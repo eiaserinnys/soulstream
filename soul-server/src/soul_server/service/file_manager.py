@@ -4,7 +4,6 @@ FileManager - 첨부 파일 관리
 첨부 파일 업로드, 검증, 정리를 담당합니다.
 """
 
-import os
 import time
 import shutil
 import mimetypes
@@ -14,10 +13,6 @@ from typing import Optional
 import aiofiles
 
 from soul_server.constants import MAX_ATTACHMENT_SIZE, DANGEROUS_EXTENSIONS
-
-
-# 기본 설정
-DEFAULT_ATTACHMENT_DIR = "/tmp/claude-code-attachments"
 
 
 class AttachmentError(Exception):
@@ -42,12 +37,14 @@ class FileManager:
     ):
         """
         Args:
-            base_dir: 첨부 파일 저장 기본 디렉토리
+            base_dir: 첨부 파일 저장 기본 디렉토리. 미지정 시 config에서 읽음.
             max_size: 최대 파일 크기 (bytes)
         """
-        self._base_dir = Path(
-            base_dir or os.getenv("ATTACHMENT_DIR", DEFAULT_ATTACHMENT_DIR)
-        )
+        if base_dir:
+            self._base_dir = Path(base_dir)
+        else:
+            from soul_server.config import get_settings
+            self._base_dir = Path(get_settings().incoming_file_dir)
         self._max_size = max_size
         self._base_dir.mkdir(parents=True, exist_ok=True)
 

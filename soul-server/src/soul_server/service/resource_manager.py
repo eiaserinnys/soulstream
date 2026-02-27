@@ -4,14 +4,9 @@ ResourceManager - 동시 실행 제한 관리
 Claude Code 동시 실행 수를 제한하고 리소스를 관리합니다.
 """
 
-import os
 import asyncio
 from typing import Optional
 from contextlib import asynccontextmanager
-
-
-# 기본 최대 동시 세션 수
-DEFAULT_MAX_CONCURRENT = 3
 
 
 class ResourceManager:
@@ -27,11 +22,13 @@ class ResourceManager:
     def __init__(self, max_concurrent: Optional[int] = None):
         """
         Args:
-            max_concurrent: 최대 동시 세션 수 (기본값: 환경변수 또는 3)
+            max_concurrent: 최대 동시 세션 수. 미지정 시 config에서 읽음.
         """
-        self._max_concurrent = max_concurrent or int(
-            os.getenv("MAX_CONCURRENT_SESSIONS", str(DEFAULT_MAX_CONCURRENT))
-        )
+        if max_concurrent is not None:
+            self._max_concurrent = max_concurrent
+        else:
+            from soul_server.config import get_settings
+            self._max_concurrent = get_settings().max_concurrent_sessions
         self._semaphore = asyncio.Semaphore(self._max_concurrent)
         self._active_count = 0
         self._lock = asyncio.Lock()

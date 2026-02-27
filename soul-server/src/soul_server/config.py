@@ -67,12 +67,16 @@ class Settings:
     host: str = "0.0.0.0"
     port: int = 3105
 
+    # 인증
+    auth_bearer_token: str = ""  # API Bearer 토큰. 미설정 시 개발 모드에서 우회
+
     # Claude Code 설정
     workspace_dir: str = ""
     claude_cli_dir: str = ""  # claude CLI가 PATH에 없는 경우 설정
 
-    # 데이터 디렉토리
-    data_dir: str = ""  # 태스크 저장, 이벤트 로그 등. 미설정 시 {workspace_dir}/data
+    # 디렉토리
+    data_dir: str = ""  # 태스크 저장, 이벤트 로그 등. 미설정 시 {workspace_dir}/.local/data
+    incoming_file_dir: str = ""  # 첨부 파일 임시 저장. 미설정 시 {workspace_dir}/.local/incoming
 
     # 리소스 제한
     max_concurrent_sessions: int = 3
@@ -96,7 +100,6 @@ class Settings:
     def from_env(cls) -> "Settings":
         """환경변수에서 설정 로드"""
         workspace_dir = os.getenv("WORKSPACE_DIR", "")
-        data_dir = os.getenv("DATA_DIR", "")
 
         settings = cls(
             service_name=os.getenv("SERVICE_NAME", cls.service_name),
@@ -104,9 +107,11 @@ class Settings:
             environment=os.getenv("ENVIRONMENT", cls.environment),
             host=os.getenv("HOST", cls.host),
             port=_safe_int(os.getenv("PORT", str(cls.port)), cls.port, "PORT"),
+            auth_bearer_token=os.getenv("AUTH_BEARER_TOKEN", ""),
             workspace_dir=workspace_dir,
             claude_cli_dir=os.getenv("CLAUDE_CLI_DIR", ""),
-            data_dir=data_dir,
+            data_dir=os.getenv("DATA_DIR", ""),
+            incoming_file_dir=os.getenv("INCOMING_FILE_DIR", ""),
             max_concurrent_sessions=_safe_int(
                 os.getenv("MAX_CONCURRENT_SESSIONS", str(cls.max_concurrent_sessions)),
                 cls.max_concurrent_sessions,
@@ -164,9 +169,13 @@ class Settings:
                 f"필수 환경변수 누락: {', '.join(missing)}. "
                 f".env 파일 또는 환경변수를 확인하세요."
             )
-        # data_dir 미설정 시 workspace_dir/data로 기본 설정
+        ws = Path(self.workspace_dir)
         if not self.data_dir:
-            self.data_dir = str(Path(self.workspace_dir) / "data")
+            # 서버 자체 데이터 → 런타임(CWD) 기준
+            self.data_dir = str(Path.cwd() / ".local" / "data")
+        if not self.incoming_file_dir:
+            # 첨부 파일 → Claude Code가 접근해야 하므로 workspace 기준
+            self.incoming_file_dir = str(ws / ".local" / "incoming")
 
     @property
     def is_production(self) -> bool:
