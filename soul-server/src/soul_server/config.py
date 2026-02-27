@@ -1,5 +1,5 @@
 """
-Seosoyoung Soul - Configuration
+Soulstream - Configuration
 
 환경변수 기반 설정 관리.
 """
@@ -9,6 +9,7 @@ import logging
 import sys
 from functools import lru_cache
 from dataclasses import dataclass
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -58,20 +59,20 @@ class Settings:
     """애플리케이션 설정"""
 
     # 서비스 정보
-    service_name: str = "seosoyoung-soul"
+    service_name: str = "soulstream"
     version: str = "0.1.0"
     environment: str = "development"  # development, staging, production
 
     # 서버 설정
     host: str = "0.0.0.0"
-    port: int = 3105  # supervisor 포트 체계에 맞춤
-
-    # 인증
-    claude_service_token: str = ""
+    port: int = 3105
 
     # Claude Code 설정
-    anthropic_api_key: str = ""
-    workspace_dir: str = "D:/soyoung_root/slackbot_workspace"
+    workspace_dir: str = ""
+    claude_cli_dir: str = ""  # claude CLI가 PATH에 없는 경우 설정
+
+    # 데이터 디렉토리
+    data_dir: str = ""  # 태스크 저장, 이벤트 로그 등. 미설정 시 {workspace_dir}/data
 
     # 리소스 제한
     max_concurrent_sessions: int = 3
@@ -94,15 +95,18 @@ class Settings:
     @classmethod
     def from_env(cls) -> "Settings":
         """환경변수에서 설정 로드"""
-        return cls(
+        workspace_dir = os.getenv("WORKSPACE_DIR", "")
+        data_dir = os.getenv("DATA_DIR", "")
+
+        settings = cls(
             service_name=os.getenv("SERVICE_NAME", cls.service_name),
             version=os.getenv("SERVICE_VERSION", cls.version),
             environment=os.getenv("ENVIRONMENT", cls.environment),
             host=os.getenv("HOST", cls.host),
             port=_safe_int(os.getenv("PORT", str(cls.port)), cls.port, "PORT"),
-            claude_service_token=os.getenv("CLAUDE_SERVICE_TOKEN", ""),
-            anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", ""),
-            workspace_dir=os.getenv("WORKSPACE_DIR", cls.workspace_dir),
+            workspace_dir=workspace_dir,
+            claude_cli_dir=os.getenv("CLAUDE_CLI_DIR", ""),
+            data_dir=data_dir,
             max_concurrent_sessions=_safe_int(
                 os.getenv("MAX_CONCURRENT_SESSIONS", str(cls.max_concurrent_sessions)),
                 cls.max_concurrent_sessions,
@@ -146,6 +150,23 @@ class Settings:
                 "HEALTH_CHECK_INTERVAL"
             ),
         )
+
+        settings.validate()
+        return settings
+
+    def validate(self) -> None:
+        """필수 설정값 검증. 누락 시 즉시 에러."""
+        missing = []
+        if not self.workspace_dir:
+            missing.append("WORKSPACE_DIR")
+        if missing:
+            raise RuntimeError(
+                f"필수 환경변수 누락: {', '.join(missing)}. "
+                f".env 파일 또는 환경변수를 확인하세요."
+            )
+        # data_dir 미설정 시 workspace_dir/data로 기본 설정
+        if not self.data_dir:
+            self.data_dir = str(Path(self.workspace_dir) / "data")
 
     @property
     def is_production(self) -> bool:

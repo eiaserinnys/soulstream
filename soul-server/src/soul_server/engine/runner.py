@@ -1,7 +1,7 @@
 """실행 엔진 Runner 프로토콜
 
 Soulstream이 요구하는 Runner 인터페이스를 정의합니다.
-seosoyoung의 ClaudeRunner 등 구체적 구현체는 이 프로토콜을 만족해야 합니다.
+ClaudeRunner 등 구체적 구현체는 이 프로토콜을 만족해야 합니다.
 """
 
 from pathlib import Path

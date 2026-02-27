@@ -161,7 +161,7 @@ class TaskStatus(str, Enum):
 
 class ExecuteRequest(BaseModel):
     """실행 요청"""
-    client_id: str = Field(..., description="클라이언트 ID (e.g., 'seosoyoung_bot')")
+    client_id: str = Field(..., description="클라이언트 ID (e.g., 'dashboard', 'slackbot')")
     request_id: str = Field(..., description="요청 ID (e.g., Slack thread ID)")
     prompt: str = Field(..., description="실행할 프롬프트")
     resume_session_id: Optional[str] = Field(None, description="이전 Claude 세션 ID (대화 연속성용)")

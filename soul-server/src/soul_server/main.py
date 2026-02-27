@@ -1,7 +1,7 @@
 """
-Seosoyoung Soul - FastAPI Application
+Soulstream - FastAPI Application
 
-슬랙 봇에서 REST API로 호출하는 Claude Code 실행 서비스.
+Claude Code 원격 실행 서비스.
 멀티 클라이언트 지원 구조.
 """
 
@@ -61,7 +61,7 @@ async def lifespan(app: FastAPI):
     global _cleanup_task
 
     # Startup
-    logger.info("Seosoyoung Soul starting...")
+    logger.info("Soulstream starting...")
     logger.info(f"  Version: {settings.version}")
     logger.info(f"  Environment: {settings.environment}")
     logger.info(f"  Max concurrent sessions: {resource_manager.max_concurrent}")
@@ -93,13 +93,14 @@ async def lifespan(app: FastAPI):
     await pool.start_maintenance()
     logger.info(f"  Runner pool maintenance loop started (interval={settings.runner_pool_maintenance_interval}s)")
 
-    # EventStore 초기화 (대시보드와 동일한 디렉토리에 JSONL 저장)
-    events_base_dir = Path(settings.workspace_dir).parent / "seosoyoung_runtime" / "data" / "events"
+    # EventStore 초기화
+    data_dir = Path(settings.data_dir)
+    events_base_dir = data_dir / "events"
     event_store = EventStore(base_dir=events_base_dir)
     logger.info(f"  EventStore initialized: {events_base_dir}")
 
     # TaskManager 초기화 및 로드
-    storage_path = Path(settings.workspace_dir) / "data" / "tasks.json"
+    storage_path = data_dir / "tasks.json"
     task_manager = init_task_manager(storage_path=storage_path, event_store=event_store)
     loaded = await task_manager.load()
     logger.info(f"  Loaded {loaded} tasks from storage")
@@ -111,7 +112,7 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
-    logger.info("Seosoyoung Soul shutting down...")
+    logger.info("Soulstream shutting down...")
 
     # 주기적 정리 태스크 중지
     if _cleanup_task:
@@ -144,8 +145,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Seosoyoung Soul",
-    description="REST API for Claude Code execution (Seosoyoung's Soul)",
+    title="Soulstream",
+    description="Claude Code remote execution service",
     version=settings.version,
     lifespan=lifespan,
     # 프로덕션에서는 OpenAPI 문서 비활성화

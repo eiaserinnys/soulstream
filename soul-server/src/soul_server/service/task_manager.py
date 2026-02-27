@@ -2,7 +2,7 @@
 TaskManager - 태스크 라이프사이클 관리
 
 태스크 기반 아키텍처의 핵심 컴포넌트.
-클라이언트(seosoyoung_bot 등)의 실행 요청을 태스크로 관리하고,
+클라이언트의 실행 요청을 태스크로 관리하고,
 결과를 영속화하여 클라이언트 재시작 시에도 복구 가능하게 합니다.
 
 이 모듈은 다음 서브모듈들을 조합합니다:
@@ -153,7 +153,7 @@ class TaskManager:
         새 태스크 생성
 
         Args:
-            client_id: 클라이언트 ID (e.g., "seosoyoung_bot")
+            client_id: 클라이언트 ID (e.g., "dashboard", "slackbot")
             request_id: 요청 ID (e.g., Slack thread ID)
             prompt: 실행할 프롬프트
             resume_session_id: 이전 세션 ID (대화 연속성용)

@@ -1,7 +1,7 @@
 """
 test_engine_adapter - SoulEngineAdapter 유닛 테스트
 
-ClaudeRunner.run()을 모킹하여 Queue 기반 스트리밍 변환을 검증합니다.
+RunnerProtocol.run()을 모킹하여 Queue 기반 스트리밍 변환을 검증합니다.
 """
 
 import asyncio
@@ -100,7 +100,7 @@ class TestSoulEngineAdapterSuccess:
         )
 
         with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
+            "soul_server.service.engine_adapter.RunnerProtocol"
         ) as MockRunner:
             instance = MockRunner.return_value
             instance.run = AsyncMock(return_value=mock_result)
@@ -123,7 +123,7 @@ class TestSoulEngineAdapterSuccess:
         )
 
         with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
+            "soul_server.service.engine_adapter.RunnerProtocol"
         ) as MockRunner:
             instance = MockRunner.return_value
             instance.run = AsyncMock(return_value=mock_result)
@@ -141,7 +141,7 @@ class TestSoulEngineAdapterSuccess:
         mock_result = EngineResult(success=True, output="")
 
         with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
+            "soul_server.service.engine_adapter.RunnerProtocol"
         ) as MockRunner:
             instance = MockRunner.return_value
             instance.run = AsyncMock(return_value=mock_result)
@@ -166,7 +166,7 @@ class TestSoulEngineAdapterError:
         )
 
         with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
+            "soul_server.service.engine_adapter.RunnerProtocol"
         ) as MockRunner:
             instance = MockRunner.return_value
             instance.run = AsyncMock(return_value=mock_result)
@@ -188,7 +188,7 @@ class TestSoulEngineAdapterError:
         )
 
         with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
+            "soul_server.service.engine_adapter.RunnerProtocol"
         ) as MockRunner:
             instance = MockRunner.return_value
             instance.run = AsyncMock(return_value=mock_result)
@@ -203,7 +203,7 @@ class TestSoulEngineAdapterError:
         adapter = SoulEngineAdapter(workspace_dir="/test")
 
         with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
+            "soul_server.service.engine_adapter.RunnerProtocol"
         ) as MockRunner:
             instance = MockRunner.return_value
             instance.run = AsyncMock(side_effect=RuntimeError("boom"))
@@ -231,7 +231,7 @@ class TestSoulEngineAdapterCallbacks:
             return EngineResult(success=True, output="done")
 
         with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
+            "soul_server.service.engine_adapter.RunnerProtocol"
         ) as MockRunner:
             instance = MockRunner.return_value
             instance.run = fake_run
@@ -255,7 +255,7 @@ class TestSoulEngineAdapterCallbacks:
             return EngineResult(success=True, output="done")
 
         with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
+            "soul_server.service.engine_adapter.RunnerProtocol"
         ) as MockRunner:
             instance = MockRunner.return_value
             instance.run = fake_run
@@ -296,7 +296,7 @@ class TestSoulEngineAdapterCallbacks:
         on_sent = AsyncMock()
 
         with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
+            "soul_server.service.engine_adapter.RunnerProtocol"
         ) as MockRunner:
             instance = MockRunner.return_value
             instance.run = fake_run
@@ -345,7 +345,7 @@ class TestSoulEngineAdapterCallbacks:
             }
 
         with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
+            "soul_server.service.engine_adapter.RunnerProtocol"
         ) as MockRunner:
             instance = MockRunner.return_value
             instance.run = fake_run
@@ -364,12 +364,12 @@ class TestSoulEngineAdapterResumeSession:
     """세션 resume 테스트"""
 
     async def test_resume_session_id_passed(self):
-        """resume_session_id가 ClaudeRunner.run()에 전달됨"""
+        """resume_session_id가 RunnerProtocol.run()에 전달됨"""
         adapter = SoulEngineAdapter(workspace_dir="/test")
         mock_result = EngineResult(success=True, output="resumed")
 
         with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
+            "soul_server.service.engine_adapter.RunnerProtocol"
         ) as MockRunner:
             instance = MockRunner.return_value
             instance.run = AsyncMock(return_value=mock_result)
@@ -397,26 +397,26 @@ class TestSoulEngineAdapterToolSettings:
         mock_result = EngineResult(success=True, output="done")
 
         with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
+            "soul_server.service.engine_adapter.RunnerProtocol"
         ) as MockRunner:
             instance = MockRunner.return_value
             instance.run = AsyncMock(return_value=mock_result)
 
             events = await collect_events(adapter, "test")
 
-        # ClaudeRunner가 기본 도구 설정으로 생성되었는지 확인
+        # RunnerProtocol가 기본 도구 설정으로 생성되었는지 확인
         call_kwargs = MockRunner.call_args.kwargs
         assert call_kwargs["allowed_tools"] == DEFAULT_ALLOWED_TOOLS
         assert call_kwargs["disallowed_tools"] == DEFAULT_DISALLOWED_TOOLS
 
     async def test_custom_allowed_tools_passed(self):
-        """allowed_tools가 지정되면 ClaudeRunner에 전달됨"""
+        """allowed_tools가 지정되면 RunnerProtocol에 전달됨"""
         adapter = SoulEngineAdapter(workspace_dir="/test")
         mock_result = EngineResult(success=True, output="done")
         custom_tools = ["Read", "Glob"]
 
         with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
+            "soul_server.service.engine_adapter.RunnerProtocol"
         ) as MockRunner:
             instance = MockRunner.return_value
             instance.run = AsyncMock(return_value=mock_result)
@@ -430,13 +430,13 @@ class TestSoulEngineAdapterToolSettings:
         assert call_kwargs["allowed_tools"] == custom_tools
 
     async def test_custom_disallowed_tools_passed(self):
-        """disallowed_tools가 지정되면 ClaudeRunner에 전달됨"""
+        """disallowed_tools가 지정되면 RunnerProtocol에 전달됨"""
         adapter = SoulEngineAdapter(workspace_dir="/test")
         mock_result = EngineResult(success=True, output="done")
         custom_disallowed = ["Bash", "Write", "Edit"]
 
         with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
+            "soul_server.service.engine_adapter.RunnerProtocol"
         ) as MockRunner:
             instance = MockRunner.return_value
             instance.run = AsyncMock(return_value=mock_result)
@@ -455,7 +455,7 @@ class TestSoulEngineAdapterToolSettings:
         mock_result = EngineResult(success=True, output="done")
 
         with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
+            "soul_server.service.engine_adapter.RunnerProtocol"
         ) as MockRunner:
             instance = MockRunner.return_value
             instance.run = AsyncMock(return_value=mock_result)
@@ -478,7 +478,7 @@ class TestSoulEngineAdapterToolSettings:
         mock_result = EngineResult(success=True, output="done")
 
         with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
+            "soul_server.service.engine_adapter.RunnerProtocol"
         ) as MockRunner:
             instance = MockRunner.return_value
             instance.run = AsyncMock(return_value=mock_result)
@@ -497,7 +497,7 @@ class TestSoulEngineAdapterToolSettings:
         mock_result = EngineResult(success=True, output="done")
 
         with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
+            "soul_server.service.engine_adapter.RunnerProtocol"
         ) as MockRunner:
             instance = MockRunner.return_value
             instance.run = AsyncMock(return_value=mock_result)
@@ -515,12 +515,12 @@ class TestSoulEngineAdapterDebugEvent:
     """debug_send_fn → DebugEvent 변환 테스트"""
 
     async def test_debug_send_fn_passed_to_runner(self):
-        """ClaudeRunner 생성 시 debug_send_fn이 전달되는지 확인"""
+        """RunnerProtocol 생성 시 debug_send_fn이 전달되는지 확인"""
         adapter = SoulEngineAdapter(workspace_dir="/test")
         mock_result = EngineResult(success=True, output="done")
 
         with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
+            "soul_server.service.engine_adapter.RunnerProtocol"
         ) as MockRunner:
             instance = MockRunner.return_value
             instance.run = AsyncMock(return_value=mock_result)
@@ -541,7 +541,7 @@ class TestSoulEngineAdapterDebugEvent:
         async def fake_run(prompt, session_id=None, on_progress=None,
                            on_compact=None, on_intervention=None,
                            on_session=None, on_event=None):
-            # debug_send_fn을 동기적으로 호출 (ClaudeRunner._debug()와 동일한 패턴)
+            # debug_send_fn을 동기적으로 호출 (RunnerProtocol._debug()와 동일한 패턴)
             if captured_debug_fn:
                 captured_debug_fn("rate limit warning: 80% used")
                 # 이벤트가 큐에 들어갈 시간을 줌
@@ -549,7 +549,7 @@ class TestSoulEngineAdapterDebugEvent:
             return EngineResult(success=True, output="done")
 
         with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
+            "soul_server.service.engine_adapter.RunnerProtocol"
         ) as MockRunner:
             def capture_init(*args, **kwargs):
                 nonlocal captured_debug_fn
@@ -583,7 +583,7 @@ class TestSoulEngineAdapterDebugEvent:
             return EngineResult(success=True, output="done")
 
         with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
+            "soul_server.service.engine_adapter.RunnerProtocol"
         ) as MockRunner:
             def capture_init(*args, **kwargs):
                 nonlocal captured_debug_fn
@@ -608,19 +608,19 @@ class TestSoulEngineAdapterWithPool:
     """풀 주입 시나리오"""
 
     async def test_pool_none_creates_runner_directly(self):
-        """pool=None이면 기존처럼 ClaudeRunner를 직접 생성"""
+        """pool=None이면 기존처럼 RunnerProtocol를 직접 생성"""
         adapter = SoulEngineAdapter(workspace_dir="/test")  # pool 없음
         mock_result = EngineResult(success=True, output="done", session_id="s1")
 
         with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
+            "soul_server.service.engine_adapter.RunnerProtocol"
         ) as MockRunner:
             instance = MockRunner.return_value
             instance.run = AsyncMock(return_value=mock_result)
 
             events = await collect_events(adapter, "test")
 
-        # ClaudeRunner 직접 생성됨
+        # RunnerProtocol 직접 생성됨
         assert MockRunner.called
         assert isinstance(events[-1], CompleteEvent)
 
@@ -725,7 +725,7 @@ class TestSoulEngineAdapterWithPool:
         assert any(isinstance(e, ErrorEvent) for e in events)
 
     async def test_pool_runner_not_created_via_clauderunner_constructor(self):
-        """풀이 있으면 ClaudeRunner 생성자 직접 호출 안 함"""
+        """풀이 있으면 RunnerProtocol 생성자 직접 호출 안 함"""
         mock_pool = MagicMock(spec=RunnerPool)
         mock_runner = MagicMock()
         mock_result = EngineResult(success=True, output="done", session_id="s1")
@@ -736,7 +736,7 @@ class TestSoulEngineAdapterWithPool:
         adapter = SoulEngineAdapter(workspace_dir="/test", pool=mock_pool)
 
         with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
+            "soul_server.service.engine_adapter.RunnerProtocol"
         ) as MockRunner:
             events = await collect_events(adapter, "test")
 
@@ -839,7 +839,7 @@ class TestEngineEventConversion:
             return EngineResult(success=True, output="done")
 
         with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
+            "soul_server.service.engine_adapter.RunnerProtocol"
         ) as MockRunner:
             instance = MockRunner.return_value
             instance.run = fake_run
@@ -876,7 +876,7 @@ class TestEngineEventConversion:
             return EngineResult(success=True, output="done")
 
         with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
+            "soul_server.service.engine_adapter.RunnerProtocol"
         ) as MockRunner:
             instance = MockRunner.return_value
             instance.run = fake_run
@@ -905,7 +905,7 @@ class TestEngineEventConversion:
             return EngineResult(success=True, output="done")
 
         with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
+            "soul_server.service.engine_adapter.RunnerProtocol"
         ) as MockRunner:
             instance = MockRunner.return_value
             instance.run = fake_run
@@ -935,7 +935,7 @@ class TestEngineEventConversion:
             return EngineResult(success=True, output="최종 결과")
 
         with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
+            "soul_server.service.engine_adapter.RunnerProtocol"
         ) as MockRunner:
             instance = MockRunner.return_value
             instance.run = fake_run
@@ -968,7 +968,7 @@ class TestEngineEventConversion:
             return EngineResult(success=True, output="done")
 
         with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
+            "soul_server.service.engine_adapter.RunnerProtocol"
         ) as MockRunner:
             instance = MockRunner.return_value
             instance.run = fake_run
@@ -1000,7 +1000,7 @@ class TestEngineEventConversion:
             return EngineResult(success=True, output="done")
 
         with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
+            "soul_server.service.engine_adapter.RunnerProtocol"
         ) as MockRunner:
             instance = MockRunner.return_value
             instance.run = fake_run
@@ -1034,7 +1034,7 @@ class TestEngineEventConversion:
             return EngineResult(success=True, output="done")
 
         with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
+            "soul_server.service.engine_adapter.RunnerProtocol"
         ) as MockRunner:
             instance = MockRunner.return_value
             instance.run = fake_run
@@ -1053,7 +1053,7 @@ class TestEngineEventConversion:
         mock_result = EngineResult(success=True, output="done")
 
         with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
+            "soul_server.service.engine_adapter.RunnerProtocol"
         ) as MockRunner:
             instance = MockRunner.return_value
             instance.run = AsyncMock(return_value=mock_result)
@@ -1088,7 +1088,7 @@ class TestEngineEventConversion:
             return EngineResult(success=True, output="done")
 
         with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
+            "soul_server.service.engine_adapter.RunnerProtocol"
         ) as MockRunner:
             instance = MockRunner.return_value
             instance.run = fake_run

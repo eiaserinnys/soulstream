@@ -1,7 +1,7 @@
 """
 test_runner_pool - RunnerPool 단위 테스트
 
-ClaudeRunner를 mock으로 대체하여 풀 로직만 검증합니다.
+RunnerProtocol를 mock으로 대체하여 풀 로직만 검증합니다.
 """
 
 import asyncio
@@ -21,7 +21,7 @@ from soul_server.service.runner_pool import RunnerPool
 
 
 def make_mock_runner():
-    """ClaudeRunner 대역 — _remove_client, _get_or_create_client는 async"""
+    """RunnerProtocol 대역 — _remove_client, _get_or_create_client는 async"""
     runner = MagicMock()
     runner._remove_client = AsyncMock()
     runner._get_or_create_client = AsyncMock()
@@ -29,22 +29,27 @@ def make_mock_runner():
     return runner
 
 
+def mock_runner_factory(**kwargs):
+    """RunnerPool에 주입할 mock runner factory"""
+    return make_mock_runner()
+
+
 @pytest.fixture
 def pool():
     """기본 풀 (max_size=3, ttl=300s)"""
-    return RunnerPool(max_size=3, idle_ttl=300.0)
+    return RunnerPool(runner_factory=mock_runner_factory, max_size=3, idle_ttl=300.0)
 
 
 @pytest.fixture
 def small_pool():
     """작은 풀 (max_size=2, ttl=300s)"""
-    return RunnerPool(max_size=2, idle_ttl=300.0)
+    return RunnerPool(runner_factory=mock_runner_factory, max_size=2, idle_ttl=300.0)
 
 
 @pytest.fixture
 def short_ttl_pool():
     """TTL이 짧은 풀 (max_size=3, ttl=0.01s)"""
-    return RunnerPool(max_size=3, idle_ttl=0.01)
+    return RunnerPool(runner_factory=mock_runner_factory, max_size=3, idle_ttl=0.01)
 
 
 # ─────────────────────────────────────────────
@@ -493,7 +498,7 @@ class TestPreWarm:
 class TestMaintenanceLoop:
     async def test_maintenance_loop_removes_ttl_expired_generic(self):
         """유지보수 루프: TTL 만료된 generic runner 제거"""
-        pool = RunnerPool(max_size=5, idle_ttl=0.01)
+        pool = RunnerPool(runner_factory=mock_runner_factory, max_size=5, idle_ttl=0.01, min_generic=0)
         expired = make_mock_runner()
         expired.is_idle.return_value = True
         expired._is_cli_alive.return_value = True
@@ -507,7 +512,7 @@ class TestMaintenanceLoop:
 
     async def test_maintenance_loop_removes_dead_subprocess(self):
         """유지보수 루프: 죽은 subprocess를 가진 generic runner 제거"""
-        pool = RunnerPool(max_size=5, idle_ttl=300.0)
+        pool = RunnerPool(runner_factory=mock_runner_factory, max_size=5, idle_ttl=300.0, min_generic=0)
         dead_runner = make_mock_runner()
         dead_runner.is_idle.return_value = True
         dead_runner._is_cli_alive.return_value = False  # 죽은 프로세스
@@ -520,7 +525,7 @@ class TestMaintenanceLoop:
 
     async def test_maintenance_loop_keeps_alive_runners(self):
         """유지보수 루프: 살아있는 runner는 유지"""
-        pool = RunnerPool(max_size=5, idle_ttl=300.0)
+        pool = RunnerPool(runner_factory=mock_runner_factory, max_size=5, idle_ttl=300.0)
         alive_runner = make_mock_runner()
         alive_runner.is_idle.return_value = True
         alive_runner._is_cli_alive.return_value = True
@@ -534,7 +539,7 @@ class TestMaintenanceLoop:
     @patch("soul_server.service.runner_pool.RunnerPool._make_runner")
     async def test_maintenance_loop_replenishes_generic_pool(self, mock_make):
         """유지보수 루프: generic pool이 min_generic 미만이면 보충"""
-        pool = RunnerPool(max_size=5, idle_ttl=300.0, min_generic=2)
+        pool = RunnerPool(runner_factory=mock_runner_factory, max_size=5, idle_ttl=300.0, min_generic=2)
         # generic pool 비어있음 → 보충 필요
         new_runner = make_mock_runner()
         mock_make.return_value = new_runner
@@ -546,7 +551,7 @@ class TestMaintenanceLoop:
 
     async def test_maintenance_loop_cancellable(self):
         """_maintenance_loop는 CancelledError로 정상 종료"""
-        pool = RunnerPool(max_size=5, idle_ttl=300.0, maintenance_interval=9999.0)
+        pool = RunnerPool(runner_factory=mock_runner_factory, max_size=5, idle_ttl=300.0, maintenance_interval=9999.0)
 
         task = asyncio.create_task(pool._maintenance_loop())
         await asyncio.sleep(0.01)
@@ -559,7 +564,7 @@ class TestMaintenanceLoop:
 
     async def test_maintenance_loop_removes_dead_session_runner(self):
         """유지보수 루프: 죽은 subprocess를 가진 session runner 제거"""
-        pool = RunnerPool(max_size=5, idle_ttl=300.0)
+        pool = RunnerPool(runner_factory=mock_runner_factory, max_size=5, idle_ttl=300.0)
         dead_runner = make_mock_runner()
         dead_runner.is_idle.return_value = True
         dead_runner._is_cli_alive.return_value = False
@@ -572,7 +577,7 @@ class TestMaintenanceLoop:
 
     async def test_maintenance_loop_removes_ttl_expired_session(self):
         """유지보수 루프: TTL 만료된 session runner 제거"""
-        pool = RunnerPool(max_size=5, idle_ttl=0.01)
+        pool = RunnerPool(runner_factory=mock_runner_factory, max_size=5, idle_ttl=0.01)
         expired_runner = make_mock_runner()
         expired_runner.is_idle.return_value = True
         expired_runner._is_cli_alive.return_value = True
@@ -592,7 +597,7 @@ class TestMaintenanceLoop:
 class TestShutdownWithMaintenanceLoop:
     async def test_shutdown_cancels_maintenance_task(self):
         """shutdown 시 유지보수 루프 태스크 취소"""
-        pool = RunnerPool(max_size=5, idle_ttl=300.0, maintenance_interval=9999.0)
+        pool = RunnerPool(runner_factory=mock_runner_factory, max_size=5, idle_ttl=300.0, maintenance_interval=9999.0)
 
         # 유지보수 루프 시작
         pool._maintenance_task = asyncio.create_task(pool._maintenance_loop())
@@ -604,7 +609,7 @@ class TestShutdownWithMaintenanceLoop:
 
     async def test_shutdown_logs_runner_count(self):
         """shutdown은 정리된 runner 수를 반환"""
-        pool = RunnerPool(max_size=5, idle_ttl=300.0)
+        pool = RunnerPool(runner_factory=mock_runner_factory, max_size=5, idle_ttl=300.0)
         r1, r2 = make_mock_runner(), make_mock_runner()
         pool._generic_pool.append((r1, time.monotonic()))
         pool._session_pool["sid_1"] = (r2, time.monotonic())

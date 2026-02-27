@@ -4,7 +4,7 @@ test_pool_integration - RunnerPool 통합 테스트
 풀 + 어댑터(SoulEngineAdapter)의 acquire/release 흐름,
 동시성 시나리오, 세션 어피니티를 검증합니다.
 
-ClaudeRunner는 mock으로 대체하여 실제 subprocess 없이 테스트합니다.
+RunnerProtocol는 mock으로 대체하여 실제 subprocess 없이 테스트합니다.
 """
 
 import asyncio
@@ -29,7 +29,7 @@ def make_mock_runner(
     success: bool = True,
     error: str = "",
 ):
-    """ClaudeRunner 대역 생성"""
+    """RunnerProtocol 대역 생성"""
     runner = MagicMock()
     runner._remove_client = AsyncMock()
     runner._get_or_create_client = AsyncMock()
@@ -43,6 +43,11 @@ def make_mock_runner(
     )
     runner.run = AsyncMock(return_value=result)
     return runner
+
+
+def mock_runner_factory(**kwargs):
+    """RunnerPool에 주입할 mock runner factory"""
+    return make_mock_runner()
 
 
 async def collect_events(adapter: SoulEngineAdapter, prompt: str, **kwargs) -> list:
@@ -60,7 +65,7 @@ async def collect_events(adapter: SoulEngineAdapter, prompt: str, **kwargs) -> l
 class TestNewSessionFlow:
     async def test_new_session_acquires_from_generic_pool(self):
         """새 세션: generic pool에서 acquire → 성공 시 session pool로 release"""
-        pool = RunnerPool(max_size=3, idle_ttl=300.0)
+        pool = RunnerPool(runner_factory=mock_runner_factory, max_size=3, idle_ttl=300.0)
         runner = make_mock_runner(session_id="new-sess-1")
 
         # generic pool에 미리 runner 추가
@@ -81,7 +86,7 @@ class TestNewSessionFlow:
 
     async def test_new_session_with_empty_pool_creates_runner(self):
         """풀이 비어있을 때: 새 runner 생성 후 session pool로 release"""
-        pool = RunnerPool(max_size=3, idle_ttl=300.0)
+        pool = RunnerPool(runner_factory=mock_runner_factory, max_size=3, idle_ttl=300.0)
         runner = make_mock_runner(session_id="fresh-sess")
 
         with patch.object(pool, "_make_runner", return_value=runner):
@@ -104,7 +109,7 @@ class TestNewSessionFlow:
 class TestContinueSessionFlow:
     async def test_continue_session_hits_session_pool(self):
         """컨티뉴: session pool에서 hit → 재사용"""
-        pool = RunnerPool(max_size=3, idle_ttl=300.0)
+        pool = RunnerPool(runner_factory=mock_runner_factory, max_size=3, idle_ttl=300.0)
         runner = make_mock_runner(session_id="existing-sess")
 
         # session pool에 미리 저장
@@ -125,7 +130,7 @@ class TestContinueSessionFlow:
 
     async def test_continue_session_reacquires_same_runner(self):
         """같은 session_id로 두 번 실행하면 같은 runner를 재사용"""
-        pool = RunnerPool(max_size=3, idle_ttl=300.0)
+        pool = RunnerPool(runner_factory=mock_runner_factory, max_size=3, idle_ttl=300.0)
 
         # 첫 번째 실행용 runner
         runner = make_mock_runner(session_id="repeat-sess")
@@ -156,7 +161,7 @@ class TestContinueSessionFlow:
 class TestSessionMissFlow:
     async def test_session_miss_falls_back_to_generic(self):
         """session miss → generic pool fallback 후 session_id로 release"""
-        pool = RunnerPool(max_size=3, idle_ttl=300.0)
+        pool = RunnerPool(runner_factory=mock_runner_factory, max_size=3, idle_ttl=300.0)
         runner = make_mock_runner(session_id="fallback-sess")
 
         # session pool에는 없음, generic pool에 있음
@@ -178,7 +183,7 @@ class TestSessionMissFlow:
 
     async def test_session_miss_no_generic_creates_new_runner(self):
         """session miss, generic도 없음 → 새 runner 생성"""
-        pool = RunnerPool(max_size=3, idle_ttl=300.0)
+        pool = RunnerPool(runner_factory=mock_runner_factory, max_size=3, idle_ttl=300.0)
         runner = make_mock_runner(session_id="brand-new")
 
         with patch.object(pool, "_make_runner", return_value=runner):
@@ -203,7 +208,7 @@ class TestSessionMissFlow:
 class TestPoolFullEviction:
     async def test_pool_full_evicts_lru_on_new_session(self):
         """풀이 가득 찼을 때 새 세션 요청 → LRU evict 후 성공"""
-        pool = RunnerPool(max_size=2, idle_ttl=300.0)
+        pool = RunnerPool(runner_factory=mock_runner_factory, max_size=2, idle_ttl=300.0)
 
         # 풀을 max_size까지 채움
         r1 = make_mock_runner(session_id="old-1")
@@ -231,7 +236,7 @@ class TestPoolFullEviction:
 
     async def test_pool_full_evicts_on_release(self):
         """release 시점에도 풀 full이면 evict"""
-        pool = RunnerPool(max_size=2, idle_ttl=300.0)
+        pool = RunnerPool(runner_factory=mock_runner_factory, max_size=2, idle_ttl=300.0)
 
         r1 = make_mock_runner(session_id="sess-a")
         r2 = make_mock_runner(session_id="sess-b")
@@ -256,7 +261,7 @@ class TestPoolFullEviction:
 class TestErrorDiscardsRunner:
     async def test_runner_not_returned_to_pool_on_error(self):
         """실패한 실행 후 runner는 풀에 반환되지 않음"""
-        pool = RunnerPool(max_size=3, idle_ttl=300.0)
+        pool = RunnerPool(runner_factory=mock_runner_factory, max_size=3, idle_ttl=300.0)
 
         # 실패하는 runner
         error_runner = make_mock_runner(success=False, error="실행 실패")
@@ -277,7 +282,7 @@ class TestErrorDiscardsRunner:
 
     async def test_runner_not_returned_on_is_error(self):
         """is_error=True 결과 시 runner 폐기"""
-        pool = RunnerPool(max_size=3, idle_ttl=300.0)
+        pool = RunnerPool(runner_factory=mock_runner_factory, max_size=3, idle_ttl=300.0)
 
         runner = MagicMock()
         runner._remove_client = AsyncMock()
@@ -300,7 +305,7 @@ class TestErrorDiscardsRunner:
 
     async def test_runner_not_returned_on_exception(self):
         """예외 발생 시 runner 폐기"""
-        pool = RunnerPool(max_size=3, idle_ttl=300.0)
+        pool = RunnerPool(runner_factory=mock_runner_factory, max_size=3, idle_ttl=300.0)
 
         runner = MagicMock()
         runner._remove_client = AsyncMock()
@@ -324,12 +329,12 @@ class TestErrorDiscardsRunner:
 
 class TestNoPoolMode:
     async def test_no_pool_creates_runner_directly(self):
-        """pool=None이면 ClaudeRunner 직접 생성 (하위호환)"""
+        """pool=None이면 RunnerProtocol 직접 생성 (하위호환)"""
         adapter = SoulEngineAdapter(workspace_dir="/test", pool=None)
         mock_result = EngineResult(success=True, output="직접 실행 완료", session_id="direct-1")
 
         with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
+            "soul_server.service.engine_adapter.RunnerProtocol"
         ) as MockRunner:
             instance = MockRunner.return_value
             instance.run = AsyncMock(return_value=mock_result)
@@ -346,7 +351,7 @@ class TestNoPoolMode:
         adapter = SoulEngineAdapter(workspace_dir="/test", pool=None)
 
         with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
+            "soul_server.service.engine_adapter.RunnerProtocol"
         ) as MockRunner:
             instance = MockRunner.return_value
             instance.run = AsyncMock(side_effect=RuntimeError("직접 실행 오류"))
@@ -365,7 +370,7 @@ class TestNoPoolMode:
 class TestConcurrency:
     async def test_concurrent_acquire_no_race_condition(self):
         """여러 태스크가 동시에 acquire — 각각 다른 runner 받음"""
-        pool = RunnerPool(max_size=5, idle_ttl=300.0)
+        pool = RunnerPool(runner_factory=mock_runner_factory, max_size=5, idle_ttl=300.0)
 
         # 5개의 다른 runner를 _make_runner가 순서대로 반환
         runners = [make_mock_runner(session_id=f"c-sess-{i}") for i in range(5)]
@@ -388,7 +393,7 @@ class TestConcurrency:
 
     async def test_concurrent_acquire_release_consistent_stats(self):
         """동시 acquire/release 후 풀 크기가 일관됨"""
-        pool = RunnerPool(max_size=3, idle_ttl=300.0)
+        pool = RunnerPool(runner_factory=mock_runner_factory, max_size=3, idle_ttl=300.0)
         runners = [make_mock_runner(session_id=f"cr-{i}") for i in range(3)]
         idx = 0
 
@@ -415,7 +420,7 @@ class TestConcurrency:
 
     async def test_concurrent_access_to_full_pool_evicts_lru(self):
         """풀 full 상태에서 동시 acquire → LRU evict 후 성공"""
-        pool = RunnerPool(max_size=2, idle_ttl=300.0)
+        pool = RunnerPool(runner_factory=mock_runner_factory, max_size=2, idle_ttl=300.0)
 
         # 풀을 가득 채움
         r1 = make_mock_runner(session_id="full-1")
@@ -447,7 +452,7 @@ class TestConcurrency:
 
     async def test_many_concurrent_adapters_no_crash(self):
         """여러 어댑터가 동시에 풀을 사용해도 충돌 없음"""
-        pool = RunnerPool(max_size=5, idle_ttl=300.0)
+        pool = RunnerPool(runner_factory=mock_runner_factory, max_size=5, idle_ttl=300.0)
         call_count = 0
 
         def make_runner():
@@ -478,7 +483,7 @@ class TestConcurrency:
 class TestSessionAffinity:
     async def test_same_session_id_returns_same_runner(self):
         """같은 session_id로 연속 호출 → 같은 runner 재사용"""
-        pool = RunnerPool(max_size=3, idle_ttl=300.0)
+        pool = RunnerPool(runner_factory=mock_runner_factory, max_size=3, idle_ttl=300.0)
         runner = make_mock_runner(session_id="affinity-sess")
 
         with patch.object(pool, "_make_runner", return_value=runner):
@@ -496,7 +501,7 @@ class TestSessionAffinity:
 
     async def test_different_session_ids_use_different_runners(self):
         """다른 session_id는 다른 runner를 사용"""
-        pool = RunnerPool(max_size=5, idle_ttl=300.0)
+        pool = RunnerPool(runner_factory=mock_runner_factory, max_size=5, idle_ttl=300.0)
         r1 = make_mock_runner(session_id="sid-A")
         r2 = make_mock_runner(session_id="sid-B")
 
