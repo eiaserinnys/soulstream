@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Node
+node_modules/
+soul-dashboard/dist/
+
+# Test
+.pytest_cache/
+htmlcov/
+.coverage
+soul-dashboard/e2e/screenshots/
+soul-dashboard/e2e/test-results/
+
+# Environment
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
