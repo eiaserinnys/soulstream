@@ -24,7 +24,7 @@ from soul_server.service.engine_adapter import (
     _extract_context_usage,
     InterventionMessage,
 )
-from soul_server.service.runner_pool import ClaudeRunnerPool
+from soul_server.service.runner_pool import RunnerPool
 from soul_server.engine.types import EngineResult
 
 
@@ -602,7 +602,7 @@ class TestSoulEngineAdapterDebugEvent:
         assert debug_events[1].message == "warning 2"
 
 
-# === ClaudeRunnerPool 통합 테스트 ===
+# === RunnerPool 통합 테스트 ===
 
 class TestSoulEngineAdapterWithPool:
     """풀 주입 시나리오"""
@@ -626,7 +626,7 @@ class TestSoulEngineAdapterWithPool:
 
     async def test_pool_acquire_called_on_execute(self):
         """풀이 있으면 acquire()가 호출됨"""
-        mock_pool = MagicMock(spec=ClaudeRunnerPool)
+        mock_pool = MagicMock(spec=RunnerPool)
         mock_runner = MagicMock()
         mock_result = EngineResult(success=True, output="done", session_id="sess-abc")
         mock_runner.run = AsyncMock(return_value=mock_result)
@@ -640,7 +640,7 @@ class TestSoulEngineAdapterWithPool:
 
     async def test_pool_acquire_passes_resume_session_id(self):
         """resume_session_id가 pool.acquire()에 전달됨"""
-        mock_pool = MagicMock(spec=ClaudeRunnerPool)
+        mock_pool = MagicMock(spec=RunnerPool)
         mock_runner = MagicMock()
         mock_result = EngineResult(success=True, output="done", session_id="sess-xyz")
         mock_runner.run = AsyncMock(return_value=mock_result)
@@ -655,7 +655,7 @@ class TestSoulEngineAdapterWithPool:
 
     async def test_pool_release_called_on_success(self):
         """성공 시 result.session_id로 release() 호출"""
-        mock_pool = MagicMock(spec=ClaudeRunnerPool)
+        mock_pool = MagicMock(spec=RunnerPool)
         mock_runner = MagicMock()
         mock_result = EngineResult(success=True, output="done", session_id="sess-new")
         mock_runner.run = AsyncMock(return_value=mock_result)
@@ -672,7 +672,7 @@ class TestSoulEngineAdapterWithPool:
 
     async def test_pool_not_released_on_error_result(self):
         """에러 결과(success=False) 시 release 호출 안 함 (runner 폐기)"""
-        mock_pool = MagicMock(spec=ClaudeRunnerPool)
+        mock_pool = MagicMock(spec=RunnerPool)
         mock_runner = MagicMock()
         mock_result = EngineResult(
             success=False,
@@ -693,7 +693,7 @@ class TestSoulEngineAdapterWithPool:
 
     async def test_pool_not_released_on_is_error(self):
         """is_error=True 시 release 호출 안 함"""
-        mock_pool = MagicMock(spec=ClaudeRunnerPool)
+        mock_pool = MagicMock(spec=RunnerPool)
         mock_runner = MagicMock()
         mock_result = EngineResult(
             success=True,
@@ -712,7 +712,7 @@ class TestSoulEngineAdapterWithPool:
 
     async def test_pool_not_released_on_exception(self):
         """예외 발생 시 release 호출 안 함"""
-        mock_pool = MagicMock(spec=ClaudeRunnerPool)
+        mock_pool = MagicMock(spec=RunnerPool)
         mock_runner = MagicMock()
         mock_runner.run = AsyncMock(side_effect=RuntimeError("runner crashed"))
         mock_pool.acquire = AsyncMock(return_value=mock_runner)
@@ -726,7 +726,7 @@ class TestSoulEngineAdapterWithPool:
 
     async def test_pool_runner_not_created_via_clauderunner_constructor(self):
         """풀이 있으면 ClaudeRunner 생성자 직접 호출 안 함"""
-        mock_pool = MagicMock(spec=ClaudeRunnerPool)
+        mock_pool = MagicMock(spec=RunnerPool)
         mock_runner = MagicMock()
         mock_result = EngineResult(success=True, output="done", session_id="s1")
         mock_runner.run = AsyncMock(return_value=mock_result)
@@ -745,7 +745,7 @@ class TestSoulEngineAdapterWithPool:
 
     async def test_complete_event_contains_session_id_from_result(self):
         """CompleteEvent.claude_session_id = result.session_id"""
-        mock_pool = MagicMock(spec=ClaudeRunnerPool)
+        mock_pool = MagicMock(spec=RunnerPool)
         mock_runner = MagicMock()
         mock_result = EngineResult(success=True, output="result text", session_id="final-sess")
         mock_runner.run = AsyncMock(return_value=mock_result)

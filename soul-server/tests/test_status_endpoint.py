@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 import soul_server.main as main_module
 from soul_server.main import app
-from soul_server.service.runner_pool import ClaudeRunnerPool
+from soul_server.service.runner_pool import RunnerPool
 
 
 # ─────────────────────────────────────────────
@@ -27,7 +27,7 @@ def make_mock_task_manager():
 
 
 def make_mock_pool(stats: dict | None = None):
-    pool = MagicMock(spec=ClaudeRunnerPool)
+    pool = MagicMock(spec=RunnerPool)
     default_stats = {
         "session_count": 2,
         "generic_count": 1,

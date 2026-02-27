@@ -18,7 +18,7 @@ from soul_server.api import attachments_router
 from soul_server.api.tasks import router as tasks_router
 from soul_server.service import resource_manager, file_manager
 from soul_server.service.engine_adapter import init_soul_engine
-from soul_server.service.runner_pool import ClaudeRunnerPool
+from soul_server.service.runner_pool import RunnerPool
 from soul_server.service.task_manager import init_task_manager, get_task_manager
 from soul_server.service.event_store import EventStore
 from soul_server.models import HealthResponse
@@ -37,7 +37,7 @@ _start_time = time.time()
 _cleanup_task = None
 
 # 전역 풀 참조 (/status 엔드포인트에서 접근)
-_runner_pool: ClaudeRunnerPool | None = None
+_runner_pool: RunnerPool | None = None
 
 
 async def periodic_cleanup():
@@ -67,9 +67,9 @@ async def lifespan(app: FastAPI):
     logger.info(f"  Max concurrent sessions: {resource_manager.max_concurrent}")
     logger.info(f"  Workspace: {settings.workspace_dir}")
 
-    # ClaudeRunnerPool 초기화
+    # RunnerPool 초기화
     global _runner_pool
-    pool = ClaudeRunnerPool(
+    pool = RunnerPool(
         max_size=settings.runner_pool_max_size,
         idle_ttl=settings.runner_pool_idle_ttl,
         workspace_dir=settings.workspace_dir,

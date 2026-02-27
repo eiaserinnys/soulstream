@@ -7,8 +7,7 @@ Claude Code 원격 실행 서비스. 세션 관리, SSE 스트리밍, 실시간 
 ```
 soulstream/
 ├── soul-server/      # FastAPI 실행 서버 (Python)
-├── soul-client/      # Python HTTP+SSE 클라이언트
-└── soul-dashboard/   # React + Express 대시보드 (TypeScript)
+└── soul-dashboard/   # React + Express 대시보드/클라이언트 (TypeScript)
 ```
 
 ## 빠른 시작
@@ -17,7 +16,9 @@ soulstream/
 
 ```bash
 cd soul-server
-pip install -e ".[dev]"
+python -m venv .venv
+.venv/Scripts/activate   # Windows
+pip install -r packages.txt
 python -m soul_server.main
 ```
 
