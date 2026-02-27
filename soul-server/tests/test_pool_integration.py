@@ -4,7 +4,7 @@ test_pool_integration - RunnerPool 통합 테스트
 풀 + 어댑터(SoulEngineAdapter)의 acquire/release 흐름,
 동시성 시나리오, 세션 어피니티를 검증합니다.
 
-RunnerProtocol는 mock으로 대체하여 실제 subprocess 없이 테스트합니다.
+ClaudeRunner는 mock으로 대체하여 실제 subprocess 없이 테스트합니다.
 """
 
 import asyncio
@@ -29,7 +29,7 @@ def make_mock_runner(
     success: bool = True,
     error: str = "",
 ):
-    """RunnerProtocol 대역 생성"""
+    """ClaudeRunner 대역 생성"""
     runner = MagicMock()
     runner._remove_client = AsyncMock()
     runner._get_or_create_client = AsyncMock()
@@ -329,12 +329,12 @@ class TestErrorDiscardsRunner:
 
 class TestNoPoolMode:
     async def test_no_pool_creates_runner_directly(self):
-        """pool=None이면 RunnerProtocol 직접 생성 (하위호환)"""
+        """pool=None이면 ClaudeRunner 직접 생성 (하위호환)"""
         adapter = SoulEngineAdapter(workspace_dir="/test", pool=None)
         mock_result = EngineResult(success=True, output="직접 실행 완료", session_id="direct-1")
 
         with patch(
-            "soul_server.service.engine_adapter.RunnerProtocol"
+            "soul_server.service.engine_adapter.ClaudeRunner"
         ) as MockRunner:
             instance = MockRunner.return_value
             instance.run = AsyncMock(return_value=mock_result)
@@ -351,7 +351,7 @@ class TestNoPoolMode:
         adapter = SoulEngineAdapter(workspace_dir="/test", pool=None)
 
         with patch(
-            "soul_server.service.engine_adapter.RunnerProtocol"
+            "soul_server.service.engine_adapter.ClaudeRunner"
         ) as MockRunner:
             instance = MockRunner.return_value
             instance.run = AsyncMock(side_effect=RuntimeError("직접 실행 오류"))

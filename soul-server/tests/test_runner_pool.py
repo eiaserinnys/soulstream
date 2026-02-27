@@ -1,7 +1,7 @@
 """
 test_runner_pool - RunnerPool 단위 테스트
 
-RunnerProtocol를 mock으로 대체하여 풀 로직만 검증합니다.
+ClaudeRunner를 mock으로 대체하여 풀 로직만 검증합니다.
 """
 
 import asyncio
@@ -21,7 +21,7 @@ from soul_server.service.runner_pool import RunnerPool
 
 
 def make_mock_runner():
-    """RunnerProtocol 대역 — _remove_client, _get_or_create_client는 async"""
+    """ClaudeRunner 대역 — _remove_client, _get_or_create_client는 async"""
     runner = MagicMock()
     runner._remove_client = AsyncMock()
     runner._get_or_create_client = AsyncMock()

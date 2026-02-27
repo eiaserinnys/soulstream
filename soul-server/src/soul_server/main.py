@@ -18,6 +18,7 @@ from soul_server.api import attachments_router
 from soul_server.api.tasks import router as tasks_router
 from soul_server.service import resource_manager, file_manager
 from soul_server.service.engine_adapter import init_soul_engine
+from soul_server.claude.agent_runner import ClaudeRunner
 from soul_server.service.runner_pool import RunnerPool
 from soul_server.service.task_manager import init_task_manager, get_task_manager
 from soul_server.service.event_store import EventStore
@@ -70,6 +71,7 @@ async def lifespan(app: FastAPI):
     # RunnerPool 초기화
     global _runner_pool
     pool = RunnerPool(
+        runner_factory=ClaudeRunner,
         max_size=settings.runner_pool_max_size,
         idle_ttl=settings.runner_pool_idle_ttl,
         workspace_dir=settings.workspace_dir,

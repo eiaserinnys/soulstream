@@ -12,8 +12,6 @@ from soul_server.engine.types import (
     InterventionCallback,
     EventCallback,
 )
-from soul_server.engine.runner import RunnerProtocol
-
 __all__ = [
     "EngineEvent",
     "EngineEventType",
@@ -22,5 +20,4 @@ __all__ = [
     "CompactCallback",
     "InterventionCallback",
     "EventCallback",
-    "RunnerProtocol",
 ]

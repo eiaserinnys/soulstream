@@ -1,7 +1,7 @@
 """soul 엔진 어댑터
 
-slackbot.claude.agent_runner의 RunnerProtocol를 soul API용으로 래핑합니다.
-RunnerProtocol.run()의 콜백(on_progress, on_compact, on_intervention)을
+ClaudeRunner를 soul API용으로 래핑합니다.
+ClaudeRunner.run()의 콜백(on_progress, on_compact, on_intervention)을
 asyncio.Queue를 통해 SSE 이벤트 스트림으로 변환하여
 기존 soul 스트리밍 인터페이스와 호환합니다.
 """
@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, AsyncIterator, Awaitable, Callable, List, Optional
 
-from soul_server.engine.runner import RunnerProtocol
+from soul_server.claude.agent_runner import ClaudeRunner
 from soul_server.engine.types import EngineEvent, EngineEventType
 from soul_server.config import get_settings
 
@@ -150,9 +150,9 @@ def _build_intervention_prompt(msg: InterventionMessage) -> str:
 
 
 class SoulEngineAdapter:
-    """RunnerProtocol -> AsyncIterator[SSE Event] 어댑터
+    """ClaudeRunner -> AsyncIterator[SSE Event] 어댑터
 
-    RunnerProtocol.run()의 콜백(on_progress, on_compact, on_intervention)을
+    ClaudeRunner.run()의 콜백(on_progress, on_compact, on_intervention)을
     asyncio.Queue를 통해 SSE 이벤트 스트림으로 변환합니다.
     기존 soul의 ClaudeCodeRunner.execute()와 동일한 인터페이스를 제공합니다.
     """
@@ -211,7 +211,7 @@ class SoulEngineAdapter:
         mcp_config_path = self._resolve_mcp_config_path() if use_mcp else None
 
         # debug_send_fn: 동기 콜백 → 큐 어댑터
-        # RunnerProtocol._debug()는 동기 함수이므로 call_soon_threadsafe로 큐에 enqueue
+        # ClaudeRunner._debug()는 동기 함수이므로 call_soon_threadsafe로 큐에 enqueue
         def debug_send_fn(message: str) -> None:
             try:
                 loop.call_soon_threadsafe(
@@ -254,7 +254,7 @@ class SoulEngineAdapter:
         # --- 세션 ID 조기 통지 ---
 
         async def on_session_callback(session_id: str) -> None:
-            """RunnerProtocol가 SystemMessage에서 session_id를 받으면 즉시 SSE 이벤트 발행"""
+            """ClaudeRunner가 SystemMessage에서 session_id를 받으면 즉시 SSE 이벤트 발행"""
             await queue.put(SessionEvent(session_id=session_id))
 
         # --- 세분화 이벤트 (dashboard용) ---
@@ -262,7 +262,7 @@ class SoulEngineAdapter:
         tracker = _CardTracker()
 
         async def on_engine_event(event: EngineEvent) -> None:
-            """RunnerProtocol 엔진 이벤트 → 세분화 SSE 이벤트 변환
+            """ClaudeRunner 엔진 이벤트 → 세분화 SSE 이벤트 변환
 
             기존 on_progress/on_compact 이벤트와 병행 발행됩니다.
             슬랙봇 하위호환 유지: 기존 이벤트를 대체하지 않습니다.
@@ -336,8 +336,7 @@ class SoulEngineAdapter:
                 runner.allowed_tools = effective_allowed
                 runner.disallowed_tools = effective_disallowed
             else:
-                runner = RunnerProtocol(
-                    thread_ts="",
+                runner = ClaudeRunner(
                     working_dir=Path(self._workspace_dir),
                     allowed_tools=effective_allowed,
                     disallowed_tools=effective_disallowed,

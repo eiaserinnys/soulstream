@@ -1,10 +1,10 @@
-"""RunnerProtocol 풀링 시스템
+"""ClaudeRunner 풀링 시스템
 
-매 요청마다 발생하는 콜드 스타트를 제거하기 위해 RunnerProtocol 인스턴스를 풀링합니다.
+매 요청마다 발생하는 콜드 스타트를 제거하기 위해 ClaudeRunner 인스턴스를 풀링합니다.
 
 ## 풀 구조
-- session pool: OrderedDict[session_id, (RunnerProtocol, last_used)] — LRU 캐시
-- generic pool: deque[(RunnerProtocol, idle_since)] — pre-warm 클라이언트 큐
+- session pool: OrderedDict[session_id, (ClaudeRunner, last_used)] — LRU 캐시
+- generic pool: deque[(ClaudeRunner, idle_since)] — pre-warm 클라이언트 큐
 
 ## 크기 제한
 max_size는 idle pool (session + generic) 합산 크기를 제한합니다.
@@ -19,13 +19,13 @@ from typing import Callable, Optional
 
 import anyio
 
-from soul_server.engine.runner import RunnerProtocol
+from soul_server.claude.agent_runner import ClaudeRunner
 
 logger = logging.getLogger(__name__)
 
 
 class RunnerPool:
-    """RunnerProtocol 인스턴스 LRU 풀
+    """ClaudeRunner 인스턴스 LRU 풀
 
     LRU 기반 세션 풀과 제네릭 풀을 함께 관리합니다.
     session_id가 있으면 같은 Claude 세션을 재사용하고,
@@ -34,7 +34,7 @@ class RunnerPool:
 
     def __init__(
         self,
-        runner_factory: Callable[..., RunnerProtocol],
+        runner_factory: Callable[..., ClaudeRunner],
         max_size: int = 5,
         idle_ttl: float = 300.0,
         workspace_dir: str = "",
@@ -56,10 +56,10 @@ class RunnerPool:
 
         # session pool: session_id → (runner, last_used_time)
         # OrderedDict 순서 = 삽입/갱신 순서 → 첫 번째 항목이 LRU
-        self._session_pool: OrderedDict[str, tuple[RunnerProtocol, float]] = OrderedDict()
+        self._session_pool: OrderedDict[str, tuple[ClaudeRunner, float]] = OrderedDict()
 
         # generic pool: (runner, idle_since_time), 왼쪽이 oldest
-        self._generic_pool: deque[tuple[RunnerProtocol, float]] = deque()
+        self._generic_pool: deque[tuple[ClaudeRunner, float]] = deque()
 
         # 통계
         self._hits: int = 0
@@ -79,10 +79,9 @@ class RunnerPool:
         """현재 idle pool 총 크기"""
         return len(self._session_pool) + len(self._generic_pool)
 
-    def _make_runner(self) -> RunnerProtocol:
+    def _make_runner(self) -> ClaudeRunner:
         """runner_factory를 사용하여 새 Runner 인스턴스 생성"""
         return self._runner_factory(
-            thread_ts="",
             working_dir=Path(self._workspace_dir) if self._workspace_dir else None,
             allowed_tools=self._allowed_tools,
             disallowed_tools=self._disallowed_tools,
@@ -90,7 +89,7 @@ class RunnerPool:
             pooled=True,
         )
 
-    async def _discard(self, runner: RunnerProtocol, reason: str = "") -> None:
+    async def _discard(self, runner: ClaudeRunner, reason: str = "") -> None:
         """runner를 안전하게 폐기"""
         try:
             await runner._remove_client()
@@ -124,7 +123,7 @@ class RunnerPool:
     # Public API
     # -------------------------------------------------------------------------
 
-    async def acquire(self, session_id: Optional[str] = None) -> RunnerProtocol:
+    async def acquire(self, session_id: Optional[str] = None) -> ClaudeRunner:
         """풀에서 runner 획득
 
         - session_id 있음 → session pool에서 LRU hit 시도 → miss면 generic fallback → 없으면 new
@@ -187,7 +186,7 @@ class RunnerPool:
 
     async def release(
         self,
-        runner: RunnerProtocol,
+        runner: ClaudeRunner,
         session_id: Optional[str] = None,
     ) -> None:
         """실행 완료 후 runner 반환
@@ -229,7 +228,7 @@ class RunnerPool:
     async def pre_warm(self, count: int) -> int:
         """N개의 generic runner를 미리 생성하여 generic pool에 추가
 
-        각 runner는 RunnerProtocol(pooled=True)로 생성 후 _get_or_create_client()를 호출합니다.
+        각 runner는 ClaudeRunner(pooled=True)로 생성 후 _get_or_create_client()를 호출합니다.
         에러는 로그만 남기고 계속 진행합니다 (부분 예열 허용).
 
         Returns:
@@ -269,11 +268,11 @@ class RunnerPool:
         - generic pool이 min_generic 미만이면 보충
         """
         now = time.monotonic()
-        to_discard: list[tuple[RunnerProtocol, str]] = []
+        to_discard: list[tuple[ClaudeRunner, str]] = []
 
         async with self._lock:
             # --- generic pool 정리 ---
-            new_generic: deque[tuple[RunnerProtocol, float]] = deque()
+            new_generic: deque[tuple[ClaudeRunner, float]] = deque()
             while self._generic_pool:
                 runner, idle_since = self._generic_pool.popleft()
                 # TTL 초과 확인
