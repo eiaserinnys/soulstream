@@ -122,6 +122,28 @@ class InstrumentedClaudeClient(ClaudeSDKClient):
         except Exception as e:
             logger.debug(f"[CONNECT] CLI args 추출 실패 (무시): {e}")
 
+        # initialize 응답 로깅 (MCP 서버, 커맨드 목록 등)
+        try:
+            server_info = await self.get_server_info()
+            if server_info:
+                # 키 목록과 주요 정보 요약
+                keys = list(server_info.keys())
+                logger.info(f"[CONNECT] server_info keys: {keys}")
+                # commands가 있으면 이름만 추출
+                commands = server_info.get("commands")
+                if commands and isinstance(commands, list):
+                    cmd_names = [c.get("name", "?") for c in commands if isinstance(c, dict)]
+                    logger.info(f"[CONNECT] commands ({len(cmd_names)}): {cmd_names[:20]}{'...' if len(cmd_names) > 20 else ''}")
+                # MCP 관련 키가 있으면 출력
+                for key in keys:
+                    if "mcp" in key.lower() or "tool" in key.lower() or "server" in key.lower():
+                        val = server_info[key]
+                        logger.info(f"[CONNECT] server_info[{key}]: {str(val)[:500]}")
+            else:
+                logger.info("[CONNECT] server_info: None")
+        except Exception as e:
+            logger.debug(f"[CONNECT] server_info 조회 실패 (무시): {e}")
+
     async def receive_messages(self) -> AsyncIterator[Message]:
         """receive_messages를 오버라이드하여 raw 스트림에서 이벤트를 관찰.
 
