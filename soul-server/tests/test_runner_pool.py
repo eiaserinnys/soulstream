@@ -26,6 +26,9 @@ def make_mock_runner():
     runner._remove_client = AsyncMock()
     runner._get_or_create_client = AsyncMock()
     runner._is_cli_alive.return_value = True
+    # _build_options: (options, stderr_file) 튜플 반환
+    mock_options = MagicMock()
+    runner._build_options = MagicMock(return_value=(mock_options, None))
     return runner
 
 

@@ -293,6 +293,8 @@ class ClaudeRunner:
         self.execution_loop: Optional[asyncio.AbstractEventLoop] = None
         # 현재 클라이언트가 연결된 세션 ID (세션 불일치 감지용)
         self._client_session_id: Optional[str] = None
+        # 현재 클라이언트의 옵션 핑거프린트 (설정 불일치 감지용)
+        self._client_options_fp: Optional[str] = None
 
     @classmethod
     async def shutdown_all_clients(cls) -> int:
@@ -308,25 +310,53 @@ class ClaudeRunner:
         """동기 컨텍스트에서 코루틴을 실행하는 브릿지"""
         return run_in_new_loop(coro)
 
+    @staticmethod
+    def _compute_options_fingerprint(options) -> Optional[str]:
+        """options의 핵심 설정을 해싱하여 fingerprint를 생성
+
+        mcp_servers, allowed_tools, disallowed_tools의 조합으로
+        클라이언트 설정 불일치를 감지합니다.
+        """
+        if options is None:
+            return None
+        import hashlib
+        key_parts = (
+            str(getattr(options, "mcp_servers", None)),
+            str(sorted(getattr(options, "allowed_tools", None) or [])),
+            str(sorted(getattr(options, "disallowed_tools", None) or [])),
+        )
+        return hashlib.md5("|".join(key_parts).encode()).hexdigest()[:8]
+
     async def _get_or_create_client(
         self,
         options: Optional[ClaudeCodeOptions] = None,
     ) -> ClaudeSDKClient:
         """ClaudeSDKClient를 가져오거나 새로 생성
 
-        세션 불일치 감지: options.resume이 설정되어 있고 기존 클라이언트의
-        세션과 다르면, 기존 클라이언트를 disconnect하고 새로 생성합니다.
-        이는 풀에서 generic runner가 session resume 요청에 할당될 때
-        기존 클라이언트가 엉뚱한 세션에 연결되어 있는 문제를 방지합니다.
+        불일치 감지:
+        1. 세션 불일치: 기존 클라이언트의 세션과 요청 세션이 다른 경우
+           - requested_session이 None이고 기존 세션이 있으면 오염 방지를 위해 재생성
+           - requested_session이 있는데 기존 세션과 다르면 재생성
+        2. 설정 불일치: MCP 서버, 허용/금지 도구 설정이 다른 경우
         """
         requested_session = getattr(options, "resume", None) if options else None
+        requested_fp = self._compute_options_fingerprint(options)
 
         if self.client is not None:
-            # 세션 불일치 감지: resume 요청인데 현재 클라이언트의 세션이 다른 경우
-            if requested_session and self._client_session_id != requested_session:
+            session_mismatch = self._client_session_id != requested_session
+            config_mismatch = (
+                requested_fp is not None
+                and self._client_options_fp is not None
+                and requested_fp != self._client_options_fp
+            )
+
+            if session_mismatch or config_mismatch:
                 logger.info(
-                    f"[DEBUG-CLIENT] 세션 불일치 감지: "
-                    f"current={self._client_session_id}, requested={requested_session} "
+                    f"[DEBUG-CLIENT] 클라이언트 불일치 감지: "
+                    f"session_mismatch={session_mismatch} "
+                    f"(current={self._client_session_id}, requested={requested_session}), "
+                    f"config_mismatch={config_mismatch} "
+                    f"(current_fp={self._client_options_fp}, requested_fp={requested_fp}) "
                     f"→ 클라이언트 재생성, runner={self.runner_id}"
                 )
                 await self._remove_client()
@@ -373,7 +403,11 @@ class ClaudeRunner:
         self.client = client
         self.pid = pid
         self._client_session_id = requested_session
-        logger.info(f"ClaudeSDKClient 생성: runner={self.runner_id}, pid={pid}, session={requested_session}")
+        self._client_options_fp = requested_fp
+        logger.info(
+            f"ClaudeSDKClient 생성: runner={self.runner_id}, pid={pid}, "
+            f"session={requested_session}, options_fp={requested_fp}"
+        )
         return client
 
     async def _remove_client(self) -> None:
@@ -383,6 +417,7 @@ class ClaudeRunner:
         self.client = None
         self.pid = None
         self._client_session_id = None
+        self._client_options_fp = None
 
         if client is None:
             return
@@ -408,6 +443,7 @@ class ClaudeRunner:
         self.client = None
         self.pid = None
         self._client_session_id = None
+        self._client_options_fp = None
         return client
 
     def is_idle(self) -> bool:

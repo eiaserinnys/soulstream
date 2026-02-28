@@ -228,7 +228,10 @@ class RunnerPool:
     async def pre_warm(self, count: int) -> int:
         """N개의 generic runner를 미리 생성하여 generic pool에 추가
 
-        각 runner는 ClaudeRunner(pooled=True)로 생성 후 _get_or_create_client()를 호출합니다.
+        각 runner는 ClaudeRunner(pooled=True)로 생성 후, runner의 도구/MCP 설정이
+        반영된 옵션으로 _get_or_create_client()를 호출합니다.
+        이를 통해 웜업된 클라이언트가 실제 요청과 동일한 설정으로 시작됩니다.
+
         에러는 로그만 남기고 계속 진행합니다 (부분 예열 허용).
 
         Returns:
@@ -240,9 +243,12 @@ class RunnerPool:
         success = 0
         failed = 0
         for i in range(count):
+            stderr_file = None
             try:
                 runner = self._make_runner()
-                await runner._get_or_create_client()
+                # runner의 도구/MCP 설정으로 옵션을 빌드하여 클라이언트 생성
+                options, stderr_file = runner._build_options()
+                await runner._get_or_create_client(options=options)
                 async with self._lock:
                     now = time.monotonic()
                     if self._total_size() >= self._max_size:
@@ -251,11 +257,18 @@ class RunnerPool:
                 success += 1
                 logger.info(
                     f"Pre-warm: runner {i + 1}/{count} 예열 완료 | "
+                    f"allowed_tools={runner.allowed_tools} | "
                     f"pool: session={len(self._session_pool)}, generic={len(self._generic_pool)}"
                 )
             except Exception as e:
                 failed += 1
                 logger.warning(f"Pre-warm: runner {i + 1}/{count} 예열 실패 (계속 진행): {e}")
+            finally:
+                if stderr_file:
+                    try:
+                        stderr_file.close()
+                    except Exception:
+                        pass
 
         logger.info(f"Pre-warm 완료: 성공={success}, 실패={failed}, 요청={count}")
         return success

@@ -8,8 +8,9 @@ import os
 import logging
 import sys
 from functools import lru_cache
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Optional
 
 from dotenv import load_dotenv
 
@@ -34,6 +35,21 @@ def _safe_int(value: str, default: int, name: str) -> int:
     except (ValueError, TypeError):
         _config_logger.warning(f"Invalid {name} value '{value}', using default: {default}")
         return default
+
+
+def _parse_csv_list(value: Optional[str], default: list[str]) -> list[str]:
+    """쉼표 구분 문자열을 리스트로 변환
+
+    Args:
+        value: 쉼표 구분 문자열 (None이면 기본값 사용)
+        default: 기본값
+
+    Returns:
+        파싱된 문자열 리스트
+    """
+    if value is None:
+        return default
+    return [item.strip() for item in value.split(",") if item.strip()]
 
 
 def _safe_float(value: str, default: float, name: str) -> float:
@@ -89,6 +105,16 @@ class Settings:
     runner_pool_maintenance_interval: float = 60.0  # 유지보수 루프 실행 간격 (초)
     runner_pool_min_generic: int = 1        # generic pool 최소 유지 수량
 
+    # Warmup 도구 설정
+    # 슬랙봇 어드민의 기본 유즈케이스 값 (engine_adapter.py DEFAULT_* 와 동일)
+    warmup_allowed_tools: list[str] = field(default_factory=lambda: [
+        "Read", "Glob", "Grep", "Task",
+        "WebFetch", "WebSearch", "Edit", "Write", "Bash",
+    ])
+    warmup_disallowed_tools: list[str] = field(default_factory=lambda: [
+        "NotebookEdit", "TodoWrite",
+    ])
+
     # 로깅
     log_level: str = "INFO"
     log_format: str = "json"  # json, text
@@ -100,6 +126,10 @@ class Settings:
     def from_env(cls) -> "Settings":
         """환경변수에서 설정 로드"""
         workspace_dir = os.getenv("WORKSPACE_DIR", "")
+
+        # 웜업 도구 기본값 (슬랙봇 어드민 유즈케이스)
+        _default_warmup_allowed = "Read,Glob,Grep,Task,WebFetch,WebSearch,Edit,Write,Bash"
+        _default_warmup_disallowed = "NotebookEdit,TodoWrite"
 
         settings = cls(
             service_name=os.getenv("SERVICE_NAME", cls.service_name),
@@ -146,6 +176,14 @@ class Settings:
                 os.getenv("RUNNER_POOL_MIN_GENERIC", str(cls.runner_pool_min_generic)),
                 cls.runner_pool_min_generic,
                 "RUNNER_POOL_MIN_GENERIC"
+            ),
+            warmup_allowed_tools=_parse_csv_list(
+                os.getenv("WARMUP_ALLOWED_TOOLS"),
+                _default_warmup_allowed.split(","),
+            ),
+            warmup_disallowed_tools=_parse_csv_list(
+                os.getenv("WARMUP_DISALLOWED_TOOLS"),
+                _default_warmup_disallowed.split(","),
             ),
             log_level=os.getenv("LOG_LEVEL", cls.log_level),
             log_format=os.getenv("LOG_FORMAT", cls.log_format),

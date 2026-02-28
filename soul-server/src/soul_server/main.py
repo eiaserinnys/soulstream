@@ -83,6 +83,8 @@ async def lifespan(app: FastAPI):
         max_size=settings.runner_pool_max_size,
         idle_ttl=settings.runner_pool_idle_ttl,
         workspace_dir=settings.workspace_dir,
+        allowed_tools=settings.warmup_allowed_tools,
+        disallowed_tools=settings.warmup_disallowed_tools,
         mcp_config_path=mcp_config_path,
         min_generic=settings.runner_pool_min_generic,
         maintenance_interval=settings.runner_pool_maintenance_interval,
@@ -92,7 +94,8 @@ async def lifespan(app: FastAPI):
     logger.info(
         f"  Runner pool initialized: max_size={settings.runner_pool_max_size}, "
         f"idle_ttl={settings.runner_pool_idle_ttl}s, "
-        f"min_generic={settings.runner_pool_min_generic}"
+        f"min_generic={settings.runner_pool_min_generic}, "
+        f"warmup_tools={settings.warmup_allowed_tools}"
     )
 
     # Pre-warm: generic runner 예열
