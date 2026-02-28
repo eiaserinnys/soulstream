@@ -11,7 +11,7 @@ import logging
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, AsyncIterator, Awaitable, Callable, List, Optional
+from typing import TYPE_CHECKING, Any, AsyncIterator, Awaitable, Callable, List, Optional
 
 from soul_server.claude.agent_runner import ClaudeRunner
 from soul_server.engine.types import EngineEvent, EngineEventType
@@ -23,10 +23,13 @@ from soul_server.models import (
     CompactEvent,
     CompleteEvent,
     ContextUsageEvent,
+    CredentialAlertEvent,
     DebugEvent,
     ErrorEvent,
     InterventionSentEvent,
     ProgressEvent,
+    RateLimitProfileInfo,
+    RateLimitProfileStatus,
     ResultSSEEvent,
     SessionEvent,
     TextDeltaSSEEvent,
@@ -149,6 +152,29 @@ def _build_intervention_prompt(msg: InterventionMessage) -> str:
     return f"[사용자 개입 메시지 from {msg.user}]\n{msg.text}"
 
 
+def _build_credential_alert_event(alert: dict) -> CredentialAlertEvent:
+    """RateLimitTracker의 alert dict → CredentialAlertEvent 변환."""
+    profiles = []
+    for p in alert.get("profiles", []):
+        five_hour = p.get("five_hour", {})
+        seven_day = p.get("seven_day", {})
+        profiles.append(RateLimitProfileInfo(
+            name=p["name"],
+            five_hour=RateLimitProfileStatus(
+                utilization=five_hour.get("utilization", "unknown"),
+                resets_at=five_hour.get("resets_at"),
+            ),
+            seven_day=RateLimitProfileStatus(
+                utilization=seven_day.get("utilization", "unknown"),
+                resets_at=seven_day.get("resets_at"),
+            ),
+        ))
+    return CredentialAlertEvent(
+        active_profile=alert["active_profile"],
+        profiles=profiles,
+    )
+
+
 class SoulEngineAdapter:
     """ClaudeRunner -> AsyncIterator[SSE Event] 어댑터
 
@@ -161,9 +187,11 @@ class SoulEngineAdapter:
         self,
         workspace_dir: Optional[str] = None,
         pool: Optional["RunnerPool"] = None,
+        rate_limit_tracker: Optional[Any] = None,
     ):
         self._workspace_dir = workspace_dir or get_settings().workspace_dir
         self._pool = pool
+        self._rate_limit_tracker = rate_limit_tracker
 
     def _resolve_mcp_config_path(self) -> Optional[Path]:
         """WORKSPACE_DIR 기준으로 mcp_config.json 경로를 해석"""
@@ -220,6 +248,14 @@ class SoulEngineAdapter:
                 )
             except Exception:
                 pass  # 큐 닫힘 등 무시
+
+        # alert_send_fn: RateLimitTracker 알림 → 큐 어댑터
+        def alert_send_fn(alert: dict) -> None:
+            try:
+                event = _build_credential_alert_event(alert)
+                loop.call_soon_threadsafe(queue.put_nowait, event)
+            except Exception:
+                pass
 
         # --- 콜백 → 큐 어댑터 ---
 
@@ -344,6 +380,11 @@ class SoulEngineAdapter:
                     debug_send_fn=debug_send_fn,
                 )
 
+            # rate limit tracker 주입
+            if self._rate_limit_tracker is not None:
+                runner.rate_limit_tracker = self._rate_limit_tracker
+                runner.alert_send_fn = alert_send_fn
+
             success = False
             try:
                 result = await runner.run(
@@ -412,17 +453,21 @@ class SoulEngineAdapter:
 soul_engine = SoulEngineAdapter()
 
 
-def init_soul_engine(pool: Optional["RunnerPool"] = None) -> SoulEngineAdapter:
+def init_soul_engine(
+    pool: Optional["RunnerPool"] = None,
+    rate_limit_tracker: Optional[Any] = None,
+) -> SoulEngineAdapter:
     """soul_engine 싱글톤을 (재)초기화한다.
 
     lifespan에서 풀 생성 후 호출하여 싱글톤을 교체한다.
 
     Args:
         pool: 주입할 RunnerPool. None이면 풀 없이 초기화.
+        rate_limit_tracker: RateLimitTracker 인스턴스. None이면 추적 비활성화.
 
     Returns:
         새로 생성된 SoulEngineAdapter 인스턴스
     """
     global soul_engine
-    soul_engine = SoulEngineAdapter(pool=pool)
+    soul_engine = SoulEngineAdapter(pool=pool, rate_limit_tracker=rate_limit_tracker)
     return soul_engine

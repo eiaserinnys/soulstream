@@ -30,6 +30,9 @@ from .schemas import (
     ToolStartSSEEvent,
     ToolResultSSEEvent,
     ResultSSEEvent,
+    RateLimitProfileStatus,
+    RateLimitProfileInfo,
+    CredentialAlertEvent,
 )
 
 __all__ = [
@@ -63,4 +66,7 @@ __all__ = [
     "ToolStartSSEEvent",
     "ToolResultSSEEvent",
     "ResultSSEEvent",
+    "RateLimitProfileStatus",
+    "RateLimitProfileInfo",
+    "CredentialAlertEvent",
 ]
