@@ -28,7 +28,8 @@ from soul_server.claude.agent_runner import (
 )
 from soul_server.engine.types import EngineResult
 from soul_server.claude.diagnostics import classify_process_error
-from claude_code_sdk._errors import MessageParseError, ProcessError
+from claude_agent_sdk import ProcessError
+from claude_agent_sdk._errors import MessageParseError
 
 
 # SDK 메시지 타입 Mock

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 try:
-    from claude_code_sdk._errors import ProcessError
+    from claude_agent_sdk import ProcessError
 except ImportError:
     class ProcessError(Exception):
         """더미 ProcessError"""

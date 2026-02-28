@@ -12,9 +12,15 @@ from typing import IO, Any, Optional, Callable, Awaitable
 import psutil
 
 try:
-    from claude_code_sdk import ClaudeCodeOptions, ClaudeSDKClient, HookMatcher, HookContext
-    from claude_code_sdk._errors import MessageParseError, ProcessError
-    from claude_code_sdk.types import (
+    from claude_agent_sdk import (
+        ClaudeAgentOptions,
+        ClaudeSDKClient,
+        HookMatcher,
+        HookContext,
+        ProcessError,
+    )
+    from claude_agent_sdk._errors import MessageParseError
+    from claude_agent_sdk.types import (
         AssistantMessage,
         HookJSONOutput,
         ResultMessage,
@@ -28,7 +34,7 @@ try:
 except ImportError:
     SDK_AVAILABLE = False
     # 더미 클래스 (import 에러 방지)
-    class ClaudeCodeOptions:
+    class ClaudeAgentOptions:
         pass
     class ClaudeSDKClient:
         pass
@@ -329,7 +335,7 @@ class ClaudeRunner:
 
     async def _get_or_create_client(
         self,
-        options: Optional[ClaudeCodeOptions] = None,
+        options: Optional[ClaudeAgentOptions] = None,
     ) -> ClaudeSDKClient:
         """ClaudeSDKClient를 가져오거나 새로 생성
 
@@ -644,8 +650,8 @@ class ClaudeRunner:
         self,
         session_id: Optional[str] = None,
         compact_events: Optional[list] = None,
-    ) -> tuple[ClaudeCodeOptions, Optional[IO[str]]]:
-        """ClaudeCodeOptions와 stderr 파일을 반환합니다.
+    ) -> tuple[ClaudeAgentOptions, Optional[IO[str]]]:
+        """ClaudeAgentOptions와 stderr 파일을 반환합니다.
 
         Returns:
             (options, stderr_file)
@@ -682,7 +688,7 @@ class ClaudeRunner:
             f"allowed_tools={self.allowed_tools}"
         )
 
-        options = ClaudeCodeOptions(
+        options = ClaudeAgentOptions(
             allowed_tools=self.allowed_tools,
             disallowed_tools=self.disallowed_tools,
             permission_mode="bypassPermissions",

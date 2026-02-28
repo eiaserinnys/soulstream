@@ -14,9 +14,9 @@ from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Optional
 
 try:
-    from claude_code_sdk import ClaudeSDKClient
-    from claude_code_sdk._errors import CLIConnectionError, MessageParseError
-    from claude_code_sdk.types import Message, ResultMessage
+    from claude_agent_sdk import ClaudeSDKClient, CLIConnectionError
+    from claude_agent_sdk._errors import MessageParseError
+    from claude_agent_sdk.types import Message, ResultMessage
     _SDK_AVAILABLE = True
 except ImportError:
     _SDK_AVAILABLE = False
@@ -153,7 +153,7 @@ class InstrumentedClaudeClient(ClaudeSDKClient):
         if not self._query:
             raise CLIConnectionError("Not connected. Call connect() first.")
 
-        from claude_code_sdk._internal.message_parser import parse_message
+        from claude_agent_sdk._internal.message_parser import parse_message
 
         async for data in self._query.receive_messages():
             # raw dict 단계에서 관심 이벤트 관찰
