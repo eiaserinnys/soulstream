@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/soul-dashboard/server/index.ts",
+    "dev": "tsx watch server/index.ts",
     "build": "vite build",
     "test": "vitest run",
     "test:e2e": "playwright test --config=playwright.config.ts",
