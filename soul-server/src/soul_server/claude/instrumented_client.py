@@ -37,7 +37,7 @@ UnknownEventCallback = Callable[[str, dict], None]
 
 # Agent SDK가 파싱하는 알려진 메시지 타입
 _KNOWN_MESSAGE_TYPES = frozenset({
-    "user", "assistant", "system", "result",
+    "user", "assistant", "system", "result", "stream_event",
 })
 
 
@@ -83,13 +83,16 @@ class InstrumentedClaudeClient(ClaudeSDKClient):
                 elif msg_type and msg_type not in _KNOWN_MESSAGE_TYPES:
                     self._handle_unknown_event(msg_type, data)
 
-            # parse_message()는 unknown type에 MessageParseError를 raise함.
-            # async generator 내부에서 예외가 전파되면 제너레이터가 고갈되므로
-            # 반드시 여기서 catch해야 함.
+            # ⚠️ parse_message()는 unknown type에 MessageParseError를 raise한다.
+            # async generator 내부에서 예외가 전파되면 제너레이터가 고갈되어
+            # 후속 __anext__() 호출이 StopAsyncIteration을 발생시키므로,
+            # 반드시 여기서 catch하여 제너레이터 체인을 보호해야 한다.
             try:
                 message = parse_message(data)
             except MessageParseError:
-                continue  # 이미 콜백으로 관찰했으므로 skip
+                # rate_limit_event 등 이미 콜백으로 관찰한 이벤트.
+                # 제너레이터를 고갈시키지 않고 다음 메시지로 넘어간다.
+                continue
             if message is not None:
                 yield message
 
