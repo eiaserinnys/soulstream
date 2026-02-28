@@ -1135,7 +1135,7 @@ class ClaudeRunner:
         logger.info(f"Claude Code SDK 실행 시작 (cwd={self.working_dir})")
         logger.info(f"[DEBUG-OPTIONS] permission_mode={options.permission_mode}")
         logger.info(f"[DEBUG-OPTIONS] cwd={options.cwd}")
-        logger.info(f"[DEBUG-OPTIONS] mcp_servers={options.mcp_servers}")
+        logger.info(f"[DEBUG-OPTIONS] setting_sources={options.setting_sources}")
         logger.info(f"[DEBUG-OPTIONS] resume={options.resume}")
         logger.info(f"[DEBUG-OPTIONS] allowed_tools count={len(options.allowed_tools) if options.allowed_tools else 0}")
         logger.info(f"[DEBUG-OPTIONS] disallowed_tools count={len(options.disallowed_tools) if options.disallowed_tools else 0}")
