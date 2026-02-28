@@ -14,6 +14,7 @@ from soul_server.claude.agent_runner import (
     COMPACT_RETRY_READ_TIMEOUT,
     CompactRetryState,
     DEFAULT_DISALLOWED_TOOLS,
+    INTERVENTION_POLL_INTERVAL,
     MAX_COMPACT_RETRIES,
     MessageState,
     _extract_last_assistant_text,
@@ -1989,6 +1990,166 @@ class TestToolResultFromUserMessage:
         results_by_id = {e.data["tool_use_id"]: e.data for e in tool_result_events}
         assert results_by_id["toolu_grep1"]["tool_name"] == "Grep"
         assert results_by_id["toolu_read1"]["tool_name"] == "Read"
+
+
+@pytest.mark.asyncio
+class TestInterventionPollingParallel:
+    """인터벤션 폴링이 메시지 수신과 병렬로 실행되는지 검증"""
+
+    async def test_intervention_polled_during_message_wait(self):
+        """메시지 대기 중에도 인터벤션이 폴링되어야 함"""
+        runner = ClaudeRunner()
+        intervention_calls = []
+        query_calls = []
+
+        # 메시지 사이에 긴 대기 시간을 시뮬레이션
+        call_count = 0
+
+        class SlowMessageStream:
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                nonlocal call_count
+                call_count += 1
+                if call_count == 1:
+                    return MockSystemMessage(session_id="intv-parallel-test")
+                elif call_count == 2:
+                    # 2초 대기 → 이 동안 인터벤션 폴링이 실행되어야 함
+                    await asyncio.sleep(2.0)
+                    return MockResultMessage(result="완료", session_id="intv-parallel-test")
+                raise StopAsyncIteration
+
+        mock_client = AsyncMock()
+        mock_client.connect = AsyncMock()
+        mock_client.disconnect = AsyncMock()
+        mock_client.receive_response = SlowMessageStream
+
+        async def mock_query(text):
+            query_calls.append(text)
+
+        mock_client.query = mock_query
+
+        # 인터벤션 콜백: 첫 호출에 메시지 반환, 이후 None
+        intervention_returned = False
+
+        async def on_intervention():
+            nonlocal intervention_returned
+            intervention_calls.append(asyncio.get_event_loop().time())
+            if not intervention_returned:
+                intervention_returned = True
+                return "사용자 중간 메시지"
+            return None
+
+        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+            with patch("soul_server.claude.agent_runner.SystemMessage", MockSystemMessage):
+                with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
+                    with patch("soul_server.claude.agent_runner.INTERVENTION_POLL_INTERVAL", 0.3):
+                        result = await runner.run(
+                            "테스트", on_intervention=on_intervention
+                        )
+
+        assert result.success is True
+        # 인터벤션 콜백이 여러 번 호출되어야 함 (메시지 대기 중 폴링)
+        assert len(intervention_calls) >= 2, (
+            f"인터벤션 폴링이 메시지 대기 중에 실행되지 않음: "
+            f"호출 횟수={len(intervention_calls)}"
+        )
+        # 인터벤션 텍스트가 client.query로 주입되었어야 함
+        assert "사용자 중간 메시지" in query_calls
+
+    async def test_intervention_not_called_without_callback(self):
+        """on_intervention이 None이면 폴링하지 않아야 함"""
+        runner = ClaudeRunner()
+
+        mock_client = _make_mock_client(
+            MockSystemMessage(session_id="no-intv-test"),
+            MockResultMessage(result="완료", session_id="no-intv-test"),
+        )
+
+        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+            with patch("soul_server.claude.agent_runner.SystemMessage", MockSystemMessage):
+                with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
+                    result = await runner.run("테스트")
+
+        # on_intervention 없으면 정상 동작만 확인
+        assert result.success is True
+
+    async def test_drain_interventions_after_result(self):
+        """ResultMessage 수신 후 큐에 남은 인터벤션이 소비되어야 함"""
+        runner = ClaudeRunner()
+        query_calls = []
+
+        mock_client = _make_mock_client(
+            MockSystemMessage(session_id="drain-test"),
+            MockResultMessage(result="완료", session_id="drain-test"),
+        )
+
+        original_query = mock_client.query
+
+        async def tracking_query(text):
+            query_calls.append(text)
+            # 원래 query도 호출 (첫 프롬프트 전송용)
+            await original_query(text)
+
+        mock_client.query = tracking_query
+
+        # 인터벤션 큐에 2개의 메시지가 대기 중
+        pending_messages = ["첫 번째 중간 메시지", "두 번째 중간 메시지"]
+
+        async def on_intervention():
+            if pending_messages:
+                return pending_messages.pop(0)
+            return None
+
+        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+            with patch("soul_server.claude.agent_runner.SystemMessage", MockSystemMessage):
+                with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
+                    result = await runner.run(
+                        "테스트", on_intervention=on_intervention
+                    )
+
+        assert result.success is True
+        # 대기 중이던 인터벤션 메시지가 모두 주입되어야 함
+        assert "첫 번째 중간 메시지" in query_calls
+        assert "두 번째 중간 메시지" in query_calls
+
+    async def test_intervention_error_does_not_break_loop(self):
+        """인터벤션 콜백 오류가 메시지 수신 루프를 중단하지 않아야 함"""
+        runner = ClaudeRunner()
+
+        mock_client = _make_mock_client(
+            MockSystemMessage(session_id="intv-error-test"),
+            MockAssistantMessage(content=[MockTextBlock(text="작업 중...")]),
+            MockResultMessage(result="완료", session_id="intv-error-test"),
+        )
+
+        call_count = 0
+
+        async def failing_intervention():
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise RuntimeError("인터벤션 오류")
+            return None
+
+        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+            with patch("soul_server.claude.agent_runner.SystemMessage", MockSystemMessage):
+                with patch("soul_server.claude.agent_runner.AssistantMessage", MockAssistantMessage):
+                    with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
+                        with patch("soul_server.claude.agent_runner.TextBlock", MockTextBlock):
+                            result = await runner.run(
+                                "테스트", on_intervention=failing_intervention
+                            )
+
+        assert result.success is True
+        # 오류가 발생해도 루프가 계속되어 최종 결과를 받아야 함
+        assert "완료" in result.output
+
+    async def test_poll_interval_constant_exported(self):
+        """INTERVENTION_POLL_INTERVAL 상수가 올바르게 정의되어야 함"""
+        assert INTERVENTION_POLL_INTERVAL > 0
+        assert INTERVENTION_POLL_INTERVAL <= 5.0  # 합리적인 범위
 
 
 if __name__ == "__main__":
