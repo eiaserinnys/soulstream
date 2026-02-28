@@ -281,6 +281,10 @@ class ClaudeRunner:
         self.debug_send_fn = debug_send_fn
         self._pooled = pooled
 
+        # Rate limit tracking
+        self.rate_limit_tracker = None  # RateLimitTracker instance (injected by adapter)
+        self.alert_send_fn: Optional[Callable] = None  # credential_alert 전송 콜백
+
         # Instance-level client state
         self.client: Optional[ClaudeSDKClient] = None
         self.pid: Optional[int] = None
@@ -538,6 +542,17 @@ class ClaudeRunner:
 
         if status == "allowed":
             return
+
+        # RateLimitTracker에 기록 (utilization이 유효한 이벤트만)
+        if self.rate_limit_tracker is not None and isinstance(
+            info.get("utilization"), (int, float)
+        ):
+            try:
+                alert = self.rate_limit_tracker.record(info)
+                if alert and self.alert_send_fn:
+                    self.alert_send_fn(alert)
+            except Exception as e:
+                logger.warning(f"RateLimitTracker 기록 실패: {e}")
 
         if status == "allowed_warning":
             warning_msg = format_rate_limit_warning(info)
