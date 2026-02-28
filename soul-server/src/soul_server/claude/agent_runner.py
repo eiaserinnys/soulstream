@@ -635,11 +635,15 @@ class ClaudeRunner:
                 _stderr_file.close()
             _stderr_file = None
 
+        # MCP 설정: mcp_config_path가 있으면 Path로 전달 (SDK가 파일을 읽어 파싱)
+        mcp_servers = self.mcp_config_path if self.mcp_config_path else {}
+
         options = ClaudeCodeOptions(
             allowed_tools=self.allowed_tools,
             disallowed_tools=self.disallowed_tools,
             permission_mode="bypassPermissions",
             cwd=self.working_dir,
+            mcp_servers=mcp_servers,
             hooks=hooks,
             extra_args={"debug-to-stderr": None},
             debug_stderr=_stderr_target,

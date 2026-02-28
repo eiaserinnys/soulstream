@@ -74,11 +74,16 @@ async def lifespan(app: FastAPI):
 
     # RunnerPool 초기화
     global _runner_pool
+    mcp_config_path = Path(settings.workspace_dir) / ".mcp.json"
+    if not mcp_config_path.exists():
+        logger.warning(f"  MCP config not found: {mcp_config_path}")
+        mcp_config_path = None
     pool = RunnerPool(
         runner_factory=ClaudeRunner,
         max_size=settings.runner_pool_max_size,
         idle_ttl=settings.runner_pool_idle_ttl,
         workspace_dir=settings.workspace_dir,
+        mcp_config_path=mcp_config_path,
         min_generic=settings.runner_pool_min_generic,
         maintenance_interval=settings.runner_pool_maintenance_interval,
     )
