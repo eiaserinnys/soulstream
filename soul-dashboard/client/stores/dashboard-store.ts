@@ -28,6 +28,9 @@ export interface DashboardState {
   /** 선택된 카드 (상세 뷰에 표시) */
   selectedCardId: string | null;
 
+  /** 선택된 React Flow 노드 ID (tool_call/tool_result 구분용) */
+  selectedNodeId: string | null;
+
   /** 선택된 이벤트 노드 데이터 (user/intervention/tool_group 노드용, 카드 기반이 아닌 노드) */
   selectedEventNodeData: {
     nodeType: string;
@@ -69,8 +72,8 @@ export interface DashboardActions {
   // 활성 세션
   setActiveSession: (key: string | null, detail?: SessionDetail) => void;
 
-  // 카드 선택
-  selectCard: (cardId: string | null) => void;
+  // 카드 선택 (nodeId: React Flow 노드의 고유 ID, tool_call/tool_result 구분에 사용)
+  selectCard: (cardId: string | null, nodeId?: string | null) => void;
 
   // 이벤트 노드 선택 (user/intervention/tool_group 등 카드가 아닌 노드)
   selectEventNode: (data: {
@@ -102,6 +105,7 @@ const initialState: DashboardState = {
   activeSessionKey: null,
   activeSession: null,
   selectedCardId: null,
+  selectedNodeId: null,
   selectedEventNodeData: null,
   cards: [],
   graphEvents: [],
@@ -131,6 +135,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>(
         activeSessionKey: key,
         activeSession: detail ?? null,
         selectedCardId: null,
+        selectedNodeId: null,
         selectedEventNodeData: null,
         cards: [],
         graphEvents: [],
@@ -140,11 +145,21 @@ export const useDashboardStore = create<DashboardState & DashboardActions>(
 
     // --- 카드 선택 ---
 
-    selectCard: (cardId) => set({ selectedCardId: cardId, selectedEventNodeData: null }),
+    selectCard: (cardId, nodeId) =>
+      set({
+        selectedCardId: cardId,
+        selectedNodeId: nodeId ?? null,
+        selectedEventNodeData: null,
+      }),
 
     // --- 이벤트 노드 선택 ---
 
-    selectEventNode: (data) => set({ selectedEventNodeData: data, selectedCardId: null }),
+    selectEventNode: (data) =>
+      set({
+        selectedEventNodeData: data,
+        selectedCardId: null,
+        selectedNodeId: null,
+      }),
 
     // --- SSE 이벤트 처리 ---
     // 주의: 카드 객체를 직접 변경하지 않고, 새 객체를 생성하여 참조 동등성을 보장합니다.
@@ -292,6 +307,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>(
         collapsedGroups: new Set<string>(),
         lastEventId: 0,
         selectedCardId: null,
+        selectedNodeId: null,
         selectedEventNodeData: null,
       }),
 

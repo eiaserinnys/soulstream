@@ -109,6 +109,7 @@ function NodeGraphInner() {
   const graphEvents = useDashboardStore((s) => s.graphEvents);
   const collapsedGroups = useDashboardStore((s) => s.collapsedGroups);
   const selectedCardId = useDashboardStore((s) => s.selectedCardId);
+  const selectedNodeId = useDashboardStore((s) => s.selectedNodeId);
   const selectCard = useDashboardStore((s) => s.selectCard);
   const selectEventNode = useDashboardStore((s) => s.selectEventNode);
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
@@ -143,10 +144,13 @@ function NodeGraphInner() {
         collapsedGroups,
       );
 
-      // 선택된 카드 반영
+      // 선택된 노드 반영: selectedNodeId(고유 노드 ID)로 판별하여
+      // tool_call/tool_result가 동시 선택되는 문제를 방지
       const nodesWithSelection = newNodes.map((n) => ({
         ...n,
-        selected: n.data.cardId === selectedCardId,
+        selected: selectedNodeId
+          ? n.id === selectedNodeId
+          : n.data.cardId === selectedCardId,
       }));
 
       setNodes(nodesWithSelection);
@@ -241,6 +245,7 @@ function NodeGraphInner() {
     collapsedGroups,
     activeSessionKey,
     selectedCardId,
+    selectedNodeId,
     setNodes,
     setEdges,
     getViewport,
@@ -270,7 +275,7 @@ function NodeGraphInner() {
 
         const cardId = nodeData?.cardId as string | undefined;
         if (cardId) {
-          selectCard(cardId);
+          selectCard(cardId, selectedNodes[0].id);
           return;
         }
 
