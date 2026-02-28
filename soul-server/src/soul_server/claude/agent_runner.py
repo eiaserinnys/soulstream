@@ -320,14 +320,14 @@ class ClaudeRunner:
     def _compute_options_fingerprint(options) -> Optional[str]:
         """options의 핵심 설정을 해싱하여 fingerprint를 생성
 
-        mcp_servers, allowed_tools, disallowed_tools의 조합으로
+        setting_sources, allowed_tools, disallowed_tools의 조합으로
         클라이언트 설정 불일치를 감지합니다.
         """
         if options is None:
             return None
         import hashlib
         key_parts = (
-            str(getattr(options, "mcp_servers", None)),
+            str(getattr(options, "setting_sources", None)),
             str(sorted(getattr(options, "allowed_tools", None) or [])),
             str(sorted(getattr(options, "disallowed_tools", None) or [])),
         )
@@ -679,11 +679,11 @@ class ClaudeRunner:
                 _stderr_file.close()
             _stderr_file = None
 
-        # MCP 설정: mcp_config_path가 있으면 Path로 전달 (SDK가 파일을 읽어 파싱)
-        mcp_servers = self.mcp_config_path if self.mcp_config_path else {}
+        # setting_sources로 프로젝트 설정을 로드하면 CLI가 .mcp.json을 자동 발견
+        # mcp_servers를 직접 전달하면 타임아웃 이슈가 있어서 setting_sources 방식 사용
         logger.info(
             f"[BUILD_OPTIONS] runner={runner_id}, "
-            f"mcp_servers={'Path(' + str(mcp_servers) + ')' if isinstance(mcp_servers, Path) else 'empty_dict'}, "
+            f"setting_sources=['project'], "
             f"session_id={session_id}, "
             f"allowed_tools={self.allowed_tools}"
         )
@@ -693,7 +693,7 @@ class ClaudeRunner:
             disallowed_tools=self.disallowed_tools,
             permission_mode="bypassPermissions",
             cwd=self.working_dir,
-            mcp_servers=mcp_servers,
+            setting_sources=["project"],  # CLI가 프로젝트 설정에서 .mcp.json 자동 발견
             hooks=hooks,
             extra_args={"debug-to-stderr": None},
             debug_stderr=_stderr_target,

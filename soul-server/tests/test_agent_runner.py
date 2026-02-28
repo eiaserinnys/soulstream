@@ -108,22 +108,14 @@ class TestClaudeRunnerUnit:
         assert options.allowed_tools == ["Read", "Glob"]
         assert options.disallowed_tools == ["Bash"]
 
-    def test_build_options_with_mcp_config(self):
-        """MCP 설정 파일 경로가 _build_options에서 mcp_servers로 전달되는지 테스트"""
-        mcp_path = Path("D:/test/.mcp.json")
-        runner = ClaudeRunner(mcp_config_path=mcp_path)
-
-        assert runner.mcp_config_path == mcp_path
-
-        # _build_options는 mcp_config_path를 mcp_servers에 Path로 전달
-        options, _ = runner._build_options()
-        assert options.mcp_servers == mcp_path
-
-    def test_build_options_without_mcp_config(self):
-        """MCP 설정이 없을 때 mcp_servers가 빈 dict인지 테스트"""
+    def test_build_options_uses_setting_sources(self):
+        """setting_sources=['project']가 설정되어 CLI가 .mcp.json을 자동 발견하는지 테스트"""
         runner = ClaudeRunner()
         options, _ = runner._build_options()
-        assert isinstance(options.mcp_servers, dict)
+
+        # setting_sources로 프로젝트 설정 로드 → CLI가 .mcp.json 자동 발견
+        assert options.setting_sources == ["project"]
+        # mcp_servers는 직접 전달하지 않음 (빈 dict)
         assert options.mcp_servers == {}
 
 
