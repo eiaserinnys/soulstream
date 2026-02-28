@@ -285,6 +285,8 @@ class ClaudeRunner:
         self.client: Optional[ClaudeSDKClient] = None
         self.pid: Optional[int] = None
         self.execution_loop: Optional[asyncio.AbstractEventLoop] = None
+        # 현재 클라이언트가 연결된 세션 ID (세션 불일치 감지용)
+        self._client_session_id: Optional[str] = None
 
     @classmethod
     async def shutdown_all_clients(cls) -> int:
@@ -304,10 +306,28 @@ class ClaudeRunner:
         self,
         options: Optional[ClaudeCodeOptions] = None,
     ) -> ClaudeSDKClient:
-        """ClaudeSDKClient를 가져오거나 새로 생성"""
+        """ClaudeSDKClient를 가져오거나 새로 생성
+
+        세션 불일치 감지: options.resume이 설정되어 있고 기존 클라이언트의
+        세션과 다르면, 기존 클라이언트를 disconnect하고 새로 생성합니다.
+        이는 풀에서 generic runner가 session resume 요청에 할당될 때
+        기존 클라이언트가 엉뚱한 세션에 연결되어 있는 문제를 방지합니다.
+        """
+        requested_session = getattr(options, "resume", None) if options else None
+
         if self.client is not None:
-            logger.info(f"[DEBUG-CLIENT] 기존 클라이언트 재사용: runner={self.runner_id}")
-            return self.client
+            # 세션 불일치 감지: resume 요청인데 현재 클라이언트의 세션이 다른 경우
+            if requested_session and self._client_session_id != requested_session:
+                logger.info(
+                    f"[DEBUG-CLIENT] 세션 불일치 감지: "
+                    f"current={self._client_session_id}, requested={requested_session} "
+                    f"→ 클라이언트 재생성, runner={self.runner_id}"
+                )
+                await self._remove_client()
+                # _remove_client() 후 self.client = None이 되므로 아래 생성 로직으로 진행
+            else:
+                logger.info(f"[DEBUG-CLIENT] 기존 클라이언트 재사용: runner={self.runner_id}")
+                return self.client
 
         import time as _time
         logger.info(f"[DEBUG-CLIENT] 새 InstrumentedClaudeClient 생성 시작: runner={self.runner_id}")
@@ -346,7 +366,8 @@ class ClaudeRunner:
 
         self.client = client
         self.pid = pid
-        logger.info(f"ClaudeSDKClient 생성: runner={self.runner_id}, pid={pid}")
+        self._client_session_id = requested_session
+        logger.info(f"ClaudeSDKClient 생성: runner={self.runner_id}, pid={pid}, session={requested_session}")
         return client
 
     async def _remove_client(self) -> None:
@@ -355,6 +376,7 @@ class ClaudeRunner:
         pid = self.pid
         self.client = None
         self.pid = None
+        self._client_session_id = None
 
         if client is None:
             return
@@ -379,6 +401,7 @@ class ClaudeRunner:
         client = self.client
         self.client = None
         self.pid = None
+        self._client_session_id = None
         return client
 
     def is_idle(self) -> bool:
@@ -666,17 +689,9 @@ class ClaudeRunner:
             except MessageParseError as e:
                 action, msg_type = classify_parse_error(e.data, log_fn=logger)
                 if action is ParseAction.CONTINUE:
-                    # rate_limit의 경우 추가 디버그 알림
-                    if msg_type == "rate_limit_event":
-                        info = e.data.get("rate_limit_info", {})
-                        status = info.get("status", "")
-                        if status == "allowed_warning":
-                            self._debug(format_rate_limit_warning(info))
-                        elif status not in ("allowed",):
-                            self._debug(
-                                f"⚠️ rate_limit `{status}` "
-                                f"(CLI 자체 처리 중, type={info.get('rateLimitType')})"
-                            )
+                    # rate_limit_event는 InstrumentedClaudeClient._handle_rate_limit()
+                    # → _observe_rate_limit()에서 이미 처리되므로 여기서 _debug()를
+                    # 중복 호출하지 않는다.
                     continue
                 raise
 
@@ -686,6 +701,9 @@ class ClaudeRunner:
             if isinstance(message, SystemMessage):
                 if hasattr(message, 'session_id'):
                     msg_state.session_id = message.session_id
+                    # 클라이언트의 실제 세션 ID를 갱신 (풀 재사용 시 올바른 세션 매칭용)
+                    if msg_state.session_id:
+                        self._client_session_id = msg_state.session_id
                     logger.info(f"세션 ID: {msg_state.session_id}")
                     # 세션 ID 조기 통지 콜백
                     if on_session and msg_state.session_id:
