@@ -31,6 +31,7 @@ const EVENTS_BASE_DIR =
   process.env.EVENTS_BASE_DIR ??
   "D:/soyoung_root/seosoyoung_runtime/data/events";
 const KEEPALIVE_INTERVAL_MS = 15_000;
+const DASHBOARD_AUTH_TOKEN = process.env.DASHBOARD_AUTH_TOKEN ?? "";
 const ALLOWED_ORIGINS =
   process.env.DASHBOARD_ALLOWED_ORIGINS?.split(",") ?? [
     `http://localhost:${PORT}`,
@@ -96,6 +97,40 @@ app.get("/api/stats", (_req, res) => {
   });
 });
 
+// Config (클라이언트에 인증 설정 전달)
+app.get("/api/config", (_req, res) => {
+  res.json({
+    authRequired: !!DASHBOARD_AUTH_TOKEN,
+  });
+});
+
+// === Auth Middleware (POST 엔드포인트 보호) ===
+// DASHBOARD_AUTH_TOKEN이 설정된 경우에만 인증을 요구합니다.
+// GET 요청(세션 조회, SSE 구독)은 인증 없이 허용됩니다.
+
+if (DASHBOARD_AUTH_TOKEN) {
+  app.use("/api/sessions", (req, res, next) => {
+    // GET 요청은 인증 불필요 (세션 조회, SSE 구독)
+    if (req.method === "GET") {
+      next();
+      return;
+    }
+
+    const authHeader = req.headers.authorization;
+    if (!authHeader || authHeader !== `Bearer ${DASHBOARD_AUTH_TOKEN}`) {
+      res.status(401).json({
+        error: {
+          code: "UNAUTHORIZED",
+          message: "Valid Bearer token required",
+        },
+      });
+      return;
+    }
+    next();
+  });
+  console.log("[dashboard] Auth enabled for POST endpoints");
+}
+
 // Routes
 app.use("/api/sessions", createSessionsRouter(sessionStore));
 app.use(
@@ -108,6 +143,7 @@ app.use(
     soulBaseUrl: SOUL_BASE_URL,
     authToken: AUTH_TOKEN,
     eventHub,
+    sessionStore,
   }),
 );
 

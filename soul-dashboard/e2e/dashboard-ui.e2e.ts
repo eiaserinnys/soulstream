@@ -328,6 +328,42 @@ const test = base.extend<{ dashboardServer: MockDashboardServer }>({
       res.json({ status: "ok", service: "soul-dashboard" });
     });
 
+    // --- Mock: Config ---
+    app.get("/api/config", (_req, res) => {
+      res.json({ authRequired: false });
+    });
+
+    // --- Mock: 세션 생성 ---
+    app.use(express.json());
+    app.post("/api/sessions", (_req, res) => {
+      res.status(201).json({
+        clientId: "dashboard",
+        requestId: "e2e-new-001",
+        sessionKey: "dashboard:e2e-new-001",
+        status: "running",
+      });
+    });
+
+    // --- Mock: 세션 재개 ---
+    app.post("/api/sessions/:id/resume", (_req, res) => {
+      res.status(201).json({
+        clientId: "dashboard",
+        requestId: "e2e-resumed-001",
+        sessionKey: "dashboard:e2e-resumed-001",
+        resumedFrom: "dashboard:e2e-ui-002",
+        resumeSessionId: "mock-claude-session-id",
+        status: "running",
+      });
+    });
+
+    // --- Mock: 세션 개입 ---
+    app.post("/api/sessions/:id/intervene", (_req, res) => {
+      res.json({ status: "ok" });
+    });
+    app.post("/api/sessions/:id/message", (_req, res) => {
+      res.json({ status: "ok" });
+    });
+
     // --- Mock: SSE 이벤트 스트림 ---
     app.get("/api/sessions/:id/events", (req, res) => {
       res.writeHead(200, {
@@ -1006,6 +1042,203 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     // 스크린샷
     await page.screenshot({
       path: `${SCREENSHOT_DIR}/14-large50-session.png`,
+      fullPage: true,
+    });
+  });
+
+  test("11. 세션 생성 플로우 (+ New → PromptComposer → Submit)", async ({
+    page,
+    dashboardServer,
+  }) => {
+    await page.goto(dashboardServer.baseURL);
+
+    // 세션 목록 로드 대기
+    await expect(
+      page.locator('[data-testid^="session-item-"]'),
+    ).toHaveCount(7, { timeout: 10_000 });
+
+    // 초기 상태: PromptComposer 미표시
+    await expect(
+      page.locator('[data-testid="prompt-composer"]'),
+    ).not.toBeVisible();
+
+    // "+ New" 버튼 클릭
+    await page.locator('[data-testid="new-session-button"]').click();
+
+    // PromptComposer 표시 확인
+    const composer = page.locator('[data-testid="prompt-composer"]');
+    await expect(composer).toBeVisible({ timeout: 5_000 });
+    await expect(composer).toContainText("New Conversation");
+
+    // 스크린샷: PromptComposer 표시
+    await page.screenshot({
+      path: `${SCREENSHOT_DIR}/15-prompt-composer-new.png`,
+      fullPage: true,
+    });
+
+    // 프롬프트 입력
+    const textarea = composer.locator("textarea");
+    await textarea.fill("새 세션을 시작합니다. 테스트 프롬프트입니다.");
+
+    // Submit 버튼 활성화 확인
+    const submitBtn = page.locator('[data-testid="compose-submit"]');
+    await expect(submitBtn).toBeEnabled();
+
+    // Submit 클릭
+    await submitBtn.click();
+
+    // PromptComposer 사라짐 확인 (세션 생성 성공 후)
+    await expect(composer).not.toBeVisible({ timeout: 5_000 });
+
+    // SSE 구독이 시작되어 노드가 렌더링되기 시작
+    const thinkingNodes = page.locator('[data-testid="thinking-node"]');
+    await expect(thinkingNodes.first()).toBeVisible({ timeout: 10_000 });
+
+    // 스크린샷: 세션 생성 후 그래프 표시
+    await page.screenshot({
+      path: `${SCREENSHOT_DIR}/16-session-created.png`,
+      fullPage: true,
+    });
+  });
+
+  test("12. 세션 재개 플로우 (Resume → PromptComposer → Submit)", async ({
+    page,
+    dashboardServer,
+  }) => {
+    await page.goto(dashboardServer.baseURL);
+
+    // 세션 목록 로드 대기
+    await expect(
+      page.locator('[data-testid^="session-item-"]'),
+    ).toHaveCount(7, { timeout: 10_000 });
+
+    // 완료된 세션의 Resume 버튼 클릭
+    const resumeBtn = page.locator(
+      '[data-testid="resume-button-dashboard:e2e-ui-002"]',
+    );
+    await expect(resumeBtn).toBeVisible();
+    await resumeBtn.click();
+
+    // PromptComposer 표시 + 재개 컨텍스트 확인
+    const composer = page.locator('[data-testid="prompt-composer"]');
+    await expect(composer).toBeVisible({ timeout: 5_000 });
+    await expect(composer).toContainText("Continue Conversation");
+    await expect(composer).toContainText("dashboard:e2e-ui-002");
+
+    // 스크린샷: Resume PromptComposer
+    await page.screenshot({
+      path: `${SCREENSHOT_DIR}/17-prompt-composer-resume.png`,
+      fullPage: true,
+    });
+
+    // 프롬프트 입력
+    const textarea = composer.locator("textarea");
+    await textarea.fill("이어서 작업해주세요.");
+
+    // Submit 클릭
+    await page.locator('[data-testid="compose-submit"]').click();
+
+    // PromptComposer 사라짐 + SSE 그래프 시작
+    await expect(composer).not.toBeVisible({ timeout: 5_000 });
+
+    const thinkingNodes = page.locator('[data-testid="thinking-node"]');
+    await expect(thinkingNodes.first()).toBeVisible({ timeout: 10_000 });
+
+    // 스크린샷: 재개된 세션
+    await page.screenshot({
+      path: `${SCREENSHOT_DIR}/18-session-resumed.png`,
+      fullPage: true,
+    });
+  });
+
+  test("13. 완료된 세션 상태 피드백 + ChatInput Resume 버튼", async ({
+    page,
+    dashboardServer,
+  }) => {
+    // 완료된 세션 선택 (SSE complete 이벤트까지 대기)
+    await navigateAndSelectSession(
+      page,
+      dashboardServer.baseURL,
+      "dashboard:e2e-ui-002",
+    );
+
+    // Complete 이벤트 수신 대기
+    await expect(page.getByText("Idle")).toBeVisible({ timeout: 10_000 });
+
+    // ChatInput에 "Session completed" 텍스트 표시
+    const chatInput = page.locator('[data-testid="chat-input"]');
+    await expect(chatInput).toBeVisible({ timeout: 5_000 });
+    await expect(chatInput).toContainText("Session completed");
+
+    // "Resume Conversation" 버튼 표시
+    const resumeConversationBtn = page.locator('[data-testid="resume-button"]');
+    await expect(resumeConversationBtn).toBeVisible();
+    await expect(resumeConversationBtn).toContainText("Resume Conversation");
+
+    // 인터벤션 입력란은 미표시 (완료 상태)
+    await expect(chatInput.locator("textarea")).not.toBeVisible();
+
+    // 스크린샷: 완료된 세션 ChatInput
+    await page.screenshot({
+      path: `${SCREENSHOT_DIR}/19-completed-session-chat.png`,
+      fullPage: true,
+    });
+
+    // Resume Conversation 버튼 클릭 → PromptComposer 전환
+    await resumeConversationBtn.click();
+
+    const composer = page.locator('[data-testid="prompt-composer"]');
+    await expect(composer).toBeVisible({ timeout: 5_000 });
+    await expect(composer).toContainText("Continue Conversation");
+
+    // 스크린샷: ChatInput Resume → PromptComposer
+    await page.screenshot({
+      path: `${SCREENSHOT_DIR}/20-chatinput-to-composer.png`,
+      fullPage: true,
+    });
+  });
+
+  test("14. 인터벤션 전송 (Running 세션)", async ({
+    page,
+    dashboardServer,
+  }) => {
+    // Running 세션 선택
+    await navigateAndSelectSession(
+      page,
+      dashboardServer.baseURL,
+      "bot:e2e-ui-001",
+    );
+
+    // SSE 스트리밍 시작 대기
+    const thinkingNodes = page.locator('[data-testid="thinking-node"]');
+    await expect(thinkingNodes.first()).toBeVisible({ timeout: 10_000 });
+
+    // ChatInput이 인터벤션 모드로 표시
+    const chatInput = page.locator('[data-testid="chat-input"]');
+    await expect(chatInput).toBeVisible({ timeout: 5_000 });
+    await expect(chatInput).toContainText("Intervention");
+
+    // textarea와 Send 버튼 표시
+    const textarea = chatInput.locator("textarea");
+    await expect(textarea).toBeVisible();
+    const sendBtn = page.locator('[data-testid="send-button"]');
+    await expect(sendBtn).toBeVisible();
+
+    // 메시지 입력
+    await textarea.fill("이 부분을 수정해주세요.");
+
+    // Send 버튼 활성화 확인
+    await expect(sendBtn).toBeEnabled();
+
+    // Send 클릭
+    await sendBtn.click();
+
+    // "Sent:" 확인 메시지 표시
+    await expect(chatInput).toContainText("Sent:", { timeout: 5_000 });
+
+    // 스크린샷: 인터벤션 전송 후
+    await page.screenshot({
+      path: `${SCREENSHOT_DIR}/21-intervention-sent.png`,
       fullPage: true,
     });
   });

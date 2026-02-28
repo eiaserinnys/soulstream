@@ -59,6 +59,12 @@ export interface DashboardState {
 
   /** 마지막으로 수신한 이벤트 ID (SSE 재연결용) */
   lastEventId: number;
+
+  /** 세션 생성 모드 (프롬프트 입력 화면 표시) */
+  isComposing: boolean;
+
+  /** 세션 재개 대상 키 (완료된 세션에서 이어서 대화) */
+  resumeTargetKey: string | null;
 }
 
 // === Actions Interface ===
@@ -91,6 +97,11 @@ export interface DashboardActions {
   // 서브 에이전트 그룹 접기/펼치기
   toggleGroupCollapse: (groupId: string) => void;
 
+  // 세션 생성/재개
+  startCompose: () => void;
+  startResume: (sessionKey: string) => void;
+  cancelCompose: () => void;
+
   // 상태 초기화
   clearCards: () => void;
   reset: () => void;
@@ -102,6 +113,31 @@ const initialState: DashboardState = {
   sessions: [],
   sessionsLoading: false,
   sessionsError: null,
+  activeSessionKey: null,
+  activeSession: null,
+  selectedCardId: null,
+  selectedNodeId: null,
+  selectedEventNodeData: null,
+  cards: [],
+  graphEvents: [],
+  collapsedGroups: new Set<string>(),
+  lastEventId: 0,
+  isComposing: false,
+  resumeTargetKey: null,
+};
+
+/** 세션 전환 시 초기화할 상태 부분집합 (중복 방지) */
+const sessionResetState: Pick<
+  DashboardState,
+  | "activeSessionKey"
+  | "activeSession"
+  | "selectedCardId"
+  | "selectedNodeId"
+  | "selectedEventNodeData"
+  | "cards"
+  | "graphEvents"
+  | "lastEventId"
+> & { collapsedGroups: Set<string> } = {
   activeSessionKey: null,
   activeSession: null,
   selectedCardId: null,
@@ -132,15 +168,9 @@ export const useDashboardStore = create<DashboardState & DashboardActions>(
 
     setActiveSession: (key, detail) =>
       set({
+        ...sessionResetState,
         activeSessionKey: key,
         activeSession: detail ?? null,
-        selectedCardId: null,
-        selectedNodeId: null,
-        selectedEventNodeData: null,
-        cards: [],
-        graphEvents: [],
-        collapsedGroups: new Set<string>(),
-        lastEventId: 0,
       }),
 
     // --- 카드 선택 ---
@@ -297,6 +327,28 @@ export const useDashboardStore = create<DashboardState & DashboardActions>(
       }
       set({ collapsedGroups: next });
     },
+
+    // --- 세션 생성/재개 ---
+
+    startCompose: () =>
+      set({
+        ...sessionResetState,
+        isComposing: true,
+        resumeTargetKey: null,
+      }),
+
+    startResume: (sessionKey) =>
+      set({
+        ...sessionResetState,
+        isComposing: true,
+        resumeTargetKey: sessionKey,
+      }),
+
+    cancelCompose: () =>
+      set({
+        isComposing: false,
+        resumeTargetKey: null,
+      }),
 
     // --- 초기화 ---
 

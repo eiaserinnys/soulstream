@@ -1,28 +1,34 @@
 /**
- * ChatInput - Soul 인터벤션 입력 컴포넌트
+ * ChatInput - Soul 인터벤션 / 세션 상태 표시 컴포넌트
  *
  * 활성 세션에 메시지를 전송하여 실행 중인 Claude에 개입합니다.
- * POST /api/sessions/:id/message 엔드포인트를 호출합니다.
+ * 완료/에러 세션에서는 상태 피드백과 "Resume" 버튼을 표시합니다.
  */
 
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
 
-const ACCENT = "#f97316";
+const ACCENT_ORANGE = "#f97316";
+const ACCENT_BLUE = "#3b82f6";
 const MAX_LENGTH = 50_000;
 
 export function ChatInput() {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const sessions = useDashboardStore((s) => s.sessions);
+  const startResume = useDashboardStore((s) => s.startResume);
 
-  // 활성 세션의 상태에 따라 라벨 결정: running → "Intervention", 그 외 → "Chat"
-  const isRunning = useMemo(() => {
-    if (!activeSessionKey) return false;
+  // 활성 세션의 상태
+  const sessionStatus = useMemo(() => {
+    if (!activeSessionKey) return null;
     const session = sessions.find(
       (s) => `${s.clientId}:${s.requestId}` === activeSessionKey,
     );
-    return session?.status === "running";
+    return session?.status ?? null;
   }, [activeSessionKey, sessions]);
+
+  const isRunning = sessionStatus === "running";
+  const isCompleted = sessionStatus === "completed";
+  const isError = sessionStatus === "error";
 
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -70,7 +76,7 @@ export function ChatInput() {
 
     try {
       const response = await fetch(
-        `/api/sessions/${encodeURIComponent(activeSessionKey)}/message`,
+        `/api/sessions/${encodeURIComponent(activeSessionKey)}/intervene`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -109,8 +115,71 @@ export function ChatInput() {
     [sendMessage],
   );
 
+  const handleResume = useCallback(() => {
+    if (activeSessionKey) {
+      startResume(activeSessionKey);
+    }
+  }, [activeSessionKey, startResume]);
+
   if (!activeSessionKey) return null;
 
+  // 완료/에러 상태 피드백
+  if (isCompleted || isError) {
+    return (
+      <div
+        data-testid="chat-input"
+        style={{
+          borderTop: "1px solid rgba(255,255,255,0.08)",
+          padding: "12px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "8px",
+          flexShrink: 0,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "8px",
+          }}
+        >
+          {/* Status feedback */}
+          <span
+            style={{
+              fontSize: "12px",
+              color: isCompleted ? "#22c55e" : "#ef4444",
+              fontWeight: 500,
+            }}
+          >
+            {isCompleted ? "Session completed" : "Session ended with error"}
+          </span>
+
+          {/* Resume button */}
+          <button
+            data-testid="resume-button"
+            onClick={handleResume}
+            style={{
+              padding: "6px 14px",
+              borderRadius: "6px",
+              border: `1px solid rgba(59, 130, 246, 0.3)`,
+              backgroundColor: "rgba(59, 130, 246, 0.08)",
+              color: ACCENT_BLUE,
+              fontSize: "12px",
+              fontWeight: 600,
+              cursor: "pointer",
+              transition: "all 0.15s",
+            }}
+          >
+            Resume Conversation
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Running 상태: 인터벤션 입력
   return (
     <div
       data-testid="chat-input"
@@ -136,8 +205,8 @@ export function ChatInput() {
           fontWeight: 600,
         }}
       >
-        <span style={{ fontSize: "12px" }}>{isRunning ? "\u270B" : "\uD83D\uDCAC"}</span>
-        {isRunning ? "Intervention" : "Chat"}
+        <span style={{ fontSize: "12px" }}>{"\u270B"}</span>
+        Intervention
       </div>
 
       {/* Input area */}
@@ -189,7 +258,7 @@ export function ChatInput() {
             border: "none",
             backgroundColor: sending || !text.trim()
               ? "rgba(255,255,255,0.05)"
-              : ACCENT,
+              : ACCENT_ORANGE,
             color: sending || !text.trim() ? "#6b7280" : "#fff",
             fontSize: "12px",
             fontWeight: 600,
@@ -234,7 +303,7 @@ export function ChatInput() {
             whiteSpace: "nowrap",
           }}
         >
-          {"\u2705"} Sent: {lastSent.length > 60 ? lastSent.slice(0, 57) + "..." : lastSent}
+          Sent: {lastSent.length > 60 ? lastSent.slice(0, 57) + "..." : lastSent}
         </div>
       )}
     </div>

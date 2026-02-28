@@ -3,6 +3,7 @@
  *
  * 좌측 패널에 세션 목록을 표시합니다.
  * 각 세션의 상태를 인디케이터(점멸/뱃지)로 시각화합니다.
+ * "+ New" 버튼으로 새 세션 생성, 완료된 세션에 Resume 버튼을 제공합니다.
  */
 
 import type { SessionSummary, SessionStatus } from "@shared/types";
@@ -50,11 +51,13 @@ interface SessionItemProps {
   session: SessionSummary;
   isActive: boolean;
   onClick: () => void;
+  onResume?: (e: React.MouseEvent) => void;
 }
 
-function SessionItem({ session, isActive, onClick }: SessionItemProps) {
+function SessionItem({ session, isActive, onClick, onResume }: SessionItemProps) {
   const config = STATUS_CONFIG[session.status];
   const sessionKey = `${session.clientId}:${session.requestId}`;
+  const canResume = session.status === "completed" || session.status === "error";
 
   // 시간 포맷
   const timeStr = session.createdAt
@@ -143,8 +146,31 @@ function SessionItem({ session, isActive, onClick }: SessionItemProps) {
         </div>
       </div>
 
-      {/* Event count badge */}
-      {session.eventCount > 0 && (
+      {/* Resume button (completed/error sessions) */}
+      {canResume && onResume && (
+        <button
+          data-testid={`resume-button-${sessionKey}`}
+          onClick={onResume}
+          title="Resume conversation"
+          style={{
+            padding: "3px 7px",
+            borderRadius: "4px",
+            border: "1px solid rgba(59, 130, 246, 0.25)",
+            backgroundColor: "transparent",
+            color: "#3b82f6",
+            fontSize: "10px",
+            fontWeight: 500,
+            cursor: "pointer",
+            flexShrink: 0,
+            transition: "all 0.15s",
+          }}
+        >
+          Resume
+        </button>
+      )}
+
+      {/* Event count badge (only when no resume button) */}
+      {!canResume && session.eventCount > 0 && (
         <span
           style={{
             fontSize: "11px",
@@ -173,10 +199,19 @@ interface SessionListProps {
 export function SessionList({ sessions, loading, error }: SessionListProps) {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const setActiveSession = useDashboardStore((s) => s.setActiveSession);
+  const startCompose = useDashboardStore((s) => s.startCompose);
+  const startResume = useDashboardStore((s) => s.startResume);
+  const isComposing = useDashboardStore((s) => s.isComposing);
 
   const handleSelect = (session: SessionSummary) => {
     const key = `${session.clientId}:${session.requestId}`;
     setActiveSession(key);
+  };
+
+  const handleResume = (e: React.MouseEvent, session: SessionSummary) => {
+    e.stopPropagation();
+    const key = `${session.clientId}:${session.requestId}`;
+    startResume(key);
   };
 
   return (
@@ -189,7 +224,7 @@ export function SessionList({ sessions, loading, error }: SessionListProps) {
         overflow: "hidden",
       }}
     >
-      {/* Header */}
+      {/* Header + New button */}
       <div
         style={{
           padding: "12px 14px",
@@ -205,9 +240,27 @@ export function SessionList({ sessions, loading, error }: SessionListProps) {
         }}
       >
         <span>Sessions</span>
-        <span style={{ color: "#6b7280", fontWeight: 400 }}>
-          {sessions.length}
-        </span>
+        <button
+          data-testid="new-session-button"
+          onClick={startCompose}
+          disabled={isComposing}
+          title="New conversation"
+          style={{
+            padding: "2px 8px",
+            borderRadius: "4px",
+            border: "1px solid rgba(59, 130, 246, 0.3)",
+            backgroundColor: isComposing
+              ? "rgba(59, 130, 246, 0.15)"
+              : "transparent",
+            color: "#3b82f6",
+            fontSize: "12px",
+            fontWeight: 600,
+            cursor: isComposing ? "default" : "pointer",
+            transition: "all 0.15s",
+          }}
+        >
+          + New
+        </button>
       </div>
 
       {/* Loading state */}
@@ -266,6 +319,7 @@ export function SessionList({ sessions, loading, error }: SessionListProps) {
               session={session}
               isActive={activeSessionKey === key}
               onClick={() => handleSelect(session)}
+              onResume={(e) => handleResume(e, session)}
             />
           );
         })}

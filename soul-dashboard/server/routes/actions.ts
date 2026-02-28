@@ -1,11 +1,14 @@
 /**
- * Actions Routes - 세션 생성 및 메시지 전송 API
+ * Actions Routes - 세션 생성, 재개, 개입 API
  *
  * POST /api/sessions                  - 새 세션 생성 (Soul에 실행 요청)
- * POST /api/sessions/:id/message      - 실행 중인 세션에 메시지 전송 (개입)
+ * POST /api/sessions/:id/resume       - 완료된 세션을 이어서 대화
+ * POST /api/sessions/:id/intervene    - 실행 중인 세션에 개입 메시지 전송
+ * POST /api/sessions/:id/message      - intervene의 레거시 호환 경로
  */
 
 import { Router } from "express";
+import type { Request, Response } from "express";
 import type {
   CreateSessionRequest,
   SendMessageRequest,
@@ -38,13 +41,6 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
    *
    * 대시보드에서 새 Claude Code 세션을 시작합니다.
    * Soul 서버의 /execute 엔드포인트에 요청을 프록시합니다.
-   *
-   * Body:
-   * {
-   *   prompt: string;
-   *   clientId?: string;       // 기본값: "dashboard"
-   *   resumeSessionId?: string; // 이전 세션 이어하기
-   * }
    */
   router.post("/", async (req, res) => {
     try {
@@ -73,7 +69,6 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
       const clientId = body.clientId ?? "dashboard";
       const requestId = generateRequestId();
 
-      // Soul 서버에 실행 요청
       const soulResponse = await fetch(`${soulBaseUrl}/execute`, {
         method: "POST",
         headers: {
@@ -98,7 +93,6 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
           errorBody,
         );
 
-        // Soul 에러는 502 Bad Gateway로 변환 (대시보드 자체 에러와 구분)
         res.status(502).json({
           error: {
             code: "SOUL_ERROR",
@@ -117,7 +111,7 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
 
       const sessionKey = `${clientId}:${requestId}`;
 
-      // user_message 이벤트 브로드캐스트 + JSONL persist (세션 시작 시 사용자의 원본 프롬프트)
+      // user_message 이벤트 브로드캐스트 + JSONL persist
       const userMessageEvent: UserMessageEvent = {
         type: "user_message",
         user: clientId,
@@ -128,7 +122,6 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
         eventHub.broadcast(sessionKey, 0, userMessageEvent);
       }
 
-      // JSONL에 user_message를 persist하여 히스토리 리플레이 시에도 사용할 수 있게 함
       if (sessionStore) {
         sessionStore.appendEvent(
           clientId, requestId, 0,
@@ -156,22 +149,189 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
   });
 
   /**
-   * POST /api/sessions/:id/message
+   * POST /api/sessions/:id/resume
+   *
+   * 완료된 세션을 이어서 대화합니다.
+   * 기존 세션의 claude_session_id를 찾아 resume_session_id로 전달하여
+   * 새 세션을 생성합니다.
+   */
+  router.post("/:id/resume", async (req, res) => {
+    try {
+      const { clientId: origClientId, requestId: origRequestId } =
+        parseSessionId(
+          req.params.id,
+          req.query as Record<string, string>,
+        );
+
+      if (!origClientId || !origRequestId) {
+        res.status(400).json({
+          error: {
+            code: "INVALID_SESSION_ID",
+            message:
+              'Session ID format: "clientId:requestId" or use ?clientId=...&requestId=...',
+          },
+        });
+        return;
+      }
+
+      const body = req.body as { prompt: string };
+
+      if (!body.prompt || typeof body.prompt !== "string") {
+        res.status(400).json({
+          error: {
+            code: "INVALID_REQUEST",
+            message: "prompt is required",
+          },
+        });
+        return;
+      }
+
+      if (body.prompt.length > MAX_PROMPT_LENGTH) {
+        res.status(400).json({
+          error: {
+            code: "INVALID_REQUEST",
+            message: `prompt exceeds maximum length of ${MAX_PROMPT_LENGTH}`,
+          },
+        });
+        return;
+      }
+
+      // 기존 세션에서 claude_session_id 찾기
+      if (!sessionStore) {
+        res.status(500).json({
+          error: {
+            code: "INTERNAL_ERROR",
+            message: "SessionStore not available",
+          },
+        });
+        return;
+      }
+
+      const events = await sessionStore.readEvents(origClientId, origRequestId);
+      let claudeSessionId: string | undefined;
+      let lastEventType: string | undefined;
+      for (const record of events) {
+        if (record.event.type === "session" && typeof record.event.session_id === "string") {
+          claudeSessionId = record.event.session_id;
+        }
+        if (typeof record.event.type === "string") {
+          lastEventType = record.event.type;
+        }
+      }
+
+      // 실행 중인 세션은 재개할 수 없음
+      if (lastEventType !== "complete" && lastEventType !== "error" && lastEventType !== "result") {
+        res.status(409).json({
+          error: {
+            code: "SESSION_STILL_RUNNING",
+            message: `Cannot resume a session that is still running (last event: ${lastEventType ?? "none"})`,
+          },
+        });
+        return;
+      }
+
+      if (!claudeSessionId) {
+        res.status(404).json({
+          error: {
+            code: "SESSION_NOT_FOUND",
+            message: `No claude_session_id found for ${origClientId}:${origRequestId}`,
+          },
+        });
+        return;
+      }
+
+      // 새 세션 생성 (resume_session_id 포함)
+      const clientId = "dashboard";
+      const requestId = generateRequestId();
+
+      const soulResponse = await fetch(`${soulBaseUrl}/execute`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(authToken
+            ? { Authorization: `Bearer ${authToken}` }
+            : {}),
+        },
+        body: JSON.stringify({
+          client_id: clientId,
+          request_id: requestId,
+          prompt: body.prompt,
+          resume_session_id: claudeSessionId,
+          use_mcp: true,
+        }),
+      });
+
+      if (!soulResponse.ok) {
+        const errorBody = await soulResponse.text();
+        console.error(
+          `[actions] Soul resume failed (${soulResponse.status}):`,
+          errorBody,
+        );
+
+        res.status(502).json({
+          error: {
+            code: "SOUL_ERROR",
+            message: `Soul server returned ${soulResponse.status}`,
+            details: { body: errorBody },
+          },
+        });
+        return;
+      }
+
+      if (soulResponse.body) {
+        await soulResponse.body.cancel();
+      }
+
+      const sessionKey = `${clientId}:${requestId}`;
+
+      const userMessageEvent: UserMessageEvent = {
+        type: "user_message",
+        user: clientId,
+        text: body.prompt,
+      };
+
+      if (eventHub) {
+        eventHub.broadcast(sessionKey, 0, userMessageEvent);
+      }
+
+      if (sessionStore) {
+        sessionStore.appendEvent(
+          clientId, requestId, 0,
+          userMessageEvent as unknown as Record<string, unknown>,
+        ).catch((err) => {
+          console.warn(`[actions] Failed to persist user_message for ${sessionKey}:`, err);
+        });
+      }
+
+      res.status(201).json({
+        clientId,
+        requestId,
+        sessionKey,
+        resumedFrom: `${origClientId}:${origRequestId}`,
+        resumeSessionId: claudeSessionId,
+        status: "running",
+      });
+    } catch (err) {
+      console.error("[actions] Failed to resume session:", err);
+      res.status(500).json({
+        error: {
+          code: "INTERNAL_ERROR",
+          message: "Failed to resume session",
+        },
+      });
+    }
+  });
+
+  /**
+   * POST /api/sessions/:id/intervene
+   * POST /api/sessions/:id/message (레거시 호환)
    *
    * 실행 중인 세션에 개입 메시지를 전송합니다.
-   * Soul 서버의 /tasks/:clientId/:requestId/intervene 엔드포인트에 프록시합니다.
-   *
-   * Body:
-   * {
-   *   text: string;
-   *   user: string;
-   *   attachmentPaths?: string[];
-   * }
    */
-  router.post("/:id/message", async (req, res) => {
+  const handleIntervene = async (req: Request, res: Response) => {
     try {
       const { clientId, requestId } = parseSessionId(
-        req.params.id,
+        req.params.id as string,
         req.query as Record<string, string>,
       );
 
@@ -218,7 +378,6 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
         return;
       }
 
-      // Soul 서버에 개입 요청
       const soulResponse = await fetch(
         `${soulBaseUrl}/tasks/${encodeURIComponent(clientId)}/${encodeURIComponent(requestId)}/intervene`,
         {
@@ -244,7 +403,6 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
           errorBody,
         );
 
-        // Soul 에러는 502 Bad Gateway로 변환
         res.status(502).json({
           error: {
             code: "SOUL_ERROR",
@@ -266,7 +424,10 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
         },
       });
     }
-  });
+  };
+
+  router.post("/:id/intervene", handleIntervene);
+  router.post("/:id/message", handleIntervene);
 
   return router;
 }

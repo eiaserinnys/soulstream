@@ -3,12 +3,15 @@
  *
  * SessionList | NodeGraph + ChatInput | DetailView 구성.
  * SSE 구독, 세션 목록 폴링, 브라우저 알림을 여기서 초기화합니다.
+ *
+ * composing 모드에서는 중앙 패널에 PromptComposer를 표시합니다.
  */
 
 import { SessionList } from "./components/SessionList";
 import { NodeGraph } from "./components/NodeGraph";
 import { DetailView } from "./components/DetailView";
 import { ChatInput } from "./components/ChatInput";
+import { PromptComposer } from "./components/PromptComposer";
 import { useSessionList } from "./hooks/useSessionList";
 import { useSession } from "./hooks/useSession";
 import { useNotification } from "./hooks/useNotification";
@@ -59,6 +62,7 @@ function ConnectionBadge({
 
 export function DashboardLayout() {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
+  const isComposing = useDashboardStore((s) => s.isComposing);
 
   // 세션 목록 폴링
   const { sessions, loading, error } = useSessionList({ intervalMs: 5000 });
@@ -70,6 +74,10 @@ export function DashboardLayout() {
 
   // 브라우저 알림 (완료/에러/인터벤션)
   useNotification();
+
+  // 중앙 패널 렌더링 결정
+  const showComposer = isComposing && !activeSessionKey;
+  const showGraph = !!activeSessionKey;
 
   return (
     <div
@@ -133,7 +141,7 @@ export function DashboardLayout() {
           <SessionList sessions={sessions} loading={loading} error={error} />
         </aside>
 
-        {/* Center: Node Graph + Chat Input */}
+        {/* Center: Context-dependent content */}
         <main
           data-testid="graph-panel"
           style={{
@@ -144,10 +152,33 @@ export function DashboardLayout() {
             flexDirection: "column",
           }}
         >
-          <div style={{ flex: 1, overflow: "hidden" }}>
-            <NodeGraph />
-          </div>
-          <ChatInput />
+          {showComposer && (
+            <PromptComposer />
+          )}
+
+          {showGraph && (
+            <>
+              <div style={{ flex: 1, overflow: "hidden" }}>
+                <NodeGraph />
+              </div>
+              <ChatInput />
+            </>
+          )}
+
+          {!showComposer && !showGraph && (
+            <div
+              style={{
+                flex: 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "#4b5563",
+                fontSize: "14px",
+              }}
+            >
+              Select a session or start a new conversation
+            </div>
+          )}
         </main>
 
         {/* Right: Detail View */}
