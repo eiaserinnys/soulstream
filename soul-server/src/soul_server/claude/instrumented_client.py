@@ -8,7 +8,10 @@ raw 스트림 단계에서 가로채어 관찰할 수 있게 한다.
 """
 
 import logging
-from typing import AsyncIterator, Callable, Optional
+import time
+from collections.abc import AsyncIterable
+from pathlib import Path
+from typing import Any, AsyncIterator, Callable, Optional
 
 try:
     from claude_code_sdk import ClaudeSDKClient
@@ -62,6 +65,62 @@ class InstrumentedClaudeClient(ClaudeSDKClient):
         super().__init__(*args, **kwargs)
         self._on_rate_limit = on_rate_limit
         self._on_unknown_event = on_unknown_event
+
+    async def connect(
+        self, prompt: str | AsyncIterable[dict[str, Any]] | None = None
+    ) -> None:
+        """connect()를 오버라이드하여 옵션, CLI 커맨드, 타이밍을 기록."""
+        # Pre-connect 로깅 (실패해도 connect를 막지 않음)
+        try:
+            opts = self.options
+            mcp = getattr(opts, "mcp_servers", None)
+            if isinstance(mcp, (Path, str)):
+                logger.info(f"[CONNECT] mcp_servers=Path({mcp})")
+            elif isinstance(mcp, dict):
+                keys = list(mcp.keys()) if mcp else []
+                logger.info(f"[CONNECT] mcp_servers=dict(keys={keys})")
+            else:
+                logger.info(f"[CONNECT] mcp_servers={type(mcp).__name__ if mcp is not None else 'None'}")
+            logger.info(
+                f"[CONNECT] cwd={getattr(opts, 'cwd', None)}, "
+                f"permission_mode={getattr(opts, 'permission_mode', None)}, "
+                f"resume={getattr(opts, 'resume', None)}"
+            )
+        except Exception as e:
+            logger.debug(f"[CONNECT] pre-connect logging failed (ignored): {e}")
+
+        t0 = time.monotonic()
+        try:
+            await super().connect(prompt)
+        except Exception as e:
+            elapsed = time.monotonic() - t0
+            logger.error(f"[CONNECT] connect() FAILED after {elapsed:.2f}s: {e}")
+            raise
+
+        elapsed = time.monotonic() - t0
+        logger.info(f"[CONNECT] connect() completed in {elapsed:.2f}s")
+
+        # CLI 커맨드 추출 (진단용)
+        try:
+            transport = self._transport
+            if transport and hasattr(transport, "_build_command"):
+                cmd = transport._build_command()
+                # --mcp-config 값은 길 수 있으므로 요약
+                cmd_summary = []
+                skip_next = False
+                for i, arg in enumerate(cmd):
+                    if skip_next:
+                        skip_next = False
+                        cmd_summary.append(f"<{len(str(arg))}chars>")
+                        continue
+                    if str(arg) == "--mcp-config" and i + 1 < len(cmd):
+                        cmd_summary.append(arg)
+                        skip_next = True
+                        continue
+                    cmd_summary.append(str(arg))
+                logger.info(f"[CONNECT] CLI args: {cmd_summary}")
+        except Exception as e:
+            logger.debug(f"[CONNECT] CLI args 추출 실패 (무시): {e}")
 
     async def receive_messages(self) -> AsyncIterator[Message]:
         """receive_messages를 오버라이드하여 raw 스트림에서 이벤트를 관찰.

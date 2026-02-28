@@ -675,6 +675,12 @@ class ClaudeRunner:
 
         # MCP 설정: mcp_config_path가 있으면 Path로 전달 (SDK가 파일을 읽어 파싱)
         mcp_servers = self.mcp_config_path if self.mcp_config_path else {}
+        logger.info(
+            f"[BUILD_OPTIONS] runner={runner_id}, "
+            f"mcp_servers={'Path(' + str(mcp_servers) + ')' if isinstance(mcp_servers, Path) else 'empty_dict'}, "
+            f"session_id={session_id}, "
+            f"allowed_tools={self.allowed_tools}"
+        )
 
         options = ClaudeCodeOptions(
             allowed_tools=self.allowed_tools,
