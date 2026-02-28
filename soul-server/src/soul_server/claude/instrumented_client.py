@@ -12,7 +12,7 @@ from typing import AsyncIterator, Callable, Optional
 
 try:
     from claude_code_sdk import ClaudeSDKClient
-    from claude_code_sdk._errors import CLIConnectionError
+    from claude_code_sdk._errors import CLIConnectionError, MessageParseError
     from claude_code_sdk.types import Message, ResultMessage
     _SDK_AVAILABLE = True
 except ImportError:
@@ -21,6 +21,8 @@ except ImportError:
     class ClaudeSDKClient:
         pass
     class CLIConnectionError(Exception):
+        pass
+    class MessageParseError(Exception):
         pass
     class Message:
         pass
@@ -81,8 +83,13 @@ class InstrumentedClaudeClient(ClaudeSDKClient):
                 elif msg_type and msg_type not in _KNOWN_MESSAGE_TYPES:
                     self._handle_unknown_event(msg_type, data)
 
-            # 정상 파싱 경로 (SDK와 동일)
-            message = parse_message(data)
+            # parse_message()는 unknown type에 MessageParseError를 raise함.
+            # async generator 내부에서 예외가 전파되면 제너레이터가 고갈되므로
+            # 반드시 여기서 catch해야 함.
+            try:
+                message = parse_message(data)
+            except MessageParseError:
+                continue  # 이미 콜백으로 관찰했으므로 skip
             if message is not None:
                 yield message
 
