@@ -4,6 +4,10 @@ ClaudeRunner를 soul API용으로 래핑합니다.
 ClaudeRunner.run()의 콜백(on_progress, on_compact, on_intervention)을
 asyncio.Queue를 통해 SSE 이벤트 스트림으로 변환하여
 기존 soul 스트리밍 인터페이스와 호환합니다.
+
+Serendipity 연동:
+  세션 시작/종료 및 SSE 이벤트를 SerendipityAdapter를 통해
+  세렌디피티 블록으로 변환하여 저장합니다.
 """
 
 import asyncio
@@ -19,6 +23,7 @@ from soul_server.config import get_settings
 
 if TYPE_CHECKING:
     from soul_server.service.runner_pool import RunnerPool
+    from soul_server.service.serendipity_adapter import SerendipityAdapter, SessionContext
 from soul_server.models import (
     CompactEvent,
     CompleteEvent,
@@ -176,6 +181,9 @@ class SoulEngineAdapter:
     ClaudeRunner.run()의 콜백(on_progress, on_compact, on_intervention)을
     asyncio.Queue를 통해 SSE 이벤트 스트림으로 변환합니다.
     기존 soul의 ClaudeCodeRunner.execute()와 동일한 인터페이스를 제공합니다.
+
+    Serendipity 연동:
+      세션 시작/종료 및 SSE 이벤트를 세렌디피티에 저장합니다.
     """
 
     def __init__(
@@ -183,10 +191,12 @@ class SoulEngineAdapter:
         workspace_dir: Optional[str] = None,
         pool: Optional["RunnerPool"] = None,
         rate_limit_tracker: Optional[Any] = None,
+        serendipity_adapter: Optional["SerendipityAdapter"] = None,
     ):
         self._workspace_dir = workspace_dir or get_settings().workspace_dir
         self._pool = pool
         self._rate_limit_tracker = rate_limit_tracker
+        self._serendipity_adapter = serendipity_adapter
 
     def _resolve_mcp_config_path(self) -> Optional[Path]:
         """WORKSPACE_DIR 기준으로 mcp_config.json 경로를 해석"""
@@ -205,6 +215,9 @@ class SoulEngineAdapter:
         allowed_tools: Optional[List[str]] = None,
         disallowed_tools: Optional[List[str]] = None,
         use_mcp: bool = True,
+        client_id: Optional[str] = None,
+        request_id: Optional[str] = None,
+        persona: Optional[str] = None,
     ) -> AsyncIterator:
         """Claude Code 실행 (SSE 이벤트 스트림)
 
@@ -218,6 +231,9 @@ class SoulEngineAdapter:
             allowed_tools: 허용 도구 목록 (None이면 기본값 사용)
             disallowed_tools: 금지 도구 목록 (None이면 기본값 사용)
             use_mcp: MCP 서버 연결 여부
+            client_id: 클라이언트 ID (세렌디피티 저장용)
+            request_id: 요청 ID (세렌디피티 저장용)
+            persona: 페르소나 이름 (세렌디피티 저장용)
 
         Yields:
             ProgressEvent | InterventionSentEvent | ContextUsageEvent
@@ -232,6 +248,19 @@ class SoulEngineAdapter:
 
         # MCP 설정
         mcp_config_path = self._resolve_mcp_config_path() if use_mcp else None
+
+        # Serendipity 세션 시작
+        serendipity_ctx: Optional["SessionContext"] = None
+        if self._serendipity_adapter is not None and client_id and request_id:
+            try:
+                serendipity_ctx = await self._serendipity_adapter.start_session(
+                    client_id=client_id,
+                    request_id=request_id,
+                    prompt=prompt,
+                    persona=persona,
+                )
+            except Exception as e:
+                logger.warning(f"Serendipity session start failed: {e}")
 
         # debug_send_fn: 동기 콜백 → 큐 어댑터
         # ClaudeRunner._debug()는 동기 함수이므로 call_soon_threadsafe로 큐에 enqueue
@@ -276,9 +305,17 @@ class SoulEngineAdapter:
             )
 
             # 이벤트 발행 + 콜백 호출
-            await queue.put(InterventionSentEvent(user=msg.user, text=msg.text))
+            intervention_event = InterventionSentEvent(user=msg.user, text=msg.text)
+            await queue.put(intervention_event)
             if on_intervention_sent:
                 await on_intervention_sent(msg.user, msg.text)
+
+            # Serendipity에 전달
+            if serendipity_ctx and self._serendipity_adapter:
+                try:
+                    await self._serendipity_adapter.on_event(serendipity_ctx, intervention_event)
+                except Exception as e:
+                    logger.warning(f"Serendipity intervention event failed: {e}")
 
             return _build_intervention_prompt(msg)
 
@@ -297,14 +334,31 @@ class SoulEngineAdapter:
 
             기존 on_progress/on_compact 이벤트와 병행 발행됩니다.
             슬랙봇 하위호환 유지: 기존 이벤트를 대체하지 않습니다.
+
+            Serendipity 연동: SSE 이벤트를 세렌디피티에도 저장합니다.
             """
+            sse_event = None  # 세렌디피티에 전달할 이벤트
+
             if event.type == EngineEventType.TEXT_DELTA:
                 text = event.data.get("text", "")
                 # TextBlock 전체 = 하나의 카드 (SDK는 청크 스트리밍 미지원)
                 card_id = tracker.new_card()
-                await queue.put(TextStartSSEEvent(card_id=card_id))
-                await queue.put(TextDeltaSSEEvent(card_id=card_id, text=text))
-                await queue.put(TextEndSSEEvent(card_id=card_id))
+                text_start = TextStartSSEEvent(card_id=card_id)
+                text_delta = TextDeltaSSEEvent(card_id=card_id, text=text)
+                text_end = TextEndSSEEvent(card_id=card_id)
+                await queue.put(text_start)
+                await queue.put(text_delta)
+                await queue.put(text_end)
+
+                # Serendipity에 전달 (text_start, text_delta, text_end 순서)
+                if serendipity_ctx and self._serendipity_adapter:
+                    try:
+                        await self._serendipity_adapter.on_event(serendipity_ctx, text_start)
+                        await self._serendipity_adapter.on_event(serendipity_ctx, text_delta)
+                        await self._serendipity_adapter.on_event(serendipity_ctx, text_end)
+                    except Exception as e:
+                        logger.warning(f"Serendipity event failed: {e}")
+                return
 
             elif event.type == EngineEventType.TOOL_START:
                 tool_name = event.data.get("tool_name", "")
@@ -322,12 +376,13 @@ class SoulEngineAdapter:
                 # tool_use_id → card_id 매핑 기록 (TOOL_RESULT에서 올바른 card_id 조회용)
                 if tool_use_id:
                     tracker.register_tool_call(tool_use_id, tracker.current_card_id)
-                await queue.put(ToolStartSSEEvent(
+                sse_event = ToolStartSSEEvent(
                     card_id=tracker.current_card_id,
                     tool_name=tool_name,
                     tool_input=tool_input,
                     tool_use_id=tool_use_id,
-                ))
+                )
+                await queue.put(sse_event)
 
             elif event.type == EngineEventType.TOOL_RESULT:
                 result = event.data.get("result", "")
@@ -337,23 +392,32 @@ class SoulEngineAdapter:
                 tool_name = event.data.get("tool_name") or tracker.last_tool or ""
                 # card_id는 tool_use_id로 TOOL_START 시점의 값을 조회
                 card_id = tracker.get_tool_card_id(tool_use_id)
-                await queue.put(ToolResultSSEEvent(
+                sse_event = ToolResultSSEEvent(
                     card_id=card_id,
                     tool_name=tool_name,
                     result=result,
                     is_error=is_error,
                     tool_use_id=tool_use_id,
-                ))
+                )
+                await queue.put(sse_event)
 
             elif event.type == EngineEventType.RESULT:
                 success = event.data.get("success", False)
                 output = event.data.get("output", "")
                 error = event.data.get("error")
-                await queue.put(ResultSSEEvent(
+                sse_event = ResultSSEEvent(
                     success=success,
                     output=output,
                     error=error,
-                ))
+                )
+                await queue.put(sse_event)
+
+            # Serendipity에 이벤트 전달
+            if sse_event and serendipity_ctx and self._serendipity_adapter:
+                try:
+                    await self._serendipity_adapter.on_event(serendipity_ctx, sse_event)
+                except Exception as e:
+                    logger.warning(f"Serendipity event failed: {e}")
 
         # --- 백그라운드 실행 ---
 
@@ -400,28 +464,49 @@ class SoulEngineAdapter:
                 # 완료/에러 이벤트
                 if result.success and not result.is_error:
                     final_text = result.output or "(결과 없음)"
-                    await queue.put(CompleteEvent(
+                    complete_event = CompleteEvent(
                         result=final_text,
                         attachments=[],
                         claude_session_id=result.session_id,
-                    ))
+                    )
+                    await queue.put(complete_event)
                     success = True
                     # 성공 시 풀에 반환
                     if self._pool is not None:
                         await self._pool.release(runner, session_id=result.session_id)
+                    # Serendipity에 전달
+                    if serendipity_ctx and self._serendipity_adapter:
+                        try:
+                            await self._serendipity_adapter.on_event(serendipity_ctx, complete_event)
+                        except Exception as e:
+                            logger.warning(f"Serendipity complete event failed: {e}")
                 else:
                     error_msg = result.error or result.output or "실행 오류"
-                    await queue.put(ErrorEvent(message=error_msg))
+                    error_event = ErrorEvent(message=error_msg)
+                    await queue.put(error_event)
                     # C-1: 에러 시 runner 폐기 (오염 방지)
                     if self._pool is not None:
                         await self._pool._discard(runner, reason="run_error")
+                    # Serendipity에 전달
+                    if serendipity_ctx and self._serendipity_adapter:
+                        try:
+                            await self._serendipity_adapter.on_event(serendipity_ctx, error_event)
+                        except Exception as e:
+                            logger.warning(f"Serendipity error event failed: {e}")
 
             except Exception as e:
                 logger.exception(f"SoulEngineAdapter execution error: {e}")
-                await queue.put(ErrorEvent(message=f"실행 오류: {str(e)}"))
+                error_event = ErrorEvent(message=f"실행 오류: {str(e)}")
+                await queue.put(error_event)
                 # C-1: 예외 시 runner 폐기 (고아 프로세스 방지)
                 if self._pool is not None:
                     await self._pool._discard(runner, reason="exception")
+                # Serendipity에 전달
+                if serendipity_ctx and self._serendipity_adapter:
+                    try:
+                        await self._serendipity_adapter.on_event(serendipity_ctx, error_event)
+                    except Exception as ex:
+                        logger.warning(f"Serendipity error event failed: {ex}")
 
             finally:
                 await queue.put(_DONE)
@@ -451,6 +536,7 @@ soul_engine = SoulEngineAdapter()
 def init_soul_engine(
     pool: Optional["RunnerPool"] = None,
     rate_limit_tracker: Optional[Any] = None,
+    serendipity_adapter: Optional["SerendipityAdapter"] = None,
 ) -> SoulEngineAdapter:
     """soul_engine 싱글톤을 (재)초기화한다.
 
@@ -459,10 +545,15 @@ def init_soul_engine(
     Args:
         pool: 주입할 RunnerPool. None이면 풀 없이 초기화.
         rate_limit_tracker: RateLimitTracker 인스턴스. None이면 추적 비활성화.
+        serendipity_adapter: SerendipityAdapter 인스턴스. None이면 세렌디피티 저장 비활성화.
 
     Returns:
         새로 생성된 SoulEngineAdapter 인스턴스
     """
     global soul_engine
-    soul_engine = SoulEngineAdapter(pool=pool, rate_limit_tracker=rate_limit_tracker)
+    soul_engine = SoulEngineAdapter(
+        pool=pool,
+        rate_limit_tracker=rate_limit_tracker,
+        serendipity_adapter=serendipity_adapter,
+    )
     return soul_engine
