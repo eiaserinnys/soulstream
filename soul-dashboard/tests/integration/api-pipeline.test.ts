@@ -17,7 +17,7 @@ import {
   startTestServer,
   createMockSoulServer,
   type TestAppContext,
-} from "../../../soul-dashboard/server/test-app-factory.js";
+} from "../../server/test-app-factory.js";
 
 const TEST_DIR = join(tmpdir(), "soul-dash-api-" + Date.now());
 

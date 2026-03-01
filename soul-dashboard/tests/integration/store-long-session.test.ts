@@ -9,8 +9,8 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
-import { useDashboardStore } from "../../../soul-dashboard/client/stores/dashboard-store";
-import { buildGraph } from "../../../soul-dashboard/client/lib/layout-engine";
+import { useDashboardStore } from "../../client/stores/dashboard-store";
+import { buildGraph } from "../../client/lib/layout-engine";
 import type {
   SoulSSEEvent,
   TextStartEvent,
@@ -22,7 +22,7 @@ import type {
   ContextUsageEvent,
   ErrorEvent,
   CompleteEvent,
-} from "../../../soul-dashboard/shared/types";
+} from "../../shared/types";
 
 describe("Store + Layout: Long Session Rendering", () => {
   beforeEach(() => {

@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { SoulClient } from "../../../soul-dashboard/server/soul-client.js";
+import { SoulClient } from "./soul-client.js";
 
 describe("SoulClient", () => {
   let client: SoulClient;

@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
-import { useDashboardStore } from "../../../soul-dashboard/client/stores/dashboard-store";
+import { useDashboardStore } from "./dashboard-store";
 import type {
   TextStartEvent,
   TextDeltaEvent,
@@ -14,7 +14,7 @@ import type {
   ToolResultEvent,
   CompleteEvent,
   SessionSummary,
-} from "../../../soul-dashboard/shared/types";
+} from "../../shared/types";
 
 describe("dashboard-store", () => {
   beforeEach(() => {

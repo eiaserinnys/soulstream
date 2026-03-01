@@ -5,8 +5,8 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { EventHub } from "../../../soul-dashboard/server/event-hub.js";
-import type { SoulSSEEvent } from "../../../soul-dashboard/shared/types.js";
+import { EventHub } from "./event-hub.js";
+import type { SoulSSEEvent } from "../shared/types.js";
 
 /** Express Response 목업 */
 function createMockResponse() {

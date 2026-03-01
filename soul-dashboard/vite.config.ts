@@ -26,7 +26,11 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "node",
-    include: ["../tests/soul-dashboard/**/*.test.ts"],
+    include: [
+      "client/**/*.test.ts",
+      "server/**/*.test.ts",
+      "tests/**/*.test.ts",
+    ],
     alias: {
       "@shared": resolve(__dirname, "shared"),
     },

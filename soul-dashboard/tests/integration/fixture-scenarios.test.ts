@@ -16,12 +16,12 @@ import { readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
-import { useDashboardStore } from "../../../soul-dashboard/client/stores/dashboard-store.js";
+import { useDashboardStore } from "../../client/stores/dashboard-store.js";
 import {
   buildGraph,
   type GraphNode,
-} from "../../../soul-dashboard/client/lib/layout-engine.js";
-import type { SoulSSEEvent, EventRecord } from "../../../soul-dashboard/shared/types.js";
+} from "../../client/lib/layout-engine.js";
+import type { SoulSSEEvent, EventRecord } from "../../shared/types.js";
 
 // === Fixture Loader ===
 

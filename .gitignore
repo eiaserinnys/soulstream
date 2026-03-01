@@ -19,6 +19,9 @@ venv/
 node_modules/
 soul-dashboard/dist/
 
+# Local data
+soul-server/.local/
+
 # Test
 .pytest_cache/
 htmlcov/
