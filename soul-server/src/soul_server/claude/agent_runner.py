@@ -650,8 +650,14 @@ class ClaudeRunner:
         self,
         session_id: Optional[str] = None,
         compact_events: Optional[list] = None,
+        include_mcp: bool = True,
     ) -> tuple[ClaudeAgentOptions, Optional[IO[str]]]:
         """ClaudeAgentOptions와 stderr 파일을 반환합니다.
+
+        Args:
+            session_id: 재개할 세션 ID
+            compact_events: 컴팩션 이벤트 목록
+            include_mcp: True면 setting_sources로 MCP를 로드, False면 MCP 없이 경량 초기화
 
         Returns:
             (options, stderr_file)
@@ -679,11 +685,13 @@ class ClaudeRunner:
                 _stderr_file.close()
             _stderr_file = None
 
-        # setting_sources로 프로젝트 설정을 로드하면 CLI가 .mcp.json을 자동 발견
-        # mcp_servers를 직접 전달하면 타임아웃 이슈가 있어서 setting_sources 방식 사용
+        # include_mcp=True: setting_sources로 프로젝트 설정(.mcp.json)을 자동 발견
+        # include_mcp=False: MCP 없이 경량 초기화 (pre_warm 등)
+        _setting_sources = ["project"] if include_mcp else None
         logger.info(
             f"[BUILD_OPTIONS] runner={runner_id}, "
-            f"setting_sources=['project'], "
+            f"setting_sources={_setting_sources}, "
+            f"include_mcp={include_mcp}, "
             f"session_id={session_id}, "
             f"allowed_tools={self.allowed_tools}"
         )
@@ -693,7 +701,7 @@ class ClaudeRunner:
             disallowed_tools=self.disallowed_tools,
             permission_mode="bypassPermissions",
             cwd=self.working_dir,
-            setting_sources=["project"],  # CLI가 프로젝트 설정에서 .mcp.json 자동 발견
+            setting_sources=_setting_sources,
             hooks=hooks,
             extra_args={"debug-to-stderr": None},
             debug_stderr=_stderr_target,
