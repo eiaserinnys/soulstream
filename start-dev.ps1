@@ -46,38 +46,49 @@ if ($Dashboard) {
 
     # 클라이언트 빌드 (Express 서버가 dist/client/를 정적 서빙하므로 빌드 필수)
     Write-Host "[Soul Dashboard] Building client..." -ForegroundColor Magenta
-    $buildResult = Start-Process -FilePath "cmd.exe" `
-        -ArgumentList "/c", "npm run build" `
-        -WorkingDirectory $DashboardDir `
-        -NoNewWindow -Wait -PassThru
-    if ($buildResult.ExitCode -ne 0) {
-        Write-Host "[ERROR] Dashboard client build failed (exit code: $($buildResult.ExitCode))" -ForegroundColor Red
-        exit 1
+    Push-Location $DashboardDir
+    try {
+        npm run build
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[ERROR] Dashboard client build failed (exit code: $LASTEXITCODE)" -ForegroundColor Red
+            exit 1
+        }
+    } finally {
+        Pop-Location
     }
     Write-Host "[Soul Dashboard] Build complete." -ForegroundColor Magenta
 }
 
-$jobs = @()
+# 프로세스 트리 전체를 종료하는 헬퍼
+function Stop-ProcessTree {
+    param([int]$ParentId)
+    # 자식 프로세스를 먼저 재귀적으로 종료
+    Get-CimInstance Win32_Process -Filter "ParentProcessId=$ParentId" -ErrorAction SilentlyContinue |
+        ForEach-Object { Stop-ProcessTree -ParentId $_.ProcessId }
+    Stop-Process -Id $ParentId -Force -ErrorAction SilentlyContinue
+}
+
+$pids = @()
 
 try {
     if ($Server) {
         Write-Host "[Soul Server] Starting on :3105 ..." -ForegroundColor Cyan
-        $serverJob = Start-Process -FilePath $VenvPython `
+        $serverProc = Start-Process -FilePath $VenvPython `
             -ArgumentList "-m", "soul_server.main" `
             -WorkingDirectory $ServerDir `
-            -PassThru
-        $jobs += $serverJob
-        Write-Host "[Soul Server] PID: $($serverJob.Id)" -ForegroundColor DarkGray
+            -NoNewWindow -PassThru
+        $pids += $serverProc.Id
+        Write-Host "[Soul Server] PID: $($serverProc.Id)" -ForegroundColor DarkGray
     }
 
     if ($Dashboard) {
         Write-Host "[Soul Dashboard] Starting on :3109 ..." -ForegroundColor Magenta
-        $dashboardJob = Start-Process -FilePath "cmd.exe" `
+        $dashboardProc = Start-Process -FilePath "cmd.exe" `
             -ArgumentList "/c", "npm run dev" `
             -WorkingDirectory $DashboardDir `
-            -PassThru
-        $jobs += $dashboardJob
-        Write-Host "[Soul Dashboard] PID: $($dashboardJob.Id)" -ForegroundColor DarkGray
+            -NoNewWindow -PassThru
+        $pids += $dashboardProc.Id
+        Write-Host "[Soul Dashboard] PID: $($dashboardProc.Id)" -ForegroundColor DarkGray
     }
 
     Write-Host ""
@@ -90,7 +101,10 @@ try {
     Write-Host ""
 
     while ($true) {
-        $alive = $jobs | Where-Object { -not $_.HasExited }
+        $alive = $pids | Where-Object {
+            try { $null = Get-Process -Id $_ -ErrorAction Stop; $true }
+            catch { $false }
+        }
         if ($alive.Count -eq 0) {
             Write-Host "[INFO] All processes exited." -ForegroundColor Yellow
             break
@@ -100,11 +114,15 @@ try {
 }
 finally {
     Write-Host ""
-    Write-Host "[Cleanup] Stopping processes..." -ForegroundColor Yellow
-    foreach ($job in $jobs) {
-        if (-not $job.HasExited) {
-            Write-Host "  Stopping PID $($job.Id)..." -ForegroundColor DarkGray
-            Stop-Process -Id $job.Id -Force -ErrorAction SilentlyContinue
+    Write-Host "[Cleanup] Stopping process trees..." -ForegroundColor Yellow
+    foreach ($pid in $pids) {
+        try {
+            $proc = Get-Process -Id $pid -ErrorAction Stop
+            Write-Host "  Stopping PID $pid ($($proc.ProcessName)) and children..." -ForegroundColor DarkGray
+            Stop-ProcessTree -ParentId $pid
+        }
+        catch {
+            # 이미 종료됨
         }
     }
     Write-Host "[Done] All processes stopped." -ForegroundColor Green
