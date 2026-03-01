@@ -62,7 +62,6 @@ if ($Dashboard) {
 # 프로세스 트리 전체를 종료하는 헬퍼
 function Stop-ProcessTree {
     param([int]$ParentId)
-    # 자식 프로세스를 먼저 재귀적으로 종료
     Get-CimInstance Win32_Process -Filter "ParentProcessId=$ParentId" -ErrorAction SilentlyContinue |
         ForEach-Object { Stop-ProcessTree -ParentId $_.ProcessId }
     Stop-Process -Id $ParentId -Force -ErrorAction SilentlyContinue
@@ -76,7 +75,7 @@ try {
         $serverProc = Start-Process -FilePath $VenvPython `
             -ArgumentList "-m", "soul_server.main" `
             -WorkingDirectory $ServerDir `
-            -NoNewWindow -PassThru
+            -PassThru
         $pids += $serverProc.Id
         Write-Host "[Soul Server] PID: $($serverProc.Id)" -ForegroundColor DarkGray
     }
@@ -86,7 +85,7 @@ try {
         $dashboardProc = Start-Process -FilePath "cmd.exe" `
             -ArgumentList "/c", "npm run dev" `
             -WorkingDirectory $DashboardDir `
-            -NoNewWindow -PassThru
+            -PassThru
         $pids += $dashboardProc.Id
         Write-Host "[Soul Dashboard] PID: $($dashboardProc.Id)" -ForegroundColor DarkGray
     }
