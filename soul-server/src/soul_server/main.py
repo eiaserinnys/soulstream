@@ -313,7 +313,14 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 
 if __name__ == "__main__":
+    import sys
     import uvicorn
+
+    # Windows에서 uvicorn reload 모드가 SelectorEventLoop을 사용하면
+    # asyncio.create_subprocess_exec가 NotImplementedError를 던짐.
+    # ProactorEventLoop을 명시적으로 설정하여 subprocess 지원을 보장.
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
     uvicorn.run(
         "soul_server.main:app",
@@ -321,4 +328,5 @@ if __name__ == "__main__":
         port=settings.port,
         reload=settings.is_development,
         access_log=not settings.is_production,
+        loop="asyncio",
     )
