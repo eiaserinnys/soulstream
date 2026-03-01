@@ -43,6 +43,18 @@ if ($Dashboard) {
         Write-Host "[ERROR] node_modules not found. Run: cd $DashboardDir && npm install" -ForegroundColor Red
         exit 1
     }
+
+    # 클라이언트 빌드 (Express 서버가 dist/client/를 정적 서빙하므로 빌드 필수)
+    Write-Host "[Soul Dashboard] Building client..." -ForegroundColor Magenta
+    $buildResult = Start-Process -FilePath "cmd.exe" `
+        -ArgumentList "/c", "npm run build" `
+        -WorkingDirectory $DashboardDir `
+        -NoNewWindow -Wait -PassThru
+    if ($buildResult.ExitCode -ne 0) {
+        Write-Host "[ERROR] Dashboard client build failed (exit code: $($buildResult.ExitCode))" -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "[Soul Dashboard] Build complete." -ForegroundColor Magenta
 }
 
 $jobs = @()
