@@ -62,7 +62,6 @@ function ConnectionBadge({
 
 export function DashboardLayout() {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
-  const isComposing = useDashboardStore((s) => s.isComposing);
 
   // 세션 목록 폴링
   const { sessions, loading, error } = useSessionList({ intervalMs: 5000 });
@@ -75,8 +74,8 @@ export function DashboardLayout() {
   // 브라우저 알림 (완료/에러/인터벤션)
   useNotification();
 
-  // 중앙 패널 렌더링 결정
-  const showComposer = isComposing && !activeSessionKey;
+  // 중앙 패널 렌더링 결정: 세션 미선택 시 항상 Composer 표시
+  const showComposer = !activeSessionKey;
   const showGraph = !!activeSessionKey;
 
   return (
@@ -165,20 +164,6 @@ export function DashboardLayout() {
             </>
           )}
 
-          {!showComposer && !showGraph && (
-            <div
-              style={{
-                flex: 1,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "#4b5563",
-                fontSize: "14px",
-              }}
-            >
-              Select a session or start a new conversation
-            </div>
-          )}
         </main>
 
         {/* Right: Detail View */}

@@ -122,7 +122,7 @@ const initialState: DashboardState = {
   graphEvents: [],
   collapsedGroups: new Set<string>(),
   lastEventId: 0,
-  isComposing: false,
+  isComposing: true,
   resumeTargetKey: null,
 };
 
