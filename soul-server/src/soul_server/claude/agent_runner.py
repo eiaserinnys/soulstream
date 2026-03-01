@@ -335,17 +335,26 @@ class ClaudeRunner:
 
     async def _get_or_create_client(
         self,
-        options: Optional[ClaudeAgentOptions] = None,
-    ) -> ClaudeSDKClient:
+        session_id: Optional[str] = None,
+        compact_events: Optional[list] = None,
+    ) -> tuple[ClaudeSDKClient, Optional["IO[str]"]]:
         """ClaudeSDKClient를 가져오거나 새로 생성
+
+        내부에서 _build_options()를 호출하여 옵션을 생성합니다.
+        웜업과 실행 모두 이 메서드를 통해 클라이언트를 생성하므로
+        동일한 옵션 빌드 경로를 보장합니다.
 
         불일치 감지:
         1. 세션 불일치: 기존 클라이언트의 세션과 요청 세션이 다른 경우
            - requested_session이 None이고 기존 세션이 있으면 오염 방지를 위해 재생성
            - requested_session이 있는데 기존 세션과 다르면 재생성
         2. 설정 불일치: MCP 서버, 허용/금지 도구 설정이 다른 경우
+
+        Returns:
+            (client, stderr_file) - stderr_file은 호출자가 닫아야 함
         """
-        requested_session = getattr(options, "resume", None) if options else None
+        options, stderr_file = self._build_options(session_id, compact_events)
+        requested_session = session_id
         requested_fp = self._compute_options_fingerprint(options)
 
         if self.client is not None:
@@ -369,7 +378,7 @@ class ClaudeRunner:
                 # _remove_client() 후 self.client = None이 되므로 아래 생성 로직으로 진행
             else:
                 logger.info(f"[DEBUG-CLIENT] 기존 클라이언트 재사용: runner={self.runner_id}")
-                return self.client
+                return self.client, stderr_file
 
         import time as _time
         logger.info(f"[DEBUG-CLIENT] 새 InstrumentedClaudeClient 생성 시작: runner={self.runner_id}")
@@ -414,7 +423,7 @@ class ClaudeRunner:
             f"ClaudeSDKClient 생성: runner={self.runner_id}, pid={pid}, "
             f"session={requested_session}, options_fp={requested_fp}"
         )
-        return client
+        return client, stderr_file
 
     async def _remove_client(self) -> None:
         """이 러너의 ClaudeSDKClient를 정리"""
@@ -650,14 +659,12 @@ class ClaudeRunner:
         self,
         session_id: Optional[str] = None,
         compact_events: Optional[list] = None,
-        include_mcp: bool = True,
     ) -> tuple[ClaudeAgentOptions, Optional[IO[str]]]:
         """ClaudeAgentOptions와 stderr 파일을 반환합니다.
 
         Args:
             session_id: 재개할 세션 ID
             compact_events: 컴팩션 이벤트 목록
-            include_mcp: True면 setting_sources로 MCP를 로드, False면 MCP 없이 경량 초기화
 
         Returns:
             (options, stderr_file)
@@ -685,13 +692,11 @@ class ClaudeRunner:
                 _stderr_file.close()
             _stderr_file = None
 
-        # include_mcp=True: setting_sources로 프로젝트 설정(.mcp.json)을 자동 발견
-        # include_mcp=False: MCP 없이 경량 초기화 (pre_warm 등)
-        _setting_sources = ["project"] if include_mcp else None
+        # setting_sources로 프로젝트 설정(.mcp.json)을 자동 발견
+        # 웜업과 실행 모두 동일한 경로를 사용하여 fingerprint 일치 보장
         logger.info(
             f"[BUILD_OPTIONS] runner={runner_id}, "
-            f"setting_sources={_setting_sources}, "
-            f"include_mcp={include_mcp}, "
+            f"setting_sources=['project'], "
             f"session_id={session_id}, "
             f"allowed_tools={self.allowed_tools}"
         )
@@ -701,7 +706,7 @@ class ClaudeRunner:
             disallowed_tools=self.disallowed_tools,
             permission_mode="bypassPermissions",
             cwd=self.working_dir,
-            setting_sources=_setting_sources,
+            setting_sources=["project"],
             hooks=hooks,
             extra_args={"debug-to-stderr": None},
             debug_stderr=_stderr_target,
@@ -1139,15 +1144,6 @@ class ClaudeRunner:
         """실제 실행 로직 (ClaudeSDKClient 기반)"""
         runner_id = self.runner_id
         compact_state = CompactRetryState()
-        options, stderr_file = self._build_options(session_id, compact_events=compact_state.events)
-        logger.info(f"Claude Code SDK 실행 시작 (cwd={self.working_dir})")
-        logger.info(f"[DEBUG-OPTIONS] permission_mode={options.permission_mode}")
-        logger.info(f"[DEBUG-OPTIONS] cwd={options.cwd}")
-        logger.info(f"[DEBUG-OPTIONS] setting_sources={options.setting_sources}")
-        logger.info(f"[DEBUG-OPTIONS] resume={options.resume}")
-        logger.info(f"[DEBUG-OPTIONS] allowed_tools count={len(options.allowed_tools) if options.allowed_tools else 0}")
-        logger.info(f"[DEBUG-OPTIONS] disallowed_tools count={len(options.disallowed_tools) if options.disallowed_tools else 0}")
-        logger.info(f"[DEBUG-OPTIONS] hooks={'yes' if options.hooks else 'no'}")
 
         # 현재 실행 루프를 인스턴스에 등록 (interrupt에서 사용)
         self.execution_loop = asyncio.get_running_loop()
@@ -1158,9 +1154,15 @@ class ClaudeRunner:
 
         msg_state = MessageState()
         _session_start = datetime.now(timezone.utc)
+        stderr_file = None
 
         try:
-            client = await self._get_or_create_client(options=options)
+            # _get_or_create_client가 내부에서 _build_options를 호출
+            client, stderr_file = await self._get_or_create_client(
+                session_id=session_id,
+                compact_events=compact_state.events,
+            )
+            logger.info(f"Claude Code SDK 실행 시작 (cwd={self.working_dir})")
 
             await client.query(prompt)
 

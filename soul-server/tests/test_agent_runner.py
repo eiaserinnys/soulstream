@@ -873,7 +873,7 @@ class TestPidTrackingAndForceKill:
         mock_client._transport = mock_transport
 
         with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
-            client = await runner._get_or_create_client()
+            client, _ = await runner._get_or_create_client()
 
         assert runner.pid == 54321
         assert runner.client is client
@@ -886,7 +886,7 @@ class TestPidTrackingAndForceKill:
         mock_client._transport = None
 
         with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
-            client = await runner._get_or_create_client()
+            client, _ = await runner._get_or_create_client()
 
         assert runner.pid is None
         assert runner.client is client

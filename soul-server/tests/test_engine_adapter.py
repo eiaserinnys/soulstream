@@ -388,11 +388,8 @@ class TestSoulEngineAdapterToolSettings:
     """요청별 도구 설정 전달 테스트"""
 
     async def test_default_tools_when_none(self):
-        """allowed_tools/disallowed_tools가 None이면 기본값 사용"""
-        from soul_server.service.engine_adapter import (
-            DEFAULT_ALLOWED_TOOLS,
-            DEFAULT_DISALLOWED_TOOLS,
-        )
+        """allowed_tools가 None이면 제한 없음, disallowed_tools는 기본값 사용"""
+        from soul_server.service.engine_adapter import DEFAULT_DISALLOWED_TOOLS
         adapter = SoulEngineAdapter(workspace_dir="/test")
         mock_result = EngineResult(success=True, output="done")
 
@@ -405,8 +402,9 @@ class TestSoulEngineAdapterToolSettings:
             events = await collect_events(adapter, "test")
 
         # ClaudeRunner가 기본 도구 설정으로 생성되었는지 확인
+        # allowed_tools=None → 제한 없음 (MCP 도구 포함 전체 허용)
         call_kwargs = MockRunner.call_args.kwargs
-        assert call_kwargs["allowed_tools"] == DEFAULT_ALLOWED_TOOLS
+        assert call_kwargs["allowed_tools"] is None
         assert call_kwargs["disallowed_tools"] == DEFAULT_DISALLOWED_TOOLS
 
     async def test_custom_allowed_tools_passed(self):

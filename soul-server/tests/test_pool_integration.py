@@ -32,7 +32,9 @@ def make_mock_runner(
     """ClaudeRunner 대역 생성"""
     runner = MagicMock()
     runner._remove_client = AsyncMock()
-    runner._get_or_create_client = AsyncMock()
+    # _get_or_create_client: (client, stderr_file) 튜플 반환
+    mock_client = MagicMock()
+    runner._get_or_create_client = AsyncMock(return_value=(mock_client, None))
     runner._is_cli_alive.return_value = True
 
     result = EngineResult(

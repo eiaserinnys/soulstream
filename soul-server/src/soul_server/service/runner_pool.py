@@ -228,9 +228,9 @@ class RunnerPool:
     async def pre_warm(self, count: int) -> int:
         """N개의 generic runner를 미리 생성하여 generic pool에 추가
 
-        각 runner는 ClaudeRunner(pooled=True)로 생성 후, MCP 없이 경량 옵션으로
-        _get_or_create_client()를 호출합니다.
-        MCP 서버 연결은 실제 태스크 실행 시점에 수행되므로, 웜업에서는 제외합니다.
+        각 runner는 ClaudeRunner(pooled=True)로 생성 후 _get_or_create_client()를
+        호출하여 클라이언트를 미리 연결합니다.
+        실행 시점과 동일한 옵션(MCP 포함)으로 연결하여 fingerprint 일치를 보장합니다.
 
         에러는 로그만 남기고 계속 진행합니다 (부분 예열 허용).
 
@@ -246,9 +246,9 @@ class RunnerPool:
             stderr_file = None
             try:
                 runner = self._make_runner()
-                # pre_warm은 MCP 없이 경량 초기화 (include_mcp=False)
-                options, stderr_file = runner._build_options(include_mcp=False)
-                await runner._get_or_create_client(options=options)
+                # _get_or_create_client가 내부에서 _build_options를 호출
+                # 실행 시점과 동일한 경로를 사용하여 fingerprint 일치 보장
+                _, stderr_file = await runner._get_or_create_client()
                 async with self._lock:
                     now = time.monotonic()
                     if self._total_size() >= self._max_size:
