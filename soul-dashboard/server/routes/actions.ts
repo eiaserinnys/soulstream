@@ -32,6 +32,89 @@ export interface ActionsRouterOptions {
   sessionStore?: SessionStore;
 }
 
+/**
+ * Soul /execute 엔드포인트에 프록시 요청을 보내고
+ * user_message를 브로드캐스트 + persist하는 공통 로직.
+ */
+async function executeSoul(opts: {
+  soulBaseUrl: string;
+  authToken?: string;
+  clientId: string;
+  requestId: string;
+  prompt: string;
+  resumeSessionId?: string;
+  eventHub?: EventHub;
+  sessionStore?: SessionStore;
+}): Promise<
+  | { ok: true; sessionKey: string }
+  | { ok: false; status: number; error: { code: string; message: string; details?: unknown } }
+> {
+  const { soulBaseUrl, authToken, clientId, requestId, prompt, resumeSessionId, eventHub, sessionStore } = opts;
+
+  const soulResponse = await fetch(`${soulBaseUrl}/execute`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+    },
+    body: JSON.stringify({
+      client_id: clientId,
+      request_id: requestId,
+      prompt,
+      resume_session_id: resumeSessionId ?? null,
+      use_mcp: true,
+    }),
+  });
+
+  if (!soulResponse.ok) {
+    const errorBody = await soulResponse.text();
+    console.error(`[actions] Soul execute failed (${soulResponse.status}):`, errorBody);
+    return {
+      ok: false,
+      status: 502,
+      error: {
+        code: "SOUL_ERROR",
+        message: `Soul server returned ${soulResponse.status}`,
+        details: { body: errorBody },
+      },
+    };
+  }
+
+  // Soul이 SSE 스트림을 반환하지만, 대시보드에서는 세션 정보만 반환
+  // 클라이언트는 별도로 /api/sessions/:id/events에 SSE 연결
+  if (soulResponse.body) {
+    await soulResponse.body.cancel();
+  }
+
+  const sessionKey = `${clientId}:${requestId}`;
+
+  // user_message 이벤트 브로드캐스트 + JSONL persist
+  const userMessageEvent: UserMessageEvent = {
+    type: "user_message",
+    user: clientId,
+    text: prompt,
+  };
+
+  if (eventHub) {
+    eventHub.broadcast(sessionKey, 0, userMessageEvent);
+  }
+
+  if (sessionStore) {
+    sessionStore
+      .appendEvent(
+        clientId,
+        requestId,
+        0,
+        userMessageEvent as unknown as Record<string, unknown>,
+      )
+      .catch((err) => {
+        console.warn(`[actions] Failed to persist user_message for ${sessionKey}:`, err);
+      });
+  }
+
+  return { ok: true, sessionKey };
+}
+
 export function createActionsRouter(options: ActionsRouterOptions): Router {
   const { soulBaseUrl, authToken, eventHub, sessionStore } = options;
   const router = Router();
@@ -69,72 +152,26 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
       const clientId = body.clientId ?? "dashboard";
       const requestId = generateRequestId();
 
-      const soulResponse = await fetch(`${soulBaseUrl}/execute`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(authToken
-            ? { Authorization: `Bearer ${authToken}` }
-            : {}),
-        },
-        body: JSON.stringify({
-          client_id: clientId,
-          request_id: requestId,
-          prompt: body.prompt,
-          resume_session_id: body.resumeSessionId ?? null,
-          use_mcp: true,
-        }),
+      const result = await executeSoul({
+        soulBaseUrl,
+        authToken,
+        clientId,
+        requestId,
+        prompt: body.prompt,
+        resumeSessionId: body.resumeSessionId ?? undefined,
+        eventHub,
+        sessionStore,
       });
 
-      if (!soulResponse.ok) {
-        const errorBody = await soulResponse.text();
-        console.error(
-          `[actions] Soul execute failed (${soulResponse.status}):`,
-          errorBody,
-        );
-
-        res.status(502).json({
-          error: {
-            code: "SOUL_ERROR",
-            message: `Soul server returned ${soulResponse.status}`,
-            details: { body: errorBody },
-          },
-        });
+      if (!result.ok) {
+        res.status(result.status).json({ error: result.error });
         return;
-      }
-
-      // Soul이 SSE 스트림을 반환하지만, 대시보드에서는 세션 정보만 반환
-      // 클라이언트는 별도로 /api/sessions/:id/events에 SSE 연결
-      if (soulResponse.body) {
-        await soulResponse.body.cancel();
-      }
-
-      const sessionKey = `${clientId}:${requestId}`;
-
-      // user_message 이벤트 브로드캐스트 + JSONL persist
-      const userMessageEvent: UserMessageEvent = {
-        type: "user_message",
-        user: clientId,
-        text: body.prompt,
-      };
-
-      if (eventHub) {
-        eventHub.broadcast(sessionKey, 0, userMessageEvent);
-      }
-
-      if (sessionStore) {
-        sessionStore.appendEvent(
-          clientId, requestId, 0,
-          userMessageEvent as unknown as Record<string, unknown>,
-        ).catch((err) => {
-          console.warn(`[actions] Failed to persist user_message for ${sessionKey}:`, err);
-        });
       }
 
       res.status(201).json({
         clientId,
         requestId,
-        sessionKey,
+        sessionKey: result.sessionKey,
         status: "running",
       });
     } catch (err) {
@@ -174,7 +211,7 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
         return;
       }
 
-      const body = req.body as { prompt: string };
+      const body = req.body as { prompt: string; clientId?: string };
 
       if (!body.prompt || typeof body.prompt !== "string") {
         res.status(400).json({
@@ -208,6 +245,18 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
       }
 
       const events = await sessionStore.readEvents(origClientId, origRequestId);
+
+      // 이벤트가 없으면 세션이 존재하지 않음
+      if (events.length === 0) {
+        res.status(404).json({
+          error: {
+            code: "SESSION_NOT_FOUND",
+            message: `No events found for ${origClientId}:${origRequestId}`,
+          },
+        });
+        return;
+      }
+
       let claudeSessionId: string | undefined;
       let lastEventType: string | undefined;
       for (const record of events) {
@@ -224,7 +273,7 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
         res.status(409).json({
           error: {
             code: "SESSION_STILL_RUNNING",
-            message: `Cannot resume a session that is still running (last event: ${lastEventType ?? "none"})`,
+            message: `Cannot resume a session that is still running (last event: ${lastEventType ?? "unknown"})`,
           },
         });
         return;
@@ -240,73 +289,30 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
         return;
       }
 
-      // 새 세션 생성 (resume_session_id 포함)
-      const clientId = "dashboard";
+      // 원래 세션의 clientId를 유지하거나, body에서 명시적으로 지정 가능
+      const clientId = body.clientId ?? origClientId;
       const requestId = generateRequestId();
 
-      const soulResponse = await fetch(`${soulBaseUrl}/execute`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(authToken
-            ? { Authorization: `Bearer ${authToken}` }
-            : {}),
-        },
-        body: JSON.stringify({
-          client_id: clientId,
-          request_id: requestId,
-          prompt: body.prompt,
-          resume_session_id: claudeSessionId,
-          use_mcp: true,
-        }),
+      const result = await executeSoul({
+        soulBaseUrl,
+        authToken,
+        clientId,
+        requestId,
+        prompt: body.prompt,
+        resumeSessionId: claudeSessionId,
+        eventHub,
+        sessionStore,
       });
 
-      if (!soulResponse.ok) {
-        const errorBody = await soulResponse.text();
-        console.error(
-          `[actions] Soul resume failed (${soulResponse.status}):`,
-          errorBody,
-        );
-
-        res.status(502).json({
-          error: {
-            code: "SOUL_ERROR",
-            message: `Soul server returned ${soulResponse.status}`,
-            details: { body: errorBody },
-          },
-        });
+      if (!result.ok) {
+        res.status(result.status).json({ error: result.error });
         return;
-      }
-
-      if (soulResponse.body) {
-        await soulResponse.body.cancel();
-      }
-
-      const sessionKey = `${clientId}:${requestId}`;
-
-      const userMessageEvent: UserMessageEvent = {
-        type: "user_message",
-        user: clientId,
-        text: body.prompt,
-      };
-
-      if (eventHub) {
-        eventHub.broadcast(sessionKey, 0, userMessageEvent);
-      }
-
-      if (sessionStore) {
-        sessionStore.appendEvent(
-          clientId, requestId, 0,
-          userMessageEvent as unknown as Record<string, unknown>,
-        ).catch((err) => {
-          console.warn(`[actions] Failed to persist user_message for ${sessionKey}:`, err);
-        });
       }
 
       res.status(201).json({
         clientId,
         requestId,
-        sessionKey,
+        sessionKey: result.sessionKey,
         resumedFrom: `${origClientId}:${origRequestId}`,
         resumeSessionId: claudeSessionId,
         status: "running",
@@ -411,6 +417,28 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
           },
         });
         return;
+      }
+
+      // 개입 메시지를 JSONL에 persist (히스토리 재생 시 유실 방지)
+      if (sessionStore) {
+        const interventionEvent = {
+          type: "user_message",
+          user: body.user,
+          text: body.text,
+        };
+        sessionStore
+          .appendEvent(
+            clientId,
+            requestId,
+            Date.now(),
+            interventionEvent as unknown as Record<string, unknown>,
+          )
+          .catch((err) => {
+            console.warn(
+              `[actions] Failed to persist intervention for ${clientId}:${requestId}:`,
+              err,
+            );
+          });
       }
 
       const result = await soulResponse.json();

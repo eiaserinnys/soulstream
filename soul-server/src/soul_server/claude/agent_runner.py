@@ -354,6 +354,12 @@ class ClaudeRunner:
             (client, stderr_file) - stderr_file은 호출자가 닫아야 함
         """
         options, stderr_file = self._build_options(session_id, compact_events)
+        logger.debug(f"[OPTIONS] permission_mode={options.permission_mode}")
+        logger.debug(f"[OPTIONS] cwd={options.cwd}")
+        logger.debug(f"[OPTIONS] resume={options.resume}")
+        logger.debug(f"[OPTIONS] allowed_tools count={len(options.allowed_tools) if options.allowed_tools else 0}")
+        logger.debug(f"[OPTIONS] disallowed_tools count={len(options.disallowed_tools) if options.disallowed_tools else 0}")
+        logger.debug(f"[OPTIONS] hooks={'yes' if options.hooks else 'no'}")
         requested_session = session_id
         requested_fp = self._compute_options_fingerprint(options)
 

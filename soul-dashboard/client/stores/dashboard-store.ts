@@ -126,28 +126,20 @@ const initialState: DashboardState = {
   resumeTargetKey: null,
 };
 
-/** 세션 전환 시 초기화할 상태 부분집합 (중복 방지) */
-const sessionResetState: Pick<
-  DashboardState,
-  | "activeSessionKey"
-  | "activeSession"
-  | "selectedCardId"
-  | "selectedNodeId"
-  | "selectedEventNodeData"
-  | "cards"
-  | "graphEvents"
-  | "lastEventId"
-> & { collapsedGroups: Set<string> } = {
-  activeSessionKey: null,
-  activeSession: null,
-  selectedCardId: null,
-  selectedNodeId: null,
-  selectedEventNodeData: null,
-  cards: [],
-  graphEvents: [],
-  collapsedGroups: new Set<string>(),
-  lastEventId: 0,
-};
+/** 세션 전환 시 초기화할 상태를 매번 새 인스턴스로 생성 (Set 공유 방지) */
+function getSessionResetState() {
+  return {
+    activeSessionKey: null as string | null,
+    activeSession: null as SessionDetail | null,
+    selectedCardId: null as string | null,
+    selectedNodeId: null as string | null,
+    selectedEventNodeData: null as DashboardState["selectedEventNodeData"],
+    cards: [] as DashboardCard[],
+    graphEvents: [] as SoulSSEEvent[],
+    collapsedGroups: new Set<string>(),
+    lastEventId: 0,
+  };
+}
 
 // === Store ===
 
@@ -168,9 +160,11 @@ export const useDashboardStore = create<DashboardState & DashboardActions>(
 
     setActiveSession: (key, detail) =>
       set({
-        ...sessionResetState,
+        ...getSessionResetState(),
         activeSessionKey: key,
         activeSession: detail ?? null,
+        isComposing: false,
+        resumeTargetKey: null,
       }),
 
     // --- 카드 선택 ---
@@ -332,14 +326,14 @@ export const useDashboardStore = create<DashboardState & DashboardActions>(
 
     startCompose: () =>
       set({
-        ...sessionResetState,
+        ...getSessionResetState(),
         isComposing: true,
         resumeTargetKey: null,
       }),
 
     startResume: (sessionKey) =>
       set({
-        ...sessionResetState,
+        ...getSessionResetState(),
         isComposing: true,
         resumeTargetKey: sessionKey,
       }),

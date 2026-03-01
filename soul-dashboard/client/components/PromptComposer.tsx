@@ -7,8 +7,10 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
+import { getAuthHeaders } from "../lib/api-headers";
 
 const ACCENT = "#3b82f6";
+/** Soul 서버의 MAX_PROMPT_LENGTH과 일치 (세션 생성 프롬프트의 최대 길이) */
 const MAX_LENGTH = 100_000;
 
 export function PromptComposer() {
@@ -52,13 +54,15 @@ export function PromptComposer() {
     try {
       let response: Response;
 
+      const headers = await getAuthHeaders();
+
       if (resumeTargetKey) {
         // Resume: POST /api/sessions/:id/resume
         response = await fetch(
           `/api/sessions/${encodeURIComponent(resumeTargetKey)}/resume`,
           {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers,
             body: JSON.stringify({ prompt: trimmed }),
           },
         );
@@ -66,7 +70,7 @@ export function PromptComposer() {
         // Create: POST /api/sessions
         response = await fetch("/api/sessions", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers,
           body: JSON.stringify({ prompt: trimmed }),
         });
       }

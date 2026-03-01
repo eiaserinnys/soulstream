@@ -7,9 +7,11 @@
 
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
+import { getAuthHeaders } from "../lib/api-headers";
 
 const ACCENT_ORANGE = "#f97316";
 const ACCENT_BLUE = "#3b82f6";
+/** Soul 서버의 MAX_MESSAGE_LENGTH과 일치 (인터벤션 메시지의 최대 길이) */
 const MAX_LENGTH = 50_000;
 
 export function ChatInput() {
@@ -75,11 +77,12 @@ export function ChatInput() {
     setError(null);
 
     try {
+      const headers = await getAuthHeaders();
       const response = await fetch(
         `/api/sessions/${encodeURIComponent(activeSessionKey)}/intervene`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers,
           body: JSON.stringify({
             text: trimmed,
             user: "dashboard",
