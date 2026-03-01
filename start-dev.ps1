@@ -1,4 +1,4 @@
-﻿param(
+param(
     [switch]$Server,
     [switch]$Dashboard
 )
@@ -59,70 +59,51 @@ if ($Dashboard) {
     Write-Host "[Soul Dashboard] Build complete." -ForegroundColor Magenta
 }
 
-# 프로세스 트리 전체를 종료하는 헬퍼
+# PID와 그 자식 프로세스를 모두 종료하는 헬퍼
 function Stop-ProcessTree {
-    param([int]$ParentId)
-    Get-CimInstance Win32_Process -Filter "ParentProcessId=$ParentId" -ErrorAction SilentlyContinue |
-        ForEach-Object { Stop-ProcessTree -ParentId $_.ProcessId }
-    Stop-Process -Id $ParentId -Force -ErrorAction SilentlyContinue
+    param([int]$Pid)
+    # 자식 프로세스 먼저 재귀적으로 종료
+    Get-CimInstance Win32_Process -Filter "ParentProcessId=$Pid" -ErrorAction SilentlyContinue |
+        ForEach-Object { Stop-ProcessTree -Pid $_.ProcessId }
+    Stop-Process -Id $Pid -Force -ErrorAction SilentlyContinue
 }
 
-$pids = @()
+$procIds = @()
 
-try {
-    if ($Server) {
-        Write-Host "[Soul Server] Starting on :3105 ..." -ForegroundColor Cyan
-        $serverProc = Start-Process -FilePath $VenvPython `
-            -ArgumentList "-m", "soul_server.main" `
-            -WorkingDirectory $ServerDir `
-            -PassThru
-        $pids += $serverProc.Id
-        Write-Host "[Soul Server] PID: $($serverProc.Id)" -ForegroundColor DarkGray
-    }
-
-    if ($Dashboard) {
-        Write-Host "[Soul Dashboard] Starting on :3109 ..." -ForegroundColor Magenta
-        $dashboardProc = Start-Process -FilePath "cmd.exe" `
-            -ArgumentList "/c", "npm run dev" `
-            -WorkingDirectory $DashboardDir `
-            -PassThru
-        $pids += $dashboardProc.Id
-        Write-Host "[Soul Dashboard] PID: $($dashboardProc.Id)" -ForegroundColor DarkGray
-    }
-
-    Write-Host ""
-    Write-Host "=== Soulstream Dev ===" -ForegroundColor Green
-    if ($Server)    { Write-Host "  Soul Server:    http://localhost:3105" -ForegroundColor Cyan }
-    if ($Server)    { Write-Host "  API Docs:       http://localhost:3105/docs" -ForegroundColor Cyan }
-    if ($Dashboard) { Write-Host "  Dashboard:      http://localhost:3109" -ForegroundColor Magenta }
-    Write-Host ""
-    Write-Host "Press Ctrl+C to stop all processes." -ForegroundColor Yellow
-    Write-Host ""
-
-    while ($true) {
-        $alive = $pids | Where-Object {
-            try { $null = Get-Process -Id $_ -ErrorAction Stop; $true }
-            catch { $false }
-        }
-        if ($alive.Count -eq 0) {
-            Write-Host "[INFO] All processes exited." -ForegroundColor Yellow
-            break
-        }
-        Start-Sleep -Seconds 2
-    }
+if ($Server) {
+    Write-Host "[Soul Server] Starting on :3105 ..." -ForegroundColor Cyan
+    $serverProc = Start-Process -FilePath $VenvPython `
+        -ArgumentList "-m", "soul_server.main" `
+        -WorkingDirectory $ServerDir `
+        -PassThru
+    $procIds += $serverProc.Id
+    Write-Host "  PID: $($serverProc.Id)" -ForegroundColor DarkGray
 }
-finally {
-    Write-Host ""
-    Write-Host "[Cleanup] Stopping process trees..." -ForegroundColor Yellow
-    foreach ($pid in $pids) {
-        try {
-            $proc = Get-Process -Id $pid -ErrorAction Stop
-            Write-Host "  Stopping PID $pid ($($proc.ProcessName)) and children..." -ForegroundColor DarkGray
-            Stop-ProcessTree -ParentId $pid
-        }
-        catch {
-            # 이미 종료됨
-        }
-    }
-    Write-Host "[Done] All processes stopped." -ForegroundColor Green
+
+if ($Dashboard) {
+    Write-Host "[Soul Dashboard] Starting on :3109 ..." -ForegroundColor Magenta
+    $dashProc = Start-Process -FilePath "cmd.exe" `
+        -ArgumentList "/c", "npm run dev" `
+        -WorkingDirectory $DashboardDir `
+        -PassThru
+    $procIds += $dashProc.Id
+    Write-Host "  PID: $($dashProc.Id)" -ForegroundColor DarkGray
 }
+
+Write-Host ""
+Write-Host "=== Soulstream Dev ===" -ForegroundColor Green
+if ($Server)    { Write-Host "  Soul Server:    http://localhost:3105" -ForegroundColor Cyan }
+if ($Server)    { Write-Host "  API Docs:       http://localhost:3105/docs" -ForegroundColor Cyan }
+if ($Dashboard) { Write-Host "  Dashboard:      http://localhost:3109" -ForegroundColor Magenta }
+Write-Host ""
+Write-Host "Press Enter to stop all processes." -ForegroundColor Yellow
+Write-Host ""
+
+Read-Host
+
+Write-Host "[Cleanup] Stopping processes..." -ForegroundColor Yellow
+foreach ($p in $procIds) {
+    Write-Host "  Killing PID $p (+ children) ..." -ForegroundColor DarkGray
+    Stop-ProcessTree -Pid $p
+}
+Write-Host "[Done] All processes stopped." -ForegroundColor Green

@@ -206,6 +206,70 @@ describe("SessionStore", () => {
     });
   });
 
+  describe("appendEvent + status recovery", () => {
+    it("appendEvent로 추가한 이벤트가 세션 상태에 반영", async () => {
+      // 1) user_message만 있는 세션 → running
+      await store.appendEvent("dashboard", "req-persist", 0, {
+        type: "user_message",
+        text: "hello",
+        user: "dashboard",
+      });
+
+      let sessions = await store.listSessions();
+      const before = sessions.find((s) => s.requestId === "req-persist");
+      expect(before).toBeDefined();
+      expect(before!.status).toBe("running");
+
+      // 2) progress, complete 이벤트 추가 → completed
+      await store.appendEvent("dashboard", "req-persist", 1, {
+        type: "progress",
+        text: "Working...",
+      });
+      await store.appendEvent("dashboard", "req-persist", 2, {
+        type: "complete",
+        result: "Done",
+      });
+
+      sessions = await store.listSessions();
+      const after = sessions.find((s) => s.requestId === "req-persist");
+      expect(after!.status).toBe("completed");
+      expect(after!.eventCount).toBe(3);
+    });
+
+    it("appendEvent로 추가한 이벤트가 readEvents로 조회 가능", async () => {
+      await store.appendEvent("bot", "req-append", 0, {
+        type: "user_message",
+        text: "test",
+        user: "bot",
+      });
+      await store.appendEvent("bot", "req-append", 1, {
+        type: "session",
+        session_id: "sess-123",
+      });
+
+      const events = await store.readEvents("bot", "req-append");
+      expect(events).toHaveLength(2);
+      expect(events[0].event.type).toBe("user_message");
+      expect(events[1].event.type).toBe("session");
+    });
+
+    it("prompt 필드가 SessionSummary에 포함", async () => {
+      await store.appendEvent("dashboard", "req-prompt", 0, {
+        type: "user_message",
+        text: "대사 작업 스킬을 로드해줘",
+        user: "dashboard",
+      });
+      await store.appendEvent("dashboard", "req-prompt", 1, {
+        type: "complete",
+        result: "Done",
+      });
+
+      const sessions = await store.listSessions();
+      const session = sessions.find((s) => s.requestId === "req-prompt");
+      expect(session!.prompt).toBe("대사 작업 스킬을 로드해줘");
+    });
+  });
+
   describe("path safety", () => {
     it("should sanitize path components to prevent traversal", async () => {
       // "../" in clientId should be sanitized to ".._"

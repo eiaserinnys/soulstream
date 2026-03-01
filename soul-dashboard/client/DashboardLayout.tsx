@@ -1,5 +1,5 @@
 /**
- * DashboardLayout - 3패널 레이아웃
+ * DashboardLayout - 3패널 레이아웃 (리사이즈 가능)
  *
  * SessionList | NodeGraph + ChatInput | DetailView 구성.
  * SSE 구독, 세션 목록 폴링, 브라우저 알림을 여기서 초기화합니다.
@@ -7,6 +7,7 @@
  * composing 모드에서는 중앙 패널에 PromptComposer를 표시합니다.
  */
 
+import { useState, useCallback, useRef } from "react";
 import { SessionList } from "./components/SessionList";
 import { NodeGraph } from "./components/NodeGraph";
 import { DetailView } from "./components/DetailView";
@@ -16,45 +17,117 @@ import { useSessionList } from "./hooks/useSessionList";
 import { useSession } from "./hooks/useSession";
 import { useNotification } from "./hooks/useNotification";
 import { useDashboardStore } from "./stores/dashboard-store";
+import { cn } from "./lib/cn";
+import { Badge } from "./components/ui/badge";
+
+// === Constants ===
+
+/** 패널 기본 비율 (%) */
+const DEFAULT_LEFT = 20;
+const DEFAULT_RIGHT = 30;
+
+/** 패널 최소/최대 비율 (%) */
+const MIN_PANEL = 10;
+const MIN_CENTER = 20;
+
+// === Drag Handle ===
+
+function DragHandle({
+  onDrag,
+}: {
+  onDrag: (deltaPercent: number) => void;
+}) {
+  const dragging = useRef(false);
+  const lastX = useRef(0);
+  const onDragRef = useRef(onDrag);
+  onDragRef.current = onDrag;
+
+  const lineRef = useRef<HTMLDivElement>(null);
+
+  const onMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      dragging.current = true;
+      lastX.current = e.clientX;
+
+      const onMouseMove = (ev: MouseEvent) => {
+        if (!dragging.current) return;
+        const dx = ev.clientX - lastX.current;
+        lastX.current = ev.clientX;
+        const containerWidth = document.documentElement.clientWidth;
+        if (containerWidth > 0) {
+          onDragRef.current((dx / containerWidth) * 100);
+        }
+      };
+
+      const onMouseUp = () => {
+        dragging.current = false;
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      };
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+    },
+    [],
+  );
+
+  return (
+    <div
+      onMouseDown={onMouseDown}
+      className="w-1 cursor-col-resize bg-transparent shrink-0 relative z-10"
+    >
+      <div
+        className="absolute inset-y-0 -left-[3px] -right-[3px]"
+        onMouseEnter={() => {
+          if (lineRef.current) lineRef.current.style.backgroundColor = "rgba(59, 130, 246, 0.5)";
+        }}
+        onMouseLeave={() => {
+          if (lineRef.current) lineRef.current.style.backgroundColor = "rgba(255,255,255,0.06)";
+        }}
+      >
+        <div
+          ref={lineRef}
+          className="absolute inset-y-0 left-[3px] w-px transition-colors duration-150"
+          style={{ backgroundColor: "rgba(255,255,255,0.06)" }}
+        />
+      </div>
+    </div>
+  );
+}
 
 // === Connection Status Badge ===
+
+const CONNECTION_CONFIG = {
+  disconnected: { label: "Idle", variant: "outline" as const, dotClass: "bg-muted-foreground" },
+  connecting: { label: "Connecting...", variant: "warning" as const, dotClass: "bg-accent-amber" },
+  connected: { label: "Live", variant: "success" as const, dotClass: "bg-success" },
+  error: { label: "Reconnecting...", variant: "error" as const, dotClass: "bg-accent-red" },
+};
 
 function ConnectionBadge({
   status,
 }: {
   status: "disconnected" | "connecting" | "connected" | "error";
 }) {
-  const config = {
-    disconnected: { label: "Idle", color: "#6b7280" },
-    connecting: { label: "Connecting...", color: "#f59e0b" },
-    connected: { label: "Live", color: "#22c55e" },
-    error: { label: "Reconnecting...", color: "#ef4444" },
-  }[status];
+  const config = CONNECTION_CONFIG[status];
+  const shouldPulse = status === "connected" || status === "connecting";
 
   return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: "4px",
-        fontSize: "11px",
-        color: config.color,
-      }}
-    >
+    <Badge variant={config.variant} size="sm">
       <span
-        style={{
-          width: "6px",
-          height: "6px",
-          borderRadius: "50%",
-          backgroundColor: config.color,
-          animation:
-            status === "connected" || status === "connecting"
-              ? "pulse 2s infinite"
-              : "none",
-        }}
+        className={cn(
+          "w-1.5 h-1.5 rounded-full",
+          config.dotClass,
+          shouldPulse && "animate-[pulse_2s_infinite]",
+        )}
       />
       {config.label}
-    </span>
+    </Badge>
   );
 }
 
@@ -74,82 +147,74 @@ export function DashboardLayout() {
   // 브라우저 알림 (완료/에러/인터벤션)
   useNotification();
 
+  // 패널 비율 상태 (%)
+  const [leftPercent, setLeftPercent] = useState(DEFAULT_LEFT);
+  const [rightPercent, setRightPercent] = useState(DEFAULT_RIGHT);
+
+  // 드래그 중 최신 값을 참조하기 위한 refs (stale closure 방지)
+  const leftRef = useRef(leftPercent);
+  leftRef.current = leftPercent;
+  const rightRef = useRef(rightPercent);
+  rightRef.current = rightPercent;
+
+  const handleLeftDrag = useCallback(
+    (delta: number) => {
+      setLeftPercent((prev) => {
+        const maxLeft = 100 - rightRef.current - MIN_CENTER;
+        return Math.max(MIN_PANEL, Math.min(maxLeft, prev + delta));
+      });
+    },
+    [],
+  );
+
+  const handleRightDrag = useCallback(
+    (delta: number) => {
+      setRightPercent((prev) => {
+        const maxRight = 100 - leftRef.current - MIN_CENTER;
+        return Math.max(MIN_PANEL, Math.min(maxRight, prev - delta));
+      });
+    },
+    [],
+  );
+
   // 중앙 패널 렌더링 결정: 세션 미선택 시 항상 Composer 표시
   const showComposer = !activeSessionKey;
   const showGraph = !!activeSessionKey;
 
+  const centerPercent = Math.max(MIN_CENTER, 100 - leftPercent - rightPercent);
+
   return (
     <div
       data-testid="dashboard-layout"
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        width: "100vw",
-        height: "100vh",
-        backgroundColor: "#111827",
-        color: "#e5e7eb",
-        fontFamily:
-          "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-        overflow: "hidden",
-      }}
+      className="flex flex-col w-screen h-screen bg-background text-foreground font-sans overflow-hidden"
     >
       {/* Top bar */}
-      <header
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "0 16px",
-          height: "40px",
-          borderBottom: "1px solid rgba(255,255,255,0.08)",
-          backgroundColor: "rgba(0,0,0,0.2)",
-          flexShrink: 0,
-        }}
-      >
-        <span
-          style={{
-            fontSize: "13px",
-            fontWeight: 600,
-            color: "#9ca3af",
-            letterSpacing: "0.02em",
-          }}
-        >
+      <header className="flex items-center justify-between px-4 h-10 border-b border-border bg-popover shrink-0">
+        <span className="text-[13px] font-semibold text-muted-foreground tracking-[0.02em]">
           Soul Dashboard
         </span>
         <ConnectionBadge status={sseStatus} />
       </header>
 
       {/* 3-Panel content */}
-      <div
-        style={{
-          display: "flex",
-          flex: 1,
-          overflow: "hidden",
-        }}
-      >
+      <div className="flex flex-1 overflow-hidden">
         {/* Left: Session List */}
         <aside
           data-testid="session-panel"
-          style={{
-            width: "240px",
-            flexShrink: 0,
-            borderRight: "1px solid rgba(255,255,255,0.08)",
-            overflow: "hidden",
-          }}
+          className="shrink-0 overflow-hidden"
+          style={{ width: `${leftPercent}%` }}
         >
           <SessionList sessions={sessions} loading={loading} error={error} />
         </aside>
 
+        {/* Left drag handle */}
+        <DragHandle onDrag={handleLeftDrag} />
+
         {/* Center: Context-dependent content */}
         <main
           data-testid="graph-panel"
-          style={{
-            flex: 1,
-            borderRight: "1px solid rgba(255,255,255,0.08)",
-            overflow: "hidden",
-            display: "flex",
-            flexDirection: "column",
-          }}
+          className="shrink-0 overflow-hidden flex flex-col"
+          style={{ width: `${centerPercent}%` }}
         >
           {showComposer && (
             <PromptComposer />
@@ -157,7 +222,7 @@ export function DashboardLayout() {
 
           {showGraph && (
             <>
-              <div style={{ flex: 1, overflow: "hidden" }}>
+              <div className="flex-1 overflow-hidden">
                 <NodeGraph />
               </div>
               <ChatInput />
@@ -166,14 +231,14 @@ export function DashboardLayout() {
 
         </main>
 
+        {/* Right drag handle */}
+        <DragHandle onDrag={handleRightDrag} />
+
         {/* Right: Detail View */}
         <aside
           data-testid="detail-panel"
-          style={{
-            width: "360px",
-            flexShrink: 0,
-            overflow: "hidden",
-          }}
+          className="shrink-0 overflow-hidden"
+          style={{ width: `${rightPercent}%` }}
         >
           <DetailView />
         </aside>

@@ -16,7 +16,10 @@
     "sourceMap": true,
     "jsx": "react-jsx",
     "paths": {
-      "@shared/*": ["./shared/*"]
+      "@shared/*": ["./shared/*"],
+      "client/lib": ["./client/lib/index.ts"],
+      "client/hooks/*": ["./client/hooks/*"],
+      "client/components/*": ["./client/components/*"]
     }
   },
   "include": ["shared/**/*.ts", "server/**/*.ts", "client/**/*.ts", "client/**/*.tsx"],

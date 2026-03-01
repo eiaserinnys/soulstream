@@ -6,15 +6,8 @@ Claude Code 원격 실행 서비스.
 """
 
 import asyncio
-import sys
 import time
 import logging
-
-# Windows에서 ProactorEventLoop을 강제하여 subprocess 지원 보장.
-# uvicorn reload 모드는 워커 프로세스를 별도로 spawn하므로,
-# __main__ 블록이 아닌 모듈 레벨에서 설정해야 워커에도 적용됨.
-if sys.platform == "win32":
-    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
@@ -326,7 +319,6 @@ if __name__ == "__main__":
         "soul_server.main:app",
         host=settings.host,
         port=settings.port,
-        reload=settings.is_development,
+        reload=False,
         access_log=not settings.is_production,
-        loop="asyncio",
     )

@@ -171,7 +171,7 @@ export class SessionStore {
     clientId: string,
     requestId: string,
     eventId: number,
-    event: Record<string, unknown>,
+    event: object,
   ): Promise<void> {
     const filePath = this.sessionPath(clientId, requestId);
     const dirPath = dirname(filePath);
@@ -278,6 +278,16 @@ export class SessionStore {
       }
     }
 
+    // 첫 user_message에서 프롬프트 추출
+    let prompt: string | undefined;
+    for (const record of records) {
+      const evt = record.event as Record<string, unknown>;
+      if (evt.type === "user_message" && typeof evt.text === "string") {
+        prompt = evt.text;
+        break;
+      }
+    }
+
     return {
       clientId,
       requestId,
@@ -286,6 +296,7 @@ export class SessionStore {
       lastEventType,
       createdAt,
       completedAt,
+      prompt,
     };
   }
 }

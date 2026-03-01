@@ -951,19 +951,19 @@ describe("applyDagreLayout tool chain width expansion", () => {
       {
         id: "n-thinking",
         type: "default",
-        data: { nodeType: "thinking", label: "thinking", content: "" },
+        data: { nodeType: "thinking", label: "thinking", content: "", streaming: false },
         position: { x: 0, y: 0 },
       },
       {
         id: "n-tool-call",
         type: "default",
-        data: { nodeType: "tool_call", label: "call", content: "" },
+        data: { nodeType: "tool_call", label: "call", content: "", streaming: false },
         position: { x: 0, y: 0 },
       },
       {
         id: "n-tool-result",
         type: "default",
-        data: { nodeType: "tool_result", label: "result", content: "" },
+        data: { nodeType: "tool_result", label: "result", content: "", streaming: false },
         position: { x: 0, y: 0 },
       },
     ];

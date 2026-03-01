@@ -38,6 +38,42 @@ export function createTestApp(options: TestAppOptions): TestAppContext {
   const soulBaseUrl = `http://localhost:${options.soulPort ?? 39999}`;
   const soulClient = new SoulClient({ soulBaseUrl });
 
+  // Soul 이벤트 → EventHub 브로드캐스트 + JSONL 저장
+  // (프로덕션 index.ts와 동일한 배선 — alias 포워딩 포함)
+  soulClient.onEvent((sessionKey, eventId, event) => {
+    const alias = eventHub.resolveAlias(sessionKey);
+
+    if (alias) {
+      const resolvedId = eventId + alias.eventIdOffset;
+      eventHub.broadcast(alias.targetKey, resolvedId, event);
+
+      const sepIdx = alias.targetKey.indexOf(":");
+      if (sepIdx !== -1) {
+        const clientId = alias.targetKey.slice(0, sepIdx);
+        const requestId = alias.targetKey.slice(sepIdx + 1);
+        sessionStore
+          .appendEvent(clientId, requestId, resolvedId, event)
+          .catch(() => {});
+      }
+
+      if (event.type === "complete" || event.type === "error" || event.type === "result") {
+        eventHub.removeAlias(sessionKey);
+      }
+      return;
+    }
+
+    eventHub.broadcast(sessionKey, eventId, event);
+
+    const sepIdx = sessionKey.indexOf(":");
+    if (sepIdx !== -1) {
+      const clientId = sessionKey.slice(0, sepIdx);
+      const requestId = sessionKey.slice(sepIdx + 1);
+      sessionStore
+        .appendEvent(clientId, requestId, eventId, event)
+        .catch(() => {});
+    }
+  });
+
   const app = express();
   app.use(express.json({ limit: "1mb" }));
 
@@ -57,7 +93,7 @@ export function createTestApp(options: TestAppOptions): TestAppContext {
   );
   app.use(
     "/api/sessions",
-    createActionsRouter({ soulBaseUrl }),
+    createActionsRouter({ soulBaseUrl, eventHub, sessionStore, soulClient }),
   );
 
   return { app, sessionStore, eventHub, soulClient };

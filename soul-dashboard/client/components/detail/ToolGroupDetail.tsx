@@ -6,8 +6,9 @@
  */
 
 import type { DashboardCard } from "@shared/types";
-import { monoFont, SectionLabel } from "./shared";
+import { SectionLabel } from "./shared";
 import { useDashboardStore } from "../../stores/dashboard-store";
+import { cn } from "../../lib/cn";
 
 /** ToolGroupDetail에 전달되는 데이터 타입 (스토어의 selectedEventNodeData에서 추출) */
 export interface ToolGroupData {
@@ -31,38 +32,14 @@ export function ToolGroupDetail({ data }: { data: ToolGroupData }) {
   const errorCount = groupedCards.filter((c) => c.isError).length;
 
   return (
-    <div style={{ padding: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+    <div className="p-4 flex flex-col gap-3">
       {/* Header */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "8px",
-        }}
-      >
-        <span style={{ fontSize: "16px" }}>📦</span>
-        <div
-          style={{
-            fontSize: "11px",
-            color: "#d97706",
-            textTransform: "uppercase",
-            letterSpacing: "0.05em",
-            fontWeight: 600,
-          }}
-        >
+      <div className="flex items-center gap-2">
+        <span className="text-base">📦</span>
+        <div className="text-[11px] text-amber-600 uppercase tracking-[0.05em] font-semibold">
           Tool Group
         </div>
-        <span
-          style={{
-            marginLeft: "auto",
-            fontSize: "12px",
-            color: "#d97706",
-            fontWeight: 700,
-            padding: "2px 8px",
-            borderRadius: 4,
-            backgroundColor: "rgba(217, 119, 6, 0.12)",
-          }}
-        >
+        <span className="ml-auto text-xs text-amber-600 font-bold px-2 py-0.5 rounded bg-amber-600/12">
           ×{count}
         </span>
       </div>
@@ -71,12 +48,7 @@ export function ToolGroupDetail({ data }: { data: ToolGroupData }) {
       <div>
         <SectionLabel>Tool</SectionLabel>
         <div
-          style={{
-            fontSize: "14px",
-            color: "#e5e7eb",
-            fontWeight: 600,
-            fontFamily: monoFont,
-          }}
+          className="text-sm text-foreground font-semibold font-mono"
         >
           {toolName}
         </div>
@@ -85,10 +57,10 @@ export function ToolGroupDetail({ data }: { data: ToolGroupData }) {
       {/* Summary */}
       <div>
         <SectionLabel>Summary</SectionLabel>
-        <div style={{ fontSize: "12px", color: "#9ca3af" }}>
+        <div className="text-xs text-muted-foreground">
           {count} calls
           {errorCount > 0 && (
-            <span style={{ color: "#ef4444", marginLeft: "8px" }}>
+            <span className="text-accent-red ml-2">
               ({errorCount} error{errorCount > 1 ? "s" : ""})
             </span>
           )}
@@ -98,52 +70,41 @@ export function ToolGroupDetail({ data }: { data: ToolGroupData }) {
       {/* Individual calls */}
       <div>
         <SectionLabel>Calls ({groupedCards.length})</SectionLabel>
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+        <div className="flex flex-col gap-2">
           {groupedCards.map((card, idx) => (
             <div
               key={card.cardId}
-              style={{
-                background: card.isError
-                  ? "rgba(239, 68, 68, 0.08)"
-                  : "rgba(0,0,0,0.3)",
-                borderRadius: "6px",
-                padding: "8px 10px",
-                borderLeft: `3px solid ${card.isError ? "#ef4444" : card.completed ? "#22c55e" : "#f59e0b"}`,
-              }}
+              className={cn(
+                "rounded-md p-2 px-2.5 border-l-[3px]",
+                card.isError
+                  ? "bg-destructive/8 border-l-accent-red"
+                  : card.completed
+                    ? "bg-input border-l-success"
+                    : "bg-input border-l-accent-amber",
+              )}
             >
               {/* Call header */}
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                  marginBottom: "4px",
-                }}
-              >
-                <span style={{ fontSize: "10px", color: "#6b7280" }}>
+              <div className="flex items-center gap-1.5 mb-1">
+                <span className="text-[10px] text-muted-foreground">
                   #{idx + 1}
                 </span>
                 <span
-                  style={{
-                    fontSize: "10px",
-                    fontFamily: monoFont,
-                    color: "#4b5563",
-                  }}
+                  className="text-[10px] text-muted-foreground/60 font-mono"
                 >
                   {card.cardId}
                 </span>
                 {card.isError && (
-                  <span style={{ fontSize: "10px", color: "#ef4444", marginLeft: "auto" }}>
+                  <span className="text-[10px] text-accent-red ml-auto">
                     ❌ Error
                   </span>
                 )}
                 {!card.isError && card.completed && (
-                  <span style={{ fontSize: "10px", color: "#22c55e", marginLeft: "auto" }}>
+                  <span className="text-[10px] text-success ml-auto">
                     ✅
                   </span>
                 )}
                 {!card.completed && (
-                  <span style={{ fontSize: "10px", color: "#f59e0b", marginLeft: "auto" }}>
+                  <span className="text-[10px] text-accent-amber ml-auto">
                     ⏳ running
                   </span>
                 )}
@@ -152,15 +113,11 @@ export function ToolGroupDetail({ data }: { data: ToolGroupData }) {
               {/* Input summary */}
               {card.toolInput && (
                 <div
-                  style={{
-                    fontSize: "11px",
-                    color: "#9ca3af",
-                    fontFamily: monoFont,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                    marginBottom: card.toolResult ? "4px" : 0,
-                  }}
+                  className={cn(
+                    "text-[11px] text-muted-foreground truncate",
+                    card.toolResult !== undefined ? "mb-1" : "",
+                    "font-mono",
+                  )}
                 >
                   {summarizeInput(card.toolInput)}
                 </div>
@@ -169,14 +126,11 @@ export function ToolGroupDetail({ data }: { data: ToolGroupData }) {
               {/* Result summary */}
               {card.toolResult !== undefined && (
                 <div
-                  style={{
-                    fontSize: "11px",
-                    color: card.isError ? "#fca5a5" : "#6b7280",
-                    fontFamily: monoFont,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
+                  className={cn(
+                    "text-[11px] truncate",
+                    card.isError ? "text-destructive-foreground" : "text-muted-foreground",
+                    "font-mono",
+                  )}
                 >
                   → {card.toolResult.length > 80 ? card.toolResult.slice(0, 77) + "..." : card.toolResult}
                 </div>

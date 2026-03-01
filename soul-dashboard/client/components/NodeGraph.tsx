@@ -33,7 +33,7 @@ import {
 const REBUILD_DEBOUNCE_MS = 100;
 
 /** 고정 줌 비율 (Complete 상태 기준) */
-const FIXED_ZOOM = 0.75;
+const FIXED_ZOOM = 0.9;
 
 /** 최소 줌 비율 (ReactFlow minZoom과 동기화) */
 const MIN_ZOOM = 0.1;
@@ -124,6 +124,13 @@ function NodeGraphInner() {
   const prevNodeIdsRef = useRef<Set<string>>(new Set());
   // 첫 로드 판별 플래그
   const hasInitializedRef = useRef(false);
+  // 이전 세션 키 추적 (세션 전환 시 fit-to-view 리셋용)
+  const prevSessionKeyRef = useRef<string | null>(null);
+  // 선택 상태를 ref로 추적 (useEffect 의존성에서 제거하여 선택 취소 루프 방지)
+  const selectedCardIdRef = useRef(selectedCardId);
+  const selectedNodeIdRef = useRef(selectedNodeId);
+  selectedCardIdRef.current = selectedCardId;
+  selectedNodeIdRef.current = selectedNodeId;
 
   // 카드/이벤트가 변경되면 그래프 재구성 (디바운스 적용)
   useEffect(() => {
@@ -132,8 +139,16 @@ function NodeGraphInner() {
       setEdges([]);
       prevNodeIdsRef.current = new Set();
       hasInitializedRef.current = false;
+      prevSessionKeyRef.current = null;
       return;
     }
+
+    // 세션 전환 감지: 다른 세션으로 바뀌면 fit-to-view를 다시 수행하도록 리셋
+    if (prevSessionKeyRef.current !== null && prevSessionKeyRef.current !== activeSessionKey) {
+      prevNodeIdsRef.current = new Set();
+      hasInitializedRef.current = false;
+    }
+    prevSessionKeyRef.current = activeSessionKey;
 
     let rafId: number | undefined;
 
@@ -146,11 +161,14 @@ function NodeGraphInner() {
 
       // 선택된 노드 반영: selectedNodeId(고유 노드 ID)로 판별하여
       // tool_call/tool_result가 동시 선택되는 문제를 방지
+      // ref를 사용하여 선택 상태 변경이 useEffect를 재트리거하지 않도록 함
+      const curSelectedNodeId = selectedNodeIdRef.current;
+      const curSelectedCardId = selectedCardIdRef.current;
       const nodesWithSelection = newNodes.map((n) => ({
         ...n,
-        selected: selectedNodeId
-          ? n.id === selectedNodeId
-          : n.data.cardId === selectedCardId,
+        selected: curSelectedNodeId
+          ? n.id === curSelectedNodeId
+          : n.data.cardId === curSelectedCardId,
       }));
 
       setNodes(nodesWithSelection);
@@ -165,13 +183,15 @@ function NodeGraphInner() {
 
       if (addedNodes.length > 0) {
         const isFirstLoad = !hasInitializedRef.current;
-        hasInitializedRef.current = true;
 
         rafId = requestAnimationFrame(() => {
           const { width: vpW, height: vpH } = store.getState();
-          if (vpW === 0 || vpH === 0) return;
+          if (vpW === 0 || vpH === 0) return; // 캔버스 미준비 → hasInitialized 유지하여 재시도
 
           if (isFirstLoad) {
+            // 캔버스 준비 확인 후에만 초기화 완료로 표시
+            hasInitializedRef.current = true;
+
             // === 세션 변경(첫 로드): 줌 허용 1회 ===
             // 1. 전체 노드의 바운딩 박스 계산
             let minX = Infinity;
@@ -189,7 +209,7 @@ function NodeGraphInner() {
             // 2. 바운딩 박스와 뷰포트 비교하여 적절한 줌 계산
             const graphW = maxX - minX;
             const graphH = maxY - minY;
-            const INIT_PADDING = 0.3;
+            const INIT_PADDING = 0.15;
             let zoom = FIXED_ZOOM;
             if (graphW > 0 && graphH > 0) {
               const fitZoomX = vpW / (graphW * (1 + INIT_PADDING));
@@ -198,14 +218,9 @@ function NodeGraphInner() {
               zoom = Math.max(zoom, MIN_ZOOM);
             }
 
-            // 3. 가장 최근(마지막) 노드가 화면 중앙에 오도록 viewport 설정
-            // NOTE: 줌은 전체 그래프 기준이지만 center는 마지막 노드 기준이므로,
-            // 그래프가 클 경우 초기 노드들이 뷰포트 밖에 위치할 수 있음 (의도된 동작)
-            const lastNode = nodesWithSelection[nodesWithSelection.length - 1];
-            if (!lastNode) return;
-            const lastDims = getNodeDimensions(lastNode.data.nodeType);
-            const centerX = lastNode.position.x + lastDims.width / 2;
-            const centerY = lastNode.position.y + lastDims.height / 2;
+            // 3. 전체 그래프의 바운딩 박스 중앙을 뷰포트 중앙에 배치
+            const centerX = (minX + maxX) / 2;
+            const centerY = (minY + maxY) / 2;
 
             setViewport(
               {
@@ -217,6 +232,9 @@ function NodeGraphInner() {
             );
             return;
           }
+
+          // 스트리밍 중에도 초기화 완료로 표시
+          hasInitializedRef.current = true;
 
           // === 스트리밍 노드 추가: 줌 절대 변경 금지, pan만 수행 ===
           const viewport = getViewport();
@@ -244,14 +262,24 @@ function NodeGraphInner() {
     graphEvents,
     collapsedGroups,
     activeSessionKey,
-    selectedCardId,
-    selectedNodeId,
     setNodes,
     setEdges,
     getViewport,
     setViewport,
     store,
   ]);
+
+  // 선택 상태 변경 시 노드의 selected 속성만 업데이트 (그래프 재구성 없이)
+  useEffect(() => {
+    setNodes((prev) =>
+      prev.map((n) => {
+        const shouldSelect = selectedNodeId
+          ? n.id === selectedNodeId
+          : n.data.cardId === selectedCardId;
+        return n.selected === shouldSelect ? n : { ...n, selected: shouldSelect };
+      }),
+    );
+  }, [selectedCardId, selectedNodeId, setNodes]);
 
   // 노드 선택 → 카드 선택 또는 이벤트 노드 선택 동기화
   const onSelectionChange = useCallback(
@@ -279,8 +307,8 @@ function NodeGraphInner() {
           return;
         }
 
-        // user/intervention 등 카드 기반이 아닌 노드 → 이벤트 노드 데이터 저장
-        if (nodeType === "user" || nodeType === "intervention") {
+        // user/intervention/system 등 카드 기반이 아닌 노드 → 이벤트 노드 데이터 저장
+        if (nodeType === "user" || nodeType === "intervention" || nodeType === "system") {
           selectEventNode({
             nodeType,
             label: (nodeData?.label as string) ?? "",
@@ -298,28 +326,17 @@ function NodeGraphInner() {
   // 빈 상태
   if (!activeSessionKey) {
     return (
-      <div style={emptyStateStyle}>
-        <div style={{ color: "#6b7280", fontSize: 13 }}>Select a session</div>
+      <div className="flex-1 flex items-center justify-center h-full">
+        <div className="text-muted-foreground text-[13px]">Select a session</div>
       </div>
     );
   }
 
   if (cards.length === 0) {
     return (
-      <div style={emptyStateStyle}>
-        <div style={{ color: "#6b7280", fontSize: 13 }}>
-          <span
-            style={{
-              display: "inline-block",
-              width: 6,
-              height: 6,
-              borderRadius: "50%",
-              backgroundColor: "#22c55e",
-              animation: "pulse 2s infinite",
-              marginRight: 8,
-              verticalAlign: "middle",
-            }}
-          />
+      <div className="flex-1 flex items-center justify-center h-full">
+        <div className="text-muted-foreground text-[13px]">
+          <span className="inline-block w-1.5 h-1.5 rounded-full bg-success animate-[pulse_2s_infinite] mr-2 align-middle" />
           Waiting for events...
         </div>
       </div>
@@ -364,18 +381,13 @@ export function NodeGraph() {
   return (
     <div
       data-testid="node-graph"
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        height: "100%",
-        overflow: "hidden",
-      }}
+      className="flex flex-col h-full overflow-hidden"
     >
       {/* Header */}
       <GraphHeader />
 
       {/* React Flow Canvas */}
-      <div style={{ flex: 1, overflow: "hidden" }}>
+      <div className="flex-1 overflow-hidden">
         <ReactFlowProvider>
           <NodeGraphInner />
         </ReactFlowProvider>
@@ -394,60 +406,19 @@ function GraphHeader() {
   );
 
   return (
-    <div
-      style={{
-        padding: "12px 14px",
-        borderBottom: "1px solid rgba(255,255,255,0.08)",
-        fontSize: "12px",
-        fontWeight: 600,
-        color: "#9ca3af",
-        textTransform: "uppercase",
-        letterSpacing: "0.05em",
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-      }}
-    >
+    <div className="py-3 px-3.5 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-[0.05em] flex justify-between items-center">
       <span>Execution Flow</span>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div className="flex items-center gap-2">
         {streamingCount > 0 && (
-          <span
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 4,
-              color: "#22c55e",
-              fontWeight: 400,
-              fontSize: 11,
-              textTransform: "none",
-            }}
-          >
-            <span
-              style={{
-                width: 5,
-                height: 5,
-                borderRadius: "50%",
-                backgroundColor: "#22c55e",
-                animation: "pulse 2s infinite",
-              }}
-            />
+          <span className="flex items-center gap-1 text-success font-normal text-[11px] normal-case">
+            <span className="w-[5px] h-[5px] rounded-full bg-success animate-[pulse_2s_infinite]" />
             {streamingCount} active
           </span>
         )}
-        <span style={{ color: "#6b7280", fontWeight: 400 }}>
+        <span className="text-muted-foreground font-normal">
           {cards.length}
         </span>
       </div>
     </div>
   );
 }
-
-// === Styles ===
-
-const emptyStateStyle: React.CSSProperties = {
-  flex: 1,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  height: "100%",
-};

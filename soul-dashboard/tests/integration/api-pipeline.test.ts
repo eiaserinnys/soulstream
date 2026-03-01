@@ -280,6 +280,129 @@ describe("API Pipeline Integration", () => {
     });
   });
 
+  // === [2-resume] 대시보드에서 세션 재개 ===
+
+  describe("[체크리스트 2-resume] 완료된 세션 재개", () => {
+    it("POST /api/sessions/:id/resume으로 완료된 세션 이어가기", async () => {
+      // 1) session 이벤트 포함된 완료 세션 생성
+      createTestJsonl("dashboard", "req-resume-target", [
+        { id: 0, event: { type: "user_message", text: "original prompt", user: "dashboard" } },
+        { id: 1, event: { type: "session", session_id: "claude-sess-resume-123" } },
+        { id: 2, event: { type: "progress", text: "Working..." } },
+        { id: 3, event: { type: "complete", result: "Done", attachments: [] } },
+      ]);
+
+      // 2) resume API 호출
+      const res = await fetch(
+        `http://localhost:${dashPort}/api/sessions/dashboard:req-resume-target/resume`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: "Continue the analysis" }),
+        },
+      );
+
+      expect(res.status).toBe(201);
+      const data = await res.json();
+
+      // resume은 원래 세션에 이벤트가 이어지므로 sessionKey가 원래 세션 키
+      expect(data.sessionKey).toBe("dashboard:req-resume-target");
+      expect(data.resumedFrom).toBe("dashboard:req-resume-target");
+      expect(data.resumeSessionId).toBe("claude-sess-resume-123");
+      expect(data.status).toBe("running");
+
+      // 3) Soul 서버가 resume_session_id를 포함한 요청을 수신했는지 확인
+      expect(soulRequests).toHaveLength(1);
+      expect(soulRequests[0].type).toBe("execute");
+      expect((soulRequests[0].body as any).prompt).toBe("Continue the analysis");
+      expect((soulRequests[0].body as any).resume_session_id).toBe("claude-sess-resume-123");
+    });
+
+    it("실행 중인 세션은 재개 불가 (409)", async () => {
+      createTestJsonl("dashboard", "req-still-running", [
+        { id: 0, event: { type: "user_message", text: "running session", user: "dashboard" } },
+        { id: 1, event: { type: "progress", text: "Still working..." } },
+      ]);
+
+      const res = await fetch(
+        `http://localhost:${dashPort}/api/sessions/dashboard:req-still-running/resume`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: "try to resume" }),
+        },
+      );
+
+      expect(res.status).toBe(409);
+      const data = await res.json();
+      expect(data.error.code).toBe("SESSION_STILL_RUNNING");
+    });
+
+    it("session 이벤트 없는 세션은 재개 불가 (404)", async () => {
+      createTestJsonl("dashboard", "req-no-session-id", [
+        { id: 0, event: { type: "user_message", text: "no session event", user: "dashboard" } },
+        { id: 1, event: { type: "complete", result: "Done" } },
+      ]);
+
+      const res = await fetch(
+        `http://localhost:${dashPort}/api/sessions/dashboard:req-no-session-id/resume`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: "try to resume" }),
+        },
+      );
+
+      expect(res.status).toBe(404);
+      const data = await res.json();
+      expect(data.error.code).toBe("SESSION_NOT_FOUND");
+    });
+  });
+
+  // === Soul 이벤트 저장 ===
+
+  describe("Soul 이벤트 → JSONL 저장 + 상태 복원", () => {
+    it("soulClient.onEvent으로 수신한 이벤트가 JSONL에 저장되어 세션 상태가 반영됨", async () => {
+      // 1) user_message만 있는 세션 생성 (running 상태)
+      createTestJsonl("dashboard", "req-soul-events", [
+        { id: 0, event: { type: "user_message", text: "test prompt", user: "dashboard" } },
+      ]);
+
+      // 세션 목록 확인: running
+      const resBefore = await fetch(`http://localhost:${dashPort}/api/sessions`);
+      const dataBefore = await resBefore.json();
+      const sessionBefore = dataBefore.sessions.find(
+        (s: any) => s.requestId === "req-soul-events",
+      );
+      expect(sessionBefore.status).toBe("running");
+
+      // 2) sessionStore.appendEvent를 직접 호출하여 이벤트 저장
+      //    (프로덕션에서는 Soul SSE → soulClient → onEvent → appendEvent)
+      //    fire-and-forget 핸들러 대신 직접 await하여 JSONL 쓰기 완료를 보장
+      await ctx.sessionStore.appendEvent(
+        "dashboard", "req-soul-events", 1,
+        { type: "session", session_id: "sess-abc" },
+      );
+      await ctx.sessionStore.appendEvent(
+        "dashboard", "req-soul-events", 2,
+        { type: "progress", text: "Working..." },
+      );
+      await ctx.sessionStore.appendEvent(
+        "dashboard", "req-soul-events", 3,
+        { type: "complete", result: "All done" },
+      );
+
+      // 3) 세션 목록 다시 확인: completed
+      const resAfter = await fetch(`http://localhost:${dashPort}/api/sessions`);
+      const dataAfter = await resAfter.json();
+      const sessionAfter = dataAfter.sessions.find(
+        (s: any) => s.requestId === "req-soul-events",
+      );
+      expect(sessionAfter.status).toBe("completed");
+      expect(sessionAfter.eventCount).toBe(4); // user_message + session + progress + complete
+    });
+  });
+
   // === Health check ===
 
   describe("Health check", () => {

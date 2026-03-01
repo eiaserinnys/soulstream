@@ -8,8 +8,9 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { getAuthHeaders } from "../lib/api-headers";
+import { cn } from "../lib/cn";
+import { Button } from "./ui/button";
 
-const ACCENT = "#3b82f6";
 /** Soul 서버의 MAX_PROMPT_LENGTH과 일치 (세션 생성 프롬프트의 최대 길이) */
 const MAX_LENGTH = 100_000;
 
@@ -108,61 +109,22 @@ export function PromptComposer() {
   );
 
   const isResume = !!resumeTargetKey;
+  const isDisabled = sending || !text.trim();
 
   return (
     <div
       data-testid="prompt-composer"
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        height: "100%",
-        padding: "40px",
-        animation: "fadeIn 0.2s ease-out",
-      }}
+      className="flex flex-col items-center justify-center h-full p-10 animate-[fadeIn_0.2s_ease-out]"
     >
-      <style>{`
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
-
-      <div
-        style={{
-          width: "100%",
-          maxWidth: "600px",
-          display: "flex",
-          flexDirection: "column",
-          gap: "16px",
-        }}
-      >
+      <div className="w-full max-w-[600px] flex flex-col gap-4">
         {/* Title */}
-        <div
-          style={{
-            fontSize: "16px",
-            fontWeight: 600,
-            color: "#e5e7eb",
-            textAlign: "center",
-          }}
-        >
+        <div className="text-base font-semibold text-foreground text-center">
           {isResume ? "Continue Conversation" : "New Conversation"}
         </div>
 
         {/* Resume context */}
         {isResume && (
-          <div
-            style={{
-              fontSize: "12px",
-              color: "#9ca3af",
-              textAlign: "center",
-              padding: "8px 12px",
-              backgroundColor: "rgba(59, 130, 246, 0.08)",
-              borderRadius: "6px",
-              border: "1px solid rgba(59, 130, 246, 0.15)",
-            }}
-          >
+          <div className="text-xs text-muted-foreground text-center py-2 px-3 bg-accent-blue/8 rounded-md border border-accent-blue/15">
             Resuming from: {resumeTargetKey}
           </div>
         )}
@@ -180,95 +142,36 @@ export function PromptComposer() {
           }
           disabled={sending}
           rows={3}
-          style={{
-            width: "100%",
-            backgroundColor: "rgba(0,0,0,0.3)",
-            border: "1px solid rgba(255,255,255,0.12)",
-            borderRadius: "8px",
-            padding: "14px 16px",
-            fontSize: "14px",
-            color: "#d1d5db",
-            fontFamily:
-              "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-            resize: "none",
-            outline: "none",
-            minHeight: "80px",
-            maxHeight: "200px",
-            lineHeight: "1.5",
-            transition: "border-color 0.15s",
-          }}
-          onFocus={(e) => {
-            e.currentTarget.style.borderColor = "rgba(59, 130, 246, 0.4)";
-          }}
-          onBlur={(e) => {
-            e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
-          }}
+          className="w-full bg-input border border-input rounded-lg py-3.5 px-4 text-sm text-foreground font-sans resize-none outline-none min-h-20 max-h-[200px] leading-normal transition-colors duration-150 focus:border-accent-blue/40"
         />
 
         {/* Actions */}
-        <div
-          style={{
-            display: "flex",
-            gap: "8px",
-            justifyContent: "flex-end",
-            alignItems: "center",
-          }}
-        >
-          <span style={{ fontSize: "11px", color: "#4b5563", flex: 1 }}>
+        <div className="flex gap-2 justify-end items-center">
+          <span className="text-[11px] text-muted-foreground/60 flex-1">
             Ctrl+Enter to submit, Esc to cancel
           </span>
 
-          <button
+          <Button
+            variant="outline"
             onClick={cancelCompose}
             disabled={sending}
-            style={{
-              padding: "8px 16px",
-              borderRadius: "6px",
-              border: "1px solid rgba(255,255,255,0.1)",
-              backgroundColor: "transparent",
-              color: "#9ca3af",
-              fontSize: "13px",
-              cursor: "pointer",
-              transition: "all 0.15s",
-            }}
           >
             Cancel
-          </button>
+          </Button>
 
-          <button
+          <Button
             data-testid="compose-submit"
             onClick={submit}
-            disabled={sending || !text.trim()}
-            style={{
-              padding: "8px 20px",
-              borderRadius: "6px",
-              border: "none",
-              backgroundColor:
-                sending || !text.trim()
-                  ? "rgba(255,255,255,0.05)"
-                  : ACCENT,
-              color: sending || !text.trim() ? "#6b7280" : "#fff",
-              fontSize: "13px",
-              fontWeight: 600,
-              cursor: sending || !text.trim() ? "default" : "pointer",
-              transition: "all 0.15s",
-            }}
+            disabled={isDisabled}
+            className="bg-accent-blue border-accent-blue text-white hover:bg-accent-blue/90"
           >
             {sending ? "Starting..." : isResume ? "Resume" : "Start"}
-          </button>
+          </Button>
         </div>
 
         {/* Error */}
         {error && (
-          <div
-            style={{
-              fontSize: "12px",
-              color: "#ef4444",
-              padding: "8px 12px",
-              borderRadius: "6px",
-              backgroundColor: "rgba(239, 68, 68, 0.08)",
-            }}
-          >
+          <div className="text-xs text-accent-red py-2 px-3 rounded-md bg-accent-red/8">
             {error}
           </div>
         )}

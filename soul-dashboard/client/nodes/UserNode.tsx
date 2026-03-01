@@ -8,97 +8,41 @@
 import { memo } from 'react';
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import type { GraphNodeData } from '../lib/layout-engine';
+import { cn } from '../lib/cn';
+import { nodeBase, nodeBgDefault, nodeContent, nodeHeader, nodeLabel, truncate2, handleStyle } from './node-styles';
 
 type UserNodeType = Node<GraphNodeData, 'user'>;
 
 const ACCENT = '#3b82f6';
 
-const truncateStyle: React.CSSProperties = {
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  display: '-webkit-box',
-  WebkitLineClamp: 2,
-  WebkitBoxOrient: 'vertical',
-};
-
 export const UserNode = memo(function UserNode({ data, selected }: NodeProps<UserNodeType>) {
   return (
     <div
       data-testid="user-node"
-      style={{
-        width: 260,
-        height: 84,
-        boxSizing: 'border-box',
-        background: 'rgba(17, 24, 39, 0.95)',
-        border: selected
-          ? `1px solid ${ACCENT}`
-          : '1px solid rgba(255,255,255,0.1)',
-        borderRadius: 8,
-        boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
-        display: 'flex',
-        overflow: 'hidden',
-      }}
+      className={cn(
+        nodeBase, nodeBgDefault,
+        "border",
+        selected ? "border-accent-blue" : "border-border",
+      )}
     >
       {/* Left accent bar */}
-      <div
-        style={{
-          width: 4,
-          flexShrink: 0,
-          background: ACCENT,
-          borderRadius: '8px 0 0 8px',
-        }}
-      />
+      <div className="w-1 shrink-0 bg-accent-blue rounded-l-lg" />
 
       {/* Content area */}
-      <div style={{ flex: 1, padding: '10px 12px', minWidth: 0 }}>
+      <div className={nodeContent}>
         {/* Header row */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            marginBottom: 6,
-          }}
-        >
+        <div className={nodeHeader}>
           {/* Avatar circle */}
-          <div
-            style={{
-              width: 20,
-              height: 20,
-              borderRadius: '50%',
-              background: `${ACCENT}33`,
-              border: `1px solid ${ACCENT}66`,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: 11,
-              flexShrink: 0,
-            }}
-          >
+          <div className="w-5 h-5 rounded-full bg-accent-blue/20 border border-accent-blue/40 flex items-center justify-center text-[11px] shrink-0">
             {'\u{1F464}'}
           </div>
-          <span
-            style={{
-              fontSize: 10,
-              color: '#6b7280',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-              fontWeight: 600,
-            }}
-          >
+          <span className={cn(nodeLabel, "text-muted-foreground")}>
             User
           </span>
         </div>
 
         {/* Truncated content */}
-        <div
-          style={{
-            fontSize: 12,
-            color: '#d1d5db',
-            lineHeight: '1.5',
-            ...truncateStyle,
-          }}
-        >
+        <div className={cn("text-xs text-foreground leading-normal", truncate2)}>
           {data.content || data.label || '(empty)'}
         </div>
       </div>
@@ -107,12 +51,7 @@ export const UserNode = memo(function UserNode({ data, selected }: NodeProps<Use
       <Handle
         type="source"
         position={Position.Bottom}
-        style={{
-          width: 8,
-          height: 8,
-          background: ACCENT,
-          border: '2px solid rgba(17, 24, 39, 0.95)',
-        }}
+        style={handleStyle(ACCENT)}
       />
     </div>
   );

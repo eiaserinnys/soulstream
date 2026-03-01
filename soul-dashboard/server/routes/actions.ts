@@ -30,6 +30,8 @@ export interface ActionsRouterOptions {
   eventHub?: EventHub;
   /** SessionStore 인스턴스 (user_message JSONL persist용) */
   sessionStore?: SessionStore;
+  /** SoulClient 인스턴스 (resume 시 새 세션 구독용) */
+  soulClient?: import("../soul-client.js").SoulClient;
 }
 
 /**
@@ -116,7 +118,7 @@ async function executeSoul(opts: {
 }
 
 export function createActionsRouter(options: ActionsRouterOptions): Router {
-  const { soulBaseUrl, authToken, eventHub, sessionStore } = options;
+  const { soulBaseUrl, authToken, eventHub, sessionStore, soulClient } = options;
   const router = Router();
 
   /**
@@ -260,8 +262,17 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
       let claudeSessionId: string | undefined;
       let lastEventType: string | undefined;
       for (const record of events) {
+        // session 이벤트에서 session_id 추출 (우선)
         if (record.event.type === "session" && typeof record.event.session_id === "string") {
           claudeSessionId = record.event.session_id;
+        }
+        // complete 이벤트에도 claude_session_id가 있을 수 있음 (fallback)
+        if (
+          record.event.type === "complete" &&
+          typeof record.event.claude_session_id === "string" &&
+          !claudeSessionId
+        ) {
+          claudeSessionId = record.event.claude_session_id;
         }
         if (typeof record.event.type === "string") {
           lastEventType = record.event.type;
@@ -289,31 +300,91 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
         return;
       }
 
-      // 원래 세션의 clientId를 유지하거나, body에서 명시적으로 지정 가능
-      const clientId = body.clientId ?? origClientId;
-      const requestId = generateRequestId();
-
-      const result = await executeSoul({
-        soulBaseUrl,
-        authToken,
-        clientId,
-        requestId,
-        prompt: body.prompt,
-        resumeSessionId: claudeSessionId,
-        eventHub,
-        sessionStore,
-      });
-
-      if (!result.ok) {
-        res.status(result.status).json({ error: result.error });
+      // resume에 soulClient가 필수 (새 세션 SSE 구독 필요)
+      if (!soulClient) {
+        res.status(500).json({
+          error: {
+            code: "INTERNAL_ERROR",
+            message: "SoulClient not available for resume",
+          },
+        });
         return;
       }
 
+      // 원래 세션에 이어지도록 처리:
+      // Soul 서버에는 새 requestId로 요청하되 (이벤트 ID 충돌 방지),
+      // 대시보드에는 원래 세션으로 이벤트가 포워딩됨
+      const origSessionKey = `${origClientId}:${origRequestId}`;
+      const newRequestId = generateRequestId();
+      const newSessionKey = `${origClientId}:${newRequestId}`;
+
+      // 원래 세션의 최대 이벤트 ID 계산 (offset 기준)
+      const maxEventId = events.reduce((max, ev) => Math.max(max, ev.id), 0);
+      const eventIdOffset = maxEventId + 1;
+
+      // user_message를 원래 세션에 직접 추가 (offset ID 적용)
+      const userMessageEvent: UserMessageEvent = {
+        type: "user_message",
+        user: origClientId,
+        text: body.prompt,
+      };
+
+      if (eventHub) {
+        eventHub.broadcast(origSessionKey, eventIdOffset, userMessageEvent);
+        // 새 세션 → 원래 세션으로의 이벤트 포워딩 alias 등록
+        eventHub.addAlias(newSessionKey, origSessionKey, eventIdOffset + 1);
+      }
+
+      if (sessionStore) {
+        sessionStore
+          .appendEvent(origClientId, origRequestId, eventIdOffset, userMessageEvent)
+          .catch((err) => {
+            console.warn(`[actions] Failed to persist resume user_message for ${origSessionKey}:`, err);
+          });
+      }
+
+      // alias와 subscribe를 fetch 전에 등록하여 이벤트 유실 방지
+      soulClient.subscribe(origClientId, newRequestId);
+
+      // Soul 서버에 새 태스크로 요청
+      const soulResponse = await fetch(`${soulBaseUrl}/execute`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        },
+        body: JSON.stringify({
+          client_id: origClientId,
+          request_id: newRequestId,
+          prompt: body.prompt,
+          resume_session_id: claudeSessionId,
+          use_mcp: true,
+        }),
+      });
+
+      if (!soulResponse.ok) {
+        const errorBody = await soulResponse.text();
+        console.error(`[actions] Soul execute failed (${soulResponse.status}):`, errorBody);
+        // 실패 시 alias와 subscription 정리
+        if (eventHub) eventHub.removeAlias(newSessionKey);
+        soulClient.unsubscribe(origClientId, newRequestId);
+        res.status(502).json({
+          error: {
+            code: "SOUL_ERROR",
+            message: `Soul server returned ${soulResponse.status}`,
+            details: { body: errorBody },
+          },
+        });
+        return;
+      }
+
+      if (soulResponse.body) {
+        await soulResponse.body.cancel();
+      }
+
       res.status(201).json({
-        clientId,
-        requestId,
-        sessionKey: result.sessionKey,
-        resumedFrom: `${origClientId}:${origRequestId}`,
+        sessionKey: origSessionKey,
+        resumedFrom: origSessionKey,
         resumeSessionId: claudeSessionId,
         status: "running",
       });
@@ -420,6 +491,9 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
       }
 
       // 개입 메시지를 JSONL에 persist (히스토리 재생 시 유실 방지)
+      // eventId 0: Soul SSE 이벤트의 단조증가 ID와 별개이며,
+      // intervention_sent 이벤트가 Soul에서 적절한 ID로 오므로 재생에 영향 없음.
+      // Date.now()를 사용하면 resume 시 maxEventId가 왜곡되므로 사용하지 않음.
       if (sessionStore) {
         const interventionEvent = {
           type: "user_message",
@@ -430,8 +504,8 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
           .appendEvent(
             clientId,
             requestId,
-            Date.now(),
-            interventionEvent as unknown as Record<string, unknown>,
+            0,
+            interventionEvent,
           )
           .catch((err) => {
             console.warn(

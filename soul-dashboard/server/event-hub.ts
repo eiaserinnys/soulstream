@@ -24,11 +24,19 @@ interface SSEClient {
  * 3. EventHub가 해당 세션의 모든 클라이언트에게 이벤트 전송
  * 4. 클라이언트 연결 종료 → removeClient()
  */
+/** 세션 별칭: 새 세션 이벤트를 원래 세션으로 포워딩하기 위한 매핑 */
+interface SessionAlias {
+  targetKey: string;
+  eventIdOffset: number;
+}
+
 export class EventHub {
   /** sessionKey → SSEClient[] */
   private readonly clients = new Map<string, SSEClient[]>();
   /** clientId → SSEClient (모든 클라이언트 조회용) */
   private readonly allClients = new Map<string, SSEClient>();
+  /** 세션 별칭: sourceKey → { targetKey, eventIdOffset } */
+  private readonly sessionAliases = new Map<string, SessionAlias>();
   private clientIdCounter = 0;
 
   /**
@@ -221,6 +229,30 @@ export class EventHub {
   }
 
   /**
+   * 세션 별칭을 등록합니다.
+   * sourceKey의 이벤트가 targetKey 세션으로 포워딩됩니다.
+   * eventIdOffset만큼 이벤트 ID가 오프셋됩니다.
+   *
+   * Resume 시: 새 세션(sourceKey) → 원래 세션(targetKey)으로 이벤트를 포워딩합니다.
+   */
+  addAlias(sourceKey: string, targetKey: string, eventIdOffset: number): void {
+    this.sessionAliases.set(sourceKey, { targetKey, eventIdOffset });
+  }
+
+  /**
+   * 세션 별칭을 조회합니다.
+   * 별칭이 없으면 null을 반환합니다.
+   */
+  resolveAlias(sessionKey: string): SessionAlias | null {
+    return this.sessionAliases.get(sessionKey) ?? null;
+  }
+
+  /** 세션 별칭을 제거합니다. */
+  removeAlias(sourceKey: string): void {
+    this.sessionAliases.delete(sourceKey);
+  }
+
+  /**
    * 모든 SSE 클라이언트 연결을 종료합니다.
    * 서버 셧다운 시 호출합니다.
    */
@@ -228,5 +260,6 @@ export class EventHub {
     for (const [clientId] of this.allClients) {
       this.removeClient(clientId);
     }
+    this.sessionAliases.clear();
   }
 }

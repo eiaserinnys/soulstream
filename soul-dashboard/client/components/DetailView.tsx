@@ -17,6 +17,7 @@ import { SubAgentDetail } from "./detail/SubAgentDetail";
 import { ErrorDetail } from "./detail/ErrorDetail";
 import { ToolGroupDetail, type ToolGroupData } from "./detail/ToolGroupDetail";
 import { SectionLabel, CodeBlock } from "./detail/shared";
+import { ScrollArea } from "./ui/scroll-area";
 
 // === Detail Router ===
 
@@ -55,45 +56,23 @@ function EventNodeDetail({
   data: { nodeType: string; label: string; content: string };
 }) {
   const isUser = data.nodeType === "user";
-  const accent = isUser ? "#3b82f6" : "#f97316";
-  const icon = isUser ? "\u{1F464}" : "\u270B";
-  const typeLabel = isUser ? "User Message" : "Intervention";
 
   return (
-    <div style={{ padding: "16px" }}>
+    <div className="p-4">
       {/* Type badge */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "6px",
-          marginBottom: "12px",
-        }}
-      >
-        <span style={{ fontSize: "14px" }}>{icon}</span>
+      <div className="flex items-center gap-1.5 mb-3">
+        <span className="text-sm">{isUser ? "\u{1F464}" : "\u270B"}</span>
         <span
-          style={{
-            fontSize: "11px",
-            color: accent,
-            fontWeight: 600,
-            textTransform: "uppercase",
-            letterSpacing: "0.05em",
-          }}
+          className={`text-[11px] font-semibold uppercase tracking-[0.05em] ${isUser ? "text-accent-blue" : "text-accent-orange"}`}
         >
-          {typeLabel}
+          {isUser ? "User Message" : "Intervention"}
         </span>
       </div>
 
       {/* Label */}
-      <div style={{ marginBottom: "12px" }}>
+      <div className="mb-3">
         <SectionLabel>From</SectionLabel>
-        <div
-          style={{
-            fontSize: "13px",
-            color: "#d1d5db",
-            fontWeight: 500,
-          }}
-        >
+        <div className="text-[13px] text-foreground font-medium">
           {data.label}
         </div>
       </div>
@@ -125,67 +104,29 @@ export function DetailView() {
   return (
     <div
       data-testid="detail-view"
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        height: "100%",
-        overflow: "hidden",
-      }}
+      className="flex flex-col h-full overflow-hidden"
     >
       {/* Header */}
-      <div
-        style={{
-          padding: "12px 14px",
-          borderBottom: "1px solid rgba(255,255,255,0.08)",
-          fontSize: "12px",
-          fontWeight: 600,
-          color: "#9ca3af",
-          textTransform: "uppercase",
-          letterSpacing: "0.05em",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
+      <div className="py-3 px-3.5 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-[0.05em] flex justify-between items-center">
         <span>Detail</span>
         {selectedCard && (
           <span
-            style={{
-              fontSize: "10px",
-              color: "#4b5563",
-              fontWeight: 400,
-              textTransform: "none",
-              fontFamily: "'Cascadia Code', 'Fira Code', monospace",
-            }}
+            className="text-[10px] text-muted-foreground/60 font-normal normal-case font-mono"
           >
             {selectedCard.cardId}
           </span>
         )}
         {selectedEventNodeData && !selectedCard && (
-          <span
-            style={{
-              fontSize: "10px",
-              color: "#4b5563",
-              fontWeight: 400,
-              textTransform: "none",
-            }}
-          >
+          <span className="text-[10px] text-muted-foreground/60 font-normal normal-case">
             {selectedEventNodeData.nodeType}
           </span>
         )}
       </div>
 
       {/* Content */}
-      <div style={{ flex: 1, overflowY: "auto" }}>
+      <ScrollArea className="flex-1">
         {!hasSelection && (
-          <div
-            style={{
-              padding: "20px",
-              textAlign: "center",
-              color: "#6b7280",
-              fontSize: "13px",
-            }}
-          >
+          <div className="p-5 text-center text-muted-foreground text-[13px]">
             Select a node to view details
           </div>
         )}
@@ -197,7 +138,7 @@ export function DetailView() {
         {selectedEventNodeData && !selectedCard && selectedEventNodeData.nodeType !== "tool_group" && (
           <EventNodeDetail data={selectedEventNodeData} />
         )}
-      </div>
+      </ScrollArea>
     </div>
   );
 }

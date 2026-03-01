@@ -6,51 +6,19 @@
  */
 
 import type { DashboardCard } from "@shared/types";
-import { monoFont } from "./shared";
 
 export function ThinkingDetail({ card }: { card: DashboardCard }) {
   return (
-    <div style={{ padding: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+    <div className="p-4 flex flex-col gap-3">
       {/* Header */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "8px",
-        }}
-      >
-        <span style={{ fontSize: "16px" }}>{"\u{1F4AD}"}</span>
-        <div
-          style={{
-            fontSize: "11px",
-            color: "#8b5cf6",
-            textTransform: "uppercase",
-            letterSpacing: "0.05em",
-            fontWeight: 600,
-          }}
-        >
+      <div className="flex items-center gap-2">
+        <span className="text-base">{"\u{1F4AD}"}</span>
+        <div className="text-[11px] text-accent-purple uppercase tracking-[0.05em] font-semibold">
           Thinking
         </div>
         {!card.completed && (
-          <span
-            style={{
-              marginLeft: "auto",
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-              fontSize: "11px",
-              color: "#8b5cf6",
-            }}
-          >
-            <span
-              style={{
-                width: "6px",
-                height: "6px",
-                borderRadius: "50%",
-                backgroundColor: "#8b5cf6",
-                animation: "pulse 2s infinite",
-              }}
-            />
+          <span className="ml-auto flex items-center gap-1.5 text-[11px] text-accent-purple">
+            <span className="w-1.5 h-1.5 rounded-full bg-accent-purple animate-[pulse_2s_infinite]" />
             Streaming...
           </span>
         )}
@@ -58,28 +26,14 @@ export function ThinkingDetail({ card }: { card: DashboardCard }) {
 
       {/* Full text content */}
       <pre
-        style={{
-          fontSize: "13px",
-          color: "#d1d5db",
-          whiteSpace: "pre-wrap",
-          wordBreak: "break-word",
-          lineHeight: "1.6",
-          margin: 0,
-          fontFamily: monoFont,
-        }}
+        className="text-[13px] text-foreground whitespace-pre-wrap break-words leading-relaxed m-0 font-mono"
       >
         {card.content || "(streaming...)"}
       </pre>
 
       {/* Character count */}
       {card.content && (
-        <div
-          style={{
-            fontSize: "10px",
-            color: "#4b5563",
-            textAlign: "right",
-          }}
-        >
+        <div className="text-[10px] text-muted-foreground/60 text-right">
           {card.content.length.toLocaleString()} chars
         </div>
       )}

@@ -2,6 +2,8 @@
  * Soul Dashboard - React 엔트리 포인트
  */
 
+import "./globals.css";
+
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";

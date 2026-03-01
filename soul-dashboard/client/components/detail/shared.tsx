@@ -1,24 +1,16 @@
 /**
  * Detail 컴포넌트 공통 유틸리티
  *
- * SectionLabel, CodeBlock, monoFont 등 상세 뷰 컴포넌트에서
+ * SectionLabel, CodeBlock 등 상세 뷰 컴포넌트에서
  * 공통으로 사용되는 스타일 요소를 정의합니다.
  */
 
-export const monoFont = "'Cascadia Code', 'Fira Code', monospace";
+import { cn } from "../../lib/cn";
 
 /** 섹션 라벨 */
 export function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div
-      style={{
-        fontSize: "11px",
-        color: "#6b7280",
-        textTransform: "uppercase",
-        letterSpacing: "0.05em",
-        marginBottom: "4px",
-      }}
-    >
+    <div className="text-[11px] text-muted-foreground uppercase tracking-[0.05em] mb-1">
       {children}
     </div>
   );
@@ -34,25 +26,15 @@ export function CodeBlock({
   variant?: "default" | "error";
   maxHeight?: number;
 }) {
-  const color = variant === "error" ? "#fca5a5" : "#9ca3af";
-  const bg =
-    variant === "error" ? "rgba(239, 68, 68, 0.08)" : "rgba(0,0,0,0.3)";
-
   return (
     <pre
-      style={{
-        fontSize: "12px",
-        color,
-        backgroundColor: bg,
-        padding: "10px",
-        borderRadius: "6px",
-        overflow: "auto",
-        maxHeight,
-        margin: 0,
-        whiteSpace: "pre-wrap",
-        wordBreak: "break-word",
-        fontFamily: monoFont,
-      }}
+      className={cn(
+        "text-xs p-2.5 rounded-md overflow-auto m-0 whitespace-pre-wrap break-words font-mono",
+        variant === "error"
+          ? "text-destructive-foreground bg-destructive/8"
+          : "text-muted-foreground bg-input",
+      )}
+      style={{ maxHeight }}
     >
       {children}
     </pre>

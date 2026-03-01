@@ -6,7 +6,7 @@
  */
 
 import type { DashboardCard } from "@shared/types";
-import { monoFont, SectionLabel, CodeBlock } from "./shared";
+import { SectionLabel, CodeBlock } from "./shared";
 
 export function SubAgentDetail({ card }: { card: DashboardCard }) {
   const input = card.toolInput ?? {};
@@ -15,47 +15,16 @@ export function SubAgentDetail({ card }: { card: DashboardCard }) {
   const subagentType = (input.subagent_type as string) ?? "unknown";
 
   return (
-    <div style={{ padding: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+    <div className="p-4 flex flex-col gap-3">
       {/* Header */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "8px",
-        }}
-      >
-        <span style={{ fontSize: "16px" }}>{"\u{1F916}"}</span>
-        <div
-          style={{
-            fontSize: "11px",
-            color: "#3b82f6",
-            textTransform: "uppercase",
-            letterSpacing: "0.05em",
-            fontWeight: 600,
-          }}
-        >
+      <div className="flex items-center gap-2">
+        <span className="text-base">{"\u{1F916}"}</span>
+        <div className="text-[11px] text-accent-blue uppercase tracking-[0.05em] font-semibold">
           Sub-Agent
         </div>
         {!card.completed && (
-          <span
-            style={{
-              marginLeft: "auto",
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-              fontSize: "11px",
-              color: "#3b82f6",
-            }}
-          >
-            <span
-              style={{
-                width: "6px",
-                height: "6px",
-                borderRadius: "50%",
-                backgroundColor: "#3b82f6",
-                animation: "pulse 2s infinite",
-              }}
-            />
+          <span className="ml-auto flex items-center gap-1.5 text-[11px] text-accent-blue">
+            <span className="w-1.5 h-1.5 rounded-full bg-accent-blue animate-[pulse_2s_infinite]" />
             Running...
           </span>
         )}
@@ -65,16 +34,7 @@ export function SubAgentDetail({ card }: { card: DashboardCard }) {
       <div>
         <SectionLabel>Agent Type</SectionLabel>
         <span
-          style={{
-            display: "inline-block",
-            padding: "2px 8px",
-            borderRadius: "4px",
-            backgroundColor: "rgba(59, 130, 246, 0.15)",
-            color: "#60a5fa",
-            fontSize: "12px",
-            fontWeight: 600,
-            fontFamily: monoFont,
-          }}
+          className="inline-block px-2 py-0.5 rounded bg-accent-blue/15 text-info-foreground text-xs font-semibold font-mono"
         >
           {subagentType}
         </span>
@@ -84,13 +44,7 @@ export function SubAgentDetail({ card }: { card: DashboardCard }) {
       {description && (
         <div>
           <SectionLabel>Description</SectionLabel>
-          <div
-            style={{
-              fontSize: "13px",
-              color: "#d1d5db",
-              lineHeight: "1.5",
-            }}
-          >
+          <div className="text-[13px] text-foreground leading-normal">
             {description}
           </div>
         </div>

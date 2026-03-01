@@ -6,51 +6,20 @@
  */
 
 import type { DashboardCard } from "@shared/types";
-import { monoFont, SectionLabel, CodeBlock, safeStringify } from "./shared";
+import { SectionLabel, CodeBlock, safeStringify } from "./shared";
 
 export function ToolDetail({ card }: { card: DashboardCard }) {
   return (
-    <div style={{ padding: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+    <div className="p-4 flex flex-col gap-3">
       {/* Header */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "8px",
-        }}
-      >
-        <span style={{ fontSize: "16px" }}>{"\u{1F527}"}</span>
-        <div
-          style={{
-            fontSize: "11px",
-            color: "#f59e0b",
-            textTransform: "uppercase",
-            letterSpacing: "0.05em",
-            fontWeight: 600,
-          }}
-        >
+      <div className="flex items-center gap-2">
+        <span className="text-base">{"\u{1F527}"}</span>
+        <div className="text-[11px] text-accent-amber uppercase tracking-[0.05em] font-semibold">
           Tool Call
         </div>
         {!card.completed && (
-          <span
-            style={{
-              marginLeft: "auto",
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-              fontSize: "11px",
-              color: "#f59e0b",
-            }}
-          >
-            <span
-              style={{
-                width: "6px",
-                height: "6px",
-                borderRadius: "50%",
-                backgroundColor: "#f59e0b",
-                animation: "pulse 2s infinite",
-              }}
-            />
+          <span className="ml-auto flex items-center gap-1.5 text-[11px] text-accent-amber">
+            <span className="w-1.5 h-1.5 rounded-full bg-accent-amber animate-[pulse_2s_infinite]" />
             Running...
           </span>
         )}
@@ -60,12 +29,7 @@ export function ToolDetail({ card }: { card: DashboardCard }) {
       <div>
         <SectionLabel>Tool</SectionLabel>
         <div
-          style={{
-            fontSize: "14px",
-            color: "#e5e7eb",
-            fontWeight: 600,
-            fontFamily: monoFont,
-          }}
+          className="text-sm text-foreground font-semibold font-mono"
         >
           {card.toolName ?? "unknown"}
         </div>

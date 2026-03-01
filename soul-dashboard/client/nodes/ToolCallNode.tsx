@@ -9,6 +9,8 @@
 import { memo } from 'react';
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import type { GraphNodeData } from '../lib/layout-engine';
+import { cn } from '../lib/cn';
+import { nodeBase, nodeContent, nodeHeader, nodeLabel, handleStyle } from './node-styles';
 
 type ToolCallNodeType = Node<GraphNodeData, 'tool_call'>;
 
@@ -33,170 +35,72 @@ export const ToolCallNode = memo(function ToolCallNode({ data, selected }: NodeP
 
   return (
     <div
-        data-testid="tool-call-node"
-        style={{
-          width: 260,
-          height: 84,
-          boxSizing: 'border-box',
-          background: isPlanMode
-            ? 'rgba(6, 182, 212, 0.06)'
-            : 'rgba(17, 24, 39, 0.95)',
-          border: selected
-            ? `1px solid ${accentColor}`
-            : isPlanMode
-              ? '1px solid rgba(6, 182, 212, 0.25)'
-              : '1px solid rgba(255,255,255,0.1)',
-          borderRadius: 8,
-          boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
-          display: 'flex',
-          overflow: 'hidden',
-          ...(isStreaming && !selected
-            ? { animation: 'tool-call-pulse 2s infinite' }
-            : {}),
-        }}
-      >
-        {/* Left accent bar */}
-        <div
-          style={{
-            width: 4,
-            flexShrink: 0,
-            background: accentColor,
-            borderRadius: '8px 0 0 8px',
-          }}
-        />
+      data-testid="tool-call-node"
+      className={cn(
+        nodeBase,
+        "border",
+        isPlanMode ? "bg-accent-cyan/6" : "bg-card",
+        selected
+          ? isPlanEntry || isPlanExit ? "border-accent-cyan" : "border-accent-amber"
+          : isPlanMode
+            ? "border-accent-cyan/25"
+            : "border-border",
+      )}
+      style={isStreaming && !selected ? { animation: 'tool-call-pulse 2s infinite' } : undefined}
+    >
+      {/* Left accent bar */}
+      <div
+        className="w-1 shrink-0 rounded-l-lg"
+        style={{ background: accentColor }}
+      />
 
-        {/* Content area */}
-        <div style={{ flex: 1, padding: '10px 12px', minWidth: 0 }}>
-          {/* Header row */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              marginBottom: 6,
-            }}
-          >
-            <span style={{ fontSize: 14, flexShrink: 0 }}>
-              {isPlanEntry ? '\u{1F4CB}' : isPlanExit ? '\u{2705}' : '\u{1F527}'}
+      {/* Content area */}
+      <div className={nodeContent}>
+        {/* Header row */}
+        <div className={nodeHeader}>
+          <span className="text-sm shrink-0">
+            {isPlanEntry ? '\u{1F4CB}' : isPlanExit ? '\u{2705}' : '\u{1F527}'}
+          </span>
+          <span className={cn(
+            nodeLabel,
+            (isPlanEntry || isPlanExit) ? "text-accent-cyan" : "text-muted-foreground",
+          )}>
+            {isPlanEntry ? 'Plan Mode' : isPlanExit ? 'Plan Exit' : 'Tool Call'}
+          </span>
+          {isStreaming && (
+            <span className="ml-auto text-[10px] font-medium" style={{ color: accentColor }}>
+              running...
             </span>
-            <span
-              style={{
-                fontSize: 10,
-                color: (isPlanEntry || isPlanExit) ? PLAN_ACCENT : '#6b7280',
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                fontWeight: 600,
-              }}
-            >
-              {isPlanEntry ? 'Plan Mode' : isPlanExit ? 'Plan Exit' : 'Tool Call'}
+          )}
+          {isPlanMode && !isPlanEntry && !isPlanExit && (
+            <span className="ml-auto text-[9px] text-accent-cyan font-medium px-[5px] py-px rounded-[3px] bg-accent-cyan/12">
+              PLAN
             </span>
-            {isStreaming && (
-              <span
-                style={{
-                  marginLeft: 'auto',
-                  fontSize: 10,
-                  color: accentColor,
-                  fontWeight: 500,
-                }}
-              >
-                running...
-              </span>
-            )}
-            {isPlanMode && !isPlanEntry && !isPlanExit && (
-              <span
-                style={{
-                  marginLeft: 'auto',
-                  fontSize: 9,
-                  color: PLAN_ACCENT,
-                  fontWeight: 500,
-                  padding: '1px 5px',
-                  borderRadius: 3,
-                  backgroundColor: 'rgba(6, 182, 212, 0.12)',
-                }}
-              >
-                PLAN
-              </span>
-            )}
-          </div>
-
-          {/* Tool name */}
-          <div
-            style={{
-              fontSize: 13,
-              color: '#e5e7eb',
-              fontWeight: 600,
-              fontFamily: "'Cascadia Code', 'Fira Code', monospace",
-              marginBottom: 4,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {data.toolName || 'unknown'}
-          </div>
-
-          {/* Truncated input params */}
-          {data.toolInput && (
-            <div
-              style={{
-                fontSize: 11,
-                color: '#6b7280',
-                fontFamily: "'Cascadia Code', 'Fira Code', monospace",
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {truncateInput(data.toolInput)}
-            </div>
           )}
         </div>
 
-        {/* Handles */}
-        <Handle
-          type="target"
-          position={Position.Top}
-          id="top"
-          style={{
-            width: 8,
-            height: 8,
-            background: accentColor,
-            border: '2px solid rgba(17, 24, 39, 0.95)',
-          }}
-        />
-        <Handle
-          type="target"
-          position={Position.Left}
-          id="left"
-          style={{
-            width: 8,
-            height: 8,
-            background: accentColor,
-            border: '2px solid rgba(17, 24, 39, 0.95)',
-          }}
-        />
-        <Handle
-          type="source"
-          position={Position.Bottom}
-          id="bottom"
-          style={{
-            width: 8,
-            height: 8,
-            background: accentColor,
-            border: '2px solid rgba(17, 24, 39, 0.95)',
-          }}
-        />
-        <Handle
-          type="source"
-          position={Position.Right}
-          id="right"
-          style={{
-            width: 8,
-            height: 8,
-            background: accentColor,
-            border: '2px solid rgba(17, 24, 39, 0.95)',
-          }}
-        />
+        {/* Tool name */}
+        <div
+          className="text-[13px] text-foreground font-semibold mb-1 truncate font-mono"
+        >
+          {data.toolName || 'unknown'}
+        </div>
+
+        {/* Truncated input params */}
+        {data.toolInput && (
+          <div
+            className="text-[11px] text-muted-foreground truncate font-mono"
+          >
+            {truncateInput(data.toolInput)}
+          </div>
+        )}
       </div>
+
+      {/* Handles */}
+      <Handle type="target" position={Position.Top} id="top" style={handleStyle(accentColor)} />
+      <Handle type="target" position={Position.Left} id="left" style={handleStyle(accentColor)} />
+      <Handle type="source" position={Position.Bottom} id="bottom" style={handleStyle(accentColor)} />
+      <Handle type="source" position={Position.Right} id="right" style={handleStyle(accentColor)} />
+    </div>
   );
 });

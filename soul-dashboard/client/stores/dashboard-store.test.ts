@@ -14,6 +14,12 @@ import type {
   ToolResultEvent,
   CompleteEvent,
   SessionSummary,
+  SessionEvent,
+  ErrorEvent,
+  InterventionSentEvent,
+  UserMessageEvent,
+  ProgressEvent,
+  MemoryEvent,
 } from "../../shared/types";
 
 describe("dashboard-store", () => {
@@ -401,6 +407,320 @@ describe("dashboard-store", () => {
       expect(cards[1].parentCardId).toBe("t1");
       expect(cards[2].cardId).toBe("t2");
       expect(cards[2].completed).toBe(false); // text_end 미수신
+    });
+  });
+
+  // === 이벤트 노드 선택 ===
+
+  describe("selectEventNode", () => {
+    it("should set selectedEventNodeData and clear card/node selection", () => {
+      // 먼저 카드와 노드를 선택해 둠
+      useDashboardStore.getState().selectCard("card-1", "node-1");
+      expect(useDashboardStore.getState().selectedCardId).toBe("card-1");
+      expect(useDashboardStore.getState().selectedNodeId).toBe("node-1");
+
+      const eventNodeData = {
+        nodeType: "user",
+        label: "User Message",
+        content: "Hello world",
+      };
+      useDashboardStore.getState().selectEventNode(eventNodeData);
+
+      const state = useDashboardStore.getState();
+      expect(state.selectedEventNodeData).toEqual(eventNodeData);
+      expect(state.selectedCardId).toBeNull();
+      expect(state.selectedNodeId).toBeNull();
+    });
+
+    it("should handle tool_group node data with groupedCardIds", () => {
+      const toolGroupData = {
+        nodeType: "tool_group",
+        label: "Bash x3",
+        content: "3 tool calls",
+        groupedCardIds: ["tool-1", "tool-2", "tool-3"],
+        toolName: "Bash",
+        groupCount: 3,
+      };
+      useDashboardStore.getState().selectEventNode(toolGroupData);
+
+      const state = useDashboardStore.getState();
+      expect(state.selectedEventNodeData).toEqual(toolGroupData);
+      expect(state.selectedEventNodeData?.groupedCardIds).toHaveLength(3);
+      expect(state.selectedEventNodeData?.toolName).toBe("Bash");
+      expect(state.selectedEventNodeData?.groupCount).toBe(3);
+    });
+
+    it("should clear selectedEventNodeData when set to null", () => {
+      useDashboardStore.getState().selectEventNode({
+        nodeType: "user",
+        label: "msg",
+        content: "text",
+      });
+      expect(useDashboardStore.getState().selectedEventNodeData).not.toBeNull();
+
+      useDashboardStore.getState().selectEventNode(null);
+      expect(useDashboardStore.getState().selectedEventNodeData).toBeNull();
+    });
+  });
+
+  // === 그룹 접기/펼치기 ===
+
+  describe("toggleGroupCollapse", () => {
+    it("should add groupId to collapsedGroups when not present", () => {
+      useDashboardStore.getState().toggleGroupCollapse("group-1");
+      expect(useDashboardStore.getState().collapsedGroups.has("group-1")).toBe(true);
+    });
+
+    it("should remove groupId from collapsedGroups when already present", () => {
+      useDashboardStore.getState().toggleGroupCollapse("group-1");
+      expect(useDashboardStore.getState().collapsedGroups.has("group-1")).toBe(true);
+
+      useDashboardStore.getState().toggleGroupCollapse("group-1");
+      expect(useDashboardStore.getState().collapsedGroups.has("group-1")).toBe(false);
+    });
+
+    it("should handle multiple groups independently", () => {
+      const { toggleGroupCollapse } = useDashboardStore.getState();
+      toggleGroupCollapse("group-a");
+      toggleGroupCollapse("group-b");
+
+      const collapsed = useDashboardStore.getState().collapsedGroups;
+      expect(collapsed.has("group-a")).toBe(true);
+      expect(collapsed.has("group-b")).toBe(true);
+
+      useDashboardStore.getState().toggleGroupCollapse("group-a");
+      const updated = useDashboardStore.getState().collapsedGroups;
+      expect(updated.has("group-a")).toBe(false);
+      expect(updated.has("group-b")).toBe(true);
+    });
+  });
+
+  // === 세션 생성/재개 ===
+
+  describe("startCompose / cancelCompose", () => {
+    it("should reset session state and set isComposing to true", () => {
+      // 먼저 세션 상태를 설정
+      useDashboardStore.getState().setActiveSession("c1:r1");
+      useDashboardStore.getState().processEvent({ type: "text_start", card_id: "t1" }, 1);
+      useDashboardStore.getState().selectCard("t1");
+
+      useDashboardStore.getState().startCompose();
+      const state = useDashboardStore.getState();
+
+      expect(state.isComposing).toBe(true);
+      expect(state.resumeTargetKey).toBeNull();
+      expect(state.activeSessionKey).toBeNull();
+      expect(state.activeSession).toBeNull();
+      expect(state.cards).toEqual([]);
+      expect(state.graphEvents).toEqual([]);
+      expect(state.selectedCardId).toBeNull();
+      expect(state.selectedNodeId).toBeNull();
+      expect(state.selectedEventNodeData).toBeNull();
+      expect(state.lastEventId).toBe(0);
+    });
+
+    it("should set isComposing to false and clear resumeTargetKey on cancel", () => {
+      useDashboardStore.getState().startCompose();
+      expect(useDashboardStore.getState().isComposing).toBe(true);
+
+      useDashboardStore.getState().cancelCompose();
+      const state = useDashboardStore.getState();
+      expect(state.isComposing).toBe(false);
+      expect(state.resumeTargetKey).toBeNull();
+    });
+
+    it("cancelCompose should clear resumeTargetKey from startResume", () => {
+      useDashboardStore.getState().startResume("c1:r1");
+      expect(useDashboardStore.getState().resumeTargetKey).toBe("c1:r1");
+
+      useDashboardStore.getState().cancelCompose();
+      expect(useDashboardStore.getState().isComposing).toBe(false);
+      expect(useDashboardStore.getState().resumeTargetKey).toBeNull();
+    });
+  });
+
+  // === 세션 재개 ===
+
+  describe("startResume", () => {
+    it("should reset session state, set isComposing, and set resumeTargetKey", () => {
+      // 먼저 기존 상태를 설정
+      useDashboardStore.getState().setActiveSession("old:session");
+      useDashboardStore.getState().processEvent({ type: "text_start", card_id: "x" }, 5);
+
+      useDashboardStore.getState().startResume("target:session");
+      const state = useDashboardStore.getState();
+
+      expect(state.isComposing).toBe(true);
+      expect(state.resumeTargetKey).toBe("target:session");
+      expect(state.activeSessionKey).toBeNull();
+      expect(state.activeSession).toBeNull();
+      expect(state.cards).toEqual([]);
+      expect(state.graphEvents).toEqual([]);
+      expect(state.lastEventId).toBe(0);
+    });
+
+    it("should differ from startCompose only in resumeTargetKey", () => {
+      useDashboardStore.getState().startCompose();
+      const composeState = { ...useDashboardStore.getState() };
+
+      useDashboardStore.getState().reset();
+      useDashboardStore.getState().startResume("key");
+      const resumeState = useDashboardStore.getState();
+
+      expect(composeState.isComposing).toBe(resumeState.isComposing);
+      expect(composeState.resumeTargetKey).toBeNull();
+      expect(resumeState.resumeTargetKey).toBe("key");
+    });
+  });
+
+  // === graphEvents 필터링 ===
+
+  describe("processEvent - graphEvents filtering", () => {
+    it("should add session event to graphEvents", () => {
+      const event: SessionEvent = { type: "session", session_id: "s1" };
+      useDashboardStore.getState().processEvent(event, 1);
+      expect(useDashboardStore.getState().graphEvents).toHaveLength(1);
+      expect(useDashboardStore.getState().graphEvents[0]).toEqual(event);
+    });
+
+    it("should add complete event to graphEvents", () => {
+      const event: CompleteEvent = { type: "complete", result: "done", attachments: [] };
+      useDashboardStore.getState().processEvent(event, 1);
+      expect(useDashboardStore.getState().graphEvents).toHaveLength(1);
+      expect(useDashboardStore.getState().graphEvents[0]).toEqual(event);
+    });
+
+    it("should add error event to graphEvents", () => {
+      const event: ErrorEvent = { type: "error", message: "something failed" };
+      useDashboardStore.getState().processEvent(event, 1);
+      expect(useDashboardStore.getState().graphEvents).toHaveLength(1);
+      expect(useDashboardStore.getState().graphEvents[0]).toEqual(event);
+    });
+
+    it("should add intervention_sent event to graphEvents", () => {
+      const event: InterventionSentEvent = {
+        type: "intervention_sent",
+        user: "admin",
+        text: "please stop",
+      };
+      useDashboardStore.getState().processEvent(event, 1);
+      expect(useDashboardStore.getState().graphEvents).toHaveLength(1);
+      expect(useDashboardStore.getState().graphEvents[0]).toEqual(event);
+    });
+
+    it("should add user_message event to graphEvents", () => {
+      const event: UserMessageEvent = {
+        type: "user_message",
+        user: "user1",
+        text: "hello",
+      };
+      useDashboardStore.getState().processEvent(event, 1);
+      expect(useDashboardStore.getState().graphEvents).toHaveLength(1);
+      expect(useDashboardStore.getState().graphEvents[0]).toEqual(event);
+    });
+
+    it("should NOT add text_start to graphEvents", () => {
+      const event: TextStartEvent = { type: "text_start", card_id: "t1" };
+      useDashboardStore.getState().processEvent(event, 1);
+      expect(useDashboardStore.getState().graphEvents).toHaveLength(0);
+    });
+
+    it("should NOT add text_delta to graphEvents", () => {
+      // text_start 먼저 추가 (text_delta 처리를 위해)
+      useDashboardStore.getState().processEvent({ type: "text_start", card_id: "t1" }, 1);
+      const event: TextDeltaEvent = { type: "text_delta", card_id: "t1", text: "hi" };
+      useDashboardStore.getState().processEvent(event, 2);
+      expect(useDashboardStore.getState().graphEvents).toHaveLength(0);
+    });
+
+    it("should NOT add tool_start to graphEvents", () => {
+      const event: ToolStartEvent = {
+        type: "tool_start",
+        card_id: "c1",
+        tool_name: "Bash",
+        tool_input: {},
+      };
+      useDashboardStore.getState().processEvent(event, 1);
+      expect(useDashboardStore.getState().graphEvents).toHaveLength(0);
+    });
+
+    it("should NOT add progress to graphEvents", () => {
+      const event: ProgressEvent = { type: "progress", text: "working..." };
+      useDashboardStore.getState().processEvent(event, 1);
+      expect(useDashboardStore.getState().graphEvents).toHaveLength(0);
+    });
+
+    it("should NOT add memory to graphEvents", () => {
+      const event: MemoryEvent = { type: "memory", used_gb: 1.5, total_gb: 8, percent: 18.75 };
+      useDashboardStore.getState().processEvent(event, 1);
+      expect(useDashboardStore.getState().graphEvents).toHaveLength(0);
+    });
+
+    it("should accumulate only graph-relevant events in mixed sequence", () => {
+      const { processEvent } = useDashboardStore.getState();
+      processEvent({ type: "session", session_id: "s1" } as SessionEvent, 1);
+      processEvent({ type: "text_start", card_id: "t1" }, 2);
+      processEvent({ type: "text_delta", card_id: "t1", text: "hi" } as TextDeltaEvent, 3);
+      processEvent({ type: "intervention_sent", user: "u", text: "stop" } as InterventionSentEvent, 4);
+      processEvent({ type: "text_end", card_id: "t1" }, 5);
+      processEvent({ type: "complete", result: "ok", attachments: [] } as CompleteEvent, 6);
+
+      const graphEvents = useDashboardStore.getState().graphEvents;
+      expect(graphEvents).toHaveLength(3);
+      expect(graphEvents[0].type).toBe("session");
+      expect(graphEvents[1].type).toBe("intervention_sent");
+      expect(graphEvents[2].type).toBe("complete");
+    });
+  });
+
+  // === clearCards ===
+
+  describe("clearCards", () => {
+    it("should clear cards and related state", () => {
+      const { processEvent, selectCard, toggleGroupCollapse } =
+        useDashboardStore.getState();
+
+      // 상태를 채움
+      processEvent({ type: "text_start", card_id: "t1" }, 1);
+      processEvent({ type: "text_delta", card_id: "t1", text: "content" } as TextDeltaEvent, 2);
+      processEvent({ type: "session", session_id: "s1" } as SessionEvent, 3);
+      selectCard("t1", "node-t1");
+      useDashboardStore.getState().selectEventNode({
+        nodeType: "user",
+        label: "msg",
+        content: "hello",
+      });
+      toggleGroupCollapse("group-1");
+
+      // 상태가 채워졌는지 확인
+      expect(useDashboardStore.getState().cards.length).toBeGreaterThan(0);
+      expect(useDashboardStore.getState().graphEvents.length).toBeGreaterThan(0);
+      expect(useDashboardStore.getState().lastEventId).toBeGreaterThan(0);
+
+      useDashboardStore.getState().clearCards();
+      const state = useDashboardStore.getState();
+
+      expect(state.cards).toEqual([]);
+      expect(state.graphEvents).toEqual([]);
+      expect(state.collapsedGroups.size).toBe(0);
+      expect(state.lastEventId).toBe(0);
+      expect(state.selectedCardId).toBeNull();
+      expect(state.selectedNodeId).toBeNull();
+      expect(state.selectedEventNodeData).toBeNull();
+    });
+
+    it("should not affect sessions or activeSessionKey", () => {
+      const sessions: SessionSummary[] = [
+        { clientId: "c1", requestId: "r1", status: "running", eventCount: 5, createdAt: "2026-01-01T00:00:00Z" },
+      ];
+      useDashboardStore.getState().setSessions(sessions);
+      useDashboardStore.getState().setActiveSession("c1:r1");
+      useDashboardStore.getState().processEvent({ type: "text_start", card_id: "t1" }, 1);
+
+      useDashboardStore.getState().clearCards();
+
+      // sessions과 activeSessionKey는 유지되어야 함
+      expect(useDashboardStore.getState().sessions).toEqual(sessions);
     });
   });
 

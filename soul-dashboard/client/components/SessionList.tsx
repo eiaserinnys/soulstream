@@ -3,44 +3,51 @@
  *
  * 좌측 패널에 세션 목록을 표시합니다.
  * 각 세션의 상태를 인디케이터(점멸/뱃지)로 시각화합니다.
- * "+ New" 버튼으로 새 세션 생성, 완료된 세션에 Resume 버튼을 제공합니다.
+ * "+ New" 버튼으로 새 세션 생성을 제공합니다.
  */
 
 import type { SessionSummary, SessionStatus } from "@shared/types";
+import type { VariantProps } from "class-variance-authority";
 import { useDashboardStore } from "../stores/dashboard-store";
+import { cn } from "../lib/cn";
+import { Button } from "./ui/button";
+import { Badge, badgeVariants } from "./ui/badge";
+import { ScrollArea } from "./ui/scroll-area";
 
 // === Status Badge Config ===
 
+type BadgeVariant = NonNullable<VariantProps<typeof badgeVariants>["variant"]>;
+
 interface StatusConfig {
   label: string;
-  color: string;
-  bgColor: string;
+  badgeVariant: BadgeVariant;
+  dotClass: string;
   animate: boolean;
 }
 
 const STATUS_CONFIG: Record<SessionStatus, StatusConfig> = {
   running: {
     label: "Running",
-    color: "#22c55e",
-    bgColor: "rgba(34, 197, 94, 0.15)",
+    badgeVariant: "success",
+    dotClass: "bg-success",
     animate: true,
   },
   completed: {
     label: "Done",
-    color: "#6b7280",
-    bgColor: "rgba(107, 114, 128, 0.15)",
+    badgeVariant: "outline",
+    dotClass: "bg-muted-foreground",
     animate: false,
   },
   error: {
     label: "Error",
-    color: "#ef4444",
-    bgColor: "rgba(239, 68, 68, 0.15)",
+    badgeVariant: "error",
+    dotClass: "bg-accent-red",
     animate: false,
   },
   unknown: {
     label: "Unknown",
-    color: "#9ca3af",
-    bgColor: "rgba(156, 163, 175, 0.15)",
+    badgeVariant: "secondary",
+    dotClass: "bg-muted-foreground",
     animate: false,
   },
 };
@@ -51,13 +58,11 @@ interface SessionItemProps {
   session: SessionSummary;
   isActive: boolean;
   onClick: () => void;
-  onResume?: (e: React.MouseEvent) => void;
 }
 
-function SessionItem({ session, isActive, onClick, onResume }: SessionItemProps) {
+function SessionItem({ session, isActive, onClick }: SessionItemProps) {
   const config = STATUS_CONFIG[session.status];
   const sessionKey = `${session.clientId}:${session.requestId}`;
-  const canResume = session.status === "completed" || session.status === "error";
 
   // 시간 포맷
   const timeStr = session.createdAt
@@ -73,116 +78,51 @@ function SessionItem({ session, isActive, onClick, onResume }: SessionItemProps)
     <button
       data-testid={`session-item-${sessionKey}`}
       onClick={onClick}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: "8px",
-        width: "100%",
-        padding: "10px 12px",
-        border: "none",
-        borderLeft: isActive ? "3px solid #3b82f6" : "3px solid transparent",
-        background: isActive ? "rgba(59, 130, 246, 0.08)" : "transparent",
-        cursor: "pointer",
-        textAlign: "left",
-        transition: "background 0.15s",
-        borderBottom: "1px solid rgba(255,255,255,0.06)",
-      }}
+      className={cn(
+        "flex items-center gap-2 w-full py-2.5 px-3 border-none cursor-pointer text-left transition-colors duration-150 border-b border-b-border",
+        isActive
+          ? "border-l-[3px] border-l-accent-blue bg-accent-blue/8"
+          : "border-l-[3px] border-l-transparent bg-transparent",
+      )}
       title={sessionKey}
     >
       {/* Status indicator (점멸 애니메이션) */}
       <span
-        style={{
-          width: "8px",
-          height: "8px",
-          borderRadius: "50%",
-          backgroundColor: config.color,
-          flexShrink: 0,
-          animation: config.animate ? "pulse 2s infinite" : "none",
-        }}
+        className={cn(
+          "w-2 h-2 rounded-full shrink-0",
+          config.dotClass,
+          config.animate && "animate-[pulse_2s_infinite]",
+        )}
       />
 
       {/* Session info */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div
-          style={{
-            fontSize: "13px",
-            color: "#e5e7eb",
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-          }}
-        >
-          {session.requestId.slice(0, 8)}
+      <div className="flex-1 min-w-0">
+        <div className="text-[13px] text-foreground truncate">
+          {session.prompt
+            ? session.prompt.length > 30
+              ? session.prompt.slice(0, 27) + "..."
+              : session.prompt
+            : session.requestId.slice(0, 12)}
         </div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "6px",
-            marginTop: "2px",
-          }}
-        >
-          <span
-            style={{
-              fontSize: "11px",
-              color: "#9ca3af",
-            }}
-          >
+        <div className="flex items-center gap-1.5 mt-0.5">
+          <span className="text-[11px] text-muted-foreground">
             {timeStr}
           </span>
-          <span
+          <Badge
             data-testid="session-status-badge"
-            style={{
-              fontSize: "10px",
-              color: config.color,
-              backgroundColor: config.bgColor,
-              padding: "1px 5px",
-              borderRadius: "3px",
-              fontWeight: 500,
-            }}
+            variant={config.badgeVariant}
+            size="sm"
           >
             {config.label}
-          </span>
+          </Badge>
         </div>
       </div>
 
-      {/* Resume button (completed/error sessions) */}
-      {canResume && onResume && (
-        <button
-          data-testid={`resume-button-${sessionKey}`}
-          onClick={onResume}
-          title="Resume conversation"
-          style={{
-            padding: "3px 7px",
-            borderRadius: "4px",
-            border: "1px solid rgba(59, 130, 246, 0.25)",
-            backgroundColor: "transparent",
-            color: "#3b82f6",
-            fontSize: "10px",
-            fontWeight: 500,
-            cursor: "pointer",
-            flexShrink: 0,
-            transition: "all 0.15s",
-          }}
-        >
-          Resume
-        </button>
-      )}
-
-      {/* Event count badge (only when no resume button) */}
-      {!canResume && session.eventCount > 0 && (
-        <span
-          style={{
-            fontSize: "11px",
-            color: "#6b7280",
-            backgroundColor: "rgba(107, 114, 128, 0.2)",
-            padding: "1px 5px",
-            borderRadius: "8px",
-            flexShrink: 0,
-          }}
-        >
+      {/* Event count badge */}
+      {session.eventCount > 0 && (
+        <Badge variant="outline" size="sm" className="shrink-0">
           {session.eventCount}
-        </span>
+        </Badge>
       )}
     </button>
   );
@@ -200,7 +140,6 @@ export function SessionList({ sessions, loading, error }: SessionListProps) {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const setActiveSession = useDashboardStore((s) => s.setActiveSession);
   const startCompose = useDashboardStore((s) => s.startCompose);
-  const startResume = useDashboardStore((s) => s.startResume);
   const isComposing = useDashboardStore((s) => s.isComposing);
 
   const handleSelect = (session: SessionSummary) => {
@@ -208,106 +147,45 @@ export function SessionList({ sessions, loading, error }: SessionListProps) {
     setActiveSession(key);
   };
 
-  const handleResume = (e: React.MouseEvent, session: SessionSummary) => {
-    e.stopPropagation();
-    const key = `${session.clientId}:${session.requestId}`;
-    startResume(key);
-  };
-
   return (
     <div
       data-testid="session-list"
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        height: "100%",
-        overflow: "hidden",
-      }}
+      className="flex flex-col h-full overflow-hidden"
     >
       {/* Header + New button */}
-      <div
-        style={{
-          padding: "12px 14px",
-          borderBottom: "1px solid rgba(255,255,255,0.08)",
-          fontSize: "12px",
-          fontWeight: 600,
-          color: "#9ca3af",
-          textTransform: "uppercase",
-          letterSpacing: "0.05em",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
+      <div className="p-3 px-3.5 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-[0.05em] flex justify-between items-center">
         <span>Sessions</span>
-        <button
+        <Button
           data-testid="new-session-button"
+          variant="outline"
+          size="xs"
           onClick={startCompose}
           disabled={isComposing}
           title="New conversation"
-          style={{
-            padding: "2px 8px",
-            borderRadius: "4px",
-            border: "1px solid rgba(59, 130, 246, 0.3)",
-            backgroundColor: isComposing
-              ? "rgba(59, 130, 246, 0.15)"
-              : "transparent",
-            color: "#3b82f6",
-            fontSize: "12px",
-            fontWeight: 600,
-            cursor: isComposing ? "default" : "pointer",
-            transition: "all 0.15s",
-          }}
+          className="border-accent-blue/30 text-accent-blue hover:bg-accent-blue/10"
         >
           + New
-        </button>
+        </Button>
       </div>
 
       {/* Loading state */}
       {loading && sessions.length === 0 && (
-        <div
-          style={{
-            padding: "20px",
-            textAlign: "center",
-            color: "#6b7280",
-            fontSize: "13px",
-          }}
-        >
+        <div className="p-5 text-center text-muted-foreground text-[13px]">
           Loading...
         </div>
       )}
 
       {/* Error state */}
       {error && (
-        <div
-          style={{
-            padding: "10px 14px",
-            color: "#ef4444",
-            fontSize: "12px",
-            backgroundColor: "rgba(239, 68, 68, 0.08)",
-          }}
-        >
+        <div className="py-2.5 px-3.5 text-accent-red text-xs bg-accent-red/8">
           {error}
         </div>
       )}
 
       {/* Session list */}
-      <div
-        style={{
-          flex: 1,
-          overflowY: "auto",
-          overflowX: "hidden",
-        }}
-      >
+      <ScrollArea className="flex-1">
         {sessions.length === 0 && !loading && (
-          <div
-            style={{
-              padding: "20px",
-              textAlign: "center",
-              color: "#6b7280",
-              fontSize: "13px",
-            }}
-          >
+          <div className="p-5 text-center text-muted-foreground text-[13px]">
             No sessions yet
           </div>
         )}
@@ -319,11 +197,10 @@ export function SessionList({ sessions, loading, error }: SessionListProps) {
               session={session}
               isActive={activeSessionKey === key}
               onClick={() => handleSelect(session)}
-              onResume={(e) => handleResume(e, session)}
             />
           );
         })}
-      </div>
+      </ScrollArea>
     </div>
   );
 }

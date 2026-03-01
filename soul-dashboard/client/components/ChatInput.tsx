@@ -1,23 +1,23 @@
 /**
- * ChatInput - Soul 인터벤션 / 세션 상태 표시 컴포넌트
+ * ChatInput - 인터벤션 / 세션 계속 컴포넌트
  *
- * 활성 세션에 메시지를 전송하여 실행 중인 Claude에 개입합니다.
- * 완료/에러 세션에서는 상태 피드백과 "Resume" 버튼을 표시합니다.
+ * Running 세션: Intervention 모드로 실행 중인 Claude에 메시지 전송 (/intervene)
+ * Completed/Error 세션: New Chat 모드로 대화 이어가기 (/resume → 새 세션 전환)
  */
 
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { getAuthHeaders } from "../lib/api-headers";
+import { cn } from "../lib/cn";
+import { Button } from "./ui/button";
 
-const ACCENT_ORANGE = "#f97316";
-const ACCENT_BLUE = "#3b82f6";
 /** Soul 서버의 MAX_MESSAGE_LENGTH과 일치 (인터벤션 메시지의 최대 길이) */
 const MAX_LENGTH = 50_000;
 
 export function ChatInput() {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const sessions = useDashboardStore((s) => s.sessions);
-  const startResume = useDashboardStore((s) => s.startResume);
+  const setActiveSession = useDashboardStore((s) => s.setActiveSession);
 
   // 활성 세션의 상태
   const sessionStatus = useMemo(() => {
@@ -31,6 +31,7 @@ export function ChatInput() {
   const isRunning = sessionStatus === "running";
   const isCompleted = sessionStatus === "completed";
   const isError = sessionStatus === "error";
+  const isFinished = isCompleted || isError;
 
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -78,25 +79,47 @@ export function ChatInput() {
 
     try {
       const headers = await getAuthHeaders();
-      const response = await fetch(
-        `/api/sessions/${encodeURIComponent(activeSessionKey)}/intervene`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            text: trimmed,
-            user: "dashboard",
-          }),
-          signal: controller.signal,
-        },
-      );
+      let response: Response;
+
+      if (isFinished) {
+        // Completed/Error → resume API로 새 세션 생성
+        response = await fetch(
+          `/api/sessions/${encodeURIComponent(activeSessionKey)}/resume`,
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ prompt: trimmed }),
+            signal: controller.signal,
+          },
+        );
+      } else {
+        // Running → intervene API로 메시지 전송
+        response = await fetch(
+          `/api/sessions/${encodeURIComponent(activeSessionKey)}/intervene`,
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              text: trimmed,
+              user: "dashboard",
+            }),
+            signal: controller.signal,
+          },
+        );
+      }
 
       if (!response.ok) {
         const body = await response.json().catch(() => ({ error: { message: "Unknown error" } }));
         throw new Error(body.error?.message ?? `HTTP ${response.status}`);
       }
 
-      setLastSent(trimmed);
+      if (isFinished) {
+        // Resume 성공 → 새 세션으로 전환
+        const result = await response.json();
+        setActiveSession(result.sessionKey);
+      } else {
+        setLastSent(trimmed);
+      }
       setText("");
     } catch (err) {
       // AbortError는 의도적 취소이므로 무시
@@ -105,7 +128,7 @@ export function ChatInput() {
     } finally {
       setSending(false);
     }
-  }, [activeSessionKey, text, sending]);
+  }, [activeSessionKey, text, sending, isFinished, setActiveSession]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -118,194 +141,75 @@ export function ChatInput() {
     [sendMessage],
   );
 
-  const handleResume = useCallback(() => {
-    if (activeSessionKey) {
-      startResume(activeSessionKey);
-    }
-  }, [activeSessionKey, startResume]);
-
   if (!activeSessionKey) return null;
 
-  // 완료/에러 상태 피드백
-  if (isCompleted || isError) {
-    return (
-      <div
-        data-testid="chat-input"
-        style={{
-          borderTop: "1px solid rgba(255,255,255,0.08)",
-          padding: "12px",
-          display: "flex",
-          flexDirection: "column",
-          gap: "8px",
-          flexShrink: 0,
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "8px",
-          }}
-        >
-          {/* Status feedback */}
-          <span
-            style={{
-              fontSize: "12px",
-              color: isCompleted ? "#22c55e" : "#ef4444",
-              fontWeight: 500,
-            }}
-          >
-            {isCompleted ? "Session completed" : "Session ended with error"}
-          </span>
+  const isDisabled = sending || !text.trim();
+  const placeholder = isFinished
+    ? "Continue the conversation..."
+    : "Send a message to Claude...";
+  const buttonLabel = sending ? "..." : isFinished ? "Resume" : "Send";
 
-          {/* Resume button */}
-          <button
-            data-testid="resume-button"
-            onClick={handleResume}
-            style={{
-              padding: "6px 14px",
-              borderRadius: "6px",
-              border: `1px solid rgba(59, 130, 246, 0.3)`,
-              backgroundColor: "rgba(59, 130, 246, 0.08)",
-              color: ACCENT_BLUE,
-              fontSize: "12px",
-              fontWeight: 600,
-              cursor: "pointer",
-              transition: "all 0.15s",
-            }}
-          >
-            Resume Conversation
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // Running 상태: 인터벤션 입력
   return (
     <div
       data-testid="chat-input"
-      style={{
-        borderTop: "1px solid rgba(255,255,255,0.08)",
-        padding: "12px",
-        display: "flex",
-        flexDirection: "column",
-        gap: "8px",
-        flexShrink: 0,
-      }}
+      className="border-t border-border p-3 flex flex-col gap-2 shrink-0"
     >
       {/* Label */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "6px",
-          fontSize: "11px",
-          color: "#6b7280",
-          textTransform: "uppercase",
-          letterSpacing: "0.05em",
-          fontWeight: 600,
-        }}
-      >
-        <span style={{ fontSize: "12px" }}>{"\u270B"}</span>
-        Intervention
+      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground uppercase tracking-[0.05em] font-semibold">
+        <span className="text-xs">{isFinished ? "\u{1F4AC}" : "\u270B"}</span>
+        {isFinished ? "New Chat" : "Intervention"}
       </div>
 
       {/* Input area */}
-      <div
-        style={{
-          display: "flex",
-          gap: "8px",
-          alignItems: "flex-end",
-        }}
-      >
+      <div className="flex gap-2 items-end">
         <textarea
           ref={textareaRef}
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Send a message to Claude..."
+          placeholder={placeholder}
           disabled={sending}
           rows={1}
-          style={{
-            flex: 1,
-            backgroundColor: "rgba(0,0,0,0.3)",
-            border: "1px solid rgba(255,255,255,0.1)",
-            borderRadius: "6px",
-            padding: "8px 10px",
-            fontSize: "13px",
-            color: "#d1d5db",
-            fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-            resize: "none",
-            outline: "none",
-            minHeight: "36px",
-            maxHeight: "120px",
-            lineHeight: "1.4",
-            transition: "border-color 0.15s",
-          }}
-          onFocus={(e) => {
-            e.currentTarget.style.borderColor = "rgba(249, 115, 22, 0.4)";
-          }}
-          onBlur={(e) => {
-            e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)";
-          }}
+          className={cn(
+            "flex-1 bg-input border border-border rounded-md py-2 px-2.5",
+            "text-[13px] text-foreground font-sans resize-none outline-none",
+            "min-h-9 max-h-[120px] leading-[1.4] transition-colors duration-150",
+            isFinished
+              ? "focus:border-accent-blue/40"
+              : "focus:border-accent-orange/40",
+          )}
         />
-        <button
+        <Button
           data-testid="send-button"
           onClick={sendMessage}
-          disabled={sending || !text.trim()}
-          style={{
-            padding: "8px 14px",
-            borderRadius: "6px",
-            border: "none",
-            backgroundColor: sending || !text.trim()
-              ? "rgba(255,255,255,0.05)"
-              : ACCENT_ORANGE,
-            color: sending || !text.trim() ? "#6b7280" : "#fff",
-            fontSize: "12px",
-            fontWeight: 600,
-            cursor: sending || !text.trim() ? "default" : "pointer",
-            flexShrink: 0,
-            height: "36px",
-            transition: "all 0.15s",
-          }}
+          disabled={isDisabled}
+          size="sm"
+          className={cn(
+            "shrink-0",
+            isFinished
+              ? "border-accent-blue bg-accent-blue text-white hover:bg-accent-blue/90"
+              : "border-accent-orange bg-accent-orange text-white hover:bg-accent-orange/90",
+          )}
         >
-          {sending ? "..." : "Send"}
-        </button>
+          {buttonLabel}
+        </Button>
       </div>
 
       {/* Hint */}
-      <div style={{ fontSize: "10px", color: "#4b5563" }}>
+      <div className="text-[10px] text-muted-foreground/60">
         Ctrl+Enter to send
       </div>
 
       {/* Error */}
       {error && (
-        <div
-          style={{
-            fontSize: "11px",
-            color: "#ef4444",
-            padding: "4px 8px",
-            borderRadius: "4px",
-            backgroundColor: "rgba(239, 68, 68, 0.08)",
-          }}
-        >
+        <div className="text-[11px] text-accent-red py-1 px-2 rounded bg-accent-red/8">
           {error}
         </div>
       )}
 
       {/* Last sent confirmation */}
       {lastSent && !error && (
-        <div
-          style={{
-            fontSize: "11px",
-            color: "#22c55e",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
+        <div className="text-[11px] text-success truncate">
           Sent: {lastSent.length > 60 ? lastSent.slice(0, 57) + "..." : lastSent}
         </div>
       )}

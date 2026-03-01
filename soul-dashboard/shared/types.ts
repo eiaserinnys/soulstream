@@ -184,6 +184,8 @@ export interface SessionSummary {
   lastEventType?: string;
   createdAt?: string;
   completedAt?: string;
+  /** 첫 user_message의 텍스트 (세션 목록에서 표시용) */
+  prompt?: string;
 }
 
 /** 세션 상세 정보 */

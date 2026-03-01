@@ -6,62 +6,26 @@
  */
 
 import type { DashboardCard } from "@shared/types";
-import { monoFont, SectionLabel, CodeBlock, safeStringify } from "./shared";
+import { SectionLabel, CodeBlock, safeStringify } from "./shared";
 
 export function ErrorDetail({ card }: { card: DashboardCard }) {
   return (
-    <div style={{ padding: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+    <div className="p-4 flex flex-col gap-3">
       {/* Header */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "8px",
-        }}
-      >
-        <span style={{ fontSize: "16px" }}>{"\u274C"}</span>
-        <div
-          style={{
-            fontSize: "11px",
-            color: "#ef4444",
-            textTransform: "uppercase",
-            letterSpacing: "0.05em",
-            fontWeight: 600,
-          }}
-        >
+      <div className="flex items-center gap-2">
+        <span className="text-base">{"\u274C"}</span>
+        <div className="text-[11px] text-accent-red uppercase tracking-[0.05em] font-semibold">
           Error
         </div>
       </div>
 
       {/* Error banner */}
-      <div
-        style={{
-          padding: "10px 12px",
-          borderRadius: "6px",
-          backgroundColor: "rgba(239, 68, 68, 0.1)",
-          border: "1px solid rgba(239, 68, 68, 0.2)",
-        }}
-      >
-        <div
-          style={{
-            fontSize: "12px",
-            color: "#fca5a5",
-            fontWeight: 600,
-            marginBottom: "4px",
-          }}
-        >
+      <div className="p-2.5 px-3 rounded-md bg-destructive/10 border border-destructive/20">
+        <div className="text-xs text-destructive-foreground font-semibold mb-1">
           {card.toolName ?? "Tool"} failed
         </div>
         <pre
-          style={{
-            fontSize: "12px",
-            color: "#fca5a5",
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-word",
-            lineHeight: "1.5",
-            margin: 0,
-            fontFamily: monoFont,
-          }}
+          className="text-xs text-destructive-foreground whitespace-pre-wrap break-words leading-normal m-0 font-mono"
         >
           {card.toolResult || "(no error message)"}
         </pre>
@@ -71,12 +35,7 @@ export function ErrorDetail({ card }: { card: DashboardCard }) {
       <div>
         <SectionLabel>Tool</SectionLabel>
         <div
-          style={{
-            fontSize: "14px",
-            color: "#e5e7eb",
-            fontWeight: 600,
-            fontFamily: monoFont,
-          }}
+          className="text-sm text-foreground font-semibold font-mono"
         >
           {card.toolName ?? "unknown"}
         </div>
