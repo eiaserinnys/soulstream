@@ -41,11 +41,6 @@ from soul_server.models import (
 
 logger = logging.getLogger(__name__)
 
-# soul API용 도구 설정 (기본값: 요청에서 도구 목록이 지정되지 않은 경우 사용)
-DEFAULT_ALLOWED_TOOLS = [
-    "Read", "Glob", "Grep", "Task",
-    "WebFetch", "WebSearch", "Edit", "Write", "Bash",
-]
 DEFAULT_DISALLOWED_TOOLS = ["NotebookEdit", "TodoWrite"]
 
 # 컨텍스트 관련 상수
@@ -231,8 +226,8 @@ class SoulEngineAdapter:
         queue: asyncio.Queue = asyncio.Queue()
         loop = asyncio.get_running_loop()
 
-        # 요청별 도구 설정 적용 (None이면 기본값 사용)
-        effective_allowed = allowed_tools if allowed_tools is not None else DEFAULT_ALLOWED_TOOLS
+        # 요청별 도구 설정 적용 (None이면 제한 없음 — MCP 도구 포함 전체 허용)
+        effective_allowed = allowed_tools
         effective_disallowed = disallowed_tools if disallowed_tools is not None else DEFAULT_DISALLOWED_TOOLS
 
         # MCP 설정
