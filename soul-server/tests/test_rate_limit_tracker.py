@@ -82,12 +82,12 @@ class TestRecord:
         tracker.record({
             "rateLimitType": "five_hour",
             "utilization": 0.30,
-            "resetsAt": "2026-02-28T15:00:00Z",
+            "resetsAt": (datetime.now(timezone.utc) + timedelta(hours=5)).isoformat(),
         })
         tracker.record({
             "rateLimitType": "seven_day",
             "utilization": 0.51,
-            "resetsAt": "2026-03-01T00:00:00Z",
+            "resetsAt": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
         })
 
         status = tracker.get_profile_status("linegames")
@@ -133,7 +133,7 @@ class TestAlertTrigger:
         result = tracker.record({
             "rateLimitType": "five_hour",
             "utilization": 0.95,
-            "resetsAt": "2026-02-28T15:00:00Z",
+            "resetsAt": (datetime.now(timezone.utc) + timedelta(hours=5)).isoformat(),
         })
 
         assert result is not None
@@ -150,7 +150,7 @@ class TestAlertTrigger:
         result = tracker.record({
             "rateLimitType": "five_hour",
             "utilization": 0.94,
-            "resetsAt": "2026-02-28T15:00:00Z",
+            "resetsAt": (datetime.now(timezone.utc) + timedelta(hours=5)).isoformat(),
         })
 
         assert result is None
@@ -164,7 +164,7 @@ class TestAlertTrigger:
         info = {
             "rateLimitType": "five_hour",
             "utilization": 0.96,
-            "resetsAt": "2026-02-28T15:00:00Z",
+            "resetsAt": (datetime.now(timezone.utc) + timedelta(hours=5)).isoformat(),
         }
 
         result1 = tracker.record(info)
@@ -182,12 +182,12 @@ class TestAlertTrigger:
         result_5h = tracker.record({
             "rateLimitType": "five_hour",
             "utilization": 0.95,
-            "resetsAt": "2026-02-28T15:00:00Z",
+            "resetsAt": (datetime.now(timezone.utc) + timedelta(hours=5)).isoformat(),
         })
         result_7d = tracker.record({
             "rateLimitType": "seven_day",
             "utilization": 0.96,
-            "resetsAt": "2026-03-01T00:00:00Z",
+            "resetsAt": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
         })
 
         assert result_5h is not None
@@ -209,7 +209,7 @@ class TestAlertTrigger:
         result = tracker.record({
             "rateLimitType": "five_hour",
             "utilization": 0.95,
-            "resetsAt": "2026-02-28T15:00:00Z",
+            "resetsAt": (datetime.now(timezone.utc) + timedelta(hours=5)).isoformat(),
         })
 
         assert result is not None
@@ -282,7 +282,7 @@ class TestPersistence:
         tracker.record({
             "rateLimitType": "five_hour",
             "utilization": 0.42,
-            "resetsAt": "2026-02-28T15:00:00Z",
+            "resetsAt": (datetime.now(timezone.utc) + timedelta(hours=5)).isoformat(),
         })
 
         assert state_path.is_file()
@@ -298,11 +298,12 @@ class TestPersistence:
 
         # 상태 파일 직접 생성
         state_path.parent.mkdir(parents=True, exist_ok=True)
+        future_time = (datetime.now(timezone.utc) + timedelta(hours=5)).isoformat()
         state_data = {
             "linegames": {
                 "five_hour": {
                     "utilization": 0.80,
-                    "resets_at": "2026-02-28T20:00:00Z",
+                    "resets_at": future_time,
                     "alerted_95": False,
                 }
             }
@@ -353,7 +354,7 @@ class TestStatusQuery:
         tracker.record({
             "rateLimitType": "five_hour",
             "utilization": 0.42,
-            "resetsAt": "2026-02-28T15:00:00Z",
+            "resetsAt": (datetime.now(timezone.utc) + timedelta(hours=5)).isoformat(),
         })
 
         statuses = tracker.get_all_profiles_status()
@@ -377,7 +378,7 @@ class TestStatusQuery:
         tracker.record({
             "rateLimitType": "five_hour",
             "utilization": 0.50,
-            "resetsAt": "2026-02-28T15:00:00Z",
+            "resetsAt": (datetime.now(timezone.utc) + timedelta(hours=5)).isoformat(),
         })
 
         status = tracker.get_profile_status("linegames")

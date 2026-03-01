@@ -7,6 +7,7 @@ FastAPI TestClient를 사용한 엔드포인트 통합 테스트.
 """
 
 import json
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 import pytest
@@ -227,7 +228,7 @@ class TestGetAllRateLimits:
         tracker.record({
             "rateLimitType": "five_hour",
             "utilization": 0.42,
-            "resetsAt": "2026-02-28T15:00:00Z",
+            "resetsAt": (datetime.now(timezone.utc) + timedelta(hours=5)).isoformat(),
         })
 
         resp = setup_with_tracker["client"].get("/profiles/rate-limits")
@@ -258,7 +259,7 @@ class TestGetProfileRateLimits:
         tracker.record({
             "rateLimitType": "five_hour",
             "utilization": 0.55,
-            "resetsAt": "2026-02-28T15:00:00Z",
+            "resetsAt": (datetime.now(timezone.utc) + timedelta(hours=5)).isoformat(),
         })
 
         resp = setup_with_tracker["client"].get("/profiles/linegames/rate-limits")
