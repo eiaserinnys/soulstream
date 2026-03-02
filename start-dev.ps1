@@ -61,11 +61,11 @@ if ($Dashboard) {
 
 # PID와 그 자식 프로세스를 모두 종료하는 헬퍼
 function Stop-ProcessTree {
-    param([int]$Pid)
+    param([int]$ProcessId)
     # 자식 프로세스 먼저 재귀적으로 종료
-    Get-CimInstance Win32_Process -Filter "ParentProcessId=$Pid" -ErrorAction SilentlyContinue |
-        ForEach-Object { Stop-ProcessTree -Pid $_.ProcessId }
-    Stop-Process -Id $Pid -Force -ErrorAction SilentlyContinue
+    Get-CimInstance Win32_Process -Filter "ParentProcessId=$ProcessId" -ErrorAction SilentlyContinue |
+        ForEach-Object { Stop-ProcessTree -ProcessId $_.ProcessId }
+    Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
 }
 
 $procIds = @()
@@ -104,6 +104,6 @@ Read-Host
 Write-Host "[Cleanup] Stopping processes..." -ForegroundColor Yellow
 foreach ($p in $procIds) {
     Write-Host "  Killing PID $p (+ children) ..." -ForegroundColor DarkGray
-    Stop-ProcessTree -Pid $p
+    Stop-ProcessTree -ProcessId $p
 }
 Write-Host "[Done] All processes stopped." -ForegroundColor Green
