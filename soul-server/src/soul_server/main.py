@@ -315,12 +315,13 @@ async def global_exception_handler(request: Request, exc: Exception):
 if __name__ == "__main__":
     import uvicorn
 
-    # MEDIUM-1: reload 설정을 환경에 따라 결정
-    # 프로덕션에서는 항상 False, 개발에서만 True 가능
+    # reload=False 고정: start-dev.ps1이 프로세스를 직접 관리하므로
+    # uvicorn reload 불필요. Windows에서 reload=True는 SelectorEventLoop을
+    # 강제하여 subprocess(claude_agent_sdk)가 NotImplementedError 발생.
     uvicorn.run(
         "soul_server.main:app",
         host=settings.host,
         port=settings.port,
-        reload=settings.is_development,
+        reload=False,
         access_log=not settings.is_production,
     )
