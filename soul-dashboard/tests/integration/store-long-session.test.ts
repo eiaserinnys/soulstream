@@ -9,10 +9,14 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
-import { useDashboardStore } from "../../client/stores/dashboard-store";
+import {
+  useDashboardStore,
+  findTreeNode,
+} from "../../client/stores/dashboard-store";
 import { buildGraph } from "../../client/lib/layout-engine";
 import type {
   SoulSSEEvent,
+  EventTreeNode,
   TextStartEvent,
   TextDeltaEvent,
   TextEndEvent,
@@ -24,6 +28,21 @@ import type {
   CompleteEvent,
 } from "../../shared/types";
 
+/** 트리에서 모든 노드를 수집합니다. */
+function collectNodes(
+  root: EventTreeNode | null,
+  filter?: (n: EventTreeNode) => boolean,
+): EventTreeNode[] {
+  if (!root) return [];
+  const result: EventTreeNode[] = [];
+  function walk(node: EventTreeNode) {
+    if (!filter || filter(node)) result.push(node);
+    for (const child of node.children) walk(child);
+  }
+  walk(root);
+  return result;
+}
+
 describe("Store + Layout: Long Session Rendering", () => {
   beforeEach(() => {
     useDashboardStore.getState().reset();
@@ -32,11 +51,15 @@ describe("Store + Layout: Long Session Rendering", () => {
   // === [6] 장시간 세션 ===
 
   describe("[체크리스트 6] 장시간 세션 정상 렌더링", () => {
-    it("100개 카드 처리 후 스토어 상태 일관성", () => {
-      const { processEvent } = useDashboardStore.getState();
+    it("100개 노드 처리 후 스토어 상태 일관성", () => {
+      const { processEvent, setActiveSession } = useDashboardStore.getState();
+      setActiveSession("test:long");
       let eventId = 1;
 
-      // 50개의 text + 50개의 tool 카드 생성
+      // user_message 추가 (트리의 턴 노드)
+      processEvent({ type: "user_message", text: "Long session", user: "test" } as SoulSSEEvent, eventId++);
+
+      // 50개의 text + 50개의 tool 노드 생성
       for (let i = 0; i < 50; i++) {
         const textId = `text-${i}`;
         processEvent({ type: "text_start", card_id: textId } as TextStartEvent, eventId++);
@@ -61,25 +84,27 @@ describe("Store + Layout: Long Session Rendering", () => {
 
       const state = useDashboardStore.getState();
 
-      // 100개 카드가 정확히 생성되었는지
-      expect(state.cards).toHaveLength(100);
+      // 100개 노드(50 text + 50 tool)가 정확히 생성되었는지
+      const textNodes = collectNodes(state.tree, (n) => n.type === "text");
+      const toolNodes = collectNodes(state.tree, (n) => n.type === "tool");
+      expect(textNodes).toHaveLength(50);
+      expect(toolNodes).toHaveLength(50);
 
-      // 모든 카드가 완료 상태
-      expect(state.cards.every((c) => c.completed)).toBe(true);
+      // 모든 노드가 완료 상태
+      expect(textNodes.every((n) => n.completed)).toBe(true);
+      expect(toolNodes.every((n) => n.completed)).toBe(true);
 
       // lastEventId가 정확한지
       expect(state.lastEventId).toBe(eventId - 1);
-
-      // 카드 타입 비율 확인
-      const textCards = state.cards.filter((c) => c.type === "text");
-      const toolCards = state.cards.filter((c) => c.type === "tool");
-      expect(textCards).toHaveLength(50);
-      expect(toolCards).toHaveLength(50);
     });
 
-    it("100개 카드에서 그래프 노드/엣지 생성 성능", () => {
-      const { processEvent } = useDashboardStore.getState();
+    it("100개 노드에서 그래프 노드/엣지 생성 성능", () => {
+      const { processEvent, setActiveSession } = useDashboardStore.getState();
+      setActiveSession("test:perf");
       let eventId = 1;
+
+      // user_message 추가
+      processEvent({ type: "user_message", text: "Perf test", user: "test" } as SoulSSEEvent, eventId++);
 
       for (let i = 0; i < 50; i++) {
         const textId = `text-${i}`;
@@ -103,29 +128,30 @@ describe("Store + Layout: Long Session Rendering", () => {
         } as ToolResultEvent, eventId++);
       }
 
-      const cards = useDashboardStore.getState().cards;
-      const events: SoulSSEEvent[] = [
-        { type: "complete", result: "Done", attachments: [] },
-      ];
+      const tree = useDashboardStore.getState().tree;
 
       // 그래프 빌드 시간 측정
       const start = performance.now();
-      const { nodes, edges } = buildGraph(cards, events);
+      const { nodes, edges } = buildGraph(tree);
       const elapsed = performance.now() - start;
 
       // 노드가 생성되었는지
       expect(nodes.length).toBeGreaterThan(0);
       expect(edges.length).toBeGreaterThan(0);
 
-      // 100개 카드 기준 500ms 이내에 그래프 빌드 완료
+      // 100개 노드 기준 500ms 이내에 그래프 빌드 완료
       expect(elapsed).toBeLessThan(500);
     });
 
-    it("컴팩트 이벤트 전후로 카드가 정상 누적", () => {
-      const { processEvent } = useDashboardStore.getState();
+    it("컴팩트 이벤트 전후로 노드가 정상 누적", () => {
+      const { processEvent, setActiveSession } = useDashboardStore.getState();
+      setActiveSession("test:compact");
       let eventId = 1;
 
-      // 컴팩트 전 카드
+      // user_message 추가
+      processEvent({ type: "user_message", text: "Compact test", user: "test" } as SoulSSEEvent, eventId++);
+
+      // 컴팩트 전 텍스트
       processEvent({ type: "text_start", card_id: "before-1" } as TextStartEvent, eventId++);
       processEvent({ type: "text_delta", card_id: "before-1", text: "Before compact" } as TextDeltaEvent, eventId++);
       processEvent({ type: "text_end", card_id: "before-1" } as TextEndEvent, eventId++);
@@ -145,34 +171,46 @@ describe("Store + Layout: Long Session Rendering", () => {
         message: "Compacted: 180K → 50K tokens",
       } as CompactEvent, eventId++);
 
-      // 컴팩트 후 카드
+      // 컴팩트 후 텍스트
       processEvent({ type: "text_start", card_id: "after-1" } as TextStartEvent, eventId++);
       processEvent({ type: "text_delta", card_id: "after-1", text: "After compact" } as TextDeltaEvent, eventId++);
       processEvent({ type: "text_end", card_id: "after-1" } as TextEndEvent, eventId++);
 
       const state = useDashboardStore.getState();
 
-      // 컴팩트 전후 카드가 모두 존재
-      expect(state.cards).toHaveLength(2);
-      expect(state.cards[0].cardId).toBe("before-1");
-      expect(state.cards[0].content).toBe("Before compact");
-      expect(state.cards[1].cardId).toBe("after-1");
-      expect(state.cards[1].content).toBe("After compact");
+      // 컴팩트 전후 텍스트 노드가 모두 존재
+      const textNodes = collectNodes(state.tree, (n) => n.type === "text");
+      expect(textNodes).toHaveLength(2);
+
+      const before = findTreeNode(state.tree, "before-1");
+      expect(before).not.toBeNull();
+      expect(before!.content).toBe("Before compact");
+
+      const after = findTreeNode(state.tree, "after-1");
+      expect(after).not.toBeNull();
+      expect(after!.content).toBe("After compact");
     });
 
     it("컴팩트 이벤트가 포함된 세션에서 그래프가 정상 빌드됨", () => {
-      const cards = [
-        { cardId: "c1", type: "text" as const, content: "Before", completed: true },
-        { cardId: "c2", type: "text" as const, content: "After", completed: true },
-      ];
-      const events: SoulSSEEvent[] = [
-        { type: "compact", trigger: "auto", message: "Compacted" },
-        { type: "complete", result: "Done", attachments: [] },
-      ];
+      const { processEvent, setActiveSession } = useDashboardStore.getState();
+      setActiveSession("test:compact-graph");
+      let eventId = 1;
 
-      const { nodes, edges } = buildGraph(cards, events);
+      // 트리 구축
+      processEvent({ type: "user_message", text: "Test", user: "test" } as SoulSSEEvent, eventId++);
+      processEvent({ type: "text_start", card_id: "c1" } as TextStartEvent, eventId++);
+      processEvent({ type: "text_delta", card_id: "c1", text: "Before" } as TextDeltaEvent, eventId++);
+      processEvent({ type: "text_end", card_id: "c1" } as TextEndEvent, eventId++);
+      processEvent({ type: "compact", trigger: "auto", message: "Compacted" } as CompactEvent, eventId++);
+      processEvent({ type: "text_start", card_id: "c2" } as TextStartEvent, eventId++);
+      processEvent({ type: "text_delta", card_id: "c2", text: "After" } as TextDeltaEvent, eventId++);
+      processEvent({ type: "text_end", card_id: "c2" } as TextEndEvent, eventId++);
+      processEvent({ type: "complete", result: "Done", attachments: [] } as CompleteEvent, eventId++);
 
-      // 카드 노드 2개 + complete 시스템 노드가 존재
+      const tree = useDashboardStore.getState().tree;
+      const { nodes, edges } = buildGraph(tree);
+
+      // 텍스트 노드 2개 + complete 시스템 노드가 존재
       expect(nodes.length).toBeGreaterThanOrEqual(2);
 
       // complete 이벤트는 시스템 노드로 표시됨
@@ -181,12 +219,10 @@ describe("Store + Layout: Long Session Rendering", () => {
       expect(completeNode).toBeDefined();
 
       // compact 이벤트는 현재 노이즈로 분류되어 시스템 노드로 표시되지 않음
-      // (context_usage, progress, debug 등과 동일)
-      // 향후 컴팩트 시각화가 필요하면 isSignificantSystemEvent에 추가
       const compactNode = systemNodes.find((n) => n.data.label.includes("Compact"));
       expect(compactNode).toBeUndefined();
 
-      // 엣지가 존재 (카드 간 연결)
+      // 엣지가 존재 (노드 간 연결)
       expect(edges.length).toBeGreaterThan(0);
     });
   });
@@ -195,8 +231,10 @@ describe("Store + Layout: Long Session Rendering", () => {
 
   describe("[체크리스트 7] 에러 케이스 클라이언트 렌더링", () => {
     it("에러 이벤트 처리 후 스토어 상태", () => {
-      const { processEvent } = useDashboardStore.getState();
+      const { processEvent, setActiveSession } = useDashboardStore.getState();
+      setActiveSession("test:error");
 
+      processEvent({ type: "user_message", text: "Error test", user: "test" } as SoulSSEEvent, 0);
       processEvent({ type: "text_start", card_id: "c1" } as TextStartEvent, 1);
       processEvent({ type: "text_delta", card_id: "c1", text: "Working..." } as TextDeltaEvent, 2);
       processEvent({
@@ -207,39 +245,53 @@ describe("Store + Layout: Long Session Rendering", () => {
 
       const state = useDashboardStore.getState();
 
-      // 에러 전의 카드는 유지
-      expect(state.cards).toHaveLength(1);
-      expect(state.cards[0].cardId).toBe("c1");
+      // 에러 전의 텍스트 노드는 유지
+      const textNode = findTreeNode(state.tree, "c1");
+      expect(textNode).not.toBeNull();
+      expect(textNode!.content).toBe("Working...");
       // text_end를 받지 못했으므로 미완료
-      expect(state.cards[0].completed).toBe(false);
+      expect(textNode!.completed).toBe(false);
       // lastEventId는 에러 이벤트까지 반영
       expect(state.lastEventId).toBe(3);
+
+      // 에러 노드가 트리에 존재
+      const errorNodes = collectNodes(state.tree, (n) => n.type === "error");
+      expect(errorNodes.length).toBeGreaterThanOrEqual(1);
     });
 
     it("에러 이벤트가 그래프에 에러 노드로 표시", () => {
-      const cards = [
-        { cardId: "c1", type: "text" as const, content: "Partial work", completed: false },
-      ];
-      const events: SoulSSEEvent[] = [
-        { type: "error", message: "Execution failed" },
-      ];
+      const { processEvent, setActiveSession } = useDashboardStore.getState();
+      setActiveSession("test:error-graph");
 
-      const { nodes } = buildGraph(cards, events);
+      processEvent({ type: "user_message", text: "Error graph", user: "test" } as SoulSSEEvent, 0);
+      processEvent({ type: "text_start", card_id: "c1" } as TextStartEvent, 1);
+      processEvent({ type: "text_delta", card_id: "c1", text: "Partial work" } as TextDeltaEvent, 2);
+      processEvent({ type: "error", message: "Execution failed" } as ErrorEvent, 3);
+
+      const tree = useDashboardStore.getState().tree;
+      const { nodes } = buildGraph(tree);
       const systemNodes = nodes.filter((n) => n.type === "system");
 
       const errorNode = systemNodes.find((n) => n.data.label.includes("Error"));
       expect(errorNode).toBeDefined();
     });
 
-    it("도구 에러 카드가 정상 렌더링", () => {
-      const { processEvent } = useDashboardStore.getState();
+    it("도구 에러 노드가 정상 렌더링", () => {
+      const { processEvent, setActiveSession } = useDashboardStore.getState();
+      setActiveSession("test:tool-error");
+      let eventId = 1;
 
+      processEvent({ type: "user_message", text: "Tool error", user: "test" } as SoulSSEEvent, eventId++);
+      processEvent({ type: "text_start", card_id: "t0" } as TextStartEvent, eventId++);
+      processEvent({ type: "text_end", card_id: "t0" } as TextEndEvent, eventId++);
+
+      const toolEventId = eventId;
       processEvent({
         type: "tool_start",
         card_id: "t1",
         tool_name: "Bash",
         tool_input: { command: "invalid-cmd" },
-      } as ToolStartEvent, 1);
+      } as ToolStartEvent, eventId++);
 
       processEvent({
         type: "tool_result",
@@ -247,25 +299,30 @@ describe("Store + Layout: Long Session Rendering", () => {
         tool_name: "Bash",
         result: "command not found: invalid-cmd",
         is_error: true,
-      } as ToolResultEvent, 2);
+      } as ToolResultEvent, eventId++);
 
-      const cards = useDashboardStore.getState().cards;
-      expect(cards[0].isError).toBe(true);
-      expect(cards[0].toolResult).toContain("command not found");
+      // tool 노드 ID는 `tool-${eventId}` 형식
+      const toolNodes = collectNodes(useDashboardStore.getState().tree, (n) => n.type === "tool");
+      expect(toolNodes).toHaveLength(1);
+      const toolNode = toolNodes[0];
+      expect(toolNode.isError).toBe(true);
+      expect(toolNode.toolResult).toContain("command not found");
 
-      // 에러 도구 카드가 그래프에 정상 표시
-      const events: SoulSSEEvent[] = [];
-      const { nodes } = buildGraph(cards, events);
+      // 에러 도구 노드가 그래프에 정상 표시
+      const tree = useDashboardStore.getState().tree;
+      const { nodes } = buildGraph(tree);
 
       const toolResultNode = nodes.find((n) => n.type === "tool_result");
       expect(toolResultNode).toBeDefined();
       expect(toolResultNode!.data.isError).toBe(true);
     });
 
-    it("세션 이벤트 순서: progress → cards → error", () => {
-      const { processEvent } = useDashboardStore.getState();
+    it("세션 이벤트 순서: progress → text → tool → error", () => {
+      const { processEvent, setActiveSession } = useDashboardStore.getState();
+      setActiveSession("test:seq");
       let id = 1;
 
+      processEvent({ type: "user_message", text: "Seq test", user: "test" } as SoulSSEEvent, id++);
       processEvent({ type: "text_start", card_id: "c1" } as TextStartEvent, id++);
       processEvent({ type: "text_delta", card_id: "c1", text: "Partial" } as TextDeltaEvent, id++);
       processEvent({ type: "text_end", card_id: "c1" } as TextEndEvent, id++);
@@ -283,11 +340,16 @@ describe("Store + Layout: Long Session Rendering", () => {
 
       const state = useDashboardStore.getState();
 
-      // 텍스트 카드는 완료, 도구 카드는 미완료
-      expect(state.cards).toHaveLength(2);
-      expect(state.cards[0].completed).toBe(true);
-      expect(state.cards[1].completed).toBe(false);
-      expect(state.cards[1].type).toBe("tool");
+      // 텍스트 노드는 완료
+      const textNode = findTreeNode(state.tree, "c1");
+      expect(textNode).not.toBeNull();
+      expect(textNode!.completed).toBe(true);
+
+      // 도구 노드는 미완료 (tool 노드 ID는 tool-${eventId} 형식)
+      const toolNodes = collectNodes(state.tree, (n) => n.type === "tool");
+      expect(toolNodes).toHaveLength(1);
+      expect(toolNodes[0].completed).toBe(false);
+      expect(toolNodes[0].type).toBe("tool");
     });
   });
 });

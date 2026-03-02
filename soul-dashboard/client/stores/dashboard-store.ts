@@ -2,7 +2,14 @@
  * Soul Dashboard - Zustand Store
  *
  * 대시보드 전역 상태 관리.
- * 세션 목록, 활성 세션, 선택된 카드, SSE 이벤트 처리를 담당합니다.
+ * 세션 목록, 활성 세션, 선택된 노드, SSE 이벤트 처리를 담당합니다.
+ *
+ * 핵심 원칙: EventTreeNode 트리가 소스 오브 트루스.
+ * SSE 이벤트가 도착하면 트리에 삽입. 레이아웃 엔진은 트리를 DFS 순회하여 렌더링.
+ *
+ * Mutable tree + version counter 전략:
+ * - 트리 노드는 in-place 변경 (text_delta가 가장 빈번, O(1) 필요)
+ * - 변경 후 treeVersion++로 리렌더 트리거
  */
 
 import { create } from "zustand";
@@ -12,6 +19,7 @@ import type {
   SessionDetail,
   DashboardCard,
   SoulSSEEvent,
+  EventTreeNode,
 } from "@shared/types";
 import type { StorageMode } from "../providers/types";
 
@@ -49,21 +57,20 @@ export interface DashboardState {
     groupCount?: number;
   } | null;
 
-  /** 활성 세션의 카드 목록 (SSE 이벤트로 구성) */
-  cards: DashboardCard[];
+  /** 이벤트 트리 루트 (소스 오브 트루스) */
+  tree: EventTreeNode | null;
 
-  /**
-   * 그래프 레이아웃에 영향을 주는 SSE 이벤트만 저장.
-   * session, complete, error, intervention_sent 이벤트만 포함합니다.
-   * text_delta 등 노이즈성 이벤트는 저장하지 않아 메모리 사용을 제한합니다.
-   */
-  graphEvents: SoulSSEEvent[];
+  /** 트리 변경 감지용 카운터 (mutable tree이므로 참조 비교 불가) */
+  treeVersion: number;
 
   /** 접힌 서브 에이전트 그룹 ID 집합 */
   collapsedGroups: Set<string>;
 
   /** 마지막으로 수신한 이벤트 ID (SSE 재연결용) */
   lastEventId: number;
+
+  /** 알림 대상 이벤트 큐 (complete, error, intervention_sent) */
+  pendingNotifications: SoulSSEEvent[];
 
   /** 세션 생성 모드 (프롬프트 입력 화면 표시) */
   isComposing: boolean;
@@ -111,8 +118,58 @@ export interface DashboardActions {
   cancelCompose: () => void;
 
   // 상태 초기화
-  clearCards: () => void;
+  clearTree: () => void;
   reset: () => void;
+
+  // 하위 호환 alias
+  clearCards: () => void;
+}
+
+// === Internal Maps (closure 변수, state 아님) ===
+
+/** ID → 노드 (O(1) 탐색) */
+let nodeMap = new Map<string, EventTreeNode>();
+/** toolUseId → tool 노드 */
+let toolUseMap = new Map<string, EventTreeNode>();
+/** SSE card_id → text 노드 */
+let cardIdMap = new Map<string, EventTreeNode>();
+/** 현재 활성 user_message/intervention 노드 ID */
+let currentTurnNodeId: string | null = null;
+/** 마지막 text 노드 ID (tool_start 부모 결정) */
+let lastTextNodeId: string | null = null;
+
+function resetInternalMaps() {
+  nodeMap = new Map();
+  toolUseMap = new Map();
+  cardIdMap = new Map();
+  currentTurnNodeId = null;
+  lastTextNodeId = null;
+}
+
+// === Tree Helpers ===
+
+function createNode(
+  id: string,
+  type: EventTreeNode["type"],
+  content: string,
+  extra?: Partial<EventTreeNode>,
+): EventTreeNode {
+  const node: EventTreeNode = {
+    id,
+    type,
+    children: [],
+    content,
+    completed: false,
+    ...extra,
+  };
+  nodeMap.set(id, node);
+  return node;
+}
+
+function ensureRoot(tree: EventTreeNode | null): EventTreeNode {
+  if (tree) return tree;
+  const root = createNode("root-session", "session", "");
+  return root;
 }
 
 // === Initial State ===
@@ -127,10 +184,11 @@ const initialState: DashboardState = {
   selectedCardId: null,
   selectedNodeId: null,
   selectedEventNodeData: null,
-  cards: [],
-  graphEvents: [],
+  tree: null,
+  treeVersion: 0,
   collapsedGroups: new Set<string>(),
   lastEventId: 0,
+  pendingNotifications: [],
   isComposing: true,
   resumeTargetKey: null,
 };
@@ -143,10 +201,11 @@ function getSessionResetState() {
     selectedCardId: null as string | null,
     selectedNodeId: null as string | null,
     selectedEventNodeData: null as DashboardState["selectedEventNodeData"],
-    cards: [] as DashboardCard[],
-    graphEvents: [] as SoulSSEEvent[],
+    tree: null as EventTreeNode | null,
+    treeVersion: 0,
     collapsedGroups: new Set<string>(),
     lastEventId: 0,
+    pendingNotifications: [] as SoulSSEEvent[],
   };
 }
 
@@ -159,241 +218,427 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
 
       // --- 스토리지 모드 ---
 
-      setStorageMode: (storageMode) =>
+      setStorageMode: (storageMode) => {
+        resetInternalMaps();
         set({
           storageMode,
-          // 모드 변경 시 세션 목록과 활성 세션 초기화
           sessions: [],
           sessionsLoading: false,
           sessionsError: null,
           activeSessionKey: null,
           activeSession: null,
-          cards: [],
-          graphEvents: [],
+          tree: null,
+          treeVersion: 0,
           collapsedGroups: new Set<string>(),
           lastEventId: 0,
+          pendingNotifications: [],
           selectedCardId: null,
           selectedNodeId: null,
           selectedEventNodeData: null,
-        }),
+        });
+      },
 
       // --- 세션 목록 ---
 
       setSessions: (sessions) => set({ sessions, sessionsError: null }),
 
-    setSessionsLoading: (sessionsLoading) => set({ sessionsLoading }),
+      setSessionsLoading: (sessionsLoading) => set({ sessionsLoading }),
 
-    setSessionsError: (sessionsError) =>
-      set({ sessionsError, sessionsLoading: false }),
+      setSessionsError: (sessionsError) =>
+        set({ sessionsError, sessionsLoading: false }),
 
-    // --- 활성 세션 ---
+      // --- 활성 세션 ---
 
-    setActiveSession: (key, detail) =>
-      set({
-        ...getSessionResetState(),
-        activeSessionKey: key,
-        activeSession: detail ?? null,
-        isComposing: false,
-        resumeTargetKey: null,
-      }),
+      setActiveSession: (key, detail) => {
+        // 같은 세션이면 아무것도 하지 않음 (resume 등에서 불필요한 리셋 방지)
+        if (key !== null && key === get().activeSessionKey) return;
 
-    // --- 카드 선택 ---
+        resetInternalMaps();
+        set({
+          ...getSessionResetState(),
+          activeSessionKey: key,
+          activeSession: detail ?? null,
+          isComposing: false,
+          resumeTargetKey: null,
+        });
+      },
 
-    selectCard: (cardId, nodeId) =>
-      set({
-        selectedCardId: cardId,
-        selectedNodeId: nodeId ?? null,
-        selectedEventNodeData: null,
-      }),
+      // --- 카드 선택 ---
 
-    // --- 이벤트 노드 선택 ---
+      selectCard: (cardId, nodeId) =>
+        set({
+          selectedCardId: cardId,
+          selectedNodeId: nodeId ?? null,
+          selectedEventNodeData: null,
+        }),
 
-    selectEventNode: (data) =>
-      set({
-        selectedEventNodeData: data,
-        selectedCardId: null,
-        selectedNodeId: null,
-      }),
+      // --- 이벤트 노드 선택 ---
 
-    // --- SSE 이벤트 처리 ---
-    // 주의: 카드 객체를 직접 변경하지 않고, 새 객체를 생성하여 참조 동등성을 보장합니다.
+      selectEventNode: (data) =>
+        set({
+          selectedEventNodeData: data,
+          selectedCardId: null,
+          selectedNodeId: null,
+        }),
 
-    processEvent: (event, eventId) => {
-      const state = get();
-      const cards = [...state.cards];
-      // 그래프 레이아웃에 영향을 주는 이벤트만 저장 (메모리 절약)
-      const isGraphRelevant =
-        event.type === "session" ||
-        event.type === "complete" ||
-        event.type === "error" ||
-        event.type === "intervention_sent" ||
-        event.type === "user_message";
-      const graphEvents = isGraphRelevant
-        ? [...state.graphEvents, event]
-        : state.graphEvents;
-      let updated = false;
+      // --- SSE 이벤트 처리 ---
+      // 트리에 in-place 변경 후 treeVersion++ 으로 리렌더 트리거
 
-      switch (event.type) {
-        // 텍스트 카드 시작
-        case "text_start": {
-          cards.push({
-            cardId: event.card_id,
-            type: "text",
-            content: "",
-            completed: false,
-          });
-          updated = true;
-          break;
-        }
+      processEvent: (event, eventId) => {
+        const state = get();
+        let root = state.tree;
+        let updated = false;
 
-        // 텍스트 카드 델타 (누적) — 새 객체 생성으로 참조 변경 보장
-        case "text_delta": {
-          const idx = cards.findIndex((c) => c.cardId === event.card_id);
-          if (idx !== -1) {
-            cards[idx] = {
-              ...cards[idx],
-              content: cards[idx].content + event.text,
-            };
-            updated = true;
-          }
-          break;
-        }
-
-        // 텍스트 카드 완료
-        case "text_end": {
-          const idx = cards.findIndex((c) => c.cardId === event.card_id);
-          if (idx !== -1) {
-            cards[idx] = { ...cards[idx], completed: true };
-            updated = true;
-          }
-          break;
-        }
-
-        // 도구 카드 시작 — 항상 고유 cardId 부여, parentCardId로 thinking 연결 보존
-        case "tool_start": {
-          const cardId = `tool-${eventId}`;
-          cards.push({
-            cardId,
-            type: "tool",
-            content: "",
-            toolName: event.tool_name,
-            toolInput: event.tool_input,
-            completed: false,
-            toolUseId: event.tool_use_id,
-            parentCardId: event.card_id,
-          });
-          updated = true;
-          break;
-        }
-
-        // 도구 카드 결과 — tool_use_id 우선, 실패 시 tool_name으로 폴백 매칭
-        case "tool_result": {
-          let idx = -1;
-          // 1차: tool_use_id로 정확 매칭 (가장 신뢰성 높음)
-          if (event.tool_use_id) {
-            idx = cards.findIndex(
-              (c) => c.type === "tool" && c.toolUseId === event.tool_use_id,
+        switch (event.type) {
+          case "user_message": {
+            root = ensureRoot(root);
+            const node = createNode(
+              `user-msg-${eventId}`,
+              "user_message",
+              event.text,
+              { completed: true, user: event.user },
             );
+            root.children.push(node);
+            currentTurnNodeId = node.id;
+            lastTextNodeId = null;
+            updated = true;
+            break;
           }
-          // 2차: card_id로 미완료 tool 카드 매칭
-          if (idx === -1 && event.card_id) {
-            idx = cards.findIndex(
-              (c) => c.type === "tool" && !c.completed && c.parentCardId === event.card_id && c.toolName === event.tool_name,
+
+          case "session": {
+            root = ensureRoot(root);
+            root.sessionId = event.session_id;
+            root.content = event.session_id;
+            updated = true;
+            break;
+          }
+
+          case "intervention_sent": {
+            root = ensureRoot(root);
+            const node = createNode(
+              `intervention-${eventId}`,
+              "intervention",
+              event.text,
+              { completed: true, user: event.user },
             );
+            root.children.push(node);
+            currentTurnNodeId = node.id;
+            lastTextNodeId = null;
+            updated = true;
+            break;
           }
-          // 3차 폴백: tool_name으로 역순 재탐색
-          if (idx === -1) {
-            for (let i = cards.length - 1; i >= 0; i--) {
-              if (
-                cards[i].type === "tool" &&
-                !cards[i].completed &&
-                cards[i].toolName === event.tool_name
-              ) {
-                idx = i;
-                break;
+
+          case "text_start": {
+            root = ensureRoot(root);
+            // currentTurnNode가 없으면 암시적 user_message 턴 생성
+            if (!currentTurnNodeId) {
+              const implicitTurn = createNode(
+                `implicit-turn-${eventId}`,
+                "user_message",
+                "",
+                { completed: true, user: "unknown" },
+              );
+              root.children.push(implicitTurn);
+              currentTurnNodeId = implicitTurn.id;
+            }
+            const turnNode = nodeMap.get(currentTurnNodeId);
+            if (turnNode) {
+              const textNode = createNode(event.card_id, "text", "");
+              cardIdMap.set(event.card_id, textNode);
+              turnNode.children.push(textNode);
+              lastTextNodeId = textNode.id;
+              updated = true;
+            }
+            break;
+          }
+
+          case "text_delta": {
+            const textNode = cardIdMap.get(event.card_id);
+            if (textNode) {
+              textNode.content += event.text;
+              updated = true;
+            }
+            break;
+          }
+
+          case "text_end": {
+            const textNode = cardIdMap.get(event.card_id);
+            if (textNode) {
+              textNode.completed = true;
+              updated = true;
+            }
+            break;
+          }
+
+          case "tool_start": {
+            root = ensureRoot(root);
+            const toolId = `tool-${eventId}`;
+            const toolNode = createNode(toolId, "tool", "", {
+              toolName: event.tool_name,
+              toolInput: event.tool_input,
+              toolUseId: event.tool_use_id,
+            });
+
+            if (event.tool_use_id) {
+              toolUseMap.set(event.tool_use_id, toolNode);
+            }
+
+            // tool의 부모는 lastTextNode
+            const parentText = lastTextNodeId ? nodeMap.get(lastTextNodeId) : null;
+            if (parentText) {
+              parentText.children.push(toolNode);
+            } else {
+              // text가 없는 경우: currentTurnNode에 직접 추가
+              const turnNode = currentTurnNodeId ? nodeMap.get(currentTurnNodeId) : null;
+              if (turnNode) {
+                turnNode.children.push(toolNode);
+              } else {
+                // 최후 수단: root에 추가
+                root.children.push(toolNode);
               }
             }
-          }
-          if (idx !== -1) {
-            cards[idx] = {
-              ...cards[idx],
-              toolResult: event.result,
-              isError: event.is_error,
-              completed: true,
-            };
             updated = true;
+            break;
           }
-          break;
+
+          case "tool_result": {
+            let toolNode: EventTreeNode | undefined;
+
+            // 1차: tool_use_id로 정확 매칭
+            if (event.tool_use_id) {
+              toolNode = toolUseMap.get(event.tool_use_id);
+            }
+            // 2차: card_id + tool_name으로 매칭
+            if (!toolNode && event.card_id) {
+              const parentText = cardIdMap.get(event.card_id);
+              if (parentText) {
+                toolNode = parentText.children.find(
+                  (c) =>
+                    c.type === "tool" &&
+                    !c.completed &&
+                    c.toolName === event.tool_name,
+                );
+              }
+            }
+            // 3차 폴백: 모든 tool 노드에서 미완료 + tool_name 매칭 (역순)
+            if (!toolNode) {
+              for (const [, node] of nodeMap) {
+                if (
+                  node.type === "tool" &&
+                  !node.completed &&
+                  node.toolName === event.tool_name
+                ) {
+                  toolNode = node;
+                  // 가장 마지막 매칭을 사용하지 않고 첫 매칭으로 break
+                  // (nodeMap 삽입 순서가 시간순이므로 마지막 매칭을 위해 계속 순회)
+                }
+              }
+            }
+
+            if (toolNode) {
+              toolNode.toolResult = event.result;
+              toolNode.isError = event.is_error;
+              toolNode.completed = true;
+              updated = true;
+            }
+            break;
+          }
+
+          case "complete": {
+            root = ensureRoot(root);
+            const turnNode = currentTurnNodeId ? nodeMap.get(currentTurnNodeId) : null;
+            const completeNode = createNode(
+              `complete-${eventId}`,
+              "complete",
+              event.result ?? "Session completed",
+              { completed: true },
+            );
+            if (turnNode) {
+              turnNode.children.push(completeNode);
+            } else {
+              root.children.push(completeNode);
+            }
+            updated = true;
+            break;
+          }
+
+          case "error": {
+            root = ensureRoot(root);
+            const turnNode = currentTurnNodeId ? nodeMap.get(currentTurnNodeId) : null;
+            const errorNode = createNode(
+              `error-${eventId}`,
+              "error",
+              event.message,
+              { completed: true, isError: true },
+            );
+            if (turnNode) {
+              turnNode.children.push(errorNode);
+            } else {
+              root.children.push(errorNode);
+            }
+            updated = true;
+            break;
+          }
+
+          default:
+            break;
         }
 
-        // progress 이벤트: 텍스트 카드 없이 들어오는 경우 별도 처리 안 함
-        // complete, error, result: 세션 상태 업데이트는 세션 목록 폴링이 담당
-        default:
-          break;
-      }
+        // 알림 큐에 이벤트 추가 (complete, error, intervention_sent)
+        const NOTIFY_TYPES = new Set(["complete", "error", "intervention_sent"]);
+        const shouldNotify = NOTIFY_TYPES.has(event.type);
 
-      if (updated || isGraphRelevant) {
-        set({ cards, graphEvents, lastEventId: eventId });
-      } else {
-        set({ lastEventId: eventId });
-      }
-    },
+        if (updated) {
+          set({
+            tree: root,
+            treeVersion: state.treeVersion + 1,
+            lastEventId: eventId,
+            ...(shouldNotify
+              ? { pendingNotifications: [...state.pendingNotifications, event] }
+              : {}),
+          });
+        } else {
+          set({
+            lastEventId: eventId,
+            ...(shouldNotify
+              ? { pendingNotifications: [...state.pendingNotifications, event] }
+              : {}),
+          });
+        }
+      },
 
-    // --- 서브 에이전트 그룹 ---
+      // --- 서브 에이전트 그룹 ---
 
-    toggleGroupCollapse: (groupId) => {
-      const current = get().collapsedGroups;
-      const next = new Set(current);
-      if (next.has(groupId)) {
-        next.delete(groupId);
-      } else {
-        next.add(groupId);
-      }
-      set({ collapsedGroups: next });
-    },
+      toggleGroupCollapse: (groupId) => {
+        const current = get().collapsedGroups;
+        const next = new Set(current);
+        if (next.has(groupId)) {
+          next.delete(groupId);
+        } else {
+          next.add(groupId);
+        }
+        set({ collapsedGroups: next });
+      },
 
-    // --- 세션 생성/재개 ---
+      // --- 세션 생성/재개 ---
 
-    startCompose: () =>
-      set({
-        ...getSessionResetState(),
-        isComposing: true,
-        resumeTargetKey: null,
-      }),
+      startCompose: () => {
+        resetInternalMaps();
+        set({
+          ...getSessionResetState(),
+          isComposing: true,
+          resumeTargetKey: null,
+        });
+      },
 
-    // Resume: 기존 세션 상태를 유지하면서 compose 모드 진입
-    // (기존 cards, graphEvents, activeSession을 유지하여 이어서 표시)
-    startResume: (sessionKey) =>
-      set({
-        isComposing: true,
-        resumeTargetKey: sessionKey,
-      }),
+      // Resume: 기존 세션 상태를 유지하면서 compose 모드 진입
+      startResume: (sessionKey) =>
+        set({
+          isComposing: true,
+          resumeTargetKey: sessionKey,
+        }),
 
-    cancelCompose: () =>
-      set({
-        isComposing: false,
-        resumeTargetKey: null,
-      }),
+      cancelCompose: () =>
+        set({
+          isComposing: false,
+          resumeTargetKey: null,
+        }),
 
-    // --- 초기화 ---
+      // --- 초기화 ---
 
-    clearCards: () =>
-      set({
-        cards: [],
-        graphEvents: [],
-        collapsedGroups: new Set<string>(),
-        lastEventId: 0,
-        selectedCardId: null,
-        selectedNodeId: null,
-        selectedEventNodeData: null,
-      }),
+      clearTree: () => {
+        resetInternalMaps();
+        set({
+          tree: null,
+          treeVersion: 0,
+          collapsedGroups: new Set<string>(),
+          lastEventId: 0,
+          pendingNotifications: [],
+          selectedCardId: null,
+          selectedNodeId: null,
+          selectedEventNodeData: null,
+        });
+      },
 
-      reset: () => set(initialState),
+      // 하위 호환 alias
+      clearCards() {
+        get().clearTree();
+      },
+
+      reset: () => {
+        resetInternalMaps();
+        set(initialState);
+      },
     }),
     {
       name: "soul-dashboard-storage",
       // 스토리지 모드만 영속화 (세션 데이터는 제외)
       partialize: (state) => ({ storageMode: state.storageMode }),
-    }
-  )
+    },
+  ),
 );
+
+// === Tree Utility Functions (외부에서 사용) ===
+
+/** 트리의 전체 노드 수를 카운트합니다. */
+export function countTreeNodes(node: EventTreeNode | null): number {
+  if (!node) return 0;
+  let count = 1;
+  for (const child of node.children) {
+    count += countTreeNodes(child);
+  }
+  return count;
+}
+
+/** 트리에서 미완료 노드 수를 카운트합니다. */
+export function countStreamingNodes(node: EventTreeNode | null): number {
+  if (!node) return 0;
+  let count = node.completed ? 0 : 1;
+  for (const child of node.children) {
+    count += countStreamingNodes(child);
+  }
+  return count;
+}
+
+/** 트리에서 ID로 노드를 찾습니다. */
+export function findTreeNode(
+  root: EventTreeNode | null,
+  id: string,
+): EventTreeNode | null {
+  if (!root) return null;
+  if (root.id === id) return root;
+  for (const child of root.children) {
+    const found = findTreeNode(child, id);
+    if (found) return found;
+  }
+  return null;
+}
+
+/** DashboardCard 호환 객체를 트리에서 생성합니다. */
+export function treeNodeToCard(node: EventTreeNode): DashboardCard {
+  return {
+    cardId: node.id,
+    type: node.type === "user_message"
+      ? "user_message"
+      : node.type === "intervention"
+        ? "intervention"
+        : node.type === "session"
+          ? "session"
+          : node.type === "complete"
+            ? "complete"
+            : node.type === "error"
+              ? "error"
+              : node.type === "tool"
+                ? "tool"
+                : "text",
+    content: node.content,
+    completed: node.completed,
+    toolName: node.toolName,
+    toolInput: node.toolInput,
+    toolResult: node.toolResult,
+    isError: node.isError,
+    toolUseId: node.toolUseId,
+    user: node.user,
+    sessionId: node.sessionId,
+  };
+}

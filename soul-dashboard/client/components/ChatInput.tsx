@@ -114,12 +114,12 @@ export function ChatInput() {
       }
 
       if (isFinished) {
-        // Resume 성공 → 새 세션으로 전환
-        const result = await response.json();
-        setActiveSession(result.sessionKey);
-      } else {
-        setLastSent(trimmed);
+        // Resume 성공 — 세션 전환 불필요
+        // 서버가 SSE로 user_message + 후속 이벤트를 기존 세션에 포워딩하므로
+        // 기존 그래프가 유지되고 새 이벤트가 자동으로 추가됨
+        await response.json();
       }
+      setLastSent(trimmed);
       setText("");
     } catch (err) {
       // AbortError는 의도적 취소이므로 무시

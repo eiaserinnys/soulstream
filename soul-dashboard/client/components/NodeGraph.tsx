@@ -20,7 +20,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-import { useDashboardStore } from "../stores/dashboard-store";
+import { useDashboardStore, countTreeNodes, countStreamingNodes } from "../stores/dashboard-store";
 import { nodeTypes } from "../nodes";
 import {
   buildGraph,
@@ -58,7 +58,6 @@ function calcPanToNode(
   const nodeW = dims.width * zoom;
   const nodeH = dims.height * zoom;
 
-  // 뷰포트 안에 있는지 체크 (마진 포함)
   if (
     screenX + nodeW > PAN_MARGIN &&
     screenX < vpW - PAN_MARGIN &&
@@ -71,29 +70,19 @@ function calcPanToNode(
   let dx = 0;
   let dy = 0;
 
-  // X축: 노드가 뷰포트 좌측으로 벗어난 경우
-  // 좌측 가장자리를 마진에 맞춤 (오버사이즈 노드도 동일 처리: 좌측 우선)
   if (screenX + nodeW <= PAN_MARGIN) {
     dx = PAN_MARGIN - screenX;
-  }
-  // X축: 노드가 뷰포트 우측으로 벗어난 경우
-  else if (screenX >= vpW - PAN_MARGIN) {
+  } else if (screenX >= vpW - PAN_MARGIN) {
     dx = vpW - PAN_MARGIN - nodeW - screenX;
-    // 노드가 뷰포트보다 클 때: 좌측 가장자리가 보이도록 클램프
     if (nodeW > vpW - 2 * PAN_MARGIN) {
       dx = PAN_MARGIN - screenX;
     }
   }
 
-  // Y축: 노드가 뷰포트 상단으로 벗어난 경우
-  // 상단 가장자리를 마진에 맞춤 (오버사이즈 노드도 동일 처리: 상단 우선)
   if (screenY + nodeH <= PAN_MARGIN) {
     dy = PAN_MARGIN - screenY;
-  }
-  // Y축: 노드가 뷰포트 하단으로 벗어난 경우
-  else if (screenY >= vpH - PAN_MARGIN) {
+  } else if (screenY >= vpH - PAN_MARGIN) {
     dy = vpH - PAN_MARGIN - nodeH - screenY;
-    // 노드가 뷰포트보다 클 때: 상단 가장자리가 보이도록 클램프
     if (nodeH > vpH - 2 * PAN_MARGIN) {
       dy = PAN_MARGIN - screenY;
     }
@@ -105,8 +94,8 @@ function calcPanToNode(
 // === Inner Graph (needs ReactFlow context) ===
 
 function NodeGraphInner() {
-  const cards = useDashboardStore((s) => s.cards);
-  const graphEvents = useDashboardStore((s) => s.graphEvents);
+  const tree = useDashboardStore((s) => s.tree);
+  const treeVersion = useDashboardStore((s) => s.treeVersion);
   const collapsedGroups = useDashboardStore((s) => s.collapsedGroups);
   const selectedCardId = useDashboardStore((s) => s.selectedCardId);
   const selectedNodeId = useDashboardStore((s) => s.selectedNodeId);
@@ -120,19 +109,15 @@ function NodeGraphInner() {
   const [nodes, setNodes, onNodesChange] = useNodesState<GraphNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<GraphEdge>([]);
 
-  // 신규 노드 감지를 위한 ID 추적
   const prevNodeIdsRef = useRef<Set<string>>(new Set());
-  // 첫 로드 판별 플래그
   const hasInitializedRef = useRef(false);
-  // 이전 세션 키 추적 (세션 전환 시 fit-to-view 리셋용)
   const prevSessionKeyRef = useRef<string | null>(null);
-  // 선택 상태를 ref로 추적 (useEffect 의존성에서 제거하여 선택 취소 루프 방지)
   const selectedCardIdRef = useRef(selectedCardId);
   const selectedNodeIdRef = useRef(selectedNodeId);
   selectedCardIdRef.current = selectedCardId;
   selectedNodeIdRef.current = selectedNodeId;
 
-  // 카드/이벤트가 변경되면 그래프 재구성 (디바운스 적용)
+  // 트리/이벤트가 변경되면 그래프 재구성 (디바운스 적용)
   useEffect(() => {
     if (!activeSessionKey) {
       setNodes([]);
@@ -143,7 +128,6 @@ function NodeGraphInner() {
       return;
     }
 
-    // 세션 전환 감지: 다른 세션으로 바뀌면 fit-to-view를 다시 수행하도록 리셋
     if (prevSessionKeyRef.current !== null && prevSessionKeyRef.current !== activeSessionKey) {
       prevNodeIdsRef.current = new Set();
       hasInitializedRef.current = false;
@@ -154,14 +138,10 @@ function NodeGraphInner() {
 
     const timer = setTimeout(() => {
       const { nodes: newNodes, edges: newEdges } = buildGraph(
-        cards,
-        graphEvents,
+        tree,
         collapsedGroups,
       );
 
-      // 선택된 노드 반영: selectedNodeId(고유 노드 ID)로 판별하여
-      // tool_call/tool_result가 동시 선택되는 문제를 방지
-      // ref를 사용하여 선택 상태 변경이 useEffect를 재트리거하지 않도록 함
       const curSelectedNodeId = selectedNodeIdRef.current;
       const curSelectedCardId = selectedCardIdRef.current;
       const nodesWithSelection = newNodes.map((n) => ({
@@ -174,7 +154,6 @@ function NodeGraphInner() {
       setNodes(nodesWithSelection);
       setEdges(newEdges);
 
-      // 신규 노드 감지: 이전에 없던 ID가 추가되었는지 확인
       const currentIds = new Set(nodesWithSelection.map((n) => n.id));
       const addedNodes = nodesWithSelection.filter(
         (n) => !prevNodeIdsRef.current.has(n.id),
@@ -186,14 +165,11 @@ function NodeGraphInner() {
 
         rafId = requestAnimationFrame(() => {
           const { width: vpW, height: vpH } = store.getState();
-          if (vpW === 0 || vpH === 0) return; // 캔버스 미준비 → hasInitialized 유지하여 재시도
+          if (vpW === 0 || vpH === 0) return;
 
           if (isFirstLoad) {
-            // 캔버스 준비 확인 후에만 초기화 완료로 표시
             hasInitializedRef.current = true;
 
-            // === 세션 변경(첫 로드): 줌 허용 1회 ===
-            // 1. 전체 노드의 바운딩 박스 계산
             let minX = Infinity;
             let minY = Infinity;
             let maxX = -Infinity;
@@ -206,7 +182,6 @@ function NodeGraphInner() {
               maxY = Math.max(maxY, n.position.y + d.height);
             }
 
-            // 2. 바운딩 박스와 뷰포트 비교하여 적절한 줌 계산
             const graphW = maxX - minX;
             const graphH = maxY - minY;
             const INIT_PADDING = 0.15;
@@ -218,7 +193,6 @@ function NodeGraphInner() {
               zoom = Math.max(zoom, MIN_ZOOM);
             }
 
-            // 3. 전체 그래프의 바운딩 박스 중앙을 뷰포트 중앙에 배치
             const centerX = (minX + maxX) / 2;
             const centerY = (minY + maxY) / 2;
 
@@ -233,18 +207,14 @@ function NodeGraphInner() {
             return;
           }
 
-          // 스트리밍 중에도 초기화 완료로 표시
           hasInitializedRef.current = true;
 
-          // === 스트리밍 노드 추가: 줌 절대 변경 금지, pan만 수행 ===
           const viewport = getViewport();
-          // 가장 최근 추가된 노드를 대상으로 pan 계산
           const targetNode = addedNodes[addedNodes.length - 1];
           const { dx, dy } = calcPanToNode(targetNode, viewport, vpW, vpH);
 
           if (dx === 0 && dy === 0) return;
 
-          // zoom은 현재 viewport의 값을 그대로 유지 (방어적 고정)
           setViewport(
             { x: viewport.x + dx, y: viewport.y + dy, zoom: viewport.zoom },
             { duration: 300 },
@@ -258,8 +228,8 @@ function NodeGraphInner() {
       if (rafId !== undefined) cancelAnimationFrame(rafId);
     };
   }, [
-    cards,
-    graphEvents,
+    treeVersion,
+    tree,
     collapsedGroups,
     activeSessionKey,
     setNodes,
@@ -269,7 +239,7 @@ function NodeGraphInner() {
     store,
   ]);
 
-  // 선택 상태 변경 시 노드의 selected 속성만 업데이트 (그래프 재구성 없이)
+  // 선택 상태 변경 시 노드의 selected 속성만 업데이트
   useEffect(() => {
     setNodes((prev) =>
       prev.map((n) => {
@@ -288,7 +258,6 @@ function NodeGraphInner() {
         const nodeData = selectedNodes[0].data;
         const nodeType = nodeData?.nodeType as string | undefined;
 
-        // tool_group 노드 → groupedCardIds 포함하여 이벤트 노드 데이터로 저장
         if (nodeType === "tool_group") {
           selectEventNode({
             nodeType,
@@ -307,7 +276,6 @@ function NodeGraphInner() {
           return;
         }
 
-        // user/intervention/system 등 카드 기반이 아닌 노드 → 이벤트 노드 데이터 저장
         if (nodeType === "user" || nodeType === "intervention" || nodeType === "system") {
           selectEventNode({
             nodeType,
@@ -317,7 +285,6 @@ function NodeGraphInner() {
           return;
         }
       }
-      // 선택 해제, 다중 선택, 또는 처리되지 않은 노드 타입 → 선택 해제
       selectCard(null);
     },
     [selectCard, selectEventNode],
@@ -332,7 +299,7 @@ function NodeGraphInner() {
     );
   }
 
-  if (cards.length === 0) {
+  if (!tree) {
     return (
       <div className="flex-1 flex items-center justify-center h-full">
         <div className="text-muted-foreground text-[13px]">
@@ -399,10 +366,13 @@ export function NodeGraph() {
 // === Header Component ===
 
 function GraphHeader() {
-  const cards = useDashboardStore((s) => s.cards);
+  const tree = useDashboardStore((s) => s.tree);
+  const treeVersion = useDashboardStore((s) => s.treeVersion);
+
+  const nodeCount = useMemo(() => countTreeNodes(tree), [tree, treeVersion]);
   const streamingCount = useMemo(
-    () => cards.filter((c) => !c.completed).length,
-    [cards],
+    () => countStreamingNodes(tree),
+    [tree, treeVersion],
   );
 
   return (
@@ -416,7 +386,7 @@ function GraphHeader() {
           </span>
         )}
         <span className="text-muted-foreground font-normal">
-          {cards.length}
+          {nodeCount}
         </span>
       </div>
     </div>

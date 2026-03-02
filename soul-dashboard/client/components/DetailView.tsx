@@ -10,7 +10,7 @@
  */
 
 import type { DashboardCard } from "@shared/types";
-import { useDashboardStore } from "../stores/dashboard-store";
+import { useDashboardStore, findTreeNode, treeNodeToCard } from "../stores/dashboard-store";
 import { ThinkingDetail } from "./detail/ThinkingDetail";
 import { ToolDetail } from "./detail/ToolDetail";
 import { SubAgentDetail } from "./detail/SubAgentDetail";
@@ -93,10 +93,13 @@ export function DetailView() {
   const selectedEventNodeData = useDashboardStore(
     (s) => s.selectedEventNodeData,
   );
-  const cards = useDashboardStore((s) => s.cards);
+  const tree = useDashboardStore((s) => s.tree);
 
-  const selectedCard = selectedCardId
-    ? cards.find((c) => c.cardId === selectedCardId) ?? null
+  const selectedCard: DashboardCard | null = selectedCardId
+    ? (() => {
+        const treeNode = findTreeNode(tree, selectedCardId);
+        return treeNode ? treeNodeToCard(treeNode) : null;
+      })()
     : null;
 
   const hasSelection = selectedCard || selectedEventNodeData;

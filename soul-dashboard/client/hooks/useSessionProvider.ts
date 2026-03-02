@@ -21,7 +21,7 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
 
   const storageMode = useDashboardStore((s) => s.storageMode);
   const processEvent = useDashboardStore((s) => s.processEvent);
-  const clearCards = useDashboardStore((s) => s.clearCards);
+  const clearTree = useDashboardStore((s) => s.clearTree);
 
   const [status, setStatus] = useState<ConnectionStatus>("disconnected");
 
@@ -33,7 +33,7 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
     }
 
     // 카드 초기화
-    clearCards();
+    clearTree();
     setStatus("connecting");
 
     const provider = getSessionProvider(storageMode);
@@ -118,15 +118,15 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
       unsubscribe();
       setStatus("disconnected");
     };
-  }, [sessionKey, storageMode, processEvent, clearCards]);
+  }, [sessionKey, storageMode, processEvent, clearTree]);
 
   const reconnect = useCallback(() => {
     // 재연결은 sessionKey 변경으로 트리거됨
     // 여기서는 수동 재연결을 위해 상태만 초기화
     if (sessionKey) {
-      clearCards();
+      clearTree();
     }
-  }, [sessionKey, clearCards]);
+  }, [sessionKey, clearTree]);
 
   return {
     status,

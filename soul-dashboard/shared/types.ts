@@ -197,19 +197,63 @@ export interface SessionDetail extends SessionSummary {
   events: EventRecord[];
 }
 
+// === Event Tree ===
+
+/** 트리 노드 타입 (SSE 이벤트 lifecycle → 단일 노드) */
+export type EventTreeNodeType =
+  | "session"
+  | "user_message"
+  | "intervention"
+  | "text"
+  | "tool"
+  | "complete"
+  | "error";
+
+/** 이벤트 트리 노드 — 소스 오브 트루스 */
+export interface EventTreeNode {
+  id: string;
+  type: EventTreeNodeType;
+  children: EventTreeNode[];
+  content: string;
+  completed: boolean;
+
+  // tool 전용
+  toolName?: string;
+  toolInput?: Record<string, unknown>;
+  toolResult?: string;
+  isError?: boolean;
+  toolUseId?: string;
+
+  // user_message / intervention 전용
+  user?: string;
+
+  // session 전용
+  sessionId?: string;
+}
+
 // === Dashboard Card ===
 
 /**
- * 대시보드 카드 - 텍스트 블록 또는 도구 호출 단위의 UI 추상화.
+ * @deprecated EventTreeNode로 대체 예정. 하위 호환을 위해 유지.
  *
- * Soul의 card_id(UUID4 8자)로 식별됩니다.
- * text_start → text_delta → text_end 시퀀스를 하나의 카드로 집계합니다.
+ * 대시보드 카드 - 실행 흐름의 단위 추상화.
  */
+export type DashboardCardType =
+  | "text"
+  | "tool"
+  | "user_message"
+  | "session"
+  | "complete"
+  | "error"
+  | "intervention";
+
 export interface DashboardCard {
   cardId: string;
-  type: "text" | "tool";
-  /** 텍스트 카드: 누적된 텍스트 내용 */
+  type: DashboardCardType;
   content: string;
+  completed: boolean;
+
+  // --- text/tool 전용 ---
   /** 도구 카드: 도구 이름 */
   toolName?: string;
   /** 도구 카드: 입력 파라미터 */
@@ -218,12 +262,16 @@ export interface DashboardCard {
   toolResult?: string;
   /** 도구 카드: 오류 여부 */
   isError?: boolean;
-  /** 카드가 완료되었는지 (text_end 수신 또는 tool_result 수신) */
-  completed: boolean;
   /** 도구 카드: SDK ToolUseBlock ID (tool_result 매칭용) */
   toolUseId?: string;
   /** 도구 카드: 부모 thinking 카드 ID (레이아웃 그룹핑용) */
   parentCardId?: string;
+
+  // --- 구조 이벤트 전용 ---
+  /** user_message, intervention: 발신자 */
+  user?: string;
+  /** session: Claude 세션 ID */
+  sessionId?: string;
 }
 
 // === API Request/Response ===

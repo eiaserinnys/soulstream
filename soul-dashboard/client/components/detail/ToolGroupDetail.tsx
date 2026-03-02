@@ -7,7 +7,7 @@
 
 import type { DashboardCard } from "@shared/types";
 import { SectionLabel } from "./shared";
-import { useDashboardStore } from "../../stores/dashboard-store";
+import { useDashboardStore, findTreeNode, treeNodeToCard } from "../../stores/dashboard-store";
 import { cn } from "../../lib/cn";
 
 /** ToolGroupDetail에 전달되는 데이터 타입 (스토어의 selectedEventNodeData에서 추출) */
@@ -21,10 +21,13 @@ export interface ToolGroupData {
 }
 
 export function ToolGroupDetail({ data }: { data: ToolGroupData }) {
-  const cards = useDashboardStore((s) => s.cards);
+  const tree = useDashboardStore((s) => s.tree);
   const groupedCardIds = data.groupedCardIds ?? [];
   const groupedCards = groupedCardIds
-    .map((id) => cards.find((c) => c.cardId === id))
+    .map((id) => {
+      const node = findTreeNode(tree, id);
+      return node ? treeNodeToCard(node) : undefined;
+    })
     .filter((c): c is DashboardCard => c !== undefined);
 
   const toolName = data.toolName ?? "unknown";

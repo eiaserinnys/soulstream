@@ -1,11 +1,11 @@
 /**
  * dashboard-store 테스트
  *
- * Zustand 스토어의 이벤트 처리 로직을 검증합니다.
+ * Zustand 스토어의 트리 기반 이벤트 처리 로직을 검증합니다.
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
-import { useDashboardStore } from "./dashboard-store";
+import { useDashboardStore, findTreeNode } from "./dashboard-store";
 import type {
   TextStartEvent,
   TextDeltaEvent,
@@ -20,7 +20,22 @@ import type {
   UserMessageEvent,
   ProgressEvent,
   MemoryEvent,
+  EventTreeNode,
 } from "../../shared/types";
+
+/** 트리에서 특정 타입의 모든 노드를 수집하는 헬퍼 */
+function collectNodes(
+  node: EventTreeNode | null,
+  type?: EventTreeNode["type"],
+): EventTreeNode[] {
+  if (!node) return [];
+  const result: EventTreeNode[] = [];
+  if (!type || node.type === type) result.push(node);
+  for (const child of node.children) {
+    result.push(...collectNodes(child, type));
+  }
+  return result;
+}
 
 describe("dashboard-store", () => {
   beforeEach(() => {
@@ -61,16 +76,18 @@ describe("dashboard-store", () => {
   // === 활성 세션 ===
 
   describe("active session", () => {
-    it("should set active session and clear cards", () => {
-      // 먼저 카드를 추가
+    it("should set active session and clear tree", () => {
       const textStart: TextStartEvent = { type: "text_start", card_id: "abc" };
+      useDashboardStore.getState().processEvent(
+        { type: "user_message", user: "u", text: "hi" } as UserMessageEvent,
+        0,
+      );
       useDashboardStore.getState().processEvent(textStart, 1);
-      expect(useDashboardStore.getState().cards.length).toBe(1);
+      expect(useDashboardStore.getState().tree).not.toBeNull();
 
-      // 활성 세션 변경 시 카드 초기화
       useDashboardStore.getState().setActiveSession("c1:r1");
       expect(useDashboardStore.getState().activeSessionKey).toBe("c1:r1");
-      expect(useDashboardStore.getState().cards).toEqual([]);
+      expect(useDashboardStore.getState().tree).toBeNull();
       expect(useDashboardStore.getState().lastEventId).toBe(0);
       expect(useDashboardStore.getState().selectedCardId).toBeNull();
     });
@@ -97,49 +114,46 @@ describe("dashboard-store", () => {
   // === SSE 이벤트 처리: 텍스트 카드 ===
 
   describe("processEvent - text card lifecycle", () => {
-    it("should create text card on text_start", () => {
+    it("should create text node on text_start", () => {
+      useDashboardStore.getState().processEvent(
+        { type: "user_message", user: "u", text: "hi" } as UserMessageEvent,
+        0,
+      );
       const event: TextStartEvent = { type: "text_start", card_id: "abc123" };
       useDashboardStore.getState().processEvent(event, 1);
 
-      const cards = useDashboardStore.getState().cards;
-      expect(cards).toHaveLength(1);
-      expect(cards[0]).toEqual({
-        cardId: "abc123",
-        type: "text",
-        content: "",
-        completed: false,
-      });
+      const tree = useDashboardStore.getState().tree;
+      expect(tree).not.toBeNull();
+      const textNodes = collectNodes(tree, "text");
+      expect(textNodes).toHaveLength(1);
+      expect(textNodes[0].id).toBe("abc123");
+      expect(textNodes[0].content).toBe("");
+      expect(textNodes[0].completed).toBe(false);
       expect(useDashboardStore.getState().lastEventId).toBe(1);
     });
 
     it("should accumulate text on text_delta", () => {
-      const start: TextStartEvent = { type: "text_start", card_id: "abc" };
-      const delta1: TextDeltaEvent = { type: "text_delta", card_id: "abc", text: "Hello " };
-      const delta2: TextDeltaEvent = { type: "text_delta", card_id: "abc", text: "World" };
-
       const { processEvent } = useDashboardStore.getState();
-      processEvent(start, 1);
-      processEvent(delta1, 2);
-      processEvent(delta2, 3);
+      processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
+      processEvent({ type: "text_start", card_id: "abc" }, 1);
+      processEvent({ type: "text_delta", card_id: "abc", text: "Hello " } as TextDeltaEvent, 2);
+      processEvent({ type: "text_delta", card_id: "abc", text: "World" } as TextDeltaEvent, 3);
 
-      const cards = useDashboardStore.getState().cards;
-      expect(cards[0].content).toBe("Hello World");
-      expect(cards[0].completed).toBe(false);
+      const textNode = findTreeNode(useDashboardStore.getState().tree, "abc");
+      expect(textNode?.content).toBe("Hello World");
+      expect(textNode?.completed).toBe(false);
     });
 
     it("should mark completed on text_end", () => {
-      const start: TextStartEvent = { type: "text_start", card_id: "abc" };
-      const delta: TextDeltaEvent = { type: "text_delta", card_id: "abc", text: "Done" };
-      const end: TextEndEvent = { type: "text_end", card_id: "abc" };
-
       const { processEvent } = useDashboardStore.getState();
-      processEvent(start, 1);
-      processEvent(delta, 2);
-      processEvent(end, 3);
+      processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
+      processEvent({ type: "text_start", card_id: "abc" }, 1);
+      processEvent({ type: "text_delta", card_id: "abc", text: "Done" } as TextDeltaEvent, 2);
+      processEvent({ type: "text_end", card_id: "abc" }, 3);
 
-      const cards = useDashboardStore.getState().cards;
-      expect(cards[0].content).toBe("Done");
-      expect(cards[0].completed).toBe(true);
+      const textNode = findTreeNode(useDashboardStore.getState().tree, "abc");
+      expect(textNode?.content).toBe("Done");
+      expect(textNode?.completed).toBe(true);
       expect(useDashboardStore.getState().lastEventId).toBe(3);
     });
   });
@@ -147,7 +161,11 @@ describe("dashboard-store", () => {
   // === SSE 이벤트 처리: 도구 카드 ===
 
   describe("processEvent - tool card lifecycle", () => {
-    it("should create tool card on tool_start", () => {
+    it("should create tool node on tool_start", () => {
+      const { processEvent } = useDashboardStore.getState();
+      processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
+      processEvent({ type: "text_start", card_id: "thinking-1" }, 1);
+
       const event: ToolStartEvent = {
         type: "tool_start",
         card_id: "thinking-1",
@@ -155,198 +173,144 @@ describe("dashboard-store", () => {
         tool_input: { file_path: "/test.ts" },
         tool_use_id: "toolu_abc",
       };
-      useDashboardStore.getState().processEvent(event, 10);
+      processEvent(event, 10);
 
-      const cards = useDashboardStore.getState().cards;
-      expect(cards).toHaveLength(1);
-      expect(cards[0]).toEqual({
-        cardId: "tool-10",
-        type: "tool",
-        content: "",
-        toolName: "Read",
-        toolInput: { file_path: "/test.ts" },
-        completed: false,
-        toolUseId: "toolu_abc",
-        parentCardId: "thinking-1",
-      });
+      const toolNode = findTreeNode(useDashboardStore.getState().tree, "tool-10");
+      expect(toolNode).not.toBeNull();
+      expect(toolNode!.type).toBe("tool");
+      expect(toolNode!.toolName).toBe("Read");
+      expect(toolNode!.toolInput).toEqual({ file_path: "/test.ts" });
+      expect(toolNode!.toolUseId).toBe("toolu_abc");
+      expect(toolNode!.completed).toBe(false);
     });
 
-    it("should complete tool card on tool_result", () => {
-      const start: ToolStartEvent = {
+    it("should complete tool node on tool_result", () => {
+      const { processEvent } = useDashboardStore.getState();
+      processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
+      processEvent({ type: "text_start", card_id: "t1" }, 1);
+
+      processEvent({
         type: "tool_start",
-        card_id: "tool-1",
+        card_id: "t1",
         tool_name: "Bash",
         tool_input: { command: "ls" },
-      };
-      const result: ToolResultEvent = {
+      } as ToolStartEvent, 2);
+      processEvent({
         type: "tool_result",
-        card_id: "tool-1",
+        card_id: "t1",
         tool_name: "Bash",
         result: "file1.txt\nfile2.txt",
         is_error: false,
-      };
+      } as ToolResultEvent, 3);
 
-      const { processEvent } = useDashboardStore.getState();
-      processEvent(start, 1);
-      processEvent(result, 2);
-
-      const cards = useDashboardStore.getState().cards;
-      expect(cards[0].toolResult).toBe("file1.txt\nfile2.txt");
-      expect(cards[0].isError).toBe(false);
-      expect(cards[0].completed).toBe(true);
+      const toolNode = findTreeNode(useDashboardStore.getState().tree, "tool-2");
+      expect(toolNode?.toolResult).toBe("file1.txt\nfile2.txt");
+      expect(toolNode?.isError).toBe(false);
+      expect(toolNode?.completed).toBe(true);
     });
 
     it("should handle tool error", () => {
-      const start: ToolStartEvent = {
+      const { processEvent } = useDashboardStore.getState();
+      processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
+      processEvent({ type: "text_start", card_id: "t1" }, 1);
+
+      processEvent({
         type: "tool_start",
-        card_id: "tool-2",
+        card_id: "t1",
         tool_name: "Bash",
         tool_input: { command: "invalid" },
-      };
-      const result: ToolResultEvent = {
+      } as ToolStartEvent, 2);
+      processEvent({
         type: "tool_result",
-        card_id: "tool-2",
+        card_id: "t1",
         tool_name: "Bash",
         result: "command not found",
         is_error: true,
-      };
+      } as ToolResultEvent, 3);
 
-      const { processEvent } = useDashboardStore.getState();
-      processEvent(start, 1);
-      processEvent(result, 2);
-
-      const cards = useDashboardStore.getState().cards;
-      expect(cards[0].isError).toBe(true);
-      expect(cards[0].completed).toBe(true);
+      const toolNode = findTreeNode(useDashboardStore.getState().tree, "tool-2");
+      expect(toolNode?.isError).toBe(true);
+      expect(toolNode?.completed).toBe(true);
     });
 
     it("should use fallback cardId when card_id is undefined", () => {
-      const start: ToolStartEvent = {
+      const { processEvent } = useDashboardStore.getState();
+      processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
+      processEvent({ type: "text_start", card_id: "t1" }, 1);
+      processEvent({
         type: "tool_start",
         tool_name: "Read",
         tool_input: {},
-      };
-      useDashboardStore.getState().processEvent(start, 42);
+      } as ToolStartEvent, 42);
 
-      const cards = useDashboardStore.getState().cards;
-      expect(cards[0].cardId).toBe("tool-42");
+      const toolNode = findTreeNode(useDashboardStore.getState().tree, "tool-42");
+      expect(toolNode).not.toBeNull();
     });
 
     it("should match tool_result by tool_name when both card_ids are undefined", () => {
-      const start: ToolStartEvent = {
-        type: "tool_start",
-        tool_name: "Bash",
-        tool_input: { command: "echo hello" },
-      };
-      const result: ToolResultEvent = {
-        type: "tool_result",
-        tool_name: "Bash",
-        result: "hello",
-        is_error: false,
-      };
-
       const { processEvent } = useDashboardStore.getState();
-      processEvent(start, 10);
-      processEvent(result, 11);
-
-      const cards = useDashboardStore.getState().cards;
-      expect(cards).toHaveLength(1);
-      expect(cards[0].toolResult).toBe("hello");
-      expect(cards[0].completed).toBe(true);
-    });
-
-    it("should fallback to tool_name when tool_start has no card_id but tool_result has card_id", () => {
-      // 시나리오: tool_start에 card_id 없음 → 카드는 "tool-10" ID로 생성
-      // tool_result에 card_id "abc123" 있음 → card_id로 찾으면 매칭 실패
-      // 폴백: tool_name으로 마지막 미완료 카드를 매칭해야 함
-      const { processEvent } = useDashboardStore.getState();
+      processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
+      processEvent({ type: "text_start", card_id: "t1" }, 1);
 
       processEvent({
         type: "tool_start",
-        // card_id 없음
         tool_name: "Bash",
         tool_input: { command: "echo hello" },
       } as ToolStartEvent, 10);
-
       processEvent({
         type: "tool_result",
-        card_id: "abc123", // card_id가 있지만 "tool-10"과 불일치
         tool_name: "Bash",
         result: "hello",
         is_error: false,
       } as ToolResultEvent, 11);
 
-      const cards = useDashboardStore.getState().cards;
-      expect(cards).toHaveLength(1);
-      expect(cards[0].cardId).toBe("tool-10"); // 원래 생성된 ID 유지
-      expect(cards[0].toolResult).toBe("hello");
-      expect(cards[0].completed).toBe(true);
-    });
-
-    it("should fallback to tool_name when card_id mismatch between tool_start and tool_result", () => {
-      // 시나리오: tool_start card_id="A", tool_result card_id="B" → 불일치
-      const { processEvent } = useDashboardStore.getState();
-
-      processEvent({
-        type: "tool_start",
-        card_id: "cardA",
-        tool_name: "Read",
-        tool_input: { file_path: "/test.ts" },
-      } as ToolStartEvent, 1);
-
-      processEvent({
-        type: "tool_result",
-        card_id: "cardB", // 불일치
-        tool_name: "Read",
-        result: "file content",
-        is_error: false,
-      } as ToolResultEvent, 2);
-
-      const cards = useDashboardStore.getState().cards;
-      expect(cards).toHaveLength(1);
-      expect(cards[0].toolResult).toBe("file content");
-      expect(cards[0].completed).toBe(true);
+      const toolNodes = collectNodes(useDashboardStore.getState().tree, "tool");
+      expect(toolNodes).toHaveLength(1);
+      expect(toolNodes[0].toolResult).toBe("hello");
+      expect(toolNodes[0].completed).toBe(true);
     });
 
     it("should match tool_result to the last uncompleted tool with matching name", () => {
       const { processEvent } = useDashboardStore.getState();
+      processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
+      processEvent({ type: "text_start", card_id: "t1" }, 1);
 
       // Tool 1 (completed)
       processEvent({
         type: "tool_start",
-        card_id: "t1",
         tool_name: "Bash",
         tool_input: {},
-      } as ToolStartEvent, 1);
+        tool_use_id: "tu1",
+      } as ToolStartEvent, 2);
       processEvent({
         type: "tool_result",
-        card_id: "t1",
         tool_name: "Bash",
         result: "done",
         is_error: false,
-      } as ToolResultEvent, 2);
+        tool_use_id: "tu1",
+      } as ToolResultEvent, 3);
 
-      // Tool 2 (uncompleted, no card_id)
+      // Tool 2 (uncompleted)
       processEvent({
         type: "tool_start",
         tool_name: "Bash",
         tool_input: {},
-      } as ToolStartEvent, 3);
+      } as ToolStartEvent, 4);
 
-      // Result without card_id should match Tool 2
+      // Result without tool_use_id should match Tool 2
       processEvent({
         type: "tool_result",
         tool_name: "Bash",
         result: "second",
         is_error: false,
-      } as ToolResultEvent, 4);
+      } as ToolResultEvent, 5);
 
-      const cards = useDashboardStore.getState().cards;
-      expect(cards).toHaveLength(2);
-      expect(cards[0].completed).toBe(true);
-      expect(cards[0].toolResult).toBe("done");
-      expect(cards[1].completed).toBe(true);
-      expect(cards[1].toolResult).toBe("second");
+      const toolNodes = collectNodes(useDashboardStore.getState().tree, "tool");
+      expect(toolNodes).toHaveLength(2);
+      expect(toolNodes[0].completed).toBe(true);
+      expect(toolNodes[0].toolResult).toBe("done");
+      expect(toolNodes[1].completed).toBe(true);
+      expect(toolNodes[1].toolResult).toBe("second");
     });
   });
 
@@ -354,14 +318,10 @@ describe("dashboard-store", () => {
 
   describe("processEvent - ignored events", () => {
     it("should update lastEventId for unhandled event types", () => {
-      const event: CompleteEvent = {
-        type: "complete",
-        result: "done",
-        attachments: [],
-      };
+      const event: ProgressEvent = { type: "progress", text: "working..." };
       useDashboardStore.getState().processEvent(event, 99);
 
-      expect(useDashboardStore.getState().cards).toEqual([]);
+      expect(useDashboardStore.getState().tree).toBeNull();
       expect(useDashboardStore.getState().lastEventId).toBe(99);
     });
   });
@@ -372,12 +332,14 @@ describe("dashboard-store", () => {
     it("should handle interleaved text and tool cards", () => {
       const { processEvent } = useDashboardStore.getState();
 
+      processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
+
       // Text card 1
       processEvent({ type: "text_start", card_id: "t1" }, 1);
       processEvent({ type: "text_delta", card_id: "t1", text: "Analyzing..." } as TextDeltaEvent, 2);
       processEvent({ type: "text_end", card_id: "t1" }, 3);
 
-      // Tool card (card_id는 부모 thinking의 ID, tool_use_id로 매칭)
+      // Tool card
       processEvent({
         type: "tool_start",
         card_id: "t1",
@@ -397,16 +359,115 @@ describe("dashboard-store", () => {
       processEvent({ type: "text_start", card_id: "t2" }, 6);
       processEvent({ type: "text_delta", card_id: "t2", text: "Done!" } as TextDeltaEvent, 7);
 
-      const cards = useDashboardStore.getState().cards;
-      expect(cards).toHaveLength(3);
-      expect(cards[0].cardId).toBe("t1");
-      expect(cards[0].completed).toBe(true);
-      expect(cards[1].cardId).toBe("tool-4"); // eventId=4 → tool-4
-      expect(cards[1].completed).toBe(true);
-      expect(cards[1].toolUseId).toBe("toolu_bash1");
-      expect(cards[1].parentCardId).toBe("t1");
-      expect(cards[2].cardId).toBe("t2");
-      expect(cards[2].completed).toBe(false); // text_end 미수신
+      const tree = useDashboardStore.getState().tree!;
+      const textNodes = collectNodes(tree, "text");
+      expect(textNodes).toHaveLength(2);
+      expect(textNodes[0].id).toBe("t1");
+      expect(textNodes[0].completed).toBe(true);
+      expect(textNodes[1].id).toBe("t2");
+      expect(textNodes[1].completed).toBe(false);
+
+      const toolNodes = collectNodes(tree, "tool");
+      expect(toolNodes).toHaveLength(1);
+      expect(toolNodes[0].id).toBe("tool-4");
+      expect(toolNodes[0].completed).toBe(true);
+      expect(toolNodes[0].toolUseId).toBe("toolu_bash1");
+
+      // tool은 t1의 자식이어야 함
+      const t1 = findTreeNode(tree, "t1")!;
+      expect(t1.children.some((c) => c.id === "tool-4")).toBe(true);
+    });
+  });
+
+  // === 트리 구조 검증 ===
+
+  describe("tree structure", () => {
+    it("user_message is root's child", () => {
+      const { processEvent } = useDashboardStore.getState();
+      processEvent({ type: "user_message", user: "u", text: "hello" } as UserMessageEvent, 1);
+
+      const tree = useDashboardStore.getState().tree!;
+      expect(tree.type).toBe("session");
+      expect(tree.children).toHaveLength(1);
+      expect(tree.children[0].type).toBe("user_message");
+      expect(tree.children[0].content).toBe("hello");
+    });
+
+    it("text is user_message's child", () => {
+      const { processEvent } = useDashboardStore.getState();
+      processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
+      processEvent({ type: "text_start", card_id: "t1" }, 1);
+
+      const tree = useDashboardStore.getState().tree!;
+      const userMsg = tree.children[0];
+      expect(userMsg.children).toHaveLength(1);
+      expect(userMsg.children[0].type).toBe("text");
+    });
+
+    it("tool is text's child", () => {
+      const { processEvent } = useDashboardStore.getState();
+      processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
+      processEvent({ type: "text_start", card_id: "t1" }, 1);
+      processEvent({
+        type: "tool_start",
+        tool_name: "Bash",
+        tool_input: {},
+      } as ToolStartEvent, 2);
+
+      const textNode = findTreeNode(useDashboardStore.getState().tree, "t1")!;
+      expect(textNode.children).toHaveLength(1);
+      expect(textNode.children[0].type).toBe("tool");
+    });
+
+    it("complete is user_message's child", () => {
+      const { processEvent } = useDashboardStore.getState();
+      processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
+      processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 1);
+
+      const tree = useDashboardStore.getState().tree!;
+      const userMsg = tree.children[0];
+      expect(userMsg.children.some((c) => c.type === "complete")).toBe(true);
+    });
+
+    it("intervention is root's child (sibling of user_message)", () => {
+      const { processEvent } = useDashboardStore.getState();
+      processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
+      processEvent({ type: "intervention_sent", user: "admin", text: "stop" } as InterventionSentEvent, 1);
+
+      const tree = useDashboardStore.getState().tree!;
+      expect(tree.children).toHaveLength(2);
+      expect(tree.children[0].type).toBe("user_message");
+      expect(tree.children[1].type).toBe("intervention");
+    });
+
+    it("resume creates a sibling user_message", () => {
+      const { processEvent } = useDashboardStore.getState();
+      processEvent({ type: "user_message", user: "u", text: "first" } as UserMessageEvent, 0);
+      processEvent({ type: "text_start", card_id: "t1" }, 1);
+      processEvent({ type: "text_end", card_id: "t1" }, 2);
+      processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 3);
+
+      // Resume: new user_message
+      processEvent({ type: "user_message", user: "u", text: "resume" } as UserMessageEvent, 4);
+      processEvent({ type: "text_start", card_id: "t2" }, 5);
+
+      const tree = useDashboardStore.getState().tree!;
+      const userMsgs = tree.children.filter((c) => c.type === "user_message");
+      expect(userMsgs).toHaveLength(2);
+      expect(userMsgs[0].content).toBe("first");
+      expect(userMsgs[1].content).toBe("resume");
+
+      // t2 should be under the second user_message
+      const secondTurn = userMsgs[1];
+      expect(secondTurn.children.some((c) => c.id === "t2")).toBe(true);
+    });
+
+    it("session event sets root sessionId", () => {
+      const { processEvent } = useDashboardStore.getState();
+      processEvent({ type: "session", session_id: "s1" } as SessionEvent, 1);
+
+      const tree = useDashboardStore.getState().tree!;
+      expect(tree.sessionId).toBe("s1");
     });
   });
 
@@ -414,7 +475,6 @@ describe("dashboard-store", () => {
 
   describe("selectEventNode", () => {
     it("should set selectedEventNodeData and clear card/node selection", () => {
-      // 먼저 카드와 노드를 선택해 둠
       useDashboardStore.getState().selectCard("card-1", "node-1");
       expect(useDashboardStore.getState().selectedCardId).toBe("card-1");
       expect(useDashboardStore.getState().selectedNodeId).toBe("node-1");
@@ -499,8 +559,11 @@ describe("dashboard-store", () => {
 
   describe("startCompose / cancelCompose", () => {
     it("should reset session state and set isComposing to true", () => {
-      // 먼저 세션 상태를 설정
       useDashboardStore.getState().setActiveSession("c1:r1");
+      useDashboardStore.getState().processEvent(
+        { type: "user_message", user: "u", text: "hi" } as UserMessageEvent,
+        0,
+      );
       useDashboardStore.getState().processEvent({ type: "text_start", card_id: "t1" }, 1);
       useDashboardStore.getState().selectCard("t1");
 
@@ -511,8 +574,7 @@ describe("dashboard-store", () => {
       expect(state.resumeTargetKey).toBeNull();
       expect(state.activeSessionKey).toBeNull();
       expect(state.activeSession).toBeNull();
-      expect(state.cards).toEqual([]);
-      expect(state.graphEvents).toEqual([]);
+      expect(state.tree).toBeNull();
       expect(state.selectedCardId).toBeNull();
       expect(state.selectedNodeId).toBeNull();
       expect(state.selectedEventNodeData).toBeNull();
@@ -543,163 +605,66 @@ describe("dashboard-store", () => {
 
   describe("startResume", () => {
     it("should preserve session state while setting isComposing and resumeTargetKey", () => {
-      // 먼저 기존 상태를 설정
       useDashboardStore.getState().setActiveSession("old:session");
+      useDashboardStore.getState().processEvent(
+        { type: "user_message", user: "u", text: "hi" } as UserMessageEvent,
+        0,
+      );
       useDashboardStore.getState().processEvent({ type: "text_start", card_id: "x" }, 5);
       useDashboardStore.getState().processEvent({ type: "session", session_id: "s1" } as SessionEvent, 6);
 
-      // 기존 상태 확인
-      expect(useDashboardStore.getState().cards.length).toBe(1);
-      expect(useDashboardStore.getState().graphEvents.length).toBe(1);
+      expect(useDashboardStore.getState().tree).not.toBeNull();
       expect(useDashboardStore.getState().lastEventId).toBe(6);
 
       useDashboardStore.getState().startResume("old:session");
       const state = useDashboardStore.getState();
 
-      // isComposing과 resumeTargetKey만 변경
       expect(state.isComposing).toBe(true);
       expect(state.resumeTargetKey).toBe("old:session");
-
-      // 기존 세션 상태는 유지 (Resume이므로 기존 노드 그래프를 이어서 표시)
       expect(state.activeSessionKey).toBe("old:session");
-      expect(state.cards.length).toBe(1);
-      expect(state.graphEvents.length).toBe(1);
+      expect(state.tree).not.toBeNull();
       expect(state.lastEventId).toBe(6);
     });
 
     it("should differ from startCompose: startCompose resets state, startResume preserves it", () => {
-      // startCompose: 새 세션이므로 상태 초기화
       useDashboardStore.getState().setActiveSession("existing:session");
+      useDashboardStore.getState().processEvent(
+        { type: "user_message", user: "u", text: "hi" } as UserMessageEvent,
+        0,
+      );
       useDashboardStore.getState().processEvent({ type: "text_start", card_id: "t1" }, 1);
       useDashboardStore.getState().startCompose();
 
       expect(useDashboardStore.getState().isComposing).toBe(true);
       expect(useDashboardStore.getState().resumeTargetKey).toBeNull();
       expect(useDashboardStore.getState().activeSessionKey).toBeNull();
-      expect(useDashboardStore.getState().cards).toEqual([]);
+      expect(useDashboardStore.getState().tree).toBeNull();
 
       useDashboardStore.getState().reset();
 
-      // startResume: 기존 세션 이어가기이므로 상태 유지
       useDashboardStore.getState().setActiveSession("existing:session");
+      useDashboardStore.getState().processEvent(
+        { type: "user_message", user: "u", text: "hi" } as UserMessageEvent,
+        0,
+      );
       useDashboardStore.getState().processEvent({ type: "text_start", card_id: "t1" }, 1);
       useDashboardStore.getState().startResume("existing:session");
 
       expect(useDashboardStore.getState().isComposing).toBe(true);
       expect(useDashboardStore.getState().resumeTargetKey).toBe("existing:session");
       expect(useDashboardStore.getState().activeSessionKey).toBe("existing:session");
-      expect(useDashboardStore.getState().cards.length).toBe(1);
+      expect(useDashboardStore.getState().tree).not.toBeNull();
     });
   });
 
-  // === graphEvents 필터링 ===
+  // === clearTree ===
 
-  describe("processEvent - graphEvents filtering", () => {
-    it("should add session event to graphEvents", () => {
-      const event: SessionEvent = { type: "session", session_id: "s1" };
-      useDashboardStore.getState().processEvent(event, 1);
-      expect(useDashboardStore.getState().graphEvents).toHaveLength(1);
-      expect(useDashboardStore.getState().graphEvents[0]).toEqual(event);
-    });
-
-    it("should add complete event to graphEvents", () => {
-      const event: CompleteEvent = { type: "complete", result: "done", attachments: [] };
-      useDashboardStore.getState().processEvent(event, 1);
-      expect(useDashboardStore.getState().graphEvents).toHaveLength(1);
-      expect(useDashboardStore.getState().graphEvents[0]).toEqual(event);
-    });
-
-    it("should add error event to graphEvents", () => {
-      const event: ErrorEvent = { type: "error", message: "something failed" };
-      useDashboardStore.getState().processEvent(event, 1);
-      expect(useDashboardStore.getState().graphEvents).toHaveLength(1);
-      expect(useDashboardStore.getState().graphEvents[0]).toEqual(event);
-    });
-
-    it("should add intervention_sent event to graphEvents", () => {
-      const event: InterventionSentEvent = {
-        type: "intervention_sent",
-        user: "admin",
-        text: "please stop",
-      };
-      useDashboardStore.getState().processEvent(event, 1);
-      expect(useDashboardStore.getState().graphEvents).toHaveLength(1);
-      expect(useDashboardStore.getState().graphEvents[0]).toEqual(event);
-    });
-
-    it("should add user_message event to graphEvents", () => {
-      const event: UserMessageEvent = {
-        type: "user_message",
-        user: "user1",
-        text: "hello",
-      };
-      useDashboardStore.getState().processEvent(event, 1);
-      expect(useDashboardStore.getState().graphEvents).toHaveLength(1);
-      expect(useDashboardStore.getState().graphEvents[0]).toEqual(event);
-    });
-
-    it("should NOT add text_start to graphEvents", () => {
-      const event: TextStartEvent = { type: "text_start", card_id: "t1" };
-      useDashboardStore.getState().processEvent(event, 1);
-      expect(useDashboardStore.getState().graphEvents).toHaveLength(0);
-    });
-
-    it("should NOT add text_delta to graphEvents", () => {
-      // text_start 먼저 추가 (text_delta 처리를 위해)
-      useDashboardStore.getState().processEvent({ type: "text_start", card_id: "t1" }, 1);
-      const event: TextDeltaEvent = { type: "text_delta", card_id: "t1", text: "hi" };
-      useDashboardStore.getState().processEvent(event, 2);
-      expect(useDashboardStore.getState().graphEvents).toHaveLength(0);
-    });
-
-    it("should NOT add tool_start to graphEvents", () => {
-      const event: ToolStartEvent = {
-        type: "tool_start",
-        card_id: "c1",
-        tool_name: "Bash",
-        tool_input: {},
-      };
-      useDashboardStore.getState().processEvent(event, 1);
-      expect(useDashboardStore.getState().graphEvents).toHaveLength(0);
-    });
-
-    it("should NOT add progress to graphEvents", () => {
-      const event: ProgressEvent = { type: "progress", text: "working..." };
-      useDashboardStore.getState().processEvent(event, 1);
-      expect(useDashboardStore.getState().graphEvents).toHaveLength(0);
-    });
-
-    it("should NOT add memory to graphEvents", () => {
-      const event: MemoryEvent = { type: "memory", used_gb: 1.5, total_gb: 8, percent: 18.75 };
-      useDashboardStore.getState().processEvent(event, 1);
-      expect(useDashboardStore.getState().graphEvents).toHaveLength(0);
-    });
-
-    it("should accumulate only graph-relevant events in mixed sequence", () => {
-      const { processEvent } = useDashboardStore.getState();
-      processEvent({ type: "session", session_id: "s1" } as SessionEvent, 1);
-      processEvent({ type: "text_start", card_id: "t1" }, 2);
-      processEvent({ type: "text_delta", card_id: "t1", text: "hi" } as TextDeltaEvent, 3);
-      processEvent({ type: "intervention_sent", user: "u", text: "stop" } as InterventionSentEvent, 4);
-      processEvent({ type: "text_end", card_id: "t1" }, 5);
-      processEvent({ type: "complete", result: "ok", attachments: [] } as CompleteEvent, 6);
-
-      const graphEvents = useDashboardStore.getState().graphEvents;
-      expect(graphEvents).toHaveLength(3);
-      expect(graphEvents[0].type).toBe("session");
-      expect(graphEvents[1].type).toBe("intervention_sent");
-      expect(graphEvents[2].type).toBe("complete");
-    });
-  });
-
-  // === clearCards ===
-
-  describe("clearCards", () => {
-    it("should clear cards and related state", () => {
+  describe("clearTree", () => {
+    it("should clear tree and related state", () => {
       const { processEvent, selectCard, toggleGroupCollapse } =
         useDashboardStore.getState();
 
-      // 상태를 채움
+      processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
       processEvent({ type: "text_start", card_id: "t1" }, 1);
       processEvent({ type: "text_delta", card_id: "t1", text: "content" } as TextDeltaEvent, 2);
       processEvent({ type: "session", session_id: "s1" } as SessionEvent, 3);
@@ -711,16 +676,14 @@ describe("dashboard-store", () => {
       });
       toggleGroupCollapse("group-1");
 
-      // 상태가 채워졌는지 확인
-      expect(useDashboardStore.getState().cards.length).toBeGreaterThan(0);
-      expect(useDashboardStore.getState().graphEvents.length).toBeGreaterThan(0);
+      expect(useDashboardStore.getState().tree).not.toBeNull();
       expect(useDashboardStore.getState().lastEventId).toBeGreaterThan(0);
 
-      useDashboardStore.getState().clearCards();
+      useDashboardStore.getState().clearTree();
       const state = useDashboardStore.getState();
 
-      expect(state.cards).toEqual([]);
-      expect(state.graphEvents).toEqual([]);
+      expect(state.tree).toBeNull();
+      expect(state.treeVersion).toBe(0);
       expect(state.collapsedGroups.size).toBe(0);
       expect(state.lastEventId).toBe(0);
       expect(state.selectedCardId).toBeNull();
@@ -734,11 +697,14 @@ describe("dashboard-store", () => {
       ];
       useDashboardStore.getState().setSessions(sessions);
       useDashboardStore.getState().setActiveSession("c1:r1");
+      useDashboardStore.getState().processEvent(
+        { type: "user_message", user: "u", text: "hi" } as UserMessageEvent,
+        0,
+      );
       useDashboardStore.getState().processEvent({ type: "text_start", card_id: "t1" }, 1);
 
-      useDashboardStore.getState().clearCards();
+      useDashboardStore.getState().clearTree();
 
-      // sessions과 activeSessionKey는 유지되어야 함
       expect(useDashboardStore.getState().sessions).toEqual(sessions);
     });
   });
@@ -754,6 +720,7 @@ describe("dashboard-store", () => {
         { clientId: "c", requestId: "r", status: "running", eventCount: 1 },
       ]);
       setActiveSession("c:r");
+      processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
       processEvent({ type: "text_start", card_id: "x" }, 1);
       selectCard("x");
 
@@ -762,7 +729,7 @@ describe("dashboard-store", () => {
 
       expect(state.sessions).toEqual([]);
       expect(state.activeSessionKey).toBeNull();
-      expect(state.cards).toEqual([]);
+      expect(state.tree).toBeNull();
       expect(state.selectedCardId).toBeNull();
       expect(state.lastEventId).toBe(0);
     });

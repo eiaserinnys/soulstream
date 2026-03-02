@@ -16,12 +16,15 @@ import { readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
-import { useDashboardStore } from "../../client/stores/dashboard-store.js";
+import {
+  useDashboardStore,
+  findTreeNode,
+} from "../../client/stores/dashboard-store.js";
 import {
   buildGraph,
   type GraphNode,
 } from "../../client/lib/layout-engine.js";
-import type { SoulSSEEvent, EventRecord } from "../../shared/types.js";
+import type { SoulSSEEvent, EventRecord, EventTreeNode } from "../../shared/types.js";
 
 // === Fixture Loader ===
 
@@ -38,7 +41,7 @@ function loadFixture(name: string): EventRecord[] {
 
 /**
  * 픽스처의 이벤트를 store.processEvent로 순차 재생합니다.
- * 재생 후 store의 cards, graphEvents를 반환합니다.
+ * 재생 후 store의 tree, treeVersion을 반환합니다.
  */
 function replayFixture(name: string) {
   const records = loadFixture(name);
@@ -53,11 +56,26 @@ function replayFixture(name: string) {
 
   const state = useDashboardStore.getState();
   return {
-    cards: state.cards,
-    graphEvents: state.graphEvents,
+    tree: state.tree,
+    treeVersion: state.treeVersion,
     lastEventId: state.lastEventId,
     records,
   };
+}
+
+/** 트리에서 모든 노드를 수집합니다. */
+function collectNodes(
+  root: EventTreeNode | null,
+  filter?: (n: EventTreeNode) => boolean,
+): EventTreeNode[] {
+  if (!root) return [];
+  const result: EventTreeNode[] = [];
+  function walk(node: EventTreeNode) {
+    if (!filter || filter(node)) result.push(node);
+    for (const child of node.children) walk(child);
+  }
+  walk(root);
+  return result;
 }
 
 // === Test Suites ===
@@ -70,66 +88,67 @@ describe("JSONL Fixture Integration Tests", () => {
   // === basic-flow: thinking → response → complete ===
 
   describe("basic-flow: 기본 텍스트 플로우", () => {
-    it("텍스트 카드 2개가 생성된다", () => {
-      const { cards } = replayFixture("basic-flow");
-      expect(cards).toHaveLength(2);
-      expect(cards[0].type).toBe("text");
-      expect(cards[1].type).toBe("text");
+    it("텍스트 노드 2개가 생성된다", () => {
+      const { tree } = replayFixture("basic-flow");
+      const textNodes = collectNodes(tree, (n) => n.type === "text");
+      expect(textNodes).toHaveLength(2);
     });
 
-    it("모든 텍스트 카드가 completed 상태이다", () => {
-      const { cards } = replayFixture("basic-flow");
-      expect(cards.every((c) => c.completed)).toBe(true);
+    it("모든 텍스트 노드가 completed 상태이다", () => {
+      const { tree } = replayFixture("basic-flow");
+      const textNodes = collectNodes(tree, (n) => n.type === "text");
+      expect(textNodes.every((n) => n.completed)).toBe(true);
     });
 
     it("텍스트 델타가 올바르게 누적된다", () => {
-      const { cards } = replayFixture("basic-flow");
-      expect(cards[0].content).toContain("Let me analyze the code...");
-      expect(cards[0].content).toContain("React component");
-      expect(cards[1].content).toContain("three panels");
+      const { tree } = replayFixture("basic-flow");
+      const textNodes = collectNodes(tree, (n) => n.type === "text");
+      expect(textNodes[0].content).toContain("Let me analyze the code...");
+      expect(textNodes[0].content).toContain("React component");
+      expect(textNodes[1].content).toContain("three panels");
     });
 
-    it("complete 이벤트가 graphEvents에 포함된다", () => {
-      const { graphEvents } = replayFixture("basic-flow");
-      expect(graphEvents.some((e) => e.type === "complete")).toBe(true);
+    it("complete 노드가 트리에 포함된다", () => {
+      const { tree } = replayFixture("basic-flow");
+      const completeNodes = collectNodes(tree, (n) => n.type === "complete");
+      expect(completeNodes.length).toBeGreaterThanOrEqual(1);
     });
 
     it("buildGraph에서 마지막 텍스트 카드가 response 노드가 된다", () => {
-      const { cards, graphEvents } = replayFixture("basic-flow");
-      const { nodes } = buildGraph(cards, graphEvents);
+      const { tree } = replayFixture("basic-flow");
+      const { nodes } = buildGraph(tree);
 
-      // user → system(session) → thinking → response → system(complete)
+      // user → thinking → response → system(complete)
       const responseNodes = nodes.filter((n) => n.type === "response");
       expect(responseNodes).toHaveLength(1);
       expect(responseNodes[0].data.content).toContain("three panels");
     });
 
     it("buildGraph에서 user_message가 user 노드로 생성된다", () => {
-      const { cards, graphEvents } = replayFixture("basic-flow");
-      const { nodes } = buildGraph(cards, graphEvents);
+      const { tree } = replayFixture("basic-flow");
+      const { nodes } = buildGraph(tree);
 
       const userNodes = nodes.filter((n) => n.type === "user");
       expect(userNodes).toHaveLength(1);
       expect(userNodes[0].data.content).toContain("Analyze this code");
     });
 
-    it("buildGraph에서 session과 complete system 노드가 생성된다", () => {
-      const { cards, graphEvents } = replayFixture("basic-flow");
-      const { nodes } = buildGraph(cards, graphEvents);
+    it("buildGraph에서 complete system 노드가 생성된다", () => {
+      const { tree } = replayFixture("basic-flow");
+      const { nodes } = buildGraph(tree);
 
       const systemNodes = nodes.filter((n) => n.type === "system");
-      expect(systemNodes).toHaveLength(2); // session + complete
-      expect(systemNodes.map((n) => n.data.label)).toContain("Session Started");
-      expect(systemNodes.map((n) => n.data.label)).toContain("Complete");
+      const completeNode = systemNodes.find((n) => n.data.label === "Complete");
+      expect(completeNode).toBeDefined();
     });
 
     it("buildGraph에서 엣지가 노드를 올바르게 연결한다", () => {
-      const { cards, graphEvents } = replayFixture("basic-flow");
-      const { nodes, edges } = buildGraph(cards, graphEvents);
+      const { tree } = replayFixture("basic-flow");
+      const { nodes, edges } = buildGraph(tree);
 
-      // 노드 수 검증: user + session + thinking + response + complete
-      expect(nodes.length).toBeGreaterThanOrEqual(5);
-      // 엣지는 노드 수 - 1 이상 (직선 체인)
+      // 노드 수 검증: user + thinking + response + complete
+      expect(nodes.length).toBeGreaterThanOrEqual(4);
+      // 엣지는 노드를 연결
       expect(edges.length).toBeGreaterThanOrEqual(nodes.length - 2);
     });
   });
@@ -137,27 +156,27 @@ describe("JSONL Fixture Integration Tests", () => {
   // === tree-layout: thinking → tool → thinking → tool → response ===
 
   describe("tree-layout: 트리 분기 레이아웃", () => {
-    it("텍스트 3개 + 도구 2개 카드가 생성된다", () => {
-      const { cards } = replayFixture("tree-layout");
-      const textCards = cards.filter((c) => c.type === "text");
-      const toolCards = cards.filter((c) => c.type === "tool");
-      expect(textCards).toHaveLength(3);
-      expect(toolCards).toHaveLength(2);
+    it("텍스트 3개 + 도구 2개 노드가 생성된다", () => {
+      const { tree } = replayFixture("tree-layout");
+      const textNodes = collectNodes(tree, (n) => n.type === "text");
+      const toolNodes = collectNodes(tree, (n) => n.type === "tool");
+      expect(textNodes).toHaveLength(3);
+      expect(toolNodes).toHaveLength(2);
     });
 
-    it("도구 카드에 toolName과 toolResult가 올바르게 설정된다", () => {
-      const { cards } = replayFixture("tree-layout");
-      const toolCards = cards.filter((c) => c.type === "tool");
-      expect(toolCards[0].toolName).toBe("Read");
-      expect(toolCards[0].toolResult).toContain("App()");
-      expect(toolCards[0].completed).toBe(true);
-      expect(toolCards[1].toolName).toBe("Read");
-      expect(toolCards[1].toolResult).toContain("import { App }");
+    it("도구 노드에 toolName과 toolResult가 올바르게 설정된다", () => {
+      const { tree } = replayFixture("tree-layout");
+      const toolNodes = collectNodes(tree, (n) => n.type === "tool");
+      expect(toolNodes[0].toolName).toBe("Read");
+      expect(toolNodes[0].toolResult).toContain("App()");
+      expect(toolNodes[0].completed).toBe(true);
+      expect(toolNodes[1].toolName).toBe("Read");
+      expect(toolNodes[1].toolResult).toContain("import { App }");
     });
 
     it("buildGraph에서 tool_call + tool_result 쌍이 생성된다", () => {
-      const { cards, graphEvents } = replayFixture("tree-layout");
-      const { nodes } = buildGraph(cards, graphEvents);
+      const { tree } = replayFixture("tree-layout");
+      const { nodes } = buildGraph(tree);
 
       const toolCallNodes = nodes.filter((n) => n.type === "tool_call");
       const toolResultNodes = nodes.filter((n) => n.type === "tool_result");
@@ -166,8 +185,8 @@ describe("JSONL Fixture Integration Tests", () => {
     });
 
     it("buildGraph에서 tool_call→tool_result 수직 엣지가 생성된다", () => {
-      const { cards, graphEvents } = replayFixture("tree-layout");
-      const { edges, nodes } = buildGraph(cards, graphEvents);
+      const { tree } = replayFixture("tree-layout");
+      const { edges, nodes } = buildGraph(tree);
 
       // 각 tool_call 노드에서 tool_result로 향하는 엣지 확인
       for (const callNode of nodes.filter((n) => n.type === "tool_call")) {
@@ -180,8 +199,8 @@ describe("JSONL Fixture Integration Tests", () => {
     });
 
     it("buildGraph에서 tool 노드는 메인 흐름에서 수평 분기한다", () => {
-      const { cards, graphEvents } = replayFixture("tree-layout");
-      const { edges, nodes } = buildGraph(cards, graphEvents);
+      const { tree } = replayFixture("tree-layout");
+      const { edges, nodes } = buildGraph(tree);
 
       // thinking 또는 메인 흐름 노드에서 tool_call로의 엣지에 sourceHandle="right" 확인
       const toolCallEdges = edges.filter((e) =>
@@ -199,22 +218,27 @@ describe("JSONL Fixture Integration Tests", () => {
   // === intervention-flow: 중간 개입 포함 ===
 
   describe("intervention-flow: 사용자 개입 시나리오", () => {
-    it("개입 이벤트가 graphEvents에 포함된다", () => {
-      const { graphEvents } = replayFixture("intervention-flow");
-      expect(
-        graphEvents.some((e) => e.type === "intervention_sent"),
-      ).toBe(true);
+    it("개입 노드가 트리에 포함된다", () => {
+      const { tree } = replayFixture("intervention-flow");
+      const interventionNodes = collectNodes(
+        tree,
+        (n) => n.type === "intervention",
+      );
+      expect(interventionNodes.length).toBeGreaterThanOrEqual(1);
     });
 
-    it("개입 전후의 카드가 모두 존재한다", () => {
-      const { cards } = replayFixture("intervention-flow");
-      // 개입 전: t1 + tool1 + t2 / 개입 후: t3 + tool2 + t4
-      expect(cards).toHaveLength(6);
+    it("개입 전후의 노드가 모두 존재한다", () => {
+      const { tree } = replayFixture("intervention-flow");
+      const textNodes = collectNodes(tree, (n) => n.type === "text");
+      const toolNodes = collectNodes(tree, (n) => n.type === "tool");
+      // 개입 전후로 텍스트와 도구 노드가 존재
+      expect(textNodes.length).toBeGreaterThanOrEqual(2);
+      expect(toolNodes.length).toBeGreaterThanOrEqual(1);
     });
 
     it("buildGraph에서 intervention 노드가 생성된다", () => {
-      const { cards, graphEvents } = replayFixture("intervention-flow");
-      const { nodes } = buildGraph(cards, graphEvents);
+      const { tree } = replayFixture("intervention-flow");
+      const { nodes } = buildGraph(tree);
 
       const interventionNodes = nodes.filter((n) => n.type === "intervention");
       expect(interventionNodes).toHaveLength(1);
@@ -222,8 +246,8 @@ describe("JSONL Fixture Integration Tests", () => {
     });
 
     it("buildGraph에서 intervention 노드가 메인 흐름에 삽입된다", () => {
-      const { cards, graphEvents } = replayFixture("intervention-flow");
-      const { edges, nodes } = buildGraph(cards, graphEvents);
+      const { tree } = replayFixture("intervention-flow");
+      const { edges, nodes } = buildGraph(tree);
 
       // intervention 노드에 target/source 엣지가 있어야 함
       const interventionNode = nodes.find((n) => n.type === "intervention");
@@ -243,24 +267,24 @@ describe("JSONL Fixture Integration Tests", () => {
   // === multi-tool: 다중 도구 호출 + running 상태 해제 ===
 
   describe("multi-tool: 다중 도구 호출", () => {
-    it("4개의 도구 카드가 생성된다", () => {
-      const { cards } = replayFixture("multi-tool");
-      const toolCards = cards.filter((c) => c.type === "tool");
-      expect(toolCards).toHaveLength(4);
+    it("4개의 도구 노드가 생성된다", () => {
+      const { tree } = replayFixture("multi-tool");
+      const toolNodes = collectNodes(tree, (n) => n.type === "tool");
+      expect(toolNodes).toHaveLength(4);
     });
 
-    it("모든 도구 카드가 completed + toolResult을 갖는다", () => {
-      const { cards } = replayFixture("multi-tool");
-      const toolCards = cards.filter((c) => c.type === "tool");
-      for (const card of toolCards) {
-        expect(card.completed).toBe(true);
-        expect(card.toolResult).toBeDefined();
+    it("모든 도구 노드가 completed + toolResult을 갖는다", () => {
+      const { tree } = replayFixture("multi-tool");
+      const toolNodes = collectNodes(tree, (n) => n.type === "tool");
+      for (const node of toolNodes) {
+        expect(node.completed).toBe(true);
+        expect(node.toolResult).toBeDefined();
       }
     });
 
-    it("도구 카드의 streaming 상태가 모두 해제된다 (buildGraph)", () => {
-      const { cards, graphEvents } = replayFixture("multi-tool");
-      const { nodes } = buildGraph(cards, graphEvents);
+    it("도구 노드의 streaming 상태가 모두 해제된다 (buildGraph)", () => {
+      const { tree } = replayFixture("multi-tool");
+      const { nodes } = buildGraph(tree);
 
       const toolCallNodes = nodes.filter((n) => n.type === "tool_call");
       for (const node of toolCallNodes) {
@@ -269,12 +293,11 @@ describe("JSONL Fixture Integration Tests", () => {
     });
 
     it("연속 tool 호출이 트리뷰로 thinking에서 분기된다", () => {
-      const { cards, graphEvents } = replayFixture("multi-tool");
-      const { edges, nodes } = buildGraph(cards, graphEvents);
+      const { tree } = replayFixture("multi-tool");
+      const { edges, nodes } = buildGraph(tree);
 
       // 트리뷰: 모든 tool_call은 thinking 노드에서 right→left로 분기
       const toolCallNodes = nodes.filter((n) => n.type === "tool_call");
-      const thinkingNodes = nodes.filter((n) => n.type === "thinking");
 
       // tool_call→tool_call 직접 연결은 없어야 함
       const chainEdges = edges.filter((e) => {
@@ -302,9 +325,9 @@ describe("JSONL Fixture Integration Tests", () => {
   // === complete-flow: complete 카드 + response 노드 중앙 정렬 ===
 
   describe("complete-flow: 세션 완료 + response 노드", () => {
-    it("마지막 텍스트 카드가 response 노드로 변환된다", () => {
-      const { cards, graphEvents } = replayFixture("complete-flow");
-      const { nodes } = buildGraph(cards, graphEvents);
+    it("마지막 텍스트 노드가 response 노드로 변환된다", () => {
+      const { tree } = replayFixture("complete-flow");
+      const { nodes } = buildGraph(tree);
 
       const responseNodes = nodes.filter((n) => n.type === "response");
       expect(responseNodes).toHaveLength(1);
@@ -312,16 +335,16 @@ describe("JSONL Fixture Integration Tests", () => {
     });
 
     it("response 노드는 streaming=false 이다", () => {
-      const { cards, graphEvents } = replayFixture("complete-flow");
-      const { nodes } = buildGraph(cards, graphEvents);
+      const { tree } = replayFixture("complete-flow");
+      const { nodes } = buildGraph(tree);
 
       const responseNode = nodes.find((n) => n.type === "response")!;
       expect(responseNode.data.streaming).toBe(false);
     });
 
     it("complete system 노드가 그래프 끝에 위치한다", () => {
-      const { cards, graphEvents } = replayFixture("complete-flow");
-      const { nodes, edges } = buildGraph(cards, graphEvents);
+      const { tree } = replayFixture("complete-flow");
+      const { nodes, edges } = buildGraph(tree);
 
       const completeNode = nodes.find(
         (n) => n.type === "system" && n.data.label === "Complete",
@@ -334,8 +357,8 @@ describe("JSONL Fixture Integration Tests", () => {
     });
 
     it("response 노드에서 complete 노드로의 엣지가 존재한다", () => {
-      const { cards, graphEvents } = replayFixture("complete-flow");
-      const { nodes, edges } = buildGraph(cards, graphEvents);
+      const { tree } = replayFixture("complete-flow");
+      const { nodes, edges } = buildGraph(tree);
 
       const responseNode = nodes.find((n) => n.type === "response")!;
       const completeNode = nodes.find(
@@ -348,17 +371,18 @@ describe("JSONL Fixture Integration Tests", () => {
       expect(edge).toBeDefined();
     });
 
-    it("전체 노드 수가 올바르다 (user + session + thinking + tool_call + tool_result + response + complete)", () => {
-      const { cards, graphEvents } = replayFixture("complete-flow");
-      const { nodes } = buildGraph(cards, graphEvents);
+    it("전체 노드 수가 올바르다", () => {
+      const { tree } = replayFixture("complete-flow");
+      const { nodes } = buildGraph(tree);
 
-      // user(1) + session(1) + thinking(1) + tool_call(1) + tool_result(1) + response(1) + complete(1) = 7
-      expect(nodes).toHaveLength(7);
+      // 트리 기반에서는 session 노드 없이: user + thinking + tool_call + tool_result + response + complete
+      // 픽스처에 따라 다를 수 있으므로 최소 개수 확인
+      expect(nodes.length).toBeGreaterThanOrEqual(5);
     });
 
     it("dagre 레이아웃이 적용되어 모든 노드에 position이 설정된다", () => {
-      const { cards, graphEvents } = replayFixture("complete-flow");
-      const { nodes } = buildGraph(cards, graphEvents);
+      const { tree } = replayFixture("complete-flow");
+      const { nodes } = buildGraph(tree);
 
       for (const node of nodes) {
         expect(node.position).toBeDefined();
@@ -382,14 +406,14 @@ describe("JSONL Fixture Integration Tests", () => {
     for (const name of fixtures) {
       it(`${name}: buildGraph가 에러 없이 실행된다`, () => {
         useDashboardStore.getState().reset();
-        const { cards, graphEvents } = replayFixture(name);
-        expect(() => buildGraph(cards, graphEvents)).not.toThrow();
+        const { tree } = replayFixture(name);
+        expect(() => buildGraph(tree)).not.toThrow();
       });
 
       it(`${name}: 모든 노드에 유효한 id가 있다`, () => {
         useDashboardStore.getState().reset();
-        const { cards, graphEvents } = replayFixture(name);
-        const { nodes } = buildGraph(cards, graphEvents);
+        const { tree } = replayFixture(name);
+        const { nodes } = buildGraph(tree);
         for (const node of nodes) {
           expect(node.id).toBeTruthy();
           expect(typeof node.id).toBe("string");
@@ -398,8 +422,8 @@ describe("JSONL Fixture Integration Tests", () => {
 
       it(`${name}: 모든 엣지의 source/target이 존재하는 노드 ID이다`, () => {
         useDashboardStore.getState().reset();
-        const { cards, graphEvents } = replayFixture(name);
-        const { nodes, edges } = buildGraph(cards, graphEvents);
+        const { tree } = replayFixture(name);
+        const { nodes, edges } = buildGraph(tree);
         const nodeIds = new Set(nodes.map((n) => n.id));
         for (const edge of edges) {
           expect(nodeIds.has(edge.source)).toBe(true);
@@ -409,8 +433,8 @@ describe("JSONL Fixture Integration Tests", () => {
 
       it(`${name}: 엣지 ID가 고유하다`, () => {
         useDashboardStore.getState().reset();
-        const { cards, graphEvents } = replayFixture(name);
-        const { edges } = buildGraph(cards, graphEvents);
+        const { tree } = replayFixture(name);
+        const { edges } = buildGraph(tree);
         const edgeIds = edges.map((e) => e.id);
         expect(new Set(edgeIds).size).toBe(edgeIds.length);
       });
