@@ -19,6 +19,7 @@ export function PromptComposer() {
   const resumeTargetKey = useDashboardStore((s) => s.resumeTargetKey);
   const cancelCompose = useDashboardStore((s) => s.cancelCompose);
   const setActiveSession = useDashboardStore((s) => s.setActiveSession);
+  const addOptimisticSession = useDashboardStore((s) => s.addOptimisticSession);
 
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -76,7 +77,8 @@ export function PromptComposer() {
 
       const result: CreateSessionResponse = await response.json();
 
-      // 세션 생성 성공 → composing 종료, 활성 세션 전환
+      // 세션 생성 성공 → 낙관적 세션 추가 → composing 종료, 활성 세션 전환
+      addOptimisticSession(result.agentSessionId, trimmed);
       cancelCompose();
       setActiveSession(result.agentSessionId);
     } catch (err) {
@@ -90,7 +92,7 @@ export function PromptComposer() {
     } finally {
       setSending(false);
     }
-  }, [text, sending, resumeTargetKey, cancelCompose, setActiveSession]);
+  }, [text, sending, resumeTargetKey, cancelCompose, setActiveSession, addOptimisticSession]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {

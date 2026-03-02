@@ -100,7 +100,8 @@ describe("Actions Routes", () => {
       expect(soulRequests).toHaveLength(1);
       expect(soulRequests[0].type).toBe("execute");
       expect((soulRequests[0].body as any).prompt).toBe("Analyze this code");
-      expect((soulRequests[0].body as any).agent_session_id).toBeDefined();
+      // 새 세션에서는 agent_session_id를 보내지 않음 (서버가 생성)
+      expect((soulRequests[0].body as any).agent_session_id).toBeUndefined();
       expect((soulRequests[0].body as any).use_mcp).toBe(true);
     });
   });

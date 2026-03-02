@@ -1,10 +1,11 @@
 """
-Task Models - 태스크 관련 데이터 모델 및 예외
+Task Models - 세션 태스크 데이터 모델 및 예외
 
-태스크의 핵심 데이터 구조를 정의합니다.
+세션(agent_session_id) 단위의 태스크 데이터 구조를 정의합니다.
 """
 
 import asyncio
+import secrets
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from enum import Enum
@@ -19,7 +20,7 @@ class TaskStatus(str, Enum):
 
 
 class TaskConflictError(Exception):
-    """태스크 충돌 오류 (같은 키로 running 태스크 존재)"""
+    """태스크 충돌 오류 (같은 세션에 running 태스크 존재)"""
     pass
 
 
@@ -48,14 +49,27 @@ def str_to_datetime(s: str) -> datetime:
     return datetime.fromisoformat(s)
 
 
+def generate_agent_session_id() -> str:
+    """서버에서 고유한 agent_session_id 생성"""
+    timestamp = utc_now().strftime("%Y%m%d%H%M%S")
+    random_part = secrets.token_hex(4)
+    return f"sess-{timestamp}-{random_part}"
+
+
 @dataclass
 class Task:
-    """태스크 데이터"""
-    client_id: str
-    request_id: str
+    """세션 태스크 데이터
+
+    agent_session_id가 primary key입니다.
+    하나의 세션은 여러 턴(user_message → complete)을 가질 수 있고,
+    모든 이벤트는 같은 JSONL 파일에 축적됩니다.
+    """
     agent_session_id: str
     prompt: str
     status: TaskStatus = TaskStatus.RUNNING
+
+    # 메타데이터 (로깅용)
+    client_id: Optional[str] = None
 
     # Claude Code 관련
     resume_session_id: Optional[str] = None
@@ -69,7 +83,6 @@ class Task:
     # 결과
     result: Optional[str] = None
     error: Optional[str] = None
-    result_delivered: bool = False
 
     # 타임스탬프
     created_at: datetime = field(default_factory=utc_now)
@@ -83,22 +96,20 @@ class Task:
 
     @property
     def key(self) -> str:
-        """태스크 키"""
-        return f"{self.client_id}:{self.request_id}"
+        """세션 키 (= agent_session_id)"""
+        return self.agent_session_id
 
     def to_dict(self) -> dict:
         """영속화용 dict 변환"""
         return {
-            "client_id": self.client_id,
-            "request_id": self.request_id,
             "agent_session_id": self.agent_session_id,
             "prompt": self.prompt,
             "status": self.status.value,
+            "client_id": self.client_id,
             "resume_session_id": self.resume_session_id,
             "claude_session_id": self.claude_session_id,
             "result": self.result,
             "error": self.error,
-            "result_delivered": self.result_delivered,
             "created_at": datetime_to_str(self.created_at),
             "completed_at": datetime_to_str(self.completed_at) if self.completed_at else None,
         }
@@ -107,16 +118,14 @@ class Task:
     def from_dict(cls, data: dict) -> "Task":
         """dict에서 복원"""
         return cls(
-            client_id=data["client_id"],
-            request_id=data["request_id"],
-            agent_session_id=data.get("agent_session_id", ""),
-            prompt=data["prompt"],
+            agent_session_id=data["agent_session_id"],
+            prompt=data.get("prompt", ""),
             status=TaskStatus(data["status"]),
+            client_id=data.get("client_id"),
             resume_session_id=data.get("resume_session_id"),
             claude_session_id=data.get("claude_session_id"),
             result=data.get("result"),
             error=data.get("error"),
-            result_delivered=data.get("result_delivered", False),
             created_at=str_to_datetime(data["created_at"]),
             completed_at=str_to_datetime(data["completed_at"]) if data.get("completed_at") else None,
         )

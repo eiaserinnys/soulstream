@@ -4,11 +4,11 @@
  * Phase 1~5 핵심 기능을 JSONL 픽스처 → store.processEvent → buildGraph 파이프라인으로 검증합니다.
  *
  * 시나리오:
- * - basic-flow: thinking → response → complete (기본 플로우)
- * - tree-layout: thinking → tool_call → thinking → tool_call → response (트리 분기)
+ * - basic-flow: thinking → thinking → complete (기본 플로우)
+ * - tree-layout: thinking → tool_call → thinking → tool_call → thinking (트리 분기)
  * - intervention-flow: 중간에 사용자 개입 포함
  * - multi-tool: 다중 tool 호출 + result (running 상태 해제)
- * - complete-flow: 세션 완료 시 마지막 카드가 response 노드로 변환
+ * - complete-flow: 세션 완료 시 thinking 노드 + complete 노드
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
@@ -85,7 +85,7 @@ describe("JSONL Fixture Integration Tests", () => {
     useDashboardStore.getState().reset();
   });
 
-  // === basic-flow: thinking → response → complete ===
+  // === basic-flow: thinking → thinking → complete ===
 
   describe("basic-flow: 기본 텍스트 플로우", () => {
     it("텍스트 노드 2개가 생성된다", () => {
@@ -114,14 +114,17 @@ describe("JSONL Fixture Integration Tests", () => {
       expect(completeNodes.length).toBeGreaterThanOrEqual(1);
     });
 
-    it("buildGraph에서 마지막 텍스트 카드가 response 노드가 된다", () => {
+    it("buildGraph에서 모든 텍스트가 thinking 노드가 된다 (response heuristic 제거)", () => {
       const { tree } = replayFixture("basic-flow");
       const { nodes } = buildGraph(tree);
 
-      // user → thinking → response → system(complete)
+      // response 노드 타입은 더 이상 사용되지 않음
       const responseNodes = nodes.filter((n) => n.type === "response");
-      expect(responseNodes).toHaveLength(1);
-      expect(responseNodes[0].data.content).toContain("three panels");
+      expect(responseNodes).toHaveLength(0);
+
+      // 모든 텍스트는 thinking
+      const thinkingNodes = nodes.filter((n) => n.type === "thinking");
+      expect(thinkingNodes.length).toBeGreaterThanOrEqual(1);
     });
 
     it("buildGraph에서 user_message가 user 노드로 생성된다", () => {
@@ -146,14 +149,14 @@ describe("JSONL Fixture Integration Tests", () => {
       const { tree } = replayFixture("basic-flow");
       const { nodes, edges } = buildGraph(tree);
 
-      // 노드 수 검증: user + thinking + response + complete
+      // 노드 수 검증: user + thinking(들) + complete
       expect(nodes.length).toBeGreaterThanOrEqual(4);
       // 엣지는 노드를 연결
       expect(edges.length).toBeGreaterThanOrEqual(nodes.length - 2);
     });
   });
 
-  // === tree-layout: thinking → tool → thinking → tool → response ===
+  // === tree-layout: thinking → tool → thinking → tool → thinking ===
 
   describe("tree-layout: 트리 분기 레이아웃", () => {
     it("텍스트 3개 + 도구 2개 노드가 생성된다", () => {
@@ -322,24 +325,27 @@ describe("JSONL Fixture Integration Tests", () => {
     });
   });
 
-  // === complete-flow: complete 카드 + response 노드 중앙 정렬 ===
+  // === complete-flow: complete 카드 + thinking 노드 ===
 
-  describe("complete-flow: 세션 완료 + response 노드", () => {
-    it("마지막 텍스트 노드가 response 노드로 변환된다", () => {
+  describe("complete-flow: 세션 완료 + thinking 노드", () => {
+    it("모든 텍스트 노드가 thinking 타입이다 (response heuristic 제거)", () => {
       const { tree } = replayFixture("complete-flow");
       const { nodes } = buildGraph(tree);
 
       const responseNodes = nodes.filter((n) => n.type === "response");
-      expect(responseNodes).toHaveLength(1);
-      expect(responseNodes[0].data.content).toContain("hello world function");
+      expect(responseNodes).toHaveLength(0);
+
+      const thinkingNodes = nodes.filter((n) => n.type === "thinking");
+      expect(thinkingNodes.length).toBeGreaterThanOrEqual(1);
     });
 
-    it("response 노드는 streaming=false 이다", () => {
+    it("마지막 thinking 노드는 streaming=false 이다", () => {
       const { tree } = replayFixture("complete-flow");
       const { nodes } = buildGraph(tree);
 
-      const responseNode = nodes.find((n) => n.type === "response")!;
-      expect(responseNode.data.streaming).toBe(false);
+      const thinkingNodes = nodes.filter((n) => n.type === "thinking");
+      const lastThinking = thinkingNodes[thinkingNodes.length - 1];
+      expect(lastThinking.data.streaming).toBe(false);
     });
 
     it("complete system 노드가 그래프 끝에 위치한다", () => {
@@ -356,17 +362,18 @@ describe("JSONL Fixture Integration Tests", () => {
       expect(outgoing).toHaveLength(0);
     });
 
-    it("response 노드에서 complete 노드로의 엣지가 존재한다", () => {
+    it("마지막 thinking 노드에서 complete 노드로의 엣지가 존재한다", () => {
       const { tree } = replayFixture("complete-flow");
       const { nodes, edges } = buildGraph(tree);
 
-      const responseNode = nodes.find((n) => n.type === "response")!;
+      const thinkingNodes = nodes.filter((n) => n.type === "thinking");
+      const lastThinking = thinkingNodes[thinkingNodes.length - 1];
       const completeNode = nodes.find(
         (n) => n.type === "system" && n.data.label === "Complete",
       )!;
 
       const edge = edges.find(
-        (e) => e.source === responseNode.id && e.target === completeNode.id,
+        (e) => e.source === lastThinking.id && e.target === completeNode.id,
       );
       expect(edge).toBeDefined();
     });
@@ -375,8 +382,7 @@ describe("JSONL Fixture Integration Tests", () => {
       const { tree } = replayFixture("complete-flow");
       const { nodes } = buildGraph(tree);
 
-      // 트리 기반에서는 session 노드 없이: user + thinking + tool_call + tool_result + response + complete
-      // 픽스처에 따라 다를 수 있으므로 최소 개수 확인
+      // 트리 기반: user + thinking(들) + tool_call + tool_result + complete
       expect(nodes.length).toBeGreaterThanOrEqual(5);
     });
 

@@ -17,12 +17,12 @@ from .schemas import (
     ContextUsageEvent,
     CompactEvent,
     DebugEvent,
-    # Task API
+    # Session API
     TaskStatus,
     ExecuteRequest,
-    TaskResponse,
-    TaskListResponse,
-    TaskInterveneRequest,
+    SessionResponse,
+    SessionListResponse,
+    InitSSEEvent,
     # 세분화 SSE 이벤트 (dashboard용)
     ThinkingSSEEvent,
     TextStartSSEEvent,
@@ -54,12 +54,12 @@ __all__ = [
     "ContextUsageEvent",
     "CompactEvent",
     "DebugEvent",
-    # Task API
+    # Session API
     "TaskStatus",
     "ExecuteRequest",
-    "TaskResponse",
-    "TaskListResponse",
-    "TaskInterveneRequest",
+    "SessionResponse",
+    "SessionListResponse",
+    "InitSSEEvent",
     # 세분화 SSE 이벤트 (dashboard용)
     "ThinkingSSEEvent",
     "TextStartSSEEvent",

@@ -39,21 +39,9 @@ export function createTestApp(options: TestAppOptions): TestAppContext {
   const soulClient = new SoulClient({ soulBaseUrl });
 
   // Soul 이벤트 → EventHub 브로드캐스트
-  // task key로 수신된 이벤트를 agentSessionId로 라우팅
-  soulClient.onEvent((taskKey, eventId, event) => {
-    const agentSessionId = eventHub.resolveTask(taskKey);
-
-    if (agentSessionId) {
-      eventHub.broadcast(agentSessionId, eventId, event);
-
-      if (event.type === "complete" || event.type === "error" || event.type === "result") {
-        eventHub.unregisterTask(taskKey);
-      }
-      return;
-    }
-
-    // task 매핑이 없으면 taskKey를 그대로 세션 키로 사용
-    eventHub.broadcast(taskKey, eventId, event);
+  // SoulClient가 agentSessionId별로 구독하므로 직접 broadcast.
+  soulClient.onEvent((agentSessionId, eventId, event) => {
+    eventHub.broadcast(agentSessionId, eventId, event);
   });
 
   const app = express();
@@ -112,14 +100,15 @@ export function createMockSoulServer(): Promise<{
 
     soulApp.post("/execute", (req, res) => {
       requests.push({ type: "execute", body: req.body });
+      const agentSessionId = req.body.agent_session_id ?? `sess-mock-${Date.now()}`;
 
-      // SSE 스트림 시뮬레이트 (즉시 종료)
+      // SSE 스트림 시뮬레이트 (init 이벤트 후 즉시 종료)
       res.writeHead(200, {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
       });
       res.write(
-        'event: progress\ndata: {"type":"progress","text":"Starting..."}\n\n',
+        `event: init\ndata: ${JSON.stringify({ type: "init", agent_session_id: agentSessionId })}\n\n`,
       );
       res.end();
     });

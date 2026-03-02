@@ -1,7 +1,7 @@
 """
 Task Executor - 백그라운드 태스크 실행 관리
 
-Claude Code 실행을 백그라운드에서 관리합니다.
+세션(agent_session_id) 단위로 Claude Code 실행을 백그라운드에서 관리합니다.
 """
 
 import asyncio
@@ -30,20 +30,20 @@ class TaskExecutor:
         self,
         tasks: Dict[str, Task],
         listener_manager: "TaskListenerManager",
-        get_intervention_func: Callable[[str, str], Awaitable[Optional[dict]]],
-        complete_task_func: Callable[[str, str, str, Optional[str]], Awaitable[Optional[Task]]],
-        error_task_func: Callable[[str, str, str], Awaitable[Optional[Task]]],
-        register_session_func: Optional[Callable[[str, str, str], None]] = None,
+        get_intervention_func: Callable[[str], Awaitable[Optional[dict]]],
+        complete_task_func: Callable[[str, str, Optional[str]], Awaitable[Optional[Task]]],
+        error_task_func: Callable[[str, str], Awaitable[Optional[Task]]],
+        register_session_func: Optional[Callable[[str, str], None]] = None,
         event_store: Optional["EventStore"] = None,
     ):
         """
         Args:
-            tasks: TaskManager의 태스크 딕셔너리 참조
+            tasks: TaskManager의 태스크 딕셔너리 참조 (key = agent_session_id)
             listener_manager: 리스너 매니저
-            get_intervention_func: 개입 메시지 가져오기 함수
-            complete_task_func: 태스크 완료 처리 함수
-            error_task_func: 태스크 에러 처리 함수
-            register_session_func: session_id 등록 함수 (session_id, client_id, request_id)
+            get_intervention_func: 개입 메시지 가져오기 함수 (agent_session_id) -> dict?
+            complete_task_func: 태스크 완료 처리 함수 (agent_session_id, result, claude_session_id?)
+            error_task_func: 태스크 에러 처리 함수 (agent_session_id, error)
+            register_session_func: claude_session_id 등록 함수 (claude_session_id, agent_session_id)
             event_store: 이벤트 영속화 저장소 (None이면 저장하지 않음)
         """
         self._tasks = tasks
@@ -56,37 +56,33 @@ class TaskExecutor:
 
     async def start_execution(
         self,
-        client_id: str,
-        request_id: str,
+        agent_session_id: str,
         claude_runner,
         resource_manager,
     ) -> bool:
         """
-        태스크의 Claude 실행을 백그라운드에서 시작
+        세션의 Claude 실행을 백그라운드에서 시작
 
         SSE 연결과 독립적으로 실행되어, 클라이언트 재연결 시에도
         실행이 계속됩니다.
 
         Args:
-            client_id: 클라이언트 ID
-            request_id: 요청 ID
-            claude_runner: SoulEngineAdapter 인스턴스 (execute() 메서드 제공)
+            agent_session_id: 세션 식별자
+            claude_runner: SoulEngineAdapter 인스턴스
             resource_manager: ResourceManager 인스턴스
 
         Returns:
             bool: 성공 여부
         """
-        key = f"{client_id}:{request_id}"
-        task = self._tasks.get(key)
+        task = self._tasks.get(agent_session_id)
         if not task:
-            logger.warning(f"Task not found for execution: {key}")
+            logger.warning(f"Task not found for execution: {agent_session_id}")
             return False
 
         if task.execution_task is not None:
-            logger.warning(f"Task already executing: {key}")
+            logger.warning(f"Task already executing: {agent_session_id}")
             return False
 
-        # 백그라운드 태스크 생성
         task.execution_task = asyncio.create_task(
             self._run_execution(
                 task=task,
@@ -94,7 +90,7 @@ class TaskExecutor:
                 resource_manager=resource_manager,
             )
         )
-        logger.info(f"Started background execution for task: {key}")
+        logger.info(f"Started background execution for session: {agent_session_id}")
 
         return True
 
@@ -105,25 +101,27 @@ class TaskExecutor:
         resource_manager,
     ) -> None:
         """백그라운드에서 Claude 실행 및 이벤트 브로드캐스트"""
-        key = task.key
+        session_id = task.agent_session_id
 
         try:
             async with resource_manager.acquire(timeout=5.0):
                 # user_message 기록 (Soul 서버가 JSONL의 유일한 기록자)
                 if self._event_store is not None:
                     try:
-                        user_msg_event = {"type": "user_message", "user": task.client_id, "text": task.prompt}
-                        event_id = self._event_store.append(task.agent_session_id, user_msg_event)
+                        user_msg_event = {
+                            "type": "user_message",
+                            "user": task.client_id or "unknown",
+                            "text": task.prompt,
+                        }
+                        event_id = self._event_store.append(session_id, user_msg_event)
                         user_msg_event["_event_id"] = event_id
-                        await self._listener_manager.broadcast(
-                            task.client_id, task.request_id, user_msg_event
-                        )
+                        await self._listener_manager.broadcast(session_id, user_msg_event)
                     except Exception as e:
-                        logger.warning(f"Failed to persist user_message for {key}: {e}")
+                        logger.warning(f"Failed to persist user_message for {session_id}: {e}")
 
                 # 개입 메시지 가져오기 함수
                 async def get_intervention():
-                    return await self._get_intervention(task.client_id, task.request_id)
+                    return await self._get_intervention(session_id)
 
                 # 개입 메시지 전송 콜백
                 async def on_intervention_sent(user: str, text: str):
@@ -132,12 +130,12 @@ class TaskExecutor:
                     if self._event_store is not None:
                         try:
                             intervention_msg = {"type": "user_message", "user": user, "text": text}
-                            self._event_store.append(task.agent_session_id, intervention_msg)
+                            self._event_store.append(session_id, intervention_msg)
                         except Exception as e:
-                            logger.warning(f"Failed to persist intervention user_message for {key}: {e}")
-                    await self._listener_manager.broadcast(task.client_id, task.request_id, event)
+                            logger.warning(f"Failed to persist intervention user_message for {session_id}: {e}")
+                    await self._listener_manager.broadcast(session_id, event)
 
-                # Claude Code 실행 (요청별 도구 설정 전달)
+                # Claude Code 실행
                 async for event in claude_runner.execute(
                     prompt=task.prompt,
                     resume_session_id=task.resume_session_id,
@@ -149,12 +147,11 @@ class TaskExecutor:
                 ):
                     event_dict = event.model_dump()
 
-                    # session_id 등록 (인터벤션 역인덱스)
+                    # claude_session_id 등록 (인터벤션 역인덱스)
                     if event.type == "session" and self._register_session:
                         self._register_session(
                             event_dict.get("session_id", ""),
-                            task.client_id,
-                            task.request_id,
+                            session_id,
                         )
 
                     # 진행 상황 저장 (재연결용)
@@ -164,90 +161,71 @@ class TaskExecutor:
                     # 이벤트 영속화 (broadcast 전에 저장)
                     if self._event_store is not None:
                         try:
-                            event_id = self._event_store.append(
-                                task.agent_session_id, event_dict
-                            )
-                            # SSE id 필드로 사용할 수 있도록 주입
+                            event_id = self._event_store.append(session_id, event_dict)
                             event_dict["_event_id"] = event_id
                         except Exception as e:
-                            logger.warning(f"Failed to persist event for {key}: {e}")
+                            logger.warning(f"Failed to persist event for {session_id}: {e}")
 
                     # 리스너들에게 브로드캐스트
-                    await self._listener_manager.broadcast(
-                        task.client_id, task.request_id, event_dict
-                    )
+                    await self._listener_manager.broadcast(session_id, event_dict)
 
                     # 완료 또는 오류 시 태스크 상태 업데이트
                     if event.type == "complete":
                         await self._complete_task(
-                            task.client_id,
-                            task.request_id,
+                            session_id,
                             event.result,
                             event.claude_session_id,
                         )
                     elif event.type == "error":
-                        await self._error_task(
-                            task.client_id,
-                            task.request_id,
-                            event.message,
-                        )
+                        await self._error_task(session_id, event.message)
 
         except RuntimeError as e:
-            # 리소스 획득 실패
             error_msg = str(e)
-            logger.error(f"Resource acquisition failed for task {key}: {error_msg}")
-            await self._error_task(task.client_id, task.request_id, error_msg)
-            # 에러 이벤트 브로드캐스트
+            logger.error(f"Resource acquisition failed for session {session_id}: {error_msg}")
+            await self._error_task(session_id, error_msg)
             await self._listener_manager.broadcast(
-                task.client_id, task.request_id,
-                {"type": "error", "message": error_msg}
+                session_id, {"type": "error", "message": error_msg}
             )
 
         except asyncio.CancelledError:
-            logger.info(f"Task execution cancelled: {key}")
+            logger.info(f"Task execution cancelled: {session_id}")
             raise
 
         except Exception as e:
-            logger.exception(f"Task execution error for {key}: {e}")
+            logger.exception(f"Task execution error for {session_id}: {e}")
             error_msg = f"실행 오류: {str(e)}"
-            await self._error_task(task.client_id, task.request_id, error_msg)
-            # 에러 이벤트 브로드캐스트
+            await self._error_task(session_id, error_msg)
             await self._listener_manager.broadcast(
-                task.client_id, task.request_id,
-                {"type": "error", "message": error_msg}
+                session_id, {"type": "error", "message": error_msg}
             )
 
         finally:
             task.execution_task = None
-            logger.info(f"Background execution finished for task: {key}")
+            logger.info(f"Background execution finished for session: {session_id}")
 
-    def is_execution_running(self, client_id: str, request_id: str) -> bool:
-        """태스크 실행이 진행 중인지 확인"""
-        key = f"{client_id}:{request_id}"
-        task = self._tasks.get(key)
+    def is_execution_running(self, agent_session_id: str) -> bool:
+        """세션 실행이 진행 중인지 확인"""
+        task = self._tasks.get(agent_session_id)
         return task is not None and task.execution_task is not None
 
     async def send_reconnect_status(
         self,
-        client_id: str,
-        request_id: str,
+        agent_session_id: str,
         queue: asyncio.Queue,
         last_event_id: Optional[int] = None,
     ) -> None:
         """
         재연결 시 현재 상태 이벤트 전송
 
-        새로 연결된 리스너에게 현재 태스크 상태를 알려줍니다.
+        새로 연결된 리스너에게 현재 세션 상태를 알려줍니다.
         last_event_id가 주어지면 EventStore에서 미수신 이벤트를 재전송합니다.
 
         Args:
-            client_id: 클라이언트 ID
-            request_id: 요청 ID
+            agent_session_id: 세션 식별자
             queue: 이벤트를 받을 큐
-            last_event_id: 클라이언트가 마지막으로 수신한 이벤트 ID (SSE Last-Event-ID)
+            last_event_id: 클라이언트가 마지막으로 수신한 이벤트 ID
         """
-        key = f"{client_id}:{request_id}"
-        task = self._tasks.get(key)
+        task = self._tasks.get(agent_session_id)
         if not task:
             return
 
@@ -258,21 +236,18 @@ class TaskExecutor:
             "has_execution": task.execution_task is not None,
         }
 
-        # 마지막 진행 상황이 있으면 포함
         if task.last_progress_text:
             reconnect_event["last_progress"] = task.last_progress_text
 
         try:
             await queue.put(reconnect_event)
-            logger.debug(f"Sent reconnect status to listener for task {key}")
+            logger.debug(f"Sent reconnect status to listener for session {agent_session_id}")
 
             # EventStore에서 미수신 이벤트 재전송
-            # read_since는 {"id": N, "event": {...}} 형식을 반환하므로
-            # 라이브 이벤트와 같은 형식으로 정규화한다: event_dict + _event_id
             if self._event_store is not None and last_event_id is not None:
                 try:
                     missed_events = self._event_store.read_since(
-                        task.agent_session_id, after_id=last_event_id
+                        agent_session_id, after_id=last_event_id
                     )
                     for ev in missed_events:
                         normalized = dict(ev.get("event", {}))
@@ -280,7 +255,7 @@ class TaskExecutor:
                         await queue.put(normalized)
                     if missed_events:
                         logger.info(
-                            f"Replayed {len(missed_events)} missed events for {key} "
+                            f"Replayed {len(missed_events)} missed events for {agent_session_id} "
                             f"(after_id={last_event_id})"
                         )
                 except Exception as e:
@@ -307,12 +282,11 @@ class TaskExecutor:
             if task.execution_task and not task.execution_task.done():
                 task.execution_task.cancel()
                 tasks_to_cancel.append((key, task.execution_task))
-                logger.info(f"Cancelling execution for task: {key}")
+                logger.info(f"Cancelling execution for session: {key}")
 
         if not tasks_to_cancel:
             return 0
 
-        # 모든 취소된 태스크 완료 대기 (gather로 병렬 대기)
         try:
             await asyncio.wait_for(
                 asyncio.gather(
@@ -324,7 +298,6 @@ class TaskExecutor:
         except asyncio.TimeoutError:
             logger.warning(f"Task cancellation timeout after {timeout}s")
 
-        # 취소된 태스크 수 카운트
         cancelled_count = sum(1 for _, t in tasks_to_cancel if t.done())
         logger.info(f"Cancelled {cancelled_count}/{len(tasks_to_cancel)} running tasks")
         return cancelled_count

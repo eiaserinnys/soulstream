@@ -41,6 +41,58 @@ export interface ActionsRouterOptions {
   soulClient?: import("../soul-client.js").SoulClient;
 }
 
+/**
+ * Soul POST /execute의 SSE 응답에서 init 이벤트를 읽어 agent_session_id를 추출합니다.
+ *
+ * SSE 형식:
+ *   event: init
+ *   data: {"type": "init", "agent_session_id": "sess-..."}
+ */
+async function readInitEvent(
+  response: globalThis.Response,
+): Promise<string> {
+  if (!response.body) {
+    throw new Error("No response body from Soul server");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) throw new Error("SSE stream ended before init event");
+
+      buffer += decoder.decode(value, { stream: true });
+
+      // SSE 이벤트는 빈 줄(\n\n)로 구분됨
+      const eventEnd = buffer.indexOf("\n\n");
+      if (eventEnd === -1) continue;
+
+      const eventBlock = buffer.substring(0, eventEnd);
+      const lines = eventBlock.split("\n");
+
+      let data = "";
+      for (const line of lines) {
+        if (line.startsWith("data: ")) data = line.substring(6);
+      }
+
+      if (data) {
+        const parsed = JSON.parse(data);
+        if (parsed.type === "init" && parsed.agent_session_id) {
+          return parsed.agent_session_id;
+        }
+      }
+
+      // init이 아니면 다음 이벤트 블록으로
+      buffer = buffer.substring(eventEnd + 2);
+    }
+  } finally {
+    reader.cancel();
+  }
+}
+
 export function createActionsRouter(options: ActionsRouterOptions): Router {
   const { soulBaseUrl, authToken, eventHub, sessionStore, soulClient } = options;
   const router = Router();
@@ -49,7 +101,7 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
    * POST /api/sessions
    *
    * 대시보드에서 새 Claude Code 세션을 시작합니다.
-   * agent_session_id를 생성하여 Soul 서버에 전달합니다.
+   * Soul 서버가 agent_session_id를 생성하여 init SSE 이벤트로 전달합니다.
    */
   router.post("/", async (req, res) => {
     try {
@@ -75,23 +127,7 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
         return;
       }
 
-      const clientId = body.clientId ?? "dashboard";
-      const requestId = generateRequestId();
-      // resume 시 클라이언트가 기존 agentSessionId를 전달하면 재사용
-      const agentSessionId = body.agentSessionId ?? generateSessionId();
-      const taskKey = `${clientId}:${requestId}`;
-
-      // EventHub에 task→session 매핑 등록
-      if (eventHub) {
-        eventHub.registerTask(taskKey, agentSessionId);
-      }
-
-      // SoulClient가 새 태스크의 SSE를 구독
-      if (soulClient) {
-        soulClient.subscribe(clientId, requestId);
-      }
-
-      // Soul 서버에 실행 요청
+      // Soul 서버에 실행 요청 (SSE 응답)
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), SOUL_REQUEST_TIMEOUT_MS);
 
@@ -104,20 +140,14 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
             ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
           },
           body: JSON.stringify({
-            client_id: clientId,
-            request_id: requestId,
-            agent_session_id: agentSessionId,
             prompt: body.prompt,
-            resume_session_id: body.resumeSessionId ?? null,
+            // resume 시 기존 agent_session_id 전달 (없으면 서버가 생성)
+            ...(body.agentSessionId ? { agent_session_id: body.agentSessionId } : {}),
             use_mcp: true,
           }),
           signal: controller.signal,
         });
       } catch (err) {
-        // 실패 시 정리
-        if (eventHub) eventHub.unregisterTask(taskKey);
-        if (soulClient) soulClient.unsubscribe(clientId, requestId);
-
         if (err instanceof Error && err.name === "AbortError") {
           res.status(504).json({
             error: {
@@ -135,8 +165,6 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
       if (!soulResponse.ok) {
         const errorBody = await soulResponse.text();
         console.error(`[actions] Soul execute failed (${soulResponse.status}):`, errorBody);
-        if (eventHub) eventHub.unregisterTask(taskKey);
-        if (soulClient) soulClient.unsubscribe(clientId, requestId);
         res.status(502).json({
           error: {
             code: "SOUL_ERROR",
@@ -147,12 +175,25 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
         return;
       }
 
-      // Soul이 SSE 스트림을 반환하지만, 대시보드에서는 세션 정보만 반환
-      if (soulResponse.body) {
-        await soulResponse.body.cancel();
+      // SSE init 이벤트에서 agent_session_id 추출
+      let agentSessionId: string;
+      try {
+        agentSessionId = await readInitEvent(soulResponse);
+      } catch (err) {
+        console.error("[actions] Failed to read init event:", err);
+        res.status(502).json({
+          error: {
+            code: "SOUL_ERROR",
+            message: "Failed to read session ID from Soul server",
+          },
+        });
+        return;
       }
 
-      // user_message 기록은 Soul 서버가 담당 (JSONL의 유일한 기록자)
+      // SoulClient가 이 세션의 이벤트를 구독 (GET /events/{id}/stream)
+      if (soulClient) {
+        soulClient.subscribe(agentSessionId);
+      }
 
       const response: CreateSessionResponse = {
         agentSessionId,
@@ -281,18 +322,10 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
 
       const result = await soulResponse.json();
 
-      // 자동 resume로 새 태스크가 생성된 경우 → task→session 매핑 등록 + SoulClient 구독
-      if (result.auto_resumed && result.task_key) {
-        if (eventHub) {
-          eventHub.registerTask(result.task_key, agentSessionId);
-        }
-        if (soulClient) {
-          const [clientId, requestId] = result.task_key.split(":", 2);
-          soulClient.subscribe(clientId, requestId);
-        }
+      // 자동 resume 시 SoulClient가 세션 이벤트를 다시 구독
+      if (result.auto_resumed && soulClient) {
+        soulClient.subscribe(agentSessionId);
       }
-
-      // user_message 기록은 Soul 서버가 담당 (JSONL의 유일한 기록자)
 
       res.json(result);
     } catch (err) {
@@ -310,24 +343,4 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
   router.post("/:id/message", handleIntervene);
 
   return router;
-}
-
-/**
- * 대시보드 요청용 고유 agent_session_id 생성.
- * "sess-" 접두사 + 타임스탬프 + 랜덤 4자리.
- */
-function generateSessionId(): string {
-  const timestamp = Date.now().toString(36);
-  const random = Math.random().toString(36).substring(2, 6);
-  return `sess-${timestamp}-${random}`;
-}
-
-/**
- * 대시보드 요청용 고유 request_id 생성.
- * "task-" 접두사 + 타임스탬프 + 랜덤 4자리.
- */
-function generateRequestId(): string {
-  const timestamp = Date.now().toString(36);
-  const random = Math.random().toString(36).substring(2, 6);
-  return `task-${timestamp}-${random}`;
 }

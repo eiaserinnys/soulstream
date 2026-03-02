@@ -1,8 +1,8 @@
 /**
  * Soul SSE Client - Soul 서버의 SSE 스트림을 구독하는 클라이언트
  *
- * Soul 서버(http://localhost:3105)의 태스크 SSE 엔드포인트에 연결하여
- * 이벤트를 수신하고, EventHub를 통해 대시보드 클라이언트에 중계합니다.
+ * Soul 서버의 세션 SSE 엔드포인트(GET /events/{agentSessionId}/stream)에
+ * 연결하여 이벤트를 수신하고, EventHub를 통해 대시보드 클라이언트에 중계합니다.
  *
  * Last-Event-ID 기반 재연결을 지원합니다.
  */
@@ -22,14 +22,14 @@ export interface SoulClientOptions {
 }
 
 export type SoulEventHandler = (
-  sessionKey: string,
+  agentSessionId: string,
   eventId: number,
   event: SoulSSEEvent,
 ) => void;
 
 interface StreamSubscription {
   eventSource: EventSource;
-  sessionKey: string;
+  agentSessionId: string;
   lastEventId: number;
   reconnectAttempts: number;
   closed: boolean;
@@ -38,7 +38,8 @@ interface StreamSubscription {
 /**
  * Soul SSE 구독 클라이언트.
  *
- * 개별 태스크 스트림에 연결하여 이벤트를 수신합니다.
+ * 세션별 SSE 스트림(GET /events/{agentSessionId}/stream)에 연결하여
+ * 이벤트를 수신합니다.
  * 연결이 끊어지면 Last-Event-ID를 사용하여 지수 백오프로 재연결합니다.
  */
 export class SoulClient {
@@ -49,7 +50,7 @@ export class SoulClient {
   private readonly subscriptions = new Map<string, StreamSubscription>();
   private readonly eventHandlers: SoulEventHandler[] = [];
   private readonly errorHandlers: Array<
-    (sessionKey: string, error: Error) => void
+    (agentSessionId: string, error: Error) => void
   > = [];
   private readonly reconnectTimers = new Set<ReturnType<typeof setTimeout>>();
   private closed = false;
@@ -72,7 +73,7 @@ export class SoulClient {
 
   /** 에러 핸들러 등록. 해제 함수를 반환합니다. */
   onError(
-    handler: (sessionKey: string, error: Error) => void,
+    handler: (agentSessionId: string, error: Error) => void,
   ): () => void {
     this.errorHandlers.push(handler);
     return () => {
@@ -82,35 +83,30 @@ export class SoulClient {
   }
 
   /**
-   * 태스크 SSE 스트림에 구독.
+   * 세션 SSE 스트림에 구독.
    *
-   * @param clientId - 클라이언트 ID
-   * @param requestId - 요청 ID
+   * @param agentSessionId - 세션 식별자
    * @param lastEventId - 마지막으로 수신한 이벤트 ID (재연결 시)
    */
   subscribe(
-    clientId: string,
-    requestId: string,
+    agentSessionId: string,
     lastEventId?: number,
   ): void {
-    const sessionKey = `${clientId}:${requestId}`;
-
     // 이미 구독 중이면 무시
-    if (this.subscriptions.has(sessionKey)) {
+    if (this.subscriptions.has(agentSessionId)) {
       return;
     }
 
-    this.connectStream(clientId, requestId, lastEventId, 0);
+    this.connectStream(agentSessionId, lastEventId, 0);
   }
 
-  /** 특정 세션 구독 해제 */
-  unsubscribe(clientId: string, requestId: string): void {
-    const sessionKey = `${clientId}:${requestId}`;
-    const sub = this.subscriptions.get(sessionKey);
+  /** 세션 구독 해제 */
+  unsubscribe(agentSessionId: string): void {
+    const sub = this.subscriptions.get(agentSessionId);
     if (sub) {
       sub.closed = true;
       sub.eventSource.close();
-      this.subscriptions.delete(sessionKey);
+      this.subscriptions.delete(agentSessionId);
     }
   }
 
@@ -137,15 +133,13 @@ export class SoulClient {
   }
 
   private connectStream(
-    clientId: string,
-    requestId: string,
+    agentSessionId: string,
     lastEventId?: number,
     reconnectAttempts?: number,
   ): void {
     if (this.closed) return;
 
-    const sessionKey = `${clientId}:${requestId}`;
-    const url = `${this.baseUrl}/tasks/${encodeURIComponent(clientId)}/${encodeURIComponent(requestId)}/stream`;
+    const url = `${this.baseUrl}/events/${encodeURIComponent(agentSessionId)}/stream`;
 
     const extraHeaders: Record<string, string> = {};
     if (this.authToken) {
@@ -168,16 +162,18 @@ export class SoulClient {
 
     const subscription: StreamSubscription = {
       eventSource,
-      sessionKey,
+      agentSessionId,
       lastEventId: lastEventId ?? 0,
       reconnectAttempts: reconnectAttempts ?? 0,
       closed: false,
     };
 
-    this.subscriptions.set(sessionKey, subscription);
+    this.subscriptions.set(agentSessionId, subscription);
 
     // 모든 이벤트 타입에 대해 리스너 등록
     const eventTypes: SSEEventType[] = [
+      "init",
+      "reconnected",
       "progress",
       "memory",
       "session",
@@ -202,6 +198,7 @@ export class SoulClient {
         if (subscription.closed) return;
 
         try {
+          if (!messageEvent.data || messageEvent.data === "undefined") return;
           const data = JSON.parse(messageEvent.data) as SoulSSEEvent;
           const eventId = messageEvent.lastEventId
             ? parseInt(messageEvent.lastEventId, 10)
@@ -214,24 +211,25 @@ export class SoulClient {
           // 핸들러에 전달
           for (const handler of this.eventHandlers) {
             try {
-              handler(sessionKey, eventId, data);
+              handler(agentSessionId, eventId, data);
             } catch (handlerError) {
               console.error(
-                `[SoulClient] Event handler error for ${sessionKey}:`,
+                `[SoulClient] Event handler error for ${agentSessionId}:`,
                 handlerError,
               );
             }
           }
 
-          // 완료/에러 이벤트면 구독 정리
+          // complete/error는 세션의 현재 턴 종료를 의미하므로 구독을 정리합니다.
+          // resume 시 새 구독이 생성됩니다.
           if (data.type === "complete" || data.type === "error") {
             subscription.closed = true;
             eventSource.close();
-            this.subscriptions.delete(sessionKey);
+            this.subscriptions.delete(agentSessionId);
           }
         } catch (parseError) {
           console.error(
-            `[SoulClient] Failed to parse event for ${sessionKey}:`,
+            `[SoulClient] Failed to parse event for ${agentSessionId}:`,
             parseError,
           );
         }
@@ -241,10 +239,10 @@ export class SoulClient {
     eventSource.onerror = (_errorEvent: Event) => {
       if (subscription.closed || this.closed) return;
 
-      const error = new Error(`SSE connection error for ${sessionKey}`);
+      const error = new Error(`SSE connection error for ${agentSessionId}`);
       for (const handler of this.errorHandlers) {
         try {
-          handler(sessionKey, error);
+          handler(agentSessionId, error);
         } catch {
           // ignore handler errors
         }
@@ -252,7 +250,7 @@ export class SoulClient {
 
       // 수동 재연결 (Last-Event-ID 보존)
       eventSource.close();
-      this.subscriptions.delete(sessionKey);
+      this.subscriptions.delete(agentSessionId);
 
       if (!this.closed) {
         // 지수 백오프 + 랜덤 지터
@@ -267,11 +265,10 @@ export class SoulClient {
           this.reconnectTimers.delete(timer);
           if (!this.closed && !subscription.closed) {
             console.log(
-              `[SoulClient] Reconnecting to ${sessionKey} (attempt=${attempts + 1}, lastEventId=${subscription.lastEventId})`,
+              `[SoulClient] Reconnecting to ${agentSessionId} (attempt=${attempts + 1}, lastEventId=${subscription.lastEventId})`,
             );
             this.connectStream(
-              clientId,
-              requestId,
+              agentSessionId,
               subscription.lastEventId,
               attempts + 1,
             );

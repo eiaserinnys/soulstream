@@ -4,11 +4,8 @@
  * Soul에서 수신한 이벤트를 연결된 대시보드 SSE 클라이언트들에게
  * 브로드캐스트합니다. agentSessionId별로 리스너를 관리합니다.
  *
- * Task→Session 매핑:
- * Soul 서버는 task key (client_id:request_id)로 이벤트를 보내지만,
- * 대시보드는 agentSessionId로 클라이언트를 관리합니다.
- * registerTask()로 task key → agentSessionId 매핑을 등록하여
- * Soul 이벤트를 올바른 세션으로 라우팅합니다.
+ * SoulClient가 agentSessionId별로 이벤트를 수신하므로
+ * 별도의 매핑 없이 직접 broadcast합니다.
  */
 
 import type { Response } from "express";
@@ -26,8 +23,8 @@ interface SSEClient {
  *
  * 사용 패턴:
  * 1. 대시보드 클라이언트가 SSE 연결 → addClient(agentSessionId)
- * 2. SoulClient가 이벤트 수신 (taskKey) → resolveTask로 agentSessionId 조회
- * 3. broadcast(agentSessionId) → 해당 세션의 모든 클라이언트에게 전송
+ * 2. SoulClient가 이벤트 수신 (agentSessionId) → broadcast(agentSessionId)
+ * 3. 해당 세션의 모든 클라이언트에게 전송
  * 4. 클라이언트 연결 종료 → removeClient()
  */
 export class EventHub {
@@ -35,8 +32,6 @@ export class EventHub {
   private readonly clients = new Map<string, SSEClient[]>();
   /** clientId → SSEClient (모든 클라이언트 조회용) */
   private readonly allClients = new Map<string, SSEClient>();
-  /** task key (client_id:request_id) → agentSessionId */
-  private readonly taskToSession = new Map<string, string>();
   private clientIdCounter = 0;
 
   /**
@@ -209,29 +204,6 @@ export class EventHub {
     }
   }
 
-  // === Task → Session 매핑 ===
-
-  /**
-   * task key → agentSessionId 매핑을 등록합니다.
-   */
-  registerTask(taskKey: string, agentSessionId: string): void {
-    this.taskToSession.set(taskKey, agentSessionId);
-  }
-
-  /**
-   * task key로 agentSessionId를 조회합니다.
-   */
-  resolveTask(taskKey: string): string | undefined {
-    return this.taskToSession.get(taskKey);
-  }
-
-  /**
-   * task key 매핑을 제거합니다.
-   */
-  unregisterTask(taskKey: string): void {
-    this.taskToSession.delete(taskKey);
-  }
-
   /** 특정 세션의 연결된 클라이언트 수 */
   getClientCount(sessionKey: string): number {
     return this.clients.get(sessionKey)?.length ?? 0;
@@ -259,6 +231,5 @@ export class EventHub {
     for (const [clientId] of this.allClients) {
       this.removeClient(clientId);
     }
-    this.taskToSession.clear();
   }
 }

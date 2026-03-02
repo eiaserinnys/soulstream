@@ -207,43 +207,6 @@ describe("EventHub", () => {
     });
   });
 
-  describe("task→session mapping", () => {
-    it("should register and resolve task→session mapping", () => {
-      hub.registerTask("dashboard:task-001", "sess-abc");
-
-      expect(hub.resolveTask("dashboard:task-001")).toBe("sess-abc");
-    });
-
-    it("should return undefined for unregistered task key", () => {
-      expect(hub.resolveTask("unknown:task")).toBeUndefined();
-    });
-
-    it("should unregister task mapping", () => {
-      hub.registerTask("dashboard:task-001", "sess-abc");
-      hub.unregisterTask("dashboard:task-001");
-
-      expect(hub.resolveTask("dashboard:task-001")).toBeUndefined();
-    });
-
-    it("should support multiple tasks mapping to same session", () => {
-      hub.registerTask("dashboard:task-001", "sess-abc");
-      hub.registerTask("dashboard:task-002", "sess-abc");
-
-      expect(hub.resolveTask("dashboard:task-001")).toBe("sess-abc");
-      expect(hub.resolveTask("dashboard:task-002")).toBe("sess-abc");
-    });
-
-    it("should clear all task mappings on closeAll", () => {
-      hub.registerTask("dashboard:task-001", "sess-abc");
-      hub.registerTask("dashboard:task-002", "sess-def");
-
-      hub.closeAll();
-
-      expect(hub.resolveTask("dashboard:task-001")).toBeUndefined();
-      expect(hub.resolveTask("dashboard:task-002")).toBeUndefined();
-    });
-  });
-
   describe("getStats", () => {
     it("should return per-session client counts", () => {
       const res1 = createMockResponse();

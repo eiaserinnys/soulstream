@@ -253,22 +253,17 @@ function truncate(text: string, maxLen: number): string {
 
 function createTextNode(
   treeNode: EventTreeNode,
-  isLastText: boolean,
-  isSessionComplete: boolean,
   planFlags?: { isPlanMode?: boolean },
 ): GraphNode {
-  const nodeType: GraphNodeType =
-    isLastText && isSessionComplete ? "response" : "thinking";
-  const label = nodeType === "response" ? "Response" : "Thinking";
-
+  // text 노드는 항상 "thinking" 타입. 실제 응답은 complete 노드가 담당.
   return {
     id: `node-${treeNode.id}`,
-    type: nodeType,
+    type: "thinking",
     position: { x: 0, y: 0 },
     data: {
-      nodeType,
+      nodeType: "thinking",
       cardId: treeNode.id,
-      label,
+      label: "Thinking",
       content: truncate(treeNode.content, 120) || "(streaming...)",
       streaming: !treeNode.completed,
       isPlanMode: planFlags?.isPlanMode,
@@ -462,30 +457,6 @@ export function buildGraph(
 
   if (!tree) return { nodes, edges };
 
-  // 세션 완료 여부: complete 또는 error 노드가 있는지
-  let isSessionComplete = false;
-  function checkComplete(node: EventTreeNode) {
-    if (node.type === "complete" || node.type === "error") {
-      isSessionComplete = true;
-    }
-    for (const child of node.children) {
-      checkComplete(child);
-    }
-  }
-  checkComplete(tree);
-
-  // 마지막 text 노드 ID (response 판정용)
-  let lastTextNodeId: string | null = null;
-  function findLastText(node: EventTreeNode) {
-    if (node.type === "text") {
-      lastTextNodeId = node.id;
-    }
-    for (const child of node.children) {
-      findLastText(child);
-    }
-  }
-  findLastText(tree);
-
   // 플랜 모드 감지
   const planMode = detectPlanModeRanges(tree);
 
@@ -607,8 +578,7 @@ export function buildGraph(
   }
 
   function processTextNode(textTreeNode: EventTreeNode) {
-    const isLast = textTreeNode.id === lastTextNodeId;
-    const graphNode = createTextNode(textTreeNode, isLast, isSessionComplete, {
+    const graphNode = createTextNode(textTreeNode, {
       isPlanMode: planMode.nodeIds.has(textTreeNode.id),
     });
     nodes.push(graphNode);

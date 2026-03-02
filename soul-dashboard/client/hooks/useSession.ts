@@ -45,8 +45,9 @@ const SSE_EVENT_TYPES: SSEEventType[] = [
   "reconnect",
 ];
 
-/** 세션 종료 이벤트 타입 */
-const TERMINAL_EVENTS = new Set<string>(["complete", "error"]);
+// 주의: complete/error는 "턴" 종료이지 "세션" 종료가 아닙니다.
+// 멀티턴 세션에서는 complete 후 새 user_message가 올 수 있으므로
+// 클라이언트가 SSE 연결을 끊으면 안 됩니다.
 
 export function useSession(options: UseSessionOptions) {
   const {
@@ -68,8 +69,6 @@ export function useSession(options: UseSessionOptions) {
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptRef = useRef(0);
   const lastEventIdRef = useRef(0);
-  const isTerminalRef = useRef(false);
-
   // 최신 processEvent/lastEventId를 ref에 동기화
   useEffect(() => {
     processEventRef.current = processEvent;
@@ -127,14 +126,6 @@ export function useSession(options: UseSessionOptions) {
           const eventId = e.lastEventId ? parseInt(e.lastEventId, 10) : 0;
 
           processEventRef.current(data, eventId);
-
-          // 터미널 이벤트면 연결 종료 (재연결 불필요)
-          if (TERMINAL_EVENTS.has(eventType)) {
-            isTerminalRef.current = true;
-            es.close();
-            eventSourceRef.current = null;
-            setStatus("disconnected");
-          }
         } catch {
           // JSON 파싱 실패: 무시 (keepalive 등)
         }
@@ -145,12 +136,6 @@ export function useSession(options: UseSessionOptions) {
     es.onerror = () => {
       es.close();
       eventSourceRef.current = null;
-
-      // 터미널 이벤트 이후의 에러는 재연결하지 않음
-      if (isTerminalRef.current) {
-        setStatus("disconnected");
-        return;
-      }
 
       setStatus("error");
 
@@ -182,7 +167,6 @@ export function useSession(options: UseSessionOptions) {
 
   // sessionKey 변경 시 연결 관리
   useEffect(() => {
-    isTerminalRef.current = false;
     reconnectAttemptRef.current = 0;
 
     if (sessionKey) {

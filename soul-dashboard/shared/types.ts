@@ -9,6 +9,9 @@
 
 /** Soul SSE 이벤트 타입 (Python SSEEventType과 동기화) */
 export type SSEEventType =
+  // 제어 이벤트
+  | "init"
+  | "reconnected"
   // 기본 이벤트
   | "progress"
   | "memory"
@@ -278,9 +281,7 @@ export interface DashboardCard {
 /** POST /api/sessions 요청 (대시보드에서 세션 생성 또는 resume) */
 export interface CreateSessionRequest {
   prompt: string;
-  clientId?: string;
-  resumeSessionId?: string;
-  /** resume 시 기존 세션 ID 재사용. 지정하면 새 ID를 생성하지 않음. */
+  /** resume 시 기존 세션 ID. 없으면 새 세션 생성 (Soul 서버가 ID 생성). */
   agentSessionId?: string;
 }
 
@@ -299,9 +300,10 @@ export interface SendMessageRequest {
 
 /** POST /api/sessions/:id/intervene 응답 */
 export interface InterveneResponse {
+  queued?: boolean;
   queue_position?: number;
   auto_resumed?: boolean;
-  task_key?: string;
+  agent_session_id?: string;
 }
 
 /** GET /api/sessions 응답 */

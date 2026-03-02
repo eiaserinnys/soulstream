@@ -166,9 +166,8 @@ describe("SoulClient", () => {
 
       // subscribe는 내부적으로 EventSource 연결을 시도
       // 테스트 환경에서는 연결이 실패하지만 구독 추적은 됨
-      // Note: 실제 구현에서 EventSource 생성자가 예외를 던질 수 있음
       try {
-        client.subscribe("bot", "req-1");
+        client.subscribe("sess-test-001");
       } catch {
         // EventSource 생성 실패는 예상됨
       }
@@ -180,8 +179,8 @@ describe("SoulClient", () => {
       });
 
       try {
-        client.subscribe("bot", "req-1");
-        client.subscribe("bot", "req-1"); // 중복
+        client.subscribe("sess-test-001");
+        client.subscribe("sess-test-001"); // 중복
       } catch {
         // 예상됨
       }
@@ -207,7 +206,7 @@ describe("SoulClient", () => {
 
       // close() 후 subscribe는 내부적으로 this.closed 체크로 무시됨
       try {
-        client.subscribe("bot", "req-after-close");
+        client.subscribe("sess-after-close");
       } catch {
         // EventSource 생성 자체가 실패할 수도 있음
       }
@@ -230,7 +229,7 @@ describe("SoulClient", () => {
       // Mock SSE 서버 구성: progress -> complete 순으로 이벤트 전송
       const app = express();
 
-      app.get("/tasks/:clientId/:requestId/stream", (_req, res) => {
+      app.get("/events/:agentSessionId/stream", (_req, res) => {
         res.writeHead(200, {
           "Content-Type": "text/event-stream",
           "Cache-Control": "no-cache",
@@ -266,22 +265,22 @@ describe("SoulClient", () => {
       });
 
       const receivedEvents: Array<{
-        sessionKey: string;
+        agentSessionId: string;
         eventId: number;
         event: SoulSSEEvent;
       }> = [];
 
-      client.onEvent((sessionKey, eventId, event) => {
-        receivedEvents.push({ sessionKey, eventId, event });
+      client.onEvent((agentSessionId, eventId, event) => {
+        receivedEvents.push({ agentSessionId, eventId, event });
       });
 
-      client.subscribe("testbot", "req-42");
+      client.subscribe("sess-test-42");
 
       // 이벤트가 2개 도착할 때까지 대기
       await waitFor(() => receivedEvents.length >= 2);
 
       // progress 이벤트 검증
-      expect(receivedEvents[0].sessionKey).toBe("testbot:req-42");
+      expect(receivedEvents[0].agentSessionId).toBe("sess-test-42");
       expect(receivedEvents[0].eventId).toBe(1);
       expect(receivedEvents[0].event.type).toBe("progress");
       expect((receivedEvents[0].event as { type: "progress"; text: string }).text).toBe(
@@ -289,7 +288,7 @@ describe("SoulClient", () => {
       );
 
       // complete 이벤트 검증
-      expect(receivedEvents[1].sessionKey).toBe("testbot:req-42");
+      expect(receivedEvents[1].agentSessionId).toBe("sess-test-42");
       expect(receivedEvents[1].eventId).toBe(2);
       expect(receivedEvents[1].event.type).toBe("complete");
     });
@@ -297,7 +296,7 @@ describe("SoulClient", () => {
     it("should auto-unsubscribe on complete event", async () => {
       const app = express();
 
-      app.get("/tasks/:clientId/:requestId/stream", (_req, res) => {
+      app.get("/events/:agentSessionId/stream", (_req, res) => {
         res.writeHead(200, {
           "Content-Type": "text/event-stream",
           "Cache-Control": "no-cache",
@@ -323,11 +322,11 @@ describe("SoulClient", () => {
       });
 
       const receivedEvents: SoulSSEEvent[] = [];
-      client.onEvent((_sessionKey, _eventId, event) => {
+      client.onEvent((_agentSessionId, _eventId, event) => {
         receivedEvents.push(event);
       });
 
-      client.subscribe("bot", "req-auto");
+      client.subscribe("sess-auto-complete");
 
       // complete 이벤트 수신 대기
       await waitFor(() => receivedEvents.length >= 1);
@@ -341,7 +340,7 @@ describe("SoulClient", () => {
     it("should auto-unsubscribe on error event", async () => {
       const app = express();
 
-      app.get("/tasks/:clientId/:requestId/stream", (_req, res) => {
+      app.get("/events/:agentSessionId/stream", (_req, res) => {
         res.writeHead(200, {
           "Content-Type": "text/event-stream",
           "Cache-Control": "no-cache",
@@ -367,11 +366,11 @@ describe("SoulClient", () => {
       });
 
       const receivedEvents: SoulSSEEvent[] = [];
-      client.onEvent((_sessionKey, _eventId, event) => {
+      client.onEvent((_agentSessionId, _eventId, event) => {
         receivedEvents.push(event);
       });
 
-      client.subscribe("bot", "req-err");
+      client.subscribe("sess-auto-error");
 
       // error 이벤트 수신 대기
       await waitFor(() => receivedEvents.length >= 1);
@@ -386,7 +385,7 @@ describe("SoulClient", () => {
     it("should receive multiple event types in sequence", async () => {
       const app = express();
 
-      app.get("/tasks/:clientId/:requestId/stream", (_req, res) => {
+      app.get("/events/:agentSessionId/stream", (_req, res) => {
         res.writeHead(200, {
           "Content-Type": "text/event-stream",
           "Cache-Control": "no-cache",
@@ -443,11 +442,11 @@ describe("SoulClient", () => {
       });
 
       const receivedEvents: SoulSSEEvent[] = [];
-      client.onEvent((_sessionKey, _eventId, event) => {
+      client.onEvent((_agentSessionId, _eventId, event) => {
         receivedEvents.push(event);
       });
 
-      client.subscribe("bot", "req-multi");
+      client.subscribe("sess-multi-events");
 
       // 5개 이벤트 모두 수신 대기
       await waitFor(() => receivedEvents.length >= 5);
@@ -474,7 +473,7 @@ describe("SoulClient", () => {
       client.onError(errorHandler);
 
       try {
-        client.subscribe("bot", "req-fail");
+        client.subscribe("sess-fail");
       } catch {
         // EventSource 생성이 실패할 수 있음
       }
@@ -485,7 +484,7 @@ describe("SoulClient", () => {
         await waitFor(() => errorHandler.mock.calls.length > 0, 5000);
 
         expect(errorHandler).toHaveBeenCalledWith(
-          "bot:req-fail",
+          "sess-fail",
           expect.any(Error),
         );
       } catch {
@@ -494,10 +493,10 @@ describe("SoulClient", () => {
       }
     });
 
-    it("should pass correct sessionKey format to handlers", async () => {
+    it("should pass correct agentSessionId to handlers", async () => {
       const app = express();
 
-      app.get("/tasks/:clientId/:requestId/stream", (req, res) => {
+      app.get("/events/:agentSessionId/stream", (req, res) => {
         res.writeHead(200, {
           "Content-Type": "text/event-stream",
           "Cache-Control": "no-cache",
@@ -506,7 +505,7 @@ describe("SoulClient", () => {
 
         const data: SoulSSEEvent = {
           type: "complete",
-          result: `handled ${req.params.clientId}/${req.params.requestId}`,
+          result: `handled ${req.params.agentSessionId}`,
           attachments: [],
         };
         res.write(`id: 1\nevent: complete\ndata: ${JSON.stringify(data)}\n\n`);
@@ -521,23 +520,23 @@ describe("SoulClient", () => {
         soulBaseUrl: `http://127.0.0.1:${mockPort}`,
       });
 
-      const sessionKeys: string[] = [];
-      client.onEvent((sessionKey) => {
-        sessionKeys.push(sessionKey);
+      const sessionIds: string[] = [];
+      client.onEvent((agentSessionId) => {
+        sessionIds.push(agentSessionId);
       });
 
-      client.subscribe("my-client", "my-request");
+      client.subscribe("sess-my-session");
 
-      await waitFor(() => sessionKeys.length >= 1);
+      await waitFor(() => sessionIds.length >= 1);
 
-      // sessionKey는 "clientId:requestId" 형식
-      expect(sessionKeys[0]).toBe("my-client:my-request");
+      // agentSessionId가 그대로 전달
+      expect(sessionIds[0]).toBe("sess-my-session");
     });
 
     it("should handle unsubscribe before events arrive", async () => {
       const app = express();
 
-      app.get("/tasks/:clientId/:requestId/stream", (_req, res) => {
+      app.get("/events/:agentSessionId/stream", (_req, res) => {
         res.writeHead(200, {
           "Content-Type": "text/event-stream",
           "Cache-Control": "no-cache",
@@ -563,14 +562,14 @@ describe("SoulClient", () => {
       });
 
       const receivedEvents: SoulSSEEvent[] = [];
-      client.onEvent((_sessionKey, _eventId, event) => {
+      client.onEvent((_agentSessionId, _eventId, event) => {
         receivedEvents.push(event);
       });
 
-      client.subscribe("bot", "req-unsub");
+      client.subscribe("sess-unsub-test");
 
       // 즉시 구독 해제
-      client.unsubscribe("bot", "req-unsub");
+      client.unsubscribe("sess-unsub-test");
 
       expect(client.getActiveSubscriptions()).toEqual([]);
 
@@ -584,7 +583,7 @@ describe("SoulClient", () => {
     it("should handle event handler errors gracefully", async () => {
       const app = express();
 
-      app.get("/tasks/:clientId/:requestId/stream", (_req, res) => {
+      app.get("/events/:agentSessionId/stream", (_req, res) => {
         res.writeHead(200, {
           "Content-Type": "text/event-stream",
           "Cache-Control": "no-cache",
@@ -629,7 +628,7 @@ describe("SoulClient", () => {
       // console.error를 모킹하여 노이즈 제거
       const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-      client.subscribe("bot", "req-handler-err");
+      client.subscribe("sess-handler-err");
 
       // 정상 핸들러도 호출되어야 함 (에러 격리)
       await waitFor(() => goodHandler.mock.calls.length >= 2);
@@ -644,7 +643,7 @@ describe("SoulClient", () => {
       const app = express();
       let receivedAuthHeader: string | undefined;
 
-      app.get("/tasks/:clientId/:requestId/stream", (req, res) => {
+      app.get("/events/:agentSessionId/stream", (req, res) => {
         receivedAuthHeader = req.headers.authorization;
 
         res.writeHead(200, {
@@ -671,11 +670,11 @@ describe("SoulClient", () => {
       });
 
       const receivedEvents: SoulSSEEvent[] = [];
-      client.onEvent((_sessionKey, _eventId, event) => {
+      client.onEvent((_agentSessionId, _eventId, event) => {
         receivedEvents.push(event);
       });
 
-      client.subscribe("bot", "req-auth");
+      client.subscribe("sess-auth-test");
 
       await waitFor(() => receivedEvents.length >= 1);
 

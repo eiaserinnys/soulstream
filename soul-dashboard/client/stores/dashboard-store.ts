@@ -16,6 +16,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type {
   SessionSummary,
+  SessionStatus,
   SessionDetail,
   DashboardCard,
   SoulSSEEvent,
@@ -97,6 +98,9 @@ export interface DashboardActions {
   // SSE 이벤트 처리
   processEvent: (event: SoulSSEEvent, eventId: number) => void;
 
+  // 낙관적 세션 추가 (세션 생성 직후 즉시 목록 반영)
+  addOptimisticSession: (agentSessionId: string, prompt: string) => void;
+
   // 세션 생성/재개
   startCompose: () => void;
   startResume: (sessionKey: string) => void;
@@ -122,6 +126,9 @@ let cardIdMap = new Map<string, EventTreeNode>();
 let currentTurnNodeId: string | null = null;
 /** 마지막 text 노드 ID (tool_start 부모 결정) */
 let lastTextNodeId: string | null = null;
+
+/** processEvent에서 알림 대상 이벤트 타입 (모듈 스코프: 매 호출 재생성 방지) */
+const NOTIFY_TYPES = new Set(["complete", "error", "intervention_sent"]);
 
 function resetInternalMaps() {
   nodeMap = new Map();
@@ -467,14 +474,42 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         }
 
         // 알림 큐에 이벤트 추가 (complete, error, intervention_sent)
-        const NOTIFY_TYPES = new Set(["complete", "error", "intervention_sent"]);
         const shouldNotify = NOTIFY_TYPES.has(event.type);
+
+        // 이벤트 타입에 따라 sessions 배열의 해당 세션 상태 갱신
+        // - complete/result → "completed"
+        // - error → "error"
+        // - user_message/intervention_sent → "running" (resume 등 새 턴 시작)
+        const derivedStatus: SessionStatus | null =
+          event.type === "complete" || event.type === "result"
+            ? "completed"
+            : event.type === "error"
+              ? "error"
+              : event.type === "user_message" || event.type === "intervention_sent"
+                ? "running"
+                : null;
+
+        let sessionsUpdate: { sessions: SessionSummary[] } | Record<string, never> = {};
+        if (derivedStatus && state.activeSessionKey) {
+          const idx = state.sessions.findIndex(
+            (s) => s.agentSessionId === state.activeSessionKey,
+          );
+          if (idx >= 0 && state.sessions[idx].status !== derivedStatus) {
+            const updatedSessions = [...state.sessions];
+            updatedSessions[idx] = {
+              ...updatedSessions[idx],
+              status: derivedStatus,
+            };
+            sessionsUpdate = { sessions: updatedSessions };
+          }
+        }
 
         if (updated) {
           set({
             tree: root,
             treeVersion: state.treeVersion + 1,
             lastEventId: eventId,
+            ...sessionsUpdate,
             ...(shouldNotify
               ? { pendingNotifications: [...state.pendingNotifications, event] }
               : {}),
@@ -482,11 +517,27 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         } else {
           set({
             lastEventId: eventId,
+            ...sessionsUpdate,
             ...(shouldNotify
               ? { pendingNotifications: [...state.pendingNotifications, event] }
               : {}),
           });
         }
+      },
+
+      // --- 낙관적 세션 추가 ---
+
+      addOptimisticSession: (agentSessionId, prompt) => {
+        const sessions = get().sessions;
+        if (sessions.some((s) => s.agentSessionId === agentSessionId)) return;
+        const newSession: SessionSummary = {
+          agentSessionId,
+          status: "running",
+          eventCount: 0,
+          createdAt: new Date().toISOString(),
+          prompt,
+        };
+        set({ sessions: [newSession, ...sessions] });
       },
 
       // --- 세션 생성/재개 ---

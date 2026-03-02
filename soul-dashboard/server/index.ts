@@ -7,6 +7,7 @@
  * Soul: http://localhost:3105
  */
 
+import "dotenv/config";
 import path from "path";
 import { fileURLToPath } from "url";
 import express from "express";
@@ -27,9 +28,11 @@ const PORT = parseInt(process.env.DASHBOARD_PORT ?? "3109", 10);
 const SOUL_BASE_URL =
   process.env.SOUL_BASE_URL ?? "http://localhost:3105";
 const AUTH_TOKEN = process.env.CLAUDE_SERVICE_TOKEN ?? "";
-const EVENTS_BASE_DIR =
-  process.env.EVENTS_BASE_DIR ??
-  "D:/soyoung_root/seosoyoung_runtime/data/events";
+if (!process.env.EVENTS_BASE_DIR) {
+  console.error("[FATAL] EVENTS_BASE_DIR 환경변수가 설정되지 않았습니다.");
+  process.exit(1);
+}
+const EVENTS_BASE_DIR = process.env.EVENTS_BASE_DIR;
 const KEEPALIVE_INTERVAL_MS = 15_000;
 const DASHBOARD_AUTH_TOKEN = process.env.DASHBOARD_AUTH_TOKEN ?? "";
 const ALLOWED_ORIGINS =
@@ -54,24 +57,9 @@ const soulClient = new SoulClient({
 });
 
 // Soul 이벤트 → EventHub 브로드캐스트
-// Soul 서버가 JSONL의 유일한 기록자. 대시보드는 읽기 전용.
-// task key → agentSessionId 매핑으로 올바른 세션에 라우팅.
-soulClient.onEvent((taskKey, eventId, event) => {
-  const agentSessionId = eventHub.resolveTask(taskKey);
-
-  if (agentSessionId) {
-    eventHub.broadcast(agentSessionId, eventId, event);
-
-    // 완료/에러 시 task 매핑 정리 (complete가 최종 이벤트이므로 complete에서만 정리)
-    if (event.type === "complete" || event.type === "error") {
-      eventHub.unregisterTask(taskKey);
-    }
-  } else {
-    // 매핑이 없는 경우 (다른 클라이언트가 시작한 태스크 등)
-    // taskKey를 그대로 세션키로 사용하여 호환성 유지
-    console.warn(`[dashboard] No session mapping for task ${taskKey}, broadcasting with taskKey`);
-    eventHub.broadcast(taskKey, eventId, event);
-  }
+// SoulClient가 agentSessionId별로 구독하므로 직접 broadcast.
+soulClient.onEvent((agentSessionId, eventId, event) => {
+  eventHub.broadcast(agentSessionId, eventId, event);
 });
 
 soulClient.onError((sessionKey, error) => {

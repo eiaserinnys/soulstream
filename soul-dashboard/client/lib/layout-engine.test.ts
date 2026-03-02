@@ -235,7 +235,7 @@ describe("buildGraph", () => {
     expect(thinkingNodes[0].data.cardId).toBe("t1");
   });
 
-  it("creates response node for last text when session is complete", () => {
+  it("all text nodes become thinking type (response heuristic removed)", () => {
     const tree = sessionRoot([
       userMsg("u1", "hi", [
         textNode("t1", "Thinking..."),
@@ -245,13 +245,14 @@ describe("buildGraph", () => {
     ]);
     const { nodes } = buildGraph(tree);
 
+    // response 노드 타입은 더 이상 사용되지 않음 — 모든 text는 thinking
     const responseNodes = nodes.filter((n) => n.type === "response");
-    expect(responseNodes).toHaveLength(1);
-    expect(responseNodes[0].data.cardId).toBe("t2");
+    expect(responseNodes).toHaveLength(0);
 
     const thinkingNodes = nodes.filter((n) => n.type === "thinking");
-    expect(thinkingNodes).toHaveLength(1);
+    expect(thinkingNodes).toHaveLength(2);
     expect(thinkingNodes[0].data.cardId).toBe("t1");
+    expect(thinkingNodes[1].data.cardId).toBe("t2");
   });
 
   it("creates tool_call and tool_result nodes for tool node", () => {
@@ -500,7 +501,7 @@ describe("buildGraph", () => {
       expect(callToResult!.targetHandle).toBe("left");
     });
 
-    it("complex scenario: thinking→tool→thinking→tool→response", () => {
+    it("complex scenario: thinking→tool→thinking→tool→thinking", () => {
       const tree = sessionRoot([
         userMsg("u1", "hi", [
           textNode("t1", "first thinking", true, [
@@ -537,9 +538,9 @@ describe("buildGraph", () => {
       const bResult = edges.find((e) => e.source === "node-toolB-call" && e.target === "node-toolB-result");
       expect(bResult).toBeDefined();
 
-      // t3 should be response node
-      const responseNode = nodes.find((n) => n.id === "node-t3");
-      expect(responseNode?.type).toBe("response");
+      // t3 should be thinking node (response heuristic removed)
+      const t3Node = nodes.find((n) => n.id === "node-t3");
+      expect(t3Node?.type).toBe("thinking");
 
       // No tool→thinking vertical edges
       expect(edges.find((e) => e.source === "node-toolA-result" && e.target === "node-t2")).toBeUndefined();

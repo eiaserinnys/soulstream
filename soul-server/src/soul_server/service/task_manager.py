@@ -1,8 +1,8 @@
 """
-TaskManager - 태스크 라이프사이클 관리
+TaskManager - 세션 라이프사이클 관리
 
-태스크 기반 아키텍처의 핵심 컴포넌트.
-클라이언트의 실행 요청을 태스크로 관리하고,
+세션(agent_session_id) 기반 아키텍처의 핵심 컴포넌트.
+클라이언트의 실행 요청을 세션 단위로 관리하고,
 결과를 영속화하여 클라이언트 재시작 시에도 복구 가능하게 합니다.
 
 이 모듈은 다음 서브모듈들을 조합합니다:
@@ -18,13 +18,13 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Optional, Dict, List
 
-# 서브모듈에서 import
 from soul_server.service.task_models import (
     Task,
     TaskStatus,
     TaskConflictError,
     TaskNotFoundError,
     TaskNotRunningError,
+    generate_agent_session_id,
     utc_now,
 )
 from soul_server.service.task_storage import TaskStorage
@@ -45,6 +45,7 @@ __all__ = [
     "init_task_manager",
     "set_task_manager",
     "utc_now",
+    "generate_agent_session_id",
 ]
 
 logger = logging.getLogger(__name__)
@@ -52,12 +53,12 @@ logger = logging.getLogger(__name__)
 
 class TaskManager:
     """
-    태스크 라이프사이클 관리자
+    세션 라이프사이클 관리자
 
     역할:
-    1. 태스크 생성/조회/삭제
-    2. {client_id, request_id}로 활성 태스크 추적 (중복 방지)
-    3. 태스크 상태 업데이트 및 결과 저장
+    1. 세션(agent_session_id) 생성/조회/삭제
+    2. agent_session_id로 활성 세션 추적 (중복 방지)
+    3. 세션 상태 업데이트 및 결과 저장
     4. SSE 리스너 관리 (via TaskListenerManager)
     5. 개입 메시지 큐 관리
     6. JSON 파일 영속화 (via TaskStorage)
@@ -74,13 +75,11 @@ class TaskManager:
             storage_path: 태스크 저장 파일 경로 (None이면 영속화 안 함)
             event_store: 이벤트 영속화 저장소 (None이면 이벤트 저장하지 않음)
         """
-        # 핵심 데이터
+        # 핵심 데이터 (key = agent_session_id)
         self._tasks: Dict[str, Task] = {}
         self._lock = asyncio.Lock()
-        # session_id → task_key 역방향 인덱스 (claude_session_id 기반)
+        # claude_session_id → agent_session_id 역방향 인덱스
         self._session_index: Dict[str, str] = {}
-        # agent_session_id → task_key 역방향 인덱스
-        self._agent_session_index: Dict[str, str] = {}
 
         # 서브 컴포넌트들
         self._storage = TaskStorage(storage_path)
@@ -96,92 +95,32 @@ class TaskManager:
             event_store=event_store,
         )
 
-    # === session_id 인덱스 ===
+    # === claude_session_id 인덱스 ===
 
-    def register_session(self, session_id: str, client_id: str, request_id: str) -> None:
-        """session_id → task_key 매핑 등록
+    def register_session(self, claude_session_id: str, agent_session_id: str) -> None:
+        """claude_session_id → agent_session_id 매핑 등록
 
         SoulEngineAdapter가 session 이벤트를 발행할 때 호출합니다.
         """
-        key = f"{client_id}:{request_id}"
-        self._session_index[session_id] = key
-        logger.info(f"Session index registered: {session_id} -> {key}")
+        self._session_index[claude_session_id] = agent_session_id
+        logger.info(f"Session index registered: {claude_session_id} -> {agent_session_id}")
 
-    def get_task_by_session(self, session_id: str) -> Optional[Task]:
-        """session_id로 태스크 조회"""
-        key = self._session_index.get(session_id)
-        if not key:
+    def get_task_by_claude_session(self, claude_session_id: str) -> Optional[Task]:
+        """claude_session_id로 태스크 조회"""
+        agent_session_id = self._session_index.get(claude_session_id)
+        if not agent_session_id:
             return None
-        return self._tasks.get(key)
+        return self._tasks.get(agent_session_id)
 
-    def _unregister_session_for_task(self, key: str) -> None:
-        """task_key에 해당하는 session_id 인덱스 제거"""
-        to_remove = [sid for sid, tk in self._session_index.items() if tk == key]
+    def _unregister_claude_session(self, agent_session_id: str) -> None:
+        """agent_session_id에 해당하는 claude_session_id 인덱스 제거"""
+        to_remove = [
+            sid for sid, asid in self._session_index.items()
+            if asid == agent_session_id
+        ]
         for sid in to_remove:
             del self._session_index[sid]
-            logger.debug(f"Session index removed: {sid}")
-        # agent_session_index는 정리하지 않음 (완료 후에도 agent_session_id로 조회 필요)
-
-    def get_task_by_agent_session(self, agent_session_id: str) -> Optional[Task]:
-        """agent_session_id로 태스크 조회"""
-        key = self._agent_session_index.get(agent_session_id)
-        if not key:
-            return None
-        return self._tasks.get(key)
-
-    async def add_intervention_by_agent_session(
-        self,
-        agent_session_id: str,
-        text: str,
-        user: str,
-        attachment_paths: Optional[List[str]] = None,
-    ) -> dict:
-        """agent_session_id 기반 개입 메시지 추가 (자동 resume 포함)
-
-        Args:
-            agent_session_id: 세션 식별자
-            text: 메시지 텍스트
-            user: 사용자
-            attachment_paths: 첨부 파일 경로
-
-        Returns:
-            결과 딕셔너리:
-            - running task인 경우: {"queue_position": int}
-            - 완료 후 자동 resume: {"auto_resumed": True, "task_key": str}
-
-        Raises:
-            TaskNotFoundError: 세션에 대응하는 태스크 없음
-        """
-        task = self.get_task_by_agent_session(agent_session_id)
-        if not task:
-            raise TaskNotFoundError(f"No task found for agent_session: {agent_session_id}")
-
-        if task.status == TaskStatus.RUNNING:
-            # running → 기존 intervention queue에 추가
-            message = {
-                "text": text,
-                "user": user,
-                "attachment_paths": attachment_paths or [],
-            }
-            await task.intervention_queue.put(message)
-            return {"queue_position": task.intervention_queue.qsize()}
-
-        # 완료/에러 → 자동 resume (새 태스크 생성)
-        resume_session_id = task.claude_session_id
-        new_request_id = f"resume-{utc_now().strftime('%Y%m%d%H%M%S')}-{id(self) % 10000:04d}"
-
-        new_task = await self.create_task(
-            client_id=user,
-            request_id=new_request_id,
-            agent_session_id=agent_session_id,  # 동일한 agent_session_id 재사용
-            prompt=text,
-            resume_session_id=resume_session_id,
-        )
-
-        return {
-            "auto_resumed": True,
-            "task_key": new_task.key,
-        }
+            logger.debug(f"Claude session index removed: {sid}")
 
     # === 로드/저장 ===
 
@@ -205,109 +144,112 @@ class TaskManager:
 
     async def create_task(
         self,
-        client_id: str,
-        request_id: str,
-        agent_session_id: str,
         prompt: str,
-        resume_session_id: Optional[str] = None,
+        agent_session_id: Optional[str] = None,
+        client_id: Optional[str] = None,
         allowed_tools: Optional[List[str]] = None,
         disallowed_tools: Optional[List[str]] = None,
         use_mcp: bool = True,
     ) -> Task:
         """
-        새 태스크 생성
+        새 세션 태스크 생성 또는 기존 세션 resume
 
         Args:
-            client_id: 클라이언트 ID (e.g., "dashboard", "slackbot")
-            request_id: 요청 ID (e.g., Slack thread ID)
-            agent_session_id: 세션 식별자 (JSONL 파일명)
             prompt: 실행할 프롬프트
-            resume_session_id: 이전 세션 ID (대화 연속성용)
-            allowed_tools: 허용 도구 목록 (None이면 제한 없음)
+            agent_session_id: 세션 식별자 (None이면 서버가 생성, 제공하면 resume)
+            client_id: 클라이언트 식별자 (메타데이터)
+            allowed_tools: 허용 도구 목록
             disallowed_tools: 금지 도구 목록
             use_mcp: MCP 서버 연결 여부
 
         Returns:
-            Task: 생성된 태스크
+            Task: 생성되거나 재활성화된 태스크
 
         Raises:
-            TaskConflictError: 같은 키로 running 태스크가 존재
+            TaskConflictError: 해당 세션에 이미 running 태스크가 존재
         """
-        key = f"{client_id}:{request_id}"
+        is_resume = agent_session_id is not None
+
+        if not is_resume:
+            agent_session_id = generate_agent_session_id()
 
         async with self._lock:
-            existing = self._tasks.get(key)
+            existing = self._tasks.get(agent_session_id)
+
             if existing:
                 if existing.status == TaskStatus.RUNNING:
-                    raise TaskConflictError(f"Task already running: {key}")
-                logger.info(f"Overwriting existing task: {key}")
+                    raise TaskConflictError(f"Session already running: {agent_session_id}")
 
-            task = Task(
-                client_id=client_id,
-                request_id=request_id,
-                agent_session_id=agent_session_id,
-                prompt=prompt,
-                resume_session_id=resume_session_id,
-                allowed_tools=allowed_tools,
-                disallowed_tools=disallowed_tools,
-                use_mcp=use_mcp,
-            )
+                # 완료/에러 세션 → resume
+                resume_session_id = existing.claude_session_id
+                logger.info(f"Resuming session: {agent_session_id} (claude_session={resume_session_id})")
 
-            self._tasks[key] = task
-            # agent_session_id → task_key 매핑 등록
-            self._agent_session_index[agent_session_id] = key
-            logger.info(f"Created task: {key} (agent_session={agent_session_id})")
+                # 기존 태스크를 RUNNING으로 재활성화
+                existing.prompt = prompt
+                existing.status = TaskStatus.RUNNING
+                existing.resume_session_id = resume_session_id
+                existing.result = None
+                existing.error = None
+                existing.completed_at = None
+                existing.last_progress_text = None
+                existing.intervention_queue = asyncio.Queue()
+                existing.allowed_tools = allowed_tools
+                existing.disallowed_tools = disallowed_tools
+                existing.use_mcp = use_mcp
+                if client_id:
+                    existing.client_id = client_id
+
+                task = existing
+            else:
+                # 새 세션
+                task = Task(
+                    agent_session_id=agent_session_id,
+                    prompt=prompt,
+                    client_id=client_id,
+                    allowed_tools=allowed_tools,
+                    disallowed_tools=disallowed_tools,
+                    use_mcp=use_mcp,
+                )
+                self._tasks[agent_session_id] = task
+                logger.info(f"Created new session: {agent_session_id}")
 
         await self._schedule_save()
         return task
 
-    async def get_task(self, client_id: str, request_id: str) -> Optional[Task]:
-        """태스크 조회"""
-        key = f"{client_id}:{request_id}"
-        return self._tasks.get(key)
-
-    async def get_tasks_by_client(self, client_id: str) -> List[Task]:
-        """클라이언트별 태스크 목록 조회"""
-        return [
-            task for task in self._tasks.values()
-            if task.client_id == client_id
-        ]
+    async def get_task(self, agent_session_id: str) -> Optional[Task]:
+        """세션 태스크 조회"""
+        return self._tasks.get(agent_session_id)
 
     async def _complete_task_internal(
         self,
-        client_id: str,
-        request_id: str,
+        agent_session_id: str,
         result: str,
         claude_session_id: Optional[str] = None,
     ) -> Optional[Task]:
         """태스크 완료 처리 (내부용 - executor에서 호출)"""
-        return await self.complete_task(client_id, request_id, result, claude_session_id)
+        return await self.complete_task(agent_session_id, result, claude_session_id)
 
     async def complete_task(
         self,
-        client_id: str,
-        request_id: str,
+        agent_session_id: str,
         result: str,
         claude_session_id: Optional[str] = None,
     ) -> Optional[Task]:
         """
-        태스크 완료 처리
+        세션 태스크 완료 처리
 
         Args:
-            client_id: 클라이언트 ID
-            request_id: 요청 ID
+            agent_session_id: 세션 식별자
             result: 실행 결과
-            claude_session_id: Claude Code 세션 ID
+            claude_session_id: Claude Code 세션 ID (다음 resume에 사용)
 
         Returns:
             업데이트된 태스크 (없으면 None)
         """
-        key = f"{client_id}:{request_id}"
-
         async with self._lock:
-            task = self._tasks.get(key)
+            task = self._tasks.get(agent_session_id)
             if not task:
-                logger.warning(f"Task not found for complete: {key}")
+                logger.warning(f"Task not found for complete: {agent_session_id}")
                 return None
 
             task.status = TaskStatus.COMPLETED
@@ -315,221 +257,127 @@ class TaskManager:
             task.claude_session_id = claude_session_id
             task.completed_at = utc_now()
 
-            # session_id 인덱스 정리
-            self._unregister_session_for_task(key)
-
-            logger.info(f"Completed task: {key}")
+            logger.info(f"Completed session: {agent_session_id}")
 
         await self._schedule_save()
         return task
 
     async def _error_task_internal(
         self,
-        client_id: str,
-        request_id: str,
+        agent_session_id: str,
         error: str,
     ) -> Optional[Task]:
         """태스크 에러 처리 (내부용 - executor에서 호출)"""
-        return await self.error_task(client_id, request_id, error)
+        return await self.error_task(agent_session_id, error)
 
     async def error_task(
         self,
-        client_id: str,
-        request_id: str,
+        agent_session_id: str,
         error: str,
     ) -> Optional[Task]:
         """
-        태스크 에러 처리
+        세션 태스크 에러 처리
 
         Args:
-            client_id: 클라이언트 ID
-            request_id: 요청 ID
+            agent_session_id: 세션 식별자
             error: 에러 메시지
 
         Returns:
             업데이트된 태스크 (없으면 None)
         """
-        key = f"{client_id}:{request_id}"
-
         async with self._lock:
-            task = self._tasks.get(key)
+            task = self._tasks.get(agent_session_id)
             if not task:
-                logger.warning(f"Task not found for error: {key}")
+                logger.warning(f"Task not found for error: {agent_session_id}")
                 return None
 
             task.status = TaskStatus.ERROR
             task.error = error
             task.completed_at = utc_now()
 
-            # session_id 인덱스 정리
-            self._unregister_session_for_task(key)
-
-            logger.info(f"Error task: {key} - {error}")
+            logger.info(f"Error session: {agent_session_id} - {error}")
 
         await self._schedule_save()
         return task
 
-    async def ack_task(self, client_id: str, request_id: str) -> bool:
-        """
-        결과 수신 확인 (태스크 삭제)
-
-        Args:
-            client_id: 클라이언트 ID
-            request_id: 요청 ID
-
-        Returns:
-            성공 여부
-        """
-        key = f"{client_id}:{request_id}"
-
-        async with self._lock:
-            task = self._tasks.pop(key, None)
-            if not task:
-                logger.warning(f"Task not found for ack: {key}")
-                return False
-
-            # session_id 인덱스 정리
-            self._unregister_session_for_task(key)
-            # intervention_queue 정리 (메모리 릭 방지)
-            self._clear_queue(task.intervention_queue)
-            # listeners 정리
-            task.listeners.clear()
-
-            logger.info(f"Acked task: {key}")
-
-        await self._schedule_save()
-        return True
-
-    async def mark_delivered(self, client_id: str, request_id: str) -> bool:
-        """
-        결과 전달 완료 마킹
-
-        ack 전에 결과가 전달되었음을 표시.
-        서비스 재시작 시 이미 전달된 결과는 재전송하지 않음.
-
-        Returns:
-            성공 여부
-        """
-        key = f"{client_id}:{request_id}"
-
-        async with self._lock:
-            task = self._tasks.get(key)
-            if not task:
-                return False
-
-            task.result_delivered = True
-
-        await self._schedule_save()
-        return True
-
     # === SSE 리스너 관리 (위임) ===
 
-    async def add_listener(self, client_id: str, request_id: str, queue: asyncio.Queue) -> bool:
+    async def add_listener(self, agent_session_id: str, queue: asyncio.Queue) -> bool:
         """SSE 리스너 추가"""
         async with self._lock:
-            return await self._listener_manager.add_listener(client_id, request_id, queue)
+            return await self._listener_manager.add_listener(agent_session_id, queue)
 
-    async def remove_listener(self, client_id: str, request_id: str, queue: asyncio.Queue) -> None:
+    async def remove_listener(self, agent_session_id: str, queue: asyncio.Queue) -> None:
         """SSE 리스너 제거"""
         async with self._lock:
-            await self._listener_manager.remove_listener(client_id, request_id, queue)
+            await self._listener_manager.remove_listener(agent_session_id, queue)
 
-    async def broadcast(self, client_id: str, request_id: str, event: dict) -> int:
+    async def broadcast(self, agent_session_id: str, event: dict) -> int:
         """모든 리스너에게 이벤트 브로드캐스트"""
-        return await self._listener_manager.broadcast(client_id, request_id, event)
+        return await self._listener_manager.broadcast(agent_session_id, event)
 
     # === 개입 메시지 관리 ===
 
-    async def add_intervention_by_session(
-        self,
-        session_id: str,
-        text: str,
-        user: str,
-        attachment_paths: Optional[List[str]] = None,
-    ) -> int:
-        """session_id 기반 개입 메시지 추가
-
-        Args:
-            session_id: Claude 세션 ID
-            text: 메시지 텍스트
-            user: 사용자
-            attachment_paths: 첨부 파일 경로
-
-        Returns:
-            큐 내 위치 (queue position)
-
-        Raises:
-            TaskNotFoundError: 세션에 대응하는 태스크 없음
-            TaskNotRunningError: 태스크가 running 상태가 아님
-        """
-        task = self.get_task_by_session(session_id)
-        if not task:
-            raise TaskNotFoundError(f"No task found for session: {session_id}")
-
-        if task.status != TaskStatus.RUNNING:
-            raise TaskNotRunningError(f"Task is not running for session: {session_id}")
-
-        message = {
-            "text": text,
-            "user": user,
-            "attachment_paths": attachment_paths or [],
-        }
-        await task.intervention_queue.put(message)
-
-        return task.intervention_queue.qsize()
-
     async def add_intervention(
         self,
-        client_id: str,
-        request_id: str,
+        agent_session_id: str,
         text: str,
         user: str,
         attachment_paths: Optional[List[str]] = None,
-    ) -> int:
+    ) -> dict:
         """
-        개입 메시지 추가
+        세션에 개입 메시지 추가 (자동 resume 포함)
+
+        Running 세션이면 intervention queue에 추가합니다.
+        완료/에러 세션이면 자동으로 resume하여 대화를 이어갑니다.
 
         Args:
-            client_id: 클라이언트 ID
-            request_id: 요청 ID
+            agent_session_id: 세션 식별자
             text: 메시지 텍스트
             user: 사용자
             attachment_paths: 첨부 파일 경로
 
         Returns:
-            큐 내 위치 (queue position)
+            결과 딕셔너리:
+            - running: {"queue_position": int}
+            - 자동 resume: {"auto_resumed": True, "agent_session_id": str}
 
         Raises:
-            TaskNotFoundError: 태스크 없음
-            TaskNotRunningError: 태스크가 running 상태가 아님
+            TaskNotFoundError: 세션이 존재하지 않음
         """
-        key = f"{client_id}:{request_id}"
-        task = self._tasks.get(key)
-
+        task = self._tasks.get(agent_session_id)
         if not task:
-            raise TaskNotFoundError(f"Task not found: {key}")
+            raise TaskNotFoundError(f"Session not found: {agent_session_id}")
 
-        if task.status != TaskStatus.RUNNING:
-            raise TaskNotRunningError(f"Task is not running: {key}")
+        if task.status == TaskStatus.RUNNING:
+            message = {
+                "text": text,
+                "user": user,
+                "attachment_paths": attachment_paths or [],
+            }
+            await task.intervention_queue.put(message)
+            return {"queue_position": task.intervention_queue.qsize()}
 
-        message = {
-            "text": text,
-            "user": user,
-            "attachment_paths": attachment_paths or [],
+        # 완료/에러 → 자동 resume (같은 세션 재활성화)
+        task = await self.create_task(
+            prompt=text,
+            agent_session_id=agent_session_id,
+            client_id=user,
+        )
+
+        return {
+            "auto_resumed": True,
+            "agent_session_id": agent_session_id,
         }
-        await task.intervention_queue.put(message)
 
-        return task.intervention_queue.qsize()
-
-    async def get_intervention(self, client_id: str, request_id: str) -> Optional[dict]:
+    async def get_intervention(self, agent_session_id: str) -> Optional[dict]:
         """
         개입 메시지 가져오기 (non-blocking)
 
         Returns:
             메시지 dict 또는 None
         """
-        key = f"{client_id}:{request_id}"
-        task = self._tasks.get(key)
+        task = self._tasks.get(agent_session_id)
         if not task:
             return None
 
@@ -542,37 +390,28 @@ class TaskManager:
 
     async def start_execution(
         self,
-        client_id: str,
-        request_id: str,
+        agent_session_id: str,
         claude_runner,
         resource_manager,
     ) -> bool:
-        """태스크의 Claude 실행을 백그라운드에서 시작"""
+        """세션의 Claude 실행을 백그라운드에서 시작"""
         return await self._executor.start_execution(
-            client_id, request_id, claude_runner, resource_manager
+            agent_session_id, claude_runner, resource_manager
         )
 
-    def is_execution_running(self, client_id: str, request_id: str) -> bool:
-        """태스크 실행이 진행 중인지 확인"""
-        return self._executor.is_execution_running(client_id, request_id)
+    def is_execution_running(self, agent_session_id: str) -> bool:
+        """세션 실행이 진행 중인지 확인"""
+        return self._executor.is_execution_running(agent_session_id)
 
     async def send_reconnect_status(
         self,
-        client_id: str,
-        request_id: str,
+        agent_session_id: str,
         queue: asyncio.Queue,
         last_event_id: Optional[int] = None,
     ) -> None:
-        """재연결 시 현재 상태 이벤트 전송
-
-        Args:
-            client_id: 클라이언트 ID
-            request_id: 요청 ID
-            queue: 이벤트를 받을 큐
-            last_event_id: 클라이언트가 마지막으로 수신한 이벤트 ID
-        """
+        """재연결 시 현재 상태 이벤트 전송"""
         await self._executor.send_reconnect_status(
-            client_id, request_id, queue, last_event_id=last_event_id
+            agent_session_id, queue, last_event_id=last_event_id
         )
 
     # === 정리 ===
@@ -598,32 +437,29 @@ class TaskManager:
         async with self._lock:
             keys_to_remove = []
             for key, task in self._tasks.items():
-                # RUNNING 상태 태스크 처리
                 if task.status == TaskStatus.RUNNING:
-                    # execution_task가 없거나 완료된 경우 (orphaned task)
                     if task.execution_task is None or task.execution_task.done():
                         if task.created_at < cutoff:
                             task.status = TaskStatus.ERROR
                             task.error = "실행 태스크 없이 오래된 running 상태 (orphaned)"
                             task.completed_at = utc_now()
                             keys_to_remove.append(key)
-                            logger.warning(f"Cleaning up orphaned running task: {key}")
+                            logger.warning(f"Cleaning up orphaned running session: {key}")
                     continue
 
-                # 오래된 태스크 정리
                 if task.created_at < cutoff:
                     keys_to_remove.append(key)
 
             for key in keys_to_remove:
                 task = self._tasks[key]
-                self._unregister_session_for_task(key)
+                self._unregister_claude_session(key)
                 self._clear_queue(task.intervention_queue)
                 task.listeners.clear()
                 del self._tasks[key]
                 cleaned += 1
 
         if cleaned > 0:
-            logger.info(f"Cleaned up {cleaned} old tasks")
+            logger.info(f"Cleaned up {cleaned} old sessions")
             await self._schedule_save()
 
         return cleaned

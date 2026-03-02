@@ -255,6 +255,98 @@ function generateLargeSSEEvents(pairCount: number): Array<{ delay: number; data:
 const LARGE_25_SSE_EVENTS = generateLargeSSEEvents(10);  // ~25 노드
 const LARGE_50_SSE_EVENTS = generateLargeSSEEvents(20);  // ~50 노드
 
+// === 멀티턴 세션 SSE 이벤트 시퀀스 ===
+
+/**
+ * 실제 sess-mm9c1n23-lqfg.jsonl의 구조를 재현하는 멀티턴 시퀀스.
+ *
+ * Turn 1: user_message → thinking → tool(Skill) → text(response) → complete
+ * Turn 2: user_message → thinking → text → 5개 tool 호출 → (진행 중, complete 없음)
+ *
+ * complete는 "턴 종료"이지 "세션 종료"가 아님.
+ * Turn 2의 이벤트가 Turn 1의 complete 이후에도 모두 수신되어야 함.
+ */
+function generateMultiTurnSSEEvents(): Array<{ delay: number; data: string; end?: boolean }> {
+  const events: Array<{ delay: number; data: string; end?: boolean }> = [];
+  let id = 0;
+  const d = 50; // 짧은 간격 (E2E 속도)
+
+  // === Turn 1 ===
+  events.push({ delay: 0,
+    data: `id: ${id++}\nevent: user_message\ndata: {"type":"user_message","user":"dashboard","text":"대사 작업 스킬을 로드하고 다음 지시를 대기."}\n\n` });
+  // thinking (processEvent에서 무시되지만 SSE로 전송됨)
+  events.push({ delay: d,
+    data: `id: ${id++}\nevent: thinking\ndata: {"type":"thinking","card_id":"mt2-think1","thinking":"Loading dialogue skill."}\n\n` });
+  // tool: Skill
+  events.push({ delay: 2*d,
+    data: `id: ${id++}\nevent: tool_start\ndata: {"type":"tool_start","card_id":"mt2-think1","tool_name":"Skill","tool_input":{"skill":"dialogue"},"tool_use_id":"tu-skill1"}\n\n` });
+  events.push({ delay: 3*d,
+    data: `id: ${id++}\nevent: tool_result\ndata: {"type":"tool_result","card_id":"mt2-think1","tool_name":"Skill","result":"Launching skill: dialogue","is_error":false,"tool_use_id":"tu-skill1"}\n\n` });
+  // progress (무시되지만 SSE로 전송됨)
+  events.push({ delay: 4*d,
+    data: `id: ${id++}\nevent: progress\ndata: {"type":"progress","text":"대사 작업 스킬을 로드하였습니다."}\n\n` });
+  // text: response
+  events.push({ delay: 5*d,
+    data: `id: ${id++}\nevent: text_start\ndata: {"type":"text_start","card_id":"mt2-resp1"}\n\n` });
+  events.push({ delay: 6*d,
+    data: `id: ${id++}\nevent: text_delta\ndata: {"type":"text_delta","card_id":"mt2-resp1","text":"대사 작업 스킬을 로드하였습니다. 지시를 기다리겠습니다."}\n\n` });
+  events.push({ delay: 7*d,
+    data: `id: ${id++}\nevent: text_end\ndata: {"type":"text_end","card_id":"mt2-resp1"}\n\n` });
+  // result (무시)
+  events.push({ delay: 8*d,
+    data: `id: ${id++}\nevent: result\ndata: {"type":"result","success":true,"output":"대사 작업 스킬을 로드하였습니다."}\n\n` });
+  // context_usage (무시)
+  events.push({ delay: 9*d,
+    data: `id: ${id++}\nevent: context_usage\ndata: {"type":"context_usage","used_tokens":126,"max_tokens":200000,"percent":0.1}\n\n` });
+  // COMPLETE — Turn 1 종료 (세션 종료가 아님!)
+  events.push({ delay: 10*d,
+    data: `id: ${id++}\nevent: complete\ndata: {"type":"complete","result":"대사 작업 스킬을 로드하였습니다. 지시를 기다리겠습니다.","attachments":[]}\n\n` });
+
+  // === Turn 2 (resume) — complete 이후에도 이벤트가 계속되어야 함 ===
+  events.push({ delay: 12*d,
+    data: `id: ${id++}\nevent: user_message\ndata: {"type":"user_message","user":"dashboard","text":"칼리엘 대사 아이디어를 생각해보자."}\n\n` });
+  // thinking
+  events.push({ delay: 13*d,
+    data: `id: ${id++}\nevent: thinking\ndata: {"type":"thinking","card_id":"mt2-think2","thinking":"Analyzing Act 3 dialogues for Kaliel ideas."}\n\n` });
+  // progress
+  events.push({ delay: 14*d,
+    data: `id: ${id++}\nevent: progress\ndata: {"type":"progress","text":"Rev2 액트 3 대사를 살펴보겠습니다."}\n\n` });
+  // text
+  events.push({ delay: 15*d,
+    data: `id: ${id++}\nevent: text_start\ndata: {"type":"text_start","card_id":"mt2-resp2"}\n\n` });
+  events.push({ delay: 16*d,
+    data: `id: ${id++}\nevent: text_delta\ndata: {"type":"text_delta","card_id":"mt2-resp2","text":"Rev2 액트 3 대사 파일들과 칼리엘 캐릭터 정보를 살펴보겠습니다."}\n\n` });
+  events.push({ delay: 17*d,
+    data: `id: ${id++}\nevent: text_end\ndata: {"type":"text_end","card_id":"mt2-resp2"}\n\n` });
+
+  // 5개 tool 호출 (병렬 + 순차 혼합, 실제 세션처럼)
+  const tools = [
+    { name: "Read", input: '{"file_path":"act3_opening.yaml"}', result: '"dialogues: [...]"' },
+    { name: "Bash", input: '{"command":"find . -name act3*"}', result: '"act3_c1_0_opening.yaml"' },
+    { name: "Grep", input: '{"pattern":"kl-","path":"act3"}', result: '"kl-KQV0PDHK\\nkl-J8J7EQHA"' },
+    { name: "Read", input: '{"file_path":"kl.yaml"}', result: '"칼리엘 (Kaliel)..."' },
+    { name: "Bash", input: '{"command":"grep -c kl dlglist"}', result: '"7"' },
+  ];
+
+  for (let i = 0; i < tools.length; i++) {
+    const t = tools[i];
+    const base = 18 + i * 2;
+    events.push({ delay: base * d,
+      data: `id: ${id++}\nevent: tool_start\ndata: {"type":"tool_start","card_id":"mt2-resp2","tool_name":"${t.name}","tool_input":${t.input},"tool_use_id":"tu-t2-${i}"}\n\n` });
+    events.push({ delay: (base + 1) * d,
+      data: `id: ${id++}\nevent: tool_result\ndata: {"type":"tool_result","card_id":"mt2-resp2","tool_name":"${t.name}","result":${t.result},"is_error":false,"tool_use_id":"tu-t2-${i}"}\n\n` });
+  }
+
+  // Turn 2 complete
+  events.push({ delay: 30 * d,
+    data: `id: ${id++}\nevent: complete\ndata: {"type":"complete","result":"칼리엘 대사 아이디어 10개를 정리했습니다.","attachments":[]}\n\n`,
+    end: true });
+
+  return events;
+}
+
+const MULTI_TURN_SSE_EVENTS = generateMultiTurnSSEEvents();
+
 // === Mock Dashboard Server Fixture ===
 
 interface MockDashboardServer {
@@ -324,6 +416,13 @@ const test = base.extend<{ dashboardServer: MockDashboardServer }>({
             createdAt: new Date(Date.now() - 240000).toISOString(),
             prompt: "대규모 작업을 수행해주세요 (20 단계).",
           },
+          {
+            agentSessionId: "sess-e2e-ui-multiturn",
+            status: "completed",
+            eventCount: MULTI_TURN_SSE_EVENTS.length,
+            createdAt: new Date(Date.now() - 300000).toISOString(),
+            prompt: "대사 작업 스킬을 로드하고 다음 지시를 대기.",
+          },
         ],
       };
       res.json(response);
@@ -392,6 +491,8 @@ const test = base.extend<{ dashboardServer: MockDashboardServer }>({
         events = LARGE_25_SSE_EVENTS;
       } else if (sessionId.includes("notool")) {
         events = NO_TOOL_SSE_EVENTS;
+      } else if (sessionId.includes("multiturn")) {
+        events = MULTI_TURN_SSE_EVENTS;
       } else if (sessionId.includes("multi")) {
         events = MULTI_TOOL_SSE_EVENTS;
       } else {
@@ -513,7 +614,7 @@ async function navigateAndSelectSession(
   await page.goto(baseURL);
   await expect(
     page.locator('[data-testid^="session-item-"]'),
-  ).toHaveCount(7, { timeout: 10_000 });
+  ).toHaveCount(8, { timeout: 10_000 });
   await page
     .locator(`[data-testid="session-item-${sessionKey}"]`)
     .click();
@@ -558,11 +659,11 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     // 세션 항목이 렌더링될 때까지 대기 (mock에서 3개 반환)
     await expect(
       page.locator('[data-testid^="session-item-"]'),
-    ).toHaveCount(7, { timeout: 10_000 });
+    ).toHaveCount(8, { timeout: 10_000 });
 
     // 세션 상태 뱃지 확인
     const statusBadges = page.locator('[data-testid="session-status-badge"]');
-    await expect(statusBadges).toHaveCount(7);
+    await expect(statusBadges).toHaveCount(8);
 
     // 그래프 패널 확인 (세션 미선택 → "Select a session" 안내)
     const graphPanel = page.locator('[data-testid="graph-panel"]');
@@ -600,14 +701,14 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     const toolNodes = page.locator('[data-testid="tool-call-node"]');
     await expect(toolNodes.first()).toBeVisible({ timeout: 10_000 });
 
-    // Complete 후 마지막 thinking이 response로 변환됨을 확인
-    const responseNodes = page.locator('[data-testid="response-node"]');
-    await expect(responseNodes.first()).toBeVisible({ timeout: 10_000 });
+    // Complete 이벤트 도착 대기 (system-node로 렌더링됨)
+    const completeNodes = page.locator('[data-testid="system-node"]');
+    await expect(completeNodes.first()).toBeVisible({ timeout: 10_000 });
 
     // React Flow 캔버스에 노드와 엣지가 렌더링되었는지 확인
     const reactFlowNodes = page.locator(".react-flow__node");
     const nodeCount = await reactFlowNodes.count();
-    expect(nodeCount).toBeGreaterThanOrEqual(3); // user + thinking + tool + response + complete
+    expect(nodeCount).toBeGreaterThanOrEqual(3); // user + thinking + tool + complete
 
     // 스크린샷: 전체 노드 그래프 렌더링
     await page.screenshot({
@@ -663,9 +764,9 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
   test("4. Complete 상태 + 레이아웃 검증", async ({ page, dashboardServer }) => {
     await navigateAndSelectSession(page, dashboardServer.baseURL);
 
-    // Complete 이벤트까지 대기: 마지막 thinking → response 변환으로 확인
-    const responseNodes = page.locator('[data-testid="response-node"]');
-    await expect(responseNodes.first()).toBeVisible({ timeout: 10_000 });
+    // Complete 이벤트까지 대기 (system-node 출현으로 확인)
+    const completeNodes = page.locator('[data-testid="system-node"]');
+    await expect(completeNodes.first()).toBeVisible({ timeout: 10_000 });
 
     // 전체 노드 그래프가 렌더링된 상태 확인
     const thinkingNodes = page.locator('[data-testid="thinking-node"]');
@@ -685,7 +786,7 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     // 레이아웃 검증: thinking 노드들이 세로로 정렬되고, tool 노드가 오른쪽에 배치
     const allNodes = page.locator(".react-flow__node");
     const nodeCount = await allNodes.count();
-    expect(nodeCount).toBeGreaterThanOrEqual(4); // user + thinking + tool + thinking (or response)
+    expect(nodeCount).toBeGreaterThanOrEqual(4); // user + thinking + tool + complete
 
     // 스크린샷: Complete 상태의 전체 대시보드
     await page.screenshot({
@@ -705,9 +806,9 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
       "sess-e2e-ui-multi",
     );
 
-    // Complete 이벤트까지 대기: response 노드 출현으로 확인
+    // Complete 이벤트까지 대기: system-node 출현으로 확인
     await expect(
-      page.locator('[data-testid="response-node"]').first(),
+      page.locator('[data-testid="system-node"]').first(),
     ).toBeVisible({ timeout: 15_000 });
 
     // 3개의 Tool Call 노드 확인 (Read, Write, Bash)
@@ -718,19 +819,19 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     const toolResultNodes = page.locator('[data-testid="tool-result-node"]');
     await expect(toolResultNodes).toHaveCount(3, { timeout: 10_000 });
 
-    // Response 노드 확인 (세션 완료 → 마지막 text가 response로 변환)
-    const responseNodes = page.locator('[data-testid="response-node"]');
-    await expect(responseNodes).toHaveCount(1, { timeout: 10_000 });
+    // Complete 노드 확인 (세션 완료 → system-node로 렌더링됨)
+    const completeNodes = page.locator('[data-testid="system-node"]');
+    await expect(completeNodes).toHaveCount(1, { timeout: 10_000 });
 
     // User 노드 확인
     const userNodes = page.locator('[data-testid="user-node"]');
     await expect(userNodes).toHaveCount(1, { timeout: 10_000 });
 
-    // Thinking 노드 확인 (첫 번째 thinking만, 두 번째는 response로 변환)
+    // Thinking 노드 확인 (모든 text 노드는 thinking)
     const thinkingNodes = page.locator('[data-testid="thinking-node"]');
     await expect(thinkingNodes).toHaveCount(1, { timeout: 10_000 });
 
-    // 전체 노드 수: user(1) + thinking(1) + tool_call(3) + tool_result(3) + response(1) + system(1, complete) = 10
+    // 전체 노드 수: user(1) + thinking(2) + tool_call(3) + tool_result(3) + system(1, complete) = 10
     const allNodes = page.locator(".react-flow__node");
     const nodeCount = await allNodes.count();
     expect(nodeCount).toBeGreaterThanOrEqual(10);
@@ -818,9 +919,9 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     const toolNodes = page.locator('[data-testid="tool-call-node"]');
     await expect(toolNodes.first()).toBeVisible({ timeout: 10_000 });
 
-    // Complete 후 마지막 thinking → response 변환 대기
-    const responseNodes = page.locator('[data-testid="response-node"]');
-    await expect(responseNodes.first()).toBeVisible({ timeout: 10_000 });
+    // Complete 이벤트 도착 대기
+    const completeNodes = page.locator('[data-testid="system-node"]');
+    await expect(completeNodes.first()).toBeVisible({ timeout: 10_000 });
 
     // 스트리밍 후 viewport 안정화 대기
     await page.waitForTimeout(500);
@@ -853,9 +954,9 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
       "sess-e2e-ui-multi",
     );
 
-    // Complete 이벤트까지 대기: response 노드 출현으로 확인
+    // Complete 이벤트까지 대기: system-node 출현으로 확인
     await expect(
-      page.locator('[data-testid="response-node"]').first(),
+      page.locator('[data-testid="system-node"]').first(),
     ).toBeVisible({ timeout: 15_000 });
 
     // viewport 안정화 대기
@@ -890,17 +991,17 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
       "sess-e2e-ui-notool",
     );
 
-    // Complete까지 대기: response 노드 출현으로 확인
+    // Complete까지 대기: system-node 출현으로 확인
     await expect(
-      page.locator('[data-testid="response-node"]').first(),
+      page.locator('[data-testid="system-node"]').first(),
     ).toBeVisible({ timeout: 10_000 });
 
     // viewport 안정화
     await page.waitForTimeout(500);
 
-    // Response 노드 확인 (tool 없는 세션 → 마지막 text가 response)
-    const responseNodes = page.locator('[data-testid="response-node"]');
-    await expect(responseNodes).toHaveCount(1, { timeout: 10_000 });
+    // Complete 노드 확인 (tool 없는 세션도 완료 시 system-node 생성)
+    const completeNodes = page.locator('[data-testid="system-node"]');
+    await expect(completeNodes).toHaveCount(1, { timeout: 10_000 });
 
     // User 노드 확인
     const userNodes = page.locator('[data-testid="user-node"]');
@@ -910,7 +1011,7 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     const toolCallNodes = page.locator('[data-testid="tool-call-node"]');
     await expect(toolCallNodes).toHaveCount(0);
 
-    // 전체 노드 수: user(1) + response(1) + system(1, complete) = 3 이상
+    // 전체 노드 수: user(1) + thinking(1) + system(1, complete) = 3 이상
     const allNodes = page.locator(".react-flow__node");
     const nodeCount = await allNodes.count();
     expect(nodeCount).toBeGreaterThanOrEqual(3);
@@ -938,7 +1039,7 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
 
     // Complete까지 대기 — 25 노드 세션은 시간이 더 걸림
     await expect(
-      page.locator('[data-testid="response-node"]').first(),
+      page.locator('[data-testid="system-node"]').first(),
     ).toBeVisible({ timeout: 30_000 });
 
     await page.waitForTimeout(500);
@@ -983,7 +1084,7 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
 
     // Complete까지 대기 — 50 노드 세션은 시간이 상당히 걸림
     await expect(
-      page.locator('[data-testid="response-node"]').first(),
+      page.locator('[data-testid="system-node"]').first(),
     ).toBeVisible({ timeout: 60_000 });
 
     await page.waitForTimeout(500);
@@ -1046,7 +1147,7 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     // 세션 목록 로드 대기
     await expect(
       page.locator('[data-testid^="session-item-"]'),
-    ).toHaveCount(7, { timeout: 10_000 });
+    ).toHaveCount(8, { timeout: 10_000 });
 
     // 초기 상태: 세션 미선택 → PromptComposer 표시됨
     const composer = page.locator('[data-testid="prompt-composer"]');
@@ -1145,7 +1246,7 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
 
     // Complete까지 대기
     await expect(
-      page.locator('[data-testid="response-node"]').first(),
+      page.locator('[data-testid="system-node"]').first(),
     ).toBeVisible({ timeout: 10_000 });
 
     // ChatInput이 "New Chat" 모드로 표시
@@ -1197,7 +1298,7 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
 
     // Complete 이벤트까지 대기
     await expect(
-      page.locator('[data-testid="response-node"]').first(),
+      page.locator('[data-testid="system-node"]').first(),
     ).toBeVisible({ timeout: 10_000 });
 
     // ChatInput이 "New Chat" 모드로 표시
@@ -1299,13 +1400,13 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     // 세션 목록 UI 로드 대기
     await expect(
       page.locator('[data-testid^="session-item-"]'),
-    ).toHaveCount(7, { timeout: 10_000 });
+    ).toHaveCount(8, { timeout: 10_000 });
 
     // 응답이 캡처되었는지 확인
     expect(sessionsResponse).not.toBeNull();
 
     const body = sessionsResponse as { sessions: Record<string, unknown>[] };
-    expect(body.sessions).toHaveLength(7);
+    expect(body.sessions).toHaveLength(8);
 
     // 모든 세션에 대해 계약 검증
     for (const session of body.sessions) {
@@ -1336,9 +1437,9 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
       "sess-e2e-ui-multi",
     );
 
-    // Complete까지 대기: response 노드 출현으로 확인
+    // Complete까지 대기: system-node 출현으로 확인
     await expect(
-      page.locator('[data-testid="response-node"]').first(),
+      page.locator('[data-testid="system-node"]').first(),
     ).toBeVisible({ timeout: 15_000 });
     await page.waitForTimeout(300);
 
@@ -1355,9 +1456,9 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
       .locator('[data-testid="session-item-sess-e2e-ui-notool"]')
       .click();
 
-    // Complete까지 대기: response 노드 출현으로 확인
+    // Complete까지 대기: system-node 출현으로 확인
     await expect(
-      page.locator('[data-testid="response-node"]').first(),
+      page.locator('[data-testid="system-node"]').first(),
     ).toBeVisible({ timeout: 10_000 });
     await page.waitForTimeout(300);
 
@@ -1366,8 +1467,8 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     await expect(toolCallNodes).toHaveCount(0, { timeout: 5_000 });
 
     // 현재 세션의 노드가 정상 렌더링되는지 확인
-    const responseNodes = page.locator('[data-testid="response-node"]');
-    await expect(responseNodes).toHaveCount(1, { timeout: 5_000 });
+    const completeNodes = page.locator('[data-testid="system-node"]');
+    await expect(completeNodes).toHaveCount(1, { timeout: 5_000 });
 
     // 스크린샷: 세션 전환 후 그래프
     await page.screenshot({
@@ -1393,7 +1494,7 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     // 세션 목록 로드 대기
     await expect(
       page.locator('[data-testid^="session-item-"]'),
-    ).toHaveCount(7, { timeout: 10_000 });
+    ).toHaveCount(8, { timeout: 10_000 });
 
     // 초기 상태: PromptComposer 표시, "+New" 비활성
     // 먼저 세션을 선택하여 Composer를 닫은 후 "+New" 활성화
@@ -1414,9 +1515,9 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     const thinkingNodes = page.locator('[data-testid="thinking-node"]');
     await expect(thinkingNodes.first()).toBeVisible({ timeout: 10_000 });
 
-    // Complete까지 대기: response 노드 출현으로 확인
+    // Complete까지 대기: system-node 출현으로 확인
     await expect(
-      page.locator('[data-testid="response-node"]').first(),
+      page.locator('[data-testid="system-node"]').first(),
     ).toBeVisible({ timeout: 15_000 });
 
     // SSE 구독이 새 세션 ID(sess-e2e-new-001)로 이루어졌는지 확인
@@ -1431,7 +1532,7 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     // Complete 이벤트까지 수신 완료 → 전체 그래프가 렌더링됨
     const allNodes = page.locator(".react-flow__node");
     const nodeCount = await allNodes.count();
-    expect(nodeCount).toBeGreaterThanOrEqual(3); // user + thinking + response/complete
+    expect(nodeCount).toBeGreaterThanOrEqual(3); // user + thinking + complete
 
     // 스크린샷
     await page.screenshot({
@@ -1440,7 +1541,91 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     });
   });
 
-  test("18. PromptComposer 입력 검증 — 빈 프롬프트 방지 + Submit 활성화", async ({
+  test("18. 세션 생성 후 세션 리스트에 즉시 표시 (낙관적 업데이트)", async ({
+    page,
+    dashboardServer,
+  }) => {
+    await page.goto(dashboardServer.baseURL);
+
+    // 세션 목록 로드 대기 (7개)
+    await expect(
+      page.locator('[data-testid^="session-item-"]'),
+    ).toHaveCount(8, { timeout: 10_000 });
+
+    // 세션 선택하여 PromptComposer 닫기
+    await page.locator('[data-testid="session-item-sess-e2e-ui-001"]').click();
+    await expect(
+      page.locator('[data-testid="prompt-composer"]'),
+    ).not.toBeVisible({ timeout: 5_000 });
+
+    // "+ New" 버튼 클릭 → PromptComposer 표시
+    await page.locator('[data-testid="new-session-button"]').click();
+    const composer = page.locator('[data-testid="prompt-composer"]');
+    await expect(composer).toBeVisible({ timeout: 5_000 });
+
+    // 프롬프트 입력 + Submit
+    await composer.locator("textarea").fill("낙관적 업데이트 테스트 세션");
+    await page.locator('[data-testid="compose-submit"]').click();
+
+    // PromptComposer 사라짐 확인
+    await expect(composer).not.toBeVisible({ timeout: 5_000 });
+
+    // 검증: 세션 리스트에 즉시 9개 표시 (폴링 없이 낙관적 추가)
+    await expect(
+      page.locator('[data-testid^="session-item-"]'),
+    ).toHaveCount(9, { timeout: 5_000 });
+
+    // 검증: 새 세션(sess-e2e-new-001)이 목록에 표시
+    await expect(
+      page.locator('[data-testid="session-item-sess-e2e-new-001"]'),
+    ).toBeVisible({ timeout: 5_000 });
+
+    // 스크린샷: 낙관적 세션 추가 후
+    await page.screenshot({
+      path: `${SCREENSHOT_DIR}/24-optimistic-session-added.png`,
+      fullPage: true,
+    });
+  });
+
+  test("19. Complete 이벤트 후 ChatInput이 New Chat 모드로 전환", async ({
+    page,
+    dashboardServer,
+  }) => {
+    // Running 세션 선택 (sess-e2e-ui-001)
+    await navigateAndSelectSession(
+      page,
+      dashboardServer.baseURL,
+      "sess-e2e-ui-001",
+    );
+
+    // SSE 스트리밍 시작 대기
+    const thinkingNodes = page.locator('[data-testid="thinking-node"]');
+    await expect(thinkingNodes.first()).toBeVisible({ timeout: 10_000 });
+
+    // ChatInput이 "Intervention" 모드로 표시
+    const chatInput = page.locator('[data-testid="chat-input"]');
+    await expect(chatInput).toBeVisible({ timeout: 5_000 });
+    await expect(chatInput).toContainText("Intervention");
+
+    // Complete 이벤트 도착 대기 (system-node 출현으로 확인)
+    const completeNodes = page.locator('[data-testid="system-node"]');
+    await expect(completeNodes.first()).toBeVisible({ timeout: 10_000 });
+
+    // 검증: ChatInput이 "New Chat" 모드로 전환 (complete 후 sessions 상태 갱신)
+    await expect(chatInput).toContainText("New Chat", { timeout: 5_000 });
+
+    // 검증: "Resume" 버튼이 표시
+    const sendBtn = page.locator('[data-testid="send-button"]');
+    await expect(sendBtn).toContainText("Resume");
+
+    // 스크린샷: Complete 후 ChatInput 전환
+    await page.screenshot({
+      path: `${SCREENSHOT_DIR}/25-complete-chatinput-transition.png`,
+      fullPage: true,
+    });
+  });
+
+  test("20. PromptComposer 입력 검증 — 빈 프롬프트 방지 + Submit 활성화", async ({
     page,
     dashboardServer,
   }) => {
@@ -1449,7 +1634,7 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     // 세션 목록 로드 대기
     await expect(
       page.locator('[data-testid^="session-item-"]'),
-    ).toHaveCount(7, { timeout: 10_000 });
+    ).toHaveCount(8, { timeout: 10_000 });
 
     // 초기 상태: 세션 미선택 → PromptComposer 표시됨
     const composer = page.locator('[data-testid="prompt-composer"]');
@@ -1470,5 +1655,83 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     // 다시 비우면 Submit 비활성화
     await composer.locator("textarea").fill("");
     await expect(submitBtn).toBeDisabled();
+  });
+
+  // === 멀티턴 세션 렌더링 테스트 ===
+
+  test("21. 멀티턴 세션 — Turn 1 complete 이후 Turn 2 이벤트가 모두 렌더링됨", async ({
+    page,
+    dashboardServer,
+  }) => {
+    await page.goto(dashboardServer.baseURL);
+
+    // 세션 목록 로드 (8개: 기존 7 + multiturn)
+    await expect(
+      page.locator('[data-testid^="session-item-"]'),
+    ).toHaveCount(8, { timeout: 10_000 });
+
+    // multiturn 세션 선택
+    const multiturnItem = page.locator(
+      '[data-testid="session-item-sess-e2e-ui-multiturn"]',
+    );
+    await multiturnItem.click();
+
+    // SSE 이벤트 전수 수신 대기: user-node가 2개 나타나면 Turn 2까지 수신 완료
+    const userNodes = page.locator('[data-testid="user-node"]');
+    await expect(userNodes).toHaveCount(2, { timeout: 15_000 });
+
+    // Turn 1 검증: 첫 번째 USER 노드 존재
+    await expect(userNodes.first()).toBeVisible();
+
+    // Turn 2 검증: 두 번째 USER 노드 존재 (이것이 핵심!)
+    await expect(userNodes.nth(1)).toBeVisible();
+
+    // complete 노드가 2개 존재 (각 Turn의 complete → system-node로 렌더링)
+    // session 이벤트가 없으므로 system-node는 complete 2개만
+    const systemNodes = page.locator('[data-testid="system-node"]');
+    await expect(systemNodes).toHaveCount(2, { timeout: 15_000 });
+
+    // Turn 2의 tool 노드 검증 (Turn 1: Skill 1개 + Turn 2: 5개 = 총 6개)
+    const toolCallNodes = page.locator('[data-testid="tool-call-node"]');
+    await expect(toolCallNodes).toHaveCount(6, { timeout: 5_000 });
+
+    // 스크린샷
+    await page.screenshot({
+      path: `${SCREENSHOT_DIR}/26-multiturn-full-render.png`,
+      fullPage: true,
+    });
+  });
+
+  test("22. 멀티턴 세션 — 세션 상태가 Turn별로 올바르게 전환됨", async ({
+    page,
+    dashboardServer,
+  }) => {
+    await page.goto(dashboardServer.baseURL);
+
+    await expect(
+      page.locator('[data-testid^="session-item-"]'),
+    ).toHaveCount(8, { timeout: 10_000 });
+
+    // multiturn 세션 선택
+    const multiturnItem = page.locator(
+      '[data-testid="session-item-sess-e2e-ui-multiturn"]',
+    );
+    await multiturnItem.click();
+
+    // 모든 이벤트 수신 완료 대기 (Turn 2 complete → system-node 2개)
+    const systemNodes = page.locator('[data-testid="system-node"]');
+    await expect(systemNodes).toHaveCount(2, { timeout: 15_000 });
+
+    // 최종 상태: Turn 2의 complete 이후이므로 세션 status가 "completed"
+    // ChatInput이 "New Chat" 모드여야 함 (Intervention이 아님)
+    const chatInput = page.locator('[data-testid="chat-input"]');
+    await expect(chatInput).toBeVisible({ timeout: 5_000 });
+    await expect(chatInput.locator("text=New Chat")).toBeVisible({ timeout: 5_000 });
+
+    // 스크린샷
+    await page.screenshot({
+      path: `${SCREENSHOT_DIR}/27-multiturn-status-transition.png`,
+      fullPage: true,
+    });
   });
 });

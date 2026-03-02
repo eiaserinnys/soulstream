@@ -37,8 +37,10 @@ const SSE_EVENT_TYPES: SSEEventType[] = [
   "reconnect",
 ];
 
-/** 세션 종료 이벤트 타입 */
-const TERMINAL_EVENTS = new Set<string>(["complete", "error"]);
+// 주의: complete/error는 "턴" 종료이지 "세션" 종료가 아닙니다.
+// 멀티턴 세션(resume)에서는 complete 이후 새 user_message가 올 수 있으므로
+// 클라이언트가 임의로 SSE 연결을 끊으면 안 됩니다.
+// 연결 해제는 unsubscribe() 또는 서버 종료에 의해서만 수행됩니다.
 
 interface SessionListResponse {
   sessions: SessionSummary[];
@@ -100,14 +102,12 @@ export class FileSessionProvider implements SessionStorageProvider {
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let reconnectAttempt = 0;
     let lastEventId = 0;
-    let isTerminal = false;
-
     const maxReconnectAttempts = 20;
     const reconnectIntervalMs = 3000;
     const maxReconnectIntervalMs = 30000;
 
     const connect = () => {
-      if (!sessionKey || isTerminal) return;
+      if (!sessionKey) return;
 
       // URL 구성
       let url = `/api/sessions/${encodeURIComponent(sessionKey)}/events`;
@@ -134,13 +134,6 @@ export class FileSessionProvider implements SessionStorageProvider {
             }
 
             onEvent(data, eventId);
-
-            // 터미널 이벤트면 연결 종료
-            if (TERMINAL_EVENTS.has(eventType)) {
-              isTerminal = true;
-              es.close();
-              eventSource = null;
-            }
           } catch {
             // JSON 파싱 실패: 무시
           }
@@ -151,8 +144,6 @@ export class FileSessionProvider implements SessionStorageProvider {
       es.onerror = () => {
         es.close();
         eventSource = null;
-
-        if (isTerminal) return;
 
         const attempt = reconnectAttempt;
         if (attempt < maxReconnectAttempts) {

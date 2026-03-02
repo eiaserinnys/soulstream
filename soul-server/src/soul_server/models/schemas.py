@@ -162,41 +162,44 @@ class TaskStatus(str, Enum):
 
 
 class ExecuteRequest(BaseModel):
-    """실행 요청"""
-    client_id: str = Field(..., description="클라이언트 ID (e.g., 'dashboard', 'slackbot')")
-    request_id: str = Field(..., description="요청 ID (e.g., Slack thread ID)")
-    agent_session_id: str = Field(..., description="세션 식별자. JSONL 파일명. resume 시 원래 세션과 동일 값.")
+    """실행 요청
+
+    agent_session_id를 제공하면 해당 세션을 resume합니다.
+    미제공 시 서버가 새 agent_session_id를 생성합니다.
+    """
     prompt: str = Field(..., description="실행할 프롬프트")
-    resume_session_id: Optional[str] = Field(None, description="이전 Claude 세션 ID (대화 연속성용)")
+    agent_session_id: Optional[str] = Field(None, description="세션 식별자. 제공하면 resume, 미제공 시 서버가 생성.")
+    client_id: Optional[str] = Field(None, description="클라이언트 식별자 (메타데이터, 로깅용)")
     attachment_paths: Optional[List[str]] = Field(None, description="첨부 파일 경로 목록")
     allowed_tools: Optional[List[str]] = Field(None, description="허용 도구 목록 (None이면 제한 없음)")
     disallowed_tools: Optional[List[str]] = Field(None, description="금지 도구 목록")
     use_mcp: bool = Field(True, description="MCP 서버 연결 여부")
 
 
-class TaskResponse(BaseModel):
-    """태스크 정보 응답"""
-    client_id: str
-    request_id: str
+class SessionResponse(BaseModel):
+    """세션 정보 응답"""
+    agent_session_id: str
     status: TaskStatus
     result: Optional[str] = None
     error: Optional[str] = None
     claude_session_id: Optional[str] = None
-    result_delivered: bool = False
     created_at: datetime
     completed_at: Optional[datetime] = None
 
 
-class TaskListResponse(BaseModel):
-    """태스크 목록 응답"""
-    tasks: List[TaskResponse]
+class SessionListResponse(BaseModel):
+    """세션 목록 응답"""
+    sessions: List[SessionResponse]
 
 
-class TaskInterveneRequest(BaseModel):
-    """개입 메시지 요청"""
-    text: str = Field(..., description="메시지 텍스트")
-    user: str = Field(..., description="요청한 사용자")
-    attachment_paths: Optional[List[str]] = Field(None, description="첨부 파일 경로 목록")
+class InitSSEEvent(BaseModel):
+    """세션 초기화 이벤트
+
+    SSE 스트림의 첫 이벤트로 전송됩니다.
+    클라이언트는 이 이벤트에서 agent_session_id를 확보합니다.
+    """
+    type: str = "init"
+    agent_session_id: str = Field(..., description="서버가 할당한 세션 식별자")
 
 
 # === 세분화 SSE Event Models (dashboard용) ===

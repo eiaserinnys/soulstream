@@ -186,7 +186,8 @@ describe("API Pipeline Integration", () => {
       expect(soulRequests).toHaveLength(1);
       expect(soulRequests[0].type).toBe("execute");
       expect((soulRequests[0].body as any).prompt).toBe("Hello, analyze this code");
-      expect((soulRequests[0].body as any).agent_session_id).toBeDefined();
+      // 새 세션에서는 agent_session_id를 보내지 않음 (서버가 init 이벤트로 반환)
+      expect((soulRequests[0].body as any).agent_session_id).toBeUndefined();
       expect((soulRequests[0].body as any).use_mcp).toBe(true);
     });
 

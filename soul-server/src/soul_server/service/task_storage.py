@@ -67,9 +67,10 @@ class TaskStorage:
                         task.status = TaskStatus.ERROR
                         task.error = "서비스 재시작으로 중단됨"
                         task.completed_at = utc_now()
-                        logger.warning(f"Marked interrupted task as error: {key}")
+                        logger.warning(f"Marked interrupted task as error: {task.key}")
 
-                    tasks[key] = task
+                    # key는 agent_session_id (마이그레이션: 기존 client_id:request_id 키 무시)
+                    tasks[task.key] = task
                     loaded += 1
                 except Exception as e:
                     logger.error(f"Failed to load task {key}: {e}")

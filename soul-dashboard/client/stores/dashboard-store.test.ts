@@ -670,6 +670,150 @@ describe("dashboard-store", () => {
     });
   });
 
+  // === 낙관적 세션 추가 ===
+
+  describe("addOptimisticSession", () => {
+    it("should prepend new session to sessions array", () => {
+      const existing: SessionSummary[] = [
+        { agentSessionId: "sess-old", status: "completed", eventCount: 10, createdAt: "2026-01-01T00:00:00Z" },
+      ];
+      useDashboardStore.getState().setSessions(existing);
+
+      useDashboardStore.getState().addOptimisticSession("sess-new", "hello");
+      const sessions = useDashboardStore.getState().sessions;
+
+      expect(sessions).toHaveLength(2);
+      expect(sessions[0].agentSessionId).toBe("sess-new");
+      expect(sessions[0].status).toBe("running");
+      expect(sessions[0].eventCount).toBe(0);
+      expect(sessions[0].prompt).toBe("hello");
+      expect(sessions[1].agentSessionId).toBe("sess-old");
+    });
+
+    it("should not duplicate if session already exists", () => {
+      useDashboardStore.getState().setSessions([
+        { agentSessionId: "sess-abc", status: "running", eventCount: 3, createdAt: "2026-01-01T00:00:00Z" },
+      ]);
+
+      useDashboardStore.getState().addOptimisticSession("sess-abc", "dup");
+      expect(useDashboardStore.getState().sessions).toHaveLength(1);
+    });
+  });
+
+  // === 멀티턴 세션 상태 전환 ===
+
+  describe("processEvent - session status derivation (multi-turn)", () => {
+    beforeEach(() => {
+      // 세션 목록에 running 세션 등록 + 활성 세션 설정
+      useDashboardStore.getState().setSessions([
+        { agentSessionId: "sess-mt", status: "running", eventCount: 0, createdAt: "2026-01-01T00:00:00Z" },
+      ]);
+      useDashboardStore.getState().setActiveSession("sess-mt");
+    });
+
+    it("should set status to 'completed' on complete event", () => {
+      const { processEvent } = useDashboardStore.getState();
+      processEvent({ type: "user_message", user: "u", text: "Turn 1" } as UserMessageEvent, 0);
+      processEvent({ type: "text_start", card_id: "t1" }, 1);
+      processEvent({ type: "text_end", card_id: "t1" }, 2);
+      processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 3);
+
+      const session = useDashboardStore.getState().sessions.find(s => s.agentSessionId === "sess-mt");
+      expect(session?.status).toBe("completed");
+    });
+
+    it("should set status to 'error' on error event", () => {
+      const { processEvent } = useDashboardStore.getState();
+      processEvent({ type: "user_message", user: "u", text: "Turn 1" } as UserMessageEvent, 0);
+      processEvent({ type: "error", message: "failed" } as ErrorEvent, 1);
+
+      const session = useDashboardStore.getState().sessions.find(s => s.agentSessionId === "sess-mt");
+      expect(session?.status).toBe("error");
+    });
+
+    it("should reset status to 'running' on user_message after complete (multi-turn)", () => {
+      const { processEvent } = useDashboardStore.getState();
+
+      // Turn 1: user_message → text → complete
+      processEvent({ type: "user_message", user: "u", text: "Turn 1" } as UserMessageEvent, 0);
+      processEvent({ type: "text_start", card_id: "t1" }, 1);
+      processEvent({ type: "text_end", card_id: "t1" }, 2);
+      processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 3);
+
+      expect(useDashboardStore.getState().sessions.find(s => s.agentSessionId === "sess-mt")?.status).toBe("completed");
+
+      // Turn 2: new user_message (resume)
+      processEvent({ type: "user_message", user: "u", text: "Turn 2" } as UserMessageEvent, 4);
+
+      expect(useDashboardStore.getState().sessions.find(s => s.agentSessionId === "sess-mt")?.status).toBe("running");
+    });
+
+    it("should reset status to 'running' on intervention_sent after complete", () => {
+      const { processEvent } = useDashboardStore.getState();
+
+      processEvent({ type: "user_message", user: "u", text: "Turn 1" } as UserMessageEvent, 0);
+      processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 1);
+
+      expect(useDashboardStore.getState().sessions.find(s => s.agentSessionId === "sess-mt")?.status).toBe("completed");
+
+      // Intervention resumes the session
+      processEvent({ type: "intervention_sent", user: "admin", text: "continue" } as InterventionSentEvent, 2);
+
+      expect(useDashboardStore.getState().sessions.find(s => s.agentSessionId === "sess-mt")?.status).toBe("running");
+    });
+
+    it("should handle full multi-turn cycle: running → completed → running → completed", () => {
+      const { processEvent } = useDashboardStore.getState();
+      const getStatus = () =>
+        useDashboardStore.getState().sessions.find(s => s.agentSessionId === "sess-mt")?.status;
+
+      // Turn 1
+      processEvent({ type: "user_message", user: "u", text: "Turn 1" } as UserMessageEvent, 0);
+      expect(getStatus()).toBe("running");
+
+      processEvent({ type: "text_start", card_id: "t1" }, 1);
+      processEvent({ type: "text_end", card_id: "t1" }, 2);
+      processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 3);
+      expect(getStatus()).toBe("completed");
+
+      // Turn 2
+      processEvent({ type: "user_message", user: "u", text: "Turn 2" } as UserMessageEvent, 4);
+      expect(getStatus()).toBe("running");
+
+      processEvent({ type: "text_start", card_id: "t2" }, 5);
+      processEvent({ type: "text_end", card_id: "t2" }, 6);
+      processEvent({ type: "complete", result: "done again", attachments: [] } as CompleteEvent, 7);
+      expect(getStatus()).toBe("completed");
+    });
+
+    it("should not update status for unrelated event types (text_start, text_delta, etc.)", () => {
+      const { processEvent } = useDashboardStore.getState();
+
+      processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
+      expect(useDashboardStore.getState().sessions.find(s => s.agentSessionId === "sess-mt")?.status).toBe("running");
+
+      // These should NOT change status
+      processEvent({ type: "text_start", card_id: "t1" }, 1);
+      processEvent({ type: "text_delta", card_id: "t1", text: "hello" } as TextDeltaEvent, 2);
+      processEvent({ type: "text_end", card_id: "t1" }, 3);
+      processEvent({ type: "tool_start", card_id: "t1", tool_name: "Bash", tool_input: {} } as ToolStartEvent, 4);
+      processEvent({ type: "tool_result", card_id: "t1", tool_name: "Bash", result: "ok", is_error: false } as ToolResultEvent, 5);
+
+      expect(useDashboardStore.getState().sessions.find(s => s.agentSessionId === "sess-mt")?.status).toBe("running");
+    });
+
+    it("should not update sessions when activeSessionKey is null", () => {
+      useDashboardStore.getState().setActiveSession(null);
+      useDashboardStore.getState().processEvent(
+        { type: "complete", result: "done", attachments: [] } as CompleteEvent,
+        0,
+      );
+
+      // sessions[0] should still be "running" (unchanged)
+      expect(useDashboardStore.getState().sessions[0].status).toBe("running");
+    });
+  });
+
   // === 초기화 ===
 
   describe("reset", () => {
