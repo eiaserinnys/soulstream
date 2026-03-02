@@ -75,6 +75,7 @@ export type SoulBlockType =
   | "soul:thinking"
   | "soul:tool_use"
   | "soul:tool_result"
+  | "soul:intervention"
   | "soul:error"
   | "paragraph"; // 기본 텍스트 블록
 

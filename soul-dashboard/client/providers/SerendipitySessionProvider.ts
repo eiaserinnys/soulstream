@@ -254,6 +254,7 @@ export class SerendipitySessionProvider implements SessionStorageProvider {
       case "soul:user":
       case "soul:assistant":
       case "soul:thinking":
+      case "soul:intervention":
         return {
           cardId: block.id,
           type: "text",
