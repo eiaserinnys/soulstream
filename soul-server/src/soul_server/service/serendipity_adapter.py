@@ -11,7 +11,7 @@ engine_adapter의 이벤트 훅에서 호출됩니다.
 | ThinkingSSEEvent | soul:thinking | Extended Thinking |
 | TextDeltaSSEEvent | soul:assistant | Claude 응답 텍스트 |
 | ToolStartSSEEvent | soul:tool_use | 도구 호출 시작 |
-| ToolResultSSEEvent | soul:tool-result | 도구 실행 결과 |
+| ToolResultSSEEvent | soul:tool_result | 도구 실행 결과 |
 | InterventionSentEvent | soul:intervention | 사용자 개입 |
 | CompleteEvent | (페이지 제목 업데이트) | 세션 완료 |
 | ErrorEvent | soul:error | 시스템 오류 |
@@ -82,12 +82,12 @@ logger = logging.getLogger(__name__)
 # 자동 부착 레이블
 SOUL_SESSION_LABEL = "🤖 Soul Session"
 
-# 블록 타입
+# 블록 타입 (Dashboard/Serendipity Plugin과 일관성: 언더스코어 사용)
 BLOCK_TYPE_USER = "soul:user"
 BLOCK_TYPE_THINKING = "soul:thinking"    # Extended Thinking
 BLOCK_TYPE_ASSISTANT = "soul:assistant"  # Claude 응답 텍스트
 BLOCK_TYPE_TOOL_USE = "soul:tool_use"    # 도구 호출 시작
-BLOCK_TYPE_TOOL_RESULT = "soul:tool-result"
+BLOCK_TYPE_TOOL_RESULT = "soul:tool_result"  # 도구 실행 결과 (언더스코어)
 BLOCK_TYPE_INTERVENTION = "soul:intervention"
 BLOCK_TYPE_ERROR = "soul:error"          # 시스템 오류
 
@@ -95,6 +95,20 @@ BLOCK_TYPE_ERROR = "soul:error"          # 시스템 오류
 BLOCK_TYPE_RESPONSE = BLOCK_TYPE_ASSISTANT
 BLOCK_TYPE_TOOL_CALL = BLOCK_TYPE_TOOL_USE
 BLOCK_TYPE_SYSTEM = BLOCK_TYPE_ERROR
+
+# 이모지 상수 (Display constants)
+EMOJI_THINKING = "💭"
+EMOJI_TOOL = "🔧"
+EMOJI_USER = "👤"
+EMOJI_ERROR = "⚠️"
+EMOJI_SUCCESS = "✅"
+EMOJI_FAILURE = "❌"
+EMOJI_SESSION = "🤖"
+
+# 분석기용 길이 제한 (휴리스틱 분석에만 사용, 세렌디피티 저장은 원문 전체 보존)
+MAX_ANALYZER_CONTENT_LENGTH = 1000
+MAX_ANALYZER_RESULT_LENGTH = 500
+MAX_ANALYZER_PROMPT_LENGTH = 2000
 
 
 # ============================================================================
@@ -143,8 +157,17 @@ class SerendipityAdapter:
     engine_adapter의 이벤트 훅에서 호출되어 SSE 이벤트를
     세렌디피티 블록으로 변환하여 저장합니다.
 
+    세렌디피티는 아카이브 목적이므로 모든 컨텐츠를 원문 그대로 보존합니다.
+    (truncate 없음)
+
     Usage:
-        adapter = SerendipityAdapter("http://localhost:4002")
+        from soul_server.config import get_settings
+        settings = get_settings()
+
+        adapter = SerendipityAdapter(
+            base_url=settings.serendipity_url,
+            enabled=settings.serendipity_enabled,
+        )
 
         # 세션 시작
         ctx = await adapter.start_session("slack", "thread-123", "테스트 요청")
@@ -158,13 +181,13 @@ class SerendipityAdapter:
 
     def __init__(
         self,
-        base_url: str = "http://localhost:4002",
+        base_url: Optional[str] = None,
         enabled: bool = True,
-        client_id_label_prefix: str = "🤖 Soul: ",
+        client_id_label_prefix: str = f"{EMOJI_SESSION} Soul: ",
     ):
         """
         Args:
-            base_url: Serendipity API URL
+            base_url: Serendipity API URL (None이면 호출 시점에 에러 발생)
             enabled: 활성화 여부 (False면 모든 작업 스킵)
             client_id_label_prefix: 클라이언트 ID 레이블 접두사
         """
@@ -174,8 +197,17 @@ class SerendipityAdapter:
         self._client: Optional[AsyncSerendipityClient] = None
 
     async def _ensure_client(self) -> AsyncSerendipityClient:
-        """클라이언트 인스턴스 보장"""
+        """클라이언트 인스턴스 보장
+
+        Raises:
+            ValueError: base_url이 설정되지 않은 경우
+        """
         if self._client is None:
+            if not self._base_url:
+                raise ValueError(
+                    "SerendipityAdapter requires base_url. "
+                    "Set SERENDIPITY_URL environment variable or pass base_url parameter."
+                )
             self._client = AsyncSerendipityClient(self._base_url)
         return self._client
 
@@ -213,11 +245,11 @@ class SerendipityAdapter:
         """
         ctx = SessionContext(client_id=client_id, request_id=request_id)
 
-        # 분석기에 최초 프롬프트 추가
+        # 분석기에 최초 프롬프트 추가 (휴리스틱 분석용, 길이 제한 적용)
         if ctx.analyzer:
             ctx.analyzer.add_event(SessionEvent(
                 event_type="user",
-                content=prompt[:2000],  # 길이 제한
+                content=prompt[:MAX_ANALYZER_PROMPT_LENGTH],
             ))
 
         if not self._enabled:
@@ -341,7 +373,7 @@ class SerendipityAdapter:
                     logger.warning(f"Session analysis failed: {e}")
 
             # 제목 결정: 명시적 summary > 분석기 제목 > 기본 제목
-            status = "✅" if success else "❌"
+            status = EMOJI_SUCCESS if success else EMOJI_FAILURE
             elapsed = time.time() - ctx.start_time
             elapsed_str = f"{int(elapsed)}s"
 
@@ -441,12 +473,12 @@ class SerendipityAdapter:
 
         try:
             if isinstance(event, TextEndSSEEvent):
-                # 텍스트 버퍼에서 완료된 텍스트 가져오기
+                # 텍스트 버퍼에서 완료된 텍스트 가져오기 (휴리스틱 분석용, 길이 제한 적용)
                 text = ctx.text_buffers.get(event.card_id, "")
                 if text.strip():
                     ctx.analyzer.add_event(SessionEvent(
                         event_type="response",
-                        content=text[:1000],  # 길이 제한
+                        content=text[:MAX_ANALYZER_CONTENT_LENGTH],
                     ))
             elif isinstance(event, ToolStartSSEEvent):
                 ctx.analyzer.add_event(SessionEvent(
@@ -456,8 +488,8 @@ class SerendipityAdapter:
                     tool_input=event.tool_input,
                 ))
             elif isinstance(event, ToolResultSSEEvent):
-                # 결과 텍스트 (길이 제한)
-                result_str = str(event.result)[:500] if event.result else ""
+                # 결과 텍스트 (휴리스틱 분석용, 길이 제한 적용)
+                result_str = str(event.result)[:MAX_ANALYZER_RESULT_LENGTH] if event.result else ""
                 ctx.analyzer.add_event(SessionEvent(
                     event_type="tool_result",
                     content=result_str,
@@ -466,7 +498,7 @@ class SerendipityAdapter:
             elif isinstance(event, InterventionSentEvent):
                 ctx.analyzer.add_event(SessionEvent(
                     event_type="user",
-                    content=event.text[:1000],  # 길이 제한
+                    content=event.text[:MAX_ANALYZER_CONTENT_LENGTH],
                 ))
         except Exception as e:
             logger.warning(f"Failed to collect event for analyzer: {e}")
@@ -475,14 +507,15 @@ class SerendipityAdapter:
         """Extended Thinking 블록 생성
 
         ThinkingBlock의 사고 과정을 soul:thinking 블록으로 저장합니다.
+        세렌디피티는 아카이브 목적이므로 원문 전체를 보존합니다.
         """
         if not event.thinking.strip():
             return
 
         client = await self._ensure_client()
 
-        # thinking 텍스트 접두사 추가
-        text = f"💭 Thinking\n\n{self._truncate_text(event.thinking, 3000)}"
+        # thinking 텍스트 접두사 추가 (원문 전체 보존)
+        text = f"{EMOJI_THINKING} Thinking\n\n{event.thinking}"
 
         content = create_soul_content(
             text=text,
@@ -518,15 +551,19 @@ class SerendipityAdapter:
             ctx.text_buffers[event.card_id] = event.text
 
     async def _on_text_end(self, ctx: SessionContext, event: TextEndSSEEvent) -> None:
-        """텍스트 블록 완료: 블록 생성"""
+        """텍스트 블록 완료: 블록 생성
+
+        세렌디피티는 아카이브 목적이므로 원문 전체를 보존합니다.
+        """
         text = ctx.text_buffers.pop(event.card_id, "")
         if not text.strip():
             return
 
         client = await self._ensure_client()
 
+        # 원문 전체 보존 (truncate 없음)
         content = create_soul_content(
-            text=self._truncate_text(text),
+            text=text,
             soul_metadata={
                 "nodeId": generate_key(),
                 "timestamp": self._iso_timestamp(),
@@ -545,16 +582,19 @@ class SerendipityAdapter:
         ctx.current_response_block_id = block["id"]
 
     async def _on_tool_start(self, ctx: SessionContext, event: ToolStartSSEEvent) -> None:
-        """도구 호출 시작: 블록 생성"""
+        """도구 호출 시작: 블록 생성
+
+        세렌디피티는 아카이브 목적이므로 원문 전체를 보존합니다.
+        """
         client = await self._ensure_client()
 
-        # tool_input을 JSON 문자열로 변환 (가독성 위해)
+        # tool_input을 JSON 문자열로 변환 (원문 전체 보존)
         try:
             tool_input_str = json.dumps(event.tool_input, ensure_ascii=False, indent=2)
         except (TypeError, ValueError):
             tool_input_str = str(event.tool_input)
 
-        text = f"🔧 {event.tool_name}\n\n{self._truncate_text(tool_input_str, 2000)}"
+        text = f"{EMOJI_TOOL} {event.tool_name}\n\n{tool_input_str}"
 
         content = create_soul_content(
             text=text,
@@ -584,12 +624,15 @@ class SerendipityAdapter:
             }
 
     async def _on_tool_result(self, ctx: SessionContext, event: ToolResultSSEEvent) -> None:
-        """도구 결과: 블록 생성"""
+        """도구 결과: 블록 생성
+
+        세렌디피티는 아카이브 목적이므로 원문 전체를 보존합니다.
+        """
         client = await self._ensure_client()
 
-        # 결과 텍스트 포맷
-        result_text = self._truncate_text(str(event.result), 3000)
-        status = "❌" if event.is_error else "✅"
+        # 결과 텍스트 포맷 (원문 전체 보존)
+        result_text = str(event.result)
+        status = EMOJI_FAILURE if event.is_error else EMOJI_SUCCESS
         text = f"{status} {event.tool_name}\n\n{result_text}"
 
         content = create_soul_content(
@@ -618,10 +661,13 @@ class SerendipityAdapter:
         )
 
     async def _on_intervention(self, ctx: SessionContext, event: InterventionSentEvent) -> None:
-        """사용자 개입: 블록 생성"""
+        """사용자 개입: 블록 생성
+
+        세렌디피티는 아카이브 목적이므로 원문 전체를 보존합니다.
+        """
         client = await self._ensure_client()
 
-        text = f"👤 {event.user}\n\n{event.text}"
+        text = f"{EMOJI_USER} {event.user}\n\n{event.text}"
 
         content = create_soul_content(
             text=text,
@@ -650,7 +696,7 @@ class SerendipityAdapter:
         """오류 발생: 시스템 블록 생성 + 세션 종료"""
         client = await self._ensure_client()
 
-        text = f"⚠️ Error: {event.message}"
+        text = f"{EMOJI_ERROR} Error: {event.message}"
 
         content = create_soul_content(
             text=text,

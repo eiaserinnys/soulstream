@@ -18,6 +18,18 @@ from soul_server.service.serendipity_adapter import (
     BLOCK_TYPE_TOOL_RESULT,
     BLOCK_TYPE_INTERVENTION,
     BLOCK_TYPE_ERROR,      # Changed: soul:system → soul:error
+    # 이모지 상수
+    EMOJI_THINKING,
+    EMOJI_TOOL,
+    EMOJI_USER,
+    EMOJI_ERROR,
+    EMOJI_SUCCESS,
+    EMOJI_FAILURE,
+    EMOJI_SESSION,
+    # 분석기 길이 제한 상수
+    MAX_ANALYZER_CONTENT_LENGTH,
+    MAX_ANALYZER_RESULT_LENGTH,
+    MAX_ANALYZER_PROMPT_LENGTH,
 )
 from soul_server.service.serendipity_client import (
     create_text_content,
@@ -364,12 +376,12 @@ class TestSerendipityAdapterEnabled:
 
 
 class TestTruncation:
-    """텍스트 잘림 테스트"""
+    """텍스트 잘림 테스트 (분석기용 내부 메서드)"""
 
     @pytest.mark.asyncio
     async def test_truncate_long_text(self):
         """긴 텍스트는 잘려야 함"""
-        adapter = SerendipityAdapter(enabled=True)
+        adapter = SerendipityAdapter(base_url="http://test:4002", enabled=True)
 
         long_text = "x" * 10000
         truncated = adapter._truncate_text(long_text, max_len=100)
@@ -380,12 +392,70 @@ class TestTruncation:
     @pytest.mark.asyncio
     async def test_short_text_not_truncated(self):
         """짧은 텍스트는 잘리지 않아야 함"""
-        adapter = SerendipityAdapter(enabled=True)
+        adapter = SerendipityAdapter(base_url="http://test:4002", enabled=True)
 
         short_text = "Hello, World!"
         result = adapter._truncate_text(short_text, max_len=100)
 
         assert result == short_text
+
+
+class TestBaseUrlValidation:
+    """base_url 검증 테스트"""
+
+    @pytest.mark.asyncio
+    async def test_ensure_client_raises_without_base_url(self):
+        """base_url 없이 _ensure_client() 호출 시 ValueError 발생"""
+        adapter = SerendipityAdapter(base_url=None, enabled=True)
+
+        with pytest.raises(ValueError) as exc_info:
+            await adapter._ensure_client()
+
+        assert "base_url" in str(exc_info.value)
+        assert "SERENDIPITY_URL" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_adapter_disabled_without_base_url_ok(self):
+        """비활성화 상태에서는 base_url 없이도 정상 동작"""
+        adapter = SerendipityAdapter(base_url=None, enabled=False)
+
+        # 예외 없이 동작해야 함
+        ctx = await adapter.start_session(
+            client_id="test",
+            request_id="req123",
+            prompt="Hello",
+        )
+
+        assert ctx.page_id is None  # 페이지 생성 안 됨
+
+
+class TestEmojiConstants:
+    """이모지 상수 테스트"""
+
+    def test_emoji_constants_defined(self):
+        """이모지 상수가 올바르게 정의되어 있어야 함"""
+        assert EMOJI_THINKING == "💭"
+        assert EMOJI_TOOL == "🔧"
+        assert EMOJI_USER == "👤"
+        assert EMOJI_ERROR == "⚠️"
+        assert EMOJI_SUCCESS == "✅"
+        assert EMOJI_FAILURE == "❌"
+        assert EMOJI_SESSION == "🤖"
+
+    def test_analyzer_length_constants_defined(self):
+        """분석기 길이 제한 상수가 올바르게 정의되어 있어야 함"""
+        assert MAX_ANALYZER_CONTENT_LENGTH == 1000
+        assert MAX_ANALYZER_RESULT_LENGTH == 500
+        assert MAX_ANALYZER_PROMPT_LENGTH == 2000
+
+
+class TestBlockTypeConstants:
+    """블록 타입 상수 테스트"""
+
+    def test_block_type_tool_result_uses_underscore(self):
+        """BLOCK_TYPE_TOOL_RESULT는 언더스코어를 사용해야 함 (Dashboard 일관성)"""
+        assert BLOCK_TYPE_TOOL_RESULT == "soul:tool_result"
+        assert "-" not in BLOCK_TYPE_TOOL_RESULT  # 하이픈 없음
 
 
 class TestThinkingEvent:
