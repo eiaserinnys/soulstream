@@ -13,8 +13,9 @@ import { NodeGraph } from "./components/NodeGraph";
 import { DetailView } from "./components/DetailView";
 import { ChatInput } from "./components/ChatInput";
 import { PromptComposer } from "./components/PromptComposer";
-import { useSessionList } from "./hooks/useSessionList";
-import { useSession } from "./hooks/useSession";
+import { StorageModeToggleCompact } from "./components/StorageModeToggle";
+import { useSessionListProvider } from "./hooks/useSessionListProvider";
+import { useSessionProvider } from "./hooks/useSessionProvider";
 import { useNotification } from "./hooks/useNotification";
 import { useDashboardStore } from "./stores/dashboard-store";
 import { cn } from "./lib/cn";
@@ -135,12 +136,13 @@ function ConnectionBadge({
 
 export function DashboardLayout() {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
+  const storageMode = useDashboardStore((s) => s.storageMode);
 
-  // 세션 목록 폴링
-  const { sessions, loading, error } = useSessionList({ intervalMs: 5000 });
+  // 세션 목록 폴링 (Provider 기반)
+  const { sessions, loading, error } = useSessionListProvider({ intervalMs: 5000 });
 
-  // 활성 세션 SSE 구독
-  const { status: sseStatus } = useSession({
+  // 활성 세션 구독 (Provider 기반)
+  const { status: sseStatus } = useSessionProvider({
     sessionKey: activeSessionKey,
   });
 
@@ -190,10 +192,18 @@ export function DashboardLayout() {
     >
       {/* Top bar */}
       <header className="flex items-center justify-between px-4 h-10 border-b border-border bg-popover shrink-0">
-        <span className="text-[13px] font-semibold text-muted-foreground tracking-[0.02em]">
-          Soul Dashboard
-        </span>
-        <ConnectionBadge status={sseStatus} />
+        <div className="flex items-center gap-3">
+          <span className="text-[13px] font-semibold text-muted-foreground tracking-[0.02em]">
+            Soul Dashboard
+          </span>
+          <StorageModeToggleCompact />
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-muted-foreground uppercase">
+            {storageMode}
+          </span>
+          <ConnectionBadge status={sseStatus} />
+        </div>
       </header>
 
       {/* 3-Panel content */}

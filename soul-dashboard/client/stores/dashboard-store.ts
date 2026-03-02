@@ -6,16 +6,21 @@
  */
 
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 import type {
   SessionSummary,
   SessionDetail,
   DashboardCard,
   SoulSSEEvent,
 } from "@shared/types";
+import type { StorageMode } from "../providers/types";
 
 // === State Interface ===
 
 export interface DashboardState {
+  /** 스토리지 모드: file(기본) 또는 serendipity */
+  storageMode: StorageMode;
+
   /** 세션 목록 */
   sessions: SessionSummary[];
   sessionsLoading: boolean;
@@ -70,6 +75,9 @@ export interface DashboardState {
 // === Actions Interface ===
 
 export interface DashboardActions {
+  // 스토리지 모드
+  setStorageMode: (mode: StorageMode) => void;
+
   // 세션 목록
   setSessions: (sessions: SessionSummary[]) => void;
   setSessionsLoading: (loading: boolean) => void;
@@ -110,6 +118,7 @@ export interface DashboardActions {
 // === Initial State ===
 
 const initialState: DashboardState = {
+  storageMode: "file",
   sessions: [],
   sessionsLoading: false,
   sessionsError: null,
@@ -143,13 +152,34 @@ function getSessionResetState() {
 
 // === Store ===
 
-export const useDashboardStore = create<DashboardState & DashboardActions>(
-  (set, get) => ({
-    ...initialState,
+export const useDashboardStore = create<DashboardState & DashboardActions>()(
+  persist(
+    (set, get) => ({
+      ...initialState,
 
-    // --- 세션 목록 ---
+      // --- 스토리지 모드 ---
 
-    setSessions: (sessions) => set({ sessions, sessionsError: null }),
+      setStorageMode: (storageMode) =>
+        set({
+          storageMode,
+          // 모드 변경 시 세션 목록과 활성 세션 초기화
+          sessions: [],
+          sessionsLoading: false,
+          sessionsError: null,
+          activeSessionKey: null,
+          activeSession: null,
+          cards: [],
+          graphEvents: [],
+          collapsedGroups: new Set<string>(),
+          lastEventId: 0,
+          selectedCardId: null,
+          selectedNodeId: null,
+          selectedEventNodeData: null,
+        }),
+
+      // --- 세션 목록 ---
+
+      setSessions: (sessions) => set({ sessions, sessionsError: null }),
 
     setSessionsLoading: (sessionsLoading) => set({ sessionsLoading }),
 
@@ -358,6 +388,12 @@ export const useDashboardStore = create<DashboardState & DashboardActions>(
         selectedEventNodeData: null,
       }),
 
-    reset: () => set(initialState),
-  }),
+      reset: () => set(initialState),
+    }),
+    {
+      name: "soul-dashboard-storage",
+      // 스토리지 모드만 영속화 (세션 데이터는 제외)
+      partialize: (state) => ({ storageMode: state.storageMode }),
+    }
+  )
 );

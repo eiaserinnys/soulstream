@@ -122,6 +122,10 @@ class Settings:
     # 헬스 체크
     health_check_interval: int = 30
 
+    # Serendipity 연동
+    serendipity_enabled: bool = True  # 세렌디피티 저장 활성화
+    serendipity_url: str = "http://localhost:4002"  # 세렌디피티 API URL
+
     @classmethod
     def from_env(cls) -> "Settings":
         """환경변수에서 설정 로드"""
@@ -192,6 +196,8 @@ class Settings:
                 cls.health_check_interval,
                 "HEALTH_CHECK_INTERVAL"
             ),
+            serendipity_enabled=os.getenv("SERENDIPITY_ENABLED", "true").lower() in ("true", "1", "yes"),
+            serendipity_url=os.getenv("SERENDIPITY_URL", cls.serendipity_url),
         )
 
         settings.validate()
