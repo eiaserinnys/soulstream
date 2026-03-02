@@ -542,34 +542,53 @@ describe("dashboard-store", () => {
   // === 세션 재개 ===
 
   describe("startResume", () => {
-    it("should reset session state, set isComposing, and set resumeTargetKey", () => {
+    it("should preserve session state while setting isComposing and resumeTargetKey", () => {
       // 먼저 기존 상태를 설정
       useDashboardStore.getState().setActiveSession("old:session");
       useDashboardStore.getState().processEvent({ type: "text_start", card_id: "x" }, 5);
+      useDashboardStore.getState().processEvent({ type: "session", session_id: "s1" } as SessionEvent, 6);
 
-      useDashboardStore.getState().startResume("target:session");
+      // 기존 상태 확인
+      expect(useDashboardStore.getState().cards.length).toBe(1);
+      expect(useDashboardStore.getState().graphEvents.length).toBe(1);
+      expect(useDashboardStore.getState().lastEventId).toBe(6);
+
+      useDashboardStore.getState().startResume("old:session");
       const state = useDashboardStore.getState();
 
+      // isComposing과 resumeTargetKey만 변경
       expect(state.isComposing).toBe(true);
-      expect(state.resumeTargetKey).toBe("target:session");
-      expect(state.activeSessionKey).toBeNull();
-      expect(state.activeSession).toBeNull();
-      expect(state.cards).toEqual([]);
-      expect(state.graphEvents).toEqual([]);
-      expect(state.lastEventId).toBe(0);
+      expect(state.resumeTargetKey).toBe("old:session");
+
+      // 기존 세션 상태는 유지 (Resume이므로 기존 노드 그래프를 이어서 표시)
+      expect(state.activeSessionKey).toBe("old:session");
+      expect(state.cards.length).toBe(1);
+      expect(state.graphEvents.length).toBe(1);
+      expect(state.lastEventId).toBe(6);
     });
 
-    it("should differ from startCompose only in resumeTargetKey", () => {
+    it("should differ from startCompose: startCompose resets state, startResume preserves it", () => {
+      // startCompose: 새 세션이므로 상태 초기화
+      useDashboardStore.getState().setActiveSession("existing:session");
+      useDashboardStore.getState().processEvent({ type: "text_start", card_id: "t1" }, 1);
       useDashboardStore.getState().startCompose();
-      const composeState = { ...useDashboardStore.getState() };
+
+      expect(useDashboardStore.getState().isComposing).toBe(true);
+      expect(useDashboardStore.getState().resumeTargetKey).toBeNull();
+      expect(useDashboardStore.getState().activeSessionKey).toBeNull();
+      expect(useDashboardStore.getState().cards).toEqual([]);
 
       useDashboardStore.getState().reset();
-      useDashboardStore.getState().startResume("key");
-      const resumeState = useDashboardStore.getState();
 
-      expect(composeState.isComposing).toBe(resumeState.isComposing);
-      expect(composeState.resumeTargetKey).toBeNull();
-      expect(resumeState.resumeTargetKey).toBe("key");
+      // startResume: 기존 세션 이어가기이므로 상태 유지
+      useDashboardStore.getState().setActiveSession("existing:session");
+      useDashboardStore.getState().processEvent({ type: "text_start", card_id: "t1" }, 1);
+      useDashboardStore.getState().startResume("existing:session");
+
+      expect(useDashboardStore.getState().isComposing).toBe(true);
+      expect(useDashboardStore.getState().resumeTargetKey).toBe("existing:session");
+      expect(useDashboardStore.getState().activeSessionKey).toBe("existing:session");
+      expect(useDashboardStore.getState().cards.length).toBe(1);
     });
   });
 

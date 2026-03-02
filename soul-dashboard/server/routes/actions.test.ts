@@ -205,6 +205,112 @@ describe("Actions Routes", () => {
       expect(data.error.code).toBe("SESSION_NOT_FOUND");
       expect(data.error.message).toContain("claude_session_id");
     });
+
+    it("정상 요청 시 원래 세션 키와 isResume=true 반환", async () => {
+      // 완료된 세션 생성 (session_id 포함)
+      createTestJsonl("dashboard", "req-completed", [
+        { id: 1, event: { type: "user_message", text: "original prompt", user: "dashboard" } },
+        { id: 2, event: { type: "session", session_id: "claude-session-abc123" } },
+        { id: 3, event: { type: "text_start", card_id: "card-1" } },
+        { id: 4, event: { type: "text_end", card_id: "card-1" } },
+        { id: 5, event: { type: "complete", result: "Done" } },
+      ]);
+
+      const res = await fetch(
+        `http://localhost:${dashPort}/api/sessions/dashboard:req-completed/resume`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: "continue the conversation" }),
+        },
+      );
+
+      expect(res.status).toBe(201);
+      const data = await res.json();
+
+      // 원래 세션 키를 반환해야 함
+      expect(data.sessionKey).toBe("dashboard:req-completed");
+      expect(data.resumedFrom).toBe("dashboard:req-completed");
+      expect(data.resumeSessionId).toBe("claude-session-abc123");
+      expect(data.status).toBe("running");
+      expect(data.isResume).toBe(true);
+
+      // Soul 서버에 올바른 요청 전송 확인
+      expect(soulRequests).toHaveLength(1);
+      expect(soulRequests[0].type).toBe("execute");
+      expect((soulRequests[0].body as any).prompt).toBe("continue the conversation");
+      expect((soulRequests[0].body as any).resume_session_id).toBe("claude-session-abc123");
+    });
+
+    it("resume 응답에 isResume=true가 포함되어 클라이언트가 세션 전환을 구분할 수 있어야 함", async () => {
+      // 완료된 세션 생성
+      createTestJsonl("dashboard", "req-for-client", [
+        { id: 1, event: { type: "user_message", text: "test", user: "dashboard" } },
+        { id: 2, event: { type: "session", session_id: "claude-sess-client" } },
+        { id: 3, event: { type: "complete", result: "Done" } },
+      ]);
+
+      const res = await fetch(
+        `http://localhost:${dashPort}/api/sessions/dashboard:req-for-client/resume`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: "resume prompt" }),
+        },
+      );
+
+      expect(res.status).toBe(201);
+      const data = await res.json();
+
+      // 클라이언트가 새 세션 생성과 resume을 구분할 수 있어야 함
+      // isResume=true이면 클라이언트는 setActiveSession을 호출하지 않음
+      expect(data.isResume).toBe(true);
+      expect(data.sessionKey).toBe("dashboard:req-for-client");
+    });
+
+    it("error로 종료된 세션도 resume 가능", async () => {
+      createTestJsonl("dashboard", "req-errored", [
+        { id: 1, event: { type: "user_message", text: "failed prompt", user: "dashboard" } },
+        { id: 2, event: { type: "session", session_id: "claude-session-xyz" } },
+        { id: 3, event: { type: "error", message: "Something went wrong" } },
+      ]);
+
+      const res = await fetch(
+        `http://localhost:${dashPort}/api/sessions/dashboard:req-errored/resume`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: "retry" }),
+        },
+      );
+
+      expect(res.status).toBe(201);
+      const data = await res.json();
+      expect(data.sessionKey).toBe("dashboard:req-errored");
+      expect(data.isResume).toBe(true);
+    });
+
+    it("result로 종료된 세션도 resume 가능", async () => {
+      createTestJsonl("dashboard", "req-result", [
+        { id: 1, event: { type: "user_message", text: "prompt", user: "dashboard" } },
+        { id: 2, event: { type: "session", session_id: "claude-session-result" } },
+        { id: 3, event: { type: "result", subtype: "success", result: "Done" } },
+      ]);
+
+      const res = await fetch(
+        `http://localhost:${dashPort}/api/sessions/dashboard:req-result/resume`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: "continue" }),
+        },
+      );
+
+      expect(res.status).toBe(201);
+      const data = await res.json();
+      expect(data.sessionKey).toBe("dashboard:req-result");
+      expect(data.isResume).toBe(true);
+    });
   });
 
   describe("POST /api/sessions/:id/intervene", () => {

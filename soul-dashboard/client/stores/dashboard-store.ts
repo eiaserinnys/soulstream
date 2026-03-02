@@ -331,9 +331,10 @@ export const useDashboardStore = create<DashboardState & DashboardActions>(
         resumeTargetKey: null,
       }),
 
+    // Resume: 기존 세션 상태를 유지하면서 compose 모드 진입
+    // (기존 cards, graphEvents, activeSession을 유지하여 이어서 표시)
     startResume: (sessionKey) =>
       set({
-        ...getSessionResetState(),
         isComposing: true,
         resumeTargetKey: sessionKey,
       }),

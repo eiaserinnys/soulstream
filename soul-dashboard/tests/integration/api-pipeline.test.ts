@@ -357,6 +357,92 @@ describe("API Pipeline Integration", () => {
       const data = await res.json();
       expect(data.error.code).toBe("SESSION_NOT_FOUND");
     });
+
+    it("resume 성공 시 원래 세션 JSONL에 user_message 추가", async () => {
+      // 1) 완료된 세션 생성
+      createTestJsonl("dashboard", "req-resume-persist", [
+        { id: 0, event: { type: "user_message", text: "original prompt", user: "dashboard" } },
+        { id: 1, event: { type: "session", session_id: "claude-sess-persist" } },
+        { id: 2, event: { type: "text_start", card_id: "c1" } },
+        { id: 3, event: { type: "text_end", card_id: "c1" } },
+        { id: 4, event: { type: "complete", result: "Done" } },
+      ]);
+
+      // 2) resume 호출
+      const res = await fetch(
+        `http://localhost:${dashPort}/api/sessions/dashboard:req-resume-persist/resume`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: "continue please" }),
+        },
+      );
+      expect(res.status).toBe(201);
+      const data = await res.json();
+      expect(data.isResume).toBe(true);
+
+      // 3) 원래 세션의 JSONL에 user_message가 추가되었는지 확인
+      const events = await ctx.sessionStore.readEvents("dashboard", "req-resume-persist");
+
+      // maxEventId (4) + 1 = 5 번 ID로 user_message가 추가되어야 함
+      const resumeUserMsg = events.find(
+        (e) => e.event.type === "user_message" && e.event.text === "continue please",
+      );
+      expect(resumeUserMsg).toBeDefined();
+      expect(resumeUserMsg!.id).toBe(5); // maxEventId(4) + 1
+      expect(resumeUserMsg!.event.user).toBe("dashboard");
+    });
+
+    it("resume 후 SSE 연결 시 원래 세션의 전체 이벤트(+resume user_message) 재생", async () => {
+      // 1) 완료된 세션 생성
+      createTestJsonl("dashboard", "req-resume-sse", [
+        { id: 0, event: { type: "user_message", text: "original prompt", user: "dashboard" } },
+        { id: 1, event: { type: "session", session_id: "claude-sess-sse" } },
+        { id: 2, event: { type: "complete", result: "Done" } },
+      ]);
+
+      // 2) resume 호출
+      const resumeRes = await fetch(
+        `http://localhost:${dashPort}/api/sessions/dashboard:req-resume-sse/resume`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: "continue" }),
+        },
+      );
+      expect(resumeRes.status).toBe(201);
+
+      // 3) SSE 연결하여 전체 이벤트 재생 확인
+      const sseRes = await fetch(
+        `http://localhost:${dashPort}/api/sessions/dashboard:req-resume-sse/events`,
+      );
+      expect(sseRes.ok).toBe(true);
+
+      const reader = sseRes.body!.getReader();
+      const decoder = new TextDecoder();
+      let collected = "";
+
+      const timeout = setTimeout(() => reader.cancel(), 2000);
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          collected += decoder.decode(value, { stream: true });
+          // resume user_message까지 받으면 중단
+          if (collected.includes('"text":"continue"')) break;
+        }
+      } catch { /* reader cancelled */ }
+      clearTimeout(timeout);
+
+      // 원래 user_message (original prompt)
+      expect(collected).toContain('"text":"original prompt"');
+      // session 이벤트
+      expect(collected).toContain('event: session');
+      // complete 이벤트
+      expect(collected).toContain('event: complete');
+      // resume user_message (continue)
+      expect(collected).toContain('"text":"continue"');
+    });
   });
 
   // === Soul 이벤트 저장 ===
