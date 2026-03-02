@@ -20,6 +20,7 @@ class SSEEventType(str, Enum):
     COMPLETE = "complete"
     ERROR = "error"
     # 세분화 이벤트 (dashboard용)
+    THINKING = "thinking"
     TEXT_START = "text_start"
     TEXT_DELTA = "text_delta"
     TEXT_END = "text_end"
@@ -199,9 +200,22 @@ class TaskInterveneRequest(BaseModel):
 
 # === 세분화 SSE Event Models (dashboard용) ===
 #
-# TextBlock(assistant 가시적 응답)을 "카드" 단위로 추상화합니다.
-# SDK의 TextBlock은 extended thinking(ThinkingBlock)이 아닌
-# assistant의 visible output 텍스트입니다.
+# ThinkingBlock(extended thinking)과 TextBlock(assistant 가시적 응답)을
+# "카드" 단위로 추상화합니다.
+
+
+class ThinkingSSEEvent(BaseModel):
+    """Extended Thinking 이벤트
+
+    Claude의 ThinkingBlock(extended thinking) 내용을 전달합니다.
+    thinking: 모델의 사고 과정 텍스트
+    signature: 사고 블록 서명 (무결성 검증용)
+    """
+    type: str = "thinking"
+    card_id: str = Field(..., description="사고 블록 단위 카드 ID")
+    thinking: str = Field(..., description="사고 과정 텍스트")
+    signature: str = Field(default="", description="사고 블록 서명")
+
 
 class TextStartSSEEvent(BaseModel):
     """텍스트 블록 시작 이벤트

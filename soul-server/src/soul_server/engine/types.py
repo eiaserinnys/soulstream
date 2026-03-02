@@ -51,16 +51,18 @@ class EngineEventType(Enum):
     """엔진 이벤트 타입
 
     Soul Dashboard가 구독하는 세분화 이벤트 종류.
+    THINKING: AssistantMessage의 ThinkingBlock (Extended Thinking)
     TEXT_DELTA: AssistantMessage의 TextBlock 텍스트 (모델의 가시적 응답)
     TOOL_*: 도구 호출 및 결과
     RESULT: 최종 결과 (성공/실패 포함)
 
     Note: SDK의 TextBlock은 assistant의 visible output입니다.
-    ThinkingBlock(extended thinking)과는 다릅니다.
+    ThinkingBlock(extended thinking)은 모델의 사고 과정을 담고 있습니다.
     어댑터 계층(engine_adapter)에서 TEXT_DELTA를
     text_start → text_delta → text_end 카드 시퀀스로 변환합니다.
     """
 
+    THINKING = "thinking"
     TEXT_DELTA = "text_delta"
     TOOL_START = "tool_start"
     TOOL_RESULT = "tool_result"
@@ -81,6 +83,7 @@ class EngineEvent:
     timestamp: float = field(default_factory=time.time)
 
     # data 스키마 (type별):
+    #   THINKING:    {"thinking": str, "signature": str}
     #   TEXT_DELTA:  {"text": str}
     #   TOOL_START:  {"tool_name": str, "tool_input": dict}
     #   TOOL_RESULT: {"tool_name": str, "result": Any, "is_error": bool}

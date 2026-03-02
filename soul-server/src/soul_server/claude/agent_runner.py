@@ -26,6 +26,7 @@ try:
         ResultMessage,
         SystemMessage,
         TextBlock,
+        ThinkingBlock,
         ToolResultBlock,
         ToolUseBlock,
         UserMessage,
@@ -55,6 +56,8 @@ except ImportError:
     class SystemMessage:
         pass
     class TextBlock:
+        pass
+    class ThinkingBlock:
         pass
     class ToolResultBlock:
         pass
@@ -906,7 +909,37 @@ class ClaudeRunner:
                 elif isinstance(message, AssistantMessage):
                     if hasattr(message, 'content'):
                         for block in message.content:
-                            if isinstance(block, TextBlock):
+                            # ThinkingBlock: Extended Thinking 처리
+                            if isinstance(block, ThinkingBlock):
+                                thinking_text = getattr(block, "thinking", "")
+                                signature = getattr(block, "signature", "")
+
+                                # thinking 내용이 있을 때만 처리
+                                if thinking_text:
+                                    logger.info(f"[THINKING] {len(thinking_text)} chars")
+                                    # truncate only if > 500 chars
+                                    thinking_preview = thinking_text[:500]
+                                    if len(thinking_text) > 500:
+                                        thinking_preview += "..."
+                                    msg_state.collected_messages.append({
+                                        "role": "assistant",
+                                        "content": f"[thinking] {thinking_preview}",
+                                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                                    })
+
+                                    if on_event:
+                                        try:
+                                            await on_event(EngineEvent(
+                                                type=EngineEventType.THINKING,
+                                                data={
+                                                    "thinking": thinking_text,
+                                                    "signature": signature,
+                                                },
+                                            ))
+                                        except Exception as e:
+                                            logger.warning(f"이벤트 콜백 오류 (THINKING): {e}")
+
+                            elif isinstance(block, TextBlock):
                                 msg_state.current_text = block.text
 
                                 msg_state.collected_messages.append({

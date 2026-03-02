@@ -40,6 +40,7 @@ from soul_server.models import (
     TextDeltaSSEEvent,
     TextEndSSEEvent,
     TextStartSSEEvent,
+    ThinkingSSEEvent,
     ToolResultSSEEvent,
     ToolStartSSEEvent,
 )
@@ -339,7 +340,27 @@ class SoulEngineAdapter:
             """
             sse_event = None  # 세렌디피티에 전달할 이벤트
 
-            if event.type == EngineEventType.TEXT_DELTA:
+            if event.type == EngineEventType.THINKING:
+                thinking = event.data.get("thinking", "")
+                signature = event.data.get("signature", "")
+                # ThinkingBlock = 하나의 카드
+                card_id = tracker.new_card()
+                sse_event = ThinkingSSEEvent(
+                    card_id=card_id,
+                    thinking=thinking,
+                    signature=signature,
+                )
+                await queue.put(sse_event)
+
+                # Serendipity에 전달
+                if serendipity_ctx and self._serendipity_adapter:
+                    try:
+                        await self._serendipity_adapter.on_event(serendipity_ctx, sse_event)
+                    except Exception as e:
+                        logger.warning(f"Serendipity thinking event failed: {e}")
+                return
+
+            elif event.type == EngineEventType.TEXT_DELTA:
                 text = event.data.get("text", "")
                 # TextBlock 전체 = 하나의 카드 (SDK는 청크 스트리밍 미지원)
                 card_id = tracker.new_card()

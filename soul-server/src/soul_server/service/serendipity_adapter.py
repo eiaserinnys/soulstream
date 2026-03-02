@@ -8,6 +8,7 @@ engine_adapter의 이벤트 훅에서 호출됩니다.
 | SSE Event | Block Type | 설명 |
 |-----------|------------|------|
 | prompt (최초) | soul:user | 사용자 프롬프트 |
+| ThinkingSSEEvent | soul:thinking | Extended Thinking |
 | TextDeltaSSEEvent | soul:assistant | Claude 응답 텍스트 |
 | ToolStartSSEEvent | soul:tool_use | 도구 호출 시작 |
 | ToolResultSSEEvent | soul:tool-result | 도구 실행 결과 |
@@ -50,6 +51,7 @@ from soul_server.models import (
     TextDeltaSSEEvent,
     TextEndSSEEvent,
     TextStartSSEEvent,
+    ThinkingSSEEvent,
     ToolResultSSEEvent,
     ToolStartSSEEvent,
 )
@@ -82,6 +84,7 @@ SOUL_SESSION_LABEL = "🤖 Soul Session"
 
 # 블록 타입
 BLOCK_TYPE_USER = "soul:user"
+BLOCK_TYPE_THINKING = "soul:thinking"    # Extended Thinking
 BLOCK_TYPE_ASSISTANT = "soul:assistant"  # Claude 응답 텍스트
 BLOCK_TYPE_TOOL_USE = "soul:tool_use"    # 도구 호출 시작
 BLOCK_TYPE_TOOL_RESULT = "soul:tool-result"
@@ -403,7 +406,9 @@ class SerendipityAdapter:
             self._collect_event_for_analyzer(ctx, event)
 
             # 이벤트 타입에 따라 분기
-            if isinstance(event, TextStartSSEEvent):
+            if isinstance(event, ThinkingSSEEvent):
+                await self._on_thinking(ctx, event)
+            elif isinstance(event, TextStartSSEEvent):
                 await self._on_text_start(ctx, event)
             elif isinstance(event, TextDeltaSSEEvent):
                 await self._on_text_delta(ctx, event)
@@ -465,6 +470,40 @@ class SerendipityAdapter:
                 ))
         except Exception as e:
             logger.warning(f"Failed to collect event for analyzer: {e}")
+
+    async def _on_thinking(self, ctx: SessionContext, event: ThinkingSSEEvent) -> None:
+        """Extended Thinking 블록 생성
+
+        ThinkingBlock의 사고 과정을 soul:thinking 블록으로 저장합니다.
+        """
+        if not event.thinking.strip():
+            return
+
+        client = await self._ensure_client()
+
+        # thinking 텍스트 접두사 추가
+        text = f"💭 Thinking\n\n{self._truncate_text(event.thinking, 3000)}"
+
+        content = create_soul_content(
+            text=text,
+            soul_metadata={
+                "nodeId": generate_key(),
+                "timestamp": self._iso_timestamp(),
+                "cardId": event.card_id,
+                "signature": event.signature,
+            },
+        )
+
+        block = await client.create_block(
+            page_id=ctx.page_id,
+            content=content,
+            block_type=BLOCK_TYPE_THINKING,
+            parent_id=ctx.user_block_id,
+            order=ctx.next_order(),
+        )
+
+        # 현재 응답 블록 ID 갱신 (후속 도구 호출의 부모)
+        ctx.current_response_block_id = block["id"]
 
     async def _on_text_start(self, ctx: SessionContext, event: TextStartSSEEvent) -> None:
         """텍스트 블록 시작: 버퍼 초기화"""

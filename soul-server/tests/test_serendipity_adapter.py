@@ -12,6 +12,7 @@ from soul_server.service.serendipity_adapter import (
     SerendipityAdapter,
     SessionContext,
     BLOCK_TYPE_USER,
+    BLOCK_TYPE_THINKING,   # Extended Thinking
     BLOCK_TYPE_ASSISTANT,  # Changed: soul:response → soul:assistant
     BLOCK_TYPE_TOOL_USE,   # Changed: soul:tool-call → soul:tool_use
     BLOCK_TYPE_TOOL_RESULT,
@@ -28,6 +29,7 @@ from soul_server.models import (
     TextStartSSEEvent,
     TextDeltaSSEEvent,
     TextEndSSEEvent,
+    ThinkingSSEEvent,
     ToolStartSSEEvent,
     ToolResultSSEEvent,
     InterventionSentEvent,
@@ -384,3 +386,86 @@ class TestTruncation:
         result = adapter._truncate_text(short_text, max_len=100)
 
         assert result == short_text
+
+
+class TestThinkingEvent:
+    """ThinkingSSEEvent 처리 테스트"""
+
+    @pytest.fixture
+    def mock_client(self):
+        """모킹된 AsyncSerendipityClient"""
+        client = AsyncMock()
+        client.create_page.return_value = {"id": "page-uuid", "title": "Test Page"}
+        client.create_block.return_value = {"id": "block-uuid"}
+        client.add_label.return_value = {"id": "label-uuid", "name": "test"}
+        client.update_page.return_value = {"id": "page-uuid", "title": "Updated"}
+        return client
+
+    @pytest.mark.asyncio
+    async def test_on_thinking_creates_block(self, mock_client):
+        """ThinkingSSEEvent를 올바르게 처리해야 함"""
+        adapter = SerendipityAdapter(enabled=True)
+        adapter._client = mock_client
+
+        ctx = SessionContext(
+            client_id="test",
+            request_id="req123",
+            page_id="page-uuid",
+            user_block_id="user-block-uuid",
+        )
+
+        event = ThinkingSSEEvent(
+            card_id="card1",
+            thinking="사용자 요청을 분석 중입니다...",
+            signature="sig123",
+        )
+        await adapter.on_event(ctx, event)
+
+        mock_client.create_block.assert_called_once()
+        call_args = mock_client.create_block.call_args
+        assert call_args.kwargs["block_type"] == BLOCK_TYPE_THINKING
+
+    @pytest.mark.asyncio
+    async def test_on_thinking_empty_text_skipped(self, mock_client):
+        """빈 thinking 텍스트는 블록을 생성하지 않아야 함"""
+        adapter = SerendipityAdapter(enabled=True)
+        adapter._client = mock_client
+
+        ctx = SessionContext(
+            client_id="test",
+            request_id="req123",
+            page_id="page-uuid",
+            user_block_id="user-block-uuid",
+        )
+
+        event = ThinkingSSEEvent(
+            card_id="card1",
+            thinking="   ",  # 공백만
+            signature="sig123",
+        )
+        await adapter.on_event(ctx, event)
+
+        mock_client.create_block.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_on_thinking_updates_response_block_id(self, mock_client):
+        """ThinkingSSEEvent 처리 후 current_response_block_id가 갱신되어야 함"""
+        adapter = SerendipityAdapter(enabled=True)
+        adapter._client = mock_client
+
+        ctx = SessionContext(
+            client_id="test",
+            request_id="req123",
+            page_id="page-uuid",
+            user_block_id="user-block-uuid",
+        )
+
+        event = ThinkingSSEEvent(
+            card_id="card1",
+            thinking="사고 과정...",
+            signature="sig123",
+        )
+        await adapter.on_event(ctx, event)
+
+        # create_block의 반환값이 current_response_block_id에 설정됨
+        assert ctx.current_response_block_id == "block-uuid"

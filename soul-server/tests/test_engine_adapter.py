@@ -1096,3 +1096,109 @@ class TestEngineEventConversion:
         assert len(result_events) == 1
         # tool_name=""이면 tracker.last_tool="Glob"으로 폴백
         assert result_events[0].tool_name == "Glob"
+
+
+# === ThinkingSSEEvent 테스트 ===
+
+class TestThinkingEvent:
+    """THINKING 이벤트 변환 테스트"""
+
+    async def test_thinking_produces_event(self):
+        """THINKING → ThinkingSSEEvent"""
+        from soul_server.models import ThinkingSSEEvent
+        from soul_server.engine.types import EngineEvent, EngineEventType
+
+        adapter = SoulEngineAdapter(workspace_dir="/test")
+
+        async def fake_run(prompt, session_id=None, on_progress=None,
+                           on_compact=None, on_intervention=None,
+                           on_session=None, on_event=None):
+            if on_event:
+                await on_event(EngineEvent(
+                    type=EngineEventType.THINKING,
+                    data={
+                        "thinking": "사용자가 무엇을 원하는지 분석 중...",
+                        "signature": "sig123",
+                    },
+                ))
+            return EngineResult(success=True, output="done")
+
+        with patch(
+            "soul_server.service.engine_adapter.ClaudeRunner"
+        ) as MockRunner:
+            instance = MockRunner.return_value
+            instance.run = fake_run
+            events = await collect_events(adapter, "test")
+
+        thinking_events = [e for e in events if isinstance(e, ThinkingSSEEvent)]
+        assert len(thinking_events) == 1
+        assert thinking_events[0].thinking == "사용자가 무엇을 원하는지 분석 중..."
+        assert thinking_events[0].signature == "sig123"
+        assert thinking_events[0].card_id is not None
+
+    async def test_thinking_gets_unique_card_id(self):
+        """각 THINKING 이벤트는 고유한 card_id를 가짐"""
+        from soul_server.models import ThinkingSSEEvent
+        from soul_server.engine.types import EngineEvent, EngineEventType
+
+        adapter = SoulEngineAdapter(workspace_dir="/test")
+
+        async def fake_run(prompt, session_id=None, on_progress=None,
+                           on_compact=None, on_intervention=None,
+                           on_session=None, on_event=None):
+            if on_event:
+                await on_event(EngineEvent(
+                    type=EngineEventType.THINKING,
+                    data={"thinking": "첫 번째 사고", "signature": "sig1"},
+                ))
+                await on_event(EngineEvent(
+                    type=EngineEventType.THINKING,
+                    data={"thinking": "두 번째 사고", "signature": "sig2"},
+                ))
+            return EngineResult(success=True, output="done")
+
+        with patch(
+            "soul_server.service.engine_adapter.ClaudeRunner"
+        ) as MockRunner:
+            instance = MockRunner.return_value
+            instance.run = fake_run
+            events = await collect_events(adapter, "test")
+
+        thinking_events = [e for e in events if isinstance(e, ThinkingSSEEvent)]
+        assert len(thinking_events) == 2
+        assert thinking_events[0].card_id != thinking_events[1].card_id
+
+    async def test_thinking_followed_by_tool_shares_card_id(self):
+        """THINKING 후 TOOL_START는 같은 card_id를 공유"""
+        from soul_server.models import ThinkingSSEEvent, ToolStartSSEEvent
+        from soul_server.engine.types import EngineEvent, EngineEventType
+
+        adapter = SoulEngineAdapter(workspace_dir="/test")
+
+        async def fake_run(prompt, session_id=None, on_progress=None,
+                           on_compact=None, on_intervention=None,
+                           on_session=None, on_event=None):
+            if on_event:
+                await on_event(EngineEvent(
+                    type=EngineEventType.THINKING,
+                    data={"thinking": "파일을 읽어야겠다", "signature": "sig"},
+                ))
+                await on_event(EngineEvent(
+                    type=EngineEventType.TOOL_START,
+                    data={"tool_name": "Read", "tool_input": {}},
+                ))
+            return EngineResult(success=True, output="done")
+
+        with patch(
+            "soul_server.service.engine_adapter.ClaudeRunner"
+        ) as MockRunner:
+            instance = MockRunner.return_value
+            instance.run = fake_run
+            events = await collect_events(adapter, "test")
+
+        thinking_events = [e for e in events if isinstance(e, ThinkingSSEEvent)]
+        tool_events = [e for e in events if isinstance(e, ToolStartSSEEvent)]
+        assert len(thinking_events) == 1
+        assert len(tool_events) == 1
+        # THINKING이 새 card_id를 생성하고, TOOL_START는 그 card_id를 참조
+        assert thinking_events[0].card_id == tool_events[0].card_id
