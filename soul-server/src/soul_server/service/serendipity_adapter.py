@@ -216,13 +216,6 @@ class SerendipityAdapter:
         """현재 시각을 ISO 8601 형식으로 반환"""
         return datetime.now(timezone.utc).isoformat()
 
-    @staticmethod
-    def _truncate_text(text: str, max_len: int = 5000) -> str:
-        """텍스트가 너무 길면 잘라냄"""
-        if len(text) > max_len:
-            return text[:max_len] + f"\n\n... (truncated, {len(text)} chars total)"
-        return text
-
     # ========== Session Lifecycle ==========
 
     async def start_session(

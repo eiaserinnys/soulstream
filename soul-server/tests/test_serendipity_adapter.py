@@ -375,31 +375,6 @@ class TestSerendipityAdapterEnabled:
         assert "❌" in call_args.args[1]
 
 
-class TestTruncation:
-    """텍스트 잘림 테스트 (분석기용 내부 메서드)"""
-
-    @pytest.mark.asyncio
-    async def test_truncate_long_text(self):
-        """긴 텍스트는 잘려야 함"""
-        adapter = SerendipityAdapter(base_url="http://test:4002", enabled=True)
-
-        long_text = "x" * 10000
-        truncated = adapter._truncate_text(long_text, max_len=100)
-
-        assert len(truncated) < len(long_text)
-        assert "truncated" in truncated
-
-    @pytest.mark.asyncio
-    async def test_short_text_not_truncated(self):
-        """짧은 텍스트는 잘리지 않아야 함"""
-        adapter = SerendipityAdapter(base_url="http://test:4002", enabled=True)
-
-        short_text = "Hello, World!"
-        result = adapter._truncate_text(short_text, max_len=100)
-
-        assert result == short_text
-
-
 class TestBaseUrlValidation:
     """base_url 검증 테스트"""
 
