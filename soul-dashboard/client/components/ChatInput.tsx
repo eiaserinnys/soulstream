@@ -17,7 +17,6 @@ const MAX_LENGTH = 50_000;
 export function ChatInput() {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const sessions = useDashboardStore((s) => s.sessions);
-  const setActiveSession = useDashboardStore((s) => s.setActiveSession);
 
   // 활성 세션의 상태
   const sessionStatus = useMemo(() => {
@@ -36,7 +35,6 @@ export function ChatInput() {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [lastSent, setLastSent] = useState<string | null>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -48,7 +46,6 @@ export function ChatInput() {
     setText("");
     setSending(false);
     setError(null);
-    setLastSent(null);
   }, [activeSessionKey]);
 
   // textarea 높이 자동 조절
@@ -119,7 +116,6 @@ export function ChatInput() {
         // 기존 그래프가 유지되고 새 이벤트가 자동으로 추가됨
         await response.json();
       }
-      setLastSent(trimmed);
       setText("");
     } catch (err) {
       // AbortError는 의도적 취소이므로 무시
@@ -128,7 +124,7 @@ export function ChatInput() {
     } finally {
       setSending(false);
     }
-  }, [activeSessionKey, text, sending, isFinished, setActiveSession]);
+  }, [activeSessionKey, text, sending, isFinished]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -207,12 +203,6 @@ export function ChatInput() {
         </div>
       )}
 
-      {/* Last sent confirmation */}
-      {lastSent && !error && (
-        <div className="text-[11px] text-success truncate">
-          Sent: {lastSent.length > 60 ? lastSent.slice(0, 57) + "..." : lastSent}
-        </div>
-      )}
     </div>
   );
 }

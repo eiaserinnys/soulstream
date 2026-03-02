@@ -16,7 +16,6 @@ export type GraphNodeType =
   | "thinking"
   | "tool_call"
   | "tool_result"
-  | "tool_group"
   | "response"
   | "system"
   | "intervention";
@@ -40,10 +39,8 @@ export interface GraphNodeData extends Record<string, unknown> {
   isPlanModeExit?: boolean;
   /** 전체 텍스트 (user/intervention 노드의 상세 뷰용) */
   fullContent?: string;
-  /** 도구 그룹 노드: 그룹에 포함된 카드 ID 목록 */
-  groupedCardIds?: string[];
-  /** 도구 그룹 노드: 그룹 내 도구 개수 */
-  groupCount?: number;
+  /** 도구 분류 배지 (Skill, Agent 등) */
+  toolCategory?: "skill" | "sub-agent";
 }
 
 export type GraphNode = Node<GraphNodeData>;
@@ -86,7 +83,6 @@ const NODE_DIMENSIONS: Record<GraphNodeType | "group", { width: number; height: 
   thinking: { width: 260, height: 84 },
   tool_call: { width: 260, height: 84 },
   tool_result: { width: 260, height: 84 },
-  tool_group: { width: 260, height: 84 },
   response: { width: 260, height: 84 },
   system: { width: 260, height: 84 },
   intervention: { width: 260, height: 84 },
@@ -280,6 +276,14 @@ function createTextNode(
   };
 }
 
+/** 도구 이름으로 카테고리를 판정합니다. */
+function getToolCategory(toolName?: string): "skill" | "sub-agent" | undefined {
+  if (!toolName) return undefined;
+  if (toolName === "Skill") return "skill";
+  if (toolName === "Agent" || toolName === "Task") return "sub-agent";
+  return undefined;
+}
+
 function createToolCallNode(
   treeNode: EventTreeNode,
   planFlags?: { isPlanMode?: boolean; isPlanModeEntry?: boolean; isPlanModeExit?: boolean },
@@ -299,6 +303,7 @@ function createToolCallNode(
       isPlanMode: planFlags?.isPlanMode,
       isPlanModeEntry: planFlags?.isPlanModeEntry,
       isPlanModeExit: planFlags?.isPlanModeExit,
+      toolCategory: getToolCategory(treeNode.toolName),
     },
   };
 }
@@ -439,49 +444,6 @@ function formatToolInput(input?: Record<string, unknown>): string {
   return parts.join("\n");
 }
 
-// === Tool Grouping ===
-
-interface ToolGroupInfo {
-  nodes: EventTreeNode[];
-  toolName: string;
-  count: number;
-}
-
-/**
- * text 노드의 tool 자식들을 그룹핑합니다.
- * 같은 toolName인 연속 tool 노드가 2개 이상이면 그룹화.
- */
-function groupToolChildren(toolChildren: EventTreeNode[]): {
-  groups: Map<string, ToolGroupInfo>;
-  skipIds: Set<string>;
-} {
-  const groups = new Map<string, ToolGroupInfo>();
-  const skipIds = new Set<string>();
-
-  // 같은 toolName별로 그룹핑
-  const byName = new Map<string, EventTreeNode[]>();
-  for (const tool of toolChildren) {
-    const name = tool.toolName ?? "unknown";
-    if (!byName.has(name)) byName.set(name, []);
-    byName.get(name)!.push(tool);
-  }
-
-  for (const [, toolNodes] of byName) {
-    if (toolNodes.length < 2) continue;
-    const representative = toolNodes[0];
-    groups.set(representative.id, {
-      nodes: toolNodes,
-      toolName: representative.toolName ?? "unknown",
-      count: toolNodes.length,
-    });
-    for (let i = 1; i < toolNodes.length; i++) {
-      skipIds.add(toolNodes[i].id);
-    }
-  }
-
-  return { groups, skipIds };
-}
-
 // === Main Build Function ===
 
 /**
@@ -494,7 +456,6 @@ function groupToolChildren(toolChildren: EventTreeNode[]): {
  */
 export function buildGraph(
   tree: EventTreeNode | null,
-  collapsedGroups?: Set<string>,
 ): { nodes: GraphNode[]; edges: GraphEdge[] } {
   const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
@@ -527,14 +488,6 @@ export function buildGraph(
 
   // 플랜 모드 감지
   const planMode = detectPlanModeRanges(tree);
-
-  // 서브 에이전트 감지
-  const subAgentGroups = detectSubAgents(tree);
-  if (collapsedGroups) {
-    for (const group of subAgentGroups) {
-      group.collapsed = collapsedGroups.has(group.groupId);
-    }
-  }
 
   // 메인 플로우 추적
   let prevMainFlowNodeId: string | null = null;
@@ -666,50 +619,10 @@ export function buildGraph(
     prevMainFlowNodeId = graphNode.id;
     lastThinkingNodeId = graphNode.id;
 
-    // text의 tool 자식들 처리
+    // text의 tool 자식들을 개별 처리 (그룹핑 없이)
     const toolChildren = textTreeNode.children.filter((c) => c.type === "tool");
-    if (toolChildren.length === 0) return;
-
-    // 도구 그룹핑
-    const { groups, skipIds } = groupToolChildren(toolChildren);
-
     for (const toolChild of toolChildren) {
-      if (skipIds.has(toolChild.id)) continue;
-
-      const groupInfo = groups.get(toolChild.id);
-      if (groupInfo) {
-        // 그룹 노드 생성
-        const toolGroupNode: GraphNode = {
-          id: `node-${toolChild.id}-group`,
-          type: "tool_group",
-          position: { x: 0, y: 0 },
-          data: {
-            nodeType: "tool_group",
-            cardId: toolChild.id,
-            label: `${groupInfo.toolName} ×${groupInfo.count}`,
-            content: `${groupInfo.count} calls`,
-            toolName: groupInfo.toolName,
-            streaming: groupInfo.nodes.some((n) => !n.completed),
-            groupedCardIds: groupInfo.nodes.map((n) => n.id),
-            groupCount: groupInfo.count,
-          },
-        };
-        nodes.push(toolGroupNode);
-
-        edges.push(
-          createEdge(graphNode.id, toolGroupNode.id, toolGroupNode.data.streaming, "right", "left"),
-        );
-
-        if (!toolBranches.has(graphNode.id)) {
-          toolBranches.set(graphNode.id, []);
-        }
-        toolBranches.get(graphNode.id)!.push({
-          callId: toolGroupNode.id,
-          resultId: undefined,
-        });
-      } else {
-        processToolNode(toolChild, graphNode.id);
-      }
+      processToolNode(toolChild, graphNode.id);
     }
   }
 
@@ -764,10 +677,7 @@ export function calcToolChainBounds(chain: ToolChainEntry[]): { width: number; h
   let totalHeight = 0;
 
   for (let i = 0; i < chain.length; i++) {
-    const isGroupNode = chain[i].callId.endsWith("-group");
-    const callDims = isGroupNode
-      ? getNodeDimensions("tool_group")
-      : getNodeDimensions("tool_call");
+    const callDims = getNodeDimensions("tool_call");
 
     let rowWidth = TOOL_BRANCH_H_GAP + callDims.width;
     let rowHeight = callDims.height;
@@ -891,10 +801,7 @@ export function applyDagreLayout(
 
       for (let i = 0; i < chain.length; i++) {
         const entry = chain[i];
-        const isGroupNode = entry.callId.endsWith("-group");
-        const callDims = isGroupNode
-          ? getNodeDimensions("tool_group")
-          : getNodeDimensions("tool_call");
+        const callDims = getNodeDimensions("tool_call");
 
         const callPos = { x: COL_B, y: toolY };
 

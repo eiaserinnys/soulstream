@@ -657,10 +657,10 @@ describe("buildGraph layout: tool nodes positioned to the right of thinking", ()
   });
 });
 
-// === 도구 그룹핑 테스트 ===
+// === 도구 개별 표시 테스트 ===
 
-describe("tool grouping", () => {
-  it("같은 toolName 5개 → 1개 tool_group 노드", () => {
+describe("individual tool nodes", () => {
+  it("같은 toolName 5개 → 5개 개별 tool_call 노드", () => {
     const tree = sessionRoot([
       userMsg("u1", "hi", [
         textNode("t1", "Thinking", true, [
@@ -674,32 +674,11 @@ describe("tool grouping", () => {
     ], "s1");
     const { nodes } = buildGraph(tree);
 
-    const groupNodes = nodes.filter((n) => n.type === "tool_group");
-    expect(groupNodes).toHaveLength(1);
-    expect(groupNodes[0].data.label).toContain("Read");
-    expect(groupNodes[0].data.label).toContain("5");
-    expect(groupNodes[0].data.groupedCardIds).toHaveLength(5);
-    expect(groupNodes[0].data.groupCount).toBe(5);
-
-    expect(nodes.filter((n) => n.type === "tool_call")).toHaveLength(0);
-    expect(nodes.filter((n) => n.type === "tool_result")).toHaveLength(0);
+    expect(nodes.filter((n) => n.type === "tool_call")).toHaveLength(5);
+    expect(nodes.filter((n) => n.type === "tool_result")).toHaveLength(5);
   });
 
-  it("1개 도구는 그룹화하지 않음", () => {
-    const tree = sessionRoot([
-      userMsg("u1", "hi", [
-        textNode("t1", "Thinking", true, [
-          toolNode("r1", "Read", { toolResult: "c1", completed: true }),
-        ]),
-      ]),
-    ], "s1");
-    const { nodes } = buildGraph(tree);
-
-    expect(nodes.filter((n) => n.type === "tool_group")).toHaveLength(0);
-    expect(nodes.filter((n) => n.type === "tool_call")).toHaveLength(1);
-  });
-
-  it("다른 toolName은 별도 그룹", () => {
+  it("다른 toolName 혼합 → 각각 개별 노드", () => {
     const tree = sessionRoot([
       userMsg("u1", "hi", [
         textNode("t1", "Thinking", true, [
@@ -713,25 +692,38 @@ describe("tool grouping", () => {
     ], "s1");
     const { nodes } = buildGraph(tree);
 
-    expect(nodes.filter((n) => n.type === "tool_group")).toHaveLength(2); // Read×2, Bash×2
-    expect(nodes.filter((n) => n.type === "tool_call")).toHaveLength(1); // Skill×1
+    expect(nodes.filter((n) => n.type === "tool_call")).toHaveLength(5);
+    expect(nodes.filter((n) => n.type === "tool_result")).toHaveLength(5);
   });
 
-  it("groupedCardIds가 원본 노드 ID를 모두 포함", () => {
+  it("Skill 도구는 toolCategory=skill 설정", () => {
     const tree = sessionRoot([
       userMsg("u1", "hi", [
         textNode("t1", "Thinking", true, [
-          toolNode("r1", "Read", { toolResult: "c1", completed: true }),
-          toolNode("r2", "Read", { toolResult: "c2", completed: true }),
-          toolNode("r3", "Read", { toolResult: "c3", completed: true }),
+          toolNode("s1", "Skill", { toolResult: "c1", completed: true }),
         ]),
       ]),
     ], "s1");
     const { nodes } = buildGraph(tree);
 
-    const groupNode = nodes.find((n) => n.type === "tool_group");
-    expect(groupNode).toBeDefined();
-    expect(groupNode!.data.groupedCardIds).toEqual(["r1", "r2", "r3"]);
+    const skillNode = nodes.find((n) => n.id === "node-s1-call");
+    expect(skillNode).toBeDefined();
+    expect(skillNode!.data.toolCategory).toBe("skill");
+  });
+
+  it("Task 도구는 toolCategory=sub-agent 설정", () => {
+    const tree = sessionRoot([
+      userMsg("u1", "hi", [
+        textNode("t1", "Thinking", true, [
+          toolNode("a1", "Task", { toolResult: "c1", completed: true }),
+        ]),
+      ]),
+    ], "s1");
+    const { nodes } = buildGraph(tree);
+
+    const agentNode = nodes.find((n) => n.id === "node-a1-call");
+    expect(agentNode).toBeDefined();
+    expect(agentNode!.data.toolCategory).toBe("sub-agent");
   });
 });
 
@@ -847,16 +839,13 @@ describe("calcToolChainBounds", () => {
     expect(bounds.height).toBe(expectedHeight);
   });
 
-  it("uses tool_group dimensions for group nodes", () => {
-    const groupWidth = getNodeDimensions("tool_group").width;
-    const groupHeight = getNodeDimensions("tool_group").height;
-
+  it("handles single tool_call without result", () => {
     const chain: ToolChainEntry[] = [
-      { callId: "node-t1-group" },
+      { callId: "node-t1" },
     ];
     const bounds = calcToolChainBounds(chain);
-    expect(bounds.width).toBe(TOOL_BRANCH_H_GAP + groupWidth);
-    expect(bounds.height).toBe(groupHeight);
+    expect(bounds.width).toBe(TOOL_BRANCH_H_GAP + callWidth);
+    expect(bounds.height).toBe(callHeight);
   });
 });
 

@@ -44,17 +44,11 @@ export interface DashboardState {
   /** 선택된 React Flow 노드 ID (tool_call/tool_result 구분용) */
   selectedNodeId: string | null;
 
-  /** 선택된 이벤트 노드 데이터 (user/intervention/tool_group 노드용, 카드 기반이 아닌 노드) */
+  /** 선택된 이벤트 노드 데이터 (user/intervention 노드용, 카드 기반이 아닌 노드) */
   selectedEventNodeData: {
     nodeType: string;
     label: string;
     content: string;
-    /** tool_group 노드: 그룹 내 카드 ID 목록 */
-    groupedCardIds?: string[];
-    /** tool_group 노드: 도구 이름 */
-    toolName?: string;
-    /** tool_group 노드: 그룹 내 도구 개수 */
-    groupCount?: number;
   } | null;
 
   /** 이벤트 트리 루트 (소스 오브 트루스) */
@@ -62,9 +56,6 @@ export interface DashboardState {
 
   /** 트리 변경 감지용 카운터 (mutable tree이므로 참조 비교 불가) */
   treeVersion: number;
-
-  /** 접힌 서브 에이전트 그룹 ID 집합 */
-  collapsedGroups: Set<string>;
 
   /** 마지막으로 수신한 이벤트 ID (SSE 재연결용) */
   lastEventId: number;
@@ -96,21 +87,15 @@ export interface DashboardActions {
   // 카드 선택 (nodeId: React Flow 노드의 고유 ID, tool_call/tool_result 구분에 사용)
   selectCard: (cardId: string | null, nodeId?: string | null) => void;
 
-  // 이벤트 노드 선택 (user/intervention/tool_group 등 카드가 아닌 노드)
+  // 이벤트 노드 선택 (user/intervention 등 카드가 아닌 노드)
   selectEventNode: (data: {
     nodeType: string;
     label: string;
     content: string;
-    groupedCardIds?: string[];
-    toolName?: string;
-    groupCount?: number;
   } | null) => void;
 
   // SSE 이벤트 처리
   processEvent: (event: SoulSSEEvent, eventId: number) => void;
-
-  // 서브 에이전트 그룹 접기/펼치기
-  toggleGroupCollapse: (groupId: string) => void;
 
   // 세션 생성/재개
   startCompose: () => void;
@@ -186,7 +171,6 @@ const initialState: DashboardState = {
   selectedEventNodeData: null,
   tree: null,
   treeVersion: 0,
-  collapsedGroups: new Set<string>(),
   lastEventId: 0,
   pendingNotifications: [],
   isComposing: true,
@@ -203,8 +187,7 @@ function getSessionResetState() {
     selectedEventNodeData: null as DashboardState["selectedEventNodeData"],
     tree: null as EventTreeNode | null,
     treeVersion: 0,
-    collapsedGroups: new Set<string>(),
-    lastEventId: 0,
+      lastEventId: 0,
     pendingNotifications: [] as SoulSSEEvent[],
   };
 }
@@ -229,8 +212,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           activeSession: null,
           tree: null,
           treeVersion: 0,
-          collapsedGroups: new Set<string>(),
-          lastEventId: 0,
+                  lastEventId: 0,
           pendingNotifications: [],
           selectedCardId: null,
           selectedNodeId: null,
@@ -507,19 +489,6 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         }
       },
 
-      // --- 서브 에이전트 그룹 ---
-
-      toggleGroupCollapse: (groupId) => {
-        const current = get().collapsedGroups;
-        const next = new Set(current);
-        if (next.has(groupId)) {
-          next.delete(groupId);
-        } else {
-          next.add(groupId);
-        }
-        set({ collapsedGroups: next });
-      },
-
       // --- 세션 생성/재개 ---
 
       startCompose: () => {
@@ -551,8 +520,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         set({
           tree: null,
           treeVersion: 0,
-          collapsedGroups: new Set<string>(),
-          lastEventId: 0,
+                  lastEventId: 0,
           pendingNotifications: [],
           selectedCardId: null,
           selectedNodeId: null,

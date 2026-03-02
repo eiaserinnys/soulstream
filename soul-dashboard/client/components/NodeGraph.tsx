@@ -6,11 +6,12 @@
  * 스트리밍 실시간 업데이트와 서브에이전트 중첩 구조를 지원합니다.
  */
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ReactFlow,
   Background,
   Controls,
+  Panel,
   useNodesState,
   useEdgesState,
   useReactFlow,
@@ -28,6 +29,7 @@ import {
   type GraphNode,
   type GraphEdge,
 } from "../lib/layout-engine";
+import { cn } from "../lib/cn";
 
 /** 그래프 재구성 디바운스 간격 (ms) - 고빈도 text_delta 이벤트 대응 */
 const REBUILD_DEBOUNCE_MS = 100;
@@ -96,7 +98,6 @@ function calcPanToNode(
 function NodeGraphInner() {
   const tree = useDashboardStore((s) => s.tree);
   const treeVersion = useDashboardStore((s) => s.treeVersion);
-  const collapsedGroups = useDashboardStore((s) => s.collapsedGroups);
   const selectedCardId = useDashboardStore((s) => s.selectedCardId);
   const selectedNodeId = useDashboardStore((s) => s.selectedNodeId);
   const selectCard = useDashboardStore((s) => s.selectCard);
@@ -116,6 +117,51 @@ function NodeGraphInner() {
   const selectedNodeIdRef = useRef(selectedNodeId);
   selectedCardIdRef.current = selectedCardId;
   selectedNodeIdRef.current = selectedNodeId;
+
+  // 자동 스크롤 상태 (기본 ON)
+  const [autoScroll, setAutoScroll] = useState(true);
+  // 프로그래밍적 뷰포트 이동을 구분하기 위한 플래그
+  const isProgrammaticMoveRef = useRef(false);
+  // 현재 그래프의 마지막 노드 참조 (토글 ON 시 즉시 이동용)
+  const lastNodeRef = useRef<GraphNode | null>(null);
+
+  // 세션 변경 시 auto-scroll 리셋
+  useEffect(() => {
+    setAutoScroll(true);
+  }, [activeSessionKey]);
+
+  // 사용자 수동 이동 감지 → auto-scroll OFF
+  const onMoveEnd = useCallback(
+    (event: MouseEvent | TouchEvent | null) => {
+      // event가 null이면 프로그래밍적 이동
+      if (event && !isProgrammaticMoveRef.current) {
+        setAutoScroll(false);
+      }
+      isProgrammaticMoveRef.current = false;
+    },
+    [],
+  );
+
+  // auto-scroll 토글 ON → 즉시 마지막 노드로 이동
+  const handleToggleAutoScroll = useCallback(() => {
+    setAutoScroll((prev) => {
+      const next = !prev;
+      if (next && lastNodeRef.current) {
+        const { width: vpW, height: vpH } = store.getState();
+        if (vpW === 0 || vpH === 0) return next;
+        const viewport = getViewport();
+        const { dx, dy } = calcPanToNode(lastNodeRef.current, viewport, vpW, vpH);
+        if (dx !== 0 || dy !== 0) {
+          isProgrammaticMoveRef.current = true;
+          setViewport(
+            { x: viewport.x + dx, y: viewport.y + dy, zoom: viewport.zoom },
+            { duration: 300 },
+          );
+        }
+      }
+      return next;
+    });
+  }, [getViewport, setViewport, store]);
 
   // 트리/이벤트가 변경되면 그래프 재구성 (디바운스 적용)
   useEffect(() => {
@@ -137,10 +183,7 @@ function NodeGraphInner() {
     let rafId: number | undefined;
 
     const timer = setTimeout(() => {
-      const { nodes: newNodes, edges: newEdges } = buildGraph(
-        tree,
-        collapsedGroups,
-      );
+      const { nodes: newNodes, edges: newEdges } = buildGraph(tree);
 
       const curSelectedNodeId = selectedNodeIdRef.current;
       const curSelectedCardId = selectedCardIdRef.current;
@@ -160,6 +203,11 @@ function NodeGraphInner() {
       );
       prevNodeIdsRef.current = currentIds;
 
+      // 마지막 노드 참조 갱신
+      if (nodesWithSelection.length > 0) {
+        lastNodeRef.current = nodesWithSelection[nodesWithSelection.length - 1];
+      }
+
       if (addedNodes.length > 0) {
         const isFirstLoad = !hasInitializedRef.current;
 
@@ -170,42 +218,21 @@ function NodeGraphInner() {
           if (isFirstLoad) {
             hasInitializedRef.current = true;
 
-            let minX = Infinity;
-            let minY = Infinity;
-            let maxX = -Infinity;
-            let maxY = -Infinity;
-            for (const n of nodesWithSelection) {
-              const d = getNodeDimensions(n.data.nodeType);
-              minX = Math.min(minX, n.position.x);
-              minY = Math.min(minY, n.position.y);
-              maxX = Math.max(maxX, n.position.x + d.width);
-              maxY = Math.max(maxY, n.position.y + d.height);
-            }
+            // 초기 로드: 줌은 FIXED_ZOOM 고정, 마지막 노드가 보이도록 pan
+            const targetNode = nodesWithSelection[nodesWithSelection.length - 1];
+            const viewport = { x: 0, y: 0, zoom: FIXED_ZOOM };
+            const { dx, dy } = calcPanToNode(targetNode, viewport, vpW, vpH);
 
-            const graphW = maxX - minX;
-            const graphH = maxY - minY;
-            const INIT_PADDING = 0.15;
-            let zoom = FIXED_ZOOM;
-            if (graphW > 0 && graphH > 0) {
-              const fitZoomX = vpW / (graphW * (1 + INIT_PADDING));
-              const fitZoomY = vpH / (graphH * (1 + INIT_PADDING));
-              zoom = Math.min(fitZoomX, fitZoomY, FIXED_ZOOM);
-              zoom = Math.max(zoom, MIN_ZOOM);
-            }
-
-            const centerX = (minX + maxX) / 2;
-            const centerY = (minY + maxY) / 2;
-
+            isProgrammaticMoveRef.current = true;
             setViewport(
-              {
-                x: vpW / 2 - centerX * zoom,
-                y: vpH / 2 - centerY * zoom,
-                zoom,
-              },
+              { x: viewport.x + dx, y: viewport.y + dy, zoom: FIXED_ZOOM },
               { duration: 300 },
             );
             return;
           }
+
+          // 스트리밍 중 auto-scroll이 OFF면 pan 하지 않음
+          if (!autoScroll) return;
 
           hasInitializedRef.current = true;
 
@@ -215,6 +242,7 @@ function NodeGraphInner() {
 
           if (dx === 0 && dy === 0) return;
 
+          isProgrammaticMoveRef.current = true;
           setViewport(
             { x: viewport.x + dx, y: viewport.y + dy, zoom: viewport.zoom },
             { duration: 300 },
@@ -230,8 +258,8 @@ function NodeGraphInner() {
   }, [
     treeVersion,
     tree,
-    collapsedGroups,
     activeSessionKey,
+    autoScroll,
     setNodes,
     setEdges,
     getViewport,
@@ -257,18 +285,6 @@ function NodeGraphInner() {
       if (selectedNodes.length === 1) {
         const nodeData = selectedNodes[0].data;
         const nodeType = nodeData?.nodeType as string | undefined;
-
-        if (nodeType === "tool_group") {
-          selectEventNode({
-            nodeType,
-            label: (nodeData?.label as string) ?? "",
-            content: (nodeData?.content as string) ?? "",
-            groupedCardIds: (nodeData?.groupedCardIds as string[]) ?? [],
-            toolName: (nodeData?.toolName as string) ?? undefined,
-            groupCount: (nodeData?.groupCount as number) ?? undefined,
-          });
-          return;
-        }
 
         const cardId = nodeData?.cardId as string | undefined;
         if (cardId) {
@@ -317,7 +333,9 @@ function NodeGraphInner() {
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
       onSelectionChange={onSelectionChange}
+      onMoveEnd={onMoveEnd}
       nodeTypes={nodeTypes}
+      nodesDraggable={false}
       defaultViewport={{ x: 0, y: 0, zoom: FIXED_ZOOM }}
       minZoom={MIN_ZOOM}
       maxZoom={2}
@@ -338,6 +356,29 @@ function NodeGraphInner() {
           boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
         }}
       />
+      {/* Auto-scroll 토글 */}
+      <Panel position="bottom-right">
+        <button
+          onClick={handleToggleAutoScroll}
+          className={cn(
+            "flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-colors",
+            "border shadow-md",
+            autoScroll
+              ? "bg-accent-blue/15 border-accent-blue/30 text-accent-blue hover:bg-accent-blue/25"
+              : "bg-popover border-border text-muted-foreground hover:bg-input",
+          )}
+          title={autoScroll ? "Auto-scroll ON — click to disable" : "Auto-scroll OFF — click to follow latest node"}
+        >
+          <span className="text-xs">{autoScroll ? "\u{2193}" : "\u{21E3}"}</span>
+          {autoScroll ? "Follow" : "Follow"}
+          <span
+            className={cn(
+              "w-1.5 h-1.5 rounded-full",
+              autoScroll ? "bg-accent-blue" : "bg-muted-foreground/40",
+            )}
+          />
+        </button>
+      </Panel>
     </ReactFlow>
   );
 }

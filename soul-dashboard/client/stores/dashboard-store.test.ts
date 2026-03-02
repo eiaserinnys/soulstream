@@ -492,22 +492,16 @@ describe("dashboard-store", () => {
       expect(state.selectedNodeId).toBeNull();
     });
 
-    it("should handle tool_group node data with groupedCardIds", () => {
-      const toolGroupData = {
-        nodeType: "tool_group",
-        label: "Bash x3",
-        content: "3 tool calls",
-        groupedCardIds: ["tool-1", "tool-2", "tool-3"],
-        toolName: "Bash",
-        groupCount: 3,
+    it("should handle intervention node data", () => {
+      const interventionData = {
+        nodeType: "intervention",
+        label: "Operator",
+        content: "Please stop",
       };
-      useDashboardStore.getState().selectEventNode(toolGroupData);
+      useDashboardStore.getState().selectEventNode(interventionData);
 
       const state = useDashboardStore.getState();
-      expect(state.selectedEventNodeData).toEqual(toolGroupData);
-      expect(state.selectedEventNodeData?.groupedCardIds).toHaveLength(3);
-      expect(state.selectedEventNodeData?.toolName).toBe("Bash");
-      expect(state.selectedEventNodeData?.groupCount).toBe(3);
+      expect(state.selectedEventNodeData).toEqual(interventionData);
     });
 
     it("should clear selectedEventNodeData when set to null", () => {
@@ -523,37 +517,6 @@ describe("dashboard-store", () => {
     });
   });
 
-  // === 그룹 접기/펼치기 ===
-
-  describe("toggleGroupCollapse", () => {
-    it("should add groupId to collapsedGroups when not present", () => {
-      useDashboardStore.getState().toggleGroupCollapse("group-1");
-      expect(useDashboardStore.getState().collapsedGroups.has("group-1")).toBe(true);
-    });
-
-    it("should remove groupId from collapsedGroups when already present", () => {
-      useDashboardStore.getState().toggleGroupCollapse("group-1");
-      expect(useDashboardStore.getState().collapsedGroups.has("group-1")).toBe(true);
-
-      useDashboardStore.getState().toggleGroupCollapse("group-1");
-      expect(useDashboardStore.getState().collapsedGroups.has("group-1")).toBe(false);
-    });
-
-    it("should handle multiple groups independently", () => {
-      const { toggleGroupCollapse } = useDashboardStore.getState();
-      toggleGroupCollapse("group-a");
-      toggleGroupCollapse("group-b");
-
-      const collapsed = useDashboardStore.getState().collapsedGroups;
-      expect(collapsed.has("group-a")).toBe(true);
-      expect(collapsed.has("group-b")).toBe(true);
-
-      useDashboardStore.getState().toggleGroupCollapse("group-a");
-      const updated = useDashboardStore.getState().collapsedGroups;
-      expect(updated.has("group-a")).toBe(false);
-      expect(updated.has("group-b")).toBe(true);
-    });
-  });
 
   // === 세션 생성/재개 ===
 
@@ -661,7 +624,7 @@ describe("dashboard-store", () => {
 
   describe("clearTree", () => {
     it("should clear tree and related state", () => {
-      const { processEvent, selectCard, toggleGroupCollapse } =
+      const { processEvent, selectCard } =
         useDashboardStore.getState();
 
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
@@ -674,7 +637,6 @@ describe("dashboard-store", () => {
         label: "msg",
         content: "hello",
       });
-      toggleGroupCollapse("group-1");
 
       expect(useDashboardStore.getState().tree).not.toBeNull();
       expect(useDashboardStore.getState().lastEventId).toBeGreaterThan(0);
@@ -684,7 +646,6 @@ describe("dashboard-store", () => {
 
       expect(state.tree).toBeNull();
       expect(state.treeVersion).toBe(0);
-      expect(state.collapsedGroups.size).toBe(0);
       expect(state.lastEventId).toBe(0);
       expect(state.selectedCardId).toBeNull();
       expect(state.selectedNodeId).toBeNull();

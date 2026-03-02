@@ -24,14 +24,24 @@ function truncateInput(input?: Record<string, unknown>): string {
   return str.slice(0, 77) + '...';
 }
 
+/** 도구 카테고리별 설정 */
+const CATEGORY_CONFIG: Record<string, { label: string; color: string; icon: string }> = {
+  skill: { label: "SKILL", color: "#a855f7", icon: "\u{2728}" },
+  "sub-agent": { label: "AGENT", color: "#06b6d4", icon: "\u{1F916}" },
+};
+
 export const ToolCallNode = memo(function ToolCallNode({ data, selected }: NodeProps<ToolCallNodeType>) {
   const isStreaming = data.streaming;
   const isPlanEntry = data.isPlanModeEntry;
   const isPlanExit = data.isPlanModeExit;
   const isPlanMode = data.isPlanMode;
+  const category = data.toolCategory;
+  const categoryConfig = category ? CATEGORY_CONFIG[category] : undefined;
 
   // 플랜 모드 진입/종료 노드는 시안 계열로 시각적 구분
-  const accentColor = (isPlanEntry || isPlanExit) ? PLAN_ACCENT : ACCENT;
+  const accentColor = (isPlanEntry || isPlanExit)
+    ? PLAN_ACCENT
+    : categoryConfig?.color ?? ACCENT;
 
   return (
     <div
@@ -59,7 +69,7 @@ export const ToolCallNode = memo(function ToolCallNode({ data, selected }: NodeP
         {/* Header row */}
         <div className={nodeHeader}>
           <span className="text-sm shrink-0">
-            {isPlanEntry ? '\u{1F4CB}' : isPlanExit ? '\u{2705}' : '\u{1F527}'}
+            {isPlanEntry ? '\u{1F4CB}' : isPlanExit ? '\u{2705}' : categoryConfig?.icon ?? '\u{1F527}'}
           </span>
           <span className={cn(
             nodeLabel,
@@ -67,12 +77,21 @@ export const ToolCallNode = memo(function ToolCallNode({ data, selected }: NodeP
           )}>
             {isPlanEntry ? 'Plan Mode' : isPlanExit ? 'Plan Exit' : 'Tool Call'}
           </span>
+          {/* 카테고리 배지 (SKILL / AGENT) */}
+          {categoryConfig && !isPlanEntry && !isPlanExit && (
+            <span
+              className="text-[9px] font-bold px-[5px] py-px rounded-[3px]"
+              style={{ color: categoryConfig.color, backgroundColor: `${categoryConfig.color}20` }}
+            >
+              {categoryConfig.label}
+            </span>
+          )}
           {isStreaming && (
             <span className="ml-auto text-[10px] font-medium" style={{ color: accentColor }}>
               running...
             </span>
           )}
-          {isPlanMode && !isPlanEntry && !isPlanExit && (
+          {isPlanMode && !isPlanEntry && !isPlanExit && !categoryConfig && (
             <span className="ml-auto text-[9px] text-accent-cyan font-medium px-[5px] py-px rounded-[3px] bg-accent-cyan/12">
               PLAN
             </span>
