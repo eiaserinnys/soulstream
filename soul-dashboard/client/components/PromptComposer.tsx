@@ -10,6 +10,7 @@ import { useDashboardStore } from "../stores/dashboard-store";
 import { getAuthHeaders, AuthTokenRequiredError } from "../lib/api-headers";
 import { cn } from "../lib/cn";
 import { Button } from "./ui/button";
+import type { CreateSessionResponse } from "@shared/types";
 
 /** Soul 서버의 MAX_PROMPT_LENGTH과 일치 (세션 생성 프롬프트의 최대 길이) */
 const MAX_LENGTH = 100_000;
@@ -53,28 +54,18 @@ export function PromptComposer() {
     setError(null);
 
     try {
-      let response: Response;
-
       const headers = await getAuthHeaders();
 
-      if (resumeTargetKey) {
-        // Resume: POST /api/sessions/:id/resume
-        response = await fetch(
-          `/api/sessions/${encodeURIComponent(resumeTargetKey)}/resume`,
-          {
-            method: "POST",
-            headers,
-            body: JSON.stringify({ prompt: trimmed }),
-          },
-        );
-      } else {
-        // Create: POST /api/sessions
-        response = await fetch("/api/sessions", {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ prompt: trimmed }),
-        });
-      }
+      // Create & Resume 모두 POST /api/sessions 단일 엔드포인트 사용
+      // Resume 시 agentSessionId를 전달하여 기존 세션 ID 재사용
+      const response = await fetch("/api/sessions", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          prompt: trimmed,
+          ...(resumeTargetKey ? { agentSessionId: resumeTargetKey } : {}),
+        }),
+      });
 
       if (!response.ok) {
         const body = await response
@@ -83,7 +74,7 @@ export function PromptComposer() {
         throw new Error(body.error?.message ?? `HTTP ${response.status}`);
       }
 
-      const result = await response.json();
+      const result: CreateSessionResponse = await response.json();
 
       // 세션 생성 성공 → composing 종료, 활성 세션 전환
       cancelCompose();

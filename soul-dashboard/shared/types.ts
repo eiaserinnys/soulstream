@@ -275,18 +275,38 @@ export interface DashboardCard {
 
 // === API Request/Response ===
 
-/** POST /api/sessions 요청 (대시보드에서 세션 생성) */
+/** POST /api/sessions 요청 (대시보드에서 세션 생성 또는 resume) */
 export interface CreateSessionRequest {
   prompt: string;
   clientId?: string;
   resumeSessionId?: string;
+  /** resume 시 기존 세션 ID 재사용. 지정하면 새 ID를 생성하지 않음. */
+  agentSessionId?: string;
 }
 
-/** POST /api/sessions/:id/message 요청 */
+/** POST /api/sessions 응답 */
+export interface CreateSessionResponse {
+  agentSessionId: string;
+  status: "running";
+}
+
+/** POST /api/sessions/:id/intervene 요청 */
 export interface SendMessageRequest {
   text: string;
   user: string;
   attachmentPaths?: string[];
+}
+
+/** POST /api/sessions/:id/intervene 응답 */
+export interface InterveneResponse {
+  queue_position?: number;
+  auto_resumed?: boolean;
+  task_key?: string;
+}
+
+/** GET /api/sessions 응답 */
+export interface SessionListResponse {
+  sessions: SessionSummary[];
 }
 
 /** 공통 API 에러 응답 */

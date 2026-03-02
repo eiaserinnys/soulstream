@@ -1,11 +1,10 @@
 /**
- * Soul Dashboard E2E 테스트 (Playwright)
+ * Soul Dashboard E2E 테스트 (Playwright) — API 계약 검증
  *
- * 브라우저에서 실제 대시보드를 로드하고 인터랙션을 검증합니다.
- * 모의 Express 서버를 beforeAll에서 한 번 시작하고 전체 테스트에서 공유합니다.
+ * Mock Express 서버를 시작하여 API 응답 형식을 검증합니다.
+ * 서버-클라이언트 간 응답 타입의 일관성을 보장합니다.
  *
- * 로컬 실행: cd src/soul-dashboard && npx playwright test --config=playwright.config.ts
- * CI 실행: webServer 설정 활성화 후 자동 시작
+ * 실행: cd soul-dashboard && npx playwright test dashboard --config=playwright.config.ts
  */
 
 import { test, expect } from "@playwright/test";
@@ -14,6 +13,12 @@ import { join } from "path";
 import { tmpdir } from "os";
 import express from "express";
 import { createServer, type Server } from "http";
+import type {
+  CreateSessionResponse,
+  InterveneResponse,
+  SessionListResponse,
+  SessionSummary,
+} from "../shared/types.js";
 
 // === Test Fixtures ===
 
@@ -26,32 +31,56 @@ let testPort = 0;
 
 /**
  * 테스트용 Express 서버를 시작합니다.
- * 실제 서버 인프라를 사용하지 않고 정적 HTML + 모의 API를 제공합니다.
+ * 실제 서버와 동일한 응답 형식을 반환하는 mock API를 제공합니다.
  */
 async function startMockDashboardServer(): Promise<number> {
   const app = express();
   app.use(express.json());
 
-  // 모의 세션 목록 API
+  // 모의 세션 목록 API — SessionListResponse 형식
   app.get("/api/sessions", (_req, res) => {
-    res.json({
+    const response: SessionListResponse = {
       sessions: [
         {
-          clientId: "bot",
-          requestId: "e2e-test-1",
+          agentSessionId: "sess-e2e-001",
           status: "completed",
           eventCount: 5,
           createdAt: new Date().toISOString(),
+          prompt: "첫 번째 테스트 세션",
         },
         {
-          clientId: "dashboard",
-          requestId: "e2e-test-2",
+          agentSessionId: "sess-e2e-002",
           status: "running",
           eventCount: 3,
           createdAt: new Date().toISOString(),
+          prompt: "두 번째 테스트 세션",
         },
       ],
-    });
+    };
+    res.json(response);
+  });
+
+  // 모의 세션 생성 API — CreateSessionResponse 형식
+  app.post("/api/sessions", (_req, res) => {
+    const response: CreateSessionResponse = {
+      agentSessionId: "sess-e2e-new-001",
+      status: "running",
+    };
+    res.status(201).json(response);
+  });
+
+  // 모의 Intervention API — InterveneResponse 형식
+  app.post("/api/sessions/:id/intervene", (_req, res) => {
+    const response: InterveneResponse = {
+      queue_position: 1,
+    };
+    res.json(response);
+  });
+  app.post("/api/sessions/:id/message", (_req, res) => {
+    const response: InterveneResponse = {
+      queue_position: 1,
+    };
+    res.json(response);
   });
 
   // 모의 Health check
@@ -67,28 +96,56 @@ async function startMockDashboardServer(): Promise<number> {
       Connection: "keep-alive",
     });
     res.write("event: connected\ndata: {}\n\n");
-    // 간단한 이벤트 시퀀스 전송
-    setTimeout(() => {
-      res.write(
-        'id: 1\nevent: text_start\ndata: {"type":"text_start","card_id":"c1"}\n\n',
-      );
-    }, 100);
-    setTimeout(() => {
-      res.write(
-        'id: 2\nevent: text_delta\ndata: {"type":"text_delta","card_id":"c1","text":"Hello from E2E test"}\n\n',
-      );
-    }, 200);
-    setTimeout(() => {
-      res.write(
-        'id: 3\nevent: text_end\ndata: {"type":"text_end","card_id":"c1"}\n\n',
-      );
-    }, 300);
-    setTimeout(() => {
-      res.write(
-        'id: 4\nevent: complete\ndata: {"type":"complete","result":"Done","attachments":[]}\n\n',
-      );
-      res.end();
-    }, 400);
+
+    const timers: NodeJS.Timeout[] = [];
+    res.on("close", () => timers.forEach(clearTimeout));
+
+    timers.push(
+      setTimeout(() => {
+        if (!res.writableEnded) {
+          res.write(
+            'id: 1\nevent: user_message\ndata: {"type":"user_message","user":"dashboard","text":"Hello"}\n\n',
+          );
+        }
+      }, 50),
+    );
+    timers.push(
+      setTimeout(() => {
+        if (!res.writableEnded) {
+          res.write(
+            'id: 2\nevent: text_start\ndata: {"type":"text_start","card_id":"c1"}\n\n',
+          );
+        }
+      }, 100),
+    );
+    timers.push(
+      setTimeout(() => {
+        if (!res.writableEnded) {
+          res.write(
+            'id: 3\nevent: text_delta\ndata: {"type":"text_delta","card_id":"c1","text":"Hello from E2E test"}\n\n',
+          );
+        }
+      }, 200),
+    );
+    timers.push(
+      setTimeout(() => {
+        if (!res.writableEnded) {
+          res.write(
+            'id: 4\nevent: text_end\ndata: {"type":"text_end","card_id":"c1"}\n\n',
+          );
+        }
+      }, 300),
+    );
+    timers.push(
+      setTimeout(() => {
+        if (!res.writableEnded) {
+          res.write(
+            'id: 5\nevent: complete\ndata: {"type":"complete","result":"Done","attachments":[]}\n\n',
+          );
+          res.end();
+        }
+      }, 400),
+    );
   });
 
   return new Promise((resolve) => {
@@ -104,10 +161,7 @@ async function startMockDashboardServer(): Promise<number> {
 
 // === Playwright Tests ===
 
-test.describe("Soul Dashboard E2E", () => {
-  // 모의 API 서버를 한 번 시작하고 전체 테스트에서 공유합니다.
-  // 실제 대시보드 UI 테스트는 webServer 설정 활성화 후 추가할 수 있습니다.
-
+test.describe("Soul Dashboard API 계약 E2E", () => {
   test.beforeAll(async () => {
     mkdirSync(TEST_DIR, { recursive: true });
     await startMockDashboardServer();
@@ -131,31 +185,95 @@ test.describe("Soul Dashboard E2E", () => {
     expect(body.service).toBe("soul-dashboard");
   });
 
-  test("세션 목록 API가 올바른 형식을 반환한다", async ({ request }) => {
+  test("GET /api/sessions — SessionListResponse 계약", async ({ request }) => {
     const res = await request.get(
       `http://localhost:${testPort}/api/sessions`,
     );
     expect(res.ok()).toBe(true);
-    const body = await res.json();
+    const body: SessionListResponse = await res.json();
+
+    // sessions 배열 존재
     expect(body.sessions).toHaveLength(2);
-    expect(body.sessions[0]).toHaveProperty("clientId");
-    expect(body.sessions[0]).toHaveProperty("requestId");
-    expect(body.sessions[0]).toHaveProperty("status");
-    expect(body.sessions[0]).toHaveProperty("eventCount");
+
+    // SessionSummary 필수 필드: agentSessionId
+    const session = body.sessions[0];
+    expect(session).toHaveProperty("agentSessionId");
+    expect(typeof session.agentSessionId).toBe("string");
+    expect(session.agentSessionId).toBeTruthy();
+
+    // 구버전 필드가 없어야 함
+    expect(session).not.toHaveProperty("clientId");
+    expect(session).not.toHaveProperty("requestId");
+    expect(session).not.toHaveProperty("sessionKey");
+
+    // 나머지 필수 필드
+    expect(session).toHaveProperty("status");
+    expect(session).toHaveProperty("eventCount");
   });
 
-  test("SSE 이벤트 스트림이 올바른 형식으로 전달된다", async ({
-    request,
-  }) => {
+  test("POST /api/sessions — CreateSessionResponse 계약", async ({ request }) => {
+    const res = await request.post(
+      `http://localhost:${testPort}/api/sessions`,
+      {
+        data: { prompt: "E2E test prompt" },
+      },
+    );
+    expect(res.status()).toBe(201);
+    const body: CreateSessionResponse = await res.json();
+
+    // agentSessionId 필수
+    expect(body).toHaveProperty("agentSessionId");
+    expect(typeof body.agentSessionId).toBe("string");
+    expect(body.agentSessionId).toBeTruthy();
+    expect(body.status).toBe("running");
+
+    // 구버전 필드가 없어야 함 (이 버그를 방지!)
+    expect(body).not.toHaveProperty("sessionKey");
+    expect(body).not.toHaveProperty("clientId");
+    expect(body).not.toHaveProperty("requestId");
+  });
+
+  test("POST /api/sessions/:id/intervene — InterveneResponse 계약", async ({ request }) => {
+    const res = await request.post(
+      `http://localhost:${testPort}/api/sessions/sess-e2e-002/intervene`,
+      {
+        data: { text: "E2E intervention", user: "dashboard" },
+      },
+    );
+    expect(res.ok()).toBe(true);
+    const body: InterveneResponse = await res.json();
+
+    // queue_position 존재
+    expect(body).toHaveProperty("queue_position");
+    expect(typeof body.queue_position).toBe("number");
+  });
+
+  test("SSE 이벤트 스트림이 올바른 형식으로 전달된다", async ({ request }) => {
     const res = await request.get(
-      `http://localhost:${testPort}/api/sessions/bot:e2e-test-1/events`,
+      `http://localhost:${testPort}/api/sessions/sess-e2e-001/events`,
     );
     expect(res.ok()).toBe(true);
     const text = await res.text();
     expect(text).toContain("event: connected");
+    expect(text).toContain("event: user_message");
     expect(text).toContain("event: text_start");
     expect(text).toContain("event: text_delta");
     expect(text).toContain("Hello from E2E test");
     expect(text).toContain("event: complete");
+  });
+
+  test("SSE 이벤트 ID가 단조 증가한다", async ({ request }) => {
+    const res = await request.get(
+      `http://localhost:${testPort}/api/sessions/sess-e2e-001/events`,
+    );
+    const text = await res.text();
+    const ids = [...text.matchAll(/^id: (\d+)$/gm)].map(m => parseInt(m[1], 10));
+
+    expect(ids.length).toBeGreaterThanOrEqual(3);
+
+    // 단조 증가 검증
+    for (let i = 1; i < ids.length; i++) {
+      expect(ids[i]).toBeGreaterThan(ids[i - 1]);
+    }
   });
 });

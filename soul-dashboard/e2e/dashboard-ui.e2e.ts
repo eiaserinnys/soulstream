@@ -15,6 +15,12 @@ import path from "path";
 import { fileURLToPath } from "url";
 import express from "express";
 import { createServer, type Server } from "http";
+import type {
+  CreateSessionResponse,
+  InterveneResponse,
+  SessionListResponse,
+  SessionSummary,
+} from "../shared/types.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -266,61 +272,62 @@ const test = base.extend<{ dashboardServer: MockDashboardServer }>({
   dashboardServer: async ({}, use) => {
     const app = express();
 
-    // --- Mock: 세션 목록 ---
+    // --- Mock: 세션 목록 — SessionListResponse 형식 ---
     app.get("/api/sessions", (_req, res) => {
-      res.json({
+      const response: SessionListResponse = {
         sessions: [
           {
-            clientId: "bot",
-            requestId: "e2e-ui-001",
+            agentSessionId: "sess-e2e-ui-001",
             status: "running",
             eventCount: 5,
             createdAt: new Date().toISOString(),
+            prompt: "src/index.ts 파일을 분석하고 에러 핸들링을 추가해주세요.",
           },
           {
-            clientId: "dashboard",
-            requestId: "e2e-ui-002",
+            agentSessionId: "sess-e2e-ui-002",
             status: "completed",
             eventCount: 12,
             createdAt: new Date(Date.now() - 3600000).toISOString(),
+            prompt: "테스트 코드를 작성해주세요.",
           },
           {
-            clientId: "bot",
-            requestId: "e2e-ui-003",
+            agentSessionId: "sess-e2e-ui-003",
             status: "error",
             eventCount: 3,
             createdAt: new Date(Date.now() - 7200000).toISOString(),
+            prompt: "에러 세션 테스트",
           },
           {
-            clientId: "dashboard",
-            requestId: "e2e-ui-multi",
+            agentSessionId: "sess-e2e-ui-multi",
             status: "running",
             eventCount: 14,
             createdAt: new Date(Date.now() - 60000).toISOString(),
+            prompt: "src/utils.ts에 validateInput 함수를 추가하고 테스트를 실행해주세요.",
           },
           {
-            clientId: "bot",
-            requestId: "e2e-ui-notool",
+            agentSessionId: "sess-e2e-ui-notool",
             status: "completed",
             eventCount: 5,
             createdAt: new Date(Date.now() - 120000).toISOString(),
+            prompt: "간단히 설명해주세요.",
           },
           {
-            clientId: "bot",
-            requestId: "e2e-ui-large25",
+            agentSessionId: "sess-e2e-ui-large25",
             status: "completed",
             eventCount: 55,
             createdAt: new Date(Date.now() - 180000).toISOString(),
+            prompt: "대규모 작업을 수행해주세요 (10 단계).",
           },
           {
-            clientId: "bot",
-            requestId: "e2e-ui-large50",
+            agentSessionId: "sess-e2e-ui-large50",
             status: "completed",
             eventCount: 105,
             createdAt: new Date(Date.now() - 240000).toISOString(),
+            prompt: "대규모 작업을 수행해주세요 (20 단계).",
           },
         ],
-      });
+      };
+      res.json(response);
     });
 
     // --- Mock: Health check ---
@@ -333,36 +340,30 @@ const test = base.extend<{ dashboardServer: MockDashboardServer }>({
       res.json({ authRequired: false });
     });
 
-    // --- Mock: 세션 생성 ---
+    // --- Mock: 세션 생성/재개 — CreateSessionResponse 형식 ---
+    // Create & Resume 모두 POST /api/sessions 단일 엔드포인트 사용.
+    // Resume 시 body.agentSessionId가 전달되면 재사용, 아니면 새 ID.
     app.use(express.json());
-    app.post("/api/sessions", (_req, res) => {
-      res.status(201).json({
-        clientId: "dashboard",
-        requestId: "e2e-new-001",
-        sessionKey: "dashboard:e2e-new-001",
+    app.post("/api/sessions", (req, res) => {
+      const response: CreateSessionResponse = {
+        agentSessionId: req.body.agentSessionId ?? "sess-e2e-new-001",
         status: "running",
-      });
+      };
+      res.status(201).json(response);
     });
 
-    // --- Mock: 세션 재개 ---
-    app.post("/api/sessions/:id/resume", (_req, res) => {
-      res.status(201).json({
-        clientId: "dashboard",
-        requestId: "e2e-resumed-001",
-        sessionKey: "dashboard:e2e-ui-002",  // 원래 세션 키 반환 (resume 동작)
-        resumedFrom: "dashboard:e2e-ui-002",
-        resumeSessionId: "mock-claude-session-id",
-        status: "running",
-        isResume: true,
-      });
-    });
-
-    // --- Mock: 세션 개입 ---
+    // --- Mock: 세션 개입 — InterveneResponse 형식 ---
     app.post("/api/sessions/:id/intervene", (_req, res) => {
-      res.json({ status: "ok" });
+      const response: InterveneResponse = {
+        queue_position: 1,
+      };
+      res.json(response);
     });
     app.post("/api/sessions/:id/message", (_req, res) => {
-      res.json({ status: "ok" });
+      const response: InterveneResponse = {
+        queue_position: 1,
+      };
+      res.json(response);
     });
 
     // --- Mock: SSE 이벤트 스트림 ---
@@ -472,7 +473,7 @@ async function getReactFlowZoom(page: Page): Promise<number | null> {
 async function navigateAndSelectSession(
   page: Page,
   baseURL: string,
-  sessionKey = "bot:e2e-ui-001",
+  sessionKey = "sess-e2e-ui-001",
 ) {
   await page.goto(baseURL);
   await expect(
@@ -666,7 +667,7 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     await navigateAndSelectSession(
       page,
       dashboardServer.baseURL,
-      "dashboard:e2e-ui-multi",
+      "sess-e2e-ui-multi",
     );
 
     // Complete 이벤트까지 대기
@@ -813,7 +814,7 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     await navigateAndSelectSession(
       page,
       dashboardServer.baseURL,
-      "dashboard:e2e-ui-multi",
+      "sess-e2e-ui-multi",
     );
 
     // Complete 이벤트까지 대기
@@ -893,7 +894,7 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     await navigateAndSelectSession(
       page,
       dashboardServer.baseURL,
-      "bot:e2e-ui-notool",
+      "sess-e2e-ui-notool",
     );
 
     // Complete까지 대기
@@ -955,7 +956,7 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     await navigateAndSelectSession(
       page,
       dashboardServer.baseURL,
-      "bot:e2e-ui-large25",
+      "sess-e2e-ui-large25",
     );
 
     // Complete까지 대기 — 25 노드 세션은 시간이 더 걸림
@@ -998,7 +999,7 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     await navigateAndSelectSession(
       page,
       dashboardServer.baseURL,
-      "bot:e2e-ui-large50",
+      "sess-e2e-ui-large50",
     );
 
     // Complete까지 대기 — 50 노드 세션은 시간이 상당히 걸림
@@ -1047,10 +1048,35 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     });
   });
 
-  test("11. 세션 생성 플로우 (+ New → PromptComposer → Submit)", async ({
+  test("11. 세션 생성 → 응답 계약 검증 → SSE 구독 → 그래프 렌더링 (핵심 E2E)", async ({
     page,
     dashboardServer,
   }) => {
+    // API 요청 감시: 세션 생성 응답과 SSE 구독 URL을 캡처
+    let createResponse: Record<string, unknown> | null = null;
+    const sseUrls: string[] = [];
+
+    page.on("response", async (resp) => {
+      const url = resp.url();
+      // POST /api/sessions 응답 캡처 (intervene/resume/events 제외)
+      if (
+        resp.request().method() === "POST" &&
+        url.includes("/api/sessions") &&
+        !url.includes("/intervene") &&
+        !url.includes("/resume") &&
+        !url.includes("/events") &&
+        !url.includes("/message")
+      ) {
+        createResponse = await resp.json().catch(() => null);
+      }
+    });
+
+    page.on("request", (req) => {
+      if (req.url().includes("/events")) {
+        sseUrls.push(req.url());
+      }
+    });
+
     await page.goto(dashboardServer.baseURL);
 
     // 세션 목록 로드 대기
@@ -1091,9 +1117,29 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     // PromptComposer 사라짐 확인 (세션 생성 성공 후)
     await expect(composer).not.toBeVisible({ timeout: 5_000 });
 
+    // [계약 검증 1] CreateSessionResponse 형식 — agentSessionId 필수, 레거시 필드 없음
+    expect(createResponse).not.toBeNull();
+    expect(createResponse).toHaveProperty("agentSessionId");
+    expect(typeof (createResponse as Record<string, unknown>).agentSessionId).toBe("string");
+    expect((createResponse as Record<string, unknown>).agentSessionId).toBeTruthy();
+    expect(createResponse).toHaveProperty("status", "running");
+
+    // 레거시 필드가 응답에 없어야 함 (이 버그를 방지!)
+    expect(createResponse).not.toHaveProperty("sessionKey");
+    expect(createResponse).not.toHaveProperty("clientId");
+    expect(createResponse).not.toHaveProperty("requestId");
+
     // SSE 구독이 시작되어 노드가 렌더링되기 시작
     const thinkingNodes = page.locator('[data-testid="thinking-node"]');
     await expect(thinkingNodes.first()).toBeVisible({ timeout: 10_000 });
+
+    // [계약 검증 2] SSE 구독 URL이 응답의 agentSessionId를 사용하는지 확인
+    const expectedSessionId = (createResponse as Record<string, unknown>).agentSessionId as string;
+    const newSessionSSE = sseUrls.filter((url) => url.includes(expectedSessionId));
+    expect(
+      newSessionSSE.length,
+      `SSE 구독이 agentSessionId(${expectedSessionId})로 시작되어야 함. 실제 SSE URLs: ${sseUrls.join(", ")}`,
+    ).toBeGreaterThanOrEqual(1);
 
     // 스크린샷: 세션 생성 후 그래프 표시
     await page.screenshot({
@@ -1102,10 +1148,33 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     });
   });
 
-  test("12. 세션 재개 플로우 (Resume → PromptComposer → Submit)", async ({
+  test("12. 세션 재개 플로우 — 동일 agentSessionId 재사용 + SSE 구독 검증", async ({
     page,
     dashboardServer,
   }) => {
+    // API 요청/응답 감시
+    let createResponse: Record<string, unknown> | null = null;
+    const sseUrls: string[] = [];
+
+    page.on("response", async (resp) => {
+      const url = resp.url();
+      if (
+        resp.request().method() === "POST" &&
+        url.includes("/api/sessions") &&
+        !url.includes("/intervene") &&
+        !url.includes("/events") &&
+        !url.includes("/message")
+      ) {
+        createResponse = await resp.json().catch(() => null);
+      }
+    });
+
+    page.on("request", (req) => {
+      if (req.url().includes("/events")) {
+        sseUrls.push(req.url());
+      }
+    });
+
     await page.goto(dashboardServer.baseURL);
 
     // 세션 목록 로드 대기
@@ -1115,7 +1184,7 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
 
     // 완료된 세션의 Resume 버튼 클릭
     const resumeBtn = page.locator(
-      '[data-testid="resume-button-dashboard:e2e-ui-002"]',
+      '[data-testid="resume-button-sess-e2e-ui-002"]',
     );
     await expect(resumeBtn).toBeVisible();
     await resumeBtn.click();
@@ -1124,7 +1193,7 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     const composer = page.locator('[data-testid="prompt-composer"]');
     await expect(composer).toBeVisible({ timeout: 5_000 });
     await expect(composer).toContainText("Continue Conversation");
-    await expect(composer).toContainText("dashboard:e2e-ui-002");
+    await expect(composer).toContainText("sess-e2e-ui-002");
 
     // 스크린샷: Resume PromptComposer
     await page.screenshot({
@@ -1142,8 +1211,26 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     // PromptComposer 사라짐 + SSE 그래프 시작
     await expect(composer).not.toBeVisible({ timeout: 5_000 });
 
+    // [계약 검증 1] Resume 시 응답의 agentSessionId가 원래 세션과 동일해야 함
+    expect(createResponse).not.toBeNull();
+    expect(createResponse).toHaveProperty("agentSessionId", "sess-e2e-ui-002");
+    expect(createResponse).toHaveProperty("status", "running");
+
+    // 레거시 필드 없음
+    expect(createResponse).not.toHaveProperty("sessionKey");
+    expect(createResponse).not.toHaveProperty("resumedFrom");
+
     const thinkingNodes = page.locator('[data-testid="thinking-node"]');
     await expect(thinkingNodes.first()).toBeVisible({ timeout: 10_000 });
+
+    // [계약 검증 2] SSE 구독이 동일한 agentSessionId로 이루어졌는지 확인
+    const resumeSessionSSE = sseUrls.filter((url) =>
+      url.includes("sess-e2e-ui-002"),
+    );
+    expect(
+      resumeSessionSSE.length,
+      `Resume 후 SSE가 sess-e2e-ui-002에 구독되어야 함`,
+    ).toBeGreaterThanOrEqual(1);
 
     // 스크린샷: 재개된 세션
     await page.screenshot({
@@ -1160,7 +1247,7 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     await navigateAndSelectSession(
       page,
       dashboardServer.baseURL,
-      "dashboard:e2e-ui-002",
+      "sess-e2e-ui-002",
     );
 
     // Complete 이벤트 수신 대기
@@ -1207,7 +1294,7 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     await navigateAndSelectSession(
       page,
       dashboardServer.baseURL,
-      "bot:e2e-ui-001",
+      "sess-e2e-ui-001",
     );
 
     // SSE 스트리밍 시작 대기
@@ -1242,5 +1329,189 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
       path: `${SCREENSHOT_DIR}/21-intervention-sent.png`,
       fullPage: true,
     });
+  });
+
+  test("15. 세션 목록 API 계약 검증 — agentSessionId 형식, 레거시 필드 없음", async ({
+    page,
+    dashboardServer,
+  }) => {
+    // GET /api/sessions 응답 캡처
+    let sessionsResponse: Record<string, unknown> | null = null;
+
+    page.on("response", async (resp) => {
+      if (
+        resp.request().method() === "GET" &&
+        resp.url().endsWith("/api/sessions")
+      ) {
+        sessionsResponse = await resp.json().catch(() => null);
+      }
+    });
+
+    await page.goto(dashboardServer.baseURL);
+
+    // 세션 목록 로드 대기
+    await expect(
+      page.locator('[data-testid^="session-item-"]'),
+    ).toHaveCount(7, { timeout: 10_000 });
+
+    // 응답이 캡처되었는지 확인
+    expect(sessionsResponse).not.toBeNull();
+
+    const body = sessionsResponse as { sessions: Record<string, unknown>[] };
+    expect(body.sessions).toHaveLength(7);
+
+    // 모든 세션에 대해 계약 검증
+    for (const session of body.sessions) {
+      // agentSessionId 필수 — "sess-" 접두사 형식
+      expect(session).toHaveProperty("agentSessionId");
+      expect(typeof session.agentSessionId).toBe("string");
+      expect(session.agentSessionId).toBeTruthy();
+
+      // 필수 필드
+      expect(session).toHaveProperty("status");
+      expect(session).toHaveProperty("eventCount");
+
+      // 레거시 필드 없음 (clientId/requestId 기반 → agentSessionId 기반으로 전환)
+      expect(session).not.toHaveProperty("clientId");
+      expect(session).not.toHaveProperty("requestId");
+      expect(session).not.toHaveProperty("sessionKey");
+    }
+  });
+
+  test("16. 세션 전환 시 이전 그래프 초기화 검증", async ({
+    page,
+    dashboardServer,
+  }) => {
+    // 첫 번째 세션 선택 (멀티 Tool)
+    await navigateAndSelectSession(
+      page,
+      dashboardServer.baseURL,
+      "sess-e2e-ui-multi",
+    );
+
+    // Complete까지 대기
+    await expect(page.getByText("Idle")).toBeVisible({ timeout: 15_000 });
+    await page.waitForTimeout(300);
+
+    // 멀티 Tool 세션의 노드 수 확인
+    const multiToolNodeCount = await page.locator(".react-flow__node").count();
+    expect(multiToolNodeCount).toBeGreaterThanOrEqual(10);
+
+    // 3개의 Tool Call 노드 확인 (멀티 Tool 세션 고유)
+    const toolCallNodes = page.locator('[data-testid="tool-call-node"]');
+    await expect(toolCallNodes).toHaveCount(3, { timeout: 5_000 });
+
+    // 다른 세션으로 전환 (Tool 없는 세션)
+    await page
+      .locator('[data-testid="session-item-sess-e2e-ui-notool"]')
+      .click();
+
+    // Complete까지 대기
+    await expect(page.getByText("Idle")).toBeVisible({ timeout: 10_000 });
+    await page.waitForTimeout(300);
+
+    // 이전 세션의 3개 Tool Call 노드가 사라졌는지 확인
+    // (Tool 없는 세션에서는 tool-call-node가 0개)
+    await expect(toolCallNodes).toHaveCount(0, { timeout: 5_000 });
+
+    // 현재 세션의 노드가 정상 렌더링되는지 확인
+    const responseNodes = page.locator('[data-testid="response-node"]');
+    await expect(responseNodes).toHaveCount(1, { timeout: 5_000 });
+
+    // 스크린샷: 세션 전환 후 그래프
+    await page.screenshot({
+      path: `${SCREENSHOT_DIR}/22-session-switch-graph-reset.png`,
+      fullPage: true,
+    });
+  });
+
+  test("17. 세션 생성 후 SSE 이벤트가 올바른 세션으로 라우팅되는지 검증", async ({
+    page,
+    dashboardServer,
+  }) => {
+    // SSE 구독 URL 캡처
+    const sseUrls: string[] = [];
+    page.on("request", (req) => {
+      if (req.url().includes("/events")) {
+        sseUrls.push(req.url());
+      }
+    });
+
+    await page.goto(dashboardServer.baseURL);
+
+    // 세션 목록 로드 대기
+    await expect(
+      page.locator('[data-testid^="session-item-"]'),
+    ).toHaveCount(7, { timeout: 10_000 });
+
+    // "+ New" → PromptComposer → Submit
+    await page.locator('[data-testid="new-session-button"]').click();
+    const composer = page.locator('[data-testid="prompt-composer"]');
+    await expect(composer).toBeVisible({ timeout: 5_000 });
+    await composer.locator("textarea").fill("SSE 라우팅 테스트");
+    await page.locator('[data-testid="compose-submit"]').click();
+    await expect(composer).not.toBeVisible({ timeout: 5_000 });
+
+    // SSE 이벤트가 도착하여 노드가 렌더링되기 시작
+    const thinkingNodes = page.locator('[data-testid="thinking-node"]');
+    await expect(thinkingNodes.first()).toBeVisible({ timeout: 10_000 });
+
+    // Complete까지 대기
+    await expect(page.getByText("Idle")).toBeVisible({ timeout: 15_000 });
+
+    // SSE 구독이 새 세션 ID(sess-e2e-new-001)로 이루어졌는지 확인
+    const newSessionSSE = sseUrls.filter((url) =>
+      url.includes("sess-e2e-new-001"),
+    );
+    expect(
+      newSessionSSE.length,
+      `SSE가 sess-e2e-new-001에 구독되어야 함`,
+    ).toBeGreaterThanOrEqual(1);
+
+    // Complete 이벤트까지 수신 완료 → 전체 그래프가 렌더링됨
+    const allNodes = page.locator(".react-flow__node");
+    const nodeCount = await allNodes.count();
+    expect(nodeCount).toBeGreaterThanOrEqual(3); // user + thinking + response/complete
+
+    // 스크린샷
+    await page.screenshot({
+      path: `${SCREENSHOT_DIR}/23-sse-routing-verified.png`,
+      fullPage: true,
+    });
+  });
+
+  test("18. PromptComposer Escape 키로 취소 + 빈 프롬프트 Submit 방지", async ({
+    page,
+    dashboardServer,
+  }) => {
+    await page.goto(dashboardServer.baseURL);
+
+    // 세션 목록 로드 대기
+    await expect(
+      page.locator('[data-testid^="session-item-"]'),
+    ).toHaveCount(7, { timeout: 10_000 });
+
+    // "+ New" → PromptComposer 표시
+    await page.locator('[data-testid="new-session-button"]').click();
+    const composer = page.locator('[data-testid="prompt-composer"]');
+    await expect(composer).toBeVisible({ timeout: 5_000 });
+
+    // 빈 프롬프트 상태에서 Submit 버튼 비활성화 확인
+    const submitBtn = page.locator('[data-testid="compose-submit"]');
+    await expect(submitBtn).toBeDisabled();
+
+    // 공백만 입력해도 Submit 비활성화 유지
+    await composer.locator("textarea").fill("   ");
+    await expect(submitBtn).toBeDisabled();
+
+    // Escape 키로 PromptComposer 닫기
+    await page.keyboard.press("Escape");
+    await expect(composer).not.toBeVisible({ timeout: 3_000 });
+
+    // 다시 열고 Cancel 버튼으로 닫기
+    await page.locator('[data-testid="new-session-button"]').click();
+    await expect(composer).toBeVisible({ timeout: 5_000 });
+    await composer.getByText("Cancel").click();
+    await expect(composer).not.toBeVisible({ timeout: 3_000 });
   });
 });

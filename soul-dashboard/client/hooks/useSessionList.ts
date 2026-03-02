@@ -7,17 +7,13 @@
 
 import { useEffect, useRef, useCallback } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
-import type { SessionSummary } from "@shared/types";
+import type { SessionListResponse } from "@shared/types";
 
 interface UseSessionListOptions {
   /** 폴링 간격 (ms). 기본 5000 */
   intervalMs?: number;
   /** 자동 폴링 활성화. 기본 true */
   enabled?: boolean;
-}
-
-interface SessionListResponse {
-  sessions: SessionSummary[];
 }
 
 export function useSessionList(options: UseSessionListOptions = {}) {

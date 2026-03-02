@@ -10,6 +10,7 @@ import { Router } from "express";
 import type { Request, Response as ExpressResponse } from "express";
 import type {
   CreateSessionRequest,
+  CreateSessionResponse,
   SendMessageRequest,
 } from "../../shared/types.js";
 import type { EventHub } from "../event-hub.js";
@@ -76,7 +77,8 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
 
       const clientId = body.clientId ?? "dashboard";
       const requestId = generateRequestId();
-      const agentSessionId = generateSessionId();
+      // resume 시 클라이언트가 기존 agentSessionId를 전달하면 재사용
+      const agentSessionId = body.agentSessionId ?? generateSessionId();
       const taskKey = `${clientId}:${requestId}`;
 
       // EventHub에 task→session 매핑 등록
@@ -152,10 +154,11 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
 
       // user_message 기록은 Soul 서버가 담당 (JSONL의 유일한 기록자)
 
-      res.status(201).json({
+      const response: CreateSessionResponse = {
         agentSessionId,
         status: "running",
-      });
+      };
+      res.status(201).json(response);
     } catch (err) {
       console.error("[actions] Failed to create session:", err);
       res.status(500).json({
