@@ -48,12 +48,13 @@ export function ChatInput() {
     setError(null);
   }, [activeSessionKey]);
 
-  // textarea 높이 자동 조절
+  // textarea 높이 자동 조절 (기본 32px, 최대 120px)
+  // Button size="sm"과 맞추기 위해 32px(h-8) 사용
   useEffect(() => {
     const el = textareaRef.current;
     if (el) {
       el.style.height = "auto";
-      el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+      el.style.height = `${Math.max(32, Math.min(el.scrollHeight, 120))}px`;
     }
   }, [text]);
 
@@ -130,40 +131,48 @@ export function ChatInput() {
   return (
     <div
       data-testid="chat-input"
-      className="border-t border-border p-3 flex flex-col gap-2 shrink-0"
+      className="border-t border-border p-3 shrink-0"
     >
-      {/* Label */}
-      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground uppercase tracking-[0.05em] font-semibold">
-        <span className="text-xs">{isFinished ? "\u{1F4AC}" : "\u270B"}</span>
-        {isFinished ? "New Chat" : "Intervention"}
-      </div>
-
-      {/* Input area */}
-      <div className="flex gap-2 items-end">
-        <textarea
-          ref={textareaRef}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={placeholder}
-          disabled={sending}
-          rows={1}
-          className={cn(
-            "flex-1 bg-input border border-border rounded-md py-2 px-2.5",
-            "text-[13px] text-foreground font-sans resize-none outline-none",
-            "min-h-9 max-h-[120px] leading-[1.4] transition-colors duration-150",
-            isFinished
-              ? "focus:border-accent-blue/40"
-              : "focus:border-accent-orange/40",
-          )}
-        />
+      <div className="flex gap-2">
+        {/* Left column: labels + textarea */}
+        <div className="flex-1 flex flex-col gap-1">
+          {/* Labels row */}
+          <div className="flex justify-between items-center">
+            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground uppercase tracking-[0.05em] font-semibold">
+              <span className="text-xs">{isFinished ? "\u{1F4AC}" : "\u270B"}</span>
+              {isFinished ? "New Chat" : "Intervention"}
+            </div>
+            <div className="text-[10px] text-muted-foreground/60">
+              Ctrl+Enter to send
+            </div>
+          </div>
+          {/* Textarea */}
+          <textarea
+            ref={textareaRef}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={placeholder}
+            disabled={sending}
+            rows={1}
+            className={cn(
+              "w-full bg-input border border-border rounded-md py-1.5 px-2.5",
+              "text-[13px] text-foreground font-sans resize-none outline-none",
+              "h-8 max-h-[120px] leading-[1.4] transition-colors duration-150",
+              isFinished
+                ? "focus:border-accent-blue/40"
+                : "focus:border-accent-orange/40",
+            )}
+          />
+        </div>
+        {/* Right: button aligned to textarea bottom, matching textarea height (h-8 = 32px) */}
         <Button
           data-testid="send-button"
           onClick={sendMessage}
           disabled={isDisabled}
           size="sm"
           className={cn(
-            "shrink-0",
+            "self-end h-8 sm:h-8",
             isFinished
               ? "border-accent-blue bg-accent-blue text-white hover:bg-accent-blue/90"
               : "border-accent-orange bg-accent-orange text-white hover:bg-accent-orange/90",
@@ -171,11 +180,6 @@ export function ChatInput() {
         >
           {buttonLabel}
         </Button>
-      </div>
-
-      {/* Hint */}
-      <div className="text-[10px] text-muted-foreground/60">
-        Ctrl+Enter to send
       </div>
 
       {/* Error */}

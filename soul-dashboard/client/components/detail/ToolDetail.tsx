@@ -6,6 +6,7 @@
  * 입력/결과 영역은 사용 가능한 세로 공간을 최대한 활용합니다.
  */
 
+import { useRef, useState, useLayoutEffect } from "react";
 import type { DashboardCard } from "@shared/types";
 import { SectionLabel, CodeBlock, safeStringify } from "./shared";
 
@@ -15,11 +16,49 @@ interface ToolDetailProps {
   focusResult?: boolean;
 }
 
+/** Result 영역의 최소 높이 */
+const RESULT_MIN_HEIGHT = 200;
+/** 상단/하단 패딩 (p-4 = 16px) */
+const CONTAINER_PADDING = 16;
+
 export function ToolDetail({ card, focusResult }: ToolDetailProps) {
   const isResult = focusResult && card.toolResult !== undefined;
+  const containerRef = useRef<HTMLDivElement>(null);
+  const resultRef = useRef<HTMLDivElement>(null);
+  const [resultMinHeight, setResultMinHeight] = useState(RESULT_MIN_HEIGHT);
+
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    const result = resultRef.current;
+    if (!container || !result) return;
+
+    const updateHeight = () => {
+      // ScrollArea viewport의 높이
+      const scrollViewport = container.closest('[data-slot="scroll-area-viewport"]');
+      const viewportHeight = scrollViewport?.clientHeight ?? 0;
+      // Result 영역의 시작 위치 (컨테이너 상단 기준)
+      const resultTop = result.offsetTop;
+      // Result label 높이 (~15px)
+      const resultLabelHeight = 15;
+      // 남은 공간 = viewport - resultTop - label - 하단 패딩
+      const available = viewportHeight - resultTop - resultLabelHeight - CONTAINER_PADDING;
+      setResultMinHeight(Math.max(RESULT_MIN_HEIGHT, available));
+    };
+
+    // 초기 측정은 다음 프레임에서 (레이아웃 완료 후)
+    requestAnimationFrame(updateHeight);
+
+    const resizeObserver = new ResizeObserver(updateHeight);
+    const scrollViewport = container.closest('[data-slot="scroll-area-viewport"]');
+    if (scrollViewport) {
+      resizeObserver.observe(scrollViewport);
+    }
+
+    return () => resizeObserver.disconnect();
+  }, [card]);
 
   return (
-    <div className="p-4 flex flex-col gap-3 h-full">
+    <div ref={containerRef} className="p-4 flex flex-col gap-3 h-full">
       {/* Header */}
       <div className="flex items-center gap-2 shrink-0">
         <span className="text-base">
@@ -52,55 +91,26 @@ export function ToolDetail({ card, focusResult }: ToolDetailProps) {
         </div>
       </div>
 
-      {/* Result-focused: 결과를 먼저, 입력을 축소하여 표시 */}
-      {isResult ? (
-        <>
-          {/* Result (주 영역) */}
-          <div className="flex-1 min-h-0 flex flex-col">
-            <SectionLabel>Result</SectionLabel>
-            <CodeBlock
-              variant={card.isError ? "error" : "default"}
-              maxHeight={undefined}
-              className="flex-1"
-            >
-              {card.toolResult}
-            </CodeBlock>
-          </div>
+      {/* Input (짧은 높이) */}
+      {card.toolInput && (
+        <div className="shrink-0">
+          <SectionLabel>Input</SectionLabel>
+          <CodeBlock maxHeight={80}>{safeStringify(card.toolInput)}</CodeBlock>
+        </div>
+      )}
 
-          {/* Input (축소) */}
-          {card.toolInput && (
-            <div className="shrink-0">
-              <SectionLabel>Input</SectionLabel>
-              <CodeBlock maxHeight={120}>{safeStringify(card.toolInput)}</CodeBlock>
-            </div>
-          )}
-        </>
-      ) : (
-        <>
-          {/* Input (주 영역) */}
-          {card.toolInput && (
-            <div className="flex-1 min-h-0 flex flex-col">
-              <SectionLabel>Input</SectionLabel>
-              <CodeBlock maxHeight={undefined} className="flex-1">
-                {safeStringify(card.toolInput)}
-              </CodeBlock>
-            </div>
-          )}
-
-          {/* Result */}
-          {card.toolResult !== undefined && (
-            <div className="flex-1 min-h-0 flex flex-col">
-              <SectionLabel>Result</SectionLabel>
-              <CodeBlock
-                variant={card.isError ? "error" : "default"}
-                maxHeight={undefined}
-                className="flex-1"
-              >
-                {card.toolResult}
-              </CodeBlock>
-            </div>
-          )}
-        </>
+      {/* Result (남은 공간 채움) */}
+      {card.toolResult !== undefined && (
+        <div ref={resultRef} className="shrink-0">
+          <SectionLabel>Result</SectionLabel>
+          <CodeBlock
+            variant={card.isError ? "error" : "default"}
+            maxHeight={undefined}
+            style={{ minHeight: resultMinHeight }}
+          >
+            {card.toolResult}
+          </CodeBlock>
+        </div>
       )}
     </div>
   );

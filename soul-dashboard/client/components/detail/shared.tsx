@@ -22,11 +22,13 @@ export function CodeBlock({
   variant = "default",
   maxHeight = 300,
   className,
+  style,
 }: {
   children: React.ReactNode;
   variant?: "default" | "error";
   maxHeight?: number;
   className?: string;
+  style?: React.CSSProperties;
 }) {
   return (
     <pre
@@ -37,7 +39,7 @@ export function CodeBlock({
           : "text-muted-foreground bg-input",
         className,
       )}
-      style={maxHeight !== undefined ? { maxHeight } : undefined}
+      style={{ ...(maxHeight !== undefined ? { maxHeight } : {}), ...style }}
     >
       {children}
     </pre>
