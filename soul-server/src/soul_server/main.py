@@ -315,10 +315,12 @@ async def global_exception_handler(request: Request, exc: Exception):
 if __name__ == "__main__":
     import uvicorn
 
+    # MEDIUM-1: reload 설정을 환경에 따라 결정
+    # 프로덕션에서는 항상 False, 개발에서만 True 가능
     uvicorn.run(
         "soul_server.main:app",
         host=settings.host,
         port=settings.port,
-        reload=False,
+        reload=settings.is_development,
         access_log=not settings.is_production,
     )

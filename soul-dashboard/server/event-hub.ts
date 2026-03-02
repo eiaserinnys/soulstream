@@ -28,7 +28,12 @@ interface SSEClient {
 interface SessionAlias {
   targetKey: string;
   eventIdOffset: number;
+  /** 생성 시각 (TTL 만료 판정용) */
+  createdAt: number;
 }
+
+/** MEDIUM-4: alias TTL (1시간) */
+const ALIAS_TTL_MS = 60 * 60 * 1000;
 
 export class EventHub {
   /** sessionKey → SSEClient[] */
@@ -188,8 +193,12 @@ export class EventHub {
 
   /**
    * Keepalive 코멘트를 모든 연결된 클라이언트에게 전송합니다.
+   * MEDIUM-4: 만료된 alias도 함께 정리합니다.
    */
   sendKeepalive(): void {
+    // 만료된 alias 정리
+    this.cleanupExpiredAliases();
+
     const deadClients: string[] = [];
 
     for (const [clientId, client] of this.allClients) {
@@ -236,7 +245,24 @@ export class EventHub {
    * Resume 시: 새 세션(sourceKey) → 원래 세션(targetKey)으로 이벤트를 포워딩합니다.
    */
   addAlias(sourceKey: string, targetKey: string, eventIdOffset: number): void {
-    this.sessionAliases.set(sourceKey, { targetKey, eventIdOffset });
+    this.sessionAliases.set(sourceKey, {
+      targetKey,
+      eventIdOffset,
+      createdAt: Date.now(),
+    });
+  }
+
+  /**
+   * MEDIUM-4: 만료된 alias를 정리합니다.
+   * sendKeepalive() 호출 시 함께 실행되어 메모리 누수를 방지합니다.
+   */
+  private cleanupExpiredAliases(): void {
+    const now = Date.now();
+    for (const [sourceKey, alias] of this.sessionAliases) {
+      if (now - alias.createdAt > ALIAS_TTL_MS) {
+        this.sessionAliases.delete(sourceKey);
+      }
+    }
   }
 
   /**

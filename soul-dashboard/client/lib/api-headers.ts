@@ -26,13 +26,58 @@ async function isAuthRequired(): Promise<boolean> {
   return cachedAuthRequired;
 }
 
+/** localStorage 키: 대시보드 인증 토큰 */
+const AUTH_TOKEN_KEY = "dashboard_auth_token";
+
+/**
+ * 저장된 인증 토큰을 가져옵니다.
+ */
+export function getStoredToken(): string | null {
+  try {
+    return localStorage.getItem(AUTH_TOKEN_KEY);
+  } catch {
+    // localStorage 접근 실패 (SSR 등)
+    return null;
+  }
+}
+
+/**
+ * 인증 토큰을 저장합니다.
+ */
+export function setStoredToken(token: string): void {
+  try {
+    localStorage.setItem(AUTH_TOKEN_KEY, token);
+  } catch {
+    // localStorage 접근 실패 (SSR 등)
+  }
+}
+
+/**
+ * 저장된 인증 토큰을 삭제합니다.
+ */
+export function clearStoredToken(): void {
+  try {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+  } catch {
+    // localStorage 접근 실패 (SSR 등)
+  }
+}
+
+/** 인증 필요 상태에서 토큰이 없을 때 발생하는 에러 */
+export class AuthTokenRequiredError extends Error {
+  constructor() {
+    super(
+      "Authentication required. Please set your API token in Settings.",
+    );
+    this.name = "AuthTokenRequiredError";
+  }
+}
+
 /**
  * POST 요청용 헤더를 반환합니다.
  * 인증이 필요한 경우 Authorization 헤더를 포함합니다.
  *
- * 현재는 same-origin 환경이므로 토큰이 설정되지 않으면
- * Content-Type만 반환합니다. 추후 토큰 입력 UI가 추가되면
- * 이 함수에서 토큰을 포함하도록 확장합니다.
+ * @throws AuthTokenRequiredError 서버가 인증을 요구하지만 토큰이 설정되지 않은 경우
  */
 export async function getAuthHeaders(): Promise<Record<string, string>> {
   const headers: Record<string, string> = {
@@ -41,11 +86,11 @@ export async function getAuthHeaders(): Promise<Record<string, string>> {
 
   const authRequired = await isAuthRequired();
   if (authRequired) {
-    // TODO: 토큰 입력 UI 추가 시 여기서 토큰을 헤더에 포함
-    // headers["Authorization"] = `Bearer ${token}`;
-    console.warn(
-      "[api] Auth required but no client-side token mechanism yet. POST requests may fail.",
-    );
+    const token = getStoredToken();
+    if (!token) {
+      throw new AuthTokenRequiredError();
+    }
+    headers["Authorization"] = `Bearer ${token}`;
   }
 
   return headers;

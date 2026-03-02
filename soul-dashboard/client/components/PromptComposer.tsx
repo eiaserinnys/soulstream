@@ -7,7 +7,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
-import { getAuthHeaders } from "../lib/api-headers";
+import { getAuthHeaders, AuthTokenRequiredError } from "../lib/api-headers";
 import { cn } from "../lib/cn";
 import { Button } from "./ui/button";
 
@@ -89,7 +89,13 @@ export function PromptComposer() {
       cancelCompose();
       setActiveSession(result.sessionKey);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to start session");
+      if (err instanceof AuthTokenRequiredError) {
+        setError("Authentication required. Please set your API token in Settings.");
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError("Failed to start session");
+      }
     } finally {
       setSending(false);
     }

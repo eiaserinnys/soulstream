@@ -8,7 +8,7 @@
  */
 
 import { Router } from "express";
-import type { Request, Response } from "express";
+import type { Request, Response as ExpressResponse } from "express";
 import type {
   CreateSessionRequest,
   SendMessageRequest,
@@ -18,8 +18,17 @@ import type { EventHub } from "../event-hub.js";
 import type { SessionStore } from "../session-store.js";
 import { parseSessionId } from "../utils/parse-session-id.js";
 
+// Express Response와 fetch Response 구분을 위한 alias
+type Response = ExpressResponse;
+
 const MAX_PROMPT_LENGTH = 100_000;
 const MAX_MESSAGE_LENGTH = 50_000;
+
+/** 외부 API 호출 타임아웃 (밀리초) */
+const SOUL_REQUEST_TIMEOUT_MS = 30_000;
+
+/** 세션 ID 유효 문자 패턴 */
+const VALID_ID_PATTERN = /^[a-zA-Z0-9_-]{1,100}$/;
 
 export interface ActionsRouterOptions {
   /** Soul 서버 기본 URL */
@@ -53,20 +62,42 @@ async function executeSoul(opts: {
 > {
   const { soulBaseUrl, authToken, clientId, requestId, prompt, resumeSessionId, eventHub, sessionStore } = opts;
 
-  const soulResponse = await fetch(`${soulBaseUrl}/execute`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-    },
-    body: JSON.stringify({
-      client_id: clientId,
-      request_id: requestId,
-      prompt,
-      resume_session_id: resumeSessionId ?? null,
-      use_mcp: true,
-    }),
-  });
+  // HIGH-2: AbortController로 타임아웃 추가
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), SOUL_REQUEST_TIMEOUT_MS);
+
+  let soulResponse: globalThis.Response;
+  try {
+    soulResponse = await fetch(`${soulBaseUrl}/execute`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+      },
+      body: JSON.stringify({
+        client_id: clientId,
+        request_id: requestId,
+        prompt,
+        resume_session_id: resumeSessionId ?? null,
+        use_mcp: true,
+      }),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      return {
+        ok: false,
+        status: 504,
+        error: {
+          code: "TIMEOUT",
+          message: `Soul server request timed out after ${SOUL_REQUEST_TIMEOUT_MS / 1000}s`,
+        },
+      };
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   if (!soulResponse.ok) {
     const errorBody = await soulResponse.text();
@@ -213,6 +244,17 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
         return;
       }
 
+      // HIGH-1: 세션 ID 형식 검증 (인젝션 방지)
+      if (!VALID_ID_PATTERN.test(origClientId) || !VALID_ID_PATTERN.test(origRequestId)) {
+        res.status(400).json({
+          error: {
+            code: "INVALID_SESSION_ID",
+            message: "Invalid characters in session ID",
+          },
+        });
+        return;
+      }
+
       const body = req.body as { prompt: string; clientId?: string };
 
       if (!body.prompt || typeof body.prompt !== "string") {
@@ -346,21 +388,46 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
       // alias와 subscribe를 fetch 전에 등록하여 이벤트 유실 방지
       soulClient.subscribe(origClientId, newRequestId);
 
-      // Soul 서버에 새 태스크로 요청
-      const soulResponse = await fetch(`${soulBaseUrl}/execute`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-        },
-        body: JSON.stringify({
-          client_id: origClientId,
-          request_id: newRequestId,
-          prompt: body.prompt,
-          resume_session_id: claudeSessionId,
-          use_mcp: true,
-        }),
-      });
+      // HIGH-2: AbortController로 타임아웃 추가
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), SOUL_REQUEST_TIMEOUT_MS);
+
+      let soulResponse: globalThis.Response;
+      try {
+        // Soul 서버에 새 태스크로 요청
+        soulResponse = await fetch(`${soulBaseUrl}/execute`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+          },
+          body: JSON.stringify({
+            client_id: origClientId,
+            request_id: newRequestId,
+            prompt: body.prompt,
+            resume_session_id: claudeSessionId,
+            use_mcp: true,
+          }),
+          signal: controller.signal,
+        });
+      } catch (err) {
+        // 타임아웃 시 정리
+        if (eventHub) eventHub.removeAlias(newSessionKey);
+        soulClient.unsubscribe(origClientId, newRequestId);
+
+        if (err instanceof Error && err.name === "AbortError") {
+          res.status(504).json({
+            error: {
+              code: "TIMEOUT",
+              message: `Soul server request timed out after ${SOUL_REQUEST_TIMEOUT_MS / 1000}s`,
+            },
+          });
+          return;
+        }
+        throw err;
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       if (!soulResponse.ok) {
         const errorBody = await soulResponse.text();
@@ -423,6 +490,17 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
         return;
       }
 
+      // HIGH-1: 세션 ID 형식 검증 (인젝션 방지)
+      if (!VALID_ID_PATTERN.test(clientId) || !VALID_ID_PATTERN.test(requestId)) {
+        res.status(400).json({
+          error: {
+            code: "INVALID_SESSION_ID",
+            message: "Invalid characters in session ID",
+          },
+        });
+        return;
+      }
+
       const body = req.body as SendMessageRequest;
 
       if (!body.text || typeof body.text !== "string") {
@@ -455,23 +533,44 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
         return;
       }
 
-      const soulResponse = await fetch(
-        `${soulBaseUrl}/tasks/${encodeURIComponent(clientId)}/${encodeURIComponent(requestId)}/intervene`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(authToken
-              ? { Authorization: `Bearer ${authToken}` }
-              : {}),
+      // HIGH-2: AbortController로 타임아웃 추가
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), SOUL_REQUEST_TIMEOUT_MS);
+
+      let soulResponse: globalThis.Response;
+      try {
+        soulResponse = await fetch(
+          `${soulBaseUrl}/tasks/${encodeURIComponent(clientId)}/${encodeURIComponent(requestId)}/intervene`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(authToken
+                ? { Authorization: `Bearer ${authToken}` }
+                : {}),
+            },
+            body: JSON.stringify({
+              text: body.text,
+              user: body.user,
+              attachment_paths: body.attachmentPaths ?? [],
+            }),
+            signal: controller.signal,
           },
-          body: JSON.stringify({
-            text: body.text,
-            user: body.user,
-            attachment_paths: body.attachmentPaths ?? [],
-          }),
-        },
-      );
+        );
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") {
+          res.status(504).json({
+            error: {
+              code: "TIMEOUT",
+              message: `Soul server request timed out after ${SOUL_REQUEST_TIMEOUT_MS / 1000}s`,
+            },
+          });
+          return;
+        }
+        throw err;
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       if (!soulResponse.ok) {
         const errorBody = await soulResponse.text();
