@@ -349,10 +349,11 @@ const test = base.extend<{ dashboardServer: MockDashboardServer }>({
       res.status(201).json({
         clientId: "dashboard",
         requestId: "e2e-resumed-001",
-        sessionKey: "dashboard:e2e-resumed-001",
+        sessionKey: "dashboard:e2e-ui-002",  // 원래 세션 키 반환 (resume 동작)
         resumedFrom: "dashboard:e2e-ui-002",
         resumeSessionId: "mock-claude-session-id",
         status: "running",
+        isResume: true,
       });
     });
 
