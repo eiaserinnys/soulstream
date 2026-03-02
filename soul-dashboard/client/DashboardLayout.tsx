@@ -9,8 +9,9 @@ import { SessionList } from "./components/SessionList";
 import { NodeGraph } from "./components/NodeGraph";
 import { DetailView } from "./components/DetailView";
 import { ChatInput } from "./components/ChatInput";
-import { useSessionList } from "./hooks/useSessionList";
-import { useSession } from "./hooks/useSession";
+import { StorageModeToggleCompact } from "./components/StorageModeToggle";
+import { useSessionListProvider } from "./hooks/useSessionListProvider";
+import { useSessionProvider } from "./hooks/useSessionProvider";
 import { useNotification } from "./hooks/useNotification";
 import { useDashboardStore } from "./stores/dashboard-store";
 
@@ -59,12 +60,13 @@ function ConnectionBadge({
 
 export function DashboardLayout() {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
+  const storageMode = useDashboardStore((s) => s.storageMode);
 
-  // 세션 목록 폴링
-  const { sessions, loading, error } = useSessionList({ intervalMs: 5000 });
+  // 세션 목록 폴링 (Provider 기반)
+  const { sessions, loading, error } = useSessionListProvider({ intervalMs: 5000 });
 
-  // 활성 세션 SSE 구독
-  const { status: sseStatus } = useSession({
+  // 활성 세션 구독 (Provider 기반)
+  const { status: sseStatus } = useSessionProvider({
     sessionKey: activeSessionKey,
   });
 
@@ -99,17 +101,31 @@ export function DashboardLayout() {
           flexShrink: 0,
         }}
       >
-        <span
-          style={{
-            fontSize: "13px",
-            fontWeight: 600,
-            color: "#9ca3af",
-            letterSpacing: "0.02em",
-          }}
-        >
-          Soul Dashboard
-        </span>
-        <ConnectionBadge status={sseStatus} />
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          <span
+            style={{
+              fontSize: "13px",
+              fontWeight: 600,
+              color: "#9ca3af",
+              letterSpacing: "0.02em",
+            }}
+          >
+            Soul Dashboard
+          </span>
+          <StorageModeToggleCompact />
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <span
+            style={{
+              fontSize: "10px",
+              color: "#6b7280",
+              textTransform: "uppercase",
+            }}
+          >
+            {storageMode}
+          </span>
+          <ConnectionBadge status={sseStatus} />
+        </div>
       </header>
 
       {/* 3-Panel content */}
