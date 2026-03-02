@@ -1,0 +1,302 @@
+/**
+ * Soul Plugin Styles
+ *
+ * Soul 블록 타입별 스타일링
+ */
+
+/* ============================================================================
+   Base Styles
+   ============================================================================ */
+
+.soul-block {
+  display: flex;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 4px 0;
+  background: var(--soul-bg, #f8f9fa);
+  border: 1px solid var(--soul-border, #e9ecef);
+}
+
+.soul-block-icon {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--soul-icon-color, #6c757d);
+}
+
+.soul-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.soul-block-content {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.soul-text {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+/* ============================================================================
+   User Block
+   ============================================================================ */
+
+.soul-block-user {
+  --soul-bg: #e3f2fd;
+  --soul-border: #90caf9;
+  --soul-icon-color: #1976d2;
+}
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+  .soul-block-user {
+    --soul-bg: #1e3a5f;
+    --soul-border: #2d5a87;
+    --soul-icon-color: #64b5f6;
+  }
+}
+
+/* ============================================================================
+   Assistant Block
+   ============================================================================ */
+
+.soul-block-assistant {
+  --soul-bg: #f3e5f5;
+  --soul-border: #ce93d8;
+  --soul-icon-color: #7b1fa2;
+}
+
+.soul-model-badge {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  background: rgba(123, 31, 162, 0.1);
+  border-radius: 4px;
+  color: #7b1fa2;
+}
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+  .soul-block-assistant {
+    --soul-bg: #3d2848;
+    --soul-border: #5d4070;
+    --soul-icon-color: #ba68c8;
+  }
+
+  .soul-model-badge {
+    background: rgba(186, 104, 200, 0.2);
+    color: #ba68c8;
+  }
+}
+
+/* ============================================================================
+   Thinking Block
+   ============================================================================ */
+
+.soul-block-thinking {
+  --soul-bg: #fff3e0;
+  --soul-border: #ffcc80;
+  --soul-icon-color: #f57c00;
+  font-style: italic;
+  opacity: 0.9;
+}
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+  .soul-block-thinking {
+    --soul-bg: #3d3020;
+    --soul-border: #5d4830;
+    --soul-icon-color: #ffb74d;
+  }
+}
+
+/* ============================================================================
+   Tool Use Block
+   ============================================================================ */
+
+.soul-block-tool-use {
+  --soul-bg: #e8f5e9;
+  --soul-border: #a5d6a7;
+  --soul-icon-color: #388e3c;
+}
+
+.soul-tool-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.soul-tool-name {
+  font-weight: 600;
+  color: #388e3c;
+}
+
+.soul-tool-input,
+.soul-tool-output {
+  margin: 0;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 4px;
+  overflow-x: auto;
+  font-size: 12px;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+}
+
+.soul-tool-input code,
+.soul-tool-output code {
+  font-family: inherit;
+}
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+  .soul-block-tool-use {
+    --soul-bg: #1e3d20;
+    --soul-border: #2d5d30;
+    --soul-icon-color: #81c784;
+  }
+
+  .soul-tool-name {
+    color: #81c784;
+  }
+
+  .soul-tool-input,
+  .soul-tool-output {
+    background: rgba(255, 255, 255, 0.05);
+  }
+}
+
+/* ============================================================================
+   Tool Result Block
+   ============================================================================ */
+
+.soul-block-tool-result {
+  --soul-bg: #f5f5f5;
+  --soul-border: #bdbdbd;
+  --soul-icon-color: #616161;
+}
+
+.soul-tool-result-error {
+  --soul-bg: #ffebee;
+  --soul-border: #ef9a9a;
+  --soul-icon-color: #c62828;
+}
+
+.soul-tool-result-error .soul-tool-output {
+  background: rgba(198, 40, 40, 0.1);
+  color: #c62828;
+}
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+  .soul-block-tool-result {
+    --soul-bg: #2d2d2d;
+    --soul-border: #424242;
+    --soul-icon-color: #9e9e9e;
+  }
+
+  .soul-tool-result-error {
+    --soul-bg: #3d2020;
+    --soul-border: #5d3030;
+    --soul-icon-color: #ef5350;
+  }
+
+  .soul-tool-result-error .soul-tool-output {
+    background: rgba(239, 83, 80, 0.1);
+    color: #ef5350;
+  }
+}
+
+/* ============================================================================
+   Error Block
+   ============================================================================ */
+
+.soul-block-error {
+  --soul-bg: #ffebee;
+  --soul-border: #ef9a9a;
+  --soul-icon-color: #c62828;
+}
+
+.soul-error-type {
+  font-weight: 600;
+  color: #c62828;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+}
+
+.soul-error-message {
+  color: #b71c1c;
+}
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+  .soul-block-error {
+    --soul-bg: #3d2020;
+    --soul-border: #5d3030;
+    --soul-icon-color: #ef5350;
+  }
+
+  .soul-error-type {
+    color: #ef5350;
+  }
+
+  .soul-error-message {
+    color: #ef9a9a;
+  }
+}
+
+/* ============================================================================
+   Intervention Block
+   ============================================================================ */
+
+.soul-block-intervention {
+  --soul-bg: #fff7ed;
+  --soul-border: #fdba74;
+  --soul-icon-color: #ea580c;
+}
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+  .soul-block-intervention {
+    --soul-bg: #431407;
+    --soul-border: #9a3412;
+    --soul-icon-color: #fb923c;
+  }
+}
+
+/* ============================================================================
+   Invalid/Unknown Block
+   ============================================================================ */
+
+.soul-block-invalid,
+.soul-block-unknown {
+  --soul-bg: #fafafa;
+  --soul-border: #eeeeee;
+  --soul-icon-color: #9e9e9e;
+  color: #9e9e9e;
+  font-style: italic;
+}
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+  .soul-block-invalid,
+  .soul-block-unknown {
+    --soul-bg: #1a1a1a;
+    --soul-border: #2a2a2a;
+    --soul-icon-color: #616161;
+    color: #616161;
+  }
+}
