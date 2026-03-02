@@ -53,46 +53,23 @@ const soulClient = new SoulClient({
   maxReconnectInterval: 30000,
 });
 
-// Soul 이벤트 → EventHub 브로드캐스트 + JSONL 저장
-// Resume 세션의 경우 alias를 통해 원래 세션으로 포워딩
-soulClient.onEvent((sessionKey, eventId, event) => {
-  const alias = eventHub.resolveAlias(sessionKey);
+// Soul 이벤트 → EventHub 브로드캐스트
+// Soul 서버가 JSONL의 유일한 기록자. 대시보드는 읽기 전용.
+// task key → agentSessionId 매핑으로 올바른 세션에 라우팅.
+soulClient.onEvent((taskKey, eventId, event) => {
+  const agentSessionId = eventHub.resolveTask(taskKey);
 
-  if (alias) {
-    // Resume 세션: 원래 세션으로 포워딩 (eventId에 offset 적용)
-    const resolvedId = eventId + alias.eventIdOffset;
-    eventHub.broadcast(alias.targetKey, resolvedId, event);
+  if (agentSessionId) {
+    eventHub.broadcast(agentSessionId, eventId, event);
 
-    const sepIdx = alias.targetKey.indexOf(":");
-    if (sepIdx !== -1) {
-      const clientId = alias.targetKey.slice(0, sepIdx);
-      const requestId = alias.targetKey.slice(sepIdx + 1);
-      sessionStore
-        .appendEvent(clientId, requestId, resolvedId, event)
-        .catch((err) =>
-          console.warn(`[dashboard] Failed to persist forwarded event for ${alias.targetKey}:`, err),
-        );
-    }
-
-    // 완료/에러 시 alias 정리
+    // 완료/에러 시 task 매핑 정리
     if (event.type === "complete" || event.type === "error" || event.type === "result") {
-      eventHub.removeAlias(sessionKey);
+      eventHub.unregisterTask(taskKey);
     }
-    return;
-  }
-
-  // 일반 세션: 기존 동작
-  eventHub.broadcast(sessionKey, eventId, event);
-
-  const sepIdx = sessionKey.indexOf(":");
-  if (sepIdx !== -1) {
-    const clientId = sessionKey.slice(0, sepIdx);
-    const requestId = sessionKey.slice(sepIdx + 1);
-    sessionStore
-      .appendEvent(clientId, requestId, eventId, event)
-      .catch((err) =>
-        console.warn(`[dashboard] Failed to persist event for ${sessionKey}:`, err),
-      );
+  } else {
+    // 매핑이 없는 경우 (다른 클라이언트가 시작한 태스크 등)
+    // taskKey를 그대로 세션키로 사용하여 호환성 유지
+    console.warn(`[dashboard] No session mapping for task ${taskKey}, broadcasting with taskKey`);
   }
 });
 
@@ -120,7 +97,7 @@ app.get("/api/health", (_req, res) => {
   res.json({
     status: "ok",
     service: "soul-dashboard",
-    version: "0.1.0",
+    version: "0.2.0",
     connectedClients: eventHub.getTotalClientCount(),
     activeSubscriptions: soulClient.getActiveSubscriptions().length,
   });

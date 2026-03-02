@@ -10,7 +10,7 @@ import { useDashboardStore } from "../stores/dashboard-store";
 import type { SoulSSEEvent, SSEEventType } from "@shared/types";
 
 interface UseSessionOptions {
-  /** 구독할 세션 키 (clientId:requestId). null이면 구독 안 함 */
+  /** 구독할 세션 키 (agentSessionId). null이면 구독 안 함 */
   sessionKey: string | null;
   /** 자동 재연결 활성화. 기본 true */
   autoReconnect?: boolean;

@@ -62,7 +62,7 @@ interface SessionItemProps {
 
 function SessionItem({ session, isActive, onClick }: SessionItemProps) {
   const config = STATUS_CONFIG[session.status];
-  const sessionKey = `${session.clientId}:${session.requestId}`;
+  const sessionKey = session.agentSessionId;
 
   // 시간 포맷
   const timeStr = session.createdAt
@@ -102,7 +102,7 @@ function SessionItem({ session, isActive, onClick }: SessionItemProps) {
             ? session.prompt.length > 30
               ? session.prompt.slice(0, 27) + "..."
               : session.prompt
-            : session.requestId.slice(0, 12)}
+            : session.agentSessionId.slice(0, 16)}
         </div>
         <div className="flex items-center gap-1.5 mt-0.5">
           <span className="text-[11px] text-muted-foreground">
@@ -143,8 +143,7 @@ export function SessionList({ sessions, loading, error }: SessionListProps) {
   const isComposing = useDashboardStore((s) => s.isComposing);
 
   const handleSelect = (session: SessionSummary) => {
-    const key = `${session.clientId}:${session.requestId}`;
-    setActiveSession(key);
+    setActiveSession(session.agentSessionId);
   };
 
   return (
@@ -189,17 +188,14 @@ export function SessionList({ sessions, loading, error }: SessionListProps) {
             No sessions yet
           </div>
         )}
-        {sessions.map((session) => {
-          const key = `${session.clientId}:${session.requestId}`;
-          return (
+        {sessions.map((session) => (
             <SessionItem
-              key={key}
+              key={session.agentSessionId}
               session={session}
-              isActive={activeSessionKey === key}
+              isActive={activeSessionKey === session.agentSessionId}
               onClick={() => handleSelect(session)}
             />
-          );
-        })}
+          ))}
       </ScrollArea>
     </div>
   );

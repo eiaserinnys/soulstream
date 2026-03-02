@@ -50,7 +50,7 @@ class TestSessionIndex:
 
     async def test_register_and_lookup(self, manager):
         """session_id 등록 후 조회"""
-        await manager.create_task("bot", "req1", "hello")
+        await manager.create_task("bot", "req1", "agent-sess-1", "hello")
         manager.register_session("sess-abc", "bot", "req1")
 
         task = manager.get_task_by_session("sess-abc")
@@ -65,7 +65,7 @@ class TestSessionIndex:
 
     async def test_cleanup_on_complete(self, manager):
         """태스크 완료 시 session_id 인덱스 정리"""
-        await manager.create_task("bot", "req1", "hello")
+        await manager.create_task("bot", "req1", "agent-sess-1", "hello")
         manager.register_session("sess-abc", "bot", "req1")
 
         await manager.complete_task("bot", "req1", "done")
@@ -75,7 +75,7 @@ class TestSessionIndex:
 
     async def test_cleanup_on_error(self, manager):
         """태스크 에러 시 session_id 인덱스 정리"""
-        await manager.create_task("bot", "req1", "hello")
+        await manager.create_task("bot", "req1", "agent-sess-1", "hello")
         manager.register_session("sess-abc", "bot", "req1")
 
         await manager.error_task("bot", "req1", "broke")
@@ -85,7 +85,7 @@ class TestSessionIndex:
 
     async def test_cleanup_on_ack(self, manager):
         """태스크 ack 시 session_id 인덱스 정리"""
-        await manager.create_task("bot", "req1", "hello")
+        await manager.create_task("bot", "req1", "agent-sess-1", "hello")
         manager.register_session("sess-abc", "bot", "req1")
         await manager.complete_task("bot", "req1", "done")
 
@@ -96,8 +96,8 @@ class TestSessionIndex:
 
     async def test_multiple_sessions(self, manager):
         """여러 태스크에 각각 다른 session_id"""
-        await manager.create_task("bot", "req1", "hello")
-        await manager.create_task("bot", "req2", "world")
+        await manager.create_task("bot", "req1", "agent-sess-1", "hello")
+        await manager.create_task("bot", "req2", "agent-sess-2", "world")
 
         manager.register_session("sess-1", "bot", "req1")
         manager.register_session("sess-2", "bot", "req2")
@@ -114,7 +114,7 @@ class TestInterventionBySession:
 
     async def test_add_intervention_by_session(self, manager):
         """session_id로 개입 메시지 추가"""
-        await manager.create_task("bot", "req1", "hello")
+        await manager.create_task("bot", "req1", "agent-sess-1", "hello")
         manager.register_session("sess-abc", "bot", "req1")
 
         pos = await manager.add_intervention_by_session(
@@ -137,7 +137,7 @@ class TestInterventionBySession:
 
     async def test_add_intervention_session_not_running(self, manager):
         """완료된 태스크의 session_id로 개입 시도"""
-        await manager.create_task("bot", "req1", "hello")
+        await manager.create_task("bot", "req1", "agent-sess-1", "hello")
         manager.register_session("sess-abc", "bot", "req1")
 
         # 완료 처리 시 인덱스 정리됨 → TaskNotFoundError
@@ -150,7 +150,7 @@ class TestInterventionBySession:
 
     async def test_multiple_interventions_by_session(self, manager):
         """session_id로 여러 개입 메시지"""
-        await manager.create_task("bot", "req1", "hello")
+        await manager.create_task("bot", "req1", "agent-sess-1", "hello")
         manager.register_session("sess-abc", "bot", "req1")
 
         await manager.add_intervention_by_session("sess-abc", "msg1", "user1")

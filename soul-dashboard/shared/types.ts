@@ -177,8 +177,8 @@ export type SessionStatus = "running" | "completed" | "error" | "unknown";
 
 /** 세션 요약 정보 (목록 조회용) */
 export interface SessionSummary {
-  clientId: string;
-  requestId: string;
+  /** 세션의 유일한 키. JSONL 파일명. */
+  agentSessionId: string;
   status: SessionStatus;
   eventCount: number;
   lastEventType?: string;
@@ -191,7 +191,6 @@ export interface SessionSummary {
 /** 세션 상세 정보 */
 export interface SessionDetail extends SessionSummary {
   claudeSessionId?: string;
-  prompt?: string;
   result?: string;
   error?: string;
   events: EventRecord[];
@@ -309,8 +308,8 @@ export interface ApiError {
 export interface DashboardSSEEvent {
   /** EventStore의 단조증가 ID */
   eventId: number;
-  /** 세션 식별자 */
-  sessionKey: string;
+  /** 세션 식별자 (agentSessionId) */
+  agentSessionId: string;
   /** 원본 Soul 이벤트 */
   event: SoulSSEEvent;
 }

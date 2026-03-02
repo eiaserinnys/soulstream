@@ -19,15 +19,13 @@ import {
 
 const TEST_DIR = join(tmpdir(), "soul-dash-sse-" + Date.now());
 
+/** 플랫 구조로 JSONL 파일 생성 */
 function createTestJsonl(
-  clientId: string,
-  requestId: string,
+  agentSessionId: string,
   events: Array<{ id: number; event: Record<string, unknown> }>,
 ): void {
-  const dir = join(TEST_DIR, clientId);
-  mkdirSync(dir, { recursive: true });
   const lines = events.map((e) => JSON.stringify(e)).join("\n") + "\n";
-  writeFileSync(join(dir, `${requestId}.jsonl`), lines, "utf-8");
+  writeFileSync(join(TEST_DIR, `${agentSessionId}.jsonl`), lines, "utf-8");
 }
 
 /** SSE 스트림에서 이벤트를 파싱하여 배열로 반환 */
@@ -72,7 +70,7 @@ describe("SSE Reconnection & Event Replay", () => {
 
   describe("[체크리스트 3] 재접속 시 미수신 이벤트 재전송", () => {
     it("Last-Event-ID 없이 연결: 전체 히스토리 재생", async () => {
-      createTestJsonl("bot", "full-replay", [
+      createTestJsonl("sess-full-replay", [
         { id: 1, event: { type: "progress", text: "Step 1" } },
         { id: 2, event: { type: "text_start", card_id: "c1" } },
         { id: 3, event: { type: "text_delta", card_id: "c1", text: "Hello" } },
@@ -81,7 +79,7 @@ describe("SSE Reconnection & Event Replay", () => {
       ]);
 
       const res = await fetch(
-        `http://localhost:${dashPort}/api/sessions/bot:full-replay/events`,
+        `http://localhost:${dashPort}/api/sessions/sess-full-replay/events`,
       );
 
       const reader = res.body!.getReader();
@@ -104,14 +102,13 @@ describe("SSE Reconnection & Event Replay", () => {
       expect(connected).toHaveLength(1);
 
       const dataEvents = events.filter((e) => e.event !== "connected");
-      // progress.text 기반 합성이 제거됨 → JSONL에 user_message가 없으면 원본 5개만 재생
       expect(dataEvents.length).toBe(5);
       expect(dataEvents[0].id).toBe("1");
       expect(dataEvents[4].id).toBe("5");
     });
 
     it("Last-Event-ID=3 으로 재연결: ID 4, 5만 재전송", async () => {
-      createTestJsonl("bot", "partial-replay", [
+      createTestJsonl("sess-partial-replay", [
         { id: 1, event: { type: "progress", text: "Step 1" } },
         { id: 2, event: { type: "text_start", card_id: "c1" } },
         { id: 3, event: { type: "text_delta", card_id: "c1", text: "Hello" } },
@@ -120,7 +117,7 @@ describe("SSE Reconnection & Event Replay", () => {
       ]);
 
       const res = await fetch(
-        `http://localhost:${dashPort}/api/sessions/bot:partial-replay/events`,
+        `http://localhost:${dashPort}/api/sessions/sess-partial-replay/events`,
         { headers: { "Last-Event-ID": "3" } },
       );
 
@@ -148,13 +145,13 @@ describe("SSE Reconnection & Event Replay", () => {
     });
 
     it("Last-Event-ID가 마지막 이벤트 이후: 히스토리 재생 없음", async () => {
-      createTestJsonl("bot", "no-replay", [
+      createTestJsonl("sess-no-replay", [
         { id: 1, event: { type: "progress", text: "Done" } },
         { id: 2, event: { type: "complete", result: "Done", attachments: [] } },
       ]);
 
       const res = await fetch(
-        `http://localhost:${dashPort}/api/sessions/bot:no-replay/events`,
+        `http://localhost:${dashPort}/api/sessions/sess-no-replay/events`,
         { headers: { "Last-Event-ID": "99" } },
       );
 
@@ -182,13 +179,13 @@ describe("SSE Reconnection & Event Replay", () => {
 
   describe("[체크리스트 4] 알림 트리거 이벤트 전송 확인", () => {
     it("complete 이벤트가 SSE로 전달됨 (알림 트리거)", async () => {
-      createTestJsonl("bot", "notify-complete", [
+      createTestJsonl("sess-notify-complete", [
         { id: 1, event: { type: "progress", text: "Working..." } },
         { id: 2, event: { type: "complete", result: "Task completed successfully", attachments: [] } },
       ]);
 
       const res = await fetch(
-        `http://localhost:${dashPort}/api/sessions/bot:notify-complete/events`,
+        `http://localhost:${dashPort}/api/sessions/sess-notify-complete/events`,
       );
 
       const reader = res.body!.getReader();
@@ -215,13 +212,13 @@ describe("SSE Reconnection & Event Replay", () => {
     });
 
     it("error 이벤트가 SSE로 전달됨 (에러 알림 트리거)", async () => {
-      createTestJsonl("bot", "notify-error", [
+      createTestJsonl("sess-notify-error", [
         { id: 1, event: { type: "progress", text: "Working..." } },
         { id: 2, event: { type: "error", message: "Rate limit exceeded", error_code: "RATE_LIMIT" } },
       ]);
 
       const res = await fetch(
-        `http://localhost:${dashPort}/api/sessions/bot:notify-error/events`,
+        `http://localhost:${dashPort}/api/sessions/sess-notify-error/events`,
       );
 
       const reader = res.body!.getReader();
@@ -248,13 +245,13 @@ describe("SSE Reconnection & Event Replay", () => {
     });
 
     it("intervention_sent 이벤트가 SSE로 전달됨 (질문/개입 알림)", async () => {
-      createTestJsonl("bot", "notify-intervention", [
+      createTestJsonl("sess-notify-intervention", [
         { id: 1, event: { type: "progress", text: "Running..." } },
         { id: 2, event: { type: "intervention_sent", user: "admin", text: "Please clarify" } },
       ]);
 
       const res = await fetch(
-        `http://localhost:${dashPort}/api/sessions/bot:notify-intervention/events`,
+        `http://localhost:${dashPort}/api/sessions/sess-notify-intervention/events`,
       );
 
       const reader = res.body!.getReader();
@@ -285,13 +282,13 @@ describe("SSE Reconnection & Event Replay", () => {
 
   describe("라이브 브로드캐스트 + 히스토리 재생 복합", () => {
     it("히스토리 재생 후 라이브 이벤트 수신", async () => {
-      createTestJsonl("bot", "live-test", [
+      createTestJsonl("sess-live-test", [
         { id: 1, event: { type: "progress", text: "Starting..." } },
         { id: 2, event: { type: "text_start", card_id: "c1" } },
       ]);
 
       const res = await fetch(
-        `http://localhost:${dashPort}/api/sessions/bot:live-test/events`,
+        `http://localhost:${dashPort}/api/sessions/sess-live-test/events`,
       );
 
       const reader = res.body!.getReader();
@@ -301,8 +298,8 @@ describe("SSE Reconnection & Event Replay", () => {
       // 히스토리 수집 대기
       await new Promise((resolve) => setTimeout(resolve, 200));
 
-      // 라이브 이벤트 브로드캐스트
-      ctx.eventHub.broadcast("bot:live-test", 3, {
+      // 라이브 이벤트 브로드캐스트 (agentSessionId로)
+      ctx.eventHub.broadcast("sess-live-test", 3, {
         type: "text_delta",
         card_id: "c1",
         text: "Live data!",

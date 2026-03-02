@@ -2,13 +2,13 @@
  * Actions Routes 단위 테스트
  *
  * POST /api/sessions                  - 새 세션 생성
- * POST /api/sessions/:id/resume       - 완료된 세션 재개
- * POST /api/sessions/:id/intervene    - 실행 중인 세션에 개입 메시지 전송
+ * POST /api/sessions/:id/intervene    - 실행 중/완료된 세션에 메시지 전송
+ * POST /api/sessions/:id/message      - intervene 레거시 호환 경로
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { type Server } from "http";
-import { mkdirSync, writeFileSync, rmSync } from "fs";
+import { mkdirSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import {
@@ -19,17 +19,6 @@ import {
 } from "../test-app-factory.js";
 
 const TEST_DIR = join(tmpdir(), "soul-dash-actions-" + Date.now());
-
-function createTestJsonl(
-  clientId: string,
-  requestId: string,
-  events: Array<{ id: number; event: Record<string, unknown> }>,
-): void {
-  const dir = join(TEST_DIR, clientId);
-  mkdirSync(dir, { recursive: true });
-  const lines = events.map((e) => JSON.stringify(e)).join("\n") + "\n";
-  writeFileSync(join(dir, `${requestId}.jsonl`), lines, "utf-8");
-}
 
 describe("Actions Routes", () => {
   let dashServer: Server;
@@ -93,7 +82,7 @@ describe("Actions Routes", () => {
       expect(data.error.message).toContain("maximum length");
     });
 
-    it("정상 요청 시 201으로 세션 생성 성공", async () => {
+    it("정상 요청 시 201으로 세션 생성 성공 (agentSessionId 반환)", async () => {
       const res = await fetch(`http://localhost:${dashPort}/api/sessions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -103,29 +92,31 @@ describe("Actions Routes", () => {
       expect(res.status).toBe(201);
       const data = await res.json();
 
-      expect(data.clientId).toBe("dashboard");
-      expect(data.requestId).toBeDefined();
-      expect(data.requestId).toMatch(/^dash-/);
-      expect(data.sessionKey).toContain("dashboard:");
+      expect(data.agentSessionId).toBeDefined();
+      expect(data.agentSessionId).toMatch(/^sess-/);
       expect(data.status).toBe("running");
 
       // Soul 서버가 올바른 요청을 수신했는지 확인
       expect(soulRequests).toHaveLength(1);
       expect(soulRequests[0].type).toBe("execute");
       expect((soulRequests[0].body as any).prompt).toBe("Analyze this code");
-      expect((soulRequests[0].body as any).client_id).toBe("dashboard");
+      expect((soulRequests[0].body as any).agent_session_id).toBeDefined();
       expect((soulRequests[0].body as any).use_mcp).toBe(true);
     });
   });
 
-  describe("POST /api/sessions/:id/resume", () => {
+  describe("POST /api/sessions/:id/intervene", () => {
     it("잘못된 세션 ID 형식이면 400 반환", async () => {
+      // 유효하지 않은 문자가 포함된 ID
       const res = await fetch(
-        `http://localhost:${dashPort}/api/sessions/invalid-no-colon/resume`,
+        `http://localhost:${dashPort}/api/sessions/${encodeURIComponent("../invalid")}/intervene`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: "continue" }),
+          body: JSON.stringify({
+            text: "stop please",
+            user: "admin",
+          }),
         },
       );
 
@@ -134,189 +125,9 @@ describe("Actions Routes", () => {
       expect(data.error.code).toBe("INVALID_SESSION_ID");
     });
 
-    it("prompt 없이 요청하면 400 반환", async () => {
-      const res = await fetch(
-        `http://localhost:${dashPort}/api/sessions/bot:req-1/resume`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({}),
-        },
-      );
-
-      expect(res.status).toBe(400);
-      const data = await res.json();
-      expect(data.error.code).toBe("INVALID_REQUEST");
-      expect(data.error.message).toContain("prompt");
-    });
-
-    it("이벤트가 없는 세션이면 404 반환", async () => {
-      const res = await fetch(
-        `http://localhost:${dashPort}/api/sessions/bot:nonexistent/resume`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: "try to resume" }),
-        },
-      );
-
-      expect(res.status).toBe(404);
-      const data = await res.json();
-      expect(data.error.code).toBe("SESSION_NOT_FOUND");
-    });
-
-    it("마지막 이벤트가 progress인 실행 중 세션이면 409 반환", async () => {
-      createTestJsonl("dashboard", "req-running", [
-        { id: 1, event: { type: "user_message", text: "hello", user: "dashboard" } },
-        { id: 2, event: { type: "progress", text: "Still working..." } },
-      ]);
-
-      const res = await fetch(
-        `http://localhost:${dashPort}/api/sessions/dashboard:req-running/resume`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: "try to resume" }),
-        },
-      );
-
-      expect(res.status).toBe(409);
-      const data = await res.json();
-      expect(data.error.code).toBe("SESSION_STILL_RUNNING");
-    });
-
-    it("session 이벤트 없이 완료된 세션이면 404 반환 (claude_session_id 미발견)", async () => {
-      createTestJsonl("dashboard", "req-no-session", [
-        { id: 1, event: { type: "user_message", text: "test", user: "dashboard" } },
-        { id: 2, event: { type: "complete", result: "Done" } },
-      ]);
-
-      const res = await fetch(
-        `http://localhost:${dashPort}/api/sessions/dashboard:req-no-session/resume`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: "try to resume" }),
-        },
-      );
-
-      expect(res.status).toBe(404);
-      const data = await res.json();
-      expect(data.error.code).toBe("SESSION_NOT_FOUND");
-      expect(data.error.message).toContain("claude_session_id");
-    });
-
-    it("정상 요청 시 원래 세션 키와 isResume=true 반환", async () => {
-      // 완료된 세션 생성 (session_id 포함)
-      createTestJsonl("dashboard", "req-completed", [
-        { id: 1, event: { type: "user_message", text: "original prompt", user: "dashboard" } },
-        { id: 2, event: { type: "session", session_id: "claude-session-abc123" } },
-        { id: 3, event: { type: "text_start", card_id: "card-1" } },
-        { id: 4, event: { type: "text_end", card_id: "card-1" } },
-        { id: 5, event: { type: "complete", result: "Done" } },
-      ]);
-
-      const res = await fetch(
-        `http://localhost:${dashPort}/api/sessions/dashboard:req-completed/resume`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: "continue the conversation" }),
-        },
-      );
-
-      expect(res.status).toBe(201);
-      const data = await res.json();
-
-      // 원래 세션 키를 반환해야 함
-      expect(data.sessionKey).toBe("dashboard:req-completed");
-      expect(data.resumedFrom).toBe("dashboard:req-completed");
-      expect(data.resumeSessionId).toBe("claude-session-abc123");
-      expect(data.status).toBe("running");
-      expect(data.isResume).toBe(true);
-
-      // Soul 서버에 올바른 요청 전송 확인
-      expect(soulRequests).toHaveLength(1);
-      expect(soulRequests[0].type).toBe("execute");
-      expect((soulRequests[0].body as any).prompt).toBe("continue the conversation");
-      expect((soulRequests[0].body as any).resume_session_id).toBe("claude-session-abc123");
-    });
-
-    it("resume 응답에 isResume=true가 포함되어 클라이언트가 세션 전환을 구분할 수 있어야 함", async () => {
-      // 완료된 세션 생성
-      createTestJsonl("dashboard", "req-for-client", [
-        { id: 1, event: { type: "user_message", text: "test", user: "dashboard" } },
-        { id: 2, event: { type: "session", session_id: "claude-sess-client" } },
-        { id: 3, event: { type: "complete", result: "Done" } },
-      ]);
-
-      const res = await fetch(
-        `http://localhost:${dashPort}/api/sessions/dashboard:req-for-client/resume`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: "resume prompt" }),
-        },
-      );
-
-      expect(res.status).toBe(201);
-      const data = await res.json();
-
-      // 클라이언트가 새 세션 생성과 resume을 구분할 수 있어야 함
-      // isResume=true이면 클라이언트는 setActiveSession을 호출하지 않음
-      expect(data.isResume).toBe(true);
-      expect(data.sessionKey).toBe("dashboard:req-for-client");
-    });
-
-    it("error로 종료된 세션도 resume 가능", async () => {
-      createTestJsonl("dashboard", "req-errored", [
-        { id: 1, event: { type: "user_message", text: "failed prompt", user: "dashboard" } },
-        { id: 2, event: { type: "session", session_id: "claude-session-xyz" } },
-        { id: 3, event: { type: "error", message: "Something went wrong" } },
-      ]);
-
-      const res = await fetch(
-        `http://localhost:${dashPort}/api/sessions/dashboard:req-errored/resume`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: "retry" }),
-        },
-      );
-
-      expect(res.status).toBe(201);
-      const data = await res.json();
-      expect(data.sessionKey).toBe("dashboard:req-errored");
-      expect(data.isResume).toBe(true);
-    });
-
-    it("result로 종료된 세션도 resume 가능", async () => {
-      createTestJsonl("dashboard", "req-result", [
-        { id: 1, event: { type: "user_message", text: "prompt", user: "dashboard" } },
-        { id: 2, event: { type: "session", session_id: "claude-session-result" } },
-        { id: 3, event: { type: "result", subtype: "success", result: "Done" } },
-      ]);
-
-      const res = await fetch(
-        `http://localhost:${dashPort}/api/sessions/dashboard:req-result/resume`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: "continue" }),
-        },
-      );
-
-      expect(res.status).toBe(201);
-      const data = await res.json();
-      expect(data.sessionKey).toBe("dashboard:req-result");
-      expect(data.isResume).toBe(true);
-    });
-  });
-
-  describe("POST /api/sessions/:id/intervene", () => {
     it("text 없이 요청하면 400 반환", async () => {
       const res = await fetch(
-        `http://localhost:${dashPort}/api/sessions/bot:req-1/intervene`,
+        `http://localhost:${dashPort}/api/sessions/sess-abc/intervene`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -332,7 +143,7 @@ describe("Actions Routes", () => {
 
     it("user 없이 요청하면 400 반환", async () => {
       const res = await fetch(
-        `http://localhost:${dashPort}/api/sessions/bot:req-1/intervene`,
+        `http://localhost:${dashPort}/api/sessions/sess-abc/intervene`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -348,7 +159,7 @@ describe("Actions Routes", () => {
 
     it("정상 요청 시 Soul 서버에 개입 메시지 전송 성공", async () => {
       const res = await fetch(
-        `http://localhost:${dashPort}/api/sessions/bot:req-1/intervene`,
+        `http://localhost:${dashPort}/api/sessions/sess-abc/intervene`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -366,8 +177,7 @@ describe("Actions Routes", () => {
       expect(soulRequests[0].type).toBe("intervene");
       expect((soulRequests[0].body as any).text).toBe("Please stop and explain");
       expect((soulRequests[0].body as any).user).toBe("admin");
-      expect(soulRequests[0].params!.clientId).toBe("bot");
-      expect(soulRequests[0].params!.requestId).toBe("req-1");
+      expect(soulRequests[0].params!.agentSessionId).toBe("sess-abc");
     });
   });
 });

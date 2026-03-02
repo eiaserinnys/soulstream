@@ -109,6 +109,18 @@ class TaskExecutor:
 
         try:
             async with resource_manager.acquire(timeout=5.0):
+                # user_message 기록 (Soul 서버가 JSONL의 유일한 기록자)
+                if self._event_store is not None:
+                    try:
+                        user_msg_event = {"type": "user_message", "user": task.client_id, "text": task.prompt}
+                        event_id = self._event_store.append(task.agent_session_id, user_msg_event)
+                        user_msg_event["_event_id"] = event_id
+                        await self._listener_manager.broadcast(
+                            task.client_id, task.request_id, user_msg_event
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to persist user_message for {key}: {e}")
+
                 # 개입 메시지 가져오기 함수
                 async def get_intervention():
                     return await self._get_intervention(task.client_id, task.request_id)
@@ -116,6 +128,13 @@ class TaskExecutor:
                 # 개입 메시지 전송 콜백
                 async def on_intervention_sent(user: str, text: str):
                     event = {"type": "intervention_sent", "user": user, "text": text}
+                    # intervention을 user_message로도 JSONL에 기록
+                    if self._event_store is not None:
+                        try:
+                            intervention_msg = {"type": "user_message", "user": user, "text": text}
+                            self._event_store.append(task.agent_session_id, intervention_msg)
+                        except Exception as e:
+                            logger.warning(f"Failed to persist intervention user_message for {key}: {e}")
                     await self._listener_manager.broadcast(task.client_id, task.request_id, event)
 
                 # Claude Code 실행 (요청별 도구 설정 전달)
@@ -146,7 +165,7 @@ class TaskExecutor:
                     if self._event_store is not None:
                         try:
                             event_id = self._event_store.append(
-                                task.client_id, task.request_id, event_dict
+                                task.agent_session_id, event_dict
                             )
                             # SSE id 필드로 사용할 수 있도록 주입
                             event_dict["_event_id"] = event_id
@@ -253,7 +272,7 @@ class TaskExecutor:
             if self._event_store is not None and last_event_id is not None:
                 try:
                     missed_events = self._event_store.read_since(
-                        client_id, request_id, after_id=last_event_id
+                        task.agent_session_id, after_id=last_event_id
                     )
                     for ev in missed_events:
                         normalized = dict(ev.get("event", {}))

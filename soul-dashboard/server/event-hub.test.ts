@@ -1,7 +1,7 @@
 /**
  * EventHub 테스트
  *
- * SSE 클라이언트 관리와 브로드캐스트를 검증합니다.
+ * SSE 클라이언트 관리, 브로드캐스트, task→session 매핑을 검증합니다.
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
@@ -50,7 +50,7 @@ describe("EventHub", () => {
   describe("addClient / removeClient", () => {
     it("should register a client and set SSE headers", () => {
       const res = createMockResponse();
-      const clientId = hub.addClient("bot:req-1", res);
+      const clientId = hub.addClient("sess-abc", res);
 
       expect(clientId).toMatch(/^dash-/);
       expect(res.writeHead).toHaveBeenCalledWith(200, {
@@ -60,12 +60,12 @@ describe("EventHub", () => {
         "X-Accel-Buffering": "no",
       });
       expect(hub.getTotalClientCount()).toBe(1);
-      expect(hub.getClientCount("bot:req-1")).toBe(1);
+      expect(hub.getClientCount("sess-abc")).toBe(1);
     });
 
     it("should send connected event on registration", () => {
       const res = createMockResponse();
-      const clientId = hub.addClient("bot:req-1", res);
+      const clientId = hub.addClient("sess-abc", res);
 
       expect(res._written.length).toBeGreaterThan(0);
       expect(res._written[0]).toContain("event: connected");
@@ -74,17 +74,17 @@ describe("EventHub", () => {
 
     it("should remove client", () => {
       const res = createMockResponse();
-      const clientId = hub.addClient("bot:req-1", res);
+      const clientId = hub.addClient("sess-abc", res);
 
       hub.removeClient(clientId);
 
       expect(hub.getTotalClientCount()).toBe(0);
-      expect(hub.getClientCount("bot:req-1")).toBe(0);
+      expect(hub.getClientCount("sess-abc")).toBe(0);
     });
 
     it("should auto-remove on connection close", () => {
       const res = createMockResponse();
-      hub.addClient("bot:req-1", res);
+      hub.addClient("sess-abc", res);
 
       expect(hub.getTotalClientCount()).toBe(1);
 
@@ -98,10 +98,10 @@ describe("EventHub", () => {
       const res1 = createMockResponse();
       const res2 = createMockResponse();
 
-      hub.addClient("bot:req-1", res1);
-      hub.addClient("bot:req-1", res2);
+      hub.addClient("sess-abc", res1);
+      hub.addClient("sess-abc", res2);
 
-      expect(hub.getClientCount("bot:req-1")).toBe(2);
+      expect(hub.getClientCount("sess-abc")).toBe(2);
       expect(hub.getTotalClientCount()).toBe(2);
     });
   });
@@ -111,11 +111,11 @@ describe("EventHub", () => {
       const res1 = createMockResponse();
       const res2 = createMockResponse();
 
-      hub.addClient("bot:req-1", res1);
-      hub.addClient("bot:req-1", res2);
+      hub.addClient("sess-abc", res1);
+      hub.addClient("sess-abc", res2);
 
       const event: SoulSSEEvent = { type: "progress", text: "Working..." };
-      hub.broadcast("bot:req-1", 1, event);
+      hub.broadcast("sess-abc", 1, event);
 
       // 각 response에 SSE 형식으로 전송되었는지 확인
       // res1._written[0]은 connected 이벤트이므로 [1]이 broadcast
@@ -133,11 +133,11 @@ describe("EventHub", () => {
       const res1 = createMockResponse();
       const res2 = createMockResponse();
 
-      hub.addClient("bot:req-1", res1);
-      hub.addClient("bot:req-2", res2);
+      hub.addClient("sess-abc", res1);
+      hub.addClient("sess-def", res2);
 
-      const event: SoulSSEEvent = { type: "progress", text: "Only req-1" };
-      hub.broadcast("bot:req-1", 1, event);
+      const event: SoulSSEEvent = { type: "progress", text: "Only sess-abc" };
+      hub.broadcast("sess-abc", 1, event);
 
       // res1은 connected + broadcast = 2 writes
       expect(res1._written).toHaveLength(2);
@@ -149,8 +149,8 @@ describe("EventHub", () => {
       const res1 = createMockResponse();
       const res2 = createMockResponse();
 
-      hub.addClient("bot:req-1", res1);
-      hub.addClient("bot:req-1", res2);
+      hub.addClient("sess-abc", res1);
+      hub.addClient("sess-abc", res2);
 
       // res1을 수동으로 종료 (writableEnded = true)
       res1.end();
@@ -160,17 +160,17 @@ describe("EventHub", () => {
         result: "Done",
         attachments: [],
       };
-      hub.broadcast("bot:req-1", 2, event);
+      hub.broadcast("sess-abc", 2, event);
 
       // dead connection이 정리되어 1개만 남아야 함
-      expect(hub.getClientCount("bot:req-1")).toBe(1);
+      expect(hub.getClientCount("sess-abc")).toBe(1);
     });
   });
 
   describe("replayEvents", () => {
     it("should send events in order to specific client", () => {
       const res = createMockResponse();
-      const clientId = hub.addClient("bot:req-1", res);
+      const clientId = hub.addClient("sess-abc", res);
 
       const events = [
         { id: 1, event: { type: "progress", text: "Step 1" } },
@@ -193,8 +193,8 @@ describe("EventHub", () => {
       const res1 = createMockResponse();
       const res2 = createMockResponse();
 
-      hub.addClient("bot:req-1", res1);
-      hub.addClient("bot:req-2", res2);
+      hub.addClient("sess-abc", res1);
+      hub.addClient("sess-def", res2);
 
       hub.sendKeepalive();
 
@@ -207,20 +207,57 @@ describe("EventHub", () => {
     });
   });
 
+  describe("task→session mapping", () => {
+    it("should register and resolve task→session mapping", () => {
+      hub.registerTask("dashboard:task-001", "sess-abc");
+
+      expect(hub.resolveTask("dashboard:task-001")).toBe("sess-abc");
+    });
+
+    it("should return undefined for unregistered task key", () => {
+      expect(hub.resolveTask("unknown:task")).toBeUndefined();
+    });
+
+    it("should unregister task mapping", () => {
+      hub.registerTask("dashboard:task-001", "sess-abc");
+      hub.unregisterTask("dashboard:task-001");
+
+      expect(hub.resolveTask("dashboard:task-001")).toBeUndefined();
+    });
+
+    it("should support multiple tasks mapping to same session", () => {
+      hub.registerTask("dashboard:task-001", "sess-abc");
+      hub.registerTask("dashboard:task-002", "sess-abc");
+
+      expect(hub.resolveTask("dashboard:task-001")).toBe("sess-abc");
+      expect(hub.resolveTask("dashboard:task-002")).toBe("sess-abc");
+    });
+
+    it("should clear all task mappings on closeAll", () => {
+      hub.registerTask("dashboard:task-001", "sess-abc");
+      hub.registerTask("dashboard:task-002", "sess-def");
+
+      hub.closeAll();
+
+      expect(hub.resolveTask("dashboard:task-001")).toBeUndefined();
+      expect(hub.resolveTask("dashboard:task-002")).toBeUndefined();
+    });
+  });
+
   describe("getStats", () => {
     it("should return per-session client counts", () => {
       const res1 = createMockResponse();
       const res2 = createMockResponse();
       const res3 = createMockResponse();
 
-      hub.addClient("bot:req-1", res1);
-      hub.addClient("bot:req-1", res2);
-      hub.addClient("bot:req-2", res3);
+      hub.addClient("sess-abc", res1);
+      hub.addClient("sess-abc", res2);
+      hub.addClient("sess-def", res3);
 
       const stats = hub.getStats();
       expect(stats).toEqual({
-        "bot:req-1": 2,
-        "bot:req-2": 1,
+        "sess-abc": 2,
+        "sess-def": 1,
       });
     });
   });

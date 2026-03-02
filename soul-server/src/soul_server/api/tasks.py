@@ -91,6 +91,7 @@ async def execute_task(
         task = await task_manager.create_task(
             client_id=request.client_id,
             request_id=request.request_id,
+            agent_session_id=request.agent_session_id,
             prompt=request.prompt,
             resume_session_id=request.resume_session_id,
             allowed_tools=request.allowed_tools,
@@ -405,40 +406,52 @@ async def intervene_task(
 
 
 @router.post(
-    "/sessions/{session_id}/intervene",
-    response_model=InterveneResponse,
+    "/sessions/{agent_session_id}/intervene",
     status_code=202,
     responses={
         404: {"model": ErrorResponse},
-        409: {"model": ErrorResponse},
     },
 )
-async def intervene_by_session(
-    session_id: str,
+async def intervene_by_agent_session(
+    agent_session_id: str,
     request: InterveneRequest,
     _: str = Depends(verify_token),
 ):
     """
-    session_id 기반 개입 메시지 전송
+    agent_session_id 기반 개입 메시지 전송 (자동 resume 포함)
 
-    Claude Code session_id로 실행 중인 태스크를 찾아 개입 메시지를 전송합니다.
-    기존 client_id/request_id 기반 API의 대안으로, 봇이 session_id만 알면
-    인터벤션을 보낼 수 있습니다.
+    running 태스크이면 intervention queue에 추가합니다.
+    완료된 태스크이면 자동으로 새 태스크를 생성하여 대화를 이어갑니다.
     """
     task_manager = get_task_manager()
 
     try:
-        queue_position = await task_manager.add_intervention_by_session(
-            session_id=session_id,
+        result = await task_manager.add_intervention_by_agent_session(
+            agent_session_id=agent_session_id,
             text=request.text,
             user=request.user,
             attachment_paths=request.attachment_paths,
         )
 
-        return InterveneResponse(
-            queued=True,
-            queue_position=queue_position,
-        )
+        if result.get("auto_resumed"):
+            # 자동 resume: 새 태스크 생성됨 → 실행 시작 필요
+            task_key = result["task_key"]
+            client_id, request_id = task_key.split(":", 1)
+            await task_manager.start_execution(
+                client_id=client_id,
+                request_id=request_id,
+                claude_runner=soul_engine,
+                resource_manager=resource_manager,
+            )
+            return {
+                "auto_resumed": True,
+                "task_key": task_key,
+            }
+        else:
+            return {
+                "queued": True,
+                "queue_position": result["queue_position"],
+            }
 
     except TaskNotFoundError:
         raise HTTPException(
@@ -446,19 +459,7 @@ async def intervene_by_session(
             detail={
                 "error": {
                     "code": "SESSION_NOT_FOUND",
-                    "message": f"세션에 대응하는 태스크를 찾을 수 없습니다: {session_id}",
-                    "details": {},
-                }
-            },
-        )
-
-    except TaskNotRunningError:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "error": {
-                    "code": "TASK_NOT_RUNNING",
-                    "message": f"세션의 태스크가 실행 중이 아닙니다: {session_id}",
+                    "message": f"세션에 대응하는 태스크를 찾을 수 없습니다: {agent_session_id}",
                     "details": {},
                 }
             },

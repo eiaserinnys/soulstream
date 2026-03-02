@@ -211,15 +211,9 @@ export class SerendipitySessionProvider implements SessionStorageProvider {
    * 세렌디피티 페이지를 SessionSummary로 변환.
    */
   private pageToSessionSummary(page: SerendipityPageSummary): SessionSummary {
-    // 페이지 제목에서 세션 정보 추출
-    // 예: "Soul Session: 2026-03-01 12:34" 또는 "clientId:requestId"
-    const titleParts = page.title.split(":");
-    const clientId = titleParts[0] || "serendipity";
-    const requestId = page.id; // 페이지 UUID를 requestId로 사용
-
+    // 페이지 UUID를 agentSessionId로 사용
     return {
-      clientId,
-      requestId,
+      agentSessionId: page.id,
       status: "completed" as SessionStatus, // 세렌디피티에 저장된 세션은 완료된 것으로 간주
       eventCount: 0, // 블록 수는 상세 조회 시 확인
       createdAt: page.createdAt,

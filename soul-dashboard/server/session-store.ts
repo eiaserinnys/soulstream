@@ -1,15 +1,17 @@
 /**
  * Session Store - JSONL 파일 읽기 전용 저장소
  *
- * Phase 4의 EventStore(Python)가 생성한 JSONL 파일을 읽어
+ * Soul 서버의 EventStore(Python)가 생성한 JSONL 파일을 읽어
  * 세션 목록과 이벤트 내역을 제공합니다.
  *
- * 파일 경로 규칙: {baseDir}/{clientId}/{requestId}.jsonl
+ * 파일 경로 규칙: {baseDir}/{agentSessionId}.jsonl (플랫 구조)
  * 각 줄: {"id": <monotonic_int>, "event": <event_dict>}
+ *
+ * Soul 서버가 JSONL의 유일한 기록자. 대시보드는 읽기 전용.
  */
 
-import { readFile, readdir, stat, mkdir, appendFile } from "fs/promises";
-import { join, basename, dirname } from "path";
+import { readFile, readdir, stat } from "fs/promises";
+import { join, basename } from "path";
 import type {
   EventRecord,
   SessionSummary,
@@ -37,73 +39,55 @@ export class SessionStore {
   /**
    * 모든 세션의 요약 목록을 반환합니다.
    *
-   * 파일시스템을 스캔하여 {baseDir}/{clientId}/{requestId}.jsonl 패턴의
-   * 파일에서 세션 메타데이터를 수집합니다.
+   * baseDir 직하의 *.jsonl 파일을 스캔합니다 (플랫 구조).
+   * 파일명 = agentSessionId.
    */
   async listSessions(): Promise<SessionSummary[]> {
     const sessions: SessionSummary[] = [];
 
-    let clientDirs: string[];
+    let files: string[];
     try {
-      clientDirs = await readdir(this.baseDir);
+      files = await readdir(this.baseDir);
     } catch {
       // baseDir이 없으면 빈 목록 반환
       return sessions;
     }
 
-    for (const clientId of clientDirs) {
-      // 경로 탈출 및 XSS 방지: 안전한 문자만 포함된 디렉토리만 허용
-      if (!this.isValidPathComponent(clientId)) {
+    for (const file of files) {
+      if (!file.endsWith(".jsonl")) continue;
+
+      const agentSessionId = basename(file, ".jsonl");
+
+      // 파일명 안전성 검증
+      if (!this.isValidPathComponent(agentSessionId)) {
         console.warn(
-          `[SessionStore] Skipping invalid client directory: ${clientId}`,
+          `[SessionStore] Skipping invalid session file: ${file}`,
         );
         continue;
       }
 
-      const clientPath = join(this.baseDir, clientId);
+      const filePath = join(this.baseDir, file);
 
-      let clientStat;
+      // 디렉토리가 아닌 파일만 처리
+      let fileStat;
       try {
-        clientStat = await stat(clientPath);
+        fileStat = await stat(filePath);
       } catch {
         continue;
       }
-      if (!clientStat.isDirectory()) continue;
+      if (!fileStat.isFile()) continue;
 
-      let files: string[];
       try {
-        files = await readdir(clientPath);
-      } catch {
-        continue;
-      }
-
-      for (const file of files) {
-        if (!file.endsWith(".jsonl")) continue;
-
-        const requestId = basename(file, ".jsonl");
-
-        // 파일명도 안전한 문자만 허용
-        if (!this.isValidPathComponent(requestId)) {
-          console.warn(
-            `[SessionStore] Skipping invalid request file: ${file}`,
-          );
-          continue;
-        }
-        const filePath = join(clientPath, file);
-
-        try {
-          const summary = await this.readSessionSummary(
-            clientId,
-            requestId,
-            filePath,
-          );
-          sessions.push(summary);
-        } catch (err) {
-          console.warn(
-            `[SessionStore] Failed to read session ${clientId}:${requestId}:`,
-            err,
-          );
-        }
+        const summary = await this.readSessionSummary(
+          agentSessionId,
+          filePath,
+        );
+        sessions.push(summary);
+      } catch (err) {
+        console.warn(
+          `[SessionStore] Failed to read session ${agentSessionId}:`,
+          err,
+        );
       }
     }
 
@@ -120,15 +104,11 @@ export class SessionStore {
   /**
    * 특정 세션의 모든 이벤트를 반환합니다.
    *
-   * @param clientId - 클라이언트 ID
-   * @param requestId - 요청 ID
+   * @param agentSessionId - 세션 식별자
    * @returns 이벤트 레코드 배열 (id 오름차순)
    */
-  async readEvents(
-    clientId: string,
-    requestId: string,
-  ): Promise<EventRecord[]> {
-    const filePath = this.sessionPath(clientId, requestId);
+  async readEvents(agentSessionId: string): Promise<EventRecord[]> {
+    const filePath = this.sessionPath(agentSessionId);
 
     let content: string;
     try {
@@ -143,44 +123,15 @@ export class SessionStore {
   /**
    * 특정 ID 이후의 이벤트만 반환합니다 (Last-Event-ID 재연결용).
    *
-   * @param clientId - 클라이언트 ID
-   * @param requestId - 요청 ID
+   * @param agentSessionId - 세션 식별자
    * @param afterId - 이 ID 이후의 이벤트만 반환
    */
   async readEventsSince(
-    clientId: string,
-    requestId: string,
+    agentSessionId: string,
     afterId: number,
   ): Promise<EventRecord[]> {
-    const events = await this.readEvents(clientId, requestId);
+    const events = await this.readEvents(agentSessionId);
     return events.filter((ev) => ev.id > afterId);
-  }
-
-  /**
-   * JSONL 파일에 이벤트를 추가합니다.
-   *
-   * 대시보드에서 생성한 이벤트(user_message 등)를 JSONL에 기록하여
-   * 히스토리 리플레이 시에도 사용할 수 있게 합니다.
-   *
-   * @param clientId - 클라이언트 ID
-   * @param requestId - 요청 ID
-   * @param eventId - 이벤트 ID (단조증가)
-   * @param event - 이벤트 페이로드
-   */
-  async appendEvent(
-    clientId: string,
-    requestId: string,
-    eventId: number,
-    event: object,
-  ): Promise<void> {
-    const filePath = this.sessionPath(clientId, requestId);
-    const dirPath = dirname(filePath);
-
-    // 디렉토리가 없으면 생성
-    await mkdir(dirPath, { recursive: true });
-
-    const record = JSON.stringify({ id: eventId, event });
-    await appendFile(filePath, record + "\n", "utf-8");
   }
 
   /**
@@ -194,11 +145,10 @@ export class SessionStore {
     return "running";
   }
 
-  private sessionPath(clientId: string, requestId: string): string {
+  sessionPath(agentSessionId: string): string {
     // 경로 탈출 방지: 안전한 문자만 허용
-    const safeClientId = this.sanitize(clientId);
-    const safeRequestId = this.sanitize(requestId);
-    return join(this.baseDir, safeClientId, `${safeRequestId}.jsonl`);
+    const safeId = this.sanitize(agentSessionId);
+    return join(this.baseDir, `${safeId}.jsonl`);
   }
 
   private sanitize(value: string): string {
@@ -231,8 +181,7 @@ export class SessionStore {
   }
 
   private async readSessionSummary(
-    clientId: string,
-    requestId: string,
+    agentSessionId: string,
     filePath: string,
   ): Promise<SessionSummary> {
     const content = await readFile(filePath, "utf-8");
@@ -246,7 +195,6 @@ export class SessionStore {
     // 첫 이벤트의 타임스탬프에서 생성 시간 추정
     let createdAt: string | undefined;
     if (firstRecord?.event) {
-      // created_at 필드가 이벤트에 있을 수 있음
       const eventData = firstRecord.event as Record<string, unknown>;
       if (typeof eventData.created_at === "string") {
         createdAt = eventData.created_at;
@@ -289,8 +237,7 @@ export class SessionStore {
     }
 
     return {
-      clientId,
-      requestId,
+      agentSessionId,
       status: this.inferStatus(lastEventType),
       eventCount,
       lastEventType,

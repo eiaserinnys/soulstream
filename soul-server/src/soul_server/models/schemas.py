@@ -165,6 +165,7 @@ class ExecuteRequest(BaseModel):
     """실행 요청"""
     client_id: str = Field(..., description="클라이언트 ID (e.g., 'dashboard', 'slackbot')")
     request_id: str = Field(..., description="요청 ID (e.g., Slack thread ID)")
+    agent_session_id: str = Field(..., description="세션 식별자. JSONL 파일명. resume 시 원래 세션과 동일 값.")
     prompt: str = Field(..., description="실행할 프롬프트")
     resume_session_id: Optional[str] = Field(None, description="이전 Claude 세션 ID (대화 연속성용)")
     attachment_paths: Optional[List[str]] = Field(None, description="첨부 파일 경로 목록")

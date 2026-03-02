@@ -2,7 +2,7 @@
  * Sessions Routes 단위 테스트
  *
  * GET /api/sessions         - 전체 세션 목록 조회
- * GET /api/sessions/:id     - 특정 세션 상세 조회
+ * GET /api/sessions/:id     - 특정 세션 상세 조회 (:id = agentSessionId)
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -18,15 +18,13 @@ import {
 
 const TEST_DIR = join(tmpdir(), "soul-dash-sessions-" + Date.now());
 
+/** 플랫 구조로 JSONL 파일 생성 */
 function createTestJsonl(
-  clientId: string,
-  requestId: string,
+  agentSessionId: string,
   events: Array<{ id: number; event: Record<string, unknown> }>,
 ): void {
-  const dir = join(TEST_DIR, clientId);
-  mkdirSync(dir, { recursive: true });
   const lines = events.map((e) => JSON.stringify(e)).join("\n") + "\n";
-  writeFileSync(join(dir, `${requestId}.jsonl`), lines, "utf-8");
+  writeFileSync(join(TEST_DIR, `${agentSessionId}.jsonl`), lines, "utf-8");
 }
 
 describe("Sessions Routes", () => {
@@ -59,13 +57,13 @@ describe("Sessions Routes", () => {
     });
 
     it("JSONL 파일에서 세션 목록 반환", async () => {
-      createTestJsonl("bot", "req-001", [
+      createTestJsonl("sess-001", [
         { id: 1, event: { type: "progress", text: "Processing..." } },
         { id: 2, event: { type: "session", session_id: "sess-abc" } },
         { id: 3, event: { type: "complete", result: "Done", attachments: [] } },
       ]);
 
-      createTestJsonl("dashboard", "req-002", [
+      createTestJsonl("sess-002", [
         { id: 1, event: { type: "user_message", text: "hello", user: "dashboard" } },
         { id: 2, event: { type: "progress", text: "Working..." } },
       ]);
@@ -76,23 +74,21 @@ describe("Sessions Routes", () => {
       const data = await res.json();
       expect(data.sessions).toHaveLength(2);
 
-      const botSession = data.sessions.find((s: any) => s.clientId === "bot");
-      expect(botSession).toBeDefined();
-      expect(botSession.requestId).toBe("req-001");
-      expect(botSession.status).toBe("completed");
-      expect(botSession.eventCount).toBe(3);
+      const sess1 = data.sessions.find((s: any) => s.agentSessionId === "sess-001");
+      expect(sess1).toBeDefined();
+      expect(sess1.status).toBe("completed");
+      expect(sess1.eventCount).toBe(3);
 
-      const dashSession = data.sessions.find((s: any) => s.clientId === "dashboard");
-      expect(dashSession).toBeDefined();
-      expect(dashSession.requestId).toBe("req-002");
-      expect(dashSession.status).toBe("running");
-      expect(dashSession.eventCount).toBe(2);
+      const sess2 = data.sessions.find((s: any) => s.agentSessionId === "sess-002");
+      expect(sess2).toBeDefined();
+      expect(sess2.status).toBe("running");
+      expect(sess2.eventCount).toBe(2);
     });
   });
 
   describe("GET /api/sessions/:id", () => {
     it("세션 상세 정보와 이벤트 목록 반환", async () => {
-      createTestJsonl("bot", "req-detail", [
+      createTestJsonl("sess-detail", [
         { id: 1, event: { type: "progress", text: "Working..." } },
         { id: 2, event: { type: "session", session_id: "sess-xyz" } },
         { id: 3, event: { type: "text_start", card_id: "c1" } },
@@ -102,36 +98,24 @@ describe("Sessions Routes", () => {
       ]);
 
       const res = await fetch(
-        `http://localhost:${port}/api/sessions/bot:req-detail`,
+        `http://localhost:${port}/api/sessions/sess-detail`,
       );
       expect(res.ok).toBe(true);
 
       const detail = await res.json();
-      expect(detail.clientId).toBe("bot");
-      expect(detail.requestId).toBe("req-detail");
+      expect(detail.agentSessionId).toBe("sess-detail");
       expect(detail.status).toBe("completed");
       expect(detail.claudeSessionId).toBe("sess-xyz");
       expect(detail.eventCount).toBe(6);
-      expect(detail.prompt).toBe("Working...");
       expect(detail.result).toBe("Finished");
       expect(detail.events).toHaveLength(6);
       expect(detail.events[0].id).toBe(1);
       expect(detail.events[5].id).toBe(6);
     });
 
-    it("콜론이 없는 잘못된 세션 ID 형식이면 400 반환", async () => {
-      const res = await fetch(
-        `http://localhost:${port}/api/sessions/invalid-no-colon`,
-      );
-      expect(res.status).toBe(400);
-
-      const data = await res.json();
-      expect(data.error.code).toBe("INVALID_SESSION_ID");
-    });
-
     it("존재하지 않는 세션이면 404 반환", async () => {
       const res = await fetch(
-        `http://localhost:${port}/api/sessions/bot:nonexistent-req`,
+        `http://localhost:${port}/api/sessions/nonexistent-session`,
       );
       expect(res.status).toBe(404);
 

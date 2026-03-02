@@ -2,6 +2,7 @@
  * dashboard-store 테스트
  *
  * Zustand 스토어의 트리 기반 이벤트 처리 로직을 검증합니다.
+ * 세션 키는 agentSessionId (예: "sess-xxx") 형식입니다.
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
@@ -48,8 +49,7 @@ describe("dashboard-store", () => {
     it("should set sessions", () => {
       const sessions: SessionSummary[] = [
         {
-          clientId: "c1",
-          requestId: "r1",
+          agentSessionId: "sess-abc",
           status: "running",
           eventCount: 5,
           createdAt: "2026-01-01T00:00:00Z",
@@ -85,15 +85,15 @@ describe("dashboard-store", () => {
       useDashboardStore.getState().processEvent(textStart, 1);
       expect(useDashboardStore.getState().tree).not.toBeNull();
 
-      useDashboardStore.getState().setActiveSession("c1:r1");
-      expect(useDashboardStore.getState().activeSessionKey).toBe("c1:r1");
+      useDashboardStore.getState().setActiveSession("sess-abc");
+      expect(useDashboardStore.getState().activeSessionKey).toBe("sess-abc");
       expect(useDashboardStore.getState().tree).toBeNull();
       expect(useDashboardStore.getState().lastEventId).toBe(0);
       expect(useDashboardStore.getState().selectedCardId).toBeNull();
     });
 
     it("should clear active session when set to null", () => {
-      useDashboardStore.getState().setActiveSession("c1:r1");
+      useDashboardStore.getState().setActiveSession("sess-abc");
       useDashboardStore.getState().setActiveSession(null);
       expect(useDashboardStore.getState().activeSessionKey).toBeNull();
     });
@@ -522,7 +522,7 @@ describe("dashboard-store", () => {
 
   describe("startCompose / cancelCompose", () => {
     it("should reset session state and set isComposing to true", () => {
-      useDashboardStore.getState().setActiveSession("c1:r1");
+      useDashboardStore.getState().setActiveSession("sess-abc");
       useDashboardStore.getState().processEvent(
         { type: "user_message", user: "u", text: "hi" } as UserMessageEvent,
         0,
@@ -555,8 +555,8 @@ describe("dashboard-store", () => {
     });
 
     it("cancelCompose should clear resumeTargetKey from startResume", () => {
-      useDashboardStore.getState().startResume("c1:r1");
-      expect(useDashboardStore.getState().resumeTargetKey).toBe("c1:r1");
+      useDashboardStore.getState().startResume("sess-abc");
+      expect(useDashboardStore.getState().resumeTargetKey).toBe("sess-abc");
 
       useDashboardStore.getState().cancelCompose();
       expect(useDashboardStore.getState().isComposing).toBe(false);
@@ -568,7 +568,7 @@ describe("dashboard-store", () => {
 
   describe("startResume", () => {
     it("should preserve session state while setting isComposing and resumeTargetKey", () => {
-      useDashboardStore.getState().setActiveSession("old:session");
+      useDashboardStore.getState().setActiveSession("sess-old");
       useDashboardStore.getState().processEvent(
         { type: "user_message", user: "u", text: "hi" } as UserMessageEvent,
         0,
@@ -579,18 +579,18 @@ describe("dashboard-store", () => {
       expect(useDashboardStore.getState().tree).not.toBeNull();
       expect(useDashboardStore.getState().lastEventId).toBe(6);
 
-      useDashboardStore.getState().startResume("old:session");
+      useDashboardStore.getState().startResume("sess-old");
       const state = useDashboardStore.getState();
 
       expect(state.isComposing).toBe(true);
-      expect(state.resumeTargetKey).toBe("old:session");
-      expect(state.activeSessionKey).toBe("old:session");
+      expect(state.resumeTargetKey).toBe("sess-old");
+      expect(state.activeSessionKey).toBe("sess-old");
       expect(state.tree).not.toBeNull();
       expect(state.lastEventId).toBe(6);
     });
 
     it("should differ from startCompose: startCompose resets state, startResume preserves it", () => {
-      useDashboardStore.getState().setActiveSession("existing:session");
+      useDashboardStore.getState().setActiveSession("sess-existing");
       useDashboardStore.getState().processEvent(
         { type: "user_message", user: "u", text: "hi" } as UserMessageEvent,
         0,
@@ -605,17 +605,17 @@ describe("dashboard-store", () => {
 
       useDashboardStore.getState().reset();
 
-      useDashboardStore.getState().setActiveSession("existing:session");
+      useDashboardStore.getState().setActiveSession("sess-existing");
       useDashboardStore.getState().processEvent(
         { type: "user_message", user: "u", text: "hi" } as UserMessageEvent,
         0,
       );
       useDashboardStore.getState().processEvent({ type: "text_start", card_id: "t1" }, 1);
-      useDashboardStore.getState().startResume("existing:session");
+      useDashboardStore.getState().startResume("sess-existing");
 
       expect(useDashboardStore.getState().isComposing).toBe(true);
-      expect(useDashboardStore.getState().resumeTargetKey).toBe("existing:session");
-      expect(useDashboardStore.getState().activeSessionKey).toBe("existing:session");
+      expect(useDashboardStore.getState().resumeTargetKey).toBe("sess-existing");
+      expect(useDashboardStore.getState().activeSessionKey).toBe("sess-existing");
       expect(useDashboardStore.getState().tree).not.toBeNull();
     });
   });
@@ -654,10 +654,10 @@ describe("dashboard-store", () => {
 
     it("should not affect sessions or activeSessionKey", () => {
       const sessions: SessionSummary[] = [
-        { clientId: "c1", requestId: "r1", status: "running", eventCount: 5, createdAt: "2026-01-01T00:00:00Z" },
+        { agentSessionId: "sess-abc", status: "running", eventCount: 5, createdAt: "2026-01-01T00:00:00Z" },
       ];
       useDashboardStore.getState().setSessions(sessions);
-      useDashboardStore.getState().setActiveSession("c1:r1");
+      useDashboardStore.getState().setActiveSession("sess-abc");
       useDashboardStore.getState().processEvent(
         { type: "user_message", user: "u", text: "hi" } as UserMessageEvent,
         0,
@@ -678,9 +678,9 @@ describe("dashboard-store", () => {
         useDashboardStore.getState();
 
       setSessions([
-        { clientId: "c", requestId: "r", status: "running", eventCount: 1 },
+        { agentSessionId: "sess-abc", status: "running", eventCount: 1 },
       ]);
-      setActiveSession("c:r");
+      setActiveSession("sess-abc");
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
       processEvent({ type: "text_start", card_id: "x" }, 1);
       selectCard("x");

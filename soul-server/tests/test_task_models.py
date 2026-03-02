@@ -19,9 +19,10 @@ from soul_server.service.task_models import (
 
 class TestTaskCreation:
     def test_create_task_defaults(self):
-        task = Task(client_id="bot", request_id="req1", prompt="hello")
+        task = Task(client_id="bot", request_id="req1", agent_session_id="sess-1", prompt="hello")
         assert task.client_id == "bot"
         assert task.request_id == "req1"
+        assert task.agent_session_id == "sess-1"
         assert task.prompt == "hello"
         assert task.status == TaskStatus.RUNNING
         assert task.result is None
@@ -32,20 +33,21 @@ class TestTaskCreation:
         assert task.completed_at is None
 
     def test_task_key(self):
-        task = Task(client_id="bot", request_id="req1", prompt="hello")
+        task = Task(client_id="bot", request_id="req1", agent_session_id="sess-1", prompt="hello")
         assert task.key == "bot:req1"
 
     def test_task_with_resume_session(self):
         task = Task(
             client_id="bot",
             request_id="req1",
+            agent_session_id="sess-1",
             prompt="hello",
             resume_session_id="abc-123",
         )
         assert task.resume_session_id == "abc-123"
 
     def test_task_runtime_fields_initialized(self):
-        task = Task(client_id="bot", request_id="req1", prompt="hello")
+        task = Task(client_id="bot", request_id="req1", agent_session_id="sess-1", prompt="hello")
         assert isinstance(task.listeners, list)
         assert len(task.listeners) == 0
         assert isinstance(task.intervention_queue, asyncio.Queue)
@@ -55,7 +57,7 @@ class TestTaskCreation:
 
 class TestTaskStatusTransitions:
     def test_complete_task(self):
-        task = Task(client_id="bot", request_id="req1", prompt="hello")
+        task = Task(client_id="bot", request_id="req1", agent_session_id="sess-1", prompt="hello")
         assert task.status == TaskStatus.RUNNING
 
         task.status = TaskStatus.COMPLETED
@@ -67,7 +69,7 @@ class TestTaskStatusTransitions:
         assert task.completed_at is not None
 
     def test_error_task(self):
-        task = Task(client_id="bot", request_id="req1", prompt="hello")
+        task = Task(client_id="bot", request_id="req1", agent_session_id="sess-1", prompt="hello")
         task.status = TaskStatus.ERROR
         task.error = "something went wrong"
         task.completed_at = utc_now()
@@ -76,7 +78,7 @@ class TestTaskStatusTransitions:
         assert task.error == "something went wrong"
 
     def test_mark_delivered(self):
-        task = Task(client_id="bot", request_id="req1", prompt="hello")
+        task = Task(client_id="bot", request_id="req1", agent_session_id="sess-1", prompt="hello")
         assert task.result_delivered is False
         task.result_delivered = True
         assert task.result_delivered is True
@@ -84,11 +86,12 @@ class TestTaskStatusTransitions:
 
 class TestTaskSerialization:
     def test_to_dict(self):
-        task = Task(client_id="bot", request_id="req1", prompt="hello")
+        task = Task(client_id="bot", request_id="req1", agent_session_id="sess-1", prompt="hello")
         d = task.to_dict()
 
         assert d["client_id"] == "bot"
         assert d["request_id"] == "req1"
+        assert d["agent_session_id"] == "sess-1"
         assert d["prompt"] == "hello"
         assert d["status"] == "running"
         assert d["result"] is None
@@ -98,7 +101,7 @@ class TestTaskSerialization:
         assert d["completed_at"] is None
 
     def test_to_dict_completed(self):
-        task = Task(client_id="bot", request_id="req1", prompt="hello")
+        task = Task(client_id="bot", request_id="req1", agent_session_id="sess-1", prompt="hello")
         task.status = TaskStatus.COMPLETED
         task.result = "result text"
         task.claude_session_id = "session-123"
@@ -115,6 +118,7 @@ class TestTaskSerialization:
         d = {
             "client_id": "bot",
             "request_id": "req1",
+            "agent_session_id": "sess-1",
             "prompt": "hello",
             "status": "running",
             "resume_session_id": None,
@@ -129,13 +133,29 @@ class TestTaskSerialization:
         task = Task.from_dict(d)
         assert task.client_id == "bot"
         assert task.request_id == "req1"
+        assert task.agent_session_id == "sess-1"
         assert task.status == TaskStatus.RUNNING
         assert task.result is None
+
+    def test_from_dict_backward_compat(self):
+        """agent_session_id가 없는 구버전 dict에서도 복원된다"""
+        now = utc_now()
+        d = {
+            "client_id": "bot",
+            "request_id": "req1",
+            "prompt": "hello",
+            "status": "running",
+            "created_at": datetime_to_str(now),
+        }
+
+        task = Task.from_dict(d)
+        assert task.agent_session_id == ""  # 기본값
 
     def test_roundtrip(self):
         task = Task(
             client_id="bot",
             request_id="req1",
+            agent_session_id="sess-1",
             prompt="hello",
             resume_session_id="session-abc",
         )
@@ -150,6 +170,7 @@ class TestTaskSerialization:
 
         assert restored.client_id == task.client_id
         assert restored.request_id == task.request_id
+        assert restored.agent_session_id == task.agent_session_id
         assert restored.prompt == task.prompt
         assert restored.status == task.status
         assert restored.result == task.result
@@ -158,7 +179,7 @@ class TestTaskSerialization:
         assert restored.resume_session_id == task.resume_session_id
 
     def test_runtime_fields_not_serialized(self):
-        task = Task(client_id="bot", request_id="req1", prompt="hello")
+        task = Task(client_id="bot", request_id="req1", agent_session_id="sess-1", prompt="hello")
         d = task.to_dict()
         assert "listeners" not in d
         assert "intervention_queue" not in d

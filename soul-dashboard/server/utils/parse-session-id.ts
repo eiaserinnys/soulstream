@@ -1,34 +1,23 @@
 /**
  * 세션 ID 파싱 유틸리티
  *
- * URL 파라미터 또는 쿼리 파라미터에서 clientId/requestId를 추출합니다.
+ * agentSessionId 전환 이후로 파싱이 단순화됨.
+ * URL 파라미터에서 agentSessionId를 그대로 반환합니다.
+ *
+ * @deprecated agentSessionId 전환 후 이 유틸은 불필요.
+ * req.params.id를 직접 사용하세요.
  */
 
 /**
- * 세션 ID를 clientId와 requestId로 파싱합니다.
- *
- * 지원 형식:
- * - URL param: "clientId:requestId" (URL 인코딩된 콜론)
- * - Query params: ?clientId=...&requestId=...
+ * 세션 ID를 agentSessionId로 반환합니다.
  */
 export function parseSessionId(
   idParam: string,
-  query: Record<string, string>,
-): { clientId?: string; requestId?: string } {
-  // Query param 우선
-  if (query.clientId && query.requestId) {
-    return { clientId: query.clientId, requestId: query.requestId };
-  }
-
-  // URL param에서 파싱
+  _query: Record<string, string>,
+): { agentSessionId?: string } {
   const decoded = decodeURIComponent(idParam);
-  const colonIdx = decoded.indexOf(":");
-  if (colonIdx > 0) {
-    return {
-      clientId: decoded.substring(0, colonIdx),
-      requestId: decoded.substring(colonIdx + 1),
-    };
+  if (decoded) {
+    return { agentSessionId: decoded };
   }
-
   return {};
 }

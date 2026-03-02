@@ -24,18 +24,18 @@ def storage(tmp_storage_path):
 class TestTaskStorageSave:
     async def test_save_creates_file(self, storage, tmp_storage_path):
         tasks = {
-            "bot:req1": Task(client_id="bot", request_id="req1", prompt="hello")
+            "bot:req1": Task(client_id="bot", request_id="req1", agent_session_id="sess-1", prompt="hello")
         }
         await storage.save(tasks)
         assert tmp_storage_path.exists()
 
     async def test_save_creates_directories(self, storage, tmp_storage_path):
-        tasks = {"bot:req1": Task(client_id="bot", request_id="req1", prompt="hello")}
+        tasks = {"bot:req1": Task(client_id="bot", request_id="req1", agent_session_id="sess-1", prompt="hello")}
         await storage.save(tasks)
         assert tmp_storage_path.parent.exists()
 
     async def test_save_valid_json(self, storage, tmp_storage_path):
-        tasks = {"bot:req1": Task(client_id="bot", request_id="req1", prompt="hello")}
+        tasks = {"bot:req1": Task(client_id="bot", request_id="req1", agent_session_id="sess-1", prompt="hello")}
         await storage.save(tasks)
 
         data = json.loads(tmp_storage_path.read_text())
@@ -45,8 +45,8 @@ class TestTaskStorageSave:
 
     async def test_save_multiple_tasks(self, storage, tmp_storage_path):
         tasks = {
-            "bot:req1": Task(client_id="bot", request_id="req1", prompt="hello"),
-            "bot:req2": Task(client_id="bot", request_id="req2", prompt="world"),
+            "bot:req1": Task(client_id="bot", request_id="req1", agent_session_id="sess-1", prompt="hello"),
+            "bot:req2": Task(client_id="bot", request_id="req2", agent_session_id="sess-2", prompt="world"),
         }
         await storage.save(tasks)
 
@@ -69,7 +69,7 @@ class TestTaskStorageLoad:
     async def test_load_from_saved(self, storage, tmp_storage_path):
         # 먼저 저장
         original_tasks = {
-            "bot:req1": Task(client_id="bot", request_id="req1", prompt="hello"),
+            "bot:req1": Task(client_id="bot", request_id="req1", agent_session_id="sess-1", prompt="hello"),
         }
         original_tasks["bot:req1"].status = TaskStatus.COMPLETED
         original_tasks["bot:req1"].result = "done"
@@ -162,7 +162,7 @@ class TestTaskStorageLoad:
 class TestTaskStorageNoPersistence:
     async def test_none_path_skips_save(self):
         storage = TaskStorage(storage_path=None)
-        tasks = {"bot:req1": Task(client_id="bot", request_id="req1", prompt="hello")}
+        tasks = {"bot:req1": Task(client_id="bot", request_id="req1", agent_session_id="sess-1", prompt="hello")}
         # save가 에러 없이 조용히 스킵되는지 확인
         await storage.save(tasks)
 

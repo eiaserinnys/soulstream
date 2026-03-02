@@ -1,7 +1,7 @@
 /**
  * Events Routes 단위 테스트
  *
- * GET /api/sessions/:id/events - SSE 이벤트 스트림
+ * GET /api/sessions/:id/events - SSE 이벤트 스트림 (:id = agentSessionId)
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -17,15 +17,13 @@ import {
 
 const TEST_DIR = join(tmpdir(), "soul-dash-events-" + Date.now());
 
+/** 플랫 구조로 JSONL 파일 생성 */
 function createTestJsonl(
-  clientId: string,
-  requestId: string,
+  agentSessionId: string,
   events: Array<{ id: number; event: Record<string, unknown> }>,
 ): void {
-  const dir = join(TEST_DIR, clientId);
-  mkdirSync(dir, { recursive: true });
   const lines = events.map((e) => JSON.stringify(e)).join("\n") + "\n";
-  writeFileSync(join(dir, `${requestId}.jsonl`), lines, "utf-8");
+  writeFileSync(join(TEST_DIR, `${agentSessionId}.jsonl`), lines, "utf-8");
 }
 
 describe("Events Routes", () => {
@@ -49,19 +47,9 @@ describe("Events Routes", () => {
   });
 
   describe("GET /api/sessions/:id/events", () => {
-    it("잘못된 세션 ID 형식이면 400 반환", async () => {
-      const res = await fetch(
-        `http://localhost:${port}/api/sessions/invalid-no-colon/events`,
-      );
-
-      expect(res.status).toBe(400);
-      const data = await res.json();
-      expect(data.error.code).toBe("INVALID_SESSION_ID");
-    });
-
     it("SSE 연결 수립 후 connected 이벤트 수신", async () => {
       const res = await fetch(
-        `http://localhost:${port}/api/sessions/bot:req-sse-1/events`,
+        `http://localhost:${port}/api/sessions/sess-sse-1/events`,
       );
 
       expect(res.ok).toBe(true);
@@ -87,11 +75,11 @@ describe("Events Routes", () => {
       clearTimeout(timeout);
 
       expect(collected).toContain("event: connected");
-      expect(collected).toContain("bot:req-sse-1");
+      expect(collected).toContain("sess-sse-1");
     });
 
     it("기존 JSONL 이벤트를 SSE로 재생", async () => {
-      createTestJsonl("bot", "req-replay", [
+      createTestJsonl("sess-replay", [
         { id: 1, event: { type: "progress", text: "Starting..." } },
         { id: 2, event: { type: "session", session_id: "sess-123" } },
         { id: 3, event: { type: "text_start", card_id: "c1" } },
@@ -101,7 +89,7 @@ describe("Events Routes", () => {
       ]);
 
       const res = await fetch(
-        `http://localhost:${port}/api/sessions/bot:req-replay/events`,
+        `http://localhost:${port}/api/sessions/sess-replay/events`,
       );
 
       expect(res.ok).toBe(true);

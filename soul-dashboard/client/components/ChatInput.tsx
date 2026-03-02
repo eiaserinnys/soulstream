@@ -22,7 +22,7 @@ export function ChatInput() {
   const sessionStatus = useMemo(() => {
     if (!activeSessionKey) return null;
     const session = sessions.find(
-      (s) => `${s.clientId}:${s.requestId}` === activeSessionKey,
+      (s) => s.agentSessionId === activeSessionKey,
     );
     return session?.status ?? null;
   }, [activeSessionKey, sessions]);
@@ -76,46 +76,28 @@ export function ChatInput() {
 
     try {
       const headers = await getAuthHeaders();
-      let response: Response;
 
-      if (isFinished) {
-        // Completed/Error → resume API로 새 세션 생성
-        response = await fetch(
-          `/api/sessions/${encodeURIComponent(activeSessionKey)}/resume`,
-          {
-            method: "POST",
-            headers,
-            body: JSON.stringify({ prompt: trimmed }),
-            signal: controller.signal,
-          },
-        );
-      } else {
-        // Running → intervene API로 메시지 전송
-        response = await fetch(
-          `/api/sessions/${encodeURIComponent(activeSessionKey)}/intervene`,
-          {
-            method: "POST",
-            headers,
-            body: JSON.stringify({
-              text: trimmed,
-              user: "dashboard",
-            }),
-            signal: controller.signal,
-          },
-        );
-      }
+      // running/completed 구분 없이 항상 /intervene로 전송
+      // Soul 서버가 태스크 상태에 따라 intervention 또는 자동 resume 분기
+      const response = await fetch(
+        `/api/sessions/${encodeURIComponent(activeSessionKey)}/intervene`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            text: trimmed,
+            user: "dashboard",
+          }),
+          signal: controller.signal,
+        },
+      );
 
       if (!response.ok) {
         const body = await response.json().catch(() => ({ error: { message: "Unknown error" } }));
         throw new Error(body.error?.message ?? `HTTP ${response.status}`);
       }
 
-      if (isFinished) {
-        // Resume 성공 — 세션 전환 불필요
-        // 서버가 SSE로 user_message + 후속 이벤트를 기존 세션에 포워딩하므로
-        // 기존 그래프가 유지되고 새 이벤트가 자동으로 추가됨
-        await response.json();
-      }
+      await response.json();
       setText("");
     } catch (err) {
       // AbortError는 의도적 취소이므로 무시
@@ -124,7 +106,7 @@ export function ChatInput() {
     } finally {
       setSending(false);
     }
-  }, [activeSessionKey, text, sending, isFinished]);
+  }, [activeSessionKey, text, sending]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {

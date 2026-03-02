@@ -2,13 +2,12 @@
  * Sessions Routes - 세션 목록 및 상세 조회 API
  *
  * GET /api/sessions         - 전체 세션 목록
- * GET /api/sessions/:id     - 특정 세션 상세 정보
+ * GET /api/sessions/:id     - 특정 세션 상세 정보 (:id = agentSessionId)
  */
 
 import { Router } from "express";
 import type { SessionStore } from "../session-store.js";
 import type { SessionDetail, SessionSummary } from "../../shared/types.js";
-import { parseSessionId } from "../utils/parse-session-id.js";
 
 export function createSessionsRouter(sessionStore: SessionStore): Router {
   const router = Router();
@@ -39,35 +38,29 @@ export function createSessionsRouter(sessionStore: SessionStore): Router {
    * GET /api/sessions/:id
    *
    * 특정 세션의 상세 정보를 반환합니다.
-   * :id 형식은 "clientId:requestId" (URL 인코딩 필요).
-   *
-   * 또는 query param으로 분리: ?clientId=...&requestId=...
+   * :id = agentSessionId
    */
   router.get("/:id", async (req, res) => {
     try {
-      const { clientId, requestId } = parseSessionId(
-        req.params.id,
-        req.query as Record<string, string>,
-      );
+      const agentSessionId = req.params.id;
 
-      if (!clientId || !requestId) {
+      if (!agentSessionId) {
         res.status(400).json({
           error: {
             code: "INVALID_SESSION_ID",
-            message:
-              'Session ID format: "clientId:requestId" or use ?clientId=...&requestId=...',
+            message: "Session ID is required",
           },
         });
         return;
       }
 
-      const events = await sessionStore.readEvents(clientId, requestId);
+      const events = await sessionStore.readEvents(agentSessionId);
 
       if (events.length === 0) {
         res.status(404).json({
           error: {
             code: "SESSION_NOT_FOUND",
-            message: `Session not found: ${clientId}:${requestId}`,
+            message: `Session not found: ${agentSessionId}`,
           },
         });
         return;
@@ -98,18 +91,17 @@ export function createSessionsRouter(sessionStore: SessionStore): Router {
         }
       }
 
-      // 첫 progress 이벤트에서 prompt 힌트 추출
+      // 첫 user_message에서 prompt 추출
       let prompt: string | undefined;
       for (const record of events) {
-        if (record.event.type === "progress") {
+        if (record.event.type === "user_message" && typeof record.event.text === "string") {
           prompt = record.event.text as string;
           break;
         }
       }
 
       const detail: SessionDetail = {
-        clientId,
-        requestId,
+        agentSessionId,
         status,
         eventCount: events.length,
         lastEventType,
@@ -134,4 +126,3 @@ export function createSessionsRouter(sessionStore: SessionStore): Router {
 
   return router;
 }
-

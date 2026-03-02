@@ -74,7 +74,7 @@ export class FileSessionProvider implements SessionStorageProvider {
    * File 모드에서는 SSE 이벤트를 재생하여 카드를 구성하므로,
    * 초기 스냅샷은 빈 배열을 반환하고 subscribe로 실시간 구축합니다.
    *
-   * @param _sessionKey - 세션 키 (clientId:requestId)
+   * @param _sessionKey - 세션 키 (agentSessionId)
    */
   async fetchCards(_sessionKey: string): Promise<DashboardCard[]> {
     // File 모드는 SSE 이벤트로 카드를 구성하므로 초기값은 빈 배열
@@ -88,7 +88,7 @@ export class FileSessionProvider implements SessionStorageProvider {
    * /api/sessions/:sessionKey/events SSE 스트림을 구독하여
    * 실시간 이벤트를 수신합니다.
    *
-   * @param sessionKey - 세션 키 (clientId:requestId)
+   * @param sessionKey - 세션 키 (agentSessionId)
    * @param onEvent - 이벤트 수신 콜백
    * @returns 구독 해제 함수
    */

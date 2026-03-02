@@ -1,5 +1,5 @@
 """
-test_task_manager - CRUD, 충돌 감지, ack, cleanup 테스트
+test_task_manager - CRUD, 충돌 감지, ack, cleanup, agent_session_id 인덱스 테스트
 """
 
 import asyncio
@@ -28,33 +28,41 @@ def manager():
 
 class TestCreateTask:
     async def test_create_basic(self, manager):
-        task = await manager.create_task("bot", "req1", "hello")
+        task = await manager.create_task("bot", "req1", "sess-1", "hello")
         assert task.client_id == "bot"
         assert task.request_id == "req1"
+        assert task.agent_session_id == "sess-1"
         assert task.prompt == "hello"
         assert task.status == TaskStatus.RUNNING
 
     async def test_create_with_resume(self, manager):
-        task = await manager.create_task("bot", "req1", "hello", resume_session_id="sess-1")
-        assert task.resume_session_id == "sess-1"
+        task = await manager.create_task("bot", "req1", "sess-1", "hello", resume_session_id="claude-sess-1")
+        assert task.resume_session_id == "claude-sess-1"
 
     async def test_create_conflict_running(self, manager):
-        await manager.create_task("bot", "req1", "hello")
+        await manager.create_task("bot", "req1", "sess-1", "hello")
         with pytest.raises(TaskConflictError):
-            await manager.create_task("bot", "req1", "hello again")
+            await manager.create_task("bot", "req1", "sess-1", "hello again")
 
     async def test_create_overwrites_completed(self, manager):
-        task1 = await manager.create_task("bot", "req1", "hello")
+        task1 = await manager.create_task("bot", "req1", "sess-1", "hello")
         await manager.complete_task("bot", "req1", "done")
 
-        task2 = await manager.create_task("bot", "req1", "new prompt")
+        task2 = await manager.create_task("bot", "req1", "sess-1", "new prompt")
         assert task2.prompt == "new prompt"
         assert task2.status == TaskStatus.RUNNING
+
+    async def test_create_registers_agent_session_index(self, manager):
+        """create_task가 agent_session_id 인덱스를 등록한다"""
+        await manager.create_task("bot", "req1", "sess-aaa", "hello")
+        task = manager.get_task_by_agent_session("sess-aaa")
+        assert task is not None
+        assert task.request_id == "req1"
 
 
 class TestGetTask:
     async def test_get_existing(self, manager):
-        await manager.create_task("bot", "req1", "hello")
+        await manager.create_task("bot", "req1", "sess-1", "hello")
         task = await manager.get_task("bot", "req1")
         assert task is not None
         assert task.prompt == "hello"
@@ -64,9 +72,9 @@ class TestGetTask:
         assert task is None
 
     async def test_get_tasks_by_client(self, manager):
-        await manager.create_task("bot1", "req1", "hello")
-        await manager.create_task("bot1", "req2", "world")
-        await manager.create_task("bot2", "req1", "other")
+        await manager.create_task("bot1", "req1", "sess-1", "hello")
+        await manager.create_task("bot1", "req2", "sess-2", "world")
+        await manager.create_task("bot2", "req1", "sess-3", "other")
 
         bot1_tasks = await manager.get_tasks_by_client("bot1")
         assert len(bot1_tasks) == 2
@@ -75,8 +83,8 @@ class TestGetTask:
         assert len(bot2_tasks) == 1
 
     async def test_get_running_tasks(self, manager):
-        await manager.create_task("bot", "req1", "hello")
-        await manager.create_task("bot", "req2", "world")
+        await manager.create_task("bot", "req1", "sess-1", "hello")
+        await manager.create_task("bot", "req2", "sess-2", "world")
         await manager.complete_task("bot", "req1", "done")
 
         running = manager.get_running_tasks()
@@ -86,7 +94,7 @@ class TestGetTask:
 
 class TestCompleteTask:
     async def test_complete_basic(self, manager):
-        await manager.create_task("bot", "req1", "hello")
+        await manager.create_task("bot", "req1", "sess-1", "hello")
         task = await manager.complete_task("bot", "req1", "result")
 
         assert task is not None
@@ -95,9 +103,9 @@ class TestCompleteTask:
         assert task.completed_at is not None
 
     async def test_complete_with_session_id(self, manager):
-        await manager.create_task("bot", "req1", "hello")
-        task = await manager.complete_task("bot", "req1", "result", claude_session_id="sess-1")
-        assert task.claude_session_id == "sess-1"
+        await manager.create_task("bot", "req1", "sess-1", "hello")
+        task = await manager.complete_task("bot", "req1", "result", claude_session_id="claude-sess-1")
+        assert task.claude_session_id == "claude-sess-1"
 
     async def test_complete_nonexistent(self, manager):
         task = await manager.complete_task("bot", "nonexistent", "result")
@@ -106,7 +114,7 @@ class TestCompleteTask:
 
 class TestErrorTask:
     async def test_error_basic(self, manager):
-        await manager.create_task("bot", "req1", "hello")
+        await manager.create_task("bot", "req1", "sess-1", "hello")
         task = await manager.error_task("bot", "req1", "something broke")
 
         assert task is not None
@@ -121,7 +129,7 @@ class TestErrorTask:
 
 class TestAckTask:
     async def test_ack_removes_task(self, manager):
-        await manager.create_task("bot", "req1", "hello")
+        await manager.create_task("bot", "req1", "sess-1", "hello")
         await manager.complete_task("bot", "req1", "result")
 
         success = await manager.ack_task("bot", "req1")
@@ -137,7 +145,7 @@ class TestAckTask:
 
 class TestMarkDelivered:
     async def test_mark_delivered(self, manager):
-        await manager.create_task("bot", "req1", "hello")
+        await manager.create_task("bot", "req1", "sess-1", "hello")
         await manager.complete_task("bot", "req1", "result")
 
         success = await manager.mark_delivered("bot", "req1")
@@ -153,7 +161,7 @@ class TestMarkDelivered:
 
 class TestIntervention:
     async def test_add_intervention(self, manager):
-        await manager.create_task("bot", "req1", "hello")
+        await manager.create_task("bot", "req1", "sess-1", "hello")
         pos = await manager.add_intervention("bot", "req1", "stop", "user1")
         assert pos == 1
 
@@ -162,14 +170,14 @@ class TestIntervention:
             await manager.add_intervention("bot", "nonexistent", "stop", "user1")
 
     async def test_add_intervention_not_running(self, manager):
-        await manager.create_task("bot", "req1", "hello")
+        await manager.create_task("bot", "req1", "sess-1", "hello")
         await manager.complete_task("bot", "req1", "done")
 
         with pytest.raises(TaskNotRunningError):
             await manager.add_intervention("bot", "req1", "stop", "user1")
 
     async def test_get_intervention(self, manager):
-        await manager.create_task("bot", "req1", "hello")
+        await manager.create_task("bot", "req1", "sess-1", "hello")
         await manager.add_intervention("bot", "req1", "stop", "user1")
 
         msg = await manager.get_intervention("bot", "req1")
@@ -178,14 +186,69 @@ class TestIntervention:
         assert msg["user"] == "user1"
 
     async def test_get_intervention_empty(self, manager):
-        await manager.create_task("bot", "req1", "hello")
+        await manager.create_task("bot", "req1", "sess-1", "hello")
         msg = await manager.get_intervention("bot", "req1")
         assert msg is None
 
 
+class TestAgentSessionIntervention:
+    """agent_session_id 기반 개입 메시지 + 자동 resume"""
+
+    async def test_intervention_running_task(self, manager):
+        """running 태스크에 agent_session_id로 개입"""
+        await manager.create_task("bot", "req1", "sess-aaa", "hello")
+
+        result = await manager.add_intervention_by_agent_session("sess-aaa", "새 질문", "user1")
+        assert "queue_position" in result
+        assert result["queue_position"] >= 1
+
+        # 메시지 확인
+        msg = await manager.get_intervention("bot", "req1")
+        assert msg is not None
+        assert msg["text"] == "새 질문"
+
+    async def test_intervention_completed_auto_resume(self, manager):
+        """완료된 태스크에 agent_session_id로 개입 → 자동 resume"""
+        await manager.create_task("bot", "req1", "sess-aaa", "hello")
+        await manager.complete_task("bot", "req1", "done", claude_session_id="claude-sess-1")
+
+        result = await manager.add_intervention_by_agent_session("sess-aaa", "이어서 해줘", "user1")
+        assert result["auto_resumed"] is True
+        assert "task_key" in result
+
+        # 새 태스크가 동일한 agent_session_id를 사용
+        new_task = manager.get_task_by_agent_session("sess-aaa")
+        assert new_task is not None
+        assert new_task.agent_session_id == "sess-aaa"
+        assert new_task.prompt == "이어서 해줘"
+        assert new_task.resume_session_id == "claude-sess-1"
+
+    async def test_intervention_not_found(self, manager):
+        """존재하지 않는 agent_session_id로 개입"""
+        with pytest.raises(TaskNotFoundError):
+            await manager.add_intervention_by_agent_session("nonexistent", "text", "user1")
+
+    async def test_get_task_by_agent_session(self, manager):
+        """agent_session_id로 태스크 조회"""
+        await manager.create_task("bot", "req1", "sess-aaa", "hello")
+        task = manager.get_task_by_agent_session("sess-aaa")
+        assert task is not None
+        assert task.client_id == "bot"
+        assert task.request_id == "req1"
+
+    async def test_agent_session_index_survives_completion(self, manager):
+        """태스크 완료 후에도 agent_session_index는 유지된다 (자동 resume 지원)"""
+        await manager.create_task("bot", "req1", "sess-aaa", "hello")
+        await manager.complete_task("bot", "req1", "done")
+
+        # agent_session_index는 여전히 조회 가능 (자동 resume에 필요)
+        task = manager.get_task_by_agent_session("sess-aaa")
+        assert task is not None
+
+
 class TestCleanup:
     async def test_cleanup_old_completed_tasks(self, manager):
-        task = await manager.create_task("bot", "req1", "hello")
+        task = await manager.create_task("bot", "req1", "sess-1", "hello")
         await manager.complete_task("bot", "req1", "result")
 
         # created_at을 과거로 조작
@@ -199,7 +262,7 @@ class TestCleanup:
         assert task is None
 
     async def test_cleanup_preserves_recent_tasks(self, manager):
-        await manager.create_task("bot", "req1", "hello")
+        await manager.create_task("bot", "req1", "sess-1", "hello")
         await manager.complete_task("bot", "req1", "result")
 
         cleaned = await manager.cleanup_old_tasks(max_age_hours=24)
@@ -211,8 +274,8 @@ class TestCleanup:
 
 class TestStats:
     async def test_stats(self, manager):
-        await manager.create_task("bot", "req1", "hello")
-        await manager.create_task("bot", "req2", "world")
+        await manager.create_task("bot", "req1", "sess-1", "hello")
+        await manager.create_task("bot", "req2", "sess-2", "world")
         await manager.complete_task("bot", "req1", "done")
 
         stats = manager.get_stats()

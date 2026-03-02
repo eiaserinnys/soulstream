@@ -132,9 +132,9 @@ export interface PortableTextMarkDef {
 // === Session Key 유틸리티 ===
 
 /**
- * Serendipity 페이지 ID를 세션 키로 사용.
+ * 세션 키.
  *
- * File 모드: "clientId:requestId" 형식
+ * File 모드: agentSessionId
  * Serendipity 모드: 페이지 UUID
  */
 export type SessionKey = string;

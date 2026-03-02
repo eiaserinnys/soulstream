@@ -19,15 +19,13 @@ import {
 
 const TEST_DIR = join(tmpdir(), "soul-dash-long-" + Date.now());
 
+/** 플랫 구조로 JSONL 파일 생성 */
 function createTestJsonl(
-  clientId: string,
-  requestId: string,
+  agentSessionId: string,
   events: Array<{ id: number; event: Record<string, unknown> }>,
 ): void {
-  const dir = join(TEST_DIR, clientId);
-  mkdirSync(dir, { recursive: true });
   const lines = events.map((e) => JSON.stringify(e)).join("\n") + "\n";
-  writeFileSync(join(dir, `${requestId}.jsonl`), lines, "utf-8");
+  writeFileSync(join(TEST_DIR, `${agentSessionId}.jsonl`), lines, "utf-8");
 }
 
 function parseSSEEvents(raw: string): Array<{ id?: string; event?: string; data?: string }> {
@@ -88,7 +86,7 @@ describe("Long Session & Error Cases", () => {
       }
 
       events.push({ id: id++, event: { type: "complete", result: "Long session completed", attachments: [] } });
-      createTestJsonl("bot", "long-session", events);
+      createTestJsonl("sess-long", events);
 
       const listRes = await fetch(`http://localhost:${dashPort}/api/sessions`);
       const listData = await listRes.json();
@@ -97,7 +95,7 @@ describe("Long Session & Error Cases", () => {
       expect(listData.sessions[0].status).toBe("completed");
 
       const detailRes = await fetch(
-        `http://localhost:${dashPort}/api/sessions/bot:long-session`,
+        `http://localhost:${dashPort}/api/sessions/sess-long`,
       );
       expect(detailRes.ok).toBe(true);
       const detail = await detailRes.json();
@@ -106,7 +104,7 @@ describe("Long Session & Error Cases", () => {
     });
 
     it("compact 이벤트가 포함된 세션을 정상 처리", async () => {
-      createTestJsonl("bot", "compact-session", [
+      createTestJsonl("sess-compact", [
         { id: 1, event: { type: "progress", text: "Starting..." } },
         { id: 2, event: { type: "session", session_id: "compact-sess" } },
         { id: 3, event: { type: "text_start", card_id: "c1" } },
@@ -121,7 +119,7 @@ describe("Long Session & Error Cases", () => {
       ]);
 
       const res = await fetch(
-        `http://localhost:${dashPort}/api/sessions/bot:compact-session`,
+        `http://localhost:${dashPort}/api/sessions/sess-compact`,
       );
       const detail = await res.json();
 
@@ -138,7 +136,7 @@ describe("Long Session & Error Cases", () => {
     });
 
     it("compact 후 SSE 이벤트 순서가 유지됨", async () => {
-      createTestJsonl("bot", "compact-sse", [
+      createTestJsonl("sess-compact-sse", [
         { id: 1, event: { type: "text_start", card_id: "c1" } },
         { id: 2, event: { type: "text_end", card_id: "c1" } },
         { id: 3, event: { type: "compact", trigger: "auto", message: "Compacted" } },
@@ -148,7 +146,7 @@ describe("Long Session & Error Cases", () => {
       ]);
 
       const res = await fetch(
-        `http://localhost:${dashPort}/api/sessions/bot:compact-sse/events`,
+        `http://localhost:${dashPort}/api/sessions/sess-compact-sse/events`,
       );
 
       const reader = res.body!.getReader();
@@ -180,7 +178,7 @@ describe("Long Session & Error Cases", () => {
 
   describe("[체크리스트 7] 에러 케이스 정상 표시", () => {
     it("에러로 종료된 세션 상태가 'error'", async () => {
-      createTestJsonl("bot", "error-session", [
+      createTestJsonl("sess-error", [
         { id: 1, event: { type: "progress", text: "Starting..." } },
         { id: 2, event: { type: "text_start", card_id: "c1" } },
         { id: 3, event: { type: "text_delta", card_id: "c1", text: "Analyzing..." } },
@@ -193,7 +191,7 @@ describe("Long Session & Error Cases", () => {
       expect(listData.sessions[0].lastEventType).toBe("error");
 
       const detailRes = await fetch(
-        `http://localhost:${dashPort}/api/sessions/bot:error-session`,
+        `http://localhost:${dashPort}/api/sessions/sess-error`,
       );
       const detail = await detailRes.json();
       expect(detail.status).toBe("error");
@@ -201,14 +199,14 @@ describe("Long Session & Error Cases", () => {
     });
 
     it("타임아웃 에러 세션", async () => {
-      createTestJsonl("bot", "timeout-session", [
+      createTestJsonl("sess-timeout", [
         { id: 1, event: { type: "progress", text: "Working..." } },
         { id: 2, event: { type: "tool_start", card_id: "t1", tool_name: "Bash", tool_input: { command: "long-running-cmd" } } },
         { id: 3, event: { type: "error", message: "Execution timed out after 300 seconds", error_code: "TIMEOUT" } },
       ]);
 
       const res = await fetch(
-        `http://localhost:${dashPort}/api/sessions/bot:timeout-session`,
+        `http://localhost:${dashPort}/api/sessions/sess-timeout`,
       );
       const detail = await res.json();
 
@@ -219,24 +217,15 @@ describe("Long Session & Error Cases", () => {
 
     it("존재하지 않는 세션 조회 시 404", async () => {
       const res = await fetch(
-        `http://localhost:${dashPort}/api/sessions/ghost:phantom`,
+        `http://localhost:${dashPort}/api/sessions/sess-nonexistent`,
       );
       expect(res.status).toBe(404);
       const data = await res.json();
       expect(data.error.code).toBe("SESSION_NOT_FOUND");
     });
 
-    it("잘못된 세션 ID 형식 시 400", async () => {
-      const res = await fetch(
-        `http://localhost:${dashPort}/api/sessions/invalid-format/events`,
-      );
-      expect(res.status).toBe(400);
-      const data = await res.json();
-      expect(data.error.code).toBe("INVALID_SESSION_ID");
-    });
-
     it("도구 실행 에러가 포함된 세션 (성공적으로 복구)", async () => {
-      createTestJsonl("bot", "tool-error", [
+      createTestJsonl("sess-tool-error", [
         { id: 1, event: { type: "text_start", card_id: "c1" } },
         { id: 2, event: { type: "text_end", card_id: "c1" } },
         { id: 3, event: { type: "tool_start", card_id: "t1", tool_name: "Bash", tool_input: { command: "rm -rf /" } } },
@@ -248,7 +237,7 @@ describe("Long Session & Error Cases", () => {
       ]);
 
       const res = await fetch(
-        `http://localhost:${dashPort}/api/sessions/bot:tool-error`,
+        `http://localhost:${dashPort}/api/sessions/sess-tool-error`,
       );
       const detail = await res.json();
 
@@ -271,29 +260,25 @@ describe("Long Session & Error Cases", () => {
     });
 
     it("빈 JSONL 파일 처리", async () => {
-      const dir = join(TEST_DIR, "bot");
-      mkdirSync(dir, { recursive: true });
-      writeFileSync(join(dir, "empty.jsonl"), "", "utf-8");
+      writeFileSync(join(TEST_DIR, "sess-empty.jsonl"), "", "utf-8");
 
       const res = await fetch(
-        `http://localhost:${dashPort}/api/sessions/bot:empty`,
+        `http://localhost:${dashPort}/api/sessions/sess-empty`,
       );
       expect(res.status).toBe(404);
     });
 
     it("손상된 JSONL 줄이 포함된 세션", async () => {
-      const dir = join(TEST_DIR, "bot");
-      mkdirSync(dir, { recursive: true });
       const content = [
         JSON.stringify({ id: 1, event: { type: "progress", text: "Start" } }),
         "CORRUPTED LINE {{{",
         JSON.stringify({ id: 2, event: { type: "complete", result: "Done", attachments: [] } }),
         "",
       ].join("\n");
-      writeFileSync(join(dir, "corrupt.jsonl"), content, "utf-8");
+      writeFileSync(join(TEST_DIR, "sess-corrupt.jsonl"), content, "utf-8");
 
       const res = await fetch(
-        `http://localhost:${dashPort}/api/sessions/bot:corrupt`,
+        `http://localhost:${dashPort}/api/sessions/sess-corrupt`,
       );
       expect(res.ok).toBe(true);
 

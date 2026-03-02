@@ -38,40 +38,22 @@ export function createTestApp(options: TestAppOptions): TestAppContext {
   const soulBaseUrl = `http://localhost:${options.soulPort ?? 39999}`;
   const soulClient = new SoulClient({ soulBaseUrl });
 
-  // Soul 이벤트 → EventHub 브로드캐스트 + JSONL 저장
-  // (프로덕션 index.ts와 동일한 배선 — alias 포워딩 포함)
-  soulClient.onEvent((sessionKey, eventId, event) => {
-    const alias = eventHub.resolveAlias(sessionKey);
+  // Soul 이벤트 → EventHub 브로드캐스트
+  // task key로 수신된 이벤트를 agentSessionId로 라우팅
+  soulClient.onEvent((taskKey, eventId, event) => {
+    const agentSessionId = eventHub.resolveTask(taskKey);
 
-    if (alias) {
-      const resolvedId = eventId + alias.eventIdOffset;
-      eventHub.broadcast(alias.targetKey, resolvedId, event);
-
-      const sepIdx = alias.targetKey.indexOf(":");
-      if (sepIdx !== -1) {
-        const clientId = alias.targetKey.slice(0, sepIdx);
-        const requestId = alias.targetKey.slice(sepIdx + 1);
-        sessionStore
-          .appendEvent(clientId, requestId, resolvedId, event)
-          .catch(() => {});
-      }
+    if (agentSessionId) {
+      eventHub.broadcast(agentSessionId, eventId, event);
 
       if (event.type === "complete" || event.type === "error" || event.type === "result") {
-        eventHub.removeAlias(sessionKey);
+        eventHub.unregisterTask(taskKey);
       }
       return;
     }
 
-    eventHub.broadcast(sessionKey, eventId, event);
-
-    const sepIdx = sessionKey.indexOf(":");
-    if (sepIdx !== -1) {
-      const clientId = sessionKey.slice(0, sepIdx);
-      const requestId = sessionKey.slice(sepIdx + 1);
-      sessionStore
-        .appendEvent(clientId, requestId, eventId, event)
-        .catch(() => {});
-    }
+    // task 매핑이 없으면 taskKey를 그대로 세션 키로 사용
+    eventHub.broadcast(taskKey, eventId, event);
   });
 
   const app = express();
@@ -116,7 +98,7 @@ export function startTestServer(app: Express): Promise<{ server: Server; port: n
 
 /**
  * Mock Soul 서버를 생성합니다.
- * /execute와 /tasks/:clientId/:requestId/intervene 엔드포인트를 제공합니다.
+ * /execute와 /sessions/:agentSessionId/intervene 엔드포인트를 제공합니다.
  */
 export function createMockSoulServer(): Promise<{
   server: Server;
@@ -142,7 +124,7 @@ export function createMockSoulServer(): Promise<{
       res.end();
     });
 
-    soulApp.post("/tasks/:clientId/:requestId/intervene", (req, res) => {
+    soulApp.post("/sessions/:agentSessionId/intervene", (req, res) => {
       requests.push({
         type: "intervene",
         body: req.body,

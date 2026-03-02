@@ -53,6 +53,7 @@ class Task:
     """태스크 데이터"""
     client_id: str
     request_id: str
+    agent_session_id: str
     prompt: str
     status: TaskStatus = TaskStatus.RUNNING
 
@@ -90,6 +91,7 @@ class Task:
         return {
             "client_id": self.client_id,
             "request_id": self.request_id,
+            "agent_session_id": self.agent_session_id,
             "prompt": self.prompt,
             "status": self.status.value,
             "resume_session_id": self.resume_session_id,
@@ -107,6 +109,7 @@ class Task:
         return cls(
             client_id=data["client_id"],
             request_id=data["request_id"],
+            agent_session_id=data.get("agent_session_id", ""),
             prompt=data["prompt"],
             status=TaskStatus(data["status"]),
             resume_session_id=data.get("resume_session_id"),

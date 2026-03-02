@@ -77,8 +77,10 @@ class TaskManager:
         # 핵심 데이터
         self._tasks: Dict[str, Task] = {}
         self._lock = asyncio.Lock()
-        # session_id → task_key 역방향 인덱스
+        # session_id → task_key 역방향 인덱스 (claude_session_id 기반)
         self._session_index: Dict[str, str] = {}
+        # agent_session_id → task_key 역방향 인덱스
+        self._agent_session_index: Dict[str, str] = {}
 
         # 서브 컴포넌트들
         self._storage = TaskStorage(storage_path)
@@ -118,6 +120,68 @@ class TaskManager:
         for sid in to_remove:
             del self._session_index[sid]
             logger.debug(f"Session index removed: {sid}")
+        # agent_session_index는 정리하지 않음 (완료 후에도 agent_session_id로 조회 필요)
+
+    def get_task_by_agent_session(self, agent_session_id: str) -> Optional[Task]:
+        """agent_session_id로 태스크 조회"""
+        key = self._agent_session_index.get(agent_session_id)
+        if not key:
+            return None
+        return self._tasks.get(key)
+
+    async def add_intervention_by_agent_session(
+        self,
+        agent_session_id: str,
+        text: str,
+        user: str,
+        attachment_paths: Optional[List[str]] = None,
+    ) -> dict:
+        """agent_session_id 기반 개입 메시지 추가 (자동 resume 포함)
+
+        Args:
+            agent_session_id: 세션 식별자
+            text: 메시지 텍스트
+            user: 사용자
+            attachment_paths: 첨부 파일 경로
+
+        Returns:
+            결과 딕셔너리:
+            - running task인 경우: {"queue_position": int}
+            - 완료 후 자동 resume: {"auto_resumed": True, "task_key": str}
+
+        Raises:
+            TaskNotFoundError: 세션에 대응하는 태스크 없음
+        """
+        task = self.get_task_by_agent_session(agent_session_id)
+        if not task:
+            raise TaskNotFoundError(f"No task found for agent_session: {agent_session_id}")
+
+        if task.status == TaskStatus.RUNNING:
+            # running → 기존 intervention queue에 추가
+            message = {
+                "text": text,
+                "user": user,
+                "attachment_paths": attachment_paths or [],
+            }
+            await task.intervention_queue.put(message)
+            return {"queue_position": task.intervention_queue.qsize()}
+
+        # 완료/에러 → 자동 resume (새 태스크 생성)
+        resume_session_id = task.claude_session_id
+        new_request_id = f"resume-{utc_now().strftime('%Y%m%d%H%M%S')}-{id(self) % 10000:04d}"
+
+        new_task = await self.create_task(
+            client_id=user,
+            request_id=new_request_id,
+            agent_session_id=agent_session_id,  # 동일한 agent_session_id 재사용
+            prompt=text,
+            resume_session_id=resume_session_id,
+        )
+
+        return {
+            "auto_resumed": True,
+            "task_key": new_task.key,
+        }
 
     # === 로드/저장 ===
 
@@ -143,6 +207,7 @@ class TaskManager:
         self,
         client_id: str,
         request_id: str,
+        agent_session_id: str,
         prompt: str,
         resume_session_id: Optional[str] = None,
         allowed_tools: Optional[List[str]] = None,
@@ -155,6 +220,7 @@ class TaskManager:
         Args:
             client_id: 클라이언트 ID (e.g., "dashboard", "slackbot")
             request_id: 요청 ID (e.g., Slack thread ID)
+            agent_session_id: 세션 식별자 (JSONL 파일명)
             prompt: 실행할 프롬프트
             resume_session_id: 이전 세션 ID (대화 연속성용)
             allowed_tools: 허용 도구 목록 (None이면 제한 없음)
@@ -179,6 +245,7 @@ class TaskManager:
             task = Task(
                 client_id=client_id,
                 request_id=request_id,
+                agent_session_id=agent_session_id,
                 prompt=prompt,
                 resume_session_id=resume_session_id,
                 allowed_tools=allowed_tools,
@@ -187,7 +254,9 @@ class TaskManager:
             )
 
             self._tasks[key] = task
-            logger.info(f"Created task: {key}")
+            # agent_session_id → task_key 매핑 등록
+            self._agent_session_index[agent_session_id] = key
+            logger.info(f"Created task: {key} (agent_session={agent_session_id})")
 
         await self._schedule_save()
         return task
