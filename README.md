@@ -80,3 +80,33 @@ npm run dev
 | `PORT` | `3105` | 서버 포트 |
 
 전체 목록은 `soul-server/.env.example` 참조
+
+## Serendipity 플러그인 동기화
+
+Soulstream의 Soul 플러그인을 Serendipity로 동기화하는 스크립트가 포함되어 있습니다.
+
+### 사용법
+
+```bash
+cd soulstream
+
+# 기본 실행 (기본 경로: ../serendipity)
+./scripts/sync-serendipity-plugin.sh
+
+# 커스텀 경로 지정
+./scripts/sync-serendipity-plugin.sh /path/to/serendipity
+
+# 옵션
+./scripts/sync-serendipity-plugin.sh -d    # 드라이런 (시뮬레이션)
+./scripts/sync-serendipity-plugin.sh -b    # 백업 후 복사
+./scripts/sync-serendipity-plugin.sh -f    # 확인 없이 덮어쓰기
+```
+
+### 소스 및 타겟 경로
+
+- **소스**: `packages/serendipity-plugin/src/`
+- **타겟**: `{serendipity}/packages/web/src/plugins/soul/`
+
+### 아키텍처 원칙
+
+"Serendipity는 Soulstream을 모른다" - Soul 플러그인의 원본은 Soulstream에서 관리하고, Serendipity로 복사합니다.
