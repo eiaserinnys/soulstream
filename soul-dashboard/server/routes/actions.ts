@@ -378,14 +378,13 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
       }
 
       if (sessionStore) {
-        // user_message를 JSONL에 동기적으로 저장
-        // 클라이언트가 SSE 연결 시 이 이벤트를 볼 수 있도록 보장
-        try {
-          await sessionStore.appendEvent(origClientId, origRequestId, eventIdOffset, userMessageEvent);
-        } catch (err) {
-          console.warn(`[actions] Failed to persist resume user_message for ${origSessionKey}:`, err);
-          // 저장 실패해도 진행 (라이브 스트림에서 볼 수 있음)
-        }
+        // 비동기 저장: eventHub.broadcast()가 라이브 전달 담당
+        // JSONL은 히스토리/재연결용 (저장 실패해도 라이브 스트림에서 볼 수 있음)
+        sessionStore
+          .appendEvent(origClientId, origRequestId, eventIdOffset, userMessageEvent)
+          .catch((err) => {
+            console.warn(`[actions] Failed to persist resume user_message for ${origSessionKey}:`, err);
+          });
       }
 
       // alias와 subscribe를 fetch 전에 등록하여 이벤트 유실 방지
