@@ -62,14 +62,15 @@ soulClient.onEvent((taskKey, eventId, event) => {
   if (agentSessionId) {
     eventHub.broadcast(agentSessionId, eventId, event);
 
-    // 완료/에러 시 task 매핑 정리
-    if (event.type === "complete" || event.type === "error" || event.type === "result") {
+    // 완료/에러 시 task 매핑 정리 (complete가 최종 이벤트이므로 complete에서만 정리)
+    if (event.type === "complete" || event.type === "error") {
       eventHub.unregisterTask(taskKey);
     }
   } else {
     // 매핑이 없는 경우 (다른 클라이언트가 시작한 태스크 등)
     // taskKey를 그대로 세션키로 사용하여 호환성 유지
     console.warn(`[dashboard] No session mapping for task ${taskKey}, broadcasting with taskKey`);
+    eventHub.broadcast(taskKey, eventId, event);
   }
 });
 

@@ -87,7 +87,7 @@ export function PromptComposer() {
 
       // 세션 생성 성공 → composing 종료, 활성 세션 전환
       cancelCompose();
-      setActiveSession(result.sessionKey);
+      setActiveSession(result.agentSessionId);
     } catch (err) {
       if (err instanceof AuthTokenRequiredError) {
         setError("Authentication required. Please set your API token in Settings.");
