@@ -12,11 +12,11 @@ from soul_server.service.serendipity_adapter import (
     SerendipityAdapter,
     SessionContext,
     BLOCK_TYPE_USER,
-    BLOCK_TYPE_RESPONSE,
-    BLOCK_TYPE_TOOL_CALL,
+    BLOCK_TYPE_ASSISTANT,  # Changed: soul:response → soul:assistant
+    BLOCK_TYPE_TOOL_USE,   # Changed: soul:tool-call → soul:tool_use
     BLOCK_TYPE_TOOL_RESULT,
     BLOCK_TYPE_INTERVENTION,
-    BLOCK_TYPE_SYSTEM,
+    BLOCK_TYPE_ERROR,      # Changed: soul:system → soul:error
 )
 from soul_server.service.serendipity_client import (
     create_text_content,
@@ -223,7 +223,7 @@ class TestSerendipityAdapterEnabled:
         # text_end에서 블록이 생성되어야 함
         mock_client.create_block.assert_called_once()
         call_args = mock_client.create_block.call_args
-        assert call_args.kwargs["block_type"] == BLOCK_TYPE_RESPONSE
+        assert call_args.kwargs["block_type"] == BLOCK_TYPE_ASSISTANT
 
     @pytest.mark.asyncio
     async def test_on_tool_start(self, mock_client):
@@ -248,7 +248,7 @@ class TestSerendipityAdapterEnabled:
 
         mock_client.create_block.assert_called_once()
         call_args = mock_client.create_block.call_args
-        assert call_args.kwargs["block_type"] == BLOCK_TYPE_TOOL_CALL
+        assert call_args.kwargs["block_type"] == BLOCK_TYPE_TOOL_USE
 
         # tool_blocks에 저장되어야 함
         assert "toolu_123" in ctx.tool_blocks

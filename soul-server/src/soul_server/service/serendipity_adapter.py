@@ -8,12 +8,12 @@ engine_adapter의 이벤트 훅에서 호출됩니다.
 | SSE Event | Block Type | 설명 |
 |-----------|------------|------|
 | prompt (최초) | soul:user | 사용자 프롬프트 |
-| TextDeltaSSEEvent | soul:response | Claude 응답 텍스트 |
-| ToolStartSSEEvent | soul:tool-call | 도구 호출 시작 |
+| TextDeltaSSEEvent | soul:assistant | Claude 응답 텍스트 |
+| ToolStartSSEEvent | soul:tool_use | 도구 호출 시작 |
 | ToolResultSSEEvent | soul:tool-result | 도구 실행 결과 |
 | InterventionSentEvent | soul:intervention | 사용자 개입 |
 | CompleteEvent | (페이지 제목 업데이트) | 세션 완료 |
-| ErrorEvent | soul:system | 시스템 오류 |
+| ErrorEvent | soul:error | 시스템 오류 |
 
 ## Content 구조
 
@@ -82,11 +82,16 @@ SOUL_SESSION_LABEL = "🤖 Soul Session"
 
 # 블록 타입
 BLOCK_TYPE_USER = "soul:user"
-BLOCK_TYPE_RESPONSE = "soul:response"
-BLOCK_TYPE_TOOL_CALL = "soul:tool-call"
+BLOCK_TYPE_ASSISTANT = "soul:assistant"  # Claude 응답 텍스트
+BLOCK_TYPE_TOOL_USE = "soul:tool_use"    # 도구 호출 시작
 BLOCK_TYPE_TOOL_RESULT = "soul:tool-result"
 BLOCK_TYPE_INTERVENTION = "soul:intervention"
-BLOCK_TYPE_SYSTEM = "soul:system"
+BLOCK_TYPE_ERROR = "soul:error"          # 시스템 오류
+
+# Deprecated aliases (backward compatibility)
+BLOCK_TYPE_RESPONSE = BLOCK_TYPE_ASSISTANT
+BLOCK_TYPE_TOOL_CALL = BLOCK_TYPE_TOOL_USE
+BLOCK_TYPE_SYSTEM = BLOCK_TYPE_ERROR
 
 
 # ============================================================================
@@ -493,7 +498,7 @@ class SerendipityAdapter:
         block = await client.create_block(
             page_id=ctx.page_id,
             content=content,
-            block_type=BLOCK_TYPE_RESPONSE,
+            block_type=BLOCK_TYPE_ASSISTANT,
             parent_id=ctx.user_block_id,
             order=ctx.next_order(),
         )
@@ -527,7 +532,7 @@ class SerendipityAdapter:
         block = await client.create_block(
             page_id=ctx.page_id,
             content=content,
-            block_type=BLOCK_TYPE_TOOL_CALL,
+            block_type=BLOCK_TYPE_TOOL_USE,
             parent_id=ctx.current_response_block_id or ctx.user_block_id,
             order=ctx.next_order(),
         )
@@ -620,7 +625,7 @@ class SerendipityAdapter:
         await client.create_block(
             page_id=ctx.page_id,
             content=content,
-            block_type=BLOCK_TYPE_SYSTEM,
+            block_type=BLOCK_TYPE_ERROR,
             parent_id=ctx.user_block_id,
             order=ctx.next_order(),
         )
