@@ -60,6 +60,12 @@ from soul_server.service.serendipity_client import (
     date_label_title,
     generate_key,
 )
+from soul_server.service.session_analyzer import (
+    SessionAnalyzer,
+    SessionEvent,
+    SessionSummary,
+    CATEGORY_LABELS,
+)
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
@@ -108,6 +114,9 @@ class SessionContext:
 
     # tool_use_id → 블록 정보 매핑
     tool_blocks: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+
+    # 세션 분석기 (자동 메타데이터 생성용)
+    analyzer: Optional[SessionAnalyzer] = field(default_factory=SessionAnalyzer)
 
     def next_order(self) -> int:
         """다음 블록 순서 반환 및 증가"""
@@ -195,6 +204,13 @@ class SerendipityAdapter:
             세션 컨텍스트
         """
         ctx = SessionContext(client_id=client_id, request_id=request_id)
+
+        # 분석기에 최초 프롬프트 추가
+        if ctx.analyzer:
+            ctx.analyzer.add_event(SessionEvent(
+                event_type="user",
+                content=prompt[:2000],  # 길이 제한
+            ))
 
         if not self._enabled:
             logger.debug("SerendipityAdapter disabled, skipping start_session")
@@ -286,12 +302,16 @@ class SerendipityAdapter:
         success: bool = True,
         summary: Optional[str] = None,
     ) -> None:
-        """세션 종료: 페이지 제목 업데이트
+        """세션 종료: 분석 기반 메타데이터 업데이트
+
+        세션 분석기를 통해 자동으로:
+        - 세션 제목 생성 (프롬프트/작업 내용 기반)
+        - 카테고리 라벨 부착 (🔧 코드 작업, 🐛 디버깅 등)
 
         Args:
             ctx: 세션 컨텍스트
             success: 성공 여부
-            summary: 세션 요약 (선택)
+            summary: 세션 요약 (선택, None이면 자동 생성)
         """
         if not self._enabled or not ctx.page_id:
             return
@@ -299,26 +319,67 @@ class SerendipityAdapter:
         try:
             client = await self._ensure_client()
 
-            # 제목 업데이트
+            # 세션 분석 실행
+            session_summary: Optional[SessionSummary] = None
+            if ctx.analyzer:
+                try:
+                    session_summary = ctx.analyzer.analyze()
+                    logger.debug(
+                        f"Session analyzed: title='{session_summary.title}', "
+                        f"categories={[c.value for c in session_summary.categories]}, "
+                        f"confidence={session_summary.confidence:.2f}"
+                    )
+                except Exception as e:
+                    logger.warning(f"Session analysis failed: {e}")
+
+            # 제목 결정: 명시적 summary > 분석기 제목 > 기본 제목
             status = "✅" if success else "❌"
             elapsed = time.time() - ctx.start_time
             elapsed_str = f"{int(elapsed)}s"
 
-            # 요약이 있으면 제목에 추가
             if summary:
-                # 요약에서 첫 50자만 사용
+                # 명시적 summary가 제공된 경우
                 summary_preview = summary[:50].replace("\n", " ")
                 if len(summary) > 50:
                     summary_preview += "..."
                 new_title = f"{status} {summary_preview} ({elapsed_str})"
+            elif session_summary and session_summary.confidence >= 0.3:
+                # 분석기 제목 사용 (신뢰도가 충분한 경우)
+                new_title = f"{status} {session_summary.title} ({elapsed_str})"
             else:
+                # 기본 제목
                 new_title = f"{status} {ctx.page_title} ({elapsed_str})"
 
             await client.update_page(ctx.page_id, new_title)
             logger.info(f"end_session(): page title updated to '{new_title}'")
 
+            # 카테고리 라벨 부착 (성공 시에만)
+            if success and session_summary and session_summary.labels:
+                await self._attach_category_labels(client, ctx.page_id, session_summary.labels)
+
         except Exception as e:
             logger.error(f"end_session() failed: {e}", exc_info=True)
+
+    async def _attach_category_labels(
+        self,
+        client: AsyncSerendipityClient,
+        page_id: str,
+        labels: List[str],
+    ) -> None:
+        """카테고리 라벨 부착
+
+        Args:
+            client: 세렌디피티 클라이언트
+            page_id: 페이지 ID
+            labels: 부착할 라벨 목록
+        """
+        for label in labels:
+            try:
+                await client.add_label(page_id, label)
+                logger.debug(f"Category label '{label}' attached to page {page_id}")
+            except Exception as e:
+                # 레이블 부착 실패는 치명적이지 않음
+                logger.warning(f"Failed to attach category label '{label}': {e}")
 
     # ========== Event Handling ==========
 
@@ -333,6 +394,9 @@ class SerendipityAdapter:
             return
 
         try:
+            # 분석기에 이벤트 수집 (세션 메타데이터 자동 생성용)
+            self._collect_event_for_analyzer(ctx, event)
+
             # 이벤트 타입에 따라 분기
             if isinstance(event, TextStartSSEEvent):
                 await self._on_text_start(ctx, event)
@@ -354,6 +418,48 @@ class SerendipityAdapter:
 
         except Exception as e:
             logger.error(f"on_event() failed for {type(event).__name__}: {e}", exc_info=True)
+
+    def _collect_event_for_analyzer(self, ctx: SessionContext, event: Any) -> None:
+        """분석기에 이벤트 수집 (휴리스틱 분석용)
+
+        Args:
+            ctx: 세션 컨텍스트
+            event: SSE 이벤트
+        """
+        if ctx.analyzer is None:
+            return
+
+        try:
+            if isinstance(event, TextEndSSEEvent):
+                # 텍스트 버퍼에서 완료된 텍스트 가져오기
+                text = ctx.text_buffers.get(event.card_id, "")
+                if text.strip():
+                    ctx.analyzer.add_event(SessionEvent(
+                        event_type="response",
+                        content=text[:1000],  # 길이 제한
+                    ))
+            elif isinstance(event, ToolStartSSEEvent):
+                ctx.analyzer.add_event(SessionEvent(
+                    event_type="tool_call",
+                    content=event.tool_name,
+                    tool_name=event.tool_name,
+                    tool_input=event.tool_input,
+                ))
+            elif isinstance(event, ToolResultSSEEvent):
+                # 결과 텍스트 (길이 제한)
+                result_str = str(event.result)[:500] if event.result else ""
+                ctx.analyzer.add_event(SessionEvent(
+                    event_type="tool_result",
+                    content=result_str,
+                    tool_name=event.tool_name,
+                ))
+            elif isinstance(event, InterventionSentEvent):
+                ctx.analyzer.add_event(SessionEvent(
+                    event_type="user",
+                    content=event.text[:1000],  # 길이 제한
+                ))
+        except Exception as e:
+            logger.warning(f"Failed to collect event for analyzer: {e}")
 
     async def _on_text_start(self, ctx: SessionContext, event: TextStartSSEEvent) -> None:
         """텍스트 블록 시작: 버퍼 초기화"""
