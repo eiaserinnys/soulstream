@@ -7,11 +7,11 @@ TDD 방식으로 작성된 테스트입니다.
 import asyncio
 import json
 import pytest
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import datetime, timezone, timedelta
+from unittest.mock import AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
-from httpx import ASGITransport, AsyncClient
+
 
 # 테스트용 TaskManager mock 설정
 @pytest.fixture
@@ -122,16 +122,31 @@ class TestGetSessions:
 class TestSessionsStream:
     """GET /sessions/stream SSE 테스트
 
-    Note: SSE 스트리밍 테스트는 비동기 특성으로 인해 단위 테스트에서
-    타임아웃이 발생할 수 있습니다. 실제 통합 테스트에서 검증합니다.
-    여기서는 라우터 등록 여부만 확인합니다.
+    SSE 스트리밍은 무한 루프이므로, 단위 테스트에서는 라우터 등록과
+    응답 타입만 확인합니다. 실제 스트리밍 동작은 통합 테스트에서 검증합니다.
     """
 
     def test_stream_endpoint_registered(self, test_app):
         """스트림 엔드포인트가 등록되어 있어야 한다"""
-        # 라우터가 등록되었는지 확인 (실제 SSE 연결 없이)
         routes = [r.path for r in test_app.routes]
         assert "/sessions/stream" in routes
+
+    def test_stream_route_is_get_method(self, mock_task_manager, mock_session_broadcaster):
+        """스트림 엔드포인트가 GET 메서드여야 한다"""
+        from soul_server.api.sessions import create_sessions_router
+
+        router = create_sessions_router(
+            task_manager=mock_task_manager,
+            session_broadcaster=mock_session_broadcaster,
+        )
+
+        # /sessions/stream 라우트 찾기
+        stream_routes = [r for r in router.routes if getattr(r, 'path', '') == '/sessions/stream']
+        assert len(stream_routes) == 1
+
+        # GET 메서드 확인
+        route = stream_routes[0]
+        assert 'GET' in route.methods
 
 
 class TestSessionBroadcaster:
@@ -202,7 +217,6 @@ class TestSessionBroadcaster:
         """세션 업데이트 이벤트를 발행해야 한다"""
         from soul_server.service.session_broadcaster import SessionBroadcaster
         from soul_server.service.task_models import Task, TaskStatus
-        from datetime import datetime, timezone
 
         broadcaster = SessionBroadcaster()
         queue = asyncio.Queue()
@@ -235,6 +249,25 @@ class TestSessionBroadcaster:
         event = await queue.get()
         assert event["type"] == "session_deleted"
         assert event["agent_session_id"] == "sess-001"
+
+    @pytest.mark.asyncio
+    async def test_broadcast_handles_full_queue(self):
+        """큐가 가득 찼을 때 에러 없이 스킵해야 한다"""
+        from soul_server.service.session_broadcaster import SessionBroadcaster
+
+        broadcaster = SessionBroadcaster()
+        # 최대 크기 1인 큐
+        small_queue = asyncio.Queue(maxsize=1)
+        await broadcaster.add_listener(small_queue)
+
+        # 첫 번째 이벤트는 성공
+        await broadcaster.broadcast({"type": "event1"})
+        assert small_queue.qsize() == 1
+
+        # 두 번째 이벤트는 스킵 (큐가 가득 참)
+        count = await broadcaster.broadcast({"type": "event2"})
+        # 큐가 가득 차서 0개에 브로드캐스트
+        assert count == 0
 
 
 class TestTaskManagerGetAllSessions:
@@ -269,3 +302,77 @@ class TestTaskManagerGetAllSessions:
         sessions = manager.get_all_sessions()
 
         assert sessions == []
+
+    @pytest.mark.asyncio
+    async def test_returns_sorted_by_created_at_desc(self):
+        """생성일 기준 내림차순으로 반환해야 한다"""
+        from soul_server.service.task_manager import TaskManager
+        from soul_server.service.task_models import Task, TaskStatus
+
+        manager = TaskManager()
+
+        now = datetime(2026, 3, 3, 12, 0, 0, tzinfo=timezone.utc)
+        task1 = Task(
+            agent_session_id="sess-old",
+            prompt="Old",
+            status=TaskStatus.COMPLETED,
+            created_at=now - timedelta(hours=2),
+        )
+        task2 = Task(
+            agent_session_id="sess-new",
+            prompt="New",
+            status=TaskStatus.RUNNING,
+            created_at=now,
+        )
+        manager._tasks["sess-old"] = task1
+        manager._tasks["sess-new"] = task2
+
+        sessions = manager.get_all_sessions()
+
+        # 최신이 먼저
+        assert sessions[0].agent_session_id == "sess-new"
+        assert sessions[1].agent_session_id == "sess-old"
+
+
+class TestSessionInfoSerialization:
+    """세션 정보 직렬화 테스트"""
+
+    def test_task_to_session_info(self):
+        """Task가 세션 정보 dict로 올바르게 변환되어야 한다"""
+        from soul_server.api.sessions import _task_to_session_info
+        from soul_server.service.task_models import Task, TaskStatus
+
+        task = Task(
+            agent_session_id="sess-001",
+            prompt="Hello",
+            status=TaskStatus.RUNNING,
+            created_at=datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc),
+        )
+
+        info = _task_to_session_info(task)
+
+        assert info["agent_session_id"] == "sess-001"
+        assert info["status"] == "running"
+        assert info["prompt"] == "Hello"
+        assert "created_at" in info
+        assert "updated_at" in info
+
+    def test_task_to_session_info_completed(self):
+        """완료된 Task의 updated_at은 completed_at이어야 한다"""
+        from soul_server.api.sessions import _task_to_session_info
+        from soul_server.service.task_models import Task, TaskStatus
+
+        created = datetime(2026, 3, 3, 1, 0, 0, tzinfo=timezone.utc)
+        completed = datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc)
+
+        task = Task(
+            agent_session_id="sess-001",
+            prompt="Hello",
+            status=TaskStatus.COMPLETED,
+            created_at=created,
+            completed_at=completed,
+        )
+
+        info = _task_to_session_info(task)
+
+        assert info["updated_at"] == completed.isoformat()

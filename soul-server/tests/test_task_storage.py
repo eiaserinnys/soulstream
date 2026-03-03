@@ -1,5 +1,7 @@
 """
 test_task_storage - 로드/저장, atomic write, running→error 복구 테스트
+
+현재 API에서 키는 agent_session_id입니다.
 """
 
 import json
@@ -24,29 +26,29 @@ def storage(tmp_storage_path):
 class TestTaskStorageSave:
     async def test_save_creates_file(self, storage, tmp_storage_path):
         tasks = {
-            "bot:req1": Task(client_id="bot", request_id="req1", agent_session_id="sess-1", prompt="hello")
+            "sess-1": Task(agent_session_id="sess-1", prompt="hello")
         }
         await storage.save(tasks)
         assert tmp_storage_path.exists()
 
     async def test_save_creates_directories(self, storage, tmp_storage_path):
-        tasks = {"bot:req1": Task(client_id="bot", request_id="req1", agent_session_id="sess-1", prompt="hello")}
+        tasks = {"sess-1": Task(agent_session_id="sess-1", prompt="hello")}
         await storage.save(tasks)
         assert tmp_storage_path.parent.exists()
 
     async def test_save_valid_json(self, storage, tmp_storage_path):
-        tasks = {"bot:req1": Task(client_id="bot", request_id="req1", agent_session_id="sess-1", prompt="hello")}
+        tasks = {"sess-1": Task(agent_session_id="sess-1", prompt="hello", client_id="bot")}
         await storage.save(tasks)
 
         data = json.loads(tmp_storage_path.read_text())
         assert "tasks" in data
         assert "last_saved" in data
-        assert "bot:req1" in data["tasks"]
+        assert "sess-1" in data["tasks"]
 
     async def test_save_multiple_tasks(self, storage, tmp_storage_path):
         tasks = {
-            "bot:req1": Task(client_id="bot", request_id="req1", agent_session_id="sess-1", prompt="hello"),
-            "bot:req2": Task(client_id="bot", request_id="req2", agent_session_id="sess-2", prompt="world"),
+            "sess-1": Task(agent_session_id="sess-1", prompt="hello"),
+            "sess-2": Task(agent_session_id="sess-2", prompt="world"),
         }
         await storage.save(tasks)
 
@@ -69,36 +71,35 @@ class TestTaskStorageLoad:
     async def test_load_from_saved(self, storage, tmp_storage_path):
         # 먼저 저장
         original_tasks = {
-            "bot:req1": Task(client_id="bot", request_id="req1", agent_session_id="sess-1", prompt="hello"),
+            "sess-1": Task(agent_session_id="sess-1", prompt="hello", client_id="bot"),
         }
-        original_tasks["bot:req1"].status = TaskStatus.COMPLETED
-        original_tasks["bot:req1"].result = "done"
-        original_tasks["bot:req1"].completed_at = utc_now()
+        original_tasks["sess-1"].status = TaskStatus.COMPLETED
+        original_tasks["sess-1"].result = "done"
+        original_tasks["sess-1"].completed_at = utc_now()
         await storage.save(original_tasks)
 
         # 로드
         loaded_tasks = {}
         loaded = await storage.load(loaded_tasks)
         assert loaded == 1
-        assert "bot:req1" in loaded_tasks
-        assert loaded_tasks["bot:req1"].status == TaskStatus.COMPLETED
-        assert loaded_tasks["bot:req1"].result == "done"
+        assert "sess-1" in loaded_tasks
+        assert loaded_tasks["sess-1"].status == TaskStatus.COMPLETED
+        assert loaded_tasks["sess-1"].result == "done"
 
     async def test_load_marks_running_as_error(self, storage, tmp_storage_path):
         """running 상태의 태스크는 서비스 재시작으로 중단된 것으로 간주"""
         now = utc_now()
         data = {
             "tasks": {
-                "bot:req1": {
-                    "client_id": "bot",
-                    "request_id": "req1",
+                "sess-1": {
+                    "agent_session_id": "sess-1",
                     "prompt": "hello",
                     "status": "running",
+                    "client_id": "bot",
                     "resume_session_id": None,
                     "claude_session_id": None,
                     "result": None,
                     "error": None,
-                    "result_delivered": False,
                     "created_at": datetime_to_str(now),
                     "completed_at": None,
                 }
@@ -112,7 +113,7 @@ class TestTaskStorageLoad:
         tasks = {}
         loaded = await storage.load(tasks)
         assert loaded == 1
-        task = tasks["bot:req1"]
+        task = tasks["sess-1"]
         assert task.status == TaskStatus.ERROR
         assert task.error == "서비스 재시작으로 중단됨"
         assert task.completed_at is not None
@@ -122,16 +123,15 @@ class TestTaskStorageLoad:
         now = utc_now()
         data = {
             "tasks": {
-                "bot:req1": {
-                    "client_id": "bot",
-                    "request_id": "req1",
+                "sess-1": {
+                    "agent_session_id": "sess-1",
                     "prompt": "hello",
                     "status": "completed",
+                    "client_id": "bot",
                     "resume_session_id": None,
-                    "claude_session_id": "sess-1",
+                    "claude_session_id": "claude-sess-1",
                     "result": "result text",
                     "error": None,
-                    "result_delivered": False,
                     "created_at": datetime_to_str(now),
                     "completed_at": datetime_to_str(now),
                 }
@@ -145,8 +145,8 @@ class TestTaskStorageLoad:
         tasks = {}
         loaded = await storage.load(tasks)
         assert loaded == 1
-        assert tasks["bot:req1"].status == TaskStatus.COMPLETED
-        assert tasks["bot:req1"].result == "result text"
+        assert tasks["sess-1"].status == TaskStatus.COMPLETED
+        assert tasks["sess-1"].result == "result text"
 
     async def test_load_corrupted_data(self, tmp_storage_path):
         """손상된 데이터는 건너뛰고 로드"""
@@ -162,7 +162,7 @@ class TestTaskStorageLoad:
 class TestTaskStorageNoPersistence:
     async def test_none_path_skips_save(self):
         storage = TaskStorage(storage_path=None)
-        tasks = {"bot:req1": Task(client_id="bot", request_id="req1", agent_session_id="sess-1", prompt="hello")}
+        tasks = {"sess-1": Task(agent_session_id="sess-1", prompt="hello")}
         # save가 에러 없이 조용히 스킵되는지 확인
         await storage.save(tasks)
 
