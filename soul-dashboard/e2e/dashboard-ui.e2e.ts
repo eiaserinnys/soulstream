@@ -464,6 +464,83 @@ const test = base.extend<{ dashboardServer: MockDashboardServer }>({
       res.json(response);
     });
 
+    // --- Mock: 세션 목록 SSE 스트림 (SSE 모드에서 사용) ---
+    app.get("/api/sessions/stream", (_req, res) => {
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      });
+
+      // 세션 목록을 named event로 전송 (실제 서버와 동일한 형식)
+      const sessions = [
+        {
+          agentSessionId: "sess-e2e-ui-001",
+          status: "running",
+          eventCount: 5,
+          createdAt: new Date().toISOString(),
+          prompt: "src/index.ts 파일을 분석하고 에러 핸들링을 추가해주세요.",
+        },
+        {
+          agentSessionId: "sess-e2e-ui-002",
+          status: "completed",
+          eventCount: 12,
+          createdAt: new Date(Date.now() - 3600000).toISOString(),
+          prompt: "테스트 코드를 작성해주세요.",
+        },
+        {
+          agentSessionId: "sess-e2e-ui-003",
+          status: "error",
+          eventCount: 3,
+          createdAt: new Date(Date.now() - 7200000).toISOString(),
+          prompt: "에러 세션 테스트",
+        },
+        {
+          agentSessionId: "sess-e2e-ui-multi",
+          status: "running",
+          eventCount: 14,
+          createdAt: new Date(Date.now() - 60000).toISOString(),
+          prompt: "src/utils.ts에 validateInput 함수를 추가하고 테스트를 실행해주세요.",
+        },
+        {
+          agentSessionId: "sess-e2e-ui-notool",
+          status: "completed",
+          eventCount: 5,
+          createdAt: new Date(Date.now() - 120000).toISOString(),
+          prompt: "간단히 설명해주세요.",
+        },
+        {
+          agentSessionId: "sess-e2e-ui-large25",
+          status: "completed",
+          eventCount: 55,
+          createdAt: new Date(Date.now() - 180000).toISOString(),
+          prompt: "대규모 작업을 수행해주세요 (10 단계).",
+        },
+        {
+          agentSessionId: "sess-e2e-ui-large50",
+          status: "completed",
+          eventCount: 105,
+          createdAt: new Date(Date.now() - 240000).toISOString(),
+          prompt: "대규모 작업을 수행해주세요 (20 단계).",
+        },
+        {
+          agentSessionId: "sess-e2e-ui-multiturn",
+          status: "completed",
+          eventCount: MULTI_TURN_SSE_EVENTS.length,
+          createdAt: new Date(Date.now() - 300000).toISOString(),
+          prompt: "대사 작업 스킬을 로드하고 다음 지시를 대기.",
+        },
+      ];
+
+      const data = JSON.stringify({ type: "session_list", sessions });
+      res.write(`event: session_list\ndata: ${data}\n\n`);
+
+      // 연결 유지 (클라이언트가 끊을 때까지)
+      _req.on("close", () => {
+        res.end();
+      });
+    });
+
     // --- Mock: SSE 이벤트 스트림 ---
     app.get("/api/sessions/:id/events", (req, res) => {
       res.writeHead(200, {
@@ -827,9 +904,9 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     const userNodes = page.locator('[data-testid="user-node"]');
     await expect(userNodes).toHaveCount(1, { timeout: 10_000 });
 
-    // Thinking 노드 확인 (모든 text 노드는 thinking)
+    // Thinking 노드 확인 (mt-t1, mt-t2 → 2개)
     const thinkingNodes = page.locator('[data-testid="thinking-node"]');
-    await expect(thinkingNodes).toHaveCount(1, { timeout: 10_000 });
+    await expect(thinkingNodes).toHaveCount(2, { timeout: 10_000 });
 
     // 전체 노드 수: user(1) + thinking(2) + tool_call(3) + tool_result(3) + system(1, complete) = 10
     const allNodes = page.locator(".react-flow__node");
@@ -1379,51 +1456,47 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     });
   });
 
-  test("15. 세션 목록 API 계약 검증 — agentSessionId 형식, 레거시 필드 없음", async ({
+  test("15. 세션 목록 SSE 스트림 검증 — /api/sessions/stream 연결 + UI 렌더링", async ({
     page,
     dashboardServer,
   }) => {
-    // GET /api/sessions 응답을 waitForResponse로 확실히 캡처
-    const responsePromise = page.waitForResponse(
-      (resp) =>
-        resp.request().method() === "GET" &&
-        resp.url().includes("/api/sessions") &&
-        !resp.url().includes("/events"),
+    // SSE 모드: /api/sessions/stream 요청이 발생하는지 감시
+    const sseRequestPromise = page.waitForRequest(
+      (req) =>
+        req.method() === "GET" &&
+        req.url().includes("/api/sessions/stream"),
     );
 
     await page.goto(dashboardServer.baseURL);
 
-    // 응답 대기 (async callback 레이스 컨디션 방지)
-    const apiResponse = await responsePromise;
-    const sessionsResponse = await apiResponse.json();
+    // SSE 요청이 발생했는지 확인 (SSE 모드가 기본 활성)
+    const sseRequest = await sseRequestPromise;
+    expect(sseRequest.url()).toContain("/api/sessions/stream");
 
-    // 세션 목록 UI 로드 대기
+    // SSE를 통해 세션 목록이 UI에 로드됨
     await expect(
       page.locator('[data-testid^="session-item-"]'),
     ).toHaveCount(8, { timeout: 10_000 });
 
-    // 응답이 캡처되었는지 확인
-    expect(sessionsResponse).not.toBeNull();
-
-    const body = sessionsResponse as { sessions: Record<string, unknown>[] };
-    expect(body.sessions).toHaveLength(8);
-
-    // 모든 세션에 대해 계약 검증
-    for (const session of body.sessions) {
-      // agentSessionId 필수 — "sess-" 접두사 형식
-      expect(session).toHaveProperty("agentSessionId");
-      expect(typeof session.agentSessionId).toBe("string");
-      expect(session.agentSessionId).toBeTruthy();
-
-      // 필수 필드
-      expect(session).toHaveProperty("status");
-      expect(session).toHaveProperty("eventCount");
-
-      // 레거시 필드 없음 (clientId/requestId 기반 → agentSessionId 기반으로 전환)
-      expect(session).not.toHaveProperty("clientId");
-      expect(session).not.toHaveProperty("requestId");
-      expect(session).not.toHaveProperty("sessionKey");
+    // 각 세션 항목에 agentSessionId 기반 data-testid가 있는지 확인
+    for (const sessionId of [
+      "sess-e2e-ui-001",
+      "sess-e2e-ui-002",
+      "sess-e2e-ui-003",
+      "sess-e2e-ui-multi",
+      "sess-e2e-ui-notool",
+      "sess-e2e-ui-large25",
+      "sess-e2e-ui-large50",
+      "sess-e2e-ui-multiturn",
+    ]) {
+      await expect(
+        page.locator(`[data-testid="session-item-${sessionId}"]`),
+      ).toBeVisible();
     }
+
+    // 상태 뱃지가 8개 표시됨
+    const statusBadges = page.locator('[data-testid="session-status-badge"]');
+    await expect(statusBadges).toHaveCount(8);
   });
 
   test("16. 세션 전환 시 이전 그래프 초기화 검증", async ({

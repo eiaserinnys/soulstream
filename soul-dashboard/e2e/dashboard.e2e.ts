@@ -88,6 +88,40 @@ async function startMockDashboardServer(): Promise<number> {
     res.json({ status: "ok", service: "soul-dashboard" });
   });
 
+  // 모의 세션 목록 SSE 스트림 (SSE 모드에서 사용)
+  app.get("/api/sessions/stream", (_req, res) => {
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    });
+
+    const sessions = [
+      {
+        agentSessionId: "sess-e2e-001",
+        status: "completed",
+        eventCount: 5,
+        createdAt: new Date().toISOString(),
+        prompt: "첫 번째 테스트 세션",
+      },
+      {
+        agentSessionId: "sess-e2e-002",
+        status: "running",
+        eventCount: 3,
+        createdAt: new Date().toISOString(),
+        prompt: "두 번째 테스트 세션",
+      },
+    ];
+
+    const data = JSON.stringify({ type: "session_list", sessions });
+    res.write(`event: session_list\ndata: ${data}\n\n`);
+
+    // API 테스트에서 request.get()이 완료되도록 응답 종료
+    setTimeout(() => {
+      if (!res.writableEnded) res.end();
+    }, 100);
+  });
+
   // 모의 SSE 엔드포인트
   app.get("/api/sessions/:id/events", (_req, res) => {
     res.writeHead(200, {
@@ -260,6 +294,33 @@ test.describe("Soul Dashboard API 계약 E2E", () => {
     expect(text).toContain("event: text_delta");
     expect(text).toContain("Hello from E2E test");
     expect(text).toContain("event: complete");
+  });
+
+  test("GET /api/sessions/stream — 세션 목록 SSE 스트림 계약", async ({ request }) => {
+    const res = await request.get(
+      `http://localhost:${testPort}/api/sessions/stream`,
+    );
+    expect(res.ok()).toBe(true);
+    const text = await res.text();
+
+    // named event 형식: "event: session_list"
+    expect(text).toContain("event: session_list");
+
+    // data 파싱 가능 확인
+    const dataMatch = text.match(/^data: (.+)$/m);
+    expect(dataMatch).not.toBeNull();
+
+    const payload = JSON.parse(dataMatch![1]);
+    expect(payload.type).toBe("session_list");
+    expect(payload.sessions).toHaveLength(2);
+
+    // 세션 필수 필드 검증
+    for (const session of payload.sessions) {
+      expect(session).toHaveProperty("agentSessionId");
+      expect(typeof session.agentSessionId).toBe("string");
+      expect(session).toHaveProperty("status");
+      expect(session).toHaveProperty("eventCount");
+    }
   });
 
   test("SSE 이벤트 ID가 단조 증가한다", async ({ request }) => {
