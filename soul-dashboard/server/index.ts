@@ -1,7 +1,8 @@
 /**
  * Soul Dashboard Server - 엔트리포인트
  *
- * Soul SSE를 구독하고 대시보드 클라이언트에 이벤트를 중계하는 서버.
+ * Soul Server의 API를 프록시하는 BFF(Backend For Frontend) 서버.
+ * 파일 직접 읽기 없이 Soul Server API만 호출합니다.
  *
  * 포트: 3109 (supervisor 포트 체계: 3101-3108 다음)
  * Soul: http://localhost:3105
@@ -12,11 +13,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import express from "express";
 import cors from "cors";
-import { SoulClient } from "./soul-client.js";
-import { SessionStore } from "./session-store.js";
-import { EventHub } from "./event-hub.js";
-import { createSessionsRouter } from "./routes/sessions.js";
-import { createEventsRouter } from "./routes/events.js";
+import { createSessionsProxyRouter } from "./routes/sessions-proxy.js";
 import { createActionsRouter } from "./routes/actions.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -28,46 +25,12 @@ const PORT = parseInt(process.env.DASHBOARD_PORT ?? "3109", 10);
 const SOUL_BASE_URL =
   process.env.SOUL_BASE_URL ?? "http://localhost:3105";
 const AUTH_TOKEN = process.env.CLAUDE_SERVICE_TOKEN ?? "";
-if (!process.env.EVENTS_BASE_DIR) {
-  console.error("[FATAL] EVENTS_BASE_DIR 환경변수가 설정되지 않았습니다.");
-  process.exit(1);
-}
-const EVENTS_BASE_DIR = process.env.EVENTS_BASE_DIR;
-const KEEPALIVE_INTERVAL_MS = 15_000;
 const DASHBOARD_AUTH_TOKEN = process.env.DASHBOARD_AUTH_TOKEN ?? "";
 const ALLOWED_ORIGINS =
   process.env.DASHBOARD_ALLOWED_ORIGINS?.split(",") ?? [
     `http://localhost:${PORT}`,
     "http://localhost:5173", // Vite dev server
   ];
-
-// === Initialize Components ===
-
-const sessionStore = new SessionStore({
-  baseDir: EVENTS_BASE_DIR,
-});
-
-const eventHub = new EventHub();
-
-const soulClient = new SoulClient({
-  soulBaseUrl: SOUL_BASE_URL,
-  authToken: AUTH_TOKEN,
-  reconnectInterval: 3000,
-  maxReconnectInterval: 30000,
-});
-
-// Soul 이벤트 → EventHub 브로드캐스트
-// SoulClient가 agentSessionId별로 구독하므로 직접 broadcast.
-soulClient.onEvent((agentSessionId, eventId, event) => {
-  eventHub.broadcast(agentSessionId, eventId, event);
-});
-
-soulClient.onError((sessionKey, error) => {
-  console.warn(
-    `[dashboard] Soul SSE error for ${sessionKey}:`,
-    error.message,
-  );
-});
 
 // === Express App ===
 
@@ -86,18 +49,7 @@ app.get("/api/health", (_req, res) => {
   res.json({
     status: "ok",
     service: "soul-dashboard",
-    version: "0.2.0",
-    connectedClients: eventHub.getTotalClientCount(),
-    activeSubscriptions: soulClient.getActiveSubscriptions().length,
-  });
-});
-
-// Stats (운영 모니터링용)
-app.get("/api/stats", (_req, res) => {
-  res.json({
-    clients: eventHub.getStats(),
-    totalClients: eventHub.getTotalClientCount(),
-    soulSubscriptions: soulClient.getActiveSubscriptions(),
+    version: "0.3.0", // Phase 3: Proxy-based architecture
   });
 });
 
@@ -135,20 +87,24 @@ if (DASHBOARD_AUTH_TOKEN) {
   console.log("[dashboard] Auth enabled for POST endpoints");
 }
 
-// Routes
-app.use("/api/sessions", createSessionsRouter(sessionStore));
+// Routes - 프록시 라우터 사용
 app.use(
   "/api/sessions",
-  createEventsRouter({ sessionStore, eventHub, soulClient }),
+  createSessionsProxyRouter({
+    soulBaseUrl: SOUL_BASE_URL,
+    authToken: AUTH_TOKEN,
+  }),
 );
+
+// Actions 라우터 (POST /sessions, POST /sessions/:id/intervene)
+// 이 라우터는 여전히 Soul Server에 직접 요청합니다 (SSE 응답 처리)
 app.use(
   "/api/sessions",
   createActionsRouter({
     soulBaseUrl: SOUL_BASE_URL,
     authToken: AUTH_TOKEN,
-    eventHub,
-    sessionStore,
-    soulClient,
+    // EventHub, SessionStore, SoulClient는 더 이상 필요하지 않음
+    // 프록시 아키텍처에서는 Soul Server가 모든 이벤트를 관리
   }),
 );
 
@@ -165,28 +121,18 @@ app.get("/{*splat}", (_req, res) => {
   res.sendFile(path.join(clientDistDir, "index.html"));
 });
 
-// === Keepalive Timer ===
-
-const keepaliveTimer = setInterval(() => {
-  eventHub.sendKeepalive();
-}, KEEPALIVE_INTERVAL_MS);
-
 // === Start Server ===
 
 const server = app.listen(PORT, () => {
   console.log(`[dashboard] Soul Dashboard server started on port ${PORT}`);
   console.log(`[dashboard] Soul server: ${SOUL_BASE_URL}`);
-  console.log(`[dashboard] Events directory: ${EVENTS_BASE_DIR}`);
+  console.log("[dashboard] Architecture: Proxy-based (Phase 3)");
 });
 
 // === Graceful Shutdown ===
 
 function shutdown() {
   console.log("[dashboard] Shutting down...");
-
-  clearInterval(keepaliveTimer);
-  soulClient.close();
-  eventHub.closeAll();
 
   server.close(() => {
     console.log("[dashboard] Server closed");
@@ -203,4 +149,4 @@ function shutdown() {
 process.on("SIGTERM", shutdown);
 process.on("SIGINT", shutdown);
 
-export { app, server, sessionStore, eventHub, soulClient };
+export { app, server };

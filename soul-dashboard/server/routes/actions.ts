@@ -13,8 +13,6 @@ import type {
   CreateSessionResponse,
   SendMessageRequest,
 } from "../../shared/types.js";
-import type { EventHub } from "../event-hub.js";
-import type { SessionStore } from "../session-store.js";
 
 // Express Response와 fetch Response 구분을 위한 alias
 type Response = ExpressResponse;
@@ -33,12 +31,6 @@ export interface ActionsRouterOptions {
   soulBaseUrl: string;
   /** 인증 토큰 */
   authToken?: string;
-  /** EventHub 인스턴스 */
-  eventHub?: EventHub;
-  /** SessionStore 인스턴스 */
-  sessionStore?: SessionStore;
-  /** SoulClient 인스턴스 (새 세션 구독용) */
-  soulClient?: import("../soul-client.js").SoulClient;
 }
 
 /**
@@ -89,12 +81,14 @@ async function readInitEvent(
       buffer = buffer.substring(eventEnd + 2);
     }
   } finally {
+    // init 이벤트만 필요하므로 나머지 SSE 스트림은 의도적으로 취소합니다.
+    // Soul 서버는 클라이언트 연결 종료를 gracefully 처리합니다.
     reader.cancel();
   }
 }
 
 export function createActionsRouter(options: ActionsRouterOptions): Router {
-  const { soulBaseUrl, authToken, eventHub, sessionStore, soulClient } = options;
+  const { soulBaseUrl, authToken } = options;
   const router = Router();
 
   /**
@@ -190,10 +184,8 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
         return;
       }
 
-      // SoulClient가 이 세션의 이벤트를 구독 (GET /events/{id}/stream)
-      if (soulClient) {
-        soulClient.subscribe(agentSessionId);
-      }
+      // 프록시 아키텍처에서는 대시보드가 세션을 직접 구독하지 않음
+      // 대시보드 클라이언트가 /api/sessions/:id/events로 직접 구독
 
       const response: CreateSessionResponse = {
         agentSessionId,
@@ -322,10 +314,8 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
 
       const result = await soulResponse.json();
 
-      // 자동 resume 시 SoulClient가 세션 이벤트를 다시 구독
-      if (result.auto_resumed && soulClient) {
-        soulClient.subscribe(agentSessionId);
-      }
+      // 프록시 아키텍처에서는 대시보드가 세션을 직접 구독하지 않음
+      // 대시보드 클라이언트가 /api/sessions/:id/events로 직접 구독
 
       res.json(result);
     } catch (err) {
