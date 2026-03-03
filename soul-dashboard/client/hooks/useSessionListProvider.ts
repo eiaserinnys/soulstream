@@ -2,7 +2,7 @@
  * useSessionListProvider - Provider 기반 세션 목록 훅
  *
  * 현재 스토리지 모드에 따라 적절한 방식으로 세션 목록을 조회합니다:
- * - file 모드: SSE 구독 (실시간 업데이트)
+ * - sse 모드: SSE 구독 (실시간 업데이트)
  * - serendipity 모드: 폴링 (5초 간격)
  */
 
@@ -10,6 +10,14 @@ import { useEffect, useRef, useCallback } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { getSessionProvider } from "../providers";
 import type { SessionStreamEvent, SessionStatus } from "@shared/types";
+
+/** 서버가 named SSE event로 보내는 이벤트 타입 목록 */
+const SESSION_STREAM_EVENT_TYPES = [
+  "session_list",
+  "session_created",
+  "session_updated",
+  "session_deleted",
+] as const;
 
 interface UseSessionListProviderOptions {
   /** 폴링 간격 (ms). serendipity 모드에서만 사용. 기본 5000 */
@@ -41,7 +49,7 @@ export function useSessionListProvider(
   const eventSourceRef = useRef<EventSource | null>(null);
 
   /**
-   * SSE 이벤트 처리 (file 모드)
+   * SSE 이벤트 처리 (sse 모드)
    */
   const handleSSEEvent = useCallback(
     (event: SessionStreamEvent) => {
@@ -71,7 +79,7 @@ export function useSessionListProvider(
   );
 
   /**
-   * SSE 연결 설정 (file 모드)
+   * SSE 연결 설정 (sse 모드)
    */
   const connectSSE = useCallback(() => {
     if (eventSourceRef.current) return;
@@ -85,14 +93,18 @@ export function useSessionListProvider(
       setSessionsError(null);
     };
 
-    eventSource.onmessage = (e) => {
-      try {
-        const data = JSON.parse(e.data) as SessionStreamEvent;
-        handleSSEEvent(data);
-      } catch (err) {
-        console.error("[useSessionListProvider] Failed to parse SSE event:", err);
-      }
-    };
+    // 서버가 named event (event: session_list 등)로 보내므로
+    // onmessage 대신 addEventListener로 각 이벤트 타입을 등록
+    for (const eventType of SESSION_STREAM_EVENT_TYPES) {
+      eventSource.addEventListener(eventType, (e: MessageEvent) => {
+        try {
+          const data = JSON.parse(e.data) as SessionStreamEvent;
+          handleSSEEvent(data);
+        } catch (err) {
+          console.error("[useSessionListProvider] Failed to parse SSE event:", err);
+        }
+      });
+    }
 
     eventSource.onerror = () => {
       setSessionsError("세션 목록 연결이 끊어졌습니다. 자동 재연결 중...");
@@ -148,8 +160,8 @@ export function useSessionListProvider(
     // 모드 변경 시 첫 로드 플래그 리셋
     isFirstLoad.current = true;
 
-    if (storageMode === "file") {
-      // file 모드: SSE 구독
+    if (storageMode === "sse") {
+      // SSE 모드: SSE 구독
       connectSSE();
 
       return () => {

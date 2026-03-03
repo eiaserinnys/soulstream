@@ -19,11 +19,11 @@ export type {
   SessionKey,
 } from "./types";
 
-// File Provider
+// SSE Provider
 export {
-  FileSessionProvider,
-  fileSessionProvider,
-} from "./FileSessionProvider";
+  SSESessionProvider,
+  sseSessionProvider,
+} from "./SSESessionProvider";
 
 // Serendipity Provider
 export {
@@ -35,7 +35,7 @@ export {
 // === Provider Factory ===
 
 import type { SessionStorageProvider, StorageMode } from "./types";
-import { fileSessionProvider } from "./FileSessionProvider";
+import { sseSessionProvider } from "./SSESessionProvider";
 import { serendipitySessionProvider } from "./SerendipitySessionProvider";
 
 /**
@@ -43,8 +43,8 @@ import { serendipitySessionProvider } from "./SerendipitySessionProvider";
  */
 export function getSessionProvider(mode: StorageMode): SessionStorageProvider {
   switch (mode) {
-    case "file":
-      return fileSessionProvider;
+    case "sse":
+      return sseSessionProvider;
     case "serendipity":
       return serendipitySessionProvider;
     default:

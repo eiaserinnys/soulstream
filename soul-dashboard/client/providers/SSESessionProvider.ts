@@ -1,8 +1,8 @@
 /**
- * FileSessionProvider - JSONL 파일 기반 세션 Provider
+ * SSESessionProvider - Soul Server API + SSE 스트림 기반 세션 Provider
  *
- * 기존 Soul 대시보드의 파일 기반 세션 관리 로직을 Provider 인터페이스로 추상화.
- * SSE 스트림을 통한 실시간 업데이트를 지원합니다.
+ * Soul Server의 /api/sessions 엔드포인트와 SSE 스트림을 통해
+ * 세션 목록 조회 및 실시간 이벤트 수신을 처리합니다.
  */
 
 import type {
@@ -47,12 +47,13 @@ interface SessionListResponse {
 }
 
 /**
- * JSONL 파일 + SSE 스트림 기반 세션 Provider.
+ * Soul Server API + SSE 스트림 기반 세션 Provider.
  *
- * 기존 Soul 대시보드의 /api/sessions 엔드포인트를 활용합니다.
+ * /api/sessions 엔드포인트로 세션 목록을 조회하고,
+ * /api/sessions/:id/events SSE 스트림으로 실시간 이벤트를 수신합니다.
  */
-export class FileSessionProvider implements SessionStorageProvider {
-  readonly mode: StorageMode = "file";
+export class SSESessionProvider implements SessionStorageProvider {
+  readonly mode: StorageMode = "sse";
 
   /**
    * 세션 목록 조회.
@@ -73,13 +74,13 @@ export class FileSessionProvider implements SessionStorageProvider {
   /**
    * 세션 카드 목록 조회 (스냅샷).
    *
-   * File 모드에서는 SSE 이벤트를 재생하여 카드를 구성하므로,
+   * SSE 이벤트를 재생하여 카드를 구성하므로,
    * 초기 스냅샷은 빈 배열을 반환하고 subscribe로 실시간 구축합니다.
    *
    * @param _sessionKey - 세션 키 (agentSessionId)
    */
   async fetchCards(_sessionKey: string): Promise<DashboardCard[]> {
-    // File 모드는 SSE 이벤트로 카드를 구성하므로 초기값은 빈 배열
+    // SSE 이벤트로 카드를 구성하므로 초기값은 빈 배열
     // 실제 이벤트 히스토리가 필요하면 /api/sessions/:id/events?history=true 호출 가능
     return [];
   }
@@ -178,5 +179,5 @@ export class FileSessionProvider implements SessionStorageProvider {
   }
 }
 
-/** FileSessionProvider 싱글톤 인스턴스 */
-export const fileSessionProvider = new FileSessionProvider();
+/** SSESessionProvider 싱글톤 인스턴스 */
+export const sseSessionProvider = new SSESessionProvider();
