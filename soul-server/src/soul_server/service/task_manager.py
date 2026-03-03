@@ -31,6 +31,7 @@ from soul_server.service.task_storage import TaskStorage
 from soul_server.service.task_listener import TaskListenerManager
 from soul_server.service.task_executor import TaskExecutor
 from soul_server.service.event_store import EventStore
+from soul_server.service.session_broadcaster import get_session_broadcaster
 
 # Re-export for backward compatibility
 __all__ = [
@@ -215,6 +216,7 @@ class TaskManager:
                     existing.client_id = client_id
 
                 task = existing
+                is_new = False
             else:
                 # 새 세션
                 task = Task(
@@ -227,8 +229,20 @@ class TaskManager:
                 )
                 self._tasks[agent_session_id] = task
                 logger.info(f"Created new session: {agent_session_id}")
+                is_new = True
 
         await self._schedule_save()
+
+        # 세션 목록 변경을 대시보드에 브로드캐스트 (부가 기능 — 실패해도 태스크 생성에 영향 없음)
+        try:
+            broadcaster = get_session_broadcaster()
+            if is_new:
+                await broadcaster.emit_session_created(task)
+            else:
+                await broadcaster.emit_session_updated(task)
+        except Exception:
+            logger.warning(f"Failed to broadcast session event for {agent_session_id}", exc_info=True)
+
         return task
 
     async def get_task(self, agent_session_id: str) -> Optional[Task]:
@@ -275,6 +289,10 @@ class TaskManager:
             logger.info(f"Completed session: {agent_session_id}")
 
         await self._schedule_save()
+        try:
+            await get_session_broadcaster().emit_session_updated(task)
+        except Exception:
+            logger.warning(f"Failed to broadcast completion for {agent_session_id}", exc_info=True)
         return task
 
     async def _error_task_internal(
@@ -313,6 +331,10 @@ class TaskManager:
             logger.info(f"Error session: {agent_session_id} - {error}")
 
         await self._schedule_save()
+        try:
+            await get_session_broadcaster().emit_session_updated(task)
+        except Exception:
+            logger.warning(f"Failed to broadcast error for {agent_session_id}", exc_info=True)
         return task
 
     # === SSE 리스너 관리 (위임) ===
@@ -465,17 +487,25 @@ class TaskManager:
                 if task.created_at < cutoff:
                     keys_to_remove.append(key)
 
+            deleted_ids = []
             for key in keys_to_remove:
                 task = self._tasks[key]
                 self._unregister_claude_session(key)
                 self._clear_queue(task.intervention_queue)
                 task.listeners.clear()
                 del self._tasks[key]
+                deleted_ids.append(key)
                 cleaned += 1
 
         if cleaned > 0:
             logger.info(f"Cleaned up {cleaned} old sessions")
             await self._schedule_save()
+            try:
+                broadcaster = get_session_broadcaster()
+                for sid in deleted_ids:
+                    await broadcaster.emit_session_deleted(sid)
+            except Exception:
+                logger.warning("Failed to broadcast session deletions", exc_info=True)
 
         return cleaned
 
