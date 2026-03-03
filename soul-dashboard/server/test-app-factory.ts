@@ -14,28 +14,67 @@ import { SoulClient } from "./soul-client.js";
 import { createSessionsRouter } from "./routes/sessions.js";
 import { createEventsRouter } from "./routes/events.js";
 import { createActionsRouter } from "./routes/actions.js";
+import { createSessionsProxyRouter } from "./routes/sessions-proxy.js";
 
 export interface TestAppOptions {
-  /** JSONL 이벤트 저장 디렉토리 */
-  eventsBaseDir: string;
+  /** JSONL 이벤트 저장 디렉토리 (레거시 모드용) */
+  eventsBaseDir?: string;
   /** Soul 서버 포트 (기본값: 39999 - 연결 안 됨) */
   soulPort?: number;
+  /** 프록시 모드 사용 여부 (Phase 3 아키텍처) */
+  useProxyMode?: boolean;
 }
 
 export interface TestAppContext {
   app: Express;
-  sessionStore: SessionStore;
-  eventHub: EventHub;
-  soulClient: SoulClient;
+  /** 레거시 모드에서만 사용 */
+  sessionStore?: SessionStore;
+  /** 레거시 모드에서만 사용 */
+  eventHub?: EventHub;
+  /** 레거시 모드에서만 사용 */
+  soulClient?: SoulClient;
 }
 
 /**
  * 테스트용 Express 앱과 의존성을 생성합니다.
+ *
+ * @param options.useProxyMode - true면 프록시 모드 (Phase 3 아키텍처)
  */
 export function createTestApp(options: TestAppOptions): TestAppContext {
+  const soulBaseUrl = `http://localhost:${options.soulPort ?? 39999}`;
+  const app = express();
+  app.use(express.json({ limit: "1mb" }));
+
+  // 프록시 모드 (Phase 3 아키텍처)
+  if (options.useProxyMode) {
+    app.get("/api/health", (_req, res) => {
+      res.json({
+        status: "ok",
+        service: "soul-dashboard",
+        version: "0.3.0",
+        soulServer: soulBaseUrl,
+      });
+    });
+
+    app.use(
+      "/api/sessions",
+      createSessionsProxyRouter({ soulBaseUrl }),
+    );
+    app.use(
+      "/api/sessions",
+      createActionsRouter({ soulBaseUrl }),
+    );
+
+    return { app };
+  }
+
+  // 레거시 모드 (파일 직접 읽기)
+  if (!options.eventsBaseDir) {
+    throw new Error("eventsBaseDir is required for legacy mode");
+  }
+
   const sessionStore = new SessionStore({ baseDir: options.eventsBaseDir });
   const eventHub = new EventHub();
-  const soulBaseUrl = `http://localhost:${options.soulPort ?? 39999}`;
   const soulClient = new SoulClient({ soulBaseUrl });
 
   // Soul 이벤트 → EventHub 브로드캐스트
@@ -43,9 +82,6 @@ export function createTestApp(options: TestAppOptions): TestAppContext {
   soulClient.onEvent((agentSessionId, eventId, event) => {
     eventHub.broadcast(agentSessionId, eventId, event);
   });
-
-  const app = express();
-  app.use(express.json({ limit: "1mb" }));
 
   app.get("/api/health", (_req, res) => {
     res.json({
@@ -63,7 +99,7 @@ export function createTestApp(options: TestAppOptions): TestAppContext {
   );
   app.use(
     "/api/sessions",
-    createActionsRouter({ soulBaseUrl, eventHub, sessionStore, soulClient }),
+    createActionsRouter({ soulBaseUrl }),
   );
 
   return { app, sessionStore, eventHub, soulClient };
