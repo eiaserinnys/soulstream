@@ -18,7 +18,6 @@ import { createServer, type Server } from "http";
 import type {
   CreateSessionResponse,
   InterveneResponse,
-  SessionListResponse,
 } from "../shared/types.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -359,73 +358,81 @@ interface MockDashboardServer {
  * 빌드된 클라이언트 + Mock API를 서빙하는 통합 서버.
  * 랜덤 포트 사용으로 포트 충돌을 방지합니다.
  */
+/**
+ * 세션 목록 fixture — 실제 서버와 동일한 snake_case 형식.
+ *
+ * 서버의 _task_to_session_info()가 반환하는 필드:
+ * agent_session_id, status, prompt, created_at, updated_at
+ * (eventCount는 서버가 보내지 않음)
+ */
+function makeMockSessions() {
+  return [
+    {
+      agent_session_id: "sess-e2e-ui-001",
+      status: "running",
+      prompt: "src/index.ts 파일을 분석하고 에러 핸들링을 추가해주세요.",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      agent_session_id: "sess-e2e-ui-002",
+      status: "completed",
+      prompt: "테스트 코드를 작성해주세요.",
+      created_at: new Date(Date.now() - 3600000).toISOString(),
+      updated_at: new Date(Date.now() - 3500000).toISOString(),
+    },
+    {
+      agent_session_id: "sess-e2e-ui-003",
+      status: "error",
+      prompt: "에러 세션 테스트",
+      created_at: new Date(Date.now() - 7200000).toISOString(),
+      updated_at: new Date(Date.now() - 7100000).toISOString(),
+    },
+    {
+      agent_session_id: "sess-e2e-ui-multi",
+      status: "running",
+      prompt: "src/utils.ts에 validateInput 함수를 추가하고 테스트를 실행해주세요.",
+      created_at: new Date(Date.now() - 60000).toISOString(),
+      updated_at: new Date(Date.now() - 60000).toISOString(),
+    },
+    {
+      agent_session_id: "sess-e2e-ui-notool",
+      status: "completed",
+      prompt: "간단히 설명해주세요.",
+      created_at: new Date(Date.now() - 120000).toISOString(),
+      updated_at: new Date(Date.now() - 110000).toISOString(),
+    },
+    {
+      agent_session_id: "sess-e2e-ui-large25",
+      status: "completed",
+      prompt: "대규모 작업을 수행해주세요 (10 단계).",
+      created_at: new Date(Date.now() - 180000).toISOString(),
+      updated_at: new Date(Date.now() - 170000).toISOString(),
+    },
+    {
+      agent_session_id: "sess-e2e-ui-large50",
+      status: "completed",
+      prompt: "대규모 작업을 수행해주세요 (20 단계).",
+      created_at: new Date(Date.now() - 240000).toISOString(),
+      updated_at: new Date(Date.now() - 230000).toISOString(),
+    },
+    {
+      agent_session_id: "sess-e2e-ui-multiturn",
+      status: "completed",
+      prompt: "대사 작업 스킬을 로드하고 다음 지시를 대기.",
+      created_at: new Date(Date.now() - 300000).toISOString(),
+      updated_at: new Date(Date.now() - 290000).toISOString(),
+    },
+  ];
+}
+
 const test = base.extend<{ dashboardServer: MockDashboardServer }>({
   dashboardServer: async ({}, use) => {
     const app = express();
 
-    // --- Mock: 세션 목록 — SessionListResponse 형식 ---
+    // --- Mock: 세션 목록 — 실제 서버와 동일한 snake_case 형식 ---
     app.get("/api/sessions", (_req, res) => {
-      const response: SessionListResponse = {
-        sessions: [
-          {
-            agentSessionId: "sess-e2e-ui-001",
-            status: "running",
-            eventCount: 5,
-            createdAt: new Date().toISOString(),
-            prompt: "src/index.ts 파일을 분석하고 에러 핸들링을 추가해주세요.",
-          },
-          {
-            agentSessionId: "sess-e2e-ui-002",
-            status: "completed",
-            eventCount: 12,
-            createdAt: new Date(Date.now() - 3600000).toISOString(),
-            prompt: "테스트 코드를 작성해주세요.",
-          },
-          {
-            agentSessionId: "sess-e2e-ui-003",
-            status: "error",
-            eventCount: 3,
-            createdAt: new Date(Date.now() - 7200000).toISOString(),
-            prompt: "에러 세션 테스트",
-          },
-          {
-            agentSessionId: "sess-e2e-ui-multi",
-            status: "running",
-            eventCount: 14,
-            createdAt: new Date(Date.now() - 60000).toISOString(),
-            prompt: "src/utils.ts에 validateInput 함수를 추가하고 테스트를 실행해주세요.",
-          },
-          {
-            agentSessionId: "sess-e2e-ui-notool",
-            status: "completed",
-            eventCount: 5,
-            createdAt: new Date(Date.now() - 120000).toISOString(),
-            prompt: "간단히 설명해주세요.",
-          },
-          {
-            agentSessionId: "sess-e2e-ui-large25",
-            status: "completed",
-            eventCount: 55,
-            createdAt: new Date(Date.now() - 180000).toISOString(),
-            prompt: "대규모 작업을 수행해주세요 (10 단계).",
-          },
-          {
-            agentSessionId: "sess-e2e-ui-large50",
-            status: "completed",
-            eventCount: 105,
-            createdAt: new Date(Date.now() - 240000).toISOString(),
-            prompt: "대규모 작업을 수행해주세요 (20 단계).",
-          },
-          {
-            agentSessionId: "sess-e2e-ui-multiturn",
-            status: "completed",
-            eventCount: MULTI_TURN_SSE_EVENTS.length,
-            createdAt: new Date(Date.now() - 300000).toISOString(),
-            prompt: "대사 작업 스킬을 로드하고 다음 지시를 대기.",
-          },
-        ],
-      };
-      res.json(response);
+      res.json({ sessions: makeMockSessions() });
     });
 
     // --- Mock: Health check ---
@@ -472,66 +479,7 @@ const test = base.extend<{ dashboardServer: MockDashboardServer }>({
         Connection: "keep-alive",
       });
 
-      // 세션 목록을 named event로 전송 (실제 서버와 동일한 형식)
-      const sessions = [
-        {
-          agentSessionId: "sess-e2e-ui-001",
-          status: "running",
-          eventCount: 5,
-          createdAt: new Date().toISOString(),
-          prompt: "src/index.ts 파일을 분석하고 에러 핸들링을 추가해주세요.",
-        },
-        {
-          agentSessionId: "sess-e2e-ui-002",
-          status: "completed",
-          eventCount: 12,
-          createdAt: new Date(Date.now() - 3600000).toISOString(),
-          prompt: "테스트 코드를 작성해주세요.",
-        },
-        {
-          agentSessionId: "sess-e2e-ui-003",
-          status: "error",
-          eventCount: 3,
-          createdAt: new Date(Date.now() - 7200000).toISOString(),
-          prompt: "에러 세션 테스트",
-        },
-        {
-          agentSessionId: "sess-e2e-ui-multi",
-          status: "running",
-          eventCount: 14,
-          createdAt: new Date(Date.now() - 60000).toISOString(),
-          prompt: "src/utils.ts에 validateInput 함수를 추가하고 테스트를 실행해주세요.",
-        },
-        {
-          agentSessionId: "sess-e2e-ui-notool",
-          status: "completed",
-          eventCount: 5,
-          createdAt: new Date(Date.now() - 120000).toISOString(),
-          prompt: "간단히 설명해주세요.",
-        },
-        {
-          agentSessionId: "sess-e2e-ui-large25",
-          status: "completed",
-          eventCount: 55,
-          createdAt: new Date(Date.now() - 180000).toISOString(),
-          prompt: "대규모 작업을 수행해주세요 (10 단계).",
-        },
-        {
-          agentSessionId: "sess-e2e-ui-large50",
-          status: "completed",
-          eventCount: 105,
-          createdAt: new Date(Date.now() - 240000).toISOString(),
-          prompt: "대규모 작업을 수행해주세요 (20 단계).",
-        },
-        {
-          agentSessionId: "sess-e2e-ui-multiturn",
-          status: "completed",
-          eventCount: MULTI_TURN_SSE_EVENTS.length,
-          createdAt: new Date(Date.now() - 300000).toISOString(),
-          prompt: "대사 작업 스킬을 로드하고 다음 지시를 대기.",
-        },
-      ];
-
+      const sessions = makeMockSessions();
       const data = JSON.stringify({ type: "session_list", sessions });
       res.write(`event: session_list\ndata: ${data}\n\n`);
 

@@ -16,8 +16,6 @@ import { createServer, type Server } from "http";
 import type {
   CreateSessionResponse,
   InterveneResponse,
-  SessionListResponse,
-  SessionSummary,
 } from "../shared/types.js";
 
 // === Test Fixtures ===
@@ -37,27 +35,26 @@ async function startMockDashboardServer(): Promise<number> {
   const app = express();
   app.use(express.json());
 
-  // 모의 세션 목록 API — SessionListResponse 형식
+  // 모의 세션 목록 API — 실제 서버와 동일한 snake_case 형식
+  const mockSessions = [
+    {
+      agent_session_id: "sess-e2e-001",
+      status: "completed",
+      prompt: "첫 번째 테스트 세션",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      agent_session_id: "sess-e2e-002",
+      status: "running",
+      prompt: "두 번째 테스트 세션",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+  ];
+
   app.get("/api/sessions", (_req, res) => {
-    const response: SessionListResponse = {
-      sessions: [
-        {
-          agentSessionId: "sess-e2e-001",
-          status: "completed",
-          eventCount: 5,
-          createdAt: new Date().toISOString(),
-          prompt: "첫 번째 테스트 세션",
-        },
-        {
-          agentSessionId: "sess-e2e-002",
-          status: "running",
-          eventCount: 3,
-          createdAt: new Date().toISOString(),
-          prompt: "두 번째 테스트 세션",
-        },
-      ],
-    };
-    res.json(response);
+    res.json({ sessions: mockSessions });
   });
 
   // 모의 세션 생성 API — CreateSessionResponse 형식
@@ -96,24 +93,7 @@ async function startMockDashboardServer(): Promise<number> {
       Connection: "keep-alive",
     });
 
-    const sessions = [
-      {
-        agentSessionId: "sess-e2e-001",
-        status: "completed",
-        eventCount: 5,
-        createdAt: new Date().toISOString(),
-        prompt: "첫 번째 테스트 세션",
-      },
-      {
-        agentSessionId: "sess-e2e-002",
-        status: "running",
-        eventCount: 3,
-        createdAt: new Date().toISOString(),
-        prompt: "두 번째 테스트 세션",
-      },
-    ];
-
-    const data = JSON.stringify({ type: "session_list", sessions });
+    const data = JSON.stringify({ type: "session_list", sessions: mockSessions });
     res.write(`event: session_list\ndata: ${data}\n\n`);
 
     // API 테스트에서 request.get()이 완료되도록 응답 종료
@@ -219,21 +199,21 @@ test.describe("Soul Dashboard API 계약 E2E", () => {
     expect(body.service).toBe("soul-dashboard");
   });
 
-  test("GET /api/sessions — SessionListResponse 계약", async ({ request }) => {
+  test("GET /api/sessions — 서버 응답 계약 (snake_case)", async ({ request }) => {
     const res = await request.get(
       `http://localhost:${testPort}/api/sessions`,
     );
     expect(res.ok()).toBe(true);
-    const body: SessionListResponse = await res.json();
+    const body = await res.json() as { sessions: Record<string, unknown>[] };
 
     // sessions 배열 존재
     expect(body.sessions).toHaveLength(2);
 
-    // SessionSummary 필수 필드: agentSessionId
+    // 서버 필수 필드: agent_session_id (snake_case)
     const session = body.sessions[0];
-    expect(session).toHaveProperty("agentSessionId");
-    expect(typeof session.agentSessionId).toBe("string");
-    expect(session.agentSessionId).toBeTruthy();
+    expect(session).toHaveProperty("agent_session_id");
+    expect(typeof session.agent_session_id).toBe("string");
+    expect(session.agent_session_id).toBeTruthy();
 
     // 구버전 필드가 없어야 함
     expect(session).not.toHaveProperty("clientId");
@@ -242,7 +222,7 @@ test.describe("Soul Dashboard API 계약 E2E", () => {
 
     // 나머지 필수 필드
     expect(session).toHaveProperty("status");
-    expect(session).toHaveProperty("eventCount");
+    expect(session).toHaveProperty("created_at");
   });
 
   test("POST /api/sessions — CreateSessionResponse 계약", async ({ request }) => {
@@ -314,12 +294,12 @@ test.describe("Soul Dashboard API 계약 E2E", () => {
     expect(payload.type).toBe("session_list");
     expect(payload.sessions).toHaveLength(2);
 
-    // 세션 필수 필드 검증
+    // 세션 필수 필드 검증 (서버와 동일한 snake_case)
     for (const session of payload.sessions) {
-      expect(session).toHaveProperty("agentSessionId");
-      expect(typeof session.agentSessionId).toBe("string");
+      expect(session).toHaveProperty("agent_session_id");
+      expect(typeof session.agent_session_id).toBe("string");
       expect(session).toHaveProperty("status");
-      expect(session).toHaveProperty("eventCount");
+      expect(session).toHaveProperty("created_at");
     }
   });
 
