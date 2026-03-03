@@ -232,6 +232,7 @@ class TextStartSSEEvent(BaseModel):
     """
     type: str = "text_start"
     card_id: str = Field(..., description="텍스트 블록 단위 카드 ID")
+    parent_tool_use_id: Optional[str] = Field(None, description="서브에이전트 내부인 경우 부모 Task 도구의 tool_use_id")
 
 
 class TextDeltaSSEEvent(BaseModel):
