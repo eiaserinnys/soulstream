@@ -11,6 +11,14 @@ import { useDashboardStore } from "../stores/dashboard-store";
 import { getSessionProvider } from "../providers";
 import type { SessionStreamEvent, SessionStatus } from "@shared/types";
 
+/** 서버가 named SSE event로 보내는 이벤트 타입 목록 */
+const SESSION_STREAM_EVENT_TYPES = [
+  "session_list",
+  "session_created",
+  "session_updated",
+  "session_deleted",
+] as const;
+
 interface UseSessionListProviderOptions {
   /** 폴링 간격 (ms). serendipity 모드에서만 사용. 기본 5000 */
   intervalMs?: number;
@@ -85,14 +93,18 @@ export function useSessionListProvider(
       setSessionsError(null);
     };
 
-    eventSource.onmessage = (e) => {
-      try {
-        const data = JSON.parse(e.data) as SessionStreamEvent;
-        handleSSEEvent(data);
-      } catch (err) {
-        console.error("[useSessionListProvider] Failed to parse SSE event:", err);
-      }
-    };
+    // 서버가 named event (event: session_list 등)로 보내므로
+    // onmessage 대신 addEventListener로 각 이벤트 타입을 등록
+    for (const eventType of SESSION_STREAM_EVENT_TYPES) {
+      eventSource.addEventListener(eventType, (e: MessageEvent) => {
+        try {
+          const data = JSON.parse(e.data) as SessionStreamEvent;
+          handleSSEEvent(data);
+        } catch (err) {
+          console.error("[useSessionListProvider] Failed to parse SSE event:", err);
+        }
+      });
+    }
 
     eventSource.onerror = () => {
       setSessionsError("세션 목록 연결이 끊어졌습니다. 자동 재연결 중...");
