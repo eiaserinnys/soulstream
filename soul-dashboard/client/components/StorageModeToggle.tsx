@@ -1,7 +1,7 @@
 /**
  * StorageModeToggle - 스토리지 모드 전환 UI
  *
- * File 모드(JSONL + SSE)와 Serendipity 모드 사이를 전환합니다.
+ * SSE 모드(Soul Server API + SSE 실시간)와 Serendipity 모드 사이를 전환합니다.
  */
 
 import { useDashboardStore } from "../stores/dashboard-store";
@@ -16,10 +16,10 @@ interface StorageModeOption {
 
 const STORAGE_MODES: StorageModeOption[] = [
   {
-    value: "file",
-    label: "File",
-    description: "로컬 JSONL + SSE 실시간",
-    icon: "📁",
+    value: "sse",
+    label: "SSE",
+    description: "Soul Server API + SSE 실시간",
+    icon: "📡",
   },
   {
     value: "serendipity",

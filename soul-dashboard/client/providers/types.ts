@@ -2,7 +2,8 @@
  * Soul Dashboard - Session Storage Provider Types
  *
  * 세션 데이터의 소스를 추상화하는 Provider 인터페이스 정의.
- * File 모드(기존 JSONL + SSE)와 Serendipity 모드를 통합합니다.
+ * SSE 모드: Soul Server API + SSE 스트림을 통한 실시간 업데이트.
+ * Serendipity 모드: 세렌디피티 API를 통한 세션 조회.
  */
 
 import type { SessionSummary, DashboardCard, SoulSSEEvent } from "@shared/types";
@@ -10,7 +11,7 @@ import type { SessionSummary, DashboardCard, SoulSSEEvent } from "@shared/types"
 // === Storage Mode ===
 
 /** 대시보드 스토리지 모드 */
-export type StorageMode = "file" | "serendipity";
+export type StorageMode = "sse" | "serendipity";
 
 // === Provider 인터페이스 ===
 
@@ -30,8 +31,7 @@ export interface SessionListProvider {
 /**
  * 세션 상세 정보를 제공하는 Provider 인터페이스.
  *
- * File 모드: SSE 스트림을 구독하여 실시간 업데이트
- * Serendipity 모드: API로 블록 조회 후 DashboardCard로 변환
+ * SSE 스트림을 구독하여 실시간 업데이트를 수신합니다.
  */
 export interface SessionDetailProvider {
   /** 세션 카드 목록 조회 (스냅샷) */
@@ -134,7 +134,7 @@ export interface PortableTextMarkDef {
 /**
  * 세션 키.
  *
- * File 모드: agentSessionId
+ * SSE 모드: agentSessionId
  * Serendipity 모드: 페이지 UUID
  */
 export type SessionKey = string;

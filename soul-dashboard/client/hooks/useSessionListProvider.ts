@@ -2,7 +2,7 @@
  * useSessionListProvider - Provider 기반 세션 목록 훅
  *
  * 현재 스토리지 모드에 따라 적절한 방식으로 세션 목록을 조회합니다:
- * - file 모드: SSE 구독 (실시간 업데이트)
+ * - sse 모드: SSE 구독 (실시간 업데이트)
  * - serendipity 모드: 폴링 (5초 간격)
  */
 
@@ -41,7 +41,7 @@ export function useSessionListProvider(
   const eventSourceRef = useRef<EventSource | null>(null);
 
   /**
-   * SSE 이벤트 처리 (file 모드)
+   * SSE 이벤트 처리 (sse 모드)
    */
   const handleSSEEvent = useCallback(
     (event: SessionStreamEvent) => {
@@ -71,7 +71,7 @@ export function useSessionListProvider(
   );
 
   /**
-   * SSE 연결 설정 (file 모드)
+   * SSE 연결 설정 (sse 모드)
    */
   const connectSSE = useCallback(() => {
     if (eventSourceRef.current) return;
@@ -148,8 +148,8 @@ export function useSessionListProvider(
     // 모드 변경 시 첫 로드 플래그 리셋
     isFirstLoad.current = true;
 
-    if (storageMode === "file") {
-      // file 모드: SSE 구독
+    if (storageMode === "sse") {
+      // SSE 모드: SSE 구독
       connectSSE();
 
       return () => {
