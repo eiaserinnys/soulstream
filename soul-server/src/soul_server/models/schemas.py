@@ -269,6 +269,7 @@ class ToolResultSSEEvent(BaseModel):
     result: str = Field(..., description="도구 실행 결과")
     is_error: bool = Field(False, description="오류 여부")
     tool_use_id: Optional[str] = Field(None, description="SDK ToolUseBlock ID (tool_start 매칭용)")
+    duration_ms: Optional[int] = Field(None, description="도구 실행 시간 (밀리초)")
 
 
 class ResultSSEEvent(BaseModel):

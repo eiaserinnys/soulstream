@@ -580,6 +580,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
             if (toolNode) {
               toolNode.toolResult = toolResultEvent.result;
               toolNode.isError = toolResultEvent.is_error;
+              toolNode.durationMs = toolResultEvent.duration_ms;
               toolNode.completed = true;
               updated = true;
             }

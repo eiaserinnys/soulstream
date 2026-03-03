@@ -140,6 +140,8 @@ export interface ToolResultEvent {
   tool_use_id?: string;
   /** 부모 tool_use_id (서브에이전트 내부 노드 배치용) */
   parent_tool_use_id?: string;
+  /** 도구 실행 시간 (밀리초) */
+  duration_ms?: number;
 }
 
 export interface ResultEvent {
