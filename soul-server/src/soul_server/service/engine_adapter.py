@@ -37,6 +37,8 @@ from soul_server.models import (
     RateLimitProfileStatus,
     ResultSSEEvent,
     SessionEvent,
+    SubagentStartSSEEvent,
+    SubagentStopSSEEvent,
     TextDeltaSSEEvent,
     TextEndSSEEvent,
     TextStartSSEEvent,
@@ -402,6 +404,7 @@ class SoulEngineAdapter:
                     tool_name=tool_name,
                     tool_input=tool_input,
                     tool_use_id=tool_use_id,
+                    parent_tool_use_id=event.parent_tool_use_id,
                 )
                 await queue.put(sse_event)
 
@@ -430,6 +433,23 @@ class SoulEngineAdapter:
                     success=success,
                     output=output,
                     error=error,
+                )
+                await queue.put(sse_event)
+
+            elif event.type == EngineEventType.SUBAGENT_START:
+                agent_id = event.data.get("agent_id", "")
+                agent_type = event.data.get("agent_type", "")
+                sse_event = SubagentStartSSEEvent(
+                    agent_id=agent_id,
+                    agent_type=agent_type,
+                    parent_tool_use_id=event.parent_tool_use_id,
+                )
+                await queue.put(sse_event)
+
+            elif event.type == EngineEventType.SUBAGENT_STOP:
+                agent_id = event.data.get("agent_id", "")
+                sse_event = SubagentStopSSEEvent(
+                    agent_id=agent_id,
                 )
                 await queue.put(sse_event)
 
