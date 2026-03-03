@@ -1,19 +1,13 @@
 """
-Session API 테스트 - GET /sessions, GET /sessions/stream
+Session Integration Tests - TC-1 ~ TC-16
 
-TDD 방식으로 작성된 테스트입니다.
+실제 세션 데이터 픽스처를 사용하는 통합 테스트입니다.
+EventDrivenMockRunner로 Claude Code 동작을 시뮬레이션합니다.
 
-SSE 스트리밍 테스트 전략:
+테스트 전략:
 1. 동기 테스트: 라우터 등록, 메서드 타입, 핸들러 존재 확인
 2. 비동기 테스트: event_generator를 직접 호출하여 초기 세션 목록 확인
 3. 통합 테스트: 실제 SessionBroadcaster로 이벤트 수신 테스트
-
-HTTP 레이어(TestClient)로 SSE를 테스트하면 블로킹되는 이유:
-- event_generator()의 while True 루프가 event_queue.get()에서 영원히 대기
-- httpx/TestClient의 iter_lines()는 스트림 EOF를 기다림
-- ASGI Transport 레벨에서 타임아웃이 서버측으로 전파되지 않음
-
-따라서 event_generator 함수를 직접 호출하여 테스트한다.
 """
 
 import asyncio
@@ -25,7 +19,8 @@ from unittest.mock import AsyncMock, MagicMock
 from fastapi.testclient import TestClient
 
 
-# 테스트용 TaskManager mock 설정
+# === Fixtures ===
+
 @pytest.fixture
 def mock_task_manager():
     """TaskManager mock 생성"""
@@ -93,6 +88,8 @@ def test_app(mock_task_manager, mock_session_broadcaster):
     return app
 
 
+# === GET /sessions Tests ===
+
 class TestGetSessions:
     """GET /sessions 테스트"""
 
@@ -138,19 +135,14 @@ class TestGetSessions:
         assert data["sessions"] == []
 
 
+# === GET /sessions/stream SSE Tests ===
+
 class TestSessionsStream:
     """GET /sessions/stream SSE 테스트
 
     SSE 스트리밍 테스트는 HTTP 레이어를 우회하여 수행한다.
     - 동기 테스트: 라우터 등록, 메서드 타입 확인
     - 비동기 테스트: event_generator 직접 호출로 SSE 로직 검증
-
-    TestClient로 SSE 테스트가 블로킹되는 근본 원인:
-    - event_generator()의 while True 루프가 event_queue.get()에서 대기
-    - httpx iter_lines()는 스트림 EOF를 기다리지만, SSE는 EOF가 없음
-    - ASGI Transport에서 클라이언트 타임아웃이 서버측으로 전파되지 않음
-
-    해결책: event_generator를 직접 호출하고, 첫 yield 후 명시적으로 종료
     """
 
     def test_stream_endpoint_registered(self, test_app):
@@ -291,17 +283,7 @@ class TestSessionsStreamEventGenerator:
 
     @pytest.mark.asyncio
     async def test_listener_cleanup_on_close(self, mock_task_manager, real_session_broadcaster):
-        """제너레이터 종료 시 리스너가 정리되어야 한다
-
-        event_generator 흐름:
-        1. 첫 번째 yield (초기 세션 목록) - 여기서 일시 중단
-        2. 두 번째 __anext__() 호출 시 add_listener 실행
-        3. event_queue.get() 대기
-
-        따라서 리스너 등록을 확인하려면:
-        - 이벤트를 발행해서 두 번째 yield까지 진행
-        - 그 후 aclose()로 finally 블록 실행 확인
-        """
+        """제너레이터 종료 시 리스너가 정리되어야 한다"""
         from soul_server.api.sessions import create_sessions_router
         from soul_server.service.task_models import Task, TaskStatus
 
@@ -358,6 +340,8 @@ class TestSessionsStreamEventGenerator:
         except asyncio.CancelledError:
             pass
 
+
+# === SessionBroadcaster Unit Tests ===
 
 class TestSessionBroadcaster:
     """SessionBroadcaster 단위 테스트"""
@@ -480,6 +464,8 @@ class TestSessionBroadcaster:
         assert count == 0
 
 
+# === TaskManager Unit Tests ===
+
 class TestTaskManagerGetAllSessions:
     """TaskManager.get_all_sessions() 테스트"""
 
@@ -544,6 +530,8 @@ class TestTaskManagerGetAllSessions:
         assert sessions[1].agent_session_id == "sess-old"
 
 
+# === Session Info Serialization Tests ===
+
 class TestSessionInfoSerialization:
     """세션 정보 직렬화 테스트"""
 
@@ -586,3 +574,108 @@ class TestSessionInfoSerialization:
         info = _task_to_session_info(task)
 
         assert info["updated_at"] == completed.isoformat()
+
+
+# === TC-8: Non-existent Session Intervention ===
+
+class TestNonExistentSessionIntervention:
+    """TC-8: 존재하지 않는 세션에 개입 시 404 반환"""
+
+    @pytest.mark.asyncio
+    async def test_intervene_nonexistent_session_raises_error(self):
+        """존재하지 않는 세션에 개입 시 TaskNotFoundError가 발생해야 한다"""
+        from soul_server.service.task_manager import TaskManager
+        from soul_server.service.task_models import TaskNotFoundError
+
+        manager = TaskManager()
+
+        # 존재하지 않는 세션에 개입 시도
+        with pytest.raises(TaskNotFoundError) as exc_info:
+            await manager.add_intervention(
+                agent_session_id="nonexistent-session-id",
+                text="Hello",
+                user="test-user",
+            )
+
+        assert "nonexistent-session-id" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_get_task_returns_none_for_nonexistent_session(self):
+        """존재하지 않는 세션 조회 시 None을 반환해야 한다"""
+        from soul_server.service.task_manager import TaskManager
+
+        manager = TaskManager()
+
+        # 존재하지 않는 세션 조회
+        task = await manager.get_task("nonexistent-session-id")
+        assert task is None
+
+
+# === TC-10: Concurrent Sessions ===
+
+class TestConcurrentSessions:
+    """TC-10: 동시에 여러 세션 실행"""
+
+    @pytest.mark.asyncio
+    async def test_multiple_sessions_in_list(self):
+        """여러 세션이 동시에 목록에 표시되어야 한다"""
+        from soul_server.service.task_manager import TaskManager
+        from soul_server.service.task_models import Task, TaskStatus
+
+        manager = TaskManager()
+
+        # 여러 세션 생성
+        task_a = Task(agent_session_id="sess-a", prompt="Task A", status=TaskStatus.RUNNING)
+        task_b = Task(agent_session_id="sess-b", prompt="Task B", status=TaskStatus.RUNNING)
+        task_c = Task(agent_session_id="sess-c", prompt="Task C", status=TaskStatus.RUNNING)
+
+        manager._tasks["sess-a"] = task_a
+        manager._tasks["sess-b"] = task_b
+        manager._tasks["sess-c"] = task_c
+
+        sessions = manager.get_all_sessions()
+
+        # 모든 세션이 목록에 있어야 함
+        assert len(sessions) == 3
+        session_ids = [s.agent_session_id for s in sessions]
+        assert "sess-a" in session_ids
+        assert "sess-b" in session_ids
+        assert "sess-c" in session_ids
+
+
+# === TC-11: Multiple Clients on Same Session SSE ===
+
+class TestMultipleClientsSSE:
+    """TC-11: 같은 세션에 여러 클라이언트 SSE 접속"""
+
+    @pytest.mark.asyncio
+    async def test_multiple_listeners_receive_same_event(self):
+        """여러 리스너가 같은 이벤트를 수신해야 한다"""
+        from soul_server.service.session_broadcaster import SessionBroadcaster
+        from soul_server.service.task_models import Task, TaskStatus
+
+        broadcaster = SessionBroadcaster()
+
+        # 두 클라이언트의 큐
+        client_a_queue = asyncio.Queue()
+        client_b_queue = asyncio.Queue()
+
+        await broadcaster.add_listener(client_a_queue)
+        await broadcaster.add_listener(client_b_queue)
+
+        # 이벤트 발행
+        task = Task(
+            agent_session_id="sess-shared",
+            prompt="Shared session",
+            status=TaskStatus.RUNNING,
+        )
+        await broadcaster.emit_session_created(task)
+
+        # 두 클라이언트 모두 동일한 이벤트 수신
+        event_a = await client_a_queue.get()
+        event_b = await client_b_queue.get()
+
+        assert event_a["type"] == "session_created"
+        assert event_b["type"] == "session_created"
+        assert event_a["session"]["agent_session_id"] == "sess-shared"
+        assert event_b["session"]["agent_session_id"] == "sess-shared"
