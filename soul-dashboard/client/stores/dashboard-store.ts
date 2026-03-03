@@ -27,6 +27,7 @@ import type {
   ToolResultEvent,
   TextStartEvent,
   ResultEvent,
+  ThinkingEvent,
 } from "@shared/types";
 import type { StorageMode } from "../providers/types";
 
@@ -396,6 +397,50 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
             currentTurnNodeId = node.id;
             lastTextNodeId = null;
             updated = true;
+            break;
+          }
+
+          case "thinking": {
+            root = ensureRoot(root);
+            const thinkingEvent = event as ThinkingEvent;
+            const thinkingCardId = thinkingEvent.card_id || `thinking-${eventId}`;
+
+            // parent_tool_use_id가 있으면 서브에이전트 내부
+            if (thinkingEvent.parent_tool_use_id) {
+              const parentSubagent = findSubagentByParentToolUseId(thinkingEvent.parent_tool_use_id);
+              if (parentSubagent) {
+                const thinkingNode = createNode(thinkingCardId, "thinking", thinkingEvent.thinking, {
+                  completed: true,
+                });
+                cardIdMap.set(thinkingCardId, thinkingNode);
+                parentSubagent.children.push(thinkingNode);
+                lastTextNodeId = thinkingNode.id;
+                updated = true;
+                break;
+              }
+            }
+
+            // 기존 로직: currentTurnNode가 없으면 암시적 user_message 턴 생성
+            if (!currentTurnNodeId) {
+              const implicitTurn = createNode(
+                `implicit-turn-${eventId}`,
+                "user_message",
+                "",
+                { completed: true, user: "unknown" },
+              );
+              root.children.push(implicitTurn);
+              currentTurnNodeId = implicitTurn.id;
+            }
+            const thinkingTurnNode = nodeMap.get(currentTurnNodeId);
+            if (thinkingTurnNode) {
+              const thinkingNode = createNode(thinkingCardId, "thinking", thinkingEvent.thinking, {
+                completed: true,
+              });
+              cardIdMap.set(thinkingCardId, thinkingNode);
+              thinkingTurnNode.children.push(thinkingNode);
+              lastTextNodeId = thinkingNode.id;
+              updated = true;
+            }
             break;
           }
 
