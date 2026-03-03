@@ -391,7 +391,10 @@ class SoulEngineAdapter:
                 text = event.data.get("text", "")
                 # TextBlock 전체 = 하나의 카드 (SDK는 청크 스트리밍 미지원)
                 card_id = tracker.new_card()
-                text_start = TextStartSSEEvent(card_id=card_id)
+                text_start = TextStartSSEEvent(
+                    card_id=card_id,
+                    parent_tool_use_id=event.parent_tool_use_id,
+                )
                 text_delta = TextDeltaSSEEvent(card_id=card_id, text=text)
                 text_end = TextEndSSEEvent(card_id=card_id)
                 await queue.put(text_start)

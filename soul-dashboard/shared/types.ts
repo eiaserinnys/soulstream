@@ -22,6 +22,7 @@ export type SSEEventType =
   | "complete"
   | "error"
   // 세분화 이벤트 (대시보드용)
+  | "thinking"
   | "text_start"
   | "text_delta"
   | "text_end"
@@ -100,6 +101,16 @@ export interface CompactEvent {
 }
 
 // === 세분화 SSE Events (대시보드 전용) ===
+
+/** Extended Thinking 이벤트 */
+export interface ThinkingEvent {
+  type: "thinking";
+  card_id: string;
+  thinking: string;
+  signature?: string;
+  /** 부모 tool_use_id (서브에이전트 내부 노드 배치용) */
+  parent_tool_use_id?: string;
+}
 
 export interface TextStartEvent {
   type: "text_start";
@@ -188,6 +199,7 @@ export type SoulSSEEvent =
   | ErrorEvent
   | ContextUsageEvent
   | CompactEvent
+  | ThinkingEvent
   | TextStartEvent
   | TextDeltaEvent
   | TextEndEvent
