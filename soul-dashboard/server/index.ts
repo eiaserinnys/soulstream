@@ -3,6 +3,7 @@
  *
  * Soul Server의 API를 프록시하는 BFF(Backend For Frontend) 서버.
  * 파일 직접 읽기 없이 Soul Server API만 호출합니다.
+ * Phase 5: 세션 이벤트를 로컬 캐시하여 서버 재시작 시에도 빠르게 제공합니다.
  *
  * 포트: 3109 (supervisor 포트 체계: 3101-3108 다음)
  * Soul: http://localhost:3105
@@ -14,7 +15,9 @@ import { fileURLToPath } from "url";
 import express from "express";
 import cors from "cors";
 import { createSessionsProxyRouter } from "./routes/sessions-proxy.js";
+import { createEventsCachedRouter } from "./routes/events-cached.js";
 import { createActionsRouter } from "./routes/actions.js";
+import { SessionCache } from "./session-cache.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,6 +34,12 @@ const ALLOWED_ORIGINS =
     `http://localhost:${PORT}`,
     "http://localhost:5173", // Vite dev server
   ];
+
+// 세션 이벤트 캐시 디렉토리
+const CACHE_DIR =
+  process.env.DASHBOARD_CACHE_DIR ??
+  path.resolve(__dirname, "../.local/sessions");
+const sessionCache = new SessionCache({ cacheDir: CACHE_DIR });
 
 // === Express App ===
 
@@ -49,7 +58,7 @@ app.get("/api/health", (_req, res) => {
   res.json({
     status: "ok",
     service: "soul-dashboard",
-    version: "0.3.0", // Phase 3: Proxy-based architecture
+    version: "0.5.0", // Phase 5: Cached events
   });
 });
 
@@ -96,6 +105,17 @@ app.use(
   }),
 );
 
+// Events 캐시 라우터 (/:id/events 엔드포인트)
+// 캐시 + 라이브 통합: 캐시된 이벤트 먼저 전송 후 Soul 서버에서 새 이벤트 수신
+app.use(
+  "/api/sessions",
+  createEventsCachedRouter({
+    soulBaseUrl: SOUL_BASE_URL,
+    sessionCache,
+    authToken: AUTH_TOKEN,
+  }),
+);
+
 // Actions 라우터 (POST /sessions, POST /sessions/:id/intervene)
 // 이 라우터는 여전히 Soul Server에 직접 요청합니다 (SSE 응답 처리)
 app.use(
@@ -126,7 +146,8 @@ app.get("/{*splat}", (_req, res) => {
 const server = app.listen(PORT, () => {
   console.log(`[dashboard] Soul Dashboard server started on port ${PORT}`);
   console.log(`[dashboard] Soul server: ${SOUL_BASE_URL}`);
-  console.log("[dashboard] Architecture: Proxy-based (Phase 3)");
+  console.log(`[dashboard] Cache dir: ${CACHE_DIR}`);
+  console.log("[dashboard] Architecture: Cached events (Phase 5)");
 });
 
 // === Graceful Shutdown ===
