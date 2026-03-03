@@ -2,8 +2,8 @@
 test_credentials_api - Credentials REST API 통합 테스트
 
 FastAPI TestClient를 사용한 엔드포인트 통합 테스트.
-인증(verify_token)은 테스트 환경에서 자동 우회됩니다
-(AUTH_BEARER_TOKEN 미설정 + development 모드).
+모든 엔드포인트는 Bearer 토큰 인증이 필요하며,
+conftest.py에서 제공하는 auth_headers fixture를 사용합니다.
 """
 
 import json
@@ -44,7 +44,7 @@ CRED_MAX = {
 
 
 @pytest.fixture
-def setup(tmp_path: Path):
+def setup(tmp_path: Path, auth_headers: dict):
     """테스트용 앱, 클라이언트, store, swapper를 셋업."""
     profiles_dir = tmp_path / "profiles"
     cred_dir = tmp_path / ".claude"
@@ -66,12 +66,13 @@ def setup(tmp_path: Path):
         "swapper": swapper,
         "cred_file": cred_file,
         "profiles_dir": profiles_dir,
+        "auth_headers": auth_headers,
     }
 
 
 class TestListProfiles:
     def test_list_empty(self, setup):
-        resp = setup["client"].get("/profiles")
+        resp = setup["client"].get("/profiles", headers=setup["auth_headers"])
         assert resp.status_code == 200
         data = resp.json()
         assert data["profiles"] == []
@@ -83,7 +84,7 @@ class TestListProfiles:
         store.save("personal", CRED_MAX)
         store.set_active("team")
 
-        resp = setup["client"].get("/profiles")
+        resp = setup["client"].get("/profiles", headers=setup["auth_headers"])
         assert resp.status_code == 200
         data = resp.json()
         assert len(data["profiles"]) == 2
@@ -95,7 +96,7 @@ class TestListProfiles:
 
 class TestGetActive:
     def test_no_active(self, setup):
-        resp = setup["client"].get("/profiles/active")
+        resp = setup["client"].get("/profiles/active", headers=setup["auth_headers"])
         assert resp.status_code == 200
         data = resp.json()
         assert data["active"] is None
@@ -106,7 +107,7 @@ class TestGetActive:
         store.save("team", CRED_TEAM)
         store.set_active("team")
 
-        resp = setup["client"].get("/profiles/active")
+        resp = setup["client"].get("/profiles/active", headers=setup["auth_headers"])
         assert resp.status_code == 200
         data = resp.json()
         assert data["active"] == "team"
@@ -115,7 +116,7 @@ class TestGetActive:
 
 class TestSaveProfile:
     def test_save_current(self, setup):
-        resp = setup["client"].post("/profiles/my_team")
+        resp = setup["client"].post("/profiles/my_team", headers=setup["auth_headers"])
         assert resp.status_code == 200
         data = resp.json()
         assert data["name"] == "my_team"
@@ -128,11 +129,11 @@ class TestSaveProfile:
 
     def test_save_invalid_name(self, setup):
         # '../' 는 FastAPI 라우터가 정규화하므로, 선두 언더스코어로 테스트
-        resp = setup["client"].post("/profiles/_hidden")
+        resp = setup["client"].post("/profiles/_hidden", headers=setup["auth_headers"])
         assert resp.status_code == 400
 
     def test_save_reserved_name(self, setup):
-        resp = setup["client"].post("/profiles/_active")
+        resp = setup["client"].post("/profiles/_active", headers=setup["auth_headers"])
         assert resp.status_code == 400
 
 
@@ -141,23 +142,27 @@ class TestActivateProfile:
         store = setup["store"]
         store.save("max_profile", CRED_MAX)
 
-        resp = setup["client"].post("/profiles/max_profile/activate")
+        resp = setup["client"].post(
+            "/profiles/max_profile/activate", headers=setup["auth_headers"]
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["activated"] == "max_profile"
 
         # 크레덴셜이 실제로 교체됐는지 확인
-        current = json.loads(
-            setup["cred_file"].read_text(encoding="utf-8")
-        )
+        current = json.loads(setup["cred_file"].read_text(encoding="utf-8"))
         assert current["claudeAiOauth"]["subscriptionType"] == "max"
 
     def test_activate_nonexistent(self, setup):
-        resp = setup["client"].post("/profiles/nonexistent/activate")
+        resp = setup["client"].post(
+            "/profiles/nonexistent/activate", headers=setup["auth_headers"]
+        )
         assert resp.status_code == 404
 
     def test_activate_invalid_name(self, setup):
-        resp = setup["client"].post("/profiles/_bad/activate")
+        resp = setup["client"].post(
+            "/profiles/_bad/activate", headers=setup["auth_headers"]
+        )
         assert resp.status_code == 400
 
 
@@ -165,17 +170,19 @@ class TestDeleteProfile:
     def test_delete_existing(self, setup):
         setup["store"].save("to_delete", CRED_TEAM)
 
-        resp = setup["client"].delete("/profiles/to_delete")
+        resp = setup["client"].delete(
+            "/profiles/to_delete", headers=setup["auth_headers"]
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["deleted"] is True
 
     def test_delete_nonexistent(self, setup):
-        resp = setup["client"].delete("/profiles/ghost")
+        resp = setup["client"].delete("/profiles/ghost", headers=setup["auth_headers"])
         assert resp.status_code == 404
 
     def test_delete_invalid_name(self, setup):
-        resp = setup["client"].delete("/profiles/_bad")
+        resp = setup["client"].delete("/profiles/_bad", headers=setup["auth_headers"])
         assert resp.status_code == 400
 
 
@@ -183,7 +190,7 @@ class TestDeleteProfile:
 
 
 @pytest.fixture
-def setup_with_tracker(tmp_path: Path):
+def setup_with_tracker(tmp_path: Path, auth_headers: dict):
     """rate_limit_tracker를 포함한 테스트 셋업."""
     profiles_dir = tmp_path / "profiles"
     cred_dir = tmp_path / ".claude"
@@ -208,12 +215,15 @@ def setup_with_tracker(tmp_path: Path):
         "client": client,
         "store": store,
         "tracker": tracker,
+        "auth_headers": auth_headers,
     }
 
 
 class TestGetAllRateLimits:
     def test_empty_profiles(self, setup_with_tracker):
-        resp = setup_with_tracker["client"].get("/profiles/rate-limits")
+        resp = setup_with_tracker["client"].get(
+            "/profiles/rate-limits", headers=setup_with_tracker["auth_headers"]
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["profiles"] == []
@@ -225,13 +235,19 @@ class TestGetAllRateLimits:
 
         store.save("linegames", CRED_TEAM)
         store.set_active("linegames")
-        tracker.record({
-            "rateLimitType": "five_hour",
-            "utilization": 0.42,
-            "resetsAt": (datetime.now(timezone.utc) + timedelta(hours=5)).isoformat(),
-        })
+        tracker.record(
+            {
+                "rateLimitType": "five_hour",
+                "utilization": 0.42,
+                "resetsAt": (
+                    datetime.now(timezone.utc) + timedelta(hours=5)
+                ).isoformat(),
+            }
+        )
 
-        resp = setup_with_tracker["client"].get("/profiles/rate-limits")
+        resp = setup_with_tracker["client"].get(
+            "/profiles/rate-limits", headers=setup_with_tracker["auth_headers"]
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["active_profile"] == "linegames"
@@ -243,7 +259,9 @@ class TestGetAllRateLimits:
 
 class TestGetProfileRateLimits:
     def test_unknown_profile(self, setup_with_tracker):
-        resp = setup_with_tracker["client"].get("/profiles/unknown/rate-limits")
+        resp = setup_with_tracker["client"].get(
+            "/profiles/unknown/rate-limits", headers=setup_with_tracker["auth_headers"]
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["name"] == "unknown"
@@ -256,13 +274,20 @@ class TestGetProfileRateLimits:
 
         store.save("linegames", CRED_TEAM)
         store.set_active("linegames")
-        tracker.record({
-            "rateLimitType": "five_hour",
-            "utilization": 0.55,
-            "resetsAt": (datetime.now(timezone.utc) + timedelta(hours=5)).isoformat(),
-        })
+        tracker.record(
+            {
+                "rateLimitType": "five_hour",
+                "utilization": 0.55,
+                "resetsAt": (
+                    datetime.now(timezone.utc) + timedelta(hours=5)
+                ).isoformat(),
+            }
+        )
 
-        resp = setup_with_tracker["client"].get("/profiles/linegames/rate-limits")
+        resp = setup_with_tracker["client"].get(
+            "/profiles/linegames/rate-limits",
+            headers=setup_with_tracker["auth_headers"],
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["name"] == "linegames"
@@ -273,5 +298,25 @@ class TestRateLimitsWithoutTracker:
     """tracker가 없을 때 503 반환 테스트."""
 
     def test_no_tracker_returns_503(self, setup):
-        resp = setup["client"].get("/profiles/rate-limits")
+        resp = setup["client"].get(
+            "/profiles/rate-limits", headers=setup["auth_headers"]
+        )
         assert resp.status_code == 503
+
+
+class TestAuthenticationRequired:
+    """인증 없이 요청 시 401 반환 테스트."""
+
+    def test_no_auth_returns_401(self, setup):
+        resp = setup["client"].get("/profiles")
+        assert resp.status_code == 401
+
+    def test_invalid_token_returns_401(self, setup):
+        resp = setup["client"].get(
+            "/profiles", headers={"Authorization": "Bearer invalid-token"}
+        )
+        assert resp.status_code == 401
+
+    def test_malformed_auth_header_returns_401(self, setup):
+        resp = setup["client"].get("/profiles", headers={"Authorization": "Basic abc"})
+        assert resp.status_code == 401

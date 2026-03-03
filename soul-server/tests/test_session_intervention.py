@@ -1,10 +1,12 @@
-"""session_id 기반 인터벤션 테스트
+"""claude_session_id 인덱스 및 개입 테스트
 
-Phase 3: session_id 기반 인터벤션 API 검증
-1. SessionEvent 모델 검증
-2. TaskManager session_id 역방향 인덱스
-3. session_id 기반 intervention 추가/조회
-4. 인덱스 정리 (완료/에러/ack/cleanup 시)
+TaskManager의 claude_session_id 역방향 인덱스와
+agent_session_id 기반 개입(intervention) 기능을 검증합니다.
+
+현재 API 구조:
+- register_session(claude_session_id, agent_session_id): SDK 세션 ID 매핑
+- get_task_by_claude_session(claude_session_id): SDK 세션 ID로 태스크 조회
+- add_intervention(agent_session_id, text, user): agent_session_id로 개입 추가
 """
 
 import asyncio
@@ -16,6 +18,7 @@ from soul_server.service.task_manager import TaskManager, set_task_manager
 from soul_server.service.task_models import (
     TaskNotFoundError,
     TaskNotRunningError,
+    TaskStatus,
 )
 
 
@@ -45,119 +48,212 @@ class TestSessionEventModel:
         assert SSEEventType.SESSION.value == "session"
 
 
-class TestSessionIndex:
-    """TaskManager session_id 역방향 인덱스"""
+class TestClaudeSessionIndex:
+    """TaskManager claude_session_id 역방향 인덱스"""
 
     async def test_register_and_lookup(self, manager):
-        """session_id 등록 후 조회"""
-        await manager.create_task("bot", "req1", "agent-sess-1", "hello")
-        manager.register_session("sess-abc", "bot", "req1")
+        """claude_session_id 등록 후 조회"""
+        task = await manager.create_task(prompt="hello", agent_session_id="agent-sess-1")
+        manager.register_session("claude-sess-abc", "agent-sess-1")
 
-        task = manager.get_task_by_session("sess-abc")
-        assert task is not None
-        assert task.client_id == "bot"
-        assert task.request_id == "req1"
+        found = manager.get_task_by_claude_session("claude-sess-abc")
+        assert found is not None
+        assert found.agent_session_id == "agent-sess-1"
+        assert found.prompt == "hello"
 
     async def test_lookup_nonexistent(self, manager):
-        """등록되지 않은 session_id 조회"""
-        task = manager.get_task_by_session("nonexistent")
-        assert task is None
-
-    async def test_cleanup_on_complete(self, manager):
-        """태스크 완료 시 session_id 인덱스 정리"""
-        await manager.create_task("bot", "req1", "agent-sess-1", "hello")
-        manager.register_session("sess-abc", "bot", "req1")
-
-        await manager.complete_task("bot", "req1", "done")
-
-        task = manager.get_task_by_session("sess-abc")
-        assert task is None
-
-    async def test_cleanup_on_error(self, manager):
-        """태스크 에러 시 session_id 인덱스 정리"""
-        await manager.create_task("bot", "req1", "agent-sess-1", "hello")
-        manager.register_session("sess-abc", "bot", "req1")
-
-        await manager.error_task("bot", "req1", "broke")
-
-        task = manager.get_task_by_session("sess-abc")
-        assert task is None
-
-    async def test_cleanup_on_ack(self, manager):
-        """태스크 ack 시 session_id 인덱스 정리"""
-        await manager.create_task("bot", "req1", "agent-sess-1", "hello")
-        manager.register_session("sess-abc", "bot", "req1")
-        await manager.complete_task("bot", "req1", "done")
-
-        await manager.ack_task("bot", "req1")
-
-        task = manager.get_task_by_session("sess-abc")
+        """등록되지 않은 claude_session_id 조회"""
+        task = manager.get_task_by_claude_session("nonexistent")
         assert task is None
 
     async def test_multiple_sessions(self, manager):
-        """여러 태스크에 각각 다른 session_id"""
-        await manager.create_task("bot", "req1", "agent-sess-1", "hello")
-        await manager.create_task("bot", "req2", "agent-sess-2", "world")
+        """여러 태스크에 각각 다른 claude_session_id"""
+        await manager.create_task(prompt="hello", agent_session_id="agent-sess-1")
+        await manager.create_task(prompt="world", agent_session_id="agent-sess-2")
 
-        manager.register_session("sess-1", "bot", "req1")
-        manager.register_session("sess-2", "bot", "req2")
+        manager.register_session("claude-1", "agent-sess-1")
+        manager.register_session("claude-2", "agent-sess-2")
 
-        t1 = manager.get_task_by_session("sess-1")
-        t2 = manager.get_task_by_session("sess-2")
+        t1 = manager.get_task_by_claude_session("claude-1")
+        t2 = manager.get_task_by_claude_session("claude-2")
 
-        assert t1.request_id == "req1"
-        assert t2.request_id == "req2"
+        assert t1 is not None
+        assert t2 is not None
+        assert t1.agent_session_id == "agent-sess-1"
+        assert t2.agent_session_id == "agent-sess-2"
+
+    async def test_session_overwrite(self, manager):
+        """동일한 claude_session_id로 다른 agent_session_id 매핑 시 덮어쓰기"""
+        await manager.create_task(prompt="hello", agent_session_id="agent-sess-1")
+        await manager.create_task(prompt="world", agent_session_id="agent-sess-2")
+
+        manager.register_session("claude-shared", "agent-sess-1")
+        manager.register_session("claude-shared", "agent-sess-2")  # 덮어쓰기
+
+        found = manager.get_task_by_claude_session("claude-shared")
+        assert found is not None
+        assert found.agent_session_id == "agent-sess-2"
 
 
-class TestInterventionBySession:
-    """session_id 기반 개입 메시지"""
+class TestInterventionByAgentSession:
+    """agent_session_id 기반 개입 메시지"""
 
-    async def test_add_intervention_by_session(self, manager):
-        """session_id로 개입 메시지 추가"""
-        await manager.create_task("bot", "req1", "agent-sess-1", "hello")
-        manager.register_session("sess-abc", "bot", "req1")
-
-        pos = await manager.add_intervention_by_session(
-            "sess-abc", "새 질문", "user1"
+    async def test_add_intervention_running(self, manager):
+        """running 상태 태스크에 개입 메시지 추가"""
+        task = await manager.create_task(
+            prompt="hello", agent_session_id="agent-sess-1"
         )
-        assert pos == 1
+
+        result = await manager.add_intervention(
+            "agent-sess-1", text="새 질문", user="user1"
+        )
+        assert "queue_position" in result
+        assert result["queue_position"] == 1
 
         # 메시지 확인
-        msg = await manager.get_intervention("bot", "req1")
+        msg = await manager.get_intervention("agent-sess-1")
         assert msg is not None
         assert msg["text"] == "새 질문"
         assert msg["user"] == "user1"
 
-    async def test_add_intervention_session_not_found(self, manager):
-        """존재하지 않는 session_id로 개입"""
+    async def test_add_intervention_not_found(self, manager):
+        """존재하지 않는 agent_session_id로 개입"""
         with pytest.raises(TaskNotFoundError):
-            await manager.add_intervention_by_session(
-                "nonexistent", "text", "user1"
-            )
+            await manager.add_intervention("nonexistent", "text", "user1")
 
-    async def test_add_intervention_session_not_running(self, manager):
-        """완료된 태스크의 session_id로 개입 시도"""
-        await manager.create_task("bot", "req1", "agent-sess-1", "hello")
-        manager.register_session("sess-abc", "bot", "req1")
+    async def test_add_intervention_auto_resume(self, manager):
+        """완료된 태스크에 개입 시 자동 resume"""
+        task = await manager.create_task(
+            prompt="hello", agent_session_id="agent-sess-1"
+        )
+        await manager.complete_task("agent-sess-1", "done")
 
-        # 완료 처리 시 인덱스 정리됨 → TaskNotFoundError
-        await manager.complete_task("bot", "req1", "done")
+        # 완료된 태스크에 개입 → 자동 resume
+        result = await manager.add_intervention(
+            "agent-sess-1", text="새 질문", user="user1"
+        )
+        assert result.get("auto_resumed") is True
+        assert result.get("agent_session_id") == "agent-sess-1"
 
-        with pytest.raises(TaskNotFoundError):
-            await manager.add_intervention_by_session(
-                "sess-abc", "text", "user1"
-            )
+        # 태스크가 다시 running 상태
+        task = await manager.get_task("agent-sess-1")
+        assert task is not None
+        assert task.status == TaskStatus.RUNNING
+        assert task.prompt == "새 질문"
 
-    async def test_multiple_interventions_by_session(self, manager):
-        """session_id로 여러 개입 메시지"""
-        await manager.create_task("bot", "req1", "agent-sess-1", "hello")
-        manager.register_session("sess-abc", "bot", "req1")
+    async def test_multiple_interventions(self, manager):
+        """여러 개입 메시지 추가"""
+        await manager.create_task(prompt="hello", agent_session_id="agent-sess-1")
 
-        await manager.add_intervention_by_session("sess-abc", "msg1", "user1")
-        pos = await manager.add_intervention_by_session("sess-abc", "msg2", "user1")
-        assert pos == 2
+        result1 = await manager.add_intervention("agent-sess-1", "msg1", "user1")
+        result2 = await manager.add_intervention("agent-sess-1", "msg2", "user1")
 
-        msg1 = await manager.get_intervention("bot", "req1")
-        msg2 = await manager.get_intervention("bot", "req1")
+        assert result1["queue_position"] == 1
+        assert result2["queue_position"] == 2
+
+        msg1 = await manager.get_intervention("agent-sess-1")
+        msg2 = await manager.get_intervention("agent-sess-1")
         assert msg1["text"] == "msg1"
         assert msg2["text"] == "msg2"
+
+    async def test_intervention_with_attachments(self, manager):
+        """첨부 파일 포함 개입"""
+        await manager.create_task(prompt="hello", agent_session_id="agent-sess-1")
+
+        result = await manager.add_intervention(
+            "agent-sess-1",
+            text="파일 봐주세요",
+            user="user1",
+            attachment_paths=["/tmp/file1.png", "/tmp/file2.txt"],
+        )
+        assert result["queue_position"] == 1
+
+        msg = await manager.get_intervention("agent-sess-1")
+        assert msg["text"] == "파일 봐주세요"
+        assert msg["attachment_paths"] == ["/tmp/file1.png", "/tmp/file2.txt"]
+
+    async def test_get_intervention_empty(self, manager):
+        """개입 메시지가 없을 때"""
+        await manager.create_task(prompt="hello", agent_session_id="agent-sess-1")
+
+        msg = await manager.get_intervention("agent-sess-1")
+        assert msg is None
+
+    async def test_get_intervention_not_found(self, manager):
+        """존재하지 않는 agent_session_id로 개입 조회"""
+        msg = await manager.get_intervention("nonexistent")
+        assert msg is None
+
+
+class TestTaskCompletion:
+    """태스크 완료/에러 처리"""
+
+    async def test_complete_task_saves_claude_session_id(self, manager):
+        """완료 시 claude_session_id 저장 (resume용)"""
+        await manager.create_task(prompt="hello", agent_session_id="agent-sess-1")
+
+        await manager.complete_task(
+            "agent-sess-1", result="done", claude_session_id="claude-sess-xyz"
+        )
+
+        task = await manager.get_task("agent-sess-1")
+        assert task is not None
+        assert task.status == TaskStatus.COMPLETED
+        assert task.result == "done"
+        assert task.claude_session_id == "claude-sess-xyz"
+
+    async def test_error_task(self, manager):
+        """에러 처리"""
+        await manager.create_task(prompt="hello", agent_session_id="agent-sess-1")
+
+        await manager.error_task("agent-sess-1", error="Something went wrong")
+
+        task = await manager.get_task("agent-sess-1")
+        assert task is not None
+        assert task.status == TaskStatus.ERROR
+        assert task.error == "Something went wrong"
+
+    async def test_complete_nonexistent(self, manager):
+        """존재하지 않는 태스크 완료 시도"""
+        result = await manager.complete_task("nonexistent", "done")
+        assert result is None
+
+    async def test_error_nonexistent(self, manager):
+        """존재하지 않는 태스크 에러 시도"""
+        result = await manager.error_task("nonexistent", "error")
+        assert result is None
+
+
+class TestResumeSession:
+    """세션 resume 테스트"""
+
+    async def test_resume_completed_session(self, manager):
+        """완료된 세션 resume"""
+        task = await manager.create_task(
+            prompt="first", agent_session_id="agent-sess-1"
+        )
+        await manager.complete_task(
+            "agent-sess-1", result="done", claude_session_id="claude-sess-xyz"
+        )
+
+        # 같은 agent_session_id로 resume
+        task = await manager.create_task(
+            prompt="second", agent_session_id="agent-sess-1"
+        )
+
+        assert task.status == TaskStatus.RUNNING
+        assert task.prompt == "second"
+        assert task.resume_session_id == "claude-sess-xyz"
+
+    async def test_resume_errored_session(self, manager):
+        """에러난 세션 resume"""
+        await manager.create_task(prompt="first", agent_session_id="agent-sess-1")
+        await manager.error_task("agent-sess-1", error="crashed")
+
+        # resume
+        task = await manager.create_task(
+            prompt="retry", agent_session_id="agent-sess-1"
+        )
+
+        assert task.status == TaskStatus.RUNNING
+        assert task.prompt == "retry"

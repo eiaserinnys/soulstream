@@ -2,6 +2,18 @@
 Session API 테스트 - GET /sessions, GET /sessions/stream
 
 TDD 방식으로 작성된 테스트입니다.
+
+SSE 스트리밍 테스트 전략:
+1. 동기 테스트: 라우터 등록, 메서드 타입, 핸들러 존재 확인
+2. 비동기 테스트: event_generator를 직접 호출하여 초기 세션 목록 확인
+3. 통합 테스트: 실제 SessionBroadcaster로 이벤트 수신 테스트
+
+HTTP 레이어(TestClient)로 SSE를 테스트하면 블로킹되는 이유:
+- event_generator()의 while True 루프가 event_queue.get()에서 영원히 대기
+- httpx/TestClient의 iter_lines()는 스트림 EOF를 기다림
+- ASGI Transport 레벨에서 타임아웃이 서버측으로 전파되지 않음
+
+따라서 event_generator 함수를 직접 호출하여 테스트한다.
 """
 
 import asyncio
@@ -52,11 +64,18 @@ def mock_task_manager():
 
 @pytest.fixture
 def mock_session_broadcaster():
-    """SessionBroadcaster mock 생성"""
+    """SessionBroadcaster mock 생성 - 리스너 등록만 수행"""
     broadcaster = MagicMock()
     broadcaster.add_listener = AsyncMock()
     broadcaster.remove_listener = AsyncMock()
     return broadcaster
+
+
+@pytest.fixture
+def real_session_broadcaster():
+    """실제 SessionBroadcaster 인스턴스 - 이벤트 테스트용"""
+    from soul_server.service.session_broadcaster import SessionBroadcaster
+    return SessionBroadcaster()
 
 
 @pytest.fixture
@@ -122,8 +141,16 @@ class TestGetSessions:
 class TestSessionsStream:
     """GET /sessions/stream SSE 테스트
 
-    SSE 스트리밍은 무한 루프이므로, 단위 테스트에서는 라우터 등록과
-    응답 타입만 확인합니다. 실제 스트리밍 동작은 통합 테스트에서 검증합니다.
+    SSE 스트리밍 테스트는 HTTP 레이어를 우회하여 수행한다.
+    - 동기 테스트: 라우터 등록, 메서드 타입 확인
+    - 비동기 테스트: event_generator 직접 호출로 SSE 로직 검증
+
+    TestClient로 SSE 테스트가 블로킹되는 근본 원인:
+    - event_generator()의 while True 루프가 event_queue.get()에서 대기
+    - httpx iter_lines()는 스트림 EOF를 기다리지만, SSE는 EOF가 없음
+    - ASGI Transport에서 클라이언트 타임아웃이 서버측으로 전파되지 않음
+
+    해결책: event_generator를 직접 호출하고, 첫 yield 후 명시적으로 종료
     """
 
     def test_stream_endpoint_registered(self, test_app):
@@ -147,6 +174,189 @@ class TestSessionsStream:
         # GET 메서드 확인
         route = stream_routes[0]
         assert 'GET' in route.methods
+
+    def test_stream_endpoint_handler_exists(self, mock_task_manager, mock_session_broadcaster):
+        """스트림 엔드포인트 핸들러가 존재해야 한다"""
+        from soul_server.api.sessions import create_sessions_router
+
+        router = create_sessions_router(
+            task_manager=mock_task_manager,
+            session_broadcaster=mock_session_broadcaster,
+        )
+
+        # /sessions/stream 라우트의 endpoint 함수 확인
+        stream_routes = [r for r in router.routes if getattr(r, 'path', '') == '/sessions/stream']
+        route = stream_routes[0]
+
+        # endpoint 함수가 존재하고 코루틴이어야 함
+        import asyncio
+        assert hasattr(route, 'endpoint')
+        assert asyncio.iscoroutinefunction(route.endpoint)
+
+
+class TestSessionsStreamEventGenerator:
+    """SSE event_generator 직접 테스트
+
+    HTTP 레이어를 우회하여 비동기 제너레이터를 직접 테스트한다.
+    이렇게 하면 블로킹 없이 SSE 로직을 검증할 수 있다.
+    """
+
+    @pytest.mark.asyncio
+    async def test_initial_session_list_sent(self, mock_task_manager, real_session_broadcaster):
+        """연결 시 초기 세션 목록이 전송되어야 한다"""
+        from soul_server.api.sessions import create_sessions_router
+        from sse_starlette.sse import EventSourceResponse
+
+        router = create_sessions_router(
+            task_manager=mock_task_manager,
+            session_broadcaster=real_session_broadcaster,
+        )
+
+        # sessions_stream 엔드포인트 함수 가져오기
+        stream_route = next(r for r in router.routes if getattr(r, 'path', '') == '/sessions/stream')
+        endpoint = stream_route.endpoint
+
+        # 엔드포인트 호출하여 EventSourceResponse 얻기
+        response = await endpoint()
+        assert isinstance(response, EventSourceResponse)
+
+        # EventSourceResponse의 body_iterator가 event_generator
+        gen = response.body_iterator
+
+        # 첫 번째 이벤트 (초기 세션 목록) 수신
+        # body_iterator는 dict 형태의 이벤트를 yield
+        first_event = await gen.__anext__()
+
+        # 이벤트 검증 - dict 형태: {"event": "...", "data": "..."}
+        assert isinstance(first_event, dict)
+        assert first_event["event"] == "session_list"
+        assert "data" in first_event
+
+        # JSON 데이터 파싱
+        data = json.loads(first_event["data"])
+
+        assert data["type"] == "session_list"
+        assert len(data["sessions"]) == 2
+        assert data["sessions"][0]["agent_session_id"] in ["sess-001", "sess-002"]
+
+        # 제너레이터 명시적 종료 (finally 블록 실행)
+        await gen.aclose()
+
+    @pytest.mark.asyncio
+    async def test_broadcast_event_received(self, mock_task_manager, real_session_broadcaster):
+        """브로드캐스트된 이벤트가 스트림으로 전송되어야 한다"""
+        from soul_server.api.sessions import create_sessions_router
+        from sse_starlette.sse import EventSourceResponse
+        from soul_server.service.task_models import Task, TaskStatus
+
+        router = create_sessions_router(
+            task_manager=mock_task_manager,
+            session_broadcaster=real_session_broadcaster,
+        )
+
+        # 엔드포인트 호출
+        stream_route = next(r for r in router.routes if getattr(r, 'path', '') == '/sessions/stream')
+        response = await stream_route.endpoint()
+        gen = response.body_iterator
+
+        # 첫 번째 이벤트 (초기 목록) 수신
+        await gen.__anext__()
+
+        # 백그라운드에서 이벤트 브로드캐스트
+        new_task = Task(
+            agent_session_id="sess-new",
+            prompt="New session",
+            status=TaskStatus.RUNNING,
+        )
+
+        # 약간의 지연 후 이벤트 발행 (리스너 등록 대기)
+        async def broadcast_after_delay():
+            await asyncio.sleep(0.01)
+            await real_session_broadcaster.emit_session_created(new_task)
+
+        # 이벤트 발행과 수신을 동시에 실행
+        broadcast_task = asyncio.create_task(broadcast_after_delay())
+
+        # 두 번째 이벤트 (session_created) 수신 - 타임아웃 포함
+        try:
+            second_event = await asyncio.wait_for(gen.__anext__(), timeout=1.0)
+
+            # 이벤트 검증 - dict 형태
+            assert isinstance(second_event, dict)
+            assert second_event["event"] == "session_created"
+            assert "sess-new" in second_event["data"]
+        finally:
+            broadcast_task.cancel()
+            await gen.aclose()
+
+    @pytest.mark.asyncio
+    async def test_listener_cleanup_on_close(self, mock_task_manager, real_session_broadcaster):
+        """제너레이터 종료 시 리스너가 정리되어야 한다
+
+        event_generator 흐름:
+        1. 첫 번째 yield (초기 세션 목록) - 여기서 일시 중단
+        2. 두 번째 __anext__() 호출 시 add_listener 실행
+        3. event_queue.get() 대기
+
+        따라서 리스너 등록을 확인하려면:
+        - 이벤트를 발행해서 두 번째 yield까지 진행
+        - 그 후 aclose()로 finally 블록 실행 확인
+        """
+        from soul_server.api.sessions import create_sessions_router
+        from soul_server.service.task_models import Task, TaskStatus
+
+        router = create_sessions_router(
+            task_manager=mock_task_manager,
+            session_broadcaster=real_session_broadcaster,
+        )
+
+        # 초기 리스너 수 확인
+        assert real_session_broadcaster.listener_count == 0
+
+        # 엔드포인트 호출
+        stream_route = next(r for r in router.routes if getattr(r, 'path', '') == '/sessions/stream')
+        response = await stream_route.endpoint()
+        gen = response.body_iterator
+
+        # 첫 번째 이벤트 수신 (아직 리스너 미등록)
+        await gen.__anext__()
+        # 첫 번째 yield 후 일시 중단, add_listener는 아직 실행 안 됨
+        assert real_session_broadcaster.listener_count == 0
+
+        # 이벤트 발행을 백그라운드에서 예약
+        async def broadcast_event():
+            await asyncio.sleep(0.01)
+            test_task = Task(
+                agent_session_id="sess-cleanup-test",
+                prompt="Test",
+                status=TaskStatus.RUNNING,
+            )
+            await real_session_broadcaster.emit_session_created(test_task)
+
+        broadcast_task = asyncio.create_task(broadcast_event())
+
+        # 두 번째 이벤트 수신 (이 시점에 리스너가 등록되어 있어야 함)
+        try:
+            await asyncio.wait_for(gen.__anext__(), timeout=1.0)
+        except asyncio.TimeoutError:
+            pass
+
+        # 리스너가 등록되었는지 확인
+        assert real_session_broadcaster.listener_count == 1
+
+        # 제너레이터 종료 (finally 블록에서 리스너 제거)
+        await gen.aclose()
+
+        # 리스너가 제거되었는지 확인
+        await asyncio.sleep(0.01)
+        assert real_session_broadcaster.listener_count == 0
+
+        # 백그라운드 태스크 정리
+        broadcast_task.cancel()
+        try:
+            await broadcast_task
+        except asyncio.CancelledError:
+            pass
 
 
 class TestSessionBroadcaster:

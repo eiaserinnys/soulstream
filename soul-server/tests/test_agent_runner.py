@@ -998,10 +998,17 @@ class TestForceKillProcess:
 
 @pytest.mark.integration
 @pytest.mark.asyncio
+@pytest.mark.skipif(
+    os.environ.get("CLAUDECODE") is not None,
+    reason="Cannot run nested Claude Code sessions"
+)
 class TestClaudeRunnerIntegration:
     """통합 테스트 (실제 SDK 호출)
 
     실행 방법: pytest -m integration tests/test_agent_runner.py
+
+    주의: Claude Code 세션 내에서 실행하면 중첩 세션 오류가 발생하므로
+    CLAUDECODE 환경변수가 설정된 경우 자동으로 건너뜁니다.
     """
 
     async def test_real_sdk_execution(self):

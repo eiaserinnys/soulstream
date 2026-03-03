@@ -346,15 +346,15 @@ class TestTaskExecutorIntegration:
         event_store = EventStore(base_dir=tmp_path)
         listener_mgr = TaskListenerManager(tasks)
 
-        async def complete_fn(cid, rid, result, session_id=None):
-            task = tasks.get(f"{cid}:{rid}")
+        async def complete_fn(agent_session_id, result, claude_session_id=None):
+            task = tasks.get(agent_session_id)
             if task:
                 task.status = TaskStatus.COMPLETED
                 task.result = result
             return task
 
-        async def error_fn(cid, rid, error):
-            task = tasks.get(f"{cid}:{rid}")
+        async def error_fn(agent_session_id, error):
+            task = tasks.get(agent_session_id)
             if task:
                 task.status = TaskStatus.ERROR
                 task.error = error
@@ -375,8 +375,8 @@ class TestTaskExecutorIntegration:
         """실행 중 이벤트가 EventStore에 저장된다"""
         tasks, executor, event_store, listener_mgr = setup
 
-        # 태스크 생성 (agent_session_id 추가)
-        task = Task(client_id="bot", request_id="r1", agent_session_id="sess-test", prompt="test")
+        # 태스크 생성 (현재 API: agent_session_id, prompt)
+        task = Task(agent_session_id="sess-test", prompt="test", client_id="bot")
         tasks[task.key] = task
 
         # 가짜 claude_runner (progress -> complete 순서로 이벤트 발행)
@@ -408,8 +408,8 @@ class TestTaskExecutorIntegration:
         mock_resource.acquire.return_value.__aenter__ = AsyncMock()
         mock_resource.acquire.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        # 실행
-        await executor.start_execution("bot", "r1", mock_runner, mock_resource)
+        # 실행 (현재 API: agent_session_id, runner, resource_manager)
+        await executor.start_execution("sess-test", mock_runner, mock_resource)
         # 비동기 태스크 완료 대기
         await asyncio.sleep(0.1)
         if task.execution_task:
@@ -437,7 +437,7 @@ class TestTaskExecutorIntegration:
             event_store=None,  # None이어도 에러 없이 동작
         )
 
-        task = Task(client_id="bot", request_id="r1", agent_session_id="sess-test", prompt="test")
+        task = Task(agent_session_id="sess-test", prompt="test", client_id="bot")
         tasks[task.key] = task
 
         complete_event = MagicMock()
@@ -461,7 +461,7 @@ class TestTaskExecutorIntegration:
         mock_resource.acquire.return_value.__aenter__ = AsyncMock()
         mock_resource.acquire.return_value.__aexit__ = AsyncMock(return_value=False)
 
-        await executor.start_execution("bot", "r1", mock_runner, mock_resource)
+        await executor.start_execution("sess-test", mock_runner, mock_resource)
         await asyncio.sleep(0.1)
         if task.execution_task:
             await task.execution_task
@@ -472,7 +472,7 @@ class TestTaskExecutorIntegration:
         """재연결 시 EventStore의 read_since로 미수신 이벤트를 정규화하여 재전송한다"""
         tasks, executor, event_store, listener_mgr = setup
 
-        task = Task(client_id="bot", request_id="r1", agent_session_id="sess-test", prompt="test")
+        task = Task(agent_session_id="sess-test", prompt="test", client_id="bot")
         tasks[task.key] = task
 
         # 이벤트 직접 저장 (agent_session_id 기준)
@@ -482,7 +482,7 @@ class TestTaskExecutorIntegration:
 
         # 재연결: after_id=2 이후 이벤트만 조회
         queue = asyncio.Queue()
-        await executor.send_reconnect_status("bot", "r1", queue, last_event_id=2)
+        await executor.send_reconnect_status("sess-test", queue, last_event_id=2)
 
         # 큐에서 이벤트 수집
         received = []
