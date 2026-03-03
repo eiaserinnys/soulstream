@@ -14,6 +14,7 @@ import { ToolResultNode } from './ToolResultNode';
 import { ResponseNode } from './ResponseNode';
 import { SystemNode } from './SystemNode';
 import { InterventionNode } from './InterventionNode';
+import { SubagentNode } from './SubagentNode';
 
 export const nodeTypes: NodeTypes = {
   user: UserNode,
@@ -23,6 +24,7 @@ export const nodeTypes: NodeTypes = {
   response: ResponseNode,
   system: SystemNode,
   intervention: InterventionNode,
+  subagent: SubagentNode,
 };
 
 export {
@@ -33,4 +35,5 @@ export {
   ResponseNode,
   SystemNode,
   InterventionNode,
+  SubagentNode,
 };

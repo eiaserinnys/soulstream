@@ -75,6 +75,9 @@ export interface DashboardState {
 
   /** 세션 재개 대상 키 (완료된 세션에서 이어서 대화) */
   resumeTargetKey: string | null;
+
+  /** 접힌 노드 ID 집합 (접기/펼치기 기능) */
+  collapsedNodeIds: Set<string>;
 }
 
 // === Actions Interface ===
@@ -124,6 +127,11 @@ export interface DashboardActions {
 
   // 하위 호환 alias
   clearCards: () => void;
+
+  // 접기/펼치기
+  toggleNodeCollapse: (nodeId: string) => void;
+  setNodeCollapsed: (nodeId: string, collapsed: boolean) => void;
+  clearCollapsedNodes: () => void;
 }
 
 // === Internal Maps (closure 변수, state 아님) ===
@@ -228,6 +236,7 @@ const initialState: DashboardState = {
   pendingNotifications: [],
   isComposing: true,
   resumeTargetKey: null,
+  collapsedNodeIds: new Set<string>(),
 };
 
 /** 세션 전환 시 초기화할 상태를 매번 새 인스턴스로 생성 (Set 공유 방지) */
@@ -240,8 +249,9 @@ function getSessionResetState() {
     selectedEventNodeData: null as DashboardState["selectedEventNodeData"],
     tree: null as EventTreeNode | null,
     treeVersion: 0,
-      lastEventId: 0,
+    lastEventId: 0,
     pendingNotifications: [] as SoulSSEEvent[],
+    collapsedNodeIds: new Set<string>(),
   };
 }
 
@@ -265,11 +275,12 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           activeSession: null,
           tree: null,
           treeVersion: 0,
-                  lastEventId: 0,
+          lastEventId: 0,
           pendingNotifications: [],
           selectedCardId: null,
           selectedNodeId: null,
           selectedEventNodeData: null,
+          collapsedNodeIds: new Set<string>(),
         });
       },
 
@@ -732,11 +743,12 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         set({
           tree: null,
           treeVersion: 0,
-                  lastEventId: 0,
+          lastEventId: 0,
           pendingNotifications: [],
           selectedCardId: null,
           selectedNodeId: null,
           selectedEventNodeData: null,
+          collapsedNodeIds: new Set<string>(),
         });
       },
 
@@ -747,7 +759,35 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
 
       reset: () => {
         resetInternalMaps();
-        set(initialState);
+        set({ ...initialState, collapsedNodeIds: new Set<string>() });
+      },
+
+      // --- 접기/펼치기 ---
+
+      toggleNodeCollapse: (nodeId) => {
+        const currentCollapsed = get().collapsedNodeIds;
+        const newCollapsed = new Set(currentCollapsed);
+        if (newCollapsed.has(nodeId)) {
+          newCollapsed.delete(nodeId);
+        } else {
+          newCollapsed.add(nodeId);
+        }
+        set({ collapsedNodeIds: newCollapsed, treeVersion: get().treeVersion + 1 });
+      },
+
+      setNodeCollapsed: (nodeId, collapsed) => {
+        const currentCollapsed = get().collapsedNodeIds;
+        const newCollapsed = new Set(currentCollapsed);
+        if (collapsed) {
+          newCollapsed.add(nodeId);
+        } else {
+          newCollapsed.delete(nodeId);
+        }
+        set({ collapsedNodeIds: newCollapsed, treeVersion: get().treeVersion + 1 });
+      },
+
+      clearCollapsedNodes: () => {
+        set({ collapsedNodeIds: new Set<string>(), treeVersion: get().treeVersion + 1 });
       },
     }),
     {
