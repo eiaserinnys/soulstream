@@ -27,7 +27,7 @@ import type { StorageMode } from "../providers/types";
 // === State Interface ===
 
 export interface DashboardState {
-  /** 스토리지 모드: file(기본) 또는 serendipity */
+  /** 스토리지 모드 */
   storageMode: StorageMode;
 
   /** 세션 목록 */
@@ -173,7 +173,7 @@ function ensureRoot(tree: EventTreeNode | null): EventTreeNode {
 // === Initial State ===
 
 const initialState: DashboardState = {
-  storageMode: "file",
+  storageMode: "sse",
   sessions: [],
   sessionsLoading: false,
   sessionsError: null,
