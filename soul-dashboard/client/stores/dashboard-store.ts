@@ -21,6 +21,12 @@ import type {
   DashboardCard,
   SoulSSEEvent,
   EventTreeNode,
+  SubagentStartEvent,
+  SubagentStopEvent,
+  ToolStartEvent,
+  ToolResultEvent,
+  TextStartEvent,
+  ResultEvent,
 } from "@shared/types";
 import type { StorageMode } from "../providers/types";
 
@@ -69,6 +75,9 @@ export interface DashboardState {
 
   /** 세션 재개 대상 키 (완료된 세션에서 이어서 대화) */
   resumeTargetKey: string | null;
+
+  /** 접힌 노드 ID 집합 (접기/펼치기 기능) */
+  collapsedNodeIds: Set<string>;
 }
 
 // === Actions Interface ===
@@ -118,6 +127,11 @@ export interface DashboardActions {
 
   // 하위 호환 alias
   clearCards: () => void;
+
+  // 접기/펼치기
+  toggleNodeCollapse: (nodeId: string) => void;
+  setNodeCollapsed: (nodeId: string, collapsed: boolean) => void;
+  clearCollapsedNodes: () => void;
 }
 
 // === Internal Maps (closure 변수, state 아님) ===
@@ -126,6 +140,8 @@ export interface DashboardActions {
 let nodeMap = new Map<string, EventTreeNode>();
 /** toolUseId → tool 노드 */
 let toolUseMap = new Map<string, EventTreeNode>();
+/** agent_id → subagent 노드 */
+let subagentMap = new Map<string, EventTreeNode>();
 /** SSE card_id → text 노드 */
 let cardIdMap = new Map<string, EventTreeNode>();
 /** 현재 활성 user_message/intervention 노드 ID */
@@ -139,9 +155,41 @@ const NOTIFY_TYPES = new Set(["complete", "error", "intervention_sent"]);
 function resetInternalMaps() {
   nodeMap = new Map();
   toolUseMap = new Map();
+  subagentMap = new Map();
   cardIdMap = new Map();
   currentTurnNodeId = null;
   lastTextNodeId = null;
+}
+
+/**
+ * parent_tool_use_id로 해당하는 서브에이전트 노드를 찾습니다.
+ * 서브에이전트의 parentToolUseId와 매칭합니다.
+ */
+function findSubagentByParentToolUseId(parentToolUseId: string): EventTreeNode | null {
+  for (const subagent of subagentMap.values()) {
+    if (subagent.parentToolUseId === parentToolUseId) {
+      return subagent;
+    }
+  }
+  return null;
+}
+
+/**
+ * parent_tool_use_id를 기반으로 부모 노드를 결정합니다.
+ * 1. parent_tool_use_id가 있으면 해당 서브에이전트를 찾음
+ * 2. 없으면 currentTurnNode 또는 root 반환
+ */
+function findParentForNode(
+  parentToolUseId: string | undefined,
+  root: EventTreeNode,
+): EventTreeNode {
+  if (parentToolUseId) {
+    const subagent = findSubagentByParentToolUseId(parentToolUseId);
+    if (subagent) return subagent;
+  }
+  // 폴백: currentTurnNode 또는 root
+  const turnNode = currentTurnNodeId ? nodeMap.get(currentTurnNodeId) : null;
+  return turnNode ?? root;
 }
 
 // === Tree Helpers ===
@@ -188,6 +236,7 @@ const initialState: DashboardState = {
   pendingNotifications: [],
   isComposing: true,
   resumeTargetKey: null,
+  collapsedNodeIds: new Set<string>(),
 };
 
 /** 세션 전환 시 초기화할 상태를 매번 새 인스턴스로 생성 (Set 공유 방지) */
@@ -200,8 +249,9 @@ function getSessionResetState() {
     selectedEventNodeData: null as DashboardState["selectedEventNodeData"],
     tree: null as EventTreeNode | null,
     treeVersion: 0,
-      lastEventId: 0,
+    lastEventId: 0,
     pendingNotifications: [] as SoulSSEEvent[],
+    collapsedNodeIds: new Set<string>(),
   };
 }
 
@@ -225,11 +275,12 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           activeSession: null,
           tree: null,
           treeVersion: 0,
-                  lastEventId: 0,
+          lastEventId: 0,
           pendingNotifications: [],
           selectedCardId: null,
           selectedNodeId: null,
           selectedEventNodeData: null,
+          collapsedNodeIds: new Set<string>(),
         });
       },
 
@@ -350,7 +401,22 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
 
           case "text_start": {
             root = ensureRoot(root);
-            // currentTurnNode가 없으면 암시적 user_message 턴 생성
+            const textStartEvent = event as TextStartEvent;
+
+            // parent_tool_use_id가 있으면 서브에이전트 내부
+            if (textStartEvent.parent_tool_use_id) {
+              const parentSubagent = findSubagentByParentToolUseId(textStartEvent.parent_tool_use_id);
+              if (parentSubagent) {
+                const textNode = createNode(textStartEvent.card_id, "text", "");
+                cardIdMap.set(textStartEvent.card_id, textNode);
+                parentSubagent.children.push(textNode);
+                lastTextNodeId = textNode.id;
+                updated = true;
+                break;
+              }
+            }
+
+            // 기존 로직: currentTurnNode가 없으면 암시적 user_message 턴 생성
             if (!currentTurnNodeId) {
               const implicitTurn = createNode(
                 `implicit-turn-${eventId}`,
@@ -363,8 +429,8 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
             }
             const turnNode = nodeMap.get(currentTurnNodeId);
             if (turnNode) {
-              const textNode = createNode(event.card_id, "text", "");
-              cardIdMap.set(event.card_id, textNode);
+              const textNode = createNode(textStartEvent.card_id, "text", "");
+              cardIdMap.set(textStartEvent.card_id, textNode);
               turnNode.children.push(textNode);
               lastTextNodeId = textNode.id;
               updated = true;
@@ -390,31 +456,86 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
             break;
           }
 
+          case "subagent_start": {
+            root = ensureRoot(root);
+            const subagentEvent = event as SubagentStartEvent;
+            const subagentNode = createNode(subagentEvent.agent_id, "subagent", "", {
+              agentId: subagentEvent.agent_id,
+              agentType: subagentEvent.agent_type,
+              parentToolUseId: subagentEvent.parent_tool_use_id,
+            });
+            subagentMap.set(subagentEvent.agent_id, subagentNode);
+
+            // 부모 ToolUseBlock의 자식으로 연결
+            const parentTool = toolUseMap.get(subagentEvent.parent_tool_use_id);
+            if (parentTool) {
+              parentTool.children.push(subagentNode);
+            } else {
+              // 폴백: root에 추가
+              root.children.push(subagentNode);
+            }
+            updated = true;
+            break;
+          }
+
+          case "subagent_stop": {
+            const subagentStopEvent = event as SubagentStopEvent;
+            const subagent = subagentMap.get(subagentStopEvent.agent_id);
+            if (subagent) {
+              subagent.completed = true;
+            }
+            subagentMap.delete(subagentStopEvent.agent_id);
+            updated = true;
+            break;
+          }
+
           case "tool_start": {
             root = ensureRoot(root);
+            const toolStartEvent = event as ToolStartEvent;
             const toolId = `tool-${eventId}`;
             const toolNode = createNode(toolId, "tool", "", {
-              toolName: event.tool_name,
-              toolInput: event.tool_input,
-              toolUseId: event.tool_use_id,
+              toolName: toolStartEvent.tool_name,
+              toolInput: toolStartEvent.tool_input,
+              toolUseId: toolStartEvent.tool_use_id,
+              parentToolUseId: toolStartEvent.parent_tool_use_id,
             });
 
-            if (event.tool_use_id) {
-              toolUseMap.set(event.tool_use_id, toolNode);
+            if (toolStartEvent.tool_use_id) {
+              toolUseMap.set(toolStartEvent.tool_use_id, toolNode);
             }
 
-            // tool의 부모는 lastTextNode
-            const parentText = lastTextNodeId ? nodeMap.get(lastTextNodeId) : null;
-            if (parentText) {
-              parentText.children.push(toolNode);
-            } else {
-              // text가 없는 경우: currentTurnNode에 직접 추가
-              const turnNode = currentTurnNodeId ? nodeMap.get(currentTurnNodeId) : null;
-              if (turnNode) {
-                turnNode.children.push(toolNode);
+            // 부모 결정: parent_tool_use_id 기반
+            if (toolStartEvent.parent_tool_use_id) {
+              // 서브에이전트 내부 → 해당 서브에이전트의 자식
+              const parentSubagent = findSubagentByParentToolUseId(toolStartEvent.parent_tool_use_id);
+              if (parentSubagent) {
+                parentSubagent.children.push(toolNode);
               } else {
-                // 최후 수단: root에 추가
-                root.children.push(toolNode);
+                // 폴백: lastTextNode 또는 currentTurnNode 또는 root
+                const parentText = lastTextNodeId ? nodeMap.get(lastTextNodeId) : null;
+                if (parentText) {
+                  parentText.children.push(toolNode);
+                } else {
+                  const turnNode = currentTurnNodeId ? nodeMap.get(currentTurnNodeId) : null;
+                  if (turnNode) {
+                    turnNode.children.push(toolNode);
+                  } else {
+                    root.children.push(toolNode);
+                  }
+                }
+              }
+            } else {
+              // 루트 레벨: 기존 로직 유지 (lastTextNode → currentTurnNode → root)
+              const parentText = lastTextNodeId ? nodeMap.get(lastTextNodeId) : null;
+              if (parentText) {
+                parentText.children.push(toolNode);
+              } else {
+                const turnNode = currentTurnNodeId ? nodeMap.get(currentTurnNodeId) : null;
+                if (turnNode) {
+                  turnNode.children.push(toolNode);
+                } else {
+                  root.children.push(toolNode);
+                }
               }
             }
             updated = true;
@@ -422,21 +543,22 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           }
 
           case "tool_result": {
+            const toolResultEvent = event as ToolResultEvent;
             let toolNode: EventTreeNode | undefined;
 
             // 1차: tool_use_id로 정확 매칭
-            if (event.tool_use_id) {
-              toolNode = toolUseMap.get(event.tool_use_id);
+            if (toolResultEvent.tool_use_id) {
+              toolNode = toolUseMap.get(toolResultEvent.tool_use_id);
             }
             // 2차: card_id + tool_name으로 매칭
-            if (!toolNode && event.card_id) {
-              const parentText = cardIdMap.get(event.card_id);
+            if (!toolNode && toolResultEvent.card_id) {
+              const parentText = cardIdMap.get(toolResultEvent.card_id);
               if (parentText) {
                 toolNode = parentText.children.find(
                   (c) =>
                     c.type === "tool" &&
                     !c.completed &&
-                    c.toolName === event.tool_name,
+                    c.toolName === toolResultEvent.tool_name,
                 );
               }
             }
@@ -446,7 +568,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
                 if (
                   node.type === "tool" &&
                   !node.completed &&
-                  node.toolName === event.tool_name
+                  node.toolName === toolResultEvent.tool_name
                 ) {
                   toolNode = node;
                   // 가장 마지막 매칭을 사용하지 않고 첫 매칭으로 break
@@ -456,8 +578,9 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
             }
 
             if (toolNode) {
-              toolNode.toolResult = event.result;
-              toolNode.isError = event.is_error;
+              toolNode.toolResult = toolResultEvent.result;
+              toolNode.isError = toolResultEvent.is_error;
+              toolNode.durationMs = toolResultEvent.duration_ms;
               toolNode.completed = true;
               updated = true;
             }
@@ -496,6 +619,25 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
             } else {
               root.children.push(errorNode);
             }
+            updated = true;
+            break;
+          }
+
+          case "result": {
+            root = ensureRoot(root);
+            const resultEvent = event as ResultEvent;
+            const resultNode = createNode(
+              `result-${eventId}`,
+              "result",
+              resultEvent.output || "Session completed",
+              {
+                completed: true,
+                durationMs: resultEvent.duration_ms,
+                usage: resultEvent.usage,
+                totalCostUsd: resultEvent.total_cost_usd,
+              },
+            );
+            root.children.push(resultNode);
             updated = true;
             break;
           }
@@ -602,11 +744,12 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         set({
           tree: null,
           treeVersion: 0,
-                  lastEventId: 0,
+          lastEventId: 0,
           pendingNotifications: [],
           selectedCardId: null,
           selectedNodeId: null,
           selectedEventNodeData: null,
+          collapsedNodeIds: new Set<string>(),
         });
       },
 
@@ -617,7 +760,35 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
 
       reset: () => {
         resetInternalMaps();
-        set(initialState);
+        set({ ...initialState, collapsedNodeIds: new Set<string>() });
+      },
+
+      // --- 접기/펼치기 ---
+
+      toggleNodeCollapse: (nodeId) => {
+        const currentCollapsed = get().collapsedNodeIds;
+        const newCollapsed = new Set(currentCollapsed);
+        if (newCollapsed.has(nodeId)) {
+          newCollapsed.delete(nodeId);
+        } else {
+          newCollapsed.add(nodeId);
+        }
+        set({ collapsedNodeIds: newCollapsed, treeVersion: get().treeVersion + 1 });
+      },
+
+      setNodeCollapsed: (nodeId, collapsed) => {
+        const currentCollapsed = get().collapsedNodeIds;
+        const newCollapsed = new Set(currentCollapsed);
+        if (collapsed) {
+          newCollapsed.add(nodeId);
+        } else {
+          newCollapsed.delete(nodeId);
+        }
+        set({ collapsedNodeIds: newCollapsed, treeVersion: get().treeVersion + 1 });
+      },
+
+      clearCollapsedNodes: () => {
+        set({ collapsedNodeIds: new Set<string>(), treeVersion: get().treeVersion + 1 });
       },
     }),
     {

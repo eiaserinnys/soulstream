@@ -4,6 +4,8 @@ import asyncio
 import json
 import logging
 import threading
+import time
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -305,6 +307,10 @@ class ClaudeRunner:
         # 현재 클라이언트의 옵션 핑거프린트 (설정 불일치 감지용)
         self._client_options_fp: Optional[str] = None
 
+        # Subagent 추적을 위한 상태
+        self._agent_stack: list[tuple[str, str]] = []  # (agent_id, parent_tool_use_id)
+        self._pending_events: deque[EngineEvent] = deque()  # 이벤트 큐
+
     @classmethod
     async def shutdown_all_clients(cls) -> int:
         """하위 호환: 모듈 레벨 shutdown_all()로 위임"""
@@ -335,6 +341,85 @@ class ClaudeRunner:
             str(sorted(getattr(options, "disallowed_tools", None) or [])),
         )
         return hashlib.md5("|".join(key_parts).encode()).hexdigest()[:8]
+
+    def _get_current_parent_tool_use_id(self) -> Optional[str]:
+        """현재 활성 서브에이전트의 parent_tool_use_id 반환"""
+        if self._agent_stack:
+            return self._agent_stack[-1][1]
+        return None
+
+    def _emit_event(self, event: EngineEvent) -> None:
+        """이벤트를 큐에 추가"""
+        self._pending_events.append(event)
+
+    def _drain_events(self) -> list[EngineEvent]:
+        """큐의 모든 이벤트를 반환하고 비움"""
+        events = list(self._pending_events)
+        self._pending_events.clear()
+        return events
+
+    async def _on_subagent_start(
+        self,
+        input_data: dict,
+        tool_use_id: Optional[str],
+        context: Any,
+    ) -> dict:
+        """SubagentStart 훅 핸들러
+
+        서브에이전트(Task 도구) 시작 시 호출됩니다.
+        agent_stack에 푸시하고 SUBAGENT_START 이벤트를 큐에 추가합니다.
+        """
+        agent_id = input_data.get("agent_id", "")
+        agent_type = input_data.get("agent_type", "")
+
+        # 스택에 푸시
+        self._agent_stack.append((agent_id, tool_use_id or ""))
+
+        # 이벤트 큐에 추가 (yield 아님!)
+        self._emit_event(EngineEvent(
+            type=EngineEventType.SUBAGENT_START,
+            data={
+                "agent_id": agent_id,
+                "agent_type": agent_type,
+            },
+            timestamp=time.time(),
+            parent_tool_use_id=tool_use_id,
+            agent_id=agent_id,
+        ))
+
+        logger.info(
+            f"[SUBAGENT_START] agent_id={agent_id}, agent_type={agent_type}, "
+            f"parent_tool_use_id={tool_use_id}"
+        )
+        return {}
+
+    async def _on_subagent_stop(
+        self,
+        input_data: dict,
+        tool_use_id: Optional[str],
+        context: Any,
+    ) -> dict:
+        """SubagentStop 훅 핸들러
+
+        서브에이전트(Task 도구) 종료 시 호출됩니다.
+        agent_stack에서 팝하고 SUBAGENT_STOP 이벤트를 큐에 추가합니다.
+        """
+        agent_id = input_data.get("agent_id", "")
+
+        # 스택에서 팝 (매칭되는 경우만)
+        if self._agent_stack and self._agent_stack[-1][0] == agent_id:
+            self._agent_stack.pop()
+
+        # 이벤트 큐에 추가
+        self._emit_event(EngineEvent(
+            type=EngineEventType.SUBAGENT_STOP,
+            data={"agent_id": agent_id},
+            timestamp=time.time(),
+            agent_id=agent_id,
+        ))
+
+        logger.info(f"[SUBAGENT_STOP] agent_id={agent_id}")
+        return {}
 
     async def _get_or_create_client(
         self,
@@ -587,6 +672,7 @@ class ClaudeRunner:
                         "is_error": is_error,
                         "tool_use_id": tool_use_id,
                     },
+                    parent_tool_use_id=self._get_current_parent_tool_use_id(),
                 ))
             except Exception as e:
                 logger.warning(f"이벤트 콜백 오류 (TOOL_RESULT:{source}): {e}")
@@ -644,28 +730,67 @@ class ClaudeRunner:
         self,
         compact_events: Optional[list],
     ) -> Optional[dict]:
-        """PreCompact 훅을 생성합니다."""
-        if compact_events is None:
-            return None
+        """PreCompact 훅을 생성합니다. (하위 호환)"""
+        return self._build_hooks(compact_events)
 
-        async def on_pre_compact(
+    def _build_hooks(
+        self,
+        compact_events: Optional[list],
+    ) -> Optional[dict]:
+        """모든 훅을 생성합니다.
+
+        - PreCompact: 컨텍스트 컴팩션 추적
+        - SubagentStart: 서브에이전트 시작 추적
+        - SubagentStop: 서브에이전트 종료 추적
+        """
+        hooks: dict = {}
+
+        # PreCompact 훅
+        if compact_events is not None:
+            async def on_pre_compact(
+                hook_input: dict,
+                tool_use_id: Optional[str],
+                context: HookContext,
+            ) -> HookJSONOutput:
+                trigger = hook_input.get("trigger", "auto")
+                logger.info(f"PreCompact 훅 트리거: trigger={trigger}")
+                compact_events.append({
+                    "trigger": trigger,
+                    "message": f"컨텍스트 컴팩트 실행됨 (트리거: {trigger})",
+                })
+                return HookJSONOutput()
+
+            hooks["PreCompact"] = [
+                HookMatcher(matcher=None, hooks=[on_pre_compact])
+            ]
+
+        # SubagentStart 훅 (항상 등록)
+        async def on_subagent_start_hook(
             hook_input: dict,
             tool_use_id: Optional[str],
             context: HookContext,
         ) -> HookJSONOutput:
-            trigger = hook_input.get("trigger", "auto")
-            logger.info(f"PreCompact 훅 트리거: trigger={trigger}")
-            compact_events.append({
-                "trigger": trigger,
-                "message": f"컨텍스트 컴팩트 실행됨 (트리거: {trigger})",
-            })
+            await self._on_subagent_start(hook_input, tool_use_id, context)
             return HookJSONOutput()
 
-        return {
-            "PreCompact": [
-                HookMatcher(matcher=None, hooks=[on_pre_compact])
-            ]
-        }
+        hooks["SubagentStart"] = [
+            HookMatcher(matcher=None, hooks=[on_subagent_start_hook])
+        ]
+
+        # SubagentStop 훅 (항상 등록)
+        async def on_subagent_stop_hook(
+            hook_input: dict,
+            tool_use_id: Optional[str],
+            context: HookContext,
+        ) -> HookJSONOutput:
+            await self._on_subagent_stop(hook_input, tool_use_id, context)
+            return HookJSONOutput()
+
+        hooks["SubagentStop"] = [
+            HookMatcher(matcher=None, hooks=[on_subagent_stop_hook])
+        ]
+
+        return hooks if hooks else None
 
     def _build_options(
         self,
@@ -805,6 +930,21 @@ class ClaudeRunner:
             logger.info(f"인터벤션 드레인 완료: {count}건 주입")
         return count
 
+    async def _notify_pending_subagent_events(
+        self,
+        on_event: Optional[EventCallback],
+    ) -> None:
+        """pending 큐에 있는 서브에이전트 이벤트를 on_event 콜백으로 전달"""
+        if not on_event:
+            return
+
+        events = self._drain_events()
+        for event in events:
+            try:
+                await on_event(event)
+            except Exception as e:
+                logger.warning(f"서브에이전트 이벤트 콜백 오류: {e}")
+
     async def _receive_messages(
         self,
         client: "ClaudeSDKClient",
@@ -935,6 +1075,7 @@ class ClaudeRunner:
                                                     "thinking": thinking_text,
                                                     "signature": signature,
                                                 },
+                                                parent_tool_use_id=self._get_current_parent_tool_use_id(),
                                             ))
                                         except Exception as e:
                                             logger.warning(f"이벤트 콜백 오류 (THINKING): {e}")
@@ -962,6 +1103,7 @@ class ClaudeRunner:
                                         await on_event(EngineEvent(
                                             type=EngineEventType.TEXT_DELTA,
                                             data={"text": block.text},
+                                            parent_tool_use_id=self._get_current_parent_tool_use_id(),
                                         ))
                                     except Exception as e:
                                         logger.warning(f"이벤트 콜백 오류 (TEXT_DELTA): {e}")
@@ -1001,6 +1143,7 @@ class ClaudeRunner:
                                                 "tool_input": event_tool_input,
                                                 "tool_use_id": tool_use_id,
                                             },
+                                            parent_tool_use_id=self._get_current_parent_tool_use_id(),
                                         ))
                                     except Exception as e:
                                         logger.warning(f"이벤트 콜백 오류 (TOOL_START): {e}")
@@ -1054,6 +1197,9 @@ class ClaudeRunner:
 
                 # 컴팩션 이벤트 알림
                 await self._notify_compact_events(compact_state, on_compact)
+
+                # 서브에이전트 이벤트 알림 (훅에서 큐에 추가된 이벤트)
+                await self._notify_pending_subagent_events(on_event)
 
                 # 메시지 수신 후에도 인터벤션 폴링 (기존 동작 유지)
                 if on_intervention:

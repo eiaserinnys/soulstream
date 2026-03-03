@@ -14,6 +14,7 @@ import {
   createEdge,
   getNodeDimensions,
   calcToolChainBounds,
+  countAllDescendants,
   type GraphNode,
   type ToolChainEntry,
 } from "./layout-engine";
@@ -100,6 +101,37 @@ function interventionNode(id: string, text: string): EventTreeNode {
     content: text,
     completed: true,
     user: "admin",
+  };
+}
+
+function subagentNode(
+  id: string,
+  agentType: string,
+  children: EventTreeNode[] = [],
+  opts: Partial<EventTreeNode> = {},
+): EventTreeNode {
+  return {
+    id,
+    type: "subagent",
+    children,
+    content: "",
+    completed: opts.completed ?? false,
+    agentId: id,
+    agentType,
+    parentToolUseId: opts.parentToolUseId,
+  };
+}
+
+function resultNode(id: string, opts: Partial<EventTreeNode> = {}): EventTreeNode {
+  return {
+    id,
+    type: "result",
+    children: [],
+    content: opts.content || "Session completed",
+    completed: true,
+    durationMs: opts.durationMs,
+    usage: opts.usage,
+    totalCostUsd: opts.totalCostUsd,
   };
 }
 
@@ -928,5 +960,272 @@ describe("large session layout", () => {
     }
 
     expect(elapsed).toBeLessThan(500);
+  });
+});
+
+// === Phase 4: 접기(collapse) 기능 및 Subagent 노드 테스트 ===
+
+describe("countAllDescendants", () => {
+  it("returns 0 for node with no children", () => {
+    const node = textNode("t1", "no children");
+    expect(countAllDescendants(node)).toBe(0);
+  });
+
+  it("counts direct children", () => {
+    const node = textNode("t1", "parent", true, [
+      toolNode("tool1", "Bash"),
+      toolNode("tool2", "Read"),
+    ]);
+    expect(countAllDescendants(node)).toBe(2);
+  });
+
+  it("counts nested descendants recursively", () => {
+    const node = textNode("t1", "parent", true, [
+      toolNode("tool1", "Bash", { completed: true }),
+      textNode("t2", "child", true, [
+        toolNode("tool2", "Read"),
+        toolNode("tool3", "Glob"),
+      ]),
+    ]);
+    // 2 direct children + 2 grandchildren = 4
+    expect(countAllDescendants(node)).toBe(4);
+  });
+});
+
+describe("buildGraph with collapsedNodeIds", () => {
+  it("접힌 노드의 자식은 렌더링되지 않음", () => {
+    const tree = sessionRoot([
+      userMsg("u1", "hi", [
+        textNode("t1", "Thinking", true, [
+          toolNode("tool1", "Bash", { toolResult: "ok", completed: true }),
+          toolNode("tool2", "Read", { toolResult: "content", completed: true }),
+        ]),
+      ]),
+    ]);
+
+    const collapsedIds = new Set(["t1"]);
+    const { nodes } = buildGraph(tree, collapsedIds);
+
+    // t1 노드는 있어야 함
+    const thinkingNode = nodes.find((n) => n.data.cardId === "t1");
+    expect(thinkingNode).toBeDefined();
+
+    // 자식 tool 노드는 없어야 함
+    expect(nodes.find((n) => n.data.cardId === "tool1")).toBeUndefined();
+    expect(nodes.find((n) => n.data.cardId === "tool2")).toBeUndefined();
+  });
+
+  it("접힌 노드는 collapsed=true, hasChildren=true, childCount 설정됨", () => {
+    const tree = sessionRoot([
+      userMsg("u1", "hi", [
+        textNode("t1", "Thinking", true, [
+          toolNode("tool1", "Bash", { toolResult: "ok", completed: true }),
+          toolNode("tool2", "Read", { toolResult: "content", completed: true }),
+        ]),
+      ]),
+    ]);
+
+    const collapsedIds = new Set(["t1"]);
+    const { nodes } = buildGraph(tree, collapsedIds);
+
+    const thinkingNode = nodes.find((n) => n.data.cardId === "t1");
+    expect(thinkingNode?.data.collapsed).toBe(true);
+    expect(thinkingNode?.data.hasChildren).toBe(true);
+    expect(thinkingNode?.data.childCount).toBe(2);
+  });
+
+  it("펼쳐진 노드는 hasChildren=true, collapsed=false", () => {
+    const tree = sessionRoot([
+      userMsg("u1", "hi", [
+        textNode("t1", "Thinking", true, [
+          toolNode("tool1", "Bash", { toolResult: "ok", completed: true }),
+        ]),
+      ]),
+    ]);
+
+    // 빈 Set = 모두 펼쳐진 상태
+    const { nodes } = buildGraph(tree, new Set());
+
+    const thinkingNode = nodes.find((n) => n.data.cardId === "t1");
+    expect(thinkingNode?.data.collapsed).toBe(false);
+    expect(thinkingNode?.data.hasChildren).toBe(true);
+    expect(thinkingNode?.data.childCount).toBe(1);
+  });
+
+  it("자식이 없는 노드는 hasChildren=false", () => {
+    const tree = sessionRoot([
+      userMsg("u1", "hi", [
+        textNode("t1", "Thinking with no tools"),
+      ]),
+    ]);
+
+    const { nodes } = buildGraph(tree);
+
+    const thinkingNode = nodes.find((n) => n.data.cardId === "t1");
+    expect(thinkingNode?.data.hasChildren).toBe(false);
+    expect(thinkingNode?.data.childCount).toBe(0);
+  });
+
+  it("collapsedNodeIds가 undefined이면 기본 동작 (모두 펼침)", () => {
+    const tree = sessionRoot([
+      userMsg("u1", "hi", [
+        textNode("t1", "Thinking", true, [
+          toolNode("tool1", "Bash", { toolResult: "ok", completed: true }),
+        ]),
+      ]),
+    ]);
+
+    // collapsedNodeIds 파라미터 생략
+    const { nodes } = buildGraph(tree);
+
+    const thinkingNode = nodes.find((n) => n.data.cardId === "t1");
+    expect(thinkingNode?.data.collapsed).toBe(false);
+
+    // 자식 tool 노드도 있어야 함
+    const toolNode1 = nodes.find((n) => n.data.cardId === "tool1");
+    expect(toolNode1).toBeDefined();
+  });
+
+  it("중첩된 접기: 부모가 접히면 모든 하위 자손이 숨겨짐", () => {
+    const tree = sessionRoot([
+      userMsg("u1", "hi", [
+        textNode("t1", "Parent", true, [
+          textNode("t2", "Child", true, [
+            toolNode("tool1", "Bash", { toolResult: "ok", completed: true }),
+          ]),
+        ]),
+      ]),
+    ]);
+
+    const collapsedIds = new Set(["t1"]);
+    const { nodes } = buildGraph(tree, collapsedIds);
+
+    // t1만 있고 t2, tool1은 없어야 함
+    expect(nodes.find((n) => n.data.cardId === "t1")).toBeDefined();
+    expect(nodes.find((n) => n.data.cardId === "t2")).toBeUndefined();
+    expect(nodes.find((n) => n.data.cardId === "tool1")).toBeUndefined();
+
+    // childCount는 모든 자손 수
+    const t1Node = nodes.find((n) => n.data.cardId === "t1");
+    expect(t1Node?.data.childCount).toBe(2); // t2 + tool1
+  });
+});
+
+describe("Subagent 노드", () => {
+  it("subagent 노드가 올바르게 생성됨", () => {
+    const tree = sessionRoot([
+      userMsg("u1", "hi", [
+        textNode("t1", "Thinking", true, [
+          toolNode("task1", "Task", {
+            toolResult: "done",
+            completed: true,
+            toolUseId: "toolu_task_1",
+          }),
+        ]),
+      ]),
+    ]);
+
+    // task1의 자식으로 subagent 추가
+    const taskNode = tree.children[0].children[0].children[0];
+    taskNode.children = [
+      subagentNode("explore_1", "Explore", [
+        textNode("sub-t1", "Subagent thinking", true, [
+          toolNode("sub-tool1", "Read", { toolResult: "file content", completed: true }),
+        ]),
+      ], { parentToolUseId: "toolu_task_1", completed: true }),
+    ];
+
+    const { nodes } = buildGraph(tree);
+
+    const subagentGraphNode = nodes.find((n) => n.data.nodeType === "subagent");
+    expect(subagentGraphNode).toBeDefined();
+    expect(subagentGraphNode?.data.agentType).toBe("Explore");
+    expect(subagentGraphNode?.data.agentId).toBe("explore_1");
+  });
+
+  it("접힌 subagent의 자식은 렌더링되지 않음", () => {
+    const tree = sessionRoot([
+      userMsg("u1", "hi", [
+        textNode("t1", "Thinking", true, [
+          toolNode("task1", "Task", {
+            completed: true,
+            toolUseId: "toolu_task_1",
+          }),
+        ]),
+      ]),
+    ]);
+
+    const taskNode = tree.children[0].children[0].children[0];
+    taskNode.children = [
+      subagentNode("explore_1", "Explore", [
+        textNode("sub-t1", "Subagent thinking"),
+        toolNode("sub-tool1", "Read", { toolResult: "content", completed: true }),
+      ], { parentToolUseId: "toolu_task_1", completed: true }),
+    ];
+
+    const collapsedIds = new Set(["explore_1"]);
+    const { nodes } = buildGraph(tree, collapsedIds);
+
+    // subagent 노드는 있어야 함
+    const subagentGraphNode = nodes.find((n) => n.data.nodeType === "subagent");
+    expect(subagentGraphNode).toBeDefined();
+    expect(subagentGraphNode?.data.collapsed).toBe(true);
+
+    // subagent 내부 노드는 없어야 함
+    expect(nodes.find((n) => n.data.cardId === "sub-t1")).toBeUndefined();
+    expect(nodes.find((n) => n.data.cardId === "sub-tool1")).toBeUndefined();
+  });
+});
+
+describe("Result 노드", () => {
+  it("result 노드가 올바르게 생성됨", () => {
+    const tree = sessionRoot([
+      userMsg("u1", "hi", [
+        textNode("t1", "Thinking"),
+      ]),
+      resultNode("result-1", {
+        durationMs: 5000,
+        usage: { input_tokens: 1000, output_tokens: 500 },
+        totalCostUsd: 0.01,
+      }),
+    ]);
+
+    const { nodes } = buildGraph(tree);
+
+    const resultGraphNode = nodes.find((n) => n.data.nodeType === "result");
+    expect(resultGraphNode).toBeDefined();
+    expect(resultGraphNode?.data.label).toBe("Session Complete");
+    expect(resultGraphNode?.data.durationMs).toBe(5000);
+    expect(resultGraphNode?.data.totalCostUsd).toBe(0.01);
+  });
+
+  it("result 노드 content에 시간과 비용 포함", () => {
+    const tree = sessionRoot([
+      resultNode("result-1", {
+        durationMs: 12345,
+        totalCostUsd: 0.0234,
+      }),
+    ]);
+
+    const { nodes } = buildGraph(tree);
+
+    const resultGraphNode = nodes.find((n) => n.data.nodeType === "result");
+    expect(resultGraphNode?.data.content).toContain("12.3s");
+    expect(resultGraphNode?.data.content).toContain("$0.0234");
+  });
+});
+
+describe("Intervention 노드 - 기존 호환", () => {
+  it("intervention 노드가 nodeType=intervention으로 설정됨", () => {
+    const tree = sessionRoot([
+      userMsg("u1", "hi"),
+      interventionNode("i1", "Please stop"),
+    ]);
+
+    const { nodes } = buildGraph(tree);
+
+    const interventionGraphNode = nodes.find((n) => n.data.nodeType === "intervention");
+    expect(interventionGraphNode).toBeDefined();
+    expect(interventionGraphNode?.data.content).toContain("stop");
   });
 });

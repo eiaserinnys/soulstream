@@ -6,11 +6,12 @@
  * 플랜 모드 진입/종료 노드는 시안 계열로 시각적 구분됩니다.
  */
 
-import { memo } from 'react';
+import { memo, useCallback } from 'react';
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import type { GraphNodeData } from '../lib/layout-engine';
 import { cn } from '../lib/cn';
-import { nodeBase, nodeContent, nodeHeader, nodeLabel, handleStyle } from './node-styles';
+import { nodeBase, nodeContent, nodeHeader, nodeLabel, handleStyle, collapseButton } from './node-styles';
+import { useDashboardStore } from '../stores/dashboard-store';
 
 type ToolCallNodeType = Node<GraphNodeData, 'tool_call'>;
 
@@ -37,6 +38,14 @@ export const ToolCallNode = memo(function ToolCallNode({ data, selected }: NodeP
   const isPlanMode = data.isPlanMode;
   const category = data.toolCategory;
   const categoryConfig = category ? CATEGORY_CONFIG[category] : undefined;
+  const toggleNodeCollapse = useDashboardStore((s) => s.toggleNodeCollapse);
+
+  const handleCollapseClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (data.cardId) {
+      toggleNodeCollapse(data.cardId);
+    }
+  }, [data.cardId, toggleNodeCollapse]);
 
   // 플랜 모드 진입/종료 노드는 시안 계열로 시각적 구분
   const accentColor = (isPlanEntry || isPlanExit)
@@ -95,6 +104,16 @@ export const ToolCallNode = memo(function ToolCallNode({ data, selected }: NodeP
             <span className="ml-auto text-[9px] text-accent-cyan font-medium px-[5px] py-px rounded-[3px] bg-accent-cyan/12">
               PLAN
             </span>
+          )}
+          {data.hasChildren && !isStreaming && (
+            <button
+              type="button"
+              className={cn(collapseButton, "ml-auto")}
+              onClick={handleCollapseClick}
+              aria-label={data.collapsed ? "Expand node" : "Collapse node"}
+            >
+              {data.collapsed ? `▶ (${data.childCount})` : "▼"}
+            </button>
           )}
         </div>
 
