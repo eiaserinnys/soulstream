@@ -28,6 +28,9 @@ export type SSEEventType =
   | "tool_start"
   | "tool_result"
   | "result"
+  // 서브에이전트 이벤트
+  | "subagent_start"
+  | "subagent_stop"
   // 대시보드 내부 이벤트
   | "context_usage"
   | "compact"
@@ -101,6 +104,8 @@ export interface CompactEvent {
 export interface TextStartEvent {
   type: "text_start";
   card_id: string;
+  /** 부모 tool_use_id (서브에이전트 내부 노드 배치용) */
+  parent_tool_use_id?: string;
 }
 
 export interface TextDeltaEvent {
@@ -121,6 +126,8 @@ export interface ToolStartEvent {
   tool_input: Record<string, unknown>;
   /** SDK ToolUseBlock ID (tool_result 매칭용) */
   tool_use_id?: string;
+  /** 부모 tool_use_id (서브에이전트 내부 노드 배치용) */
+  parent_tool_use_id?: string;
 }
 
 export interface ToolResultEvent {
@@ -131,6 +138,8 @@ export interface ToolResultEvent {
   is_error: boolean;
   /** SDK ToolUseBlock ID (tool_start 매칭용) */
   tool_use_id?: string;
+  /** 부모 tool_use_id (서브에이전트 내부 노드 배치용) */
+  parent_tool_use_id?: string;
 }
 
 export interface ResultEvent {
@@ -138,6 +147,26 @@ export interface ResultEvent {
   success: boolean;
   output: string;
   error?: string;
+  /** 실행 시간 (ms) */
+  duration_ms?: number;
+  /** 토큰 사용량 */
+  usage?: { input_tokens: number; output_tokens: number };
+  /** 총 비용 (USD) */
+  total_cost_usd?: number;
+}
+
+/** 서브에이전트 시작 이벤트 */
+export interface SubagentStartEvent {
+  type: "subagent_start";
+  agent_id: string;
+  agent_type: string;
+  parent_tool_use_id: string;
+}
+
+/** 서브에이전트 종료 이벤트 */
+export interface SubagentStopEvent {
+  type: "subagent_stop";
+  agent_id: string;
 }
 
 export interface ReconnectEvent {
@@ -163,6 +192,8 @@ export type SoulSSEEvent =
   | ToolStartEvent
   | ToolResultEvent
   | ResultEvent
+  | SubagentStartEvent
+  | SubagentStopEvent
   | ReconnectEvent;
 
 // === JSONL Record ===
@@ -203,12 +234,17 @@ export interface SessionDetail extends SessionSummary {
 
 /** 트리 노드 타입 (SSE 이벤트 lifecycle → 단일 노드) */
 export type EventTreeNodeType =
-  | "session"
-  | "user_message"
-  | "intervention"
-  | "text"
-  | "tool"
-  | "complete"
+  | "session"           // 가상 루트
+  | "subagent"          // 가상 (SubagentStart)
+  | "user_message"      // UserMessage
+  | "intervention"      // Intervention
+  | "thinking"          // ThinkingBlock (text_start/delta/end)
+  | "text"              // TextBlock (하위 호환)
+  | "tool_use"          // ToolUseBlock
+  | "tool"              // 하위 호환 alias
+  | "tool_result"       // ToolResultBlock
+  | "result"            // ResultMessage
+  | "complete"          // 하위 호환
   | "error";
 
 /** 이벤트 트리 노드 — 소스 오브 트루스 */
@@ -219,18 +255,34 @@ export interface EventTreeNode {
   content: string;
   completed: boolean;
 
-  // tool 전용
+  // 부모-자식 관계 결정
+  /** ToolUseBlock.id */
+  toolUseId?: string;
+  /** 부모 tool_use_id (서브에이전트 내부 노드 배치용) */
+  parentToolUseId?: string;
+
+  // tool_use 전용
   toolName?: string;
   toolInput?: Record<string, unknown>;
+
+  // tool_result 전용
   toolResult?: string;
   isError?: boolean;
-  toolUseId?: string;
+
+  // subagent 전용
+  agentId?: string;
+  agentType?: string;
 
   // user_message / intervention 전용
   user?: string;
 
   // session 전용
   sessionId?: string;
+
+  // result 전용
+  durationMs?: number;
+  usage?: { input_tokens: number; output_tokens: number };
+  totalCostUsd?: number;
 }
 
 // === Dashboard Card ===
