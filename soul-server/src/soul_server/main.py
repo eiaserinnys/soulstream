@@ -279,8 +279,7 @@ _rate_limit_tracker = RateLimitTracker(
 
 # === API Routers ===
 
-# Task API - 태스크 기반 API
-app.include_router(tasks_router, tags=["tasks"])
+# NOTE: tasks_router는 sessions_router 이후에 등록합니다. (아래 참조)
 
 # Attachments API
 app.include_router(attachments_router, prefix="/attachments", tags=["attachments"])
@@ -508,7 +507,11 @@ async def session_history(
     return EventSourceResponse(event_generator())
 
 
+# Sessions API를 Task API보다 먼저 등록해야 합니다.
+# tasks_router의 GET /sessions/{id}가 sessions_router의 GET /sessions/stream을
+# 가로채지 않도록 고정 경로가 먼저 매칭되어야 합니다.
 app.include_router(sessions_router, tags=["sessions"])
+app.include_router(tasks_router, tags=["tasks"])
 
 
 # === Exception Handlers ===

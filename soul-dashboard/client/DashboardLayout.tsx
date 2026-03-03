@@ -138,7 +138,7 @@ export function DashboardLayout() {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const storageMode = useDashboardStore((s) => s.storageMode);
 
-  // 세션 목록 폴링 (Provider 기반)
+  // 세션 목록 구독 (SSE 모드: 실시간, Serendipity 모드: 폴링)
   const { sessions, loading, error } = useSessionListProvider({ intervalMs: 5000 });
 
   // 활성 세션 구독 (Provider 기반)
