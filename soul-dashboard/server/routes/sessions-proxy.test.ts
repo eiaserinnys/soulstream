@@ -6,7 +6,8 @@
  *
  * GET /api/sessions              → Soul GET /sessions
  * GET /api/sessions/stream       → Soul GET /sessions/stream (SSE)
- * GET /api/sessions/:id/events   → Soul GET /sessions/:id/history (SSE)
+ *
+ * Note: GET /api/sessions/:id/events는 events-cached.test.ts에서 테스트합니다.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -224,66 +225,5 @@ describe("Sessions Proxy Routes", () => {
     });
   });
 
-  describe("GET /api/sessions/:id/events", () => {
-    it("저장된 이벤트와 history_sync 이벤트를 SSE로 반환", async () => {
-      mockSoul.events.set("sess-history", [
-        { id: 1, event: { type: "progress", text: "Working..." } },
-        { id: 2, event: { type: "text_start" } },
-        { id: 3, event: { type: "text_delta", text: "Hello" } },
-        { id: 4, event: { type: "complete", result: "Done" } },
-      ]);
-      mockSoul.isLive.set("sess-history", false);
-
-      const res = await fetch(
-        `http://localhost:${dashPort}/api/sessions/sess-history/events`,
-      );
-      expect(res.ok).toBe(true);
-      expect(res.headers.get("content-type")).toContain("text/event-stream");
-
-      const text = await res.text();
-      expect(text).toContain("event: progress");
-      expect(text).toContain("event: text_start");
-      expect(text).toContain("event: text_delta");
-      expect(text).toContain("event: complete");
-      expect(text).toContain("event: history_sync");
-      expect(text).toContain('"last_event_id":4');
-    });
-
-    it("존재하지 않는 세션이면 404 반환", async () => {
-      const res = await fetch(
-        `http://localhost:${dashPort}/api/sessions/nonexistent/events`,
-      );
-      expect(res.status).toBe(404);
-
-      const data = (await res.json()) as { error: { code: string } };
-      expect(data.error.code).toBe("SESSION_NOT_FOUND");
-    });
-
-    it("Last-Event-ID 헤더를 전달하여 이후 이벤트만 수신", async () => {
-      mockSoul.events.set("sess-resume", [
-        { id: 1, event: { type: "progress", text: "Step 1" } },
-        { id: 2, event: { type: "progress", text: "Step 2" } },
-        { id: 3, event: { type: "progress", text: "Step 3" } },
-      ]);
-      mockSoul.isLive.set("sess-resume", true);
-
-      const res = await fetch(
-        `http://localhost:${dashPort}/api/sessions/sess-resume/events`,
-        {
-          headers: {
-            "Last-Event-ID": "1",
-          },
-        },
-      );
-      expect(res.ok).toBe(true);
-
-      const text = await res.text();
-      // id: 1 이벤트는 포함되지 않아야 함
-      expect(text).not.toContain('"Step 1"');
-      // id: 2, 3 이벤트는 포함되어야 함
-      expect(text).toContain('"Step 2"');
-      expect(text).toContain('"Step 3"');
-      expect(text).toContain('"is_live":true');
-    });
-  });
+  // Note: GET /api/sessions/:id/events 테스트는 events-cached.test.ts로 이동함
 });
