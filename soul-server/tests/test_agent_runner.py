@@ -340,11 +340,15 @@ class TestClaudeRunnerCompact:
         assert options.hooks["PreCompact"][0].matcher is None
 
     async def test_build_options_without_compact_events(self):
-        """compact_events 미전달 시 hooks가 None인지 확인"""
+        """compact_events 미전달 시 PreCompact 훅은 없지만 SubagentStart/Stop은 있어야 함"""
         runner = ClaudeRunner()
         options, _ = runner._build_options()
 
-        assert options.hooks is None
+        # SubagentStart/Stop 훅은 항상 등록됨
+        assert options.hooks is not None
+        assert "PreCompact" not in options.hooks
+        assert "SubagentStart" in options.hooks
+        assert "SubagentStop" in options.hooks
 
     async def test_compact_callback_called(self):
         """컴팩션 발생 시 on_compact 콜백이 호출되는지 확인"""
@@ -1056,14 +1060,18 @@ class TestClaudeRunnerIntegration:
 class TestBuildCompactHook:
     """_build_compact_hook 메서드 단위 테스트"""
 
-    def test_returns_none_when_compact_events_is_none(self):
-        """compact_events가 None이면 hooks는 None"""
+    def test_returns_subagent_hooks_when_compact_events_is_none(self):
+        """compact_events가 None이면 PreCompact는 없지만 SubagentStart/Stop은 있음"""
         runner = ClaudeRunner()
         hooks = runner._build_compact_hook(None)
-        assert hooks is None
+        # SubagentStart/Stop 훅은 항상 등록됨
+        assert hooks is not None
+        assert "PreCompact" not in hooks
+        assert "SubagentStart" in hooks
+        assert "SubagentStop" in hooks
 
     def test_returns_hooks_when_compact_events_provided(self):
-        """compact_events 제공 시 PreCompact 훅 딕셔너리 반환"""
+        """compact_events 제공 시 PreCompact + SubagentStart/Stop 훅 딕셔너리 반환"""
         runner = ClaudeRunner()
         compact_events = []
         hooks = runner._build_compact_hook(compact_events)
@@ -1073,6 +1081,179 @@ class TestBuildCompactHook:
         assert len(hooks["PreCompact"]) == 1
         assert hooks["PreCompact"][0].matcher is None
 
+
+class TestSubagentHooks:
+    """SubagentStart/Stop 훅 및 관련 메서드 테스트"""
+
+    def test_agent_stack_initially_empty(self):
+        """초기 agent_stack은 비어있어야 함"""
+        runner = ClaudeRunner()
+        assert runner._agent_stack == []
+
+    def test_pending_events_initially_empty(self):
+        """초기 pending_events는 비어있어야 함"""
+        runner = ClaudeRunner()
+        assert len(runner._pending_events) == 0
+
+    def test_get_current_parent_tool_use_id_empty_stack(self):
+        """빈 스택이면 None 반환"""
+        runner = ClaudeRunner()
+        assert runner._get_current_parent_tool_use_id() is None
+
+    def test_get_current_parent_tool_use_id_with_stack(self):
+        """스택에 항목이 있으면 마지막 항목의 tool_use_id 반환"""
+        runner = ClaudeRunner()
+        runner._agent_stack.append(("agent-1", "toolu_1"))
+        assert runner._get_current_parent_tool_use_id() == "toolu_1"
+        runner._agent_stack.append(("agent-2", "toolu_2"))
+        assert runner._get_current_parent_tool_use_id() == "toolu_2"
+
+    def test_emit_event_adds_to_pending(self):
+        """_emit_event가 pending_events에 이벤트를 추가"""
+        from soul_server.engine.types import EngineEvent, EngineEventType
+        runner = ClaudeRunner()
+        event = EngineEvent(type=EngineEventType.SUBAGENT_START, data={"agent_id": "test"})
+        runner._emit_event(event)
+        assert len(runner._pending_events) == 1
+        assert runner._pending_events[0] is event
+
+    def test_drain_events_returns_and_clears(self):
+        """_drain_events가 이벤트 목록을 반환하고 큐를 비움"""
+        from soul_server.engine.types import EngineEvent, EngineEventType
+        runner = ClaudeRunner()
+        event1 = EngineEvent(type=EngineEventType.SUBAGENT_START, data={"agent_id": "test1"})
+        event2 = EngineEvent(type=EngineEventType.SUBAGENT_STOP, data={"agent_id": "test1"})
+        runner._emit_event(event1)
+        runner._emit_event(event2)
+
+        events = runner._drain_events()
+        assert len(events) == 2
+        assert len(runner._pending_events) == 0
+
+    @pytest.mark.asyncio
+    async def test_on_subagent_start(self):
+        """_on_subagent_start가 스택에 푸시하고 이벤트를 발행"""
+        from soul_server.engine.types import EngineEventType
+        runner = ClaudeRunner()
+        await runner._on_subagent_start(
+            {"agent_id": "test-agent-1", "agent_type": "Explore"},
+            "toolu_task_1",
+            None,
+        )
+
+        # 스택에 푸시됨
+        assert len(runner._agent_stack) == 1
+        assert runner._agent_stack[0] == ("test-agent-1", "toolu_task_1")
+
+        # 이벤트가 큐에 추가됨
+        events = runner._drain_events()
+        assert len(events) == 1
+        assert events[0].type == EngineEventType.SUBAGENT_START
+        assert events[0].data["agent_id"] == "test-agent-1"
+        assert events[0].data["agent_type"] == "Explore"
+        assert events[0].parent_tool_use_id == "toolu_task_1"
+        assert events[0].agent_id == "test-agent-1"
+
+    @pytest.mark.asyncio
+    async def test_on_subagent_stop(self):
+        """_on_subagent_stop이 스택에서 팝하고 이벤트를 발행"""
+        from soul_server.engine.types import EngineEventType
+        runner = ClaudeRunner()
+        runner._agent_stack.append(("test-agent-1", "toolu_task_1"))
+
+        await runner._on_subagent_stop(
+            {"agent_id": "test-agent-1"},
+            "toolu_task_1",
+            None,
+        )
+
+        # 스택에서 팝됨
+        assert len(runner._agent_stack) == 0
+
+        # 이벤트가 큐에 추가됨
+        events = runner._drain_events()
+        assert len(events) == 1
+        assert events[0].type == EngineEventType.SUBAGENT_STOP
+        assert events[0].data["agent_id"] == "test-agent-1"
+        assert events[0].agent_id == "test-agent-1"
+
+    @pytest.mark.asyncio
+    async def test_nested_subagents(self):
+        """중첩 서브에이전트 (2단계 이상) 정상 추적"""
+        runner = ClaudeRunner()
+
+        # 1단계 서브에이전트 시작
+        await runner._on_subagent_start(
+            {"agent_id": "agent-1", "agent_type": "Explore"},
+            "toolu_1",
+            None,
+        )
+        assert runner._get_current_parent_tool_use_id() == "toolu_1"
+
+        # 2단계 서브에이전트 시작
+        await runner._on_subagent_start(
+            {"agent_id": "agent-2", "agent_type": "Plan"},
+            "toolu_2",
+            None,
+        )
+        assert runner._get_current_parent_tool_use_id() == "toolu_2"
+
+        # 2단계 종료
+        await runner._on_subagent_stop(
+            {"agent_id": "agent-2"},
+            "toolu_2",
+            None,
+        )
+        assert runner._get_current_parent_tool_use_id() == "toolu_1"
+
+        # 1단계 종료
+        await runner._on_subagent_stop(
+            {"agent_id": "agent-1"},
+            "toolu_1",
+            None,
+        )
+        assert runner._get_current_parent_tool_use_id() is None
+
+    def test_engine_event_includes_parent_tool_use_id(self):
+        """EngineEvent에 parent_tool_use_id 포함"""
+        from soul_server.engine.types import EngineEvent, EngineEventType
+        import time
+        event = EngineEvent(
+            type=EngineEventType.TOOL_START,
+            data={"tool_name": "Read", "tool_input": {}},
+            timestamp=time.time(),
+            parent_tool_use_id="toolu_task_1",
+        )
+        assert event.parent_tool_use_id == "toolu_task_1"
+
+    def test_engine_event_includes_agent_id(self):
+        """EngineEvent에 agent_id 포함"""
+        from soul_server.engine.types import EngineEvent, EngineEventType
+        import time
+        event = EngineEvent(
+            type=EngineEventType.SUBAGENT_START,
+            data={"agent_id": "test", "agent_type": "Explore"},
+            timestamp=time.time(),
+            agent_id="test",
+        )
+        assert event.agent_id == "test"
+
+    def test_hooks_always_include_subagent_hooks(self):
+        """_build_hooks가 항상 SubagentStart/Stop 훅을 포함"""
+        runner = ClaudeRunner()
+
+        # compact_events 없이도 SubagentStart/Stop 훅은 등록
+        hooks = runner._build_hooks(None)
+        assert "SubagentStart" in hooks
+        assert "SubagentStop" in hooks
+        assert "PreCompact" not in hooks
+
+        # compact_events와 함께 모든 훅 등록
+        compact_events = []
+        hooks = runner._build_hooks(compact_events)
+        assert "SubagentStart" in hooks
+        assert "SubagentStop" in hooks
+        assert "PreCompact" in hooks
 
 
 class TestExtractLastAssistantText:

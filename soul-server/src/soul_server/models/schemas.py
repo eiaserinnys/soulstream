@@ -28,6 +28,9 @@ class SSEEventType(str, Enum):
     TOOL_RESULT = "tool_result"
     RESULT = "result"
     CREDENTIAL_ALERT = "credential_alert"
+    # 서브에이전트 이벤트
+    SUBAGENT_START = "subagent_start"
+    SUBAGENT_STOP = "subagent_stop"
 
 
 # === Request Models ===
@@ -255,6 +258,7 @@ class ToolStartSSEEvent(BaseModel):
     tool_name: str = Field(..., description="도구 이름")
     tool_input: dict = Field(default_factory=dict, description="도구 입력 파라미터")
     tool_use_id: Optional[str] = Field(None, description="SDK ToolUseBlock ID (tool_result 매칭용)")
+    parent_tool_use_id: Optional[str] = Field(None, description="서브에이전트 내부인 경우 부모 Task 도구의 tool_use_id")
 
 
 class ToolResultSSEEvent(BaseModel):
@@ -278,6 +282,27 @@ class ResultSSEEvent(BaseModel):
     success: bool = Field(..., description="성공 여부")
     output: str = Field(..., description="출력 텍스트")
     error: Optional[str] = Field(None, description="오류 메시지")
+
+
+class SubagentStartSSEEvent(BaseModel):
+    """서브에이전트 시작 이벤트
+
+    Task 도구가 서브에이전트를 시작할 때 발행됩니다.
+    parent_tool_use_id로 부모 Task 도구 호출을 식별합니다.
+    """
+    type: str = "subagent_start"
+    agent_id: str = Field(..., description="서브에이전트 고유 ID")
+    agent_type: str = Field(..., description="서브에이전트 타입 (Explore, Plan 등)")
+    parent_tool_use_id: Optional[str] = Field(None, description="부모 Task 도구의 tool_use_id")
+
+
+class SubagentStopSSEEvent(BaseModel):
+    """서브에이전트 종료 이벤트
+
+    Task 도구가 완료되어 서브에이전트가 종료될 때 발행됩니다.
+    """
+    type: str = "subagent_stop"
+    agent_id: str = Field(..., description="서브에이전트 고유 ID")
 
 
 class RateLimitProfileStatus(BaseModel):
