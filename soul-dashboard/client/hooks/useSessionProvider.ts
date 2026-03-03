@@ -38,13 +38,10 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
 
     const provider = getSessionProvider(storageMode);
 
-    // 초기 카드 로드 (Serendipity 모드에서 필요)
+    // 초기 카드 로드 (Serendipity 모드에서 필요, SSE 모드에서는 빈 배열)
     const loadInitialCards = async () => {
       try {
         const cards = await provider.fetchCards(sessionKey);
-
-        // 각 카드를 이벤트로 변환하여 처리
-        // (File 모드에서는 빈 배열이므로 영향 없음)
         for (let i = 0; i < cards.length; i++) {
           const card = cards[i];
           // 텍스트 카드
