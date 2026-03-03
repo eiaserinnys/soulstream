@@ -1202,3 +1202,186 @@ class TestThinkingEvent:
         assert len(tool_events) == 1
         # THINKING이 새 card_id를 생성하고, TOOL_START는 그 card_id를 참조
         assert thinking_events[0].card_id == tool_events[0].card_id
+
+
+# === _CardTracker start_tool/end_tool 테스트 ===
+
+
+class TestCardTrackerToolDuration:
+    """_CardTracker 도구 실행 시간 측정 테스트"""
+
+    def test_start_tool_records_time(self):
+        """start_tool은 시간을 기록"""
+        from soul_server.service.engine_adapter import _CardTracker
+        tracker = _CardTracker()
+        tracker.start_tool("tool-123")
+        assert "tool-123" in tracker._tool_start_times
+
+    def test_end_tool_returns_duration_ms(self):
+        """end_tool은 밀리초 단위 경과 시간 반환"""
+        import time as _time
+        from soul_server.service.engine_adapter import _CardTracker
+        tracker = _CardTracker()
+        tracker.start_tool("tool-456")
+        _time.sleep(0.01)  # 10ms 대기
+        duration = tracker.end_tool("tool-456")
+        assert duration is not None
+        assert duration >= 10  # 최소 10ms
+
+    def test_end_tool_removes_start_time(self):
+        """end_tool 후 시작 시간이 삭제됨"""
+        from soul_server.service.engine_adapter import _CardTracker
+        tracker = _CardTracker()
+        tracker.start_tool("tool-789")
+        tracker.end_tool("tool-789")
+        assert "tool-789" not in tracker._tool_start_times
+
+    def test_end_tool_returns_none_for_unknown_id(self):
+        """알 수 없는 tool_use_id에 대해 None 반환"""
+        from soul_server.service.engine_adapter import _CardTracker
+        tracker = _CardTracker()
+        duration = tracker.end_tool("unknown-id")
+        assert duration is None
+
+    def test_end_tool_returns_none_for_none_id(self):
+        """None tool_use_id에 대해 None 반환"""
+        from soul_server.service.engine_adapter import _CardTracker
+        tracker = _CardTracker()
+        duration = tracker.end_tool(None)
+        assert duration is None
+
+    def test_start_tool_with_empty_string_does_nothing(self):
+        """빈 문자열 tool_use_id는 무시"""
+        from soul_server.service.engine_adapter import _CardTracker
+        tracker = _CardTracker()
+        tracker.start_tool("")
+        assert "" not in tracker._tool_start_times
+
+
+# === ToolResultSSEEvent duration_ms 필드 테스트 ===
+
+
+class TestToolResultDurationMs:
+    """TOOL_RESULT 이벤트의 duration_ms 필드 테스트"""
+
+    async def test_tool_result_includes_duration_ms(self):
+        """TOOL_START → TOOL_RESULT 시 duration_ms가 포함됨"""
+        from soul_server.models import ToolResultSSEEvent
+        from soul_server.engine.types import EngineEvent, EngineEventType
+        import time as _time
+
+        adapter = SoulEngineAdapter(workspace_dir="/test")
+
+        async def fake_run(prompt, session_id=None, on_progress=None,
+                           on_compact=None, on_intervention=None,
+                           on_session=None, on_event=None):
+            if on_event:
+                # TOOL_START 발행
+                await on_event(EngineEvent(
+                    type=EngineEventType.TOOL_START,
+                    data={
+                        "tool_name": "Read",
+                        "tool_input": {"file_path": "/test.txt"},
+                        "tool_use_id": "tool-abc",
+                    },
+                ))
+                # 10ms 대기
+                await asyncio.sleep(0.01)
+                # TOOL_RESULT 발행
+                await on_event(EngineEvent(
+                    type=EngineEventType.TOOL_RESULT,
+                    data={
+                        "tool_name": "Read",
+                        "result": "file content",
+                        "is_error": False,
+                        "tool_use_id": "tool-abc",
+                    },
+                ))
+            return EngineResult(success=True, output="done")
+
+        with patch(
+            "soul_server.service.engine_adapter.ClaudeRunner"
+        ) as MockRunner:
+            instance = MockRunner.return_value
+            instance.run = fake_run
+            events = await collect_events(adapter, "test")
+
+        result_events = [e for e in events if isinstance(e, ToolResultSSEEvent)]
+        assert len(result_events) == 1
+        assert result_events[0].duration_ms is not None
+        assert result_events[0].duration_ms >= 10  # 최소 10ms
+
+    async def test_tool_result_duration_ms_none_without_start(self):
+        """TOOL_START 없이 TOOL_RESULT가 오면 duration_ms는 None"""
+        from soul_server.models import ToolResultSSEEvent
+        from soul_server.engine.types import EngineEvent, EngineEventType
+
+        adapter = SoulEngineAdapter(workspace_dir="/test")
+
+        async def fake_run(prompt, session_id=None, on_progress=None,
+                           on_compact=None, on_intervention=None,
+                           on_session=None, on_event=None):
+            if on_event:
+                # TOOL_START 없이 바로 TOOL_RESULT
+                await on_event(EngineEvent(
+                    type=EngineEventType.TOOL_RESULT,
+                    data={
+                        "tool_name": "Read",
+                        "result": "file content",
+                        "is_error": False,
+                        "tool_use_id": "tool-unknown",
+                    },
+                ))
+            return EngineResult(success=True, output="done")
+
+        with patch(
+            "soul_server.service.engine_adapter.ClaudeRunner"
+        ) as MockRunner:
+            instance = MockRunner.return_value
+            instance.run = fake_run
+            events = await collect_events(adapter, "test")
+
+        result_events = [e for e in events if isinstance(e, ToolResultSSEEvent)]
+        assert len(result_events) == 1
+        assert result_events[0].duration_ms is None
+
+    async def test_tool_result_duration_ms_none_without_tool_use_id(self):
+        """tool_use_id 없는 TOOL_RESULT는 duration_ms가 None"""
+        from soul_server.models import ToolResultSSEEvent
+        from soul_server.engine.types import EngineEvent, EngineEventType
+
+        adapter = SoulEngineAdapter(workspace_dir="/test")
+
+        async def fake_run(prompt, session_id=None, on_progress=None,
+                           on_compact=None, on_intervention=None,
+                           on_session=None, on_event=None):
+            if on_event:
+                # tool_use_id 없는 TOOL_START
+                await on_event(EngineEvent(
+                    type=EngineEventType.TOOL_START,
+                    data={
+                        "tool_name": "Read",
+                        "tool_input": {},
+                    },
+                ))
+                # tool_use_id 없는 TOOL_RESULT
+                await on_event(EngineEvent(
+                    type=EngineEventType.TOOL_RESULT,
+                    data={
+                        "tool_name": "Read",
+                        "result": "file content",
+                        "is_error": False,
+                    },
+                ))
+            return EngineResult(success=True, output="done")
+
+        with patch(
+            "soul_server.service.engine_adapter.ClaudeRunner"
+        ) as MockRunner:
+            instance = MockRunner.return_value
+            instance.run = fake_run
+            events = await collect_events(adapter, "test")
+
+        result_events = [e for e in events if isinstance(e, ToolResultSSEEvent)]
+        assert len(result_events) == 1
+        assert result_events[0].duration_ms is None

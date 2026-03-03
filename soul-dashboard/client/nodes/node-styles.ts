@@ -42,3 +42,6 @@ export function handleStyleSmall(color: string) {
     border: '2px solid rgba(17, 24, 39, 0.95)',
   };
 }
+
+/** 접기/펼치기 버튼 기본 클래스 */
+export const collapseButton = "text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer px-1 py-0.5 rounded hover:bg-muted/50";

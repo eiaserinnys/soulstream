@@ -17,6 +17,7 @@ import {
   useReactFlow,
   useStoreApi,
   ReactFlowProvider,
+  PanOnScrollMode,
   type OnSelectionChangeParams,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
@@ -339,6 +340,12 @@ function NodeGraphInner() {
       defaultViewport={{ x: 0, y: 0, zoom: FIXED_ZOOM }}
       minZoom={MIN_ZOOM}
       maxZoom={2}
+      // Phase 1: UX 개선 - 줌/스크롤 동작 변경
+      zoomOnDoubleClick={false}
+      zoomOnScroll={false}
+      panOnScroll={true}
+      panOnScrollMode={PanOnScrollMode.Vertical}
+      zoomActivationKeyCode="Control"
       proOptions={{ hideAttribution: true }}
       colorMode="dark"
       defaultEdgeOptions={{

@@ -12,6 +12,7 @@ Serendipity 연동:
 
 import asyncio
 import logging
+import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,6 +38,8 @@ from soul_server.models import (
     RateLimitProfileStatus,
     ResultSSEEvent,
     SessionEvent,
+    SubagentStartSSEEvent,
+    SubagentStopSSEEvent,
     TextDeltaSSEEvent,
     TextEndSSEEvent,
     TextStartSSEEvent,
@@ -70,6 +73,7 @@ class _CardTracker:
         self._current_card_id: Optional[str] = None
         self._last_tool_name: Optional[str] = None
         self._tool_use_card_map: dict[str, Optional[str]] = {}  # tool_use_id → card_id
+        self._tool_start_times: dict[str, float] = {}  # tool_use_id → start_time (monotonic)
 
     def new_card(self) -> str:
         """새 카드 ID 생성 및 현재 카드로 설정
@@ -103,6 +107,29 @@ class _CardTracker:
         if tool_use_id and tool_use_id in self._tool_use_card_map:
             return self._tool_use_card_map[tool_use_id]
         return self._current_card_id
+
+    def start_tool(self, tool_use_id: str) -> None:
+        """도구 시작 시간 기록
+
+        Args:
+            tool_use_id: SDK ToolUseBlock ID
+        """
+        if tool_use_id:
+            self._tool_start_times[tool_use_id] = time.monotonic()
+
+    def end_tool(self, tool_use_id: Optional[str]) -> Optional[int]:
+        """도구 종료 시 경과 시간(ms) 반환
+
+        Args:
+            tool_use_id: SDK ToolUseBlock ID
+
+        Returns:
+            경과 시간(밀리초), tool_use_id가 없거나 시작 시간이 기록되지 않은 경우 None
+        """
+        if tool_use_id and tool_use_id in self._tool_start_times:
+            start = self._tool_start_times.pop(tool_use_id)
+            return int((time.monotonic() - start) * 1000)
+        return None
 
 
 @dataclass
@@ -397,11 +424,13 @@ class SoulEngineAdapter:
                 # tool_use_id → card_id 매핑 기록 (TOOL_RESULT에서 올바른 card_id 조회용)
                 if tool_use_id:
                     tracker.register_tool_call(tool_use_id, tracker.current_card_id)
+                    tracker.start_tool(tool_use_id)
                 sse_event = ToolStartSSEEvent(
                     card_id=tracker.current_card_id,
                     tool_name=tool_name,
                     tool_input=tool_input,
                     tool_use_id=tool_use_id,
+                    parent_tool_use_id=event.parent_tool_use_id,
                 )
                 await queue.put(sse_event)
 
@@ -413,12 +442,15 @@ class SoulEngineAdapter:
                 tool_name = event.data.get("tool_name") or tracker.last_tool or ""
                 # card_id는 tool_use_id로 TOOL_START 시점의 값을 조회
                 card_id = tracker.get_tool_card_id(tool_use_id)
+                # 도구 실행 시간 계산
+                duration_ms = tracker.end_tool(tool_use_id)
                 sse_event = ToolResultSSEEvent(
                     card_id=card_id,
                     tool_name=tool_name,
                     result=result,
                     is_error=is_error,
                     tool_use_id=tool_use_id,
+                    duration_ms=duration_ms,
                 )
                 await queue.put(sse_event)
 
@@ -430,6 +462,23 @@ class SoulEngineAdapter:
                     success=success,
                     output=output,
                     error=error,
+                )
+                await queue.put(sse_event)
+
+            elif event.type == EngineEventType.SUBAGENT_START:
+                agent_id = event.data.get("agent_id", "")
+                agent_type = event.data.get("agent_type", "")
+                sse_event = SubagentStartSSEEvent(
+                    agent_id=agent_id,
+                    agent_type=agent_type,
+                    parent_tool_use_id=event.parent_tool_use_id,
+                )
+                await queue.put(sse_event)
+
+            elif event.type == EngineEventType.SUBAGENT_STOP:
+                agent_id = event.data.get("agent_id", "")
+                sse_event = SubagentStopSSEEvent(
+                    agent_id=agent_id,
                 )
                 await queue.put(sse_event)
 
