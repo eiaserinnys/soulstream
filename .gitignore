@@ -33,6 +33,14 @@ soul-dashboard/e2e/test-results/
 .env
 .env.local
 
+# Runtime data (soulstream_runtime에서만 존재)
+logs/
+data/
+.local/
+requirements.txt
+src/
+scripts/
+
 # OS
 .DS_Store
 Thumbs.db
