@@ -55,6 +55,7 @@ class EngineEventType(Enum):
     TEXT_DELTA: AssistantMessage의 TextBlock 텍스트 (모델의 가시적 응답)
     TOOL_*: 도구 호출 및 결과
     RESULT: 최종 결과 (성공/실패 포함)
+    SUBAGENT_*: 서브에이전트 시작/종료
 
     Note: SDK의 TextBlock은 assistant의 visible output입니다.
     ThinkingBlock(extended thinking)은 모델의 사고 과정을 담고 있습니다.
@@ -67,6 +68,8 @@ class EngineEventType(Enum):
     TOOL_START = "tool_start"
     TOOL_RESULT = "tool_result"
     RESULT = "result"
+    SUBAGENT_START = "subagent_start"
+    SUBAGENT_STOP = "subagent_stop"
 
 
 @dataclass
@@ -76,18 +79,24 @@ class EngineEvent:
     type: 이벤트 종류 (EngineEventType)
     timestamp: 발행 시각 (Unix epoch, float)
     data: 이벤트별 페이로드 (dict) — 스키마는 아래 참조
+    parent_tool_use_id: 서브에이전트 내부 이벤트일 경우 부모 도구 호출 ID
+    agent_id: 서브에이전트 관련 이벤트일 경우 에이전트 ID
     """
 
     type: EngineEventType
     data: dict = field(default_factory=dict)
     timestamp: float = field(default_factory=time.time)
+    parent_tool_use_id: Optional[str] = None
+    agent_id: Optional[str] = None
 
     # data 스키마 (type별):
-    #   THINKING:    {"thinking": str, "signature": str}
-    #   TEXT_DELTA:  {"text": str}
-    #   TOOL_START:  {"tool_name": str, "tool_input": dict}
-    #   TOOL_RESULT: {"tool_name": str, "result": Any, "is_error": bool}
-    #   RESULT:      {"success": bool, "output": str, "error": Optional[str]}
+    #   THINKING:       {"thinking": str, "signature": str}
+    #   TEXT_DELTA:     {"text": str}
+    #   TOOL_START:     {"tool_name": str, "tool_input": dict}
+    #   TOOL_RESULT:    {"tool_name": str, "result": Any, "is_error": bool}
+    #   RESULT:         {"success": bool, "output": str, "error": Optional[str]}
+    #   SUBAGENT_START: {"agent_id": str, "agent_type": str}
+    #   SUBAGENT_STOP:  {"agent_id": str}
 
 
 # 이벤트 콜백 타입 alias
