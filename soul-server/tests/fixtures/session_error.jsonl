@@ -1,0 +1,6 @@
+{"id": 1, "event": {"type": "user_message", "user": "test-user", "text": "이 명령을 실행해주세요: rm -rf /"}}
+{"id": 2, "event": {"type": "thinking", "card_id": "error-001", "thinking": "This command is dangerous and should not be executed.", "signature": "test-signature"}}
+{"id": 3, "event": {"type": "text_start", "card_id": "error-001"}}
+{"id": 4, "event": {"type": "text_delta", "card_id": "error-001", "text": "죄송합니다. 이 명령은 실행할 수 없습니다."}}
+{"id": 5, "event": {"type": "text_end", "card_id": "error-001"}}
+{"id": 6, "event": {"type": "error", "message": "Permission denied: dangerous command blocked", "error_code": "COMMAND_BLOCKED"}}
