@@ -376,6 +376,7 @@ class SoulEngineAdapter:
                     card_id=card_id,
                     thinking=thinking,
                     signature=signature,
+                    parent_tool_use_id=event.parent_tool_use_id,
                 )
                 await queue.put(sse_event)
 
