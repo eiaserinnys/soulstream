@@ -1385,3 +1385,252 @@ class TestToolResultDurationMs:
         result_events = [e for e in events if isinstance(e, ToolResultSSEEvent)]
         assert len(result_events) == 1
         assert result_events[0].duration_ms is None
+
+
+# === parent_tool_use_id 전파 테스트 ===
+
+
+class TestParentToolUseIdPropagation:
+    """서브에이전트 내부 이벤트의 parent_tool_use_id 전파 테스트"""
+
+    async def test_thinking_event_with_parent_tool_use_id(self):
+        """THINKING 이벤트에 parent_tool_use_id가 전파됨"""
+        from soul_server.models import ThinkingSSEEvent
+        from soul_server.engine.types import EngineEvent, EngineEventType
+
+        adapter = SoulEngineAdapter(workspace_dir="/test")
+
+        async def fake_run(prompt, session_id=None, on_progress=None,
+                           on_compact=None, on_intervention=None,
+                           on_session=None, on_event=None):
+            if on_event:
+                await on_event(EngineEvent(
+                    type=EngineEventType.THINKING,
+                    data={"thinking": "서브에이전트 내 사고", "signature": "sig"},
+                    parent_tool_use_id="parent-task-123",
+                ))
+            return EngineResult(success=True, output="done")
+
+        with patch(
+            "soul_server.service.engine_adapter.ClaudeRunner"
+        ) as MockRunner:
+            instance = MockRunner.return_value
+            instance.run = fake_run
+            events = await collect_events(adapter, "test")
+
+        thinking_events = [e for e in events if isinstance(e, ThinkingSSEEvent)]
+        assert len(thinking_events) == 1
+        assert thinking_events[0].parent_tool_use_id == "parent-task-123"
+
+    async def test_text_start_event_with_parent_tool_use_id(self):
+        """TEXT_DELTA → TextStartSSEEvent에 parent_tool_use_id가 전파됨"""
+        from soul_server.models import TextStartSSEEvent
+        from soul_server.engine.types import EngineEvent, EngineEventType
+
+        adapter = SoulEngineAdapter(workspace_dir="/test")
+
+        async def fake_run(prompt, session_id=None, on_progress=None,
+                           on_compact=None, on_intervention=None,
+                           on_session=None, on_event=None):
+            if on_event:
+                await on_event(EngineEvent(
+                    type=EngineEventType.TEXT_DELTA,
+                    data={"text": "서브에이전트 내 응답"},
+                    parent_tool_use_id="parent-task-456",
+                ))
+            return EngineResult(success=True, output="done")
+
+        with patch(
+            "soul_server.service.engine_adapter.ClaudeRunner"
+        ) as MockRunner:
+            instance = MockRunner.return_value
+            instance.run = fake_run
+            events = await collect_events(adapter, "test")
+
+        start_events = [e for e in events if isinstance(e, TextStartSSEEvent)]
+        assert len(start_events) == 1
+        assert start_events[0].parent_tool_use_id == "parent-task-456"
+
+    async def test_tool_start_event_with_parent_tool_use_id(self):
+        """TOOL_START 이벤트에 parent_tool_use_id가 전파됨"""
+        from soul_server.models import ToolStartSSEEvent
+        from soul_server.engine.types import EngineEvent, EngineEventType
+
+        adapter = SoulEngineAdapter(workspace_dir="/test")
+
+        async def fake_run(prompt, session_id=None, on_progress=None,
+                           on_compact=None, on_intervention=None,
+                           on_session=None, on_event=None):
+            if on_event:
+                await on_event(EngineEvent(
+                    type=EngineEventType.TOOL_START,
+                    data={"tool_name": "Read", "tool_input": {"file_path": "/test"}},
+                    parent_tool_use_id="parent-task-789",
+                ))
+            return EngineResult(success=True, output="done")
+
+        with patch(
+            "soul_server.service.engine_adapter.ClaudeRunner"
+        ) as MockRunner:
+            instance = MockRunner.return_value
+            instance.run = fake_run
+            events = await collect_events(adapter, "test")
+
+        tool_events = [e for e in events if isinstance(e, ToolStartSSEEvent)]
+        assert len(tool_events) == 1
+        assert tool_events[0].parent_tool_use_id == "parent-task-789"
+
+    async def test_tool_result_event_with_parent_tool_use_id(self):
+        """TOOL_RESULT 이벤트에 parent_tool_use_id가 전파됨"""
+        from soul_server.models import ToolResultSSEEvent
+        from soul_server.engine.types import EngineEvent, EngineEventType
+
+        adapter = SoulEngineAdapter(workspace_dir="/test")
+
+        async def fake_run(prompt, session_id=None, on_progress=None,
+                           on_compact=None, on_intervention=None,
+                           on_session=None, on_event=None):
+            if on_event:
+                await on_event(EngineEvent(
+                    type=EngineEventType.TOOL_RESULT,
+                    data={"tool_name": "Read", "result": "content", "is_error": False},
+                    parent_tool_use_id="parent-task-abc",
+                ))
+            return EngineResult(success=True, output="done")
+
+        with patch(
+            "soul_server.service.engine_adapter.ClaudeRunner"
+        ) as MockRunner:
+            instance = MockRunner.return_value
+            instance.run = fake_run
+            events = await collect_events(adapter, "test")
+
+        result_events = [e for e in events if isinstance(e, ToolResultSSEEvent)]
+        assert len(result_events) == 1
+        assert result_events[0].parent_tool_use_id == "parent-task-abc"
+
+    async def test_subagent_start_event_with_parent_tool_use_id(self):
+        """SUBAGENT_START 이벤트에 parent_tool_use_id가 전파됨"""
+        from soul_server.models import SubagentStartSSEEvent
+        from soul_server.engine.types import EngineEvent, EngineEventType
+
+        adapter = SoulEngineAdapter(workspace_dir="/test")
+
+        async def fake_run(prompt, session_id=None, on_progress=None,
+                           on_compact=None, on_intervention=None,
+                           on_session=None, on_event=None):
+            if on_event:
+                await on_event(EngineEvent(
+                    type=EngineEventType.SUBAGENT_START,
+                    data={"agent_id": "agent-001", "agent_type": "explore"},
+                    parent_tool_use_id="task-tool-xyz",
+                ))
+            return EngineResult(success=True, output="done")
+
+        with patch(
+            "soul_server.service.engine_adapter.ClaudeRunner"
+        ) as MockRunner:
+            instance = MockRunner.return_value
+            instance.run = fake_run
+            events = await collect_events(adapter, "test")
+
+        subagent_events = [e for e in events if isinstance(e, SubagentStartSSEEvent)]
+        assert len(subagent_events) == 1
+        assert subagent_events[0].parent_tool_use_id == "task-tool-xyz"
+
+    async def test_result_event_with_parent_tool_use_id(self):
+        """RESULT 이벤트에 parent_tool_use_id가 전파됨"""
+        from soul_server.models import ResultSSEEvent
+        from soul_server.engine.types import EngineEvent, EngineEventType
+
+        adapter = SoulEngineAdapter(workspace_dir="/test")
+
+        async def fake_run(prompt, session_id=None, on_progress=None,
+                           on_compact=None, on_intervention=None,
+                           on_session=None, on_event=None):
+            if on_event:
+                await on_event(EngineEvent(
+                    type=EngineEventType.RESULT,
+                    data={"success": True, "output": "완료", "error": None},
+                    parent_tool_use_id="parent-task-final",
+                ))
+            return EngineResult(success=True, output="완료")
+
+        with patch(
+            "soul_server.service.engine_adapter.ClaudeRunner"
+        ) as MockRunner:
+            instance = MockRunner.return_value
+            instance.run = fake_run
+            events = await collect_events(adapter, "test")
+
+        result_events = [e for e in events if isinstance(e, ResultSSEEvent)]
+        assert len(result_events) == 1
+        assert result_events[0].parent_tool_use_id == "parent-task-final"
+
+    async def test_events_without_parent_tool_use_id(self):
+        """parent_tool_use_id 없는 이벤트도 정상 처리"""
+        from soul_server.models import (
+            ThinkingSSEEvent,
+            TextStartSSEEvent,
+            ToolStartSSEEvent,
+            ToolResultSSEEvent,
+            ResultSSEEvent,
+        )
+        from soul_server.engine.types import EngineEvent, EngineEventType
+
+        adapter = SoulEngineAdapter(workspace_dir="/test")
+
+        async def fake_run(prompt, session_id=None, on_progress=None,
+                           on_compact=None, on_intervention=None,
+                           on_session=None, on_event=None):
+            if on_event:
+                # parent_tool_use_id 없이 이벤트 발행
+                await on_event(EngineEvent(
+                    type=EngineEventType.THINKING,
+                    data={"thinking": "메인 에이전트 사고", "signature": "sig"},
+                ))
+                await on_event(EngineEvent(
+                    type=EngineEventType.TEXT_DELTA,
+                    data={"text": "메인 에이전트 응답"},
+                ))
+                await on_event(EngineEvent(
+                    type=EngineEventType.TOOL_START,
+                    data={"tool_name": "Read", "tool_input": {}},
+                ))
+                await on_event(EngineEvent(
+                    type=EngineEventType.TOOL_RESULT,
+                    data={"tool_name": "Read", "result": "ok", "is_error": False},
+                ))
+                await on_event(EngineEvent(
+                    type=EngineEventType.RESULT,
+                    data={"success": True, "output": "완료", "error": None},
+                ))
+            return EngineResult(success=True, output="완료")
+
+        with patch(
+            "soul_server.service.engine_adapter.ClaudeRunner"
+        ) as MockRunner:
+            instance = MockRunner.return_value
+            instance.run = fake_run
+            events = await collect_events(adapter, "test")
+
+        # 모든 이벤트가 parent_tool_use_id=None으로 정상 처리
+        thinking = [e for e in events if isinstance(e, ThinkingSSEEvent)]
+        assert len(thinking) == 1
+        assert thinking[0].parent_tool_use_id is None
+
+        text_start = [e for e in events if isinstance(e, TextStartSSEEvent)]
+        assert len(text_start) == 1
+        assert text_start[0].parent_tool_use_id is None
+
+        tool_start = [e for e in events if isinstance(e, ToolStartSSEEvent)]
+        assert len(tool_start) == 1
+        assert tool_start[0].parent_tool_use_id is None
+
+        tool_result = [e for e in events if isinstance(e, ToolResultSSEEvent)]
+        assert len(tool_result) == 1
+        assert tool_result[0].parent_tool_use_id is None
+
+        result = [e for e in events if isinstance(e, ResultSSEEvent)]
+        assert len(result) == 1
+        assert result[0].parent_tool_use_id is None
