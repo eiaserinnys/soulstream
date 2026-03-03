@@ -222,6 +222,7 @@ class ThinkingSSEEvent(BaseModel):
     card_id: str = Field(..., description="사고 블록 단위 카드 ID")
     thinking: str = Field(..., description="사고 과정 텍스트")
     signature: str = Field(default="", description="사고 블록 서명")
+    parent_tool_use_id: Optional[str] = Field(None, description="서브에이전트 내부인 경우 부모 Task 도구의 tool_use_id")
 
 
 class TextStartSSEEvent(BaseModel):
