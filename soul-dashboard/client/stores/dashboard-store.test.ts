@@ -71,6 +71,138 @@ describe("dashboard-store", () => {
       expect(useDashboardStore.getState().sessionsError).toBe("Network error");
       expect(useDashboardStore.getState().sessionsLoading).toBe(false);
     });
+
+    // === 세션 목록 CRUD (SSE 구독 지원) ===
+
+    describe("addSession", () => {
+      it("should add new session to the beginning of the list", () => {
+        const existing: SessionSummary[] = [
+          { agentSessionId: "sess-old", status: "completed", eventCount: 10, createdAt: "2026-01-01T00:00:00Z" },
+        ];
+        useDashboardStore.getState().setSessions(existing);
+
+        const newSession: SessionSummary = {
+          agentSessionId: "sess-new",
+          status: "running",
+          eventCount: 0,
+          createdAt: "2026-01-02T00:00:00Z",
+        };
+        useDashboardStore.getState().addSession(newSession);
+
+        const sessions = useDashboardStore.getState().sessions;
+        expect(sessions).toHaveLength(2);
+        expect(sessions[0].agentSessionId).toBe("sess-new");
+        expect(sessions[1].agentSessionId).toBe("sess-old");
+      });
+
+      it("should not add duplicate session", () => {
+        useDashboardStore.getState().setSessions([
+          { agentSessionId: "sess-abc", status: "running", eventCount: 3, createdAt: "2026-01-01T00:00:00Z" },
+        ]);
+
+        useDashboardStore.getState().addSession({
+          agentSessionId: "sess-abc",
+          status: "running",
+          eventCount: 5,
+          createdAt: "2026-01-01T00:00:00Z",
+        });
+
+        expect(useDashboardStore.getState().sessions).toHaveLength(1);
+        // 기존 값이 유지되어야 함
+        expect(useDashboardStore.getState().sessions[0].eventCount).toBe(3);
+      });
+
+      it("should clear sessionsError on add", () => {
+        useDashboardStore.getState().setSessionsError("some error");
+        useDashboardStore.getState().addSession({
+          agentSessionId: "sess-new",
+          status: "running",
+          eventCount: 0,
+          createdAt: "2026-01-01T00:00:00Z",
+        });
+
+        expect(useDashboardStore.getState().sessionsError).toBeNull();
+      });
+    });
+
+    describe("updateSession", () => {
+      it("should update existing session's status", () => {
+        useDashboardStore.getState().setSessions([
+          { agentSessionId: "sess-abc", status: "running", eventCount: 5, createdAt: "2026-01-01T00:00:00Z" },
+          { agentSessionId: "sess-def", status: "running", eventCount: 3, createdAt: "2026-01-01T00:00:00Z" },
+        ]);
+
+        useDashboardStore.getState().updateSession("sess-abc", {
+          status: "completed",
+          completedAt: "2026-01-02T00:00:00Z",
+        });
+
+        const sessions = useDashboardStore.getState().sessions;
+        expect(sessions[0].status).toBe("completed");
+        expect(sessions[0].completedAt).toBe("2026-01-02T00:00:00Z");
+        // 다른 세션은 변경되지 않아야 함
+        expect(sessions[1].status).toBe("running");
+      });
+
+      it("should do nothing if session not found", () => {
+        useDashboardStore.getState().setSessions([
+          { agentSessionId: "sess-abc", status: "running", eventCount: 5, createdAt: "2026-01-01T00:00:00Z" },
+        ]);
+
+        useDashboardStore.getState().updateSession("sess-nonexistent", { status: "completed" });
+
+        expect(useDashboardStore.getState().sessions).toHaveLength(1);
+        expect(useDashboardStore.getState().sessions[0].status).toBe("running");
+      });
+
+      it("should allow partial updates", () => {
+        useDashboardStore.getState().setSessions([
+          { agentSessionId: "sess-abc", status: "running", eventCount: 5, createdAt: "2026-01-01T00:00:00Z", prompt: "test" },
+        ]);
+
+        useDashboardStore.getState().updateSession("sess-abc", { eventCount: 10 });
+
+        const session = useDashboardStore.getState().sessions[0];
+        expect(session.eventCount).toBe(10);
+        expect(session.status).toBe("running"); // 변경되지 않음
+        expect(session.prompt).toBe("test"); // 변경되지 않음
+      });
+    });
+
+    describe("removeSession", () => {
+      it("should remove session from list", () => {
+        useDashboardStore.getState().setSessions([
+          { agentSessionId: "sess-abc", status: "running", eventCount: 5, createdAt: "2026-01-01T00:00:00Z" },
+          { agentSessionId: "sess-def", status: "completed", eventCount: 3, createdAt: "2026-01-01T00:00:00Z" },
+        ]);
+
+        useDashboardStore.getState().removeSession("sess-abc");
+
+        const sessions = useDashboardStore.getState().sessions;
+        expect(sessions).toHaveLength(1);
+        expect(sessions[0].agentSessionId).toBe("sess-def");
+      });
+
+      it("should do nothing if session not found", () => {
+        useDashboardStore.getState().setSessions([
+          { agentSessionId: "sess-abc", status: "running", eventCount: 5, createdAt: "2026-01-01T00:00:00Z" },
+        ]);
+
+        useDashboardStore.getState().removeSession("sess-nonexistent");
+
+        expect(useDashboardStore.getState().sessions).toHaveLength(1);
+      });
+
+      it("should handle removing last session", () => {
+        useDashboardStore.getState().setSessions([
+          { agentSessionId: "sess-abc", status: "running", eventCount: 5, createdAt: "2026-01-01T00:00:00Z" },
+        ]);
+
+        useDashboardStore.getState().removeSession("sess-abc");
+
+        expect(useDashboardStore.getState().sessions).toHaveLength(0);
+      });
+    });
   });
 
   // === 활성 세션 ===
