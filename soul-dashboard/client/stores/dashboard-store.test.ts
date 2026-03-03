@@ -1360,6 +1360,162 @@ describe("dashboard-store", () => {
     });
   });
 
+  // === 멀티턴 서브에이전트 ===
+
+  describe("processEvent - multi-turn subagent", () => {
+    /** 세션 C: 멀티턴 서브에이전트 시퀀스 */
+    function replayMultiTurnSubagent(processEvent: (event: any, eventId: number) => void) {
+      let id = 0;
+      // Turn 1: user → tool(Skill, text 전) → text → complete
+      processEvent({ type: "user_message", user: "u", text: "Load skill" } as UserMessageEvent, id++);
+      processEvent({ type: "tool_start", tool_name: "Skill", tool_input: { skill: "dialogue" }, tool_use_id: "tu-skill" } as ToolStartEvent, id++);
+      processEvent({ type: "tool_result", tool_name: "Skill", result: "ok", is_error: false, tool_use_id: "tu-skill" } as ToolResultEvent, id++);
+      processEvent({ type: "text_start", card_id: "c-t1" }, id++);
+      processEvent({ type: "text_delta", card_id: "c-t1", text: "Loaded." } as TextDeltaEvent, id++);
+      processEvent({ type: "text_end", card_id: "c-t1" }, id++);
+      processEvent({ type: "complete", result: "Skill loaded", attachments: [] } as CompleteEvent, id++);
+
+      // Turn 2: user → text → Task(subagent) → subagent 내부 tool → subagent stop → text → complete
+      processEvent({ type: "user_message", user: "u", text: "Analyze" } as UserMessageEvent, id++);
+      processEvent({ type: "text_start", card_id: "c-t2" }, id++);
+      processEvent({ type: "text_delta", card_id: "c-t2", text: "Exploring..." } as TextDeltaEvent, id++);
+      processEvent({ type: "text_end", card_id: "c-t2" }, id++);
+      // Task tool
+      processEvent({ type: "tool_start", tool_name: "Task", tool_input: { subagent_type: "Explore" }, tool_use_id: "tu-task1" } as ToolStartEvent, id++);
+      // Subagent
+      processEvent({ type: "subagent_start", agent_id: "agent-1", agent_type: "Explore", parent_tool_use_id: "tu-task1" } as SubagentStartEvent, id++);
+      // Subagent 내부 tool
+      processEvent({ type: "tool_start", tool_name: "Grep", tool_input: {}, tool_use_id: "tu-sub-grep", parent_tool_use_id: "tu-task1" } as ToolStartEvent, id++);
+      processEvent({ type: "tool_result", tool_name: "Grep", result: "found", is_error: false, tool_use_id: "tu-sub-grep", parent_tool_use_id: "tu-task1" } as ToolResultEvent, id++);
+      processEvent({ type: "subagent_stop", agent_id: "agent-1", parent_tool_use_id: "tu-task1" } as SubagentStopEvent, id++);
+      // Task result
+      processEvent({ type: "tool_result", tool_name: "Task", result: "Explored", is_error: false, tool_use_id: "tu-task1" } as ToolResultEvent, id++);
+      // Post-subagent text
+      processEvent({ type: "text_start", card_id: "c-t3" }, id++);
+      processEvent({ type: "text_delta", card_id: "c-t3", text: "Found results." } as TextDeltaEvent, id++);
+      processEvent({ type: "text_end", card_id: "c-t3" }, id++);
+      processEvent({ type: "complete", result: "Done", attachments: [] } as CompleteEvent, id++);
+    }
+
+    /** 세션 B: 단순 세션 (reopen 테스트용) */
+    function replaySimpleSessionB(processEvent: (event: any, eventId: number) => void) {
+      processEvent({ type: "user_message", user: "u", text: "Session B" } as UserMessageEvent, 0);
+      processEvent({ type: "text_start", card_id: "b-t1" }, 1);
+      processEvent({ type: "text_delta", card_id: "b-t1", text: "Simple answer." } as TextDeltaEvent, 2);
+      processEvent({ type: "text_end", card_id: "b-t1" }, 3);
+      processEvent({ type: "complete", result: "Session B done", attachments: [] } as CompleteEvent, 4);
+    }
+
+    /** 트리를 재귀 순회하여 타입별 노드 수 집계 */
+    function snapshotTree(tree: EventTreeNode | null): Record<string, number> {
+      const counts: Record<string, number> = {};
+      for (const node of collectNodes(tree)) {
+        counts[node.type] = (counts[node.type] ?? 0) + 1;
+      }
+      return counts;
+    }
+
+    it("멀티턴 서브에이전트 트리 구조 검증", () => {
+      const { processEvent } = useDashboardStore.getState();
+      replayMultiTurnSubagent(processEvent);
+
+      const tree = useDashboardStore.getState().tree!;
+
+      // Turn 1: user_message, tool(Skill), text
+      const turn1 = tree.children[0];
+      expect(turn1.type).toBe("user_message");
+      expect(turn1.content).toBe("Load skill");
+      const turn1Tools = collectNodes(turn1, "tool");
+      expect(turn1Tools).toHaveLength(1);
+      expect(turn1Tools[0].toolName).toBe("Skill");
+      const turn1Texts = collectNodes(turn1, "text");
+      expect(turn1Texts).toHaveLength(1);
+
+      // Turn 2: user_message, text(2개), tool(Task + Grep inside subagent), subagent
+      const turn2 = tree.children[1];
+      expect(turn2.type).toBe("user_message");
+      expect(turn2.content).toBe("Analyze");
+      const turn2Texts = collectNodes(turn2, "text");
+      expect(turn2Texts).toHaveLength(2); // c-t2, c-t3
+      const turn2Subagents = collectNodes(turn2, "subagent");
+      expect(turn2Subagents).toHaveLength(1);
+      expect(turn2Subagents[0].agentType).toBe("Explore");
+
+      // Subagent는 Task tool의 자식
+      const taskNode = collectNodes(turn2, "tool").find(t => t.toolName === "Task");
+      expect(taskNode).toBeDefined();
+      expect(taskNode!.children.some(c => c.type === "subagent")).toBe(true);
+
+      // Subagent 내부 tool이 subagent의 자식
+      const subagentNode = turn2Subagents[0];
+      expect(subagentNode.children.some(c => c.toolName === "Grep")).toBe(true);
+    });
+
+    it("멀티턴 서브에이전트 세션 재오픈 무결성", () => {
+      const { processEvent, setActiveSession } = useDashboardStore.getState();
+
+      // Session C: first load
+      setActiveSession("sess-C");
+      replayMultiTurnSubagent(processEvent);
+      const snapC1 = snapshotTree(useDashboardStore.getState().tree);
+
+      // Switch to B
+      setActiveSession("sess-B");
+      replaySimpleSessionB(processEvent);
+
+      // Switch back to C (cache replay)
+      setActiveSession("sess-C");
+      replayMultiTurnSubagent(processEvent);
+      const snapC2 = snapshotTree(useDashboardStore.getState().tree);
+
+      // C2 should match C1
+      expect(snapC2).toEqual(snapC1);
+      expect(snapC2["subagent"]).toBe(1);
+      expect(snapC2["user_message"]).toBe(2);
+
+      // No B nodes leaked into C
+      const allNodes = collectNodes(useDashboardStore.getState().tree);
+      const bNodeLeaks = allNodes.filter(n => n.content.includes("Session B"));
+      expect(bNodeLeaks).toHaveLength(0);
+    });
+
+    it("서브에이전트 이벤트 누락 시에도 tool이 올바른 턴에 배치", () => {
+      const { processEvent } = useDashboardStore.getState();
+
+      // Turn 1
+      processEvent({ type: "user_message", user: "u", text: "Turn 1" } as UserMessageEvent, 0);
+      processEvent({ type: "text_start", card_id: "t1" }, 1);
+      processEvent({ type: "text_end", card_id: "t1" }, 2);
+      processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 3);
+
+      // Turn 2: Task tool with parent_tool_use_id but NO subagent_start/stop
+      processEvent({ type: "user_message", user: "u", text: "Turn 2" } as UserMessageEvent, 4);
+      processEvent({ type: "text_start", card_id: "t2" }, 5);
+      processEvent({ type: "text_end", card_id: "t2" }, 6);
+      processEvent({ type: "tool_start", tool_name: "Task", tool_input: {}, tool_use_id: "tu-task" } as ToolStartEvent, 7);
+      // Inner tool with parent_tool_use_id (subagent event missing)
+      processEvent({ type: "tool_start", tool_name: "Grep", tool_input: {}, tool_use_id: "tu-grep", parent_tool_use_id: "tu-task" } as ToolStartEvent, 8);
+      processEvent({ type: "tool_result", tool_name: "Grep", result: "ok", is_error: false, tool_use_id: "tu-grep", parent_tool_use_id: "tu-task" } as ToolResultEvent, 9);
+      processEvent({ type: "tool_result", tool_name: "Task", result: "done", is_error: false, tool_use_id: "tu-task" } as ToolResultEvent, 10);
+      processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 11);
+
+      const tree = useDashboardStore.getState().tree!;
+
+      // Should not crash, 2 user_message turns
+      const userMsgs = tree.children.filter(c => c.type === "user_message");
+      expect(userMsgs).toHaveLength(2);
+
+      // Turn 2 should have the Task tool
+      const turn2Tools = collectNodes(userMsgs[1], "tool");
+      expect(turn2Tools.length).toBeGreaterThanOrEqual(1);
+      expect(turn2Tools.some(t => t.toolName === "Task")).toBe(true);
+
+      // Grep은 Turn 2 어딘가에 배치되어야 함 (subagent 없이도 크래시하지 않음)
+      const grepInTurn2 = collectNodes(userMsgs[1], "tool").filter(t => t.toolName === "Grep");
+      expect(grepInTurn2).toHaveLength(1);
+    });
+  });
+
   // === 초기화 ===
 
   describe("reset", () => {

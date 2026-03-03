@@ -32,6 +32,8 @@ const SSE_EVENT_TYPES: SSEEventType[] = [
   "tool_start",
   "tool_result",
   "result",
+  "subagent_start",
+  "subagent_stop",
   "context_usage",
   "compact",
   "reconnect",
