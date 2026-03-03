@@ -5,11 +5,12 @@
  * keyframes (node-shimmer, pulse)는 globals.css에 정의되어 있습니다.
  */
 
-import { memo } from 'react';
+import { memo, useCallback } from 'react';
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import type { GraphNodeData } from '../lib/layout-engine';
 import { cn } from '../lib/cn';
-import { nodeBase, nodeContent, nodeHeader, nodeLabel, truncate2, handleStyle } from './node-styles';
+import { nodeBase, nodeContent, nodeHeader, nodeLabel, truncate2, handleStyle, collapseButton } from './node-styles';
+import { useDashboardStore } from '../stores/dashboard-store';
 
 type ThinkingNodeType = Node<GraphNodeData, 'thinking'>;
 
@@ -20,6 +21,14 @@ export const ThinkingNode = memo(function ThinkingNode({ data, selected }: NodeP
   const isStreaming = data.streaming;
   const isPlanMode = data.isPlanMode;
   const accentColor = isPlanMode ? PLAN_ACCENT : ACCENT;
+  const toggleNodeCollapse = useDashboardStore((s) => s.toggleNodeCollapse);
+
+  const handleCollapseClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (data.cardId) {
+      toggleNodeCollapse(data.cardId);
+    }
+  }, [data.cardId, toggleNodeCollapse]);
 
   return (
     <div
@@ -57,7 +66,17 @@ export const ThinkingNode = memo(function ThinkingNode({ data, selected }: NodeP
               PLAN
             </span>
           )}
-          {isStreaming && (
+          {data.hasChildren && (
+            <button
+              type="button"
+              className={cn(collapseButton, "ml-auto")}
+              onClick={handleCollapseClick}
+              aria-label={data.collapsed ? "Expand node" : "Collapse node"}
+            >
+              {data.collapsed ? `▶ (${data.childCount})` : "▼"}
+            </button>
+          )}
+          {isStreaming && !data.hasChildren && (
             <span
               className="ml-auto w-1.5 h-1.5 rounded-full shrink-0 animate-[pulse_2s_infinite]"
               style={{ background: accentColor }}
