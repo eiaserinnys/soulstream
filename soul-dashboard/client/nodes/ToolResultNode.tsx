@@ -16,6 +16,13 @@ type ToolResultNodeType = Node<GraphNodeData, 'tool_result'>;
 const COLOR_SUCCESS = '#22c55e';
 const COLOR_ERROR = '#ef4444';
 
+/** 실행 시간을 사람이 읽기 좋은 형식으로 포맷 */
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${(ms / 60000).toFixed(1)}m`;
+}
+
 export const ToolResultNode = memo(function ToolResultNode({ data, selected }: NodeProps<ToolResultNodeType>) {
   const isError = data.isError ?? false;
   const accent = isError ? COLOR_ERROR : COLOR_SUCCESS;
@@ -26,7 +33,7 @@ export const ToolResultNode = memo(function ToolResultNode({ data, selected }: N
       data-testid="tool-result-node"
       className={cn(
         nodeBase, nodeBgDefault,
-        "border",
+        "border relative",
         selected
           ? isError ? "border-accent-red" : "border-success"
           : "border-border",
@@ -67,6 +74,13 @@ export const ToolResultNode = memo(function ToolResultNode({ data, selected }: N
           {data.toolResult || data.content || '(no result)'}
         </div>
       </div>
+
+      {/* Duration badge (bottom-right) */}
+      {data.durationMs !== undefined && data.durationMs > 0 && (
+        <div className="absolute bottom-1 right-2 text-[10px] text-muted-foreground/60 font-mono">
+          {formatDuration(data.durationMs)}
+        </div>
+      )}
 
       {/* Handles */}
       <Handle type="target" position={Position.Left} id="left" style={handleStyle(accent)} />

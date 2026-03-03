@@ -360,6 +360,7 @@ function createToolResultNode(treeNode: EventTreeNode): GraphNode | null {
         toolResult: "",
         isError: treeNode.isError,
         streaming: false,
+        durationMs: treeNode.durationMs,
       },
     };
   }
@@ -393,6 +394,7 @@ function createToolResultNode(treeNode: EventTreeNode): GraphNode | null {
       toolResult: treeNode.toolResult,
       isError: treeNode.isError,
       streaming: false,
+      durationMs: treeNode.durationMs,
     },
   };
 }
