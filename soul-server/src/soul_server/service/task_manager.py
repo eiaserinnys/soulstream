@@ -95,6 +95,13 @@ class TaskManager:
             event_store=event_store,
         )
 
+    # === Public Properties ===
+
+    @property
+    def event_store(self) -> Optional[EventStore]:
+        """이벤트 저장소 접근자"""
+        return self._event_store
+
     # === claude_session_id 인덱스 ===
 
     def register_session(self, claude_session_id: str, agent_session_id: str) -> None:
