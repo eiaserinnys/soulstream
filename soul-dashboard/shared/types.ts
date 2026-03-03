@@ -335,3 +335,44 @@ export interface DashboardSSEEvent {
   /** 원본 Soul 이벤트 */
   event: SoulSSEEvent;
 }
+
+// === Session Stream SSE Events ===
+
+/**
+ * 세션 스트림 SSE 이벤트 - /sessions/stream에서 전송
+ *
+ * 세션 목록의 실시간 변경사항을 클라이언트에 푸시합니다.
+ */
+
+/** 세션 목록 초기화 (구독 시 최초 전송) */
+export interface SessionListStreamEvent {
+  type: "session_list";
+  sessions: SessionSummary[];
+}
+
+/** 새 세션 생성 */
+export interface SessionCreatedStreamEvent {
+  type: "session_created";
+  session: SessionSummary;
+}
+
+/** 세션 상태 업데이트 */
+export interface SessionUpdatedStreamEvent {
+  type: "session_updated";
+  agent_session_id: string;
+  status: SessionStatus;
+  updated_at: string;
+}
+
+/** 세션 삭제 */
+export interface SessionDeletedStreamEvent {
+  type: "session_deleted";
+  agent_session_id: string;
+}
+
+/** 세션 스트림 이벤트 유니온 */
+export type SessionStreamEvent =
+  | SessionListStreamEvent
+  | SessionCreatedStreamEvent
+  | SessionUpdatedStreamEvent
+  | SessionDeletedStreamEvent;
