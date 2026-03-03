@@ -34,6 +34,13 @@ from .schemas import (
     RateLimitProfileStatus,
     RateLimitProfileInfo,
     CredentialAlertEvent,
+    # Session List API
+    SessionInfo,
+    SessionsListResponse,
+    SessionListSSEEvent,
+    SessionCreatedSSEEvent,
+    SessionUpdatedSSEEvent,
+    SessionDeletedSSEEvent,
 )
 
 __all__ = [
@@ -71,4 +78,11 @@ __all__ = [
     "RateLimitProfileStatus",
     "RateLimitProfileInfo",
     "CredentialAlertEvent",
+    # Session List API
+    "SessionInfo",
+    "SessionsListResponse",
+    "SessionListSSEEvent",
+    "SessionCreatedSSEEvent",
+    "SessionUpdatedSSEEvent",
+    "SessionDeletedSSEEvent",
 ]

@@ -142,6 +142,14 @@ class TaskManager:
         """실행 중인 태스크 목록 반환"""
         return [t for t in self._tasks.values() if t.status == TaskStatus.RUNNING]
 
+    def get_all_sessions(self) -> List[Task]:
+        """모든 세션 목록 반환 (생성일 기준 내림차순)"""
+        return sorted(
+            self._tasks.values(),
+            key=lambda t: t.created_at,
+            reverse=True,
+        )
+
     async def create_task(
         self,
         prompt: str,

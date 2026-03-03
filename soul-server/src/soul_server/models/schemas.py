@@ -304,3 +304,45 @@ class CredentialAlertEvent(BaseModel):
     profiles: List[RateLimitProfileInfo] = Field(
         ..., description="전체 프로필 rate limit 상태"
     )
+
+
+# === Session List API Models ===
+
+class SessionInfo(BaseModel):
+    """세션 요약 정보 (목록용)"""
+    agent_session_id: str = Field(..., description="세션 식별자")
+    status: TaskStatus = Field(..., description="세션 상태")
+    prompt: str = Field(..., description="실행 프롬프트")
+    created_at: datetime = Field(..., description="생성 시각")
+    updated_at: datetime = Field(..., description="마지막 업데이트 시각")
+
+
+class SessionsListResponse(BaseModel):
+    """세션 목록 응답 (GET /sessions)"""
+    sessions: List[SessionInfo] = Field(default_factory=list)
+
+
+class SessionListSSEEvent(BaseModel):
+    """세션 목록 SSE 이벤트 (연결 시 초기 목록)"""
+    type: str = "session_list"
+    sessions: List[SessionInfo] = Field(default_factory=list)
+
+
+class SessionCreatedSSEEvent(BaseModel):
+    """세션 생성 SSE 이벤트"""
+    type: str = "session_created"
+    session: SessionInfo = Field(..., description="생성된 세션 정보")
+
+
+class SessionUpdatedSSEEvent(BaseModel):
+    """세션 업데이트 SSE 이벤트"""
+    type: str = "session_updated"
+    agent_session_id: str = Field(..., description="세션 식별자")
+    status: TaskStatus = Field(..., description="변경된 상태")
+    updated_at: datetime = Field(..., description="업데이트 시각")
+
+
+class SessionDeletedSSEEvent(BaseModel):
+    """세션 삭제 SSE 이벤트"""
+    type: str = "session_deleted"
+    agent_session_id: str = Field(..., description="삭제된 세션 식별자")

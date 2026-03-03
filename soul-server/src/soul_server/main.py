@@ -10,11 +10,11 @@ import time
 import logging
 from pathlib import Path
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from soul_server.api import attachments_router
+from soul_server.api import attachments_router, create_sessions_router
 from soul_server.api.tasks import router as tasks_router
 from soul_server.api.credentials import create_credentials_router
 from soul_server.service import resource_manager, file_manager
@@ -25,6 +25,10 @@ from soul_server.service.engine_adapter import init_soul_engine
 from soul_server.claude.agent_runner import ClaudeRunner
 from soul_server.service.runner_pool import RunnerPool
 from soul_server.service.task_manager import init_task_manager, get_task_manager
+from soul_server.service.session_broadcaster import (
+    init_session_broadcaster,
+    get_session_broadcaster,
+)
 from soul_server.service.event_store import EventStore
 from soul_server.models import HealthResponse
 from soul_server.config import get_settings, setup_logging
@@ -118,6 +122,10 @@ async def lifespan(app: FastAPI):
     task_manager = init_task_manager(storage_path=storage_path, event_store=event_store)
     loaded = await task_manager.load()
     logger.info(f"  Loaded {loaded} tasks from storage")
+
+    # SessionBroadcaster 초기화
+    init_session_broadcaster()
+    logger.info("  SessionBroadcaster initialized")
 
     # 주기적 정리 태스크 시작
     _cleanup_task = asyncio.create_task(periodic_cleanup())
@@ -284,6 +292,106 @@ credentials_router = create_credentials_router(
     rate_limit_tracker=_rate_limit_tracker,
 )
 app.include_router(credentials_router, prefix="/profiles", tags=["credentials"])
+
+
+# Sessions API - 세션 목록 조회/스트리밍 (런타임에 싱글톤 참조)
+def _create_sessions_router():
+    """Sessions 라우터 생성 (런타임에 싱글톤 참조)"""
+    from soul_server.service.session_broadcaster import get_session_broadcaster
+
+    return create_sessions_router(
+        task_manager=get_task_manager(),
+        session_broadcaster=get_session_broadcaster(),
+    )
+
+
+# Note: Sessions 라우터는 lifespan 이후 TaskManager/SessionBroadcaster가
+# 초기화된 후에 동적으로 등록해야 합니다. FastAPI는 동적 라우터 등록을
+# 지원하지 않으므로, 대안으로 엔드포인트 내에서 싱글톤을 참조합니다.
+# 여기서는 별도의 라우터 팩토리 함수를 사용하는 대신,
+# 전역 get_task_manager/get_session_broadcaster를 직접 사용합니다.
+sessions_router = APIRouter()
+
+
+@sessions_router.get("/sessions")
+async def get_sessions():
+    """세션 목록 조회"""
+    import json
+    from soul_server.models import SessionsListResponse
+
+    task_manager = get_task_manager()
+    tasks = task_manager.get_all_sessions()
+
+    sessions = []
+    for t in tasks:
+        updated_at = t.completed_at or t.created_at
+        sessions.append({
+            "agent_session_id": t.agent_session_id,
+            "status": t.status.value,
+            "prompt": t.prompt,
+            "created_at": t.created_at.isoformat(),
+            "updated_at": updated_at.isoformat(),
+        })
+
+    return {"sessions": sessions}
+
+
+@sessions_router.get("/sessions/stream")
+async def sessions_stream():
+    """세션 목록 변경 SSE 스트림"""
+    import json
+    from sse_starlette.sse import EventSourceResponse
+
+    task_manager = get_task_manager()
+    session_broadcaster = get_session_broadcaster()
+
+    async def event_generator():
+        # 초기 세션 목록 전송
+        tasks = task_manager.get_all_sessions()
+        sessions = []
+        for t in tasks:
+            updated_at = t.completed_at or t.created_at
+            sessions.append({
+                "agent_session_id": t.agent_session_id,
+                "status": t.status.value,
+                "prompt": t.prompt,
+                "created_at": t.created_at.isoformat(),
+                "updated_at": updated_at.isoformat(),
+            })
+
+        yield {
+            "event": "session_list",
+            "data": json.dumps({
+                "type": "session_list",
+                "sessions": sessions,
+            }, ensure_ascii=False),
+        }
+
+        # 리스너 등록
+        event_queue = asyncio.Queue()
+        await session_broadcaster.add_listener(event_queue)
+
+        try:
+            while True:
+                try:
+                    event = await asyncio.wait_for(
+                        event_queue.get(),
+                        timeout=30.0,
+                    )
+                    yield {
+                        "event": event.get("type", "unknown"),
+                        "data": json.dumps(event, ensure_ascii=False),
+                    }
+                except asyncio.TimeoutError:
+                    yield {"comment": "keepalive"}
+
+        finally:
+            await session_broadcaster.remove_listener(event_queue)
+
+    return EventSourceResponse(event_generator())
+
+
+app.include_router(sessions_router, tags=["sessions"])
 
 
 # === Exception Handlers ===
