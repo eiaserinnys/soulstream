@@ -272,6 +272,7 @@ class ToolResultSSEEvent(BaseModel):
     is_error: bool = Field(False, description="오류 여부")
     tool_use_id: Optional[str] = Field(None, description="SDK ToolUseBlock ID (tool_start 매칭용)")
     duration_ms: Optional[int] = Field(None, description="도구 실행 시간 (밀리초)")
+    parent_tool_use_id: Optional[str] = Field(None, description="서브에이전트 내부인 경우 부모 Task 도구의 tool_use_id")
 
 
 class ResultSSEEvent(BaseModel):
