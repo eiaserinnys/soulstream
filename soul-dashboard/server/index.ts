@@ -40,6 +40,7 @@ const CACHE_DIR =
   process.env.DASHBOARD_CACHE_DIR ??
   path.resolve(__dirname, "../.local/sessions");
 const sessionCache = new SessionCache({ cacheDir: CACHE_DIR });
+const BYPASS_CACHE = process.env.DASHBOARD_BYPASS_CACHE === "true";
 
 // === Express App ===
 
@@ -113,6 +114,7 @@ app.use(
     soulBaseUrl: SOUL_BASE_URL,
     sessionCache,
     authToken: AUTH_TOKEN,
+    bypassCache: BYPASS_CACHE,
   }),
 );
 
@@ -148,6 +150,9 @@ const server = app.listen(PORT, () => {
   console.log(`[dashboard] Soul server: ${SOUL_BASE_URL}`);
   console.log(`[dashboard] Cache dir: ${CACHE_DIR}`);
   console.log("[dashboard] Architecture: Cached events (Phase 5)");
+  if (BYPASS_CACHE) {
+    console.log("[dashboard] ⚠️ Cache bypass enabled (DASHBOARD_BYPASS_CACHE=true)");
+  }
 });
 
 // === Graceful Shutdown ===
