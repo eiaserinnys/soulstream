@@ -22,6 +22,9 @@ import type {
   ProgressEvent,
   MemoryEvent,
   EventTreeNode,
+  SubagentStartEvent,
+  SubagentStopEvent,
+  ResultEvent,
 } from "../../shared/types";
 
 /** 트리에서 특정 타입의 모든 노드를 수집하는 헬퍼 */
@@ -943,6 +946,291 @@ describe("dashboard-store", () => {
 
       // sessions[0] should still be "running" (unchanged)
       expect(useDashboardStore.getState().sessions[0].status).toBe("running");
+    });
+  });
+
+  // === 서브에이전트 구조 ===
+
+  describe("processEvent - subagent structure", () => {
+    it("Subagent 노드가 Task ToolUseBlock의 자식으로 배치", () => {
+      const { processEvent } = useDashboardStore.getState();
+
+      processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
+      processEvent({ type: "text_start", card_id: "t1" }, 1);
+
+      // Task tool 시작
+      processEvent({
+        type: "tool_start",
+        tool_name: "Task",
+        tool_input: { subagent_type: "Explore" },
+        tool_use_id: "toolu_task_1",
+      } as ToolStartEvent, 2);
+
+      // Subagent 시작
+      processEvent({
+        type: "subagent_start",
+        agent_id: "agent-1",
+        agent_type: "Explore",
+        parent_tool_use_id: "toolu_task_1",
+      } as SubagentStartEvent, 3);
+
+      const tree = useDashboardStore.getState().tree!;
+      const taskNode = findTreeNode(tree, "tool-2");
+      expect(taskNode).not.toBeNull();
+      expect(taskNode?.children).toHaveLength(1);
+      expect(taskNode?.children[0].type).toBe("subagent");
+      expect(taskNode?.children[0].agentId).toBe("agent-1");
+      expect(taskNode?.children[0].agentType).toBe("Explore");
+    });
+
+    it("Subagent 내부 노드들이 Subagent의 자식으로 배치", () => {
+      const { processEvent } = useDashboardStore.getState();
+
+      processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
+      processEvent({ type: "text_start", card_id: "t1" }, 1);
+
+      // Task 시작
+      processEvent({
+        type: "tool_start",
+        tool_name: "Task",
+        tool_input: {},
+        tool_use_id: "toolu_task_1",
+      } as ToolStartEvent, 2);
+
+      // Subagent 시작
+      processEvent({
+        type: "subagent_start",
+        agent_id: "agent-1",
+        agent_type: "Explore",
+        parent_tool_use_id: "toolu_task_1",
+      } as SubagentStartEvent, 3);
+
+      // Subagent 내부 tool (parent_tool_use_id 포함)
+      processEvent({
+        type: "tool_start",
+        tool_name: "Read",
+        tool_input: { file_path: "/test.ts" },
+        tool_use_id: "toolu_2",
+        parent_tool_use_id: "toolu_task_1",
+      } as ToolStartEvent, 4);
+
+      const tree = useDashboardStore.getState().tree!;
+      const taskNode = findTreeNode(tree, "tool-2");
+      const subagentNode = taskNode?.children[0];
+      expect(subagentNode?.type).toBe("subagent");
+      expect(subagentNode?.children).toHaveLength(1);
+      expect(subagentNode?.children[0].toolName).toBe("Read");
+    });
+
+    it("Subagent 내부 text_start가 Subagent의 자식으로 배치", () => {
+      const { processEvent } = useDashboardStore.getState();
+
+      processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
+      processEvent({ type: "text_start", card_id: "t1" }, 1);
+
+      // Task 시작
+      processEvent({
+        type: "tool_start",
+        tool_name: "Task",
+        tool_input: {},
+        tool_use_id: "toolu_task_1",
+      } as ToolStartEvent, 2);
+
+      // Subagent 시작
+      processEvent({
+        type: "subagent_start",
+        agent_id: "agent-1",
+        agent_type: "Explore",
+        parent_tool_use_id: "toolu_task_1",
+      } as SubagentStartEvent, 3);
+
+      // Subagent 내부 text (parent_tool_use_id 포함)
+      processEvent({
+        type: "text_start",
+        card_id: "sub-text-1",
+        parent_tool_use_id: "toolu_task_1",
+      } as TextStartEvent, 4);
+
+      processEvent({
+        type: "text_delta",
+        card_id: "sub-text-1",
+        text: "Exploring...",
+      } as TextDeltaEvent, 5);
+
+      const tree = useDashboardStore.getState().tree!;
+      const taskNode = findTreeNode(tree, "tool-2");
+      const subagentNode = taskNode?.children[0];
+      expect(subagentNode?.children).toHaveLength(1);
+      expect(subagentNode?.children[0].type).toBe("text");
+      expect(subagentNode?.children[0].content).toBe("Exploring...");
+    });
+
+    it("subagent_stop이 Subagent를 완료 상태로 변경", () => {
+      const { processEvent } = useDashboardStore.getState();
+
+      processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
+      processEvent({ type: "text_start", card_id: "t1" }, 1);
+
+      processEvent({
+        type: "tool_start",
+        tool_name: "Task",
+        tool_input: {},
+        tool_use_id: "toolu_task_1",
+      } as ToolStartEvent, 2);
+
+      processEvent({
+        type: "subagent_start",
+        agent_id: "agent-1",
+        agent_type: "Explore",
+        parent_tool_use_id: "toolu_task_1",
+      } as SubagentStartEvent, 3);
+
+      // Subagent 내부 작업
+      processEvent({
+        type: "tool_start",
+        tool_name: "Read",
+        tool_input: {},
+        tool_use_id: "toolu_2",
+        parent_tool_use_id: "toolu_task_1",
+      } as ToolStartEvent, 4);
+
+      // Subagent 종료
+      processEvent({
+        type: "subagent_stop",
+        agent_id: "agent-1",
+      } as SubagentStopEvent, 5);
+
+      const tree = useDashboardStore.getState().tree!;
+      const taskNode = findTreeNode(tree, "tool-2");
+      const subagentNode = taskNode?.children[0];
+      expect(subagentNode?.completed).toBe(true);
+    });
+
+    it("중첩 Subagent (2단계) 정상 렌더링", () => {
+      const { processEvent } = useDashboardStore.getState();
+
+      processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
+      processEvent({ type: "text_start", card_id: "t1" }, 1);
+
+      // 1단계 Task
+      processEvent({
+        type: "tool_start",
+        tool_name: "Task",
+        tool_input: {},
+        tool_use_id: "toolu_task_1",
+      } as ToolStartEvent, 2);
+
+      processEvent({
+        type: "subagent_start",
+        agent_id: "agent-1",
+        agent_type: "general-purpose",
+        parent_tool_use_id: "toolu_task_1",
+      } as SubagentStartEvent, 3);
+
+      // 2단계 Task (agent-1 내부)
+      processEvent({
+        type: "tool_start",
+        tool_name: "Task",
+        tool_input: {},
+        tool_use_id: "toolu_task_2",
+        parent_tool_use_id: "toolu_task_1",
+      } as ToolStartEvent, 4);
+
+      processEvent({
+        type: "subagent_start",
+        agent_id: "agent-2",
+        agent_type: "Explore",
+        parent_tool_use_id: "toolu_task_2",
+      } as SubagentStartEvent, 5);
+
+      const tree = useDashboardStore.getState().tree!;
+      const task1 = findTreeNode(tree, "tool-2");
+      expect(task1).not.toBeNull();
+
+      const subagent1 = task1?.children[0];
+      expect(subagent1?.agentType).toBe("general-purpose");
+
+      const task2 = subagent1?.children[0];
+      expect(task2?.toolName).toBe("Task");
+
+      const subagent2 = task2?.children[0];
+      expect(subagent2?.agentType).toBe("Explore");
+    });
+
+    it("병렬 tool 실행이 같은 Subagent 아래에 형제로 배치", () => {
+      const { processEvent } = useDashboardStore.getState();
+
+      processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
+      processEvent({ type: "text_start", card_id: "t1" }, 1);
+
+      processEvent({
+        type: "tool_start",
+        tool_name: "Task",
+        tool_input: {},
+        tool_use_id: "toolu_task_1",
+      } as ToolStartEvent, 2);
+
+      processEvent({
+        type: "subagent_start",
+        agent_id: "agent-1",
+        agent_type: "Explore",
+        parent_tool_use_id: "toolu_task_1",
+      } as SubagentStartEvent, 3);
+
+      // 병렬 tool 1
+      processEvent({
+        type: "tool_start",
+        tool_name: "Glob",
+        tool_input: { pattern: "*.ts" },
+        tool_use_id: "toolu_2",
+        parent_tool_use_id: "toolu_task_1",
+      } as ToolStartEvent, 4);
+
+      // 병렬 tool 2
+      processEvent({
+        type: "tool_start",
+        tool_name: "Read",
+        tool_input: { file_path: "/test.ts" },
+        tool_use_id: "toolu_3",
+        parent_tool_use_id: "toolu_task_1",
+      } as ToolStartEvent, 5);
+
+      const tree = useDashboardStore.getState().tree!;
+      const taskNode = findTreeNode(tree, "tool-2");
+      const subagentNode = taskNode?.children[0];
+
+      expect(subagentNode?.children).toHaveLength(2);
+      expect(subagentNode?.children[0].toolName).toBe("Glob");
+      expect(subagentNode?.children[1].toolName).toBe("Read");
+    });
+  });
+
+  // === result 이벤트 ===
+
+  describe("processEvent - result event", () => {
+    it("result 이벤트가 root의 자식으로 배치", () => {
+      const { processEvent } = useDashboardStore.getState();
+
+      processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
+      processEvent({ type: "text_start", card_id: "t1" }, 1);
+      processEvent({ type: "text_end", card_id: "t1" }, 2);
+
+      processEvent({
+        type: "result",
+        success: true,
+        output: "Task completed successfully",
+        duration_ms: 5000,
+        usage: { input_tokens: 1000, output_tokens: 500 },
+        total_cost_usd: 0.01,
+      } as ResultEvent, 3);
+
+      const tree = useDashboardStore.getState().tree!;
+      const resultNodes = collectNodes(tree, "result");
+      expect(resultNodes).toHaveLength(1);
+      expect(resultNodes[0].content).toBe("Task completed successfully");
+      expect(resultNodes[0].durationMs).toBe(5000);
+      expect(resultNodes[0].usage).toEqual({ input_tokens: 1000, output_tokens: 500 });
+      expect(resultNodes[0].totalCostUsd).toBe(0.01);
     });
   });
 
