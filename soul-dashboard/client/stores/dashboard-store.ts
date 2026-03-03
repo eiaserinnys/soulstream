@@ -79,6 +79,12 @@ export interface DashboardActions {
 
   // 세션 목록
   setSessions: (sessions: SessionSummary[]) => void;
+  addSession: (session: SessionSummary) => void;
+  updateSession: (
+    agentSessionId: string,
+    updates: Partial<Pick<SessionSummary, "status" | "completedAt" | "eventCount" | "lastEventType">>
+  ) => void;
+  removeSession: (agentSessionId: string) => void;
   setSessionsLoading: (loading: boolean) => void;
   setSessionsError: (error: string | null) => void;
 
@@ -230,6 +236,31 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
       // --- 세션 목록 ---
 
       setSessions: (sessions) => set({ sessions, sessionsError: null }),
+
+      addSession: (session) => {
+        const sessions = get().sessions;
+        // 중복 체크 (이미 존재하면 추가하지 않음)
+        if (sessions.some((s) => s.agentSessionId === session.agentSessionId)) {
+          return;
+        }
+        // 최신 세션이 앞에 오도록 추가
+        set({ sessions: [session, ...sessions], sessionsError: null });
+      },
+
+      updateSession: (agentSessionId, updates) => {
+        const sessions = get().sessions;
+        const idx = sessions.findIndex((s) => s.agentSessionId === agentSessionId);
+        if (idx < 0) return;
+
+        const updatedSessions = [...sessions];
+        updatedSessions[idx] = { ...updatedSessions[idx], ...updates };
+        set({ sessions: updatedSessions });
+      },
+
+      removeSession: (agentSessionId) => {
+        const sessions = get().sessions;
+        set({ sessions: sessions.filter((s) => s.agentSessionId !== agentSessionId) });
+      },
 
       setSessionsLoading: (sessionsLoading) => set({ sessionsLoading }),
 
