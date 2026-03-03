@@ -166,6 +166,8 @@ export interface ResultEvent {
   usage?: { input_tokens: number; output_tokens: number };
   /** 총 비용 (USD) */
   total_cost_usd?: number;
+  /** 부모 tool_use_id (서브에이전트 내부 노드 배치용) */
+  parent_tool_use_id?: string;
 }
 
 /** 서브에이전트 시작 이벤트 */

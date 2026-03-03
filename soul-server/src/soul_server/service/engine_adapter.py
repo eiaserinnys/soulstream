@@ -467,6 +467,7 @@ class SoulEngineAdapter:
                     success=success,
                     output=output,
                     error=error,
+                    parent_tool_use_id=event.parent_tool_use_id,
                 )
                 await queue.put(sse_event)
 

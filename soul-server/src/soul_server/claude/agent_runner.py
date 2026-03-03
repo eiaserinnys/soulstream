@@ -1186,6 +1186,7 @@ class ClaudeRunner:
                                     "output": result_output,
                                     "error": result_output if msg_state.is_error else None,
                                 },
+                                parent_tool_use_id=self._get_current_parent_tool_use_id(),
                             ))
                         except Exception as e:
                             logger.warning(f"이벤트 콜백 오류 (RESULT): {e}")
