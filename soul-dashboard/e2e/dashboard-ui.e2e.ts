@@ -489,6 +489,9 @@ const test = base.extend<{ dashboardServer: MockDashboardServer }>({
       });
     });
 
+    // 세션별 SSE 요청 횟수 추적 (캐시 리플레이 시뮬레이션)
+    const sessionRequestCount = new Map<string, number>();
+
     // --- Mock: SSE 이벤트 스트림 ---
     app.get("/api/sessions/:id/events", (req, res) => {
       res.writeHead(200, {
@@ -509,6 +512,11 @@ const test = base.extend<{ dashboardServer: MockDashboardServer }>({
 
       // 세션 ID에 따라 이벤트 시퀀스 선택
       const sessionId = req.params.id;
+
+      // 요청 횟수 추적: 2회차 이후는 캐시 리플레이 (지연 없음)
+      const count = (sessionRequestCount.get(sessionId) ?? 0) + 1;
+      sessionRequestCount.set(sessionId, count);
+      const isCacheReplay = count >= 2;
       let events: Array<{ delay: number; data: string; end?: boolean }>;
       if (sessionId.includes("large50")) {
         events = LARGE_50_SSE_EVENTS;
@@ -524,8 +532,9 @@ const test = base.extend<{ dashboardServer: MockDashboardServer }>({
         events = SSE_EVENTS;
       }
 
-      // SSE 이벤트 스케줄링
+      // SSE 이벤트 스케줄링 (캐시 리플레이 시 지연 없음)
       for (const event of events) {
+        const effectiveDelay = isCacheReplay ? 0 : event.delay;
         timers.push(
           setTimeout(() => {
             if (!res.writableEnded) {
@@ -534,7 +543,7 @@ const test = base.extend<{ dashboardServer: MockDashboardServer }>({
                 res.end();
               }
             }
-          }, event.delay),
+          }, effectiveDelay),
         );
       }
     });
@@ -628,6 +637,19 @@ async function checkNodeOverlaps(page: Page): Promise<Array<{ a: string; b: stri
     }
   }
   return overlaps;
+}
+
+/** 페이지 내 노드 타입별 개수를 캡처 */
+async function captureNodeSnapshot(page: Page): Promise<Record<string, number>> {
+  return page.evaluate(() => {
+    const types = ["user-node", "thinking-node", "tool-call-node", "tool-result-node", "system-node"];
+    const snapshot: Record<string, number> = {};
+    for (const type of types) {
+      snapshot[type] = document.querySelectorAll(`[data-testid="${type}"]`).length;
+    }
+    snapshot["total"] = document.querySelectorAll(".react-flow__node").length;
+    return snapshot;
+  });
 }
 
 /** 대시보드에 접속하고 세션을 선택하는 공통 설정 */
@@ -1752,6 +1774,93 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     // 스크린샷
     await page.screenshot({
       path: `${SCREENSHOT_DIR}/27-multiturn-status-transition.png`,
+      fullPage: true,
+    });
+  });
+
+  test("23. 캐시 리플레이 — A→B→A 라운드트립 후 그래프 무결성 검증", async ({
+    page,
+    dashboardServer,
+  }) => {
+    // === Session A (multi-tool): 첫 로드 (라이브 SSE, 지연 있음) ===
+    await navigateAndSelectSession(
+      page,
+      dashboardServer.baseURL,
+      "sess-e2e-ui-multi",
+    );
+
+    // Complete까지 대기
+    await expect(
+      page.locator('[data-testid="system-node"]').first(),
+    ).toBeVisible({ timeout: 15_000 });
+    await page.waitForTimeout(300);
+
+    // A1 스냅샷 캡처
+    const snapshotA1 = await captureNodeSnapshot(page);
+
+    // 구체 노드 수 검증
+    expect(snapshotA1["tool-call-node"]).toBe(3);
+    expect(snapshotA1["tool-result-node"]).toBe(3);
+    expect(snapshotA1["thinking-node"]).toBe(2);
+    expect(snapshotA1["user-node"]).toBe(1);
+
+    // === Session B (no-tool): 전환 ===
+    await page
+      .locator('[data-testid="session-item-sess-e2e-ui-notool"]')
+      .click();
+
+    await expect(
+      page.locator('[data-testid="system-node"]').first(),
+    ).toBeVisible({ timeout: 10_000 });
+    await page.waitForTimeout(300);
+
+    const snapshotB = await captureNodeSnapshot(page);
+
+    // B는 A와 다른 그래프여야 함 (tool 없음)
+    expect(snapshotB["tool-call-node"]).toBe(0);
+    expect(snapshotB["total"]).not.toBe(snapshotA1["total"]);
+
+    // === Session A 복귀: 캐시 리플레이 (지연 없음, 0ms) ===
+    await page
+      .locator('[data-testid="session-item-sess-e2e-ui-multi"]')
+      .click();
+
+    await expect(
+      page.locator('[data-testid="system-node"]').first(),
+    ).toBeVisible({ timeout: 15_000 });
+    await page.waitForTimeout(300);
+
+    // A2 스냅샷 캡처
+    const snapshotA2 = await captureNodeSnapshot(page);
+
+    // === 검증: A1 === A2 ===
+    // 총 노드 수 동일
+    expect(snapshotA2["total"]).toBe(snapshotA1["total"]);
+
+    // 타입별 노드 수 동일
+    for (const key of Object.keys(snapshotA1)) {
+      expect(
+        snapshotA2[key],
+        `${key} mismatch: A1=${snapshotA1[key]} A2=${snapshotA2[key]}`,
+      ).toBe(snapshotA1[key]);
+    }
+
+    // 구체 노드 수 재검증
+    expect(snapshotA2["tool-call-node"]).toBe(3);
+    expect(snapshotA2["tool-result-node"]).toBe(3);
+    expect(snapshotA2["thinking-node"]).toBe(2);
+    expect(snapshotA2["user-node"]).toBe(1);
+
+    // 노드 겹침 없음
+    const overlaps = await checkNodeOverlaps(page);
+    expect(
+      overlaps,
+      `노드 겹침: ${JSON.stringify(overlaps)}`,
+    ).toHaveLength(0);
+
+    // 스크린샷
+    await page.screenshot({
+      path: `${SCREENSHOT_DIR}/28-cache-replay-roundtrip.png`,
       fullPage: true,
     });
   });

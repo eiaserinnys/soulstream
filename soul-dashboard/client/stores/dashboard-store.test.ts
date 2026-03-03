@@ -1234,6 +1234,132 @@ describe("dashboard-store", () => {
     });
   });
 
+  // === 세션 재오픈 무결성 ===
+
+  describe("processEvent - session reopen integrity", () => {
+    /** 세션 A: user→text→tool→text→complete */
+    function replaySessionA(processEvent: (event: any, eventId: number) => void) {
+      processEvent({ type: "user_message", user: "u", text: "Session A" } as UserMessageEvent, 0);
+      processEvent({ type: "text_start", card_id: "a-t1" }, 1);
+      processEvent({ type: "text_delta", card_id: "a-t1", text: "Analyzing..." } as TextDeltaEvent, 2);
+      processEvent({ type: "text_end", card_id: "a-t1" }, 3);
+      processEvent({ type: "tool_start", card_id: "a-t1", tool_name: "Read", tool_input: { file_path: "/test.ts" }, tool_use_id: "tu-a1" } as ToolStartEvent, 4);
+      processEvent({ type: "tool_result", card_id: "a-t1", tool_name: "Read", result: "content", is_error: false, tool_use_id: "tu-a1" } as ToolResultEvent, 5);
+      processEvent({ type: "text_start", card_id: "a-t2" }, 6);
+      processEvent({ type: "text_delta", card_id: "a-t2", text: "Done." } as TextDeltaEvent, 7);
+      processEvent({ type: "text_end", card_id: "a-t2" }, 8);
+      processEvent({ type: "complete", result: "Session A done", attachments: [] } as CompleteEvent, 9);
+    }
+
+    /** 세션 B: user→text→complete (tool 없음) */
+    function replaySessionB(processEvent: (event: any, eventId: number) => void) {
+      processEvent({ type: "user_message", user: "u", text: "Session B" } as UserMessageEvent, 0);
+      processEvent({ type: "text_start", card_id: "b-t1" }, 1);
+      processEvent({ type: "text_delta", card_id: "b-t1", text: "Simple answer." } as TextDeltaEvent, 2);
+      processEvent({ type: "text_end", card_id: "b-t1" }, 3);
+      processEvent({ type: "complete", result: "Session B done", attachments: [] } as CompleteEvent, 4);
+    }
+
+    /** 트리를 재귀 순회하여 타입별 노드 수 집계 */
+    function snapshotTree(tree: EventTreeNode | null): Record<string, number> {
+      const counts: Record<string, number> = {};
+      for (const node of collectNodes(tree)) {
+        counts[node.type] = (counts[node.type] ?? 0) + 1;
+      }
+      return counts;
+    }
+
+    it("A→B→A roundtrip: tree should match first load", () => {
+      const { processEvent, setActiveSession } = useDashboardStore.getState();
+
+      // Session A: first load
+      setActiveSession("sess-A");
+      replaySessionA(processEvent);
+      const snapA1 = snapshotTree(useDashboardStore.getState().tree);
+
+      // Switch to B
+      setActiveSession("sess-B");
+      replaySessionB(processEvent);
+      const snapB = snapshotTree(useDashboardStore.getState().tree);
+
+      // B should differ from A (no tool nodes)
+      expect(snapB["tool"]).toBeUndefined();
+      expect(snapA1["tool"]).toBe(1);
+
+      // Switch back to A (cache replay)
+      setActiveSession("sess-A");
+      replaySessionA(processEvent);
+      const snapA2 = snapshotTree(useDashboardStore.getState().tree);
+
+      // A2 should match A1
+      expect(snapA2).toEqual(snapA1);
+
+      // No B nodes leaked into A
+      const allNodes = collectNodes(useDashboardStore.getState().tree);
+      const bNodeLeaks = allNodes.filter(n => n.content.includes("Session B"));
+      expect(bNodeLeaks).toHaveLength(0);
+    });
+
+    it("fast switch: no duplicate nodes from incomplete replay", () => {
+      const { processEvent, setActiveSession } = useDashboardStore.getState();
+
+      // Session A: partial replay (user + text + tool, no complete)
+      setActiveSession("sess-A");
+      processEvent({ type: "user_message", user: "u", text: "Session A" } as UserMessageEvent, 0);
+      processEvent({ type: "text_start", card_id: "a-t1" }, 1);
+      processEvent({ type: "tool_start", card_id: "a-t1", tool_name: "Read", tool_input: {}, tool_use_id: "tu-a1" } as ToolStartEvent, 2);
+
+      // Immediately switch to B
+      setActiveSession("sess-B");
+      replaySessionB(processEvent);
+
+      // Immediately switch back to A — full replay
+      setActiveSession("sess-A");
+      replaySessionA(processEvent);
+
+      // Should have exactly 1 user_message and 1 tool (no leftover from partial replay)
+      const tree = useDashboardStore.getState().tree!;
+      const userNodes = collectNodes(tree, "user_message");
+      const toolNodes = collectNodes(tree, "tool");
+      expect(userNodes).toHaveLength(1);
+      expect(toolNodes).toHaveLength(1);
+    });
+
+    it("same eventId across sessions: no type confusion", () => {
+      const { processEvent, setActiveSession } = useDashboardStore.getState();
+
+      // Session A: eventId=4 → tool node
+      setActiveSession("sess-A");
+      processEvent({ type: "user_message", user: "u", text: "A" } as UserMessageEvent, 0);
+      processEvent({ type: "text_start", card_id: "a-t1" }, 1);
+      processEvent({ type: "tool_start", card_id: "a-t1", tool_name: "Read", tool_input: {}, tool_use_id: "tu-a1" } as ToolStartEvent, 4);
+      processEvent({ type: "tool_result", card_id: "a-t1", tool_name: "Read", result: "ok", is_error: false, tool_use_id: "tu-a1" } as ToolResultEvent, 5);
+      processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 9);
+
+      // Session B: eventId=4 → complete node (different type for same eventId!)
+      setActiveSession("sess-B");
+      processEvent({ type: "user_message", user: "u", text: "B" } as UserMessageEvent, 0);
+      processEvent({ type: "text_start", card_id: "b-t1" }, 1);
+      processEvent({ type: "text_end", card_id: "b-t1" }, 3);
+      processEvent({ type: "complete", result: "B done", attachments: [] } as CompleteEvent, 4);
+
+      // Switch back to A — replay
+      setActiveSession("sess-A");
+      processEvent({ type: "user_message", user: "u", text: "A" } as UserMessageEvent, 0);
+      processEvent({ type: "text_start", card_id: "a-t1" }, 1);
+      processEvent({ type: "tool_start", card_id: "a-t1", tool_name: "Read", tool_input: {}, tool_use_id: "tu-a1" } as ToolStartEvent, 4);
+      processEvent({ type: "tool_result", card_id: "a-t1", tool_name: "Read", result: "ok", is_error: false, tool_use_id: "tu-a1" } as ToolResultEvent, 5);
+      processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 9);
+
+      // Verify eventId=4 in session A is a tool node, not a complete node
+      const tree = useDashboardStore.getState().tree!;
+      const toolNode = findTreeNode(tree, "tool-4");
+      expect(toolNode).not.toBeNull();
+      expect(toolNode!.type).toBe("tool");
+      expect(toolNode!.toolName).toBe("Read");
+    });
+  });
+
   // === 초기화 ===
 
   describe("reset", () => {
