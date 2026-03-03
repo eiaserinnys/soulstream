@@ -23,12 +23,14 @@ export interface EventsCachedRouterOptions {
   sessionCache: SessionCache;
   /** 인증 토큰 (옵션) */
   authToken?: string;
+  /** 캐시 우회 모드 (진단용) */
+  bypassCache?: boolean;
 }
 
 export function createEventsCachedRouter(
   options: EventsCachedRouterOptions,
 ): Router {
-  const { soulBaseUrl, sessionCache, authToken } = options;
+  const { soulBaseUrl, sessionCache, authToken, bypassCache } = options;
   const router = Router();
 
   /**
@@ -62,19 +64,24 @@ export function createEventsCachedRouter(
 
       // 2. 캐시에서 Last-Event-ID 이후 이벤트 읽기
       let cachedEvents: CachedEvent[];
-      try {
-        cachedEvents = await sessionCache.readEvents(
-          agentSessionId,
-          clientLastEventId,
-        );
-      } catch (err) {
-        console.warn(`[events-cached] Failed to read cache:`, err);
+      if (bypassCache) {
         cachedEvents = [];
+      } else {
+        try {
+          cachedEvents = await sessionCache.readEvents(
+            agentSessionId,
+            clientLastEventId,
+          );
+        } catch (err) {
+          console.warn(`[events-cached] Failed to read cache:`, err);
+          cachedEvents = [];
+        }
       }
 
       // 캐시의 마지막 이벤트 ID (Soul 서버에 전달할 값)
-      const cacheLastEventId =
-        cachedEvents.length > 0
+      const cacheLastEventId = bypassCache
+        ? 0
+        : cachedEvents.length > 0
           ? cachedEvents[cachedEvents.length - 1].id
           : clientLastEventId;
 
@@ -189,6 +196,7 @@ export function createEventsCachedRouter(
           for (const event of events.parsed) {
             // 캐시에 저장 (history_sync 등 메타 이벤트는 제외)
             if (
+              !bypassCache &&
               event.id !== undefined &&
               event.type !== "history_sync" &&
               event.data
