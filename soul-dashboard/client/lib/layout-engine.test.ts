@@ -773,7 +773,7 @@ describe("virtual thinking node", () => {
     ], "s1");
     const { nodes, edges } = buildGraph(tree);
 
-    const virtualNode = nodes.find((n) => n.id === "node-virtual-init");
+    const virtualNode = nodes.find((n) => n.id === "node-virtual-init-u1");
     expect(virtualNode).toBeDefined();
     expect(virtualNode!.type).toBe("thinking");
     expect(virtualNode!.data.label).toBe("Initial Tools");
@@ -789,7 +789,32 @@ describe("virtual thinking node", () => {
     ], "s1");
     const { nodes } = buildGraph(tree);
 
-    expect(nodes.find((n) => n.id === "node-virtual-init")).toBeUndefined();
+    expect(nodes.find((n) => n.id === "node-virtual-init-u1")).toBeUndefined();
+  });
+
+  it("멀티턴: 각 턴의 가상 thinking ID가 고유", () => {
+    const tree = sessionRoot([
+      // Turn 1: tool 먼저 → 가상 thinking 필요
+      userMsg("u1", "Turn 1", [
+        toolNode("tool1", "Skill", { toolResult: "ok", completed: true }),
+        textNode("t1", "Response 1"),
+      ]),
+      // Turn 2: tool 먼저 → 가상 thinking 필요
+      userMsg("u2", "Turn 2", [
+        toolNode("tool2", "Task", { toolResult: "ok", completed: true }),
+        textNode("t2", "Response 2"),
+      ]),
+    ], "s1");
+    const { nodes } = buildGraph(tree);
+
+    // 2개의 가상 노드가 서로 다른 ID를 가져야 함
+    const virtualNodes = nodes.filter(n => n.id.startsWith("node-virtual-init"));
+    expect(virtualNodes).toHaveLength(2);
+    expect(virtualNodes[0].id).not.toBe(virtualNodes[1].id);
+
+    // 전체 노드 ID에 중복이 없어야 함
+    const ids = nodes.map(n => n.id);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 });
 

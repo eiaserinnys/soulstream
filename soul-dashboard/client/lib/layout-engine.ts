@@ -684,7 +684,7 @@ export function buildGraph(
         }
         if (needsVirtual) {
           const virtualNode: GraphNode = {
-            id: "node-virtual-init",
+            id: `node-virtual-init-${parentTurnNode.id}`,
             type: "thinking",
             position: { x: 0, y: 0 },
             data: {
