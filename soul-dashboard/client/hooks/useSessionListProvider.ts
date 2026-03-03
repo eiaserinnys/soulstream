@@ -9,7 +9,23 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { getSessionProvider } from "../providers";
-import type { SessionStreamEvent, SessionStatus } from "@shared/types";
+import type { SessionStreamEvent, SessionStatus, SessionSummary } from "@shared/types";
+
+/**
+ * 서버가 보내는 snake_case 세션 데이터를 SessionSummary (camelCase)로 변환합니다.
+ * 서버의 _task_to_session_info()는 agent_session_id, created_at, updated_at를 보내고,
+ * eventCount는 포함하지 않습니다.
+ */
+function toSessionSummary(raw: Record<string, unknown>): SessionSummary {
+  return {
+    agentSessionId: (raw.agent_session_id ?? raw.agentSessionId) as string,
+    status: (raw.status as SessionStatus) ?? "unknown",
+    eventCount: (raw.event_count ?? raw.eventCount ?? 0) as number,
+    createdAt: (raw.created_at ?? raw.createdAt) as string | undefined,
+    completedAt: (raw.updated_at ?? raw.completedAt) as string | undefined,
+    prompt: raw.prompt as string | undefined,
+  };
+}
 
 /** 서버가 named SSE event로 보내는 이벤트 타입 목록 */
 const SESSION_STREAM_EVENT_TYPES = [
@@ -55,12 +71,12 @@ export function useSessionListProvider(
     (event: SessionStreamEvent) => {
       switch (event.type) {
         case "session_list":
-          setSessions(event.sessions);
+          setSessions(event.sessions.map((s) => toSessionSummary(s as unknown as Record<string, unknown>)));
           setSessionsLoading(false);
           break;
 
         case "session_created":
-          addSession(event.session);
+          addSession(toSessionSummary(event.session as unknown as Record<string, unknown>));
           break;
 
         case "session_updated":

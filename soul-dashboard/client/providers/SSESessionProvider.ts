@@ -43,7 +43,21 @@ const SSE_EVENT_TYPES: SSEEventType[] = [
 // 연결 해제는 unsubscribe() 또는 서버 종료에 의해서만 수행됩니다.
 
 interface SessionListResponse {
-  sessions: SessionSummary[];
+  sessions: Record<string, unknown>[];
+}
+
+/**
+ * 서버 응답(snake_case)을 SessionSummary(camelCase)로 변환합니다.
+ */
+function toSessionSummary(raw: Record<string, unknown>): SessionSummary {
+  return {
+    agentSessionId: (raw.agent_session_id ?? raw.agentSessionId) as string,
+    status: (raw.status as SessionSummary["status"]) ?? "unknown",
+    eventCount: (raw.event_count ?? raw.eventCount ?? 0) as number,
+    createdAt: (raw.created_at ?? raw.createdAt) as string | undefined,
+    completedAt: (raw.updated_at ?? raw.completedAt) as string | undefined,
+    prompt: raw.prompt as string | undefined,
+  };
 }
 
 /**
@@ -68,7 +82,7 @@ export class SSESessionProvider implements SessionStorageProvider {
     }
 
     const data: SessionListResponse = await res.json();
-    return data.sessions;
+    return data.sessions.map(toSessionSummary);
   }
 
   /**
