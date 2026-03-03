@@ -286,6 +286,7 @@ class ResultSSEEvent(BaseModel):
     success: bool = Field(..., description="성공 여부")
     output: str = Field(..., description="출력 텍스트")
     error: Optional[str] = Field(None, description="오류 메시지")
+    parent_tool_use_id: Optional[str] = Field(None, description="서브에이전트 내부인 경우 부모 Task 도구의 tool_use_id")
 
 
 class SubagentStartSSEEvent(BaseModel):
