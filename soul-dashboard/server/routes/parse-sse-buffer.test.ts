@@ -291,6 +291,124 @@ describe("parseSSEBuffer", () => {
     });
   });
 
+  describe("CRLF 정규화 — sse-starlette 호환", () => {
+    /** \\r\\n 을 사용하는 SSE 이벤트 문자열 생성 */
+    function sseEventCRLF(id: number, type: string, data: object): string {
+      return `id: ${id}\r\nevent: ${type}\r\ndata: ${JSON.stringify(data)}\r\n\r\n`;
+    }
+
+    it("CRLF로 구분된 단일 이벤트를 파싱", () => {
+      const buffer = sseEventCRLF(1, "text_start", { type: "text_start" });
+      const result = parseSSEBuffer(buffer);
+
+      expect(result.parsed).toHaveLength(1);
+      expect(result.parsed[0].id).toBe(1);
+      expect(result.parsed[0].type).toBe("text_start");
+      expect(result.parsed[0].data).toBe('{"type":"text_start"}');
+    });
+
+    it("CRLF로 구분된 여러 이벤트를 순서대로 파싱", () => {
+      const buffer =
+        sseEventCRLF(1, "text_start", { type: "text_start" }) +
+        sseEventCRLF(2, "text_delta", { type: "text_delta", text: "Hello" }) +
+        sseEventCRLF(3, "text_end", { type: "text_end" });
+
+      const result = parseSSEBuffer(buffer);
+
+      expect(result.parsed).toHaveLength(3);
+      expect(result.parsed[0].id).toBe(1);
+      expect(result.parsed[1].id).toBe(2);
+      expect(result.parsed[2].id).toBe(3);
+    });
+
+    it("CRLF 이벤트의 불완전한 마지막 블록은 remaining으로", () => {
+      const buffer =
+        sseEventCRLF(1, "text_start", { type: "text_start" }) +
+        "id: 2\r\nevent: text_delta\r\ndata: {\"type\":\"text_del";
+
+      const result = parseSSEBuffer(buffer);
+
+      expect(result.parsed).toHaveLength(1);
+      expect(result.parsed[0].id).toBe(1);
+      expect(result.remaining).toContain("id: 2");
+    });
+
+    it("CRLF chunk 경계 시뮬레이션: 이벤트 분할 시에도 정상 파싱", () => {
+      const chunks = [
+        "id: 1\r\nevent: text_start\r\ndata: {\"type\":\"text_st",
+        "art\"}\r\n\r\n",
+      ];
+
+      let buffer = "";
+      const allEvents: Array<{ id?: number; type?: string; data?: string }> = [];
+      for (const chunk of chunks) {
+        buffer += chunk;
+        const result = parseSSEBuffer(buffer);
+        buffer = result.remaining;
+        for (const event of result.parsed) {
+          allEvents.push({ id: event.id, type: event.type, data: event.data });
+        }
+      }
+
+      expect(allEvents).toHaveLength(1);
+      expect(allEvents[0].id).toBe(1);
+      expect(allEvents[0].type).toBe("text_start");
+      expect(allEvents[0].data).toBe('{"type":"text_start"}');
+    });
+
+    it("CRLF 대량 이벤트를 랜덤 chunk로 분할해도 모든 id 보존", () => {
+      const eventCount = 50;
+      const fullStream = Array.from({ length: eventCount }, (_, i) =>
+        sseEventCRLF(i + 1, `event_${i + 1}`, {
+          type: `event_${i + 1}`,
+          data: "x".repeat(50),
+        }),
+      ).join("");
+
+      const chunkSizes = [73, 150, 31, 200, 88, 42, 300, 17, 99, 250];
+      const chunks: string[] = [];
+      let pos = 0;
+      let sizeIdx = 0;
+      while (pos < fullStream.length) {
+        const size = chunkSizes[sizeIdx % chunkSizes.length];
+        chunks.push(fullStream.slice(pos, pos + size));
+        pos += size;
+        sizeIdx++;
+      }
+
+      let buffer = "";
+      const allEvents: Array<{ id?: number }> = [];
+      for (const chunk of chunks) {
+        buffer += chunk;
+        const result = parseSSEBuffer(buffer);
+        buffer = result.remaining;
+        for (const event of result.parsed) {
+          allEvents.push({ id: event.id });
+        }
+      }
+
+      expect(allEvents).toHaveLength(eventCount);
+      for (let i = 0; i < eventCount; i++) {
+        expect(allEvents[i].id).toBe(i + 1);
+      }
+    });
+
+    it("LF와 CRLF가 섞인 스트림도 정상 파싱", () => {
+      // 실제 환경에서 프록시를 거치면 줄바꿈이 혼합될 수 있음
+      const buffer =
+        "id: 1\r\nevent: text_start\ndata: {\"type\":\"text_start\"}\r\n\r\n" +
+        "id: 2\nevent: text_end\r\ndata: {\"type\":\"text_end\"}\n\n";
+
+      const result = parseSSEBuffer(buffer);
+
+      expect(result.parsed).toHaveLength(2);
+      expect(result.parsed[0].id).toBe(1);
+      expect(result.parsed[0].type).toBe("text_start");
+      expect(result.parsed[1].id).toBe(2);
+      expect(result.parsed[1].type).toBe("text_end");
+    });
+  });
+
   describe("캐시 가능 여부 — id 존재 검증", () => {
     it("정상적으로 파싱된 이벤트는 id가 존재하여 캐시 가능", () => {
       const buffer = sseEvent(42, "tool_start", {
