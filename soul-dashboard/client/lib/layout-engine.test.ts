@@ -1200,6 +1200,7 @@ describe("Subagent 노드", () => {
     expect(nodes.find((n) => n.data.cardId === "sub-t1")).toBeUndefined();
     expect(nodes.find((n) => n.data.cardId === "sub-tool1")).toBeUndefined();
   });
+
 });
 
 describe("Result 노드", () => {

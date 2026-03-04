@@ -1203,6 +1203,36 @@ describe("dashboard-store", () => {
       expect(subagentNode?.children[0].toolName).toBe("Glob");
       expect(subagentNode?.children[1].toolName).toBe("Read");
     });
+
+    it("parent_tool_use_id 불일치 시 subagent가 root에 배치 (방어)", () => {
+      const { processEvent } = useDashboardStore.getState();
+
+      processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
+      processEvent({ type: "text_start", card_id: "t1" }, 1);
+
+      // Task tool 시작
+      processEvent({
+        type: "tool_start",
+        tool_name: "Task",
+        tool_input: { subagent_type: "shay-dev" },
+        tool_use_id: "toolu_task_1",
+      } as ToolStartEvent, 2);
+
+      // Subagent 시작 — parent_tool_use_id가 매칭되지 않는 경우 (방어 케이스)
+      processEvent({
+        type: "subagent_start",
+        agent_id: "agent-1",
+        agent_type: "shay-dev",
+        parent_tool_use_id: "unknown-id",
+      } as SubagentStartEvent, 3);
+
+      const tree = useDashboardStore.getState().tree!;
+
+      // 매칭 실패 시 root에 배치
+      const rootSubagents = tree.children.filter(c => c.type === "subagent");
+      expect(rootSubagents).toHaveLength(1);
+      expect(rootSubagents[0].agentId).toBe("agent-1");
+    });
   });
 
   // === result 이벤트 ===
