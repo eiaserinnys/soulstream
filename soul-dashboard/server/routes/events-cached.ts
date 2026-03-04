@@ -264,8 +264,13 @@ export interface ParsedSSEResult {
 export function parseSSEBuffer(buffer: string): ParsedSSEResult {
   const events: ParsedSSEEvent[] = [];
 
+  // SSE 스펙: CR, LF, CRLF 모두 줄 종료로 인정
+  // sse-starlette 등 일부 서버는 \r\n을 사용하므로 먼저 \n으로 통일
+  // 순서 중요: \r\n → \n 먼저, 그다음 단독 \r → \n
+  const normalized = buffer.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+
   // \n\n 으로 이벤트 블록 분리
-  const blocks = buffer.split("\n\n");
+  const blocks = normalized.split("\n\n");
 
   // 마지막 블록은 불완전할 수 있으므로 remaining으로 보존
   const remaining = blocks.pop() ?? "";
