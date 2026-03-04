@@ -42,11 +42,13 @@ export interface SessionDetailProvider {
    *
    * @param sessionKey - 세션 식별자
    * @param onEvent - 이벤트 수신 콜백
+   * @param onStatusChange - 연결 상태 변경 콜백 (SSE 재연결 시 UI 반영용)
    * @returns 구독 해제 함수
    */
   subscribe(
     sessionKey: string,
-    onEvent: (event: SoulSSEEvent, eventId: number) => void
+    onEvent: (event: SoulSSEEvent, eventId: number) => void,
+    onStatusChange?: (status: "connecting" | "connected" | "error") => void,
   ): () => void;
 
   /** Provider 타입 식별자 */
