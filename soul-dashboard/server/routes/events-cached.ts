@@ -242,68 +242,59 @@ export function createEventsCachedRouter(
   return router;
 }
 
-interface ParsedSSEEvent {
+export interface ParsedSSEEvent {
   id?: number;
   type?: string;
   data?: string;
   raw: string;
 }
 
-interface ParsedSSEResult {
+export interface ParsedSSEResult {
   parsed: ParsedSSEEvent[];
   remaining: string;
 }
 
 /**
  * SSE 버퍼에서 완전한 이벤트를 파싱합니다.
+ *
+ * SSE 이벤트는 빈 줄(`\n\n`)로 구분됩니다.
+ * `\n\n`을 기준으로 이벤트 블록을 분리한 후 각 블록의 필드를 파싱합니다.
+ * 마지막 블록이 불완전하면 remaining으로 반환하여 다음 chunk와 합칩니다.
  */
-function parseSSEBuffer(buffer: string): ParsedSSEResult {
+export function parseSSEBuffer(buffer: string): ParsedSSEResult {
   const events: ParsedSSEEvent[] = [];
-  const lines = buffer.split("\n");
-  let remaining = "";
 
-  let currentEvent: ParsedSSEEvent = { raw: "" };
-  let rawLines: string[] = [];
+  // \n\n 으로 이벤트 블록 분리
+  const blocks = buffer.split("\n\n");
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+  // 마지막 블록은 불완전할 수 있으므로 remaining으로 보존
+  const remaining = blocks.pop() ?? "";
 
-    // 마지막 줄이면서 줄바꿈으로 끝나지 않으면 remaining에 추가
-    if (i === lines.length - 1 && !buffer.endsWith("\n")) {
-      remaining = line;
-      break;
-    }
+  for (const block of blocks) {
+    if (!block) continue; // 연속 \n\n 사이의 빈 블록 스킵
 
-    rawLines.push(line);
+    const event: ParsedSSEEvent = { raw: block + "\n\n" };
+    const lines = block.split("\n");
 
-    if (line === "") {
-      // 빈 줄 = 이벤트 종료
-      if (rawLines.length > 1) {
-        currentEvent.raw = rawLines.join("\n") + "\n";
-        events.push(currentEvent);
+    for (const line of lines) {
+      if (line.startsWith("id:")) {
+        const parsed = parseInt(line.slice(3).trim(), 10);
+        if (!isNaN(parsed)) {
+          event.id = parsed;
+        }
+      } else if (line.startsWith("event:")) {
+        event.type = line.slice(6).trim();
+      } else if (line.startsWith("data:")) {
+        // SSE 스펙: 여러 data: 줄은 \n으로 연결
+        if (event.data !== undefined) {
+          event.data += "\n" + line.slice(5).trim();
+        } else {
+          event.data = line.slice(5).trim();
+        }
       }
-      currentEvent = { raw: "" };
-      rawLines = [];
-      continue;
     }
 
-    // 필드 파싱
-    if (line.startsWith("id:")) {
-      const value = line.slice(3).trim();
-      const parsed = parseInt(value, 10);
-      if (!isNaN(parsed)) {
-        currentEvent.id = parsed;
-      }
-    } else if (line.startsWith("event:")) {
-      currentEvent.type = line.slice(6).trim();
-    } else if (line.startsWith("data:")) {
-      currentEvent.data = line.slice(5).trim();
-    }
-  }
-
-  // 마지막에 남은 불완전한 이벤트가 있으면 remaining에 추가
-  if (rawLines.length > 0) {
-    remaining = rawLines.join("\n") + (remaining ? "\n" + remaining : "");
+    events.push(event);
   }
 
   return { parsed: events, remaining };
