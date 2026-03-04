@@ -1203,6 +1203,140 @@ describe("Subagent 노드", () => {
 
 });
 
+describe("Subagent 레이아웃 (브릿지 케이스)", () => {
+  /**
+   * 핵심 시나리오: text → tool(Task) → subagent(Explore) → text → tool(Read)
+   *
+   * 기대 레이아웃 (부모 기준 상대 배치):
+   *   COL_A              COL_B              COL_C              COL_D
+   *   [thinking] ──────→ [Task call] ──────→ [Task result]
+   *                           ↓
+   *                      [subagent: Explore]
+   *                           ↓
+   *                      [sub-text] ───────→ [Read call] ──────→ [Read result]
+   *      ↓
+   *   [next thinking]
+   *
+   * - subagent와 내부 노드는 mainFlowOrder에 포함되지 않음
+   * - 메인 플로우(COL_A)의 Y 누적에 영향 없음
+   * - tool은 부모 X + COL_STEP으로 자동 배치
+   */
+
+  function buildSubagentTree() {
+    const tree = sessionRoot([
+      userMsg("u1", "hi", [
+        textNode("t1", "Thinking about task", true, [
+          toolNode("task1", "Task", {
+            toolResult: "done",
+            completed: true,
+            toolUseId: "toolu_task_1",
+          }),
+        ]),
+        textNode("t2", "Next thinking"),
+      ]),
+    ]);
+
+    // toolNode helper는 children을 지원하지 않으므로 수동 설정
+    const taskNode = tree.children[0].children[0].children[0]; // task1
+    taskNode.children = [
+      subagentNode("explore_1", "Explore", [
+        textNode("sub-t1", "Subagent thinking", true, [
+          toolNode("sub-read1", "Read", {
+            toolResult: "file content",
+            completed: true,
+          }),
+        ]),
+      ], { parentToolUseId: "toolu_task_1", completed: true }),
+    ];
+
+    return tree;
+  }
+
+  it("subagent 노드는 parent tool_call보다 왼쪽(COL_A)에 배치되지 않음", () => {
+    const tree = buildSubagentTree();
+    const { nodes } = buildGraph(tree);
+
+    const taskCall = nodes.find((n) => n.id === "node-task1-call")!;
+    const subagent = nodes.find((n) => n.data.nodeType === "subagent")!;
+
+    expect(taskCall).toBeDefined();
+    expect(subagent).toBeDefined();
+
+    // subagent는 parent tool_call (COL_B)의 왼쪽에 있으면 안 됨
+    expect(subagent.position.x).toBeGreaterThanOrEqual(taskCall.position.x);
+  });
+
+  it("subagent 내부 text는 메인 플로우의 Y 누적에 영향을 주지 않음", () => {
+    const tree = buildSubagentTree();
+    const { nodes } = buildGraph(tree);
+
+    const t1 = nodes.find((n) => n.id === "node-t1")!;
+    const t2 = nodes.find((n) => n.id === "node-t2")!;
+
+    // subagent가 없을 때 t1 → t2 간의 정상 간격 기준:
+    // tool chain 1개 (Task) = 84px 높이 + effectiveHeight 적용
+    // subagent 내부 노드가 mainFlowOrder에 포함되면 t2가 불필요하게 아래로 밀림
+    const treeWithoutSubagent = sessionRoot([
+      userMsg("u1", "hi", [
+        textNode("t1", "Thinking about task", true, [
+          toolNode("task1", "Task", { toolResult: "done", completed: true }),
+        ]),
+        textNode("t2", "Next thinking"),
+      ]),
+    ]);
+    const { nodes: nodesWithout } = buildGraph(treeWithoutSubagent);
+    const t2Without = nodesWithout.find((n) => n.id === "node-t2")!;
+
+    // subagent가 있어도 t2의 Y가 subagent 없을 때보다 많이 밀리면 안 됨
+    // (effectiveHeight 확장은 허용하되, mainFlowOrder에 subagent 내부 text가 끼어들면 안 됨)
+    // subagent 내부 text가 mainFlowOrder에 있으면 1개 추가 노드만큼(84+60=144) 더 밀림
+    // 정상적으로는 effectiveHeight 확장만 적용됨
+    const extraGap = t2.position.y - t2Without.position.y;
+    // mainFlowOrder에 끼어드는 경우 extraGap >= 144 (MAIN_FLOW_V_GAP + node height)
+    // 정상 경우 effectiveHeight 확장분만 적용 (subagent 높이만큼)
+    expect(extraGap).toBeLessThan(144);
+  });
+
+  it("subagent 내부 text의 tool은 올바르게 배치됨 (COL_B/C)", () => {
+    const tree = buildSubagentTree();
+    const { nodes } = buildGraph(tree);
+
+    const subText = nodes.find((n) => n.id === "node-sub-t1");
+    const readCall = nodes.find((n) => n.id === "node-sub-read1-call");
+    const readResult = nodes.find((n) => n.id === "node-sub-read1-result");
+
+    expect(subText).toBeDefined();
+    expect(readCall).toBeDefined();
+    expect(readResult).toBeDefined();
+
+    // 내부 tool은 내부 text보다 오른쪽에 있어야 함
+    expect(readCall!.position.x).toBeGreaterThan(subText!.position.x);
+    expect(readResult!.position.x).toBeGreaterThan(readCall!.position.x);
+  });
+
+  it("subagent 노드와 메인 플로우 노드는 겹치지 않음", () => {
+    const tree = buildSubagentTree();
+    const { nodes } = buildGraph(tree);
+
+    const mainFlowNodes = nodes.filter(
+      (n) => n.data.nodeType === "user" || n.data.nodeType === "text" || n.data.nodeType === "thinking",
+    );
+    const subagentNodes = nodes.filter(
+      (n) => n.data.nodeType === "subagent",
+    );
+
+    for (const main of mainFlowNodes) {
+      for (const sub of subagentNodes) {
+        // 같은 위치에 겹치면 안 됨
+        const samePosition =
+          Math.abs(main.position.x - sub.position.x) < 10 &&
+          Math.abs(main.position.y - sub.position.y) < 10;
+        expect(samePosition).toBe(false);
+      }
+    }
+  });
+});
+
 describe("Result 노드", () => {
   it("result 노드가 올바르게 생성됨", () => {
     const tree = sessionRoot([
