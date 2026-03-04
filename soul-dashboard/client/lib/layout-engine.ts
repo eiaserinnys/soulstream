@@ -2,7 +2,7 @@
  * Soul Dashboard - Layout Engine
  *
  * EventTreeNode 트리를 DFS 순회하여 React Flow 노드/엣지로 변환하는 레이아웃 엔진.
- * 원점 기반 고정 열(A/B/C) 배치 + 순차 Y 누적 방식으로 레이아웃을 적용합니다.
+ * 원점 기반 메인 플로우 열 + 상대 오프셋(COL_STEP) 배치 + 순차 Y 누적 방식으로 레이아웃을 적용합니다.
  */
 
 import type { Node, Edge } from "@xyflow/react";
@@ -96,6 +96,16 @@ export interface ToolChainEntry {
 /** thinking 노드별 tool 분기 정보 */
 export type ToolBranches = Map<string, ToolChainEntry[]>;
 
+/** subagent 레이아웃 브랜치 정보 */
+export interface SubagentBranch {
+  /** subagent 그래프 노드 ID */
+  nodeId: string;
+  /** 부모 그래프 노드 ID (보통 tool_call) */
+  parentNodeId: string;
+  /** subagent 내부에서 tool의 부모가 되는 노드 ID 목록 (text + subagent 자신) */
+  internalToolParentIds: string[];
+}
+
 // === Node Dimensions ===
 
 /** 노드 타입별 기본 크기 (그리드 레이아웃에 사용) */
@@ -108,7 +118,7 @@ const NODE_DIMENSIONS: Record<GraphNodeType | "group", { width: number; height: 
   tool_use: { width: 260, height: 84 },
   tool_call: { width: 260, height: 84 },
   tool_result: { width: 260, height: 84 },
-  subagent: { width: 280, height: 84 },
+  subagent: { width: 260, height: 84 },
   result: { width: 260, height: 84 },
   response: { width: 260, height: 84 },
   system: { width: 260, height: 84 },
@@ -589,6 +599,9 @@ export function buildGraph(
   // tool 분기 매핑
   const toolBranches: ToolBranches = new Map();
 
+  // subagent 브랜치 수집
+  const subagentBranches: SubagentBranch[] = [];
+
   // session root 자체는 system 노드로 표시 (sessionId가 있는 경우)
   if (tree.sessionId) {
     const sessionNode = createSystemNodeFromTree(tree);
@@ -812,12 +825,21 @@ export function buildGraph(
 
     if (parentNodeId) {
       edges.push(
-        createEdge(parentNodeId, subagentGraphNode.id, !subagentTreeNode.completed, "right", "left"),
+        createEdge(parentNodeId, subagentGraphNode.id, !subagentTreeNode.completed),
       );
     }
 
+    // subagent 브랜치 정보 수집
+    // subagent 자신도 직접 tool 자식을 가질 수 있으므로 internalToolParentIds에 포함
+    const branch: SubagentBranch = {
+      nodeId: subagentGraphNode.id,
+      parentNodeId: parentNodeId ?? "",
+      internalToolParentIds: [subagentGraphNode.id],
+    };
+
     // 접힌 상태면 자식 처리 안함
     if (collapsedNodeIds.has(subagentTreeNode.id)) {
+      subagentBranches.push(branch);
       return;
     }
 
@@ -832,6 +854,8 @@ export function buildGraph(
         nodes.push(childGraphNode);
         edges.push(createEdge(subagentGraphNode.id, childGraphNode.id, !child.completed));
 
+        branch.internalToolParentIds.push(childGraphNode.id);
+
         // 접힌 상태가 아니면 자식 처리
         if (!collapsedNodeIds.has(child.id)) {
           for (const grandchild of child.children) {
@@ -844,9 +868,11 @@ export function buildGraph(
         processToolNode(child, subagentGraphNode.id);
       }
     }
+
+    subagentBranches.push(branch);
   }
 
-  return applyDagreLayout(nodes, edges, "TB", toolBranches);
+  return applyDagreLayout(nodes, edges, "TB", toolBranches, subagentBranches);
 }
 
 // === Grid Layout ===
@@ -895,6 +921,7 @@ export function applyDagreLayout(
   edges: GraphEdge[],
   direction: "TB" | "LR" = "TB",
   toolBranches?: ToolBranches,
+  subagentBranches?: SubagentBranch[],
 ): { nodes: GraphNode[]; edges: GraphEdge[] } {
   if (nodes.length === 0) {
     return { nodes, edges };
@@ -913,14 +940,28 @@ export function applyDagreLayout(
     }
   }
 
+  // subagent 관련 노드 ID 집합 (mainFlowOrder에서 제외)
+  const subagentRelatedIds = new Set<string>();
+  if (subagentBranches) {
+    for (const branch of subagentBranches) {
+      subagentRelatedIds.add(branch.nodeId);
+      for (const id of branch.internalToolParentIds) {
+        subagentRelatedIds.add(id);
+      }
+    }
+  }
+
+  // 수동 배치 대상: tool + subagent 관련 노드
+  const manualNodeIds = new Set([...toolNodeIds, ...subagentRelatedIds]);
+
   // 노드를 분류
   const topLevelNodes = nodes.filter((n) => !n.parentId);
   const childNodes = nodes.filter((n) => n.parentId);
 
-  // 메인 플로우 노드
-  const mainFlowOrder = topLevelNodes.filter((n) => !toolNodeIds.has(n.id));
+  // 메인 플로우 노드 (tool, subagent 관련 제외)
+  const mainFlowOrder = topLevelNodes.filter((n) => !manualNodeIds.has(n.id));
 
-  // 유효 높이 계산
+  // 유효 높이 계산 (subagent는 COL_B+ 영역에 격리되므로 메인 플로우 높이에 영향 없음)
   const effectiveHeights = new Map<string, number>();
   for (const node of mainFlowOrder) {
     const nodeType = node.data.nodeType;
@@ -937,15 +978,14 @@ export function applyDagreLayout(
     effectiveHeights.set(node.id, height);
   }
 
-  // 고정 열 X 좌표
+  // 레이아웃 상수
   const NODE_WIDTH = getNodeDimensions("thinking").width;
   const MARGIN = 20;
-  const COL_A = MARGIN;
-  const COL_B = COL_A + NODE_WIDTH + TOOL_BRANCH_H_GAP;
-  const COL_C = COL_B + NODE_WIDTH + TOOL_BRANCH_H_GAP;
+  const COL_STEP = NODE_WIDTH + TOOL_BRANCH_H_GAP; // 부모→자식 열 간격
+  const COL_A = MARGIN; // 메인 플로우 열
+  const MAIN_FLOW_V_GAP = 60;
 
   // 순차 Y 좌표
-  const MAIN_FLOW_V_GAP = 60;
   const sequentialTopY = new Map<string, number>();
   let currentTopY = MARGIN;
   for (const node of mainFlowOrder) {
@@ -967,7 +1007,7 @@ export function applyDagreLayout(
       return { ...node, position: pos };
     }
 
-    if (toolNodeIds.has(node.id)) {
+    if (manualNodeIds.has(node.id)) {
       return node;
     }
 
@@ -979,43 +1019,106 @@ export function applyDagreLayout(
     return { ...node, position: pos };
   });
 
-  // tool 노드 수동 배치
+  // 헬퍼: tool 체인을 부모 위치 기준 상대 열로 배치
+  function positionToolChain(parentId: string, chain: ToolChainEntry[]) {
+    const parentPos = nodePositions.get(parentId);
+    if (!parentPos) return;
+
+    const callX = parentPos.x + COL_STEP;
+    const resultX = callX + COL_STEP;
+    let toolY = parentPos.y;
+
+    for (const entry of chain) {
+      const callDims = getNodeDimensions("tool_call");
+      const callPos = { x: callX, y: toolY };
+
+      const callIdx = positionedNodes.findIndex((n) => n.id === entry.callId);
+      if (callIdx !== -1) {
+        positionedNodes[callIdx] = { ...positionedNodes[callIdx], position: callPos };
+        nodePositions.set(entry.callId, callPos);
+      }
+
+      if (entry.resultId) {
+        const resultDims = getNodeDimensions("tool_result");
+        const resultPos = { x: resultX, y: toolY };
+
+        const resultIdx = positionedNodes.findIndex((n) => n.id === entry.resultId);
+        if (resultIdx !== -1) {
+          positionedNodes[resultIdx] = { ...positionedNodes[resultIdx], position: resultPos };
+          nodePositions.set(entry.resultId, resultPos);
+        }
+
+        const callBottom = toolY + callDims.height;
+        const resultBottom = toolY + resultDims.height;
+        toolY = Math.max(callBottom, resultBottom) + V_GAP;
+      } else {
+        toolY = toolY + callDims.height + V_GAP;
+      }
+    }
+  }
+
+  // subagent 내부 tool parent ID 집합 (메인 tool 배치에서 제외)
+  const subagentInternalParentIds = new Set<string>();
+  if (subagentBranches) {
+    for (const branch of subagentBranches) {
+      for (const textId of branch.internalToolParentIds) {
+        subagentInternalParentIds.add(textId);
+      }
+    }
+  }
+
+  // 1단계: 메인 플로우 tool 배치 (subagent 내부 제외)
   if (toolBranches) {
     for (const [parentId, chain] of toolBranches) {
-      const parentPos = nodePositions.get(parentId);
+      if (subagentInternalParentIds.has(parentId)) continue;
+      positionToolChain(parentId, chain);
+    }
+  }
+
+  // 2단계: subagent 배치 (tool_call 위치를 참조)
+  if (subagentBranches) {
+    const nodeDims = getNodeDimensions("thinking");
+
+    for (const branch of subagentBranches) {
+      const parentPos = nodePositions.get(branch.parentNodeId);
       if (!parentPos) continue;
 
-      let toolY = parentPos.y;
-
-      for (let i = 0; i < chain.length; i++) {
-        const entry = chain[i];
-        const callDims = getNodeDimensions("tool_call");
-
-        const callPos = { x: COL_B, y: toolY };
-
-        const callIdx = positionedNodes.findIndex((n) => n.id === entry.callId);
-        if (callIdx !== -1) {
-          positionedNodes[callIdx] = { ...positionedNodes[callIdx], position: callPos };
-          nodePositions.set(entry.callId, callPos);
-        }
-
-        if (entry.resultId) {
-          const resultDims = getNodeDimensions("tool_result");
-          const resultPos = { x: COL_C, y: toolY };
-
-          const resultIdx = positionedNodes.findIndex((n) => n.id === entry.resultId);
-          if (resultIdx !== -1) {
-            positionedNodes[resultIdx] = { ...positionedNodes[resultIdx], position: resultPos };
-            nodePositions.set(entry.resultId, resultPos);
-          }
-
-          const callBottom = toolY + callDims.height;
-          const resultBottom = toolY + resultDims.height;
-          toolY = Math.max(callBottom, resultBottom) + V_GAP;
-        } else {
-          toolY = toolY + callDims.height + V_GAP;
-        }
+      // subagent: 부모 아래, 같은 X
+      const subY = parentPos.y + nodeDims.height + V_GAP;
+      const subPos = { x: parentPos.x, y: subY };
+      const subIdx = positionedNodes.findIndex((n) => n.id === branch.nodeId);
+      if (subIdx !== -1) {
+        positionedNodes[subIdx] = { ...positionedNodes[subIdx], position: subPos };
+        nodePositions.set(branch.nodeId, subPos);
       }
+
+      // 내부 text: subagent 아래, 같은 X
+      let internalY = subY + nodeDims.height + V_GAP;
+      for (const textId of branch.internalToolParentIds) {
+        if (textId === branch.nodeId) continue; // subagent 자신은 이미 배치됨
+
+        const textPos = { x: subPos.x, y: internalY };
+        const textIdx = positionedNodes.findIndex((n) => n.id === textId);
+        if (textIdx === -1) continue;
+
+        positionedNodes[textIdx] = { ...positionedNodes[textIdx], position: textPos };
+        nodePositions.set(textId, textPos);
+
+        let textHeight = nodeDims.height;
+        if (toolBranches?.has(textId)) {
+          const chainBounds = calcToolChainBounds(toolBranches.get(textId)!);
+          textHeight = Math.max(textHeight, chainBounds.height);
+        }
+        internalY += textHeight + V_GAP;
+      }
+    }
+  }
+
+  // 3단계: subagent 내부 tool 배치 (내부 text 위치를 참조)
+  if (toolBranches) {
+    for (const parentId of subagentInternalParentIds) {
+      const chain = toolBranches.get(parentId);
+      if (chain) positionToolChain(parentId, chain);
     }
   }
 
