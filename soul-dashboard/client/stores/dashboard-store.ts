@@ -524,11 +524,12 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
             subagentMap.set(subagentEvent.agent_id, subagentNode);
 
             // 부모 ToolUseBlock의 자식으로 연결
+            // 서버가 toolu_* ID로 브릿지하므로 toolUseMap.get이 직접 성공해야 함
             const parentTool = toolUseMap.get(subagentEvent.parent_tool_use_id);
             if (parentTool) {
               parentTool.children.push(subagentNode);
             } else {
-              // 폴백: root에 추가
+              // 방어: ID 매칭 실패 시 root에 추가
               root.children.push(subagentNode);
             }
             updated = true;

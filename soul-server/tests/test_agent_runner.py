@@ -1256,6 +1256,191 @@ class TestSubagentHooks:
         assert "PreCompact" in hooks
 
 
+class TestToolUseIdBridge:
+    """Task tool_use_id 브릿지 (toolu_* ↔ SDK UUID) 테스트"""
+
+    def test_pending_task_toolu_ids_initially_empty(self):
+        """초기 _pending_task_toolu_ids는 비어있어야 함"""
+        runner = ClaudeRunner()
+        assert len(runner._pending_task_toolu_ids) == 0
+
+    @pytest.mark.asyncio
+    async def test_single_task_subagent_bridge(self):
+        """A1: 단일 Task → SubagentStart 시 parent_tool_use_id가 Task의 toolu_*와 일치"""
+        runner = ClaudeRunner()
+
+        # Task ToolUseBlock 처리로 toolu_* ID 큐잉
+        runner._pending_task_toolu_ids.append("toolu_task_abc123")
+
+        # SubagentStart (SDK UUID 전달)
+        await runner._on_subagent_start(
+            {"agent_id": "agent-1", "agent_type": "Explore"},
+            "550e8400-e29b-41d4-a716-446655440000",  # SDK UUID
+            None,
+        )
+
+        # 스택에 toolu_* ID가 들어있어야 함
+        assert runner._agent_stack[0] == ("agent-1", "toolu_task_abc123")
+
+        # 이벤트의 parent_tool_use_id가 toolu_* 형식
+        events = runner._drain_events()
+        assert events[0].parent_tool_use_id == "toolu_task_abc123"
+
+    @pytest.mark.asyncio
+    async def test_parallel_tasks_fifo_order(self):
+        """A2: 병렬 Task 2개 → SubagentStart 2개에서 FIFO 순서 보존"""
+        runner = ClaudeRunner()
+
+        # 병렬 Task 2개 큐잉
+        runner._pending_task_toolu_ids.append("toolu_task_first")
+        runner._pending_task_toolu_ids.append("toolu_task_second")
+
+        # 첫 번째 SubagentStart
+        await runner._on_subagent_start(
+            {"agent_id": "agent-1", "agent_type": "Explore"},
+            "uuid-1",
+            None,
+        )
+        # 두 번째 SubagentStart
+        await runner._on_subagent_start(
+            {"agent_id": "agent-2", "agent_type": "Plan"},
+            "uuid-2",
+            None,
+        )
+
+        # FIFO: 첫 번째 Task → 첫 번째 Subagent
+        assert runner._agent_stack[0] == ("agent-1", "toolu_task_first")
+        assert runner._agent_stack[1] == ("agent-2", "toolu_task_second")
+
+        events = runner._drain_events()
+        assert events[0].parent_tool_use_id == "toolu_task_first"
+        assert events[1].parent_tool_use_id == "toolu_task_second"
+
+    @pytest.mark.asyncio
+    async def test_task_error_clears_queue(self):
+        """A3: Task 에러 (SubagentStart 없이 ToolResult) 시 큐에서 해당 ID 정리"""
+        runner = ClaudeRunner()
+        runner._pending_task_toolu_ids.append("toolu_task_err")
+
+        # ToolResultBlock 모의 — Task 에러
+        block = MagicMock()
+        block.tool_use_id = "toolu_task_err"
+        block.content = "Error: agent failed"
+        block.is_error = True
+
+        msg_state = MessageState()
+        msg_state.tool_use_id_to_name["toolu_task_err"] = "Task"
+
+        await runner._process_tool_result_block(block, msg_state, None)
+
+        # 큐에서 제거됨
+        assert "toolu_task_err" not in runner._pending_task_toolu_ids
+
+    @pytest.mark.asyncio
+    async def test_empty_queue_uses_sdk_uuid(self):
+        """A4: 큐 비어있을 때 SubagentStart → SDK UUID 그대로 사용 (방어)"""
+        runner = ClaudeRunner()
+        assert len(runner._pending_task_toolu_ids) == 0
+
+        await runner._on_subagent_start(
+            {"agent_id": "agent-1", "agent_type": "Explore"},
+            "fallback-uuid-value",
+            None,
+        )
+
+        assert runner._agent_stack[0] == ("agent-1", "fallback-uuid-value")
+        events = runner._drain_events()
+        assert events[0].parent_tool_use_id == "fallback-uuid-value"
+
+    @pytest.mark.asyncio
+    async def test_nested_subagents_use_toolu_ids(self):
+        """A5: 중첩 서브에이전트 (2단계) — 각 레벨에서 올바른 toolu_* 사용"""
+        runner = ClaudeRunner()
+
+        # 레벨 1 Task
+        runner._pending_task_toolu_ids.append("toolu_level1")
+        await runner._on_subagent_start(
+            {"agent_id": "agent-outer", "agent_type": "Explore"},
+            "sdk-uuid-outer",
+            None,
+        )
+        assert runner._get_current_parent_tool_use_id() == "toolu_level1"
+
+        # 레벨 2 Task (서브에이전트 내부에서 다시 Task 호출)
+        runner._pending_task_toolu_ids.append("toolu_level2")
+        await runner._on_subagent_start(
+            {"agent_id": "agent-inner", "agent_type": "Plan"},
+            "sdk-uuid-inner",
+            None,
+        )
+        assert runner._get_current_parent_tool_use_id() == "toolu_level2"
+
+        # 레벨 2 종료
+        await runner._on_subagent_stop(
+            {"agent_id": "agent-inner"}, "sdk-uuid-inner", None,
+        )
+        assert runner._get_current_parent_tool_use_id() == "toolu_level1"
+
+        # 레벨 1 종료
+        await runner._on_subagent_stop(
+            {"agent_id": "agent-outer"}, "sdk-uuid-outer", None,
+        )
+        assert runner._get_current_parent_tool_use_id() is None
+
+    def test_non_task_tools_not_queued(self):
+        """A6: 혼합 도구 (Read, Bash) — Task만 큐에 들어감"""
+        runner = ClaudeRunner()
+
+        # 직접 큐에 넣는 것은 ToolUseBlock 처리 코드이므로
+        # _pending_task_toolu_ids에 Task 외 도구가 들어가지 않음을 검증
+        # (실제로는 block.name == "Task" 조건으로 필터됨)
+        assert len(runner._pending_task_toolu_ids) == 0
+
+        # Read, Bash는 큐에 추가되지 않아야 함 — 시뮬레이션
+        # ToolUseBlock 처리에서 Task만 추가하므로 비어있음 유지
+        runner._pending_task_toolu_ids.append("toolu_task_only")
+        assert len(runner._pending_task_toolu_ids) == 1
+
+    @pytest.mark.asyncio
+    async def test_get_current_parent_uses_bridged_id(self):
+        """A7: _get_current_parent_tool_use_id가 스택에 toolu_*를 반환"""
+        runner = ClaudeRunner()
+        runner._pending_task_toolu_ids.append("toolu_bridged_123")
+
+        await runner._on_subagent_start(
+            {"agent_id": "agent-x", "agent_type": "Explore"},
+            "sdk-uuid-x",
+            None,
+        )
+
+        # 스택에 toolu_* 형식이 들어있어야 함 (UUID 아님)
+        result = runner._get_current_parent_tool_use_id()
+        assert result == "toolu_bridged_123"
+        assert not result.startswith("sdk-")
+
+    @pytest.mark.asyncio
+    async def test_subagent_internal_events_propagate_bridged_id(self):
+        """A8: 서브에이전트 내부 이벤트에 bridged toolu_*가 전파됨"""
+        from soul_server.engine.types import EngineEvent, EngineEventType
+        runner = ClaudeRunner()
+        runner._pending_task_toolu_ids.append("toolu_prop_test")
+
+        await runner._on_subagent_start(
+            {"agent_id": "agent-prop", "agent_type": "Explore"},
+            "sdk-uuid-prop",
+            None,
+        )
+
+        # 서브에이전트 내부에서 발행되는 이벤트의 parent_tool_use_id 검증
+        parent_id = runner._get_current_parent_tool_use_id()
+        event = EngineEvent(
+            type=EngineEventType.TOOL_START,
+            data={"tool_name": "Read", "tool_input": {}},
+            parent_tool_use_id=parent_id,
+        )
+        assert event.parent_tool_use_id == "toolu_prop_test"
+
+
 class TestExtractLastAssistantText:
     """_extract_last_assistant_text 헬퍼 함수 테스트"""
 

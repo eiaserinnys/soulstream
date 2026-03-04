@@ -645,6 +645,9 @@ export function buildGraph(
     } else if (turnNode.type === "tool") {
       // root 직하에 tool이 있는 경우 (비정상이지만 방어적 처리)
       processToolNode(turnNode, lastThinkingNodeId ?? prevMainFlowNodeId);
+    } else if (turnNode.type === "subagent") {
+      // root 직하에 subagent가 있는 경우 (ID 매칭 실패 방어)
+      processSubagentNode(turnNode, lastThinkingNodeId ?? prevMainFlowNodeId);
     } else if (turnNode.type === "text") {
       // root 직하에 text가 있는 경우 (비정상이지만 방어적 처리)
       processTextNode(turnNode);
