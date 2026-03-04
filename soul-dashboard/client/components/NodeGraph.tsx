@@ -225,7 +225,7 @@ function NodeGraphInner() {
               nodeType,
               label: (lastAdded.data.label as string) ?? "",
               content: (lastAdded.data.fullContent as string) ?? (lastAdded.data.content as string) ?? "",
-            });
+            }, lastAdded.id);
           }
         }
 
@@ -236,7 +236,19 @@ function NodeGraphInner() {
           if (isFirstLoad) {
             hasInitializedRef.current = true;
 
-            // 초기 로드: 줌은 FIXED_ZOOM 고정, 마지막 노드가 보이도록 pan
+            // 초기 로드: 첫 번째 USER 노드 선택
+            const firstUserNode = nodesWithSelection.find(
+              (n) => n.data.nodeType === "user",
+            );
+            if (firstUserNode) {
+              selectEventNode({
+                nodeType: "user",
+                label: (firstUserNode.data.label as string) ?? "",
+                content: (firstUserNode.data.fullContent as string) ?? (firstUserNode.data.content as string) ?? "",
+              }, firstUserNode.id);
+            }
+
+            // 줌은 FIXED_ZOOM 고정, 마지막 노드가 보이도록 pan
             const targetNode = nodesWithSelection[nodesWithSelection.length - 1];
             const viewport = { x: 0, y: 0, zoom: FIXED_ZOOM };
             const { dx, dy } = calcPanToNode(targetNode, viewport, vpW, vpH);
@@ -317,7 +329,7 @@ function NodeGraphInner() {
             nodeType,
             label: (nodeData?.label as string) ?? "",
             content: (nodeData?.fullContent as string) ?? (nodeData?.content as string) ?? "",
-          });
+          }, selectedNodes[0].id);
           return;
         }
       }
