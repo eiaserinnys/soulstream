@@ -212,6 +212,23 @@ function NodeGraphInner() {
       if (addedNodes.length > 0) {
         const isFirstLoad = !hasInitializedRef.current;
 
+        // Follow 모드 ON일 때 마지막 추가 노드를 자동 선택
+        if (!isFirstLoad && autoScroll) {
+          const lastAdded = addedNodes[addedNodes.length - 1];
+          const cardId = lastAdded.data.cardId as string | undefined;
+          const nodeType = lastAdded.data.nodeType as string | undefined;
+
+          if (cardId) {
+            selectCard(cardId, lastAdded.id);
+          } else if (nodeType === "user" || nodeType === "intervention" || nodeType === "system") {
+            selectEventNode({
+              nodeType,
+              label: (lastAdded.data.label as string) ?? "",
+              content: (lastAdded.data.fullContent as string) ?? (lastAdded.data.content as string) ?? "",
+            });
+          }
+        }
+
         rafId = requestAnimationFrame(() => {
           const { width: vpW, height: vpH } = store.getState();
           if (vpW === 0 || vpH === 0) return;
@@ -266,6 +283,8 @@ function NodeGraphInner() {
     getViewport,
     setViewport,
     store,
+    selectCard,
+    selectEventNode,
   ]);
 
   // 선택 상태 변경 시 노드의 selected 속성만 업데이트

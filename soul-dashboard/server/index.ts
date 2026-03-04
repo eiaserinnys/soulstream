@@ -29,6 +29,7 @@ const SOUL_BASE_URL =
   process.env.SOUL_BASE_URL ?? "http://localhost:3105";
 const AUTH_TOKEN = process.env.CLAUDE_SERVICE_TOKEN ?? "";
 const DASHBOARD_AUTH_TOKEN = process.env.DASHBOARD_AUTH_TOKEN ?? "";
+const SERENDIPITY_URL = process.env.SERENDIPITY_URL ?? "";
 const ALLOWED_ORIGINS =
   process.env.DASHBOARD_ALLOWED_ORIGINS?.split(",") ?? [
     `http://localhost:${PORT}`,
@@ -63,10 +64,11 @@ app.get("/api/health", (_req, res) => {
   });
 });
 
-// Config (클라이언트에 인증 설정 전달)
+// Config (클라이언트에 설정 전달)
 app.get("/api/config", (_req, res) => {
   res.json({
     authRequired: !!DASHBOARD_AUTH_TOKEN,
+    serendipityAvailable: !!SERENDIPITY_URL,
   });
 });
 
