@@ -112,7 +112,7 @@ export interface DashboardActions {
     nodeType: string;
     label: string;
     content: string;
-  } | null) => void;
+  } | null, nodeId?: string | null) => void;
 
   // SSE 이벤트 처리
   processEvent: (event: SoulSSEEvent, eventId: number) => void;
@@ -353,11 +353,11 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
 
       // --- 이벤트 노드 선택 ---
 
-      selectEventNode: (data) =>
+      selectEventNode: (data, nodeId) =>
         set({
           selectedEventNodeData: data,
           selectedCardId: null,
-          selectedNodeId: null,
+          selectedNodeId: nodeId ?? null,
         }),
 
       // --- SSE 이벤트 처리 ---
