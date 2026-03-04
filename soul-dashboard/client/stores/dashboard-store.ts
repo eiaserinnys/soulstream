@@ -31,6 +31,19 @@ import type {
 } from "@shared/types";
 import type { StorageMode } from "../providers/types";
 
+// === Selected Event Node Data ===
+
+/** selectEventNode로 선택된 이벤트 노드의 데이터 (user, intervention, system, result) */
+export interface SelectedEventNodeData {
+  nodeType: "user" | "intervention" | "system" | "result";
+  label: string;
+  content: string;
+  durationMs?: number;
+  usage?: { input_tokens: number; output_tokens: number };
+  totalCostUsd?: number;
+  isError?: boolean;
+}
+
 // === State Interface ===
 
 export interface DashboardState {
@@ -52,12 +65,8 @@ export interface DashboardState {
   /** 선택된 React Flow 노드 ID (tool_call/tool_result 구분용) */
   selectedNodeId: string | null;
 
-  /** 선택된 이벤트 노드 데이터 (user/intervention 노드용, 카드 기반이 아닌 노드) */
-  selectedEventNodeData: {
-    nodeType: string;
-    label: string;
-    content: string;
-  } | null;
+  /** 선택된 이벤트 노드 데이터 (user/intervention/system/result 노드용) */
+  selectedEventNodeData: SelectedEventNodeData | null;
 
   /** 이벤트 트리 루트 (소스 오브 트루스) */
   tree: EventTreeNode | null;
@@ -107,12 +116,8 @@ export interface DashboardActions {
   // 카드 선택 (nodeId: React Flow 노드의 고유 ID, tool_call/tool_result 구분에 사용)
   selectCard: (cardId: string | null, nodeId?: string | null) => void;
 
-  // 이벤트 노드 선택 (user/intervention 등 카드가 아닌 노드)
-  selectEventNode: (data: {
-    nodeType: string;
-    label: string;
-    content: string;
-  } | null, nodeId?: string | null) => void;
+  // 이벤트 노드 선택 (user/intervention/system/result 등 카드가 아닌 노드)
+  selectEventNode: (data: SelectedEventNodeData | null, nodeId?: string | null) => void;
 
   // SSE 이벤트 처리
   processEvent: (event: SoulSSEEvent, eventId: number) => void;

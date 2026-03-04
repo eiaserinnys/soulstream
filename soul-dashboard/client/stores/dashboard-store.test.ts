@@ -615,7 +615,7 @@ describe("dashboard-store", () => {
       expect(useDashboardStore.getState().selectedNodeId).toBe("node-1");
 
       const eventNodeData = {
-        nodeType: "user",
+        nodeType: "user" as const,
         label: "User Message",
         content: "Hello world",
       };
@@ -629,7 +629,7 @@ describe("dashboard-store", () => {
 
     it("should handle intervention node data", () => {
       const interventionData = {
-        nodeType: "intervention",
+        nodeType: "intervention" as const,
         label: "Operator",
         content: "Please stop",
       };
