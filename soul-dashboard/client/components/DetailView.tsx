@@ -11,7 +11,7 @@
  */
 
 import type { DashboardCard } from "@shared/types";
-import { useDashboardStore, findTreeNode, treeNodeToCard } from "../stores/dashboard-store";
+import { useDashboardStore, findTreeNode, treeNodeToCard, type SelectedEventNodeData } from "../stores/dashboard-store";
 import { ThinkingDetail } from "./detail/ThinkingDetail";
 import { ToolDetail } from "./detail/ToolDetail";
 import { SubAgentDetail } from "./detail/SubAgentDetail";
@@ -47,14 +47,23 @@ function CardDetail({ card, focusResult }: { card: DashboardCard; focusResult?: 
 // === Event Node Detail ===
 
 /**
- * user/intervention 이벤트 노드의 상세 뷰.
- * 전체 메시지 텍스트를 표시합니다.
+ * 이벤트 노드(user, intervention, system, result)의 상세 뷰.
+ * nodeType에 따라 적절한 레이아웃으로 표시합니다.
  */
 function EventNodeDetail({
   data,
 }: {
-  data: { nodeType: string; label: string; content: string };
+  data: SelectedEventNodeData;
 }) {
+  if (data.nodeType === "result") {
+    return <ResultNodeDetail data={data} />;
+  }
+
+  if (data.nodeType === "system") {
+    return <SystemNodeDetail data={data} />;
+  }
+
+  // user 또는 intervention
   const isUser = data.nodeType === "user";
 
   return (
@@ -81,6 +90,88 @@ function EventNodeDetail({
       <div>
         <SectionLabel>Message</SectionLabel>
         <CodeBlock maxHeight={500}>{data.content || "(empty)"}</CodeBlock>
+      </div>
+    </div>
+  );
+}
+
+/** result 노드 상세: 세션 결과 (duration, cost, usage) */
+function ResultNodeDetail({ data }: { data: SelectedEventNodeData }) {
+  const durationStr = data.durationMs
+    ? `${(data.durationMs / 1000).toFixed(1)}s`
+    : null;
+  const costStr = data.totalCostUsd
+    ? `$${data.totalCostUsd.toFixed(4)}`
+    : null;
+  const hasStats = durationStr || costStr || data.usage;
+
+  return (
+    <div className="p-4">
+      {/* Header */}
+      <div className="flex items-center gap-1.5 mb-3">
+        <span className="w-1.5 h-1.5 rounded-full bg-success" />
+        <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-success">
+          Session Complete
+        </span>
+      </div>
+
+      {/* Stats */}
+      {hasStats && (
+        <div className="mb-3 grid grid-cols-2 gap-x-4 gap-y-2">
+          {durationStr && (
+            <div>
+              <SectionLabel>Duration</SectionLabel>
+              <div className="text-[13px] text-foreground font-medium">{durationStr}</div>
+            </div>
+          )}
+          {costStr && (
+            <div>
+              <SectionLabel>Cost</SectionLabel>
+              <div className="text-[13px] text-foreground font-medium">{costStr}</div>
+            </div>
+          )}
+          {data.usage && (
+            <div className="col-span-2">
+              <SectionLabel>Tokens</SectionLabel>
+              <div className="text-[13px] text-foreground font-medium">
+                {data.usage.input_tokens.toLocaleString()} in / {data.usage.output_tokens.toLocaleString()} out
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Output */}
+      {data.content && (
+        <div>
+          <SectionLabel>Output</SectionLabel>
+          <CodeBlock maxHeight={500}>{data.content}</CodeBlock>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** system 노드 상세: complete/error 메시지 */
+function SystemNodeDetail({ data }: { data: SelectedEventNodeData }) {
+  const isError = data.isError;
+
+  return (
+    <div className="p-4">
+      {/* Header */}
+      <div className="flex items-center gap-1.5 mb-3">
+        <span className={`w-1.5 h-1.5 rounded-full ${isError ? "bg-accent-red" : "bg-muted-foreground"}`} />
+        <span
+          className={`text-[11px] font-semibold uppercase tracking-[0.05em] ${isError ? "text-accent-red" : "text-muted-foreground"}`}
+        >
+          {isError ? "Error" : data.label || "System"}
+        </span>
+      </div>
+
+      {/* Content */}
+      <div>
+        <SectionLabel>{isError ? "Error Message" : "Message"}</SectionLabel>
+        <CodeBlock maxHeight={500}>{data.content || "(no details)"}</CodeBlock>
       </div>
     </div>
   );
