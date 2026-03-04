@@ -7,7 +7,7 @@
  * composing 모드에서는 중앙 패널에 PromptComposer를 표시합니다.
  */
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { SessionList } from "./components/SessionList";
 import { NodeGraph } from "./components/NodeGraph";
 import { DetailView } from "./components/DetailView";
@@ -136,7 +136,7 @@ function ConnectionBadge({
 
 export function DashboardLayout() {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
-  const storageMode = useDashboardStore((s) => s.storageMode);
+  const setSerendipityAvailable = useDashboardStore((s) => s.setSerendipityAvailable);
 
   // 세션 목록 구독 (SSE 모드: 실시간, Serendipity 모드: 폴링)
   const { sessions, loading, error } = useSessionListProvider({ intervalMs: 5000 });
@@ -148,6 +148,21 @@ export function DashboardLayout() {
 
   // 브라우저 알림 (완료/에러/인터벤션)
   useNotification();
+
+  // 서버 설정 로드 (세렌디피티 가용 여부)
+  useEffect(() => {
+    fetch("/api/config")
+      .then((res) => {
+        if (!res.ok) throw new Error(`Config fetch failed: ${res.status}`);
+        return res.json();
+      })
+      .then((config: { serendipityAvailable?: boolean }) => {
+        setSerendipityAvailable(!!config.serendipityAvailable);
+      })
+      .catch(() => {
+        // config 로드 실패 시 기본값 유지 (false)
+      });
+  }, [setSerendipityAvailable]);
 
   // 패널 비율 상태 (%)
   const [leftPercent, setLeftPercent] = useState(DEFAULT_LEFT);
@@ -196,12 +211,9 @@ export function DashboardLayout() {
           <span className="text-[13px] font-semibold text-muted-foreground tracking-[0.02em]">
             Soul Dashboard
           </span>
-          <StorageModeToggleCompact />
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-[10px] text-muted-foreground uppercase">
-            {storageMode}
-          </span>
+          <StorageModeToggleCompact />
           <ConnectionBadge status={sseStatus} />
         </div>
       </header>

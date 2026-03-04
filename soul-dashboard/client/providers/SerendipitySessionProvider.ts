@@ -163,7 +163,8 @@ export class SerendipitySessionProvider implements SessionStorageProvider {
    */
   subscribe(
     sessionKey: string,
-    onEvent: (event: SoulSSEEvent, eventId: number) => void
+    onEvent: (event: SoulSSEEvent, eventId: number) => void,
+    _onStatusChange?: (status: "connecting" | "connected" | "error") => void,
   ): () => void {
     const { pollingIntervalMs } = this.options;
 

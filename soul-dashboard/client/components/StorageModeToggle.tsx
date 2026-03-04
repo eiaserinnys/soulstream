@@ -5,6 +5,7 @@
  */
 
 import { useDashboardStore } from "../stores/dashboard-store";
+import { cn } from "../lib/cn";
 import type { StorageMode } from "../providers/types";
 
 interface StorageModeOption {
@@ -62,28 +63,46 @@ export function StorageModeToggle() {
 }
 
 /**
- * 컴팩트 버전 - 헤더 등 좁은 공간용
+ * 컴팩트 버전 - 헤더 우상단 배치용
+ *
+ * 외곽선 버튼 스타일. 클릭으로 SSE ↔ Serendipity 전환.
+ * 세렌디피티 서버가 설정되지 않은 경우 클릭에 반응하지 않음.
  */
 export function StorageModeToggleCompact() {
   const storageMode = useDashboardStore((s) => s.storageMode);
   const setStorageMode = useDashboardStore((s) => s.setStorageMode);
+  const serendipityAvailable = useDashboardStore((s) => s.serendipityAvailable);
 
   const currentMode = STORAGE_MODES.find((m) => m.value === storageMode);
-  const nextMode = STORAGE_MODES.find((m) => m.value !== storageMode);
+  if (!currentMode) return null;
 
-  if (!currentMode || !nextMode) return null;
+  const canToggle = serendipityAvailable;
+
+  const handleClick = () => {
+    if (!canToggle) return;
+    const nextMode = storageMode === "sse" ? "serendipity" : "sse";
+    setStorageMode(nextMode);
+  };
 
   return (
     <button
-      onClick={() => setStorageMode(nextMode.value)}
-      className="flex items-center gap-1 px-2 py-1 rounded text-xs
-                 bg-slate-700 text-slate-300 hover:bg-slate-600
-                 transition-colors duration-150"
-      title={`현재: ${currentMode.label} (${currentMode.description})\n클릭하여 ${nextMode.label}로 전환`}
+      onClick={handleClick}
+      disabled={!canToggle}
+      className={cn(
+        "flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-medium",
+        "border transition-colors",
+        canToggle
+          ? "border-border text-muted-foreground hover:bg-input cursor-pointer"
+          : "border-transparent text-muted-foreground/50 cursor-default",
+      )}
+      title={
+        canToggle
+          ? `현재: ${currentMode.label}\n클릭하여 전환`
+          : currentMode.label
+      }
     >
-      <span>{currentMode.icon}</span>
-      <span className="text-slate-400">→</span>
-      <span>{nextMode.icon}</span>
+      <span className="text-[10px]">{currentMode.icon}</span>
+      <span>{currentMode.label}</span>
     </button>
   );
 }

@@ -113,7 +113,8 @@ export class SSESessionProvider implements SessionStorageProvider {
    */
   subscribe(
     sessionKey: string,
-    onEvent: (event: SoulSSEEvent, eventId: number) => void
+    onEvent: (event: SoulSSEEvent, eventId: number) => void,
+    onStatusChange?: (status: "connecting" | "connected" | "error") => void,
   ): () => void {
     let eventSource: EventSource | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -126,6 +127,8 @@ export class SSESessionProvider implements SessionStorageProvider {
     const connect = () => {
       if (!sessionKey) return;
 
+      onStatusChange?.("connecting");
+
       // URL 구성
       let url = `/api/sessions/${encodeURIComponent(sessionKey)}/events`;
       if (lastEventId > 0) {
@@ -137,6 +140,7 @@ export class SSESessionProvider implements SessionStorageProvider {
 
       es.onopen = () => {
         reconnectAttempt = 0;
+        onStatusChange?.("connected");
       };
 
       // 타입별 이벤트 리스너 등록
@@ -161,6 +165,7 @@ export class SSESessionProvider implements SessionStorageProvider {
       es.onerror = () => {
         es.close();
         eventSource = null;
+        onStatusChange?.("error");
 
         const attempt = reconnectAttempt;
         if (attempt < maxReconnectAttempts) {

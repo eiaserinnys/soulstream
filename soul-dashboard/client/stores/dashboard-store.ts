@@ -79,6 +79,9 @@ export interface DashboardState {
 
   /** 접힌 노드 ID 집합 (접기/펼치기 기능) */
   collapsedNodeIds: Set<string>;
+
+  /** 세렌디피티 모드 사용 가능 여부 (서버 설정 기반) */
+  serendipityAvailable: boolean;
 }
 
 // === Actions Interface ===
@@ -133,6 +136,9 @@ export interface DashboardActions {
   toggleNodeCollapse: (nodeId: string) => void;
   setNodeCollapsed: (nodeId: string, collapsed: boolean) => void;
   clearCollapsedNodes: () => void;
+
+  // 세렌디피티 가용 여부
+  setSerendipityAvailable: (available: boolean) => void;
 }
 
 // === Internal Maps (closure 변수, state 아님) ===
@@ -238,6 +244,7 @@ const initialState: DashboardState = {
   isComposing: true,
   resumeTargetKey: null,
   collapsedNodeIds: new Set<string>(),
+  serendipityAvailable: false,
 };
 
 /** 세션 전환 시 초기화할 상태를 매번 새 인스턴스로 생성 (Set 공유 방지) */
@@ -835,6 +842,10 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
       clearCollapsedNodes: () => {
         set({ collapsedNodeIds: new Set<string>(), treeVersion: get().treeVersion + 1 });
       },
+
+      // --- 세렌디피티 가용 여부 ---
+
+      setSerendipityAvailable: (serendipityAvailable) => set({ serendipityAvailable }),
     }),
     {
       name: "soul-dashboard-storage",

@@ -106,10 +106,14 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
 
     loadInitialCards();
 
-    // 실시간 구독
-    const unsubscribe = provider.subscribe(sessionKey, (event, eventId) => {
-      processEvent(event, eventId);
-    });
+    // 실시간 구독 (SSE 재연결 시 상태 피드백 포함)
+    const unsubscribe = provider.subscribe(
+      sessionKey,
+      (event, eventId) => {
+        processEvent(event, eventId);
+      },
+      setStatus,
+    );
 
     return () => {
       unsubscribe();
