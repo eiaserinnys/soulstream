@@ -22,15 +22,32 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-import { useDashboardStore, countTreeNodes, countStreamingNodes } from "../stores/dashboard-store";
+import { useDashboardStore, countTreeNodes, countStreamingNodes, type SelectedEventNodeData } from "../stores/dashboard-store";
 import { nodeTypes } from "../nodes";
 import {
   buildGraph,
   getNodeDimensions,
   type GraphNode,
   type GraphEdge,
+  type GraphNodeData,
 } from "../lib/layout-engine";
 import { cn } from "../lib/cn";
+
+/** selectEventNode 경로로 라우팅하는 노드 타입 (트리 조회 불필요, 데이터 직접 전달) */
+const EVENT_NODE_TYPES = new Set(["user", "intervention", "system", "result"]);
+
+/** 그래프 노드 데이터에서 이벤트 노드 선택 데이터를 추출합니다. */
+function buildEventNodeData(nodeData: GraphNodeData): SelectedEventNodeData {
+  return {
+    nodeType: nodeData.nodeType as SelectedEventNodeData["nodeType"],
+    label: nodeData.label,
+    content: nodeData.fullContent ?? nodeData.content ?? "",
+    durationMs: nodeData.durationMs,
+    usage: nodeData.usage,
+    totalCostUsd: nodeData.totalCostUsd,
+    isError: nodeData.isError,
+  };
+}
 
 /** 그래프 재구성 디바운스 간격 (ms) - 고빈도 text_delta 이벤트 대응 */
 const REBUILD_DEBOUNCE_MS = 100;
@@ -215,17 +232,16 @@ function NodeGraphInner() {
         // Follow 모드 ON일 때 마지막 추가 노드를 자동 선택
         if (!isFirstLoad && autoScroll) {
           const lastAdded = addedNodes[addedNodes.length - 1];
-          const cardId = lastAdded.data.cardId as string | undefined;
           const nodeType = lastAdded.data.nodeType as string | undefined;
+          const cardId = lastAdded.data.cardId as string | undefined;
 
-          if (cardId) {
+          if (nodeType && EVENT_NODE_TYPES.has(nodeType)) {
+            selectEventNode(
+              buildEventNodeData(lastAdded.data as GraphNodeData),
+              lastAdded.id,
+            );
+          } else if (cardId) {
             selectCard(cardId, lastAdded.id);
-          } else if (nodeType === "user" || nodeType === "intervention" || nodeType === "system") {
-            selectEventNode({
-              nodeType,
-              label: (lastAdded.data.label as string) ?? "",
-              content: (lastAdded.data.fullContent as string) ?? (lastAdded.data.content as string) ?? "",
-            }, lastAdded.id);
           }
         }
 
@@ -241,11 +257,10 @@ function NodeGraphInner() {
               (n) => n.data.nodeType === "user",
             );
             if (firstUserNode) {
-              selectEventNode({
-                nodeType: "user",
-                label: (firstUserNode.data.label as string) ?? "",
-                content: (firstUserNode.data.fullContent as string) ?? (firstUserNode.data.content as string) ?? "",
-              }, firstUserNode.id);
+              selectEventNode(
+                buildEventNodeData(firstUserNode.data as GraphNodeData),
+                firstUserNode.id,
+              );
             }
 
             // 줌은 FIXED_ZOOM 고정, 마지막 노드가 보이도록 pan
@@ -312,24 +327,26 @@ function NodeGraphInner() {
   }, [selectedCardId, selectedNodeId, setNodes]);
 
   // 노드 선택 → 카드 선택 또는 이벤트 노드 선택 동기화
+  // nodeType 기반 라우팅: user/intervention/system/result → selectEventNode, 나머지 → selectCard
   const onSelectionChange = useCallback(
     ({ nodes: selectedNodes }: OnSelectionChangeParams) => {
       if (selectedNodes.length === 1) {
-        const nodeData = selectedNodes[0].data;
+        const nodeData = selectedNodes[0].data as GraphNodeData;
         const nodeType = nodeData?.nodeType as string | undefined;
 
-        const cardId = nodeData?.cardId as string | undefined;
-        if (cardId) {
-          selectCard(cardId, selectedNodes[0].id);
+        // 이벤트 노드: 데이터 직접 전달 (트리 조회 불필요)
+        if (nodeType && EVENT_NODE_TYPES.has(nodeType)) {
+          selectEventNode(
+            buildEventNodeData(nodeData),
+            selectedNodes[0].id,
+          );
           return;
         }
 
-        if (nodeType === "user" || nodeType === "intervention" || nodeType === "system") {
-          selectEventNode({
-            nodeType,
-            label: (nodeData?.label as string) ?? "",
-            content: (nodeData?.fullContent as string) ?? (nodeData?.content as string) ?? "",
-          }, selectedNodes[0].id);
+        // 카드 노드: 트리 조회 기반 (thinking, tool_call, tool_result, subagent)
+        const cardId = nodeData?.cardId as string | undefined;
+        if (cardId) {
+          selectCard(cardId, selectedNodes[0].id);
           return;
         }
       }

@@ -463,6 +463,7 @@ function createSystemNodeFromTree(treeNode: EventTreeNode): GraphNode {
       content,
       isError: treeNode.type === "error",
       streaming: false,
+      fullContent: treeNode.content,
     },
   };
 }
@@ -511,6 +512,7 @@ function createResultNode(
       label: "Session Complete",
       content: [durationStr, costStr].filter(Boolean).join(" | ") || "Completed",
       streaming: false,
+      fullContent: treeNode.content,
       durationMs: treeNode.durationMs,
       usage: treeNode.usage,
       totalCostUsd: treeNode.totalCostUsd,
