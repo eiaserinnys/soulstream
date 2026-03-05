@@ -1308,3 +1308,126 @@ describe("Intervention 노드 - 기존 호환", () => {
     expect(interventionGraphNode?.data.content).toContain("stop");
   });
 });
+
+describe("멀티턴 세션 레이아웃", () => {
+  it("3턴 세션: 모든 턴의 노드가 존재하고 올바른 Y 순서로 배치됨", () => {
+    const tree = sessionRoot([
+      userMsg("u1", "Turn 1", [
+        textNode("t1", "Thinking 1", true, [
+          toolNode("tool1", "Bash", { toolResult: "ok", completed: true }),
+        ]),
+      ]),
+      userMsg("u2", "Turn 2", [
+        textNode("t2", "Thinking 2", true, [
+          toolNode("tool2", "Read", { toolResult: "content", completed: true }),
+        ]),
+      ]),
+      userMsg("u3", "Turn 3", [
+        textNode("t3", "Thinking 3"),
+      ]),
+    ], "session-multi");
+
+    const { nodes, edges } = buildGraph(tree);
+
+    // 모든 노드 존재 확인
+    const session = nodes.find(n => n.id === "node-root-session");
+    const u1 = nodes.find(n => n.id === "node-u1");
+    const t1 = nodes.find(n => n.id === "node-t1");
+    const u2 = nodes.find(n => n.id === "node-u2");
+    const t2 = nodes.find(n => n.id === "node-t2");
+    const u3 = nodes.find(n => n.id === "node-u3");
+    const t3 = nodes.find(n => n.id === "node-t3");
+
+    expect(session).toBeDefined();
+    expect(u1).toBeDefined();
+    expect(t1).toBeDefined();
+    expect(u2).toBeDefined();
+    expect(t2).toBeDefined();
+    expect(u3).toBeDefined();
+    expect(t3).toBeDefined();
+
+    // 엣지 체인 확인: session → u1 → t1 → u2 → t2 → u3 → t3
+    expect(edges.find(e => e.source === session!.id && e.target === u1!.id)).toBeDefined();
+    expect(edges.find(e => e.source === u1!.id && e.target === t1!.id)).toBeDefined();
+    expect(edges.find(e => e.source === t1!.id && e.target === u2!.id)).toBeDefined();
+    expect(edges.find(e => e.source === u2!.id && e.target === t2!.id)).toBeDefined();
+    expect(edges.find(e => e.source === t2!.id && e.target === u3!.id)).toBeDefined();
+    expect(edges.find(e => e.source === u3!.id && e.target === t3!.id)).toBeDefined();
+
+    // Y 순서 확인 (모든 메인 플로우 노드가 순차적으로 아래로)
+    expect(u1!.position.y).toBeGreaterThan(session!.position.y);
+    expect(t1!.position.y).toBeGreaterThan(u1!.position.y);
+    expect(u2!.position.y).toBeGreaterThan(t1!.position.y);
+    expect(t2!.position.y).toBeGreaterThan(u2!.position.y);
+    expect(u3!.position.y).toBeGreaterThan(t2!.position.y);
+    expect(t3!.position.y).toBeGreaterThan(u3!.position.y);
+
+    // 모든 메인 플로우 노드가 같은 X에 배치
+    expect(u1!.position.x).toBe(session!.position.x);
+    expect(t1!.position.x).toBe(session!.position.x);
+    expect(u2!.position.x).toBe(session!.position.x);
+    expect(t2!.position.x).toBe(session!.position.x);
+    expect(u3!.position.x).toBe(session!.position.x);
+    expect(t3!.position.x).toBe(session!.position.x);
+
+    // tool 노드는 오른쪽에 배치
+    const toolCall1 = nodes.find(n => n.id === "node-tool1-call")!;
+    const toolCall2 = nodes.find(n => n.id === "node-tool2-call")!;
+    expect(toolCall1.position.x).toBeGreaterThan(t1!.position.x);
+    expect(toolCall2.position.x).toBeGreaterThan(t2!.position.x);
+  });
+
+  it("sessionId 없어도 세션 루트 가상 노드가 항상 생성됨", () => {
+    const tree = sessionRoot([
+      userMsg("u1", "Turn 1", [
+        textNode("t1", "Thinking 1"),
+      ]),
+      userMsg("u2", "Turn 2", [
+        textNode("t2", "Thinking 2"),
+      ]),
+    ]);
+    // sessionId 없음
+
+    const { nodes, edges } = buildGraph(tree);
+
+    // 세션 루트 가상 노드가 반드시 존재
+    const session = nodes.find(n => n.id === "node-root-session");
+    expect(session).toBeDefined();
+    expect(session!.data.nodeType).toBe("system");
+
+    // 세션 → 첫 턴 연결
+    const u1 = nodes.find(n => n.id === "node-u1")!;
+    expect(edges.find(e => e.source === session!.id && e.target === u1.id)).toBeDefined();
+
+    // 모든 턴 존재 + Y 순서
+    const t1 = nodes.find(n => n.id === "node-t1")!;
+    const u2 = nodes.find(n => n.id === "node-u2")!;
+    const t2 = nodes.find(n => n.id === "node-t2")!;
+
+    expect(t1.position.y).toBeGreaterThan(u1.position.y);
+    expect(u2.position.y).toBeGreaterThan(t1.position.y);
+    expect(t2.position.y).toBeGreaterThan(u2.position.y);
+  });
+
+  it("노드 총 수 확인: 세션 + 유저3 + 씽킹3 + 도구2x(call+result) = 11", () => {
+    const tree = sessionRoot([
+      userMsg("u1", "Turn 1", [
+        textNode("t1", "Thinking 1", true, [
+          toolNode("tool1", "Bash", { toolResult: "ok", completed: true }),
+        ]),
+      ]),
+      userMsg("u2", "Turn 2", [
+        textNode("t2", "Thinking 2", true, [
+          toolNode("tool2", "Read", { toolResult: "content", completed: true }),
+        ]),
+      ]),
+      userMsg("u3", "Turn 3", [
+        textNode("t3", "Thinking 3"),
+      ]),
+    ], "session-1");
+
+    const { nodes } = buildGraph(tree);
+    // session(1) + user(3) + thinking(3) + tool_call(2) + tool_result(2) = 11
+    expect(nodes).toHaveLength(11);
+  });
+});

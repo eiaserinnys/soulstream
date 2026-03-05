@@ -565,12 +565,10 @@ export function buildGraph(
 
   // (tool 분기와 subagent 배치는 applyDagreLayout이 엣지 그래프에서 자동 추론)
 
-  // session root 자체는 system 노드로 표시 (sessionId가 있는 경우)
-  if (tree.sessionId) {
-    const sessionNode = createSystemNodeFromTree(tree);
-    nodes.push(sessionNode);
-    prevMainFlowNodeId = sessionNode.id;
-  }
+  // session root는 항상 가상 노드로 생성 (서버가 보내지 않더라도 대시보드에서 생성)
+  const sessionNode = createSystemNodeFromTree(tree);
+  nodes.push(sessionNode);
+  prevMainFlowNodeId = sessionNode.id;
 
   // session root의 자식들을 순회 (user_message, intervention, result 등)
   for (const turnNode of tree.children) {
@@ -780,7 +778,7 @@ export function buildGraph(
 
     if (parentNodeId) {
       edges.push(
-        createEdge(parentNodeId, subagentGraphNode.id, !subagentTreeNode.completed),
+        createEdge(parentNodeId, subagentGraphNode.id, !subagentTreeNode.completed, "right", "left"),
       );
     }
 
