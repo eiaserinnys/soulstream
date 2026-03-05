@@ -321,13 +321,10 @@ class ClaudeRunner:
 
         # Subagent 추적을 위한 상태
         self._pending_events: deque[EngineEvent] = deque()  # 이벤트 큐
-        # PreToolUse → SubagentStart 브릿지:
-        # SDK가 PreToolUse에 toolu_* ID를, SubagentStart에 UUID를 전달하므로
-        # 직접 매핑이 불가능. FIFO 큐로 Task 도구의 toolu_* ID를 전달.
-        # 실행 순서: PreToolUse(Task) → Task 실행 → SubagentStart
-        self._pending_task_tool_ids: list[str] = []  # Task 도구 toolu_* FIFO 큐
-        # SubagentStart에서 구축: agent_id → parent_tool_use_id
-        self._agent_id_to_parent: dict[str, str] = {}
+        # NOTE: SDK 한계로 SubagentStart에서 parent의 toolu_* ID를 획득할 수 없음.
+        # PreToolUse는 toolu_* ID를, SubagentStart는 random UUID를 전달하며,
+        # Task 도구는 isConcurrencySafe=true라 병렬 실행 시 순서 보장 불가.
+        # → parent_tool_use_id를 빈 문자열로 전달, 대시보드가 턴 루트에 연결.
 
     @classmethod
     async def shutdown_all_clients(cls) -> int:
@@ -379,46 +376,26 @@ class ClaudeRunner:
         """SubagentStart 훅 핸들러
 
         서브에이전트(Task 도구) 시작 시 호출됩니다.
-        PreToolUse에서 FIFO 큐에 저장한 toolu_* ID를 꺼내어
-        parent_tool_use_id로 사용합니다.
+        parent_tool_use_id는 빈 문자열로 전달합니다.
 
-        SDK 특성:
-        - PreToolUse의 tool_use_id 파라미터 = toolu_* (API ID)
-        - SubagentStart의 tool_use_id 파라미터 = UUID (CLI 내부 ID)
-        - 두 값은 직접 매핑 불가 → FIFO 큐로 순서 기반 브릿지
-        - CLI가 도구를 순차 실행하므로 FIFO 순서가 보장됨
+        SDK 한계:
+        - PreToolUse의 tool_use_id = toolu_* (API ID)
+        - SubagentStart의 tool_use_id = crypto.randomUUID() (CLI 생성)
+        - Task 도구는 isConcurrencySafe=true → 병렬 실행 시 매핑 불가
+        - 대시보드가 턴 루트에 연결하여 처리
         """
         agent_id = input_data.get("agent_id", "")
         agent_type = input_data.get("agent_type", "")
 
-        # FIFO 큐에서 Task 도구의 toolu_* ID 획득
-        if self._pending_task_tool_ids:
-            parent_id = self._pending_task_tool_ids.pop(0)
-            logger.info(
-                f"[SubagentStart] FIFO 큐에서 parent_id 획득: {parent_id} "
-                f"(남은 큐={len(self._pending_task_tool_ids)})"
-            )
-        else:
-            logger.error(
-                f"[SubagentStart] FIFO 큐 비어있음 — PreToolUse(Task)가 선행되지 않음, "
-                f"sdk_uuid={tool_use_id}"
-            )
-            parent_id = ""
-
-        # agent_id → parent_tool_use_id 매핑 저장 (SubagentStop에서 사용)
-        if agent_id and parent_id:
-            self._agent_id_to_parent[agent_id] = parent_id
-
-        # 이벤트 큐에 추가
+        # 이벤트 큐에 추가 (parent_tool_use_id는 빈 문자열)
         self._emit_event(SubagentStartEngineEvent(
             agent_type=agent_type,
-            parent_tool_use_id=parent_id,
+            parent_tool_use_id="",
             agent_id=agent_id,
         ))
 
         logger.info(
-            f"[SUBAGENT_START] agent_id={agent_id}, agent_type={agent_type}, "
-            f"parent_tool_use_id={parent_id} (resolved={'ok' if parent_id else 'FAIL'})"
+            f"[SUBAGENT_START] agent_id={agent_id}, agent_type={agent_type}"
         )
         return {}
 
@@ -435,16 +412,13 @@ class ClaudeRunner:
         """
         agent_id = input_data.get("agent_id", "")
 
-        # SubagentStart에서 저장한 parent_tool_use_id 조회
-        parent_id = self._agent_id_to_parent.pop(agent_id, None)
-
         # 이벤트 큐에 추가
         self._emit_event(SubagentStopEngineEvent(
             agent_id=agent_id,
-            parent_tool_use_id=parent_id,
+            parent_tool_use_id="",
         ))
 
-        logger.info(f"[SUBAGENT_STOP] agent_id={agent_id}, parent_tool_use_id={parent_id}")
+        logger.info(f"[SUBAGENT_STOP] agent_id={agent_id}")
         return {}
 
     async def _get_or_create_client(
@@ -787,37 +761,10 @@ class ClaudeRunner:
                 HookMatcher(matcher=None, hooks=[on_pre_compact])
             ]
 
-        # PreToolUse 훅 (항상 등록): SDK UUID → toolu_* 매핑 구축
-        async def on_pre_tool_use_hook(
-            hook_input: dict,
-            tool_use_id: Optional[str],
-            context: HookContext,
-        ) -> SyncHookJSONOutput:
-            tool_name = hook_input.get("tool_name", "unknown")
-            api_id = hook_input.get("tool_use_id")  # toolu_* 형식
-
-            # Task 도구의 toolu_* ID를 FIFO 큐에 저장
-            # SubagentStart 훅에서 이 큐에서 꺼내어 parent_tool_use_id로 사용
-            #
-            # 안전성 근거: Claude SDK CLI는 도구를 순차 실행한다.
-            # PreToolUse(A) → Task A 실행 → SubagentStart(A) → SubagentStop(A)
-            # → PreToolUse(B) → Task B 실행 → SubagentStart(B) → ...
-            # 따라서 큐에 2개 이상 쌓이는 것은 비정상 상태이다.
-            if tool_name == "Task" and api_id:
-                if self._pending_task_tool_ids:
-                    logger.warning(
-                        f"[PreToolUse] 큐에 미소비 항목 존재 — 순차 실행 가정 위반 가능: "
-                        f"기존={self._pending_task_tool_ids}, 추가={api_id}"
-                    )
-                self._pending_task_tool_ids.append(api_id)
-                logger.info(
-                    f"[PreToolUse] Task 큐 추가: {api_id} (큐 크기={len(self._pending_task_tool_ids)})"
-                )
-            return {}
-
-        hooks["PreToolUse"] = [
-            HookMatcher(matcher=None, hooks=[on_pre_tool_use_hook])
-        ]
+        # NOTE: PreToolUse 훅 제거됨.
+        # SDK 한계로 PreToolUse의 toolu_* ID와 SubagentStart의 UUID를 매핑할 수 없고,
+        # Task 도구가 isConcurrencySafe=true라 병렬 실행 시 FIFO 순서도 보장 불가.
+        # parent_tool_use_id는 빈 문자열로 전달하고, 대시보드가 턴 루트에 연결.
 
         # SubagentStart 훅 (항상 등록)
         async def on_subagent_start_hook(
@@ -1393,8 +1340,6 @@ class ClaudeRunner:
 
         # 이전 실행의 잔여 상태 정리 (풀링된 runner 재사용 대비)
         self._pending_events.clear()
-        self._pending_task_tool_ids.clear()
-        self._agent_id_to_parent.clear()
 
         # 현재 실행 루프를 인스턴스에 등록 (interrupt에서 사용)
         self.execution_loop = asyncio.get_running_loop()
