@@ -105,6 +105,7 @@ export interface CompactEvent {
 /** Extended Thinking 이벤트 */
 export interface ThinkingEvent {
   type: "thinking";
+  timestamp: number;
   card_id: string;
   thinking: string;
   signature?: string;
@@ -114,6 +115,7 @@ export interface ThinkingEvent {
 
 export interface TextStartEvent {
   type: "text_start";
+  timestamp: number;
   /** thinking의 card_id, 없으면 턴 루트에 직접 배치 */
   card_id?: string;
   /** 부모 tool_use_id (서브에이전트 내부 노드 배치용) */
@@ -122,17 +124,20 @@ export interface TextStartEvent {
 
 export interface TextDeltaEvent {
   type: "text_delta";
+  timestamp: number;
   card_id?: string;
   text: string;
 }
 
 export interface TextEndEvent {
   type: "text_end";
+  timestamp: number;
   card_id?: string;
 }
 
 export interface ToolStartEvent {
   type: "tool_start";
+  timestamp: number;
   card_id?: string;
   tool_name: string;
   tool_input: Record<string, unknown>;
@@ -144,6 +149,7 @@ export interface ToolStartEvent {
 
 export interface ToolResultEvent {
   type: "tool_result";
+  timestamp: number;
   card_id?: string;
   tool_name: string;
   result: string;
@@ -152,17 +158,14 @@ export interface ToolResultEvent {
   tool_use_id?: string;
   /** 부모 tool_use_id (서브에이전트 내부 노드 배치용) */
   parent_tool_use_id?: string;
-  /** 도구 실행 시간 (밀리초) */
-  duration_ms?: number;
 }
 
 export interface ResultEvent {
   type: "result";
+  timestamp: number;
   success: boolean;
   output: string;
   error?: string;
-  /** 실행 시간 (ms) */
-  duration_ms?: number;
   /** 토큰 사용량 */
   usage?: { input_tokens: number; output_tokens: number };
   /** 총 비용 (USD) */
@@ -174,6 +177,7 @@ export interface ResultEvent {
 /** 서브에이전트 시작 이벤트 */
 export interface SubagentStartEvent {
   type: "subagent_start";
+  timestamp: number;
   agent_id: string;
   agent_type: string;
   parent_tool_use_id: string;
@@ -182,7 +186,9 @@ export interface SubagentStartEvent {
 /** 서브에이전트 종료 이벤트 */
 export interface SubagentStopEvent {
   type: "subagent_stop";
+  timestamp: number;
   agent_id: string;
+  parent_tool_use_id?: string;
 }
 
 export interface ReconnectEvent {
@@ -300,6 +306,10 @@ export interface EventTreeNode {
 
   // session 전용
   sessionId?: string;
+
+  // 시간 정보
+  /** 이벤트 발행 시각 (Unix epoch, 초) */
+  timestamp?: number;
 
   // result 전용
   durationMs?: number;

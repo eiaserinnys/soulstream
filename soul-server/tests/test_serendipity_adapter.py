@@ -156,7 +156,7 @@ class TestSerendipityAdapterDisabled:
         ctx = SessionContext(client_id="test", request_id="req123")
 
         # 예외가 발생하지 않아야 함
-        event = TextDeltaSSEEvent(card_id="abc", text="Hello")
+        event = TextDeltaSSEEvent(card_id="abc", text="Hello", timestamp=1000.0)
         await adapter.on_event(ctx, event)
 
     @pytest.mark.asyncio
@@ -229,10 +229,10 @@ class TestSerendipityAdapterEnabled:
         )
 
         # text_start → text_delta → text_end 시퀀스
-        await adapter.on_event(ctx, TextStartSSEEvent(card_id="card1"))
-        await adapter.on_event(ctx, TextDeltaSSEEvent(card_id="card1", text="Hello "))
-        await adapter.on_event(ctx, TextDeltaSSEEvent(card_id="card1", text="World!"))
-        await adapter.on_event(ctx, TextEndSSEEvent(card_id="card1"))
+        await adapter.on_event(ctx, TextStartSSEEvent(card_id="card1", timestamp=1000.0))
+        await adapter.on_event(ctx, TextDeltaSSEEvent(card_id="card1", text="Hello ", timestamp=1001.0))
+        await adapter.on_event(ctx, TextDeltaSSEEvent(card_id="card1", text="World!", timestamp=1002.0))
+        await adapter.on_event(ctx, TextEndSSEEvent(card_id="card1", timestamp=1003.0))
 
         # text_end에서 블록이 생성되어야 함
         mock_client.create_block.assert_called_once()
@@ -257,6 +257,7 @@ class TestSerendipityAdapterEnabled:
             tool_name="Bash",
             tool_input={"command": "ls -la"},
             tool_use_id="toolu_123",
+            timestamp=1000.0,
         )
         await adapter.on_event(ctx, event)
 
@@ -287,6 +288,7 @@ class TestSerendipityAdapterEnabled:
             result="total 42",
             is_error=False,
             tool_use_id="toolu_123",
+            timestamp=1000.0,
         )
         await adapter.on_event(ctx, event)
 
@@ -463,6 +465,7 @@ class TestThinkingEvent:
             card_id="card1",
             thinking="사용자 요청을 분석 중입니다...",
             signature="sig123",
+            timestamp=1000.0,
         )
         await adapter.on_event(ctx, event)
 
@@ -487,6 +490,7 @@ class TestThinkingEvent:
             card_id="card1",
             thinking="   ",  # 공백만
             signature="sig123",
+            timestamp=1000.0,
         )
         await adapter.on_event(ctx, event)
 
@@ -509,6 +513,7 @@ class TestThinkingEvent:
             card_id="card1",
             thinking="사고 과정...",
             signature="sig123",
+            timestamp=1000.0,
         )
         await adapter.on_event(ctx, event)
 

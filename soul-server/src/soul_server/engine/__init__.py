@@ -5,8 +5,14 @@
 
 from soul_server.engine.types import (
     EngineEvent,
-    EngineEventType,
     EngineResult,
+    ThinkingEngineEvent,
+    TextDeltaEngineEvent,
+    ToolStartEngineEvent,
+    ToolResultEngineEvent,
+    ResultEngineEvent,
+    SubagentStartEngineEvent,
+    SubagentStopEngineEvent,
     ProgressCallback,
     CompactCallback,
     InterventionCallback,
@@ -14,8 +20,14 @@ from soul_server.engine.types import (
 )
 __all__ = [
     "EngineEvent",
-    "EngineEventType",
     "EngineResult",
+    "ThinkingEngineEvent",
+    "TextDeltaEngineEvent",
+    "ToolStartEngineEvent",
+    "ToolResultEngineEvent",
+    "ResultEngineEvent",
+    "SubagentStartEngineEvent",
+    "SubagentStopEngineEvent",
     "ProgressCallback",
     "CompactCallback",
     "InterventionCallback",

@@ -212,13 +212,9 @@ class InitSSEEvent(BaseModel):
 
 
 class ThinkingSSEEvent(BaseModel):
-    """Extended Thinking 이벤트
-
-    Claude의 ThinkingBlock(extended thinking) 내용을 전달합니다.
-    thinking: 모델의 사고 과정 텍스트
-    signature: 사고 블록 서명 (무결성 검증용)
-    """
+    """Extended Thinking 이벤트"""
     type: str = "thinking"
+    timestamp: float = Field(..., description="이벤트 발행 시각 (Unix epoch)")
     card_id: str = Field(..., description="사고 블록 단위 카드 ID")
     thinking: str = Field(..., description="사고 과정 텍스트")
     signature: str = Field(default="", description="사고 블록 서명")
@@ -226,24 +222,17 @@ class ThinkingSSEEvent(BaseModel):
 
 
 class TextStartSSEEvent(BaseModel):
-    """텍스트 블록 시작 이벤트
-
-    TextBlock의 시작을 알립니다.
-    card_id는 연관된 thinking 블록의 카드 ID입니다.
-    ThinkingBlock 없이 TextBlock만 올 때 card_id=None입니다.
-    """
+    """텍스트 블록 시작 이벤트"""
     type: str = "text_start"
+    timestamp: float = Field(..., description="이벤트 발행 시각 (Unix epoch)")
     card_id: Optional[str] = Field(None, description="연관된 thinking 블록의 카드 ID")
     parent_tool_use_id: Optional[str] = Field(None, description="서브에이전트 내부인 경우 부모 Task 도구의 tool_use_id")
 
 
 class TextDeltaSSEEvent(BaseModel):
-    """텍스트 블록 내용 이벤트
-
-    TextBlock의 전체 텍스트 내용. SDK가 청크 스트리밍을 지원하지
-    않으므로 한 번에 전체 텍스트가 전달됩니다.
-    """
+    """텍스트 블록 내용 이벤트"""
     type: str = "text_delta"
+    timestamp: float = Field(..., description="이벤트 발행 시각 (Unix epoch)")
     card_id: Optional[str] = Field(None, description="카드 ID")
     text: str = Field(..., description="텍스트 내용")
 
@@ -251,12 +240,14 @@ class TextDeltaSSEEvent(BaseModel):
 class TextEndSSEEvent(BaseModel):
     """텍스트 블록 완료 이벤트"""
     type: str = "text_end"
+    timestamp: float = Field(..., description="이벤트 발행 시각 (Unix epoch)")
     card_id: Optional[str] = Field(None, description="카드 ID")
 
 
 class ToolStartSSEEvent(BaseModel):
     """도구 호출 시작 이벤트"""
     type: str = "tool_start"
+    timestamp: float = Field(..., description="이벤트 발행 시각 (Unix epoch)")
     card_id: Optional[str] = Field(None, description="연관된 텍스트 블록의 카드 ID")
     tool_name: str = Field(..., description="도구 이름")
     tool_input: dict = Field(default_factory=dict, description="도구 입력 파라미터")
@@ -267,12 +258,12 @@ class ToolStartSSEEvent(BaseModel):
 class ToolResultSSEEvent(BaseModel):
     """도구 결과 이벤트"""
     type: str = "tool_result"
+    timestamp: float = Field(..., description="이벤트 발행 시각 (Unix epoch)")
     card_id: Optional[str] = Field(None, description="연관된 텍스트 블록의 카드 ID")
     tool_name: str = Field(..., description="도구 이름")
     result: str = Field(..., description="도구 실행 결과")
     is_error: bool = Field(False, description="오류 여부")
     tool_use_id: Optional[str] = Field(None, description="SDK ToolUseBlock ID (tool_start 매칭용)")
-    duration_ms: Optional[int] = Field(None, description="도구 실행 시간 (밀리초)")
     parent_tool_use_id: Optional[str] = Field(None, description="서브에이전트 내부인 경우 부모 Task 도구의 tool_use_id")
 
 
@@ -284,30 +275,28 @@ class ResultSSEEvent(BaseModel):
     대시보드는 ResultSSEEvent를 소비합니다.
     """
     type: str = "result"
+    timestamp: float = Field(..., description="이벤트 발행 시각 (Unix epoch)")
     success: bool = Field(..., description="성공 여부")
     output: str = Field(..., description="출력 텍스트")
     error: Optional[str] = Field(None, description="오류 메시지")
+    usage: Optional[dict] = Field(None, description="토큰 사용량 {input_tokens, output_tokens}")
+    total_cost_usd: Optional[float] = Field(None, description="총 비용 (USD)")
     parent_tool_use_id: Optional[str] = Field(None, description="서브에이전트 내부인 경우 부모 Task 도구의 tool_use_id")
 
 
 class SubagentStartSSEEvent(BaseModel):
-    """서브에이전트 시작 이벤트
-
-    Task 도구가 서브에이전트를 시작할 때 발행됩니다.
-    parent_tool_use_id로 부모 Task 도구 호출을 식별합니다.
-    """
+    """서브에이전트 시작 이벤트"""
     type: str = "subagent_start"
+    timestamp: float = Field(..., description="이벤트 발행 시각 (Unix epoch)")
     agent_id: str = Field(..., description="서브에이전트 고유 ID")
     agent_type: str = Field(..., description="서브에이전트 타입 (Explore, Plan 등)")
     parent_tool_use_id: Optional[str] = Field(None, description="부모 Task 도구의 tool_use_id")
 
 
 class SubagentStopSSEEvent(BaseModel):
-    """서브에이전트 종료 이벤트
-
-    Task 도구가 완료되어 서브에이전트가 종료될 때 발행됩니다.
-    """
+    """서브에이전트 종료 이벤트"""
     type: str = "subagent_stop"
+    timestamp: float = Field(..., description="이벤트 발행 시각 (Unix epoch)")
     agent_id: str = Field(..., description="서브에이전트 고유 ID")
     parent_tool_use_id: Optional[str] = Field(None, description="부모 Task 도구의 tool_use_id")
 

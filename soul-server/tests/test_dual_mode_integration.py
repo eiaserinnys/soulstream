@@ -196,11 +196,11 @@ class TestSerendipityModeBasic:
         )
 
         # 텍스트 이벤트 시퀀스
-        await serendipity_adapter.on_event(ctx, TextStartSSEEvent(card_id="card1"))
+        await serendipity_adapter.on_event(ctx, TextStartSSEEvent(card_id="card1", timestamp=1000.0))
         await serendipity_adapter.on_event(
-            ctx, TextDeltaSSEEvent(card_id="card1", text="응답 텍스트")
+            ctx, TextDeltaSSEEvent(card_id="card1", text="응답 텍스트", timestamp=1001.0)
         )
-        await serendipity_adapter.on_event(ctx, TextEndSSEEvent(card_id="card1"))
+        await serendipity_adapter.on_event(ctx, TextEndSSEEvent(card_id="card1", timestamp=1002.0))
 
         # 블록 생성 확인
         mock_serendipity_client.create_block.assert_called()
@@ -290,6 +290,7 @@ class TestSerendipityModeAnalyzer:
             tool_name="Edit",
             tool_input={"file_path": "/test.py"},
             tool_use_id="toolu_1",
+            timestamp=1000.0,
         )
         await serendipity_adapter.on_event(ctx, tool_event)
 
@@ -335,7 +336,7 @@ class TestModeSwitch:
         disabled_adapter = SerendipityAdapter(enabled=False)
 
         # 비활성화 상태에서 이벤트 처리
-        await disabled_adapter.on_event(ctx, TextDeltaSSEEvent(card_id="c1", text="test"))
+        await disabled_adapter.on_event(ctx, TextDeltaSSEEvent(card_id="c1", text="test", timestamp=1000.0))
 
         # 예외 없이 처리됨
         # (실제 운영에서는 기존 ctx.page_id로 작업 계속 가능)
@@ -402,14 +403,15 @@ class TestFullIntegrationScenario:
 
         # 2. 이벤트 처리
         events = [
-            TextStartSSEEvent(card_id="c1"),
-            TextDeltaSSEEvent(card_id="c1", text="버그를 수정하겠습니다."),
-            TextEndSSEEvent(card_id="c1"),
+            TextStartSSEEvent(card_id="c1", timestamp=1000.0),
+            TextDeltaSSEEvent(card_id="c1", text="버그를 수정하겠습니다.", timestamp=1001.0),
+            TextEndSSEEvent(card_id="c1", timestamp=1002.0),
             ToolStartSSEEvent(
                 card_id="c1",
                 tool_name="Edit",
                 tool_input={"file_path": "src/main.py"},
                 tool_use_id="toolu_1",
+                timestamp=1003.0,
             ),
             ToolResultSSEEvent(
                 card_id="c1",
@@ -417,12 +419,14 @@ class TestFullIntegrationScenario:
                 result="파일 수정됨",
                 is_error=False,
                 tool_use_id="toolu_1",
+                timestamp=1004.0,
             ),
             ToolStartSSEEvent(
                 card_id="c1",
                 tool_name="Bash",
                 tool_input={"command": "pytest tests/"},
                 tool_use_id="toolu_2",
+                timestamp=1005.0,
             ),
             ToolResultSSEEvent(
                 card_id="c1",
@@ -430,6 +434,7 @@ class TestFullIntegrationScenario:
                 result="3 tests passed",
                 is_error=False,
                 tool_use_id="toolu_2",
+                timestamp=1006.0,
             ),
         ]
 
