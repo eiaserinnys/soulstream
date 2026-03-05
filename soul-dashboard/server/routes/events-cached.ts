@@ -62,6 +62,18 @@ export function createEventsCachedRouter(
         }
       }
 
+      // query param 폴백 (EventSource는 Last-Event-ID 헤더를 자동 설정하지만,
+      // 수동 연결 시 query param이 사용될 수 있음)
+      if (!clientLastEventId) {
+        const lastEventIdParam = req.query.lastEventId;
+        if (typeof lastEventIdParam === "string") {
+          const parsed = parseInt(lastEventIdParam, 10);
+          if (!isNaN(parsed)) {
+            clientLastEventId = parsed;
+          }
+        }
+      }
+
       // 2. 캐시에서 Last-Event-ID 이후 이벤트 읽기
       let cachedEvents: CachedEvent[];
       if (bypassCache) {

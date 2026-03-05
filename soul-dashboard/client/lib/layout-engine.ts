@@ -622,8 +622,8 @@ export function buildGraph(
     } else if (turnNode.type === "subagent") {
       // root 직하에 subagent가 있는 경우 (ID 매칭 실패 방어)
       processSubagentNode(turnNode, lastThinkingNodeId ?? prevMainFlowNodeId);
-    } else if (turnNode.type === "text") {
-      // root 직하에 text가 있는 경우 (비정상이지만 방어적 처리)
+    } else if (turnNode.type === "text" || turnNode.type === "thinking") {
+      // root 직하에 text/thinking가 있는 경우 (비정상이지만 방어적 처리)
       processTextNode(turnNode);
     }
   }
@@ -644,7 +644,7 @@ export function buildGraph(
     let hasToolBeforeText = false;
     let hasText = false;
     for (const child of parentTurnNode.children) {
-      if (child.type === "text") { hasText = true; break; }
+      if (child.type === "text" || child.type === "thinking") { hasText = true; break; }
       if (child.type === "tool") { hasToolBeforeText = true; }
     }
 
@@ -652,13 +652,13 @@ export function buildGraph(
       // 첫 text 이전에 tool이 있으면 가상 thinking 삽입 여부 확인
       let foundText = false;
       for (const child of parentTurnNode.children) {
-        if (child.type === "text") { foundText = true; break; }
+        if (child.type === "text" || child.type === "thinking") { foundText = true; break; }
       }
       if (!foundText || hasToolBeforeText) {
         // 가상 thinking이 필요한지 정확히 판단
         let needsVirtual = false;
         for (const child of parentTurnNode.children) {
-          if (child.type === "text") break;
+          if (child.type === "text" || child.type === "thinking") break;
           if (child.type === "tool") { needsVirtual = true; break; }
         }
         if (needsVirtual) {
@@ -686,7 +686,7 @@ export function buildGraph(
     }
 
     for (const child of parentTurnNode.children) {
-      if (child.type === "text") {
+      if (child.type === "text" || child.type === "thinking") {
         processTextNode(child);
       } else if (child.type === "tool") {
         processToolNode(child, lastThinkingNodeId ?? prevMainFlowNodeId);
@@ -719,14 +719,14 @@ export function buildGraph(
       return;
     }
 
-    // text의 자식들을 처리 (tool, subagent, 중첩 text 등)
+    // text의 자식들을 처리 (tool, subagent, 중첩 text/thinking 등)
     for (const child of textTreeNode.children) {
       if (child.type === "tool") {
         processToolNode(child, graphNode.id);
       } else if (child.type === "subagent") {
         processSubagentNode(child, graphNode.id);
-      } else if (child.type === "text") {
-        // 중첩된 text (서브에이전트 내부 등)
+      } else if (child.type === "text" || child.type === "thinking") {
+        // 중첩된 text/thinking (서브에이전트 내부 등)
         processTextNode(child);
       }
     }
@@ -759,11 +759,11 @@ export function buildGraph(
       return;
     }
 
-    // tool의 자식 처리 (subagent 등)
+    // tool의 자식 처리 (subagent, text, thinking 등)
     for (const child of toolTreeNode.children) {
       if (child.type === "subagent") {
         processSubagentNode(child, callNode.id);
-      } else if (child.type === "text") {
+      } else if (child.type === "text" || child.type === "thinking") {
         processTextNode(child);
       } else if (child.type === "tool") {
         processToolNode(child, callNode.id);
@@ -787,9 +787,9 @@ export function buildGraph(
       return;
     }
 
-    // subagent의 자식들 처리 (text, tool 등)
+    // subagent의 자식들 처리 (text, thinking, tool 등)
     for (const child of subagentTreeNode.children) {
-      if (child.type === "text") {
+      if (child.type === "text" || child.type === "thinking") {
         const childCollapseInfo = getCollapseInfo(child);
         const childGraphNode = createTextNode(child, {
           isPlanMode: planMode.nodeIds.has(child.id),
@@ -801,6 +801,10 @@ export function buildGraph(
           for (const grandchild of child.children) {
             if (grandchild.type === "tool") {
               processToolNode(grandchild, childGraphNode.id);
+            } else if (grandchild.type === "subagent") {
+              processSubagentNode(grandchild, childGraphNode.id);
+            } else if (grandchild.type === "text" || grandchild.type === "thinking") {
+              processTextNode(grandchild);
             }
           }
         }
