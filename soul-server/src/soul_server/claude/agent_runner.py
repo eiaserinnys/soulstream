@@ -24,7 +24,7 @@ try:
     from claude_agent_sdk._errors import MessageParseError
     from claude_agent_sdk.types import (
         AssistantMessage,
-        HookJSONOutput,
+        SyncHookJSONOutput,
         ResultMessage,
         SystemMessage,
         TextBlock,
@@ -51,7 +51,7 @@ except ImportError:
         pass
     class AssistantMessage:
         pass
-    class HookJSONOutput:
+    class SyncHookJSONOutput:
         pass
     class ResultMessage:
         pass
@@ -746,14 +746,14 @@ class ClaudeRunner:
                 hook_input: dict,
                 tool_use_id: Optional[str],
                 context: HookContext,
-            ) -> HookJSONOutput:
+            ) -> SyncHookJSONOutput:
                 trigger = hook_input.get("trigger", "auto")
                 logger.info(f"PreCompact 훅 트리거: trigger={trigger}")
                 compact_events.append({
                     "trigger": trigger,
                     "message": f"컨텍스트 컴팩트 실행됨 (트리거: {trigger})",
                 })
-                return HookJSONOutput()
+                return {}
 
             hooks["PreCompact"] = [
                 HookMatcher(matcher=None, hooks=[on_pre_compact])
@@ -764,13 +764,13 @@ class ClaudeRunner:
             hook_input: dict,
             tool_use_id: Optional[str],
             context: HookContext,
-        ) -> HookJSONOutput:
+        ) -> SyncHookJSONOutput:
             # hook_input["tool_use_id"] = toolu_* (API의 ToolUseBlock.id)
             # tool_use_id (두 번째 파라미터) = SDK UUID (CLI 내부 식별자)
             api_id = hook_input.get("tool_use_id")
             if tool_use_id and api_id:
                 self._sdk_uuid_to_api_id[tool_use_id] = api_id
-            return HookJSONOutput()
+            return {}
 
         hooks["PreToolUse"] = [
             HookMatcher(matcher=None, hooks=[on_pre_tool_use_hook])
@@ -781,9 +781,9 @@ class ClaudeRunner:
             hook_input: dict,
             tool_use_id: Optional[str],
             context: HookContext,
-        ) -> HookJSONOutput:
+        ) -> SyncHookJSONOutput:
             await self._on_subagent_start(hook_input, tool_use_id, context)
-            return HookJSONOutput()
+            return {}
 
         hooks["SubagentStart"] = [
             HookMatcher(matcher=None, hooks=[on_subagent_start_hook])
@@ -794,9 +794,9 @@ class ClaudeRunner:
             hook_input: dict,
             tool_use_id: Optional[str],
             context: HookContext,
-        ) -> HookJSONOutput:
+        ) -> SyncHookJSONOutput:
             await self._on_subagent_stop(hook_input, tool_use_id, context)
-            return HookJSONOutput()
+            return {}
 
         hooks["SubagentStop"] = [
             HookMatcher(matcher=None, hooks=[on_subagent_stop_hook])
