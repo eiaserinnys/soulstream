@@ -533,6 +533,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
               toolInput: toolStartEvent.tool_input,
               toolUseId: toolStartEvent.tool_use_id,
               parentToolUseId: toolStartEvent.parent_tool_use_id,
+              timestamp: toolStartEvent.timestamp,
             });
 
             if (toolStartEvent.tool_use_id) {
@@ -564,8 +565,13 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
             if (toolNode) {
               toolNode.toolResult = toolResultEvent.result;
               toolNode.isError = toolResultEvent.is_error;
-              toolNode.durationMs = toolResultEvent.duration_ms;
               toolNode.completed = true;
+              // timestamp 차이로 duration 계산
+              if (toolNode.timestamp && toolResultEvent.timestamp) {
+                toolNode.durationMs = Math.round(
+                  (toolResultEvent.timestamp - toolNode.timestamp) * 1000,
+                );
+              }
               updated = true;
             }
             break;
@@ -617,7 +623,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
               resultEvent.output || "Session completed",
               {
                 completed: true,
-                durationMs: resultEvent.duration_ms,
+                timestamp: resultEvent.timestamp,
                 usage: resultEvent.usage,
                 totalCostUsd: resultEvent.total_cost_usd,
               },

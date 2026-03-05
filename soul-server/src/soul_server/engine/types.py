@@ -1,13 +1,15 @@
 """Soulstream 엔진 타입 정의
 
-실행 엔진의 순수한 출력·설정 타입만 정의합니다.
+이벤트 = 노드 = 객체: 각 이벤트 타입이 자기 데이터를 갖고, to_sse()로 변환 방법을 안다.
 """
 
 import time
+import uuid
 from dataclasses import dataclass, field
-from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Coroutine, Optional
+
+from pydantic import BaseModel
 
 
 @dataclass
@@ -47,56 +49,174 @@ CompactCallback = Callable[[str, str], Coroutine[Any, Any, None]]
 InterventionCallback = Callable[[], Coroutine[Any, Any, Optional[str]]]
 
 
-class EngineEventType(Enum):
-    """엔진 이벤트 타입
-
-    Soul Dashboard가 구독하는 세분화 이벤트 종류.
-    THINKING: AssistantMessage의 ThinkingBlock (Extended Thinking)
-    TEXT_DELTA: AssistantMessage의 TextBlock 텍스트 (모델의 가시적 응답)
-    TOOL_*: 도구 호출 및 결과
-    RESULT: 최종 결과 (성공/실패 포함)
-    SUBAGENT_*: 서브에이전트 시작/종료
-
-    Note: SDK의 TextBlock은 assistant의 visible output입니다.
-    ThinkingBlock(extended thinking)은 모델의 사고 과정을 담고 있습니다.
-    어댑터 계층(engine_adapter)에서 TEXT_DELTA를
-    text_start → text_delta → text_end 카드 시퀀스로 변환합니다.
-    """
-
-    THINKING = "thinking"
-    TEXT_DELTA = "text_delta"
-    TOOL_START = "tool_start"
-    TOOL_RESULT = "tool_result"
-    RESULT = "result"
-    SUBAGENT_START = "subagent_start"
-    SUBAGENT_STOP = "subagent_stop"
+# === EngineEvent 타입 계층 ===
 
 
 @dataclass
 class EngineEvent:
-    """엔진에서 발행하는 단일 이벤트
+    """엔진 이벤트 기본 클래스. 서브클래스가 to_sse()를 구현한다.
 
-    type: 이벤트 종류 (EngineEventType)
     timestamp: 발행 시각 (Unix epoch, float)
-    data: 이벤트별 페이로드 (dict) — 스키마는 아래 참조
     parent_tool_use_id: 서브에이전트 내부 이벤트일 경우 부모 도구 호출 ID
     agent_id: 서브에이전트 관련 이벤트일 경우 에이전트 ID
     """
 
-    type: EngineEventType
-    data: dict = field(default_factory=dict)
     timestamp: float = field(default_factory=time.time)
     parent_tool_use_id: Optional[str] = None
     agent_id: Optional[str] = None
 
-    # data 스키마 (type별):
-    #   THINKING:       {"thinking": str, "signature": str}
-    #   TEXT_DELTA:     {"text": str}
-    #   TOOL_START:     {"tool_name": str, "tool_input": dict}
-    #   TOOL_RESULT:    {"tool_name": str, "result": Any, "is_error": bool}
-    #   RESULT:         {"success": bool, "output": str, "error": Optional[str]}
-    #   SUBAGENT_START: {"agent_id": str, "agent_type": str}
-    #   SUBAGENT_STOP:  {"agent_id": str}
+    def to_sse(self) -> list[BaseModel]:
+        raise NotImplementedError(f"{type(self).__name__}.to_sse()")
+
+
+@dataclass
+class ThinkingEngineEvent(EngineEvent):
+    """Extended Thinking 이벤트"""
+
+    thinking: str = ""
+    signature: str = ""
+    card_id: str = ""
+
+    def __post_init__(self):
+        if not self.card_id:
+            self.card_id = uuid.uuid4().hex[:8]
+
+    def to_sse(self) -> list[BaseModel]:
+        from soul_server.models.schemas import ThinkingSSEEvent
+        return [ThinkingSSEEvent(
+            card_id=self.card_id,
+            thinking=self.thinking,
+            signature=self.signature,
+            parent_tool_use_id=self.parent_tool_use_id,
+            timestamp=self.timestamp,
+        )]
+
+
+@dataclass
+class TextDeltaEngineEvent(EngineEvent):
+    """텍스트 블록 이벤트 (text_start → text_delta → text_end 시퀀스 생성)"""
+
+    text: str = ""
+    card_id: Optional[str] = None
+
+    def to_sse(self) -> list[BaseModel]:
+        from soul_server.models.schemas import (
+            TextStartSSEEvent,
+            TextDeltaSSEEvent,
+            TextEndSSEEvent,
+        )
+        return [
+            TextStartSSEEvent(
+                card_id=self.card_id,
+                parent_tool_use_id=self.parent_tool_use_id,
+                timestamp=self.timestamp,
+            ),
+            TextDeltaSSEEvent(
+                card_id=self.card_id,
+                text=self.text,
+                timestamp=self.timestamp,
+            ),
+            TextEndSSEEvent(
+                card_id=self.card_id,
+                timestamp=self.timestamp,
+            ),
+        ]
+
+
+@dataclass
+class ToolStartEngineEvent(EngineEvent):
+    """도구 호출 시작 이벤트"""
+
+    tool_name: str = ""
+    tool_input: dict = field(default_factory=dict)
+    tool_use_id: Optional[str] = None
+    card_id: Optional[str] = None
+
+    def to_sse(self) -> list[BaseModel]:
+        from soul_server.models.schemas import ToolStartSSEEvent
+        return [ToolStartSSEEvent(
+            card_id=self.card_id,
+            tool_name=self.tool_name,
+            tool_input=self.tool_input,
+            tool_use_id=self.tool_use_id,
+            parent_tool_use_id=self.parent_tool_use_id,
+            timestamp=self.timestamp,
+        )]
+
+
+@dataclass
+class ToolResultEngineEvent(EngineEvent):
+    """도구 결과 이벤트"""
+
+    tool_name: str = ""
+    result: Any = ""
+    is_error: bool = False
+    tool_use_id: Optional[str] = None
+    card_id: Optional[str] = None
+
+    def to_sse(self) -> list[BaseModel]:
+        from soul_server.models.schemas import ToolResultSSEEvent
+        return [ToolResultSSEEvent(
+            card_id=self.card_id,
+            tool_name=self.tool_name,
+            result=self.result,
+            is_error=self.is_error,
+            tool_use_id=self.tool_use_id,
+            parent_tool_use_id=self.parent_tool_use_id,
+            timestamp=self.timestamp,
+        )]
+
+
+@dataclass
+class ResultEngineEvent(EngineEvent):
+    """최종 결과 이벤트"""
+
+    success: bool = False
+    output: str = ""
+    error: Optional[str] = None
+    usage: Optional[dict] = None
+    total_cost_usd: Optional[float] = None
+
+    def to_sse(self) -> list[BaseModel]:
+        from soul_server.models.schemas import ResultSSEEvent
+        return [ResultSSEEvent(
+            success=self.success,
+            output=self.output,
+            error=self.error,
+            usage=self.usage,
+            total_cost_usd=self.total_cost_usd,
+            parent_tool_use_id=self.parent_tool_use_id,
+            timestamp=self.timestamp,
+        )]
+
+
+@dataclass
+class SubagentStartEngineEvent(EngineEvent):
+    """서브에이전트 시작 이벤트"""
+
+    agent_type: str = ""
+
+    def to_sse(self) -> list[BaseModel]:
+        from soul_server.models.schemas import SubagentStartSSEEvent
+        return [SubagentStartSSEEvent(
+            agent_id=self.agent_id or "",
+            agent_type=self.agent_type,
+            parent_tool_use_id=self.parent_tool_use_id,
+            timestamp=self.timestamp,
+        )]
+
+
+@dataclass
+class SubagentStopEngineEvent(EngineEvent):
+    """서브에이전트 종료 이벤트"""
+
+    def to_sse(self) -> list[BaseModel]:
+        from soul_server.models.schemas import SubagentStopSSEEvent
+        return [SubagentStopSSEEvent(
+            agent_id=self.agent_id or "",
+            parent_tool_use_id=self.parent_tool_use_id,
+            timestamp=self.timestamp,
+        )]
 
 
 # 이벤트 콜백 타입 alias

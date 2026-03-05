@@ -12,14 +12,12 @@ Serendipity 연동:
 
 import asyncio
 import logging
-import time
-import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncIterator, Awaitable, Callable, List, Optional
 
 from soul_server.claude.agent_runner import ClaudeRunner
-from soul_server.engine.types import EngineEvent, EngineEventType
+from soul_server.engine.types import EngineEvent
 from soul_server.config import get_settings
 
 if TYPE_CHECKING:
@@ -36,16 +34,7 @@ from soul_server.models import (
     ProgressEvent,
     RateLimitProfileInfo,
     RateLimitProfileStatus,
-    ResultSSEEvent,
     SessionEvent,
-    SubagentStartSSEEvent,
-    SubagentStopSSEEvent,
-    TextDeltaSSEEvent,
-    TextEndSSEEvent,
-    TextStartSSEEvent,
-    ThinkingSSEEvent,
-    ToolResultSSEEvent,
-    ToolStartSSEEvent,
 )
 
 logger = logging.getLogger(__name__)
@@ -57,77 +46,6 @@ DEFAULT_MAX_CONTEXT_TOKENS = 200_000
 
 # sentinel: 스트리밍 종료 신호
 _DONE = object()
-
-
-class _CardTracker:
-    """SSE 이벤트용 카드 ID 관리 + text↔tool 관계 추적
-
-    ThinkingBlock만 새 card_id를 생성하고, TextBlock은 현재 thinking의
-    card_id를 재사용합니다.
-    카드 ID는 UUID4 기반 8자리 식별자로 생성됩니다.
-    """
-
-    def __init__(self) -> None:
-        self._current_thinking_id: Optional[str] = None
-        self._last_tool_name: Optional[str] = None
-        self._tool_use_card_map: dict[str, Optional[str]] = {}  # tool_use_id → card_id
-        self._tool_start_times: dict[str, float] = {}  # tool_use_id → start_time (monotonic)
-
-    def new_thinking(self) -> str:
-        """ThinkingBlock용 새 card_id 생성
-
-        Returns:
-            생성된 카드 ID (8자리 hex)
-        """
-        self._current_thinking_id = uuid.uuid4().hex[:8]
-        return self._current_thinking_id
-
-    @property
-    def current_thinking_id(self) -> Optional[str]:
-        """현재 활성 thinking card_id"""
-        return self._current_thinking_id
-
-    def set_last_tool(self, tool_name: str) -> None:
-        """마지막 도구 이름 기록 (TOOL_RESULT에서 tool_name 폴백용)"""
-        self._last_tool_name = tool_name
-
-    @property
-    def last_tool(self) -> Optional[str]:
-        """마지막으로 호출된 도구 이름"""
-        return self._last_tool_name
-
-    def register_tool_call(self, tool_use_id: str, card_id: Optional[str]) -> None:
-        """tool_use_id에 대한 card_id를 기록 (TOOL_RESULT에서 올바른 card_id 조회용)"""
-        self._tool_use_card_map[tool_use_id] = card_id
-
-    def get_tool_card_id(self, tool_use_id: Optional[str]) -> Optional[str]:
-        """tool_use_id로 TOOL_START 시점의 card_id를 조회"""
-        if tool_use_id and tool_use_id in self._tool_use_card_map:
-            return self._tool_use_card_map[tool_use_id]
-        return self._current_thinking_id
-
-    def start_tool(self, tool_use_id: str) -> None:
-        """도구 시작 시간 기록
-
-        Args:
-            tool_use_id: SDK ToolUseBlock ID
-        """
-        if tool_use_id:
-            self._tool_start_times[tool_use_id] = time.monotonic()
-
-    def end_tool(self, tool_use_id: Optional[str]) -> Optional[int]:
-        """도구 종료 시 경과 시간(ms) 반환
-
-        Args:
-            tool_use_id: SDK ToolUseBlock ID
-
-        Returns:
-            경과 시간(밀리초), tool_use_id가 없거나 시작 시간이 기록되지 않은 경우 None
-        """
-        if tool_use_id and tool_use_id in self._tool_start_times:
-            start = self._tool_start_times.pop(tool_use_id)
-            return int((time.monotonic() - start) * 1000)
-        return None
 
 
 @dataclass
@@ -353,146 +271,20 @@ class SoulEngineAdapter:
 
         # --- 세분화 이벤트 (dashboard용) ---
 
-        tracker = _CardTracker()
-
         async def on_engine_event(event: EngineEvent) -> None:
-            """ClaudeRunner 엔진 이벤트 → 세분화 SSE 이벤트 변환
+            """EngineEvent → SSE 이벤트 변환. 상태 없음, 분기 없음.
 
-            기존 on_progress/on_compact 이벤트와 병행 발행됩니다.
-            슬랙봇 하위호환 유지: 기존 이벤트를 대체하지 않습니다.
-
-            Serendipity 연동: SSE 이벤트를 세렌디피티에도 저장합니다.
+            각 이벤트가 to_sse()로 자기 변환을 담당합니다.
             """
-            sse_event = None  # 세렌디피티에 전달할 이벤트
-
-            if event.type == EngineEventType.THINKING:
-                thinking = event.data.get("thinking", "")
-                signature = event.data.get("signature", "")
-                # ThinkingBlock = 새 card_id 생성
-                card_id = tracker.new_thinking()
-                sse_event = ThinkingSSEEvent(
-                    card_id=card_id,
-                    thinking=thinking,
-                    signature=signature,
-                    parent_tool_use_id=event.parent_tool_use_id,
-                )
-                await queue.put(sse_event)
-
-                # Serendipity에 전달
-                if serendipity_ctx and self._serendipity_adapter:
+            sse_events = event.to_sse()
+            for sse in sse_events:
+                await queue.put(sse)
+            if serendipity_ctx and self._serendipity_adapter:
+                for sse in sse_events:
                     try:
-                        await self._serendipity_adapter.on_event(serendipity_ctx, sse_event)
-                    except Exception as e:
-                        logger.warning(f"Serendipity thinking event failed: {e}")
-                return
-
-            elif event.type == EngineEventType.TEXT_DELTA:
-                text = event.data.get("text", "")
-                # TextBlock은 현재 thinking의 card_id를 재사용
-                # ThinkingBlock 없이 TextBlock만 오면 card_id=None
-                card_id = tracker.current_thinking_id
-                text_start = TextStartSSEEvent(
-                    card_id=card_id,
-                    parent_tool_use_id=event.parent_tool_use_id,
-                )
-                text_delta = TextDeltaSSEEvent(card_id=card_id, text=text)
-                text_end = TextEndSSEEvent(card_id=card_id)
-                await queue.put(text_start)
-                await queue.put(text_delta)
-                await queue.put(text_end)
-
-                # Serendipity에 전달 (text_start, text_delta, text_end 순서)
-                if serendipity_ctx and self._serendipity_adapter:
-                    try:
-                        await self._serendipity_adapter.on_event(serendipity_ctx, text_start)
-                        await self._serendipity_adapter.on_event(serendipity_ctx, text_delta)
-                        await self._serendipity_adapter.on_event(serendipity_ctx, text_end)
+                        await self._serendipity_adapter.on_event(serendipity_ctx, sse)
                     except Exception as e:
                         logger.warning(f"Serendipity event failed: {e}")
-                return
-
-            elif event.type == EngineEventType.TOOL_START:
-                tool_name = event.data.get("tool_name", "")
-                tool_input = event.data.get("tool_input", {})
-                tool_use_id = event.data.get("tool_use_id")
-                # SSE 페이로드 크기 제한: 대형 tool_input 방지
-                try:
-                    import json as _json
-                    tool_input_str = _json.dumps(tool_input, ensure_ascii=False)
-                    if len(tool_input_str) > 2000:
-                        tool_input = {"_truncated": tool_input_str[:2000] + "..."}
-                except (TypeError, ValueError):
-                    tool_input = {"_error": "serialize_failed"}
-                tracker.set_last_tool(tool_name)
-                # tool_use_id → card_id 매핑 기록 (TOOL_RESULT에서 올바른 card_id 조회용)
-                if tool_use_id:
-                    tracker.register_tool_call(tool_use_id, tracker.current_thinking_id)
-                    tracker.start_tool(tool_use_id)
-                sse_event = ToolStartSSEEvent(
-                    card_id=tracker.current_thinking_id,
-                    tool_name=tool_name,
-                    tool_input=tool_input,
-                    tool_use_id=tool_use_id,
-                    parent_tool_use_id=event.parent_tool_use_id,
-                )
-                await queue.put(sse_event)
-
-            elif event.type == EngineEventType.TOOL_RESULT:
-                result = event.data.get("result", "")
-                is_error = event.data.get("is_error", False)
-                tool_use_id = event.data.get("tool_use_id")
-                # tool_name은 이벤트 페이로드 우선, 없으면 tracker 폴백
-                tool_name = event.data.get("tool_name") or tracker.last_tool or ""
-                # card_id는 tool_use_id로 TOOL_START 시점의 값을 조회
-                card_id = tracker.get_tool_card_id(tool_use_id)
-                # 도구 실행 시간 계산
-                duration_ms = tracker.end_tool(tool_use_id)
-                sse_event = ToolResultSSEEvent(
-                    card_id=card_id,
-                    tool_name=tool_name,
-                    result=result,
-                    is_error=is_error,
-                    tool_use_id=tool_use_id,
-                    duration_ms=duration_ms,
-                    parent_tool_use_id=event.parent_tool_use_id,
-                )
-                await queue.put(sse_event)
-
-            elif event.type == EngineEventType.RESULT:
-                success = event.data.get("success", False)
-                output = event.data.get("output", "")
-                error = event.data.get("error")
-                sse_event = ResultSSEEvent(
-                    success=success,
-                    output=output,
-                    error=error,
-                    parent_tool_use_id=event.parent_tool_use_id,
-                )
-                await queue.put(sse_event)
-
-            elif event.type == EngineEventType.SUBAGENT_START:
-                agent_id = event.data.get("agent_id", "")
-                agent_type = event.data.get("agent_type", "")
-                sse_event = SubagentStartSSEEvent(
-                    agent_id=agent_id,
-                    agent_type=agent_type,
-                    parent_tool_use_id=event.parent_tool_use_id,
-                )
-                await queue.put(sse_event)
-
-            elif event.type == EngineEventType.SUBAGENT_STOP:
-                agent_id = event.data.get("agent_id", "")
-                sse_event = SubagentStopSSEEvent(
-                    agent_id=agent_id,
-                )
-                await queue.put(sse_event)
-
-            # Serendipity에 이벤트 전달
-            if sse_event and serendipity_ctx and self._serendipity_adapter:
-                try:
-                    await self._serendipity_adapter.on_event(serendipity_ctx, sse_event)
-                except Exception as e:
-                    logger.warning(f"Serendipity event failed: {e}")
 
         # --- 백그라운드 실행 ---
 

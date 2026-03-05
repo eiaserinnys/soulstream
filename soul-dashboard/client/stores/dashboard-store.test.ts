@@ -1452,9 +1452,9 @@ describe("dashboard-store", () => {
 
       processEvent({
         type: "result",
+        timestamp: 1000.0,
         success: true,
         output: "Task completed successfully",
-        duration_ms: 5000,
         usage: { input_tokens: 1000, output_tokens: 500 },
         total_cost_usd: 0.01,
       } as ResultEvent, 3);
@@ -1463,7 +1463,7 @@ describe("dashboard-store", () => {
       const resultNodes = collectNodes(tree, "result");
       expect(resultNodes).toHaveLength(1);
       expect(resultNodes[0].content).toBe("Task completed successfully");
-      expect(resultNodes[0].durationMs).toBe(5000);
+      expect(resultNodes[0].timestamp).toBe(1000.0);
       expect(resultNodes[0].usage).toEqual({ input_tokens: 1000, output_tokens: 500 });
       expect(resultNodes[0].totalCostUsd).toBe(0.01);
     });
