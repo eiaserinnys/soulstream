@@ -763,32 +763,32 @@ class TestCardTracker:
     """_CardTracker 유닛 테스트"""
 
     def test_initial_state(self):
-        """초기 상태: card_id와 last_tool 모두 None"""
+        """초기 상태: thinking_id와 last_tool 모두 None"""
         from soul_server.service.engine_adapter import _CardTracker
         tracker = _CardTracker()
-        assert tracker.current_card_id is None
+        assert tracker.current_thinking_id is None
         assert tracker.last_tool is None
 
-    def test_new_card_returns_string(self):
-        """new_card()는 문자열 반환"""
+    def test_new_thinking_returns_string(self):
+        """new_thinking()은 문자열 반환"""
         from soul_server.service.engine_adapter import _CardTracker
         tracker = _CardTracker()
-        card_id = tracker.new_card()
+        card_id = tracker.new_thinking()
         assert isinstance(card_id, str)
         assert len(card_id) > 0
 
-    def test_new_card_updates_current(self):
-        """new_card() 후 current_card_id가 갱신됨"""
+    def test_new_thinking_updates_current(self):
+        """new_thinking() 후 current_thinking_id가 갱신됨"""
         from soul_server.service.engine_adapter import _CardTracker
         tracker = _CardTracker()
-        new_id = tracker.new_card()
-        assert tracker.current_card_id == new_id
+        new_id = tracker.new_thinking()
+        assert tracker.current_thinking_id == new_id
 
-    def test_new_card_generates_unique_ids(self):
-        """new_card() 연속 호출 → 서로 다른 ID 반환"""
+    def test_new_thinking_generates_unique_ids(self):
+        """new_thinking() 연속 호출 → 서로 다른 ID 반환"""
         from soul_server.service.engine_adapter import _CardTracker
         tracker = _CardTracker()
-        ids = {tracker.new_card() for _ in range(10)}
+        ids = {tracker.new_thinking() for _ in range(10)}
         assert len(ids) == 10
 
     def test_set_last_tool(self):
@@ -800,14 +800,14 @@ class TestCardTracker:
         tracker.set_last_tool("Grep")
         assert tracker.last_tool == "Grep"
 
-    def test_current_card_id_overwritten_by_new_card(self):
-        """new_card()를 두 번 호출하면 이전 card_id는 덮어써짐"""
+    def test_current_thinking_id_overwritten_by_new_thinking(self):
+        """new_thinking()을 두 번 호출하면 이전 thinking_id는 덮어써짐"""
         from soul_server.service.engine_adapter import _CardTracker
         tracker = _CardTracker()
-        id1 = tracker.new_card()
-        id2 = tracker.new_card()
+        id1 = tracker.new_thinking()
+        id2 = tracker.new_thinking()
         assert id1 != id2
-        assert tracker.current_card_id == id2
+        assert tracker.current_thinking_id == id2
 
 
 # === EngineEvent → SSE 이벤트 변환 테스트 ===
@@ -944,8 +944,8 @@ class TestEngineEventConversion:
         assert result_events[0].success is True
         assert result_events[0].output == "최종 결과"
 
-    async def test_multiple_text_blocks_get_distinct_card_ids(self):
-        """두 TEXT_DELTA → 서로 다른 card_id"""
+    async def test_text_blocks_without_thinking_get_none_card_id(self):
+        """THINKING 없이 TEXT_DELTA만 두 번 → 둘 다 card_id=None"""
         from soul_server.models import TextStartSSEEvent
         from soul_server.engine.types import EngineEvent, EngineEventType
 
@@ -957,11 +957,11 @@ class TestEngineEventConversion:
             if on_event:
                 await on_event(EngineEvent(
                     type=EngineEventType.TEXT_DELTA,
-                    data={"text": "첫 번째 사고"},
+                    data={"text": "첫 번째 텍스트"},
                 ))
                 await on_event(EngineEvent(
                     type=EngineEventType.TEXT_DELTA,
-                    data={"text": "두 번째 사고"},
+                    data={"text": "두 번째 텍스트"},
                 ))
             return EngineResult(success=True, output="done")
 
@@ -974,7 +974,55 @@ class TestEngineEventConversion:
 
         start_events = [e for e in events if isinstance(e, TextStartSSEEvent)]
         assert len(start_events) == 2
-        assert start_events[0].card_id != start_events[1].card_id
+        # ThinkingBlock 없이 TextBlock만 오면 card_id는 모두 None
+        assert start_events[0].card_id is None
+        assert start_events[1].card_id is None
+
+    async def test_text_blocks_with_thinking_use_thinking_card_id(self):
+        """THINKING → TEXT_DELTA → THINKING → TEXT_DELTA → 각 TEXT는 직전 THINKING의 card_id"""
+        from soul_server.models import TextStartSSEEvent, ThinkingSSEEvent
+        from soul_server.engine.types import EngineEvent, EngineEventType
+
+        adapter = SoulEngineAdapter(workspace_dir="/test")
+
+        async def fake_run(prompt, session_id=None, on_progress=None,
+                           on_compact=None, on_intervention=None,
+                           on_session=None, on_event=None):
+            if on_event:
+                await on_event(EngineEvent(
+                    type=EngineEventType.THINKING,
+                    data={"thinking": "첫 번째 사고", "signature": "sig1"},
+                ))
+                await on_event(EngineEvent(
+                    type=EngineEventType.TEXT_DELTA,
+                    data={"text": "첫 번째 텍스트"},
+                ))
+                await on_event(EngineEvent(
+                    type=EngineEventType.THINKING,
+                    data={"thinking": "두 번째 사고", "signature": "sig2"},
+                ))
+                await on_event(EngineEvent(
+                    type=EngineEventType.TEXT_DELTA,
+                    data={"text": "두 번째 텍스트"},
+                ))
+            return EngineResult(success=True, output="done")
+
+        with patch(
+            "soul_server.service.engine_adapter.ClaudeRunner"
+        ) as MockRunner:
+            instance = MockRunner.return_value
+            instance.run = fake_run
+            events = await collect_events(adapter, "test")
+
+        thinking_events = [e for e in events if isinstance(e, ThinkingSSEEvent)]
+        start_events = [e for e in events if isinstance(e, TextStartSSEEvent)]
+        assert len(thinking_events) == 2
+        assert len(start_events) == 2
+        # 각 TEXT_DELTA는 직전 THINKING의 card_id를 사용
+        assert start_events[0].card_id == thinking_events[0].card_id
+        assert start_events[1].card_id == thinking_events[1].card_id
+        # 두 THINKING의 card_id는 서로 다름
+        assert thinking_events[0].card_id != thinking_events[1].card_id
 
     async def test_tool_linked_to_text_card(self):
         """TOOL_START.card_id = 직전 TEXT_DELTA의 card_id"""

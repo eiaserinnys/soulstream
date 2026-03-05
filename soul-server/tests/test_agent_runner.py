@@ -1083,30 +1083,24 @@ class TestBuildCompactHook:
 
 
 class TestSubagentHooks:
-    """SubagentStart/Stop 훅 및 관련 메서드 테스트"""
+    """SubagentStart/Stop 훅 및 _sdk_uuid_to_api_id 매핑 테스트
 
-    def test_agent_stack_initially_empty(self):
-        """초기 agent_stack은 비어있어야 함"""
+    새 아키텍처:
+    - _agent_stack, _get_current_parent_tool_use_id() 제거됨
+    - PreToolUse 훅이 _sdk_uuid_to_api_id dict에 SDK UUID → toolu_* 매핑을 구축
+    - SubagentStart는 매핑을 조회하여 parent_tool_use_id 결정
+    - SubagentStop은 이벤트만 발행 (스택 팝 없음)
+    """
+
+    def test_sdk_uuid_to_api_id_initially_empty(self):
+        """초기 _sdk_uuid_to_api_id는 비어있어야 함"""
         runner = ClaudeRunner()
-        assert runner._agent_stack == []
+        assert runner._sdk_uuid_to_api_id == {}
 
     def test_pending_events_initially_empty(self):
         """초기 pending_events는 비어있어야 함"""
         runner = ClaudeRunner()
         assert len(runner._pending_events) == 0
-
-    def test_get_current_parent_tool_use_id_empty_stack(self):
-        """빈 스택이면 None 반환"""
-        runner = ClaudeRunner()
-        assert runner._get_current_parent_tool_use_id() is None
-
-    def test_get_current_parent_tool_use_id_with_stack(self):
-        """스택에 항목이 있으면 마지막 항목의 tool_use_id 반환"""
-        runner = ClaudeRunner()
-        runner._agent_stack.append(("agent-1", "toolu_1"))
-        assert runner._get_current_parent_tool_use_id() == "toolu_1"
-        runner._agent_stack.append(("agent-2", "toolu_2"))
-        assert runner._get_current_parent_tool_use_id() == "toolu_2"
 
     def test_emit_event_adds_to_pending(self):
         """_emit_event가 pending_events에 이벤트를 추가"""
@@ -1131,21 +1125,21 @@ class TestSubagentHooks:
         assert len(runner._pending_events) == 0
 
     @pytest.mark.asyncio
-    async def test_on_subagent_start(self):
-        """_on_subagent_start가 스택에 푸시하고 이벤트를 발행"""
+    async def test_on_subagent_start_with_mapped_id(self):
+        """_on_subagent_start가 _sdk_uuid_to_api_id 매핑으로 toolu_* ID를 사용"""
         from soul_server.engine.types import EngineEventType
         runner = ClaudeRunner()
+
+        # PreToolUse 훅이 매핑을 구축한 상황 시뮬레이션
+        runner._sdk_uuid_to_api_id["sdk-uuid-1"] = "toolu_task_1"
+
         await runner._on_subagent_start(
             {"agent_id": "test-agent-1", "agent_type": "Explore"},
-            "toolu_task_1",
+            "sdk-uuid-1",
             None,
         )
 
-        # 스택에 푸시됨
-        assert len(runner._agent_stack) == 1
-        assert runner._agent_stack[0] == ("test-agent-1", "toolu_task_1")
-
-        # 이벤트가 큐에 추가됨
+        # 이벤트가 큐에 추가됨, parent_tool_use_id가 toolu_* 형식
         events = runner._drain_events()
         assert len(events) == 1
         assert events[0].type == EngineEventType.SUBAGENT_START
@@ -1155,20 +1149,49 @@ class TestSubagentHooks:
         assert events[0].agent_id == "test-agent-1"
 
     @pytest.mark.asyncio
-    async def test_on_subagent_stop(self):
-        """_on_subagent_stop이 스택에서 팝하고 이벤트를 발행"""
+    async def test_on_subagent_start_without_mapping_falls_back(self):
+        """매핑이 없으면 SDK UUID를 그대로 parent_tool_use_id로 사용 (방어)"""
         from soul_server.engine.types import EngineEventType
         runner = ClaudeRunner()
-        runner._agent_stack.append(("test-agent-1", "toolu_task_1"))
 
-        await runner._on_subagent_stop(
-            {"agent_id": "test-agent-1"},
-            "toolu_task_1",
+        # 매핑 없이 SubagentStart 호출
+        await runner._on_subagent_start(
+            {"agent_id": "agent-fallback", "agent_type": "Explore"},
+            "unmapped-sdk-uuid",
             None,
         )
 
-        # 스택에서 팝됨
-        assert len(runner._agent_stack) == 0
+        events = runner._drain_events()
+        assert len(events) == 1
+        assert events[0].parent_tool_use_id == "unmapped-sdk-uuid"
+
+    @pytest.mark.asyncio
+    async def test_on_subagent_start_with_none_tool_use_id(self):
+        """tool_use_id가 None이면 parent_tool_use_id는 빈 문자열"""
+        from soul_server.engine.types import EngineEventType
+        runner = ClaudeRunner()
+
+        await runner._on_subagent_start(
+            {"agent_id": "agent-none", "agent_type": "Plan"},
+            None,
+            None,
+        )
+
+        events = runner._drain_events()
+        assert len(events) == 1
+        assert events[0].parent_tool_use_id == ""
+
+    @pytest.mark.asyncio
+    async def test_on_subagent_stop_emits_event_only(self):
+        """_on_subagent_stop은 이벤트만 발행 (스택 팝 없음)"""
+        from soul_server.engine.types import EngineEventType
+        runner = ClaudeRunner()
+
+        await runner._on_subagent_stop(
+            {"agent_id": "test-agent-1"},
+            "sdk-uuid-1",
+            None,
+        )
 
         # 이벤트가 큐에 추가됨
         events = runner._drain_events()
@@ -1178,41 +1201,29 @@ class TestSubagentHooks:
         assert events[0].agent_id == "test-agent-1"
 
     @pytest.mark.asyncio
-    async def test_nested_subagents(self):
-        """중첩 서브에이전트 (2단계 이상) 정상 추적"""
+    async def test_subagent_start_stop_sequence(self):
+        """SubagentStart → SubagentStop 순서대로 이벤트 발행"""
+        from soul_server.engine.types import EngineEventType
         runner = ClaudeRunner()
+        runner._sdk_uuid_to_api_id["sdk-uuid-1"] = "toolu_task_1"
 
-        # 1단계 서브에이전트 시작
         await runner._on_subagent_start(
             {"agent_id": "agent-1", "agent_type": "Explore"},
-            "toolu_1",
+            "sdk-uuid-1",
             None,
         )
-        assert runner._get_current_parent_tool_use_id() == "toolu_1"
-
-        # 2단계 서브에이전트 시작
-        await runner._on_subagent_start(
-            {"agent_id": "agent-2", "agent_type": "Plan"},
-            "toolu_2",
-            None,
-        )
-        assert runner._get_current_parent_tool_use_id() == "toolu_2"
-
-        # 2단계 종료
-        await runner._on_subagent_stop(
-            {"agent_id": "agent-2"},
-            "toolu_2",
-            None,
-        )
-        assert runner._get_current_parent_tool_use_id() == "toolu_1"
-
-        # 1단계 종료
         await runner._on_subagent_stop(
             {"agent_id": "agent-1"},
-            "toolu_1",
+            "sdk-uuid-1",
             None,
         )
-        assert runner._get_current_parent_tool_use_id() is None
+
+        events = runner._drain_events()
+        assert len(events) == 2
+        assert events[0].type == EngineEventType.SUBAGENT_START
+        assert events[0].parent_tool_use_id == "toolu_task_1"
+        assert events[1].type == EngineEventType.SUBAGENT_STOP
+        assert events[1].agent_id == "agent-1"
 
     def test_engine_event_includes_parent_tool_use_id(self):
         """EngineEvent에 parent_tool_use_id 포함"""
@@ -1238,12 +1249,13 @@ class TestSubagentHooks:
         )
         assert event.agent_id == "test"
 
-    def test_hooks_always_include_subagent_hooks(self):
-        """_build_hooks가 항상 SubagentStart/Stop 훅을 포함"""
+    def test_hooks_always_include_subagent_and_pretooluse_hooks(self):
+        """_build_hooks가 항상 PreToolUse/SubagentStart/Stop 훅을 포함"""
         runner = ClaudeRunner()
 
-        # compact_events 없이도 SubagentStart/Stop 훅은 등록
+        # compact_events 없이도 PreToolUse/SubagentStart/Stop 훅은 등록
         hooks = runner._build_hooks(None)
+        assert "PreToolUse" in hooks
         assert "SubagentStart" in hooks
         assert "SubagentStop" in hooks
         assert "PreCompact" not in hooks
@@ -1251,96 +1263,87 @@ class TestSubagentHooks:
         # compact_events와 함께 모든 훅 등록
         compact_events = []
         hooks = runner._build_hooks(compact_events)
+        assert "PreToolUse" in hooks
         assert "SubagentStart" in hooks
         assert "SubagentStop" in hooks
         assert "PreCompact" in hooks
 
 
-class TestToolUseIdBridge:
-    """Task tool_use_id 브릿지 (toolu_* ↔ SDK UUID) 테스트"""
+class TestSdkUuidToApiIdMapping:
+    """SDK UUID → toolu_* API ID 매핑 테스트 (PreToolUse 훅 기반)
 
-    def test_pending_task_toolu_ids_initially_empty(self):
-        """초기 _pending_task_toolu_ids는 비어있어야 함"""
+    새 아키텍처: PreToolUse 훅이 _sdk_uuid_to_api_id dict를 구축하고,
+    SubagentStart 훅이 이 매핑을 조회하여 parent_tool_use_id를 결정합니다.
+    """
+
+    def test_mapping_initially_empty(self):
+        """초기 _sdk_uuid_to_api_id는 비어있어야 함"""
         runner = ClaudeRunner()
-        assert len(runner._pending_task_toolu_ids) == 0
+        assert len(runner._sdk_uuid_to_api_id) == 0
+
+    def test_pretooluse_populates_mapping(self):
+        """PreToolUse 훅이 SDK UUID → toolu_* 매핑을 구축하는지 검증"""
+        runner = ClaudeRunner()
+
+        # PreToolUse가 하는 일을 직접 시뮬레이션
+        # hook_input["tool_use_id"] = toolu_* (API ID)
+        # tool_use_id (param) = SDK UUID
+        sdk_uuid = "550e8400-e29b-41d4-a716-446655440000"
+        api_id = "toolu_task_abc123"
+        runner._sdk_uuid_to_api_id[sdk_uuid] = api_id
+
+        assert runner._sdk_uuid_to_api_id[sdk_uuid] == "toolu_task_abc123"
 
     @pytest.mark.asyncio
     async def test_single_task_subagent_bridge(self):
-        """A1: 단일 Task → SubagentStart 시 parent_tool_use_id가 Task의 toolu_*와 일치"""
+        """B1: PreToolUse 매핑 후 SubagentStart가 toolu_* ID를 사용"""
         runner = ClaudeRunner()
 
-        # Task ToolUseBlock 처리로 toolu_* ID 큐잉
-        runner._pending_task_toolu_ids.append("toolu_task_abc123")
+        # PreToolUse 훅에 의해 매핑 구축
+        sdk_uuid = "550e8400-e29b-41d4-a716-446655440000"
+        runner._sdk_uuid_to_api_id[sdk_uuid] = "toolu_task_abc123"
 
-        # SubagentStart (SDK UUID 전달)
+        # SubagentStart (동일 SDK UUID 전달)
         await runner._on_subagent_start(
             {"agent_id": "agent-1", "agent_type": "Explore"},
-            "550e8400-e29b-41d4-a716-446655440000",  # SDK UUID
+            sdk_uuid,
             None,
         )
-
-        # 스택에 toolu_* ID가 들어있어야 함
-        assert runner._agent_stack[0] == ("agent-1", "toolu_task_abc123")
 
         # 이벤트의 parent_tool_use_id가 toolu_* 형식
         events = runner._drain_events()
         assert events[0].parent_tool_use_id == "toolu_task_abc123"
 
     @pytest.mark.asyncio
-    async def test_parallel_tasks_fifo_order(self):
-        """A2: 병렬 Task 2개 → SubagentStart 2개에서 FIFO 순서 보존"""
+    async def test_parallel_tasks_independent_mapping(self):
+        """B2: 병렬 Task 2개 → 각각 독립적인 SDK UUID → toolu_* 매핑"""
         runner = ClaudeRunner()
 
-        # 병렬 Task 2개 큐잉
-        runner._pending_task_toolu_ids.append("toolu_task_first")
-        runner._pending_task_toolu_ids.append("toolu_task_second")
+        # 병렬 Task 2개의 PreToolUse 매핑
+        runner._sdk_uuid_to_api_id["sdk-uuid-1"] = "toolu_task_first"
+        runner._sdk_uuid_to_api_id["sdk-uuid-2"] = "toolu_task_second"
 
-        # 첫 번째 SubagentStart
+        # SubagentStart 2개 (순서 무관, 각자 자기 SDK UUID로 매핑 조회)
         await runner._on_subagent_start(
             {"agent_id": "agent-1", "agent_type": "Explore"},
-            "uuid-1",
+            "sdk-uuid-1",
             None,
         )
-        # 두 번째 SubagentStart
         await runner._on_subagent_start(
             {"agent_id": "agent-2", "agent_type": "Plan"},
-            "uuid-2",
+            "sdk-uuid-2",
             None,
         )
-
-        # FIFO: 첫 번째 Task → 첫 번째 Subagent
-        assert runner._agent_stack[0] == ("agent-1", "toolu_task_first")
-        assert runner._agent_stack[1] == ("agent-2", "toolu_task_second")
 
         events = runner._drain_events()
         assert events[0].parent_tool_use_id == "toolu_task_first"
         assert events[1].parent_tool_use_id == "toolu_task_second"
 
     @pytest.mark.asyncio
-    async def test_task_error_clears_queue(self):
-        """A3: Task 에러 (SubagentStart 없이 ToolResult) 시 큐에서 해당 ID 정리"""
+    async def test_unmapped_uuid_falls_back(self):
+        """B3: 매핑에 없는 SDK UUID → SDK UUID 그대로 사용 (방어)"""
         runner = ClaudeRunner()
-        runner._pending_task_toolu_ids.append("toolu_task_err")
-
-        # ToolResultBlock 모의 — Task 에러
-        block = MagicMock()
-        block.tool_use_id = "toolu_task_err"
-        block.content = "Error: agent failed"
-        block.is_error = True
-
-        msg_state = MessageState()
-        msg_state.tool_use_id_to_name["toolu_task_err"] = "Task"
-
-        await runner._process_tool_result_block(block, msg_state, None)
-
-        # 큐에서 제거됨
-        assert "toolu_task_err" not in runner._pending_task_toolu_ids
-
-    @pytest.mark.asyncio
-    async def test_empty_queue_uses_sdk_uuid(self):
-        """A4: 큐 비어있을 때 SubagentStart → SDK UUID 그대로 사용 (방어)"""
-        runner = ClaudeRunner()
-        assert len(runner._pending_task_toolu_ids) == 0
+        assert len(runner._sdk_uuid_to_api_id) == 0
 
         await runner._on_subagent_start(
             {"agent_id": "agent-1", "agent_type": "Explore"},
@@ -1348,64 +1351,65 @@ class TestToolUseIdBridge:
             None,
         )
 
-        assert runner._agent_stack[0] == ("agent-1", "fallback-uuid-value")
         events = runner._drain_events()
         assert events[0].parent_tool_use_id == "fallback-uuid-value"
 
     @pytest.mark.asyncio
-    async def test_nested_subagents_use_toolu_ids(self):
-        """A5: 중첩 서브에이전트 (2단계) — 각 레벨에서 올바른 toolu_* 사용"""
+    async def test_subagent_stop_just_emits_event(self):
+        """B4: SubagentStop은 이벤트만 발행, 매핑이나 스택 조작 없음"""
+        from soul_server.engine.types import EngineEventType
         runner = ClaudeRunner()
+        runner._sdk_uuid_to_api_id["sdk-uuid-1"] = "toolu_task_1"
 
-        # 레벨 1 Task
-        runner._pending_task_toolu_ids.append("toolu_level1")
-        await runner._on_subagent_start(
-            {"agent_id": "agent-outer", "agent_type": "Explore"},
-            "sdk-uuid-outer",
+        await runner._on_subagent_stop(
+            {"agent_id": "agent-1"},
+            "sdk-uuid-1",
             None,
         )
-        assert runner._get_current_parent_tool_use_id() == "toolu_level1"
 
-        # 레벨 2 Task (서브에이전트 내부에서 다시 Task 호출)
-        runner._pending_task_toolu_ids.append("toolu_level2")
-        await runner._on_subagent_start(
-            {"agent_id": "agent-inner", "agent_type": "Plan"},
-            "sdk-uuid-inner",
-            None,
+        # 매핑은 그대로 남아있음 (SubagentStop이 정리하지 않음)
+        assert "sdk-uuid-1" in runner._sdk_uuid_to_api_id
+
+        events = runner._drain_events()
+        assert len(events) == 1
+        assert events[0].type == EngineEventType.SUBAGENT_STOP
+        assert events[0].agent_id == "agent-1"
+
+    def test_mapping_cleared_on_run_start(self):
+        """B5: 실행 시작 시 이전 실행의 매핑이 정리되는지 검증"""
+        runner = ClaudeRunner()
+        runner._sdk_uuid_to_api_id["old-uuid"] = "toolu_old"
+        runner._pending_events.append(
+            MagicMock()  # 잔여 이벤트
         )
-        assert runner._get_current_parent_tool_use_id() == "toolu_level2"
 
-        # 레벨 2 종료
-        await runner._on_subagent_stop(
-            {"agent_id": "agent-inner"}, "sdk-uuid-inner", None,
-        )
-        assert runner._get_current_parent_tool_use_id() == "toolu_level1"
+        # _run_impl 시작 시 clear 호출됨 — 직접 시뮬레이션
+        runner._sdk_uuid_to_api_id.clear()
+        runner._pending_events.clear()
 
-        # 레벨 1 종료
-        await runner._on_subagent_stop(
-            {"agent_id": "agent-outer"}, "sdk-uuid-outer", None,
-        )
-        assert runner._get_current_parent_tool_use_id() is None
+        assert len(runner._sdk_uuid_to_api_id) == 0
+        assert len(runner._pending_events) == 0
 
-    def test_non_task_tools_not_queued(self):
-        """A6: 혼합 도구 (Read, Bash) — Task만 큐에 들어감"""
+    def test_multiple_tools_mapped_independently(self):
+        """B6: 여러 도구의 PreToolUse 매핑이 독립적으로 유지됨"""
         runner = ClaudeRunner()
 
-        # 직접 큐에 넣는 것은 ToolUseBlock 처리 코드이므로
-        # _pending_task_toolu_ids에 Task 외 도구가 들어가지 않음을 검증
-        # (실제로는 block.name == "Task" 조건으로 필터됨)
-        assert len(runner._pending_task_toolu_ids) == 0
+        # Read, Bash, Task 등 여러 도구가 PreToolUse를 거침
+        runner._sdk_uuid_to_api_id["uuid-read"] = "toolu_read_1"
+        runner._sdk_uuid_to_api_id["uuid-bash"] = "toolu_bash_1"
+        runner._sdk_uuid_to_api_id["uuid-task"] = "toolu_task_1"
 
-        # Read, Bash는 큐에 추가되지 않아야 함 — 시뮬레이션
-        # ToolUseBlock 처리에서 Task만 추가하므로 비어있음 유지
-        runner._pending_task_toolu_ids.append("toolu_task_only")
-        assert len(runner._pending_task_toolu_ids) == 1
+        # 각각 독립적으로 조회 가능
+        assert runner._sdk_uuid_to_api_id["uuid-read"] == "toolu_read_1"
+        assert runner._sdk_uuid_to_api_id["uuid-bash"] == "toolu_bash_1"
+        assert runner._sdk_uuid_to_api_id["uuid-task"] == "toolu_task_1"
 
     @pytest.mark.asyncio
-    async def test_get_current_parent_uses_bridged_id(self):
-        """A7: _get_current_parent_tool_use_id가 스택에 toolu_*를 반환"""
+    async def test_subagent_start_event_has_correct_toolu_id(self):
+        """B7: SubagentStart 이벤트의 parent_tool_use_id가 toolu_* 형식인지 검증"""
+        from soul_server.engine.types import EngineEventType
         runner = ClaudeRunner()
-        runner._pending_task_toolu_ids.append("toolu_bridged_123")
+        runner._sdk_uuid_to_api_id["sdk-uuid-x"] = "toolu_bridged_123"
 
         await runner._on_subagent_start(
             {"agent_id": "agent-x", "agent_type": "Explore"},
@@ -1413,17 +1417,17 @@ class TestToolUseIdBridge:
             None,
         )
 
-        # 스택에 toolu_* 형식이 들어있어야 함 (UUID 아님)
-        result = runner._get_current_parent_tool_use_id()
+        events = runner._drain_events()
+        result = events[0].parent_tool_use_id
         assert result == "toolu_bridged_123"
-        assert not result.startswith("sdk-")
+        assert result.startswith("toolu_")
 
     @pytest.mark.asyncio
-    async def test_subagent_internal_events_propagate_bridged_id(self):
-        """A8: 서브에이전트 내부 이벤트에 bridged toolu_*가 전파됨"""
+    async def test_event_propagates_mapped_toolu_id(self):
+        """B8: 매핑된 toolu_* ID가 이벤트에 올바르게 전파됨"""
         from soul_server.engine.types import EngineEvent, EngineEventType
         runner = ClaudeRunner()
-        runner._pending_task_toolu_ids.append("toolu_prop_test")
+        runner._sdk_uuid_to_api_id["sdk-uuid-prop"] = "toolu_prop_test"
 
         await runner._on_subagent_start(
             {"agent_id": "agent-prop", "agent_type": "Explore"},
@@ -1431,8 +1435,10 @@ class TestToolUseIdBridge:
             None,
         )
 
+        events = runner._drain_events()
+        parent_id = events[0].parent_tool_use_id
+
         # 서브에이전트 내부에서 발행되는 이벤트의 parent_tool_use_id 검증
-        parent_id = runner._get_current_parent_tool_use_id()
         event = EngineEvent(
             type=EngineEventType.TOOL_START,
             data={"tool_name": "Read", "tool_input": {}},

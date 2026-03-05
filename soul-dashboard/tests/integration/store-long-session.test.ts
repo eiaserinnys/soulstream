@@ -67,11 +67,13 @@ describe("Store + Layout: Long Session Rendering", () => {
         processEvent({ type: "text_end", card_id: textId } as TextEndEvent, eventId++);
 
         const toolId = `tool-${i}`;
+        const toolUseId = `toolu_long_${i}`;
         processEvent({
           type: "tool_start",
           card_id: toolId,
           tool_name: "Bash",
           tool_input: { command: `echo ${i}` },
+          tool_use_id: toolUseId,
         } as ToolStartEvent, eventId++);
         processEvent({
           type: "tool_result",
@@ -79,6 +81,7 @@ describe("Store + Layout: Long Session Rendering", () => {
           tool_name: "Bash",
           result: `output ${i}`,
           is_error: false,
+          tool_use_id: toolUseId,
         } as ToolResultEvent, eventId++);
       }
 
@@ -113,11 +116,13 @@ describe("Store + Layout: Long Session Rendering", () => {
         processEvent({ type: "text_end", card_id: textId } as TextEndEvent, eventId++);
 
         const toolId = `tool-${i}`;
+        const toolUseId = `toolu_perf_${i}`;
         processEvent({
           type: "tool_start",
           card_id: toolId,
           tool_name: "Read",
           tool_input: { file_path: `/path/file${i}.ts` },
+          tool_use_id: toolUseId,
         } as ToolStartEvent, eventId++);
         processEvent({
           type: "tool_result",
@@ -125,6 +130,7 @@ describe("Store + Layout: Long Session Rendering", () => {
           tool_name: "Read",
           result: `content of file${i}`,
           is_error: false,
+          tool_use_id: toolUseId,
         } as ToolResultEvent, eventId++);
       }
 
@@ -291,6 +297,7 @@ describe("Store + Layout: Long Session Rendering", () => {
         card_id: "t1",
         tool_name: "Bash",
         tool_input: { command: "invalid-cmd" },
+        tool_use_id: "toolu_err1",
       } as ToolStartEvent, eventId++);
 
       processEvent({
@@ -299,6 +306,7 @@ describe("Store + Layout: Long Session Rendering", () => {
         tool_name: "Bash",
         result: "command not found: invalid-cmd",
         is_error: true,
+        tool_use_id: "toolu_err1",
       } as ToolResultEvent, eventId++);
 
       // tool 노드 ID는 `tool-${eventId}` 형식

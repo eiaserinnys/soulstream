@@ -3,8 +3,8 @@
 {"id":3,"event":{"type":"text_start","card_id":"card-t1"}}
 {"id":4,"event":{"type":"text_delta","card_id":"card-t1","text":"Starting the analysis of the entire project structure..."}}
 {"id":5,"event":{"type":"text_end","card_id":"card-t1"}}
-{"id":6,"event":{"type":"tool_start","card_id":"card-tool1","tool_name":"Glob","tool_input":{"pattern":"**/*.ts"}}}
-{"id":7,"event":{"type":"tool_result","card_id":"card-tool1","tool_name":"Glob","result":"Found 42 TypeScript files","is_error":false}}
+{"id":6,"event":{"type":"tool_start","card_id":"card-tool1","tool_name":"Glob","tool_input":{"pattern":"**/*.ts"},"tool_use_id":"toolu_intv1"}}
+{"id":7,"event":{"type":"tool_result","card_id":"card-tool1","tool_name":"Glob","result":"Found 42 TypeScript files","is_error":false,"tool_use_id":"toolu_intv1"}}
 {"id":8,"event":{"type":"text_start","card_id":"card-t2"}}
 {"id":9,"event":{"type":"text_delta","card_id":"card-t2","text":"Found 42 files. Analyzing each one..."}}
 {"id":10,"event":{"type":"text_end","card_id":"card-t2"}}
@@ -12,8 +12,8 @@
 {"id":12,"event":{"type":"text_start","card_id":"card-t3"}}
 {"id":13,"event":{"type":"text_delta","card_id":"card-t3","text":"Understood, narrowing scope to src/client/ as requested."}}
 {"id":14,"event":{"type":"text_end","card_id":"card-t3"}}
-{"id":15,"event":{"type":"tool_start","card_id":"card-tool2","tool_name":"Glob","tool_input":{"pattern":"src/client/**/*.ts"}}}
-{"id":16,"event":{"type":"tool_result","card_id":"card-tool2","tool_name":"Glob","result":"Found 12 client files","is_error":false}}
+{"id":15,"event":{"type":"tool_start","card_id":"card-tool2","tool_name":"Glob","tool_input":{"pattern":"src/client/**/*.ts"},"tool_use_id":"toolu_intv2"}}
+{"id":16,"event":{"type":"tool_result","card_id":"card-tool2","tool_name":"Glob","result":"Found 12 client files","is_error":false,"tool_use_id":"toolu_intv2"}}
 {"id":17,"event":{"type":"text_start","card_id":"card-t4"}}
 {"id":18,"event":{"type":"text_delta","card_id":"card-t4","text":"Analysis of the 12 client files is complete."}}
 {"id":19,"event":{"type":"text_end","card_id":"card-t4"}}

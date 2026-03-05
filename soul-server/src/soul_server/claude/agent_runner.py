@@ -308,11 +308,10 @@ class ClaudeRunner:
         self._client_options_fp: Optional[str] = None
 
         # Subagent 추적을 위한 상태
-        self._agent_stack: list[tuple[str, str]] = []  # (agent_id, parent_tool_use_id)
         self._pending_events: deque[EngineEvent] = deque()  # 이벤트 큐
-        # Task ToolUseBlock의 toolu_* ID를 FIFO 큐로 보관.
-        # SubagentStart 훅이 호출될 때 큐에서 꺼내 SDK UUID 대신 사용한다.
-        self._pending_task_toolu_ids: deque[str] = deque()
+        # PreToolUse 훅에서 구축: SDK UUID → toolu_* ID 매핑
+        # 실행 순서: ToolUseBlock → PreToolUse 훅(매핑 등록) → Task 실행 → SubagentStart 훅(매핑 조회)
+        self._sdk_uuid_to_api_id: dict[str, str] = {}
 
     @classmethod
     async def shutdown_all_clients(cls) -> int:
@@ -345,12 +344,6 @@ class ClaudeRunner:
         )
         return hashlib.md5("|".join(key_parts).encode()).hexdigest()[:8]
 
-    def _get_current_parent_tool_use_id(self) -> Optional[str]:
-        """현재 활성 서브에이전트의 parent_tool_use_id 반환"""
-        if self._agent_stack:
-            return self._agent_stack[-1][1]
-        return None
-
     def _emit_event(self, event: EngineEvent) -> None:
         """이벤트를 큐에 추가"""
         self._pending_events.append(event)
@@ -370,26 +363,16 @@ class ClaudeRunner:
         """SubagentStart 훅 핸들러
 
         서브에이전트(Task 도구) 시작 시 호출됩니다.
-        agent_stack에 푸시하고 SUBAGENT_START 이벤트를 큐에 추가합니다.
-
-        SDK가 전달하는 tool_use_id는 UUID 형식이지만, 대시보드 클라이언트는
-        Claude API의 toolu_* 형식 ID로 트리를 구성합니다.
-        _pending_task_toolu_ids 큐에서 toolu_* ID를 꺼내 SDK UUID 대신 사용합니다.
+        PreToolUse 훅에서 구축된 SDK UUID → toolu_* 매핑으로
+        결정론적으로 parent_tool_use_id를 획득합니다.
         """
         agent_id = input_data.get("agent_id", "")
         agent_type = input_data.get("agent_type", "")
 
-        # SDK UUID 대신 toolu_* ID 사용 (FIFO)
-        if self._pending_task_toolu_ids:
-            bridged_id = self._pending_task_toolu_ids.popleft()
-        else:
-            # 방어: 큐가 비어있으면 SDK UUID 그대로 사용
-            bridged_id = tool_use_id or ""
+        # PreToolUse에서 구축된 매핑으로 toolu_* ID 획득
+        parent_id = self._sdk_uuid_to_api_id.get(tool_use_id, tool_use_id or "") if tool_use_id else ""
 
-        # 스택에 푸시
-        self._agent_stack.append((agent_id, bridged_id))
-
-        # 이벤트 큐에 추가 (yield 아님!)
+        # 이벤트 큐에 추가
         self._emit_event(EngineEvent(
             type=EngineEventType.SUBAGENT_START,
             data={
@@ -397,13 +380,13 @@ class ClaudeRunner:
                 "agent_type": agent_type,
             },
             timestamp=time.time(),
-            parent_tool_use_id=bridged_id,
+            parent_tool_use_id=parent_id,
             agent_id=agent_id,
         ))
 
         logger.info(
             f"[SUBAGENT_START] agent_id={agent_id}, agent_type={agent_type}, "
-            f"parent_tool_use_id={bridged_id} (sdk_uuid={tool_use_id})"
+            f"parent_tool_use_id={parent_id} (sdk_uuid={tool_use_id})"
         )
         return {}
 
@@ -416,13 +399,9 @@ class ClaudeRunner:
         """SubagentStop 훅 핸들러
 
         서브에이전트(Task 도구) 종료 시 호출됩니다.
-        agent_stack에서 팝하고 SUBAGENT_STOP 이벤트를 큐에 추가합니다.
+        이벤트만 발행합니다 (스택 관리 불필요).
         """
         agent_id = input_data.get("agent_id", "")
-
-        # 스택에서 팝 (매칭되는 경우만)
-        if self._agent_stack and self._agent_stack[-1][0] == agent_id:
-            self._agent_stack.pop()
 
         # 이벤트 큐에 추가
         self._emit_event(EngineEvent(
@@ -633,6 +612,7 @@ class ClaudeRunner:
         msg_state: "MessageState",
         on_event,
         source: str = "",
+        msg_parent: Optional[str] = None,
     ) -> None:
         """ToolResultBlock에서 TOOL_RESULT 이벤트 발행 (공통 로직)
 
@@ -644,6 +624,7 @@ class ClaudeRunner:
             msg_state: 메시지 처리 상태
             on_event: 이벤트 콜백
             source: 로그용 출처 ("AssistantMessage" 또는 "UserMessage")
+            msg_parent: SDK 메시지의 parent_tool_use_id (서브에이전트 레벨 결정)
         """
         tool_use_id = getattr(block, "tool_use_id", None)
 
@@ -652,11 +633,6 @@ class ClaudeRunner:
             return
         if tool_use_id:
             msg_state.emitted_tool_result_ids.add(tool_use_id)
-
-        # Task 도구가 SubagentStart 없이 ToolResult를 받으면 (에러 케이스)
-        # _pending_task_toolu_ids 큐에서 해당 ID를 제거하여 후속 SubagentStart와의 불일치를 방지
-        if tool_use_id and tool_use_id in self._pending_task_toolu_ids:
-            self._pending_task_toolu_ids.remove(tool_use_id)
 
         content = ""
         if isinstance(block.content, str):
@@ -691,7 +667,7 @@ class ClaudeRunner:
                         "is_error": is_error,
                         "tool_use_id": tool_use_id,
                     },
-                    parent_tool_use_id=self._get_current_parent_tool_use_id(),
+                    parent_tool_use_id=msg_parent,
                 ))
             except Exception as e:
                 logger.warning(f"이벤트 콜백 오류 (TOOL_RESULT:{source}): {e}")
@@ -782,6 +758,23 @@ class ClaudeRunner:
             hooks["PreCompact"] = [
                 HookMatcher(matcher=None, hooks=[on_pre_compact])
             ]
+
+        # PreToolUse 훅 (항상 등록): SDK UUID → toolu_* 매핑 구축
+        async def on_pre_tool_use_hook(
+            hook_input: dict,
+            tool_use_id: Optional[str],
+            context: HookContext,
+        ) -> HookJSONOutput:
+            # hook_input["tool_use_id"] = toolu_* (API의 ToolUseBlock.id)
+            # tool_use_id (두 번째 파라미터) = SDK UUID (CLI 내부 식별자)
+            api_id = hook_input.get("tool_use_id")
+            if tool_use_id and api_id:
+                self._sdk_uuid_to_api_id[tool_use_id] = api_id
+            return HookJSONOutput()
+
+        hooks["PreToolUse"] = [
+            HookMatcher(matcher=None, hooks=[on_pre_tool_use_hook])
+        ]
 
         # SubagentStart 훅 (항상 등록)
         async def on_subagent_start_hook(
@@ -984,6 +977,9 @@ class ClaudeRunner:
         runner_id = self.runner_id
         aiter = client.receive_response().__aiter__()
 
+        # SDK 메시지의 parent_tool_use_id를 추적 (ResultMessage에서 사용)
+        last_msg_parent: Optional[str] = None
+
         # 메시지 수신 태스크를 재사용하기 위한 변수.
         # 폴링 타이머 완료 시 msg_task는 pending 상태로 재사용되며,
         # 메시지 도착 시 finally에서 None으로 리셋하여 다음 반복에서 새로 생성한다.
@@ -1066,6 +1062,10 @@ class ClaudeRunner:
 
                 # AssistantMessage에서 텍스트/도구 사용 추출
                 elif isinstance(message, AssistantMessage):
+                    # SDK 메시지의 parent_tool_use_id를 직접 사용
+                    msg_parent = getattr(message, "parent_tool_use_id", None)
+                    last_msg_parent = msg_parent
+
                     if hasattr(message, 'content'):
                         for block in message.content:
                             # ThinkingBlock: Extended Thinking 처리
@@ -1094,7 +1094,7 @@ class ClaudeRunner:
                                                     "thinking": thinking_text,
                                                     "signature": signature,
                                                 },
-                                                parent_tool_use_id=self._get_current_parent_tool_use_id(),
+                                                parent_tool_use_id=msg_parent,
                                             ))
                                         except Exception as e:
                                             logger.warning(f"이벤트 콜백 오류 (THINKING): {e}")
@@ -1122,7 +1122,7 @@ class ClaudeRunner:
                                         await on_event(EngineEvent(
                                             type=EngineEventType.TEXT_DELTA,
                                             data={"text": block.text},
-                                            parent_tool_use_id=self._get_current_parent_tool_use_id(),
+                                            parent_tool_use_id=msg_parent,
                                         ))
                                     except Exception as e:
                                         logger.warning(f"이벤트 콜백 오류 (TEXT_DELTA): {e}")
@@ -1138,9 +1138,6 @@ class ClaudeRunner:
                                 tool_use_id = getattr(block, "id", None)
                                 if tool_use_id:
                                     msg_state.tool_use_id_to_name[tool_use_id] = block.name
-                                    # Task 도구의 toolu_* ID를 큐에 보관 → SubagentStart에서 사용
-                                    if block.name == "Task":
-                                        self._pending_task_toolu_ids.append(tool_use_id)
                                 logger.info(f"[TOOL_USE] {block.name}: {tool_input[:500]}")
                                 msg_state.collected_messages.append({
                                     "role": "assistant",
@@ -1165,14 +1162,16 @@ class ClaudeRunner:
                                                 "tool_input": event_tool_input,
                                                 "tool_use_id": tool_use_id,
                                             },
-                                            parent_tool_use_id=self._get_current_parent_tool_use_id(),
+                                            parent_tool_use_id=msg_parent,
                                         ))
                                     except Exception as e:
                                         logger.warning(f"이벤트 콜백 오류 (TOOL_START): {e}")
 
                             elif isinstance(block, ToolResultBlock):
                                 await self._process_tool_result_block(
-                                    block, msg_state, on_event, source="AssistantMessage",
+                                    block, msg_state, on_event,
+                                    source="AssistantMessage",
+                                    msg_parent=msg_parent,
                                 )
 
                 # UserMessage에서 ToolResultBlock 추출 → TOOL_RESULT 이벤트 발행
@@ -1180,11 +1179,16 @@ class ClaudeRunner:
                 # AssistantMessage.content에 ToolResultBlock이 포함되는 경우도 대비하여
                 # 양쪽 모두 처리하되, emitted_tool_result_ids로 중복 발행을 방지합니다.
                 elif isinstance(message, UserMessage):
+                    msg_parent = getattr(message, "parent_tool_use_id", None)
+                    last_msg_parent = msg_parent
+
                     if hasattr(message, 'content') and isinstance(message.content, list):
                         for block in message.content:
                             if isinstance(block, ToolResultBlock):
                                 await self._process_tool_result_block(
-                                    block, msg_state, on_event, source="UserMessage",
+                                    block, msg_state, on_event,
+                                    source="UserMessage",
+                                    msg_parent=msg_parent,
                                 )
 
                 # ResultMessage에서 최종 결과 추출
@@ -1208,7 +1212,7 @@ class ClaudeRunner:
                                     "output": result_output,
                                     "error": result_output if msg_state.is_error else None,
                                 },
-                                parent_tool_use_id=self._get_current_parent_tool_use_id(),
+                                parent_tool_use_id=last_msg_parent,
                             ))
                         except Exception as e:
                             logger.warning(f"이벤트 콜백 오류 (RESULT): {e}")
@@ -1357,9 +1361,8 @@ class ClaudeRunner:
         compact_state = CompactRetryState()
 
         # 이전 실행의 잔여 상태 정리 (풀링된 runner 재사용 대비)
-        self._agent_stack.clear()
         self._pending_events.clear()
-        self._pending_task_toolu_ids.clear()
+        self._sdk_uuid_to_api_id.clear()
 
         # 현재 실행 루프를 인스턴스에 등록 (interrupt에서 사용)
         self.execution_loop = asyncio.get_running_loop()

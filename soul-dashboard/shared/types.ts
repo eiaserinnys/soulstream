@@ -114,20 +114,21 @@ export interface ThinkingEvent {
 
 export interface TextStartEvent {
   type: "text_start";
-  card_id: string;
+  /** thinking의 card_id, 없으면 턴 루트에 직접 배치 */
+  card_id?: string;
   /** 부모 tool_use_id (서브에이전트 내부 노드 배치용) */
   parent_tool_use_id?: string;
 }
 
 export interface TextDeltaEvent {
   type: "text_delta";
-  card_id: string;
+  card_id?: string;
   text: string;
 }
 
 export interface TextEndEvent {
   type: "text_end";
-  card_id: string;
+  card_id?: string;
 }
 
 export interface ToolStartEvent {
@@ -291,6 +292,11 @@ export interface EventTreeNode {
 
   // user_message / intervention 전용
   user?: string;
+
+  // thinking 노드의 가시적 텍스트 (text_delta로 업데이트)
+  textContent?: string;
+  // text_end 수신 여부
+  textCompleted?: boolean;
 
   // session 전용
   sessionId?: string;
