@@ -321,9 +321,11 @@ class ClaudeRunner:
 
         # Subagent 추적을 위한 상태
         self._pending_events: deque[EngineEvent] = deque()  # 이벤트 큐
-        # PreToolUse 훅에서 구축: SDK UUID → toolu_* ID 매핑
-        # 실행 순서: ToolUseBlock → PreToolUse 훅(매핑 등록) → Task 실행 → SubagentStart 훅(매핑 조회)
-        self._sdk_uuid_to_api_id: dict[str, str] = {}
+        # PreToolUse → SubagentStart 브릿지:
+        # SDK가 PreToolUse에 toolu_* ID를, SubagentStart에 UUID를 전달하므로
+        # 직접 매핑이 불가능. FIFO 큐로 Task 도구의 toolu_* ID를 전달.
+        # 실행 순서: PreToolUse(Task) → Task 실행 → SubagentStart
+        self._pending_task_tool_ids: list[str] = []  # Task 도구 toolu_* FIFO 큐
         # SubagentStart에서 구축: agent_id → parent_tool_use_id
         self._agent_id_to_parent: dict[str, str] = {}
 
@@ -377,32 +379,30 @@ class ClaudeRunner:
         """SubagentStart 훅 핸들러
 
         서브에이전트(Task 도구) 시작 시 호출됩니다.
-        PreToolUse 훅에서 구축된 SDK UUID → toolu_* 매핑으로
-        결정론적으로 parent_tool_use_id를 획득합니다.
+        PreToolUse에서 FIFO 큐에 저장한 toolu_* ID를 꺼내어
+        parent_tool_use_id로 사용합니다.
+
+        SDK 특성:
+        - PreToolUse의 tool_use_id 파라미터 = toolu_* (API ID)
+        - SubagentStart의 tool_use_id 파라미터 = UUID (CLI 내부 ID)
+        - 두 값은 직접 매핑 불가 → FIFO 큐로 순서 기반 브릿지
+        - CLI가 도구를 순차 실행하므로 FIFO 순서가 보장됨
         """
         agent_id = input_data.get("agent_id", "")
         agent_type = input_data.get("agent_type", "")
 
-        # 진단 로그: input_data 전체 키와 tool_use_id 덤프
-        logger.info(
-            f"[SubagentStart] DIAG param_tool_use_id={tool_use_id}, "
-            f"input_data_keys={list(input_data.keys())}, "
-            f"input_data={{{', '.join(f'{k}={v!r}' for k, v in input_data.items() if k != 'prompt')}}}"
-        )
-
-        # PreToolUse에서 구축된 매핑으로 toolu_* ID 획득 (폴백 금지)
-        if tool_use_id:
-            parent_id = self._sdk_uuid_to_api_id.get(tool_use_id)
-            if parent_id is None:
-                logger.error(
-                    f"[SubagentStart] UUID→API 매핑 조회 실패: sdk_uuid={tool_use_id}, "
-                    f"매핑 테이블 크기={len(self._sdk_uuid_to_api_id)}, "
-                    f"매핑 키 목록={list(self._sdk_uuid_to_api_id.keys())}, "
-                    f"매핑 값 목록={list(self._sdk_uuid_to_api_id.values())}"
-                )
-                parent_id = ""
+        # FIFO 큐에서 Task 도구의 toolu_* ID 획득
+        if self._pending_task_tool_ids:
+            parent_id = self._pending_task_tool_ids.pop(0)
+            logger.info(
+                f"[SubagentStart] FIFO 큐에서 parent_id 획득: {parent_id} "
+                f"(남은 큐={len(self._pending_task_tool_ids)})"
+            )
         else:
-            logger.error(f"[SubagentStart] tool_use_id가 None — SubagentStart 훅에 tool_use_id 미전달")
+            logger.error(
+                f"[SubagentStart] FIFO 큐 비어있음 — PreToolUse(Task)가 선행되지 않음, "
+                f"sdk_uuid={tool_use_id}"
+            )
             parent_id = ""
 
         # agent_id → parent_tool_use_id 매핑 저장 (SubagentStop에서 사용)
@@ -416,10 +416,9 @@ class ClaudeRunner:
             agent_id=agent_id,
         ))
 
-        mapped = parent_id != tool_use_id and parent_id != ""
         logger.info(
             f"[SUBAGENT_START] agent_id={agent_id}, agent_type={agent_type}, "
-            f"parent_tool_use_id={parent_id} (sdk_uuid={tool_use_id}, mapped={mapped})"
+            f"parent_tool_use_id={parent_id} (resolved={'ok' if parent_id else 'FAIL'})"
         )
         return {}
 
@@ -794,33 +793,25 @@ class ClaudeRunner:
             tool_use_id: Optional[str],
             context: HookContext,
         ) -> SyncHookJSONOutput:
-            api_id = hook_input.get("tool_use_id")
             tool_name = hook_input.get("tool_name", "unknown")
+            api_id = hook_input.get("tool_use_id")  # toolu_* 형식
 
-            # 진단 로그: hook_input의 전체 키와 tool_use_id 파라미터 비교
-            logger.info(
-                f"[PreToolUse] DIAG tool={tool_name}, "
-                f"param_tool_use_id={tool_use_id}, "
-                f"hook_input.tool_use_id={api_id}, "
-                f"hook_input_keys={list(hook_input.keys())}"
-            )
-
-            if tool_use_id and api_id and tool_use_id != api_id:
-                # 정상: 두 값이 다르면 UUID → toolu_* 매핑
-                self._sdk_uuid_to_api_id[tool_use_id] = api_id
+            # Task 도구의 toolu_* ID를 FIFO 큐에 저장
+            # SubagentStart 훅에서 이 큐에서 꺼내어 parent_tool_use_id로 사용
+            #
+            # 안전성 근거: Claude SDK CLI는 도구를 순차 실행한다.
+            # PreToolUse(A) → Task A 실행 → SubagentStart(A) → SubagentStop(A)
+            # → PreToolUse(B) → Task B 실행 → SubagentStart(B) → ...
+            # 따라서 큐에 2개 이상 쌓이는 것은 비정상 상태이다.
+            if tool_name == "Task" and api_id:
+                if self._pending_task_tool_ids:
+                    logger.warning(
+                        f"[PreToolUse] 큐에 미소비 항목 존재 — 순차 실행 가정 위반 가능: "
+                        f"기존={self._pending_task_tool_ids}, 추가={api_id}"
+                    )
+                self._pending_task_tool_ids.append(api_id)
                 logger.info(
-                    f"[PreToolUse] 매핑 등록 성공: {tool_use_id} → {api_id} (tool={tool_name})"
-                )
-            elif tool_use_id and api_id and tool_use_id == api_id:
-                # 비정상: 두 값이 같으면 둘 다 toolu_* 형식
-                logger.error(
-                    f"[PreToolUse] param과 hook_input이 동일 — UUID가 아닌 toolu_* 수신: "
-                    f"tool_use_id={tool_use_id} (tool={tool_name})"
-                )
-                # 매핑 저장하지 않음 (toolu_* → toolu_*는 무의미)
-            else:
-                logger.error(
-                    f"[PreToolUse] 매핑 실패: param={tool_use_id}, hook_input={api_id}, tool={tool_name}"
+                    f"[PreToolUse] Task 큐 추가: {api_id} (큐 크기={len(self._pending_task_tool_ids)})"
                 )
             return {}
 
@@ -1402,7 +1393,7 @@ class ClaudeRunner:
 
         # 이전 실행의 잔여 상태 정리 (풀링된 runner 재사용 대비)
         self._pending_events.clear()
-        self._sdk_uuid_to_api_id.clear()
+        self._pending_task_tool_ids.clear()
         self._agent_id_to_parent.clear()
 
         # 현재 실행 루프를 인스턴스에 등록 (interrupt에서 사용)
