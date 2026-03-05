@@ -1256,6 +1256,186 @@ describe("dashboard-store", () => {
       expect(rootSubagents).toHaveLength(1);
       expect(rootSubagents[0].agentId).toBe("agent-1");
     });
+
+    it("parent_tool_use_id 빈 문자열 → 에러 노드 없이 턴 루트에 배치 (SDK 한계 대응)", () => {
+      const { processEvent } = useDashboardStore.getState();
+
+      processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
+      processEvent({ type: "text_start", card_id: "t1" }, 1);
+
+      // Task tool 시작
+      processEvent({
+        type: "tool_start",
+        card_id: "t1",
+        tool_name: "Task",
+        tool_input: { subagent_type: "Explore" },
+        tool_use_id: "toolu_task_1",
+      } as ToolStartEvent, 2);
+
+      // Subagent 시작 — parent_tool_use_id가 빈 문자열 (SDK 한계)
+      processEvent({
+        type: "subagent_start",
+        agent_id: "agent-1",
+        agent_type: "Explore",
+        parent_tool_use_id: "",
+      } as SubagentStartEvent, 3);
+
+      const tree = useDashboardStore.getState().tree!;
+
+      // 에러 노드가 없어야 함 (빈 parent_tool_use_id는 예상된 동작)
+      expect(collectNodes(tree, "error")).toHaveLength(0);
+
+      // 턴 루트(user_message)의 자식으로 배치
+      const turnRoot = tree.children[0];
+      expect(turnRoot.type).toBe("user_message");
+      const subagents = turnRoot.children.filter(c => c.type === "subagent");
+      expect(subagents).toHaveLength(1);
+      expect(subagents[0].agentId).toBe("agent-1");
+      expect(subagents[0].agentType).toBe("Explore");
+
+      // 세션 루트에 직접 배치되지 않아야 함
+      const rootSubagents = tree.children.filter(c => c.type === "subagent");
+      expect(rootSubagents).toHaveLength(0);
+    });
+
+    it("parent_tool_use_id 빈 문자열 + 턴 루트 없음 → 세션 루트에 폴백", () => {
+      const { processEvent } = useDashboardStore.getState();
+
+      // user_message 없이 subagent_start 직접 수신 (비정상이지만 방어 코드 검증)
+      processEvent({
+        type: "subagent_start",
+        agent_id: "agent-1",
+        agent_type: "Explore",
+        parent_tool_use_id: "",
+      } as SubagentStartEvent, 0);
+
+      const tree = useDashboardStore.getState().tree!;
+
+      // 에러 노드 없음
+      expect(collectNodes(tree, "error")).toHaveLength(0);
+
+      // 턴 루트가 없으므로 세션 루트에 폴백
+      const subagents = tree.children.filter(c => c.type === "subagent");
+      expect(subagents).toHaveLength(1);
+      expect(subagents[0].agentId).toBe("agent-1");
+    });
+
+    it("parent_tool_use_id 빈 문자열 + 서브에이전트 내부 이벤트가 정상 배치", () => {
+      const { processEvent } = useDashboardStore.getState();
+      let id = 0;
+
+      processEvent({ type: "user_message", user: "u", text: "Run tasks" } as UserMessageEvent, id++);
+      processEvent({ type: "text_start", card_id: "t1" }, id++);
+      processEvent({ type: "text_end", card_id: "t1" }, id++);
+
+      // Task tool 시작
+      processEvent({
+        type: "tool_start",
+        card_id: "t1",
+        tool_name: "Task",
+        tool_input: { subagent_type: "Explore" },
+        tool_use_id: "toolu_task_1",
+      } as ToolStartEvent, id++);
+
+      // Subagent 시작 (빈 parent_tool_use_id)
+      processEvent({
+        type: "subagent_start",
+        agent_id: "agent-1",
+        agent_type: "Explore",
+        parent_tool_use_id: "",
+      } as SubagentStartEvent, id++);
+
+      // Subagent 내부 tool (parent_tool_use_id 있음 → resolveParent 경유)
+      processEvent({
+        type: "tool_start",
+        tool_name: "Grep",
+        tool_input: { pattern: "test" },
+        tool_use_id: "toolu_grep",
+        parent_tool_use_id: "toolu_task_1",
+      } as ToolStartEvent, id++);
+
+      processEvent({
+        type: "tool_result",
+        tool_name: "Grep",
+        result: "found",
+        is_error: false,
+        tool_use_id: "toolu_grep",
+        parent_tool_use_id: "toolu_task_1",
+      } as ToolResultEvent, id++);
+
+      // Subagent 종료
+      processEvent({
+        type: "subagent_stop",
+        agent_id: "agent-1",
+        parent_tool_use_id: "",
+      } as SubagentStopEvent, id++);
+
+      const tree = useDashboardStore.getState().tree!;
+      expect(collectNodes(tree, "error")).toHaveLength(0);
+
+      // 턴 루트에 subagent가 배치됨
+      const turnRoot = tree.children[0];
+      const subagents = turnRoot.children.filter(c => c.type === "subagent");
+      expect(subagents).toHaveLength(1);
+      expect(subagents[0].completed).toBe(true);
+    });
+
+    it("병렬 서브에이전트 — 빈 parent_tool_use_id로 모두 턴 루트에 배치", () => {
+      const { processEvent } = useDashboardStore.getState();
+      let id = 0;
+
+      processEvent({ type: "user_message", user: "u", text: "Run parallel tasks" } as UserMessageEvent, id++);
+      processEvent({ type: "text_start", card_id: "t1" }, id++);
+      processEvent({ type: "text_end", card_id: "t1" }, id++);
+
+      // Task-1
+      processEvent({
+        type: "tool_start",
+        card_id: "t1",
+        tool_name: "Task",
+        tool_input: { subagent_type: "Explore" },
+        tool_use_id: "toolu_task_1",
+      } as ToolStartEvent, id++);
+
+      // Task-2 (병렬)
+      processEvent({
+        type: "tool_start",
+        card_id: "t1",
+        tool_name: "Task",
+        tool_input: { subagent_type: "code-reviewer" },
+        tool_use_id: "toolu_task_2",
+      } as ToolStartEvent, id++);
+
+      // Subagent-1 (빈 parent_tool_use_id)
+      processEvent({
+        type: "subagent_start",
+        agent_id: "agent-1",
+        agent_type: "Explore",
+        parent_tool_use_id: "",
+      } as SubagentStartEvent, id++);
+
+      // Subagent-2 (빈 parent_tool_use_id)
+      processEvent({
+        type: "subagent_start",
+        agent_id: "agent-2",
+        agent_type: "code-reviewer",
+        parent_tool_use_id: "",
+      } as SubagentStartEvent, id++);
+
+      const tree = useDashboardStore.getState().tree!;
+      expect(collectNodes(tree, "error")).toHaveLength(0);
+
+      // 턴 루트에 두 서브에이전트가 모두 배치
+      const turnRoot = tree.children[0];
+      const subagents = turnRoot.children.filter(c => c.type === "subagent");
+      expect(subagents).toHaveLength(2);
+      expect(subagents[0].agentId).toBe("agent-1");
+      expect(subagents[1].agentId).toBe("agent-2");
+
+      // 세션 루트에는 서브에이전트 없음
+      const rootSubagents = tree.children.filter(c => c.type === "subagent");
+      expect(rootSubagents).toHaveLength(0);
+    });
   });
 
   // === thinking + text 결합 ===
