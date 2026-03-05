@@ -158,8 +158,6 @@ let subagentMap = new Map<string, EventTreeNode>();
 let cardIdMap = new Map<string, EventTreeNode>();
 /** 현재 활성 user_message/intervention 노드 ID */
 let currentTurnNodeId: string | null = null;
-/** 마지막 text 노드 ID (tool_start 부모 결정) */
-let lastTextNodeId: string | null = null;
 
 /** processEvent에서 알림 대상 이벤트 타입 (모듈 스코프: 매 호출 재생성 방지) */
 const NOTIFY_TYPES = new Set(["complete", "error", "intervention_sent"]);
@@ -170,7 +168,6 @@ function resetInternalMaps() {
   subagentMap = new Map();
   cardIdMap = new Map();
   currentTurnNodeId = null;
-  lastTextNodeId = null;
 }
 
 /**
@@ -186,25 +183,24 @@ function findSubagentByParentToolUseId(parentToolUseId: string): EventTreeNode |
   return null;
 }
 
-/**
- * parent_tool_use_id를 기반으로 부모 노드를 결정합니다.
- * 1. parent_tool_use_id가 있으면 해당 서브에이전트를 찾음
- * 2. 없으면 currentTurnNode 또는 root 반환
- */
-function findParentForNode(
-  parentToolUseId: string | undefined,
-  root: EventTreeNode,
-): EventTreeNode {
-  if (parentToolUseId) {
-    const subagent = findSubagentByParentToolUseId(parentToolUseId);
-    if (subagent) return subagent;
-  }
-  // 폴백: currentTurnNode 또는 root
-  const turnNode = currentTurnNodeId ? nodeMap.get(currentTurnNodeId) : null;
-  return turnNode ?? root;
-}
-
 // === Tree Helpers ===
+
+/** 부모를 찾지 못한 이벤트에 대한 에러 노드를 root 상단에 삽입 */
+function insertOrphanError(
+  root: EventTreeNode,
+  eventType: string,
+  eventId: number,
+  detail: string,
+): void {
+  const errorNode = createNode(
+    `orphan-error-${eventId}`,
+    "error",
+    `[${eventType}] 부모 노드를 찾을 수 없음: ${detail}`,
+    { completed: true, isError: true },
+  );
+  // root.children 맨 앞에 삽입 → flow 상단에 표시
+  root.children.unshift(errorNode);
+}
 
 function createNode(
   id: string,
@@ -384,7 +380,6 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
             );
             root.children.push(node);
             currentTurnNodeId = node.id;
-            lastTextNodeId = null;
             updated = true;
             break;
           }
@@ -407,7 +402,6 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
             );
             root.children.push(node);
             currentTurnNodeId = node.id;
-            lastTextNodeId = null;
             updated = true;
             break;
           }
@@ -426,34 +420,31 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
                 });
                 cardIdMap.set(thinkingCardId, thinkingNode);
                 parentSubagent.children.push(thinkingNode);
-                // lastTextNodeId를 덮어쓰지 않음: 서브에이전트 내부 이벤트가
-                // 루트 레벨의 lastTextNodeId를 오염하면 후속 루트 도구가 잘못 배치됨
+                updated = true;
+                break;
+              } else {
+                // 서버가 parent_tool_use_id를 보냈으나 매칭 실패 → 에러 노드
+                insertOrphanError(root, "thinking", eventId,
+                  `parent_tool_use_id="${thinkingEvent.parent_tool_use_id}" 서브에이전트 매칭 실패`);
+                const thinkingNode = createNode(thinkingCardId, "thinking", thinkingEvent.thinking, {
+                  completed: true,
+                });
+                cardIdMap.set(thinkingCardId, thinkingNode);
+                root.children.push(thinkingNode);
                 updated = true;
                 break;
               }
             }
 
-            // 기존 로직: currentTurnNode가 없으면 암시적 user_message 턴 생성
-            if (!currentTurnNodeId) {
-              const implicitTurn = createNode(
-                `implicit-turn-${eventId}`,
-                "user_message",
-                "",
-                { completed: true, user: "unknown" },
-              );
-              root.children.push(implicitTurn);
-              currentTurnNodeId = implicitTurn.id;
-            }
-            const thinkingTurnNode = nodeMap.get(currentTurnNodeId);
-            if (thinkingTurnNode) {
-              const thinkingNode = createNode(thinkingCardId, "thinking", thinkingEvent.thinking, {
-                completed: true,
-              });
-              cardIdMap.set(thinkingCardId, thinkingNode);
-              thinkingTurnNode.children.push(thinkingNode);
-              lastTextNodeId = thinkingNode.id;
-              updated = true;
-            }
+            // 루트 레벨: currentTurnNode 또는 root에 직접 배치
+            const turnNode = currentTurnNodeId ? nodeMap.get(currentTurnNodeId) : null;
+            const thinkingParent = turnNode || root;
+            const thinkingNode = createNode(thinkingCardId, "thinking", thinkingEvent.thinking, {
+              completed: true,
+            });
+            cardIdMap.set(thinkingCardId, thinkingNode);
+            thinkingParent.children.push(thinkingNode);
+            updated = true;
             break;
           }
 
@@ -468,32 +459,27 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
                 const textNode = createNode(textStartEvent.card_id, "text", "");
                 cardIdMap.set(textStartEvent.card_id, textNode);
                 parentSubagent.children.push(textNode);
-                // lastTextNodeId를 덮어쓰지 않음: 서브에이전트 내부 이벤트가
-                // 루트 레벨의 lastTextNodeId를 오염하면 후속 루트 도구가 잘못 배치됨
+                updated = true;
+                break;
+              } else {
+                // 서버가 parent_tool_use_id를 보냈으나 매칭 실패 → 에러 노드
+                insertOrphanError(root, "text_start", eventId,
+                  `parent_tool_use_id="${textStartEvent.parent_tool_use_id}" 서브에이전트 매칭 실패`);
+                const textNode = createNode(textStartEvent.card_id, "text", "");
+                cardIdMap.set(textStartEvent.card_id, textNode);
+                root.children.push(textNode);
                 updated = true;
                 break;
               }
             }
 
-            // 기존 로직: currentTurnNode가 없으면 암시적 user_message 턴 생성
-            if (!currentTurnNodeId) {
-              const implicitTurn = createNode(
-                `implicit-turn-${eventId}`,
-                "user_message",
-                "",
-                { completed: true, user: "unknown" },
-              );
-              root.children.push(implicitTurn);
-              currentTurnNodeId = implicitTurn.id;
-            }
-            const turnNode = nodeMap.get(currentTurnNodeId);
-            if (turnNode) {
-              const textNode = createNode(textStartEvent.card_id, "text", "");
-              cardIdMap.set(textStartEvent.card_id, textNode);
-              turnNode.children.push(textNode);
-              lastTextNodeId = textNode.id;
-              updated = true;
-            }
+            // 루트 레벨: currentTurnNode 또는 root에 직접 배치
+            const textTurnNode = currentTurnNodeId ? nodeMap.get(currentTurnNodeId) : null;
+            const textParent = textTurnNode || root;
+            const textNode = createNode(textStartEvent.card_id, "text", "");
+            cardIdMap.set(textStartEvent.card_id, textNode);
+            textParent.children.push(textNode);
+            updated = true;
             break;
           }
 
@@ -531,7 +517,9 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
             if (parentTool) {
               parentTool.children.push(subagentNode);
             } else {
-              // 방어: ID 매칭 실패 시 root에 추가
+              // 서버가 parent_tool_use_id를 보냈으나 매칭 실패 → 에러 노드
+              insertOrphanError(root, "subagent_start", eventId,
+                `parent_tool_use_id="${subagentEvent.parent_tool_use_id}" toolUseMap 매칭 실패`);
               root.children.push(subagentNode);
             }
             updated = true;
@@ -571,31 +559,23 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
               if (parentSubagent) {
                 parentSubagent.children.push(toolNode);
               } else {
-                // 폴백: lastTextNode 또는 currentTurnNode 또는 root
-                const parentText = lastTextNodeId ? nodeMap.get(lastTextNodeId) : null;
-                if (parentText) {
-                  parentText.children.push(toolNode);
-                } else {
-                  const turnNode = currentTurnNodeId ? nodeMap.get(currentTurnNodeId) : null;
-                  if (turnNode) {
-                    turnNode.children.push(toolNode);
-                  } else {
-                    root.children.push(toolNode);
-                  }
-                }
+                // 서버가 parent_tool_use_id를 보냈으나 매칭 실패 → 에러 노드
+                insertOrphanError(root, "tool_start", eventId,
+                  `parent_tool_use_id="${toolStartEvent.parent_tool_use_id}" 매칭 실패`);
+                root.children.push(toolNode);
               }
             } else {
-              // 루트 레벨: 기존 로직 유지 (lastTextNode → currentTurnNode → root)
-              const parentText = lastTextNodeId ? nodeMap.get(lastTextNodeId) : null;
+              // 루트 레벨 도구: card_id로 부모 text 조회
+              const parentText = toolStartEvent.card_id
+                ? cardIdMap.get(toolStartEvent.card_id)
+                : null;
               if (parentText) {
                 parentText.children.push(toolNode);
               } else {
-                const turnNode = currentTurnNodeId ? nodeMap.get(currentTurnNodeId) : null;
-                if (turnNode) {
-                  turnNode.children.push(toolNode);
-                } else {
-                  root.children.push(toolNode);
-                }
+                // card_id 없거나 매칭 실패 → 에러 노드
+                insertOrphanError(root, "tool_start", eventId,
+                  `card_id="${toolStartEvent.card_id ?? "없음"}" 매칭 실패`);
+                root.children.push(toolNode);
               }
             }
             updated = true;
@@ -631,8 +611,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
                   node.toolName === toolResultEvent.tool_name
                 ) {
                   toolNode = node;
-                  // 가장 마지막 매칭을 사용하지 않고 첫 매칭으로 break
-                  // (nodeMap 삽입 순서가 시간순이므로 마지막 매칭을 위해 계속 순회)
+                  // nodeMap 삽입 순서가 시간순이므로, 계속 순회하여 가장 최신 미완료 노드를 사용
                 }
               }
             }

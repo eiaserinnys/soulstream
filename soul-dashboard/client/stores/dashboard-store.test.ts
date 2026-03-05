@@ -368,7 +368,7 @@ describe("dashboard-store", () => {
       expect(toolNode?.completed).toBe(true);
     });
 
-    it("should use fallback cardId when card_id is undefined", () => {
+    it("card_id 없는 tool_start → 에러 노드 삽입 + tool은 root에 배치", () => {
       const { processEvent } = useDashboardStore.getState();
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
       processEvent({ type: "text_start", card_id: "t1" }, 1);
@@ -378,17 +378,27 @@ describe("dashboard-store", () => {
         tool_input: {},
       } as ToolStartEvent, 42);
 
-      const toolNode = findTreeNode(useDashboardStore.getState().tree, "tool-42");
+      const tree = useDashboardStore.getState().tree!;
+      const toolNode = findTreeNode(tree, "tool-42");
       expect(toolNode).not.toBeNull();
+
+      // 에러 노드가 root에 삽입되어야 함
+      const errorNodes = collectNodes(tree, "error");
+      expect(errorNodes.length).toBeGreaterThanOrEqual(1);
+      expect(errorNodes[0].content).toContain("card_id");
+
+      // tool은 root의 직접 자식 (text의 자식이 아님)
+      expect(tree.children.some(c => c.id === "tool-42")).toBe(true);
     });
 
-    it("should match tool_result by tool_name when both card_ids are undefined", () => {
+    it("should match tool_result by tool_name when tool_use_id is undefined", () => {
       const { processEvent } = useDashboardStore.getState();
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
       processEvent({ type: "text_start", card_id: "t1" }, 1);
 
       processEvent({
         type: "tool_start",
+        card_id: "t1",
         tool_name: "Bash",
         tool_input: { command: "echo hello" },
       } as ToolStartEvent, 10);
@@ -413,6 +423,7 @@ describe("dashboard-store", () => {
       // Tool 1 (completed)
       processEvent({
         type: "tool_start",
+        card_id: "t1",
         tool_name: "Bash",
         tool_input: {},
         tool_use_id: "tu1",
@@ -428,6 +439,7 @@ describe("dashboard-store", () => {
       // Tool 2 (uncompleted)
       processEvent({
         type: "tool_start",
+        card_id: "t1",
         tool_name: "Bash",
         tool_input: {},
       } as ToolStartEvent, 4);
@@ -539,12 +551,13 @@ describe("dashboard-store", () => {
       expect(userMsg.children[0].type).toBe("text");
     });
 
-    it("tool is text's child", () => {
+    it("tool is text's child (card_id로 부모 매칭)", () => {
       const { processEvent } = useDashboardStore.getState();
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
       processEvent({ type: "text_start", card_id: "t1" }, 1);
       processEvent({
         type: "tool_start",
+        card_id: "t1",
         tool_name: "Bash",
         tool_input: {},
       } as ToolStartEvent, 2);
@@ -961,6 +974,7 @@ describe("dashboard-store", () => {
       // Task tool 시작
       processEvent({
         type: "tool_start",
+        card_id: "t1",
         tool_name: "Task",
         tool_input: { subagent_type: "Explore" },
         tool_use_id: "toolu_task_1",
@@ -975,6 +989,7 @@ describe("dashboard-store", () => {
       } as SubagentStartEvent, 3);
 
       const tree = useDashboardStore.getState().tree!;
+      expect(collectNodes(tree, "error")).toHaveLength(0);
       const taskNode = findTreeNode(tree, "tool-2");
       expect(taskNode).not.toBeNull();
       expect(taskNode?.children).toHaveLength(1);
@@ -992,6 +1007,7 @@ describe("dashboard-store", () => {
       // Task 시작
       processEvent({
         type: "tool_start",
+        card_id: "t1",
         tool_name: "Task",
         tool_input: {},
         tool_use_id: "toolu_task_1",
@@ -1015,6 +1031,7 @@ describe("dashboard-store", () => {
       } as ToolStartEvent, 4);
 
       const tree = useDashboardStore.getState().tree!;
+      expect(collectNodes(tree, "error")).toHaveLength(0);
       const taskNode = findTreeNode(tree, "tool-2");
       const subagentNode = taskNode?.children[0];
       expect(subagentNode?.type).toBe("subagent");
@@ -1031,6 +1048,7 @@ describe("dashboard-store", () => {
       // Task 시작
       processEvent({
         type: "tool_start",
+        card_id: "t1",
         tool_name: "Task",
         tool_input: {},
         tool_use_id: "toolu_task_1",
@@ -1058,6 +1076,7 @@ describe("dashboard-store", () => {
       } as TextDeltaEvent, 5);
 
       const tree = useDashboardStore.getState().tree!;
+      expect(collectNodes(tree, "error")).toHaveLength(0);
       const taskNode = findTreeNode(tree, "tool-2");
       const subagentNode = taskNode?.children[0];
       expect(subagentNode?.children).toHaveLength(1);
@@ -1073,6 +1092,7 @@ describe("dashboard-store", () => {
 
       processEvent({
         type: "tool_start",
+        card_id: "t1",
         tool_name: "Task",
         tool_input: {},
         tool_use_id: "toolu_task_1",
@@ -1101,6 +1121,7 @@ describe("dashboard-store", () => {
       } as SubagentStopEvent, 5);
 
       const tree = useDashboardStore.getState().tree!;
+      expect(collectNodes(tree, "error")).toHaveLength(0);
       const taskNode = findTreeNode(tree, "tool-2");
       const subagentNode = taskNode?.children[0];
       expect(subagentNode?.completed).toBe(true);
@@ -1115,6 +1136,7 @@ describe("dashboard-store", () => {
       // 1단계 Task
       processEvent({
         type: "tool_start",
+        card_id: "t1",
         tool_name: "Task",
         tool_input: {},
         tool_use_id: "toolu_task_1",
@@ -1144,6 +1166,7 @@ describe("dashboard-store", () => {
       } as SubagentStartEvent, 5);
 
       const tree = useDashboardStore.getState().tree!;
+      expect(collectNodes(tree, "error")).toHaveLength(0);
       const task1 = findTreeNode(tree, "tool-2");
       expect(task1).not.toBeNull();
 
@@ -1165,6 +1188,7 @@ describe("dashboard-store", () => {
 
       processEvent({
         type: "tool_start",
+        card_id: "t1",
         tool_name: "Task",
         tool_input: {},
         tool_use_id: "toolu_task_1",
@@ -1196,6 +1220,7 @@ describe("dashboard-store", () => {
       } as ToolStartEvent, 5);
 
       const tree = useDashboardStore.getState().tree!;
+      expect(collectNodes(tree, "error")).toHaveLength(0);
       const taskNode = findTreeNode(tree, "tool-2");
       const subagentNode = taskNode?.children[0];
 
@@ -1204,7 +1229,7 @@ describe("dashboard-store", () => {
       expect(subagentNode?.children[1].toolName).toBe("Read");
     });
 
-    it("parent_tool_use_id 불일치 시 subagent가 root에 배치 (방어)", () => {
+    it("parent_tool_use_id 불일치 시 에러 노드 삽입 + subagent가 root에 배치", () => {
       const { processEvent } = useDashboardStore.getState();
 
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
@@ -1213,12 +1238,13 @@ describe("dashboard-store", () => {
       // Task tool 시작
       processEvent({
         type: "tool_start",
+        card_id: "t1",
         tool_name: "Task",
         tool_input: { subagent_type: "shay-dev" },
         tool_use_id: "toolu_task_1",
       } as ToolStartEvent, 2);
 
-      // Subagent 시작 — parent_tool_use_id가 매칭되지 않는 경우 (방어 케이스)
+      // Subagent 시작 — parent_tool_use_id가 매칭되지 않는 경우
       processEvent({
         type: "subagent_start",
         agent_id: "agent-1",
@@ -1227,6 +1253,11 @@ describe("dashboard-store", () => {
       } as SubagentStartEvent, 3);
 
       const tree = useDashboardStore.getState().tree!;
+
+      // 에러 노드 삽입
+      const errorNodes = collectNodes(tree, "error");
+      expect(errorNodes.length).toBeGreaterThanOrEqual(1);
+      expect(errorNodes.some(e => e.content.includes("toolUseMap 매칭 실패"))).toBe(true);
 
       // 매칭 실패 시 root에 배치
       const rootSubagents = tree.children.filter(c => c.type === "subagent");
@@ -1396,11 +1427,11 @@ describe("dashboard-store", () => {
     /** 세션 C: 멀티턴 서브에이전트 시퀀스 */
     function replayMultiTurnSubagent(processEvent: (event: any, eventId: number) => void) {
       let id = 0;
-      // Turn 1: user → tool(Skill, text 전) → text → complete
+      // Turn 1: user → text → tool(Skill) → complete
       processEvent({ type: "user_message", user: "u", text: "Load skill" } as UserMessageEvent, id++);
-      processEvent({ type: "tool_start", tool_name: "Skill", tool_input: { skill: "dialogue" }, tool_use_id: "tu-skill" } as ToolStartEvent, id++);
-      processEvent({ type: "tool_result", tool_name: "Skill", result: "ok", is_error: false, tool_use_id: "tu-skill" } as ToolResultEvent, id++);
       processEvent({ type: "text_start", card_id: "c-t1" }, id++);
+      processEvent({ type: "tool_start", card_id: "c-t1", tool_name: "Skill", tool_input: { skill: "dialogue" }, tool_use_id: "tu-skill" } as ToolStartEvent, id++);
+      processEvent({ type: "tool_result", tool_name: "Skill", result: "ok", is_error: false, tool_use_id: "tu-skill" } as ToolResultEvent, id++);
       processEvent({ type: "text_delta", card_id: "c-t1", text: "Loaded." } as TextDeltaEvent, id++);
       processEvent({ type: "text_end", card_id: "c-t1" }, id++);
       processEvent({ type: "complete", result: "Skill loaded", attachments: [] } as CompleteEvent, id++);
@@ -1411,7 +1442,7 @@ describe("dashboard-store", () => {
       processEvent({ type: "text_delta", card_id: "c-t2", text: "Exploring..." } as TextDeltaEvent, id++);
       processEvent({ type: "text_end", card_id: "c-t2" }, id++);
       // Task tool
-      processEvent({ type: "tool_start", tool_name: "Task", tool_input: { subagent_type: "Explore" }, tool_use_id: "tu-task1" } as ToolStartEvent, id++);
+      processEvent({ type: "tool_start", card_id: "c-t2", tool_name: "Task", tool_input: { subagent_type: "Explore" }, tool_use_id: "tu-task1" } as ToolStartEvent, id++);
       // Subagent
       processEvent({ type: "subagent_start", agent_id: "agent-1", agent_type: "Explore", parent_tool_use_id: "tu-task1" } as SubagentStartEvent, id++);
       // Subagent 내부 tool
@@ -1509,7 +1540,7 @@ describe("dashboard-store", () => {
       expect(bNodeLeaks).toHaveLength(0);
     });
 
-    it("서브에이전트 이벤트 누락 시에도 tool이 올바른 턴에 배치", () => {
+    it("서브에이전트 이벤트 누락 시 에러 노드 삽입 + tool은 root에 배치", () => {
       const { processEvent } = useDashboardStore.getState();
 
       // Turn 1
@@ -1522,8 +1553,8 @@ describe("dashboard-store", () => {
       processEvent({ type: "user_message", user: "u", text: "Turn 2" } as UserMessageEvent, 4);
       processEvent({ type: "text_start", card_id: "t2" }, 5);
       processEvent({ type: "text_end", card_id: "t2" }, 6);
-      processEvent({ type: "tool_start", tool_name: "Task", tool_input: {}, tool_use_id: "tu-task" } as ToolStartEvent, 7);
-      // Inner tool with parent_tool_use_id (subagent event missing)
+      processEvent({ type: "tool_start", card_id: "t2", tool_name: "Task", tool_input: {}, tool_use_id: "tu-task" } as ToolStartEvent, 7);
+      // Inner tool with parent_tool_use_id (subagent event missing → 에러 노드 삽입)
       processEvent({ type: "tool_start", tool_name: "Grep", tool_input: {}, tool_use_id: "tu-grep", parent_tool_use_id: "tu-task" } as ToolStartEvent, 8);
       processEvent({ type: "tool_result", tool_name: "Grep", result: "ok", is_error: false, tool_use_id: "tu-grep", parent_tool_use_id: "tu-task" } as ToolResultEvent, 9);
       processEvent({ type: "tool_result", tool_name: "Task", result: "done", is_error: false, tool_use_id: "tu-task" } as ToolResultEvent, 10);
@@ -1535,21 +1566,25 @@ describe("dashboard-store", () => {
       const userMsgs = tree.children.filter(c => c.type === "user_message");
       expect(userMsgs).toHaveLength(2);
 
-      // Turn 2 should have the Task tool
+      // Turn 2 should have the Task tool (card_id로 t2 아래 배치)
       const turn2Tools = collectNodes(userMsgs[1], "tool");
-      expect(turn2Tools.length).toBeGreaterThanOrEqual(1);
       expect(turn2Tools.some(t => t.toolName === "Task")).toBe(true);
 
-      // Grep은 Turn 2 어딘가에 배치되어야 함 (subagent 없이도 크래시하지 않음)
-      const grepInTurn2 = collectNodes(userMsgs[1], "tool").filter(t => t.toolName === "Grep");
-      expect(grepInTurn2).toHaveLength(1);
+      // Grep은 subagent 없이 parent_tool_use_id 매칭 실패 → 에러 노드 + root에 배치
+      const errorNodes = collectNodes(tree, "error");
+      expect(errorNodes.length).toBeGreaterThanOrEqual(1);
+      expect(errorNodes.some(e => e.content.includes("parent_tool_use_id"))).toBe(true);
+
+      // Grep이 root에 배치됨
+      const grepOnRoot = tree.children.filter(c => c.type === "tool" && c.toolName === "Grep");
+      expect(grepOnRoot).toHaveLength(1);
     });
   });
 
-  // === 순차 서브에이전트 lastTextNodeId 오염 방지 ===
+  // === 순차 서브에이전트 card_id 기반 격리 ===
 
   describe("processEvent - sequential subagent isolation", () => {
-    it("서브에이전트 내부 text가 lastTextNodeId를 오염하지 않아 후속 Task가 올바른 부모에 배치", () => {
+    it("서브에이전트 내부 text가 후속 Task의 부모에 영향 주지 않음 (card_id 기반 매칭)", () => {
       const { processEvent } = useDashboardStore.getState();
       let id = 0;
 
@@ -1562,6 +1597,7 @@ describe("dashboard-store", () => {
       // Task-1
       processEvent({
         type: "tool_start",
+        card_id: "main-text",
         tool_name: "Task",
         tool_input: { prompt: "Explore" },
         tool_use_id: "toolu_task_1",
@@ -1575,7 +1611,7 @@ describe("dashboard-store", () => {
         parent_tool_use_id: "toolu_task_1",
       } as SubagentStartEvent, id++);
 
-      // Subagent-1 내부 text (이것이 lastTextNodeId를 오염하면 안됨)
+      // Subagent-1 내부 text (이것이 후속 Task의 card_id 매칭에 영향 주면 안됨)
       processEvent({
         type: "text_start",
         card_id: "agent-1-text",
@@ -1615,10 +1651,10 @@ describe("dashboard-store", () => {
         tool_use_id: "toolu_task_1",
       } as ToolResultEvent, id++);
 
-      // Task-2: 루트 레벨 (parent_tool_use_id 없음)
-      // 이것이 main-text의 자식이어야 하지, agent-1-text의 자식이면 안됨
+      // Task-2: 루트 레벨 (parent_tool_use_id 없음, card_id로 부모 결정)
       processEvent({
         type: "tool_start",
+        card_id: "main-text",
         tool_name: "Task",
         tool_input: { prompt: "Review" },
         tool_use_id: "toolu_task_2",
@@ -1641,7 +1677,7 @@ describe("dashboard-store", () => {
       expect(agentInternalTools.every(t => t.toolName === "Grep")).toBe(true);
     });
 
-    it("서브에이전트 내부 thinking이 lastTextNodeId를 오염하지 않아 후속 Task가 올바른 부모에 배치", () => {
+    it("서브에이전트 내부 thinking이 후속 Task의 부모에 영향 주지 않음 (card_id 기반 매칭)", () => {
       const { processEvent } = useDashboardStore.getState();
       let id = 0;
 
@@ -1652,6 +1688,7 @@ describe("dashboard-store", () => {
       // Task-1
       processEvent({
         type: "tool_start",
+        card_id: "main-text",
         tool_name: "Task",
         tool_input: { prompt: "Explore" },
         tool_use_id: "toolu_task_1",
@@ -1686,9 +1723,10 @@ describe("dashboard-store", () => {
         tool_use_id: "toolu_task_1",
       } as ToolResultEvent, id++);
 
-      // Task-2: 루트 레벨
+      // Task-2: 루트 레벨 (card_id로 부모 결정)
       processEvent({
         type: "tool_start",
+        card_id: "main-text",
         tool_name: "Task",
         tool_input: { prompt: "Review" },
         tool_use_id: "toolu_task_2",
@@ -1703,6 +1741,158 @@ describe("dashboard-store", () => {
       expect(mainTextTools).toHaveLength(2);
       expect(mainTextTools[0].toolName).toBe("Task");
       expect(mainTextTools[1].toolName).toBe("Task");
+    });
+  });
+
+  // === 에러 노드 삽입 (orphan detection) ===
+
+  describe("processEvent - orphan error node insertion", () => {
+    it("card_id 기반 부모 매칭: tool이 해당 text 아래에 배치", () => {
+      const { processEvent } = useDashboardStore.getState();
+      processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
+      processEvent({ type: "text_start", card_id: "A" }, 1);
+      processEvent({
+        type: "tool_start",
+        card_id: "A",
+        tool_name: "Read",
+        tool_input: {},
+      } as ToolStartEvent, 2);
+
+      const tree = useDashboardStore.getState().tree!;
+      const textA = findTreeNode(tree, "A")!;
+      expect(textA.children).toHaveLength(1);
+      expect(textA.children[0].type).toBe("tool");
+      expect(textA.children[0].toolName).toBe("Read");
+
+      // 에러 노드 없음
+      const errorNodes = collectNodes(tree, "error");
+      expect(errorNodes).toHaveLength(0);
+    });
+
+    it("card_id 병렬 도구: 올바른 text 아래에 배치", () => {
+      const { processEvent } = useDashboardStore.getState();
+      processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
+      processEvent({ type: "text_start", card_id: "A" }, 1);
+      processEvent({ type: "text_start", card_id: "B" }, 2);
+      processEvent({
+        type: "tool_start",
+        card_id: "A",
+        tool_name: "Read",
+        tool_input: {},
+      } as ToolStartEvent, 3);
+
+      const tree = useDashboardStore.getState().tree!;
+      const textA = findTreeNode(tree, "A")!;
+      const textB = findTreeNode(tree, "B")!;
+
+      // tool은 A 아래에 배치
+      expect(textA.children).toHaveLength(1);
+      expect(textA.children[0].toolName).toBe("Read");
+      // B에는 자식 없음
+      expect(textB.children).toHaveLength(0);
+    });
+
+    it("parent_tool_use_id 매칭 실패 시 에러 노드 삽입", () => {
+      const { processEvent } = useDashboardStore.getState();
+      processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
+      processEvent({ type: "text_start", card_id: "t1" }, 1);
+      processEvent({
+        type: "tool_start",
+        tool_name: "Read",
+        tool_input: {},
+        parent_tool_use_id: "nonexistent-id",
+      } as ToolStartEvent, 2);
+
+      const tree = useDashboardStore.getState().tree!;
+      const errorNodes = collectNodes(tree, "error");
+      expect(errorNodes.length).toBeGreaterThanOrEqual(1);
+      expect(errorNodes[0].content).toContain("nonexistent-id");
+
+      // tool은 root에 배치
+      expect(tree.children.some(c => c.id === "tool-2")).toBe(true);
+    });
+
+    it("currentTurnNode 없이 thinking → root 직접 배치 (implicit turn 생성 안 함)", () => {
+      const { processEvent } = useDashboardStore.getState();
+
+      // user_message 없이 바로 thinking 이벤트
+      processEvent({
+        type: "thinking",
+        thinking: "Analyzing...",
+        card_id: "th-1",
+      } as ThinkingEvent, 0);
+
+      const tree = useDashboardStore.getState().tree!;
+
+      // implicit-turn 노드가 생성되지 않아야 함
+      const userMsgs = collectNodes(tree, "user_message");
+      expect(userMsgs).toHaveLength(0);
+
+      // thinking이 root의 직접 자식
+      const thinkingNodes = collectNodes(tree, "thinking");
+      expect(thinkingNodes).toHaveLength(1);
+      expect(thinkingNodes[0].content).toBe("Analyzing...");
+      expect(tree.children.some(c => c.type === "thinking")).toBe(true);
+    });
+
+    it("currentTurnNode 없이 text_start → root 직접 배치 (implicit turn 생성 안 함)", () => {
+      const { processEvent } = useDashboardStore.getState();
+
+      // user_message 없이 바로 text_start 이벤트
+      processEvent({ type: "text_start", card_id: "orphan-text" }, 0);
+      processEvent({ type: "text_delta", card_id: "orphan-text", text: "hello" } as TextDeltaEvent, 1);
+
+      const tree = useDashboardStore.getState().tree!;
+
+      // implicit-turn 노드가 생성되지 않아야 함
+      const userMsgs = collectNodes(tree, "user_message");
+      expect(userMsgs).toHaveLength(0);
+
+      // text가 root의 직접 자식
+      const textNode = findTreeNode(tree, "orphan-text")!;
+      expect(textNode.content).toBe("hello");
+      expect(tree.children.some(c => c.id === "orphan-text")).toBe(true);
+    });
+
+    it("서브에이전트 내부 text_start에서 parent_tool_use_id 매칭 실패 시 에러 노드 삽입", () => {
+      const { processEvent } = useDashboardStore.getState();
+      processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
+
+      // parent_tool_use_id가 있지만 매칭되는 subagent가 없는 text_start
+      processEvent({
+        type: "text_start",
+        card_id: "orphan-sub-text",
+        parent_tool_use_id: "nonexistent-parent",
+      } as TextStartEvent, 1);
+
+      const tree = useDashboardStore.getState().tree!;
+      const errorNodes = collectNodes(tree, "error");
+      expect(errorNodes.length).toBeGreaterThanOrEqual(1);
+      expect(errorNodes[0].content).toContain("nonexistent-parent");
+
+      // text는 root에 배치
+      expect(tree.children.some(c => c.id === "orphan-sub-text")).toBe(true);
+    });
+
+    it("서브에이전트 내부 thinking에서 parent_tool_use_id 매칭 실패 시 에러 노드 삽입", () => {
+      const { processEvent } = useDashboardStore.getState();
+      processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
+
+      // parent_tool_use_id가 있지만 매칭되는 subagent가 없는 thinking
+      processEvent({
+        type: "thinking",
+        card_id: "orphan-thinking",
+        thinking: "Lost thought...",
+        parent_tool_use_id: "nonexistent-parent",
+      } as ThinkingEvent, 1);
+
+      const tree = useDashboardStore.getState().tree!;
+      const errorNodes = collectNodes(tree, "error");
+      expect(errorNodes.length).toBeGreaterThanOrEqual(1);
+      expect(errorNodes[0].content).toContain("nonexistent-parent");
+
+      // thinking은 root에 배치
+      expect(tree.children.some(c => c.type === "thinking")).toBe(true);
     });
   });
 
