@@ -74,7 +74,19 @@ from soul_server.claude.diagnostics import (
     classify_process_error,
     format_rate_limit_warning,
 )
-from soul_server.engine.types import EngineResult, InterventionCallback, EngineEvent, EngineEventType, EventCallback
+from soul_server.engine.types import (
+    EngineResult,
+    InterventionCallback,
+    EngineEvent,
+    EventCallback,
+    ThinkingEngineEvent,
+    TextDeltaEngineEvent,
+    ToolStartEngineEvent,
+    ToolResultEngineEvent,
+    ResultEngineEvent,
+    SubagentStartEngineEvent,
+    SubagentStopEngineEvent,
+)
 from soul_server.claude.instrumented_client import InstrumentedClaudeClient
 from soul_server.claude.sdk_compat import ParseAction, classify_parse_error
 from soul_server.claude.session_validator import validate_session
@@ -246,8 +258,8 @@ class MessageState:
     usage: Optional[dict] = None
     collected_messages: list[dict] = field(default_factory=list)
     msg_count: int = 0
-    last_tool: str = ""
     tool_use_id_to_name: dict = field(default_factory=dict)  # tool_use_id → tool_name 매핑
+    tool_use_id_to_card_id: dict = field(default_factory=dict)  # tool_use_id → card_id 매핑
     emitted_tool_result_ids: set = field(default_factory=set)  # 중복 TOOL_RESULT 방지
 
     @property
@@ -312,6 +324,8 @@ class ClaudeRunner:
         # PreToolUse 훅에서 구축: SDK UUID → toolu_* ID 매핑
         # 실행 순서: ToolUseBlock → PreToolUse 훅(매핑 등록) → Task 실행 → SubagentStart 훅(매핑 조회)
         self._sdk_uuid_to_api_id: dict[str, str] = {}
+        # SubagentStart에서 구축: agent_id → parent_tool_use_id
+        self._agent_id_to_parent: dict[str, str] = {}
 
     @classmethod
     async def shutdown_all_clients(cls) -> int:
@@ -372,14 +386,13 @@ class ClaudeRunner:
         # PreToolUse에서 구축된 매핑으로 toolu_* ID 획득
         parent_id = self._sdk_uuid_to_api_id.get(tool_use_id, tool_use_id or "") if tool_use_id else ""
 
+        # agent_id → parent_tool_use_id 매핑 저장 (SubagentStop에서 사용)
+        if agent_id and parent_id:
+            self._agent_id_to_parent[agent_id] = parent_id
+
         # 이벤트 큐에 추가
-        self._emit_event(EngineEvent(
-            type=EngineEventType.SUBAGENT_START,
-            data={
-                "agent_id": agent_id,
-                "agent_type": agent_type,
-            },
-            timestamp=time.time(),
+        self._emit_event(SubagentStartEngineEvent(
+            agent_type=agent_type,
             parent_tool_use_id=parent_id,
             agent_id=agent_id,
         ))
@@ -403,15 +416,16 @@ class ClaudeRunner:
         """
         agent_id = input_data.get("agent_id", "")
 
+        # SubagentStart에서 저장한 parent_tool_use_id 조회
+        parent_id = self._agent_id_to_parent.pop(agent_id, None)
+
         # 이벤트 큐에 추가
-        self._emit_event(EngineEvent(
-            type=EngineEventType.SUBAGENT_STOP,
-            data={"agent_id": agent_id},
-            timestamp=time.time(),
+        self._emit_event(SubagentStopEngineEvent(
             agent_id=agent_id,
+            parent_tool_use_id=parent_id,
         ))
 
-        logger.info(f"[SUBAGENT_STOP] agent_id={agent_id}")
+        logger.info(f"[SUBAGENT_STOP] agent_id={agent_id}, parent_tool_use_id={parent_id}")
         return {}
 
     async def _get_or_create_client(
@@ -636,19 +650,16 @@ class ClaudeRunner:
 
         content = ""
         if isinstance(block.content, str):
-            content = block.content[:2000]
+            content = block.content
         elif block.content:
             try:
-                content = json.dumps(block.content, ensure_ascii=False)[:2000]
+                content = json.dumps(block.content, ensure_ascii=False)
             except (TypeError, ValueError):
-                content = str(block.content)[:2000]
+                content = str(block.content)
 
-        tool_name = (
-            msg_state.tool_use_id_to_name.get(tool_use_id, "")
-            if tool_use_id
-            else msg_state.last_tool or ""
-        )
+        tool_name = msg_state.tool_use_id_to_name.get(tool_use_id, "") if tool_use_id else ""
         is_error = bool(getattr(block, "is_error", False))
+        card_id = msg_state.tool_use_id_to_card_id.get(tool_use_id) if tool_use_id else None
 
         logger.info(f"[TOOL_RESULT:{source}] {tool_name}: {content[:500]}")
         msg_state.collected_messages.append({
@@ -659,14 +670,12 @@ class ClaudeRunner:
 
         if on_event:
             try:
-                await on_event(EngineEvent(
-                    type=EngineEventType.TOOL_RESULT,
-                    data={
-                        "tool_name": tool_name,
-                        "result": content,
-                        "is_error": is_error,
-                        "tool_use_id": tool_use_id,
-                    },
+                await on_event(ToolResultEngineEvent(
+                    tool_name=tool_name,
+                    result=content,
+                    is_error=is_error,
+                    tool_use_id=tool_use_id,
+                    card_id=card_id,
                     parent_tool_use_id=msg_parent,
                 ))
             except Exception as e:
@@ -1065,6 +1074,8 @@ class ClaudeRunner:
                     # SDK 메시지의 parent_tool_use_id를 직접 사용
                     msg_parent = getattr(message, "parent_tool_use_id", None)
                     last_msg_parent = msg_parent
+                    # 메시지 단위 card_id: ThinkingBlock에서 생성, 후속 블록에서 참조
+                    current_card_id: Optional[str] = None
 
                     if hasattr(message, 'content'):
                         for block in message.content:
@@ -1088,14 +1099,13 @@ class ClaudeRunner:
 
                                     if on_event:
                                         try:
-                                            await on_event(EngineEvent(
-                                                type=EngineEventType.THINKING,
-                                                data={
-                                                    "thinking": thinking_text,
-                                                    "signature": signature,
-                                                },
+                                            event = ThinkingEngineEvent(
+                                                thinking=thinking_text,
+                                                signature=signature,
                                                 parent_tool_use_id=msg_parent,
-                                            ))
+                                            )
+                                            current_card_id = event.card_id
+                                            await on_event(event)
                                         except Exception as e:
                                             logger.warning(f"이벤트 콜백 오류 (THINKING): {e}")
 
@@ -1119,49 +1129,38 @@ class ClaudeRunner:
 
                                 if on_event:
                                     try:
-                                        await on_event(EngineEvent(
-                                            type=EngineEventType.TEXT_DELTA,
-                                            data={"text": block.text},
+                                        await on_event(TextDeltaEngineEvent(
+                                            text=block.text,
+                                            card_id=current_card_id,
                                             parent_tool_use_id=msg_parent,
                                         ))
                                     except Exception as e:
                                         logger.warning(f"이벤트 콜백 오류 (TEXT_DELTA): {e}")
 
                             elif isinstance(block, ToolUseBlock):
-                                tool_input = ""
+                                tool_input_str = ""
                                 if block.input:
-                                    tool_input = json.dumps(block.input, ensure_ascii=False)
-                                    if len(tool_input) > 2000:
-                                        tool_input = tool_input[:2000] + "..."
-                                msg_state.last_tool = block.name
+                                    tool_input_str = json.dumps(block.input, ensure_ascii=False)
                                 # tool_use_id → tool_name 매핑 기록
                                 tool_use_id = getattr(block, "id", None)
                                 if tool_use_id:
                                     msg_state.tool_use_id_to_name[tool_use_id] = block.name
-                                logger.info(f"[TOOL_USE] {block.name}: {tool_input[:500]}")
+                                    msg_state.tool_use_id_to_card_id[tool_use_id] = current_card_id
+                                logger.info(f"[TOOL_USE] {block.name}: {tool_input_str[:500]}")
                                 msg_state.collected_messages.append({
                                     "role": "assistant",
-                                    "content": f"[tool_use: {block.name}] {tool_input}",
+                                    "content": f"[tool_use: {block.name}] {tool_input_str}",
                                     "timestamp": datetime.now(timezone.utc).isoformat(),
                                 })
 
                                 if on_event:
                                     try:
-                                        # tool_input 크기 제한: 대형 파일 내용 등 방지
                                         event_tool_input = block.input or {}
-                                        try:
-                                            _input_str = json.dumps(event_tool_input, ensure_ascii=False)
-                                            if len(_input_str) > 2000:
-                                                event_tool_input = {"_truncated": _input_str[:2000] + "..."}
-                                        except (TypeError, ValueError):
-                                            event_tool_input = {"_error": "serialize_failed"}
-                                        await on_event(EngineEvent(
-                                            type=EngineEventType.TOOL_START,
-                                            data={
-                                                "tool_name": block.name,
-                                                "tool_input": event_tool_input,
-                                                "tool_use_id": tool_use_id,
-                                            },
+                                        await on_event(ToolStartEngineEvent(
+                                            tool_name=block.name,
+                                            tool_input=event_tool_input,
+                                            tool_use_id=tool_use_id,
+                                            card_id=current_card_id,
                                             parent_tool_use_id=msg_parent,
                                         ))
                                     except Exception as e:
@@ -1205,13 +1204,11 @@ class ClaudeRunner:
                     if on_event:
                         try:
                             result_output = msg_state.result_text or msg_state.current_text
-                            await on_event(EngineEvent(
-                                type=EngineEventType.RESULT,
-                                data={
-                                    "success": not msg_state.is_error,
-                                    "output": result_output,
-                                    "error": result_output if msg_state.is_error else None,
-                                },
+                            await on_event(ResultEngineEvent(
+                                success=not msg_state.is_error,
+                                output=result_output,
+                                error=result_output if msg_state.is_error else None,
+                                usage=msg_state.usage,
                                 parent_tool_use_id=last_msg_parent,
                             ))
                         except Exception as e:
@@ -1363,6 +1360,7 @@ class ClaudeRunner:
         # 이전 실행의 잔여 상태 정리 (풀링된 runner 재사용 대비)
         self._pending_events.clear()
         self._sdk_uuid_to_api_id.clear()
+        self._agent_id_to_parent.clear()
 
         # 현재 실행 루프를 인스턴스에 등록 (interrupt에서 사용)
         self.execution_loop = asyncio.get_running_loop()
@@ -1415,8 +1413,7 @@ class ClaudeRunner:
                     _dur = (datetime.now(timezone.utc) - _session_start).total_seconds()
                     logger.warning(
                         f"세션 무출력 종료: runner={runner_id}, "
-                        f"duration={_dur:.1f}s, msgs={msg_state.msg_count}, "
-                        f"last_tool={msg_state.last_tool}"
+                        f"duration={_dur:.1f}s, msgs={msg_state.msg_count}"
                     )
                 break
 
@@ -1448,7 +1445,7 @@ class ClaudeRunner:
                 pid=self.pid,
                 duration_sec=_dur,
                 message_count=msg_state.msg_count,
-                last_tool=msg_state.last_tool,
+                last_tool="",
                 current_text_len=len(msg_state.current_text),
                 result_text_len=len(msg_state.result_text),
                 session_id=msg_state.session_id,

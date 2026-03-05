@@ -1104,19 +1104,19 @@ class TestSubagentHooks:
 
     def test_emit_event_adds_to_pending(self):
         """_emit_event가 pending_events에 이벤트를 추가"""
-        from soul_server.engine.types import EngineEvent, EngineEventType
+        from soul_server.engine.types import SubagentStartEngineEvent
         runner = ClaudeRunner()
-        event = EngineEvent(type=EngineEventType.SUBAGENT_START, data={"agent_id": "test"})
+        event = SubagentStartEngineEvent(agent_type="Explore", agent_id="test")
         runner._emit_event(event)
         assert len(runner._pending_events) == 1
         assert runner._pending_events[0] is event
 
     def test_drain_events_returns_and_clears(self):
         """_drain_events가 이벤트 목록을 반환하고 큐를 비움"""
-        from soul_server.engine.types import EngineEvent, EngineEventType
+        from soul_server.engine.types import SubagentStartEngineEvent, SubagentStopEngineEvent
         runner = ClaudeRunner()
-        event1 = EngineEvent(type=EngineEventType.SUBAGENT_START, data={"agent_id": "test1"})
-        event2 = EngineEvent(type=EngineEventType.SUBAGENT_STOP, data={"agent_id": "test1"})
+        event1 = SubagentStartEngineEvent(agent_type="Explore", agent_id="test1")
+        event2 = SubagentStopEngineEvent(agent_id="test1")
         runner._emit_event(event1)
         runner._emit_event(event2)
 
@@ -1127,7 +1127,7 @@ class TestSubagentHooks:
     @pytest.mark.asyncio
     async def test_on_subagent_start_with_mapped_id(self):
         """_on_subagent_start가 _sdk_uuid_to_api_id 매핑으로 toolu_* ID를 사용"""
-        from soul_server.engine.types import EngineEventType
+        from soul_server.engine.types import SubagentStartEngineEvent
         runner = ClaudeRunner()
 
         # PreToolUse 훅이 매핑을 구축한 상황 시뮬레이션
@@ -1142,16 +1142,14 @@ class TestSubagentHooks:
         # 이벤트가 큐에 추가됨, parent_tool_use_id가 toolu_* 형식
         events = runner._drain_events()
         assert len(events) == 1
-        assert events[0].type == EngineEventType.SUBAGENT_START
-        assert events[0].data["agent_id"] == "test-agent-1"
-        assert events[0].data["agent_type"] == "Explore"
-        assert events[0].parent_tool_use_id == "toolu_task_1"
+        assert isinstance(events[0], SubagentStartEngineEvent)
         assert events[0].agent_id == "test-agent-1"
+        assert events[0].agent_type == "Explore"
+        assert events[0].parent_tool_use_id == "toolu_task_1"
 
     @pytest.mark.asyncio
     async def test_on_subagent_start_without_mapping_falls_back(self):
         """매핑이 없으면 SDK UUID를 그대로 parent_tool_use_id로 사용 (방어)"""
-        from soul_server.engine.types import EngineEventType
         runner = ClaudeRunner()
 
         # 매핑 없이 SubagentStart 호출
@@ -1168,7 +1166,6 @@ class TestSubagentHooks:
     @pytest.mark.asyncio
     async def test_on_subagent_start_with_none_tool_use_id(self):
         """tool_use_id가 None이면 parent_tool_use_id는 빈 문자열"""
-        from soul_server.engine.types import EngineEventType
         runner = ClaudeRunner()
 
         await runner._on_subagent_start(
@@ -1184,7 +1181,7 @@ class TestSubagentHooks:
     @pytest.mark.asyncio
     async def test_on_subagent_stop_emits_event_only(self):
         """_on_subagent_stop은 이벤트만 발행 (스택 팝 없음)"""
-        from soul_server.engine.types import EngineEventType
+        from soul_server.engine.types import SubagentStopEngineEvent
         runner = ClaudeRunner()
 
         await runner._on_subagent_stop(
@@ -1196,14 +1193,13 @@ class TestSubagentHooks:
         # 이벤트가 큐에 추가됨
         events = runner._drain_events()
         assert len(events) == 1
-        assert events[0].type == EngineEventType.SUBAGENT_STOP
-        assert events[0].data["agent_id"] == "test-agent-1"
+        assert isinstance(events[0], SubagentStopEngineEvent)
         assert events[0].agent_id == "test-agent-1"
 
     @pytest.mark.asyncio
     async def test_subagent_start_stop_sequence(self):
         """SubagentStart → SubagentStop 순서대로 이벤트 발행"""
-        from soul_server.engine.types import EngineEventType
+        from soul_server.engine.types import SubagentStartEngineEvent, SubagentStopEngineEvent
         runner = ClaudeRunner()
         runner._sdk_uuid_to_api_id["sdk-uuid-1"] = "toolu_task_1"
 
@@ -1220,18 +1216,18 @@ class TestSubagentHooks:
 
         events = runner._drain_events()
         assert len(events) == 2
-        assert events[0].type == EngineEventType.SUBAGENT_START
+        assert isinstance(events[0], SubagentStartEngineEvent)
         assert events[0].parent_tool_use_id == "toolu_task_1"
-        assert events[1].type == EngineEventType.SUBAGENT_STOP
+        assert isinstance(events[1], SubagentStopEngineEvent)
         assert events[1].agent_id == "agent-1"
 
     def test_engine_event_includes_parent_tool_use_id(self):
         """EngineEvent에 parent_tool_use_id 포함"""
-        from soul_server.engine.types import EngineEvent, EngineEventType
+        from soul_server.engine.types import ToolStartEngineEvent
         import time
-        event = EngineEvent(
-            type=EngineEventType.TOOL_START,
-            data={"tool_name": "Read", "tool_input": {}},
+        event = ToolStartEngineEvent(
+            tool_name="Read",
+            tool_input={},
             timestamp=time.time(),
             parent_tool_use_id="toolu_task_1",
         )
@@ -1239,11 +1235,10 @@ class TestSubagentHooks:
 
     def test_engine_event_includes_agent_id(self):
         """EngineEvent에 agent_id 포함"""
-        from soul_server.engine.types import EngineEvent, EngineEventType
+        from soul_server.engine.types import SubagentStartEngineEvent
         import time
-        event = EngineEvent(
-            type=EngineEventType.SUBAGENT_START,
-            data={"agent_id": "test", "agent_type": "Explore"},
+        event = SubagentStartEngineEvent(
+            agent_type="Explore",
             timestamp=time.time(),
             agent_id="test",
         )
@@ -1357,7 +1352,7 @@ class TestSdkUuidToApiIdMapping:
     @pytest.mark.asyncio
     async def test_subagent_stop_just_emits_event(self):
         """B4: SubagentStop은 이벤트만 발행, 매핑이나 스택 조작 없음"""
-        from soul_server.engine.types import EngineEventType
+        from soul_server.engine.types import SubagentStopEngineEvent
         runner = ClaudeRunner()
         runner._sdk_uuid_to_api_id["sdk-uuid-1"] = "toolu_task_1"
 
@@ -1372,7 +1367,7 @@ class TestSdkUuidToApiIdMapping:
 
         events = runner._drain_events()
         assert len(events) == 1
-        assert events[0].type == EngineEventType.SUBAGENT_STOP
+        assert isinstance(events[0], SubagentStopEngineEvent)
         assert events[0].agent_id == "agent-1"
 
     def test_mapping_cleared_on_run_start(self):
@@ -1407,7 +1402,6 @@ class TestSdkUuidToApiIdMapping:
     @pytest.mark.asyncio
     async def test_subagent_start_event_has_correct_toolu_id(self):
         """B7: SubagentStart 이벤트의 parent_tool_use_id가 toolu_* 형식인지 검증"""
-        from soul_server.engine.types import EngineEventType
         runner = ClaudeRunner()
         runner._sdk_uuid_to_api_id["sdk-uuid-x"] = "toolu_bridged_123"
 
@@ -1425,7 +1419,7 @@ class TestSdkUuidToApiIdMapping:
     @pytest.mark.asyncio
     async def test_event_propagates_mapped_toolu_id(self):
         """B8: 매핑된 toolu_* ID가 이벤트에 올바르게 전파됨"""
-        from soul_server.engine.types import EngineEvent, EngineEventType
+        from soul_server.engine.types import ToolStartEngineEvent
         runner = ClaudeRunner()
         runner._sdk_uuid_to_api_id["sdk-uuid-prop"] = "toolu_prop_test"
 
@@ -1439,9 +1433,9 @@ class TestSdkUuidToApiIdMapping:
         parent_id = events[0].parent_tool_use_id
 
         # 서브에이전트 내부에서 발행되는 이벤트의 parent_tool_use_id 검증
-        event = EngineEvent(
-            type=EngineEventType.TOOL_START,
-            data={"tool_name": "Read", "tool_input": {}},
+        event = ToolStartEngineEvent(
+            tool_name="Read",
+            tool_input={},
             parent_tool_use_id=parent_id,
         )
         assert event.parent_tool_use_id == "toolu_prop_test"
@@ -2083,7 +2077,7 @@ class TestEngineEventCallback:
 
     async def test_text_delta_event_emitted(self):
         """TextBlock -> TEXT_DELTA 이벤트가 발행되는지 확인"""
-        from soul_server.engine.types import EngineEvent, EngineEventType
+        from soul_server.engine.types import EngineEvent, TextDeltaEngineEvent
 
         runner = ClaudeRunner()
         events = []
@@ -2102,13 +2096,13 @@ class TestEngineEventCallback:
                     with patch("soul_server.claude.agent_runner.TextBlock", MockTextBlock):
                         await runner.run("테스트", on_event=on_event)
 
-        text_events = [e for e in events if e.type == EngineEventType.TEXT_DELTA]
+        text_events = [e for e in events if isinstance(e, TextDeltaEngineEvent)]
         assert len(text_events) == 1
-        assert text_events[0].data["text"] == "응답 중..."
+        assert text_events[0].text == "응답 중..."
 
     async def test_tool_start_event_emitted(self):
         """ToolUseBlock -> TOOL_START 이벤트가 발행되는지 확인"""
-        from soul_server.engine.types import EngineEvent, EngineEventType
+        from soul_server.engine.types import EngineEvent, ToolStartEngineEvent
 
         @dataclass
         class MockToolUseBlock:
@@ -2132,22 +2126,24 @@ class TestEngineEventCallback:
                     with patch("soul_server.claude.agent_runner.ToolUseBlock", MockToolUseBlock):
                         await runner.run("테스트", on_event=on_event)
 
-        tool_events = [e for e in events if e.type == EngineEventType.TOOL_START]
+        tool_events = [e for e in events if isinstance(e, ToolStartEngineEvent)]
         assert len(tool_events) == 1
-        assert tool_events[0].data["tool_name"] == "Read"
-        assert tool_events[0].data["tool_input"] == {"file_path": "/test.py"}
+        assert tool_events[0].tool_name == "Read"
+        assert tool_events[0].tool_input == {"file_path": "/test.py"}
 
     async def test_tool_result_event_emitted(self):
         """ToolResultBlock -> TOOL_RESULT 이벤트가 발행되는지 확인"""
-        from soul_server.engine.types import EngineEvent, EngineEventType
+        from soul_server.engine.types import EngineEvent, ToolResultEngineEvent
 
         @dataclass
         class MockToolUseBlock:
             name: str
+            id: str = "toolu_read_1"
             input: dict = None
 
         @dataclass
         class MockToolResultBlock:
+            tool_use_id: str = "toolu_read_1"
             content: str = ""
             is_error: bool = False
 
@@ -2159,8 +2155,8 @@ class TestEngineEventCallback:
 
         mock_client = _make_mock_client(
             MockAssistantMessage(content=[
-                MockToolUseBlock(name="Read", input={}),
-                MockToolResultBlock(content="파일 내용입니다", is_error=False),
+                MockToolUseBlock(name="Read", id="toolu_read_1", input={}),
+                MockToolResultBlock(tool_use_id="toolu_read_1", content="파일 내용입니다", is_error=False),
             ]),
             MockResultMessage(result="완료", session_id="result-test"),
         )
@@ -2172,15 +2168,15 @@ class TestEngineEventCallback:
                         with patch("soul_server.claude.agent_runner.ToolResultBlock", MockToolResultBlock):
                             await runner.run("테스트", on_event=on_event)
 
-        tool_result_events = [e for e in events if e.type == EngineEventType.TOOL_RESULT]
+        tool_result_events = [e for e in events if isinstance(e, ToolResultEngineEvent)]
         assert len(tool_result_events) == 1
-        assert tool_result_events[0].data["tool_name"] == "Read"
-        assert tool_result_events[0].data["result"] == "파일 내용입니다"
-        assert tool_result_events[0].data["is_error"] is False
+        assert tool_result_events[0].tool_name == "Read"
+        assert tool_result_events[0].result == "파일 내용입니다"
+        assert tool_result_events[0].is_error is False
 
     async def test_result_event_emitted(self):
         """ResultMessage -> RESULT 이벤트가 발행되는지 확인"""
-        from soul_server.engine.types import EngineEvent, EngineEventType
+        from soul_server.engine.types import EngineEvent, ResultEngineEvent
 
         runner = ClaudeRunner()
         events = []
@@ -2196,10 +2192,10 @@ class TestEngineEventCallback:
             with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
                 await runner.run("테스트", on_event=on_event)
 
-        result_events = [e for e in events if e.type == EngineEventType.RESULT]
+        result_events = [e for e in events if isinstance(e, ResultEngineEvent)]
         assert len(result_events) == 1
-        assert result_events[0].data["success"] is True
-        assert result_events[0].data["output"] == "최종 결과물"
+        assert result_events[0].success is True
+        assert result_events[0].output == "최종 결과물"
 
     async def test_no_event_callback_backward_compat(self):
         """on_event=None 시 기존 동작과 동일한지 확인 (회귀 테스트)"""
@@ -2222,7 +2218,7 @@ class TestEngineEventCallback:
 
     async def test_event_callback_error_does_not_raise(self):
         """이벤트 콜백에서 예외 발생해도 실행이 중단되지 않는지 확인"""
-        from soul_server.engine.types import EngineEvent, EngineEventType
+        from soul_server.engine.types import EngineEvent
 
         runner = ClaudeRunner()
 
@@ -2250,7 +2246,7 @@ class TestToolResultFromUserMessage:
 
     async def test_tool_result_from_user_message(self):
         """UserMessage.content의 ToolResultBlock → TOOL_RESULT 이벤트 발행"""
-        from soul_server.engine.types import EngineEvent, EngineEventType
+        from soul_server.engine.types import EngineEvent, ToolStartEngineEvent, ToolResultEngineEvent
 
         @dataclass
         class MockToolUseBlock:
@@ -2294,22 +2290,22 @@ class TestToolResultFromUserMessage:
                                 await runner.run("테스트", on_event=on_event)
 
         # TOOL_START + TOOL_RESULT 모두 발행되어야 함
-        tool_start_events = [e for e in events if e.type == EngineEventType.TOOL_START]
-        tool_result_events = [e for e in events if e.type == EngineEventType.TOOL_RESULT]
+        tool_start_events = [e for e in events if isinstance(e, ToolStartEngineEvent)]
+        tool_result_events = [e for e in events if isinstance(e, ToolResultEngineEvent)]
 
         assert len(tool_start_events) == 1
-        assert tool_start_events[0].data["tool_name"] == "Read"
-        assert tool_start_events[0].data["tool_use_id"] == "toolu_abc123"
+        assert tool_start_events[0].tool_name == "Read"
+        assert tool_start_events[0].tool_use_id == "toolu_abc123"
 
         assert len(tool_result_events) == 1
-        assert tool_result_events[0].data["tool_name"] == "Read"
-        assert tool_result_events[0].data["result"] == "파일 내용입니다"
-        assert tool_result_events[0].data["is_error"] is False
-        assert tool_result_events[0].data["tool_use_id"] == "toolu_abc123"
+        assert tool_result_events[0].tool_name == "Read"
+        assert tool_result_events[0].result == "파일 내용입니다"
+        assert tool_result_events[0].is_error is False
+        assert tool_result_events[0].tool_use_id == "toolu_abc123"
 
     async def test_tool_use_id_name_mapping(self):
         """여러 도구 호출 시 tool_use_id→tool_name 매핑이 올바르게 동작"""
-        from soul_server.engine.types import EngineEvent, EngineEventType
+        from soul_server.engine.types import EngineEvent, ToolResultEngineEvent
 
         @dataclass
         class MockToolUseBlock:
@@ -2355,13 +2351,13 @@ class TestToolResultFromUserMessage:
                             with patch("soul_server.claude.agent_runner.UserMessage", MockUserMessage):
                                 await runner.run("테스트", on_event=on_event)
 
-        tool_result_events = [e for e in events if e.type == EngineEventType.TOOL_RESULT]
+        tool_result_events = [e for e in events if isinstance(e, ToolResultEngineEvent)]
         assert len(tool_result_events) == 2
 
         # tool_use_id → tool_name 매핑 확인
-        results_by_id = {e.data["tool_use_id"]: e.data for e in tool_result_events}
-        assert results_by_id["toolu_grep1"]["tool_name"] == "Grep"
-        assert results_by_id["toolu_read1"]["tool_name"] == "Read"
+        results_by_id = {e.tool_use_id: e for e in tool_result_events}
+        assert results_by_id["toolu_grep1"].tool_name == "Grep"
+        assert results_by_id["toolu_read1"].tool_name == "Read"
 
 
 @pytest.mark.asyncio
