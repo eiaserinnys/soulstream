@@ -121,6 +121,7 @@ function NodeGraphInner() {
   const selectCard = useDashboardStore((s) => s.selectCard);
   const selectEventNode = useDashboardStore((s) => s.selectEventNode);
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
+  const collapsedNodeIds = useDashboardStore((s) => s.collapsedNodeIds);
 
   const { getViewport, setViewport } = useReactFlow();
   const store = useStoreApi();
@@ -201,7 +202,7 @@ function NodeGraphInner() {
     let rafId: number | undefined;
 
     const timer = setTimeout(() => {
-      const { nodes: newNodes, edges: newEdges } = buildGraph(tree);
+      const { nodes: newNodes, edges: newEdges } = buildGraph(tree, collapsedNodeIds);
 
       const curSelectedNodeId = selectedNodeIdRef.current;
       const curSelectedCardId = selectedCardIdRef.current;
@@ -305,6 +306,7 @@ function NodeGraphInner() {
     tree,
     activeSessionKey,
     autoScroll,
+    collapsedNodeIds,
     setNodes,
     setEdges,
     getViewport,
