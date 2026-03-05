@@ -12,7 +12,6 @@ import {
   applyDagreLayout,
   detectSubAgents,
   createEdge,
-  getNodeDimensions,
   countAllDescendants,
   type GraphNode,
 } from "./layout-engine";
@@ -134,15 +133,6 @@ function resultNode(id: string, opts: Partial<EventTreeNode> = {}): EventTreeNod
 }
 
 // === Tests ===
-
-describe("getNodeDimensions", () => {
-  it("returns correct dimensions for each node type", () => {
-    expect(getNodeDimensions("thinking")).toEqual({ width: 260, height: 84 });
-    expect(getNodeDimensions("tool_call")).toEqual({ width: 260, height: 84 });
-    expect(getNodeDimensions("system")).toEqual({ width: 260, height: 84 });
-    expect(getNodeDimensions("group")).toEqual({ width: 320, height: 100 });
-  });
-});
 
 describe("createEdge", () => {
   it("creates an edge with correct source and target", () => {
@@ -823,12 +813,16 @@ describe("applyDagreLayout", () => {
         id: "n1",
         type: "thinking",
         position: { x: 0, y: 0 },
+        width: 260,
+        height: 84,
         data: { nodeType: "thinking", label: "A", content: "", streaming: false },
       },
       {
         id: "n2",
         type: "tool_call",
         position: { x: 0, y: 0 },
+        width: 260,
+        height: 84,
         data: { nodeType: "tool_call", label: "B", content: "", streaming: false },
       },
     ];
@@ -907,9 +901,9 @@ describe("large session layout", () => {
     const sorted = [...mainFlowNodes].sort((a, b) => a.position.y - b.position.y);
 
     for (let i = 1; i < sorted.length; i++) {
-      const prevDims = getNodeDimensions(sorted[i - 1].data.nodeType);
+      const prevH = sorted[i - 1].height ?? 84;
       const gap = sorted[i].position.y - sorted[i - 1].position.y;
-      expect(gap).toBeGreaterThanOrEqual(prevDims.height);
+      expect(gap).toBeGreaterThanOrEqual(prevH);
     }
   });
 
@@ -1215,7 +1209,7 @@ describe("Subagent 레이아웃 (브릿지 케이스)", () => {
 
     const t2 = nodes.find((n) => n.id === "node-t2")!;
     const subText = nodes.find((n) => n.id === "node-sub-t1")!;
-    const nodeHeight = getNodeDimensions("thinking").height;
+    const nodeHeight = subText.height ?? 84;
 
     // subagent 내부 text의 바닥(Y + height)이 t2의 상단(Y)보다 위에 있어야 함
     const subTextBottom = subText.position.y + nodeHeight;

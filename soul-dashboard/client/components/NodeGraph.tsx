@@ -26,7 +26,8 @@ import { useDashboardStore, countTreeNodes, countStreamingNodes, type SelectedEv
 import { nodeTypes } from "../nodes";
 import {
   buildGraph,
-  getNodeDimensions,
+  DEFAULT_NODE_WIDTH,
+  DEFAULT_NODE_HEIGHT,
   type GraphNode,
   type GraphEdge,
   type GraphNodeData,
@@ -71,12 +72,11 @@ function calcPanToNode(
   vpW: number,
   vpH: number,
 ): { dx: number; dy: number } {
-  const dims = getNodeDimensions(node.data.nodeType);
   const { zoom } = viewport;
   const screenX = node.position.x * zoom + viewport.x;
   const screenY = node.position.y * zoom + viewport.y;
-  const nodeW = dims.width * zoom;
-  const nodeH = dims.height * zoom;
+  const nodeW = (node.width ?? DEFAULT_NODE_WIDTH) * zoom;
+  const nodeH = (node.height ?? DEFAULT_NODE_HEIGHT) * zoom;
 
   if (
     screenX + nodeW > PAN_MARGIN &&

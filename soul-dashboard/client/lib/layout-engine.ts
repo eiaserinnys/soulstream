@@ -86,32 +86,9 @@ export interface SubAgentGroup {
 
 // === Node Dimensions ===
 
-/** 노드 타입별 기본 크기 (그리드 레이아웃에 사용) */
-const NODE_DIMENSIONS: Record<GraphNodeType | "group", { width: number; height: number }> = {
-  session: { width: 260, height: 84 },
-  user: { width: 260, height: 84 },
-  intervention: { width: 260, height: 84 },
-  thinking: { width: 260, height: 84 },
-  text: { width: 260, height: 84 },
-  tool_use: { width: 260, height: 84 },
-  tool_call: { width: 260, height: 84 },
-  tool_result: { width: 260, height: 84 },
-  subagent: { width: 260, height: 84 },
-  result: { width: 260, height: 84 },
-  response: { width: 260, height: 84 },
-  system: { width: 260, height: 84 },
-  error: { width: 260, height: 84 },
-  group: { width: 320, height: 100 },
-};
-
-/**
- * 노드 타입에 대한 크기를 반환합니다.
- */
-export function getNodeDimensions(
-  nodeType: GraphNodeType | "group",
-): { width: number; height: number } {
-  return NODE_DIMENSIONS[nodeType] ?? { width: 260, height: 84 };
-}
+/** 모든 카드의 기본 크기 (노드 생성 시 사용) */
+export const DEFAULT_NODE_WIDTH = 260;
+export const DEFAULT_NODE_HEIGHT = 84;
 
 // === Edge Creation ===
 
@@ -210,14 +187,6 @@ export function detectSubAgents(tree: EventTreeNode | null): SubAgentGroup[] {
 
 // === Plan Mode Detection ===
 
-/** EnterPlanMode ~ ExitPlanMode 범위 */
-export interface PlanModeRange {
-  enterNodeId: string;
-  exitNodeId: string;
-  /** ExitPlanMode가 명시적으로 발견되었는지 여부 */
-  closed: boolean;
-}
-
 /**
  * EventTreeNode 트리에서 EnterPlanMode / ExitPlanMode 도구 호출을 감지하여
  * 플랜 모드 구간을 반환합니다.
@@ -283,6 +252,8 @@ function createTextNode(
     id: `node-${treeNode.id}`,
     type: "thinking",
     position: { x: 0, y: 0 },
+    width: DEFAULT_NODE_WIDTH,
+    height: DEFAULT_NODE_HEIGHT,
     data: {
       nodeType: "thinking",
       cardId: treeNode.id,
@@ -314,6 +285,8 @@ function createToolCallNode(
     id: `node-${treeNode.id}-call`,
     type: "tool_call",
     position: { x: 0, y: 0 },
+    width: DEFAULT_NODE_WIDTH,
+    height: DEFAULT_NODE_HEIGHT,
     data: {
       nodeType: "tool_call",
       cardId: treeNode.id,
@@ -339,6 +312,8 @@ function createToolResultNode(treeNode: EventTreeNode): GraphNode | null {
       id: `node-${treeNode.id}-result`,
       type: "tool_result",
       position: { x: 0, y: 0 },
+      width: DEFAULT_NODE_WIDTH,
+      height: DEFAULT_NODE_HEIGHT,
       data: {
         nodeType: "tool_result",
         cardId: treeNode.id,
@@ -358,6 +333,8 @@ function createToolResultNode(treeNode: EventTreeNode): GraphNode | null {
       id: `node-${treeNode.id}-result`,
       type: "tool_result",
       position: { x: 0, y: 0 },
+      width: DEFAULT_NODE_WIDTH,
+      height: DEFAULT_NODE_HEIGHT,
       data: {
         nodeType: "tool_result",
         cardId: treeNode.id,
@@ -373,6 +350,8 @@ function createToolResultNode(treeNode: EventTreeNode): GraphNode | null {
     id: `node-${treeNode.id}-result`,
     type: "tool_result",
     position: { x: 0, y: 0 },
+    width: DEFAULT_NODE_WIDTH,
+    height: DEFAULT_NODE_HEIGHT,
     data: {
       nodeType: "tool_result",
       cardId: treeNode.id,
@@ -392,6 +371,8 @@ function createUserNode(treeNode: EventTreeNode): GraphNode {
     id: `node-${treeNode.id}`,
     type: "user",
     position: { x: 0, y: 0 },
+    width: DEFAULT_NODE_WIDTH,
+    height: DEFAULT_NODE_HEIGHT,
     data: {
       nodeType: "user",
       label: `User (${treeNode.user ?? "unknown"})`,
@@ -410,6 +391,8 @@ function createInterventionNodeFromTree(
     id: `node-${treeNode.id}`,
     type: "intervention",
     position: { x: 0, y: 0 },
+    width: DEFAULT_NODE_WIDTH,
+    height: DEFAULT_NODE_HEIGHT,
     data: {
       nodeType: "intervention",
       cardId: treeNode.id,
@@ -445,6 +428,8 @@ function createSystemNodeFromTree(treeNode: EventTreeNode): GraphNode {
     id: `node-${treeNode.id}`,
     type: "system",
     position: { x: 0, y: 0 },
+    width: DEFAULT_NODE_WIDTH,
+    height: DEFAULT_NODE_HEIGHT,
     data: {
       nodeType: "system",
       label,
@@ -464,6 +449,8 @@ function createSubagentNode(
     id: `node-${treeNode.id}`,
     type: "subagent",
     position: { x: 0, y: 0 },
+    width: DEFAULT_NODE_WIDTH,
+    height: DEFAULT_NODE_HEIGHT,
     data: {
       nodeType: "subagent",
       cardId: treeNode.id,
@@ -494,6 +481,8 @@ function createResultNode(
     id: `node-${treeNode.id}`,
     type: "system",
     position: { x: 0, y: 0 },
+    width: DEFAULT_NODE_WIDTH,
+    height: DEFAULT_NODE_HEIGHT,
     data: {
       nodeType: "result",
       cardId: treeNode.id,
@@ -679,6 +668,8 @@ export function buildGraph(
             id: `node-virtual-init-${parentTurnNode.id}`,
             type: "thinking",
             position: { x: 0, y: 0 },
+            width: DEFAULT_NODE_WIDTH,
+            height: DEFAULT_NODE_HEIGHT,
             data: {
               nodeType: "thinking",
               label: "Initial Tools",
@@ -845,9 +836,7 @@ export function applyDagreLayout(
 ): { nodes: GraphNode[]; edges: GraphEdge[] } {
   if (nodes.length === 0) return { nodes, edges };
 
-  const NODE_WIDTH = getNodeDimensions("thinking").width;
   const MARGIN = 20;
-  const COL_STEP = NODE_WIDTH + TOOL_BRANCH_H_GAP;
   const FLOW_GAP = 60; // depth 0 (메인 플로우) 수직 간격
 
   // 노드 맵
@@ -867,7 +856,7 @@ export function applyDagreLayout(
   }
 
   // 루트 = incoming 엣지 없는 최상위 노드
-  const roots = nodes.filter((n) => !incoming.has(n.id) && !n.parentId);
+  const roots = nodes.filter((n) => !incoming.has(n.id));
 
   // depth 계산: 수평 엣지 +1, 수직 엣지 동일 (사이클 방어 포함)
   const depthOf = new Map<string, number>();
@@ -890,16 +879,12 @@ export function applyDagreLayout(
     }
 
     // 사이클 방어: 계산 진입 즉시 기본값으로 마킹
-    const fallback = 84;
+    const fallback = DEFAULT_NODE_HEIGHT;
     rowHeightOf.set(id, fallback);
     effHeightOf.set(id, fallback);
 
     const node = nodeMap.get(id);
-    const selfH = node
-      ? (node.type === "group"
-          ? getNodeDimensions("group").height
-          : getNodeDimensions(node.data.nodeType).height)
-      : 84;
+    const selfH = node?.height ?? fallback;
 
     const ch = childrenOf.get(id) ?? [];
     const hCh = ch.filter((c) => c.horizontal);
@@ -936,15 +921,17 @@ export function applyDagreLayout(
     const hCh = ch.filter((c) => c.horizontal);
     const vCh = ch.filter((c) => !c.horizontal);
 
-    // 수평 자식: 오른쪽으로, V_GAP 간격으로 아래로 스택
+    // 수평 자식: 부모 width + H_GAP만큼 오른쪽으로, V_GAP 간격으로 아래로 스택
+    const parentW = nodeMap.get(id)?.width ?? DEFAULT_NODE_WIDTH;
+    const colStep = parentW + TOOL_BRANCH_H_GAP;
     let hy = y;
     for (const hc of hCh) {
-      placeSubtree(hc.id, x + COL_STEP, hy);
+      placeSubtree(hc.id, x + colStep, hy);
       hy += computeHeights(hc.id).eff + V_GAP;
     }
 
     // 수직 자식: 아래로, 같은 X
-    const row = rowHeightOf.get(id) ?? 84;
+    const row = rowHeightOf.get(id) ?? DEFAULT_NODE_HEIGHT;
     const vGap = (depthOf.get(id) ?? 0) === 0 ? FLOW_GAP : V_GAP;
     let vy = y + row + vGap;
     for (const vc of vCh) {
@@ -963,13 +950,6 @@ export function applyDagreLayout(
 
   // 위치 반영
   const positioned = nodes.map((node) => {
-    if (node.parentId) {
-      // 그룹 자식: 부모 내부 상대 배치
-      const sibs = nodes.filter((n) => n.parentId === node.parentId);
-      const idx = sibs.findIndex((n) => n.id === node.id);
-      const d = getNodeDimensions(node.data.nodeType);
-      return { ...node, position: { x: 20, y: 40 + idx * (d.height + 16) } };
-    }
     const p = positions.get(node.id);
     return p ? { ...node, position: p } : node;
   });
