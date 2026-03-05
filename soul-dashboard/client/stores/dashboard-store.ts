@@ -499,18 +499,20 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
             });
             subagentMap.set(subagentEvent.agent_id, subagentNode);
 
-            // 부모 ToolUseBlock의 자식으로 연결
-            // 서버가 toolu_* ID로 브릿지하므로 toolUseMap.get이 직접 성공해야 함
-            const parentTool = toolUseMap.get(subagentEvent.parent_tool_use_id);
+            // 부모 노드 결정
+            // SDK 한계: PreToolUse는 toolu_* ID를, SubagentStart는 crypto.randomUUID()를 전달하며
+            // Task 도구가 isConcurrencySafe=true라 병렬 실행 시 매핑 불가.
+            // → parent_tool_use_id가 비어 있으면 턴 루트에 연결한다.
+            const parentToolUseId = subagentEvent.parent_tool_use_id;
+            const parentTool = parentToolUseId ? toolUseMap.get(parentToolUseId) : null;
             if (parentTool) {
-              // Reparent: subagent_start가 자식 이벤트보다 늦게 도착한 경우,
-              // resolveParent()가 subagent를 찾지 못해 toolNode에 직접 배치한 자식들을
-              // subagent 노드 아래로 이동한다.
-              // parentToolUseId가 일치하는 노드만 이동하여, 다른 용도의 자식은 보존한다.
+              // NOTE: 현재 서버는 빈 parent_tool_use_id를 전달하므로 이 분기는 도달 불가.
+              // SDK 한계가 해소되어 parent 매핑이 복원되면 활성화된다.
+              // parent_tool_use_id로 매칭 성공 → reparent 로직
               const toReparent: EventTreeNode[] = [];
               const toKeep: EventTreeNode[] = [];
               for (const child of parentTool.children) {
-                if (child.parentToolUseId === subagentEvent.parent_tool_use_id) {
+                if (child.parentToolUseId === parentToolUseId) {
                   toReparent.push(child);
                 } else {
                   toKeep.push(child);
@@ -519,10 +521,14 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
               parentTool.children.length = 0;
               parentTool.children.push(...toKeep, subagentNode);
               subagentNode.children.push(...toReparent);
+            } else if (!parentToolUseId) {
+              // parent_tool_use_id 없음 (SDK 한계) → 현재 턴 루트에 연결
+              const turnNode = currentTurnNodeId ? nodeMap.get(currentTurnNodeId) : null;
+              (turnNode ?? root).children.push(subagentNode);
             } else {
-              // 서버가 parent_tool_use_id를 보냈으나 매칭 실패 → 에러 노드
+              // parent_tool_use_id가 있으나 매칭 실패 → 에러 노드
               insertOrphanError(root, "subagent_start", eventId,
-                `parent_tool_use_id="${subagentEvent.parent_tool_use_id}" toolUseMap 매칭 실패`);
+                `parent_tool_use_id="${parentToolUseId}" toolUseMap 매칭 실패`);
               root.children.push(subagentNode);
             }
             updated = true;
