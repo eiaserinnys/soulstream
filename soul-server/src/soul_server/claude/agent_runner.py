@@ -383,6 +383,13 @@ class ClaudeRunner:
         agent_id = input_data.get("agent_id", "")
         agent_type = input_data.get("agent_type", "")
 
+        # 진단 로그: input_data 전체 키와 tool_use_id 덤프
+        logger.info(
+            f"[SubagentStart] DIAG param_tool_use_id={tool_use_id}, "
+            f"input_data_keys={list(input_data.keys())}, "
+            f"input_data={{{', '.join(f'{k}={v!r}' for k, v in input_data.items() if k != 'prompt')}}}"
+        )
+
         # PreToolUse에서 구축된 매핑으로 toolu_* ID 획득 (폴백 금지)
         if tool_use_id:
             parent_id = self._sdk_uuid_to_api_id.get(tool_use_id)
@@ -390,7 +397,8 @@ class ClaudeRunner:
                 logger.error(
                     f"[SubagentStart] UUID→API 매핑 조회 실패: sdk_uuid={tool_use_id}, "
                     f"매핑 테이블 크기={len(self._sdk_uuid_to_api_id)}, "
-                    f"매핑 키 목록={list(self._sdk_uuid_to_api_id.keys())}"
+                    f"매핑 키 목록={list(self._sdk_uuid_to_api_id.keys())}, "
+                    f"매핑 값 목록={list(self._sdk_uuid_to_api_id.values())}"
                 )
                 parent_id = ""
         else:
@@ -786,18 +794,33 @@ class ClaudeRunner:
             tool_use_id: Optional[str],
             context: HookContext,
         ) -> SyncHookJSONOutput:
-            # hook_input["tool_use_id"] = toolu_* (API의 ToolUseBlock.id)
-            # tool_use_id (두 번째 파라미터) = SDK UUID (CLI 내부 식별자)
             api_id = hook_input.get("tool_use_id")
             tool_name = hook_input.get("tool_name", "unknown")
-            if tool_use_id and api_id:
+
+            # 진단 로그: hook_input의 전체 키와 tool_use_id 파라미터 비교
+            logger.info(
+                f"[PreToolUse] DIAG tool={tool_name}, "
+                f"param_tool_use_id={tool_use_id}, "
+                f"hook_input.tool_use_id={api_id}, "
+                f"hook_input_keys={list(hook_input.keys())}"
+            )
+
+            if tool_use_id and api_id and tool_use_id != api_id:
+                # 정상: 두 값이 다르면 UUID → toolu_* 매핑
                 self._sdk_uuid_to_api_id[tool_use_id] = api_id
-                logger.debug(
-                    f"[PreToolUse] UUID→API 매핑 등록: {tool_use_id} → {api_id} (tool={tool_name})"
+                logger.info(
+                    f"[PreToolUse] 매핑 등록 성공: {tool_use_id} → {api_id} (tool={tool_name})"
                 )
+            elif tool_use_id and api_id and tool_use_id == api_id:
+                # 비정상: 두 값이 같으면 둘 다 toolu_* 형식
+                logger.error(
+                    f"[PreToolUse] param과 hook_input이 동일 — UUID가 아닌 toolu_* 수신: "
+                    f"tool_use_id={tool_use_id} (tool={tool_name})"
+                )
+                # 매핑 저장하지 않음 (toolu_* → toolu_*는 무의미)
             else:
                 logger.error(
-                    f"[PreToolUse] UUID→API 매핑 실패: sdk_uuid={tool_use_id}, api_id={api_id}, tool={tool_name}"
+                    f"[PreToolUse] 매핑 실패: param={tool_use_id}, hook_input={api_id}, tool={tool_name}"
                 )
             return {}
 
