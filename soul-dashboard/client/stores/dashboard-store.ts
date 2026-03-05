@@ -197,7 +197,8 @@ function resolveParent(parentToolUseId: string | null | undefined, root: EventTr
   const subagent = toolNode.children.find(c => c.type === "subagent");
   if (subagent) return subagent;
 
-  // subagent_start가 아직 안 왔을 수 있음 → tool 노드 자체 반환
+  // subagent_start가 아직 안 왔을 수 있음 → tool 노드 자체에 임시 배치.
+  // subagent_start 도착 시 reparent 로직이 이 자식들을 subagent 아래로 이동시킨다.
   return toolNode;
 }
 
@@ -502,7 +503,22 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
             // 서버가 toolu_* ID로 브릿지하므로 toolUseMap.get이 직접 성공해야 함
             const parentTool = toolUseMap.get(subagentEvent.parent_tool_use_id);
             if (parentTool) {
-              parentTool.children.push(subagentNode);
+              // Reparent: subagent_start가 자식 이벤트보다 늦게 도착한 경우,
+              // resolveParent()가 subagent를 찾지 못해 toolNode에 직접 배치한 자식들을
+              // subagent 노드 아래로 이동한다.
+              // parentToolUseId가 일치하는 노드만 이동하여, 다른 용도의 자식은 보존한다.
+              const toReparent: EventTreeNode[] = [];
+              const toKeep: EventTreeNode[] = [];
+              for (const child of parentTool.children) {
+                if (child.parentToolUseId === subagentEvent.parent_tool_use_id) {
+                  toReparent.push(child);
+                } else {
+                  toKeep.push(child);
+                }
+              }
+              parentTool.children.length = 0;
+              parentTool.children.push(...toKeep, subagentNode);
+              subagentNode.children.push(...toReparent);
             } else {
               // 서버가 parent_tool_use_id를 보냈으나 매칭 실패 → 에러 노드
               insertOrphanError(root, "subagent_start", eventId,
