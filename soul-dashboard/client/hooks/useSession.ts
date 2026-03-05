@@ -34,6 +34,7 @@ const SSE_EVENT_TYPES: SSEEventType[] = [
   "debug",
   "complete",
   "error",
+  "thinking",
   "text_start",
   "text_delta",
   "text_end",
