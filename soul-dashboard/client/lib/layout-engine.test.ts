@@ -13,10 +13,8 @@ import {
   detectSubAgents,
   createEdge,
   getNodeDimensions,
-  calcToolChainBounds,
   countAllDescendants,
   type GraphNode,
-  type ToolChainEntry,
 } from "./layout-engine";
 
 // === Helper: 트리 노드 팩토리 ===
@@ -852,61 +850,6 @@ describe("applyDagreLayout", () => {
   });
 });
 
-// === calcToolChainBounds 테스트 ===
-
-describe("calcToolChainBounds", () => {
-  const TOOL_BRANCH_H_GAP = 120;
-  const callWidth = getNodeDimensions("tool_call").width;
-  const callHeight = getNodeDimensions("tool_call").height;
-  const resultWidth = getNodeDimensions("tool_result").width;
-  const resultHeight = getNodeDimensions("tool_result").height;
-  const V_GAP = 16;
-
-  it("returns zero for empty chain", () => {
-    expect(calcToolChainBounds([])).toEqual({ width: 0, height: 0 });
-  });
-
-  it("calculates width and height for call + result", () => {
-    const chain: ToolChainEntry[] = [
-      { callId: "node-t1-call", resultId: "node-t1-result" },
-    ];
-    const bounds = calcToolChainBounds(chain);
-    expect(bounds.width).toBe(TOOL_BRANCH_H_GAP + callWidth + TOOL_BRANCH_H_GAP + resultWidth);
-    expect(bounds.height).toBe(Math.max(callHeight, resultHeight));
-  });
-
-  it("calculates width for call-only (no result)", () => {
-    const chain: ToolChainEntry[] = [{ callId: "node-t1-call" }];
-    const bounds = calcToolChainBounds(chain);
-    expect(bounds.width).toBe(TOOL_BRANCH_H_GAP + callWidth);
-    expect(bounds.height).toBe(callHeight);
-  });
-
-  it("stacks multiple entries vertically with V_GAP", () => {
-    const chain: ToolChainEntry[] = [
-      { callId: "t1-call", resultId: "t1-result" },
-      { callId: "t2-call", resultId: "t2-result" },
-      { callId: "t3-call" },
-    ];
-    const bounds = calcToolChainBounds(chain);
-
-    const row1Height = Math.max(callHeight, resultHeight);
-    const row2Height = Math.max(callHeight, resultHeight);
-    const row3Height = callHeight;
-    const expectedHeight = row1Height + V_GAP + row2Height + V_GAP + row3Height;
-    expect(bounds.height).toBe(expectedHeight);
-  });
-
-  it("handles single tool_call without result", () => {
-    const chain: ToolChainEntry[] = [
-      { callId: "node-t1" },
-    ];
-    const bounds = calcToolChainBounds(chain);
-    expect(bounds.width).toBe(TOOL_BRANCH_H_GAP + callWidth);
-    expect(bounds.height).toBe(callHeight);
-  });
-});
-
 // === 대규모 세션 레이아웃 검증 ===
 
 describe("large session layout", () => {
@@ -1266,35 +1209,17 @@ describe("Subagent 레이아웃 (브릿지 케이스)", () => {
     expect(subagent.position.x).toBeGreaterThanOrEqual(taskCall.position.x);
   });
 
-  it("subagent 내부 text는 메인 플로우의 Y 누적에 영향을 주지 않음", () => {
+  it("subagent 서브트리가 메인 플로우 다음 노드와 겹치지 않음", () => {
     const tree = buildSubagentTree();
     const { nodes } = buildGraph(tree);
 
-    const t1 = nodes.find((n) => n.id === "node-t1")!;
     const t2 = nodes.find((n) => n.id === "node-t2")!;
+    const subText = nodes.find((n) => n.id === "node-sub-t1")!;
+    const nodeHeight = getNodeDimensions("thinking").height;
 
-    // subagent가 없을 때 t1 → t2 간의 정상 간격 기준:
-    // tool chain 1개 (Task) = 84px 높이 + effectiveHeight 적용
-    // subagent 내부 노드가 mainFlowOrder에 포함되면 t2가 불필요하게 아래로 밀림
-    const treeWithoutSubagent = sessionRoot([
-      userMsg("u1", "hi", [
-        textNode("t1", "Thinking about task", true, [
-          toolNode("task1", "Task", { toolResult: "done", completed: true }),
-        ]),
-        textNode("t2", "Next thinking"),
-      ]),
-    ]);
-    const { nodes: nodesWithout } = buildGraph(treeWithoutSubagent);
-    const t2Without = nodesWithout.find((n) => n.id === "node-t2")!;
-
-    // subagent가 있어도 t2의 Y가 subagent 없을 때보다 많이 밀리면 안 됨
-    // (effectiveHeight 확장은 허용하되, mainFlowOrder에 subagent 내부 text가 끼어들면 안 됨)
-    // subagent 내부 text가 mainFlowOrder에 있으면 1개 추가 노드만큼(84+60=144) 더 밀림
-    // 정상적으로는 effectiveHeight 확장만 적용됨
-    const extraGap = t2.position.y - t2Without.position.y;
-    // mainFlowOrder에 끼어드는 경우 extraGap >= 144 (MAIN_FLOW_V_GAP + node height)
-    // 정상 경우 effectiveHeight 확장분만 적용 (subagent 높이만큼)
-    expect(extraGap).toBeLessThan(144);
+    // subagent 내부 text의 바닥(Y + height)이 t2의 상단(Y)보다 위에 있어야 함
+    const subTextBottom = subText.position.y + nodeHeight;
+    expect(t2.position.y).toBeGreaterThan(subTextBottom);
   });
 
   it("subagent 내부 text의 tool은 올바르게 배치됨 (COL_B/C)", () => {
