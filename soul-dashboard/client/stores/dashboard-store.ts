@@ -426,7 +426,8 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
                 });
                 cardIdMap.set(thinkingCardId, thinkingNode);
                 parentSubagent.children.push(thinkingNode);
-                lastTextNodeId = thinkingNode.id;
+                // lastTextNodeId를 덮어쓰지 않음: 서브에이전트 내부 이벤트가
+                // 루트 레벨의 lastTextNodeId를 오염하면 후속 루트 도구가 잘못 배치됨
                 updated = true;
                 break;
               }
@@ -467,7 +468,8 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
                 const textNode = createNode(textStartEvent.card_id, "text", "");
                 cardIdMap.set(textStartEvent.card_id, textNode);
                 parentSubagent.children.push(textNode);
-                lastTextNodeId = textNode.id;
+                // lastTextNodeId를 덮어쓰지 않음: 서브에이전트 내부 이벤트가
+                // 루트 레벨의 lastTextNodeId를 오염하면 후속 루트 도구가 잘못 배치됨
                 updated = true;
                 break;
               }

@@ -1546,6 +1546,166 @@ describe("dashboard-store", () => {
     });
   });
 
+  // === 순차 서브에이전트 lastTextNodeId 오염 방지 ===
+
+  describe("processEvent - sequential subagent isolation", () => {
+    it("서브에이전트 내부 text가 lastTextNodeId를 오염하지 않아 후속 Task가 올바른 부모에 배치", () => {
+      const { processEvent } = useDashboardStore.getState();
+      let id = 0;
+
+      // Turn: user → text → Task-1 → subagent-1(text+tool) → subagent-1 stop → Task-2
+      processEvent({ type: "user_message", user: "u", text: "Run tasks" } as UserMessageEvent, id++);
+      processEvent({ type: "text_start", card_id: "main-text" }, id++);
+      processEvent({ type: "text_delta", card_id: "main-text", text: "Planning..." } as TextDeltaEvent, id++);
+      processEvent({ type: "text_end", card_id: "main-text" }, id++);
+
+      // Task-1
+      processEvent({
+        type: "tool_start",
+        tool_name: "Task",
+        tool_input: { prompt: "Explore" },
+        tool_use_id: "toolu_task_1",
+      } as ToolStartEvent, id++);
+
+      // Subagent-1
+      processEvent({
+        type: "subagent_start",
+        agent_id: "agent-1",
+        agent_type: "Explore",
+        parent_tool_use_id: "toolu_task_1",
+      } as SubagentStartEvent, id++);
+
+      // Subagent-1 내부 text (이것이 lastTextNodeId를 오염하면 안됨)
+      processEvent({
+        type: "text_start",
+        card_id: "agent-1-text",
+        parent_tool_use_id: "toolu_task_1",
+      }, id++);
+      processEvent({ type: "text_delta", card_id: "agent-1-text", text: "Searching..." } as TextDeltaEvent, id++);
+      processEvent({ type: "text_end", card_id: "agent-1-text" }, id++);
+
+      // Subagent-1 내부 tool
+      processEvent({
+        type: "tool_start",
+        tool_name: "Grep",
+        tool_input: {},
+        tool_use_id: "toolu_grep",
+        parent_tool_use_id: "toolu_task_1",
+      } as ToolStartEvent, id++);
+      processEvent({
+        type: "tool_result",
+        tool_name: "Grep",
+        result: "found",
+        is_error: false,
+        tool_use_id: "toolu_grep",
+        parent_tool_use_id: "toolu_task_1",
+      } as ToolResultEvent, id++);
+
+      // Subagent-1 종료
+      processEvent({
+        type: "subagent_stop",
+        agent_id: "agent-1",
+        parent_tool_use_id: "toolu_task_1",
+      } as SubagentStopEvent, id++);
+      processEvent({
+        type: "tool_result",
+        tool_name: "Task",
+        result: "Explored",
+        is_error: false,
+        tool_use_id: "toolu_task_1",
+      } as ToolResultEvent, id++);
+
+      // Task-2: 루트 레벨 (parent_tool_use_id 없음)
+      // 이것이 main-text의 자식이어야 하지, agent-1-text의 자식이면 안됨
+      processEvent({
+        type: "tool_start",
+        tool_name: "Task",
+        tool_input: { prompt: "Review" },
+        tool_use_id: "toolu_task_2",
+      } as ToolStartEvent, id++);
+
+      const tree = useDashboardStore.getState().tree!;
+      const turn = tree.children[0]; // user_message
+      const mainText = findTreeNode(turn, "main-text")!;
+
+      // Task-1과 Task-2가 모두 main-text의 자식이어야 함
+      const mainTextTools = mainText.children.filter(c => c.type === "tool");
+      expect(mainTextTools).toHaveLength(2);
+      expect(mainTextTools[0].toolName).toBe("Task");
+      expect(mainTextTools[1].toolName).toBe("Task");
+
+      // Task-2가 agent-1 내부에 잘못 배치되지 않았는지 확인
+      const agent1 = collectNodes(tree, "subagent")[0];
+      const agentInternalTools = collectNodes(agent1, "tool");
+      // agent-1 내부에는 Grep만 있어야 함 (Task-2가 여기 있으면 안됨)
+      expect(agentInternalTools.every(t => t.toolName === "Grep")).toBe(true);
+    });
+
+    it("서브에이전트 내부 thinking이 lastTextNodeId를 오염하지 않아 후속 Task가 올바른 부모에 배치", () => {
+      const { processEvent } = useDashboardStore.getState();
+      let id = 0;
+
+      processEvent({ type: "user_message", user: "u", text: "Run tasks" } as UserMessageEvent, id++);
+      processEvent({ type: "text_start", card_id: "main-text" }, id++);
+      processEvent({ type: "text_end", card_id: "main-text" }, id++);
+
+      // Task-1
+      processEvent({
+        type: "tool_start",
+        tool_name: "Task",
+        tool_input: { prompt: "Explore" },
+        tool_use_id: "toolu_task_1",
+      } as ToolStartEvent, id++);
+
+      processEvent({
+        type: "subagent_start",
+        agent_id: "agent-1",
+        agent_type: "Explore",
+        parent_tool_use_id: "toolu_task_1",
+      } as SubagentStartEvent, id++);
+
+      // Subagent-1 내부 thinking (text_start 대신 thinking 이벤트)
+      processEvent({
+        type: "thinking",
+        card_id: "agent-1-thinking",
+        thinking: "Analyzing...",
+        parent_tool_use_id: "toolu_task_1",
+      } as ThinkingEvent, id++);
+
+      // Subagent-1 종료
+      processEvent({
+        type: "subagent_stop",
+        agent_id: "agent-1",
+        parent_tool_use_id: "toolu_task_1",
+      } as SubagentStopEvent, id++);
+      processEvent({
+        type: "tool_result",
+        tool_name: "Task",
+        result: "Explored",
+        is_error: false,
+        tool_use_id: "toolu_task_1",
+      } as ToolResultEvent, id++);
+
+      // Task-2: 루트 레벨
+      processEvent({
+        type: "tool_start",
+        tool_name: "Task",
+        tool_input: { prompt: "Review" },
+        tool_use_id: "toolu_task_2",
+      } as ToolStartEvent, id++);
+
+      const tree = useDashboardStore.getState().tree!;
+      const turn = tree.children[0];
+      const mainText = findTreeNode(turn, "main-text")!;
+
+      // Task-1과 Task-2가 모두 main-text의 자식
+      const mainTextTools = mainText.children.filter(c => c.type === "tool");
+      expect(mainTextTools).toHaveLength(2);
+      expect(mainTextTools[0].toolName).toBe("Task");
+      expect(mainTextTools[1].toolName).toBe("Task");
+    });
+  });
+
   // === 초기화 ===
 
   describe("reset", () => {

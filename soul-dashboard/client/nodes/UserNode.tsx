@@ -2,7 +2,7 @@
  * UserNode - 사용자 입력/프롬프트 노드
  *
  * 사용자가 보낸 메시지를 표시합니다.
- * 실행 흐름의 시작점으로 하단 source handle만 갖습니다.
+ * 상단 target handle과 하단 source handle을 갖습니다.
  */
 
 import { memo } from 'react';
@@ -47,12 +47,9 @@ export const UserNode = memo(function UserNode({ data, selected }: NodeProps<Use
         </div>
       </div>
 
-      {/* Bottom source handle */}
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        style={handleStyle(ACCENT)}
-      />
+      {/* Handles */}
+      <Handle type="target" position={Position.Top} style={handleStyle(ACCENT)} />
+      <Handle type="source" position={Position.Bottom} style={handleStyle(ACCENT)} />
     </div>
   );
 });
