@@ -82,9 +82,9 @@ export const SubagentNode = memo(function SubagentNode({ data, selected }: NodeP
       )}
 
       {/* Handles */}
-      <Handle type="target" position={Position.Left} style={handleStyle(ACCENT)} />
+      <Handle type="target" position={Position.Left} id="left" style={handleStyle(ACCENT)} />
       <Handle type="source" position={Position.Right} id="right" style={handleStyle(ACCENT)} />
-      <Handle type="source" position={Position.Bottom} style={handleStyle(ACCENT)} />
+      <Handle type="source" position={Position.Bottom} id="bottom" style={handleStyle(ACCENT)} />
     </div>
   );
 });
