@@ -383,8 +383,19 @@ class ClaudeRunner:
         agent_id = input_data.get("agent_id", "")
         agent_type = input_data.get("agent_type", "")
 
-        # PreToolUse에서 구축된 매핑으로 toolu_* ID 획득
-        parent_id = self._sdk_uuid_to_api_id.get(tool_use_id, tool_use_id or "") if tool_use_id else ""
+        # PreToolUse에서 구축된 매핑으로 toolu_* ID 획득 (폴백 금지)
+        if tool_use_id:
+            parent_id = self._sdk_uuid_to_api_id.get(tool_use_id)
+            if parent_id is None:
+                logger.error(
+                    f"[SubagentStart] UUID→API 매핑 조회 실패: sdk_uuid={tool_use_id}, "
+                    f"매핑 테이블 크기={len(self._sdk_uuid_to_api_id)}, "
+                    f"매핑 키 목록={list(self._sdk_uuid_to_api_id.keys())}"
+                )
+                parent_id = ""
+        else:
+            logger.error(f"[SubagentStart] tool_use_id가 None — SubagentStart 훅에 tool_use_id 미전달")
+            parent_id = ""
 
         # agent_id → parent_tool_use_id 매핑 저장 (SubagentStop에서 사용)
         if agent_id and parent_id:
@@ -397,9 +408,10 @@ class ClaudeRunner:
             agent_id=agent_id,
         ))
 
+        mapped = parent_id != tool_use_id and parent_id != ""
         logger.info(
             f"[SUBAGENT_START] agent_id={agent_id}, agent_type={agent_type}, "
-            f"parent_tool_use_id={parent_id} (sdk_uuid={tool_use_id})"
+            f"parent_tool_use_id={parent_id} (sdk_uuid={tool_use_id}, mapped={mapped})"
         )
         return {}
 
@@ -777,8 +789,16 @@ class ClaudeRunner:
             # hook_input["tool_use_id"] = toolu_* (API의 ToolUseBlock.id)
             # tool_use_id (두 번째 파라미터) = SDK UUID (CLI 내부 식별자)
             api_id = hook_input.get("tool_use_id")
+            tool_name = hook_input.get("tool_name", "unknown")
             if tool_use_id and api_id:
                 self._sdk_uuid_to_api_id[tool_use_id] = api_id
+                logger.debug(
+                    f"[PreToolUse] UUID→API 매핑 등록: {tool_use_id} → {api_id} (tool={tool_name})"
+                )
+            else:
+                logger.error(
+                    f"[PreToolUse] UUID→API 매핑 실패: sdk_uuid={tool_use_id}, api_id={api_id}, tool={tool_name}"
+                )
             return {}
 
         hooks["PreToolUse"] = [
