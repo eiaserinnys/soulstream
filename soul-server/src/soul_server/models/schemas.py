@@ -228,11 +228,12 @@ class ThinkingSSEEvent(BaseModel):
 class TextStartSSEEvent(BaseModel):
     """텍스트 블록 시작 이벤트
 
-    AssistantMessage의 TextBlock 하나를 '카드'로 추상화하여
-    시작 시점을 알립니다.
+    TextBlock의 시작을 알립니다.
+    card_id는 연관된 thinking 블록의 카드 ID입니다.
+    ThinkingBlock 없이 TextBlock만 올 때 card_id=None입니다.
     """
     type: str = "text_start"
-    card_id: str = Field(..., description="텍스트 블록 단위 카드 ID")
+    card_id: Optional[str] = Field(None, description="연관된 thinking 블록의 카드 ID")
     parent_tool_use_id: Optional[str] = Field(None, description="서브에이전트 내부인 경우 부모 Task 도구의 tool_use_id")
 
 
@@ -243,14 +244,14 @@ class TextDeltaSSEEvent(BaseModel):
     않으므로 한 번에 전체 텍스트가 전달됩니다.
     """
     type: str = "text_delta"
-    card_id: str = Field(..., description="카드 ID")
+    card_id: Optional[str] = Field(None, description="카드 ID")
     text: str = Field(..., description="텍스트 내용")
 
 
 class TextEndSSEEvent(BaseModel):
     """텍스트 블록 완료 이벤트"""
     type: str = "text_end"
-    card_id: str = Field(..., description="카드 ID")
+    card_id: Optional[str] = Field(None, description="카드 ID")
 
 
 class ToolStartSSEEvent(BaseModel):
@@ -308,6 +309,7 @@ class SubagentStopSSEEvent(BaseModel):
     """
     type: str = "subagent_stop"
     agent_id: str = Field(..., description="서브에이전트 고유 ID")
+    parent_tool_use_id: Optional[str] = Field(None, description="부모 Task 도구의 tool_use_id")
 
 
 class RateLimitProfileStatus(BaseModel):
