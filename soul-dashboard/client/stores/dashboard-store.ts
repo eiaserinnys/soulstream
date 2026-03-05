@@ -171,16 +171,34 @@ function resetInternalMaps() {
 }
 
 /**
- * parent_tool_use_id로 해당하는 서브에이전트 노드를 찾습니다.
- * 서브에이전트의 parentToolUseId와 매칭합니다.
+ * parent_tool_use_id로 부모 노드를 결정합니다.
+ * - null/undefined → 현재 턴 루트 (없으면 session root)
+ * - "toolu_X" → toolUseMap에서 tool 노드 → 그 자식 subagent 반환
  */
-function findSubagentByParentToolUseId(parentToolUseId: string): EventTreeNode | null {
-  for (const subagent of subagentMap.values()) {
-    if (subagent.parentToolUseId === parentToolUseId) {
-      return subagent;
+function resolveParent(parentToolUseId: string | null | undefined, root: EventTreeNode): EventTreeNode {
+  if (!parentToolUseId) {
+    // 루트 레벨 → 현재 턴 루트
+    if (currentTurnNodeId) {
+      const turn = nodeMap.get(currentTurnNodeId);
+      if (turn) return turn;
     }
+    return root;
   }
-  return null;
+
+  // parent_tool_use_id → toolUseMap에서 해당 tool 노드 찾기
+  const toolNode = toolUseMap.get(parentToolUseId);
+  if (!toolNode) {
+    insertOrphanError(root, "resolveParent", -1,
+      `parent_tool_use_id="${parentToolUseId}" toolUseMap 매칭 실패`);
+    return root;
+  }
+
+  // tool 노드의 subagent 자식 찾기 (1단계 탐색, 최대 1개)
+  const subagent = toolNode.children.find(c => c.type === "subagent");
+  if (subagent) return subagent;
+
+  // subagent_start가 아직 안 왔을 수 있음 → tool 노드 자체 반환
+  return toolNode;
 }
 
 // === Tree Helpers ===
@@ -411,39 +429,12 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
             const thinkingEvent = event as ThinkingEvent;
             const thinkingCardId = thinkingEvent.card_id || `thinking-${eventId}`;
 
-            // parent_tool_use_id가 있으면 서브에이전트 내부
-            if (thinkingEvent.parent_tool_use_id) {
-              const parentSubagent = findSubagentByParentToolUseId(thinkingEvent.parent_tool_use_id);
-              if (parentSubagent) {
-                const thinkingNode = createNode(thinkingCardId, "thinking", thinkingEvent.thinking, {
-                  completed: true,
-                });
-                cardIdMap.set(thinkingCardId, thinkingNode);
-                parentSubagent.children.push(thinkingNode);
-                updated = true;
-                break;
-              } else {
-                // 서버가 parent_tool_use_id를 보냈으나 매칭 실패 → 에러 노드
-                insertOrphanError(root, "thinking", eventId,
-                  `parent_tool_use_id="${thinkingEvent.parent_tool_use_id}" 서브에이전트 매칭 실패`);
-                const thinkingNode = createNode(thinkingCardId, "thinking", thinkingEvent.thinking, {
-                  completed: true,
-                });
-                cardIdMap.set(thinkingCardId, thinkingNode);
-                root.children.push(thinkingNode);
-                updated = true;
-                break;
-              }
-            }
-
-            // 루트 레벨: currentTurnNode 또는 root에 직접 배치
-            const turnNode = currentTurnNodeId ? nodeMap.get(currentTurnNodeId) : null;
-            const thinkingParent = turnNode || root;
+            const parent = resolveParent(thinkingEvent.parent_tool_use_id, root);
             const thinkingNode = createNode(thinkingCardId, "thinking", thinkingEvent.thinking, {
               completed: true,
             });
             cardIdMap.set(thinkingCardId, thinkingNode);
-            thinkingParent.children.push(thinkingNode);
+            parent.children.push(thinkingNode);
             updated = true;
             break;
           }
@@ -452,50 +443,46 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
             root = ensureRoot(root);
             const textStartEvent = event as TextStartEvent;
 
-            // parent_tool_use_id가 있으면 서브에이전트 내부
-            if (textStartEvent.parent_tool_use_id) {
-              const parentSubagent = findSubagentByParentToolUseId(textStartEvent.parent_tool_use_id);
-              if (parentSubagent) {
-                const textNode = createNode(textStartEvent.card_id, "text", "");
-                cardIdMap.set(textStartEvent.card_id, textNode);
-                parentSubagent.children.push(textNode);
-                updated = true;
-                break;
-              } else {
-                // 서버가 parent_tool_use_id를 보냈으나 매칭 실패 → 에러 노드
-                insertOrphanError(root, "text_start", eventId,
-                  `parent_tool_use_id="${textStartEvent.parent_tool_use_id}" 서브에이전트 매칭 실패`);
-                const textNode = createNode(textStartEvent.card_id, "text", "");
-                cardIdMap.set(textStartEvent.card_id, textNode);
-                root.children.push(textNode);
-                updated = true;
-                break;
-              }
+            // card_id가 있고 cardIdMap에 있으면 → thinking 노드가 이미 존재
+            // text_delta에서 thinking.textContent를 업데이트하므로 여기서는 마킹만
+            if (textStartEvent.card_id && cardIdMap.has(textStartEvent.card_id)) {
+              // thinking 노드가 이미 있음 → 별도 노드 생성 불필요
+              updated = true;
+              break;
             }
 
-            // 루트 레벨: currentTurnNode 또는 root에 직접 배치
-            const textTurnNode = currentTurnNodeId ? nodeMap.get(currentTurnNodeId) : null;
-            const textParent = textTurnNode || root;
-            const textNode = createNode(textStartEvent.card_id, "text", "");
-            cardIdMap.set(textStartEvent.card_id, textNode);
+            // thinking 없이 text만 온 경우 → 부모에 독립 text 노드 생성
+            const textNodeId = textStartEvent.card_id ?? `text-${eventId}`;
+            const textParent = resolveParent(textStartEvent.parent_tool_use_id, root);
+            const textNode = createNode(textNodeId, "text", "");
+            if (textStartEvent.card_id) cardIdMap.set(textStartEvent.card_id, textNode);
             textParent.children.push(textNode);
             updated = true;
             break;
           }
 
           case "text_delta": {
-            const textNode = cardIdMap.get(event.card_id);
-            if (textNode) {
-              textNode.content += event.text;
+            const targetNode = event.card_id ? cardIdMap.get(event.card_id) : null;
+            if (targetNode) {
+              if (targetNode.type === "thinking") {
+                // thinking 노드의 가시적 텍스트 갱신
+                targetNode.textContent = (targetNode.textContent ?? "") + event.text;
+              } else {
+                // 독립 text 노드의 content 갱신
+                targetNode.content += event.text;
+              }
               updated = true;
             }
             break;
           }
 
           case "text_end": {
-            const textNode = cardIdMap.get(event.card_id);
-            if (textNode) {
-              textNode.completed = true;
+            const targetNode = event.card_id ? cardIdMap.get(event.card_id) : null;
+            if (targetNode) {
+              targetNode.textCompleted = true;
+              if (targetNode.type !== "thinking") {
+                targetNode.completed = true;
+              }
               updated = true;
             }
             break;
@@ -552,31 +539,15 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
               toolUseMap.set(toolStartEvent.tool_use_id, toolNode);
             }
 
-            // 부모 결정: parent_tool_use_id 기반
-            if (toolStartEvent.parent_tool_use_id) {
-              // 서브에이전트 내부 → 해당 서브에이전트의 자식
-              const parentSubagent = findSubagentByParentToolUseId(toolStartEvent.parent_tool_use_id);
-              if (parentSubagent) {
-                parentSubagent.children.push(toolNode);
-              } else {
-                // 서버가 parent_tool_use_id를 보냈으나 매칭 실패 → 에러 노드
-                insertOrphanError(root, "tool_start", eventId,
-                  `parent_tool_use_id="${toolStartEvent.parent_tool_use_id}" 매칭 실패`);
-                root.children.push(toolNode);
-              }
+            // 부모 결정: card_id → thinking 자식 | 없으면 resolveParent
+            const parentThinking = toolStartEvent.card_id
+              ? cardIdMap.get(toolStartEvent.card_id)
+              : null;
+            if (parentThinking) {
+              parentThinking.children.push(toolNode);
             } else {
-              // 루트 레벨 도구: card_id로 부모 text 조회
-              const parentText = toolStartEvent.card_id
-                ? cardIdMap.get(toolStartEvent.card_id)
-                : null;
-              if (parentText) {
-                parentText.children.push(toolNode);
-              } else {
-                // card_id 없거나 매칭 실패 → 에러 노드
-                insertOrphanError(root, "tool_start", eventId,
-                  `card_id="${toolStartEvent.card_id ?? "없음"}" 매칭 실패`);
-                root.children.push(toolNode);
-              }
+              const parent = resolveParent(toolStartEvent.parent_tool_use_id, root);
+              parent.children.push(toolNode);
             }
             updated = true;
             break;
@@ -584,37 +555,11 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
 
           case "tool_result": {
             const toolResultEvent = event as ToolResultEvent;
-            let toolNode: EventTreeNode | undefined;
 
-            // 1차: tool_use_id로 정확 매칭
-            if (toolResultEvent.tool_use_id) {
-              toolNode = toolUseMap.get(toolResultEvent.tool_use_id);
-            }
-            // 2차: card_id + tool_name으로 매칭
-            if (!toolNode && toolResultEvent.card_id) {
-              const parentText = cardIdMap.get(toolResultEvent.card_id);
-              if (parentText) {
-                toolNode = parentText.children.find(
-                  (c) =>
-                    c.type === "tool" &&
-                    !c.completed &&
-                    c.toolName === toolResultEvent.tool_name,
-                );
-              }
-            }
-            // 3차 폴백: 모든 tool 노드에서 미완료 + tool_name 매칭 (역순)
-            if (!toolNode) {
-              for (const [, node] of nodeMap) {
-                if (
-                  node.type === "tool" &&
-                  !node.completed &&
-                  node.toolName === toolResultEvent.tool_name
-                ) {
-                  toolNode = node;
-                  // nodeMap 삽입 순서가 시간순이므로, 계속 순회하여 가장 최신 미완료 노드를 사용
-                }
-              }
-            }
+            // tool_use_id 정확 매칭만 (폴백 없음)
+            const toolNode = toolResultEvent.tool_use_id
+              ? toolUseMap.get(toolResultEvent.tool_use_id)
+              : undefined;
 
             if (toolNode) {
               toolNode.toolResult = toolResultEvent.result;
@@ -665,6 +610,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           case "result": {
             root = ensureRoot(root);
             const resultEvent = event as ResultEvent;
+            const resultParent = resolveParent(resultEvent.parent_tool_use_id, root);
             const resultNode = createNode(
               `result-${eventId}`,
               "result",
@@ -676,7 +622,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
                 totalCostUsd: resultEvent.total_cost_usd,
               },
             );
-            root.children.push(resultNode);
+            resultParent.children.push(resultNode);
             updated = true;
             break;
           }

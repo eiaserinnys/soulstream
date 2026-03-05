@@ -62,32 +62,30 @@ _DONE = object()
 class _CardTracker:
     """SSE 이벤트용 카드 ID 관리 + text↔tool 관계 추적
 
-    AssistantMessage의 TextBlock 하나를 '카드'로 추상화합니다.
+    ThinkingBlock만 새 card_id를 생성하고, TextBlock은 현재 thinking의
+    card_id를 재사용합니다.
     카드 ID는 UUID4 기반 8자리 식별자로 생성됩니다.
-
-    SDK는 TextBlock을 청크 스트리밍하지 않으므로 TEXT_DELTA 하나가
-    하나의 완전한 카드에 해당합니다.
     """
 
     def __init__(self) -> None:
-        self._current_card_id: Optional[str] = None
+        self._current_thinking_id: Optional[str] = None
         self._last_tool_name: Optional[str] = None
         self._tool_use_card_map: dict[str, Optional[str]] = {}  # tool_use_id → card_id
         self._tool_start_times: dict[str, float] = {}  # tool_use_id → start_time (monotonic)
 
-    def new_card(self) -> str:
-        """새 카드 ID 생성 및 현재 카드로 설정
+    def new_thinking(self) -> str:
+        """ThinkingBlock용 새 card_id 생성
 
         Returns:
             생성된 카드 ID (8자리 hex)
         """
-        self._current_card_id = uuid.uuid4().hex[:8]
-        return self._current_card_id
+        self._current_thinking_id = uuid.uuid4().hex[:8]
+        return self._current_thinking_id
 
     @property
-    def current_card_id(self) -> Optional[str]:
-        """현재 활성 카드 ID (thinking 블록 없이 tool이 오면 None)"""
-        return self._current_card_id
+    def current_thinking_id(self) -> Optional[str]:
+        """현재 활성 thinking card_id"""
+        return self._current_thinking_id
 
     def set_last_tool(self, tool_name: str) -> None:
         """마지막 도구 이름 기록 (TOOL_RESULT에서 tool_name 폴백용)"""
@@ -106,7 +104,7 @@ class _CardTracker:
         """tool_use_id로 TOOL_START 시점의 card_id를 조회"""
         if tool_use_id and tool_use_id in self._tool_use_card_map:
             return self._tool_use_card_map[tool_use_id]
-        return self._current_card_id
+        return self._current_thinking_id
 
     def start_tool(self, tool_use_id: str) -> None:
         """도구 시작 시간 기록
@@ -370,8 +368,8 @@ class SoulEngineAdapter:
             if event.type == EngineEventType.THINKING:
                 thinking = event.data.get("thinking", "")
                 signature = event.data.get("signature", "")
-                # ThinkingBlock = 하나의 카드
-                card_id = tracker.new_card()
+                # ThinkingBlock = 새 card_id 생성
+                card_id = tracker.new_thinking()
                 sse_event = ThinkingSSEEvent(
                     card_id=card_id,
                     thinking=thinking,
@@ -390,8 +388,9 @@ class SoulEngineAdapter:
 
             elif event.type == EngineEventType.TEXT_DELTA:
                 text = event.data.get("text", "")
-                # TextBlock 전체 = 하나의 카드 (SDK는 청크 스트리밍 미지원)
-                card_id = tracker.new_card()
+                # TextBlock은 현재 thinking의 card_id를 재사용
+                # ThinkingBlock 없이 TextBlock만 오면 card_id=None
+                card_id = tracker.current_thinking_id
                 text_start = TextStartSSEEvent(
                     card_id=card_id,
                     parent_tool_use_id=event.parent_tool_use_id,
@@ -427,10 +426,10 @@ class SoulEngineAdapter:
                 tracker.set_last_tool(tool_name)
                 # tool_use_id → card_id 매핑 기록 (TOOL_RESULT에서 올바른 card_id 조회용)
                 if tool_use_id:
-                    tracker.register_tool_call(tool_use_id, tracker.current_card_id)
+                    tracker.register_tool_call(tool_use_id, tracker.current_thinking_id)
                     tracker.start_tool(tool_use_id)
                 sse_event = ToolStartSSEEvent(
-                    card_id=tracker.current_card_id,
+                    card_id=tracker.current_thinking_id,
                     tool_name=tool_name,
                     tool_input=tool_input,
                     tool_use_id=tool_use_id,
