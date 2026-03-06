@@ -62,7 +62,7 @@ export interface DashboardState {
   /** 선택된 카드 (상세 뷰에 표시) */
   selectedCardId: string | null;
 
-  /** 선택된 React Flow 노드 ID (tool_call/tool_result 구분용) */
+  /** 선택된 React Flow 노드 ID */
   selectedNodeId: string | null;
 
   /** 선택된 이벤트 노드 데이터 (user/intervention/system/result 노드용) */
@@ -116,7 +116,7 @@ export interface DashboardActions {
   // 활성 세션
   setActiveSession: (key: string | null, detail?: SessionDetail) => void;
 
-  // 카드 선택 (nodeId: React Flow 노드의 고유 ID, tool_call/tool_result 구분에 사용)
+  // 카드 선택 (nodeId: React Flow 노드의 고유 ID)
   selectCard: (cardId: string | null, nodeId?: string | null) => void;
 
   // 이벤트 노드 선택 (user/intervention/system/result 등 카드가 아닌 노드)

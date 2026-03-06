@@ -1,7 +1,7 @@
 /**
  * Text Renderer — thinking, text 노드를 렌더링
  *
- * 메인 플로우(수직 체인)에 배치되며, 자식 tool/subagent 노드를 재귀 처리합니다.
+ * 메인 플로우(수직 체인)에 배치되며, 자식 tool 노드를 재귀 처리합니다.
  */
 
 import type { EventTreeNode } from "@shared/types";
@@ -35,7 +35,7 @@ export function renderTextNode(
     return;
   }
 
-  // text의 자식들을 처리 (tool, subagent, 중첩 text/thinking 등)
+  // text의 자식들을 처리 (tool, 중첩 text/thinking 등)
   for (const child of treeNode.children) {
     dispatchRenderer(child, graphNode.id, ctx);
   }

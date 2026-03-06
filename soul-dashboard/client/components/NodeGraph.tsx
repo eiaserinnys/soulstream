@@ -2,8 +2,8 @@
  * NodeGraph - React Flow 기반 노드 그래프 패널
  *
  * Soul 실행 이벤트를 노드 기반 그래프로 시각화합니다.
- * thinking-tool-result 관계를 React Flow로 표현하며
- * 스트리밍 실시간 업데이트와 서브에이전트 중첩 구조를 지원합니다.
+ * thinking-tool 관계를 React Flow로 표현하며
+ * 스트리밍 실시간 업데이트를 지원합니다.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -350,7 +350,7 @@ function NodeGraphInner() {
           return;
         }
 
-        // 카드 노드: 트리 조회 기반 (thinking, tool_call, tool_result, subagent)
+        // 카드 노드: 트리 조회 기반 (thinking, tool_call)
         const cardId = nodeData?.cardId as string | undefined;
         if (cardId) {
           selectCard(cardId, selectedNodes[0].id);

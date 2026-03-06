@@ -231,11 +231,10 @@ describe("renderTextNode", () => {
     const node = textTreeNode("t1", "thinking", true, [tool]);
     renderTextNode(node, null, ctx);
 
-    // text node + tool_call + tool_result
-    expect(ctx.nodes.length).toBe(3);
+    // text node + tool_call
+    expect(ctx.nodes.length).toBe(2);
     expect(ctx.nodes[0].data.nodeType).toBe("thinking");
     expect(ctx.nodes[1].data.nodeType).toBe("tool_call");
-    expect(ctx.nodes[2].data.nodeType).toBe("tool_result");
   });
 
   it("skips children when collapsed", () => {
@@ -267,22 +266,17 @@ describe("renderTextNode", () => {
 });
 
 describe("renderToolNode", () => {
-  it("creates tool_call and tool_result nodes with horizontal edges", () => {
+  it("creates tool_call node with horizontal edge from parent", () => {
     const ctx = makeCtx();
     const node = toolTreeNode("tool1", "Read", { toolResult: "file content" });
     renderToolNode(node, "parent-id", ctx);
 
-    expect(ctx.nodes.length).toBe(2);
+    expect(ctx.nodes.length).toBe(1);
     expect(ctx.nodes[0].data.nodeType).toBe("tool_call");
-    expect(ctx.nodes[1].data.nodeType).toBe("tool_result");
 
     // Edge from parent to call (horizontal)
     expect(ctx.edges[0].sourceHandle).toBe("right");
     expect(ctx.edges[0].targetHandle).toBe("left");
-
-    // Edge from call to result (horizontal)
-    expect(ctx.edges[1].sourceHandle).toBe("right");
-    expect(ctx.edges[1].targetHandle).toBe("left");
   });
 
   it("creates animated edge for streaming tool", () => {
@@ -293,14 +287,13 @@ describe("renderToolNode", () => {
     expect(ctx.edges[0].animated).toBe(true);
   });
 
-  it("skips result node when tool_result is waiting", () => {
+  it("streaming tool creates only tool_call node", () => {
     const ctx = makeCtx();
     const node = toolTreeNode("tool1", "Bash", { completed: false, toolResult: undefined });
     renderToolNode(node, "parent", ctx);
 
-    // tool_call + tool_result (waiting state)
-    expect(ctx.nodes.length).toBe(2);
-    expect(ctx.nodes[1].data.content).toContain("waiting");
+    expect(ctx.nodes.length).toBe(1);
+    expect(ctx.nodes[0].data.nodeType).toBe("tool_call");
   });
 
   it("sets plan mode flags correctly", () => {
@@ -319,16 +312,14 @@ describe("renderToolNode", () => {
     expect(ctx.nodes[0].data.isPlanModeExit).toBe(false);
   });
 
-  it("silently ignores child subagent nodes (no renderer registered)", () => {
+  it("silently ignores unknown child node types (no renderer registered)", () => {
     const ctx = makeCtx();
     const child: EventTreeNode = {
-      id: "sa1",
-      type: "subagent",
+      id: "unknown1",
+      type: "session" as any, // session type not in renderer registry
       children: [],
       content: "",
       completed: false,
-      agentId: "sa1",
-      agentType: "explore",
     };
     const node = toolTreeNode("tool1", "Task", {
       toolResult: "done",
@@ -336,10 +327,9 @@ describe("renderToolNode", () => {
     });
     renderToolNode(node, "parent", ctx);
 
-    // tool_call + tool_result only (subagent silently skipped)
-    expect(ctx.nodes.length).toBe(2);
+    // tool_call only (unknown child silently skipped)
+    expect(ctx.nodes.length).toBe(1);
     expect(ctx.nodes[0].data.nodeType).toBe("tool_call");
-    expect(ctx.nodes[1].data.nodeType).toBe("tool_result");
   });
 });
 
@@ -412,8 +402,8 @@ describe("processChildNodes", () => {
     ]);
     processChildNodes(parent, ctx);
 
-    // virtual thinking + tool_call + tool_result
-    expect(ctx.nodes.length).toBe(3);
+    // virtual thinking + tool_call
+    expect(ctx.nodes.length).toBe(2);
     expect(ctx.nodes[0].data.label).toBe("Initial Tools");
     expect(ctx.nodes[0].data.content).toContain("tools invoked before first thinking");
     expect(ctx.nodes[1].data.nodeType).toBe("tool_call");
@@ -427,7 +417,7 @@ describe("processChildNodes", () => {
     ]);
     processChildNodes(parent, ctx);
 
-    // text node + tool_call + tool_result (no virtual)
+    // text node + tool_call (no virtual)
     expect(ctx.nodes[0].data.nodeType).toBe("thinking");
     expect(ctx.nodes[0].data.label).toBe("Thinking");
   });

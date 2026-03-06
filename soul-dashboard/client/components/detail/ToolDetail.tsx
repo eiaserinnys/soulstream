@@ -2,7 +2,6 @@
  * ToolDetail - 도구 호출 카드 상세 뷰
  *
  * 도구 이름, 입력 파라미터, 실행 결과를 상세히 표시합니다.
- * focusResult=true일 때 결과에 포커스 (Result 노드 클릭 시).
  * 입력/결과 영역은 사용 가능한 세로 공간을 최대한 활용합니다.
  */
 
@@ -12,8 +11,6 @@ import { SectionLabel, CodeBlock, safeStringify } from "./shared";
 
 interface ToolDetailProps {
   card: ToolNode;
-  /** true면 Result에 포커스 (헤더가 "Result"로 표시됨) */
-  focusResult?: boolean;
 }
 
 /** Result 영역의 최소 높이 */
@@ -21,8 +18,7 @@ const RESULT_MIN_HEIGHT = 200;
 /** 상단/하단 패딩 (p-4 = 16px) */
 const CONTAINER_PADDING = 16;
 
-export function ToolDetail({ card, focusResult }: ToolDetailProps) {
-  const isResult = focusResult && card.toolResult !== undefined;
+export function ToolDetail({ card }: ToolDetailProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const resultRef = useRef<HTMLDivElement>(null);
   const [resultMinHeight, setResultMinHeight] = useState(RESULT_MIN_HEIGHT);
@@ -61,17 +57,9 @@ export function ToolDetail({ card, focusResult }: ToolDetailProps) {
     <div ref={containerRef} className="p-4 flex flex-col gap-3 h-full">
       {/* Header */}
       <div className="flex items-center gap-2 shrink-0">
-        <span className="text-base">
-          {isResult
-            ? card.isError ? "\u274C" : "\u2705"
-            : "\u{1F527}"}
-        </span>
-        <div className={`text-[11px] uppercase tracking-[0.05em] font-semibold ${
-          isResult
-            ? card.isError ? "text-accent-red" : "text-success"
-            : "text-accent-amber"
-        }`}>
-          {isResult ? (card.isError ? "Error" : "Result") : "Tool Call"}
+        <span className="text-base">{"\u{1F527}"}</span>
+        <div className="text-[11px] uppercase tracking-[0.05em] font-semibold text-accent-amber">
+          Tool Call
         </div>
         {!card.completed && (
           <span className="ml-auto flex items-center gap-1.5 text-[11px] text-accent-amber">
