@@ -9,7 +9,10 @@
     "test": "vitest run",
     "test:e2e": "playwright test --config=playwright.config.ts",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:replay": "vite-node tools/cli-test.ts",
+    "test:replay:all": "vite-node tools/cli-test.ts -- --all",
+    "test:baseline": "vite-node tools/cli-test.ts -- --all --baseline"
   },
   "dependencies": {
     "@base-ui/react": "^1.2.0",

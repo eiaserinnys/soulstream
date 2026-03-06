@@ -259,7 +259,6 @@ class MessageState:
     collected_messages: list[dict] = field(default_factory=list)
     msg_count: int = 0
     tool_use_id_to_name: dict = field(default_factory=dict)  # tool_use_id → tool_name 매핑
-    tool_use_id_to_card_id: dict = field(default_factory=dict)  # tool_use_id → card_id 매핑
     emitted_tool_result_ids: set = field(default_factory=set)  # 중복 TOOL_RESULT 방지
 
     @property
@@ -652,7 +651,6 @@ class ClaudeRunner:
 
         tool_name = msg_state.tool_use_id_to_name.get(tool_use_id, "") if tool_use_id else ""
         is_error = bool(getattr(block, "is_error", False))
-        card_id = msg_state.tool_use_id_to_card_id.get(tool_use_id) if tool_use_id else None
 
         logger.info(f"[TOOL_RESULT:{source}] {tool_name}: {content[:500]}")
         msg_state.collected_messages.append({
@@ -668,7 +666,6 @@ class ClaudeRunner:
                     result=content,
                     is_error=is_error,
                     tool_use_id=tool_use_id,
-                    card_id=card_id,
                     parent_tool_use_id=msg_parent,
                 ))
             except Exception as e:
@@ -1055,9 +1052,6 @@ class ClaudeRunner:
                     # SDK 메시지의 parent_tool_use_id를 직접 사용
                     msg_parent = getattr(message, "parent_tool_use_id", None)
                     last_msg_parent = msg_parent
-                    # 메시지 단위 card_id: ThinkingBlock에서 생성, 후속 블록에서 참조
-                    current_card_id: Optional[str] = None
-
                     if hasattr(message, 'content'):
                         for block in message.content:
                             # ThinkingBlock: Extended Thinking 처리
@@ -1080,13 +1074,11 @@ class ClaudeRunner:
 
                                     if on_event:
                                         try:
-                                            event = ThinkingEngineEvent(
+                                            await on_event(ThinkingEngineEvent(
                                                 thinking=thinking_text,
                                                 signature=signature,
                                                 parent_tool_use_id=msg_parent,
-                                            )
-                                            current_card_id = event.card_id
-                                            await on_event(event)
+                                            ))
                                         except Exception as e:
                                             logger.warning(f"이벤트 콜백 오류 (THINKING): {e}")
 
@@ -1112,7 +1104,6 @@ class ClaudeRunner:
                                     try:
                                         await on_event(TextDeltaEngineEvent(
                                             text=block.text,
-                                            card_id=current_card_id,
                                             parent_tool_use_id=msg_parent,
                                         ))
                                     except Exception as e:
@@ -1126,7 +1117,6 @@ class ClaudeRunner:
                                 tool_use_id = getattr(block, "id", None)
                                 if tool_use_id:
                                     msg_state.tool_use_id_to_name[tool_use_id] = block.name
-                                    msg_state.tool_use_id_to_card_id[tool_use_id] = current_card_id
                                 logger.info(f"[TOOL_USE] {block.name}: {tool_input_str[:500]}")
                                 msg_state.collected_messages.append({
                                     "role": "assistant",
@@ -1141,7 +1131,6 @@ class ClaudeRunner:
                                             tool_name=block.name,
                                             tool_input=event_tool_input,
                                             tool_use_id=tool_use_id,
-                                            card_id=current_card_id,
                                             parent_tool_use_id=msg_parent,
                                         ))
                                     except Exception as e:

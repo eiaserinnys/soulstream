@@ -4,7 +4,6 @@
 """
 
 import time
-import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Coroutine, Optional
@@ -75,16 +74,10 @@ class ThinkingEngineEvent(EngineEvent):
 
     thinking: str = ""
     signature: str = ""
-    card_id: str = ""
-
-    def __post_init__(self):
-        if not self.card_id:
-            self.card_id = uuid.uuid4().hex[:8]
 
     def to_sse(self) -> list[BaseModel]:
         from soul_server.models.schemas import ThinkingSSEEvent
         return [ThinkingSSEEvent(
-            card_id=self.card_id,
             thinking=self.thinking,
             signature=self.signature,
             parent_tool_use_id=self.parent_tool_use_id,
@@ -97,7 +90,6 @@ class TextDeltaEngineEvent(EngineEvent):
     """텍스트 블록 이벤트 (text_start → text_delta → text_end 시퀀스 생성)"""
 
     text: str = ""
-    card_id: Optional[str] = None
 
     def to_sse(self) -> list[BaseModel]:
         from soul_server.models.schemas import (
@@ -107,17 +99,14 @@ class TextDeltaEngineEvent(EngineEvent):
         )
         return [
             TextStartSSEEvent(
-                card_id=self.card_id,
                 parent_tool_use_id=self.parent_tool_use_id,
                 timestamp=self.timestamp,
             ),
             TextDeltaSSEEvent(
-                card_id=self.card_id,
                 text=self.text,
                 timestamp=self.timestamp,
             ),
             TextEndSSEEvent(
-                card_id=self.card_id,
                 timestamp=self.timestamp,
             ),
         ]
@@ -130,12 +119,10 @@ class ToolStartEngineEvent(EngineEvent):
     tool_name: str = ""
     tool_input: dict = field(default_factory=dict)
     tool_use_id: Optional[str] = None
-    card_id: Optional[str] = None
 
     def to_sse(self) -> list[BaseModel]:
         from soul_server.models.schemas import ToolStartSSEEvent
         return [ToolStartSSEEvent(
-            card_id=self.card_id,
             tool_name=self.tool_name,
             tool_input=self.tool_input,
             tool_use_id=self.tool_use_id,
@@ -152,12 +139,10 @@ class ToolResultEngineEvent(EngineEvent):
     result: Any = ""
     is_error: bool = False
     tool_use_id: Optional[str] = None
-    card_id: Optional[str] = None
 
     def to_sse(self) -> list[BaseModel]:
         from soul_server.models.schemas import ToolResultSSEEvent
         return [ToolResultSSEEvent(
-            card_id=self.card_id,
             tool_name=self.tool_name,
             result=self.result,
             is_error=self.is_error,
