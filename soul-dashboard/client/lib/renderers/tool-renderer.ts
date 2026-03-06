@@ -5,7 +5,7 @@
  * 자식 subagent/text/tool 노드를 재귀 처리합니다.
  */
 
-import type { EventTreeNode } from "@shared/types";
+import type { EventTreeNode, ToolNode } from "@shared/types";
 import type { LayoutContext } from "../layout-context";
 import {
   createToolCallNode,
@@ -21,8 +21,9 @@ export function renderToolNode(
   parentNodeId: string | null,
   ctx: LayoutContext,
 ): void {
+  const toolNode = treeNode as ToolNode;
   const collapseInfo = getCollapseInfo(treeNode, ctx.collapsedNodeIds);
-  const callNode = createToolCallNode(treeNode, {
+  const callNode = createToolCallNode(toolNode, {
     isPlanMode: ctx.planMode.nodeIds.has(treeNode.id),
     isPlanModeEntry: ctx.planMode.entryIds.has(treeNode.id),
     isPlanModeExit: ctx.planMode.exitIds.has(treeNode.id),
@@ -31,11 +32,11 @@ export function renderToolNode(
 
   if (parentNodeId) {
     ctx.edges.push(
-      createEdge(parentNodeId, callNode.id, !treeNode.completed && !treeNode.toolResult, "right", "left"),
+      createEdge(parentNodeId, callNode.id, !toolNode.completed && !toolNode.toolResult, "right", "left"),
     );
   }
 
-  const resultNode = createToolResultNode(treeNode);
+  const resultNode = createToolResultNode(toolNode);
 
   if (resultNode) {
     ctx.nodes.push(resultNode);

@@ -6,7 +6,18 @@
  */
 
 import type { Node, Edge } from "@xyflow/react";
-import type { EventTreeNode } from "@shared/types";
+import type {
+  EventTreeNode,
+  ToolNode,
+  UserMessageNode,
+  InterventionNode,
+  SessionNode,
+  SubagentNode,
+  ResultNode,
+  CompleteNode,
+  ErrorNode,
+  CompactNode,
+} from "@shared/types";
 import { createLayoutContext } from "./layout-context";
 import { dispatchRenderer } from "./renderers";
 
@@ -117,7 +128,7 @@ export function detectPlanModeRanges(tree: EventTreeNode | null): { nodeIds: Set
   if (!tree) return { nodeIds, entryIds, exitIds };
 
   // 트리의 모든 tool 노드를 DFS 순서로 수집
-  const allTools: EventTreeNode[] = [];
+  const allTools: ToolNode[] = [];
   function collectTools(node: EventTreeNode) {
     if (node.type === "tool") {
       allTools.push(node);
@@ -128,7 +139,7 @@ export function detectPlanModeRanges(tree: EventTreeNode | null): { nodeIds: Set
   }
   collectTools(tree);
 
-  let enterNode: EventTreeNode | null = null;
+  let enterNode: ToolNode | null = null;
 
   for (const tool of allTools) {
     if (tool.toolName === "EnterPlanMode") {
@@ -195,7 +206,7 @@ function getToolCategory(toolName?: string): "skill" | "sub-agent" | undefined {
 }
 
 export function createToolCallNode(
-  treeNode: EventTreeNode,
+  treeNode: ToolNode,
   planFlags?: { isPlanMode?: boolean; isPlanModeEntry?: boolean; isPlanModeExit?: boolean },
   collapseInfo?: CollapseInfo,
 ): GraphNode {
@@ -208,7 +219,7 @@ export function createToolCallNode(
     data: {
       nodeType: "tool_call",
       cardId: treeNode.id,
-      label: treeNode.toolName ?? "Tool",
+      label: treeNode.toolName,
       content: formatToolInput(treeNode.toolInput),
       toolName: treeNode.toolName,
       toolInput: treeNode.toolInput,
@@ -224,7 +235,7 @@ export function createToolCallNode(
   };
 }
 
-export function createToolResultNode(treeNode: EventTreeNode): GraphNode | null {
+export function createToolResultNode(treeNode: ToolNode): GraphNode | null {
   if (treeNode.toolResult === undefined && treeNode.completed) {
     return {
       id: `node-${treeNode.id}-result`,
@@ -235,7 +246,7 @@ export function createToolResultNode(treeNode: EventTreeNode): GraphNode | null 
       data: {
         nodeType: "tool_result",
         cardId: treeNode.id,
-        label: `${treeNode.toolName ?? "Tool"} Result`,
+        label: `${treeNode.toolName} Result`,
         content: "(no output)",
         toolName: treeNode.toolName,
         toolResult: "",
@@ -256,7 +267,7 @@ export function createToolResultNode(treeNode: EventTreeNode): GraphNode | null 
       data: {
         nodeType: "tool_result",
         cardId: treeNode.id,
-        label: `${treeNode.toolName ?? "Tool"} Result`,
+        label: `${treeNode.toolName} Result`,
         content: "(waiting...)",
         toolName: treeNode.toolName,
         streaming: true,
@@ -273,7 +284,7 @@ export function createToolResultNode(treeNode: EventTreeNode): GraphNode | null 
     data: {
       nodeType: "tool_result",
       cardId: treeNode.id,
-      label: `${treeNode.toolName ?? "Tool"} Result`,
+      label: `${treeNode.toolName} Result`,
       content: truncate(treeNode.toolResult, 120),
       toolName: treeNode.toolName,
       toolResult: treeNode.toolResult,
@@ -284,7 +295,7 @@ export function createToolResultNode(treeNode: EventTreeNode): GraphNode | null 
   };
 }
 
-export function createUserNode(treeNode: EventTreeNode): GraphNode {
+export function createUserNode(treeNode: UserMessageNode): GraphNode {
   return {
     id: `node-${treeNode.id}`,
     type: "user",
@@ -293,7 +304,7 @@ export function createUserNode(treeNode: EventTreeNode): GraphNode {
     height: DEFAULT_NODE_HEIGHT,
     data: {
       nodeType: "user",
-      label: `User (${treeNode.user ?? "unknown"})`,
+      label: `User (${treeNode.user})`,
       content: truncate(treeNode.content, 120),
       streaming: false,
       fullContent: treeNode.content,
@@ -302,7 +313,7 @@ export function createUserNode(treeNode: EventTreeNode): GraphNode {
 }
 
 export function createInterventionNodeFromTree(
-  treeNode: EventTreeNode,
+  treeNode: InterventionNode,
   collapseInfo?: CollapseInfo,
 ): GraphNode {
   return {
@@ -325,7 +336,7 @@ export function createInterventionNodeFromTree(
   };
 }
 
-export function createSystemNodeFromTree(treeNode: EventTreeNode): GraphNode {
+export function createSystemNodeFromTree(treeNode: SessionNode | CompleteNode | ErrorNode): GraphNode {
   let label: string;
   let content: string;
 
@@ -359,7 +370,7 @@ export function createSystemNodeFromTree(treeNode: EventTreeNode): GraphNode {
   };
 }
 
-export function createCompactNode(treeNode: EventTreeNode): GraphNode {
+export function createCompactNode(treeNode: CompactNode): GraphNode {
   return {
     id: `node-${treeNode.id}`,
     type: "system",
@@ -376,7 +387,7 @@ export function createCompactNode(treeNode: EventTreeNode): GraphNode {
 }
 
 export function createSubagentNode(
-  treeNode: EventTreeNode,
+  treeNode: SubagentNode,
   collapseInfo?: CollapseInfo,
 ): GraphNode {
   return {
@@ -401,7 +412,7 @@ export function createSubagentNode(
 }
 
 export function createResultNode(
-  treeNode: EventTreeNode,
+  treeNode: ResultNode,
   collapseInfo?: CollapseInfo,
 ): GraphNode {
   const durationStr = treeNode.durationMs
@@ -511,7 +522,7 @@ export function buildGraph(
   const ctx = createLayoutContext(planMode, collapsedNodeIds);
 
   // session root는 항상 가상 노드로 생성
-  const sessionNode = createSystemNodeFromTree(tree);
+  const sessionNode = createSystemNodeFromTree(tree as SessionNode);
   ctx.nodes.push(sessionNode);
   ctx.prevMainFlowNodeId = sessionNode.id;
 

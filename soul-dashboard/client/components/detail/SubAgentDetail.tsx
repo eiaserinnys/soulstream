@@ -5,11 +5,11 @@
  * description, prompt, subagent_type 등의 필드를 분리하여 보여줍니다.
  */
 
-import type { EventTreeNode } from "@shared/types";
+import type { ToolNode } from "@shared/types";
 import { SectionLabel, CodeBlock } from "./shared";
 
-export function SubAgentDetail({ card }: { card: EventTreeNode }) {
-  const input = card.toolInput ?? {};
+export function SubAgentDetail({ card }: { card: ToolNode }) {
+  const input = card.toolInput;
   const description = (input.description as string) ?? "";
   const prompt = (input.prompt as string) ?? "";
   const subagentType = (input.subagent_type as string) ?? "unknown";

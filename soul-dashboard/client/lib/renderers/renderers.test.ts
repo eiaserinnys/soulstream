@@ -6,8 +6,26 @@
  */
 
 import { describe, it, expect } from "vitest";
-import type { EventTreeNode } from "@shared/types";
+import type { EventTreeNode, ToolNode, ResultNode } from "@shared/types";
 import { createLayoutContext, type LayoutContext } from "../layout-context";
+
+/** toolTreeNode 팩토리 옵션 */
+interface ToolNodeOpts {
+  toolInput?: Record<string, unknown>;
+  toolResult?: string;
+  isError?: boolean;
+  completed?: boolean;
+  toolUseId?: string;
+  children?: EventTreeNode[];
+}
+
+/** resultTreeNode 팩토리 옵션 */
+interface ResultNodeOpts {
+  content?: string;
+  durationMs?: number;
+  usage?: { input_tokens: number; output_tokens: number };
+  totalCostUsd?: number;
+}
 import {
   dispatchRenderer,
   getRegisteredTypes,
@@ -39,7 +57,7 @@ function textTreeNode(id: string, content: string, completed = true, children: E
 function toolTreeNode(
   id: string,
   toolName: string,
-  opts: Partial<EventTreeNode> = {},
+  opts: ToolNodeOpts = {},
 ): EventTreeNode {
   return {
     id,
@@ -52,7 +70,7 @@ function toolTreeNode(
     isError: opts.isError,
     completed: opts.completed ?? true,
     toolUseId: opts.toolUseId,
-  };
+  } as ToolNode;
 }
 
 function userMsgNode(id: string, text: string, children: EventTreeNode[] = []): EventTreeNode {
@@ -71,7 +89,7 @@ function errorTreeNode(id: string, message: string): EventTreeNode {
   return { id, type: "error", children: [], content: message, completed: true, isError: true };
 }
 
-function resultTreeNode(id: string, opts: Partial<EventTreeNode> = {}): EventTreeNode {
+function resultTreeNode(id: string, opts: ResultNodeOpts = {}): EventTreeNode {
   return {
     id,
     type: "result",
@@ -81,7 +99,7 @@ function resultTreeNode(id: string, opts: Partial<EventTreeNode> = {}): EventTre
     durationMs: opts.durationMs,
     usage: opts.usage,
     totalCostUsd: opts.totalCostUsd,
-  };
+  } as ResultNode;
 }
 
 // === Tests ===
