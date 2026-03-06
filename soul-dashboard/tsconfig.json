@@ -22,6 +22,6 @@
       "client/components/*": ["./client/components/*"]
     }
   },
-  "include": ["shared/**/*.ts", "server/**/*.ts", "client/**/*.ts", "client/**/*.tsx"],
+  "include": ["shared/**/*.ts", "server/**/*.ts", "client/**/*.ts", "client/**/*.tsx", "tools/**/*.ts"],
   "exclude": ["node_modules", "dist"]
 }

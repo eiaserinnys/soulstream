@@ -5,10 +5,10 @@
  * 에러 메시지를 강조하고, 도구 이름과 입력 정보도 함께 보여줍니다.
  */
 
-import type { DashboardCard } from "@shared/types";
+import type { ToolNode } from "@shared/types";
 import { SectionLabel, CodeBlock, safeStringify } from "./shared";
 
-export function ErrorDetail({ card }: { card: DashboardCard }) {
+export function ErrorDetail({ card }: { card: ToolNode }) {
   return (
     <div className="p-4 flex flex-col gap-3">
       {/* Header */}
@@ -22,7 +22,7 @@ export function ErrorDetail({ card }: { card: DashboardCard }) {
       {/* Error banner */}
       <div className="p-2.5 px-3 rounded-md bg-destructive/10 border border-destructive/20">
         <div className="text-xs text-destructive-foreground font-semibold mb-1">
-          {card.toolName ?? "Tool"} failed
+          {card.toolName} failed
         </div>
         <pre
           className="text-xs text-destructive-foreground whitespace-pre-wrap break-words leading-normal m-0 font-mono"
@@ -37,7 +37,7 @@ export function ErrorDetail({ card }: { card: DashboardCard }) {
         <div
           className="text-sm text-foreground font-semibold font-mono"
         >
-          {card.toolName ?? "unknown"}
+          {card.toolName}
         </div>
       </div>
 

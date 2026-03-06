@@ -6,7 +6,20 @@
  */
 
 import type { Node, Edge } from "@xyflow/react";
-import type { EventTreeNode } from "@shared/types";
+import type {
+  EventTreeNode,
+  ToolNode,
+  UserMessageNode,
+  InterventionNode,
+  SessionNode,
+  SubagentNode,
+  ResultNode,
+  CompleteNode,
+  ErrorNode,
+  CompactNode,
+} from "@shared/types";
+import { createLayoutContext } from "./layout-context";
+import { dispatchRenderer } from "./renderers";
 
 // === Graph Node Types ===
 
@@ -67,23 +80,6 @@ export interface GraphNodeData extends Record<string, unknown> {
 export type GraphNode = Node<GraphNodeData>;
 export type GraphEdge = Edge;
 
-// === Sub-Agent Grouping ===
-
-/** Task 도구 호출로 감지된 서브 에이전트 그룹 */
-export interface SubAgentGroup {
-  /** 그룹 고유 ID */
-  groupId: string;
-  /** Task tool_call 카드 ID */
-  taskCardId: string;
-  /** 그룹에 포함된 카드 ID 목록 (Task 카드 자체 포함) */
-  cardIds: string[];
-  /** 그룹 레이블 (Task 입력에서 추출) */
-  label: string;
-  /** 접힌 상태 여부 */
-  collapsed: boolean;
-}
-
-
 // === Node Dimensions ===
 
 /** 모든 카드의 기본 크기 (노드 생성 시 사용) */
@@ -118,73 +114,6 @@ export function createEdge(
   };
 }
 
-// === Sub-Agent Detection ===
-
-/**
- * EventTreeNode 트리에서 Task 도구 호출을 감지하여 서브 에이전트 그룹을 추출합니다.
- * 트리를 DFS 순회하여 tool 타입 노드 중 toolName === "Task"인 노드를 기준으로 그룹핑합니다.
- */
-export function detectSubAgents(tree: EventTreeNode | null): SubAgentGroup[] {
-  if (!tree) return [];
-
-  const groups: SubAgentGroup[] = [];
-  let groupCounter = 0;
-
-  function collectToolNodes(node: EventTreeNode): EventTreeNode[] {
-    const tools: EventTreeNode[] = [];
-    if (node.type === "tool") {
-      tools.push(node);
-    }
-    for (const child of node.children) {
-      tools.push(...collectToolNodes(child));
-    }
-    return tools;
-  }
-
-  const allTools = collectToolNodes(tree);
-
-  for (let i = 0; i < allTools.length; i++) {
-    const tool = allTools[i];
-    if (tool.toolName !== "Task") continue;
-
-    groupCounter += 1;
-    const groupId = `subagent-${groupCounter}`;
-    const groupCardIds: string[] = [tool.id];
-
-    const taskDescription =
-      (tool.toolInput?.description as string) ??
-      (tool.toolInput?.prompt as string) ??
-      "Sub-agent Task";
-    const label =
-      taskDescription.length > 50
-        ? taskDescription.slice(0, 47) + "..."
-        : taskDescription;
-
-    if (!tool.completed) {
-      // 아직 실행 중인 Task: 이후 모든 도구를 그룹에 포함
-      for (let j = i + 1; j < allTools.length; j++) {
-        groupCardIds.push(allTools[j].id);
-      }
-    } else {
-      // 완료된 Task: 다음 Task 시작 전까지의 도구를 그룹에 포함
-      for (let j = i + 1; j < allTools.length; j++) {
-        if (allTools[j].toolName === "Task") break;
-        groupCardIds.push(allTools[j].id);
-      }
-    }
-
-    groups.push({
-      groupId,
-      taskCardId: tool.id,
-      cardIds: groupCardIds,
-      label,
-      collapsed: false,
-    });
-  }
-
-  return groups;
-}
-
 // === Plan Mode Detection ===
 
 /**
@@ -199,7 +128,7 @@ export function detectPlanModeRanges(tree: EventTreeNode | null): { nodeIds: Set
   if (!tree) return { nodeIds, entryIds, exitIds };
 
   // 트리의 모든 tool 노드를 DFS 순서로 수집
-  const allTools: EventTreeNode[] = [];
+  const allTools: ToolNode[] = [];
   function collectTools(node: EventTreeNode) {
     if (node.type === "tool") {
       allTools.push(node);
@@ -210,7 +139,7 @@ export function detectPlanModeRanges(tree: EventTreeNode | null): { nodeIds: Set
   }
   collectTools(tree);
 
-  let enterNode: EventTreeNode | null = null;
+  let enterNode: ToolNode | null = null;
 
   for (const tool of allTools) {
     if (tool.toolName === "EnterPlanMode") {
@@ -236,13 +165,13 @@ function truncate(text: string, maxLen: number): string {
 }
 
 /** 추가 접기/펼치기 정보 */
-interface CollapseInfo {
+export interface CollapseInfo {
   collapsed?: boolean;
   hasChildren?: boolean;
   childCount?: number;
 }
 
-function createTextNode(
+export function createTextNode(
   treeNode: EventTreeNode,
   planFlags?: { isPlanMode?: boolean },
   collapseInfo?: CollapseInfo,
@@ -276,8 +205,8 @@ function getToolCategory(toolName?: string): "skill" | "sub-agent" | undefined {
   return undefined;
 }
 
-function createToolCallNode(
-  treeNode: EventTreeNode,
+export function createToolCallNode(
+  treeNode: ToolNode,
   planFlags?: { isPlanMode?: boolean; isPlanModeEntry?: boolean; isPlanModeExit?: boolean },
   collapseInfo?: CollapseInfo,
 ): GraphNode {
@@ -290,7 +219,7 @@ function createToolCallNode(
     data: {
       nodeType: "tool_call",
       cardId: treeNode.id,
-      label: treeNode.toolName ?? "Tool",
+      label: treeNode.toolName,
       content: formatToolInput(treeNode.toolInput),
       toolName: treeNode.toolName,
       toolInput: treeNode.toolInput,
@@ -306,7 +235,7 @@ function createToolCallNode(
   };
 }
 
-function createToolResultNode(treeNode: EventTreeNode): GraphNode | null {
+export function createToolResultNode(treeNode: ToolNode): GraphNode | null {
   if (treeNode.toolResult === undefined && treeNode.completed) {
     return {
       id: `node-${treeNode.id}-result`,
@@ -317,7 +246,7 @@ function createToolResultNode(treeNode: EventTreeNode): GraphNode | null {
       data: {
         nodeType: "tool_result",
         cardId: treeNode.id,
-        label: `${treeNode.toolName ?? "Tool"} Result`,
+        label: `${treeNode.toolName} Result`,
         content: "(no output)",
         toolName: treeNode.toolName,
         toolResult: "",
@@ -338,7 +267,7 @@ function createToolResultNode(treeNode: EventTreeNode): GraphNode | null {
       data: {
         nodeType: "tool_result",
         cardId: treeNode.id,
-        label: `${treeNode.toolName ?? "Tool"} Result`,
+        label: `${treeNode.toolName} Result`,
         content: "(waiting...)",
         toolName: treeNode.toolName,
         streaming: true,
@@ -355,7 +284,7 @@ function createToolResultNode(treeNode: EventTreeNode): GraphNode | null {
     data: {
       nodeType: "tool_result",
       cardId: treeNode.id,
-      label: `${treeNode.toolName ?? "Tool"} Result`,
+      label: `${treeNode.toolName} Result`,
       content: truncate(treeNode.toolResult, 120),
       toolName: treeNode.toolName,
       toolResult: treeNode.toolResult,
@@ -366,7 +295,7 @@ function createToolResultNode(treeNode: EventTreeNode): GraphNode | null {
   };
 }
 
-function createUserNode(treeNode: EventTreeNode): GraphNode {
+export function createUserNode(treeNode: UserMessageNode): GraphNode {
   return {
     id: `node-${treeNode.id}`,
     type: "user",
@@ -375,7 +304,7 @@ function createUserNode(treeNode: EventTreeNode): GraphNode {
     height: DEFAULT_NODE_HEIGHT,
     data: {
       nodeType: "user",
-      label: `User (${treeNode.user ?? "unknown"})`,
+      label: `User (${treeNode.user})`,
       content: truncate(treeNode.content, 120),
       streaming: false,
       fullContent: treeNode.content,
@@ -383,8 +312,8 @@ function createUserNode(treeNode: EventTreeNode): GraphNode {
   };
 }
 
-function createInterventionNodeFromTree(
-  treeNode: EventTreeNode,
+export function createInterventionNodeFromTree(
+  treeNode: InterventionNode,
   collapseInfo?: CollapseInfo,
 ): GraphNode {
   return {
@@ -407,7 +336,7 @@ function createInterventionNodeFromTree(
   };
 }
 
-function createSystemNodeFromTree(treeNode: EventTreeNode): GraphNode {
+export function createSystemNodeFromTree(treeNode: SessionNode | CompleteNode | ErrorNode): GraphNode {
   let label: string;
   let content: string;
 
@@ -441,8 +370,24 @@ function createSystemNodeFromTree(treeNode: EventTreeNode): GraphNode {
   };
 }
 
-function createSubagentNode(
-  treeNode: EventTreeNode,
+export function createCompactNode(treeNode: CompactNode): GraphNode {
+  return {
+    id: `node-${treeNode.id}`,
+    type: "system",
+    position: { x: 0, y: 0 },
+    width: DEFAULT_NODE_WIDTH,
+    height: DEFAULT_NODE_HEIGHT,
+    data: {
+      nodeType: "system",
+      label: "\u26A1 Context Compaction",
+      content: treeNode.content || "Context compaction occurred",
+      streaming: false,
+    },
+  };
+}
+
+export function createSubagentNode(
+  treeNode: SubagentNode,
   collapseInfo?: CollapseInfo,
 ): GraphNode {
   return {
@@ -466,8 +411,8 @@ function createSubagentNode(
   };
 }
 
-function createResultNode(
-  treeNode: EventTreeNode,
+export function createResultNode(
+  treeNode: ResultNode,
   collapseInfo?: CollapseInfo,
 ): GraphNode {
   const durationStr = treeNode.durationMs
@@ -534,6 +479,22 @@ function formatToolInput(input?: Record<string, unknown>): string {
   return parts.join("\n");
 }
 
+// === Collapse Info Helper ===
+
+/**
+ * 노드의 접기/펼치기 정보를 계산합니다.
+ * 렌더러 함수에서 사용합니다.
+ */
+export function getCollapseInfo(treeNode: EventTreeNode, collapsedNodeIds: Set<string>): CollapseInfo {
+  const hasChildren = treeNode.children.length > 0;
+  const isCollapsed = collapsedNodeIds.has(treeNode.id);
+  return {
+    collapsed: isCollapsed,
+    hasChildren,
+    childCount: countAllDescendants(treeNode),
+  };
+}
+
 // === Main Build Function ===
 
 /**
@@ -544,6 +505,9 @@ function formatToolInput(input?: Record<string, unknown>): string {
  * - user_message/intervention의 자식 (text, complete, error) → Col A 메인 플로우
  * - text의 자식 (tool) → Col B/C 수평 분기
  *
+ * LayoutContext에 공유 상태를 캡슐화하고, 렌더러 registry를 통해
+ * 노드 타입별 렌더링을 위임합니다.
+ *
  * @param tree - 이벤트 트리 루트
  * @param collapsedNodeIds - 접힌 노드 ID 집합 (접힌 노드의 자식은 렌더링되지 않음)
  */
@@ -551,270 +515,29 @@ export function buildGraph(
   tree: EventTreeNode | null,
   collapsedNodeIds: Set<string> = new Set(),
 ): { nodes: GraphNode[]; edges: GraphEdge[] } {
-  const nodes: GraphNode[] = [];
-  const edges: GraphEdge[] = [];
+  if (!tree) return { nodes: [], edges: [] };
 
-  if (!tree) return { nodes, edges };
-
-  // 플랜 모드 감지
+  // LayoutContext 생성
   const planMode = detectPlanModeRanges(tree);
+  const ctx = createLayoutContext(planMode, collapsedNodeIds);
 
-  // 메인 플로우 추적
-  let prevMainFlowNodeId: string | null = null;
-  let lastThinkingNodeId: string | null = null;
+  // session root는 항상 가상 노드로 생성
+  const sessionNode = createSystemNodeFromTree(tree as SessionNode);
+  ctx.nodes.push(sessionNode);
+  ctx.prevMainFlowNodeId = sessionNode.id;
 
-  // (tool 분기와 subagent 배치는 applyDagreLayout이 엣지 그래프에서 자동 추론)
-
-  // session root는 항상 가상 노드로 생성 (서버가 보내지 않더라도 대시보드에서 생성)
-  const sessionNode = createSystemNodeFromTree(tree);
-  nodes.push(sessionNode);
-  prevMainFlowNodeId = sessionNode.id;
-
-  // session root의 자식들을 순회 (user_message, intervention, result 등)
+  // session root의 자식들을 렌더러 registry에 위임
   for (const turnNode of tree.children) {
-    if (turnNode.type === "user_message") {
-      // user_message 노드
-      if (turnNode.content) {
-        const userNode = createUserNode(turnNode);
-        nodes.push(userNode);
-        if (prevMainFlowNodeId) {
-          edges.push(createEdge(prevMainFlowNodeId, userNode.id));
-        }
-        prevMainFlowNodeId = userNode.id;
-      }
-
-      // user_message의 자식들을 처리
-      processChildNodes(turnNode);
-    } else if (turnNode.type === "intervention") {
-      // intervention 노드
-      const collapseInfo = getCollapseInfo(turnNode);
-      const intvNode = createInterventionNodeFromTree(turnNode, collapseInfo);
-      nodes.push(intvNode);
-      if (prevMainFlowNodeId) {
-        edges.push(createEdge(prevMainFlowNodeId, intvNode.id));
-      }
-      prevMainFlowNodeId = intvNode.id;
-
-      // intervention의 자식들을 처리 (접히지 않은 경우만)
-      if (!collapsedNodeIds.has(turnNode.id)) {
-        processChildNodes(turnNode);
-      }
-    } else if (turnNode.type === "complete" || turnNode.type === "error") {
-      // complete/error가 root 직하에 있는 경우
-      const sysNode = createSystemNodeFromTree(turnNode);
-      nodes.push(sysNode);
-      if (prevMainFlowNodeId) {
-        edges.push(createEdge(prevMainFlowNodeId, sysNode.id));
-      }
-      prevMainFlowNodeId = sysNode.id;
-    } else if (turnNode.type === "result") {
-      // result 노드
-      const collapseInfo = getCollapseInfo(turnNode);
-      const resultGraphNode = createResultNode(turnNode, collapseInfo);
-      nodes.push(resultGraphNode);
-      if (prevMainFlowNodeId) {
-        edges.push(createEdge(prevMainFlowNodeId, resultGraphNode.id));
-      }
-      prevMainFlowNodeId = resultGraphNode.id;
-    } else if (turnNode.type === "tool") {
-      // root 직하에 tool이 있는 경우 (비정상이지만 방어적 처리)
-      processToolNode(turnNode, lastThinkingNodeId ?? prevMainFlowNodeId);
-    } else if (turnNode.type === "subagent") {
-      // root 직하에 subagent가 있는 경우 (ID 매칭 실패 방어)
-      processSubagentNode(turnNode, lastThinkingNodeId ?? prevMainFlowNodeId);
-    } else if (turnNode.type === "text" || turnNode.type === "thinking") {
-      // root 직하에 text/thinking가 있는 경우 (비정상이지만 방어적 처리)
-      processTextNode(turnNode);
+    // tool, subagent, text/thinking이 root 직하에 있는 경우 (비정상이지만 방어적 처리)
+    // 이들은 parentNodeId로 lastThinkingNodeId ?? prevMainFlowNodeId를 사용
+    if (turnNode.type === "tool" || turnNode.type === "subagent") {
+      dispatchRenderer(turnNode, ctx.lastThinkingNodeId ?? ctx.prevMainFlowNodeId, ctx);
+    } else {
+      dispatchRenderer(turnNode, null, ctx);
     }
   }
 
-  /** 노드의 접기/펼치기 정보를 계산합니다 */
-  function getCollapseInfo(treeNode: EventTreeNode): CollapseInfo {
-    const hasChildren = treeNode.children.length > 0;
-    const isCollapsed = collapsedNodeIds.has(treeNode.id);
-    return {
-      collapsed: isCollapsed,
-      hasChildren,
-      childCount: countAllDescendants(treeNode),
-    };
-  }
-
-  function processChildNodes(parentTurnNode: EventTreeNode) {
-    // 가상 thinking 노드 필요 여부 판정
-    let hasToolBeforeText = false;
-    let hasText = false;
-    for (const child of parentTurnNode.children) {
-      if (child.type === "text" || child.type === "thinking") { hasText = true; break; }
-      if (child.type === "tool") { hasToolBeforeText = true; }
-    }
-
-    if (hasToolBeforeText && !hasText || hasToolBeforeText) {
-      // 첫 text 이전에 tool이 있으면 가상 thinking 삽입 여부 확인
-      let foundText = false;
-      for (const child of parentTurnNode.children) {
-        if (child.type === "text" || child.type === "thinking") { foundText = true; break; }
-      }
-      if (!foundText || hasToolBeforeText) {
-        // 가상 thinking이 필요한지 정확히 판단
-        let needsVirtual = false;
-        for (const child of parentTurnNode.children) {
-          if (child.type === "text" || child.type === "thinking") break;
-          if (child.type === "tool") { needsVirtual = true; break; }
-        }
-        if (needsVirtual) {
-          const virtualNode: GraphNode = {
-            id: `node-virtual-init-${parentTurnNode.id}`,
-            type: "thinking",
-            position: { x: 0, y: 0 },
-            width: DEFAULT_NODE_WIDTH,
-            height: DEFAULT_NODE_HEIGHT,
-            data: {
-              nodeType: "thinking",
-              label: "Initial Tools",
-              content: "(tools invoked before first thinking)",
-              streaming: false,
-            },
-          };
-          nodes.push(virtualNode);
-          if (prevMainFlowNodeId) {
-            edges.push(createEdge(prevMainFlowNodeId, virtualNode.id));
-          }
-          prevMainFlowNodeId = virtualNode.id;
-          lastThinkingNodeId = virtualNode.id;
-        }
-      }
-    }
-
-    for (const child of parentTurnNode.children) {
-      if (child.type === "text" || child.type === "thinking") {
-        processTextNode(child);
-      } else if (child.type === "tool") {
-        processToolNode(child, lastThinkingNodeId ?? prevMainFlowNodeId);
-      } else if (child.type === "complete" || child.type === "error") {
-        const sysNode = createSystemNodeFromTree(child);
-        nodes.push(sysNode);
-        if (prevMainFlowNodeId) {
-          edges.push(createEdge(prevMainFlowNodeId, sysNode.id));
-        }
-        prevMainFlowNodeId = sysNode.id;
-      }
-    }
-  }
-
-  function processTextNode(textTreeNode: EventTreeNode) {
-    const collapseInfo = getCollapseInfo(textTreeNode);
-    const graphNode = createTextNode(textTreeNode, {
-      isPlanMode: planMode.nodeIds.has(textTreeNode.id),
-    }, collapseInfo);
-    nodes.push(graphNode);
-
-    if (prevMainFlowNodeId) {
-      edges.push(createEdge(prevMainFlowNodeId, graphNode.id, !textTreeNode.completed));
-    }
-    prevMainFlowNodeId = graphNode.id;
-    lastThinkingNodeId = graphNode.id;
-
-    // 접힌 상태면 자식 처리 안함
-    if (collapsedNodeIds.has(textTreeNode.id)) {
-      return;
-    }
-
-    // text의 자식들을 처리 (tool, subagent, 중첩 text/thinking 등)
-    for (const child of textTreeNode.children) {
-      if (child.type === "tool") {
-        processToolNode(child, graphNode.id);
-      } else if (child.type === "subagent") {
-        processSubagentNode(child, graphNode.id);
-      } else if (child.type === "text" || child.type === "thinking") {
-        // 중첩된 text/thinking (서브에이전트 내부 등)
-        processTextNode(child);
-      }
-    }
-  }
-
-  function processToolNode(toolTreeNode: EventTreeNode, parentNodeId: string | null) {
-    const collapseInfo = getCollapseInfo(toolTreeNode);
-    const callNode = createToolCallNode(toolTreeNode, {
-      isPlanMode: planMode.nodeIds.has(toolTreeNode.id),
-      isPlanModeEntry: planMode.entryIds.has(toolTreeNode.id),
-      isPlanModeExit: planMode.exitIds.has(toolTreeNode.id),
-    }, collapseInfo);
-    nodes.push(callNode);
-
-    if (parentNodeId) {
-      edges.push(
-        createEdge(parentNodeId, callNode.id, !toolTreeNode.completed && !toolTreeNode.toolResult, "right", "left"),
-      );
-    }
-
-    const resultNode = createToolResultNode(toolTreeNode);
-
-    if (resultNode) {
-      nodes.push(resultNode);
-      edges.push(createEdge(callNode.id, resultNode.id, resultNode.data.streaming, "right", "left"));
-    }
-
-    // 접힌 상태면 자식 처리 안함
-    if (collapsedNodeIds.has(toolTreeNode.id)) {
-      return;
-    }
-
-    // tool의 자식 처리 (subagent, text, thinking 등)
-    for (const child of toolTreeNode.children) {
-      if (child.type === "subagent") {
-        processSubagentNode(child, callNode.id);
-      } else if (child.type === "text" || child.type === "thinking") {
-        processTextNode(child);
-      } else if (child.type === "tool") {
-        processToolNode(child, callNode.id);
-      }
-    }
-  }
-
-  function processSubagentNode(subagentTreeNode: EventTreeNode, parentNodeId: string | null) {
-    const collapseInfo = getCollapseInfo(subagentTreeNode);
-    const subagentGraphNode = createSubagentNode(subagentTreeNode, collapseInfo);
-    nodes.push(subagentGraphNode);
-
-    if (parentNodeId) {
-      edges.push(
-        createEdge(parentNodeId, subagentGraphNode.id, !subagentTreeNode.completed, "right", "left"),
-      );
-    }
-
-    // 접힌 상태면 자식 처리 안함
-    if (collapsedNodeIds.has(subagentTreeNode.id)) {
-      return;
-    }
-
-    // subagent의 자식들 처리 (text, thinking, tool 등)
-    for (const child of subagentTreeNode.children) {
-      if (child.type === "text" || child.type === "thinking") {
-        const childCollapseInfo = getCollapseInfo(child);
-        const childGraphNode = createTextNode(child, {
-          isPlanMode: planMode.nodeIds.has(child.id),
-        }, childCollapseInfo);
-        nodes.push(childGraphNode);
-        edges.push(createEdge(subagentGraphNode.id, childGraphNode.id, !child.completed));
-
-        if (!collapsedNodeIds.has(child.id)) {
-          for (const grandchild of child.children) {
-            if (grandchild.type === "tool") {
-              processToolNode(grandchild, childGraphNode.id);
-            } else if (grandchild.type === "subagent") {
-              processSubagentNode(grandchild, childGraphNode.id);
-            } else if (grandchild.type === "text" || grandchild.type === "thinking") {
-              processTextNode(grandchild);
-            }
-          }
-        }
-      } else if (child.type === "tool") {
-        processToolNode(child, subagentGraphNode.id);
-      }
-    }
-  }
-
-  return applyDagreLayout(nodes, edges);
+  return applyDagreLayout(ctx.nodes, ctx.edges);
 }
 
 // === Grid Layout ===

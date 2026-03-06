@@ -29,8 +29,7 @@ engine_adapter의 이벤트 훅에서 호출됩니다.
     "toolName": "Bash",  // tool-call, tool-result
     "toolInput": {...},   // tool-call
     "toolUseId": "toolu_xxx",  // tool-call, tool-result
-    "isError": false,     // tool-result
-    "cardId": "card123"   // 연관 카드 ID
+    "isError": false      // tool-result
   }
 }
 ```
@@ -126,13 +125,12 @@ class SessionContext:
     page_id: Optional[str] = None
     page_title: str = ""
     user_block_id: Optional[str] = None
-    current_card_id: Optional[str] = None
     current_response_block_id: Optional[str] = None
     start_time: float = field(default_factory=time.time)
     block_order: int = 0
 
-    # 텍스트 블록 버퍼 (card_id → text)
-    text_buffers: Dict[str, str] = field(default_factory=dict)
+    # 현재 텍스트 블록 버퍼 (text_start → text_delta* → text_end 시퀀스용)
+    current_text_buffer: str = ""
 
     # tool_use_id → 블록 정보 매핑
     tool_blocks: Dict[str, Dict[str, Any]] = field(default_factory=dict)
@@ -467,7 +465,7 @@ class SerendipityAdapter:
         try:
             if isinstance(event, TextEndSSEEvent):
                 # 텍스트 버퍼에서 완료된 텍스트 가져오기 (휴리스틱 분석용, 길이 제한 적용)
-                text = ctx.text_buffers.get(event.card_id, "")
+                text = ctx.current_text_buffer
                 if text.strip():
                     ctx.analyzer.add_event(SessionEvent(
                         event_type="response",
@@ -515,7 +513,6 @@ class SerendipityAdapter:
             soul_metadata={
                 "nodeId": generate_key(),
                 "timestamp": self._iso_timestamp(),
-                "cardId": event.card_id,
                 "signature": event.signature,
             },
         )
@@ -533,22 +530,19 @@ class SerendipityAdapter:
 
     async def _on_text_start(self, ctx: SessionContext, event: TextStartSSEEvent) -> None:
         """텍스트 블록 시작: 버퍼 초기화"""
-        ctx.current_card_id = event.card_id
-        ctx.text_buffers[event.card_id] = ""
+        ctx.current_text_buffer = ""
 
     async def _on_text_delta(self, ctx: SessionContext, event: TextDeltaSSEEvent) -> None:
         """텍스트 델타: 버퍼에 텍스트 누적"""
-        if event.card_id in ctx.text_buffers:
-            ctx.text_buffers[event.card_id] += event.text
-        else:
-            ctx.text_buffers[event.card_id] = event.text
+        ctx.current_text_buffer += event.text
 
     async def _on_text_end(self, ctx: SessionContext, event: TextEndSSEEvent) -> None:
         """텍스트 블록 완료: 블록 생성
 
         세렌디피티는 아카이브 목적이므로 원문 전체를 보존합니다.
         """
-        text = ctx.text_buffers.pop(event.card_id, "")
+        text = ctx.current_text_buffer
+        ctx.current_text_buffer = ""
         if not text.strip():
             return
 
@@ -560,7 +554,6 @@ class SerendipityAdapter:
             soul_metadata={
                 "nodeId": generate_key(),
                 "timestamp": self._iso_timestamp(),
-                "cardId": event.card_id,
             },
         )
 
@@ -594,7 +587,6 @@ class SerendipityAdapter:
             soul_metadata={
                 "nodeId": generate_key(),
                 "timestamp": self._iso_timestamp(),
-                "cardId": event.card_id,
                 "toolName": event.tool_name,
                 "toolInput": event.tool_input,
                 "toolUseId": event.tool_use_id,
@@ -633,7 +625,6 @@ class SerendipityAdapter:
             soul_metadata={
                 "nodeId": generate_key(),
                 "timestamp": self._iso_timestamp(),
-                "cardId": event.card_id,
                 "toolName": event.tool_name,
                 "toolUseId": event.tool_use_id,
                 "isError": event.is_error,

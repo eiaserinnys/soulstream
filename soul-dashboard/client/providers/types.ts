@@ -6,7 +6,7 @@
  * Serendipity 모드: 세렌디피티 API를 통한 세션 조회.
  */
 
-import type { SessionSummary, DashboardCard, SoulSSEEvent } from "@shared/types";
+import type { SessionSummary, EventTreeNode, SoulSSEEvent } from "@shared/types";
 
 // === Storage Mode ===
 
@@ -35,7 +35,7 @@ export interface SessionListProvider {
  */
 export interface SessionDetailProvider {
   /** 세션 카드 목록 조회 (스냅샷) */
-  fetchCards(sessionKey: string): Promise<DashboardCard[]>;
+  fetchCards(sessionKey: string): Promise<EventTreeNode[]>;
 
   /**
    * 실시간 업데이트 구독.
