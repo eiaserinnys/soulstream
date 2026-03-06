@@ -1,0 +1,195 @@
+{
+  "sessionFile": "sess-20260305233541-c2ac0b2b.jsonl",
+  "createdAt": "2026-03-06T05:28:16.491Z",
+  "treeStats": {
+    "totalNodes": 19,
+    "byType": {
+      "session": 1,
+      "user_message": 1,
+      "thinking": 1,
+      "tool": 13,
+      "subagent": 1,
+      "result": 1,
+      "complete": 1
+    },
+    "maxDepth": 3,
+    "orphanCount": 0,
+    "streamingCount": 0
+  },
+  "treeStructure": [
+    {
+      "id": "root-session",
+      "type": "session",
+      "childCount": 1,
+      "completed": false,
+      "children": [
+        {
+          "id": "user-msg-1",
+          "type": "user_message",
+          "childCount": 5,
+          "completed": true,
+          "children": [
+            {
+              "id": "thinking-2",
+              "type": "thinking",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-3",
+              "type": "tool",
+              "childCount": 12,
+              "completed": true,
+              "children": [
+                {
+                  "id": "tool-6",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-7",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-10",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-12",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-14",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-15",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-16",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-20",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-22",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-23",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-26",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-28",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                }
+              ]
+            },
+            {
+              "id": "ae8170cca0f3f132f",
+              "type": "subagent",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "result-36",
+              "type": "result",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "complete-38",
+              "type": "complete",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "validationResults": [
+    {
+      "name": "V1: 트리 무결성 (단일 부모)",
+      "passed": true,
+      "detailCount": 1,
+      "warningCount": 0
+    },
+    {
+      "name": "V2: thinking→text 연결 (parent_tool_use_id 기반)",
+      "passed": true,
+      "detailCount": 1,
+      "warningCount": 0
+    },
+    {
+      "name": "V3: tool_use_id 연결 (tool_start → tool_result)",
+      "passed": true,
+      "detailCount": 1,
+      "warningCount": 0
+    },
+    {
+      "name": "V4: 고아 노드 감지",
+      "passed": true,
+      "detailCount": 1,
+      "warningCount": 0
+    },
+    {
+      "name": "V5: 스트리밍 완료 확인",
+      "passed": true,
+      "detailCount": 1,
+      "warningCount": 0
+    },
+    {
+      "name": "V6: 그래프 생성 유효성",
+      "passed": true,
+      "detailCount": 1,
+      "warningCount": 0
+    }
+  ]
+}

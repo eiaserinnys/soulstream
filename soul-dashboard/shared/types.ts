@@ -106,7 +106,6 @@ export interface CompactEvent {
 export interface ThinkingEvent {
   type: "thinking";
   timestamp: number;
-  card_id: string;
   thinking: string;
   signature?: string;
   /** 부모 tool_use_id (서브에이전트 내부 노드 배치용) */
@@ -116,8 +115,6 @@ export interface ThinkingEvent {
 export interface TextStartEvent {
   type: "text_start";
   timestamp: number;
-  /** thinking의 card_id, 없으면 턴 루트에 직접 배치 */
-  card_id?: string;
   /** 부모 tool_use_id (서브에이전트 내부 노드 배치용) */
   parent_tool_use_id?: string;
 }
@@ -125,20 +122,17 @@ export interface TextStartEvent {
 export interface TextDeltaEvent {
   type: "text_delta";
   timestamp: number;
-  card_id?: string;
   text: string;
 }
 
 export interface TextEndEvent {
   type: "text_end";
   timestamp: number;
-  card_id?: string;
 }
 
 export interface ToolStartEvent {
   type: "tool_start";
   timestamp: number;
-  card_id?: string;
   tool_name: string;
   tool_input: Record<string, unknown>;
   /** SDK ToolUseBlock ID (tool_result 매칭용) */
@@ -150,7 +144,6 @@ export interface ToolStartEvent {
 export interface ToolResultEvent {
   type: "tool_result";
   timestamp: number;
-  card_id?: string;
   tool_name: string;
   result: string;
   is_error: boolean;

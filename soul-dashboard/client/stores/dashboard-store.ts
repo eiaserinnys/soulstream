@@ -154,8 +154,10 @@ let nodeMap = new Map<string, EventTreeNode>();
 let toolUseMap = new Map<string, EventTreeNode>();
 /** agent_id → subagent 노드 */
 let subagentMap = new Map<string, EventTreeNode>();
-/** SSE card_id → text 노드 */
-let cardIdMap = new Map<string, EventTreeNode>();
+/** parent_tool_use_id별 가장 최근 thinking 노드 (text_start와 매칭용) */
+let lastThinkingByParent = new Map<string, EventTreeNode>();
+/** 현재 text_start → text_delta → text_end 시퀀스의 대상 노드 */
+let activeTextTarget: EventTreeNode | null = null;
 /** 현재 활성 user_message/intervention 노드 ID */
 let currentTurnNodeId: string | null = null;
 
@@ -166,7 +168,8 @@ function resetInternalMaps() {
   nodeMap = new Map();
   toolUseMap = new Map();
   subagentMap = new Map();
-  cardIdMap = new Map();
+  lastThinkingByParent = new Map();
+  activeTextTarget = null;
   currentTurnNodeId = null;
 }
 
@@ -428,13 +431,16 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           case "thinking": {
             root = ensureRoot(root);
             const thinkingEvent = event as ThinkingEvent;
-            const thinkingCardId = thinkingEvent.card_id || `thinking-${eventId}`;
+            const thinkingNodeId = `thinking-${eventId}`;
 
             const parent = resolveParent(thinkingEvent.parent_tool_use_id, root);
-            const thinkingNode = createNode(thinkingCardId, "thinking", thinkingEvent.thinking, {
+            const thinkingNode = createNode(thinkingNodeId, "thinking", thinkingEvent.thinking, {
               completed: true,
             });
-            cardIdMap.set(thinkingCardId, thinkingNode);
+            // 같은 parent 레벨의 후속 text_start와 매칭하기 위해 등록
+            // "" = root 레벨 (서브에이전트 밖), 그 외 = 해당 서브에이전트의 parent_tool_use_id
+            const parentKey = thinkingEvent.parent_tool_use_id || "";
+            lastThinkingByParent.set(parentKey, thinkingNode);
             parent.children.push(thinkingNode);
             updated = true;
             break;
@@ -443,34 +449,32 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           case "text_start": {
             root = ensureRoot(root);
             const textStartEvent = event as TextStartEvent;
+            const parentKey = textStartEvent.parent_tool_use_id || "";
+            const thinkingNode = lastThinkingByParent.get(parentKey);
 
-            // card_id가 있고 cardIdMap에 있으면 → thinking 노드가 이미 존재
-            // text_delta에서 thinking.textContent를 업데이트하므로 여기서는 마킹만
-            if (textStartEvent.card_id && cardIdMap.has(textStartEvent.card_id)) {
-              // thinking 노드가 이미 있음 → 별도 노드 생성 불필요
-              updated = true;
-              break;
+            if (thinkingNode) {
+              // 같은 parent 레벨에 thinking 노드 존재 → 텍스트를 thinking에 병합
+              lastThinkingByParent.delete(parentKey); // 1:1 매칭 후 해제
+              activeTextTarget = thinkingNode;
+            } else {
+              // thinking 없이 text만 온 경우 → 독립 text 노드 생성
+              const textParent = resolveParent(textStartEvent.parent_tool_use_id, root);
+              const textNode = createNode(`text-${eventId}`, "text", "");
+              textParent.children.push(textNode);
+              activeTextTarget = textNode;
             }
-
-            // thinking 없이 text만 온 경우 → 부모에 독립 text 노드 생성
-            const textNodeId = textStartEvent.card_id ?? `text-${eventId}`;
-            const textParent = resolveParent(textStartEvent.parent_tool_use_id, root);
-            const textNode = createNode(textNodeId, "text", "");
-            if (textStartEvent.card_id) cardIdMap.set(textStartEvent.card_id, textNode);
-            textParent.children.push(textNode);
             updated = true;
             break;
           }
 
           case "text_delta": {
-            const targetNode = event.card_id ? cardIdMap.get(event.card_id) : null;
-            if (targetNode) {
-              if (targetNode.type === "thinking") {
+            if (activeTextTarget) {
+              if (activeTextTarget.type === "thinking") {
                 // thinking 노드의 가시적 텍스트 갱신
-                targetNode.textContent = (targetNode.textContent ?? "") + event.text;
+                activeTextTarget.textContent = (activeTextTarget.textContent ?? "") + event.text;
               } else {
                 // 독립 text 노드의 content 갱신
-                targetNode.content += event.text;
+                activeTextTarget.content += event.text;
               }
               updated = true;
             }
@@ -478,12 +482,12 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           }
 
           case "text_end": {
-            const targetNode = event.card_id ? cardIdMap.get(event.card_id) : null;
-            if (targetNode) {
-              targetNode.textCompleted = true;
-              if (targetNode.type !== "thinking") {
-                targetNode.completed = true;
+            if (activeTextTarget) {
+              activeTextTarget.textCompleted = true;
+              if (activeTextTarget.type !== "thinking") {
+                activeTextTarget.completed = true;
               }
+              activeTextTarget = null;
               updated = true;
             }
             break;
@@ -562,16 +566,8 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
               toolUseMap.set(toolStartEvent.tool_use_id, toolNode);
             }
 
-            // 부모 결정: card_id → thinking 자식 | 없으면 resolveParent
-            const parentThinking = toolStartEvent.card_id
-              ? cardIdMap.get(toolStartEvent.card_id)
-              : null;
-            if (parentThinking) {
-              parentThinking.children.push(toolNode);
-            } else {
-              const parent = resolveParent(toolStartEvent.parent_tool_use_id, root);
-              parent.children.push(toolNode);
-            }
+            const parent = resolveParent(toolStartEvent.parent_tool_use_id, root);
+            parent.children.push(toolNode);
             updated = true;
             break;
           }
