@@ -10,7 +10,7 @@ CredentialSwapper - 크레덴셜 파일 교체 모듈
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from soul_server.service.credential_store import CredentialStore
 
@@ -48,6 +48,28 @@ class CredentialSwapper:
                 f"크레덴셜 파일이 존재하지 않습니다: {self._cred_path}"
             )
         return json.loads(self._cred_path.read_text(encoding="utf-8"))
+
+    def extract_email(self) -> Optional[str]:
+        """현재 크레덴셜 파일에서 이메일 주소 추출.
+
+        탐색 경로:
+        1. claudeAiOauth.email
+        2. 최상위 email 필드
+
+        Returns:
+            이메일 주소 또는 None (이메일 필드 없음)
+
+        Raises:
+            FileNotFoundError: 크레덴셜 파일이 없음
+        """
+        data = self.read_current()
+
+        oauth = data.get("claudeAiOauth", {})
+        email = oauth.get("email") or data.get("email")
+
+        if not email or not isinstance(email, str):
+            return None
+        return email
 
     def save_current_as(self, name: str) -> None:
         """
