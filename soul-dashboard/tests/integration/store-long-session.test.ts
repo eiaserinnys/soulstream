@@ -61,23 +61,19 @@ describe("Store + Layout: Long Session Rendering", () => {
 
       // 50개의 text + 50개의 tool 노드 생성
       for (let i = 0; i < 50; i++) {
-        const textId = `text-${i}`;
-        processEvent({ type: "text_start", card_id: textId } as TextStartEvent, eventId++);
-        processEvent({ type: "text_delta", card_id: textId, text: `Content ${i}` } as TextDeltaEvent, eventId++);
-        processEvent({ type: "text_end", card_id: textId } as TextEndEvent, eventId++);
+        processEvent({ type: "text_start" } as TextStartEvent, eventId++);
+        processEvent({ type: "text_delta", text: `Content ${i}` } as TextDeltaEvent, eventId++);
+        processEvent({ type: "text_end" } as TextEndEvent, eventId++);
 
-        const toolId = `tool-${i}`;
         const toolUseId = `toolu_long_${i}`;
         processEvent({
           type: "tool_start",
-          card_id: toolId,
           tool_name: "Bash",
           tool_input: { command: `echo ${i}` },
           tool_use_id: toolUseId,
         } as ToolStartEvent, eventId++);
         processEvent({
           type: "tool_result",
-          card_id: toolId,
           tool_name: "Bash",
           result: `output ${i}`,
           is_error: false,
@@ -110,23 +106,19 @@ describe("Store + Layout: Long Session Rendering", () => {
       processEvent({ type: "user_message", text: "Perf test", user: "test" } as SoulSSEEvent, eventId++);
 
       for (let i = 0; i < 50; i++) {
-        const textId = `text-${i}`;
-        processEvent({ type: "text_start", card_id: textId } as TextStartEvent, eventId++);
-        processEvent({ type: "text_delta", card_id: textId, text: `Content ${i}` } as TextDeltaEvent, eventId++);
-        processEvent({ type: "text_end", card_id: textId } as TextEndEvent, eventId++);
+        processEvent({ type: "text_start" } as TextStartEvent, eventId++);
+        processEvent({ type: "text_delta", text: `Content ${i}` } as TextDeltaEvent, eventId++);
+        processEvent({ type: "text_end" } as TextEndEvent, eventId++);
 
-        const toolId = `tool-${i}`;
         const toolUseId = `toolu_perf_${i}`;
         processEvent({
           type: "tool_start",
-          card_id: toolId,
           tool_name: "Read",
           tool_input: { file_path: `/path/file${i}.ts` },
           tool_use_id: toolUseId,
         } as ToolStartEvent, eventId++);
         processEvent({
           type: "tool_result",
-          card_id: toolId,
           tool_name: "Read",
           result: `content of file${i}`,
           is_error: false,
@@ -154,15 +146,15 @@ describe("Store + Layout: Long Session Rendering", () => {
       setActiveSession("test:compact");
       let eventId = 1;
 
-      // user_message 추가
+      // user_message 추가 (eventId=1)
       processEvent({ type: "user_message", text: "Compact test", user: "test" } as SoulSSEEvent, eventId++);
 
-      // 컴팩트 전 텍스트
-      processEvent({ type: "text_start", card_id: "before-1" } as TextStartEvent, eventId++);
-      processEvent({ type: "text_delta", card_id: "before-1", text: "Before compact" } as TextDeltaEvent, eventId++);
-      processEvent({ type: "text_end", card_id: "before-1" } as TextEndEvent, eventId++);
+      // 컴팩트 전 텍스트 (text_start eventId=2 → node "text-2")
+      processEvent({ type: "text_start" } as TextStartEvent, eventId++);
+      processEvent({ type: "text_delta", text: "Before compact" } as TextDeltaEvent, eventId++);
+      processEvent({ type: "text_end" } as TextEndEvent, eventId++);
 
-      // 컨텍스트 사용량 이벤트
+      // 컨텍스트 사용량 이벤트 (eventId=5)
       processEvent({
         type: "context_usage",
         used_tokens: 180000,
@@ -170,17 +162,17 @@ describe("Store + Layout: Long Session Rendering", () => {
         percent: 90,
       } as ContextUsageEvent, eventId++);
 
-      // 컴팩트 이벤트
+      // 컴팩트 이벤트 (eventId=6)
       processEvent({
         type: "compact",
         trigger: "auto",
         message: "Compacted: 180K → 50K tokens",
       } as CompactEvent, eventId++);
 
-      // 컴팩트 후 텍스트
-      processEvent({ type: "text_start", card_id: "after-1" } as TextStartEvent, eventId++);
-      processEvent({ type: "text_delta", card_id: "after-1", text: "After compact" } as TextDeltaEvent, eventId++);
-      processEvent({ type: "text_end", card_id: "after-1" } as TextEndEvent, eventId++);
+      // 컴팩트 후 텍스트 (text_start eventId=7 → node "text-7")
+      processEvent({ type: "text_start" } as TextStartEvent, eventId++);
+      processEvent({ type: "text_delta", text: "After compact" } as TextDeltaEvent, eventId++);
+      processEvent({ type: "text_end" } as TextEndEvent, eventId++);
 
       const state = useDashboardStore.getState();
 
@@ -188,11 +180,11 @@ describe("Store + Layout: Long Session Rendering", () => {
       const textNodes = collectNodes(state.tree, (n) => n.type === "text");
       expect(textNodes).toHaveLength(2);
 
-      const before = findTreeNode(state.tree, "before-1");
+      const before = findTreeNode(state.tree, "text-2");
       expect(before).not.toBeNull();
       expect(before!.content).toBe("Before compact");
 
-      const after = findTreeNode(state.tree, "after-1");
+      const after = findTreeNode(state.tree, "text-7");
       expect(after).not.toBeNull();
       expect(after!.content).toBe("After compact");
     });
@@ -204,13 +196,13 @@ describe("Store + Layout: Long Session Rendering", () => {
 
       // 트리 구축
       processEvent({ type: "user_message", text: "Test", user: "test" } as SoulSSEEvent, eventId++);
-      processEvent({ type: "text_start", card_id: "c1" } as TextStartEvent, eventId++);
-      processEvent({ type: "text_delta", card_id: "c1", text: "Before" } as TextDeltaEvent, eventId++);
-      processEvent({ type: "text_end", card_id: "c1" } as TextEndEvent, eventId++);
+      processEvent({ type: "text_start" } as TextStartEvent, eventId++);
+      processEvent({ type: "text_delta", text: "Before" } as TextDeltaEvent, eventId++);
+      processEvent({ type: "text_end" } as TextEndEvent, eventId++);
       processEvent({ type: "compact", trigger: "auto", message: "Compacted" } as CompactEvent, eventId++);
-      processEvent({ type: "text_start", card_id: "c2" } as TextStartEvent, eventId++);
-      processEvent({ type: "text_delta", card_id: "c2", text: "After" } as TextDeltaEvent, eventId++);
-      processEvent({ type: "text_end", card_id: "c2" } as TextEndEvent, eventId++);
+      processEvent({ type: "text_start" } as TextStartEvent, eventId++);
+      processEvent({ type: "text_delta", text: "After" } as TextDeltaEvent, eventId++);
+      processEvent({ type: "text_end" } as TextEndEvent, eventId++);
       processEvent({ type: "complete", result: "Done", attachments: [] } as CompleteEvent, eventId++);
 
       const tree = useDashboardStore.getState().tree;
@@ -240,9 +232,10 @@ describe("Store + Layout: Long Session Rendering", () => {
       const { processEvent, setActiveSession } = useDashboardStore.getState();
       setActiveSession("test:error");
 
+      // eventId=0→user_message, 1→text_start→"text-1", 2→text_delta, 3→error
       processEvent({ type: "user_message", text: "Error test", user: "test" } as SoulSSEEvent, 0);
-      processEvent({ type: "text_start", card_id: "c1" } as TextStartEvent, 1);
-      processEvent({ type: "text_delta", card_id: "c1", text: "Working..." } as TextDeltaEvent, 2);
+      processEvent({ type: "text_start" } as TextStartEvent, 1);
+      processEvent({ type: "text_delta", text: "Working..." } as TextDeltaEvent, 2);
       processEvent({
         type: "error",
         message: "Rate limit exceeded",
@@ -251,8 +244,8 @@ describe("Store + Layout: Long Session Rendering", () => {
 
       const state = useDashboardStore.getState();
 
-      // 에러 전의 텍스트 노드는 유지
-      const textNode = findTreeNode(state.tree, "c1");
+      // 에러 전의 텍스트 노드는 유지 (node ID: "text-1")
+      const textNode = findTreeNode(state.tree, "text-1");
       expect(textNode).not.toBeNull();
       expect(textNode!.content).toBe("Working...");
       // text_end를 받지 못했으므로 미완료
@@ -270,8 +263,8 @@ describe("Store + Layout: Long Session Rendering", () => {
       setActiveSession("test:error-graph");
 
       processEvent({ type: "user_message", text: "Error graph", user: "test" } as SoulSSEEvent, 0);
-      processEvent({ type: "text_start", card_id: "c1" } as TextStartEvent, 1);
-      processEvent({ type: "text_delta", card_id: "c1", text: "Partial work" } as TextDeltaEvent, 2);
+      processEvent({ type: "text_start" } as TextStartEvent, 1);
+      processEvent({ type: "text_delta", text: "Partial work" } as TextDeltaEvent, 2);
       processEvent({ type: "error", message: "Execution failed" } as ErrorEvent, 3);
 
       const tree = useDashboardStore.getState().tree;
@@ -288,13 +281,12 @@ describe("Store + Layout: Long Session Rendering", () => {
       let eventId = 1;
 
       processEvent({ type: "user_message", text: "Tool error", user: "test" } as SoulSSEEvent, eventId++);
-      processEvent({ type: "text_start", card_id: "t0" } as TextStartEvent, eventId++);
-      processEvent({ type: "text_end", card_id: "t0" } as TextEndEvent, eventId++);
+      processEvent({ type: "text_start" } as TextStartEvent, eventId++);
+      processEvent({ type: "text_end" } as TextEndEvent, eventId++);
 
       const toolEventId = eventId;
       processEvent({
         type: "tool_start",
-        card_id: "t1",
         tool_name: "Bash",
         tool_input: { command: "invalid-cmd" },
         tool_use_id: "toolu_err1",
@@ -302,7 +294,6 @@ describe("Store + Layout: Long Session Rendering", () => {
 
       processEvent({
         type: "tool_result",
-        card_id: "t1",
         tool_name: "Bash",
         result: "command not found: invalid-cmd",
         is_error: true,
@@ -330,13 +321,13 @@ describe("Store + Layout: Long Session Rendering", () => {
       setActiveSession("test:seq");
       let id = 1;
 
+      // id=1→user_message, id=2→text_start→"text-2", id=3→text_delta, id=4→text_end, id=5→tool_start, id=6→error
       processEvent({ type: "user_message", text: "Seq test", user: "test" } as SoulSSEEvent, id++);
-      processEvent({ type: "text_start", card_id: "c1" } as TextStartEvent, id++);
-      processEvent({ type: "text_delta", card_id: "c1", text: "Partial" } as TextDeltaEvent, id++);
-      processEvent({ type: "text_end", card_id: "c1" } as TextEndEvent, id++);
+      processEvent({ type: "text_start" } as TextStartEvent, id++);
+      processEvent({ type: "text_delta", text: "Partial" } as TextDeltaEvent, id++);
+      processEvent({ type: "text_end" } as TextEndEvent, id++);
       processEvent({
         type: "tool_start",
-        card_id: "t1",
         tool_name: "Bash",
         tool_input: { command: "test" },
       } as ToolStartEvent, id++);
@@ -348,8 +339,8 @@ describe("Store + Layout: Long Session Rendering", () => {
 
       const state = useDashboardStore.getState();
 
-      // 텍스트 노드는 완료
-      const textNode = findTreeNode(state.tree, "c1");
+      // 텍스트 노드는 완료 (node ID: "text-2")
+      const textNode = findTreeNode(state.tree, "text-2");
       expect(textNode).not.toBeNull();
       expect(textNode!.completed).toBe(true);
 
