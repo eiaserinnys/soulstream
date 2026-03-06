@@ -1,8 +1,7 @@
 /**
  * ProcessingContext — processEvent의 공유 상태를 명시적 컨텍스트로 묶는다.
  *
- * Phase 2: 구조 분리만 수행. Map 구조 자체는 변경하지 않는다.
- * Phase 5에서 subagentMap, lastThinkingByParent 등이 제거/변경될 수 있다.
+ * Phase 5: subagentMap 삭제 완료. 남은 Map: nodeMap, toolUseMap, lastThinkingByParent.
  */
 
 import type { EventTreeNode } from "@shared/types";
@@ -14,8 +13,6 @@ export interface ProcessingContext {
   nodeMap: Map<string, EventTreeNode>;
   /** toolUseId → tool 노드 */
   toolUseMap: Map<string, EventTreeNode>;
-  /** agent_id → subagent 노드 */
-  subagentMap: Map<string, EventTreeNode>;
   /** parent_tool_use_id별 가장 최근 thinking 노드 (text_start와 매칭용) */
   lastThinkingByParent: Map<string, EventTreeNode>;
   /** 현재 text_start → text_delta → text_end 시퀀스의 대상 노드 */
@@ -28,7 +25,6 @@ export function createProcessingContext(): ProcessingContext {
   return {
     nodeMap: new Map(),
     toolUseMap: new Map(),
-    subagentMap: new Map(),
     lastThinkingByParent: new Map(),
     activeTextTarget: null,
     currentTurnNodeId: null,

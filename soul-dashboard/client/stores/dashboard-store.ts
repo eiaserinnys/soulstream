@@ -17,7 +17,6 @@ import { persist } from "zustand/middleware";
 import type {
   SessionSummary,
   SessionDetail,
-  DashboardCard,
   SoulSSEEvent,
   EventTreeNode,
   TextStartEvent,
@@ -509,29 +508,3 @@ export function findTreeNode(
   return null;
 }
 
-/** 노드 타입 → 카드 타입 매핑 */
-const NODE_TYPE_TO_CARD_TYPE: Partial<Record<EventTreeNode["type"], DashboardCard["type"]>> = {
-  user_message: "user_message",
-  intervention: "intervention",
-  session: "session",
-  complete: "complete",
-  error: "error",
-  tool: "tool",
-};
-
-/** DashboardCard 호환 객체를 트리에서 생성합니다. */
-export function treeNodeToCard(node: EventTreeNode): DashboardCard {
-  return {
-    cardId: node.id,
-    type: NODE_TYPE_TO_CARD_TYPE[node.type] ?? "text",
-    content: node.content,
-    completed: node.completed,
-    toolName: node.toolName,
-    toolInput: node.toolInput,
-    toolResult: node.toolResult,
-    isError: node.isError,
-    toolUseId: node.toolUseId,
-    user: node.user,
-    sessionId: node.sessionId,
-  };
-}
