@@ -93,7 +93,7 @@ describe("createNodeFromEvent", () => {
       expect(node!.completed).toBe(true);
     });
 
-    it("should create node for subagent_start", () => {
+    it("should return null for subagent_start (R4: ignored)", () => {
       const event: SubagentStartEvent = {
         type: "subagent_start",
         timestamp: 1700000000,
@@ -104,14 +104,7 @@ describe("createNodeFromEvent", () => {
 
       const node = createNodeFromEvent(event, 20);
 
-      expect(node).not.toBeNull();
-      expect(node!.id).toBe("agent-uuid-123");
-      expect(node!.type).toBe("subagent");
-      expect(node!.content).toBe("");
-      expect(node!.completed).toBe(false);
-      expect(node!.agentId).toBe("agent-uuid-123");
-      expect(node!.agentType).toBe("task");
-      expect(node!.parentToolUseId).toBe("toolu_xyz");
+      expect(node).toBeNull();
     });
 
     it("should create node for tool_start", () => {
@@ -491,14 +484,9 @@ describe("applyUpdate", () => {
     });
   });
 
-  describe("subagent_stop", () => {
-    it("should mark subagent as completed and remove from subagentMap", () => {
+  describe("subagent_stop (R4: ignored)", () => {
+    it("should always return false (subagent_stop is ignored)", () => {
       const { ctx, root } = makeCtxWithRoot();
-      const subagentNode = makeNode("agent-1", "subagent", "", {
-        agentId: "agent-1",
-        agentType: "task",
-      });
-      ctx.subagentMap.set("agent-1", subagentNode);
 
       const event: SubagentStopEvent = {
         type: "subagent_stop",
@@ -508,23 +496,6 @@ describe("applyUpdate", () => {
 
       const changed = applyUpdate(event, 50, ctx, root);
 
-      expect(changed).toBe(true);
-      expect(subagentNode.completed).toBe(true);
-      expect(ctx.subagentMap.has("agent-1")).toBe(false);
-    });
-
-    it("should return false when agent_id not found in subagentMap", () => {
-      const { ctx, root } = makeCtxWithRoot();
-
-      const event: SubagentStopEvent = {
-        type: "subagent_stop",
-        timestamp: 0,
-        agent_id: "nonexistent",
-      };
-
-      const changed = applyUpdate(event, 51, ctx, root);
-
-      // No matching agent → no state change → false
       expect(changed).toBe(false);
     });
   });

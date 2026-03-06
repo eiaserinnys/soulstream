@@ -69,23 +69,6 @@ export interface GraphNodeData extends Record<string, unknown> {
 export type GraphNode = Node<GraphNodeData>;
 export type GraphEdge = Edge;
 
-// === Sub-Agent Grouping ===
-
-/** Task 도구 호출로 감지된 서브 에이전트 그룹 */
-export interface SubAgentGroup {
-  /** 그룹 고유 ID */
-  groupId: string;
-  /** Task tool_call 카드 ID */
-  taskCardId: string;
-  /** 그룹에 포함된 카드 ID 목록 (Task 카드 자체 포함) */
-  cardIds: string[];
-  /** 그룹 레이블 (Task 입력에서 추출) */
-  label: string;
-  /** 접힌 상태 여부 */
-  collapsed: boolean;
-}
-
-
 // === Node Dimensions ===
 
 /** 모든 카드의 기본 크기 (노드 생성 시 사용) */
@@ -118,73 +101,6 @@ export function createEdge(
     targetHandle,
     style: { stroke: animated ? "#3b82f6" : "#4b5563", strokeWidth: 1.5 },
   };
-}
-
-// === Sub-Agent Detection ===
-
-/**
- * EventTreeNode 트리에서 Task 도구 호출을 감지하여 서브 에이전트 그룹을 추출합니다.
- * 트리를 DFS 순회하여 tool 타입 노드 중 toolName === "Task"인 노드를 기준으로 그룹핑합니다.
- */
-export function detectSubAgents(tree: EventTreeNode | null): SubAgentGroup[] {
-  if (!tree) return [];
-
-  const groups: SubAgentGroup[] = [];
-  let groupCounter = 0;
-
-  function collectToolNodes(node: EventTreeNode): EventTreeNode[] {
-    const tools: EventTreeNode[] = [];
-    if (node.type === "tool") {
-      tools.push(node);
-    }
-    for (const child of node.children) {
-      tools.push(...collectToolNodes(child));
-    }
-    return tools;
-  }
-
-  const allTools = collectToolNodes(tree);
-
-  for (let i = 0; i < allTools.length; i++) {
-    const tool = allTools[i];
-    if (tool.toolName !== "Task") continue;
-
-    groupCounter += 1;
-    const groupId = `subagent-${groupCounter}`;
-    const groupCardIds: string[] = [tool.id];
-
-    const taskDescription =
-      (tool.toolInput?.description as string) ??
-      (tool.toolInput?.prompt as string) ??
-      "Sub-agent Task";
-    const label =
-      taskDescription.length > 50
-        ? taskDescription.slice(0, 47) + "..."
-        : taskDescription;
-
-    if (!tool.completed) {
-      // 아직 실행 중인 Task: 이후 모든 도구를 그룹에 포함
-      for (let j = i + 1; j < allTools.length; j++) {
-        groupCardIds.push(allTools[j].id);
-      }
-    } else {
-      // 완료된 Task: 다음 Task 시작 전까지의 도구를 그룹에 포함
-      for (let j = i + 1; j < allTools.length; j++) {
-        if (allTools[j].toolName === "Task") break;
-        groupCardIds.push(allTools[j].id);
-      }
-    }
-
-    groups.push({
-      groupId,
-      taskCardId: tool.id,
-      cardIds: groupCardIds,
-      label,
-      collapsed: false,
-    });
-  }
-
-  return groups;
 }
 
 // === Plan Mode Detection ===
@@ -439,6 +355,22 @@ export function createSystemNodeFromTree(treeNode: EventTreeNode): GraphNode {
       isError: treeNode.type === "error",
       streaming: false,
       fullContent: treeNode.content,
+    },
+  };
+}
+
+export function createCompactNode(treeNode: EventTreeNode): GraphNode {
+  return {
+    id: `node-${treeNode.id}`,
+    type: "system",
+    position: { x: 0, y: 0 },
+    width: DEFAULT_NODE_WIDTH,
+    height: DEFAULT_NODE_HEIGHT,
+    data: {
+      nodeType: "system",
+      label: "\u26A1 Context Compaction",
+      content: treeNode.content || "Context compaction occurred",
+      streaming: false,
     },
   };
 }

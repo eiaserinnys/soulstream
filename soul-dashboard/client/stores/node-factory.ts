@@ -15,13 +15,12 @@ import type {
   ThinkingEvent,
   ToolStartEvent,
   ToolResultEvent,
-  SubagentStartEvent,
-  SubagentStopEvent,
   ResultEvent,
   CompleteEvent,
   ErrorEvent,
   UserMessageEvent,
   InterventionSentEvent,
+  CompactEvent,
 } from "@shared/types";
 import type { ProcessingContext } from "./processing-context";
 import { makeNode } from "./processing-context";
@@ -33,9 +32,9 @@ import { makeNode } from "./processing-context";
  * 반환된 노드는 아직 트리에 삽입되지 않았고, Map에도 등록되지 않았습니다.
  * placeInTree()가 트리 삽입과 Map 등록을 담당합니다.
  *
- * 생성형: user_message, intervention_sent, thinking, subagent_start,
- *         tool_start, complete, error, result
- * 업데이트형 (null 반환): session, text_start/delta/end, tool_result, subagent_stop
+ * 생성형: user_message, intervention_sent, thinking, tool_start, complete, error, result, compact
+ * 무시: subagent_start, subagent_stop (R4: 가상 노드 미생성)
+ * 업데이트형 (null 반환): session, text_start/delta/end, tool_result
  */
 export function createNodeFromEvent(
   event: SoulSSEEvent,
@@ -65,14 +64,9 @@ export function createNodeFromEvent(
       });
     }
 
-    case "subagent_start": {
-      const e = event as SubagentStartEvent;
-      return makeNode(e.agent_id, "subagent", "", {
-        agentId: e.agent_id,
-        agentType: e.agent_type,
-        parentToolUseId: e.parent_tool_use_id,
-      });
-    }
+    // R4: subagent_start/stop은 무시 — 가상 노드를 생성하지 않음
+    case "subagent_start":
+      return null;
 
     case "tool_start": {
       const e = event as ToolStartEvent;
@@ -118,6 +112,16 @@ export function createNodeFromEvent(
       );
     }
 
+    case "compact": {
+      const e = event as CompactEvent;
+      return makeNode(
+        `compact-${eventId}`,
+        "compact",
+        e.message ?? "Context compaction occurred",
+        { completed: true },
+      );
+    }
+
     default:
       return null;
   }
@@ -130,7 +134,6 @@ export function createNodeFromEvent(
  * text_delta: activeTextTarget 텍스트 누적
  * text_end: activeTextTarget 완료 마킹
  * tool_result: tool 노드에 결과 반영
- * subagent_stop: subagent 노드 완료 마킹
  *
  * 주의: text_start는 tree-placer.ts의 handleTextStart()가 담당합니다.
  *
@@ -200,16 +203,9 @@ export function applyUpdate(
       return false;
     }
 
-    case "subagent_stop": {
-      const e = event as SubagentStopEvent;
-      const subagent = ctx.subagentMap.get(e.agent_id);
-      if (subagent) {
-        subagent.completed = true;
-        ctx.subagentMap.delete(e.agent_id);
-        return true;
-      }
+    // R4: subagent_stop은 무시 — subagent 가상 노드가 없으므로 완료 마킹 불필요
+    case "subagent_stop":
       return false;
-    }
 
     default:
       return false;

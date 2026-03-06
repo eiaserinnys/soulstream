@@ -1,7 +1,7 @@
 /**
  * layout-engine 테스트
  *
- * buildGraph, applyDagreLayout, detectSubAgents, createEdge 함수를 테스트합니다.
+ * buildGraph, applyDagreLayout, createEdge 함수를 테스트합니다.
  * EventTreeNode 트리 기반 API를 검증합니다.
  */
 
@@ -10,7 +10,6 @@ import type { EventTreeNode } from "@shared/types";
 import {
   buildGraph,
   applyDagreLayout,
-  detectSubAgents,
   createEdge,
   countAllDescendants,
   type GraphNode,
@@ -101,24 +100,6 @@ function interventionNode(id: string, text: string): EventTreeNode {
   };
 }
 
-function subagentNode(
-  id: string,
-  agentType: string,
-  children: EventTreeNode[] = [],
-  opts: Partial<EventTreeNode> = {},
-): EventTreeNode {
-  return {
-    id,
-    type: "subagent",
-    children,
-    content: "",
-    completed: opts.completed ?? false,
-    agentId: id,
-    agentType,
-    parentToolUseId: opts.parentToolUseId,
-  };
-}
-
 function resultNode(id: string, opts: Partial<EventTreeNode> = {}): EventTreeNode {
   return {
     id,
@@ -161,76 +142,6 @@ describe("createEdge", () => {
 
     const e3 = createEdge("a", "b", false, "right", "left");
     expect(e3.id).not.toBe(e1.id);
-  });
-});
-
-describe("detectSubAgents", () => {
-  it("returns empty array when no Task tools", () => {
-    const tree = sessionRoot([
-      userMsg("u1", "hi", [
-        textNode("t1", "hello", true, [
-          toolNode("tool1", "Bash"),
-        ]),
-      ]),
-    ]);
-    expect(detectSubAgents(tree)).toEqual([]);
-  });
-
-  it("detects a single sub-agent group from Task tool", () => {
-    const tree = sessionRoot([
-      userMsg("u1", "hi", [
-        textNode("t1", "start", true, [
-          toolNode("task1", "Task", {
-            toolInput: { description: "Explore codebase", prompt: "..." },
-            completed: true,
-          }),
-          toolNode("t2", "Bash", { completed: true }),
-        ]),
-      ]),
-    ]);
-
-    const groups = detectSubAgents(tree);
-    expect(groups).toHaveLength(1);
-    expect(groups[0].taskCardId).toBe("task1");
-    expect(groups[0].cardIds).toContain("task1");
-    expect(groups[0].cardIds).toContain("t2");
-    expect(groups[0].label).toContain("Explore codebase");
-  });
-
-  it("detects running (incomplete) Task as sub-agent group", () => {
-    const tree = sessionRoot([
-      userMsg("u1", "hi", [
-        textNode("t1", "thinking", true, [
-          toolNode("task1", "Task", {
-            toolInput: { description: "Long running task" },
-            completed: false,
-          }),
-          toolNode("tool1", "Bash", { completed: false }),
-        ]),
-      ]),
-    ]);
-
-    const groups = detectSubAgents(tree);
-    expect(groups).toHaveLength(1);
-    expect(groups[0].cardIds).toEqual(["task1", "tool1"]);
-  });
-
-  it("truncates long task descriptions", () => {
-    const longDesc = "A".repeat(100);
-    const tree = sessionRoot([
-      userMsg("u1", "hi", [
-        textNode("t1", "thinking", true, [
-          toolNode("task1", "Task", {
-            toolInput: { description: longDesc },
-            completed: true,
-          }),
-        ]),
-      ]),
-    ]);
-
-    const groups = detectSubAgents(tree);
-    expect(groups[0].label.length).toBeLessThanOrEqual(50);
-    expect(groups[0].label).toContain("...");
   });
 });
 
@@ -1070,189 +981,6 @@ describe("buildGraph with collapsedNodeIds", () => {
     // childCount는 모든 자손 수
     const t1Node = nodes.find((n) => n.data.cardId === "t1");
     expect(t1Node?.data.childCount).toBe(2); // t2 + tool1
-  });
-});
-
-describe("Subagent 노드", () => {
-  it("subagent 노드가 올바르게 생성됨", () => {
-    const tree = sessionRoot([
-      userMsg("u1", "hi", [
-        textNode("t1", "Thinking", true, [
-          toolNode("task1", "Task", {
-            toolResult: "done",
-            completed: true,
-            toolUseId: "toolu_task_1",
-          }),
-        ]),
-      ]),
-    ]);
-
-    // task1의 자식으로 subagent 추가
-    const taskNode = tree.children[0].children[0].children[0];
-    taskNode.children = [
-      subagentNode("explore_1", "Explore", [
-        textNode("sub-t1", "Subagent thinking", true, [
-          toolNode("sub-tool1", "Read", { toolResult: "file content", completed: true }),
-        ]),
-      ], { parentToolUseId: "toolu_task_1", completed: true }),
-    ];
-
-    const { nodes } = buildGraph(tree);
-
-    const subagentGraphNode = nodes.find((n) => n.data.nodeType === "subagent");
-    expect(subagentGraphNode).toBeDefined();
-    expect(subagentGraphNode?.data.agentType).toBe("Explore");
-    expect(subagentGraphNode?.data.agentId).toBe("explore_1");
-  });
-
-  it("접힌 subagent의 자식은 렌더링되지 않음", () => {
-    const tree = sessionRoot([
-      userMsg("u1", "hi", [
-        textNode("t1", "Thinking", true, [
-          toolNode("task1", "Task", {
-            completed: true,
-            toolUseId: "toolu_task_1",
-          }),
-        ]),
-      ]),
-    ]);
-
-    const taskNode = tree.children[0].children[0].children[0];
-    taskNode.children = [
-      subagentNode("explore_1", "Explore", [
-        textNode("sub-t1", "Subagent thinking"),
-        toolNode("sub-tool1", "Read", { toolResult: "content", completed: true }),
-      ], { parentToolUseId: "toolu_task_1", completed: true }),
-    ];
-
-    const collapsedIds = new Set(["explore_1"]);
-    const { nodes } = buildGraph(tree, collapsedIds);
-
-    // subagent 노드는 있어야 함
-    const subagentGraphNode = nodes.find((n) => n.data.nodeType === "subagent");
-    expect(subagentGraphNode).toBeDefined();
-    expect(subagentGraphNode?.data.collapsed).toBe(true);
-
-    // subagent 내부 노드는 없어야 함
-    expect(nodes.find((n) => n.data.cardId === "sub-t1")).toBeUndefined();
-    expect(nodes.find((n) => n.data.cardId === "sub-tool1")).toBeUndefined();
-  });
-
-});
-
-describe("Subagent 레이아웃 (브릿지 케이스)", () => {
-  /**
-   * 핵심 시나리오: text → tool(Task) → subagent(Explore) → text → tool(Read)
-   *
-   * 기대 레이아웃 (부모 기준 상대 배치):
-   *   COL_A              COL_B              COL_C              COL_D
-   *   [thinking] ──────→ [Task call] ──────→ [Task result]
-   *                           ↓
-   *                      [subagent: Explore]
-   *                           ↓
-   *                      [sub-text] ───────→ [Read call] ──────→ [Read result]
-   *      ↓
-   *   [next thinking]
-   *
-   * - subagent와 내부 노드는 mainFlowOrder에 포함되지 않음
-   * - 메인 플로우(COL_A)의 Y 누적에 영향 없음
-   * - tool은 부모 X + COL_STEP으로 자동 배치
-   */
-
-  function buildSubagentTree() {
-    const tree = sessionRoot([
-      userMsg("u1", "hi", [
-        textNode("t1", "Thinking about task", true, [
-          toolNode("task1", "Task", {
-            toolResult: "done",
-            completed: true,
-            toolUseId: "toolu_task_1",
-          }),
-        ]),
-        textNode("t2", "Next thinking"),
-      ]),
-    ]);
-
-    // toolNode helper는 children을 지원하지 않으므로 수동 설정
-    const taskNode = tree.children[0].children[0].children[0]; // task1
-    taskNode.children = [
-      subagentNode("explore_1", "Explore", [
-        textNode("sub-t1", "Subagent thinking", true, [
-          toolNode("sub-read1", "Read", {
-            toolResult: "file content",
-            completed: true,
-          }),
-        ]),
-      ], { parentToolUseId: "toolu_task_1", completed: true }),
-    ];
-
-    return tree;
-  }
-
-  it("subagent 노드는 parent tool_call보다 왼쪽(COL_A)에 배치되지 않음", () => {
-    const tree = buildSubagentTree();
-    const { nodes } = buildGraph(tree);
-
-    const taskCall = nodes.find((n) => n.id === "node-task1-call")!;
-    const subagent = nodes.find((n) => n.data.nodeType === "subagent")!;
-
-    expect(taskCall).toBeDefined();
-    expect(subagent).toBeDefined();
-
-    // subagent는 parent tool_call (COL_B)의 왼쪽에 있으면 안 됨
-    expect(subagent.position.x).toBeGreaterThanOrEqual(taskCall.position.x);
-  });
-
-  it("subagent 서브트리가 메인 플로우 다음 노드와 겹치지 않음", () => {
-    const tree = buildSubagentTree();
-    const { nodes } = buildGraph(tree);
-
-    const t2 = nodes.find((n) => n.id === "node-t2")!;
-    const subText = nodes.find((n) => n.id === "node-sub-t1")!;
-    const nodeHeight = subText.height ?? 84;
-
-    // subagent 내부 text의 바닥(Y + height)이 t2의 상단(Y)보다 위에 있어야 함
-    const subTextBottom = subText.position.y + nodeHeight;
-    expect(t2.position.y).toBeGreaterThan(subTextBottom);
-  });
-
-  it("subagent 내부 text의 tool은 올바르게 배치됨 (COL_B/C)", () => {
-    const tree = buildSubagentTree();
-    const { nodes } = buildGraph(tree);
-
-    const subText = nodes.find((n) => n.id === "node-sub-t1");
-    const readCall = nodes.find((n) => n.id === "node-sub-read1-call");
-    const readResult = nodes.find((n) => n.id === "node-sub-read1-result");
-
-    expect(subText).toBeDefined();
-    expect(readCall).toBeDefined();
-    expect(readResult).toBeDefined();
-
-    // 내부 tool은 내부 text보다 오른쪽에 있어야 함
-    expect(readCall!.position.x).toBeGreaterThan(subText!.position.x);
-    expect(readResult!.position.x).toBeGreaterThan(readCall!.position.x);
-  });
-
-  it("subagent 노드와 메인 플로우 노드는 겹치지 않음", () => {
-    const tree = buildSubagentTree();
-    const { nodes } = buildGraph(tree);
-
-    const mainFlowNodes = nodes.filter(
-      (n) => n.data.nodeType === "user" || n.data.nodeType === "text" || n.data.nodeType === "thinking",
-    );
-    const subagentNodes = nodes.filter(
-      (n) => n.data.nodeType === "subagent",
-    );
-
-    for (const main of mainFlowNodes) {
-      for (const sub of subagentNodes) {
-        // 같은 위치에 겹치면 안 됨
-        const samePosition =
-          Math.abs(main.position.x - sub.position.x) < 10 &&
-          Math.abs(main.position.y - sub.position.y) < 10;
-        expect(samePosition).toBe(false);
-      }
-    }
   });
 });
 

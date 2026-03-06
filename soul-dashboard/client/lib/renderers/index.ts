@@ -12,8 +12,7 @@ import type { NodeRenderer } from "./types";
 import { renderUserMessageTurn, renderInterventionTurn } from "./turn-renderer";
 import { renderTextNode } from "./text-renderer";
 import { renderToolNode } from "./tool-renderer";
-import { renderSubagentNode } from "./subagent-renderer";
-import { renderCompletionNode, renderResultNode } from "./system-renderer";
+import { renderCompletionNode, renderResultNode, renderCompactNode } from "./system-renderer";
 
 /** 노드 타입별 렌더러 registry */
 const renderers = new Map<EventTreeNodeType, NodeRenderer>([
@@ -22,7 +21,7 @@ const renderers = new Map<EventTreeNodeType, NodeRenderer>([
   ["thinking", renderTextNode],
   ["text", renderTextNode],
   ["tool", renderToolNode],
-  ["subagent", renderSubagentNode],   // Phase 5에서 삭제 예정
+  ["compact", renderCompactNode],
   ["complete", renderCompletionNode],
   ["error", renderCompletionNode],
   ["result", renderResultNode],
@@ -31,7 +30,7 @@ const renderers = new Map<EventTreeNodeType, NodeRenderer>([
 /**
  * 트리 노드의 타입에 맞는 렌더러를 찾아 실행합니다.
  *
- * registry에 등록되지 않은 타입은 조용히 무시합니다 (session, compact 등).
+ * registry에 등록되지 않은 타입은 조용히 무시합니다 (session, subagent 등).
  */
 export function dispatchRenderer(
   treeNode: EventTreeNode,
@@ -53,6 +52,5 @@ export type { NodeRenderer } from "./types";
 export { renderUserMessageTurn, renderInterventionTurn } from "./turn-renderer";
 export { renderTextNode } from "./text-renderer";
 export { renderToolNode } from "./tool-renderer";
-export { renderSubagentNode } from "./subagent-renderer";
-export { renderCompletionNode, renderResultNode } from "./system-renderer";
+export { renderCompletionNode, renderResultNode, renderCompactNode } from "./system-renderer";
 export { processChildNodes } from "./child-processor";

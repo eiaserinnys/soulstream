@@ -25,9 +25,6 @@ describe("createProcessingContext", () => {
     expect(ctx.toolUseMap).toBeInstanceOf(Map);
     expect(ctx.toolUseMap.size).toBe(0);
 
-    expect(ctx.subagentMap).toBeInstanceOf(Map);
-    expect(ctx.subagentMap.size).toBe(0);
-
     expect(ctx.lastThinkingByParent).toBeInstanceOf(Map);
     expect(ctx.lastThinkingByParent.size).toBe(0);
 

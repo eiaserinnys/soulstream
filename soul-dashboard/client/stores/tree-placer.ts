@@ -4,14 +4,12 @@
  * placeInTree: 생성된 노드를 이벤트 필드 기반으로 트리에 삽입
  * resolveParent: parent_tool_use_id로 부모 노드를 결정
  *
- * Phase 2: 현재 코드의 행위를 100% 보존. 일부 이벤트 타입별 분기가 남아 있으나
- * Phase 5에서 parent_event_id 통합 후 필드 기반으로 단순화될 예정.
+ * Phase 5: subagent_start 분기 삭제, compact 추가.
  */
 
 import type {
   EventTreeNode,
   SoulSSEEvent,
-  SubagentStartEvent,
   TextStartEvent,
   ThinkingEvent,
   ToolStartEvent,
@@ -62,9 +60,8 @@ export function resolveParent(
  * 이벤트 타입별 분기를 최소화하되, 현재 코드의 행위를 100% 보존합니다.
  * - 턴 루트(user_message, intervention): root.children에 추가, currentTurnNodeId 갱신
  * - thinking: resolveParent로 부모 결정, lastThinkingByParent 등록
- * - subagent_start: 복잡한 reparent 로직 포함
  * - tool_start: resolveParent로 부모 결정, toolUseMap 등록
- * - complete/error: 턴 루트 또는 root에 추가
+ * - compact/complete/error: 턴 루트 또는 root에 추가
  * - result: resolveParent로 부모 결정
  */
 export function placeInTree(
@@ -97,46 +94,6 @@ export function placeInTree(
       break;
     }
 
-    case "subagent_start": {
-      const e = event as SubagentStartEvent;
-      ctx.subagentMap.set(e.agent_id, node);
-
-      // 부모 노드 결정
-      // SDK 한계: PreToolUse는 toolu_* ID를, SubagentStart는 crypto.randomUUID()를 전달하며
-      // Task 도구가 isConcurrencySafe=true라 병렬 실행 시 매핑 불가.
-      // → parent_tool_use_id가 비어 있으면 턴 루트에 연결한다.
-      const parentToolUseId = e.parent_tool_use_id;
-      const parentTool = parentToolUseId ? ctx.toolUseMap.get(parentToolUseId) : null;
-
-      if (parentTool) {
-        // NOTE: 현재 서버는 빈 parent_tool_use_id를 전달하므로 이 분기는 도달 불가.
-        // SDK 한계가 해소되어 parent 매핑이 복원되면 활성화된다.
-        // parent_tool_use_id로 매칭 성공 → reparent 로직
-        const toReparent: EventTreeNode[] = [];
-        const toKeep: EventTreeNode[] = [];
-        for (const child of parentTool.children) {
-          if (child.parentToolUseId === parentToolUseId) {
-            toReparent.push(child);
-          } else {
-            toKeep.push(child);
-          }
-        }
-        parentTool.children.length = 0;
-        parentTool.children.push(...toKeep, node);
-        node.children.push(...toReparent);
-      } else if (!parentToolUseId) {
-        // parent_tool_use_id 없음 (SDK 한계) → 현재 턴 루트에 연결
-        const turnNode = ctx.currentTurnNodeId ? ctx.nodeMap.get(ctx.currentTurnNodeId) : null;
-        (turnNode ?? root).children.push(node);
-      } else {
-        // parent_tool_use_id가 있으나 매칭 실패 → 에러 노드
-        insertOrphanError(root, ctx, "subagent_start", eventId,
-          `parent_tool_use_id="${parentToolUseId}" toolUseMap 매칭 실패`);
-        root.children.push(node);
-      }
-      break;
-    }
-
     case "tool_start": {
       const e = event as ToolStartEvent;
       if (e.tool_use_id) {
@@ -147,6 +104,7 @@ export function placeInTree(
       break;
     }
 
+    case "compact":
     case "complete":
     case "error": {
       const turnNode = ctx.currentTurnNodeId ? ctx.nodeMap.get(ctx.currentTurnNodeId) : null;
