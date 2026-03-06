@@ -304,6 +304,59 @@ class TestRateLimitsWithoutTracker:
         assert resp.status_code == 503
 
 
+class TestGetCurrentEmail:
+    def test_email_not_found_returns_null(self, setup):
+        """이메일 필드가 없으면 available=False 반환"""
+        # CRED_TEAM에는 email 필드가 없으므로
+        resp = setup["client"].get("/profiles/email", headers=setup["auth_headers"])
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["email"] is None
+        assert data["available"] is False
+
+    def test_email_found_in_oauth(self, setup):
+        """claudeAiOauth.email 필드가 있으면 반환"""
+        cred_with_email = {
+            "claudeAiOauth": {
+                **CRED_TEAM["claudeAiOauth"],
+                "email": "user@example.com",
+            }
+        }
+        setup["cred_file"].write_text(json.dumps(cred_with_email), encoding="utf-8")
+
+        resp = setup["client"].get("/profiles/email", headers=setup["auth_headers"])
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["email"] == "user@example.com"
+        assert data["available"] is True
+
+    def test_email_found_at_top_level(self, setup):
+        """최상위 email 필드가 있으면 반환"""
+        cred_with_email = {
+            **CRED_TEAM,
+            "email": "top@example.com",
+        }
+        setup["cred_file"].write_text(json.dumps(cred_with_email), encoding="utf-8")
+
+        resp = setup["client"].get("/profiles/email", headers=setup["auth_headers"])
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["email"] == "top@example.com"
+        assert data["available"] is True
+
+    def test_no_auth_returns_401(self, setup):
+        """인증 없으면 401"""
+        resp = setup["client"].get("/profiles/email")
+        assert resp.status_code == 401
+
+    def test_credentials_file_missing(self, setup):
+        """크레덴셜 파일 없으면 404"""
+        setup["cred_file"].unlink()
+
+        resp = setup["client"].get("/profiles/email", headers=setup["auth_headers"])
+        assert resp.status_code == 404
+
+
 class TestAuthenticationRequired:
     """인증 없이 요청 시 401 반환 테스트."""
 

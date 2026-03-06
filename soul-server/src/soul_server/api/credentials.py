@@ -78,6 +78,20 @@ def create_credentials_router(
             "profiles": statuses,
         }
 
+    @router.get("/email")
+    async def get_current_email(_: str = Depends(verify_token)):
+        """
+        GET /profiles/email — 현재 크레덴셜의 계정 이메일 추출
+        """
+        try:
+            email = swapper.extract_email()
+        except FileNotFoundError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+
+        if email is None:
+            return {"email": None, "available": False}
+        return {"email": email, "available": True}
+
     # --- Parameterized paths ---
 
     @router.post("/{name}")
