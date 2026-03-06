@@ -400,6 +400,15 @@ class SoulEngineAdapter:
 soul_engine = SoulEngineAdapter()
 
 
+def get_soul_engine() -> SoulEngineAdapter:
+    """현재 soul_engine 싱글톤 인스턴스를 반환한다.
+
+    모듈 로드 시점이 아닌 호출 시점의 전역 변수를 참조하므로,
+    init_soul_engine()으로 재초기화된 인스턴스를 올바르게 반환한다.
+    """
+    return soul_engine
+
+
 def init_soul_engine(
     pool: Optional["RunnerPool"] = None,
     rate_limit_tracker: Optional[Any] = None,
