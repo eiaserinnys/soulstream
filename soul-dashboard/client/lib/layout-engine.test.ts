@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import type { EventTreeNode } from "@shared/types";
+import type { EventTreeNode, ToolNode, ResultNode } from "@shared/types";
 import {
   buildGraph,
   applyDagreLayout,
@@ -14,6 +14,24 @@ import {
   countAllDescendants,
   type GraphNode,
 } from "./layout-engine";
+
+/** toolNode 팩토리 옵션 */
+interface ToolNodeOpts {
+  toolInput?: Record<string, unknown>;
+  toolResult?: string;
+  isError?: boolean;
+  completed?: boolean;
+  toolUseId?: string;
+  children?: EventTreeNode[];
+}
+
+/** resultNode 팩토리 옵션 */
+interface ResultNodeOpts {
+  content?: string;
+  durationMs?: number;
+  usage?: { input_tokens: number; output_tokens: number };
+  totalCostUsd?: number;
+}
 
 // === Helper: 트리 노드 팩토리 ===
 
@@ -52,12 +70,12 @@ function textNode(id: string, content: string, completed = true, children: Event
 function toolNode(
   id: string,
   toolName: string,
-  opts: Partial<EventTreeNode> = {},
+  opts: ToolNodeOpts = {},
 ): EventTreeNode {
   return {
     id,
     type: "tool",
-    children: [],
+    children: opts.children ?? [],
     content: "",
     toolName,
     toolInput: opts.toolInput ?? { command: "test" },
@@ -65,7 +83,7 @@ function toolNode(
     isError: opts.isError,
     completed: opts.completed ?? true,
     toolUseId: opts.toolUseId,
-  };
+  } as ToolNode;
 }
 
 function completeNode(id: string, result = "done"): EventTreeNode {
@@ -100,7 +118,7 @@ function interventionNode(id: string, text: string): EventTreeNode {
   };
 }
 
-function resultNode(id: string, opts: Partial<EventTreeNode> = {}): EventTreeNode {
+function resultNode(id: string, opts: ResultNodeOpts = {}): EventTreeNode {
   return {
     id,
     type: "result",
@@ -110,7 +128,7 @@ function resultNode(id: string, opts: Partial<EventTreeNode> = {}): EventTreeNod
     durationMs: opts.durationMs,
     usage: opts.usage,
     totalCostUsd: opts.totalCostUsd,
-  };
+  } as ResultNode;
 }
 
 // === Tests ===

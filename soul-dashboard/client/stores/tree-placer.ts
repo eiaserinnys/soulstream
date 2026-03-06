@@ -15,7 +15,7 @@ import type {
   ToolStartEvent,
   ResultEvent,
 } from "@shared/types";
-import type { ProcessingContext } from "./processing-context";
+import type { ProcessingContext, TextTargetNode } from "./processing-context";
 import { makeNode, registerNode } from "./processing-context";
 
 /**
@@ -140,14 +140,14 @@ export function handleTextStart(
   if (thinkingNode) {
     // 같은 parent 레벨에 thinking 노드 존재 → 텍스트를 thinking에 병합
     ctx.lastThinkingByParent.delete(parentKey); // 1:1 매칭 후 해제
-    ctx.activeTextTarget = thinkingNode;
+    ctx.activeTextTarget = thinkingNode as TextTargetNode;
   } else {
     // thinking 없이 text만 온 경우 → 독립 text 노드 생성
     const textParent = resolveParent(event.parent_event_id, ctx, root);
     const textNode = makeNode(`text-${eventId}`, "text", "");
     registerNode(ctx, textNode);
     textParent.children.push(textNode);
-    ctx.activeTextTarget = textNode;
+    ctx.activeTextTarget = textNode as TextTargetNode;
   }
   return true;
 }

@@ -10,7 +10,7 @@
  * - user/intervention 이벤트 노드 → EventNodeDetail
  */
 
-import type { EventTreeNode } from "@shared/types";
+import type { EventTreeNode, ToolNode, ThinkingNode, TextNode } from "@shared/types";
 import { useDashboardStore, findTreeNode, type SelectedEventNodeData } from "../stores/dashboard-store";
 import { ThinkingDetail } from "./detail/ThinkingDetail";
 import { ToolDetail } from "./detail/ToolDetail";
@@ -28,20 +28,24 @@ import { ScrollArea } from "./ui/scroll-area";
  * 1. tool + toolName === "Task" → SubAgentDetail
  * 2. tool + isError === true → ErrorDetail
  * 3. tool → ToolDetail
- * 4. text → ThinkingDetail
+ * 4. text/thinking → ThinkingDetail
  */
 function CardDetail({ card, focusResult }: { card: EventTreeNode; focusResult?: boolean }) {
-  if (card.type === "tool") {
-    if (card.toolName === "Task") {
-      return <SubAgentDetail card={card} />;
+  if (card.type === "tool" || card.type === "tool_use") {
+    const toolCard = card as ToolNode;
+    if (toolCard.toolName === "Task") {
+      return <SubAgentDetail card={toolCard} />;
     }
-    if (card.isError) {
-      return <ErrorDetail card={card} />;
+    if (toolCard.isError) {
+      return <ErrorDetail card={toolCard} />;
     }
-    return <ToolDetail card={card} focusResult={focusResult} />;
+    return <ToolDetail card={toolCard} focusResult={focusResult} />;
   }
 
-  return <ThinkingDetail card={card} />;
+  if (card.type === "thinking" || card.type === "text") {
+    return <ThinkingDetail card={card} />;
+  }
+  return null;
 }
 
 // === Event Node Detail ===

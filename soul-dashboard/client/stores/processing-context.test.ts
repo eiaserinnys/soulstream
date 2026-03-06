@@ -12,7 +12,7 @@ import {
   ensureRoot,
 } from "./processing-context";
 import type { ProcessingContext } from "./processing-context";
-import type { EventTreeNode } from "../../shared/types";
+import type { EventTreeNode, ErrorNode, ToolNode, SubagentNode } from "../../shared/types";
 
 describe("createProcessingContext", () => {
   it("should return a context with all empty Maps and null fields", () => {
@@ -55,7 +55,7 @@ describe("makeNode", () => {
     });
 
     expect(node.completed).toBe(true);
-    expect(node.isError).toBe(true);
+    expect((node as ErrorNode).isError).toBe(true);
   });
 
   it("should allow overriding children via extra", () => {
@@ -77,9 +77,9 @@ describe("makeNode", () => {
       timestamp: 1700000000,
     });
 
-    expect(node.toolName).toBe("Bash");
-    expect(node.toolInput).toEqual({ command: "ls" });
-    expect(node.toolUseId).toBe("toolu_abc");
+    expect((node as ToolNode).toolName).toBe("Bash");
+    expect((node as ToolNode).toolInput).toEqual({ command: "ls" });
+    expect((node as ToolNode).toolUseId).toBe("toolu_abc");
     expect(node.parentEventId).toBe("toolu_parent");
     expect(node.timestamp).toBe(1700000000);
   });
@@ -90,8 +90,8 @@ describe("makeNode", () => {
       agentType: "task",
     });
 
-    expect(node.agentId).toBe("agent-1");
-    expect(node.agentType).toBe("task");
+    expect((node as SubagentNode).agentId).toBe("agent-1");
+    expect((node as SubagentNode).agentType).toBe("task");
   });
 });
 
