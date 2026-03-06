@@ -49,14 +49,14 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
             processEvent(
               {
                 type: "text_start",
-                card_id: card.cardId,
+                timestamp: 0,
               },
               i * 2
             );
             processEvent(
               {
                 type: "text_delta",
-                card_id: card.cardId,
+                timestamp: 0,
                 text: card.content,
               },
               i * 2 + 1
@@ -64,7 +64,7 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
             processEvent(
               {
                 type: "text_end",
-                card_id: card.cardId,
+                timestamp: 0,
               },
               i * 2 + 2
             );
@@ -74,10 +74,11 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
             processEvent(
               {
                 type: "tool_start",
-                card_id: card.parentCardId,
-                tool_name: card.toolName ?? "unknown",
-                tool_input: card.toolInput ?? {},
+                timestamp: 0,
+                tool_name: card.toolName,
+                tool_input: card.toolInput,
                 tool_use_id: card.toolUseId,
+                parent_event_id: card.parentEventId,
               },
               i * 2
             );
@@ -85,11 +86,12 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
               processEvent(
                 {
                   type: "tool_result",
-                  card_id: card.parentCardId,
-                  tool_name: card.toolName ?? "unknown",
+                  timestamp: 0,
+                  tool_name: card.toolName,
                   result: card.toolResult ?? "",
                   is_error: card.isError ?? false,
                   tool_use_id: card.toolUseId,
+                  parent_event_id: card.parentEventId,
                 },
                 i * 2 + 1
               );

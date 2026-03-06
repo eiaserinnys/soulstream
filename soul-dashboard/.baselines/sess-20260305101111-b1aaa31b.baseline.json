@@ -1,0 +1,1245 @@
+{
+  "sessionFile": "sess-20260305101111-b1aaa31b.jsonl",
+  "createdAt": "2026-03-06T05:28:15.400Z",
+  "treeStats": {
+    "totalNodes": 168,
+    "byType": {
+      "session": 1,
+      "error": 1,
+      "user_message": 6,
+      "thinking": 13,
+      "tool": 128,
+      "result": 6,
+      "complete": 6,
+      "subagent": 1,
+      "text": 6
+    },
+    "maxDepth": 3,
+    "orphanCount": 1,
+    "streamingCount": 0
+  },
+  "treeStructure": [
+    {
+      "id": "root-session",
+      "type": "session",
+      "childCount": 8,
+      "completed": false,
+      "children": [
+        {
+          "id": "orphan-error-8",
+          "type": "error",
+          "childCount": 0,
+          "completed": true,
+          "children": []
+        },
+        {
+          "id": "user-msg-1",
+          "type": "user_message",
+          "childCount": 23,
+          "completed": true,
+          "children": [
+            {
+              "id": "thinking-2",
+              "type": "thinking",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-7",
+              "type": "tool",
+              "childCount": 65,
+              "completed": true,
+              "children": [
+                {
+                  "id": "tool-10",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-11",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-12",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-13",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-18",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-19",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-22",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-24",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-26",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-28",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-30",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-32",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-34",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-35",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-36",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-40",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-41",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-44",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-45",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-46",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-50",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-51",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-52",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-56",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-57",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-59",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-60",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-64",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-65",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-66",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-70",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-72",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-74",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-76",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-78",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-79",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-80",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-84",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-85",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-88",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-89",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-90",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-94",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-95",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-97",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-100",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-101",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-102",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-106",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-107",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-109",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-112",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-113",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-114",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-118",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-119",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-120",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-124",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-125",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-126",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-130",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-132",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-134",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-136",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                },
+                {
+                  "id": "tool-137",
+                  "type": "tool",
+                  "childCount": 0,
+                  "completed": true,
+                  "children": []
+                }
+              ]
+            },
+            {
+              "id": "thinking-142",
+              "type": "thinking",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-147",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-149",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-151",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "thinking-153",
+              "type": "thinking",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-158",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-159",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "thinking-162",
+              "type": "thinking",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-163",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-165",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-167",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-169",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "thinking-171",
+              "type": "thinking",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-172",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-174",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-176",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-178",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-180",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "thinking-182",
+              "type": "thinking",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "result-187",
+              "type": "result",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "complete-189",
+              "type": "complete",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "aeadade194296b27b",
+          "type": "subagent",
+          "childCount": 0,
+          "completed": true,
+          "children": []
+        },
+        {
+          "id": "user-msg-190",
+          "type": "user_message",
+          "childCount": 6,
+          "completed": true,
+          "children": [
+            {
+              "id": "thinking-191",
+              "type": "thinking",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-192",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-199",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-202",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "result-204",
+              "type": "result",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "complete-206",
+              "type": "complete",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "user-msg-207",
+          "type": "user_message",
+          "childCount": 3,
+          "completed": true,
+          "children": [
+            {
+              "id": "thinking-208",
+              "type": "thinking",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "result-214",
+              "type": "result",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "complete-216",
+              "type": "complete",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "user-msg-217",
+          "type": "user_message",
+          "childCount": 6,
+          "completed": true,
+          "children": [
+            {
+              "id": "tool-218",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-221",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-223",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "text-226",
+              "type": "text",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "result-229",
+              "type": "result",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "complete-231",
+              "type": "complete",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "user-msg-232",
+          "type": "user_message",
+          "childCount": 47,
+          "completed": true,
+          "children": [
+            {
+              "id": "thinking-233",
+              "type": "thinking",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-238",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-241",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-243",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "thinking-245",
+              "type": "thinking",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-246",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-248",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "thinking-250",
+              "type": "thinking",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-255",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-257",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-259",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "thinking-261",
+              "type": "thinking",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-266",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-268",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-270",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "text-273",
+              "type": "text",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-276",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-278",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-279",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-282",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-284",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-286",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-288",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-290",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-291",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-294",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-296",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-298",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-300",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-302",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-304",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-305",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-307",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-310",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-312",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-314",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-315",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-317",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-319",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "text-323",
+              "type": "text",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-326",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-328",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-330",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-332",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "text-335",
+              "type": "text",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "result-338",
+              "type": "result",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "complete-340",
+              "type": "complete",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "user-msg-341",
+          "type": "user_message",
+          "childCount": 9,
+          "completed": true,
+          "children": [
+            {
+              "id": "tool-342",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-345",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "thinking-347",
+              "type": "thinking",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-352",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "text-355",
+              "type": "text",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "tool-358",
+              "type": "tool",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "text-361",
+              "type": "text",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "result-364",
+              "type": "result",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            },
+            {
+              "id": "complete-366",
+              "type": "complete",
+              "childCount": 0,
+              "completed": true,
+              "children": []
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "validationResults": [
+    {
+      "name": "V1: 트리 무결성 (단일 부모)",
+      "passed": true,
+      "detailCount": 1,
+      "warningCount": 0
+    },
+    {
+      "name": "V2: thinking→text 연결 (parent_event_id 기반)",
+      "passed": true,
+      "detailCount": 1,
+      "warningCount": 2
+    },
+    {
+      "name": "V3: tool_use_id 연결 (tool_start → tool_result)",
+      "passed": true,
+      "detailCount": 1,
+      "warningCount": 0
+    },
+    {
+      "name": "V4: 고아 노드 감지",
+      "passed": true,
+      "detailCount": 0,
+      "warningCount": 1
+    },
+    {
+      "name": "V5: 스트리밍 완료 확인",
+      "passed": true,
+      "detailCount": 1,
+      "warningCount": 0
+    },
+    {
+      "name": "V6: 그래프 생성 유효성",
+      "passed": true,
+      "detailCount": 1,
+      "warningCount": 0
+    }
+  ]
+}
