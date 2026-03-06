@@ -16,20 +16,21 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type {
   SessionSummary,
-  SessionStatus,
   SessionDetail,
   DashboardCard,
   SoulSSEEvent,
   EventTreeNode,
-  SubagentStartEvent,
-  SubagentStopEvent,
-  ToolStartEvent,
-  ToolResultEvent,
   TextStartEvent,
-  ResultEvent,
-  ThinkingEvent,
 } from "@shared/types";
 import type { StorageMode } from "../providers/types";
+import {
+  type ProcessingContext,
+  createProcessingContext,
+  ensureRoot,
+} from "./processing-context";
+import { createNodeFromEvent, applyUpdate } from "./node-factory";
+import { placeInTree, handleTextStart } from "./tree-placer";
+import { shouldNotify, deriveSessionStatus } from "./session-updater";
 
 // === Selected Event Node Data ===
 
@@ -146,107 +147,22 @@ export interface DashboardActions {
   setSerendipityAvailable: (available: boolean) => void;
 }
 
-// === Internal Maps (closure 변수, state 아님) ===
+// === Internal Processing Context ===
+// ProcessingContext가 기존 closure 변수(nodeMap, toolUseMap 등)를 대체합니다.
+// 세션 전환/리셋 시 새 컨텍스트를 생성하여 이전 상태를 완전히 격리합니다.
 
-/** ID → 노드 (O(1) 탐색) */
-let nodeMap = new Map<string, EventTreeNode>();
-/** toolUseId → tool 노드 */
-let toolUseMap = new Map<string, EventTreeNode>();
-/** agent_id → subagent 노드 */
-let subagentMap = new Map<string, EventTreeNode>();
-/** parent_tool_use_id별 가장 최근 thinking 노드 (text_start와 매칭용) */
-let lastThinkingByParent = new Map<string, EventTreeNode>();
-/** 현재 text_start → text_delta → text_end 시퀀스의 대상 노드 */
-let activeTextTarget: EventTreeNode | null = null;
-/** 현재 활성 user_message/intervention 노드 ID */
-let currentTurnNodeId: string | null = null;
-
-/** processEvent에서 알림 대상 이벤트 타입 (모듈 스코프: 매 호출 재생성 방지) */
-const NOTIFY_TYPES = new Set(["complete", "error", "intervention_sent"]);
+let ctx: ProcessingContext = createProcessingContext();
 
 function resetInternalMaps() {
-  nodeMap = new Map();
-  toolUseMap = new Map();
-  subagentMap = new Map();
-  lastThinkingByParent = new Map();
-  activeTextTarget = null;
-  currentTurnNodeId = null;
+  ctx = createProcessingContext();
 }
 
-/**
- * parent_tool_use_id로 부모 노드를 결정합니다.
- * - null/undefined → 현재 턴 루트 (없으면 session root)
- * - "toolu_X" → toolUseMap에서 tool 노드 → 그 자식 subagent 반환
- */
-function resolveParent(parentToolUseId: string | null | undefined, root: EventTreeNode): EventTreeNode {
-  if (!parentToolUseId) {
-    // 루트 레벨 → 현재 턴 루트
-    if (currentTurnNodeId) {
-      const turn = nodeMap.get(currentTurnNodeId);
-      if (turn) return turn;
-    }
-    return root;
-  }
-
-  // parent_tool_use_id → toolUseMap에서 해당 tool 노드 찾기
-  const toolNode = toolUseMap.get(parentToolUseId);
-  if (!toolNode) {
-    insertOrphanError(root, "resolveParent", -1,
-      `parent_tool_use_id="${parentToolUseId}" toolUseMap 매칭 실패`);
-    return root;
-  }
-
-  // tool 노드의 subagent 자식 찾기 (1단계 탐색, 최대 1개)
-  const subagent = toolNode.children.find(c => c.type === "subagent");
-  if (subagent) return subagent;
-
-  // subagent_start가 아직 안 왔을 수 있음 → tool 노드 자체에 임시 배치.
-  // subagent_start 도착 시 reparent 로직이 이 자식들을 subagent 아래로 이동시킨다.
-  return toolNode;
-}
-
-// === Tree Helpers ===
-
-/** 부모를 찾지 못한 이벤트에 대한 에러 노드를 root 상단에 삽입 */
-function insertOrphanError(
-  root: EventTreeNode,
-  eventType: string,
-  eventId: number,
-  detail: string,
-): void {
-  const errorNode = createNode(
-    `orphan-error-${eventId}`,
-    "error",
-    `[${eventType}] 부모 노드를 찾을 수 없음: ${detail}`,
-    { completed: true, isError: true },
-  );
-  // root.children 맨 앞에 삽입 → flow 상단에 표시
-  root.children.unshift(errorNode);
-}
-
-function createNode(
-  id: string,
-  type: EventTreeNode["type"],
-  content: string,
-  extra?: Partial<EventTreeNode>,
-): EventTreeNode {
-  const node: EventTreeNode = {
-    id,
-    type,
-    children: [],
-    content,
-    completed: false,
-    ...extra,
-  };
-  nodeMap.set(id, node);
-  return node;
-}
-
-function ensureRoot(tree: EventTreeNode | null): EventTreeNode {
-  if (tree) return tree;
-  const root = createNode("root-session", "session", "");
-  return root;
-}
+/** ensureRoot가 필요한 이벤트 타입 (text_delta, text_end, tool_result, subagent_stop 제외) */
+const NEEDS_ROOT = new Set([
+  "user_message", "session", "intervention_sent", "thinking",
+  "text_start", "subagent_start", "tool_start",
+  "complete", "error", "result",
+]);
 
 // === Initial State ===
 
@@ -384,293 +300,36 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         }),
 
       // --- SSE 이벤트 처리 ---
+      // createNodeFromEvent + placeInTree + applyUpdate + updateSessionStatus + enqueueNotification
       // 트리에 in-place 변경 후 treeVersion++ 으로 리렌더 트리거
 
       processEvent: (event, eventId) => {
         const state = get();
         let root = state.tree;
-        let updated = false;
 
-        switch (event.type) {
-          case "user_message": {
-            root = ensureRoot(root);
-            const node = createNode(
-              `user-msg-${eventId}`,
-              "user_message",
-              event.text,
-              { completed: true, user: event.user },
-            );
-            root.children.push(node);
-            currentTurnNodeId = node.id;
-            updated = true;
-            break;
-          }
-
-          case "session": {
-            root = ensureRoot(root);
-            root.sessionId = event.session_id;
-            root.content = event.session_id;
-            updated = true;
-            break;
-          }
-
-          case "intervention_sent": {
-            root = ensureRoot(root);
-            const node = createNode(
-              `intervention-${eventId}`,
-              "intervention",
-              event.text,
-              { completed: true, user: event.user },
-            );
-            root.children.push(node);
-            currentTurnNodeId = node.id;
-            updated = true;
-            break;
-          }
-
-          case "thinking": {
-            root = ensureRoot(root);
-            const thinkingEvent = event as ThinkingEvent;
-            const thinkingNodeId = `thinking-${eventId}`;
-
-            const parent = resolveParent(thinkingEvent.parent_tool_use_id, root);
-            const thinkingNode = createNode(thinkingNodeId, "thinking", thinkingEvent.thinking, {
-              completed: true,
-            });
-            // 같은 parent 레벨의 후속 text_start와 매칭하기 위해 등록
-            // "" = root 레벨 (서브에이전트 밖), 그 외 = 해당 서브에이전트의 parent_tool_use_id
-            const parentKey = thinkingEvent.parent_tool_use_id || "";
-            lastThinkingByParent.set(parentKey, thinkingNode);
-            parent.children.push(thinkingNode);
-            updated = true;
-            break;
-          }
-
-          case "text_start": {
-            root = ensureRoot(root);
-            const textStartEvent = event as TextStartEvent;
-            const parentKey = textStartEvent.parent_tool_use_id || "";
-            const thinkingNode = lastThinkingByParent.get(parentKey);
-
-            if (thinkingNode) {
-              // 같은 parent 레벨에 thinking 노드 존재 → 텍스트를 thinking에 병합
-              lastThinkingByParent.delete(parentKey); // 1:1 매칭 후 해제
-              activeTextTarget = thinkingNode;
-            } else {
-              // thinking 없이 text만 온 경우 → 독립 text 노드 생성
-              const textParent = resolveParent(textStartEvent.parent_tool_use_id, root);
-              const textNode = createNode(`text-${eventId}`, "text", "");
-              textParent.children.push(textNode);
-              activeTextTarget = textNode;
-            }
-            updated = true;
-            break;
-          }
-
-          case "text_delta": {
-            if (activeTextTarget) {
-              if (activeTextTarget.type === "thinking") {
-                // thinking 노드의 가시적 텍스트 갱신
-                activeTextTarget.textContent = (activeTextTarget.textContent ?? "") + event.text;
-              } else {
-                // 독립 text 노드의 content 갱신
-                activeTextTarget.content += event.text;
-              }
-              updated = true;
-            }
-            break;
-          }
-
-          case "text_end": {
-            if (activeTextTarget) {
-              activeTextTarget.textCompleted = true;
-              if (activeTextTarget.type !== "thinking") {
-                activeTextTarget.completed = true;
-              }
-              activeTextTarget = null;
-              updated = true;
-            }
-            break;
-          }
-
-          case "subagent_start": {
-            root = ensureRoot(root);
-            const subagentEvent = event as SubagentStartEvent;
-            const subagentNode = createNode(subagentEvent.agent_id, "subagent", "", {
-              agentId: subagentEvent.agent_id,
-              agentType: subagentEvent.agent_type,
-              parentToolUseId: subagentEvent.parent_tool_use_id,
-            });
-            subagentMap.set(subagentEvent.agent_id, subagentNode);
-
-            // 부모 노드 결정
-            // SDK 한계: PreToolUse는 toolu_* ID를, SubagentStart는 crypto.randomUUID()를 전달하며
-            // Task 도구가 isConcurrencySafe=true라 병렬 실행 시 매핑 불가.
-            // → parent_tool_use_id가 비어 있으면 턴 루트에 연결한다.
-            const parentToolUseId = subagentEvent.parent_tool_use_id;
-            const parentTool = parentToolUseId ? toolUseMap.get(parentToolUseId) : null;
-            if (parentTool) {
-              // NOTE: 현재 서버는 빈 parent_tool_use_id를 전달하므로 이 분기는 도달 불가.
-              // SDK 한계가 해소되어 parent 매핑이 복원되면 활성화된다.
-              // parent_tool_use_id로 매칭 성공 → reparent 로직
-              const toReparent: EventTreeNode[] = [];
-              const toKeep: EventTreeNode[] = [];
-              for (const child of parentTool.children) {
-                if (child.parentToolUseId === parentToolUseId) {
-                  toReparent.push(child);
-                } else {
-                  toKeep.push(child);
-                }
-              }
-              parentTool.children.length = 0;
-              parentTool.children.push(...toKeep, subagentNode);
-              subagentNode.children.push(...toReparent);
-            } else if (!parentToolUseId) {
-              // parent_tool_use_id 없음 (SDK 한계) → 현재 턴 루트에 연결
-              const turnNode = currentTurnNodeId ? nodeMap.get(currentTurnNodeId) : null;
-              (turnNode ?? root).children.push(subagentNode);
-            } else {
-              // parent_tool_use_id가 있으나 매칭 실패 → 에러 노드
-              insertOrphanError(root, "subagent_start", eventId,
-                `parent_tool_use_id="${parentToolUseId}" toolUseMap 매칭 실패`);
-              root.children.push(subagentNode);
-            }
-            updated = true;
-            break;
-          }
-
-          case "subagent_stop": {
-            const subagentStopEvent = event as SubagentStopEvent;
-            const subagent = subagentMap.get(subagentStopEvent.agent_id);
-            if (subagent) {
-              subagent.completed = true;
-            }
-            subagentMap.delete(subagentStopEvent.agent_id);
-            updated = true;
-            break;
-          }
-
-          case "tool_start": {
-            root = ensureRoot(root);
-            const toolStartEvent = event as ToolStartEvent;
-            const toolId = `tool-${eventId}`;
-            const toolNode = createNode(toolId, "tool", "", {
-              toolName: toolStartEvent.tool_name,
-              toolInput: toolStartEvent.tool_input,
-              toolUseId: toolStartEvent.tool_use_id,
-              parentToolUseId: toolStartEvent.parent_tool_use_id,
-              timestamp: toolStartEvent.timestamp,
-            });
-
-            if (toolStartEvent.tool_use_id) {
-              toolUseMap.set(toolStartEvent.tool_use_id, toolNode);
-            }
-
-            const parent = resolveParent(toolStartEvent.parent_tool_use_id, root);
-            parent.children.push(toolNode);
-            updated = true;
-            break;
-          }
-
-          case "tool_result": {
-            const toolResultEvent = event as ToolResultEvent;
-
-            // tool_use_id 정확 매칭만 (폴백 없음)
-            const toolNode = toolResultEvent.tool_use_id
-              ? toolUseMap.get(toolResultEvent.tool_use_id)
-              : undefined;
-
-            if (toolNode) {
-              toolNode.toolResult = toolResultEvent.result;
-              toolNode.isError = toolResultEvent.is_error;
-              toolNode.completed = true;
-              // timestamp 차이로 duration 계산
-              if (toolNode.timestamp && toolResultEvent.timestamp) {
-                toolNode.durationMs = Math.round(
-                  (toolResultEvent.timestamp - toolNode.timestamp) * 1000,
-                );
-              }
-              updated = true;
-            }
-            break;
-          }
-
-          case "complete": {
-            root = ensureRoot(root);
-            const turnNode = currentTurnNodeId ? nodeMap.get(currentTurnNodeId) : null;
-            const completeNode = createNode(
-              `complete-${eventId}`,
-              "complete",
-              event.result ?? "Session completed",
-              { completed: true },
-            );
-            if (turnNode) {
-              turnNode.children.push(completeNode);
-            } else {
-              root.children.push(completeNode);
-            }
-            updated = true;
-            break;
-          }
-
-          case "error": {
-            root = ensureRoot(root);
-            const turnNode = currentTurnNodeId ? nodeMap.get(currentTurnNodeId) : null;
-            const errorNode = createNode(
-              `error-${eventId}`,
-              "error",
-              event.message,
-              { completed: true, isError: true },
-            );
-            if (turnNode) {
-              turnNode.children.push(errorNode);
-            } else {
-              root.children.push(errorNode);
-            }
-            updated = true;
-            break;
-          }
-
-          case "result": {
-            root = ensureRoot(root);
-            const resultEvent = event as ResultEvent;
-            const resultParent = resolveParent(resultEvent.parent_tool_use_id, root);
-            const resultNode = createNode(
-              `result-${eventId}`,
-              "result",
-              resultEvent.output || "Session completed",
-              {
-                completed: true,
-                timestamp: resultEvent.timestamp,
-                usage: resultEvent.usage,
-                totalCostUsd: resultEvent.total_cost_usd,
-              },
-            );
-            resultParent.children.push(resultNode);
-            updated = true;
-            break;
-          }
-
-          default:
-            break;
+        // root가 필요한 이벤트에 대해 보장
+        if (NEEDS_ROOT.has(event.type)) {
+          root = ensureRoot(root, ctx);
         }
 
-        // 알림 큐에 이벤트 추가 (complete, error, intervention_sent)
-        const shouldNotify = NOTIFY_TYPES.has(event.type);
+        // 1. 노드 생성 시도 (생성형 이벤트만 노드 반환)
+        const node = createNodeFromEvent(event, eventId);
+        let updated: boolean;
 
-        // 이벤트 타입에 따라 sessions 배열의 해당 세션 상태 갱신
-        // - complete/result → "completed"
-        // - error → "error"
-        // - user_message/intervention_sent → "running" (resume 등 새 턴 시작)
-        const derivedStatus: SessionStatus | null =
-          event.type === "complete" || event.type === "result"
-            ? "completed"
-            : event.type === "error"
-              ? "error"
-              : event.type === "user_message" || event.type === "intervention_sent"
-                ? "running"
-                : null;
+        if (node) {
+          // 2a. 생성된 노드를 트리에 배치 + Map 등록
+          placeInTree(node, event, eventId, ctx, root!);
+          updated = true;
+        } else if (event.type === "text_start") {
+          // 2b. text_start: 조건부 노드 생성 + 트리 배치 (tree-placer 책임)
+          updated = handleTextStart(event as TextStartEvent, eventId, ctx, root!);
+        } else {
+          // 2c. 업데이트 이벤트 처리 (session, text_delta/end, tool_result, subagent_stop)
+          updated = applyUpdate(event, eventId, ctx, root);
+        }
 
+        // 3. 세션 상태 갱신
+        const derivedStatus = deriveSessionStatus(event);
         let sessionsUpdate: { sessions: SessionSummary[] } | Record<string, never> = {};
         if (derivedStatus && state.activeSessionKey) {
           const idx = state.sessions.findIndex(
@@ -686,13 +345,15 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           }
         }
 
+        // 4. 알림 큐 + store 갱신
+        const notify = shouldNotify(event);
         if (updated) {
           set({
             tree: root,
             treeVersion: state.treeVersion + 1,
             lastEventId: eventId,
             ...sessionsUpdate,
-            ...(shouldNotify
+            ...(notify
               ? { pendingNotifications: [...state.pendingNotifications, event] }
               : {}),
           });
@@ -700,7 +361,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           set({
             lastEventId: eventId,
             ...sessionsUpdate,
-            ...(shouldNotify
+            ...(notify
               ? { pendingNotifications: [...state.pendingNotifications, event] }
               : {}),
           });
@@ -848,23 +509,21 @@ export function findTreeNode(
   return null;
 }
 
+/** 노드 타입 → 카드 타입 매핑 */
+const NODE_TYPE_TO_CARD_TYPE: Partial<Record<EventTreeNode["type"], DashboardCard["type"]>> = {
+  user_message: "user_message",
+  intervention: "intervention",
+  session: "session",
+  complete: "complete",
+  error: "error",
+  tool: "tool",
+};
+
 /** DashboardCard 호환 객체를 트리에서 생성합니다. */
 export function treeNodeToCard(node: EventTreeNode): DashboardCard {
   return {
     cardId: node.id,
-    type: node.type === "user_message"
-      ? "user_message"
-      : node.type === "intervention"
-        ? "intervention"
-        : node.type === "session"
-          ? "session"
-          : node.type === "complete"
-            ? "complete"
-            : node.type === "error"
-              ? "error"
-              : node.type === "tool"
-                ? "tool"
-                : "text",
+    type: NODE_TYPE_TO_CARD_TYPE[node.type] ?? "text",
     content: node.content,
     completed: node.completed,
     toolName: node.toolName,
