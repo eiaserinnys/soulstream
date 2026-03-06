@@ -1,7 +1,6 @@
 """Claude Code SDK 기반 실행기"""
 
 import asyncio
-import json
 import logging
 import threading
 import time
@@ -23,15 +22,7 @@ try:
     )
     from claude_agent_sdk._errors import MessageParseError
     from claude_agent_sdk.types import (
-        AssistantMessage,
-        SyncHookJSONOutput,
         ResultMessage,
-        SystemMessage,
-        TextBlock,
-        ThinkingBlock,
-        ToolResultBlock,
-        ToolUseBlock,
-        UserMessage,
     )
     SDK_AVAILABLE = True
 except ImportError:
@@ -49,23 +40,7 @@ except ImportError:
         pass
     class ProcessError(Exception):
         pass
-    class AssistantMessage:
-        pass
-    class SyncHookJSONOutput:
-        pass
     class ResultMessage:
-        pass
-    class SystemMessage:
-        pass
-    class TextBlock:
-        pass
-    class ThinkingBlock:
-        pass
-    class ToolResultBlock:
-        pass
-    class ToolUseBlock:
-        pass
-    class UserMessage:
         pass
 
 from soul_server.claude.diagnostics import (
@@ -79,14 +54,16 @@ from soul_server.engine.types import (
     InterventionCallback,
     EngineEvent,
     EventCallback,
-    ThinkingEngineEvent,
-    TextDeltaEngineEvent,
-    ToolStartEngineEvent,
-    ToolResultEngineEvent,
-    ResultEngineEvent,
-    SubagentStartEngineEvent,
-    SubagentStopEngineEvent,
 )
+from soul_server.claude.compact_retry import (
+    CompactRetryHandler,
+    CompactRetryState,  # re-export for backward compat
+    COMPACT_RETRY_READ_TIMEOUT,  # re-export
+    MAX_COMPACT_RETRIES,  # re-export
+    _extract_last_assistant_text,  # re-export
+)
+from soul_server.claude.hook_builder import build_hooks as _build_hooks_fn
+from soul_server.claude.message_processor import MessageProcessor
 from soul_server.claude.instrumented_client import InstrumentedClaudeClient
 from soul_server.claude.sdk_compat import ParseAction, classify_parse_error
 from soul_server.claude.session_validator import validate_session
@@ -219,33 +196,8 @@ def shutdown_all_sync() -> int:
         return 0
 
 
-# Compact retry 상수
-COMPACT_RETRY_READ_TIMEOUT = 30  # 초: retry 시 receive_response() 읽기 타임아웃
-MAX_COMPACT_RETRIES = 3  # compact 재시도 최대 횟수
 INTERVENTION_POLL_INTERVAL = 1.0  # 초: 인터벤션 폴링 주기
 MAX_INTERVENTION_DRAIN = 100  # _drain_interventions 안전 상한
-
-
-@dataclass
-class CompactRetryState:
-    """Compact retry 외부 루프 상태"""
-    events: list[dict] = field(default_factory=list)
-    notified_count: int = 0
-    retry_count: int = 0
-
-    def snapshot(self) -> int:
-        """현재 이벤트 수 기록 (외부 루프 시작 시 호출)"""
-        return len(self.events)
-
-    def did_compact(self, before: int) -> bool:
-        """스냅샷 이후 compact가 발생했는지"""
-        return len(self.events) > before
-
-    def can_retry(self) -> bool:
-        return self.retry_count < MAX_COMPACT_RETRIES
-
-    def increment(self) -> None:
-        self.retry_count += 1
 
 
 @dataclass
@@ -270,14 +222,6 @@ class MessageState:
         self.current_text = ""
         self.result_text = ""
         self.is_error = False
-
-
-def _extract_last_assistant_text(collected_messages: list[dict]) -> str:
-    """collected_messages에서 마지막 assistant 텍스트를 추출 (tool_use 제외)"""
-    for msg in reversed(collected_messages):
-        if msg.get("role") == "assistant" and not msg.get("content", "").startswith("[tool_use:"):
-            return msg["content"]
-    return ""
 
 
 class ClaudeRunner:
@@ -356,69 +300,11 @@ class ClaudeRunner:
         )
         return hashlib.md5("|".join(key_parts).encode()).hexdigest()[:8]
 
-    def _emit_event(self, event: EngineEvent) -> None:
-        """이벤트를 큐에 추가"""
-        self._pending_events.append(event)
-
     def _drain_events(self) -> list[EngineEvent]:
         """큐의 모든 이벤트를 반환하고 비움"""
         events = list(self._pending_events)
         self._pending_events.clear()
         return events
-
-    async def _on_subagent_start(
-        self,
-        input_data: dict,
-        tool_use_id: Optional[str],
-        context: Any,
-    ) -> dict:
-        """SubagentStart 훅 핸들러
-
-        서브에이전트(Task 도구) 시작 시 호출됩니다.
-        parent_tool_use_id는 빈 문자열로 전달합니다.
-
-        SDK 한계:
-        - PreToolUse의 tool_use_id = toolu_* (API ID)
-        - SubagentStart의 tool_use_id = crypto.randomUUID() (CLI 생성)
-        - Task 도구는 isConcurrencySafe=true → 병렬 실행 시 매핑 불가
-        - 대시보드가 턴 루트에 연결하여 처리
-        """
-        agent_id = input_data.get("agent_id", "")
-        agent_type = input_data.get("agent_type", "")
-
-        # 이벤트 큐에 추가 (parent_tool_use_id는 빈 문자열)
-        self._emit_event(SubagentStartEngineEvent(
-            agent_type=agent_type,
-            parent_tool_use_id="",
-            agent_id=agent_id,
-        ))
-
-        logger.info(
-            f"[SUBAGENT_START] agent_id={agent_id}, agent_type={agent_type}"
-        )
-        return {}
-
-    async def _on_subagent_stop(
-        self,
-        input_data: dict,
-        tool_use_id: Optional[str],
-        context: Any,
-    ) -> dict:
-        """SubagentStop 훅 핸들러
-
-        서브에이전트(Task 도구) 종료 시 호출됩니다.
-        이벤트만 발행합니다 (스택 관리 불필요).
-        """
-        agent_id = input_data.get("agent_id", "")
-
-        # 이벤트 큐에 추가
-        self._emit_event(SubagentStopEngineEvent(
-            agent_id=agent_id,
-            parent_tool_use_id="",
-        ))
-
-        logger.info(f"[SUBAGENT_STOP] agent_id={agent_id}")
-        return {}
 
     async def _get_or_create_client(
         self,
@@ -589,7 +475,7 @@ class ClaudeRunner:
 
     def _is_cli_alive(self) -> bool:
         """CLI 서브프로세스가 아직 살아있는지 확인"""
-        if self.pid is None:
+        if not isinstance(self.pid, int):
             return False
         try:
             proc = psutil.Process(self.pid)
@@ -611,65 +497,6 @@ class ClaudeRunner:
         except Exception as e:
             logger.warning(f"인터럽트 실패: runner={self.runner_id}, {e}")
             return False
-
-    async def _process_tool_result_block(
-        self,
-        block,
-        msg_state: "MessageState",
-        on_event,
-        source: str = "",
-        msg_parent: Optional[str] = None,
-    ) -> None:
-        """ToolResultBlock에서 TOOL_RESULT 이벤트 발행 (공통 로직)
-
-        AssistantMessage와 UserMessage 양쪽에서 호출됩니다.
-        emitted_tool_result_ids로 동일 tool_use_id의 중복 발행을 방지합니다.
-
-        Args:
-            block: ToolResultBlock 인스턴스
-            msg_state: 메시지 처리 상태
-            on_event: 이벤트 콜백
-            source: 로그용 출처 ("AssistantMessage" 또는 "UserMessage")
-            msg_parent: SDK 메시지의 parent_tool_use_id (서브에이전트 레벨 결정)
-        """
-        tool_use_id = getattr(block, "tool_use_id", None)
-
-        # 중복 방지: 동일 tool_use_id의 결과가 이미 발행되었으면 건너뜀
-        if tool_use_id and tool_use_id in msg_state.emitted_tool_result_ids:
-            return
-        if tool_use_id:
-            msg_state.emitted_tool_result_ids.add(tool_use_id)
-
-        content = ""
-        if isinstance(block.content, str):
-            content = block.content
-        elif block.content:
-            try:
-                content = json.dumps(block.content, ensure_ascii=False)
-            except (TypeError, ValueError):
-                content = str(block.content)
-
-        tool_name = msg_state.tool_use_id_to_name.get(tool_use_id, "") if tool_use_id else ""
-        is_error = bool(getattr(block, "is_error", False))
-
-        logger.info(f"[TOOL_RESULT:{source}] {tool_name}: {content[:500]}")
-        msg_state.collected_messages.append({
-            "role": "tool",
-            "content": content,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
-
-        if on_event:
-            try:
-                await on_event(ToolResultEngineEvent(
-                    tool_name=tool_name,
-                    result=content,
-                    is_error=is_error,
-                    tool_use_id=tool_use_id,
-                    parent_tool_use_id=msg_parent,
-                ))
-            except Exception as e:
-                logger.warning(f"이벤트 콜백 오류 (TOOL_RESULT:{source}): {e}")
 
     def _debug(self, message: str) -> None:
         """디버그 메시지 전송 (debug_send_fn이 있을 때만)"""
@@ -720,77 +547,6 @@ class ClaudeRunner:
         """InstrumentedClaudeClient 콜백: unknown event 관찰"""
         logger.debug(f"Unknown event observed: {msg_type}")
 
-    def _build_compact_hook(
-        self,
-        compact_events: Optional[list],
-    ) -> Optional[dict]:
-        """PreCompact 훅을 생성합니다. (하위 호환)"""
-        return self._build_hooks(compact_events)
-
-    def _build_hooks(
-        self,
-        compact_events: Optional[list],
-    ) -> Optional[dict]:
-        """모든 훅을 생성합니다.
-
-        - PreCompact: 컨텍스트 컴팩션 추적
-        - SubagentStart: 서브에이전트 시작 추적
-        - SubagentStop: 서브에이전트 종료 추적
-        """
-        hooks: dict = {}
-
-        # PreCompact 훅
-        if compact_events is not None:
-            async def on_pre_compact(
-                hook_input: dict,
-                tool_use_id: Optional[str],
-                context: HookContext,
-            ) -> SyncHookJSONOutput:
-                trigger = hook_input.get("trigger", "auto")
-                logger.info(f"PreCompact 훅 트리거: trigger={trigger}")
-                compact_events.append({
-                    "trigger": trigger,
-                    "message": f"컨텍스트 컴팩트 실행됨 (트리거: {trigger})",
-                })
-                return {}
-
-            hooks["PreCompact"] = [
-                HookMatcher(matcher=None, hooks=[on_pre_compact])
-            ]
-
-        # NOTE: PreToolUse 훅 제거됨.
-        # SDK 한계로 PreToolUse의 toolu_* ID와 SubagentStart의 UUID를 매핑할 수 없고,
-        # Task 도구가 isConcurrencySafe=true라 병렬 실행 시 FIFO 순서도 보장 불가.
-        # parent_tool_use_id는 빈 문자열로 전달하고, 대시보드가 턴 루트에 연결.
-
-        # SubagentStart 훅 (항상 등록)
-        async def on_subagent_start_hook(
-            hook_input: dict,
-            tool_use_id: Optional[str],
-            context: HookContext,
-        ) -> SyncHookJSONOutput:
-            await self._on_subagent_start(hook_input, tool_use_id, context)
-            return {}
-
-        hooks["SubagentStart"] = [
-            HookMatcher(matcher=None, hooks=[on_subagent_start_hook])
-        ]
-
-        # SubagentStop 훅 (항상 등록)
-        async def on_subagent_stop_hook(
-            hook_input: dict,
-            tool_use_id: Optional[str],
-            context: HookContext,
-        ) -> SyncHookJSONOutput:
-            await self._on_subagent_stop(hook_input, tool_use_id, context)
-            return {}
-
-        hooks["SubagentStop"] = [
-            HookMatcher(matcher=None, hooks=[on_subagent_stop_hook])
-        ]
-
-        return hooks if hooks else None
-
     def _build_options(
         self,
         session_id: Optional[str] = None,
@@ -807,7 +563,7 @@ class ClaudeRunner:
             - stderr_file은 호출자가 닫아야 함 (sys.stderr이면 None)
         """
         runner_id = self.runner_id
-        hooks = self._build_compact_hook(compact_events)
+        hooks = _build_hooks_fn(compact_events, self._pending_events)
 
         # CLI stderr를 세션별 파일에 캡처
         import sys as _sys
@@ -852,24 +608,6 @@ class ClaudeRunner:
             options.resume = session_id
 
         return options, _stderr_file
-
-    async def _notify_compact_events(
-        self,
-        compact_state: CompactRetryState,
-        on_compact: Optional[Callable[[str, str], Awaitable[None]]],
-    ) -> None:
-        """미통지 compact 이벤트를 on_compact 콜백으로 전달"""
-        if not on_compact:
-            return
-        pending = compact_state.events[compact_state.notified_count:]
-        if not pending:
-            return
-        for event in pending:
-            try:
-                await on_compact(event["trigger"], event["message"])
-            except Exception as e:
-                logger.warning(f"컴팩션 콜백 오류: {e}")
-        compact_state.notified_count = len(compact_state.events)
 
     async def _poll_intervention(
         self,
@@ -944,10 +682,14 @@ class ClaudeRunner:
             except Exception as e:
                 logger.warning(f"서브에이전트 이벤트 콜백 오류: {e}")
 
+    def _update_client_session_id(self, session_id: str) -> None:
+        """MessageProcessor 콜백: 클라이언트 세션 ID 갱신"""
+        self._client_session_id = session_id
+
     async def _receive_messages(
         self,
         client: "ClaudeSDKClient",
-        compact_state: CompactRetryState,
+        compact_handler: CompactRetryHandler,
         msg_state: MessageState,
         on_progress: Optional[Callable[[str], Awaitable[None]]],
         on_compact: Optional[Callable[[str, str], Awaitable[None]]],
@@ -962,10 +704,14 @@ class ClaudeRunner:
         on_intervention 콜백을 폴링하여 사용자 메시지를 즉시 주입합니다.
         """
         runner_id = self.runner_id
+        processor = MessageProcessor(
+            msg_state=msg_state,
+            on_event=on_event,
+            on_progress=on_progress,
+            on_session=on_session,
+            on_client_session_update=self._update_client_session_id,
+        )
         aiter = client.receive_response().__aiter__()
-
-        # SDK 메시지의 parent_tool_use_id를 추적 (ResultMessage에서 사용)
-        last_msg_parent: Optional[str] = None
 
         # 메시지 수신 태스크를 재사용하기 위한 변수.
         # 폴링 타이머 완료 시 msg_task는 pending 상태로 재사용되며,
@@ -976,7 +722,7 @@ class ClaudeRunner:
             while True:
                 # 메시지 수신 태스크가 없으면 새로 생성
                 if msg_task is None:
-                    if compact_state.retry_count > 0:
+                    if compact_handler.retry_count > 0:
                         msg_task = asyncio.create_task(
                             asyncio.wait_for(
                                 aiter.__anext__(), timeout=COMPACT_RETRY_READ_TIMEOUT
@@ -1015,7 +761,7 @@ class ClaudeRunner:
                 except asyncio.TimeoutError:
                     logger.warning(
                         f"Compact retry 읽기 타임아웃 ({COMPACT_RETRY_READ_TIMEOUT}s): "
-                        f"runner={runner_id}, retry={compact_state.retry_count}, "
+                        f"runner={runner_id}, retry={compact_handler.retry_count}, "
                         f"pid={self.pid}, cli_alive={self._is_cli_alive()}"
                     )
                     return
@@ -1030,167 +776,15 @@ class ClaudeRunner:
                     # 완료된 태스크 참조 해제. 다음 반복에서 새 태스크를 생성한다.
                     msg_task = None
 
-                msg_state.msg_count += 1
+                # 메시지 처리를 MessageProcessor에 위임
+                await processor.process(message)
 
-                # SystemMessage에서 세션 ID 추출
-                if isinstance(message, SystemMessage):
-                    if hasattr(message, 'session_id'):
-                        msg_state.session_id = message.session_id
-                        # 클라이언트의 실제 세션 ID를 갱신 (풀 재사용 시 올바른 세션 매칭용)
-                        if msg_state.session_id:
-                            self._client_session_id = msg_state.session_id
-                        logger.info(f"세션 ID: {msg_state.session_id}")
-                        # 세션 ID 조기 통지 콜백
-                        if on_session and msg_state.session_id:
-                            try:
-                                await on_session(msg_state.session_id)
-                            except Exception as e:
-                                logger.warning(f"세션 ID 콜백 오류: {e}")
-
-                # AssistantMessage에서 텍스트/도구 사용 추출
-                elif isinstance(message, AssistantMessage):
-                    # SDK 메시지의 parent_tool_use_id를 직접 사용
-                    msg_parent = getattr(message, "parent_tool_use_id", None)
-                    last_msg_parent = msg_parent
-                    if hasattr(message, 'content'):
-                        for block in message.content:
-                            # ThinkingBlock: Extended Thinking 처리
-                            if isinstance(block, ThinkingBlock):
-                                thinking_text = getattr(block, "thinking", "")
-                                signature = getattr(block, "signature", "")
-
-                                # thinking 내용이 있을 때만 처리
-                                if thinking_text:
-                                    logger.info(f"[THINKING] {len(thinking_text)} chars")
-                                    # truncate only if > 500 chars
-                                    thinking_preview = thinking_text[:500]
-                                    if len(thinking_text) > 500:
-                                        thinking_preview += "..."
-                                    msg_state.collected_messages.append({
-                                        "role": "assistant",
-                                        "content": f"[thinking] {thinking_preview}",
-                                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                                    })
-
-                                    if on_event:
-                                        try:
-                                            await on_event(ThinkingEngineEvent(
-                                                thinking=thinking_text,
-                                                signature=signature,
-                                                parent_tool_use_id=msg_parent,
-                                            ))
-                                        except Exception as e:
-                                            logger.warning(f"이벤트 콜백 오류 (THINKING): {e}")
-
-                            elif isinstance(block, TextBlock):
-                                msg_state.current_text = block.text
-
-                                msg_state.collected_messages.append({
-                                    "role": "assistant",
-                                    "content": block.text,
-                                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                                })
-
-                                if on_progress:
-                                    try:
-                                        display_text = msg_state.current_text
-                                        if len(display_text) > 1000:
-                                            display_text = "...\n" + display_text[-1000:]
-                                        await on_progress(display_text)
-                                    except Exception as e:
-                                        logger.warning(f"진행 상황 콜백 오류: {e}")
-
-                                if on_event:
-                                    try:
-                                        await on_event(TextDeltaEngineEvent(
-                                            text=block.text,
-                                            parent_tool_use_id=msg_parent,
-                                        ))
-                                    except Exception as e:
-                                        logger.warning(f"이벤트 콜백 오류 (TEXT_DELTA): {e}")
-
-                            elif isinstance(block, ToolUseBlock):
-                                tool_input_str = ""
-                                if block.input:
-                                    tool_input_str = json.dumps(block.input, ensure_ascii=False)
-                                # tool_use_id → tool_name 매핑 기록
-                                tool_use_id = getattr(block, "id", None)
-                                if tool_use_id:
-                                    msg_state.tool_use_id_to_name[tool_use_id] = block.name
-                                logger.info(f"[TOOL_USE] {block.name}: {tool_input_str[:500]}")
-                                msg_state.collected_messages.append({
-                                    "role": "assistant",
-                                    "content": f"[tool_use: {block.name}] {tool_input_str}",
-                                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                                })
-
-                                if on_event:
-                                    try:
-                                        event_tool_input = block.input or {}
-                                        await on_event(ToolStartEngineEvent(
-                                            tool_name=block.name,
-                                            tool_input=event_tool_input,
-                                            tool_use_id=tool_use_id,
-                                            parent_tool_use_id=msg_parent,
-                                        ))
-                                    except Exception as e:
-                                        logger.warning(f"이벤트 콜백 오류 (TOOL_START): {e}")
-
-                            elif isinstance(block, ToolResultBlock):
-                                await self._process_tool_result_block(
-                                    block, msg_state, on_event,
-                                    source="AssistantMessage",
-                                    msg_parent=msg_parent,
-                                )
-
-                # UserMessage에서 ToolResultBlock 추출 → TOOL_RESULT 이벤트 발행
-                # Claude Code SDK는 도구 실행 결과를 UserMessage.content에 ToolResultBlock으로 반환합니다.
-                # AssistantMessage.content에 ToolResultBlock이 포함되는 경우도 대비하여
-                # 양쪽 모두 처리하되, emitted_tool_result_ids로 중복 발행을 방지합니다.
-                elif isinstance(message, UserMessage):
-                    msg_parent = getattr(message, "parent_tool_use_id", None)
-                    last_msg_parent = msg_parent
-
-                    if hasattr(message, 'content') and isinstance(message.content, list):
-                        for block in message.content:
-                            if isinstance(block, ToolResultBlock):
-                                await self._process_tool_result_block(
-                                    block, msg_state, on_event,
-                                    source="UserMessage",
-                                    msg_parent=msg_parent,
-                                )
-
-                # ResultMessage에서 최종 결과 추출
-                elif isinstance(message, ResultMessage):
-                    if hasattr(message, 'is_error'):
-                        msg_state.is_error = message.is_error
-                    if hasattr(message, 'result'):
-                        msg_state.result_text = message.result
-                    if hasattr(message, 'session_id') and message.session_id:
-                        msg_state.session_id = message.session_id
-                    if hasattr(message, 'usage') and message.usage:
-                        msg_state.usage = message.usage
-
-                    if on_event:
-                        try:
-                            result_output = msg_state.result_text or msg_state.current_text
-                            await on_event(ResultEngineEvent(
-                                success=not msg_state.is_error,
-                                output=result_output,
-                                error=result_output if msg_state.is_error else None,
-                                usage=msg_state.usage,
-                                parent_tool_use_id=last_msg_parent,
-                            ))
-                        except Exception as e:
-                            logger.warning(f"이벤트 콜백 오류 (RESULT): {e}")
-
-                    # ResultMessage 수신 후 큐에 남은 인터벤션을 best-effort로 소비.
-                    # 세션이 이미 완료 상태이므로 SDK가 거부할 수 있으며 그 경우 무시한다.
-                    if on_intervention:
-                        await self._drain_interventions(client, on_intervention)
+                # ResultMessage 수신 후 큐에 남은 인터벤션을 best-effort로 소비
+                if isinstance(message, ResultMessage) and on_intervention:
+                    await self._drain_interventions(client, on_intervention)
 
                 # 컴팩션 이벤트 알림
-                await self._notify_compact_events(compact_state, on_compact)
+                await compact_handler.notify_events(on_compact)
 
                 # 서브에이전트 이벤트 알림 (훅에서 큐에 추가된 이벤트)
                 await self._notify_pending_subagent_events(on_event)
@@ -1206,66 +800,6 @@ class ClaudeRunner:
                     await msg_task
                 except (asyncio.CancelledError, Exception):
                     pass
-
-    def _evaluate_compact_retry(
-        self,
-        compact_state: CompactRetryState,
-        msg_state: MessageState,
-        before_snapshot: int,
-    ) -> bool:
-        """Compact retry 판정. True이면 외부 루프 continue, False이면 break.
-
-        Side effect: CLI 종료 시 collected_messages에서 fallback 텍스트 복원.
-        """
-        compact_happened = compact_state.did_compact(before_snapshot)
-
-        if not compact_happened:
-            return False
-
-        if msg_state.has_result:
-            logger.info(
-                f"Compact 발생했으나 이미 유효한 결과 있음 - retry 생략 "
-                f"(result_text={len(msg_state.result_text)} chars, "
-                f"current_text={len(msg_state.current_text)} chars, "
-                f"compact_retry_count={compact_state.retry_count}/{MAX_COMPACT_RETRIES})"
-            )
-            return False
-
-        if not compact_state.can_retry():
-            return False
-
-        # CLI 프로세스 상태 확인 [B]
-        cli_alive = self._is_cli_alive()
-        logger.info(
-            f"Compact retry 판정: pid={self.pid}, cli_alive={cli_alive}, "
-            f"has_result={msg_state.has_result}, current_text={len(msg_state.current_text)} chars, "
-            f"result_text={len(msg_state.result_text)} chars, "
-            f"collected_msgs={len(msg_state.collected_messages)}, "
-            f"retry={compact_state.retry_count}/{MAX_COMPACT_RETRIES}"
-        )
-
-        if not cli_alive:
-            # CLI 종료: collected_messages에서 마지막 텍스트 복원 [C]
-            logger.warning(
-                f"Compact retry 생략: CLI 프로세스 이미 종료 "
-                f"(pid={self.pid}, runner={self.runner_id})"
-            )
-            fallback_text = _extract_last_assistant_text(msg_state.collected_messages)
-            if fallback_text:
-                msg_state.current_text = fallback_text
-                logger.info(
-                    f"Fallback: collected_messages에서 텍스트 복원 "
-                    f"({len(fallback_text)} chars)"
-                )
-            return False
-
-        compact_state.increment()
-        logger.info(
-            f"Compact 후 응답 재수신 시도 "
-            f"(retry={compact_state.retry_count}/{MAX_COMPACT_RETRIES}, "
-            f"session_id={msg_state.session_id})"
-        )
-        return True
 
     async def run(
         self,
@@ -1325,7 +859,7 @@ class ClaudeRunner:
     ) -> EngineResult:
         """실제 실행 로직 (ClaudeSDKClient 기반)"""
         runner_id = self.runner_id
-        compact_state = CompactRetryState()
+        compact_handler = CompactRetryHandler()
 
         # 이전 실행의 잔여 상태 정리 (풀링된 runner 재사용 대비)
         self._pending_events.clear()
@@ -1345,7 +879,7 @@ class ClaudeRunner:
             # _get_or_create_client가 내부에서 _build_options를 호출
             client, stderr_file = await self._get_or_create_client(
                 session_id=session_id,
-                compact_events=compact_state.events,
+                compact_events=compact_handler.events,
             )
             logger.info(f"Claude Code SDK 실행 시작 (cwd={self.working_dir})")
 
@@ -1358,10 +892,10 @@ class ClaudeRunner:
             # compact 이벤트가 감지되면 receive_response()를 재호출하여
             # post-compact 응답을 계속 수신.
             while True:
-                before = compact_state.snapshot()
+                before = compact_handler.snapshot()
 
                 await self._receive_messages(
-                    client, compact_state, msg_state, on_progress, on_compact,
+                    client, compact_handler, msg_state, on_progress, on_compact,
                     on_intervention, on_session, on_event,
                 )
 
@@ -1369,10 +903,15 @@ class ClaudeRunner:
                 await asyncio.sleep(0)
 
                 # 미통지 compact 이벤트 알림
-                await self._notify_compact_events(compact_state, on_compact)
+                await compact_handler.notify_events(on_compact)
 
                 # Compact retry 판정
-                if self._evaluate_compact_retry(compact_state, msg_state, before):
+                if compact_handler.evaluate(
+                    msg_state, before,
+                    cli_alive=self._is_cli_alive(),
+                    pid=self.pid,
+                    runner_id=self.runner_id,
+                ):
                     msg_state.reset_for_retry()
                     continue
 

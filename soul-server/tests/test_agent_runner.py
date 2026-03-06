@@ -167,7 +167,7 @@ class TestClaudeRunnerPurity:
         )
 
         with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
-            with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
+            with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                 result = await runner.run("테스트")
 
         assert isinstance(result, EngineResult)
@@ -206,10 +206,10 @@ class TestClaudeRunnerAsync:
         )
 
         with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
-            with patch("soul_server.claude.agent_runner.SystemMessage", MockSystemMessage):
-                with patch("soul_server.claude.agent_runner.AssistantMessage", MockAssistantMessage):
-                    with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
-                        with patch("soul_server.claude.agent_runner.TextBlock", MockTextBlock):
+            with patch("soul_server.claude.message_processor.SystemMessage", MockSystemMessage):
+                with patch("soul_server.claude.message_processor.AssistantMessage", MockAssistantMessage):
+                    with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
+                        with patch("soul_server.claude.message_processor.TextBlock", MockTextBlock):
                             result = await runner.run("테스트 프롬프트")
 
         assert result.success is True
@@ -228,7 +228,7 @@ class TestClaudeRunnerAsync:
         )
 
         with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
-            with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
+            with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                 result = await runner.run("테스트")
 
         assert result.success is True
@@ -269,7 +269,7 @@ class TestClaudeRunnerAsync:
         )
 
         with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
-            with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
+            with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                 result = await runner.compact_session("test-session-id")
 
         assert result.success is True
@@ -314,10 +314,10 @@ class TestClaudeRunnerProgress:
         mock_loop.time = mock_time
 
         with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
-            with patch("soul_server.claude.agent_runner.SystemMessage", MockSystemMessage):
-                with patch("soul_server.claude.agent_runner.AssistantMessage", MockAssistantMessage):
-                    with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
-                        with patch("soul_server.claude.agent_runner.TextBlock", MockTextBlock):
+            with patch("soul_server.claude.message_processor.SystemMessage", MockSystemMessage):
+                with patch("soul_server.claude.message_processor.AssistantMessage", MockAssistantMessage):
+                    with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
+                        with patch("soul_server.claude.message_processor.TextBlock", MockTextBlock):
                             with patch("asyncio.get_event_loop", return_value=mock_loop):
                                 result = await runner.run("테스트", on_progress=on_progress)
 
@@ -376,10 +376,10 @@ class TestClaudeRunnerCompact:
             return options, stderr_f
 
         with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
-            with patch("soul_server.claude.agent_runner.SystemMessage", MockSystemMessage):
-                with patch("soul_server.claude.agent_runner.AssistantMessage", MockAssistantMessage):
-                    with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
-                        with patch("soul_server.claude.agent_runner.TextBlock", MockTextBlock):
+            with patch("soul_server.claude.message_processor.SystemMessage", MockSystemMessage):
+                with patch("soul_server.claude.message_processor.AssistantMessage", MockAssistantMessage):
+                    with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
+                        with patch("soul_server.claude.message_processor.TextBlock", MockTextBlock):
                             with patch.object(runner, "_build_options", patched_build):
                                 result = await runner.run(
                                     "테스트", on_compact=on_compact
@@ -418,7 +418,7 @@ class TestClaudeRunnerCompact:
             return options, stderr_f
 
         with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
-            with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
+            with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                 with patch.object(runner, "_build_options", patched_build):
                     result = await runner.run("테스트", on_compact=on_compact)
 
@@ -450,7 +450,7 @@ class TestClaudeRunnerCompact:
             return options, stderr_f
 
         with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
-            with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
+            with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                 with patch.object(runner, "_build_options", patched_build):
                     result = await runner.run("테스트", on_compact=failing_compact)
 
@@ -466,7 +466,7 @@ class TestClaudeRunnerCompact:
         )
 
         with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
-            with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
+            with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                 result = await runner.run("테스트")
 
         assert result.success is True
@@ -1057,59 +1057,17 @@ class TestClaudeRunnerIntegration:
         assert result.success is True
 
 
-class TestBuildCompactHook:
-    """_build_compact_hook 메서드 단위 테스트"""
-
-    def test_returns_subagent_hooks_when_compact_events_is_none(self):
-        """compact_events가 None이면 PreCompact는 없지만 SubagentStart/Stop은 있음"""
-        runner = ClaudeRunner()
-        hooks = runner._build_compact_hook(None)
-        # SubagentStart/Stop 훅은 항상 등록됨
-        assert hooks is not None
-        assert "PreCompact" not in hooks
-        assert "SubagentStart" in hooks
-        assert "SubagentStop" in hooks
-
-    def test_returns_hooks_when_compact_events_provided(self):
-        """compact_events 제공 시 PreCompact + SubagentStart/Stop 훅 딕셔너리 반환"""
-        runner = ClaudeRunner()
-        compact_events = []
-        hooks = runner._build_compact_hook(compact_events)
-
-        assert hooks is not None
-        assert "PreCompact" in hooks
-        assert len(hooks["PreCompact"]) == 1
-        assert hooks["PreCompact"][0].matcher is None
-
-
 class TestSubagentHooks:
-    """SubagentStart/Stop 훅 및 _sdk_uuid_to_api_id 매핑 테스트
+    """SubagentStart/Stop 훅 및 EngineEvent 테스트
 
-    새 아키텍처:
-    - _agent_stack, _get_current_parent_tool_use_id() 제거됨
-    - PreToolUse 훅이 _sdk_uuid_to_api_id dict에 SDK UUID → toolu_* 매핑을 구축
-    - SubagentStart는 매핑을 조회하여 parent_tool_use_id 결정
-    - SubagentStop은 이벤트만 발행 (스택 팝 없음)
+    hook_builder.py로 추출된 훅 빌드 로직은 test_hook_builder.py에서 테스트.
+    여기서는 ClaudeRunner에 남아있는 _pending_events / _drain_events만 테스트.
     """
-
-    def test_sdk_uuid_to_api_id_initially_empty(self):
-        """초기 _sdk_uuid_to_api_id는 비어있어야 함"""
-        runner = ClaudeRunner()
-        assert runner._sdk_uuid_to_api_id == {}
 
     def test_pending_events_initially_empty(self):
         """초기 pending_events는 비어있어야 함"""
         runner = ClaudeRunner()
         assert len(runner._pending_events) == 0
-
-    def test_emit_event_adds_to_pending(self):
-        """_emit_event가 pending_events에 이벤트를 추가"""
-        from soul_server.engine.types import SubagentStartEngineEvent
-        runner = ClaudeRunner()
-        event = SubagentStartEngineEvent(agent_type="Explore", agent_id="test")
-        runner._emit_event(event)
-        assert len(runner._pending_events) == 1
-        assert runner._pending_events[0] is event
 
     def test_drain_events_returns_and_clears(self):
         """_drain_events가 이벤트 목록을 반환하고 큐를 비움"""
@@ -1117,109 +1075,12 @@ class TestSubagentHooks:
         runner = ClaudeRunner()
         event1 = SubagentStartEngineEvent(agent_type="Explore", agent_id="test1")
         event2 = SubagentStopEngineEvent(agent_id="test1")
-        runner._emit_event(event1)
-        runner._emit_event(event2)
+        runner._pending_events.append(event1)
+        runner._pending_events.append(event2)
 
         events = runner._drain_events()
         assert len(events) == 2
         assert len(runner._pending_events) == 0
-
-    @pytest.mark.asyncio
-    async def test_on_subagent_start_with_mapped_id(self):
-        """_on_subagent_start가 _sdk_uuid_to_api_id 매핑으로 toolu_* ID를 사용"""
-        from soul_server.engine.types import SubagentStartEngineEvent
-        runner = ClaudeRunner()
-
-        # PreToolUse 훅이 매핑을 구축한 상황 시뮬레이션
-        runner._sdk_uuid_to_api_id["sdk-uuid-1"] = "toolu_task_1"
-
-        await runner._on_subagent_start(
-            {"agent_id": "test-agent-1", "agent_type": "Explore"},
-            "sdk-uuid-1",
-            None,
-        )
-
-        # 이벤트가 큐에 추가됨, parent_tool_use_id가 toolu_* 형식
-        events = runner._drain_events()
-        assert len(events) == 1
-        assert isinstance(events[0], SubagentStartEngineEvent)
-        assert events[0].agent_id == "test-agent-1"
-        assert events[0].agent_type == "Explore"
-        assert events[0].parent_tool_use_id == "toolu_task_1"
-
-    @pytest.mark.asyncio
-    async def test_on_subagent_start_without_mapping_falls_back(self):
-        """매핑이 없으면 SDK UUID를 그대로 parent_tool_use_id로 사용 (방어)"""
-        runner = ClaudeRunner()
-
-        # 매핑 없이 SubagentStart 호출
-        await runner._on_subagent_start(
-            {"agent_id": "agent-fallback", "agent_type": "Explore"},
-            "unmapped-sdk-uuid",
-            None,
-        )
-
-        events = runner._drain_events()
-        assert len(events) == 1
-        assert events[0].parent_tool_use_id == "unmapped-sdk-uuid"
-
-    @pytest.mark.asyncio
-    async def test_on_subagent_start_with_none_tool_use_id(self):
-        """tool_use_id가 None이면 parent_tool_use_id는 빈 문자열"""
-        runner = ClaudeRunner()
-
-        await runner._on_subagent_start(
-            {"agent_id": "agent-none", "agent_type": "Plan"},
-            None,
-            None,
-        )
-
-        events = runner._drain_events()
-        assert len(events) == 1
-        assert events[0].parent_tool_use_id == ""
-
-    @pytest.mark.asyncio
-    async def test_on_subagent_stop_emits_event_only(self):
-        """_on_subagent_stop은 이벤트만 발행 (스택 팝 없음)"""
-        from soul_server.engine.types import SubagentStopEngineEvent
-        runner = ClaudeRunner()
-
-        await runner._on_subagent_stop(
-            {"agent_id": "test-agent-1"},
-            "sdk-uuid-1",
-            None,
-        )
-
-        # 이벤트가 큐에 추가됨
-        events = runner._drain_events()
-        assert len(events) == 1
-        assert isinstance(events[0], SubagentStopEngineEvent)
-        assert events[0].agent_id == "test-agent-1"
-
-    @pytest.mark.asyncio
-    async def test_subagent_start_stop_sequence(self):
-        """SubagentStart → SubagentStop 순서대로 이벤트 발행"""
-        from soul_server.engine.types import SubagentStartEngineEvent, SubagentStopEngineEvent
-        runner = ClaudeRunner()
-        runner._sdk_uuid_to_api_id["sdk-uuid-1"] = "toolu_task_1"
-
-        await runner._on_subagent_start(
-            {"agent_id": "agent-1", "agent_type": "Explore"},
-            "sdk-uuid-1",
-            None,
-        )
-        await runner._on_subagent_stop(
-            {"agent_id": "agent-1"},
-            "sdk-uuid-1",
-            None,
-        )
-
-        events = runner._drain_events()
-        assert len(events) == 2
-        assert isinstance(events[0], SubagentStartEngineEvent)
-        assert events[0].parent_tool_use_id == "toolu_task_1"
-        assert isinstance(events[1], SubagentStopEngineEvent)
-        assert events[1].agent_id == "agent-1"
 
     def test_engine_event_includes_parent_tool_use_id(self):
         """EngineEvent에 parent_tool_use_id 포함"""
@@ -1243,202 +1104,6 @@ class TestSubagentHooks:
             agent_id="test",
         )
         assert event.agent_id == "test"
-
-    def test_hooks_always_include_subagent_and_pretooluse_hooks(self):
-        """_build_hooks가 항상 PreToolUse/SubagentStart/Stop 훅을 포함"""
-        runner = ClaudeRunner()
-
-        # compact_events 없이도 PreToolUse/SubagentStart/Stop 훅은 등록
-        hooks = runner._build_hooks(None)
-        assert "PreToolUse" in hooks
-        assert "SubagentStart" in hooks
-        assert "SubagentStop" in hooks
-        assert "PreCompact" not in hooks
-
-        # compact_events와 함께 모든 훅 등록
-        compact_events = []
-        hooks = runner._build_hooks(compact_events)
-        assert "PreToolUse" in hooks
-        assert "SubagentStart" in hooks
-        assert "SubagentStop" in hooks
-        assert "PreCompact" in hooks
-
-
-class TestSdkUuidToApiIdMapping:
-    """SDK UUID → toolu_* API ID 매핑 테스트 (PreToolUse 훅 기반)
-
-    새 아키텍처: PreToolUse 훅이 _sdk_uuid_to_api_id dict를 구축하고,
-    SubagentStart 훅이 이 매핑을 조회하여 parent_tool_use_id를 결정합니다.
-    """
-
-    def test_mapping_initially_empty(self):
-        """초기 _sdk_uuid_to_api_id는 비어있어야 함"""
-        runner = ClaudeRunner()
-        assert len(runner._sdk_uuid_to_api_id) == 0
-
-    def test_pretooluse_populates_mapping(self):
-        """PreToolUse 훅이 SDK UUID → toolu_* 매핑을 구축하는지 검증"""
-        runner = ClaudeRunner()
-
-        # PreToolUse가 하는 일을 직접 시뮬레이션
-        # hook_input["tool_use_id"] = toolu_* (API ID)
-        # tool_use_id (param) = SDK UUID
-        sdk_uuid = "550e8400-e29b-41d4-a716-446655440000"
-        api_id = "toolu_task_abc123"
-        runner._sdk_uuid_to_api_id[sdk_uuid] = api_id
-
-        assert runner._sdk_uuid_to_api_id[sdk_uuid] == "toolu_task_abc123"
-
-    @pytest.mark.asyncio
-    async def test_single_task_subagent_bridge(self):
-        """B1: PreToolUse 매핑 후 SubagentStart가 toolu_* ID를 사용"""
-        runner = ClaudeRunner()
-
-        # PreToolUse 훅에 의해 매핑 구축
-        sdk_uuid = "550e8400-e29b-41d4-a716-446655440000"
-        runner._sdk_uuid_to_api_id[sdk_uuid] = "toolu_task_abc123"
-
-        # SubagentStart (동일 SDK UUID 전달)
-        await runner._on_subagent_start(
-            {"agent_id": "agent-1", "agent_type": "Explore"},
-            sdk_uuid,
-            None,
-        )
-
-        # 이벤트의 parent_tool_use_id가 toolu_* 형식
-        events = runner._drain_events()
-        assert events[0].parent_tool_use_id == "toolu_task_abc123"
-
-    @pytest.mark.asyncio
-    async def test_parallel_tasks_independent_mapping(self):
-        """B2: 병렬 Task 2개 → 각각 독립적인 SDK UUID → toolu_* 매핑"""
-        runner = ClaudeRunner()
-
-        # 병렬 Task 2개의 PreToolUse 매핑
-        runner._sdk_uuid_to_api_id["sdk-uuid-1"] = "toolu_task_first"
-        runner._sdk_uuid_to_api_id["sdk-uuid-2"] = "toolu_task_second"
-
-        # SubagentStart 2개 (순서 무관, 각자 자기 SDK UUID로 매핑 조회)
-        await runner._on_subagent_start(
-            {"agent_id": "agent-1", "agent_type": "Explore"},
-            "sdk-uuid-1",
-            None,
-        )
-        await runner._on_subagent_start(
-            {"agent_id": "agent-2", "agent_type": "Plan"},
-            "sdk-uuid-2",
-            None,
-        )
-
-        events = runner._drain_events()
-        assert events[0].parent_tool_use_id == "toolu_task_first"
-        assert events[1].parent_tool_use_id == "toolu_task_second"
-
-    @pytest.mark.asyncio
-    async def test_unmapped_uuid_falls_back(self):
-        """B3: 매핑에 없는 SDK UUID → SDK UUID 그대로 사용 (방어)"""
-        runner = ClaudeRunner()
-        assert len(runner._sdk_uuid_to_api_id) == 0
-
-        await runner._on_subagent_start(
-            {"agent_id": "agent-1", "agent_type": "Explore"},
-            "fallback-uuid-value",
-            None,
-        )
-
-        events = runner._drain_events()
-        assert events[0].parent_tool_use_id == "fallback-uuid-value"
-
-    @pytest.mark.asyncio
-    async def test_subagent_stop_just_emits_event(self):
-        """B4: SubagentStop은 이벤트만 발행, 매핑이나 스택 조작 없음"""
-        from soul_server.engine.types import SubagentStopEngineEvent
-        runner = ClaudeRunner()
-        runner._sdk_uuid_to_api_id["sdk-uuid-1"] = "toolu_task_1"
-
-        await runner._on_subagent_stop(
-            {"agent_id": "agent-1"},
-            "sdk-uuid-1",
-            None,
-        )
-
-        # 매핑은 그대로 남아있음 (SubagentStop이 정리하지 않음)
-        assert "sdk-uuid-1" in runner._sdk_uuid_to_api_id
-
-        events = runner._drain_events()
-        assert len(events) == 1
-        assert isinstance(events[0], SubagentStopEngineEvent)
-        assert events[0].agent_id == "agent-1"
-
-    def test_mapping_cleared_on_run_start(self):
-        """B5: 실행 시작 시 이전 실행의 매핑이 정리되는지 검증"""
-        runner = ClaudeRunner()
-        runner._sdk_uuid_to_api_id["old-uuid"] = "toolu_old"
-        runner._pending_events.append(
-            MagicMock()  # 잔여 이벤트
-        )
-
-        # _run_impl 시작 시 clear 호출됨 — 직접 시뮬레이션
-        runner._sdk_uuid_to_api_id.clear()
-        runner._pending_events.clear()
-
-        assert len(runner._sdk_uuid_to_api_id) == 0
-        assert len(runner._pending_events) == 0
-
-    def test_multiple_tools_mapped_independently(self):
-        """B6: 여러 도구의 PreToolUse 매핑이 독립적으로 유지됨"""
-        runner = ClaudeRunner()
-
-        # Read, Bash, Task 등 여러 도구가 PreToolUse를 거침
-        runner._sdk_uuid_to_api_id["uuid-read"] = "toolu_read_1"
-        runner._sdk_uuid_to_api_id["uuid-bash"] = "toolu_bash_1"
-        runner._sdk_uuid_to_api_id["uuid-task"] = "toolu_task_1"
-
-        # 각각 독립적으로 조회 가능
-        assert runner._sdk_uuid_to_api_id["uuid-read"] == "toolu_read_1"
-        assert runner._sdk_uuid_to_api_id["uuid-bash"] == "toolu_bash_1"
-        assert runner._sdk_uuid_to_api_id["uuid-task"] == "toolu_task_1"
-
-    @pytest.mark.asyncio
-    async def test_subagent_start_event_has_correct_toolu_id(self):
-        """B7: SubagentStart 이벤트의 parent_tool_use_id가 toolu_* 형식인지 검증"""
-        runner = ClaudeRunner()
-        runner._sdk_uuid_to_api_id["sdk-uuid-x"] = "toolu_bridged_123"
-
-        await runner._on_subagent_start(
-            {"agent_id": "agent-x", "agent_type": "Explore"},
-            "sdk-uuid-x",
-            None,
-        )
-
-        events = runner._drain_events()
-        result = events[0].parent_tool_use_id
-        assert result == "toolu_bridged_123"
-        assert result.startswith("toolu_")
-
-    @pytest.mark.asyncio
-    async def test_event_propagates_mapped_toolu_id(self):
-        """B8: 매핑된 toolu_* ID가 이벤트에 올바르게 전파됨"""
-        from soul_server.engine.types import ToolStartEngineEvent
-        runner = ClaudeRunner()
-        runner._sdk_uuid_to_api_id["sdk-uuid-prop"] = "toolu_prop_test"
-
-        await runner._on_subagent_start(
-            {"agent_id": "agent-prop", "agent_type": "Explore"},
-            "sdk-uuid-prop",
-            None,
-        )
-
-        events = runner._drain_events()
-        parent_id = events[0].parent_tool_use_id
-
-        # 서브에이전트 내부에서 발행되는 이벤트의 parent_tool_use_id 검증
-        event = ToolStartEngineEvent(
-            tool_name="Read",
-            tool_input={},
-            parent_tool_use_id=parent_id,
-        )
-        assert event.parent_tool_use_id == "toolu_prop_test"
 
 
 class TestExtractLastAssistantText:
@@ -1543,10 +1208,10 @@ class TestCompactRetryHangFix:
             return options, stderr_f
 
         with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
-            with patch("soul_server.claude.agent_runner.SystemMessage", MockSystemMessage):
-                with patch("soul_server.claude.agent_runner.AssistantMessage", MockAssistantMessage):
-                    with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
-                        with patch("soul_server.claude.agent_runner.TextBlock", MockTextBlock):
+            with patch("soul_server.claude.message_processor.SystemMessage", MockSystemMessage):
+                with patch("soul_server.claude.message_processor.AssistantMessage", MockAssistantMessage):
+                    with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
+                        with patch("soul_server.claude.message_processor.TextBlock", MockTextBlock):
                             with patch.object(runner, "_build_options", patched_build):
                                 result = await runner.run("테스트")
 
@@ -1645,8 +1310,8 @@ class TestCompactRetryHangFix:
             return options, stderr_f
 
         with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
-            with patch("soul_server.claude.agent_runner.AssistantMessage", MockAssistantMessage):
-                with patch("soul_server.claude.agent_runner.TextBlock", MockTextBlock):
+            with patch("soul_server.claude.message_processor.AssistantMessage", MockAssistantMessage):
+                with patch("soul_server.claude.message_processor.TextBlock", MockTextBlock):
                     with patch.object(runner, "_build_options", patched_build):
                         result = await runner.run("테스트")
 
@@ -1762,8 +1427,8 @@ class TestClaudeRunnerIsErrorFromResultMessage:
         )
 
         with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
-            with patch("soul_server.claude.agent_runner.SystemMessage", MockSystemMessage):
-                with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
+            with patch("soul_server.claude.message_processor.SystemMessage", MockSystemMessage):
+                with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                     result = await runner.run("테스트")
 
         assert result.is_error is True
@@ -1784,7 +1449,7 @@ class TestClaudeRunnerIsErrorFromResultMessage:
         )
 
         with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
-            with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
+            with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                 result = await runner.run("테스트")
 
         assert result.is_error is False
@@ -1807,10 +1472,10 @@ class TestInlineIntervention:
         )
 
         with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
-            with patch("soul_server.claude.agent_runner.SystemMessage", MockSystemMessage):
-                with patch("soul_server.claude.agent_runner.AssistantMessage", MockAssistantMessage):
-                    with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
-                        with patch("soul_server.claude.agent_runner.TextBlock", MockTextBlock):
+            with patch("soul_server.claude.message_processor.SystemMessage", MockSystemMessage):
+                with patch("soul_server.claude.message_processor.AssistantMessage", MockAssistantMessage):
+                    with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
+                        with patch("soul_server.claude.message_processor.TextBlock", MockTextBlock):
                             result = await runner.run("테스트")
 
         assert result.success is True
@@ -1836,9 +1501,9 @@ class TestInlineIntervention:
         )
 
         with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
-            with patch("soul_server.claude.agent_runner.AssistantMessage", MockAssistantMessage):
-                with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
-                    with patch("soul_server.claude.agent_runner.TextBlock", MockTextBlock):
+            with patch("soul_server.claude.message_processor.AssistantMessage", MockAssistantMessage):
+                with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
+                    with patch("soul_server.claude.message_processor.TextBlock", MockTextBlock):
                         result = await runner.run("테스트", on_intervention=no_intervention)
 
         assert result.success is True
@@ -1867,9 +1532,9 @@ class TestInlineIntervention:
         )
 
         with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
-            with patch("soul_server.claude.agent_runner.AssistantMessage", MockAssistantMessage):
-                with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
-                    with patch("soul_server.claude.agent_runner.TextBlock", MockTextBlock):
+            with patch("soul_server.claude.message_processor.AssistantMessage", MockAssistantMessage):
+                with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
+                    with patch("soul_server.claude.message_processor.TextBlock", MockTextBlock):
                         result = await runner.run("테스트", on_intervention=one_time_intervention)
 
         assert result.success is True
@@ -1892,9 +1557,9 @@ class TestInlineIntervention:
         )
 
         with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
-            with patch("soul_server.claude.agent_runner.AssistantMessage", MockAssistantMessage):
-                with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
-                    with patch("soul_server.claude.agent_runner.TextBlock", MockTextBlock):
+            with patch("soul_server.claude.message_processor.AssistantMessage", MockAssistantMessage):
+                with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
+                    with patch("soul_server.claude.message_processor.TextBlock", MockTextBlock):
                         result = await runner.run("테스트", on_intervention=failing_intervention)
 
         # 콜백 오류에도 실행은 성공
@@ -1944,9 +1609,9 @@ class TestInlineIntervention:
         mock_loop.time = mock_time
 
         with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
-            with patch("soul_server.claude.agent_runner.AssistantMessage", MockAssistantMessage):
-                with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
-                    with patch("soul_server.claude.agent_runner.TextBlock", MockTextBlock):
+            with patch("soul_server.claude.message_processor.AssistantMessage", MockAssistantMessage):
+                with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
+                    with patch("soul_server.claude.message_processor.TextBlock", MockTextBlock):
                         with patch("asyncio.get_event_loop", return_value=mock_loop):
                             result = await runner.run(
                                 "테스트",
@@ -1980,7 +1645,7 @@ class TestClaudeRunnerPooled:
         )
 
         with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
-            with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
+            with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                 result = await runner.run("테스트")
 
         assert result.success is True
@@ -1999,7 +1664,7 @@ class TestClaudeRunnerPooled:
         )
 
         with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
-            with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
+            with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                 result = await runner.run("테스트")
 
         assert result.success is True
@@ -2063,7 +1728,7 @@ class TestClaudeRunnerPooled:
         )
 
         with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
-            with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
+            with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                 result = await runner.run("테스트")
 
         # 레지스트리에서는 제거됨 (풀이 별도로 관리)
@@ -2091,9 +1756,9 @@ class TestEngineEventCallback:
         )
 
         with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
-            with patch("soul_server.claude.agent_runner.AssistantMessage", MockAssistantMessage):
-                with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
-                    with patch("soul_server.claude.agent_runner.TextBlock", MockTextBlock):
+            with patch("soul_server.claude.message_processor.AssistantMessage", MockAssistantMessage):
+                with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
+                    with patch("soul_server.claude.message_processor.TextBlock", MockTextBlock):
                         await runner.run("테스트", on_event=on_event)
 
         text_events = [e for e in events if isinstance(e, TextDeltaEngineEvent)]
@@ -2121,9 +1786,9 @@ class TestEngineEventCallback:
         )
 
         with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
-            with patch("soul_server.claude.agent_runner.AssistantMessage", MockAssistantMessage):
-                with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
-                    with patch("soul_server.claude.agent_runner.ToolUseBlock", MockToolUseBlock):
+            with patch("soul_server.claude.message_processor.AssistantMessage", MockAssistantMessage):
+                with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
+                    with patch("soul_server.claude.message_processor.ToolUseBlock", MockToolUseBlock):
                         await runner.run("테스트", on_event=on_event)
 
         tool_events = [e for e in events if isinstance(e, ToolStartEngineEvent)]
@@ -2162,10 +1827,10 @@ class TestEngineEventCallback:
         )
 
         with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
-            with patch("soul_server.claude.agent_runner.AssistantMessage", MockAssistantMessage):
-                with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
-                    with patch("soul_server.claude.agent_runner.ToolUseBlock", MockToolUseBlock):
-                        with patch("soul_server.claude.agent_runner.ToolResultBlock", MockToolResultBlock):
+            with patch("soul_server.claude.message_processor.AssistantMessage", MockAssistantMessage):
+                with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
+                    with patch("soul_server.claude.message_processor.ToolUseBlock", MockToolUseBlock):
+                        with patch("soul_server.claude.message_processor.ToolResultBlock", MockToolResultBlock):
                             await runner.run("테스트", on_event=on_event)
 
         tool_result_events = [e for e in events if isinstance(e, ToolResultEngineEvent)]
@@ -2189,7 +1854,7 @@ class TestEngineEventCallback:
         )
 
         with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
-            with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
+            with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                 await runner.run("테스트", on_event=on_event)
 
         result_events = [e for e in events if isinstance(e, ResultEngineEvent)]
@@ -2207,9 +1872,9 @@ class TestEngineEventCallback:
         )
 
         with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
-            with patch("soul_server.claude.agent_runner.AssistantMessage", MockAssistantMessage):
-                with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
-                    with patch("soul_server.claude.agent_runner.TextBlock", MockTextBlock):
+            with patch("soul_server.claude.message_processor.AssistantMessage", MockAssistantMessage):
+                with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
+                    with patch("soul_server.claude.message_processor.TextBlock", MockTextBlock):
                         # on_event 없이 호출 - 기존 코드와 동일
                         result = await runner.run("테스트")
 
@@ -2231,9 +1896,9 @@ class TestEngineEventCallback:
         )
 
         with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
-            with patch("soul_server.claude.agent_runner.AssistantMessage", MockAssistantMessage):
-                with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
-                    with patch("soul_server.claude.agent_runner.TextBlock", MockTextBlock):
+            with patch("soul_server.claude.message_processor.AssistantMessage", MockAssistantMessage):
+                with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
+                    with patch("soul_server.claude.message_processor.TextBlock", MockTextBlock):
                         result = await runner.run("테스트", on_event=broken_on_event)
 
         # 콜백 오류에도 불구하고 실행 결과는 정상
@@ -2282,11 +1947,11 @@ class TestToolResultFromUserMessage:
         )
 
         with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
-            with patch("soul_server.claude.agent_runner.AssistantMessage", MockAssistantMessage):
-                with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
-                    with patch("soul_server.claude.agent_runner.ToolUseBlock", MockToolUseBlock):
-                        with patch("soul_server.claude.agent_runner.ToolResultBlock", MockToolResultBlock):
-                            with patch("soul_server.claude.agent_runner.UserMessage", MockUserMessage):
+            with patch("soul_server.claude.message_processor.AssistantMessage", MockAssistantMessage):
+                with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
+                    with patch("soul_server.claude.message_processor.ToolUseBlock", MockToolUseBlock):
+                        with patch("soul_server.claude.message_processor.ToolResultBlock", MockToolResultBlock):
+                            with patch("soul_server.claude.message_processor.UserMessage", MockUserMessage):
                                 await runner.run("테스트", on_event=on_event)
 
         # TOOL_START + TOOL_RESULT 모두 발행되어야 함
@@ -2344,11 +2009,11 @@ class TestToolResultFromUserMessage:
         )
 
         with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
-            with patch("soul_server.claude.agent_runner.AssistantMessage", MockAssistantMessage):
-                with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
-                    with patch("soul_server.claude.agent_runner.ToolUseBlock", MockToolUseBlock):
-                        with patch("soul_server.claude.agent_runner.ToolResultBlock", MockToolResultBlock):
-                            with patch("soul_server.claude.agent_runner.UserMessage", MockUserMessage):
+            with patch("soul_server.claude.message_processor.AssistantMessage", MockAssistantMessage):
+                with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
+                    with patch("soul_server.claude.message_processor.ToolUseBlock", MockToolUseBlock):
+                        with patch("soul_server.claude.message_processor.ToolResultBlock", MockToolResultBlock):
+                            with patch("soul_server.claude.message_processor.UserMessage", MockUserMessage):
                                 await runner.run("테스트", on_event=on_event)
 
         tool_result_events = [e for e in events if isinstance(e, ToolResultEngineEvent)]
@@ -2410,8 +2075,8 @@ class TestInterventionPollingParallel:
             return None
 
         with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
-            with patch("soul_server.claude.agent_runner.SystemMessage", MockSystemMessage):
-                with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
+            with patch("soul_server.claude.message_processor.SystemMessage", MockSystemMessage):
+                with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                     with patch("soul_server.claude.agent_runner.INTERVENTION_POLL_INTERVAL", 0.3):
                         result = await runner.run(
                             "테스트", on_intervention=on_intervention
@@ -2436,8 +2101,8 @@ class TestInterventionPollingParallel:
         )
 
         with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
-            with patch("soul_server.claude.agent_runner.SystemMessage", MockSystemMessage):
-                with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
+            with patch("soul_server.claude.message_processor.SystemMessage", MockSystemMessage):
+                with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                     result = await runner.run("테스트")
 
         # on_intervention 없으면 정상 동작만 확인
@@ -2471,8 +2136,8 @@ class TestInterventionPollingParallel:
             return None
 
         with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
-            with patch("soul_server.claude.agent_runner.SystemMessage", MockSystemMessage):
-                with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
+            with patch("soul_server.claude.message_processor.SystemMessage", MockSystemMessage):
+                with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                     result = await runner.run(
                         "테스트", on_intervention=on_intervention
                     )
@@ -2502,10 +2167,10 @@ class TestInterventionPollingParallel:
             return None
 
         with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
-            with patch("soul_server.claude.agent_runner.SystemMessage", MockSystemMessage):
-                with patch("soul_server.claude.agent_runner.AssistantMessage", MockAssistantMessage):
-                    with patch("soul_server.claude.agent_runner.ResultMessage", MockResultMessage):
-                        with patch("soul_server.claude.agent_runner.TextBlock", MockTextBlock):
+            with patch("soul_server.claude.message_processor.SystemMessage", MockSystemMessage):
+                with patch("soul_server.claude.message_processor.AssistantMessage", MockAssistantMessage):
+                    with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
+                        with patch("soul_server.claude.message_processor.TextBlock", MockTextBlock):
                             result = await runner.run(
                                 "테스트", on_intervention=failing_intervention
                             )
