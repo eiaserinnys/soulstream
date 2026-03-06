@@ -81,7 +81,7 @@ describe("createNodeFromEvent", () => {
         type: "thinking",
         timestamp: 1700000000,
         thinking: "Let me consider...",
-        parent_tool_use_id: "toolu_abc",
+        parent_event_id: "toolu_abc",
       };
 
       const node = createNodeFromEvent(event, 10);
@@ -99,7 +99,7 @@ describe("createNodeFromEvent", () => {
         timestamp: 1700000000,
         agent_id: "agent-uuid-123",
         agent_type: "task",
-        parent_tool_use_id: "toolu_xyz",
+        parent_event_id: "toolu_xyz",
       };
 
       const node = createNodeFromEvent(event, 20);
@@ -114,7 +114,7 @@ describe("createNodeFromEvent", () => {
         tool_name: "Bash",
         tool_input: { command: "ls -la" },
         tool_use_id: "toolu_001",
-        parent_tool_use_id: "toolu_parent",
+        parent_event_id: "toolu_parent",
       };
 
       const node = createNodeFromEvent(event, 30);
@@ -127,7 +127,7 @@ describe("createNodeFromEvent", () => {
       expect(node!.toolName).toBe("Bash");
       expect(node!.toolInput).toEqual({ command: "ls -la" });
       expect(node!.toolUseId).toBe("toolu_001");
-      expect(node!.parentToolUseId).toBe("toolu_parent");
+      expect(node!.parentEventId).toBe("toolu_parent");
       expect(node!.timestamp).toBe(1700000001);
     });
 
@@ -386,7 +386,7 @@ describe("applyUpdate", () => {
         timestamp: 1700000000,
       });
       registerNode(ctx, toolNode);
-      ctx.toolUseMap.set("toolu_abc", toolNode);
+      ctx.nodeMap.set("toolu_abc", toolNode);
 
       const event: ToolResultEvent = {
         type: "tool_result",
@@ -412,7 +412,7 @@ describe("applyUpdate", () => {
         toolUseId: "toolu_err",
         timestamp: 1700000000,
       });
-      ctx.toolUseMap.set("toolu_err", toolNode);
+      ctx.nodeMap.set("toolu_err", toolNode);
 
       const event: ToolResultEvent = {
         type: "tool_result",
@@ -466,7 +466,7 @@ describe("applyUpdate", () => {
       const toolNode = makeNode("tool-3", "tool", "", {
         toolUseId: "toolu_notime",
       });
-      ctx.toolUseMap.set("toolu_notime", toolNode);
+      ctx.nodeMap.set("toolu_notime", toolNode);
 
       const event: ToolResultEvent = {
         type: "tool_result",

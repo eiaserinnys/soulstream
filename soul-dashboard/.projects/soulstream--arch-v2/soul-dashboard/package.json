@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "@seosoyoung/soul-dashboard": "file:../../.."
+  }
+}

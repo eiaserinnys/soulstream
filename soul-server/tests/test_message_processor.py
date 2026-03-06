@@ -50,13 +50,13 @@ class MockToolResultBlock:
 @dataclass
 class MockAssistantMessage:
     content: list = field(default_factory=list)
-    parent_tool_use_id: Optional[str] = None
+    parent_event_id: Optional[str] = None
 
 
 @dataclass
 class MockUserMessage:
     content: list = field(default_factory=list)
-    parent_tool_use_id: Optional[str] = None
+    parent_event_id: Optional[str] = None
 
 
 @dataclass
@@ -160,18 +160,18 @@ class TestThinkingBlock:
         assert event.signature == "sig-1"
 
     @pytest.mark.asyncio
-    async def test_thinking_event_parent_tool_use_id(self):
+    async def test_thinking_event_parent_event_id(self):
         events = []
         on_event = AsyncMock(side_effect=lambda e: events.append(e))
         proc, _ = _make_processor(on_event=on_event)
 
         msg = MockAssistantMessage(
             content=[MockThinkingBlock(thinking="thought")],
-            parent_tool_use_id="parent-1",
+            parent_event_id="parent-1",
         )
         await proc.process(msg)
 
-        assert events[0].parent_tool_use_id == "parent-1"
+        assert events[0].parent_event_id == "parent-1"
 
     @pytest.mark.asyncio
     async def test_empty_thinking_no_event(self):
@@ -250,18 +250,18 @@ class TestTextBlock:
         assert state.current_text == "final text"
 
     @pytest.mark.asyncio
-    async def test_text_parent_tool_use_id(self):
+    async def test_text_parent_event_id(self):
         events = []
         on_event = AsyncMock(side_effect=lambda e: events.append(e))
         proc, _ = _make_processor(on_event=on_event)
 
         msg = MockAssistantMessage(
             content=[MockTextBlock(text="hi")],
-            parent_tool_use_id="parent-2",
+            parent_event_id="parent-2",
         )
         await proc.process(msg)
 
-        assert events[0].parent_tool_use_id == "parent-2"
+        assert events[0].parent_event_id == "parent-2"
 
 
 class TestToolUseBlock:
@@ -415,7 +415,7 @@ class TestUserMessage:
                     tool_use_id="toolu-u1", content="written"
                 )
             ],
-            parent_tool_use_id="parent-u",
+            parent_event_id="parent-u",
         )
         await proc.process(msg)
 
@@ -423,14 +423,14 @@ class TestUserMessage:
         event = events[0]
         assert isinstance(event, ToolResultEngineEvent)
         assert event.tool_name == "Write"
-        assert event.parent_tool_use_id == "parent-u"
+        assert event.parent_event_id == "parent-u"
 
     @pytest.mark.asyncio
     async def test_user_message_updates_last_msg_parent(self):
         proc, _ = _make_processor()
 
         msg = MockUserMessage(
-            content=[], parent_tool_use_id="parent-track"
+            content=[], parent_event_id="parent-track"
         )
         await proc.process(msg)
 
@@ -512,20 +512,20 @@ class TestLastMsgParent:
     async def test_assistant_message_sets_last_msg_parent(self):
         proc, _ = _make_processor()
 
-        msg = MockAssistantMessage(content=[], parent_tool_use_id="p-1")
+        msg = MockAssistantMessage(content=[], parent_event_id="p-1")
         await proc.process(msg)
 
         assert proc.last_msg_parent == "p-1"
 
     @pytest.mark.asyncio
     async def test_result_uses_last_msg_parent(self):
-        """ResultMessage는 직전 메시지의 parent_tool_use_id를 사용"""
+        """ResultMessage는 직전 메시지의 parent_event_id를 사용"""
         events = []
         on_event = AsyncMock(side_effect=lambda e: events.append(e))
         proc, _ = _make_processor(on_event=on_event)
 
         # AssistantMessage로 last_msg_parent 설정
-        msg1 = MockAssistantMessage(content=[], parent_tool_use_id="p-result")
+        msg1 = MockAssistantMessage(content=[], parent_event_id="p-result")
         await proc.process(msg1)
 
         # ResultMessage
@@ -533,7 +533,7 @@ class TestLastMsgParent:
         await proc.process(msg2)
 
         result_event = [e for e in events if isinstance(e, ResultEngineEvent)][0]
-        assert result_event.parent_tool_use_id == "p-result"
+        assert result_event.parent_event_id == "p-result"
 
     @pytest.mark.asyncio
     async def test_msg_count_increments(self):

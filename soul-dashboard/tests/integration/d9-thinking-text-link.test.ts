@@ -1,10 +1,10 @@
 /**
- * D9 수정 검증 테스트: thinking→text 연결 (parent_tool_use_id 기반)
+ * D9 수정 검증 테스트: thinking→text 연결 (parent_event_id 기반)
  *
  * D9 버그: card_id가 AssistantMessage 단위로 리셋되어
  * thinking과 text가 별도 메시지로 분리될 때 연결이 끊기는 문제.
  *
- * 수정: card_id 제거, parent_tool_use_id로 같은 부모 레벨의
+ * 수정: card_id 제거, parent_event_id로 같은 부모 레벨의
  * thinking→text 매칭을 수행하는 lastThinkingByParent + activeTextTarget 방식.
  */
 
@@ -94,7 +94,7 @@ describe("D9: thinking→text 연결 (card_id 제거)", () => {
 
   // === D9 핵심: 별도 메시지에서도 매칭 성공 ===
 
-  it("thinking과 text가 같은 parent_tool_use_id를 가지면 매칭 (서브에이전트 내부)", () => {
+  it("thinking과 text가 같은 parent_event_id를 가지면 매칭 (서브에이전트 내부)", () => {
     const { processEvent, setActiveSession } = useDashboardStore.getState();
     setActiveSession("test:d9-subagent");
 
@@ -114,18 +114,18 @@ describe("D9: thinking→text 연결 (card_id 제거)", () => {
       type: "subagent_start",
       agent_id: "agent-1",
       agent_type: "Explore",
-      parent_tool_use_id: toolUseId,
+      parent_event_id: toolUseId,
     } as SubagentStartEvent, 3);
 
-    // 서브에이전트 내부 thinking + text (같은 parent_tool_use_id)
+    // 서브에이전트 내부 thinking + text (같은 parent_event_id)
     processEvent({
       type: "thinking",
       thinking: "Subagent thinking...",
-      parent_tool_use_id: toolUseId,
+      parent_event_id: toolUseId,
     } as ThinkingEvent, 4);
     processEvent({
       type: "text_start",
-      parent_tool_use_id: toolUseId,
+      parent_event_id: toolUseId,
     } as TextStartEvent, 5);
     processEvent({
       type: "text_delta",
@@ -339,7 +339,7 @@ describe("D9: thinking→text 연결 (card_id 제거)", () => {
 
   // === 병렬 서브에이전트에서 각각 thinking→text 매칭 ===
 
-  it("병렬 서브에이전트의 thinking→text가 parent_tool_use_id로 올바르게 분리 매칭", () => {
+  it("병렬 서브에이전트의 thinking→text가 parent_event_id로 올바르게 분리 매칭", () => {
     const { processEvent, setActiveSession } = useDashboardStore.getState();
     setActiveSession("test:d9-concurrent-subagents");
 
@@ -356,7 +356,7 @@ describe("D9: thinking→text 연결 (card_id 제거)", () => {
       type: "subagent_start",
       agent_id: "agent-A",
       agent_type: "Explore",
-      parent_tool_use_id: "toolu_A",
+      parent_event_id: "toolu_A",
     } as SubagentStartEvent, 3);
 
     // 서브에이전트 B 시작
@@ -370,27 +370,27 @@ describe("D9: thinking→text 연결 (card_id 제거)", () => {
       type: "subagent_start",
       agent_id: "agent-B",
       agent_type: "Plan",
-      parent_tool_use_id: "toolu_B",
+      parent_event_id: "toolu_B",
     } as SubagentStartEvent, 5);
 
     // A의 thinking
     processEvent({
       type: "thinking",
       thinking: "A is thinking...",
-      parent_tool_use_id: "toolu_A",
+      parent_event_id: "toolu_A",
     } as ThinkingEvent, 6);
 
     // B의 thinking
     processEvent({
       type: "thinking",
       thinking: "B is thinking...",
-      parent_tool_use_id: "toolu_B",
+      parent_event_id: "toolu_B",
     } as ThinkingEvent, 7);
 
     // A의 text (A의 thinking에 매칭되어야 함)
     processEvent({
       type: "text_start",
-      parent_tool_use_id: "toolu_A",
+      parent_event_id: "toolu_A",
     } as TextStartEvent, 8);
     processEvent({ type: "text_delta", text: "A response" } as TextDeltaEvent, 9);
     processEvent({ type: "text_end" } as TextEndEvent, 10);
@@ -398,7 +398,7 @@ describe("D9: thinking→text 연결 (card_id 제거)", () => {
     // B의 text (B의 thinking에 매칭되어야 함)
     processEvent({
       type: "text_start",
-      parent_tool_use_id: "toolu_B",
+      parent_event_id: "toolu_B",
     } as TextStartEvent, 11);
     processEvent({ type: "text_delta", text: "B response" } as TextDeltaEvent, 12);
     processEvent({ type: "text_end" } as TextEndEvent, 13);

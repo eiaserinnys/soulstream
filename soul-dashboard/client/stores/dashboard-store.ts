@@ -91,6 +91,9 @@ export interface DashboardState {
 
   /** 세렌디피티 모드 사용 가능 여부 (서버 설정 기반) */
   serendipityAvailable: boolean;
+
+  /** 이벤트 처리 컨텍스트 (nodeMap, lastThinkingByParent 등) */
+  processingCtx: ProcessingContext;
 }
 
 // === Actions Interface ===
@@ -147,14 +150,8 @@ export interface DashboardActions {
 }
 
 // === Internal Processing Context ===
-// ProcessingContext가 기존 closure 변수(nodeMap, toolUseMap 등)를 대체합니다.
-// 세션 전환/리셋 시 새 컨텍스트를 생성하여 이전 상태를 완전히 격리합니다.
-
-let ctx: ProcessingContext = createProcessingContext();
-
-function resetInternalMaps() {
-  ctx = createProcessingContext();
-}
+// Phase 6: ProcessingContext를 store state 내부로 이동.
+// nodeMap이 store 관할이 되어, 세션 전환/리셋 시 store.set()으로 완전 격리.
 
 /** ensureRoot가 필요한 이벤트 타입 (text_delta, text_end, tool_result, subagent_stop 제외) */
 const NEEDS_ROOT = new Set([
@@ -183,6 +180,7 @@ const initialState: DashboardState = {
   resumeTargetKey: null,
   collapsedNodeIds: new Set<string>(),
   serendipityAvailable: false,
+  processingCtx: createProcessingContext(),
 };
 
 /** 세션 전환 시 초기화할 상태를 매번 새 인스턴스로 생성 (Set 공유 방지) */
@@ -198,6 +196,7 @@ function getSessionResetState() {
     lastEventId: 0,
     pendingNotifications: [] as SoulSSEEvent[],
     collapsedNodeIds: new Set<string>(),
+    processingCtx: createProcessingContext(),
   };
 }
 
@@ -211,7 +210,6 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
       // --- 스토리지 모드 ---
 
       setStorageMode: (storageMode) => {
-        resetInternalMaps();
         set({
           storageMode,
           sessions: [],
@@ -227,6 +225,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           selectedNodeId: null,
           selectedEventNodeData: null,
           collapsedNodeIds: new Set<string>(),
+          processingCtx: createProcessingContext(),
         });
       },
 
@@ -270,7 +269,6 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         // 같은 세션이면 아무것도 하지 않음 (resume 등에서 불필요한 리셋 방지)
         if (key !== null && key === get().activeSessionKey) return;
 
-        resetInternalMaps();
         set({
           ...getSessionResetState(),
           activeSessionKey: key,
@@ -304,6 +302,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
 
       processEvent: (event, eventId) => {
         const state = get();
+        const ctx = state.processingCtx;
         let root = state.tree;
 
         // root가 필요한 이벤트에 대해 보장
@@ -385,7 +384,6 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
       // --- 세션 생성/재개 ---
 
       startCompose: () => {
-        resetInternalMaps();
         set({
           ...getSessionResetState(),
           isComposing: true,
@@ -409,7 +407,6 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
       // --- 초기화 ---
 
       clearTree: () => {
-        resetInternalMaps();
         set({
           tree: null,
           treeVersion: 0,
@@ -419,6 +416,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           selectedNodeId: null,
           selectedEventNodeData: null,
           collapsedNodeIds: new Set<string>(),
+          processingCtx: createProcessingContext(),
         });
       },
 
@@ -428,8 +426,11 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
       },
 
       reset: () => {
-        resetInternalMaps();
-        set({ ...initialState, collapsedNodeIds: new Set<string>() });
+        set({
+          ...initialState,
+          collapsedNodeIds: new Set<string>(),
+          processingCtx: createProcessingContext(),
+        });
       },
 
       // --- 접기/펼치기 ---

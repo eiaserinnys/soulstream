@@ -267,7 +267,7 @@ class ClaudeRunner:
         # NOTE: SDK 한계로 SubagentStart에서 parent의 toolu_* ID를 획득할 수 없음.
         # PreToolUse는 toolu_* ID를, SubagentStart는 random UUID를 전달하며,
         # Task 도구는 isConcurrencySafe=true라 병렬 실행 시 순서 보장 불가.
-        # → parent_tool_use_id를 빈 문자열로 전달, 대시보드가 턴 루트에 연결.
+        # → parent_event_id를 빈 문자열로 전달, 대시보드가 턴 루트에 연결.
 
     @classmethod
     async def shutdown_all_clients(cls) -> int:
