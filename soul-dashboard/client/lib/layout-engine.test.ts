@@ -204,7 +204,7 @@ describe("buildGraph", () => {
     expect(thinkingNodes[1].data.cardId).toBe("t2");
   });
 
-  it("creates tool_call and tool_result nodes for tool node", () => {
+  it("creates tool_call node for tool node", () => {
     const tree = sessionRoot([
       userMsg("u1", "hi", [
         textNode("t1", "thinking", true, [
@@ -216,58 +216,11 @@ describe("buildGraph", () => {
         ]),
       ]),
     ]);
-    const { nodes, edges } = buildGraph(tree);
+    const { nodes } = buildGraph(tree);
 
     const callNodes = nodes.filter((n) => n.type === "tool_call");
     expect(callNodes).toHaveLength(1);
     expect(callNodes[0].data.toolName).toBe("Bash");
-
-    const resultNodes = nodes.filter((n) => n.type === "tool_result");
-    expect(resultNodes).toHaveLength(1);
-    expect(resultNodes[0].data.toolResult).toContain("file1.txt");
-
-    const callToResult = edges.find(
-      (e) => e.source === "node-tool1-call" && e.target === "node-tool1-result",
-    );
-    expect(callToResult).toBeDefined();
-    expect(callToResult!.sourceHandle).toBe("right");
-    expect(callToResult!.targetHandle).toBe("left");
-  });
-
-  it("tool_result node includes cardId for DetailView selection", () => {
-    const tree = sessionRoot([
-      userMsg("u1", "hi", [
-        textNode("t1", "thinking", true, [
-          toolNode("tool1", "Bash", {
-            toolInput: { command: "ls" },
-            toolResult: "output",
-            completed: true,
-          }),
-        ]),
-      ]),
-    ]);
-    const { nodes } = buildGraph(tree);
-    const resultNode = nodes.find((n) => n.type === "tool_result");
-    expect(resultNode).toBeDefined();
-    expect(resultNode!.data.cardId).toBe("tool1");
-  });
-
-  it("empty tool_result node includes cardId for DetailView selection", () => {
-    const tree = sessionRoot([
-      userMsg("u1", "hi", [
-        textNode("t1", "thinking", true, [
-          toolNode("tool1", "Bash", {
-            toolInput: { command: "echo" },
-            toolResult: undefined,
-            completed: true,
-          }),
-        ]),
-      ]),
-    ]);
-    const { nodes } = buildGraph(tree);
-    const resultNode = nodes.find((n) => n.type === "tool_result");
-    expect(resultNode).toBeDefined();
-    expect(resultNode!.data.cardId).toBe("tool1");
   });
 
   it("creates system nodes for session and complete", () => {
@@ -389,11 +342,6 @@ describe("buildGraph", () => {
       ]);
       const { edges } = buildGraph(tree);
 
-      const resultToThinking = edges.find(
-        (e) => e.source === "node-tool1-result" && e.target === "node-t2",
-      );
-      expect(resultToThinking).toBeUndefined();
-
       const t1ToT2 = edges.find(
         (e) => e.source === "node-t1" && e.target === "node-t2",
       );
@@ -432,24 +380,6 @@ describe("buildGraph", () => {
       expect(t1ToT2!.sourceHandle).toBeUndefined();
     });
 
-    it("tool_call→tool_result uses horizontal edge (right→left)", () => {
-      const tree = sessionRoot([
-        userMsg("u1", "hi", [
-          textNode("t1", "thinking", true, [
-            toolNode("tool1", "Bash", { toolResult: "ok", completed: true }),
-          ]),
-        ]),
-      ]);
-      const { edges } = buildGraph(tree);
-
-      const callToResult = edges.find(
-        (e) => e.source === "node-tool1-call" && e.target === "node-tool1-result",
-      );
-      expect(callToResult).toBeDefined();
-      expect(callToResult!.sourceHandle).toBe("right");
-      expect(callToResult!.targetHandle).toBe("left");
-    });
-
     it("complex scenario: thinking→tool→thinking→tool→thinking", () => {
       const tree = sessionRoot([
         userMsg("u1", "hi", [
@@ -478,22 +408,9 @@ describe("buildGraph", () => {
       expect(t2ToB).toBeDefined();
       expect(t2ToB!.sourceHandle).toBe("right");
 
-      // Horizontal tool results
-      const aResult = edges.find((e) => e.source === "node-toolA-call" && e.target === "node-toolA-result");
-      expect(aResult).toBeDefined();
-      expect(aResult!.sourceHandle).toBe("right");
-      expect(aResult!.targetHandle).toBe("left");
-
-      const bResult = edges.find((e) => e.source === "node-toolB-call" && e.target === "node-toolB-result");
-      expect(bResult).toBeDefined();
-
       // t3 should be thinking node (response heuristic removed)
       const t3Node = nodes.find((n) => n.id === "node-t3");
       expect(t3Node?.type).toBe("thinking");
-
-      // No tool→thinking vertical edges
-      expect(edges.find((e) => e.source === "node-toolA-result" && e.target === "node-t2")).toBeUndefined();
-      expect(edges.find((e) => e.source === "node-toolB-result" && e.target === "node-t3")).toBeUndefined();
     });
 
     it("streaming tool (no result yet) still branches horizontally", () => {
@@ -530,22 +447,6 @@ describe("buildGraph layout: tool nodes positioned to the right of thinking", ()
     const thinkingNode = nodes.find((n) => n.id === "node-t1")!;
     const toolCallNode = nodes.find((n) => n.id === "node-tool1-call")!;
     expect(toolCallNode.position.x).toBeGreaterThan(thinkingNode.position.x);
-  });
-
-  it("tool_result is to the right of its tool_call (same y)", () => {
-    const tree = sessionRoot([
-      userMsg("u1", "hi", [
-        textNode("t1", "thinking", true, [
-          toolNode("tool1", "Bash", { toolResult: "output", completed: true }),
-        ]),
-      ]),
-    ]);
-    const { nodes } = buildGraph(tree);
-
-    const toolCallNode = nodes.find((n) => n.id === "node-tool1-call")!;
-    const toolResultNode = nodes.find((n) => n.id === "node-tool1-result")!;
-    expect(toolResultNode.position.x).toBeGreaterThan(toolCallNode.position.x);
-    expect(toolResultNode.position.y).toBe(toolCallNode.position.y);
   });
 
   it("second thinking node is below first thinking node", () => {
@@ -625,7 +526,6 @@ describe("individual tool nodes", () => {
     const { nodes } = buildGraph(tree);
 
     expect(nodes.filter((n) => n.type === "tool_call")).toHaveLength(5);
-    expect(nodes.filter((n) => n.type === "tool_result")).toHaveLength(5);
   });
 
   it("다른 toolName 혼합 → 각각 개별 노드", () => {
@@ -643,7 +543,6 @@ describe("individual tool nodes", () => {
     const { nodes } = buildGraph(tree);
 
     expect(nodes.filter((n) => n.type === "tool_call")).toHaveLength(5);
-    expect(nodes.filter((n) => n.type === "tool_result")).toHaveLength(5);
   });
 
   it("Skill 도구는 toolCategory=skill 설정", () => {
@@ -797,22 +696,22 @@ describe("large session layout", () => {
     ], `large-${pairCount}`);
   }
 
-  it("25+ 노드 세션: 모든 노드가 양수 좌표", () => {
+  it("20+ 노드 세션: 모든 노드가 양수 좌표", () => {
     const tree = generateLargeSession(10);
     const { nodes } = buildGraph(tree);
 
-    expect(nodes.length).toBeGreaterThanOrEqual(25);
+    expect(nodes.length).toBeGreaterThanOrEqual(20);
     for (const node of nodes) {
       expect(node.position.x).toBeGreaterThanOrEqual(0);
       expect(node.position.y).toBeGreaterThanOrEqual(0);
     }
   });
 
-  it("50+ 노드 세션: 모든 노드가 양수 좌표", () => {
+  it("40+ 노드 세션: 모든 노드가 양수 좌표", () => {
     const tree = generateLargeSession(20);
     const { nodes } = buildGraph(tree);
 
-    expect(nodes.length).toBeGreaterThanOrEqual(45);
+    expect(nodes.length).toBeGreaterThanOrEqual(40);
     for (const node of nodes) {
       expect(node.position.x).toBeGreaterThanOrEqual(0);
       expect(node.position.y).toBeGreaterThanOrEqual(0);
@@ -1155,7 +1054,7 @@ describe("멀티턴 세션 레이아웃", () => {
     expect(t2.position.y).toBeGreaterThan(u2.position.y);
   });
 
-  it("노드 총 수 확인: 세션 + 유저3 + 씽킹3 + 도구2x(call+result) = 11", () => {
+  it("노드 총 수 확인: 세션 + 유저3 + 씽킹3 + 도구2x(call) = 9", () => {
     const tree = sessionRoot([
       userMsg("u1", "Turn 1", [
         textNode("t1", "Thinking 1", true, [
@@ -1173,7 +1072,7 @@ describe("멀티턴 세션 레이아웃", () => {
     ], "session-1");
 
     const { nodes } = buildGraph(tree);
-    // session(1) + user(3) + thinking(3) + tool_call(2) + tool_result(2) = 11
-    expect(nodes).toHaveLength(11);
+    // session(1) + user(3) + thinking(3) + tool_call(2) = 9
+    expect(nodes).toHaveLength(9);
   });
 });

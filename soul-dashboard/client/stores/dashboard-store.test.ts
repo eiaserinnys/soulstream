@@ -982,8 +982,6 @@ describe("dashboard-store", () => {
       } as SubagentStartEvent, 3);
 
       const tree = useDashboardStore.getState().tree!;
-      // No subagent nodes in tree
-      expect(collectNodes(tree, "subagent")).toHaveLength(0);
       // No error nodes
       expect(collectNodes(tree, "error")).toHaveLength(0);
       // Task tool is still there with no children
@@ -1020,7 +1018,6 @@ describe("dashboard-store", () => {
       } as SubagentStopEvent, 4);
 
       const tree = useDashboardStore.getState().tree!;
-      expect(collectNodes(tree, "subagent")).toHaveLength(0);
       expect(collectNodes(tree, "error")).toHaveLength(0);
     });
 
@@ -1436,8 +1433,6 @@ describe("dashboard-store", () => {
 
       const tree = useDashboardStore.getState().tree!;
 
-      // No subagent nodes
-      expect(collectNodes(tree, "subagent")).toHaveLength(0);
       // No error nodes
       expect(collectNodes(tree, "error")).toHaveLength(0);
 
@@ -1582,8 +1577,6 @@ describe("dashboard-store", () => {
       const task1 = turnTools[0];
       expect(task1.children.some(c => (c as ToolNode).toolName === "Grep")).toBe(true);
 
-      // No subagent nodes
-      expect(collectNodes(tree, "subagent")).toHaveLength(0);
       // No error nodes
       expect(collectNodes(tree, "error")).toHaveLength(0);
     });

@@ -10,30 +10,24 @@ import type { NodeTypes } from '@xyflow/react';
 import { UserNode } from './UserNode';
 import { ThinkingNode } from './ThinkingNode';
 import { ToolCallNode } from './ToolCallNode';
-import { ToolResultNode } from './ToolResultNode';
 import { ResponseNode } from './ResponseNode';
 import { SystemNode } from './SystemNode';
 import { InterventionNode } from './InterventionNode';
-import { SubagentNode } from './SubagentNode';
 
 export const nodeTypes: NodeTypes = {
   user: UserNode,
   thinking: ThinkingNode,
   tool_call: ToolCallNode,
-  tool_result: ToolResultNode,
   response: ResponseNode,
   system: SystemNode,
   intervention: InterventionNode,
-  subagent: SubagentNode,
 };
 
 export {
   UserNode,
   ThinkingNode,
   ToolCallNode,
-  ToolResultNode,
   ResponseNode,
   SystemNode,
   InterventionNode,
-  SubagentNode,
 };
