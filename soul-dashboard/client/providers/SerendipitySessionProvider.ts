@@ -2,7 +2,7 @@
  * SerendipitySessionProvider - 세렌디피티 API 기반 세션 Provider
  *
  * 세렌디피티에 저장된 Soul 세션 페이지를 대시보드에서 조회합니다.
- * Soul Plugin이 생성한 soul:* 블록 타입을 DashboardCard로 변환합니다.
+ * Soul Plugin이 생성한 soul:* 블록 타입을 EventTreeNode로 변환합니다.
  */
 
 import type {
@@ -14,7 +14,7 @@ import type {
 } from "./types";
 import type {
   SessionSummary,
-  DashboardCard,
+  EventTreeNode,
   SoulSSEEvent,
   SessionStatus,
 } from "@shared/types";
@@ -135,11 +135,11 @@ export class SerendipitySessionProvider implements SessionStorageProvider {
   /**
    * 세션 카드 목록 조회.
    *
-   * 세렌디피티 페이지의 블록을 DashboardCard로 변환합니다.
+   * 세렌디피티 페이지의 블록을 EventTreeNode로 변환합니다.
    *
    * @param sessionKey - 세션 키 (세렌디피티 페이지 UUID)
    */
-  async fetchCards(sessionKey: string): Promise<DashboardCard[]> {
+  async fetchCards(sessionKey: string): Promise<EventTreeNode[]> {
     const { baseUrl } = this.options;
 
     const pageRes = await fetch(`${baseUrl}/pages/${sessionKey}`);
@@ -180,8 +180,8 @@ export class SerendipitySessionProvider implements SessionStorageProvider {
           const newCards = cards.slice(lastBlockCount);
 
           for (const card of newCards) {
-            // Card를 SSE 이벤트로 변환하여 전달
-            const event = this.cardToEvent(card);
+            // Node를 SSE 이벤트로 변환하여 전달
+            const event = this.nodeToEvent(card);
             if (event) {
               eventIdCounter += 1;
               onEvent(event, eventIdCounter);
@@ -223,25 +223,25 @@ export class SerendipitySessionProvider implements SessionStorageProvider {
   }
 
   /**
-   * 세렌디피티 블록 배열을 DashboardCard 배열로 변환.
+   * 세렌디피티 블록 배열을 EventTreeNode 배열로 변환.
    */
-  private blocksToCards(blocks: SerendipityBlock[]): DashboardCard[] {
-    const cards: DashboardCard[] = [];
+  private blocksToCards(blocks: SerendipityBlock[]): EventTreeNode[] {
+    const nodes: EventTreeNode[] = [];
 
     for (const block of blocks) {
-      const card = this.blockToCard(block);
-      if (card) {
-        cards.push(card);
+      const node = this.blockToNode(block);
+      if (node) {
+        nodes.push(node);
       }
     }
 
-    return cards;
+    return nodes;
   }
 
   /**
-   * 단일 세렌디피티 블록을 DashboardCard로 변환.
+   * 단일 세렌디피티 블록을 EventTreeNode로 변환.
    */
-  private blockToCard(block: SerendipityBlock): DashboardCard | null {
+  private blockToNode(block: SerendipityBlock): EventTreeNode | null {
     const blockType = block.type as SoulBlockType;
     const content = this.extractTextFromPortableText(block.content);
 
@@ -251,42 +251,49 @@ export class SerendipitySessionProvider implements SessionStorageProvider {
       case "soul:thinking":
       case "soul:intervention":
         return {
-          cardId: block.id,
+          id: block.id,
           type: "text",
+          children: [],
           content,
           completed: true,
         };
 
-      case "soul:tool_use":
+      case "soul:tool_use": {
         // tool_use 블록의 메타데이터에서 도구 정보 추출
         const toolUseData = this.extractToolData(block.content);
         return {
-          cardId: block.id,
+          id: block.id,
           type: "tool",
+          children: [],
           content: "",
           toolName: toolUseData.toolName,
           toolInput: toolUseData.toolInput,
           completed: false, // tool_result가 올 때까지 미완료
         };
+      }
 
-      case "soul:tool_result":
-        // tool_result는 이전 tool_use 카드를 업데이트하는 용도
-        // 여기서는 별도 카드로 생성하고, 레이아웃에서 매칭
+      case "soul:tool_result": {
+        // tool_result는 이전 tool_use 노드를 업데이트하는 용도
+        // 여기서는 별도 노드로 생성하고, 레이아웃에서 매칭
         const toolResultData = this.extractToolResultData(block.content);
         return {
-          cardId: block.id,
+          id: block.id,
           type: "tool",
+          children: [],
           content: "",
           toolName: toolResultData.toolName,
+          toolInput: {},
           toolResult: toolResultData.result,
           isError: toolResultData.isError,
           completed: true,
         };
+      }
 
       case "soul:error":
         return {
-          cardId: block.id,
+          id: block.id,
           type: "text",
+          children: [],
           content: `Error: ${content}`,
           completed: true,
         };
@@ -296,8 +303,9 @@ export class SerendipitySessionProvider implements SessionStorageProvider {
         // 일반 텍스트 블록
         if (content.trim()) {
           return {
-            cardId: block.id,
+            id: block.id,
             type: "text",
+            children: [],
             content,
             completed: true,
           };
@@ -371,35 +379,32 @@ export class SerendipitySessionProvider implements SessionStorageProvider {
   }
 
   /**
-   * DashboardCard를 SoulSSEEvent로 변환 (폴링 업데이트용).
+   * EventTreeNode를 SoulSSEEvent로 변환 (폴링 업데이트용).
    */
-  private cardToEvent(card: DashboardCard): SoulSSEEvent | null {
-    if (card.type === "text") {
-      // text_end 이벤트로 전달 (이미 완료된 카드)
+  private nodeToEvent(node: EventTreeNode): SoulSSEEvent | null {
+    if (node.type === "text") {
       return {
         type: "text_end",
-        card_id: card.cardId,
+        timestamp: 0,
       };
     }
 
-    if (card.type === "tool" && card.completed) {
-      // tool_result 이벤트로 전달
+    if (node.type === "tool" && node.completed) {
       return {
         type: "tool_result",
-        card_id: card.cardId,
-        tool_name: card.toolName ?? "unknown",
-        result: card.toolResult ?? "",
-        is_error: card.isError ?? false,
+        timestamp: 0,
+        tool_name: node.toolName,
+        result: node.toolResult ?? "",
+        is_error: node.isError ?? false,
       };
     }
 
-    if (card.type === "tool" && !card.completed) {
-      // tool_start 이벤트로 전달
+    if (node.type === "tool" && !node.completed) {
       return {
         type: "tool_start",
-        card_id: card.cardId,
-        tool_name: card.toolName ?? "unknown",
-        tool_input: card.toolInput ?? {},
+        timestamp: 0,
+        tool_name: node.toolName,
+        tool_input: node.toolInput,
       };
     }
 

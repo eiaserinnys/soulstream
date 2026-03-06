@@ -117,9 +117,7 @@ class TestSessionContext:
         assert ctx.page_id is None
         assert ctx.page_title == ""
         assert ctx.user_block_id is None
-        assert ctx.current_card_id is None
         assert ctx.block_order == 0
-        assert ctx.text_buffers == {}
         assert ctx.tool_blocks == {}
 
     def test_session_context_next_order(self):

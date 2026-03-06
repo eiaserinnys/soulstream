@@ -806,8 +806,6 @@ class TestEngineEventConversion:
         assert isinstance(start, TextStartSSEEvent)
         assert isinstance(delta, TextDeltaSSEEvent)
         assert isinstance(end, TextEndSSEEvent)
-        # 세 이벤트 모두 동일한 card_id
-        assert start.card_id == delta.card_id == end.card_id
         assert delta.text == "모델이 응답 중..."
 
     async def test_tool_start_event(self):
@@ -897,115 +895,6 @@ class TestEngineEventConversion:
         assert result_events[0].success is True
         assert result_events[0].output == "최종 결과"
 
-    async def test_text_blocks_without_thinking_get_none_card_id(self):
-        """card_id 미지정 TextDeltaEngineEvent → card_id=None"""
-        from soul_server.models import TextStartSSEEvent
-
-        adapter = SoulEngineAdapter(workspace_dir="/test")
-
-        async def fake_run(prompt, session_id=None, on_progress=None,
-                           on_compact=None, on_intervention=None,
-                           on_session=None, on_event=None):
-            if on_event:
-                await on_event(TextDeltaEngineEvent(
-                    text="첫 번째 텍스트",
-                ))
-                await on_event(TextDeltaEngineEvent(
-                    text="두 번째 텍스트",
-                ))
-            return EngineResult(success=True, output="done")
-
-        with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
-        ) as MockRunner:
-            instance = MockRunner.return_value
-            instance.run = fake_run
-            events = await collect_events(adapter, "test")
-
-        start_events = [e for e in events if isinstance(e, TextStartSSEEvent)]
-        assert len(start_events) == 2
-        # ThinkingBlock 없이 TextBlock만 오면 card_id는 모두 None
-        assert start_events[0].card_id is None
-        assert start_events[1].card_id is None
-
-    async def test_text_blocks_with_thinking_use_thinking_card_id(self):
-        """ThinkingEngineEvent → TextDeltaEngineEvent(card_id=...) → card_id 일치"""
-        from soul_server.models import TextStartSSEEvent, ThinkingSSEEvent
-
-        adapter = SoulEngineAdapter(workspace_dir="/test")
-
-        # 이벤트 생성 시 card_id를 미리 할당하고 TextDelta에 전달
-        thinking1 = ThinkingEngineEvent(thinking="첫 번째 사고", signature="sig1")
-        thinking2 = ThinkingEngineEvent(thinking="두 번째 사고", signature="sig2")
-
-        async def fake_run(prompt, session_id=None, on_progress=None,
-                           on_compact=None, on_intervention=None,
-                           on_session=None, on_event=None):
-            if on_event:
-                await on_event(thinking1)
-                await on_event(TextDeltaEngineEvent(
-                    text="첫 번째 텍스트",
-                    card_id=thinking1.card_id,
-                ))
-                await on_event(thinking2)
-                await on_event(TextDeltaEngineEvent(
-                    text="두 번째 텍스트",
-                    card_id=thinking2.card_id,
-                ))
-            return EngineResult(success=True, output="done")
-
-        with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
-        ) as MockRunner:
-            instance = MockRunner.return_value
-            instance.run = fake_run
-            events = await collect_events(adapter, "test")
-
-        thinking_events = [e for e in events if isinstance(e, ThinkingSSEEvent)]
-        start_events = [e for e in events if isinstance(e, TextStartSSEEvent)]
-        assert len(thinking_events) == 2
-        assert len(start_events) == 2
-        # 각 TextDelta는 해당 Thinking의 card_id를 사용
-        assert start_events[0].card_id == thinking_events[0].card_id
-        assert start_events[1].card_id == thinking_events[1].card_id
-        # 두 Thinking의 card_id는 서로 다름
-        assert thinking_events[0].card_id != thinking_events[1].card_id
-
-    async def test_tool_linked_to_text_card(self):
-        """TextDeltaEngineEvent와 ToolStartEngineEvent에 같은 card_id → SSE에도 같은 card_id"""
-        from soul_server.models import TextStartSSEEvent, ToolStartSSEEvent
-
-        adapter = SoulEngineAdapter(workspace_dir="/test")
-        shared_card_id = "shared-card-001"
-
-        async def fake_run(prompt, session_id=None, on_progress=None,
-                           on_compact=None, on_intervention=None,
-                           on_session=None, on_event=None):
-            if on_event:
-                await on_event(TextDeltaEngineEvent(
-                    text="Read 파일을 먼저",
-                    card_id=shared_card_id,
-                ))
-                await on_event(ToolStartEngineEvent(
-                    tool_name="Read",
-                    tool_input={},
-                    card_id=shared_card_id,
-                ))
-            return EngineResult(success=True, output="done")
-
-        with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
-        ) as MockRunner:
-            instance = MockRunner.return_value
-            instance.run = fake_run
-            events = await collect_events(adapter, "test")
-
-        text_starts = [e for e in events if isinstance(e, TextStartSSEEvent)]
-        tool_starts = [e for e in events if isinstance(e, ToolStartSSEEvent)]
-        assert len(text_starts) == 1
-        assert len(tool_starts) == 1
-        assert text_starts[0].card_id == tool_starts[0].card_id == shared_card_id
-
     async def test_existing_progress_still_emitted_alongside_new_events(self):
         """기존 ProgressEvent도 그대로 발행 (슬랙봇 하위호환)"""
         from soul_server.models import TextStartSSEEvent
@@ -1089,82 +978,17 @@ class TestThinkingEvent:
         assert len(thinking_events) == 1
         assert thinking_events[0].thinking == "사용자가 무엇을 원하는지 분석 중..."
         assert thinking_events[0].signature == "sig123"
-        assert thinking_events[0].card_id is not None
-
-    async def test_thinking_gets_unique_card_id(self):
-        """각 ThinkingEngineEvent는 고유한 card_id를 자동 생성"""
-        from soul_server.models import ThinkingSSEEvent
-
-        adapter = SoulEngineAdapter(workspace_dir="/test")
-
-        async def fake_run(prompt, session_id=None, on_progress=None,
-                           on_compact=None, on_intervention=None,
-                           on_session=None, on_event=None):
-            if on_event:
-                await on_event(ThinkingEngineEvent(
-                    thinking="첫 번째 사고",
-                    signature="sig1",
-                ))
-                await on_event(ThinkingEngineEvent(
-                    thinking="두 번째 사고",
-                    signature="sig2",
-                ))
-            return EngineResult(success=True, output="done")
-
-        with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
-        ) as MockRunner:
-            instance = MockRunner.return_value
-            instance.run = fake_run
-            events = await collect_events(adapter, "test")
-
-        thinking_events = [e for e in events if isinstance(e, ThinkingSSEEvent)]
-        assert len(thinking_events) == 2
-        assert thinking_events[0].card_id != thinking_events[1].card_id
-
-    async def test_thinking_followed_by_tool_shares_card_id(self):
-        """ThinkingEngineEvent의 card_id를 ToolStartEngineEvent에 전달하면 SSE에서도 일치"""
-        from soul_server.models import ThinkingSSEEvent, ToolStartSSEEvent
-
-        adapter = SoulEngineAdapter(workspace_dir="/test")
-
-        thinking_evt = ThinkingEngineEvent(thinking="파일을 읽어야겠다", signature="sig")
-
-        async def fake_run(prompt, session_id=None, on_progress=None,
-                           on_compact=None, on_intervention=None,
-                           on_session=None, on_event=None):
-            if on_event:
-                await on_event(thinking_evt)
-                await on_event(ToolStartEngineEvent(
-                    tool_name="Read",
-                    tool_input={},
-                    card_id=thinking_evt.card_id,
-                ))
-            return EngineResult(success=True, output="done")
-
-        with patch(
-            "soul_server.service.engine_adapter.ClaudeRunner"
-        ) as MockRunner:
-            instance = MockRunner.return_value
-            instance.run = fake_run
-            events = await collect_events(adapter, "test")
-
-        thinking_events = [e for e in events if isinstance(e, ThinkingSSEEvent)]
-        tool_events = [e for e in events if isinstance(e, ToolStartSSEEvent)]
-        assert len(thinking_events) == 1
-        assert len(tool_events) == 1
-        # Thinking의 card_id가 ToolStart에 전파됨
-        assert thinking_events[0].card_id == tool_events[0].card_id
+        # card_id 테스트들은 Phase 5에서 card_id 필드 삭제로 제거됨
 
 
-# === parent_tool_use_id 전파 테스트 ===
+# === parent_event_id 전파 테스트 ===
 
 
 class TestParentToolUseIdPropagation:
-    """서브에이전트 내부 이벤트의 parent_tool_use_id 전파 테스트"""
+    """서브에이전트 내부 이벤트의 parent_event_id 전파 테스트"""
 
-    async def test_thinking_event_with_parent_tool_use_id(self):
-        """ThinkingEngineEvent에 parent_tool_use_id가 전파됨"""
+    async def test_thinking_event_with_parent_event_id(self):
+        """ThinkingEngineEvent에 parent_event_id가 전파됨"""
         from soul_server.models import ThinkingSSEEvent
 
         adapter = SoulEngineAdapter(workspace_dir="/test")
@@ -1176,7 +1000,7 @@ class TestParentToolUseIdPropagation:
                 await on_event(ThinkingEngineEvent(
                     thinking="서브에이전트 내 사고",
                     signature="sig",
-                    parent_tool_use_id="toolu_parent_task_123",
+                    parent_event_id="toolu_parent_task_123",
                 ))
             return EngineResult(success=True, output="done")
 
@@ -1189,10 +1013,10 @@ class TestParentToolUseIdPropagation:
 
         thinking_events = [e for e in events if isinstance(e, ThinkingSSEEvent)]
         assert len(thinking_events) == 1
-        assert thinking_events[0].parent_tool_use_id == "toolu_parent_task_123"
+        assert thinking_events[0].parent_event_id == "toolu_parent_task_123"
 
-    async def test_text_start_event_with_parent_tool_use_id(self):
-        """TextDeltaEngineEvent → TextStartSSEEvent에 parent_tool_use_id가 전파됨"""
+    async def test_text_start_event_with_parent_event_id(self):
+        """TextDeltaEngineEvent → TextStartSSEEvent에 parent_event_id가 전파됨"""
         from soul_server.models import TextStartSSEEvent
 
         adapter = SoulEngineAdapter(workspace_dir="/test")
@@ -1203,7 +1027,7 @@ class TestParentToolUseIdPropagation:
             if on_event:
                 await on_event(TextDeltaEngineEvent(
                     text="서브에이전트 내 응답",
-                    parent_tool_use_id="toolu_parent_task_456",
+                    parent_event_id="toolu_parent_task_456",
                 ))
             return EngineResult(success=True, output="done")
 
@@ -1216,10 +1040,10 @@ class TestParentToolUseIdPropagation:
 
         start_events = [e for e in events if isinstance(e, TextStartSSEEvent)]
         assert len(start_events) == 1
-        assert start_events[0].parent_tool_use_id == "toolu_parent_task_456"
+        assert start_events[0].parent_event_id == "toolu_parent_task_456"
 
-    async def test_tool_start_event_with_parent_tool_use_id(self):
-        """ToolStartEngineEvent에 parent_tool_use_id가 전파됨"""
+    async def test_tool_start_event_with_parent_event_id(self):
+        """ToolStartEngineEvent에 parent_event_id가 전파됨"""
         from soul_server.models import ToolStartSSEEvent
 
         adapter = SoulEngineAdapter(workspace_dir="/test")
@@ -1231,7 +1055,7 @@ class TestParentToolUseIdPropagation:
                 await on_event(ToolStartEngineEvent(
                     tool_name="Read",
                     tool_input={"file_path": "/test"},
-                    parent_tool_use_id="toolu_parent_task_789",
+                    parent_event_id="toolu_parent_task_789",
                 ))
             return EngineResult(success=True, output="done")
 
@@ -1244,10 +1068,10 @@ class TestParentToolUseIdPropagation:
 
         tool_events = [e for e in events if isinstance(e, ToolStartSSEEvent)]
         assert len(tool_events) == 1
-        assert tool_events[0].parent_tool_use_id == "toolu_parent_task_789"
+        assert tool_events[0].parent_event_id == "toolu_parent_task_789"
 
-    async def test_tool_result_event_with_parent_tool_use_id(self):
-        """ToolResultEngineEvent에 parent_tool_use_id가 전파됨"""
+    async def test_tool_result_event_with_parent_event_id(self):
+        """ToolResultEngineEvent에 parent_event_id가 전파됨"""
         from soul_server.models import ToolResultSSEEvent
 
         adapter = SoulEngineAdapter(workspace_dir="/test")
@@ -1260,7 +1084,7 @@ class TestParentToolUseIdPropagation:
                     tool_name="Read",
                     result="content",
                     is_error=False,
-                    parent_tool_use_id="toolu_parent_task_abc",
+                    parent_event_id="toolu_parent_task_abc",
                 ))
             return EngineResult(success=True, output="done")
 
@@ -1273,10 +1097,10 @@ class TestParentToolUseIdPropagation:
 
         result_events = [e for e in events if isinstance(e, ToolResultSSEEvent)]
         assert len(result_events) == 1
-        assert result_events[0].parent_tool_use_id == "toolu_parent_task_abc"
+        assert result_events[0].parent_event_id == "toolu_parent_task_abc"
 
-    async def test_subagent_start_event_with_parent_tool_use_id(self):
-        """SubagentStartEngineEvent에 parent_tool_use_id가 전파됨"""
+    async def test_subagent_start_event_with_parent_event_id(self):
+        """SubagentStartEngineEvent에 parent_event_id가 전파됨"""
         from soul_server.models import SubagentStartSSEEvent
 
         adapter = SoulEngineAdapter(workspace_dir="/test")
@@ -1288,7 +1112,7 @@ class TestParentToolUseIdPropagation:
                 await on_event(SubagentStartEngineEvent(
                     agent_id="agent-001",
                     agent_type="explore",
-                    parent_tool_use_id="toolu_task_tool_xyz",
+                    parent_event_id="toolu_task_tool_xyz",
                 ))
             return EngineResult(success=True, output="done")
 
@@ -1301,10 +1125,10 @@ class TestParentToolUseIdPropagation:
 
         subagent_events = [e for e in events if isinstance(e, SubagentStartSSEEvent)]
         assert len(subagent_events) == 1
-        assert subagent_events[0].parent_tool_use_id == "toolu_task_tool_xyz"
+        assert subagent_events[0].parent_event_id == "toolu_task_tool_xyz"
 
-    async def test_result_event_with_parent_tool_use_id(self):
-        """ResultEngineEvent에 parent_tool_use_id가 전파됨"""
+    async def test_result_event_with_parent_event_id(self):
+        """ResultEngineEvent에 parent_event_id가 전파됨"""
         from soul_server.models import ResultSSEEvent
 
         adapter = SoulEngineAdapter(workspace_dir="/test")
@@ -1317,7 +1141,7 @@ class TestParentToolUseIdPropagation:
                     success=True,
                     output="완료",
                     error=None,
-                    parent_tool_use_id="parent-task-final",
+                    parent_event_id="parent-task-final",
                 ))
             return EngineResult(success=True, output="완료")
 
@@ -1330,10 +1154,10 @@ class TestParentToolUseIdPropagation:
 
         result_events = [e for e in events if isinstance(e, ResultSSEEvent)]
         assert len(result_events) == 1
-        assert result_events[0].parent_tool_use_id == "parent-task-final"
+        assert result_events[0].parent_event_id == "parent-task-final"
 
-    async def test_events_without_parent_tool_use_id(self):
-        """parent_tool_use_id 없는 이벤트도 정상 처리"""
+    async def test_events_without_parent_event_id(self):
+        """parent_event_id 없는 이벤트도 정상 처리"""
         from soul_server.models import (
             ThinkingSSEEvent,
             TextStartSSEEvent,
@@ -1348,7 +1172,7 @@ class TestParentToolUseIdPropagation:
                            on_compact=None, on_intervention=None,
                            on_session=None, on_event=None):
             if on_event:
-                # parent_tool_use_id 없이 이벤트 발행
+                # parent_event_id 없이 이벤트 발행
                 await on_event(ThinkingEngineEvent(
                     thinking="메인 에이전트 사고",
                     signature="sig",
@@ -1379,23 +1203,23 @@ class TestParentToolUseIdPropagation:
             instance.run = fake_run
             events = await collect_events(adapter, "test")
 
-        # 모든 이벤트가 parent_tool_use_id=None으로 정상 처리
+        # 모든 이벤트가 parent_event_id=None으로 정상 처리
         thinking = [e for e in events if isinstance(e, ThinkingSSEEvent)]
         assert len(thinking) == 1
-        assert thinking[0].parent_tool_use_id is None
+        assert thinking[0].parent_event_id is None
 
         text_start = [e for e in events if isinstance(e, TextStartSSEEvent)]
         assert len(text_start) == 1
-        assert text_start[0].parent_tool_use_id is None
+        assert text_start[0].parent_event_id is None
 
         tool_start = [e for e in events if isinstance(e, ToolStartSSEEvent)]
         assert len(tool_start) == 1
-        assert tool_start[0].parent_tool_use_id is None
+        assert tool_start[0].parent_event_id is None
 
         tool_result = [e for e in events if isinstance(e, ToolResultSSEEvent)]
         assert len(tool_result) == 1
-        assert tool_result[0].parent_tool_use_id is None
+        assert tool_result[0].parent_event_id is None
 
         result = [e for e in events if isinstance(e, ResultSSEEvent)]
         assert len(result) == 1
-        assert result[0].parent_tool_use_id is None
+        assert result[0].parent_event_id is None

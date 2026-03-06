@@ -11,7 +11,7 @@ import type {
 } from "./types";
 import type {
   SessionSummary,
-  DashboardCard,
+  EventTreeNode,
   SoulSSEEvent,
   SSEEventType,
 } from "@shared/types";
@@ -96,7 +96,7 @@ export class SSESessionProvider implements SessionStorageProvider {
    *
    * @param _sessionKey - 세션 키 (agentSessionId)
    */
-  async fetchCards(_sessionKey: string): Promise<DashboardCard[]> {
+  async fetchCards(_sessionKey: string): Promise<EventTreeNode[]> {
     // SSE 이벤트로 카드를 구성하므로 초기값은 빈 배열
     // 실제 이벤트 히스토리가 필요하면 /api/sessions/:id/events?history=true 호출 가능
     return [];

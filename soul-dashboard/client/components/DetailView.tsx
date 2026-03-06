@@ -10,8 +10,8 @@
  * - user/intervention 이벤트 노드 → EventNodeDetail
  */
 
-import type { DashboardCard } from "@shared/types";
-import { useDashboardStore, findTreeNode, treeNodeToCard, type SelectedEventNodeData } from "../stores/dashboard-store";
+import type { EventTreeNode, ToolNode, ThinkingNode, TextNode } from "@shared/types";
+import { useDashboardStore, findTreeNode, type SelectedEventNodeData } from "../stores/dashboard-store";
 import { ThinkingDetail } from "./detail/ThinkingDetail";
 import { ToolDetail } from "./detail/ToolDetail";
 import { SubAgentDetail } from "./detail/SubAgentDetail";
@@ -28,20 +28,24 @@ import { ScrollArea } from "./ui/scroll-area";
  * 1. tool + toolName === "Task" → SubAgentDetail
  * 2. tool + isError === true → ErrorDetail
  * 3. tool → ToolDetail
- * 4. text → ThinkingDetail
+ * 4. text/thinking → ThinkingDetail
  */
-function CardDetail({ card, focusResult }: { card: DashboardCard; focusResult?: boolean }) {
-  if (card.type === "tool") {
-    if (card.toolName === "Task") {
-      return <SubAgentDetail card={card} />;
+function CardDetail({ card, focusResult }: { card: EventTreeNode; focusResult?: boolean }) {
+  if (card.type === "tool" || card.type === "tool_use") {
+    const toolCard = card as ToolNode;
+    if (toolCard.toolName === "Task") {
+      return <SubAgentDetail card={toolCard} />;
     }
-    if (card.isError) {
-      return <ErrorDetail card={card} />;
+    if (toolCard.isError) {
+      return <ErrorDetail card={toolCard} />;
     }
-    return <ToolDetail card={card} focusResult={focusResult} />;
+    return <ToolDetail card={toolCard} focusResult={focusResult} />;
   }
 
-  return <ThinkingDetail card={card} />;
+  if (card.type === "thinking" || card.type === "text") {
+    return <ThinkingDetail card={card} />;
+  }
+  return null;
 }
 
 // === Event Node Detail ===
@@ -187,11 +191,8 @@ export function DetailView() {
   );
   const tree = useDashboardStore((s) => s.tree);
 
-  const selectedCard: DashboardCard | null = selectedCardId
-    ? (() => {
-        const treeNode = findTreeNode(tree, selectedCardId);
-        return treeNode ? treeNodeToCard(treeNode) : null;
-      })()
+  const selectedCard: EventTreeNode | null = selectedCardId
+    ? findTreeNode(tree, selectedCardId)
     : null;
 
   // tool_result 노드를 선택했는지 판정 (nodeId가 "-result"로 끝남)
