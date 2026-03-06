@@ -12,7 +12,7 @@ import {
   ensureRoot,
 } from "./processing-context";
 import type { ProcessingContext } from "./processing-context";
-import type { EventTreeNode, ErrorNode, ToolNode, SubagentNode } from "../../shared/types";
+import type { EventTreeNode, ErrorNode, ToolNode } from "../../shared/types";
 
 describe("createProcessingContext", () => {
   it("should return a context with all empty Maps and null fields", () => {
@@ -84,14 +84,12 @@ describe("makeNode", () => {
     expect(node.timestamp).toBe(1700000000);
   });
 
-  it("should set subagent-specific fields via extra", () => {
-    const node = makeNode("agent-1", "subagent", "", {
-      agentId: "agent-1",
-      agentType: "task",
+  it("should set arbitrary extra fields via overrides", () => {
+    const node = makeNode("extra-1", "text", "test", {
+      completed: true,
     });
 
-    expect((node as SubagentNode).agentId).toBe("agent-1");
-    expect((node as SubagentNode).agentType).toBe("task");
+    expect(node.completed).toBe(true);
   });
 });
 

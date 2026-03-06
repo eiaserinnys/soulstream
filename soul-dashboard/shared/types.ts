@@ -271,13 +271,6 @@ export interface SessionNode extends BaseNode {
   sessionId?: string;
 }
 
-/** 서브에이전트 가상 노드 (R4: 더 이상 생성되지 않으나 하위 호환) */
-export interface SubagentNode extends BaseNode {
-  type: "subagent";
-  agentId?: string;
-  agentType?: string;
-}
-
 /** 사용자 메시지 노드 */
 export interface UserMessageNode extends BaseNode {
   type: "user_message";
@@ -320,14 +313,6 @@ export interface ToolNode extends BaseNode {
   durationMs?: number;
 }
 
-/** 도구 결과 노드 (하위 호환) */
-export interface ToolResultNode extends BaseNode {
-  type: "tool_result";
-  toolName?: string;
-  toolResult?: string;
-  isError?: boolean;
-}
-
 /** 세션 결과 노드 */
 export interface ResultNode extends BaseNode {
   type: "result";
@@ -355,13 +340,11 @@ export interface ErrorNode extends BaseNode {
 /** 이벤트 트리 노드 — 소스 오브 트루스 (discriminated union) */
 export type EventTreeNode =
   | SessionNode
-  | SubagentNode
   | UserMessageNode
   | InterventionNode
   | ThinkingNode
   | TextNode
   | ToolNode
-  | ToolResultNode
   | ResultNode
   | CompactNode
   | CompleteNode

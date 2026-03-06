@@ -30,7 +30,7 @@ const renderers = new Map<EventTreeNodeType, NodeRenderer>([
 /**
  * 트리 노드의 타입에 맞는 렌더러를 찾아 실행합니다.
  *
- * registry에 등록되지 않은 타입은 조용히 무시합니다 (session, subagent 등).
+ * registry에 등록되지 않은 타입은 조용히 무시합니다 (session 등).
  */
 export function dispatchRenderer(
   treeNode: EventTreeNode,

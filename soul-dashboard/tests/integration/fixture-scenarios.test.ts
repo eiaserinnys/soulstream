@@ -177,28 +177,12 @@ describe("JSONL Fixture Integration Tests", () => {
       expect(toolNodes[1].toolResult).toContain("import { App }");
     });
 
-    it("buildGraph에서 tool_call + tool_result 쌍이 생성된다", () => {
+    it("buildGraph에서 tool_call 노드가 생성된다", () => {
       const { tree } = replayFixture("tree-layout");
       const { nodes } = buildGraph(tree);
 
       const toolCallNodes = nodes.filter((n) => n.type === "tool_call");
-      const toolResultNodes = nodes.filter((n) => n.type === "tool_result");
       expect(toolCallNodes).toHaveLength(2);
-      expect(toolResultNodes).toHaveLength(2);
-    });
-
-    it("buildGraph에서 tool_call→tool_result 수직 엣지가 생성된다", () => {
-      const { tree } = replayFixture("tree-layout");
-      const { edges, nodes } = buildGraph(tree);
-
-      // 각 tool_call 노드에서 tool_result로 향하는 엣지 확인
-      for (const callNode of nodes.filter((n) => n.type === "tool_call")) {
-        const resultNodeId = callNode.id.replace("-call", "-result");
-        const edge = edges.find(
-          (e) => e.source === callNode.id && e.target === resultNodeId,
-        );
-        expect(edge).toBeDefined();
-      }
     });
 
     it("buildGraph에서 tool 노드는 메인 흐름에서 수평 분기한다", () => {
@@ -382,7 +366,7 @@ describe("JSONL Fixture Integration Tests", () => {
       const { tree } = replayFixture("complete-flow");
       const { nodes } = buildGraph(tree);
 
-      // 트리 기반: user + thinking(들) + tool_call + tool_result + complete
+      // 트리 기반: user + thinking(들) + tool_call + complete
       expect(nodes.length).toBeGreaterThanOrEqual(5);
     });
 

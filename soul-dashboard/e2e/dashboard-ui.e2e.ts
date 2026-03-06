@@ -720,7 +720,7 @@ async function checkNodeOverlaps(page: Page): Promise<Array<{ a: string; b: stri
 /** 페이지 내 노드 타입별 개수를 캡처 */
 async function captureNodeSnapshot(page: Page): Promise<Record<string, number>> {
   return page.evaluate(() => {
-    const types = ["user-node", "thinking-node", "tool-call-node", "tool-result-node", "system-node"];
+    const types = ["user-node", "thinking-node", "tool-call-node", "system-node"];
     const snapshot: Record<string, number> = {};
     for (const type of types) {
       snapshot[type] = document.querySelectorAll(`[data-testid="${type}"]`).length;
@@ -940,10 +940,6 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     const toolCallNodes = page.locator('[data-testid="tool-call-node"]');
     await expect(toolCallNodes).toHaveCount(3, { timeout: 10_000 });
 
-    // 3개의 Tool Result 노드 확인
-    const toolResultNodes = page.locator('[data-testid="tool-result-node"]');
-    await expect(toolResultNodes).toHaveCount(3, { timeout: 10_000 });
-
     // Complete 노드 확인 (세션 완료 → system-node로 렌더링됨)
     const completeNodes = page.locator('[data-testid="system-node"]');
     await expect(completeNodes).toHaveCount(1, { timeout: 10_000 });
@@ -956,10 +952,10 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     const thinkingNodes = page.locator('[data-testid="thinking-node"]');
     await expect(thinkingNodes).toHaveCount(2, { timeout: 10_000 });
 
-    // 전체 노드 수: user(1) + thinking(2) + tool_call(3) + tool_result(3) + system(1, complete) = 10
+    // 전체 노드 수: user(1) + thinking(2) + tool_call(3) + system(1, complete) = 7
     const allNodes = page.locator(".react-flow__node");
     const nodeCount = await allNodes.count();
-    expect(nodeCount).toBeGreaterThanOrEqual(10);
+    expect(nodeCount).toBeGreaterThanOrEqual(7);
 
     // 레이아웃 정렬 검증: Tool Call 노드들이 세로 체이닝 (같은 X 좌표)
     const toolCallBoxes = await Promise.all(
@@ -1888,7 +1884,6 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
 
     // 구체 노드 수 검증
     expect(snapshotA1["tool-call-node"]).toBe(3);
-    expect(snapshotA1["tool-result-node"]).toBe(3);
     expect(snapshotA1["thinking-node"]).toBe(2);
     expect(snapshotA1["user-node"]).toBe(1);
 
@@ -1935,7 +1930,6 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
 
     // 구체 노드 수 재검증
     expect(snapshotA2["tool-call-node"]).toBe(3);
-    expect(snapshotA2["tool-result-node"]).toBe(3);
     expect(snapshotA2["thinking-node"]).toBe(2);
     expect(snapshotA2["user-node"]).toBe(1);
 

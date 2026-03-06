@@ -5,12 +5,11 @@
  * - text 카드 → ThinkingDetail
  * - tool 카드 (Task) → SubAgentDetail
  * - tool 카드 (에러) → ErrorDetail
- * - tool 카드 (일반, call 선택) → ToolDetail (Input 포커스)
- * - tool 카드 (일반, result 선택) → ToolDetail (Result 포커스)
+ * - tool 카드 (일반) → ToolDetail
  * - user/intervention 이벤트 노드 → EventNodeDetail
  */
 
-import type { EventTreeNode, ToolNode, ThinkingNode, TextNode } from "@shared/types";
+import type { EventTreeNode, ToolNode } from "@shared/types";
 import { useDashboardStore, findTreeNode, type SelectedEventNodeData } from "../stores/dashboard-store";
 import { ThinkingDetail } from "./detail/ThinkingDetail";
 import { ToolDetail } from "./detail/ToolDetail";
@@ -30,7 +29,7 @@ import { ScrollArea } from "./ui/scroll-area";
  * 3. tool → ToolDetail
  * 4. text/thinking → ThinkingDetail
  */
-function CardDetail({ card, focusResult }: { card: EventTreeNode; focusResult?: boolean }) {
+function CardDetail({ card }: { card: EventTreeNode }) {
   if (card.type === "tool" || card.type === "tool_use") {
     const toolCard = card as ToolNode;
     if (toolCard.toolName === "Task") {
@@ -39,7 +38,7 @@ function CardDetail({ card, focusResult }: { card: EventTreeNode; focusResult?: 
     if (toolCard.isError) {
       return <ErrorDetail card={toolCard} />;
     }
-    return <ToolDetail card={toolCard} focusResult={focusResult} />;
+    return <ToolDetail card={toolCard} />;
   }
 
   if (card.type === "thinking" || card.type === "text") {
@@ -185,7 +184,6 @@ function SystemNodeDetail({ data }: { data: SelectedEventNodeData }) {
 
 export function DetailView() {
   const selectedCardId = useDashboardStore((s) => s.selectedCardId);
-  const selectedNodeId = useDashboardStore((s) => s.selectedNodeId);
   const selectedEventNodeData = useDashboardStore(
     (s) => s.selectedEventNodeData,
   );
@@ -195,14 +193,11 @@ export function DetailView() {
     ? findTreeNode(tree, selectedCardId)
     : null;
 
-  // tool_result 노드를 선택했는지 판정 (nodeId가 "-result"로 끝남)
-  const focusResult = selectedNodeId?.endsWith("-result") ?? false;
-
   const hasSelection = selectedCard || selectedEventNodeData;
 
   // 상세 헤더에 표시할 타입 라벨
   const headerTypeLabel = selectedCard
-    ? focusResult ? "Result" : selectedCard.type === "tool" ? "Tool Call" : selectedCard.type
+    ? selectedCard.type === "tool" ? "Tool Call" : selectedCard.type
     : selectedEventNodeData?.nodeType ?? "";
 
   return (
@@ -230,7 +225,7 @@ export function DetailView() {
           </div>
         )}
 
-        {selectedCard && <CardDetail card={selectedCard} focusResult={focusResult} />}
+        {selectedCard && <CardDetail card={selectedCard} />}
         {selectedEventNodeData && !selectedCard && (
           <EventNodeDetail data={selectedEventNodeData} />
         )}

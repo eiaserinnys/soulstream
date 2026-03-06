@@ -307,13 +307,12 @@ describe("Store + Layout: Long Session Rendering", () => {
       expect(toolNode.isError).toBe(true);
       expect(toolNode.toolResult).toContain("command not found");
 
-      // 에러 도구 노드가 그래프에 정상 표시
+      // 에러 도구 노드가 그래프에서 tool_call로 표시
       const tree = useDashboardStore.getState().tree;
       const { nodes } = buildGraph(tree);
 
-      const toolResultNode = nodes.find((n) => n.type === "tool_result");
-      expect(toolResultNode).toBeDefined();
-      expect(toolResultNode!.data.isError).toBe(true);
+      const toolCallNode = nodes.find((n) => n.type === "tool_call");
+      expect(toolCallNode).toBeDefined();
     });
 
     it("세션 이벤트 순서: progress → text → tool → error", () => {

@@ -291,24 +291,11 @@ export function detectOrphanNodes(root: EventTreeNode): ValidationResult {
   }
 
   if (orphans.length > 0) {
-    // subagent 노드가 루트에 붙는 것은 현재 SDK 한계로 인한 알려진 동작
-    const subagentOrphans = orphans.filter((n) => n.type === "subagent");
-    const otherOrphans = orphans.filter((n) => n.type !== "subagent");
-
-    if (subagentOrphans.length > 0) {
-      result.warnings.push(
-        `subagent 노드 ${subagentOrphans.length}개가 세션 루트에 직접 배치 ` +
-          `(SDK 한계 — 알려진 동작): ${subagentOrphans.map((n) => n.id).join(", ")}`,
-      );
-    }
-
-    if (otherOrphans.length > 0) {
-      result.passed = false;
-      result.details.push(
-        `세션 루트에 비정상 노드 ${otherOrphans.length}개 감지: ` +
-          otherOrphans.map((n) => `"${n.id}" (${n.type})`).join(", "),
-      );
-    }
+    result.passed = false;
+    result.details.push(
+      `세션 루트에 비정상 노드 ${orphans.length}개 감지: ` +
+        orphans.map((n) => `"${n.id}" (${n.type})`).join(", "),
+    );
   }
 
   if (result.passed && orphans.length === 0) {

@@ -12,7 +12,6 @@ import type {
   UserMessageNode,
   InterventionNode,
   SessionNode,
-  SubagentNode,
   ResultNode,
   CompleteNode,
   ErrorNode,
@@ -32,8 +31,6 @@ export type GraphNodeType =
   | "text"          // TextBlock (하위 호환)
   | "tool_use"      // ToolUseBlock
   | "tool_call"     // 하위 호환 alias
-  | "tool_result"   // ToolResultBlock
-  | "subagent"      // Subagent (가상)
   | "result"        // ResultMessage
   | "response"      // 하위 호환
   | "system"        // 시스템 메시지
@@ -52,10 +49,6 @@ export interface GraphNodeData extends Record<string, unknown> {
   hasChildren?: boolean;      // 자식 노드 존재 여부
   childCount?: number;        // 자식 노드 수 (전체 자손)
 
-  // subagent 전용
-  agentId?: string;
-  agentType?: string;
-
   // result 전용
   durationMs?: number;
   usage?: { input_tokens: number; output_tokens: number };
@@ -66,7 +59,6 @@ export interface GraphNodeData extends Record<string, unknown> {
   toolInput?: Record<string, unknown>;
   toolResult?: string;
   isError?: boolean;
-  subAgentId?: string;  // 하위 호환
   /** 플랜 모드 관련 플래그 */
   isPlanMode?: boolean;
   isPlanModeEntry?: boolean;
@@ -235,66 +227,6 @@ export function createToolCallNode(
   };
 }
 
-export function createToolResultNode(treeNode: ToolNode): GraphNode | null {
-  if (treeNode.toolResult === undefined && treeNode.completed) {
-    return {
-      id: `node-${treeNode.id}-result`,
-      type: "tool_result",
-      position: { x: 0, y: 0 },
-      width: DEFAULT_NODE_WIDTH,
-      height: DEFAULT_NODE_HEIGHT,
-      data: {
-        nodeType: "tool_result",
-        cardId: treeNode.id,
-        label: `${treeNode.toolName} Result`,
-        content: "(no output)",
-        toolName: treeNode.toolName,
-        toolResult: "",
-        isError: treeNode.isError,
-        streaming: false,
-        durationMs: treeNode.durationMs,
-      },
-    };
-  }
-
-  if (treeNode.toolResult === undefined) {
-    return {
-      id: `node-${treeNode.id}-result`,
-      type: "tool_result",
-      position: { x: 0, y: 0 },
-      width: DEFAULT_NODE_WIDTH,
-      height: DEFAULT_NODE_HEIGHT,
-      data: {
-        nodeType: "tool_result",
-        cardId: treeNode.id,
-        label: `${treeNode.toolName} Result`,
-        content: "(waiting...)",
-        toolName: treeNode.toolName,
-        streaming: true,
-      },
-    };
-  }
-
-  return {
-    id: `node-${treeNode.id}-result`,
-    type: "tool_result",
-    position: { x: 0, y: 0 },
-    width: DEFAULT_NODE_WIDTH,
-    height: DEFAULT_NODE_HEIGHT,
-    data: {
-      nodeType: "tool_result",
-      cardId: treeNode.id,
-      label: `${treeNode.toolName} Result`,
-      content: truncate(treeNode.toolResult, 120),
-      toolName: treeNode.toolName,
-      toolResult: treeNode.toolResult,
-      isError: treeNode.isError,
-      streaming: false,
-      durationMs: treeNode.durationMs,
-    },
-  };
-}
-
 export function createUserNode(treeNode: UserMessageNode): GraphNode {
   return {
     id: `node-${treeNode.id}`,
@@ -382,31 +314,6 @@ export function createCompactNode(treeNode: CompactNode): GraphNode {
       label: "\u26A1 Context Compaction",
       content: treeNode.content || "Context compaction occurred",
       streaming: false,
-    },
-  };
-}
-
-export function createSubagentNode(
-  treeNode: SubagentNode,
-  collapseInfo?: CollapseInfo,
-): GraphNode {
-  return {
-    id: `node-${treeNode.id}`,
-    type: "subagent",
-    position: { x: 0, y: 0 },
-    width: DEFAULT_NODE_WIDTH,
-    height: DEFAULT_NODE_HEIGHT,
-    data: {
-      nodeType: "subagent",
-      cardId: treeNode.id,
-      label: treeNode.agentType ?? "Agent",
-      content: `Agent: ${treeNode.agentId ?? "unknown"}`,
-      streaming: !treeNode.completed,
-      agentId: treeNode.agentId,
-      agentType: treeNode.agentType,
-      collapsed: collapseInfo?.collapsed ?? false,
-      hasChildren: collapseInfo?.hasChildren ?? false,
-      childCount: collapseInfo?.childCount ?? 0,
     },
   };
 }
@@ -528,9 +435,9 @@ export function buildGraph(
 
   // session root의 자식들을 렌더러 registry에 위임
   for (const turnNode of tree.children) {
-    // tool, subagent, text/thinking이 root 직하에 있는 경우 (비정상이지만 방어적 처리)
+    // tool, text/thinking이 root 직하에 있는 경우 (비정상이지만 방어적 처리)
     // 이들은 parentNodeId로 lastThinkingNodeId ?? prevMainFlowNodeId를 사용
-    if (turnNode.type === "tool" || turnNode.type === "subagent") {
+    if (turnNode.type === "tool") {
       dispatchRenderer(turnNode, ctx.lastThinkingNodeId ?? ctx.prevMainFlowNodeId, ctx);
     } else {
       dispatchRenderer(turnNode, null, ctx);
