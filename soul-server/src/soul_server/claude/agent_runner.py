@@ -512,10 +512,7 @@ class ClaudeRunner:
         info = data.get("rate_limit_info", {})
         status = info.get("status", "")
 
-        if status == "allowed":
-            return
-
-        # RateLimitTracker에 기록 (utilization이 유효한 이벤트만)
+        # 모든 상태에서 utilization 기록 (allowed 포함)
         if self.rate_limit_tracker is not None and isinstance(
             info.get("utilization"), (int, float)
         ):
@@ -525,6 +522,9 @@ class ClaudeRunner:
                     self.alert_send_fn(alert)
             except Exception as e:
                 logger.warning(f"RateLimitTracker 기록 실패: {e}")
+
+        if status == "allowed":
+            return
 
         if status == "allowed_warning":
             warning_msg = format_rate_limit_warning(info)

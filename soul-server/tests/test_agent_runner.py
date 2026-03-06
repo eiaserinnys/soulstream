@@ -749,6 +749,104 @@ class TestFormatRateLimitWarning:
         assert "75%" in msg
 
 
+class TestObserveRateLimitAllowed:
+    """_observe_rate_limit()가 allowed 상태에서도 utilization을 기록하는지 검증"""
+
+    def test_allowed_status_calls_record(self):
+        """status=allowed + utilization → record() 호출 확인"""
+        runner = ClaudeRunner()
+        mock_tracker = MagicMock()
+        mock_tracker.record.return_value = None  # 알림 없음
+        runner.rate_limit_tracker = mock_tracker
+
+        runner._observe_rate_limit({
+            "rate_limit_info": {
+                "status": "allowed",
+                "rateLimitType": "five_hour",
+                "utilization": 0.42,
+            }
+        })
+
+        mock_tracker.record.assert_called_once_with({
+            "status": "allowed",
+            "rateLimitType": "five_hour",
+            "utilization": 0.42,
+        })
+
+    def test_allowed_with_95_percent_triggers_alert(self):
+        """status=allowed + utilization 0.95 → credential_alert 반환 및 alert_send_fn 호출"""
+        runner = ClaudeRunner()
+        mock_tracker = MagicMock()
+        fake_alert = {
+            "type": "credential_alert",
+            "active_profile": "linegames",
+            "profiles": [],
+        }
+        mock_tracker.record.return_value = fake_alert
+        runner.rate_limit_tracker = mock_tracker
+
+        mock_alert_fn = MagicMock()
+        runner.alert_send_fn = mock_alert_fn
+
+        runner._observe_rate_limit({
+            "rate_limit_info": {
+                "status": "allowed",
+                "rateLimitType": "five_hour",
+                "utilization": 0.95,
+            }
+        })
+
+        mock_tracker.record.assert_called_once()
+        mock_alert_fn.assert_called_once_with(fake_alert)
+
+    def test_allowed_without_utilization_skips_record(self):
+        """status=allowed + utilization 없음 → record() 호출하지 않음"""
+        runner = ClaudeRunner()
+        mock_tracker = MagicMock()
+        runner.rate_limit_tracker = mock_tracker
+
+        runner._observe_rate_limit({
+            "rate_limit_info": {
+                "status": "allowed",
+                "rateLimitType": "five_hour",
+            }
+        })
+
+        mock_tracker.record.assert_not_called()
+
+    def test_allowed_warning_still_records_and_debugs(self):
+        """status=allowed_warning → record() 호출 + 디버그 메시지 전송"""
+        runner = ClaudeRunner()
+        mock_tracker = MagicMock()
+        mock_tracker.record.return_value = None
+        runner.rate_limit_tracker = mock_tracker
+        runner.debug_send_fn = MagicMock()
+
+        runner._observe_rate_limit({
+            "rate_limit_info": {
+                "status": "allowed_warning",
+                "rateLimitType": "five_hour",
+                "utilization": 0.85,
+            }
+        })
+
+        mock_tracker.record.assert_called_once()
+        runner.debug_send_fn.assert_called_once()
+
+    def test_no_tracker_allowed_no_error(self):
+        """rate_limit_tracker가 None이어도 에러 없이 동작"""
+        runner = ClaudeRunner()
+        runner.rate_limit_tracker = None
+
+        # 예외 없이 통과해야 함
+        runner._observe_rate_limit({
+            "rate_limit_info": {
+                "status": "allowed",
+                "rateLimitType": "five_hour",
+                "utilization": 0.50,
+            }
+        })
+
 
 def _clear_all_client_state():
     """테스트용: 모듈 레벨 레지스트리 초기화"""
