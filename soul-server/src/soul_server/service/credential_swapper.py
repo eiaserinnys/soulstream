@@ -9,10 +9,14 @@ CredentialSwapper - 크레덴셜 파일 교체 모듈
 
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any, Optional
 
 from soul_server.service.credential_store import CredentialStore
+
+# 이메일 형식 기본 검증 패턴
+_EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +72,9 @@ class CredentialSwapper:
         email = oauth.get("email") or data.get("email")
 
         if not email or not isinstance(email, str):
+            return None
+        if not _EMAIL_PATTERN.match(email):
+            logger.warning(f"크레덴셜 파일에 유효하지 않은 이메일 형식: {email!r}")
             return None
         return email
 
