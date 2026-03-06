@@ -251,7 +251,7 @@ export interface SessionDetail extends SessionSummary {
 /** 트리 노드 타입 (SSE 이벤트 lifecycle → 단일 노드) */
 export type EventTreeNodeType =
   | "session"           // 가상 루트
-  | "subagent"          // 가상 (SubagentStart)
+  | "subagent"          // 가상 (SubagentStart) — R4: 더 이상 생성되지 않으나 하위 호환 유지
   | "user_message"      // UserMessage
   | "intervention"      // Intervention
   | "thinking"          // ThinkingBlock (text_start/delta/end)
@@ -260,6 +260,7 @@ export type EventTreeNodeType =
   | "tool"              // 하위 호환 alias
   | "tool_result"       // ToolResultBlock
   | "result"            // ResultMessage
+  | "compact"           // Context compaction
   | "complete"          // 하위 호환
   | "error";
 
@@ -308,49 +309,6 @@ export interface EventTreeNode {
   durationMs?: number;
   usage?: { input_tokens: number; output_tokens: number };
   totalCostUsd?: number;
-}
-
-// === Dashboard Card ===
-
-/**
- * @deprecated EventTreeNode로 대체 예정. 하위 호환을 위해 유지.
- *
- * 대시보드 카드 - 실행 흐름의 단위 추상화.
- */
-export type DashboardCardType =
-  | "text"
-  | "tool"
-  | "user_message"
-  | "session"
-  | "complete"
-  | "error"
-  | "intervention";
-
-export interface DashboardCard {
-  cardId: string;
-  type: DashboardCardType;
-  content: string;
-  completed: boolean;
-
-  // --- text/tool 전용 ---
-  /** 도구 카드: 도구 이름 */
-  toolName?: string;
-  /** 도구 카드: 입력 파라미터 */
-  toolInput?: Record<string, unknown>;
-  /** 도구 카드: 실행 결과 */
-  toolResult?: string;
-  /** 도구 카드: 오류 여부 */
-  isError?: boolean;
-  /** 도구 카드: SDK ToolUseBlock ID (tool_result 매칭용) */
-  toolUseId?: string;
-  /** 도구 카드: 부모 thinking 카드 ID (레이아웃 그룹핑용) */
-  parentCardId?: string;
-
-  // --- 구조 이벤트 전용 ---
-  /** user_message, intervention: 발신자 */
-  user?: string;
-  /** session: Claude 세션 ID */
-  sessionId?: string;
 }
 
 // === API Request/Response ===

@@ -13,7 +13,6 @@ import type {
   UserMessageEvent,
   InterventionSentEvent,
   ThinkingEvent,
-  SubagentStartEvent,
   TextStartEvent,
   ToolStartEvent,
   CompleteEvent,
@@ -271,114 +270,6 @@ describe("placeInTree", () => {
 
       expect(turnNode.children).toContain(node);
       expect(ctx.toolUseMap.size).toBe(0);
-    });
-  });
-
-  describe("subagent_start", () => {
-    it("should place under turn root when parent_tool_use_id is empty", () => {
-      const { ctx, root } = makeCtxWithRoot();
-      const turnNode = setupTurnRoot(ctx, root);
-      const node = makeNode("agent-1", "subagent", "", {
-        agentId: "agent-1",
-        agentType: "task",
-        parentToolUseId: "",
-      });
-      const event: SubagentStartEvent = {
-        type: "subagent_start",
-        timestamp: 0,
-        agent_id: "agent-1",
-        agent_type: "task",
-        parent_tool_use_id: "",
-      };
-
-      placeInTree(node, event, 8, ctx, root);
-
-      expect(turnNode.children).toContain(node);
-      expect(ctx.subagentMap.get("agent-1")).toBe(node);
-    });
-
-    it("should place under root when no currentTurnNodeId and empty parent_tool_use_id", () => {
-      const { ctx, root } = makeCtxWithRoot();
-      const node = makeNode("agent-2", "subagent", "", {
-        agentId: "agent-2",
-        agentType: "task",
-      });
-      const event: SubagentStartEvent = {
-        type: "subagent_start",
-        timestamp: 0,
-        agent_id: "agent-2",
-        agent_type: "task",
-        parent_tool_use_id: "",
-      };
-
-      placeInTree(node, event, 9, ctx, root);
-
-      expect(root.children).toContain(node);
-      expect(ctx.subagentMap.get("agent-2")).toBe(node);
-    });
-
-    it("should reparent children from tool to subagent when parent_tool_use_id matches", () => {
-      const { ctx, root } = makeCtxWithRoot();
-      setupTurnRoot(ctx, root);
-
-      // Setup parent tool with an existing child that has same parentToolUseId
-      const parentTool = makeNode("tool-parent", "tool", "", { toolUseId: "toolu_xyz" });
-      registerNode(ctx, parentTool);
-      ctx.toolUseMap.set("toolu_xyz", parentTool);
-
-      const orphanChild = makeNode("thinking-orphan", "thinking", "I was here first", {
-        parentToolUseId: "toolu_xyz",
-      });
-      parentTool.children.push(orphanChild);
-
-      const nonMatchChild = makeNode("other-child", "text", "unrelated");
-      parentTool.children.push(nonMatchChild);
-
-      const node = makeNode("agent-3", "subagent", "", {
-        agentId: "agent-3",
-        agentType: "task",
-        parentToolUseId: "toolu_xyz",
-      });
-      const event: SubagentStartEvent = {
-        type: "subagent_start",
-        timestamp: 0,
-        agent_id: "agent-3",
-        agent_type: "task",
-        parent_tool_use_id: "toolu_xyz",
-      };
-
-      placeInTree(node, event, 10, ctx, root);
-
-      // parentTool should now have [nonMatchChild, node]
-      expect(parentTool.children).toHaveLength(2);
-      expect(parentTool.children[0]).toBe(nonMatchChild);
-      expect(parentTool.children[1]).toBe(node);
-
-      // orphanChild should be reparented under node
-      expect(node.children).toContain(orphanChild);
-    });
-
-    it("should insert orphan error and place under root when parent_tool_use_id has no match", () => {
-      const { ctx, root } = makeCtxWithRoot();
-      const node = makeNode("agent-4", "subagent", "", {
-        agentId: "agent-4",
-        agentType: "task",
-        parentToolUseId: "toolu_missing",
-      });
-      const event: SubagentStartEvent = {
-        type: "subagent_start",
-        timestamp: 0,
-        agent_id: "agent-4",
-        agent_type: "task",
-        parent_tool_use_id: "toolu_missing",
-      };
-
-      placeInTree(node, event, 11, ctx, root);
-
-      // Should have error node + subagent node in root.children
-      expect(root.children.some((c) => c.type === "error")).toBe(true);
-      expect(root.children).toContain(node);
-      expect(ctx.subagentMap.get("agent-4")).toBe(node);
     });
   });
 

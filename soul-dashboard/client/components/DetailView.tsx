@@ -10,8 +10,8 @@
  * - user/intervention 이벤트 노드 → EventNodeDetail
  */
 
-import type { DashboardCard } from "@shared/types";
-import { useDashboardStore, findTreeNode, treeNodeToCard, type SelectedEventNodeData } from "../stores/dashboard-store";
+import type { EventTreeNode } from "@shared/types";
+import { useDashboardStore, findTreeNode, type SelectedEventNodeData } from "../stores/dashboard-store";
 import { ThinkingDetail } from "./detail/ThinkingDetail";
 import { ToolDetail } from "./detail/ToolDetail";
 import { SubAgentDetail } from "./detail/SubAgentDetail";
@@ -30,7 +30,7 @@ import { ScrollArea } from "./ui/scroll-area";
  * 3. tool → ToolDetail
  * 4. text → ThinkingDetail
  */
-function CardDetail({ card, focusResult }: { card: DashboardCard; focusResult?: boolean }) {
+function CardDetail({ card, focusResult }: { card: EventTreeNode; focusResult?: boolean }) {
   if (card.type === "tool") {
     if (card.toolName === "Task") {
       return <SubAgentDetail card={card} />;
@@ -187,11 +187,8 @@ export function DetailView() {
   );
   const tree = useDashboardStore((s) => s.tree);
 
-  const selectedCard: DashboardCard | null = selectedCardId
-    ? (() => {
-        const treeNode = findTreeNode(tree, selectedCardId);
-        return treeNode ? treeNodeToCard(treeNode) : null;
-      })()
+  const selectedCard: EventTreeNode | null = selectedCardId
+    ? findTreeNode(tree, selectedCardId)
     : null;
 
   // tool_result 노드를 선택했는지 판정 (nodeId가 "-result"로 끝남)

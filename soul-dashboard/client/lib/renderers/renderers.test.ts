@@ -15,8 +15,8 @@ import {
   renderInterventionTurn,
   renderTextNode,
   renderToolNode,
-  renderSubagentNode,
   renderCompletionNode,
+  renderCompactNode,
   renderResultNode,
   processChildNodes,
 } from "./index";
@@ -84,23 +84,6 @@ function resultTreeNode(id: string, opts: Partial<EventTreeNode> = {}): EventTre
   };
 }
 
-function subagentTreeNode(
-  id: string,
-  agentType: string,
-  children: EventTreeNode[] = [],
-  opts: Partial<EventTreeNode> = {},
-): EventTreeNode {
-  return {
-    id,
-    type: "subagent",
-    children,
-    content: "",
-    completed: opts.completed ?? false,
-    agentId: id,
-    agentType,
-  };
-}
-
 // === Tests ===
 
 describe("renderer registry", () => {
@@ -111,7 +94,7 @@ describe("renderer registry", () => {
     expect(types).toContain("thinking");
     expect(types).toContain("text");
     expect(types).toContain("tool");
-    expect(types).toContain("subagent");
+    expect(types).toContain("compact");
     expect(types).toContain("complete");
     expect(types).toContain("error");
     expect(types).toContain("result");
@@ -318,59 +301,48 @@ describe("renderToolNode", () => {
     expect(ctx.nodes[0].data.isPlanModeExit).toBe(false);
   });
 
-  it("processes child subagent nodes", () => {
+  it("silently ignores child subagent nodes (no renderer registered)", () => {
     const ctx = makeCtx();
-    const child = subagentTreeNode("sa1", "explore");
+    const child: EventTreeNode = {
+      id: "sa1",
+      type: "subagent",
+      children: [],
+      content: "",
+      completed: false,
+      agentId: "sa1",
+      agentType: "explore",
+    };
     const node = toolTreeNode("tool1", "Task", {
       toolResult: "done",
       children: [child],
     });
     renderToolNode(node, "parent", ctx);
 
-    // tool_call + tool_result + subagent
-    expect(ctx.nodes.length).toBe(3);
-    expect(ctx.nodes[2].data.nodeType).toBe("subagent");
+    // tool_call + tool_result only (subagent silently skipped)
+    expect(ctx.nodes.length).toBe(2);
+    expect(ctx.nodes[0].data.nodeType).toBe("tool_call");
+    expect(ctx.nodes[1].data.nodeType).toBe("tool_result");
   });
 });
 
-describe("renderSubagentNode", () => {
-  it("creates a subagent node with horizontal edge from parent", () => {
-    const ctx = makeCtx();
-    const node = subagentTreeNode("sa1", "explore");
-    renderSubagentNode(node, "parent-id", ctx);
+describe("renderCompactNode", () => {
+  it("creates a system node for compact type", () => {
+    const ctx = makeCtx({ prevMainFlowNodeId: "prev" });
+    const node: EventTreeNode = {
+      id: "compact1",
+      type: "compact",
+      children: [],
+      content: "Context compaction occurred",
+      completed: true,
+    };
+    renderCompactNode(node, null, ctx);
 
     expect(ctx.nodes.length).toBe(1);
-    expect(ctx.nodes[0].data.nodeType).toBe("subagent");
-    expect(ctx.edges[0].sourceHandle).toBe("right");
-    expect(ctx.edges[0].targetHandle).toBe("left");
-  });
-
-  it("processes child text and tool nodes", () => {
-    const ctx = makeCtx();
-    const children = [
-      textTreeNode("t1", "thinking in subagent"),
-      toolTreeNode("tool1", "Bash", { toolResult: "ok" }),
-    ];
-    const node = subagentTreeNode("sa1", "explore", children);
-    renderSubagentNode(node, "parent", ctx);
-
-    // subagent + text child + tool_call + tool_result
-    expect(ctx.nodes.length).toBe(4);
-    expect(ctx.nodes[0].data.nodeType).toBe("subagent");
-    expect(ctx.nodes[1].data.nodeType).toBe("thinking");
-    expect(ctx.nodes[2].data.nodeType).toBe("tool_call");
-    expect(ctx.nodes[3].data.nodeType).toBe("tool_result");
-  });
-
-  it("skips children when collapsed", () => {
-    const collapsed = new Set(["sa1"]);
-    const ctx = makeCtx({ collapsedNodeIds: collapsed });
-    const children = [textTreeNode("t1", "hidden")];
-    const node = subagentTreeNode("sa1", "explore", children);
-    renderSubagentNode(node, "parent", ctx);
-
-    expect(ctx.nodes.length).toBe(1);
-    expect(ctx.nodes[0].data.collapsed).toBe(true);
+    expect(ctx.nodes[0].data.nodeType).toBe("system");
+    expect(ctx.nodes[0].data.label).toBe("⚡ Context Compaction");
+    expect(ctx.edges.length).toBe(1);
+    expect(ctx.edges[0].source).toBe("prev");
+    expect(ctx.prevMainFlowNodeId).toBe(ctx.nodes[0].id);
   });
 });
 

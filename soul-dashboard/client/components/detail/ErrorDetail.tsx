@@ -5,10 +5,10 @@
  * 에러 메시지를 강조하고, 도구 이름과 입력 정보도 함께 보여줍니다.
  */
 
-import type { DashboardCard } from "@shared/types";
+import type { EventTreeNode } from "@shared/types";
 import { SectionLabel, CodeBlock, safeStringify } from "./shared";
 
-export function ErrorDetail({ card }: { card: DashboardCard }) {
+export function ErrorDetail({ card }: { card: EventTreeNode }) {
   return (
     <div className="p-4 flex flex-col gap-3">
       {/* Header */}
