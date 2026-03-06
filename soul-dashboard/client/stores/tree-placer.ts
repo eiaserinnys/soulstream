@@ -2,9 +2,9 @@
  * Tree Placer — 노드를 트리에 배치하고 Map에 등록
  *
  * placeInTree: 생성된 노드를 이벤트 필드 기반으로 트리에 삽입
- * resolveParent: parent_tool_use_id로 부모 노드를 결정
+ * resolveParent: parent_event_id로 부모 노드를 결정
  *
- * Phase 5: subagent_start 분기 삭제, compact 추가.
+ * Phase 6: toolUseMap 삭제, nodeMap 통합. resolveParent 간소화.
  */
 
 import type {
@@ -16,20 +16,19 @@ import type {
   ResultEvent,
 } from "@shared/types";
 import type { ProcessingContext } from "./processing-context";
-import { makeNode, registerNode, insertOrphanError } from "./processing-context";
+import { makeNode, registerNode } from "./processing-context";
 
 /**
- * parent_tool_use_id로 부모 노드를 결정합니다.
+ * parent_event_id로 부모 노드를 결정합니다.
  * - null/undefined → 현재 턴 루트 (없으면 session root)
- * - "toolu_X" → toolUseMap에서 tool 노드 → 그 자식 subagent 반환
+ * - 값 있음 → nodeMap에서 직접 조회
  */
 export function resolveParent(
-  parentToolUseId: string | null | undefined,
+  parentEventId: string | null | undefined,
   ctx: ProcessingContext,
   root: EventTreeNode,
 ): EventTreeNode {
-  if (!parentToolUseId) {
-    // 루트 레벨 → 현재 턴 루트
+  if (!parentEventId) {
     if (ctx.currentTurnNodeId) {
       const turn = ctx.nodeMap.get(ctx.currentTurnNodeId);
       if (turn) return turn;
@@ -37,21 +36,7 @@ export function resolveParent(
     return root;
   }
 
-  // parent_tool_use_id → toolUseMap에서 해당 tool 노드 찾기
-  const toolNode = ctx.toolUseMap.get(parentToolUseId);
-  if (!toolNode) {
-    insertOrphanError(root, ctx, "resolveParent", `resolve-${parentToolUseId}`,
-      `parent_tool_use_id="${parentToolUseId}" toolUseMap 매칭 실패`);
-    return root;
-  }
-
-  // tool 노드의 subagent 자식 찾기 (1단계 탐색, 최대 1개)
-  const subagent = toolNode.children.find(c => c.type === "subagent");
-  if (subagent) return subagent;
-
-  // subagent_start가 아직 안 왔을 수 있음 → tool 노드 자체에 임시 배치.
-  // subagent_start 도착 시 reparent 로직이 이 자식들을 subagent 아래로 이동시킨다.
-  return toolNode;
+  return ctx.nodeMap.get(parentEventId) ?? root;
 }
 
 /**
@@ -60,7 +45,7 @@ export function resolveParent(
  * 이벤트 타입별 분기를 최소화하되, 현재 코드의 행위를 100% 보존합니다.
  * - 턴 루트(user_message, intervention): root.children에 추가, currentTurnNodeId 갱신
  * - thinking: resolveParent로 부모 결정, lastThinkingByParent 등록
- * - tool_start: resolveParent로 부모 결정, toolUseMap 등록
+ * - tool_start: resolveParent로 부모 결정, nodeMap에 tool_use_id 등록
  * - compact/complete/error: 턴 루트 또는 root에 추가
  * - result: resolveParent로 부모 결정
  */
@@ -85,10 +70,10 @@ export function placeInTree(
 
     case "thinking": {
       const e = event as ThinkingEvent;
-      const parent = resolveParent(e.parent_tool_use_id, ctx, root);
+      const parent = resolveParent(e.parent_event_id, ctx, root);
       // 같은 parent 레벨의 후속 text_start와 매칭하기 위해 등록
-      // "" = root 레벨 (서브에이전트 밖), 그 외 = 해당 서브에이전트의 parent_tool_use_id
-      const parentKey = e.parent_tool_use_id || "";
+      // "" = root 레벨 (서브에이전트 밖), 그 외 = 해당 서브에이전트의 parent_event_id
+      const parentKey = e.parent_event_id || "";
       ctx.lastThinkingByParent.set(parentKey, node);
       parent.children.push(node);
       break;
@@ -96,10 +81,11 @@ export function placeInTree(
 
     case "tool_start": {
       const e = event as ToolStartEvent;
+      // tool_use_id를 nodeMap에 등록 (tool_result 매칭 + resolveParent용)
       if (e.tool_use_id) {
-        ctx.toolUseMap.set(e.tool_use_id, node);
+        ctx.nodeMap.set(e.tool_use_id, node);
       }
-      const parent = resolveParent(e.parent_tool_use_id, ctx, root);
+      const parent = resolveParent(e.parent_event_id, ctx, root);
       parent.children.push(node);
       break;
     }
@@ -118,7 +104,7 @@ export function placeInTree(
 
     case "result": {
       const e = event as ResultEvent;
-      const parent = resolveParent(e.parent_tool_use_id, ctx, root);
+      const parent = resolveParent(e.parent_event_id, ctx, root);
       parent.children.push(node);
       break;
     }
@@ -148,7 +134,7 @@ export function handleTextStart(
   ctx: ProcessingContext,
   root: EventTreeNode,
 ): boolean {
-  const parentKey = event.parent_tool_use_id || "";
+  const parentKey = event.parent_event_id || "";
   const thinkingNode = ctx.lastThinkingByParent.get(parentKey);
 
   if (thinkingNode) {
@@ -157,7 +143,7 @@ export function handleTextStart(
     ctx.activeTextTarget = thinkingNode;
   } else {
     // thinking 없이 text만 온 경우 → 독립 text 노드 생성
-    const textParent = resolveParent(event.parent_tool_use_id, ctx, root);
+    const textParent = resolveParent(event.parent_event_id, ctx, root);
     const textNode = makeNode(`text-${eventId}`, "text", "");
     registerNode(ctx, textNode);
     textParent.children.push(textNode);

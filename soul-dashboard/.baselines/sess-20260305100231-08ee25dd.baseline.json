@@ -442,7 +442,7 @@
       "warningCount": 0
     },
     {
-      "name": "V2: thinking→text 연결 (parent_tool_use_id 기반)",
+      "name": "V2: thinking→text 연결 (parent_event_id 기반)",
       "passed": true,
       "detailCount": 1,
       "warningCount": 2

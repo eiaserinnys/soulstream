@@ -128,7 +128,7 @@ describe("shouldNotify", () => {
         timestamp: 0,
         agent_id: "a1",
         agent_type: "task",
-        parent_tool_use_id: "toolu_1",
+        parent_event_id: "toolu_1",
       };
       expect(shouldNotify(event)).toBe(false);
     });
@@ -284,7 +284,7 @@ describe("deriveSessionStatus", () => {
         timestamp: 0,
         agent_id: "a1",
         agent_type: "task",
-        parent_tool_use_id: "toolu_1",
+        parent_event_id: "toolu_1",
       };
       expect(deriveSessionStatus(event)).toBeNull();
     });

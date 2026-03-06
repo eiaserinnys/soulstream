@@ -104,7 +104,7 @@ export function validateTreeIntegrity(root: EventTreeNode): ValidationResult {
 /**
  * V2: thinking→text 연결 — thinking 노드에 textContent가 올바르게 병합되었는지 검증합니다.
  *
- * parent_tool_use_id 기반으로 thinking과 text_start가 같은 부모 레벨에서 매칭되어
+ * parent_event_id 기반으로 thinking과 text_start가 같은 부모 레벨에서 매칭되어
  * text_delta의 내용이 thinking 노드의 textContent로 병합되어야 합니다.
  * 매칭 실패 시 thinking에 텍스트가 없고 독립 text 노드가 생기며
  * textCompleted 플래그도 설정되지 않습니다.
@@ -114,28 +114,28 @@ export function validateThinkingTextConnections(
   events: Array<{ id: number; event: Record<string, unknown> }>,
 ): ValidationResult {
   const result: ValidationResult = {
-    name: "V2: thinking→text 연결 (parent_tool_use_id 기반)",
+    name: "V2: thinking→text 연결 (parent_event_id 기반)",
     passed: true,
     details: [],
     warnings: [],
   };
 
   // 이벤트 시퀀스에서 thinking → text_start 쌍 검증
-  const thinkingEvents: Array<{ eventId: number; parentToolUseId: string | null }> = [];
-  const textStartEvents: Array<{ eventId: number; parentToolUseId: string | null }> = [];
+  const thinkingEvents: Array<{ eventId: number; parentEventId: string | null }> = [];
+  const textStartEvents: Array<{ eventId: number; parentEventId: string | null }> = [];
 
   for (const record of events) {
     const evt = record.event;
     if (evt.type === "thinking") {
       thinkingEvents.push({
         eventId: record.id,
-        parentToolUseId: (evt.parent_tool_use_id as string | null) ?? null,
+        parentEventId: (evt.parent_event_id as string | null) ?? null,
       });
     }
     if (evt.type === "text_start") {
       textStartEvents.push({
         eventId: record.id,
-        parentToolUseId: (evt.parent_tool_use_id as string | null) ?? null,
+        parentEventId: (evt.parent_event_id as string | null) ?? null,
       });
     }
   }

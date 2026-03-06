@@ -47,7 +47,7 @@ def build_hooks(
 
     NOTE: SDK 한계로 PreToolUse의 toolu_* ID와 SubagentStart의 UUID를 매핑할 수 없고,
     Task 도구가 isConcurrencySafe=true라 병렬 실행 시 FIFO 순서도 보장 불가.
-    parent_tool_use_id는 빈 문자열로 전달하고, 대시보드가 턴 루트에 연결.
+    parent_event_id는 빈 문자열로 전달하고, 대시보드가 턴 루트에 연결.
     """
     hooks: dict = {}
 
@@ -83,7 +83,7 @@ def build_hooks(
         event_queue.append(
             SubagentStartEngineEvent(
                 agent_type=agent_type,
-                parent_tool_use_id="",
+                parent_event_id="",
                 agent_id=agent_id,
             )
         )
@@ -108,7 +108,7 @@ def build_hooks(
         event_queue.append(
             SubagentStopEngineEvent(
                 agent_id=agent_id,
-                parent_tool_use_id="",
+                parent_event_id="",
             )
         )
 

@@ -74,7 +74,7 @@ export function createNodeFromEvent(
         toolName: e.tool_name,
         toolInput: e.tool_input,
         toolUseId: e.tool_use_id,
-        parentToolUseId: e.parent_tool_use_id,
+        parentEventId: e.parent_event_id,
         timestamp: e.timestamp,
       });
     }
@@ -183,9 +183,9 @@ export function applyUpdate(
 
     case "tool_result": {
       const e = event as ToolResultEvent;
-      // tool_use_id 정확 매칭만 (폴백 없음)
+      // tool_use_id로 nodeMap에서 정확 매칭 (Phase 6: toolUseMap 통합)
       const toolNode = e.tool_use_id
-        ? ctx.toolUseMap.get(e.tool_use_id)
+        ? ctx.nodeMap.get(e.tool_use_id)
         : undefined;
 
       if (toolNode) {
