@@ -253,21 +253,26 @@ function NodeGraphInner() {
           if (isFirstLoad) {
             hasInitializedRef.current = true;
 
-            // 초기 로드: 첫 번째 USER 노드 선택
-            const firstUserNode = nodesWithSelection.find(
-              (n) => n.data.nodeType === "user",
-            );
-            if (firstUserNode) {
-              selectEventNode(
-                buildEventNodeData(firstUserNode.data as GraphNodeData),
-                firstUserNode.id,
-              );
+            // 초기 로드 / 세션 전환: 마지막 노드 자동 선택 (D10)
+            const lastNode = nodesWithSelection[nodesWithSelection.length - 1];
+            if (lastNode) {
+              const nodeType = lastNode.data.nodeType as string | undefined;
+              if (nodeType && EVENT_NODE_TYPES.has(nodeType)) {
+                selectEventNode(
+                  buildEventNodeData(lastNode.data as GraphNodeData),
+                  lastNode.id,
+                );
+              } else {
+                const cardId = lastNode.data.cardId as string | undefined;
+                if (cardId) {
+                  selectCard(cardId, lastNode.id);
+                }
+              }
             }
 
             // 줌은 FIXED_ZOOM 고정, 마지막 노드가 보이도록 pan
-            const targetNode = nodesWithSelection[nodesWithSelection.length - 1];
             const viewport = { x: 0, y: 0, zoom: FIXED_ZOOM };
-            const { dx, dy } = calcPanToNode(targetNode, viewport, vpW, vpH);
+            const { dx, dy } = calcPanToNode(lastNode, viewport, vpW, vpH);
 
             isProgrammaticMoveRef.current = true;
             setViewport(

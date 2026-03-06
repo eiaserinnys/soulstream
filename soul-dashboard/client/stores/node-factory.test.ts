@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { createNodeFromEvent, applyUpdate } from "./node-factory";
 import { createProcessingContext, makeNode, registerNode } from "./processing-context";
-import type { ProcessingContext } from "./processing-context";
+import type { ProcessingContext, TextTargetNode } from "./processing-context";
 import type {
   EventTreeNode,
   UserMessageEvent,
@@ -26,6 +26,14 @@ import type {
   SubagentStopEvent,
   ProgressEvent,
   MemoryEvent,
+  ToolNode,
+  UserMessageNode,
+  InterventionNode,
+  ErrorNode,
+  ResultNode,
+  SessionNode,
+  ThinkingNode,
+  TextNode,
 } from "../../shared/types";
 
 // === Helpers ===
@@ -55,7 +63,7 @@ describe("createNodeFromEvent", () => {
       expect(node!.type).toBe("user_message");
       expect(node!.content).toBe("Hello, world!");
       expect(node!.completed).toBe(true);
-      expect(node!.user).toBe("alice");
+      expect((node as UserMessageNode).user).toBe("alice");
       expect(node!.children).toEqual([]);
     });
 
@@ -73,7 +81,7 @@ describe("createNodeFromEvent", () => {
       expect(node!.type).toBe("intervention");
       expect(node!.content).toBe("Please stop");
       expect(node!.completed).toBe(true);
-      expect(node!.user).toBe("bob");
+      expect((node as InterventionNode).user).toBe("bob");
     });
 
     it("should create node for thinking", () => {
@@ -124,9 +132,9 @@ describe("createNodeFromEvent", () => {
       expect(node!.type).toBe("tool");
       expect(node!.content).toBe("");
       expect(node!.completed).toBe(false);
-      expect(node!.toolName).toBe("Bash");
-      expect(node!.toolInput).toEqual({ command: "ls -la" });
-      expect(node!.toolUseId).toBe("toolu_001");
+      expect((node as ToolNode).toolName).toBe("Bash");
+      expect((node as ToolNode).toolInput).toEqual({ command: "ls -la" });
+      expect((node as ToolNode).toolUseId).toBe("toolu_001");
       expect(node!.parentEventId).toBe("toolu_parent");
       expect(node!.timestamp).toBe(1700000001);
     });
@@ -174,7 +182,7 @@ describe("createNodeFromEvent", () => {
       expect(node!.type).toBe("error");
       expect(node!.content).toBe("Something went wrong");
       expect(node!.completed).toBe(true);
-      expect(node!.isError).toBe(true);
+      expect((node as ErrorNode).isError).toBe(true);
     });
 
     it("should create node for result", () => {
@@ -195,8 +203,8 @@ describe("createNodeFromEvent", () => {
       expect(node!.content).toBe("Task finished");
       expect(node!.completed).toBe(true);
       expect(node!.timestamp).toBe(1700000010);
-      expect(node!.usage).toEqual({ input_tokens: 100, output_tokens: 50 });
-      expect(node!.totalCostUsd).toBe(0.005);
+      expect((node as ResultNode).usage).toEqual({ input_tokens: 100, output_tokens: 50 });
+      expect((node as ResultNode).totalCostUsd).toBe(0.005);
     });
 
     it("should preserve empty string content for result when output is empty", () => {
@@ -283,7 +291,7 @@ describe("applyUpdate", () => {
       const changed = applyUpdate(event, 1, ctx, root);
 
       expect(changed).toBe(true);
-      expect(root.sessionId).toBe("sess-abc");
+      expect((root as SessionNode).sessionId).toBe("sess-abc");
       expect(root.content).toBe("sess-abc");
     });
 
@@ -304,22 +312,22 @@ describe("applyUpdate", () => {
       it("should append to thinking node's textContent when target is thinking", () => {
         const { ctx, root } = makeCtxWithRoot();
         const thinkingNode = makeNode("thinking-1", "thinking", "inner");
-        ctx.activeTextTarget = thinkingNode;
+        ctx.activeTextTarget = thinkingNode as TextTargetNode;
 
         const event1: TextDeltaEvent = { type: "text_delta", timestamp: 0, text: "Hello " };
         const changed1 = applyUpdate(event1, 20, ctx, root);
         expect(changed1).toBe(true);
-        expect(thinkingNode.textContent).toBe("Hello ");
+        expect((thinkingNode as ThinkingNode).textContent).toBe("Hello ");
 
         const event2: TextDeltaEvent = { type: "text_delta", timestamp: 0, text: "world" };
         applyUpdate(event2, 21, ctx, root);
-        expect(thinkingNode.textContent).toBe("Hello world");
+        expect((thinkingNode as ThinkingNode).textContent).toBe("Hello world");
       });
 
       it("should append to text node's content when target is text", () => {
         const { ctx, root } = makeCtxWithRoot();
         const textNode = makeNode("text-1", "text", "");
-        ctx.activeTextTarget = textNode;
+        ctx.activeTextTarget = textNode as TextTargetNode;
 
         const event: TextDeltaEvent = { type: "text_delta", timestamp: 0, text: "chunk" };
         applyUpdate(event, 22, ctx, root);
@@ -342,13 +350,13 @@ describe("applyUpdate", () => {
         const { ctx, root } = makeCtxWithRoot();
         const thinkingNode = makeNode("thinking-1", "thinking", "inner");
         // makeNode creates with completed: false
-        ctx.activeTextTarget = thinkingNode;
+        ctx.activeTextTarget = thinkingNode as TextTargetNode;
 
         const event: TextEndEvent = { type: "text_end", timestamp: 0 };
         const changed = applyUpdate(event, 30, ctx, root);
 
         expect(changed).toBe(true);
-        expect(thinkingNode.textCompleted).toBe(true);
+        expect((thinkingNode as ThinkingNode).textCompleted).toBe(true);
         // text_end does NOT set completed for thinking nodes (type !== "thinking" check)
         expect(thinkingNode.completed).toBe(false);
         expect(ctx.activeTextTarget).toBeNull();
@@ -357,12 +365,12 @@ describe("applyUpdate", () => {
       it("should mark text target as both textCompleted and completed", () => {
         const { ctx, root } = makeCtxWithRoot();
         const textNode = makeNode("text-1", "text", "content");
-        ctx.activeTextTarget = textNode;
+        ctx.activeTextTarget = textNode as TextTargetNode;
 
         const event: TextEndEvent = { type: "text_end", timestamp: 0 };
         applyUpdate(event, 31, ctx, root);
 
-        expect(textNode.textCompleted).toBe(true);
+        expect((textNode as TextNode).textCompleted).toBe(true);
         expect(textNode.completed).toBe(true);
         expect(ctx.activeTextTarget).toBeNull();
       });
@@ -400,10 +408,10 @@ describe("applyUpdate", () => {
       const changed = applyUpdate(event, 40, ctx, root);
 
       expect(changed).toBe(true);
-      expect(toolNode.toolResult).toBe("success output");
-      expect(toolNode.isError).toBe(false);
+      expect((toolNode as ToolNode).toolResult).toBe("success output");
+      expect((toolNode as ToolNode).isError).toBe(false);
       expect(toolNode.completed).toBe(true);
-      expect(toolNode.durationMs).toBe(2000); // (2) * 1000
+      expect((toolNode as ToolNode).durationMs).toBe(2000); // (2) * 1000
     });
 
     it("should set isError=true for error results", () => {
@@ -425,7 +433,7 @@ describe("applyUpdate", () => {
 
       applyUpdate(event, 41, ctx, root);
 
-      expect(toolNode.isError).toBe(true);
+      expect((toolNode as ToolNode).isError).toBe(true);
     });
 
     it("should return false when tool_use_id has no match", () => {
@@ -480,7 +488,7 @@ describe("applyUpdate", () => {
       applyUpdate(event, 44, ctx, root);
 
       // toolNode.timestamp is undefined, so durationMs should not be set
-      expect(toolNode.durationMs).toBeUndefined();
+      expect((toolNode as ToolNode).durationMs).toBeUndefined();
     });
   });
 

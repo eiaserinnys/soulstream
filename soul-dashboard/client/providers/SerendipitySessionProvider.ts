@@ -282,6 +282,7 @@ export class SerendipitySessionProvider implements SessionStorageProvider {
           children: [],
           content: "",
           toolName: toolResultData.toolName,
+          toolInput: {},
           toolResult: toolResultData.result,
           isError: toolResultData.isError,
           completed: true,
@@ -392,7 +393,7 @@ export class SerendipitySessionProvider implements SessionStorageProvider {
       return {
         type: "tool_result",
         timestamp: 0,
-        tool_name: node.toolName ?? "unknown",
+        tool_name: node.toolName,
         result: node.toolResult ?? "",
         is_error: node.isError ?? false,
       };
@@ -402,8 +403,8 @@ export class SerendipitySessionProvider implements SessionStorageProvider {
       return {
         type: "tool_start",
         timestamp: 0,
-        tool_name: node.toolName ?? "unknown",
-        tool_input: node.toolInput ?? {},
+        tool_name: node.toolName,
+        tool_input: node.toolInput,
       };
     }
 

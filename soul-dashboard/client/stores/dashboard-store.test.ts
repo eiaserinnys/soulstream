@@ -26,6 +26,10 @@ import type {
   SubagentStopEvent,
   ResultEvent,
   ThinkingEvent,
+  ToolNode,
+  SessionNode,
+  ThinkingNode,
+  ResultNode,
 } from "../../shared/types";
 
 /** 트리에서 특정 타입의 모든 노드를 수집하는 헬퍼 */
@@ -302,6 +306,7 @@ describe("dashboard-store", () => {
 
       const event: ToolStartEvent = {
         type: "tool_start",
+        timestamp: 0,
         tool_name: "Read",
         tool_input: { file_path: "/test.ts" },
         tool_use_id: "toolu_abc",
@@ -311,9 +316,9 @@ describe("dashboard-store", () => {
       const toolNode = findTreeNode(useDashboardStore.getState().tree, "tool-10");
       expect(toolNode).not.toBeNull();
       expect(toolNode!.type).toBe("tool");
-      expect(toolNode!.toolName).toBe("Read");
-      expect(toolNode!.toolInput).toEqual({ file_path: "/test.ts" });
-      expect(toolNode!.toolUseId).toBe("toolu_abc");
+      expect((toolNode as ToolNode).toolName).toBe("Read");
+      expect((toolNode as ToolNode).toolInput).toEqual({ file_path: "/test.ts" });
+      expect((toolNode as ToolNode).toolUseId).toBe("toolu_abc");
       expect(toolNode!.completed).toBe(false);
     });
 
@@ -324,6 +329,7 @@ describe("dashboard-store", () => {
 
       processEvent({
         type: "tool_start",
+        timestamp: 0,
         tool_name: "Bash",
         tool_input: { command: "ls" },
         tool_use_id: "toolu_bash1",
@@ -337,8 +343,8 @@ describe("dashboard-store", () => {
       } as ToolResultEvent, 3);
 
       const toolNode = findTreeNode(useDashboardStore.getState().tree, "tool-2");
-      expect(toolNode?.toolResult).toBe("file1.txt\nfile2.txt");
-      expect(toolNode?.isError).toBe(false);
+      expect((toolNode as ToolNode).toolResult).toBe("file1.txt\nfile2.txt");
+      expect((toolNode as ToolNode).isError).toBe(false);
       expect(toolNode?.completed).toBe(true);
     });
 
@@ -349,6 +355,7 @@ describe("dashboard-store", () => {
 
       processEvent({
         type: "tool_start",
+        timestamp: 0,
         tool_name: "Bash",
         tool_input: { command: "invalid" },
         tool_use_id: "toolu_bash2",
@@ -362,7 +369,7 @@ describe("dashboard-store", () => {
       } as ToolResultEvent, 3);
 
       const toolNode = findTreeNode(useDashboardStore.getState().tree, "tool-2");
-      expect(toolNode?.isError).toBe(true);
+      expect((toolNode as ToolNode).isError).toBe(true);
       expect(toolNode?.completed).toBe(true);
     });
 
@@ -372,6 +379,7 @@ describe("dashboard-store", () => {
       processEvent({ type: "text_start" } as TextStartEvent, 1);
       processEvent({
         type: "tool_start",
+        timestamp: 0,
         tool_name: "Read",
         tool_input: {},
       } as ToolStartEvent, 42);
@@ -397,6 +405,7 @@ describe("dashboard-store", () => {
 
       processEvent({
         type: "tool_start",
+        timestamp: 0,
         tool_name: "Bash",
         tool_input: { command: "echo hello" },
         tool_use_id: "tu1",
@@ -414,7 +423,7 @@ describe("dashboard-store", () => {
       expect(toolNodes).toHaveLength(1);
       // tool_use_id가 없는 tool_result는 매칭 실패 → tool은 미완료 상태 유지
       expect(toolNodes[0].completed).toBe(false);
-      expect(toolNodes[0].toolResult).toBeUndefined();
+      expect((toolNodes[0] as ToolNode).toolResult).toBeUndefined();
     });
 
     it("tool_result with matching tool_use_id completes the tool", () => {
@@ -424,6 +433,7 @@ describe("dashboard-store", () => {
 
       processEvent({
         type: "tool_start",
+        timestamp: 0,
         tool_name: "Bash",
         tool_input: {},
         tool_use_id: "tu1",
@@ -440,7 +450,7 @@ describe("dashboard-store", () => {
       const toolNodes = collectNodes(useDashboardStore.getState().tree, "tool");
       expect(toolNodes).toHaveLength(1);
       expect(toolNodes[0].completed).toBe(true);
-      expect(toolNodes[0].toolResult).toBe("done");
+      expect((toolNodes[0] as ToolNode).toolResult).toBe("done");
     });
   });
 
@@ -472,6 +482,7 @@ describe("dashboard-store", () => {
       // Tool card (no parent_event_id → resolveParent → turn root)
       processEvent({
         type: "tool_start",
+        timestamp: 0,
         tool_name: "Bash",
         tool_input: { command: "ls" },
         tool_use_id: "toolu_bash1",
@@ -500,7 +511,7 @@ describe("dashboard-store", () => {
       expect(toolNodes).toHaveLength(1);
       expect(toolNodes[0].id).toBe("tool-4");
       expect(toolNodes[0].completed).toBe(true);
-      expect(toolNodes[0].toolUseId).toBe("toolu_bash1");
+      expect((toolNodes[0] as ToolNode).toolUseId).toBe("toolu_bash1");
 
       // tool은 user_message(턴 루트)의 자식이어야 함 (resolveParent)
       const userMsg = tree.children[0];
@@ -539,6 +550,7 @@ describe("dashboard-store", () => {
       processEvent({ type: "text_start" } as TextStartEvent, 1);
       processEvent({
         type: "tool_start",
+        timestamp: 0,
         tool_name: "Bash",
         tool_input: {},
       } as ToolStartEvent, 2);
@@ -596,7 +608,7 @@ describe("dashboard-store", () => {
       processEvent({ type: "session", session_id: "s1" } as SessionEvent, 1);
 
       const tree = useDashboardStore.getState().tree!;
-      expect(tree.sessionId).toBe("s1");
+      expect((tree as SessionNode).sessionId).toBe("s1");
     });
   });
 
@@ -925,7 +937,7 @@ describe("dashboard-store", () => {
       processEvent({ type: "text_start" } as TextStartEvent, 1);
       processEvent({ type: "text_delta", text: "hello" } as TextDeltaEvent, 2);
       processEvent({ type: "text_end" } as TextEndEvent, 3);
-      processEvent({ type: "tool_start", tool_name: "Bash", tool_input: {} } as ToolStartEvent, 4);
+      processEvent({ type: "tool_start", timestamp: 0, tool_name: "Bash", tool_input: {} } as ToolStartEvent, 4);
       processEvent({ type: "tool_result", tool_name: "Bash", result: "ok", is_error: false } as ToolResultEvent, 5);
 
       expect(useDashboardStore.getState().sessions.find(s => s.agentSessionId === "sess-mt")?.status).toBe("running");
@@ -955,6 +967,7 @@ describe("dashboard-store", () => {
       // Task tool
       processEvent({
         type: "tool_start",
+        timestamp: 0,
         tool_name: "Task",
         tool_input: { subagent_type: "Explore" },
         tool_use_id: "toolu_task_1",
@@ -987,6 +1000,7 @@ describe("dashboard-store", () => {
 
       processEvent({
         type: "tool_start",
+        timestamp: 0,
         tool_name: "Task",
         tool_input: {},
         tool_use_id: "toolu_task_1",
@@ -1019,6 +1033,7 @@ describe("dashboard-store", () => {
       // Task tool
       processEvent({
         type: "tool_start",
+        timestamp: 0,
         tool_name: "Task",
         tool_input: {},
         tool_use_id: "toolu_task_1",
@@ -1035,6 +1050,7 @@ describe("dashboard-store", () => {
       // Inner tool — resolveParent finds toolu_task_1 in nodeMap, no subagent child → tool node itself
       processEvent({
         type: "tool_start",
+        timestamp: 0,
         tool_name: "Read",
         tool_input: { file_path: "/test.ts" },
         tool_use_id: "toolu_2",
@@ -1046,7 +1062,7 @@ describe("dashboard-store", () => {
       // Read tool is placed as child of Task tool directly (no subagent intermediary)
       const taskNode = findTreeNode(tree, "tool-2");
       expect(taskNode?.children).toHaveLength(1);
-      expect(taskNode?.children[0].toolName).toBe("Read");
+      expect((taskNode?.children[0] as ToolNode).toolName).toBe("Read");
     });
   });
 
@@ -1099,7 +1115,7 @@ describe("dashboard-store", () => {
 
       const thinkingNode = findTreeNode(useDashboardStore.getState().tree, "thinking-1")!;
       expect(thinkingNode.type).toBe("thinking");
-      expect(thinkingNode.textContent).toBe("Here is the answer.");
+      expect((thinkingNode as ThinkingNode).textContent).toBe("Here is the answer.");
       // content(thinking 원문)는 변경되지 않음
       expect(thinkingNode.content).toBe("Deep thought");
     });
@@ -1116,7 +1132,7 @@ describe("dashboard-store", () => {
       processEvent({ type: "text_end" } as TextEndEvent, 4);
 
       const thinkingNode = findTreeNode(useDashboardStore.getState().tree, "thinking-1")!;
-      expect(thinkingNode.textCompleted).toBe(true);
+      expect((thinkingNode as ThinkingNode).textCompleted).toBe(true);
       // thinking 노드의 completed는 true (생성 시 설정)
       expect(thinkingNode.completed).toBe(true);
     });
@@ -1130,6 +1146,7 @@ describe("dashboard-store", () => {
       } as ThinkingEvent, 1);
       processEvent({
         type: "tool_start",
+        timestamp: 0,
         tool_name: "Read",
         tool_input: { file_path: "/test.ts" },
         tool_use_id: "toolu_read1",
@@ -1191,6 +1208,7 @@ describe("dashboard-store", () => {
       // 도구 호출 (resolveParent → 턴 루트)
       processEvent({
         type: "tool_start",
+        timestamp: 0,
         tool_name: "Read",
         tool_input: {},
         tool_use_id: "toolu_1",
@@ -1217,14 +1235,14 @@ describe("dashboard-store", () => {
       const thinkingNodes = collectNodes(userMsg, "thinking");
       expect(thinkingNodes).toHaveLength(2);
       expect(thinkingNodes[0].content).toBe("First thought");
-      expect(thinkingNodes[0].textContent).toBe("Response 1");
+      expect((thinkingNodes[0] as ThinkingNode).textContent).toBe("Response 1");
       expect(thinkingNodes[1].content).toBe("Second thought");
-      expect(thinkingNodes[1].textContent).toBe("Response 2");
+      expect((thinkingNodes[1] as ThinkingNode).textContent).toBe("Response 2");
 
       // 도구는 턴 루트(user_message)의 자식 (thinking과 형제)
       const toolNodes = collectNodes(userMsg, "tool");
       expect(toolNodes).toHaveLength(1);
-      expect(toolNodes[0].toolName).toBe("Read");
+      expect((toolNodes[0] as ToolNode).toolName).toBe("Read");
       expect(userMsg.children.some(c => c.type === "tool")).toBe(true);
     });
   });
@@ -1253,8 +1271,8 @@ describe("dashboard-store", () => {
       expect(resultNodes).toHaveLength(1);
       expect(resultNodes[0].content).toBe("Task completed successfully");
       expect(resultNodes[0].timestamp).toBe(1000.0);
-      expect(resultNodes[0].usage).toEqual({ input_tokens: 1000, output_tokens: 500 });
-      expect(resultNodes[0].totalCostUsd).toBe(0.01);
+      expect((resultNodes[0] as ResultNode).usage).toEqual({ input_tokens: 1000, output_tokens: 500 });
+      expect((resultNodes[0] as ResultNode).totalCostUsd).toBe(0.01);
     });
   });
 
@@ -1267,7 +1285,7 @@ describe("dashboard-store", () => {
       processEvent({ type: "text_start" } as TextStartEvent, 1);
       processEvent({ type: "text_delta", text: "Analyzing..." } as TextDeltaEvent, 2);
       processEvent({ type: "text_end" } as TextEndEvent, 3);
-      processEvent({ type: "tool_start", tool_name: "Read", tool_input: { file_path: "/test.ts" }, tool_use_id: "tu-a1" } as ToolStartEvent, 4);
+      processEvent({ type: "tool_start", timestamp: 0, tool_name: "Read", tool_input: { file_path: "/test.ts" }, tool_use_id: "tu-a1" } as ToolStartEvent, 4);
       processEvent({ type: "tool_result", tool_name: "Read", result: "content", is_error: false, tool_use_id: "tu-a1" } as ToolResultEvent, 5);
       processEvent({ type: "text_start" } as TextStartEvent, 6);
       processEvent({ type: "text_delta", text: "Done." } as TextDeltaEvent, 7);
@@ -1331,7 +1349,7 @@ describe("dashboard-store", () => {
       setActiveSession("sess-A");
       processEvent({ type: "user_message", user: "u", text: "Session A" } as UserMessageEvent, 0);
       processEvent({ type: "text_start" } as TextStartEvent, 1);
-      processEvent({ type: "tool_start", tool_name: "Read", tool_input: {}, tool_use_id: "tu-a1" } as ToolStartEvent, 2);
+      processEvent({ type: "tool_start", timestamp: 0, tool_name: "Read", tool_input: {}, tool_use_id: "tu-a1" } as ToolStartEvent, 2);
 
       // Immediately switch to B
       setActiveSession("sess-B");
@@ -1356,7 +1374,7 @@ describe("dashboard-store", () => {
       setActiveSession("sess-A");
       processEvent({ type: "user_message", user: "u", text: "A" } as UserMessageEvent, 0);
       processEvent({ type: "text_start" } as TextStartEvent, 1);
-      processEvent({ type: "tool_start", tool_name: "Read", tool_input: {}, tool_use_id: "tu-a1" } as ToolStartEvent, 4);
+      processEvent({ type: "tool_start", timestamp: 0, tool_name: "Read", tool_input: {}, tool_use_id: "tu-a1" } as ToolStartEvent, 4);
       processEvent({ type: "tool_result", tool_name: "Read", result: "ok", is_error: false, tool_use_id: "tu-a1" } as ToolResultEvent, 5);
       processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 9);
 
@@ -1371,7 +1389,7 @@ describe("dashboard-store", () => {
       setActiveSession("sess-A");
       processEvent({ type: "user_message", user: "u", text: "A" } as UserMessageEvent, 0);
       processEvent({ type: "text_start" } as TextStartEvent, 1);
-      processEvent({ type: "tool_start", tool_name: "Read", tool_input: {}, tool_use_id: "tu-a1" } as ToolStartEvent, 4);
+      processEvent({ type: "tool_start", timestamp: 0, tool_name: "Read", tool_input: {}, tool_use_id: "tu-a1" } as ToolStartEvent, 4);
       processEvent({ type: "tool_result", tool_name: "Read", result: "ok", is_error: false, tool_use_id: "tu-a1" } as ToolResultEvent, 5);
       processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 9);
 
@@ -1380,7 +1398,7 @@ describe("dashboard-store", () => {
       const toolNode = findTreeNode(tree, "tool-4");
       expect(toolNode).not.toBeNull();
       expect(toolNode!.type).toBe("tool");
-      expect(toolNode!.toolName).toBe("Read");
+      expect((toolNode as ToolNode).toolName).toBe("Read");
     });
   });
 
@@ -1394,7 +1412,7 @@ describe("dashboard-store", () => {
       // Turn 1: user → text → tool(Skill) → complete
       processEvent({ type: "user_message", user: "u", text: "Load skill" } as UserMessageEvent, id++);
       processEvent({ type: "text_start" } as TextStartEvent, id++);
-      processEvent({ type: "tool_start", tool_name: "Skill", tool_input: { skill: "dialogue" }, tool_use_id: "tu-skill" } as ToolStartEvent, id++);
+      processEvent({ type: "tool_start", timestamp: 0, tool_name: "Skill", tool_input: { skill: "dialogue" }, tool_use_id: "tu-skill" } as ToolStartEvent, id++);
       processEvent({ type: "tool_result", tool_name: "Skill", result: "ok", is_error: false, tool_use_id: "tu-skill" } as ToolResultEvent, id++);
       processEvent({ type: "text_delta", text: "Loaded." } as TextDeltaEvent, id++);
       processEvent({ type: "text_end" } as TextEndEvent, id++);
@@ -1405,9 +1423,9 @@ describe("dashboard-store", () => {
       processEvent({ type: "text_start" } as TextStartEvent, id++);
       processEvent({ type: "text_delta", text: "Exploring..." } as TextDeltaEvent, id++);
       processEvent({ type: "text_end" } as TextEndEvent, id++);
-      processEvent({ type: "tool_start", tool_name: "Task", tool_input: { subagent_type: "Explore" }, tool_use_id: "tu-task1" } as ToolStartEvent, id++);
+      processEvent({ type: "tool_start", timestamp: 0, tool_name: "Task", tool_input: { subagent_type: "Explore" }, tool_use_id: "tu-task1" } as ToolStartEvent, id++);
       processEvent({ type: "subagent_start", agent_id: "agent-1", agent_type: "Explore", parent_event_id: "tu-task1" } as SubagentStartEvent, id++);
-      processEvent({ type: "tool_start", tool_name: "Grep", tool_input: {}, tool_use_id: "tu-sub-grep", parent_event_id: "tu-task1" } as ToolStartEvent, id++);
+      processEvent({ type: "tool_start", timestamp: 0, tool_name: "Grep", tool_input: {}, tool_use_id: "tu-sub-grep", parent_event_id: "tu-task1" } as ToolStartEvent, id++);
       processEvent({ type: "tool_result", tool_name: "Grep", result: "found", is_error: false, tool_use_id: "tu-sub-grep", parent_event_id: "tu-task1" } as ToolResultEvent, id++);
       processEvent({ type: "subagent_stop", agent_id: "agent-1", parent_event_id: "tu-task1" } as SubagentStopEvent, id++);
       processEvent({ type: "tool_result", tool_name: "Task", result: "Explored", is_error: false, tool_use_id: "tu-task1" } as ToolResultEvent, id++);
@@ -1429,16 +1447,16 @@ describe("dashboard-store", () => {
       expect(turn1.content).toBe("Load skill");
       const turn1Tools = collectNodes(turn1, "tool");
       expect(turn1Tools).toHaveLength(1);
-      expect(turn1Tools[0].toolName).toBe("Skill");
+      expect((turn1Tools[0] as ToolNode).toolName).toBe("Skill");
 
       // Turn 2: user_message with text, tool(Task with Grep child)
       const turn2 = tree.children[1];
       expect(turn2.type).toBe("user_message");
       expect(turn2.content).toBe("Analyze");
       // Grep is child of Task tool (no subagent intermediary)
-      const taskNode = collectNodes(turn2, "tool").find(t => t.toolName === "Task");
+      const taskNode = collectNodes(turn2, "tool").find(t => (t as ToolNode).toolName === "Task");
       expect(taskNode).toBeDefined();
-      expect(taskNode!.children.some(c => c.toolName === "Grep")).toBe(true);
+      expect(taskNode!.children.some(c => (c as ToolNode).toolName === "Grep")).toBe(true);
     });
 
     it("tool은 Task tool의 자식으로 배치 (subagent 없이)", () => {
@@ -1454,9 +1472,9 @@ describe("dashboard-store", () => {
       processEvent({ type: "user_message", user: "u", text: "Turn 2" } as UserMessageEvent, 4);
       processEvent({ type: "text_start" } as TextStartEvent, 5);
       processEvent({ type: "text_end" } as TextEndEvent, 6);
-      processEvent({ type: "tool_start", tool_name: "Task", tool_input: {}, tool_use_id: "tu-task" } as ToolStartEvent, 7);
+      processEvent({ type: "tool_start", timestamp: 0, tool_name: "Task", tool_input: {}, tool_use_id: "tu-task" } as ToolStartEvent, 7);
       // Inner tool with parent_event_id → resolveParent → nodeMap["tu-task"] → tool itself
-      processEvent({ type: "tool_start", tool_name: "Grep", tool_input: {}, tool_use_id: "tu-grep", parent_event_id: "tu-task" } as ToolStartEvent, 8);
+      processEvent({ type: "tool_start", timestamp: 0, tool_name: "Grep", tool_input: {}, tool_use_id: "tu-grep", parent_event_id: "tu-task" } as ToolStartEvent, 8);
       processEvent({ type: "tool_result", tool_name: "Grep", result: "ok", is_error: false, tool_use_id: "tu-grep", parent_event_id: "tu-task" } as ToolResultEvent, 9);
       processEvent({ type: "tool_result", tool_name: "Task", result: "done", is_error: false, tool_use_id: "tu-task" } as ToolResultEvent, 10);
       processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 11);
@@ -1469,11 +1487,11 @@ describe("dashboard-store", () => {
 
       // Turn 2 should have the Task tool (resolveParent → turn root)
       const turn2Tools = collectNodes(userMsgs[1], "tool");
-      expect(turn2Tools.some(t => t.toolName === "Task")).toBe(true);
+      expect(turn2Tools.some(t => (t as ToolNode).toolName === "Task")).toBe(true);
 
       // Grep은 Task tool의 자식으로 배치 (resolveParent가 toolNode 반환)
-      const taskNode = turn2Tools.find(t => t.toolName === "Task");
-      expect(taskNode?.children.some(c => c.toolName === "Grep")).toBe(true);
+      const taskNode = turn2Tools.find(t => (t as ToolNode).toolName === "Task");
+      expect(taskNode?.children.some(c => (c as ToolNode).toolName === "Grep")).toBe(true);
 
       // 에러 노드 없음 (parent_event_id가 nodeMap에서 매칭 성공)
       const errorNodes = collectNodes(tree, "error");
@@ -1496,6 +1514,7 @@ describe("dashboard-store", () => {
       // Task-1
       processEvent({
         type: "tool_start",
+        timestamp: 0,
         tool_name: "Task",
         tool_input: { prompt: "Explore" },
         tool_use_id: "toolu_task_1",
@@ -1512,6 +1531,7 @@ describe("dashboard-store", () => {
       // Inner tool with parent_event_id → goes to Task tool node directly
       processEvent({
         type: "tool_start",
+        timestamp: 0,
         tool_name: "Grep",
         tool_input: {},
         tool_use_id: "toolu_grep",
@@ -1543,6 +1563,7 @@ describe("dashboard-store", () => {
       // Task-2: root level
       processEvent({
         type: "tool_start",
+        timestamp: 0,
         tool_name: "Task",
         tool_input: { prompt: "Review" },
         tool_use_id: "toolu_task_2",
@@ -1554,12 +1575,12 @@ describe("dashboard-store", () => {
       // Task-1 and Task-2 are both turn root children
       const turnTools = turn.children.filter(c => c.type === "tool");
       expect(turnTools).toHaveLength(2);
-      expect(turnTools[0].toolName).toBe("Task");
-      expect(turnTools[1].toolName).toBe("Task");
+      expect((turnTools[0] as ToolNode).toolName).toBe("Task");
+      expect((turnTools[1] as ToolNode).toolName).toBe("Task");
 
       // Grep is child of Task-1 (directly, no subagent)
       const task1 = turnTools[0];
-      expect(task1.children.some(c => c.toolName === "Grep")).toBe(true);
+      expect(task1.children.some(c => (c as ToolNode).toolName === "Grep")).toBe(true);
 
       // No subagent nodes
       expect(collectNodes(tree, "subagent")).toHaveLength(0);
@@ -1577,6 +1598,7 @@ describe("dashboard-store", () => {
       processEvent({ type: "text_start" } as TextStartEvent, 1);
       processEvent({
         type: "tool_start",
+        timestamp: 0,
         tool_name: "Read",
         tool_input: {},
       } as ToolStartEvent, 2);
@@ -1586,7 +1608,7 @@ describe("dashboard-store", () => {
       // tool은 턴 루트(user_message)에 배치
       expect(userMsg.children.some(c => c.type === "tool")).toBe(true);
       const toolNode = userMsg.children.find(c => c.type === "tool");
-      expect(toolNode?.toolName).toBe("Read");
+      expect((toolNode as ToolNode).toolName).toBe("Read");
 
       // 에러 노드 없음
       const errorNodes = collectNodes(tree, "error");
@@ -1600,6 +1622,7 @@ describe("dashboard-store", () => {
       processEvent({ type: "text_start" } as TextStartEvent, 2);
       processEvent({
         type: "tool_start",
+        timestamp: 0,
         tool_name: "Read",
         tool_input: {},
       } as ToolStartEvent, 3);
@@ -1610,7 +1633,7 @@ describe("dashboard-store", () => {
       // tool은 턴 루트에 배치
       const toolNodes = userMsg.children.filter(c => c.type === "tool");
       expect(toolNodes).toHaveLength(1);
-      expect(toolNodes[0].toolName).toBe("Read");
+      expect((toolNodes[0] as ToolNode).toolName).toBe("Read");
     });
 
     it("parent_event_id 매칭 실패 시 root에 배치 (에러 노드 없음)", () => {
@@ -1619,6 +1642,7 @@ describe("dashboard-store", () => {
       processEvent({ type: "text_start" } as TextStartEvent, 1);
       processEvent({
         type: "tool_start",
+        timestamp: 0,
         tool_name: "Read",
         tool_input: {},
         parent_event_id: "nonexistent-id",

@@ -249,67 +249,123 @@ export interface SessionDetail extends SessionSummary {
 // === Event Tree ===
 
 /** 트리 노드 타입 (SSE 이벤트 lifecycle → 단일 노드) */
-export type EventTreeNodeType =
-  | "session"           // 가상 루트
-  | "subagent"          // 가상 (SubagentStart) — R4: 더 이상 생성되지 않으나 하위 호환 유지
-  | "user_message"      // UserMessage
-  | "intervention"      // Intervention
-  | "thinking"          // ThinkingBlock (text_start/delta/end)
-  | "text"              // TextBlock (하위 호환)
-  | "tool_use"          // ToolUseBlock
-  | "tool"              // 하위 호환 alias
-  | "tool_result"       // ToolResultBlock
-  | "result"            // ResultMessage
-  | "compact"           // Context compaction
-  | "complete"          // 하위 호환
-  | "error";
+export type EventTreeNodeType = EventTreeNode["type"];
 
-/** 이벤트 트리 노드 — 소스 오브 트루스 */
-export interface EventTreeNode {
+// === EventTreeNode Discriminated Union ===
+
+/** 모든 노드 타입의 공통 필드 */
+interface BaseNode {
   id: string;
-  type: EventTreeNodeType;
   children: EventTreeNode[];
   content: string;
   completed: boolean;
-
-  // 부모-자식 관계 결정
-  /** SDK ToolUseBlock.id (tool_result 매칭용) */
-  toolUseId?: string;
   /** 부모 이벤트 ID (서브에이전트 내부 노드 배치용) */
   parentEventId?: string;
-
-  // tool_use 전용
-  toolName?: string;
-  toolInput?: Record<string, unknown>;
-
-  // tool_result 전용
-  toolResult?: string;
-  isError?: boolean;
-
-  // subagent 전용
-  agentId?: string;
-  agentType?: string;
-
-  // user_message / intervention 전용
-  user?: string;
-
-  // thinking 노드의 가시적 텍스트 (text_delta로 업데이트)
-  textContent?: string;
-  // text_end 수신 여부
-  textCompleted?: boolean;
-
-  // session 전용
-  sessionId?: string;
-
-  // 시간 정보
   /** 이벤트 발행 시각 (Unix epoch, 초) */
   timestamp?: number;
+}
 
-  // result 전용
+/** 가상 세션 루트 노드 */
+export interface SessionNode extends BaseNode {
+  type: "session";
+  sessionId?: string;
+}
+
+/** 서브에이전트 가상 노드 (R4: 더 이상 생성되지 않으나 하위 호환) */
+export interface SubagentNode extends BaseNode {
+  type: "subagent";
+  agentId?: string;
+  agentType?: string;
+}
+
+/** 사용자 메시지 노드 */
+export interface UserMessageNode extends BaseNode {
+  type: "user_message";
+  user: string;
+}
+
+/** 인터벤션 노드 */
+export interface InterventionNode extends BaseNode {
+  type: "intervention";
+  user?: string;
+}
+
+/** Thinking (확장 사고) 노드 */
+export interface ThinkingNode extends BaseNode {
+  type: "thinking";
+  /** text_delta로 누적되는 가시적 텍스트 */
+  textContent?: string;
+  /** text_end 수신 여부 */
+  textCompleted?: boolean;
+}
+
+/** 독립 텍스트 노드 (thinking 매칭 없이 text_start가 온 경우) */
+export interface TextNode extends BaseNode {
+  type: "text";
+  /** text_delta로 누적되는 가시적 텍스트 */
+  textContent?: string;
+  /** text_end 수신 여부 */
+  textCompleted?: boolean;
+}
+
+/** 도구 호출 노드 */
+export interface ToolNode extends BaseNode {
+  type: "tool" | "tool_use";
+  /** SDK ToolUseBlock.id (tool_result 매칭용) */
+  toolUseId?: string;
+  toolName: string;
+  toolInput: Record<string, unknown>;
+  toolResult?: string;
+  isError?: boolean;
+  durationMs?: number;
+}
+
+/** 도구 결과 노드 (하위 호환) */
+export interface ToolResultNode extends BaseNode {
+  type: "tool_result";
+  toolName?: string;
+  toolResult?: string;
+  isError?: boolean;
+}
+
+/** 세션 결과 노드 */
+export interface ResultNode extends BaseNode {
+  type: "result";
   durationMs?: number;
   usage?: { input_tokens: number; output_tokens: number };
   totalCostUsd?: number;
 }
+
+/** 컨텍스트 압축 노드 */
+export interface CompactNode extends BaseNode {
+  type: "compact";
+}
+
+/** 세션 완료 노드 */
+export interface CompleteNode extends BaseNode {
+  type: "complete";
+}
+
+/** 에러 노드 */
+export interface ErrorNode extends BaseNode {
+  type: "error";
+  isError?: boolean;
+}
+
+/** 이벤트 트리 노드 — 소스 오브 트루스 (discriminated union) */
+export type EventTreeNode =
+  | SessionNode
+  | SubagentNode
+  | UserMessageNode
+  | InterventionNode
+  | ThinkingNode
+  | TextNode
+  | ToolNode
+  | ToolResultNode
+  | ResultNode
+  | CompactNode
+  | CompleteNode
+  | ErrorNode;
 
 // === API Request/Response ===
 

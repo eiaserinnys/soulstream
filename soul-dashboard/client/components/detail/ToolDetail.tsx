@@ -7,11 +7,11 @@
  */
 
 import { useRef, useState, useLayoutEffect } from "react";
-import type { EventTreeNode } from "@shared/types";
+import type { ToolNode } from "@shared/types";
 import { SectionLabel, CodeBlock, safeStringify } from "./shared";
 
 interface ToolDetailProps {
-  card: EventTreeNode;
+  card: ToolNode;
   /** true면 Result에 포커스 (헤더가 "Result"로 표시됨) */
   focusResult?: boolean;
 }
@@ -87,7 +87,7 @@ export function ToolDetail({ card, focusResult }: ToolDetailProps) {
         <div
           className="text-sm text-foreground font-semibold font-mono"
         >
-          {card.toolName ?? "unknown"}
+          {card.toolName}
         </div>
       </div>
 

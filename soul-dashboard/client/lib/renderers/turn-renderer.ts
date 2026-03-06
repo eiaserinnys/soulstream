@@ -5,7 +5,7 @@
  * 메인 플로우(수직 체인)에 배치되며, 자식 노드 처리를 위임합니다.
  */
 
-import type { EventTreeNode } from "@shared/types";
+import type { EventTreeNode, UserMessageNode, InterventionNode } from "@shared/types";
 import type { LayoutContext } from "../layout-context";
 import {
   createUserNode,
@@ -22,7 +22,7 @@ export function renderUserMessageTurn(
   ctx: LayoutContext,
 ): void {
   if (treeNode.content) {
-    const userNode = createUserNode(treeNode);
+    const userNode = createUserNode(treeNode as UserMessageNode);
     ctx.nodes.push(userNode);
     if (ctx.prevMainFlowNodeId) {
       ctx.edges.push(createEdge(ctx.prevMainFlowNodeId, userNode.id));
@@ -40,7 +40,7 @@ export function renderInterventionTurn(
   ctx: LayoutContext,
 ): void {
   const collapseInfo = getCollapseInfo(treeNode, ctx.collapsedNodeIds);
-  const intvNode = createInterventionNodeFromTree(treeNode, collapseInfo);
+  const intvNode = createInterventionNodeFromTree(treeNode as InterventionNode, collapseInfo);
   ctx.nodes.push(intvNode);
   if (ctx.prevMainFlowNodeId) {
     ctx.edges.push(createEdge(ctx.prevMainFlowNodeId, intvNode.id));

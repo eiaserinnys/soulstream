@@ -12,9 +12,11 @@ import type {
   EventTreeNode,
   SoulSSEEvent,
   SessionEvent,
+  SessionNode,
   ThinkingEvent,
   ToolStartEvent,
   ToolResultEvent,
+  ToolNode,
   ResultEvent,
   CompleteEvent,
   ErrorEvent,
@@ -147,9 +149,9 @@ export function applyUpdate(
 ): boolean {
   switch (event.type) {
     case "session": {
-      if (!root) return false;
+      if (!root || root.type !== "session") return false;
       const e = event as SessionEvent;
-      root.sessionId = e.session_id;
+      (root as SessionNode).sessionId = e.session_id;
       root.content = e.session_id;
       return true;
     }
@@ -184,11 +186,12 @@ export function applyUpdate(
     case "tool_result": {
       const e = event as ToolResultEvent;
       // tool_use_id로 nodeMap에서 정확 매칭 (Phase 6: toolUseMap 통합)
-      const toolNode = e.tool_use_id
+      const found = e.tool_use_id
         ? ctx.nodeMap.get(e.tool_use_id)
         : undefined;
 
-      if (toolNode) {
+      if (found && (found.type === "tool" || found.type === "tool_use")) {
+        const toolNode = found as ToolNode;
         toolNode.toolResult = e.result;
         toolNode.isError = e.is_error;
         toolNode.completed = true;

@@ -118,7 +118,7 @@ function replaySession(
     const eventType = record.event.type as string;
     if (processableTypes.has(eventType)) {
       store.getState().processEvent(
-        record.event as SoulSSEEvent,
+        record.event as unknown as SoulSSEEvent,
         record.id,
       );
       processedCount++;

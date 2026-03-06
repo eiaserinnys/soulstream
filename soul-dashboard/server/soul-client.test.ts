@@ -402,17 +402,17 @@ describe("SoulClient", () => {
           {
             id: 2,
             type: "text_start",
-            data: { type: "text_start", card_id: "card-1" },
+            data: { type: "text_start", timestamp: 0 },
           },
           {
             id: 3,
             type: "text_delta",
-            data: { type: "text_delta", card_id: "card-1", text: "Hello" },
+            data: { type: "text_delta", timestamp: 0, text: "Hello" },
           },
           {
             id: 4,
             type: "text_end",
-            data: { type: "text_end", card_id: "card-1" },
+            data: { type: "text_end", timestamp: 0 },
           },
           {
             id: 5,
