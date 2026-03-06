@@ -1,7 +1,7 @@
 /**
  * processing-context 테스트
  *
- * ProcessingContext 생성, makeNode, registerNode, ensureRoot, insertOrphanError를 검증합니다.
+ * ProcessingContext 생성, makeNode, registerNode, ensureRoot를 검증합니다.
  */
 
 import { describe, it, expect } from "vitest";
@@ -10,7 +10,6 @@ import {
   makeNode,
   registerNode,
   ensureRoot,
-  insertOrphanError,
 } from "./processing-context";
 import type { ProcessingContext } from "./processing-context";
 import type { EventTreeNode } from "../../shared/types";
@@ -21,9 +20,6 @@ describe("createProcessingContext", () => {
 
     expect(ctx.nodeMap).toBeInstanceOf(Map);
     expect(ctx.nodeMap.size).toBe(0);
-
-    expect(ctx.toolUseMap).toBeInstanceOf(Map);
-    expect(ctx.toolUseMap.size).toBe(0);
 
     expect(ctx.lastThinkingByParent).toBeInstanceOf(Map);
     expect(ctx.lastThinkingByParent.size).toBe(0);
@@ -77,14 +73,14 @@ describe("makeNode", () => {
       toolName: "Bash",
       toolInput: { command: "ls" },
       toolUseId: "toolu_abc",
-      parentToolUseId: "toolu_parent",
+      parentEventId: "toolu_parent",
       timestamp: 1700000000,
     });
 
     expect(node.toolName).toBe("Bash");
     expect(node.toolInput).toEqual({ command: "ls" });
     expect(node.toolUseId).toBe("toolu_abc");
-    expect(node.parentToolUseId).toBe("toolu_parent");
+    expect(node.parentEventId).toBe("toolu_parent");
     expect(node.timestamp).toBe(1700000000);
   });
 
@@ -154,50 +150,5 @@ describe("ensureRoot", () => {
     const root2 = ensureRoot(root1, ctx);
 
     expect(root1).toBe(root2);
-  });
-});
-
-describe("insertOrphanError", () => {
-  it("should create an error node and prepend to root.children", () => {
-    const ctx = createProcessingContext();
-    const root = makeNode("root-session", "session", "");
-    const existingChild = makeNode("existing", "text", "already here");
-    root.children.push(existingChild);
-
-    insertOrphanError(root, ctx, "tool_start", 42, "missing parent");
-
-    // error node should be at the front
-    expect(root.children).toHaveLength(2);
-    expect(root.children[0].id).toBe("orphan-error-42");
-    expect(root.children[0].type).toBe("error");
-    expect(root.children[0].completed).toBe(true);
-    expect(root.children[0].isError).toBe(true);
-    expect(root.children[0].content).toContain("[tool_start]");
-    expect(root.children[0].content).toContain("missing parent");
-
-    // existing child should be pushed to second position
-    expect(root.children[1]).toBe(existingChild);
-  });
-
-  it("should register the error node in nodeMap", () => {
-    const ctx = createProcessingContext();
-    const root = makeNode("root-session", "session", "");
-
-    insertOrphanError(root, ctx, "resolveParent", 99, "no match");
-
-    expect(ctx.nodeMap.has("orphan-error-99")).toBe(true);
-  });
-
-  it("should create multiple error nodes with different IDs", () => {
-    const ctx = createProcessingContext();
-    const root = makeNode("root-session", "session", "");
-
-    insertOrphanError(root, ctx, "type1", 1, "detail1");
-    insertOrphanError(root, ctx, "type2", 2, "detail2");
-
-    expect(root.children).toHaveLength(2);
-    // most recent should be at front (unshift)
-    expect(root.children[0].id).toBe("orphan-error-2");
-    expect(root.children[1].id).toBe("orphan-error-1");
   });
 });

@@ -1082,17 +1082,17 @@ class TestSubagentHooks:
         assert len(events) == 2
         assert len(runner._pending_events) == 0
 
-    def test_engine_event_includes_parent_tool_use_id(self):
-        """EngineEvent에 parent_tool_use_id 포함"""
+    def test_engine_event_includes_parent_event_id(self):
+        """EngineEvent에 parent_event_id 포함"""
         from soul_server.engine.types import ToolStartEngineEvent
         import time
         event = ToolStartEngineEvent(
             tool_name="Read",
             tool_input={},
             timestamp=time.time(),
-            parent_tool_use_id="toolu_task_1",
+            parent_event_id="toolu_task_1",
         )
-        assert event.parent_tool_use_id == "toolu_task_1"
+        assert event.parent_event_id == "toolu_task_1"
 
     def test_engine_event_includes_agent_id(self):
         """EngineEvent에 agent_id 포함"""
@@ -1928,7 +1928,7 @@ class TestToolResultFromUserMessage:
         @dataclass
         class MockUserMessage:
             content: list = None
-            parent_tool_use_id: str = None
+            parent_event_id: str = None
 
         runner = ClaudeRunner()
         events = []
@@ -1987,7 +1987,7 @@ class TestToolResultFromUserMessage:
         @dataclass
         class MockUserMessage:
             content: list = None
-            parent_tool_use_id: str = None
+            parent_event_id: str = None
 
         runner = ClaudeRunner()
         events = []

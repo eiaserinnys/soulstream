@@ -66,7 +66,7 @@ class MessageProcessor:
         self.on_session = on_session
         self.on_client_session_update = on_client_session_update
 
-        # SDK 메시지의 parent_tool_use_id를 추적 (ResultMessage에서 사용)
+        # SDK 메시지의 parent_event_id를 추적 (ResultMessage에서 사용)
         self.last_msg_parent: Optional[str] = None
 
     async def process(self, message: Any) -> None:
@@ -99,7 +99,7 @@ class MessageProcessor:
 
     async def _handle_assistant_message(self, message: Any) -> None:
         """AssistantMessage 처리 — 블록 순회 및 이벤트 발행"""
-        msg_parent = getattr(message, "parent_tool_use_id", None)
+        msg_parent = getattr(message, "parent_event_id", None)
         self.last_msg_parent = msg_parent
         if hasattr(message, "content"):
             for block in message.content:
@@ -144,7 +144,7 @@ class MessageProcessor:
                         ThinkingEngineEvent(
                             thinking=thinking_text,
                             signature=signature,
-                            parent_tool_use_id=msg_parent,
+                            parent_event_id=msg_parent,
                         )
                     )
                 except Exception as e:
@@ -178,7 +178,7 @@ class MessageProcessor:
                 await self.on_event(
                     TextDeltaEngineEvent(
                         text=block.text,
-                        parent_tool_use_id=msg_parent,
+                        parent_event_id=msg_parent,
                     )
                 )
             except Exception as e:
@@ -212,7 +212,7 @@ class MessageProcessor:
                         tool_name=block.name,
                         tool_input=event_tool_input,
                         tool_use_id=tool_use_id,
-                        parent_tool_use_id=msg_parent,
+                        parent_event_id=msg_parent,
                     )
                 )
             except Exception as e:
@@ -270,7 +270,7 @@ class MessageProcessor:
                         result=content,
                         is_error=is_error,
                         tool_use_id=tool_use_id,
-                        parent_tool_use_id=msg_parent,
+                        parent_event_id=msg_parent,
                     )
                 )
             except Exception as e:
@@ -284,7 +284,7 @@ class MessageProcessor:
         AssistantMessage.content에 ToolResultBlock이 포함되는 경우도 대비하여
         양쪽 모두 처리하되, emitted_tool_result_ids로 중복 발행을 방지한다.
         """
-        msg_parent = getattr(message, "parent_tool_use_id", None)
+        msg_parent = getattr(message, "parent_event_id", None)
         self.last_msg_parent = msg_parent
 
         if hasattr(message, "content") and isinstance(message.content, list):
@@ -316,7 +316,7 @@ class MessageProcessor:
                         output=result_output,
                         error=result_output if self.msg_state.is_error else None,
                         usage=self.msg_state.usage,
-                        parent_tool_use_id=self.last_msg_parent,
+                        parent_event_id=self.last_msg_parent,
                     )
                 )
             except Exception as e:

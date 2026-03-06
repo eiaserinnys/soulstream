@@ -217,14 +217,14 @@ class ThinkingSSEEvent(BaseModel):
     timestamp: float = Field(..., description="이벤트 발행 시각 (Unix epoch)")
     thinking: str = Field(..., description="사고 과정 텍스트")
     signature: str = Field(default="", description="사고 블록 서명")
-    parent_tool_use_id: Optional[str] = Field(None, description="서브에이전트 내부인 경우 부모 Task 도구의 tool_use_id")
+    parent_event_id: Optional[str] = Field(None, description="서브에이전트 내부인 경우 부모 이벤트 ID")
 
 
 class TextStartSSEEvent(BaseModel):
     """텍스트 블록 시작 이벤트"""
     type: str = "text_start"
     timestamp: float = Field(..., description="이벤트 발행 시각 (Unix epoch)")
-    parent_tool_use_id: Optional[str] = Field(None, description="서브에이전트 내부인 경우 부모 Task 도구의 tool_use_id")
+    parent_event_id: Optional[str] = Field(None, description="서브에이전트 내부인 경우 부모 이벤트 ID")
 
 
 class TextDeltaSSEEvent(BaseModel):
@@ -247,7 +247,7 @@ class ToolStartSSEEvent(BaseModel):
     tool_name: str = Field(..., description="도구 이름")
     tool_input: dict = Field(default_factory=dict, description="도구 입력 파라미터")
     tool_use_id: Optional[str] = Field(None, description="SDK ToolUseBlock ID (tool_result 매칭용)")
-    parent_tool_use_id: Optional[str] = Field(None, description="서브에이전트 내부인 경우 부모 Task 도구의 tool_use_id")
+    parent_event_id: Optional[str] = Field(None, description="서브에이전트 내부인 경우 부모 이벤트 ID")
 
 
 class ToolResultSSEEvent(BaseModel):
@@ -258,7 +258,7 @@ class ToolResultSSEEvent(BaseModel):
     result: str = Field(..., description="도구 실행 결과")
     is_error: bool = Field(False, description="오류 여부")
     tool_use_id: Optional[str] = Field(None, description="SDK ToolUseBlock ID (tool_start 매칭용)")
-    parent_tool_use_id: Optional[str] = Field(None, description="서브에이전트 내부인 경우 부모 Task 도구의 tool_use_id")
+    parent_event_id: Optional[str] = Field(None, description="서브에이전트 내부인 경우 부모 이벤트 ID")
 
 
 class ResultSSEEvent(BaseModel):
@@ -275,7 +275,7 @@ class ResultSSEEvent(BaseModel):
     error: Optional[str] = Field(None, description="오류 메시지")
     usage: Optional[dict] = Field(None, description="토큰 사용량 {input_tokens, output_tokens}")
     total_cost_usd: Optional[float] = Field(None, description="총 비용 (USD)")
-    parent_tool_use_id: Optional[str] = Field(None, description="서브에이전트 내부인 경우 부모 Task 도구의 tool_use_id")
+    parent_event_id: Optional[str] = Field(None, description="서브에이전트 내부인 경우 부모 이벤트 ID")
 
 
 class SubagentStartSSEEvent(BaseModel):
@@ -284,7 +284,7 @@ class SubagentStartSSEEvent(BaseModel):
     timestamp: float = Field(..., description="이벤트 발행 시각 (Unix epoch)")
     agent_id: str = Field(..., description="서브에이전트 고유 ID")
     agent_type: str = Field(..., description="서브에이전트 타입 (Explore, Plan 등)")
-    parent_tool_use_id: Optional[str] = Field(None, description="부모 Task 도구의 tool_use_id")
+    parent_event_id: Optional[str] = Field(None, description="부모 이벤트 ID")
 
 
 class SubagentStopSSEEvent(BaseModel):
@@ -292,7 +292,7 @@ class SubagentStopSSEEvent(BaseModel):
     type: str = "subagent_stop"
     timestamp: float = Field(..., description="이벤트 발행 시각 (Unix epoch)")
     agent_id: str = Field(..., description="서브에이전트 고유 ID")
-    parent_tool_use_id: Optional[str] = Field(None, description="부모 Task 도구의 tool_use_id")
+    parent_event_id: Optional[str] = Field(None, description="부모 이벤트 ID")
 
 
 class RateLimitProfileStatus(BaseModel):

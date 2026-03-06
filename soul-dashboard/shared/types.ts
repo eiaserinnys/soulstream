@@ -108,15 +108,15 @@ export interface ThinkingEvent {
   timestamp: number;
   thinking: string;
   signature?: string;
-  /** 부모 tool_use_id (서브에이전트 내부 노드 배치용) */
-  parent_tool_use_id?: string;
+  /** 부모 이벤트 ID (서브에이전트 내부 노드 배치용) */
+  parent_event_id?: string;
 }
 
 export interface TextStartEvent {
   type: "text_start";
   timestamp: number;
-  /** 부모 tool_use_id (서브에이전트 내부 노드 배치용) */
-  parent_tool_use_id?: string;
+  /** 부모 이벤트 ID (서브에이전트 내부 노드 배치용) */
+  parent_event_id?: string;
 }
 
 export interface TextDeltaEvent {
@@ -137,8 +137,8 @@ export interface ToolStartEvent {
   tool_input: Record<string, unknown>;
   /** SDK ToolUseBlock ID (tool_result 매칭용) */
   tool_use_id?: string;
-  /** 부모 tool_use_id (서브에이전트 내부 노드 배치용) */
-  parent_tool_use_id?: string;
+  /** 부모 이벤트 ID (서브에이전트 내부 노드 배치용) */
+  parent_event_id?: string;
 }
 
 export interface ToolResultEvent {
@@ -149,8 +149,8 @@ export interface ToolResultEvent {
   is_error: boolean;
   /** SDK ToolUseBlock ID (tool_start 매칭용) */
   tool_use_id?: string;
-  /** 부모 tool_use_id (서브에이전트 내부 노드 배치용) */
-  parent_tool_use_id?: string;
+  /** 부모 이벤트 ID (서브에이전트 내부 노드 배치용) */
+  parent_event_id?: string;
 }
 
 export interface ResultEvent {
@@ -163,8 +163,8 @@ export interface ResultEvent {
   usage?: { input_tokens: number; output_tokens: number };
   /** 총 비용 (USD) */
   total_cost_usd?: number;
-  /** 부모 tool_use_id (서브에이전트 내부 노드 배치용) */
-  parent_tool_use_id?: string;
+  /** 부모 이벤트 ID (서브에이전트 내부 노드 배치용) */
+  parent_event_id?: string;
 }
 
 /** 서브에이전트 시작 이벤트 */
@@ -173,7 +173,7 @@ export interface SubagentStartEvent {
   timestamp: number;
   agent_id: string;
   agent_type: string;
-  parent_tool_use_id: string;
+  parent_event_id: string;
 }
 
 /** 서브에이전트 종료 이벤트 */
@@ -181,7 +181,7 @@ export interface SubagentStopEvent {
   type: "subagent_stop";
   timestamp: number;
   agent_id: string;
-  parent_tool_use_id?: string;
+  parent_event_id?: string;
 }
 
 export interface ReconnectEvent {
@@ -273,10 +273,10 @@ export interface EventTreeNode {
   completed: boolean;
 
   // 부모-자식 관계 결정
-  /** ToolUseBlock.id */
+  /** SDK ToolUseBlock.id (tool_result 매칭용) */
   toolUseId?: string;
-  /** 부모 tool_use_id (서브에이전트 내부 노드 배치용) */
-  parentToolUseId?: string;
+  /** 부모 이벤트 ID (서브에이전트 내부 노드 배치용) */
+  parentEventId?: string;
 
   // tool_use 전용
   toolName?: string;

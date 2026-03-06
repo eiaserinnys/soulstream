@@ -387,15 +387,15 @@ function generateSubagentSSEEvents(): Array<{ delay: number; data: string; end?:
     data: `id: ${id++}\nevent: tool_start\ndata: {"type":"tool_start","card_id":"sa-resp2","tool_name":"Task","tool_input":{"subagent_type":"Explore"},"tool_use_id":"tu-task-1"}\n\n` });
   // Subagent start
   events.push({ delay: 13*d,
-    data: `id: ${id++}\nevent: subagent_start\ndata: {"type":"subagent_start","agent_id":"agent-1","agent_type":"Explore","parent_tool_use_id":"tu-task-1"}\n\n` });
+    data: `id: ${id++}\nevent: subagent_start\ndata: {"type":"subagent_start","agent_id":"agent-1","agent_type":"Explore","parent_event_id":"tu-task-1"}\n\n` });
   // Subagent inner tool
   events.push({ delay: 14*d,
-    data: `id: ${id++}\nevent: tool_start\ndata: {"type":"tool_start","card_id":"sa-resp2","tool_name":"Grep","tool_input":{"pattern":"TODO"},"tool_use_id":"tu-sub-grep","parent_tool_use_id":"tu-task-1"}\n\n` });
+    data: `id: ${id++}\nevent: tool_start\ndata: {"type":"tool_start","card_id":"sa-resp2","tool_name":"Grep","tool_input":{"pattern":"TODO"},"tool_use_id":"tu-sub-grep","parent_event_id":"tu-task-1"}\n\n` });
   events.push({ delay: 15*d,
-    data: `id: ${id++}\nevent: tool_result\ndata: {"type":"tool_result","card_id":"sa-resp2","tool_name":"Grep","result":"3 matches found","is_error":false,"tool_use_id":"tu-sub-grep","parent_tool_use_id":"tu-task-1"}\n\n` });
+    data: `id: ${id++}\nevent: tool_result\ndata: {"type":"tool_result","card_id":"sa-resp2","tool_name":"Grep","result":"3 matches found","is_error":false,"tool_use_id":"tu-sub-grep","parent_event_id":"tu-task-1"}\n\n` });
   // Subagent stop
   events.push({ delay: 16*d,
-    data: `id: ${id++}\nevent: subagent_stop\ndata: {"type":"subagent_stop","agent_id":"agent-1","parent_tool_use_id":"tu-task-1"}\n\n` });
+    data: `id: ${id++}\nevent: subagent_stop\ndata: {"type":"subagent_stop","agent_id":"agent-1","parent_event_id":"tu-task-1"}\n\n` });
   // Task result
   events.push({ delay: 17*d,
     data: `id: ${id++}\nevent: tool_result\ndata: {"type":"tool_result","card_id":"sa-resp2","tool_name":"Task","result":"코드 탐색 완료","is_error":false,"tool_use_id":"tu-task-1"}\n\n` });
