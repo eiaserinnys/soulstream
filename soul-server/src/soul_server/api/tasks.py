@@ -16,6 +16,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from soul_server.models import (
     ExecuteRequest,
+    InputResponseRequest,
     SessionResponse,
     SessionListResponse,
     InterveneRequest,
@@ -26,6 +27,7 @@ from soul_server.service.task_manager import (
     Task,
     TaskConflictError,
     TaskNotFoundError,
+    TaskNotRunningError,
     TaskStatus,
 )
 from soul_server.service import resource_manager, get_soul_engine
@@ -351,6 +353,73 @@ async def intervene_session(
                 "error": {
                     "code": "SESSION_NOT_FOUND",
                     "message": f"세션을 찾을 수 없습니다: {agent_session_id}",
+                    "details": {},
+                }
+            },
+        )
+
+
+@router.post(
+    "/sessions/{agent_session_id}/respond",
+    status_code=200,
+    responses={
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        422: {"model": ErrorResponse},
+    },
+)
+async def respond_to_input_request(
+    agent_session_id: str,
+    request: InputResponseRequest,
+    _: str = Depends(verify_token),
+):
+    """
+    AskUserQuestion에 대한 사용자 응답 전달
+
+    input_request SSE 이벤트를 수신한 클라이언트가
+    사용자의 선택을 이 엔드포인트로 전달합니다.
+    """
+    task_manager = get_task_manager()
+
+    try:
+        success = task_manager.deliver_input_response(
+            agent_session_id=agent_session_id,
+            request_id=request.request_id,
+            answers=request.answers,
+        )
+
+        if success:
+            return {"delivered": True, "request_id": request.request_id}
+        else:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": {
+                        "code": "REQUEST_NOT_PENDING",
+                        "message": f"대기 중인 input_request가 없습니다: {request.request_id}",
+                        "details": {},
+                    }
+                },
+            )
+
+    except TaskNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": {
+                    "code": "SESSION_NOT_FOUND",
+                    "message": f"세션을 찾을 수 없습니다: {agent_session_id}",
+                    "details": {},
+                }
+            },
+        )
+    except TaskNotRunningError:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": {
+                    "code": "SESSION_NOT_RUNNING",
+                    "message": f"세션이 실행 중이 아닙니다: {agent_session_id}",
                     "details": {},
                 }
             },

@@ -204,6 +204,37 @@ class SubagentStopEngineEvent(EngineEvent):
         )]
 
 
+@dataclass
+class InputRequestEngineEvent(EngineEvent):
+    """사용자 입력 요청 이벤트 (AskUserQuestion)
+
+    Claude Code가 AskUserQuestion 도구를 호출할 때 발행됩니다.
+    can_use_tool 콜백에서 생성하여 이벤트 큐에 추가합니다.
+    """
+
+    request_id: str = ""
+    tool_use_id: str = ""
+    questions: list = field(default_factory=list)
+
+    def to_sse(self) -> list[BaseModel]:
+        from soul_server.models.schemas import InputRequestSSEEvent, InputRequestQuestion
+        return [InputRequestSSEEvent(
+            request_id=self.request_id,
+            tool_use_id=self.tool_use_id,
+            questions=[
+                InputRequestQuestion(
+                    question=q.get("question", ""),
+                    header=q.get("header", ""),
+                    options=q.get("options", []),
+                    multi_select=q.get("multiSelect", False),
+                )
+                for q in self.questions
+            ],
+            parent_event_id=self.parent_event_id,
+            timestamp=self.timestamp,
+        )]
+
+
 # 이벤트 콜백 타입 alias
 # EngineEvent를 받아서 코루틴을 반환하는 비동기 콜백
 EventCallback = Callable[[EngineEvent], Coroutine[Any, Any, None]]

@@ -162,6 +162,7 @@ class SoulEngineAdapter:
         client_id: Optional[str] = None,
         request_id: Optional[str] = None,
         persona: Optional[str] = None,
+        on_runner_ready: Optional[Callable[["ClaudeRunner"], None]] = None,
     ) -> AsyncIterator:
         """Claude Code 실행 (SSE 이벤트 스트림)
 
@@ -310,6 +311,10 @@ class SoulEngineAdapter:
             if self._rate_limit_tracker is not None:
                 runner.rate_limit_tracker = self._rate_limit_tracker
                 runner.alert_send_fn = alert_send_fn
+
+            # runner 준비 알림 (AskUserQuestion 응답 전달 경로 구축용)
+            if on_runner_ready:
+                on_runner_ready(runner)
 
             success = False
             try:

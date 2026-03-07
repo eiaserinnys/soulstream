@@ -22,7 +22,10 @@ try:
     )
     from claude_agent_sdk._errors import MessageParseError
     from claude_agent_sdk.types import (
+        PermissionResultAllow,
+        PermissionResultDeny,
         ResultMessage,
+        ToolPermissionContext,
     )
     SDK_AVAILABLE = True
 except ImportError:
@@ -42,6 +45,12 @@ except ImportError:
         pass
     class ResultMessage:
         pass
+    class PermissionResultAllow:
+        pass
+    class PermissionResultDeny:
+        pass
+    class ToolPermissionContext:
+        pass
 
 from soul_server.claude.diagnostics import (
     DebugSendFn,
@@ -51,6 +60,7 @@ from soul_server.claude.diagnostics import (
 )
 from soul_server.engine.types import (
     EngineResult,
+    InputRequestEngineEvent,
     InterventionCallback,
     EngineEvent,
     EventCallback,
@@ -268,6 +278,17 @@ class ClaudeRunner:
         # PreToolUse는 toolu_* ID를, SubagentStart는 random UUID를 전달하며,
         # Task 도구는 isConcurrencySafe=true라 병렬 실행 시 순서 보장 불가.
         # → parent_event_id를 빈 문자열로 전달, 대시보드가 턴 루트에 연결.
+
+        # AskUserQuestion 응답 대기용
+        # request_id → asyncio.Event (응답 도착 알림)
+        self._input_response_events: dict[str, asyncio.Event] = {}
+        # request_id → 응답 데이터 (answers dict)
+        self._input_responses: dict[str, dict] = {}
+        # AskUserQuestion 응답 대기 타임아웃 (초)
+        self.input_request_timeout: float = 300.0
+        # can_use_tool 콜백에서 직접 이벤트를 발행하기 위한 런타임 콜백
+        # _execute()에서 on_event가 설정되면 여기에 바인딩됩니다.
+        self._on_event_callback: Optional[EventCallback] = None
 
     @classmethod
     async def shutdown_all_clients(cls) -> int:
@@ -498,6 +519,115 @@ class ClaudeRunner:
             logger.warning(f"인터럽트 실패: runner={self.runner_id}, {e}")
             return False
 
+    def deliver_input_response(self, request_id: str, answers: dict) -> bool:
+        """외부에서 AskUserQuestion 응답을 전달
+
+        API 엔드포인트에서 호출합니다.
+        can_use_tool 콜백이 이 응답을 수신하여 SDK에 전달합니다.
+
+        Args:
+            request_id: input_request 이벤트의 request_id
+            answers: 질문별 응답 dict
+
+        Returns:
+            True: 대기 중인 요청이 있어 응답 전달 성공
+            False: 대기 중인 요청 없음
+        """
+        event = self._input_response_events.get(request_id)
+        if event is None:
+            return False
+        self._input_responses[request_id] = answers
+        event.set()
+        return True
+
+    def _make_can_use_tool(self):
+        """AskUserQuestion을 감지하는 can_use_tool 콜백 팩토리
+
+        AskUserQuestion 외의 도구는 항상 허용합니다
+        (permission_mode=bypassPermissions와 동등한 동작).
+
+        AskUserQuestion이 감지되면:
+        1. InputRequestEngineEvent를 _on_event_callback으로 직접 발행
+        2. asyncio.Event로 클라이언트 응답을 대기
+        3. 응답을 PermissionResultAllow로 변환하여 반환
+
+        NOTE: can_use_tool 콜백은 SDK 내부의 Query._handle_control_request()에서
+        호출됩니다. 이 동안 receive_messages() 스트림은 대기 상태이므로,
+        _pending_events가 아닌 _on_event_callback으로 직접 이벤트를 발행해야 합니다.
+        """
+        import uuid as _uuid
+
+        async def can_use_tool(tool_name, tool_input, context):
+            if tool_name != "AskUserQuestion":
+                return PermissionResultAllow()
+
+            request_id = _uuid.uuid4().hex[:12]
+            questions = tool_input.get("questions", [])
+
+            logger.info(
+                f"[ASK_USER] AskUserQuestion 감지: "
+                f"runner={self.runner_id}, request_id={request_id}, "
+                f"questions={len(questions)}"
+            )
+
+            # InputRequestEngineEvent를 직접 발행
+            event = InputRequestEngineEvent(
+                request_id=request_id,
+                tool_use_id="",
+                questions=questions,
+            )
+            if self._on_event_callback:
+                try:
+                    await self._on_event_callback(event)
+                except Exception as e:
+                    logger.warning(f"[ASK_USER] 이벤트 발행 실패: {e}")
+            else:
+                logger.warning(
+                    f"[ASK_USER] on_event 콜백 없음, 이벤트 큐에 추가: "
+                    f"request_id={request_id}"
+                )
+                self._pending_events.append(event)
+
+            # 응답 대기용 Event 생성
+            response_event = asyncio.Event()
+            self._input_response_events[request_id] = response_event
+
+            try:
+                # 응답 대기 (타임아웃 포함)
+                try:
+                    await asyncio.wait_for(
+                        response_event.wait(),
+                        timeout=self.input_request_timeout,
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        f"[ASK_USER] 응답 타임아웃: "
+                        f"runner={self.runner_id}, request_id={request_id}"
+                    )
+                    return PermissionResultDeny(
+                        message="사용자 응답 대기 시간이 초과되었습니다."
+                    )
+
+                # 응답 수신
+                answers = self._input_responses.get(request_id, {})
+                logger.info(
+                    f"[ASK_USER] 응답 수신: "
+                    f"runner={self.runner_id}, request_id={request_id}, "
+                    f"answers={answers}"
+                )
+
+                # updated_input 구성: 원본 questions + answers
+                updated_input = dict(tool_input)
+                updated_input["answers"] = answers
+
+                return PermissionResultAllow(updated_input=updated_input)
+            finally:
+                # 정리
+                self._input_response_events.pop(request_id, None)
+                self._input_responses.pop(request_id, None)
+
+        return can_use_tool
+
     def _debug(self, message: str) -> None:
         """디버그 메시지 전송 (debug_send_fn이 있을 때만)"""
         if not self.debug_send_fn:
@@ -597,6 +727,7 @@ class ClaudeRunner:
             allowed_tools=self.allowed_tools,
             disallowed_tools=self.disallowed_tools,
             permission_mode="bypassPermissions",
+            can_use_tool=self._make_can_use_tool(),
             cwd=self.working_dir,
             setting_sources=["project"],
             hooks=hooks,
@@ -863,6 +994,11 @@ class ClaudeRunner:
 
         # 이전 실행의 잔여 상태 정리 (풀링된 runner 재사용 대비)
         self._pending_events.clear()
+        self._input_response_events.clear()
+        self._input_responses.clear()
+
+        # can_use_tool 콜백에서 사용할 on_event 바인딩
+        self._on_event_callback = on_event
 
         # 현재 실행 루프를 인스턴스에 등록 (interrupt에서 사용)
         self.execution_loop = asyncio.get_running_loop()
@@ -1010,6 +1146,12 @@ class ClaudeRunner:
                 await self._remove_client()
             # pooled 모드: client 유지, registry와 execution_loop만 정리
             self.execution_loop = None
+            self._on_event_callback = None
+            # 미응답 input_request 정리 (타임아웃 중인 콜백이 있으면 깨움)
+            for evt in self._input_response_events.values():
+                evt.set()
+            self._input_response_events.clear()
+            self._input_responses.clear()
             if runner_id:
                 remove_runner(runner_id)
             if stderr_file is not None:
