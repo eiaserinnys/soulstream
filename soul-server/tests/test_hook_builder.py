@@ -116,12 +116,12 @@ class TestSubagentStartHook:
         assert isinstance(event, SubagentStartEngineEvent)
         assert event.agent_id == "agent-1"
         assert event.agent_type == "task"
-        assert event.parent_event_id == ""
+        assert event.parent_event_id == "toolu-y"
         assert result == {}
 
     @pytest.mark.asyncio
-    async def test_parent_event_id_always_empty(self):
-        """parent_event_id는 항상 빈 문자열"""
+    async def test_parent_event_id_from_tool_use_id(self):
+        """parent_event_id는 SDK가 전달한 tool_use_id를 사용한다"""
         event_queue: deque[EngineEvent] = deque()
         hooks = build_hooks(compact_events=None, event_queue=event_queue)
 
@@ -129,6 +129,21 @@ class TestSubagentStartHook:
         await start_fn(
             {"agent_id": "a-2", "agent_type": "code"},
             "toolu-z",
+            MagicMock(),
+        )
+
+        assert event_queue[0].parent_event_id == "toolu-z"
+
+    @pytest.mark.asyncio
+    async def test_parent_event_id_empty_when_no_tool_use_id(self):
+        """tool_use_id가 None이면 parent_event_id는 빈 문자열"""
+        event_queue: deque[EngineEvent] = deque()
+        hooks = build_hooks(compact_events=None, event_queue=event_queue)
+
+        start_fn = hooks["SubagentStart"][0].hooks[0]
+        await start_fn(
+            {"agent_id": "a-3", "agent_type": "task"},
+            None,
             MagicMock(),
         )
 
@@ -166,7 +181,7 @@ class TestSubagentStopHook:
         event = event_queue[0]
         assert isinstance(event, SubagentStopEngineEvent)
         assert event.agent_id == "agent-1"
-        assert event.parent_event_id == ""
+        assert event.parent_event_id == "toolu-w"
         assert result == {}
 
     @pytest.mark.asyncio
