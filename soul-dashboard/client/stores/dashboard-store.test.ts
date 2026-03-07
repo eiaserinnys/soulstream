@@ -850,6 +850,13 @@ describe("dashboard-store", () => {
         { agentSessionId: "sess-mt", status: "running", eventCount: 0, createdAt: "2026-01-01T00:00:00Z" },
       ]);
       useDashboardStore.getState().setActiveSession("sess-mt");
+
+      // history_sync를 보내 히스토리 리플레이 완료 상태로 전환
+      // (리플레이 중에는 status 갱신이 억제되므로, 라이브 이벤트 테스트 전에 필수)
+      useDashboardStore.getState().processEvent(
+        { type: "history_sync", last_event_id: 0, is_live: true, status: "running" } as any,
+        -1,
+      );
     });
 
     it("should set status to 'completed' on complete event", () => {
