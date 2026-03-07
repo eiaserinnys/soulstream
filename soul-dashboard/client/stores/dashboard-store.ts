@@ -92,6 +92,9 @@ export interface DashboardState {
   /** 세렌디피티 모드 사용 가능 여부 (서버 설정 기반) */
   serendipityAvailable: boolean;
 
+  /** 오른쪽 패널 활성 탭 */
+  activeRightTab: "detail" | "chat";
+
   /** 이벤트 처리 컨텍스트 (nodeMap, lastThinkingByParent 등) */
   processingCtx: ProcessingContext;
 }
@@ -147,6 +150,9 @@ export interface DashboardActions {
 
   // 세렌디피티 가용 여부
   setSerendipityAvailable: (available: boolean) => void;
+
+  // 오른쪽 패널 탭
+  setActiveRightTab: (tab: "detail" | "chat") => void;
 }
 
 // === Internal Processing Context ===
@@ -180,6 +186,7 @@ const initialState: DashboardState = {
   resumeTargetKey: null,
   collapsedNodeIds: new Set<string>(),
   serendipityAvailable: false,
+  activeRightTab: "detail",
   processingCtx: createProcessingContext(),
 };
 
@@ -225,6 +232,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           selectedNodeId: null,
           selectedEventNodeData: null,
           collapsedNodeIds: new Set<string>(),
+          activeRightTab: "detail",
           processingCtx: createProcessingContext(),
         });
       },
@@ -285,6 +293,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           selectedCardId: cardId,
           selectedNodeId: nodeId ?? null,
           selectedEventNodeData: null,
+          activeRightTab: "detail",
         }),
 
       // --- 이벤트 노드 선택 ---
@@ -294,6 +303,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           selectedEventNodeData: data,
           selectedCardId: null,
           selectedNodeId: nodeId ?? null,
+          activeRightTab: "detail",
         }),
 
       // --- SSE 이벤트 처리 ---
@@ -464,6 +474,10 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
       // --- 세렌디피티 가용 여부 ---
 
       setSerendipityAvailable: (serendipityAvailable) => set({ serendipityAvailable }),
+
+      // --- 오른쪽 패널 탭 ---
+
+      setActiveRightTab: (activeRightTab) => set({ activeRightTab }),
     }),
     {
       name: "soul-dashboard-storage",
