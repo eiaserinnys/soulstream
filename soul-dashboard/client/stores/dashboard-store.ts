@@ -17,9 +17,11 @@ import { persist } from "zustand/middleware";
 import type {
   SessionSummary,
   SessionDetail,
+  SessionStatus,
   SoulSSEEvent,
   EventTreeNode,
   TextStartEvent,
+  HistorySyncEvent,
 } from "@shared/types";
 import type { StorageMode } from "../providers/types";
 import {
@@ -92,6 +94,9 @@ export interface DashboardState {
   /** 세렌디피티 모드 사용 가능 여부 (서버 설정 기반) */
   serendipityAvailable: boolean;
 
+  /** 오른쪽 패널 활성 탭 */
+  activeRightTab: "detail" | "chat";
+
   /** 이벤트 처리 컨텍스트 (nodeMap, lastThinkingByParent 등) */
   processingCtx: ProcessingContext;
 }
@@ -116,17 +121,20 @@ export interface DashboardActions {
   // 활성 세션
   setActiveSession: (key: string | null, detail?: SessionDetail) => void;
 
-  // 카드 선택 (nodeId: React Flow 노드의 고유 ID)
-  selectCard: (cardId: string | null, nodeId?: string | null) => void;
+  // 카드 선택 (nodeId: React Flow 노드의 고유 ID, switchTab: detail 탭 전환 여부)
+  selectCard: (cardId: string | null, nodeId?: string | null, switchTab?: boolean) => void;
 
   // 이벤트 노드 선택 (user/intervention/system/result 등 카드가 아닌 노드)
-  selectEventNode: (data: SelectedEventNodeData | null, nodeId?: string | null) => void;
+  selectEventNode: (data: SelectedEventNodeData | null, nodeId?: string | null, switchTab?: boolean) => void;
 
   // SSE 이벤트 처리
   processEvent: (event: SoulSSEEvent, eventId: number) => void;
 
   // 낙관적 세션 추가 (세션 생성 직후 즉시 목록 반영)
   addOptimisticSession: (agentSessionId: string, prompt: string) => void;
+
+  // 세션 생성 완료 (낙관적 추가 + compose 종료 + 세션 활성화를 단일 set으로 처리)
+  completeCompose: (agentSessionId: string, prompt: string) => void;
 
   // 세션 생성/재개
   startCompose: () => void;
@@ -147,6 +155,9 @@ export interface DashboardActions {
 
   // 세렌디피티 가용 여부
   setSerendipityAvailable: (available: boolean) => void;
+
+  // 오른쪽 패널 탭
+  setActiveRightTab: (tab: "detail" | "chat") => void;
 }
 
 // === Internal Processing Context ===
@@ -165,7 +176,7 @@ const NEEDS_ROOT = new Set([
 const initialState: DashboardState = {
   storageMode: "sse",
   sessions: [],
-  sessionsLoading: false,
+  sessionsLoading: true,
   sessionsError: null,
   activeSessionKey: null,
   activeSession: null,
@@ -180,6 +191,7 @@ const initialState: DashboardState = {
   resumeTargetKey: null,
   collapsedNodeIds: new Set<string>(),
   serendipityAvailable: false,
+  activeRightTab: "detail",
   processingCtx: createProcessingContext(),
 };
 
@@ -213,7 +225,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         set({
           storageMode,
           sessions: [],
-          sessionsLoading: false,
+          sessionsLoading: true,
           sessionsError: null,
           activeSessionKey: null,
           activeSession: null,
@@ -225,6 +237,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           selectedNodeId: null,
           selectedEventNodeData: null,
           collapsedNodeIds: new Set<string>(),
+          activeRightTab: "detail",
           processingCtx: createProcessingContext(),
         });
       },
@@ -280,20 +293,22 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
 
       // --- 카드 선택 ---
 
-      selectCard: (cardId, nodeId) =>
+      selectCard: (cardId, nodeId, switchTab = true) =>
         set({
           selectedCardId: cardId,
           selectedNodeId: nodeId ?? null,
           selectedEventNodeData: null,
+          ...(switchTab ? { activeRightTab: "detail" as const } : {}),
         }),
 
       // --- 이벤트 노드 선택 ---
 
-      selectEventNode: (data, nodeId) =>
+      selectEventNode: (data, nodeId, switchTab = true) =>
         set({
           selectedEventNodeData: data,
           selectedCardId: null,
           selectedNodeId: nodeId ?? null,
+          ...(switchTab ? { activeRightTab: "detail" as const } : {}),
         }),
 
       // --- SSE 이벤트 처리 ---
@@ -304,6 +319,31 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         const state = get();
         const ctx = state.processingCtx;
         let root = state.tree;
+
+        // history_sync 이벤트: 히스토리 리플레이 완료 → 서버의 정본 상태 적용
+        if (event.type === "history_sync") {
+          ctx.historySynced = true;
+          const syncEvent = event as HistorySyncEvent;
+
+          // 서버가 보내준 status를 세션 목록에 즉시 반영 (정본)
+          let sessionsUpdate: { sessions: SessionSummary[] } | Record<string, never> = {};
+          if (syncEvent.status && state.activeSessionKey) {
+            const idx = state.sessions.findIndex(
+              (s) => s.agentSessionId === state.activeSessionKey,
+            );
+            if (idx >= 0 && state.sessions[idx].status !== syncEvent.status) {
+              const updatedSessions = [...state.sessions];
+              updatedSessions[idx] = {
+                ...updatedSessions[idx],
+                status: syncEvent.status as SessionStatus,
+              };
+              sessionsUpdate = { sessions: updatedSessions };
+            }
+          }
+
+          set({ lastEventId: eventId, ...sessionsUpdate });
+          return;
+        }
 
         // root가 필요한 이벤트에 대해 보장
         if (NEEDS_ROOT.has(event.type)) {
@@ -326,25 +366,30 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           updated = applyUpdate(event, eventId, ctx, root);
         }
 
-        // 3. 세션 상태 갱신
-        const derivedStatus = deriveSessionStatus(event);
+        // 3. 세션 상태 갱신 — 히스토리 리플레이 중에는 억제
+        // history_sync 수신 전에는 저장된 이벤트를 리플레이하는 단계이므로
+        // 이벤트별로 status를 갱신하면 running → completed 깜빡임이 발생한다.
         let sessionsUpdate: { sessions: SessionSummary[] } | Record<string, never> = {};
-        if (derivedStatus && state.activeSessionKey) {
-          const idx = state.sessions.findIndex(
-            (s) => s.agentSessionId === state.activeSessionKey,
-          );
-          if (idx >= 0 && state.sessions[idx].status !== derivedStatus) {
-            const updatedSessions = [...state.sessions];
-            updatedSessions[idx] = {
-              ...updatedSessions[idx],
-              status: derivedStatus,
-            };
-            sessionsUpdate = { sessions: updatedSessions };
+        if (ctx.historySynced) {
+          const derivedStatus = deriveSessionStatus(event);
+          if (derivedStatus && state.activeSessionKey) {
+            const idx = state.sessions.findIndex(
+              (s) => s.agentSessionId === state.activeSessionKey,
+            );
+            if (idx >= 0 && state.sessions[idx].status !== derivedStatus) {
+              const updatedSessions = [...state.sessions];
+              updatedSessions[idx] = {
+                ...updatedSessions[idx],
+                status: derivedStatus,
+              };
+              sessionsUpdate = { sessions: updatedSessions };
+            }
           }
         }
 
         // 4. 알림 큐 + store 갱신
-        const notify = shouldNotify(event);
+        // 히스토리 리플레이 중에는 알림도 억제 (과거 이벤트로 알림이 뜨면 안 됨)
+        const notify = ctx.historySynced && shouldNotify(event);
         if (updated) {
           set({
             tree: root,
@@ -379,6 +424,33 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           prompt,
         };
         set({ sessions: [newSession, ...sessions] });
+      },
+
+      // --- 세션 생성 완료 (atomic) ---
+
+      completeCompose: (agentSessionId, prompt) => {
+        const sessions = get().sessions;
+        const newSession: SessionSummary = {
+          agentSessionId,
+          status: "running",
+          eventCount: 0,
+          createdAt: new Date().toISOString(),
+          prompt,
+        };
+        const updatedSessions = sessions.some(
+          (s) => s.agentSessionId === agentSessionId,
+        )
+          ? sessions
+          : [newSession, ...sessions];
+
+        set({
+          ...getSessionResetState(),
+          sessions: updatedSessions,
+          activeSessionKey: agentSessionId,
+          activeSession: null,
+          isComposing: false,
+          resumeTargetKey: null,
+        });
       },
 
       // --- 세션 생성/재개 ---
@@ -464,6 +536,10 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
       // --- 세렌디피티 가용 여부 ---
 
       setSerendipityAvailable: (serendipityAvailable) => set({ serendipityAvailable }),
+
+      // --- 오른쪽 패널 탭 ---
+
+      setActiveRightTab: (activeRightTab) => set({ activeRightTab }),
     }),
     {
       name: "soul-dashboard-storage",
