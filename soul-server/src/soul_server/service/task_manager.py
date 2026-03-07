@@ -133,8 +133,8 @@ class TaskManager:
     # === 로드/저장 ===
 
     async def load(self) -> int:
-        """파일에서 태스크 로드"""
-        return await self._storage.load(self._tasks)
+        """파일에서 태스크 로드 (JSONL 이벤트 기반 상태 보정 포함)"""
+        return await self._storage.load(self._tasks, event_store=self._event_store)
 
     async def save(self) -> None:
         """태스크 상태 저장"""
