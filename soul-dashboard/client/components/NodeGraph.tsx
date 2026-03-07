@@ -140,6 +140,9 @@ function NodeGraphInner() {
   selectedCardIdRef.current = selectedCardId;
   selectedNodeIdRef.current = selectedNodeId;
 
+  // 프로그래밍적 선택 변경 시 onSelectionChange에서 탭 전환을 억제하기 위한 플래그
+  const isProgrammaticSelectRef = useRef(false);
+
   // 자동 스크롤 상태 (기본 ON)
   const [autoScroll, setAutoScroll] = useState(true);
   // 프로그래밍적 뷰포트 이동을 구분하기 위한 플래그
@@ -256,11 +259,13 @@ function NodeGraphInner() {
 
         // Follow 모드 ON일 때 마지막 추가 노드를 자동 선택
         // switchTab: false → detail 내용은 갱신하되 chat/detail 탭 전환은 하지 않음
+        // isProgrammaticSelectRef → 후속 onSelectionChange에서도 탭 전환 억제
         if (!isFirstLoad && autoScroll) {
           const lastAdded = addedNodes[addedNodes.length - 1];
           const nodeType = lastAdded.data.nodeType as string | undefined;
           const cardId = lastAdded.data.cardId as string | undefined;
 
+          isProgrammaticSelectRef.current = true;
           if (nodeType && EVENT_NODE_TYPES.has(nodeType)) {
             selectEventNode(
               buildEventNodeData(lastAdded.data as GraphNodeData),
@@ -361,8 +366,12 @@ function NodeGraphInner() {
 
   // 노드 선택 → 카드 선택 또는 이벤트 노드 선택 동기화
   // nodeType 기반 라우팅: user/intervention/system/result → selectEventNode, 나머지 → selectCard
+  // isProgrammaticSelectRef가 true이면 프로그래밍적 선택 변경이므로 탭 전환 억제
   const onSelectionChange = useCallback(
     ({ nodes: selectedNodes }: OnSelectionChangeParams) => {
+      const switchTab = !isProgrammaticSelectRef.current;
+      isProgrammaticSelectRef.current = false;
+
       if (selectedNodes.length === 1) {
         const nodeData = selectedNodes[0].data as GraphNodeData;
         const nodeType = nodeData?.nodeType as string | undefined;
@@ -372,6 +381,7 @@ function NodeGraphInner() {
           selectEventNode(
             buildEventNodeData(nodeData),
             selectedNodes[0].id,
+            switchTab,
           );
           return;
         }
@@ -379,11 +389,11 @@ function NodeGraphInner() {
         // 카드 노드: 트리 조회 기반 (thinking, tool_call)
         const cardId = nodeData?.cardId as string | undefined;
         if (cardId) {
-          selectCard(cardId, selectedNodes[0].id);
+          selectCard(cardId, selectedNodes[0].id, switchTab);
           return;
         }
       }
-      selectCard(null);
+      selectCard(null, null, switchTab);
     },
     [selectCard, selectEventNode],
   );
