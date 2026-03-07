@@ -141,11 +141,12 @@ async def execute_task(
             while True:
                 try:
                     event = await asyncio.wait_for(event_queue.get(), timeout=30.0)
+                    event_id = event.get("_event_id")
+                    data = {k: v for k, v in event.items() if k != "_event_id"}
                     sse_event = {
                         "event": event.get("type", "unknown"),
-                        "data": json.dumps(event, ensure_ascii=False),
+                        "data": json.dumps(data, ensure_ascii=False),
                     }
-                    event_id = event.pop("_event_id", None)
                     if event_id is not None:
                         sse_event["id"] = str(event_id)
                     yield sse_event
@@ -237,6 +238,11 @@ async def session_stream(
             }
             return
 
+        if task.status == TaskStatus.INTERRUPTED:
+            # interrupted 세션은 터미널 이벤트를 보내지 않음.
+            # 상태는 세션 목록 SSE(/sessions/stream)에서 "interrupted"로 정확히 전달됨.
+            return
+
         # Running 세션 → 리스너 등록하고 이벤트 대기
         event_queue = asyncio.Queue()
         await task_manager.add_listener(agent_session_id, event_queue)
@@ -252,11 +258,12 @@ async def session_stream(
                 try:
                     event = await asyncio.wait_for(event_queue.get(), timeout=30.0)
 
+                    event_id = event.get("_event_id") if isinstance(event, dict) else None
+                    data = {k: v for k, v in event.items() if k != "_event_id"} if isinstance(event, dict) else event
                     sse_event = {
                         "event": event.get("type", "unknown"),
-                        "data": json.dumps(event, ensure_ascii=False),
+                        "data": json.dumps(data, ensure_ascii=False),
                     }
-                    event_id = event.pop("_event_id", None) if isinstance(event, dict) else None
                     if event_id is not None:
                         sse_event["id"] = str(event_id)
                     yield sse_event

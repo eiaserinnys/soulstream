@@ -18,8 +18,11 @@ const MAX_LENGTH = 100_000;
 export function PromptComposer() {
   const resumeTargetKey = useDashboardStore((s) => s.resumeTargetKey);
   const cancelCompose = useDashboardStore((s) => s.cancelCompose);
-  const setActiveSession = useDashboardStore((s) => s.setActiveSession);
-  const addOptimisticSession = useDashboardStore((s) => s.addOptimisticSession);
+  const completeCompose = useDashboardStore((s) => s.completeCompose);
+  const sessionsLoading = useDashboardStore((s) => s.sessionsLoading);
+
+  // 서버 초기 접속 중 여부 (session list SSE가 아직 연결되지 않은 상태)
+  const serverConnecting = sessionsLoading;
 
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -77,10 +80,8 @@ export function PromptComposer() {
 
       const result: CreateSessionResponse = await response.json();
 
-      // 세션 생성 성공 → 낙관적 세션 추가 → composing 종료, 활성 세션 전환
-      addOptimisticSession(result.agentSessionId, trimmed);
-      cancelCompose();
-      setActiveSession(result.agentSessionId);
+      // 세션 생성 성공 → 단일 atomic 호출로 낙관적 추가 + compose 종료 + 세션 활성화
+      completeCompose(result.agentSessionId, trimmed);
     } catch (err) {
       if (err instanceof AuthTokenRequiredError) {
         setError("Authentication required. Please set your API token in Settings.");
@@ -92,7 +93,7 @@ export function PromptComposer() {
     } finally {
       setSending(false);
     }
-  }, [text, sending, resumeTargetKey, cancelCompose, setActiveSession, addOptimisticSession]);
+  }, [text, sending, resumeTargetKey, completeCompose]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -109,6 +110,23 @@ export function PromptComposer() {
 
   const isResume = !!resumeTargetKey;
   const isDisabled = sending || !text.trim();
+
+  // 서버 미연결 시 (resume이 아닌 경우에만): 접속 대기 UI 표시
+  if (!isResume && serverConnecting) {
+    return (
+      <div
+        data-testid="prompt-composer"
+        className="flex flex-col items-center justify-center h-full p-10 animate-[fadeIn_0.2s_ease-out]"
+      >
+        <div className="flex flex-col items-center gap-3">
+          <span className="w-2 h-2 rounded-full bg-accent-amber animate-[pulse_2s_infinite]" />
+          <div className="text-sm text-muted-foreground">
+            Connecting to server...
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

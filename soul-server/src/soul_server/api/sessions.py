@@ -172,17 +172,21 @@ def create_sessions_router() -> APIRouter:
                     }
 
             # 2. history_sync 이벤트 발행
-            # 현재 세션 상태 확인
+            # 현재 세션 상태 확인 — 클라이언트가 이 status를 정본으로 사용
             current_task = await task_manager.get_task(agent_session_id)
             is_live = current_task and current_task.status == TaskModelStatus.RUNNING
 
+            sync_payload: dict = {
+                "type": "history_sync",
+                "last_event_id": last_stored_id,
+                "is_live": is_live,
+            }
+            if current_task:
+                sync_payload["status"] = current_task.status.value
+
             yield {
                 "event": "history_sync",
-                "data": json.dumps({
-                    "type": "history_sync",
-                    "last_event_id": last_stored_id,
-                    "is_live": is_live,
-                }, ensure_ascii=False),
+                "data": json.dumps(sync_payload, ensure_ascii=False),
             }
 
             # 3. running 세션이면 라이브 스트리밍
@@ -200,10 +204,11 @@ def create_sessions_router() -> APIRouter:
 
                         # event_id를 get으로 추출 (원본 이벤트 변경하지 않음)
                         event_id = event.get("_event_id") if isinstance(event, dict) else None
+                        data = {k: v for k, v in event.items() if k != "_event_id"} if isinstance(event, dict) else event
 
                         sse_event = {
                             "event": event.get("type", "unknown"),
-                            "data": json.dumps(event, ensure_ascii=False),
+                            "data": json.dumps(data, ensure_ascii=False),
                         }
                         if event_id is not None:
                             sse_event["id"] = str(event_id)
