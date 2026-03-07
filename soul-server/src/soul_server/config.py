@@ -16,25 +16,21 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-_config_logger = logging.getLogger(__name__)
 
-
-def _safe_int(value: str, default: int, name: str) -> int:
-    """환경변수를 안전하게 int로 변환
+def _parse_int(value: str, name: str) -> int:
+    """환경변수를 int로 변환. 변환 불가 시 즉시 ValueError.
 
     Args:
         value: 변환할 문자열
-        default: 변환 실패 시 기본값
-        name: 환경변수 이름 (로깅용)
+        name: 환경변수 이름 (에러 메시지용)
 
     Returns:
-        변환된 int 값 또는 기본값
+        변환된 int 값
     """
     try:
         return int(value)
     except (ValueError, TypeError):
-        _config_logger.warning(f"Invalid {name} value '{value}', using default: {default}")
-        return default
+        raise ValueError(f"Invalid environment variable {name}='{value}': expected integer")
 
 
 def _parse_csv_list(value: Optional[str], default: list[str]) -> list[str]:
@@ -52,22 +48,20 @@ def _parse_csv_list(value: Optional[str], default: list[str]) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
-def _safe_float(value: str, default: float, name: str) -> float:
-    """환경변수를 안전하게 float로 변환
+def _parse_float(value: str, name: str) -> float:
+    """환경변수를 float로 변환. 변환 불가 시 즉시 ValueError.
 
     Args:
         value: 변환할 문자열
-        default: 변환 실패 시 기본값
-        name: 환경변수 이름 (로깅용)
+        name: 환경변수 이름 (에러 메시지용)
 
     Returns:
-        변환된 float 값 또는 기본값
+        변환된 float 값
     """
     try:
         return float(value)
     except (ValueError, TypeError):
-        _config_logger.warning(f"Invalid {name} value '{value}', using default: {default}")
-        return default
+        raise ValueError(f"Invalid environment variable {name}='{value}': expected float")
 
 
 @dataclass
@@ -140,45 +134,38 @@ class Settings:
             version=os.getenv("SERVICE_VERSION", cls.version),
             environment=os.getenv("ENVIRONMENT", cls.environment),
             host=os.getenv("HOST", cls.host),
-            port=_safe_int(os.getenv("PORT", str(cls.port)), cls.port, "PORT"),
+            port=_parse_int(os.getenv("PORT", str(cls.port)), "PORT"),
             auth_bearer_token=os.getenv("AUTH_BEARER_TOKEN", ""),
             workspace_dir=workspace_dir,
             claude_cli_dir=os.getenv("CLAUDE_CLI_DIR", ""),
             data_dir=os.getenv("DATA_DIR", ""),
             incoming_file_dir=os.getenv("INCOMING_FILE_DIR", ""),
-            max_concurrent_sessions=_safe_int(
+            max_concurrent_sessions=_parse_int(
                 os.getenv("MAX_CONCURRENT_SESSIONS", str(cls.max_concurrent_sessions)),
-                cls.max_concurrent_sessions,
                 "MAX_CONCURRENT_SESSIONS"
             ),
-            session_timeout_seconds=_safe_int(
+            session_timeout_seconds=_parse_int(
                 os.getenv("SESSION_TIMEOUT_SECONDS", str(cls.session_timeout_seconds)),
-                cls.session_timeout_seconds,
                 "SESSION_TIMEOUT_SECONDS"
             ),
-            runner_pool_max_size=_safe_int(
+            runner_pool_max_size=_parse_int(
                 os.getenv("RUNNER_POOL_MAX_SIZE", str(cls.runner_pool_max_size)),
-                cls.runner_pool_max_size,
                 "RUNNER_POOL_MAX_SIZE"
             ),
-            runner_pool_idle_ttl=_safe_float(
+            runner_pool_idle_ttl=_parse_float(
                 os.getenv("RUNNER_POOL_IDLE_TTL", str(cls.runner_pool_idle_ttl)),
-                cls.runner_pool_idle_ttl,
                 "RUNNER_POOL_IDLE_TTL"
             ),
-            runner_pool_pre_warm=_safe_int(
+            runner_pool_pre_warm=_parse_int(
                 os.getenv("RUNNER_POOL_PRE_WARM", str(cls.runner_pool_pre_warm)),
-                cls.runner_pool_pre_warm,
                 "RUNNER_POOL_PRE_WARM"
             ),
-            runner_pool_maintenance_interval=_safe_float(
+            runner_pool_maintenance_interval=_parse_float(
                 os.getenv("RUNNER_POOL_MAINTENANCE_INTERVAL", str(cls.runner_pool_maintenance_interval)),
-                cls.runner_pool_maintenance_interval,
                 "RUNNER_POOL_MAINTENANCE_INTERVAL"
             ),
-            runner_pool_min_generic=_safe_int(
+            runner_pool_min_generic=_parse_int(
                 os.getenv("RUNNER_POOL_MIN_GENERIC", str(cls.runner_pool_min_generic)),
-                cls.runner_pool_min_generic,
                 "RUNNER_POOL_MIN_GENERIC"
             ),
             warmup_allowed_tools=_parse_csv_list(
@@ -191,9 +178,8 @@ class Settings:
             ),
             log_level=os.getenv("LOG_LEVEL", cls.log_level),
             log_format=os.getenv("LOG_FORMAT", cls.log_format),
-            health_check_interval=_safe_int(
+            health_check_interval=_parse_int(
                 os.getenv("HEALTH_CHECK_INTERVAL", str(cls.health_check_interval)),
-                cls.health_check_interval,
                 "HEALTH_CHECK_INTERVAL"
             ),
             serendipity_enabled=os.getenv("SERENDIPITY_ENABLED", "true").lower() in ("true", "1", "yes"),

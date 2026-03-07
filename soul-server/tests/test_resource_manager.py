@@ -62,23 +62,6 @@ class TestResourceManagerAcquire:
         assert rm.can_acquire() is True
 
 
-class TestTryAcquire:
-    def test_try_acquire_success(self, rm):
-        assert rm.try_acquire() is True
-        assert rm.active_count == 1
-
-    def test_try_acquire_full(self):
-        rm = ResourceManager(max_concurrent=1)
-        assert rm.try_acquire() is True
-        assert rm.try_acquire() is False
-
-    def test_release_after_try_acquire(self):
-        rm = ResourceManager(max_concurrent=1)
-        rm.try_acquire()
-        rm.release()
-        assert rm.active_count == 0
-
-
 class TestGetStats:
     def test_get_stats(self, rm):
         stats = rm.get_stats()

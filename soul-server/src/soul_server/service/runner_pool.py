@@ -89,6 +89,10 @@ class RunnerPool:
             pooled=True,
         )
 
+    async def discard(self, runner: ClaudeRunner, reason: str = "") -> None:
+        """Runner를 폐기합니다. 에러 발생 시 외부에서 호출하는 public API."""
+        await self._discard(runner, reason=reason)
+
     async def _discard(self, runner: ClaudeRunner, reason: str = "") -> None:
         """runner를 안전하게 폐기"""
         try:
