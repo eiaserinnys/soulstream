@@ -1,7 +1,7 @@
 /**
  * DashboardLayout - 3패널 레이아웃 (리사이즈 가능)
  *
- * SessionList | NodeGraph + ChatInput | DetailView 구성.
+ * SessionList | NodeGraph | RightPanel (Detail + Chat) 구성.
  * SSE 구독, 세션 목록 폴링, 브라우저 알림을 여기서 초기화합니다.
  *
  * composing 모드에서는 중앙 패널에 PromptComposer를 표시합니다.
@@ -10,13 +10,13 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { SessionList } from "./components/SessionList";
 import { NodeGraph } from "./components/NodeGraph";
-import { DetailView } from "./components/DetailView";
-import { ChatInput } from "./components/ChatInput";
+import { RightPanel } from "./components/RightPanel";
 import { PromptComposer } from "./components/PromptComposer";
 import { StorageModeToggleCompact } from "./components/StorageModeToggle";
 import { useSessionListProvider } from "./hooks/useSessionListProvider";
 import { useSessionProvider } from "./hooks/useSessionProvider";
 import { useNotification } from "./hooks/useNotification";
+import { useUrlSync } from "./hooks/useUrlSync";
 import { useDashboardStore } from "./stores/dashboard-store";
 import { cn } from "./lib/cn";
 import { Badge } from "./components/ui/badge";
@@ -149,6 +149,9 @@ export function DashboardLayout() {
   // 브라우저 알림 (완료/에러/인터벤션)
   useNotification();
 
+  // URL ↔ 스토어 동기화 (/{sessionId} 라우팅)
+  useUrlSync();
+
   // 서버 설정 로드 (세렌디피티 가용 여부)
   useEffect(() => {
     fetch("/api/config")
@@ -243,12 +246,9 @@ export function DashboardLayout() {
           )}
 
           {showGraph && (
-            <>
-              <div className="flex-1 overflow-hidden">
-                <NodeGraph />
-              </div>
-              <ChatInput />
-            </>
+            <div className="flex-1 overflow-hidden">
+              <NodeGraph />
+            </div>
           )}
 
         </main>
@@ -256,13 +256,13 @@ export function DashboardLayout() {
         {/* Right drag handle */}
         <DragHandle onDrag={handleRightDrag} />
 
-        {/* Right: Detail View */}
+        {/* Right: Detail + Chat */}
         <aside
           data-testid="detail-panel"
           className="shrink-0 overflow-hidden"
           style={{ width: `${rightPercent}%` }}
         >
-          <DetailView />
+          <RightPanel />
         </aside>
       </div>
     </div>

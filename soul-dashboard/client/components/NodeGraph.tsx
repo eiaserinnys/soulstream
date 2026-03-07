@@ -33,6 +33,7 @@ import {
   type GraphNodeData,
 } from "../lib/layout-engine";
 import { cn } from "../lib/cn";
+import { createGraphDump, downloadDump } from "../lib/graph-dump";
 
 /** selectEventNode 경로로 라우팅하는 노드 타입 (트리 조회 불필요, 데이터 직접 전달) */
 const EVENT_NODE_TYPES = new Set(["user", "intervention", "system", "result"]);
@@ -122,6 +123,8 @@ function NodeGraphInner() {
   const selectEventNode = useDashboardStore((s) => s.selectEventNode);
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const collapsedNodeIds = useDashboardStore((s) => s.collapsedNodeIds);
+  const lastEventId = useDashboardStore((s) => s.lastEventId);
+  const processingCtx = useDashboardStore((s) => s.processingCtx);
 
   const { getViewport, setViewport } = useReactFlow();
   const store = useStoreApi();
@@ -136,6 +139,9 @@ function NodeGraphInner() {
   const selectedNodeIdRef = useRef(selectedNodeId);
   selectedCardIdRef.current = selectedCardId;
   selectedNodeIdRef.current = selectedNodeId;
+
+  // 프로그래밍적 선택 변경 시 onSelectionChange에서 탭 전환을 억제하기 위한 플래그
+  const isProgrammaticSelectRef = useRef(false);
 
   // 자동 스크롤 상태 (기본 ON)
   const [autoScroll, setAutoScroll] = useState(true);
@@ -181,6 +187,27 @@ function NodeGraphInner() {
       return next;
     });
   }, [getViewport, setViewport, store]);
+
+  // Ctrl+Shift+D → 그래프 상태 덤프 다운로드
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.key === "D") {
+        e.preventDefault();
+        const dump = createGraphDump(
+          activeSessionKey,
+          treeVersion,
+          lastEventId,
+          tree,
+          nodes as GraphNode[],
+          edges as GraphEdge[],
+          processingCtx,
+        );
+        downloadDump(dump);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [activeSessionKey, treeVersion, lastEventId, tree, nodes, edges, processingCtx]);
 
   // 트리/이벤트가 변경되면 그래프 재구성 (디바운스 적용)
   useEffect(() => {
@@ -231,18 +258,22 @@ function NodeGraphInner() {
         const isFirstLoad = !hasInitializedRef.current;
 
         // Follow 모드 ON일 때 마지막 추가 노드를 자동 선택
+        // switchTab: false → detail 내용은 갱신하되 chat/detail 탭 전환은 하지 않음
+        // isProgrammaticSelectRef → 후속 onSelectionChange에서도 탭 전환 억제
         if (!isFirstLoad && autoScroll) {
           const lastAdded = addedNodes[addedNodes.length - 1];
           const nodeType = lastAdded.data.nodeType as string | undefined;
           const cardId = lastAdded.data.cardId as string | undefined;
 
+          isProgrammaticSelectRef.current = true;
           if (nodeType && EVENT_NODE_TYPES.has(nodeType)) {
             selectEventNode(
               buildEventNodeData(lastAdded.data as GraphNodeData),
               lastAdded.id,
+              false,
             );
           } else if (cardId) {
-            selectCard(cardId, lastAdded.id);
+            selectCard(cardId, lastAdded.id, false);
           }
         }
 
@@ -335,8 +366,12 @@ function NodeGraphInner() {
 
   // 노드 선택 → 카드 선택 또는 이벤트 노드 선택 동기화
   // nodeType 기반 라우팅: user/intervention/system/result → selectEventNode, 나머지 → selectCard
+  // isProgrammaticSelectRef가 true이면 프로그래밍적 선택 변경이므로 탭 전환 억제
   const onSelectionChange = useCallback(
     ({ nodes: selectedNodes }: OnSelectionChangeParams) => {
+      const switchTab = !isProgrammaticSelectRef.current;
+      isProgrammaticSelectRef.current = false;
+
       if (selectedNodes.length === 1) {
         const nodeData = selectedNodes[0].data as GraphNodeData;
         const nodeType = nodeData?.nodeType as string | undefined;
@@ -346,6 +381,7 @@ function NodeGraphInner() {
           selectEventNode(
             buildEventNodeData(nodeData),
             selectedNodes[0].id,
+            switchTab,
           );
           return;
         }
@@ -353,11 +389,11 @@ function NodeGraphInner() {
         // 카드 노드: 트리 조회 기반 (thinking, tool_call)
         const cardId = nodeData?.cardId as string | undefined;
         if (cardId) {
-          selectCard(cardId, selectedNodes[0].id);
+          selectCard(cardId, selectedNodes[0].id, switchTab);
           return;
         }
       }
-      selectCard(null);
+      selectCard(null, null, switchTab);
     },
     [selectCard, selectEventNode],
   );
@@ -418,8 +454,27 @@ function NodeGraphInner() {
           boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
         }}
       />
-      {/* Auto-scroll 토글 */}
+      {/* Auto-scroll 토글 + Dump */}
       <Panel position="bottom-right">
+        <div className="flex items-center gap-1.5">
+        <button
+          onClick={() => {
+            const dump = createGraphDump(
+              activeSessionKey,
+              treeVersion,
+              lastEventId,
+              tree,
+              nodes as GraphNode[],
+              edges as GraphEdge[],
+              processingCtx,
+            );
+            downloadDump(dump);
+          }}
+          className="flex items-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-medium transition-colors border shadow-md bg-popover border-border text-muted-foreground hover:bg-input"
+          title="Dump graph state (Ctrl+Shift+D)"
+        >
+          Dump
+        </button>
         <button
           onClick={handleToggleAutoScroll}
           className={cn(
@@ -440,6 +495,7 @@ function NodeGraphInner() {
             )}
           />
         </button>
+        </div>
       </Panel>
     </ReactFlow>
   );

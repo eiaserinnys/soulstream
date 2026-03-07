@@ -195,28 +195,11 @@ export function DetailView() {
 
   const hasSelection = selectedCard || selectedEventNodeData;
 
-  // 상세 헤더에 표시할 타입 라벨
-  const headerTypeLabel = selectedCard
-    ? selectedCard.type === "tool" ? "Tool Call" : selectedCard.type
-    : selectedEventNodeData?.nodeType ?? "";
-
   return (
     <div
       data-testid="detail-view"
       className="flex flex-col h-full overflow-hidden"
     >
-      {/* Header */}
-      <div className="py-3 px-3.5 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-[0.05em] flex justify-between items-center">
-        <span>Detail</span>
-        {hasSelection && (
-          <span
-            className="text-[10px] text-muted-foreground/60 font-normal normal-case font-mono"
-          >
-            {headerTypeLabel}
-          </span>
-        )}
-      </div>
-
       {/* Content */}
       <ScrollArea className="flex-1">
         {!hasSelection && (

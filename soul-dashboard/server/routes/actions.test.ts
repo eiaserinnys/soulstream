@@ -8,17 +8,12 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { type Server } from "http";
-import { mkdirSync, rmSync } from "fs";
-import { join } from "path";
-import { tmpdir } from "os";
 import {
   createTestApp,
   startTestServer,
   createMockSoulServer,
   type TestAppContext,
 } from "../test-app-factory.js";
-
-const TEST_DIR = join(tmpdir(), "soul-dash-actions-" + Date.now());
 
 describe("Actions Routes", () => {
   let dashServer: Server;
@@ -33,25 +28,20 @@ describe("Actions Routes", () => {
   let ctx: TestAppContext;
 
   beforeEach(async () => {
-    mkdirSync(TEST_DIR, { recursive: true });
-
     const soul = await createMockSoulServer();
     soulServer = soul.server;
     soulPort = soul.port;
     soulRequests = soul.requests;
 
-    ctx = createTestApp({ eventsBaseDir: TEST_DIR, soulPort });
+    ctx = createTestApp({ soulPort });
     const started = await startTestServer(ctx.app);
     dashServer = started.server;
     dashPort = started.port;
   });
 
   afterEach(async () => {
-    ctx?.soulClient?.close();
-    ctx?.eventHub?.closeAll();
     await new Promise<void>((resolve) => dashServer?.close(() => resolve()));
     await new Promise<void>((resolve) => soulServer?.close(() => resolve()));
-    rmSync(TEST_DIR, { recursive: true, force: true });
   });
 
   describe("POST /api/sessions", () => {
