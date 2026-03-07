@@ -31,6 +31,8 @@ class SSEEventType(str, Enum):
     # 서브에이전트 이벤트
     SUBAGENT_START = "subagent_start"
     SUBAGENT_STOP = "subagent_stop"
+    # 사용자 입력 요청 이벤트
+    INPUT_REQUEST = "input_request"
 
 
 # === Request Models ===
@@ -40,6 +42,15 @@ class InterveneRequest(BaseModel):
     text: str = Field(..., description="메시지 텍스트")
     user: str = Field(..., description="요청한 사용자")
     attachment_paths: Optional[List[str]] = Field(None, description="첨부 파일 경로 목록")
+
+
+class InputResponseRequest(BaseModel):
+    """AskUserQuestion 응답 요청
+
+    클라이언트가 input_request 이벤트에 대한 사용자 응답을 전송합니다.
+    """
+    request_id: str = Field(..., description="input_request 이벤트의 request_id")
+    answers: dict = Field(..., description="질문별 응답. {question_text: selected_label}")
 
 
 # === Response Models ===
@@ -293,6 +304,29 @@ class SubagentStopSSEEvent(BaseModel):
     timestamp: float = Field(..., description="이벤트 발행 시각 (Unix epoch)")
     agent_id: str = Field(..., description="서브에이전트 고유 ID")
     parent_event_id: Optional[str] = Field(None, description="부모 이벤트 ID")
+
+
+class InputRequestQuestion(BaseModel):
+    """AskUserQuestion의 개별 질문"""
+    question: str = Field(..., description="질문 텍스트")
+    header: str = Field(default="", description="질문 헤더")
+    options: List[dict] = Field(default_factory=list, description="선택지 목록. [{label, description}]")
+    multi_select: bool = Field(False, description="복수 선택 허용 여부")
+
+
+class InputRequestSSEEvent(BaseModel):
+    """사용자 입력 요청 이벤트 (AskUserQuestion)
+
+    Claude Code가 AskUserQuestion 도구를 호출하면 발행됩니다.
+    클라이언트는 이 이벤트를 받아 사용자에게 선택지를 표시하고,
+    POST /sessions/{id}/respond로 응답을 전송합니다.
+    """
+    type: str = "input_request"
+    timestamp: float = Field(..., description="이벤트 발행 시각 (Unix epoch)")
+    request_id: str = Field(..., description="응답 시 사용할 요청 식별자")
+    tool_use_id: str = Field(default="", description="SDK tool_use_id")
+    questions: List[InputRequestQuestion] = Field(..., description="질문 목록")
+    parent_event_id: Optional[str] = Field(None, description="서브에이전트 내부인 경우 부모 이벤트 ID")
 
 
 class RateLimitProfileStatus(BaseModel):

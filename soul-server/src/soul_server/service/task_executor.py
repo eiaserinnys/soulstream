@@ -135,6 +135,10 @@ class TaskExecutor:
                             logger.warning(f"Failed to persist intervention user_message for {session_id}: {e}")
                     await self._listener_manager.broadcast(session_id, event)
 
+                # AskUserQuestion 응답 전달 경로 구축
+                def on_runner_ready(runner):
+                    task._deliver_input_response = runner.deliver_input_response
+
                 # Claude Code 실행
                 async for event in claude_runner.execute(
                     prompt=task.prompt,
@@ -144,6 +148,7 @@ class TaskExecutor:
                     allowed_tools=task.allowed_tools,
                     disallowed_tools=task.disallowed_tools,
                     use_mcp=task.use_mcp,
+                    on_runner_ready=on_runner_ready,
                 ):
                     event_dict = event.model_dump()
 
@@ -201,6 +206,7 @@ class TaskExecutor:
 
         finally:
             task.execution_task = None
+            task._deliver_input_response = None
             logger.info(f"Background execution finished for session: {session_id}")
 
     def is_execution_running(self, agent_session_id: str) -> bool:

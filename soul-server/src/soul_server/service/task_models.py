@@ -93,6 +93,9 @@ class Task:
     intervention_queue: asyncio.Queue = field(default_factory=asyncio.Queue, repr=False)
     execution_task: Optional[asyncio.Task] = field(default=None, repr=False)
     last_progress_text: Optional[str] = field(default=None, repr=False)
+    # AskUserQuestion 응답 전달 콜백 (실행 중에만 유효)
+    # Callable[[str, dict], bool]: (request_id, answers) -> success
+    _deliver_input_response: object = field(default=None, repr=False)
 
     @property
     def key(self) -> str:
