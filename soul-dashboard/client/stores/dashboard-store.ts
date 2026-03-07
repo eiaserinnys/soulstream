@@ -121,17 +121,20 @@ export interface DashboardActions {
   // 활성 세션
   setActiveSession: (key: string | null, detail?: SessionDetail) => void;
 
-  // 카드 선택 (nodeId: React Flow 노드의 고유 ID)
-  selectCard: (cardId: string | null, nodeId?: string | null) => void;
+  // 카드 선택 (nodeId: React Flow 노드의 고유 ID, switchTab: detail 탭 전환 여부)
+  selectCard: (cardId: string | null, nodeId?: string | null, switchTab?: boolean) => void;
 
   // 이벤트 노드 선택 (user/intervention/system/result 등 카드가 아닌 노드)
-  selectEventNode: (data: SelectedEventNodeData | null, nodeId?: string | null) => void;
+  selectEventNode: (data: SelectedEventNodeData | null, nodeId?: string | null, switchTab?: boolean) => void;
 
   // SSE 이벤트 처리
   processEvent: (event: SoulSSEEvent, eventId: number) => void;
 
   // 낙관적 세션 추가 (세션 생성 직후 즉시 목록 반영)
   addOptimisticSession: (agentSessionId: string, prompt: string) => void;
+
+  // 세션 생성 완료 (낙관적 추가 + compose 종료 + 세션 활성화를 단일 set으로 처리)
+  completeCompose: (agentSessionId: string, prompt: string) => void;
 
   // 세션 생성/재개
   startCompose: () => void;
@@ -173,7 +176,7 @@ const NEEDS_ROOT = new Set([
 const initialState: DashboardState = {
   storageMode: "sse",
   sessions: [],
-  sessionsLoading: false,
+  sessionsLoading: true,
   sessionsError: null,
   activeSessionKey: null,
   activeSession: null,
@@ -222,7 +225,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         set({
           storageMode,
           sessions: [],
-          sessionsLoading: false,
+          sessionsLoading: true,
           sessionsError: null,
           activeSessionKey: null,
           activeSession: null,
@@ -290,22 +293,22 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
 
       // --- 카드 선택 ---
 
-      selectCard: (cardId, nodeId) =>
+      selectCard: (cardId, nodeId, switchTab = true) =>
         set({
           selectedCardId: cardId,
           selectedNodeId: nodeId ?? null,
           selectedEventNodeData: null,
-          activeRightTab: "detail",
+          ...(switchTab ? { activeRightTab: "detail" as const } : {}),
         }),
 
       // --- 이벤트 노드 선택 ---
 
-      selectEventNode: (data, nodeId) =>
+      selectEventNode: (data, nodeId, switchTab = true) =>
         set({
           selectedEventNodeData: data,
           selectedCardId: null,
           selectedNodeId: nodeId ?? null,
-          activeRightTab: "detail",
+          ...(switchTab ? { activeRightTab: "detail" as const } : {}),
         }),
 
       // --- SSE 이벤트 처리 ---
@@ -421,6 +424,33 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           prompt,
         };
         set({ sessions: [newSession, ...sessions] });
+      },
+
+      // --- 세션 생성 완료 (atomic) ---
+
+      completeCompose: (agentSessionId, prompt) => {
+        const sessions = get().sessions;
+        const newSession: SessionSummary = {
+          agentSessionId,
+          status: "running",
+          eventCount: 0,
+          createdAt: new Date().toISOString(),
+          prompt,
+        };
+        const updatedSessions = sessions.some(
+          (s) => s.agentSessionId === agentSessionId,
+        )
+          ? sessions
+          : [newSession, ...sessions];
+
+        set({
+          ...getSessionResetState(),
+          sessions: updatedSessions,
+          activeSessionKey: agentSessionId,
+          activeSession: null,
+          isComposing: false,
+          resumeTargetKey: null,
+        });
       },
 
       // --- 세션 생성/재개 ---
