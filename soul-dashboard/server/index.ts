@@ -127,8 +127,6 @@ app.use(
   createActionsRouter({
     soulBaseUrl: SOUL_BASE_URL,
     authToken: AUTH_TOKEN,
-    // EventHub, SessionStore, SoulClient는 더 이상 필요하지 않음
-    // 프록시 아키텍처에서는 Soul Server가 모든 이벤트를 관리
   }),
 );
 
