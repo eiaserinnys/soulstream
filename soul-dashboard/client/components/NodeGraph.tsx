@@ -255,6 +255,7 @@ function NodeGraphInner() {
         const isFirstLoad = !hasInitializedRef.current;
 
         // Follow 모드 ON일 때 마지막 추가 노드를 자동 선택
+        // switchTab: false → detail 내용은 갱신하되 chat/detail 탭 전환은 하지 않음
         if (!isFirstLoad && autoScroll) {
           const lastAdded = addedNodes[addedNodes.length - 1];
           const nodeType = lastAdded.data.nodeType as string | undefined;
@@ -264,9 +265,10 @@ function NodeGraphInner() {
             selectEventNode(
               buildEventNodeData(lastAdded.data as GraphNodeData),
               lastAdded.id,
+              false,
             );
           } else if (cardId) {
-            selectCard(cardId, lastAdded.id);
+            selectCard(cardId, lastAdded.id, false);
           }
         }
 
