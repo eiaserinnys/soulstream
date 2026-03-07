@@ -207,10 +207,11 @@ def create_sessions_router(
 
                         # event_id를 get으로 추출 (원본 이벤트 변경하지 않음)
                         event_id = event.get("_event_id") if isinstance(event, dict) else None
+                        data = {k: v for k, v in event.items() if k != "_event_id"} if isinstance(event, dict) else event
 
                         sse_event = {
                             "event": event.get("type", "unknown"),
-                            "data": json.dumps(event, ensure_ascii=False),
+                            "data": json.dumps(data, ensure_ascii=False),
                         }
                         if event_id is not None:
                             sse_event["id"] = str(event_id)
