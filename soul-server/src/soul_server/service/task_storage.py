@@ -8,7 +8,7 @@ import asyncio
 import json
 import logging
 from pathlib import Path
-from typing import Dict, Optional
+from typing import TYPE_CHECKING, Dict, Optional
 
 from soul_server.service.task_models import (
     Task,
@@ -17,7 +17,16 @@ from soul_server.service.task_models import (
     datetime_to_str,
 )
 
+if TYPE_CHECKING:
+    from soul_server.service.event_store import EventStore
+
 logger = logging.getLogger(__name__)
+
+# JSONL 마지막 이벤트 타입 → TaskStatus 매핑 (result는 success 필드에 따라 분기)
+_EVENT_TYPE_TO_STATUS = {
+    "complete": TaskStatus.COMPLETED,
+    "error": TaskStatus.ERROR,
+}
 
 
 class TaskStorage:
@@ -37,14 +46,21 @@ class TaskStorage:
         self._storage_path = storage_path
         self._save_scheduled = False
 
-    async def load(self, tasks: Dict[str, Task]) -> int:
+    async def load(
+        self,
+        tasks: Dict[str, Task],
+        event_store: Optional["EventStore"] = None,
+    ) -> int:
         """
         파일에서 태스크 로드
 
-        서비스 시작 시 호출. running 상태의 태스크는 interrupted로 마킹.
+        서비스 시작 시 호출.
+        running 상태의 태스크는 JSONL 이벤트를 확인하여 실제 상태를 보정한 뒤,
+        이벤트에도 완료 기록이 없으면 interrupted로 마킹합니다.
 
         Args:
             tasks: 로드된 태스크를 저장할 딕셔너리
+            event_store: JSONL 이벤트 저장소 (상태 보정에 사용)
 
         Returns:
             로드된 태스크 수
@@ -58,16 +74,31 @@ class TaskStorage:
             tasks_data = data.get("tasks", {})
 
             loaded = 0
+            reconciled = 0
             for key, task_data in tasks_data.items():
                 try:
                     task = Task.from_dict(task_data)
 
-                    # running 상태의 태스크는 서비스 재시작으로 중단된 것
+                    # running 상태의 태스크: JSONL 이벤트로 실제 상태 보정
                     if task.status == TaskStatus.RUNNING:
-                        task.status = TaskStatus.INTERRUPTED
-                        task.error = "서비스 재시작으로 중단됨"
-                        task.completed_at = utc_now()
-                        logger.warning(f"Marked interrupted task: {task.key}")
+                        reconciled_status = self._reconcile_status_from_events(
+                            task.agent_session_id, event_store
+                        )
+                        if reconciled_status:
+                            task.status = reconciled_status
+                            task.completed_at = utc_now()
+                            if reconciled_status == TaskStatus.ERROR:
+                                task.error = "서비스 재시작 전 에러 발생 (JSONL 기반 보정)"
+                            logger.info(
+                                f"Reconciled task status from JSONL: "
+                                f"{task.key} → {reconciled_status.value}"
+                            )
+                            reconciled += 1
+                        else:
+                            task.status = TaskStatus.INTERRUPTED
+                            task.error = "서비스 재시작으로 중단됨"
+                            task.completed_at = utc_now()
+                            logger.warning(f"Marked interrupted task: {task.key}")
 
                     # key는 agent_session_id (마이그레이션: 기존 client_id:request_id 키 무시)
                     tasks[task.key] = task
@@ -75,9 +106,12 @@ class TaskStorage:
                 except Exception as e:
                     logger.error(f"Failed to load task {key}: {e}")
 
-            logger.info(f"Loaded {loaded} tasks from storage")
+            logger.info(
+                f"Loaded {loaded} tasks from storage"
+                + (f" ({reconciled} reconciled from JSONL)" if reconciled else "")
+            )
 
-            # running → interrupted 변경사항 저장
+            # 상태 변경사항 저장
             await self._save(tasks)
 
             return loaded
@@ -85,6 +119,52 @@ class TaskStorage:
         except Exception as e:
             logger.error(f"Failed to load tasks file: {e}")
             return 0
+
+    @staticmethod
+    def _reconcile_status_from_events(
+        agent_session_id: str,
+        event_store: Optional["EventStore"],
+    ) -> Optional[TaskStatus]:
+        """JSONL 이벤트의 마지막 터미널 이벤트로 실제 상태를 판별한다.
+
+        JSONL을 역순으로 탐색하여 complete/result/error 중 가장 마지막 것을 찾는다.
+        터미널 이벤트가 없으면 None을 반환한다 (호출자가 interrupted로 처리).
+
+        Args:
+            agent_session_id: 세션 식별자
+            event_store: JSONL 이벤트 저장소
+
+        Returns:
+            보정된 TaskStatus 또는 None
+        """
+        if not event_store:
+            return None
+
+        try:
+            events = event_store.read_all(agent_session_id)
+        except Exception as e:
+            logger.warning(
+                f"Failed to read JSONL for reconciliation ({agent_session_id}): {e}"
+            )
+            return None
+
+        if not events:
+            return None
+
+        # 역순으로 터미널 이벤트 탐색
+        for record in reversed(events):
+            event = record.get("event", {})
+            event_type = event.get("type")
+
+            # result 이벤트는 success 필드에 따라 분기
+            if event_type == "result":
+                return TaskStatus.COMPLETED if event.get("success") else TaskStatus.ERROR
+
+            status = _EVENT_TYPE_TO_STATUS.get(event_type)
+            if status:
+                return status
+
+        return None
 
     async def _save(self, tasks: Dict[str, Task]) -> None:
         """태스크를 파일에 저장 (내부용)"""

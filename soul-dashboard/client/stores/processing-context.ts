@@ -20,6 +20,8 @@ export interface ProcessingContext {
   activeTextTarget: TextTargetNode | null;
   /** 현재 활성 user_message/intervention 노드 ID */
   currentTurnNodeId: string | null;
+  /** history_sync 수신 여부. false인 동안은 히스토리 리플레이 중이므로 세션 상태 갱신을 억제. */
+  historySynced: boolean;
 }
 
 export function createProcessingContext(): ProcessingContext {
@@ -28,6 +30,7 @@ export function createProcessingContext(): ProcessingContext {
     lastThinkingByParent: new Map(),
     activeTextTarget: null,
     currentTurnNodeId: null,
+    historySynced: false,
   };
 }
 
