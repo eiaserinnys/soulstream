@@ -423,6 +423,46 @@ class TaskManager:
         except asyncio.QueueEmpty:
             return None
 
+    # === AskUserQuestion 응답 전달 ===
+
+    def deliver_input_response(
+        self,
+        agent_session_id: str,
+        request_id: str,
+        answers: dict,
+    ) -> bool:
+        """AskUserQuestion에 대한 사용자 응답 전달
+
+        Args:
+            agent_session_id: 세션 식별자
+            request_id: input_request 이벤트의 request_id
+            answers: 질문별 응답 dict
+
+        Returns:
+            True: 전달 성공
+            False: 세션 없음 또는 실행 중이 아님 또는 콜백 없음
+
+        Raises:
+            TaskNotFoundError: 세션이 존재하지 않음
+            TaskNotRunningError: 세션이 실행 중이 아님
+        """
+        task = self._tasks.get(agent_session_id)
+        if not task:
+            raise TaskNotFoundError(f"Session not found: {agent_session_id}")
+
+        if task.status != TaskStatus.RUNNING:
+            raise TaskNotRunningError(f"Session not running: {agent_session_id}")
+
+        deliver_fn = task._deliver_input_response
+        if not callable(deliver_fn):
+            logger.warning(
+                f"deliver_input_response: 콜백 없음 "
+                f"(session={agent_session_id}, request_id={request_id})"
+            )
+            return False
+
+        return deliver_fn(request_id, answers)
+
     # === 백그라운드 실행 관리 (위임) ===
 
     async def start_execution(
