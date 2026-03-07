@@ -38,6 +38,7 @@ const SSE_EVENT_TYPES: SSEEventType[] = [
   "context_usage",
   "compact",
   "reconnect",
+  "history_sync",
 ];
 
 // 주의: complete/error는 "턴" 종료이지 "세션" 종료가 아닙니다.
