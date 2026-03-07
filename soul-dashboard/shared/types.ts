@@ -223,7 +223,7 @@ export interface EventRecord {
 // === Session ===
 
 /** 세션 상태 */
-export type SessionStatus = "running" | "completed" | "error" | "unknown";
+export type SessionStatus = "running" | "completed" | "error" | "interrupted" | "unknown";
 
 /** 세션 요약 정보 (목록 조회용) */
 export interface SessionSummary {

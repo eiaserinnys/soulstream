@@ -41,7 +41,7 @@ class TaskStorage:
         """
         파일에서 태스크 로드
 
-        서비스 시작 시 호출. running 상태의 태스크는 error로 마킹.
+        서비스 시작 시 호출. running 상태의 태스크는 interrupted로 마킹.
 
         Args:
             tasks: 로드된 태스크를 저장할 딕셔너리
@@ -64,10 +64,10 @@ class TaskStorage:
 
                     # running 상태의 태스크는 서비스 재시작으로 중단된 것
                     if task.status == TaskStatus.RUNNING:
-                        task.status = TaskStatus.ERROR
+                        task.status = TaskStatus.INTERRUPTED
                         task.error = "서비스 재시작으로 중단됨"
                         task.completed_at = utc_now()
-                        logger.warning(f"Marked interrupted task as error: {task.key}")
+                        logger.warning(f"Marked interrupted task: {task.key}")
 
                     # key는 agent_session_id (마이그레이션: 기존 client_id:request_id 키 무시)
                     tasks[task.key] = task
@@ -77,7 +77,7 @@ class TaskStorage:
 
             logger.info(f"Loaded {loaded} tasks from storage")
 
-            # running → error 변경사항 저장
+            # running → interrupted 변경사항 저장
             await self._save(tasks)
 
             return loaded

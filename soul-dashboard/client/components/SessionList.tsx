@@ -44,6 +44,12 @@ const STATUS_CONFIG: Record<SessionStatus, StatusConfig> = {
     dotClass: "bg-accent-red",
     animate: false,
   },
+  interrupted: {
+    label: "Interrupted",
+    badgeVariant: "warning",
+    dotClass: "bg-accent-amber",
+    animate: false,
+  },
   unknown: {
     label: "Unknown",
     badgeVariant: "secondary",

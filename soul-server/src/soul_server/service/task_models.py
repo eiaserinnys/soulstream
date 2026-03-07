@@ -17,6 +17,7 @@ class TaskStatus(str, Enum):
     RUNNING = "running"
     COMPLETED = "completed"
     ERROR = "error"
+    INTERRUPTED = "interrupted"
 
 
 class TaskConflictError(Exception):
