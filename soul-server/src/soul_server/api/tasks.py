@@ -237,6 +237,11 @@ async def session_stream(
             }
             return
 
+        if task.status == TaskStatus.INTERRUPTED:
+            # interrupted 세션은 터미널 이벤트를 보내지 않음.
+            # 상태는 세션 목록 SSE(/sessions/stream)에서 "interrupted"로 정확히 전달됨.
+            return
+
         # Running 세션 → 리스너 등록하고 이벤트 대기
         event_queue = asyncio.Queue()
         await task_manager.add_listener(agent_session_id, event_queue)
