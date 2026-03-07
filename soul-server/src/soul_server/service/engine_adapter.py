@@ -358,7 +358,7 @@ class SoulEngineAdapter:
                     await queue.put(error_event)
                     # C-1: 에러 시 runner 폐기 (오염 방지)
                     if self._pool is not None:
-                        await self._pool._discard(runner, reason="run_error")
+                        await self._pool.discard(runner, reason="run_error")
                     # Serendipity에 전달
                     if serendipity_ctx and self._serendipity_adapter:
                         try:
@@ -372,7 +372,7 @@ class SoulEngineAdapter:
                 await queue.put(error_event)
                 # C-1: 예외 시 runner 폐기 (고아 프로세스 방지)
                 if self._pool is not None:
-                    await self._pool._discard(runner, reason="exception")
+                    await self._pool.discard(runner, reason="exception")
                 # Serendipity에 전달
                 if serendipity_ctx and self._serendipity_adapter:
                     try:
