@@ -14,7 +14,7 @@ import pytest
 from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -94,16 +94,20 @@ def mock_session_broadcaster():
 
 @pytest.fixture
 def test_app_with_history(mock_task_manager_with_event_store, mock_session_broadcaster):
-    """history 엔드포인트가 포함된 테스트 앱"""
+    """history 엔드포인트가 포함된 테스트 앱
+
+    패치는 fixture 수명 내내 활성화됩니다.
+    """
     from soul_server.api.sessions import create_sessions_router
 
     app = FastAPI()
-    router = create_sessions_router(
-        task_manager=mock_task_manager_with_event_store,
-        session_broadcaster=mock_session_broadcaster,
-    )
-    app.include_router(router)
-    return app
+    with (
+        patch("soul_server.api.sessions.get_task_manager", return_value=mock_task_manager_with_event_store),
+        patch("soul_server.api.sessions.get_session_broadcaster", return_value=mock_session_broadcaster),
+    ):
+        router = create_sessions_router()
+        app.include_router(router)
+        yield app
 
 
 # === GET /sessions/{id}/history 엔드포인트 등록 테스트 ===
@@ -122,10 +126,11 @@ class TestHistoryEndpointRegistration:
         """히스토리 엔드포인트가 GET 메서드여야 한다"""
         from soul_server.api.sessions import create_sessions_router
 
-        router = create_sessions_router(
-            task_manager=mock_task_manager_with_event_store,
-            session_broadcaster=mock_session_broadcaster,
-        )
+        with (
+            patch("soul_server.api.sessions.get_task_manager", return_value=mock_task_manager_with_event_store),
+            patch("soul_server.api.sessions.get_session_broadcaster", return_value=mock_session_broadcaster),
+        ):
+            router = create_sessions_router()
 
         history_routes = [
             r for r in router.routes
@@ -156,34 +161,35 @@ class TestHistoryStoredEvents:
         event_store.append("sess-001", {"type": "text_start", "text": "Hello"})
         event_store.append("sess-001", {"type": "text_delta", "delta": " world"})
 
-        router = create_sessions_router(
-            task_manager=mock_task_manager_with_event_store,
-            session_broadcaster=mock_session_broadcaster,
-        )
+        with (
+            patch("soul_server.api.sessions.get_task_manager", return_value=mock_task_manager_with_event_store),
+            patch("soul_server.api.sessions.get_session_broadcaster", return_value=mock_session_broadcaster),
+        ):
+            router = create_sessions_router()
 
-        # history 엔드포인트 찾기
-        history_route = next(
-            r for r in router.routes
-            if getattr(r, 'path', '') == '/sessions/{agent_session_id}/history'
-        )
-        endpoint = history_route.endpoint
+            # history 엔드포인트 찾기
+            history_route = next(
+                r for r in router.routes
+                if getattr(r, 'path', '') == '/sessions/{agent_session_id}/history'
+            )
+            endpoint = history_route.endpoint
 
-        # 엔드포인트 호출
-        response = await endpoint(agent_session_id="sess-001")
-        assert isinstance(response, EventSourceResponse)
+            # 엔드포인트 호출
+            response = await endpoint(agent_session_id="sess-001")
+            assert isinstance(response, EventSourceResponse)
 
-        gen = response.body_iterator
-        events = []
+            gen = response.body_iterator
+            events = []
 
-        # 저장된 이벤트 2개 + history_sync 이벤트 수신
-        for _ in range(3):
-            try:
-                event = await asyncio.wait_for(gen.__anext__(), timeout=1.0)
-                events.append(event)
-            except (asyncio.TimeoutError, StopAsyncIteration):
-                break
+            # 저장된 이벤트 2개 + history_sync 이벤트 수신
+            for _ in range(3):
+                try:
+                    event = await asyncio.wait_for(gen.__anext__(), timeout=1.0)
+                    events.append(event)
+                except (asyncio.TimeoutError, StopAsyncIteration):
+                    break
 
-        await gen.aclose()
+            await gen.aclose()
 
         # 첫 번째 이벤트: text_start
         assert events[0]["event"] == "text_start"
@@ -214,30 +220,31 @@ class TestHistoryStoredEvents:
         for i in range(5):
             event_store.append("sess-001", {"type": "text_delta", "delta": f"chunk{i}"})
 
-        router = create_sessions_router(
-            task_manager=mock_task_manager_with_event_store,
-            session_broadcaster=mock_session_broadcaster,
-        )
+        with (
+            patch("soul_server.api.sessions.get_task_manager", return_value=mock_task_manager_with_event_store),
+            patch("soul_server.api.sessions.get_session_broadcaster", return_value=mock_session_broadcaster),
+        ):
+            router = create_sessions_router()
 
-        history_route = next(
-            r for r in router.routes
-            if getattr(r, 'path', '') == '/sessions/{agent_session_id}/history'
-        )
-        endpoint = history_route.endpoint
+            history_route = next(
+                r for r in router.routes
+                if getattr(r, 'path', '') == '/sessions/{agent_session_id}/history'
+            )
+            endpoint = history_route.endpoint
 
-        # Last-Event-ID=3 으로 호출 (ID 4, 5만 전송되어야 함)
-        response = await endpoint(agent_session_id="sess-001", last_event_id="3")
-        gen = response.body_iterator
+            # Last-Event-ID=3 으로 호출 (ID 4, 5만 전송되어야 함)
+            response = await endpoint(agent_session_id="sess-001", last_event_id="3")
+            gen = response.body_iterator
 
-        events = []
-        for _ in range(3):  # 2개 이벤트 + history_sync
-            try:
-                event = await asyncio.wait_for(gen.__anext__(), timeout=1.0)
-                events.append(event)
-            except (asyncio.TimeoutError, StopAsyncIteration):
-                break
+            events = []
+            for _ in range(3):  # 2개 이벤트 + history_sync
+                try:
+                    event = await asyncio.wait_for(gen.__anext__(), timeout=1.0)
+                    events.append(event)
+                except (asyncio.TimeoutError, StopAsyncIteration):
+                    break
 
-        await gen.aclose()
+            await gen.aclose()
 
         # ID 4, 5만 전송
         assert len(events) == 3
@@ -261,27 +268,28 @@ class TestHistorySyncEvent:
         event_store = mock_task_manager_with_event_store.event_store
         event_store.append("sess-001", {"type": "text_start"})
 
-        router = create_sessions_router(
-            task_manager=mock_task_manager_with_event_store,
-            session_broadcaster=mock_session_broadcaster,
-        )
+        with (
+            patch("soul_server.api.sessions.get_task_manager", return_value=mock_task_manager_with_event_store),
+            patch("soul_server.api.sessions.get_session_broadcaster", return_value=mock_session_broadcaster),
+        ):
+            router = create_sessions_router()
 
-        history_route = next(
-            r for r in router.routes
-            if getattr(r, 'path', '') == '/sessions/{agent_session_id}/history'
-        )
-        response = await history_route.endpoint(agent_session_id="sess-001")
-        gen = response.body_iterator
+            history_route = next(
+                r for r in router.routes
+                if getattr(r, 'path', '') == '/sessions/{agent_session_id}/history'
+            )
+            response = await history_route.endpoint(agent_session_id="sess-001")
+            gen = response.body_iterator
 
-        events = []
-        for _ in range(2):  # text_start + history_sync
-            try:
-                event = await asyncio.wait_for(gen.__anext__(), timeout=1.0)
-                events.append(event)
-            except (asyncio.TimeoutError, StopAsyncIteration):
-                break
+            events = []
+            for _ in range(2):  # text_start + history_sync
+                try:
+                    event = await asyncio.wait_for(gen.__anext__(), timeout=1.0)
+                    events.append(event)
+                except (asyncio.TimeoutError, StopAsyncIteration):
+                    break
 
-        await gen.aclose()
+            await gen.aclose()
 
         history_sync = events[-1]
         data = json.loads(history_sync["data"])
@@ -297,27 +305,28 @@ class TestHistorySyncEvent:
         event_store = mock_task_manager_with_event_store.event_store
         event_store.append("sess-002", {"type": "complete", "result": "Done"})
 
-        router = create_sessions_router(
-            task_manager=mock_task_manager_with_event_store,
-            session_broadcaster=mock_session_broadcaster,
-        )
+        with (
+            patch("soul_server.api.sessions.get_task_manager", return_value=mock_task_manager_with_event_store),
+            patch("soul_server.api.sessions.get_session_broadcaster", return_value=mock_session_broadcaster),
+        ):
+            router = create_sessions_router()
 
-        history_route = next(
-            r for r in router.routes
-            if getattr(r, 'path', '') == '/sessions/{agent_session_id}/history'
-        )
-        response = await history_route.endpoint(agent_session_id="sess-002")
-        gen = response.body_iterator
+            history_route = next(
+                r for r in router.routes
+                if getattr(r, 'path', '') == '/sessions/{agent_session_id}/history'
+            )
+            response = await history_route.endpoint(agent_session_id="sess-002")
+            gen = response.body_iterator
 
-        events = []
-        for _ in range(2):  # complete + history_sync
-            try:
-                event = await asyncio.wait_for(gen.__anext__(), timeout=1.0)
-                events.append(event)
-            except (asyncio.TimeoutError, StopAsyncIteration):
-                break
+            events = []
+            for _ in range(2):  # complete + history_sync
+                try:
+                    event = await asyncio.wait_for(gen.__anext__(), timeout=1.0)
+                    events.append(event)
+                except (asyncio.TimeoutError, StopAsyncIteration):
+                    break
 
-        await gen.aclose()
+            await gen.aclose()
 
         history_sync = events[-1]
         data = json.loads(history_sync["data"])
@@ -332,21 +341,22 @@ class TestHistorySyncEvent:
 
         # 이벤트 없이 테스트
 
-        router = create_sessions_router(
-            task_manager=mock_task_manager_with_event_store,
-            session_broadcaster=mock_session_broadcaster,
-        )
+        with (
+            patch("soul_server.api.sessions.get_task_manager", return_value=mock_task_manager_with_event_store),
+            patch("soul_server.api.sessions.get_session_broadcaster", return_value=mock_session_broadcaster),
+        ):
+            router = create_sessions_router()
 
-        history_route = next(
-            r for r in router.routes
-            if getattr(r, 'path', '') == '/sessions/{agent_session_id}/history'
-        )
-        response = await history_route.endpoint(agent_session_id="sess-001")
-        gen = response.body_iterator
+            history_route = next(
+                r for r in router.routes
+                if getattr(r, 'path', '') == '/sessions/{agent_session_id}/history'
+            )
+            response = await history_route.endpoint(agent_session_id="sess-001")
+            gen = response.body_iterator
 
-        # 첫 번째 이벤트가 history_sync여야 함
-        event = await asyncio.wait_for(gen.__anext__(), timeout=1.0)
-        await gen.aclose()
+            # 첫 번째 이벤트가 history_sync여야 함
+            event = await asyncio.wait_for(gen.__anext__(), timeout=1.0)
+            await gen.aclose()
 
         assert event["event"] == "history_sync"
         data = json.loads(event["data"])
@@ -379,41 +389,42 @@ class TestHistoryLiveStreaming:
 
         mock_task_manager_with_event_store.add_listener = AsyncMock(side_effect=capture_queue)
 
-        router = create_sessions_router(
-            task_manager=mock_task_manager_with_event_store,
-            session_broadcaster=mock_session_broadcaster,
-        )
+        with (
+            patch("soul_server.api.sessions.get_task_manager", return_value=mock_task_manager_with_event_store),
+            patch("soul_server.api.sessions.get_session_broadcaster", return_value=mock_session_broadcaster),
+        ):
+            router = create_sessions_router()
 
-        history_route = next(
-            r for r in router.routes
-            if getattr(r, 'path', '') == '/sessions/{agent_session_id}/history'
-        )
-        response = await history_route.endpoint(agent_session_id="sess-001")
-        gen = response.body_iterator
+            history_route = next(
+                r for r in router.routes
+                if getattr(r, 'path', '') == '/sessions/{agent_session_id}/history'
+            )
+            response = await history_route.endpoint(agent_session_id="sess-001")
+            gen = response.body_iterator
 
-        # 저장된 이벤트 + history_sync 수신
-        await asyncio.wait_for(gen.__anext__(), timeout=1.0)  # text_start
-        await asyncio.wait_for(gen.__anext__(), timeout=1.0)  # history_sync
+            # 저장된 이벤트 + history_sync 수신
+            await asyncio.wait_for(gen.__anext__(), timeout=1.0)  # text_start
+            await asyncio.wait_for(gen.__anext__(), timeout=1.0)  # history_sync
 
-        # 라이브 이벤트 푸시 (백그라운드)
-        async def push_live_event():
-            await asyncio.sleep(0.01)
-            if live_queue:
-                await live_queue.put({
-                    "type": "text_delta",
-                    "delta": "live content",
-                    "_event_id": 2,
-                })
+            # 라이브 이벤트 푸시 (백그라운드)
+            async def push_live_event():
+                await asyncio.sleep(0.01)
+                if live_queue:
+                    await live_queue.put({
+                        "type": "text_delta",
+                        "delta": "live content",
+                        "_event_id": 2,
+                    })
 
-        push_task = asyncio.create_task(push_live_event())
+            push_task = asyncio.create_task(push_live_event())
 
-        # 라이브 이벤트 수신
-        try:
-            live_event = await asyncio.wait_for(gen.__anext__(), timeout=1.0)
-            assert live_event["event"] == "text_delta"
-        finally:
-            push_task.cancel()
-            await gen.aclose()
+            # 라이브 이벤트 수신
+            try:
+                live_event = await asyncio.wait_for(gen.__anext__(), timeout=1.0)
+                assert live_event["event"] == "text_delta"
+            finally:
+                push_task.cancel()
+                await gen.aclose()
 
 
 # === 연결 유지 테스트 (complete/error 후) ===
@@ -440,42 +451,43 @@ class TestHistoryConnectionPersistence:
 
         mock_task_manager_with_event_store.add_listener = AsyncMock(side_effect=capture_queue)
 
-        router = create_sessions_router(
-            task_manager=mock_task_manager_with_event_store,
-            session_broadcaster=mock_session_broadcaster,
-        )
+        with (
+            patch("soul_server.api.sessions.get_task_manager", return_value=mock_task_manager_with_event_store),
+            patch("soul_server.api.sessions.get_session_broadcaster", return_value=mock_session_broadcaster),
+        ):
+            router = create_sessions_router()
 
-        history_route = next(
-            r for r in router.routes
-            if getattr(r, 'path', '') == '/sessions/{agent_session_id}/history'
-        )
-        response = await history_route.endpoint(agent_session_id="sess-001")
-        gen = response.body_iterator
+            history_route = next(
+                r for r in router.routes
+                if getattr(r, 'path', '') == '/sessions/{agent_session_id}/history'
+            )
+            response = await history_route.endpoint(agent_session_id="sess-001")
+            gen = response.body_iterator
 
-        # 저장된 이벤트 모두 수신
-        await asyncio.wait_for(gen.__anext__(), timeout=1.0)  # text_start
-        await asyncio.wait_for(gen.__anext__(), timeout=1.0)  # complete
-        await asyncio.wait_for(gen.__anext__(), timeout=1.0)  # history_sync
+            # 저장된 이벤트 모두 수신
+            await asyncio.wait_for(gen.__anext__(), timeout=1.0)  # text_start
+            await asyncio.wait_for(gen.__anext__(), timeout=1.0)  # complete
+            await asyncio.wait_for(gen.__anext__(), timeout=1.0)  # history_sync
 
-        # complete 후에도 새 이벤트(resume)를 수신할 수 있어야 함
-        async def push_resume_event():
-            await asyncio.sleep(0.01)
-            if live_queue:
-                await live_queue.put({
-                    "type": "text_start",
-                    "text": "Resumed!",
-                    "_event_id": 3,
-                })
+            # complete 후에도 새 이벤트(resume)를 수신할 수 있어야 함
+            async def push_resume_event():
+                await asyncio.sleep(0.01)
+                if live_queue:
+                    await live_queue.put({
+                        "type": "text_start",
+                        "text": "Resumed!",
+                        "_event_id": 3,
+                    })
 
-        push_task = asyncio.create_task(push_resume_event())
+            push_task = asyncio.create_task(push_resume_event())
 
-        try:
-            # 연결이 열려있어야 새 이벤트 수신 가능
-            resume_event = await asyncio.wait_for(gen.__anext__(), timeout=1.0)
-            assert resume_event["event"] == "text_start"
-        finally:
-            push_task.cancel()
-            await gen.aclose()
+            try:
+                # 연결이 열려있어야 새 이벤트 수신 가능
+                resume_event = await asyncio.wait_for(gen.__anext__(), timeout=1.0)
+                assert resume_event["event"] == "text_start"
+            finally:
+                push_task.cancel()
+                await gen.aclose()
 
 
 # === 404 오류 테스트 ===
@@ -491,18 +503,19 @@ class TestHistoryNotFound:
         from fastapi import HTTPException
         from soul_server.api.sessions import create_sessions_router
 
-        router = create_sessions_router(
-            task_manager=mock_task_manager_with_event_store,
-            session_broadcaster=mock_session_broadcaster,
-        )
+        with (
+            patch("soul_server.api.sessions.get_task_manager", return_value=mock_task_manager_with_event_store),
+            patch("soul_server.api.sessions.get_session_broadcaster", return_value=mock_session_broadcaster),
+        ):
+            router = create_sessions_router()
 
-        history_route = next(
-            r for r in router.routes
-            if getattr(r, 'path', '') == '/sessions/{agent_session_id}/history'
-        )
+            history_route = next(
+                r for r in router.routes
+                if getattr(r, 'path', '') == '/sessions/{agent_session_id}/history'
+            )
 
-        with pytest.raises(HTTPException) as exc_info:
-            await history_route.endpoint(agent_session_id="nonexistent-session")
+            with pytest.raises(HTTPException) as exc_info:
+                await history_route.endpoint(agent_session_id="nonexistent-session")
 
         assert exc_info.value.status_code == 404
         assert "SESSION_NOT_FOUND" in str(exc_info.value.detail)

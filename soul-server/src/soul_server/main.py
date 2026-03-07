@@ -10,7 +10,7 @@ import time
 import logging
 from pathlib import Path
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, APIRouter
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -25,10 +25,7 @@ from soul_server.service.engine_adapter import init_soul_engine
 from soul_server.claude.agent_runner import ClaudeRunner
 from soul_server.service.runner_pool import RunnerPool
 from soul_server.service.task_manager import init_task_manager, get_task_manager
-from soul_server.service.session_broadcaster import (
-    init_session_broadcaster,
-    get_session_broadcaster,
-)
+from soul_server.service.session_broadcaster import init_session_broadcaster
 from soul_server.service.event_store import EventStore
 from soul_server.models import HealthResponse
 from soul_server.config import get_settings, setup_logging
@@ -293,219 +290,10 @@ credentials_router = create_credentials_router(
 app.include_router(credentials_router, prefix="/profiles", tags=["credentials"])
 
 
-# Sessions API - 세션 목록 조회/스트리밍 (런타임에 싱글톤 참조)
-def _create_sessions_router():
-    """Sessions 라우터 생성 (런타임에 싱글톤 참조)"""
-    from soul_server.service.session_broadcaster import get_session_broadcaster
-
-    return create_sessions_router(
-        task_manager=get_task_manager(),
-        session_broadcaster=get_session_broadcaster(),
-    )
-
-
-# Note: Sessions 라우터는 lifespan 이후 TaskManager/SessionBroadcaster가
-# 초기화된 후에 동적으로 등록해야 합니다. FastAPI는 동적 라우터 등록을
-# 지원하지 않으므로, 대안으로 엔드포인트 내에서 싱글톤을 참조합니다.
-# 여기서는 별도의 라우터 팩토리 함수를 사용하는 대신,
-# 전역 get_task_manager/get_session_broadcaster를 직접 사용합니다.
-sessions_router = APIRouter()
-
-
-@sessions_router.get("/sessions")
-async def get_sessions():
-    """세션 목록 조회"""
-    import json
-    from soul_server.models import SessionsListResponse
-
-    task_manager = get_task_manager()
-    tasks = task_manager.get_all_sessions()
-
-    sessions = []
-    for t in tasks:
-        updated_at = t.completed_at or t.created_at
-        sessions.append({
-            "agent_session_id": t.agent_session_id,
-            "status": t.status.value,
-            "prompt": t.prompt,
-            "created_at": t.created_at.isoformat(),
-            "updated_at": updated_at.isoformat(),
-        })
-
-    return {"sessions": sessions}
-
-
-@sessions_router.get("/sessions/stream")
-async def sessions_stream():
-    """세션 목록 변경 SSE 스트림"""
-    import json
-    from sse_starlette.sse import EventSourceResponse
-
-    task_manager = get_task_manager()
-    session_broadcaster = get_session_broadcaster()
-
-    async def event_generator():
-        # 초기 세션 목록 전송
-        tasks = task_manager.get_all_sessions()
-        sessions = []
-        for t in tasks:
-            updated_at = t.completed_at or t.created_at
-            sessions.append({
-                "agent_session_id": t.agent_session_id,
-                "status": t.status.value,
-                "prompt": t.prompt,
-                "created_at": t.created_at.isoformat(),
-                "updated_at": updated_at.isoformat(),
-            })
-
-        yield {
-            "event": "session_list",
-            "data": json.dumps({
-                "type": "session_list",
-                "sessions": sessions,
-            }, ensure_ascii=False),
-        }
-
-        # 리스너 등록
-        event_queue = asyncio.Queue()
-        await session_broadcaster.add_listener(event_queue)
-
-        try:
-            while True:
-                try:
-                    event = await asyncio.wait_for(
-                        event_queue.get(),
-                        timeout=30.0,
-                    )
-                    yield {
-                        "event": event.get("type", "unknown"),
-                        "data": json.dumps(event, ensure_ascii=False),
-                    }
-                except asyncio.TimeoutError:
-                    yield {"comment": "keepalive"}
-
-        finally:
-            await session_broadcaster.remove_listener(event_queue)
-
-    return EventSourceResponse(event_generator())
-
-
-@sessions_router.get("/sessions/{agent_session_id}/history")
-async def session_history(
-    agent_session_id: str,
-    last_event_id: str | None = None,
-):
-    """세션 히스토리 + 라이브 스트리밍 SSE
-
-    대시보드용 엔드포인트. 저장된 이벤트를 먼저 전송하고,
-    running 세션이면 라이브 이벤트를 계속 스트리밍합니다.
-
-    기존 /events/{id}/stream과의 차이점:
-    - /events/{id}/stream: 실행 중 이벤트만 전송, complete 시 연결 종료 (슬랙봇용)
-    - /sessions/{id}/history: 저장된 이벤트 먼저 전송 + 라이브 스트리밍, complete 후에도 연결 유지 (대시보드용)
-
-    Query Parameters:
-        last_event_id: 마지막으로 수신한 이벤트 ID. 이후 이벤트만 전송.
-    """
-    import json
-    from fastapi import HTTPException
-    from sse_starlette.sse import EventSourceResponse
-    from soul_server.service.task_models import TaskStatus as TaskModelStatus
-
-    task_manager = get_task_manager()
-
-    # 세션 존재 확인
-    task = await task_manager.get_task(agent_session_id)
-    if not task:
-        raise HTTPException(
-            status_code=404,
-            detail={
-                "error": {
-                    "code": "SESSION_NOT_FOUND",
-                    "message": f"세션을 찾을 수 없습니다: {agent_session_id}",
-                    "details": {},
-                }
-            },
-        )
-
-    # Last-Event-ID 파싱
-    after_id = 0
-    if last_event_id is not None:
-        try:
-            after_id = int(last_event_id)
-        except (ValueError, TypeError):
-            logger.warning(f"Invalid last_event_id: {last_event_id!r}")
-
-    async def event_generator():
-        # 1. EventStore에서 저장된 이벤트 조회 및 전송
-        event_store = task_manager.event_store
-        stored_events = []
-        last_stored_id = 0
-
-        if event_store:
-            try:
-                if after_id > 0:
-                    stored_events = event_store.read_since(agent_session_id, after_id)
-                else:
-                    stored_events = event_store.read_all(agent_session_id)
-            except Exception as e:
-                logger.error(f"Failed to read events for {agent_session_id}: {e}")
-
-            # 저장된 이벤트 전송
-            for record in stored_events:
-                event_id = record["id"]
-                event = record["event"]
-                last_stored_id = max(last_stored_id, event_id)
-
-                yield {
-                    "id": str(event_id),
-                    "event": event.get("type", "unknown"),
-                    "data": json.dumps(event, ensure_ascii=False),
-                }
-
-        # 2. history_sync 이벤트 발행
-        current_task = await task_manager.get_task(agent_session_id)
-        is_live = current_task and current_task.status == TaskModelStatus.RUNNING
-
-        yield {
-            "event": "history_sync",
-            "data": json.dumps({
-                "type": "history_sync",
-                "last_event_id": last_stored_id,
-                "is_live": is_live,
-            }, ensure_ascii=False),
-        }
-
-        # 3. running 세션이면 라이브 스트리밍
-        event_queue = asyncio.Queue()
-        await task_manager.add_listener(agent_session_id, event_queue)
-
-        try:
-            while True:
-                try:
-                    event = await asyncio.wait_for(
-                        event_queue.get(),
-                        timeout=30.0,
-                    )
-
-                    event_id = event.get("_event_id") if isinstance(event, dict) else None
-
-                    sse_event = {
-                        "event": event.get("type", "unknown"),
-                        "data": json.dumps(event, ensure_ascii=False),
-                    }
-                    if event_id is not None:
-                        sse_event["id"] = str(event_id)
-                    yield sse_event
-
-                except asyncio.TimeoutError:
-                    yield {"comment": "keepalive"}
-
-        finally:
-            await task_manager.remove_listener(agent_session_id, event_queue)
-
-    return EventSourceResponse(event_generator())
-
+# Sessions API - 세션 목록 조회/스트리밍
+# create_sessions_router() 내부에서 get_task_manager/get_session_broadcaster를
+# lazy 싱글톤으로 참조하므로, lifespan 이후 초기화 순서에 무관하게 동작합니다.
+sessions_router = create_sessions_router()
 
 # Sessions API를 Task API보다 먼저 등록해야 합니다.
 # tasks_router의 GET /sessions/{id}가 sessions_router의 GET /sessions/stream을

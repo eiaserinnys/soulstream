@@ -13,12 +13,13 @@ import json
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 from sse_starlette.sse import EventSourceResponse
 
 from soul_server.models import SessionsListResponse
 from soul_server.service.task_models import Task, TaskStatus as TaskModelStatus
-from soul_server.api.auth import verify_token
+from soul_server.service.task_manager import get_task_manager
+from soul_server.service.session_broadcaster import get_session_broadcaster
 
 logger = logging.getLogger(__name__)
 
@@ -35,29 +36,20 @@ def _task_to_session_info(task: Task) -> dict:
     }
 
 
-def create_sessions_router(
-    task_manager,
-    session_broadcaster,
-    auth_dependency=None,
-) -> APIRouter:
+def create_sessions_router() -> APIRouter:
     """세션 API 라우터 생성
 
-    Args:
-        task_manager: TaskManager 인스턴스
-        session_broadcaster: SessionBroadcaster 인스턴스
-        auth_dependency: 인증 의존성 (None이면 verify_token 사용)
+    TaskManager와 SessionBroadcaster는 각 핸들러에서 lazy 싱글톤 참조를 사용합니다.
 
     Returns:
         APIRouter 인스턴스
     """
     router = APIRouter()
 
-    # 인증 의존성 설정
-    auth_dep = auth_dependency if auth_dependency else Depends(verify_token)
-
     @router.get("/sessions", response_model=SessionsListResponse)
     async def get_sessions():
         """세션 목록 조회"""
+        task_manager = get_task_manager()
         tasks = task_manager.get_all_sessions()
         sessions = [_task_to_session_info(t) for t in tasks]
         return {"sessions": sessions}
@@ -72,6 +64,9 @@ def create_sessions_router(
 
         async def event_generator():
             # 초기 세션 목록 전송
+            task_manager = get_task_manager()
+            session_broadcaster = get_session_broadcaster()
+
             tasks = task_manager.get_all_sessions()
             sessions = [_task_to_session_info(t) for t in tasks]
 
@@ -124,6 +119,8 @@ def create_sessions_router(
         Headers:
             Last-Event-ID: 마지막으로 수신한 이벤트 ID. 이후 이벤트만 전송.
         """
+        task_manager = get_task_manager()
+
         # 세션 존재 확인
         task = await task_manager.get_task(agent_session_id)
         if not task:
