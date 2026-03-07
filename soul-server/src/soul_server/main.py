@@ -489,10 +489,11 @@ async def session_history(
                     )
 
                     event_id = event.get("_event_id") if isinstance(event, dict) else None
+                    data = {k: v for k, v in event.items() if k != "_event_id"} if isinstance(event, dict) else event
 
                     sse_event = {
                         "event": event.get("type", "unknown"),
-                        "data": json.dumps(event, ensure_ascii=False),
+                        "data": json.dumps(data, ensure_ascii=False),
                     }
                     if event_id is not None:
                         sse_event["id"] = str(event_id)
