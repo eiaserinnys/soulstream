@@ -17,6 +17,7 @@ import { StorageModeToggleCompact } from "./components/StorageModeToggle";
 import { useSessionListProvider } from "./hooks/useSessionListProvider";
 import { useSessionProvider } from "./hooks/useSessionProvider";
 import { useNotification } from "./hooks/useNotification";
+import { useUrlSync } from "./hooks/useUrlSync";
 import { useDashboardStore } from "./stores/dashboard-store";
 import { cn } from "./lib/cn";
 import { Badge } from "./components/ui/badge";
@@ -148,6 +149,9 @@ export function DashboardLayout() {
 
   // 브라우저 알림 (완료/에러/인터벤션)
   useNotification();
+
+  // URL ↔ 스토어 동기화 (/{sessionId} 라우팅)
+  useUrlSync();
 
   // 서버 설정 로드 (세렌디피티 가용 여부)
   useEffect(() => {

@@ -517,11 +517,10 @@ class TaskManager:
                 if task.status == TaskStatus.RUNNING:
                     if task.execution_task is None or task.execution_task.done():
                         if task.created_at < cutoff:
-                            task.status = TaskStatus.ERROR
+                            task.status = TaskStatus.INTERRUPTED
                             task.error = "실행 태스크 없이 오래된 running 상태 (orphaned)"
                             task.completed_at = utc_now()
-                            keys_to_remove.append(key)
-                            logger.warning(f"Cleaning up orphaned running session: {key}")
+                            logger.warning(f"Marked orphaned running session as interrupted: {key}")
                     continue
 
                 if task.created_at < cutoff:
@@ -562,12 +561,14 @@ class TaskManager:
         running = sum(1 for t in self._tasks.values() if t.status == TaskStatus.RUNNING)
         completed = sum(1 for t in self._tasks.values() if t.status == TaskStatus.COMPLETED)
         error = sum(1 for t in self._tasks.values() if t.status == TaskStatus.ERROR)
+        interrupted = sum(1 for t in self._tasks.values() if t.status == TaskStatus.INTERRUPTED)
 
         return {
             "total": len(self._tasks),
             "running": running,
             "completed": completed,
             "error": error,
+            "interrupted": interrupted,
         }
 
 
