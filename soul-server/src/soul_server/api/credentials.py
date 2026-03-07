@@ -35,6 +35,26 @@ def create_credentials_router(
     """
     router = APIRouter()
 
+    def _enrich_live_expires(profiles: list, active: str | None) -> None:
+        """활성 프로필의 expiresAt을 라이브 credentials 파일 값으로 갱신.
+
+        프로필 파일에 저장된 expiresAt은 저장 시점의 스냅샷이므로,
+        Claude Code가 토큰을 갱신하면 실제 만료일과 달라집니다.
+        활성 프로필만 라이브 값으로 덮어씁니다.
+        """
+        if not active:
+            return
+        try:
+            live_data = swapper.read_current()
+            live_expires = live_data.get("claudeAiOauth", {}).get("expiresAt")
+            if live_expires is not None:
+                for p in profiles:
+                    if p["name"] == active:
+                        p["expiresAt"] = live_expires
+                        break
+        except Exception as e:
+            logger.debug(f"라이브 credentials 읽기 실패, 프로필 값 사용: {e}")
+
     # --- Static paths (parameterized paths보다 먼저 등록) ---
 
     @router.get("")
@@ -44,6 +64,7 @@ def create_credentials_router(
         """
         profiles = store.list_profiles()
         active = store.get_active()
+        _enrich_live_expires(profiles, active)
         return {"profiles": profiles, "active": active}
 
     @router.get("/active")
@@ -56,6 +77,7 @@ def create_credentials_router(
             return {"active": None, "profile": None}
 
         profiles = store.list_profiles()
+        _enrich_live_expires(profiles, active)
         profile_meta = next(
             (p for p in profiles if p["name"] == active), None
         )
