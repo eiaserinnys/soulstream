@@ -35,7 +35,9 @@ export type SSEEventType =
   // 대시보드 내부 이벤트
   | "context_usage"
   | "compact"
-  | "reconnect";
+  | "reconnect"
+  // 히스토리 동기화 이벤트
+  | "history_sync";
 
 // === Soul SSE Event Payloads ===
 
@@ -189,6 +191,15 @@ export interface ReconnectEvent {
   last_event_id?: number;
 }
 
+/** 히스토리 동기화 완료 이벤트 (저장된 이벤트 전송 후 서버가 발행) */
+export interface HistorySyncEvent {
+  type: "history_sync";
+  last_event_id: number;
+  is_live: boolean;
+  /** 서버가 판정한 현재 세션 상태 (정본) */
+  status?: SessionStatus;
+}
+
 /** Soul에서 수신하는 모든 SSE 이벤트 유니온 */
 export type SoulSSEEvent =
   | ProgressEvent
@@ -210,7 +221,8 @@ export type SoulSSEEvent =
   | ResultEvent
   | SubagentStartEvent
   | SubagentStopEvent
-  | ReconnectEvent;
+  | ReconnectEvent
+  | HistorySyncEvent;
 
 // === JSONL Record ===
 
