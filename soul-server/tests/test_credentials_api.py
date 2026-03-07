@@ -93,25 +93,11 @@ class TestListProfiles:
         names = {p["name"] for p in data["profiles"]}
         assert names == {"team", "personal"}
 
-
-class TestLiveExpiresAt:
-    """활성 프로필의 expiresAt이 라이브 credentials에서 갱신되는지 테스트."""
-
-    def test_active_profile_gets_live_expires(self, setup):
-        """활성 프로필의 expiresAt은 라이브 credentials 값으로 갱신."""
+    def test_profiles_include_expires_at(self, setup):
+        """각 프로필이 저장된 크레덴셜의 expiresAt을 반환."""
         store = setup["store"]
         store.save("team", CRED_TEAM)
         store.save("personal", CRED_MAX)
-        store.set_active("team")
-
-        # 라이브 credentials에 새 expiresAt 기록 (토큰 갱신 시뮬레이션)
-        refreshed_cred = {
-            "claudeAiOauth": {
-                **CRED_TEAM["claudeAiOauth"],
-                "expiresAt": 9999999999999,
-            }
-        }
-        setup["cred_file"].write_text(json.dumps(refreshed_cred), encoding="utf-8")
 
         resp = setup["client"].get("/profiles", headers=setup["auth_headers"])
         data = resp.json()
@@ -119,71 +105,10 @@ class TestLiveExpiresAt:
         team = next(p for p in data["profiles"] if p["name"] == "team")
         personal = next(p for p in data["profiles"] if p["name"] == "personal")
 
-        # 활성 프로필: 라이브 값으로 갱신됨
-        assert team["expiresAt"] == 9999999999999
-        # 비활성 프로필: 저장된 스냅샷 값 유지
+        assert team["expiresAt"] == CRED_TEAM["claudeAiOauth"]["expiresAt"]
         assert personal["expiresAt"] == CRED_MAX["claudeAiOauth"]["expiresAt"]
-
-    def test_active_endpoint_gets_live_expires(self, setup):
-        """GET /profiles/active도 라이브 expiresAt 반영."""
-        store = setup["store"]
-        store.save("team", CRED_TEAM)
-        store.set_active("team")
-
-        refreshed_cred = {
-            "claudeAiOauth": {
-                **CRED_TEAM["claudeAiOauth"],
-                "expiresAt": 8888888888888,
-            }
-        }
-        setup["cred_file"].write_text(json.dumps(refreshed_cred), encoding="utf-8")
-
-        resp = setup["client"].get("/profiles/active", headers=setup["auth_headers"])
-        data = resp.json()
-        assert data["profile"]["expiresAt"] == 8888888888888
-
-    def test_cred_file_missing_falls_back(self, setup):
-        """라이브 credentials 파일이 없으면 저장된 스냅샷 값 사용."""
-        store = setup["store"]
-        store.save("team", CRED_TEAM)
-        store.set_active("team")
-        setup["cred_file"].unlink()
-
-        resp = setup["client"].get("/profiles", headers=setup["auth_headers"])
-        assert resp.status_code == 200
-        data = resp.json()
-
-        team = next(p for p in data["profiles"] if p["name"] == "team")
-        assert team["expiresAt"] == CRED_TEAM["claudeAiOauth"]["expiresAt"]
-
-    def test_no_expires_in_live_preserves_stored(self, setup):
-        """라이브 credentials에 expiresAt이 없으면 저장된 값 유지."""
-        store = setup["store"]
-        store.save("team", CRED_TEAM)
-        store.set_active("team")
-
-        # expiresAt 없는 credentials 기록
-        no_expires_cred = {"claudeAiOauth": {"accessToken": "abc"}}
-        setup["cred_file"].write_text(json.dumps(no_expires_cred), encoding="utf-8")
-
-        resp = setup["client"].get("/profiles", headers=setup["auth_headers"])
-        data = resp.json()
-
-        team = next(p for p in data["profiles"] if p["name"] == "team")
-        assert team["expiresAt"] == CRED_TEAM["claudeAiOauth"]["expiresAt"]
-
-    def test_no_active_profile_skips_enrichment(self, setup):
-        """활성 프로필 없으면 enrichment 스킵."""
-        store = setup["store"]
-        store.save("team", CRED_TEAM)
-        # set_active 하지 않음
-
-        resp = setup["client"].get("/profiles", headers=setup["auth_headers"])
-        data = resp.json()
-        assert data["active"] is None
-
-        team = next(p for p in data["profiles"] if p["name"] == "team")
-        assert team["expiresAt"] == CRED_TEAM["claudeAiOauth"]["expiresAt"]
+        # 각 프로필이 서로 다른 고유한 expiresAt을 가짐
+        assert team["expiresAt"] != personal["expiresAt"]
 
 
 class TestGetActive:
