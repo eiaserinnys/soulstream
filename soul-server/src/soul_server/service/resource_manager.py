@@ -104,26 +104,6 @@ class ResourceManager:
                     self._active_count -= 1
                 self._semaphore.release()
 
-    def try_acquire(self) -> bool:
-        """
-        리소스 획득 시도 (non-blocking, 동기 버전)
-
-        Returns:
-            True if acquired, False if not available
-        """
-        if self._active_count < self._max_concurrent:
-            self._active_count += 1
-            return True
-        return False
-
-    def release(self) -> None:
-        """리소스 해제 (try_acquire와 쌍으로 사용)"""
-        try:
-            self._semaphore.release()
-            self._active_count = max(0, self._active_count - 1)
-        except ValueError:
-            pass  # 이미 해제됨
-
     def get_stats(self) -> dict:
         """리소스 통계 반환"""
         return {
