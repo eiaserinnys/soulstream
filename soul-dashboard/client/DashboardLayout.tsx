@@ -1,7 +1,7 @@
 /**
  * DashboardLayout - 3패널 레이아웃 (리사이즈 가능)
  *
- * SessionList | NodeGraph + ChatInput | DetailView 구성.
+ * SessionList | NodeGraph | RightPanel (Detail + Chat) 구성.
  * SSE 구독, 세션 목록 폴링, 브라우저 알림을 여기서 초기화합니다.
  *
  * composing 모드에서는 중앙 패널에 PromptComposer를 표시합니다.
@@ -10,8 +10,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { SessionList } from "./components/SessionList";
 import { NodeGraph } from "./components/NodeGraph";
-import { DetailView } from "./components/DetailView";
-import { ChatInput } from "./components/ChatInput";
+import { RightPanel } from "./components/RightPanel";
 import { PromptComposer } from "./components/PromptComposer";
 import { StorageModeToggleCompact } from "./components/StorageModeToggle";
 import { useSessionListProvider } from "./hooks/useSessionListProvider";
@@ -247,12 +246,9 @@ export function DashboardLayout() {
           )}
 
           {showGraph && (
-            <>
-              <div className="flex-1 overflow-hidden">
-                <NodeGraph />
-              </div>
-              <ChatInput />
-            </>
+            <div className="flex-1 overflow-hidden">
+              <NodeGraph />
+            </div>
           )}
 
         </main>
@@ -260,13 +256,13 @@ export function DashboardLayout() {
         {/* Right drag handle */}
         <DragHandle onDrag={handleRightDrag} />
 
-        {/* Right: Detail View */}
+        {/* Right: Detail + Chat */}
         <aside
           data-testid="detail-panel"
           className="shrink-0 overflow-hidden"
           style={{ width: `${rightPercent}%` }}
         >
-          <DetailView />
+          <RightPanel />
         </aside>
       </div>
     </div>
