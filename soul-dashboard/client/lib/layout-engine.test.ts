@@ -170,7 +170,7 @@ describe("buildGraph", () => {
     expect(result.edges).toEqual([]);
   });
 
-  it("creates thinking node for text node", () => {
+  it("creates text node for text tree node", () => {
     const tree = sessionRoot([
       userMsg("u1", "hi", [
         textNode("t1", "Hello world"),
@@ -178,13 +178,13 @@ describe("buildGraph", () => {
     ]);
     const { nodes } = buildGraph(tree);
 
-    const thinkingNodes = nodes.filter((n) => n.type === "thinking");
-    expect(thinkingNodes).toHaveLength(1);
-    expect(thinkingNodes[0].data.content).toContain("Hello world");
-    expect(thinkingNodes[0].data.cardId).toBe("t1");
+    const textNodes = nodes.filter((n) => n.type === "text");
+    expect(textNodes).toHaveLength(1);
+    expect(textNodes[0].data.content).toContain("Hello world");
+    expect(textNodes[0].data.cardId).toBe("t1");
   });
 
-  it("all text nodes become thinking type (response heuristic removed)", () => {
+  it("all text tree nodes become text graph type (response heuristic removed)", () => {
     const tree = sessionRoot([
       userMsg("u1", "hi", [
         textNode("t1", "Thinking..."),
@@ -194,14 +194,14 @@ describe("buildGraph", () => {
     ]);
     const { nodes } = buildGraph(tree);
 
-    // response 노드 타입은 더 이상 사용되지 않음 — 모든 text는 thinking
+    // response 노드 타입은 더 이상 사용되지 않음
     const responseNodes = nodes.filter((n) => n.type === "response");
     expect(responseNodes).toHaveLength(0);
 
-    const thinkingNodes = nodes.filter((n) => n.type === "thinking");
-    expect(thinkingNodes).toHaveLength(2);
-    expect(thinkingNodes[0].data.cardId).toBe("t1");
-    expect(thinkingNodes[1].data.cardId).toBe("t2");
+    const textNodes = nodes.filter((n) => n.type === "text");
+    expect(textNodes).toHaveLength(2);
+    expect(textNodes[0].data.cardId).toBe("t1");
+    expect(textNodes[1].data.cardId).toBe("t2");
   });
 
   it("creates tool_call node for tool node", () => {
@@ -408,9 +408,9 @@ describe("buildGraph", () => {
       expect(t2ToB).toBeDefined();
       expect(t2ToB!.sourceHandle).toBe("right");
 
-      // t3 should be thinking node (response heuristic removed)
+      // t3 should be text node (text tree nodes map to text graph type)
       const t3Node = nodes.find((n) => n.id === "node-t3");
-      expect(t3Node?.type).toBe("thinking");
+      expect(t3Node?.type).toBe("text");
     });
 
     it("streaming tool (no result yet) still branches horizontally", () => {
@@ -722,7 +722,7 @@ describe("large session layout", () => {
     const tree = generateLargeSession(20);
     const { nodes } = buildGraph(tree);
 
-    const mainFlowX = nodes.find((n) => n.data.nodeType === "thinking")?.position.x;
+    const mainFlowX = nodes.find((n) => n.data.nodeType === "text" || n.data.nodeType === "thinking")?.position.x;
     if (mainFlowX === undefined) return;
 
     const mainFlowNodes = nodes.filter((n) => n.position.x === mainFlowX);
