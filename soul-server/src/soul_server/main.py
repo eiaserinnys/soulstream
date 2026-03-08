@@ -58,7 +58,7 @@ async def periodic_cleanup():
         except asyncio.CancelledError:
             break
         except Exception as e:
-            logger.error(f"Periodic cleanup error: {e}")
+            logger.exception(f"Periodic cleanup error: {e}")
 
 
 @asynccontextmanager
@@ -211,7 +211,7 @@ async def shutdown():
                 logger.info(f"Shutdown: {cancelled}개 태스크 취소")
             await task_manager.save()
         except Exception as e:
-            logger.warning(f"Shutdown cleanup error: {e}")
+            logger.warning(f"Shutdown cleanup error: {e}", exc_info=True)
 
         await asyncio.sleep(0.3)
         os._exit(0)
