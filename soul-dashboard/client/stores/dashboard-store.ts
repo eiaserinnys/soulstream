@@ -97,7 +97,7 @@ export interface DashboardState {
   /** 오른쪽 패널 활성 탭 */
   activeRightTab: "detail" | "chat";
 
-  /** 이벤트 처리 컨텍스트 (nodeMap, lastThinkingByParent 등) */
+  /** 이벤트 처리 컨텍스트 (nodeMap, activeTextTarget 등) */
   processingCtx: ProcessingContext;
 }
 

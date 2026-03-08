@@ -28,7 +28,6 @@ import type {
   ThinkingEvent,
   ToolNode,
   SessionNode,
-  ThinkingNode,
   ResultNode,
 } from "../../shared/types";
 
@@ -1089,24 +1088,24 @@ describe("dashboard-store", () => {
       expect(userMsg.children[0].id).toBe("thinking-1");
     });
 
-    it("text_start가 같은 parent_event_id의 thinking을 찾으면 별도 노드 생성하지 않음", () => {
+    it("text_start가 독립 TextNode를 생성 (thinking과 형제)", () => {
       const { processEvent } = useDashboardStore.getState();
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
       processEvent({
         type: "thinking",
         thinking: "Reasoning...",
       } as ThinkingEvent, 1);
-      // text_start가 같은 parent 레벨 → thinking 노드 재사용
       processEvent({ type: "text_start" } as TextStartEvent, 2);
 
       const tree = useDashboardStore.getState().tree!;
       const userMsg = tree.children[0];
-      // thinking 하나만 있어야 함 (text 노드 추가 생성 안 함)
-      expect(userMsg.children).toHaveLength(1);
+      // thinking + text 두 개가 형제로 존재
+      expect(userMsg.children).toHaveLength(2);
       expect(userMsg.children[0].type).toBe("thinking");
+      expect(userMsg.children[1].type).toBe("text");
     });
 
-    it("text_delta가 thinking 노드의 textContent를 갱신", () => {
+    it("text_delta가 독립 TextNode의 content를 갱신", () => {
       const { processEvent } = useDashboardStore.getState();
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
       processEvent({
@@ -1117,14 +1116,15 @@ describe("dashboard-store", () => {
       processEvent({ type: "text_delta", text: "Here is " } as TextDeltaEvent, 3);
       processEvent({ type: "text_delta", text: "the answer." } as TextDeltaEvent, 4);
 
+      const textNode = findTreeNode(useDashboardStore.getState().tree, "text-2")!;
+      expect(textNode.type).toBe("text");
+      expect(textNode.content).toBe("Here is the answer.");
+      // thinking 원문은 변경되지 않음
       const thinkingNode = findTreeNode(useDashboardStore.getState().tree, "thinking-1")!;
-      expect(thinkingNode.type).toBe("thinking");
-      expect((thinkingNode as ThinkingNode).textContent).toBe("Here is the answer.");
-      // content(thinking 원문)는 변경되지 않음
       expect(thinkingNode.content).toBe("Deep thought");
     });
 
-    it("text_end가 thinking 노드의 textCompleted를 설정하지만 completed는 유지", () => {
+    it("text_end가 독립 TextNode의 completed를 설정", () => {
       const { processEvent } = useDashboardStore.getState();
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
       processEvent({
@@ -1135,9 +1135,10 @@ describe("dashboard-store", () => {
       processEvent({ type: "text_delta", text: "Answer" } as TextDeltaEvent, 3);
       processEvent({ type: "text_end" } as TextEndEvent, 4);
 
-      const thinkingNode = findTreeNode(useDashboardStore.getState().tree, "thinking-1")!;
-      expect((thinkingNode as ThinkingNode).textCompleted).toBe(true);
+      const textNode = findTreeNode(useDashboardStore.getState().tree, "text-2")!;
+      expect(textNode.completed).toBe(true);
       // thinking 노드의 completed는 true (생성 시 설정)
+      const thinkingNode = findTreeNode(useDashboardStore.getState().tree, "thinking-1")!;
       expect(thinkingNode.completed).toBe(true);
     });
 
@@ -1239,9 +1240,13 @@ describe("dashboard-store", () => {
       const thinkingNodes = collectNodes(userMsg, "thinking");
       expect(thinkingNodes).toHaveLength(2);
       expect(thinkingNodes[0].content).toBe("First thought");
-      expect((thinkingNodes[0] as ThinkingNode).textContent).toBe("Response 1");
       expect(thinkingNodes[1].content).toBe("Second thought");
-      expect((thinkingNodes[1] as ThinkingNode).textContent).toBe("Response 2");
+
+      // text는 독립 TextNode로 생성됨
+      const textNodes = collectNodes(userMsg, "text");
+      expect(textNodes).toHaveLength(2);
+      expect(textNodes[0].content).toBe("Response 1");
+      expect(textNodes[1].content).toBe("Response 2");
 
       // 도구는 턴 루트(user_message)의 자식 (thinking과 형제)
       const toolNodes = collectNodes(userMsg, "tool");

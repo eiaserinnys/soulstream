@@ -157,7 +157,7 @@ describe("placeInTree", () => {
   });
 
   describe("thinking", () => {
-    it("should place under turn root and register in lastThinkingByParent", () => {
+    it("should place under turn root", () => {
       const { ctx, root } = makeCtxWithRoot();
       const turnNode = setupTurnRoot(ctx, root);
       const node = makeNode("thinking-3", "thinking", "hmm");
@@ -170,7 +170,6 @@ describe("placeInTree", () => {
       placeInTree(node, event, 3, ctx, root);
 
       expect(turnNode.children).toContain(node);
-      expect(ctx.lastThinkingByParent.get("")).toBe(node);
       expect(ctx.nodeMap.get("thinking-3")).toBe(node);
     });
 
@@ -195,7 +194,6 @@ describe("placeInTree", () => {
 
       // Phase 6: nodeMap에서 직접 조회하므로 tool 노드 아래에 배치
       expect(toolNode.children).toContain(node);
-      expect(ctx.lastThinkingByParent.get("toolu_abc")).toBe(node);
     });
   });
 
@@ -402,67 +400,48 @@ describe("placeInTree", () => {
 // === handleTextStart ===
 
 describe("handleTextStart", () => {
-  describe("with matching thinking node", () => {
-    it("should set activeTextTarget to the thinking node and clear lastThinkingByParent", () => {
-      const { ctx, root } = makeCtxWithRoot();
-      const thinkingNode = makeNode("thinking-1", "thinking", "inner thoughts", {
-        completed: true,
-      });
-      registerNode(ctx, thinkingNode);
-      root.children.push(thinkingNode);
-      // Register thinking at root level (parentKey = "")
-      ctx.lastThinkingByParent.set("", thinkingNode);
-
-      const event: TextStartEvent = { type: "text_start", timestamp: 0 };
-      const changed = handleTextStart(event, 10, ctx, root);
-
-      expect(changed).toBe(true);
-      expect(ctx.activeTextTarget).toBe(thinkingNode);
-      expect(ctx.lastThinkingByParent.has("")).toBe(false);
+  it("should always create an independent text node (even when thinking exists)", () => {
+    const { ctx, root } = makeCtxWithRoot();
+    const thinkingNode = makeNode("thinking-1", "thinking", "inner thoughts", {
+      completed: true,
     });
+    registerNode(ctx, thinkingNode);
+    root.children.push(thinkingNode);
 
-    it("should match thinking by parent_event_id", () => {
-      const { ctx, root } = makeCtxWithRoot();
-      const thinkingNode = makeNode("thinking-2", "thinking", "sub thinking");
-      ctx.lastThinkingByParent.set("toolu_parent", thinkingNode);
+    const event: TextStartEvent = { type: "text_start", timestamp: 0 };
+    const changed = handleTextStart(event, 10, ctx, root);
 
-      const event: TextStartEvent = {
-        type: "text_start",
-        timestamp: 0,
-        parent_event_id: "toolu_parent",
-      };
-      const changed = handleTextStart(event, 11, ctx, root);
-
-      expect(changed).toBe(true);
-      expect(ctx.activeTextTarget).toBe(thinkingNode);
-      expect(ctx.lastThinkingByParent.has("toolu_parent")).toBe(false);
-    });
+    expect(changed).toBe(true);
+    expect(ctx.activeTextTarget).not.toBeNull();
+    expect(ctx.activeTextTarget!.id).toBe("text-10");
+    expect(ctx.activeTextTarget!.type).toBe("text");
+    // text node is a sibling of thinking, not merged into it
+    expect(root.children).toContain(ctx.activeTextTarget);
+    expect(root.children).toContain(thinkingNode);
   });
 
-  describe("without matching thinking node", () => {
-    it("should create an independent text node under resolved parent", () => {
-      const { ctx, root } = makeCtxWithRoot();
+  it("should create an independent text node under resolved parent", () => {
+    const { ctx, root } = makeCtxWithRoot();
 
-      const event: TextStartEvent = { type: "text_start", timestamp: 0 };
-      const changed = handleTextStart(event, 12, ctx, root);
+    const event: TextStartEvent = { type: "text_start", timestamp: 0 };
+    const changed = handleTextStart(event, 12, ctx, root);
 
-      expect(changed).toBe(true);
-      expect(ctx.activeTextTarget).not.toBeNull();
-      expect(ctx.activeTextTarget!.id).toBe("text-12");
-      expect(ctx.activeTextTarget!.type).toBe("text");
-      expect(ctx.nodeMap.has("text-12")).toBe(true);
-      // Should be child of root (no currentTurnNodeId)
-      expect(root.children).toContain(ctx.activeTextTarget);
-    });
+    expect(changed).toBe(true);
+    expect(ctx.activeTextTarget).not.toBeNull();
+    expect(ctx.activeTextTarget!.id).toBe("text-12");
+    expect(ctx.activeTextTarget!.type).toBe("text");
+    expect(ctx.nodeMap.has("text-12")).toBe(true);
+    // Should be child of root (no currentTurnNodeId)
+    expect(root.children).toContain(ctx.activeTextTarget);
+  });
 
-    it("should place independent text node under turn root when set", () => {
-      const { ctx, root } = makeCtxWithRoot();
-      const turnNode = setupTurnRoot(ctx, root);
+  it("should place independent text node under turn root when set", () => {
+    const { ctx, root } = makeCtxWithRoot();
+    const turnNode = setupTurnRoot(ctx, root);
 
-      const event: TextStartEvent = { type: "text_start", timestamp: 0 };
-      handleTextStart(event, 13, ctx, root);
+    const event: TextStartEvent = { type: "text_start", timestamp: 0 };
+    handleTextStart(event, 13, ctx, root);
 
-      expect(turnNode.children).toContain(ctx.activeTextTarget);
-    });
+    expect(turnNode.children).toContain(ctx.activeTextTarget);
   });
 });

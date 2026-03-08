@@ -168,17 +168,21 @@ export function createTextNode(
   planFlags?: { isPlanMode?: boolean },
   collapseInfo?: CollapseInfo,
 ): GraphNode {
-  // text 노드는 항상 "thinking" 타입. 실제 응답은 complete 노드가 담당.
+  // thinking 노드와 text 노드를 독립 타입으로 구분
+  const isThinking = treeNode.type === "thinking";
+  const nodeType: GraphNodeType = isThinking ? "thinking" : "text";
+  const label = isThinking ? "Thinking" : "Text";
+
   return {
     id: `node-${treeNode.id}`,
-    type: "thinking",
+    type: nodeType,
     position: { x: 0, y: 0 },
     width: DEFAULT_NODE_WIDTH,
     height: DEFAULT_NODE_HEIGHT,
     data: {
-      nodeType: "thinking",
+      nodeType,
       cardId: treeNode.id,
-      label: "Thinking",
+      label,
       content: truncate(treeNode.content, 120) || "(streaming...)",
       streaming: !treeNode.completed,
       isPlanMode: planFlags?.isPlanMode,

@@ -100,10 +100,9 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
       return {
         id: n.id,
         role: "assistant",
-        content: n.textContent ?? n.content,
+        content: n.content,
         thinkingContent: n.content,
         timestamp: n.timestamp,
-        isStreaming: !n.textCompleted && n.textContent !== undefined,
         treeNodeId: n.id,
         treeNodeType: n.type,
       };
