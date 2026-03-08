@@ -107,10 +107,16 @@ _session_broadcaster: Optional[SessionBroadcaster] = None
 
 
 def get_session_broadcaster() -> SessionBroadcaster:
-    """SessionBroadcaster 싱글톤 반환"""
-    global _session_broadcaster
+    """SessionBroadcaster 싱글톤 반환
+
+    Raises:
+        RuntimeError: init_session_broadcaster()가 호출되지 않은 경우
+    """
     if _session_broadcaster is None:
-        _session_broadcaster = SessionBroadcaster()
+        raise RuntimeError(
+            "SessionBroadcaster not initialized. "
+            "Call init_session_broadcaster() first."
+        )
     return _session_broadcaster
 
 
