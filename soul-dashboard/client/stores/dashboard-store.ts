@@ -33,6 +33,19 @@ import { createNodeFromEvent, applyUpdate } from "./node-factory";
 import { placeInTree, handleTextStart } from "./tree-placer";
 import { shouldNotify, deriveSessionStatus } from "./session-updater";
 
+// === Dashboard Config ===
+
+export interface ProfileConfig {
+  name: string;
+  id: string;
+  hasPortrait: boolean;
+}
+
+export interface DashboardConfig {
+  user: ProfileConfig;
+  assistant: ProfileConfig;
+}
+
 // === Selected Event Node Data ===
 
 /** selectEventNode로 선택된 이벤트 노드의 데이터 (user, intervention, system, result) */
@@ -96,6 +109,9 @@ export interface DashboardState {
 
   /** 오른쪽 패널 활성 탭 */
   activeRightTab: "detail" | "chat";
+
+  /** 대시보드 프로필 설정 */
+  dashboardConfig: DashboardConfig | null;
 
   /** 이벤트 처리 컨텍스트 (nodeMap, activeTextTarget 등) */
   processingCtx: ProcessingContext;
@@ -161,6 +177,9 @@ export interface DashboardActions {
 
   // 오른쪽 패널 탭
   setActiveRightTab: (tab: "detail" | "chat") => void;
+
+  // 대시보드 프로필 설정
+  setDashboardConfig: (config: DashboardConfig) => void;
 }
 
 // === Internal Processing Context ===
@@ -195,6 +214,7 @@ const initialState: DashboardState = {
   collapsedNodeIds: new Set<string>(),
   serendipityAvailable: false,
   activeRightTab: "chat",
+  dashboardConfig: null,
   processingCtx: createProcessingContext(),
 };
 
@@ -265,9 +285,10 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         const idx = sessions.findIndex((s) => s.agentSessionId === agentSessionId);
         if (idx < 0) return;
 
-        const updatedSessions = [...sessions];
-        updatedSessions[idx] = { ...updatedSessions[idx], ...updates };
-        set({ sessions: updatedSessions });
+        const updated = { ...sessions[idx], ...updates };
+        const rest = [...sessions];
+        rest.splice(idx, 1);
+        set({ sessions: [updated, ...rest] });
       },
 
       removeSession: (agentSessionId) => {
@@ -640,6 +661,10 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
       // --- 오른쪽 패널 탭 ---
 
       setActiveRightTab: (activeRightTab) => set({ activeRightTab }),
+
+      // --- 대시보드 프로필 설정 ---
+
+      setDashboardConfig: (dashboardConfig) => set({ dashboardConfig }),
     }),
     {
       name: "soul-dashboard-storage",
