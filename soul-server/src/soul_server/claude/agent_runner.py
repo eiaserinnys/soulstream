@@ -133,6 +133,7 @@ class ClaudeResult(EngineResult):
 # ---------------------------------------------------------------------------
 _registry: dict[str, "ClaudeRunner"] = {}
 _registry_lock = threading.Lock()
+_shutting_down = False
 
 
 def get_runner(runner_id: str) -> Optional["ClaudeRunner"]:
@@ -141,10 +142,28 @@ def get_runner(runner_id: str) -> Optional["ClaudeRunner"]:
         return _registry.get(runner_id)
 
 
-def register_runner(runner: "ClaudeRunner") -> None:
-    """레지스트리에 러너 등록"""
+def register_runner(runner: "ClaudeRunner") -> bool:
+    """레지스트리에 러너 등록
+
+    Args:
+        runner: 등록할 ClaudeRunner 인스턴스
+
+    Returns:
+        True: 등록 성공
+        False: 셧다운 중이라 등록 거부
+    """
     with _registry_lock:
+        if _shutting_down:
+            return False  # 셧다운 중 등록 거부
         _registry[runner.runner_id] = runner
+        return True
+
+
+def reset_shutdown_state() -> None:
+    """테스트용: _shutting_down 플래그 초기화"""
+    global _shutting_down
+    with _registry_lock:
+        _shutting_down = False
 
 
 def remove_runner(runner_id: str) -> Optional["ClaudeRunner"]:
@@ -157,12 +176,17 @@ async def shutdown_all() -> int:
     """모든 등록된 러너의 클라이언트를 종료
 
     프로세스 종료 전에 호출하여 고아 프로세스를 방지합니다.
+    셧다운 시작 후 새 러너 등록은 거부됩니다.
 
     Returns:
         종료된 클라이언트 수
     """
+    global _shutting_down
+
     with _registry_lock:
+        _shutting_down = True
         runners = list(_registry.values())
+        _registry.clear()
 
     if not runners:
         logger.info("종료할 활성 클라이언트 없음")
@@ -180,9 +204,6 @@ async def shutdown_all() -> int:
             if runner.pid:
                 ClaudeRunner._force_kill_process(runner.pid, runner.runner_id)
                 count += 1
-
-    with _registry_lock:
-        _registry.clear()
 
     logger.info(f"총 {count}개 클라이언트 종료 완료")
     return count
