@@ -8,7 +8,6 @@ SessionBroadcaster - 세션 목록 변경 이벤트 브로드캐스트
 import asyncio
 import logging
 from typing import List, Optional
-from datetime import datetime
 
 from soul_server.service.task_models import Task, utc_now
 
@@ -54,12 +53,19 @@ class SessionBroadcaster:
         """
         async with self._lock:
             count = 0
+            failed_queues = []
             for queue in self._listeners:
                 try:
                     queue.put_nowait(event)
                     count += 1
                 except asyncio.QueueFull:
-                    logger.warning("Session broadcaster: queue full, skipping")
+                    logger.warning("Session broadcaster: queue full, removing listener")
+                    failed_queues.append(queue)
+
+            # 실패한 리스너 제거 (메모리 누수 방지)
+            for queue in failed_queues:
+                self._listeners.remove(queue)
+
             return count
 
     def _task_to_session_info(self, task: Task) -> dict:

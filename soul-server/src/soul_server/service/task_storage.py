@@ -161,6 +161,7 @@ class TaskStorage:
         """
         self._storage_path = storage_path
         self._save_scheduled = False
+        self._pending_save_task: Optional[asyncio.Task] = None
 
     async def load(
         self,
@@ -385,6 +386,12 @@ class TaskStorage:
         async def do_save():
             await asyncio.sleep(0.5)  # 500ms debounce
             self._save_scheduled = False
+            self._pending_save_task = None
             await self._save(tasks)
 
-        asyncio.create_task(do_save())
+        self._pending_save_task = asyncio.create_task(do_save())
+
+    async def flush_pending_save(self) -> None:
+        """대기 중인 저장 완료 대기 (셧다운 시 호출)"""
+        if self._pending_save_task is not None:
+            await self._pending_save_task
