@@ -26,7 +26,8 @@ export function ThinkingDetail({ card }: { card: ThinkingNode | TextNode }) {
 
       {/* Full text content */}
       <pre
-        className="text-[14px] text-foreground whitespace-pre-wrap break-words leading-relaxed m-0 font-mono"
+        className="text-[14px] text-foreground whitespace-pre-wrap break-words leading-relaxed m-0"
+        style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" }}
       >
         {card.content || "(streaming...)"}
       </pre>

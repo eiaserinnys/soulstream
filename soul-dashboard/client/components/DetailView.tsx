@@ -29,12 +29,15 @@ function CompleteDetail({ card }: { card: EventTreeNode }) {
   return (
     <div className="p-4 flex flex-col gap-3">
       <div className="flex items-center gap-2">
-        <span className="text-base">{"\u2705"}</span>
+        <span className="text-base">{"\u2699\uFE0F"}</span>
         <div className="text-[12px] text-success uppercase tracking-[0.05em] font-semibold">
           Complete
         </div>
       </div>
-      <pre className="text-[14px] text-foreground whitespace-pre-wrap break-words leading-relaxed m-0 font-mono">
+      <pre
+        className="text-[14px] text-foreground whitespace-pre-wrap break-words leading-relaxed m-0"
+        style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" }}
+      >
         {card.content || "Session completed"}
       </pre>
       {card.content && (

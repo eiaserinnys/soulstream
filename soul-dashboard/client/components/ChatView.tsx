@@ -69,13 +69,13 @@ const CollapsibleContent = memo(function CollapsibleContent({
       {needsCollapse ? (
         <button
           onClick={() => setExpanded((v) => !v)}
-          className="text-[11px] text-muted-foreground hover:text-foreground mb-0.5 flex items-center gap-1"
+          className="text-[13px] text-muted-foreground hover:text-foreground mb-0.5 flex items-center gap-1"
         >
-          <span className="text-[10px]">{expanded ? "\u25BC" : "\u25B6"}</span>
+          <span className="text-[11px]">{expanded ? "\u25BC" : "\u25B6"}</span>
           {label}
         </button>
       ) : (
-        <span className="text-[11px] text-muted-foreground mb-0.5 flex items-center gap-1">
+        <span className="text-[13px] text-muted-foreground mb-0.5 flex items-center gap-1">
           {label}
         </span>
       )}
@@ -93,8 +93,8 @@ const UserMessage = memo(function UserMessage({ msg }: { msg: ChatMessage }) {
     <div className="flex gap-2 px-3 py-1.5">
       <span className="text-xs mt-0.5 shrink-0">{"\u{1F464}"}</span>
       <div className="flex-1 min-w-0">
-        <div className="text-[11px] font-semibold text-accent-blue uppercase tracking-wide mb-0.5">User</div>
-        <div className="text-[14px] text-foreground whitespace-pre-wrap break-words">{msg.content}</div>
+        <div className="text-[15px] font-bold text-accent-blue uppercase tracking-wide mb-0.5">User</div>
+        <div className="text-[15px] text-foreground whitespace-pre-wrap break-words">{msg.content}</div>
       </div>
     </div>
   );
@@ -105,8 +105,8 @@ const InterventionMessage = memo(function InterventionMessage({ msg }: { msg: Ch
     <div className="flex gap-2 px-3 py-1.5">
       <span className="text-xs mt-0.5 shrink-0">{"\u270B"}</span>
       <div className="flex-1 min-w-0">
-        <div className="text-[11px] font-semibold text-accent-orange uppercase tracking-wide mb-0.5">Intervention</div>
-        <div className="text-[14px] text-foreground whitespace-pre-wrap break-words">{msg.content}</div>
+        <div className="text-[15px] font-bold text-accent-orange uppercase tracking-wide mb-0.5">Intervention</div>
+        <div className="text-[15px] text-foreground whitespace-pre-wrap break-words">{msg.content}</div>
       </div>
     </div>
   );
@@ -130,7 +130,7 @@ const AssistantMessage = memo(function AssistantMessage({ msg }: { msg: ChatMess
     <div className="flex gap-2 px-3 py-1.5">
       <span className="text-xs mt-0.5 shrink-0">{"\u{1F916}"}</span>
       <div className="flex-1 min-w-0">
-        <div className="text-[14px] text-foreground whitespace-pre-wrap break-words">
+        <div className="text-[15px] text-foreground whitespace-pre-wrap break-words">
           {msg.content}
           {msg.isStreaming && <span className="inline-block w-1.5 h-3.5 bg-foreground/60 ml-0.5 animate-pulse" />}
         </div>
@@ -152,13 +152,13 @@ const ToolCallItem = memo(function ToolCallItem({ msg }: { msg: ChatMessage }) {
       <button
         onClick={() => setExpanded((v) => !v)}
         className={cn(
-          "text-[12px] font-mono flex items-center gap-1",
+          "text-[13px] font-mono flex items-center gap-1",
           msg.isError ? "text-accent-red" : "text-muted-foreground",
           "hover:text-foreground",
         )}
       >
-        <span className="text-[10px]">{expanded ? "\u25BC" : "\u25B6"}</span>
         <span>{statusIcon}</span>
+        <span className="text-[11px]">{expanded ? "\u25BC" : "\u25B6"}</span>
         <span className="truncate">{msg.content}</span>
       </button>
       {expanded && msg.toolInput && (
@@ -188,10 +188,10 @@ const ToolCallGroup = memo(function ToolCallGroup({ messages }: { messages: Chat
     <div className="px-3 py-0.5">
       <button
         onClick={() => setExpanded((v) => !v)}
-        className="text-[12px] text-muted-foreground hover:text-foreground flex items-center gap-1.5"
+        className="text-[13px] text-muted-foreground hover:text-foreground flex items-center gap-1.5"
       >
-        <span className="text-[10px]">{expanded ? "\u25BC" : "\u25B6"}</span>
         <span>{"\u{1F527}"}</span>
+        <span className="text-[11px]">{expanded ? "\u25BC" : "\u25B6"}</span>
         <span className="font-medium">
           Tool Calls ({messages.length})
         </span>
@@ -302,8 +302,12 @@ export function ChatView() {
   // ref로 effect 내부에서 최신 상태를 참조 (effect deps에서 제거하여 불필요한 재실행 방지)
   const isFollowingRef = useRef(true);
   useEffect(() => { isFollowingRef.current = isFollowing; }, [isFollowing]);
+  // 프로그래밍 스크롤 중 scroll 이벤트가 follow를 해제하지 않도록 가드
+  const isProgrammaticScroll = useRef(false);
 
   const checkScrollPosition = useCallback(() => {
+    // 프로그래밍 스크롤 중에는 follow 해제하지 않음
+    if (isProgrammaticScroll.current) return;
     const el = scrollRef.current;
     if (!el) return;
     const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - SCROLL_THRESHOLD;
@@ -322,7 +326,13 @@ export function ChatView() {
     prevTreeVersion.current = treeVersion;
 
     if (isFollowingRef.current && scrollRef.current) {
-      scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+      // DOM 업데이트 후 스크롤하도록 rAF 사용
+      const el = scrollRef.current;
+      isProgrammaticScroll.current = true;
+      requestAnimationFrame(() => {
+        el.scrollTop = el.scrollHeight;
+        isProgrammaticScroll.current = false;
+      });
     } else if (!isFollowingRef.current) {
       setShowNewMessage(true);
     }
@@ -339,9 +349,13 @@ export function ChatView() {
 
   const scrollToBottom = useCallback(() => {
     if (scrollRef.current) {
+      isProgrammaticScroll.current = true;
       scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
       setIsFollowing(true);
       setShowNewMessage(false);
+      scrollRef.current.addEventListener("scrollend", () => {
+        isProgrammaticScroll.current = false;
+      }, { once: true });
     }
   }, []);
 
@@ -349,8 +363,12 @@ export function ChatView() {
     setIsFollowing((prev) => {
       const next = !prev;
       if (next && scrollRef.current) {
+        isProgrammaticScroll.current = true;
         scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
         setShowNewMessage(false);
+        scrollRef.current.addEventListener("scrollend", () => {
+          isProgrammaticScroll.current = false;
+        }, { once: true });
       }
       return next;
     });
