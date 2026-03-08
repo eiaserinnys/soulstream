@@ -244,6 +244,7 @@ class TextDeltaSSEEvent(BaseModel):
     type: str = "text_delta"
     timestamp: float = Field(..., description="이벤트 발행 시각 (Unix epoch)")
     text: str = Field(..., description="텍스트 내용")
+    parent_event_id: Optional[str] = Field(None, description="서브에이전트 내부인 경우 부모 이벤트 ID")
 
 
 class TextEndSSEEvent(BaseModel):

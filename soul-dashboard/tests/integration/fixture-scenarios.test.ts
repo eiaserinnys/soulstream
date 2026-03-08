@@ -114,7 +114,7 @@ describe("JSONL Fixture Integration Tests", () => {
       expect(completeNodes.length).toBeGreaterThanOrEqual(1);
     });
 
-    it("buildGraph에서 모든 텍스트가 thinking 노드가 된다 (response heuristic 제거)", () => {
+    it("buildGraph에서 모든 텍스트가 text 노드가 된다 (thinking/text 분리)", () => {
       const { tree } = replayFixture("basic-flow");
       const { nodes } = buildGraph(tree);
 
@@ -122,9 +122,9 @@ describe("JSONL Fixture Integration Tests", () => {
       const responseNodes = nodes.filter((n) => n.type === "response");
       expect(responseNodes).toHaveLength(0);
 
-      // 모든 텍스트는 thinking
-      const thinkingNodes = nodes.filter((n) => n.type === "thinking");
-      expect(thinkingNodes.length).toBeGreaterThanOrEqual(1);
+      // text tree 노드는 text graph 노드로
+      const textNodes = nodes.filter((n) => n.type === "text");
+      expect(textNodes.length).toBeGreaterThanOrEqual(1);
     });
 
     it("buildGraph에서 user_message가 user 노드로 생성된다", () => {
@@ -279,11 +279,11 @@ describe("JSONL Fixture Integration Tests", () => {
       }
     });
 
-    it("연속 tool 호출이 트리뷰로 thinking에서 분기된다", () => {
+    it("연속 tool 호출이 트리뷰로 text/thinking에서 분기된다", () => {
       const { tree } = replayFixture("multi-tool");
       const { edges, nodes } = buildGraph(tree);
 
-      // 트리뷰: 모든 tool_call은 thinking 노드에서 right→left로 분기
+      // 트리뷰: 모든 tool_call은 text/thinking 노드에서 right→left로 분기
       const toolCallNodes = nodes.filter((n) => n.type === "tool_call");
 
       // tool_call→tool_call 직접 연결은 없어야 함
@@ -294,11 +294,11 @@ describe("JSONL Fixture Integration Tests", () => {
       });
       expect(chainEdges.length).toBe(0);
 
-      // 대신 thinking→tool_call 엣지가 tool 개수만큼 있어야 함
+      // 대신 text/thinking→tool_call 엣지가 tool 개수만큼 있어야 함
       const branchEdges = edges.filter((e) => {
         const source = nodes.find((n) => n.id === e.source);
         const target = nodes.find((n) => n.id === e.target);
-        return (source?.type === "thinking" || source?.type === "response") && target?.type === "tool_call";
+        return (source?.type === "thinking" || source?.type === "text" || source?.type === "response") && target?.type === "tool_call";
       });
       expect(branchEdges.length).toBeGreaterThanOrEqual(toolCallNodes.length);
     });
@@ -311,25 +311,25 @@ describe("JSONL Fixture Integration Tests", () => {
 
   // === complete-flow: complete 카드 + thinking 노드 ===
 
-  describe("complete-flow: 세션 완료 + thinking 노드", () => {
-    it("모든 텍스트 노드가 thinking 타입이다 (response heuristic 제거)", () => {
+  describe("complete-flow: 세션 완료 + text 노드", () => {
+    it("모든 텍스트 노드가 text 타입이다 (thinking/text 분리)", () => {
       const { tree } = replayFixture("complete-flow");
       const { nodes } = buildGraph(tree);
 
       const responseNodes = nodes.filter((n) => n.type === "response");
       expect(responseNodes).toHaveLength(0);
 
-      const thinkingNodes = nodes.filter((n) => n.type === "thinking");
-      expect(thinkingNodes.length).toBeGreaterThanOrEqual(1);
+      const textNodes = nodes.filter((n) => n.type === "text");
+      expect(textNodes.length).toBeGreaterThanOrEqual(1);
     });
 
-    it("마지막 thinking 노드는 streaming=false 이다", () => {
+    it("마지막 text 노드는 streaming=false 이다", () => {
       const { tree } = replayFixture("complete-flow");
       const { nodes } = buildGraph(tree);
 
-      const thinkingNodes = nodes.filter((n) => n.type === "thinking");
-      const lastThinking = thinkingNodes[thinkingNodes.length - 1];
-      expect(lastThinking.data.streaming).toBe(false);
+      const textNodes = nodes.filter((n) => n.type === "text");
+      const lastText = textNodes[textNodes.length - 1];
+      expect(lastText.data.streaming).toBe(false);
     });
 
     it("complete system 노드가 그래프 끝에 위치한다", () => {
@@ -346,18 +346,18 @@ describe("JSONL Fixture Integration Tests", () => {
       expect(outgoing).toHaveLength(0);
     });
 
-    it("마지막 thinking 노드에서 complete 노드로의 엣지가 존재한다", () => {
+    it("마지막 text 노드에서 complete 노드로의 엣지가 존재한다", () => {
       const { tree } = replayFixture("complete-flow");
       const { nodes, edges } = buildGraph(tree);
 
-      const thinkingNodes = nodes.filter((n) => n.type === "thinking");
-      const lastThinking = thinkingNodes[thinkingNodes.length - 1];
+      const textNodes = nodes.filter((n) => n.type === "text");
+      const lastText = textNodes[textNodes.length - 1];
       const completeNode = nodes.find(
         (n) => n.type === "system" && n.data.label === "Complete",
       )!;
 
       const edge = edges.find(
-        (e) => e.source === lastThinking.id && e.target === completeNode.id,
+        (e) => e.source === lastText.id && e.target === completeNode.id,
       );
       expect(edge).toBeDefined();
     });

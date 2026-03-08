@@ -30,11 +30,8 @@ function serializeTreeNode(node: EventTreeNode): Record<string, unknown> {
   // 타입별 추가 필드
   switch (node.type) {
     case "thinking":
-      base.textContent = node.textContent?.slice(0, 200);
-      base.textCompleted = node.textCompleted;
       break;
     case "text":
-      base.textContent = node.textContent?.slice(0, 200);
       base.textCompleted = node.textCompleted;
       break;
     case "tool":
@@ -94,17 +91,11 @@ function serializeContext(ctx: ProcessingContext): Record<string, unknown> {
     nodeMapEntries[key] = `${node.type}:${node.id}`;
   });
 
-  const lastThinkingEntries: Record<string, string> = {};
-  ctx.lastThinkingByParent.forEach((node, key) => {
-    lastThinkingEntries[key || "(root)"] = node.id;
-  });
-
   return {
     currentTurnNodeId: ctx.currentTurnNodeId,
     nodeMapSize: ctx.nodeMap.size,
     nodeMapKeys: Object.keys(nodeMapEntries),
     nodeMap: nodeMapEntries,
-    lastThinkingByParent: lastThinkingEntries,
     activeTextTarget: ctx.activeTextTarget
       ? { id: ctx.activeTextTarget.id, type: ctx.activeTextTarget.type }
       : null,
