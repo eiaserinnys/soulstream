@@ -107,6 +107,7 @@ class TextDeltaEngineEvent(EngineEvent):
                 timestamp=self.timestamp,
             ),
             TextEndSSEEvent(
+                parent_event_id=self.parent_event_id,
                 timestamp=self.timestamp,
             ),
         ]
