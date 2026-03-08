@@ -18,7 +18,7 @@ export const nodeContent = "flex-1 px-3 py-2.5 min-w-0";
 export const nodeHeader = "flex items-center gap-1.5 mb-1.5";
 
 /** 노드 라벨 텍스트 */
-export const nodeLabel = "text-[10px] uppercase tracking-[0.05em] font-semibold";
+export const nodeLabel = "text-[13px] uppercase tracking-[0.05em] font-bold";
 
 /** 텍스트 줄임 (2줄) */
 export const truncate2 = "line-clamp-2";

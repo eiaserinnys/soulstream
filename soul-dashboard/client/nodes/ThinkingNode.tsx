@@ -54,12 +54,12 @@ export const ThinkingNode = memo(function ThinkingNode({ data, selected }: NodeP
       <div className={nodeContent}>
         {/* Header row */}
         <div className={nodeHeader}>
-          <span className="text-sm shrink-0">{'\u{1F4AD}'}</span>
+          <span className="text-sm shrink-0">{data.nodeType === "text" ? '\u{1F642}' : '\u{1F4AD}'}</span>
           <span className={cn(
             nodeLabel,
             isPlanMode ? "text-accent-cyan" : "text-muted-foreground",
           )}>
-            Thinking
+            {data.nodeType === "text" ? "Assistant" : "Thinking"}
           </span>
           {isPlanMode && (
             <span className="text-[9px] text-accent-cyan font-medium px-[5px] py-px rounded-[3px] bg-accent-cyan/12">
@@ -85,7 +85,7 @@ export const ThinkingNode = memo(function ThinkingNode({ data, selected }: NodeP
         </div>
 
         {/* Truncated content */}
-        <div className={cn("text-xs text-muted-foreground leading-normal italic", truncate2)}>
+        <div className={cn("text-[12px] text-muted-foreground leading-normal italic", truncate2)}>
           {data.content || data.label || '(thinking...)'}
         </div>
       </div>

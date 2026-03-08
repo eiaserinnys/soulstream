@@ -68,7 +68,20 @@ function collectMessages(
     if (msg) out.push(msg);
   }
 
-  for (const child of node.children) {
+  // result 노드가 complete 보다 먼저 오는 경우를 보정:
+  // complete → result 순서가 되도록 children을 정렬 (해당 노드가 있을 때만)
+  const children = node.children;
+  const needsSort = children.some((c) => c.type === "result") &&
+    children.some((c) => c.type === "complete");
+  const ordered = needsSort
+    ? [...children].sort((a, b) => {
+        if (a.type === "result" && b.type === "complete") return 1;
+        if (a.type === "complete" && b.type === "result") return -1;
+        return 0;
+      })
+    : children;
+
+  for (const child of ordered) {
     collectMessages(child, out);
   }
 }
@@ -128,17 +141,15 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
     case "tool":
     case "tool_use": {
       const n = node as ToolNode;
+      const durationStr = n.durationMs
+        ? `(${(n.durationMs / 1000).toFixed(1)}s)`
+        : "";
       const status = n.completed
         ? n.isError
           ? "error"
-          : "done"
+          : ""
         : "running";
-      const durationStr = n.durationMs
-        ? `${(n.durationMs / 1000).toFixed(1)}s`
-        : "";
-      const content = durationStr
-        ? `${n.toolName}  ${status}  ${durationStr}`
-        : `${n.toolName}  ${status}`;
+      const content = [n.toolName, status, durationStr].filter(Boolean).join("  ");
 
       return {
         id: n.id,
