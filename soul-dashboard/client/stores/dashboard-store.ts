@@ -130,6 +130,9 @@ export interface DashboardActions {
   // SSE 이벤트 처리
   processEvent: (event: SoulSSEEvent, eventId: number) => void;
 
+  // SSE 이벤트 배치 처리 (히스토리 리플레이 최적화: N개 이벤트를 트리에 적용 후 set() 1회)
+  processEvents: (events: Array<{ event: SoulSSEEvent; eventId: number }>) => void;
+
   // 낙관적 세션 추가 (세션 생성 직후 즉시 목록 반영)
   addOptimisticSession: (agentSessionId: string, prompt: string) => void;
 
@@ -409,6 +412,102 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
               : {}),
           });
         }
+      },
+
+      // --- SSE 이벤트 배치 처리 ---
+      // 히스토리 리플레이 최적화: N개 이벤트의 트리 변경을 수행 후 set() 1회만 호출.
+      // 개별 processEvent가 매번 set()을 호출하는 것과 달리,
+      // 972개 이벤트 → set() 1회로 렌더 비용을 O(N)에서 O(1)로 줄입니다.
+
+      processEvents: (events) => {
+        if (events.length === 0) return;
+
+        const state = get();
+        const ctx = state.processingCtx;
+        let root = state.tree;
+        let updated = false;
+        let maxEventId = state.lastEventId;
+        let sessionsUpdate: { sessions: SessionSummary[] } | Record<string, never> = {};
+        const notifications: SoulSSEEvent[] = [];
+
+        for (const { event, eventId } of events) {
+          if (eventId > maxEventId) maxEventId = eventId;
+
+          // history_sync 이벤트
+          if (event.type === "history_sync") {
+            ctx.historySynced = true;
+            const syncEvent = event as HistorySyncEvent;
+
+            if (syncEvent.status && state.activeSessionKey) {
+              const sessions = sessionsUpdate.sessions ?? state.sessions;
+              const idx = sessions.findIndex(
+                (s) => s.agentSessionId === state.activeSessionKey,
+              );
+              if (idx >= 0 && sessions[idx].status !== syncEvent.status) {
+                const updatedSessions = [...sessions];
+                updatedSessions[idx] = {
+                  ...updatedSessions[idx],
+                  status: syncEvent.status as SessionStatus,
+                };
+                sessionsUpdate = { sessions: updatedSessions };
+              }
+            }
+            continue;
+          }
+
+          // root 보장
+          if (NEEDS_ROOT.has(event.type)) {
+            root = ensureRoot(root, ctx);
+          }
+
+          // 노드 생성/배치/업데이트
+          const node = createNodeFromEvent(event, eventId);
+          if (node) {
+            placeInTree(node, event, eventId, ctx, root!);
+            updated = true;
+          } else if (event.type === "text_start") {
+            if (handleTextStart(event as TextStartEvent, eventId, ctx, root!)) {
+              updated = true;
+            }
+          } else {
+            if (applyUpdate(event, eventId, ctx, root)) {
+              updated = true;
+            }
+          }
+
+          // 세션 상태 갱신 (히스토리 리플레이 중에는 억제)
+          if (ctx.historySynced) {
+            const derivedStatus = deriveSessionStatus(event);
+            if (derivedStatus && state.activeSessionKey) {
+              const sessions = sessionsUpdate.sessions ?? state.sessions;
+              const idx = sessions.findIndex(
+                (s) => s.agentSessionId === state.activeSessionKey,
+              );
+              if (idx >= 0 && sessions[idx].status !== derivedStatus) {
+                const updatedSessions = [...sessions];
+                updatedSessions[idx] = {
+                  ...updatedSessions[idx],
+                  status: derivedStatus,
+                };
+                sessionsUpdate = { sessions: updatedSessions };
+              }
+            }
+
+            if (shouldNotify(event)) {
+              notifications.push(event);
+            }
+          }
+        }
+
+        // 배치 전체에 대해 set() 1회만 호출
+        set({
+          ...(updated ? { tree: root, treeVersion: state.treeVersion + 1 } : {}),
+          lastEventId: maxEventId,
+          ...sessionsUpdate,
+          ...(notifications.length > 0
+            ? { pendingNotifications: [...state.pendingNotifications, ...notifications] }
+            : {}),
+        });
       },
 
       // --- 낙관적 세션 추가 ---
