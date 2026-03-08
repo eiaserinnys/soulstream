@@ -17,6 +17,7 @@ import { InterventionNode } from './InterventionNode';
 export const nodeTypes: NodeTypes = {
   user: UserNode,
   thinking: ThinkingNode,
+  text: ThinkingNode,
   tool_call: ToolCallNode,
   response: ResponseNode,
   system: SystemNode,

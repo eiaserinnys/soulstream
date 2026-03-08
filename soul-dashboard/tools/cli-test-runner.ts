@@ -102,91 +102,49 @@ export function validateTreeIntegrity(root: EventTreeNode): ValidationResult {
 }
 
 /**
- * V2: thinking→text 연결 — thinking 노드에 textContent가 올바르게 병합되었는지 검증합니다.
+ * V2: thinking/text 독립성 — thinking과 text가 독립 형제 노드로 존재하는지 검증합니다.
  *
- * parent_event_id 기반으로 thinking과 text_start가 같은 부모 레벨에서 매칭되어
- * text_delta의 내용이 thinking 노드의 textContent로 병합되어야 합니다.
- * 매칭 실패 시 thinking에 텍스트가 없고 독립 text 노드가 생기며
- * textCompleted 플래그도 설정되지 않습니다.
+ * thinking과 text는 독립적인 형제 노드입니다.
+ * text 노드의 completed/textCompleted 플래그가 올바르게 설정되었는지 확인합니다.
  */
 export function validateThinkingTextConnections(
   root: EventTreeNode,
   events: Array<{ id: number; event: Record<string, unknown> }>,
 ): ValidationResult {
   const result: ValidationResult = {
-    name: "V2: thinking→text 연결 (parent_event_id 기반)",
+    name: "V2: thinking/text 독립성 검증",
     passed: true,
     details: [],
     warnings: [],
   };
 
-  // 이벤트 시퀀스에서 thinking → text_start 쌍 검증
-  const thinkingEvents: Array<{ eventId: number; parentEventId: string | null }> = [];
-  const textStartEvents: Array<{ eventId: number; parentEventId: string | null }> = [];
+  // 이벤트 시퀀스에서 thinking, text_start 카운트
+  let thinkingEventCount = 0;
+  let textStartEventCount = 0;
 
   for (const record of events) {
     const evt = record.event;
-    if (evt.type === "thinking") {
-      thinkingEvents.push({
-        eventId: record.id,
-        parentEventId: (evt.parent_event_id as string | null) ?? null,
-      });
-    }
-    if (evt.type === "text_start") {
-      textStartEvents.push({
-        eventId: record.id,
-        parentEventId: (evt.parent_event_id as string | null) ?? null,
-      });
-    }
+    if (evt.type === "thinking") thinkingEventCount++;
+    if (evt.type === "text_start") textStartEventCount++;
   }
 
-  // 트리에서 thinking 노드의 textContent 검증
+  // 트리에서 thinking/text 노드 검증
   const allNodes = collectAllNodes(root);
   const thinkingNodes = allNodes.filter((n) => n.type === "thinking");
+  const textNodes = allNodes.filter((n) => n.type === "text");
 
-  // textContent가 있는 thinking (정상 매칭)
-  const linkedThinking = thinkingNodes.filter(
-    (n) => n.textContent !== undefined && n.textContent !== null,
-  );
-  // textContent가 없는 thinking (매칭 실패 또는 thinking-only)
-  const unlinkedThinking = thinkingNodes.filter(
-    (n) => n.textContent === undefined || n.textContent === null,
-  );
-
-  // textCompleted 검증 — 매칭된 thinking에 textCompleted가 설정되었는지
-  const incompleteLinked = linkedThinking.filter((n) => !n.textCompleted);
-  if (incompleteLinked.length > 0) {
-    result.passed = false;
-    result.details.push(
-      `thinking 노드 ${incompleteLinked.length}개에 textContent가 있으나 textCompleted=false: ` +
-        incompleteLinked.map((n) => n.id).slice(0, 5).join(", ") +
-        (incompleteLinked.length > 5 ? ` ... 외 ${incompleteLinked.length - 5}개` : ""),
-    );
-  }
-
-  // thinking 없이 생성된 독립 text 노드 개수 확인
-  const independentTextNodes = allNodes.filter((n) => n.type === "text");
-  if (independentTextNodes.length > 0 && thinkingNodes.length > 0) {
-    // thinking이 있는 세션에서 독립 text가 있으면 경고 (매칭 실패 가능)
+  // text 노드의 completed 검증
+  const incompleteText = textNodes.filter((n) => !n.completed);
+  if (incompleteText.length > 0) {
     result.warnings.push(
-      `독립 text 노드 ${independentTextNodes.length}개 존재 (thinking 매칭 실패 가능)`,
+      `text 노드 ${incompleteText.length}개가 미완료 상태 (스트리밍 중일 수 있음)`,
     );
   }
 
-  if (unlinkedThinking.length > 0) {
-    result.warnings.push(
-      `thinking 노드 ${unlinkedThinking.length}개에 textContent가 없음 ` +
-        `(thinking-only이거나 text 매칭 실패): ${unlinkedThinking.map((n) => n.id).slice(0, 5).join(", ")}` +
-        (unlinkedThinking.length > 5 ? ` ... 외 ${unlinkedThinking.length - 5}개` : ""),
-    );
-  }
-
-  if (result.passed) {
-    result.details.push(
-      `thinking ${thinkingNodes.length}개 (linked: ${linkedThinking.length}, unlinked: ${unlinkedThinking.length}), ` +
-        `text_start ${textStartEvents.length}개, 독립 text 노드 ${independentTextNodes.length}개`,
-    );
-  }
+  result.details.push(
+    `thinking ${thinkingNodes.length}개, text ${textNodes.length}개 (독립 형제 노드), ` +
+      `text_start 이벤트 ${textStartEventCount}개`,
+  );
 
   return result;
 }

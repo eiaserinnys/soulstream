@@ -4,7 +4,8 @@
  * placeInTree: 생성된 노드를 이벤트 필드 기반으로 트리에 삽입
  * resolveParent: parent_event_id로 부모 노드를 결정
  *
- * Phase 6: toolUseMap 삭제, nodeMap 통합. resolveParent 간소화.
+ * Phase 7: thinking/text 분리. lastThinkingByParent 삭제.
+ *   thinking과 text는 독립 형제 노드로 트리에 배치된다.
  */
 
 import type {
@@ -42,9 +43,8 @@ export function resolveParent(
 /**
  * 생성된 노드를 트리에 배치하고 필요한 Map에 등록합니다.
  *
- * 이벤트 타입별 분기를 최소화하되, 현재 코드의 행위를 100% 보존합니다.
  * - 턴 루트(user_message, intervention): root.children에 추가, currentTurnNodeId 갱신
- * - thinking: resolveParent로 부모 결정, lastThinkingByParent 등록
+ * - thinking: resolveParent로 부모 결정
  * - tool_start: resolveParent로 부모 결정, nodeMap에 tool_use_id 등록
  * - compact/complete/error: 턴 루트 또는 root에 추가
  * - result: resolveParent로 부모 결정
@@ -71,10 +71,6 @@ export function placeInTree(
     case "thinking": {
       const e = event as ThinkingEvent;
       const parent = resolveParent(e.parent_event_id, ctx, root);
-      // 같은 parent 레벨의 후속 text_start와 매칭하기 위해 등록
-      // "" = root 레벨 (서브에이전트 밖), 그 외 = 해당 서브에이전트의 parent_event_id
-      const parentKey = e.parent_event_id || "";
-      ctx.lastThinkingByParent.set(parentKey, node);
       parent.children.push(node);
       break;
     }
@@ -121,12 +117,8 @@ export function placeInTree(
 /**
  * text_start 이벤트를 처리합니다.
  *
- * - thinking 매칭: 같은 parent 레벨에 thinking 노드가 존재하면 텍스트를 thinking에 병합
- * - 독립 text 노드: thinking 없이 text만 온 경우 독립 text 노드를 생성하여 트리에 배치
- *
- * node-factory의 applyUpdate와 분리된 이유:
- * text_start는 조건에 따라 노드 생성 + 트리 삽입을 수행하므로
- * tree-placer의 책임에 해당합니다.
+ * 항상 독립 TextNode를 생성하여 트리에 배치합니다.
+ * thinking과 text는 독립적인 형제 노드입니다.
  */
 export function handleTextStart(
   event: TextStartEvent,
@@ -134,20 +126,10 @@ export function handleTextStart(
   ctx: ProcessingContext,
   root: EventTreeNode,
 ): boolean {
-  const parentKey = event.parent_event_id || "";
-  const thinkingNode = ctx.lastThinkingByParent.get(parentKey);
-
-  if (thinkingNode) {
-    // 같은 parent 레벨에 thinking 노드 존재 → 텍스트를 thinking에 병합
-    ctx.lastThinkingByParent.delete(parentKey); // 1:1 매칭 후 해제
-    ctx.activeTextTarget = thinkingNode as TextTargetNode;
-  } else {
-    // thinking 없이 text만 온 경우 → 독립 text 노드 생성
-    const textParent = resolveParent(event.parent_event_id, ctx, root);
-    const textNode = makeNode(`text-${eventId}`, "text", "");
-    registerNode(ctx, textNode);
-    textParent.children.push(textNode);
-    ctx.activeTextTarget = textNode as TextTargetNode;
-  }
+  const textParent = resolveParent(event.parent_event_id, ctx, root);
+  const textNode = makeNode(`text-${eventId}`, "text", "");
+  registerNode(ctx, textNode);
+  textParent.children.push(textNode);
+  ctx.activeTextTarget = textNode as TextTargetNode;
   return true;
 }
