@@ -211,7 +211,7 @@ export function DashboardLayout() {
       {/* Top bar */}
       <header className="flex items-center justify-between px-4 h-10 border-b border-border bg-popover shrink-0">
         <div className="flex items-center gap-3">
-          <span className="text-[13px] font-semibold text-muted-foreground tracking-[0.02em]">
+          <span className="text-[14px] font-semibold text-muted-foreground tracking-[0.02em]">
             Soul Dashboard
           </span>
         </div>

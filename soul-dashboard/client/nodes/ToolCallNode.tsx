@@ -1,7 +1,7 @@
 /**
  * ToolCallNode - 도구 호출 노드
  *
- * 도구 이름을 강조 표시하고, 입력 파라미터를 축약하여 보여줍니다.
+ * 헤더에 도구 이름(대문자)을 표시하고, 입력 파라미터를 2줄로 보여줍니다.
  * streaming 상태(결과 대기 중)일 때 pulsing border를 표시합니다.
  * 플랜 모드 진입/종료 노드는 시안 계열로 시각적 구분됩니다.
  */
@@ -10,7 +10,7 @@ import { memo, useCallback } from 'react';
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import type { GraphNodeData } from '../lib/layout-engine';
 import { cn } from '../lib/cn';
-import { nodeBase, nodeContent, nodeHeader, nodeLabel, handleStyle, collapseButton } from './node-styles';
+import { nodeBase, nodeContent, nodeHeader, nodeLabel, handleStyle, collapseButton, truncate2 } from './node-styles';
 import { useDashboardStore } from '../stores/dashboard-store';
 
 type ToolCallNodeType = Node<GraphNodeData, 'tool_call'>;
@@ -18,11 +18,25 @@ type ToolCallNodeType = Node<GraphNodeData, 'tool_call'>;
 const ACCENT = '#f59e0b';
 const PLAN_ACCENT = '#06b6d4';
 
-function truncateInput(input?: Record<string, unknown>): string {
+/** 도구별 입력 파라미터를 읽기 쉬운 형태로 변환 */
+function formatInputPreview(toolName: string | undefined, input?: Record<string, unknown>): string {
   if (!input) return '';
-  const str = JSON.stringify(input);
-  if (str.length <= 80) return str;
-  return str.slice(0, 77) + '...';
+  const name = toolName ?? '';
+
+  if (name === 'Bash' && typeof input.command === 'string') {
+    return input.command;
+  }
+  if (name === 'Read' && typeof input.file_path === 'string') {
+    return input.file_path;
+  }
+
+  // 기타 도구: 첫 번째 키의 값이 문자열이면 그대로, 아니면 JSON
+  const keys = Object.keys(input);
+  if (keys.length > 0) {
+    const firstValue = input[keys[0]];
+    if (typeof firstValue === 'string') return firstValue;
+  }
+  return JSON.stringify(input);
 }
 
 /** 도구 카테고리별 설정 */
@@ -52,6 +66,27 @@ export const ToolCallNode = memo(function ToolCallNode({ data, selected }: NodeP
     ? PLAN_ACCENT
     : categoryConfig?.color ?? ACCENT;
 
+  // 상태 아이콘 결정
+  const isCompleted = !isStreaming;
+  const statusIcon = isPlanEntry
+    ? '\u{1F4CB}'
+    : isPlanExit
+      ? '\u{2705}'
+      : categoryConfig?.icon
+        ? categoryConfig.icon
+        : isCompleted && data.isError
+          ? '\u{274C}'
+          : isCompleted
+            ? '\u{2705}'
+            : '\u{1F528}';
+
+  // 헤더 라벨 텍스트
+  const headerLabel = isPlanEntry
+    ? 'Plan Mode'
+    : isPlanExit
+      ? 'Plan Exit'
+      : (data.toolName ?? 'unknown').toUpperCase();
+
   return (
     <div
       data-testid="tool-call-node"
@@ -78,13 +113,13 @@ export const ToolCallNode = memo(function ToolCallNode({ data, selected }: NodeP
         {/* Header row */}
         <div className={nodeHeader}>
           <span className="text-sm shrink-0">
-            {isPlanEntry ? '\u{1F4CB}' : isPlanExit ? '\u{2705}' : categoryConfig?.icon ?? '\u{1F527}'}
+            {statusIcon}
           </span>
           <span className={cn(
             nodeLabel,
             (isPlanEntry || isPlanExit) ? "text-accent-cyan" : "text-muted-foreground",
           )}>
-            {isPlanEntry ? 'Plan Mode' : isPlanExit ? 'Plan Exit' : 'Tool Call'}
+            {headerLabel}
           </span>
           {/* 카테고리 배지 (SKILL / AGENT) */}
           {categoryConfig && !isPlanEntry && !isPlanExit && (
@@ -117,19 +152,12 @@ export const ToolCallNode = memo(function ToolCallNode({ data, selected }: NodeP
           )}
         </div>
 
-        {/* Tool name */}
-        <div
-          className="text-[13px] text-foreground font-semibold mb-1 truncate font-mono"
-        >
-          {data.toolName || 'unknown'}
-        </div>
-
-        {/* Truncated input params */}
+        {/* Input params (2-line clamp) */}
         {data.toolInput && (
           <div
-            className="text-[11px] text-muted-foreground truncate font-mono"
+            className={cn("text-[11px] text-muted-foreground font-mono whitespace-pre-wrap", truncate2)}
           >
-            {truncateInput(data.toolInput)}
+            {formatInputPreview(data.toolName, data.toolInput)}
           </div>
         )}
       </div>

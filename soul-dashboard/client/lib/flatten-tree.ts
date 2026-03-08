@@ -28,6 +28,10 @@ export interface ChatMessage {
   toolName?: string;
   toolDurationMs?: number;
   isError?: boolean;
+  /** tool 전용: 도구 입력 파라미터 */
+  toolInput?: Record<string, unknown>;
+  /** tool 전용: 도구 실행 결과 */
+  toolResult?: string;
   /** text/thinking 전용: 스트리밍 중 여부 */
   isStreaming?: boolean;
   /** result 전용 */
@@ -144,6 +148,8 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
         toolName: n.toolName,
         toolDurationMs: n.durationMs,
         isError: n.isError,
+        toolInput: n.toolInput,
+        toolResult: n.toolResult,
         treeNodeId: n.id,
         treeNodeType: n.type,
       };
