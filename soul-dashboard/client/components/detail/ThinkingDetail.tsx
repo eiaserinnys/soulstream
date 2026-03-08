@@ -13,11 +13,11 @@ export function ThinkingDetail({ card }: { card: ThinkingNode | TextNode }) {
       {/* Header */}
       <div className="flex items-center gap-2">
         <span className="text-base">{"\u{1F4AD}"}</span>
-        <div className="text-[11px] text-accent-purple uppercase tracking-[0.05em] font-semibold">
+        <div className="text-[12px] text-accent-purple uppercase tracking-[0.05em] font-semibold">
           Thinking
         </div>
         {!card.completed && (
-          <span className="ml-auto flex items-center gap-1.5 text-[11px] text-accent-purple">
+          <span className="ml-auto flex items-center gap-1.5 text-[12px] text-accent-purple">
             <span className="w-1.5 h-1.5 rounded-full bg-accent-purple animate-[pulse_2s_infinite]" />
             Streaming...
           </span>
@@ -26,14 +26,14 @@ export function ThinkingDetail({ card }: { card: ThinkingNode | TextNode }) {
 
       {/* Full text content */}
       <pre
-        className="text-[13px] text-foreground whitespace-pre-wrap break-words leading-relaxed m-0 font-mono"
+        className="text-[14px] text-foreground whitespace-pre-wrap break-words leading-relaxed m-0 font-mono"
       >
         {card.content || "(streaming...)"}
       </pre>
 
       {/* Character count */}
       {card.content && (
-        <div className="text-[10px] text-muted-foreground/60 text-right">
+        <div className="text-[11px] text-muted-foreground/60 text-right">
           {card.content.length.toLocaleString()} chars
         </div>
       )}
