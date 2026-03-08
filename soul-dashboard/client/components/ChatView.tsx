@@ -12,6 +12,7 @@ import { memo, useMemo, useRef, useEffect, useState, useCallback } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { flattenTree, type ChatMessage } from "../lib/flatten-tree";
 import { ChatInput } from "./ChatInput";
+import { ProfileAvatar } from "./ProfileAvatar";
 import { cn } from "../lib/cn";
 
 /** 스크롤 하단 판정 threshold (px) */
@@ -89,11 +90,31 @@ const CollapsibleContent = memo(function CollapsibleContent({
 // === Message Components ===
 
 const UserMessage = memo(function UserMessage({ msg }: { msg: ChatMessage }) {
+  const config = useDashboardStore((s) => s.dashboardConfig);
+  const userConfig = config?.user;
+  const displayName = userConfig && userConfig.name !== "USER"
+    ? `${userConfig.name}`
+    : "User";
+  const displayId = userConfig?.id ? `${userConfig.id}` : null;
+
   return (
     <div className="flex gap-2 px-3 py-1.5">
-      <span className="text-xs mt-0.5 shrink-0">{"\u{1F464}"}</span>
+      <ProfileAvatar
+        role="user"
+        hasPortrait={userConfig?.hasPortrait ?? false}
+        fallbackEmoji={"\u{1F464}"}
+      />
       <div className="flex-1 min-w-0">
-        <div className="text-[15px] font-bold text-accent-blue uppercase tracking-wide mb-0.5">User</div>
+        <div className="flex items-baseline gap-1.5 mb-0.5">
+          <span className="text-[15px] font-bold text-accent-blue uppercase tracking-wide">
+            {displayName}
+          </span>
+          {displayId && (
+            <span className="text-[11px] text-muted-foreground">
+              {displayId}
+            </span>
+          )}
+        </div>
         <div className="text-[15px] text-foreground whitespace-pre-wrap break-words">{msg.content}</div>
       </div>
     </div>
@@ -101,11 +122,31 @@ const UserMessage = memo(function UserMessage({ msg }: { msg: ChatMessage }) {
 });
 
 const InterventionMessage = memo(function InterventionMessage({ msg }: { msg: ChatMessage }) {
+  const config = useDashboardStore((s) => s.dashboardConfig);
+  const userConfig = config?.user;
+  const displayName = userConfig && userConfig.name !== "USER"
+    ? `${userConfig.name}`
+    : "Intervention";
+  const displayId = userConfig?.id ? `${userConfig.id}` : null;
+
   return (
     <div className="flex gap-2 px-3 py-1.5">
-      <span className="text-xs mt-0.5 shrink-0">{"\u270B"}</span>
+      <ProfileAvatar
+        role="user"
+        hasPortrait={userConfig?.hasPortrait ?? false}
+        fallbackEmoji={"\u270B"}
+      />
       <div className="flex-1 min-w-0">
-        <div className="text-[15px] font-bold text-accent-orange uppercase tracking-wide mb-0.5">Intervention</div>
+        <div className="flex items-baseline gap-1.5 mb-0.5">
+          <span className="text-[15px] font-bold text-accent-orange uppercase tracking-wide">
+            {displayName}
+          </span>
+          {displayId && (
+            <span className="text-[11px] text-muted-foreground">
+              {displayId}
+            </span>
+          )}
+        </div>
         <div className="text-[15px] text-foreground whitespace-pre-wrap break-words">{msg.content}</div>
       </div>
     </div>
@@ -116,9 +157,9 @@ const InterventionMessage = memo(function InterventionMessage({ msg }: { msg: Ch
 const ThinkingMessage = memo(function ThinkingMessage({ msg }: { msg: ChatMessage }) {
   return (
     <div className="flex gap-2 px-3 py-1.5">
-      <span className="text-xs mt-0.5 shrink-0">{"\u{1F4AD}"}</span>
+      <span className="w-8 shrink-0" />
       <div className="flex-1 min-w-0">
-        <CollapsibleContent content={msg.content} label="Thinking" />
+        <CollapsibleContent content={msg.content} label={"\u{1F4AD} Thinking"} />
       </div>
     </div>
   );
@@ -126,10 +167,31 @@ const ThinkingMessage = memo(function ThinkingMessage({ msg }: { msg: ChatMessag
 
 /** text 노드: 일반 텍스트 표시 */
 const AssistantMessage = memo(function AssistantMessage({ msg }: { msg: ChatMessage }) {
+  const config = useDashboardStore((s) => s.dashboardConfig);
+  const assistantConfig = config?.assistant;
+  const displayName = assistantConfig && assistantConfig.name !== "ASSISTANT"
+    ? `${assistantConfig.name}`
+    : "Assistant";
+  const displayId = assistantConfig?.id ? `${assistantConfig.id}` : null;
+
   return (
     <div className="flex gap-2 px-3 py-1.5">
-      <span className="text-xs mt-0.5 shrink-0">{"\u{1F916}"}</span>
+      <ProfileAvatar
+        role="assistant"
+        hasPortrait={assistantConfig?.hasPortrait ?? false}
+        fallbackEmoji={"\u{1F916}"}
+      />
       <div className="flex-1 min-w-0">
+        <div className="flex items-baseline gap-1.5 mb-0.5">
+          <span className="text-[15px] font-bold text-foreground uppercase tracking-wide">
+            {displayName}
+          </span>
+          {displayId && (
+            <span className="text-[11px] text-muted-foreground">
+              {displayId}
+            </span>
+          )}
+        </div>
         <div className="text-[15px] text-foreground whitespace-pre-wrap break-words">
           {msg.content}
           {msg.isStreaming && <span className="inline-block w-1.5 h-3.5 bg-foreground/60 ml-0.5 animate-pulse" />}
@@ -185,26 +247,27 @@ const ToolCallGroup = memo(function ToolCallGroup({ messages }: { messages: Chat
   const allDone = messages.every((m) => m.toolResult !== undefined || m.toolDurationMs !== undefined);
 
   return (
-    <div className="px-3 py-0.5">
-      <button
-        onClick={() => setExpanded((v) => !v)}
-        className="text-[13px] text-muted-foreground hover:text-foreground flex items-center gap-1.5"
-      >
-        <span>{"\u{1F527}"}</span>
-        <span className="text-[11px]">{expanded ? "\u25BC" : "\u25B6"}</span>
-        <span className="font-medium">
-          Tool Calls ({messages.length})
-        </span>
-        {hasError && <span className="text-accent-red text-[10px]">{"\u25CF"} error</span>}
-        {!hasError && allDone && <span className="text-success text-[10px]">{"\u25CF"} done</span>}
-      </button>
-      {expanded && (
-        <div className="ml-4 mt-1 space-y-0.5">
-          {messages.map((msg) => (
-            <ToolCallItem key={msg.id} msg={msg} />
-          ))}
-        </div>
-      )}
+    <div className="flex gap-2 px-3 py-0.5">
+      <span className="w-8 shrink-0" />
+      <div className="flex-1 min-w-0">
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="text-[13px] text-muted-foreground hover:text-foreground flex items-center gap-1.5"
+        >
+          <span>{"\u{1F527}"}</span>
+          <span className="text-[11px]">{expanded ? "\u25BC" : "\u25B6"}</span>
+          <span className="font-medium">Tool Calls ({messages.length})</span>
+          {hasError && <span className="text-accent-red text-[10px]">{"\u25CF"} error</span>}
+          {!hasError && allDone && <span className="text-success text-[10px]">{"\u25CF"} done</span>}
+        </button>
+        {expanded && (
+          <div className="ml-4 mt-1 space-y-0.5">
+            {messages.map((msg) => (
+              <ToolCallItem key={msg.id} msg={msg} />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 });
@@ -213,14 +276,14 @@ const ToolCallGroup = memo(function ToolCallGroup({ messages }: { messages: Chat
 const ToolMessage = memo(function ToolMessage({ msg }: { msg: ChatMessage }) {
   return (
     <div className="flex gap-2 px-3 py-0.5">
-      <span className="text-xs mt-0.5 shrink-0">{"\u{1F527}"}</span>
-      <div
-        className={cn(
-          "text-[12px] font-mono truncate",
-          msg.isError ? "text-accent-red" : "text-muted-foreground",
-        )}
-      >
-        {msg.content}
+      <span className="w-8 shrink-0" />
+      <div className={cn(
+        "flex-1 min-w-0 flex items-center gap-1",
+        "text-[12px] font-mono truncate",
+        msg.isError ? "text-accent-red" : "text-muted-foreground",
+      )}>
+        <span>{"\u{1F527}"}</span>
+        <span className="truncate">{msg.content}</span>
       </div>
     </div>
   );
@@ -235,26 +298,25 @@ const SystemMessage = memo(function SystemMessage({ msg }: { msg: ChatMessage })
   if (isComplete && msg.content && msg.content !== "Turn completed") {
     return (
       <div className="flex gap-2 px-3 py-1.5">
-        <span className="text-xs mt-0.5 shrink-0">{"\u2705"}</span>
+        <span className="w-8 shrink-0" />
         <div className="flex-1 min-w-0">
-          <CollapsibleContent content={msg.content} label="Complete" />
+          <CollapsibleContent content={msg.content} label={"\u2705 Complete"} />
         </div>
       </div>
     );
   }
 
   return (
-    <div className="px-3 py-1">
-      <div
-        className={cn(
-          "text-[12px] px-2 py-1 rounded text-center",
-          isError
-            ? "text-accent-red bg-accent-red/8"
-            : isResult
-              ? "text-success bg-success/8"
-              : "text-muted-foreground bg-input",
-        )}
-      >
+    <div className="flex gap-2 px-3 py-1">
+      <span className="w-8 shrink-0" />
+      <div className={cn(
+        "flex-1 min-w-0 text-[12px] px-2 py-1 rounded text-center",
+        isError
+          ? "text-accent-red bg-accent-red/8"
+          : isResult
+            ? "text-success bg-success/8"
+            : "text-muted-foreground bg-input",
+      )}>
         {msg.content}
       </div>
     </div>

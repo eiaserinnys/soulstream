@@ -159,7 +159,7 @@ export function PromptComposer() {
           }
           disabled={sending}
           rows={3}
-          className="w-full bg-input border border-input rounded-lg py-3.5 px-4 text-sm text-foreground font-sans resize-none outline-none min-h-20 max-h-[200px] leading-normal transition-colors duration-150 focus:border-accent-blue/40"
+          className="w-full bg-input border border-input rounded-lg py-3.5 px-4 text-[15px] text-foreground font-sans resize-none outline-none min-h-20 max-h-[200px] leading-normal transition-colors duration-150 focus:border-accent-blue/40"
         />
 
         {/* Actions */}

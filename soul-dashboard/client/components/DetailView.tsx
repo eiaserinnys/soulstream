@@ -107,19 +107,19 @@ function EventNodeDetail({
   const isUser = data.nodeType === "user";
 
   return (
-    <div className="p-4">
-      {/* Type badge */}
-      <div className="flex items-center gap-1.5 mb-3">
-        <span className="text-sm">{isUser ? "\u{1F464}" : "\u270B"}</span>
-        <span
+    <div className="p-4 flex flex-col gap-3">
+      {/* Header */}
+      <div className="flex items-center gap-2">
+        <span className="text-base">{isUser ? "\u{1F464}" : "\u270B"}</span>
+        <div
           className={`text-[12px] font-semibold uppercase tracking-[0.05em] ${isUser ? "text-accent-blue" : "text-accent-orange"}`}
         >
           {isUser ? "User Message" : "Intervention"}
-        </span>
+        </div>
       </div>
 
-      {/* Label */}
-      <div className="mb-3">
+      {/* From */}
+      <div>
         <SectionLabel>From</SectionLabel>
         <div className="text-[14px] text-foreground font-medium">
           {data.label}
@@ -127,10 +127,19 @@ function EventNodeDetail({
       </div>
 
       {/* Full content */}
-      <div>
-        <SectionLabel>Message</SectionLabel>
-        <CodeBlock maxHeight={500}>{data.content || "(empty)"}</CodeBlock>
-      </div>
+      <pre
+        className="text-[14px] text-foreground whitespace-pre-wrap break-words leading-relaxed m-0"
+        style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" }}
+      >
+        {data.content || "(empty)"}
+      </pre>
+
+      {/* Character count */}
+      {data.content && (
+        <div className="text-[11px] text-muted-foreground/60 text-right">
+          {data.content.length.toLocaleString()} chars
+        </div>
+      )}
     </div>
   );
 }
