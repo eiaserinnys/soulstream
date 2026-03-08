@@ -78,3 +78,89 @@ class TestSetSessionBroadcaster:
         set_session_broadcaster(None)
         with pytest.raises(RuntimeError):
             get_session_broadcaster()
+
+
+import asyncio
+
+
+class TestSessionBroadcasterBroadcast:
+    """broadcast 메서드 테스트"""
+
+    @pytest.fixture
+    def broadcaster(self):
+        return SessionBroadcaster()
+
+    async def test_broadcast_to_single_listener(self, broadcaster):
+        """단일 리스너에게 이벤트 브로드캐스트"""
+        queue = asyncio.Queue()
+        await broadcaster.add_listener(queue)
+
+        event = {"type": "test", "data": "hello"}
+        count = await broadcaster.broadcast(event)
+
+        assert count == 1
+        assert queue.get_nowait() == event
+
+    async def test_broadcast_to_multiple_listeners(self, broadcaster):
+        """여러 리스너에게 이벤트 브로드캐스트"""
+        queue1 = asyncio.Queue()
+        queue2 = asyncio.Queue()
+        await broadcaster.add_listener(queue1)
+        await broadcaster.add_listener(queue2)
+
+        event = {"type": "test", "data": "hello"}
+        count = await broadcaster.broadcast(event)
+
+        assert count == 2
+        assert queue1.get_nowait() == event
+        assert queue2.get_nowait() == event
+
+    async def test_broadcast_removes_full_queue_listener(self, broadcaster):
+        """큐가 가득 찬 리스너는 자동으로 제거된다"""
+        # maxsize=1로 제한된 큐 생성
+        full_queue = asyncio.Queue(maxsize=1)
+        normal_queue = asyncio.Queue()
+
+        await broadcaster.add_listener(full_queue)
+        await broadcaster.add_listener(normal_queue)
+
+        # 첫 번째 이벤트로 full_queue를 채움
+        full_queue.put_nowait({"type": "fill"})
+
+        assert broadcaster.listener_count == 2
+
+        # 두 번째 브로드캐스트 - full_queue는 가득 참
+        event = {"type": "test", "data": "hello"}
+        count = await broadcaster.broadcast(event)
+
+        # normal_queue만 성공, full_queue는 제거됨
+        assert count == 1
+        assert broadcaster.listener_count == 1
+        assert normal_queue.get_nowait() == event
+
+    async def test_broadcast_removes_multiple_full_queues(self, broadcaster):
+        """여러 개의 가득 찬 큐가 동시에 제거된다"""
+        full_queue1 = asyncio.Queue(maxsize=1)
+        full_queue2 = asyncio.Queue(maxsize=1)
+        normal_queue = asyncio.Queue()
+
+        await broadcaster.add_listener(full_queue1)
+        await broadcaster.add_listener(full_queue2)
+        await broadcaster.add_listener(normal_queue)
+
+        # 두 큐를 채움
+        full_queue1.put_nowait({"type": "fill"})
+        full_queue2.put_nowait({"type": "fill"})
+
+        assert broadcaster.listener_count == 3
+
+        event = {"type": "test"}
+        count = await broadcaster.broadcast(event)
+
+        assert count == 1
+        assert broadcaster.listener_count == 1
+
+    async def test_broadcast_empty_listeners(self, broadcaster):
+        """리스너가 없으면 0 반환"""
+        count = await broadcaster.broadcast({"type": "test"})
+        assert count == 0
