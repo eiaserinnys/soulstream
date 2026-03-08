@@ -9,11 +9,9 @@ import { memo } from 'react';
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import type { GraphNodeData } from '../lib/layout-engine';
 import { cn } from '../lib/cn';
-import { nodeBase, nodeHeader, truncate2, handleStyle } from './node-styles';
+import { nodeBase, nodeHeader, truncate2, handleStyle, NODE_COLORS } from './node-styles';
 
 type ResponseNodeType = Node<GraphNodeData, 'response'>;
-
-const ACCENT = '#10b981';
 
 export const ResponseNode = memo(function ResponseNode({ data, selected }: NodeProps<ResponseNodeType>) {
   const isStreaming = data.streaming;
@@ -25,23 +23,23 @@ export const ResponseNode = memo(function ResponseNode({ data, selected }: NodeP
         nodeBase,
         "bg-card border relative",
         selected
-          ? "border-accent-green shadow-[0_2px_12px_rgba(0,0,0,0.5),0_0_0_1px_rgba(16,185,129,0.27)]"
-          : "border-accent-green/25 shadow-[0_2px_12px_rgba(0,0,0,0.5)]",
+          ? "border-node-response shadow-[0_2px_12px_rgba(0,0,0,0.5)]"
+          : "border-node-response/25 shadow-[0_2px_12px_rgba(0,0,0,0.5)]",
       )}
     >
       {/* Left accent bar (wider for emphasis) */}
-      <div className="w-[5px] shrink-0 bg-accent-green rounded-l-lg" />
+      <div className="w-[5px] shrink-0 bg-node-response rounded-l-lg" />
 
       {/* Content area */}
       <div className="flex-1 px-3.5 py-3 min-w-0">
         {/* Header row */}
         <div className={cn(nodeHeader, "mb-2")}>
           <span className="text-sm shrink-0">{'\u{1F4AC}'}</span>
-          <span className="text-[13px] text-accent-green uppercase tracking-[0.05em] font-bold">
+          <span className="text-[13px] text-node-response uppercase tracking-[0.05em] font-bold">
             Response
           </span>
           {isStreaming && (
-            <span className="ml-auto w-1.5 h-1.5 rounded-full bg-accent-green shrink-0 animate-[pulse_2s_infinite]" />
+            <span className="ml-auto w-1.5 h-1.5 rounded-full bg-node-response shrink-0 animate-[pulse_2s_infinite]" />
           )}
         </div>
 
@@ -57,8 +55,8 @@ export const ResponseNode = memo(function ResponseNode({ data, selected }: NodeP
       )}
 
       {/* Handles */}
-      <Handle type="target" position={Position.Top} style={handleStyle(ACCENT)} />
-      <Handle type="source" position={Position.Bottom} style={handleStyle(ACCENT)} />
+      <Handle type="target" position={Position.Top} style={handleStyle(NODE_COLORS.response)} />
+      <Handle type="source" position={Position.Bottom} style={handleStyle(NODE_COLORS.response)} />
     </div>
   );
 });

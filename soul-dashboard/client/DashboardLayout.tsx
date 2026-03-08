@@ -13,6 +13,8 @@ import { NodeGraph } from "./components/NodeGraph";
 import { RightPanel } from "./components/RightPanel";
 import { PromptComposer } from "./components/PromptComposer";
 import { StorageModeToggleCompact } from "./components/StorageModeToggle";
+import { ThemeToggle } from "./components/ThemeToggle";
+import { initTheme } from "./hooks/useTheme";
 import { useSessionListProvider } from "./hooks/useSessionListProvider";
 import { useSessionProvider } from "./hooks/useSessionProvider";
 import { useNotification } from "./hooks/useNotification";
@@ -86,16 +88,21 @@ function DragHandle({
       <div
         className="absolute inset-y-0 -left-[3px] -right-[3px]"
         onMouseEnter={() => {
-          if (lineRef.current) lineRef.current.style.backgroundColor = "rgba(59, 130, 246, 0.5)";
+          if (lineRef.current) {
+            lineRef.current.style.backgroundColor = "var(--node-user)";
+            lineRef.current.style.opacity = "0.5";
+          }
         }}
         onMouseLeave={() => {
-          if (lineRef.current) lineRef.current.style.backgroundColor = "rgba(255,255,255,0.06)";
+          if (lineRef.current) {
+            lineRef.current.style.backgroundColor = "var(--border)";
+            lineRef.current.style.opacity = "1";
+          }
         }}
       >
         <div
           ref={lineRef}
-          className="absolute inset-y-0 left-[3px] w-px transition-colors duration-150"
-          style={{ backgroundColor: "rgba(255,255,255,0.06)" }}
+          className="absolute inset-y-0 left-[3px] w-px transition-colors duration-150 bg-border"
         />
       </div>
     </div>
@@ -146,6 +153,9 @@ export function DashboardLayout() {
   const { status: sseStatus } = useSessionProvider({
     sessionKey: activeSessionKey,
   });
+
+  // 테마 초기화 (localStorage → OS 설정 → dark 기본)
+  useEffect(() => { initTheme(); }, []);
 
   // 브라우저 알림 (완료/에러/인터벤션)
   useNotification();
@@ -220,6 +230,7 @@ export function DashboardLayout() {
           </span>
         </div>
         <div className="flex items-center gap-2">
+          <ThemeToggle />
           <StorageModeToggleCompact />
           <ConnectionBadge status={sseStatus} />
         </div>
