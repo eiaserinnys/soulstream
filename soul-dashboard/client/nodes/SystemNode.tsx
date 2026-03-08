@@ -9,16 +9,13 @@ import { memo } from 'react';
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import type { GraphNodeData } from '../lib/layout-engine';
 import { cn } from '../lib/cn';
-import { nodeBase, nodeBgDefault, nodeHeader, nodeLabel, truncate2, handleStyleSmall } from './node-styles';
+import { nodeBase, nodeBgDefault, nodeHeader, nodeLabel, truncate2, handleStyleSmall, NODE_COLORS } from './node-styles';
 
 type SystemNodeType = Node<GraphNodeData, 'system'>;
 
-const COLOR_NORMAL = '#6b7280';
-const COLOR_ERROR = '#ef4444';
-
 export const SystemNode = memo(function SystemNode({ data, selected }: NodeProps<SystemNodeType>) {
   const isError = data.isError ?? false;
-  const accent = isError ? COLOR_ERROR : COLOR_NORMAL;
+  const accent = isError ? NODE_COLORS.error : NODE_COLORS.system;
 
   return (
     <div
@@ -27,7 +24,7 @@ export const SystemNode = memo(function SystemNode({ data, selected }: NodeProps
         nodeBase, nodeBgDefault,
         "border shadow-[0_1px_4px_rgba(0,0,0,0.3)]",
         selected
-          ? isError ? "border-accent-red" : "border-muted-foreground"
+          ? isError ? "border-node-error" : "border-muted-foreground"
           : "border-border",
       )}
     >
@@ -44,7 +41,7 @@ export const SystemNode = memo(function SystemNode({ data, selected }: NodeProps
           <span className="text-sm shrink-0">{'\u2699\uFE0F'}</span>
           <span className={cn(
             nodeLabel,
-            isError ? "text-accent-red" : "text-muted-foreground",
+            isError ? "text-node-error" : "text-muted-foreground",
           )}>
             {data.label || 'System'}
           </span>

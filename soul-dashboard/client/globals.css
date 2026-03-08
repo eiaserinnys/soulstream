@@ -4,15 +4,36 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  /* Dashboard-specific accent colors */
-  --color-accent-blue: #3b82f6;
-  --color-accent-purple: #8b5cf6;
-  --color-accent-amber: #f59e0b;
-  --color-accent-green: #10b981;
-  --color-accent-cyan: #06b6d4;
-  --color-accent-red: #ef4444;
-  --color-accent-orange: #f97316;
-  --color-amber-600: #d97706;
+  /*
+   * Dashboard accent colors — mapped to node color CSS variables.
+   * Using var() here makes Tailwind v4 emit dynamic references
+   * in utility classes (e.g., bg-accent-blue → var(--node-user))
+   * so they respond to theme changes at runtime.
+   */
+  --color-accent-blue:   var(--node-user);
+  --color-accent-purple: var(--node-thinking);
+  --color-accent-amber:  var(--node-tool);
+  --color-accent-green:  var(--node-response);
+  --color-accent-cyan:   var(--node-plan);
+  --color-accent-red:    var(--node-error);
+  --color-accent-orange: var(--node-intervention);
+  --color-amber-600:     var(--amber-600);
+
+  /*
+   * Node accent colors — the single source of truth for node coloring.
+   * Resolved via :root / .dark overrides below.
+   * Light mode: original -500 level (vibrant, good contrast on white).
+   * Dark mode: custom muted palette (saturation ↓20-30%, lightness ↑8-12%).
+   */
+  --color-node-user: var(--node-user);
+  --color-node-response: var(--node-response);
+  --color-node-thinking: var(--node-thinking);
+  --color-node-plan: var(--node-plan);
+  --color-node-tool: var(--node-tool);
+  --color-node-skill: var(--node-skill);
+  --color-node-intervention: var(--node-intervention);
+  --color-node-error: var(--node-error);
+  --color-node-system: var(--node-system);
 
   /* Node dimensions (used by layout-engine, DO NOT CHANGE) */
   --node-width: 260px;
@@ -82,7 +103,7 @@
     border-radius: 3px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: var(--muted-foreground);
   }
 }
 
@@ -98,8 +119,8 @@
 }
 
 @keyframes tool-call-pulse {
-  0%, 100% { border-color: rgba(245, 158, 11, 0.3); }
-  50% { border-color: rgba(245, 158, 11, 0.7); }
+  0%, 100% { border-color: color-mix(in srgb, var(--node-tool) 30%, transparent); }
+  50% { border-color: color-mix(in srgb, var(--node-tool) 70%, transparent); }
 }
 
 @keyframes fadeIn {
@@ -110,39 +131,41 @@
 /* Component-level shimmer classes */
 @layer components {
   .shimmer-purple {
-    background: linear-gradient(90deg, transparent 0%, rgba(139, 92, 246, 0.06) 50%, transparent 100%);
+    background: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--node-thinking) 6%, transparent) 50%, transparent 100%);
     background-size: 200px 100%;
     animation: node-shimmer 1.5s infinite linear;
   }
   .shimmer-cyan {
-    background: linear-gradient(90deg, transparent 0%, rgba(6, 182, 212, 0.06) 50%, transparent 100%);
+    background: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--node-plan) 6%, transparent) 50%, transparent 100%);
     background-size: 200px 100%;
     animation: node-shimmer 1.5s infinite linear;
   }
   .shimmer-green {
-    background: linear-gradient(90deg, transparent 0%, rgba(16, 185, 129, 0.06) 50%, transparent 100%);
+    background: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--node-response) 6%, transparent) 50%, transparent 100%);
     background-size: 200px 100%;
     animation: node-shimmer 1.5s infinite linear;
   }
 
-  /* React Flow dark theme overrides */
+  /* React Flow theme-adaptive overrides */
   .react-flow__background {
     background-color: var(--background) !important;
   }
   .react-flow__controls button {
-    background: rgba(17, 24, 39, 0.95) !important;
+    background: var(--card) !important;
     border-color: var(--border) !important;
     color: var(--muted-foreground) !important;
     fill: var(--muted-foreground) !important;
   }
   .react-flow__controls button:hover {
-    background: rgba(31, 41, 55, 0.95) !important;
+    background: var(--muted) !important;
   }
   .react-flow__edge-path {
-    stroke: #4b5563 !important;
+    stroke: var(--muted-foreground) !important;
+    opacity: 0.4;
   }
   .react-flow__edge.animated .react-flow__edge-path {
-    stroke: var(--color-accent-blue) !important;
+    stroke: var(--node-user) !important;
+    opacity: 1;
   }
 }
 
@@ -157,7 +180,25 @@
   }
 }
 
+/* ============================================================
+ * Light mode (default)
+ * Node colors: original Tailwind -500 — vibrant on white bg.
+ * ============================================================ */
 :root {
+  /* Node accent palette (light) */
+  --node-user:         #3b82f6;  /* blue-500   */
+  --node-response:     #10b981;  /* emerald-500 */
+  --node-thinking:     #8b5cf6;  /* violet-500 */
+  --node-plan:         #06b6d4;  /* cyan-500   */
+  --node-tool:         #f59e0b;  /* amber-500  */
+  --node-skill:        #a855f7;  /* purple-500 */
+  --node-intervention: #f97316;  /* orange-500 */
+  --node-error:        #ef4444;  /* red-500    */
+  --node-system:       #6b7280;  /* gray-500   */
+
+  --amber-600:           #d97706;
+
+  /* Semantic tokens (light) */
   --accent: --alpha(var(--color-black) / 4%);
   --accent-foreground: var(--color-neutral-800);
   --background: var(--color-white);
@@ -185,7 +226,37 @@
   --warning-foreground: var(--color-amber-700);
 }
 
+/* ============================================================
+ * Dark mode
+ * Node colors: custom muted palette — lower saturation, raised
+ * lightness for comfortable viewing on near-black backgrounds.
+ *
+ * Design rationale (HSL adjustments from -500 baseline):
+ *   blue:    S 91→70%, L 60→68%  — less electric, still clearly blue
+ *   emerald: S 84→60%, L 39→52%  — biggest lift; -500 was too dark
+ *   violet:  S 91→65%, L 66→72%  — softer purple, less neon
+ *   cyan:    S 96→65%, L 42→52%  — toned down teal
+ *   amber:   S 93→75%, L 50→58%  — warmer, less glaring yellow
+ *   purple:  S 92→60%, L 65→72%  — gentle lavender
+ *   orange:  S 95→70%, L 53→60%  — warm terracotta
+ *   red:     S 84→65%, L 60→66%  — softer alert red
+ *   gray:    S  5→ 8%, L 47→55%  — slightly brighter for readability
+ * ============================================================ */
 .dark {
+  /* Node accent palette (dark — muted) */
+  --node-user:         hsl(217, 70%, 68%);   /* #7ba3e6 — muted blue    */
+  --node-response:     hsl(160, 60%, 52%);   /* #4db894 — muted emerald */
+  --node-thinking:     hsl(258, 65%, 72%);   /* #a18ae0 — muted violet  */
+  --node-plan:         hsl(189, 65%, 52%);   /* #3db5c9 — muted cyan    */
+  --node-tool:         hsl(38,  75%, 58%);   /* #d9a83a — muted amber   */
+  --node-skill:        hsl(271, 60%, 72%);   /* #b08ad6 — muted purple  */
+  --node-intervention: hsl(25,  70%, 60%);   /* #d0884a — muted orange  */
+  --node-error:        hsl(0,   65%, 66%);   /* #d47676 — muted red     */
+  --node-system:       hsl(220,  8%, 55%);   /* #868b94 — muted gray    */
+
+  --amber-600:           hsl(38, 65%, 48%);
+
+  /* Semantic tokens (dark) */
   --accent: --alpha(var(--color-white) / 4%);
   --accent-foreground: var(--color-neutral-100);
   --background: color-mix(in srgb, var(--color-neutral-950) 95%, var(--color-white));
