@@ -5,10 +5,26 @@
  * 노드 크기 260x84px은 layout-engine과 동기화되어 있으므로 절대 변경하지 않는다.
  */
 
+/**
+ * 노드 색상 CSS 변수 — globals.css의 :root / .dark에서 테마별 값이 결정된다.
+ * 컴포넌트는 이 상수를 통해 CSS 변수를 참조하므로 테마 전환 시 자동 적용된다.
+ */
+export const NODE_COLORS = {
+  user:         'var(--node-user)',
+  response:     'var(--node-response)',
+  thinking:     'var(--node-thinking)',
+  plan:         'var(--node-plan)',
+  tool:         'var(--node-tool)',
+  skill:        'var(--node-skill)',
+  intervention: 'var(--node-intervention)',
+  error:        'var(--node-error)',
+  system:       'var(--node-system)',
+} as const;
+
 /** 노드 기본 클래스 (260x84 고정, border-box) */
 export const nodeBase = "w-[260px] h-[84px] box-border rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.4)] flex overflow-hidden";
 
-/** 노드 배경 (기본 다크) */
+/** 노드 배경 (기본) */
 export const nodeBgDefault = "bg-card";
 
 /** 노드 콘텐츠 영역 */
@@ -29,7 +45,7 @@ export function handleStyle(color: string) {
     width: 8,
     height: 8,
     background: color,
-    border: '2px solid rgba(17, 24, 39, 0.95)',
+    border: '2px solid var(--card)',
   };
 }
 
@@ -39,7 +55,7 @@ export function handleStyleSmall(color: string) {
     width: 6,
     height: 6,
     background: color,
-    border: '2px solid rgba(17, 24, 39, 0.95)',
+    border: '2px solid var(--card)',
   };
 }
 

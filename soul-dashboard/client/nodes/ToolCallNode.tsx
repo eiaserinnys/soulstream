@@ -10,13 +10,10 @@ import { memo, useCallback } from 'react';
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import type { GraphNodeData } from '../lib/layout-engine';
 import { cn } from '../lib/cn';
-import { nodeBase, nodeContent, nodeHeader, nodeLabel, handleStyle, collapseButton, truncate2 } from './node-styles';
+import { nodeBase, nodeContent, nodeHeader, nodeLabel, handleStyle, collapseButton, truncate2, NODE_COLORS } from './node-styles';
 import { useDashboardStore } from '../stores/dashboard-store';
 
 type ToolCallNodeType = Node<GraphNodeData, 'tool_call'>;
-
-const ACCENT = '#f59e0b';
-const PLAN_ACCENT = '#06b6d4';
 
 /** 도구별 입력 파라미터를 읽기 쉬운 형태로 변환 */
 function formatInputPreview(toolName: string | undefined, input?: Record<string, unknown>): string {
@@ -39,10 +36,10 @@ function formatInputPreview(toolName: string | undefined, input?: Record<string,
   return JSON.stringify(input);
 }
 
-/** 도구 카테고리별 설정 */
+/** 도구 카테고리별 설정 — color는 CSS 변수를 참조 */
 const CATEGORY_CONFIG: Record<string, { label: string; color: string; icon: string }> = {
-  skill: { label: "SKILL", color: "#a855f7", icon: "\u{2728}" },
-  "sub-agent": { label: "AGENT", color: "#06b6d4", icon: "\u{1F916}" },
+  skill: { label: "SKILL", color: NODE_COLORS.skill, icon: "\u{2728}" },
+  "sub-agent": { label: "AGENT", color: NODE_COLORS.plan, icon: "\u{1F916}" },
 };
 
 export const ToolCallNode = memo(function ToolCallNode({ data, selected }: NodeProps<ToolCallNodeType>) {
@@ -63,8 +60,8 @@ export const ToolCallNode = memo(function ToolCallNode({ data, selected }: NodeP
 
   // 플랜 모드 진입/종료 노드는 시안 계열로 시각적 구분
   const accentColor = (isPlanEntry || isPlanExit)
-    ? PLAN_ACCENT
-    : categoryConfig?.color ?? ACCENT;
+    ? NODE_COLORS.plan
+    : categoryConfig?.color ?? NODE_COLORS.tool;
 
   // 상태 아이콘 결정
   const isCompleted = !isStreaming;
@@ -93,11 +90,11 @@ export const ToolCallNode = memo(function ToolCallNode({ data, selected }: NodeP
       className={cn(
         nodeBase,
         "border",
-        isPlanMode ? "bg-accent-cyan/6" : "bg-card",
+        isPlanMode ? "bg-node-plan/6" : "bg-card",
         selected
-          ? isPlanEntry || isPlanExit ? "border-accent-cyan" : "border-accent-amber"
+          ? isPlanEntry || isPlanExit ? "border-node-plan" : "border-node-tool"
           : isPlanMode
-            ? "border-accent-cyan/25"
+            ? "border-node-plan/25"
             : "border-border",
       )}
       style={isStreaming && !selected ? { animation: 'tool-call-pulse 2s infinite' } : undefined}
@@ -117,7 +114,7 @@ export const ToolCallNode = memo(function ToolCallNode({ data, selected }: NodeP
           </span>
           <span className={cn(
             nodeLabel,
-            (isPlanEntry || isPlanExit) ? "text-accent-cyan" : "text-muted-foreground",
+            (isPlanEntry || isPlanExit) ? "text-node-plan" : "text-muted-foreground",
           )}>
             {headerLabel}
           </span>
@@ -125,7 +122,7 @@ export const ToolCallNode = memo(function ToolCallNode({ data, selected }: NodeP
           {categoryConfig && !isPlanEntry && !isPlanExit && (
             <span
               className="text-[9px] font-bold px-[5px] py-px rounded-[3px]"
-              style={{ color: categoryConfig.color, backgroundColor: `${categoryConfig.color}20` }}
+              style={{ color: categoryConfig.color, backgroundColor: `color-mix(in srgb, ${categoryConfig.color} 12%, transparent)` }}
             >
               {categoryConfig.label}
             </span>
@@ -136,7 +133,7 @@ export const ToolCallNode = memo(function ToolCallNode({ data, selected }: NodeP
             </span>
           )}
           {isPlanMode && !isPlanEntry && !isPlanExit && !categoryConfig && (
-            <span className="ml-auto text-[9px] text-accent-cyan font-medium px-[5px] py-px rounded-[3px] bg-accent-cyan/12">
+            <span className="ml-auto text-[9px] text-node-plan font-medium px-[5px] py-px rounded-[3px] bg-node-plan/12">
               PLAN
             </span>
           )}
