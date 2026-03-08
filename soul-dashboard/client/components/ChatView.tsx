@@ -17,6 +17,41 @@ import { cn } from "../lib/cn";
 /** 스크롤 하단 판정 threshold (px) */
 const SCROLL_THRESHOLD = 50;
 
+/** 접기/펼치기 가능한 3줄 미리보기 컴포넌트 (thinking, complete 노드 공용) */
+const CollapsibleContent = memo(function CollapsibleContent({
+  content,
+  label,
+}: {
+  content: string;
+  label: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const lines = content.split("\n");
+  const needsCollapse = lines.length > 3;
+  const preview = needsCollapse ? lines.slice(0, 3).join("\n") + "..." : content;
+
+  return (
+    <div>
+      {needsCollapse ? (
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="text-[10px] text-muted-foreground hover:text-foreground mb-0.5 flex items-center gap-1"
+        >
+          <span className="text-[9px]">{expanded ? "\u25BC" : "\u25B6"}</span>
+          {label}
+        </button>
+      ) : (
+        <span className="text-[10px] text-muted-foreground mb-0.5 flex items-center gap-1">
+          {label}
+        </span>
+      )}
+      <pre className="text-[11px] text-muted-foreground bg-input rounded px-2 py-1.5 whitespace-pre-wrap break-words overflow-auto max-h-60 font-mono">
+        {expanded || !needsCollapse ? content : preview}
+      </pre>
+    </div>
+  );
+});
+
 // === Message Components ===
 
 const UserMessage = memo(function UserMessage({ msg }: { msg: ChatMessage }) {
@@ -43,28 +78,24 @@ const InterventionMessage = memo(function InterventionMessage({ msg }: { msg: Ch
   );
 });
 
-const AssistantMessage = memo(function AssistantMessage({ msg }: { msg: ChatMessage }) {
-  const [thinkingOpen, setThinkingOpen] = useState(false);
-  const hasThinking = msg.thinkingContent && msg.thinkingContent !== msg.content;
+/** thinking 노드: 3줄 미리보기 + 접기/펼치기 */
+const ThinkingMessage = memo(function ThinkingMessage({ msg }: { msg: ChatMessage }) {
+  return (
+    <div className="flex gap-2 px-3 py-1.5">
+      <span className="text-xs mt-0.5 shrink-0">{"\u{1F4AD}"}</span>
+      <div className="flex-1 min-w-0">
+        <CollapsibleContent content={msg.content} label="Thinking" />
+      </div>
+    </div>
+  );
+});
 
+/** text 노드: 일반 텍스트 표시 */
+const AssistantMessage = memo(function AssistantMessage({ msg }: { msg: ChatMessage }) {
   return (
     <div className="flex gap-2 px-3 py-1.5">
       <span className="text-xs mt-0.5 shrink-0">{"\u{1F916}"}</span>
       <div className="flex-1 min-w-0">
-        {hasThinking && (
-          <button
-            onClick={() => setThinkingOpen((v) => !v)}
-            className="text-[10px] text-muted-foreground hover:text-foreground mb-0.5 flex items-center gap-1"
-          >
-            <span className="text-[9px]">{thinkingOpen ? "\u25BC" : "\u25B6"}</span>
-            Thinking
-          </button>
-        )}
-        {hasThinking && thinkingOpen && (
-          <pre className="text-[11px] text-muted-foreground bg-input rounded px-2 py-1.5 mb-1.5 whitespace-pre-wrap break-words overflow-auto max-h-40 font-mono">
-            {msg.thinkingContent}
-          </pre>
-        )}
         <div className="text-[13px] text-foreground whitespace-pre-wrap break-words">
           {msg.content}
           {msg.isStreaming && <span className="inline-block w-1.5 h-3.5 bg-foreground/60 ml-0.5 animate-pulse" />}
@@ -93,6 +124,19 @@ const ToolMessage = memo(function ToolMessage({ msg }: { msg: ChatMessage }) {
 const SystemMessage = memo(function SystemMessage({ msg }: { msg: ChatMessage }) {
   const isError = msg.isError;
   const isResult = msg.treeNodeType === "result";
+  const isComplete = msg.treeNodeType === "complete";
+
+  // complete 노드: thinking과 동일한 접기/펼치기 컴포넌트 사용
+  if (isComplete && msg.content && msg.content !== "Turn completed") {
+    return (
+      <div className="flex gap-2 px-3 py-1.5">
+        <span className="text-xs mt-0.5 shrink-0">{"\u2705"}</span>
+        <div className="flex-1 min-w-0">
+          <CollapsibleContent content={msg.content} label="Complete" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="px-3 py-1">
@@ -121,7 +165,10 @@ const ChatMessageItem = memo(function ChatMessageItem({ msg }: { msg: ChatMessag
     case "intervention":
       return <InterventionMessage msg={msg} />;
     case "assistant":
-      return <AssistantMessage msg={msg} />;
+      // thinking 노드와 text 노드를 독립 컴포넌트로 분리
+      return msg.treeNodeType === "thinking"
+        ? <ThinkingMessage msg={msg} />
+        : <AssistantMessage msg={msg} />;
     case "tool":
       return <ToolMessage msg={msg} />;
     case "system":

@@ -2,20 +2,19 @@
  * ProcessingContext — processEvent의 공유 상태를 명시적 컨텍스트로 묶는다.
  *
  * Phase 6: toolUseMap 삭제 완료. tool_use_id → 노드 매핑은 nodeMap에 통합.
+ * Phase 7: thinking/text 분리. lastThinkingByParent 삭제, TextTargetNode → TextNode.
  */
 
-import type { EventTreeNode, EventTreeNodeType, ThinkingNode, TextNode } from "@shared/types";
+import type { EventTreeNode, EventTreeNodeType, TextNode } from "@shared/types";
 
 // === ProcessingContext ===
 
-/** text_delta/text_end 대상이 될 수 있는 노드 타입 */
-export type TextTargetNode = ThinkingNode | TextNode;
+/** text_delta/text_end 대상 노드 타입 */
+export type TextTargetNode = TextNode;
 
 export interface ProcessingContext {
   /** ID → 노드 (O(1) 탐색). node.id와 tool_use_id 양쪽으로 등록. */
   nodeMap: Map<string, EventTreeNode>;
-  /** parent_event_id별 가장 최근 thinking 노드 (text_start와 매칭용) */
-  lastThinkingByParent: Map<string, EventTreeNode>;
   /** 현재 text_start → text_delta → text_end 시퀀스의 대상 노드 */
   activeTextTarget: TextTargetNode | null;
   /** 현재 활성 user_message/intervention 노드 ID */
@@ -27,7 +26,6 @@ export interface ProcessingContext {
 export function createProcessingContext(): ProcessingContext {
   return {
     nodeMap: new Map(),
-    lastThinkingByParent: new Map(),
     activeTextTarget: null,
     currentTurnNodeId: null,
     historySynced: false,

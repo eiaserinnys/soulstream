@@ -16,18 +16,15 @@ function makeUserMessage(id: string, text: string, children: EventTreeNode[] = [
   return { type: "user_message", id, content: text, completed: true, user: "dashboard", children };
 }
 
-function makeThinking(id: string, thinking: string, opts?: { textContent?: string; textCompleted?: boolean }): ThinkingNode {
+function makeThinking(id: string, thinking: string): ThinkingNode {
   return {
     type: "thinking", id, content: thinking, completed: true, children: [],
-    textContent: opts?.textContent,
-    textCompleted: opts?.textCompleted,
   };
 }
 
 function makeText(id: string, text: string, opts?: { textCompleted?: boolean }): TextNode {
   return {
     type: "text", id, content: text, completed: opts?.textCompleted ?? true, children: [],
-    textContent: text,
     textCompleted: opts?.textCompleted ?? true,
   };
 }
@@ -69,34 +66,39 @@ describe("flattenTree", () => {
     expect(flattenTree(makeSession())).toEqual([]);
   });
 
-  it("user_message + text + tool 조합", () => {
+  it("user_message + thinking + text + tool 조합", () => {
     const tree = makeSession([
       makeUserMessage("u1", "hello", [
-        makeThinking("t1", "내면 사고", { textContent: "응답 텍스트", textCompleted: true }),
+        makeThinking("t1", "내면 사고"),
+        makeText("txt1", "응답 텍스트", { textCompleted: true }),
         makeTool("tool1", "Read", { completed: true, durationMs: 300 }),
       ]),
     ]);
 
     const msgs = flattenTree(tree);
-    expect(msgs).toHaveLength(3);
+    expect(msgs).toHaveLength(4);
 
     // user
     expect(msgs[0].role).toBe("user");
     expect(msgs[0].content).toBe("hello");
 
-    // thinking → assistant with textContent as main
+    // thinking
     expect(msgs[1].role).toBe("assistant");
-    expect(msgs[1].content).toBe("응답 텍스트");
+    expect(msgs[1].content).toBe("내면 사고");
     expect(msgs[1].thinkingContent).toBe("내면 사고");
 
+    // text (independent)
+    expect(msgs[2].role).toBe("assistant");
+    expect(msgs[2].content).toBe("응답 텍스트");
+
     // tool
-    expect(msgs[2].role).toBe("tool");
-    expect(msgs[2].toolName).toBe("Read");
-    expect(msgs[2].content).toContain("Read");
-    expect(msgs[2].content).toContain("0.3s");
+    expect(msgs[3].role).toBe("tool");
+    expect(msgs[3].toolName).toBe("Read");
+    expect(msgs[3].content).toContain("Read");
+    expect(msgs[3].content).toContain("0.3s");
   });
 
-  it("thinking만 단독 (textContent 없음) → content를 직접 표시", () => {
+  it("thinking만 단독 → content를 직접 표시", () => {
     const tree = makeSession([
       makeUserMessage("u1", "hi", [
         makeThinking("t1", "사고 내용만"),
