@@ -103,7 +103,7 @@ function SessionItem({ session, isActive, onClick }: SessionItemProps) {
 
       {/* Session info */}
       <div className="flex-1 min-w-0">
-        <div className="text-[13px] text-foreground truncate">
+        <div className="text-[15px] text-foreground truncate">
           {session.prompt
             ? session.prompt.length > 30
               ? session.prompt.slice(0, 27) + "..."
@@ -111,13 +111,14 @@ function SessionItem({ session, isActive, onClick }: SessionItemProps) {
             : session.agentSessionId.slice(0, 16)}
         </div>
         <div className="flex items-center gap-1.5 mt-0.5">
-          <span className="text-[11px] text-muted-foreground">
+          <span className="text-[12px] text-muted-foreground">
             {timeStr}
           </span>
           <Badge
             data-testid="session-status-badge"
             variant={config.badgeVariant}
             size="sm"
+            className="text-[11px]"
           >
             {config.label}
           </Badge>

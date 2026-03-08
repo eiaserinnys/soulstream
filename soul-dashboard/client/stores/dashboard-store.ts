@@ -211,6 +211,7 @@ function getSessionResetState() {
     lastEventId: 0,
     pendingNotifications: [] as SoulSSEEvent[],
     collapsedNodeIds: new Set<string>(),
+    activeRightTab: "chat" as const,
     processingCtx: createProcessingContext(),
   };
 }
