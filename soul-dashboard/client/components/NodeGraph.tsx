@@ -292,11 +292,12 @@ function NodeGraphInner() {
                 selectEventNode(
                   buildEventNodeData(lastNode.data as GraphNodeData),
                   lastNode.id,
+                  false,  // 초기 로드: 탭 전환 안 함 (CHAT 탭 유지)
                 );
               } else {
                 const cardId = lastNode.data.cardId as string | undefined;
                 if (cardId) {
-                  selectCard(cardId, lastNode.id);
+                  selectCard(cardId, lastNode.id, false);  // 초기 로드: 탭 전환 안 함
                 }
               }
             }

@@ -17,6 +17,7 @@ import { useSessionListProvider } from "./hooks/useSessionListProvider";
 import { useSessionProvider } from "./hooks/useSessionProvider";
 import { useNotification } from "./hooks/useNotification";
 import { useUrlSync } from "./hooks/useUrlSync";
+import { useDashboardConfig } from "./hooks/useDashboardConfig";
 import { useDashboardStore } from "./stores/dashboard-store";
 import { cn } from "./lib/cn";
 import { Badge } from "./components/ui/badge";
@@ -151,6 +152,9 @@ export function DashboardLayout() {
 
   // URL ↔ 스토어 동기화 (/{sessionId} 라우팅)
   useUrlSync();
+
+  // 대시보드 프로필 설정 로드
+  useDashboardConfig();
 
   // 서버 설정 로드 (세렌디피티 가용 여부)
   useEffect(() => {
