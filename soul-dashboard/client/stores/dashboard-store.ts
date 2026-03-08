@@ -194,7 +194,7 @@ const initialState: DashboardState = {
   resumeTargetKey: null,
   collapsedNodeIds: new Set<string>(),
   serendipityAvailable: false,
-  activeRightTab: "detail",
+  activeRightTab: "chat",
   processingCtx: createProcessingContext(),
 };
 
@@ -240,7 +240,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           selectedNodeId: null,
           selectedEventNodeData: null,
           collapsedNodeIds: new Set<string>(),
-          activeRightTab: "detail",
+          activeRightTab: "chat",
           processingCtx: createProcessingContext(),
         });
       },

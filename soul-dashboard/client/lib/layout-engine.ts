@@ -220,6 +220,7 @@ export function createToolCallNode(
       toolName: treeNode.toolName,
       toolInput: treeNode.toolInput,
       streaming: !treeNode.completed && !treeNode.toolResult,
+      isError: treeNode.isError,
       isPlanMode: planFlags?.isPlanMode,
       isPlanModeEntry: planFlags?.isPlanModeEntry,
       isPlanModeExit: planFlags?.isPlanModeExit,

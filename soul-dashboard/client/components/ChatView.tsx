@@ -4,8 +4,8 @@
  * 트리를 flat 메시지 리스트로 변환하여 DM 스타일 채팅 UI로 렌더링합니다.
  * 하단에 ChatInput을 배치하여 인터벤션/리줌 메시지를 전송합니다.
  *
- * 자동 스크롤: 새 이벤트 시 하단으로 스크롤, 사용자가 위로 스크롤하면 비활성화.
- * "↓ 마지막으로" 버튼으로 하단 스크롤 + 자동 스크롤 재활성화.
+ * Follow mode: NodeGraph 패턴과 동일한 follow/unfollow 토글.
+ * Tool grouping: 연속된 tool 메시지를 접기/펼치기 그룹으로 묶어 표시.
  */
 
 import { memo, useMemo, useRef, useEffect, useState, useCallback } from "react";
@@ -16,6 +16,40 @@ import { cn } from "../lib/cn";
 
 /** 스크롤 하단 판정 threshold (px) */
 const SCROLL_THRESHOLD = 50;
+
+// === Message Grouping Types ===
+
+type MessageOrGroup =
+  | { type: "single"; msg: ChatMessage }
+  | { type: "tool-group"; messages: ChatMessage[] };
+
+function groupMessages(messages: ChatMessage[]): MessageOrGroup[] {
+  const result: MessageOrGroup[] = [];
+  let toolBuffer: ChatMessage[] = [];
+
+  const flushTools = () => {
+    if (toolBuffer.length === 0) return;
+    if (toolBuffer.length === 1) {
+      result.push({ type: "single", msg: toolBuffer[0] });
+    } else {
+      result.push({ type: "tool-group", messages: [...toolBuffer] });
+    }
+    toolBuffer = [];
+  };
+
+  for (const msg of messages) {
+    if (msg.role === "tool") {
+      toolBuffer.push(msg);
+    } else {
+      flushTools();
+      result.push({ type: "single", msg });
+    }
+  }
+  flushTools();
+  return result;
+}
+
+// === Utility Components ===
 
 /** 접기/펼치기 가능한 3줄 미리보기 컴포넌트 (thinking, complete 노드 공용) */
 const CollapsibleContent = memo(function CollapsibleContent({
@@ -35,17 +69,17 @@ const CollapsibleContent = memo(function CollapsibleContent({
       {needsCollapse ? (
         <button
           onClick={() => setExpanded((v) => !v)}
-          className="text-[10px] text-muted-foreground hover:text-foreground mb-0.5 flex items-center gap-1"
+          className="text-[11px] text-muted-foreground hover:text-foreground mb-0.5 flex items-center gap-1"
         >
-          <span className="text-[9px]">{expanded ? "\u25BC" : "\u25B6"}</span>
+          <span className="text-[10px]">{expanded ? "\u25BC" : "\u25B6"}</span>
           {label}
         </button>
       ) : (
-        <span className="text-[10px] text-muted-foreground mb-0.5 flex items-center gap-1">
+        <span className="text-[11px] text-muted-foreground mb-0.5 flex items-center gap-1">
           {label}
         </span>
       )}
-      <pre className="text-[11px] text-muted-foreground bg-input rounded px-2 py-1.5 whitespace-pre-wrap break-words overflow-auto max-h-60 font-mono">
+      <pre className="text-[12px] text-muted-foreground bg-input rounded px-2 py-1.5 whitespace-pre-wrap break-words overflow-auto max-h-60 font-mono">
         {expanded || !needsCollapse ? content : preview}
       </pre>
     </div>
@@ -59,8 +93,8 @@ const UserMessage = memo(function UserMessage({ msg }: { msg: ChatMessage }) {
     <div className="flex gap-2 px-3 py-1.5">
       <span className="text-xs mt-0.5 shrink-0">{"\u{1F464}"}</span>
       <div className="flex-1 min-w-0">
-        <div className="text-[10px] font-semibold text-accent-blue uppercase tracking-wide mb-0.5">User</div>
-        <div className="text-[13px] text-foreground whitespace-pre-wrap break-words">{msg.content}</div>
+        <div className="text-[11px] font-semibold text-accent-blue uppercase tracking-wide mb-0.5">User</div>
+        <div className="text-[14px] text-foreground whitespace-pre-wrap break-words">{msg.content}</div>
       </div>
     </div>
   );
@@ -71,8 +105,8 @@ const InterventionMessage = memo(function InterventionMessage({ msg }: { msg: Ch
     <div className="flex gap-2 px-3 py-1.5">
       <span className="text-xs mt-0.5 shrink-0">{"\u270B"}</span>
       <div className="flex-1 min-w-0">
-        <div className="text-[10px] font-semibold text-accent-orange uppercase tracking-wide mb-0.5">Intervention</div>
-        <div className="text-[13px] text-foreground whitespace-pre-wrap break-words">{msg.content}</div>
+        <div className="text-[11px] font-semibold text-accent-orange uppercase tracking-wide mb-0.5">Intervention</div>
+        <div className="text-[14px] text-foreground whitespace-pre-wrap break-words">{msg.content}</div>
       </div>
     </div>
   );
@@ -96,7 +130,7 @@ const AssistantMessage = memo(function AssistantMessage({ msg }: { msg: ChatMess
     <div className="flex gap-2 px-3 py-1.5">
       <span className="text-xs mt-0.5 shrink-0">{"\u{1F916}"}</span>
       <div className="flex-1 min-w-0">
-        <div className="text-[13px] text-foreground whitespace-pre-wrap break-words">
+        <div className="text-[14px] text-foreground whitespace-pre-wrap break-words">
           {msg.content}
           {msg.isStreaming && <span className="inline-block w-1.5 h-3.5 bg-foreground/60 ml-0.5 animate-pulse" />}
         </div>
@@ -105,13 +139,84 @@ const AssistantMessage = memo(function AssistantMessage({ msg }: { msg: ChatMess
   );
 });
 
+// === Tool Call Components ===
+
+/** 그룹 내 개별 tool call 항목 */
+const ToolCallItem = memo(function ToolCallItem({ msg }: { msg: ChatMessage }) {
+  const [expanded, setExpanded] = useState(false);
+  const isDone = msg.toolResult !== undefined || msg.toolDurationMs !== undefined;
+  const statusIcon = msg.isError ? "\u274C" : isDone ? "\u2705" : "\u{1F528}";
+
+  return (
+    <div>
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        className={cn(
+          "text-[12px] font-mono flex items-center gap-1",
+          msg.isError ? "text-accent-red" : "text-muted-foreground",
+          "hover:text-foreground",
+        )}
+      >
+        <span className="text-[10px]">{expanded ? "\u25BC" : "\u25B6"}</span>
+        <span>{statusIcon}</span>
+        <span className="truncate">{msg.content}</span>
+      </button>
+      {expanded && msg.toolInput && (
+        <pre className="text-[12px] text-muted-foreground bg-input rounded px-2 py-1.5 ml-5 mt-0.5 whitespace-pre-wrap break-words overflow-auto max-h-40 font-mono">
+          {typeof msg.toolInput === "string" ? msg.toolInput : JSON.stringify(msg.toolInput, null, 2)}
+        </pre>
+      )}
+      {expanded && msg.toolResult && (
+        <pre className={cn(
+          "text-[12px] bg-input rounded px-2 py-1.5 ml-5 mt-0.5 whitespace-pre-wrap break-words overflow-auto max-h-40 font-mono",
+          msg.isError ? "text-accent-red/80" : "text-muted-foreground",
+        )}>
+          {msg.toolResult}
+        </pre>
+      )}
+    </div>
+  );
+});
+
+/** 연속된 tool 메시지를 하나로 묶어 표시하는 그룹 컴포넌트 */
+const ToolCallGroup = memo(function ToolCallGroup({ messages }: { messages: ChatMessage[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasError = messages.some((m) => m.isError);
+  const allDone = messages.every((m) => m.toolResult !== undefined || m.toolDurationMs !== undefined);
+
+  return (
+    <div className="px-3 py-0.5">
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        className="text-[12px] text-muted-foreground hover:text-foreground flex items-center gap-1.5"
+      >
+        <span className="text-[10px]">{expanded ? "\u25BC" : "\u25B6"}</span>
+        <span>{"\u{1F527}"}</span>
+        <span className="font-medium">
+          Tool Calls ({messages.length})
+        </span>
+        {hasError && <span className="text-accent-red text-[10px]">{"\u25CF"} error</span>}
+        {!hasError && allDone && <span className="text-success text-[10px]">{"\u25CF"} done</span>}
+      </button>
+      {expanded && (
+        <div className="ml-4 mt-1 space-y-0.5">
+          {messages.map((msg) => (
+            <ToolCallItem key={msg.id} msg={msg} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+});
+
+/** 단일 tool 메시지 (그룹에 속하지 않는 단독 tool) */
 const ToolMessage = memo(function ToolMessage({ msg }: { msg: ChatMessage }) {
   return (
     <div className="flex gap-2 px-3 py-0.5">
       <span className="text-xs mt-0.5 shrink-0">{"\u{1F527}"}</span>
       <div
         className={cn(
-          "text-[11px] font-mono truncate",
+          "text-[12px] font-mono truncate",
           msg.isError ? "text-accent-red" : "text-muted-foreground",
         )}
       >
@@ -142,7 +247,7 @@ const SystemMessage = memo(function SystemMessage({ msg }: { msg: ChatMessage })
     <div className="px-3 py-1">
       <div
         className={cn(
-          "text-[11px] px-2 py-1 rounded text-center",
+          "text-[12px] px-2 py-1 rounded text-center",
           isError
             ? "text-accent-red bg-accent-red/8"
             : isResult
@@ -187,31 +292,46 @@ export function ChatView() {
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const messages = useMemo(() => flattenTree(tree), [tree, treeVersion]);
+  const grouped = useMemo(() => groupMessages(messages), [messages]);
 
-  // === Auto-scroll ===
+  // === Follow mode ===
   const scrollRef = useRef<HTMLDivElement>(null);
-  const isAutoScroll = useRef(true);
-  const [showScrollBtn, setShowScrollBtn] = useState(false);
+  const [isFollowing, setIsFollowing] = useState(true);
+  const [showNewMessage, setShowNewMessage] = useState(false);
+  const prevTreeVersion = useRef(treeVersion);
+  // ref로 effect 내부에서 최신 상태를 참조 (effect deps에서 제거하여 불필요한 재실행 방지)
+  const isFollowingRef = useRef(true);
+  useEffect(() => { isFollowingRef.current = isFollowing; }, [isFollowing]);
 
   const checkScrollPosition = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
     const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - SCROLL_THRESHOLD;
-    isAutoScroll.current = atBottom;
-    setShowScrollBtn(!atBottom);
+    if (atBottom && !isFollowingRef.current) {
+      // 사용자가 직접 맨 아래로 스크롤하면 follow 재활성화
+      setIsFollowing(true);
+      setShowNewMessage(false);
+    } else if (!atBottom && isFollowingRef.current) {
+      setIsFollowing(false);
+    }
   }, []);
 
-  // 새 이벤트 시 자동 스크롤
+  // 새 이벤트 시: following이면 스크롤, 아니면 "New Messages" 배너 표시
   useEffect(() => {
-    if (isAutoScroll.current && scrollRef.current) {
+    if (treeVersion === prevTreeVersion.current) return;
+    prevTreeVersion.current = treeVersion;
+
+    if (isFollowingRef.current && scrollRef.current) {
       scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    } else if (!isFollowingRef.current) {
+      setShowNewMessage(true);
     }
   }, [treeVersion]);
 
-  // 세션 변경 시 스크롤 리셋
+  // 세션 변경 시: follow 리셋
   useEffect(() => {
-    isAutoScroll.current = true;
-    setShowScrollBtn(false);
+    setIsFollowing(true);
+    setShowNewMessage(false);
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
@@ -220,9 +340,20 @@ export function ChatView() {
   const scrollToBottom = useCallback(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-      isAutoScroll.current = true;
-      setShowScrollBtn(false);
+      setIsFollowing(true);
+      setShowNewMessage(false);
     }
+  }, []);
+
+  const toggleFollow = useCallback(() => {
+    setIsFollowing((prev) => {
+      const next = !prev;
+      if (next && scrollRef.current) {
+        scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+        setShowNewMessage(false);
+      }
+      return next;
+    });
   }, []);
 
   if (!activeSessionKey) {
@@ -247,22 +378,42 @@ export function ChatView() {
           </div>
         )}
 
-        {messages.map((msg) => (
-          <ChatMessageItem key={msg.id} msg={msg} />
-        ))}
+        {grouped.map((item) =>
+          item.type === "tool-group" ? (
+            <ToolCallGroup key={item.messages[0].id} messages={item.messages} />
+          ) : (
+            <ChatMessageItem key={item.msg.id} msg={item.msg} />
+          ),
+        )}
       </div>
 
-      {/* "↓ 마지막으로" button */}
-      {showScrollBtn && (
+      {/* "New Messages" banner */}
+      {showNewMessage && !isFollowing && (
         <div className="relative">
           <button
             onClick={scrollToBottom}
             className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[11px] text-muted-foreground bg-popover/90 border border-border rounded-full px-3 py-1 hover:text-foreground hover:bg-popover transition-colors shadow-sm z-10"
           >
-            {"\u2193"} 마지막으로
+            {"\u2193"} New Messages
           </button>
         </div>
       )}
+
+      {/* Follow toggle button */}
+      <div className="relative">
+        <button
+          onClick={toggleFollow}
+          className={cn(
+            "absolute bottom-2 right-2 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-colors",
+            "border shadow-md z-10",
+            isFollowing
+              ? "bg-accent-blue/15 border-accent-blue/30 text-accent-blue hover:bg-accent-blue/25"
+              : "bg-popover border-border text-muted-foreground hover:bg-input",
+          )}
+        >
+          {"\u2193"} Follow
+        </button>
+      </div>
 
       {/* ChatInput */}
       <ChatInput />
