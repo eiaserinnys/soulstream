@@ -9,18 +9,15 @@ import { memo, useCallback } from 'react';
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import type { GraphNodeData } from '../lib/layout-engine';
 import { cn } from '../lib/cn';
-import { nodeBase, nodeContent, nodeHeader, nodeLabel, truncate2, handleStyle, collapseButton } from './node-styles';
+import { nodeBase, nodeContent, nodeHeader, nodeLabel, truncate2, handleStyle, collapseButton, NODE_COLORS } from './node-styles';
 import { useDashboardStore } from '../stores/dashboard-store';
 
 type ThinkingNodeType = Node<GraphNodeData, 'thinking'>;
 
-const ACCENT = '#8b5cf6';
-const PLAN_ACCENT = '#06b6d4';
-
 export const ThinkingNode = memo(function ThinkingNode({ data, selected }: NodeProps<ThinkingNodeType>) {
   const isStreaming = data.streaming;
   const isPlanMode = data.isPlanMode;
-  const accentColor = isPlanMode ? PLAN_ACCENT : ACCENT;
+  const accentColor = isPlanMode ? NODE_COLORS.plan : NODE_COLORS.thinking;
   const toggleNodeCollapse = useDashboardStore((s) => s.toggleNodeCollapse);
 
   const handleCollapseClick = useCallback((e: React.MouseEvent) => {
@@ -36,11 +33,11 @@ export const ThinkingNode = memo(function ThinkingNode({ data, selected }: NodeP
       className={cn(
         nodeBase,
         "border relative",
-        isPlanMode ? "bg-accent-cyan/6" : "bg-card",
+        isPlanMode ? "bg-node-plan/6" : "bg-card",
         selected
-          ? isPlanMode ? "border-accent-cyan" : "border-accent-purple"
+          ? isPlanMode ? "border-node-plan" : "border-node-thinking"
           : isPlanMode
-            ? "border-accent-cyan/25"
+            ? "border-node-plan/25"
             : "border-border",
       )}
     >
@@ -54,15 +51,15 @@ export const ThinkingNode = memo(function ThinkingNode({ data, selected }: NodeP
       <div className={nodeContent}>
         {/* Header row */}
         <div className={nodeHeader}>
-          <span className="text-sm shrink-0">{'\u{1F4AD}'}</span>
+          <span className="text-sm shrink-0">{data.nodeType === "text" ? '\u{1F642}' : '\u{1F4AD}'}</span>
           <span className={cn(
             nodeLabel,
-            isPlanMode ? "text-accent-cyan" : "text-muted-foreground",
+            isPlanMode ? "text-node-plan" : "text-muted-foreground",
           )}>
-            Thinking
+            {data.nodeType === "text" ? "Assistant" : "Thinking"}
           </span>
           {isPlanMode && (
-            <span className="text-[9px] text-accent-cyan font-medium px-[5px] py-px rounded-[3px] bg-accent-cyan/12">
+            <span className="text-[9px] text-node-plan font-medium px-[5px] py-px rounded-[3px] bg-node-plan/12">
               PLAN
             </span>
           )}
@@ -85,7 +82,7 @@ export const ThinkingNode = memo(function ThinkingNode({ data, selected }: NodeP
         </div>
 
         {/* Truncated content */}
-        <div className={cn("text-xs text-muted-foreground leading-normal italic", truncate2)}>
+        <div className={cn("text-[12px] text-muted-foreground leading-normal italic", truncate2)}>
           {data.content || data.label || '(thinking...)'}
         </div>
       </div>

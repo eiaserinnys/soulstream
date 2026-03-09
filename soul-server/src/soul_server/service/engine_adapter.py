@@ -14,7 +14,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, AsyncIterator, Awaitable, Callable, List, Optional
+from typing import TYPE_CHECKING, Any, AsyncIterator, Awaitable, Callable, List, Optional, Union
 
 from soul_server.claude.agent_runner import ClaudeRunner
 from soul_server.engine.types import EngineEvent
@@ -38,6 +38,19 @@ from soul_server.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+# SSE 이벤트 타입 alias - execute()가 yield할 수 있는 모든 이벤트 타입
+SSEEvent = Union[
+    ProgressEvent,
+    SessionEvent,
+    InterventionSentEvent,
+    ContextUsageEvent,
+    CompactEvent,
+    DebugEvent,
+    CompleteEvent,
+    ErrorEvent,
+    CredentialAlertEvent,
+]
 
 DEFAULT_DISALLOWED_TOOLS = ["NotebookEdit", "TodoWrite"]
 
@@ -163,7 +176,7 @@ class SoulEngineAdapter:
         request_id: Optional[str] = None,
         persona: Optional[str] = None,
         on_runner_ready: Optional[Callable[["ClaudeRunner"], None]] = None,
-    ) -> AsyncIterator:
+    ) -> AsyncIterator[SSEEvent]:
         """Claude Code 실행 (SSE 이벤트 스트림)
 
         기존 soul의 ClaudeCodeRunner.execute()와 동일한 인터페이스.

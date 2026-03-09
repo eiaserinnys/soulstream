@@ -126,11 +126,15 @@ export interface TextDeltaEvent {
   type: "text_delta";
   timestamp: number;
   text: string;
+  /** 부모 이벤트 ID (서브에이전트 내부 노드 배치용) */
+  parent_event_id?: string;
 }
 
 export interface TextEndEvent {
   type: "text_end";
   timestamp: number;
+  /** 부모 이벤트 ID (서브에이전트 내부 노드 배치용) */
+  parent_event_id?: string;
 }
 
 export interface ToolStartEvent {
@@ -300,17 +304,11 @@ export interface InterventionNode extends BaseNode {
 /** Thinking (확장 사고) 노드 */
 export interface ThinkingNode extends BaseNode {
   type: "thinking";
-  /** text_delta로 누적되는 가시적 텍스트 */
-  textContent?: string;
-  /** text_end 수신 여부 */
-  textCompleted?: boolean;
 }
 
-/** 독립 텍스트 노드 (thinking 매칭 없이 text_start가 온 경우) */
+/** 텍스트 노드 */
 export interface TextNode extends BaseNode {
   type: "text";
-  /** text_delta로 누적되는 가시적 텍스트 */
-  textContent?: string;
   /** text_end 수신 여부 */
   textCompleted?: boolean;
 }

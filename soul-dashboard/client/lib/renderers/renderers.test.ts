@@ -123,7 +123,7 @@ describe("renderer registry", () => {
     const node = textTreeNode("t1", "hello");
     dispatchRenderer(node, null, ctx);
     expect(ctx.nodes.length).toBeGreaterThan(0);
-    expect(ctx.nodes[0].data.nodeType).toBe("thinking");
+    expect(ctx.nodes[0].data.nodeType).toBe("text");
   });
 
   it("silently ignores unknown node types", () => {
@@ -172,7 +172,7 @@ describe("renderUserMessageTurn", () => {
     // user node + text node
     expect(ctx.nodes.length).toBe(2);
     expect(ctx.nodes[0].data.nodeType).toBe("user");
-    expect(ctx.nodes[1].data.nodeType).toBe("thinking");
+    expect(ctx.nodes[1].data.nodeType).toBe("text");
   });
 });
 
@@ -205,13 +205,13 @@ describe("renderInterventionTurn", () => {
 });
 
 describe("renderTextNode", () => {
-  it("creates a thinking node and updates prevMainFlowNodeId", () => {
+  it("creates a text node and updates prevMainFlowNodeId", () => {
     const ctx = makeCtx({ prevMainFlowNodeId: "prev" });
     const node = textTreeNode("t1", "I'm thinking...");
     renderTextNode(node, null, ctx);
 
     expect(ctx.nodes.length).toBe(1);
-    expect(ctx.nodes[0].data.nodeType).toBe("thinking");
+    expect(ctx.nodes[0].data.nodeType).toBe("text");
     expect(ctx.prevMainFlowNodeId).toBe(ctx.nodes[0].id);
     expect(ctx.lastThinkingNodeId).toBe(ctx.nodes[0].id);
   });
@@ -233,7 +233,7 @@ describe("renderTextNode", () => {
 
     // text node + tool_call
     expect(ctx.nodes.length).toBe(2);
-    expect(ctx.nodes[0].data.nodeType).toBe("thinking");
+    expect(ctx.nodes[0].data.nodeType).toBe("text");
     expect(ctx.nodes[1].data.nodeType).toBe("tool_call");
   });
 
@@ -418,8 +418,8 @@ describe("processChildNodes", () => {
     processChildNodes(parent, ctx);
 
     // text node + tool_call (no virtual)
-    expect(ctx.nodes[0].data.nodeType).toBe("thinking");
-    expect(ctx.nodes[0].data.label).toBe("Thinking");
+    expect(ctx.nodes[0].data.nodeType).toBe("text");
+    expect(ctx.nodes[0].data.label).toBe("Text");
   });
 
   it("handles complete/error children in processChildNodes", () => {

@@ -19,11 +19,11 @@ export function SubAgentDetail({ card }: { card: ToolNode }) {
       {/* Header */}
       <div className="flex items-center gap-2">
         <span className="text-base">{"\u{1F916}"}</span>
-        <div className="text-[11px] text-accent-blue uppercase tracking-[0.05em] font-semibold">
+        <div className="text-[12px] text-accent-blue uppercase tracking-[0.05em] font-semibold">
           Sub-Agent
         </div>
         {!card.completed && (
-          <span className="ml-auto flex items-center gap-1.5 text-[11px] text-accent-blue">
+          <span className="ml-auto flex items-center gap-1.5 text-[12px] text-accent-blue">
             <span className="w-1.5 h-1.5 rounded-full bg-accent-blue animate-[pulse_2s_infinite]" />
             Running...
           </span>
@@ -44,7 +44,7 @@ export function SubAgentDetail({ card }: { card: ToolNode }) {
       {description && (
         <div>
           <SectionLabel>Description</SectionLabel>
-          <div className="text-[13px] text-foreground leading-normal">
+          <div className="text-[14px] text-foreground leading-normal">
             {description}
           </div>
         </div>

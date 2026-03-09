@@ -21,9 +21,6 @@ describe("createProcessingContext", () => {
     expect(ctx.nodeMap).toBeInstanceOf(Map);
     expect(ctx.nodeMap.size).toBe(0);
 
-    expect(ctx.lastThinkingByParent).toBeInstanceOf(Map);
-    expect(ctx.lastThinkingByParent.size).toBe(0);
-
     expect(ctx.activeTextTarget).toBeNull();
     expect(ctx.currentTurnNodeId).toBeNull();
   });

@@ -130,6 +130,54 @@ app.use(
   }),
 );
 
+// Dashboard config/portrait 프록시 (Soul Server → 클라이언트)
+app.get("/api/dashboard/config", async (_req, res) => {
+  try {
+    const headers: Record<string, string> = {};
+    if (AUTH_TOKEN) headers["Authorization"] = `Bearer ${AUTH_TOKEN}`;
+    const upstream = await fetch(`${SOUL_BASE_URL}/api/dashboard/config`, {
+      headers,
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!upstream.ok) {
+      res.status(upstream.status).json({ error: { message: `Upstream ${upstream.status}` } });
+      return;
+    }
+    const data = await upstream.json();
+    res.json(data);
+  } catch (err) {
+    console.error("[dashboard] Failed to proxy /api/dashboard/config:", err);
+    res.status(502).json({ error: { message: "Failed to reach soul server" } });
+  }
+});
+
+app.get("/api/dashboard/portrait/:role", async (req, res) => {
+  try {
+    const { role } = req.params;
+    const headers: Record<string, string> = {};
+    if (AUTH_TOKEN) headers["Authorization"] = `Bearer ${AUTH_TOKEN}`;
+    const upstream = await fetch(
+      `${SOUL_BASE_URL}/api/dashboard/portrait/${encodeURIComponent(role)}`,
+      { headers, signal: AbortSignal.timeout(10_000) },
+    );
+    if (!upstream.ok) {
+      res.status(upstream.status).end();
+      return;
+    }
+    // Forward content-type and cache headers
+    const ct = upstream.headers.get("content-type");
+    if (ct) res.setHeader("Content-Type", ct);
+    const cc = upstream.headers.get("cache-control");
+    if (cc) res.setHeader("Cache-Control", cc);
+    // Stream the body
+    const buf = Buffer.from(await upstream.arrayBuffer());
+    res.send(buf);
+  } catch (err) {
+    console.error("[dashboard] Failed to proxy portrait:", err);
+    res.status(502).end();
+  }
+});
+
 // === Static File Serving ===
 
 // dist/client/ 는 vite build 결과물이 위치하는 디렉토리.

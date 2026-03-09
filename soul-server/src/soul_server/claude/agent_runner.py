@@ -133,6 +133,7 @@ class ClaudeResult(EngineResult):
 # ---------------------------------------------------------------------------
 _registry: dict[str, "ClaudeRunner"] = {}
 _registry_lock = threading.Lock()
+_shutting_down = False
 
 
 def get_runner(runner_id: str) -> Optional["ClaudeRunner"]:
@@ -141,10 +142,28 @@ def get_runner(runner_id: str) -> Optional["ClaudeRunner"]:
         return _registry.get(runner_id)
 
 
-def register_runner(runner: "ClaudeRunner") -> None:
-    """레지스트리에 러너 등록"""
+def register_runner(runner: "ClaudeRunner") -> bool:
+    """레지스트리에 러너 등록
+
+    Args:
+        runner: 등록할 ClaudeRunner 인스턴스
+
+    Returns:
+        True: 등록 성공
+        False: 셧다운 중이라 등록 거부
+    """
     with _registry_lock:
+        if _shutting_down:
+            return False  # 셧다운 중 등록 거부
         _registry[runner.runner_id] = runner
+        return True
+
+
+def reset_shutdown_state() -> None:
+    """테스트용: _shutting_down 플래그 초기화"""
+    global _shutting_down
+    with _registry_lock:
+        _shutting_down = False
 
 
 def remove_runner(runner_id: str) -> Optional["ClaudeRunner"]:
@@ -157,12 +176,17 @@ async def shutdown_all() -> int:
     """모든 등록된 러너의 클라이언트를 종료
 
     프로세스 종료 전에 호출하여 고아 프로세스를 방지합니다.
+    셧다운 시작 후 새 러너 등록은 거부됩니다.
 
     Returns:
         종료된 클라이언트 수
     """
+    global _shutting_down
+
     with _registry_lock:
+        _shutting_down = True
         runners = list(_registry.values())
+        _registry.clear()
 
     if not runners:
         logger.info("종료할 활성 클라이언트 없음")
@@ -180,9 +204,6 @@ async def shutdown_all() -> int:
             if runner.pid:
                 ClaudeRunner._force_kill_process(runner.pid, runner.runner_id)
                 count += 1
-
-    with _registry_lock:
-        _registry.clear()
 
     logger.info(f"총 {count}개 클라이언트 종료 완료")
     return count
@@ -232,6 +253,26 @@ class MessageState:
         self.current_text = ""
         self.result_text = ""
         self.is_error = False
+
+
+@dataclass
+class ExecutionContext:
+    """_execute() 실행 컨텍스트
+
+    초기화 단계에서 생성되어 실행 전반에 걸쳐 사용되는 상태를 담습니다.
+
+    Attributes:
+        runner_id: Unique identifier for the runner instance
+        session_start: UTC timestamp when execution started
+        msg_state: Accumulated message state during execution
+        compact_handler: Handler for compact retry logic
+        stderr_file: File handle for CLI stderr capture (caller must close)
+    """
+    runner_id: str
+    session_start: datetime
+    msg_state: MessageState = field(default_factory=MessageState)
+    compact_handler: "CompactRetryHandler" = field(default_factory=CompactRetryHandler)
+    stderr_file: Optional[IO[str]] = None
 
 
 class ClaudeRunner:
@@ -932,6 +973,216 @@ class ClaudeRunner:
                 except (asyncio.CancelledError, Exception):
                     pass
 
+    # ---------------------------------------------------------------------------
+    # _execute() 헬퍼 메서드들
+    # ---------------------------------------------------------------------------
+
+    def _prepare_execution(
+        self,
+        on_event: Optional[EventCallback] = None,
+    ) -> ExecutionContext:
+        """실행 전 초기화 로직
+
+        이전 실행의 잔여 상태를 정리하고, 실행 컨텍스트를 생성합니다.
+
+        Args:
+            on_event: 이벤트 콜백 (can_use_tool에서 사용)
+
+        Returns:
+            ExecutionContext: 실행 컨텍스트
+        """
+        runner_id = self.runner_id
+
+        # 이전 실행의 잔여 상태 정리 (풀링된 runner 재사용 대비)
+        self._pending_events.clear()
+        self._input_response_events.clear()
+        self._input_responses.clear()
+
+        # can_use_tool 콜백에서 사용할 on_event 바인딩
+        self._on_event_callback = on_event
+
+        # 현재 실행 루프를 인스턴스에 등록 (interrupt에서 사용)
+        self.execution_loop = asyncio.get_running_loop()
+
+        # 모듈 레지스트리에 등록 (runner_id가 있을 때만)
+        if runner_id:
+            register_runner(self)
+
+        return ExecutionContext(
+            runner_id=runner_id,
+            session_start=datetime.now(timezone.utc),
+            msg_state=MessageState(),
+            compact_handler=CompactRetryHandler(),
+        )
+
+    def _finalize_result(self, msg_state: MessageState) -> EngineResult:
+        """정상 완료 시 결과 생성
+
+        Args:
+            msg_state: 메시지 상태
+
+        Returns:
+            EngineResult: 엔진 실행 결과
+        """
+        output = msg_state.result_text or msg_state.current_text
+
+        return EngineResult(
+            success=not msg_state.is_error,
+            output=output,
+            session_id=msg_state.session_id,
+            collected_messages=msg_state.collected_messages,
+            is_error=msg_state.is_error,
+            usage=msg_state.usage,
+        )
+
+    def _handle_file_not_found(self, e: FileNotFoundError) -> EngineResult:
+        """FileNotFoundError 처리
+
+        Args:
+            e: FileNotFoundError 예외
+
+        Returns:
+            EngineResult: 에러 결과
+        """
+        logger.error(f"Claude Code CLI를 찾을 수 없습니다: {e}")
+        return EngineResult(
+            success=False,
+            output="",
+            error="Claude Code CLI를 찾을 수 없습니다. claude 명령어가 PATH에 있는지 확인하세요."
+        )
+
+    def _handle_process_error(
+        self,
+        e: "ProcessError",
+        ctx: ExecutionContext,
+    ) -> EngineResult:
+        """ProcessError 처리
+
+        Args:
+            e: ProcessError 예외
+            ctx: 실행 컨텍스트
+
+        Returns:
+            EngineResult: 에러 결과
+        """
+        msg_state = ctx.msg_state
+        friendly_msg = classify_process_error(e)
+        logger.error(
+            f"Claude Code CLI 프로세스 오류: exit_code={e.exit_code}, "
+            f"stderr={e.stderr}, friendly={friendly_msg}"
+        )
+        _dur = (datetime.now(timezone.utc) - ctx.session_start).total_seconds()
+        dump = build_session_dump(
+            reason="ProcessError",
+            pid=self.pid,
+            duration_sec=_dur,
+            message_count=msg_state.msg_count,
+            last_tool="",
+            current_text_len=len(msg_state.current_text),
+            result_text_len=len(msg_state.result_text),
+            session_id=msg_state.session_id,
+            exit_code=e.exit_code,
+            error_detail=str(e.stderr or e),
+            active_clients_count=len(_registry),
+            runner_id=ctx.runner_id,
+        )
+        self._debug(dump)
+        return EngineResult(
+            success=False,
+            output=msg_state.current_text,
+            session_id=msg_state.session_id,
+            error=friendly_msg,
+        )
+
+    def _handle_parse_error(
+        self,
+        e: "MessageParseError",
+        msg_state: MessageState,
+    ) -> EngineResult:
+        """MessageParseError 처리
+
+        Args:
+            e: MessageParseError 예외
+            msg_state: 메시지 상태
+
+        Returns:
+            EngineResult: 에러 결과
+        """
+        action, msg_type = classify_parse_error(e.data, log_fn=logger)
+
+        if msg_type == "rate_limit_event":
+            logger.warning(f"rate_limit_event (외부 catch): {e}")
+            return EngineResult(
+                success=False,
+                output=msg_state.current_text,
+                session_id=msg_state.session_id,
+                error="사용량 제한에 도달했습니다. 잠시 후 다시 시도해주세요.",
+            )
+
+        if action is ParseAction.CONTINUE:
+            # unknown type이 외부까지 전파된 경우
+            logger.warning(f"Unknown message type escaped loop: {msg_type}")
+            return EngineResult(
+                success=False,
+                output=msg_state.current_text,
+                session_id=msg_state.session_id,
+                error=f"알 수 없는 메시지 타입: {msg_type}",
+            )
+
+        logger.exception(f"SDK 메시지 파싱 오류: {e}")
+        return EngineResult(
+            success=False,
+            output=msg_state.current_text,
+            session_id=msg_state.session_id,
+            error="Claude 응답 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        )
+
+    def _handle_unknown_error(
+        self,
+        e: Exception,
+        msg_state: MessageState,
+    ) -> EngineResult:
+        """알 수 없는 예외 처리
+
+        Args:
+            e: Exception 예외
+            msg_state: 메시지 상태
+
+        Returns:
+            EngineResult: 에러 결과
+        """
+        logger.exception(f"Claude Code SDK 실행 오류: {e}")
+        return EngineResult(
+            success=False,
+            output=msg_state.current_text,
+            session_id=msg_state.session_id,
+            error=str(e)
+        )
+
+    async def _cleanup_execution(self, ctx: ExecutionContext) -> None:
+        """실행 후 정리 로직
+
+        Args:
+            ctx: 실행 컨텍스트
+        """
+        if not self._pooled:
+            await self._remove_client()
+        # pooled 모드: client 유지, registry와 execution_loop만 정리
+        self.execution_loop = None
+        self._on_event_callback = None
+        # 미응답 input_request 정리 (타임아웃 중인 콜백이 있으면 깨움)
+        for evt in self._input_response_events.values():
+            evt.set()
+        self._input_response_events.clear()
+        self._input_responses.clear()
+        if ctx.runner_id:
+            remove_runner(ctx.runner_id)
+        if ctx.stderr_file is not None:
+            try:
+                ctx.stderr_file.close()
+            except Exception:
+                pass
+
     async def run(
         self,
         prompt: str,
@@ -988,32 +1239,17 @@ class ClaudeRunner:
         on_session: Optional[Callable[[str], Awaitable[None]]] = None,
         on_event: Optional[EventCallback] = None,
     ) -> EngineResult:
-        """실제 실행 로직 (ClaudeSDKClient 기반)"""
-        runner_id = self.runner_id
-        compact_handler = CompactRetryHandler()
+        """실제 실행 로직 - 오케스트레이션만 담당
 
-        # 이전 실행의 잔여 상태 정리 (풀링된 runner 재사용 대비)
-        self._pending_events.clear()
-        self._input_response_events.clear()
-        self._input_responses.clear()
-
-        # can_use_tool 콜백에서 사용할 on_event 바인딩
-        self._on_event_callback = on_event
-
-        # 현재 실행 루프를 인스턴스에 등록 (interrupt에서 사용)
-        self.execution_loop = asyncio.get_running_loop()
-
-        # 모듈 레지스트리에 등록 (runner_id가 있을 때만)
-        if runner_id:
-            register_runner(self)
-
-        msg_state = MessageState()
-        _session_start = datetime.now(timezone.utc)
-        stderr_file = None
+        초기화, 에러 처리, 정리 로직은 헬퍼 메서드로 분리되어 있습니다.
+        """
+        ctx = self._prepare_execution(on_event)
+        msg_state = ctx.msg_state
+        compact_handler = ctx.compact_handler
 
         try:
             # _get_or_create_client가 내부에서 _build_options를 호출
-            client, stderr_file = await self._get_or_create_client(
+            client, ctx.stderr_file = await self._get_or_create_client(
                 session_id=session_id,
                 compact_events=compact_handler.events,
             )
@@ -1053,112 +1289,25 @@ class ClaudeRunner:
 
                 # 무출력 종료: 로그만 남기고 스레드 덤프는 생략
                 if not msg_state.has_result:
-                    _dur = (datetime.now(timezone.utc) - _session_start).total_seconds()
+                    _dur = (datetime.now(timezone.utc) - ctx.session_start).total_seconds()
                     logger.warning(
-                        f"세션 무출력 종료: runner={runner_id}, "
+                        f"세션 무출력 종료: runner={ctx.runner_id}, "
                         f"duration={_dur:.1f}s, msgs={msg_state.msg_count}"
                     )
                 break
 
-            # 정상 완료
-            output = msg_state.result_text or msg_state.current_text
-
-            return EngineResult(
-                success=not msg_state.is_error,
-                output=output,
-                session_id=msg_state.session_id,
-                collected_messages=msg_state.collected_messages,
-                is_error=msg_state.is_error,
-                usage=msg_state.usage,
-            )
+            return self._finalize_result(msg_state)
 
         except FileNotFoundError as e:
-            logger.error(f"Claude Code CLI를 찾을 수 없습니다: {e}")
-            return EngineResult(
-                success=False,
-                output="",
-                error="Claude Code CLI를 찾을 수 없습니다. claude 명령어가 PATH에 있는지 확인하세요."
-            )
+            return self._handle_file_not_found(e)
         except ProcessError as e:
-            friendly_msg = classify_process_error(e)
-            logger.error(f"Claude Code CLI 프로세스 오류: exit_code={e.exit_code}, stderr={e.stderr}, friendly={friendly_msg}")
-            _dur = (datetime.now(timezone.utc) - _session_start).total_seconds()
-            dump = build_session_dump(
-                reason="ProcessError",
-                pid=self.pid,
-                duration_sec=_dur,
-                message_count=msg_state.msg_count,
-                last_tool="",
-                current_text_len=len(msg_state.current_text),
-                result_text_len=len(msg_state.result_text),
-                session_id=msg_state.session_id,
-                exit_code=e.exit_code,
-                error_detail=str(e.stderr or e),
-                active_clients_count=len(_registry),
-                runner_id=runner_id,
-            )
-            self._debug(dump)
-            return EngineResult(
-                success=False,
-                output=msg_state.current_text,
-                session_id=msg_state.session_id,
-                error=friendly_msg,
-            )
+            return self._handle_process_error(e, ctx)
         except MessageParseError as e:
-            action, msg_type = classify_parse_error(e.data, log_fn=logger)
-
-            if msg_type == "rate_limit_event":
-                logger.warning(f"rate_limit_event (외부 catch): {e}")
-                return EngineResult(
-                    success=False,
-                    output=msg_state.current_text,
-                    session_id=msg_state.session_id,
-                    error="사용량 제한에 도달했습니다. 잠시 후 다시 시도해주세요.",
-                )
-
-            if action is ParseAction.CONTINUE:
-                # unknown type이 외부까지 전파된 경우
-                logger.warning(f"Unknown message type escaped loop: {msg_type}")
-                return EngineResult(
-                    success=False,
-                    output=msg_state.current_text,
-                    session_id=msg_state.session_id,
-                    error=f"알 수 없는 메시지 타입: {msg_type}",
-                )
-
-            logger.exception(f"SDK 메시지 파싱 오류: {e}")
-            return EngineResult(
-                success=False,
-                output=msg_state.current_text,
-                session_id=msg_state.session_id,
-                error="Claude 응답 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
-            )
+            return self._handle_parse_error(e, msg_state)
         except Exception as e:
-            logger.exception(f"Claude Code SDK 실행 오류: {e}")
-            return EngineResult(
-                success=False,
-                output=msg_state.current_text,
-                session_id=msg_state.session_id,
-                error=str(e)
-            )
+            return self._handle_unknown_error(e, msg_state)
         finally:
-            if not self._pooled:
-                await self._remove_client()
-            # pooled 모드: client 유지, registry와 execution_loop만 정리
-            self.execution_loop = None
-            self._on_event_callback = None
-            # 미응답 input_request 정리 (타임아웃 중인 콜백이 있으면 깨움)
-            for evt in self._input_response_events.values():
-                evt.set()
-            self._input_response_events.clear()
-            self._input_responses.clear()
-            if runner_id:
-                remove_runner(runner_id)
-            if stderr_file is not None:
-                try:
-                    stderr_file.close()
-                except Exception:
-                    pass
+            await self._cleanup_execution(ctx)
 
     async def compact_session(self, session_id: str) -> EngineResult:
         """세션 컴팩트 처리"""

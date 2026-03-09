@@ -14,7 +14,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from soul_server.api import attachments_router, create_sessions_router
+from soul_server.api import attachments_router, dashboard_router, create_sessions_router
 from soul_server.api.tasks import router as tasks_router
 from soul_server.api.credentials import create_credentials_router
 from soul_server.service import resource_manager, file_manager
@@ -58,7 +58,7 @@ async def periodic_cleanup():
         except asyncio.CancelledError:
             break
         except Exception as e:
-            logger.error(f"Periodic cleanup error: {e}")
+            logger.exception(f"Periodic cleanup error: {e}")
 
 
 @asynccontextmanager
@@ -211,7 +211,7 @@ async def shutdown():
                 logger.info(f"Shutdown: {cancelled}개 태스크 취소")
             await task_manager.save()
         except Exception as e:
-            logger.warning(f"Shutdown cleanup error: {e}")
+            logger.warning(f"Shutdown cleanup error: {e}", exc_info=True)
 
         await asyncio.sleep(0.3)
         os._exit(0)
@@ -300,6 +300,9 @@ sessions_router = create_sessions_router()
 # 가로채지 않도록 고정 경로가 먼저 매칭되어야 합니다.
 app.include_router(sessions_router, tags=["sessions"])
 app.include_router(tasks_router, tags=["tasks"])
+
+# Dashboard API - 프로필 설정 및 초상화 서빙
+app.include_router(dashboard_router, prefix="/api", tags=["dashboard"])
 
 
 # === Exception Handlers ===

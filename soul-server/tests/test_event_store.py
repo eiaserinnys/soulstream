@@ -290,18 +290,61 @@ class TestEdgeCases:
         events = store.read_all("sess-1")
         assert len(events) == 2  # 손상된 줄은 건너뛰고 2개만 반환
 
-    def test_cleanup_session_removes_cache(self, store):
-        """cleanup_session이 메모리 캐시를 제거한다"""
+    def test_cleanup_session_removes_next_id_cache(self, store):
+        """cleanup_session이 _next_id 캐시를 제거한다 (Lock은 유지)"""
         store.append("sess-1", {"type": "progress", "text": "1"})
         assert "sess-1" in store._next_id
         assert "sess-1" in store._locks
 
         store.cleanup_session("sess-1")
         assert "sess-1" not in store._next_id
-        assert "sess-1" not in store._locks
+        # Lock은 race condition 방지를 위해 유지됨
+        assert "sess-1" in store._locks
+
+    def test_concurrent_append_and_cleanup_no_error(self, store):
+        """동시에 append와 cleanup이 호출되어도 오류가 발생하지 않는다"""
+        import threading
+        import time
+
+        errors = []
+        stop_flag = threading.Event()
+
+        def append_loop():
+            """append를 반복 호출"""
+            try:
+                for i in range(100):
+                    if stop_flag.is_set():
+                        break
+                    store.append("sess-concurrent", {"type": "progress", "idx": i})
+                    time.sleep(0.001)
+            except Exception as e:
+                errors.append(e)
+
+        def cleanup_loop():
+            """cleanup을 반복 호출"""
+            try:
+                for _ in range(50):
+                    if stop_flag.is_set():
+                        break
+                    store.cleanup_session("sess-concurrent")
+                    time.sleep(0.002)
+            except Exception as e:
+                errors.append(e)
+
+        threads = [
+            threading.Thread(target=append_loop),
+            threading.Thread(target=cleanup_loop),
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        # 어떤 오류도 발생하지 않아야 함
+        assert not errors
 
     def test_delete_session_removes_file(self, store, tmp_path):
-        """delete_session이 JSONL 파일과 캐시를 모두 제거한다"""
+        """delete_session이 JSONL 파일과 _next_id 캐시를 제거한다 (Lock은 유지)"""
         store.append("sess-1", {"type": "progress", "text": "1"})
         files = list(tmp_path.rglob("*.jsonl"))
         assert len(files) == 1
@@ -310,6 +353,8 @@ class TestEdgeCases:
         files_after = list(tmp_path.rglob("*.jsonl"))
         assert len(files_after) == 0
         assert "sess-1" not in store._next_id
+        # Lock은 race condition 방지를 위해 유지됨
+        assert "sess-1" in store._locks
 
     def test_path_traversal_blocked(self, store):
         """경로 탈출을 시도하는 agent_session_id가 안전하게 처리된다"""

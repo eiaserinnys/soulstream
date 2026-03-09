@@ -9,11 +9,9 @@ import { memo } from 'react';
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import type { GraphNodeData } from '../lib/layout-engine';
 import { cn } from '../lib/cn';
-import { nodeBase, nodeBgDefault, nodeContent, nodeHeader, nodeLabel, truncate2, handleStyle } from './node-styles';
+import { nodeBase, nodeBgDefault, nodeContent, nodeHeader, nodeLabel, truncate2, handleStyle, NODE_COLORS } from './node-styles';
 
 type UserNodeType = Node<GraphNodeData, 'user'>;
-
-const ACCENT = '#3b82f6';
 
 export const UserNode = memo(function UserNode({ data, selected }: NodeProps<UserNodeType>) {
   return (
@@ -22,18 +20,18 @@ export const UserNode = memo(function UserNode({ data, selected }: NodeProps<Use
       className={cn(
         nodeBase, nodeBgDefault,
         "border",
-        selected ? "border-accent-blue" : "border-border",
+        selected ? "border-node-user" : "border-border",
       )}
     >
       {/* Left accent bar */}
-      <div className="w-1 shrink-0 bg-accent-blue rounded-l-lg" />
+      <div className="w-1 shrink-0 bg-node-user rounded-l-lg" />
 
       {/* Content area */}
       <div className={nodeContent}>
         {/* Header row */}
         <div className={nodeHeader}>
           {/* Avatar circle */}
-          <div className="w-5 h-5 rounded-full bg-accent-blue/20 border border-accent-blue/40 flex items-center justify-center text-[11px] shrink-0">
+          <div className="w-5 h-5 rounded-full bg-node-user/20 border border-node-user/40 flex items-center justify-center text-[11px] shrink-0">
             {'\u{1F464}'}
           </div>
           <span className={cn(nodeLabel, "text-muted-foreground")}>
@@ -48,8 +46,8 @@ export const UserNode = memo(function UserNode({ data, selected }: NodeProps<Use
       </div>
 
       {/* Handles */}
-      <Handle type="target" position={Position.Top} style={handleStyle(ACCENT)} />
-      <Handle type="source" position={Position.Bottom} style={handleStyle(ACCENT)} />
+      <Handle type="target" position={Position.Top} style={handleStyle(NODE_COLORS.user)} />
+      <Handle type="source" position={Position.Bottom} style={handleStyle(NODE_COLORS.user)} />
     </div>
   );
 });
