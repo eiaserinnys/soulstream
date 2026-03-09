@@ -131,7 +131,7 @@ export function ChatInput() {
   return (
     <div
       data-testid="chat-input"
-      className="border-t border-border p-3 shrink-0"
+      className="border-t border-border p-[var(--panel-inset)] shrink-0"
     >
       <div className="flex gap-2">
         {/* Left column: labels + textarea */}

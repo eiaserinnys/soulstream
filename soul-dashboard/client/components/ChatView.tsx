@@ -210,7 +210,7 @@ export function ChatView() {
         <div className="relative">
           <button
             onClick={scrollToBottom}
-            className="absolute bottom-2 left-1/2 -translate-x-1/2 text-[11px] text-muted-foreground bg-popover/90 border border-border rounded-full px-3 py-1 hover:text-foreground hover:bg-popover transition-colors shadow-sm z-10"
+            className="absolute bottom-[var(--panel-inset)] left-1/2 -translate-x-1/2 text-[11px] text-muted-foreground bg-popover/90 border border-border rounded-full px-3 py-1 hover:text-foreground hover:bg-popover transition-colors shadow-sm z-10"
           >
             {"\u2193"} 마지막으로
           </button>
