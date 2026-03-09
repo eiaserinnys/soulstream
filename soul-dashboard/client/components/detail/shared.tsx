@@ -10,7 +10,7 @@ import { cn } from "../../lib/cn";
 /** 섹션 라벨 */
 export function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="text-[11px] text-muted-foreground uppercase tracking-[0.05em] mb-1">
+    <div className="text-[12px] text-muted-foreground uppercase tracking-[0.05em] mb-1">
       {children}
     </div>
   );
@@ -33,7 +33,7 @@ export function CodeBlock({
   return (
     <pre
       className={cn(
-        "text-xs p-2.5 rounded-md overflow-auto m-0 whitespace-pre-wrap break-words font-mono",
+        "text-[13px] p-2.5 rounded-md overflow-auto m-0 whitespace-pre-wrap break-words font-mono",
         variant === "error"
           ? "text-destructive-foreground bg-destructive/8"
           : "text-muted-foreground bg-input",

@@ -849,9 +849,11 @@ class TestObserveRateLimitAllowed:
 
 
 def _clear_all_client_state():
-    """테스트용: 모듈 레벨 레지스트리 초기화"""
+    """테스트용: 모듈 레벨 레지스트리 초기화 (shutdown 플래그도 리셋)"""
+    from soul_server.claude.agent_runner import reset_shutdown_state
     with _registry_lock:
         _registry.clear()
+    reset_shutdown_state()
 
 
 @pytest.mark.asyncio
@@ -955,6 +957,61 @@ class TestShutdownAllClients:
 
         count = await shutdown_all()
         assert count == 1
+
+    async def test_register_rejected_during_shutdown(self):
+        """셧다운 중에는 새 러너 등록이 거부된다"""
+        from soul_server.claude.agent_runner import (
+            _shutting_down,
+            reset_shutdown_state,
+        )
+        _clear_all_client_state()
+        reset_shutdown_state()
+
+        # 기존 러너 등록
+        mock_client_1 = AsyncMock()
+        runner1 = ClaudeRunner()
+        runner1.client = mock_client_1
+        result1 = register_runner(runner1)
+        assert result1 is True
+        assert get_runner(runner1.runner_id) is runner1
+
+        # 셧다운 시작 (내부적으로 _shutting_down=True 설정됨)
+        import asyncio
+        shutdown_task = asyncio.create_task(shutdown_all())
+
+        # 잠시 대기하여 shutdown_all이 플래그를 설정할 시간을 줌
+        await asyncio.sleep(0.01)
+
+        # 셧다운 완료 대기
+        await shutdown_task
+
+        # 셧다운 후 새 러너 등록 시도 - 거부되어야 함
+        runner2 = ClaudeRunner()
+        runner2.client = AsyncMock()
+        result2 = register_runner(runner2)
+        assert result2 is False
+        assert get_runner(runner2.runner_id) is None
+
+        # 상태 복원
+        reset_shutdown_state()
+
+    async def test_shutdown_sets_shutting_down_flag(self):
+        """shutdown_all이 _shutting_down 플래그를 설정하는지 확인"""
+        from soul_server.claude.agent_runner import (
+            _shutting_down,
+            reset_shutdown_state,
+        )
+        _clear_all_client_state()
+        reset_shutdown_state()
+
+        await shutdown_all()
+
+        # _shutting_down 모듈 변수 직접 확인
+        import soul_server.claude.agent_runner as ar
+        assert ar._shutting_down is True
+
+        # 상태 복원
+        reset_shutdown_state()
 
 
 @pytest.mark.asyncio

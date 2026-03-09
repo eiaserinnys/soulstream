@@ -120,6 +120,14 @@ class Settings:
     serendipity_enabled: bool = True  # 세렌디피티 저장 활성화
     serendipity_url: str = "http://localhost:4002"  # 세렌디피티 API URL
 
+    # Dashboard profile (선택 사항 — 미설정 시 기본 이름 표시, 초상화 없음)
+    dash_user_name: str = "USER"
+    dash_user_id: str = ""
+    dash_user_portrait: str = ""  # 빈 문자열이면 이미지 없음
+    dash_assistant_name: str = "ASSISTANT"
+    dash_assistant_id: str = ""
+    dash_assistant_portrait: str = ""  # 빈 문자열이면 이미지 없음
+
     @classmethod
     def from_env(cls) -> "Settings":
         """환경변수에서 설정 로드"""
@@ -184,6 +192,13 @@ class Settings:
             ),
             serendipity_enabled=os.getenv("SERENDIPITY_ENABLED", "true").lower() in ("true", "1", "yes"),
             serendipity_url=os.getenv("SERENDIPITY_URL", cls.serendipity_url),
+            # Dashboard profile
+            dash_user_name=os.getenv("DASH_USER_NAME", "USER"),
+            dash_user_id=os.getenv("DASH_USER_ID", ""),
+            dash_user_portrait=os.getenv("DASH_USER_PORTRAIT", ""),
+            dash_assistant_name=os.getenv("DASH_ASSISTANT_NAME", "ASSISTANT"),
+            dash_assistant_id=os.getenv("DASH_ASSISTANT_ID", ""),
+            dash_assistant_portrait=os.getenv("DASH_ASSISTANT_PORTRAIT", ""),
         )
 
         settings.validate()

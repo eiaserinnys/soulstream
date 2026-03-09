@@ -7,6 +7,7 @@ JSON 파일 기반의 태스크 상태 영속화를 담당합니다.
 import asyncio
 import json
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, Optional
 
@@ -15,6 +16,7 @@ from soul_server.service.task_models import (
     TaskStatus,
     utc_now,
     datetime_to_str,
+    str_to_datetime,
 )
 
 if TYPE_CHECKING:
@@ -27,6 +29,120 @@ _EVENT_TYPE_TO_STATUS = {
     "complete": TaskStatus.COMPLETED,
     "error": TaskStatus.ERROR,
 }
+
+
+def _rebuild_task_from_events(agent_session_id: str, events: list) -> Task:
+    """JSONL 이벤트 목록으로부터 Task 객체를 재구성한다.
+
+    Args:
+        agent_session_id: 세션 식별자
+        events: JSONL 이벤트 레코드 리스트 (각 항목: {"id": int, "event": dict})
+
+    Returns:
+        복구된 Task 객체
+    """
+    prompt = ""
+    client_id = None
+    claude_session_id = None
+    result = None
+    error = None
+    status = TaskStatus.INTERRUPTED  # 기본: 터미널 이벤트 없으면 interrupted
+    created_at = None
+    completed_at = None
+
+    # 첫 번째 이벤트의 timestamp → created_at
+    first_event = events[0].get("event", {})
+    ts = first_event.get("timestamp")
+    if ts:
+        try:
+            created_at = str_to_datetime(ts)
+        except (ValueError, TypeError):
+            pass
+
+    # 세션 ID에서 타임스탬프 추출 시도 (sess-YYYYMMDDHHMMSS-xxxx)
+    if not created_at and agent_session_id.startswith("sess-"):
+        parts = agent_session_id.split("-")
+        if len(parts) >= 2:
+            try:
+                created_at = datetime.strptime(parts[1], "%Y%m%d%H%M%S").replace(
+                    tzinfo=timezone.utc
+                )
+            except (ValueError, IndexError):
+                pass
+
+    if not created_at:
+        created_at = utc_now()
+
+    # 이벤트 순회: 첫 user_message → prompt/client_id, 마지막 터미널 → status/result
+    for record in events:
+        event = record.get("event", {})
+        event_type = event.get("type")
+
+        if event_type == "user_message" and not prompt:
+            prompt = event.get("content", "")
+            client_id = event.get("client_id")
+
+        # claude_session_id 추출 (system 이벤트 또는 이벤트 공통 필드)
+        sid = event.get("claude_session_id") or event.get("session_id")
+        if sid:
+            claude_session_id = sid
+
+    # 역순으로 터미널 이벤트 탐색
+    for record in reversed(events):
+        event = record.get("event", {})
+        event_type = event.get("type")
+
+        if event_type == "result":
+            if event.get("success"):
+                status = TaskStatus.COMPLETED
+                result = event.get("result", "")
+            else:
+                status = TaskStatus.ERROR
+                error = event.get("error", "JSONL 기반 복구 — 에러 발생")
+            ts = event.get("timestamp")
+            if ts:
+                try:
+                    completed_at = str_to_datetime(ts)
+                except (ValueError, TypeError):
+                    pass
+            break
+
+        if event_type == "complete":
+            status = TaskStatus.COMPLETED
+            result = event.get("result", "")
+            ts = event.get("timestamp")
+            if ts:
+                try:
+                    completed_at = str_to_datetime(ts)
+                except (ValueError, TypeError):
+                    pass
+            break
+
+        if event_type == "error":
+            status = TaskStatus.ERROR
+            error = event.get("error", "JSONL 기반 복구 — 에러 발생")
+            ts = event.get("timestamp")
+            if ts:
+                try:
+                    completed_at = str_to_datetime(ts)
+                except (ValueError, TypeError):
+                    pass
+            break
+
+    if not completed_at:
+        completed_at = created_at
+
+    return Task(
+        agent_session_id=agent_session_id,
+        prompt=prompt or "(복구됨 — 원본 프롬프트 없음)",
+        status=status,
+        client_id=client_id,
+        claude_session_id=claude_session_id,
+        result=result,
+        error=error,
+        created_at=created_at,
+        completed_at=completed_at,
+    )
 
 
 class TaskStorage:
@@ -45,6 +161,7 @@ class TaskStorage:
         """
         self._storage_path = storage_path
         self._save_scheduled = False
+        self._pending_save_task: Optional[asyncio.Task] = None
 
     async def load(
         self,
@@ -70,7 +187,12 @@ class TaskStorage:
             return 0
 
         try:
-            data = json.loads(self._storage_path.read_text())
+            try:
+                raw = self._storage_path.read_text(encoding='utf-8')
+            except UnicodeDecodeError:
+                logger.warning("tasks.json is not UTF-8, trying cp949 (legacy)")
+                raw = self._storage_path.read_text(encoding='cp949')
+            data = json.loads(raw)
             tasks_data = data.get("tasks", {})
 
             loaded = 0
@@ -111,10 +233,15 @@ class TaskStorage:
                 + (f" ({reconciled} reconciled from JSONL)" if reconciled else "")
             )
 
+            # 고아 세션 복구: JSONL에는 있지만 tasks.json에 없는 세션 복구
+            orphans_recovered = 0
+            if event_store:
+                orphans_recovered = self._recover_orphan_sessions(tasks, event_store)
+
             # 상태 변경사항 저장
             await self._save(tasks)
 
-            return loaded
+            return loaded + orphans_recovered
 
         except Exception as e:
             logger.error(f"Failed to load tasks file: {e}")
@@ -166,6 +293,59 @@ class TaskStorage:
 
         return None
 
+    @staticmethod
+    def _recover_orphan_sessions(
+        tasks: Dict[str, Task],
+        event_store: "EventStore",
+    ) -> int:
+        """JSONL에는 존재하지만 tasks.json에 없는 고아 세션을 복구한다.
+
+        인코딩 오류 등으로 tasks.json 저장이 실패한 경우,
+        JSONL 이벤트 로그로부터 Task 객체를 재구성하여 복구한다.
+
+        Args:
+            tasks: 현재 로드된 태스크 딕셔너리 (복구된 태스크가 추가됨)
+            event_store: JSONL 이벤트 저장소
+
+        Returns:
+            복구된 세션 수
+        """
+        try:
+            jsonl_sessions = event_store.list_sessions()
+        except Exception as e:
+            logger.warning(f"Failed to list JSONL sessions for orphan recovery: {e}")
+            return 0
+
+        known_ids = set(tasks.keys())
+        recovered = 0
+
+        for session_info in jsonl_sessions:
+            agent_session_id = session_info["agent_session_id"]
+            if agent_session_id in known_ids:
+                continue
+
+            try:
+                events = event_store.read_all(agent_session_id)
+                if not events:
+                    continue
+
+                task = _rebuild_task_from_events(agent_session_id, events)
+                tasks[task.key] = task
+                recovered += 1
+                logger.info(
+                    f"Recovered orphan session from JSONL: "
+                    f"{agent_session_id} → {task.status.value}"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to recover orphan session {agent_session_id}: {e}"
+                )
+
+        if recovered:
+            logger.info(f"Recovered {recovered} orphan session(s) from JSONL")
+
+        return recovered
+
     async def _save(self, tasks: Dict[str, Task]) -> None:
         """태스크를 파일에 저장 (내부용)"""
         if not self._storage_path:
@@ -184,7 +364,7 @@ class TaskStorage:
             # Path.rename()은 Windows에서 대상 파일이 이미 존재하면 WinError 183을 발생시킴.
             # Path.replace()는 Windows/Unix 모두에서 원자적으로 덮어쓰기 가능.
             temp_path = self._storage_path.with_suffix(".tmp")
-            temp_path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+            temp_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
             temp_path.replace(self._storage_path)
 
             logger.debug(f"Saved {len(tasks)} tasks to storage")
@@ -206,6 +386,12 @@ class TaskStorage:
         async def do_save():
             await asyncio.sleep(0.5)  # 500ms debounce
             self._save_scheduled = False
+            self._pending_save_task = None
             await self._save(tasks)
 
-        asyncio.create_task(do_save())
+        self._pending_save_task = asyncio.create_task(do_save())
+
+    async def flush_pending_save(self) -> None:
+        """대기 중인 저장 완료 대기 (셧다운 시 호출)"""
+        if self._pending_save_task is not None:
+            await self._pending_save_task

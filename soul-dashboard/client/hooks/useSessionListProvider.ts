@@ -69,6 +69,7 @@ export function useSessionListProvider(
    */
   const handleSSEEvent = useCallback(
     (event: SessionStreamEvent) => {
+      setSessionsError(null);  // 이벤트 수신 = 연결 정상
       switch (event.type) {
         case "session_list":
           setSessions(event.sessions.map((s) => toSessionSummary(s as unknown as Record<string, unknown>)));
@@ -91,7 +92,7 @@ export function useSessionListProvider(
           break;
       }
     },
-    [setSessions, addSession, updateSession, removeSession, setSessionsLoading]
+    [setSessions, addSession, updateSession, removeSession, setSessionsLoading, setSessionsError]
   );
 
   /**

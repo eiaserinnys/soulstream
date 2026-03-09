@@ -153,12 +153,16 @@ class EventStore:
         """세션의 캐시된 메타데이터를 제거한다.
 
         TaskManager.ack_task 등에서 호출하여 메모리 누수를 방지한다.
+        Lock은 race condition 방지를 위해 유지한다 (다른 스레드가 사용 중일 수 있음).
         """
         self._next_id.pop(agent_session_id, None)
-        self._locks.pop(agent_session_id, None)
+        # Lock은 저렴하므로 제거하지 않음 (race condition 방지)
 
     def delete_session(self, agent_session_id: str) -> None:
-        """세션 데이터와 JSONL 파일을 제거한다."""
+        """세션 데이터와 JSONL 파일을 제거한다.
+
+        Lock은 race condition 방지를 위해 유지한다.
+        """
         self.cleanup_session(agent_session_id)
         path = self._session_path(agent_session_id)
         if path.exists():

@@ -338,3 +338,76 @@ class TestTaskStorageReconciliation:
         tasks = {}
         await storage.load(tasks, event_store=None)
         assert tasks["sess-1"].status == TaskStatus.INTERRUPTED
+
+
+import asyncio
+
+
+class TestTaskStorageScheduleSave:
+    """schedule_save 및 flush_pending_save 테스트"""
+
+    async def test_schedule_save_saves_after_debounce(self, tmp_storage_path):
+        """schedule_save는 debounce 후 저장한다"""
+        storage = TaskStorage(tmp_storage_path)
+        tasks = {"sess-1": Task(agent_session_id="sess-1", prompt="hello")}
+
+        await storage.schedule_save(tasks)
+
+        # 즉시 저장되지 않음
+        assert not tmp_storage_path.exists()
+
+        # debounce 대기 (500ms + 여유)
+        await asyncio.sleep(0.6)
+
+        # 저장 완료
+        assert tmp_storage_path.exists()
+
+    async def test_schedule_save_debounces_multiple_calls(self, tmp_storage_path):
+        """여러 호출이 debounce 된다"""
+        storage = TaskStorage(tmp_storage_path)
+
+        tasks = {"sess-1": Task(agent_session_id="sess-1", prompt="hello")}
+        await storage.schedule_save(tasks)
+
+        # 두 번째 호출은 무시됨 (이미 예약됨)
+        await storage.schedule_save(tasks)
+
+        await asyncio.sleep(0.6)
+        assert tmp_storage_path.exists()
+
+    async def test_flush_pending_save_waits_for_save(self, tmp_storage_path):
+        """flush_pending_save는 대기 중인 저장을 완료한다"""
+        storage = TaskStorage(tmp_storage_path)
+        tasks = {"sess-1": Task(agent_session_id="sess-1", prompt="hello")}
+
+        await storage.schedule_save(tasks)
+        assert not tmp_storage_path.exists()
+
+        # flush로 저장 완료 대기
+        await storage.flush_pending_save()
+
+        # 저장 완료됨
+        assert tmp_storage_path.exists()
+
+    async def test_flush_pending_save_no_op_when_no_pending(self, tmp_storage_path):
+        """대기 중인 저장이 없으면 즉시 반환"""
+        storage = TaskStorage(tmp_storage_path)
+
+        # schedule_save 호출 안 함
+        await storage.flush_pending_save()
+
+        # 에러 없이 완료
+        assert not tmp_storage_path.exists()
+
+    async def test_pending_save_task_cleared_after_completion(self, tmp_storage_path):
+        """저장 완료 후 _pending_save_task가 None이 된다"""
+        storage = TaskStorage(tmp_storage_path)
+        tasks = {"sess-1": Task(agent_session_id="sess-1", prompt="hello")}
+
+        await storage.schedule_save(tasks)
+
+        # flush로 완료 대기
+        await storage.flush_pending_save()
+
+        # 완료 후 pending task가 None
+        assert storage._pending_save_task is None

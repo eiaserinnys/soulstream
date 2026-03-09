@@ -6,6 +6,7 @@
  * - tool 카드 (Task) → SubAgentDetail
  * - tool 카드 (에러) → ErrorDetail
  * - tool 카드 (일반) → ToolDetail
+ * - complete 카드 → CompleteDetail
  * - user/intervention 이벤트 노드 → EventNodeDetail
  */
 
@@ -18,6 +19,36 @@ import { ErrorDetail } from "./detail/ErrorDetail";
 import { SectionLabel, CodeBlock } from "./detail/shared";
 import { ScrollArea } from "./ui/scroll-area";
 
+// === Complete Detail ===
+
+/**
+ * complete 타입 노드의 상세 뷰.
+ * ThinkingDetail과 유사하지만 성공(green) 스타일링을 적용합니다.
+ */
+function CompleteDetail({ card }: { card: EventTreeNode }) {
+  return (
+    <div className="p-4 flex flex-col gap-3">
+      <div className="flex items-center gap-2">
+        <span className="text-base">{"\u2699\uFE0F"}</span>
+        <div className="text-[12px] text-success uppercase tracking-[0.05em] font-semibold">
+          Complete
+        </div>
+      </div>
+      <pre
+        className="text-[14px] text-foreground whitespace-pre-wrap break-words leading-relaxed m-0"
+        style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" }}
+      >
+        {card.content || "Session completed"}
+      </pre>
+      {card.content && (
+        <div className="text-[11px] text-muted-foreground/60 text-right">
+          {card.content.length.toLocaleString()} chars
+        </div>
+      )}
+    </div>
+  );
+}
+
 // === Detail Router ===
 
 /**
@@ -28,6 +59,7 @@ import { ScrollArea } from "./ui/scroll-area";
  * 2. tool + isError === true → ErrorDetail
  * 3. tool → ToolDetail
  * 4. text/thinking → ThinkingDetail
+ * 5. complete → CompleteDetail
  */
 function CardDetail({ card }: { card: EventTreeNode }) {
   if (card.type === "tool" || card.type === "tool_use") {
@@ -44,6 +76,11 @@ function CardDetail({ card }: { card: EventTreeNode }) {
   if (card.type === "thinking" || card.type === "text") {
     return <ThinkingDetail card={card} />;
   }
+
+  if (card.type === "complete") {
+    return <CompleteDetail card={card} />;
+  }
+
   return null;
 }
 
@@ -70,30 +107,39 @@ function EventNodeDetail({
   const isUser = data.nodeType === "user";
 
   return (
-    <div className="p-4">
-      {/* Type badge */}
-      <div className="flex items-center gap-1.5 mb-3">
-        <span className="text-sm">{isUser ? "\u{1F464}" : "\u270B"}</span>
-        <span
-          className={`text-[11px] font-semibold uppercase tracking-[0.05em] ${isUser ? "text-accent-blue" : "text-accent-orange"}`}
+    <div className="p-4 flex flex-col gap-3">
+      {/* Header */}
+      <div className="flex items-center gap-2">
+        <span className="text-base">{isUser ? "\u{1F464}" : "\u270B"}</span>
+        <div
+          className={`text-[12px] font-semibold uppercase tracking-[0.05em] ${isUser ? "text-accent-blue" : "text-accent-orange"}`}
         >
           {isUser ? "User Message" : "Intervention"}
-        </span>
+        </div>
       </div>
 
-      {/* Label */}
-      <div className="mb-3">
+      {/* From */}
+      <div>
         <SectionLabel>From</SectionLabel>
-        <div className="text-[13px] text-foreground font-medium">
+        <div className="text-[14px] text-foreground font-medium">
           {data.label}
         </div>
       </div>
 
       {/* Full content */}
-      <div>
-        <SectionLabel>Message</SectionLabel>
-        <div className="whitespace-pre-wrap break-words text-sm overflow-auto" style={{ maxHeight: 500 }}>{data.content || "(empty)"}</div>
-      </div>
+      <pre
+        className="text-[14px] text-foreground whitespace-pre-wrap break-words leading-relaxed m-0"
+        style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" }}
+      >
+        {data.content || "(empty)"}
+      </pre>
+
+      {/* Character count */}
+      {data.content && (
+        <div className="text-[11px] text-muted-foreground/60 text-right">
+          {data.content.length.toLocaleString()} chars
+        </div>
+      )}
     </div>
   );
 }
@@ -113,7 +159,7 @@ function ResultNodeDetail({ data }: { data: SelectedEventNodeData }) {
       {/* Header */}
       <div className="flex items-center gap-1.5 mb-3">
         <span className="w-1.5 h-1.5 rounded-full bg-success" />
-        <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-success">
+        <span className="text-[12px] font-semibold uppercase tracking-[0.05em] text-success">
           Session Complete
         </span>
       </div>
@@ -124,19 +170,19 @@ function ResultNodeDetail({ data }: { data: SelectedEventNodeData }) {
           {durationStr && (
             <div>
               <SectionLabel>Duration</SectionLabel>
-              <div className="text-[13px] text-foreground font-medium">{durationStr}</div>
+              <div className="text-[14px] text-foreground font-medium">{durationStr}</div>
             </div>
           )}
           {costStr && (
             <div>
               <SectionLabel>Cost</SectionLabel>
-              <div className="text-[13px] text-foreground font-medium">{costStr}</div>
+              <div className="text-[14px] text-foreground font-medium">{costStr}</div>
             </div>
           )}
           {data.usage && (
             <div className="col-span-2">
               <SectionLabel>Tokens</SectionLabel>
-              <div className="text-[13px] text-foreground font-medium">
+              <div className="text-[14px] text-foreground font-medium">
                 {data.usage.input_tokens.toLocaleString()} in / {data.usage.output_tokens.toLocaleString()} out
               </div>
             </div>
@@ -165,7 +211,7 @@ function SystemNodeDetail({ data }: { data: SelectedEventNodeData }) {
       <div className="flex items-center gap-1.5 mb-3">
         <span className={`w-1.5 h-1.5 rounded-full ${isError ? "bg-accent-red" : "bg-muted-foreground"}`} />
         <span
-          className={`text-[11px] font-semibold uppercase tracking-[0.05em] ${isError ? "text-accent-red" : "text-muted-foreground"}`}
+          className={`text-[12px] font-semibold uppercase tracking-[0.05em] ${isError ? "text-accent-red" : "text-muted-foreground"}`}
         >
           {isError ? "Error" : data.label || "System"}
         </span>
