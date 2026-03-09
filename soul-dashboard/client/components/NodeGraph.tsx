@@ -285,18 +285,23 @@ function NodeGraphInner() {
             hasInitializedRef.current = true;
 
             // 초기 로드 / 세션 전환: 마지막 노드 자동 선택 (D10)
+            // isProgrammaticSelectRef → 후속 onSelectionChange에서 탭 전환 억제
             const lastNode = nodesWithSelection[nodesWithSelection.length - 1];
             if (lastNode) {
+              isProgrammaticSelectRef.current = true;
               const nodeType = lastNode.data.nodeType as string | undefined;
               if (nodeType && EVENT_NODE_TYPES.has(nodeType)) {
                 selectEventNode(
                   buildEventNodeData(lastNode.data as GraphNodeData),
                   lastNode.id,
+                  false,
                 );
               } else {
                 const cardId = lastNode.data.cardId as string | undefined;
                 if (cardId) {
-                  selectCard(cardId, lastNode.id);
+                  selectCard(cardId, lastNode.id, false);
+                } else {
+                  isProgrammaticSelectRef.current = false;
                 }
               }
             }
@@ -393,7 +398,10 @@ function NodeGraphInner() {
           return;
         }
       }
-      selectCard(null, null, switchTab);
+      // 노드 해제(deselect)에서는 탭 전환하지 않음
+      // 세션 전환 시 노드가 클리어되면서 onSelectionChange가 호출되는데,
+      // 이때 detail 탭으로 전환하면 사용자가 보고 있던 chat 탭이 초기화됨
+      selectCard(null, null, false);
     },
     [selectCard, selectEventNode],
   );
