@@ -81,6 +81,10 @@ function interventionTreeNode(id: string, text: string, children: EventTreeNode[
   return { id, type: "intervention", children, content: text, completed: true, user: "admin" };
 }
 
+function compactTreeNode(id: string, content = "Context compaction occurred"): EventTreeNode {
+  return { id, type: "compact", children: [], content, completed: true };
+}
+
 function completeTreeNode(id: string, content = "done"): EventTreeNode {
   return { id, type: "complete", children: [], content, completed: true };
 }
@@ -432,6 +436,24 @@ describe("processChildNodes", () => {
 
     expect(ctx.nodes.length).toBe(2);
     expect(ctx.nodes[1].data.nodeType).toBe("system");
+  });
+
+  it("handles compact children in processChildNodes", () => {
+    const ctx = makeCtx({ prevMainFlowNodeId: "prev" });
+    const parent = userMsgNode("u1", "Hi", [
+      textTreeNode("t1", "thinking"),
+      compactTreeNode("cpt1"),
+      completeTreeNode("c1"),
+    ]);
+    processChildNodes(parent, ctx);
+
+    // text + compact + complete = 3 nodes
+    expect(ctx.nodes.length).toBe(3);
+    // compact node should be a system node with compact label
+    expect(ctx.nodes[1].data.nodeType).toBe("system");
+    expect(ctx.nodes[1].data.label).toBe("⚡ Context Compaction");
+    // prevMainFlowNodeId should chain through compact to complete
+    expect(ctx.prevMainFlowNodeId).toBe(ctx.nodes[2].id);
   });
 });
 
