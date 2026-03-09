@@ -56,6 +56,7 @@ export interface MemoryEvent {
 export interface SessionEvent {
   type: "session";
   session_id: string;
+  pid?: number;
 }
 
 export interface InterventionSentEvent {
@@ -281,6 +282,7 @@ interface BaseNode {
 export interface SessionNode extends BaseNode {
   type: "session";
   sessionId?: string;
+  pid?: number;
 }
 
 /** 사용자 메시지 노드 */

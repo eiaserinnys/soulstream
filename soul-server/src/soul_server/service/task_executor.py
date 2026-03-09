@@ -135,9 +135,10 @@ class TaskExecutor:
                             logger.warning(f"Failed to persist intervention user_message for {session_id}: {e}")
                     await self._listener_manager.broadcast(session_id, event)
 
-                # AskUserQuestion 응답 전달 경로 구축
+                # AskUserQuestion 응답 전달 경로 구축 + pid 기록
                 def on_runner_ready(runner):
                     task._deliver_input_response = runner.deliver_input_response
+                    task.pid = runner.pid
 
                 # Claude Code 실행
                 async for event in claude_runner.execute(
@@ -207,6 +208,7 @@ class TaskExecutor:
         finally:
             task.execution_task = None
             task._deliver_input_response = None
+            task.pid = None  # 프로세스 종료 후 stale PID 방지
             logger.info(f"Background execution finished for session: {session_id}")
 
     def is_execution_running(self, agent_session_id: str) -> bool:
