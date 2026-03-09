@@ -153,6 +153,11 @@ class TaskExecutor:
                 ):
                     event_dict = event.model_dump()
 
+                    # intervention_sent는 on_intervention_sent 콜백에서
+                    # 이미 영속화 + 브로드캐스트를 수행했으므로 메인 루프에서 중복 처리하지 않는다.
+                    if event.type == "intervention_sent":
+                        continue
+
                     # claude_session_id 등록 (인터벤션 역인덱스)
                     if event.type == "session" and self._register_session:
                         self._register_session(

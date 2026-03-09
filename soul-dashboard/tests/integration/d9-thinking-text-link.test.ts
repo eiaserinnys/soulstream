@@ -1,11 +1,8 @@
 /**
- * D9 수정 검증 테스트: thinking→text 연결 (parent_event_id 기반)
+ * D9 수정 검증 테스트: thinking/text 독립 노드 (Phase 7)
  *
- * D9 버그: card_id가 AssistantMessage 단위로 리셋되어
- * thinking과 text가 별도 메시지로 분리될 때 연결이 끊기는 문제.
- *
- * 수정: card_id 제거, parent_event_id로 같은 부모 레벨의
- * thinking→text 매칭을 수행하는 lastThinkingByParent + activeTextTarget 방식.
+ * Phase 7: thinking과 text는 독립적인 형제 노드로 트리에 배치됩니다.
+ * text_start는 항상 새 TextNode를 생성합니다.
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
@@ -42,14 +39,14 @@ function collectNodes(
   return result;
 }
 
-describe("D9: thinking→text 연결 (card_id 제거)", () => {
+describe("D9: thinking/text 독립 노드 (Phase 7)", () => {
   beforeEach(() => {
     useDashboardStore.getState().reset();
   });
 
-  // === 핵심 시나리오: thinking 후 text가 정상 병합 ===
+  // === 핵심 시나리오: thinking과 text가 독립 형제 노드 ===
 
-  it("thinking 후 text_start → text_delta → text_end가 thinking 노드에 병합", () => {
+  it("thinking 후 text_start → text_delta → text_end가 독립 TextNode로 생성", () => {
     const { processEvent, setActiveSession } = useDashboardStore.getState();
     setActiveSession("test:d9-basic");
 
@@ -62,15 +59,15 @@ describe("D9: thinking→text 연결 (card_id 제거)", () => {
 
     const tree = useDashboardStore.getState().tree!;
     const thinkingNodes = collectNodes(tree, (n) => n.type === "thinking");
+    const textNodes = collectNodes(tree, (n) => n.type === "text");
 
     expect(thinkingNodes).toHaveLength(1);
     expect(thinkingNodes[0].content).toBe("Let me analyze...");
-    expect(thinkingNodes[0].textContent).toBe("Here is the answer.");
-    expect(thinkingNodes[0].textCompleted).toBe(true);
 
-    // 독립 text 노드가 생성되지 않음
-    const textNodes = collectNodes(tree, (n) => n.type === "text");
-    expect(textNodes).toHaveLength(0);
+    // text는 독립 TextNode로 생성
+    expect(textNodes).toHaveLength(1);
+    expect(textNodes[0].content).toBe("Here is the answer.");
+    expect(textNodes[0].completed).toBe(true);
   });
 
   it("thinking 없이 text만 오면 독립 text 노드 생성", () => {
@@ -92,9 +89,9 @@ describe("D9: thinking→text 연결 (card_id 제거)", () => {
     expect(thinkingNodes).toHaveLength(0);
   });
 
-  // === D9 핵심: 별도 메시지에서도 매칭 성공 ===
+  // === 서브에이전트 내부에서도 독립 노드 ===
 
-  it("thinking과 text가 같은 parent_event_id를 가지면 매칭 (서브에이전트 내부)", () => {
+  it("서브에이전트 내부 thinking과 text가 독립 형제 노드로 생성", () => {
     const { processEvent, setActiveSession } = useDashboardStore.getState();
     setActiveSession("test:d9-subagent");
 
@@ -135,15 +132,19 @@ describe("D9: thinking→text 연결 (card_id 제거)", () => {
 
     const tree = useDashboardStore.getState().tree!;
     const thinkingNodes = collectNodes(tree, (n) => n.type === "thinking");
+    const textNodes = collectNodes(tree, (n) => n.type === "text");
 
     expect(thinkingNodes).toHaveLength(1);
-    expect(thinkingNodes[0].textContent).toBe("Subagent response");
-    expect(thinkingNodes[0].textCompleted).toBe(true);
+    expect(thinkingNodes[0].content).toBe("Subagent thinking...");
+
+    expect(textNodes).toHaveLength(1);
+    expect(textNodes[0].content).toBe("Subagent response");
+    expect(textNodes[0].completed).toBe(true);
   });
 
-  // === 연속 thinking 블록 각각 독립 매칭 ===
+  // === 연속 thinking 블록 각각 독립 노드 ===
 
-  it("연속 thinking→text 블록이 각각 올바르게 매칭", () => {
+  it("연속 thinking→text 블록이 각각 독립 노드로 생성", () => {
     const { processEvent, setActiveSession } = useDashboardStore.getState();
     setActiveSession("test:d9-sequential");
 
@@ -178,12 +179,15 @@ describe("D9: thinking→text 연결 (card_id 제거)", () => {
 
     const tree = useDashboardStore.getState().tree!;
     const thinkingNodes = collectNodes(tree, (n) => n.type === "thinking");
+    const textNodes = collectNodes(tree, (n) => n.type === "text");
 
     expect(thinkingNodes).toHaveLength(2);
     expect(thinkingNodes[0].content).toBe("First thought");
-    expect(thinkingNodes[0].textContent).toBe("Response 1");
     expect(thinkingNodes[1].content).toBe("Second thought");
-    expect(thinkingNodes[1].textContent).toBe("Response 2");
+
+    expect(textNodes).toHaveLength(2);
+    expect(textNodes[0].content).toBe("Response 1");
+    expect(textNodes[1].content).toBe("Response 2");
   });
 
   // === thinking 후 text 없이 다음 thinking이 오는 경우 ===
@@ -218,18 +222,23 @@ describe("D9: thinking→text 연결 (card_id 제거)", () => {
 
     const tree = useDashboardStore.getState().tree!;
     const thinkingNodes = collectNodes(tree, (n) => n.type === "thinking");
+    const textNodes = collectNodes(tree, (n) => n.type === "text");
 
     expect(thinkingNodes).toHaveLength(2);
-    // 첫 번째 thinking: text 없음
-    expect(thinkingNodes[0].textContent).toBeUndefined();
-    // 두 번째 thinking: text 매칭 성공
-    expect(thinkingNodes[1].textContent).toBe("Final answer");
-    expect(thinkingNodes[1].textCompleted).toBe(true);
+    // 첫 번째 thinking: text 없음 (독립)
+    expect(thinkingNodes[0].content).toBe("Planning...");
+    // 두 번째 thinking: 역시 독립
+    expect(thinkingNodes[1].content).toBe("Analyzing result");
+
+    // text는 독립 TextNode
+    expect(textNodes).toHaveLength(1);
+    expect(textNodes[0].content).toBe("Final answer");
+    expect(textNodes[0].completed).toBe(true);
   });
 
-  // === text_start 후 text_end 없이 다음 시퀀스가 오는 경우 (방어) ===
+  // === 완료 후 미완료 노드 없음 확인 ===
 
-  it("text_end 없이 새 thinking이 오면 activeTextTarget이 리셋됨", () => {
+  it("정상 완료 후 미완료 노드 없음", () => {
     const { processEvent, setActiveSession } = useDashboardStore.getState();
     setActiveSession("test:d9-incomplete");
 
@@ -250,11 +259,11 @@ describe("D9: thinking→text 연결 (card_id 제거)", () => {
     processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 10);
 
     const tree = useDashboardStore.getState().tree!;
-    const thinkingNodes = collectNodes(tree, (n) => n.type === "thinking");
+    const textNodes = collectNodes(tree, (n) => n.type === "text");
 
-    expect(thinkingNodes).toHaveLength(2);
-    expect(thinkingNodes[0].textContent).toBe("Response 1");
-    expect(thinkingNodes[1].textContent).toBe("Response 2");
+    expect(textNodes).toHaveLength(2);
+    expect(textNodes[0].content).toBe("Response 1");
+    expect(textNodes[1].content).toBe("Response 2");
 
     // 미완료 노드 없음
     const incompleteNodes = collectNodes(tree, (n) => !n.completed && n.type !== "session");
@@ -337,9 +346,9 @@ describe("D9: thinking→text 연결 (card_id 제거)", () => {
     expect(textNodes[1].completed).toBe(true);
   });
 
-  // === 병렬 서브에이전트에서 각각 thinking→text 매칭 ===
+  // === 병렬 서브에이전트에서 각각 독립 thinking/text ===
 
-  it("병렬 서브에이전트의 thinking→text가 parent_event_id로 올바르게 분리 매칭", () => {
+  it("병렬 서브에이전트의 thinking과 text가 parent_event_id로 올바르게 배치", () => {
     const { processEvent, setActiveSession } = useDashboardStore.getState();
     setActiveSession("test:d9-concurrent-subagents");
 
@@ -387,7 +396,7 @@ describe("D9: thinking→text 연결 (card_id 제거)", () => {
       parent_event_id: "toolu_B",
     } as ThinkingEvent, 7);
 
-    // A의 text (A의 thinking에 매칭되어야 함)
+    // A의 text
     processEvent({
       type: "text_start",
       parent_event_id: "toolu_A",
@@ -395,7 +404,7 @@ describe("D9: thinking→text 연결 (card_id 제거)", () => {
     processEvent({ type: "text_delta", text: "A response" } as TextDeltaEvent, 9);
     processEvent({ type: "text_end" } as TextEndEvent, 10);
 
-    // B의 text (B의 thinking에 매칭되어야 함)
+    // B의 text
     processEvent({
       type: "text_start",
       parent_event_id: "toolu_B",
@@ -405,19 +414,17 @@ describe("D9: thinking→text 연결 (card_id 제거)", () => {
 
     const tree = useDashboardStore.getState().tree!;
     const thinkingNodes = collectNodes(tree, (n) => n.type === "thinking");
+    const textNodes = collectNodes(tree, (n) => n.type === "text");
 
     expect(thinkingNodes).toHaveLength(2);
-    // A의 thinking은 A의 text를 가짐
     expect(thinkingNodes[0].content).toBe("A is thinking...");
-    expect(thinkingNodes[0].textContent).toBe("A response");
-    expect(thinkingNodes[0].textCompleted).toBe(true);
-    // B의 thinking은 B의 text를 가짐
     expect(thinkingNodes[1].content).toBe("B is thinking...");
-    expect(thinkingNodes[1].textContent).toBe("B response");
-    expect(thinkingNodes[1].textCompleted).toBe(true);
 
-    // 독립 text 노드 없음 (모두 thinking에 병합됨)
-    const textNodes = collectNodes(tree, (n) => n.type === "text");
-    expect(textNodes).toHaveLength(0);
+    // text는 독립 TextNode로 각각 생성
+    expect(textNodes).toHaveLength(2);
+    expect(textNodes[0].content).toBe("A response");
+    expect(textNodes[0].completed).toBe(true);
+    expect(textNodes[1].content).toBe("B response");
+    expect(textNodes[1].completed).toBe(true);
   });
 });

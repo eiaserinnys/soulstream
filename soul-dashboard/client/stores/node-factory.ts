@@ -160,14 +160,7 @@ export function applyUpdate(
 
     case "text_delta": {
       if (ctx.activeTextTarget) {
-        if (ctx.activeTextTarget.type === "thinking") {
-          // thinking 노드의 가시적 텍스트 갱신
-          ctx.activeTextTarget.textContent =
-            (ctx.activeTextTarget.textContent ?? "") + event.text;
-        } else {
-          // 독립 text 노드의 content 갱신
-          ctx.activeTextTarget.content += event.text;
-        }
+        ctx.activeTextTarget.content += event.text;
         return true;
       }
       return false;
@@ -176,9 +169,7 @@ export function applyUpdate(
     case "text_end": {
       if (ctx.activeTextTarget) {
         ctx.activeTextTarget.textCompleted = true;
-        if (ctx.activeTextTarget.type !== "thinking") {
-          ctx.activeTextTarget.completed = true;
-        }
+        ctx.activeTextTarget.completed = true;
         ctx.activeTextTarget = null;
         return true;
       }

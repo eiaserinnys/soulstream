@@ -58,11 +58,15 @@ async function readInitEvent(
 
       buffer += decoder.decode(value, { stream: true });
 
-      // SSE 이벤트는 빈 줄(\n\n)로 구분됨
-      const eventEnd = buffer.indexOf("\n\n");
+      // SSE 스펙: CR, LF, CRLF 모두 줄 종료로 인정
+      // sse_starlette는 기본적으로 \r\n을 사용하므로 \n으로 정규화
+      // (parseSSEBuffer()와 동일한 정규화 전략)
+      const normalized = buffer.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+
+      const eventEnd = normalized.indexOf("\n\n");
       if (eventEnd === -1) continue;
 
-      const eventBlock = buffer.substring(0, eventEnd);
+      const eventBlock = normalized.substring(0, eventEnd);
       const lines = eventBlock.split("\n");
 
       let data = "";
@@ -78,7 +82,7 @@ async function readInitEvent(
       }
 
       // init이 아니면 다음 이벤트 블록으로
-      buffer = buffer.substring(eventEnd + 2);
+      buffer = normalized.substring(eventEnd + 2);
     }
   } finally {
     // init 이벤트만 필요하므로 나머지 SSE 스트림은 의도적으로 취소합니다.

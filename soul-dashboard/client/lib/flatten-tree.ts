@@ -29,6 +29,10 @@ export interface ChatMessage {
   toolName?: string;
   toolDurationMs?: number;
   isError?: boolean;
+  /** tool 전용: 도구 입력 파라미터 */
+  toolInput?: Record<string, unknown>;
+  /** tool 전용: 도구 실행 결과 */
+  toolResult?: string;
   /** text/thinking 전용: 스트리밍 중 여부 */
   isStreaming?: boolean;
   /** result 전용 */
@@ -76,7 +80,20 @@ function collectMessages(
     if (msg) out.push(msg);
   }
 
-  for (const child of node.children) {
+  // result 노드가 complete 보다 먼저 오는 경우를 보정:
+  // complete → result 순서가 되도록 children을 정렬 (해당 노드가 있을 때만)
+  const children = node.children;
+  const needsSort = children.some((c) => c.type === "result") &&
+    children.some((c) => c.type === "complete");
+  const ordered = needsSort
+    ? [...children].sort((a, b) => {
+        if (a.type === "result" && b.type === "complete") return 1;
+        if (a.type === "complete" && b.type === "result") return -1;
+        return 0;
+      })
+    : children;
+
+  for (const child of ordered) {
     collectMessages(child, out);
   }
 }
@@ -112,10 +129,9 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
       return {
         id: n.id,
         role: "assistant",
-        content: n.textContent ?? n.content,
+        content: n.content,
         thinkingContent: n.content,
         timestamp: n.timestamp,
-        isStreaming: !n.textCompleted && n.textContent !== undefined,
         treeNodeId: n.id,
         treeNodeType: n.type,
       };
@@ -137,17 +153,15 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
     case "tool":
     case "tool_use": {
       const n = node as ToolNode;
+      const durationStr = n.durationMs
+        ? `(${(n.durationMs / 1000).toFixed(1)}s)`
+        : "";
       const status = n.completed
         ? n.isError
           ? "error"
-          : "done"
+          : ""
         : "running";
-      const durationStr = n.durationMs
-        ? `${(n.durationMs / 1000).toFixed(1)}s`
-        : "";
-      const content = durationStr
-        ? `${n.toolName}  ${status}  ${durationStr}`
-        : `${n.toolName}  ${status}`;
+      const content = [n.toolName, status, durationStr].filter(Boolean).join("  ");
 
       return {
         id: n.id,
@@ -157,6 +171,8 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
         toolName: n.toolName,
         toolDurationMs: n.durationMs,
         isError: n.isError,
+        toolInput: n.toolInput,
+        toolResult: n.toolResult,
         treeNodeId: n.id,
         treeNodeType: n.type,
       };

@@ -33,6 +33,7 @@ import {
   type GraphNodeData,
 } from "../lib/layout-engine";
 import { cn } from "../lib/cn";
+import { useTheme } from "../hooks/useTheme";
 import { createGraphDump, downloadDump } from "../lib/graph-dump";
 
 /** selectEventNode 경로로 라우팅하는 노드 타입 (트리 조회 불필요, 데이터 직접 전달) */
@@ -115,6 +116,7 @@ function calcPanToNode(
 // === Inner Graph (needs ReactFlow context) ===
 
 function NodeGraphInner() {
+  const [theme] = useTheme();
   const tree = useDashboardStore((s) => s.tree);
   const treeVersion = useDashboardStore((s) => s.treeVersion);
   const selectedCardId = useDashboardStore((s) => s.selectedCardId);
@@ -294,12 +296,12 @@ function NodeGraphInner() {
                 selectEventNode(
                   buildEventNodeData(lastNode.data as GraphNodeData),
                   lastNode.id,
-                  false,
+                  false,  // 초기 로드: 탭 전환 안 함 (CHAT 탭 유지)
                 );
               } else {
                 const cardId = lastNode.data.cardId as string | undefined;
                 if (cardId) {
-                  selectCard(cardId, lastNode.id, false);
+                  selectCard(cardId, lastNode.id, false);  // 초기 로드: 탭 전환 안 함
                 } else {
                   isProgrammaticSelectRef.current = false;
                 }
@@ -446,20 +448,20 @@ function NodeGraphInner() {
       panOnScrollMode={PanOnScrollMode.Vertical}
       zoomActivationKeyCode="Control"
       proOptions={{ hideAttribution: true }}
-      colorMode="dark"
+      colorMode={theme}
       defaultEdgeOptions={{
         type: "smoothstep",
-        style: { stroke: "#4b5563", strokeWidth: 1.5 },
+        style: { stroke: "var(--muted-foreground)", strokeWidth: 1.5, opacity: 0.3 },
       }}
       style={{ width: "100%", height: "100%" }}
     >
-      <Background color="#1f2937" gap={20} size={1} />
+      <Background color="var(--muted-foreground)" gap={20} size={1} style={{ opacity: 0.15 }} />
       <Controls
         showInteractive={false}
         style={{
           borderRadius: 6,
-          border: "1px solid rgba(255,255,255,0.08)",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
+          border: "1px solid var(--border)",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
         }}
       />
       {/* Auto-scroll 토글 + Dump */}

@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { createNodeFromEvent, applyUpdate } from "./node-factory";
 import { createProcessingContext, makeNode, registerNode } from "./processing-context";
-import type { ProcessingContext, TextTargetNode } from "./processing-context";
+import type { ProcessingContext } from "./processing-context";
 import type {
   EventTreeNode,
   UserMessageEvent,
@@ -32,7 +32,6 @@ import type {
   ErrorNode,
   ResultNode,
   SessionNode,
-  ThinkingNode,
   TextNode,
 } from "../../shared/types";
 
@@ -309,30 +308,19 @@ describe("applyUpdate", () => {
     // text_start tests are in tree-placer.test.ts (handleTextStart)
 
     describe("text_delta", () => {
-      it("should append to thinking node's textContent when target is thinking", () => {
+      it("should append to text node's content", () => {
         const { ctx, root } = makeCtxWithRoot();
-        const thinkingNode = makeNode("thinking-1", "thinking", "inner");
-        ctx.activeTextTarget = thinkingNode as TextTargetNode;
+        const textNode = makeNode("text-1", "text", "");
+        ctx.activeTextTarget = textNode as TextNode;
 
         const event1: TextDeltaEvent = { type: "text_delta", timestamp: 0, text: "Hello " };
         const changed1 = applyUpdate(event1, 20, ctx, root);
         expect(changed1).toBe(true);
-        expect((thinkingNode as ThinkingNode).textContent).toBe("Hello ");
+        expect(textNode.content).toBe("Hello ");
 
         const event2: TextDeltaEvent = { type: "text_delta", timestamp: 0, text: "world" };
         applyUpdate(event2, 21, ctx, root);
-        expect((thinkingNode as ThinkingNode).textContent).toBe("Hello world");
-      });
-
-      it("should append to text node's content when target is text", () => {
-        const { ctx, root } = makeCtxWithRoot();
-        const textNode = makeNode("text-1", "text", "");
-        ctx.activeTextTarget = textNode as TextTargetNode;
-
-        const event: TextDeltaEvent = { type: "text_delta", timestamp: 0, text: "chunk" };
-        applyUpdate(event, 22, ctx, root);
-
-        expect(textNode.content).toBe("chunk");
+        expect(textNode.content).toBe("Hello world");
       });
 
       it("should return false when no activeTextTarget", () => {
@@ -346,30 +334,15 @@ describe("applyUpdate", () => {
     });
 
     describe("text_end", () => {
-      it("should mark thinking target as textCompleted but not change completed", () => {
+      it("should mark text target as both textCompleted and completed", () => {
         const { ctx, root } = makeCtxWithRoot();
-        const thinkingNode = makeNode("thinking-1", "thinking", "inner");
-        // makeNode creates with completed: false
-        ctx.activeTextTarget = thinkingNode as TextTargetNode;
+        const textNode = makeNode("text-1", "text", "content");
+        ctx.activeTextTarget = textNode as TextNode;
 
         const event: TextEndEvent = { type: "text_end", timestamp: 0 };
         const changed = applyUpdate(event, 30, ctx, root);
 
         expect(changed).toBe(true);
-        expect((thinkingNode as ThinkingNode).textCompleted).toBe(true);
-        // text_end does NOT set completed for thinking nodes (type !== "thinking" check)
-        expect(thinkingNode.completed).toBe(false);
-        expect(ctx.activeTextTarget).toBeNull();
-      });
-
-      it("should mark text target as both textCompleted and completed", () => {
-        const { ctx, root } = makeCtxWithRoot();
-        const textNode = makeNode("text-1", "text", "content");
-        ctx.activeTextTarget = textNode as TextTargetNode;
-
-        const event: TextEndEvent = { type: "text_end", timestamp: 0 };
-        applyUpdate(event, 31, ctx, root);
-
         expect((textNode as TextNode).textCompleted).toBe(true);
         expect(textNode.completed).toBe(true);
         expect(ctx.activeTextTarget).toBeNull();

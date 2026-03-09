@@ -82,12 +82,13 @@ export function createMockSoulServer(): Promise<{
       const agentSessionId = req.body.agent_session_id ?? `sess-mock-${Date.now()}`;
 
       // SSE 스트림 시뮬레이트 (init 이벤트 후 즉시 종료)
+      // 실제 Soul 서버(sse_starlette)는 \r\n 구분자를 사용하므로 동일하게 재현
       res.writeHead(200, {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
       });
       res.write(
-        `event: init\ndata: ${JSON.stringify({ type: "init", agent_session_id: agentSessionId })}\n\n`,
+        `event: init\r\ndata: ${JSON.stringify({ type: "init", agent_session_id: agentSessionId })}\r\n\r\n`,
       );
       res.end();
     });

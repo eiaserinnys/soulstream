@@ -13,10 +13,13 @@ import { NodeGraph } from "./components/NodeGraph";
 import { RightPanel } from "./components/RightPanel";
 import { PromptComposer } from "./components/PromptComposer";
 import { StorageModeToggleCompact } from "./components/StorageModeToggle";
+import { ThemeToggle } from "./components/ThemeToggle";
+import { initTheme } from "./hooks/useTheme";
 import { useSessionListProvider } from "./hooks/useSessionListProvider";
 import { useSessionProvider } from "./hooks/useSessionProvider";
 import { useNotification } from "./hooks/useNotification";
 import { useUrlSync } from "./hooks/useUrlSync";
+import { useDashboardConfig } from "./hooks/useDashboardConfig";
 import { useDashboardStore } from "./stores/dashboard-store";
 import { cn } from "./lib/cn";
 import { Badge } from "./components/ui/badge";
@@ -85,16 +88,21 @@ function DragHandle({
       <div
         className="absolute inset-y-0 -left-[3px] -right-[3px]"
         onMouseEnter={() => {
-          if (lineRef.current) lineRef.current.style.backgroundColor = "rgba(59, 130, 246, 0.5)";
+          if (lineRef.current) {
+            lineRef.current.style.backgroundColor = "var(--node-user)";
+            lineRef.current.style.opacity = "0.5";
+          }
         }}
         onMouseLeave={() => {
-          if (lineRef.current) lineRef.current.style.backgroundColor = "rgba(255,255,255,0.06)";
+          if (lineRef.current) {
+            lineRef.current.style.backgroundColor = "var(--border)";
+            lineRef.current.style.opacity = "1";
+          }
         }}
       >
         <div
           ref={lineRef}
-          className="absolute inset-y-0 left-[3px] w-px transition-colors duration-150"
-          style={{ backgroundColor: "rgba(255,255,255,0.06)" }}
+          className="absolute inset-y-0 left-[3px] w-px transition-colors duration-150 bg-border"
         />
       </div>
     </div>
@@ -146,11 +154,17 @@ export function DashboardLayout() {
     sessionKey: activeSessionKey,
   });
 
+  // 테마 초기화 (localStorage → OS 설정 → dark 기본)
+  useEffect(() => { initTheme(); }, []);
+
   // 브라우저 알림 (완료/에러/인터벤션)
   useNotification();
 
   // URL ↔ 스토어 동기화 (/{sessionId} 라우팅)
   useUrlSync();
+
+  // 대시보드 프로필 설정 로드
+  useDashboardConfig();
 
   // 서버 설정 로드 (세렌디피티 가용 여부)
   useEffect(() => {
@@ -211,11 +225,12 @@ export function DashboardLayout() {
       {/* Top bar */}
       <header className="flex items-center justify-between px-4 h-10 border-b border-border bg-popover shrink-0">
         <div className="flex items-center gap-3">
-          <span className="text-[13px] font-semibold text-muted-foreground tracking-[0.02em]">
+          <span className="text-[14px] font-semibold text-muted-foreground tracking-[0.02em]">
             Soul Dashboard
           </span>
         </div>
         <div className="flex items-center gap-2">
+          <ThemeToggle />
           <StorageModeToggleCompact />
           <ConnectionBadge status={sseStatus} />
         </div>
