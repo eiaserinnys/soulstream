@@ -47,14 +47,14 @@ _runner_pool: RunnerPool | None = None
 
 
 async def periodic_cleanup():
-    """주기적 태스크 정리 (24시간 이상 된 완료 태스크)"""
+    """주기적 고아 running 세션 보정 (24시간 이상 된 orphaned running 태스크)"""
     while True:
         try:
             await asyncio.sleep(3600)  # 1시간마다 실행
             task_manager = get_task_manager()
-            cleaned = await task_manager.cleanup_old_tasks(max_age_hours=24)
-            if cleaned > 0:
-                logger.info(f"Periodic cleanup: removed {cleaned} old tasks")
+            fixed = await task_manager.cleanup_orphaned_running(max_age_hours=24)
+            if fixed > 0:
+                logger.info(f"Periodic cleanup: fixed {fixed} orphaned running sessions")
         except asyncio.CancelledError:
             break
         except Exception as e:

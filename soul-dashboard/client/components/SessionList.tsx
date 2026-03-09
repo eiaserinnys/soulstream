@@ -145,6 +145,7 @@ interface SessionListProps {
 
 export function SessionList({ sessions, loading, error }: SessionListProps) {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
+  const sessionsTotal = useDashboardStore((s) => s.sessionsTotal);
   const setActiveSession = useDashboardStore((s) => s.setActiveSession);
   const startCompose = useDashboardStore((s) => s.startCompose);
   const isComposing = useDashboardStore((s) => s.isComposing);
@@ -160,7 +161,14 @@ export function SessionList({ sessions, loading, error }: SessionListProps) {
     >
       {/* Header + New button */}
       <div className="p-3 px-3.5 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-[0.05em] flex justify-between items-center">
-        <span>Sessions</span>
+        <span>
+          Sessions
+          {sessionsTotal > 0 && (
+            <span className="ml-1 text-[10px] font-normal normal-case tracking-normal text-muted-foreground/60">
+              ({sessionsTotal})
+            </span>
+          )}
+        </span>
         <Button
           data-testid="new-session-button"
           variant="outline"

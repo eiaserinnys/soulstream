@@ -67,6 +67,7 @@ export interface DashboardState {
 
   /** 세션 목록 */
   sessions: SessionSummary[];
+  sessionsTotal: number;
   sessionsLoading: boolean;
   sessionsError: string | null;
 
@@ -124,7 +125,7 @@ export interface DashboardActions {
   setStorageMode: (mode: StorageMode) => void;
 
   // 세션 목록
-  setSessions: (sessions: SessionSummary[]) => void;
+  setSessions: (sessions: SessionSummary[], total?: number) => void;
   addSession: (session: SessionSummary) => void;
   updateSession: (
     agentSessionId: string,
@@ -198,6 +199,7 @@ const NEEDS_ROOT = new Set([
 const initialState: DashboardState = {
   storageMode: "sse",
   sessions: [],
+  sessionsTotal: 0,
   sessionsLoading: true,
   sessionsError: null,
   activeSessionKey: null,
@@ -249,6 +251,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         set({
           storageMode,
           sessions: [],
+          sessionsTotal: 0,
           sessionsLoading: true,
           sessionsError: null,
           activeSessionKey: null,
@@ -268,7 +271,11 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
 
       // --- 세션 목록 ---
 
-      setSessions: (sessions) => set({ sessions, sessionsError: null }),
+      setSessions: (sessions, total) => set({
+        sessions,
+        sessionsTotal: total ?? sessions.length,
+        sessionsError: null,
+      }),
 
       addSession: (session) => {
         const sessions = get().sessions;
@@ -277,7 +284,11 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           return;
         }
         // 최신 세션이 앞에 오도록 추가
-        set({ sessions: [session, ...sessions], sessionsError: null });
+        set({
+          sessions: [session, ...sessions],
+          sessionsTotal: get().sessionsTotal + 1,
+          sessionsError: null,
+        });
       },
 
       updateSession: (agentSessionId, updates) => {
@@ -293,7 +304,12 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
 
       removeSession: (agentSessionId) => {
         const sessions = get().sessions;
-        set({ sessions: sessions.filter((s) => s.agentSessionId !== agentSessionId) });
+        const filtered = sessions.filter((s) => s.agentSessionId !== agentSessionId);
+        const removed = sessions.length - filtered.length;
+        set({
+          sessions: filtered,
+          sessionsTotal: Math.max(0, get().sessionsTotal - removed),
+        });
       },
 
       setSessionsLoading: (sessionsLoading) => set({ sessionsLoading }),

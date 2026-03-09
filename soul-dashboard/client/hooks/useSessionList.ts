@@ -55,7 +55,7 @@ export function useSessionList(options: UseSessionListOptions = {}) {
       switch (event.type) {
         case "session_list":
           // 초기 목록 설정
-          setSessions(event.sessions);
+          setSessions(event.sessions, event.total);
           setSessionsLoading(false);
           break;
 

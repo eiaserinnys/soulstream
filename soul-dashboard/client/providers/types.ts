@@ -20,9 +20,15 @@ export type StorageMode = "sse" | "serendipity";
  *
  * 각 모드별 구현체가 이 인터페이스를 구현합니다.
  */
+/** 페이지네이션된 세션 목록 조회 결과 */
+export interface PaginatedSessions {
+  sessions: SessionSummary[];
+  total: number;
+}
+
 export interface SessionListProvider {
-  /** 세션 목록 조회 */
-  fetchSessions(): Promise<SessionSummary[]>;
+  /** 세션 목록 조회 (페이지네이션 지원) */
+  fetchSessions(offset?: number, limit?: number): Promise<PaginatedSessions>;
 
   /** Provider 타입 식별자 */
   readonly mode: StorageMode;

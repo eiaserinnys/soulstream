@@ -69,7 +69,7 @@ def mock_task_manager_with_event_store(event_store):
     }
 
     # get_all_sessions 메서드 mock
-    manager.get_all_sessions = MagicMock(return_value=[task1, task2])
+    manager.get_all_sessions = MagicMock(return_value=([task1, task2], 2))
 
     # get_task 메서드 mock - async 함수
     async def mock_get_task(agent_session_id: str):

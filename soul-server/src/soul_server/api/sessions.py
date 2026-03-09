@@ -13,7 +13,7 @@ import json
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Query
 from sse_starlette.sse import EventSourceResponse
 
 from soul_server.models import SessionsListResponse
@@ -48,12 +48,15 @@ def create_sessions_router() -> APIRouter:
     router = APIRouter()
 
     @router.get("/sessions", response_model=SessionsListResponse)
-    async def get_sessions():
-        """세션 목록 조회"""
+    async def get_sessions(
+        offset: int = Query(0, ge=0, description="건너뛸 항목 수"),
+        limit: int = Query(0, ge=0, description="반환할 최대 항목 수 (0이면 전체)"),
+    ):
+        """세션 목록 조회 (페이지네이션 지원)"""
         task_manager = get_task_manager()
-        tasks = task_manager.get_all_sessions()
+        tasks, total = task_manager.get_all_sessions(offset=offset, limit=limit)
         sessions = [_task_to_session_info(t) for t in tasks]
-        return {"sessions": sessions}
+        return {"sessions": sessions, "total": total}
 
     @router.get("/sessions/stream")
     async def sessions_stream():
@@ -68,7 +71,7 @@ def create_sessions_router() -> APIRouter:
             task_manager = get_task_manager()
             session_broadcaster = get_session_broadcaster()
 
-            tasks = task_manager.get_all_sessions()
+            tasks, total = task_manager.get_all_sessions()
             sessions = [_task_to_session_info(t) for t in tasks]
 
             yield {
@@ -76,6 +79,7 @@ def create_sessions_router() -> APIRouter:
                 "data": json.dumps({
                     "type": "session_list",
                     "sessions": sessions,
+                    "total": total,
                 }, ensure_ascii=False),
             }
 

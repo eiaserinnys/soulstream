@@ -72,7 +72,10 @@ export function useSessionListProvider(
       setSessionsError(null);  // 이벤트 수신 = 연결 정상
       switch (event.type) {
         case "session_list":
-          setSessions(event.sessions.map((s) => toSessionSummary(s as unknown as Record<string, unknown>)));
+          setSessions(
+            event.sessions.map((s) => toSessionSummary(s as unknown as Record<string, unknown>)),
+            event.total,
+          );
           setSessionsLoading(false);
           break;
 
@@ -152,11 +155,11 @@ export function useSessionListProvider(
       abortRef.current = false;
 
       const provider = getSessionProvider(storageMode);
-      const data = await provider.fetchSessions();
+      const result = await provider.fetchSessions();
 
       if (abortRef.current) return; // 취소된 요청은 무시
 
-      setSessions(data);
+      setSessions(result.sessions, result.total);
     } catch (err: unknown) {
       if (abortRef.current) return;
 
