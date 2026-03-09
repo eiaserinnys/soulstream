@@ -374,12 +374,14 @@ class SessionInfo(BaseModel):
 class SessionsListResponse(BaseModel):
     """세션 목록 응답 (GET /sessions)"""
     sessions: List[SessionInfo] = Field(default_factory=list)
+    total: int = Field(0, description="전체 세션 수 (페이지네이션용)")
 
 
 class SessionListSSEEvent(BaseModel):
     """세션 목록 SSE 이벤트 (연결 시 초기 목록)"""
     type: str = "session_list"
     sessions: List[SessionInfo] = Field(default_factory=list)
+    total: int = Field(0, description="전체 세션 수")
 
 
 class SessionCreatedSSEEvent(BaseModel):

@@ -150,13 +150,33 @@ class TaskManager:
         """실행 중인 태스크 목록 반환"""
         return [t for t in self._tasks.values() if t.status == TaskStatus.RUNNING]
 
-    def get_all_sessions(self) -> List[Task]:
-        """모든 세션 목록 반환 (생성일 기준 내림차순)"""
-        return sorted(
+    def get_all_sessions(
+        self,
+        offset: int = 0,
+        limit: int = 0,
+    ) -> tuple[List[Task], int]:
+        """세션 목록 반환 (생성일 기준 내림차순, 페이지네이션 지원)
+
+        Args:
+            offset: 건너뛸 항목 수 (기본 0)
+            limit: 반환할 최대 항목 수 (0이면 전체)
+
+        Returns:
+            (세션 리스트, 전체 세션 수) 튜플
+        """
+        all_sorted = sorted(
             self._tasks.values(),
             key=lambda t: t.created_at,
             reverse=True,
         )
+        total = len(all_sorted)
+
+        if offset > 0:
+            all_sorted = all_sorted[offset:]
+        if limit > 0:
+            all_sorted = all_sorted[:limit]
+
+        return all_sorted, total
 
     async def create_task(
         self,
@@ -498,55 +518,48 @@ class TaskManager:
         async with self._lock:
             return await self._executor.cancel_running_tasks(timeout)
 
-    async def cleanup_old_tasks(self, max_age_hours: int = 24) -> int:
+    async def cleanup_orphaned_running(self, max_age_hours: int = 24) -> int:
         """
-        오래된 태스크 정리
+        고아 running 태스크 보정
+
+        실행 태스크(execution_task)가 없는데 running 상태인 오래된 세션을
+        interrupted로 마킹합니다. 완료/에러/중단된 세션은 삭제하지 않고
+        메모리에 유지합니다 (대시보드 히스토리 조회용).
 
         Args:
-            max_age_hours: 최대 보관 시간
+            max_age_hours: orphaned 판정 기준 시간
 
         Returns:
-            정리된 태스크 수
+            보정된 태스크 수
         """
         cutoff = utc_now() - timedelta(hours=max_age_hours)
-        cleaned = 0
+        fixed = 0
+        fixed_tasks = []
 
         async with self._lock:
-            keys_to_remove = []
             for key, task in self._tasks.items():
-                if task.status == TaskStatus.RUNNING:
-                    if task.execution_task is None or task.execution_task.done():
-                        if task.created_at < cutoff:
-                            task.status = TaskStatus.INTERRUPTED
-                            task.error = "실행 태스크 없이 오래된 running 상태 (orphaned)"
-                            task.completed_at = utc_now()
-                            logger.warning(f"Marked orphaned running session as interrupted: {key}")
+                if task.status != TaskStatus.RUNNING:
                     continue
+                if task.execution_task is None or task.execution_task.done():
+                    if task.created_at < cutoff:
+                        task.status = TaskStatus.INTERRUPTED
+                        task.error = "실행 태스크 없이 오래된 running 상태 (orphaned)"
+                        task.completed_at = utc_now()
+                        logger.warning(f"Marked orphaned running session as interrupted: {key}")
+                        fixed_tasks.append(task)
+                        fixed += 1
 
-                if task.created_at < cutoff:
-                    keys_to_remove.append(key)
-
-            deleted_ids = []
-            for key in keys_to_remove:
-                task = self._tasks[key]
-                self._unregister_claude_session(key)
-                self._clear_queue(task.intervention_queue)
-                task.listeners.clear()
-                del self._tasks[key]
-                deleted_ids.append(key)
-                cleaned += 1
-
-        if cleaned > 0:
-            logger.info(f"Cleaned up {cleaned} old sessions")
+        if fixed > 0:
+            logger.info(f"Fixed {fixed} orphaned running sessions")
             await self._schedule_save()
             try:
                 broadcaster = get_session_broadcaster()
-                for sid in deleted_ids:
-                    await broadcaster.emit_session_deleted(sid)
+                for task in fixed_tasks:
+                    await broadcaster.emit_session_updated(task)
             except Exception:
-                logger.warning("Failed to broadcast session deletions", exc_info=True)
+                logger.warning("Failed to broadcast orphaned session fixes", exc_info=True)
 
-        return cleaned
+        return fixed
 
     def _clear_queue(self, queue: asyncio.Queue) -> None:
         """큐 내 모든 항목 제거"""

@@ -395,6 +395,7 @@ export interface InterveneResponse {
 /** GET /api/sessions 응답 */
 export interface SessionListResponse {
   sessions: SessionSummary[];
+  total: number;
 }
 
 /** 공통 API 에러 응답 */
@@ -434,6 +435,7 @@ export interface DashboardSSEEvent {
 export interface SessionListStreamEvent {
   type: "session_list";
   sessions: SessionSummary[];
+  total: number;
 }
 
 /** 새 세션 생성 */

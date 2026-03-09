@@ -102,8 +102,9 @@ class TestGetTask:
         await manager.create_task(prompt="world", agent_session_id="sess-2")
         await manager.complete_task("sess-1", "done")
 
-        sessions = manager.get_all_sessions()
+        sessions, total = manager.get_all_sessions()
         assert len(sessions) == 2
+        assert total == 2
 
 
 class TestCompleteTask:
@@ -224,28 +225,32 @@ class TestClaudeSessionIndex:
 
 
 class TestCleanup:
-    async def test_cleanup_old_completed_tasks(self, manager):
-        """오래된 완료 세션 정리"""
+    async def test_cleanup_fixes_orphaned_running(self, manager):
+        """오래된 orphaned running 세션을 interrupted로 보정"""
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
-        await manager.complete_task("sess-1", "result")
 
-        # created_at을 과거로 조작
+        # created_at을 과거로 조작 (running 상태, execution_task 없음 → orphaned)
         task_ref = await manager.get_task("sess-1")
         task_ref.created_at = utc_now() - timedelta(hours=25)
 
-        cleaned = await manager.cleanup_old_tasks(max_age_hours=24)
-        assert cleaned == 1
+        fixed = await manager.cleanup_orphaned_running(max_age_hours=24)
+        assert fixed == 1
 
         task = await manager.get_task("sess-1")
-        assert task is None
+        assert task is not None
+        assert task.status.value == "interrupted"
 
-    async def test_cleanup_preserves_recent_tasks(self, manager):
-        """최근 세션은 정리 안 함"""
+    async def test_cleanup_preserves_completed_tasks(self, manager):
+        """완료된 세션은 삭제하지 않고 유지"""
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
         await manager.complete_task("sess-1", "result")
 
-        cleaned = await manager.cleanup_old_tasks(max_age_hours=24)
-        assert cleaned == 0
+        # 오래된 세션이라도 삭제하지 않음
+        task_ref = await manager.get_task("sess-1")
+        task_ref.created_at = utc_now() - timedelta(hours=25)
+
+        fixed = await manager.cleanup_orphaned_running(max_age_hours=24)
+        assert fixed == 0
 
         task = await manager.get_task("sess-1")
         assert task is not None
