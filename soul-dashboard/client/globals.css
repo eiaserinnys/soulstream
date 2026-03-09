@@ -125,6 +125,11 @@
     animation: node-shimmer 1.5s infinite linear;
   }
 
+  /* React Flow panel inset — sync with --panel-inset token */
+  .react-flow__panel {
+    margin: var(--panel-inset) !important;
+  }
+
   /* React Flow dark theme overrides */
   .react-flow__background {
     background-color: var(--background) !important;
@@ -158,6 +163,9 @@
 }
 
 :root {
+  /* Panel edge inset — shared by ReactFlow Panel, ChatInput, scroll-to-bottom */
+  --panel-inset: 15px;
+
   --accent: --alpha(var(--color-black) / 4%);
   --accent-foreground: var(--color-neutral-800);
   --background: var(--color-white);
