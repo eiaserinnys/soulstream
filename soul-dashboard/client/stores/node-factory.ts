@@ -151,7 +151,9 @@ export function applyUpdate(
     case "session": {
       if (!root || root.type !== "session") return false;
       const e = event as SessionEvent;
-      (root as SessionNode).sessionId = e.session_id;
+      const sessionRoot = root as SessionNode;
+      sessionRoot.sessionId = e.session_id;
+      sessionRoot.pid = e.pid;
       root.content = e.session_id;
       return true;
     }

@@ -41,7 +41,12 @@ class TestSessionEventModel:
     def test_session_event_model_dump(self):
         event = SessionEvent(session_id="sess-abc123")
         d = event.model_dump()
-        assert d == {"type": "session", "session_id": "sess-abc123"}
+        assert d == {"type": "session", "session_id": "sess-abc123", "pid": None}
+
+    def test_session_event_with_pid(self):
+        event = SessionEvent(session_id="sess-abc123", pid=12345)
+        d = event.model_dump()
+        assert d == {"type": "session", "session_id": "sess-abc123", "pid": 12345}
 
     def test_sse_event_type_session(self):
         assert SSEEventType.SESSION == "session"

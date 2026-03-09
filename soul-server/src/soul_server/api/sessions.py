@@ -33,6 +33,7 @@ def _task_to_session_info(task: Task) -> dict:
         "prompt": task.prompt,
         "created_at": task.created_at.isoformat(),
         "updated_at": updated_at.isoformat(),
+        "pid": task.pid,
     }
 
 

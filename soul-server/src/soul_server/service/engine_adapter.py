@@ -266,9 +266,15 @@ class SoulEngineAdapter:
 
         # --- 세션 ID 조기 통지 ---
 
+        # runner 참조: run_claude() 내에서 runner 생성 후 설정.
+        # on_session_callback은 runner.run() → _receive_messages() 시점에 호출되므로
+        # _get_or_create_client()에서 pid가 이미 설정된 이후다. 타이밍 안전.
+        _runner_ref: list[Optional[ClaudeRunner]] = [None]
+
         async def on_session_callback(session_id: str) -> None:
             """ClaudeRunner가 SystemMessage에서 session_id를 받으면 즉시 SSE 이벤트 발행"""
-            await queue.put(SessionEvent(session_id=session_id))
+            runner_pid = _runner_ref[0].pid if _runner_ref[0] else None
+            await queue.put(SessionEvent(session_id=session_id, pid=runner_pid))
 
         # --- 세분화 이벤트 (dashboard용) ---
 
@@ -311,6 +317,9 @@ class SoulEngineAdapter:
             if self._rate_limit_tracker is not None:
                 runner.rate_limit_tracker = self._rate_limit_tracker
                 runner.alert_send_fn = alert_send_fn
+
+            # runner 참조 저장 (on_session_callback에서 pid 접근용)
+            _runner_ref[0] = runner
 
             # runner 준비 알림 (AskUserQuestion 응답 전달 경로 구축용)
             if on_runner_ready:
