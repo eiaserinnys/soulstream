@@ -52,7 +52,7 @@ def mock_task_manager():
     }
 
     # get_all_sessions 메서드 mock
-    manager.get_all_sessions = MagicMock(return_value=[task1, task2])
+    manager.get_all_sessions = MagicMock(return_value=([task1, task2], 2))
 
     return manager
 
@@ -124,7 +124,7 @@ class TestGetSessions:
 
         # 빈 TaskManager
         empty_manager = MagicMock()
-        empty_manager.get_all_sessions = MagicMock(return_value=[])
+        empty_manager.get_all_sessions = MagicMock(return_value=([], 0))
 
         app = FastAPI()
         with (
@@ -495,9 +495,10 @@ class TestTaskManagerGetAllSessions:
         manager._tasks["sess-001"] = task1
         manager._tasks["sess-002"] = task2
 
-        sessions = manager.get_all_sessions()
+        sessions, total = manager.get_all_sessions()
 
         assert len(sessions) == 2
+        assert total == 2
         assert any(s.agent_session_id == "sess-001" for s in sessions)
         assert any(s.agent_session_id == "sess-002" for s in sessions)
 
@@ -507,9 +508,10 @@ class TestTaskManagerGetAllSessions:
         from soul_server.service.task_manager import TaskManager
 
         manager = TaskManager()
-        sessions = manager.get_all_sessions()
+        sessions, total = manager.get_all_sessions()
 
         assert sessions == []
+        assert total == 0
 
     @pytest.mark.asyncio
     async def test_returns_sorted_by_created_at_desc(self):
@@ -535,11 +537,45 @@ class TestTaskManagerGetAllSessions:
         manager._tasks["sess-old"] = task1
         manager._tasks["sess-new"] = task2
 
-        sessions = manager.get_all_sessions()
+        sessions, total = manager.get_all_sessions()
 
         # 최신이 먼저
         assert sessions[0].agent_session_id == "sess-new"
         assert sessions[1].agent_session_id == "sess-old"
+        assert total == 2
+
+    @pytest.mark.asyncio
+    async def test_pagination_offset_limit(self):
+        """offset과 limit으로 페이지네이션"""
+        from soul_server.service.task_manager import TaskManager
+        from soul_server.service.task_models import Task, TaskStatus
+
+        manager = TaskManager()
+
+        now = datetime(2026, 3, 3, 12, 0, 0, tzinfo=timezone.utc)
+        for i in range(5):
+            task = Task(
+                agent_session_id=f"sess-{i:03d}",
+                prompt=f"Task {i}",
+                status=TaskStatus.COMPLETED,
+                created_at=now + timedelta(hours=i),
+            )
+            manager._tasks[f"sess-{i:03d}"] = task
+
+        # 전체
+        sessions, total = manager.get_all_sessions()
+        assert len(sessions) == 5
+        assert total == 5
+
+        # offset=2, limit=2
+        sessions, total = manager.get_all_sessions(offset=2, limit=2)
+        assert len(sessions) == 2
+        assert total == 5
+
+        # offset=0, limit=3
+        sessions, total = manager.get_all_sessions(offset=0, limit=3)
+        assert len(sessions) == 3
+        assert total == 5
 
 
 # === Session Info Serialization Tests ===
@@ -645,10 +681,11 @@ class TestConcurrentSessions:
         manager._tasks["sess-b"] = task_b
         manager._tasks["sess-c"] = task_c
 
-        sessions = manager.get_all_sessions()
+        sessions, total = manager.get_all_sessions()
 
         # 모든 세션이 목록에 있어야 함
         assert len(sessions) == 3
+        assert total == 3
         session_ids = [s.agent_session_id for s in sessions]
         assert "sess-a" in session_ids
         assert "sess-b" in session_ids
