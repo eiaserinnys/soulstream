@@ -1,0 +1,163 @@
+# Soulstream deployment configuration for haniel.
+#
+# Install:
+#   1. Open PowerShell as Administrator
+#   2. irm https://raw.githubusercontent.com/eiaserinnys/Haniel/main/install-haniel.ps1 | iex
+#   3. When prompted for config URL, enter:
+#      https://raw.githubusercontent.com/eiaserinnys/soulstream/main/haniel.yaml
+#
+# Directory structure after installation:
+#   {root}/
+#   +-- haniel.yaml                    <- this file
+#   +-- .self/                         <- haniel repo (self-update)
+#   +-- .services/
+#       +-- soulstream/                <- soulstream repo
+#           +-- soul-server/           <- FastAPI backend
+#           +-- soul-dashboard/        <- Express + React frontend
+#           +-- logs/                  <- service stdout/stderr
+
+poll_interval: 60
+
+shutdown:
+  timeout: 10
+  kill_timeout: 30
+
+backoff:
+  base_delay: 5
+  max_delay: 300
+  circuit_breaker: 5
+  circuit_window: 300
+
+webhooks:
+  - url: https://hooks.slack.com/services/YOUR/WEBHOOK/URL
+    format: slack
+
+mcp:
+  enabled: true
+  transport: sse
+  port: 3200
+
+repos:
+  haniel:
+    url: https://github.com/eiaserinnys/Haniel.git
+    branch: main
+    path: ./.self
+
+  soulstream:
+    url: git@github.com:eiaserinnys/soulstream.git
+    branch: main
+    path: ./.services/soulstream
+
+self:
+  repo: haniel
+  auto_update: false
+
+services:
+  soul-server:
+    run: ./.services/soulstream/soul-server/.venv/Scripts/python.exe -X utf8 -m soul_server.main
+    cwd: ./.services/soulstream/soul-server
+    repo: soulstream
+    ready: port:3105
+    restart_delay: 3
+    shutdown:
+      signal: SIGTERM
+      timeout: 15
+    hooks:
+      post_pull: ./.services/soulstream/soul-server/.venv/Scripts/pip.exe install -e ./.services/soulstream/soul-server
+
+  soul-dashboard:
+    run: npx tsx server/index.ts
+    cwd: ./.services/soulstream/soul-dashboard
+    repo: soulstream
+    after: soul-server
+    ready: port:3109
+    restart_delay: 3
+    hooks:
+      post_pull: npm --prefix ./.services/soulstream/soul-dashboard install && npm --prefix ./.services/soulstream/soul-dashboard run build
+
+install:
+  requirements:
+    python: ">=3.11"
+    node: ">=18"
+    winsw: true
+
+  directories:
+    - ./.self/logs
+    - ./.services
+    - ./.services/soulstream/logs
+
+  environments:
+    soul-venv:
+      type: python-venv
+      path: ./.services/soulstream/soul-server/.venv
+      requirements:
+        - ./.services/soulstream/soul-server/pyproject.toml
+
+    dashboard-node:
+      type: npm
+      path: ./.services/soulstream/soul-dashboard
+
+  configs:
+    soul-server-env:
+      path: ./.services/soulstream/soul-server/.env
+      keys:
+        # Required
+        - key: WORKSPACE_DIR
+          prompt: "Workspace directory — absolute path to the seosoyoung workspace"
+          guide: "The directory where .projects/, .local/, .env etc. live (e.g. D:/soyoung_root/seosoyoung_workspace)"
+        - key: AUTH_BEARER_TOKEN
+          prompt: "API authentication bearer token"
+          guide: "Any random string for API auth. Generate with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+        # Server
+        - key: HOST
+          default: "0.0.0.0"
+        - key: PORT
+          default: "3105"
+        - key: ENVIRONMENT
+          default: "production"
+        # Runner Pool
+        - key: MAX_CONCURRENT_SESSIONS
+          default: "5"
+        - key: SESSION_TIMEOUT_SECONDS
+          default: "3600"
+        - key: RUNNER_POOL_MAX_SIZE
+          default: "8"
+        - key: RUNNER_POOL_IDLE_TTL
+          default: "600"
+        - key: RUNNER_POOL_PRE_WARM
+          default: "2"
+        - key: RUNNER_POOL_MIN_GENERIC
+          default: "1"
+        # Serendipity
+        - key: SERENDIPITY_ENABLED
+          default: "false"
+        - key: SERENDIPITY_URL
+          default: ""
+        # Dashboard profile
+        - key: DASH_USER_NAME
+          prompt: "Dashboard display name for the user"
+        - key: DASH_USER_ID
+          prompt: "Dashboard user ID"
+        - key: DASH_USER_PORTRAIT
+          default: ".local/portrait/user.png"
+        - key: DASH_ASSISTANT_NAME
+          default: "Assistant"
+        - key: DASH_ASSISTANT_ID
+          default: "assistant"
+        - key: DASH_ASSISTANT_PORTRAIT
+          default: ".local/portrait/assistant.png"
+
+    dashboard-env:
+      path: ./.services/soulstream/soul-dashboard/.env
+      keys:
+        - key: SOUL_API_URL
+          default: "http://localhost:3105"
+        - key: DASHBOARD_PORT
+          default: "3109"
+
+  service:
+    name: soulstream
+    display: "Soulstream (via Haniel)"
+    working_directory: "{root}"
+    environment:
+      PYTHONUTF8: "1"
