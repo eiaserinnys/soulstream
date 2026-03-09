@@ -92,7 +92,7 @@ function EventNodeDetail({
       {/* Full content */}
       <div>
         <SectionLabel>Message</SectionLabel>
-        <CodeBlock maxHeight={500}>{data.content || "(empty)"}</CodeBlock>
+        <div className="whitespace-pre-wrap break-words text-sm overflow-auto" style={{ maxHeight: 500 }}>{data.content || "(empty)"}</div>
       </div>
     </div>
   );
@@ -148,7 +148,7 @@ function ResultNodeDetail({ data }: { data: SelectedEventNodeData }) {
       {data.content && (
         <div>
           <SectionLabel>Output</SectionLabel>
-          <CodeBlock maxHeight={500}>{data.content}</CodeBlock>
+          <div className="whitespace-pre-wrap break-words text-sm overflow-auto" style={{ maxHeight: 500 }}>{data.content}</div>
         </div>
       )}
     </div>
