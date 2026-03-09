@@ -47,6 +47,7 @@ def task_to_response(task: Task) -> SessionResponse:
         result=task.result,
         error=task.error,
         claude_session_id=task.claude_session_id,
+        pid=task.pid,
         created_at=task.created_at,
         completed_at=task.completed_at,
     )

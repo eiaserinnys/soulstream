@@ -7,6 +7,7 @@
 
 import type {
   EventTreeNode,
+  SessionNode,
   ThinkingNode,
   TextNode,
   ToolNode,
@@ -58,8 +59,19 @@ function collectMessages(
   node: EventTreeNode,
   out: ChatMessage[],
 ): void {
-  // session 루트는 자신을 메시지로 변환하지 않고 children만 순회
-  if (node.type !== "session") {
+  // session 루트: pid가 있으면 시스템 메시지로 표시
+  if (node.type === "session") {
+    const sessionNode = node as SessionNode;
+    if (sessionNode.pid != null) {
+      out.push({
+        id: `${node.id}-pid`,
+        role: "system",
+        content: `Process ID: ${sessionNode.pid}`,
+        treeNodeId: node.id,
+        treeNodeType: "session",
+      });
+    }
+  } else {
     const msg = nodeToMessage(node);
     if (msg) out.push(msg);
   }

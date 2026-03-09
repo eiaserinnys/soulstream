@@ -107,6 +107,7 @@ class SessionEvent(BaseModel):
     """
     type: str = "session"
     session_id: str
+    pid: Optional[int] = Field(None, description="Claude Code 프로세스 ID")
 
 
 class ProgressEvent(BaseModel):
@@ -198,6 +199,7 @@ class SessionResponse(BaseModel):
     result: Optional[str] = None
     error: Optional[str] = None
     claude_session_id: Optional[str] = None
+    pid: Optional[int] = Field(None, description="Claude Code 프로세스 ID")
     created_at: datetime
     completed_at: Optional[datetime] = None
 
