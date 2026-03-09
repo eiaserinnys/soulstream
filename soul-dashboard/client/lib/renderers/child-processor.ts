@@ -65,8 +65,12 @@ export function processChildNodes(
       dispatchRenderer(child, null, ctx);
     } else if (child.type === "tool") {
       dispatchRenderer(child, ctx.lastThinkingNodeId ?? ctx.prevMainFlowNodeId, ctx);
-    } else if (child.type === "complete" || child.type === "error") {
-      // complete/error도 dispatchRenderer로 위임 (renderCompletionNode과 동일)
+    } else if (
+      child.type === "compact" ||
+      child.type === "complete" ||
+      child.type === "error"
+    ) {
+      // compact/complete/error — 메인 플로우 시스템 노드
       dispatchRenderer(child, null, ctx);
     }
   }
