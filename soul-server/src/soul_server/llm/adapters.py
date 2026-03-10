@@ -51,7 +51,7 @@ class OpenAIAdapter:
         kwargs: dict = {
             "model": model,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
-            "max_tokens": max_tokens,
+            "max_completion_tokens": max_tokens,
         }
         if temperature is not None:
             kwargs["temperature"] = temperature
