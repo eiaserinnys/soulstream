@@ -17,6 +17,8 @@ from fastapi.responses import JSONResponse
 from soul_server.api import attachments_router, dashboard_router, create_sessions_router
 from soul_server.api.tasks import router as tasks_router
 from soul_server.api.credentials import create_credentials_router
+from soul_server.api.llm import create_llm_router
+from soul_server.llm import OpenAIAdapter, AnthropicAdapter, LlmExecutor
 from soul_server.service import resource_manager, file_manager
 from soul_server.service.credential_store import CredentialStore
 from soul_server.service.credential_swapper import CredentialSwapper
@@ -44,6 +46,9 @@ _cleanup_task = None
 
 # 전역 풀 참조 (/status 엔드포인트에서 접근)
 _runner_pool: RunnerPool | None = None
+
+# 전역 LLM executor 참조
+_llm_executor: LlmExecutor | None = None
 
 
 async def periodic_cleanup():
@@ -121,8 +126,31 @@ async def lifespan(app: FastAPI):
     logger.info(f"  Loaded {loaded} tasks from storage")
 
     # SessionBroadcaster 초기화
-    init_session_broadcaster()
+    broadcaster = init_session_broadcaster()
     logger.info("  SessionBroadcaster initialized")
+
+    # LLM Proxy 초기화
+    global _llm_executor
+    llm_adapters: dict = {}
+    if settings.llm_openai_api_key:
+        llm_adapters["openai"] = OpenAIAdapter(api_key=settings.llm_openai_api_key)
+        logger.info("  LLM adapter initialized: openai")
+    if settings.llm_anthropic_api_key:
+        llm_adapters["anthropic"] = AnthropicAdapter(api_key=settings.llm_anthropic_api_key)
+        logger.info("  LLM adapter initialized: anthropic")
+
+    if llm_adapters:
+        _llm_executor = LlmExecutor(
+            adapters=llm_adapters,
+            task_manager=task_manager,
+            event_store=event_store,
+            session_broadcaster=broadcaster,
+        )
+        llm_router = create_llm_router(executor=_llm_executor)
+        app.include_router(llm_router, tags=["llm"])
+        logger.info(f"  LLM proxy initialized: providers={list(llm_adapters.keys())}")
+    else:
+        logger.info("  LLM proxy skipped: no API keys configured")
 
     # 주기적 정리 태스크 시작
     _cleanup_task = asyncio.create_task(periodic_cleanup())

@@ -120,6 +120,10 @@ class Settings:
     serendipity_enabled: bool = True  # 세렌디피티 저장 활성화
     serendipity_url: str = "http://localhost:4002"  # 세렌디피티 API URL
 
+    # LLM Proxy (선택 사항 — 미설정 프로바이더 호출 시 에러)
+    llm_openai_api_key: str = ""
+    llm_anthropic_api_key: str = ""
+
     # Dashboard profile (선택 사항 — 미설정 시 기본 이름 표시, 초상화 없음)
     dash_user_name: str = "USER"
     dash_user_id: str = ""
@@ -192,6 +196,9 @@ class Settings:
             ),
             serendipity_enabled=os.getenv("SERENDIPITY_ENABLED", "true").lower() in ("true", "1", "yes"),
             serendipity_url=os.getenv("SERENDIPITY_URL", cls.serendipity_url),
+            # LLM Proxy
+            llm_openai_api_key=os.getenv("LLM_OPENAI_API_KEY", ""),
+            llm_anthropic_api_key=os.getenv("LLM_ANTHROPIC_API_KEY", ""),
             # Dashboard profile
             dash_user_name=os.getenv("DASH_USER_NAME", "USER"),
             dash_user_id=os.getenv("DASH_USER_ID", ""),
