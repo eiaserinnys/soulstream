@@ -22,6 +22,7 @@ import type {
   EventTreeNode,
   TextStartEvent,
   HistorySyncEvent,
+  InputRequestNodeDef,
 } from "@shared/types";
 import type { StorageMode } from "../providers/types";
 import {
@@ -181,6 +182,9 @@ export interface DashboardActions {
 
   // 대시보드 프로필 설정
   setDashboardConfig: (config: DashboardConfig) => void;
+
+  // input_request 응답 완료 처리
+  respondToInputRequest: (nodeId: string) => void;
 }
 
 // === Internal Processing Context ===
@@ -681,6 +685,18 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
       // --- 대시보드 프로필 설정 ---
 
       setDashboardConfig: (dashboardConfig) => set({ dashboardConfig }),
+
+      // --- input_request 응답 완료 처리 ---
+      // 클라이언트가 respond API 호출 성공 후, 트리 노드의 responded/completed 상태를 갱신
+      respondToInputRequest: (nodeId) => {
+        const ctx = get().processingCtx;
+        const node = ctx.nodeMap.get(nodeId);
+        if (node && node.type === "input_request") {
+          (node as InputRequestNodeDef).responded = true;
+          (node as InputRequestNodeDef).completed = true;
+          set((state) => ({ treeVersion: state.treeVersion + 1 }));
+        }
+      },
     }),
     {
       name: "soul-dashboard-storage",

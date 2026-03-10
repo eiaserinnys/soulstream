@@ -423,6 +423,17 @@ export interface InterveneResponse {
   agent_session_id?: string;
 }
 
+/** POST /api/sessions/:id/respond 요청 */
+export interface SendRespondRequest {
+  requestId: string;
+  answers: Record<string, string>;
+}
+
+/** POST /api/sessions/:id/respond 응답 */
+export interface RespondResponse {
+  status: string;
+}
+
 /** GET /api/sessions 응답 */
 export interface SessionListResponse {
   sessions: SessionSummary[];
