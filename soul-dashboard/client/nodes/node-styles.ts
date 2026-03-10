@@ -19,6 +19,7 @@ export const NODE_COLORS = {
   intervention: 'var(--node-intervention)',
   error:        'var(--node-error)',
   system:       'var(--node-system)',
+  inputRequest: 'var(--node-input-request)',
 } as const;
 
 /** 노드 기본 클래스 (260x84 고정, border-box) */

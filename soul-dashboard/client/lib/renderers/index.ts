@@ -13,6 +13,7 @@ import { renderUserMessageTurn, renderInterventionTurn } from "./turn-renderer";
 import { renderTextNode } from "./text-renderer";
 import { renderToolNode } from "./tool-renderer";
 import { renderCompletionNode, renderResultNode, renderCompactNode } from "./system-renderer";
+import { renderInputRequestNode } from "./input-request-renderer";
 
 /** 노드 타입별 렌더러 registry */
 const renderers = new Map<EventTreeNodeType, NodeRenderer>([
@@ -25,6 +26,7 @@ const renderers = new Map<EventTreeNodeType, NodeRenderer>([
   ["complete", renderCompletionNode],
   ["error", renderCompletionNode],
   ["result", renderResultNode],
+  ["input_request", renderInputRequestNode],
 ]);
 
 /**
@@ -53,4 +55,5 @@ export { renderUserMessageTurn, renderInterventionTurn } from "./turn-renderer";
 export { renderTextNode } from "./text-renderer";
 export { renderToolNode } from "./tool-renderer";
 export { renderCompletionNode, renderResultNode, renderCompactNode } from "./system-renderer";
+export { renderInputRequestNode } from "./input-request-renderer";
 export { processChildNodes } from "./child-processor";

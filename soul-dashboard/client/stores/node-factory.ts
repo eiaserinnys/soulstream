@@ -23,6 +23,7 @@ import type {
   UserMessageEvent,
   InterventionSentEvent,
   CompactEvent,
+  InputRequestEvent,
 } from "@shared/types";
 import type { ProcessingContext } from "./processing-context";
 import { makeNode } from "./processing-context";
@@ -34,7 +35,7 @@ import { makeNode } from "./processing-context";
  * 반환된 노드는 아직 트리에 삽입되지 않았고, Map에도 등록되지 않았습니다.
  * placeInTree()가 트리 삽입과 Map 등록을 담당합니다.
  *
- * 생성형: user_message, intervention_sent, thinking, tool_start, complete, error, result, compact
+ * 생성형: user_message, intervention_sent, thinking, tool_start, complete, error, result, compact, input_request
  * 무시: subagent_start, subagent_stop (R4: 가상 노드 미생성)
  * 업데이트형 (null 반환): session, text_start/delta/end, tool_result
  */
@@ -122,6 +123,19 @@ export function createNodeFromEvent(
         e.message ?? "Context compaction occurred",
         { completed: true },
       );
+    }
+
+    case "input_request": {
+      const e = event as InputRequestEvent;
+      const firstQuestion = e.questions[0]?.question ?? "Input requested";
+      return makeNode(`input-request-${eventId}`, "input_request", firstQuestion, {
+        requestId: e.request_id,
+        toolUseId: e.tool_use_id,
+        questions: e.questions,
+        parentEventId: e.parent_event_id,
+        timestamp: e.timestamp,
+        responded: false,
+      });
     }
 
     default:
