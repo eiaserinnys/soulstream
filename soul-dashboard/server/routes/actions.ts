@@ -12,6 +12,7 @@ import type {
   CreateSessionRequest,
   CreateSessionResponse,
   SendMessageRequest,
+  SendRespondRequest,
 } from "../../shared/types.js";
 
 // Express Response와 fetch Response 구분을 위한 alias
@@ -335,6 +336,113 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
 
   router.post("/:id/intervene", handleIntervene);
   router.post("/:id/message", handleIntervene);
+
+  /**
+   * POST /api/sessions/:id/respond
+   *
+   * AskUserQuestion에 대한 사용자 응답을 Soul 서버에 전달합니다.
+   */
+  router.post("/:id/respond", async (req, res) => {
+    try {
+      const agentSessionId = req.params.id as string;
+
+      if (!agentSessionId || !VALID_ID_PATTERN.test(agentSessionId)) {
+        res.status(400).json({
+          error: { code: "INVALID_SESSION_ID", message: "Invalid agent session ID" },
+        });
+        return;
+      }
+
+      const body = req.body as SendRespondRequest;
+
+      if (!body.requestId || typeof body.requestId !== "string" || !VALID_ID_PATTERN.test(body.requestId)) {
+        res.status(400).json({
+          error: { code: "INVALID_REQUEST", message: "requestId is required and must match [a-zA-Z0-9_-]{1,100}" },
+        });
+        return;
+      }
+
+      if (!body.answers || typeof body.answers !== "object") {
+        res.status(400).json({
+          error: { code: "INVALID_REQUEST", message: "answers is required" },
+        });
+        return;
+      }
+
+      // answers 값 검증: 키와 값이 문자열이고 합리적 길이
+      const answerEntries = Object.entries(body.answers);
+      if (answerEntries.length === 0 || answerEntries.length > 50) {
+        res.status(400).json({
+          error: { code: "INVALID_REQUEST", message: "answers must have 1-50 entries" },
+        });
+        return;
+      }
+
+      for (const [key, value] of answerEntries) {
+        if (typeof key !== "string" || typeof value !== "string") {
+          res.status(400).json({
+            error: { code: "INVALID_REQUEST", message: "answer keys and values must be strings" },
+          });
+          return;
+        }
+        if (key.length > 1000 || value.length > 1000) {
+          res.status(400).json({
+            error: { code: "INVALID_REQUEST", message: "answer key/value too long (max 1000 chars)" },
+          });
+          return;
+        }
+      }
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), SOUL_REQUEST_TIMEOUT_MS);
+
+      let soulResponse: globalThis.Response;
+      try {
+        soulResponse = await fetch(
+          `${soulBaseUrl}/sessions/${encodeURIComponent(agentSessionId)}/respond`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+            },
+            body: JSON.stringify({
+              request_id: body.requestId,
+              answers: body.answers,
+            }),
+            signal: controller.signal,
+          },
+        );
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") {
+          res.status(504).json({
+            error: { code: "TIMEOUT", message: `Soul server request timed out after ${SOUL_REQUEST_TIMEOUT_MS / 1000}s` },
+          });
+          return;
+        }
+        throw err;
+      } finally {
+        clearTimeout(timeoutId);
+      }
+
+      if (!soulResponse.ok) {
+        const errorBody = await soulResponse.text();
+        console.error(`[actions] Soul respond failed (${soulResponse.status}):`, errorBody);
+        res.status(502).json({
+          error: { code: "SOUL_ERROR", message: `Soul server returned ${soulResponse.status}`, details: { body: errorBody } },
+        });
+        return;
+      }
+
+      const result = await soulResponse.json();
+      res.json(result);
+    } catch (err) {
+      console.error("[actions] Failed to respond:", err);
+      res.status(500).json({
+        error: { code: "INTERNAL_ERROR", message: "Failed to respond" },
+      });
+    }
+  });
 
   return router;
 }
