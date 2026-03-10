@@ -33,6 +33,8 @@ import type {
   ResultNode,
   SessionNode,
   TextNode,
+  InputRequestEvent,
+  InputRequestNodeDef,
 } from "../../shared/types";
 
 // === Helpers ===
@@ -218,6 +220,54 @@ describe("createNodeFromEvent", () => {
 
       // ?? only catches null/undefined, consistent with complete event behavior
       expect(node!.content).toBe("");
+    });
+
+    it("should create node for input_request", () => {
+      const event: InputRequestEvent = {
+        type: "input_request",
+        timestamp: 1700000020,
+        request_id: "req-001",
+        tool_use_id: "toolu_ask",
+        questions: [
+          {
+            question: "Which database should we use?",
+            options: [
+              { label: "PostgreSQL", description: "Relational DB" },
+              { label: "MongoDB", description: "Document DB" },
+            ],
+          },
+        ],
+        parent_event_id: "toolu_parent",
+      };
+
+      const node = createNodeFromEvent(event, 70);
+
+      expect(node).not.toBeNull();
+      expect(node!.id).toBe("input-request-70");
+      expect(node!.type).toBe("input_request");
+      expect(node!.content).toBe("Which database should we use?");
+      expect(node!.completed).toBe(false);
+      expect(node!.parentEventId).toBe("toolu_parent");
+      expect(node!.timestamp).toBe(1700000020);
+      const irNode = node as InputRequestNodeDef;
+      expect(irNode.requestId).toBe("req-001");
+      expect(irNode.toolUseId).toBe("toolu_ask");
+      expect(irNode.questions).toHaveLength(1);
+      expect(irNode.responded).toBe(false);
+    });
+
+    it("should use fallback content when input_request has no questions", () => {
+      const event: InputRequestEvent = {
+        type: "input_request",
+        timestamp: 1700000021,
+        request_id: "req-002",
+        questions: [],
+      };
+
+      const node = createNodeFromEvent(event, 71);
+
+      expect(node).not.toBeNull();
+      expect(node!.content).toBe("Input requested");
     });
   });
 

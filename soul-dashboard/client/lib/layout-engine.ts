@@ -16,6 +16,8 @@ import type {
   CompleteNode,
   ErrorNode,
   CompactNode,
+  InputRequestNodeDef,
+  InputRequestQuestion,
 } from "@shared/types";
 import { createLayoutContext } from "./layout-context";
 import { dispatchRenderer } from "./renderers";
@@ -34,7 +36,8 @@ export type GraphNodeType =
   | "result"        // ResultMessage
   | "response"      // 하위 호환
   | "system"        // 시스템 메시지
-  | "error";        // 에러
+  | "error"         // 에러
+  | "input_request"; // AskUserQuestion
 
 /** React Flow 노드의 data 필드 */
 export interface GraphNodeData extends Record<string, unknown> {
@@ -67,6 +70,11 @@ export interface GraphNodeData extends Record<string, unknown> {
   fullContent?: string;
   /** 도구 분류 배지 (Skill, Agent 등) */
   toolCategory?: "skill" | "sub-agent";
+
+  // input_request 전용
+  requestId?: string;
+  questions?: InputRequestQuestion[];
+  responded?: boolean;
 }
 
 export type GraphNode = Node<GraphNodeData>;
@@ -266,6 +274,33 @@ export function createInterventionNodeFromTree(
       content: truncate(treeNode.content, 120),
       streaming: false,
       fullContent: treeNode.content,
+      collapsed: collapseInfo?.collapsed ?? false,
+      hasChildren: collapseInfo?.hasChildren ?? false,
+      childCount: collapseInfo?.childCount ?? 0,
+    },
+  };
+}
+
+export function createInputRequestNodeFromTree(
+  treeNode: InputRequestNodeDef,
+  collapseInfo?: CollapseInfo,
+): GraphNode {
+  const firstQuestion = treeNode.questions[0]?.question ?? "Input requested";
+  return {
+    id: `node-${treeNode.id}`,
+    type: "input_request",
+    position: { x: 0, y: 0 },
+    width: DEFAULT_NODE_WIDTH,
+    height: DEFAULT_NODE_HEIGHT,
+    data: {
+      nodeType: "input_request",
+      cardId: treeNode.id,
+      label: "Input Request",
+      content: truncate(firstQuestion, 120),
+      streaming: !treeNode.completed,
+      requestId: treeNode.requestId,
+      questions: treeNode.questions,
+      responded: treeNode.responded,
       collapsed: collapseInfo?.collapsed ?? false,
       hasChildren: collapseInfo?.hasChildren ?? false,
       childCount: collapseInfo?.childCount ?? 0,

@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import type { EventTreeNode, ToolNode, ResultNode } from "@shared/types";
+import type { EventTreeNode, ToolNode, ResultNode, InputRequestNodeDef } from "@shared/types";
 import { createLayoutContext, type LayoutContext } from "../layout-context";
 
 /** toolTreeNode 팩토리 옵션 */
@@ -36,6 +36,7 @@ import {
   renderCompletionNode,
   renderCompactNode,
   renderResultNode,
+  renderInputRequestNode,
   processChildNodes,
 } from "./index";
 
@@ -120,6 +121,7 @@ describe("renderer registry", () => {
     expect(types).toContain("complete");
     expect(types).toContain("error");
     expect(types).toContain("result");
+    expect(types).toContain("input_request");
   });
 
   it("dispatches to the correct renderer via dispatchRenderer", () => {
@@ -454,6 +456,58 @@ describe("processChildNodes", () => {
     expect(ctx.nodes[1].data.label).toBe("⚡ Context Compaction");
     // prevMainFlowNodeId should chain through compact to complete
     expect(ctx.prevMainFlowNodeId).toBe(ctx.nodes[2].id);
+  });
+});
+
+function inputRequestTreeNode(
+  id: string,
+  question: string,
+  responded = false,
+): EventTreeNode {
+  return {
+    id,
+    type: "input_request",
+    children: [],
+    content: question,
+    completed: responded,
+    requestId: "req-001",
+    questions: [{ question, options: [{ label: "A" }, { label: "B" }] }],
+    responded,
+  } as InputRequestNodeDef;
+}
+
+describe("renderInputRequestNode", () => {
+  it("creates an input_request node and connects to prevMainFlowNodeId", () => {
+    const ctx = makeCtx({ prevMainFlowNodeId: "prev" });
+    const node = inputRequestTreeNode("ir1", "Which option?");
+    renderInputRequestNode(node, null, ctx);
+
+    expect(ctx.nodes.length).toBe(1);
+    expect(ctx.nodes[0].data.nodeType).toBe("input_request");
+    expect(ctx.nodes[0].data.content).toContain("Which option?");
+    expect(ctx.nodes[0].data.responded).toBe(false);
+    expect(ctx.edges.length).toBe(1);
+    expect(ctx.edges[0].source).toBe("prev");
+    expect(ctx.edges[0].target).toBe(ctx.nodes[0].id);
+    expect(ctx.prevMainFlowNodeId).toBe(ctx.nodes[0].id);
+  });
+
+  it("creates node without edge when no prevMainFlowNodeId", () => {
+    const ctx = makeCtx({ prevMainFlowNodeId: null });
+    const node = inputRequestTreeNode("ir2", "Select one");
+    renderInputRequestNode(node, null, ctx);
+
+    expect(ctx.nodes.length).toBe(1);
+    expect(ctx.edges.length).toBe(0);
+  });
+
+  it("reflects responded=true in graph node data", () => {
+    const ctx = makeCtx({ prevMainFlowNodeId: "prev" });
+    const node = inputRequestTreeNode("ir3", "Answered question", true);
+    renderInputRequestNode(node, null, ctx);
+
+    expect(ctx.nodes[0].data.responded).toBe(true);
+    expect(ctx.nodes[0].data.streaming).toBe(false); // completed = true
   });
 });
 
