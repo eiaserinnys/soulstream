@@ -146,6 +146,68 @@ class TaskManager:
 
     # === CRUD 작업 ===
 
+    async def register_external_task(self, task: Task) -> None:
+        """외부에서 생성된 태스크를 등록한다.
+
+        LLM 프록시 등 TaskManager의 create_task 흐름을 거치지 않는
+        외부 모듈이 직접 생성한 Task를 등록할 때 사용합니다.
+
+        Args:
+            task: 등록할 Task 인스턴스
+        """
+        async with self._lock:
+            self._tasks[task.agent_session_id] = task
+        await self._schedule_save()
+
+    async def finalize_task(
+        self,
+        agent_session_id: str,
+        *,
+        result: Optional[str] = None,
+        error: Optional[str] = None,
+        **metadata,
+    ) -> Optional[Task]:
+        """태스크를 완료 또는 에러로 마무리한다.
+
+        result가 제공되면 COMPLETED, error가 제공되면 ERROR 상태로 전환합니다.
+        metadata의 키가 Task 필드와 일치하면 해당 필드도 업데이트합니다.
+
+        Args:
+            agent_session_id: 세션 식별자
+            result: 성공 결과 (COMPLETED 전환)
+            error: 에러 메시지 (ERROR 전환)
+            **metadata: 추가 메타데이터 (llm_usage 등)
+
+        Returns:
+            업데이트된 태스크 (없으면 None)
+        """
+        async with self._lock:
+            task = self._tasks.get(agent_session_id)
+            if not task:
+                logger.warning(f"Task not found for finalize: {agent_session_id}")
+                return None
+
+            if result is not None:
+                task.status = TaskStatus.COMPLETED
+                task.result = result
+            elif error is not None:
+                task.status = TaskStatus.ERROR
+                task.error = error
+
+            task.completed_at = utc_now()
+
+            # 추가 메타데이터 설정
+            for key, value in metadata.items():
+                if hasattr(task, key):
+                    setattr(task, key, value)
+
+        await self._schedule_save()
+        try:
+            await get_session_broadcaster().emit_session_updated(task)
+        except Exception:
+            logger.warning(f"Failed to broadcast finalize for {agent_session_id}", exc_info=True)
+        return task
+
     def get_running_tasks(self) -> List[Task]:
         """실행 중인 태스크 목록 반환"""
         return [t for t in self._tasks.values() if t.status == TaskStatus.RUNNING]

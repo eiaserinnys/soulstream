@@ -82,6 +82,12 @@ class Task:
     disallowed_tools: Optional[List[str]] = field(default=None, repr=False)
     use_mcp: bool = field(default=True, repr=False)
 
+    # LLM 프록시 메타데이터
+    session_type: str = "claude"        # "claude" | "llm"
+    llm_provider: Optional[str] = None  # "openai" | "anthropic"
+    llm_model: Optional[str] = None     # ex. "gpt-5-mini"
+    llm_usage: Optional[dict] = field(default=None, repr=False)  # {"input_tokens": N, "output_tokens": N}
+
     # 결과
     result: Optional[str] = None
     error: Optional[str] = None
@@ -113,6 +119,10 @@ class Task:
             "client_id": self.client_id,
             "resume_session_id": self.resume_session_id,
             "claude_session_id": self.claude_session_id,
+            "session_type": self.session_type,
+            "llm_provider": self.llm_provider,
+            "llm_model": self.llm_model,
+            "llm_usage": self.llm_usage,
             "result": self.result,
             "error": self.error,
             "created_at": datetime_to_str(self.created_at),
@@ -129,6 +139,10 @@ class Task:
             client_id=data.get("client_id"),
             resume_session_id=data.get("resume_session_id"),
             claude_session_id=data.get("claude_session_id"),
+            session_type=data.get("session_type", "claude"),
+            llm_provider=data.get("llm_provider"),
+            llm_model=data.get("llm_model"),
+            llm_usage=data.get("llm_usage"),
             result=data.get("result"),
             error=data.get("error"),
             created_at=str_to_datetime(data["created_at"]),
