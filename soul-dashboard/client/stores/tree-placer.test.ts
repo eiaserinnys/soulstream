@@ -18,6 +18,7 @@ import type {
   CompleteEvent,
   ErrorEvent,
   ResultEvent,
+  InputRequestEvent,
   SoulSSEEvent,
 } from "../../shared/types";
 
@@ -355,6 +356,53 @@ describe("placeInTree", () => {
       placeInTree(node, event, 17, ctx, root);
 
       // Phase 6: nodeMap에서 직접 조회하므로 tool 노드 아래에 배치
+      expect(toolNode.children).toContain(node);
+    });
+  });
+
+  describe("input_request", () => {
+    it("should place under turn root via resolveParent when no parent_event_id", () => {
+      const { ctx, root } = makeCtxWithRoot();
+      const turnNode = setupTurnRoot(ctx, root);
+      const node = makeNode("input-request-20", "input_request", "Select option", {
+        requestId: "req-001",
+        responded: false,
+      });
+      const event: InputRequestEvent = {
+        type: "input_request",
+        timestamp: 1700000000,
+        request_id: "req-001",
+        questions: [{ question: "Select option", options: [{ label: "A" }] }],
+      };
+
+      placeInTree(node, event, 20, ctx, root);
+
+      expect(turnNode.children).toContain(node);
+      expect(ctx.nodeMap.get("input-request-20")).toBe(node);
+    });
+
+    it("should place under tool node via resolveParent when parent_event_id matches", () => {
+      const { ctx, root } = makeCtxWithRoot();
+      setupTurnRoot(ctx, root);
+
+      const toolNode = makeNode("tool-1", "tool", "", { toolUseId: "toolu_ask" });
+      registerNode(ctx, toolNode);
+      ctx.nodeMap.set("toolu_ask", toolNode);
+
+      const node = makeNode("input-request-21", "input_request", "Choose", {
+        requestId: "req-002",
+        responded: false,
+      });
+      const event: InputRequestEvent = {
+        type: "input_request",
+        timestamp: 1700000001,
+        request_id: "req-002",
+        questions: [{ question: "Choose", options: [{ label: "X" }] }],
+        parent_event_id: "toolu_ask",
+      };
+
+      placeInTree(node, event, 21, ctx, root);
+
       expect(toolNode.children).toContain(node);
     });
   });

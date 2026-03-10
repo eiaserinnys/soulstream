@@ -15,6 +15,7 @@ import type {
   ThinkingEvent,
   ToolStartEvent,
   ResultEvent,
+  InputRequestEvent,
 } from "@shared/types";
 import type { ProcessingContext, TextTargetNode } from "./processing-context";
 import { makeNode, registerNode } from "./processing-context";
@@ -100,6 +101,13 @@ export function placeInTree(
 
     case "result": {
       const e = event as ResultEvent;
+      const parent = resolveParent(e.parent_event_id, ctx, root);
+      parent.children.push(node);
+      break;
+    }
+
+    case "input_request": {
+      const e = event as InputRequestEvent;
       const parent = resolveParent(e.parent_event_id, ctx, root);
       parent.children.push(node);
       break;

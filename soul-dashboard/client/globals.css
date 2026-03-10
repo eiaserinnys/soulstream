@@ -17,6 +17,7 @@
   --color-accent-cyan:   var(--node-plan);
   --color-accent-red:    var(--node-error);
   --color-accent-orange: var(--node-intervention);
+  --color-accent-pink:   var(--node-input-request);
   --color-amber-600:     var(--amber-600);
 
   /*
@@ -34,6 +35,7 @@
   --color-node-intervention: var(--node-intervention);
   --color-node-error: var(--node-error);
   --color-node-system: var(--node-system);
+  --color-node-input-request: var(--node-input-request);
 
   /* Node dimensions (used by layout-engine, DO NOT CHANGE) */
   --node-width: 260px;
@@ -123,6 +125,14 @@
   50% { border-color: color-mix(in srgb, var(--node-tool) 70%, transparent); }
 }
 
+@keyframes pulse-border-pink {
+  0%, 100% { border-color: color-mix(in srgb, var(--node-input-request) 30%, transparent); }
+  50% { border-color: color-mix(in srgb, var(--node-input-request) 70%, transparent); }
+}
+.animate-pulse-border-pink {
+  animation: pulse-border-pink 2s ease-in-out infinite;
+}
+
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
@@ -203,6 +213,7 @@
   --node-intervention: #f97316;  /* orange-500 */
   --node-error:        #ef4444;  /* red-500    */
   --node-system:       #6b7280;  /* gray-500   */
+  --node-input-request: #ec4899; /* pink-500   */
 
   --amber-600:           #d97706;
 
@@ -261,6 +272,7 @@
   --node-intervention: hsl(25,  70%, 60%);   /* #d0884a — muted orange  */
   --node-error:        hsl(0,   65%, 66%);   /* #d47676 — muted red     */
   --node-system:       hsl(220,  8%, 55%);   /* #868b94 — muted gray    */
+  --node-input-request: hsl(330, 65%, 65%);  /* #d470a0 — muted pink    */
 
   --amber-600:           hsl(38, 65%, 48%);
 

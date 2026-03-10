@@ -36,6 +36,8 @@ export type SSEEventType =
   | "context_usage"
   | "compact"
   | "reconnect"
+  // 사용자 입력 요청 이벤트
+  | "input_request"
   // 히스토리 동기화 이벤트
   | "history_sync";
 
@@ -205,6 +207,24 @@ export interface HistorySyncEvent {
   status?: SessionStatus;
 }
 
+/** 사용자 입력 요청 — 질문 항목 */
+export interface InputRequestQuestion {
+  question: string;
+  header?: string;
+  options: Array<{ label: string; description?: string }>;
+  multiSelect?: boolean;
+}
+
+/** 사용자 입력 요청 이벤트 (AskUserQuestion) */
+export interface InputRequestEvent {
+  type: "input_request";
+  timestamp: number;
+  request_id: string;
+  tool_use_id?: string;
+  questions: InputRequestQuestion[];
+  parent_event_id?: string;
+}
+
 /** Soul에서 수신하는 모든 SSE 이벤트 유니온 */
 export type SoulSSEEvent =
   | ProgressEvent
@@ -227,6 +247,7 @@ export type SoulSSEEvent =
   | SubagentStartEvent
   | SubagentStopEvent
   | ReconnectEvent
+  | InputRequestEvent
   | HistorySyncEvent;
 
 // === JSONL Record ===
@@ -349,6 +370,15 @@ export interface ErrorNode extends BaseNode {
   isError?: boolean;
 }
 
+/** 사용자 입력 요청 노드 */
+export interface InputRequestNodeDef extends BaseNode {
+  type: "input_request";
+  requestId: string;
+  toolUseId?: string;
+  questions: InputRequestQuestion[];
+  responded?: boolean;
+}
+
 /** 이벤트 트리 노드 — 소스 오브 트루스 (discriminated union) */
 export type EventTreeNode =
   | SessionNode
@@ -360,7 +390,8 @@ export type EventTreeNode =
   | ResultNode
   | CompactNode
   | CompleteNode
-  | ErrorNode;
+  | ErrorNode
+  | InputRequestNodeDef;
 
 // === API Request/Response ===
 

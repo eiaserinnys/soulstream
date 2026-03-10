@@ -13,6 +13,7 @@ import { ToolCallNode } from './ToolCallNode';
 import { ResponseNode } from './ResponseNode';
 import { SystemNode } from './SystemNode';
 import { InterventionNode } from './InterventionNode';
+import { InputRequestNode } from './InputRequestNode';
 
 export const nodeTypes: NodeTypes = {
   user: UserNode,
@@ -22,6 +23,7 @@ export const nodeTypes: NodeTypes = {
   response: ResponseNode,
   system: SystemNode,
   intervention: InterventionNode,
+  input_request: InputRequestNode,
 };
 
 export {
@@ -31,4 +33,5 @@ export {
   ResponseNode,
   SystemNode,
   InterventionNode,
+  InputRequestNode,
 };
