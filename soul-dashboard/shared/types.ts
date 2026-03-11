@@ -325,6 +325,10 @@ export interface InterventionNode extends BaseNode {
 /** Thinking (확장 사고) 노드 */
 export interface ThinkingNode extends BaseNode {
   type: "thinking";
+  /** 콘텐츠가 truncate 되었는지 여부 */
+  isTruncated?: boolean;
+  /** truncate된 경우, 전체 내용을 가진 원본 이벤트 ID */
+  fullContentEventId?: number;
 }
 
 /** 텍스트 노드 */
@@ -344,6 +348,10 @@ export interface ToolNode extends BaseNode {
   toolResult?: string;
   isError?: boolean;
   durationMs?: number;
+  /** 콘텐츠가 truncate 되었는지 여부 */
+  isTruncated?: boolean;
+  /** truncate된 경우, 전체 내용을 가진 원본 이벤트 ID */
+  fullContentEventId?: number;
 }
 
 /** 세션 결과 노드 */

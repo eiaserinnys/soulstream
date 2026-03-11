@@ -28,6 +28,9 @@ import type {
 import type { ProcessingContext } from "./processing-context";
 import { makeNode } from "./processing-context";
 
+/** 이 길이를 초과하는 콘텐츠는 truncate하여 메모리를 절약한다 */
+const TRUNCATE_THRESHOLD = 2000;
+
 /**
  * 이벤트에서 새 노드를 생성합니다.
  *
@@ -62,9 +65,17 @@ export function createNodeFromEvent(
 
     case "thinking": {
       const e = event as ThinkingEvent;
-      return makeNode(`thinking-${eventId}`, "thinking", e.thinking, {
-        completed: true,
-      });
+      const thinking = e.thinking;
+      const truncated = thinking && thinking.length > TRUNCATE_THRESHOLD;
+      return makeNode(
+        `thinking-${eventId}`,
+        "thinking",
+        truncated ? thinking.slice(0, TRUNCATE_THRESHOLD) : thinking,
+        {
+          completed: true,
+          ...(truncated && { isTruncated: true, fullContentEventId: eventId }),
+        },
+      );
     }
 
     // R4: subagent_start/stop은 무시 — 가상 노드를 생성하지 않음
@@ -199,7 +210,14 @@ export function applyUpdate(
 
       if (found && (found.type === "tool" || found.type === "tool_use")) {
         const toolNode = found as ToolNode;
-        toolNode.toolResult = e.result;
+        const result = e.result;
+        if (result && result.length > TRUNCATE_THRESHOLD) {
+          toolNode.toolResult = result.slice(0, TRUNCATE_THRESHOLD);
+          toolNode.isTruncated = true;
+          toolNode.fullContentEventId = eventId;
+        } else {
+          toolNode.toolResult = result;
+        }
         toolNode.isError = e.is_error;
         toolNode.completed = true;
         // timestamp 차이로 duration 계산
