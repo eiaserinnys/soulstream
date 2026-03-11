@@ -14,7 +14,8 @@ TaskManager - 세션 라이프사이클 관리
 
 import asyncio
 import logging
-from datetime import timedelta
+import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional, Dict, List
 
@@ -26,12 +27,25 @@ from soul_server.service.task_models import (
     TaskNotRunningError,
     generate_agent_session_id,
     utc_now,
+    datetime_to_str,
+    str_to_datetime,
 )
 from soul_server.service.task_storage import TaskStorage
 from soul_server.service.task_listener import TaskListenerManager
 from soul_server.service.task_executor import TaskExecutor
 from soul_server.service.event_store import EventStore
+from soul_server.service.session_catalog import SessionCatalog
 from soul_server.service.session_broadcaster import get_session_broadcaster
+
+# 이벤트 타입별 미리보기 텍스트 필드 매핑
+PREVIEW_FIELD_MAP = {
+    "user_message": "text",
+    "intervention": "text",
+    "thinking": "thinking",
+    "result": "result",
+    "complete": "result",
+    "error": "error",
+}
 
 # Re-export for backward compatibility
 __all__ = [
@@ -70,17 +84,30 @@ class TaskManager:
         self,
         storage_path: Optional[Path] = None,
         event_store: Optional[EventStore] = None,
+        eviction_ttl: int = 900,
     ):
         """
         Args:
             storage_path: 태스크 저장 파일 경로 (None이면 영속화 안 함)
             event_store: 이벤트 영속화 저장소 (None이면 이벤트 저장하지 않음)
+            eviction_ttl: 완료 세션 메모리 퇴거 TTL (초, 기본 15분)
         """
         # 핵심 데이터 (key = agent_session_id)
         self._tasks: Dict[str, Task] = {}
         self._lock = asyncio.Lock()
         # claude_session_id → agent_session_id 역방향 인덱스
         self._session_index: Dict[str, str] = {}
+
+        # 세션 카탈로그 (모든 세션의 경량 인덱스)
+        catalog_path = (
+            storage_path.parent / "session_catalog.json" if storage_path else None
+        )
+        self._catalog = SessionCatalog(catalog_path)
+
+        # LRU 퇴거 관리
+        self._eviction_ttl = eviction_ttl
+        self._eviction_candidates: Dict[str, float] = {}  # {session_id: expiry_timestamp}
+        self._eviction_task: Optional[asyncio.Task] = None
 
         # 서브 컴포넌트들
         self._storage = TaskStorage(storage_path)
@@ -133,12 +160,48 @@ class TaskManager:
     # === 로드/저장 ===
 
     async def load(self) -> int:
-        """파일에서 태스크 로드 (JSONL 이벤트 기반 상태 보정 포함)"""
-        return await self._storage.load(self._tasks, event_store=self._event_store)
+        """파일에서 태스크 로드 (JSONL 이벤트 기반 상태 보정 포함)
+
+        로드 후 카탈로그를 빌드하고, 비실행 세션을 메모리에서 즉시 퇴거합니다.
+        """
+        # 1. 기존 로직: tasks.json 로드 + 상태 보정 + 고아 복구
+        loaded = await self._storage.load(self._tasks, event_store=self._event_store)
+
+        # 2. 기존 카탈로그 파일 로드 (last_message 등 보존용)
+        await self._catalog.load()
+
+        # 3. 로드된 전체 Task로 카탈로그 빌드
+        await self._catalog.build_from_tasks(self._tasks)
+
+        # 4. 비실행 세션을 _tasks에서 완전 퇴거 (서버 기동 시에는 LRU 없이 즉시)
+        evicted_ids = [
+            sid for sid, task in self._tasks.items()
+            if task.status != TaskStatus.RUNNING
+        ]
+        for sid in evicted_ids:
+            del self._tasks[sid]
+            self._unregister_claude_session(sid)
+
+        if evicted_ids:
+            logger.info(f"Startup eviction: {len(evicted_ids)} non-running sessions removed from memory")
+
+        # 5. 퇴거 루프 시작
+        self._eviction_task = asyncio.create_task(self._eviction_loop())
+
+        return loaded
 
     async def save(self) -> None:
-        """태스크 상태 저장"""
+        """태스크 상태 저장
+
+        영속화 전략:
+        - tasks.json: 현재 메모리의 working set만 저장 (running 세션 + LRU 캐시)
+        - session_catalog.json: 전체 세션 인덱스 (퇴거된 세션 포함, 정본)
+
+        session_catalog.json이 정본이며, tasks.json 손실 시에도
+        카탈로그에서 모든 세션 메타데이터를 복원할 수 있습니다.
+        """
         await self._storage.save(self._tasks)
+        await self._catalog.save_now()
 
     async def _schedule_save(self) -> None:
         """저장 예약 (debounce)"""
@@ -157,6 +220,7 @@ class TaskManager:
         """
         async with self._lock:
             self._tasks[task.agent_session_id] = task
+        self._catalog.upsert_from_task(task)
         await self._schedule_save()
 
     async def finalize_task(
@@ -201,6 +265,14 @@ class TaskManager:
                 if hasattr(task, key):
                     setattr(task, key, value)
 
+        # 카탈로그 업데이트 + LRU 퇴거 후보 등록
+        self._catalog.upsert(
+            agent_session_id,
+            status=task.status.value,
+            completed_at=datetime_to_str(task.completed_at),
+        )
+        self._eviction_candidates[agent_session_id] = time.time() + self._eviction_ttl
+
         await self._schedule_save()
         try:
             await get_session_broadcaster().emit_session_updated(task)
@@ -216,29 +288,39 @@ class TaskManager:
         self,
         offset: int = 0,
         limit: int = 0,
-    ) -> tuple[List[Task], int]:
+    ) -> tuple[list[dict], int]:
         """세션 목록 반환 (생성일 기준 내림차순, 페이지네이션 지원)
+
+        카탈로그 기반으로 전체 세션 목록을 반환합니다.
+        running 세션의 pid는 _tasks에서 보충합니다.
 
         Args:
             offset: 건너뛸 항목 수 (기본 0)
             limit: 반환할 최대 항목 수 (0이면 전체)
 
         Returns:
-            (세션 리스트, 전체 세션 수) 튜플
+            (세션 dict 리스트, 전체 세션 수) 튜플
         """
-        all_sorted = sorted(
-            self._tasks.values(),
-            key=lambda t: t.created_at,
-            reverse=True,
-        )
-        total = len(all_sorted)
-
-        if offset > 0:
-            all_sorted = all_sorted[offset:]
-        if limit > 0:
-            all_sorted = all_sorted[:limit]
-
-        return all_sorted, total
+        entries, total = self._catalog.get_all(offset, limit)
+        result = []
+        for entry in entries:
+            session_id = entry["agent_session_id"]
+            # running 세션의 pid를 _tasks에서 보충
+            pid = entry.get("pid")
+            task = self._tasks.get(session_id)
+            if task:
+                pid = task.pid
+            created_at = entry.get("created_at", "")
+            result.append({
+                "agent_session_id": session_id,
+                "status": entry.get("status", "unknown"),
+                "prompt": entry.get("prompt", ""),
+                "created_at": created_at,
+                "updated_at": entry.get("completed_at") or created_at,
+                "pid": pid,
+                "last_message": entry.get("last_message"),
+            })
+        return result, total
 
     async def create_task(
         self,
@@ -274,6 +356,13 @@ class TaskManager:
         async with self._lock:
             existing = self._tasks.get(agent_session_id)
 
+            # 퇴거된 세션의 resume 지원: _tasks에 없으면 카탈로그/저장소에서 복원
+            if not existing and is_resume:
+                existing = await self._load_evicted_task(agent_session_id)
+                if existing:
+                    self._tasks[agent_session_id] = existing
+                    logger.info(f"Restored evicted session for resume: {agent_session_id}")
+
             if existing:
                 if existing.status == TaskStatus.RUNNING:
                     raise TaskConflictError(f"Session already running: {agent_session_id}")
@@ -297,6 +386,9 @@ class TaskManager:
                 if client_id:
                     existing.client_id = client_id
 
+                # 퇴거 후보에서 제거
+                self._eviction_candidates.pop(agent_session_id, None)
+
                 task = existing
                 is_new = False
             else:
@@ -313,6 +405,21 @@ class TaskManager:
                 logger.info(f"Created new session: {agent_session_id}")
                 is_new = True
 
+        # 카탈로그에 세션 등록/업데이트
+        existing_entry = self._catalog.get(agent_session_id)
+        self._catalog.upsert(
+            agent_session_id,
+            status=TaskStatus.RUNNING.value,
+            prompt=prompt,
+            session_type=task.session_type,
+            client_id=task.client_id,
+            claude_session_id=task.claude_session_id,
+            created_at=datetime_to_str(task.created_at),
+            completed_at=None,
+            pid=None,
+            last_message=existing_entry.get("last_message") if existing_entry else None,
+        )
+
         await self._schedule_save()
 
         # 세션 목록 변경을 대시보드에 브로드캐스트 (부가 기능 — 실패해도 태스크 생성에 영향 없음)
@@ -328,8 +435,23 @@ class TaskManager:
         return task
 
     async def get_task(self, agent_session_id: str) -> Optional[Task]:
-        """세션 태스크 조회"""
-        return self._tasks.get(agent_session_id)
+        """세션 태스크 조회
+
+        1. _tasks에서 먼저 조회 (running + LRU 캐시 히트)
+        2. _eviction_candidates에 있으면 LRU TTL 갱신
+        3. _tasks에 없으면 저장소에서 on-demand 로드 (메모리에 상주시키지 않음)
+        """
+        task = self._tasks.get(agent_session_id)
+        if task:
+            # LRU 캐시 히트 → TTL 갱신
+            if agent_session_id in self._eviction_candidates:
+                self._eviction_candidates[agent_session_id] = (
+                    time.time() + self._eviction_ttl
+                )
+            return task
+
+        # on-demand 로드 (퇴거된 세션)
+        return await self._load_evicted_task(agent_session_id)
 
     async def _complete_task_internal(
         self,
@@ -369,6 +491,16 @@ class TaskManager:
             task.completed_at = utc_now()
 
             logger.info(f"Completed session: {agent_session_id}")
+
+        # 카탈로그 업데이트 + LRU 퇴거 후보 등록
+        self._catalog.upsert(
+            agent_session_id,
+            status=TaskStatus.COMPLETED.value,
+            claude_session_id=claude_session_id,
+            completed_at=datetime_to_str(task.completed_at),
+        )
+        self._eviction_candidates[agent_session_id] = time.time() + self._eviction_ttl
+        self._unregister_claude_session(agent_session_id)
 
         await self._schedule_save()
         try:
@@ -412,6 +544,15 @@ class TaskManager:
 
             logger.info(f"Error session: {agent_session_id} - {error}")
 
+        # 카탈로그 업데이트 + LRU 퇴거 후보 등록
+        self._catalog.upsert(
+            agent_session_id,
+            status=TaskStatus.ERROR.value,
+            completed_at=datetime_to_str(task.completed_at),
+        )
+        self._eviction_candidates[agent_session_id] = time.time() + self._eviction_ttl
+        self._unregister_claude_session(agent_session_id)
+
         await self._schedule_save()
         try:
             await get_session_broadcaster().emit_session_updated(task)
@@ -432,7 +573,28 @@ class TaskManager:
             await self._listener_manager.remove_listener(agent_session_id, queue)
 
     async def broadcast(self, agent_session_id: str, event: dict) -> int:
-        """모든 리스너에게 이벤트 브로드캐스트"""
+        """모든 리스너에게 이벤트 브로드캐스트
+
+        PREVIEW_FIELD_MAP에 해당하는 이벤트 타입이면 카탈로그의
+        last_message를 업데이트합니다.
+        """
+        # 카탈로그 last_message 업데이트
+        event_type = event.get("type", "")
+        text_field = PREVIEW_FIELD_MAP.get(event_type)
+        if text_field:
+            text = event.get(text_field, "")
+            if isinstance(text, str) and text:
+                ts = event.get("timestamp")
+                if isinstance(ts, (int, float)):
+                    ts_str = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+                elif isinstance(ts, str):
+                    ts_str = ts
+                else:
+                    ts_str = datetime_to_str(utc_now())
+                self._catalog.update_last_message(
+                    agent_session_id, event_type, text[:200], ts_str
+                )
+
         return await self._listener_manager.broadcast(agent_session_id, event)
 
     # === 개입 메시지 관리 ===
@@ -449,6 +611,7 @@ class TaskManager:
 
         Running 세션이면 intervention queue에 추가합니다.
         완료/에러 세션이면 자동으로 resume하여 대화를 이어갑니다.
+        퇴거된 세션도 on-demand 로드하여 처리합니다.
 
         Args:
             agent_session_id: 세션 식별자
@@ -465,10 +628,9 @@ class TaskManager:
             TaskNotFoundError: 세션이 존재하지 않음
         """
         task = self._tasks.get(agent_session_id)
-        if not task:
-            raise TaskNotFoundError(f"Session not found: {agent_session_id}")
 
-        if task.status == TaskStatus.RUNNING:
+        if task and task.status == TaskStatus.RUNNING:
+            # running 세션에 직접 개입
             message = {
                 "text": text,
                 "user": user,
@@ -477,8 +639,14 @@ class TaskManager:
             await task.intervention_queue.put(message)
             return {"queue_position": task.intervention_queue.qsize()}
 
-        # 완료/에러 → 자동 resume (같은 세션 재활성화)
-        task = await self.create_task(
+        if not task:
+            # 퇴거된 세션 on-demand 로드
+            task = await self._load_evicted_task(agent_session_id)
+            if not task:
+                raise TaskNotFoundError(f"Session not found: {agent_session_id}")
+
+        # 완료/에러/중단 → 자동 resume (같은 세션 재활성화)
+        await self.create_task(
             prompt=text,
             agent_session_id=agent_session_id,
             client_id=user,
@@ -577,6 +745,15 @@ class TaskManager:
 
     async def cancel_running_tasks(self, timeout: float = 5.0) -> int:
         """실행 중인 모든 태스크 취소"""
+        # 퇴거 루프 중지
+        if self._eviction_task:
+            self._eviction_task.cancel()
+            try:
+                await self._eviction_task
+            except asyncio.CancelledError:
+                pass
+            self._eviction_task = None
+
         async with self._lock:
             return await self._executor.cancel_running_tasks(timeout)
 
@@ -613,6 +790,16 @@ class TaskManager:
 
         if fixed > 0:
             logger.info(f"Fixed {fixed} orphaned running sessions")
+            # 카탈로그 업데이트 + 퇴거 후보 등록
+            for task in fixed_tasks:
+                self._catalog.upsert(
+                    task.agent_session_id,
+                    status=TaskStatus.INTERRUPTED.value,
+                    completed_at=datetime_to_str(task.completed_at),
+                )
+                self._eviction_candidates[task.agent_session_id] = (
+                    time.time() + self._eviction_ttl
+                )
             await self._schedule_save()
             try:
                 broadcaster = get_session_broadcaster()
@@ -639,12 +826,98 @@ class TaskManager:
         interrupted = sum(1 for t in self._tasks.values() if t.status == TaskStatus.INTERRUPTED)
 
         return {
-            "total": len(self._tasks),
+            "total_in_memory": len(self._tasks),
+            "total_in_catalog": len(self._catalog),
             "running": running,
             "completed": completed,
             "error": error,
             "interrupted": interrupted,
+            "eviction_candidates": len(self._eviction_candidates),
         }
+
+    # === LRU 퇴거 관리 ===
+
+    async def _eviction_loop(self) -> None:
+        """주기적 퇴거 루프 (60초 간격)"""
+        while True:
+            try:
+                await asyncio.sleep(60)
+                evicted = self._run_eviction_check()
+                if evicted > 0:
+                    logger.info(f"Eviction loop: removed {evicted} sessions from memory")
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                logger.exception("Eviction loop error")
+
+    def _run_eviction_check(self) -> int:
+        """퇴거 후보 검사 — TTL 만료된 세션을 _tasks에서 제거
+
+        race condition 방지: resume으로 RUNNING 상태가 된 세션은
+        퇴거 후보에서 제거만 하고 _tasks에서 삭제하지 않습니다.
+
+        Returns:
+            퇴거된 세션 수
+        """
+        now = time.time()
+        evicted = 0
+        for session_id in list(self._eviction_candidates):
+            if now >= self._eviction_candidates[session_id]:
+                task = self._tasks.get(session_id)
+                # running 세션은 퇴거하지 않음 (resume으로 재활성화된 경우)
+                if task and task.status == TaskStatus.RUNNING:
+                    del self._eviction_candidates[session_id]
+                    continue
+                if session_id in self._tasks:
+                    del self._tasks[session_id]
+                    logger.debug(f"Evicted session from memory: {session_id}")
+                del self._eviction_candidates[session_id]
+                evicted += 1
+        return evicted
+
+    async def _load_evicted_task(self, agent_session_id: str) -> Optional[Task]:
+        """퇴거된 세션을 카탈로그에서 온디맨드 로드 (메모리에 상주시키지 않음)
+
+        Args:
+            agent_session_id: 세션 식별자
+
+        Returns:
+            복원된 Task 또는 None
+        """
+        entry = self._catalog.get(agent_session_id)
+        if not entry:
+            return None
+
+        # 필수 필드 누락 시 안전하게 처리
+        status_str = entry.get("status")
+        created_at_str = entry.get("created_at")
+        if not status_str or not created_at_str:
+            logger.warning(
+                f"Incomplete catalog entry for {agent_session_id}: "
+                f"status={status_str}, created_at={created_at_str}"
+            )
+            return None
+
+        try:
+            return Task(
+                agent_session_id=agent_session_id,
+                prompt=entry.get("prompt", ""),
+                status=TaskStatus(status_str),
+                client_id=entry.get("client_id"),
+                claude_session_id=entry.get("claude_session_id"),
+                session_type=entry.get("session_type", "claude"),
+                llm_provider=entry.get("llm_provider"),
+                llm_model=entry.get("llm_model"),
+                created_at=str_to_datetime(created_at_str),
+                completed_at=(
+                    str_to_datetime(entry["completed_at"])
+                    if entry.get("completed_at")
+                    else None
+                ),
+            )
+        except (ValueError, KeyError) as e:
+            logger.error(f"Failed to restore task from catalog: {agent_session_id}: {e}")
+            return None
 
 
 # 싱글톤 인스턴스는 main.py에서 초기화
@@ -662,10 +935,15 @@ def get_task_manager() -> TaskManager:
 def init_task_manager(
     storage_path: Optional[Path] = None,
     event_store: Optional[EventStore] = None,
+    eviction_ttl: int = 900,
 ) -> TaskManager:
     """TaskManager 초기화"""
     global task_manager
-    task_manager = TaskManager(storage_path=storage_path, event_store=event_store)
+    task_manager = TaskManager(
+        storage_path=storage_path,
+        event_store=event_store,
+        eviction_ttl=eviction_ttl,
+    )
     return task_manager
 
 

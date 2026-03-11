@@ -91,6 +91,7 @@ class Settings:
     # 리소스 제한
     max_concurrent_sessions: int = 3
     session_timeout_seconds: int = 1800  # 30분
+    session_eviction_ttl_seconds: int = 900  # 완료 세션 메모리 퇴거 TTL (15분)
 
     # Runner Pool 설정
     runner_pool_max_size: int = 5           # idle pool 최대 크기 (session + generic 합산)
@@ -159,6 +160,10 @@ class Settings:
             session_timeout_seconds=_parse_int(
                 os.getenv("SESSION_TIMEOUT_SECONDS", str(cls.session_timeout_seconds)),
                 "SESSION_TIMEOUT_SECONDS"
+            ),
+            session_eviction_ttl_seconds=_parse_int(
+                os.getenv("SESSION_EVICTION_TTL_SECONDS", str(cls.session_eviction_ttl_seconds)),
+                "SESSION_EVICTION_TTL_SECONDS"
             ),
             runner_pool_max_size=_parse_int(
                 os.getenv("RUNNER_POOL_MAX_SIZE", str(cls.runner_pool_max_size)),
