@@ -72,9 +72,7 @@ export interface DashboardState {
   sessionsLoading: boolean;
   sessionsError: string | null;
 
-  /** 세션 목록 페이지네이션/필터 */
-  sessionPage: number;
-  sessionPageSize: number;
+  /** 세션 타입 필터 */
   sessionTypeFilter: "all" | "claude" | "llm";
 
   /** 활성 세션 (현재 보고 있는 세션) */
@@ -141,8 +139,7 @@ export interface DashboardActions {
   setSessionsLoading: (loading: boolean) => void;
   setSessionsError: (error: string | null) => void;
 
-  // 세션 목록 페이지네이션/필터
-  setSessionPage: (page: number) => void;
+  // 세션 타입 필터
   setSessionTypeFilter: (type: "all" | "claude" | "llm") => void;
 
   // 활성 세션
@@ -216,8 +213,6 @@ const initialState: DashboardState = {
   sessionsTotal: 0,
   sessionsLoading: true,
   sessionsError: null,
-  sessionPage: 0,
-  sessionPageSize: 20,
   sessionTypeFilter: "all",
   activeSessionKey: null,
   activeSession: null,
@@ -271,7 +266,6 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           sessionsTotal: 0,
           sessionsLoading: true,
           sessionsError: null,
-          sessionPage: 0,
           sessionTypeFilter: "all",
           activeSessionKey: null,
           activeSession: null,
@@ -297,13 +291,12 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
       }),
 
       addSession: (session) => {
-        const { sessions, sessionsTotal, sessionPageSize } = get();
+        const { sessions, sessionsTotal } = get();
         // 중복 체크 (이미 존재하면 추가하지 않음)
         if (sessions.some((s) => s.agentSessionId === session.agentSessionId)) {
           return;
         }
-        // 최신 세션이 앞에 오도록 추가하되, 페이지 크기를 초과하지 않도록 trim
-        const updated = [session, ...sessions].slice(0, sessionPageSize);
+        const updated = [session, ...sessions];
         set({
           sessions: updated,
           sessionsTotal: sessionsTotal + 1,
@@ -337,14 +330,9 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
       setSessionsError: (sessionsError) =>
         set({ sessionsError, sessionsLoading: false }),
 
-      // --- 세션 목록 페이지네이션/필터 ---
+      // --- 세션 타입 필터 ---
 
-      setSessionPage: (sessionPage) => set({ sessionPage }),
-
-      setSessionTypeFilter: (sessionTypeFilter) => set({
-        sessionTypeFilter,
-        sessionPage: 0,  // 탭 전환 시 페이지를 0으로 리셋
-      }),
+      setSessionTypeFilter: (sessionTypeFilter) => set({ sessionTypeFilter }),
 
       // --- 활성 세션 ---
 
