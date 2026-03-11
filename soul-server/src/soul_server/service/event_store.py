@@ -134,6 +134,39 @@ class EventStore:
 
         return events
 
+    def read_one(self, agent_session_id: str, event_id: int) -> Optional[dict]:
+        """특정 이벤트 하나를 반환한다.
+
+        클라이언트에서 truncate된 콘텐츠의 전체 내용을 요청할 때 사용.
+
+        Args:
+            agent_session_id: 세션 식별자
+            event_id: 조회할 이벤트 ID
+
+        Returns:
+            이벤트 레코드 딕셔너리 {"id": int, "event": dict}, 없으면 None
+        """
+        path = self._session_path(agent_session_id)
+        if not path.exists():
+            return None
+
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        record = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if record["id"] == event_id:
+                        return record
+        except OSError as e:
+            logger.warning(f"Failed to read event {event_id} from {path}: {e}")
+
+        return None
+
     def read_since(self, agent_session_id: str, after_id: int) -> List[dict]:
         """after_id 이후의 이벤트만 반환한다.
 

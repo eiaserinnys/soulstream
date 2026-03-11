@@ -42,6 +42,10 @@ export interface ChatMessage {
   /** 원본 트리 노드 ID (클릭 시 Detail 연동용) */
   treeNodeId: string;
   treeNodeType: string;
+  /** 콘텐츠가 truncate 되었는지 여부 (큰 toolResult/thinking) */
+  isTruncated?: boolean;
+  /** truncate된 경우, 전체 내용을 가진 원본 이벤트 ID */
+  fullContentEventId?: number;
 }
 
 /**
@@ -134,6 +138,8 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
         timestamp: n.timestamp,
         treeNodeId: n.id,
         treeNodeType: n.type,
+        isTruncated: n.isTruncated,
+        fullContentEventId: n.fullContentEventId,
       };
     }
 
@@ -175,6 +181,8 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
         toolResult: n.toolResult,
         treeNodeId: n.id,
         treeNodeType: n.type,
+        isTruncated: n.isTruncated,
+        fullContentEventId: n.fullContentEventId,
       };
     }
 

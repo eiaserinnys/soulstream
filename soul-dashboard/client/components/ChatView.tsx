@@ -18,6 +18,100 @@ import { cn } from "../lib/cn";
 /** 스크롤 하단 판정 threshold (px) */
 const SCROLL_THRESHOLD = 50;
 
+// === Truncation Lazy Load ===
+
+/**
+ * truncate된 콘텐츠의 "전체 내용 보기" 버튼 + 로딩 상태 관리.
+ * 클릭 시 서버에서 전체 이벤트를 가져와 콘텐츠를 반환한다.
+ */
+function useLazyLoadContent(
+  msg: ChatMessage,
+): {
+  displayContent: string | undefined;
+  isTruncated: boolean;
+  loading: boolean;
+  error: string | null;
+  loadFullContent: () => void;
+} {
+  const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
+  const [fullContent, setFullContent] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const loadingRef = useRef(false);
+
+  const isTruncated = !!msg.isTruncated && fullContent === null;
+
+  const loadFullContent = useCallback(async () => {
+    if (!activeSessionKey || !msg.fullContentEventId || loadingRef.current) return;
+    loadingRef.current = true;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(
+        `/api/sessions/${encodeURIComponent(activeSessionKey)}/events/${msg.fullContentEventId}`,
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const record = await res.json();
+      const event = record.event;
+      // tool_result 이벤트: result 필드, thinking 이벤트: thinking 필드
+      const content = event.result ?? event.thinking ?? event.text ?? "";
+      setFullContent(content);
+    } catch {
+      setError("로드 실패. 다시 시도해주세요.");
+    } finally {
+      loadingRef.current = false;
+      setLoading(false);
+    }
+  }, [activeSessionKey, msg.fullContentEventId]);
+
+  // tool 메시지의 경우 toolResult, thinking의 경우 content
+  const baseContent =
+    msg.treeNodeType === "thinking"
+      ? msg.thinkingContent ?? msg.content
+      : msg.toolResult;
+
+  return {
+    displayContent: fullContent ?? baseContent,
+    isTruncated,
+    loading,
+    error,
+    loadFullContent,
+  };
+}
+
+/** truncate된 콘텐츠 하단에 표시하는 "전체 내용 보기" 버튼 */
+const ShowFullContentButton = memo(function ShowFullContentButton({
+  loading,
+  error,
+  onClick,
+}: {
+  loading: boolean;
+  error: string | null;
+  onClick: () => void;
+}) {
+  return (
+    <div className="mt-1 flex items-center gap-2">
+      <button
+        onClick={onClick}
+        disabled={loading}
+        className="text-[11px] text-accent-blue hover:text-accent-blue/80 flex items-center gap-1 disabled:opacity-50"
+      >
+        {loading ? (
+          <>
+            <span className="inline-block w-3 h-3 border border-accent-blue/40 border-t-accent-blue rounded-full animate-spin" />
+            Loading...
+          </>
+        ) : (
+          "\u2026 전체 내용 보기"
+        )}
+      </button>
+      {error && (
+        <span className="text-[11px] text-accent-red">{error}</span>
+      )}
+    </div>
+  );
+});
+
 // === Message Grouping Types ===
 
 type MessageOrGroup =
@@ -153,13 +247,18 @@ const InterventionMessage = memo(function InterventionMessage({ msg }: { msg: Ch
   );
 });
 
-/** thinking 노드: 3줄 미리보기 + 접기/펼치기 */
+/** thinking 노드: 3줄 미리보기 + 접기/펼치기 + truncation lazy load */
 const ThinkingMessage = memo(function ThinkingMessage({ msg }: { msg: ChatMessage }) {
+  const { displayContent, isTruncated, loading, error, loadFullContent } = useLazyLoadContent(msg);
+
   return (
     <div className="flex gap-2 px-3 py-1.5">
       <span className="w-8 shrink-0" />
       <div className="flex-1 min-w-0">
-        <CollapsibleContent content={msg.content} label={"\u{1F4AD} Thinking"} />
+        <CollapsibleContent content={displayContent ?? msg.content} label={"\u{1F4AD} Thinking"} />
+        {isTruncated && (
+          <ShowFullContentButton loading={loading} error={error} onClick={loadFullContent} />
+        )}
       </div>
     </div>
   );
@@ -203,9 +302,10 @@ const AssistantMessage = memo(function AssistantMessage({ msg }: { msg: ChatMess
 
 // === Tool Call Components ===
 
-/** 그룹 내 개별 tool call 항목 */
+/** 그룹 내 개별 tool call 항목 (truncation lazy load 포함) */
 const ToolCallItem = memo(function ToolCallItem({ msg }: { msg: ChatMessage }) {
   const [expanded, setExpanded] = useState(false);
+  const { displayContent, isTruncated, loading, error, loadFullContent } = useLazyLoadContent(msg);
   const isDone = msg.toolResult !== undefined || msg.toolDurationMs !== undefined;
   const statusIcon = msg.isError ? "\u274C" : isDone ? "\u2705" : "\u{1F528}";
 
@@ -228,13 +328,18 @@ const ToolCallItem = memo(function ToolCallItem({ msg }: { msg: ChatMessage }) {
           {typeof msg.toolInput === "string" ? msg.toolInput : JSON.stringify(msg.toolInput, null, 2)}
         </pre>
       )}
-      {expanded && msg.toolResult && (
-        <pre className={cn(
-          "text-[12px] bg-input rounded px-2 py-1.5 ml-5 mt-0.5 whitespace-pre-wrap break-words overflow-auto max-h-40 font-mono",
-          msg.isError ? "text-accent-red/80" : "text-muted-foreground",
-        )}>
-          {msg.toolResult}
-        </pre>
+      {expanded && displayContent && (
+        <div className="ml-5 mt-0.5">
+          <pre className={cn(
+            "text-[12px] bg-input rounded px-2 py-1.5 whitespace-pre-wrap break-words overflow-auto max-h-40 font-mono",
+            msg.isError ? "text-accent-red/80" : "text-muted-foreground",
+          )}>
+            {displayContent}
+          </pre>
+          {isTruncated && (
+            <ShowFullContentButton loading={loading} error={error} onClick={loadFullContent} />
+          )}
+        </div>
       )}
     </div>
   );

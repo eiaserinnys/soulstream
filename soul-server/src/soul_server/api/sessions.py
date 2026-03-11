@@ -13,7 +13,7 @@ import json
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Header, HTTPException, Query
+from fastapi import APIRouter, Header, HTTPException, Path as FastAPIPath, Query
 from sse_starlette.sse import EventSourceResponse
 
 from soul_server.models import SessionsListResponse
@@ -105,6 +105,34 @@ def create_sessions_router() -> APIRouter:
                 await session_broadcaster.remove_listener(event_queue)
 
         return EventSourceResponse(event_generator())
+
+    @router.get("/sessions/{agent_session_id}/events/{event_id}")
+    async def get_event(
+        agent_session_id: str,
+        event_id: int = FastAPIPath(..., ge=1, description="이벤트 ID (1 이상)"),
+    ):
+        """개별 이벤트 조회
+
+        클라이언트에서 truncate된 콘텐츠의 전체 내용을 요청할 때 사용합니다.
+        """
+        task_manager = get_task_manager()
+        event_store = task_manager.event_store
+        if not event_store:
+            raise HTTPException(status_code=500, detail="EventStore not available")
+
+        record = event_store.read_one(agent_session_id, event_id)
+        if record is None:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": {
+                        "code": "EVENT_NOT_FOUND",
+                        "message": f"이벤트를 찾을 수 없습니다: {event_id}",
+                        "details": {},
+                    }
+                },
+            )
+        return record
 
     @router.get("/sessions/{agent_session_id}/history")
     async def session_history(
