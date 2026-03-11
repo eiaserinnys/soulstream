@@ -75,13 +75,46 @@ def _rebuild_task_from_events(agent_session_id: str, events: list) -> Task:
         created_at = utc_now()
 
     # 이벤트 순회: 첫 user_message → prompt/client_id, 마지막 터미널 → status/result
+    last_meaningful = None
     for record in events:
         event = record.get("event", {})
         event_type = event.get("type")
 
         if event_type == "user_message" and not prompt:
-            prompt = event.get("content", "")
-            client_id = event.get("client_id")
+            # Claude 세션: "text" 키, LLM 세션: "messages" 배열
+            prompt = event.get("text", "")
+            if not prompt and "messages" in event:
+                for m in event.get("messages", []):
+                    if m.get("role") == "user":
+                        content = m.get("content", "")
+                        if isinstance(content, str):
+                            prompt = content[:200]
+                            break
+                        elif isinstance(content, list):
+                            # Anthropic content blocks: [{"type":"text","text":"..."},...]
+                            for block in content:
+                                if isinstance(block, dict) and block.get("type") == "text":
+                                    prompt = block.get("text", "")[:200]
+                                    break
+                        if prompt:
+                            break
+            # client_id: Claude 세션은 "user", LLM 세션은 "client_id"
+            client_id = event.get("user") or event.get("client_id")
+
+        # 유의미한 이벤트의 preview 추적 (프롬프트 폴백용)
+        if event_type in {
+            "user_message", "intervention_sent", "thinking",
+            "complete", "result", "error",
+        }:
+            text = (
+                event.get("text")
+                or event.get("result")
+                or event.get("thinking")
+                or event.get("error")
+                or ""
+            )
+            if text:
+                last_meaningful = text[:200]
 
         # claude_session_id 추출 (system 이벤트 또는 이벤트 공통 필드)
         sid = event.get("claude_session_id") or event.get("session_id")
@@ -132,6 +165,10 @@ def _rebuild_task_from_events(agent_session_id: str, events: list) -> Task:
 
     if not completed_at:
         completed_at = created_at
+
+    # user_message에서 프롬프트를 못 찾은 경우 → 마지막 유의미 이벤트 사용
+    if not prompt and last_meaningful:
+        prompt = last_meaningful
 
     return Task(
         agent_session_id=agent_session_id,
