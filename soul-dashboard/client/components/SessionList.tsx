@@ -6,13 +6,14 @@
  * "+ New" 버튼으로 새 세션 생성을 제공합니다.
  */
 
+import { memo, useRef, useCallback } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import type { SessionSummary, SessionStatus } from "@shared/types";
 import type { VariantProps } from "class-variance-authority";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { cn } from "../lib/cn";
 import { Button } from "./ui/button";
 import { Badge, badgeVariants } from "./ui/badge";
-import { ScrollArea } from "./ui/scroll-area";
 
 // === Status Badge Config ===
 
@@ -66,7 +67,7 @@ interface SessionItemProps {
   onClick: () => void;
 }
 
-function SessionItem({ session, isActive, onClick }: SessionItemProps) {
+const SessionItem = memo(function SessionItem({ session, isActive, onClick }: SessionItemProps) {
   const config = STATUS_CONFIG[session.status];
   const sessionKey = session.agentSessionId;
 
@@ -133,7 +134,7 @@ function SessionItem({ session, isActive, onClick }: SessionItemProps) {
       )}
     </button>
   );
-}
+});
 
 // === SessionList ===
 
@@ -143,16 +144,28 @@ interface SessionListProps {
   error: string | null;
 }
 
+/** SessionItem의 예상 높이 (px) — 가상화 estimateSize에 사용 */
+const ITEM_HEIGHT = 56;
+
 export function SessionList({ sessions, loading, error }: SessionListProps) {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const sessionsTotal = useDashboardStore((s) => s.sessionsTotal);
   const setActiveSession = useDashboardStore((s) => s.setActiveSession);
   const startCompose = useDashboardStore((s) => s.startCompose);
   const isComposing = useDashboardStore((s) => s.isComposing);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  const handleSelect = (session: SessionSummary) => {
-    setActiveSession(session.agentSessionId);
-  };
+  const virtualizer = useVirtualizer({
+    count: sessions.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => ITEM_HEIGHT,
+    overscan: 5,
+  });
+
+  const handleSelect = useCallback(
+    (agentSessionId: string) => setActiveSession(agentSessionId),
+    [setActiveSession],
+  );
 
   return (
     <div
@@ -196,22 +209,47 @@ export function SessionList({ sessions, loading, error }: SessionListProps) {
         </div>
       )}
 
-      {/* Session list */}
-      <ScrollArea className="flex-1">
+      {/* Session list — 가상 스크롤 */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto">
         {sessions.length === 0 && !loading && (
           <div className="p-5 text-center text-muted-foreground text-[13px]">
             No sessions yet
           </div>
         )}
-        {sessions.map((session) => (
-            <SessionItem
-              key={session.agentSessionId}
-              session={session}
-              isActive={activeSessionKey === session.agentSessionId}
-              onClick={() => handleSelect(session)}
-            />
-          ))}
-      </ScrollArea>
+        {sessions.length > 0 && (
+          <div
+            style={{
+              height: virtualizer.getTotalSize(),
+              position: "relative",
+              width: "100%",
+            }}
+          >
+            {virtualizer.getVirtualItems().map((virtualRow) => {
+              const session = sessions[virtualRow.index];
+              return (
+                <div
+                  key={session.agentSessionId}
+                  ref={virtualizer.measureElement}
+                  data-index={virtualRow.index}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                >
+                  <SessionItem
+                    session={session}
+                    isActive={activeSessionKey === session.agentSessionId}
+                    onClick={() => handleSelect(session.agentSessionId)}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
