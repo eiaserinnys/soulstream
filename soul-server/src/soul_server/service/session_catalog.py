@@ -41,10 +41,10 @@ class SessionCatalog:
     # === 빌드 ===
 
     async def build_from_tasks(self, tasks: Dict[str, Task]) -> None:
-        """기존 Task dict에서 카탈로그를 빌드한다.
+        """카탈로그를 전체 리빌드한다 (카탈로그 손상 시 복구 전용).
 
-        서버 기동 시 tasks.json 로드 직후 호출됩니다.
-        기존 카탈로그 파일이 있으면 last_message 등 추가 정보를 보존합니다.
+        기존 엔트리를 모두 clear한 뒤 tasks에 있는 세션만 재생성한다.
+        정상 기동 경로에서는 사용하지 않는다 — load() 후 upsert_from_task()를 사용한다.
 
         Args:
             tasks: 로드된 Task 딕셔너리
@@ -67,7 +67,12 @@ class SessionCatalog:
 
     @staticmethod
     def _task_to_entry(task: Task) -> dict:
-        """Task를 카탈로그 엔트리로 변환"""
+        """Task를 카탈로그 엔트리로 변환
+
+        last_message는 Task에 존재하지 않는 카탈로그 전용 필드이므로
+        이 메서드에서 생성하지 않는다. 기존 엔트리의 last_message 보존은
+        upsert_from_task()가 담당한다.
+        """
         return {
             "status": task.status.value,
             "prompt": task.prompt,
@@ -81,7 +86,6 @@ class SessionCatalog:
                 datetime_to_str(task.completed_at) if task.completed_at else None
             ),
             "pid": task.pid,
-            "last_message": None,
         }
 
     def __len__(self) -> int:
@@ -96,6 +100,9 @@ class SessionCatalog:
 
     def upsert_from_task(self, task: Task) -> None:
         """Task 객체로부터 카탈로그 엔트리 생성/업데이트
+
+        _task_to_entry()는 last_message를 포함하지 않으므로,
+        기존 엔트리의 last_message는 upsert()의 update()에서 자연스럽게 유지된다.
 
         Args:
             task: 등록할 Task 인스턴스

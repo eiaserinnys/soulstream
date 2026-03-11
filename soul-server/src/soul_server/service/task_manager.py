@@ -162,28 +162,42 @@ class TaskManager:
     async def load(self) -> int:
         """파일에서 태스크 로드 (JSONL 이벤트 기반 상태 보정 포함)
 
-        로드 후 카탈로그를 빌드하고, 카탈로그 기반으로 고아 세션을 복구한 뒤,
-        비실행 세션을 메모리에서 즉시 퇴거합니다.
+        기존 카탈로그를 로드한 뒤 tasks.json의 세션만 upsert하고,
+        JSONL/카탈로그 수 불일치 시에만 고아 세션을 복구합니다.
+        비실행 세션은 메모리에서 즉시 퇴거합니다.
         """
         # 1. tasks.json 로드 + 상태 보정 (고아 복구는 여기서 하지 않음)
         loaded = await self._storage.load(self._tasks, event_store=self._event_store)
 
-        # 2. 기존 카탈로그 파일 로드 (last_message 등 보존용)
+        # 2. 기존 카탈로그 파일 로드
         await self._catalog.load()
 
-        # 3. 로드된 전체 Task로 카탈로그 빌드
-        await self._catalog.build_from_tasks(self._tasks)
+        # 3. tasks.json의 세션만 카탈로그에 반영 (기존 엔트리 유지)
+        for session_id, task in self._tasks.items():
+            self._catalog.upsert_from_task(task)
 
-        # 4. 고아 세션 복구: 카탈로그를 전달하여 효율적인 검출
+        # 4. 고아 세션 복구: JSONL/카탈로그 집합 불일치 시에만 실행
         orphans_recovered = 0
         if self._event_store:
-            orphans_recovered = recover_orphan_sessions(
-                self._tasks, self._event_store, catalog=self._catalog
-            )
-            if orphans_recovered:
-                loaded += orphans_recovered
-                # 복구된 고아를 tasks.json에 영속화
-                await self._storage.save(self._tasks)
+            jsonl_ids = set(self._event_store.list_session_ids())
+            catalog_ids = self._catalog.known_session_ids()
+            if jsonl_ids != catalog_ids:
+                logger.info(
+                    f"JSONL/catalog mismatch: "
+                    f"JSONL-only={len(jsonl_ids - catalog_ids)}, "
+                    f"catalog-only={len(catalog_ids - jsonl_ids)}, recovering..."
+                )
+                orphans_recovered = recover_orphan_sessions(
+                    self._tasks, self._event_store, catalog=self._catalog
+                )
+                if orphans_recovered:
+                    loaded += orphans_recovered
+                    await self._storage.save(self._tasks)
+            else:
+                logger.info(
+                    f"Catalog matches JSONL ({len(catalog_ids)} sessions), "
+                    f"skipping orphan recovery"
+                )
 
         # 5. 비실행 세션을 _tasks에서 완전 퇴거 (서버 기동 시에는 LRU 없이 즉시)
         evicted_ids = [
@@ -875,6 +889,7 @@ class TaskManager:
                 evicted = self._run_eviction_check()
                 if evicted > 0:
                     logger.info(f"Eviction loop: removed {evicted} sessions from memory")
+                    await self._schedule_save()
             except asyncio.CancelledError:
                 break
             except Exception:
