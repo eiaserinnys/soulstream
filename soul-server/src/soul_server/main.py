@@ -121,7 +121,11 @@ async def lifespan(app: FastAPI):
 
     # TaskManager 초기화 및 로드
     storage_path = data_dir / "tasks.json"
-    task_manager = init_task_manager(storage_path=storage_path, event_store=event_store)
+    task_manager = init_task_manager(
+        storage_path=storage_path,
+        event_store=event_store,
+        eviction_ttl=settings.session_eviction_ttl_seconds,
+    )
     loaded = await task_manager.load()
     logger.info(f"  Loaded {loaded} tasks from storage")
 

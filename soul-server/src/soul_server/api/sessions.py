@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 def _task_to_session_info(task: Task) -> dict:
-    """Task를 세션 정보 dict로 변환"""
+    """Task를 세션 정보 dict로 변환 (개별 세션 조회용)"""
     updated_at = task.completed_at or task.created_at
     return {
         "agent_session_id": task.agent_session_id,
@@ -34,6 +34,7 @@ def _task_to_session_info(task: Task) -> dict:
         "created_at": task.created_at.isoformat(),
         "updated_at": updated_at.isoformat(),
         "pid": task.pid,
+        "last_message": None,
     }
 
 
@@ -54,8 +55,7 @@ def create_sessions_router() -> APIRouter:
     ):
         """세션 목록 조회 (페이지네이션 지원)"""
         task_manager = get_task_manager()
-        tasks, total = task_manager.get_all_sessions(offset=offset, limit=limit)
-        sessions = [_task_to_session_info(t) for t in tasks]
+        sessions, total = task_manager.get_all_sessions(offset=offset, limit=limit)
         return {"sessions": sessions, "total": total}
 
     @router.get("/sessions/stream")
@@ -71,8 +71,7 @@ def create_sessions_router() -> APIRouter:
             task_manager = get_task_manager()
             session_broadcaster = get_session_broadcaster()
 
-            tasks, total = task_manager.get_all_sessions()
-            sessions = [_task_to_session_info(t) for t in tasks]
+            sessions, total = task_manager.get_all_sessions()
 
             yield {
                 "event": "session_list",

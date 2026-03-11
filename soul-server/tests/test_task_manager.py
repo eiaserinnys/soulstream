@@ -264,7 +264,9 @@ class TestStats:
         await manager.complete_task("sess-1", "done")
 
         stats = manager.get_stats()
-        assert stats["total"] == 2
+        assert stats["total_in_memory"] == 2
+        assert stats["total_in_catalog"] == 2
         assert stats["running"] == 1
         assert stats["completed"] == 1
         assert stats["error"] == 0
+        assert stats["eviction_candidates"] == 1
