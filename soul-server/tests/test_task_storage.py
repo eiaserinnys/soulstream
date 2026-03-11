@@ -4,13 +4,16 @@ test_task_storage - 로드/저장, atomic write, running→error 복구 테스�
 현재 API에서 키는 agent_session_id입니다.
 """
 
+import asyncio
 import json
 from pathlib import Path
 
 import pytest
 
+from soul_server.service.event_store import EventStore
+from soul_server.service.session_catalog import SessionCatalog
 from soul_server.service.task_models import Task, TaskStatus, utc_now, datetime_to_str
-from soul_server.service.task_storage import TaskStorage
+from soul_server.service.task_storage import TaskStorage, recover_orphan_sessions
 
 
 @pytest.fixture
@@ -340,7 +343,116 @@ class TestTaskStorageReconciliation:
         assert tasks["sess-1"].status == TaskStatus.INTERRUPTED
 
 
-import asyncio
+class TestRecoverOrphanSessions:
+    """recover_orphan_sessions() — 카탈로그 기반/폴백 양쪽 테스트"""
+
+    @pytest.fixture
+    def events_dir(self, tmp_path):
+        d = tmp_path / "events"
+        d.mkdir()
+        return d
+
+    @pytest.fixture
+    def event_store(self, events_dir):
+        return EventStore(events_dir)
+
+    def _seed_events(self, event_store, session_id, events):
+        for ev in events:
+            event_store.append(session_id, ev)
+
+    async def test_recover_orphan_without_catalog(self, event_store):
+        """카탈로그 없이 폴백으로 고아 복구"""
+        self._seed_events(event_store, "orphan-1", [
+            {"type": "user_message", "text": "hello"},
+            {"type": "complete", "result": "done"},
+        ])
+
+        tasks = {}
+        recovered = recover_orphan_sessions(tasks, event_store, catalog=None)
+        assert recovered == 1
+        assert "orphan-1" in tasks
+        assert tasks["orphan-1"].status == TaskStatus.COMPLETED
+
+    async def test_recover_orphan_with_catalog(self, event_store, tmp_path):
+        """카탈로그가 있으면 카탈로그에 없는 세션만 고아로 검출"""
+        catalog = SessionCatalog(tmp_path / "catalog.json")
+
+        # 세션 2개 생성 (둘 다 JSONL 파일 존재)
+        self._seed_events(event_store, "known-1", [
+            {"type": "user_message", "text": "known"},
+            {"type": "complete", "result": "ok"},
+        ])
+        self._seed_events(event_store, "orphan-1", [
+            {"type": "user_message", "text": "orphan"},
+            {"type": "error", "message": "failed"},
+        ])
+
+        # 카탈로그에는 known-1만 등록
+        catalog.upsert("known-1", status="completed")
+
+        tasks = {}
+        recovered = recover_orphan_sessions(tasks, event_store, catalog=catalog)
+        assert recovered == 1
+        assert "orphan-1" in tasks
+        assert "known-1" not in tasks  # 카탈로그에 있으므로 고아가 아님
+        assert tasks["orphan-1"].status == TaskStatus.ERROR
+
+    async def test_recover_orphan_updates_catalog(self, event_store, tmp_path):
+        """고아 복구 시 카탈로그에도 엔트리가 추가된다"""
+        catalog = SessionCatalog(tmp_path / "catalog.json")
+
+        self._seed_events(event_store, "orphan-1", [
+            {"type": "user_message", "text": "hello"},
+            {"type": "result", "success": True, "output": "done"},
+        ])
+
+        tasks = {}
+        recover_orphan_sessions(tasks, event_store, catalog=catalog)
+
+        entry = catalog.get("orphan-1")
+        assert entry is not None
+        assert entry["status"] == "completed"
+
+    async def test_recover_skips_known_tasks(self, event_store, tmp_path):
+        """이미 tasks에 있는 세션은 고아로 처리하지 않는다"""
+        catalog = SessionCatalog(tmp_path / "catalog.json")
+
+        self._seed_events(event_store, "existing-1", [
+            {"type": "user_message", "text": "hello"},
+            {"type": "complete", "result": "ok"},
+        ])
+
+        # tasks에 이미 존재
+        existing_task = Task(agent_session_id="existing-1", prompt="hello")
+        existing_task.status = TaskStatus.COMPLETED
+        tasks = {"existing-1": existing_task}
+
+        recovered = recover_orphan_sessions(tasks, event_store, catalog=catalog)
+        assert recovered == 0
+
+    async def test_recover_empty_jsonl_skipped(self, event_store, events_dir, tmp_path):
+        """빈 JSONL 파일은 건너뛴다"""
+        catalog = SessionCatalog(tmp_path / "catalog.json")
+
+        # 빈 JSONL 파일 생성 (append 없이)
+        (events_dir / "empty-sess.jsonl").write_text("")
+
+        tasks = {}
+        recovered = recover_orphan_sessions(tasks, event_store, catalog=catalog)
+        assert recovered == 0
+
+    async def test_recover_no_orphans(self, event_store, tmp_path):
+        """고아가 없으면 0 반환"""
+        catalog = SessionCatalog(tmp_path / "catalog.json")
+
+        self._seed_events(event_store, "sess-1", [
+            {"type": "user_message", "text": "hello"},
+        ])
+        catalog.upsert("sess-1", status="completed")
+
+        tasks = {}
+        recovered = recover_orphan_sessions(tasks, event_store, catalog=catalog)
+        assert recovered == 0
 
 
 class TestTaskStorageScheduleSave:
