@@ -138,6 +138,8 @@ class EventStore:
         """after_id 이후의 이벤트만 반환한다.
 
         Last-Event-ID 기반 SSE 재연결 지원.
+        JSONL 파일을 line-by-line으로 스캔하여 after_id 이후의 이벤트만 수집한다.
+        ID는 단조증가이므로 after_id와 일치하는 줄을 찾으면 그 이후만 결과에 추가한다.
 
         Args:
             agent_session_id: 세션 식별자
@@ -146,8 +148,47 @@ class EventStore:
         Returns:
             이벤트 딕셔너리 리스트
         """
-        all_events = self.read_all(agent_session_id)
-        return [ev for ev in all_events if ev["id"] > after_id]
+        path = self._session_path(agent_session_id)
+        if not path.exists():
+            return []
+
+        result = []
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                found = False
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        record = json.loads(line)
+                    except json.JSONDecodeError:
+                        logger.warning(f"Skipping corrupted line in {path}")
+                        continue
+                    if found:
+                        result.append(record)
+                    elif record["id"] == after_id:
+                        found = True
+                    elif record["id"] > after_id:
+                        # after_id=0 또는 해당 ID가 삭제된 경우:
+                        # 이후 모든 레코드를 수집
+                        result.append(record)
+        except OSError as e:
+            logger.warning(f"Failed to read events from {path}: {e}")
+
+        return result
+
+    def list_session_ids(self) -> List[str]:
+        """JSONL 파일명에서 세션 ID 목록을 반환한다 (파일 내용 읽기 없음).
+
+        디렉토리 glob만 수행하므로 list_sessions()보다 훨씬 가볍다.
+
+        Returns:
+            세션 ID 리스트
+        """
+        if not self._base_dir.exists():
+            return []
+        return [f.stem for f in self._base_dir.glob("*.jsonl") if f.is_file()]
 
     def cleanup_session(self, agent_session_id: str) -> None:
         """세션의 캐시된 메타데이터를 제거한다.
@@ -173,6 +214,11 @@ class EventStore:
 
     def list_sessions(self) -> List[dict]:
         """저장된 세션 목록을 반환한다.
+
+        .. deprecated::
+            SessionCatalog 도입으로 이 메서드의 주요 호출처가 제거되었습니다.
+            카탈로그 미존재 시 폴백 용도로만 유지됩니다.
+            새 코드에서는 SessionCatalog을 사용하세요.
 
         base_dir 직하의 *.jsonl 파일을 스캔한다 (플랫 구조).
 

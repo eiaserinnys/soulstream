@@ -88,6 +88,10 @@ class SessionCatalog:
         """카탈로그 엔트리 수"""
         return len(self._entries)
 
+    def known_session_ids(self) -> set:
+        """카탈로그에 등록된 모든 세션 ID를 반환한다."""
+        return set(self._entries.keys())
+
     # === CRUD ===
 
     def upsert_from_task(self, task: Task) -> None:

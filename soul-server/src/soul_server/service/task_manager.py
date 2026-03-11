@@ -30,7 +30,7 @@ from soul_server.service.task_models import (
     datetime_to_str,
     str_to_datetime,
 )
-from soul_server.service.task_storage import TaskStorage
+from soul_server.service.task_storage import TaskStorage, recover_orphan_sessions
 from soul_server.service.task_listener import TaskListenerManager
 from soul_server.service.task_executor import TaskExecutor
 from soul_server.service.event_store import EventStore
@@ -162,9 +162,10 @@ class TaskManager:
     async def load(self) -> int:
         """파일에서 태스크 로드 (JSONL 이벤트 기반 상태 보정 포함)
 
-        로드 후 카탈로그를 빌드하고, 비실행 세션을 메모리에서 즉시 퇴거합니다.
+        로드 후 카탈로그를 빌드하고, 카탈로그 기반으로 고아 세션을 복구한 뒤,
+        비실행 세션을 메모리에서 즉시 퇴거합니다.
         """
-        # 1. 기존 로직: tasks.json 로드 + 상태 보정 + 고아 복구
+        # 1. tasks.json 로드 + 상태 보정 (고아 복구는 여기서 하지 않음)
         loaded = await self._storage.load(self._tasks, event_store=self._event_store)
 
         # 2. 기존 카탈로그 파일 로드 (last_message 등 보존용)
@@ -173,7 +174,18 @@ class TaskManager:
         # 3. 로드된 전체 Task로 카탈로그 빌드
         await self._catalog.build_from_tasks(self._tasks)
 
-        # 4. 비실행 세션을 _tasks에서 완전 퇴거 (서버 기동 시에는 LRU 없이 즉시)
+        # 4. 고아 세션 복구: 카탈로그를 전달하여 효율적인 검출
+        orphans_recovered = 0
+        if self._event_store:
+            orphans_recovered = recover_orphan_sessions(
+                self._tasks, self._event_store, catalog=self._catalog
+            )
+            if orphans_recovered:
+                loaded += orphans_recovered
+                # 복구된 고아를 tasks.json에 영속화
+                await self._storage.save(self._tasks)
+
+        # 5. 비실행 세션을 _tasks에서 완전 퇴거 (서버 기동 시에는 LRU 없이 즉시)
         evicted_ids = [
             sid for sid, task in self._tasks.items()
             if task.status != TaskStatus.RUNNING
@@ -185,7 +197,7 @@ class TaskManager:
         if evicted_ids:
             logger.info(f"Startup eviction: {len(evicted_ids)} non-running sessions removed from memory")
 
-        # 5. 퇴거 루프 시작
+        # 6. 퇴거 루프 시작
         self._eviction_task = asyncio.create_task(self._eviction_loop())
 
         return loaded

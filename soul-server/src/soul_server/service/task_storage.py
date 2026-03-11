@@ -21,6 +21,7 @@ from soul_server.service.task_models import (
 
 if TYPE_CHECKING:
     from soul_server.service.event_store import EventStore
+    from soul_server.service.session_catalog import SessionCatalog
 
 logger = logging.getLogger(__name__)
 
@@ -145,6 +146,98 @@ def _rebuild_task_from_events(agent_session_id: str, events: list) -> Task:
     )
 
 
+def recover_orphan_sessions(
+    tasks: Dict[str, Task],
+    event_store: "EventStore",
+    catalog: Optional["SessionCatalog"] = None,
+) -> int:
+    """JSONL에는 존재하지만 tasks.json에 없는 고아 세션을 복구한다.
+
+    인코딩 오류 등으로 tasks.json 저장이 실패한 경우,
+    JSONL 이벤트 로그로부터 Task 객체를 재구성하여 복구한다.
+
+    카탈로그가 제공되면 디렉토리 glob으로 JSONL 파일명만 확인하여
+    카탈로그에 없는 세션만 고아로 판별한다 (파일 내용 읽기 없음).
+    카탈로그가 없으면 기존 EventStore.list_sessions()로 폴백한다.
+
+    Args:
+        tasks: 현재 로드된 태스크 딕셔너리 (복구된 태스크가 추가됨)
+        event_store: JSONL 이벤트 저장소
+        catalog: 세션 카탈로그 (있으면 효율적인 고아 검출)
+
+    Returns:
+        복구된 세션 수
+    """
+    known_ids = set(tasks.keys())
+
+    if catalog is not None:
+        # 카탈로그 기반: 디렉토리 glob으로 JSONL 파일명만 확인 (파일 내용 읽기 없음)
+        try:
+            jsonl_session_ids = event_store.list_session_ids()
+        except Exception as e:
+            logger.warning(f"Failed to list JSONL session IDs for orphan recovery: {e}")
+            return 0
+
+        catalog_ids = catalog.known_session_ids()
+        orphan_ids = [
+            sid for sid in jsonl_session_ids
+            if sid not in catalog_ids and sid not in known_ids
+        ]
+    else:
+        # 폴백: EventStore.list_sessions()로 전체 스캔
+        try:
+            jsonl_sessions = event_store.list_sessions()
+        except Exception as e:
+            logger.warning(f"Failed to list JSONL sessions for orphan recovery: {e}")
+            return 0
+        orphan_ids = [
+            s["agent_session_id"] for s in jsonl_sessions
+            if s["agent_session_id"] not in known_ids
+        ]
+
+    recovered = 0
+    for agent_session_id in orphan_ids:
+        try:
+            events = event_store.read_all(agent_session_id)
+            if not events:
+                continue
+
+            task = _rebuild_task_from_events(agent_session_id, events)
+            tasks[task.key] = task
+            recovered += 1
+
+            # 카탈로그가 있으면 복구된 세션을 카탈로그에도 추가
+            if catalog is not None:
+                catalog.upsert(
+                    agent_session_id,
+                    status=task.status.value,
+                    prompt=task.prompt,
+                    session_type=getattr(task, "session_type", "claude"),
+                    client_id=task.client_id,
+                    claude_session_id=task.claude_session_id,
+                    created_at=datetime_to_str(task.created_at),
+                    completed_at=(
+                        datetime_to_str(task.completed_at)
+                        if task.completed_at
+                        else None
+                    ),
+                )
+
+            logger.info(
+                f"Recovered orphan session from JSONL: "
+                f"{agent_session_id} → {task.status.value}"
+            )
+        except Exception as e:
+            logger.warning(
+                f"Failed to recover orphan session {agent_session_id}: {e}"
+            )
+
+    if recovered:
+        logger.info(f"Recovered {recovered} orphan session(s) from JSONL")
+
+    return recovered
+
+
 class TaskStorage:
     """
     태스크 영속화 관리자
@@ -233,15 +326,10 @@ class TaskStorage:
                 + (f" ({reconciled} reconciled from JSONL)" if reconciled else "")
             )
 
-            # 고아 세션 복구: JSONL에는 있지만 tasks.json에 없는 세션 복구
-            orphans_recovered = 0
-            if event_store:
-                orphans_recovered = self._recover_orphan_sessions(tasks, event_store)
-
             # 상태 변경사항 저장
             await self._save(tasks)
 
-            return loaded + orphans_recovered
+            return loaded
 
         except Exception as e:
             logger.error(f"Failed to load tasks file: {e}")
@@ -300,8 +388,9 @@ class TaskStorage:
     ) -> int:
         """JSONL에는 존재하지만 tasks.json에 없는 고아 세션을 복구한다.
 
-        인코딩 오류 등으로 tasks.json 저장이 실패한 경우,
-        JSONL 이벤트 로그로부터 Task 객체를 재구성하여 복구한다.
+        .. deprecated::
+            모듈 레벨의 recover_orphan_sessions() 함수를 직접 사용하세요.
+            카탈로그 기반 최적화를 위해 catalog 파라미터를 전달할 수 있습니다.
 
         Args:
             tasks: 현재 로드된 태스크 딕셔너리 (복구된 태스크가 추가됨)
@@ -310,41 +399,7 @@ class TaskStorage:
         Returns:
             복구된 세션 수
         """
-        try:
-            jsonl_sessions = event_store.list_sessions()
-        except Exception as e:
-            logger.warning(f"Failed to list JSONL sessions for orphan recovery: {e}")
-            return 0
-
-        known_ids = set(tasks.keys())
-        recovered = 0
-
-        for session_info in jsonl_sessions:
-            agent_session_id = session_info["agent_session_id"]
-            if agent_session_id in known_ids:
-                continue
-
-            try:
-                events = event_store.read_all(agent_session_id)
-                if not events:
-                    continue
-
-                task = _rebuild_task_from_events(agent_session_id, events)
-                tasks[task.key] = task
-                recovered += 1
-                logger.info(
-                    f"Recovered orphan session from JSONL: "
-                    f"{agent_session_id} → {task.status.value}"
-                )
-            except Exception as e:
-                logger.warning(
-                    f"Failed to recover orphan session {agent_session_id}: {e}"
-                )
-
-        if recovered:
-            logger.info(f"Recovered {recovered} orphan session(s) from JSONL")
-
-        return recovered
+        return recover_orphan_sessions(tasks, event_store)
 
     async def _save(self, tasks: Dict[str, Task]) -> None:
         """태스크를 파일에 저장 (내부용)"""
