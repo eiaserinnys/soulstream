@@ -25,6 +25,7 @@ interface MockSoulServer {
     prompt?: string;
     created_at: string;
     updated_at: string;
+    session_type?: string;
   }>;
   /** 저장된 세션별 이벤트 데이터 */
   events: Map<
@@ -50,9 +51,21 @@ function createMockSoulServer(): Promise<MockSoulServer> {
     const app = express();
     app.use(express.json());
 
-    // GET /sessions - 세션 목록 조회
-    app.get("/sessions", (_req, res) => {
-      res.json({ sessions });
+    // GET /sessions - 세션 목록 조회 (쿼리 파라미터 필터 지원)
+    app.get("/sessions", (req, res) => {
+      let filtered = sessions;
+      const sessionType = req.query.session_type as string | undefined;
+      if (sessionType) {
+        filtered = sessions.filter((s) => (s as Record<string, unknown>).session_type === sessionType);
+      }
+      const offset = parseInt(req.query.offset as string, 10) || 0;
+      const limit = parseInt(req.query.limit as string, 10) || 0;
+
+      let result = filtered;
+      if (offset > 0) result = result.slice(offset);
+      if (limit > 0) result = result.slice(0, limit);
+
+      res.json({ sessions: result, total: filtered.length });
     });
 
     // GET /sessions/stream - 세션 목록 SSE 스트림
@@ -176,6 +189,60 @@ describe("Sessions Proxy Routes", () => {
 
       const data = (await res.json()) as { sessions: unknown[] };
       expect(data.sessions).toEqual([]);
+    });
+
+    it("쿼리 파라미터를 Soul Server에 전달", async () => {
+      mockSoul.sessions.push(
+        {
+          agent_session_id: "sess-claude-001",
+          status: "running",
+          prompt: "Claude session",
+          created_at: "2024-01-01T00:00:00Z",
+          updated_at: "2024-01-01T00:00:00Z",
+          session_type: "claude",
+        },
+        {
+          agent_session_id: "sess-llm-001",
+          status: "running",
+          prompt: "LLM session",
+          created_at: "2024-01-01T00:01:00Z",
+          updated_at: "2024-01-01T00:01:00Z",
+          session_type: "llm",
+        },
+      );
+
+      // session_type=claude로 필터
+      const res = await fetch(
+        `http://localhost:${dashPort}/api/sessions?session_type=claude`,
+      );
+      expect(res.ok).toBe(true);
+
+      const data = (await res.json()) as { sessions: Array<{ agent_session_id: string }>; total: number };
+      expect(data.sessions).toHaveLength(1);
+      expect(data.sessions[0].agent_session_id).toBe("sess-claude-001");
+      expect(data.total).toBe(1);
+    });
+
+    it("offset과 limit 쿼리 파라미터를 Soul Server에 전달", async () => {
+      for (let i = 0; i < 5; i++) {
+        mockSoul.sessions.push({
+          agent_session_id: `sess-${i}`,
+          status: "completed",
+          prompt: `Task ${i}`,
+          created_at: `2024-01-01T0${i}:00:00Z`,
+          updated_at: `2024-01-01T0${i}:00:00Z`,
+          session_type: "claude",
+        });
+      }
+
+      const res = await fetch(
+        `http://localhost:${dashPort}/api/sessions?offset=1&limit=2`,
+      );
+      expect(res.ok).toBe(true);
+
+      const data = (await res.json()) as { sessions: unknown[]; total: number };
+      expect(data.sessions).toHaveLength(2);
+      expect(data.total).toBe(5);
     });
 
     it("Soul Server의 세션 목록을 프록시하여 반환", async () => {

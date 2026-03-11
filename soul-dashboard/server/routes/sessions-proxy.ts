@@ -32,7 +32,7 @@ export function createSessionsProxyRouter(
    *
    * Soul Server의 /sessions를 프록시합니다.
    */
-  router.get("/", async (_req: Request, res: Response) => {
+  router.get("/", async (req: Request, res: Response) => {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(
@@ -40,9 +40,17 @@ export function createSessionsProxyRouter(
         SOUL_REQUEST_TIMEOUT_MS,
       );
 
+      // 쿼리 파라미터를 upstream URL에 전달
+      const queryString = new URLSearchParams(
+        req.query as Record<string, string>,
+      ).toString();
+      const url = queryString
+        ? `${soulBaseUrl}/sessions?${queryString}`
+        : `${soulBaseUrl}/sessions`;
+
       let soulResponse: globalThis.Response;
       try {
-        soulResponse = await fetch(`${soulBaseUrl}/sessions`, {
+        soulResponse = await fetch(url, {
           method: "GET",
           headers: {
             ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
