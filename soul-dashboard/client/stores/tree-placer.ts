@@ -89,7 +89,9 @@ export function placeInTree(
 
     case "compact":
     case "complete":
-    case "error": {
+    case "error":
+    case "assistant_message": {
+      // 턴 루트 또는 root에 추가 (assistant_message: LLM 프록시 응답)
       const turnNode = ctx.currentTurnNodeId ? ctx.nodeMap.get(ctx.currentTurnNodeId) : null;
       if (turnNode) {
         turnNode.children.push(node);

@@ -5,12 +5,12 @@
  * - sse 모드: fetchSessions API 호출 + SSE delta 이벤트 (session_created/updated/deleted)
  * - serendipity 모드: 폴링 (5초 간격)
  *
- * 페이지네이션과 세션 타입 필터를 지원합니다.
+ * 세션 타입 필터를 지원합니다. 가상 스크롤이 클라이언트 측 렌더링을 제어합니다.
  *
  * 설계 핵심:
  * - SSE 구독과 API fetch를 독립된 이펙트로 분리하여,
- *   페이지/필터 변경 시 SSE 연결이 끊어지지 않도록 합니다.
- * - SSE delta 이벤트는 전역(페이지 무관)이므로 storageMode 변경 시에만 재연결합니다.
+ *   필터 변경 시 SSE 연결이 끊어지지 않도록 합니다.
+ * - SSE delta 이벤트는 전역이므로 storageMode 변경 시에만 재연결합니다.
  */
 
 import { useEffect, useRef, useCallback } from "react";
@@ -52,9 +52,7 @@ export function useSessionListProvider(
   const loading = useDashboardStore((s) => s.sessionsLoading);
   const error = useDashboardStore((s) => s.sessionsError);
 
-  // 페이지네이션/필터 상태
-  const sessionPage = useDashboardStore((s) => s.sessionPage);
-  const sessionPageSize = useDashboardStore((s) => s.sessionPageSize);
+  // 필터 상태
   const sessionTypeFilter = useDashboardStore((s) => s.sessionTypeFilter);
 
   // 첫 로드 추적 (최초 마운트 시에만 로딩 표시, 이후 페이지/필터 변경은 백그라운드 갱신)
@@ -77,9 +75,8 @@ export function useSessionListProvider(
       abortRef.current = false;
 
       const provider = getSessionProvider(storageMode);
-      const offset = sessionPage * sessionPageSize;
       const typeFilter = sessionTypeFilter === "all" ? undefined : sessionTypeFilter;
-      const result = await provider.fetchSessions(offset, sessionPageSize, typeFilter);
+      const result = await provider.fetchSessions(typeFilter);
 
       if (abortRef.current) return;
 
@@ -94,7 +91,7 @@ export function useSessionListProvider(
       isFirstLoad.current = false;
       setSessionsLoading(false);
     }
-  }, [storageMode, sessionPage, sessionPageSize, sessionTypeFilter, setSessions, setSessionsLoading, setSessionsError]);
+  }, [storageMode, sessionTypeFilter, setSessions, setSessionsLoading, setSessionsError]);
 
   /**
    * SSE delta 이벤트 처리 (sse 모드)

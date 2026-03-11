@@ -372,6 +372,7 @@ class TestRecoverOrphanSessions:
         assert recovered == 1
         assert "orphan-1" in tasks
         assert tasks["orphan-1"].status == TaskStatus.COMPLETED
+        assert tasks["orphan-1"].prompt == "hello"
 
     async def test_recover_orphan_with_catalog(self, event_store, tmp_path):
         """카탈로그가 있으면 카탈로그에 없는 세션만 고아로 검출"""
@@ -396,6 +397,7 @@ class TestRecoverOrphanSessions:
         assert "orphan-1" in tasks
         assert "known-1" not in tasks  # 카탈로그에 있으므로 고아가 아님
         assert tasks["orphan-1"].status == TaskStatus.ERROR
+        assert tasks["orphan-1"].prompt == "orphan"
 
     async def test_recover_orphan_updates_catalog(self, event_store, tmp_path):
         """고아 복구 시 카탈로그에도 엔트리가 추가된다"""
@@ -409,6 +411,7 @@ class TestRecoverOrphanSessions:
         tasks = {}
         recover_orphan_sessions(tasks, event_store, catalog=catalog)
 
+        assert tasks["orphan-1"].prompt == "hello"
         entry = catalog.get("orphan-1")
         assert entry is not None
         assert entry["status"] == "completed"
@@ -453,6 +456,109 @@ class TestRecoverOrphanSessions:
         tasks = {}
         recovered = recover_orphan_sessions(tasks, event_store, catalog=catalog)
         assert recovered == 0
+
+    async def test_recover_llm_session_messages_array(self, event_store):
+        """LLM 세션의 messages 배열에서 프롬프트를 추출한다"""
+        self._seed_events(event_store, "llm-1", [
+            {
+                "type": "user_message",
+                "timestamp": 1.0,
+                "messages": [
+                    {"role": "user", "content": "Translate this text"},
+                    {"role": "system", "content": "You are a translator"},
+                ],
+                "provider": "anthropic",
+                "model": "claude-3-haiku",
+                "max_tokens": 1024,
+                "client_id": "bot-client",
+            },
+            {"type": "result", "success": True, "output": "done"},
+        ])
+
+        tasks = {}
+        recovered = recover_orphan_sessions(tasks, event_store, catalog=None)
+        assert recovered == 1
+        assert tasks["llm-1"].prompt == "Translate this text"
+        assert tasks["llm-1"].client_id == "bot-client"
+
+    async def test_recover_client_id_from_user_field(self, event_store):
+        """Claude 세션의 'user' 필드에서 client_id를 추출한다"""
+        self._seed_events(event_store, "claude-1", [
+            {"type": "user_message", "user": "slack-user", "text": "do something"},
+            {"type": "complete", "result": "ok"},
+        ])
+
+        tasks = {}
+        recover_orphan_sessions(tasks, event_store, catalog=None)
+        assert tasks["claude-1"].client_id == "slack-user"
+        assert tasks["claude-1"].prompt == "do something"
+
+    async def test_recover_fallback_to_last_meaningful_event(self, event_store):
+        """user_message에 text가 없으면 마지막 유의미 이벤트에서 폴백"""
+        self._seed_events(event_store, "fallback-1", [
+            {"type": "user_message"},  # text 없음
+            {"type": "thinking", "thinking": "Let me analyze..."},
+            {"type": "complete", "result": "analysis done"},
+        ])
+
+        tasks = {}
+        recover_orphan_sessions(tasks, event_store, catalog=None)
+        # last_meaningful은 complete의 result
+        assert tasks["fallback-1"].prompt == "analysis done"
+        assert "(복구됨" not in tasks["fallback-1"].prompt
+
+    async def test_recover_no_meaningful_events_uses_fallback_string(self, event_store):
+        """유의미한 이벤트도 없으면 폴백 문자열 사용"""
+        self._seed_events(event_store, "empty-1", [
+            {"type": "system", "session_id": "claude-abc"},
+        ])
+
+        tasks = {}
+        recover_orphan_sessions(tasks, event_store, catalog=None)
+        assert tasks["empty-1"].prompt == "(복구됨 — 원본 프롬프트 없음)"
+
+    async def test_recover_llm_content_blocks_format(self, event_store):
+        """Anthropic content blocks 형식에서도 프롬프트를 추출한다"""
+        self._seed_events(event_store, "llm-blocks-1", [
+            {
+                "type": "user_message",
+                "timestamp": 1.0,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "Analyze this image"},
+                            {"type": "image", "source": {"data": "..."}},
+                        ],
+                    },
+                ],
+                "client_id": "bot-client",
+            },
+            {"type": "result", "success": True, "output": "done"},
+        ])
+
+        tasks = {}
+        recover_orphan_sessions(tasks, event_store, catalog=None)
+        assert tasks["llm-blocks-1"].prompt == "Analyze this image"
+
+    async def test_recover_llm_no_user_role_message(self, event_store):
+        """messages 배열에 user role이 없으면 last_meaningful 폴백"""
+        self._seed_events(event_store, "llm-no-user-1", [
+            {
+                "type": "user_message",
+                "timestamp": 1.0,
+                "messages": [
+                    {"role": "system", "content": "You are a translator"},
+                ],
+                "client_id": "bot-client",
+            },
+            {"type": "result", "success": True, "result": "translated text"},
+        ])
+
+        tasks = {}
+        recover_orphan_sessions(tasks, event_store, catalog=None)
+        # user_message에서 추출 실패 → result의 result 필드가 last_meaningful
+        assert tasks["llm-no-user-1"].prompt == "translated text"
 
 
 class TestTaskStorageScheduleSave:
