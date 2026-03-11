@@ -2,10 +2,12 @@
  * SessionList + SessionItem - 세션 목록 컴포넌트
  *
  * 좌측 패널에 세션 목록을 표시합니다.
+ * 세션 타입별 탭(All / Claude Code / LLM)과 페이지네이션을 제공합니다.
  * 각 세션의 상태를 인디케이터(점멸/뱃지)로 시각화합니다.
  * "+ New" 버튼으로 새 세션 생성을 제공합니다.
  */
 
+import { useMemo } from "react";
 import type { SessionSummary, SessionStatus } from "@shared/types";
 import type { VariantProps } from "class-variance-authority";
 import { useDashboardStore } from "../stores/dashboard-store";
@@ -13,6 +15,16 @@ import { cn } from "../lib/cn";
 import { Button } from "./ui/button";
 import { Badge, badgeVariants } from "./ui/badge";
 import { ScrollArea } from "./ui/scroll-area";
+import { Tabs, TabsList, TabsTab } from "./ui/tabs";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationPrevious,
+  PaginationNext,
+  PaginationEllipsis,
+} from "./ui/pagination";
 
 // === Status Badge Config ===
 
@@ -122,6 +134,16 @@ function SessionItem({ session, isActive, onClick }: SessionItemProps) {
           >
             {config.label}
           </Badge>
+          {/* LLM 타입 인디케이터 */}
+          {session.sessionType === "llm" && (
+            <Badge
+              variant="secondary"
+              size="sm"
+              className="text-[10px] px-1"
+            >
+              LLM
+            </Badge>
+          )}
         </div>
       </div>
 
@@ -133,6 +155,43 @@ function SessionItem({ session, isActive, onClick }: SessionItemProps) {
       )}
     </button>
   );
+}
+
+// === Pagination Helpers ===
+
+/**
+ * 표시할 페이지 번호 목록을 계산합니다.
+ * 현재 페이지 주변 2개씩, 첫/마지막 페이지, 중간에 Ellipsis를 포함합니다.
+ */
+function getPageNumbers(currentPage: number, totalPages: number): (number | "ellipsis")[] {
+  if (totalPages <= 5) {
+    return Array.from({ length: totalPages }, (_, i) => i);
+  }
+
+  const pages: (number | "ellipsis")[] = [];
+
+  // 항상 첫 페이지
+  pages.push(0);
+
+  if (currentPage > 2) {
+    pages.push("ellipsis");
+  }
+
+  // 현재 페이지 주변
+  const start = Math.max(1, currentPage - 1);
+  const end = Math.min(totalPages - 2, currentPage + 1);
+  for (let i = start; i <= end; i++) {
+    pages.push(i);
+  }
+
+  if (currentPage < totalPages - 3) {
+    pages.push("ellipsis");
+  }
+
+  // 항상 마지막 페이지
+  pages.push(totalPages - 1);
+
+  return pages;
 }
 
 // === SessionList ===
@@ -150,8 +209,27 @@ export function SessionList({ sessions, loading, error }: SessionListProps) {
   const startCompose = useDashboardStore((s) => s.startCompose);
   const isComposing = useDashboardStore((s) => s.isComposing);
 
+  // 페이지네이션/필터 상태
+  const sessionPage = useDashboardStore((s) => s.sessionPage);
+  const sessionPageSize = useDashboardStore((s) => s.sessionPageSize);
+  const sessionTypeFilter = useDashboardStore((s) => s.sessionTypeFilter);
+  const setSessionPage = useDashboardStore((s) => s.setSessionPage);
+  const setSessionTypeFilter = useDashboardStore((s) => s.setSessionTypeFilter);
+
+  const totalPages = Math.ceil(sessionsTotal / sessionPageSize);
+
+  const pageNumbers = useMemo(
+    () => getPageNumbers(sessionPage, totalPages),
+    [sessionPage, totalPages],
+  );
+
   const handleSelect = (session: SessionSummary) => {
     setActiveSession(session.agentSessionId);
+  };
+
+  const handleTabChange = (value: string | number | null) => {
+    if (value === null) return;
+    setSessionTypeFilter(String(value) as "all" | "claude" | "llm");
   };
 
   return (
@@ -181,6 +259,15 @@ export function SessionList({ sessions, loading, error }: SessionListProps) {
           + New
         </Button>
       </div>
+
+      {/* Session type tabs */}
+      <Tabs value={sessionTypeFilter} onValueChange={handleTabChange}>
+        <TabsList variant="underline" className="w-full justify-start px-2 border-b border-border">
+          <TabsTab value="all" className="text-xs h-7 px-2">All</TabsTab>
+          <TabsTab value="claude" className="text-xs h-7 px-2">Claude Code</TabsTab>
+          <TabsTab value="llm" className="text-xs h-7 px-2">LLM</TabsTab>
+        </TabsList>
+      </Tabs>
 
       {/* Loading state */}
       {loading && sessions.length === 0 && (
@@ -212,6 +299,51 @@ export function SessionList({ sessions, loading, error }: SessionListProps) {
             />
           ))}
       </ScrollArea>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="border-t border-border py-1.5">
+          <Pagination>
+            <PaginationContent>
+              <PaginationItem>
+                <PaginationPrevious
+                  onClick={() => setSessionPage(Math.max(0, sessionPage - 1))}
+                  className={cn(
+                    "h-7 text-xs cursor-pointer",
+                    sessionPage === 0 && "pointer-events-none opacity-50",
+                  )}
+                />
+              </PaginationItem>
+              {pageNumbers.map((n, idx) =>
+                n === "ellipsis" ? (
+                  <PaginationItem key={`ellipsis-${idx}`}>
+                    <PaginationEllipsis className="h-7" />
+                  </PaginationItem>
+                ) : (
+                  <PaginationItem key={n}>
+                    <PaginationLink
+                      isActive={n === sessionPage}
+                      onClick={() => setSessionPage(n)}
+                      className="h-7 w-7 text-xs cursor-pointer"
+                    >
+                      {n + 1}
+                    </PaginationLink>
+                  </PaginationItem>
+                ),
+              )}
+              <PaginationItem>
+                <PaginationNext
+                  onClick={() => setSessionPage(Math.min(totalPages - 1, sessionPage + 1))}
+                  className={cn(
+                    "h-7 text-xs cursor-pointer",
+                    sessionPage >= totalPages - 1 && "pointer-events-none opacity-50",
+                  )}
+                />
+              </PaginationItem>
+            </PaginationContent>
+          </Pagination>
+        </div>
+      )}
     </div>
   );
 }
