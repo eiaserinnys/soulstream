@@ -68,23 +68,11 @@ class SessionBroadcaster:
 
             return count
 
-    def _task_to_session_info(self, task: Task) -> dict:
-        """Task를 세션 정보 dict로 변환"""
-        # updated_at은 completed_at 또는 created_at
-        updated_at = task.completed_at or task.created_at
-        return {
-            "agent_session_id": task.agent_session_id,
-            "status": task.status.value,
-            "prompt": task.prompt,
-            "created_at": task.created_at.isoformat(),
-            "updated_at": updated_at.isoformat(),
-        }
-
     async def emit_session_created(self, task: Task) -> int:
         """세션 생성 이벤트 발행"""
         event = {
             "type": "session_created",
-            "session": self._task_to_session_info(task),
+            "session": task.to_session_info(),
         }
         return await self.broadcast(event)
 

@@ -117,6 +117,48 @@ class TestGetSessions:
         assert "created_at" in sess1
         assert "updated_at" in sess1
 
+    def test_returns_session_type_in_response(self, test_app, mock_task_manager):
+        """응답에 session_type이 포함되어야 한다"""
+        client = TestClient(test_app)
+        response = client.get("/sessions")
+
+        assert response.status_code == 200
+        data = response.json()
+        for sess in data["sessions"]:
+            assert "session_type" in sess
+
+    def test_session_type_filter(self, mock_session_broadcaster):
+        """session_type 쿼리 파라미터로 필터링해야 한다"""
+        from fastapi import FastAPI
+        from soul_server.api.sessions import create_sessions_router
+        from soul_server.service.task_models import Task, TaskStatus
+
+        manager = MagicMock()
+        claude_task = Task(
+            agent_session_id="sess-claude",
+            prompt="Claude",
+            status=TaskStatus.RUNNING,
+            session_type="claude",
+        )
+        # get_all_sessions이 session_type 파라미터를 올바르게 전달받는지 확인
+        manager.get_all_sessions = MagicMock(return_value=([claude_task], 1))
+
+        app = FastAPI()
+        with (
+            patch("soul_server.api.sessions.get_task_manager", return_value=manager),
+            patch("soul_server.api.sessions.get_session_broadcaster", return_value=mock_session_broadcaster),
+        ):
+            router = create_sessions_router()
+            app.include_router(router)
+
+            client = TestClient(app=app)
+            response = client.get("/sessions?session_type=claude")
+
+        assert response.status_code == 200
+        # get_all_sessions가 session_type="claude"로 호출되었는지 확인
+        call_kwargs = manager.get_all_sessions.call_args
+        assert call_kwargs.kwargs.get("session_type") == "claude"
+
     def test_empty_session_list(self, mock_session_broadcaster):
         """세션이 없을 때 빈 목록을 반환해야 한다"""
         from fastapi import FastAPI
@@ -545,6 +587,82 @@ class TestTaskManagerGetAllSessions:
         assert total == 2
 
     @pytest.mark.asyncio
+    async def test_filter_by_session_type(self):
+        """session_type으로 필터링"""
+        from soul_server.service.task_manager import TaskManager
+        from soul_server.service.task_models import Task, TaskStatus
+
+        manager = TaskManager()
+
+        claude_task = Task(
+            agent_session_id="sess-claude",
+            prompt="Claude task",
+            status=TaskStatus.RUNNING,
+            session_type="claude",
+        )
+        llm_task = Task(
+            agent_session_id="sess-llm",
+            prompt="LLM task",
+            status=TaskStatus.RUNNING,
+            session_type="llm",
+        )
+        manager._tasks["sess-claude"] = claude_task
+        manager._tasks["sess-llm"] = llm_task
+
+        # 전체
+        sessions, total = manager.get_all_sessions()
+        assert total == 2
+
+        # claude만
+        sessions, total = manager.get_all_sessions(session_type="claude")
+        assert total == 1
+        assert sessions[0].agent_session_id == "sess-claude"
+
+        # llm만
+        sessions, total = manager.get_all_sessions(session_type="llm")
+        assert total == 1
+        assert sessions[0].agent_session_id == "sess-llm"
+
+        # 없는 타입
+        sessions, total = manager.get_all_sessions(session_type="nonexistent")
+        assert total == 0
+        assert sessions == []
+
+    @pytest.mark.asyncio
+    async def test_filter_and_pagination_combined(self):
+        """session_type 필터와 페이지네이션 조합"""
+        from soul_server.service.task_manager import TaskManager
+        from soul_server.service.task_models import Task, TaskStatus
+
+        manager = TaskManager()
+
+        now = datetime(2026, 3, 3, 12, 0, 0, tzinfo=timezone.utc)
+        for i in range(5):
+            task = Task(
+                agent_session_id=f"sess-claude-{i:03d}",
+                prompt=f"Claude {i}",
+                status=TaskStatus.COMPLETED,
+                session_type="claude",
+                created_at=now + timedelta(hours=i),
+            )
+            manager._tasks[f"sess-claude-{i:03d}"] = task
+
+        llm_task = Task(
+            agent_session_id="sess-llm-001",
+            prompt="LLM task",
+            status=TaskStatus.RUNNING,
+            session_type="llm",
+        )
+        manager._tasks["sess-llm-001"] = llm_task
+
+        # claude만 + 페이지네이션
+        sessions, total = manager.get_all_sessions(
+            session_type="claude", offset=1, limit=2,
+        )
+        assert total == 5  # 전체 claude 수
+        assert len(sessions) == 2  # limit=2
+
+    @pytest.mark.asyncio
     async def test_pagination_offset_limit(self):
         """offset과 limit으로 페이지네이션"""
         from soul_server.service.task_manager import TaskManager
@@ -581,11 +699,10 @@ class TestTaskManagerGetAllSessions:
 # === Session Info Serialization Tests ===
 
 class TestSessionInfoSerialization:
-    """세션 정보 직렬화 테스트"""
+    """세션 정보 직렬화 테스트 — Task.to_session_info() 메서드"""
 
-    def test_task_to_session_info(self):
+    def test_to_session_info(self):
         """Task가 세션 정보 dict로 올바르게 변환되어야 한다"""
-        from soul_server.api.sessions import _task_to_session_info
         from soul_server.service.task_models import Task, TaskStatus
 
         task = Task(
@@ -595,17 +712,18 @@ class TestSessionInfoSerialization:
             created_at=datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc),
         )
 
-        info = _task_to_session_info(task)
+        info = task.to_session_info()
 
         assert info["agent_session_id"] == "sess-001"
         assert info["status"] == "running"
         assert info["prompt"] == "Hello"
+        assert info["session_type"] == "claude"
+        assert info["pid"] is None
         assert "created_at" in info
         assert "updated_at" in info
 
-    def test_task_to_session_info_completed(self):
+    def test_to_session_info_completed(self):
         """완료된 Task의 updated_at은 completed_at이어야 한다"""
-        from soul_server.api.sessions import _task_to_session_info
         from soul_server.service.task_models import Task, TaskStatus
 
         created = datetime(2026, 3, 3, 1, 0, 0, tzinfo=timezone.utc)
@@ -619,9 +737,26 @@ class TestSessionInfoSerialization:
             completed_at=completed,
         )
 
-        info = _task_to_session_info(task)
+        info = task.to_session_info()
 
         assert info["updated_at"] == completed.isoformat()
+
+    def test_to_session_info_llm_type(self):
+        """LLM 타입 세션이 올바르게 변환되어야 한다"""
+        from soul_server.service.task_models import Task, TaskStatus
+
+        task = Task(
+            agent_session_id="sess-llm-001",
+            prompt="LLM prompt",
+            status=TaskStatus.RUNNING,
+            session_type="llm",
+            pid=12345,
+        )
+
+        info = task.to_session_info()
+
+        assert info["session_type"] == "llm"
+        assert info["pid"] == 12345
 
 
 # === TC-8: Non-existent Session Intervention ===

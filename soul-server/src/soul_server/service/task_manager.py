@@ -216,18 +216,24 @@ class TaskManager:
         self,
         offset: int = 0,
         limit: int = 0,
+        session_type: Optional[str] = None,
     ) -> tuple[List[Task], int]:
         """세션 목록 반환 (생성일 기준 내림차순, 페이지네이션 지원)
 
         Args:
             offset: 건너뛸 항목 수 (기본 0)
             limit: 반환할 최대 항목 수 (0이면 전체)
+            session_type: 세션 타입 필터 ("claude" | "llm", None이면 전체)
 
         Returns:
             (세션 리스트, 전체 세션 수) 튜플
         """
+        all_tasks = list(self._tasks.values())
+        if session_type:
+            all_tasks = [t for t in all_tasks if t.session_type == session_type]
+
         all_sorted = sorted(
-            self._tasks.values(),
+            all_tasks,
             key=lambda t: t.created_at,
             reverse=True,
         )

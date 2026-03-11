@@ -110,6 +110,22 @@ class Task:
         """세션 키 (= agent_session_id)"""
         return self.agent_session_id
 
+    def to_session_info(self) -> dict:
+        """대시보드용 세션 요약 정보 dict 변환
+
+        GET /sessions 응답, SSE session_list/session_created 이벤트에서 사용합니다.
+        """
+        updated_at = self.completed_at or self.created_at
+        return {
+            "agent_session_id": self.agent_session_id,
+            "status": self.status.value,
+            "prompt": self.prompt,
+            "created_at": self.created_at.isoformat(),
+            "updated_at": updated_at.isoformat(),
+            "pid": self.pid,
+            "session_type": self.session_type,
+        }
+
     def to_dict(self) -> dict:
         """영속화용 dict 변환"""
         return {

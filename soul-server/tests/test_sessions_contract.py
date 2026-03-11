@@ -34,6 +34,7 @@ class TestSessionInfoSchema:
             prompt="Hello world",
             created_at=datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc),
             updated_at=datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc),
+            session_type="claude",
         )
 
         assert info.agent_session_id == "sess-001"
@@ -48,6 +49,7 @@ class TestSessionInfoSchema:
             prompt="Test prompt",
             created_at=datetime(2026, 3, 3, 1, 0, 0, tzinfo=timezone.utc),
             updated_at=datetime(2026, 3, 3, 1, 30, 0, tzinfo=timezone.utc),
+            session_type="claude",
         )
 
         assert info.status == TaskStatus.COMPLETED
@@ -60,6 +62,7 @@ class TestSessionInfoSchema:
             prompt="Error prompt",
             created_at=datetime(2026, 3, 3, 1, 0, 0, tzinfo=timezone.utc),
             updated_at=datetime(2026, 3, 3, 1, 5, 0, tzinfo=timezone.utc),
+            session_type="llm",
         )
 
         assert info.status == TaskStatus.ERROR
@@ -118,6 +121,18 @@ class TestSessionInfoSchema:
                 # created_at, updated_at 누락
             )
 
+    def test_missing_session_type_rejected(self):
+        """session_type 누락 시 거부되어야 한다"""
+        with pytest.raises(ValidationError):
+            SessionInfo(
+                agent_session_id="sess-001",
+                status=TaskStatus.RUNNING,
+                prompt="Hello",
+                created_at=datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc),
+                updated_at=datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc),
+                # session_type 누락 — 필수 필드
+            )
+
 
 class TestSessionsListResponseSchema:
     """SessionsListResponse 스키마 검증"""
@@ -132,6 +147,7 @@ class TestSessionsListResponseSchema:
                     prompt="Hello",
                     created_at=datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc),
                     updated_at=datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc),
+                    session_type="claude",
                 ),
                 SessionInfo(
                     agent_session_id="sess-002",
@@ -139,6 +155,7 @@ class TestSessionsListResponseSchema:
                     prompt="World",
                     created_at=datetime(2026, 3, 3, 1, 0, 0, tzinfo=timezone.utc),
                     updated_at=datetime(2026, 3, 3, 1, 30, 0, tzinfo=timezone.utc),
+                    session_type="llm",
                 ),
             ]
         )
@@ -170,6 +187,7 @@ class TestSessionListSSEEventSchema:
                     prompt="Hello",
                     created_at=datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc),
                     updated_at=datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc),
+                    session_type="claude",
                 ),
             ]
         )
@@ -200,6 +218,7 @@ class TestSessionCreatedSSEEventSchema:
             prompt="New session",
             created_at=datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc),
             updated_at=datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc),
+            session_type="claude",
         )
         event = SessionCreatedSSEEvent(
             type="session_created",
@@ -299,6 +318,7 @@ class TestSSEEventJsonSerialization:
             prompt="Hello",
             created_at=datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc),
             updated_at=datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc),
+            session_type="claude",
         )
 
         json_dict = info.model_dump(mode="json")
@@ -316,6 +336,7 @@ class TestSSEEventJsonSerialization:
             prompt="New session",
             created_at=datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc),
             updated_at=datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc),
+            session_type="claude",
         )
         event = SessionCreatedSSEEvent(
             type="session_created",
@@ -373,6 +394,7 @@ class TestSSEEventTypeValidation:
             prompt="Hello",
             created_at=datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc),
             updated_at=datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc),
+            session_type="claude",
         )
         event = SessionCreatedSSEEvent(session=session)
         assert event.type == "session_created"
