@@ -170,6 +170,7 @@ def _rebuild_task_from_events(agent_session_id: str, events: list) -> Task:
     if not prompt and last_meaningful:
         prompt = last_meaningful
 
+    session_type = "llm" if agent_session_id.startswith("llm-") else "claude"
     return Task(
         agent_session_id=agent_session_id,
         prompt=prompt or "(복구됨 — 원본 프롬프트 없음)",
@@ -180,6 +181,7 @@ def _rebuild_task_from_events(agent_session_id: str, events: list) -> Task:
         error=error,
         created_at=created_at,
         completed_at=completed_at,
+        session_type=session_type,
     )
 
 
