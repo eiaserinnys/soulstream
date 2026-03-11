@@ -51,8 +51,30 @@ def mock_task_manager():
         "sess-002": task2,
     }
 
-    # get_all_sessions 메서드 mock
-    manager.get_all_sessions = MagicMock(return_value=([task1, task2], 2))
+    # get_all_sessions → dict 리스트 반환 (카탈로그 기반 API)
+    session_dicts = [
+        {
+            "agent_session_id": "sess-001",
+            "status": "running",
+            "prompt": "Hello world",
+            "client_id": "test-client",
+            "created_at": "2026-03-03T02:00:00+00:00",
+            "updated_at": "2026-03-03T02:00:00+00:00",
+            "pid": task1.pid,
+            "last_message": None,
+        },
+        {
+            "agent_session_id": "sess-002",
+            "status": "completed",
+            "prompt": "Test prompt",
+            "client_id": "test-client",
+            "created_at": "2026-03-03T01:00:00+00:00",
+            "updated_at": "2026-03-03T01:30:00+00:00",
+            "pid": None,
+            "last_message": None,
+        },
+    ]
+    manager.get_all_sessions = MagicMock(return_value=(session_dicts, 2))
 
     return manager
 
@@ -489,18 +511,19 @@ class TestTaskManagerGetAllSessions:
 
         manager = TaskManager()
 
-        # 직접 _tasks에 추가 (create_task의 부작용 없이)
+        # _tasks에 추가 + 카탈로그 구축
         task1 = Task(agent_session_id="sess-001", prompt="Test 1", status=TaskStatus.RUNNING)
         task2 = Task(agent_session_id="sess-002", prompt="Test 2", status=TaskStatus.COMPLETED)
         manager._tasks["sess-001"] = task1
         manager._tasks["sess-002"] = task2
+        await manager._catalog.build_from_tasks(manager._tasks)
 
         sessions, total = manager.get_all_sessions()
 
         assert len(sessions) == 2
         assert total == 2
-        assert any(s.agent_session_id == "sess-001" for s in sessions)
-        assert any(s.agent_session_id == "sess-002" for s in sessions)
+        assert any(s["agent_session_id"] == "sess-001" for s in sessions)
+        assert any(s["agent_session_id"] == "sess-002" for s in sessions)
 
     @pytest.mark.asyncio
     async def test_returns_empty_list_when_no_sessions(self):
@@ -536,12 +559,13 @@ class TestTaskManagerGetAllSessions:
         )
         manager._tasks["sess-old"] = task1
         manager._tasks["sess-new"] = task2
+        await manager._catalog.build_from_tasks(manager._tasks)
 
         sessions, total = manager.get_all_sessions()
 
-        # 최신이 먼저
-        assert sessions[0].agent_session_id == "sess-new"
-        assert sessions[1].agent_session_id == "sess-old"
+        # 최신이 먼저 (dict 반환)
+        assert sessions[0]["agent_session_id"] == "sess-new"
+        assert sessions[1]["agent_session_id"] == "sess-old"
         assert total == 2
 
     @pytest.mark.asyncio
@@ -561,6 +585,7 @@ class TestTaskManagerGetAllSessions:
                 created_at=now + timedelta(hours=i),
             )
             manager._tasks[f"sess-{i:03d}"] = task
+        await manager._catalog.build_from_tasks(manager._tasks)
 
         # 전체
         sessions, total = manager.get_all_sessions()
@@ -680,13 +705,14 @@ class TestConcurrentSessions:
         manager._tasks["sess-a"] = task_a
         manager._tasks["sess-b"] = task_b
         manager._tasks["sess-c"] = task_c
+        await manager._catalog.build_from_tasks(manager._tasks)
 
         sessions, total = manager.get_all_sessions()
 
-        # 모든 세션이 목록에 있어야 함
+        # 모든 세션이 목록에 있어야 함 (dict 반환)
         assert len(sessions) == 3
         assert total == 3
-        session_ids = [s.agent_session_id for s in sessions]
+        session_ids = [s["agent_session_id"] for s in sessions]
         assert "sess-a" in session_ids
         assert "sess-b" in session_ids
         assert "sess-c" in session_ids
