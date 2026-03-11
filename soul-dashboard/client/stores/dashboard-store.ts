@@ -205,6 +205,7 @@ const NEEDS_ROOT = new Set([
   "user_message", "session", "intervention_sent", "thinking",
   "text_start", "subagent_start", "tool_start",
   "complete", "error", "result", "input_request",
+  "assistant_message",
 ]);
 
 // === Initial State ===

@@ -8,7 +8,7 @@
 import type {
   SessionStorageProvider,
   StorageMode,
-  PaginatedSessions,
+  SessionListResult,
   SerendipityBlock,
   SoulBlockType,
   PortableTextContent,
@@ -83,11 +83,12 @@ export class SerendipitySessionProvider implements SessionStorageProvider {
   }
 
   /**
-   * 세션 목록 조회.
+   * 세션 목록 조회 (전체 목록 반환).
    *
    * soul-session 라벨이 있는 세렌디피티 페이지 목록을 반환합니다.
+   * 가상 스크롤이 클라이언트 측에서 렌더링을 제어합니다.
    */
-  async fetchSessions(offset = 0, limit = 0, _sessionType?: string): Promise<PaginatedSessions> {
+  async fetchSessions(_sessionType?: string): Promise<SessionListResult> {
     const { baseUrl, sessionLabelName } = this.options;
 
     try {
@@ -126,13 +127,7 @@ export class SerendipitySessionProvider implements SessionStorageProvider {
         return bTime.localeCompare(aTime);
       });
 
-      // 세렌디피티 모드는 서버 페이지네이션 미지원 — 클라이언트 슬라이싱
-      const total = sessions.length;
-      const sliced = limit > 0
-        ? sessions.slice(offset, offset + limit)
-        : sessions.slice(offset);
-
-      return { sessions: sliced, total };
+      return { sessions, total: sessions.length };
     } catch (err) {
       console.error("[SerendipitySessionProvider] fetchSessions error:", err);
       throw err;

@@ -39,7 +39,9 @@ export type SSEEventType =
   // 사용자 입력 요청 이벤트
   | "input_request"
   // 히스토리 동기화 이벤트
-  | "history_sync";
+  | "history_sync"
+  // LLM 프록시 이벤트
+  | "assistant_message";
 
 // === Soul SSE Event Payloads ===
 
@@ -225,6 +227,16 @@ export interface InputRequestEvent {
   parent_event_id?: string;
 }
 
+/** LLM 프록시 응답 이벤트 */
+export interface AssistantMessageEvent {
+  type: "assistant_message";
+  content: string;
+  usage?: { input_tokens: number; output_tokens: number };
+  model?: string;
+  provider?: string;
+  timestamp?: number;
+}
+
 /** Soul에서 수신하는 모든 SSE 이벤트 유니온 */
 export type SoulSSEEvent =
   | ProgressEvent
@@ -248,7 +260,8 @@ export type SoulSSEEvent =
   | SubagentStopEvent
   | ReconnectEvent
   | InputRequestEvent
-  | HistorySyncEvent;
+  | HistorySyncEvent
+  | AssistantMessageEvent;
 
 // === JSONL Record ===
 
@@ -389,6 +402,14 @@ export interface InputRequestNodeDef extends BaseNode {
   responded?: boolean;
 }
 
+/** LLM 프록시 어시스턴트 응답 노드 */
+export interface AssistantMessageNode extends BaseNode {
+  type: "assistant_message";
+  model?: string;
+  provider?: string;
+  usage?: { input_tokens: number; output_tokens: number };
+}
+
 /** 이벤트 트리 노드 — 소스 오브 트루스 (discriminated union) */
 export type EventTreeNode =
   | SessionNode
@@ -401,7 +422,8 @@ export type EventTreeNode =
   | CompactNode
   | CompleteNode
   | ErrorNode
-  | InputRequestNodeDef;
+  | InputRequestNodeDef
+  | AssistantMessageNode;
 
 // === API Request/Response ===
 

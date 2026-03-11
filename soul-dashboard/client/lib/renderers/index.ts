@@ -14,6 +14,7 @@ import { renderTextNode } from "./text-renderer";
 import { renderToolNode } from "./tool-renderer";
 import { renderCompletionNode, renderResultNode, renderCompactNode } from "./system-renderer";
 import { renderInputRequestNode } from "./input-request-renderer";
+import { renderAssistantMessageNode } from "./assistant-message-renderer";
 
 /** 노드 타입별 렌더러 registry */
 const renderers = new Map<EventTreeNodeType, NodeRenderer>([
@@ -27,6 +28,7 @@ const renderers = new Map<EventTreeNodeType, NodeRenderer>([
   ["error", renderCompletionNode],
   ["result", renderResultNode],
   ["input_request", renderInputRequestNode],
+  ["assistant_message", renderAssistantMessageNode],
 ]);
 
 /**
@@ -56,4 +58,5 @@ export { renderTextNode } from "./text-renderer";
 export { renderToolNode } from "./tool-renderer";
 export { renderCompletionNode, renderResultNode, renderCompactNode } from "./system-renderer";
 export { renderInputRequestNode } from "./input-request-renderer";
+export { renderAssistantMessageNode } from "./assistant-message-renderer";
 export { processChildNodes } from "./child-processor";
