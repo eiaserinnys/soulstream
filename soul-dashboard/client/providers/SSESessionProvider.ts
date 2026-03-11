@@ -8,7 +8,7 @@
 import type {
   SessionStorageProvider,
   StorageMode,
-  PaginatedSessions,
+  SessionListResult,
 } from "./types";
 import type {
   SessionSummary,
@@ -76,16 +76,13 @@ export class SSESessionProvider implements SessionStorageProvider {
   readonly mode: StorageMode = "sse";
 
   /**
-   * 세션 목록 조회 (페이지네이션 지원).
+   * 세션 목록 조회 (전체 목록 반환).
    *
    * /api/sessions 엔드포인트에서 세션 목록을 가져옵니다.
+   * 가상 스크롤이 클라이언트 측에서 렌더링을 제어합니다.
    */
-  async fetchSessions(offset = 0, limit = 0): Promise<PaginatedSessions> {
-    const params = new URLSearchParams();
-    if (offset > 0) params.set("offset", String(offset));
-    if (limit > 0) params.set("limit", String(limit));
-    const qs = params.toString();
-    const url = `/api/sessions${qs ? `?${qs}` : ""}`;
+  async fetchSessions(): Promise<SessionListResult> {
+    const url = "/api/sessions";
 
     const res = await fetch(url);
 
