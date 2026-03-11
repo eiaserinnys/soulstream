@@ -14,6 +14,7 @@ import type {
   ResultNode,
   UserMessageNode,
   InterventionNode,
+  AssistantMessageNode,
 } from "@shared/types";
 
 /** Chat 탭에 표시되는 메시지 단위 */
@@ -236,6 +237,19 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
         timestamp: node.timestamp,
         treeNodeId: node.id,
         treeNodeType: node.type,
+      };
+    }
+
+    case "assistant_message": {
+      const n = node as AssistantMessageNode;
+      return {
+        id: n.id,
+        role: "assistant",
+        content: n.content,
+        timestamp: n.timestamp,
+        usage: n.usage,
+        treeNodeId: n.id,
+        treeNodeType: n.type,
       };
     }
 

@@ -24,6 +24,7 @@ import type {
   InterventionSentEvent,
   CompactEvent,
   InputRequestEvent,
+  AssistantMessageEvent,
 } from "@shared/types";
 import type { ProcessingContext } from "./processing-context";
 import { makeNode } from "./processing-context";
@@ -38,7 +39,7 @@ const TRUNCATE_THRESHOLD = 2000;
  * 반환된 노드는 아직 트리에 삽입되지 않았고, Map에도 등록되지 않았습니다.
  * placeInTree()가 트리 삽입과 Map 등록을 담당합니다.
  *
- * 생성형: user_message, intervention_sent, thinking, tool_start, complete, error, result, compact, input_request
+ * 생성형: user_message, intervention_sent, thinking, tool_start, complete, error, result, compact, input_request, assistant_message
  * 무시: subagent_start, subagent_stop (R4: 가상 노드 미생성)
  * 업데이트형 (null 반환): session, text_start/delta/end, tool_result
  */
@@ -146,6 +147,17 @@ export function createNodeFromEvent(
         parentEventId: e.parent_event_id,
         timestamp: e.timestamp,
         responded: false,
+      });
+    }
+
+    case "assistant_message": {
+      const e = event as AssistantMessageEvent;
+      return makeNode(`asst-msg-${eventId}`, "assistant_message", e.content, {
+        completed: true,
+        model: e.model,
+        provider: e.provider,
+        usage: e.usage,
+        timestamp: e.timestamp,
       });
     }
 
