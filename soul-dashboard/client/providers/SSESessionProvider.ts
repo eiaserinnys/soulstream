@@ -11,11 +11,11 @@ import type {
   PaginatedSessions,
 } from "./types";
 import type {
-  SessionSummary,
   EventTreeNode,
   SoulSSEEvent,
   SSEEventType,
 } from "@shared/types";
+import { toSessionSummary } from "@shared/mappers";
 
 // SSE 이벤트 타입 목록
 const SSE_EVENT_TYPES: SSEEventType[] = [
@@ -52,19 +52,6 @@ interface SessionListResponse {
   total: number;
 }
 
-/**
- * 서버 응답(snake_case)을 SessionSummary(camelCase)로 변환합니다.
- */
-function toSessionSummary(raw: Record<string, unknown>): SessionSummary {
-  return {
-    agentSessionId: (raw.agent_session_id ?? raw.agentSessionId) as string,
-    status: (raw.status as SessionSummary["status"]) ?? "unknown",
-    eventCount: (raw.event_count ?? raw.eventCount ?? 0) as number,
-    createdAt: (raw.created_at ?? raw.createdAt) as string | undefined,
-    completedAt: (raw.updated_at ?? raw.completedAt) as string | undefined,
-    prompt: raw.prompt as string | undefined,
-  };
-}
 
 /**
  * Soul Server API + SSE 스트림 기반 세션 Provider.
@@ -80,10 +67,11 @@ export class SSESessionProvider implements SessionStorageProvider {
    *
    * /api/sessions 엔드포인트에서 세션 목록을 가져옵니다.
    */
-  async fetchSessions(offset = 0, limit = 0): Promise<PaginatedSessions> {
+  async fetchSessions(offset = 0, limit = 0, sessionType?: string): Promise<PaginatedSessions> {
     const params = new URLSearchParams();
     if (offset > 0) params.set("offset", String(offset));
     if (limit > 0) params.set("limit", String(limit));
+    if (sessionType) params.set("session_type", sessionType);
     const qs = params.toString();
     const url = `/api/sessions${qs ? `?${qs}` : ""}`;
 

@@ -370,6 +370,7 @@ class SessionInfo(BaseModel):
     created_at: datetime = Field(..., description="생성 시각")
     updated_at: datetime = Field(..., description="마지막 업데이트 시각")
     pid: Optional[int] = Field(None, description="프로세스 ID")
+    session_type: str = Field("claude", description="세션 타입: claude | llm")
     last_message: Optional[dict] = Field(None, description="마지막 메시지 정보")
 
 

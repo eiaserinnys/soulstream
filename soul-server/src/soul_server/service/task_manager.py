@@ -300,8 +300,9 @@ class TaskManager:
         self,
         offset: int = 0,
         limit: int = 0,
+        session_type: Optional[str] = None,
     ) -> tuple[list[dict], int]:
-        """세션 목록 반환 (생성일 기준 내림차순, 페이지네이션 지원)
+        """세션 목록 반환 (생성일 기준 내림차순, 페이지네이션 + 타입 필터 지원)
 
         카탈로그 기반으로 전체 세션 목록을 반환합니다.
         running 세션의 pid는 _tasks에서 보충합니다.
@@ -309,13 +310,29 @@ class TaskManager:
         Args:
             offset: 건너뛸 항목 수 (기본 0)
             limit: 반환할 최대 항목 수 (0이면 전체)
+            session_type: 세션 타입 필터 ("claude" | "llm", None이면 전체)
 
         Returns:
             (세션 dict 리스트, 전체 세션 수) 튜플
         """
-        entries, total = self._catalog.get_all(offset, limit)
+        # session_type 필터링을 위해 전체를 먼저 가져온 뒤 필터 → 페이지네이션
+        all_entries, _ = self._catalog.get_all(offset=0, limit=0)
+
+        if session_type:
+            all_entries = [
+                e for e in all_entries
+                if e.get("session_type", "claude") == session_type
+            ]
+
+        total = len(all_entries)
+
+        if offset > 0:
+            all_entries = all_entries[offset:]
+        if limit > 0:
+            all_entries = all_entries[:limit]
+
         result = []
-        for entry in entries:
+        for entry in all_entries:
             session_id = entry["agent_session_id"]
             # running 세션의 pid를 _tasks에서 보충
             pid = entry.get("pid")
@@ -330,6 +347,7 @@ class TaskManager:
                 "created_at": created_at,
                 "updated_at": entry.get("completed_at") or created_at,
                 "pid": pid,
+                "session_type": entry.get("session_type", "claude"),
                 "last_message": entry.get("last_message"),
             })
         return result, total
