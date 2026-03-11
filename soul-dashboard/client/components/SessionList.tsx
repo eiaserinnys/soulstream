@@ -7,7 +7,8 @@
  * "+ New" 버튼으로 새 세션 생성을 제공합니다.
  */
 
-import { memo, useMemo } from "react";
+import { memo, useRef, useCallback, useMemo } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import type { SessionSummary, SessionStatus } from "@shared/types";
 import type { VariantProps } from "class-variance-authority";
 import { useDashboardStore } from "../stores/dashboard-store";
@@ -216,6 +217,19 @@ export function SessionList({ sessions, loading, error }: SessionListProps) {
   const sessionTypeFilter = useDashboardStore((s) => s.sessionTypeFilter);
   const setSessionPage = useDashboardStore((s) => s.setSessionPage);
   const setSessionTypeFilter = useDashboardStore((s) => s.setSessionTypeFilter);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const virtualizer = useVirtualizer({
+    count: sessions.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => ITEM_HEIGHT,
+    overscan: 5,
+  });
+
+  const handleSelect = useCallback(
+    (agentSessionId: string) => setActiveSession(agentSessionId),
+    [setActiveSession],
+  );
 
   const totalPages = Math.ceil(sessionsTotal / sessionPageSize);
 
@@ -287,14 +301,39 @@ export function SessionList({ sessions, loading, error }: SessionListProps) {
             No sessions yet
           </div>
         )}
-        {sessions.map((session) => (
-            <SessionItem
-              key={session.agentSessionId}
-              session={session}
-              isActive={activeSessionKey === session.agentSessionId}
-              onClick={() => setActiveSession(session.agentSessionId)}
-            />
-          ))}
+        {sessions.length > 0 && (
+          <div
+            style={{
+              height: virtualizer.getTotalSize(),
+              position: "relative",
+              width: "100%",
+            }}
+          >
+            {virtualizer.getVirtualItems().map((virtualRow) => {
+              const session = sessions[virtualRow.index];
+              return (
+                <div
+                  key={session.agentSessionId}
+                  ref={virtualizer.measureElement}
+                  data-index={virtualRow.index}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                >
+                  <SessionItem
+                    session={session}
+                    isActive={activeSessionKey === session.agentSessionId}
+                    onClick={() => handleSelect(session.agentSessionId)}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Pagination */}
