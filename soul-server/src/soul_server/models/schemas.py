@@ -369,6 +369,8 @@ class SessionInfo(BaseModel):
     prompt: str = Field(..., description="실행 프롬프트")
     created_at: datetime = Field(..., description="생성 시각")
     updated_at: datetime = Field(..., description="마지막 업데이트 시각")
+    pid: Optional[int] = Field(None, description="프로세스 ID")
+    session_type: str = Field(..., description="세션 타입: claude | llm")
 
 
 class SessionsListResponse(BaseModel):
