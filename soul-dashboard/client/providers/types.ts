@@ -27,8 +27,8 @@ export interface PaginatedSessions {
 }
 
 export interface SessionListProvider {
-  /** 세션 목록 조회 (페이지네이션 지원) */
-  fetchSessions(offset?: number, limit?: number): Promise<PaginatedSessions>;
+  /** 세션 목록 조회 (페이지네이션 + 타입 필터 지원) */
+  fetchSessions(offset?: number, limit?: number, sessionType?: string): Promise<PaginatedSessions>;
 
   /** Provider 타입 식별자 */
   readonly mode: StorageMode;

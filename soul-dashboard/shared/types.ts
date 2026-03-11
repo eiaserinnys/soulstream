@@ -274,6 +274,8 @@ export interface SessionSummary {
   completedAt?: string;
   /** 첫 user_message의 텍스트 (세션 목록에서 표시용) */
   prompt?: string;
+  /** 세션 유형: Claude Code 세션 또는 LLM 세션 */
+  sessionType?: "claude" | "llm";
 }
 
 /** 세션 상세 정보 */
