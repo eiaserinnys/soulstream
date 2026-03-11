@@ -11,7 +11,7 @@ Sessions API - 세션 목록 조회 및 SSE 스트리밍
 import asyncio
 import json
 import logging
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Header, HTTPException, Path as FastAPIPath, Query
 from sse_starlette.sse import EventSourceResponse
@@ -22,20 +22,6 @@ from soul_server.service.task_manager import get_task_manager
 from soul_server.service.session_broadcaster import get_session_broadcaster
 
 logger = logging.getLogger(__name__)
-
-
-def _task_to_session_info(task: Task) -> dict:
-    """Task를 세션 정보 dict로 변환 (개별 세션 조회용)"""
-    updated_at = task.completed_at or task.created_at
-    return {
-        "agent_session_id": task.agent_session_id,
-        "status": task.status.value,
-        "prompt": task.prompt,
-        "created_at": task.created_at.isoformat(),
-        "updated_at": updated_at.isoformat(),
-        "pid": task.pid,
-        "last_message": None,
-    }
 
 
 def create_sessions_router() -> APIRouter:
@@ -52,10 +38,13 @@ def create_sessions_router() -> APIRouter:
     async def get_sessions(
         offset: int = Query(0, ge=0, description="건너뛸 항목 수"),
         limit: int = Query(0, ge=0, description="반환할 최대 항목 수 (0이면 전체)"),
+        session_type: Literal["claude", "llm"] | None = Query(None, description="세션 타입 필터: claude | llm"),
     ):
-        """세션 목록 조회 (페이지네이션 지원)"""
+        """세션 목록 조회 (페이지네이션, 타입 필터 지원)"""
         task_manager = get_task_manager()
-        sessions, total = task_manager.get_all_sessions(offset=offset, limit=limit)
+        sessions, total = task_manager.get_all_sessions(
+            offset=offset, limit=limit, session_type=session_type,
+        )
         return {"sessions": sessions, "total": total}
 
     @router.get("/sessions/stream")

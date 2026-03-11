@@ -87,7 +87,7 @@ export class SerendipitySessionProvider implements SessionStorageProvider {
    *
    * soul-session 라벨이 있는 세렌디피티 페이지 목록을 반환합니다.
    */
-  async fetchSessions(offset = 0, limit = 0): Promise<PaginatedSessions> {
+  async fetchSessions(offset = 0, limit = 0, _sessionType?: string): Promise<PaginatedSessions> {
     const { baseUrl, sessionLabelName } = this.options;
 
     try {
