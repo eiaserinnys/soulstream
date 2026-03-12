@@ -22,27 +22,6 @@ from soul_server.llm.adapters import LlmAdapter
 logger = logging.getLogger(__name__)
 
 
-def _summarize_messages(messages: list[dict]) -> str:
-    """messages 배열에서 대시보드 표시용 텍스트를 추출한다.
-
-    마지막 user 메시지의 content를 최대 500자까지 반환한다.
-    멀티모달(content가 list)인 경우 text 파트만 합친다.
-    """
-    for m in reversed(messages):
-        if m.get("role") == "user":
-            content = m.get("content", "")
-            if isinstance(content, str):
-                return content[:500]
-            if isinstance(content, list):
-                texts = [
-                    p.get("text", "")
-                    for p in content
-                    if isinstance(p, dict) and p.get("type") == "text"
-                ]
-                return " ".join(texts)[:500]
-    return "(LLM request)"
-
-
 def _generate_llm_session_id() -> str:
     """LLM 세션 ID 생성"""
     timestamp = utc_now().strftime("%Y%m%d%H%M%S")
@@ -124,13 +103,10 @@ class LlmExecutor:
             )
 
         # 요청 이벤트 기록
-        messages_dicts = [m.model_dump() for m in request.messages]
         request_event = {
             "type": "user_message",
             "timestamp": time.time(),
-            "text": _summarize_messages(messages_dicts),
-            "user": request.client_id or "llm-proxy",
-            "messages": messages_dicts,
+            "messages": [m.model_dump() for m in request.messages],
             "provider": request.provider,
             "model": request.model,
             "max_tokens": request.max_tokens,
