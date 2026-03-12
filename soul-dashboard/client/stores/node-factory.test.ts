@@ -68,6 +68,47 @@ describe("createNodeFromEvent", () => {
       expect(node!.children).toEqual([]);
     });
 
+    it("should extract content from messages when text is absent (LLM session)", () => {
+      const event: UserMessageEvent = {
+        type: "user_message",
+        messages: [
+          { role: "system", content: "You are helpful." },
+          { role: "user", content: "Translate this" },
+        ],
+        client_id: "translate",
+      };
+
+      const node = createNodeFromEvent(event, 2);
+
+      expect(node).not.toBeNull();
+      expect(node!.content).toBe("Translate this");
+      expect((node as UserMessageNode).user).toBe("translate");
+    });
+
+    it("should fallback to 'llm-proxy' when neither user nor client_id exists", () => {
+      const event: UserMessageEvent = {
+        type: "user_message",
+        messages: [{ role: "user", content: "Hello" }],
+      };
+
+      const node = createNodeFromEvent(event, 3);
+
+      expect(node).not.toBeNull();
+      expect((node as UserMessageNode).user).toBe("llm-proxy");
+    });
+
+    it("should return empty content when messages has no user role", () => {
+      const event: UserMessageEvent = {
+        type: "user_message",
+        messages: [{ role: "system", content: "You are helpful." }],
+      };
+
+      const node = createNodeFromEvent(event, 4);
+
+      expect(node).not.toBeNull();
+      expect(node!.content).toBe("");
+    });
+
     it("should create node for intervention_sent", () => {
       const event: InterventionSentEvent = {
         type: "intervention_sent",

@@ -39,7 +39,6 @@ from soul_server.service.session_broadcaster import get_session_broadcaster
 
 # 이벤트 타입별 미리보기 텍스트 필드 매핑
 PREVIEW_FIELD_MAP = {
-    "user_message": "text",
     "intervention": "text",
     "thinking": "thinking",
     "result": "result",
@@ -621,23 +620,45 @@ class TaskManager:
 
         PREVIEW_FIELD_MAP에 해당하는 이벤트 타입이면 카탈로그의
         last_message를 업데이트합니다.
+        user_message는 text 또는 messages에서 preview를 추출합니다.
         """
         # 카탈로그 last_message 업데이트
         event_type = event.get("type", "")
         text_field = PREVIEW_FIELD_MAP.get(event_type)
-        if text_field:
+
+        # user_message 전용 분기: text 또는 messages에서 preview 추출
+        if event_type == "user_message":
+            text = event.get("text", "")
+            if not text and "messages" in event:
+                for m in reversed(event.get("messages", [])):
+                    if m.get("role") == "user":
+                        c = m.get("content", "")
+                        if isinstance(c, str):
+                            text = c
+                        elif isinstance(c, list):
+                            text = " ".join(
+                                p.get("text", "") for p in c
+                                if isinstance(p, dict) and p.get("type") == "text"
+                            )
+                        else:
+                            text = ""
+                        break
+        elif text_field:
             text = event.get(text_field, "")
-            if isinstance(text, str) and text:
-                ts = event.get("timestamp")
-                if isinstance(ts, (int, float)):
-                    ts_str = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
-                elif isinstance(ts, str):
-                    ts_str = ts
-                else:
-                    ts_str = datetime_to_str(utc_now())
-                self._catalog.update_last_message(
-                    agent_session_id, event_type, text[:200], ts_str
-                )
+        else:
+            text = ""
+
+        if isinstance(text, str) and text:
+            ts = event.get("timestamp")
+            if isinstance(ts, (int, float)):
+                ts_str = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+            elif isinstance(ts, str):
+                ts_str = ts
+            else:
+                ts_str = datetime_to_str(utc_now())
+            self._catalog.update_last_message(
+                agent_session_id, event_type, text[:200], ts_str
+            )
 
         return await self._listener_manager.broadcast(agent_session_id, event)
 

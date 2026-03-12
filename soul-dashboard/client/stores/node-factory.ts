@@ -32,6 +32,26 @@ import { makeNode } from "./processing-context";
 /** 이 길이를 초과하는 콘텐츠는 truncate하여 메모리를 절약한다 */
 const TRUNCATE_THRESHOLD = 2000;
 
+/** LLM 세션의 messages 배열에서 마지막 user 메시지 콘텐츠를 추출한다. */
+function extractLastUserContent(messages?: Array<{role: string; content: unknown}>): string {
+  if (!messages) return "";
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === "user") {
+      const content = messages[i].content;
+      if (typeof content === "string") return content;
+      if (Array.isArray(content)) {
+        return content
+          .filter((p): p is {type: string; text: string} =>
+            typeof p === "object" && p !== null && p.type === "text")
+          .map(p => p.text)
+          .join(" ");
+      }
+      return "";
+    }
+  }
+  return "";
+}
+
 /**
  * 이벤트에서 새 노드를 생성합니다.
  *
@@ -50,9 +70,10 @@ export function createNodeFromEvent(
   switch (event.type) {
     case "user_message": {
       const e = event as UserMessageEvent;
-      return makeNode(`user-msg-${eventId}`, "user_message", e.text, {
+      const content = e.text ?? extractLastUserContent(e.messages);
+      return makeNode(`user-msg-${eventId}`, "user_message", content, {
         completed: true,
-        user: e.user,
+        user: e.user ?? e.client_id ?? "llm-proxy",
       });
     }
 

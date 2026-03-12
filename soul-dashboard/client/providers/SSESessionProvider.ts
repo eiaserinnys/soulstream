@@ -24,6 +24,8 @@ const SSE_EVENT_TYPES: SSEEventType[] = [
   "session",
   "intervention_sent",
   "user_message",
+  "assistant_message",
+  "input_request",
   "debug",
   "complete",
   "error",
