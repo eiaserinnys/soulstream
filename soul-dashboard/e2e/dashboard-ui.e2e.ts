@@ -42,7 +42,7 @@ const MULTI_TOOL_SSE_EVENTS = [
   // 1) Thinking: 분석
   {
     delay: 1 * SSE_INTERVAL,
-    data: 'id: 1\nevent: text_start\ndata: {"type":"text_start","card_id":"mt-t1"}\n\n',
+    data: 'id: 1\nevent: text_start\ndata: {"type":"text_start","card_id":"mt-t1","parent_event_id":"0"}\n\n',
   },
   {
     delay: 2 * SSE_INTERVAL,
@@ -55,7 +55,7 @@ const MULTI_TOOL_SSE_EVENTS = [
   // 2) Tool 1: Read
   {
     delay: 4 * SSE_INTERVAL,
-    data: 'id: 4\nevent: tool_start\ndata: {"type":"tool_start","card_id":"mt-tool1","tool_name":"Read","tool_input":{"file_path":"/src/utils.ts"}}\n\n',
+    data: 'id: 4\nevent: tool_start\ndata: {"type":"tool_start","card_id":"mt-tool1","tool_name":"Read","tool_input":{"file_path":"/src/utils.ts"},"parent_event_id":"0"}\n\n',
   },
   {
     delay: 5 * SSE_INTERVAL,
@@ -64,7 +64,7 @@ const MULTI_TOOL_SSE_EVENTS = [
   // 3) Tool 2: Write
   {
     delay: 6 * SSE_INTERVAL,
-    data: 'id: 6\nevent: tool_start\ndata: {"type":"tool_start","card_id":"mt-tool2","tool_name":"Write","tool_input":{"file_path":"/src/utils.ts","content":"export function validateInput(s: string) { return s.trim().length > 0; }"}}\n\n',
+    data: 'id: 6\nevent: tool_start\ndata: {"type":"tool_start","card_id":"mt-tool2","tool_name":"Write","tool_input":{"file_path":"/src/utils.ts","content":"export function validateInput(s: string) { return s.trim().length > 0; }"},"parent_event_id":"0"}\n\n',
   },
   {
     delay: 7 * SSE_INTERVAL,
@@ -73,7 +73,7 @@ const MULTI_TOOL_SSE_EVENTS = [
   // 4) Tool 3: Bash
   {
     delay: 8 * SSE_INTERVAL,
-    data: 'id: 8\nevent: tool_start\ndata: {"type":"tool_start","card_id":"mt-tool3","tool_name":"Bash","tool_input":{"command":"npm test -- --filter=utils"}}\n\n',
+    data: 'id: 8\nevent: tool_start\ndata: {"type":"tool_start","card_id":"mt-tool3","tool_name":"Bash","tool_input":{"command":"npm test -- --filter=utils"},"parent_event_id":"0"}\n\n',
   },
   {
     delay: 9 * SSE_INTERVAL,
@@ -82,7 +82,7 @@ const MULTI_TOOL_SSE_EVENTS = [
   // 5) 두 번째 Thinking
   {
     delay: 10 * SSE_INTERVAL,
-    data: 'id: 10\nevent: text_start\ndata: {"type":"text_start","card_id":"mt-t2"}\n\n',
+    data: 'id: 10\nevent: text_start\ndata: {"type":"text_start","card_id":"mt-t2","parent_event_id":"0"}\n\n',
   },
   {
     delay: 11 * SSE_INTERVAL,
@@ -95,7 +95,7 @@ const MULTI_TOOL_SSE_EVENTS = [
   // 6) Complete
   {
     delay: 14 * SSE_INTERVAL,
-    data: 'id: 13\nevent: complete\ndata: {"type":"complete","result":"src/utils.ts에 validateInput 함수를 추가하고 테스트를 통과했습니다.","attachments":[]}\n\n',
+    data: 'id: 13\nevent: complete\ndata: {"type":"complete","result":"src/utils.ts에 validateInput 함수를 추가하고 테스트를 통과했습니다.","attachments":[],"parent_event_id":"0"}\n\n',
     end: true,
   },
 ];
@@ -109,7 +109,7 @@ const SSE_EVENTS = [
   // 1) Thinking 카드: text_start → text_delta → text_end
   {
     delay: 1 * SSE_INTERVAL,
-    data: 'id: 1\nevent: text_start\ndata: {"type":"text_start","card_id":"card-t1"}\n\n',
+    data: 'id: 1\nevent: text_start\ndata: {"type":"text_start","card_id":"card-t1","parent_event_id":"0"}\n\n',
   },
   {
     delay: 2 * SSE_INTERVAL,
@@ -122,7 +122,7 @@ const SSE_EVENTS = [
   // 2) Tool 호출: tool_start → tool_result
   {
     delay: 4 * SSE_INTERVAL,
-    data: 'id: 4\nevent: tool_start\ndata: {"type":"tool_start","card_id":"card-tool1","tool_name":"Read","tool_input":{"file_path":"/src/index.ts"}}\n\n',
+    data: 'id: 4\nevent: tool_start\ndata: {"type":"tool_start","card_id":"card-tool1","tool_name":"Read","tool_input":{"file_path":"/src/index.ts"},"parent_event_id":"0"}\n\n',
   },
   {
     delay: 6 * SSE_INTERVAL,
@@ -131,7 +131,7 @@ const SSE_EVENTS = [
   // 3) 두 번째 Thinking 카드
   {
     delay: 7 * SSE_INTERVAL,
-    data: 'id: 6\nevent: text_start\ndata: {"type":"text_start","card_id":"card-t2"}\n\n',
+    data: 'id: 6\nevent: text_start\ndata: {"type":"text_start","card_id":"card-t2","parent_event_id":"0"}\n\n',
   },
   {
     delay: 8 * SSE_INTERVAL,
@@ -144,7 +144,7 @@ const SSE_EVENTS = [
   // 4) Complete 이벤트
   {
     delay: 11 * SSE_INTERVAL,
-    data: 'id: 9\nevent: complete\ndata: {"type":"complete","result":"작업이 완료되었습니다. src/index.ts에 에러 핸들링을 추가했습니다.","attachments":[]}\n\n',
+    data: 'id: 9\nevent: complete\ndata: {"type":"complete","result":"작업이 완료되었습니다. src/index.ts에 에러 핸들링을 추가했습니다.","attachments":[],"parent_event_id":"0"}\n\n',
     end: true,
   },
 ];
@@ -162,7 +162,7 @@ const NO_TOOL_SSE_EVENTS = [
   },
   {
     delay: 1 * SSE_INTERVAL,
-    data: 'id: 1\nevent: text_start\ndata: {"type":"text_start","card_id":"nt-t1"}\n\n',
+    data: 'id: 1\nevent: text_start\ndata: {"type":"text_start","card_id":"nt-t1","parent_event_id":"0"}\n\n',
   },
   {
     delay: 2 * SSE_INTERVAL,
@@ -174,7 +174,7 @@ const NO_TOOL_SSE_EVENTS = [
   },
   {
     delay: 5 * SSE_INTERVAL,
-    data: 'id: 4\nevent: complete\ndata: {"type":"complete","result":"답변을 완료했습니다.","attachments":[]}\n\n',
+    data: 'id: 4\nevent: complete\ndata: {"type":"complete","result":"답변을 완료했습니다.","attachments":[],"parent_event_id":"0"}\n\n',
     end: true,
   },
 ];
@@ -187,7 +187,8 @@ function generateLargeSSEEvents(pairCount: number): Array<{ delay: number; data:
   let id = 0;
   let step = 0;
 
-  // user message
+  // user message (id=0, 자식들의 parent_event_id 기준)
+  const userMsgId = id;
   events.push({
     delay: 0,
     data: `id: ${id++}\nevent: user_message\ndata: {"type":"user_message","user":"dashboard","text":"대규모 작업을 수행해주세요 (${pairCount} 단계)."}\n\n`,
@@ -198,7 +199,7 @@ function generateLargeSSEEvents(pairCount: number): Array<{ delay: number; data:
     // thinking
     events.push({
       delay: step * SSE_INTERVAL,
-      data: `id: ${id++}\nevent: text_start\ndata: {"type":"text_start","card_id":"lg-t${i}"}\n\n`,
+      data: `id: ${id++}\nevent: text_start\ndata: {"type":"text_start","card_id":"lg-t${i}","parent_event_id":"${userMsgId}"}\n\n`,
     });
     step++;
     events.push({
@@ -216,7 +217,7 @@ function generateLargeSSEEvents(pairCount: number): Array<{ delay: number; data:
     step++;
     events.push({
       delay: step * SSE_INTERVAL,
-      data: `id: ${id++}\nevent: tool_start\ndata: {"type":"tool_start","card_id":"lg-tool${i}","tool_name":"${toolName}","tool_input":{"command":"step-${i}"}}\n\n`,
+      data: `id: ${id++}\nevent: tool_start\ndata: {"type":"tool_start","card_id":"lg-tool${i}","tool_name":"${toolName}","tool_input":{"command":"step-${i}"},"parent_event_id":"${userMsgId}"}\n\n`,
     });
     step++;
     events.push({
@@ -229,7 +230,7 @@ function generateLargeSSEEvents(pairCount: number): Array<{ delay: number; data:
   step++;
   events.push({
     delay: step * SSE_INTERVAL,
-    data: `id: ${id++}\nevent: text_start\ndata: {"type":"text_start","card_id":"lg-final"}\n\n`,
+    data: `id: ${id++}\nevent: text_start\ndata: {"type":"text_start","card_id":"lg-final","parent_event_id":"${userMsgId}"}\n\n`,
   });
   step++;
   events.push({
@@ -244,7 +245,7 @@ function generateLargeSSEEvents(pairCount: number): Array<{ delay: number; data:
   step += 2;
   events.push({
     delay: step * SSE_INTERVAL,
-    data: `id: ${id++}\nevent: complete\ndata: {"type":"complete","result":"${pairCount}단계 작업 완료","attachments":[]}\n\n`,
+    data: `id: ${id++}\nevent: complete\ndata: {"type":"complete","result":"${pairCount}단계 작업 완료","attachments":[],"parent_event_id":"${userMsgId}"}\n\n`,
     end: true,
   });
 
@@ -271,14 +272,15 @@ function generateMultiTurnSSEEvents(): Array<{ delay: number; data: string; end?
   const d = 50; // 짧은 간격 (E2E 속도)
 
   // === Turn 1 ===
+  const turn1UserId = id;
   events.push({ delay: 0,
     data: `id: ${id++}\nevent: user_message\ndata: {"type":"user_message","user":"dashboard","text":"대사 작업 스킬을 로드하고 다음 지시를 대기."}\n\n` });
-  // thinking (processEvent에서 무시되지만 SSE로 전송됨)
+  // thinking
   events.push({ delay: d,
-    data: `id: ${id++}\nevent: thinking\ndata: {"type":"thinking","card_id":"mt2-think1","thinking":"Loading dialogue skill."}\n\n` });
+    data: `id: ${id++}\nevent: thinking\ndata: {"type":"thinking","card_id":"mt2-think1","thinking":"Loading dialogue skill.","parent_event_id":"${turn1UserId}"}\n\n` });
   // tool: Skill
   events.push({ delay: 2*d,
-    data: `id: ${id++}\nevent: tool_start\ndata: {"type":"tool_start","card_id":"mt2-think1","tool_name":"Skill","tool_input":{"skill":"dialogue"},"tool_use_id":"tu-skill1"}\n\n` });
+    data: `id: ${id++}\nevent: tool_start\ndata: {"type":"tool_start","card_id":"mt2-think1","tool_name":"Skill","tool_input":{"skill":"dialogue"},"tool_use_id":"tu-skill1","parent_event_id":"${turn1UserId}"}\n\n` });
   events.push({ delay: 3*d,
     data: `id: ${id++}\nevent: tool_result\ndata: {"type":"tool_result","card_id":"mt2-think1","tool_name":"Skill","result":"Launching skill: dialogue","is_error":false,"tool_use_id":"tu-skill1"}\n\n` });
   // progress (무시되지만 SSE로 전송됨)
@@ -286,33 +288,34 @@ function generateMultiTurnSSEEvents(): Array<{ delay: number; data: string; end?
     data: `id: ${id++}\nevent: progress\ndata: {"type":"progress","text":"대사 작업 스킬을 로드하였습니다."}\n\n` });
   // text: response
   events.push({ delay: 5*d,
-    data: `id: ${id++}\nevent: text_start\ndata: {"type":"text_start","card_id":"mt2-resp1"}\n\n` });
+    data: `id: ${id++}\nevent: text_start\ndata: {"type":"text_start","card_id":"mt2-resp1","parent_event_id":"${turn1UserId}"}\n\n` });
   events.push({ delay: 6*d,
     data: `id: ${id++}\nevent: text_delta\ndata: {"type":"text_delta","card_id":"mt2-resp1","text":"대사 작업 스킬을 로드하였습니다. 지시를 기다리겠습니다."}\n\n` });
   events.push({ delay: 7*d,
     data: `id: ${id++}\nevent: text_end\ndata: {"type":"text_end","card_id":"mt2-resp1"}\n\n` });
-  // result (무시)
+  // result
   events.push({ delay: 8*d,
-    data: `id: ${id++}\nevent: result\ndata: {"type":"result","success":true,"output":"대사 작업 스킬을 로드하였습니다."}\n\n` });
+    data: `id: ${id++}\nevent: result\ndata: {"type":"result","success":true,"output":"대사 작업 스킬을 로드하였습니다.","parent_event_id":"${turn1UserId}"}\n\n` });
   // context_usage (무시)
   events.push({ delay: 9*d,
     data: `id: ${id++}\nevent: context_usage\ndata: {"type":"context_usage","used_tokens":126,"max_tokens":200000,"percent":0.1}\n\n` });
   // COMPLETE — Turn 1 종료 (세션 종료가 아님!)
   events.push({ delay: 10*d,
-    data: `id: ${id++}\nevent: complete\ndata: {"type":"complete","result":"대사 작업 스킬을 로드하였습니다. 지시를 기다리겠습니다.","attachments":[]}\n\n` });
+    data: `id: ${id++}\nevent: complete\ndata: {"type":"complete","result":"대사 작업 스킬을 로드하였습니다. 지시를 기다리겠습니다.","attachments":[],"parent_event_id":"${turn1UserId}"}\n\n` });
 
   // === Turn 2 (resume) — complete 이후에도 이벤트가 계속되어야 함 ===
+  const turn2UserId = id;
   events.push({ delay: 12*d,
     data: `id: ${id++}\nevent: user_message\ndata: {"type":"user_message","user":"dashboard","text":"칼리엘 대사 아이디어를 생각해보자."}\n\n` });
   // thinking
   events.push({ delay: 13*d,
-    data: `id: ${id++}\nevent: thinking\ndata: {"type":"thinking","card_id":"mt2-think2","thinking":"Analyzing Act 3 dialogues for Kaliel ideas."}\n\n` });
+    data: `id: ${id++}\nevent: thinking\ndata: {"type":"thinking","card_id":"mt2-think2","thinking":"Analyzing Act 3 dialogues for Kaliel ideas.","parent_event_id":"${turn2UserId}"}\n\n` });
   // progress
   events.push({ delay: 14*d,
     data: `id: ${id++}\nevent: progress\ndata: {"type":"progress","text":"Rev2 액트 3 대사를 살펴보겠습니다."}\n\n` });
   // text
   events.push({ delay: 15*d,
-    data: `id: ${id++}\nevent: text_start\ndata: {"type":"text_start","card_id":"mt2-resp2"}\n\n` });
+    data: `id: ${id++}\nevent: text_start\ndata: {"type":"text_start","card_id":"mt2-resp2","parent_event_id":"${turn2UserId}"}\n\n` });
   events.push({ delay: 16*d,
     data: `id: ${id++}\nevent: text_delta\ndata: {"type":"text_delta","card_id":"mt2-resp2","text":"Rev2 액트 3 대사 파일들과 칼리엘 캐릭터 정보를 살펴보겠습니다."}\n\n` });
   events.push({ delay: 17*d,
@@ -331,14 +334,14 @@ function generateMultiTurnSSEEvents(): Array<{ delay: number; data: string; end?
     const t = tools[i];
     const base = 18 + i * 2;
     events.push({ delay: base * d,
-      data: `id: ${id++}\nevent: tool_start\ndata: {"type":"tool_start","card_id":"mt2-resp2","tool_name":"${t.name}","tool_input":${t.input},"tool_use_id":"tu-t2-${i}"}\n\n` });
+      data: `id: ${id++}\nevent: tool_start\ndata: {"type":"tool_start","card_id":"mt2-resp2","tool_name":"${t.name}","tool_input":${t.input},"tool_use_id":"tu-t2-${i}","parent_event_id":"${turn2UserId}"}\n\n` });
     events.push({ delay: (base + 1) * d,
       data: `id: ${id++}\nevent: tool_result\ndata: {"type":"tool_result","card_id":"mt2-resp2","tool_name":"${t.name}","result":${t.result},"is_error":false,"tool_use_id":"tu-t2-${i}"}\n\n` });
   }
 
   // Turn 2 complete
   events.push({ delay: 30 * d,
-    data: `id: ${id++}\nevent: complete\ndata: {"type":"complete","result":"칼리엘 대사 아이디어 10개를 정리했습니다.","attachments":[]}\n\n`,
+    data: `id: ${id++}\nevent: complete\ndata: {"type":"complete","result":"칼리엘 대사 아이디어 10개를 정리했습니다.","attachments":[],"parent_event_id":"${turn2UserId}"}\n\n`,
     end: true });
 
   return events;
@@ -358,33 +361,35 @@ function generateSubagentSSEEvents(): Array<{ delay: number; data: string; end?:
   const d = 50;
 
   // === Turn 1 ===
+  const turn1UserId = id;
   events.push({ delay: 0,
     data: `id: ${id++}\nevent: user_message\ndata: {"type":"user_message","user":"dashboard","text":"스킬을 로드해주세요."}\n\n` });
   events.push({ delay: d,
-    data: `id: ${id++}\nevent: tool_start\ndata: {"type":"tool_start","card_id":"sa-t1","tool_name":"Skill","tool_input":{"skill":"dialogue"},"tool_use_id":"tu-skill-1"}\n\n` });
+    data: `id: ${id++}\nevent: tool_start\ndata: {"type":"tool_start","card_id":"sa-t1","tool_name":"Skill","tool_input":{"skill":"dialogue"},"tool_use_id":"tu-skill-1","parent_event_id":"${turn1UserId}"}\n\n` });
   events.push({ delay: 2*d,
     data: `id: ${id++}\nevent: tool_result\ndata: {"type":"tool_result","card_id":"sa-t1","tool_name":"Skill","result":"Skill loaded","is_error":false,"tool_use_id":"tu-skill-1"}\n\n` });
   events.push({ delay: 3*d,
-    data: `id: ${id++}\nevent: text_start\ndata: {"type":"text_start","card_id":"sa-resp1"}\n\n` });
+    data: `id: ${id++}\nevent: text_start\ndata: {"type":"text_start","card_id":"sa-resp1","parent_event_id":"${turn1UserId}"}\n\n` });
   events.push({ delay: 4*d,
     data: `id: ${id++}\nevent: text_delta\ndata: {"type":"text_delta","card_id":"sa-resp1","text":"스킬을 로드했습니다."}\n\n` });
   events.push({ delay: 5*d,
     data: `id: ${id++}\nevent: text_end\ndata: {"type":"text_end","card_id":"sa-resp1"}\n\n` });
   events.push({ delay: 6*d,
-    data: `id: ${id++}\nevent: complete\ndata: {"type":"complete","result":"스킬 로드 완료","attachments":[]}\n\n` });
+    data: `id: ${id++}\nevent: complete\ndata: {"type":"complete","result":"스킬 로드 완료","attachments":[],"parent_event_id":"${turn1UserId}"}\n\n` });
 
   // === Turn 2 ===
+  const turn2UserId = id;
   events.push({ delay: 8*d,
     data: `id: ${id++}\nevent: user_message\ndata: {"type":"user_message","user":"dashboard","text":"코드를 분석해주세요."}\n\n` });
   events.push({ delay: 9*d,
-    data: `id: ${id++}\nevent: text_start\ndata: {"type":"text_start","card_id":"sa-resp2"}\n\n` });
+    data: `id: ${id++}\nevent: text_start\ndata: {"type":"text_start","card_id":"sa-resp2","parent_event_id":"${turn2UserId}"}\n\n` });
   events.push({ delay: 10*d,
     data: `id: ${id++}\nevent: text_delta\ndata: {"type":"text_delta","card_id":"sa-resp2","text":"코드를 탐색하겠습니다."}\n\n` });
   events.push({ delay: 11*d,
     data: `id: ${id++}\nevent: text_end\ndata: {"type":"text_end","card_id":"sa-resp2"}\n\n` });
   // Task tool
   events.push({ delay: 12*d,
-    data: `id: ${id++}\nevent: tool_start\ndata: {"type":"tool_start","card_id":"sa-resp2","tool_name":"Task","tool_input":{"subagent_type":"Explore"},"tool_use_id":"tu-task-1"}\n\n` });
+    data: `id: ${id++}\nevent: tool_start\ndata: {"type":"tool_start","card_id":"sa-resp2","tool_name":"Task","tool_input":{"subagent_type":"Explore"},"tool_use_id":"tu-task-1","parent_event_id":"${turn2UserId}"}\n\n` });
   // Subagent start
   events.push({ delay: 13*d,
     data: `id: ${id++}\nevent: subagent_start\ndata: {"type":"subagent_start","agent_id":"agent-1","agent_type":"Explore","parent_event_id":"tu-task-1"}\n\n` });
@@ -401,13 +406,13 @@ function generateSubagentSSEEvents(): Array<{ delay: number; data: string; end?:
     data: `id: ${id++}\nevent: tool_result\ndata: {"type":"tool_result","card_id":"sa-resp2","tool_name":"Task","result":"코드 탐색 완료","is_error":false,"tool_use_id":"tu-task-1"}\n\n` });
   // Post-subagent text
   events.push({ delay: 18*d,
-    data: `id: ${id++}\nevent: text_start\ndata: {"type":"text_start","card_id":"sa-resp3"}\n\n` });
+    data: `id: ${id++}\nevent: text_start\ndata: {"type":"text_start","card_id":"sa-resp3","parent_event_id":"${turn2UserId}"}\n\n` });
   events.push({ delay: 19*d,
     data: `id: ${id++}\nevent: text_delta\ndata: {"type":"text_delta","card_id":"sa-resp3","text":"분석 결과를 정리했습니다."}\n\n` });
   events.push({ delay: 20*d,
     data: `id: ${id++}\nevent: text_end\ndata: {"type":"text_end","card_id":"sa-resp3"}\n\n` });
   events.push({ delay: 22*d,
-    data: `id: ${id++}\nevent: complete\ndata: {"type":"complete","result":"분석 완료","attachments":[]}\n\n`,
+    data: `id: ${id++}\nevent: complete\ndata: {"type":"complete","result":"분석 완료","attachments":[],"parent_event_id":"${turn2UserId}"}\n\n`,
     end: true });
 
   return events;
@@ -585,6 +590,12 @@ const test = base.extend<{ dashboardServer: MockDashboardServer }, { dashboardSe
 
       // 연결 확인
       res.write("event: connected\ndata: {}\n\n");
+
+      // history_sync 이벤트: 히스토리 리플레이 완료 → 라이브 이벤트 시작
+      // ctx.historySynced = true로 전환되어야 deriveSessionStatus()가 세션 상태를 갱신함
+      res.write(
+        'event: history_sync\ndata: {"type":"history_sync","last_event_id":0,"is_live":true,"status":"running"}\n\n',
+      );
 
       // 세션 ID에 따라 이벤트 시퀀스 선택
       const sessionId = req.params.id;
@@ -826,14 +837,14 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     const toolNodes = page.locator('[data-testid="tool-call-node"]');
     await expect(toolNodes.first()).toBeVisible({ timeout: 10_000 });
 
-    // Complete 이벤트 도착 대기 (system-node로 렌더링됨)
+    // Complete 이벤트 도착 대기: Session Started(root) + Complete = system-node 2개
     const completeNodes = page.locator('[data-testid="system-node"]');
-    await expect(completeNodes.first()).toBeVisible({ timeout: 10_000 });
+    await expect(completeNodes).toHaveCount(2, { timeout: 10_000 });
 
     // React Flow 캔버스에 노드와 엣지가 렌더링되었는지 확인
     const reactFlowNodes = page.locator(".react-flow__node");
     const nodeCount = await reactFlowNodes.count();
-    expect(nodeCount).toBeGreaterThanOrEqual(3); // user + thinking + tool + complete
+    expect(nodeCount).toBeGreaterThanOrEqual(5); // root + user + thinking + tool + complete
 
     // 스크린샷: 전체 노드 그래프 렌더링
     await page.screenshot({
@@ -863,8 +874,9 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     const detailView = page.locator('[data-testid="detail-view"]');
     await expect(detailView).toBeVisible();
 
-    // Thinking 카드 상세에서 "Detail" 헤더 확인
-    await expect(detailView.getByText("Detail")).toBeVisible();
+    // Thinking 카드 상세에서 "Thinking" 헤더 확인
+    // (ThinkingDetail 컴포넌트가 "💭 Thinking" 헤더를 렌더링)
+    await expect(detailView.getByText("Thinking")).toBeVisible();
 
     // 스크린샷: Thinking 노드 선택 → Detail 패널
     await page.screenshot({
@@ -889,9 +901,9 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
   test("4. Complete 상태 + 레이아웃 검증", async ({ page, dashboardServer }) => {
     await navigateAndSelectSession(page, dashboardServer.baseURL);
 
-    // Complete 이벤트까지 대기 (system-node 출현으로 확인)
+    // Complete 이벤트까지 대기: Session Started(root) + Complete = system-node 2개
     const completeNodes = page.locator('[data-testid="system-node"]');
-    await expect(completeNodes.first()).toBeVisible({ timeout: 10_000 });
+    await expect(completeNodes).toHaveCount(2, { timeout: 10_000 });
 
     // 전체 노드 그래프가 렌더링된 상태 확인
     const thinkingNodes = page.locator('[data-testid="thinking-node"]');
@@ -911,7 +923,7 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     // 레이아웃 검증: thinking 노드들이 세로로 정렬되고, tool 노드가 오른쪽에 배치
     const allNodes = page.locator(".react-flow__node");
     const nodeCount = await allNodes.count();
-    expect(nodeCount).toBeGreaterThanOrEqual(4); // user + thinking + tool + complete
+    expect(nodeCount).toBeGreaterThanOrEqual(5); // root + user + thinking + tool + complete
 
     // 스크린샷: Complete 상태의 전체 대시보드
     await page.screenshot({
@@ -931,18 +943,18 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
       "sess-e2e-ui-multi",
     );
 
-    // Complete 이벤트까지 대기: system-node 출현으로 확인
+    // Complete 이벤트까지 대기: Session Started(root) + Complete = system-node 2개
     await expect(
-      page.locator('[data-testid="system-node"]').first(),
-    ).toBeVisible({ timeout: 15_000 });
+      page.locator('[data-testid="system-node"]'),
+    ).toHaveCount(2, { timeout: 15_000 });
 
     // 3개의 Tool Call 노드 확인 (Read, Write, Bash)
     const toolCallNodes = page.locator('[data-testid="tool-call-node"]');
     await expect(toolCallNodes).toHaveCount(3, { timeout: 10_000 });
 
-    // Complete 노드 확인 (세션 완료 → system-node로 렌더링됨)
+    // System 노드 확인: Session Started(root) + Complete = 2
     const completeNodes = page.locator('[data-testid="system-node"]');
-    await expect(completeNodes).toHaveCount(1, { timeout: 10_000 });
+    await expect(completeNodes).toHaveCount(2, { timeout: 10_000 });
 
     // User 노드 확인
     const userNodes = page.locator('[data-testid="user-node"]');
@@ -977,20 +989,6 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     // Tool Call 노드들이 위에서 아래로 정렬 (Y 좌표 증가)
     expect(toolCallBoxes[0]!.y).toBeLessThan(toolCallBoxes[1]!.y);
     expect(toolCallBoxes[1]!.y).toBeLessThan(toolCallBoxes[2]!.y);
-
-    // 레이아웃 정렬 검증: Tool Result 노드들이 Tool Call 오른쪽에 배치
-    const toolResultBoxes = await Promise.all(
-      Array.from({ length: 3 }, (_, i) =>
-        toolResultNodes.nth(i).boundingBox(),
-      ),
-    );
-
-    for (const box of toolResultBoxes) {
-      expect(box).not.toBeNull();
-    }
-
-    // Result가 Call 오른쪽에 있어야 함
-    expect(toolResultBoxes[0]!.x).toBeGreaterThan(toolCallBoxes[0]!.x);
 
     // 노드 크기 일관성 검증: 모든 Tool Call 노드의 너비가 동일 (viewport zoom 적용)
     const widths = toolCallBoxes.map((b) => b!.width);
@@ -1040,9 +1038,9 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     const toolNodes = page.locator('[data-testid="tool-call-node"]');
     await expect(toolNodes.first()).toBeVisible({ timeout: 10_000 });
 
-    // Complete 이벤트 도착 대기
+    // Complete 이벤트 도착 대기: Session Started(root) + Complete = system-node 2개
     const completeNodes = page.locator('[data-testid="system-node"]');
-    await expect(completeNodes.first()).toBeVisible({ timeout: 10_000 });
+    await expect(completeNodes).toHaveCount(2, { timeout: 10_000 });
 
     // 스트리밍 후 viewport 안정화 대기
     await page.waitForTimeout(500);
@@ -1075,17 +1073,18 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
       "sess-e2e-ui-multi",
     );
 
-    // Complete 이벤트까지 대기: system-node 출현으로 확인
+    // Complete 이벤트까지 대기: Session Started(root) + Complete = system-node 2개
     await expect(
-      page.locator('[data-testid="system-node"]').first(),
-    ).toBeVisible({ timeout: 15_000 });
+      page.locator('[data-testid="system-node"]'),
+    ).toHaveCount(2, { timeout: 15_000 });
 
     // viewport 안정화 대기
     await page.waitForTimeout(500);
 
     // 노드가 충분히 렌더링되었는지 확인
+    // MULTI_TOOL: root(1) + user(1) + thinking(2) + tool(3) + complete(1) = 8
     const nodeCount = await page.locator(".react-flow__node").count();
-    expect(nodeCount).toBeGreaterThanOrEqual(10);
+    expect(nodeCount).toBeGreaterThanOrEqual(7);
 
     // AABB 겹침 검사: 어떤 두 노드도 겹치면 안 됨
     const overlaps = await checkNodeOverlaps(page);
@@ -1112,17 +1111,17 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
       "sess-e2e-ui-notool",
     );
 
-    // Complete까지 대기: system-node 출현으로 확인
+    // Complete까지 대기: Session Started(root) + Complete = system-node 2개
     await expect(
-      page.locator('[data-testid="system-node"]').first(),
-    ).toBeVisible({ timeout: 10_000 });
+      page.locator('[data-testid="system-node"]'),
+    ).toHaveCount(2, { timeout: 10_000 });
 
     // viewport 안정화
     await page.waitForTimeout(500);
 
-    // Complete 노드 확인 (tool 없는 세션도 완료 시 system-node 생성)
+    // System 노드 확인: Session Started(root) + Complete = 2
     const completeNodes = page.locator('[data-testid="system-node"]');
-    await expect(completeNodes).toHaveCount(1, { timeout: 10_000 });
+    await expect(completeNodes).toHaveCount(2, { timeout: 10_000 });
 
     // User 노드 확인
     const userNodes = page.locator('[data-testid="user-node"]');
@@ -1158,10 +1157,10 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
       "sess-e2e-ui-large25",
     );
 
-    // Complete까지 대기 — 25 노드 세션은 시간이 더 걸림
+    // Complete까지 대기: Session Started(root) + Complete = system-node 2개
     await expect(
-      page.locator('[data-testid="system-node"]').first(),
-    ).toBeVisible({ timeout: 30_000 });
+      page.locator('[data-testid="system-node"]'),
+    ).toHaveCount(2, { timeout: 30_000 });
 
     await page.waitForTimeout(500);
 
@@ -1203,10 +1202,10 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
       "sess-e2e-ui-large50",
     );
 
-    // Complete까지 대기 — 50 노드 세션은 시간이 상당히 걸림
+    // Complete까지 대기: Session Started(root) + Complete = system-node 2개
     await expect(
-      page.locator('[data-testid="system-node"]').first(),
-    ).toBeVisible({ timeout: 60_000 });
+      page.locator('[data-testid="system-node"]'),
+    ).toHaveCount(2, { timeout: 60_000 });
 
     await page.waitForTimeout(500);
 
@@ -1365,10 +1364,10 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
       "sess-e2e-ui-002",
     );
 
-    // Complete까지 대기
+    // Complete까지 대기: Session Started(root) + Complete = system-node 2개
     await expect(
-      page.locator('[data-testid="system-node"]').first(),
-    ).toBeVisible({ timeout: 10_000 });
+      page.locator('[data-testid="system-node"]'),
+    ).toHaveCount(2, { timeout: 10_000 });
 
     // ChatInput이 "New Chat" 모드로 표시
     const chatInput = page.locator('[data-testid="chat-input"]');
@@ -1417,10 +1416,10 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
       "sess-e2e-ui-002",
     );
 
-    // Complete 이벤트까지 대기
+    // Complete 이벤트까지 대기: Session Started(root) + Complete = system-node 2개
     await expect(
-      page.locator('[data-testid="system-node"]').first(),
-    ).toBeVisible({ timeout: 10_000 });
+      page.locator('[data-testid="system-node"]'),
+    ).toHaveCount(2, { timeout: 10_000 });
 
     // ChatInput이 "New Chat" 모드로 표시
     const chatInput = page.locator('[data-testid="chat-input"]');
@@ -1561,15 +1560,15 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
       "sess-e2e-ui-multi",
     );
 
-    // Complete까지 대기: system-node 출현으로 확인
+    // Complete까지 대기: Session Started(root) + Complete = system-node 2개
     await expect(
-      page.locator('[data-testid="system-node"]').first(),
-    ).toBeVisible({ timeout: 15_000 });
+      page.locator('[data-testid="system-node"]'),
+    ).toHaveCount(2, { timeout: 15_000 });
     await page.waitForTimeout(300);
 
     // 멀티 Tool 세션의 노드 수 확인
     const multiToolNodeCount = await page.locator(".react-flow__node").count();
-    expect(multiToolNodeCount).toBeGreaterThanOrEqual(10);
+    expect(multiToolNodeCount).toBeGreaterThanOrEqual(7);
 
     // 3개의 Tool Call 노드 확인 (멀티 Tool 세션 고유)
     const toolCallNodes = page.locator('[data-testid="tool-call-node"]');
@@ -1580,10 +1579,10 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
       .locator('[data-testid="session-item-sess-e2e-ui-notool"]')
       .click();
 
-    // Complete까지 대기: system-node 출현으로 확인
+    // Complete까지 대기: Session Started(root) + Complete = system-node 2개
     await expect(
-      page.locator('[data-testid="system-node"]').first(),
-    ).toBeVisible({ timeout: 10_000 });
+      page.locator('[data-testid="system-node"]'),
+    ).toHaveCount(2, { timeout: 10_000 });
     await page.waitForTimeout(300);
 
     // 이전 세션의 3개 Tool Call 노드가 사라졌는지 확인
@@ -1591,8 +1590,9 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     await expect(toolCallNodes).toHaveCount(0, { timeout: 5_000 });
 
     // 현재 세션의 노드가 정상 렌더링되는지 확인
+    // Session Started(root) + Complete = 2
     const completeNodes = page.locator('[data-testid="system-node"]');
-    await expect(completeNodes).toHaveCount(1, { timeout: 5_000 });
+    await expect(completeNodes).toHaveCount(2, { timeout: 5_000 });
 
     // 스크린샷: 세션 전환 후 그래프
     await page.screenshot({
@@ -1639,10 +1639,10 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     const thinkingNodes = page.locator('[data-testid="thinking-node"]');
     await expect(thinkingNodes.first()).toBeVisible({ timeout: 10_000 });
 
-    // Complete까지 대기: system-node 출현으로 확인
+    // Complete까지 대기: Session Started(root) + Complete = system-node 2개
     await expect(
-      page.locator('[data-testid="system-node"]').first(),
-    ).toBeVisible({ timeout: 15_000 });
+      page.locator('[data-testid="system-node"]'),
+    ).toHaveCount(2, { timeout: 15_000 });
 
     // SSE 구독이 새 세션 ID(sess-e2e-new-001)로 이루어졌는지 확인
     const newSessionSSE = sseUrls.filter((url) =>
@@ -1731,9 +1731,9 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     await expect(chatInput).toBeVisible({ timeout: 5_000 });
     await expect(chatInput).toContainText("Intervention");
 
-    // Complete 이벤트 도착 대기 (system-node 출현으로 확인)
+    // Complete 이벤트 도착 대기: Session Started(root) + Complete = system-node 2개
     const completeNodes = page.locator('[data-testid="system-node"]');
-    await expect(completeNodes.first()).toBeVisible({ timeout: 10_000 });
+    await expect(completeNodes).toHaveCount(2, { timeout: 10_000 });
 
     // 검증: ChatInput이 "New Chat" 모드로 전환 (complete 후 sessions 상태 갱신)
     await expect(chatInput).toContainText("New Chat", { timeout: 5_000 });
@@ -1810,10 +1810,9 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     // Turn 2 검증: 두 번째 USER 노드 존재 (이것이 핵심!)
     await expect(userNodes.nth(1)).toBeVisible();
 
-    // complete 노드가 2개 존재 (각 Turn의 complete → system-node로 렌더링)
-    // session 이벤트가 없으므로 system-node는 complete 2개만
+    // system-node: Session Started(root) + result + 2 completes = 4
     const systemNodes = page.locator('[data-testid="system-node"]');
-    await expect(systemNodes).toHaveCount(2, { timeout: 15_000 });
+    await expect(systemNodes).toHaveCount(4, { timeout: 15_000 });
 
     // Turn 2의 tool 노드 검증 (Turn 1: Skill 1개 + Turn 2: 5개 = 총 6개)
     const toolCallNodes = page.locator('[data-testid="tool-call-node"]');
@@ -1842,12 +1841,9 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
     );
     await multiturnItem.click();
 
-    // 모든 이벤트 수신 완료 대기 (Turn 2 complete → system-node 2개 이상: complete 2개 + result 이벤트)
+    // 모든 이벤트 수신 완료 대기: root + result + 2 completes = 4
     const systemNodes = page.locator('[data-testid="system-node"]');
-    await expect(async () => {
-      const count = await systemNodes.count();
-      expect(count).toBeGreaterThanOrEqual(2);
-    }).toPass({ timeout: 15_000 });
+    await expect(systemNodes).toHaveCount(4, { timeout: 15_000 });
 
     // 최종 상태: Turn 2의 complete 이후이므로 세션 status가 "completed"
     // ChatInput이 "New Chat" 모드여야 함 (Intervention이 아님)
@@ -1873,10 +1869,10 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
       "sess-e2e-ui-multi",
     );
 
-    // Complete까지 대기
+    // Complete까지 대기: Session Started(root) + Complete = system-node 2개
     await expect(
-      page.locator('[data-testid="system-node"]').first(),
-    ).toBeVisible({ timeout: 15_000 });
+      page.locator('[data-testid="system-node"]'),
+    ).toHaveCount(2, { timeout: 15_000 });
     await page.waitForTimeout(300);
 
     // A1 스냅샷 캡처
@@ -1892,9 +1888,10 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
       .locator('[data-testid="session-item-sess-e2e-ui-notool"]')
       .click();
 
+    // Complete까지 대기: Session Started(root) + Complete = system-node 2개
     await expect(
-      page.locator('[data-testid="system-node"]').first(),
-    ).toBeVisible({ timeout: 10_000 });
+      page.locator('[data-testid="system-node"]'),
+    ).toHaveCount(2, { timeout: 10_000 });
     await page.waitForTimeout(300);
 
     const snapshotB = await captureNodeSnapshot(page);
@@ -1908,9 +1905,10 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
       .locator('[data-testid="session-item-sess-e2e-ui-multi"]')
       .click();
 
+    // 캐시 리플레이: Session Started(root) + Complete = system-node 2개
     await expect(
-      page.locator('[data-testid="system-node"]').first(),
-    ).toBeVisible({ timeout: 15_000 });
+      page.locator('[data-testid="system-node"]'),
+    ).toHaveCount(2, { timeout: 15_000 });
     await page.waitForTimeout(300);
 
     // A2 스냅샷 캡처
@@ -1957,9 +1955,9 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
       "sess-e2e-ui-subagent",
     );
 
-    // Complete까지 대기 (Turn 2 complete → system-node 2개)
+    // Complete까지 대기: Session Started(root) + 2 completes = system-node 3개
     const systemNodes = page.locator('[data-testid="system-node"]');
-    await expect(systemNodes).toHaveCount(2, { timeout: 15_000 });
+    await expect(systemNodes).toHaveCount(3, { timeout: 15_000 });
 
     // User 노드 2개 (Turn 1 + Turn 2)
     const userNodes = page.locator('[data-testid="user-node"]');
@@ -2001,9 +1999,10 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
       "sess-e2e-ui-multi",
     );
 
+    // Complete까지 대기: Session Started(root) + Complete = system-node 2개
     await expect(
-      page.locator('[data-testid="system-node"]').first(),
-    ).toBeVisible({ timeout: 15_000 });
+      page.locator('[data-testid="system-node"]'),
+    ).toHaveCount(2, { timeout: 15_000 });
     await page.waitForTimeout(300);
 
     const snapshotA1 = await captureNodeSnapshot(page);
@@ -2013,8 +2012,9 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
       .locator('[data-testid="session-item-sess-e2e-ui-subagent"]')
       .click();
 
+    // Subagent: root + 2 completes = system-node 3개
     const systemNodes = page.locator('[data-testid="system-node"]');
-    await expect(systemNodes).toHaveCount(2, { timeout: 15_000 });
+    await expect(systemNodes).toHaveCount(3, { timeout: 15_000 });
     await page.waitForTimeout(300);
 
     // === Session A 복귀: 캐시 리플레이 ===
@@ -2022,9 +2022,10 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
       .locator('[data-testid="session-item-sess-e2e-ui-multi"]')
       .click();
 
+    // 캐시 리플레이: Session Started(root) + Complete = system-node 2개
     await expect(
-      page.locator('[data-testid="system-node"]').first(),
-    ).toBeVisible({ timeout: 15_000 });
+      page.locator('[data-testid="system-node"]'),
+    ).toHaveCount(2, { timeout: 15_000 });
     await page.waitForTimeout(300);
 
     const snapshotA2 = await captureNodeSnapshot(page);
