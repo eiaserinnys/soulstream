@@ -40,7 +40,7 @@ if ($Server) {
 
 if ($Dashboard) {
     if (-not (Test-Path (Join-Path $DashboardDir "node_modules"))) {
-        Write-Host "[ERROR] node_modules not found. Run: cd $DashboardDir && npm install" -ForegroundColor Red
+        Write-Host "[ERROR] node_modules not found. Run: cd $DashboardDir && pnpm install" -ForegroundColor Red
         exit 1
     }
 
@@ -48,7 +48,7 @@ if ($Dashboard) {
     Write-Host "[Soul Dashboard] Building client..." -ForegroundColor Magenta
     Push-Location $DashboardDir
     try {
-        npm run build
+        pnpm run build
         if ($LASTEXITCODE -ne 0) {
             Write-Host "[ERROR] Dashboard client build failed (exit code: $LASTEXITCODE)" -ForegroundColor Red
             exit 1
@@ -83,7 +83,7 @@ if ($Server) {
 if ($Dashboard) {
     Write-Host "[Soul Dashboard] Starting on :3109 ..." -ForegroundColor Magenta
     $dashProc = Start-Process -FilePath "cmd.exe" `
-        -ArgumentList "/c", "npm run dev" `
+        -ArgumentList "/c", "pnpm run dev" `
         -WorkingDirectory $DashboardDir `
         -PassThru
     $procIds += $dashProc.Id
