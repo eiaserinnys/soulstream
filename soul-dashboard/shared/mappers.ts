@@ -5,7 +5,17 @@
  * SSESessionProvider와 useSessionListProvider 양쪽에서 단일 함수를 공유합니다.
  */
 
-import type { SessionSummary, SessionStatus } from "./types";
+import type { SessionSummary, SessionStatus, LlmUsage } from "./types";
+
+/** snake_case / camelCase 양쪽 응답을 LlmUsage로 변환 */
+function toLlmUsage(raw: unknown): LlmUsage | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const r = raw as Record<string, unknown>;
+  return {
+    inputTokens: (r.input_tokens ?? r.inputTokens ?? 0) as number,
+    outputTokens: (r.output_tokens ?? r.outputTokens ?? 0) as number,
+  };
+}
 
 /**
  * 서버 응답(snake_case)을 SessionSummary(camelCase)로 변환합니다.
@@ -22,5 +32,9 @@ export function toSessionSummary(raw: Record<string, unknown>): SessionSummary {
     completedAt: (raw.updated_at ?? raw.completedAt) as string | undefined,
     prompt: raw.prompt as string | undefined,
     sessionType: (raw.session_type ?? raw.sessionType) as "claude" | "llm" | undefined,
+    llmProvider: (raw.llm_provider ?? raw.llmProvider) as string | undefined,
+    llmModel: (raw.llm_model ?? raw.llmModel) as string | undefined,
+    llmUsage: toLlmUsage(raw.llm_usage ?? raw.llmUsage),
+    clientId: (raw.client_id ?? raw.clientId) as string | undefined,
   };
 }

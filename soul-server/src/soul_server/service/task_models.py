@@ -116,7 +116,7 @@ class Task:
         GET /sessions 응답, SSE session_list/session_created 이벤트에서 사용합니다.
         """
         updated_at = self.completed_at or self.created_at
-        return {
+        info = {
             "agent_session_id": self.agent_session_id,
             "status": self.status.value,
             "prompt": self.prompt,
@@ -125,6 +125,12 @@ class Task:
             "pid": self.pid,
             "session_type": self.session_type,
         }
+        if self.session_type != "claude":
+            info["llm_provider"] = self.llm_provider
+            info["llm_model"] = self.llm_model
+            info["llm_usage"] = self.llm_usage
+            info["client_id"] = self.client_id
+        return info
 
     def to_dict(self) -> dict:
         """영속화용 dict 변환"""
