@@ -21,6 +21,7 @@ from soul_server.engine.types import EngineEvent
 from soul_server.config import get_settings
 
 if TYPE_CHECKING:
+    from soul_server.cogito.brief_composer import BriefComposer
     from soul_server.service.runner_pool import RunnerPool
     from soul_server.service.serendipity_adapter import SerendipityAdapter, SessionContext
 from soul_server.models import (
@@ -149,11 +150,13 @@ class SoulEngineAdapter:
         pool: Optional["RunnerPool"] = None,
         rate_limit_tracker: Optional[Any] = None,
         serendipity_adapter: Optional["SerendipityAdapter"] = None,
+        brief_composer: Optional["BriefComposer"] = None,
     ):
         self._workspace_dir = workspace_dir or get_settings().workspace_dir
         self._pool = pool
         self._rate_limit_tracker = rate_limit_tracker
         self._serendipity_adapter = serendipity_adapter
+        self._brief_composer = brief_composer
 
     def _resolve_mcp_config_path(self) -> Optional[Path]:
         """WORKSPACE_DIR 기준으로 mcp_config.json 경로를 해석"""
@@ -197,6 +200,13 @@ class SoulEngineAdapter:
             ProgressEvent | InterventionSentEvent | ContextUsageEvent
             | CompactEvent | DebugEvent | CompleteEvent | ErrorEvent
         """
+        # Cogito brief refresh (failure isolated — 실패해도 세션 진행)
+        if self._brief_composer is not None:
+            try:
+                await self._brief_composer.write_brief()
+            except Exception as e:
+                logger.warning("Cogito brief refresh failed: %s", e)
+
         queue: asyncio.Queue = asyncio.Queue()
         loop = asyncio.get_running_loop()
 
@@ -440,6 +450,7 @@ def init_soul_engine(
     pool: Optional["RunnerPool"] = None,
     rate_limit_tracker: Optional[Any] = None,
     serendipity_adapter: Optional["SerendipityAdapter"] = None,
+    brief_composer: Optional["BriefComposer"] = None,
 ) -> SoulEngineAdapter:
     """soul_engine 싱글톤을 (재)초기화한다.
 
@@ -449,6 +460,7 @@ def init_soul_engine(
         pool: 주입할 RunnerPool. None이면 풀 없이 초기화.
         rate_limit_tracker: RateLimitTracker 인스턴스. None이면 추적 비활성화.
         serendipity_adapter: SerendipityAdapter 인스턴스. None이면 세렌디피티 저장 비활성화.
+        brief_composer: BriefComposer 인스턴스. None이면 브리프 생성 비활성화.
 
     Returns:
         새로 생성된 SoulEngineAdapter 인스턴스
@@ -458,5 +470,6 @@ def init_soul_engine(
         pool=pool,
         rate_limit_tracker=rate_limit_tracker,
         serendipity_adapter=serendipity_adapter,
+        brief_composer=brief_composer,
     )
     return soul_engine
