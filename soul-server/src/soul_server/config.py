@@ -125,6 +125,9 @@ class Settings:
     llm_openai_api_key: str = ""
     llm_anthropic_api_key: str = ""
 
+    # Cogito (선택 사항 — 미설정 시 브리프 생성 비활성화)
+    cogito_manifest_path: str = ""
+
     # Dashboard profile (선택 사항 — 미설정 시 기본 이름 표시, 초상화 없음)
     dash_user_name: str = "USER"
     dash_user_id: str = ""
@@ -201,6 +204,8 @@ class Settings:
             ),
             serendipity_enabled=os.getenv("SERENDIPITY_ENABLED", "true").lower() in ("true", "1", "yes"),
             serendipity_url=os.getenv("SERENDIPITY_URL", cls.serendipity_url),
+            # Cogito
+            cogito_manifest_path=os.getenv("COGITO_MANIFEST_PATH", ""),
             # LLM Proxy
             llm_openai_api_key=os.getenv("LLM_OPENAI_API_KEY", ""),
             llm_anthropic_api_key=os.getenv("LLM_ANTHROPIC_API_KEY", ""),
