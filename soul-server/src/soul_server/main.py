@@ -30,6 +30,9 @@ from soul_server.service.task_manager import init_task_manager, get_task_manager
 from soul_server.service.session_broadcaster import init_session_broadcaster
 from soul_server.service.event_store import EventStore
 from soul_server.models import HealthResponse
+from cogito.endpoint import mount_cogito as _mount_cogito
+from soul_server.cogito.mcp_tools import cogito_mcp, cogito_api_router, init as init_cogito_mcp
+from soul_server.cogito.reflector_setup import create_reflector
 from soul_server.config import get_settings, setup_logging
 
 # 설정 로드
@@ -107,7 +110,12 @@ async def lifespan(app: FastAPI):
             manifest_path=settings.cogito_manifest_path,
             output_dir=cogito_output_dir,
         )
+        init_cogito_mcp(
+            brief_composer=brief_composer,
+            manifest_path=settings.cogito_manifest_path,
+        )
         logger.info(f"  Cogito brief composer: manifest={settings.cogito_manifest_path}")
+        logger.info("  Cogito MCP tools: initialized")
     else:
         logger.info("  Cogito brief composer: disabled (COGITO_MANIFEST_PATH not set)")
 
@@ -238,6 +246,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# === Cogito: /reflect endpoints + MCP SSE + REST API ===
+
+# Soulstream 자체 /reflect 엔드포인트 (cogito-manifest.yaml에 등록됨)
+_soulstream_reflector = create_reflector(port=settings.port)
+_mount_cogito(app, _soulstream_reflector)
+
+# Cogito MCP SSE 서브마운트 (포트 추가 불필요, 기존 4105에 서브경로)
+_cogito_sse_app = cogito_mcp.http_app(transport="sse")
+app.mount("/cogito-mcp", _cogito_sse_app)
+
+# Cogito REST API (브리프 갱신 등)
+app.include_router(cogito_api_router)
 
 
 # === Health & Status Endpoints ===
