@@ -9,7 +9,7 @@
  * - 이벤트 트리 (EventTreeNode 계층)
  * - 그래프 노드 (React Flow 좌표 + 데이터)
  * - 그래프 에지
- * - 처리 컨텍스트 (nodeMap 키, currentTurnNodeId 등)
+ * - 처리 컨텍스트 (nodeMap 키 등)
  */
 
 import type { EventTreeNode } from "@shared/types";
@@ -92,7 +92,6 @@ function serializeContext(ctx: ProcessingContext): Record<string, unknown> {
   });
 
   return {
-    currentTurnNodeId: ctx.currentTurnNodeId,
     nodeMapSize: ctx.nodeMap.size,
     nodeMapKeys: Object.keys(nodeMapEntries),
     nodeMap: nodeMapEntries,

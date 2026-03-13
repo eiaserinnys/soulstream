@@ -1,7 +1,8 @@
 /**
  * tree-placer 테스트
  *
- * resolveParent와 placeInTree의 이벤트 타입별 배치 로직을 검증합니다.
+ * Phase 8: 순수 parent_event_id 기반 배치 로직을 검증합니다.
+ * resolveParent, placeInTree, handleTextStart.
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
@@ -31,40 +32,21 @@ function makeCtxWithRoot(): { ctx: ProcessingContext; root: EventTreeNode } {
   return { ctx, root };
 }
 
-/** Turn root를 세팅하는 헬퍼 */
-function setupTurnRoot(ctx: ProcessingContext, root: EventTreeNode): EventTreeNode {
-  const turnNode = makeNode("user-msg-1", "user_message", "hello", { completed: true });
-  registerNode(ctx, turnNode);
-  root.children.push(turnNode);
-  ctx.currentTurnNodeId = "user-msg-1";
-  return turnNode;
-}
-
 // === resolveParent ===
 
 describe("resolveParent", () => {
-  it("should return turn root when parentEventId is null and currentTurnNodeId is set", () => {
+  it("should return root when parentEventId is null", () => {
     const { ctx, root } = makeCtxWithRoot();
-    const turnNode = setupTurnRoot(ctx, root);
 
     const parent = resolveParent(null, ctx, root);
 
-    expect(parent).toBe(turnNode);
+    expect(parent).toBe(root);
   });
 
-  it("should return turn root when parentEventId is undefined", () => {
+  it("should return root when parentEventId is undefined", () => {
     const { ctx, root } = makeCtxWithRoot();
-    const turnNode = setupTurnRoot(ctx, root);
 
     const parent = resolveParent(undefined, ctx, root);
-
-    expect(parent).toBe(turnNode);
-  });
-
-  it("should return session root when parentEventId is null and no currentTurnNodeId", () => {
-    const { ctx, root } = makeCtxWithRoot();
-
-    const parent = resolveParent(null, ctx, root);
 
     expect(parent).toBe(root);
   });
@@ -105,7 +87,6 @@ describe("resolveParent", () => {
     const parent = resolveParent("toolu_nonexistent", ctx, root);
 
     expect(parent).toBe(root);
-    // Phase 6: 더 이상 orphan error를 삽입하지 않음
     expect(root.children).toHaveLength(0);
   });
 
@@ -115,7 +96,6 @@ describe("resolveParent", () => {
     const parentA = resolveParent("toolu_a", ctx, root);
     const parentB = resolveParent("toolu_b", ctx, root);
 
-    // Phase 6: 매칭 실패 시 orphan error 없이 root 반환
     expect(parentA).toBe(root);
     expect(parentB).toBe(root);
     expect(root.children).toHaveLength(0);
@@ -126,7 +106,7 @@ describe("resolveParent", () => {
 
 describe("placeInTree", () => {
   describe("user_message", () => {
-    it("should place as root child and set currentTurnNodeId", () => {
+    it("should place as root child", () => {
       const { ctx, root } = makeCtxWithRoot();
       const node = makeNode("user-msg-1", "user_message", "hello", { completed: true });
       const event: UserMessageEvent = { type: "user_message", user: "alice", text: "hello" };
@@ -134,15 +114,13 @@ describe("placeInTree", () => {
       placeInTree(node, event, 1, ctx, root);
 
       expect(root.children).toContain(node);
-      expect(ctx.currentTurnNodeId).toBe("user-msg-1");
       expect(ctx.nodeMap.get("user-msg-1")).toBe(node);
     });
   });
 
   describe("intervention_sent", () => {
-    it("should place as root child and update currentTurnNodeId", () => {
+    it("should place as root child", () => {
       const { ctx, root } = makeCtxWithRoot();
-      setupTurnRoot(ctx, root);
       const node = makeNode("intervention-2", "intervention", "stop", { completed: true });
       const event: InterventionSentEvent = {
         type: "intervention_sent",
@@ -153,30 +131,34 @@ describe("placeInTree", () => {
       placeInTree(node, event, 2, ctx, root);
 
       expect(root.children).toContain(node);
-      expect(ctx.currentTurnNodeId).toBe("intervention-2");
     });
   });
 
   describe("thinking", () => {
-    it("should place under turn root", () => {
+    it("should place under parent node when parent_event_id matches", () => {
       const { ctx, root } = makeCtxWithRoot();
-      const turnNode = setupTurnRoot(ctx, root);
+      // Setup parent node (user_message) registered by eventId
+      const parentNode = makeNode("user-msg-1", "user_message", "hello", { completed: true });
+      registerNode(ctx, parentNode);
+      ctx.nodeMap.set("100", parentNode);
+      root.children.push(parentNode);
+
       const node = makeNode("thinking-3", "thinking", "hmm");
       const event: ThinkingEvent = {
         type: "thinking",
         timestamp: 0,
         thinking: "hmm",
+        parent_event_id: "100",
       };
 
       placeInTree(node, event, 3, ctx, root);
 
-      expect(turnNode.children).toContain(node);
+      expect(parentNode.children).toContain(node);
       expect(ctx.nodeMap.get("thinking-3")).toBe(node);
     });
 
     it("should place under tool node when parent_event_id matches tool_use_id", () => {
       const { ctx, root } = makeCtxWithRoot();
-      setupTurnRoot(ctx, root);
 
       // Setup tool node registered by tool_use_id in nodeMap
       const toolNode = makeNode("tool-1", "tool", "", { toolUseId: "toolu_abc" });
@@ -193,15 +175,19 @@ describe("placeInTree", () => {
 
       placeInTree(node, event, 4, ctx, root);
 
-      // Phase 6: nodeMap에서 직접 조회하므로 tool 노드 아래에 배치
       expect(toolNode.children).toContain(node);
     });
   });
 
   describe("tool_start", () => {
-    it("should place under turn root and register in nodeMap", () => {
+    it("should place under parent node and register in nodeMap", () => {
       const { ctx, root } = makeCtxWithRoot();
-      const turnNode = setupTurnRoot(ctx, root);
+      // Setup parent node
+      const parentNode = makeNode("user-msg-1", "user_message", "hello", { completed: true });
+      registerNode(ctx, parentNode);
+      ctx.nodeMap.set("100", parentNode);
+      root.children.push(parentNode);
+
       const node = makeNode("tool-5", "tool", "", {
         toolUseId: "toolu_001",
       });
@@ -211,18 +197,18 @@ describe("placeInTree", () => {
         tool_name: "Bash",
         tool_input: { command: "ls" },
         tool_use_id: "toolu_001",
+        parent_event_id: "100",
       };
 
       placeInTree(node, event, 5, ctx, root);
 
-      expect(turnNode.children).toContain(node);
+      expect(parentNode.children).toContain(node);
       expect(ctx.nodeMap.get("toolu_001")).toBe(node);
       expect(ctx.nodeMap.get("tool-5")).toBe(node);
     });
 
     it("should place under parent tool node when parent_event_id matches", () => {
       const { ctx, root } = makeCtxWithRoot();
-      setupTurnRoot(ctx, root);
 
       const parentTool = makeNode("tool-parent", "tool", "", { toolUseId: "toolu_parent" });
       registerNode(ctx, parentTool);
@@ -240,14 +226,12 @@ describe("placeInTree", () => {
 
       placeInTree(node, event, 6, ctx, root);
 
-      // Phase 6: nodeMap에서 직접 조회하므로 부모 tool 노드 아래에 배치
       expect(parentTool.children).toContain(node);
       expect(ctx.nodeMap.get("toolu_child")).toBe(node);
     });
 
     it("should not register tool_use_id key in nodeMap when tool_use_id is undefined", () => {
       const { ctx, root } = makeCtxWithRoot();
-      const turnNode = setupTurnRoot(ctx, root);
       const node = makeNode("tool-7", "tool", "");
       const event: ToolStartEvent = {
         type: "tool_start",
@@ -258,30 +242,36 @@ describe("placeInTree", () => {
 
       placeInTree(node, event, 7, ctx, root);
 
-      expect(turnNode.children).toContain(node);
       // tool_use_id가 없으므로 toolu_ 키로 nodeMap에 등록되지 않아야 함
       const toolUseKeys = [...ctx.nodeMap.keys()].filter((k) => k.startsWith("toolu_"));
       expect(toolUseKeys).toHaveLength(0);
+      // root 직하 배치 (no parent_event_id)
+      expect(root.children).toContain(node);
     });
   });
 
   describe("complete", () => {
-    it("should place under turn root when currentTurnNodeId is set", () => {
+    it("should place under parent when parent_event_id is set", () => {
       const { ctx, root } = makeCtxWithRoot();
-      const turnNode = setupTurnRoot(ctx, root);
+      const parentNode = makeNode("user-msg-1", "user_message", "hello", { completed: true });
+      registerNode(ctx, parentNode);
+      ctx.nodeMap.set("100", parentNode);
+      root.children.push(parentNode);
+
       const node = makeNode("complete-12", "complete", "Done", { completed: true });
       const event: CompleteEvent = {
         type: "complete",
         result: "Done",
         attachments: [],
+        parent_event_id: "100",
       };
 
       placeInTree(node, event, 12, ctx, root);
 
-      expect(turnNode.children).toContain(node);
+      expect(parentNode.children).toContain(node);
     });
 
-    it("should place under root when no currentTurnNodeId", () => {
+    it("should place under root when no parent_event_id", () => {
       const { ctx, root } = makeCtxWithRoot();
       const node = makeNode("complete-13", "complete", "Done", { completed: true });
       const event: CompleteEvent = {
@@ -297,18 +287,22 @@ describe("placeInTree", () => {
   });
 
   describe("error", () => {
-    it("should place under turn root when available", () => {
+    it("should place under parent when parent_event_id is set", () => {
       const { ctx, root } = makeCtxWithRoot();
-      const turnNode = setupTurnRoot(ctx, root);
+      const parentNode = makeNode("user-msg-1", "user_message", "hello", { completed: true });
+      registerNode(ctx, parentNode);
+      ctx.nodeMap.set("100", parentNode);
+      root.children.push(parentNode);
+
       const node = makeNode("error-14", "error", "boom", { completed: true, isError: true });
-      const event: ErrorEvent = { type: "error", message: "boom" };
+      const event: ErrorEvent = { type: "error", message: "boom", parent_event_id: "100" };
 
       placeInTree(node, event, 14, ctx, root);
 
-      expect(turnNode.children).toContain(node);
+      expect(parentNode.children).toContain(node);
     });
 
-    it("should place under root when no turn root", () => {
+    it("should place under root when no parent_event_id", () => {
       const { ctx, root } = makeCtxWithRoot();
       const node = makeNode("error-15", "error", "boom", { completed: true, isError: true });
       const event: ErrorEvent = { type: "error", message: "boom" };
@@ -320,9 +314,8 @@ describe("placeInTree", () => {
   });
 
   describe("result", () => {
-    it("should place under turn root via resolveParent when no parent_event_id", () => {
+    it("should place under root when no parent_event_id", () => {
       const { ctx, root } = makeCtxWithRoot();
-      const turnNode = setupTurnRoot(ctx, root);
       const node = makeNode("result-16", "result", "output", { completed: true });
       const event: ResultEvent = {
         type: "result",
@@ -333,12 +326,11 @@ describe("placeInTree", () => {
 
       placeInTree(node, event, 16, ctx, root);
 
-      expect(turnNode.children).toContain(node);
+      expect(root.children).toContain(node);
     });
 
     it("should place under tool node via resolveParent when parent_event_id matches", () => {
       const { ctx, root } = makeCtxWithRoot();
-      setupTurnRoot(ctx, root);
 
       const toolNode = makeNode("tool-1", "tool", "", { toolUseId: "toolu_res" });
       registerNode(ctx, toolNode);
@@ -355,15 +347,13 @@ describe("placeInTree", () => {
 
       placeInTree(node, event, 17, ctx, root);
 
-      // Phase 6: nodeMap에서 직접 조회하므로 tool 노드 아래에 배치
       expect(toolNode.children).toContain(node);
     });
   });
 
   describe("input_request", () => {
-    it("should place under turn root via resolveParent when no parent_event_id", () => {
+    it("should place under root when no parent_event_id", () => {
       const { ctx, root } = makeCtxWithRoot();
-      const turnNode = setupTurnRoot(ctx, root);
       const node = makeNode("input-request-20", "input_request", "Select option", {
         requestId: "req-001",
         responded: false,
@@ -377,13 +367,12 @@ describe("placeInTree", () => {
 
       placeInTree(node, event, 20, ctx, root);
 
-      expect(turnNode.children).toContain(node);
+      expect(root.children).toContain(node);
       expect(ctx.nodeMap.get("input-request-20")).toBe(node);
     });
 
     it("should place under tool node via resolveParent when parent_event_id matches", () => {
       const { ctx, root } = makeCtxWithRoot();
-      setupTurnRoot(ctx, root);
 
       const toolNode = makeNode("tool-1", "tool", "", { toolUseId: "toolu_ask" });
       registerNode(ctx, toolNode);
@@ -408,20 +397,7 @@ describe("placeInTree", () => {
   });
 
   describe("default (unknown creation event)", () => {
-    it("should place under turn root when available", () => {
-      const { ctx, root } = makeCtxWithRoot();
-      const turnNode = setupTurnRoot(ctx, root);
-      const node = makeNode("unknown-18", "text", "fallback");
-
-      // Simulate an unknown event type that somehow got a node created
-      const event = { type: "some_future_type" } as unknown as SoulSSEEvent;
-
-      placeInTree(node, event, 18, ctx, root);
-
-      expect(turnNode.children).toContain(node);
-    });
-
-    it("should place under root when no turn root", () => {
+    it("should place under root when no parent_event_id", () => {
       const { ctx, root } = makeCtxWithRoot();
       const node = makeNode("unknown-19", "text", "fallback");
       const event = { type: "some_future_type" } as unknown as SoulSSEEvent;
@@ -433,7 +409,7 @@ describe("placeInTree", () => {
   });
 
   describe("nodeMap registration", () => {
-    it("should register every placed node in nodeMap", () => {
+    it("should register every placed node in nodeMap by node.id", () => {
       const { ctx, root } = makeCtxWithRoot();
       const node = makeNode("user-msg-99", "user_message", "test");
       const event: UserMessageEvent = { type: "user_message", user: "u", text: "test" };
@@ -441,6 +417,35 @@ describe("placeInTree", () => {
       placeInTree(node, event, 99, ctx, root);
 
       expect(ctx.nodeMap.get("user-msg-99")).toBe(node);
+    });
+
+    it("should register node by String(eventId) in nodeMap", () => {
+      const { ctx, root } = makeCtxWithRoot();
+      const node = makeNode("user-msg-1", "user_message", "test");
+      const event: UserMessageEvent = { type: "user_message", user: "u", text: "test" };
+
+      placeInTree(node, event, 42, ctx, root);
+
+      expect(ctx.nodeMap.get("42")).toBe(node);
+    });
+
+    it("should register tool_use_id in nodeMap for tool_start", () => {
+      const { ctx, root } = makeCtxWithRoot();
+      const node = makeNode("tool-1", "tool", "", { toolUseId: "toolu_xyz" });
+      const event: ToolStartEvent = {
+        type: "tool_start",
+        timestamp: 0,
+        tool_name: "Bash",
+        tool_input: {},
+        tool_use_id: "toolu_xyz",
+      };
+
+      placeInTree(node, event, 10, ctx, root);
+
+      // Three registrations: node.id, String(eventId), tool_use_id
+      expect(ctx.nodeMap.get("tool-1")).toBe(node);
+      expect(ctx.nodeMap.get("10")).toBe(node);
+      expect(ctx.nodeMap.get("toolu_xyz")).toBe(node);
     });
   });
 });
@@ -479,17 +484,21 @@ describe("handleTextStart", () => {
     expect(ctx.activeTextTarget!.id).toBe("text-12");
     expect(ctx.activeTextTarget!.type).toBe("text");
     expect(ctx.nodeMap.has("text-12")).toBe(true);
-    // Should be child of root (no currentTurnNodeId)
+    // Should be child of root (no parent_event_id)
     expect(root.children).toContain(ctx.activeTextTarget);
   });
 
-  it("should place independent text node under turn root when set", () => {
+  it("should place text node under parent when parent_event_id is set", () => {
     const { ctx, root } = makeCtxWithRoot();
-    const turnNode = setupTurnRoot(ctx, root);
+    // Setup parent node registered by eventId
+    const parentNode = makeNode("user-msg-1", "user_message", "hello", { completed: true });
+    registerNode(ctx, parentNode);
+    ctx.nodeMap.set("100", parentNode);
+    root.children.push(parentNode);
 
-    const event: TextStartEvent = { type: "text_start", timestamp: 0 };
+    const event: TextStartEvent = { type: "text_start", timestamp: 0, parent_event_id: "100" };
     handleTextStart(event, 13, ctx, root);
 
-    expect(turnNode.children).toContain(ctx.activeTextTarget);
+    expect(parentNode.children).toContain(ctx.activeTextTarget);
   });
 });

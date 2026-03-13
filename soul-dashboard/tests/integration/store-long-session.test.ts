@@ -194,16 +194,16 @@ describe("Store + Layout: Long Session Rendering", () => {
       setActiveSession("test:compact-graph");
       let eventId = 1;
 
-      // 트리 구축
+      // 트리 구축 (eventId 1 = user_message)
       processEvent({ type: "user_message", text: "Test", user: "test" } as SoulSSEEvent, eventId++);
-      processEvent({ type: "text_start" } as TextStartEvent, eventId++);
+      processEvent({ type: "text_start", parent_event_id: "1" } as TextStartEvent, eventId++);
       processEvent({ type: "text_delta", text: "Before" } as TextDeltaEvent, eventId++);
       processEvent({ type: "text_end" } as TextEndEvent, eventId++);
       processEvent({ type: "compact", trigger: "auto", message: "Compacted" } as CompactEvent, eventId++);
-      processEvent({ type: "text_start" } as TextStartEvent, eventId++);
+      processEvent({ type: "text_start", parent_event_id: "1" } as TextStartEvent, eventId++);
       processEvent({ type: "text_delta", text: "After" } as TextDeltaEvent, eventId++);
       processEvent({ type: "text_end" } as TextEndEvent, eventId++);
-      processEvent({ type: "complete", result: "Done", attachments: [] } as CompleteEvent, eventId++);
+      processEvent({ type: "complete", result: "Done", attachments: [], parent_event_id: "1" } as CompleteEvent, eventId++);
 
       const tree = useDashboardStore.getState().tree;
       const { nodes, edges } = buildGraph(tree);
@@ -216,9 +216,9 @@ describe("Store + Layout: Long Session Rendering", () => {
       const completeNode = systemNodes.find((n) => n.data.label.includes("Complete"));
       expect(completeNode).toBeDefined();
 
-      // compact 이벤트는 현재 노이즈로 분류되어 시스템 노드로 표시되지 않음
-      const compactNode = systemNodes.find((n) => n.data.label.includes("Compact"));
-      expect(compactNode).toBeUndefined();
+      // compact 이벤트도 시스템 노드로 렌더링됨
+      const compactNode = systemNodes.find((n) => n.data.label.includes("Compaction"));
+      expect(compactNode).toBeDefined();
 
       // 엣지가 존재 (노드 간 연결)
       expect(edges.length).toBeGreaterThan(0);
