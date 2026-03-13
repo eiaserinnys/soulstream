@@ -66,14 +66,14 @@ services:
       post_pull: ./.services/soulstream/soul-server/.venv/Scripts/pip.exe install -e ./.services/soulstream/soul-server
 
   soul-dashboard:
-    run: npx tsx server/index.ts
+    run: pnpm exec tsx server/index.ts
     cwd: ./.services/soulstream/soul-dashboard
     repo: soulstream
     after: soul-server
     ready: port:3109
     restart_delay: 3
     hooks:
-      post_pull: npm --prefix ./.services/soulstream/soul-dashboard install && npm --prefix ./.services/soulstream/soul-dashboard run build
+      post_pull: pnpm -C ./.services/soulstream/soul-dashboard install && pnpm -C ./.services/soulstream/soul-dashboard run build
 
 install:
   requirements:
@@ -94,7 +94,7 @@ install:
         - ./.services/soulstream/soul-server/pyproject.toml
 
     dashboard-node:
-      type: npm
+      type: pnpm
       path: ./.services/soulstream/soul-dashboard
 
   configs:

@@ -64,8 +64,8 @@ python -m soul_server.main
 
 ```bash
 cd soul-dashboard
-npm install
-npm run dev
+pnpm install
+pnpm run dev
 ```
 
 ## 환경 변수
