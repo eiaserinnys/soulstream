@@ -68,9 +68,10 @@ export function processChildNodes(
     } else if (
       child.type === "compact" ||
       child.type === "complete" ||
-      child.type === "error"
+      child.type === "error" ||
+      child.type === "assistant_message"
     ) {
-      // compact/complete/error — 메인 플로우 시스템 노드
+      // compact/complete/error/assistant_message — 메인 플로우 시스템 노드
       dispatchRenderer(child, null, ctx);
     }
   }
