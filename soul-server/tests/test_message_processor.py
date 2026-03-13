@@ -426,7 +426,8 @@ class TestUserMessage:
         assert event.parent_event_id == "parent-u"
 
     @pytest.mark.asyncio
-    async def test_user_message_updates_last_msg_parent(self):
+    async def test_user_message_no_last_msg_parent_attribute(self):
+        """last_msg_parent가 삭제되었으므로 속성이 존재하지 않는다"""
         proc, _ = _make_processor()
 
         msg = MockUserMessage(
@@ -434,7 +435,7 @@ class TestUserMessage:
         )
         await proc.process(msg)
 
-        assert proc.last_msg_parent == "parent-track"
+        assert not hasattr(proc, "last_msg_parent")
 
 
 class TestResultMessage:
@@ -505,35 +506,49 @@ class TestResultMessage:
         assert event.output == "fallback text"
 
 
-class TestLastMsgParent:
-    """last_msg_parent 추적 테스트"""
+class TestResultParentEventId:
+    """ResultMessage의 parent_event_id 동작 테스트
+
+    last_msg_parent가 삭제되었으므로 ResultEngineEvent.parent_event_id는
+    항상 None이다. task_executor가 user_request_id로 채운다.
+    """
 
     @pytest.mark.asyncio
-    async def test_assistant_message_sets_last_msg_parent(self):
+    async def test_no_last_msg_parent_attribute(self):
+        """MessageProcessor에 last_msg_parent 속성이 없다"""
         proc, _ = _make_processor()
-
-        msg = MockAssistantMessage(content=[], parent_tool_use_id="p-1")
-        await proc.process(msg)
-
-        assert proc.last_msg_parent == "p-1"
+        assert not hasattr(proc, "last_msg_parent")
 
     @pytest.mark.asyncio
-    async def test_result_uses_last_msg_parent(self):
-        """ResultMessage는 직전 메시지의 parent_tool_use_id를 사용"""
+    async def test_result_parent_event_id_always_none(self):
+        """ResultMessage의 parent_event_id는 항상 None"""
         events = []
         on_event = AsyncMock(side_effect=lambda e: events.append(e))
         proc, _ = _make_processor(on_event=on_event)
 
-        # AssistantMessage로 last_msg_parent 설정
+        # AssistantMessage 후 ResultMessage
         msg1 = MockAssistantMessage(content=[], parent_tool_use_id="p-result")
         await proc.process(msg1)
 
-        # ResultMessage
         msg2 = MockResultMessage(result="done")
         await proc.process(msg2)
 
         result_event = [e for e in events if isinstance(e, ResultEngineEvent)][0]
-        assert result_event.parent_event_id == "p-result"
+        assert result_event.parent_event_id is None
+
+    @pytest.mark.asyncio
+    async def test_result_parent_event_id_none_without_prior_message(self):
+        """선행 메시지 없이 ResultMessage만 처리해도 parent_event_id=None"""
+        events = []
+        on_event = AsyncMock(side_effect=lambda e: events.append(e))
+        proc, _ = _make_processor(on_event=on_event)
+
+        msg = MockResultMessage(result="standalone")
+        await proc.process(msg)
+
+        result_event = events[0]
+        assert isinstance(result_event, ResultEngineEvent)
+        assert result_event.parent_event_id is None
 
     @pytest.mark.asyncio
     async def test_msg_count_increments(self):
