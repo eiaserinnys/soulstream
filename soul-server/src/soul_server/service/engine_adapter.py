@@ -372,6 +372,7 @@ class SoulEngineAdapter:
                         result=final_text,
                         attachments=[],
                         claude_session_id=result.session_id,
+                        parent_event_id=None,  # task_executor가 user_request_id로 채움
                     )
                     await queue.put(complete_event)
                     success = True
@@ -386,7 +387,10 @@ class SoulEngineAdapter:
                             logger.warning(f"Serendipity complete event failed: {e}")
                 else:
                     error_msg = result.error or result.output or "실행 오류"
-                    error_event = ErrorEvent(message=error_msg)
+                    error_event = ErrorEvent(
+                        message=error_msg,
+                        parent_event_id=None,  # task_executor가 user_request_id로 채움
+                    )
                     await queue.put(error_event)
                     # C-1: 에러 시 runner 폐기 (오염 방지)
                     if self._pool is not None:
@@ -400,7 +404,10 @@ class SoulEngineAdapter:
 
             except Exception as e:
                 logger.exception(f"SoulEngineAdapter execution error: {e}")
-                error_event = ErrorEvent(message=f"실행 오류: {str(e)}")
+                error_event = ErrorEvent(
+                    message=f"실행 오류: {str(e)}",
+                    parent_event_id=None,  # task_executor가 user_request_id로 채움
+                )
                 await queue.put(error_event)
                 # C-1: 예외 시 runner 폐기 (고아 프로세스 방지)
                 if self._pool is not None:

@@ -104,6 +104,7 @@ class TaskExecutor:
         session_id = task.agent_session_id
 
         try:
+            current_user_request_id: Optional[str] = None  # except에서 NameError 방지
             async with resource_manager.acquire(timeout=5.0):
                 # user_message 기록 (Soul 서버가 JSONL의 유일한 기록자)
                 if self._event_store is not None:
@@ -115,6 +116,7 @@ class TaskExecutor:
                         }
                         event_id = self._event_store.append(session_id, user_msg_event)
                         user_msg_event["_event_id"] = event_id
+                        current_user_request_id = str(event_id)
                         await self._listener_manager.broadcast(session_id, user_msg_event)
                     except Exception as e:
                         logger.warning(f"Failed to persist user_message for {session_id}: {e}")
@@ -125,12 +127,14 @@ class TaskExecutor:
 
                 # 개입 메시지 전송 콜백
                 async def on_intervention_sent(user: str, text: str):
+                    nonlocal current_user_request_id
                     event = {"type": "intervention_sent", "user": user, "text": text}
                     # intervention을 user_message로도 JSONL에 기록
                     if self._event_store is not None:
                         try:
                             intervention_msg = {"type": "user_message", "user": user, "text": text}
-                            self._event_store.append(session_id, intervention_msg)
+                            ev_id = self._event_store.append(session_id, intervention_msg)
+                            current_user_request_id = str(ev_id)
                         except Exception as e:
                             logger.warning(f"Failed to persist intervention user_message for {session_id}: {e}")
                     await self._listener_manager.broadcast(session_id, event)
@@ -157,6 +161,13 @@ class TaskExecutor:
                     # 이미 영속화 + 브로드캐스트를 수행했으므로 메인 루프에서 중복 처리하지 않는다.
                     if event.type == "intervention_sent":
                         continue
+
+                    # parent_event_id 채움 (규칙 3: parent_tool_use_id 없음 → user_request의 자식)
+                    # parent_event_id 필드를 가진 이벤트에만 적용.
+                    # progress, session, memory, compact 등 메타 이벤트는
+                    # 해당 필드가 model에 없으므로 model_dump()에 키가 없어 자동 제외.
+                    if "parent_event_id" in event_dict and event_dict["parent_event_id"] is None:
+                        event_dict["parent_event_id"] = current_user_request_id
 
                     # claude_session_id 등록 (인터벤션 역인덱스)
                     if event.type == "session" and self._register_session:
@@ -195,7 +206,7 @@ class TaskExecutor:
             logger.error(f"Resource acquisition failed for session {session_id}: {error_msg}")
             await self._error_task(session_id, error_msg)
             await self._listener_manager.broadcast(
-                session_id, {"type": "error", "message": error_msg}
+                session_id, {"type": "error", "message": error_msg, "parent_event_id": current_user_request_id}
             )
 
         except asyncio.CancelledError:
@@ -207,7 +218,7 @@ class TaskExecutor:
             error_msg = f"실행 오류: {str(e)}"
             await self._error_task(session_id, error_msg)
             await self._listener_manager.broadcast(
-                session_id, {"type": "error", "message": error_msg}
+                session_id, {"type": "error", "message": error_msg, "parent_event_id": current_user_request_id}
             )
 
         finally:
