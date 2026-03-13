@@ -21,6 +21,7 @@ export function renderUserMessageTurn(
   _parentNodeId: string | null,
   ctx: LayoutContext,
 ): void {
+  let userNodeId: string | null = null;
   if (treeNode.content) {
     const userNode = createUserNode(treeNode as UserMessageNode);
     ctx.nodes.push(userNode);
@@ -28,9 +29,10 @@ export function renderUserMessageTurn(
       ctx.edges.push(createEdge(ctx.prevMainFlowNodeId, userNode.id));
     }
     ctx.prevMainFlowNodeId = userNode.id;
+    userNodeId = userNode.id;
   }
 
-  processChildNodes(treeNode, ctx);
+  processChildNodes(treeNode, userNodeId, ctx);
 }
 
 /** intervention 턴을 렌더링합니다. */
@@ -48,6 +50,6 @@ export function renderInterventionTurn(
   ctx.prevMainFlowNodeId = intvNode.id;
 
   if (!ctx.collapsedNodeIds.has(treeNode.id)) {
-    processChildNodes(treeNode, ctx);
+    processChildNodes(treeNode, intvNode.id, ctx);
   }
 }

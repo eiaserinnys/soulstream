@@ -576,10 +576,10 @@ describe("individual tool nodes", () => {
   });
 });
 
-// === virtual thinking 테스트 ===
+// === tool이 root 직하에 있는 경우 (Phase 3: 보상 로직 제거 후) ===
 
-describe("virtual thinking node", () => {
-  it("첫 text 전에 tool이 있으면 가상 thinking 삽입", () => {
+describe("tools as direct children of user_message", () => {
+  it("tool이 user_message 직하에 있으면 가상 thinking 없이 직접 분기", () => {
     const tree = sessionRoot([
       userMsg("u1", "hi", [
         toolNode("tool1", "Read", { toolResult: "c1", completed: true }),
@@ -587,50 +587,29 @@ describe("virtual thinking node", () => {
         textNode("t1", "Now thinking"),
       ]),
     ], "s1");
-    const { nodes, edges } = buildGraph(tree);
+    const { nodes } = buildGraph(tree);
 
-    const virtualNode = nodes.find((n) => n.id === "node-virtual-init-u1");
-    expect(virtualNode).toBeDefined();
-    expect(virtualNode!.type).toBe("thinking");
-    expect(virtualNode!.data.label).toBe("Initial Tools");
+    // 가상 thinking 노드가 없어야 함
+    expect(nodes.find((n) => n.id.startsWith("node-virtual-init"))).toBeUndefined();
+
+    // tool_call 노드 2개 + text 1개 + session + user
+    const toolCalls = nodes.filter((n) => n.type === "tool_call");
+    expect(toolCalls).toHaveLength(2);
   });
 
-  it("첫 카드가 text이면 가상 thinking 없음", () => {
+  it("tool은 user node의 parentGraphNodeId로 수평 분기", () => {
     const tree = sessionRoot([
       userMsg("u1", "hi", [
-        textNode("t1", "First thinking", true, [
-          toolNode("tool1", "Read", { toolResult: "c1", completed: true }),
-        ]),
+        toolNode("tool1", "Read", { toolResult: "c1", completed: true }),
       ]),
     ], "s1");
-    const { nodes } = buildGraph(tree);
+    const { edges } = buildGraph(tree);
 
-    expect(nodes.find((n) => n.id === "node-virtual-init-u1")).toBeUndefined();
-  });
-
-  it("멀티턴: 각 턴의 가상 thinking ID가 고유", () => {
-    const tree = sessionRoot([
-      // Turn 1: tool 먼저 → 가상 thinking 필요
-      userMsg("u1", "Turn 1", [
-        toolNode("tool1", "Skill", { toolResult: "ok", completed: true }),
-        textNode("t1", "Response 1"),
-      ]),
-      // Turn 2: tool 먼저 → 가상 thinking 필요
-      userMsg("u2", "Turn 2", [
-        toolNode("tool2", "Task", { toolResult: "ok", completed: true }),
-        textNode("t2", "Response 2"),
-      ]),
-    ], "s1");
-    const { nodes } = buildGraph(tree);
-
-    // 2개의 가상 노드가 서로 다른 ID를 가져야 함
-    const virtualNodes = nodes.filter(n => n.id.startsWith("node-virtual-init"));
-    expect(virtualNodes).toHaveLength(2);
-    expect(virtualNodes[0].id).not.toBe(virtualNodes[1].id);
-
-    // 전체 노드 ID에 중복이 없어야 함
-    const ids = nodes.map(n => n.id);
-    expect(new Set(ids).size).toBe(ids.length);
+    // user node → tool_call 수평 엣지
+    const toolEdge = edges.find((e) => e.target === "node-tool1-call");
+    expect(toolEdge).toBeDefined();
+    expect(toolEdge!.sourceHandle).toBe("right");
+    expect(toolEdge!.targetHandle).toBe("left");
   });
 });
 
