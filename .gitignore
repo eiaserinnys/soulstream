@@ -38,8 +38,6 @@ logs/
 data/
 .local/
 requirements.txt
-src/
-scripts/
 
 # OS
 .DS_Store
