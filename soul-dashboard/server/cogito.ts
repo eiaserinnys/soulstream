@@ -63,6 +63,9 @@ interface RuntimeStatus {
   pid: number;
   uptime_seconds: number;
   metrics: Record<string, number>;
+  exe?: string;
+  cmdline?: string[];
+  cwd?: string;
 }
 
 // ── 헬퍼 ──
@@ -232,6 +235,9 @@ export function createCogitoRouter(): Router {
       metrics: {
         memory_mb: Math.round(process.memoryUsage().rss / 1024 / 1024),
       },
+      exe: process.execPath,
+      cmdline: process.argv,
+      cwd: process.cwd(),
     };
   }
 
