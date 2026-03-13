@@ -7,8 +7,12 @@
 
 import express, { type Express } from "express";
 import { createServer, type Server } from "http";
+import { createRequire } from "module";
 import { createSessionsProxyRouter } from "./routes/sessions-proxy.js";
 import { createActionsRouter } from "./routes/actions.js";
+
+const _require = createRequire(import.meta.url);
+const _pkg = _require("../package.json") as { version: string };
 
 export interface TestAppOptions {
   /** Soul 서버 포트 (기본값: 39999 - 연결 안 됨) */
@@ -31,7 +35,7 @@ export function createTestApp(options: TestAppOptions = {}): TestAppContext {
     res.json({
       status: "ok",
       service: "soul-dashboard",
-      version: "0.5.0",
+      version: _pkg.version,
       soulServer: soulBaseUrl,
     });
   });
