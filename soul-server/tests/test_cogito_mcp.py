@@ -19,6 +19,15 @@ def reset_mcp_state():
     mcp_tools._manifest_path = None
 
 
+def _unwrap(tool_or_func):
+    """FunctionTool에서 원본 함수를 꺼낸다.
+
+    fastmcp 2.x의 @tool()은 FunctionTool을 반환하므로,
+    테스트에서 직접 호출할 때는 .fn으로 원본 함수를 꺼내야 한다.
+    """
+    return getattr(tool_or_func, "fn", tool_or_func)
+
+
 # ---------------------------------------------------------------------------
 # init()
 # ---------------------------------------------------------------------------
@@ -46,7 +55,8 @@ class TestInit:
 
 class TestReflectService:
     async def test_no_manifest_path(self):
-        result = await mcp_tools.reflect_service("test-svc")
+        fn = _unwrap(mcp_tools.reflect_service)
+        result = await fn("test-svc")
         assert "error" in result
         assert "not configured" in result["error"].lower() or "COGITO_MANIFEST_PATH" in result["error"]
 
@@ -55,7 +65,8 @@ class TestReflectService:
         manifest_file.write_text("services:\n  - name: foo\n    type: external\n    static: {}\n")
         mcp_tools._manifest_path = str(manifest_file)
 
-        result = await mcp_tools.reflect_service("nonexistent")
+        fn = _unwrap(mcp_tools.reflect_service)
+        result = await fn("nonexistent")
         assert "error" in result
         assert "찾을 수 없습니다" in result["error"]
         assert "available" in result
@@ -74,7 +85,8 @@ class TestReflectService:
         )
         mcp_tools._manifest_path = str(manifest_file)
 
-        result = await mcp_tools.reflect_service("mcp-slack", level=0)
+        fn = _unwrap(mcp_tools.reflect_service)
+        result = await fn("mcp-slack", level=0)
         assert "identity" in result
         assert result["identity"]["name"] == "mcp-slack"
 
@@ -85,7 +97,8 @@ class TestReflectService:
         )
         mcp_tools._manifest_path = str(manifest_file)
 
-        result = await mcp_tools.reflect_service("ext", level=1)
+        fn = _unwrap(mcp_tools.reflect_service)
+        result = await fn("ext", level=1)
         assert "error" in result
         assert "Level 0" in result["error"]
 
@@ -98,7 +111,8 @@ class TestReflectService:
         mcp_tools._manifest_path = str(manifest_file)
         mock_get.return_value = {"identity": {"name": "svc"}, "capabilities": []}
 
-        result = await mcp_tools.reflect_service("svc", level=0)
+        fn = _unwrap(mcp_tools.reflect_service)
+        result = await fn("svc", level=0)
         mock_get.assert_called_once_with("http://localhost:3104/reflect")
         assert result["identity"]["name"] == "svc"
 
@@ -111,7 +125,8 @@ class TestReflectService:
         mcp_tools._manifest_path = str(manifest_file)
         mock_get.return_value = {"configs": []}
 
-        result = await mcp_tools.reflect_service("svc", level=1, capability="image_gen")
+        fn = _unwrap(mcp_tools.reflect_service)
+        result = await fn("svc", level=1, capability="image_gen")
         mock_get.assert_called_once_with("http://localhost:3104/reflect/config/image_gen")
 
     @patch("soul_server.cogito.mcp_tools._http_get")
@@ -123,7 +138,8 @@ class TestReflectService:
         mcp_tools._manifest_path = str(manifest_file)
         mock_get.return_value = {"status": "healthy", "pid": 1234}
 
-        result = await mcp_tools.reflect_service("svc", level=3)
+        fn = _unwrap(mcp_tools.reflect_service)
+        result = await fn("svc", level=3)
         mock_get.assert_called_once_with("http://localhost:3104/reflect/runtime")
         assert result["status"] == "healthy"
 
@@ -135,7 +151,8 @@ class TestReflectService:
         )
         mcp_tools._manifest_path = str(manifest_file)
 
-        result = await mcp_tools.reflect_service("svc", level=0)
+        fn = _unwrap(mcp_tools.reflect_service)
+        result = await fn("svc", level=0)
         assert "error" in result
         assert "connection refused" in result["error"]
 
@@ -146,7 +163,8 @@ class TestReflectService:
 
 class TestReflectBrief:
     async def test_no_composer(self):
-        result = await mcp_tools.reflect_brief()
+        fn = _unwrap(mcp_tools.reflect_brief)
+        result = await fn()
         assert "error" in result
 
     async def test_success(self):
@@ -157,7 +175,8 @@ class TestReflectBrief:
         ])
         mcp_tools._brief_composer = composer
 
-        result = await mcp_tools.reflect_brief()
+        fn = _unwrap(mcp_tools.reflect_brief)
+        result = await fn()
         assert "services" in result
         assert len(result["services"]) == 2
         assert result["services"][0]["name"] == "svc1"
@@ -170,7 +189,8 @@ class TestReflectBrief:
 
 class TestReflectRefresh:
     async def test_no_composer(self):
-        result = await mcp_tools.reflect_refresh()
+        fn = _unwrap(mcp_tools.reflect_refresh)
+        result = await fn()
         assert "error" in result
 
     async def test_success(self):
@@ -178,7 +198,8 @@ class TestReflectRefresh:
         composer.write_brief = AsyncMock(return_value=Path("/output/brief.md"))
         mcp_tools._brief_composer = composer
 
-        result = await mcp_tools.reflect_refresh()
+        fn = _unwrap(mcp_tools.reflect_refresh)
+        result = await fn()
         assert result["refreshed"] is True
         assert "brief.md" in result["path"]
 
@@ -220,22 +241,32 @@ class TestApiRefresh:
 # ---------------------------------------------------------------------------
 
 class TestReflectorSetup:
-    def test_create_reflector(self):
-        from soul_server.cogito.reflector_setup import create_reflector
+    def test_reflector_identity(self):
+        from soul_server.cogito.reflector_setup import reflect
+        from soul_server.config import get_settings
 
-        reflect = create_reflector(port=4105)
         level0 = reflect.get_level0()
 
         assert level0["identity"]["name"] == "soulstream-server"
-        assert level0["identity"]["port"] == 4105
+        assert level0["identity"]["port"] == get_settings().port
+
+    def test_reflector_capabilities(self):
+        """데코레이터 적용된 모듈을 임포트하면 capabilities가 등록된다."""
+        import soul_server.api.tasks  # noqa: F401
+        import soul_server.api.credentials  # noqa: F401
+        import soul_server.service.runner_pool  # noqa: F401
+        import soul_server.api.llm  # noqa: F401
+        import soul_server.cogito.mcp_tools  # noqa: F401
+        from soul_server.cogito.reflector_setup import reflect
+
+        level0 = reflect.get_level0()
         cap_names = [c["name"] for c in level0["capabilities"]]
         assert "session_management" in cap_names
         assert "cogito" in cap_names
 
     def test_reflector_configs(self):
-        from soul_server.cogito.reflector_setup import create_reflector
+        from soul_server.cogito.reflector_setup import reflect
 
-        reflect = create_reflector(port=4105)
         level1 = reflect.get_level1()
 
         config_keys = [c["key"] for c in level1["configs"]]

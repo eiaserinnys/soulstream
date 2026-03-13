@@ -9,12 +9,17 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 
 from soul_server.api.auth import verify_token
+from soul_server.cogito.reflector_setup import reflect
 from soul_server.models.llm import LlmCompletionRequest, LlmCompletionResponse
 from soul_server.llm.executor import LlmExecutor
 
 logger = logging.getLogger(__name__)
 
 
+@reflect.capability(
+    name="llm_proxy",
+    description="OpenAI/Anthropic LLM 프록시 (선택 사항)",
+)
 def create_llm_router(executor: LlmExecutor) -> APIRouter:
     """LLM 라우터 생성
 
