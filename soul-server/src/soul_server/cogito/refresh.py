@@ -32,7 +32,7 @@ def main() -> None:
     parser.add_argument(
         "--output",
         default=None,
-        help="Output directory for brief.yaml (default: $WORKSPACE_DIR/.claude/rules/cogito/)",
+        help="Output directory for brief.md (default: $WORKSPACE_DIR/.claude/rules/cogito/)",
     )
     args = parser.parse_args()
 
