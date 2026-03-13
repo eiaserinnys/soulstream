@@ -353,7 +353,7 @@ class TaskManager:
             if task:
                 pid = task.pid
             created_at = entry.get("created_at", "")
-            result.append({
+            info = {
                 "agent_session_id": session_id,
                 "status": entry.get("status", "unknown"),
                 "prompt": entry.get("prompt", ""),
@@ -362,7 +362,13 @@ class TaskManager:
                 "pid": pid,
                 "session_type": entry.get("session_type", "claude"),
                 "last_message": entry.get("last_message"),
-            })
+            }
+            if entry.get("session_type", "claude") != "claude":
+                info["llm_provider"] = entry.get("llm_provider")
+                info["llm_model"] = entry.get("llm_model")
+                info["llm_usage"] = entry.get("llm_usage")
+                info["client_id"] = entry.get("client_id")
+            result.append(info)
         return result, total
 
     async def create_task(

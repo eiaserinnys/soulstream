@@ -321,8 +321,17 @@ export function createSystemNodeFromTree(treeNode: SessionNode | CompleteNode | 
     label = "Error";
     content = treeNode.content;
   } else {
-    label = "Session Started";
-    content = `Session ID: ${treeNode.sessionId ?? treeNode.content}`;
+    const sn = treeNode as SessionNode;
+    if (sn.sessionType === "llm") {
+      const parts = ["LLM Session"];
+      if (sn.llmProvider) parts.push(sn.llmProvider);
+      if (sn.llmModel) parts.push(sn.llmModel);
+      label = parts.join(" \u00B7 ");
+      content = "";
+    } else {
+      label = "Session Started";
+      content = `Session ID: ${treeNode.sessionId ?? treeNode.content}`;
+    }
   }
 
   return {

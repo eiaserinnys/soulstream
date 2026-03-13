@@ -18,6 +18,7 @@ import type {
   SessionSummary,
   SessionDetail,
   SessionStatus,
+  SessionNode,
   SoulSSEEvent,
   EventTreeNode,
   TextStartEvent,
@@ -204,6 +205,27 @@ const NEEDS_ROOT = new Set([
   "complete", "error", "result", "input_request",
   "assistant_message",
 ]);
+
+/**
+ * 세션 루트 노드에 LLM 메타데이터를 설정한다.
+ * ensureRoot() 직후 호출하여 루트가 처음 생성될 때만 메타데이터를 반영한다.
+ */
+function applyLlmMetadata(
+  root: EventTreeNode,
+  sessions: SessionSummary[],
+  activeSessionKey: string | null,
+): void {
+  if (!activeSessionKey || root.type !== "session") return;
+  const sessionRoot = root as SessionNode;
+  if (sessionRoot.sessionType != null) return; // 이미 설정됨
+
+  const info = sessions.find((s) => s.agentSessionId === activeSessionKey);
+  if (info?.sessionType === "llm") {
+    sessionRoot.sessionType = info.sessionType;
+    sessionRoot.llmProvider = info.llmProvider;
+    sessionRoot.llmModel = info.llmModel;
+  }
+}
 
 // === Initial State ===
 
@@ -406,6 +428,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         // root가 필요한 이벤트에 대해 보장
         if (NEEDS_ROOT.has(event.type)) {
           root = ensureRoot(root, ctx);
+          applyLlmMetadata(root, state.sessions, state.activeSessionKey);
         }
 
         // 1. 노드 생성 시도 (생성형 이벤트만 노드 반환)
@@ -513,6 +536,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           // root 보장
           if (NEEDS_ROOT.has(event.type)) {
             root = ensureRoot(root, ctx);
+            applyLlmMetadata(root, state.sessions, state.activeSessionKey);
           }
 
           // 노드 생성/배치/업데이트
