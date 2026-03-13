@@ -13,12 +13,10 @@ import type { EventTreeNode, EventTreeNodeType, TextNode } from "@shared/types";
 export type TextTargetNode = TextNode;
 
 export interface ProcessingContext {
-  /** ID → 노드 (O(1) 탐색). node.id와 tool_use_id 양쪽으로 등록. */
+  /** ID → 노드 (O(1) 탐색). node.id, _event_id(String), tool_use_id로 등록. */
   nodeMap: Map<string, EventTreeNode>;
   /** 현재 text_start → text_delta → text_end 시퀀스의 대상 노드 */
   activeTextTarget: TextTargetNode | null;
-  /** 현재 활성 user_message/intervention 노드 ID */
-  currentTurnNodeId: string | null;
   /** history_sync 수신 여부. false인 동안은 히스토리 리플레이 중이므로 세션 상태 갱신을 억제. */
   historySynced: boolean;
 }
@@ -27,7 +25,6 @@ export function createProcessingContext(): ProcessingContext {
   return {
     nodeMap: new Map(),
     activeTextTarget: null,
-    currentTurnNodeId: null,
     historySynced: false,
   };
 }

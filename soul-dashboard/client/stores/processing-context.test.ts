@@ -22,7 +22,6 @@ describe("createProcessingContext", () => {
     expect(ctx.nodeMap.size).toBe(0);
 
     expect(ctx.activeTextTarget).toBeNull();
-    expect(ctx.currentTurnNodeId).toBeNull();
   });
 
   it("should return independent contexts on multiple calls", () => {
