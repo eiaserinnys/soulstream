@@ -184,6 +184,9 @@ describe("Cogito /reflect endpoints", () => {
         pid: number;
         uptime_seconds: number;
         metrics: Record<string, number>;
+        exe?: string;
+        cmdline?: string[];
+        cwd?: string;
       };
 
       // schema 필수: status, pid, uptime_seconds
@@ -195,6 +198,14 @@ describe("Cogito /reflect endpoints", () => {
 
       // metrics
       expect(data.metrics.memory_mb).toBeTypeOf("number");
+
+      // process context (exe, cmdline, cwd)
+      expect(data.exe).toBeDefined();
+      expect(data.exe).toBeTypeOf("string");
+      expect(data.cmdline).toBeInstanceOf(Array);
+      expect(data.cmdline.length).toBeGreaterThan(0);
+      expect(data.cwd).toBeDefined();
+      expect(data.cwd).toBeTypeOf("string");
     });
   });
 
