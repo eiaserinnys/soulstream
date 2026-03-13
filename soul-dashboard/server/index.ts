@@ -18,7 +18,12 @@ import { createSessionsProxyRouter } from "./routes/sessions-proxy.js";
 import { createEventsCachedRouter } from "./routes/events-cached.js";
 import { createActionsRouter } from "./routes/actions.js";
 import { createLlmProxyRouter } from "./routes/llm-proxy.js";
+import { createCogitoRouter } from "./cogito.js";
 import { SessionCache } from "./session-cache.js";
+import { createRequire } from "module";
+
+const _require = createRequire(import.meta.url);
+const _pkg = _require("../package.json") as { version: string };
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -61,9 +66,12 @@ app.get("/api/health", (_req, res) => {
   res.json({
     status: "ok",
     service: "soul-dashboard",
-    version: "0.5.0", // Phase 5: Cached events
+    version: _pkg.version,
   });
 });
+
+// Cogito /reflect 엔드포인트 (자기 기술 프로토콜)
+app.use(createCogitoRouter());
 
 // Config (클라이언트에 설정 전달)
 app.get("/api/config", (_req, res) => {
