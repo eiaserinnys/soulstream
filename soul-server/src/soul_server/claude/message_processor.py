@@ -66,9 +66,6 @@ class MessageProcessor:
         self.on_session = on_session
         self.on_client_session_update = on_client_session_update
 
-        # SDK 메시지의 parent_tool_use_id를 추적 (ResultMessage에서 사용)
-        self.last_msg_parent: Optional[str] = None
-
     async def process(self, message: Any) -> None:
         """단일 메시지를 처리한다."""
         self.msg_state.msg_count += 1
@@ -100,7 +97,6 @@ class MessageProcessor:
     async def _handle_assistant_message(self, message: Any) -> None:
         """AssistantMessage 처리 — 블록 순회 및 이벤트 발행"""
         msg_parent = getattr(message, "parent_tool_use_id", None)
-        self.last_msg_parent = msg_parent
         if hasattr(message, "content"):
             for block in message.content:
                 await self._process_block(block, msg_parent)
@@ -285,7 +281,6 @@ class MessageProcessor:
         양쪽 모두 처리하되, emitted_tool_result_ids로 중복 발행을 방지한다.
         """
         msg_parent = getattr(message, "parent_tool_use_id", None)
-        self.last_msg_parent = msg_parent
 
         if hasattr(message, "content") and isinstance(message.content, list):
             for block in message.content:
@@ -316,7 +311,7 @@ class MessageProcessor:
                         output=result_output,
                         error=result_output if self.msg_state.is_error else None,
                         usage=self.msg_state.usage,
-                        parent_event_id=self.last_msg_parent,
+                        parent_event_id=None,  # task_executor가 user_request_id로 채움
                     )
                 )
             except Exception as e:
