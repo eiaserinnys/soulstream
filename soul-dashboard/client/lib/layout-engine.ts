@@ -483,14 +483,8 @@ export function buildGraph(
   ctx.prevMainFlowNodeId = sessionNode.id;
 
   // session root의 자식들을 렌더러 registry에 위임
-  for (const turnNode of tree.children) {
-    // tool, text/thinking이 root 직하에 있는 경우 (비정상이지만 방어적 처리)
-    // 이들은 parentNodeId로 lastThinkingNodeId ?? prevMainFlowNodeId를 사용
-    if (turnNode.type === "tool") {
-      dispatchRenderer(turnNode, ctx.lastThinkingNodeId ?? ctx.prevMainFlowNodeId, ctx);
-    } else {
-      dispatchRenderer(turnNode, null, ctx);
-    }
+  for (const childNode of tree.children) {
+    dispatchRenderer(childNode, null, ctx);
   }
 
   return applyDagreLayout(ctx.nodes, ctx.edges);

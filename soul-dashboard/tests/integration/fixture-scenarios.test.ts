@@ -279,11 +279,10 @@ describe("JSONL Fixture Integration Tests", () => {
       }
     });
 
-    it("연속 tool 호출이 트리뷰로 text/thinking에서 분기된다", () => {
+    it("연속 tool 호출이 부모 노드에서 수평 분기된다", () => {
       const { tree } = replayFixture("multi-tool");
       const { edges, nodes } = buildGraph(tree);
 
-      // 트리뷰: 모든 tool_call은 text/thinking 노드에서 right→left로 분기
       const toolCallNodes = nodes.filter((n) => n.type === "tool_call");
 
       // tool_call→tool_call 직접 연결은 없어야 함
@@ -294,11 +293,10 @@ describe("JSONL Fixture Integration Tests", () => {
       });
       expect(chainEdges.length).toBe(0);
 
-      // 대신 text/thinking→tool_call 엣지가 tool 개수만큼 있어야 함
+      // 모든 tool_call에 수평 엣지(right→left)가 있어야 함
       const branchEdges = edges.filter((e) => {
-        const source = nodes.find((n) => n.id === e.source);
         const target = nodes.find((n) => n.id === e.target);
-        return (source?.type === "thinking" || source?.type === "text" || source?.type === "response") && target?.type === "tool_call";
+        return target?.type === "tool_call" && e.sourceHandle === "right" && e.targetHandle === "left";
       });
       expect(branchEdges.length).toBeGreaterThanOrEqual(toolCallNodes.length);
     });
