@@ -96,7 +96,22 @@ async def lifespan(app: FastAPI):
         maintenance_interval=settings.runner_pool_maintenance_interval,
     )
     _runner_pool = pool
-    init_soul_engine(pool=pool, rate_limit_tracker=_rate_limit_tracker)
+
+    # Cogito brief composer (선택 사항)
+    brief_composer = None
+    if settings.cogito_manifest_path:
+        from soul_server.cogito.brief_composer import BriefComposer
+
+        cogito_output_dir = str(Path(settings.workspace_dir) / ".claude" / "rules" / "cogito")
+        brief_composer = BriefComposer(
+            manifest_path=settings.cogito_manifest_path,
+            output_dir=cogito_output_dir,
+        )
+        logger.info(f"  Cogito brief composer: manifest={settings.cogito_manifest_path}")
+    else:
+        logger.info("  Cogito brief composer: disabled (COGITO_MANIFEST_PATH not set)")
+
+    init_soul_engine(pool=pool, rate_limit_tracker=_rate_limit_tracker, brief_composer=brief_composer)
     logger.info(
         f"  Runner pool initialized: max_size={settings.runner_pool_max_size}, "
         f"idle_ttl={settings.runner_pool_idle_ttl}s, "
