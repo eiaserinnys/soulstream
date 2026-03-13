@@ -282,6 +282,12 @@ export interface EventRecord {
 /** 세션 상태 */
 export type SessionStatus = "running" | "completed" | "error" | "interrupted" | "unknown";
 
+/** LLM 토큰 사용량 */
+export interface LlmUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
 /** 세션 요약 정보 (목록 조회용) */
 export interface SessionSummary {
   /** 세션의 유일한 키. JSONL 파일명. */
@@ -295,6 +301,14 @@ export interface SessionSummary {
   prompt?: string;
   /** 세션 유형: Claude Code 세션 또는 LLM 세션 */
   sessionType?: "claude" | "llm";
+  /** LLM 프로바이더 (openai, anthropic 등) */
+  llmProvider?: string;
+  /** LLM 모델명 */
+  llmModel?: string;
+  /** LLM 토큰 사용량 */
+  llmUsage?: LlmUsage;
+  /** LLM 클라이언트 식별자 */
+  clientId?: string;
 }
 
 /** 세션 상세 정보 */
@@ -329,6 +343,12 @@ export interface SessionNode extends BaseNode {
   type: "session";
   sessionId?: string;
   pid?: number;
+  /** 세션 유형 */
+  sessionType?: "claude" | "llm";
+  /** LLM 프로바이더 */
+  llmProvider?: string;
+  /** LLM 모델명 */
+  llmModel?: string;
 }
 
 /** 사용자 메시지 노드 */
