@@ -67,6 +67,8 @@ export interface InterventionSentEvent {
   type: "intervention_sent";
   user: string;
   text: string;
+  /** 부모 이벤트 ID (Phase 2: 타입 통일용, 서버에서 설정하지 않음) */
+  parent_event_id?: string;
 }
 
 /** 사용자가 보낸 초기 프롬프트 (세션 시작 시 대시보드가 생성) */
@@ -80,6 +82,8 @@ export interface UserMessageEvent {
   messages?: Array<{role: string; content: unknown}>;
   /** LLM 세션: 클라이언트 ID */
   client_id?: string;
+  /** 부모 이벤트 ID (Phase 2: 타입 통일용, 서버에서 설정하지 않음) */
+  parent_event_id?: string;
 }
 
 export interface DebugEvent {
@@ -92,12 +96,16 @@ export interface CompleteEvent {
   result: string;
   attachments: string[];
   claude_session_id?: string;
+  /** 부모 이벤트 ID (Phase 2: 순수 parent 기반 배치용) */
+  parent_event_id?: string;
 }
 
 export interface ErrorEvent {
   type: "error";
   message: string;
   error_code?: string;
+  /** 부모 이벤트 ID (Phase 2: 순수 parent 기반 배치용) */
+  parent_event_id?: string;
 }
 
 export interface ContextUsageEvent {
@@ -111,6 +119,8 @@ export interface CompactEvent {
   type: "compact";
   trigger: string;
   message: string;
+  /** 부모 이벤트 ID (Phase 2: 순수 parent 기반 배치용) */
+  parent_event_id?: string;
 }
 
 // === 세분화 SSE Events (대시보드 전용) ===
@@ -241,6 +251,8 @@ export interface AssistantMessageEvent {
   model?: string;
   provider?: string;
   timestamp?: number;
+  /** 부모 이벤트 ID (Phase 2: 순수 parent 기반 배치용) */
+  parent_event_id?: string;
 }
 
 /** Soul에서 수신하는 모든 SSE 이벤트 유니온 */
