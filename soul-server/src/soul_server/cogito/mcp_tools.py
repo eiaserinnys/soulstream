@@ -18,6 +18,7 @@ from fastapi import APIRouter, HTTPException
 from fastmcp import FastMCP
 
 from cogito.manifest import load_manifest
+from soul_server.cogito.reflector_setup import reflect
 
 if TYPE_CHECKING:
     from soul_server.cogito.brief_composer import BriefComposer
@@ -92,7 +93,14 @@ async def _do_refresh() -> tuple[bool, str]:
 # MCP Tools
 # ---------------------------------------------------------------------------
 
+# NOTE: @reflect.capability가 아래에 있어야 원본 함수를 먼저 받아 inspect로 소스를 추적한다.
+# @cogito_mcp.tool()이 위에 있으면 FunctionTool을 반환하므로, 순서를 바꾸면 소스 추적이 실패한다.
 @cogito_mcp.tool()
+@reflect.capability(
+    name="cogito",
+    description="서비스 리플렉션 데이터 조회 (MCP 도구)",
+    tools=["reflect_service", "reflect_brief", "reflect_refresh"],
+)
 async def reflect_service(
     service: str,
     level: int = 0,
