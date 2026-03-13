@@ -1,12 +1,15 @@
 /**
- * ChatInput - 인터벤션 / 세션 계속 컴포넌트
+ * ChatInput - 인터벤션 / 세션 계속 / LLM 컨텍스트 전송 컴포넌트
  *
  * Running 세션: Intervention 모드로 실행 중인 Claude에 메시지 전송 (/intervene)
  * Completed/Error 세션: New Chat 모드로 대화 이어가기 (/resume → 새 세션 전환)
+ * LLM 완료 세션: 이전 대화 컨텍스트를 누적하여 새 LLM 요청 전송 (/api/llm/completions)
  */
 
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import type { SessionSummary } from "@shared/types";
 import { useDashboardStore } from "../stores/dashboard-store";
+import { flattenTree } from "../lib/flatten-tree";
 import { getAuthHeaders } from "../lib/api-headers";
 import { cn } from "../lib/cn";
 import { Button } from "./ui/button";
@@ -14,23 +17,57 @@ import { Button } from "./ui/button";
 /** Soul 서버의 MAX_MESSAGE_LENGTH과 일치 (인터벤션 메시지의 최대 길이) */
 const MAX_LENGTH = 50_000;
 
+interface ActiveSessionInfo {
+  status: string | null;
+  isLlm: boolean;
+  llmProvider?: string;
+  llmModel?: string;
+  clientId?: string;
+}
+
 export function ChatInput() {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const sessions = useDashboardStore((s) => s.sessions);
+  const tree = useDashboardStore((s) => s.tree);
+  const treeVersion = useDashboardStore((s) => s.treeVersion);
+  const setActiveSession = useDashboardStore((s) => s.setActiveSession);
 
-  // 활성 세션의 상태
-  const sessionStatus = useMemo(() => {
-    if (!activeSessionKey) return null;
+  // 활성 세션의 상태 + LLM 메타데이터
+  const sessionInfo = useMemo((): ActiveSessionInfo => {
+    if (!activeSessionKey) return { status: null, isLlm: false };
     const session = sessions.find(
-      (s) => s.agentSessionId === activeSessionKey,
+      (s: SessionSummary) => s.agentSessionId === activeSessionKey,
     );
-    return session?.status ?? null;
+    if (!session) return { status: null, isLlm: false };
+    return {
+      status: session.status,
+      isLlm: session.sessionType === "llm",
+      llmProvider: session.llmProvider,
+      llmModel: session.llmModel,
+      clientId: session.clientId,
+    };
   }, [activeSessionKey, sessions]);
 
-  const isRunning = sessionStatus === "running";
-  const isCompleted = sessionStatus === "completed";
-  const isError = sessionStatus === "error";
+  const isLlm = sessionInfo.isLlm;
+  const isRunning = sessionInfo.status === "running";
+  const isCompleted = sessionInfo.status === "completed";
+  const isError = sessionInfo.status === "error";
   const isFinished = isCompleted || isError;
+  const isLlmFinished = isLlm && isFinished;
+
+  // LLM 대화 컨텍스트: 트리에서 user/assistant 메시지를 추출
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const llmMessages = useMemo(() => {
+    if (!isLlm || !tree) return [];
+    const flat = flattenTree(tree);
+    const msgs: Array<{ role: string; content: string }> = [];
+    for (const m of flat) {
+      if (m.role === "user") msgs.push({ role: "user", content: m.content });
+      else if (m.role === "assistant" && m.treeNodeType === "assistant_message")
+        msgs.push({ role: "assistant", content: m.content });
+    }
+    return msgs;
+  }, [isLlm, tree, treeVersion]);
 
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -78,28 +115,55 @@ export function ChatInput() {
     try {
       const headers = await getAuthHeaders();
 
-      // running/completed 구분 없이 항상 /intervene로 전송
-      // Soul 서버가 태스크 상태에 따라 intervention 또는 자동 resume 분기
-      const response = await fetch(
-        `/api/sessions/${encodeURIComponent(activeSessionKey)}/intervene`,
-        {
+      if (isLlmFinished) {
+        // LLM 완료 세션: 이전 컨텍스트 + 새 메시지를 /api/llm/completions로 전송
+        const response = await fetch("/api/llm/completions", {
           method: "POST",
           headers,
           body: JSON.stringify({
-            text: trimmed,
-            user: "dashboard",
+            provider: sessionInfo.llmProvider,
+            model: sessionInfo.llmModel,
+            messages: [...llmMessages, { role: "user", content: trimmed }],
+            client_id: sessionInfo.clientId,
           }),
           signal: controller.signal,
-        },
-      );
+        });
 
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({ error: { message: "Unknown error" } }));
-        throw new Error(body.error?.message ?? `HTTP ${response.status}`);
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({ error: { message: "Unknown error" } }));
+          throw new Error(body.error?.message ?? `HTTP ${response.status}`);
+        }
+
+        const result = await response.json();
+        setText("");
+
+        // 새 세션으로 자동 전환
+        if (result.session_id) {
+          setActiveSession(result.session_id);
+        }
+      } else {
+        // Claude 세션 또는 running LLM: 기존 /intervene 경로
+        const response = await fetch(
+          `/api/sessions/${encodeURIComponent(activeSessionKey)}/intervene`,
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              text: trimmed,
+              user: "dashboard",
+            }),
+            signal: controller.signal,
+          },
+        );
+
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({ error: { message: "Unknown error" } }));
+          throw new Error(body.error?.message ?? `HTTP ${response.status}`);
+        }
+
+        await response.json();
+        setText("");
       }
-
-      await response.json();
-      setText("");
     } catch (err) {
       // AbortError는 의도적 취소이므로 무시
       if (err instanceof DOMException && err.name === "AbortError") return;
@@ -107,7 +171,7 @@ export function ChatInput() {
     } finally {
       setSending(false);
     }
-  }, [activeSessionKey, text, sending]);
+  }, [activeSessionKey, text, sending, isLlmFinished, sessionInfo, llmMessages, setActiveSession]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -123,10 +187,31 @@ export function ChatInput() {
   if (!activeSessionKey) return null;
 
   const isDisabled = sending || !text.trim();
-  const placeholder = isFinished
-    ? "Continue the conversation..."
-    : "Send a message to Claude...";
-  const buttonLabel = sending ? "..." : isFinished ? "Resume" : "Send";
+
+  // LLM 완료 세션: 컨텍스트 누적 모드
+  const ctxCount = llmMessages.length;
+  const placeholder = isLlmFinished
+    ? `Send with ${ctxCount} messages context...`
+    : isFinished
+      ? "Continue the conversation..."
+      : "Send a message to Claude...";
+  const buttonLabel = sending ? "..." : isLlmFinished ? "Send" : isFinished ? "Resume" : "Send";
+  const modeIcon = isLlmFinished ? "\u{1F916}" : isFinished ? "\u{1F4AC}" : "\u270B";
+  const modeLabel = isLlmFinished
+    ? `LLM (${ctxCount} ctx)`
+    : isFinished ? "New Chat" : "Intervention";
+
+  // 색상: LLM 완료 → success(초록), resume → accent-blue, intervention → accent-orange
+  const borderColor = isLlmFinished
+    ? "focus:border-success/40"
+    : isFinished
+      ? "focus:border-accent-blue/40"
+      : "focus:border-accent-orange/40";
+  const buttonColor = isLlmFinished
+    ? "border-success bg-success text-white hover:bg-success/90"
+    : isFinished
+      ? "border-accent-blue bg-accent-blue text-white hover:bg-accent-blue/90"
+      : "border-accent-orange bg-accent-orange text-white hover:bg-accent-orange/90";
 
   return (
     <div
@@ -139,8 +224,8 @@ export function ChatInput() {
           {/* Labels row */}
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground uppercase tracking-[0.05em] font-semibold">
-              <span className="text-xs">{isFinished ? "\u{1F4AC}" : "\u270B"}</span>
-              {isFinished ? "New Chat" : "Intervention"}
+              <span className="text-xs">{modeIcon}</span>
+              {modeLabel}
             </div>
             <div className="text-[10px] text-muted-foreground/60">
               Ctrl+Enter to send
@@ -159,9 +244,7 @@ export function ChatInput() {
               "w-full bg-input border border-border rounded-md py-1.5 px-2.5",
               "text-[15px] text-foreground font-sans resize-none outline-none",
               "h-8 max-h-[120px] leading-[1.4] transition-colors duration-150",
-              isFinished
-                ? "focus:border-accent-blue/40"
-                : "focus:border-accent-orange/40",
+              borderColor,
             )}
           />
         </div>
@@ -171,12 +254,7 @@ export function ChatInput() {
           onClick={sendMessage}
           disabled={isDisabled}
           size="sm"
-          className={cn(
-            "self-end h-8 sm:h-8",
-            isFinished
-              ? "border-accent-blue bg-accent-blue text-white hover:bg-accent-blue/90"
-              : "border-accent-orange bg-accent-orange text-white hover:bg-accent-orange/90",
-          )}
+          className={cn("self-end h-8 sm:h-8", buttonColor)}
         >
           {buttonLabel}
         </Button>

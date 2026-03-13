@@ -9,6 +9,7 @@
  */
 
 import { memo, useMemo, useRef, useEffect, useState, useCallback } from "react";
+import type { SessionSummary } from "@shared/types";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { flattenTree, type ChatMessage } from "../lib/flatten-tree";
 import { ChatInput } from "./ChatInput";
@@ -17,6 +18,31 @@ import { cn } from "../lib/cn";
 
 /** 스크롤 하단 판정 threshold (px) */
 const SCROLL_THRESHOLD = 50;
+
+// === LLM Context ===
+
+interface LlmContext {
+  isLlm: boolean;
+  llmModel?: string;
+  llmProvider?: string;
+}
+
+function useLlmContext(): LlmContext {
+  const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
+  const sessions = useDashboardStore((s) => s.sessions);
+  return useMemo(() => {
+    if (!activeSessionKey) return { isLlm: false };
+    const session = sessions.find(
+      (s: SessionSummary) => s.agentSessionId === activeSessionKey,
+    );
+    if (!session || session.sessionType !== "llm") return { isLlm: false };
+    return {
+      isLlm: true,
+      llmModel: session.llmModel,
+      llmProvider: session.llmProvider,
+    };
+  }, [activeSessionKey, sessions]);
+}
 
 // === Truncation Lazy Load ===
 
@@ -183,19 +209,24 @@ const CollapsibleContent = memo(function CollapsibleContent({
 
 // === Message Components ===
 
-const UserMessage = memo(function UserMessage({ msg }: { msg: ChatMessage }) {
+const UserMessage = memo(function UserMessage({ msg, llmContext }: { msg: ChatMessage; llmContext?: LlmContext }) {
   const config = useDashboardStore((s) => s.dashboardConfig);
   const userConfig = config?.user;
-  const displayName = userConfig && userConfig.name !== "USER"
-    ? `${userConfig.name}`
-    : "User";
-  const displayId = userConfig?.id ? `${userConfig.id}` : null;
+
+  const isLlm = llmContext?.isLlm ?? false;
+  const displayName = isLlm
+    ? "USER"
+    : userConfig && userConfig.name !== "USER"
+      ? `${userConfig.name}`
+      : "User";
+  const displayId = isLlm ? null : userConfig?.id ? `${userConfig.id}` : null;
+  const hasPortrait = isLlm ? false : userConfig?.hasPortrait ?? false;
 
   return (
     <div className="flex gap-2 px-3 py-1.5">
       <ProfileAvatar
         role="user"
-        hasPortrait={userConfig?.hasPortrait ?? false}
+        hasPortrait={hasPortrait}
         fallbackEmoji={"\u{1F464}"}
       />
       <div className="flex-1 min-w-0">
@@ -265,19 +296,31 @@ const ThinkingMessage = memo(function ThinkingMessage({ msg }: { msg: ChatMessag
 });
 
 /** text 노드: 일반 텍스트 표시 */
-const AssistantMessage = memo(function AssistantMessage({ msg }: { msg: ChatMessage }) {
+const AssistantMessage = memo(function AssistantMessage({ msg, llmContext }: { msg: ChatMessage; llmContext?: LlmContext }) {
   const config = useDashboardStore((s) => s.dashboardConfig);
   const assistantConfig = config?.assistant;
-  const displayName = assistantConfig && assistantConfig.name !== "ASSISTANT"
-    ? `${assistantConfig.name}`
-    : "Assistant";
-  const displayId = assistantConfig?.id ? `${assistantConfig.id}` : null;
+
+  const isLlm = llmContext?.isLlm ?? false;
+  // LLM 세션: assistant_message에 model 정보가 있으면 표시, 없으면 llmContext에서 가져옴
+  const modelLabel = msg.model ?? llmContext?.llmModel;
+  const displayName = isLlm
+    ? modelLabel ? `ASSISTANT (${modelLabel})` : "ASSISTANT"
+    : assistantConfig && assistantConfig.name !== "ASSISTANT"
+      ? `${assistantConfig.name}`
+      : "Assistant";
+  const displayId = isLlm ? null : assistantConfig?.id ? `${assistantConfig.id}` : null;
+  const hasPortrait = isLlm ? false : assistantConfig?.hasPortrait ?? false;
+
+  // 토큰 사용량 (assistant_message 노드에 usage가 있을 때 인라인 표시)
+  const tokenInfo = msg.usage
+    ? `${(msg.usage.input_tokens + msg.usage.output_tokens).toLocaleString()} tokens`
+    : null;
 
   return (
     <div className="flex gap-2 px-3 py-1.5">
       <ProfileAvatar
         role="assistant"
-        hasPortrait={assistantConfig?.hasPortrait ?? false}
+        hasPortrait={hasPortrait}
         fallbackEmoji={"\u{1F916}"}
       />
       <div className="flex-1 min-w-0">
@@ -288,6 +331,11 @@ const AssistantMessage = memo(function AssistantMessage({ msg }: { msg: ChatMess
           {displayId && (
             <span className="text-[11px] text-muted-foreground">
               {displayId}
+            </span>
+          )}
+          {isLlm && tokenInfo && (
+            <span className="text-[11px] text-muted-foreground/70 font-normal normal-case">
+              {tokenInfo}
             </span>
           )}
         </div>
@@ -430,17 +478,17 @@ const SystemMessage = memo(function SystemMessage({ msg }: { msg: ChatMessage })
 
 // === ChatMessage Renderer ===
 
-const ChatMessageItem = memo(function ChatMessageItem({ msg }: { msg: ChatMessage }) {
+const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext }: { msg: ChatMessage; llmContext?: LlmContext }) {
   switch (msg.role) {
     case "user":
-      return <UserMessage msg={msg} />;
+      return <UserMessage msg={msg} llmContext={llmContext} />;
     case "intervention":
       return <InterventionMessage msg={msg} />;
     case "assistant":
       // thinking 노드와 text 노드를 독립 컴포넌트로 분리
       return msg.treeNodeType === "thinking"
         ? <ThinkingMessage msg={msg} />
-        : <AssistantMessage msg={msg} />;
+        : <AssistantMessage msg={msg} llmContext={llmContext} />;
     case "tool":
       return <ToolMessage msg={msg} />;
     case "system":
@@ -456,6 +504,7 @@ export function ChatView() {
   const tree = useDashboardStore((s) => s.tree);
   const treeVersion = useDashboardStore((s) => s.treeVersion);
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
+  const llmContext = useLlmContext();
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const messages = useMemo(() => flattenTree(tree), [tree, treeVersion]);
@@ -567,7 +616,7 @@ export function ChatView() {
           item.type === "tool-group" ? (
             <ToolCallGroup key={item.messages[0].id} messages={item.messages} />
           ) : (
-            <ChatMessageItem key={item.msg.id} msg={item.msg} />
+            <ChatMessageItem key={item.msg.id} msg={item.msg} llmContext={llmContext} />
           ),
         )}
       </div>

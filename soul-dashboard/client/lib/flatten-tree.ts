@@ -43,6 +43,10 @@ export interface ChatMessage {
   /** 원본 트리 노드 ID (클릭 시 Detail 연동용) */
   treeNodeId: string;
   treeNodeType: string;
+  /** assistant_message 전용: LLM 모델명 */
+  model?: string;
+  /** assistant_message 전용: LLM 프로바이더 */
+  provider?: string;
   /** 콘텐츠가 truncate 되었는지 여부 (큰 toolResult/thinking) */
   isTruncated?: boolean;
   /** truncate된 경우, 전체 내용을 가진 원본 이벤트 ID */
@@ -248,6 +252,8 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
         content: n.content,
         timestamp: n.timestamp,
         usage: n.usage,
+        model: n.model,
+        provider: n.provider,
         treeNodeId: n.id,
         treeNodeType: n.type,
       };
