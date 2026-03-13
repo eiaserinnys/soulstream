@@ -10,6 +10,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 
 from soul_server.api.auth import verify_token
+from soul_server.cogito.reflector_setup import reflect
 from soul_server.service.credential_store import CredentialStore
 from soul_server.service.credential_swapper import CredentialSwapper
 from soul_server.service.rate_limit_tracker import RateLimitTracker
@@ -17,6 +18,10 @@ from soul_server.service.rate_limit_tracker import RateLimitTracker
 logger = logging.getLogger(__name__)
 
 
+@reflect.capability(
+    name="credential_management",
+    description="Claude 계정 프로필 관리, 크레덴셜 교체, 레이트 리밋 추적",
+)
 def create_credentials_router(
     store: CredentialStore,
     swapper: CredentialSwapper,

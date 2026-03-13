@@ -32,7 +32,7 @@ from soul_server.service.event_store import EventStore
 from soul_server.models import HealthResponse
 from cogito.endpoint import mount_cogito as _mount_cogito
 from soul_server.cogito.mcp_tools import cogito_mcp, cogito_api_router, init as init_cogito_mcp
-from soul_server.cogito.reflector_setup import create_reflector
+from soul_server.cogito.reflector_setup import reflect as _soulstream_reflector
 from soul_server.config import get_settings, setup_logging
 
 # 설정 로드
@@ -251,7 +251,6 @@ app.add_middleware(
 # === Cogito: /reflect endpoints + MCP SSE + REST API ===
 
 # Soulstream 자체 /reflect 엔드포인트 (cogito-manifest.yaml에 등록됨)
-_soulstream_reflector = create_reflector(port=settings.port)
 _mount_cogito(app, _soulstream_reflector)
 
 # Cogito MCP SSE 서브마운트 (포트 추가 불필요, 기존 4105에 서브경로)

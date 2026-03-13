@@ -20,6 +20,7 @@ from typing import Callable, Optional
 import anyio
 
 from soul_server.claude.agent_runner import ClaudeRunner
+from soul_server.cogito.reflector_setup import reflect
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +128,10 @@ class RunnerPool:
     # Public API
     # -------------------------------------------------------------------------
 
+    @reflect.capability(
+        name="runner_pool",
+        description="Claude Code 러너 풀 관리, 예열, 유지보수",
+    )
     async def acquire(self, session_id: Optional[str] = None) -> ClaudeRunner:
         """풀에서 runner 획득
 
