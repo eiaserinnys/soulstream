@@ -32,6 +32,7 @@ from soul_server.service.task_manager import (
 )
 from soul_server.service import resource_manager, get_soul_engine
 from soul_server.api.auth import verify_token
+from soul_server.cogito.reflector_setup import reflect
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,11 @@ def task_to_response(task: Task) -> SessionResponse:
         409: {"model": ErrorResponse},
         503: {"model": ErrorResponse},
     },
+)
+@reflect.capability(
+    name="session_management",
+    description="Claude Code 세션 생성, 목록 조회, SSE 스트리밍",
+    tools=["execute", "sessions_list", "sessions_stream"],
 )
 async def execute_task(
     request: ExecuteRequest,
