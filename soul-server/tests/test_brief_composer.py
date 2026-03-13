@@ -2,7 +2,7 @@
 test_brief_composer — BriefComposer 유닛/통합 테스트
 
 cogito manifest를 읽고 서비스 리플렉션 데이터를 수집하여
-brief.yaml을 생성하는 기능을 검증합니다.
+brief.md를 생성하는 기능을 검증합니다.
 """
 
 import asyncio
@@ -304,7 +304,7 @@ class TestEngineAdapterIntegration:
         from soul_server.service.engine_adapter import SoulEngineAdapter
 
         mock_composer = MagicMock()
-        mock_composer.write_brief = AsyncMock(return_value=Path("/tmp/brief.yaml"))
+        mock_composer.write_brief = AsyncMock(return_value=Path("/tmp/brief.md"))
 
         adapter = SoulEngineAdapter(
             workspace_dir="/tmp/ws",

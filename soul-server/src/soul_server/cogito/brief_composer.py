@@ -1,7 +1,7 @@
 """Cogito brief composer.
 
 Collects reflection data from services declared in a cogito manifest
-and writes a brief YAML file for Claude Code to load as a project rule.
+and writes a brief file (.md) for Claude Code to load as a project rule.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ class BriefComposer:
 
     Args:
         manifest_path: Absolute path to ``cogito-manifest.yaml``.
-        output_dir: Directory where ``brief.yaml`` will be written.
+        output_dir: Directory where ``brief.md`` will be written.
             Typically ``{WORKSPACE_DIR}/.claude/rules/cogito/``.
     """
 
@@ -52,14 +52,14 @@ class BriefComposer:
         return named
 
     async def write_brief(self) -> Path:
-        """Compose brief and write to YAML file.
+        """Compose brief and write to file.
 
         Returns:
             Path to the written brief file.
         """
         services = await self.compose()
         self._output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = self._output_dir / "brief.yaml"
+        output_path = self._output_dir / "brief.md"
         content = self._format_as_rule(services)
         output_path.write_text(content, encoding="utf-8")
         logger.info("Brief written to %s (%d services)", output_path, len(services))
@@ -67,7 +67,7 @@ class BriefComposer:
 
     @staticmethod
     def _format_as_rule(services: list[tuple[str, str, dict[str, Any]]]) -> str:
-        """Format service reflection data as a YAML rule file.
+        """Format service reflection data as a rule file.
 
         The output is designed to be loaded by Claude Code as a project rule
         (``setting_sources=["project"]``).
@@ -80,6 +80,12 @@ class BriefComposer:
             "#",
             "# 이 파일은 cogito 프로토콜에 의해 자동 생성됩니다.",
             "# 각 서비스의 /reflect 엔드포인트에서 수집한 최신 상태입니다.",
+            "#",
+            "# 아래 서비스에 대한 상세 정보(소스 코드 위치, 설정, API 명세 등)가 필요하면",
+            "# soulstream-cogito MCP 도구를 사용하세요:",
+            "#   - reflect_service(name, level) : 개별 서비스의 상세 리플렉션 (level 0~3)",
+            "#   - reflect_brief() : 전체 서비스 브리프 재조회",
+            "#   - reflect_refresh() : 브리프 파일 즉시 갱신",
             "",
             "services:",
         ]
