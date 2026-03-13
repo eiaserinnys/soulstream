@@ -17,6 +17,7 @@ import cors from "cors";
 import { createSessionsProxyRouter } from "./routes/sessions-proxy.js";
 import { createEventsCachedRouter } from "./routes/events-cached.js";
 import { createActionsRouter } from "./routes/actions.js";
+import { createLlmProxyRouter } from "./routes/llm-proxy.js";
 import { SessionCache } from "./session-cache.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -77,13 +78,7 @@ app.get("/api/config", (_req, res) => {
 // GET 요청(세션 조회, SSE 구독)은 인증 없이 허용됩니다.
 
 if (DASHBOARD_AUTH_TOKEN) {
-  app.use("/api/sessions", (req, res, next) => {
-    // GET 요청은 인증 불필요 (세션 조회, SSE 구독)
-    if (req.method === "GET") {
-      next();
-      return;
-    }
-
+  const requireAuth: express.RequestHandler = (req, res, next) => {
     const authHeader = req.headers.authorization;
     if (!authHeader || authHeader !== `Bearer ${DASHBOARD_AUTH_TOKEN}`) {
       res.status(401).json({
@@ -95,7 +90,20 @@ if (DASHBOARD_AUTH_TOKEN) {
       return;
     }
     next();
+  };
+
+  app.use("/api/sessions", (req, res, next) => {
+    // GET 요청은 인증 불필요 (세션 조회, SSE 구독)
+    if (req.method === "GET") {
+      next();
+      return;
+    }
+    requireAuth(req, res, next);
   });
+
+  // LLM proxy — 모든 요청에 인증 필수
+  app.use("/api/llm", requireAuth);
+
   console.log("[dashboard] Auth enabled for POST endpoints");
 }
 
@@ -125,6 +133,15 @@ app.use(
 app.use(
   "/api/sessions",
   createActionsRouter({
+    soulBaseUrl: SOUL_BASE_URL,
+    authToken: AUTH_TOKEN,
+  }),
+);
+
+// LLM Proxy 라우터 (POST /api/llm/completions → Soul Server /llm/completions)
+app.use(
+  "/api/llm",
+  createLlmProxyRouter({
     soulBaseUrl: SOUL_BASE_URL,
     authToken: AUTH_TOKEN,
   }),

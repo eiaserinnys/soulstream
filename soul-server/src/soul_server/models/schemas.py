@@ -372,6 +372,10 @@ class SessionInfo(BaseModel):
     pid: Optional[int] = Field(None, description="프로세스 ID")
     session_type: str = Field("claude", description="세션 타입: claude | llm")
     last_message: Optional[dict] = Field(None, description="마지막 메시지 정보")
+    llm_provider: Optional[str] = Field(None, description="LLM 프로바이더 (openai, anthropic 등)")
+    llm_model: Optional[str] = Field(None, description="LLM 모델명")
+    llm_usage: Optional[dict] = Field(None, description="LLM 토큰 사용량")
+    client_id: Optional[str] = Field(None, description="LLM 클라이언트 식별자")
 
 
 class SessionsListResponse(BaseModel):
