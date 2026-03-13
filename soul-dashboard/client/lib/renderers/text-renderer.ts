@@ -29,7 +29,6 @@ export function renderTextNode(
     ctx.edges.push(createEdge(ctx.prevMainFlowNodeId, graphNode.id, !treeNode.completed));
   }
   ctx.prevMainFlowNodeId = graphNode.id;
-  ctx.lastThinkingNodeId = graphNode.id;
 
   if (ctx.collapsedNodeIds.has(treeNode.id)) {
     return;

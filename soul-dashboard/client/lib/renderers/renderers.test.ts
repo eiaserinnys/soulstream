@@ -219,7 +219,6 @@ describe("renderTextNode", () => {
     expect(ctx.nodes.length).toBe(1);
     expect(ctx.nodes[0].data.nodeType).toBe("text");
     expect(ctx.prevMainFlowNodeId).toBe(ctx.nodes[0].id);
-    expect(ctx.lastThinkingNodeId).toBe(ctx.nodes[0].id);
   });
 
   it("creates animated edge for streaming text", () => {
@@ -401,31 +400,55 @@ describe("renderResultNode", () => {
 });
 
 describe("processChildNodes", () => {
-  it("inserts virtual thinking node when tools appear before text", () => {
-    const ctx = makeCtx({ prevMainFlowNodeId: "prev" });
-    const parent = userMsgNode("u1", "Hi", [
-      toolTreeNode("tool1", "Bash", { toolResult: "ok" }),
-    ]);
-    processChildNodes(parent, ctx);
-
-    // virtual thinking + tool_call
-    expect(ctx.nodes.length).toBe(2);
-    expect(ctx.nodes[0].data.label).toBe("Initial Tools");
-    expect(ctx.nodes[0].data.content).toContain("tools invoked before first thinking");
-    expect(ctx.nodes[1].data.nodeType).toBe("tool_call");
-  });
-
-  it("does not insert virtual thinking when text appears first", () => {
+  it("passes parentGraphNodeId to all children uniformly", () => {
     const ctx = makeCtx({ prevMainFlowNodeId: "prev" });
     const parent = userMsgNode("u1", "Hi", [
       textTreeNode("t1", "I'm thinking"),
       toolTreeNode("tool1", "Bash", { toolResult: "ok" }),
     ]);
-    processChildNodes(parent, ctx);
+    processChildNodes(parent, "user-1", ctx);
 
-    // text node + tool_call (no virtual)
+    // text node + tool_call
     expect(ctx.nodes[0].data.nodeType).toBe("text");
-    expect(ctx.nodes[0].data.label).toBe("Text");
+    expect(ctx.nodes[1].data.nodeType).toBe("tool_call");
+    // tool should connect horizontally to parentGraphNodeId
+    const toolEdge = ctx.edges.find(e => e.target === "node-tool1-call");
+    expect(toolEdge?.source).toBe("user-1");
+  });
+
+  it("tool and thinking are siblings under same parent", () => {
+    const ctx = makeCtx({ prevMainFlowNodeId: "user-1" });
+    const thinkingChild: EventTreeNode = {
+      id: "th1",
+      type: "thinking",
+      children: [],
+      content: "thinking...",
+      completed: true,
+    };
+    const parent = userMsgNode("u1", "Hi", [
+      thinkingChild,
+      toolTreeNode("tool1", "Bash", { toolResult: "ok" }),
+    ]);
+    processChildNodes(parent, "user-1", ctx);
+
+    // thinking + tool_call
+    expect(ctx.nodes.length).toBe(2);
+    const thinkingGraphNode = ctx.nodes[0];
+    const toolGraphNode = ctx.nodes[1];
+
+    // thinking connects to prevMainFlowNodeId via vertical edge
+    const thinkingEdge = ctx.edges.find(e => e.target === thinkingGraphNode.id);
+    expect(thinkingEdge?.source).toBe("user-1");
+
+    // tool connects horizontally to parentGraphNodeId
+    const toolEdge = ctx.edges.find(e => e.target === toolGraphNode.id);
+    expect(toolEdge?.source).toBe("user-1");
+
+    // No edge from thinking to tool (they are siblings)
+    const thinkingToTool = ctx.edges.find(
+      e => e.source === thinkingGraphNode.id && e.target === toolGraphNode.id,
+    );
+    expect(thinkingToTool).toBeUndefined();
   });
 
   it("handles complete/error children in processChildNodes", () => {
@@ -434,7 +457,7 @@ describe("processChildNodes", () => {
       textTreeNode("t1", "thinking"),
       completeTreeNode("c1"),
     ]);
-    processChildNodes(parent, ctx);
+    processChildNodes(parent, "parent-node-id", ctx);
 
     expect(ctx.nodes.length).toBe(2);
     expect(ctx.nodes[1].data.nodeType).toBe("system");
@@ -447,7 +470,7 @@ describe("processChildNodes", () => {
       compactTreeNode("cpt1"),
       completeTreeNode("c1"),
     ]);
-    processChildNodes(parent, ctx);
+    processChildNodes(parent, "parent-node-id", ctx);
 
     // text + compact + complete = 3 nodes
     expect(ctx.nodes.length).toBe(3);
@@ -525,16 +548,14 @@ describe("LayoutContext state management", () => {
     expect(ctx.edges[1].target).toBe("node-t2");
   });
 
-  it("lastThinkingNodeId is used as tool parent", () => {
+  it("tool connects to explicit parentGraphNodeId, not thinking node", () => {
     const ctx = makeCtx({ prevMainFlowNodeId: "start" });
     renderTextNode(textTreeNode("t1", "thinking"), null, ctx);
-    // Now lastThinkingNodeId should be node-t1
-    expect(ctx.lastThinkingNodeId).toBe("node-t1");
 
-    // Tool should connect to lastThinkingNodeId
-    renderToolNode(toolTreeNode("tool1", "Bash", { toolResult: "ok" }), ctx.lastThinkingNodeId, ctx);
-    // Find the edge from thinking to tool
+    // Tool connects to the parentGraphNodeId passed by processChildNodes,
+    // not to the thinking node (they are siblings)
+    renderToolNode(toolTreeNode("tool1", "Bash", { toolResult: "ok" }), "user-node-id", ctx);
     const toolEdge = ctx.edges.find(e => e.target === "node-tool1-call");
-    expect(toolEdge?.source).toBe("node-t1");
+    expect(toolEdge?.source).toBe("user-node-id");
   });
 });
