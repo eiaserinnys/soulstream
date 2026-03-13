@@ -61,6 +61,14 @@ const STATUS_CONFIG: Record<SessionStatus, StatusConfig> = {
   },
 };
 
+// === Helpers ===
+
+function formatTokenCount(tokens: number): string {
+  if (tokens >= 999_950) return `${(tokens / 1_000_000).toFixed(1)}M`;
+  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}k`;
+  return `${tokens}`;
+}
+
 // === SessionItem ===
 
 interface SessionItemProps {
@@ -72,6 +80,17 @@ interface SessionItemProps {
 const SessionItem = memo(function SessionItem({ session, isActive, onClick }: SessionItemProps) {
   const config = STATUS_CONFIG[session.status];
   const sessionKey = session.agentSessionId;
+  const isLlm = session.sessionType === "llm";
+
+  // LLM 세션 라벨: "gpt-5-mini · translate" 형태
+  const llmLabel = isLlm
+    ? [session.llmModel, session.clientId].filter(Boolean).join(" \u00B7 ") || null
+    : null;
+
+  // LLM 토큰 배지
+  const tokenBadge = isLlm && session.llmUsage
+    ? `${formatTokenCount(session.llmUsage.inputTokens + session.llmUsage.outputTokens)} tok`
+    : null;
 
   // 시간 포맷
   const timeStr = session.createdAt
@@ -107,11 +126,16 @@ const SessionItem = memo(function SessionItem({ session, isActive, onClick }: Se
       {/* Session info */}
       <div className="flex-1 min-w-0">
         <div className="text-[15px] text-foreground truncate">
-          {session.prompt
-            ? session.prompt.length > 30
-              ? session.prompt.slice(0, 27) + "..."
-              : session.prompt
-            : session.agentSessionId.slice(0, 16)}
+          {isLlm && (
+            <span className="mr-1" title="LLM session">{"\u{1F916}"}</span>
+          )}
+          {isLlm && llmLabel
+            ? llmLabel
+            : session.prompt
+              ? session.prompt.length > 30
+                ? session.prompt.slice(0, 27) + "..."
+                : session.prompt
+              : session.agentSessionId.slice(0, 16)}
         </div>
         <div className="flex items-center gap-1.5 mt-0.5">
           <span className="text-[12px] text-muted-foreground">
@@ -125,25 +149,19 @@ const SessionItem = memo(function SessionItem({ session, isActive, onClick }: Se
           >
             {config.label}
           </Badge>
-          {/* LLM 타입 인디케이터 */}
-          {session.sessionType === "llm" && (
-            <Badge
-              variant="secondary"
-              size="sm"
-              className="text-[10px] px-1"
-            >
-              LLM
-            </Badge>
-          )}
         </div>
       </div>
 
-      {/* Event count badge */}
-      {session.eventCount > 0 && (
+      {/* Token badge (LLM) or Event count badge (Claude) */}
+      {isLlm && tokenBadge ? (
+        <Badge variant="outline" size="sm" className="shrink-0" title="Token usage">
+          {tokenBadge}
+        </Badge>
+      ) : session.eventCount > 0 ? (
         <Badge variant="outline" size="sm" className="shrink-0">
           {session.eventCount}
         </Badge>
-      )}
+      ) : null}
     </button>
   );
 });
