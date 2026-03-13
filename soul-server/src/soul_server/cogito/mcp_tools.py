@@ -174,10 +174,10 @@ async def reflect_brief() -> dict:
 
 @cogito_mcp.tool()
 async def reflect_refresh() -> dict:
-    """브리프 파일(brief.yaml)을 즉시 갱신한다.
+    """브리프 파일(brief.md)을 즉시 갱신한다.
 
     Returns:
-        {"refreshed": true, "path": "...brief.yaml"}
+        {"refreshed": true, "path": "...brief.md"}
     """
     try:
         ok, result = await _do_refresh()

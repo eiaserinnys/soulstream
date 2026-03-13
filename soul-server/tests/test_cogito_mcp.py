@@ -175,12 +175,12 @@ class TestReflectRefresh:
 
     async def test_success(self):
         composer = MagicMock()
-        composer.write_brief = AsyncMock(return_value=Path("/output/brief.yaml"))
+        composer.write_brief = AsyncMock(return_value=Path("/output/brief.md"))
         mcp_tools._brief_composer = composer
 
         result = await mcp_tools.reflect_refresh()
         assert result["refreshed"] is True
-        assert "brief.yaml" in result["path"]
+        assert "brief.md" in result["path"]
 
 
 # ---------------------------------------------------------------------------
@@ -197,7 +197,7 @@ class TestApiRefresh:
 
     async def test_success(self):
         composer = MagicMock()
-        composer.write_brief = AsyncMock(return_value=Path("/output/brief.yaml"))
+        composer.write_brief = AsyncMock(return_value=Path("/output/brief.md"))
         mcp_tools._brief_composer = composer
 
         result = await mcp_tools.api_refresh()
