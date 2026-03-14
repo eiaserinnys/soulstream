@@ -970,15 +970,16 @@ describe("멀티턴 세션 레이아웃", () => {
     expect(u3).toBeDefined();
     expect(t3).toBeDefined();
 
-    // 엣지 체인 확인: session → u1 → t1 → u2 → t2 → u3 → t3
+    // 트리 구조 기반 엣지 확인:
+    // 세션 → 첫째 턴(u1), 형제 체인(u1→u2→u3), 턴 내부(un→tn)
     expect(edges.find(e => e.source === session!.id && e.target === u1!.id)).toBeDefined();
+    expect(edges.find(e => e.source === u1!.id && e.target === u2!.id)).toBeDefined();
+    expect(edges.find(e => e.source === u2!.id && e.target === u3!.id)).toBeDefined();
     expect(edges.find(e => e.source === u1!.id && e.target === t1!.id)).toBeDefined();
-    expect(edges.find(e => e.source === t1!.id && e.target === u2!.id)).toBeDefined();
     expect(edges.find(e => e.source === u2!.id && e.target === t2!.id)).toBeDefined();
-    expect(edges.find(e => e.source === t2!.id && e.target === u3!.id)).toBeDefined();
     expect(edges.find(e => e.source === u3!.id && e.target === t3!.id)).toBeDefined();
 
-    // Y 순서 확인 (모든 메인 플로우 노드가 순차적으로 아래로)
+    // Y 순서 확인 (모든 노드가 순차적으로 아래로)
     expect(u1!.position.y).toBeGreaterThan(session!.position.y);
     expect(t1!.position.y).toBeGreaterThan(u1!.position.y);
     expect(u2!.position.y).toBeGreaterThan(t1!.position.y);
@@ -986,13 +987,14 @@ describe("멀티턴 세션 레이아웃", () => {
     expect(u3!.position.y).toBeGreaterThan(t2!.position.y);
     expect(t3!.position.y).toBeGreaterThan(u3!.position.y);
 
-    // 모든 메인 플로우 노드가 같은 X에 배치
+    // 턴 루트(user)는 세션과 같은 X, 턴 내부(text)는 들여쓰기
     expect(u1!.position.x).toBe(session!.position.x);
-    expect(t1!.position.x).toBe(session!.position.x);
     expect(u2!.position.x).toBe(session!.position.x);
-    expect(t2!.position.x).toBe(session!.position.x);
     expect(u3!.position.x).toBe(session!.position.x);
-    expect(t3!.position.x).toBe(session!.position.x);
+    // 턴 내부 노드는 INDENT_STEP(40) 만큼 들여쓰기
+    expect(t1!.position.x).toBe(session!.position.x + 40);
+    expect(t2!.position.x).toBe(session!.position.x + 40);
+    expect(t3!.position.x).toBe(session!.position.x + 40);
 
     // tool 노드는 오른쪽에 배치
     const toolCall1 = nodes.find(n => n.id === "node-tool1-call")!;

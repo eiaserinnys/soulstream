@@ -43,12 +43,11 @@ import {
 // === Helper: 트리 노드 팩토리 ===
 
 function makeCtx(overrides?: Partial<LayoutContext>): LayoutContext {
-  const ctx = createLayoutContext(
+  const base = createLayoutContext(
     { nodeIds: new Set(), entryIds: new Set(), exitIds: new Set() },
     new Set(),
   );
-  if (overrides) Object.assign(ctx, overrides);
-  return ctx;
+  return { ...base, ...overrides };
 }
 
 function textTreeNode(id: string, content: string, completed = true, children: EventTreeNode[] = []): EventTreeNode {
@@ -125,11 +124,12 @@ describe("renderer registry", () => {
   });
 
   it("dispatches to the correct renderer via dispatchRenderer", () => {
-    const ctx = makeCtx({ prevMainFlowNodeId: "prev" });
+    const ctx = makeCtx();
     const node = textTreeNode("t1", "hello");
-    dispatchRenderer(node, null, ctx);
+    const result = dispatchRenderer(node, null, ctx);
     expect(ctx.nodes.length).toBeGreaterThan(0);
     expect(ctx.nodes[0].data.nodeType).toBe("text");
+    expect(result).toBe(ctx.nodes[0].id);
   });
 
   it("silently ignores unknown node types", () => {
@@ -148,30 +148,28 @@ describe("renderer registry", () => {
 });
 
 describe("renderUserMessageTurn", () => {
-  it("creates a user node and connects to prevMainFlowNodeId", () => {
-    const ctx = makeCtx({ prevMainFlowNodeId: "session-node" });
+  it("creates a user node and returns its id", () => {
+    const ctx = makeCtx();
     const node = userMsgNode("u1", "Hello world");
-    renderUserMessageTurn(node, null, ctx);
+    const result = renderUserMessageTurn(node, null, ctx);
 
     expect(ctx.nodes.length).toBe(1);
     expect(ctx.nodes[0].data.nodeType).toBe("user");
     expect(ctx.nodes[0].data.content).toContain("Hello world");
-    expect(ctx.edges.length).toBe(1);
-    expect(ctx.edges[0].source).toBe("session-node");
-    expect(ctx.edges[0].target).toBe(ctx.nodes[0].id);
-    expect(ctx.prevMainFlowNodeId).toBe(ctx.nodes[0].id);
+    expect(result).toBe(ctx.nodes[0].id);
   });
 
-  it("skips user node creation if content is empty", () => {
-    const ctx = makeCtx({ prevMainFlowNodeId: "session-node" });
+  it("returns null if content is empty", () => {
+    const ctx = makeCtx();
     const node = userMsgNode("u1", "");
-    renderUserMessageTurn(node, null, ctx);
+    const result = renderUserMessageTurn(node, null, ctx);
 
     expect(ctx.nodes).toHaveLength(0);
+    expect(result).toBeNull();
   });
 
   it("processes child text nodes", () => {
-    const ctx = makeCtx({ prevMainFlowNodeId: "session-node" });
+    const ctx = makeCtx();
     const node = userMsgNode("u1", "Hi", [textTreeNode("t1", "thinking...")]);
     renderUserMessageTurn(node, null, ctx);
 
@@ -179,59 +177,60 @@ describe("renderUserMessageTurn", () => {
     expect(ctx.nodes.length).toBe(2);
     expect(ctx.nodes[0].data.nodeType).toBe("user");
     expect(ctx.nodes[1].data.nodeType).toBe("text");
+    // processChildNodes creates edge: user → text
+    const edge = ctx.edges.find(e => e.target === ctx.nodes[1].id);
+    expect(edge?.source).toBe(ctx.nodes[0].id);
   });
 });
 
 describe("renderInterventionTurn", () => {
-  it("creates an intervention node with collapse info", () => {
-    const ctx = makeCtx({ prevMainFlowNodeId: "prev" });
+  it("creates an intervention node and returns its id", () => {
+    const ctx = makeCtx();
     const node = interventionTreeNode("intv1", "Stop!");
-    renderInterventionTurn(node, null, ctx);
+    const result = renderInterventionTurn(node, null, ctx);
 
     expect(ctx.nodes.length).toBe(1);
     expect(ctx.nodes[0].data.nodeType).toBe("intervention");
     expect(ctx.nodes[0].data.content).toContain("Stop!");
-    expect(ctx.prevMainFlowNodeId).toBe(ctx.nodes[0].id);
+    expect(result).toBe(ctx.nodes[0].id);
   });
 
   it("skips children when node is collapsed", () => {
     const collapsed = new Set(["intv1"]);
-    const ctx = makeCtx({
-      prevMainFlowNodeId: "prev",
-      collapsedNodeIds: collapsed,
-    });
+    const ctx = makeCtx({ collapsedNodeIds: collapsed });
     const node = interventionTreeNode("intv1", "Stop!", [textTreeNode("t1", "child")]);
-    renderInterventionTurn(node, null, ctx);
+    const result = renderInterventionTurn(node, null, ctx);
 
     // Only intervention node, no child
     expect(ctx.nodes.length).toBe(1);
     expect(ctx.nodes[0].data.nodeType).toBe("intervention");
     expect(ctx.nodes[0].data.collapsed).toBe(true);
+    expect(result).toBe(ctx.nodes[0].id);
   });
 });
 
 describe("renderTextNode", () => {
-  it("creates a text node and updates prevMainFlowNodeId", () => {
-    const ctx = makeCtx({ prevMainFlowNodeId: "prev" });
+  it("creates a text node and returns its id", () => {
+    const ctx = makeCtx();
     const node = textTreeNode("t1", "I'm thinking...");
-    renderTextNode(node, null, ctx);
+    const result = renderTextNode(node, null, ctx);
 
     expect(ctx.nodes.length).toBe(1);
     expect(ctx.nodes[0].data.nodeType).toBe("text");
-    expect(ctx.prevMainFlowNodeId).toBe(ctx.nodes[0].id);
+    expect(result).toBe(ctx.nodes[0].id);
   });
 
-  it("creates animated edge for streaming text", () => {
-    const ctx = makeCtx({ prevMainFlowNodeId: "prev" });
+  it("does not create edges (processChildNodes handles that)", () => {
+    const ctx = makeCtx();
     const node = textTreeNode("t1", "streaming...", false);
     renderTextNode(node, null, ctx);
 
-    expect(ctx.edges.length).toBe(1);
-    expect(ctx.edges[0].animated).toBe(true);
+    // text renderer no longer creates edges
+    expect(ctx.edges.length).toBe(0);
   });
 
-  it("processes child tool nodes", () => {
-    const ctx = makeCtx({ prevMainFlowNodeId: "prev" });
+  it("processes child tool nodes via processChildNodes", () => {
+    const ctx = makeCtx();
     const tool = toolTreeNode("tool1", "Bash", { toolResult: "ok" });
     const node = textTreeNode("t1", "thinking", true, [tool]);
     renderTextNode(node, null, ctx);
@@ -240,23 +239,27 @@ describe("renderTextNode", () => {
     expect(ctx.nodes.length).toBe(2);
     expect(ctx.nodes[0].data.nodeType).toBe("text");
     expect(ctx.nodes[1].data.nodeType).toBe("tool_call");
+    // tool creates horizontal edge from text to tool
+    const toolEdge = ctx.edges.find(e => e.target === ctx.nodes[1].id);
+    expect(toolEdge?.sourceHandle).toBe("right");
+    expect(toolEdge?.targetHandle).toBe("left");
   });
 
-  it("skips children when collapsed", () => {
+  it("skips children when collapsed but still returns id", () => {
     const collapsed = new Set(["t1"]);
-    const ctx = makeCtx({ prevMainFlowNodeId: "prev", collapsedNodeIds: collapsed });
+    const ctx = makeCtx({ collapsedNodeIds: collapsed });
     const tool = toolTreeNode("tool1", "Bash", { toolResult: "ok" });
     const node = textTreeNode("t1", "thinking", true, [tool]);
-    renderTextNode(node, null, ctx);
+    const result = renderTextNode(node, null, ctx);
 
     // Only text node
     expect(ctx.nodes.length).toBe(1);
     expect(ctx.nodes[0].data.collapsed).toBe(true);
+    expect(result).toBe(ctx.nodes[0].id);
   });
 
   it("sets isPlanMode when node is in plan mode range", () => {
     const ctx = makeCtx({
-      prevMainFlowNodeId: "prev",
       planMode: {
         nodeIds: new Set(["t1"]),
         entryIds: new Set(),
@@ -339,8 +342,8 @@ describe("renderToolNode", () => {
 });
 
 describe("renderCompactNode", () => {
-  it("creates a system node for compact type", () => {
-    const ctx = makeCtx({ prevMainFlowNodeId: "prev" });
+  it("creates a system node for compact type and returns its id", () => {
+    const ctx = makeCtx();
     const node: EventTreeNode = {
       id: "compact1",
       type: "compact",
@@ -348,60 +351,79 @@ describe("renderCompactNode", () => {
       content: "Context compaction occurred",
       completed: true,
     };
-    renderCompactNode(node, null, ctx);
+    const result = renderCompactNode(node, null, ctx);
 
     expect(ctx.nodes.length).toBe(1);
     expect(ctx.nodes[0].data.nodeType).toBe("system");
     expect(ctx.nodes[0].data.label).toBe("⚡ Context Compaction");
-    expect(ctx.edges.length).toBe(1);
-    expect(ctx.edges[0].source).toBe("prev");
-    expect(ctx.prevMainFlowNodeId).toBe(ctx.nodes[0].id);
+    // No edges created by renderer (processChildNodes handles that)
+    expect(ctx.edges.length).toBe(0);
+    expect(result).toBe(ctx.nodes[0].id);
   });
 });
 
 describe("renderCompletionNode", () => {
-  it("creates a system node for complete type", () => {
-    const ctx = makeCtx({ prevMainFlowNodeId: "prev" });
+  it("creates a system node for complete type and returns its id", () => {
+    const ctx = makeCtx();
     const node = completeTreeNode("c1", "All done");
-    renderCompletionNode(node, null, ctx);
+    const result = renderCompletionNode(node, null, ctx);
 
     expect(ctx.nodes.length).toBe(1);
     expect(ctx.nodes[0].data.nodeType).toBe("system");
     expect(ctx.nodes[0].data.label).toBe("Complete");
-    expect(ctx.prevMainFlowNodeId).toBe(ctx.nodes[0].id);
+    expect(result).toBe(ctx.nodes[0].id);
   });
 
   it("creates a system node for error type", () => {
-    const ctx = makeCtx({ prevMainFlowNodeId: "prev" });
+    const ctx = makeCtx();
     const node = errorTreeNode("e1", "Something broke");
-    renderCompletionNode(node, null, ctx);
+    const result = renderCompletionNode(node, null, ctx);
 
     expect(ctx.nodes.length).toBe(1);
     expect(ctx.nodes[0].data.label).toBe("Error");
     expect(ctx.nodes[0].data.isError).toBe(true);
+    expect(result).toBe(ctx.nodes[0].id);
   });
 });
 
 describe("renderResultNode", () => {
   it("creates a result node with duration and cost", () => {
-    const ctx = makeCtx({ prevMainFlowNodeId: "prev" });
+    const ctx = makeCtx();
     const node = resultTreeNode("r1", {
       durationMs: 5000,
       totalCostUsd: 0.0123,
     });
-    renderResultNode(node, null, ctx);
+    const result = renderResultNode(node, null, ctx);
 
     expect(ctx.nodes.length).toBe(1);
     expect(ctx.nodes[0].data.nodeType).toBe("result");
     expect(ctx.nodes[0].data.content).toContain("5.0s");
     expect(ctx.nodes[0].data.content).toContain("$0.0123");
-    expect(ctx.prevMainFlowNodeId).toBe(ctx.nodes[0].id);
+    expect(result).toBe(ctx.nodes[0].id);
   });
 });
 
 describe("processChildNodes", () => {
-  it("passes parentGraphNodeId to all children uniformly", () => {
-    const ctx = makeCtx({ prevMainFlowNodeId: "prev" });
+  it("creates vertical edges: parent→first child, sibling→sibling", () => {
+    const ctx = makeCtx();
+    const parent = userMsgNode("u1", "Hi", [
+      textTreeNode("t1", "I'm thinking"),
+      textTreeNode("t2", "More thoughts"),
+    ]);
+    processChildNodes(parent, "user-1", ctx);
+
+    // 2 text nodes
+    expect(ctx.nodes.length).toBe(2);
+    // parent → first child (vertical)
+    expect(ctx.edges[0].source).toBe("user-1");
+    expect(ctx.edges[0].target).toBe(ctx.nodes[0].id);
+    // sibling → sibling (vertical)
+    expect(ctx.edges[1].source).toBe(ctx.nodes[0].id);
+    expect(ctx.edges[1].target).toBe(ctx.nodes[1].id);
+  });
+
+  it("tool is excluded from vertical chain (horizontal edge only)", () => {
+    const ctx = makeCtx();
     const parent = userMsgNode("u1", "Hi", [
       textTreeNode("t1", "I'm thinking"),
       toolTreeNode("tool1", "Bash", { toolResult: "ok" }),
@@ -411,13 +433,20 @@ describe("processChildNodes", () => {
     // text node + tool_call
     expect(ctx.nodes[0].data.nodeType).toBe("text");
     expect(ctx.nodes[1].data.nodeType).toBe("tool_call");
-    // tool should connect horizontally to parentGraphNodeId
+    // tool connects horizontally to parentGraphNodeId
     const toolEdge = ctx.edges.find(e => e.target === "node-tool1-call");
     expect(toolEdge?.source).toBe("user-1");
+    expect(toolEdge?.sourceHandle).toBe("right");
+    expect(toolEdge?.targetHandle).toBe("left");
+    // No vertical edge to tool
+    const verticalToTool = ctx.edges.find(
+      e => e.target === ctx.nodes[1].id && e.sourceHandle !== "right",
+    );
+    expect(verticalToTool).toBeUndefined();
   });
 
   it("tool and thinking are siblings under same parent", () => {
-    const ctx = makeCtx({ prevMainFlowNodeId: "user-1" });
+    const ctx = makeCtx();
     const thinkingChild: EventTreeNode = {
       id: "th1",
       type: "thinking",
@@ -436,23 +465,26 @@ describe("processChildNodes", () => {
     const thinkingGraphNode = ctx.nodes[0];
     const toolGraphNode = ctx.nodes[1];
 
-    // thinking connects to prevMainFlowNodeId via vertical edge
-    const thinkingEdge = ctx.edges.find(e => e.target === thinkingGraphNode.id);
+    // thinking connects to parent via vertical edge (first child)
+    const thinkingEdge = ctx.edges.find(
+      e => e.target === thinkingGraphNode.id && e.sourceHandle !== "right",
+    );
     expect(thinkingEdge?.source).toBe("user-1");
 
     // tool connects horizontally to parentGraphNodeId
     const toolEdge = ctx.edges.find(e => e.target === toolGraphNode.id);
     expect(toolEdge?.source).toBe("user-1");
+    expect(toolEdge?.sourceHandle).toBe("right");
 
-    // No edge from thinking to tool (they are siblings)
+    // No vertical edge from thinking to tool (tool excluded from chain)
     const thinkingToTool = ctx.edges.find(
       e => e.source === thinkingGraphNode.id && e.target === toolGraphNode.id,
     );
     expect(thinkingToTool).toBeUndefined();
   });
 
-  it("handles complete/error children in processChildNodes", () => {
-    const ctx = makeCtx({ prevMainFlowNodeId: "prev" });
+  it("handles complete/error children with vertical edges", () => {
+    const ctx = makeCtx();
     const parent = userMsgNode("u1", "Hi", [
       textTreeNode("t1", "thinking"),
       completeTreeNode("c1"),
@@ -461,10 +493,15 @@ describe("processChildNodes", () => {
 
     expect(ctx.nodes.length).toBe(2);
     expect(ctx.nodes[1].data.nodeType).toBe("system");
+    // parent → text (first child)
+    expect(ctx.edges[0].source).toBe("parent-node-id");
+    // text → complete (sibling chain)
+    expect(ctx.edges[1].source).toBe(ctx.nodes[0].id);
+    expect(ctx.edges[1].target).toBe(ctx.nodes[1].id);
   });
 
-  it("handles compact children in processChildNodes", () => {
-    const ctx = makeCtx({ prevMainFlowNodeId: "prev" });
+  it("chains text → compact → complete via vertical edges", () => {
+    const ctx = makeCtx();
     const parent = userMsgNode("u1", "Hi", [
       textTreeNode("t1", "thinking"),
       compactTreeNode("cpt1"),
@@ -474,11 +511,27 @@ describe("processChildNodes", () => {
 
     // text + compact + complete = 3 nodes
     expect(ctx.nodes.length).toBe(3);
-    // compact node should be a system node with compact label
     expect(ctx.nodes[1].data.nodeType).toBe("system");
     expect(ctx.nodes[1].data.label).toBe("⚡ Context Compaction");
-    // prevMainFlowNodeId should chain through compact to complete
-    expect(ctx.prevMainFlowNodeId).toBe(ctx.nodes[2].id);
+    // parent → text → compact → complete
+    expect(ctx.edges[0].source).toBe("parent-node-id");
+    expect(ctx.edges[0].target).toBe(ctx.nodes[0].id);
+    expect(ctx.edges[1].source).toBe(ctx.nodes[0].id);
+    expect(ctx.edges[1].target).toBe(ctx.nodes[1].id);
+    expect(ctx.edges[2].source).toBe(ctx.nodes[1].id);
+    expect(ctx.edges[2].target).toBe(ctx.nodes[2].id);
+  });
+
+  it("no edge when parentGraphNodeId is null", () => {
+    const ctx = makeCtx();
+    const parent = userMsgNode("u1", "", [
+      textTreeNode("t1", "orphan thinking"),
+    ]);
+    processChildNodes(parent, null, ctx);
+
+    expect(ctx.nodes.length).toBe(1);
+    // No edges (no parent to connect to)
+    expect(ctx.edges.length).toBe(0);
   });
 });
 
@@ -500,62 +553,66 @@ function inputRequestTreeNode(
 }
 
 describe("renderInputRequestNode", () => {
-  it("creates an input_request node and connects to prevMainFlowNodeId", () => {
-    const ctx = makeCtx({ prevMainFlowNodeId: "prev" });
+  it("creates an input_request node and returns its id", () => {
+    const ctx = makeCtx();
     const node = inputRequestTreeNode("ir1", "Which option?");
-    renderInputRequestNode(node, null, ctx);
+    const result = renderInputRequestNode(node, null, ctx);
 
     expect(ctx.nodes.length).toBe(1);
     expect(ctx.nodes[0].data.nodeType).toBe("input_request");
     expect(ctx.nodes[0].data.content).toContain("Which option?");
     expect(ctx.nodes[0].data.responded).toBe(false);
-    expect(ctx.edges.length).toBe(1);
-    expect(ctx.edges[0].source).toBe("prev");
-    expect(ctx.edges[0].target).toBe(ctx.nodes[0].id);
-    expect(ctx.prevMainFlowNodeId).toBe(ctx.nodes[0].id);
-  });
-
-  it("creates node without edge when no prevMainFlowNodeId", () => {
-    const ctx = makeCtx({ prevMainFlowNodeId: null });
-    const node = inputRequestTreeNode("ir2", "Select one");
-    renderInputRequestNode(node, null, ctx);
-
-    expect(ctx.nodes.length).toBe(1);
+    // No edges created by renderer (processChildNodes handles that)
     expect(ctx.edges.length).toBe(0);
+    expect(result).toBe(ctx.nodes[0].id);
   });
 
   it("reflects responded=true in graph node data", () => {
-    const ctx = makeCtx({ prevMainFlowNodeId: "prev" });
+    const ctx = makeCtx();
     const node = inputRequestTreeNode("ir3", "Answered question", true);
-    renderInputRequestNode(node, null, ctx);
+    const result = renderInputRequestNode(node, null, ctx);
 
     expect(ctx.nodes[0].data.responded).toBe(true);
     expect(ctx.nodes[0].data.streaming).toBe(false); // completed = true
+    expect(result).toBe(ctx.nodes[0].id);
   });
 });
 
-describe("LayoutContext state management", () => {
-  it("prevMainFlowNodeId is updated by text nodes in sequence", () => {
-    const ctx = makeCtx({ prevMainFlowNodeId: "start" });
-    renderTextNode(textTreeNode("t1", "first"), null, ctx);
-    renderTextNode(textTreeNode("t2", "second"), null, ctx);
+describe("Tree-based edge generation", () => {
+  it("processChildNodes chains text siblings with vertical edges", () => {
+    const ctx = makeCtx();
+    const parent = userMsgNode("u1", "Go", [
+      textTreeNode("t1", "first"),
+      textTreeNode("t2", "second"),
+    ]);
+    processChildNodes(parent, "user-node", ctx);
 
-    expect(ctx.prevMainFlowNodeId).toBe("node-t2");
-    // Verify chain: start → t1 → t2
-    expect(ctx.edges[0].source).toBe("start");
-    expect(ctx.edges[0].target).toBe("node-t1");
-    expect(ctx.edges[1].source).toBe("node-t1");
-    expect(ctx.edges[1].target).toBe("node-t2");
+    // user-node → t1 → t2 (vertical chain)
+    const verticalEdges = ctx.edges.filter(e => e.sourceHandle !== "right");
+    expect(verticalEdges.length).toBe(2);
+    expect(verticalEdges[0].source).toBe("user-node");
+    expect(verticalEdges[0].target).toBe("node-t1");
+    expect(verticalEdges[1].source).toBe("node-t1");
+    expect(verticalEdges[1].target).toBe("node-t2");
   });
 
-  it("tool connects to explicit parentGraphNodeId, not thinking node", () => {
-    const ctx = makeCtx({ prevMainFlowNodeId: "start" });
-    renderTextNode(textTreeNode("t1", "thinking"), null, ctx);
-
-    // Tool connects to the parentGraphNodeId passed by processChildNodes,
-    // not to the thinking node (they are siblings)
+  it("tool connects to explicit parentGraphNodeId via horizontal edge", () => {
+    const ctx = makeCtx();
     renderToolNode(toolTreeNode("tool1", "Bash", { toolResult: "ok" }), "user-node-id", ctx);
     const toolEdge = ctx.edges.find(e => e.target === "node-tool1-call");
     expect(toolEdge?.source).toBe("user-node-id");
+    expect(toolEdge?.sourceHandle).toBe("right");
+    expect(toolEdge?.targetHandle).toBe("left");
+  });
+
+  it("renderers return graph node IDs for processChildNodes to use", () => {
+    const ctx = makeCtx();
+    const textId = renderTextNode(textTreeNode("t1", "hello"), null, ctx);
+    const completeId = renderCompletionNode(completeTreeNode("c1"), null, ctx);
+    const toolId = renderToolNode(toolTreeNode("tool1", "Bash"), "parent", ctx);
+
+    expect(textId).toBe("node-t1");
+    expect(completeId).toBe("node-c1");
+    expect(toolId).toBe("node-tool1-call");
   });
 });

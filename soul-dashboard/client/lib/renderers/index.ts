@@ -40,11 +40,9 @@ export function dispatchRenderer(
   treeNode: EventTreeNode,
   parentNodeId: string | null,
   ctx: LayoutContext,
-): void {
+): string | null {
   const renderer = renderers.get(treeNode.type);
-  if (renderer) {
-    renderer(treeNode, parentNodeId, ctx);
-  }
+  return renderer ? renderer(treeNode, parentNodeId, ctx) : null;
 }
 
 /** 등록된 모든 렌더러 타입을 반환합니다 (테스트용). */
