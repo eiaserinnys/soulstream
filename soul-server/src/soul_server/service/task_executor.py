@@ -135,6 +135,7 @@ class TaskExecutor:
                             intervention_msg = {"type": "user_message", "user": user, "text": text}
                             ev_id = self._event_store.append(session_id, intervention_msg)
                             current_user_request_id = str(ev_id)
+                            event["_event_id"] = ev_id  # SSE id: 필드에 JSONL event_id 전달
                         except Exception as e:
                             logger.warning(f"Failed to persist intervention user_message for {session_id}: {e}")
                     await self._listener_manager.broadcast(session_id, event)
