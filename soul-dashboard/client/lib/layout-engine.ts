@@ -20,7 +20,7 @@ import type {
   InputRequestQuestion,
 } from "@shared/types";
 import { createLayoutContext } from "./layout-context";
-import { dispatchRenderer } from "./renderers";
+import { processChildNodes } from "./renderers";
 
 // === Graph Node Types ===
 
@@ -480,12 +480,11 @@ export function buildGraph(
   // session root는 항상 가상 노드로 생성
   const sessionNode = createSystemNodeFromTree(tree as SessionNode);
   ctx.nodes.push(sessionNode);
-  ctx.prevMainFlowNodeId = sessionNode.id;
 
-  // session root의 자식들을 렌더러 registry에 위임
-  for (const childNode of tree.children) {
-    dispatchRenderer(childNode, null, ctx);
-  }
+  // session root의 자식(턴 노드)들을 processChildNodes로 처리.
+  // 형제 체인(u1→u2→u3)이 생성되며, sibling 엣지는 data.sibling=true로 마킹되어
+  // placeSubtree에서 들여쓰기 없이 같은 x 좌표에 배치된다.
+  processChildNodes(tree, sessionNode.id, ctx);
 
   return applyDagreLayout(ctx.nodes, ctx.edges);
 }
@@ -495,6 +494,8 @@ export function buildGraph(
 /** tool 체인이 부모 노드 우측에 배치될 때의 수평 간격 */
 const TOOL_BRANCH_H_GAP = 120;
 const V_GAP = 16;
+/** 트리 계층 들여쓰기 폭 */
+const INDENT_STEP = 40;
 
 /**
  * 엣지 기반 재귀 레이아웃을 적용합니다.
@@ -519,14 +520,15 @@ export function applyDagreLayout(
   for (const node of nodes) nodeMap.set(node.id, node);
 
   // 엣지에서 부모→자식 인접 리스트 구성
-  type ChildRef = { id: string; horizontal: boolean };
+  type ChildRef = { id: string; horizontal: boolean; sibling: boolean };
   const childrenOf = new Map<string, ChildRef[]>();
   const incoming = new Set<string>();
 
   for (const edge of edges) {
     const h = edge.sourceHandle === "right" && edge.targetHandle === "left";
+    const s = !!(edge.data as Record<string, unknown> | undefined)?.sibling;
     if (!childrenOf.has(edge.source)) childrenOf.set(edge.source, []);
-    childrenOf.get(edge.source)!.push({ id: edge.target, horizontal: h });
+    childrenOf.get(edge.source)!.push({ id: edge.target, horizontal: h, sibling: s });
     incoming.add(edge.target);
   }
 
@@ -588,7 +590,7 @@ export function applyDagreLayout(
   // 위치 배정 (top-down)
   const positions = new Map<string, { x: number; y: number }>();
 
-  function placeSubtree(id: string, x: number, y: number) {
+  function placeSubtree(id: string, x: number, y: number, isRootLevel: boolean = false) {
     if (positions.has(id)) return; // 사이클 방어
     positions.set(id, { x, y });
 
@@ -601,16 +603,19 @@ export function applyDagreLayout(
     const colStep = parentW + TOOL_BRANCH_H_GAP;
     let hy = y;
     for (const hc of hCh) {
-      placeSubtree(hc.id, x + colStep, hy);
+      placeSubtree(hc.id, x + colStep, hy, false);
       hy += computeHeights(hc.id).eff + V_GAP;
     }
 
-    // 수직 자식: 아래로, 같은 X
+    // 수직 자식: sibling 엣지는 같은 x (형제 체인), 그 외는 들여쓰기
     const row = rowHeightOf.get(id) ?? DEFAULT_NODE_HEIGHT;
     const vGap = (depthOf.get(id) ?? 0) === 0 ? FLOW_GAP : V_GAP;
     let vy = y + row + vGap;
     for (const vc of vCh) {
-      placeSubtree(vc.id, x, vy);
+      // sibling 엣지: 형제이므로 같은 x 유지
+      // isRootLevel: 세션 루트에서 첫째 자식도 같은 x 유지
+      const childX = (vc.sibling || isRootLevel) ? x : x + INDENT_STEP;
+      placeSubtree(vc.id, childX, vy, false);
       vy += computeHeights(vc.id).eff + vGap;
     }
   }
@@ -619,7 +624,7 @@ export function applyDagreLayout(
   let rootY = MARGIN;
   for (const r of roots) {
     computeHeights(r.id);
-    placeSubtree(r.id, MARGIN, rootY);
+    placeSubtree(r.id, MARGIN, rootY, true);
     rootY += (effHeightOf.get(r.id) ?? 84) + FLOW_GAP;
   }
 

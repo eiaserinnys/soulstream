@@ -1,8 +1,9 @@
 /**
  * Assistant Message Renderer — LLM 프록시 응답 노드를 렌더링
  *
- * text 노드와 동일한 패턴으로 메인 플로우에 배치합니다.
+ * 트리 구조에 따라 배치됩니다.
  * 모델/프로바이더/usage 메타데이터를 label에 포함합니다.
+ * 엣지 생성은 processChildNodes가 담당합니다.
  *
  * 리프 노드 전용: LLM 프록시 세션에서 assistant_message는 자식을 갖지 않으므로
  * children 재귀 처리를 하지 않습니다.
@@ -12,7 +13,6 @@ import type { EventTreeNode, AssistantMessageNode } from "@shared/types";
 import type { LayoutContext } from "../layout-context";
 import {
   createTextNode,
-  createEdge,
   getCollapseInfo,
 } from "../layout-engine";
 
@@ -21,7 +21,7 @@ export function renderAssistantMessageNode(
   treeNode: EventTreeNode,
   _parentNodeId: string | null,
   ctx: LayoutContext,
-): void {
+): string | null {
   const collapseInfo = getCollapseInfo(treeNode, ctx.collapsedNodeIds);
   const node = treeNode as AssistantMessageNode;
 
@@ -35,9 +35,5 @@ export function renderAssistantMessageNode(
   graphNode.data.usage = node.usage;
 
   ctx.nodes.push(graphNode);
-
-  if (ctx.prevMainFlowNodeId) {
-    ctx.edges.push(createEdge(ctx.prevMainFlowNodeId, graphNode.id, !treeNode.completed));
-  }
-  ctx.prevMainFlowNodeId = graphNode.id;
+  return graphNode.id;
 }
