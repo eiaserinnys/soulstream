@@ -3,7 +3,7 @@
  *
  * 수평 분기로 배치되며 (right→left 핸들), tool_call 노드를 생성합니다.
  * 도구 결과는 ToolCallNode 내에서 in-place 표시됩니다.
- * 자식 text/tool 노드를 재귀 처리합니다.
+ * 자식 노드를 processChildNodes로 재귀 처리합니다.
  */
 
 import type { EventTreeNode, ToolNode } from "@shared/types";
@@ -13,14 +13,14 @@ import {
   createEdge,
   getCollapseInfo,
 } from "../layout-engine";
-import { dispatchRenderer } from "./index";
+import { processChildNodes } from "./child-processor";
 
 /** tool 노드를 렌더링합니다. */
 export function renderToolNode(
   treeNode: EventTreeNode,
   parentNodeId: string | null,
   ctx: LayoutContext,
-): void {
+): string | null {
   const toolNode = treeNode as ToolNode;
   const collapseInfo = getCollapseInfo(treeNode, ctx.collapsedNodeIds);
   const callNode = createToolCallNode(toolNode, {
@@ -30,6 +30,7 @@ export function renderToolNode(
   }, collapseInfo);
   ctx.nodes.push(callNode);
 
+  // 수평 엣지 (부모 → tool): tool-renderer가 담당
   if (parentNodeId) {
     ctx.edges.push(
       createEdge(parentNodeId, callNode.id, !toolNode.completed && !toolNode.toolResult, "right", "left"),
@@ -37,11 +38,9 @@ export function renderToolNode(
   }
 
   if (ctx.collapsedNodeIds.has(treeNode.id)) {
-    return;
+    return callNode.id;
   }
 
-  // tool의 자식 처리 (text, thinking, tool 등)
-  for (const child of treeNode.children) {
-    dispatchRenderer(child, callNode.id, ctx);
-  }
+  processChildNodes(treeNode, callNode.id, ctx);
+  return callNode.id;
 }

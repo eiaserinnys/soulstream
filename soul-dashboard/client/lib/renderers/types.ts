@@ -15,4 +15,4 @@ export type NodeRenderer = (
   treeNode: EventTreeNode,
   parentNodeId: string | null,
   ctx: LayoutContext,
-) => void;
+) => string | null;
