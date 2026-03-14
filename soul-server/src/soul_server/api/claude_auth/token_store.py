@@ -6,10 +6,17 @@ OAuth 토큰을 현재 프로세스(os.environ)와 .env 파일에 동시 저장/
 - .env: soulstream 재시작 시 자동 로드 (load_dotenv)
 """
 
+from __future__ import annotations
+
+import logging
 import os
 import re
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
+
+# 환경변수 키
+TOKEN_ENV_KEY = "CLAUDE_CODE_OAUTH_TOKEN"
 
 # Claude OAuth 토큰 형식: sk-ant-oat01-{base64-like characters}
 _TOKEN_PATTERN = re.compile(r"^sk-ant-oat01-[A-Za-z0-9_-]+$")
@@ -29,6 +36,15 @@ def is_valid_token(token: str) -> bool:
     return bool(_TOKEN_PATTERN.match(token.strip()))
 
 
+def get_oauth_token() -> str | None:
+    """현재 저장된 OAuth 토큰 반환
+
+    Returns:
+        토큰 문자열 또는 None
+    """
+    return os.environ.get(TOKEN_ENV_KEY)
+
+
 def save_oauth_token(token: str, env_path: Path) -> None:
     """OAuth 토큰을 현재 프로세스 + .env 파일에 저장
 
@@ -39,7 +55,8 @@ def save_oauth_token(token: str, env_path: Path) -> None:
     token = token.strip()
 
     # 1. 즉시 적용 (다음 Claude Code spawn에 반영)
-    os.environ["CLAUDE_CODE_OAUTH_TOKEN"] = token
+    os.environ[TOKEN_ENV_KEY] = token
+    logger.info(f"Saved OAuth token to os.environ['{TOKEN_ENV_KEY}']")
 
     # 2. 영구 저장 (soulstream 재시작 시 자동 로드)
     lines: list[str] = []
@@ -48,8 +65,8 @@ def save_oauth_token(token: str, env_path: Path) -> None:
     if env_path.exists():
         with open(env_path, "r", encoding="utf-8") as f:
             for line in f:
-                if line.startswith("CLAUDE_CODE_OAUTH_TOKEN="):
-                    lines.append(f"CLAUDE_CODE_OAUTH_TOKEN={token}\n")
+                if line.startswith(f"{TOKEN_ENV_KEY}="):
+                    lines.append(f"{TOKEN_ENV_KEY}={token}\n")
                     token_found = True
                 else:
                     lines.append(line)
@@ -59,13 +76,14 @@ def save_oauth_token(token: str, env_path: Path) -> None:
         if lines and not lines[-1].endswith("\n"):
             lines.append("\n")
         lines.append("\n# Claude Code OAuth Token (auto-generated)\n")
-        lines.append(f"CLAUDE_CODE_OAUTH_TOKEN={token}\n")
+        lines.append(f"{TOKEN_ENV_KEY}={token}\n")
 
     # 부모 디렉토리가 없으면 생성
     env_path.parent.mkdir(parents=True, exist_ok=True)
 
     with open(env_path, "w", encoding="utf-8") as f:
         f.writelines(lines)
+    logger.info(f"Saved OAuth token to {env_path}")
 
 
 def delete_oauth_token(env_path: Path) -> bool:
@@ -80,9 +98,10 @@ def delete_oauth_token(env_path: Path) -> bool:
     had_token = False
 
     # 1. 환경변수에서 삭제
-    if "CLAUDE_CODE_OAUTH_TOKEN" in os.environ:
-        del os.environ["CLAUDE_CODE_OAUTH_TOKEN"]
+    if TOKEN_ENV_KEY in os.environ:
+        del os.environ[TOKEN_ENV_KEY]
         had_token = True
+        logger.info(f"Deleted OAuth token from os.environ['{TOKEN_ENV_KEY}']")
 
     # 2. .env 파일에서 삭제
     if env_path.exists():
@@ -92,7 +111,7 @@ def delete_oauth_token(env_path: Path) -> bool:
         with open(env_path, "r", encoding="utf-8") as f:
             for line in f:
                 # 토큰 라인 제거
-                if line.startswith("CLAUDE_CODE_OAUTH_TOKEN="):
+                if line.startswith(f"{TOKEN_ENV_KEY}="):
                     had_token = True
                     skip_next_empty = True
                     continue
@@ -112,6 +131,7 @@ def delete_oauth_token(env_path: Path) -> bool:
 
         with open(env_path, "w", encoding="utf-8") as f:
             f.writelines(lines)
+        logger.info(f"Deleted OAuth token from {env_path}")
 
     return had_token
 

@@ -6,11 +6,14 @@ pytest 전역 설정 및 fixture
 2. WORKSPACE_DIR 설정 (필수 환경변수)
 3. get_settings 캐시 초기화 (환경변수 변경 반영)
 4. 인증이 필요한 테스트를 위한 토큰 및 헤더 fixture 제공
+5. cogito/fastmcp 모듈 모킹 (의존성 없이 테스트 가능)
 """
 
 import os
+import sys
 import pytest
 from pathlib import Path
+from unittest.mock import MagicMock
 
 
 # === 테스트 환경 상수 ===
@@ -23,6 +26,19 @@ def pytest_configure(config):
     이 함수는 테스트 수집 전에 호출되므로,
     모든 모듈 임포트 전에 환경 변수가 설정됩니다.
     """
+    # cogito 및 fastmcp 모듈 모킹 (패키지가 설치되지 않은 환경에서 테스트 가능하게)
+    # soul_server.cogito 모듈이 cogito와 fastmcp를 임포트하므로, 임포트 전에 모킹 필요
+    if "cogito" not in sys.modules:
+        mock_cogito = MagicMock()
+        mock_cogito.Reflector = MagicMock
+        sys.modules["cogito"] = mock_cogito
+        sys.modules["cogito.endpoint"] = MagicMock()
+
+    if "fastmcp" not in sys.modules:
+        mock_fastmcp = MagicMock()
+        mock_fastmcp.FastMCP = MagicMock
+        sys.modules["fastmcp"] = mock_fastmcp
+
     # 테스트 환경으로 설정
     os.environ["ENVIRONMENT"] = "development"
 
