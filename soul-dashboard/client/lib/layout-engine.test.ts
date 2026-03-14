@@ -312,7 +312,7 @@ describe("buildGraph", () => {
       expect(thinkingToTool!.targetHandle).toBe("left");
     });
 
-    it("thinking→thinking uses vertical edge (no handles)", () => {
+    it("sibling thinking nodes are both horizontal children of parent", () => {
       const tree = sessionRoot([
         userMsg("u1", "hi", [
           textNode("t1", "first thinking", true, [
@@ -323,15 +323,28 @@ describe("buildGraph", () => {
       ]);
       const { edges } = buildGraph(tree);
 
-      const thinkingToThinking = edges.find(
-        (e) => e.source === "node-t1" && e.target === "node-t2",
+      // t1, t2 모두 u1의 수평 자식
+      const u1ToT1 = edges.find(
+        (e) => e.source === "node-u1" && e.target === "node-t1",
       );
-      expect(thinkingToThinking).toBeDefined();
-      expect(thinkingToThinking!.sourceHandle).toBeUndefined();
-      expect(thinkingToThinking!.targetHandle).toBeUndefined();
+      expect(u1ToT1).toBeDefined();
+      expect(u1ToT1!.sourceHandle).toBe("right");
+      expect(u1ToT1!.targetHandle).toBe("left");
+
+      const u1ToT2 = edges.find(
+        (e) => e.source === "node-u1" && e.target === "node-t2",
+      );
+      expect(u1ToT2).toBeDefined();
+      expect(u1ToT2!.sourceHandle).toBe("right");
+      expect(u1ToT2!.targetHandle).toBe("left");
+
+      // t1→t2 직접 엣지는 없음 (둘 다 u1의 자식)
+      expect(edges.find(
+        (e) => e.source === "node-t1" && e.target === "node-t2",
+      )).toBeUndefined();
     });
 
-    it("tool nodes do NOT participate in main vertical chain", () => {
+    it("all children are horizontal children of parent (no type distinction)", () => {
       const tree = sessionRoot([
         userMsg("u1", "hi", [
           textNode("t1", "first", true, [
@@ -342,13 +355,21 @@ describe("buildGraph", () => {
       ]);
       const { edges } = buildGraph(tree);
 
-      const t1ToT2 = edges.find(
-        (e) => e.source === "node-t1" && e.target === "node-t2",
+      // tool도 thinking도 동일하게 부모의 수평 자식
+      const u1ToT1 = edges.find(
+        (e) => e.source === "node-u1" && e.target === "node-t1",
       );
-      expect(t1ToT2).toBeDefined();
+      expect(u1ToT1).toBeDefined();
+      expect(u1ToT1!.sourceHandle).toBe("right");
+
+      const u1ToT2 = edges.find(
+        (e) => e.source === "node-u1" && e.target === "node-t2",
+      );
+      expect(u1ToT2).toBeDefined();
+      expect(u1ToT2!.sourceHandle).toBe("right");
     });
 
-    it("multiple tools from same thinking chain horizontally", () => {
+    it("multiple tools from same parent chain horizontally", () => {
       const tree = sessionRoot([
         userMsg("u1", "hi", [
           textNode("t1", "thinking", true, [
@@ -360,6 +381,7 @@ describe("buildGraph", () => {
       ]);
       const { edges } = buildGraph(tree);
 
+      // toolA, toolB 모두 t1의 수평 자식
       const t1ToA = edges.find(
         (e) => e.source === "node-t1" && e.target === "node-toolA-call",
       );
@@ -373,14 +395,15 @@ describe("buildGraph", () => {
       expect(t1ToB!.sourceHandle).toBe("right");
       expect(t1ToB!.targetHandle).toBe("left");
 
-      const t1ToT2 = edges.find(
-        (e) => e.source === "node-t1" && e.target === "node-t2",
+      // t1, t2 모두 u1의 수평 자식
+      const u1ToT2 = edges.find(
+        (e) => e.source === "node-u1" && e.target === "node-t2",
       );
-      expect(t1ToT2).toBeDefined();
-      expect(t1ToT2!.sourceHandle).toBeUndefined();
+      expect(u1ToT2).toBeDefined();
+      expect(u1ToT2!.sourceHandle).toBe("right");
     });
 
-    it("complex scenario: thinking→tool→thinking→tool→thinking", () => {
+    it("complex scenario: all children are horizontal from their parent", () => {
       const tree = sessionRoot([
         userMsg("u1", "hi", [
           textNode("t1", "first thinking", true, [
@@ -395,11 +418,12 @@ describe("buildGraph", () => {
       ]);
       const { nodes, edges } = buildGraph(tree);
 
-      // Main vertical chain: t1 → t2 → t3
-      expect(edges.find((e) => e.source === "node-t1" && e.target === "node-t2")).toBeDefined();
-      expect(edges.find((e) => e.source === "node-t2" && e.target === "node-t3")).toBeDefined();
+      // t1, t2, t3, c1 모두 u1의 수평 자식
+      expect(edges.find((e) => e.source === "node-u1" && e.target === "node-t1")).toBeDefined();
+      expect(edges.find((e) => e.source === "node-u1" && e.target === "node-t2")).toBeDefined();
+      expect(edges.find((e) => e.source === "node-u1" && e.target === "node-t3")).toBeDefined();
 
-      // Horizontal branches
+      // tool은 각각의 thinking의 수평 자식
       const t1ToA = edges.find((e) => e.source === "node-t1" && e.target === "node-toolA-call");
       expect(t1ToA).toBeDefined();
       expect(t1ToA!.sourceHandle).toBe("right");
@@ -408,7 +432,7 @@ describe("buildGraph", () => {
       expect(t2ToB).toBeDefined();
       expect(t2ToB!.sourceHandle).toBe("right");
 
-      // t3 should be text node (text tree nodes map to text graph type)
+      // t3 should be text node
       const t3Node = nodes.find((n) => n.id === "node-t3");
       expect(t3Node?.type).toBe("text");
     });
@@ -971,32 +995,31 @@ describe("멀티턴 세션 레이아웃", () => {
     expect(t3).toBeDefined();
 
     // 트리 구조 기반 엣지 확인:
-    // 세션 → 첫째 턴(u1), 형제 체인(u1→u2→u3), 턴 내부(un→tn)
+    // 세션 → u1, u2, u3 (모두 세션의 수평 자식)
+    // 각 턴 → 자식 (수평 자식)
     expect(edges.find(e => e.source === session!.id && e.target === u1!.id)).toBeDefined();
-    expect(edges.find(e => e.source === u1!.id && e.target === u2!.id)).toBeDefined();
-    expect(edges.find(e => e.source === u2!.id && e.target === u3!.id)).toBeDefined();
+    expect(edges.find(e => e.source === session!.id && e.target === u2!.id)).toBeDefined();
+    expect(edges.find(e => e.source === session!.id && e.target === u3!.id)).toBeDefined();
     expect(edges.find(e => e.source === u1!.id && e.target === t1!.id)).toBeDefined();
     expect(edges.find(e => e.source === u2!.id && e.target === t2!.id)).toBeDefined();
     expect(edges.find(e => e.source === u3!.id && e.target === t3!.id)).toBeDefined();
 
-    // Y 순서 확인 (모든 노드가 순차적으로 아래로)
-    expect(u1!.position.y).toBeGreaterThan(session!.position.y);
-    expect(t1!.position.y).toBeGreaterThan(u1!.position.y);
-    expect(u2!.position.y).toBeGreaterThan(t1!.position.y);
-    expect(t2!.position.y).toBeGreaterThan(u2!.position.y);
-    expect(u3!.position.y).toBeGreaterThan(t2!.position.y);
-    expect(t3!.position.y).toBeGreaterThan(u3!.position.y);
+    // 턴끼리는 같은 X, 형제로서 아래로 쌓임
+    expect(u1!.position.x).toBe(u2!.position.x);
+    expect(u2!.position.x).toBe(u3!.position.x);
+    expect(u2!.position.y).toBeGreaterThan(u1!.position.y);
+    expect(u3!.position.y).toBeGreaterThan(u2!.position.y);
 
-    // 턴 루트(user)는 세션과 같은 X, 턴 내부(text)는 들여쓰기
-    expect(u1!.position.x).toBe(session!.position.x);
-    expect(u2!.position.x).toBe(session!.position.x);
-    expect(u3!.position.x).toBe(session!.position.x);
-    // 턴 내부 노드는 INDENT_STEP(40) 만큼 들여쓰기
-    expect(t1!.position.x).toBe(session!.position.x + 40);
-    expect(t2!.position.x).toBe(session!.position.x + 40);
-    expect(t3!.position.x).toBe(session!.position.x + 40);
+    // 턴의 자식(thinking)은 턴 오른쪽에 배치
+    expect(t1!.position.x).toBeGreaterThan(u1!.position.x);
+    expect(t2!.position.x).toBeGreaterThan(u2!.position.x);
+    expect(t3!.position.x).toBeGreaterThan(u3!.position.x);
 
-    // tool 노드는 오른쪽에 배치
+    // 같은 depth의 노드는 같은 X
+    expect(t1!.position.x).toBe(t2!.position.x);
+    expect(t2!.position.x).toBe(t3!.position.x);
+
+    // tool 노드는 thinking 오른쪽에 배치
     const toolCall1 = nodes.find(n => n.id === "node-tool1-call")!;
     const toolCall2 = nodes.find(n => n.id === "node-tool2-call")!;
     expect(toolCall1.position.x).toBeGreaterThan(t1!.position.x);
@@ -1021,18 +1044,20 @@ describe("멀티턴 세션 레이아웃", () => {
     expect(session).toBeDefined();
     expect(session!.data.nodeType).toBe("system");
 
-    // 세션 → 첫 턴 연결
+    // 세션 → 두 턴 모두 수평 연결
     const u1 = nodes.find(n => n.id === "node-u1")!;
-    expect(edges.find(e => e.source === session!.id && e.target === u1.id)).toBeDefined();
-
-    // 모든 턴 존재 + Y 순서
-    const t1 = nodes.find(n => n.id === "node-t1")!;
     const u2 = nodes.find(n => n.id === "node-u2")!;
+    expect(edges.find(e => e.source === session!.id && e.target === u1.id)).toBeDefined();
+    expect(edges.find(e => e.source === session!.id && e.target === u2.id)).toBeDefined();
+
+    // 턴은 형제로서 아래로 쌓임
+    const t1 = nodes.find(n => n.id === "node-t1")!;
     const t2 = nodes.find(n => n.id === "node-t2")!;
 
-    expect(t1.position.y).toBeGreaterThan(u1.position.y);
-    expect(u2.position.y).toBeGreaterThan(t1.position.y);
-    expect(t2.position.y).toBeGreaterThan(u2.position.y);
+    expect(u2.position.y).toBeGreaterThan(u1.position.y);
+    // thinking은 턴 오른쪽에 배치
+    expect(t1.position.x).toBeGreaterThan(u1.position.x);
+    expect(t2.position.x).toBeGreaterThan(u2.position.x);
   });
 
   it("노드 총 수 확인: 세션 + 유저3 + 씽킹3 + 도구2x(call) = 9", () => {
