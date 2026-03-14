@@ -457,9 +457,9 @@ export function getCollapseInfo(treeNode: EventTreeNode, collapsedNodeIds: Set<s
  * EventTreeNode 트리를 React Flow 노드/엣지로 변환합니다.
  *
  * DFS 순회로 트리를 탐색하며:
- * - session root의 자식 (user_message, intervention) → Col A 메인 플로우
- * - user_message/intervention의 자식 (text, complete, error) → Col A 메인 플로우
- * - text의 자식 (tool) → Col B/C 수평 분기
+ * 트리 구조를 그대로 레이아웃에 반영합니다:
+ * - 자식 노드는 부모 우측에 수평 배치
+ * - 형제 노드는 같은 x에서 아래로 스택
  *
  * LayoutContext에 공유 상태를 캡슐화하고, 렌더러 registry를 통해
  * 노드 타입별 렌더링을 위임합니다.
@@ -491,19 +491,16 @@ export function buildGraph(
 
 // === Grid Layout ===
 
-/** tool 체인이 부모 노드 우측에 배치될 때의 수평 간격 */
-const TOOL_BRANCH_H_GAP = 120;
+/** 자식 노드가 부모 노드 우측에 배치될 때의 수평 간격 */
+const TREE_H_GAP = 120;
 const V_GAP = 16;
-/** 트리 계층 들여쓰기 폭 */
-const INDENT_STEP = 40;
 
 /**
  * 엣지 기반 재귀 레이아웃을 적용합니다.
  *
- * 모든 노드를 동일한 로직으로 배치합니다:
- * - 엣지 핸들로 방향 결정: right→left = 수평 자식, 그 외 = 수직 자식
- * - 수평 자식: parent.x + COL_STEP, 부모 Y에서 아래로 V_GAP 간격 스택
- * - 수직 자식: parent.x, parent.y + rowHeight + gap
+ * 트리 구조 레이아웃:
+ * - 자식 노드: 부모 우측에 수평 배치 (right→left 엣지)
+ * - 형제 노드: 같은 x에서 아래로 V_GAP 간격 스택
  * - effectiveHeight: 재귀적으로 모든 자손의 높이를 포함
  */
 export function applyDagreLayout(
@@ -600,7 +597,7 @@ export function applyDagreLayout(
 
     // 수평 자식: 부모 width + H_GAP만큼 오른쪽으로, V_GAP 간격으로 아래로 스택
     const parentW = nodeMap.get(id)?.width ?? DEFAULT_NODE_WIDTH;
-    const colStep = parentW + TOOL_BRANCH_H_GAP;
+    const colStep = parentW + TREE_H_GAP;
     let hy = y;
     for (const hc of hCh) {
       placeSubtree(hc.id, x + colStep, hy, false);
@@ -614,7 +611,7 @@ export function applyDagreLayout(
     for (const vc of vCh) {
       // sibling 엣지: 형제이므로 같은 x 유지
       // isRootLevel: 세션 루트에서 첫째 자식도 같은 x 유지
-      const childX = (vc.sibling || isRootLevel) ? x : x + INDENT_STEP;
+      const childX = x;
       placeSubtree(vc.id, childX, vy, false);
       vy += computeHeights(vc.id).eff + vGap;
     }
