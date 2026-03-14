@@ -271,7 +271,7 @@ class TestSetTokenEndpoint:
     def test_set_valid_token(self, client, auth_headers: dict, test_env_path: Path):
         """유효한 토큰 설정"""
         response = client.post(
-            "/auth/claude/token",
+            "/token",
             json={"token": "sk-ant-oat01-valid123"},
             headers=auth_headers,
         )
@@ -288,7 +288,7 @@ class TestSetTokenEndpoint:
     def test_set_invalid_token(self, client, auth_headers: dict):
         """유효하지 않은 토큰 형식"""
         response = client.post(
-            "/auth/claude/token",
+            "/token",
             json={"token": "invalid-token-format"},
             headers=auth_headers,
         )
@@ -301,7 +301,7 @@ class TestSetTokenEndpoint:
     def test_set_empty_token(self, client, auth_headers: dict):
         """빈 토큰"""
         response = client.post(
-            "/auth/claude/token",
+            "/token",
             json={"token": ""},
             headers=auth_headers,
         )
@@ -314,7 +314,7 @@ class TestSetTokenEndpoint:
     def test_set_token_unauthorized(self, client):
         """인증 없이 요청"""
         response = client.post(
-            "/auth/claude/token",
+            "/token",
             json={"token": "sk-ant-oat01-valid"},
         )
 
@@ -334,7 +334,7 @@ class TestDeleteTokenEndpoint:
         test_env_path.write_text("CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-todelete\n")
         os.environ["CLAUDE_CODE_OAUTH_TOKEN"] = "sk-ant-oat01-todelete"
 
-        response = client.delete("/auth/claude/token", headers=auth_headers)
+        response = client.delete("/token", headers=auth_headers)
 
         assert response.status_code == 200
         data = response.json()
@@ -352,7 +352,7 @@ class TestDeleteTokenEndpoint:
         if "CLAUDE_CODE_OAUTH_TOKEN" in os.environ:
             del os.environ["CLAUDE_CODE_OAUTH_TOKEN"]
 
-        response = client.delete("/auth/claude/token", headers=auth_headers)
+        response = client.delete("/token", headers=auth_headers)
 
         assert response.status_code == 200
         data = response.json()
@@ -361,7 +361,7 @@ class TestDeleteTokenEndpoint:
 
     def test_delete_token_unauthorized(self, client):
         """인증 없이 요청"""
-        response = client.delete("/auth/claude/token")
+        response = client.delete("/token")
 
         assert response.status_code == 401
 
@@ -377,7 +377,7 @@ class TestTokenPersistence:
         token = "sk-ant-oat01-persist"
 
         response = client.post(
-            "/auth/claude/token",
+            "/token",
             json={"token": token},
             headers=auth_headers,
         )
@@ -394,14 +394,14 @@ class TestTokenPersistence:
 
         # 첫 번째 토큰 설정
         client.post(
-            "/auth/claude/token",
+            "/token",
             json={"token": old_token},
             headers=auth_headers,
         )
 
         # 두 번째 토큰으로 업데이트
         response = client.post(
-            "/auth/claude/token",
+            "/token",
             json={"token": new_token},
             headers=auth_headers,
         )
