@@ -280,6 +280,91 @@ class TestInterventionUpdatesUserRequestId:
         assert second_parent is not None
 
 
+class TestInterventionBroadcastEventId:
+    """intervention_sent 브로드캐스트에 _event_id가 포함되는지 검증"""
+
+    @pytest.mark.asyncio
+    async def test_intervention_broadcast_includes_event_id(self, tmp_path):
+        """intervention_sent 브로드캐스트 dict에 _event_id가 JSONL event_id로 설정된다"""
+        event_store = EventStore(base_dir=tmp_path / "events")
+        task = _make_task()
+        tasks = {task.agent_session_id: task}
+
+        # 시퀀스: intervention → complete
+        intervention = ("INTERVENTION", "user1", "keep going")
+        complete_event = CompleteEvent(result="done", parent_event_id=None)
+        runner = FakeClaudeRunner(events=[intervention, complete_event])
+
+        executor, broadcasts = _make_executor(tasks, event_store=event_store)
+        await executor._run_execution(task, runner, FakeResourceManager())
+
+        # intervention_sent 브로드캐스트 찾기
+        intervention_broadcasts = [
+            (sid, ev) for sid, ev in broadcasts
+            if isinstance(ev, dict) and ev.get("type") == "intervention_sent"
+        ]
+        assert len(intervention_broadcasts) == 1
+        _, intv_dict = intervention_broadcasts[0]
+
+        # _event_id가 존재하고 정수(JSONL event_id)여야 함
+        assert "_event_id" in intv_dict
+        assert isinstance(intv_dict["_event_id"], int)
+
+    @pytest.mark.asyncio
+    async def test_intervention_broadcast_no_event_id_without_store(self):
+        """EventStore 없으면 intervention_sent에 _event_id가 없다"""
+        task = _make_task()
+        tasks = {task.agent_session_id: task}
+
+        intervention = ("INTERVENTION", "user1", "keep going")
+        complete_event = CompleteEvent(result="done", parent_event_id=None)
+        runner = FakeClaudeRunner(events=[intervention, complete_event])
+
+        executor, broadcasts = _make_executor(tasks, event_store=None)
+        await executor._run_execution(task, runner, FakeResourceManager())
+
+        intervention_broadcasts = [
+            (sid, ev) for sid, ev in broadcasts
+            if isinstance(ev, dict) and ev.get("type") == "intervention_sent"
+        ]
+        assert len(intervention_broadcasts) == 1
+        _, intv_dict = intervention_broadcasts[0]
+
+        # EventStore 없으면 _event_id가 설정되지 않음
+        assert "_event_id" not in intv_dict
+
+    @pytest.mark.asyncio
+    async def test_intervention_event_id_matches_jsonl(self, tmp_path):
+        """intervention_sent의 _event_id가 JSONL에 기록된 user_message의 ID와 일치한다"""
+        event_store = EventStore(base_dir=tmp_path / "events")
+        task = _make_task()
+        tasks = {task.agent_session_id: task}
+
+        intervention = ("INTERVENTION", "user1", "intervention text here")
+        complete_event = CompleteEvent(result="done", parent_event_id=None)
+        runner = FakeClaudeRunner(events=[intervention, complete_event])
+
+        executor, broadcasts = _make_executor(tasks, event_store=event_store)
+        await executor._run_execution(task, runner, FakeResourceManager())
+
+        # JSONL에서 intervention user_message 찾기 (user 필드로 구분)
+        all_events = event_store.read_all(task.agent_session_id)
+        intervention_msgs = [
+            e for e in all_events
+            if e["event"].get("type") == "user_message" and e["event"].get("user") == "user1"
+        ]
+        assert len(intervention_msgs) == 1
+        jsonl_id = intervention_msgs[0]["id"]
+
+        # 브로드캐스트의 _event_id와 일치해야 함
+        intervention_broadcasts = [
+            (sid, ev) for sid, ev in broadcasts
+            if isinstance(ev, dict) and ev.get("type") == "intervention_sent"
+        ]
+        _, intv_dict = intervention_broadcasts[0]
+        assert intv_dict["_event_id"] == jsonl_id
+
+
 class TestExceptionPathParentEventId:
     """exception 경로에서 parent_event_id가 포함되는지 검증"""
 
