@@ -18,7 +18,7 @@ from soul_server.api import attachments_router, dashboard_router, create_session
 from soul_server.api.tasks import router as tasks_router
 from soul_server.api.credentials import create_credentials_router
 from soul_server.api.llm import create_llm_router
-from soul_server.api.claude_auth import create_claude_auth_router
+from soul_server.api.claude_auth import create_claude_auth_router, AuthSessionManager
 from soul_server.llm import OpenAIAdapter, AnthropicAdapter, LlmExecutor
 from soul_server.service import resource_manager, file_manager
 from soul_server.service.credential_store import CredentialStore
@@ -374,7 +374,8 @@ app.include_router(tasks_router, tags=["tasks"])
 app.include_router(dashboard_router, prefix="/api", tags=["dashboard"])
 
 # Claude OAuth 토큰 API
-claude_auth_router = create_claude_auth_router()
+auth_session_manager = AuthSessionManager()
+claude_auth_router = create_claude_auth_router(session_manager=auth_session_manager)
 app.include_router(claude_auth_router, prefix="/auth/claude", tags=["claude-auth"])
 
 
