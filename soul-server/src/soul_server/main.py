@@ -375,7 +375,7 @@ app.include_router(dashboard_router, prefix="/api", tags=["dashboard"])
 
 # Claude OAuth 토큰 API
 claude_auth_router = create_claude_auth_router()
-app.include_router(claude_auth_router, tags=["claude-auth"])
+app.include_router(claude_auth_router, prefix="/auth/claude", tags=["claude-auth"])
 
 
 # === Exception Handlers ===
