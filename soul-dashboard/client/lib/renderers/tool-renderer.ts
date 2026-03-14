@@ -10,7 +10,6 @@ import type { EventTreeNode, ToolNode } from "@shared/types";
 import type { LayoutContext } from "../layout-context";
 import {
   createToolCallNode,
-  createEdge,
   getCollapseInfo,
 } from "../layout-engine";
 import { processChildNodes } from "./child-processor";
@@ -18,7 +17,7 @@ import { processChildNodes } from "./child-processor";
 /** tool 노드를 렌더링합니다. */
 export function renderToolNode(
   treeNode: EventTreeNode,
-  parentNodeId: string | null,
+  _parentNodeId: string | null,
   ctx: LayoutContext,
 ): string | null {
   const toolNode = treeNode as ToolNode;
@@ -30,12 +29,7 @@ export function renderToolNode(
   }, collapseInfo);
   ctx.nodes.push(callNode);
 
-  // 수평 엣지 (부모 → tool): tool-renderer가 담당
-  if (parentNodeId) {
-    ctx.edges.push(
-      createEdge(parentNodeId, callNode.id, !toolNode.completed && !toolNode.toolResult, "right", "left"),
-    );
-  }
+  // 엣지 생성은 child-processor가 담당 (모든 자식 동일하게 수평 엣지)
 
   if (ctx.collapsedNodeIds.has(treeNode.id)) {
     return callNode.id;
