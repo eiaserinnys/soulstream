@@ -40,8 +40,17 @@ if ($Server) {
 
 if ($Dashboard) {
     if (-not (Test-Path (Join-Path $DashboardDir "node_modules"))) {
-        Write-Host "[ERROR] node_modules not found. Run: cd $DashboardDir && pnpm install" -ForegroundColor Red
-        exit 1
+        Write-Host "[Soul Dashboard] Installing dependencies..." -ForegroundColor Magenta
+        Push-Location $DashboardDir
+        try {
+            pnpm install
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "[ERROR] pnpm install failed (exit code: $LASTEXITCODE)" -ForegroundColor Red
+                exit 1
+            }
+        } finally {
+            Pop-Location
+        }
     }
 
     # 클라이언트 빌드 (Express 서버가 dist/client/를 정적 서빙하므로 빌드 필수)
