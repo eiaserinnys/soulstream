@@ -274,25 +274,26 @@ describe("renderTextNode", () => {
 });
 
 describe("renderToolNode", () => {
-  it("creates tool_call node with horizontal edge from parent", () => {
+  it("creates tool_call node (edge handled by child-processor)", () => {
     const ctx = makeCtx();
     const node = toolTreeNode("tool1", "Read", { toolResult: "file content" });
     renderToolNode(node, "parent-id", ctx);
 
     expect(ctx.nodes.length).toBe(1);
     expect(ctx.nodes[0].data.nodeType).toBe("tool_call");
-
-    // Edge from parent to call (horizontal)
-    expect(ctx.edges[0].sourceHandle).toBe("right");
-    expect(ctx.edges[0].targetHandle).toBe("left");
+    // Edge is created by child-processor, not by renderToolNode
+    expect(ctx.edges.length).toBe(0);
   });
 
-  it("creates animated edge for streaming tool", () => {
+  it("streaming tool creates only tool_call node (no edges)", () => {
     const ctx = makeCtx();
     const node = toolTreeNode("tool1", "Bash", { completed: false });
     renderToolNode(node, "parent", ctx);
 
-    expect(ctx.edges[0].animated).toBe(true);
+    expect(ctx.nodes.length).toBe(1);
+    expect(ctx.nodes[0].data.nodeType).toBe("tool_call");
+    // Edge is created by child-processor, not by renderToolNode
+    expect(ctx.edges.length).toBe(0);
   });
 
   it("streaming tool creates only tool_call node", () => {
@@ -404,7 +405,7 @@ describe("renderResultNode", () => {
 });
 
 describe("processChildNodes", () => {
-  it("creates vertical edges: parent→first child, sibling→sibling", () => {
+  it("creates horizontal edges: parent→all children (right→left)", () => {
     const ctx = makeCtx();
     const parent = userMsgNode("u1", "Hi", [
       textTreeNode("t1", "I'm thinking"),
@@ -414,15 +415,19 @@ describe("processChildNodes", () => {
 
     // 2 text nodes
     expect(ctx.nodes.length).toBe(2);
-    // parent → first child (vertical)
+    // All children connect horizontally to parent (right→left)
+    expect(ctx.edges.length).toBe(2);
     expect(ctx.edges[0].source).toBe("user-1");
     expect(ctx.edges[0].target).toBe(ctx.nodes[0].id);
-    // sibling → sibling (vertical)
-    expect(ctx.edges[1].source).toBe(ctx.nodes[0].id);
+    expect(ctx.edges[0].sourceHandle).toBe("right");
+    expect(ctx.edges[0].targetHandle).toBe("left");
+    expect(ctx.edges[1].source).toBe("user-1");
     expect(ctx.edges[1].target).toBe(ctx.nodes[1].id);
+    expect(ctx.edges[1].sourceHandle).toBe("right");
+    expect(ctx.edges[1].targetHandle).toBe("left");
   });
 
-  it("tool is excluded from vertical chain (horizontal edge only)", () => {
+  it("all children get horizontal edges uniformly (no type distinction)", () => {
     const ctx = makeCtx();
     const parent = userMsgNode("u1", "Hi", [
       textTreeNode("t1", "I'm thinking"),
@@ -433,19 +438,15 @@ describe("processChildNodes", () => {
     // text node + tool_call
     expect(ctx.nodes[0].data.nodeType).toBe("text");
     expect(ctx.nodes[1].data.nodeType).toBe("tool_call");
-    // tool connects horizontally to parentGraphNodeId
-    const toolEdge = ctx.edges.find(e => e.target === "node-tool1-call");
-    expect(toolEdge?.source).toBe("user-1");
-    expect(toolEdge?.sourceHandle).toBe("right");
-    expect(toolEdge?.targetHandle).toBe("left");
-    // No vertical edge to tool
-    const verticalToTool = ctx.edges.find(
-      e => e.target === ctx.nodes[1].id && e.sourceHandle !== "right",
-    );
-    expect(verticalToTool).toBeUndefined();
+    // Both connect horizontally to parent
+    expect(ctx.edges.length).toBe(2);
+    expect(ctx.edges[0].source).toBe("user-1");
+    expect(ctx.edges[0].sourceHandle).toBe("right");
+    expect(ctx.edges[1].source).toBe("user-1");
+    expect(ctx.edges[1].sourceHandle).toBe("right");
   });
 
-  it("tool and thinking are siblings under same parent", () => {
+  it("tool and thinking are siblings under same parent with horizontal edges", () => {
     const ctx = makeCtx();
     const thinkingChild: EventTreeNode = {
       id: "th1",
@@ -465,25 +466,17 @@ describe("processChildNodes", () => {
     const thinkingGraphNode = ctx.nodes[0];
     const toolGraphNode = ctx.nodes[1];
 
-    // thinking connects to parent via vertical edge (first child)
-    const thinkingEdge = ctx.edges.find(
-      e => e.target === thinkingGraphNode.id && e.sourceHandle !== "right",
-    );
+    // Both connect horizontally to parent
+    const thinkingEdge = ctx.edges.find(e => e.target === thinkingGraphNode.id);
     expect(thinkingEdge?.source).toBe("user-1");
+    expect(thinkingEdge?.sourceHandle).toBe("right");
 
-    // tool connects horizontally to parentGraphNodeId
     const toolEdge = ctx.edges.find(e => e.target === toolGraphNode.id);
     expect(toolEdge?.source).toBe("user-1");
     expect(toolEdge?.sourceHandle).toBe("right");
-
-    // No vertical edge from thinking to tool (tool excluded from chain)
-    const thinkingToTool = ctx.edges.find(
-      e => e.source === thinkingGraphNode.id && e.target === toolGraphNode.id,
-    );
-    expect(thinkingToTool).toBeUndefined();
   });
 
-  it("handles complete/error children with vertical edges", () => {
+  it("handles complete/error children with horizontal edges", () => {
     const ctx = makeCtx();
     const parent = userMsgNode("u1", "Hi", [
       textTreeNode("t1", "thinking"),
@@ -493,14 +486,15 @@ describe("processChildNodes", () => {
 
     expect(ctx.nodes.length).toBe(2);
     expect(ctx.nodes[1].data.nodeType).toBe("system");
-    // parent → text (first child)
+    // Both children connect horizontally to parent
+    expect(ctx.edges.length).toBe(2);
     expect(ctx.edges[0].source).toBe("parent-node-id");
-    // text → complete (sibling chain)
-    expect(ctx.edges[1].source).toBe(ctx.nodes[0].id);
-    expect(ctx.edges[1].target).toBe(ctx.nodes[1].id);
+    expect(ctx.edges[0].sourceHandle).toBe("right");
+    expect(ctx.edges[1].source).toBe("parent-node-id");
+    expect(ctx.edges[1].sourceHandle).toBe("right");
   });
 
-  it("chains text → compact → complete via vertical edges", () => {
+  it("all children connect horizontally: text, compact, complete", () => {
     const ctx = makeCtx();
     const parent = userMsgNode("u1", "Hi", [
       textTreeNode("t1", "thinking"),
@@ -513,13 +507,17 @@ describe("processChildNodes", () => {
     expect(ctx.nodes.length).toBe(3);
     expect(ctx.nodes[1].data.nodeType).toBe("system");
     expect(ctx.nodes[1].data.label).toBe("⚡ Context Compaction");
-    // parent → text → compact → complete
+    // All children connect horizontally to parent
+    expect(ctx.edges.length).toBe(3);
     expect(ctx.edges[0].source).toBe("parent-node-id");
     expect(ctx.edges[0].target).toBe(ctx.nodes[0].id);
-    expect(ctx.edges[1].source).toBe(ctx.nodes[0].id);
+    expect(ctx.edges[0].sourceHandle).toBe("right");
+    expect(ctx.edges[1].source).toBe("parent-node-id");
     expect(ctx.edges[1].target).toBe(ctx.nodes[1].id);
-    expect(ctx.edges[2].source).toBe(ctx.nodes[1].id);
+    expect(ctx.edges[1].sourceHandle).toBe("right");
+    expect(ctx.edges[2].source).toBe("parent-node-id");
     expect(ctx.edges[2].target).toBe(ctx.nodes[2].id);
+    expect(ctx.edges[2].sourceHandle).toBe("right");
   });
 
   it("no edge when parentGraphNodeId is null", () => {
@@ -579,7 +577,7 @@ describe("renderInputRequestNode", () => {
 });
 
 describe("Tree-based edge generation", () => {
-  it("processChildNodes chains text siblings with vertical edges", () => {
+  it("processChildNodes connects all siblings with horizontal edges", () => {
     const ctx = makeCtx();
     const parent = userMsgNode("u1", "Go", [
       textTreeNode("t1", "first"),
@@ -587,19 +585,31 @@ describe("Tree-based edge generation", () => {
     ]);
     processChildNodes(parent, "user-node", ctx);
 
-    // user-node → t1 → t2 (vertical chain)
-    const verticalEdges = ctx.edges.filter(e => e.sourceHandle !== "right");
-    expect(verticalEdges.length).toBe(2);
-    expect(verticalEdges[0].source).toBe("user-node");
-    expect(verticalEdges[0].target).toBe("node-t1");
-    expect(verticalEdges[1].source).toBe("node-t1");
-    expect(verticalEdges[1].target).toBe("node-t2");
+    // All children connect horizontally to parent (right→left)
+    expect(ctx.edges.length).toBe(2);
+    expect(ctx.edges[0].source).toBe("user-node");
+    expect(ctx.edges[0].target).toBe("node-t1");
+    expect(ctx.edges[0].sourceHandle).toBe("right");
+    expect(ctx.edges[0].targetHandle).toBe("left");
+    expect(ctx.edges[1].source).toBe("user-node");
+    expect(ctx.edges[1].target).toBe("node-t2");
+    expect(ctx.edges[1].sourceHandle).toBe("right");
+    expect(ctx.edges[1].targetHandle).toBe("left");
   });
 
-  it("tool connects to explicit parentGraphNodeId via horizontal edge", () => {
+  it("tool edge is created by processChildNodes (not renderToolNode)", () => {
     const ctx = makeCtx();
+    // renderToolNode alone does not create edges
     renderToolNode(toolTreeNode("tool1", "Bash", { toolResult: "ok" }), "user-node-id", ctx);
-    const toolEdge = ctx.edges.find(e => e.target === "node-tool1-call");
+    expect(ctx.edges.length).toBe(0);
+
+    // When called via processChildNodes, edge is created
+    const ctx2 = makeCtx();
+    const parent = userMsgNode("u1", "Go", [
+      toolTreeNode("tool1", "Bash", { toolResult: "ok" }),
+    ]);
+    processChildNodes(parent, "user-node-id", ctx2);
+    const toolEdge = ctx2.edges.find(e => e.target === "node-tool1-call");
     expect(toolEdge?.source).toBe("user-node-id");
     expect(toolEdge?.sourceHandle).toBe("right");
     expect(toolEdge?.targetHandle).toBe("left");
