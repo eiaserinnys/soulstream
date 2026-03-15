@@ -232,22 +232,20 @@ describe("JSONL Fixture Integration Tests", () => {
       expect(interventionNodes[0].data.content).toContain("src/client");
     });
 
-    it("buildGraph에서 intervention 노드가 메인 흐름에 삽입된다", () => {
+    it("buildGraph에서 intervention 노드가 부모에 연결된다", () => {
       const { tree } = replayFixture("intervention-flow");
       const { edges, nodes } = buildGraph(tree);
 
-      // intervention 노드에 target/source 엣지가 있어야 함
+      // intervention 노드에 incoming 엣지가 있어야 함 (부모→intervention)
       const interventionNode = nodes.find((n) => n.type === "intervention");
       expect(interventionNode).toBeDefined();
 
       const incomingEdges = edges.filter(
         (e) => e.target === interventionNode!.id,
       );
-      const outgoingEdges = edges.filter(
-        (e) => e.source === interventionNode!.id,
-      );
+      // horizontal layout: intervention connects to parent (incoming only)
+      // outgoing edge is optional (depends on whether intervention has children)
       expect(incomingEdges.length).toBeGreaterThanOrEqual(1);
-      expect(outgoingEdges.length).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -344,7 +342,7 @@ describe("JSONL Fixture Integration Tests", () => {
       expect(outgoing).toHaveLength(0);
     });
 
-    it("마지막 text 노드에서 complete 노드로의 엣지가 존재한다", () => {
+    it("text와 complete 노드가 같은 부모에 연결된다", () => {
       const { tree } = replayFixture("complete-flow");
       const { nodes, edges } = buildGraph(tree);
 
@@ -354,10 +352,14 @@ describe("JSONL Fixture Integration Tests", () => {
         (n) => n.type === "system" && n.data.label === "Complete",
       )!;
 
-      const edge = edges.find(
-        (e) => e.source === lastText.id && e.target === completeNode.id,
-      );
-      expect(edge).toBeDefined();
+      // Horizontal layout: text and complete are siblings (both connect to same parent)
+      // Find the parent of text node
+      const textIncomingEdge = edges.find((e) => e.target === lastText.id);
+      const completeIncomingEdge = edges.find((e) => e.target === completeNode.id);
+      expect(textIncomingEdge).toBeDefined();
+      expect(completeIncomingEdge).toBeDefined();
+      // Both should connect from the same parent
+      expect(textIncomingEdge!.source).toBe(completeIncomingEdge!.source);
     });
 
     it("전체 노드 수가 올바르다", () => {
