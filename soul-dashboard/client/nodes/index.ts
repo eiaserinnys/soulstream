@@ -14,6 +14,7 @@ import { ResponseNode } from './ResponseNode';
 import { SystemNode } from './SystemNode';
 import { InterventionNode } from './InterventionNode';
 import { InputRequestNode } from './InputRequestNode';
+import { NodeHandles } from './NodeHandles';
 
 export const nodeTypes: NodeTypes = {
   user: UserNode,
@@ -34,4 +35,5 @@ export {
   SystemNode,
   InterventionNode,
   InputRequestNode,
+  NodeHandles,
 };

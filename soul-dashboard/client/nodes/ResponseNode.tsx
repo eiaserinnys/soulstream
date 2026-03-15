@@ -6,10 +6,11 @@
  */
 
 import { memo } from 'react';
-import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
+import { type NodeProps, type Node } from '@xyflow/react';
 import type { GraphNodeData } from '../lib/layout-engine';
 import { cn } from '../lib/cn';
-import { nodeBase, nodeHeader, truncate2, handleStyle, NODE_COLORS } from './node-styles';
+import { nodeBase, nodeHeader, truncate2, NODE_COLORS } from './node-styles';
+import { NodeHandles } from './NodeHandles';
 
 type ResponseNodeType = Node<GraphNodeData, 'response'>;
 
@@ -55,8 +56,7 @@ export const ResponseNode = memo(function ResponseNode({ data, selected }: NodeP
       )}
 
       {/* Handles */}
-      <Handle type="target" position={Position.Top} style={handleStyle(NODE_COLORS.response)} />
-      <Handle type="source" position={Position.Bottom} style={handleStyle(NODE_COLORS.response)} />
+      <NodeHandles color={NODE_COLORS.response} />
     </div>
   );
 });
