@@ -241,7 +241,7 @@ export function DashboardLayout() {
         {/* Left: Session List */}
         <aside
           data-testid="session-panel"
-          className="shrink-0 overflow-hidden"
+          className="overflow-hidden"
           style={{ width: `${leftPercent}%` }}
         >
           <SessionList sessions={sessions} loading={loading} error={error} />
@@ -253,7 +253,7 @@ export function DashboardLayout() {
         {/* Center: Context-dependent content */}
         <main
           data-testid="graph-panel"
-          className="shrink-0 overflow-hidden flex flex-col"
+          className="overflow-hidden flex flex-col"
           style={{ width: `${centerPercent}%` }}
         >
           {showComposer && (
@@ -274,7 +274,7 @@ export function DashboardLayout() {
         {/* Right: Detail + Chat */}
         <aside
           data-testid="detail-panel"
-          className="shrink-0 overflow-hidden"
+          className="overflow-hidden"
           style={{ width: `${rightPercent}%` }}
         >
           <RightPanel />

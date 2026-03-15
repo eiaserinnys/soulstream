@@ -638,7 +638,7 @@ export function ChatView() {
         <button
           onClick={toggleFollow}
           className={cn(
-            "absolute bottom-2 right-2 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-colors",
+            "absolute bottom-[15px] right-[15px] flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-colors",
             "border shadow-md z-10",
             isFollowing
               ? "bg-accent-blue/15 border-accent-blue/30 text-accent-blue hover:bg-accent-blue/25"
