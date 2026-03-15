@@ -6,10 +6,11 @@
  */
 
 import { memo } from 'react';
-import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
+import { type NodeProps, type Node } from '@xyflow/react';
 import type { GraphNodeData } from '../lib/layout-engine';
 import { cn } from '../lib/cn';
-import { nodeBase, nodeBgDefault, nodeContent, nodeHeader, nodeLabel, truncate2, handleStyle, NODE_COLORS } from './node-styles';
+import { nodeBase, nodeBgDefault, nodeContent, nodeHeader, nodeLabel, truncate2, NODE_COLORS } from './node-styles';
+import { NodeHandles } from './NodeHandles';
 
 type UserNodeType = Node<GraphNodeData, 'user'>;
 
@@ -46,8 +47,7 @@ export const UserNode = memo(function UserNode({ data, selected }: NodeProps<Use
       </div>
 
       {/* Handles */}
-      <Handle type="target" position={Position.Top} style={handleStyle(NODE_COLORS.user)} />
-      <Handle type="source" position={Position.Bottom} style={handleStyle(NODE_COLORS.user)} />
+      <NodeHandles color={NODE_COLORS.user} />
     </div>
   );
 });

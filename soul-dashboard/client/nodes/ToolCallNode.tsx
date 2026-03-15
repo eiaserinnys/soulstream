@@ -7,10 +7,11 @@
  */
 
 import { memo, useCallback } from 'react';
-import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
+import { type NodeProps, type Node } from '@xyflow/react';
 import type { GraphNodeData } from '../lib/layout-engine';
 import { cn } from '../lib/cn';
-import { nodeBase, nodeContent, nodeHeader, nodeLabel, handleStyle, collapseButton, truncate2, NODE_COLORS } from './node-styles';
+import { nodeBase, nodeContent, nodeHeader, nodeLabel, collapseButton, truncate2, NODE_COLORS } from './node-styles';
+import { NodeHandles } from './NodeHandles';
 import { useDashboardStore } from '../stores/dashboard-store';
 
 type ToolCallNodeType = Node<GraphNodeData, 'tool_call'>;
@@ -160,10 +161,7 @@ export const ToolCallNode = memo(function ToolCallNode({ data, selected }: NodeP
       </div>
 
       {/* Handles */}
-      <Handle type="target" position={Position.Top} id="top" style={handleStyle(accentColor)} />
-      <Handle type="target" position={Position.Left} id="left" style={handleStyle(accentColor)} />
-      <Handle type="source" position={Position.Bottom} id="bottom" style={handleStyle(accentColor)} />
-      <Handle type="source" position={Position.Right} id="right" style={handleStyle(accentColor)} />
+      <NodeHandles color={accentColor} />
     </div>
   );
 });
