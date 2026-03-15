@@ -6,10 +6,11 @@
  */
 
 import { memo, useCallback } from 'react';
-import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
+import { type NodeProps, type Node } from '@xyflow/react';
 import type { GraphNodeData } from '../lib/layout-engine';
 import { cn } from '../lib/cn';
-import { nodeBase, nodeContent, nodeHeader, nodeLabel, truncate2, handleStyle, collapseButton, NODE_COLORS } from './node-styles';
+import { nodeBase, nodeContent, nodeHeader, nodeLabel, truncate2, collapseButton, NODE_COLORS } from './node-styles';
+import { NodeHandles } from './NodeHandles';
 import { useDashboardStore } from '../stores/dashboard-store';
 
 type ThinkingNodeType = Node<GraphNodeData, 'thinking'>;
@@ -96,9 +97,7 @@ export const ThinkingNode = memo(function ThinkingNode({ data, selected }: NodeP
       )}
 
       {/* Handles */}
-      <Handle type="target" position={Position.Top} style={handleStyle(accentColor)} />
-      <Handle type="source" position={Position.Bottom} style={handleStyle(accentColor)} />
-      <Handle type="source" position={Position.Right} id="right" style={handleStyle(accentColor)} />
+      <NodeHandles color={accentColor} />
     </div>
   );
 });

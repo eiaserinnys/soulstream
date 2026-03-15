@@ -13,11 +13,12 @@
  */
 
 import { memo, useState, useCallback, useRef, useEffect } from 'react';
-import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
+import { type NodeProps, type Node } from '@xyflow/react';
 import type { GraphNodeData } from '../lib/layout-engine';
 import type { InputRequestQuestion } from '@shared/types';
 import { cn } from '../lib/cn';
-import { nodeBase, nodeBgDefault, nodeContent, nodeHeader, nodeLabel, truncate2, handleStyle, NODE_COLORS } from './node-styles';
+import { nodeBase, nodeBgDefault, nodeContent, nodeHeader, nodeLabel, truncate2, NODE_COLORS } from './node-styles';
+import { NodeHandles } from './NodeHandles';
 import { useDashboardStore } from '../stores/dashboard-store';
 
 type InputRequestNodeData = Node<GraphNodeData, 'input_request'>;
@@ -110,8 +111,7 @@ export const InputRequestNode = memo(function InputRequestNode({ data, selected 
         </div>
 
         {/* Handles */}
-        <Handle type="target" position={Position.Top} style={handleStyle(NODE_COLORS.inputRequest)} />
-        <Handle type="source" position={Position.Bottom} style={handleStyle(NODE_COLORS.inputRequest)} />
+        <NodeHandles color={NODE_COLORS.inputRequest} />
       </div>
 
       {/* 옵션 팝오버 */}

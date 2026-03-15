@@ -6,10 +6,11 @@
  */
 
 import { memo } from 'react';
-import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
+import { type NodeProps, type Node } from '@xyflow/react';
 import type { GraphNodeData } from '../lib/layout-engine';
 import { cn } from '../lib/cn';
-import { nodeBase, nodeBgDefault, nodeContent, nodeHeader, nodeLabel, truncate2, handleStyle, NODE_COLORS } from './node-styles';
+import { nodeBase, nodeBgDefault, nodeContent, nodeHeader, nodeLabel, truncate2, NODE_COLORS } from './node-styles';
+import { NodeHandles } from './NodeHandles';
 
 type InterventionNodeType = Node<GraphNodeData, 'intervention'>;
 
@@ -50,8 +51,7 @@ export const InterventionNode = memo(function InterventionNode({ data, selected 
       </div>
 
       {/* Handles */}
-      <Handle type="target" position={Position.Top} style={handleStyle(NODE_COLORS.intervention)} />
-      <Handle type="source" position={Position.Bottom} style={handleStyle(NODE_COLORS.intervention)} />
+      <NodeHandles color={NODE_COLORS.intervention} />
     </div>
   );
 });
