@@ -119,81 +119,42 @@ export class SSESessionProvider implements SessionStorageProvider {
     onStatusChange?: (status: "connecting" | "connected" | "error") => void,
   ): () => void {
     let eventSource: EventSource | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let reconnectAttempt = 0;
-    let lastEventId = 0;
-    const maxReconnectAttempts = 20;
-    const reconnectIntervalMs = 3000;
-    const maxReconnectIntervalMs = 30000;
 
-    const connect = () => {
-      if (!sessionKey) return;
+    onStatusChange?.("connecting");
 
-      onStatusChange?.("connecting");
+    // URL 구성
+    const url = `/api/sessions/${encodeURIComponent(sessionKey)}/events`;
 
-      // URL 구성
-      let url = `/api/sessions/${encodeURIComponent(sessionKey)}/events`;
-      if (lastEventId > 0) {
-        url += `?lastEventId=${lastEventId}`;
-      }
+    const es = new EventSource(url);
+    eventSource = es;
 
-      const es = new EventSource(url);
-      eventSource = es;
-
-      es.onopen = () => {
-        reconnectAttempt = 0;
-        onStatusChange?.("connected");
-      };
-
-      // 타입별 이벤트 리스너 등록
-      for (const eventType of SSE_EVENT_TYPES) {
-        es.addEventListener(eventType, (e: MessageEvent) => {
-          try {
-            const data = JSON.parse(e.data) as SoulSSEEvent;
-            const eventId = e.lastEventId ? parseInt(e.lastEventId, 10) : 0;
-
-            if (eventId > lastEventId) {
-              lastEventId = eventId;
-            }
-
-            onEvent(data, eventId);
-          } catch {
-            // JSON 파싱 실패: 무시
-          }
-        });
-      }
-
-      // 에러 처리 & 재연결
-      es.onerror = () => {
-        es.close();
-        eventSource = null;
-        onStatusChange?.("error");
-
-        const attempt = reconnectAttempt;
-        if (attempt < maxReconnectAttempts) {
-          const delay = Math.min(
-            reconnectIntervalMs * Math.pow(2, attempt),
-            maxReconnectIntervalMs
-          );
-          reconnectAttempt = attempt + 1;
-
-          reconnectTimer = setTimeout(() => {
-            reconnectTimer = null;
-            connect();
-          }, delay);
-        }
-      };
+    es.onopen = () => {
+      onStatusChange?.("connected");
     };
 
-    // 초기 연결
-    connect();
+    // 타입별 이벤트 리스너 등록
+    for (const eventType of SSE_EVENT_TYPES) {
+      es.addEventListener(eventType, (e: MessageEvent) => {
+        try {
+          const data = JSON.parse(e.data) as SoulSSEEvent;
+          const eventId = e.lastEventId ? parseInt(e.lastEventId, 10) : 0;
+          onEvent(data, eventId);
+        } catch {
+          // JSON 파싱 실패: 무시
+        }
+      });
+    }
+
+    // 에러 시 연결 종료만 수행.
+    // 재연결은 세션 목록 SSE가 페이지 리프레시로 처리한다.
+    es.onerror = () => {
+      es.close();
+      eventSource = null;
+      onStatusChange?.("error");
+    };
 
     // 구독 해제 함수
     return () => {
-      if (reconnectTimer) {
-        clearTimeout(reconnectTimer);
-        reconnectTimer = null;
-      }
       if (eventSource) {
         eventSource.close();
         eventSource = null;
