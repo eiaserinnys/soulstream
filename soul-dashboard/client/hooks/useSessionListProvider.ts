@@ -140,7 +140,14 @@ export function useSessionListProvider(
     const eventSource = new EventSource("/api/sessions/stream");
     eventSourceRef.current = eventSource;
 
+    // 재연결 감지: 에러 후 다시 연결되면 페이지 리프레시
+    let hadError = false;
+
     eventSource.onopen = () => {
+      if (hadError) {
+        window.location.reload();
+        return;
+      }
       setSessionsError(null);
     };
 
@@ -156,7 +163,7 @@ export function useSessionListProvider(
     }
 
     eventSource.onerror = () => {
-      setSessionsError("세션 목록 연결이 끊어졌습니다. 자동 재연결 중...");
+      hadError = true;
     };
   }, [handleSSEEvent, setSessionsError]);
 
