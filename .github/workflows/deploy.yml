@@ -1,0 +1,187 @@
+name: Deploy to Linode
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  SERVER_DEPLOY_BASE: /home/eias/services/soulstream-server
+  DASHBOARD_DEPLOY_BASE: /home/eias/services/soulstream-dashboard
+  KEEP_RELEASES: 5
+
+jobs:
+  build-server:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Upload server source
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-source
+          path: |
+            soul-server/src
+            soul-server/pyproject.toml
+
+  build-dashboard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: soul-dashboard
+        run: npm ci
+
+      - name: Build dashboard client
+        working-directory: soul-dashboard
+        run: npm run build
+
+      - name: Upload dashboard artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-build
+          path: |
+            soul-dashboard/dist/client
+            soul-dashboard/server
+            soul-dashboard/shared
+            soul-dashboard/tsconfig.json
+            soul-dashboard/package.json
+            soul-dashboard/package-lock.json
+
+  deploy:
+    needs: [build-server, build-dashboard]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📢 Discord 알림 (배포 시작)
+        run: |
+          curl -s -H "Content-Type: application/json" \
+            -d "{\"embeds\": [{\"title\": \"🚀 배포 시작\", \"description\": \"**soulstream** 배포가 시작되었습니다.\", \"color\": 3447003, \"fields\": [{\"name\": \"브랜치\", \"value\": \"\`${{ github.ref_name }}\`\", \"inline\": true}, {\"name\": \"커밋\", \"value\": \"[\`${GITHUB_SHA::7}\`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})\", \"inline\": true}, {\"name\": \"실행자\", \"value\": \"${{ github.actor }}\", \"inline\": true}], \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}]}" \
+            ${{ secrets.DISCORD_WEBHOOK_URL }} || true
+
+      - name: Download server artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: server-source
+          path: server-source
+
+      - name: Download dashboard artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dashboard-build
+          path: dashboard-build
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.LINODE_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.LINODE_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy Soul Server
+        run: |
+          SSH_CMD="ssh -i ~/.ssh/id_ed25519 ${{ secrets.LINODE_USER }}@${{ secrets.LINODE_HOST }}"
+          RELEASE_NAME=$(date +%Y-%m-%d-%H%M%S)
+          RELEASE_DIR="${SERVER_DEPLOY_BASE}/releases/${RELEASE_NAME}"
+
+          echo "=== 1. 릴리즈 디렉토리 생성 ==="
+          $SSH_CMD "mkdir -p ${RELEASE_DIR}"
+
+          echo "=== 2. 소스 파일 동기화 ==="
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/id_ed25519" \
+            server-source/soul-server/ ${{ secrets.LINODE_USER }}@${{ secrets.LINODE_HOST }}:${RELEASE_DIR}/
+
+          echo "=== 3. pyproject.toml 수정 (SSH URL로 변경) ==="
+          $SSH_CMD "sed -i 's|git+https://github.com/|git+ssh://git@github.com/|g' ${RELEASE_DIR}/pyproject.toml"
+
+          echo "=== 4. venv 생성 및 의존성 설치 ==="
+          $SSH_CMD "cd ${RELEASE_DIR} && python3 -m venv .venv && source .venv/bin/activate && pip install --upgrade pip && pip install -e ."
+
+          echo "=== 5. shared .env 심볼릭 링크 ==="
+          $SSH_CMD "ln -sf ${SERVER_DEPLOY_BASE}/shared/.env ${RELEASE_DIR}/.env"
+
+          echo "=== 6. current 심볼릭 링크 전환 ==="
+          $SSH_CMD "ln -sfn ${RELEASE_DIR} ${SERVER_DEPLOY_BASE}/current"
+
+          echo "=== 7. 서비스 재시작 (PM2) ==="
+          $SSH_CMD "pm2 restart soulstream-server || pm2 start /home/eias/services/soulstream-server/start.sh --name soulstream-server --interpreter /bin/bash"
+
+          sleep 2
+
+          echo "=== 8. 서비스 상태 확인 ==="
+          $SSH_CMD "pm2 show soulstream-server" || true
+
+          echo "=== 9. 오래된 릴리즈 정리 ==="
+          $SSH_CMD "cd ${SERVER_DEPLOY_BASE}/releases && ls -t | tail -n +\$((${KEEP_RELEASES} + 1)) | xargs -r rm -rf"
+
+      - name: Deploy Soul Dashboard
+        run: |
+          SSH_CMD="ssh -i ~/.ssh/id_ed25519 ${{ secrets.LINODE_USER }}@${{ secrets.LINODE_HOST }}"
+          RELEASE_NAME=$(date +%Y-%m-%d-%H%M%S)
+          RELEASE_DIR="${DASHBOARD_DEPLOY_BASE}/releases/${RELEASE_NAME}"
+
+          echo "=== 1. 릴리즈 디렉토리 생성 ==="
+          $SSH_CMD "mkdir -p ${RELEASE_DIR}/dist"
+
+          echo "=== 2. 빌드 파일 동기화 ==="
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/id_ed25519" \
+            dashboard-build/soul-dashboard/dist/client/ ${{ secrets.LINODE_USER }}@${{ secrets.LINODE_HOST }}:${RELEASE_DIR}/dist/client/
+
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/id_ed25519" \
+            dashboard-build/soul-dashboard/server/ ${{ secrets.LINODE_USER }}@${{ secrets.LINODE_HOST }}:${RELEASE_DIR}/server/
+
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/id_ed25519" \
+            dashboard-build/soul-dashboard/shared/ ${{ secrets.LINODE_USER }}@${{ secrets.LINODE_HOST }}:${RELEASE_DIR}/shared/
+
+          rsync -avz \
+            -e "ssh -i ~/.ssh/id_ed25519" \
+            dashboard-build/soul-dashboard/tsconfig.json \
+            dashboard-build/soul-dashboard/package.json \
+            dashboard-build/soul-dashboard/package-lock.json \
+            ${{ secrets.LINODE_USER }}@${{ secrets.LINODE_HOST }}:${RELEASE_DIR}/
+
+          echo "=== 3. npm install (프로덕션 의존성 + tsx) ==="
+          $SSH_CMD "cd ${RELEASE_DIR} && npm ci --omit=dev && npm install tsx typescript"
+
+          echo "=== 4. shared .env 심볼릭 링크 ==="
+          $SSH_CMD "ln -sf ${DASHBOARD_DEPLOY_BASE}/shared/.env ${RELEASE_DIR}/.env"
+
+          echo "=== 5. current 심볼릭 링크 전환 ==="
+          $SSH_CMD "ln -sfn ${RELEASE_DIR} ${DASHBOARD_DEPLOY_BASE}/current"
+
+          echo "=== 6. 서비스 재시작 (PM2) ==="
+          $SSH_CMD "pm2 restart soulstream-dashboard || pm2 start ${DASHBOARD_DEPLOY_BASE}/current/node_modules/.bin/tsx --name soulstream-dashboard --interpreter /usr/bin/node --cwd ${DASHBOARD_DEPLOY_BASE}/current -- server/index.ts"
+
+          sleep 2
+
+          echo "=== 7. 서비스 상태 확인 ==="
+          $SSH_CMD "pm2 show soulstream-dashboard" || true
+
+          echo "=== 8. 오래된 릴리즈 정리 ==="
+          $SSH_CMD "cd ${DASHBOARD_DEPLOY_BASE}/releases && ls -t | tail -n +\$((${KEEP_RELEASES} + 1)) | xargs -r rm -rf"
+
+      - name: 📢 Discord 알림 (배포 성공)
+        if: success()
+        run: |
+          curl -s -H "Content-Type: application/json" \
+            -d "{\"embeds\": [{\"title\": \"✅ 배포 완료\", \"description\": \"**soulstream** 배포가 성공적으로 완료되었습니다.\", \"color\": 5763719, \"fields\": [{\"name\": \"브랜치\", \"value\": \"\`${{ github.ref_name }}\`\", \"inline\": true}, {\"name\": \"커밋\", \"value\": \"[\`${GITHUB_SHA::7}\`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})\", \"inline\": true}], \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}]}" \
+            ${{ secrets.DISCORD_WEBHOOK_URL }} || true
+
+      - name: 📢 Discord 알림 (배포 실패)
+        if: failure()
+        run: |
+          curl -s -H "Content-Type: application/json" \
+            -d "{\"embeds\": [{\"title\": \"❌ 배포 실패\", \"description\": \"**soulstream** 배포가 실패했습니다.\", \"color\": 15548997, \"fields\": [{\"name\": \"브랜치\", \"value\": \"\`${{ github.ref_name }}\`\", \"inline\": true}, {\"name\": \"커밋\", \"value\": \"[\`${GITHUB_SHA::7}\`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})\", \"inline\": true}, {\"name\": \"워크플로우\", \"value\": \"[로그 보기](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\", \"inline\": true}], \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}]}" \
+            ${{ secrets.DISCORD_WEBHOOK_URL }} || true
