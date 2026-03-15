@@ -213,7 +213,7 @@ app.use(express.static(clientDistDir));
 
 // SPA fallback: API가 아닌 모든 GET 요청에 index.html 반환
 app.get("/{*splat}", (_req, res) => {
-  res.sendFile(path.join(clientDistDir, "index.html"));
+  res.sendFile("index.html", { root: clientDistDir });
 });
 
 // === Start Server ===
