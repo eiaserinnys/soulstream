@@ -86,6 +86,13 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H ${{ secrets.LINODE_HOST }} >> ~/.ssh/known_hosts
 
+      - name: Debug artifact structure
+        run: |
+          echo "=== server-source 구조 ==="
+          find server-source -type f | head -20 || echo "server-source 디렉토리 없음"
+          echo "=== dashboard-build 구조 ==="
+          find dashboard-build -type f | head -20 || echo "dashboard-build 디렉토리 없음"
+
       - name: Deploy Soul Server
         run: |
           SSH_CMD="ssh -i ~/.ssh/id_ed25519 ${{ secrets.LINODE_USER }}@${{ secrets.LINODE_HOST }}"
@@ -98,7 +105,7 @@ jobs:
           echo "=== 2. 소스 파일 동기화 ==="
           rsync -avz --delete \
             -e "ssh -i ~/.ssh/id_ed25519" \
-            server-source/soul-server/ ${{ secrets.LINODE_USER }}@${{ secrets.LINODE_HOST }}:${RELEASE_DIR}/
+            server-source/ ${{ secrets.LINODE_USER }}@${{ secrets.LINODE_HOST }}:${RELEASE_DIR}/
 
           echo "=== 3. pyproject.toml 수정 (SSH URL로 변경) ==="
           $SSH_CMD "sed -i 's|git+https://github.com/|git+ssh://git@github.com/|g' ${RELEASE_DIR}/pyproject.toml"
@@ -135,21 +142,21 @@ jobs:
           echo "=== 2. 빌드 파일 동기화 ==="
           rsync -avz --delete \
             -e "ssh -i ~/.ssh/id_ed25519" \
-            dashboard-build/soul-dashboard/dist/client/ ${{ secrets.LINODE_USER }}@${{ secrets.LINODE_HOST }}:${RELEASE_DIR}/dist/client/
+            dashboard-build/dist/client/ ${{ secrets.LINODE_USER }}@${{ secrets.LINODE_HOST }}:${RELEASE_DIR}/dist/client/
 
           rsync -avz --delete \
             -e "ssh -i ~/.ssh/id_ed25519" \
-            dashboard-build/soul-dashboard/server/ ${{ secrets.LINODE_USER }}@${{ secrets.LINODE_HOST }}:${RELEASE_DIR}/server/
+            dashboard-build/server/ ${{ secrets.LINODE_USER }}@${{ secrets.LINODE_HOST }}:${RELEASE_DIR}/server/
 
           rsync -avz --delete \
             -e "ssh -i ~/.ssh/id_ed25519" \
-            dashboard-build/soul-dashboard/shared/ ${{ secrets.LINODE_USER }}@${{ secrets.LINODE_HOST }}:${RELEASE_DIR}/shared/
+            dashboard-build/shared/ ${{ secrets.LINODE_USER }}@${{ secrets.LINODE_HOST }}:${RELEASE_DIR}/shared/
 
           rsync -avz \
             -e "ssh -i ~/.ssh/id_ed25519" \
-            dashboard-build/soul-dashboard/tsconfig.json \
-            dashboard-build/soul-dashboard/package.json \
-            dashboard-build/soul-dashboard/package-lock.json \
+            dashboard-build/tsconfig.json \
+            dashboard-build/package.json \
+            dashboard-build/package-lock.json \
             ${{ secrets.LINODE_USER }}@${{ secrets.LINODE_HOST }}:${RELEASE_DIR}/
 
           echo "=== 3. npm install (프로덕션 의존성 + tsx) ==="
