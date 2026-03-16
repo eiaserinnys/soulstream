@@ -167,7 +167,7 @@ jobs:
           $SSH_CMD "ln -sfn ${RELEASE_DIR} ${DASHBOARD_DEPLOY_BASE}/current"
 
           echo "=== 6. 서비스 재시작 (PM2) ==="
-          $SSH_CMD "pm2 restart soulstream-dashboard || pm2 start ${DASHBOARD_DEPLOY_BASE}/current/node_modules/.bin/tsx --name soulstream-dashboard --interpreter /usr/bin/node --cwd ${DASHBOARD_DEPLOY_BASE}/current -- server/index.ts"
+          $SSH_CMD "pm2 delete soulstream-dashboard 2>/dev/null; pm2 start ${DASHBOARD_DEPLOY_BASE}/current/node_modules/.bin/tsx --name soulstream-dashboard --interpreter /usr/bin/node --cwd ${DASHBOARD_DEPLOY_BASE}/current -- server/index.ts && pm2 save"
 
           sleep 2
 
