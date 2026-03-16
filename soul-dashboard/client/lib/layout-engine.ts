@@ -75,6 +75,7 @@ export interface GraphNodeData extends Record<string, unknown> {
   requestId?: string;
   questions?: InputRequestQuestion[];
   responded?: boolean;
+  expired?: boolean;
 }
 
 export type GraphNode = Node<GraphNodeData>;
@@ -301,6 +302,7 @@ export function createInputRequestNodeFromTree(
       requestId: treeNode.requestId,
       questions: treeNode.questions,
       responded: treeNode.responded,
+      expired: treeNode.expired,
       collapsed: collapseInfo?.collapsed ?? false,
       hasChildren: collapseInfo?.hasChildren ?? false,
       childCount: collapseInfo?.childCount ?? 0,
