@@ -7,24 +7,33 @@
 
 import { useState, useEffect } from 'react';
 
+const calcRemaining = (at: number | undefined, timeoutSec: number): number => {
+  if (!at) return timeoutSec;
+  return Math.max(0, timeoutSec - Math.floor((Date.now() - at) / 1000));
+};
+
 export function useInputRequestTimer(
   receivedAt: number | undefined,
   timeoutSec: number = 300
 ): { remainingSec: number; isExpired: boolean } {
-  const [remainingSec, setRemainingSec] = useState<number>(timeoutSec);
+  const [remainingSec, setRemainingSec] = useState<number>(() => calcRemaining(receivedAt, timeoutSec));
 
   useEffect(() => {
     if (!receivedAt) return;
 
+    let intervalId: ReturnType<typeof setInterval>;
     const update = () => {
       const elapsed = Math.floor((Date.now() - receivedAt) / 1000);
       const remaining = Math.max(0, timeoutSec - elapsed);
       setRemainingSec(remaining);
+      if (remaining === 0) {
+        clearInterval(intervalId);
+      }
     };
 
     update();
-    const interval = setInterval(update, 1000);
-    return () => clearInterval(interval);
+    intervalId = setInterval(update, 1000);
+    return () => clearInterval(intervalId);
   }, [receivedAt, timeoutSec]);
 
   return { remainingSec, isExpired: remainingSec <= 0 };

@@ -19,6 +19,10 @@ export async function submitInputResponse(
   answer: string
 ): Promise<boolean> {
   try {
+    const node = useDashboardStore.getState().processingCtx?.nodeMap?.get(nodeId);
+    if (node?.type === "input_request" && (node as any).responded) {
+      return false; // 이미 응답됨
+    }
     const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/respond`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

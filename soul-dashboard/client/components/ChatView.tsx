@@ -14,15 +14,10 @@ import { useDashboardStore } from "../stores/dashboard-store";
 import { flattenTree, type ChatMessage } from "../lib/flatten-tree";
 import { submitInputResponse } from "../lib/input-request-actions";
 import { useInputRequestTimer } from "../hooks/useInputRequestTimer";
+import { formatTime } from "../lib/input-request-utils";
 import { ChatInput } from "./ChatInput";
 import { ProfileAvatar } from "./ProfileAvatar";
 import { cn } from "../lib/cn";
-
-function formatTime(sec: number): string {
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  return `${m}:${s.toString().padStart(2, '0')}`;
-}
 
 /** 스크롤 하단 판정 threshold (px) */
 const SCROLL_THRESHOLD = 50;
@@ -508,14 +503,18 @@ const ChatInputRequest = memo(function ChatInputRequest({
 
   const handleSelect = async (answer: string) => {
     if (selectedAnswer || msg.responded || msg.expired || isExpired) return;
-    setSelectedAnswer(answer);
-    await submitInputResponse(
+    if (!msg.requestId) return;
+    setSelectedAnswer(answer);  // 낙관적 UI
+    const success = await submitInputResponse(
       sessionId,
-      msg.requestId!,
+      msg.requestId,
       msg.id,
       question.question,
       answer
     );
+    if (!success) {
+      setSelectedAnswer(null);  // 실패 시 롤백
+    }
   };
 
   const isDisabled = !!selectedAnswer || !!msg.responded || !!msg.expired || isExpired;
