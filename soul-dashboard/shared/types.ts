@@ -375,6 +375,7 @@ export interface SessionNode extends BaseNode {
 export interface UserMessageNode extends BaseNode {
   type: "user_message";
   user: string;
+  context?: ContextItem[];
 }
 
 /** 인터벤션 노드 */
