@@ -124,11 +124,15 @@ const CONFIG_DEFS: ConfigDef[] = [
   { key: "DASHBOARD_PORT", capability: null, source: "env", sensitive: false, required: false },
   { key: "SOUL_BASE_URL", capability: "session_proxy", source: "env", sensitive: false, required: false },
   { key: "CLAUDE_SERVICE_TOKEN", capability: "session_proxy", source: "env", sensitive: true, required: true },
-  { key: "DASHBOARD_AUTH_TOKEN", capability: null, source: "env", sensitive: true, required: false },
   { key: "SERENDIPITY_URL", capability: null, source: "env", sensitive: false, required: false },
   { key: "DASHBOARD_ALLOWED_ORIGINS", capability: null, source: "env", sensitive: false, required: false },
   { key: "DASHBOARD_CACHE_DIR", capability: "event_cache", source: "env", sensitive: false, required: false },
   { key: "DASHBOARD_BYPASS_CACHE", capability: "event_cache", source: "env", sensitive: false, required: false },
+  { key: "GOOGLE_CLIENT_ID", capability: null, source: "env", sensitive: false, required: false },
+  { key: "GOOGLE_CLIENT_SECRET", capability: null, source: "env", sensitive: true, required: false },
+  { key: "GOOGLE_CALLBACK_URL", capability: null, source: "env", sensitive: false, required: false },
+  { key: "ALLOWED_EMAIL", capability: null, source: "env", sensitive: false, required: false },
+  { key: "JWT_SECRET", capability: null, source: "env", sensitive: true, required: false },
 ];
 
 const SOURCE_MAP: Array<{

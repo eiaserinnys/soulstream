@@ -203,7 +203,7 @@ describe("Cogito /reflect endpoints", () => {
       expect(data.exe).toBeDefined();
       expect(data.exe).toBeTypeOf("string");
       expect(data.cmdline).toBeInstanceOf(Array);
-      expect(data.cmdline.length).toBeGreaterThan(0);
+      expect((data.cmdline as string[]).length).toBeGreaterThan(0);
       expect(data.cwd).toBeDefined();
       expect(data.cwd).toBeTypeOf("string");
     });

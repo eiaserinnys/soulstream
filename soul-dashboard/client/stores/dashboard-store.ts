@@ -520,12 +520,13 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
             const syncEvent = event as HistorySyncEvent;
 
             if (syncEvent.status && state.activeSessionKey) {
-              const sessions = sessionsUpdate.sessions ?? state.sessions;
+              const sessions: SessionSummary[] =
+                "sessions" in sessionsUpdate ? sessionsUpdate.sessions : state.sessions;
               const idx = sessions.findIndex(
                 (s) => s.agentSessionId === state.activeSessionKey,
               );
               if (idx >= 0 && sessions[idx].status !== syncEvent.status) {
-                const updatedSessions = [...sessions];
+                const updatedSessions: SessionSummary[] = [...sessions];
                 updatedSessions[idx] = {
                   ...updatedSessions[idx],
                   status: syncEvent.status as SessionStatus,

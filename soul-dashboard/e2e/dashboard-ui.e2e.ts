@@ -523,7 +523,10 @@ const test = base.extend<{ dashboardServer: MockDashboardServer }, { dashboardSe
 
     // --- Mock: Config ---
     app.get("/api/config", (_req, res) => {
-      res.json({ authRequired: false });
+      res.json({ serendipityAvailable: false });
+    });
+    app.get("/api/auth/config", (_req, res) => {
+      res.json({ authEnabled: false, devModeEnabled: true });
     });
 
     // --- Mock: 세션 생성/재개 — CreateSessionResponse 형식 ---

@@ -12,14 +12,19 @@
 import "dotenv/config";
 import path from "path";
 import { fileURLToPath } from "url";
-import express from "express";
+import express, { type Express } from "express";
 import cors from "cors";
+import cookieParser from "cookie-parser";
+import passport from "passport";
 import { createSessionsProxyRouter } from "./routes/sessions-proxy.js";
 import { createEventsCachedRouter } from "./routes/events-cached.js";
 import { createActionsRouter } from "./routes/actions.js";
 import { createLlmProxyRouter } from "./routes/llm-proxy.js";
 import { createCogitoRouter } from "./cogito.js";
 import { SessionCache } from "./session-cache.js";
+import { configurePassport } from "./auth/passport.js";
+import { createAuthRouter } from "./auth/routes.js";
+import { isAuthEnabled, requireAuth } from "./auth/middleware.js";
 import { createRequire } from "module";
 
 const _require = createRequire(import.meta.url);
@@ -34,7 +39,6 @@ const PORT = parseInt(process.env.DASHBOARD_PORT ?? "3109", 10);
 const SOUL_BASE_URL =
   process.env.SOUL_BASE_URL ?? "http://localhost:3105";
 const AUTH_TOKEN = process.env.CLAUDE_SERVICE_TOKEN ?? "";
-const DASHBOARD_AUTH_TOKEN = process.env.DASHBOARD_AUTH_TOKEN ?? "";
 const SERENDIPITY_URL = process.env.SERENDIPITY_URL ?? "";
 const ALLOWED_ORIGINS =
   process.env.DASHBOARD_ALLOWED_ORIGINS?.split(",") ?? [
@@ -49,9 +53,18 @@ const CACHE_DIR =
 const sessionCache = new SessionCache({ cacheDir: CACHE_DIR });
 const BYPASS_CACHE = process.env.DASHBOARD_BYPASS_CACHE === "true";
 
+// === JWT_SECRET 시작 시 검증 ===
+// GOOGLE_CLIENT_ID가 설정된 경우(인증 활성) JWT_SECRET이 없으면 즉시 에러
+
+if (isAuthEnabled() && !process.env.JWT_SECRET) {
+  throw new Error(
+    "[dashboard] JWT_SECRET is required when GOOGLE_CLIENT_ID is set"
+  );
+}
+
 // === Express App ===
 
-const app = express();
+const app: Express = express();
 
 app.use(
   cors({
@@ -59,7 +72,12 @@ app.use(
     credentials: true,
   }),
 );
+app.use(cookieParser());
 app.use(express.json({ limit: "1mb" }));
+
+// Passport 초기화 (Google OAuth Strategy 등록)
+configurePassport();
+app.use(passport.initialize());
 
 // Health check (내부 경로 정보 노출하지 않음)
 app.get("/api/health", (_req, res) => {
@@ -73,47 +91,21 @@ app.get("/api/health", (_req, res) => {
 // Cogito /reflect 엔드포인트 (자기 기술 프로토콜)
 app.use(createCogitoRouter());
 
-// Config (클라이언트에 설정 전달)
+// Auth 라우트 (공개 엔드포인트 — 인증 미들웨어 적용 전에 등록)
+app.use("/api/auth", createAuthRouter());
+
+// Config (클라이언트에 설정 전달 — 인증 상태 정본은 /api/auth/config로 일원화)
 app.get("/api/config", (_req, res) => {
   res.json({
-    authRequired: !!DASHBOARD_AUTH_TOKEN,
     serendipityAvailable: !!SERENDIPITY_URL,
   });
 });
 
-// === Auth Middleware (POST 엔드포인트 보호) ===
-// DASHBOARD_AUTH_TOKEN이 설정된 경우에만 인증을 요구합니다.
-// GET 요청(세션 조회, SSE 구독)은 인증 없이 허용됩니다.
+// === 보호 대상 라우트 ===
+// GOOGLE_CLIENT_ID 미설정 시 requireAuth는 next()를 즉시 호출하여 통과
 
-if (DASHBOARD_AUTH_TOKEN) {
-  const requireAuth: express.RequestHandler = (req, res, next) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || authHeader !== `Bearer ${DASHBOARD_AUTH_TOKEN}`) {
-      res.status(401).json({
-        error: {
-          code: "UNAUTHORIZED",
-          message: "Valid Bearer token required",
-        },
-      });
-      return;
-    }
-    next();
-  };
-
-  app.use("/api/sessions", (req, res, next) => {
-    // GET 요청은 인증 불필요 (세션 조회, SSE 구독)
-    if (req.method === "GET") {
-      next();
-      return;
-    }
-    requireAuth(req, res, next);
-  });
-
-  // LLM proxy — 모든 요청에 인증 필수
-  app.use("/api/llm", requireAuth);
-
-  console.log("[dashboard] Auth enabled for POST endpoints");
-}
+app.use("/api/sessions", requireAuth);
+app.use("/api/llm", requireAuth);
 
 // Routes - 프록시 라우터 사용
 app.use(
@@ -223,6 +215,9 @@ const server = app.listen(PORT, () => {
   console.log(`[dashboard] Soul server: ${SOUL_BASE_URL}`);
   console.log(`[dashboard] Cache dir: ${CACHE_DIR}`);
   console.log("[dashboard] Architecture: Cached events (Phase 5)");
+  if (isAuthEnabled()) {
+    console.log("[dashboard] Auth enabled (Google OAuth + JWT)");
+  }
   if (BYPASS_CACHE) {
     console.log("[dashboard] ⚠️ Cache bypass enabled (DASHBOARD_BYPASS_CACHE=true)");
   }
