@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["tests/memory/**/*.ts"],
+  "compilerOptions": {
+    "noEmit": true,
+    "module": "node16",
+    "moduleResolution": "node16",
+    "types": ["node"]
+  }
+}
