@@ -82,6 +82,10 @@ class Task:
     disallowed_tools: Optional[List[str]] = field(default=None, repr=False)
     use_mcp: bool = field(default=True, repr=False)
 
+    # 추가 컨텍스트 항목 (런타임 전용, 영속화 안 됨)
+    # 각 항목은 {"key": str, "label": str, "content": Any} 형태
+    context_items: Optional[List[dict]] = field(default=None, repr=False)
+
     # LLM 프록시 메타데이터
     session_type: str = "claude"        # "claude" | "llm"
     llm_provider: Optional[str] = None  # "openai" | "anthropic"

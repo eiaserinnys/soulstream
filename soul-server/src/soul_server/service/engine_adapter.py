@@ -11,7 +11,9 @@ Serendipity 연동:
 """
 
 import asyncio
+import json
 import logging
+import socket
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncIterator, Awaitable, Callable, List, Optional, Union
@@ -133,6 +135,49 @@ def _build_credential_alert_event(alert: dict) -> CredentialAlertEvent:
     )
 
 
+def _build_soulstream_context_item(
+    agent_session_id: str,
+    claude_session_id: Optional[str],
+    workspace_dir: str,
+) -> dict:
+    """소울스트림 자체 세션 메타데이터 context_item을 생성한다."""
+    hostname = socket.gethostname()
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+    except Exception:
+        ip = "unknown"
+
+    content = {
+        "agent_session_id": agent_session_id,
+        "claude_session_id": claude_session_id if claude_session_id else "(new session)",
+        "workspace_dir": workspace_dir,
+        "hostname": hostname,
+        "ip_address": ip,
+    }
+    return {
+        "key": "soulstream_session",
+        "label": "Soulstream 세션 정보",
+        "content": content,
+    }
+
+
+def _format_context_items(context_items: List[dict]) -> str:
+    """context_items를 Claude Code가 읽을 수 있는 XML 블록으로 직렬화한다."""
+    parts = []
+    for item in context_items:
+        key = item.get("key", "item")
+        content = item.get("content", "")
+        if isinstance(content, (dict, list)):
+            content_str = json.dumps(content, ensure_ascii=False, indent=2)
+        else:
+            content_str = str(content)
+        parts.append(f"<{key}>\n{content_str}\n</{key}>")
+    return "<context>\n" + "\n".join(parts) + "\n</context>"
+
+
 class SoulEngineAdapter:
     """ClaudeRunner -> AsyncIterator[SSE Event] 어댑터
 
@@ -179,6 +224,8 @@ class SoulEngineAdapter:
         request_id: Optional[str] = None,
         persona: Optional[str] = None,
         on_runner_ready: Optional[Callable[["ClaudeRunner"], None]] = None,
+        context_items: Optional[List[dict]] = None,
+        agent_session_id: Optional[str] = None,
     ) -> AsyncIterator[SSEEvent]:
         """Claude Code 실행 (SSE 이벤트 스트림)
 
@@ -195,6 +242,8 @@ class SoulEngineAdapter:
             client_id: 클라이언트 ID (세렌디피티 저장용)
             request_id: 요청 ID (세렌디피티 저장용)
             persona: 페르소나 이름 (세렌디피티 저장용)
+            context_items: 클라이언트가 전달한 추가 컨텍스트 항목 목록
+            agent_session_id: 세션 식별자 (소울스트림 자체 context_item에 포함)
 
         Yields:
             ProgressEvent | InterventionSentEvent | ContextUsageEvent
@@ -216,6 +265,18 @@ class SoulEngineAdapter:
 
         # MCP 설정
         mcp_config_path = self._resolve_mcp_config_path() if use_mcp else None
+
+        # context_items 빌드: 소울스트림 자체 항목 + 클라이언트 항목
+        soulstream_item = _build_soulstream_context_item(
+            agent_session_id=agent_session_id or "(unknown)",
+            claude_session_id=resume_session_id,
+            workspace_dir=self._workspace_dir,
+        )
+        combined_context_items = [soulstream_item] + (context_items or [])
+
+        # 프롬프트 앞에 context 블록 삽입
+        context_block = _format_context_items(combined_context_items)
+        effective_prompt = context_block + "\n\n" + prompt
 
         # Serendipity 세션 시작
         serendipity_ctx: Optional["SessionContext"] = None
@@ -351,7 +412,7 @@ class SoulEngineAdapter:
             success = False
             try:
                 result = await runner.run(
-                    prompt=prompt,
+                    prompt=effective_prompt,
                     session_id=resume_session_id,
                     on_progress=on_progress,
                     on_compact=on_compact,

@@ -192,6 +192,10 @@ class ExecuteRequest(BaseModel):
     allowed_tools: Optional[List[str]] = Field(None, description="허용 도구 목록 (None이면 제한 없음)")
     disallowed_tools: Optional[List[str]] = Field(None, description="금지 도구 목록")
     use_mcp: bool = Field(True, description="MCP 서버 연결 여부")
+    context_items: Optional[List[dict]] = Field(
+        None,
+        description="추가 컨텍스트 항목 목록. 각 항목은 {key, label, content} 형태.",
+    )
 
 
 class SessionResponse(BaseModel):
