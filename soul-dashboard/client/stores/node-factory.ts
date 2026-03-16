@@ -272,8 +272,10 @@ export function applyUpdate(
       const e = event as InputRequestExpiredEvent;
       const node = ctx.nodeMap.get(e.request_id);
       if (node && node.type === "input_request") {
-        (node as InputRequestNodeDef).expired = true;
-        return true;
+        // expired = true 즉시 설정하면 findPendingInputRequest가 배너를 즉시 필터링함
+        // 대신 serverExpiredAt으로 "만료 신호"만 전달 — AskQuestionBanner가 2초 후 expireInputRequest 호출
+        (node as InputRequestNodeDef).serverExpiredAt = Date.now();
+        return true;  // treeVersion++ → 리렌더 트리거 (배너에서 serverExpiredAt 감지)
       }
       return false;
     }

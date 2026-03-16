@@ -454,6 +454,7 @@ export interface InputRequestNodeDef extends BaseNode {
   expired?: boolean;
   receivedAt?: number;
   timeoutSec?: number;
+  serverExpiredAt?: number;  // 서버 만료 이벤트 수신 시각 (ms) — expired=true 즉시 설정 방지용
 }
 
 /** LLM 프록시 어시스턴트 응답 노드 */
