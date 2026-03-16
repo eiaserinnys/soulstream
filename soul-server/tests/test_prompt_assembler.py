@@ -1,9 +1,11 @@
 """
-test_prompt_assembler.py - assemble_prompt() 단위 테스트
+test_prompt_assembler.py - assemble_prompt() 단위 테스트 및 ContextItem 스키마 검증
 """
 
 import json
 import pytest
+from pydantic import ValidationError
+from soul_server.models.schemas import ContextItem, StructuredContext
 from soul_server.service.prompt_assembler import assemble_prompt
 
 
@@ -82,9 +84,76 @@ class TestAssemblePromptMultipleItems:
         assert result == "질문"
 
 
+class TestContextItemKeyValidation:
+    def test_valid_key_accepted(self):
+        item = ContextItem(key="history", label="히스토리", content="내용")
+        assert item.key == "history"
+
+    def test_key_with_underscore_accepted(self):
+        item = ContextItem(key="_private_key", label="라벨", content="내용")
+        assert item.key == "_private_key"
+
+    def test_key_with_hyphen_accepted(self):
+        item = ContextItem(key="my-key", label="라벨", content="내용")
+        assert item.key == "my-key"
+
+    def test_key_starting_with_digit_rejected(self):
+        with pytest.raises(ValidationError):
+            ContextItem(key="1invalid", label="라벨", content="내용")
+
+    def test_key_with_space_rejected(self):
+        with pytest.raises(ValidationError):
+            ContextItem(key="in valid", label="라벨", content="내용")
+
+    def test_key_with_angle_bracket_rejected(self):
+        with pytest.raises(ValidationError):
+            ContextItem(key="a>b", label="라벨", content="내용")
+
+    def test_key_with_newline_rejected(self):
+        with pytest.raises(ValidationError):
+            ContextItem(key="a\nb", label="라벨", content="내용")
+
+
 class TestAssemblePromptBackwardCompat:
     def test_context_none_backward_compat(self):
         """context 없는 요청은 기존 동작과 완전히 동일하다."""
         original_prompt = "이것은 기존 방식으로 조립된 단일 문자열 프롬프트입니다."
         result = assemble_prompt(original_prompt, None)
         assert result == original_prompt
+
+
+class TestAssemblePromptSecurity:
+    def test_invalid_key_skipped(self):
+        """유효하지 않은 key(XML 태그명 형식 위반)는 건너뛴다."""
+        ctx = _ctx(("valid", "유효", "값"), ("in valid", "공백있음", "위험"))
+        result = assemble_prompt("질문", ctx)
+        assert "<valid>" in result
+        assert "in valid" not in result
+
+    def test_key_with_angle_brackets_skipped(self):
+        """꺾쇠괄호가 포함된 key는 건너뛴다."""
+        ctx = _ctx(("a>b", "위험", "내용"))
+        result = assemble_prompt("질문", ctx)
+        assert result == "질문"
+
+    def test_closing_tag_in_str_content_escaped(self):
+        """문자열 content 내부의 닫힘 태그 패턴이 이스케이프된다."""
+        ctx = _ctx(("data", "데이터", "결과는 </data> 이후에 나옵니다"))
+        result = assemble_prompt("질문", ctx)
+        # 이스케이프된 패턴이 content 내에 존재해야 한다
+        assert "<\\/" in result
+        # 실제 닫힘 태그는 XML 구조 마감으로 1번만 등장해야 한다 (조기 종료 없음)
+        assert result.count("</data>") == 1
+
+    def test_empty_string_content_skipped(self):
+        """빈 문자열 content는 None과 동일하게 태그를 생략한다."""
+        ctx = _ctx(("key", "키", ""))
+        result = assemble_prompt("질문", ctx)
+        assert result == "질문"
+
+    def test_empty_string_and_valid_items_mixed(self):
+        """빈 문자열 항목은 건너뛰고 나머지는 정상 처리된다."""
+        ctx = _ctx(("empty", "빈값", ""), ("valid", "유효", "값"))
+        result = assemble_prompt("질문", ctx)
+        assert "<valid>" in result
+        assert "<empty>" not in result
