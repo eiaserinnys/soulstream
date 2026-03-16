@@ -39,16 +39,22 @@ interface AskQuestionBannerInnerProps {
 
 function AskQuestionBannerInner({ node, sessionId }: AskQuestionBannerInnerProps) {
   const expireInputRequest = useDashboardStore((s: DashboardState & DashboardActions) => s.expireInputRequest);
-  const { remainingSec, isExpired } = useInputRequestTimer(node.receivedAt, 300);
+  const { remainingSec, isExpired } = useInputRequestTimer(node.receivedAt, node.timeoutSec ?? 300);
   const [responded, setResponded] = useState(false);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [visible, setVisible] = useState(true);
 
+  // 두 만료 경로 통합: 클라이언트 타이머(isExpired) 또는 서버 이벤트(serverExpiredAt)
+  const isEffectivelyExpired = isExpired || !!node.serverExpiredAt;
+
   useEffect(() => {
-    if (isExpired && !responded) {
-      expireInputRequest(node.id);
+    if (isEffectivelyExpired && !responded) {
+      // expireInputRequest를 즉시 호출하면 expired=true → findPendingInputRequest 필터링 → 배너 즉시 사라짐
+      // 2초 후에 호출하여 그 동안 "⏱️ 시간 초과" 메시지 표시
+      const timer = setTimeout(() => expireInputRequest(node.id), 2000);
+      return () => clearTimeout(timer);
     }
-  }, [isExpired, responded, node.id, expireInputRequest]);
+  }, [isEffectivelyExpired, responded, node.id, expireInputRequest]);
 
   useEffect(() => {
     if (responded) {
@@ -83,7 +89,7 @@ function AskQuestionBannerInner({ node, sessionId }: AskQuestionBannerInnerProps
     <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000] bg-background border border-border rounded-xl p-4 min-w-80 max-w-[500px] shadow-lg">
       {responded ? (
         <div className="text-center text-success">✅ 응답 완료</div>
-      ) : isExpired ? (
+      ) : isEffectivelyExpired ? (
         <div className="text-center text-muted-foreground">⏱️ 시간 초과</div>
       ) : (
         <>
@@ -115,9 +121,11 @@ function AskQuestionBannerInner({ node, sessionId }: AskQuestionBannerInnerProps
               </button>
             ))}
           </div>
-          <div className="text-[12px] text-muted-foreground text-right">
-            ⏱️ {formatTime(remainingSec)}
-          </div>
+          {!isEffectivelyExpired && (
+            <div className="text-[12px] text-muted-foreground text-right">
+              ⏱️ {formatTime(remainingSec)}
+            </div>
+          )}
         </>
       )}
     </div>

@@ -10,6 +10,7 @@
 
 import type {
   EventTreeNode,
+  InputRequestNodeDef,
   SoulSSEEvent,
   SessionEvent,
   SessionNode,
@@ -24,6 +25,7 @@ import type {
   InterventionSentEvent,
   CompactEvent,
   InputRequestEvent,
+  InputRequestExpiredEvent,
   AssistantMessageEvent,
 } from "@shared/types";
 import type { ProcessingContext } from "./processing-context";
@@ -168,7 +170,8 @@ export function createNodeFromEvent(
         parentEventId: e.parent_event_id,
         timestamp: e.timestamp,
         responded: false,
-        receivedAt: Date.now(),
+        receivedAt: e.started_at * 1000,
+        timeoutSec: e.timeout_sec,
       });
     }
 
@@ -261,6 +264,18 @@ export function applyUpdate(
           );
         }
         return true;
+      }
+      return false;
+    }
+
+    case "input_request_expired": {
+      const e = event as InputRequestExpiredEvent;
+      const node = ctx.nodeMap.get(e.request_id);
+      if (node && node.type === "input_request") {
+        // expired = true 즉시 설정하면 findPendingInputRequest가 배너를 즉시 필터링함
+        // 대신 serverExpiredAt으로 "만료 신호"만 전달 — AskQuestionBanner가 2초 후 expireInputRequest 호출
+        (node as InputRequestNodeDef).serverExpiredAt = Date.now();
+        return true;  // treeVersion++ → 리렌더 트리거 (배너에서 serverExpiredAt 감지)
       }
       return false;
     }

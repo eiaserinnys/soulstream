@@ -12,6 +12,7 @@ import type {
   SoulSSEEvent,
   TextStartEvent,
   ToolStartEvent,
+  InputRequestEvent,
 } from "@shared/types";
 import type { ProcessingContext, TextTargetNode } from "./processing-context";
 import { makeNode, registerNode } from "./processing-context";
@@ -61,6 +62,11 @@ export function placeInTree(
   // tool_start: tool_use_id로도 등록 (서브에이전트 parent 조회용)
   if (event.type === "tool_start" && (event as ToolStartEvent).tool_use_id) {
     ctx.nodeMap.set((event as ToolStartEvent).tool_use_id!, node);
+  }
+
+  // input_request: request_id로도 등록 (input_request_expired 조회용)
+  if (event.type === "input_request" && (event as InputRequestEvent).request_id) {
+    ctx.nodeMap.set((event as InputRequestEvent).request_id, node);
   }
 
   // 모든 타입 동일: resolveParent로 부모 결정
