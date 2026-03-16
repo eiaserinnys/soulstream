@@ -25,7 +25,7 @@ from soul_server.service import resource_manager, file_manager
 from soul_server.service.credential_store import CredentialStore
 from soul_server.service.credential_swapper import CredentialSwapper
 from soul_server.service.rate_limit_tracker import RateLimitTracker
-from soul_server.service.engine_adapter import init_soul_engine
+from soul_server.service.engine_adapter import init_soul_engine, get_soul_engine
 from soul_server.claude.agent_runner import ClaudeRunner
 from soul_server.service.runner_pool import RunnerPool
 from soul_server.service.task_manager import init_task_manager, get_task_manager
@@ -221,6 +221,13 @@ async def lifespan(app: FastAPI):
     loaded = await task_manager.load()
     logger.info(f"  Loaded {loaded} tasks from storage")
 
+    # SessionBroadcaster 초기화
+    # pre_shutdown_sessions 처리보다 먼저 초기화해야 한다.
+    # add_intervention() → create_task() → get_session_broadcaster() 경로로 호출되므로,
+    # broadcaster가 준비되지 않으면 세션 재개 시 emit 호출이 항상 실패한다.
+    broadcaster = init_session_broadcaster()
+    logger.info("  SessionBroadcaster initialized")
+
     # 이전 종료 시 저장된 세션 재개 (graceful_shutdown이 저장한 pre_shutdown_sessions.json)
     # 완료된 세션에 add_intervention()을 호출하면 task_manager의 auto-resume이 새 실행을 생성한다.
     pre_shutdown_file = data_dir / "pre_shutdown_sessions.json"
@@ -229,21 +236,24 @@ async def lifespan(app: FastAPI):
             sessions_to_resume = json.loads(pre_shutdown_file.read_text())
             for s in sessions_to_resume:
                 try:
-                    await task_manager.add_intervention(
+                    result = await task_manager.add_intervention(
                         s["agent_session_id"],
                         "소울스트림 서버 재시작이 완료되었습니다. 이전에 진행하던 작업을 재개해주세요.",
                         user="system",
                     )
+                    if result.get("auto_resumed"):
+                        await task_manager.start_execution(
+                            agent_session_id=s["agent_session_id"],
+                            claude_runner=get_soul_engine(),
+                            resource_manager=resource_manager,
+                        )
+                        logger.info(f"  세션 재개 실행 시작: {s['agent_session_id']}")
                 except Exception as e:
                     logger.warning(f"  세션 재개 실패 ({s['agent_session_id']}): {e}")
             pre_shutdown_file.unlink()
             logger.info(f"  이전 세션 재개 메시지 전송: {len(sessions_to_resume)}개")
         except Exception as e:
             logger.warning(f"  pre_shutdown_sessions.json 처리 실패: {e}")
-
-    # SessionBroadcaster 초기화
-    broadcaster = init_session_broadcaster()
-    logger.info("  SessionBroadcaster initialized")
 
     # LLM Proxy 초기화
     global _llm_executor
@@ -407,7 +417,7 @@ async def get_status():
         "tasks": [
             {
                 "client_id": t.client_id,
-                "request_id": t.request_id,
+                "agent_session_id": t.agent_session_id,
                 "status": t.status,
                 "created_at": t.created_at.isoformat(),
             }
