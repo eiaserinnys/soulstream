@@ -24,6 +24,7 @@ import "@xyflow/react/dist/style.css";
 
 import { useDashboardStore, countTreeNodes, countStreamingNodes, type SelectedEventNodeData } from "../stores/dashboard-store";
 import { nodeTypes } from "../nodes";
+import { AskQuestionBanner } from "./AskQuestionBanner";
 import {
   buildGraph,
   DEFAULT_NODE_WIDTH,
@@ -429,85 +430,89 @@ function NodeGraphInner() {
   }
 
   return (
-    <ReactFlow
-      nodes={nodes}
-      edges={edges}
-      onNodesChange={onNodesChange}
-      onEdgesChange={onEdgesChange}
-      onSelectionChange={onSelectionChange}
-      onMoveEnd={onMoveEnd}
-      nodeTypes={nodeTypes}
-      nodesDraggable={false}
-      defaultViewport={{ x: 0, y: 0, zoom: FIXED_ZOOM }}
-      minZoom={MIN_ZOOM}
-      maxZoom={2}
-      // Phase 1: UX 개선 - 줌/스크롤 동작 변경
-      zoomOnDoubleClick={false}
-      zoomOnScroll={false}
-      panOnScroll={true}
-      panOnScrollMode={PanOnScrollMode.Vertical}
-      zoomActivationKeyCode="Control"
-      proOptions={{ hideAttribution: true }}
-      colorMode={theme}
-      defaultEdgeOptions={{
-        type: "smoothstep",
-        style: { stroke: "var(--muted-foreground)", strokeWidth: 1.5, opacity: 0.3 },
-      }}
-      style={{ width: "100%", height: "100%" }}
-    >
-      <Background color="var(--muted-foreground)" gap={20} size={1} style={{ opacity: 0.15 }} />
-      <Controls
-        showInteractive={false}
-        style={{
-          borderRadius: 6,
-          border: "1px solid var(--border)",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onSelectionChange={onSelectionChange}
+        onMoveEnd={onMoveEnd}
+        nodeTypes={nodeTypes}
+        nodesDraggable={false}
+        defaultViewport={{ x: 0, y: 0, zoom: FIXED_ZOOM }}
+        minZoom={MIN_ZOOM}
+        maxZoom={2}
+        // Phase 1: UX 개선 - 줌/스크롤 동작 변경
+        zoomOnDoubleClick={false}
+        zoomOnScroll={false}
+        panOnScroll={true}
+        panOnScrollMode={PanOnScrollMode.Vertical}
+        zoomActivationKeyCode="Control"
+        proOptions={{ hideAttribution: true }}
+        colorMode={theme}
+        defaultEdgeOptions={{
+          type: "smoothstep",
+          style: { stroke: "var(--muted-foreground)", strokeWidth: 1.5, opacity: 0.3 },
         }}
-      />
-      {/* Auto-scroll 토글 + Dump */}
-      <Panel position="bottom-right">
-        <div className="flex items-center gap-1.5">
-        <button
-          onClick={() => {
-            const dump = createGraphDump(
-              activeSessionKey,
-              treeVersion,
-              lastEventId,
-              tree,
-              nodes as GraphNode[],
-              edges as GraphEdge[],
-              processingCtx,
-            );
-            downloadDump(dump);
+        style={{ width: "100%", height: "100%" }}
+      >
+        <Background color="var(--muted-foreground)" gap={20} size={1} style={{ opacity: 0.15 }} />
+        <Controls
+          showInteractive={false}
+          style={{
+            borderRadius: 6,
+            border: "1px solid var(--border)",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
           }}
-          className="flex items-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-medium transition-colors border shadow-md bg-popover border-border text-muted-foreground hover:bg-input"
-          title="Dump graph state (Ctrl+Shift+D)"
-        >
-          Dump
-        </button>
-        <button
-          onClick={handleToggleAutoScroll}
-          className={cn(
-            "flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-colors",
-            "border shadow-md",
-            autoScroll
-              ? "bg-accent-blue/15 border-accent-blue/30 text-accent-blue hover:bg-accent-blue/25"
-              : "bg-popover border-border text-muted-foreground hover:bg-input",
-          )}
-          title={autoScroll ? "Auto-scroll ON — click to disable" : "Auto-scroll OFF — click to follow latest node"}
-        >
-          <span className="text-xs">{autoScroll ? "\u{2193}" : "\u{21E3}"}</span>
-          {autoScroll ? "Follow" : "Follow"}
-          <span
+        />
+        {/* Auto-scroll 토글 + Dump */}
+        <Panel position="bottom-right">
+          <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => {
+              const dump = createGraphDump(
+                activeSessionKey,
+                treeVersion,
+                lastEventId,
+                tree,
+                nodes as GraphNode[],
+                edges as GraphEdge[],
+                processingCtx,
+              );
+              downloadDump(dump);
+            }}
+            className="flex items-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-medium transition-colors border shadow-md bg-popover border-border text-muted-foreground hover:bg-input"
+            title="Dump graph state (Ctrl+Shift+D)"
+          >
+            Dump
+          </button>
+          <button
+            onClick={handleToggleAutoScroll}
             className={cn(
-              "w-1.5 h-1.5 rounded-full",
-              autoScroll ? "bg-accent-blue" : "bg-muted-foreground/40",
+              "flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-colors",
+              "border shadow-md",
+              autoScroll
+                ? "bg-accent-blue/15 border-accent-blue/30 text-accent-blue hover:bg-accent-blue/25"
+                : "bg-popover border-border text-muted-foreground hover:bg-input",
             )}
-          />
-        </button>
-        </div>
-      </Panel>
-    </ReactFlow>
+            title={autoScroll ? "Auto-scroll ON — click to disable" : "Auto-scroll OFF — click to follow latest node"}
+          >
+            <span className="text-xs">{autoScroll ? "\u{2193}" : "\u{21E3}"}</span>
+            {autoScroll ? "Follow" : "Follow"}
+            <span
+              className={cn(
+                "w-1.5 h-1.5 rounded-full",
+                autoScroll ? "bg-accent-blue" : "bg-muted-foreground/40",
+              )}
+            />
+          </button>
+          </div>
+        </Panel>
+      </ReactFlow>
+      {/* AskUserQuestion 배너: 캔버스 하단 중앙 오버레이 */}
+      <AskQuestionBanner />
+    </div>
   );
 }
 

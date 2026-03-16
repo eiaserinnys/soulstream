@@ -438,6 +438,8 @@ export interface InputRequestNodeDef extends BaseNode {
   toolUseId?: string;
   questions: InputRequestQuestion[];
   responded?: boolean;
+  expired?: boolean;
+  receivedAt?: number;
 }
 
 /** LLM 프록시 어시스턴트 응답 노드 */
