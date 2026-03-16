@@ -9,12 +9,20 @@
  */
 
 import { memo, useMemo, useRef, useEffect, useState, useCallback } from "react";
-import type { SessionSummary } from "@shared/types";
+import type { SessionSummary, InputRequestQuestion } from "@shared/types";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { flattenTree, type ChatMessage } from "../lib/flatten-tree";
+import { submitInputResponse } from "../lib/input-request-actions";
+import { useInputRequestTimer } from "../hooks/useInputRequestTimer";
 import { ChatInput } from "./ChatInput";
 import { ProfileAvatar } from "./ProfileAvatar";
 import { cn } from "../lib/cn";
+
+function formatTime(sec: number): string {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
 
 /** 스크롤 하단 판정 threshold (px) */
 const SCROLL_THRESHOLD = 50;
@@ -476,9 +484,89 @@ const SystemMessage = memo(function SystemMessage({ msg }: { msg: ChatMessage })
   );
 });
 
+// === ChatInputRequest Component ===
+
+const ChatInputRequest = memo(function ChatInputRequest({
+  msg,
+  sessionId,
+}: {
+  msg: ChatMessage;
+  sessionId: string;
+}) {
+  const expireInputRequest = useDashboardStore((s) => s.expireInputRequest);
+  const { remainingSec, isExpired } = useInputRequestTimer(msg.receivedAt, 300);
+  const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isExpired && !msg.responded && !selectedAnswer) {
+      expireInputRequest(msg.id);
+    }
+  }, [isExpired, msg.responded, selectedAnswer, msg.id, expireInputRequest]);
+
+  const question: InputRequestQuestion | undefined = msg.questions?.[0];
+  if (!question) return null;
+
+  const handleSelect = async (answer: string) => {
+    if (selectedAnswer || msg.responded || msg.expired || isExpired) return;
+    setSelectedAnswer(answer);
+    await submitInputResponse(
+      sessionId,
+      msg.requestId!,
+      msg.id,
+      question.question,
+      answer
+    );
+  };
+
+  const isDisabled = !!selectedAnswer || !!msg.responded || !!msg.expired || isExpired;
+  const isDone = !!selectedAnswer || !!msg.responded;
+  const isTimedOut = msg.expired || (isExpired && !isDone);
+
+  return (
+    <div className="flex gap-2 px-3 py-1.5">
+      <span className="w-8 shrink-0 text-center">🔔</span>
+      <div className="flex-1 min-w-0">
+        <div className="text-[13px] text-muted-foreground mb-1">Claude가 질문합니다</div>
+        {question.header && (
+          <div className="text-[11px] text-muted-foreground uppercase tracking-wide mb-1">{question.header}</div>
+        )}
+        <div className="text-[14px] font-medium text-foreground mb-2">{question.question}</div>
+        {isTimedOut ? (
+          <div className="text-[12px] text-muted-foreground">⏱️ 시간 초과</div>
+        ) : isDone ? (
+          <div className="text-[12px] text-success">✅ {selectedAnswer || '응답 완료'}</div>
+        ) : (
+          <>
+            <div className="flex flex-wrap gap-1.5 mb-1.5">
+              {question.options?.map((opt) => (
+                <button
+                  key={opt.label}
+                  onClick={() => handleSelect(opt.label)}
+                  disabled={isDisabled}
+                  className={cn(
+                    "px-3 py-1 rounded text-[12px] border transition-colors",
+                    "border-border bg-input text-foreground",
+                    "hover:bg-muted/50 disabled:opacity-50 disabled:cursor-default",
+                  )}
+                >
+                  {opt.label}
+                  {opt.description && (
+                    <span className="text-muted-foreground ml-1 text-[11px]">— {opt.description}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+            <div className="text-[11px] text-muted-foreground">⏱️ {formatTime(remainingSec)}</div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+});
+
 // === ChatMessage Renderer ===
 
-const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext }: { msg: ChatMessage; llmContext?: LlmContext }) {
+const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, sessionId }: { msg: ChatMessage; llmContext?: LlmContext; sessionId?: string }) {
   switch (msg.role) {
     case "user":
       return <UserMessage msg={msg} llmContext={llmContext} />;
@@ -493,6 +581,8 @@ const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext }: { msg
       return <ToolMessage msg={msg} />;
     case "system":
       return <SystemMessage msg={msg} />;
+    case "input_request":
+      return sessionId ? <ChatInputRequest msg={msg} sessionId={sessionId} /> : null;
     default:
       return null;
   }
@@ -616,7 +706,7 @@ export function ChatView() {
           item.type === "tool-group" ? (
             <ToolCallGroup key={item.messages[0].id} messages={item.messages} />
           ) : (
-            <ChatMessageItem key={item.msg.id} msg={item.msg} llmContext={llmContext} />
+            <ChatMessageItem key={item.msg.id} msg={item.msg} llmContext={llmContext} sessionId={activeSessionKey ?? undefined} />
           ),
         )}
       </div>
