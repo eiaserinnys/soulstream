@@ -192,6 +192,9 @@ export interface DashboardActions {
 
   // input_request 응답 완료 처리
   respondToInputRequest: (nodeId: string) => void;
+
+  // input_request 타임아웃 만료 처리
+  expireInputRequest: (nodeId: string) => void;
 }
 
 // === Internal Processing Context ===
@@ -731,6 +734,17 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         if (node && node.type === "input_request") {
           (node as InputRequestNodeDef).responded = true;
           (node as InputRequestNodeDef).completed = true;
+          set((state) => ({ treeVersion: state.treeVersion + 1 }));
+        }
+      },
+
+      // --- input_request 타임아웃 만료 처리 ---
+      // 타임아웃 경과 시 트리 노드의 expired 상태를 갱신
+      expireInputRequest: (nodeId) => {
+        const ctx = get().processingCtx;
+        const node = ctx.nodeMap.get(nodeId);
+        if (node && node.type === "input_request") {
+          (node as InputRequestNodeDef).expired = true;
           set((state) => ({ treeVersion: state.treeVersion + 1 }));
         }
       },
