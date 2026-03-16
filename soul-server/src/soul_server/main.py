@@ -6,6 +6,7 @@ Claude Code 원격 실행 서비스.
 """
 
 import asyncio
+import json
 import time
 import logging
 from pathlib import Path
@@ -54,6 +55,9 @@ _runner_pool: RunnerPool | None = None
 # 전역 LLM executor 참조
 _llm_executor: LlmExecutor | None = None
 
+# draining 상태 (신규 세션 거부 중 여부)
+_is_draining: bool = False
+
 
 async def periodic_cleanup():
     """주기적 고아 running 세션 보정 (24시간 이상 된 orphaned running 태스크)"""
@@ -68,6 +72,70 @@ async def periodic_cleanup():
             break
         except Exception as e:
             logger.exception(f"Periodic cleanup error: {e}")
+
+
+async def graceful_shutdown(task_manager, timeout: float = 50.0):
+    """Graceful shutdown 코루틴.
+
+    세 종료 경로(supervisor POST /shutdown, lifespan SIGTERM)에서 공통으로 사용.
+    이중 호출 가드로 동시 실행을 방지한다.
+
+    1. draining 상태 설정 (신규 /execute 요청 503 반환)
+    2. 활성 세션 목록을 pre_shutdown_sessions.json에 저장 (Phase 2 재기동 시 재개용)
+    3. 각 세션에 종료 예고 intervention 전송 (dict 포맷 — engine_adapter가 dict를 기대)
+    4. 세션 완료 대기 (최대 timeout 초)
+    5. timeout 초과 후 잔여 RUNNING 세션 강제 취소
+    """
+    global _is_draining
+
+    # 이중 호출 가드 (POST /shutdown과 lifespan 동시 수신 방어)
+    if _is_draining:
+        return
+    _is_draining = True
+
+    try:
+        # 활성 세션 목록 저장 (즉시 완료 — 예기치 않은 SIGKILL이 와도 Phase 2 재개 데이터 보존)
+        running_tasks = task_manager.get_running_tasks()
+        active_sessions = [
+            {"agent_session_id": t.agent_session_id, "claude_session_id": t.claude_session_id}
+            for t in running_tasks
+        ]
+        save_path = Path(settings.data_dir) / "pre_shutdown_sessions.json"
+        save_path.write_text(json.dumps(active_sessions))
+        logger.info(f"Graceful shutdown: {len(active_sessions)}개 활성 세션 저장 → {save_path}")
+
+        # 각 세션에 종료 예고 intervention 전송
+        # add_intervention()은 완료된 세션에 호출하면 auto-resume을 트리거하므로,
+        # intervention_queue에 직접 dict를 put한다 (engine_adapter가 dict를 기대함).
+        # 루프 진입 전 스냅샷으로 lookup map 구성 (O(n) 순회 1회)
+        running_map = {t.agent_session_id: t for t in running_tasks}
+        message = "소울스트림 서버가 재시작될 예정입니다. 현재 작업을 중단하고 대기해주세요."
+        for s in active_sessions:
+            task = running_map.get(s["agent_session_id"])
+            if task and hasattr(task, "intervention_queue"):
+                await task.intervention_queue.put({
+                    "text": message,
+                    "user": "system",
+                    "attachment_paths": [],
+                })
+
+        # 세션 완료 대기 (최대 timeout 초)
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        while task_manager.get_running_tasks():
+            if loop.time() > deadline:
+                logger.warning("Graceful shutdown: timeout 초과, 잔여 세션 강제 취소")
+                break
+            await asyncio.sleep(1.0)
+
+        # timeout 초과 후 잔여 RUNNING 세션 강제 취소
+        if task_manager.get_running_tasks():
+            await task_manager.cancel_running_tasks(timeout=5.0)
+
+    except Exception:
+        # 예외 발생 시 draining 상태를 복원하여 서버가 영구적으로 /execute를 거부하지 않도록 한다
+        _is_draining = False
+        raise
 
 
 @asynccontextmanager
@@ -153,6 +221,26 @@ async def lifespan(app: FastAPI):
     loaded = await task_manager.load()
     logger.info(f"  Loaded {loaded} tasks from storage")
 
+    # 이전 종료 시 저장된 세션 재개 (graceful_shutdown이 저장한 pre_shutdown_sessions.json)
+    # 완료된 세션에 add_intervention()을 호출하면 task_manager의 auto-resume이 새 실행을 생성한다.
+    pre_shutdown_file = data_dir / "pre_shutdown_sessions.json"
+    if pre_shutdown_file.exists():
+        try:
+            sessions_to_resume = json.loads(pre_shutdown_file.read_text())
+            for s in sessions_to_resume:
+                try:
+                    await task_manager.add_intervention(
+                        s["agent_session_id"],
+                        "소울스트림 서버 재시작이 완료되었습니다. 이전에 진행하던 작업을 재개해주세요.",
+                        user="system",
+                    )
+                except Exception as e:
+                    logger.warning(f"  세션 재개 실패 ({s['agent_session_id']}): {e}")
+            pre_shutdown_file.unlink()
+            logger.info(f"  이전 세션 재개 메시지 전송: {len(sessions_to_resume)}개")
+        except Exception as e:
+            logger.warning(f"  pre_shutdown_sessions.json 처리 실패: {e}")
+
     # SessionBroadcaster 초기화
     broadcaster = init_session_broadcaster()
     logger.info("  SessionBroadcaster initialized")
@@ -197,12 +285,10 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
 
-    # 실행 중인 태스크 취소 (고아 프로세스 방지)
+    # Graceful shutdown: 실행 중인 세션 정리 (pm2 SIGTERM 경로 — kill_timeout 60초 이내)
     try:
         task_manager = get_task_manager()
-        cancelled = await task_manager.cancel_running_tasks(timeout=5.0)
-        if cancelled > 0:
-            logger.info(f"  Cancelled {cancelled} running tasks")
+        await graceful_shutdown(task_manager, timeout=50.0)
         await task_manager.save()
         logger.info("  Saved tasks to storage")
     except RuntimeError:
@@ -249,6 +335,17 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def check_draining(request: Request, call_next):
+    """드레이닝 중 신규 세션 실행 요청을 거부한다."""
+    if _is_draining and request.url.path == "/execute":
+        return JSONResponse(
+            {"error": "server_draining", "message": "서버 재시작 중입니다. 잠시 후 다시 시도하세요."},
+            status_code=503,
+        )
+    return await call_next(request)
+
+
 # === Cogito: /reflect endpoints + MCP SSE + REST API ===
 
 # Soulstream 자체 /reflect 엔드포인트 (cogito-manifest.yaml에 등록됨)
@@ -272,17 +369,14 @@ async def shutdown():
     logger.info("Graceful shutdown 요청 수신")
 
     async def _do_shutdown():
-        # 실행 중인 태스크 정리
+        # Graceful shutdown + save (lifespan이 실행되지 않는 Windows 경로이므로 직접 처리)
         try:
             task_manager = get_task_manager()
-            cancelled = await task_manager.cancel_running_tasks(timeout=5.0)
-            if cancelled > 0:
-                logger.info(f"Shutdown: {cancelled}개 태스크 취소")
+            await graceful_shutdown(task_manager, timeout=50.0)
             await task_manager.save()
         except Exception as e:
             logger.warning(f"Shutdown cleanup error: {e}", exc_info=True)
 
-        await asyncio.sleep(0.3)
         os._exit(0)
 
     asyncio.create_task(_do_shutdown())
@@ -309,6 +403,7 @@ async def get_status():
     response: dict = {
         "active_tasks": len(running_tasks),
         "max_concurrent": resource_manager.max_concurrent,
+        "is_draining": _is_draining,
         "tasks": [
             {
                 "client_id": t.client_id,
