@@ -158,7 +158,7 @@ jobs:
             ${{ secrets.LINODE_USER }}@${{ secrets.LINODE_HOST }}:${RELEASE_DIR}/
 
           echo "=== 3. pnpm install (프로덕션 의존성 + tsx) ==="
-          $SSH_CMD "cd ${RELEASE_DIR} && pnpm install --frozen-lockfile --prod && pnpm add tsx typescript"
+          $SSH_CMD "cd ${RELEASE_DIR} && export PATH=\$HOME/.local/bin:\$PATH && pnpm install --frozen-lockfile --prod && pnpm add tsx typescript"
 
           echo "=== 4. shared .env 심볼릭 링크 ==="
           $SSH_CMD "ln -sf ${DASHBOARD_DEPLOY_BASE}/shared/.env ${RELEASE_DIR}/.env"
