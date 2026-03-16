@@ -134,7 +134,7 @@ export interface DashboardActions {
   addSession: (session: SessionSummary) => void;
   updateSession: (
     agentSessionId: string,
-    updates: Partial<Pick<SessionSummary, "status" | "completedAt" | "eventCount" | "lastEventType">>
+    updates: Partial<Pick<SessionSummary, "status" | "updatedAt" | "completedAt" | "eventCount" | "lastEventType">>
   ) => void;
   removeSession: (agentSessionId: string) => void;
   setSessionsLoading: (loading: boolean) => void;
@@ -334,10 +334,15 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         const idx = sessions.findIndex((s) => s.agentSessionId === agentSessionId);
         if (idx < 0) return;
 
-        const updated = { ...sessions[idx], ...updates };
-        const rest = [...sessions];
-        rest.splice(idx, 1);
-        set({ sessions: [updated, ...rest] });
+        const newSessions = sessions.map((s) =>
+          s.agentSessionId === agentSessionId ? { ...s, ...updates } : s
+        );
+        newSessions.sort((a, b) => {
+          const aTime = a.updatedAt ?? a.createdAt ?? "";
+          const bTime = b.updatedAt ?? b.createdAt ?? "";
+          return bTime.localeCompare(aTime);
+        });
+        set({ sessions: newSessions });
       },
 
       removeSession: (agentSessionId) => {
