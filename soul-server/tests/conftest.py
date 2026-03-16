@@ -43,7 +43,10 @@ def pytest_configure(config):
 
     if "fastmcp" not in sys.modules:
         mock_fastmcp = MagicMock()
-        mock_fastmcp.FastMCP = MagicMock
+        # FastMCP 클래스를 lambda로 설정: MagicMock 클래스를 직접 할당하면
+        # FastMCP("soulstream-cogito") 호출 시 spec="soulstream-cogito"로 해석되어
+        # @cogito_mcp.tool() 데코레이터가 AttributeError를 일으킨다.
+        mock_fastmcp.FastMCP = lambda *args, **kwargs: MagicMock()
         sys.modules["fastmcp"] = mock_fastmcp
 
     # 테스트 환경으로 설정
