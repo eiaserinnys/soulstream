@@ -168,6 +168,7 @@ export function createNodeFromEvent(
         parentEventId: e.parent_event_id,
         timestamp: e.timestamp,
         responded: false,
+        receivedAt: Date.now(),
       });
     }
 
