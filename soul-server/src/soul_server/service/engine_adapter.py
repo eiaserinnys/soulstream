@@ -33,6 +33,7 @@ from soul_server.models import (
     CredentialAlertEvent,
     DebugEvent,
     ErrorEvent,
+    InputRequestExpiredSSEEvent,
     InterventionSentEvent,
     ProgressEvent,
     RateLimitProfileInfo,
@@ -53,6 +54,7 @@ SSEEvent = Union[
     CompleteEvent,
     ErrorEvent,
     CredentialAlertEvent,
+    InputRequestExpiredSSEEvent,
 ]
 
 DEFAULT_DISALLOWED_TOOLS = ["NotebookEdit", "TodoWrite"]

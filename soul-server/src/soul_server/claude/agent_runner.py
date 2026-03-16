@@ -61,6 +61,7 @@ from soul_server.claude.diagnostics import (
 from soul_server.engine.types import (
     EngineResult,
     InputRequestEngineEvent,
+    InputRequestExpiredEngineEvent,
     InterventionCallback,
     EngineEvent,
     EventCallback,
@@ -612,10 +613,13 @@ class ClaudeRunner:
             )
 
             # InputRequestEngineEvent를 직접 발행
+            started_at = time.time()
             event = InputRequestEngineEvent(
                 request_id=request_id,
                 tool_use_id="",
                 questions=questions,
+                started_at=started_at,
+                timeout_sec=self.input_request_timeout,
             )
             if self._on_event_callback:
                 try:
@@ -645,6 +649,15 @@ class ClaudeRunner:
                         f"[ASK_USER] 응답 타임아웃: "
                         f"runner={self.runner_id}, request_id={request_id}"
                     )
+                    # 만료 이벤트 발행 — 클라이언트가 선택 창을 닫도록
+                    expired_event = InputRequestExpiredEngineEvent(
+                        request_id=request_id,
+                    )
+                    if self._on_event_callback:
+                        try:
+                            await self._on_event_callback(expired_event)
+                        except Exception as e:
+                            logger.warning(f"[ASK_USER] 만료 이벤트 발행 실패: {e}")
                     return PermissionResultDeny(
                         message="사용자 응답 대기 시간이 초과되었습니다."
                     )

@@ -38,6 +38,7 @@ export type SSEEventType =
   | "reconnect"
   // 사용자 입력 요청 이벤트
   | "input_request"
+  | "input_request_expired"
   // 히스토리 동기화 이벤트
   | "history_sync"
   // LLM 프록시 이벤트
@@ -241,6 +242,17 @@ export interface InputRequestEvent {
   tool_use_id?: string;
   questions: InputRequestQuestion[];
   parent_event_id?: string;
+  /** 서버가 타이머를 시작한 시각 (Unix epoch) */
+  started_at: number;
+  /** 응답 대기 타임아웃 (초) */
+  timeout_sec: number;
+}
+
+/** 사용자 입력 요청 만료 이벤트 — 클라이언트가 선택 창을 닫아야 함 */
+export interface InputRequestExpiredEvent {
+  type: "input_request_expired";
+  request_id: string;
+  timestamp: number;
 }
 
 /** LLM 프록시 응답 이벤트 */
@@ -278,6 +290,7 @@ export type SoulSSEEvent =
   | SubagentStopEvent
   | ReconnectEvent
   | InputRequestEvent
+  | InputRequestExpiredEvent
   | HistorySyncEvent
   | AssistantMessageEvent;
 
