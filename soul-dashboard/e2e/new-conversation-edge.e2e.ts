@@ -199,7 +199,10 @@ const test = base.extend<
 
       // Config / Health
       app.get("/api/config", (_req, res) =>
-        res.json({ authRequired: false }),
+        res.json({ serendipityAvailable: false }),
+      );
+      app.get("/api/auth/config", (_req, res) =>
+        res.json({ authEnabled: false, devModeEnabled: true }),
       );
       app.get("/api/health", (_req, res) =>
         res.json({ status: "ok", service: "soul-dashboard" }),
