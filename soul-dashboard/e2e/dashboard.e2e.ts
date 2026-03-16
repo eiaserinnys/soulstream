@@ -85,6 +85,20 @@ async function startMockDashboardServer(): Promise<number> {
     res.json({ status: "ok", service: "soul-dashboard" });
   });
 
+  // 모의 인증 엔드포인트 (인증 비활성 기본값)
+  app.get("/api/auth/config", (_req, res) => {
+    res.json({ authEnabled: false, devModeEnabled: true });
+  });
+  app.get("/api/auth/status", (_req, res) => {
+    res.json({ authenticated: false });
+  });
+  app.post("/api/auth/dev-login", (_req, res) => {
+    res.json({ success: true });
+  });
+  app.post("/api/auth/logout", (_req, res) => {
+    res.json({ success: true });
+  });
+
   // 모의 세션 목록 SSE 스트림 (SSE 모드에서 사용)
   app.get("/api/sessions/stream", (_req, res) => {
     res.writeHead(200, {
@@ -316,5 +330,41 @@ test.describe("Soul Dashboard API 계약 E2E", () => {
     for (let i = 1; i < ids.length; i++) {
       expect(ids[i]).toBeGreaterThan(ids[i - 1]);
     }
+  });
+
+  test("GET /api/auth/config — 인증 설정 계약", async ({ request }) => {
+    const res = await request.get(`http://localhost:${testPort}/api/auth/config`);
+    expect(res.ok()).toBe(true);
+    const body = await res.json();
+    expect(body).toHaveProperty("authEnabled");
+    expect(typeof body.authEnabled).toBe("boolean");
+    expect(body).toHaveProperty("devModeEnabled");
+    expect(typeof body.devModeEnabled).toBe("boolean");
+  });
+
+  test("GET /api/auth/status — 인증 상태 계약", async ({ request }) => {
+    const res = await request.get(`http://localhost:${testPort}/api/auth/status`);
+    expect(res.ok()).toBe(true);
+    const body = await res.json();
+    expect(body).toHaveProperty("authenticated");
+    expect(typeof body.authenticated).toBe("boolean");
+  });
+
+  test("POST /api/auth/dev-login — 개발자 로그인 계약", async ({ request }) => {
+    const res = await request.post(`http://localhost:${testPort}/api/auth/dev-login`, {
+      data: { email: "dev@example.com", name: "Dev User" },
+    });
+    expect(res.ok()).toBe(true);
+    const body = await res.json();
+    expect(body).toHaveProperty("success");
+    expect(body.success).toBe(true);
+  });
+
+  test("POST /api/auth/logout — 로그아웃 계약", async ({ request }) => {
+    const res = await request.post(`http://localhost:${testPort}/api/auth/logout`);
+    expect(res.ok()).toBe(true);
+    const body = await res.json();
+    expect(body).toHaveProperty("success");
+    expect(body.success).toBe(true);
   });
 });

@@ -7,7 +7,6 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
-import { getAuthHeaders, AuthTokenRequiredError } from "../lib/api-headers";
 import { cn } from "../lib/cn";
 import { Button } from "./ui/button";
 import type { CreateSessionResponse } from "@shared/types";
@@ -58,13 +57,11 @@ export function PromptComposer() {
     setError(null);
 
     try {
-      const headers = await getAuthHeaders();
-
       // Create & Resume 모두 POST /api/sessions 단일 엔드포인트 사용
       // Resume 시 agentSessionId를 전달하여 기존 세션 ID 재사용
       const response = await fetch("/api/sessions", {
         method: "POST",
-        headers,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt: trimmed,
           ...(resumeTargetKey ? { agentSessionId: resumeTargetKey } : {}),
@@ -83,9 +80,7 @@ export function PromptComposer() {
       // 세션 생성 성공 → 단일 atomic 호출로 낙관적 추가 + compose 종료 + 세션 활성화
       completeCompose(result.agentSessionId, trimmed);
     } catch (err) {
-      if (err instanceof AuthTokenRequiredError) {
-        setError("Authentication required. Please set your API token in Settings.");
-      } else if (err instanceof Error) {
+      if (err instanceof Error) {
         setError(err.message);
       } else {
         setError("Failed to start session");

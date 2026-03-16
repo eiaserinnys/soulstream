@@ -11,7 +11,9 @@ import { memo, useRef, useCallback } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { SessionSummary, SessionStatus } from "@shared/types";
 import type { VariantProps } from "class-variance-authority";
+import { LogOut } from "lucide-react";
 import { useDashboardStore } from "../stores/dashboard-store";
+import { useAuth } from "../providers/AuthProvider";
 import { cn } from "../lib/cn";
 import { Button } from "./ui/button";
 import { Badge, badgeVariants } from "./ui/badge";
@@ -186,6 +188,7 @@ export function SessionList({ sessions, loading, error }: SessionListProps) {
   const sessionTypeFilter = useDashboardStore((s) => s.sessionTypeFilter);
   const setSessionTypeFilter = useDashboardStore((s) => s.setSessionTypeFilter);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const { authEnabled, user, logout } = useAuth();
 
   const virtualizer = useVirtualizer({
     count: sessions.length,
@@ -296,6 +299,36 @@ export function SessionList({ sessions, loading, error }: SessionListProps) {
           </div>
         )}
       </div>
+
+      {/* 사용자 정보 + 로그아웃 (authEnabled 시에만) */}
+      {authEnabled && (
+        <div className="shrink-0 border-t border-border px-3 py-2 flex items-center gap-2">
+          {user?.picture ? (
+            <img
+              src={user.picture}
+              alt={user.name}
+              className="w-6 h-6 rounded-full shrink-0"
+            />
+          ) : (
+            <div className="w-6 h-6 rounded-full bg-accent-blue/20 flex items-center justify-center shrink-0">
+              <span className="text-[10px] text-accent-blue font-semibold">
+                {user?.name?.[0]?.toUpperCase() ?? "?"}
+              </span>
+            </div>
+          )}
+          <span className="flex-1 text-xs text-muted-foreground truncate min-w-0">
+            {user?.name ?? user?.email ?? ""}
+          </span>
+          <button
+            data-testid="logout-button"
+            onClick={() => void logout()}
+            title="로그아웃"
+            className="shrink-0 text-muted-foreground hover:text-foreground transition-colors duration-150 p-0.5 rounded"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
