@@ -10,7 +10,6 @@ import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import type { SessionSummary } from "@shared/types";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { flattenTree } from "../lib/flatten-tree";
-import { getAuthHeaders } from "../lib/api-headers";
 import { cn } from "../lib/cn";
 import { Button } from "./ui/button";
 
@@ -113,7 +112,7 @@ export function ChatInput() {
     setError(null);
 
     try {
-      const headers = await getAuthHeaders();
+      const headers = { "Content-Type": "application/json" };
 
       if (isLlmFinished) {
         // LLM 완료 세션: 이전 컨텍스트 + 새 메시지를 /api/llm/completions로 전송

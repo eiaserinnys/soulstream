@@ -507,9 +507,53 @@ function makeMockSessions() {
   ];
 }
 
+// === 인증 Mock 상태 (worker-scoped 가변 상태) ===
+//
+// dashboardServer fixture는 { scope: "worker" }로 선언되어 있어 worker당 서버가 1개 생성됩니다.
+// 이 모듈 스코프 변수 mockAuth는 같은 worker 내의 서버 핸들러와 테스트 코드가
+// 동일한 모듈 인스턴스를 공유하므로 안전하게 사용할 수 있습니다.
+// 주의: fixture scope가 test-scoped로 변경되거나 병렬 worker 수가 1보다 커지면
+// 테스트 간 상태 오염이 발생할 수 있으므로 반드시 beforeEach에서 resetMockAuth()를 호출해야 합니다.
+
+interface AuthMockState {
+  authEnabled: boolean;
+  devModeEnabled: boolean;
+  authenticated: boolean;
+  user: { email: string; name: string; picture?: string } | null;
+}
+
+let mockAuth: AuthMockState = {
+  authEnabled: false,
+  devModeEnabled: true,
+  authenticated: false,
+  user: null,
+};
+
+/** 인증 비활성(기본) 상태로 초기화 */
+function resetMockAuth() {
+  mockAuth = { authEnabled: false, devModeEnabled: true, authenticated: false, user: null };
+}
+
+/** 인증 활성 시나리오 설정 */
+function configureMockAuth(opts: {
+  authEnabled: boolean;
+  authenticated: boolean;
+  user?: AuthMockState["user"];
+  devModeEnabled?: boolean;
+}) {
+  mockAuth = {
+    authEnabled: opts.authEnabled,
+    devModeEnabled: opts.devModeEnabled ?? true,
+    authenticated: opts.authenticated,
+    user: opts.user ?? null,
+  };
+}
+
 const test = base.extend<{ dashboardServer: MockDashboardServer }, { dashboardServer: MockDashboardServer }>({
   dashboardServer: [async ({}, use) => {
     const app = express();
+    // JSON 파싱 미들웨어를 모든 라우트보다 먼저 등록 (req.body 파싱 보장)
+    app.use(express.json());
 
     // --- Mock: 세션 목록 — 실제 서버와 동일한 snake_case 형식 ---
     app.get("/api/sessions", (_req, res) => {
@@ -525,8 +569,25 @@ const test = base.extend<{ dashboardServer: MockDashboardServer }, { dashboardSe
     app.get("/api/config", (_req, res) => {
       res.json({ serendipityAvailable: false });
     });
+    // --- Mock: 인증 엔드포인트 (가변 상태 기반) ---
     app.get("/api/auth/config", (_req, res) => {
-      res.json({ authEnabled: false, devModeEnabled: true });
+      res.json({ authEnabled: mockAuth.authEnabled, devModeEnabled: mockAuth.devModeEnabled });
+    });
+    app.get("/api/auth/status", (_req, res) => {
+      res.json({ authenticated: mockAuth.authenticated, user: mockAuth.user });
+    });
+    app.post("/api/auth/dev-login", (req, res) => {
+      const { email, name } = req.body as { email: string; name?: string };
+      mockAuth.authenticated = true;
+      mockAuth.user = { email, name: name ?? "Dev User" };
+      res.cookie("soul_dashboard_auth", "test-jwt", { httpOnly: true });
+      res.json({ success: true });
+    });
+    app.post("/api/auth/logout", (_req, res) => {
+      mockAuth.authenticated = false;
+      mockAuth.user = null;
+      res.clearCookie("soul_dashboard_auth");
+      res.json({ success: true });
     });
 
     // --- Mock: 세션 생성/재개 — CreateSessionResponse 형식 ---
@@ -2047,5 +2108,78 @@ test.describe("Soul Dashboard 브라우저 UI", () => {
       path: `${SCREENSHOT_DIR}/30-subagent-roundtrip.png`,
       fullPage: true,
     });
+  });
+});
+
+// === 인증 UI 시나리오 E2E ===
+
+test.describe("인증 UI 시나리오", () => {
+  test.beforeEach(() => {
+    resetMockAuth();
+  });
+
+  test("인증 비활성 → 로그인 없이 바로 대시보드 표시", async ({
+    page,
+    dashboardServer,
+  }) => {
+    configureMockAuth({ authEnabled: false, authenticated: false });
+    await page.goto(dashboardServer.baseURL);
+    // 로그인 페이지 없이 세션 목록이 바로 표시되어야 함
+    await expect(page.getByTestId("session-list")).toBeVisible({ timeout: 8_000 });
+    await expect(page.getByTestId("login-page")).not.toBeVisible();
+  });
+
+  test("인증 활성 + 미인증 → 로그인 페이지 표시", async ({
+    page,
+    dashboardServer,
+  }) => {
+    configureMockAuth({ authEnabled: true, authenticated: false });
+    await page.goto(dashboardServer.baseURL);
+    // 로그인 페이지가 표시되어야 함
+    await expect(page.getByTestId("login-page")).toBeVisible({ timeout: 8_000 });
+    await expect(page.getByTestId("google-login-button")).toBeVisible();
+    // 세션 목록은 보이지 않아야 함
+    await expect(page.getByTestId("session-list")).not.toBeVisible();
+  });
+
+  test("dev-login으로 인증 → 대시보드 진입", async ({
+    page,
+    dashboardServer,
+  }) => {
+    configureMockAuth({ authEnabled: true, authenticated: false, devModeEnabled: true });
+    await page.goto(dashboardServer.baseURL);
+
+    // 로그인 페이지가 표시되어야 함
+    await expect(page.getByTestId("login-page")).toBeVisible({ timeout: 8_000 });
+
+    // dev-login 폼 작성 후 제출
+    await page.getByTestId("dev-email-input").fill("dev@example.com");
+    await page.getByTestId("dev-login-button").click();
+
+    // dev-login 성공 → 대시보드 진입
+    await expect(page.getByTestId("session-list")).toBeVisible({ timeout: 8_000 });
+    await expect(page.getByTestId("login-page")).not.toBeVisible();
+  });
+
+  test("로그아웃 → 로그인 페이지로 전환", async ({
+    page,
+    dashboardServer,
+  }) => {
+    configureMockAuth({
+      authEnabled: true,
+      authenticated: true,
+      user: { email: "user@example.com", name: "Test User" },
+    });
+    await page.goto(dashboardServer.baseURL);
+
+    // 대시보드가 표시되어야 함
+    await expect(page.getByTestId("session-list")).toBeVisible({ timeout: 8_000 });
+
+    // 로그아웃 버튼 클릭
+    await page.getByTestId("logout-button").click();
+
+    // 로그인 페이지로 전환되어야 함
+    await expect(page.getByTestId("login-page")).toBeVisible({ timeout: 8_000 });
+    await expect(page.getByTestId("session-list")).not.toBeVisible();
   });
 });
