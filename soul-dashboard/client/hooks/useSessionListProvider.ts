@@ -119,7 +119,7 @@ export function useSessionListProvider(
         case "session_updated":
           updateSession(event.agent_session_id, {
             status: event.status as SessionStatus,
-            completedAt: event.updated_at,
+            updatedAt: event.updated_at,
           });
           break;
 
