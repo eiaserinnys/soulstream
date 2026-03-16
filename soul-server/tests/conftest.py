@@ -26,6 +26,12 @@ def pytest_configure(config):
     이 함수는 테스트 수집 전에 호출되므로,
     모든 모듈 임포트 전에 환경 변수가 설정됩니다.
     """
+    # venv의 .pth 파일(soulstream_runtime 경로)보다 로컬 소스를 우선하도록 sys.path 앞에 삽입
+    # 이렇게 하지 않으면 런타임의 soul_server가 로드되어 잘못된 모듈이 테스트됨
+    local_src = Path(__file__).parent.parent / "src"
+    if str(local_src) not in sys.path:
+        sys.path.insert(0, str(local_src))
+
     # cogito 및 fastmcp 모듈 모킹 (패키지가 설치되지 않은 환경에서 테스트 가능하게)
     # soul_server.cogito 모듈이 cogito와 fastmcp를 임포트하므로, 임포트 전에 모킹 필요
     if "cogito" not in sys.modules:
@@ -33,6 +39,7 @@ def pytest_configure(config):
         mock_cogito.Reflector = MagicMock
         sys.modules["cogito"] = mock_cogito
         sys.modules["cogito.endpoint"] = MagicMock()
+        sys.modules["cogito.manifest"] = MagicMock()  # load_manifest 모킹
 
     if "fastmcp" not in sys.modules:
         mock_fastmcp = MagicMock()

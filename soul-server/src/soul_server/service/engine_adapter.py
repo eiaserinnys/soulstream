@@ -13,6 +13,7 @@ Serendipity 연동:
 import asyncio
 import json
 import logging
+import re
 import socket
 from dataclasses import dataclass
 from pathlib import Path
@@ -170,7 +171,9 @@ def _format_context_items(context_items: List[dict]) -> str:
     """context_items를 Claude Code가 읽을 수 있는 XML 블록으로 직렬화한다."""
     parts = []
     for item in context_items:
-        key = item.get("key", "item")
+        raw_key = item.get("key", "item")
+        # XML 태그명으로 안전한 문자만 허용 (영문/숫자/밑줄)
+        key = re.sub(r'[^a-zA-Z0-9_]', '_', raw_key) or "item"
         content = item.get("content", "")
         if isinstance(content, (dict, list)):
             content_str = json.dumps(content, ensure_ascii=False, indent=2)
