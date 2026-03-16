@@ -17,6 +17,7 @@ import type {
   AssistantMessageNode,
   InputRequestNodeDef,
   InputRequestQuestion,
+  ContextItem,
 } from "@shared/types";
 
 /** Chat 탭에 표시되는 메시지 단위 */
@@ -63,6 +64,8 @@ export interface ChatMessage {
   expired?: boolean;
   /** input_request 전용: 클라이언트 수신 시각 (Date.now()) */
   receivedAt?: number;
+  /** user_message 전용: 구조화된 맥락 항목 배열 */
+  contextItems?: ContextItem[];
 }
 
 /**
@@ -130,6 +133,7 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
         timestamp: n.timestamp,
         treeNodeId: n.id,
         treeNodeType: n.type,
+        contextItems: n.context,
       };
     }
 

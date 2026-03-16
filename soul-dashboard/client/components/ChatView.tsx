@@ -9,7 +9,7 @@
  */
 
 import { memo, useMemo, useRef, useEffect, useState, useCallback } from "react";
-import type { SessionSummary, InputRequestQuestion } from "@shared/types";
+import type { SessionSummary, InputRequestQuestion, ContextItem } from "@shared/types";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { flattenTree, type ChatMessage } from "../lib/flatten-tree";
 import { submitInputResponse } from "../lib/input-request-actions";
@@ -17,6 +17,7 @@ import { useInputRequestTimer } from "../hooks/useInputRequestTimer";
 import { formatTime } from "../lib/input-request-utils";
 import { ChatInput } from "./ChatInput";
 import { ProfileAvatar } from "./ProfileAvatar";
+import { ContextContentRenderer } from "./ContextContentRenderer";
 import { cn } from "../lib/cn";
 
 /** 스크롤 하단 판정 threshold (px) */
@@ -244,6 +245,21 @@ const UserMessage = memo(function UserMessage({ msg, llmContext }: { msg: ChatMe
           )}
         </div>
         <div className="text-[15px] text-foreground whitespace-pre-wrap break-words">{msg.content}</div>
+        {msg.contextItems && msg.contextItems.length > 0 && (
+          <details className="mt-2 border border-gray-200 rounded-md">
+            <summary className="px-3 py-1.5 text-sm text-gray-500 cursor-pointer select-none">
+              📋 Context ({msg.contextItems.length})
+            </summary>
+            <div className="px-3 py-2 space-y-2 text-sm">
+              {msg.contextItems.map((item: ContextItem) => (
+                <div key={item.key} className="flex gap-3">
+                  <div className="font-medium text-gray-600 whitespace-nowrap">{item.label}</div>
+                  <ContextContentRenderer content={item.content} />
+                </div>
+              ))}
+            </div>
+          </details>
+        )}
       </div>
     </div>
   );
