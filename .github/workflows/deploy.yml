@@ -36,13 +36,18 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - name: Install dependencies
         working-directory: soul-dashboard
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Build dashboard client
         working-directory: soul-dashboard
-        run: npm run build
+        run: pnpm run build
 
       - name: Upload dashboard artifacts
         uses: actions/upload-artifact@v4
@@ -54,7 +59,7 @@ jobs:
             soul-dashboard/shared
             soul-dashboard/tsconfig.json
             soul-dashboard/package.json
-            soul-dashboard/package-lock.json
+            soul-dashboard/pnpm-lock.yaml
 
   deploy:
     needs: [build-server, build-dashboard]
@@ -149,11 +154,11 @@ jobs:
             -e "ssh -i ~/.ssh/id_ed25519" \
             dashboard-build/tsconfig.json \
             dashboard-build/package.json \
-            dashboard-build/package-lock.json \
+            dashboard-build/pnpm-lock.yaml \
             ${{ secrets.LINODE_USER }}@${{ secrets.LINODE_HOST }}:${RELEASE_DIR}/
 
-          echo "=== 3. npm install (프로덕션 의존성 + tsx) ==="
-          $SSH_CMD "cd ${RELEASE_DIR} && npm ci --omit=dev && npm install tsx typescript"
+          echo "=== 3. pnpm install (프로덕션 의존성 + tsx) ==="
+          $SSH_CMD "cd ${RELEASE_DIR} && pnpm install --frozen-lockfile --prod && pnpm add tsx typescript"
 
           echo "=== 4. shared .env 심볼릭 링크 ==="
           $SSH_CMD "ln -sf ${DASHBOARD_DEPLOY_BASE}/shared/.env ${RELEASE_DIR}/.env"
