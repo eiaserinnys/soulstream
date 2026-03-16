@@ -4,7 +4,7 @@ Pydantic 모델 - Request/Response 스키마
 
 from datetime import datetime
 from enum import Enum
-from typing import Optional, List
+from typing import Any, Optional, List
 from pydantic import BaseModel, Field
 
 
@@ -179,6 +179,18 @@ class TaskStatus(str, Enum):
     INTERRUPTED = "interrupted"
 
 
+class ContextItem(BaseModel):
+    """하나의 맥락 항목."""
+    key: str = Field(..., description="항목 이름, 프롬프트 조립 시 XML 태그명으로 사용")
+    label: str = Field(..., description="대시보드 표시용 라벨")
+    content: Any = Field(..., description="항목 내용 — 네이티브 JSON (dict, list, str, number 등)")
+
+
+class StructuredContext(BaseModel):
+    """구조화된 맥락. execute 요청에 prompt와 함께 전달."""
+    items: List[ContextItem] = Field(..., description="맥락 항목 리스트 (순서 유지)")
+
+
 class ExecuteRequest(BaseModel):
     """실행 요청
 
@@ -186,6 +198,7 @@ class ExecuteRequest(BaseModel):
     미제공 시 서버가 새 agent_session_id를 생성합니다.
     """
     prompt: str = Field(..., description="실행할 프롬프트")
+    context: Optional[StructuredContext] = Field(None, description="구조화된 맥락")
     agent_session_id: Optional[str] = Field(None, description="세션 식별자. 제공하면 resume, 미제공 시 서버가 생성.")
     client_id: Optional[str] = Field(None, description="클라이언트 식별자 (메타데이터, 로깅용)")
     attachment_paths: Optional[List[str]] = Field(None, description="첨부 파일 경로 목록")
