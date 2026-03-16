@@ -33,6 +33,7 @@ class SSEEventType(str, Enum):
     SUBAGENT_STOP = "subagent_stop"
     # 사용자 입력 요청 이벤트
     INPUT_REQUEST = "input_request"
+    INPUT_REQUEST_EXPIRED = "input_request_expired"
 
 
 # === Request Models ===
@@ -338,6 +339,19 @@ class InputRequestSSEEvent(BaseModel):
     tool_use_id: str = Field(default="", description="SDK tool_use_id")
     questions: List[InputRequestQuestion] = Field(..., description="질문 목록")
     parent_event_id: Optional[str] = Field(None, description="서브에이전트 내부인 경우 부모 이벤트 ID")
+    started_at: float = Field(..., description="서버가 타이머를 시작한 시각 (Unix epoch)")
+    timeout_sec: float = Field(..., description="응답 대기 타임아웃 (초)")
+
+
+class InputRequestExpiredSSEEvent(BaseModel):
+    """사용자 입력 요청 만료 이벤트
+
+    AskUserQuestion 타임아웃이 발생하면 발행됩니다.
+    클라이언트는 이 이벤트를 받아 선택 창을 닫아야 합니다.
+    """
+    type: str = "input_request_expired"
+    request_id: str = Field(..., description="만료된 요청 식별자")
+    timestamp: float = Field(..., description="이벤트 발행 시각 (Unix epoch)")
 
 
 class RateLimitProfileStatus(BaseModel):
