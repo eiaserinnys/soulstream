@@ -53,12 +53,20 @@ const CACHE_DIR =
 const sessionCache = new SessionCache({ cacheDir: CACHE_DIR });
 const BYPASS_CACHE = process.env.DASHBOARD_BYPASS_CACHE === "true";
 
-// === JWT_SECRET 시작 시 검증 ===
-// GOOGLE_CLIENT_ID가 설정된 경우(인증 활성) JWT_SECRET이 없으면 즉시 에러
+// === 시작 시 인증 설정 검증 ===
 
-if (isAuthEnabled() && !process.env.JWT_SECRET) {
+// GOOGLE_CLIENT_ID는 있지만 CLIENT_SECRET이 없으면 즉시 에러
+if (process.env.GOOGLE_CLIENT_ID && !process.env.GOOGLE_CLIENT_SECRET) {
   throw new Error(
-    "[dashboard] JWT_SECRET is required when GOOGLE_CLIENT_ID is set"
+    "[dashboard] GOOGLE_CLIENT_SECRET is required when GOOGLE_CLIENT_ID is set"
+  );
+}
+
+// 인증 활성 또는 dev 모드일 때 JWT_SECRET 필수
+const devModeEnabled = process.env.NODE_ENV !== "production";
+if ((isAuthEnabled() || devModeEnabled) && !process.env.JWT_SECRET) {
+  throw new Error(
+    "[dashboard] JWT_SECRET is required when auth is enabled or in dev mode (NODE_ENV !== production)"
   );
 }
 

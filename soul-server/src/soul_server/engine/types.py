@@ -217,7 +217,9 @@ class InputRequestEngineEvent(EngineEvent):
     request_id: str = ""
     tool_use_id: str = ""
     questions: list = field(default_factory=list)
-    started_at: float = field(default_factory=time.time)
+    # NOTE: agent_runner.py에서 항상 started_at=time.time()을 명시적으로 전달한다.
+    # kw_only=True로 기본값 없이 선언하여 누락 시 TypeError 발생으로 명시적 실패 강제.
+    started_at: float = field(kw_only=True)
     timeout_sec: float = 300.0
 
     def to_sse(self) -> list[BaseModel]:
