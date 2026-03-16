@@ -155,6 +155,8 @@ class TaskExecutor:
                     disallowed_tools=task.disallowed_tools,
                     use_mcp=task.use_mcp,
                     on_runner_ready=on_runner_ready,
+                    context_items=task.context_items,
+                    agent_session_id=task.agent_session_id,
                 ):
                     event_dict = event.model_dump()
 
