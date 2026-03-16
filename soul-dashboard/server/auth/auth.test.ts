@@ -220,10 +220,12 @@ describe("Auth enabled (GOOGLE_CLIENT_ID 설정)", () => {
   let server: Server;
   let baseUrl: string;
   const ORIGINAL_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+  const ORIGINAL_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
   const ORIGINAL_JWT_SECRET = process.env.JWT_SECRET;
 
   beforeAll(async () => {
     process.env.GOOGLE_CLIENT_ID = "mock-client-id";
+    process.env.GOOGLE_CLIENT_SECRET = "mock-client-secret";
     process.env.JWT_SECRET = "test-secret-enabled";
 
     const app = createTestApp();
@@ -236,6 +238,11 @@ describe("Auth enabled (GOOGLE_CLIENT_ID 설정)", () => {
       delete process.env.GOOGLE_CLIENT_ID;
     } else {
       process.env.GOOGLE_CLIENT_ID = ORIGINAL_CLIENT_ID;
+    }
+    if (ORIGINAL_CLIENT_SECRET === undefined) {
+      delete process.env.GOOGLE_CLIENT_SECRET;
+    } else {
+      process.env.GOOGLE_CLIENT_SECRET = ORIGINAL_CLIENT_SECRET;
     }
     if (ORIGINAL_JWT_SECRET === undefined) {
       delete process.env.JWT_SECRET;
