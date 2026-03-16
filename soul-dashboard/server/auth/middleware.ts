@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express'
 import { verifyToken, DecodedToken } from './jwt.js'
-import { AUTH_COOKIE_NAME } from './routes.js'
+import { AUTH_COOKIE_NAME } from './constants.js'
 
 /**
  * Check if authentication is enabled.
@@ -15,7 +15,7 @@ export function isAuthEnabled(): boolean {
  * Extract JWT token from request.
  * Priority: 1. Cookie, 2. Authorization Bearer header
  */
-function extractToken(req: Request): string | null {
+export function extractToken(req: Request): string | null {
   // Check cookie first
   const cookieToken = req.cookies?.[AUTH_COOKIE_NAME]
   if (cookieToken) {
