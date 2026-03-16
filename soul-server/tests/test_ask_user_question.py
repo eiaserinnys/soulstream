@@ -266,6 +266,8 @@ class TestInputRequestSSEEventModel:
             timestamp=1234567890.0,
             request_id="req-test",
             tool_use_id="toolu_test",
+            started_at=1234567890.0,
+            timeout_sec=300.0,
             questions=[
                 InputRequestQuestion(
                     question="Choose?",
@@ -281,6 +283,8 @@ class TestInputRequestSSEEventModel:
         assert data["request_id"] == "req-test"
         assert data["tool_use_id"] == "toolu_test"
         assert len(data["questions"]) == 1
+        assert data["started_at"] == 1234567890.0
+        assert data["timeout_sec"] == 300.0
 
     def test_model_defaults(self):
         """기본값 테스트"""
