@@ -10,6 +10,7 @@
 
 import type {
   EventTreeNode,
+  InputRequestNodeDef,
   SoulSSEEvent,
   SessionEvent,
   SessionNode,
@@ -24,6 +25,7 @@ import type {
   InterventionSentEvent,
   CompactEvent,
   InputRequestEvent,
+  InputRequestExpiredEvent,
   AssistantMessageEvent,
 } from "@shared/types";
 import type { ProcessingContext } from "./processing-context";
@@ -168,7 +170,8 @@ export function createNodeFromEvent(
         parentEventId: e.parent_event_id,
         timestamp: e.timestamp,
         responded: false,
-        receivedAt: Date.now(),
+        receivedAt: e.started_at * 1000,
+        timeoutSec: e.timeout_sec,
       });
     }
 
@@ -260,6 +263,16 @@ export function applyUpdate(
             (e.timestamp - toolNode.timestamp) * 1000,
           );
         }
+        return true;
+      }
+      return false;
+    }
+
+    case "input_request_expired": {
+      const e = event as InputRequestExpiredEvent;
+      const node = ctx.nodeMap.get(e.request_id);
+      if (node && node.type === "input_request") {
+        (node as InputRequestNodeDef).expired = true;
         return true;
       }
       return false;

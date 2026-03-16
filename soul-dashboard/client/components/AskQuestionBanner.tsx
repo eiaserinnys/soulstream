@@ -39,7 +39,7 @@ interface AskQuestionBannerInnerProps {
 
 function AskQuestionBannerInner({ node, sessionId }: AskQuestionBannerInnerProps) {
   const expireInputRequest = useDashboardStore((s: DashboardState & DashboardActions) => s.expireInputRequest);
-  const { remainingSec, isExpired } = useInputRequestTimer(node.receivedAt, 300);
+  const { remainingSec, isExpired } = useInputRequestTimer(node.receivedAt, node.timeoutSec ?? 300);
   const [responded, setResponded] = useState(false);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [visible, setVisible] = useState(true);
@@ -47,6 +47,8 @@ function AskQuestionBannerInner({ node, sessionId }: AskQuestionBannerInnerProps
   useEffect(() => {
     if (isExpired && !responded) {
       expireInputRequest(node.id);
+      const timer = setTimeout(() => setVisible(false), 2000);
+      return () => clearTimeout(timer);
     }
   }, [isExpired, responded, node.id, expireInputRequest]);
 
