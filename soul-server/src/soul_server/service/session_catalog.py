@@ -140,6 +140,7 @@ class SessionCatalog:
             "preview": preview[:200],
             "timestamp": timestamp,
         }
+        entry["updated_at"] = timestamp
         self.schedule_save()
 
     def remove(self, session_id: str) -> None:
@@ -152,7 +153,10 @@ class SessionCatalog:
     def get_all(
         self, offset: int = 0, limit: int = 0
     ) -> tuple[list[dict], int]:
-        """전체 카탈로그 엔트리 반환 (created_at 내림차순)
+        """전체 카탈로그 엔트리 반환 (마지막 활동 시간 내림차순)
+
+        updated_at(마지막 메시지 수신 시간)이 있으면 그것을 기준으로 정렬하고,
+        없으면 created_at으로 폴백한다.
 
         Args:
             offset: 건너뛸 항목 수
@@ -165,7 +169,10 @@ class SessionCatalog:
             {"agent_session_id": sid, **entry}
             for sid, entry in self._entries.items()
         ]
-        all_entries.sort(key=lambda e: e.get("created_at", ""), reverse=True)
+        all_entries.sort(
+            key=lambda e: e.get("updated_at") or e.get("created_at", ""),
+            reverse=True,
+        )
         total = len(all_entries)
 
         if offset > 0:
