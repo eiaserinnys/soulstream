@@ -217,6 +217,8 @@ class InputRequestEngineEvent(EngineEvent):
     request_id: str = ""
     tool_use_id: str = ""
     questions: list = field(default_factory=list)
+    started_at: float = field(default_factory=time.time)
+    timeout_sec: float = 300.0
 
     def to_sse(self) -> list[BaseModel]:
         from soul_server.models.schemas import InputRequestSSEEvent, InputRequestQuestion
@@ -233,6 +235,26 @@ class InputRequestEngineEvent(EngineEvent):
                 for q in self.questions
             ],
             parent_event_id=self.parent_event_id,
+            timestamp=self.timestamp,
+            started_at=self.started_at,
+            timeout_sec=self.timeout_sec,
+        )]
+
+
+@dataclass
+class InputRequestExpiredEngineEvent(EngineEvent):
+    """사용자 입력 요청 만료 이벤트
+
+    AskUserQuestion 타임아웃이 발생할 때 발행됩니다.
+    클라이언트는 이 이벤트를 받아 선택 창을 닫습니다.
+    """
+
+    request_id: str = ""
+
+    def to_sse(self) -> list[BaseModel]:
+        from soul_server.models.schemas import InputRequestExpiredSSEEvent
+        return [InputRequestExpiredSSEEvent(
+            request_id=self.request_id,
             timestamp=self.timestamp,
         )]
 
