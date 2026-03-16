@@ -15,7 +15,9 @@ describe("SessionCache", () => {
   let cache: SessionCache;
 
   beforeEach(async () => {
-    // 테스트 디렉토리 생성
+    // 이전 실행의 잔여 파일 정리 후 디렉토리 재생성
+    // (afterEach가 타임아웃 등으로 실패했을 때를 대비)
+    await rm(TEST_CACHE_DIR, { recursive: true, force: true });
     await mkdir(TEST_CACHE_DIR, { recursive: true });
     cache = new SessionCache({ cacheDir: TEST_CACHE_DIR });
   });
