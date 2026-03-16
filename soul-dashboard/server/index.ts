@@ -114,6 +114,30 @@ app.get("/api/config", (_req, res) => {
 
 app.use("/api/sessions", requireAuth);
 app.use("/api/llm", requireAuth);
+app.use('/api/debug', requireAuth)
+
+app.get('/api/debug/memory', (_, res) => {
+  const m = process.memoryUsage()
+  const mb = (v: number) => Math.round(v / 1024 / 1024 * 10) / 10
+  res.json({
+    heapUsed: mb(m.heapUsed),
+    heapTotal: mb(m.heapTotal),
+    rss: mb(m.rss),
+    external: mb(m.external),
+    timestamp: new Date().toISOString()
+  })
+})
+
+app.post('/api/debug/gc', (_, res) => {
+  if (typeof (global as any).gc === 'function') {
+    ;(global as any).gc()
+    const m = process.memoryUsage()
+    const mb = (v: number) => Math.round(v / 1024 / 1024 * 10) / 10
+    res.json({ gc: true, heapUsed: mb(m.heapUsed), heapTotal: mb(m.heapTotal), rss: mb(m.rss) })
+  } else {
+    res.status(400).json({ error: 'GC not exposed. Start Node with --expose-gc flag.' })
+  }
+})
 
 // Routes - 프록시 라우터 사용
 app.use(
