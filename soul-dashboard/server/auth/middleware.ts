@@ -4,11 +4,11 @@ import { AUTH_COOKIE_NAME } from './constants.js'
 
 /**
  * Check if authentication is enabled.
- * Authentication is enabled when GOOGLE_CLIENT_ID is set.
+ * Authentication is enabled when both GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are set.
  * When not set, all routes are accessible without authentication.
  */
 export function isAuthEnabled(): boolean {
-  return Boolean(process.env.GOOGLE_CLIENT_ID)
+  return Boolean(process.env.GOOGLE_CLIENT_ID) && Boolean(process.env.GOOGLE_CLIENT_SECRET)
 }
 
 /**
