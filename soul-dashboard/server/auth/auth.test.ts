@@ -12,9 +12,8 @@ import {
   afterAll,
   beforeEach,
   afterEach,
-  vi,
 } from "vitest";
-import express, { type Request, type Response, type NextFunction } from "express";
+import express, { type Request, type Response } from "express";
 import cookieParser from "cookie-parser";
 import { createServer, type Server } from "http";
 import { generateToken, verifyToken } from "./jwt.js";
@@ -379,5 +378,50 @@ describe("devModeEnabled 로직", () => {
       body: JSON.stringify({ email: "not-an-email" }),
     });
     expect(res.status).toBe(400);
+  });
+});
+
+// ── Production 환경 보안 게이트 테스트 ──
+
+describe("Production 환경 보안 게이트", () => {
+  let server: Server;
+  let baseUrl: string;
+  const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
+  const ORIGINAL_JWT_SECRET = process.env.JWT_SECRET;
+  const ORIGINAL_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+
+  beforeAll(async () => {
+    delete process.env.GOOGLE_CLIENT_ID;
+    process.env.JWT_SECRET = "test-secret-production";
+    process.env.NODE_ENV = "production"; // production 환경 시뮬레이션
+
+    const app = createTestApp();
+    ({ server, baseUrl } = await startServer(app));
+  });
+
+  afterAll(async () => {
+    await stopServer(server);
+    process.env.NODE_ENV = ORIGINAL_NODE_ENV;
+    if (ORIGINAL_JWT_SECRET === undefined) delete process.env.JWT_SECRET;
+    else process.env.JWT_SECRET = ORIGINAL_JWT_SECRET;
+    if (ORIGINAL_CLIENT_ID === undefined) delete process.env.GOOGLE_CLIENT_ID;
+    else process.env.GOOGLE_CLIENT_ID = ORIGINAL_CLIENT_ID;
+  });
+
+  it("NODE_ENV=production이면 devModeEnabled: false", async () => {
+    const res = await fetch(`${baseUrl}/api/auth/config`);
+    const body = await res.json();
+    expect(body.devModeEnabled).toBe(false);
+  });
+
+  it("NODE_ENV=production이면 dev-login이 403을 반환한다", async () => {
+    const res = await fetch(`${baseUrl}/api/auth/dev-login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "hacker@example.com", name: "Hacker" }),
+    });
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error).toContain("non-production");
   });
 });

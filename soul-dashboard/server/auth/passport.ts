@@ -67,14 +67,6 @@ export function configurePassport(): void {
     )
   )
 
-  // Note: serialize/deserialize not actively used with JWT-based auth (session: false)
-  passport.serializeUser((user, done) => {
-    done(null, user)
-  })
-
-  passport.deserializeUser((user: GoogleUser, done) => {
-    done(null, user)
-  })
 }
 
 export { passport }
