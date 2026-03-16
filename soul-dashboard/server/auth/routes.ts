@@ -3,35 +3,12 @@ import passport from 'passport'
 import express from 'express'
 import { generateToken, verifyToken } from './jwt.js'
 import { GoogleUser } from './passport.js'
+import { AUTH_COOKIE_NAME } from './constants.js'
+import { isAuthEnabled, extractToken } from './middleware.js'
 
-/**
- * Check if authentication is enabled (GOOGLE_CLIENT_ID set).
- * Mirrors isAuthEnabled() in middleware.ts — routes.ts defines it locally
- * to avoid a circular dependency (middleware.ts imports AUTH_COOKIE_NAME from here).
- */
-function isAuthEnabled(): boolean {
-  return Boolean(process.env.GOOGLE_CLIENT_ID)
-}
+export { AUTH_COOKIE_NAME }
 
-export const AUTH_COOKIE_NAME = 'soul_dashboard_auth'
 const COOKIE_MAX_AGE = 7 * 24 * 60 * 60 * 1000 // 7 days in milliseconds
-
-/**
- * Extract token from request (cookie or Authorization header)
- */
-function extractToken(req: Request): string | null {
-  const cookieToken = req.cookies?.[AUTH_COOKIE_NAME]
-  if (cookieToken) {
-    return cookieToken
-  }
-
-  const authHeader = req.headers.authorization
-  if (authHeader?.startsWith('Bearer ')) {
-    return authHeader.slice(7)
-  }
-
-  return null
-}
 
 /**
  * Get current user from request
