@@ -120,7 +120,7 @@ jobs:
           $SSH_CMD "ln -sfn ${RELEASE_DIR} ${SERVER_DEPLOY_BASE}/current"
 
           echo "=== 7. 서비스 재시작 (PM2) ==="
-          $SSH_CMD "pm2 restart soulstream-server || pm2 start /home/eias/services/soulstream-server/start.sh --name soulstream-server --interpreter /bin/bash"
+          $SSH_CMD "pm2 restart soulstream-server || pm2 start /home/eias/services/soulstream-server/ecosystem.config.js"
 
           sleep 2
 
