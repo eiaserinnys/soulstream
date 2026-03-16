@@ -2183,3 +2183,46 @@ test.describe("인증 UI 시나리오", () => {
     await expect(page.getByTestId("session-list")).not.toBeVisible();
   });
 });
+
+test.describe("모바일 레이아웃", () => {
+  test("375px 뷰포트 초기 화면", async ({ page, dashboardServer }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto(dashboardServer.baseURL);
+    await expect(page.getByTestId("hamburger-button")).toBeVisible();
+    await expect(page.getByTestId("connection-badge")).not.toBeAttached();
+    await expect(page.getByTestId("session-panel")).not.toBeAttached();
+    await expect(page.getByTestId("graph-panel")).not.toBeAttached();
+    await expect(page.getByTestId("detail-panel")).not.toBeAttached();
+  });
+
+  test("햄버거 버튼 클릭 시 사이드바 슬라이드인", async ({ page, dashboardServer }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto(dashboardServer.baseURL);
+    await page.getByTestId("hamburger-button").click();
+    await expect(page.locator('[data-slot="sheet-backdrop"]')).toBeVisible();
+    await expect(page.locator('[data-testid="session-list"] [data-testid^="session-item-"]').first()).toBeVisible();
+  });
+
+  test("세션 선택 후 ChatView 전체화면", async ({ page, dashboardServer }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto(dashboardServer.baseURL);
+    await page.getByTestId("hamburger-button").click();
+    await page.locator('[data-testid^="session-item-"]').first().click();
+    await expect(page.locator('[data-slot="sheet-backdrop"]')).not.toBeAttached({ timeout: 3000 });
+    await expect(page.getByTestId("mobile-main")).toBeVisible();
+    await expect(page.getByTestId("graph-panel")).not.toBeAttached();
+    await expect(page.getByTestId("detail-panel")).not.toBeAttached();
+  });
+
+  test("데스크탑 전환 시 3패널 복원", async ({ page, dashboardServer }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto(dashboardServer.baseURL);
+    await page.getByTestId("hamburger-button").click();
+    await page.locator('[data-testid^="session-item-"]').first().click();
+    await expect(page.locator('[data-slot="sheet-backdrop"]')).not.toBeAttached({ timeout: 3000 });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await expect(page.getByTestId("session-panel")).toBeVisible();
+    await expect(page.getByTestId("graph-panel")).toBeVisible();
+    await expect(page.getByTestId("detail-panel")).toBeVisible();
+  });
+});
