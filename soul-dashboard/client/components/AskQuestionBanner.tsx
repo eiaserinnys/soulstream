@@ -10,13 +10,9 @@ import { useEffect, useState } from 'react';
 import { useDashboardStore, type DashboardState, type DashboardActions } from '../stores/dashboard-store';
 import { submitInputResponse } from '../lib/input-request-actions';
 import { useInputRequestTimer } from '../hooks/useInputRequestTimer';
+import { formatTime } from '../lib/input-request-utils';
+import { cn } from '../lib/cn';
 import type { EventTreeNode, InputRequestNodeDef, InputRequestQuestion } from '@shared/types';
-
-function formatTime(sec: number): string {
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  return `${m}:${s.toString().padStart(2, '0')}`;
-}
 
 /** 트리를 재귀 순회하여 미응답·미만료 input_request 노드를 반환 */
 function findPendingInputRequest(nodes: EventTreeNode[]): InputRequestNodeDef | null {
@@ -68,7 +64,7 @@ function AskQuestionBannerInner({ node, sessionId }: AskQuestionBannerInnerProps
 
   const handleSelect = async (answer: string) => {
     if (selectedAnswer) return;
-    setSelectedAnswer(answer);
+    setSelectedAnswer(answer);  // 낙관적 UI
     const success = await submitInputResponse(
       sessionId,
       node.requestId,
@@ -76,66 +72,50 @@ function AskQuestionBannerInner({ node, sessionId }: AskQuestionBannerInnerProps
       question.question,
       answer
     );
-    if (success) setResponded(true);
+    if (success) {
+      setResponded(true);
+    } else {
+      setSelectedAnswer(null);  // 실패 시 롤백
+    }
   };
 
   return (
-    <div
-      style={{
-        position: 'absolute',
-        bottom: 24,
-        left: '50%',
-        transform: 'translateX(-50%)',
-        zIndex: 1000,
-        background: 'var(--background, #1e1e2e)',
-        border: '1px solid var(--border, #444)',
-        borderRadius: 12,
-        padding: '16px 20px',
-        minWidth: 320,
-        maxWidth: 500,
-        boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
-        transition: 'opacity 300ms ease-out',
-        opacity: responded ? 1 : 1,
-      }}
-    >
+    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000] bg-background border border-border rounded-xl p-4 min-w-80 max-w-[500px] shadow-lg">
       {responded ? (
-        <div style={{ textAlign: 'center', color: '#4caf50' }}>✅ 응답 완료</div>
+        <div className="text-center text-success">✅ 응답 완료</div>
       ) : isExpired ? (
-        <div style={{ textAlign: 'center', color: 'var(--muted-foreground, #888)' }}>⏱️ 시간 초과</div>
+        <div className="text-center text-muted-foreground">⏱️ 시간 초과</div>
       ) : (
         <>
-          <div style={{ marginBottom: 8, fontSize: 13, opacity: 0.7 }}>🔔 Claude가 질문합니다</div>
+          <div className="mb-2 text-[13px] text-muted-foreground">🔔 Claude가 질문합니다</div>
           {question.header && (
-            <div style={{ marginBottom: 4, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em', opacity: 0.6 }}>
+            <div className="mb-1 text-[11px] text-muted-foreground uppercase tracking-wide">
               {question.header}
             </div>
           )}
-          <div style={{ marginBottom: 12, fontWeight: 500 }}>{question.question}</div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+          <div className="mb-3 font-medium text-foreground">{question.question}</div>
+          <div className="flex flex-wrap gap-2 mb-2">
             {question.options?.map((opt) => (
               <button
                 key={opt.label}
                 onClick={() => handleSelect(opt.label)}
                 disabled={!!selectedAnswer}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: 6,
-                  border: '1px solid var(--border, #555)',
-                  background: selectedAnswer === opt.label ? '#4caf50' : 'var(--popover, #2a2a3e)',
-                  color: 'var(--foreground, #fff)',
-                  cursor: selectedAnswer ? 'default' : 'pointer',
-                  fontSize: 13,
-                  transition: 'background 150ms',
-                }}
+                className={cn(
+                  "px-3.5 py-1.5 rounded border text-[13px] transition-colors",
+                  selectedAnswer === opt.label
+                    ? "bg-success border-success text-white"
+                    : "border-border bg-popover text-foreground hover:bg-muted/50",
+                  "disabled:opacity-50 disabled:cursor-default",
+                )}
               >
                 {opt.label}
                 {opt.description && (
-                  <span style={{ marginLeft: 4, opacity: 0.6, fontSize: 11 }}>— {opt.description}</span>
+                  <span className="ml-1 opacity-60 text-[11px]">— {opt.description}</span>
                 )}
               </button>
             ))}
           </div>
-          <div style={{ fontSize: 12, opacity: 0.6, textAlign: 'right' }}>
+          <div className="text-[12px] text-muted-foreground text-right">
             ⏱️ {formatTime(remainingSec)}
           </div>
         </>
