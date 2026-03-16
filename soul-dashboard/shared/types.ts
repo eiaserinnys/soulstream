@@ -71,6 +71,12 @@ export interface InterventionSentEvent {
   parent_event_id?: string;
 }
 
+export interface ContextItem {
+  key: string;
+  label: string;
+  content: any;
+}
+
 /** 사용자가 보낸 초기 프롬프트 (세션 시작 시 대시보드가 생성) */
 export interface UserMessageEvent {
   type: "user_message";
@@ -78,6 +84,8 @@ export interface UserMessageEvent {
   text?: string;
   /** Claude 세션: 사용자 ID */
   user?: string;
+  /** Claude 세션: 구조화된 맥락 항목 배열 (Phase 2에서 렌더링) */
+  context?: ContextItem[];
   /** LLM 세션: OpenAI 형식 메시지 배열 (정본) */
   messages?: Array<{role: string; content: unknown}>;
   /** LLM 세션: 클라이언트 ID */
