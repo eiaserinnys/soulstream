@@ -2,10 +2,13 @@
 Pydantic 모델 - Request/Response 스키마
 """
 
+import re
 from datetime import datetime
 from enum import Enum
 from typing import Any, Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+_TAG_NAME_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_\-]*$")
 
 
 # === Enums ===
@@ -181,9 +184,19 @@ class TaskStatus(str, Enum):
 
 class ContextItem(BaseModel):
     """하나의 맥락 항목."""
-    key: str = Field(..., description="항목 이름, 프롬프트 조립 시 XML 태그명으로 사용")
+    key: str = Field(..., description="항목 이름, 프롬프트 조립 시 XML 태그명으로 사용. 알파벳/숫자/언더스코어/하이픈만 허용, 알파벳 또는 '_'로 시작.")
     label: str = Field(..., description="대시보드 표시용 라벨")
     content: Any = Field(..., description="항목 내용 — 네이티브 JSON (dict, list, str, number 등)")
+
+    @field_validator("key")
+    @classmethod
+    def validate_key(cls, v: str) -> str:
+        if not _TAG_NAME_RE.fullmatch(v):
+            raise ValueError(
+                f"key must be a valid XML tag name (alphanumeric, underscore, hyphen; "
+                f"must start with letter or '_'): {v!r}"
+            )
+        return v
 
 
 class StructuredContext(BaseModel):
