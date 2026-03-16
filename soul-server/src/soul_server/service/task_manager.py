@@ -358,7 +358,7 @@ class TaskManager:
                 "status": entry.get("status", "unknown"),
                 "prompt": entry.get("prompt", ""),
                 "created_at": created_at,
-                "updated_at": entry.get("completed_at") or created_at,
+                "updated_at": entry.get("updated_at") or entry.get("completed_at") or created_at,
                 "pid": pid,
                 "session_type": entry.get("session_type", "claude"),
                 "last_message": entry.get("last_message"),
