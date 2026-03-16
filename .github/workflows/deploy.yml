@@ -86,13 +86,6 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H ${{ secrets.LINODE_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Debug artifact structure
-        run: |
-          echo "=== server-source 구조 ==="
-          find server-source -type f | head -20 || echo "server-source 디렉토리 없음"
-          echo "=== dashboard-build 구조 ==="
-          find dashboard-build -type f | head -20 || echo "dashboard-build 디렉토리 없음"
-
       - name: Deploy Soul Server
         run: |
           SSH_CMD="ssh -i ~/.ssh/id_ed25519 ${{ secrets.LINODE_USER }}@${{ secrets.LINODE_HOST }}"
