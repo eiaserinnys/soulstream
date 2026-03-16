@@ -105,19 +105,18 @@ async def graceful_shutdown(task_manager, timeout: float = 50.0):
         logger.info(f"Graceful shutdown: {len(active_sessions)}개 활성 세션 저장 → {save_path}")
 
         # 각 세션에 종료 예고 intervention 전송
-        # add_intervention()은 완료된 세션에 호출하면 auto-resume을 트리거하므로,
-        # intervention_queue에 직접 dict를 put한다 (engine_adapter가 dict를 기대함).
-        # 루프 진입 전 스냅샷으로 lookup map 구성 (O(n) 순회 1회)
-        running_map = {t.agent_session_id: t for t in running_tasks}
+        # skip_resume=True로 add_intervention을 호출하여 완료 세션의 auto-resume을 방지한다.
         message = "소울스트림 서버가 재시작될 예정입니다. 현재 작업을 중단하고 대기해주세요."
         for s in active_sessions:
-            task = running_map.get(s["agent_session_id"])
-            if task and hasattr(task, "intervention_queue"):
-                await task.intervention_queue.put({
-                    "text": message,
-                    "user": "system",
-                    "attachment_paths": [],
-                })
+            try:
+                await task_manager.add_intervention(
+                    s["agent_session_id"],
+                    message,
+                    user="system",
+                    skip_resume=True,
+                )
+            except Exception as e:
+                logger.warning(f"개입 전송 실패 ({s['agent_session_id']}): {e}")
 
         # 세션 완료 대기 (최대 timeout 초)
         loop = asyncio.get_running_loop()
@@ -134,6 +133,7 @@ async def graceful_shutdown(task_manager, timeout: float = 50.0):
 
     except Exception:
         # 예외 발생 시 draining 상태를 복원하여 서버가 영구적으로 /execute를 거부하지 않도록 한다
+        save_path.unlink(missing_ok=True)  # 파일이 기록됐을 수 있으므로 정리
         _is_draining = False
         raise
 

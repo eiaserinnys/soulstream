@@ -130,10 +130,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
           setUser(null);
         }
       } catch (err) {
-        // 통신 실패 시 폴백: 접근 허용
+        // 통신 실패 시 폴백: 접근 거부 (fail-closed)
         console.error("Auth initialization failed:", err);
         if (isMounted) {
-          setIsAuthenticated(true);
+          setIsAuthenticated(false);
         }
       } finally {
         if (isMounted) {
