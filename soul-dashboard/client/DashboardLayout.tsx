@@ -12,6 +12,7 @@ import { SessionList } from "./components/SessionList";
 import { NodeGraph } from "./components/NodeGraph";
 import { RightPanel } from "./components/RightPanel";
 import { PromptComposer } from "./components/PromptComposer";
+import { ChatView } from "./components/ChatView";
 import { StorageModeToggleCompact } from "./components/StorageModeToggle";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { initTheme } from "./hooks/useTheme";
@@ -21,9 +22,13 @@ import { useNotification } from "./hooks/useNotification";
 import { useUrlSync } from "./hooks/useUrlSync";
 import { useDashboardConfig } from "./hooks/useDashboardConfig";
 import { useServerStatus } from "./hooks/useServerStatus";
+import { useIsMobile } from "./hooks/use-mobile";
 import { useDashboardStore } from "./stores/dashboard-store";
 import { cn } from "./lib/cn";
 import { Badge } from "./components/ui/badge";
+import { Sheet, SheetContent } from "./components/ui/sheet";
+import { Button } from "./components/ui/button";
+import { Menu } from "lucide-react";
 
 // === Constants ===
 
@@ -128,7 +133,7 @@ function ConnectionBadge({
   const shouldPulse = status === "connected" || status === "connecting";
 
   return (
-    <Badge variant={config.variant} size="sm">
+    <Badge data-testid="connection-badge" variant={config.variant} size="sm">
       <span
         className={cn(
           "w-1.5 h-1.5 rounded-full",
@@ -215,9 +220,23 @@ export function DashboardLayout() {
     [],
   );
 
+  // 모바일 여부 및 사이드바 상태
+  const isMobile = useIsMobile();
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  // PC 전환 시 Sheet 닫힘
+  useEffect(() => {
+    if (!isMobile) { setIsSidebarOpen(false); }
+  }, [isMobile]);
+
+  // 세션 선택 시 Sheet 자동 닫힘
+  useEffect(() => {
+    if (activeSessionKey && isMobile) { setIsSidebarOpen(false); }
+  }, [activeSessionKey, isMobile]);
+
   // 중앙 패널 렌더링 결정: 세션 미선택 시 항상 Composer 표시
   const showComposer = !activeSessionKey;
-  const showGraph = !!activeSessionKey;
+  const hasActiveSession = !!activeSessionKey;
 
   const centerPercent = Math.max(MIN_CENTER, 100 - leftPercent - rightPercent);
 
@@ -229,15 +248,27 @@ export function DashboardLayout() {
       {/* Top bar */}
       <header className="flex items-center justify-between px-4 h-10 border-b border-border bg-popover shrink-0">
         <div className="flex items-center gap-3">
+          {isMobile && (
+            <Button
+              data-testid="hamburger-button"
+              variant="ghost"
+              size="icon"
+              onClick={() => setIsSidebarOpen(true)}
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
+          )}
           <span className="text-[14px] font-semibold text-muted-foreground tracking-[0.02em]">
             Soul Dashboard
           </span>
         </div>
-        <div className="flex items-center gap-2">
-          <ThemeToggle />
-          <StorageModeToggleCompact />
-          <ConnectionBadge status={sseStatus} />
-        </div>
+        {!isMobile && (
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            <StorageModeToggleCompact />
+            <ConnectionBadge status={sseStatus} />
+          </div>
+        )}
       </header>
 
       {/* Draining 배너: 서버 재시작 중일 때 표시 */}
@@ -250,50 +281,66 @@ export function DashboardLayout() {
         </div>
       )}
 
-      {/* 3-Panel content */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left: Session List */}
-        <aside
-          data-testid="session-panel"
-          className="overflow-hidden"
-          style={{ width: `${leftPercent}%` }}
-        >
-          <SessionList sessions={sessions} loading={loading} error={error} />
-        </aside>
+      {isMobile ? (
+        <>
+          {/* 모바일: Sheet 슬라이드 사이드바 */}
+          <Sheet open={isSidebarOpen} onOpenChange={setIsSidebarOpen}>
+            <SheetContent side="left" showCloseButton={false}>
+              <SessionList sessions={sessions} loading={loading} error={error} />
+            </SheetContent>
+          </Sheet>
+          {/* 모바일: 단일 메인 뷰 */}
+          <main data-testid="mobile-main" className="flex-1 overflow-hidden flex flex-col">
+            {showComposer && <PromptComposer />}
+            {hasActiveSession && <ChatView />}
+          </main>
+        </>
+      ) : (
+        /* 데스크탑: 3-Panel content */
+        <div className="flex flex-1 overflow-hidden">
+          {/* Left: Session List */}
+          <aside
+            data-testid="session-panel"
+            className="overflow-hidden"
+            style={{ width: `${leftPercent}%` }}
+          >
+            <SessionList sessions={sessions} loading={loading} error={error} />
+          </aside>
 
-        {/* Left drag handle */}
-        <DragHandle onDrag={handleLeftDrag} />
+          {/* Left drag handle */}
+          <DragHandle onDrag={handleLeftDrag} />
 
-        {/* Center: Context-dependent content */}
-        <main
-          data-testid="graph-panel"
-          className="overflow-hidden flex flex-col"
-          style={{ width: `${centerPercent}%` }}
-        >
-          {showComposer && (
-            <PromptComposer />
-          )}
+          {/* Center: Context-dependent content */}
+          <main
+            data-testid="graph-panel"
+            className="overflow-hidden flex flex-col"
+            style={{ width: `${centerPercent}%` }}
+          >
+            {showComposer && (
+              <PromptComposer />
+            )}
 
-          {showGraph && (
-            <div className="flex-1 overflow-hidden">
-              <NodeGraph />
-            </div>
-          )}
+            {hasActiveSession && (
+              <div className="flex-1 overflow-hidden">
+                <NodeGraph />
+              </div>
+            )}
 
-        </main>
+          </main>
 
-        {/* Right drag handle */}
-        <DragHandle onDrag={handleRightDrag} />
+          {/* Right drag handle */}
+          <DragHandle onDrag={handleRightDrag} />
 
-        {/* Right: Detail + Chat */}
-        <aside
-          data-testid="detail-panel"
-          className="overflow-hidden"
-          style={{ width: `${rightPercent}%` }}
-        >
-          <RightPanel />
-        </aside>
-      </div>
+          {/* Right: Detail + Chat */}
+          <aside
+            data-testid="detail-panel"
+            className="overflow-hidden"
+            style={{ width: `${rightPercent}%` }}
+          >
+            <RightPanel />
+          </aside>
+        </div>
+      )}
     </div>
   );
 }
