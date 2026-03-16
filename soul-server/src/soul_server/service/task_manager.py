@@ -680,6 +680,7 @@ class TaskManager:
         text: str,
         user: str,
         attachment_paths: Optional[List[str]] = None,
+        skip_resume: bool = False,
     ) -> dict:
         """
         세션에 개입 메시지 추가 (자동 resume 포함)
@@ -693,14 +694,16 @@ class TaskManager:
             text: 메시지 텍스트
             user: 사용자
             attachment_paths: 첨부 파일 경로
+            skip_resume: True이면 완료/퇴거 세션에 대한 auto-resume을 건너뜀 (graceful_shutdown용)
 
         Returns:
             결과 딕셔너리:
             - running: {"queue_position": int}
             - 자동 resume: {"auto_resumed": True, "agent_session_id": str}
+            - skip_resume: {"skipped": True}
 
         Raises:
-            TaskNotFoundError: 세션이 존재하지 않음
+            TaskNotFoundError: 세션이 존재하지 않음 (skip_resume=False인 경우)
         """
         task = self._tasks.get(agent_session_id)
 
@@ -713,6 +716,9 @@ class TaskManager:
             }
             await task.intervention_queue.put(message)
             return {"queue_position": task.intervention_queue.qsize()}
+
+        if skip_resume:
+            return {"skipped": True}  # 완료/퇴거 세션 resume 건너뜀
 
         if not task:
             # 퇴거된 세션 on-demand 로드

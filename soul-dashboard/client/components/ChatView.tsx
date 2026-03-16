@@ -488,15 +488,8 @@ const ChatInputRequest = memo(function ChatInputRequest({
   msg: ChatMessage;
   sessionId: string;
 }) {
-  const expireInputRequest = useDashboardStore((s) => s.expireInputRequest);
-  const { remainingSec, isExpired } = useInputRequestTimer(msg.receivedAt, 300);
+  const { remainingSec, isExpired } = useInputRequestTimer(msg.receivedAt, msg.timeoutSec ?? 300);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (isExpired && !msg.responded && !selectedAnswer) {
-      expireInputRequest(msg.id);
-    }
-  }, [isExpired, msg.responded, selectedAnswer, msg.id, expireInputRequest]);
 
   const question: InputRequestQuestion | undefined = msg.questions?.[0];
   if (!question) return null;
