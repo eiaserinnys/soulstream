@@ -147,6 +147,20 @@ app.use(
   }),
 );
 
+// Status 프록시 (Soul Server is_draining 상태 조회 — 인증 불필요 공개 엔드포인트)
+app.get("/api/status", async (_req, res) => {
+  try {
+    const response = await fetch(`${SOUL_BASE_URL}/status`, {
+      signal: AbortSignal.timeout(5_000),
+    });
+    const data = await response.json();
+    res.json(data);
+  } catch {
+    // soul-server가 종료 중이거나 응답 없음 — draining 상태로 간주
+    res.status(502).json({ is_draining: true, error: "soul-server unavailable" });
+  }
+});
+
 // Dashboard config/portrait 프록시 (Soul Server → 클라이언트)
 app.get("/api/dashboard/config", async (_req, res) => {
   try {

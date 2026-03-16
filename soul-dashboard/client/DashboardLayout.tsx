@@ -20,6 +20,7 @@ import { useSessionProvider } from "./hooks/useSessionProvider";
 import { useNotification } from "./hooks/useNotification";
 import { useUrlSync } from "./hooks/useUrlSync";
 import { useDashboardConfig } from "./hooks/useDashboardConfig";
+import { useServerStatus } from "./hooks/useServerStatus";
 import { useDashboardStore } from "./stores/dashboard-store";
 import { cn } from "./lib/cn";
 import { Badge } from "./components/ui/badge";
@@ -166,6 +167,9 @@ export function DashboardLayout() {
   // 대시보드 프로필 설정 로드
   useDashboardConfig();
 
+  // Soul Server 드레이닝 상태 폴링 (3초 간격)
+  const { isDraining } = useServerStatus();
+
   // 서버 설정 로드 (세렌디피티 가용 여부)
   useEffect(() => {
     fetch("/api/config")
@@ -235,6 +239,16 @@ export function DashboardLayout() {
           <ConnectionBadge status={sseStatus} />
         </div>
       </header>
+
+      {/* Draining 배너: 서버 재시작 중일 때 표시 */}
+      {isDraining && (
+        <div
+          role="status"
+          className="flex items-center justify-center px-4 py-1.5 text-sm font-medium bg-accent-amber text-black shrink-0"
+        >
+          서버가 재시작 중입니다. 재시작 완료 후 세션이 자동으로 재개됩니다.
+        </div>
+      )}
 
       {/* 3-Panel content */}
       <div className="flex flex-1 overflow-hidden">
