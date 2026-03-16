@@ -321,6 +321,7 @@ export interface SessionSummary {
   eventCount: number;
   lastEventType?: string;
   createdAt?: string;
+  updatedAt?: string;
   completedAt?: string;
   /** 첫 user_message의 텍스트 (세션 목록에서 표시용) */
   prompt?: string;

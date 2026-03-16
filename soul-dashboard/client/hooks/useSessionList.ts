@@ -68,7 +68,7 @@ export function useSessionList(options: UseSessionListOptions = {}) {
           // 기존 세션 상태 업데이트
           updateSession(event.agent_session_id, {
             status: event.status as SessionStatus,
-            completedAt: event.updated_at,
+            updatedAt: event.updated_at,
           });
           break;
 
