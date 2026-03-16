@@ -15,12 +15,14 @@ import type {
   UserMessageNode,
   InterventionNode,
   AssistantMessageNode,
+  InputRequestNodeDef,
+  InputRequestQuestion,
 } from "@shared/types";
 
 /** Chat 탭에 표시되는 메시지 단위 */
 export interface ChatMessage {
   id: string;
-  role: "user" | "assistant" | "tool" | "system" | "intervention";
+  role: "user" | "assistant" | "tool" | "system" | "intervention" | "input_request";
   /** 메인 표시 텍스트 */
   content: string;
   timestamp?: number;
@@ -51,6 +53,16 @@ export interface ChatMessage {
   isTruncated?: boolean;
   /** truncate된 경우, 전체 내용을 가진 원본 이벤트 ID */
   fullContentEventId?: number;
+  /** input_request 전용: 질문 목록 */
+  questions?: InputRequestQuestion[];
+  /** input_request 전용: 요청 ID */
+  requestId?: string;
+  /** input_request 전용: 응답 완료 여부 */
+  responded?: boolean;
+  /** input_request 전용: 만료 여부 */
+  expired?: boolean;
+  /** input_request 전용: 클라이언트 수신 시각 (Date.now()) */
+  receivedAt?: number;
 }
 
 /**
@@ -254,6 +266,24 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
         usage: n.usage,
         model: n.model,
         provider: n.provider,
+        treeNodeId: n.id,
+        treeNodeType: n.type,
+      };
+    }
+
+    case "input_request": {
+      const n = node as InputRequestNodeDef;
+      const firstQuestion = n.questions[0]?.question ?? "Input requested";
+      return {
+        id: n.id,
+        role: "input_request",
+        content: firstQuestion,
+        timestamp: n.timestamp,
+        questions: n.questions,
+        requestId: n.requestId,
+        responded: n.responded,
+        expired: n.expired,
+        receivedAt: n.receivedAt,
         treeNodeId: n.id,
         treeNodeType: n.type,
       };
