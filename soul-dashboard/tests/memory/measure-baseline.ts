@@ -19,7 +19,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const WORKSPACE_ROOT = path.resolve(__dirname, '../../../../..')
 const OUTPUT_DIR = path.join(WORKSPACE_ROOT, '.local/artifacts/analysis')
 
-const DASHBOARD_URL = 'http://localhost:3109'
+const DASHBOARD_PORT = process.env.DASHBOARD_PORT ?? '3300'
+const DASHBOARD_URL = `http://localhost:${DASHBOARD_PORT}`
 const MEMORY_API_URL = `${DASHBOARD_URL}/api/debug/memory`
 
 interface ServerMemory {
