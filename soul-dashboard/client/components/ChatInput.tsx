@@ -90,13 +90,14 @@ export function ChatInput() {
     setError(null);
   }, [activeSessionKey]);
 
-  // textarea 높이 자동 조절 (기본 36px, 최대 120px)
-  // Button h-9(36px)과 맞추기 위해 36px 사용
+  // textarea 높이 자동 조절
+  // 모바일(< 640px): h-9(36px), 데스크탑: h-8(32px)에 맞춤
   useEffect(() => {
     const el = textareaRef.current;
     if (el) {
+      const minH = window.innerWidth < 640 ? 36 : 32;
       el.style.height = "auto";
-      el.style.height = `${Math.max(36, Math.min(el.scrollHeight, 120))}px`;
+      el.style.height = `${Math.max(minH, Math.min(el.scrollHeight, 120))}px`;
     }
   }, [text]);
 
@@ -252,8 +253,8 @@ export function ChatInput() {
             rows={1}
             className={cn(
               "w-full bg-input border border-border rounded-md py-1.5 px-2.5",
-              "text-[16px] text-foreground font-sans resize-none outline-none",
-              "h-9 max-h-[120px] leading-[1.4] transition-colors duration-150",
+              "text-[16px] sm:text-[15px] text-foreground font-sans resize-none outline-none",
+              "h-9 sm:h-8 max-h-[120px] leading-[1.4] transition-colors duration-150",
               borderColor,
             )}
           />
@@ -264,7 +265,7 @@ export function ChatInput() {
           onClick={sendMessage}
           disabled={isDisabled}
           size="sm"
-          className={cn("self-end h-9 sm:h-9", buttonColor)}
+          className={cn("self-end h-9 sm:h-8 text-[16px] sm:text-[14px]", buttonColor)}
         >
           {buttonLabel}
         </Button>
