@@ -135,8 +135,17 @@ class TaskManager:
         """claude_session_id → agent_session_id 매핑 등록
 
         SoulEngineAdapter가 session 이벤트를 발행할 때 호출합니다.
+        task.claude_session_id를 여기서 저장함으로써 graceful_shutdown 시
+        pre_shutdown_sessions.json에 유효한 claude_session_id가 기록된다.
+
+        asyncio 단일 이벤트 루프 특성상, 이 동기 함수는 await 지점 없이
+        실행되므로 complete_task()의 _lock 없이도 레이스 컨디션이 발생하지 않는다.
         """
         self._session_index[claude_session_id] = agent_session_id
+        # task.claude_session_id 즉시 저장: complete_task()보다 먼저 재시작이 오더라도 resume 가능
+        task = self._tasks.get(agent_session_id)
+        if task:
+            task.claude_session_id = claude_session_id
         logger.info(f"Session index registered: {claude_session_id} -> {agent_session_id}")
 
     def get_task_by_claude_session(self, claude_session_id: str) -> Optional[Task]:
