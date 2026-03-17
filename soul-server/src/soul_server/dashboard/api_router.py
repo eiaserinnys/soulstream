@@ -22,7 +22,6 @@ from pydantic import BaseModel
 
 from soul_server.api.sessions import stream_session_events
 from soul_server.dashboard.auth import require_dashboard_auth
-from soul_server.dashboard.session_cache import SessionCache
 from soul_server.service.task_manager import (
     get_task_manager,
     TaskConflictError,
@@ -35,12 +34,6 @@ from soul_server.service.session_broadcaster import get_session_broadcaster
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-
-# === 의존성 주입 ===
-
-async def get_session_cache(request: Request) -> SessionCache:
-    return request.app.state.session_cache
 
 
 # === 요청 모델 ===
@@ -161,54 +154,62 @@ async def api_sessions_stream():
     "/api/sessions/{session_id}/events",
     dependencies=[Depends(require_dashboard_auth)],
 )
-async def api_session_events_cached(
+async def api_session_events(
     session_id: str,
     request: Request,
-    session_cache: SessionCache = Depends(get_session_cache),
 ):
-    """SessionCache 통합 SSE 스트림 (GET /api/sessions/{id}/events)"""
+    """EventStore 기반 SSE 스트림 (GET /api/sessions/{id}/events)
+
+    EventStore에서 히스토리를 읽고, 이후 라이브 이벤트를 스트리밍한다.
+    SessionCache는 사용하지 않는다.
+    """
     task_manager = get_task_manager()
 
     last_event_id_str = request.headers.get("Last-Event-ID")
-    after_id: Optional[int] = int(last_event_id_str) if last_event_id_str else None
-
-    cached_events = await session_cache.read_events(session_id, after_id)
+    after_id: int = int(last_event_id_str) if last_event_id_str else 0
 
     async def event_generator():
-        # next_id 초기값: 명시적 None 체크 (after_id=0 시 0이 falsy라 오동작 방지)
-        next_id = (
-            cached_events[-1]["id"]
-            if cached_events
-            else (after_id if after_id is not None else 0)
-        )
+        # Part 1: EventStore에서 히스토리 읽기
+        event_store = task_manager.event_store
+        last_stored_id = 0
 
-        # 1. 캐시에서 히스토리 재전송
-        for item in cached_events:
-            event_type = item["event"].get("type", "unknown") if isinstance(item["event"], dict) else "unknown"
-            yield (
-                f"id: {item['id']}\n"
-                f"event: {event_type}\n"
-                f"data: {json.dumps(item['event'], ensure_ascii=False)}\n\n"
-            )
+        if event_store:
+            try:
+                stored = (
+                    event_store.read_since(session_id, after_id)
+                    if after_id > 0
+                    else event_store.read_all(session_id)
+                )
+            except Exception as e:
+                logger.error("Failed to read events for %s: %s", session_id, e)
+                stored = []
 
-        # 2. history_sync + 라이브 이벤트 스트리밍
+            for record in stored:
+                last_stored_id = max(last_stored_id, record["id"])
+                event = record["event"]
+                event_type = event.get("type", "unknown") if isinstance(event, dict) else "unknown"
+                yield (
+                    f"id: {record['id']}\n"
+                    f"event: {event_type}\n"
+                    f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                )
+
+        # Part 2+3: history_sync + 라이브 이벤트 스트리밍
         async for event_dict in stream_session_events(
-            session_id, last_stored_id=next_id, task_manager=task_manager
+            session_id, last_stored_id=last_stored_id, task_manager=task_manager
         ):
             event_type = event_dict.get("type", "unknown")
             if event_type == "keepalive":
                 yield ": keepalive\n\n"
             elif event_type == "history_sync":
-                # history_sync는 캐시에 저장하지 않음 (메타데이터 이벤트)
                 yield (
                     f"event: history_sync\n"
                     f"data: {json.dumps(event_dict, ensure_ascii=False)}\n\n"
                 )
             else:
-                next_id += 1
-                await session_cache.append_event(session_id, next_id, event_dict)
+                last_stored_id += 1
                 yield (
-                    f"id: {next_id}\n"
+                    f"id: {last_stored_id}\n"
                     f"event: {event_type}\n"
                     f"data: {json.dumps(event_dict, ensure_ascii=False)}\n\n"
                 )
