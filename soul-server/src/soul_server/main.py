@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from soul_server.api import attachments_router, dashboard_router, create_sessions_router
 from soul_server.dashboard.session_cache import SessionCache
 from soul_server.dashboard.api_router import router as dash_api_router
+from soul_server.dashboard.auth_routes import router as dash_auth_router
 from soul_server.api.tasks import router as tasks_router
 from soul_server.api.credentials import create_credentials_router
 from soul_server.api.llm import create_llm_router
@@ -498,6 +499,9 @@ app.include_router(dashboard_router, prefix="/api", tags=["dashboard"])
 auth_session_manager = AuthSessionManager()
 claude_auth_router = create_claude_auth_router(session_manager=auth_session_manager)
 app.include_router(claude_auth_router, prefix="/auth/claude", tags=["claude-auth"])
+
+# Dashboard Auth 라우터 (인증 불필요 — 공개 엔드포인트)
+app.include_router(dash_auth_router)
 
 # Dashboard /api/* 라우터 (기존 dashboard_router와 별개 변수명)
 # 등록 순서: GET /api/sessions/stream이 GET /api/sessions/{id}/events보다 먼저 매칭되도록
