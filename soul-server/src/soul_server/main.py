@@ -7,6 +7,7 @@ Claude Code 원격 실행 서비스.
 
 import asyncio
 import json
+import os
 import time
 import logging
 from pathlib import Path
@@ -14,8 +15,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from soul_server.api import attachments_router, dashboard_router, create_sessions_router
+from soul_server.dashboard.session_cache import SessionCache
+from soul_server.dashboard.api_router import router as dash_api_router
 from soul_server.api.tasks import router as tasks_router
 from soul_server.api.credentials import create_credentials_router
 from soul_server.api.llm import create_llm_router
@@ -278,6 +282,15 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("  LLM proxy skipped: no API keys configured")
 
+    # Dashboard app.state 초기화 (api_router.py에서 접근)
+    app.state.runner_pool = pool
+    app.state.llm_executor = _llm_executor if llm_adapters else None
+
+    # SessionCache 초기화
+    _cache_dir = os.environ["SOUL_DASHBOARD_CACHE_DIR"]
+    app.state.session_cache = SessionCache(_cache_dir)
+    logger.info(f"  SessionCache initialized: {_cache_dir}")
+
     # 주기적 정리 태스크 시작
     _cleanup_task = asyncio.create_task(periodic_cleanup())
     logger.info("  Started periodic cleanup task")
@@ -333,6 +346,9 @@ if settings.is_production:
         "http://127.0.0.1:8080",
         "http://127.0.0.1:3000",
     ]
+    # SOUL_ALLOWED_ORIGINS 환경변수에서 추가 오리진 합산
+    extra = [o.strip() for o in os.environ.get("SOUL_ALLOWED_ORIGINS", "").split(",") if o.strip()]
+    _allowed_origins = list(set(_allowed_origins + extra))
 else:
     _allowed_origins = ["*"]
 
@@ -482,6 +498,20 @@ app.include_router(dashboard_router, prefix="/api", tags=["dashboard"])
 auth_session_manager = AuthSessionManager()
 claude_auth_router = create_claude_auth_router(session_manager=auth_session_manager)
 app.include_router(claude_auth_router, prefix="/auth/claude", tags=["claude-auth"])
+
+# Dashboard /api/* 라우터 (기존 dashboard_router와 별개 변수명)
+# 등록 순서: GET /api/sessions/stream이 GET /api/sessions/{id}/events보다 먼저 매칭되도록
+# api_router.py 내부에서 이미 올바른 순서로 정의되어 있음
+app.include_router(dash_api_router)
+
+# SPA 정적 파일 서빙 (모든 include_router 이후에 마운트 — /api/* 경로 가로채기 방지)
+_dashboard_dir_str = os.environ.get("SOUL_DASHBOARD_DIR", "dist/client")
+_dashboard_dir = Path(_dashboard_dir_str)
+if not _dashboard_dir.is_absolute():
+    _dashboard_dir = Path.cwd() / _dashboard_dir
+if _dashboard_dir.exists():
+    app.mount("/", StaticFiles(directory=str(_dashboard_dir), html=True), name="spa")
+    logger.info(f"Dashboard SPA mounted: {_dashboard_dir}")
 
 
 # === Exception Handlers ===

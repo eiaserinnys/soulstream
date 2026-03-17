@@ -11,7 +11,7 @@ Sessions API - 세션 목록 조회 및 SSE 스트리밍
 import asyncio
 import json
 import logging
-from typing import Literal, Optional
+from typing import AsyncGenerator, Literal, Optional
 
 from fastapi import APIRouter, Header, HTTPException, Path as FastAPIPath, Query
 from sse_starlette.sse import EventSourceResponse
@@ -22,6 +22,47 @@ from soul_server.service.task_manager import get_task_manager
 from soul_server.service.session_broadcaster import get_session_broadcaster
 
 logger = logging.getLogger(__name__)
+
+
+async def stream_session_events(
+    agent_session_id: str,
+    last_stored_id: int,
+    task_manager,
+) -> AsyncGenerator[dict, None]:
+    """Parts 2+3: history_sync 발행 + 라이브 이벤트 스트리밍.
+
+    Part 1(저장소 읽기)은 호출자 책임:
+    - session_history(): EventStore 읽기 후 stream_session_events() 호출
+    - /api/sessions/{id}/events: SessionCache 읽기 후 stream_session_events() 호출
+
+    반환: raw event dict. 호출자가 SSE id/event/data 필드를 래핑.
+    """
+    # Part 2: history_sync 발행
+    current_task = await task_manager.get_task(agent_session_id)
+    is_live = current_task and current_task.status == TaskModelStatus.RUNNING
+
+    sync_payload: dict = {
+        "type": "history_sync",
+        "last_event_id": last_stored_id,
+        "is_live": is_live,
+    }
+    if current_task:
+        sync_payload["status"] = current_task.status.value
+    yield sync_payload
+
+    # Part 3: 라이브 스트리밍
+    event_queue = asyncio.Queue()
+    await task_manager.add_listener(agent_session_id, event_queue)
+    try:
+        while True:
+            try:
+                event = await asyncio.wait_for(event_queue.get(), timeout=30.0)
+                data = {k: v for k, v in event.items() if k != "_event_id"} if isinstance(event, dict) else event
+                yield data
+            except asyncio.TimeoutError:
+                yield {"type": "keepalive"}
+    finally:
+        await task_manager.remove_listener(agent_session_id, event_queue)
 
 
 def create_sessions_router() -> APIRouter:
@@ -164,87 +205,39 @@ def create_sessions_router() -> APIRouter:
             except (ValueError, TypeError):
                 logger.warning(f"Invalid Last-Event-ID header: {last_event_id!r}")
 
-        async def event_generator():
-            # 1. EventStore에서 저장된 이벤트 조회 및 전송
+        async def sse_wrapper():
+            # Part 1: EventStore 읽기 (기존 event_generator 로직 그대로)
             event_store = task_manager.event_store
-            stored_events = []
             last_stored_id = 0
 
             if event_store:
                 try:
-                    if after_id > 0:
-                        stored_events = event_store.read_since(agent_session_id, after_id)
-                    else:
-                        stored_events = event_store.read_all(agent_session_id)
+                    stored = (
+                        event_store.read_since(agent_session_id, after_id)
+                        if after_id > 0
+                        else event_store.read_all(agent_session_id)
+                    )
                 except Exception as e:
                     logger.error(f"Failed to read events for {agent_session_id}: {e}")
-                    # Graceful degradation - proceed with live streaming only
+                    stored = []
 
-                # 저장된 이벤트 전송
-                for record in stored_events:
-                    event_id = record["id"]
+                for record in stored:
+                    last_stored_id = max(last_stored_id, record["id"])
                     event = record["event"]
-                    last_stored_id = max(last_stored_id, event_id)
-
                     yield {
-                        "id": str(event_id),
+                        "id": str(record["id"]),
                         "event": event.get("type", "unknown"),
                         "data": json.dumps(event, ensure_ascii=False),
                     }
 
-            # 2. history_sync 이벤트 발행
-            # 현재 세션 상태 확인 — 클라이언트가 이 status를 정본으로 사용
-            current_task = await task_manager.get_task(agent_session_id)
-            is_live = current_task and current_task.status == TaskModelStatus.RUNNING
+            # Parts 2+3: stream_session_events에 위임 (history_sync 이중 발행 없음)
+            async for event_dict in stream_session_events(agent_session_id, last_stored_id, task_manager):
+                event_type = event_dict.get("type", "unknown")
+                if event_type == "keepalive":
+                    yield {"comment": "keepalive"}
+                else:
+                    yield {"event": event_type, "data": json.dumps(event_dict, ensure_ascii=False)}
 
-            sync_payload: dict = {
-                "type": "history_sync",
-                "last_event_id": last_stored_id,
-                "is_live": is_live,
-            }
-            if current_task:
-                sync_payload["status"] = current_task.status.value
-
-            yield {
-                "event": "history_sync",
-                "data": json.dumps(sync_payload, ensure_ascii=False),
-            }
-
-            # 3. running 세션이면 라이브 스트리밍
-            # (complete/error 후에도 연결 유지 - resume 대비)
-            event_queue = asyncio.Queue()
-            await task_manager.add_listener(agent_session_id, event_queue)
-
-            try:
-                while True:
-                    try:
-                        event = await asyncio.wait_for(
-                            event_queue.get(),
-                            timeout=30.0,
-                        )
-
-                        # event_id를 get으로 추출 (원본 이벤트 변경하지 않음)
-                        event_id = event.get("_event_id") if isinstance(event, dict) else None
-                        data = {k: v for k, v in event.items() if k != "_event_id"} if isinstance(event, dict) else event
-
-                        sse_event = {
-                            "event": event.get("type", "unknown"),
-                            "data": json.dumps(data, ensure_ascii=False),
-                        }
-                        if event_id is not None:
-                            sse_event["id"] = str(event_id)
-                        yield sse_event
-
-                        # 기존 /events/{id}/stream과 달리 complete/error 후에도 계속
-                        # (resume 시 새 이벤트 수신 가능)
-
-                    except asyncio.TimeoutError:
-                        # keepalive
-                        yield {"comment": "keepalive"}
-
-            finally:
-                await task_manager.remove_listener(agent_session_id, event_queue)
-
-        return EventSourceResponse(event_generator())
+        return EventSourceResponse(sse_wrapper())
 
     return router
