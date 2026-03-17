@@ -121,6 +121,10 @@ export interface DashboardState {
 
   /** 이벤트 처리 컨텍스트 (nodeMap, activeTextTarget 등) */
   processingCtx: ProcessingContext;
+
+  /** 입력창 임시 저장 (키: 세션ID / '__new_chat__' / '__resume__{sessionKey}')
+   * ⚠️ getSessionResetState()에 포함하지 않는 것이 이 기능의 핵심 — drafts는 세션 전환 시 초기화하지 않는다 */
+  drafts: Record<string, string>;
 }
 
 // === Actions Interface ===
@@ -195,6 +199,10 @@ export interface DashboardActions {
 
   // input_request 타임아웃 만료 처리
   expireInputRequest: (nodeId: string) => void;
+
+  // draft 저장/삭제
+  setDraft: (key: string, text: string) => void;
+  clearDraft: (key: string) => void;
 }
 
 // === Internal Processing Context ===
@@ -255,6 +263,7 @@ const initialState: DashboardState = {
   activeRightTab: "chat",
   dashboardConfig: null,
   processingCtx: createProcessingContext(),
+  drafts: {},
 };
 
 /** 세션 전환 시 초기화할 상태를 매번 새 인스턴스로 생성 (Set 공유 방지) */
@@ -728,6 +737,23 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
 
       setActiveRightTab: (activeRightTab) => set({ activeRightTab }),
 
+      // --- draft 저장/삭제 ---
+
+      setDraft: (key, text) => {
+        // 빈 문자열은 저장하지 않고 삭제 — localStorage 무한 누적 방지
+        if (!text) {
+          get().clearDraft(key);
+          return;
+        }
+        const { drafts } = get();
+        set({ drafts: { ...drafts, [key]: text } });
+      },
+      clearDraft: (key) => {
+        const { drafts } = get();
+        const { [key]: _, ...rest } = drafts;
+        set({ drafts: rest });
+      },
+
       // --- 대시보드 프로필 설정 ---
 
       setDashboardConfig: (dashboardConfig) => set({ dashboardConfig }),
@@ -757,8 +783,8 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
     }),
     {
       name: "soul-dashboard-storage",
-      // 스토리지 모드만 영속화 (세션 데이터는 제외)
-      partialize: (state) => ({ storageMode: state.storageMode }),
+      // 스토리지 모드 + 입력창 draft 영속화 (세션 데이터는 제외)
+      partialize: (state) => ({ storageMode: state.storageMode, drafts: state.drafts }),
     },
   ),
 );

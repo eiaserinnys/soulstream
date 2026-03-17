@@ -19,11 +19,18 @@ export function PromptComposer() {
   const cancelCompose = useDashboardStore((s) => s.cancelCompose);
   const completeCompose = useDashboardStore((s) => s.completeCompose);
   const sessionsLoading = useDashboardStore((s) => s.sessionsLoading);
+  const setDraft = useDashboardStore((s) => s.setDraft);
+  const clearDraft = useDashboardStore((s) => s.clearDraft);
+  // resume 세션이면 별도 키로 구분 (ChatInput의 세션 draft 키와 충돌 방지)
+  // 취소(Esc/Cancel) 시 draft 유지 — 의도적 설계 (재진입 시 복원 목적)
+  const draftKey = resumeTargetKey ? `__resume__${resumeTargetKey}` : "__new_chat__";
 
   // 서버 초기 접속 중 여부 (session list SSE가 아직 연결되지 않은 상태)
   const serverConnecting = sessionsLoading;
 
-  const [text, setText] = useState("");
+  // 마운트 시 저장된 draft 복원 (lazy initializer: 최초 1회만 실행)
+  // draftKey는 훅 호출 순서상 useState 앞에 선언되어 이미 확정된 값이다
+  const [text, setText] = useState(() => useDashboardStore.getState().drafts[draftKey] ?? "");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -77,7 +84,8 @@ export function PromptComposer() {
 
       const result: CreateSessionResponse = await response.json();
 
-      // 세션 생성 성공 → 단일 atomic 호출로 낙관적 추가 + compose 종료 + 세션 활성화
+      // 세션 생성 성공 → draft 삭제 후 단일 atomic 호출로 낙관적 추가 + compose 종료 + 세션 활성화
+      clearDraft(draftKey);
       completeCompose(result.agentSessionId, trimmed);
     } catch (err) {
       if (err instanceof Error) {
@@ -88,7 +96,7 @@ export function PromptComposer() {
     } finally {
       setSending(false);
     }
-  }, [text, sending, resumeTargetKey, completeCompose]);
+  }, [text, sending, resumeTargetKey, completeCompose, clearDraft, draftKey]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -145,7 +153,10 @@ export function PromptComposer() {
         <textarea
           ref={textareaRef}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            setDraft(draftKey, e.target.value);
+          }}
           onKeyDown={handleKeyDown}
           placeholder={
             isResume
