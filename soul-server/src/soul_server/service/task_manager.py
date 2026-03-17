@@ -388,7 +388,7 @@ class TaskManager:
         allowed_tools: Optional[List[str]] = None,
         disallowed_tools: Optional[List[str]] = None,
         use_mcp: bool = True,
-        context_items: Optional[List[dict]] = None,
+        context: Optional[dict] = None,
     ) -> Task:
         """
         새 세션 태스크 생성 또는 기존 세션 resume
@@ -400,7 +400,7 @@ class TaskManager:
             allowed_tools: 허용 도구 목록
             disallowed_tools: 금지 도구 목록
             use_mcp: MCP 서버 연결 여부
-            context_items: 추가 컨텍스트 항목 목록 (런타임 전용, 영속화 안 됨)
+            context: 구조화된 맥락 (dict, StructuredContext.model_dump() 결과)
 
         Returns:
             Task: 생성되거나 재활성화된 태스크
@@ -443,7 +443,7 @@ class TaskManager:
                 existing.allowed_tools = allowed_tools
                 existing.disallowed_tools = disallowed_tools
                 existing.use_mcp = use_mcp
-                existing.context_items = context_items
+                existing.context = context
                 if client_id:
                     existing.client_id = client_id
 
@@ -461,7 +461,7 @@ class TaskManager:
                     allowed_tools=allowed_tools,
                     disallowed_tools=disallowed_tools,
                     use_mcp=use_mcp,
-                    context_items=context_items,
+                    context=context,
                 )
                 self._tasks[agent_session_id] = task
                 logger.info(f"Created new session: {agent_session_id}")
