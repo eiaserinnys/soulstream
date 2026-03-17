@@ -18,7 +18,7 @@ GOOGLE_CLIENT_ID 설정 시:
 
 import logging
 import secrets
-from urllib.parse import urlencode
+from urllib.parse import urlencode, quote, unquote
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
@@ -29,6 +29,8 @@ from soul_server.dashboard.auth import COOKIE_NAME, generate_token, verify_token
 
 # CSRF state 쿠키 이름
 OAUTH_STATE_COOKIE = "soul_oauth_state"
+# 로그인 후 복귀 경로 쿠키
+RETURN_TO_COOKIE = "soul_return_to"
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +68,7 @@ async def auth_config():
 # === /api/auth/google ===
 
 @router.get("/api/auth/google")
-async def auth_google(request: Request):
+async def auth_google(request: Request, return_to: str = ""):
     """Google OAuth 시작 — Google authorize URL로 리다이렉트."""
     settings = get_settings()
     if not settings.is_auth_enabled:
@@ -93,6 +95,16 @@ async def auth_google(request: Request):
         max_age=600,  # 10분
         secure=request.url.scheme == "https",
     )
+    # 로그인 후 복귀 경로 저장 (경로만 허용 — open redirect 방지)
+    if return_to and return_to.startswith("/") and not return_to.startswith("//"):
+        response.set_cookie(
+            RETURN_TO_COOKIE,
+            return_to,
+            httponly=True,
+            samesite="lax",
+            max_age=600,
+            secure=request.url.scheme == "https",
+        )
     return response
 
 
@@ -146,7 +158,7 @@ async def auth_callback(code: str, state: str, request: Request):
         logger.warning("Email not allowed: %s", userinfo.get("email"))
         return RedirectResponse("/?error=no_user")
 
-    # 4. JWT 생성 → httpOnly 쿠키 설정 → / 리다이렉트
+    # 4. JWT 생성 → httpOnly 쿠키 설정 → 원래 경로로 리다이렉트
     jwt_token = generate_token(
         {
             "email": userinfo["email"],
@@ -155,7 +167,11 @@ async def auth_callback(code: str, state: str, request: Request):
         },
         settings.jwt_secret,
     )
-    response = RedirectResponse("/")
+    # 복귀 경로 복원 (쿠키에서 읽고, 경로 형태가 아니면 / 로 폴백)
+    return_to = request.cookies.get(RETURN_TO_COOKIE, "/")
+    if not return_to.startswith("/") or return_to.startswith("//"):
+        return_to = "/"
+    response = RedirectResponse(return_to)
     response.set_cookie(
         COOKIE_NAME,
         jwt_token,
@@ -164,8 +180,9 @@ async def auth_callback(code: str, state: str, request: Request):
         max_age=7 * 24 * 3600,
         secure=request.url.scheme == "https",
     )
-    # state 쿠키 정리
+    # 임시 쿠키 정리
     response.delete_cookie(OAUTH_STATE_COOKIE)
+    response.delete_cookie(RETURN_TO_COOKIE)
     return response
 
 
