@@ -62,11 +62,10 @@ if (process.env.GOOGLE_CLIENT_ID && !process.env.GOOGLE_CLIENT_SECRET) {
   );
 }
 
-// 인증 활성 또는 dev 모드일 때 JWT_SECRET 필수
-const devModeEnabled = process.env.NODE_ENV !== "production";
-if ((isAuthEnabled() || devModeEnabled) && !process.env.JWT_SECRET) {
+// Google OAuth 활성화 시에만 JWT_SECRET 필수
+if (isAuthEnabled() && !process.env.JWT_SECRET) {
   throw new Error(
-    "[dashboard] JWT_SECRET is required when auth is enabled or in dev mode (NODE_ENV !== production)"
+    "[dashboard] JWT_SECRET is required when Google OAuth is enabled"
   );
 }
 
