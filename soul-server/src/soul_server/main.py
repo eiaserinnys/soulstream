@@ -509,11 +509,29 @@ app.include_router(dash_auth_router)
 app.include_router(dash_api_router)
 
 # SPA 정적 파일 서빙 (모든 include_router 이후에 마운트 — /api/* 경로 가로채기 방지)
+# StaticFiles(html=True)는 실제 파일이 있는 경로만 서빙하고, /sess-xxx 같은
+# 클라이언트 라우트는 404를 반환한다. SPA fallback을 위해 catch-all 핸들러를 추가한다.
 _dashboard_dir_str = os.environ.get("SOUL_DASHBOARD_DIR", "dist/client")
 _dashboard_dir = Path(_dashboard_dir_str)
 if not _dashboard_dir.is_absolute():
     _dashboard_dir = Path.cwd() / _dashboard_dir
 if _dashboard_dir.exists():
+    _index_html = _dashboard_dir / "index.html"
+
+    @app.middleware("http")
+    async def spa_fallback(request: Request, call_next):
+        """SPA fallback — /api/* 이외의 경로에서 404 발생 시 index.html을 반환한다."""
+        response = await call_next(request)
+        if (
+            response.status_code == 404
+            and request.method == "GET"
+            and not request.url.path.startswith("/api/")
+            and _index_html.exists()
+        ):
+            from starlette.responses import HTMLResponse
+            return HTMLResponse(_index_html.read_text())
+        return response
+
     app.mount("/", StaticFiles(directory=str(_dashboard_dir), html=True), name="spa")
     logger.info(f"Dashboard SPA mounted: {_dashboard_dir}")
 
