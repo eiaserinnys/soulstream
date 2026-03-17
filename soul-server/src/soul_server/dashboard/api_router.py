@@ -64,14 +64,14 @@ class RespondBody(BaseModel):
 
 # === /api/health ===
 
-@router.get("/api/health", dependencies=[Depends(require_dashboard_auth)])
+@router.get("/api/health")
 async def api_health():
     return {"status": "ok"}
 
 
 # === /api/config ===
 
-@router.get("/api/config", dependencies=[Depends(require_dashboard_auth)])
+@router.get("/api/config")
 async def api_config():
     serendipity_url = os.environ.get("SERENDIPITY_URL", "")
     return {"serendipityAvailable": bool(serendipity_url)}
