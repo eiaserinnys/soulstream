@@ -7,7 +7,6 @@ on:
 
 env:
   SERVER_DEPLOY_BASE: /home/eias/services/soulstream-server
-  DASHBOARD_DEPLOY_BASE: /home/eias/services/soulstream-dashboard
   KEEP_RELEASES: 5
 
 jobs:
@@ -55,11 +54,6 @@ jobs:
           name: dashboard-build
           path: |
             soul-dashboard/dist/client
-            soul-dashboard/server
-            soul-dashboard/shared
-            soul-dashboard/tsconfig.json
-            soul-dashboard/package.json
-            soul-dashboard/pnpm-lock.yaml
 
   deploy:
     needs: [build-server, build-dashboard]
@@ -105,6 +99,11 @@ jobs:
             -e "ssh -i ~/.ssh/id_ed25519" \
             server-source/ ${{ secrets.LINODE_USER }}@${{ secrets.LINODE_HOST }}:${RELEASE_DIR}/
 
+          echo "=== 2-1. dashboard dist 동기화 ==="
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/id_ed25519" \
+            dashboard-build/dist/client/ ${{ secrets.LINODE_USER }}@${{ secrets.LINODE_HOST }}:${RELEASE_DIR}/dist/client/
+
           echo "=== 3. pyproject.toml 수정 (SSH URL로 변경) ==="
           $SSH_CMD "sed -i 's|git+https://github.com/|git+ssh://git@github.com/|g' ${RELEASE_DIR}/pyproject.toml"
 
@@ -127,55 +126,6 @@ jobs:
 
           echo "=== 9. 오래된 릴리즈 정리 ==="
           $SSH_CMD "cd ${SERVER_DEPLOY_BASE}/releases && ls -t | tail -n +\$((${KEEP_RELEASES} + 1)) | xargs -r rm -rf"
-
-      - name: Deploy Soul Dashboard
-        run: |
-          SSH_CMD="ssh -i ~/.ssh/id_ed25519 ${{ secrets.LINODE_USER }}@${{ secrets.LINODE_HOST }}"
-          RELEASE_NAME=$(date +%Y-%m-%d-%H%M%S)
-          RELEASE_DIR="${DASHBOARD_DEPLOY_BASE}/releases/${RELEASE_NAME}"
-
-          echo "=== 1. 릴리즈 디렉토리 생성 ==="
-          $SSH_CMD "mkdir -p ${RELEASE_DIR}/dist"
-
-          echo "=== 2. 빌드 파일 동기화 ==="
-          rsync -avz --delete \
-            -e "ssh -i ~/.ssh/id_ed25519" \
-            dashboard-build/dist/client/ ${{ secrets.LINODE_USER }}@${{ secrets.LINODE_HOST }}:${RELEASE_DIR}/dist/client/
-
-          rsync -avz --delete \
-            -e "ssh -i ~/.ssh/id_ed25519" \
-            dashboard-build/server/ ${{ secrets.LINODE_USER }}@${{ secrets.LINODE_HOST }}:${RELEASE_DIR}/server/
-
-          rsync -avz --delete \
-            -e "ssh -i ~/.ssh/id_ed25519" \
-            dashboard-build/shared/ ${{ secrets.LINODE_USER }}@${{ secrets.LINODE_HOST }}:${RELEASE_DIR}/shared/
-
-          rsync -avz \
-            -e "ssh -i ~/.ssh/id_ed25519" \
-            dashboard-build/tsconfig.json \
-            dashboard-build/package.json \
-            dashboard-build/pnpm-lock.yaml \
-            ${{ secrets.LINODE_USER }}@${{ secrets.LINODE_HOST }}:${RELEASE_DIR}/
-
-          echo "=== 3. pnpm install (프로덕션 의존성 + tsx) ==="
-          $SSH_CMD "cd ${RELEASE_DIR} && export PATH=\$HOME/.local/bin:\$PATH && pnpm install --frozen-lockfile --prod && pnpm add tsx typescript"
-
-          echo "=== 4. shared .env 심볼릭 링크 ==="
-          $SSH_CMD "ln -sf ${DASHBOARD_DEPLOY_BASE}/shared/.env ${RELEASE_DIR}/.env"
-
-          echo "=== 5. current 심볼릭 링크 전환 ==="
-          $SSH_CMD "ln -sfn ${RELEASE_DIR} ${DASHBOARD_DEPLOY_BASE}/current"
-
-          echo "=== 6. 서비스 재시작 (PM2) ==="
-          $SSH_CMD "pm2 delete soulstream-dashboard 2>/dev/null; pm2 start ${DASHBOARD_DEPLOY_BASE}/current/node_modules/tsx/dist/cli.mjs --name soulstream-dashboard --cwd ${DASHBOARD_DEPLOY_BASE}/current -- server/index.ts && pm2 save"
-
-          sleep 2
-
-          echo "=== 7. 서비스 상태 확인 ==="
-          $SSH_CMD "pm2 show soulstream-dashboard" || true
-
-          echo "=== 8. 오래된 릴리즈 정리 ==="
-          $SSH_CMD "cd ${DASHBOARD_DEPLOY_BASE}/releases && ls -t | tail -n +\$((${KEEP_RELEASES} + 1)) | xargs -r rm -rf"
 
       - name: 📢 Discord 알림 (배포 성공)
         if: success()
