@@ -102,10 +102,10 @@ async def api_status(request: Request):
 # === /api/sessions (GET) ===
 
 @router.get("/api/sessions", dependencies=[Depends(require_dashboard_auth)])
-async def api_get_sessions():
+async def api_get_sessions(session_type: Optional[str] = None):
     task_manager = get_task_manager()
     sessions, total = task_manager.get_all_sessions(
-        offset=0, limit=0, session_type=None
+        offset=0, limit=0, session_type=session_type
     )
     return {"sessions": sessions, "total": total}
 
