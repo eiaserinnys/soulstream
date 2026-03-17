@@ -243,7 +243,7 @@ export function DashboardLayout() {
   return (
     <div
       data-testid="dashboard-layout"
-      className="flex flex-col w-screen h-screen bg-background text-foreground font-sans overflow-hidden"
+      className="flex flex-col w-screen h-dvh bg-background text-foreground font-sans overflow-hidden"
     >
       {/* Top bar */}
       <header className="flex items-center justify-between px-4 h-10 border-b border-border bg-popover shrink-0">
