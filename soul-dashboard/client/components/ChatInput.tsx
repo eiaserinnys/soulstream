@@ -252,7 +252,7 @@ export function ChatInput() {
             rows={1}
             className={cn(
               "w-full bg-input border border-border rounded-md py-1.5 px-2.5",
-              "text-[15px] text-foreground font-sans resize-none outline-none",
+              "text-[16px] text-foreground font-sans resize-none outline-none",
               "h-8 max-h-[120px] leading-[1.4] transition-colors duration-150",
               borderColor,
             )}
