@@ -102,7 +102,7 @@ jobs:
           echo "=== 2-1. dashboard dist 동기화 ==="
           rsync -avz --delete \
             -e "ssh -i ~/.ssh/id_ed25519" \
-            dashboard-build/dist/client/ ${{ secrets.LINODE_USER }}@${{ secrets.LINODE_HOST }}:${RELEASE_DIR}/dist/client/
+            dashboard-build/ ${{ secrets.LINODE_USER }}@${{ secrets.LINODE_HOST }}:${RELEASE_DIR}/dist/client/
 
           echo "=== 3. pyproject.toml 수정 (SSH URL로 변경) ==="
           $SSH_CMD "sed -i 's|git+https://github.com/|git+ssh://git@github.com/|g' ${RELEASE_DIR}/pyproject.toml"
