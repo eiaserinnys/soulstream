@@ -26,7 +26,7 @@ import { useIsMobile } from "./hooks/use-mobile";
 import { useDashboardStore } from "./stores/dashboard-store";
 import { cn } from "./lib/cn";
 import { Badge } from "./components/ui/badge";
-import { Sheet, SheetContent } from "./components/ui/sheet";
+import { Sheet, SheetContent, SheetFooter } from "./components/ui/sheet";
 import { Button } from "./components/ui/button";
 import { Menu } from "lucide-react";
 
@@ -287,6 +287,11 @@ export function DashboardLayout() {
           <Sheet open={isSidebarOpen} onOpenChange={setIsSidebarOpen}>
             <SheetContent side="left" showCloseButton={false}>
               <SessionList sessions={sessions} loading={loading} error={error} />
+              <SheetFooter className="border-t border-border p-3 flex flex-row items-center gap-2">
+                <ThemeToggle />
+                <StorageModeToggleCompact />
+                <ConnectionBadge status={sseStatus} />
+              </SheetFooter>
             </SheetContent>
           </Sheet>
           {/* 모바일: 단일 메인 뷰 */}
