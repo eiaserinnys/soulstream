@@ -100,6 +100,7 @@ jobs:
             server-source/ ${{ secrets.LINODE_USER }}@${{ secrets.LINODE_HOST }}:${RELEASE_DIR}/
 
           echo "=== 2-1. dashboard dist 동기화 ==="
+          $SSH_CMD "mkdir -p ${RELEASE_DIR}/dist/client"
           rsync -avz --delete \
             -e "ssh -i ~/.ssh/id_ed25519" \
             dashboard-build/ ${{ secrets.LINODE_USER }}@${{ secrets.LINODE_HOST }}:${RELEASE_DIR}/dist/client/
