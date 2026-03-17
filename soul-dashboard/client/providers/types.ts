@@ -55,6 +55,7 @@ export interface SessionDetailProvider {
     sessionKey: string,
     onEvent: (event: SoulSSEEvent, eventId: number) => void,
     onStatusChange?: (status: "connecting" | "connected" | "error") => void,
+    options?: { lastEventId?: number },
   ): () => void;
 
   /** Provider 타입 식별자 */

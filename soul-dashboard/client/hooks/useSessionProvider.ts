@@ -53,6 +53,13 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
     }
   }, [activeStatus]);
 
+  // resume 판별: sessionKey가 동일하고 subscriptionEpoch만 바뀌면 resume
+  const prevSessionKeyRef = useRef<string | null>(null);
+  const prevEpochRef = useRef(0);
+
+  // 마지막으로 수신한 eventId 추적 (resume 시 이후 이벤트만 요청)
+  const lastEventIdRef = useRef(0);
+
   // 이벤트 큐 + 타이머 refs
   const eventQueueRef = useRef<QueuedEvent[]>([]);
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -88,6 +95,9 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
   /** 이벤트를 큐에 추가 */
   const enqueueEvent = useCallback(
     (event: SoulSSEEvent, eventId: number) => {
+      if (eventId > lastEventIdRef.current) {
+        lastEventIdRef.current = eventId;
+      }
       eventQueueRef.current.push({ event, eventId });
 
       if (eventQueueRef.current.length >= BATCH_SIZE) {
@@ -121,15 +131,46 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
   // 세션 변경 시 카드 초기화 및 구독 시작
   useEffect(() => {
     if (!sessionKey) {
+      prevSessionKeyRef.current = null;
+      prevEpochRef.current = subscriptionEpoch;
       setStatus("disconnected");
       return;
     }
 
-    // 카드 초기화
-    clearTree();
-    setStatus("connecting");
+    // Resume 판별: sessionKey가 동일하고 epoch만 바뀌면 resume
+    const isResume =
+      sessionKey === prevSessionKeyRef.current &&
+      subscriptionEpoch !== prevEpochRef.current;
+
+    prevSessionKeyRef.current = sessionKey;
+    prevEpochRef.current = subscriptionEpoch;
 
     const provider = getSessionProvider(storageMode);
+
+    if (isResume) {
+      // Resume: 기존 대화를 유지하고, 마지막 eventId 이후부터만 구독
+      setStatus("connecting");
+
+      const unsubscribe = provider.subscribe(
+        sessionKey,
+        (event, eventId) => {
+          enqueueEvent(event, eventId);
+        },
+        setStatus,
+        { lastEventId: lastEventIdRef.current },
+      );
+
+      return () => {
+        clearTimersAndQueue();
+        unsubscribe();
+        setStatus("disconnected");
+      };
+    }
+
+    // 새 세션: 카드 초기화 후 처음부터 구독
+    clearTree();
+    lastEventIdRef.current = 0;
+    setStatus("connecting");
 
     // 초기 카드 로드 (Serendipity 모드에서 필요, SSE 모드에서는 빈 배열)
     const loadInitialCards = async () => {

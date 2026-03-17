@@ -117,11 +117,12 @@ export class SSESessionProvider implements SessionStorageProvider {
     sessionKey: string,
     onEvent: (event: SoulSSEEvent, eventId: number) => void,
     onStatusChange?: (status: "connecting" | "connected" | "error") => void,
+    options?: { lastEventId?: number },
   ): () => void {
     let eventSource: EventSource | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let reconnectAttempt = 0;
-    let lastEventId = 0;
+    let lastEventId = options?.lastEventId ?? 0;
     const maxReconnectAttempts = 20;
     const reconnectIntervalMs = 3000;
     const maxReconnectIntervalMs = 30000;
