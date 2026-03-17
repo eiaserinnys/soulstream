@@ -787,6 +787,7 @@ class ClaudeRunner:
             hooks=hooks,
             extra_args={"debug-to-stderr": None},
             debug_stderr=_stderr_target,
+            max_buffer_size=50 * 1024 * 1024,  # 50MB: 기본값 1MB가 대형 응답에서 오버플로우 발생
         )
 
         if session_id:
