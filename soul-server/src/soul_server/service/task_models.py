@@ -92,6 +92,9 @@ class Task:
     llm_model: Optional[str] = None     # ex. "gpt-5-mini"
     llm_usage: Optional[dict] = field(default=None, repr=False)  # {"input_tokens": N, "output_tokens": N}
 
+    # 구조화된 맥락 (실행 파라미터, 이력 추적용으로 영속화됨)
+    context: Optional[dict] = field(default=None, repr=False)
+
     # 결과
     result: Optional[str] = None
     error: Optional[str] = None
@@ -149,6 +152,7 @@ class Task:
             "llm_provider": self.llm_provider,
             "llm_model": self.llm_model,
             "llm_usage": self.llm_usage,
+            "context": self.context,
             "result": self.result,
             "error": self.error,
             "created_at": datetime_to_str(self.created_at),
@@ -169,6 +173,7 @@ class Task:
             llm_provider=data.get("llm_provider"),
             llm_model=data.get("llm_model"),
             llm_usage=data.get("llm_usage"),
+            context=data.get("context"),
             result=data.get("result"),
             error=data.get("error"),
             created_at=str_to_datetime(data["created_at"]),

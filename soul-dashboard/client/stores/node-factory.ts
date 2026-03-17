@@ -76,6 +76,7 @@ export function createNodeFromEvent(
       return makeNode(`user-msg-${eventId}`, "user_message", content, {
         completed: true,
         user: e.user ?? e.client_id ?? "llm-proxy",
+        context: e.context,
       });
     }
 
