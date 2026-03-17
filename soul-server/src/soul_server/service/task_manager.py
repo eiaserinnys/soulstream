@@ -300,10 +300,12 @@ class TaskManager:
                     setattr(task, key, value)
 
         # 카탈로그 업데이트 + LRU 퇴거 후보 등록
+        # llm_usage 등 finalize 시점에 확정되는 LLM 메타데이터도 카탈로그에 반영
         self._catalog.upsert(
             agent_session_id,
             status=task.status.value,
             completed_at=datetime_to_str(task.completed_at),
+            llm_usage=task.llm_usage,
         )
         self._eviction_candidates[agent_session_id] = time.time() + self._eviction_ttl
 
