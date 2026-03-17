@@ -128,6 +128,13 @@ class Settings:
     # Cogito (선택 사항 — 미설정 시 브리프 생성 비활성화)
     cogito_manifest_path: str = ""
 
+    # Google OAuth (선택 — 미설정 시 인증 비활성)
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_callback_url: str = "/api/auth/google/callback"
+    allowed_email: str = ""
+    jwt_secret: str = ""
+
     # Dashboard profile (선택 사항 — 미설정 시 기본 이름 표시, 초상화 없음)
     dash_user_name: str = "USER"
     dash_user_id: str = ""
@@ -209,6 +216,12 @@ class Settings:
             # LLM Proxy
             llm_openai_api_key=os.getenv("LLM_OPENAI_API_KEY", ""),
             llm_anthropic_api_key=os.getenv("LLM_ANTHROPIC_API_KEY", ""),
+            # Google OAuth
+            google_client_id=os.getenv("GOOGLE_CLIENT_ID", ""),
+            google_client_secret=os.getenv("GOOGLE_CLIENT_SECRET", ""),
+            google_callback_url=os.getenv("GOOGLE_CALLBACK_URL", "/api/auth/google/callback"),
+            allowed_email=os.getenv("ALLOWED_EMAIL", ""),
+            jwt_secret=os.getenv("JWT_SECRET", ""),
             # Dashboard profile
             dash_user_name=os.getenv("DASH_USER_NAME", "USER"),
             dash_user_id=os.getenv("DASH_USER_ID", ""),
@@ -226,6 +239,18 @@ class Settings:
         missing = []
         if not self.workspace_dir:
             missing.append("WORKSPACE_DIR")
+        # Google OAuth 활성 시 필수 변수 검증
+        if self.google_client_id:
+            if not self.google_client_secret:
+                missing.append("GOOGLE_CLIENT_SECRET")
+            if not self.jwt_secret:
+                missing.append("JWT_SECRET")
+            elif len(self.jwt_secret) < 32:
+                raise RuntimeError(
+                    "JWT_SECRET must be at least 32 characters for sufficient entropy."
+                )
+            if not self.allowed_email:
+                missing.append("ALLOWED_EMAIL")
         if missing:
             raise RuntimeError(
                 f"필수 환경변수 누락: {', '.join(missing)}. "
@@ -238,6 +263,10 @@ class Settings:
         if not self.incoming_file_dir:
             # 첨부 파일 → Claude Code가 접근해야 하므로 workspace 기준
             self.incoming_file_dir = str(ws / ".local" / "incoming")
+
+    @property
+    def is_auth_enabled(self) -> bool:
+        return bool(self.google_client_id)
 
     @property
     def is_production(self) -> bool:
