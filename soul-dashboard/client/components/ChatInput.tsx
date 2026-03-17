@@ -30,6 +30,8 @@ export function ChatInput() {
   const tree = useDashboardStore((s) => s.tree);
   const treeVersion = useDashboardStore((s) => s.treeVersion);
   const setActiveSession = useDashboardStore((s) => s.setActiveSession);
+  const setDraft = useDashboardStore((s) => s.setDraft);
+  const clearDraft = useDashboardStore((s) => s.clearDraft);
 
   // 활성 세션의 상태 + LLM 메타데이터
   const sessionInfo = useMemo((): ActiveSessionInfo => {
@@ -79,7 +81,11 @@ export function ChatInput() {
   useEffect(() => {
     abortRef.current?.abort();
     abortRef.current = null;
-    setText("");
+    // 세션 전환 시 저장된 draft 복원 (getState()로 직접 읽어 의존성에 drafts 불필요)
+    const saved = activeSessionKey
+      ? (useDashboardStore.getState().drafts[activeSessionKey] ?? "")
+      : "";
+    setText(saved);
     setSending(false);
     setError(null);
   }, [activeSessionKey]);
@@ -135,6 +141,7 @@ export function ChatInput() {
 
         const result = await response.json();
         setText("");
+        if (activeSessionKey) clearDraft(activeSessionKey); // 이전 세션 draft 삭제 (setActiveSession 전에 처리)
 
         // 새 세션으로 자동 전환
         if (result.session_id) {
@@ -162,6 +169,7 @@ export function ChatInput() {
 
         await response.json();
         setText("");
+        if (activeSessionKey) clearDraft(activeSessionKey);
       }
     } catch (err) {
       // AbortError는 의도적 취소이므로 무시
@@ -170,7 +178,7 @@ export function ChatInput() {
     } finally {
       setSending(false);
     }
-  }, [activeSessionKey, text, sending, isLlmFinished, sessionInfo, llmMessages, setActiveSession]);
+  }, [activeSessionKey, text, sending, isLlmFinished, sessionInfo, llmMessages, setActiveSession, clearDraft]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -234,7 +242,10 @@ export function ChatInput() {
           <textarea
             ref={textareaRef}
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => {
+              setText(e.target.value);
+              if (activeSessionKey) setDraft(activeSessionKey, e.target.value);
+            }}
             onKeyDown={handleKeyDown}
             placeholder={placeholder}
             disabled={sending}
