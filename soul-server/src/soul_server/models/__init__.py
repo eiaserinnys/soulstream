@@ -21,6 +21,8 @@ from .schemas import (
     # Session API
     TaskStatus,
     ExecuteRequest,
+    ContextItem,
+    StructuredContext,
     SessionResponse,
     SessionListResponse,
     InitSSEEvent,
@@ -70,6 +72,8 @@ __all__ = [
     # Session API
     "TaskStatus",
     "ExecuteRequest",
+    "ContextItem",
+    "StructuredContext",
     "SessionResponse",
     "SessionListResponse",
     "InitSSEEvent",

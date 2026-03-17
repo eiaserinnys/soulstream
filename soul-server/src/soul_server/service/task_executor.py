@@ -9,6 +9,7 @@ import logging
 from typing import Dict, Callable, Awaitable, Optional, TYPE_CHECKING
 
 from soul_server.service.task_models import Task, TaskStatus
+from soul_server.service.prompt_assembler import assemble_prompt
 
 if TYPE_CHECKING:
     from soul_server.service.event_store import EventStore
@@ -113,6 +114,7 @@ class TaskExecutor:
                             "type": "user_message",
                             "user": task.client_id or "unknown",
                             "text": task.prompt,
+                            "context": task.context.get("items") if task.context else None,
                         }
                         event_id = self._event_store.append(session_id, user_msg_event)
                         user_msg_event["_event_id"] = event_id
@@ -145,9 +147,12 @@ class TaskExecutor:
                     task._deliver_input_response = runner.deliver_input_response
                     task.pid = runner.pid
 
+                # 구조화된 맥락을 XML 섹션으로 조립
+                assembled_prompt = assemble_prompt(task.prompt, task.context)
+
                 # Claude Code 실행
                 async for event in claude_runner.execute(
-                    prompt=task.prompt,
+                    prompt=assembled_prompt,
                     resume_session_id=task.resume_session_id,
                     get_intervention=get_intervention,
                     on_intervention_sent=on_intervention_sent,
