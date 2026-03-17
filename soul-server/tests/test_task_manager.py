@@ -223,6 +223,70 @@ class TestClaudeSessionIndex:
         task = manager.get_task_by_claude_session("nonexistent")
         assert task is None
 
+    async def test_register_session_sets_task_claude_session_id(self, manager):
+        """register_session() 호출 시 task.claude_session_id가 즉시 설정된다.
+
+        서버가 complete_task() 이전에 재시작되더라도, register_session()이
+        task.claude_session_id를 저장하므로 graceful_shutdown 시점에
+        pre_shutdown_sessions.json에 유효한 claude_session_id가 기록된다.
+        """
+        await manager.create_task(prompt="hello", agent_session_id="sess-1")
+        # 초기에는 claude_session_id 없음
+        task = await manager.get_task("sess-1")
+        assert task.claude_session_id is None
+
+        manager.register_session("claude-abc", "sess-1")
+
+        # register_session 후 즉시 설정되어 있어야 한다
+        assert task.claude_session_id == "claude-abc"
+
+    async def test_register_session_for_nonexistent_task_does_not_fail(self, manager):
+        """존재하지 않는 agent_session_id에 register_session 해도 에러가 없다"""
+        # 에러 없이 완료되어야 함
+        manager.register_session("claude-xyz", "sess-nonexistent")
+        # 인덱스는 등록됨
+        task = manager.get_task_by_claude_session("claude-xyz")
+        assert task is None  # 태스크가 없으므로 None
+
+    async def test_get_running_tasks_has_claude_session_id_after_register(self, manager):
+        """register_session 후 get_running_tasks()로 조회한 태스크의 claude_session_id가 None이 아니다."""
+        await manager.create_task(prompt="hello", agent_session_id="sess-1")
+        manager.register_session("claude-abc", "sess-1")
+
+        running = manager.get_running_tasks()
+        assert len(running) == 1
+        assert running[0].claude_session_id == "claude-abc"
+
+    async def test_interrupted_resume_uses_claude_session_id_from_register(self, manager):
+        """INTERRUPTED 세션에 add_intervention 시 resume_session_id가 register_session에서 저장된 값을 사용한다.
+
+        시나리오:
+        1. create_task로 태스크 생성
+        2. register_session으로 claude_session_id 설정 (complete_task 전에 재시작 상황 시뮬레이션)
+        3. 세션을 INTERRUPTED 상태로 전환
+        4. add_intervention으로 resume
+        5. 새 태스크의 resume_session_id가 register_session에서 설정된 값임을 확인
+        """
+        await manager.create_task(prompt="hello", agent_session_id="sess-1")
+        manager.register_session("claude-abc", "sess-1")
+
+        # 재시작 상황: complete_task가 불리지 않고 INTERRUPTED로 마킹
+        task = await manager.get_task("sess-1")
+        task.status = TaskStatus.INTERRUPTED
+
+        # add_intervention → create_task(resume) 호출
+        result = await manager.add_intervention(
+            agent_session_id="sess-1",
+            text="재개해줘",
+            user="user1",
+        )
+        assert result["auto_resumed"] is True
+
+        # resume된 태스크의 resume_session_id가 register_session에서 설정된 값이어야 함
+        resumed_task = await manager.get_task("sess-1")
+        assert resumed_task.status == TaskStatus.RUNNING
+        assert resumed_task.resume_session_id == "claude-abc"
+
 
 class TestCleanup:
     async def test_cleanup_fixes_orphaned_running(self, manager):
