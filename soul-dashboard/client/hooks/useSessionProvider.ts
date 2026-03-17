@@ -33,6 +33,26 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
 
   const [status, setStatus] = useState<ConnectionStatus>("disconnected");
 
+  // Resume 감지: 활성 세션이 completed/error → running으로 바뀌면 구독을 재시작.
+  // subscriptionEpoch를 effect 의존성에 넣어, 값이 바뀔 때 구독 effect가 재실행됨.
+  const sessions = useDashboardStore((s) => s.sessions);
+  const activeStatus = sessions.find((s) => s.agentSessionId === sessionKey)?.status ?? null;
+  const prevStatusRef = useRef<string | null>(null);
+  const [subscriptionEpoch, setSubscriptionEpoch] = useState(0);
+
+  useEffect(() => {
+    const prev = prevStatusRef.current;
+    prevStatusRef.current = activeStatus;
+
+    if (
+      prev !== null &&
+      (prev === "completed" || prev === "error") &&
+      activeStatus === "running"
+    ) {
+      setSubscriptionEpoch((e) => e + 1);
+    }
+  }, [activeStatus]);
+
   // 이벤트 큐 + 타이머 refs
   const eventQueueRef = useRef<QueuedEvent[]>([]);
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -178,7 +198,9 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
       unsubscribe();
       setStatus("disconnected");
     };
-  }, [sessionKey, storageMode, processEvents, clearTree, enqueueEvent, clearTimersAndQueue]);
+  // subscriptionEpoch: resume 감지 시 변경되어 구독을 재시작
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionKey, storageMode, processEvents, clearTree, enqueueEvent, clearTimersAndQueue, subscriptionEpoch]);
 
   const reconnect = useCallback(() => {
     // 재연결은 sessionKey 변경으로 트리거됨
