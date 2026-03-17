@@ -133,21 +133,29 @@ export function useSessionListProvider(
 
   /**
    * SSE 연결 설정 (sse 모드 — delta 이벤트 수신용)
+   *
+   * EventSource 자동 재연결은 서버가 200 + text/event-stream으로 응답할 때만 동작합니다.
+   * 서버가 완전히 다운되어 TCP 연결 자체가 실패하면 EventSource가 CLOSED(readyState=2)로
+   * 전환되고, 이 경우 자동 재연결이 중단됩니다.
+   * reconnectTimerRef로 CLOSED 상태를 감지하여 수동으로 재연결합니다.
    */
+  const reconnectTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const connectSSE = useCallback(() => {
     if (eventSourceRef.current) return;
 
     const eventSource = new EventSource("/api/sessions/stream");
     eventSourceRef.current = eventSource;
 
-    // 재연결 감지: 에러 후 다시 연결되면 페이지 리프레시
+    // 재연결 감지: 에러 후 다시 연결되면 세션 목록을 다시 fetch
     let hadError = false;
 
     eventSource.onopen = () => {
       if (hadError) {
-        window.location.reload();
-        return;
+        // 페이지 리로드 대신 세션 목록만 다시 fetch
+        fetchSessions();
       }
+      hadError = false;
       setSessionsError(null);
     };
 
@@ -165,12 +173,27 @@ export function useSessionListProvider(
     eventSource.onerror = () => {
       hadError = true;
     };
-  }, [handleSSEEvent, setSessionsError]);
+
+    // EventSource가 CLOSED(readyState=2)되면 수동 재연결
+    // (TCP 연결 실패, 비정상 상태 코드 등으로 자동 재연결이 중단된 경우)
+    if (reconnectTimerRef.current) clearInterval(reconnectTimerRef.current);
+    reconnectTimerRef.current = setInterval(() => {
+      if (eventSourceRef.current?.readyState === EventSource.CLOSED) {
+        console.warn("[SSE] EventSource CLOSED, reconnecting...");
+        eventSourceRef.current = null;
+        connectSSE();
+      }
+    }, 3000);
+  }, [handleSSEEvent, setSessionsError, fetchSessions]);
 
   /**
    * SSE 연결 해제
    */
   const disconnectSSE = useCallback(() => {
+    if (reconnectTimerRef.current) {
+      clearInterval(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;

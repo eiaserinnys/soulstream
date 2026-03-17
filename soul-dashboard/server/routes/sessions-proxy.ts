@@ -109,6 +109,16 @@ export function createSessionsProxyRouter(
     try {
       const controller = new AbortController();
 
+      // SSE 헤더를 먼저 전송하여, soul-server 연결 실패 시에도
+      // 브라우저 EventSource가 자동 재연결을 유지하도록 합니다.
+      // (200 + text/event-stream이 아닌 응답은 EventSource를 CLOSED로 만들어 재연결이 중단됨)
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
+      });
+
       let soulResponse: globalThis.Response;
       try {
         soulResponse = await fetch(`${soulBaseUrl}/sessions/stream`, {
@@ -121,12 +131,9 @@ export function createSessionsProxyRouter(
         });
       } catch (err) {
         console.error("[sessions-proxy] Failed to connect to SSE stream:", err);
-        res.status(502).json({
-          error: {
-            code: "SOUL_CONNECTION_ERROR",
-            message: "Failed to connect to Soul server SSE stream",
-          },
-        });
+        // SSE 포맷으로 에러 전달 후 연결 종료 → 브라우저가 자동 재연결
+        res.write("retry: 3000\nevent: error\ndata: {\"message\":\"Soul server unavailable\"}\n\n");
+        res.end();
         return;
       }
 
@@ -136,22 +143,10 @@ export function createSessionsProxyRouter(
           `[sessions-proxy] Soul GET /sessions/stream failed (${soulResponse.status}):`,
           errorBody,
         );
-        res.status(soulResponse.status).json({
-          error: {
-            code: "SOUL_ERROR",
-            message: `Soul server returned ${soulResponse.status}`,
-          },
-        });
+        res.write(`retry: 3000\nevent: error\ndata: ${JSON.stringify({message: `Soul server returned ${soulResponse.status}`})}\n\n`);
+        res.end();
         return;
       }
-
-      // SSE 헤더 설정
-      res.writeHead(200, {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-        "X-Accel-Buffering": "no",
-      });
 
       // 클라이언트 연결 종료 시 upstream 연결도 종료
       res.on("close", () => {
@@ -185,13 +180,16 @@ export function createSessionsProxyRouter(
         "[sessions-proxy] Failed to proxy GET /sessions/stream:",
         err,
       );
-      if (!res.headersSent) {
-        res.status(500).json({
-          error: {
-            code: "INTERNAL_ERROR",
-            message: "Failed to establish SSE stream",
-          },
-        });
+      if (!res.writableEnded) {
+        if (!res.headersSent) {
+          res.writeHead(200, {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            Connection: "keep-alive",
+          });
+        }
+        res.write("retry: 3000\nevent: error\ndata: {\"message\":\"Internal proxy error\"}\n\n");
+        res.end();
       }
     }
   });
