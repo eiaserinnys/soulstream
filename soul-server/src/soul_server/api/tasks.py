@@ -104,6 +104,8 @@ async def execute_task(
             disallowed_tools=request.disallowed_tools,
             use_mcp=request.use_mcp,
             context=request.context.model_dump() if request.context else None,
+            context_items=[item.model_dump() for item in request.context.items] if request.context else None,
+            extra_context_items=request.context_items,
         )
     except TaskConflictError:
         raise HTTPException(
