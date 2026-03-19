@@ -1,3 +1,4 @@
 packages:
   - 'packages/*'
   - 'soul-dashboard'
+  - 'soul-stream'
