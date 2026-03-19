@@ -179,3 +179,14 @@ class Task:
             created_at=str_to_datetime(data["created_at"]),
             completed_at=str_to_datetime(data["completed_at"]) if data.get("completed_at") else None,
         )
+
+
+# 이벤트 타입별 미리보기 텍스트 필드 매핑 (readable events only)
+PREVIEW_FIELD_MAP: dict[str, str] = {
+    "intervention": "text",
+    "thinking": "thinking",
+    "text": "text",
+    "result": "result",
+    "complete": "result",
+    "error": "error",
+}

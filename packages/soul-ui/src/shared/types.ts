@@ -321,6 +321,13 @@ export interface LlmUsage {
   outputTokens: number;
 }
 
+/** 세션의 마지막 readable-event 메시지 */
+export interface LastMessage {
+  type: string;
+  preview: string;
+  timestamp: string;
+}
+
 /** 세션 요약 정보 (목록 조회용) */
 export interface SessionSummary {
   /** 세션의 유일한 키. JSONL 파일명. */
@@ -343,6 +350,8 @@ export interface SessionSummary {
   llmUsage?: LlmUsage;
   /** LLM 클라이언트 식별자 */
   clientId?: string;
+  /** 마지막 readable-event의 메시지 정보 */
+  lastMessage?: LastMessage;
 }
 
 /** 세션 상세 정보 */
@@ -589,6 +598,7 @@ export interface SessionUpdatedStreamEvent {
   agent_session_id: string;
   status: SessionStatus;
   updated_at: string;
+  last_message?: LastMessage;
 }
 
 /** 세션 삭제 */
