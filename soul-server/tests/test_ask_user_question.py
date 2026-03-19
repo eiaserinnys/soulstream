@@ -207,6 +207,7 @@ class TestInputRequestEngineEvent:
                     "multiSelect": False,
                 }
             ],
+            started_at=1000000.0,
         )
 
         sse_events = event.to_sse()
@@ -232,6 +233,7 @@ class TestInputRequestEngineEvent:
                 {"question": "Q1?", "options": [{"label": "Y"}, {"label": "N"}]},
                 {"question": "Q2?", "options": [{"label": "A"}, {"label": "B"}], "multiSelect": True},
             ],
+            started_at=1000000.0,
         )
 
         sse_events = event.to_sse()
@@ -248,6 +250,7 @@ class TestInputRequestEngineEvent:
         event = InputRequestEngineEvent(
             request_id="req-empty",
             questions=[],
+            started_at=1000000.0,
         )
 
         sse_events = event.to_sse()

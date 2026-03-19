@@ -198,6 +198,12 @@ class TestBriefComposer:
     async def test_compose_returns_named_tuples(self, manifest_file, output_dir):
         from soul_server.cogito.brief_composer import BriefComposer
 
+        mock_manifest = {
+            "services": [
+                {"name": "svc-internal", "endpoint": "http://localhost:9999/reflect", "type": "internal"},
+                {"name": "svc-external", "type": "external"},
+            ]
+        }
         mock_results = [
             {
                 "identity": {"name": "svc-internal", "description": "Internal", "port": 9999},
@@ -209,7 +215,10 @@ class TestBriefComposer:
             },
         ]
 
-        with patch("soul_server.cogito.brief_composer.cogito_compose", new_callable=AsyncMock) as mock_compose:
+        with (
+            patch("soul_server.cogito.brief_composer.load_manifest", return_value=mock_manifest),
+            patch("soul_server.cogito.brief_composer.cogito_compose", new_callable=AsyncMock) as mock_compose,
+        ):
             mock_compose.return_value = mock_results
             composer = BriefComposer(manifest_path=str(manifest_file), output_dir=str(output_dir))
             result = await composer.compose()
@@ -222,6 +231,12 @@ class TestBriefComposer:
     async def test_write_brief_creates_file(self, manifest_file, output_dir):
         from soul_server.cogito.brief_composer import BriefComposer
 
+        mock_manifest = {
+            "services": [
+                {"name": "svc-internal", "endpoint": "http://localhost:9999/reflect", "type": "internal"},
+                {"name": "svc-external", "type": "external"},
+            ]
+        }
         mock_results = [
             {
                 "identity": {"name": "svc-internal", "description": "Internal", "port": 9999},
@@ -233,7 +248,10 @@ class TestBriefComposer:
             },
         ]
 
-        with patch("soul_server.cogito.brief_composer.cogito_compose", new_callable=AsyncMock) as mock_compose:
+        with (
+            patch("soul_server.cogito.brief_composer.load_manifest", return_value=mock_manifest),
+            patch("soul_server.cogito.brief_composer.cogito_compose", new_callable=AsyncMock) as mock_compose,
+        ):
             mock_compose.return_value = mock_results
             composer = BriefComposer(manifest_path=str(manifest_file), output_dir=str(output_dir))
             path = await composer.write_brief()
@@ -250,10 +268,19 @@ class TestBriefComposer:
         """output_dir이 존재하지 않아도 자동 생성."""
         from soul_server.cogito.brief_composer import BriefComposer
 
+        mock_manifest = {
+            "services": [
+                {"name": "s", "type": "internal"},
+                {"name": "e", "type": "external"},
+            ]
+        }
         deep_dir = tmp_path / "a" / "b" / "c"
         assert not deep_dir.exists()
 
-        with patch("soul_server.cogito.brief_composer.cogito_compose", new_callable=AsyncMock) as mock_compose:
+        with (
+            patch("soul_server.cogito.brief_composer.load_manifest", return_value=mock_manifest),
+            patch("soul_server.cogito.brief_composer.cogito_compose", new_callable=AsyncMock) as mock_compose,
+        ):
             mock_compose.return_value = [
                 {"identity": {"name": "s"}, "capabilities": []},
                 {"identity": {"name": "e"}, "capabilities": []},
@@ -269,6 +296,12 @@ class TestBriefComposer:
         """조회 실패한 서비스도 brief에 포함 (status: unreachable)."""
         from soul_server.cogito.brief_composer import BriefComposer
 
+        mock_manifest = {
+            "services": [
+                {"name": "svc-internal", "endpoint": "http://localhost:9999/reflect", "type": "internal"},
+                {"name": "svc-external", "type": "external"},
+            ]
+        }
         mock_results = [
             {
                 "identity": {"name": "http://localhost:9999/reflect", "status": "unreachable"},
@@ -280,7 +313,10 @@ class TestBriefComposer:
             },
         ]
 
-        with patch("soul_server.cogito.brief_composer.cogito_compose", new_callable=AsyncMock) as mock_compose:
+        with (
+            patch("soul_server.cogito.brief_composer.load_manifest", return_value=mock_manifest),
+            patch("soul_server.cogito.brief_composer.cogito_compose", new_callable=AsyncMock) as mock_compose,
+        ):
             mock_compose.return_value = mock_results
             composer = BriefComposer(manifest_path=str(manifest_file), output_dir=str(output_dir))
             path = await composer.write_brief()
