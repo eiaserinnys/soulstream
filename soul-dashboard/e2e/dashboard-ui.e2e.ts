@@ -566,8 +566,8 @@ const test = base.extend<{ dashboardServer: MockDashboardServer }, { dashboardSe
     });
 
     // --- Mock: Config ---
-    app.get("/api/config", (_req, res) => {
-      res.json({ serendipityAvailable: false });
+    app.get("/api/config/settings", (_req, res) => {
+      res.json({ serendipityAvailable: false, categories: [] });
     });
     // --- Mock: 인증 엔드포인트 (가변 상태 기반) ---
     app.get("/api/auth/config", (_req, res) => {

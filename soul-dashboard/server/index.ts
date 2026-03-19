@@ -101,10 +101,11 @@ app.use(createCogitoRouter());
 // Auth 라우트 (공개 엔드포인트 — 인증 미들웨어 적용 전에 등록)
 app.use("/api/auth", createAuthRouter());
 
-// Config (클라이언트에 설정 전달 — 인증 상태 정본은 /api/auth/config로 일원화)
-app.get("/api/config", (_req, res) => {
+// Config (클라이언트에 설정 전달 — soul-server의 /api/config/settings와 호환)
+app.get("/api/config/settings", (_req, res) => {
   res.json({
     serendipityAvailable: !!SERENDIPITY_URL,
+    categories: [],
   });
 });
 
