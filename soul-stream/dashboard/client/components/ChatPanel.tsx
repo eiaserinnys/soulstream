@@ -6,6 +6,7 @@
  */
 
 import { useMemo } from "react";
+import { Badge, cn } from "@seosoyoung/soul-ui";
 import { useOrchestratorStore } from "../store/orchestrator-store";
 import { nodeColor } from "./NodeHeader";
 
@@ -106,11 +107,11 @@ export function ChatPanel() {
       {selectedNode && selectedSession && (
         <div
           className="mx-3.5 mt-2 px-3 py-2 bg-muted border border-input rounded-lg border-l-[3px] shrink-0"
-          style={{ borderLeftColor: color.css }}
+          style={{ borderLeftColor: color }}
         >
           <div
             className="text-[11px] font-mono opacity-70"
-            style={{ color: color.css }}
+            style={{ color: color }}
           >
             {selectedNode.nodeId} &middot; {selectedNode.host}
           </div>
@@ -118,15 +119,15 @@ export function ChatPanel() {
             {selectedSession.sessionId}
           </div>
           <div className="flex gap-1.5 mt-1">
-            <span
-              className={`text-[10px] font-mono px-1.5 py-px rounded ${
-                selectedSession.status === "running"
-                  ? "bg-success/10 text-success"
-                  : "bg-muted text-muted-foreground/50"
-              }`}
+            <Badge
+              variant={selectedSession.status === "running" ? "success" : "outline"}
+              size="sm"
             >
+              {selectedSession.status === "running" && (
+                <span className="w-1.5 h-1.5 rounded-full bg-success animate-[pulse_2s_infinite]" />
+              )}
               {selectedSession.status}
-            </span>
+            </Badge>
           </div>
         </div>
       )}

@@ -269,7 +269,7 @@ export class NodeConnection {
               ? { updatedAt: msg.updated_at as string }
               : {}),
             ...(msg.last_message != null
-              ? { lastMessage: msg.last_message }
+              ? { lastMessage: msg.last_message as string }
               : {}),
           });
         }
