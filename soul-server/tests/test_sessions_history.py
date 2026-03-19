@@ -422,9 +422,48 @@ class TestHistoryLiveStreaming:
             try:
                 live_event = await asyncio.wait_for(gen.__anext__(), timeout=1.0)
                 assert live_event["event"] == "text_delta"
+                # 라이브 이벤트에 SSE id: 필드가 포함되어야 한다
+                assert live_event["id"] == "2"
+                # data JSON에는 _event_id가 포함되지 않아야 한다
+                data = json.loads(live_event["data"])
+                assert "_event_id" not in data
             finally:
                 push_task.cancel()
                 await gen.aclose()
+
+    @pytest.mark.asyncio
+    async def test_live_event_without_event_id_has_no_sse_id(
+        self, mock_task_manager_with_event_store, mock_session_broadcaster
+    ):
+        """_event_id가 없는 라이브 이벤트(history_sync, keepalive)에는 SSE id가 없어야 한다"""
+        from soul_server.api.sessions import create_sessions_router
+
+        event_store = mock_task_manager_with_event_store.event_store
+        event_store.append("sess-001", {"type": "text_start"})
+
+        with (
+            patch("soul_server.api.sessions.get_task_manager", return_value=mock_task_manager_with_event_store),
+            patch("soul_server.api.sessions.get_session_broadcaster", return_value=mock_session_broadcaster),
+        ):
+            router = create_sessions_router()
+
+            history_route = next(
+                r for r in router.routes
+                if getattr(r, 'path', '') == '/sessions/{agent_session_id}/history'
+            )
+            response = await history_route.endpoint(agent_session_id="sess-001")
+            gen = response.body_iterator
+
+            # text_start (stored, has id)
+            stored_event = await asyncio.wait_for(gen.__anext__(), timeout=1.0)
+            assert "id" in stored_event
+
+            # history_sync (no _event_id, should not have SSE id)
+            sync_event = await asyncio.wait_for(gen.__anext__(), timeout=1.0)
+            assert sync_event["event"] == "history_sync"
+            assert "id" not in sync_event
+
+            await gen.aclose()
 
 
 # === 연결 유지 테스트 (complete/error 후) ===

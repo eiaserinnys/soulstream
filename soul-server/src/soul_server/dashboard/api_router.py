@@ -227,9 +227,11 @@ async def api_session_events(
                     f"data: {json.dumps(event_dict, ensure_ascii=False)}\n\n"
                 )
             else:
-                last_stored_id += 1
+                # _event_id를 pop하여 data JSON에서 제거하되, SSE id: 필드로 전달
+                event_id = event_dict.pop("_event_id", None)
+                sse_id = f"id: {event_id}\n" if event_id is not None else ""
                 yield (
-                    f"id: {last_stored_id}\n"
+                    f"{sse_id}"
                     f"event: {event_type}\n"
                     f"data: {json.dumps(event_dict, ensure_ascii=False)}\n\n"
                 )
