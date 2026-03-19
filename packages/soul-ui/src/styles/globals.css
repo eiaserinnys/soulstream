@@ -1,0 +1,271 @@
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  /*
+   * Dashboard accent colors — mapped to node color CSS variables.
+   * Using var() here makes Tailwind v4 emit dynamic references
+   * in utility classes (e.g., bg-accent-blue → var(--node-user))
+   * so they respond to theme changes at runtime.
+   */
+  --color-accent-blue:   var(--node-user);
+  --color-accent-purple: var(--node-thinking);
+  --color-accent-amber:  var(--node-tool);
+  --color-accent-green:  var(--node-response);
+  --color-accent-cyan:   var(--node-plan);
+  --color-accent-red:    var(--node-error);
+  --color-accent-orange: var(--node-intervention);
+  --color-accent-pink:   var(--node-input-request);
+  --color-amber-600:     var(--amber-600);
+
+  /*
+   * Node accent colors — the single source of truth for node coloring.
+   * Resolved via :root / .dark overrides below.
+   * Light mode: original -500 level (vibrant, good contrast on white).
+   * Dark mode: custom muted palette (saturation ↓20-30%, lightness ↑8-12%).
+   */
+  --color-node-user: var(--node-user);
+  --color-node-response: var(--node-response);
+  --color-node-thinking: var(--node-thinking);
+  --color-node-plan: var(--node-plan);
+  --color-node-tool: var(--node-tool);
+  --color-node-skill: var(--node-skill);
+  --color-node-intervention: var(--node-intervention);
+  --color-node-error: var(--node-error);
+  --color-node-system: var(--node-system);
+  --color-node-input-request: var(--node-input-request);
+
+  /* Font */
+  --font-mono: 'Cascadia Code', 'Fira Code', monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+  /* Coss UI semantic color mappings */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+
+  --animate-skeleton: skeleton 2s -1s infinite linear;
+  @keyframes skeleton {
+    to { background-position: -200% 0; }
+  }
+}
+
+/* Base layer — lower priority than Tailwind utilities */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    overflow: hidden;
+    background: var(--background);
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--muted-foreground);
+  }
+}
+
+/* Keyframes — outside layers (not affected by cascade) */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@keyframes node-shimmer {
+  0% { background-position: -200px 0; }
+  100% { background-position: 200px 0; }
+}
+
+@keyframes tool-call-pulse {
+  0%, 100% { border-color: color-mix(in srgb, var(--node-tool) 30%, transparent); }
+  50% { border-color: color-mix(in srgb, var(--node-tool) 70%, transparent); }
+}
+
+@keyframes pulse-border-pink {
+  0%, 100% { border-color: color-mix(in srgb, var(--node-input-request) 30%, transparent); }
+  50% { border-color: color-mix(in srgb, var(--node-input-request) 70%, transparent); }
+}
+.animate-pulse-border-pink {
+  animation: pulse-border-pink 2s ease-in-out infinite;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Component-level shimmer classes */
+@layer components {
+  .shimmer-purple {
+    background: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--node-thinking) 6%, transparent) 50%, transparent 100%);
+    background-size: 200px 100%;
+    animation: node-shimmer 1.5s infinite linear;
+  }
+  .shimmer-cyan {
+    background: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--node-plan) 6%, transparent) 50%, transparent 100%);
+    background-size: 200px 100%;
+    animation: node-shimmer 1.5s infinite linear;
+  }
+  .shimmer-green {
+    background: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--node-response) 6%, transparent) 50%, transparent 100%);
+    background-size: 200px 100%;
+    animation: node-shimmer 1.5s infinite linear;
+  }
+}
+
+/* Utility layer — same priority as Tailwind utilities */
+@layer utilities {
+  .line-clamp-2 {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+}
+
+/* ============================================================
+ * Light mode (default)
+ * Node colors: original Tailwind -500 — vibrant on white bg.
+ * ============================================================ */
+:root {
+  /* Panel edge inset — shared by ReactFlow Panel, ChatInput, scroll-to-bottom */
+  --panel-inset: 15px;
+
+  /* Node accent palette (light) */
+  --node-user:         #3b82f6;  /* blue-500   */
+  --node-response:     #10b981;  /* emerald-500 */
+  --node-thinking:     #8b5cf6;  /* violet-500 */
+  --node-plan:         #06b6d4;  /* cyan-500   */
+  --node-tool:         #f59e0b;  /* amber-500  */
+  --node-skill:        #a855f7;  /* purple-500 */
+  --node-intervention: #f97316;  /* orange-500 */
+  --node-error:        #ef4444;  /* red-500    */
+  --node-system:       #6b7280;  /* gray-500   */
+  --node-input-request: #ec4899; /* pink-500   */
+
+  --amber-600:           #d97706;
+
+  /* Semantic tokens (light) */
+  --accent: --alpha(var(--color-black) / 4%);
+  --accent-foreground: var(--color-neutral-800);
+  --background: var(--color-white);
+  --border: --alpha(var(--color-black) / 8%);
+  --card: var(--color-white);
+  --card-foreground: var(--color-neutral-800);
+  --destructive: var(--color-red-500);
+  --destructive-foreground: var(--color-red-700);
+  --foreground: var(--color-neutral-800);
+  --info: var(--color-blue-500);
+  --info-foreground: var(--color-blue-700);
+  --input: --alpha(var(--color-black) / 10%);
+  --muted: --alpha(var(--color-black) / 4%);
+  --muted-foreground: color-mix(in srgb, var(--color-neutral-500) 90%, var(--color-black));
+  --popover: var(--color-white);
+  --popover-foreground: var(--color-neutral-800);
+  --primary: var(--color-neutral-800);
+  --primary-foreground: var(--color-neutral-50);
+  --ring: var(--color-neutral-400);
+  --secondary: --alpha(var(--color-black) / 4%);
+  --secondary-foreground: var(--color-neutral-800);
+  --success: var(--color-emerald-500);
+  --success-foreground: var(--color-emerald-700);
+  --warning: var(--color-amber-500);
+  --warning-foreground: var(--color-amber-700);
+}
+
+/* ============================================================
+ * Dark mode
+ * Node colors: custom muted palette — lower saturation, raised
+ * lightness for comfortable viewing on near-black backgrounds.
+ *
+ * Design rationale (HSL adjustments from -500 baseline):
+ *   blue:    S 91->70%, L 60->68%  — less electric, still clearly blue
+ *   emerald: S 84->60%, L 39->52%  — biggest lift; -500 was too dark
+ *   violet:  S 91->65%, L 66->72%  — softer purple, less neon
+ *   cyan:    S 96->65%, L 42->52%  — toned down teal
+ *   amber:   S 93->75%, L 50->58%  — warmer, less glaring yellow
+ *   purple:  S 92->60%, L 65->72%  — gentle lavender
+ *   orange:  S 95->70%, L 53->60%  — warm terracotta
+ *   red:     S 84->65%, L 60->66%  — softer alert red
+ *   gray:    S  5-> 8%, L 47->55%  — slightly brighter for readability
+ * ============================================================ */
+.dark {
+  /* Node accent palette (dark — muted) */
+  --node-user:         hsl(217, 70%, 68%);   /* #7ba3e6 — muted blue    */
+  --node-response:     hsl(160, 60%, 52%);   /* #4db894 — muted emerald */
+  --node-thinking:     hsl(258, 65%, 72%);   /* #a18ae0 — muted violet  */
+  --node-plan:         hsl(189, 65%, 52%);   /* #3db5c9 — muted cyan    */
+  --node-tool:         hsl(38,  75%, 58%);   /* #d9a83a — muted amber   */
+  --node-skill:        hsl(271, 60%, 72%);   /* #b08ad6 — muted purple  */
+  --node-intervention: hsl(25,  70%, 60%);   /* #d0884a — muted orange  */
+  --node-error:        hsl(0,   65%, 66%);   /* #d47676 — muted red     */
+  --node-system:       hsl(220,  8%, 55%);   /* #868b94 — muted gray    */
+  --node-input-request: hsl(330, 65%, 65%);  /* #d470a0 — muted pink    */
+
+  --amber-600:           hsl(38, 65%, 48%);
+
+  /* Semantic tokens (dark) */
+  --accent: --alpha(var(--color-white) / 4%);
+  --accent-foreground: var(--color-neutral-100);
+  --background: color-mix(in srgb, var(--color-neutral-950) 95%, var(--color-white));
+  --border: --alpha(var(--color-white) / 6%);
+  --card: color-mix(in srgb, var(--background) 98%, var(--color-white));
+  --card-foreground: var(--color-neutral-100);
+  --destructive: color-mix(in srgb, var(--color-red-500) 90%, var(--color-white));
+  --destructive-foreground: var(--color-red-400);
+  --foreground: var(--color-neutral-100);
+  --info: var(--color-blue-500);
+  --info-foreground: var(--color-blue-400);
+  --input: --alpha(var(--color-white) / 8%);
+  --muted: --alpha(var(--color-white) / 4%);
+  --muted-foreground: color-mix(in srgb, var(--color-neutral-500) 90%, var(--color-white));
+  --popover: color-mix(in srgb, var(--background) 98%, var(--color-white));
+  --popover-foreground: var(--color-neutral-100);
+  --primary: var(--color-neutral-100);
+  --primary-foreground: var(--color-neutral-800);
+  --ring: var(--color-neutral-500);
+  --secondary: --alpha(var(--color-white) / 4%);
+  --secondary-foreground: var(--color-neutral-100);
+  --success: var(--color-emerald-500);
+  --success-foreground: var(--color-emerald-400);
+  --warning: var(--color-amber-500);
+  --warning-foreground: var(--color-amber-400);
+}

@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useRef } from "react";
-import { useDashboardStore } from "../stores/dashboard-store";
+import { useDashboardStore } from "@seosoyoung/soul-ui";
 
 /** pathname에서 세션 ID를 추출합니다. "/" → null, "/sess-abc" → "sess-abc" */
 function extractSessionId(pathname: string): string | null {

@@ -6,8 +6,7 @@
  */
 
 import { useCallback } from "react";
-import { useTheme } from "../hooks/useTheme";
-import { cn } from "../lib/cn";
+import { useTheme, cn } from "@seosoyoung/soul-ui";
 
 /** 컴팩트 테마 토글 — 헤더 우상단 배치용 */
 export function ThemeToggle() {

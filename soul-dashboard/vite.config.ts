@@ -8,7 +8,8 @@ export default defineConfig({
   root: ".",
   resolve: {
     alias: {
-      "@shared": resolve(__dirname, "shared"),
+      "@shared": resolve(__dirname, "../packages/soul-ui/src/shared"),
+      "@seosoyoung/soul-ui": resolve(__dirname, "../packages/soul-ui/src"),
       "client/lib": resolve(__dirname, "client/lib"),
       "client/hooks": resolve(__dirname, "client/hooks"),
       "client/components": resolve(__dirname, "client/components"),
@@ -36,7 +37,8 @@ export default defineConfig({
       "tests/**/*.test.ts",
     ],
     alias: {
-      "@shared": resolve(__dirname, "shared"),
+      "@shared": resolve(__dirname, "../packages/soul-ui/src/shared"),
+      "@seosoyoung/soul-ui": resolve(__dirname, "../packages/soul-ui/src"),
     },
     server: {
       deps: {

@@ -6,16 +6,15 @@
  */
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { useDashboardStore } from "../stores/dashboard-store";
+import { useDashboardStore, type SoulSSEEvent } from "@seosoyoung/soul-ui";
 import { getSessionProvider } from "../providers";
-import type { SoulSSEEvent } from "@shared/types";
 
 interface UseSessionProviderOptions {
   /** 구독할 세션 키. null이면 구독 안 함 */
   sessionKey: string | null;
 }
 
-import { BATCH_SIZE, BATCH_FLUSH_MS } from "../lib/event-batch";
+import { BATCH_SIZE, BATCH_FLUSH_MS } from "@seosoyoung/soul-ui";
 
 type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 
