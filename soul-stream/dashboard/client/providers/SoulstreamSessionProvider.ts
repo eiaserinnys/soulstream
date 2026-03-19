@@ -1,0 +1,73 @@
+/**
+ * SoulstreamSessionProvider — 오케스트레이터 대시보드용 SessionStorageProvider 구현.
+ *
+ * SoulStream API를 통해 특정 노드의 세션에 접근한다.
+ * 개별 세션의 이벤트는 노드의 소울 서버에 프록시되는
+ * /api/sessions/:id/events SSE 엔드포인트를 사용한다.
+ */
+
+import type {
+  SessionStorageProvider,
+  StorageMode,
+  SessionListResult,
+} from "@seosoyoung/soul-ui";
+import type { EventTreeNode, SoulSSEEvent } from "@seosoyoung/soul-ui";
+
+export class SoulstreamSessionProvider implements SessionStorageProvider {
+  readonly mode: StorageMode = "sse";
+
+  async fetchSessions(_sessionType?: string): Promise<SessionListResult> {
+    const res = await fetch("/api/sessions");
+    if (!res.ok) throw new Error(`Failed to fetch sessions: ${res.status}`);
+    const data = await res.json();
+    return {
+      sessions: data.sessions ?? [],
+      total: data.total ?? 0,
+    };
+  }
+
+  async fetchCards(sessionKey: string): Promise<EventTreeNode[]> {
+    // SoulStream은 세션의 카드(이벤트 트리)를 직접 제공하지 않으므로
+    // SSE 스트림에서 증분으로 빌드한다.
+    // 초기 상태는 빈 배열 — subscribe에서 채워진다.
+    return [];
+  }
+
+  subscribe(
+    sessionKey: string,
+    onEvent: (event: SoulSSEEvent, eventId: number) => void,
+    onStatusChange?: (status: "connecting" | "connected" | "error") => void,
+    options?: { lastEventId?: number },
+  ): () => void {
+    onStatusChange?.("connecting");
+
+    let url = `/api/sessions/${sessionKey}/events`;
+    if (options?.lastEventId !== undefined) {
+      url += `?lastEventId=${options.lastEventId}`;
+    }
+
+    const es = new EventSource(url);
+
+    es.onopen = () => {
+      onStatusChange?.("connected");
+    };
+
+    es.onmessage = (e) => {
+      try {
+        const parsed = JSON.parse(e.data);
+        const eventId = e.lastEventId ? parseInt(e.lastEventId, 10) : 0;
+        onEvent(parsed as SoulSSEEvent, eventId);
+      } catch {
+        // 파싱 실패 무시
+      }
+    };
+
+    es.onerror = () => {
+      onStatusChange?.("error");
+    };
+
+    return () => {
+      es.close();
+    };
+  }
+}
