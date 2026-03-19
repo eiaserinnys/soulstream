@@ -114,7 +114,7 @@ class TaskExecutor:
                             "type": "user_message",
                             "user": task.client_id or "unknown",
                             "text": task.prompt,
-                            "context": task.context.get("items") if task.context else None,
+                            "context": task.context_items,
                         }
                         event_id = self._event_store.append(session_id, user_msg_event)
                         user_msg_event["_event_id"] = event_id

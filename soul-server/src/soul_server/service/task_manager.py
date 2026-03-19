@@ -391,6 +391,8 @@ class TaskManager:
         disallowed_tools: Optional[List[str]] = None,
         use_mcp: bool = True,
         context: Optional[dict] = None,
+        context_items: Optional[List[dict]] = None,
+        extra_context_items: Optional[List[dict]] = None,
     ) -> Task:
         """
         새 세션 태스크 생성 또는 기존 세션 resume
@@ -403,6 +405,8 @@ class TaskManager:
             disallowed_tools: 금지 도구 목록
             use_mcp: MCP 서버 연결 여부
             context: 구조화된 맥락 (dict, StructuredContext.model_dump() 결과)
+            context_items: StructuredContext.items에서 추출한 맥락 항목 (Pydantic 검증 완료)
+            extra_context_items: 클라이언트가 직접 전달한 추가 맥락 항목 (raw dict)
 
         Returns:
             Task: 생성되거나 재활성화된 태스크
@@ -410,6 +414,10 @@ class TaskManager:
         Raises:
             TaskConflictError: 해당 세션에 이미 running 태스크가 존재
         """
+        # 두 소스 병합: StructuredContext.items + 클라이언트 직접 전달분
+        merged = (context_items or []) + (extra_context_items or [])
+        effective_context_items = merged or None
+
         is_resume = agent_session_id is not None
 
         if not is_resume:
@@ -446,6 +454,7 @@ class TaskManager:
                 existing.disallowed_tools = disallowed_tools
                 existing.use_mcp = use_mcp
                 existing.context = context
+                existing.context_items = effective_context_items
                 if client_id:
                     existing.client_id = client_id
 
@@ -464,6 +473,7 @@ class TaskManager:
                     disallowed_tools=disallowed_tools,
                     use_mcp=use_mcp,
                     context=context,
+                    context_items=effective_context_items,
                 )
                 self._tasks[agent_session_id] = task
                 logger.info(f"Created new session: {agent_session_id}")
