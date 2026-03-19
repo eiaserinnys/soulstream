@@ -21,6 +21,8 @@ from soul_server.upstream.protocol import (
     EVT_HEALTH_STATUS,
     EVT_NODE_REGISTER,
     EVT_SESSION_CREATED,
+    EVT_SESSION_DELETED,
+    EVT_SESSION_UPDATED,
     EVT_SESSIONS_UPDATE,
 )
 
@@ -35,10 +37,19 @@ def _make_mock_task(agent_session_id: str = "test-session-1"):
     return task
 
 
+def _make_broadcaster():
+    """테스트용 SessionBroadcaster mock 생성."""
+    broadcaster = MagicMock()
+    broadcaster.add_listener = AsyncMock()
+    broadcaster.remove_listener = AsyncMock()
+    return broadcaster
+
+
 def _make_adapter(
     task_manager: MagicMock | None = None,
     soul_engine: MagicMock | None = None,
     resource_manager: MagicMock | None = None,
+    session_broadcaster: MagicMock | None = None,
 ) -> UpstreamAdapter:
     """테스트용 UpstreamAdapter 인스턴스 생성."""
     tm = task_manager or MagicMock()
@@ -46,11 +57,13 @@ def _make_adapter(
     rm = resource_manager or MagicMock()
     rm.max_concurrent = 3
     rm.get_stats.return_value = {"active": 1, "available": 2, "max": 3}
+    bc = session_broadcaster or _make_broadcaster()
 
     return UpstreamAdapter(
         task_manager=tm,
         soul_engine=se,
         resource_manager=rm,
+        session_broadcaster=bc,
         upstream_url="ws://localhost:5200/ws/node",
         node_id="test-node",
         host="localhost",
@@ -409,6 +422,220 @@ class TestShutdown:
         mock_task.cancel.assert_called_once()
         assert len(adapter._stream_tasks) == 0
         adapter._session.close.assert_awaited_once()
+
+
+class TestInitialSessionSync:
+    """연결 직후 초기 세션 전송 테스트."""
+
+    @pytest.mark.asyncio
+    async def test_send_initial_sessions(self):
+        """_send_initial_sessions가 현재 세션 목록을 sessions_update로 전송."""
+        tm = MagicMock()
+        tm.get_all_sessions.return_value = (
+            [
+                {"agent_session_id": "s1", "status": "running"},
+                {"agent_session_id": "s2", "status": "completed"},
+            ],
+            2,
+        )
+
+        adapter = _make_adapter(task_manager=tm)
+        adapter._ws = MagicMock()
+        adapter._ws.closed = False
+        adapter._ws.send_json = AsyncMock()
+
+        await adapter._send_initial_sessions()
+
+        sent = adapter._ws.send_json.call_args.args[0]
+        assert sent["type"] == EVT_SESSIONS_UPDATE
+        assert len(sent["sessions"]) == 2
+        assert sent["total"] == 2
+
+    @pytest.mark.asyncio
+    async def test_send_initial_sessions_empty(self):
+        """세션이 없을 때도 빈 목록을 정상 전송."""
+        tm = MagicMock()
+        tm.get_all_sessions.return_value = ([], 0)
+
+        adapter = _make_adapter(task_manager=tm)
+        adapter._ws = MagicMock()
+        adapter._ws.closed = False
+        adapter._ws.send_json = AsyncMock()
+
+        await adapter._send_initial_sessions()
+
+        sent = adapter._ws.send_json.call_args.args[0]
+        assert sent["type"] == EVT_SESSIONS_UPDATE
+        assert sent["sessions"] == []
+        assert sent["total"] == 0
+
+
+class TestBroadcastSessionChanges:
+    """SessionBroadcaster 이벤트 → 오케스트레이터 전달 테스트."""
+
+    @pytest.mark.asyncio
+    async def test_forwards_session_created(self):
+        """session_created 이벤트를 session_id 포함하여 전달."""
+        adapter = _make_adapter()
+        adapter._ws = MagicMock()
+        adapter._ws.closed = False
+        adapter._ws.send_json = AsyncMock()
+        adapter._running = True
+        adapter._broadcast_queue = asyncio.Queue()
+
+        # 이벤트를 큐에 넣고 running을 False로 바꿔 루프 종료
+        await adapter._broadcast_queue.put({
+            "type": "session_created",
+            "session": {
+                "agent_session_id": "new-session-1",
+                "status": "running",
+                "prompt": "Hello",
+            },
+        })
+
+        async def _stop_after_one():
+            await asyncio.sleep(0.05)
+            adapter._running = False
+
+        asyncio.create_task(_stop_after_one())
+        await adapter._broadcast_session_changes()
+
+        sent = adapter._ws.send_json.call_args.args[0]
+        assert sent["type"] == EVT_SESSION_CREATED
+        assert sent["session_id"] == "new-session-1"
+        assert sent["session"]["agent_session_id"] == "new-session-1"
+
+    @pytest.mark.asyncio
+    async def test_forwards_session_updated(self):
+        """session_updated 이벤트를 그대로 전달."""
+        adapter = _make_adapter()
+        adapter._ws = MagicMock()
+        adapter._ws.closed = False
+        adapter._ws.send_json = AsyncMock()
+        adapter._running = True
+        adapter._broadcast_queue = asyncio.Queue()
+
+        await adapter._broadcast_queue.put({
+            "type": "session_updated",
+            "agent_session_id": "session-1",
+            "status": "completed",
+            "updated_at": "2026-03-20T08:00:00Z",
+        })
+
+        async def _stop_after_one():
+            await asyncio.sleep(0.05)
+            adapter._running = False
+
+        asyncio.create_task(_stop_after_one())
+        await adapter._broadcast_session_changes()
+
+        sent = adapter._ws.send_json.call_args.args[0]
+        assert sent["type"] == EVT_SESSION_UPDATED
+        assert sent["agent_session_id"] == "session-1"
+        assert sent["status"] == "completed"
+
+    @pytest.mark.asyncio
+    async def test_forwards_session_updated_with_last_message(self):
+        """last_message 포함 session_updated 이벤트 전달."""
+        adapter = _make_adapter()
+        adapter._ws = MagicMock()
+        adapter._ws.closed = False
+        adapter._ws.send_json = AsyncMock()
+        adapter._running = True
+        adapter._broadcast_queue = asyncio.Queue()
+
+        await adapter._broadcast_queue.put({
+            "type": "session_updated",
+            "agent_session_id": "session-1",
+            "status": "running",
+            "updated_at": "2026-03-20T08:00:00Z",
+            "last_message": {
+                "type": "text",
+                "preview": "Working on it...",
+                "timestamp": "2026-03-20T08:00:00Z",
+            },
+        })
+
+        async def _stop_after_one():
+            await asyncio.sleep(0.05)
+            adapter._running = False
+
+        asyncio.create_task(_stop_after_one())
+        await adapter._broadcast_session_changes()
+
+        sent = adapter._ws.send_json.call_args.args[0]
+        assert sent["type"] == EVT_SESSION_UPDATED
+        assert sent["last_message"]["preview"] == "Working on it..."
+
+    @pytest.mark.asyncio
+    async def test_forwards_session_deleted(self):
+        """session_deleted 이벤트를 그대로 전달."""
+        adapter = _make_adapter()
+        adapter._ws = MagicMock()
+        adapter._ws.closed = False
+        adapter._ws.send_json = AsyncMock()
+        adapter._running = True
+        adapter._broadcast_queue = asyncio.Queue()
+
+        await adapter._broadcast_queue.put({
+            "type": "session_deleted",
+            "agent_session_id": "session-to-delete",
+        })
+
+        async def _stop_after_one():
+            await asyncio.sleep(0.05)
+            adapter._running = False
+
+        asyncio.create_task(_stop_after_one())
+        await adapter._broadcast_session_changes()
+
+        sent = adapter._ws.send_json.call_args.args[0]
+        assert sent["type"] == EVT_SESSION_DELETED
+        assert sent["agent_session_id"] == "session-to-delete"
+
+
+class TestStartStopBroadcast:
+    """broadcast 리스너 등록/해제 라이프사이클 테스트."""
+
+    @pytest.mark.asyncio
+    async def test_start_broadcast_registers_listener(self):
+        """_start_broadcast가 broadcaster에 리스너를 등록."""
+        bc = _make_broadcaster()
+        adapter = _make_adapter(session_broadcaster=bc)
+        adapter._running = True
+
+        await adapter._start_broadcast()
+
+        bc.add_listener.assert_awaited_once()
+        assert adapter._broadcast_queue is not None
+        assert adapter._broadcast_task is not None
+
+        # 정리
+        adapter._running = False
+        await adapter._stop_broadcast()
+
+    @pytest.mark.asyncio
+    async def test_stop_broadcast_removes_listener(self):
+        """_stop_broadcast가 broadcaster에서 리스너를 제거."""
+        bc = _make_broadcaster()
+        adapter = _make_adapter(session_broadcaster=bc)
+        adapter._running = True
+
+        await adapter._start_broadcast()
+        queue_ref = adapter._broadcast_queue
+
+        adapter._running = False
+        await adapter._stop_broadcast()
+
+        bc.remove_listener.assert_awaited_once_with(queue_ref)
+        assert adapter._broadcast_queue is None
+        assert adapter._broadcast_task is None
+
+    @pytest.mark.asyncio
+    async def test_stop_broadcast_idempotent(self):
+        """broadcast가 없는 상태에서 _stop_broadcast 호출해도 에러 없음."""
+        adapter = _make_adapter()
+        await adapter._stop_broadcast()  # 에러 없이 통과
 
 
 class TestCommandErrorHandling:
