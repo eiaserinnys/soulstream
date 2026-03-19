@@ -198,8 +198,8 @@ const test = base.extend<
       });
 
       // Config / Health
-      app.get("/api/config", (_req, res) =>
-        res.json({ serendipityAvailable: false }),
+      app.get("/api/config/settings", (_req, res) =>
+        res.json({ serendipityAvailable: false, categories: [] }),
       );
       app.get("/api/auth/config", (_req, res) =>
         res.json({ authEnabled: false, devModeEnabled: true }),
