@@ -2,6 +2,9 @@
 @import "tw-animate-css";
 @import "@seosoyoung/soul-ui/styles/globals.css";
 
+/* Tailwind v4 — soul-ui 컴포넌트 소스를 명시적으로 스캔 대상에 추가 */
+@source "../../packages/soul-ui/src";
+
 /* ============================================================
  * Soul Dashboard — dashboard-specific styles
  * Theme tokens, semantic colors, base layer, keyframes, and
