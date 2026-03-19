@@ -6,8 +6,7 @@
  */
 
 import { useEffect, useRef, useCallback } from "react";
-import { useDashboardStore } from "../stores/dashboard-store";
-import type { SessionStreamEvent, SessionStatus } from "@shared/types";
+import { useDashboardStore, type SessionStreamEvent, type SessionStatus } from "@seosoyoung/soul-ui";
 
 interface UseSessionListOptions {
   /** SSE 구독 활성화. 기본 true */
