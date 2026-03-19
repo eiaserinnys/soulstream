@@ -283,6 +283,17 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("  LLM proxy skipped: no API keys configured")
 
+    # SPA 정적 파일 서빙 — LLM 라우터 등록 이후에 마운트한다.
+    # StaticFiles를 "/" 에 먼저 마운트하면 Starlette 라우팅이 삽입 순서대로 매칭하므로
+    # POST /llm/completions 같은 API 요청을 StaticFiles가 가로채 405를 반환하게 된다.
+    _dashboard_dir_str = os.environ.get("SOUL_DASHBOARD_DIR", "dist/client")
+    _dashboard_dir = Path(_dashboard_dir_str)
+    if not _dashboard_dir.is_absolute():
+        _dashboard_dir = Path.cwd() / _dashboard_dir
+    if _dashboard_dir.exists():
+        app.mount("/", StaticFiles(directory=str(_dashboard_dir), html=True), name="spa")
+        logger.info(f"  Dashboard SPA mounted: {_dashboard_dir}")
+
     # Dashboard app.state 초기화 (api_router.py에서 접근)
     app.state.runner_pool = pool
     app.state.llm_executor = _llm_executor if llm_adapters else None
@@ -508,32 +519,24 @@ app.include_router(dash_auth_router)
 # api_router.py 내부에서 이미 올바른 순서로 정의되어 있음
 app.include_router(dash_api_router)
 
-# SPA 정적 파일 서빙 (모든 include_router 이후에 마운트 — /api/* 경로 가로채기 방지)
-# StaticFiles(html=True)는 실제 파일이 있는 경로만 서빙하고, /sess-xxx 같은
-# 클라이언트 라우트는 404를 반환한다. SPA fallback을 위해 catch-all 핸들러를 추가한다.
-_dashboard_dir_str = os.environ.get("SOUL_DASHBOARD_DIR", "dist/client")
-_dashboard_dir = Path(_dashboard_dir_str)
-if not _dashboard_dir.is_absolute():
-    _dashboard_dir = Path.cwd() / _dashboard_dir
-if _dashboard_dir.exists():
-    _index_html = _dashboard_dir / "index.html"
-
-    @app.middleware("http")
-    async def spa_fallback(request: Request, call_next):
-        """SPA fallback — /api/* 이외의 경로에서 404 발생 시 index.html을 반환한다."""
-        response = await call_next(request)
-        if (
-            response.status_code == 404
-            and request.method == "GET"
-            and not request.url.path.startswith("/api/")
-            and _index_html.exists()
-        ):
+# SPA fallback 미들웨어 — /sess-xxx 같은 클라이언트 라우트에서 index.html을 반환한다.
+# StaticFiles(html=True)가 /sess-xxx 에 대해 404를 반환할 때 index.html로 폴백한다.
+@app.middleware("http")
+async def spa_fallback(request: Request, call_next):
+    """SPA fallback — /api/* 이외의 경로에서 404 발생 시 index.html을 반환한다."""
+    response = await call_next(request)
+    if (
+        response.status_code == 404
+        and request.method == "GET"
+        and not request.url.path.startswith("/api/")
+    ):
+        _d = os.environ.get("SOUL_DASHBOARD_DIR", "dist/client")
+        _p = Path(_d) if Path(_d).is_absolute() else Path.cwd() / _d
+        _idx = _p / "index.html"
+        if _idx.exists():
             from starlette.responses import HTMLResponse
-            return HTMLResponse(_index_html.read_text())
-        return response
-
-    app.mount("/", StaticFiles(directory=str(_dashboard_dir), html=True), name="spa")
-    logger.info(f"Dashboard SPA mounted: {_dashboard_dir}")
+            return HTMLResponse(_idx.read_text())
+    return response
 
 
 # === Exception Handlers ===
