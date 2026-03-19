@@ -4,11 +4,3 @@
 
 /* Tailwind v4 — soul-ui 컴포넌트 소스를 명시적으로 스캔 대상에 추가 */
 @source "../../../packages/soul-ui/src";
-
-/* Orchestrator-specific overrides */
-@layer base {
-  body {
-    overflow: hidden;
-    background: var(--background);
-  }
-}

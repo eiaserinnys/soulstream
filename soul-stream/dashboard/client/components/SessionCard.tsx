@@ -2,37 +2,22 @@
  * SessionCard — 세션 카드. 세션 ID, 상태 표시.
  */
 
+import { Badge, cn } from "@seosoyoung/soul-ui";
 import type { OrchestratorSession } from "../store/types";
 
-function statusDotClass(status: OrchestratorSession["status"]): string {
-  switch (status) {
-    case "running":
-      return "bg-success animate-pulse";
-    case "idle":
-      return "bg-accent-amber";
-    case "completed":
-      return "bg-muted-foreground/30";
-    case "error":
-      return "bg-destructive";
-    default:
-      return "bg-muted-foreground/30";
-  }
+interface StatusConfig {
+  label: string;
+  badgeVariant: "success" | "warning" | "outline" | "error";
+  dotClass: string;
+  animate: boolean;
 }
 
-function statusColor(status: OrchestratorSession["status"]): string {
-  switch (status) {
-    case "running":
-      return "text-success";
-    case "idle":
-      return "text-accent-amber";
-    case "completed":
-      return "text-muted-foreground/50";
-    case "error":
-      return "text-destructive";
-    default:
-      return "text-muted-foreground/50";
-  }
-}
+const STATUS_CONFIG: Record<string, StatusConfig> = {
+  running:   { label: "Running",   badgeVariant: "success", dotClass: "bg-success",          animate: true },
+  idle:      { label: "Idle",      badgeVariant: "warning", dotClass: "bg-accent-amber",     animate: false },
+  completed: { label: "Done",      badgeVariant: "outline", dotClass: "bg-muted-foreground", animate: false },
+  error:     { label: "Error",     badgeVariant: "error",   dotClass: "bg-accent-red",       animate: false },
+};
 
 interface SessionCardProps {
   session: OrchestratorSession;
@@ -47,6 +32,8 @@ export function SessionCard({
   isActive,
   onClick,
 }: SessionCardProps) {
+  const config = STATUS_CONFIG[session.status] ?? STATUS_CONFIG.completed;
+
   // 세션 ID 축약 표시
   const shortId =
     session.sessionId.length > 20
@@ -55,13 +42,14 @@ export function SessionCard({
 
   return (
     <div
-      className={`bg-card border rounded-[10px] px-3 py-2.5 cursor-pointer transition-colors shrink-0 border-l-[3px] ${
+      className={cn(
+        "bg-card border rounded-[10px] px-3 py-2.5 cursor-pointer transition-colors shrink-0 border-l-[3px] hover:bg-muted",
         isSelected
           ? "border-l-accent-blue bg-accent-blue/[0.06] border-accent-blue/15"
           : isActive
             ? "border-l-success border-border"
-            : "border-l-transparent border-border"
-      } hover:bg-muted`}
+            : "border-l-transparent border-border",
+      )}
       onClick={onClick}
     >
       {/* Top: session ID + status */}
@@ -69,16 +57,16 @@ export function SessionCard({
         <span className="text-xs font-mono font-medium text-foreground tracking-wide">
           {shortId}
         </span>
-        <div className="flex items-center gap-1">
-          <div
-            className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusDotClass(session.status)}`}
-          />
+        <Badge variant={config.badgeVariant} size="sm">
           <span
-            className={`text-[10px] font-mono uppercase tracking-wider ${statusColor(session.status)}`}
-          >
-            {session.status}
-          </span>
-        </div>
+            className={cn(
+              "w-1.5 h-1.5 rounded-full",
+              config.dotClass,
+              config.animate && "animate-[pulse_2s_infinite]",
+            )}
+          />
+          {config.label}
+        </Badge>
       </div>
 
       {/* Node ID */}
