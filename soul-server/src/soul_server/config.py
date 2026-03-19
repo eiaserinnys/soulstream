@@ -137,6 +137,11 @@ class Settings:
     allowed_email: str = ""
     jwt_secret: str = ""
 
+    # Upstream (소울스트림 연결 — 미설정 시 독립 실행 모드)
+    soulstream_upstream_url: str = ""          # ws://soulstream-host:5200/ws/node
+    soulstream_node_id: str = ""               # 노드 식별자 (예: soul-alpha)
+    soulstream_upstream_enabled: bool = False   # False면 독립 실행 모드
+
     # Dashboard profile (선택 사항 — 미설정 시 기본 이름 표시, 초상화 없음)
     dash_user_name: str = "USER"
     dash_user_id: str = ""
@@ -218,6 +223,12 @@ class Settings:
             # LLM Proxy
             llm_openai_api_key=os.getenv("LLM_OPENAI_API_KEY", ""),
             llm_anthropic_api_key=os.getenv("LLM_ANTHROPIC_API_KEY", ""),
+            # Upstream (소울스트림 연결)
+            soulstream_upstream_url=os.getenv("SOULSTREAM_UPSTREAM_URL", ""),
+            soulstream_node_id=os.getenv("SOULSTREAM_NODE_ID", ""),
+            soulstream_upstream_enabled=os.getenv(
+                "SOULSTREAM_UPSTREAM_ENABLED", "false"
+            ).lower() in ("true", "1", "yes"),
             # Google OAuth
             google_client_id=os.getenv("GOOGLE_CLIENT_ID", ""),
             google_client_secret=os.getenv("GOOGLE_CLIENT_SECRET", ""),
@@ -253,6 +264,12 @@ class Settings:
                 )
             if not self.allowed_email:
                 missing.append("ALLOWED_EMAIL")
+        # Upstream 활성 시 필수 변수 검증
+        if self.soulstream_upstream_enabled:
+            if not self.soulstream_upstream_url:
+                missing.append("SOULSTREAM_UPSTREAM_URL")
+            if not self.soulstream_node_id:
+                missing.append("SOULSTREAM_NODE_ID")
         if missing:
             raise RuntimeError(
                 f"필수 환경변수 누락: {', '.join(missing)}. "
