@@ -24,6 +24,7 @@ function toLlmUsage(raw: unknown): LlmUsage | undefined {
  * session_type을 보냅니다. eventCount는 포함하지 않을 수 있습니다.
  */
 export function toSessionSummary(raw: Record<string, unknown>): SessionSummary {
+  const lastMsg = (raw.last_message ?? raw.lastMessage) as Record<string, unknown> | undefined;
   return {
     agentSessionId: (raw.agent_session_id ?? raw.agentSessionId) as string,
     status: (raw.status as SessionStatus) ?? "unknown",
@@ -32,6 +33,11 @@ export function toSessionSummary(raw: Record<string, unknown>): SessionSummary {
     updatedAt: (raw.updated_at ?? raw.updatedAt) as string | undefined,
     completedAt: (raw.completed_at ?? raw.completedAt) as string | undefined,
     prompt: raw.prompt as string | undefined,
+    lastMessage: lastMsg ? {
+      type: lastMsg.type as string,
+      preview: lastMsg.preview as string,
+      timestamp: lastMsg.timestamp as string,
+    } : undefined,
     sessionType: (raw.session_type ?? raw.sessionType) as "claude" | "llm" | undefined,
     llmProvider: (raw.llm_provider ?? raw.llmProvider) as string | undefined,
     llmModel: (raw.llm_model ?? raw.llmModel) as string | undefined,

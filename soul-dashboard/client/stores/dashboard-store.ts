@@ -138,7 +138,7 @@ export interface DashboardActions {
   addSession: (session: SessionSummary) => void;
   updateSession: (
     agentSessionId: string,
-    updates: Partial<Pick<SessionSummary, "status" | "updatedAt" | "completedAt" | "eventCount" | "lastEventType">>
+    updates: Partial<Pick<SessionSummary, "status" | "updatedAt" | "completedAt" | "eventCount" | "lastEventType" | "lastMessage">>
   ) => void;
   removeSession: (agentSessionId: string) => void;
   setSessionsLoading: (loading: boolean) => void;
