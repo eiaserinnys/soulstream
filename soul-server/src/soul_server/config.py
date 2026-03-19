@@ -14,7 +14,9 @@ from typing import Optional
 
 from dotenv import load_dotenv
 
-load_dotenv()
+# find_dotenv()는 소스 코드 경로 기준으로 탐색하므로 CWD의 .env를 찾지 못한다.
+# 서비스 CWD의 .env를 명시적으로 로드한다.
+load_dotenv(dotenv_path=Path.cwd() / ".env")
 
 
 def _parse_int(value: str, name: str) -> int:
