@@ -41,6 +41,7 @@ from soul_server.service.session_broadcaster import get_session_broadcaster
 PREVIEW_FIELD_MAP = {
     "intervention": "text",
     "thinking": "thinking",
+    "text": "text",
     "result": "result",
     "complete": "result",
     "error": "error",
@@ -690,6 +691,23 @@ class TaskManager:
             self._catalog.update_last_message(
                 agent_session_id, event_type, text[:200], ts_str
             )
+            # 세션 리스트 브로드캐스트: 클라이언트에 last_message 변경 통지
+            try:
+                task = self._tasks.get(agent_session_id)
+                status = task.status.value if task else "unknown"
+                broadcaster = get_session_broadcaster()
+                await broadcaster.emit_session_message_updated(
+                    agent_session_id=agent_session_id,
+                    status=status,
+                    updated_at=ts_str,
+                    last_message={
+                        "type": event_type,
+                        "preview": text[:200],
+                        "timestamp": ts_str,
+                    },
+                )
+            except Exception:
+                logger.debug("session list broadcast skipped (broadcaster not ready)")
 
         return await self._listener_manager.broadcast(agent_session_id, event)
 

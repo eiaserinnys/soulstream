@@ -334,3 +334,99 @@ class TestStats:
         assert stats["completed"] == 1
         assert stats["error"] == 0
         assert stats["eviction_candidates"] == 1
+
+
+from unittest.mock import AsyncMock, patch, MagicMock
+from soul_server.service.session_broadcaster import (
+    SessionBroadcaster,
+    set_session_broadcaster,
+)
+
+
+class TestBroadcastSessionListUpdate:
+    """broadcast()에서 readable event 시 세션 리스트 브로드캐스트 테스트"""
+
+    @pytest.fixture
+    def mock_broadcaster(self):
+        """mock SessionBroadcaster를 설정하고 반환"""
+        broadcaster = MagicMock(spec=SessionBroadcaster)
+        broadcaster.emit_session_message_updated = AsyncMock(return_value=1)
+        set_session_broadcaster(broadcaster)
+        yield broadcaster
+        set_session_broadcaster(None)
+
+    async def test_readable_event_triggers_session_list_broadcast(
+        self, manager, mock_broadcaster
+    ):
+        """readable event(thinking)가 emit_session_message_updated를 호출한다"""
+        await manager.create_task(prompt="hello", agent_session_id="sess-1")
+
+        event = {"type": "thinking", "thinking": "분석 중입니다...", "timestamp": "2026-03-20T01:00:00+00:00"}
+        await manager.broadcast("sess-1", event)
+
+        mock_broadcaster.emit_session_message_updated.assert_called_once()
+        call_kwargs = mock_broadcaster.emit_session_message_updated.call_args.kwargs
+        assert call_kwargs["agent_session_id"] == "sess-1"
+        assert call_kwargs["status"] == "running"
+        assert call_kwargs["last_message"]["type"] == "thinking"
+        assert call_kwargs["last_message"]["preview"] == "분석 중입니다..."
+
+    async def test_text_event_triggers_session_list_broadcast(
+        self, manager, mock_broadcaster
+    ):
+        """text 이벤트가 emit_session_message_updated를 호출한다"""
+        await manager.create_task(prompt="hello", agent_session_id="sess-1")
+
+        event = {"type": "text", "text": "응답 내용", "timestamp": "2026-03-20T01:00:00+00:00"}
+        await manager.broadcast("sess-1", event)
+
+        mock_broadcaster.emit_session_message_updated.assert_called_once()
+        call_kwargs = mock_broadcaster.emit_session_message_updated.call_args.kwargs
+        assert call_kwargs["last_message"]["type"] == "text"
+        assert call_kwargs["last_message"]["preview"] == "응답 내용"
+
+    async def test_empty_text_does_not_trigger_broadcast(
+        self, manager, mock_broadcaster
+    ):
+        """text가 빈 이벤트에서는 emit_session_message_updated가 호출되지 않는다"""
+        await manager.create_task(prompt="hello", agent_session_id="sess-1")
+
+        event = {"type": "thinking", "thinking": ""}
+        await manager.broadcast("sess-1", event)
+
+        mock_broadcaster.emit_session_message_updated.assert_not_called()
+
+    async def test_unrecognized_event_does_not_trigger_broadcast(
+        self, manager, mock_broadcaster
+    ):
+        """PREVIEW_FIELD_MAP에 없는 이벤트는 브로드캐스트하지 않는다"""
+        await manager.create_task(prompt="hello", agent_session_id="sess-1")
+
+        event = {"type": "tool_start", "tool": "some_tool"}
+        await manager.broadcast("sess-1", event)
+
+        mock_broadcaster.emit_session_message_updated.assert_not_called()
+
+    async def test_broadcaster_not_initialized_does_not_crash(self, manager):
+        """broadcaster가 초기화되지 않아도 broadcast()는 정상 동작한다"""
+        set_session_broadcaster(None)
+        await manager.create_task(prompt="hello", agent_session_id="sess-1")
+
+        event = {"type": "thinking", "thinking": "테스트", "timestamp": "2026-03-20T01:00:00+00:00"}
+        # 예외 없이 정상 반환해야 한다
+        result = await manager.broadcast("sess-1", event)
+        assert isinstance(result, int)
+
+    async def test_user_message_triggers_broadcast(
+        self, manager, mock_broadcaster
+    ):
+        """user_message 이벤트도 last_message를 브로드캐스트한다"""
+        await manager.create_task(prompt="hello", agent_session_id="sess-1")
+
+        event = {"type": "user_message", "text": "사용자 입력", "timestamp": "2026-03-20T01:00:00+00:00"}
+        await manager.broadcast("sess-1", event)
+
+        mock_broadcaster.emit_session_message_updated.assert_called_once()
+        call_kwargs = mock_broadcaster.emit_session_message_updated.call_args.kwargs
+        assert call_kwargs["last_message"]["type"] == "user_message"
+        assert call_kwargs["last_message"]["preview"] == "사용자 입력"
