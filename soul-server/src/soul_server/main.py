@@ -307,10 +307,45 @@ async def lifespan(app: FastAPI):
     _cleanup_task = asyncio.create_task(periodic_cleanup())
     logger.info("  Started periodic cleanup task")
 
+    # UpstreamAdapter 시작 (소울스트림 연결)
+    upstream_adapter = None
+    upstream_task = None
+    if settings.soulstream_upstream_enabled:
+        from soul_server.upstream import UpstreamAdapter
+
+        upstream_adapter = UpstreamAdapter(
+            task_manager=task_manager,
+            soul_engine=get_soul_engine(),
+            resource_manager=resource_manager,
+            upstream_url=settings.soulstream_upstream_url,
+            node_id=settings.soulstream_node_id,
+            host=settings.host,
+            port=settings.port,
+        )
+        upstream_task = asyncio.create_task(upstream_adapter.run())
+        logger.info(
+            "  UpstreamAdapter started: url=%s, node_id=%s",
+            settings.soulstream_upstream_url,
+            settings.soulstream_node_id,
+        )
+    else:
+        logger.info("  UpstreamAdapter disabled (standalone mode)")
+
     yield
 
     # Shutdown
     logger.info("Soulstream shutting down...")
+
+    # UpstreamAdapter 종료
+    if upstream_adapter:
+        await upstream_adapter.shutdown()
+        if upstream_task:
+            upstream_task.cancel()
+            try:
+                await upstream_task
+            except asyncio.CancelledError:
+                pass
+        logger.info("  UpstreamAdapter stopped")
 
     # 주기적 정리 태스크 중지
     if _cleanup_task:
