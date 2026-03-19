@@ -1792,4 +1792,107 @@ describe("dashboard-store", () => {
       expect(state.lastEventId).toBe(0);
     });
   });
+
+  // === Dedup 가드 테스트 ===
+
+  describe("dedup guard", () => {
+    it("processEvent should skip events with eventId <= lastEventId", () => {
+      const store = useDashboardStore.getState();
+
+      // 먼저 세션 설정
+      store.setSessions([
+        { agentSessionId: "sess-dedup", status: "running", eventCount: 0, createdAt: "2026-01-01T00:00:00Z" },
+      ]);
+      store.setActiveSession("sess-dedup");
+
+      // 이벤트를 처리하여 lastEventId를 5로 설정
+      const userMsg: UserMessageEvent = { type: "user_message", user: "test", text: "hello", timestamp: 0 };
+      store.processEvent(userMsg, 5);
+      expect(useDashboardStore.getState().lastEventId).toBe(5);
+
+      // treeVersion 기록
+      const versionBefore = useDashboardStore.getState().treeVersion;
+
+      // eventId=3 (이미 처리된 것) → 건너뛰어야 함
+      const textStart: TextStartEvent = { type: "text_start", timestamp: 0 };
+      store.processEvent(textStart, 3);
+
+      // treeVersion이 변하지 않아야 함 (노드가 추가되지 않음)
+      expect(useDashboardStore.getState().treeVersion).toBe(versionBefore);
+      expect(useDashboardStore.getState().lastEventId).toBe(5); // 변하지 않음
+    });
+
+    it("processEvent should allow eventId=0 (history_sync)", () => {
+      const store = useDashboardStore.getState();
+
+      store.setSessions([
+        { agentSessionId: "sess-dedup2", status: "running", eventCount: 0, createdAt: "2026-01-01T00:00:00Z" },
+      ]);
+      store.setActiveSession("sess-dedup2");
+
+      // lastEventId를 10으로 설정
+      const userMsg: UserMessageEvent = { type: "user_message", user: "test", text: "hello", timestamp: 0 };
+      store.processEvent(userMsg, 10);
+      expect(useDashboardStore.getState().lastEventId).toBe(10);
+
+      // history_sync (eventId=0) → 건너뛰지 않아야 함
+      const historySync = { type: "history_sync", last_event_id: 10, is_live: true } as unknown as import("../../shared/types").SoulSSEEvent;
+      store.processEvent(historySync, 0);
+
+      // lastEventId는 그대로 (history_sync는 eventId=0)
+      // 중요한 것은 에러 없이 처리되는 것
+      expect(useDashboardStore.getState().lastEventId).toBe(10);
+    });
+
+    it("processEvents batch should skip duplicate events", () => {
+      const store = useDashboardStore.getState();
+
+      store.setSessions([
+        { agentSessionId: "sess-batch", status: "running", eventCount: 0, createdAt: "2026-01-01T00:00:00Z" },
+      ]);
+      store.setActiveSession("sess-batch");
+
+      // lastEventId를 5로 설정
+      const userMsg: UserMessageEvent = { type: "user_message", user: "test", text: "hello", timestamp: 0 };
+      store.processEvent(userMsg, 5);
+
+      const versionBefore = useDashboardStore.getState().treeVersion;
+
+      // 배치: eventId 3, 4 (이미 처리됨) + 6, 7 (새 이벤트)
+      store.processEvents([
+        { event: { type: "text_start", timestamp: 0 } as TextStartEvent, eventId: 3 },
+        { event: { type: "text_delta", text: "dup", timestamp: 0 } as TextDeltaEvent, eventId: 4 },
+        { event: { type: "text_start", timestamp: 0 } as TextStartEvent, eventId: 6 },
+        { event: { type: "text_delta", text: "new", timestamp: 0 } as TextDeltaEvent, eventId: 7 },
+      ]);
+
+      // lastEventId는 7이어야 함 (새 이벤트의 최대값)
+      expect(useDashboardStore.getState().lastEventId).toBe(7);
+      // treeVersion은 증가해야 함 (새 이벤트가 처리됨)
+      expect(useDashboardStore.getState().treeVersion).toBeGreaterThan(versionBefore);
+    });
+
+    it("processEvents batch should handle history_sync with eventId=0", () => {
+      const store = useDashboardStore.getState();
+
+      store.setSessions([
+        { agentSessionId: "sess-sync", status: "running", eventCount: 0, createdAt: "2026-01-01T00:00:00Z" },
+      ]);
+      store.setActiveSession("sess-sync");
+
+      // lastEventId를 5로 설정
+      store.processEvent(
+        { type: "user_message", user: "test", text: "hello", timestamp: 0 } as UserMessageEvent,
+        5,
+      );
+
+      // history_sync (eventId=0)를 배치로 처리 → 건너뛰지 않아야 함
+      store.processEvents([
+        { event: { type: "history_sync", last_event_id: 5, is_live: true } as unknown as import("../../shared/types").SoulSSEEvent, eventId: 0 },
+      ]);
+
+      // 에러 없이 처리되고, processingCtx.historySynced가 true가 되어야 함
+      expect(useDashboardStore.getState().processingCtx.historySynced).toBe(true);
+    });
+  });
 });

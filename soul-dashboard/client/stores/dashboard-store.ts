@@ -414,6 +414,13 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
 
       processEvent: (event, eventId) => {
         const state = get();
+
+        // Dedup: 이미 처리한 이벤트 건너뛰기 (resume/reconnect 시 중복 방지)
+        // history_sync는 eventId=0이므로 이 가드에 걸리지 않는다
+        if (eventId > 0 && eventId <= state.lastEventId) {
+          return;
+        }
+
         const ctx = state.processingCtx;
         let root = state.tree;
 
@@ -438,7 +445,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
             }
           }
 
-          set({ lastEventId: eventId, ...sessionsUpdate });
+          set({ ...(eventId > 0 ? { lastEventId: eventId } : {}), ...sessionsUpdate });
           return;
         }
 
@@ -526,6 +533,10 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         const notifications: SoulSSEEvent[] = [];
 
         for (const { event, eventId } of events) {
+          // Dedup: 이미 처리한 이벤트 건너뛰기 (resume/reconnect 시 중복 방지)
+          if (eventId > 0 && eventId <= state.lastEventId) {
+            continue;
+          }
           if (eventId > maxEventId) maxEventId = eventId;
 
           // history_sync 이벤트
