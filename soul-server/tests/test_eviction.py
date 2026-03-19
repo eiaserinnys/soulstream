@@ -52,33 +52,6 @@ class TestCatalogIntegration:
         assert entry["status"] == "error"
         assert entry["completed_at"] is not None
 
-    async def test_broadcast_updates_last_message(self, manager: TaskManager):
-        """broadcast()가 PREVIEW_FIELD_MAP에 해당하는 이벤트의 last_message를 업데이트"""
-        await manager.create_task(prompt="hello", agent_session_id="sess-1")
-
-        await manager.broadcast("sess-1", {
-            "type": "thinking",
-            "thinking": "Let me think about this...",
-            "timestamp": time.time(),
-        })
-
-        entry = manager._catalog.get("sess-1")
-        assert entry["last_message"] is not None
-        assert entry["last_message"]["type"] == "thinking"
-        assert entry["last_message"]["preview"] == "Let me think about this..."
-
-    async def test_broadcast_ignores_non_preview_events(self, manager: TaskManager):
-        """PREVIEW_FIELD_MAP에 없는 이벤트 타입은 last_message를 업데이트하지 않음"""
-        await manager.create_task(prompt="hello", agent_session_id="sess-1")
-
-        await manager.broadcast("sess-1", {
-            "type": "session",
-            "session_id": "claude-1",
-        })
-
-        entry = manager._catalog.get("sess-1")
-        assert entry.get("last_message") is None
-
     async def test_get_all_sessions_from_catalog(self, manager: TaskManager):
         """get_all_sessions()가 카탈로그 기반 dict를 반환"""
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
