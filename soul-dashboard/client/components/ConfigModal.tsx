@@ -7,7 +7,7 @@
  * read_only disabled, hot_reloadable 구분을 제공합니다.
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogPopup,
@@ -315,7 +315,12 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
         const initial: Record<string, string> = {};
         for (const cat of data.categories) {
           for (const field of cat.fields) {
-            initial[field.key] = String(field.value ?? "");
+            let v = String(field.value ?? "");
+            // bool 값 정규화: Python "True"/"False" → "true"/"false"
+            if (field.value_type === "bool") {
+              v = (v === "true" || v === "True" || v === "1") ? "true" : "false";
+            }
+            initial[field.key] = v;
           }
         }
         setFormData(initial);
@@ -329,10 +334,10 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
       });
   }, [open]);
 
-  const handleChange = useCallback((key: string, value: string) => {
+  const handleChange = (key: string, value: string) => {
     setFormData((prev) => ({ ...prev, [key]: value }));
     setResult(null);
-  }, []);
+  };
 
   // Collect changed fields
   const changedKeys = Object.keys(formData).filter(
@@ -340,10 +345,12 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
   );
   const hasChanges = changedKeys.length > 0;
 
-  const handleSave = useCallback(async () => {
+  const handleSave = async () => {
     const changes: Record<string, string> = {};
-    for (const key of changedKeys) {
-      changes[key] = formData[key];
+    for (const key of Object.keys(formData)) {
+      if (formData[key] !== originalData[key]) {
+        changes[key] = formData[key];
+      }
     }
 
     setSaving(true);
@@ -368,7 +375,7 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
     } finally {
       setSaving(false);
     }
-  }, [changedKeys, formData]);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -421,6 +428,7 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
                 닫기
               </Button>
               <Button
+                data-testid="config-save-button"
                 size="sm"
                 disabled={!hasChanges || saving}
                 onClick={handleSave}
