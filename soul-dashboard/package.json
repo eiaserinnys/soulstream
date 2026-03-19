@@ -15,11 +15,10 @@
     "test:baseline": "vite-node tools/cli-test.ts -- --all --baseline"
   },
   "dependencies": {
-    "@base-ui/react": "^1.2.0",
+    "@seosoyoung/soul-ui": "workspace:*",
     "@tanstack/react-virtual": "^3.13.21",
-    "@xyflow/react": "^12.10.1",
     "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
+    "@xyflow/react": "^12.10.1",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^17.3.1",
@@ -28,11 +27,8 @@
     "lucide-react": "^0.575.0",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
-    "radix-ui": "^1.4.3",
     "react": "^19.2.4",
-    "react-day-picker": "^9.14.0",
     "react-dom": "^19.2.4",
-    "tailwind-merge": "^3.5.0",
     "zustand": "^5.0.11"
   },
   "pnpm": {

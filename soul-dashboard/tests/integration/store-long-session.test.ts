@@ -12,21 +12,19 @@ import { describe, it, expect, beforeEach } from "vitest";
 import {
   useDashboardStore,
   findTreeNode,
-} from "../../client/stores/dashboard-store";
+  type SoulSSEEvent,
+  type EventTreeNode,
+  type TextStartEvent,
+  type TextDeltaEvent,
+  type TextEndEvent,
+  type ToolStartEvent,
+  type ToolResultEvent,
+  type CompactEvent,
+  type ContextUsageEvent,
+  type ErrorEvent,
+  type CompleteEvent,
+} from "@seosoyoung/soul-ui";
 import { buildGraph } from "../../client/lib/layout-engine";
-import type {
-  SoulSSEEvent,
-  EventTreeNode,
-  TextStartEvent,
-  TextDeltaEvent,
-  TextEndEvent,
-  ToolStartEvent,
-  ToolResultEvent,
-  CompactEvent,
-  ContextUsageEvent,
-  ErrorEvent,
-  CompleteEvent,
-} from "../../shared/types";
 
 /** 트리에서 모든 노드를 수집합니다. */
 function collectNodes(
