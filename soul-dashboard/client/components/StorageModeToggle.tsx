@@ -4,9 +4,7 @@
  * SSE 모드(Soul Server API + SSE 실시간)와 Serendipity 모드 사이를 전환합니다.
  */
 
-import { useDashboardStore } from "../stores/dashboard-store";
-import { cn } from "../lib/cn";
-import type { StorageMode } from "../providers/types";
+import { useDashboardStore, cn, type StorageMode } from "@seosoyoung/soul-ui";
 
 interface StorageModeOption {
   value: StorageMode;

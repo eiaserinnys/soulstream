@@ -10,7 +10,7 @@
 import { memo } from 'react';
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import type { GraphNodeData } from '../lib/layout-engine';
-import { cn } from '../lib/cn';
+import { cn } from '@seosoyoung/soul-ui';
 import { nodeBase, nodeBgDefault, nodeContent, nodeHeader, nodeLabel, truncate2, handleStyle, NODE_COLORS } from './node-styles';
 
 type InputRequestNodeData = Node<GraphNodeData, 'input_request'>;

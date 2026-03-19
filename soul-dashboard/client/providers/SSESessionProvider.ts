@@ -10,12 +10,12 @@ import type {
   StorageMode,
   SessionListResult,
 } from "./types";
-import type {
-  EventTreeNode,
-  SoulSSEEvent,
-  SSEEventType,
-} from "@shared/types";
-import { toSessionSummary } from "@shared/mappers";
+import {
+  toSessionSummary,
+  type EventTreeNode,
+  type SoulSSEEvent,
+  type SSEEventType,
+} from "@seosoyoung/soul-ui";
 
 // SSE 이벤트 타입 목록
 const SSE_EVENT_TYPES: SSEEventType[] = [
