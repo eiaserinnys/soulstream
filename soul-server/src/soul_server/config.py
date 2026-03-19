@@ -296,6 +296,91 @@ class Settings:
         return self.environment == "development"
 
 
+@dataclass
+class SettingMeta:
+    """Settings 필드의 UI/API용 메타데이터"""
+
+    env_key: str           # 환경변수 이름 (예: "MAX_CONCURRENT_SESSIONS")
+    label: str             # UI 표시 이름
+    description: str       # 설명
+    category: str          # 카테고리
+    value_type: str        # "str" | "int" | "float" | "bool" | "csv"
+    sensitive: bool = False
+    hot_reloadable: bool = True
+    read_only: bool = False
+
+
+CATEGORY_LABELS: dict[str, str] = {
+    "server": "서버",
+    "session": "세션 관리",
+    "runner_pool": "러너 풀",
+    "warmup": "워밍업 도구",
+    "dashboard": "대시보드 프로필",
+    "integration": "외부 연동",
+    "auth": "인증",
+    "llm": "LLM 프록시",
+    "upstream": "소울스트림 연결",
+    "paths": "경로 (읽기 전용)",
+}
+
+# Settings dataclass의 필드명 → 메타데이터 매핑
+# 모든 Settings 필드가 등록되어야 한다 (테스트로 검증).
+SETTINGS_REGISTRY: dict[str, SettingMeta] = {
+    # --- server ---
+    "service_name": SettingMeta("SERVICE_NAME", "서비스 이름", "서비스 식별자", "server", "str", read_only=True),
+    "version": SettingMeta("SERVICE_VERSION", "버전", "서비스 버전", "server", "str", read_only=True),
+    "environment": SettingMeta("ENVIRONMENT", "실행 환경", "development / staging / production", "server", "str"),
+    "host": SettingMeta("HOST", "바인드 주소", "서버가 리슨하는 호스트 주소", "server", "str", hot_reloadable=False),
+    "port": SettingMeta("PORT", "포트", "서버 포트 번호", "server", "int", hot_reloadable=False),
+    "log_level": SettingMeta("LOG_LEVEL", "로그 레벨", "INFO / DEBUG / WARNING / ERROR", "server", "str"),
+    "log_format": SettingMeta("LOG_FORMAT", "로그 포맷", "json 또는 text", "server", "str"),
+    "health_check_interval": SettingMeta("HEALTH_CHECK_INTERVAL", "헬스 체크 간격", "헬스 체크 주기 (초)", "server", "int"),
+    # --- session ---
+    "max_concurrent_sessions": SettingMeta("MAX_CONCURRENT_SESSIONS", "최대 동시 세션", "동시에 실행 가능한 세션 수 (재시작 필요: resource_manager가 init 시 캐시)", "session", "int", hot_reloadable=False),
+    "session_timeout_seconds": SettingMeta("SESSION_TIMEOUT_SECONDS", "세션 타임아웃", "세션 타임아웃 (초)", "session", "int"),
+    "session_eviction_ttl_seconds": SettingMeta("SESSION_EVICTION_TTL_SECONDS", "완료 세션 퇴거 TTL", "완료된 세션의 메모리 퇴거 TTL (초)", "session", "int"),
+    # --- runner_pool (전부 !hot — RunnerPool init 시 캐시) ---
+    "runner_pool_max_size": SettingMeta("RUNNER_POOL_MAX_SIZE", "러너 풀 최대 크기", "idle pool 최대 크기 (session + generic 합산)", "runner_pool", "int", hot_reloadable=False),
+    "runner_pool_idle_ttl": SettingMeta("RUNNER_POOL_IDLE_TTL", "유휴 러너 TTL", "유휴 runner 생존 시간 (초)", "runner_pool", "float", hot_reloadable=False),
+    "runner_pool_pre_warm": SettingMeta("RUNNER_POOL_PRE_WARM", "사전 예열 수", "기동 시 예열할 generic runner 수", "runner_pool", "int", hot_reloadable=False),
+    "runner_pool_maintenance_interval": SettingMeta("RUNNER_POOL_MAINTENANCE_INTERVAL", "유지보수 간격", "유지보수 루프 실행 간격 (초)", "runner_pool", "float", hot_reloadable=False),
+    "runner_pool_min_generic": SettingMeta("RUNNER_POOL_MIN_GENERIC", "최소 generic 유지", "generic pool 최소 유지 수량", "runner_pool", "int", hot_reloadable=False),
+    # --- warmup (전부 !hot) ---
+    "warmup_allowed_tools": SettingMeta("WARMUP_ALLOWED_TOOLS", "허용 도구", "워밍업 시 허용할 도구 (쉼표 구분)", "warmup", "csv", hot_reloadable=False),
+    "warmup_disallowed_tools": SettingMeta("WARMUP_DISALLOWED_TOOLS", "비허용 도구", "워밍업 시 비허용할 도구 (쉼표 구분)", "warmup", "csv", hot_reloadable=False),
+    # --- dashboard ---
+    "dash_user_name": SettingMeta("DASH_USER_NAME", "사용자 이름", "대시보드에 표시할 사용자 이름", "dashboard", "str"),
+    "dash_user_id": SettingMeta("DASH_USER_ID", "사용자 ID", "사용자 식별자", "dashboard", "str"),
+    "dash_user_portrait": SettingMeta("DASH_USER_PORTRAIT", "사용자 초상화", "사용자 초상화 이미지 경로", "dashboard", "str"),
+    "dash_assistant_name": SettingMeta("DASH_ASSISTANT_NAME", "어시스턴트 이름", "대시보드에 표시할 어시스턴트 이름", "dashboard", "str"),
+    "dash_assistant_id": SettingMeta("DASH_ASSISTANT_ID", "어시스턴트 ID", "어시스턴트 식별자", "dashboard", "str"),
+    "dash_assistant_portrait": SettingMeta("DASH_ASSISTANT_PORTRAIT", "어시스턴트 초상화", "어시스턴트 초상화 이미지 경로", "dashboard", "str"),
+    # --- integration ---
+    "serendipity_enabled": SettingMeta("SERENDIPITY_ENABLED", "세렌디피티 활성화", "세렌디피티 저장 활성화 여부", "integration", "bool"),
+    "serendipity_url": SettingMeta("SERENDIPITY_URL", "세렌디피티 URL", "세렌디피티 API URL", "integration", "str"),
+    "cogito_manifest_path": SettingMeta("COGITO_MANIFEST_PATH", "Cogito 매니페스트", "cogito 매니페스트 파일 경로", "integration", "str"),
+    # --- upstream (전부 !hot — 소울스트림 연결은 init 시 설정) ---
+    "soulstream_upstream_url": SettingMeta("SOULSTREAM_UPSTREAM_URL", "Upstream URL", "소울스트림 오케스트레이터 WebSocket URL", "upstream", "str", hot_reloadable=False),
+    "soulstream_node_id": SettingMeta("SOULSTREAM_NODE_ID", "노드 ID", "소울스트림 노드 식별자", "upstream", "str", hot_reloadable=False),
+    "soulstream_upstream_enabled": SettingMeta("SOULSTREAM_UPSTREAM_ENABLED", "Upstream 활성화", "소울스트림 오케스트레이터 연결 활성화", "upstream", "bool", hot_reloadable=False),
+    # --- auth ---
+    "auth_bearer_token": SettingMeta("AUTH_BEARER_TOKEN", "API 토큰", "API Bearer 인증 토큰", "auth", "str", sensitive=True),
+    "google_client_id": SettingMeta("GOOGLE_CLIENT_ID", "Google Client ID", "Google OAuth 클라이언트 ID", "auth", "str"),
+    "google_client_secret": SettingMeta("GOOGLE_CLIENT_SECRET", "Google Client Secret", "Google OAuth 클라이언트 시크릿", "auth", "str", sensitive=True),
+    "google_callback_url": SettingMeta("GOOGLE_CALLBACK_URL", "Google Callback URL", "OAuth 콜백 경로", "auth", "str"),
+    "allowed_email": SettingMeta("ALLOWED_EMAIL", "허용 이메일", "인증 허용 이메일 주소", "auth", "str"),
+    "jwt_secret": SettingMeta("JWT_SECRET", "JWT 시크릿", "JWT 서명 키 (32자 이상)", "auth", "str", sensitive=True),
+    # --- llm ---
+    "llm_openai_api_key": SettingMeta("LLM_OPENAI_API_KEY", "OpenAI API Key", "LLM 프록시용 OpenAI 키", "llm", "str", sensitive=True),
+    "llm_anthropic_api_key": SettingMeta("LLM_ANTHROPIC_API_KEY", "Anthropic API Key", "LLM 프록시용 Anthropic 키", "llm", "str", sensitive=True),
+    # --- paths (전부 read_only) ---
+    "workspace_dir": SettingMeta("WORKSPACE_DIR", "워크스페이스 경로", "Claude Code 워크스페이스 디렉토리", "paths", "str", read_only=True),
+    "claude_cli_dir": SettingMeta("CLAUDE_CLI_DIR", "Claude CLI 경로", "claude CLI 디렉토리 (PATH에 없는 경우)", "paths", "str", read_only=True),
+    "data_dir": SettingMeta("DATA_DIR", "데이터 경로", "태스크 저장, 이벤트 로그 등 (미설정 시 자동 설정)", "paths", "str", read_only=True),
+    "incoming_file_dir": SettingMeta("INCOMING_FILE_DIR", "첨부파일 경로", "첨부 파일 임시 저장 (미설정 시 자동 설정)", "paths", "str", read_only=True),
+}
+
+
 @lru_cache
 def get_settings() -> Settings:
     """설정 싱글톤 반환"""
