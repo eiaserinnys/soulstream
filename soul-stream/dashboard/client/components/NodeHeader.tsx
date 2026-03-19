@@ -2,6 +2,7 @@
  * NodeHeader — 노드 컬럼 상단. 노드 이름, 호스트, 상태, 세션 수 표시.
  */
 
+import { NODE_COLORS, cn } from "@seosoyoung/soul-ui";
 import type { OrchestratorNode } from "../store/types";
 
 // 노드 식별자에서 첫 글자 추출 (예: "soul-alpha" → "A")
@@ -11,17 +12,13 @@ function nodeInitial(nodeId: string): string {
   return last[0].toUpperCase();
 }
 
-// 노드별 색상 (순환)
-const NODE_COLORS = [
-  { css: "var(--node-user)", raw: "#7ba3e6" },
-  { css: "var(--node-response)", raw: "#4db894" },
-  { css: "var(--node-tool)", raw: "#d9a83a" },
-  { css: "var(--node-thinking)", raw: "#a18ae0" },
-  { css: "var(--node-plan)", raw: "#3db5c9" },
-];
+// 노드별 색상 키 (순환)
+const NODE_COLOR_KEYS = ['user', 'response', 'tool', 'thinking', 'plan'] as const;
 
-export function nodeColor(index: number) {
-  return NODE_COLORS[index % NODE_COLORS.length];
+/** 노드 인덱스에 대응하는 CSS 변수 문자열 반환 */
+export function nodeColor(index: number): string {
+  const key = NODE_COLOR_KEYS[index % NODE_COLOR_KEYS.length];
+  return NODE_COLORS[key];
 }
 
 interface NodeHeaderProps {
@@ -44,9 +41,10 @@ export function NodeHeader({
 
   return (
     <div
-      className={`px-3.5 py-3 border-b border-border cursor-pointer transition-colors shrink-0 ${
-        isSelected ? "bg-accent-blue/[0.06]" : "hover:bg-muted"
-      }`}
+      className={cn(
+        "px-3.5 py-3 border-b border-border cursor-pointer transition-colors shrink-0",
+        isSelected ? "bg-accent-blue/[0.06]" : "hover:bg-muted",
+      )}
       onClick={onClick}
     >
       {/* Top row: icon + name + status dot */}
@@ -55,9 +53,9 @@ export function NodeHeader({
           <div
             className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-semibold font-mono shrink-0"
             style={{
-              background: `${color.raw}18`,
-              color: color.css,
-              border: `1px solid ${color.raw}30`,
+              background: `color-mix(in srgb, ${color} 10%, transparent)`,
+              color: color,
+              border: `1px solid color-mix(in srgb, ${color} 19%, transparent)`,
             }}
           >
             {nodeInitial(node.nodeId)}
@@ -73,11 +71,12 @@ export function NodeHeader({
         </div>
         <div className="flex items-center gap-1">
           <div
-            className={`w-[7px] h-[7px] rounded-full shrink-0 ${
+            className={cn(
+              "w-[7px] h-[7px] rounded-full shrink-0",
               isHealthy
                 ? "bg-success shadow-[0_0_6px_rgba(16,185,129,0.3)]"
-                : "bg-muted-foreground/30"
-            }`}
+                : "bg-muted-foreground/30",
+            )}
           />
         </div>
       </div>

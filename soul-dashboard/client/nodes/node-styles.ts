@@ -6,21 +6,10 @@
  */
 
 /**
- * 노드 색상 CSS 변수 — globals.css의 :root / .dark에서 테마별 값이 결정된다.
- * 컴포넌트는 이 상수를 통해 CSS 변수를 참조하므로 테마 전환 시 자동 적용된다.
+ * 노드 색상 CSS 변수 — soul-ui 패키지에서 정본을 가져온다.
+ * globals.css의 :root / .dark에서 테마별 값이 결정된다.
  */
-export const NODE_COLORS = {
-  user:         'var(--node-user)',
-  response:     'var(--node-response)',
-  thinking:     'var(--node-thinking)',
-  plan:         'var(--node-plan)',
-  tool:         'var(--node-tool)',
-  skill:        'var(--node-skill)',
-  intervention: 'var(--node-intervention)',
-  error:        'var(--node-error)',
-  system:       'var(--node-system)',
-  inputRequest: 'var(--node-input-request)',
-} as const;
+export { NODE_COLORS } from "@seosoyoung/soul-ui";
 
 /** 노드 기본 클래스 (260x84 고정, border-box) */
 export const nodeBase = "w-[260px] h-[84px] box-border rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.4)] flex overflow-hidden";

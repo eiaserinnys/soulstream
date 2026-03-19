@@ -4,6 +4,9 @@
  * soul-dashboard에서 추출한 공유 UI 컴포넌트, 스토어, 유틸리티, 훅, 타입을 제공합니다.
  */
 
+// === Style Constants ===
+export { NODE_COLORS } from "./styles/node-colors";
+
 // === Shared Types ===
 export type {
   SSEEventType,

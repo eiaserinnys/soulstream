@@ -2,13 +2,35 @@
  * TopBar — 상단 바. 타이틀 + 연결 상태 표시.
  */
 
+import { Badge, cn } from "@seosoyoung/soul-ui";
 import { useOrchestratorStore } from "../store/orchestrator-store";
+
+const CONNECTION_CONFIG = {
+  disconnected: { label: "Idle", variant: "outline" as const, dotClass: "bg-muted-foreground" },
+  connecting: { label: "Connecting...", variant: "warning" as const, dotClass: "bg-accent-amber" },
+  connected: { label: "Live", variant: "success" as const, dotClass: "bg-success" },
+};
+
+function ConnectionBadge({ status }: { status: "disconnected" | "connecting" | "connected" }) {
+  const config = CONNECTION_CONFIG[status];
+  const shouldPulse = status === "connected" || status === "connecting";
+
+  return (
+    <Badge variant={config.variant} size="sm">
+      <span
+        className={cn(
+          "w-1.5 h-1.5 rounded-full",
+          config.dotClass,
+          shouldPulse && "animate-[pulse_2s_infinite]",
+        )}
+      />
+      {config.label}
+    </Badge>
+  );
+}
 
 export function TopBar() {
   const connectionStatus = useOrchestratorStore((s) => s.connectionStatus);
-
-  const isConnected = connectionStatus === "connected";
-  const label = isConnected ? "Connected" : connectionStatus === "connecting" ? "Connecting..." : "Disconnected";
 
   return (
     <div className="flex h-10 items-center justify-between border-b border-border px-4 bg-popover shrink-0">
@@ -16,25 +38,7 @@ export function TopBar() {
         Soulstream Orchestrator
       </span>
       <div className="flex items-center gap-2">
-        <div
-          className={`flex items-center gap-1.5 text-[11px] font-mono px-2 py-0.5 rounded-md border ${
-            isConnected
-              ? "text-success border-success/20 bg-success/[0.06]"
-              : "text-muted-foreground border-border bg-muted"
-          }`}
-        >
-          <div className="relative">
-            <div
-              className={`w-1.5 h-1.5 rounded-full ${
-                isConnected ? "bg-success" : "bg-muted-foreground"
-              }`}
-            />
-            {isConnected && (
-              <div className="absolute inset-0 rounded-full bg-success animate-ping opacity-50" />
-            )}
-          </div>
-          <span>{label}</span>
-        </div>
+        <ConnectionBadge status={connectionStatus} />
       </div>
     </div>
   );
