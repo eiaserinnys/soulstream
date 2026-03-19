@@ -1,0 +1,11 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "@seosoyoung/soul-ui/styles/globals.css";
+
+/* Orchestrator-specific overrides */
+@layer base {
+  body {
+    overflow: hidden;
+    background: var(--background);
+  }
+}
