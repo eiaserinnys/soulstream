@@ -13,6 +13,8 @@ import { NodeGraph } from "./components/NodeGraph";
 import { PromptComposer } from "./components/PromptComposer";
 import { StorageModeToggleCompact } from "./components/StorageModeToggle";
 import { ThemeToggle } from "./components/ThemeToggle";
+import { ConfigButton } from "./components/ConfigButton";
+import { ConfigModal } from "./components/ConfigModal";
 import { useSessionListProvider } from "./hooks/useSessionListProvider";
 import { useSessionProvider } from "./hooks/useSessionProvider";
 import { useNotification } from "./hooks/useNotification";
@@ -179,7 +181,7 @@ export function DashboardLayout() {
 
   // 서버 설정 로드 (세렌디피티 가용 여부)
   useEffect(() => {
-    fetch("/api/config")
+    fetch("/api/config/settings")
       .then((res) => {
         if (!res.ok) throw new Error(`Config fetch failed: ${res.status}`);
         return res.json();
@@ -191,6 +193,9 @@ export function DashboardLayout() {
         // config 로드 실패 시 기본값 유지 (false)
       });
   }, [setSerendipityAvailable]);
+
+  // Config 모달 상태
+  const [configOpen, setConfigOpen] = useState(false);
 
   // 패널 비율 상태 (%)
   const [leftPercent, setLeftPercent] = useState(DEFAULT_LEFT);
@@ -267,6 +272,7 @@ export function DashboardLayout() {
         {!isMobile && (
           <div className="flex items-center gap-2">
             <ThemeToggle />
+            <ConfigButton onClick={() => setConfigOpen(true)} />
             <StorageModeToggleCompact />
             <ConnectionBadge status={sseStatus} />
           </div>
@@ -348,6 +354,9 @@ export function DashboardLayout() {
           </aside>
         </div>
       )}
+
+      {/* Config Modal */}
+      <ConfigModal open={configOpen} onOpenChange={setConfigOpen} />
     </div>
   );
 }
