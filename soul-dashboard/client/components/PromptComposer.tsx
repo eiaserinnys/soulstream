@@ -6,10 +6,12 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { useDashboardStore } from "../stores/dashboard-store";
-import { cn } from "../lib/cn";
-import { Button } from "./ui/button";
-import type { CreateSessionResponse } from "@shared/types";
+import {
+  useDashboardStore,
+  cn,
+  Button,
+  type CreateSessionResponse,
+} from "@seosoyoung/soul-ui";
 
 /** Soul 서버의 MAX_PROMPT_LENGTH과 일치 (세션 생성 프롬프트의 최대 길이) */
 const MAX_LENGTH = 100_000;

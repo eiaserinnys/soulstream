@@ -9,8 +9,7 @@
  */
 
 import { useEffect, useRef, useCallback } from "react";
-import { useDashboardStore } from "../stores/dashboard-store";
-import type { SoulSSEEvent } from "@shared/types";
+import { useDashboardStore, type SoulSSEEvent } from "@seosoyoung/soul-ui";
 
 /**
  * 브라우저 알림 권한을 요청하고 이벤트 기반 알림을 관리합니다.

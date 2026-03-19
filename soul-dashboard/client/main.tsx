@@ -9,7 +9,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { AuthProvider, useAuth } from "./providers/AuthProvider";
 import { Login } from "./pages/Login";
-import { Spinner } from "./components/ui/spinner";
+import { Spinner } from "@seosoyoung/soul-ui";
 
 /**
  * AuthGate - 인증 상태에 따라 App 또는 Login을 조건부 렌더링.

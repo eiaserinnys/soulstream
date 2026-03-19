@@ -10,24 +10,26 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { SessionList } from "./components/SessionList";
 import { NodeGraph } from "./components/NodeGraph";
-import { RightPanel } from "./components/RightPanel";
 import { PromptComposer } from "./components/PromptComposer";
-import { ChatView } from "./components/ChatView";
 import { StorageModeToggleCompact } from "./components/StorageModeToggle";
 import { ThemeToggle } from "./components/ThemeToggle";
-import { initTheme } from "./hooks/useTheme";
 import { useSessionListProvider } from "./hooks/useSessionListProvider";
 import { useSessionProvider } from "./hooks/useSessionProvider";
 import { useNotification } from "./hooks/useNotification";
 import { useUrlSync } from "./hooks/useUrlSync";
 import { useDashboardConfig } from "./hooks/useDashboardConfig";
 import { useServerStatus } from "./hooks/useServerStatus";
-import { useIsMobile } from "./hooks/use-mobile";
-import { useDashboardStore } from "./stores/dashboard-store";
-import { cn } from "./lib/cn";
-import { Badge } from "./components/ui/badge";
-import { Sheet, SheetContent, SheetFooter } from "./components/ui/sheet";
-import { Button } from "./components/ui/button";
+import {
+  RightPanel,
+  ChatView,
+  initTheme,
+  useIsMobile,
+  useDashboardStore,
+  cn,
+  Badge,
+  Sheet, SheetContent, SheetFooter,
+  Button,
+} from "@seosoyoung/soul-ui";
 import { Menu } from "lucide-react";
 
 // === Constants ===

@@ -8,7 +8,7 @@
 import { memo } from 'react';
 import { type NodeProps, type Node } from '@xyflow/react';
 import type { GraphNodeData } from '../lib/layout-engine';
-import { cn } from '../lib/cn';
+import { cn } from '@seosoyoung/soul-ui';
 import { nodeBase, nodeHeader, truncate2, NODE_COLORS } from './node-styles';
 import { NodeHandles } from './NodeHandles';
 
