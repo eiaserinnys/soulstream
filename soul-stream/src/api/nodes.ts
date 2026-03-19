@@ -21,13 +21,22 @@ export function createNodesRouter(nodeManager: NodeManager): Router {
       Connection: "keep-alive",
     });
 
-    // 초기 상태 전송
-    res.write(
-      `data: ${JSON.stringify({ type: "init", nodes: nodeManager.getNodes() })}\n\n`
-    );
+    // 초기 스냅샷 전송 (named event)
+    const nodes = nodeManager.getNodes();
+    res.write(`event: snapshot\ndata: ${JSON.stringify(nodes)}\n\n`);
+
+    // 이벤트 타입을 클라이언트가 기대하는 이름으로 매핑
+    const eventNameMap: Record<string, string> = {
+      node_registered: "node_connected",
+      node_status_changed: "node_updated",
+      node_unregistered: "node_disconnected",
+    };
 
     const unsub = nodeManager.onNodeChange((event) => {
-      res.write(`data: ${JSON.stringify(event)}\n\n`);
+      const sseEvent = eventNameMap[event.type] ?? event.type;
+      const payload =
+        "node" in event ? event.node : { nodeId: event.nodeId };
+      res.write(`event: ${sseEvent}\ndata: ${JSON.stringify(payload)}\n\n`);
     });
 
     req.on("close", () => {
