@@ -15,7 +15,7 @@ TaskManager - 세션 라이프사이클 관리
 import asyncio
 import logging
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from pathlib import Path
 from typing import Optional, Dict, List
 
@@ -36,16 +36,6 @@ from soul_server.service.task_executor import TaskExecutor
 from soul_server.service.event_store import EventStore
 from soul_server.service.session_catalog import SessionCatalog
 from soul_server.service.session_broadcaster import get_session_broadcaster
-
-# 이벤트 타입별 미리보기 텍스트 필드 매핑
-PREVIEW_FIELD_MAP = {
-    "intervention": "text",
-    "thinking": "thinking",
-    "text": "text",
-    "result": "result",
-    "complete": "result",
-    "error": "error",
-}
 
 # Re-export for backward compatibility
 __all__ = [
@@ -121,6 +111,7 @@ class TaskManager:
             error_task_func=self._error_task_internal,
             register_session_func=self.register_session,
             event_store=event_store,
+            catalog=self._catalog,
         )
 
     # === Public Properties ===
@@ -648,67 +639,7 @@ class TaskManager:
             await self._listener_manager.remove_listener(agent_session_id, queue)
 
     async def broadcast(self, agent_session_id: str, event: dict) -> int:
-        """모든 리스너에게 이벤트 브로드캐스트
-
-        PREVIEW_FIELD_MAP에 해당하는 이벤트 타입이면 카탈로그의
-        last_message를 업데이트합니다.
-        user_message는 text 또는 messages에서 preview를 추출합니다.
-        """
-        # 카탈로그 last_message 업데이트
-        event_type = event.get("type", "")
-        text_field = PREVIEW_FIELD_MAP.get(event_type)
-
-        # user_message 전용 분기: text 또는 messages에서 preview 추출
-        if event_type == "user_message":
-            text = event.get("text", "")
-            if not text and "messages" in event:
-                for m in reversed(event.get("messages", [])):
-                    if m.get("role") == "user":
-                        c = m.get("content", "")
-                        if isinstance(c, str):
-                            text = c
-                        elif isinstance(c, list):
-                            text = " ".join(
-                                p.get("text", "") for p in c
-                                if isinstance(p, dict) and p.get("type") == "text"
-                            )
-                        else:
-                            text = ""
-                        break
-        elif text_field:
-            text = event.get(text_field, "")
-        else:
-            text = ""
-
-        if isinstance(text, str) and text:
-            ts = event.get("timestamp")
-            if isinstance(ts, (int, float)):
-                ts_str = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
-            elif isinstance(ts, str):
-                ts_str = ts
-            else:
-                ts_str = datetime_to_str(utc_now())
-            self._catalog.update_last_message(
-                agent_session_id, event_type, text[:200], ts_str
-            )
-            # 세션 리스트 브로드캐스트: 클라이언트에 last_message 변경 통지
-            try:
-                task = self._tasks.get(agent_session_id)
-                status = task.status.value if task else "unknown"
-                broadcaster = get_session_broadcaster()
-                await broadcaster.emit_session_message_updated(
-                    agent_session_id=agent_session_id,
-                    status=status,
-                    updated_at=ts_str,
-                    last_message={
-                        "type": event_type,
-                        "preview": text[:200],
-                        "timestamp": ts_str,
-                    },
-                )
-            except Exception:
-                logger.debug("session list broadcast skipped (broadcaster not ready)")
-
+        """모든 리스너에게 이벤트 브로드캐스트"""
         return await self._listener_manager.broadcast(agent_session_id, event)
 
     # === 개입 메시지 관리 ===

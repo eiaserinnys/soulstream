@@ -6,14 +6,17 @@ Task Executor - 백그라운드 태스크 실행 관리
 
 import asyncio
 import logging
+from datetime import datetime, timezone
 from typing import Dict, Callable, Awaitable, Optional, TYPE_CHECKING
 
-from soul_server.service.task_models import Task, TaskStatus
+from soul_server.service.task_models import Task, TaskStatus, PREVIEW_FIELD_MAP, datetime_to_str, utc_now
 from soul_server.service.prompt_assembler import assemble_prompt
+from soul_server.service.session_broadcaster import get_session_broadcaster
 
 if TYPE_CHECKING:
     from soul_server.service.event_store import EventStore
     from soul_server.service.task_listener import TaskListenerManager
+    from soul_server.service.session_catalog import SessionCatalog
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +39,7 @@ class TaskExecutor:
         error_task_func: Callable[[str, str], Awaitable[Optional[Task]]],
         register_session_func: Optional[Callable[[str, str], None]] = None,
         event_store: Optional["EventStore"] = None,
+        catalog: Optional["SessionCatalog"] = None,
     ):
         """
         Args:
@@ -46,6 +50,7 @@ class TaskExecutor:
             error_task_func: 태스크 에러 처리 함수 (agent_session_id, error)
             register_session_func: claude_session_id 등록 함수 (claude_session_id, agent_session_id)
             event_store: 이벤트 영속화 저장소 (None이면 저장하지 않음)
+            catalog: 세션 카탈로그 (last_message 업데이트용)
         """
         self._tasks = tasks
         self._listener_manager = listener_manager
@@ -54,6 +59,7 @@ class TaskExecutor:
         self._error_task = error_task_func
         self._register_session = register_session_func
         self._event_store = event_store
+        self._catalog = catalog
 
     async def start_execution(
         self,
@@ -120,6 +126,12 @@ class TaskExecutor:
                         user_msg_event["_event_id"] = event_id
                         current_user_request_id = str(event_id)
                         await self._listener_manager.broadcast(session_id, user_msg_event)
+                        try:
+                            await self._update_and_broadcast_last_message(
+                                session_id, user_msg_event, task
+                            )
+                        except Exception:
+                            logger.debug("last_message update failed for user_message")
                     except Exception as e:
                         logger.warning(f"Failed to persist user_message for {session_id}: {e}")
 
@@ -141,6 +153,12 @@ class TaskExecutor:
                         except Exception as e:
                             logger.warning(f"Failed to persist intervention user_message for {session_id}: {e}")
                     await self._listener_manager.broadcast(session_id, event)
+                    try:
+                        await self._update_and_broadcast_last_message(
+                            session_id, event, task
+                        )
+                    except Exception:
+                        logger.debug("last_message update failed for intervention_sent")
 
                 # AskUserQuestion 응답 전달 경로 구축 + pid 기록
                 def on_runner_ready(runner):
@@ -198,6 +216,12 @@ class TaskExecutor:
 
                     # 리스너들에게 브로드캐스트
                     await self._listener_manager.broadcast(session_id, event_dict)
+                    try:
+                        await self._update_and_broadcast_last_message(
+                            session_id, event_dict, task
+                        )
+                    except Exception:
+                        logger.debug("last_message update failed")
 
                     # 완료 또는 오류 시 태스크 상태 업데이트
                     if event.type == "complete":
@@ -239,6 +263,68 @@ class TaskExecutor:
         """세션 실행이 진행 중인지 확인"""
         task = self._tasks.get(agent_session_id)
         return task is not None and task.execution_task is not None
+
+    async def _update_and_broadcast_last_message(
+        self, session_id: str, event_dict: dict, task: Task
+    ) -> None:
+        """readable event의 last_message를 카탈로그에 저장하고 세션 리스트 SSE로 브로드캐스트."""
+        if self._catalog is None:
+            return
+
+        event_type = event_dict.get("type", "")
+
+        # user_message 전용: text 또는 messages에서 preview 추출
+        if event_type == "user_message":
+            text = event_dict.get("text", "")
+            if not text and "messages" in event_dict:
+                for m in reversed(event_dict.get("messages", [])):
+                    if m.get("role") == "user":
+                        c = m.get("content", "")
+                        if isinstance(c, str):
+                            text = c
+                        elif isinstance(c, list):
+                            text = " ".join(
+                                p.get("text", "") for p in c
+                                if isinstance(p, dict) and p.get("type") == "text"
+                            )
+                        break
+        elif event_type == "intervention_sent":
+            text = event_dict.get("text", "")
+        else:
+            text_field = PREVIEW_FIELD_MAP.get(event_type)
+            if not text_field:
+                return
+            text = event_dict.get(text_field, "")
+
+        if not isinstance(text, str) or not text:
+            return
+
+        ts = event_dict.get("timestamp")
+        if isinstance(ts, (int, float)):
+            ts_str = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+        elif isinstance(ts, str):
+            ts_str = ts
+        else:
+            ts_str = datetime_to_str(utc_now())
+
+        self._catalog.update_last_message(
+            session_id, event_type, text[:200], ts_str
+        )
+
+        try:
+            broadcaster = get_session_broadcaster()
+            await broadcaster.emit_session_message_updated(
+                agent_session_id=session_id,
+                status=task.status.value,
+                updated_at=ts_str,
+                last_message={
+                    "type": event_type,
+                    "preview": text[:200],
+                    "timestamp": ts_str,
+                },
+            )
+        except Exception:
+            logger.debug("session list broadcast skipped (broadcaster not ready)")
 
     async def send_reconnect_status(
         self,
