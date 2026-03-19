@@ -18,7 +18,7 @@ import type {
   EventTreeNode,
   SoulSSEEvent,
   SessionStatus,
-} from "@shared/types";
+} from "@seosoyoung/soul-ui";
 
 /**
  * 세렌디피티 페이지 응답 타입.

@@ -9,15 +9,18 @@
 
 import { memo, useRef, useCallback } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import type { SessionSummary, SessionStatus } from "@shared/types";
 import type { VariantProps } from "class-variance-authority";
 import { LogOut } from "lucide-react";
-import { useDashboardStore } from "../stores/dashboard-store";
+import {
+  type SessionSummary,
+  type SessionStatus,
+  useDashboardStore,
+  cn,
+  Button,
+  Badge, badgeVariants,
+  Tabs, TabsList, TabsTab,
+} from "@seosoyoung/soul-ui";
 import { useAuth } from "../providers/AuthProvider";
-import { cn } from "../lib/cn";
-import { Button } from "./ui/button";
-import { Badge, badgeVariants } from "./ui/badge";
-import { Tabs, TabsList, TabsTab } from "./ui/tabs";
 
 // === Status Badge Config ===
 

@@ -28,9 +28,8 @@ console.warn = (...args: unknown[]) => {
   _originalWarn(...args);
 };
 
-import { useDashboardStore } from "../client/stores/dashboard-store";
+import { useDashboardStore, type SoulSSEEvent } from "@seosoyoung/soul-ui";
 import { buildGraph } from "../client/lib/layout-engine";
-import type { SoulSSEEvent } from "@shared/types";
 import {
   validateTreeIntegrity,
   validateThinkingTextConnections,

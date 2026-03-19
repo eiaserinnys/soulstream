@@ -19,12 +19,14 @@ import { fileURLToPath } from "url";
 import {
   useDashboardStore,
   findTreeNode,
-} from "../../client/stores/dashboard-store.js";
+  type SoulSSEEvent,
+  type EventRecord,
+  type EventTreeNode,
+} from "@seosoyoung/soul-ui";
 import {
   buildGraph,
   type GraphNode,
 } from "../../client/lib/layout-engine.js";
-import type { SoulSSEEvent, EventRecord, EventTreeNode } from "../../shared/types.js";
 
 // === Fixture Loader ===
 

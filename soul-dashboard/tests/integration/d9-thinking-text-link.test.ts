@@ -9,20 +9,18 @@ import { describe, it, expect, beforeEach } from "vitest";
 import {
   useDashboardStore,
   findTreeNode,
-} from "../../client/stores/dashboard-store";
-import type {
-  EventTreeNode,
-  SoulSSEEvent,
-  ThinkingEvent,
-  TextStartEvent,
-  TextDeltaEvent,
-  TextEndEvent,
-  ToolStartEvent,
-  ToolResultEvent,
-  SubagentStartEvent,
-  SubagentStopEvent,
-  CompleteEvent,
-} from "../../shared/types";
+  type EventTreeNode,
+  type SoulSSEEvent,
+  type ThinkingEvent,
+  type TextStartEvent,
+  type TextDeltaEvent,
+  type TextEndEvent,
+  type ToolStartEvent,
+  type ToolResultEvent,
+  type SubagentStartEvent,
+  type SubagentStopEvent,
+  type CompleteEvent,
+} from "@seosoyoung/soul-ui";
 
 /** 특정 타입의 모든 노드 수집 */
 function collectNodes(

@@ -5,8 +5,7 @@
  */
 
 import { useEffect } from "react";
-import { useDashboardStore } from "../stores/dashboard-store";
-import type { DashboardConfig } from "../stores/dashboard-store";
+import { useDashboardStore, type DashboardConfig } from "@seosoyoung/soul-ui";
 
 const DEFAULT_CONFIG: DashboardConfig = {
   user: { name: "USER", id: "", hasPortrait: false },

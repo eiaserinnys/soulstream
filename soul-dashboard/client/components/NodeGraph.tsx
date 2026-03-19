@@ -22,9 +22,14 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-import { useDashboardStore, countTreeNodes, countStreamingNodes, type SelectedEventNodeData } from "../stores/dashboard-store";
+import {
+  useDashboardStore, countTreeNodes, countStreamingNodes,
+  type SelectedEventNodeData,
+  AskQuestionBanner,
+  cn,
+  useTheme,
+} from "@seosoyoung/soul-ui";
 import { nodeTypes } from "../nodes";
-import { AskQuestionBanner } from "./AskQuestionBanner";
 import {
   buildGraph,
   DEFAULT_NODE_WIDTH,
@@ -33,8 +38,6 @@ import {
   type GraphEdge,
   type GraphNodeData,
 } from "../lib/layout-engine";
-import { cn } from "../lib/cn";
-import { useTheme } from "../hooks/useTheme";
 import { createGraphDump, downloadDump } from "../lib/graph-dump";
 
 /** selectEventNode 경로로 라우팅하는 노드 타입 (트리 조회 불필요, 데이터 직접 전달) */

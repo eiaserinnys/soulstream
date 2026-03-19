@@ -14,10 +14,13 @@
  */
 
 import { useEffect, useRef, useCallback } from "react";
-import { useDashboardStore } from "../stores/dashboard-store";
+import {
+  useDashboardStore,
+  toSessionSummary,
+  type SessionStreamEvent,
+  type SessionStatus,
+} from "@seosoyoung/soul-ui";
 import { getSessionProvider } from "../providers";
-import type { SessionStreamEvent, SessionStatus } from "@shared/types";
-import { toSessionSummary } from "@shared/mappers";
 
 /** 서버가 named SSE event로 보내는 이벤트 타입 목록 */
 const SESSION_STREAM_EVENT_TYPES = [
