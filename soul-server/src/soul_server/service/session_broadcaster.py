@@ -87,6 +87,33 @@ class SessionBroadcaster:
         }
         return await self.broadcast(event)
 
+    async def emit_session_message_updated(
+        self,
+        agent_session_id: str,
+        status: str,
+        updated_at: str,
+        last_message: dict,
+    ) -> int:
+        """세션의 last_message 변경 이벤트 발행
+
+        readable event가 발생할 때마다 호출되어 세션 리스트의
+        마지막 메시지를 실시간으로 갱신한다.
+
+        Args:
+            agent_session_id: 세션 식별자
+            status: 현재 세션 상태 (TaskStatus.value)
+            updated_at: ISO 8601 타임스탬프 (항상 UTC)
+            last_message: {"type": str, "preview": str, "timestamp": str}
+        """
+        event = {
+            "type": "session_updated",
+            "agent_session_id": agent_session_id,
+            "status": status,
+            "updated_at": updated_at,
+            "last_message": last_message,
+        }
+        return await self.broadcast(event)
+
     async def emit_session_deleted(self, agent_session_id: str) -> int:
         """세션 삭제 이벤트 발행"""
         event = {

@@ -164,3 +164,51 @@ class TestSessionBroadcasterBroadcast:
         """리스너가 없으면 0 반환"""
         count = await broadcaster.broadcast({"type": "test"})
         assert count == 0
+
+
+class TestEmitSessionMessageUpdated:
+    """emit_session_message_updated 메서드 테스트"""
+
+    @pytest.fixture
+    def broadcaster(self):
+        return SessionBroadcaster()
+
+    async def test_emits_session_updated_with_last_message(self, broadcaster):
+        """session_updated 이벤트에 last_message 필드가 포함되어 리스너에 전달된다"""
+        queue = asyncio.Queue()
+        await broadcaster.add_listener(queue)
+
+        last_message = {"type": "thinking", "preview": "분석 중...", "timestamp": "2026-03-20T01:00:00+00:00"}
+        count = await broadcaster.emit_session_message_updated(
+            agent_session_id="sess-123",
+            status="running",
+            updated_at="2026-03-20T01:00:00+00:00",
+            last_message=last_message,
+        )
+
+        assert count == 1
+        event = queue.get_nowait()
+        assert event["type"] == "session_updated"
+        assert event["agent_session_id"] == "sess-123"
+        assert event["status"] == "running"
+        assert event["updated_at"] == "2026-03-20T01:00:00+00:00"
+        assert event["last_message"] == last_message
+
+    async def test_emits_to_multiple_listeners(self, broadcaster):
+        """여러 리스너 모두에게 last_message가 포함된 이벤트를 전달한다"""
+        q1 = asyncio.Queue()
+        q2 = asyncio.Queue()
+        await broadcaster.add_listener(q1)
+        await broadcaster.add_listener(q2)
+
+        last_message = {"type": "text", "preview": "Hello", "timestamp": "2026-03-20T01:00:00+00:00"}
+        count = await broadcaster.emit_session_message_updated(
+            agent_session_id="sess-456",
+            status="running",
+            updated_at="2026-03-20T01:00:00+00:00",
+            last_message=last_message,
+        )
+
+        assert count == 2
+        assert q1.get_nowait()["last_message"] == last_message
+        assert q2.get_nowait()["last_message"] == last_message
