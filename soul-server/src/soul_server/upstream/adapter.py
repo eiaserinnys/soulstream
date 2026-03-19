@@ -25,6 +25,8 @@ from .protocol import (
     EVT_HEALTH_STATUS,
     EVT_NODE_REGISTER,
     EVT_SESSION_CREATED,
+    EVT_SESSION_DELETED,
+    EVT_SESSION_UPDATED,
     EVT_SESSIONS_UPDATE,
 )
 from .reconnect import ReconnectPolicy
@@ -32,6 +34,7 @@ from .reconnect import ReconnectPolicy
 if TYPE_CHECKING:
     from soul_server.service.engine_adapter import SoulEngineAdapter
     from soul_server.service.resource_manager import ResourceManager
+    from soul_server.service.session_broadcaster import SessionBroadcaster
     from soul_server.service.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
@@ -49,6 +52,7 @@ class UpstreamAdapter:
         task_manager: TaskManager,
         soul_engine: SoulEngineAdapter,
         resource_manager: ResourceManager,
+        session_broadcaster: SessionBroadcaster,
         upstream_url: str,
         node_id: str,
         host: str = "",
@@ -57,6 +61,7 @@ class UpstreamAdapter:
         self._tm = task_manager
         self._engine = soul_engine
         self._rm = resource_manager
+        self._broadcaster = session_broadcaster
         self._url = upstream_url
         self._node_id = node_id
         self._host = host
@@ -67,6 +72,8 @@ class UpstreamAdapter:
         self._reconnect = ReconnectPolicy()
         self._running = False
         self._stream_tasks: dict[str, asyncio.Task] = {}
+        self._broadcast_task: asyncio.Task | None = None
+        self._broadcast_queue: asyncio.Queue | None = None
 
     # ─── Lifecycle ──────────────────────────────────
 
@@ -97,6 +104,9 @@ class UpstreamAdapter:
                         break
                     logger.exception("Unexpected error in upstream connection")
 
+                # 연결 종료 시 broadcast 리스너 정리
+                await self._stop_broadcast()
+
                 if self._running:
                     await self._reconnect.wait()
         finally:
@@ -105,6 +115,9 @@ class UpstreamAdapter:
     async def shutdown(self) -> None:
         """연결 종료. lifespan shutdown에서 호출한다."""
         self._running = False
+
+        # broadcast 태스크 정리
+        await self._stop_broadcast()
 
         # 스트리밍 태스크 취소
         for task in self._stream_tasks.values():
@@ -120,7 +133,7 @@ class UpstreamAdapter:
     # ─── Connection ─────────────────────────────────
 
     async def _connect_and_serve(self) -> None:
-        """WebSocket 연결 + 노드 등록 + 명령 수신 루프."""
+        """WebSocket 연결 + 노드 등록 + 세션 동기화 + 명령 수신 루프."""
         logger.info("Connecting to upstream: %s", self._url)
 
         self._ws = await self._session.ws_connect(self._url)
@@ -137,6 +150,10 @@ class UpstreamAdapter:
                 "max_concurrent": self._rm.max_concurrent,
             },
         })
+
+        # 세션 동기화: 구독 먼저 → 초기 전송 (이벤트 유실 방지)
+        await self._start_broadcast()
+        await self._send_initial_sessions()
 
         # 명령 수신 루프
         async for msg in self._ws:
@@ -155,6 +172,90 @@ class UpstreamAdapter:
                 break
 
         logger.info("Upstream connection closed")
+
+    # ─── Session Sync ─────────────────────────────
+
+    async def _send_initial_sessions(self) -> None:
+        """현재 세션 목록을 오케스트레이터에 전송."""
+        sessions, total = self._tm.get_all_sessions()
+        await self._send({
+            "type": EVT_SESSIONS_UPDATE,
+            "sessions": sessions,
+            "total": total,
+        })
+        logger.info("Sent initial sessions to upstream (count=%d)", total)
+
+    async def _start_broadcast(self) -> None:
+        """SessionBroadcaster에 리스너 등록 + 소비 태스크 시작."""
+        # 이전 연결의 잔여 리스너가 있으면 정리
+        await self._stop_broadcast()
+
+        self._broadcast_queue = asyncio.Queue()
+        await self._broadcaster.add_listener(self._broadcast_queue)
+        self._broadcast_task = asyncio.create_task(
+            self._broadcast_session_changes(),
+            name="upstream-broadcast-sessions",
+        )
+
+    async def _stop_broadcast(self) -> None:
+        """broadcast 태스크 취소 + 리스너 해제."""
+        if self._broadcast_task and not self._broadcast_task.done():
+            self._broadcast_task.cancel()
+            try:
+                await self._broadcast_task
+            except asyncio.CancelledError:
+                pass
+        self._broadcast_task = None
+
+        if self._broadcast_queue is not None:
+            await self._broadcaster.remove_listener(self._broadcast_queue)
+            self._broadcast_queue = None
+
+    async def _broadcast_session_changes(self) -> None:
+        """SessionBroadcaster 이벤트를 오케스트레이터 프로토콜로 변환하여 전송."""
+        try:
+            while self._running:
+                try:
+                    event = await asyncio.wait_for(
+                        self._broadcast_queue.get(), timeout=30.0,
+                    )
+                except asyncio.TimeoutError:
+                    continue
+
+                try:
+                    await self._dispatch_broadcast_event(event)
+                except Exception:
+                    logger.exception(
+                        "Error dispatching broadcast event: %s",
+                        event.get("type"),
+                    )
+        except asyncio.CancelledError:
+            pass
+
+    async def _dispatch_broadcast_event(self, event: dict) -> None:
+        """개별 broadcaster 이벤트를 오케스트레이터 프로토콜로 변환하여 전송."""
+        event_type = event.get("type", "")
+
+        if event_type == "session_created":
+            # broadcaster: {"type": "session_created", "session": to_session_info()}
+            # _handle_create_session이 request_id 포함 응답을 이미 보내므로,
+            # broadcast 경로에서는 세션 정보를 포함한 보강 메시지를 전송
+            session_info = event.get("session", {})
+            await self._send({
+                "type": EVT_SESSION_CREATED,
+                "session_id": session_info.get("agent_session_id", ""),
+                "session": session_info,
+            })
+        elif event_type == "session_updated":
+            await self._send({
+                "type": EVT_SESSION_UPDATED,
+                **{k: v for k, v in event.items() if k != "type"},
+            })
+        elif event_type == "session_deleted":
+            await self._send({
+                "type": EVT_SESSION_DELETED,
+                **{k: v for k, v in event.items() if k != "type"},
+            })
 
     # ─── Command Dispatch ───────────────────────────
 
@@ -216,11 +317,14 @@ class UpstreamAdapter:
         )
         self._stream_tasks[session_id] = stream_task
 
-        await self._send({
-            "type": EVT_SESSION_CREATED,
-            "session_id": session_id,
-            "request_id": cmd.get("request_id", ""),
-        })
+        # request_id 응답만 전송. 세션 정보는 SessionBroadcaster 경로로 전달됨.
+        request_id = cmd.get("request_id", "")
+        if request_id:
+            await self._send({
+                "type": EVT_SESSION_CREATED,
+                "session_id": session_id,
+                "request_id": request_id,
+            })
 
     async def _handle_intervene(self, cmd: dict) -> None:
         """개입 명령 처리."""
@@ -335,6 +439,8 @@ class UpstreamAdapter:
 
     async def _cleanup(self) -> None:
         """연결 정리."""
+        await self._stop_broadcast()
+
         for task in self._stream_tasks.values():
             task.cancel()
         self._stream_tasks.clear()

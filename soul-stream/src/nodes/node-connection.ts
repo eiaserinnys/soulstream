@@ -244,10 +244,46 @@ export class NodeConnection {
         // 새 세션 추가
         const sessionId = msg.session_id as string;
         if (sessionId) {
+          const sessionData = (msg.session as Record<string, unknown>) ?? {};
           this._sessions.set(sessionId, {
+            ...sessionData,
             sessionId,
-            status: "running",
+            status: (sessionData.status as string) ?? "running",
           });
+        }
+        break;
+      }
+
+      case "session_updated": {
+        // 세션 상태/메시지 갱신
+        const id =
+          (msg.agent_session_id as string) ??
+          (msg.sessionId as string) ??
+          "";
+        if (id && this._sessions.has(id)) {
+          const existing = this._sessions.get(id)!;
+          this._sessions.set(id, {
+            ...existing,
+            ...(msg.status != null ? { status: msg.status as string } : {}),
+            ...(msg.updated_at != null
+              ? { updatedAt: msg.updated_at as string }
+              : {}),
+            ...(msg.last_message != null
+              ? { lastMessage: msg.last_message }
+              : {}),
+          });
+        }
+        break;
+      }
+
+      case "session_deleted": {
+        // 세션 제거
+        const delId =
+          (msg.agent_session_id as string) ??
+          (msg.sessionId as string) ??
+          "";
+        if (delId) {
+          this._sessions.delete(delId);
         }
         break;
       }

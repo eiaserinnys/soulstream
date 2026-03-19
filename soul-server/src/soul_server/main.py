@@ -317,6 +317,7 @@ async def lifespan(app: FastAPI):
             task_manager=task_manager,
             soul_engine=get_soul_engine(),
             resource_manager=resource_manager,
+            session_broadcaster=broadcaster,
             upstream_url=settings.soulstream_upstream_url,
             node_id=settings.soulstream_node_id,
             host=settings.host,
