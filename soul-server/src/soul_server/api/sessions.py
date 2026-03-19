@@ -57,8 +57,7 @@ async def stream_session_events(
         while True:
             try:
                 event = await asyncio.wait_for(event_queue.get(), timeout=30.0)
-                data = {k: v for k, v in event.items() if k != "_event_id"} if isinstance(event, dict) else event
-                yield data
+                yield event  # _event_id를 포함한 원본 그대로 전달 (sse_wrapper가 SSE id: 필드로 변환)
             except asyncio.TimeoutError:
                 yield {"type": "keepalive"}
     finally:
@@ -236,7 +235,12 @@ def create_sessions_router() -> APIRouter:
                 if event_type == "keepalive":
                     yield {"comment": "keepalive"}
                 else:
-                    yield {"event": event_type, "data": json.dumps(event_dict, ensure_ascii=False)}
+                    # _event_id를 pop하여 data JSON에서 제거하되, SSE id: 필드로 전달
+                    event_id = event_dict.pop("_event_id", None)
+                    sse_event: dict = {"event": event_type, "data": json.dumps(event_dict, ensure_ascii=False)}
+                    if event_id is not None:
+                        sse_event["id"] = str(event_id)
+                    yield sse_event
 
         return EventSourceResponse(sse_wrapper())
 
