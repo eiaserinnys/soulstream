@@ -211,6 +211,35 @@ const CollapsibleContent = memo(function CollapsibleContent({
   );
 });
 
+/** user_message의 구조화된 맥락 표시 (ToolCallGroup과 동일한 접기/펼치기 스타일) */
+const ContextBlock = memo(function ContextBlock({ items }: { items: ContextItem[] }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="mt-1.5">
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        className="text-[13px] text-muted-foreground hover:text-foreground flex items-center gap-1.5"
+      >
+        <span className="text-[11px]">{expanded ? "\u25BC" : "\u25B6"}</span>
+        <span>{"\u{1F4CB}"}</span>
+        <span className="font-medium">Context ({items.length})</span>
+      </button>
+      {expanded && (
+        <div className="ml-4 mt-1 space-y-1.5">
+          {items.map((item: ContextItem) => (
+            <div key={item.key}>
+              <div className="text-[11px] text-muted-foreground uppercase tracking-wide mb-0.5">
+                {item.label}
+              </div>
+              <ContextContentRenderer content={item.content} />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+});
+
 // === Message Components ===
 
 const UserMessage = memo(function UserMessage({ msg, llmContext }: { msg: ChatMessage; llmContext?: LlmContext }) {
@@ -246,19 +275,7 @@ const UserMessage = memo(function UserMessage({ msg, llmContext }: { msg: ChatMe
         </div>
         <div className="text-[15px] text-foreground whitespace-pre-wrap break-words">{msg.content}</div>
         {msg.contextItems && msg.contextItems.length > 0 && (
-          <details className="mt-2 border border-gray-200 rounded-md">
-            <summary className="px-3 py-1.5 text-sm text-gray-500 cursor-pointer select-none">
-              📋 Context ({msg.contextItems.length})
-            </summary>
-            <div className="px-3 py-2 space-y-2 text-sm">
-              {msg.contextItems.map((item: ContextItem) => (
-                <div key={item.key} className="flex gap-3">
-                  <div className="font-medium text-gray-600 whitespace-nowrap">{item.label}</div>
-                  <ContextContentRenderer content={item.content} />
-                </div>
-              ))}
-            </div>
-          </details>
+          <ContextBlock items={msg.contextItems} />
         )}
       </div>
     </div>
@@ -386,8 +403,8 @@ const ToolCallItem = memo(function ToolCallItem({ msg }: { msg: ChatMessage }) {
           "hover:text-foreground",
         )}
       >
-        <span>{statusIcon}</span>
         <span className="text-[11px]">{expanded ? "\u25BC" : "\u25B6"}</span>
+        <span>{statusIcon}</span>
         <span className="truncate">{msg.content}</span>
       </button>
       {expanded && msg.toolInput && (
@@ -426,8 +443,8 @@ const ToolCallGroup = memo(function ToolCallGroup({ messages }: { messages: Chat
           onClick={() => setExpanded((v) => !v)}
           className="text-[13px] text-muted-foreground hover:text-foreground flex items-center gap-1.5"
         >
-          <span>{"\u{1F527}"}</span>
           <span className="text-[11px]">{expanded ? "\u25BC" : "\u25B6"}</span>
+          <span>{"\u{1F527}"}</span>
           <span className="font-medium">Tool Calls ({messages.length})</span>
           {hasError && <span className="text-accent-red text-[10px]">{"\u25CF"} error</span>}
           {!hasError && allDone && <span className="text-success text-[10px]">{"\u25CF"} done</span>}
