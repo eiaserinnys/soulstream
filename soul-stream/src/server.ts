@@ -44,7 +44,7 @@ export function createSoulStreamServer(config: ServerConfig) {
   if (config.dashboardDir && existsSync(config.dashboardDir)) {
     app.use(express.static(config.dashboardDir));
     // SPA fallback
-    app.get("*", (_req, res) => {
+    app.get("{*path}", (_req, res) => {
       res.sendFile("index.html", { root: config.dashboardDir! });
     });
   }
