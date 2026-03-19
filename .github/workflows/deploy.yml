@@ -7,6 +7,7 @@ on:
 
 env:
   SERVER_DEPLOY_BASE: /home/eias/services/soulstream-server
+  STREAM_DEPLOY_BASE: /home/eias/services/soul-stream
   KEEP_RELEASES: 5
 
 jobs:
@@ -24,7 +25,7 @@ jobs:
             soul-server/src
             soul-server/pyproject.toml
 
-  build-dashboard:
+  build-dashboards:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -41,22 +42,35 @@ jobs:
           version: 9
 
       - name: Install dependencies
-        working-directory: soul-dashboard
         run: pnpm install --frozen-lockfile
 
-      - name: Build dashboard client
+      - name: Build soul-dashboard client
         working-directory: soul-dashboard
         run: pnpm run build
 
-      - name: Upload dashboard artifacts
+      - name: Build soul-stream dashboard
+        working-directory: soul-stream/dashboard
+        run: pnpm run build
+
+      - name: Upload soul-dashboard artifacts
         uses: actions/upload-artifact@v4
         with:
           name: dashboard-build
           path: |
             soul-dashboard/dist/client
 
+      - name: Upload soul-stream artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: soul-stream-build
+          path: |
+            soul-stream/src
+            soul-stream/package.json
+            soul-stream/tsconfig.json
+            soul-stream/dashboard/dist
+
   deploy:
-    needs: [build-server, build-dashboard]
+    needs: [build-server, build-dashboards]
     runs-on: ubuntu-latest
 
     steps:
@@ -128,11 +142,54 @@ jobs:
           echo "=== 9. 오래된 릴리즈 정리 ==="
           $SSH_CMD "cd ${SERVER_DEPLOY_BASE}/releases && ls -t | tail -n +\$((${KEEP_RELEASES} + 1)) | xargs -r rm -rf"
 
+      - name: Download soul-stream artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: soul-stream-build
+          path: soul-stream-build
+
+      - name: Deploy Soul Stream
+        run: |
+          SSH_CMD="ssh -i ~/.ssh/id_ed25519 ${{ secrets.LINODE_USER }}@${{ secrets.LINODE_HOST }}"
+          RELEASE_NAME=$(date +%Y-%m-%d-%H%M%S)
+          RELEASE_DIR="${STREAM_DEPLOY_BASE}/releases/${RELEASE_NAME}"
+
+          echo "=== 1. 릴리즈 디렉토리 생성 ==="
+          $SSH_CMD "mkdir -p ${RELEASE_DIR}"
+
+          echo "=== 2. 소스 파일 동기화 ==="
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/id_ed25519" \
+            soul-stream-build/ ${{ secrets.LINODE_USER }}@${{ secrets.LINODE_HOST }}:${RELEASE_DIR}/
+
+          echo "=== 3. Node.js 의존성 설치 ==="
+          $SSH_CMD "cd ${RELEASE_DIR} && npm install --omit=dev 2>&1 | tail -5"
+
+          echo "=== 4. tsx 설치 (TypeScript 런타임) ==="
+          $SSH_CMD "cd ${RELEASE_DIR} && npm install tsx 2>&1 | tail -3"
+
+          echo "=== 5. shared .env 심볼릭 링크 ==="
+          $SSH_CMD "ln -sf ${STREAM_DEPLOY_BASE}/shared/.env ${RELEASE_DIR}/.env"
+
+          echo "=== 6. current 심볼릭 링크 전환 ==="
+          $SSH_CMD "ln -sfn ${RELEASE_DIR} ${STREAM_DEPLOY_BASE}/current"
+
+          echo "=== 7. 서비스 재시작 (PM2) ==="
+          $SSH_CMD "pm2 restart soul-stream || pm2 start /home/eias/services/soul-stream/ecosystem.config.js"
+
+          sleep 2
+
+          echo "=== 8. 서비스 상태 확인 ==="
+          $SSH_CMD "pm2 show soul-stream" || true
+
+          echo "=== 9. 오래된 릴리즈 정리 ==="
+          $SSH_CMD "cd ${STREAM_DEPLOY_BASE}/releases && ls -t | tail -n +\$((${KEEP_RELEASES} + 1)) | xargs -r rm -rf"
+
       - name: 📢 Discord 알림 (배포 성공)
         if: success()
         run: |
           curl -s -H "Content-Type: application/json" \
-            -d "{\"embeds\": [{\"title\": \"✅ 배포 완료\", \"description\": \"**soulstream** 배포가 성공적으로 완료되었습니다.\", \"color\": 5763719, \"fields\": [{\"name\": \"브랜치\", \"value\": \"\`${{ github.ref_name }}\`\", \"inline\": true}, {\"name\": \"커밋\", \"value\": \"[\`${GITHUB_SHA::7}\`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})\", \"inline\": true}], \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}]}" \
+            -d "{\"embeds\": [{\"title\": \"✅ 배포 완료\", \"description\": \"**soulstream** (soul-server + soul-stream) 배포가 성공적으로 완료되었습니다.\", \"color\": 5763719, \"fields\": [{\"name\": \"브랜치\", \"value\": \"\`${{ github.ref_name }}\`\", \"inline\": true}, {\"name\": \"커밋\", \"value\": \"[\`${GITHUB_SHA::7}\`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})\", \"inline\": true}], \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}]}" \
             ${{ secrets.DISCORD_WEBHOOK_URL }} || true
 
       - name: 📢 Discord 알림 (배포 실패)
