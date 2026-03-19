@@ -94,9 +94,10 @@ const SessionItem = memo(function SessionItem({ session, isActive, onClick }: Se
     ? `${formatTokenCount(session.llmUsage.inputTokens + session.llmUsage.outputTokens)} tok`
     : null;
 
-  // 시간 포맷
-  const timeStr = session.createdAt
-    ? new Date(session.createdAt).toLocaleString("ko-KR", {
+  // 시간 포맷: lastMessage.timestamp → updatedAt → createdAt 우선순위
+  const displayTime = session.lastMessage?.timestamp ?? session.updatedAt ?? session.createdAt;
+  const timeStr = displayTime
+    ? new Date(displayTime).toLocaleString("ko-KR", {
         month: "2-digit",
         day: "2-digit",
         hour: "2-digit",
@@ -133,11 +134,15 @@ const SessionItem = memo(function SessionItem({ session, isActive, onClick }: Se
           )}
           {isLlm && llmLabel
             ? llmLabel
-            : session.prompt
-              ? session.prompt.length > 30
-                ? session.prompt.slice(0, 27) + "..."
-                : session.prompt
-              : session.agentSessionId.slice(0, 16)}
+            : session.lastMessage?.preview
+              ? session.lastMessage.preview.length > 30
+                ? session.lastMessage.preview.slice(0, 27) + "..."
+                : session.lastMessage.preview
+              : session.prompt
+                ? session.prompt.length > 30
+                  ? session.prompt.slice(0, 27) + "..."
+                  : session.prompt
+                : session.agentSessionId.slice(0, 16)}
         </div>
         <div className="flex items-center gap-1.5 mt-0.5">
           <span className="text-[12px] text-muted-foreground">

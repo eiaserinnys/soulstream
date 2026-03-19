@@ -321,6 +321,13 @@ export interface LlmUsage {
   outputTokens: number;
 }
 
+/** 마지막 readable event 메시지 */
+export interface LastMessage {
+  type: string;
+  preview: string;
+  timestamp: string;
+}
+
 /** 세션 요약 정보 (목록 조회용) */
 export interface SessionSummary {
   /** 세션의 유일한 키. JSONL 파일명. */
@@ -333,6 +340,8 @@ export interface SessionSummary {
   completedAt?: string;
   /** 첫 user_message의 텍스트 (세션 목록에서 표시용) */
   prompt?: string;
+  /** 마지막 readable event 메시지 */
+  lastMessage?: LastMessage;
   /** 세션 유형: Claude Code 세션 또는 LLM 세션 */
   sessionType?: "claude" | "llm";
   /** LLM 프로바이더 (openai, anthropic 등) */
@@ -589,6 +598,7 @@ export interface SessionUpdatedStreamEvent {
   agent_session_id: string;
   status: SessionStatus;
   updated_at: string;
+  last_message?: LastMessage;
 }
 
 /** 세션 삭제 */

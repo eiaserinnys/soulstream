@@ -116,12 +116,21 @@ export function useSessionListProvider(
           break;
         }
 
-        case "session_updated":
-          updateSession(event.agent_session_id, {
+        case "session_updated": {
+          const updates: Parameters<typeof updateSession>[1] = {
             status: event.status as SessionStatus,
             updatedAt: event.updated_at,
-          });
+          };
+          if (event.last_message) {
+            updates.lastMessage = {
+              type: event.last_message.type,
+              preview: event.last_message.preview,
+              timestamp: event.last_message.timestamp,
+            };
+          }
+          updateSession(event.agent_session_id, updates);
           break;
+        }
 
         case "session_deleted":
           removeSession(event.agent_session_id);
