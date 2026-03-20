@@ -19,6 +19,7 @@ from fastmcp import FastMCP
 
 from cogito.manifest import load_manifest
 from soul_server.cogito.reflector_setup import reflect
+from soul_server.service.task_manager import task_manager
 
 if TYPE_CHECKING:
     from soul_server.cogito.brief_composer import BriefComposer
@@ -195,6 +196,121 @@ async def reflect_refresh() -> dict:
     if not ok:
         return {"error": result}
     return {"refreshed": True, "path": result}
+
+
+# ---------------------------------------------------------------------------
+# Session query helpers
+# ---------------------------------------------------------------------------
+
+def _truncate_tool_event(ev: dict, max_chars: int) -> dict:
+    ev = dict(ev)
+    for field in ("input", "output", "content"):
+        if field in ev:
+            val = ev[field]
+            if isinstance(val, str) and len(val) > max_chars:
+                ev[field] = val[:max_chars] + f"... [{len(val) - max_chars}자 생략]"
+            elif isinstance(val, dict):
+                serialized = str(val)
+                if len(serialized) > max_chars:
+                    ev[field] = serialized[:max_chars] + "... [생략]"
+    return ev
+
+
+# ---------------------------------------------------------------------------
+# MCP Tools — Session query
+# ---------------------------------------------------------------------------
+
+@cogito_mcp.tool()
+async def list_sessions(
+    cursor: int = 0,
+    limit: int = 20,
+) -> dict:
+    """세션 목록을 페이지네이션하여 조회한다.
+
+    Args:
+        cursor: 시작 오프셋 (행 인덱스 기반 정수). 첫 호출 시 0.
+        limit: 반환할 세션 수 (최대 100).
+
+    Returns:
+        {sessions: [...], next_cursor: int | None}
+        next_cursor가 None이면 마지막 페이지.
+    """
+    limit = min(limit, 100)
+    sessions, _total = task_manager.get_all_sessions(offset=cursor, limit=limit + 1)
+    has_more = len(sessions) > limit
+    return {
+        "sessions": sessions[:limit],
+        "next_cursor": cursor + limit if has_more else None,
+    }
+
+
+@cogito_mcp.tool()
+async def list_session_events(
+    session_id: str,
+    cursor: int = 0,
+    limit: int = 20,
+    tool_truncate_chars: int = 500,
+) -> dict:
+    """세션의 이벤트 목록을 페이지네이션하여 조회한다.
+
+    Args:
+        session_id: 세션 ID.
+        cursor: 마지막으로 수신한 이벤트 ID (이 ID는 포함하지 않음). 0이면 처음부터 반환.
+                행 오프셋이 아닌 이벤트 ID임에 주의.
+        limit: 반환할 이벤트 수 (최대 100).
+        tool_truncate_chars: tool_use/tool_result 이벤트의 input/output/content 필드를
+                             잘라낼 글자 수. 0이면 자르지 않음.
+
+    Returns:
+        {events: [...], next_cursor: int | None}
+        next_cursor가 None이면 마지막 페이지.
+    """
+    limit = min(limit, 100)
+    event_store = task_manager.event_store
+    if event_store is None:
+        return {"error": "EventStore가 초기화되지 않았습니다"}
+    existing_ids = set(event_store.list_session_ids())
+    if session_id not in existing_ids:
+        return {"error": f"세션을 찾을 수 없습니다: {session_id}"}
+    all_events = event_store.read_since(agent_session_id=session_id, after_id=cursor)
+    has_more = len(all_events) > limit
+    result = []
+    for entry in all_events[:limit]:
+        ev = entry["event"]
+        if tool_truncate_chars > 0 and ev.get("type") in ("tool_use", "tool_result"):
+            ev = _truncate_tool_event(ev, tool_truncate_chars)
+        result.append({"id": entry["id"], "event": ev})
+    last_id = result[-1]["id"] if result else cursor
+    return {
+        "events": result,
+        "next_cursor": last_id if has_more else None,
+    }
+
+
+@cogito_mcp.tool()
+async def get_session_event(
+    session_id: str,
+    event_id: int,
+) -> dict:
+    """특정 이벤트의 전문을 조회한다 (truncation 없음).
+
+    Args:
+        session_id: 세션 ID.
+        event_id: 이벤트 ID (list_session_events 반환 항목의 id 필드 값).
+
+    Returns:
+        {id: int, event: dict} 또는 {error: str}
+    """
+    event_store = task_manager.event_store
+    if event_store is None:
+        return {"error": "EventStore가 초기화되지 않았습니다"}
+    existing_ids = set(event_store.list_session_ids())
+    if session_id not in existing_ids:
+        return {"error": f"세션을 찾을 수 없습니다: {session_id}"}
+    entry = event_store.read_one(agent_session_id=session_id, event_id=event_id)
+    if entry is None:
+        return {"error": f"이벤트를 찾을 수 없습니다: session={session_id}, event_id={event_id}"}
+    return entry
 
 
 # ---------------------------------------------------------------------------
