@@ -256,7 +256,7 @@ const UserMessage = memo(function UserMessage({ msg, llmContext }: { msg: ChatMe
   const hasPortrait = isLlm ? false : userConfig?.hasPortrait ?? false;
 
   return (
-    <div className="flex gap-2 px-3 py-1.5">
+    <div className="flex gap-2 px-3 py-1.5" data-tree-node-id={msg.treeNodeId}>
       <ProfileAvatar
         role="user"
         hasPortrait={hasPortrait}
@@ -291,7 +291,7 @@ const InterventionMessage = memo(function InterventionMessage({ msg }: { msg: Ch
   const displayId = userConfig?.id ? `${userConfig.id}` : null;
 
   return (
-    <div className="flex gap-2 px-3 py-1.5">
+    <div className="flex gap-2 px-3 py-1.5" data-tree-node-id={msg.treeNodeId}>
       <ProfileAvatar
         role="user"
         hasPortrait={userConfig?.hasPortrait ?? false}
@@ -319,7 +319,7 @@ const ThinkingMessage = memo(function ThinkingMessage({ msg }: { msg: ChatMessag
   const { displayContent, isTruncated, loading, error, loadFullContent } = useLazyLoadContent(msg);
 
   return (
-    <div className="flex gap-2 px-3 py-1.5">
+    <div className="flex gap-2 px-3 py-1.5" data-tree-node-id={msg.treeNodeId}>
       <span className="w-8 shrink-0" />
       <div className="flex-1 min-w-0">
         <CollapsibleContent content={displayContent ?? msg.content} label={"\u{1F4AD} Thinking"} />
@@ -353,7 +353,7 @@ const AssistantMessage = memo(function AssistantMessage({ msg, llmContext }: { m
     : null;
 
   return (
-    <div className="flex gap-2 px-3 py-1.5">
+    <div className="flex gap-2 px-3 py-1.5" data-tree-node-id={msg.treeNodeId}>
       <ProfileAvatar
         role="assistant"
         hasPortrait={hasPortrait}
@@ -436,7 +436,7 @@ const ToolCallGroup = memo(function ToolCallGroup({ messages }: { messages: Chat
   const allDone = messages.every((m) => m.toolResult !== undefined || m.toolDurationMs !== undefined);
 
   return (
-    <div className="flex gap-2 px-3 py-0.5">
+    <div className="flex gap-2 px-3 py-0.5" data-tree-node-id={messages[0].treeNodeId}>
       <span className="w-8 shrink-0" />
       <div className="flex-1 min-w-0">
         <button
@@ -464,7 +464,7 @@ const ToolCallGroup = memo(function ToolCallGroup({ messages }: { messages: Chat
 /** 단일 tool 메시지 (그룹에 속하지 않는 단독 tool) */
 const ToolMessage = memo(function ToolMessage({ msg }: { msg: ChatMessage }) {
   return (
-    <div className="flex gap-2 px-3 py-0.5">
+    <div className="flex gap-2 px-3 py-0.5" data-tree-node-id={msg.treeNodeId}>
       <span className="w-8 shrink-0" />
       <div className={cn(
         "flex-1 min-w-0 flex items-center gap-1",
@@ -486,7 +486,7 @@ const SystemMessage = memo(function SystemMessage({ msg }: { msg: ChatMessage })
   // complete 노드: thinking과 동일한 접기/펼치기 컴포넌트 사용
   if (isComplete && msg.content && msg.content !== "Turn completed") {
     return (
-      <div className="flex gap-2 px-3 py-1.5">
+      <div className="flex gap-2 px-3 py-1.5" data-tree-node-id={msg.treeNodeId}>
         <span className="w-8 shrink-0" />
         <div className="flex-1 min-w-0">
           <CollapsibleContent content={msg.content} label={"\u2705 Complete"} />
@@ -496,7 +496,7 @@ const SystemMessage = memo(function SystemMessage({ msg }: { msg: ChatMessage })
   }
 
   return (
-    <div className="flex gap-2 px-3 py-1">
+    <div className="flex gap-2 px-3 py-1" data-tree-node-id={msg.treeNodeId}>
       <span className="w-8 shrink-0" />
       <div className={cn(
         "flex-1 min-w-0 text-[12px] px-2 py-1 rounded text-center",
@@ -548,7 +548,7 @@ const ChatInputRequest = memo(function ChatInputRequest({
   const isTimedOut = msg.expired || (isExpired && !isDone);
 
   return (
-    <div className="flex gap-2 px-3 py-1.5">
+    <div className="flex gap-2 px-3 py-1.5" data-tree-node-id={msg.treeNodeId}>
       <span className="w-8 shrink-0 text-center">🔔</span>
       <div className="flex-1 min-w-0">
         <div className="text-[13px] text-muted-foreground mb-1">Claude가 질문합니다</div>
@@ -619,6 +619,8 @@ export function ChatView() {
   const tree = useDashboardStore((s) => s.tree);
   const treeVersion = useDashboardStore((s) => s.treeVersion);
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
+  const focusEventId = useDashboardStore((s) => s.focusEventId);
+  const setFocusEventId = useDashboardStore((s) => s.setFocusEventId);
   const llmContext = useLlmContext();
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -677,6 +679,27 @@ export function ChatView() {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [activeSessionKey]);
+
+  // 검색 결과 클릭 시: focusEventId에 해당하는 메시지로 스크롤 + 2초간 하이라이트
+  useEffect(() => {
+    if (!focusEventId || !scrollRef.current) return;
+    // treeNodeId 패턴: {type}-{eventId} → suffix 매칭
+    const el = scrollRef.current.querySelector(
+      `[data-tree-node-id$="-${focusEventId}"]`,
+    ) as HTMLElement | null;
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("ring-2", "ring-accent-amber", "rounded");
+      const timer = setTimeout(() => {
+        el.classList.remove("ring-2", "ring-accent-amber", "rounded");
+        setFocusEventId(null);
+      }, 2000);
+      return () => clearTimeout(timer);
+    } else {
+      // DOM 요소 없음 (text_delta/tool_result 등): 세션 이동만, 스크롤 없음
+      setFocusEventId(null);
+    }
+  }, [focusEventId, setFocusEventId]);
 
   const scrollToBottom = useCallback(() => {
     if (scrollRef.current) {

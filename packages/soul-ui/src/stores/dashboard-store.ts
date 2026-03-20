@@ -125,6 +125,9 @@ export interface DashboardState {
   /** 입력창 임시 저장 (키: 세션ID / '__new_chat__' / '__resume__{sessionKey}')
    * ⚠️ getSessionResetState()에 포함하지 않는 것이 이 기능의 핵심 — drafts는 세션 전환 시 초기화하지 않는다 */
   drafts: Record<string, string>;
+
+  /** 검색 결과 클릭 시 스크롤할 이벤트 ID (ChatView가 감지하여 해당 메시지로 스크롤) */
+  focusEventId: number | null;
 }
 
 // === Actions Interface ===
@@ -203,6 +206,9 @@ export interface DashboardActions {
   // draft 저장/삭제
   setDraft: (key: string, text: string) => void;
   clearDraft: (key: string) => void;
+
+  // 검색 포커스 이벤트 ID
+  setFocusEventId: (eventId: number | null) => void;
 }
 
 // === Internal Processing Context ===
@@ -264,6 +270,7 @@ const initialState: DashboardState = {
   dashboardConfig: null,
   processingCtx: createProcessingContext(),
   drafts: {},
+  focusEventId: null,
 };
 
 /** 세션 전환 시 초기화할 상태를 매번 새 인스턴스로 생성 (Set 공유 방지) */
@@ -764,6 +771,10 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         const { [key]: _, ...rest } = drafts;
         set({ drafts: rest });
       },
+
+      // --- 검색 포커스 이벤트 ID ---
+
+      setFocusEventId: (focusEventId) => set({ focusEventId }),
 
       // --- 대시보드 프로필 설정 ---
 
