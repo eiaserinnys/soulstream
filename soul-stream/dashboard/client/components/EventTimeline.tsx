@@ -1,11 +1,18 @@
 /**
- * EventTimeline — SSE 이벤트 타임라인 (Phase 1: 단순 목록).
- * Phase 2에서 히스토리 replay 기능으로 개선 예정.
+ * EventTimeline — SSE 이벤트 타임라인.
+ * Phase 2: 히스토리 replay 스크롤 처리 개선.
+ *
+ * 스크롤 전략:
+ *   - init 이벤트 수신 후 캐시 replay burst 동안 스크롤 고정 OFF
+ *   - 300ms 동안 새 이벤트가 없으면 replay 완료로 판정 → 하단 스크롤 후 live 모드 ON
+ *   - live 모드에서는 이벤트 수신마다 하단 스크롤
  */
 
 import { useEffect, useRef } from "react";
 import { cn } from "@seosoyoung/soul-ui";
 import type { SessionEvent } from "../hooks/useSessionEvents";
+
+const REPLAY_SETTLE_MS = 300;
 
 interface EventItemConfig {
   dotClass: string;
@@ -50,11 +57,50 @@ interface EventTimelineProps {
 
 export function EventTimeline({ events }: EventTimelineProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  // replay 완료 여부 (true = live 모드, 이벤트마다 스크롤)
+  const isLiveRef = useRef(false);
+  // replay settle 타이머 핸들
+  const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // 새 이벤트가 올 때마다 하단으로 스크롤
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (events.length === 0) {
+      // 세션 리셋 — live 모드 초기화
+      isLiveRef.current = false;
+      if (settleTimerRef.current) {
+        clearTimeout(settleTimerRef.current);
+        settleTimerRef.current = null;
+      }
+      return;
+    }
+
+    const lastEvent = events[events.length - 1];
+
+    if (lastEvent.type === "init") {
+      // 새 SSE 연결 시작 — replay 모드로 전환
+      isLiveRef.current = false;
+    }
+
+    if (!isLiveRef.current) {
+      // replay 모드: burst settle 타이머 리셋
+      if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+      settleTimerRef.current = setTimeout(() => {
+        // burst 종료 — 하단으로 한 번에 스크롤 후 live 모드 전환
+        isLiveRef.current = true;
+        settleTimerRef.current = null;
+        bottomRef.current?.scrollIntoView({ behavior: "instant" });
+      }, REPLAY_SETTLE_MS);
+    } else {
+      // live 모드: 이벤트마다 하단 스크롤
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [events]);
+
+  // 컴포넌트 언마운트 시 타이머 정리
+  useEffect(() => {
+    return () => {
+      if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+    };
+  }, []);
 
   if (events.length === 0) {
     return (
