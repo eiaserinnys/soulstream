@@ -4,6 +4,8 @@
  * 고정 비율: 좌 65% / 우 35%.
  */
 
+import { useEffect } from "react";
+import { useDashboardStore } from "@seosoyoung/soul-ui";
 import { TopBar } from "./TopBar";
 import { NodesPanel } from "./NodesPanel";
 import { ChatPanel } from "./ChatPanel";
@@ -11,6 +13,11 @@ import { useNodes } from "../hooks/useNodes";
 import { useSessions } from "../hooks/useSessions";
 
 export function OrchestratorLayout() {
+  // soul-ui 스토리지 모드: SSE (오케스트레이터는 항상 SSE)
+  useEffect(() => {
+    useDashboardStore.getState().setStorageMode("sse");
+  }, []);
+
   // SSE 훅 활성화
   useNodes();
   useSessions();
