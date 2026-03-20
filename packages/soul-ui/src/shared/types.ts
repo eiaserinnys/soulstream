@@ -39,6 +39,7 @@ export type SSEEventType =
   // 사용자 입력 요청 이벤트
   | "input_request"
   | "input_request_expired"
+  | "input_request_responded"
   // 히스토리 동기화 이벤트
   | "history_sync"
   // LLM 프록시 이벤트
@@ -263,6 +264,13 @@ export interface InputRequestExpiredEvent {
   timestamp: number;
 }
 
+/** 사용자 입력 요청 응답 완료 이벤트 — 클라이언트가 선택 창을 닫아야 함 */
+export interface InputRequestRespondedEvent {
+  type: "input_request_responded";
+  request_id: string;
+  timestamp: number;
+}
+
 /** LLM 프록시 응답 이벤트 */
 export interface AssistantMessageEvent {
   type: "assistant_message";
@@ -299,6 +307,7 @@ export type SoulSSEEvent =
   | ReconnectEvent
   | InputRequestEvent
   | InputRequestExpiredEvent
+  | InputRequestRespondedEvent
   | HistorySyncEvent
   | AssistantMessageEvent;
 

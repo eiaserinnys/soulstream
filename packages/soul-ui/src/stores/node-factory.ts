@@ -26,6 +26,7 @@ import type {
   CompactEvent,
   InputRequestEvent,
   InputRequestExpiredEvent,
+  InputRequestRespondedEvent,
   AssistantMessageEvent,
 } from "@shared/types";
 import type { ProcessingContext } from "./processing-context";
@@ -277,6 +278,17 @@ export function applyUpdate(
         // 대신 serverExpiredAt으로 "만료 신호"만 전달 — AskQuestionBanner가 2초 후 expireInputRequest 호출
         (node as InputRequestNodeDef).serverExpiredAt = Date.now();
         return true;  // treeVersion++ → 리렌더 트리거 (배너에서 serverExpiredAt 감지)
+      }
+      return false;
+    }
+
+    case "input_request_responded": {
+      const e = event as InputRequestRespondedEvent;
+      const node = ctx.nodeMap.get(e.request_id);
+      if (node && node.type === "input_request") {
+        (node as InputRequestNodeDef).responded = true;
+        (node as InputRequestNodeDef).completed = true;
+        return true;  // treeVersion++ → 배너 리렌더 → findPendingInputRequest가 필터링
       }
       return false;
     }
