@@ -180,6 +180,7 @@ class TaskExecutor:
                     on_runner_ready=on_runner_ready,
                     context_items=task.context_items,
                     agent_session_id=task.agent_session_id,
+                    model=task.model,
                 ):
                     event_dict = event.model_dump()
 
