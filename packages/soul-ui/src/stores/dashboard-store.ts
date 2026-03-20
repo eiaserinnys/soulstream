@@ -24,6 +24,7 @@ import type {
   TextStartEvent,
   HistorySyncEvent,
   InputRequestNodeDef,
+  CatalogState,
 } from "@shared/types";
 import type { StorageMode } from "../providers/types";
 import {
@@ -128,6 +129,15 @@ export interface DashboardState {
 
   /** 검색 결과 클릭 시 스크롤할 이벤트 ID (ChatView가 감지하여 해당 메시지로 스크롤) */
   focusEventId: number | null;
+
+  /** 폴더 카탈로그 상태 */
+  catalog: CatalogState | null;
+
+  /** 선택된 폴더 ID (null = 미분류) */
+  selectedFolderId: string | null;
+
+  /** 카탈로그 변경 감지용 카운터 */
+  catalogVersion: number;
 }
 
 // === Actions Interface ===
@@ -209,6 +219,11 @@ export interface DashboardActions {
 
   // 검색 포커스 이벤트 ID
   setFocusEventId: (eventId: number | null) => void;
+
+  // 카탈로그
+  setCatalog: (catalog: CatalogState) => void;
+  selectFolder: (folderId: string | null) => void;
+  getSessionsInFolder: (folderId: string | null) => SessionSummary[];
 }
 
 // === Internal Processing Context ===
@@ -271,6 +286,9 @@ const initialState: DashboardState = {
   processingCtx: createProcessingContext(),
   drafts: {},
   focusEventId: null,
+  catalog: null,
+  selectedFolderId: null,
+  catalogVersion: 0,
 };
 
 /** 세션 전환 시 초기화할 상태를 매번 새 인스턴스로 생성 (Set 공유 방지) */
@@ -801,6 +819,32 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           (node as InputRequestNodeDef).expired = true;
           set((state) => ({ treeVersion: state.treeVersion + 1 }));
         }
+      },
+
+      // --- 카탈로그 ---
+
+      setCatalog: (catalog) =>
+        set((state) => ({ catalog, catalogVersion: state.catalogVersion + 1 })),
+
+      selectFolder: (folderId) => set({ selectedFolderId: folderId }),
+
+      getSessionsInFolder: (folderId) => {
+        const { sessions, catalog } = get();
+        if (!catalog) return sessions;
+        return sessions.filter((s) => {
+          const assignment = catalog.sessions[s.agentSessionId];
+          if (folderId === null) {
+            // 미분류: 카탈로그에 없거나 folderId가 null인 세션
+            return !assignment || assignment.folderId === null;
+          }
+          return assignment?.folderId === folderId;
+        }).map((s) => {
+          const assignment = catalog.sessions[s.agentSessionId];
+          if (assignment?.displayName) {
+            return { ...s, displayName: assignment.displayName };
+          }
+          return s;
+        });
       },
     }),
     {
