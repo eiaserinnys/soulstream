@@ -239,6 +239,13 @@ def recover_orphan_sessions(
         try:
             events = event_store.read_all(agent_session_id)
             if not events:
+                # 이벤트 없는 JSONL은 복구 불가 → 삭제하여 재발견 방지
+                try:
+                    event_store.delete_session(agent_session_id)
+                except Exception as del_e:
+                    logger.warning(
+                        f"Failed to delete empty orphan JSONL {agent_session_id}: {del_e!r}"
+                    )
                 continue
 
             task = _rebuild_task_from_events(agent_session_id, events)
@@ -260,6 +267,15 @@ def recover_orphan_sessions(
                         if task.completed_at
                         else None
                     ),
+                )
+
+            # catalog에 기록한 뒤 JSONL 삭제 (재시작 시 재발견 방지)
+            try:
+                event_store.delete_session(agent_session_id)
+                logger.debug(f"Deleted orphan JSONL after recovery: {agent_session_id}")
+            except Exception as del_e:
+                logger.warning(
+                    f"Failed to delete orphan JSONL {agent_session_id}: {del_e!r}"
                 )
 
             logger.info(

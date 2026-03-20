@@ -12,6 +12,7 @@ TaskManager._tasks에서 퇴거된 세션도 카탈로그에는 남아있어,
 import asyncio
 import json
 import logging
+import traceback
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -22,6 +23,9 @@ from soul_server.service.task_models import (
 )
 
 logger = logging.getLogger(__name__)
+
+SAVE_RETRY_COUNT = 3
+SAVE_RETRY_DELAY = 0.1  # 100ms
 
 
 class SessionCatalog:
@@ -228,23 +232,44 @@ class SessionCatalog:
         await self._save_to_file()
 
     async def _save_to_file(self) -> None:
-        """카탈로그를 파일에 저장 (atomic write)"""
+        """카탈로그를 파일에 저장 (atomic write, 재시도 포함)"""
         if not self._catalog_path:
             return
-        try:
-            data = {
-                "entries": self._entries,
-                "last_saved": datetime_to_str(utc_now()),
-            }
-            self._catalog_path.parent.mkdir(parents=True, exist_ok=True)
-            temp_path = self._catalog_path.with_suffix(".tmp")
-            temp_path.write_text(
-                json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
-            )
-            temp_path.replace(self._catalog_path)
-            logger.debug(f"SessionCatalog saved: {len(self._entries)} entries")
-        except Exception as e:
-            logger.error(f"Failed to save session catalog: {e}")
+        data = {
+            "entries": self._entries,
+            "last_saved": datetime_to_str(utc_now()),
+        }
+        self._catalog_path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = self._catalog_path.with_suffix(".tmp")
+        last_error = None
+        last_tb = None
+        for attempt in range(SAVE_RETRY_COUNT):
+            try:
+                temp_path.write_text(
+                    json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
+                temp_path.replace(self._catalog_path)
+                if attempt > 0:
+                    logger.info(f"SessionCatalog saved on retry {attempt + 1}")
+                else:
+                    logger.debug(f"SessionCatalog saved: {len(self._entries)} entries")
+                return
+            except Exception as e:
+                last_error = e
+                last_tb = traceback.format_exc()  # except 안에서 캡처
+                try:
+                    temp_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                if attempt < SAVE_RETRY_COUNT - 1:
+                    logger.warning(
+                        f"SessionCatalog save attempt {attempt + 1} failed: {last_error!r}, retrying..."
+                    )
+                    await asyncio.sleep(SAVE_RETRY_DELAY)
+        logger.error(
+            f"Failed to save session catalog after {SAVE_RETRY_COUNT} attempts: {last_error!r}\n"
+            f"{last_tb}"
+        )
 
     async def load(self) -> None:
         """파일에서 카탈로그 로드"""

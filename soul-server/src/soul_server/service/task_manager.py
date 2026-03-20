@@ -94,6 +94,10 @@ class TaskManager:
         )
         self._catalog = SessionCatalog(catalog_path)
 
+        # catalog 파일이 존재했고 로드된 경우 True
+        # False = cold-start 복구 모드 → pre_shutdown 세션 재개 금지
+        self._catalog_loaded: bool = False
+
         # LRU 퇴거 관리
         self._eviction_ttl = eviction_ttl
         self._eviction_candidates: Dict[str, float] = {}  # {session_id: expiry_timestamp}
@@ -170,7 +174,12 @@ class TaskManager:
         loaded = await self._storage.load(self._tasks, event_store=self._event_store)
 
         # 2. 기존 카탈로그 파일 로드
+        # _catalog_loaded: catalog 파일이 존재했던 경우 True
+        # False = cold-start 복구 모드 → pre_shutdown 세션 재개 금지
+        catalog_file = self._catalog._catalog_path
+        catalog_existed = catalog_file is not None and catalog_file.exists()
         await self._catalog.load()
+        self._catalog_loaded = catalog_existed
 
         # 3. tasks.json의 세션만 카탈로그에 반영 (기존 엔트리 유지)
         for session_id, task in self._tasks.items():
