@@ -182,11 +182,16 @@ class Task:
 
 
 # 이벤트 타입별 미리보기 텍스트 필드 매핑 (readable events only)
+# - thinking: ThinkingSSEEvent.thinking
+# - text_delta: TextDeltaSSEEvent.text (block.text 전체, 청크 아님)
+# - result: ResultSSEEvent.output
+# - complete: CompleteEvent.result
+# - error: ErrorEvent.message
+# intervention_sent는 별도 처리 (_update_and_broadcast_last_message L291~292)
 PREVIEW_FIELD_MAP: dict[str, str] = {
-    "intervention": "text",
-    "thinking": "thinking",
-    "text": "text",
-    "result": "result",
-    "complete": "result",
-    "error": "error",
+    "thinking":   "thinking",
+    "text_delta": "text",
+    "result":     "output",
+    "complete":   "result",
+    "error":      "error",
 }
