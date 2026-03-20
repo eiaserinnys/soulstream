@@ -7,6 +7,7 @@ import type { NodeManager } from "../nodes/node-manager";
 import { SessionAggregator } from "../sessions/session-aggregator";
 import { SessionRouter } from "../sessions/session-router";
 import type { CreateSessionRequest } from "../sessions/types";
+import { globalEventStore } from "../sessions/event-store";
 
 export function createSessionsRouter(nodeManager: NodeManager): Router {
   const router = Router();
@@ -67,6 +68,13 @@ export function createSessionsRouter(nodeManager: NodeManager): Router {
       `data: ${JSON.stringify({ type: "init", sessionId, nodeId: found.nodeId })}\n\n`
     );
 
+    // 캐시된 이벤트 replay
+    const cached = globalEventStore.getEvents(sessionId);
+    for (const event of cached) {
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+    }
+
+    // 라이브 구독
     const unsub = node.onSessionEvent(sessionId, (event) => {
       res.write(`data: ${JSON.stringify(event)}\n\n`);
     });
