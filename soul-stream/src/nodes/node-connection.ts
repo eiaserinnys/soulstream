@@ -233,7 +233,8 @@ export class NodeConnection {
               (s as Record<string, unknown>).agent_session_id ??
               "";
             if (id) {
-              this._sessions.set(id as string, s);
+              // sessionId를 정규화하여 저장 (upstream이 agent_session_id만 보내는 경우 대비)
+              this._sessions.set(id as string, { ...s, sessionId: id as string });
             }
           }
         }
