@@ -265,10 +265,11 @@ async def lifespan(app: FastAPI):
                             logger.info(f"  세션 재개 실행 시작: {s['agent_session_id']}")
                     except Exception as e:
                         logger.warning(f"  세션 재개 실패 ({s['agent_session_id']}): {e}")
-                pre_shutdown_file.unlink()
                 logger.info(f"  이전 세션 재개 메시지 전송: {len(sessions_to_resume)}개")
             except Exception as e:
                 logger.warning(f"  pre_shutdown_sessions.json 처리 실패: {e}")
+            finally:
+                pre_shutdown_file.unlink(missing_ok=True)
 
     # LLM Proxy 초기화
     global _llm_executor
