@@ -4,7 +4,9 @@ export interface SessionSummary {
   sessionId: string;
   status: string;
   createdAt?: string;
-  lastMessage?: string;
+  updatedAt?: string;
+  lastMessage?: unknown; // soul-server가 {preview, timestamp, type} 객체를 보냄
+  prompt?: string;
   [key: string]: unknown;
 }
 
