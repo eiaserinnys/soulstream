@@ -179,6 +179,20 @@ app.use(
   }),
 );
 
+// Cogito Search 프록시 → soul-server /cogito/search
+app.get("/api/cogito/search", async (req, res) => {
+  const params = new URLSearchParams(req.query as Record<string, string>);
+  try {
+    const response = await fetch(`${SOUL_BASE_URL}/cogito/search?${params}`, {
+      headers: { Authorization: `Bearer ${AUTH_TOKEN}` },
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch {
+    res.status(502).json({ detail: "soul-server unavailable" });
+  }
+});
+
 // Status 프록시 (Soul Server is_draining 상태 조회 — 인증 불필요 공개 엔드포인트)
 app.get("/api/status", async (_req, res) => {
   try {
