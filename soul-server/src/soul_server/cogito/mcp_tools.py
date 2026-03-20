@@ -19,7 +19,7 @@ from fastmcp import FastMCP
 
 from cogito.manifest import load_manifest
 from soul_server.cogito.reflector_setup import reflect
-from soul_server.service.task_manager import task_manager
+from soul_server.service.task_manager import get_task_manager
 
 if TYPE_CHECKING:
     from soul_server.cogito.brief_composer import BriefComposer
@@ -235,8 +235,12 @@ async def list_sessions(
         {sessions: [...], next_cursor: int | None}
         next_cursor가 None이면 마지막 페이지.
     """
+    try:
+        tm = get_task_manager()
+    except RuntimeError as e:
+        return {"error": str(e)}
     limit = min(limit, 100)
-    sessions, _total = task_manager.get_all_sessions(offset=cursor, limit=limit + 1)
+    sessions, _total = tm.get_all_sessions(offset=cursor, limit=limit + 1)
     has_more = len(sessions) > limit
     return {
         "sessions": sessions[:limit],
@@ -265,8 +269,12 @@ async def list_session_events(
         {events: [...], next_cursor: int | None}
         next_cursor가 None이면 마지막 페이지.
     """
+    try:
+        tm = get_task_manager()
+    except RuntimeError as e:
+        return {"error": str(e)}
     limit = min(limit, 100)
-    event_store = task_manager.event_store
+    event_store = tm.event_store
     if event_store is None:
         return {"error": "EventStore가 초기화되지 않았습니다"}
     existing_ids = set(event_store.list_session_ids())
@@ -301,7 +309,11 @@ async def get_session_event(
     Returns:
         {id: int, event: dict} 또는 {error: str}
     """
-    event_store = task_manager.event_store
+    try:
+        tm = get_task_manager()
+    except RuntimeError as e:
+        return {"error": str(e)}
+    event_store = tm.event_store
     if event_store is None:
         return {"error": "EventStore가 초기화되지 않았습니다"}
     existing_ids = set(event_store.list_session_ids())
