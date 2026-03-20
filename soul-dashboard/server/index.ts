@@ -17,6 +17,7 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import passport from "passport";
 import { createSessionsProxyRouter } from "./routes/sessions-proxy.js";
+import { createCatalogProxyRouter } from "./routes/catalog-proxy.js";
 import { createEventsCachedRouter } from "./routes/events-cached.js";
 import { createActionsRouter } from "./routes/actions.js";
 import { createLlmProxyRouter } from "./routes/llm-proxy.js";
@@ -113,6 +114,7 @@ app.get("/api/config/settings", (_req, res) => {
 // GOOGLE_CLIENT_ID 미설정 시 requireAuth는 next()를 즉시 호출하여 통과
 
 app.use("/api/sessions", requireAuth);
+app.use("/api/catalog", requireAuth);
 app.use("/api/llm", requireAuth);
 app.use('/api/debug', requireAuth)
 
@@ -143,6 +145,15 @@ app.post('/api/debug/gc', (_, res) => {
 app.use(
   "/api/sessions",
   createSessionsProxyRouter({
+    soulBaseUrl: SOUL_BASE_URL,
+    authToken: AUTH_TOKEN,
+  }),
+);
+
+// Catalog 프록시 라우터
+app.use(
+  "/api/catalog",
+  createCatalogProxyRouter({
     soulBaseUrl: SOUL_BASE_URL,
     authToken: AUTH_TOKEN,
   }),

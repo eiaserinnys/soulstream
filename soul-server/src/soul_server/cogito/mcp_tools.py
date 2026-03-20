@@ -20,6 +20,7 @@ from fastmcp import FastMCP
 from cogito.manifest import load_manifest
 from soul_server.cogito.reflector_setup import reflect
 from soul_server.service.task_manager import get_task_manager
+from soul_server.main import get_session_db
 
 if TYPE_CHECKING:
     from soul_server.cogito.brief_composer import BriefComposer
@@ -269,22 +270,23 @@ async def list_session_events(
         {events: [...], next_cursor: int | None}
         next_cursor가 None이면 마지막 페이지.
     """
+    import json as _json
     try:
-        tm = get_task_manager()
+        db = get_session_db()
     except RuntimeError as e:
         return {"error": str(e)}
     limit = min(limit, 100)
-    event_store = tm.event_store
-    if event_store is None:
-        return {"error": "EventStore가 초기화되지 않았습니다"}
-    existing_ids = set(event_store.list_session_ids())
-    if session_id not in existing_ids:
+    session = db.get_session(session_id)
+    if session is None:
         return {"error": f"세션을 찾을 수 없습니다: {session_id}"}
-    all_events = event_store.read_since(agent_session_id=session_id, after_id=cursor)
+    all_events = db.read_events(session_id, after_id=cursor)
     has_more = len(all_events) > limit
     result = []
     for entry in all_events[:limit]:
-        ev = entry["event"]
+        try:
+            ev = _json.loads(entry["payload"])
+        except (_json.JSONDecodeError, KeyError):
+            ev = {}
         if tool_truncate_chars > 0 and ev.get("type") in ("tool_use", "tool_result"):
             ev = _truncate_tool_event(ev, tool_truncate_chars)
         result.append({"id": entry["id"], "event": ev})
@@ -309,20 +311,22 @@ async def get_session_event(
     Returns:
         {id: int, event: dict} 또는 {error: str}
     """
+    import json as _json
     try:
-        tm = get_task_manager()
+        db = get_session_db()
     except RuntimeError as e:
         return {"error": str(e)}
-    event_store = tm.event_store
-    if event_store is None:
-        return {"error": "EventStore가 초기화되지 않았습니다"}
-    existing_ids = set(event_store.list_session_ids())
-    if session_id not in existing_ids:
+    session = db.get_session(session_id)
+    if session is None:
         return {"error": f"세션을 찾을 수 없습니다: {session_id}"}
-    entry = event_store.read_one(agent_session_id=session_id, event_id=event_id)
+    entry = db.read_one_event(session_id, event_id)
     if entry is None:
         return {"error": f"이벤트를 찾을 수 없습니다: session={session_id}, event_id={event_id}"}
-    return entry
+    try:
+        ev = _json.loads(entry["payload"])
+    except (_json.JSONDecodeError, KeyError):
+        ev = {}
+    return {"id": entry["id"], "event": ev}
 
 
 @cogito_mcp.tool()
@@ -343,15 +347,12 @@ async def search_session_history(
         score > 0인 항목만 반환.
     """
     try:
-        tm = get_task_manager()
+        db = get_session_db()
     except RuntimeError as e:
         return {"error": str(e)}
-    event_store = tm.event_store
-    if event_store is None:
-        return {"error": "EventStore가 초기화되지 않았습니다"}
-    from soul_server.cogito.search import BM25SearchEngine
+    from soul_server.cogito.search import SessionSearchEngine
     try:
-        engine = BM25SearchEngine(event_store)
+        engine = SessionSearchEngine(db)
         results = engine.search(query=query, session_ids=session_ids, top_k=top_k)
     except ValueError as e:
         return {"error": str(e)}
@@ -384,18 +385,15 @@ async def api_search_sessions(
     top_k: int = Query(default=10, ge=1, le=100),
     session_ids: str | None = None,  # 콤마 구분 문자열
 ) -> dict:
-    """세션 기록 BM25 검색 REST 엔드포인트."""
-    event_store = None
+    """세션 기록 FTS5 검색 REST 엔드포인트."""
     try:
-        event_store = get_task_manager().event_store
+        db = get_session_db()
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
-    if event_store is None:
-        raise HTTPException(status_code=503, detail="EventStore not initialized")
-    from soul_server.cogito.search import BM25SearchEngine
+    from soul_server.cogito.search import SessionSearchEngine
     ids = [s.strip() for s in session_ids.split(",") if s.strip()] if session_ids else None
     try:
-        engine = BM25SearchEngine(event_store)
+        engine = SessionSearchEngine(db)
         results = engine.search(query=q, session_ids=ids, top_k=top_k)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

@@ -33,9 +33,9 @@ from soul_server.service.rate_limit_tracker import RateLimitTracker
 from soul_server.service.engine_adapter import init_soul_engine, get_soul_engine
 from soul_server.claude.agent_runner import ClaudeRunner
 from soul_server.service.runner_pool import RunnerPool
-from soul_server.service.task_manager import init_task_manager, get_task_manager
+from soul_server.service.task_manager import get_task_manager, TaskManager, set_task_manager
 from soul_server.service.session_broadcaster import init_session_broadcaster
-from soul_server.service.event_store import EventStore
+from soul_server.service.session_db import SessionDB
 from soul_server.models import HealthResponse
 from cogito.endpoint import mount_cogito as _mount_cogito
 from soul_server.cogito.mcp_tools import cogito_mcp, cogito_api_router, init as init_cogito_mcp
@@ -60,8 +60,24 @@ _runner_pool: RunnerPool | None = None
 # 전역 LLM executor 참조
 _llm_executor: LlmExecutor | None = None
 
+# 전역 SessionDB 참조
+_session_db: SessionDB | None = None
+
 # draining 상태 (신규 세션 거부 중 여부)
 _is_draining: bool = False
+
+
+def init_session_db(db: SessionDB) -> None:
+    """SessionDB 전역 인스턴스 설정"""
+    global _session_db
+    _session_db = db
+
+
+def get_session_db() -> SessionDB:
+    """SessionDB 전역 인스턴스 반환"""
+    if _session_db is None:
+        raise RuntimeError("SessionDB not initialized.")
+    return _session_db
 
 
 async def periodic_cleanup():
@@ -99,15 +115,15 @@ async def graceful_shutdown(task_manager, timeout: float = 50.0):
     _is_draining = True
 
     try:
-        # 활성 세션 목록 저장 (즉시 완료 — 예기치 않은 SIGKILL이 와도 Phase 2 재개 데이터 보존)
+        # 활성 세션을 DB에 플래그로 기록 (SIGKILL이 와도 DB에 남음)
         running_tasks = task_manager.get_running_tasks()
         active_sessions = [
             {"agent_session_id": t.agent_session_id, "claude_session_id": t.claude_session_id}
             for t in running_tasks
         ]
-        save_path = Path(settings.data_dir) / "pre_shutdown_sessions.json"
-        save_path.write_text(json.dumps(active_sessions))
-        logger.info(f"Graceful shutdown: {len(active_sessions)}개 활성 세션 저장 → {save_path}")
+        session_db = get_session_db()
+        session_db.mark_running_at_shutdown()
+        logger.info(f"Graceful shutdown: {len(active_sessions)}개 활성 세션 플래그 설정")
 
         # 각 세션에 종료 예고 intervention 전송
         # skip_resume=True로 add_intervention을 호출하여 완료 세션의 auto-resume을 방지한다.
@@ -138,7 +154,7 @@ async def graceful_shutdown(task_manager, timeout: float = 50.0):
 
     except Exception:
         # 예외 발생 시 draining 상태를 복원하여 서버가 영구적으로 /execute를 거부하지 않도록 한다
-        save_path.unlink(missing_ok=True)  # 파일이 기록됐을 수 있으므로 정리
+        session_db.clear_shutdown_flags()  # 플래그 정리
         _is_draining = False
         raise
 
@@ -210,21 +226,23 @@ async def lifespan(app: FastAPI):
     await pool.start_maintenance()
     logger.info(f"  Runner pool maintenance loop started (interval={settings.runner_pool_maintenance_interval}s)")
 
-    # EventStore 초기화
+    # SessionDB 초기화 (레거시 마이그레이션 → DB 생성)
     data_dir = Path(settings.data_dir)
-    events_base_dir = data_dir / "events"
-    event_store = EventStore(base_dir=events_base_dir)
-    logger.info(f"  EventStore initialized: {events_base_dir}")
+    db_path = data_dir / "soulstream.db"
+    SessionDB.migrate_from_legacy(db_path, data_dir)
+    _session_db = SessionDB(db_path)
+    _session_db.ensure_default_folders()
+    init_session_db(_session_db)
+    logger.info(f"  SessionDB initialized: {db_path}")
 
     # TaskManager 초기화 및 로드
-    storage_path = data_dir / "tasks.json"
-    task_manager = init_task_manager(
-        storage_path=storage_path,
-        event_store=event_store,
+    task_manager = TaskManager(
+        session_db=_session_db,
         eviction_ttl=settings.session_eviction_ttl_seconds,
     )
+    set_task_manager(task_manager)
     loaded = await task_manager.load()
-    logger.info(f"  Loaded {loaded} tasks from storage")
+    logger.info(f"  Loaded {loaded} sessions from DB")
 
     # SessionBroadcaster 초기화
     # pre_shutdown_sessions 처리보다 먼저 초기화해야 한다.
@@ -233,43 +251,37 @@ async def lifespan(app: FastAPI):
     broadcaster = init_session_broadcaster()
     logger.info("  SessionBroadcaster initialized")
 
-    # 이전 종료 시 저장된 세션 재개 (graceful_shutdown이 저장한 pre_shutdown_sessions.json)
-    # 완료된 세션에 add_intervention()을 호출하면 task_manager의 auto-resume이 새 실행을 생성한다.
-    pre_shutdown_file = data_dir / "pre_shutdown_sessions.json"
-    if pre_shutdown_file.exists():
-        if not task_manager._catalog_loaded:
-            # catalog 파일이 없었던 cold-start 복구 모드
-            # → pre_shutdown 세션 재개 금지 (OOM 방지)
-            logger.warning(
-                "Skipping pre-shutdown session resume: running in recovery mode "
-                "(catalog was missing or failed to load). "
-                "This prevents OOM from resuming stale sessions."
-            )
-            pre_shutdown_file.unlink()
-        else:
-            try:
-                sessions_to_resume = json.loads(pre_shutdown_file.read_text())
-                for s in sessions_to_resume:
-                    try:
-                        result = await task_manager.add_intervention(
-                            s["agent_session_id"],
-                            "소울스트림 서버 재시작이 완료되었습니다. 이전에 진행하던 작업을 재개해주세요.",
-                            user="system",
+    # 카탈로그 API 라우터 등록
+    from soul_server.api.catalog import create_catalog_router
+    catalog_router = create_catalog_router(session_db=_session_db, broadcaster=broadcaster)
+    app.include_router(catalog_router, prefix="/catalog", tags=["catalog"])
+    logger.info("  Catalog API registered")
+
+    # 이전 종료 시 저장된 세션 재개 (graceful_shutdown이 DB에 플래그로 저장)
+    shutdown_sessions = _session_db.get_shutdown_sessions()
+    if shutdown_sessions:
+        try:
+            for s in shutdown_sessions:
+                try:
+                    result = await task_manager.add_intervention(
+                        s["session_id"],
+                        "소울스트림 서버 재시작이 완료되었습니다. 이전에 진행하던 작업을 재개해주세요.",
+                        user="system",
+                    )
+                    if result.get("auto_resumed"):
+                        await task_manager.start_execution(
+                            agent_session_id=s["session_id"],
+                            claude_runner=get_soul_engine(),
+                            resource_manager=resource_manager,
                         )
-                        if result.get("auto_resumed"):
-                            await task_manager.start_execution(
-                                agent_session_id=s["agent_session_id"],
-                                claude_runner=get_soul_engine(),
-                                resource_manager=resource_manager,
-                            )
-                            logger.info(f"  세션 재개 실행 시작: {s['agent_session_id']}")
-                    except Exception as e:
-                        logger.warning(f"  세션 재개 실패 ({s['agent_session_id']}): {e}")
-                logger.info(f"  이전 세션 재개 메시지 전송: {len(sessions_to_resume)}개")
-            except Exception as e:
-                logger.warning(f"  pre_shutdown_sessions.json 처리 실패: {e}")
-            finally:
-                pre_shutdown_file.unlink(missing_ok=True)
+                        logger.info(f"  세션 재개 실행 시작: {s['session_id']}")
+                except Exception as e:
+                    logger.warning(f"  세션 재개 실패 ({s['session_id']}): {e}")
+            logger.info(f"  이전 세션 재개 메시지 전송: {len(shutdown_sessions)}개")
+        except Exception as e:
+            logger.warning(f"  shutdown session resume 실패: {e}")
+        finally:
+            _session_db.clear_shutdown_flags()
 
     # LLM Proxy 초기화
     global _llm_executor
@@ -285,7 +297,7 @@ async def lifespan(app: FastAPI):
         _llm_executor = LlmExecutor(
             adapters=llm_adapters,
             task_manager=task_manager,
-            event_store=event_store,
+            session_db=_session_db,
             session_broadcaster=broadcaster,
         )
         llm_router = create_llm_router(executor=_llm_executor)
