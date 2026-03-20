@@ -62,6 +62,7 @@ from soul_server.engine.types import (
     EngineResult,
     InputRequestEngineEvent,
     InputRequestExpiredEngineEvent,
+    InputRequestRespondedEngineEvent,
     InterventionCallback,
     EngineEvent,
     EventCallback,
@@ -672,6 +673,16 @@ class ClaudeRunner:
                     f"runner={self.runner_id}, request_id={request_id}, "
                     f"answers={answers}"
                 )
+
+                # 응답 완료 이벤트 발행 — 클라이언트가 배너를 닫도록
+                responded_event = InputRequestRespondedEngineEvent(
+                    request_id=request_id,
+                )
+                if self._on_event_callback:
+                    try:
+                        await self._on_event_callback(responded_event)
+                    except Exception as e:
+                        logger.warning(f"[ASK_USER] 응답 완료 이벤트 발행 실패: {e}")
 
                 # updated_input 구성: 원본 questions + answers
                 updated_input = dict(tool_input)
