@@ -237,28 +237,38 @@ async def lifespan(app: FastAPI):
     # 완료된 세션에 add_intervention()을 호출하면 task_manager의 auto-resume이 새 실행을 생성한다.
     pre_shutdown_file = data_dir / "pre_shutdown_sessions.json"
     if pre_shutdown_file.exists():
-        try:
-            sessions_to_resume = json.loads(pre_shutdown_file.read_text())
-            for s in sessions_to_resume:
-                try:
-                    result = await task_manager.add_intervention(
-                        s["agent_session_id"],
-                        "소울스트림 서버 재시작이 완료되었습니다. 이전에 진행하던 작업을 재개해주세요.",
-                        user="system",
-                    )
-                    if result.get("auto_resumed"):
-                        await task_manager.start_execution(
-                            agent_session_id=s["agent_session_id"],
-                            claude_runner=get_soul_engine(),
-                            resource_manager=resource_manager,
-                        )
-                        logger.info(f"  세션 재개 실행 시작: {s['agent_session_id']}")
-                except Exception as e:
-                    logger.warning(f"  세션 재개 실패 ({s['agent_session_id']}): {e}")
+        if not task_manager._catalog_loaded:
+            # catalog 파일이 없었던 cold-start 복구 모드
+            # → pre_shutdown 세션 재개 금지 (OOM 방지)
+            logger.warning(
+                "Skipping pre-shutdown session resume: running in recovery mode "
+                "(catalog was missing or failed to load). "
+                "This prevents OOM from resuming stale sessions."
+            )
             pre_shutdown_file.unlink()
-            logger.info(f"  이전 세션 재개 메시지 전송: {len(sessions_to_resume)}개")
-        except Exception as e:
-            logger.warning(f"  pre_shutdown_sessions.json 처리 실패: {e}")
+        else:
+            try:
+                sessions_to_resume = json.loads(pre_shutdown_file.read_text())
+                for s in sessions_to_resume:
+                    try:
+                        result = await task_manager.add_intervention(
+                            s["agent_session_id"],
+                            "소울스트림 서버 재시작이 완료되었습니다. 이전에 진행하던 작업을 재개해주세요.",
+                            user="system",
+                        )
+                        if result.get("auto_resumed"):
+                            await task_manager.start_execution(
+                                agent_session_id=s["agent_session_id"],
+                                claude_runner=get_soul_engine(),
+                                resource_manager=resource_manager,
+                            )
+                            logger.info(f"  세션 재개 실행 시작: {s['agent_session_id']}")
+                    except Exception as e:
+                        logger.warning(f"  세션 재개 실패 ({s['agent_session_id']}): {e}")
+                pre_shutdown_file.unlink()
+                logger.info(f"  이전 세션 재개 메시지 전송: {len(sessions_to_resume)}개")
+            except Exception as e:
+                logger.warning(f"  pre_shutdown_sessions.json 처리 실패: {e}")
 
     # LLM Proxy 초기화
     global _llm_executor
