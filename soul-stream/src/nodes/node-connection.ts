@@ -7,6 +7,7 @@
 import type { WebSocket } from "ws";
 import type { NodeRegistration, NodeInfo, NodeStatus } from "./types";
 import type { SessionSummary, SessionEvent } from "../sessions/types";
+import { globalEventStore } from "../sessions/event-store";
 
 let requestIdCounter = 0;
 function nextRequestId(): string {
@@ -208,6 +209,8 @@ export class NodeConnection {
         const sessionId = msg.session_id as string;
         const event = msg as SessionEvent;
 
+        globalEventStore.append(sessionId, event); // 이벤트 캐싱
+
         // 세션 이벤트 리스너에 전달
         const listeners = this._eventListeners.get(sessionId);
         if (listeners) {
@@ -285,6 +288,7 @@ export class NodeConnection {
           "";
         if (delId) {
           this._sessions.delete(delId);
+          globalEventStore.clear(delId); // 캐시 정리
         }
         break;
       }
