@@ -16,6 +16,10 @@ export interface OrchestratorSession {
   sessionId: string;
   nodeId: string;
   status: "running" | "idle" | "completed" | "error";
+  lastMessage?: { preview?: string; timestamp?: string; type?: string };
+  updatedAt?: string;
+  createdAt?: string;
+  prompt?: string;
 }
 
 /** SSE로 수신하는 노드 변경 이벤트 */
