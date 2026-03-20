@@ -33,10 +33,8 @@ export function ChatPanel() {
     return nodeSessions?.find((s) => s.sessionId === selectedSessionId) ?? null;
   }, [selectedNodeId, selectedSessionId, sessions]);
 
-  // SSE 이벤트 스트림 — running 세션만 구독
-  const activeSessionId =
-    selectedSession?.status === "running" ? selectedSessionId : null;
-  const events = useSessionEvents(activeSessionId);
+  // SSE 이벤트 스트림 — running: 실시간 구독, completed: 캐시 replay
+  const events = useSessionEvents(selectedSessionId);
 
   // 빈 상태
   if (!selectedNodeId) {
