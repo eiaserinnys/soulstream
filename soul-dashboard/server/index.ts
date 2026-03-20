@@ -181,7 +181,13 @@ app.use(
 
 // Cogito Search 프록시 → soul-server /cogito/search
 app.get("/api/cogito/search", async (req, res) => {
-  const params = new URLSearchParams(req.query as Record<string, string>);
+  const q = req.query.q as string | undefined;
+  if (!q) {
+    res.status(400).json({ detail: "q parameter required" });
+    return;
+  }
+  const topK = req.query.top_k as string | undefined;
+  const params = new URLSearchParams({ q, ...(topK ? { top_k: topK } : {}) });
   try {
     const response = await fetch(`${SOUL_BASE_URL}/cogito/search?${params}`, {
       headers: { Authorization: `Bearer ${AUTH_TOKEN}` },

@@ -681,6 +681,8 @@ export function ChatView() {
   }, [activeSessionKey]);
 
   // 검색 결과 클릭 시: focusEventId에 해당하는 메시지로 스크롤 + 2초간 하이라이트
+  // treeVersion을 의존성에 포함하여 세션 로딩 완료 후 재시도한다.
+  const focusAttemptsRef = useRef(0);
   useEffect(() => {
     if (!focusEventId || !scrollRef.current) return;
     // treeNodeId 패턴: {type}-{eventId} → suffix 매칭
@@ -688,18 +690,27 @@ export function ChatView() {
       `[data-tree-node-id$="-${focusEventId}"]`,
     ) as HTMLElement | null;
     if (el) {
+      focusAttemptsRef.current = 0;
       el.scrollIntoView({ behavior: "smooth", block: "center" });
       el.classList.add("ring-2", "ring-accent-amber", "rounded");
       const timer = setTimeout(() => {
         el.classList.remove("ring-2", "ring-accent-amber", "rounded");
         setFocusEventId(null);
       }, 2000);
-      return () => clearTimeout(timer);
-    } else {
-      // DOM 요소 없음 (text_delta/tool_result 등): 세션 이동만, 스크롤 없음
+      return () => {
+        clearTimeout(timer);
+        el.classList.remove("ring-2", "ring-accent-amber", "rounded");
+      };
+    }
+    // DOM 요소 없음: 세션 로딩 중일 수 있으므로 treeVersion 갱신마다 재시도.
+    // 최대 20회 시도 후 포기 (text_delta/tool_result 등 DOM 노드가 없는 이벤트 대응).
+    focusAttemptsRef.current += 1;
+    if (focusAttemptsRef.current >= 20) {
+      focusAttemptsRef.current = 0;
       setFocusEventId(null);
     }
-  }, [focusEventId, setFocusEventId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusEventId, treeVersion, setFocusEventId]);
 
   const scrollToBottom = useCallback(() => {
     if (scrollRef.current) {
