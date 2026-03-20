@@ -3,11 +3,32 @@
  */
 
 import { Router } from "express";
+import type { Response } from "express";
 import type { NodeManager } from "../nodes/node-manager";
 import { SessionAggregator } from "../sessions/session-aggregator";
 import { SessionRouter } from "../sessions/session-router";
-import type { CreateSessionRequest } from "../sessions/types";
+import type { CreateSessionRequest, SessionEvent } from "../sessions/types";
 import { globalEventStore } from "../sessions/event-store";
+
+/**
+ * SessionEvent에서 내부 이벤트를 추출하여 typed SSE로 전송한다.
+ *
+ * 서버 내부 형식: { type: "event", session_id: "...", event: { type: "text_start", ... } }
+ * SSE 출력 형식:  event: text_start\ndata: { "type": "text_start", ... }\n\n
+ *
+ * 이렇게 하면 클라이언트의 EventSource.addEventListener("text_start", ...)가 트리거된다.
+ */
+function writeTypedSSE(res: Response, sessionEvent: SessionEvent): void {
+  const inner = sessionEvent.event as Record<string, unknown> | undefined;
+  if (!inner) {
+    // event 필드가 없으면 래핑 없이 직접 전송
+    const eventType = sessionEvent.type ?? "message";
+    res.write(`event: ${eventType}\ndata: ${JSON.stringify(sessionEvent)}\n\n`);
+    return;
+  }
+  const eventType = (inner.type as string) ?? "message";
+  res.write(`event: ${eventType}\ndata: ${JSON.stringify(inner)}\n\n`);
+}
 
 export function createSessionsRouter(nodeManager: NodeManager): Router {
   const router = Router();
@@ -63,18 +84,18 @@ export function createSessionsRouter(nodeManager: NodeManager): Router {
       Connection: "keep-alive",
     });
 
-    // 초기 이벤트
+    // 초기 이벤트 — typed SSE
     res.write(
-      `data: ${JSON.stringify({ type: "init", sessionId, nodeId: found.nodeId })}\n\n`
+      `event: init\ndata: ${JSON.stringify({ type: "init", sessionId, nodeId: found.nodeId })}\n\n`
     );
 
     // 캐시된 이벤트 replay
     const cached = globalEventStore.getEvents(sessionId);
 
     if (cached.length > 0) {
-      // in-memory 캐시에 이벤트가 있으면 그대로 사용
+      // in-memory 캐시에 이벤트가 있으면 typed SSE로 전송
       for (const event of cached) {
-        res.write(`data: ${JSON.stringify(event)}\n\n`);
+        writeTypedSSE(res, event);
       }
     } else {
       // 캐시가 없으면 soul-server HTTP API에서 히스토리를 프록시
@@ -113,13 +134,14 @@ export function createSessionsRouter(nodeManager: NodeManager): Router {
                 if (eventType === "history_sync") break outer;
                 if (eventType === "keepalive") continue;
 
-                // soul-server 이벤트를 soul-stream 포맷으로 래핑
+                // soul-server 이벤트를 soul-stream 포맷으로 래핑 (캐시용)
                 const wrapped = {
                   type: "event",
                   session_id: sessionId,
                   event: parsed,
                 };
-                res.write(`data: ${JSON.stringify(wrapped)}\n\n`);
+                // typed SSE로 전송 (내부 이벤트를 꺼내서 event: prefix 추가)
+                writeTypedSSE(res, wrapped);
                 // in-memory 캐시에도 저장 (이후 재요청 시 재활용)
                 globalEventStore.append(sessionId, wrapped);
               } catch {
@@ -135,9 +157,9 @@ export function createSessionsRouter(nodeManager: NodeManager): Router {
       }
     }
 
-    // 라이브 구독
+    // 라이브 구독 — typed SSE
     const unsub = node.onSessionEvent(sessionId, (event) => {
-      res.write(`data: ${JSON.stringify(event)}\n\n`);
+      writeTypedSSE(res, event);
     });
 
     req.on("close", () => {
