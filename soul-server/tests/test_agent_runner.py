@@ -1067,8 +1067,8 @@ class TestPidTrackingAndForceKill:
         assert runner.client is None
         assert runner.pid is None
 
-    async def test_remove_client_no_force_kill_on_success(self):
-        """disconnect 성공 시 강제 종료 호출 안 함"""
+    async def test_remove_client_force_kill_on_success(self):
+        """disconnect 성공 시에도 orphan subprocess 방지를 위해 강제 종료 호출"""
         runner = ClaudeRunner()
 
         mock_client = AsyncMock()
@@ -1078,7 +1078,7 @@ class TestPidTrackingAndForceKill:
         with patch.object(ClaudeRunner, "_force_kill_process") as mock_force_kill:
             await runner._remove_client()
 
-        mock_force_kill.assert_not_called()
+        mock_force_kill.assert_called_once_with(11111, runner.runner_id)
         assert runner.client is None
         assert runner.pid is None
 

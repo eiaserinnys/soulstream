@@ -121,17 +121,17 @@ class TestSessionInfoSchema:
                 # created_at, updated_at 누락
             )
 
-    def test_missing_session_type_rejected(self):
-        """session_type 누락 시 거부되어야 한다"""
-        with pytest.raises(ValidationError):
-            SessionInfo(
-                agent_session_id="sess-001",
-                status=TaskStatus.RUNNING,
-                prompt="Hello",
-                created_at=datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc),
-                updated_at=datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc),
-                # session_type 누락 — 필수 필드
-            )
+    def test_missing_session_type_defaults_to_claude(self):
+        """session_type 누락 시 기본값 'claude'가 적용되어야 한다"""
+        info = SessionInfo(
+            agent_session_id="sess-001",
+            status=TaskStatus.RUNNING,
+            prompt="Hello",
+            created_at=datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc),
+            # session_type 누락 — default "claude"
+        )
+        assert info.session_type == "claude"
 
 
 class TestSessionsListResponseSchema:
