@@ -12,7 +12,7 @@ import time
 import logging
 from pathlib import Path
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -567,25 +567,10 @@ app.include_router(dash_api_router)
 
 # SPA fallback 미들웨어 — /sess-xxx 같은 클라이언트 라우트에서 index.html을 반환한다.
 # StaticFiles(html=True)가 /sess-xxx 에 대해 404를 반환할 때 index.html로 폴백한다.
-# index.html에는 항상 no-cache 헤더를 추가하여 브라우저가 항상 최신 JS 번들을 로드하게 한다.
 @app.middleware("http")
 async def spa_fallback(request: Request, call_next):
-    """SPA fallback — /api/* 이외의 경로에서 404 발생 시 index.html을 반환한다.
-    StaticFiles가 서빙하는 index.html 응답에도 no-cache 헤더를 추가한다."""
+    """SPA fallback — /api/* 이외의 경로에서 404 발생 시 index.html을 반환한다."""
     response = await call_next(request)
-
-    # StaticFiles가 서빙한 HTML 응답에 no-cache 헤더 추가
-    # (Vite 빌드 업데이트 후 브라우저가 구 index.html을 캐시하는 문제 방지)
-    content_type = response.headers.get("content-type", "")
-    if (
-        request.method == "GET"
-        and "text/html" in content_type
-        and not request.url.path.startswith("/api/")
-    ):
-        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-        response.headers["Pragma"] = "no-cache"
-        return response
-
     if (
         response.status_code == 404
         and request.method == "GET"
@@ -601,6 +586,24 @@ async def spa_fallback(request: Request, call_next):
                 headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"},
             )
     return response
+
+
+# GET / 전용 라우트 — StaticFiles보다 먼저 등록되어 index.html에 no-cache 헤더를 보장한다.
+# StaticFiles(html=True)는 FileResponse를 반환하므로 미들웨어에서 헤더 수정이 불가능하다.
+# 이 라우트는 StaticFiles Mount보다 등록 순서상 앞에 있으므로 우선 매칭된다.
+@app.get("/", include_in_schema=False)
+async def serve_index_html() -> Response:
+    """/ 요청에 index.html을 Cache-Control: no-cache와 함께 반환한다."""
+    _d = os.environ.get("SOUL_DASHBOARD_DIR", "dist/client")
+    _p = Path(_d) if Path(_d).is_absolute() else Path.cwd() / _d
+    _idx = _p / "index.html"
+    if _idx.exists():
+        from starlette.responses import HTMLResponse
+        return HTMLResponse(
+            _idx.read_text(),
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"},
+        )
+    return Response("Not Found", status_code=404)
 
 
 # === Exception Handlers ===
