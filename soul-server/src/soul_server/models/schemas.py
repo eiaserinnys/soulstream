@@ -37,6 +37,7 @@ class SSEEventType(str, Enum):
     # 사용자 입력 요청 이벤트
     INPUT_REQUEST = "input_request"
     INPUT_REQUEST_EXPIRED = "input_request_expired"
+    INPUT_REQUEST_RESPONDED = "input_request_responded"
 
 
 # === Request Models ===
@@ -378,6 +379,17 @@ class InputRequestExpiredSSEEvent(BaseModel):
     """
     type: str = "input_request_expired"
     request_id: str = Field(..., description="만료된 요청 식별자")
+    timestamp: float = Field(..., description="이벤트 발행 시각 (Unix epoch)")
+
+
+class InputRequestRespondedSSEEvent(BaseModel):
+    """사용자 입력 요청 응답 완료 이벤트
+
+    사용자가 AskUserQuestion에 응답하면 발행됩니다.
+    클라이언트는 이 이벤트를 받아 선택 창을 닫아야 합니다.
+    """
+    type: str = "input_request_responded"
+    request_id: str = Field(..., description="응답된 요청 식별자")
     timestamp: float = Field(..., description="이벤트 발행 시각 (Unix epoch)")
 
 

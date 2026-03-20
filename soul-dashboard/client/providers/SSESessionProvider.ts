@@ -26,6 +26,8 @@ const SSE_EVENT_TYPES: SSEEventType[] = [
   "user_message",
   "assistant_message",
   "input_request",
+  "input_request_expired",
+  "input_request_responded",
   "debug",
   "complete",
   "error",
