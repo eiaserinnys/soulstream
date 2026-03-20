@@ -487,8 +487,9 @@ class ClaudeRunner:
             logger.info(f"ClaudeSDKClient 정상 종료: runner={self.runner_id}")
         except Exception as e:
             logger.warning(f"ClaudeSDKClient disconnect 실패: runner={self.runner_id}, {e}")
-            if pid:
-                self._force_kill_process(pid, self.runner_id)
+
+        if pid:
+            self._force_kill_process(pid, self.runner_id)
 
     def detach_client(self) -> Optional[ClaudeSDKClient]:
         """풀이 runner를 회수할 때 client/pid를 안전하게 분리
