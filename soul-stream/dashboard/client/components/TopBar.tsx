@@ -6,12 +6,12 @@ import { Badge, cn } from "@seosoyoung/soul-ui";
 import { useOrchestratorStore } from "../store/orchestrator-store";
 
 const CONNECTION_CONFIG = {
-  disconnected: { label: "Idle", variant: "outline" as const, dotClass: "bg-muted-foreground" },
   connecting: { label: "Connecting...", variant: "warning" as const, dotClass: "bg-accent-amber" },
   connected: { label: "Live", variant: "success" as const, dotClass: "bg-success" },
+  error: { label: "Reconnecting...", variant: "error" as const, dotClass: "bg-accent-red" },
 };
 
-function ConnectionBadge({ status }: { status: "disconnected" | "connecting" | "connected" }) {
+function ConnectionBadge({ status }: { status: "connecting" | "connected" | "error" }) {
   const config = CONNECTION_CONFIG[status];
   const shouldPulse = status === "connected" || status === "connecting";
 
