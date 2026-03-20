@@ -1,6 +1,6 @@
 """BM25 기반 세션 이벤트 전문 검색 엔진."""
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 from rank_bm25 import BM25Okapi
 
@@ -15,8 +15,19 @@ class SearchResult:
     preview: str  # 최대 200자
     event_type: str
 
+    def to_dict(self) -> dict:
+        return asdict(self)
+
 
 class BM25SearchEngine:
+    """BM25 전문 검색 엔진.
+
+    온-더-플라이 인덱싱: search() 호출마다 대상 세션의 JSONL을 전부 읽어
+    BM25 인덱스를 처음부터 구축한다. 세션 수 × 이벤트 수에 비례하는
+    O(N) 시간 복잡도를 가지므로, 세션이 수백 개를 넘으면 응답 지연이 발생할 수 있다.
+    인덱스 캐싱은 향후 확장 포인트로 남겨둔다.
+    """
+
     def __init__(self, event_store: EventStore) -> None:
         self._store = event_store
 

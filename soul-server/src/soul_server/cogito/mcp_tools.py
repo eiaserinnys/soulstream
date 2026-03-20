@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastmcp import FastMCP
 
 from cogito.manifest import load_manifest
@@ -355,18 +355,7 @@ async def search_session_history(
         results = engine.search(query=query, session_ids=session_ids, top_k=top_k)
     except ValueError as e:
         return {"error": str(e)}
-    return {
-        "results": [
-            {
-                "session_id": r.session_id,
-                "event_id": r.event_id,
-                "score": r.score,
-                "preview": r.preview,
-                "event_type": r.event_type,
-            }
-            for r in results
-        ]
-    }
+    return {"results": [r.to_dict() for r in results]}
 
 
 # ---------------------------------------------------------------------------
@@ -392,7 +381,7 @@ async def api_refresh() -> dict:
 @cogito_api_router.get("/search")
 async def api_search_sessions(
     q: str,
-    top_k: int = 10,
+    top_k: int = Query(default=10, ge=1, le=100),
     session_ids: str | None = None,  # 콤마 구분 문자열
 ) -> dict:
     """세션 기록 BM25 검색 REST 엔드포인트."""
@@ -412,11 +401,8 @@ async def api_search_sessions(
         raise HTTPException(status_code=400, detail=str(e))
     return {
         "results": [
-            {
-                "session_id": r.session_id,
-                "event_id": r.event_id,
-                "score": r.score,
-                "preview": r.preview,
+            r.to_dict()
+            for r in results
                 "event_type": r.event_type,
             }
             for r in results

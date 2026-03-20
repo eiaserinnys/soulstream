@@ -310,7 +310,8 @@ def extract_searchable_text(event: dict) -> str | None:
         if isinstance(inp, str):
             return inp
         if isinstance(inp, dict):
-            return str(inp)
+            # str(dict)은 Python repr이라 검색 품질이 낮다. json.dumps로 일관된 형태 유지.
+            return json.dumps(inp, ensure_ascii=False)
     elif event_type == "tool_result":
         content = event.get("content")
         if isinstance(content, str):
