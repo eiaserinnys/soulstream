@@ -29,7 +29,7 @@ export function NodeColumn({
     selectedNodeId === node.nodeId && selectedSessionId === null;
 
   return (
-    <div className="flex-none w-[280px] flex flex-col h-full border-r border-border last:border-r-0 overflow-hidden">
+    <div className="flex-none w-[320px] flex flex-col h-full border-r border-border last:border-r-0 overflow-hidden">
       <NodeHeader
         node={node}
         colorIndex={colorIndex}
