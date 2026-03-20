@@ -223,6 +223,7 @@ class ExecuteRequest(BaseModel):
         None,
         description="추가 컨텍스트 항목 목록. 각 항목은 {key, label, content} 형태.",
     )
+    model: Optional[str] = Field(None, description="Claude 모델명. 미지정 시 서버 기본 모델 사용.")
 
 
 class SessionResponse(BaseModel):

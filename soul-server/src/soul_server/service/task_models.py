@@ -86,6 +86,9 @@ class Task:
     # 각 항목은 {"key": str, "label": str, "content": Any} 형태
     context_items: Optional[List[dict]] = field(default=None, repr=False)
 
+    # 모델 지정 (런타임 전용, 영속화 안 됨)
+    model: Optional[str] = field(default=None, repr=False)
+
     # LLM 프록시 메타데이터
     session_type: str = "claude"        # "claude" | "llm"
     llm_provider: Optional[str] = None  # "openai" | "anthropic"
