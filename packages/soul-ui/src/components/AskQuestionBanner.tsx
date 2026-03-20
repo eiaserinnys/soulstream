@@ -40,37 +40,26 @@ interface AskQuestionBannerInnerProps {
 function AskQuestionBannerInner({ node, sessionId }: AskQuestionBannerInnerProps) {
   const expireInputRequest = useDashboardStore((s: DashboardState & DashboardActions) => s.expireInputRequest);
   const { remainingSec, isExpired } = useInputRequestTimer(node.receivedAt, node.timeoutSec ?? 300);
-  const [responded, setResponded] = useState(false);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
-  const [visible, setVisible] = useState(true);
 
   // 두 만료 경로 통합: 클라이언트 타이머(isExpired) 또는 서버 이벤트(serverExpiredAt)
   const isEffectivelyExpired = isExpired || !!node.serverExpiredAt;
 
   useEffect(() => {
-    if (isEffectivelyExpired && !responded) {
+    if (isEffectivelyExpired) {
       // expireInputRequest를 즉시 호출하면 expired=true → findPendingInputRequest 필터링 → 배너 즉시 사라짐
       // 2초 후에 호출하여 그 동안 "⏱️ 시간 초과" 메시지 표시
       const timer = setTimeout(() => expireInputRequest(node.id), 2000);
       return () => clearTimeout(timer);
     }
-  }, [isEffectivelyExpired, responded, node.id, expireInputRequest]);
-
-  useEffect(() => {
-    if (responded) {
-      const timer = setTimeout(() => setVisible(false), 2000);
-      return () => clearTimeout(timer);
-    }
-  }, [responded]);
-
-  if (!visible) return null;
+  }, [isEffectivelyExpired, node.id, expireInputRequest]);
 
   const question: InputRequestQuestion | undefined = node.questions[0];
   if (!question) return null;
 
   const handleSelect = async (answer: string) => {
     if (selectedAnswer) return;
-    setSelectedAnswer(answer);  // 낙관적 UI
+    setSelectedAnswer(answer);  // 낙관적 UI: 버튼 즉시 비활성화
     const success = await submitInputResponse(
       sessionId,
       node.requestId,
@@ -78,18 +67,16 @@ function AskQuestionBannerInner({ node, sessionId }: AskQuestionBannerInnerProps
       question.question,
       answer
     );
-    if (success) {
-      setResponded(true);
-    } else {
+    if (!success) {
       setSelectedAnswer(null);  // 실패 시 롤백
     }
+    // 성공 시 상태 갱신은 SSE로 돌아오는 input_request_responded 이벤트가 처리한다.
+    // responded=true → findPendingInputRequest 필터링 → 배너 컴포넌트 언마운트
   };
 
   return (
     <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000] bg-background border border-border rounded-xl p-4 min-w-80 max-w-[500px] shadow-lg">
-      {responded ? (
-        <div className="text-center text-success">✅ 응답 완료</div>
-      ) : isEffectivelyExpired ? (
+      {isEffectivelyExpired ? (
         <div className="text-center text-muted-foreground">⏱️ 시간 초과</div>
       ) : (
         <>

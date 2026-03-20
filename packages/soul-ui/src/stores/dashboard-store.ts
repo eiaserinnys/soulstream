@@ -197,9 +197,6 @@ export interface DashboardActions {
   // 대시보드 프로필 설정
   setDashboardConfig: (config: DashboardConfig) => void;
 
-  // input_request 응답 완료 처리
-  respondToInputRequest: (nodeId: string) => void;
-
   // input_request 타임아웃 만료 처리
   expireInputRequest: (nodeId: string) => void;
 
@@ -779,18 +776,6 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
       // --- 대시보드 프로필 설정 ---
 
       setDashboardConfig: (dashboardConfig) => set({ dashboardConfig }),
-
-      // --- input_request 응답 완료 처리 ---
-      // 클라이언트가 respond API 호출 성공 후, 트리 노드의 responded/completed 상태를 갱신
-      respondToInputRequest: (nodeId) => {
-        const ctx = get().processingCtx;
-        const node = ctx.nodeMap.get(nodeId);
-        if (node && node.type === "input_request") {
-          (node as InputRequestNodeDef).responded = true;
-          (node as InputRequestNodeDef).completed = true;
-          set((state) => ({ treeVersion: state.treeVersion + 1 }));
-        }
-      },
 
       // --- input_request 타임아웃 만료 처리 ---
       // 타임아웃 경과 시 트리 노드의 expired 상태를 갱신

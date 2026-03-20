@@ -261,6 +261,23 @@ class InputRequestExpiredEngineEvent(EngineEvent):
         )]
 
 
+@dataclass
+class InputRequestRespondedEngineEvent(EngineEvent):
+    """사용자 입력 요청 응답 완료 이벤트
+
+    사용자가 AskUserQuestion에 응답하면 발행됩니다.
+    클라이언트는 이 이벤트를 받아 선택 창을 닫고 응답 완료 상태로 갱신합니다.
+    """
+    request_id: str = ""
+
+    def to_sse(self) -> list[BaseModel]:
+        from soul_server.models.schemas import InputRequestRespondedSSEEvent
+        return [InputRequestRespondedSSEEvent(
+            request_id=self.request_id,
+            timestamp=self.timestamp,
+        )]
+
+
 # 이벤트 콜백 타입 alias
 # EngineEvent를 받아서 코루틴을 반환하는 비동기 콜백
 EventCallback = Callable[[EngineEvent], Coroutine[Any, Any, None]]
