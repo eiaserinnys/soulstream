@@ -16,6 +16,7 @@ import logging
 import re
 import socket
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncIterator, Awaitable, Callable, List, Optional, Union
 
@@ -138,7 +139,7 @@ def _build_credential_alert_event(alert: dict) -> CredentialAlertEvent:
     )
 
 
-def _build_soulstream_context_item(
+def build_soulstream_context_item(
     agent_session_id: str,
     claude_session_id: Optional[str],
     workspace_dir: str,
@@ -159,6 +160,7 @@ def _build_soulstream_context_item(
         "workspace_dir": workspace_dir,
         "hostname": hostname,
         "ip_address": ip,
+        "current_time": datetime.now(timezone.utc).isoformat(),
     }
     return {
         "key": "soulstream_session",
@@ -207,6 +209,10 @@ class SoulEngineAdapter:
         self._rate_limit_tracker = rate_limit_tracker
         self._serendipity_adapter = serendipity_adapter
         self._brief_composer = brief_composer
+
+    @property
+    def workspace_dir(self) -> str:
+        return self._workspace_dir
 
     def _resolve_mcp_config_path(self) -> Optional[Path]:
         """WORKSPACE_DIR 기준으로 mcp_config.json 경로를 해석"""
@@ -272,16 +278,9 @@ class SoulEngineAdapter:
         # MCP 설정
         mcp_config_path = self._resolve_mcp_config_path() if use_mcp else None
 
-        # context_items 빌드: 소울스트림 자체 항목 + 클라이언트 항목
-        soulstream_item = _build_soulstream_context_item(
-            agent_session_id=agent_session_id or "(unknown)",
-            claude_session_id=resume_session_id,
-            workspace_dir=self._workspace_dir,
-        )
-        combined_context_items = [soulstream_item] + (context_items or [])
-
         # 프롬프트 앞에 context 블록 삽입
-        context_block = _format_context_items(combined_context_items)
+        # context_items는 task_executor에서 서버 컨텍스트와 머지된 상태로 전달됨
+        context_block = _format_context_items(context_items or [])
         effective_prompt = context_block + "\n\n" + prompt
 
         # Serendipity 세션 시작

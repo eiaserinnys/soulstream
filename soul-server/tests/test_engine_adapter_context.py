@@ -9,7 +9,7 @@ _format_context_items:
   4. dict content → JSON 직렬화
   5. string content → 그대로 포함
 
-_build_soulstream_context_item:
+build_soulstream_context_item:
   6. 반환값에 key, label, content 필드 존재
   7. claude_session_id=None → '(new session)' 기록
 """
@@ -20,7 +20,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from soul_server.service.engine_adapter import (
-    _build_soulstream_context_item,
+    build_soulstream_context_item,
     _format_context_items,
 )
 
@@ -79,7 +79,7 @@ def _call_build(
     claude_session_id=None,
     workspace_dir="/workspace",
 ) -> dict:
-    """_build_soulstream_context_item 호출 헬퍼 (socket mock 포함)."""
+    """build_soulstream_context_item 호출 헬퍼 (socket mock 포함)."""
     mock_socket_instance = MagicMock()
     mock_socket_instance.getsockname.return_value = ("10.0.0.1", 80)
 
@@ -90,11 +90,11 @@ def _call_build(
     mock_socket_module.SOCK_DGRAM = 2
 
     with patch("soul_server.service.engine_adapter.socket", mock_socket_module):
-        return _build_soulstream_context_item(agent_session_id, claude_session_id, workspace_dir)
+        return build_soulstream_context_item(agent_session_id, claude_session_id, workspace_dir)
 
 
 class TestBuildSoulsreamContextItem:
-    """_build_soulstream_context_item 함수 테스트."""
+    """build_soulstream_context_item 함수 테스트."""
 
     def test_required_top_level_fields_present(self):
         """반환값에 key, label, content 필드가 존재한다."""
@@ -112,6 +112,16 @@ class TestBuildSoulsreamContextItem:
         assert content["workspace_dir"] == "/work"
         assert "hostname" in content
         assert "ip_address" in content
+        assert "current_time" in content
+
+    def test_current_time_is_iso8601_utc(self):
+        """current_time이 ISO 8601 UTC 형식이다."""
+        from datetime import datetime, timezone
+        item = _call_build()
+        current_time = item["content"]["current_time"]
+        # ISO 8601 파싱 가능한지 확인
+        parsed = datetime.fromisoformat(current_time)
+        assert parsed.tzinfo is not None  # timezone-aware
 
     def test_none_claude_session_id_becomes_new_session(self):
         """claude_session_id=None이면 content에 '(new session)'이 기록된다."""

@@ -12,6 +12,7 @@ from typing import Dict, Callable, Awaitable, Optional, TYPE_CHECKING
 from soul_server.service.task_models import Task, TaskStatus, PREVIEW_FIELD_MAP, datetime_to_str, utc_now
 from soul_server.service.prompt_assembler import assemble_prompt
 from soul_server.service.session_broadcaster import get_session_broadcaster
+from soul_server.service.engine_adapter import build_soulstream_context_item
 
 if TYPE_CHECKING:
     from soul_server.service.event_store import EventStore
@@ -113,6 +114,15 @@ class TaskExecutor:
         try:
             current_user_request_id: Optional[str] = None  # except에서 NameError 방지
             async with resource_manager.acquire(timeout=5.0):
+                # 서버 컨텍스트 빌드 + 클라이언트 컨텍스트 머지
+                # SSE 이벤트와 프롬프트 주입 양쪽에 동일한 머지 결과를 사용
+                soulstream_item = build_soulstream_context_item(
+                    agent_session_id=task.agent_session_id,
+                    claude_session_id=task.resume_session_id,
+                    workspace_dir=claude_runner.workspace_dir,
+                )
+                combined_context_items = [soulstream_item] + (task.context_items or [])
+
                 # user_message 기록 (Soul 서버가 JSONL의 유일한 기록자)
                 if self._event_store is not None:
                     try:
@@ -120,7 +130,7 @@ class TaskExecutor:
                             "type": "user_message",
                             "user": task.client_id or "unknown",
                             "text": task.prompt,
-                            "context": task.context_items,
+                            "context": combined_context_items,
                         }
                         event_id = self._event_store.append(session_id, user_msg_event)
                         user_msg_event["_event_id"] = event_id
@@ -146,7 +156,20 @@ class TaskExecutor:
                     # intervention을 user_message로도 JSONL에 기록
                     if self._event_store is not None:
                         try:
-                            intervention_msg = {"type": "user_message", "user": user, "text": text}
+                            intervention_soulstream = build_soulstream_context_item(
+                                agent_session_id=task.agent_session_id,
+                                claude_session_id=task.resume_session_id,
+                                workspace_dir=claude_runner.workspace_dir,
+                            )
+                            # intervention에는 서버 컨텍스트만 포함.
+                            # 클라이언트 context_items(슬랙 메타데이터 등)는 초기 메시지에만 유효하므로
+                            # 후속 intervention에는 포함하지 않는다.
+                            intervention_msg = {
+                                "type": "user_message",
+                                "user": user,
+                                "text": text,
+                                "context": [intervention_soulstream],
+                            }
                             ev_id = self._event_store.append(session_id, intervention_msg)
                             current_user_request_id = str(ev_id)
                             event["_event_id"] = ev_id  # SSE id: 필드에 JSONL event_id 전달
@@ -178,7 +201,7 @@ class TaskExecutor:
                     disallowed_tools=task.disallowed_tools,
                     use_mcp=task.use_mcp,
                     on_runner_ready=on_runner_ready,
-                    context_items=task.context_items,
+                    context_items=combined_context_items,
                     agent_session_id=task.agent_session_id,
                     model=task.model,
                 ):
