@@ -251,6 +251,12 @@ async def lifespan(app: FastAPI):
     broadcaster = init_session_broadcaster()
     logger.info("  SessionBroadcaster initialized")
 
+    # 카탈로그 API 라우터 등록
+    from soul_server.api.catalog import create_catalog_router
+    catalog_router = create_catalog_router(session_db=_session_db, broadcaster=broadcaster)
+    app.include_router(catalog_router, prefix="/catalog", tags=["catalog"])
+    logger.info("  Catalog API registered")
+
     # 이전 종료 시 저장된 세션 재개 (graceful_shutdown이 DB에 플래그로 저장)
     shutdown_sessions = _session_db.get_shutdown_sessions()
     if shutdown_sessions:
