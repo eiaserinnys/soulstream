@@ -9,6 +9,7 @@ pytest 전역 설정 및 fixture
 5. cogito/fastmcp 모듈 모킹 (의존성 없이 테스트 가능)
 """
 
+import importlib.util
 import os
 import sys
 import pytest
@@ -34,14 +35,14 @@ def pytest_configure(config):
 
     # cogito 및 fastmcp 모듈 모킹 (패키지가 설치되지 않은 환경에서 테스트 가능하게)
     # soul_server.cogito 모듈이 cogito와 fastmcp를 임포트하므로, 임포트 전에 모킹 필요
-    if "cogito" not in sys.modules:
+    if importlib.util.find_spec("cogito") is None:
         mock_cogito = MagicMock()
         mock_cogito.Reflector = MagicMock
         sys.modules["cogito"] = mock_cogito
         sys.modules["cogito.endpoint"] = MagicMock()
         sys.modules["cogito.manifest"] = MagicMock()  # load_manifest 모킹
 
-    if "fastmcp" not in sys.modules:
+    if importlib.util.find_spec("fastmcp") is None:
         mock_fastmcp = MagicMock()
         # FastMCP 클래스를 lambda로 설정: MagicMock 클래스를 직접 할당하면
         # FastMCP("soulstream-cogito") 호출 시 spec="soulstream-cogito"로 해석되어

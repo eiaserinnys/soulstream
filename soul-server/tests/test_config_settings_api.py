@@ -69,15 +69,21 @@ def client(app):
 
 
 @pytest.fixture(autouse=True)
-def mock_auth():
-    """Dashboard 인증 우회"""
+def mock_auth(app):
+    """Dashboard 인증 우회 — app.dependency_overrides 사용.
+
+    Depends()가 임포트 시점에 함수 참조를 캡처하므로,
+    patch()로 모듈 속성을 바꿔도 이미 등록된 의존성에는 영향이 없다.
+    FastAPI의 dependency_overrides를 사용해야 한다.
+    """
     from soul_server.dashboard.auth import require_dashboard_auth
 
     async def noop():
         pass
 
-    with patch("soul_server.dashboard.api_router.require_dashboard_auth", noop):
-        yield
+    app.dependency_overrides[require_dashboard_auth] = noop
+    yield
+    app.dependency_overrides.clear()
 
 
 @pytest.fixture(autouse=True)
