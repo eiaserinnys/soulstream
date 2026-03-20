@@ -156,14 +156,17 @@ class TestGetSessions:
         from soul_server.service.task_models import Task, TaskStatus
 
         manager = MagicMock()
-        claude_task = Task(
-            agent_session_id="sess-claude",
-            prompt="Claude",
-            status=TaskStatus.RUNNING,
-            session_type="claude",
-        )
+        # get_all_sessions은 (list[dict], int)를 반환 — Task 객체가 아닌 dict
+        claude_session = {
+            "agent_session_id": "sess-claude",
+            "prompt": "Claude",
+            "status": "running",
+            "session_type": "claude",
+            "created_at": "2026-03-03T02:00:00+00:00",
+            "updated_at": "2026-03-03T02:00:00+00:00",
+        }
         # get_all_sessions이 session_type 파라미터를 올바르게 전달받는지 확인
-        manager.get_all_sessions = MagicMock(return_value=([claude_task], 1))
+        manager.get_all_sessions = MagicMock(return_value=([claude_session], 1))
 
         app = FastAPI()
         with (
@@ -632,6 +635,8 @@ class TestTaskManagerGetAllSessions:
         )
         manager._tasks["sess-claude"] = claude_task
         manager._tasks["sess-llm"] = llm_task
+        manager._catalog.upsert_from_task(claude_task)
+        manager._catalog.upsert_from_task(llm_task)
 
         # 전체
         sessions, total = manager.get_all_sessions()
@@ -640,12 +645,12 @@ class TestTaskManagerGetAllSessions:
         # claude만
         sessions, total = manager.get_all_sessions(session_type="claude")
         assert total == 1
-        assert sessions[0].agent_session_id == "sess-claude"
+        assert sessions[0]["agent_session_id"] == "sess-claude"
 
         # llm만
         sessions, total = manager.get_all_sessions(session_type="llm")
         assert total == 1
-        assert sessions[0].agent_session_id == "sess-llm"
+        assert sessions[0]["agent_session_id"] == "sess-llm"
 
         # 없는 타입
         sessions, total = manager.get_all_sessions(session_type="nonexistent")
@@ -670,6 +675,7 @@ class TestTaskManagerGetAllSessions:
                 created_at=now + timedelta(hours=i),
             )
             manager._tasks[f"sess-claude-{i:03d}"] = task
+            manager._catalog.upsert_from_task(task)
 
         llm_task = Task(
             agent_session_id="sess-llm-001",
@@ -678,6 +684,7 @@ class TestTaskManagerGetAllSessions:
             session_type="llm",
         )
         manager._tasks["sess-llm-001"] = llm_task
+        manager._catalog.upsert_from_task(llm_task)
 
         # claude만 + 페이지네이션
         sessions, total = manager.get_all_sessions(
