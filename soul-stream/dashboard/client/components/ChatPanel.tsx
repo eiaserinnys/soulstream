@@ -9,6 +9,8 @@ import { useMemo } from "react";
 import { Badge, cn } from "@seosoyoung/soul-ui";
 import { useOrchestratorStore } from "../store/orchestrator-store";
 import { nodeColor } from "./NodeHeader";
+import { useSessionEvents } from "../hooks/useSessionEvents";
+import { EventTimeline } from "./EventTimeline";
 
 export function ChatPanel() {
   const selectedNodeId = useOrchestratorStore((s) => s.selectedNodeId);
@@ -30,6 +32,11 @@ export function ChatPanel() {
     const nodeSessions = sessions.get(selectedNodeId);
     return nodeSessions?.find((s) => s.sessionId === selectedSessionId) ?? null;
   }, [selectedNodeId, selectedSessionId, sessions]);
+
+  // SSE 이벤트 스트림 — running 세션만 구독
+  const activeSessionId =
+    selectedSession?.status === "running" ? selectedSessionId : null;
+  const events = useSessionEvents(activeSessionId);
 
   // 빈 상태
   if (!selectedNodeId) {
@@ -132,14 +139,8 @@ export function ChatPanel() {
         </div>
       )}
 
-      {/* Session events placeholder */}
-      <div className="flex-1 overflow-y-auto px-3.5 py-3 flex flex-col gap-2.5">
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-xs text-muted-foreground/30 font-mono text-center">
-            세션 이벤트 스트리밍은 소울 서버 연결 후 활성화됩니다
-          </div>
-        </div>
-      </div>
+      {/* Session events timeline */}
+      <EventTimeline events={events} />
 
       {/* Input — 소울 서버 연결 전에는 비활성화 */}
       <div className="px-3.5 py-2.5 border-t border-border shrink-0 flex gap-2 items-end">

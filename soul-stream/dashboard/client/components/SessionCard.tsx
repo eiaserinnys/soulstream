@@ -34,11 +34,20 @@ export function SessionCard({
 }: SessionCardProps) {
   const config = STATUS_CONFIG[session.status] ?? STATUS_CONFIG.completed;
 
-  // 세션 ID 축약 표시
-  const shortId =
-    session.sessionId.length > 20
-      ? session.sessionId.slice(0, 8) + "..." + session.sessionId.slice(-4)
-      : session.sessionId;
+  // 제목 계산: lastMessage.preview → prompt → sessionId
+  const raw = session.lastMessage?.preview ?? session.prompt ?? session.sessionId;
+  const title = raw.length > 30 ? raw.slice(0, 27) + "..." : raw;
+
+  // 시간 계산: lastMessage.timestamp → updatedAt → createdAt
+  const tsRaw = session.lastMessage?.timestamp ?? session.updatedAt ?? session.createdAt;
+  const timeStr = tsRaw
+    ? new Date(tsRaw).toLocaleString("ko-KR", {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : "";
 
   return (
     <div
@@ -52,10 +61,10 @@ export function SessionCard({
       )}
       onClick={onClick}
     >
-      {/* Top: session ID + status */}
+      {/* Top: title + status badge */}
       <div className="flex items-center justify-between mb-1">
-        <span className="text-xs font-mono font-medium text-foreground tracking-wide">
-          {shortId}
+        <span className="text-[13px] truncate font-medium text-foreground mr-2">
+          {title}
         </span>
         <Badge variant={config.badgeVariant} size="sm">
           <span
@@ -69,9 +78,14 @@ export function SessionCard({
         </Badge>
       </div>
 
-      {/* Node ID */}
-      <div className="text-[11px] text-muted-foreground/50 font-mono">
-        {session.nodeId}
+      {/* Bottom: time + nodeId */}
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] text-muted-foreground/50">
+          {timeStr}
+        </span>
+        <span className="text-[11px] text-muted-foreground/50 font-mono">
+          {session.nodeId}
+        </span>
       </div>
     </div>
   );

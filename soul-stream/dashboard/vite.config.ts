@@ -12,6 +12,12 @@ export default defineConfig({
       "@seosoyoung/soul-ui": resolve(__dirname, "../../packages/soul-ui/src"),
       "client": resolve(__dirname, "client"),
     },
+    // soul-ui 소스를 직접 alias로 참조하므로, soul-ui의 node_modules도 탐색 경로에 포함
+    modules: [
+      resolve(__dirname, "../../packages/soul-ui/node_modules"),
+      resolve(__dirname, "node_modules"),
+      "node_modules",
+    ],
   },
   build: {
     outDir: "dist",
