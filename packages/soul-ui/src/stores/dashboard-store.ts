@@ -130,6 +130,15 @@ export interface DashboardState {
   /** 검색 결과 클릭 시 스크롤할 이벤트 ID (ChatView가 감지하여 해당 메시지로 스크롤) */
   focusEventId: number | null;
 
+  /** 세션 다중 선택 ID 집합 */
+  selectedSessionIds: Set<string>;
+
+  /** Shift+클릭 범위 기준점 */
+  lastSelectedSessionId: string | null;
+
+  /** 인라인 편집 중인 세션 */
+  editingSessionId: string | null;
+
   /** 폴더 카탈로그 상태 */
   catalog: CatalogState | null;
 
@@ -224,6 +233,11 @@ export interface DashboardActions {
   setCatalog: (catalog: CatalogState) => void;
   selectFolder: (folderId: string | null) => void;
   getSessionsInFolder: (folderId: string | null) => SessionSummary[];
+
+  // 다중 선택
+  toggleSessionSelection: (id: string, ctrlKey: boolean, shiftKey: boolean) => void;
+  clearSelection: () => void;
+  setEditingSession: (id: string | null) => void;
 }
 
 // === Internal Processing Context ===
@@ -286,6 +300,9 @@ const initialState: DashboardState = {
   processingCtx: createProcessingContext(),
   drafts: {},
   focusEventId: null,
+  selectedSessionIds: new Set<string>(),
+  lastSelectedSessionId: null,
+  editingSessionId: null,
   catalog: null,
   selectedFolderId: null,
   catalogVersion: 0,
@@ -827,6 +844,41 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         set((state) => ({ catalog, catalogVersion: state.catalogVersion + 1 })),
 
       selectFolder: (folderId) => set({ selectedFolderId: folderId }),
+
+      toggleSessionSelection: (id, ctrlKey, shiftKey) => {
+        const state = get();
+        if (!ctrlKey && !shiftKey) {
+          // 일반 클릭: 선택 초기화 + activeSession 설정
+          set({
+            selectedSessionIds: new Set([id]),
+            lastSelectedSessionId: id,
+          });
+          state.setActiveSession(id);
+          return;
+        }
+        if (ctrlKey) {
+          const next = new Set(state.selectedSessionIds);
+          if (next.has(id)) next.delete(id);
+          else next.add(id);
+          set({ selectedSessionIds: next, lastSelectedSessionId: id });
+          return;
+        }
+        if (shiftKey && state.lastSelectedSessionId) {
+          const folder = state.getSessionsInFolder(state.selectedFolderId);
+          const lastIdx = folder.findIndex((s) => s.agentSessionId === state.lastSelectedSessionId);
+          const curIdx = folder.findIndex((s) => s.agentSessionId === id);
+          if (lastIdx >= 0 && curIdx >= 0) {
+            const [from, to] = lastIdx < curIdx ? [lastIdx, curIdx] : [curIdx, lastIdx];
+            const next = new Set(state.selectedSessionIds);
+            for (let i = from; i <= to; i++) next.add(folder[i].agentSessionId);
+            set({ selectedSessionIds: next });
+          }
+        }
+      },
+
+      clearSelection: () => set({ selectedSessionIds: new Set() }),
+
+      setEditingSession: (id) => set({ editingSessionId: id }),
 
       getSessionsInFolder: (folderId) => {
         const { sessions, catalog } = get();
