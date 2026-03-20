@@ -31,7 +31,13 @@ export function useSessions() {
           sessions: Array<{
             sessionId: string;
             nodeId: string;
-            status: string;
+            summary: {
+              status?: string;
+              lastMessage?: unknown;
+              updatedAt?: string;
+              createdAt?: string;
+              prompt?: string;
+            };
           }>;
         } = await res.json();
 
@@ -39,10 +45,19 @@ export function useSessions() {
         const grouped = new Map<string, OrchestratorSession[]>();
         for (const s of data.sessions) {
           const list = grouped.get(s.nodeId) ?? [];
+          const rawLm = s.summary.lastMessage;
+          const lastMessage =
+            rawLm && typeof rawLm === "object"
+              ? (rawLm as { preview?: string; timestamp?: string; type?: string })
+              : undefined;
           list.push({
             sessionId: s.sessionId,
             nodeId: s.nodeId,
-            status: s.status as OrchestratorSession["status"],
+            status: (s.summary.status ?? "completed") as OrchestratorSession["status"],
+            lastMessage,
+            updatedAt: s.summary.updatedAt,
+            createdAt: s.summary.createdAt,
+            prompt: s.summary.prompt,
           });
           grouped.set(s.nodeId, list);
         }
