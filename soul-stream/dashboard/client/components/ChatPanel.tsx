@@ -6,11 +6,10 @@
  */
 
 import { useMemo } from "react";
-import { Badge, cn } from "@seosoyoung/soul-ui";
+import { Badge, ChatView } from "@seosoyoung/soul-ui";
 import { useOrchestratorStore } from "../store/orchestrator-store";
 import { nodeColor } from "./NodeHeader";
-import { useSessionEvents } from "../hooks/useSessionEvents";
-import { EventTimeline } from "./EventTimeline";
+import { useSessionStream } from "../hooks/useSessionStream";
 
 export function ChatPanel() {
   const selectedNodeId = useOrchestratorStore((s) => s.selectedNodeId);
@@ -33,8 +32,8 @@ export function ChatPanel() {
     return nodeSessions?.find((s) => s.sessionId === selectedSessionId) ?? null;
   }, [selectedNodeId, selectedSessionId, sessions]);
 
-  // SSE 이벤트 스트림 — running: 실시간 구독, completed: 캐시 replay
-  const events = useSessionEvents(selectedSessionId);
+  // SSE 이벤트 스트림 — soul-ui의 ChatView + useDashboardStore 기반
+  const { status: streamStatus } = useSessionStream();
 
   // 빈 상태
   if (!selectedNodeId) {
@@ -137,24 +136,8 @@ export function ChatPanel() {
         </div>
       )}
 
-      {/* Session events timeline */}
-      <EventTimeline events={events} />
-
-      {/* Input — 소울 서버 연결 전에는 비활성화 */}
-      <div className="px-3.5 py-2.5 border-t border-border shrink-0 flex gap-2 items-end">
-        <textarea
-          className="flex-1 bg-muted border border-input rounded-[10px] px-3 py-2 text-sm text-foreground resize-none outline-none leading-snug max-h-[100px] transition-colors placeholder:text-muted-foreground/30 focus:border-accent-blue/30 focus:shadow-[0_0_0_3px_rgba(59,130,246,0.08)] disabled:opacity-50"
-          rows={1}
-          placeholder="메시지 입력..."
-          disabled
-        />
-        <button
-          className="w-8 h-8 rounded-lg border-none bg-accent-blue/10 text-accent-blue text-sm cursor-pointer transition-colors flex items-center justify-center shrink-0 hover:bg-accent-blue/20 disabled:opacity-50 disabled:cursor-not-allowed"
-          disabled
-        >
-          &#8593;
-        </button>
-      </div>
+      {/* Session events — ChatView from soul-ui (ChatInput 내장) */}
+      <ChatView />
     </div>
   );
 }
