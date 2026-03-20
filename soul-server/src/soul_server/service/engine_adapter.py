@@ -231,6 +231,7 @@ class SoulEngineAdapter:
         on_runner_ready: Optional[Callable[["ClaudeRunner"], None]] = None,
         context_items: Optional[List[dict]] = None,
         agent_session_id: Optional[str] = None,
+        model: Optional[str] = None,
     ) -> AsyncIterator[SSEEvent]:
         """Claude Code 실행 (SSE 이벤트 스트림)
 
@@ -400,6 +401,7 @@ class SoulEngineAdapter:
                     disallowed_tools=effective_disallowed,
                     mcp_config_path=mcp_config_path,
                     debug_send_fn=debug_send_fn,
+                    model=model,
                 )
 
             # rate limit tracker 주입
