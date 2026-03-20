@@ -15,6 +15,7 @@ import { StorageModeToggleCompact } from "./components/StorageModeToggle";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { ConfigButton } from "./components/ConfigButton";
 import { ConfigModal } from "./components/ConfigModal";
+import { SearchModal } from "./components/SearchModal";
 import { useSessionListProvider } from "./hooks/useSessionListProvider";
 import { useSessionProvider } from "./hooks/useSessionProvider";
 import { useNotification } from "./hooks/useNotification";
@@ -32,7 +33,7 @@ import {
   Sheet, SheetContent, SheetFooter,
   Button,
 } from "@seosoyoung/soul-ui";
-import { Menu } from "lucide-react";
+import { Menu, Search } from "lucide-react";
 
 // === Constants ===
 
@@ -196,6 +197,7 @@ export function DashboardLayout() {
 
   // Config 모달 상태
   const [configOpen, setConfigOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   // 패널 비율 상태 (%)
   const [leftPercent, setLeftPercent] = useState(DEFAULT_LEFT);
@@ -271,6 +273,9 @@ export function DashboardLayout() {
         </div>
         {!isMobile && (
           <div className="flex items-center gap-2">
+            <Button variant="ghost" size="icon" onClick={() => setSearchOpen(true)}>
+              <Search className="h-4 w-4" />
+            </Button>
             <ThemeToggle />
             <ConfigButton onClick={() => setConfigOpen(true)} />
             <StorageModeToggleCompact />
@@ -357,6 +362,9 @@ export function DashboardLayout() {
 
       {/* Config Modal */}
       <ConfigModal open={configOpen} onOpenChange={setConfigOpen} />
+
+      {/* Search Modal */}
+      <SearchModal open={searchOpen} onOpenChange={setSearchOpen} />
     </div>
   );
 }

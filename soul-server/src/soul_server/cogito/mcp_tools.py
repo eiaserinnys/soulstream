@@ -400,11 +400,5 @@ async def api_search_sessions(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {
-        "results": [
-            r.to_dict()
-            for r in results
-                "event_type": r.event_type,
-            }
-            for r in results
-        ]
+        "results": [r.to_dict() for r in results]
     }
