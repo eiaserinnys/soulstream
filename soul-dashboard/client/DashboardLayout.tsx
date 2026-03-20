@@ -8,7 +8,9 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { SessionList } from "./components/SessionList";
+import { FolderTree } from "./components/FolderTree";
+import { FolderContents } from "./components/FolderContents";
+import { VerticalSplitPane } from "./components/VerticalSplitPane";
 import { NodeGraph } from "./components/NodeGraph";
 import { PromptComposer } from "./components/PromptComposer";
 import { StorageModeToggleCompact } from "./components/StorageModeToggle";
@@ -299,7 +301,7 @@ export function DashboardLayout() {
           {/* 모바일: Sheet 슬라이드 사이드바 */}
           <Sheet open={isSidebarOpen} onOpenChange={setIsSidebarOpen}>
             <SheetContent side="left" showCloseButton={false}>
-              <SessionList sessions={sessions} loading={loading} error={error} />
+              <FolderTree />
               <SheetFooter className="border-t border-border p-3 flex flex-row items-center gap-2">
                 <ThemeToggle />
                 <StorageModeToggleCompact />
@@ -316,34 +318,36 @@ export function DashboardLayout() {
       ) : (
         /* 데스크탑: 3-Panel content */
         <div className="flex flex-1 overflow-hidden">
-          {/* Left: Session List */}
+          {/* Left: Folder Tree */}
           <aside
             data-testid="session-panel"
             className="overflow-hidden"
             style={{ width: `${leftPercent}%` }}
           >
-            <SessionList sessions={sessions} loading={loading} error={error} />
+            <FolderTree />
           </aside>
 
           {/* Left drag handle */}
           <DragHandle onDrag={handleLeftDrag} />
 
-          {/* Center: Context-dependent content */}
+          {/* Center: VerticalSplitPane (top: sessions, bottom: graph/composer) */}
           <main
             data-testid="graph-panel"
             className="overflow-hidden flex flex-col"
             style={{ width: `${centerPercent}%` }}
           >
-            {showComposer && (
-              <PromptComposer />
-            )}
-
-            {hasActiveSession && (
-              <div className="flex-1 overflow-hidden">
-                <NodeGraph />
-              </div>
-            )}
-
+            <VerticalSplitPane
+              top={<FolderContents />}
+              bottom={
+                showComposer ? (
+                  <PromptComposer />
+                ) : (
+                  <div className="flex-1 overflow-hidden h-full">
+                    <NodeGraph />
+                  </div>
+                )
+              }
+            />
           </main>
 
           {/* Right drag handle */}
