@@ -14,10 +14,11 @@ from soul_server.service.prompt_assembler import assemble_prompt
 from soul_server.service.session_broadcaster import get_session_broadcaster
 from soul_server.service.engine_adapter import build_soulstream_context_item
 
+import json
+
 if TYPE_CHECKING:
-    from soul_server.service.event_store import EventStore
+    from soul_server.service.session_db import SessionDB
     from soul_server.service.task_listener import TaskListenerManager
-    from soul_server.service.session_catalog import SessionCatalog
 
 logger = logging.getLogger(__name__)
 
@@ -39,8 +40,7 @@ class TaskExecutor:
         complete_task_func: Callable[[str, str, Optional[str]], Awaitable[Optional[Task]]],
         error_task_func: Callable[[str, str], Awaitable[Optional[Task]]],
         register_session_func: Optional[Callable[[str, str], None]] = None,
-        event_store: Optional["EventStore"] = None,
-        catalog: Optional["SessionCatalog"] = None,
+        session_db: Optional["SessionDB"] = None,
     ):
         """
         Args:
@@ -50,8 +50,7 @@ class TaskExecutor:
             complete_task_func: 태스크 완료 처리 함수 (agent_session_id, result, claude_session_id?)
             error_task_func: 태스크 에러 처리 함수 (agent_session_id, error)
             register_session_func: claude_session_id 등록 함수 (claude_session_id, agent_session_id)
-            event_store: 이벤트 영속화 저장소 (None이면 저장하지 않음)
-            catalog: 세션 카탈로그 (last_message 업데이트용)
+            session_db: SQLite 기반 세션 저장소
         """
         self._tasks = tasks
         self._listener_manager = listener_manager
@@ -59,8 +58,26 @@ class TaskExecutor:
         self._complete_task = complete_task_func
         self._error_task = error_task_func
         self._register_session = register_session_func
-        self._event_store = event_store
-        self._catalog = catalog
+        self._db = session_db
+
+    def _persist_event(self, session_id: str, event_dict: dict) -> Optional[int]:
+        """이벤트를 SessionDB에 영속화하고 event_id를 반환한다."""
+        if self._db is None:
+            return None
+        from soul_server.service.session_db import SessionDB
+        event_id = self._db.get_next_event_id(session_id)
+        event_type = event_dict.get("type", "")
+        payload = json.dumps(event_dict, ensure_ascii=False)
+        searchable = SessionDB.extract_searchable_text(event_dict)
+        ts = event_dict.get("timestamp")
+        if isinstance(ts, (int, float)):
+            created_at = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+        elif isinstance(ts, str):
+            created_at = ts
+        else:
+            created_at = utc_now().isoformat()
+        self._db.append_event(session_id, event_id, event_type, payload, searchable, created_at)
+        return event_id
 
     async def start_execution(
         self,
@@ -123,8 +140,8 @@ class TaskExecutor:
                 )
                 combined_context_items = [soulstream_item] + (task.context_items or [])
 
-                # user_message 기록 (Soul 서버가 JSONL의 유일한 기록자)
-                if self._event_store is not None:
+                # user_message 기록
+                if self._db is not None:
                     try:
                         user_msg_event = {
                             "type": "user_message",
@@ -132,7 +149,7 @@ class TaskExecutor:
                             "text": task.prompt,
                             "context": combined_context_items,
                         }
-                        event_id = self._event_store.append(session_id, user_msg_event)
+                        event_id = self._persist_event(session_id, user_msg_event)
                         user_msg_event["_event_id"] = event_id
                         current_user_request_id = str(event_id)
                         await self._listener_manager.broadcast(session_id, user_msg_event)
@@ -154,23 +171,20 @@ class TaskExecutor:
                     nonlocal current_user_request_id
                     event = {"type": "intervention_sent", "user": user, "text": text}
                     # intervention을 user_message로도 JSONL에 기록
-                    if self._event_store is not None:
+                    if self._db is not None:
                         try:
                             intervention_soulstream = build_soulstream_context_item(
                                 agent_session_id=task.agent_session_id,
                                 claude_session_id=task.resume_session_id,
                                 workspace_dir=claude_runner.workspace_dir,
                             )
-                            # intervention에는 서버 컨텍스트만 포함.
-                            # 클라이언트 context_items(슬랙 메타데이터 등)는 초기 메시지에만 유효하므로
-                            # 후속 intervention에는 포함하지 않는다.
                             intervention_msg = {
                                 "type": "user_message",
                                 "user": user,
                                 "text": text,
                                 "context": [intervention_soulstream],
                             }
-                            ev_id = self._event_store.append(session_id, intervention_msg)
+                            ev_id = self._persist_event(session_id, intervention_msg)
                             current_user_request_id = str(ev_id)
                             event["_event_id"] = ev_id  # SSE id: 필드에 JSONL event_id 전달
                         except Exception as e:
@@ -231,9 +245,9 @@ class TaskExecutor:
                         task.last_progress_text = event_dict.get("text", "")
 
                     # 이벤트 영속화 (broadcast 전에 저장)
-                    if self._event_store is not None:
+                    if self._db is not None:
                         try:
-                            event_id = self._event_store.append(session_id, event_dict)
+                            event_id = self._persist_event(session_id, event_dict)
                             event_dict["_event_id"] = event_id
                         except Exception as e:
                             logger.warning(f"Failed to persist event for {session_id}: {e}")
@@ -292,7 +306,7 @@ class TaskExecutor:
         self, session_id: str, event_dict: dict, task: Task
     ) -> None:
         """readable event의 last_message를 카탈로그에 저장하고 세션 리스트 SSE로 브로드캐스트."""
-        if self._catalog is None:
+        if self._db is None:
             return
 
         event_type = event_dict.get("type", "")
@@ -331,9 +345,11 @@ class TaskExecutor:
         else:
             ts_str = datetime_to_str(utc_now())
 
-        self._catalog.update_last_message(
-            session_id, event_type, text[:200], ts_str
-        )
+        self._db.update_last_message(session_id, {
+            "type": event_type,
+            "preview": text[:200],
+            "timestamp": ts_str,
+        })
 
         try:
             broadcaster = get_session_broadcaster()
@@ -385,14 +401,17 @@ class TaskExecutor:
             await queue.put(reconnect_event)
             logger.debug(f"Sent reconnect status to listener for session {agent_session_id}")
 
-            # EventStore에서 미수신 이벤트 재전송
-            if self._event_store is not None and last_event_id is not None:
+            # SessionDB에서 미수신 이벤트 재전송
+            if self._db is not None and last_event_id is not None:
                 try:
-                    missed_events = self._event_store.read_since(
+                    missed_events = self._db.read_events(
                         agent_session_id, after_id=last_event_id
                     )
                     for ev in missed_events:
-                        normalized = dict(ev.get("event", {}))
+                        try:
+                            normalized = json.loads(ev["payload"])
+                        except (json.JSONDecodeError, KeyError):
+                            normalized = {}
                         normalized["_event_id"] = ev["id"]
                         await queue.put(normalized)
                     if missed_events:

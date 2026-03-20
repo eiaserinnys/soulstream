@@ -4,6 +4,7 @@ LLM Executor - LLM 실행 서비스
 LLM 프록시 요청을 처리하고, 세션 추적 및 이벤트 저장을 수행합니다.
 """
 
+import json
 import logging
 import secrets
 import time
@@ -15,7 +16,7 @@ from soul_server.service.task_models import (
     utc_now,
 )
 from soul_server.service.task_manager import TaskManager
-from soul_server.service.event_store import EventStore
+from soul_server.service.session_db import SessionDB
 from soul_server.service.session_broadcaster import SessionBroadcaster
 from soul_server.llm.adapters import LlmAdapter
 
@@ -46,13 +47,24 @@ class LlmExecutor:
         self,
         adapters: dict[str, LlmAdapter],
         task_manager: TaskManager,
-        event_store: EventStore,
+        session_db: SessionDB,
         session_broadcaster: SessionBroadcaster,
     ) -> None:
         self._adapters = adapters
         self._task_manager = task_manager
-        self._event_store = event_store
+        self._db = session_db
         self._session_broadcaster = session_broadcaster
+
+    def _persist_event(self, session_id: str, event_dict: dict) -> int:
+        """이벤트를 SessionDB에 영속화하고 event_id를 반환한다."""
+        event_id = self._db.get_next_event_id(session_id)
+        event_type = event_dict.get("type", "")
+        payload = json.dumps(event_dict, ensure_ascii=False)
+        searchable = SessionDB.extract_searchable_text(event_dict)
+        ts = event_dict.get("timestamp")
+        created_at = utc_now().isoformat() if not isinstance(ts, str) else ts
+        self._db.append_event(session_id, event_id, event_type, payload, searchable, created_at)
+        return event_id
 
     async def execute(self, request: LlmCompletionRequest) -> LlmCompletionResponse:
         """LLM 완성 요청 실행
@@ -112,7 +124,7 @@ class LlmExecutor:
             "max_tokens": request.max_tokens,
             "client_id": request.client_id,
         }
-        self._event_store.append(agent_session_id, request_event)
+        self._persist_event(agent_session_id, request_event)
 
         try:
             # LLM 호출
@@ -137,7 +149,7 @@ class LlmExecutor:
                 "model": request.model,
                 "provider": request.provider,
             }
-            self._event_store.append(agent_session_id, response_event)
+            self._persist_event(agent_session_id, response_event)
 
             # Task 완료 처리 (TaskManager 공개 API 사용)
             await self._task_manager.finalize_task(
@@ -169,7 +181,7 @@ class LlmExecutor:
                 "provider": request.provider,
                 "model": request.model,
             }
-            self._event_store.append(agent_session_id, error_event)
+            self._persist_event(agent_session_id, error_event)
 
             # Task 에러 처리 (TaskManager 공개 API 사용)
             await self._task_manager.finalize_task(
