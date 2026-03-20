@@ -5,7 +5,7 @@
  */
 
 import { useState, useCallback } from "react";
-import { useDashboardStore, cn, Button, Badge, badgeVariants } from "@seosoyoung/soul-ui";
+import { useDashboardStore, cn, Button, Badge } from "@seosoyoung/soul-ui";
 
 export function FolderTree() {
   const catalog = useDashboardStore((s) => s.catalog);
@@ -16,6 +16,30 @@ export function FolderTree() {
   const startCompose = useDashboardStore((s) => s.startCompose);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+
+  const handleDrop = useCallback(async (folderId: string | null, e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOverId(null);
+    try {
+      const ids: string[] = JSON.parse(e.dataTransfer.getData("text/plain"));
+      if (ids.length === 1) {
+        await fetch(`/api/catalog/sessions/${ids[0]}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ folderId }),
+        });
+      } else if (ids.length > 1) {
+        await fetch("/api/catalog/sessions/batch", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionIds: ids, folderId }),
+        });
+      }
+    } catch {
+      // SSE will sync state
+    }
+  }, []);
 
   const getSessionCount = useCallback(
     (folderId: string | null) => {
@@ -88,6 +112,7 @@ export function FolderTree() {
             className={cn(
               "flex items-center justify-between px-3 py-1.5 cursor-pointer text-sm hover:bg-accent/50 group",
               selectedFolderId === folder.id && "bg-accent text-accent-foreground",
+              dragOverId === folder.id && "ring-2 ring-primary",
             )}
             onClick={() => selectFolder(folder.id)}
             onDoubleClick={() => handleDoubleClick(folder.id, folder.name)}
@@ -95,6 +120,9 @@ export function FolderTree() {
               e.preventDefault();
               handleDeleteFolder(folder.id, folder.name);
             }}
+            onDragOver={(e) => { e.preventDefault(); setDragOverId(folder.id); }}
+            onDragLeave={() => setDragOverId(null)}
+            onDrop={(e) => handleDrop(folder.id, e)}
           >
             {editingId === folder.id ? (
               <input
@@ -122,8 +150,12 @@ export function FolderTree() {
           className={cn(
             "flex items-center justify-between px-3 py-1.5 cursor-pointer text-sm hover:bg-accent/50",
             selectedFolderId === null && "bg-accent text-accent-foreground",
+            dragOverId === "__null__" && "ring-2 ring-primary",
           )}
           onClick={() => selectFolder(null)}
+          onDragOver={(e) => { e.preventDefault(); setDragOverId("__null__"); }}
+          onDragLeave={() => setDragOverId(null)}
+          onDrop={(e) => handleDrop(null, e)}
         >
           <span className="truncate text-muted-foreground">Uncategorized</span>
           <Badge variant="secondary" className="ml-2 text-xs">
