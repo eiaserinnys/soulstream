@@ -325,6 +325,50 @@ async def get_session_event(
     return entry
 
 
+@cogito_mcp.tool()
+async def search_session_history(
+    query: str,
+    session_ids: list[str] | None = None,
+    top_k: int = 10,
+) -> dict:
+    """BM25로 세션 이벤트 텍스트를 검색한다.
+
+    Args:
+        query: 검색어 (공백 기반 토크나이즈, 한글 지원)
+        session_ids: 검색할 세션 ID 목록. None이면 전체 세션 검색.
+        top_k: 반환할 최대 결과 수 (최대 100).
+
+    Returns:
+        {results: [{session_id, event_id, score, preview, event_type}, ...]}
+        score > 0인 항목만 반환.
+    """
+    try:
+        tm = get_task_manager()
+    except RuntimeError as e:
+        return {"error": str(e)}
+    event_store = tm.event_store
+    if event_store is None:
+        return {"error": "EventStore가 초기화되지 않았습니다"}
+    from soul_server.cogito.search import BM25SearchEngine
+    try:
+        engine = BM25SearchEngine(event_store)
+        results = engine.search(query=query, session_ids=session_ids, top_k=top_k)
+    except ValueError as e:
+        return {"error": str(e)}
+    return {
+        "results": [
+            {
+                "session_id": r.session_id,
+                "event_id": r.event_id,
+                "score": r.score,
+                "preview": r.preview,
+                "event_type": r.event_type,
+            }
+            for r in results
+        ]
+    }
+
+
 # ---------------------------------------------------------------------------
 # REST API router — cogito-related endpoints outside of MCP
 # ---------------------------------------------------------------------------
@@ -343,3 +387,38 @@ async def api_refresh() -> dict:
     if not ok:
         raise HTTPException(status_code=503, detail=result)
     return {"refreshed": True, "path": result}
+
+
+@cogito_api_router.get("/search")
+async def api_search_sessions(
+    q: str,
+    top_k: int = 10,
+    session_ids: str | None = None,  # 콤마 구분 문자열
+) -> dict:
+    """세션 기록 BM25 검색 REST 엔드포인트."""
+    event_store = None
+    try:
+        event_store = get_task_manager().event_store
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    if event_store is None:
+        raise HTTPException(status_code=503, detail="EventStore not initialized")
+    from soul_server.cogito.search import BM25SearchEngine
+    ids = [s.strip() for s in session_ids.split(",") if s.strip()] if session_ids else None
+    try:
+        engine = BM25SearchEngine(event_store)
+        results = engine.search(query=q, session_ids=ids, top_k=top_k)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {
+        "results": [
+            {
+                "session_id": r.session_id,
+                "event_id": r.event_id,
+                "score": r.score,
+                "preview": r.preview,
+                "event_type": r.event_type,
+            }
+            for r in results
+        ]
+    }

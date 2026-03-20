@@ -296,3 +296,33 @@ class EventStore:
             })
 
         return sessions
+
+
+def extract_searchable_text(event: dict) -> str | None:
+    """이벤트에서 검색 가능한 텍스트를 추출한다."""
+    event_type = event.get("type")
+    if event_type == "text_delta":
+        return event.get("text")
+    elif event_type == "thinking":
+        return event.get("thinking")
+    elif event_type == "tool_use":
+        inp = event.get("input")
+        if isinstance(inp, str):
+            return inp
+        if isinstance(inp, dict):
+            return str(inp)
+    elif event_type == "tool_result":
+        content = event.get("content")
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            texts = [c.get("text", "") for c in content if isinstance(c, dict)]
+            return " ".join(filter(None, texts))
+    elif event_type == "user":
+        content = event.get("content")
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            texts = [c.get("text", "") for c in content if isinstance(c, dict)]
+            return " ".join(filter(None, texts))
+    return None
