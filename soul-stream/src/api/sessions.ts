@@ -42,7 +42,7 @@ export function createSessionsRouter(nodeManager: NodeManager): Router {
   });
 
   /** GET /api/sessions/:id/events — 세션 이벤트 히스토리 + 실시간 (SSE). */
-  router.get("/:id/events", (req, res) => {
+  router.get("/:id/events", async (req, res) => {
     const sessionId = req.params.id;
     const found = aggregator.findSession(sessionId);
 
@@ -70,8 +70,69 @@ export function createSessionsRouter(nodeManager: NodeManager): Router {
 
     // 캐시된 이벤트 replay
     const cached = globalEventStore.getEvents(sessionId);
-    for (const event of cached) {
-      res.write(`data: ${JSON.stringify(event)}\n\n`);
+
+    if (cached.length > 0) {
+      // in-memory 캐시에 이벤트가 있으면 그대로 사용
+      for (const event of cached) {
+        res.write(`data: ${JSON.stringify(event)}\n\n`);
+      }
+    } else {
+      // 캐시가 없으면 soul-server HTTP API에서 히스토리를 프록시
+      // (서버 재시작 후 in-memory 캐시가 비워진 경우 등)
+      try {
+        const baseUrl = node.getHttpBaseUrl();
+        const historyUrl = `${baseUrl}/sessions/${sessionId}/history`;
+        const upstream = await fetch(historyUrl, {
+          headers: { Accept: "text/event-stream" },
+          signal: AbortSignal.timeout(5000),
+        });
+
+        if (upstream.ok && upstream.body) {
+          const reader = upstream.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+
+          outer: while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() ?? "";
+
+            for (const line of lines) {
+              if (!line.startsWith("data:")) continue;
+              const raw = line.slice(5).trim();
+              if (!raw) continue;
+
+              try {
+                const parsed = JSON.parse(raw) as Record<string, unknown>;
+                const eventType = parsed.type as string | undefined;
+
+                // history_sync = 히스토리 재생 완료 신호
+                if (eventType === "history_sync") break outer;
+                if (eventType === "keepalive") continue;
+
+                // soul-server 이벤트를 soul-stream 포맷으로 래핑
+                const wrapped = {
+                  type: "event",
+                  session_id: sessionId,
+                  event: parsed,
+                };
+                res.write(`data: ${JSON.stringify(wrapped)}\n\n`);
+                // in-memory 캐시에도 저장 (이후 재요청 시 재활용)
+                globalEventStore.append(sessionId, wrapped);
+              } catch {
+                // 파싱 실패 — 건너뜀
+              }
+            }
+          }
+
+          reader.cancel().catch(() => {});
+        }
+      } catch {
+        // soul-server 접근 실패 시 조용히 계속 (라이브 구독만 유지)
+      }
     }
 
     // 라이브 구독

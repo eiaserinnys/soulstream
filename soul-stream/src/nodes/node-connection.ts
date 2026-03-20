@@ -70,6 +70,12 @@ export class NodeConnection {
     return Array.from(this._sessions.values());
   }
 
+  /** soul-server HTTP 베이스 URL 반환. 0.0.0.0은 127.0.0.1로 정규화. */
+  getHttpBaseUrl(): string {
+    const host = this.host === "0.0.0.0" ? "127.0.0.1" : this.host;
+    return `http://${host}:${this.port}`;
+  }
+
   /** 세션 생성 명령 전송. */
   async createSession(
     prompt: string,
