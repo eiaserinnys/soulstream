@@ -421,6 +421,15 @@ class TaskManager:
             created_at=datetime_to_str(task.created_at),
         )
 
+        # 새 세션이면 기본 폴더에 자동 배치
+        if is_new:
+            default_name = SessionDB.DEFAULT_FOLDERS.get(
+                task.session_type, SessionDB.DEFAULT_FOLDERS["claude"]
+            )
+            folder = self._db.get_default_folder(default_name)
+            if folder:
+                self._db.assign_session_to_folder(agent_session_id, folder["id"])
+
         # SessionDB commits immediately, no schedule needed
 
         # 세션 목록 변경을 대시보드에 브로드캐스트 (부가 기능 — 실패해도 태스크 생성에 영향 없음)
