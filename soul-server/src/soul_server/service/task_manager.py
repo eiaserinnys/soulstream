@@ -394,6 +394,7 @@ class TaskManager:
         context: Optional[dict] = None,
         context_items: Optional[List[dict]] = None,
         extra_context_items: Optional[List[dict]] = None,
+        model: Optional[str] = None,
     ) -> Task:
         """
         새 세션 태스크 생성 또는 기존 세션 resume
@@ -456,6 +457,7 @@ class TaskManager:
                 existing.use_mcp = use_mcp
                 existing.context = context
                 existing.context_items = effective_context_items
+                existing.model = model
                 if client_id:
                     existing.client_id = client_id
 
@@ -475,6 +477,7 @@ class TaskManager:
                     use_mcp=use_mcp,
                     context=context,
                     context_items=effective_context_items,
+                    model=model,
                 )
                 self._tasks[agent_session_id] = task
                 logger.info(f"Created new session: {agent_session_id}")
