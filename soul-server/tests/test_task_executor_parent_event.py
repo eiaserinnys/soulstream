@@ -56,6 +56,8 @@ class FakeResourceManagerFailure:
 class FakeClaudeRunner:
     """테스트용 SoulEngineAdapter — 미리 정의된 이벤트를 yield"""
 
+    workspace_dir = "/fake/workspace"
+
     def __init__(self, events, on_runner_ready_runner=None):
         self._events = events
         self._on_runner_ready_runner = on_runner_ready_runner
@@ -80,6 +82,8 @@ class FakeClaudeRunner:
 
 class FakeClaudeRunnerException:
     """execute() 내부에서 예외를 발생시키는 runner"""
+
+    workspace_dir = "/fake/workspace"
 
     async def execute(self, **kwargs):
         raise RuntimeError("Runner exploded")
