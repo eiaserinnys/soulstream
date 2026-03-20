@@ -567,10 +567,25 @@ app.include_router(dash_api_router)
 
 # SPA fallback 미들웨어 — /sess-xxx 같은 클라이언트 라우트에서 index.html을 반환한다.
 # StaticFiles(html=True)가 /sess-xxx 에 대해 404를 반환할 때 index.html로 폴백한다.
+# index.html에는 항상 no-cache 헤더를 추가하여 브라우저가 항상 최신 JS 번들을 로드하게 한다.
 @app.middleware("http")
 async def spa_fallback(request: Request, call_next):
-    """SPA fallback — /api/* 이외의 경로에서 404 발생 시 index.html을 반환한다."""
+    """SPA fallback — /api/* 이외의 경로에서 404 발생 시 index.html을 반환한다.
+    StaticFiles가 서빙하는 index.html 응답에도 no-cache 헤더를 추가한다."""
     response = await call_next(request)
+
+    # StaticFiles가 서빙한 HTML 응답에 no-cache 헤더 추가
+    # (Vite 빌드 업데이트 후 브라우저가 구 index.html을 캐시하는 문제 방지)
+    content_type = response.headers.get("content-type", "")
+    if (
+        request.method == "GET"
+        and "text/html" in content_type
+        and not request.url.path.startswith("/api/")
+    ):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        return response
+
     if (
         response.status_code == 404
         and request.method == "GET"
@@ -581,7 +596,10 @@ async def spa_fallback(request: Request, call_next):
         _idx = _p / "index.html"
         if _idx.exists():
             from starlette.responses import HTMLResponse
-            return HTMLResponse(_idx.read_text())
+            return HTMLResponse(
+                _idx.read_text(),
+                headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"},
+            )
     return response
 
 
