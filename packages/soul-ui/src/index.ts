@@ -70,6 +70,10 @@ export type {
   SessionUpdatedStreamEvent,
   SessionDeletedStreamEvent,
   SessionStreamEvent,
+  CatalogFolder,
+  CatalogAssignment,
+  CatalogState,
+  CatalogUpdatedStreamEvent,
 } from "./shared/types";
 
 // === Shared Mappers ===

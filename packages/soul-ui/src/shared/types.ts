@@ -352,6 +352,8 @@ export interface SessionSummary {
   clientId?: string;
   /** 마지막 readable-event의 메시지 정보 */
   lastMessage?: LastMessage;
+  /** 카탈로그에서 설정한 세션 표시 이름 */
+  displayName?: string;
 }
 
 /** 세션 상세 정보 */
@@ -607,9 +609,35 @@ export interface SessionDeletedStreamEvent {
   agent_session_id: string;
 }
 
+/** 카탈로그 폴더 */
+export interface CatalogFolder {
+  id: string;
+  name: string;
+  sortOrder: number;
+}
+
+/** 카탈로그 세션 배치 정보 */
+export interface CatalogAssignment {
+  folderId: string | null;
+  displayName: string | null;
+}
+
+/** 카탈로그 상태 */
+export interface CatalogState {
+  folders: CatalogFolder[];
+  sessions: Record<string, CatalogAssignment>;
+}
+
+/** 카탈로그 업데이트 이벤트 */
+export interface CatalogUpdatedStreamEvent {
+  type: "catalog_updated";
+  catalog: CatalogState;
+}
+
 /** 세션 스트림 이벤트 유니온 */
 export type SessionStreamEvent =
   | SessionListStreamEvent
   | SessionCreatedStreamEvent
   | SessionUpdatedStreamEvent
-  | SessionDeletedStreamEvent;
+  | SessionDeletedStreamEvent
+  | CatalogUpdatedStreamEvent;
