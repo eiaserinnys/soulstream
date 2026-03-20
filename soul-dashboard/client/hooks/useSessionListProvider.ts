@@ -28,6 +28,7 @@ const SESSION_STREAM_EVENT_TYPES = [
   "session_created",
   "session_updated",
   "session_deleted",
+  "catalog_updated",
 ] as const;
 
 interface UseSessionListProviderOptions {
@@ -138,6 +139,10 @@ export function useSessionListProvider(
         case "session_deleted":
           removeSession(event.agent_session_id);
           break;
+
+        case "catalog_updated":
+          useDashboardStore.getState().setCatalog(event.catalog);
+          break;
       }
     },
     [addSession, updateSession, removeSession, setSessionsError]
@@ -217,6 +222,12 @@ export function useSessionListProvider(
     if (!enabled) return;
 
     fetchSessions();
+
+    // 초기 카탈로그 로드
+    fetch("/api/catalog")
+      .then((r) => r.json())
+      .then((data) => useDashboardStore.getState().setCatalog(data))
+      .catch(() => {});
 
     return () => {
       abortRef.current = true;

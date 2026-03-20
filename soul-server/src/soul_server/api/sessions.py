@@ -144,13 +144,11 @@ def create_sessions_router() -> APIRouter:
 
         클라이언트에서 truncate된 콘텐츠의 전체 내용을 요청할 때 사용합니다.
         """
-        task_manager = get_task_manager()
-        event_store = task_manager.event_store
-        if not event_store:
-            raise HTTPException(status_code=500, detail="EventStore not available")
+        from soul_server.main import get_session_db
+        db = get_session_db()
 
-        record = event_store.read_one(agent_session_id, event_id)
-        if record is None:
+        entry = db.read_one_event(agent_session_id, event_id)
+        if entry is None:
             raise HTTPException(
                 status_code=404,
                 detail={
@@ -161,7 +159,11 @@ def create_sessions_router() -> APIRouter:
                     }
                 },
             )
-        return record
+        try:
+            ev = json.loads(entry["payload"])
+        except (json.JSONDecodeError, KeyError):
+            ev = {}
+        return {"id": entry["id"], "event": ev}
 
     @router.get("/sessions/{agent_session_id}/history")
     async def session_history(
@@ -205,29 +207,28 @@ def create_sessions_router() -> APIRouter:
                 logger.warning(f"Invalid Last-Event-ID header: {last_event_id!r}")
 
         async def sse_wrapper():
-            # Part 1: EventStore 읽기 (기존 event_generator 로직 그대로)
-            event_store = task_manager.event_store
+            # Part 1: SessionDB에서 저장 이벤트 읽기
+            from soul_server.main import get_session_db
+            db = get_session_db()
             last_stored_id = 0
 
-            if event_store:
-                try:
-                    stored = (
-                        event_store.read_since(agent_session_id, after_id)
-                        if after_id > 0
-                        else event_store.read_all(agent_session_id)
-                    )
-                except Exception as e:
-                    logger.error(f"Failed to read events for {agent_session_id}: {e}")
-                    stored = []
+            try:
+                stored = db.read_events(agent_session_id, after_id=after_id)
+            except Exception as e:
+                logger.error(f"Failed to read events for {agent_session_id}: {e}")
+                stored = []
 
-                for record in stored:
-                    last_stored_id = max(last_stored_id, record["id"])
-                    event = record["event"]
-                    yield {
-                        "id": str(record["id"]),
-                        "event": event.get("type", "unknown"),
-                        "data": json.dumps(event, ensure_ascii=False),
-                    }
+            for record in stored:
+                last_stored_id = max(last_stored_id, record["id"])
+                try:
+                    event = json.loads(record["payload"])
+                except (json.JSONDecodeError, KeyError):
+                    event = {}
+                yield {
+                    "id": str(record["id"]),
+                    "event": event.get("type", "unknown"),
+                    "data": json.dumps(event, ensure_ascii=False),
+                }
 
             # Parts 2+3: stream_session_events에 위임 (history_sync 이중 발행 없음)
             async for event_dict in stream_session_events(agent_session_id, last_stored_id, task_manager):
