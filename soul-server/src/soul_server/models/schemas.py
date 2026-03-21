@@ -34,6 +34,8 @@ class SSEEventType(str, Enum):
     # 서브에이전트 이벤트
     SUBAGENT_START = "subagent_start"
     SUBAGENT_STOP = "subagent_stop"
+    # 메타데이터 이벤트
+    METADATA_UPDATED = "metadata_updated"
     # 사용자 입력 요청 이벤트
     INPUT_REQUEST = "input_request"
     INPUT_REQUEST_EXPIRED = "input_request_expired"
@@ -435,6 +437,7 @@ class SessionInfo(BaseModel):
     llm_model: Optional[str] = Field(None, description="LLM 모델명")
     llm_usage: Optional[dict] = Field(None, description="LLM 토큰 사용량")
     client_id: Optional[str] = Field(None, description="LLM 클라이언트 식별자")
+    metadata: Optional[List[dict]] = Field(None, description="세션 메타데이터 (커밋, 브랜치, 카드 등)")
 
 
 class SessionsListResponse(BaseModel):
@@ -462,6 +465,14 @@ class SessionUpdatedSSEEvent(BaseModel):
     agent_session_id: str = Field(..., description="세션 식별자")
     status: TaskStatus = Field(..., description="변경된 상태")
     updated_at: datetime = Field(..., description="업데이트 시각")
+
+
+class MetadataUpdatedSSEEvent(BaseModel):
+    """세션 메타데이터 업데이트 SSE 이벤트"""
+    type: str = "metadata_updated"
+    session_id: str = Field(..., description="세션 식별자")
+    entry: dict = Field(..., description="새로 추가된 메타데이터 엔트리")
+    metadata: List[dict] = Field(default_factory=list, description="전체 메타데이터 배열")
 
 
 class SessionDeletedSSEEvent(BaseModel):
