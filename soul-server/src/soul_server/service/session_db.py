@@ -673,3 +673,21 @@ def _remove_legacy_files(
             pre_shutdown_path.unlink()
     except OSError as e:
         logger.warning(f"Failed to remove {pre_shutdown_path}: {e}")
+
+
+# === 싱글턴 인스턴스 관리 ===
+
+_session_db: Optional[SessionDB] = None
+
+
+def init_session_db(db: SessionDB) -> None:
+    """SessionDB 전역 인스턴스 설정"""
+    global _session_db
+    _session_db = db
+
+
+def get_session_db() -> SessionDB:
+    """SessionDB 전역 인스턴스 반환"""
+    if _session_db is None:
+        raise RuntimeError("SessionDB not initialized.")
+    return _session_db

@@ -20,7 +20,7 @@ from fastmcp import FastMCP
 from cogito.manifest import load_manifest
 from soul_server.cogito.reflector_setup import reflect
 from soul_server.service.task_manager import get_task_manager
-from soul_server.main import get_session_db
+from soul_server.service.session_db import get_session_db
 
 if TYPE_CHECKING:
     from soul_server.cogito.brief_composer import BriefComposer
