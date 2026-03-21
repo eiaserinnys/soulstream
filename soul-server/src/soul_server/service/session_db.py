@@ -261,7 +261,7 @@ class SessionDB:
 
     def get_next_event_id(self, session_id: str) -> int:
         row = self._conn.execute(
-            "SELECT MAX(id) FROM events WHERE session_id = ?", (session_id,)
+            "SELECT MAX(id) FROM events"
         ).fetchone()
         max_id = row[0] if row[0] is not None else 0
         return max_id + 1
