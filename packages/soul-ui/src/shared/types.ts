@@ -377,6 +377,10 @@ export interface SessionSummary {
   displayName?: string;
   /** 세션 메타데이터 (커밋, 브랜치, 카드 등 산출물 기록) */
   metadata?: MetadataEntry[];
+  /** 마지막 이벤트 ID (읽음 상태 비교용) */
+  lastEventId?: number;
+  /** 마지막으로 읽은 이벤트 ID */
+  lastReadEventId?: number;
 }
 
 /** 세션 상세 정보 */
@@ -626,6 +630,8 @@ export interface SessionUpdatedStreamEvent {
   status: SessionStatus;
   updated_at: string;
   last_message?: LastMessage;
+  last_event_id?: number;
+  last_read_event_id?: number;
 }
 
 /** 세션 삭제 */

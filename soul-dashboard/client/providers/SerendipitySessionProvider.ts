@@ -222,6 +222,8 @@ export class SerendipitySessionProvider implements SessionStorageProvider {
       eventCount: 0, // 블록 수는 상세 조회 시 확인
       createdAt: page.createdAt,
       completedAt: page.updatedAt,
+      lastEventId: 0,
+      lastReadEventId: 0,
     };
   }
 
