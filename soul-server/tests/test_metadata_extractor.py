@@ -18,7 +18,7 @@ from soul_server.service.metadata_extractor import MetadataExtractor
 
 @pytest.fixture
 def rules_path(tmp_path):
-    """테스트용 규칙 YAML 생성"""
+    """범용 규칙만 포함하는 테스트용 YAML (소스 리포 기본값과 동일)"""
     rules = tmp_path / "rules.yaml"
     rules.write_text(
         """
@@ -48,15 +48,6 @@ rules:
       type: git_worktree_create
       value: "$1"
 
-  - name: trello_card_create
-    tool_name: mcp__trello__add_card_to_list
-    result_mode: json
-    extract:
-      type: trello_card
-      value: "$.id"
-      label: "$.name"
-      url: "$.url"
-
   - name: git_branch_delete
     tool_name: Bash
     result_mode: regex
@@ -73,13 +64,42 @@ rules:
       type: git_worktree_remove
       value: "worktree removed"
 
-  - name: serendipity_page
-    tool_name: mcp__serendipity__create_page
+  - name: file_write
+    tool_name: Write
+    result_mode: regex
+    result_pattern: "The file (.+) has been written"
+    extract:
+      type: file_write
+      value: "$1"
+
+  - name: file_edit
+    tool_name: Edit
+    result_mode: regex
+    result_pattern: "The file (.+) has been updated"
+    extract:
+      type: file_edit
+      value: "$1"
+""",
+        encoding="utf-8",
+    )
+    return rules
+
+
+@pytest.fixture
+def specialized_rules_path(tmp_path):
+    """환경 특화 규칙을 포함하는 테스트용 YAML (배포 환경에서 사용)"""
+    rules = tmp_path / "specialized_rules.yaml"
+    rules.write_text(
+        """
+rules:
+  - name: trello_card_create
+    tool_name: mcp__trello__add_card_to_list
     result_mode: json
     extract:
-      type: serendipity_page
+      type: trello_card
       value: "$.id"
-      label: "$.title"
+      label: "$.name"
+      url: "$.url"
 
   - name: trello_card_move
     tool_name: mcp__trello__move_card
@@ -89,6 +109,14 @@ rules:
       value: "$.id"
       label: "$.name"
       url: "$.url"
+
+  - name: serendipity_page
+    tool_name: mcp__serendipity__create_page
+    result_mode: json
+    extract:
+      type: serendipity_page
+      value: "$.id"
+      label: "$.title"
 
   - name: serendipity_page_update
     tool_name: mcp__serendipity__update_page
@@ -113,22 +141,6 @@ rules:
       type: serendipity_block
       value: "$.id"
       label: "$.type"
-
-  - name: file_write
-    tool_name: Write
-    result_mode: regex
-    result_pattern: "The file (.+) has been written"
-    extract:
-      type: file_write
-      value: "$1"
-
-  - name: file_edit
-    tool_name: Edit
-    result_mode: regex
-    result_pattern: "The file (.+) has been updated"
-    extract:
-      type: file_edit
-      value: "$1"
 """,
         encoding="utf-8",
     )
@@ -140,15 +152,24 @@ def extractor(rules_path):
     return MetadataExtractor(rules_path)
 
 
+@pytest.fixture
+def specialized_extractor(specialized_rules_path):
+    return MetadataExtractor(specialized_rules_path)
+
+
 # ============================================================
 # 초기화
 # ============================================================
 
 
 class TestInit:
-    def test_load_rules(self, extractor):
-        """규칙 로드 성공"""
-        assert len(extractor._rules) == 13
+    def test_load_universal_rules(self, extractor):
+        """범용 규칙 로드 성공"""
+        assert len(extractor._rules) == 7
+
+    def test_load_specialized_rules(self, specialized_extractor):
+        """특화 규칙 로드 성공"""
+        assert len(specialized_extractor._rules) == 6
 
     def test_file_not_found(self, tmp_path):
         """존재하지 않는 규칙 파일"""
@@ -263,14 +284,16 @@ class TestRegexMode:
 
 
 class TestJsonMode:
-    def test_trello_card(self, extractor):
+    """범용 extractor에는 JSON 모드 규칙이 없으므로, 특화 extractor로 테스트"""
+
+    def test_trello_card(self, specialized_extractor):
         """Trello 카드 생성 결과에서 추출"""
         result = json.dumps({
             "id": "card-123",
             "name": "Phase 1 카드",
             "url": "https://trello.com/c/abc123",
         })
-        entry = extractor.extract("mcp__trello__add_card_to_list", result, is_error=False)
+        entry = specialized_extractor.extract("mcp__trello__add_card_to_list", result, is_error=False)
 
         assert entry is not None
         assert entry["type"] == "trello_card"
@@ -278,80 +301,80 @@ class TestJsonMode:
         assert entry["label"] == "Phase 1 카드"
         assert entry["url"] == "https://trello.com/c/abc123"
 
-    def test_serendipity_page(self, extractor):
+    def test_serendipity_page(self, specialized_extractor):
         """세렌디피티 페이지 생성 결과에서 추출"""
         result = json.dumps({
             "id": "page-uuid-123",
             "title": "작업 문서",
         })
-        entry = extractor.extract("mcp__serendipity__create_page", result, is_error=False)
+        entry = specialized_extractor.extract("mcp__serendipity__create_page", result, is_error=False)
 
         assert entry is not None
         assert entry["type"] == "serendipity_page"
         assert entry["value"] == "page-uuid-123"
         assert entry["label"] == "작업 문서"
 
-    def test_invalid_json(self, extractor):
+    def test_invalid_json(self, specialized_extractor):
         """잘못된 JSON 결과"""
-        entry = extractor.extract("mcp__trello__add_card_to_list", "not json", is_error=False)
+        entry = specialized_extractor.extract("mcp__trello__add_card_to_list", "not json", is_error=False)
         assert entry is None
 
-    def test_trello_card_move(self, extractor):
+    def test_trello_card_move(self, specialized_extractor):
         """Trello 카드 이동 결과에서 추출"""
         result = json.dumps({
             "id": "card-456",
             "name": "Phase 2",
             "url": "https://trello.com/c/xyz",
         })
-        entry = extractor.extract("mcp__trello__move_card", result, is_error=False)
+        entry = specialized_extractor.extract("mcp__trello__move_card", result, is_error=False)
 
         assert entry is not None
         assert entry["type"] == "trello_card_move"
         assert entry["value"] == "card-456"
         assert entry["label"] == "Phase 2"
 
-    def test_serendipity_page_update(self, extractor):
+    def test_serendipity_page_update(self, specialized_extractor):
         """세렌디피티 페이지 갱신 결과에서 추출"""
         result = json.dumps({
             "id": "page-uuid",
             "title": "Updated Doc",
         })
-        entry = extractor.extract("mcp__serendipity__update_page", result, is_error=False)
+        entry = specialized_extractor.extract("mcp__serendipity__update_page", result, is_error=False)
 
         assert entry is not None
         assert entry["type"] == "serendipity_page_update"
         assert entry["value"] == "page-uuid"
         assert entry["label"] == "Updated Doc"
 
-    def test_serendipity_block_create(self, extractor):
+    def test_serendipity_block_create(self, specialized_extractor):
         """세렌디피티 블록 생성 결과에서 추출"""
         result = json.dumps({
             "id": "block-uuid",
             "type": "paragraph",
         })
-        entry = extractor.extract("mcp__serendipity__create_block", result, is_error=False)
+        entry = specialized_extractor.extract("mcp__serendipity__create_block", result, is_error=False)
 
         assert entry is not None
         assert entry["type"] == "serendipity_block"
         assert entry["value"] == "block-uuid"
         assert entry["label"] == "paragraph"
 
-    def test_serendipity_block_update(self, extractor):
+    def test_serendipity_block_update(self, specialized_extractor):
         """세렌디피티 블록 갱신 결과에서 추출"""
         result = json.dumps({
             "id": "block-uuid-2",
             "type": "heading",
         })
-        entry = extractor.extract("mcp__serendipity__update_block", result, is_error=False)
+        entry = specialized_extractor.extract("mcp__serendipity__update_block", result, is_error=False)
 
         assert entry is not None
         assert entry["type"] == "serendipity_block"
         assert entry["value"] == "block-uuid-2"
 
-    def test_missing_required_field(self, extractor):
+    def test_missing_required_field(self, specialized_extractor):
         """필수 필드(value 경로) 누락"""
         result = json.dumps({"name": "test"})  # id 없음
-        entry = extractor.extract("mcp__trello__add_card_to_list", result, is_error=False)
+        entry = specialized_extractor.extract("mcp__trello__add_card_to_list", result, is_error=False)
         assert entry is None
 
 

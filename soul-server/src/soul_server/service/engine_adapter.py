@@ -143,6 +143,7 @@ def build_soulstream_context_item(
     agent_session_id: str,
     claude_session_id: Optional[str],
     workspace_dir: str,
+    folder_name: Optional[str] = None,
 ) -> dict:
     """소울스트림 자체 세션 메타데이터 context_item을 생성한다."""
     hostname = socket.gethostname()
@@ -158,6 +159,7 @@ def build_soulstream_context_item(
         "agent_session_id": agent_session_id,
         "claude_session_id": claude_session_id if claude_session_id else "(new session)",
         "workspace_dir": workspace_dir,
+        "folder": folder_name or "(unassigned)",
         "hostname": hostname,
         "ip_address": ip,
         "current_time": datetime.now(timezone.utc).isoformat(),

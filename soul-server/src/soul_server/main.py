@@ -220,8 +220,11 @@ async def lifespan(app: FastAPI):
     logger.info(f"  SessionDB initialized: {db_path}")
 
     # MetadataExtractor 초기화 (부가 기능 — 로드 실패해도 서비스 기동에 영향 없음)
+    # DATA_DIR에 환경 특화 규칙이 있으면 우선 사용, 없으면 패키지 기본 규칙으로 폴백
     metadata_extractor = None
     metadata_rules_path = data_dir / "metadata_rules.yaml"
+    if not metadata_rules_path.exists():
+        metadata_rules_path = Path(__file__).parent.parent.parent / "data" / "metadata_rules.yaml"
     try:
         from soul_server.service.metadata_extractor import MetadataExtractor
         metadata_extractor = MetadataExtractor(metadata_rules_path)
