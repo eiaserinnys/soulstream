@@ -219,10 +219,23 @@ async def lifespan(app: FastAPI):
     init_session_db(session_db)
     logger.info(f"  SessionDB initialized: {db_path}")
 
+    # MetadataExtractor 초기화 (부가 기능 — 로드 실패해도 서비스 기동에 영향 없음)
+    metadata_extractor = None
+    metadata_rules_path = data_dir / "metadata_rules.yaml"
+    try:
+        from soul_server.service.metadata_extractor import MetadataExtractor
+        metadata_extractor = MetadataExtractor(metadata_rules_path)
+        logger.info(f"  MetadataExtractor loaded: {metadata_rules_path}")
+    except FileNotFoundError:
+        logger.info(f"  MetadataExtractor skipped: {metadata_rules_path} not found")
+    except Exception:
+        logger.warning("  MetadataExtractor initialization failed", exc_info=True)
+
     # TaskManager 초기화 및 로드
     task_manager = TaskManager(
         session_db=session_db,
         eviction_ttl=settings.session_eviction_ttl_seconds,
+        metadata_extractor=metadata_extractor,
     )
     set_task_manager(task_manager)
     loaded = await task_manager.load()

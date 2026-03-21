@@ -19,6 +19,7 @@ import json
 if TYPE_CHECKING:
     from soul_server.service.session_db import SessionDB
     from soul_server.service.task_listener import TaskListenerManager
+    from soul_server.service.metadata_extractor import MetadataExtractor
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,8 @@ class TaskExecutor:
         error_task_func: Callable[[str, str], Awaitable[Optional[Task]]],
         register_session_func: Optional[Callable[[str, str], None]] = None,
         session_db: Optional["SessionDB"] = None,
+        metadata_extractor: Optional["MetadataExtractor"] = None,
+        append_metadata_func: Optional[Callable] = None,
     ):
         """
         Args:
@@ -51,6 +54,8 @@ class TaskExecutor:
             error_task_func: 태스크 에러 처리 함수 (agent_session_id, error)
             register_session_func: claude_session_id 등록 함수 (claude_session_id, agent_session_id)
             session_db: SQLite 기반 세션 저장소
+            metadata_extractor: 메타데이터 추출기 (tool_result에서 자동 감지)
+            append_metadata_func: 메타데이터 추가 함수 (agent_session_id, entry)
         """
         self._tasks = tasks
         self._listener_manager = listener_manager
@@ -59,6 +64,8 @@ class TaskExecutor:
         self._error_task = error_task_func
         self._register_session = register_session_func
         self._db = session_db
+        self._metadata_extractor = metadata_extractor
+        self._append_metadata = append_metadata_func
 
     def _persist_event(self, session_id: str, event_dict: dict) -> Optional[int]:
         """이벤트를 SessionDB에 영속화하고 event_id를 반환한다."""
@@ -260,6 +267,26 @@ class TaskExecutor:
                         )
                     except Exception:
                         logger.debug("last_message update failed")
+
+                    # tool_result 이벤트에서 메타데이터 자동 추출
+                    if (
+                        event.type == "tool_result"
+                        and self._metadata_extractor
+                        and self._append_metadata
+                    ):
+                        try:
+                            entry = self._metadata_extractor.extract(
+                                tool_name=event_dict.get("tool_name", ""),
+                                result=event_dict.get("result", ""),
+                                is_error=event_dict.get("is_error", False),
+                            )
+                            if entry:
+                                await self._append_metadata(session_id, entry)
+                        except Exception:
+                            logger.debug(
+                                f"Metadata extraction failed for {session_id}",
+                                exc_info=True,
+                            )
 
                     # 완료 또는 오류 시 태스크 상태 업데이트
                     if event.type == "complete":
