@@ -139,15 +139,15 @@ const SessionItem = memo(function SessionItem({ session, isActive, onClick }: Se
           )}
           {isLlm && llmLabel
             ? llmLabel
-            : session.lastMessage?.preview
-              ? session.lastMessage.preview.length > 30
-                ? session.lastMessage.preview.slice(0, 27) + "..."
-                : session.lastMessage.preview
-              : session.prompt
-                ? session.prompt.length > 30
-                  ? session.prompt.slice(0, 27) + "..."
-                  : session.prompt
-                : session.agentSessionId.slice(0, 16)}
+            : session.displayName
+              ? `📌 ${session.displayName.length > 28 ? session.displayName.slice(0, 25) + "..." : session.displayName}`
+              : session.lastMessage?.preview
+                ? `🗨️ ${session.lastMessage.preview.length > 28 ? session.lastMessage.preview.slice(0, 25) + "..." : session.lastMessage.preview}`
+                : session.prompt
+                  ? session.prompt.length > 30
+                    ? session.prompt.slice(0, 27) + "..."
+                    : session.prompt
+                  : session.agentSessionId.slice(0, 16)}
         </div>
         <div className="flex items-center gap-1.5 mt-0.5">
           <span className="text-[12px] text-muted-foreground">
