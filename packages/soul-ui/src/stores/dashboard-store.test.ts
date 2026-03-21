@@ -248,6 +248,24 @@ describe("dashboard-store", () => {
       useDashboardStore.getState().selectCard(null);
       expect(useDashboardStore.getState().selectedCardId).toBeNull();
     });
+
+    it("should switch from chat to detail tab when selecting a card", () => {
+      useDashboardStore.getState().setActiveRightTab("chat");
+      useDashboardStore.getState().selectCard("card-1");
+      expect(useDashboardStore.getState().activeRightTab).toBe("detail");
+    });
+
+    it("should NOT switch from info to detail tab when selecting a card", () => {
+      useDashboardStore.getState().setActiveRightTab("info");
+      useDashboardStore.getState().selectCard("card-1");
+      expect(useDashboardStore.getState().activeRightTab).toBe("info");
+    });
+
+    it("should NOT switch tab when already on detail", () => {
+      useDashboardStore.getState().setActiveRightTab("detail");
+      useDashboardStore.getState().selectCard("card-1");
+      expect(useDashboardStore.getState().activeRightTab).toBe("detail");
+    });
   });
 
   // === SSE 이벤트 처리: 텍스트 카드 ===
@@ -663,6 +681,26 @@ describe("dashboard-store", () => {
 
       useDashboardStore.getState().selectEventNode(null);
       expect(useDashboardStore.getState().selectedEventNodeData).toBeNull();
+    });
+
+    it("should switch from chat to detail tab when selecting event node", () => {
+      useDashboardStore.getState().setActiveRightTab("chat");
+      useDashboardStore.getState().selectEventNode({
+        nodeType: "user",
+        label: "User",
+        content: "hello",
+      });
+      expect(useDashboardStore.getState().activeRightTab).toBe("detail");
+    });
+
+    it("should NOT switch from info to detail tab when selecting event node", () => {
+      useDashboardStore.getState().setActiveRightTab("info");
+      useDashboardStore.getState().selectEventNode({
+        nodeType: "user",
+        label: "User",
+        content: "hello",
+      });
+      expect(useDashboardStore.getState().activeRightTab).toBe("info");
     });
   });
 

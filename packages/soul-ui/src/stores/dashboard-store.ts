@@ -113,7 +113,7 @@ export interface DashboardState {
   serendipityAvailable: boolean;
 
   /** 오른쪽 패널 활성 탭 */
-  activeRightTab: "detail" | "chat";
+  activeRightTab: "detail" | "chat" | "info";
 
   /** 대시보드 프로필 설정 */
   dashboardConfig: DashboardConfig | null;
@@ -208,7 +208,7 @@ export interface DashboardActions {
   setSerendipityAvailable: (available: boolean) => void;
 
   // 오른쪽 패널 탭
-  setActiveRightTab: (tab: "detail" | "chat") => void;
+  setActiveRightTab: (tab: "detail" | "chat" | "info") => void;
 
   // 대시보드 프로필 설정
   setDashboardConfig: (config: DashboardConfig) => void;
@@ -444,23 +444,29 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
 
       // --- 카드 선택 ---
 
-      selectCard: (cardId, nodeId, switchTab = true) =>
+      selectCard: (cardId, nodeId, switchTab = true) => {
+        const current = get().activeRightTab;
+        const shouldSwitch = switchTab && current === "chat";
         set({
           selectedCardId: cardId,
           selectedNodeId: nodeId ?? null,
           selectedEventNodeData: null,
-          ...(switchTab ? { activeRightTab: "detail" as const } : {}),
-        }),
+          ...(shouldSwitch ? { activeRightTab: "detail" as const } : {}),
+        });
+      },
 
       // --- 이벤트 노드 선택 ---
 
-      selectEventNode: (data, nodeId, switchTab = true) =>
+      selectEventNode: (data, nodeId, switchTab = true) => {
+        const current = get().activeRightTab;
+        const shouldSwitch = switchTab && current === "chat";
         set({
           selectedEventNodeData: data,
           selectedCardId: null,
           selectedNodeId: nodeId ?? null,
-          ...(switchTab ? { activeRightTab: "detail" as const } : {}),
-        }),
+          ...(shouldSwitch ? { activeRightTab: "detail" as const } : {}),
+        });
+      },
 
       // --- SSE 이벤트 처리 ---
       // createNodeFromEvent + placeInTree + applyUpdate + updateSessionStatus + enqueueNotification
