@@ -71,11 +71,13 @@ class TaskManager:
         self,
         session_db: SessionDB,
         eviction_ttl: int = 900,
+        metadata_extractor=None,
     ):
         """
         Args:
             session_db: SQLite 기반 세션 저장소
             eviction_ttl: 완료 세션 메모리 퇴거 TTL (초, 기본 15분)
+            metadata_extractor: MetadataExtractor 인스턴스 (tool_result에서 자동 감지)
         """
         # 핵심 데이터 (key = agent_session_id)
         self._tasks: Dict[str, Task] = {}
@@ -101,6 +103,8 @@ class TaskManager:
             error_task_func=self._error_task_internal,
             register_session_func=self.register_session,
             session_db=session_db,
+            metadata_extractor=metadata_extractor,
+            append_metadata_func=self.append_session_metadata,
         )
 
     # === claude_session_id 인덱스 ===
