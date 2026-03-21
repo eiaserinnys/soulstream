@@ -230,6 +230,7 @@ export interface DashboardActions {
   setCatalog: (catalog: CatalogState) => void;
   selectFolder: (folderId: string | null) => void;
   getSessionsInFolder: (folderId: string | null) => SessionSummary[];
+  moveSessionsToFolder: (sessionIds: string[], folderId: string | null) => void;
 
   // 활성 세션 해제 (selectedFolderId를 유지하면서 세션만 해제)
   clearActiveSession: () => void;
@@ -839,6 +840,22 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
 
       setCatalog: (catalog) =>
         set((state) => ({ catalog, catalogVersion: state.catalogVersion + 1 })),
+
+      moveSessionsToFolder: (sessionIds, folderId) => {
+        if (sessionIds.length === 0) return;
+        const { catalog } = get();
+        if (!catalog) return;
+        const updatedSessions = { ...catalog.sessions };
+        for (const id of sessionIds) {
+          if (updatedSessions[id]) {
+            updatedSessions[id] = { ...updatedSessions[id], folderId };
+          }
+        }
+        set((state) => ({
+          catalog: { ...catalog, sessions: updatedSessions },
+          catalogVersion: state.catalogVersion + 1,
+        }));
+      },
 
       selectFolder: (folderId) => set({ selectedFolderId: folderId }),
 

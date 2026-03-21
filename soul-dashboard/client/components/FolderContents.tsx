@@ -6,6 +6,7 @@
 
 import { useMemo, useRef, useState, memo, useCallback } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { moveSessionsOptimistic } from "client/lib/move-sessions";
 import {
   useDashboardStore,
   cn,
@@ -155,27 +156,16 @@ export function FolderContents() {
   );
 
   const handleMoveToFolder = useCallback(
-    async (sessionId: string, folderId: string | null) => {
+    async (targetFolderId: string | null) => {
+      const sessionId = contextMenu?.sessionId;
+      if (!sessionId) return;
       const ids = selectedSessionIds.has(sessionId)
         ? Array.from(selectedSessionIds)
         : [sessionId];
-
-      if (ids.length === 1) {
-        await fetch(`/api/catalog/sessions/${ids[0]}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ folderId }),
-        });
-      } else {
-        await fetch("/api/catalog/sessions/batch", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionIds: ids, folderId }),
-        });
-      }
       setContextMenu(null);
+      await moveSessionsOptimistic(ids, targetFolderId);
     },
-    [selectedSessionIds],
+    [selectedSessionIds, contextMenu],
   );
 
   const catalog = useDashboardStore((s) => s.catalog);
@@ -266,14 +256,14 @@ export function FolderContents() {
             <button
               key={f.id}
               className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
-              onClick={() => handleMoveToFolder(contextMenu.sessionId, f.id)}
+              onClick={() => handleMoveToFolder(f.id)}
             >
               {f.name}
             </button>
           ))}
           <button
             className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent text-muted-foreground"
-            onClick={() => handleMoveToFolder(contextMenu.sessionId, null)}
+            onClick={() => handleMoveToFolder(null)}
           >
             Uncategorized
           </button>

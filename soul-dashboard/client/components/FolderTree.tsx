@@ -6,6 +6,7 @@
 
 import { useState, useCallback } from "react";
 import { useDashboardStore, cn, Button, Badge } from "@seosoyoung/soul-ui";
+import { moveSessionsOptimistic } from "client/lib/move-sessions";
 
 export function FolderTree() {
   const catalog = useDashboardStore((s) => s.catalog);
@@ -23,21 +24,9 @@ export function FolderTree() {
     setDragOverId(null);
     try {
       const ids: string[] = JSON.parse(e.dataTransfer.getData("text/plain"));
-      if (ids.length === 1) {
-        await fetch(`/api/catalog/sessions/${ids[0]}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ folderId }),
-        });
-      } else if (ids.length > 1) {
-        await fetch("/api/catalog/sessions/batch", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionIds: ids, folderId }),
-        });
-      }
+      await moveSessionsOptimistic(ids, folderId);
     } catch {
-      // SSE will sync state
+      // JSON parse error — ignore
     }
   }, []);
 
