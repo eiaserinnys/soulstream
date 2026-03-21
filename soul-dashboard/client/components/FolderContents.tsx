@@ -10,6 +10,7 @@ import { moveSessionsOptimistic } from "client/lib/move-sessions";
 import { renameSessionOptimistic } from "client/lib/rename-session";
 import {
   useDashboardStore,
+  useIsMobile,
   cn,
   Badge,
   type SessionSummary,
@@ -103,8 +104,10 @@ export function FolderContents() {
   const selectedSessionIds = useDashboardStore((s) => s.selectedSessionIds);
   const editingSessionId = useDashboardStore((s) => s.editingSessionId);
   const setEditingSession = useDashboardStore((s) => s.setEditingSession);
+  const setMobileView = useDashboardStore((s) => s.setMobileView);
   const catalogVersion = useDashboardStore((s) => s.catalogVersion);
   const sessions = useDashboardStore((s) => s.sessions);
+  const isMobile = useIsMobile();
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -218,9 +221,10 @@ export function FolderContents() {
                 isActive={activeSessionKey === session.agentSessionId}
                 isSelected={selectedSessionIds.has(session.agentSessionId)}
                 isEditing={editingSessionId === session.agentSessionId}
-                onClick={(e) =>
-                  toggleSessionSelection(session.agentSessionId, e.ctrlKey || e.metaKey, e.shiftKey)
-                }
+                onClick={(e) => {
+                  toggleSessionSelection(session.agentSessionId, e.ctrlKey || e.metaKey, e.shiftKey);
+                  if (isMobile) setMobileView("chat");
+                }}
                 onContextMenu={(e) => handleContextMenu(session.agentSessionId, e)}
                 onDragStart={(e) => handleDragStart(session.agentSessionId, e)}
                 onEditSubmit={(name) => handleEditSubmit(session.agentSessionId, name)}

@@ -666,105 +666,39 @@ describe("dashboard-store", () => {
   });
 
 
-  // === 세션 생성/재개 ===
+  // === New Session 모달 ===
 
-  describe("startCompose / cancelCompose", () => {
-    it("should reset session state and set isComposing to true", () => {
-      useDashboardStore.getState().setActiveSession("sess-abc");
-      useDashboardStore.getState().processEvent(
-        { type: "user_message", user: "u", text: "hi" } as UserMessageEvent,
-        0,
-      );
-      useDashboardStore.getState().processEvent({ type: "text_start" } as TextStartEvent, 1);
-      useDashboardStore.getState().selectCard("t1");
+  describe("openNewSessionModal / closeNewSessionModal", () => {
+    it("should open and close the new session modal", () => {
+      expect(useDashboardStore.getState().isNewSessionModalOpen).toBe(false);
 
-      useDashboardStore.getState().startCompose();
-      const state = useDashboardStore.getState();
+      useDashboardStore.getState().openNewSessionModal();
+      expect(useDashboardStore.getState().isNewSessionModalOpen).toBe(true);
 
-      expect(state.isComposing).toBe(true);
-      expect(state.resumeTargetKey).toBeNull();
-      expect(state.activeSessionKey).toBeNull();
-      expect(state.activeSession).toBeNull();
-      expect(state.tree).toBeNull();
-      expect(state.selectedCardId).toBeNull();
-      expect(state.selectedNodeId).toBeNull();
-      expect(state.selectedEventNodeData).toBeNull();
-      expect(state.lastEventId).toBe(0);
-    });
-
-    it("should set isComposing to false and clear resumeTargetKey on cancel", () => {
-      useDashboardStore.getState().startCompose();
-      expect(useDashboardStore.getState().isComposing).toBe(true);
-
-      useDashboardStore.getState().cancelCompose();
-      const state = useDashboardStore.getState();
-      expect(state.isComposing).toBe(false);
-      expect(state.resumeTargetKey).toBeNull();
-    });
-
-    it("cancelCompose should clear resumeTargetKey from startResume", () => {
-      useDashboardStore.getState().startResume("sess-abc");
-      expect(useDashboardStore.getState().resumeTargetKey).toBe("sess-abc");
-
-      useDashboardStore.getState().cancelCompose();
-      expect(useDashboardStore.getState().isComposing).toBe(false);
-      expect(useDashboardStore.getState().resumeTargetKey).toBeNull();
+      useDashboardStore.getState().closeNewSessionModal();
+      expect(useDashboardStore.getState().isNewSessionModalOpen).toBe(false);
     });
   });
 
-  // === 세션 재개 ===
+  // === addOptimisticSession ===
 
-  describe("startResume", () => {
-    it("should preserve session state while setting isComposing and resumeTargetKey", () => {
-      useDashboardStore.getState().setActiveSession("sess-old");
-      useDashboardStore.getState().processEvent(
-        { type: "user_message", user: "u", text: "hi" } as UserMessageEvent,
-        0,
-      );
-      useDashboardStore.getState().processEvent({ type: "text_start" } as TextStartEvent, 5);
-      useDashboardStore.getState().processEvent({ type: "session", session_id: "s1" } as SessionEvent, 6);
-
-      expect(useDashboardStore.getState().tree).not.toBeNull();
-      expect(useDashboardStore.getState().lastEventId).toBe(6);
-
-      useDashboardStore.getState().startResume("sess-old");
+  describe("addOptimisticSession", () => {
+    it("should add session and set it as active", () => {
+      useDashboardStore.getState().addOptimisticSession("sess-new", "hello");
       const state = useDashboardStore.getState();
 
-      expect(state.isComposing).toBe(true);
-      expect(state.resumeTargetKey).toBe("sess-old");
-      expect(state.activeSessionKey).toBe("sess-old");
-      expect(state.tree).not.toBeNull();
-      expect(state.lastEventId).toBe(6);
+      expect(state.sessions).toHaveLength(1);
+      expect(state.sessions[0].agentSessionId).toBe("sess-new");
+      expect(state.sessions[0].prompt).toBe("hello");
+      expect(state.activeSessionKey).toBe("sess-new");
     });
 
-    it("should differ from startCompose: startCompose resets state, startResume preserves it", () => {
-      useDashboardStore.getState().setActiveSession("sess-existing");
-      useDashboardStore.getState().processEvent(
-        { type: "user_message", user: "u", text: "hi" } as UserMessageEvent,
-        0,
-      );
-      useDashboardStore.getState().processEvent({ type: "text_start" } as TextStartEvent, 1);
-      useDashboardStore.getState().startCompose();
+    it("should not duplicate session if already exists", () => {
+      useDashboardStore.getState().addOptimisticSession("sess-new", "hello");
+      useDashboardStore.getState().addOptimisticSession("sess-new", "hello again");
+      const state = useDashboardStore.getState();
 
-      expect(useDashboardStore.getState().isComposing).toBe(true);
-      expect(useDashboardStore.getState().resumeTargetKey).toBeNull();
-      expect(useDashboardStore.getState().activeSessionKey).toBeNull();
-      expect(useDashboardStore.getState().tree).toBeNull();
-
-      useDashboardStore.getState().reset();
-
-      useDashboardStore.getState().setActiveSession("sess-existing");
-      useDashboardStore.getState().processEvent(
-        { type: "user_message", user: "u", text: "hi" } as UserMessageEvent,
-        0,
-      );
-      useDashboardStore.getState().processEvent({ type: "text_start" } as TextStartEvent, 1);
-      useDashboardStore.getState().startResume("sess-existing");
-
-      expect(useDashboardStore.getState().isComposing).toBe(true);
-      expect(useDashboardStore.getState().resumeTargetKey).toBe("sess-existing");
-      expect(useDashboardStore.getState().activeSessionKey).toBe("sess-existing");
-      expect(useDashboardStore.getState().tree).not.toBeNull();
+      expect(state.sessions).toHaveLength(1);
     });
   });
 
