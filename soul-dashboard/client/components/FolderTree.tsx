@@ -5,13 +5,15 @@
  */
 
 import { useState, useCallback, useMemo } from "react";
-import { useDashboardStore, isSessionUnread, cn, Button, Badge, SYSTEM_FOLDERS } from "@seosoyoung/soul-ui";
+import { useDashboardStore, isSessionUnread, cn, Button, Badge, Spinner, SYSTEM_FOLDERS } from "@seosoyoung/soul-ui";
+import { Plus } from "lucide-react";
 import { moveSessionsOptimistic } from "client/lib/move-sessions";
 import {
   createFolder,
   renameFolderOptimistic,
   deleteFolderOptimistic,
 } from "client/lib/folder-operations";
+import { FolderDialog } from "./FolderDialog";
 
 const SYSTEM_FOLDER_NAMES = new Set(Object.values(SYSTEM_FOLDERS));
 
@@ -24,6 +26,8 @@ export function FolderTree() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
 
   const handleDrop = useCallback(async (folderId: string | null, e: React.DragEvent) => {
     e.preventDefault();
@@ -64,16 +68,36 @@ export function FolderTree() {
     [catalog, sessions, catalogVersion],
   );
 
-  const handleCreateFolder = async () => {
-    const name = prompt("새 폴더 이름:");
-    if (!name?.trim()) return;
-    await createFolder(name.trim());
+  const handleCreateFolder = async (name: string) => {
+    try {
+      await createFolder(name.trim());
+      setCreateDialogOpen(false);
+    } catch {
+      // API 에러는 folder-operations 내부에서 console.error로 보고됨
+    }
   };
 
-  const handleDeleteFolder = async (folderId: string, folderName: string) => {
-    if (!confirm(`'${folderName}' 폴더를 삭제하시겠습니까?\n폴더 내 세션은 미분류로 이동됩니다.`)) return;
-    await deleteFolderOptimistic(folderId);
+  const handleDeleteFolder = async () => {
+    if (!deleteTarget) return;
+    try {
+      await deleteFolderOptimistic(deleteTarget.id);
+      setDeleteTarget(null);
+    } catch {
+      // API 에러는 folder-operations 내부에서 console.error로 보고됨
+    }
   };
+
+  const runningFolderIds = useMemo(() => {
+    if (!catalog) return new Set<string>();
+    const set = new Set<string>();
+    for (const s of sessions) {
+      if (s.status === "running") {
+        const fid = catalog.sessions[s.agentSessionId]?.folderId;
+        if (fid) set.add(fid);
+      }
+    }
+    return set;
+  }, [catalog, sessions, catalogVersion]);
 
   const handleDoubleClick = (folderId: string, currentName: string) => {
     setEditingId(folderId);
@@ -119,7 +143,7 @@ export function FolderTree() {
       onDoubleClick={() => handleDoubleClick(folder.id, folder.name)}
       onContextMenu={(e) => {
         e.preventDefault();
-        handleDeleteFolder(folder.id, folder.name);
+        setDeleteTarget({ id: folder.id, name: folder.name });
       }}
       onDragOver={(e) => { e.preventDefault(); setDragOverId(folder.id); }}
       onDragLeave={() => setDragOverId(null)}
@@ -140,6 +164,9 @@ export function FolderTree() {
       ) : (
         <span className="truncate">{folder.name}</span>
       )}
+      {runningFolderIds.has(folder.id) && (
+        <Spinner className="h-3 w-3 shrink-0 text-green-500" />
+      )}
       {(() => {
         const unreadCount = getUnreadCount(folder.id);
         return unreadCount > 0 ? (
@@ -159,8 +186,8 @@ export function FolderTree() {
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-3 py-2 border-b border-border">
         <span className="text-sm font-medium">Folders</span>
-        <Button variant="ghost" size="sm" onClick={handleCreateFolder} title="New folder">
-          +
+        <Button variant="ghost" size="icon" onClick={() => setCreateDialogOpen(true)} title="New folder">
+          <Plus className="h-3.5 w-3.5" />
         </Button>
       </div>
 
@@ -203,6 +230,20 @@ export function FolderTree() {
           })()}
         </div>
       </div>
+
+      <FolderDialog
+        mode="create"
+        open={createDialogOpen}
+        onOpenChange={setCreateDialogOpen}
+        onConfirm={handleCreateFolder}
+      />
+      <FolderDialog
+        mode="delete"
+        open={!!deleteTarget}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        onConfirm={handleDeleteFolder}
+        folderName={deleteTarget?.name ?? ""}
+      />
     </div>
   );
 }
