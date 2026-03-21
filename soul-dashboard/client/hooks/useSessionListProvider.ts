@@ -225,8 +225,12 @@ export function useSessionListProvider(
 
     // 초기 카탈로그 로드
     fetch("/api/catalog")
-      .then((r) => r.json())
-      .then((data) => useDashboardStore.getState().setCatalog(data))
+      .then((r) => { if (r.ok) return r.json(); throw new Error("catalog fetch failed"); })
+      .then((data) => {
+        if (data?.folders && data?.sessions) {
+          useDashboardStore.getState().setCatalog(data);
+        }
+      })
       .catch(() => {});
 
     return () => {

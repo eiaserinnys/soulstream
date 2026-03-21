@@ -867,7 +867,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
 
       getSessionsInFolder: (folderId) => {
         const { sessions, catalog } = get();
-        if (!catalog) return sessions;
+        if (!catalog?.sessions) return sessions;
         return sessions.filter((s) => {
           const assignment = catalog.sessions[s.agentSessionId];
           if (folderId === null) {

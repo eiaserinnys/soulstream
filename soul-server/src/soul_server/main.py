@@ -239,6 +239,7 @@ async def lifespan(app: FastAPI):
     from soul_server.api.catalog import create_catalog_router
     catalog_router = create_catalog_router(session_db=session_db, broadcaster=broadcaster)
     app.include_router(catalog_router, prefix="/catalog", tags=["catalog"])
+    app.include_router(catalog_router, prefix="/api/catalog", tags=["catalog"])
     logger.info("  Catalog API registered")
 
     # 이전 종료 시 저장된 세션 재개 (graceful_shutdown이 DB에 플래그로 저장)
