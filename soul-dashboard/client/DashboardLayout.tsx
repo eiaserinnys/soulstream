@@ -336,18 +336,18 @@ export function DashboardLayout() {
             className="overflow-hidden flex flex-col"
             style={{ width: `${centerPercent}%` }}
           >
-            <VerticalSplitPane
-              top={<FolderContents />}
-              bottom={
-                showComposer ? (
-                  <PromptComposer />
-                ) : (
+            {showComposer ? (
+              <PromptComposer />
+            ) : (
+              <VerticalSplitPane
+                top={<FolderContents />}
+                bottom={
                   <div className="flex-1 overflow-hidden h-full">
                     <NodeGraph />
                   </div>
-                )
-              }
-            />
+                }
+              />
+            )}
           </main>
 
           {/* Right drag handle */}

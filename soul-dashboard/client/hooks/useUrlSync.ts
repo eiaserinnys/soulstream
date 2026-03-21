@@ -26,6 +26,7 @@ export function useUrlSync() {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const setActiveSession = useDashboardStore((s) => s.setActiveSession);
   const startCompose = useDashboardStore((s) => s.startCompose);
+  const catalog = useDashboardStore((s) => s.catalog);
 
   // popstate 핸들러에서 최신 상태를 참조하기 위한 ref
   const skipNextPush = useRef(false);
@@ -41,6 +42,22 @@ export function useUrlSync() {
     // "/" 이면 기본 상태 (Composer) 유지
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 1-2. catalog 로드 후 폴더 재동기화 (1회성)
+  // 마운트 시 setActiveSession이 catalog 없이 실행됐으면 selectedFolderId가
+  // null(미분류)로 잘못 설정되었을 수 있다. catalog 최초 로드 시 실제 폴더를 재확인한다.
+  const folderSyncDone = useRef(false);
+  useEffect(() => {
+    if (folderSyncDone.current) return;
+    if (!activeSessionKey || !catalog?.sessions) return;
+    const entry = catalog.sessions[activeSessionKey];
+    const correctFolderId = entry?.folderId ?? null;
+    const { selectedFolderId } = useDashboardStore.getState();
+    if (selectedFolderId !== correctFolderId) {
+      useDashboardStore.setState({ selectedFolderId: correctFolderId });
+    }
+    folderSyncDone.current = true;
+  }, [activeSessionKey, catalog]);
 
   // 2. activeSessionKey 변경 → URL 업데이트
   useEffect(() => {

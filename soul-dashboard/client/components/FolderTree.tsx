@@ -89,6 +89,20 @@ export function FolderTree() {
     setEditingId(null);
   };
 
+  /** 폴더 선택 시 해당 폴더의 첫 세션을 자동 선택한다 */
+  const handleSelectFolder = useCallback((folderId: string | null) => {
+    const store = useDashboardStore.getState();
+    const folderSessions = store.getSessionsInFolder(folderId);
+    if (folderSessions.length > 0) {
+      // 첫 번째 세션 활성화 → setActiveSession이 selectedFolderId도 갱신
+      store.setActiveSession(folderSessions[0].agentSessionId);
+    } else {
+      // 빈 폴더: 폴더만 선택하고 세션 해제
+      selectFolder(folderId);
+      store.clearActiveSession();
+    }
+  }, [selectFolder]);
+
   const folders = catalog?.folders ?? [];
 
   return (
@@ -114,7 +128,7 @@ export function FolderTree() {
               selectedFolderId === folder.id && "bg-accent text-accent-foreground",
               dragOverId === folder.id && "ring-2 ring-primary",
             )}
-            onClick={() => selectFolder(folder.id)}
+            onClick={() => handleSelectFolder(folder.id)}
             onDoubleClick={() => handleDoubleClick(folder.id, folder.name)}
             onContextMenu={(e) => {
               e.preventDefault();
@@ -152,7 +166,7 @@ export function FolderTree() {
             selectedFolderId === null && "bg-accent text-accent-foreground",
             dragOverId === "__null__" && "ring-2 ring-primary",
           )}
-          onClick={() => selectFolder(null)}
+          onClick={() => handleSelectFolder(null)}
           onDragOver={(e) => { e.preventDefault(); setDragOverId("__null__"); }}
           onDragLeave={() => setDragOverId(null)}
           onDrop={(e) => handleDrop(null, e)}
