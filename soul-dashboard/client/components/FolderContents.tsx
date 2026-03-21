@@ -7,6 +7,7 @@
 import { useMemo, useRef, useState, memo, useCallback } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { moveSessionsOptimistic } from "client/lib/move-sessions";
+import { renameSessionOptimistic } from "client/lib/rename-session";
 import {
   useDashboardStore,
   cn,
@@ -145,12 +146,8 @@ export function FolderContents() {
   const handleEditSubmit = useCallback(
     async (sessionId: string, name: string) => {
       const displayName = name.trim() || null;
-      await fetch(`/api/catalog/sessions/${sessionId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ displayName }),
-      });
       setEditingSession(null);
+      await renameSessionOptimistic(sessionId, displayName);
     },
     [setEditingSession],
   );
