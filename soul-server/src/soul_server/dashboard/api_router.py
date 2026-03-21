@@ -287,24 +287,25 @@ async def api_session_events(
     is_llm = (task is not None and task.session_type == "llm") or session_id.startswith("llm-")
 
     async def event_generator():
-        # Part 1: EventStore에서 히스토리 읽기
-        event_store = task_manager.event_store
+        import json as _json
+        # Part 1: SessionDB에서 히스토리 읽기
+        from soul_server.service.session_db import get_session_db
+        db = get_session_db()
         last_stored_id = 0
 
-        if event_store:
-            try:
-                stored = (
-                    event_store.read_since(session_id, after_id)
-                    if after_id > 0
-                    else event_store.read_all(session_id)
-                )
-            except Exception as e:
-                logger.error("Failed to read events for %s: %s", session_id, e)
-                stored = []
+        try:
+            stored = db.read_events(session_id, after_id=after_id)
+        except Exception as e:
+            logger.error("Failed to read events for %s: %s", session_id, e)
+            stored = []
 
+        if stored:
             for record in stored:
                 last_stored_id = max(last_stored_id, record["id"])
-                event = record["event"]
+                try:
+                    event = _json.loads(record["payload"])
+                except (_json.JSONDecodeError, KeyError):
+                    event = {}
                 event_type = event.get("type", "unknown") if isinstance(event, dict) else "unknown"
                 yield (
                     f"id: {record['id']}\n"
