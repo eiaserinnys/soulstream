@@ -65,11 +65,11 @@ rules:
       type: git_worktree_remove
       value: "worktree removed"
 
-  # 실제 result: "The file {path} has been written successfully."
+  # 실제 result: "File created successfully at: {path}"
   - name: file_write
     tool_name: Write
     result_mode: regex
-    result_pattern: "The file (.+) has been written"
+    result_pattern: "File created successfully at:\\s*(.+)"
     extract:
       type: file_write
       value: "$1"

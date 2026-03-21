@@ -301,7 +301,7 @@ class TaskExecutor:
                             if entry:
                                 await self._append_metadata(session_id, entry)
                         except Exception:
-                            logger.debug(
+                            logger.warning(
                                 f"Metadata extraction failed for {session_id}",
                                 exc_info=True,
                             )
