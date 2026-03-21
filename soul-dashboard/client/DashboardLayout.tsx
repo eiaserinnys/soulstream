@@ -1,18 +1,18 @@
 /**
  * DashboardLayout - 3패널 레이아웃 (리사이즈 가능)
  *
- * SessionList | NodeGraph | RightPanel (Detail + Chat) 구성.
+ * SessionList | VerticalSplitPane(FolderContents + NodeGraph) | RightPanel (Detail + Chat) 구성.
  * SSE 구독, 세션 목록 폴링, 브라우저 알림을 여기서 초기화합니다.
- *
- * composing 모드에서는 중앙 패널에 PromptComposer를 표시합니다.
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { FolderTree } from "./components/FolderTree";
 import { FolderContents } from "./components/FolderContents";
+import { SessionsTopBar } from "./components/SessionsTopBar";
+import { MobileChatHeader } from "./components/MobileChatHeader";
 import { VerticalSplitPane } from "./components/VerticalSplitPane";
 import { NodeGraph } from "./components/NodeGraph";
-import { PromptComposer } from "./components/PromptComposer";
+import { NewSessionModal } from "./components/NewSessionModal";
 import { StorageModeToggleCompact } from "./components/StorageModeToggle";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { ConfigButton } from "./components/ConfigButton";
@@ -234,20 +234,21 @@ export function DashboardLayout() {
   // 모바일 여부 및 사이드바 상태
   const isMobile = useIsMobile();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const mobileView = useDashboardStore((s) => s.mobileView);
+  const setMobileView = useDashboardStore((s) => s.setMobileView);
 
-  // PC 전환 시 Sheet 닫힘
+  // PC 전환 시 Sheet 닫힘 + mobileView 리셋
   useEffect(() => {
-    if (!isMobile) { setIsSidebarOpen(false); }
-  }, [isMobile]);
+    if (!isMobile) {
+      setIsSidebarOpen(false);
+      setMobileView("sessions");
+    }
+  }, [isMobile, setMobileView]);
 
   // 세션 선택 시 Sheet 자동 닫힘
   useEffect(() => {
     if (activeSessionKey && isMobile) { setIsSidebarOpen(false); }
   }, [activeSessionKey, isMobile]);
-
-  // 중앙 패널 렌더링 결정: 세션 미선택 시 항상 Composer 표시
-  const showComposer = !activeSessionKey;
-  const hasActiveSession = !!activeSessionKey;
 
   const centerPercent = Math.max(MIN_CENTER, 100 - leftPercent - rightPercent);
 
@@ -309,10 +310,20 @@ export function DashboardLayout() {
               </SheetFooter>
             </SheetContent>
           </Sheet>
-          {/* 모바일: 단일 메인 뷰 */}
+          {/* 모바일: mobileView에 따른 뷰 전환 */}
           <main data-testid="mobile-main" className="flex-1 overflow-hidden flex flex-col">
-            {showComposer && <PromptComposer />}
-            {hasActiveSession && <ChatView />}
+            {mobileView === "sessions" && (
+              <>
+                <SessionsTopBar />
+                <FolderContents />
+              </>
+            )}
+            {mobileView === "chat" && (
+              <>
+                <MobileChatHeader onBack={() => setMobileView("sessions")} />
+                <ChatView />
+              </>
+            )}
           </main>
         </>
       ) : (
@@ -330,24 +341,21 @@ export function DashboardLayout() {
           {/* Left drag handle */}
           <DragHandle onDrag={handleLeftDrag} />
 
-          {/* Center: VerticalSplitPane (top: sessions, bottom: graph/composer) */}
+          {/* Center: SessionsTopBar + VerticalSplitPane (top: sessions, bottom: graph) */}
           <main
             data-testid="graph-panel"
             className="overflow-hidden flex flex-col"
             style={{ width: `${centerPercent}%` }}
           >
-            {showComposer ? (
-              <PromptComposer />
-            ) : (
-              <VerticalSplitPane
-                top={<FolderContents />}
-                bottom={
-                  <div className="flex-1 overflow-hidden h-full">
-                    <NodeGraph />
-                  </div>
-                }
-              />
-            )}
+            <SessionsTopBar />
+            <VerticalSplitPane
+              top={<FolderContents />}
+              bottom={
+                <div className="flex-1 overflow-hidden h-full bg-muted/50 dark:bg-muted/30">
+                  <NodeGraph />
+                </div>
+              }
+            />
           </main>
 
           {/* Right drag handle */}
@@ -369,6 +377,9 @@ export function DashboardLayout() {
 
       {/* Search Modal */}
       <SearchModal open={searchOpen} onOpenChange={setSearchOpen} />
+
+      {/* New Session Modal */}
+      <NewSessionModal />
     </div>
   );
 }

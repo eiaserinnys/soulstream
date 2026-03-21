@@ -531,6 +531,8 @@ export interface CreateSessionRequest {
   prompt: string;
   /** resume 시 기존 세션 ID. 없으면 새 세션 생성 (Soul 서버가 ID 생성). */
   agentSessionId?: string;
+  /** 세션을 배치할 폴더 ID. 미지정 시 session_type 기반 자동 배정. */
+  folderId?: string;
 }
 
 /** POST /api/sessions 응답 */

@@ -2,7 +2,7 @@
  * useUrlSync - URL ↔ 스토어 양방향 동기화
  *
  * 브라우저 주소창과 Zustand activeSessionKey를 동기화합니다.
- * - "/" → 새 대화 (Composer)
+ * - "/" → 세션 미선택 (폴더 콘텐츠 표시)
  * - "/#/{agentSessionId}" → 해당 세션 보기
  *
  * React Router를 사용하지 않고 네이티브 History API로 구현합니다.
@@ -25,7 +25,7 @@ function extractSessionId(hash: string): string | null {
 export function useUrlSync() {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const setActiveSession = useDashboardStore((s) => s.setActiveSession);
-  const startCompose = useDashboardStore((s) => s.startCompose);
+  const clearActiveSession = useDashboardStore((s) => s.clearActiveSession);
   const catalog = useDashboardStore((s) => s.catalog);
 
   // popstate 핸들러에서 최신 상태를 참조하기 위한 ref
@@ -87,11 +87,11 @@ export function useUrlSync() {
       if (sessionId) {
         setActiveSession(sessionId);
       } else {
-        startCompose();
+        clearActiveSession();
       }
     };
 
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
-  }, [setActiveSession, startCompose]);
+  }, [setActiveSession, clearActiveSession]);
 }
