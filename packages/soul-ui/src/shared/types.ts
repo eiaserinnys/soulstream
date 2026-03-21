@@ -43,7 +43,9 @@ export type SSEEventType =
   // 히스토리 동기화 이벤트
   | "history_sync"
   // LLM 프록시 이벤트
-  | "assistant_message";
+  | "assistant_message"
+  // 메타데이터 이벤트
+  | "metadata_updated";
 
 // === Soul SSE Event Payloads ===
 
@@ -337,6 +339,16 @@ export interface LastMessage {
   timestamp: string;
 }
 
+/** 세션 메타데이터 엔트리 */
+export interface MetadataEntry {
+  type: string;
+  value: string;
+  label?: string;
+  url?: string;
+  timestamp?: string;
+  tool_name?: string;
+}
+
 /** 세션 요약 정보 (목록 조회용) */
 export interface SessionSummary {
   /** 세션의 유일한 키. JSONL 파일명. */
@@ -363,6 +375,8 @@ export interface SessionSummary {
   lastMessage?: LastMessage;
   /** 카탈로그에서 설정한 세션 표시 이름 */
   displayName?: string;
+  /** 세션 메타데이터 (커밋, 브랜치, 카드 등 산출물 기록) */
+  metadata?: MetadataEntry[];
 }
 
 /** 세션 상세 정보 */
@@ -643,10 +657,19 @@ export interface CatalogUpdatedStreamEvent {
   catalog: CatalogState;
 }
 
+/** 메타데이터 업데이트 이벤트 (세션 스트림) */
+export interface MetadataUpdatedStreamEvent {
+  type: "metadata_updated";
+  session_id: string;
+  entry: MetadataEntry;
+  metadata: MetadataEntry[];
+}
+
 /** 세션 스트림 이벤트 유니온 */
 export type SessionStreamEvent =
   | SessionListStreamEvent
   | SessionCreatedStreamEvent
   | SessionUpdatedStreamEvent
   | SessionDeletedStreamEvent
-  | CatalogUpdatedStreamEvent;
+  | CatalogUpdatedStreamEvent
+  | MetadataUpdatedStreamEvent;
