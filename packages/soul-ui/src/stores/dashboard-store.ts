@@ -137,6 +137,9 @@ export interface DashboardState {
   /** 인라인 편집 중인 세션 */
   editingSessionId: string | null;
 
+  /** 모바일 뷰 상태 ('sessions': 세션 리스트, 'chat': 채팅 뷰) */
+  mobileView: "sessions" | "chat";
+
   /** 폴더 카탈로그 상태 */
   catalog: CatalogState | null;
 
@@ -230,6 +233,9 @@ export interface DashboardActions {
   updateFolderName: (folderId: string, name: string) => void;
   removeFolder: (folderId: string) => void;
 
+  // 모바일 뷰 전환
+  setMobileView: (view: "sessions" | "chat") => void;
+
   // 활성 세션 해제 (selectedFolderId를 유지하면서 세션만 해제)
   clearActiveSession: () => void;
 
@@ -301,6 +307,7 @@ const initialState: DashboardState = {
   selectedSessionIds: new Set<string>(),
   lastSelectedSessionId: null,
   editingSessionId: null,
+  mobileView: "sessions",
   catalog: null,
   selectedFolderId: null,
   catalogVersion: 0,
@@ -875,6 +882,8 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
       },
 
       selectFolder: (folderId) => set({ selectedFolderId: folderId }),
+
+      setMobileView: (mobileView) => set({ mobileView }),
 
       clearActiveSession: () => {
         // selectedFolderId를 유지하면서 세션 관련 상태만 초기화
