@@ -135,6 +135,21 @@ class TestEventCRUD:
         db.append_event("s1", 1, "text_delta", '{}', "", "2026-01-01T00:00:00Z")
         assert db.get_next_event_id("s1") == 2
 
+    def test_get_next_event_id_cross_session(self, db):
+        """다른 세션의 이벤트가 있을 때 새 세션의 ID가 충돌하지 않아야 한다."""
+        db.upsert_session("s1", session_type="claude")
+        db.upsert_session("s2", session_type="claude")
+        # s1에 이벤트 3개 추가 (id 1, 2, 3)
+        db.append_event("s1", 1, "text_delta", '{}', "", "2026-01-01T00:00:00Z")
+        db.append_event("s1", 2, "text_delta", '{}', "", "2026-01-01T00:00:01Z")
+        db.append_event("s1", 3, "text_delta", '{}', "", "2026-01-01T00:00:02Z")
+        # s2의 다음 ID는 4여야 한다 (1이 아니라)
+        next_id = db.get_next_event_id("s2")
+        assert next_id == 4, f"Expected 4, got {next_id} — would collide with s1's events"
+        # 실제로 저장이 성공해야 한다
+        db.append_event("s2", next_id, "text_delta", '{}', "", "2026-01-01T00:00:03Z")
+        assert db.count_events("s2") == 1
+
     def test_count_events(self, db):
         db.upsert_session("s1", session_type="claude")
         assert db.count_events("s1") == 0
