@@ -186,7 +186,7 @@ export interface DashboardActions {
   processEvents: (events: Array<{ event: SoulSSEEvent; eventId: number }>) => void;
 
   // 낙관적 세션 추가 + 활성 세션 설정 (세션 생성 직후 즉시 목록 반영)
-  addOptimisticSession: (agentSessionId: string, prompt: string) => void;
+  addOptimisticSession: (agentSessionId: string, prompt: string, folderId?: string | null) => void;
 
   // New Session 모달
   openNewSessionModal: () => void;
@@ -674,8 +674,9 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
 
       // --- 낙관적 세션 추가 ---
 
-      addOptimisticSession: (agentSessionId, prompt) => {
+      addOptimisticSession: (agentSessionId, prompt, folderId) => {
         const sessions = get().sessions;
+        let catalog = get().catalog;
         const newSession: SessionSummary = {
           agentSessionId,
           status: "running",
@@ -689,9 +690,21 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           ? sessions
           : [newSession, ...sessions];
 
+        // catalog.sessions에도 낙관적으로 폴더 할당 추가
+        if (catalog && folderId) {
+          catalog = {
+            ...catalog,
+            sessions: {
+              ...catalog.sessions,
+              [agentSessionId]: { folderId, displayName: null },
+            },
+          };
+        }
+
         set({
           ...getSessionResetState(),
           sessions: updatedSessions,
+          catalog,
           activeSessionKey: agentSessionId,
           activeSession: null,
         });
