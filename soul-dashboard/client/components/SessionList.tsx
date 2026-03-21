@@ -15,6 +15,7 @@ import {
   type SessionSummary,
   type SessionStatus,
   useDashboardStore,
+  isSessionUnread,
   cn,
   Button,
   Badge, badgeVariants,
@@ -86,6 +87,7 @@ const SessionItem = memo(function SessionItem({ session, isActive, onClick }: Se
   const config = STATUS_CONFIG[session.status];
   const sessionKey = session.agentSessionId;
   const isLlm = session.sessionType === "llm";
+  const isUnread = isSessionUnread(session);
 
   // LLM 세션 라벨: "gpt-5-mini · translate" 형태
   const llmLabel = isLlm
@@ -131,7 +133,7 @@ const SessionItem = memo(function SessionItem({ session, isActive, onClick }: Se
 
       {/* Session info */}
       <div className="flex-1 min-w-0">
-        <div className="text-[15px] text-foreground truncate">
+        <div className={cn("text-[15px] text-foreground truncate", isUnread && "font-semibold")}>
           {isLlm && (
             <span className="mr-1" title="LLM session">{"\u{1F916}"}</span>
           )}

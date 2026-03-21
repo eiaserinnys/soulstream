@@ -20,6 +20,7 @@ import { ConfigModal } from "./components/ConfigModal";
 import { SearchModal } from "./components/SearchModal";
 import { useSessionListProvider } from "./hooks/useSessionListProvider";
 import { useSessionProvider } from "./hooks/useSessionProvider";
+import { useReadPositionSync } from "./hooks/useReadPositionSync";
 import { useNotification } from "./hooks/useNotification";
 import { useUrlSync } from "./hooks/useUrlSync";
 import { useDashboardConfig } from "./hooks/useDashboardConfig";
@@ -169,6 +170,9 @@ export function DashboardLayout() {
 
   // 테마 초기화 (localStorage → OS 설정 → dark 기본)
   useEffect(() => { initTheme(); }, []);
+
+  // 읽음 상태 동기화 (세션 선택 시 즉시 + 활성 세션 이벤트 도착 시 debounce)
+  useReadPositionSync();
 
   // 브라우저 알림 (완료/에러/인터벤션)
   useNotification();

@@ -103,6 +103,7 @@ export type {
 // === Stores ===
 export {
   useDashboardStore,
+  isSessionUnread,
   countTreeNodes,
   countStreamingNodes,
   findTreeNode,

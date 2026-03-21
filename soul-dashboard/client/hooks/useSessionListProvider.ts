@@ -133,6 +133,12 @@ export function useSessionListProvider(
               timestamp: event.last_message.timestamp,
             };
           }
+          if (event.last_event_id != null) {
+            updates.lastEventId = event.last_event_id;
+          }
+          if (event.last_read_event_id != null) {
+            updates.lastReadEventId = event.last_read_event_id;
+          }
           updateSession(event.agent_session_id, updates);
           break;
         }
