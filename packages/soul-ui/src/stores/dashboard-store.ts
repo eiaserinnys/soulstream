@@ -231,6 +231,9 @@ export interface DashboardActions {
   selectFolder: (folderId: string | null) => void;
   getSessionsInFolder: (folderId: string | null) => SessionSummary[];
 
+  // 활성 세션 해제 (selectedFolderId를 유지하면서 세션만 해제)
+  clearActiveSession: () => void;
+
   // 다중 선택
   toggleSessionSelection: (id: string, ctrlKey: boolean, shiftKey: boolean) => void;
   clearSelection: () => void;
@@ -418,10 +421,19 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         // 같은 세션이면 아무것도 하지 않음 (resume 등에서 불필요한 리셋 방지)
         if (key !== null && key === get().activeSessionKey) return;
 
+        // 세션이 속한 폴더를 찾아 selectedFolderId도 갱신
+        let folderId: string | null = null;
+        const { catalog } = get();
+        if (key && catalog?.sessions) {
+          const entry = catalog.sessions[key];
+          folderId = entry?.folderId ?? null; // 미등록 세션이면 null(미분류)
+        }
+
         set({
           ...getSessionResetState(),
           activeSessionKey: key,
           activeSession: detail ?? null,
+          selectedFolderId: folderId,
           isComposing: false,
           resumeTargetKey: null,
         });
@@ -829,6 +841,19 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         set((state) => ({ catalog, catalogVersion: state.catalogVersion + 1 })),
 
       selectFolder: (folderId) => set({ selectedFolderId: folderId }),
+
+      clearActiveSession: () => {
+        // selectedFolderId를 유지하면서 세션 관련 상태만 초기화
+        const { selectedFolderId } = get();
+        set({
+          ...getSessionResetState(),
+          activeSessionKey: null,
+          activeSession: null,
+          selectedFolderId,
+          isComposing: false,
+          resumeTargetKey: null,
+        });
+      },
 
       toggleSessionSelection: (id, ctrlKey, shiftKey) => {
         const state = get();
