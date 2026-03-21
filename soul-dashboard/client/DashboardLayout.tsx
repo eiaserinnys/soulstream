@@ -1,18 +1,17 @@
 /**
  * DashboardLayout - 3패널 레이아웃 (리사이즈 가능)
  *
- * SessionList | NodeGraph | RightPanel (Detail + Chat) 구성.
+ * SessionList | VerticalSplitPane(FolderContents + NodeGraph) | RightPanel (Detail + Chat) 구성.
  * SSE 구독, 세션 목록 폴링, 브라우저 알림을 여기서 초기화합니다.
- *
- * composing 모드에서는 중앙 패널에 PromptComposer를 표시합니다.
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { FolderTree } from "./components/FolderTree";
 import { FolderContents } from "./components/FolderContents";
+import { SessionsTopBar } from "./components/SessionsTopBar";
 import { VerticalSplitPane } from "./components/VerticalSplitPane";
 import { NodeGraph } from "./components/NodeGraph";
-import { PromptComposer } from "./components/PromptComposer";
+import { NewSessionModal } from "./components/NewSessionModal";
 import { StorageModeToggleCompact } from "./components/StorageModeToggle";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { ConfigButton } from "./components/ConfigButton";
@@ -245,10 +244,6 @@ export function DashboardLayout() {
     if (activeSessionKey && isMobile) { setIsSidebarOpen(false); }
   }, [activeSessionKey, isMobile]);
 
-  // 중앙 패널 렌더링 결정: 세션 미선택 시 항상 Composer 표시
-  const showComposer = !activeSessionKey;
-  const hasActiveSession = !!activeSessionKey;
-
   const centerPercent = Math.max(MIN_CENTER, 100 - leftPercent - rightPercent);
 
   return (
@@ -311,8 +306,7 @@ export function DashboardLayout() {
           </Sheet>
           {/* 모바일: 단일 메인 뷰 */}
           <main data-testid="mobile-main" className="flex-1 overflow-hidden flex flex-col">
-            {showComposer && <PromptComposer />}
-            {hasActiveSession && <ChatView />}
+            <ChatView />
           </main>
         </>
       ) : (
@@ -330,24 +324,21 @@ export function DashboardLayout() {
           {/* Left drag handle */}
           <DragHandle onDrag={handleLeftDrag} />
 
-          {/* Center: VerticalSplitPane (top: sessions, bottom: graph/composer) */}
+          {/* Center: SessionsTopBar + VerticalSplitPane (top: sessions, bottom: graph) */}
           <main
             data-testid="graph-panel"
             className="overflow-hidden flex flex-col"
             style={{ width: `${centerPercent}%` }}
           >
-            {showComposer ? (
-              <PromptComposer />
-            ) : (
-              <VerticalSplitPane
-                top={<FolderContents />}
-                bottom={
-                  <div className="flex-1 overflow-hidden h-full">
-                    <NodeGraph />
-                  </div>
-                }
-              />
-            )}
+            <SessionsTopBar />
+            <VerticalSplitPane
+              top={<FolderContents />}
+              bottom={
+                <div className="flex-1 overflow-hidden h-full bg-muted/50 dark:bg-muted/30">
+                  <NodeGraph />
+                </div>
+              }
+            />
           </main>
 
           {/* Right drag handle */}
@@ -369,6 +360,9 @@ export function DashboardLayout() {
 
       {/* Search Modal */}
       <SearchModal open={searchOpen} onOpenChange={setSearchOpen} />
+
+      {/* New Session Modal */}
+      <NewSessionModal />
     </div>
   );
 }
