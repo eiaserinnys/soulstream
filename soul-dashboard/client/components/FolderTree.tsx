@@ -7,6 +7,11 @@
 import { useState, useCallback } from "react";
 import { useDashboardStore, cn, Button, Badge } from "@seosoyoung/soul-ui";
 import { moveSessionsOptimistic } from "client/lib/move-sessions";
+import {
+  createFolder,
+  renameFolderOptimistic,
+  deleteFolderOptimistic,
+} from "client/lib/folder-operations";
 
 export function FolderTree() {
   const catalog = useDashboardStore((s) => s.catalog);
@@ -47,19 +52,12 @@ export function FolderTree() {
   const handleCreateFolder = async () => {
     const name = prompt("새 폴더 이름:");
     if (!name?.trim()) return;
-    await fetch("/api/catalog/folders", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name.trim() }),
-    });
+    await createFolder(name.trim());
   };
 
   const handleDeleteFolder = async (folderId: string, folderName: string) => {
     if (!confirm(`'${folderName}' 폴더를 삭제하시겠습니까?\n폴더 내 세션은 미분류로 이동됩니다.`)) return;
-    await fetch(`/api/catalog/folders/${folderId}`, { method: "DELETE" });
-    if (selectedFolderId === folderId) {
-      selectFolder(null);
-    }
+    await deleteFolderOptimistic(folderId);
   };
 
   const handleDoubleClick = (folderId: string, currentName: string) => {
@@ -69,11 +67,7 @@ export function FolderTree() {
 
   const handleRenameSubmit = async (folderId: string) => {
     if (editName.trim()) {
-      await fetch(`/api/catalog/folders/${folderId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: editName.trim() }),
-      });
+      await renameFolderOptimistic(folderId, editName.trim());
     }
     setEditingId(null);
   };
@@ -81,13 +75,12 @@ export function FolderTree() {
   /** 폴더 선택 시 해당 폴더의 첫 세션을 자동 선택한다 */
   const handleSelectFolder = useCallback((folderId: string | null) => {
     const store = useDashboardStore.getState();
+    // 폴더 선택을 먼저 명시적으로 설정 (setActiveSession의 early return과 무관하게)
+    selectFolder(folderId);
     const folderSessions = store.getSessionsInFolder(folderId);
     if (folderSessions.length > 0) {
-      // 첫 번째 세션 활성화 → setActiveSession이 selectedFolderId도 갱신
       store.setActiveSession(folderSessions[0].agentSessionId);
     } else {
-      // 빈 폴더: 폴더만 선택하고 세션 해제
-      selectFolder(folderId);
       store.clearActiveSession();
     }
   }, [selectFolder]);

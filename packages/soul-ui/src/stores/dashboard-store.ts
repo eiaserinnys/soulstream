@@ -25,6 +25,7 @@ import type {
   HistorySyncEvent,
   InputRequestNodeDef,
   CatalogState,
+  CatalogFolder,
 } from "@shared/types";
 import type { StorageMode } from "../providers/types";
 import {
@@ -232,6 +233,9 @@ export interface DashboardActions {
   getSessionsInFolder: (folderId: string | null) => SessionSummary[];
   moveSessionsToFolder: (sessionIds: string[], folderId: string | null) => void;
   renameSession: (sessionId: string, displayName: string | null) => void;
+  addFolder: (folder: CatalogFolder) => void;
+  updateFolderName: (folderId: string, name: string) => void;
+  removeFolder: (folderId: string) => void;
 
   // 활성 세션 해제 (selectedFolderId를 유지하면서 세션만 해제)
   clearActiveSession: () => void;
@@ -868,6 +872,48 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
               ...catalog.sessions,
               [sessionId]: { ...catalog.sessions[sessionId], displayName },
             },
+          },
+          catalogVersion: state.catalogVersion + 1,
+        }));
+      },
+
+      addFolder: (folder) => {
+        const { catalog } = get();
+        if (!catalog) return;
+        set((state) => ({
+          catalog: { ...catalog, folders: [...catalog.folders, folder] },
+          catalogVersion: state.catalogVersion + 1,
+        }));
+      },
+
+      updateFolderName: (folderId, name) => {
+        const { catalog } = get();
+        if (!catalog) return;
+        set((state) => ({
+          catalog: {
+            ...catalog,
+            folders: catalog.folders.map((f) =>
+              f.id === folderId ? { ...f, name } : f,
+            ),
+          },
+          catalogVersion: state.catalogVersion + 1,
+        }));
+      },
+
+      removeFolder: (folderId) => {
+        const { catalog } = get();
+        if (!catalog) return;
+        const updatedSessions = { ...catalog.sessions };
+        for (const [id, assignment] of Object.entries(updatedSessions)) {
+          if (assignment.folderId === folderId) {
+            updatedSessions[id] = { ...assignment, folderId: null };
+          }
+        }
+        set((state) => ({
+          catalog: {
+            ...catalog,
+            folders: catalog.folders.filter((f) => f.id !== folderId),
+            sessions: updatedSessions,
           },
           catalogVersion: state.catalogVersion + 1,
         }));
