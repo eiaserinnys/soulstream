@@ -15,6 +15,7 @@ import type {
   ToolResultEvent,
   CompleteEvent,
   SessionSummary,
+  CatalogState,
   SessionEvent,
   ErrorEvent,
   InterventionSentEvent,
@@ -779,6 +780,57 @@ describe("dashboard-store", () => {
 
       useDashboardStore.getState().addOptimisticSession("sess-abc", "dup");
       expect(useDashboardStore.getState().sessions).toHaveLength(1);
+    });
+
+    it("should assign folderId in catalog.sessions when folderId is provided", () => {
+      const catalog: CatalogState = {
+        folders: [{ id: "folder-1", name: "Test Folder" }],
+        sessions: {},
+      };
+      useDashboardStore.getState().setCatalog(catalog);
+
+      useDashboardStore.getState().addOptimisticSession("sess-folder", "hi", "folder-1");
+      const state = useDashboardStore.getState();
+
+      expect(state.catalog?.sessions["sess-folder"]).toEqual({
+        folderId: "folder-1",
+        displayName: null,
+      });
+      expect(state.sessions[0].agentSessionId).toBe("sess-folder");
+    });
+
+    it("should not modify catalog.sessions when folderId is null/undefined", () => {
+      const catalog: CatalogState = {
+        folders: [{ id: "folder-1", name: "Test Folder" }],
+        sessions: { "sess-existing": { folderId: "folder-1", displayName: null } },
+      };
+      useDashboardStore.getState().setCatalog(catalog);
+
+      useDashboardStore.getState().addOptimisticSession("sess-no-folder", "hi");
+      const state = useDashboardStore.getState();
+
+      // 기존 catalog.sessions는 그대로, 새 세션에 대한 할당은 없음
+      expect(state.catalog?.sessions["sess-no-folder"]).toBeUndefined();
+      expect(state.catalog?.sessions["sess-existing"]).toEqual({
+        folderId: "folder-1",
+        displayName: null,
+      });
+    });
+
+    it("should place session in correct folder via getSessionsInFolder", () => {
+      const catalog: CatalogState = {
+        folders: [{ id: "folder-1", name: "Test Folder" }],
+        sessions: {},
+      };
+      useDashboardStore.getState().setCatalog(catalog);
+
+      useDashboardStore.getState().addOptimisticSession("sess-in-folder", "hi", "folder-1");
+      const inFolder = useDashboardStore.getState().getSessionsInFolder("folder-1");
+      const inUncategorized = useDashboardStore.getState().getSessionsInFolder(null);
+
+      expect(inFolder).toHaveLength(1);
+      expect(inFolder[0].agentSessionId).toBe("sess-in-folder");
+      expect(inUncategorized).toHaveLength(0);
     });
   });
 

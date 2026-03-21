@@ -110,7 +110,7 @@ export function NewSessionModal() {
 
       // 성공: draft 삭제, 낙관적 추가, 모달 닫기
       clearDraft(draftKey);
-      addOptimisticSession(result.agentSessionId, trimmed);
+      addOptimisticSession(result.agentSessionId, trimmed, selectedFolderId);
       closeModal();
     } catch (err) {
       if (err instanceof Error) {
