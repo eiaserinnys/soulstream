@@ -412,10 +412,13 @@ async def set_session_name(session_id: str, name: str = "") -> dict:
     display_name = name.strip() or None
     db.rename_session(session_id, display_name)
     # 카탈로그 변경 브로드캐스트 (대시보드 실시간 반영)
-    broadcaster = get_session_broadcaster()
-    if broadcaster:
+    try:
+        broadcaster = get_session_broadcaster()
+    except RuntimeError:
+        pass  # 서버 초기화 전이면 브로드캐스트 생략
+    else:
         catalog = db.get_catalog()
-        broadcaster.broadcast({"type": "catalog_updated", "catalog": catalog})
+        await broadcaster.broadcast({"type": "catalog_updated", "catalog": catalog})
     return {
         "session_id": session_id,
         "display_name": display_name,

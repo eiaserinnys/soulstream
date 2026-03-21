@@ -39,9 +39,9 @@ def create_catalog_router(
 ) -> APIRouter:
     router = APIRouter()
 
-    def _broadcast_catalog():
+    async def _broadcast_catalog():
         catalog = session_db.get_catalog()
-        broadcaster.broadcast({
+        await broadcaster.broadcast({
             "type": "catalog_updated",
             "catalog": catalog,
         })
@@ -54,7 +54,7 @@ def create_catalog_router(
     async def create_folder(body: FolderCreate):
         folder_id = str(uuid.uuid4())
         session_db.create_folder(folder_id, body.name, body.sort_order)
-        _broadcast_catalog()
+        await _broadcast_catalog()
         return {"id": folder_id, "name": body.name, "sortOrder": body.sort_order}
 
     @router.put("/folders/{folder_id}")
@@ -67,13 +67,13 @@ def create_catalog_router(
         if not fields:
             raise HTTPException(status_code=400, detail="No fields to update")
         session_db.update_folder(folder_id, **fields)
-        _broadcast_catalog()
+        await _broadcast_catalog()
         return {"ok": True}
 
     @router.delete("/folders/{folder_id}", status_code=204)
     async def delete_folder(folder_id: str):
         session_db.delete_folder(folder_id)
-        _broadcast_catalog()
+        await _broadcast_catalog()
 
     @router.put("/sessions/{session_id}")
     async def update_session_catalog(session_id: str, body: SessionCatalogUpdate):
@@ -84,14 +84,14 @@ def create_catalog_router(
             session_db.assign_session_to_folder(session_id, body.folderId)
         if body.displayName is not None:
             session_db.rename_session(session_id, body.displayName)
-        _broadcast_catalog()
+        await _broadcast_catalog()
         return {"ok": True}
 
     @router.put("/sessions/batch")
     async def batch_move_sessions(body: BatchMoveRequest):
         for sid in body.sessionIds:
             session_db.assign_session_to_folder(sid, body.folderId)
-        _broadcast_catalog()
+        await _broadcast_catalog()
         return {"ok": True}
 
     return router
