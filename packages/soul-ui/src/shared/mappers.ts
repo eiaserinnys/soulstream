@@ -48,5 +48,7 @@ export function toSessionSummary(raw: Record<string, unknown>): SessionSummary {
         }
       : undefined,
     metadata: (raw.metadata as MetadataEntry[] | undefined) ?? [],
+    lastEventId: (raw.last_event_id ?? raw.lastEventId ?? 0) as number,
+    lastReadEventId: (raw.last_read_event_id ?? raw.lastReadEventId ?? 0) as number,
   };
 }

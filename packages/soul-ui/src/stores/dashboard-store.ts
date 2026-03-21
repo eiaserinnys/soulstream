@@ -37,6 +37,13 @@ import { createNodeFromEvent, applyUpdate } from "./node-factory";
 import { placeInTree, handleTextStart } from "./tree-placer";
 import { shouldNotify, deriveSessionStatus } from "./session-updater";
 
+// === Unread Utility ===
+
+/** 세션이 읽지 않은 상태인지 판단한다 */
+export function isSessionUnread(session: SessionSummary): boolean {
+  return (session.lastEventId ?? 0) > (session.lastReadEventId ?? 0);
+}
+
 // === Dashboard Config ===
 
 export interface ProfileConfig {
@@ -161,7 +168,7 @@ export interface DashboardActions {
   addSession: (session: SessionSummary) => void;
   updateSession: (
     agentSessionId: string,
-    updates: Partial<Pick<SessionSummary, "status" | "updatedAt" | "completedAt" | "eventCount" | "lastEventType" | "lastMessage" | "metadata">>
+    updates: Partial<Pick<SessionSummary, "status" | "updatedAt" | "completedAt" | "eventCount" | "lastEventType" | "lastMessage" | "metadata" | "lastEventId" | "lastReadEventId">>
   ) => void;
   removeSession: (agentSessionId: string) => void;
   setSessionsLoading: (loading: boolean) => void;
@@ -689,6 +696,8 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           eventCount: 0,
           createdAt: new Date().toISOString(),
           prompt,
+          lastEventId: 0,
+          lastReadEventId: 0,
         };
         const updatedSessions = sessions.some(
           (s) => s.agentSessionId === agentSessionId,

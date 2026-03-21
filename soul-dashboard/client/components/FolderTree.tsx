@@ -5,7 +5,7 @@
  */
 
 import { useState, useCallback, useMemo } from "react";
-import { useDashboardStore, cn, Button, Badge, SYSTEM_FOLDERS } from "@seosoyoung/soul-ui";
+import { useDashboardStore, isSessionUnread, cn, Button, Badge, SYSTEM_FOLDERS } from "@seosoyoung/soul-ui";
 import { moveSessionsOptimistic } from "client/lib/move-sessions";
 import {
   createFolder,
@@ -45,6 +45,20 @@ export function FolderTree() {
           return !assignment || assignment.folderId === null;
         }
         return assignment?.folderId === folderId;
+      }).length;
+    },
+    [catalog, sessions, catalogVersion],
+  );
+
+  const getUnreadCount = useCallback(
+    (folderId: string | null) => {
+      if (!catalog) return 0;
+      return sessions.filter((s) => {
+        const assignment = catalog.sessions[s.agentSessionId];
+        if (folderId === null) {
+          return (!assignment || assignment.folderId === null) && isSessionUnread(s);
+        }
+        return assignment?.folderId === folderId && isSessionUnread(s);
       }).length;
     },
     [catalog, sessions, catalogVersion],
@@ -126,9 +140,18 @@ export function FolderTree() {
       ) : (
         <span className="truncate">{folder.name}</span>
       )}
-      <Badge variant="secondary" className="ml-2 text-xs">
-        {getSessionCount(folder.id)}
-      </Badge>
+      {(() => {
+        const unreadCount = getUnreadCount(folder.id);
+        return unreadCount > 0 ? (
+          <Badge variant="destructive" className="ml-2 text-xs font-bold">
+            {unreadCount}
+          </Badge>
+        ) : (
+          <Badge variant="secondary" className="ml-2 text-xs">
+            {getSessionCount(folder.id)}
+          </Badge>
+        );
+      })()}
     </div>
   );
 
@@ -166,9 +189,18 @@ export function FolderTree() {
           onDrop={(e) => handleDrop(null, e)}
         >
           <span className="truncate text-muted-foreground">Uncategorized</span>
-          <Badge variant="secondary" className="ml-2 text-xs">
-            {getSessionCount(null)}
-          </Badge>
+          {(() => {
+            const unreadCount = getUnreadCount(null);
+            return unreadCount > 0 ? (
+              <Badge variant="destructive" className="ml-2 text-xs font-bold">
+                {unreadCount}
+              </Badge>
+            ) : (
+              <Badge variant="secondary" className="ml-2 text-xs">
+                {getSessionCount(null)}
+              </Badge>
+            );
+          })()}
         </div>
       </div>
     </div>
