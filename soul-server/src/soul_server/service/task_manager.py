@@ -353,6 +353,7 @@ class TaskManager:
                 "metadata": s.get("metadata") or [],
                 "last_event_id": last_event_id,
                 "last_read_event_id": last_read_event_id,
+                "display_name": s.get("display_name"),
             }
             if s.get("session_type", "claude") != "claude":
                 info["llm_provider"] = s.get("llm_provider")
