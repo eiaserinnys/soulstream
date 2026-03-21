@@ -159,6 +159,8 @@ class TaskExecutor:
                         event_id = self._persist_event(session_id, user_msg_event)
                         user_msg_event["_event_id"] = event_id
                         current_user_request_id = str(event_id)
+                        if event_id is not None:
+                            task.last_event_id = event_id
                         await self._listener_manager.broadcast(session_id, user_msg_event)
                         try:
                             await self._update_and_broadcast_last_message(
@@ -194,6 +196,8 @@ class TaskExecutor:
                             ev_id = self._persist_event(session_id, intervention_msg)
                             current_user_request_id = str(ev_id)
                             event["_event_id"] = ev_id  # SSE id: 필드에 JSONL event_id 전달
+                            if ev_id is not None:
+                                task.last_event_id = ev_id
                         except Exception as e:
                             logger.warning(f"Failed to persist intervention user_message for {session_id}: {e}")
                     await self._listener_manager.broadcast(session_id, event)
@@ -256,6 +260,9 @@ class TaskExecutor:
                         try:
                             event_id = self._persist_event(session_id, event_dict)
                             event_dict["_event_id"] = event_id
+                            # Task 메모리 객체의 last_event_id 갱신
+                            if event_id is not None:
+                                task.last_event_id = event_id
                         except Exception as e:
                             logger.warning(f"Failed to persist event for {session_id}: {e}")
 
@@ -389,6 +396,8 @@ class TaskExecutor:
                     "preview": text[:200],
                     "timestamp": ts_str,
                 },
+                last_event_id=task.last_event_id,
+                last_read_event_id=task.last_read_event_id,
             )
         except Exception:
             logger.debug("session list broadcast skipped (broadcaster not ready)")

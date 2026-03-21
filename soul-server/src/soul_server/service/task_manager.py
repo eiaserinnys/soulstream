@@ -338,6 +338,9 @@ class TaskManager:
             task = self._tasks.get(session_id)
             pid = task.pid if task else None
             created_at = s.get("created_at", "")
+            # running 세션의 last_event_id는 Task 메모리에서 보충
+            last_event_id = task.last_event_id if task else s.get("last_event_id", 0)
+            last_read_event_id = task.last_read_event_id if task else s.get("last_read_event_id", 0)
             info = {
                 "agent_session_id": session_id,
                 "status": s.get("status", "unknown"),
@@ -348,6 +351,8 @@ class TaskManager:
                 "session_type": s.get("session_type", "claude"),
                 "last_message": s.get("last_message"),
                 "metadata": s.get("metadata") or [],
+                "last_event_id": last_event_id,
+                "last_read_event_id": last_read_event_id,
             }
             if s.get("session_type", "claude") != "claude":
                 info["llm_provider"] = s.get("llm_provider")
