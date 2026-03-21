@@ -195,13 +195,28 @@ class TestFolderCRUD:
         db.ensure_default_folders()
         folders = db.get_all_folders()
         names = {f["name"] for f in folders}
-        assert "클로드 코드 세션" in names
-        assert "LLM 세션" in names
+        assert "⚙️ 클로드 코드 세션" in names
+        assert "⚙️ LLM 세션" in names
 
     def test_ensure_default_folders_idempotent(self, db):
         db.ensure_default_folders()
         db.ensure_default_folders()
         folders = db.get_all_folders()
+        assert len(folders) == 2
+
+    def test_ensure_default_folders_migrates_old_names(self, db):
+        """기존 이름(접두사 없음) → 새 이름(⚙️ 접두사)으로 마이그레이션"""
+        db.create_folder("f1", "클로드 코드 세션", sort_order=0)
+        db.create_folder("f2", "LLM 세션", sort_order=1)
+        db.ensure_default_folders()
+        folders = db.get_all_folders()
+        names = {f["name"] for f in folders}
+        assert "⚙️ 클로드 코드 세션" in names
+        assert "⚙️ LLM 세션" in names
+        # 기존 이름은 더 이상 존재하지 않아야 함
+        assert "클로드 코드 세션" not in names
+        assert "LLM 세션" not in names
+        # 중복 폴더가 생기면 안 됨
         assert len(folders) == 2
 
 

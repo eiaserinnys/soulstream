@@ -102,7 +102,8 @@ def _utc_now_str() -> str:
 class SessionDB:
     """SQLite 기반 세션 저장소"""
 
-    DEFAULT_FOLDERS = {"claude": "클로드 코드 세션", "llm": "LLM 세션"}
+    # shared/constants.ts의 SYSTEM_FOLDERS와 동기화 필수
+    DEFAULT_FOLDERS = {"claude": "⚙️ 클로드 코드 세션", "llm": "⚙️ LLM 세션"}
 
     def __init__(self, db_path: Path):
         self._db_path = db_path
@@ -359,6 +360,15 @@ class SessionDB:
         return dict(row) if row else None
 
     def ensure_default_folders(self) -> None:
+        # 마이그레이션: 기존 폴더명 → 새 폴더명 (⚙️ 접두사 추가)
+        _OLD_TO_NEW = {
+            '클로드 코드 세션': '⚙️ 클로드 코드 세션',
+            'LLM 세션': '⚙️ LLM 세션',
+        }
+        for old_name, new_name in _OLD_TO_NEW.items():
+            self._conn.execute('UPDATE folders SET name = ? WHERE name = ?', (new_name, old_name))
+        self._conn.commit()
+
         for key, name in self.DEFAULT_FOLDERS.items():
             existing = self.get_default_folder(name)
             if existing is None:
