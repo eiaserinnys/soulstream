@@ -332,14 +332,14 @@ class TestSetSessionName:
     async def test_session_not_found(self, session_db):
         fn = _unwrap(mcp_tools.set_session_name)
         with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
-            with patch("soul_server.cogito.mcp_tools.get_session_broadcaster", return_value=None):
+            with patch("soul_server.cogito.mcp_tools.get_session_broadcaster", side_effect=RuntimeError("not init")):
                 result = await fn("nonexistent", "name")
         assert "error" in result
 
     async def test_sets_name(self, session_db):
         fn = _unwrap(mcp_tools.set_session_name)
         with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
-            with patch("soul_server.cogito.mcp_tools.get_session_broadcaster", return_value=None):
+            with patch("soul_server.cogito.mcp_tools.get_session_broadcaster", side_effect=RuntimeError("not init")):
                 result = await fn("test-sess-001", "세션 이름 테스트")
         assert result["session_id"] == "test-sess-001"
         assert result["display_name"] == "세션 이름 테스트"
@@ -351,7 +351,7 @@ class TestSetSessionName:
         session_db.rename_session("test-sess-001", "기존 이름")
         fn = _unwrap(mcp_tools.set_session_name)
         with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
-            with patch("soul_server.cogito.mcp_tools.get_session_broadcaster", return_value=None):
+            with patch("soul_server.cogito.mcp_tools.get_session_broadcaster", side_effect=RuntimeError("not init")):
                 result = await fn("test-sess-001", "")
         assert result["display_name"] is None
         session = session_db.get_session("test-sess-001")
@@ -361,17 +361,18 @@ class TestSetSessionName:
         session_db.rename_session("test-sess-001", "기존 이름")
         fn = _unwrap(mcp_tools.set_session_name)
         with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
-            with patch("soul_server.cogito.mcp_tools.get_session_broadcaster", return_value=None):
+            with patch("soul_server.cogito.mcp_tools.get_session_broadcaster", side_effect=RuntimeError("not init")):
                 result = await fn("test-sess-001", "   ")
         assert result["display_name"] is None
 
     async def test_broadcasts_catalog_update(self, session_db):
         mock_broadcaster = MagicMock()
+        mock_broadcaster.broadcast = AsyncMock(return_value=1)
         fn = _unwrap(mcp_tools.set_session_name)
         with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
             with patch("soul_server.cogito.mcp_tools.get_session_broadcaster", return_value=mock_broadcaster):
                 await fn("test-sess-001", "브로드캐스트 테스트")
-        mock_broadcaster.broadcast.assert_called_once()
+        mock_broadcaster.broadcast.assert_awaited_once()
         call_args = mock_broadcaster.broadcast.call_args[0][0]
         assert call_args["type"] == "catalog_updated"
         assert "catalog" in call_args
