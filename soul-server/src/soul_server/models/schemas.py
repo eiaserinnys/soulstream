@@ -227,6 +227,7 @@ class ExecuteRequest(BaseModel):
         description="추가 컨텍스트 항목 목록. 각 항목은 {key, label, content} 형태.",
     )
     model: Optional[str] = Field(None, description="Claude 모델명. 미지정 시 서버 기본 모델 사용.")
+    folder_id: Optional[str] = Field(None, description="세션을 배치할 폴더 ID. 미지정 시 session_type 기반 자동 배정.")
 
 
 class SessionResponse(BaseModel):
