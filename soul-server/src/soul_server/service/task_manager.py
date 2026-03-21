@@ -336,6 +336,7 @@ class TaskManager:
                 "pid": pid,
                 "session_type": s.get("session_type", "claude"),
                 "last_message": s.get("last_message"),
+                "metadata": s.get("metadata") or [],
             }
             if s.get("session_type", "claude") != "claude":
                 info["llm_provider"] = s.get("llm_provider")
@@ -404,6 +405,11 @@ class TaskManager:
                 # 완료/에러 세션 → resume
                 resume_session_id = existing.claude_session_id
                 logger.info(f"Resuming session: {agent_session_id} (claude_session={resume_session_id})")
+
+                # DB에서 기존 metadata 로드 (메모리 퇴거 후 resume 시에도 유지)
+                db_session = self._db.get_session(agent_session_id)
+                if db_session and db_session.get("metadata"):
+                    existing.metadata = db_session["metadata"]
 
                 # 기존 태스크를 RUNNING으로 재활성화
                 existing.prompt = prompt
@@ -679,6 +685,48 @@ class TaskManager:
             "auto_resumed": True,
             "agent_session_id": agent_session_id,
         }
+
+    async def append_session_metadata(
+        self, agent_session_id: str, entry: dict
+    ) -> None:
+        """세션에 메타데이터 엔트리를 추가한다.
+
+        Task.metadata에 append하고, SessionDB에 영속화하고,
+        metadata_updated + session_updated SSE 이벤트를 브로드캐스트한다.
+
+        Args:
+            agent_session_id: 세션 식별자
+            entry: 메타데이터 엔트리
+                {type, value, label?, url?, timestamp, tool_name}
+        """
+        task = self._tasks.get(agent_session_id)
+        if not task:
+            logger.warning(f"Task not found for metadata append: {agent_session_id}")
+            return
+
+        # Task 메모리에 추가
+        task.metadata.append(entry)
+
+        # DB에 영속화
+        self._db.append_metadata(agent_session_id, entry)
+
+        # SSE 브로드캐스트 (부가 기능 — 실패해도 메타데이터 저장에 영향 없음)
+        try:
+            broadcaster = get_session_broadcaster()
+            # metadata_updated 이벤트
+            await broadcaster.broadcast({
+                "type": "metadata_updated",
+                "session_id": agent_session_id,
+                "entry": entry,
+                "metadata": task.metadata,
+            })
+            # session_updated 이벤트 (세션 목록 실시간 갱신)
+            await broadcaster.emit_session_updated(task)
+        except Exception:
+            logger.warning(
+                f"Failed to broadcast metadata for {agent_session_id}",
+                exc_info=True,
+            )
 
     async def get_intervention(self, agent_session_id: str) -> Optional[dict]:
         """
