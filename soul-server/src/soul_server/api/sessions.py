@@ -144,7 +144,7 @@ def create_sessions_router() -> APIRouter:
 
         클라이언트에서 truncate된 콘텐츠의 전체 내용을 요청할 때 사용합니다.
         """
-        from soul_server.main import get_session_db
+        from soul_server.service.session_db import get_session_db
         db = get_session_db()
 
         entry = db.read_one_event(agent_session_id, event_id)
@@ -208,7 +208,7 @@ def create_sessions_router() -> APIRouter:
 
         async def sse_wrapper():
             # Part 1: SessionDB에서 저장 이벤트 읽기
-            from soul_server.main import get_session_db
+            from soul_server.service.session_db import get_session_db
             db = get_session_db()
             last_stored_id = 0
 
