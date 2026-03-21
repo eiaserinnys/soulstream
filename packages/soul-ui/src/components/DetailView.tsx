@@ -16,7 +16,6 @@ import { ThinkingDetail } from "./detail/ThinkingDetail";
 import { ToolDetail } from "./detail/ToolDetail";
 import { SubAgentDetail } from "./detail/SubAgentDetail";
 import { ErrorDetail } from "./detail/ErrorDetail";
-import { SessionMetadata } from "./detail/SessionMetadata";
 import { SectionLabel, CodeBlock } from "./detail/shared";
 import { ScrollArea } from "./ui/scroll-area";
 
@@ -235,8 +234,6 @@ export function DetailView() {
     (s) => s.selectedEventNodeData,
   );
   const tree = useDashboardStore((s) => s.tree);
-  const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
-  const sessions = useDashboardStore((s) => s.sessions);
 
   const selectedCard: EventTreeNode | null = selectedCardId
     ? findTreeNode(tree, selectedCardId)
@@ -244,32 +241,26 @@ export function DetailView() {
 
   const hasSelection = selectedCard || selectedEventNodeData;
 
-  // 노드 미선택 시 활성 세션의 메타데이터 표시
-  const activeMetadata = !hasSelection && activeSessionKey
-    ? sessions.find((s) => s.agentSessionId === activeSessionKey)?.metadata
-    : undefined;
-
   return (
     <div
       data-testid="detail-view"
       className="flex flex-col h-full overflow-hidden"
     >
-      {/* Content */}
-      <ScrollArea className="flex-1">
-        {!hasSelection && activeMetadata != null && (
-          <SessionMetadata metadata={activeMetadata} />
-        )}
-        {!hasSelection && activeMetadata == null && (
-          <div className="p-5 text-center text-muted-foreground text-[13px]">
+      {!hasSelection && (
+        <div className="flex-1 flex items-center justify-center h-full">
+          <div className="text-muted-foreground text-[13px]">
             Select a node to view details
           </div>
-        )}
-
-        {selectedCard && <CardDetail card={selectedCard} />}
-        {selectedEventNodeData && !selectedCard && (
-          <EventNodeDetail data={selectedEventNodeData} />
-        )}
-      </ScrollArea>
+        </div>
+      )}
+      {hasSelection && (
+        <ScrollArea className="flex-1">
+          {selectedCard && <CardDetail card={selectedCard} />}
+          {selectedEventNodeData && !selectedCard && (
+            <EventNodeDetail data={selectedEventNodeData} />
+          )}
+        </ScrollArea>
+      )}
     </div>
   );
 }

@@ -412,6 +412,16 @@ function NodeGraphInner() {
     [selectCard, selectEventNode],
   );
 
+  // 이미 선택된 노드를 재클릭해도 탭을 전환한다.
+  // onSelectionChange는 이미 선택된 노드 재클릭 시 발화하지 않으므로,
+  // 탭 전환만 별도로 처리한다. 노드 선택 자체는 onSelectionChange가 담당.
+  const onNodeClick = useCallback(() => {
+    const currentTab = useDashboardStore.getState().activeRightTab;
+    if (currentTab === "chat") {
+      useDashboardStore.getState().setActiveRightTab("detail");
+    }
+  }, []);
+
   // 빈 상태
   if (!activeSessionKey) {
     return (
@@ -440,6 +450,7 @@ function NodeGraphInner() {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onSelectionChange={onSelectionChange}
+        onNodeClick={onNodeClick}
         onMoveEnd={onMoveEnd}
         nodeTypes={nodeTypes}
         nodesDraggable={false}
