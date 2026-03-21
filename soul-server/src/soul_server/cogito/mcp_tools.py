@@ -21,6 +21,7 @@ from cogito.manifest import load_manifest
 from soul_server.cogito.reflector_setup import reflect
 from soul_server.service.task_manager import get_task_manager
 from soul_server.service.session_db import get_session_db
+from soul_server.service.session_broadcaster import get_session_broadcaster
 
 if TYPE_CHECKING:
     from soul_server.cogito.brief_composer import BriefComposer
@@ -357,6 +358,68 @@ async def search_session_history(
     except ValueError as e:
         return {"error": str(e)}
     return {"results": [r.to_dict() for r in results]}
+
+
+# ---------------------------------------------------------------------------
+# MCP Tools — Session name management
+# ---------------------------------------------------------------------------
+
+
+@cogito_mcp.tool()
+async def get_session_name(session_id: str) -> dict:
+    """세션의 표시 이름(displayName)을 조회한다.
+
+    Args:
+        session_id: 세션 ID (agent_session_id).
+
+    Returns:
+        {session_id: str, display_name: str | None}
+    """
+    try:
+        db = get_session_db()
+    except RuntimeError as e:
+        return {"error": str(e)}
+    session = db.get_session(session_id)
+    if session is None:
+        return {"error": f"세션을 찾을 수 없습니다: {session_id}"}
+    return {
+        "session_id": session_id,
+        "display_name": session.get("display_name"),
+    }
+
+
+@cogito_mcp.tool()
+async def set_session_name(session_id: str, name: str = "") -> dict:
+    """세션의 표시 이름(displayName)을 설정한다.
+
+    빈 문자열을 전달하면 이름을 제거한다.
+    대시보드에서 📌 접두어로 표시된다.
+
+    Args:
+        session_id: 세션 ID (agent_session_id).
+        name: 설정할 이름. 빈 문자열이면 이름 제거.
+
+    Returns:
+        {session_id: str, display_name: str | None}
+    """
+    try:
+        db = get_session_db()
+    except RuntimeError as e:
+        return {"error": str(e)}
+    session = db.get_session(session_id)
+    if session is None:
+        return {"error": f"세션을 찾을 수 없습니다: {session_id}"}
+    display_name = name.strip() or None
+    db.rename_session(session_id, display_name)
+    # 카탈로그 변경 브로드캐스트 (대시보드 실시간 반영)
+    broadcaster = get_session_broadcaster()
+    if broadcaster:
+        catalog = db.get_catalog()
+        broadcaster.broadcast({"type": "catalog_updated", "catalog": catalog})
+    return {
+        "session_id": session_id,
+        "display_name": display_name,
+    }
 
 
 # ---------------------------------------------------------------------------

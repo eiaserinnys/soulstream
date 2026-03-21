@@ -46,11 +46,11 @@ const SessionItem = memo(function SessionItem({
 }) {
   const [editValue, setEditValue] = useState(session.displayName ?? "");
 
-  const displayText =
-    session.displayName ||
-    session.lastMessage?.preview ||
-    session.prompt ||
-    session.agentSessionId;
+  const displayText = session.displayName
+    ? `📌 ${session.displayName}`
+    : session.lastMessage?.preview
+      ? `🗨️ ${session.lastMessage.preview}`
+      : session.prompt || session.agentSessionId;
 
   const timeStr = session.updatedAt
     ? new Date(session.updatedAt).toLocaleString()
