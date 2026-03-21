@@ -131,6 +131,9 @@ class MetadataExtractor:
         except (json.JSONDecodeError, TypeError):
             return None
 
+        # MCP content block unwrap: [{"type":"text","text":"..."}] → inner JSON
+        data = self._unwrap_mcp_content(data)
+
         if not isinstance(data, dict):
             return None
 
@@ -155,6 +158,27 @@ class MetadataExtractor:
                 entry["url"] = str(url)
 
         return entry
+
+    @staticmethod
+    def _unwrap_mcp_content(data: Any) -> Any:
+        """MCP content block 배열에서 실제 JSON을 추출한다.
+
+        MCP 도구 결과는 [{"type":"text","text":"실제JSON"}] 형태로 래핑된다.
+        message_processor.py가 이를 json.dumps()로 직렬화하므로,
+        json.loads() 결과가 list일 수 있다.
+        """
+        if (
+            isinstance(data, list)
+            and len(data) == 1
+            and isinstance(data[0], dict)
+            and data[0].get("type") == "text"
+            and "text" in data[0]
+        ):
+            try:
+                return json.loads(data[0]["text"])
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return data
 
     @staticmethod
     def _substitute_groups(template: str, match: re.Match) -> str:
