@@ -5,7 +5,7 @@
  * SSESessionProvider와 useSessionListProvider 양쪽에서 단일 함수를 공유합니다.
  */
 
-import type { SessionSummary, SessionStatus, LlmUsage } from "./types";
+import type { SessionSummary, SessionStatus, LlmUsage, MetadataEntry } from "./types";
 
 /** snake_case / camelCase 양쪽 응답을 LlmUsage로 변환 */
 function toLlmUsage(raw: unknown): LlmUsage | undefined {
@@ -47,5 +47,6 @@ export function toSessionSummary(raw: Record<string, unknown>): SessionSummary {
           timestamp: lastMsg.timestamp as string,
         }
       : undefined,
+    metadata: (raw.metadata as MetadataEntry[] | undefined) ?? [],
   };
 }

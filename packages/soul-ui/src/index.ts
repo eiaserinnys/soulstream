@@ -74,6 +74,8 @@ export type {
   CatalogAssignment,
   CatalogState,
   CatalogUpdatedStreamEvent,
+  MetadataEntry,
+  MetadataUpdatedStreamEvent,
 } from "./shared/types";
 
 // === Shared Mappers ===
@@ -144,6 +146,7 @@ export { ErrorDetail } from "./components/detail/ErrorDetail";
 export { SubAgentDetail } from "./components/detail/SubAgentDetail";
 export { ThinkingDetail } from "./components/detail/ThinkingDetail";
 export { ToolDetail } from "./components/detail/ToolDetail";
+export { SessionMetadata } from "./components/detail/SessionMetadata";
 export { SectionLabel, CodeBlock, safeStringify } from "./components/detail/shared";
 
 // === UI Components ===
