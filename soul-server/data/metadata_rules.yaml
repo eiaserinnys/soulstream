@@ -1,0 +1,76 @@
+# 세션 메타데이터 추출 규칙
+# tool_result 이벤트의 tool_name + result를 매칭하여 메타데이터를 추출한다.
+#
+# 규칙 순서가 우선순위를 결정한다 (first-match-wins).
+# 같은 tool_name에 대한 여러 규칙이 있으면, 더 구체적인 규칙을 위에 배치해야 한다.
+#
+# 필드 설명:
+#   tool_name: 도구 이름 (정확히 일치 또는 정규식)
+#   tool_name_regex: true면 tool_name을 정규식으로 취급 (기본: false)
+#   result_mode: "regex" | "json" (result를 정규식으로 매칭할지 JSON 파싱할지)
+#   result_pattern: 정규식 패턴 (result_mode: regex일 때)
+#   extract: 추출할 필드 매핑
+#     type: 메타데이터 타입 (고정 문자열)
+#     value: 추출 값 ($1, $2 = 정규식 캡처 그룹 / $.path = JSON path)
+#     label: 선택, 표시 라벨
+#     url: 선택, 관련 URL
+
+rules:
+  - name: git_commit
+    tool_name: Bash
+    result_mode: regex
+    result_pattern: "\\[([a-f0-9]{7,12})\\]\\s+(.+)"
+    extract:
+      type: git_commit
+      value: "$1"
+      label: "$2"
+
+  - name: git_branch_create
+    tool_name: Bash
+    result_mode: regex
+    result_pattern: "Switched to a new branch '([^']+)'"
+    extract:
+      type: git_branch_create
+      value: "$1"
+
+  - name: git_worktree_add
+    tool_name: Bash
+    result_mode: regex
+    result_pattern: "Preparing worktree \\(new branch '([^']+)'\\)"
+    extract:
+      type: git_worktree_create
+      value: "$1"
+
+  - name: trello_card_create
+    tool_name: mcp__trello__add_card_to_list
+    result_mode: json
+    extract:
+      type: trello_card
+      value: "$.id"
+      label: "$.name"
+      url: "$.url"
+
+  - name: trello_card_update
+    tool_name: mcp__trello__update_card_details
+    result_mode: json
+    extract:
+      type: trello_card_update
+      value: "$.id"
+      label: "$.name"
+      url: "$.url"
+
+  - name: serendipity_page_create
+    tool_name: mcp__serendipity__create_page
+    result_mode: json
+    extract:
+      type: serendipity_page
+      value: "$.id"
+      label: "$.title"
+
+  - name: arbor_item_create
+    tool_name: mcp__arbor__arbor_create_item
+    result_mode: json
+    extract:
+      type: arbor_item
+      value: "$.id"
+      label: "$.title"

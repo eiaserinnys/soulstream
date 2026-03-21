@@ -75,6 +75,13 @@ export function useSessionList(options: UseSessionListOptions = {}) {
           // 목록에서 제거
           removeSession(event.agent_session_id);
           break;
+
+        case "metadata_updated":
+          // 세션 메타데이터 실시간 업데이트
+          updateSession(event.session_id, {
+            metadata: event.metadata,
+          });
+          break;
       }
     },
     [setSessions, addSession, updateSession, removeSession, setSessionsLoading]
