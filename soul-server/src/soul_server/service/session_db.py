@@ -413,25 +413,27 @@ class SessionDB:
             return event.get("text", "")
         elif event_type == "thinking":
             return event.get("thinking", "")
-        elif event_type == "tool_use":
-            inp = event.get("input")
+        elif event_type in ("tool_use", "tool_start"):
+            inp = event.get("input") or event.get("tool_input")
             if isinstance(inp, str):
                 return inp
             if isinstance(inp, dict):
                 return json.dumps(inp, ensure_ascii=False)
         elif event_type == "tool_result":
-            content = event.get("content")
+            # "result" (현재 형식) 또는 "content" (레거시) 키 지원
+            content = event.get("result") or event.get("content")
             if isinstance(content, str):
                 return content
             if isinstance(content, list):
                 texts = [c.get("text", "") for c in content if isinstance(c, dict)]
                 return " ".join(filter(None, texts))
-        elif event_type == "user":
-            content = event.get("content")
-            if isinstance(content, str):
-                return content
-            if isinstance(content, list):
-                texts = [c.get("text", "") for c in content if isinstance(c, dict)]
+        elif event_type in ("user", "user_message"):
+            # "text" (현재) 또는 "content" (레거시) 키 지원
+            text = event.get("text") or event.get("content")
+            if isinstance(text, str):
+                return text
+            if isinstance(text, list):
+                texts = [c.get("text", "") for c in text if isinstance(c, dict)]
                 return " ".join(filter(None, texts))
         return ""
 

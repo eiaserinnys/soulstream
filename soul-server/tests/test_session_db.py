@@ -303,7 +303,25 @@ class TestExtractSearchableText:
         assert "key" in result
         assert "val" in result
 
-    def test_tool_result_str(self):
+    def test_tool_start_dict(self):
+        result = SessionDB.extract_searchable_text({
+            "type": "tool_start", "tool_input": {"command": "git status"}
+        })
+        assert "git status" in result
+
+    def test_tool_start_str(self):
+        assert SessionDB.extract_searchable_text({
+            "type": "tool_start", "tool_input": "ls -la"
+        }) == "ls -la"
+
+    def test_tool_result_result_key(self):
+        """현재 형식: result 키"""
+        assert SessionDB.extract_searchable_text({
+            "type": "tool_result", "result": "command output"
+        }) == "command output"
+
+    def test_tool_result_content_key(self):
+        """레거시 형식: content 키"""
         assert SessionDB.extract_searchable_text({"type": "tool_result", "content": "output"}) == "output"
 
     def test_tool_result_list(self):
@@ -316,6 +334,12 @@ class TestExtractSearchableText:
 
     def test_user_str(self):
         assert SessionDB.extract_searchable_text({"type": "user", "content": "question"}) == "question"
+
+    def test_user_message_text_key(self):
+        """현재 형식: user_message 타입, text 키"""
+        assert SessionDB.extract_searchable_text({
+            "type": "user_message", "text": "안녕하세요"
+        }) == "안녕하세요"
 
     def test_unknown_type(self):
         assert SessionDB.extract_searchable_text({"type": "unknown"}) == ""
