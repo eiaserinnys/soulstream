@@ -67,6 +67,76 @@ rules:
       value: "$.id"
       label: "$.title"
 
+  - name: git_branch_delete
+    tool_name: Bash
+    result_mode: regex
+    result_pattern: "Deleted branch ([^ ]+)"
+    extract:
+      type: git_branch_delete
+      value: "$1"
+
+  # git worktree remove는 성공 시 출력이 없을 수 있다.
+  # stderr의 "Removing worktree" 메시지가 result에 포함되면 매칭.
+  # 빈 출력이면 매칭 실패 → 메타데이터 미기록 (허용 가능한 누락)
+  - name: git_worktree_remove
+    tool_name: Bash
+    result_mode: regex
+    result_pattern: "(?:Removing worktree|worktree .+ removed)"
+    extract:
+      type: git_worktree_remove
+      value: "worktree removed"
+
+  - name: trello_card_move
+    tool_name: mcp__trello__move_card
+    result_mode: json
+    extract:
+      type: trello_card_move
+      value: "$.id"
+      label: "$.name"
+      url: "$.url"
+
+  - name: serendipity_page_update
+    tool_name: mcp__serendipity__update_page
+    result_mode: json
+    extract:
+      type: serendipity_page_update
+      value: "$.id"
+      label: "$.title"
+
+  - name: serendipity_block_create
+    tool_name: mcp__serendipity__create_block
+    result_mode: json
+    extract:
+      type: serendipity_block
+      value: "$.id"
+      label: "$.type"
+
+  - name: serendipity_block_update
+    tool_name: mcp__serendipity__update_block
+    result_mode: json
+    extract:
+      type: serendipity_block
+      value: "$.id"
+      label: "$.type"
+
+  # 실제 result: "The file {path} has been written successfully."
+  - name: file_write
+    tool_name: Write
+    result_mode: regex
+    result_pattern: "The file (.+) has been written"
+    extract:
+      type: file_write
+      value: "$1"
+
+  # 실제 result: "The file {path} has been updated successfully."
+  - name: file_edit
+    tool_name: Edit
+    result_mode: regex
+    result_pattern: "The file (.+) has been updated"
+    extract:
+      type: file_edit
+      value: "$1"
+
   - name: arbor_item_create
     tool_name: mcp__arbor__arbor_create_item
     result_mode: json
