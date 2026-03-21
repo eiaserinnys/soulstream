@@ -6,9 +6,11 @@ test_task_manager - 세션 CRUD, 충돌 감지, cleanup, agent_session_id 기반
 
 import asyncio
 from datetime import timedelta
+from pathlib import Path
 
 import pytest
 
+from soul_server.service.session_db import SessionDB
 from soul_server.service.task_manager import TaskManager, set_task_manager
 from soul_server.service.task_models import (
     Task,
@@ -20,11 +22,14 @@ from soul_server.service.task_models import (
 
 
 @pytest.fixture
-def manager():
-    """영속화 없는 TaskManager"""
-    m = TaskManager(storage_path=None)
+def manager(tmp_path):
+    """인메모리 SQLite를 사용하는 TaskManager"""
+    db = SessionDB(tmp_path / "test_sessions.db")
+    db.ensure_default_folders()
+    m = TaskManager(session_db=db)
     yield m
     set_task_manager(None)
+    db.close()
 
 
 class TestCreateTask:
@@ -329,7 +334,7 @@ class TestStats:
 
         stats = manager.get_stats()
         assert stats["total_in_memory"] == 2
-        assert stats["total_in_catalog"] == 2
+        assert stats["total_in_db"] == 2
         assert stats["running"] == 1
         assert stats["completed"] == 1
         assert stats["error"] == 0
