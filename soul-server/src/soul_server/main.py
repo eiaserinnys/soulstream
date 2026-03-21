@@ -35,7 +35,7 @@ from soul_server.claude.agent_runner import ClaudeRunner
 from soul_server.service.runner_pool import RunnerPool
 from soul_server.service.task_manager import get_task_manager, TaskManager, set_task_manager
 from soul_server.service.session_broadcaster import init_session_broadcaster
-from soul_server.service.session_db import SessionDB
+from soul_server.service.session_db import SessionDB, init_session_db, get_session_db
 from soul_server.models import HealthResponse
 from cogito.endpoint import mount_cogito as _mount_cogito
 from soul_server.cogito.mcp_tools import cogito_mcp, cogito_api_router, init as init_cogito_mcp
@@ -60,24 +60,8 @@ _runner_pool: RunnerPool | None = None
 # 전역 LLM executor 참조
 _llm_executor: LlmExecutor | None = None
 
-# 전역 SessionDB 참조
-_session_db: SessionDB | None = None
-
 # draining 상태 (신규 세션 거부 중 여부)
 _is_draining: bool = False
-
-
-def init_session_db(db: SessionDB) -> None:
-    """SessionDB 전역 인스턴스 설정"""
-    global _session_db
-    _session_db = db
-
-
-def get_session_db() -> SessionDB:
-    """SessionDB 전역 인스턴스 반환"""
-    if _session_db is None:
-        raise RuntimeError("SessionDB not initialized.")
-    return _session_db
 
 
 async def periodic_cleanup():
@@ -230,14 +214,14 @@ async def lifespan(app: FastAPI):
     data_dir = Path(settings.data_dir)
     db_path = data_dir / "soulstream.db"
     SessionDB.migrate_from_legacy(db_path, data_dir)
-    _session_db = SessionDB(db_path)
-    _session_db.ensure_default_folders()
-    init_session_db(_session_db)
+    session_db = SessionDB(db_path)
+    session_db.ensure_default_folders()
+    init_session_db(session_db)
     logger.info(f"  SessionDB initialized: {db_path}")
 
     # TaskManager 초기화 및 로드
     task_manager = TaskManager(
-        session_db=_session_db,
+        session_db=session_db,
         eviction_ttl=settings.session_eviction_ttl_seconds,
     )
     set_task_manager(task_manager)
@@ -253,12 +237,12 @@ async def lifespan(app: FastAPI):
 
     # 카탈로그 API 라우터 등록
     from soul_server.api.catalog import create_catalog_router
-    catalog_router = create_catalog_router(session_db=_session_db, broadcaster=broadcaster)
+    catalog_router = create_catalog_router(session_db=session_db, broadcaster=broadcaster)
     app.include_router(catalog_router, prefix="/catalog", tags=["catalog"])
     logger.info("  Catalog API registered")
 
     # 이전 종료 시 저장된 세션 재개 (graceful_shutdown이 DB에 플래그로 저장)
-    shutdown_sessions = _session_db.get_shutdown_sessions()
+    shutdown_sessions = session_db.get_shutdown_sessions()
     if shutdown_sessions:
         try:
             for s in shutdown_sessions:
@@ -281,7 +265,7 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"  shutdown session resume 실패: {e}")
         finally:
-            _session_db.clear_shutdown_flags()
+            session_db.clear_shutdown_flags()
 
     # LLM Proxy 초기화
     global _llm_executor
@@ -297,7 +281,7 @@ async def lifespan(app: FastAPI):
         _llm_executor = LlmExecutor(
             adapters=llm_adapters,
             task_manager=task_manager,
-            session_db=_session_db,
+            session_db=session_db,
             session_broadcaster=broadcaster,
         )
         llm_router = create_llm_router(executor=_llm_executor)
