@@ -2,6 +2,8 @@
 
 Claude Code 원격 실행 서비스. 세션 관리, SSE 스트리밍, 실시간 대시보드를 제공합니다.
 
+<!-- sentinel group deploy test -->
+
 ## 구조
 
 ```
