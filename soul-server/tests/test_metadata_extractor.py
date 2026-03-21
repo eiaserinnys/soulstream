@@ -57,6 +57,22 @@ rules:
       label: "$.name"
       url: "$.url"
 
+  - name: git_branch_delete
+    tool_name: Bash
+    result_mode: regex
+    result_pattern: "Deleted branch ([^ ]+)"
+    extract:
+      type: git_branch_delete
+      value: "$1"
+
+  - name: git_worktree_remove
+    tool_name: Bash
+    result_mode: regex
+    result_pattern: "(?:Removing worktree|worktree .+ removed)"
+    extract:
+      type: git_worktree_remove
+      value: "worktree removed"
+
   - name: serendipity_page
     tool_name: mcp__serendipity__create_page
     result_mode: json
@@ -64,6 +80,55 @@ rules:
       type: serendipity_page
       value: "$.id"
       label: "$.title"
+
+  - name: trello_card_move
+    tool_name: mcp__trello__move_card
+    result_mode: json
+    extract:
+      type: trello_card_move
+      value: "$.id"
+      label: "$.name"
+      url: "$.url"
+
+  - name: serendipity_page_update
+    tool_name: mcp__serendipity__update_page
+    result_mode: json
+    extract:
+      type: serendipity_page_update
+      value: "$.id"
+      label: "$.title"
+
+  - name: serendipity_block_create
+    tool_name: mcp__serendipity__create_block
+    result_mode: json
+    extract:
+      type: serendipity_block
+      value: "$.id"
+      label: "$.type"
+
+  - name: serendipity_block_update
+    tool_name: mcp__serendipity__update_block
+    result_mode: json
+    extract:
+      type: serendipity_block
+      value: "$.id"
+      label: "$.type"
+
+  - name: file_write
+    tool_name: Write
+    result_mode: regex
+    result_pattern: "The file (.+) has been written"
+    extract:
+      type: file_write
+      value: "$1"
+
+  - name: file_edit
+    tool_name: Edit
+    result_mode: regex
+    result_pattern: "The file (.+) has been updated"
+    extract:
+      type: file_edit
+      value: "$1"
 """,
         encoding="utf-8",
     )
@@ -83,7 +148,7 @@ def extractor(rules_path):
 class TestInit:
     def test_load_rules(self, extractor):
         """규칙 로드 성공"""
-        assert len(extractor._rules) == 5
+        assert len(extractor._rules) == 13
 
     def test_file_not_found(self, tmp_path):
         """존재하지 않는 규칙 파일"""
@@ -141,6 +206,47 @@ class TestRegexMode:
         entry = extractor.extract("Bash", result, is_error=False)
         assert entry is None
 
+    def test_git_branch_delete(self, extractor):
+        """git branch 삭제 감지"""
+        result = "Deleted branch feature/old-branch (was abc1234)."
+        entry = extractor.extract("Bash", result, is_error=False)
+
+        assert entry is not None
+        assert entry["type"] == "git_branch_delete"
+        assert entry["value"] == "feature/old-branch"
+
+    def test_git_worktree_remove(self, extractor):
+        """git worktree 삭제 감지"""
+        result = "Removing worktree"
+        entry = extractor.extract("Bash", result, is_error=False)
+
+        assert entry is not None
+        assert entry["type"] == "git_worktree_remove"
+
+    def test_git_worktree_remove_empty_output(self, extractor):
+        """git worktree remove 빈 출력 시 매칭 실패"""
+        result = ""
+        entry = extractor.extract("Bash", result, is_error=False)
+        assert entry is None
+
+    def test_file_write(self, extractor):
+        """Write 도구 결과에서 파일 경로 추출"""
+        result = "The file D:\\project\\src\\main.py has been written successfully."
+        entry = extractor.extract("Write", result, is_error=False)
+
+        assert entry is not None
+        assert entry["type"] == "file_write"
+        assert entry["value"] == "D:\\project\\src\\main.py"
+
+    def test_file_edit(self, extractor):
+        """Edit 도구 결과에서 파일 경로 추출"""
+        result = "The file D:\\soyoung_root\\soulstream_runtime\\.env has been updated successfully."
+        entry = extractor.extract("Edit", result, is_error=False)
+
+        assert entry is not None
+        assert entry["type"] == "file_edit"
+        assert entry["value"] == "D:\\soyoung_root\\soulstream_runtime\\.env"
+
     def test_first_match_wins(self, extractor):
         """git commit과 branch 모두 포함 시 첫 번째 매칭"""
         # git_commit 규칙이 git_branch_create보다 앞에 있음
@@ -189,6 +295,58 @@ class TestJsonMode:
         """잘못된 JSON 결과"""
         entry = extractor.extract("mcp__trello__add_card_to_list", "not json", is_error=False)
         assert entry is None
+
+    def test_trello_card_move(self, extractor):
+        """Trello 카드 이동 결과에서 추출"""
+        result = json.dumps({
+            "id": "card-456",
+            "name": "Phase 2",
+            "url": "https://trello.com/c/xyz",
+        })
+        entry = extractor.extract("mcp__trello__move_card", result, is_error=False)
+
+        assert entry is not None
+        assert entry["type"] == "trello_card_move"
+        assert entry["value"] == "card-456"
+        assert entry["label"] == "Phase 2"
+
+    def test_serendipity_page_update(self, extractor):
+        """세렌디피티 페이지 갱신 결과에서 추출"""
+        result = json.dumps({
+            "id": "page-uuid",
+            "title": "Updated Doc",
+        })
+        entry = extractor.extract("mcp__serendipity__update_page", result, is_error=False)
+
+        assert entry is not None
+        assert entry["type"] == "serendipity_page_update"
+        assert entry["value"] == "page-uuid"
+        assert entry["label"] == "Updated Doc"
+
+    def test_serendipity_block_create(self, extractor):
+        """세렌디피티 블록 생성 결과에서 추출"""
+        result = json.dumps({
+            "id": "block-uuid",
+            "type": "paragraph",
+        })
+        entry = extractor.extract("mcp__serendipity__create_block", result, is_error=False)
+
+        assert entry is not None
+        assert entry["type"] == "serendipity_block"
+        assert entry["value"] == "block-uuid"
+        assert entry["label"] == "paragraph"
+
+    def test_serendipity_block_update(self, extractor):
+        """세렌디피티 블록 갱신 결과에서 추출"""
+        result = json.dumps({
+            "id": "block-uuid-2",
+            "type": "heading",
+        })
+        entry = extractor.extract("mcp__serendipity__update_block", result, is_error=False)
+
+        assert entry is not None
+        assert entry["type"] == "serendipity_block"
+        assert entry["value"] == "block-uuid-2"
 
     def test_missing_required_field(self, extractor):
         """필수 필드(value 경로) 누락"""
