@@ -140,6 +140,7 @@ export { ChatView } from "./components/ChatView";
 export { ChatInput } from "./components/ChatInput";
 export { RightPanel } from "./components/RightPanel";
 export { DetailView } from "./components/DetailView";
+export { SessionInfoView } from "./components/SessionInfoView";
 export { AskQuestionBanner } from "./components/AskQuestionBanner";
 export { ProfileAvatar } from "./components/ProfileAvatar";
 export { ContextContentRenderer } from "./components/ContextContentRenderer";
