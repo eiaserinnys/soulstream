@@ -30,6 +30,7 @@ const SESSION_STREAM_EVENT_TYPES = [
   "session_updated",
   "session_deleted",
   "catalog_updated",
+  "metadata_updated",
 ] as const;
 
 interface UseSessionListProviderOptions {
