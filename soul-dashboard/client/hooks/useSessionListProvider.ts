@@ -17,6 +17,7 @@ import { useEffect, useRef, useCallback } from "react";
 import {
   useDashboardStore,
   toSessionSummary,
+  SYSTEM_FOLDERS,
   type SessionStreamEvent,
   type SessionStatus,
 } from "@seosoyoung/soul-ui";
@@ -223,12 +224,24 @@ export function useSessionListProvider(
 
     fetchSessions();
 
-    // 초기 카탈로그 로드
+    // 초기 카탈로그 로드 + 폴더 자동 선택
     fetch("/api/catalog")
       .then((r) => { if (r.ok) return r.json(); throw new Error("catalog fetch failed"); })
       .then((data) => {
         if (data?.folders && data?.sessions) {
-          useDashboardStore.getState().setCatalog(data);
+          const store = useDashboardStore.getState();
+          store.setCatalog(data);
+
+          // selectedFolderId가 아직 설정되지 않았으면 기본 폴더 자동 선택
+          if (store.selectedFolderId === null && !store.activeSessionKey) {
+            const claudeFolder = data.folders.find(
+              (f: { name: string }) => f.name === SYSTEM_FOLDERS.claude,
+            );
+            const defaultFolderId = claudeFolder?.id ?? data.folders[0]?.id ?? null;
+            if (defaultFolderId) {
+              useDashboardStore.getState().selectFolder(defaultFolderId);
+            }
+          }
         }
       })
       .catch(() => {});
