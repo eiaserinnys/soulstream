@@ -67,7 +67,7 @@ rules:
   - name: file_write
     tool_name: Write
     result_mode: regex
-    result_pattern: "The file (.+) has been written"
+    result_pattern: "File created successfully at:\\\\s*(.+)"
     extract:
       type: file_write
       value: "$1"
@@ -252,7 +252,7 @@ class TestRegexMode:
 
     def test_file_write(self, extractor):
         """Write 도구 결과에서 파일 경로 추출"""
-        result = "The file D:\\project\\src\\main.py has been written successfully."
+        result = "File created successfully at: D:\\project\\src\\main.py"
         entry = extractor.extract("Write", result, is_error=False)
 
         assert entry is not None
@@ -375,6 +375,93 @@ class TestJsonMode:
         """필수 필드(value 경로) 누락"""
         result = json.dumps({"name": "test"})  # id 없음
         entry = specialized_extractor.extract("mcp__trello__add_card_to_list", result, is_error=False)
+        assert entry is None
+
+
+# ============================================================
+# MCP content block unwrap
+# ============================================================
+
+
+class TestMcpContentBlockUnwrap:
+    """MCP 도구 결과가 [{"type":"text","text":"..."}] 형태로 래핑될 때 unwrap"""
+
+    def test_mcp_wrapped_trello_card(self, specialized_extractor):
+        """MCP 래핑된 Trello 카드 생성 결과에서 추출"""
+        inner_json = json.dumps({
+            "id": "card-mcp-123",
+            "name": "MCP 래핑 카드",
+            "url": "https://trello.com/c/mcp123",
+        })
+        # MCP content block 형태로 래핑
+        result = json.dumps([{"type": "text", "text": inner_json}])
+        entry = specialized_extractor.extract(
+            "mcp__trello__add_card_to_list", result, is_error=False
+        )
+
+        assert entry is not None
+        assert entry["type"] == "trello_card"
+        assert entry["value"] == "card-mcp-123"
+        assert entry["label"] == "MCP 래핑 카드"
+        assert entry["url"] == "https://trello.com/c/mcp123"
+
+    def test_mcp_wrapped_serendipity_page(self, specialized_extractor):
+        """MCP 래핑된 세렌디피티 페이지 생성 결과에서 추출"""
+        inner_json = json.dumps({
+            "id": "page-mcp-uuid",
+            "title": "MCP 래핑 문서",
+        })
+        result = json.dumps([{"type": "text", "text": inner_json}])
+        entry = specialized_extractor.extract(
+            "mcp__serendipity__create_page", result, is_error=False
+        )
+
+        assert entry is not None
+        assert entry["type"] == "serendipity_page"
+        assert entry["value"] == "page-mcp-uuid"
+        assert entry["label"] == "MCP 래핑 문서"
+
+    def test_mcp_wrapped_invalid_inner_json(self, specialized_extractor):
+        """MCP 래핑 내부에 유효하지 않은 JSON"""
+        result = json.dumps([{"type": "text", "text": "not valid json"}])
+        entry = specialized_extractor.extract(
+            "mcp__trello__add_card_to_list", result, is_error=False
+        )
+        assert entry is None
+
+    def test_mcp_wrapped_missing_required_field(self, specialized_extractor):
+        """MCP 래핑된 JSON에 필수 필드 누락"""
+        inner_json = json.dumps({"name": "no id"})
+        result = json.dumps([{"type": "text", "text": inner_json}])
+        entry = specialized_extractor.extract(
+            "mcp__trello__add_card_to_list", result, is_error=False
+        )
+        assert entry is None
+
+    def test_plain_json_still_works(self, specialized_extractor):
+        """래핑 없는 일반 JSON도 여전히 동작"""
+        result = json.dumps({
+            "id": "card-plain",
+            "name": "일반 카드",
+            "url": "https://trello.com/c/plain",
+        })
+        entry = specialized_extractor.extract(
+            "mcp__trello__add_card_to_list", result, is_error=False
+        )
+        assert entry is not None
+        assert entry["value"] == "card-plain"
+
+    def test_mcp_wrapped_multiple_blocks_ignored(self, specialized_extractor):
+        """MCP content block이 2개 이상이면 unwrap하지 않음"""
+        inner1 = json.dumps({"id": "1", "name": "a", "url": "u"})
+        inner2 = json.dumps({"id": "2", "name": "b", "url": "v"})
+        result = json.dumps([
+            {"type": "text", "text": inner1},
+            {"type": "text", "text": inner2},
+        ])
+        entry = specialized_extractor.extract(
+            "mcp__trello__add_card_to_list", result, is_error=False
+        )
         assert entry is None
 
 
