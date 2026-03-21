@@ -215,10 +215,7 @@ function CategorySection({
   onChange: (key: string, value: string) => void;
 }) {
   return (
-    <div className="mb-4 last:mb-0">
-      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-1">
-        {category.label}
-      </h3>
+    <div>
       <div className="space-y-2">
         {category.fields.map((field) => (
           <div
@@ -293,6 +290,7 @@ function ResultMessage({
 
 export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
   const [categories, setCategories] = useState<SettingCategory[]>([]);
+  const [selectedTab, setSelectedTab] = useState<string>("");
   const [formData, setFormData] = useState<Record<string, string>>({});
   const [originalData, setOriginalData] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
@@ -311,6 +309,7 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
     fetchSettings()
       .then((data) => {
         setCategories(data.categories);
+        setSelectedTab(data.categories[0]?.name ?? "");
 
         const initial: Record<string, string> = {};
         for (const cat of data.categories) {
@@ -402,17 +401,38 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
           )}
 
           {!loading && !error && categories.length > 0 && (
-            <div className="divide-y divide-border">
-              {categories.map((cat) => (
-                <div key={cat.name} className="py-3 first:pt-0 last:pb-0">
+            <>
+              <div role="tablist" className="flex flex-wrap gap-1 mb-4 border-b border-border pb-2">
+                {categories.map((cat) => (
+                  <button
+                    key={cat.name}
+                    type="button"
+                    role="tab"
+                    aria-selected={selectedTab === cat.name}
+                    onClick={() => setSelectedTab(cat.name)}
+                    className={cn(
+                      "px-3 py-1.5 text-xs rounded-t transition-colors",
+                      selectedTab === cat.name
+                        ? "bg-muted text-foreground border-b-2 border-primary"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+                    )}
+                  >
+                    {cat.label}
+                  </button>
+                ))}
+              </div>
+              {(() => {
+                const cat = categories.find((c) => c.name === selectedTab);
+                return cat ? (
                   <CategorySection
+                    key={cat.name}
                     category={cat}
                     formData={formData}
                     onChange={handleChange}
                   />
-                </div>
-              ))}
-            </div>
+                ) : null;
+              })()}
+            </>
           )}
         </DialogPanel>
 
