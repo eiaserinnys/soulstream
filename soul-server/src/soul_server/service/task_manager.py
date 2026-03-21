@@ -179,6 +179,37 @@ class TaskManager:
         인터페이스 호환을 위해 유지."""
         pass
 
+    # === 내부 헬퍼 ===
+
+    async def _assign_default_folder_and_broadcast(
+        self, session_id: str, session_type: str
+    ) -> None:
+        """새 세션을 기본 폴더에 배정하고 catalog_updated를 브로드캐스트한다.
+
+        부가 기능이므로, 폴더 배정이나 브로드캐스트에 실패해도
+        호출자의 핵심 동작(세션 생성/등록)에 영향을 주지 않는다.
+        """
+        default_name = SessionDB.DEFAULT_FOLDERS.get(
+            session_type, SessionDB.DEFAULT_FOLDERS["claude"]
+        )
+        folder = self._db.get_default_folder(default_name)
+        if folder:
+            self._db.assign_session_to_folder(session_id, folder["id"])
+
+        try:
+            broadcaster = get_session_broadcaster()
+            if folder:
+                catalog = self._db.get_catalog()
+                await broadcaster.broadcast({
+                    "type": "catalog_updated",
+                    "catalog": catalog,
+                })
+        except Exception:
+            logger.warning(
+                f"Failed to broadcast catalog for {session_id}",
+                exc_info=True,
+            )
+
     # === CRUD 작업 ===
 
     async def register_external_task(self, task: Task) -> None:
@@ -201,7 +232,11 @@ class TaskManager:
             claude_session_id=task.claude_session_id,
             created_at=datetime_to_str(task.created_at),
         )
-        # SessionDB commits immediately, no schedule needed
+
+        # 기본 폴더 자동 배정 + 카탈로그 브로드캐스트
+        await self._assign_default_folder_and_broadcast(
+            task.agent_session_id, task.session_type
+        )
 
     async def finalize_task(
         self,
@@ -421,16 +456,11 @@ class TaskManager:
             created_at=datetime_to_str(task.created_at),
         )
 
-        # 새 세션이면 기본 폴더에 자동 배치
+        # 새 세션이면 기본 폴더에 자동 배치 + 카탈로그 브로드캐스트
         if is_new:
-            default_name = SessionDB.DEFAULT_FOLDERS.get(
-                task.session_type, SessionDB.DEFAULT_FOLDERS["claude"]
+            await self._assign_default_folder_and_broadcast(
+                agent_session_id, task.session_type
             )
-            folder = self._db.get_default_folder(default_name)
-            if folder:
-                self._db.assign_session_to_folder(agent_session_id, folder["id"])
-
-        # SessionDB commits immediately, no schedule needed
 
         # 세션 목록 변경을 대시보드에 브로드캐스트 (부가 기능 — 실패해도 태스크 생성에 영향 없음)
         try:
