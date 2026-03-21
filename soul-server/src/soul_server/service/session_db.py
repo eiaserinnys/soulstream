@@ -199,6 +199,54 @@ class SessionDB:
         )
         self._conn.commit()
 
+    def append_metadata(self, session_id: str, entry: dict) -> None:
+        """세션에 메타데이터 엔트리를 추가한다.
+
+        기존 metadata JSON 배열에 엔트리를 추가하고,
+        events 테이블에 synthetic metadata 이벤트를 삽입하여
+        FTS5 자동 인덱싱을 트리거한다.
+
+        Args:
+            session_id: 세션 ID
+            entry: 메타데이터 엔트리 dict
+                {type, value, label?, url?, timestamp, tool_name}
+
+        Raises:
+            ValueError: 세션이 존재하지 않을 때
+        """
+        session = self.get_session(session_id)
+        if session is None:
+            raise ValueError(f"Session not found: {session_id}")
+
+        # 기존 metadata에 추가
+        existing = session.get("metadata") or []
+        existing.append(entry)
+        metadata_json = json.dumps(existing, ensure_ascii=False)
+
+        now = _utc_now_str()
+        self._conn.execute(
+            "UPDATE sessions SET metadata = ?, updated_at = ? WHERE session_id = ?",
+            (metadata_json, now, session_id),
+        )
+
+        # synthetic metadata 이벤트 삽입 (FTS5 인덱싱)
+        searchable = f"{entry.get('type', '')}: {entry.get('value', '')} {entry.get('label', '')}"
+        event_payload = json.dumps({
+            "type": "metadata",
+            "metadata_type": entry.get("type"),
+            "value": entry.get("value"),
+            "label": entry.get("label"),
+        }, ensure_ascii=False)
+
+        next_id = self.get_next_event_id(session_id)
+        self._conn.execute(
+            "INSERT INTO events (id, session_id, event_type, payload, searchable_text, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (next_id, session_id, "metadata", event_payload, searchable, now),
+        )
+
+        self._conn.commit()
+
     def update_last_message(self, session_id: str, last_message: dict) -> None:
         now = _utc_now_str()
         self._conn.execute(

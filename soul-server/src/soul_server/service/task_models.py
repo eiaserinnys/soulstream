@@ -98,6 +98,9 @@ class Task:
     # 구조화된 맥락 (실행 파라미터, 이력 추적용으로 영속화됨)
     context: Optional[dict] = field(default=None, repr=False)
 
+    # 세션 메타데이터 (커밋, 브랜치, 카드 등 산출물 기록, 영속화됨)
+    metadata: List[dict] = field(default_factory=list, repr=False)
+
     # 결과
     result: Optional[str] = None
     error: Optional[str] = None
@@ -140,6 +143,7 @@ class Task:
             info["llm_model"] = self.llm_model
             info["llm_usage"] = self.llm_usage
             info["client_id"] = self.client_id
+        info["metadata"] = self.metadata
         return info
 
     def to_dict(self) -> dict:
@@ -156,6 +160,7 @@ class Task:
             "llm_model": self.llm_model,
             "llm_usage": self.llm_usage,
             "context": self.context,
+            "metadata": self.metadata,
             "result": self.result,
             "error": self.error,
             "created_at": datetime_to_str(self.created_at),
@@ -177,6 +182,7 @@ class Task:
             llm_model=data.get("llm_model"),
             llm_usage=data.get("llm_usage"),
             context=data.get("context"),
+            metadata=data.get("metadata", []),
             result=data.get("result"),
             error=data.get("error"),
             created_at=str_to_datetime(data["created_at"]),
