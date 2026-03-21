@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   last_message TEXT,
   metadata TEXT,
   was_running_at_shutdown INTEGER NOT NULL DEFAULT 0,
+  last_event_id INTEGER NOT NULL DEFAULT 0,
+  last_read_event_id INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -89,7 +91,9 @@ END;
 _SESSION_COLUMNS = frozenset({
     "folder_id", "display_name", "session_type", "status",
     "prompt", "client_id", "claude_session_id", "last_message",
-    "metadata", "was_running_at_shutdown", "created_at", "updated_at",
+    "metadata", "was_running_at_shutdown",
+    "last_event_id", "last_read_event_id",
+    "created_at", "updated_at",
 })
 
 _FOLDER_COLUMNS = frozenset({"name", "sort_order"})
@@ -113,6 +117,19 @@ class SessionDB:
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA foreign_keys=ON")
         self._conn.executescript(SCHEMA_SQL)
+
+        # 인라인 마이그레이션: last_event_id, last_read_event_id 컬럼 추가
+        for col, col_type, default in [
+            ("last_event_id", "INTEGER", 0),
+            ("last_read_event_id", "INTEGER", 0),
+        ]:
+            try:
+                self._conn.execute(
+                    f"ALTER TABLE sessions ADD COLUMN {col} {col_type} NOT NULL DEFAULT {default}"
+                )
+            except sqlite3.OperationalError:
+                pass  # 이미 존재
+
         self._conn.commit()
 
     def close(self) -> None:
@@ -256,6 +273,27 @@ class SessionDB:
         )
         self._conn.commit()
 
+    # --- 읽음 상태 관리 ---
+
+    def update_last_read_event_id(self, session_id: str, event_id: int) -> bool:
+        """읽음 위치 갱신. 성공 시 True, 세션 미존재 시 False."""
+        cursor = self._conn.execute(
+            "UPDATE sessions SET last_read_event_id = ? WHERE session_id = ?",
+            (event_id, session_id),
+        )
+        self._conn.commit()
+        return cursor.rowcount > 0
+
+    def get_read_position(self, session_id: str) -> tuple[int, int]:
+        """(last_event_id, last_read_event_id) 반환."""
+        row = self._conn.execute(
+            "SELECT last_event_id, last_read_event_id FROM sessions WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"Session not found: {session_id}")
+        return (row[0], row[1])
+
     def mark_running_at_shutdown(self) -> None:
         self._conn.execute(
             "UPDATE sessions SET was_running_at_shutdown = 1 WHERE status = 'running'"
@@ -289,6 +327,11 @@ class SessionDB:
             "INSERT INTO events (id, session_id, event_type, payload, searchable_text, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?)",
             (event_id, session_id, event_type, payload, searchable_text, created_at),
+        )
+        # 세션의 last_event_id를 자동 갱신
+        self._conn.execute(
+            "UPDATE sessions SET last_event_id = ? WHERE session_id = ?",
+            (event_id, session_id),
         )
         self._conn.commit()
 

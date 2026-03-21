@@ -101,6 +101,10 @@ class Task:
     # 세션 메타데이터 (커밋, 브랜치, 카드 등 산출물 기록, 영속화됨)
     metadata: List[dict] = field(default_factory=list, repr=False)
 
+    # 읽음 상태 추적
+    last_event_id: int = 0
+    last_read_event_id: int = 0
+
     # 결과
     result: Optional[str] = None
     error: Optional[str] = None
@@ -144,6 +148,8 @@ class Task:
             info["llm_usage"] = self.llm_usage
             info["client_id"] = self.client_id
         info["metadata"] = self.metadata
+        info["last_event_id"] = self.last_event_id
+        info["last_read_event_id"] = self.last_read_event_id
         return info
 
     def to_dict(self) -> dict:

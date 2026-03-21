@@ -84,6 +84,8 @@ class SessionBroadcaster:
             "agent_session_id": task.agent_session_id,
             "status": task.status.value,
             "updated_at": updated_at.isoformat(),
+            "last_event_id": task.last_event_id,
+            "last_read_event_id": task.last_read_event_id,
         }
         return await self.broadcast(event)
 
@@ -93,6 +95,8 @@ class SessionBroadcaster:
         status: str,
         updated_at: str,
         last_message: dict,
+        last_event_id: int = 0,
+        last_read_event_id: int = 0,
     ) -> int:
         """세션의 last_message 변경 이벤트 발행
 
@@ -104,6 +108,8 @@ class SessionBroadcaster:
             status: 현재 세션 상태 (TaskStatus.value)
             updated_at: ISO 8601 타임스탬프 (항상 UTC)
             last_message: {"type": str, "preview": str, "timestamp": str}
+            last_event_id: 세션의 최신 이벤트 ID
+            last_read_event_id: 세션의 마지막 읽은 이벤트 ID
         """
         event = {
             "type": "session_updated",
@@ -111,6 +117,23 @@ class SessionBroadcaster:
             "status": status,
             "updated_at": updated_at,
             "last_message": last_message,
+            "last_event_id": last_event_id,
+            "last_read_event_id": last_read_event_id,
+        }
+        return await self.broadcast(event)
+
+    async def emit_read_position_updated(
+        self,
+        session_id: str,
+        last_event_id: int,
+        last_read_event_id: int,
+    ) -> int:
+        """read-position 변경 시 크로스 대시보드 동기화용 브로드캐스트."""
+        event = {
+            "type": "session_updated",
+            "agent_session_id": session_id,
+            "last_event_id": last_event_id,
+            "last_read_event_id": last_read_event_id,
         }
         return await self.broadcast(event)
 
