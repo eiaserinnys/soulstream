@@ -10,7 +10,7 @@
  * 낙관적 업데이트는 UX 지연을 줄이기 위한 임시 상태이다.
  */
 
-import { useDashboardStore } from "@seosoyoung/soul-ui";
+import { useDashboardStore, SYSTEM_FOLDERS } from "@seosoyoung/soul-ui";
 import type { CatalogFolder } from "@shared/types";
 
 /**
@@ -91,9 +91,11 @@ export async function deleteFolderOptimistic(
     : [];
   const prevSelectedFolderId = selectedFolderId;
 
-  // 삭제 대상이 현재 선택 폴더이면 미분류로 전환
+  // 삭제 대상이 현재 선택 폴더이면 클로드 코드 세션 폴더로 전환
   if (selectedFolderId === folderId) {
-    selectFolder(null);
+    const claudeFolder = catalog?.folders.find((f) => f.name === SYSTEM_FOLDERS.claude && f.id !== folderId);
+    const fallbackId = claudeFolder?.id ?? catalog?.folders.find((f) => f.id !== folderId)?.id ?? null;
+    selectFolder(fallbackId);
   }
 
   // 낙관적 삭제 (removeFolder가 세션의 folderId도 null로 변경)

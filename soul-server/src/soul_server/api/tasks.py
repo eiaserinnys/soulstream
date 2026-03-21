@@ -107,6 +107,7 @@ async def execute_task(
             context_items=[item.model_dump() for item in request.context.items] if request.context else None,
             extra_context_items=request.context_items,
             model=request.model,
+            folder_id=request.folder_id,
         )
     except TaskConflictError:
         raise HTTPException(

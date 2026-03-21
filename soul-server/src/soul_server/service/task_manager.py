@@ -186,19 +186,26 @@ class TaskManager:
     # === 내부 헬퍼 ===
 
     async def _assign_default_folder_and_broadcast(
-        self, session_id: str, session_type: str
+        self, session_id: str, session_type: str, folder_id: str | None = None
     ) -> None:
-        """새 세션을 기본 폴더에 배정하고 catalog_updated를 브로드캐스트한다.
+        """새 세션을 폴더에 배정하고 catalog_updated를 브로드캐스트한다.
+
+        folder_id가 지정되면 해당 폴더에 배치하고,
+        미지정이면 session_type 기반 기본 폴더에 자동 배정한다.
 
         부가 기능이므로, 폴더 배정이나 브로드캐스트에 실패해도
         호출자의 핵심 동작(세션 생성/등록)에 영향을 주지 않는다.
         """
-        default_name = SessionDB.DEFAULT_FOLDERS.get(
-            session_type, SessionDB.DEFAULT_FOLDERS["claude"]
-        )
-        folder = self._db.get_default_folder(default_name)
-        if folder:
-            self._db.assign_session_to_folder(session_id, folder["id"])
+        if folder_id is not None:
+            self._db.assign_session_to_folder(session_id, folder_id)
+            folder = {"id": folder_id}
+        else:
+            default_name = SessionDB.DEFAULT_FOLDERS.get(
+                session_type, SessionDB.DEFAULT_FOLDERS["claude"]
+            )
+            folder = self._db.get_default_folder(default_name)
+            if folder:
+                self._db.assign_session_to_folder(session_id, folder["id"])
 
         try:
             broadcaster = get_session_broadcaster()
@@ -362,6 +369,7 @@ class TaskManager:
         context_items: Optional[List[dict]] = None,
         extra_context_items: Optional[List[dict]] = None,
         model: Optional[str] = None,
+        folder_id: Optional[str] = None,
     ) -> Task:
         """
         새 세션 태스크 생성 또는 기존 세션 resume
@@ -376,6 +384,7 @@ class TaskManager:
             context: 구조화된 맥락 (dict, StructuredContext.model_dump() 결과)
             context_items: StructuredContext.items에서 추출한 맥락 항목 (Pydantic 검증 완료)
             extra_context_items: 클라이언트가 직접 전달한 추가 맥락 항목 (raw dict)
+            folder_id: 세션을 배치할 폴더 ID (None이면 session_type 기반 자동 배정)
 
         Returns:
             Task: 생성되거나 재활성화된 태스크
@@ -466,10 +475,10 @@ class TaskManager:
             created_at=datetime_to_str(task.created_at),
         )
 
-        # 새 세션이면 기본 폴더에 자동 배치 + 카탈로그 브로드캐스트
+        # 새 세션이면 폴더에 배치 + 카탈로그 브로드캐스트
         if is_new:
             await self._assign_default_folder_and_broadcast(
-                agent_session_id, task.session_type
+                agent_session_id, task.session_type, folder_id=folder_id
             )
 
         # 세션 목록 변경을 대시보드에 브로드캐스트 (부가 기능 — 실패해도 태스크 생성에 영향 없음)

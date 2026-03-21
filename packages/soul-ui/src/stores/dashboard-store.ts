@@ -103,11 +103,8 @@ export interface DashboardState {
   /** 알림 대상 이벤트 큐 (complete, error, intervention_sent) */
   pendingNotifications: SoulSSEEvent[];
 
-  /** 세션 생성 모드 (프롬프트 입력 화면 표시) */
-  isComposing: boolean;
-
-  /** 세션 재개 대상 키 (완료된 세션에서 이어서 대화) */
-  resumeTargetKey: string | null;
+  /** New Session 모달 열림 상태 */
+  isNewSessionModalOpen: boolean;
 
   /** 접힌 노드 ID 집합 (접기/펼치기 기능) */
   collapsedNodeIds: Set<string>;
@@ -124,7 +121,7 @@ export interface DashboardState {
   /** 이벤트 처리 컨텍스트 (nodeMap, activeTextTarget 등) */
   processingCtx: ProcessingContext;
 
-  /** 입력창 임시 저장 (키: 세션ID / '__new_chat__' / '__resume__{sessionKey}')
+  /** 입력창 임시 저장 (키: 세션ID / '__draft__{folderId}')
    * ⚠️ getSessionResetState()에 포함하지 않는 것이 이 기능의 핵심 — drafts는 세션 전환 시 초기화하지 않는다 */
   drafts: Record<string, string>;
 
@@ -139,6 +136,9 @@ export interface DashboardState {
 
   /** 인라인 편집 중인 세션 */
   editingSessionId: string | null;
+
+  /** 모바일 뷰 상태 ('sessions': 세션 리스트, 'chat': 채팅 뷰) */
+  mobileView: "sessions" | "chat";
 
   /** 폴더 카탈로그 상태 */
   catalog: CatalogState | null;
@@ -185,16 +185,12 @@ export interface DashboardActions {
   // SSE 이벤트 배치 처리 (히스토리 리플레이 최적화: N개 이벤트를 트리에 적용 후 set() 1회)
   processEvents: (events: Array<{ event: SoulSSEEvent; eventId: number }>) => void;
 
-  // 낙관적 세션 추가 (세션 생성 직후 즉시 목록 반영)
+  // 낙관적 세션 추가 + 활성 세션 설정 (세션 생성 직후 즉시 목록 반영)
   addOptimisticSession: (agentSessionId: string, prompt: string) => void;
 
-  // 세션 생성 완료 (낙관적 추가 + compose 종료 + 세션 활성화를 단일 set으로 처리)
-  completeCompose: (agentSessionId: string, prompt: string) => void;
-
-  // 세션 생성/재개
-  startCompose: () => void;
-  startResume: (sessionKey: string) => void;
-  cancelCompose: () => void;
+  // New Session 모달
+  openNewSessionModal: () => void;
+  closeNewSessionModal: () => void;
 
   // 상태 초기화
   clearTree: () => void;
@@ -236,6 +232,9 @@ export interface DashboardActions {
   addFolder: (folder: CatalogFolder) => void;
   updateFolderName: (folderId: string, name: string) => void;
   removeFolder: (folderId: string) => void;
+
+  // 모바일 뷰 전환
+  setMobileView: (view: "sessions" | "chat") => void;
 
   // 활성 세션 해제 (selectedFolderId를 유지하면서 세션만 해제)
   clearActiveSession: () => void;
@@ -297,8 +296,7 @@ const initialState: DashboardState = {
   treeVersion: 0,
   lastEventId: 0,
   pendingNotifications: [],
-  isComposing: true,
-  resumeTargetKey: null,
+  isNewSessionModalOpen: false,
   collapsedNodeIds: new Set<string>(),
   serendipityAvailable: false,
   activeRightTab: "chat",
@@ -309,6 +307,7 @@ const initialState: DashboardState = {
   selectedSessionIds: new Set<string>(),
   lastSelectedSessionId: null,
   editingSessionId: null,
+  mobileView: "sessions",
   catalog: null,
   selectedFolderId: null,
   catalogVersion: 0,
@@ -440,8 +439,6 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           activeSessionKey: key,
           activeSession: detail ?? null,
           selectedFolderId: folderId,
-          isComposing: false,
-          resumeTargetKey: null,
         });
       },
 
@@ -679,21 +676,6 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
 
       addOptimisticSession: (agentSessionId, prompt) => {
         const sessions = get().sessions;
-        if (sessions.some((s) => s.agentSessionId === agentSessionId)) return;
-        const newSession: SessionSummary = {
-          agentSessionId,
-          status: "running",
-          eventCount: 0,
-          createdAt: new Date().toISOString(),
-          prompt,
-        };
-        set({ sessions: [newSession, ...sessions] });
-      },
-
-      // --- 세션 생성 완료 (atomic) ---
-
-      completeCompose: (agentSessionId, prompt) => {
-        const sessions = get().sessions;
         const newSession: SessionSummary = {
           agentSessionId,
           status: "running",
@@ -712,33 +694,13 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           sessions: updatedSessions,
           activeSessionKey: agentSessionId,
           activeSession: null,
-          isComposing: false,
-          resumeTargetKey: null,
         });
       },
 
-      // --- 세션 생성/재개 ---
+      // --- New Session 모달 ---
 
-      startCompose: () => {
-        set({
-          ...getSessionResetState(),
-          isComposing: true,
-          resumeTargetKey: null,
-        });
-      },
-
-      // Resume: 기존 세션 상태를 유지하면서 compose 모드 진입
-      startResume: (sessionKey) =>
-        set({
-          isComposing: true,
-          resumeTargetKey: sessionKey,
-        }),
-
-      cancelCompose: () =>
-        set({
-          isComposing: false,
-          resumeTargetKey: null,
-        }),
+      openNewSessionModal: () => set({ isNewSessionModalOpen: true }),
+      closeNewSessionModal: () => set({ isNewSessionModalOpen: false }),
 
       // --- 초기화 ---
 
@@ -921,6 +883,8 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
 
       selectFolder: (folderId) => set({ selectedFolderId: folderId }),
 
+      setMobileView: (mobileView) => set({ mobileView }),
+
       clearActiveSession: () => {
         // selectedFolderId를 유지하면서 세션 관련 상태만 초기화
         const { selectedFolderId } = get();
@@ -929,8 +893,6 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           activeSessionKey: null,
           activeSession: null,
           selectedFolderId,
-          isComposing: false,
-          resumeTargetKey: null,
         });
       },
 

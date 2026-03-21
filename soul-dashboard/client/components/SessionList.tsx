@@ -191,8 +191,7 @@ export function SessionList({ sessions, loading, error }: SessionListProps) {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const sessionsTotal = useDashboardStore((s) => s.sessionsTotal);
   const setActiveSession = useDashboardStore((s) => s.setActiveSession);
-  const startCompose = useDashboardStore((s) => s.startCompose);
-  const isComposing = useDashboardStore((s) => s.isComposing);
+  const openNewSessionModal = useDashboardStore((s) => s.openNewSessionModal);
   const sessionTypeFilter = useDashboardStore((s) => s.sessionTypeFilter);
   const setSessionTypeFilter = useDashboardStore((s) => s.setSessionTypeFilter);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -234,8 +233,7 @@ export function SessionList({ sessions, loading, error }: SessionListProps) {
           data-testid="new-session-button"
           variant="outline"
           size="xs"
-          onClick={startCompose}
-          disabled={isComposing}
+          onClick={openNewSessionModal}
           title="New conversation"
           className="border-accent-blue/30 text-accent-blue hover:bg-accent-blue/10"
         >
