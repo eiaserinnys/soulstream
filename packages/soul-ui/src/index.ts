@@ -7,6 +7,9 @@
 // === Style Constants ===
 export { NODE_COLORS } from "./styles/node-colors";
 
+// === Shared Constants ===
+export { SYSTEM_FOLDERS, DEFAULT_FOLDER_KEY } from "./shared/constants";
+
 // === Shared Types ===
 export type {
   SSEEventType,

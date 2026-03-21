@@ -341,3 +341,53 @@ class TestStats:
         assert stats["eviction_candidates"] == 1
 
 
+class TestFolderId:
+    async def test_create_with_folder_id(self, manager):
+        """folder_id 지정 시 해당 폴더에 세션이 배치된다"""
+        # 커스텀 폴더 생성
+        manager._db.create_folder("custom-folder", "커스텀 폴더", sort_order=10)
+
+        task = await manager.create_task(
+            prompt="hello",
+            agent_session_id="sess-1",
+            folder_id="custom-folder",
+        )
+
+        # DB에서 세션의 folder_id 확인
+        session = manager._db.get_session("sess-1")
+        assert session["folder_id"] == "custom-folder"
+
+    async def test_create_without_folder_id_uses_default(self, manager):
+        """folder_id 미지정 시 session_type 기반 기본 폴더에 자동 배정된다"""
+        task = await manager.create_task(
+            prompt="hello",
+            agent_session_id="sess-1",
+        )
+
+        session = manager._db.get_session("sess-1")
+        assert session["folder_id"] is not None
+
+        # 기본 폴더의 이름 확인
+        folders = manager._db.get_all_folders()
+        folder_map = {f["id"]: f["name"] for f in folders}
+        assigned_name = folder_map.get(session["folder_id"])
+        assert assigned_name == "⚙️ 클로드 코드 세션"
+
+    async def test_register_external_task_uses_default_folder(self, manager):
+        """register_external_task는 folder_id 없이 기본 폴더에 배정된다"""
+        task = Task(
+            agent_session_id="ext-1",
+            prompt="external",
+            session_type="llm",
+        )
+        await manager.register_external_task(task)
+
+        session = manager._db.get_session("ext-1")
+        assert session["folder_id"] is not None
+
+        folders = manager._db.get_all_folders()
+        folder_map = {f["id"]: f["name"] for f in folders}
+        assigned_name = folder_map.get(session["folder_id"])
+        assert assigned_name == "⚙️ LLM 세션"
+
+
