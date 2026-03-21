@@ -386,6 +386,12 @@ class SessionDB:
         )
         self._conn.commit()
 
+    def get_folder(self, folder_id: str) -> Optional[dict]:
+        row = self._conn.execute(
+            "SELECT * FROM folders WHERE id = ?", (folder_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
     def delete_folder(self, folder_id: str) -> None:
         self._conn.execute("DELETE FROM folders WHERE id = ?", (folder_id,))
         self._conn.commit()
