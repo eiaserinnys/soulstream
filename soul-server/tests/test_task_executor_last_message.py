@@ -7,7 +7,7 @@ from soul_server.service.task_executor import TaskExecutor
 from soul_server.service.task_models import Task, TaskStatus
 
 
-def _make_executor(catalog=None):
+def _make_executor(session_db=None):
     """테스트용 TaskExecutor 생성"""
     return TaskExecutor(
         tasks={},
@@ -15,7 +15,7 @@ def _make_executor(catalog=None):
         get_intervention_func=AsyncMock(),
         complete_task_func=AsyncMock(),
         error_task_func=AsyncMock(),
-        catalog=catalog,
+        session_db=session_db,
     )
 
 
@@ -24,6 +24,8 @@ def _make_task(session_id="test-session", status=TaskStatus.RUNNING):
     task = MagicMock(spec=Task)
     task.agent_session_id = session_id
     task.status = status
+    task.last_event_id = 0
+    task.last_read_event_id = 0
     return task
 
 
@@ -34,20 +36,24 @@ class TestUpdateAndBroadcastLastMessage:
     async def test_readable_event_triggers_last_message_broadcast(
         self, mock_get_broadcaster
     ):
-        """text_delta 이벤트가 catalog.update_last_message와 emit_session_message_updated를 호출한다"""
-        catalog = MagicMock()
+        """text_delta 이벤트가 session_db.update_last_message와 emit_session_message_updated를 호출한다"""
+        session_db = MagicMock()
         broadcaster = MagicMock()
         broadcaster.emit_session_message_updated = AsyncMock()
         mock_get_broadcaster.return_value = broadcaster
 
-        executor = _make_executor(catalog=catalog)
+        executor = _make_executor(session_db=session_db)
         task = _make_task()
 
         event = {"type": "text_delta", "text": "hello", "timestamp": "2024-01-01T00:00:00Z"}
         await executor._update_and_broadcast_last_message("test-session", event, task)
 
-        catalog.update_last_message.assert_called_once_with(
-            "test-session", "text_delta", "hello", "2024-01-01T00:00:00Z"
+        session_db.update_last_message.assert_called_once_with(
+            "test-session", {
+                "type": "text_delta",
+                "preview": "hello",
+                "timestamp": "2024-01-01T00:00:00Z",
+            }
         )
         broadcaster.emit_session_message_updated.assert_called_once()
         call_kwargs = broadcaster.emit_session_message_updated.call_args.kwargs
@@ -60,115 +66,115 @@ class TestUpdateAndBroadcastLastMessage:
         self, mock_get_broadcaster
     ):
         """user_message 이벤트의 text가 preview로 사용된다"""
-        catalog = MagicMock()
+        session_db = MagicMock()
         broadcaster = MagicMock()
         broadcaster.emit_session_message_updated = AsyncMock()
         mock_get_broadcaster.return_value = broadcaster
 
-        executor = _make_executor(catalog=catalog)
+        executor = _make_executor(session_db=session_db)
         task = _make_task()
 
         event = {"type": "user_message", "text": "my prompt"}
         await executor._update_and_broadcast_last_message("test-session", event, task)
 
-        catalog.update_last_message.assert_called_once()
-        args = catalog.update_last_message.call_args
-        assert args[0][0] == "test-session"
-        assert args[0][1] == "user_message"
-        assert args[0][2] == "my prompt"
+        session_db.update_last_message.assert_called_once()
+        call_kwargs = session_db.update_last_message.call_args
+        assert call_kwargs[0][0] == "test-session"
+        assert call_kwargs[0][1]["type"] == "user_message"
+        assert call_kwargs[0][1]["preview"] == "my prompt"
 
     @patch("soul_server.service.task_executor.get_session_broadcaster")
     async def test_complete_event_triggers_last_message_broadcast(
         self, mock_get_broadcaster
     ):
         """complete 이벤트의 result가 preview로 사용된다"""
-        catalog = MagicMock()
+        session_db = MagicMock()
         broadcaster = MagicMock()
         broadcaster.emit_session_message_updated = AsyncMock()
         mock_get_broadcaster.return_value = broadcaster
 
-        executor = _make_executor(catalog=catalog)
+        executor = _make_executor(session_db=session_db)
         task = _make_task()
 
         event = {"type": "complete", "result": "done"}
         await executor._update_and_broadcast_last_message("test-session", event, task)
 
-        catalog.update_last_message.assert_called_once()
-        args = catalog.update_last_message.call_args
-        assert args[0][2] == "done"
+        session_db.update_last_message.assert_called_once()
+        call_kwargs = session_db.update_last_message.call_args
+        assert call_kwargs[0][1]["preview"] == "done"
 
     @patch("soul_server.service.task_executor.get_session_broadcaster")
     async def test_intervention_sent_triggers_last_message_broadcast(
         self, mock_get_broadcaster
     ):
         """intervention_sent 이벤트의 text가 preview로 사용된다"""
-        catalog = MagicMock()
+        session_db = MagicMock()
         broadcaster = MagicMock()
         broadcaster.emit_session_message_updated = AsyncMock()
         mock_get_broadcaster.return_value = broadcaster
 
-        executor = _make_executor(catalog=catalog)
+        executor = _make_executor(session_db=session_db)
         task = _make_task()
 
         event = {"type": "intervention_sent", "text": "intervened"}
         await executor._update_and_broadcast_last_message("test-session", event, task)
 
-        catalog.update_last_message.assert_called_once()
-        args = catalog.update_last_message.call_args
-        assert args[0][1] == "intervention_sent"
-        assert args[0][2] == "intervened"
+        session_db.update_last_message.assert_called_once()
+        call_kwargs = session_db.update_last_message.call_args
+        assert call_kwargs[0][1]["type"] == "intervention_sent"
+        assert call_kwargs[0][1]["preview"] == "intervened"
 
     @patch("soul_server.service.task_executor.get_session_broadcaster")
     async def test_non_readable_event_skips_broadcast(
         self, mock_get_broadcaster
     ):
-        """PREVIEW_FIELD_MAP에 없는 이벤트는 catalog.update_last_message를 호출하지 않는다"""
-        catalog = MagicMock()
-        executor = _make_executor(catalog=catalog)
+        """PREVIEW_FIELD_MAP에 없는 이벤트는 session_db.update_last_message를 호출하지 않는다"""
+        session_db = MagicMock()
+        executor = _make_executor(session_db=session_db)
         task = _make_task()
 
         event = {"type": "session", "session_id": "xxx"}
         await executor._update_and_broadcast_last_message("test-session", event, task)
 
-        catalog.update_last_message.assert_not_called()
+        session_db.update_last_message.assert_not_called()
         mock_get_broadcaster.assert_not_called()
 
     @patch("soul_server.service.task_executor.get_session_broadcaster")
     async def test_empty_text_skips_broadcast(
         self, mock_get_broadcaster
     ):
-        """text_delta의 text가 빈 이벤트에서는 catalog.update_last_message가 호출되지 않는다"""
-        catalog = MagicMock()
-        executor = _make_executor(catalog=catalog)
+        """text_delta의 text가 빈 이벤트에서는 session_db.update_last_message가 호출되지 않는다"""
+        session_db = MagicMock()
+        executor = _make_executor(session_db=session_db)
         task = _make_task()
 
         event = {"type": "text_delta", "text": ""}
         await executor._update_and_broadcast_last_message("test-session", event, task)
 
-        catalog.update_last_message.assert_not_called()
+        session_db.update_last_message.assert_not_called()
         mock_get_broadcaster.assert_not_called()
 
     @patch("soul_server.service.task_executor.get_session_broadcaster")
     async def test_broadcaster_not_ready_does_not_crash(
         self, mock_get_broadcaster
     ):
-        """broadcaster가 예외를 던져도 크래시하지 않고 catalog는 정상 업데이트된다"""
-        catalog = MagicMock()
+        """broadcaster가 예외를 던져도 크래시하지 않고 session_db는 정상 업데이트된다"""
+        session_db = MagicMock()
         mock_get_broadcaster.side_effect = Exception("broadcaster not ready")
 
-        executor = _make_executor(catalog=catalog)
+        executor = _make_executor(session_db=session_db)
         task = _make_task()
 
         event = {"type": "text_delta", "text": "hello", "timestamp": "2024-01-01T00:00:00Z"}
         # 예외 없이 정상 반환해야 한다
         await executor._update_and_broadcast_last_message("test-session", event, task)
 
-        # catalog는 broadcaster 예외와 무관하게 업데이트된다
-        catalog.update_last_message.assert_called_once()
+        # session_db는 broadcaster 예외와 무관하게 업데이트된다
+        session_db.update_last_message.assert_called_once()
 
-    async def test_catalog_none_skips_silently(self):
-        """catalog가 None이면 에러 없이 즉시 반환한다"""
-        executor = _make_executor(catalog=None)
+    async def test_session_db_none_skips_silently(self):
+        """session_db가 None이면 에러 없이 즉시 반환한다"""
+        executor = _make_executor(session_db=None)
         task = _make_task()
 
         event = {"type": "text_delta", "text": "hello", "timestamp": "2024-01-01T00:00:00Z"}
@@ -180,19 +186,23 @@ class TestUpdateAndBroadcastLastMessage:
         self, mock_get_broadcaster
     ):
         """text_delta 이벤트는 TextDeltaSSEEvent.text(block.text 전체)에서 preview를 추출한다"""
-        catalog = MagicMock()
+        session_db = MagicMock()
         broadcaster = MagicMock()
         broadcaster.emit_session_message_updated = AsyncMock()
         mock_get_broadcaster.return_value = broadcaster
 
-        executor = _make_executor(catalog=catalog)
+        executor = _make_executor(session_db=session_db)
         task = _make_task()
 
         event = {"type": "text_delta", "text": "assistant response text", "timestamp": "2024-01-01T00:00:00Z"}
         await executor._update_and_broadcast_last_message("test-session", event, task)
 
-        catalog.update_last_message.assert_called_once_with(
-            "test-session", "text_delta", "assistant response text", "2024-01-01T00:00:00Z"
+        session_db.update_last_message.assert_called_once_with(
+            "test-session", {
+                "type": "text_delta",
+                "preview": "assistant response text",
+                "timestamp": "2024-01-01T00:00:00Z",
+            }
         )
         call_kwargs = broadcaster.emit_session_message_updated.call_args.kwargs
         assert call_kwargs["last_message"]["type"] == "text_delta"
@@ -203,20 +213,24 @@ class TestUpdateAndBroadcastLastMessage:
         self, mock_get_broadcaster
     ):
         """result 이벤트는 ResultSSEEvent.output 필드에서 preview를 추출한다 (result 필드 아님)"""
-        catalog = MagicMock()
+        session_db = MagicMock()
         broadcaster = MagicMock()
         broadcaster.emit_session_message_updated = AsyncMock()
         mock_get_broadcaster.return_value = broadcaster
 
-        executor = _make_executor(catalog=catalog)
+        executor = _make_executor(session_db=session_db)
         task = _make_task()
 
         # ResultSSEEvent는 'output' 필드를 가짐. 'result' 필드는 없음.
         event = {"type": "result", "output": "final output text", "timestamp": "2024-01-01T00:00:00Z"}
         await executor._update_and_broadcast_last_message("test-session", event, task)
 
-        catalog.update_last_message.assert_called_once_with(
-            "test-session", "result", "final output text", "2024-01-01T00:00:00Z"
+        session_db.update_last_message.assert_called_once_with(
+            "test-session", {
+                "type": "result",
+                "preview": "final output text",
+                "timestamp": "2024-01-01T00:00:00Z",
+            }
         )
         call_kwargs = broadcaster.emit_session_message_updated.call_args.kwargs
         assert call_kwargs["last_message"]["preview"] == "final output text"

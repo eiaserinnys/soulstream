@@ -6,6 +6,7 @@ Sessions API - 세션 목록 조회 및 SSE 스트리밍
 - GET /sessions: 세션 목록 조회 (JSON)
 - GET /sessions/stream: 세션 목록 변경 SSE 구독
 - GET /sessions/{id}/history: 세션 히스토리 + 라이브 스트리밍 SSE 구독
+- PUT /sessions/{id}/read-position: 읽음 위치 갱신
 """
 
 import asyncio
@@ -14,6 +15,7 @@ import logging
 from typing import AsyncGenerator, Literal, Optional
 
 from fastapi import APIRouter, Header, HTTPException, Path as FastAPIPath, Query
+from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from soul_server.models import SessionsListResponse
@@ -244,5 +246,51 @@ def create_sessions_router() -> APIRouter:
                     yield sse_event
 
         return EventSourceResponse(sse_wrapper())
+
+    class ReadPositionRequest(BaseModel):
+        last_read_event_id: int
+
+    @router.put("/sessions/{session_id}/read-position")
+    async def update_read_position(
+        session_id: str,
+        body: ReadPositionRequest,
+    ):
+        """읽음 위치 갱신 API
+
+        클라이언트가 세션을 확인했을 때 호출하여 read-position을 갱신한다.
+        갱신 후 SSE로 크로스 대시보드 동기화 이벤트를 발행한다.
+        """
+        from soul_server.service.session_db import get_session_db
+        db = get_session_db()
+
+        success = db.update_last_read_event_id(session_id, body.last_read_event_id)
+        if not success:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": {
+                        "code": "SESSION_NOT_FOUND",
+                        "message": f"세션을 찾을 수 없습니다: {session_id}",
+                        "details": {},
+                    }
+                },
+            )
+
+        # 갱신 후 현재 값을 조회하여 SSE 브로드캐스트
+        last_event_id, last_read_event_id = db.get_read_position(session_id)
+        try:
+            session_broadcaster = get_session_broadcaster()
+            await session_broadcaster.emit_read_position_updated(
+                session_id=session_id,
+                last_event_id=last_event_id,
+                last_read_event_id=last_read_event_id,
+            )
+        except Exception:
+            logger.warning(
+                f"Failed to broadcast read-position update for {session_id}",
+                exc_info=True,
+            )
+
+        return {"ok": True}
 
     return router
