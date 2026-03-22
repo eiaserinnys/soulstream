@@ -73,6 +73,22 @@ def _create_sqlite_db(db_path: Path, *, with_folders: bool = True, with_sessions
             ],
         )
 
+    # events 테이블 (SQLite 내장 이벤트)
+    conn.execute(
+        "CREATE TABLE events ("
+        "id INTEGER, session_id TEXT, event_type TEXT, "
+        "payload TEXT, searchable_text TEXT, created_at TEXT, "
+        "PRIMARY KEY (session_id, id))"
+    )
+    conn.executemany(
+        "INSERT INTO events VALUES (?, ?, ?, ?, ?, ?)",
+        [
+            (1, "sess-1", "text", '{"type":"text","text":"hello"}', "hello", "2026-01-01T00:00:01Z"),
+            (2, "sess-1", "tool_use", '{"type":"tool_use","input":"test"}', "test", "2026-01-01T00:00:02Z"),
+            (1, "sess-2", "user_message", '{"type":"user_message","text":"hi"}', "hi", "2026-01-02T00:00:01Z"),
+        ],
+    )
+
     conn.commit()
     conn.close()
 
@@ -167,10 +183,10 @@ class TestCountSources:
         assert counts["sessions"] == 3
 
     def test_events_count(self, populated_data_dir: Path):
-        """이벤트 수는 JSONL 행 수 합계이다 (파일 수가 아님)."""
+        """이벤트 수는 SQLite events 테이블 + JSONL 행 수 합계."""
         legacy = _detect_legacy_files(str(populated_data_dir))
         counts = _count_sources(legacy)
-        assert counts["events"] == 3  # sess-1: 2행, sess-2: 1행
+        assert counts["events"] == 6  # SQLite: 3 + JSONL: 3
 
     def test_folders_count(self, populated_data_dir: Path):
         """사용자 정의 폴더만 카운트 (시스템 폴더 제외)."""
@@ -294,13 +310,17 @@ class TestAutoMigrate:
 
     @pytest.mark.asyncio
     async def test_idempotent(self, populated_data_dir: Path):
-        """두 번 실행해도 안전 (ON CONFLICT)."""
+        """검증 통과 후 deprecated 처리되면, 두 번째 실행에서 감지 안 함."""
         pool, conn = _make_mock_pool()
-        # 검증 통과 → deprecated
-        conn.fetchval = AsyncMock(side_effect=[3, 3, 2])
+        # JSONL 세션 존재 확인(2회) + 검증(sessions=3, events=6, folders=2)
+        conn.fetchval = AsyncMock(side_effect=[1, 1, 3, 6, 2])
         session_db = _make_mock_session_db(pool)
 
         await auto_migrate(session_db, str(populated_data_dir))
+
+        # soulstream.db와 events/ 모두 deprecated 처리됨 확인
+        assert (populated_data_dir / "soulstream.db.deprecated").exists()
+        assert (populated_data_dir / "events.deprecated").exists()
 
         # 두 번째 실행: deprecated 파일만 있으므로 감지 안 함 → 즉시 리턴
         conn.execute.reset_mock()
