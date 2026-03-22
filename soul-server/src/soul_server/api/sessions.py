@@ -276,6 +276,17 @@ def create_sessions_router() -> APIRouter:
                 },
             )
 
+        # Task 객체도 갱신 (이중 저장소 정합성 유지)
+        try:
+            task_manager = get_task_manager()
+            task = await task_manager.get_task(session_id)
+            if task:
+                task.last_read_event_id = body.last_read_event_id
+        except KeyError:
+            pass  # 퇴거된 세션은 Task가 없을 수 있음
+        except RuntimeError:
+            logger.warning(f"TaskManager not available when syncing read position for {session_id}")
+
         # 갱신 후 현재 값을 조회하여 SSE 브로드캐스트
         last_event_id, last_read_event_id = db.get_read_position(session_id)
         try:

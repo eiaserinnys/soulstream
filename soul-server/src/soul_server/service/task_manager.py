@@ -154,8 +154,19 @@ class TaskManager:
         sessions, total = self._db.get_all_sessions()
 
         loaded = 0
+        zombies = 0
         for s in sessions:
             if s["status"] == TaskStatus.RUNNING.value:
+                # 좀비 세션 정리: was_running_at_shutdown=0인 running 세션은
+                # graceful shutdown 이전에 프로세스가 죽은 것이므로 completed로 전환
+                if not s.get("was_running_at_shutdown", 0):
+                    self._db.upsert_session(
+                        s["session_id"],
+                        status=TaskStatus.COMPLETED.value,
+                    )
+                    zombies += 1
+                    continue
+
                 try:
                     task = Task(
                         agent_session_id=s["session_id"],
@@ -164,6 +175,8 @@ class TaskManager:
                         client_id=s.get("client_id"),
                         claude_session_id=s.get("claude_session_id"),
                         session_type=s.get("session_type", "claude"),
+                        last_event_id=s.get("last_event_id", 0),
+                        last_read_event_id=s.get("last_read_event_id", 0),
                         created_at=str_to_datetime(s["created_at"]),
                     )
                     self._tasks[s["session_id"]] = task
@@ -171,6 +184,8 @@ class TaskManager:
                 except (ValueError, KeyError) as e:
                     logger.warning(f"Failed to load session {s['session_id']}: {e}")
 
+        if zombies:
+            logger.info(f"Cleaned up {zombies} zombie sessions (running without shutdown flag)")
         logger.info(f"Loaded {loaded} running sessions from DB (total {total} in catalog)")
 
         # 퇴거 루프 시작
@@ -1003,6 +1018,8 @@ class TaskManager:
                 client_id=entry.get("client_id"),
                 claude_session_id=entry.get("claude_session_id"),
                 session_type=entry.get("session_type", "claude"),
+                last_event_id=entry.get("last_event_id", 0),
+                last_read_event_id=entry.get("last_read_event_id", 0),
                 created_at=str_to_datetime(created_at_str),
                 completed_at=completed_at,
             )
