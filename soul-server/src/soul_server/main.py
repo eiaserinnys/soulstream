@@ -244,6 +244,11 @@ async def lifespan(app: FastAPI):
     loaded = await task_manager.load()
     logger.info(f"  Loaded {loaded} sessions from DB")
 
+    # 꼬인 읽음 상태 복구 (완료 세션의 last_read_event_id=0 → last_event_id로)
+    # 순서 의존: load()가 좀비 세션을 completed로 전환한 뒤에 실행해야
+    # 좀비→completed 전환된 세션도 함께 복구된다.
+    session_db.repair_broken_read_positions()
+
     # SessionBroadcaster 초기화
     # pre_shutdown_sessions 처리보다 먼저 초기화해야 한다.
     # add_intervention() → create_task() → get_session_broadcaster() 경로로 호출되므로,
