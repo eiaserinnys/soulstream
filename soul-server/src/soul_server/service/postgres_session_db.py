@@ -69,7 +69,22 @@ class PostgresSessionDB:
         )
         async with self._pool.acquire() as conn:
             await conn.execute("SELECT 1")
+        await self._apply_schema()
         logger.info("PostgreSQL connection pool established")
+
+    async def _apply_schema(self) -> None:
+        """DDL 정본 파일을 실행하여 스키마와 프로시저를 배포한다.
+
+        실패 시 예외 → 서버 기동 중단.
+        """
+        from pathlib import Path
+
+        schema_path = (
+            Path(__file__).resolve().parent.parent.parent.parent / "sql" / "schema.sql"
+        )
+        sql = schema_path.read_text(encoding="utf-8")
+        await self._pool.execute(sql)
+        logger.info("Schema and procedures deployed from %s", schema_path.name)
 
     async def close(self) -> None:
         if self._pool:

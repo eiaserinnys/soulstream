@@ -13,6 +13,7 @@ import importlib.util
 import os
 import sys
 import pytest
+import pytest_asyncio
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -109,3 +110,33 @@ def tmp_workspace(tmp_path: Path) -> Path:
     workspace = tmp_path / "workspace"
     workspace.mkdir(parents=True, exist_ok=True)
     return workspace
+
+
+@pytest_asyncio.fixture
+async def test_db():
+    """실제 PostgreSQL DB에 연결하여 프로시저를 테스트하는 fixture.
+
+    TEST_DATABASE_URL 환경변수가 없으면 skip한다.
+    기존 mock 기반 테스트에 영향 없음.
+    """
+    try:
+        import asyncpg
+    except ImportError:
+        pytest.skip("asyncpg not installed")
+
+    url = os.environ.get("TEST_DATABASE_URL")
+    if not url:
+        pytest.skip("TEST_DATABASE_URL not set")
+
+    pool = await asyncpg.create_pool(url)
+    schema_path = Path(__file__).resolve().parent.parent / "sql" / "schema.sql"
+    schema_sql = schema_path.read_text(encoding="utf-8")
+    await pool.execute(schema_sql)
+
+    yield pool
+
+    # 정리: 의존성 순서에 맞게 삭제
+    await pool.execute("DELETE FROM events")
+    await pool.execute("DELETE FROM sessions")
+    await pool.execute("DELETE FROM folders")
+    await pool.close()
