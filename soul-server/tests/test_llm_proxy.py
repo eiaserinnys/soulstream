@@ -138,8 +138,7 @@ def _make_mock_session_db():
     db.upsert_session = AsyncMock()
     db.get_session = AsyncMock(return_value=None)
     db.get_all_sessions = AsyncMock(return_value=([], 0))
-    db.get_next_event_id = AsyncMock(return_value=1)
-    db.append_event = AsyncMock()
+    db.append_event = AsyncMock(return_value=1)
     db.ensure_default_folders = AsyncMock()
     db.get_default_folder = AsyncMock(return_value={"id": "claude", "name": "클로드 코드 세션"})
     db.assign_session_to_folder = AsyncMock()
@@ -301,13 +300,13 @@ class TestLlmExecutor:
         assert session_db.append_event.call_count == 2
 
         # 요청 이벤트
-        first_call_payload = json.loads(session_db.append_event.call_args_list[0][0][3])
+        first_call_payload = json.loads(session_db.append_event.call_args_list[0][0][2])
         assert first_call_payload["type"] == "user_message"
         assert first_call_payload["provider"] == "openai"
         assert first_call_payload["model"] == "gpt-4o-mini"
 
         # 응답 이벤트
-        second_call_payload = json.loads(session_db.append_event.call_args_list[1][0][3])
+        second_call_payload = json.loads(session_db.append_event.call_args_list[1][0][2])
         assert second_call_payload["type"] == "assistant_message"
         assert second_call_payload["content"] == "Mock response"
         assert second_call_payload["usage"] == {"input_tokens": 10, "output_tokens": 5}
@@ -332,7 +331,7 @@ class TestLlmExecutor:
 
         # 에러 이벤트가 기록되었는지 확인 (append_event 2회: request + error)
         assert session_db.append_event.call_count == 2
-        error_payload = json.loads(session_db.append_event.call_args_list[1][0][3])
+        error_payload = json.loads(session_db.append_event.call_args_list[1][0][2])
         assert error_payload["type"] == "error"
 
     async def test_execute_broadcasts_session(self, executor, broadcaster):
