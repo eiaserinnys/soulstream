@@ -53,18 +53,23 @@ def _create_sqlite_db(db_path: Path, *, with_folders: bool = True, with_sessions
         conn.execute(
             "CREATE TABLE sessions ("
             "session_id TEXT PRIMARY KEY, folder_id TEXT, display_name TEXT, "
-            "status TEXT, session_type TEXT, last_message TEXT, metadata TEXT, "
-            "created_at TEXT, updated_at TEXT)"
+            "session_type TEXT, status TEXT, prompt TEXT, client_id TEXT, "
+            "claude_session_id TEXT, last_message TEXT, metadata TEXT, "
+            "was_running_at_shutdown INTEGER, created_at TEXT, updated_at TEXT, "
+            "last_event_id INTEGER, last_read_event_id INTEGER)"
         )
         conn.executemany(
-            "INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
-                ("sess-1", "uuid-claude", None, "completed", "claude", None, None,
-                 "2026-01-01T00:00:00Z", "2026-01-01T01:00:00Z"),
-                ("sess-2", "custom-folder-1", "🔨 내 작업 세션", "active", "claude", "hello", None,
-                 "2026-01-02T00:00:00Z", "2026-01-02T01:00:00Z"),
-                ("sess-3", "custom-folder-2", None, "completed", "claude", None, None,
-                 "2026-01-03T00:00:00Z", "2026-01-03T01:00:00Z"),
+                ("sess-1", "uuid-claude", None, "claude", "completed",
+                 "test prompt 1", "client-1", "cs-1", None, None,
+                 0, "2026-01-01T00:00:00Z", "2026-01-01T01:00:00Z", 5, 3),
+                ("sess-2", "custom-folder-1", "🔨 내 작업 세션", "claude", "active",
+                 "test prompt 2", "client-2", "cs-2", "hello", None,
+                 0, "2026-01-02T00:00:00Z", "2026-01-02T01:00:00Z", 10, 8),
+                ("sess-3", "custom-folder-2", None, "claude", "completed",
+                 "test prompt 3", None, "cs-3", None, None,
+                 1, "2026-01-03T00:00:00Z", "2026-01-03T01:00:00Z", 2, 2),
             ],
         )
 
