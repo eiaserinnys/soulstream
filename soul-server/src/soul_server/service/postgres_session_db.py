@@ -258,8 +258,7 @@ class PostgresSessionDB:
             UPDATE sessions
             SET last_read_event_id = last_event_id
             WHERE status != 'running'
-              AND last_read_event_id = 0
-              AND last_event_id > 0
+              AND last_read_event_id < last_event_id
         """)
         count = int(result.split()[-1]) if result else 0
         if count:
