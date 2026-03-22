@@ -57,6 +57,12 @@ def pytest_configure(config):
     if "WORKSPACE_DIR" not in os.environ:
         os.environ["WORKSPACE_DIR"] = "/tmp/soul-server-test-workspace"
 
+    # 필수 환경변수 설정 (테스트용 더미 값)
+    if "SOULSTREAM_NODE_ID" not in os.environ:
+        os.environ["SOULSTREAM_NODE_ID"] = "test-node"
+    if "DATABASE_URL" not in os.environ:
+        os.environ["DATABASE_URL"] = "postgresql://test:test@localhost:5432/test"
+
     # 테스트용 인증 토큰 설정
     os.environ["AUTH_BEARER_TOKEN"] = TEST_AUTH_TOKEN
 
