@@ -143,7 +143,7 @@ async def execute_task(
             "data": json.dumps({
                 "type": "init",
                 "agent_session_id": agent_session_id,
-            }, ensure_ascii=False),
+            }, ensure_ascii=False, default=str),
         }
 
         event_queue = asyncio.Queue()
@@ -157,7 +157,7 @@ async def execute_task(
                     data = {k: v for k, v in event.items() if k != "_event_id"}
                     sse_event = {
                         "event": event.get("type", "unknown"),
-                        "data": json.dumps(data, ensure_ascii=False),
+                        "data": json.dumps(data, ensure_ascii=False, default=str),
                     }
                     if event_id is not None:
                         sse_event["id"] = str(event_id)
@@ -224,7 +224,7 @@ async def session_stream(
             "data": json.dumps({
                 "type": "init",
                 "agent_session_id": agent_session_id,
-            }, ensure_ascii=False),
+            }, ensure_ascii=False, default=str),
         }
 
         # 이미 완료된 세션이면 즉시 결과 반환
@@ -236,7 +236,7 @@ async def session_stream(
                     "result": task.result,
                     "claude_session_id": task.claude_session_id,
                     "attachments": [],
-                }, ensure_ascii=False),
+                }, ensure_ascii=False, default=str),
             }
             return
 
@@ -246,7 +246,7 @@ async def session_stream(
                 "data": json.dumps({
                     "type": "error",
                     "message": task.error,
-                }, ensure_ascii=False),
+                }, ensure_ascii=False, default=str),
             }
             return
 
@@ -274,7 +274,7 @@ async def session_stream(
                     data = {k: v for k, v in event.items() if k != "_event_id"} if isinstance(event, dict) else event
                     sse_event = {
                         "event": event.get("type", "unknown"),
-                        "data": json.dumps(data, ensure_ascii=False),
+                        "data": json.dumps(data, ensure_ascii=False, default=str),
                     }
                     if event_id is not None:
                         sse_event["id"] = str(event_id)
