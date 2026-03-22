@@ -656,6 +656,7 @@ class ClaudeRunner:
                     # 만료 이벤트 발행 — 클라이언트가 선택 창을 닫도록
                     expired_event = InputRequestExpiredEngineEvent(
                         request_id=request_id,
+                        parent_event_id=request_id,
                     )
                     if self._on_event_callback:
                         try:
@@ -677,6 +678,7 @@ class ClaudeRunner:
                 # 응답 완료 이벤트 발행 — 클라이언트가 배너를 닫도록
                 responded_event = InputRequestRespondedEngineEvent(
                     request_id=request_id,
+                    parent_event_id=request_id,
                 )
                 if self._on_event_callback:
                     try:

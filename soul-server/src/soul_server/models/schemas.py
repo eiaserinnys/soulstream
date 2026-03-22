@@ -382,6 +382,7 @@ class InputRequestExpiredSSEEvent(BaseModel):
     """
     type: str = "input_request_expired"
     request_id: str = Field(..., description="만료된 요청 식별자")
+    parent_event_id: Optional[str] = Field(None, description="부모 이벤트 ID (AskQuestion의 request_id)")
     timestamp: float = Field(..., description="이벤트 발행 시각 (Unix epoch)")
 
 
@@ -393,6 +394,7 @@ class InputRequestRespondedSSEEvent(BaseModel):
     """
     type: str = "input_request_responded"
     request_id: str = Field(..., description="응답된 요청 식별자")
+    parent_event_id: Optional[str] = Field(None, description="부모 이벤트 ID (AskQuestion의 request_id)")
     timestamp: float = Field(..., description="이벤트 발행 시각 (Unix epoch)")
 
 

@@ -257,6 +257,7 @@ class InputRequestExpiredEngineEvent(EngineEvent):
         from soul_server.models.schemas import InputRequestExpiredSSEEvent
         return [InputRequestExpiredSSEEvent(
             request_id=self.request_id,
+            parent_event_id=self.parent_event_id,
             timestamp=self.timestamp,
         )]
 
@@ -274,6 +275,7 @@ class InputRequestRespondedEngineEvent(EngineEvent):
         from soul_server.models.schemas import InputRequestRespondedSSEEvent
         return [InputRequestRespondedSSEEvent(
             request_id=self.request_id,
+            parent_event_id=self.parent_event_id,
             timestamp=self.timestamp,
         )]
 

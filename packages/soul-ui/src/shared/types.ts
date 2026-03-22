@@ -263,6 +263,7 @@ export interface InputRequestEvent {
 export interface InputRequestExpiredEvent {
   type: "input_request_expired";
   request_id: string;
+  parent_event_id?: string;
   timestamp: number;
 }
 
@@ -270,6 +271,7 @@ export interface InputRequestExpiredEvent {
 export interface InputRequestRespondedEvent {
   type: "input_request_responded";
   request_id: string;
+  parent_event_id?: string;
   timestamp: number;
 }
 
