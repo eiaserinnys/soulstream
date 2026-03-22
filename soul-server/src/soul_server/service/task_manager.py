@@ -193,7 +193,7 @@ class TaskManager:
         return loaded
 
     async def save(self) -> None:
-        """SQLite DB는 각 메서드에서 즉시 커밋하므로 별도 저장이 불필요하다.
+        """PostgreSQL은 각 메서드에서 즉시 커밋하므로 별도 저장이 불필요하다.
         인터페이스 호환을 위해 유지."""
         pass
 

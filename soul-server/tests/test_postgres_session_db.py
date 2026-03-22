@@ -344,24 +344,31 @@ class TestEventCRUD:
 class TestAppendMetadata:
     @pytest.mark.asyncio
     async def test_append_metadata_uses_transaction(self, db_with_conn):
-        """트랜잭션 내에서 JSONB append + 이벤트 삽입이 원자적으로 수행되는지 확인"""
+        """트랜잭션 내에서 FOR UPDATE + JSONB append + 이벤트 삽입 + last_event_id 갱신이 원자적으로 수행되는지 확인"""
         db, conn = db_with_conn
+        conn.fetchval = AsyncMock(side_effect=["s1", 42])  # FOR UPDATE, INSERT RETURNING id
         conn.execute = AsyncMock(return_value="UPDATE 1")
 
         entry = {"type": "git_commit", "value": "abc1234"}
         await db.append_metadata("s1", entry)
 
-        # 트랜잭션 내에서 2회 호출: UPDATE sessions + INSERT events
+        # fetchval: FOR UPDATE + INSERT RETURNING id
+        assert conn.fetchval.call_count == 2
+        for_update_sql = conn.fetchval.call_args_list[0][0][0]
+        assert "FOR UPDATE" in for_update_sql
+
+        # execute: UPDATE metadata + UPDATE last_event_id
         assert conn.execute.call_count == 2
         update_sql = conn.execute.call_args_list[0][0][0]
-        insert_sql = conn.execute.call_args_list[1][0][0]
         assert "COALESCE(metadata" in update_sql
-        assert "INSERT INTO events" in insert_sql
+        last_event_sql = conn.execute.call_args_list[1][0][0]
+        assert "last_event_id" in last_event_sql
 
     @pytest.mark.asyncio
     async def test_append_metadata_atomic_jsonb_append(self, db_with_conn):
         """SELECT 없이 JSONB || 연산자로 원자적 append하는지 확인"""
         db, conn = db_with_conn
+        conn.fetchval = AsyncMock(side_effect=["s1", 1])  # FOR UPDATE, INSERT RETURNING id
         conn.execute = AsyncMock(return_value="UPDATE 1")
 
         entry = {"type": "trello_card", "value": "card-123"}
@@ -370,27 +377,44 @@ class TestAppendMetadata:
         update_sql = conn.execute.call_args_list[0][0][0]
         # JSONB 배열 연결 연산자 사용
         assert "||" in update_sql
-        # SELECT로 기존 메타데이터를 먼저 가져오지 않음
-        conn.fetchrow = AsyncMock()  # not called
 
     @pytest.mark.asyncio
     async def test_append_metadata_atomic_event_id(self, db_with_conn):
-        """이벤트 ID를 서브쿼리로 원자적으로 계산하는지 확인"""
+        """이벤트 ID를 서브쿼리로 원자적으로 계산하고 RETURNING으로 회수하는지 확인"""
         db, conn = db_with_conn
+        conn.fetchval = AsyncMock(side_effect=["s1", 5])  # FOR UPDATE, INSERT RETURNING id
         conn.execute = AsyncMock(return_value="UPDATE 1")
 
         entry = {"type": "git_commit", "value": "abc1234"}
         await db.append_metadata("s1", entry)
 
-        insert_sql = conn.execute.call_args_list[1][0][0]
+        insert_sql = conn.fetchval.call_args_list[1][0][0]
         # MAX(id) + 1 서브쿼리가 INSERT 안에 포함
         assert "COALESCE(MAX(id), 0) + 1" in insert_sql
+        # RETURNING id로 할당된 ID를 회수
+        assert "RETURNING id" in insert_sql
+
+    @pytest.mark.asyncio
+    async def test_append_metadata_updates_last_event_id(self, db_with_conn):
+        """append_metadata가 last_event_id를 갱신하는지 확인"""
+        db, conn = db_with_conn
+        conn.fetchval = AsyncMock(side_effect=["s1", 7])  # FOR UPDATE, INSERT RETURNING id=7
+        conn.execute = AsyncMock(return_value="UPDATE 1")
+
+        entry = {"type": "git_commit", "value": "abc1234"}
+        await db.append_metadata("s1", entry)
+
+        # 마지막 execute가 last_event_id=7을 갱신
+        last_call = conn.execute.call_args_list[-1]
+        assert "last_event_id" in last_call[0][0]
+        assert last_call[0][1] == 7  # event_id
+        assert last_call[0][2] == "s1"  # session_id
 
     @pytest.mark.asyncio
     async def test_append_metadata_nonexistent_session(self, db_with_conn):
         """존재하지 않는 세션에 append하면 ValueError"""
         db, conn = db_with_conn
-        conn.execute = AsyncMock(return_value="UPDATE 0")
+        conn.fetchval = AsyncMock(return_value=None)  # FOR UPDATE returns None
 
         with pytest.raises(ValueError, match="not found"):
             await db.append_metadata("nonexistent", {"type": "test"})

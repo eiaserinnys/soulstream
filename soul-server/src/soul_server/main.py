@@ -324,7 +324,7 @@ async def lifespan(app: FastAPI):
     # SPA 정적 파일 서빙 — LLM 라우터 등록 이후에 마운트한다.
     # StaticFiles를 "/" 에 먼저 마운트하면 Starlette 라우팅이 삽입 순서대로 매칭하므로
     # POST /llm/completions 같은 API 요청을 StaticFiles가 가로채 405를 반환하게 된다.
-    _dashboard_dir_str = os.environ.get("SOUL_DASHBOARD_DIR", "dist/client")
+    _dashboard_dir_str = settings.dashboard_dir
     _dashboard_dir = Path(_dashboard_dir_str)
     if not _dashboard_dir.is_absolute():
         _dashboard_dir = Path.cwd() / _dashboard_dir
@@ -337,7 +337,7 @@ async def lifespan(app: FastAPI):
     app.state.llm_executor = _llm_executor if llm_adapters else None
 
     # SessionCache 초기화
-    _cache_dir = os.environ["SOUL_DASHBOARD_CACHE_DIR"]
+    _cache_dir = settings.dashboard_cache_dir
     app.state.session_cache = SessionCache(_cache_dir)
     logger.info(f"  SessionCache initialized: {_cache_dir}")
 
@@ -611,7 +611,7 @@ async def spa_fallback(request: Request, call_next):
         and request.method == "GET"
         and not request.url.path.startswith("/api/")
     ):
-        _d = os.environ.get("SOUL_DASHBOARD_DIR", "dist/client")
+        _d = settings.dashboard_dir
         _p = Path(_d) if Path(_d).is_absolute() else Path.cwd() / _d
         _idx = _p / "index.html"
         if _idx.exists():
