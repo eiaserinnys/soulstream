@@ -26,6 +26,9 @@ _SESSION_COLUMNS = frozenset({
 
 _FOLDER_COLUMNS = frozenset({"name", "sort_order"})
 
+# timestamptz 컬럼 — 문자열이면 datetime으로 자동 변환
+_TIMESTAMP_COLUMNS = frozenset({"created_at", "updated_at"})
+
 # JSONB 컬럼 목록 — Python dict ↔ PostgreSQL JSONB 자동 변환
 _JSONB_COLUMNS = frozenset({"last_message", "metadata"})
 
@@ -86,6 +89,11 @@ class PostgresSessionDB:
         for col in _JSONB_COLUMNS:
             if col in fields and isinstance(fields[col], (dict, list)):
                 fields[col] = json.dumps(fields[col], ensure_ascii=False)
+
+        # timestamptz 컬럼: 문자열이면 datetime으로 변환 (asyncpg 요구)
+        for col in _TIMESTAMP_COLUMNS:
+            if col in fields and isinstance(fields[col], str):
+                fields[col] = datetime.fromisoformat(fields[col])
 
         now = _utc_now()
 
