@@ -25,6 +25,14 @@ def _make_mock_db():
         return [e for e in events if e["id"] > after_id]
 
     db.read_events = AsyncMock(side_effect=mock_read_events)
+
+    async def mock_stream_events_raw(session_id, after_id=0):
+        events = db._events.get(session_id, [])
+        for ev in events:
+            if ev["id"] > after_id:
+                yield ev["id"], ev["event_type"], ev["payload"]
+
+    db.stream_events_raw = mock_stream_events_raw
     return db
 
 

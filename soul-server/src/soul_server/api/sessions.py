@@ -209,28 +209,23 @@ def create_sessions_router() -> APIRouter:
                 logger.warning(f"Invalid Last-Event-ID header: {last_event_id!r}")
 
         async def sse_wrapper():
-            # Part 1: SessionDB에서 저장 이벤트 읽기
+            # Part 1: SessionDB에서 저장 이벤트 스트리밍
             from soul_server.service.postgres_session_db import get_session_db
             db = get_session_db()
             last_stored_id = 0
 
             try:
-                stored = await db.read_events(agent_session_id, after_id=after_id)
+                async for event_id, event_type, payload_text in db.stream_events_raw(
+                    agent_session_id, after_id=after_id,
+                ):
+                    last_stored_id = max(last_stored_id, event_id)
+                    yield {
+                        "id": str(event_id),
+                        "event": event_type,
+                        "data": payload_text,
+                    }
             except Exception as e:
                 logger.error(f"Failed to read events for {agent_session_id}: {e}")
-                stored = []
-
-            for record in stored:
-                last_stored_id = max(last_stored_id, record["id"])
-                try:
-                    event = json.loads(record["payload"])
-                except (json.JSONDecodeError, KeyError):
-                    event = {}
-                yield {
-                    "id": str(record["id"]),
-                    "event": event.get("type", "unknown"),
-                    "data": json.dumps(event, ensure_ascii=False, default=str),
-                }
 
             # Parts 2+3: stream_session_events에 위임 (history_sync 이중 발행 없음)
             async for event_dict in stream_session_events(agent_session_id, last_stored_id, task_manager):

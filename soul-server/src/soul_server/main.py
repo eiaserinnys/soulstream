@@ -219,6 +219,7 @@ async def lifespan(app: FastAPI):
     )
     await session_db.connect()
     await session_db.ensure_default_folders()
+    await session_db.ensure_indexes()
     init_session_db(session_db)
     logger.info(f"  PostgresSessionDB initialized: node_id={settings.soulstream_node_id}")
 

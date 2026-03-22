@@ -258,6 +258,67 @@ class TestEventCRUD:
         assert events[1]["event_type"] == "tool_use"
 
     @pytest.mark.asyncio
+    async def test_stream_events_raw_empty(self, db_with_conn):
+        """빈 세션에서 stream_events_raw는 아무것도 yield하지 않는다"""
+        db, conn = db_with_conn
+
+        async def empty_cursor(*args, **kwargs):
+            return
+            yield  # make it an async generator
+
+        conn.cursor = MagicMock(return_value=empty_cursor())
+
+        results = []
+        async for item in db.stream_events_raw("s1"):
+            results.append(item)
+        assert results == []
+
+    @pytest.mark.asyncio
+    async def test_stream_events_raw_yields_tuples(self, db_with_conn):
+        """stream_events_raw는 (id, event_type, payload_text) 튜플을 yield한다"""
+        db, conn = db_with_conn
+
+        rows = [
+            {"id": 1, "event_type": "text_delta", "payload_text": '{"type":"text_delta","text":"hello"}'},
+            {"id": 2, "event_type": "tool_use", "payload_text": '{"type":"tool_use","tool":"grep"}'},
+        ]
+
+        async def mock_cursor(*args, **kwargs):
+            for row in rows:
+                yield row
+
+        conn.cursor = MagicMock(return_value=mock_cursor())
+
+        results = []
+        async for item in db.stream_events_raw("s1"):
+            results.append(item)
+
+        assert len(results) == 2
+        assert results[0] == (1, "text_delta", '{"type":"text_delta","text":"hello"}')
+        assert results[1] == (2, "tool_use", '{"type":"tool_use","tool":"grep"}')
+
+    @pytest.mark.asyncio
+    async def test_stream_events_raw_after_id(self, db_with_conn):
+        """stream_events_raw는 after_id를 쿼리에 전달한다"""
+        db, conn = db_with_conn
+
+        async def empty_cursor(*args, **kwargs):
+            return
+            yield
+
+        conn.cursor = MagicMock(return_value=empty_cursor())
+
+        async for _ in db.stream_events_raw("s1", after_id=5):
+            pass
+
+        cursor_call = conn.cursor.call_args
+        sql = cursor_call[0][0]
+        assert "session_id = $1" in sql
+        assert "id > $2" in sql
+        assert cursor_call[0][1] == "s1"
+        assert cursor_call[0][2] == 5
+
+    @pytest.mark.asyncio
     async def test_read_one_event(self, db):
         now = datetime.now(timezone.utc)
         record = _make_record({
@@ -355,6 +416,16 @@ class TestFolderCRUD:
         assert db._pool.execute.call_count == 2
         for call in db._pool.execute.call_args_list:
             assert "ON CONFLICT (id) DO NOTHING" in call[0][0]
+
+    @pytest.mark.asyncio
+    async def test_ensure_indexes(self, db):
+        db._pool.execute = AsyncMock()
+        await db.ensure_indexes()
+        db._pool.execute.assert_called_once()
+        sql = db._pool.execute.call_args[0][0]
+        assert "CREATE INDEX IF NOT EXISTS" in sql
+        assert "idx_events_session_id_id" in sql
+        assert "(session_id, id)" in sql
 
     @pytest.mark.asyncio
     async def test_get_catalog(self, db):
