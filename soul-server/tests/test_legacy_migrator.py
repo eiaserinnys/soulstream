@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from soul_server.service.legacy_migrator import (
+    DryRunReport,
     _count_sources,
     _deprecate_files,
     _detect_legacy_files,
@@ -17,6 +18,7 @@ from soul_server.service.legacy_migrator import (
     _parse_dt,
     _verify_migration,
     auto_migrate,
+    auto_migrate_dry_run,
 )
 
 
@@ -99,16 +101,16 @@ def populated_data_dir(data_dir: Path) -> Path:
     # soulstream.db (folders + sessions 포함)
     _create_sqlite_db(data_dir / "soulstream.db")
 
-    # events/
+    # events/ — SessionCache 실제 포맷: {"id": N, "event": {...}}
     events_dir = data_dir / "events"
     events_dir.mkdir()
     (events_dir / "sess-1.jsonl").write_text(
-        json.dumps({"id": 1, "type": "text", "text": "hello"}) + "\n"
-        + json.dumps({"id": 2, "type": "tool_use", "input": "test"}) + "\n",
+        json.dumps({"id": 1, "event": {"type": "text", "text": "hello"}}) + "\n"
+        + json.dumps({"id": 2, "event": {"type": "tool_use", "input": "test"}}) + "\n",
         encoding="utf-8",
     )
     (events_dir / "sess-2.jsonl").write_text(
-        json.dumps({"id": 1, "type": "user_message", "text": "hi"}) + "\n",
+        json.dumps({"id": 1, "event": {"type": "user_message", "text": "hi"}}) + "\n",
         encoding="utf-8",
     )
 
@@ -360,3 +362,180 @@ class TestExtractSearchable:
 
     def test_unknown_type(self):
         assert _extract_searchable({"type": "unknown_type"}) == ""
+
+
+# ---------------------------------------------------------------------------
+# JSONL 포맷 호환성 테스트
+# ---------------------------------------------------------------------------
+
+
+class TestJsonlFormatCompat:
+    """nested/flat/mixed JSONL 포맷이 올바르게 파싱되는지 검증."""
+
+    @pytest.mark.asyncio
+    async def test_nested_event_format(self, data_dir: Path):
+        """SessionCache 포맷 {"id": N, "event": {...}}이 올바르게 파싱된다."""
+        events_dir = data_dir / "events"
+        events_dir.mkdir()
+        (events_dir / "sess-nested.jsonl").write_text(
+            json.dumps({"id": 1, "event": {"type": "text", "text": "hello world"}}) + "\n"
+            + json.dumps({"id": 2, "event": {"type": "tool_use", "input": "test cmd"}}) + "\n",
+            encoding="utf-8",
+        )
+
+        pool, conn = _make_mock_pool()
+        conn.fetchval = AsyncMock(return_value=None)  # 세션 없음 → 자동 생성
+
+        from soul_server.service.legacy_migrator import _migrate_events_from_jsonl
+        await _migrate_events_from_jsonl(pool, events_dir, "test-node")
+
+        # conn.execute 호출 인자를 검사
+        calls = conn.execute.await_args_list
+        # 세션 자동 생성 INSERT + 이벤트 INSERT 2건 + last_event_id UPDATE
+        event_inserts = [
+            c for c in calls
+            if "INSERT INTO events" in str(c.args[0])
+        ]
+        assert len(event_inserts) == 2
+
+        # 첫 번째 이벤트: event_type이 "text"여야 함 (not "unknown")
+        first_insert = event_inserts[0]
+        # args: (query, sid, eid, event_type, payload, searchable, created_at)
+        assert first_insert.args[3] == "text"
+        assert first_insert.args[5] == "hello world"  # searchable_text
+        # payload에 래퍼 없이 이벤트만 포함
+        payload_dict = json.loads(first_insert.args[4])
+        assert "event" not in payload_dict  # 래퍼 없음
+        assert payload_dict["type"] == "text"
+
+        # 두 번째 이벤트
+        second_insert = event_inserts[1]
+        assert second_insert.args[3] == "tool_use"
+        assert second_insert.args[5] == "test cmd"
+
+    @pytest.mark.asyncio
+    async def test_flat_event_format_compat(self, data_dir: Path):
+        """레거시 flat 포맷 {"id": N, "type": "...", ...}도 여전히 호환된다."""
+        events_dir = data_dir / "events"
+        events_dir.mkdir()
+        (events_dir / "sess-flat.jsonl").write_text(
+            json.dumps({"id": 1, "type": "text", "text": "flat hello"}) + "\n",
+            encoding="utf-8",
+        )
+
+        pool, conn = _make_mock_pool()
+        conn.fetchval = AsyncMock(return_value=None)
+
+        from soul_server.service.legacy_migrator import _migrate_events_from_jsonl
+        await _migrate_events_from_jsonl(pool, events_dir, "test-node")
+
+        event_inserts = [
+            c for c in conn.execute.await_args_list
+            if "INSERT INTO events" in str(c.args[0])
+        ]
+        assert len(event_inserts) == 1
+        assert event_inserts[0].args[3] == "text"
+        assert event_inserts[0].args[5] == "flat hello"
+
+    @pytest.mark.asyncio
+    async def test_mixed_format(self, data_dir: Path):
+        """한 파일에 nested와 flat이 섞여 있어도 정상 처리된다."""
+        events_dir = data_dir / "events"
+        events_dir.mkdir()
+        (events_dir / "sess-mixed.jsonl").write_text(
+            json.dumps({"id": 1, "event": {"type": "text", "text": "nested"}}) + "\n"
+            + json.dumps({"id": 2, "type": "user_message", "text": "flat"}) + "\n",
+            encoding="utf-8",
+        )
+
+        pool, conn = _make_mock_pool()
+        conn.fetchval = AsyncMock(return_value=None)
+
+        from soul_server.service.legacy_migrator import _migrate_events_from_jsonl
+        await _migrate_events_from_jsonl(pool, events_dir, "test-node")
+
+        event_inserts = [
+            c for c in conn.execute.await_args_list
+            if "INSERT INTO events" in str(c.args[0])
+        ]
+        assert len(event_inserts) == 2
+        assert event_inserts[0].args[3] == "text"
+        assert event_inserts[0].args[5] == "nested"
+        assert event_inserts[1].args[3] == "user_message"
+        assert event_inserts[1].args[5] == "flat"
+
+
+# ---------------------------------------------------------------------------
+# 드라이런 테스트
+# ---------------------------------------------------------------------------
+
+
+class TestDryRun:
+    @pytest.mark.asyncio
+    async def test_dry_run_no_db_writes(self, populated_data_dir: Path):
+        """dry_run=True일 때 DB INSERT가 호출되지 않는다."""
+        pool, conn = _make_mock_pool()
+        session_db = _make_mock_session_db(pool)
+
+        report = await auto_migrate(session_db, str(populated_data_dir), dry_run=True)
+
+        assert isinstance(report, DryRunReport)
+        conn.execute.assert_not_awaited()
+        conn.executemany.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_dry_run_no_deprecate(self, populated_data_dir: Path):
+        """dry_run=True일 때 원본 파일이 deprecated되지 않는다."""
+        pool, conn = _make_mock_pool()
+        session_db = _make_mock_session_db(pool)
+
+        await auto_migrate(session_db, str(populated_data_dir), dry_run=True)
+
+        assert (populated_data_dir / "soulstream.db").exists()
+        assert (populated_data_dir / "events").exists()
+        assert not (populated_data_dir / "soulstream.db.deprecated").exists()
+        assert not (populated_data_dir / "events.deprecated").exists()
+
+    @pytest.mark.asyncio
+    async def test_dry_run_report_contents(self, populated_data_dir: Path):
+        """DryRunReport에 올바른 정보가 담긴다."""
+        report = await auto_migrate_dry_run(str(populated_data_dir))
+
+        assert report is not None
+        assert report.source_counts["sessions"] == 3
+        assert report.source_counts["events"] == 6  # SQLite: 3 + JSONL: 3
+        assert report.source_counts["folders"] == 2
+        assert "sessions_db" in report.legacy_files
+        assert "events_dir" in report.legacy_files
+        # 이벤트 타입 분포 검증
+        assert "text" in report.event_type_distribution
+        assert "tool_use" in report.event_type_distribution
+        assert "user_message" in report.event_type_distribution
+        # 샘플 매핑 검증
+        assert len(report.sample_mappings) > 0
+        assert len(report.sample_mappings) <= 3
+        for s in report.sample_mappings:
+            assert "session_id" in s
+            assert "event_id" in s
+            assert "event_type" in s
+
+    @pytest.mark.asyncio
+    async def test_dry_run_no_legacy_files(self, data_dir: Path):
+        """레거시 파일이 없으면 None을 반환한다."""
+        report = await auto_migrate_dry_run(str(data_dir))
+        assert report is None
+
+    @pytest.mark.asyncio
+    async def test_dry_run_sessions_to_create(self, data_dir: Path):
+        """SQLite에 없는 JSONL 세션이 sessions_to_create에 포함된다."""
+        # JSONL만 있고 SQLite 없음 → 모든 JSONL 세션이 자동 생성 대상
+        events_dir = data_dir / "events"
+        events_dir.mkdir()
+        (events_dir / "sess-orphan.jsonl").write_text(
+            json.dumps({"id": 1, "event": {"type": "text", "text": "orphan"}}) + "\n",
+            encoding="utf-8",
+        )
+
+        report = await auto_migrate_dry_run(str(data_dir))
+        assert report is not None
+        assert "sess-orphan" in report.sessions_to_create
