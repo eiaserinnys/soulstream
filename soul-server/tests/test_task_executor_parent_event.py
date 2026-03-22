@@ -105,12 +105,10 @@ def _make_mock_session_db():
     _events = {}  # session_id -> list of {id, event_type, payload, ...}
     _next_ids = {}  # session_id -> next_id
 
-    async def _get_next_event_id(session_id):
+    async def _append_event(session_id, event_type, payload, searchable_text, created_at):
         if session_id not in _next_ids:
             _next_ids[session_id] = 1
-        return _next_ids[session_id]
-
-    async def _append_event(session_id, event_id, event_type, payload, searchable_text, created_at):
+        event_id = _next_ids[session_id]
         if session_id not in _events:
             _events[session_id] = []
         _events[session_id].append({
@@ -122,12 +120,12 @@ def _make_mock_session_db():
             "created_at": created_at,
         })
         _next_ids[session_id] = event_id + 1
+        return event_id
 
     async def _read_events(session_id, after_id=0):
         events = _events.get(session_id, [])
         return [e for e in events if e["id"] > after_id]
 
-    db.get_next_event_id = AsyncMock(side_effect=_get_next_event_id)
     db.append_event = AsyncMock(side_effect=_append_event)
     db.read_events = AsyncMock(side_effect=_read_events)
     db.upsert_session = AsyncMock()
