@@ -15,7 +15,7 @@ import {
 } from "client/lib/folder-operations";
 import { FolderDialog } from "./FolderDialog";
 
-const SYSTEM_FOLDER_NAMES = new Set(Object.values(SYSTEM_FOLDERS));
+const SYSTEM_FOLDER_NAMES: Set<string> = new Set(Object.values(SYSTEM_FOLDERS));
 
 export function FolderTree() {
   const catalog = useDashboardStore((s) => s.catalog);
@@ -203,32 +203,7 @@ export function FolderTree() {
         {/* 시스템 폴더 */}
         {systemFolders.map(renderFolder)}
 
-        {/* 미분류 */}
-        <div
-          className={cn(
-            "flex items-center justify-between px-3 py-1.5 cursor-pointer text-sm hover:bg-accent/50",
-            selectedFolderId === null && "bg-accent text-accent-foreground",
-            dragOverId === "__null__" && "ring-2 ring-primary",
-          )}
-          onClick={() => handleSelectFolder(null)}
-          onDragOver={(e) => { e.preventDefault(); setDragOverId("__null__"); }}
-          onDragLeave={() => setDragOverId(null)}
-          onDrop={(e) => handleDrop(null, e)}
-        >
-          <span className="truncate text-muted-foreground">Uncategorized</span>
-          {(() => {
-            const unreadCount = getUnreadCount(null);
-            return unreadCount > 0 ? (
-              <Badge variant="destructive" className="ml-2 text-xs font-bold">
-                {unreadCount}
-              </Badge>
-            ) : (
-              <Badge variant="secondary" className="ml-2 text-xs">
-                {getSessionCount(null)}
-              </Badge>
-            );
-          })()}
-        </div>
+        {/* PostgreSQL 모드: 모든 세션이 기본 폴더에 자동 배정되므로 Uncategorized 불필요 */}
       </div>
 
       <FolderDialog

@@ -38,6 +38,7 @@ class TestUpdateAndBroadcastLastMessage:
     ):
         """text_delta 이벤트가 session_db.update_last_message와 emit_session_message_updated를 호출한다"""
         session_db = MagicMock()
+        session_db.update_last_message = AsyncMock()
         broadcaster = MagicMock()
         broadcaster.emit_session_message_updated = AsyncMock()
         mock_get_broadcaster.return_value = broadcaster
@@ -67,6 +68,7 @@ class TestUpdateAndBroadcastLastMessage:
     ):
         """user_message 이벤트의 text가 preview로 사용된다"""
         session_db = MagicMock()
+        session_db.update_last_message = AsyncMock()
         broadcaster = MagicMock()
         broadcaster.emit_session_message_updated = AsyncMock()
         mock_get_broadcaster.return_value = broadcaster
@@ -89,6 +91,7 @@ class TestUpdateAndBroadcastLastMessage:
     ):
         """complete 이벤트의 result가 preview로 사용된다"""
         session_db = MagicMock()
+        session_db.update_last_message = AsyncMock()
         broadcaster = MagicMock()
         broadcaster.emit_session_message_updated = AsyncMock()
         mock_get_broadcaster.return_value = broadcaster
@@ -109,6 +112,7 @@ class TestUpdateAndBroadcastLastMessage:
     ):
         """intervention_sent 이벤트의 text가 preview로 사용된다"""
         session_db = MagicMock()
+        session_db.update_last_message = AsyncMock()
         broadcaster = MagicMock()
         broadcaster.emit_session_message_updated = AsyncMock()
         mock_get_broadcaster.return_value = broadcaster
@@ -130,6 +134,7 @@ class TestUpdateAndBroadcastLastMessage:
     ):
         """PREVIEW_FIELD_MAP에 없는 이벤트는 session_db.update_last_message를 호출하지 않는다"""
         session_db = MagicMock()
+        session_db.update_last_message = AsyncMock()
         executor = _make_executor(session_db=session_db)
         task = _make_task()
 
@@ -145,6 +150,7 @@ class TestUpdateAndBroadcastLastMessage:
     ):
         """text_delta의 text가 빈 이벤트에서는 session_db.update_last_message가 호출되지 않는다"""
         session_db = MagicMock()
+        session_db.update_last_message = AsyncMock()
         executor = _make_executor(session_db=session_db)
         task = _make_task()
 
@@ -160,6 +166,7 @@ class TestUpdateAndBroadcastLastMessage:
     ):
         """broadcaster가 예외를 던져도 크래시하지 않고 session_db는 정상 업데이트된다"""
         session_db = MagicMock()
+        session_db.update_last_message = AsyncMock()
         mock_get_broadcaster.side_effect = Exception("broadcaster not ready")
 
         executor = _make_executor(session_db=session_db)
@@ -187,6 +194,7 @@ class TestUpdateAndBroadcastLastMessage:
     ):
         """text_delta 이벤트는 TextDeltaSSEEvent.text(block.text 전체)에서 preview를 추출한다"""
         session_db = MagicMock()
+        session_db.update_last_message = AsyncMock()
         broadcaster = MagicMock()
         broadcaster.emit_session_message_updated = AsyncMock()
         mock_get_broadcaster.return_value = broadcaster
@@ -214,6 +222,7 @@ class TestUpdateAndBroadcastLastMessage:
     ):
         """result 이벤트는 ResultSSEEvent.output 필드에서 preview를 추출한다 (result 필드 아님)"""
         session_db = MagicMock()
+        session_db.update_last_message = AsyncMock()
         broadcaster = MagicMock()
         broadcaster.emit_session_message_updated = AsyncMock()
         mock_get_broadcaster.return_value = broadcaster

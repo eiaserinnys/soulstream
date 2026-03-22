@@ -16,7 +16,9 @@ import { InterventionNode } from './InterventionNode';
 import { InputRequestNode } from './InputRequestNode';
 import { NodeHandles } from './NodeHandles';
 
-export const nodeTypes: NodeTypes = {
+// Note: 타입 단언 필요 — @xyflow/react의 NodeTypes와 프로젝트의 @types/react 버전 간
+// ReactNode 정의 불일치 (bigint 포함 여부). 런타임에는 영향 없음.
+export const nodeTypes = {
   user: UserNode,
   thinking: ThinkingNode,
   text: ThinkingNode,
@@ -25,7 +27,7 @@ export const nodeTypes: NodeTypes = {
   system: SystemNode,
   intervention: InterventionNode,
   input_request: InputRequestNode,
-};
+} satisfies Record<string, unknown> as unknown as NodeTypes;
 
 export {
   UserNode,

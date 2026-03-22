@@ -16,7 +16,7 @@ from soul_server.service.task_models import (
     utc_now,
 )
 from soul_server.service.task_manager import TaskManager
-from soul_server.service.session_db import SessionDB
+from soul_server.service.postgres_session_db import PostgresSessionDB
 from soul_server.service.session_broadcaster import SessionBroadcaster
 from soul_server.llm.adapters import LlmAdapter
 
@@ -47,7 +47,7 @@ class LlmExecutor:
         self,
         adapters: dict[str, LlmAdapter],
         task_manager: TaskManager,
-        session_db: SessionDB,
+        session_db: PostgresSessionDB,
         session_broadcaster: SessionBroadcaster,
     ) -> None:
         self._adapters = adapters
@@ -55,15 +55,15 @@ class LlmExecutor:
         self._db = session_db
         self._session_broadcaster = session_broadcaster
 
-    def _persist_event(self, session_id: str, event_dict: dict) -> int:
+    async def _persist_event(self, session_id: str, event_dict: dict) -> int:
         """이벤트를 SessionDB에 영속화하고 event_id를 반환한다."""
-        event_id = self._db.get_next_event_id(session_id)
+        event_id = await self._db.get_next_event_id(session_id)
         event_type = event_dict.get("type", "")
         payload = json.dumps(event_dict, ensure_ascii=False)
-        searchable = SessionDB.extract_searchable_text(event_dict)
+        searchable = PostgresSessionDB.extract_searchable_text(event_dict)
         ts = event_dict.get("timestamp")
         created_at = utc_now().isoformat() if not isinstance(ts, str) else ts
-        self._db.append_event(session_id, event_id, event_type, payload, searchable, created_at)
+        await self._db.append_event(session_id, event_id, event_type, payload, searchable, created_at)
         return event_id
 
     async def execute(self, request: LlmCompletionRequest) -> LlmCompletionResponse:
@@ -124,7 +124,7 @@ class LlmExecutor:
             "max_tokens": request.max_tokens,
             "client_id": request.client_id,
         }
-        self._persist_event(agent_session_id, request_event)
+        await self._persist_event(agent_session_id, request_event)
 
         try:
             # LLM 호출
@@ -149,7 +149,7 @@ class LlmExecutor:
                 "model": request.model,
                 "provider": request.provider,
             }
-            self._persist_event(agent_session_id, response_event)
+            await self._persist_event(agent_session_id, response_event)
 
             # Task 완료 처리 (TaskManager 공개 API 사용)
             await self._task_manager.finalize_task(
@@ -181,7 +181,7 @@ class LlmExecutor:
                 "provider": request.provider,
                 "model": request.model,
             }
-            self._persist_event(agent_session_id, error_event)
+            await self._persist_event(agent_session_id, error_event)
 
             # Task 에러 처리 (TaskManager 공개 API 사용)
             await self._task_manager.finalize_task(

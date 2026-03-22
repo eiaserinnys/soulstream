@@ -84,7 +84,7 @@ def create_sessions_router() -> APIRouter:
     ):
         """세션 목록 조회 (페이지네이션, 타입 필터 지원)"""
         task_manager = get_task_manager()
-        sessions, total = task_manager.get_all_sessions(
+        sessions, total = await task_manager.get_all_sessions(
             offset=offset, limit=limit, session_type=session_type,
         )
         return {"sessions": sessions, "total": total}
@@ -102,7 +102,7 @@ def create_sessions_router() -> APIRouter:
             task_manager = get_task_manager()
             session_broadcaster = get_session_broadcaster()
 
-            sessions, total = task_manager.get_all_sessions()
+            sessions, total = await task_manager.get_all_sessions()
 
             yield {
                 "event": "session_list",
@@ -146,10 +146,10 @@ def create_sessions_router() -> APIRouter:
 
         클라이언트에서 truncate된 콘텐츠의 전체 내용을 요청할 때 사용합니다.
         """
-        from soul_server.service.session_db import get_session_db
+        from soul_server.service.postgres_session_db import get_session_db
         db = get_session_db()
 
-        entry = db.read_one_event(agent_session_id, event_id)
+        entry = await db.read_one_event(agent_session_id, event_id)
         if entry is None:
             raise HTTPException(
                 status_code=404,
@@ -210,12 +210,12 @@ def create_sessions_router() -> APIRouter:
 
         async def sse_wrapper():
             # Part 1: SessionDB에서 저장 이벤트 읽기
-            from soul_server.service.session_db import get_session_db
+            from soul_server.service.postgres_session_db import get_session_db
             db = get_session_db()
             last_stored_id = 0
 
             try:
-                stored = db.read_events(agent_session_id, after_id=after_id)
+                stored = await db.read_events(agent_session_id, after_id=after_id)
             except Exception as e:
                 logger.error(f"Failed to read events for {agent_session_id}: {e}")
                 stored = []
@@ -260,10 +260,10 @@ def create_sessions_router() -> APIRouter:
         클라이언트가 세션을 확인했을 때 호출하여 read-position을 갱신한다.
         갱신 후 SSE로 크로스 대시보드 동기화 이벤트를 발행한다.
         """
-        from soul_server.service.session_db import get_session_db
+        from soul_server.service.postgres_session_db import get_session_db
         db = get_session_db()
 
-        success = db.update_last_read_event_id(session_id, body.last_read_event_id)
+        success = await db.update_last_read_event_id(session_id, body.last_read_event_id)
         if not success:
             raise HTTPException(
                 status_code=404,
@@ -288,7 +288,7 @@ def create_sessions_router() -> APIRouter:
             logger.warning(f"TaskManager not available when syncing read position for {session_id}")
 
         # 갱신 후 현재 값을 조회하여 SSE 브로드캐스트
-        last_event_id, last_read_event_id = db.get_read_position(session_id)
+        last_event_id, last_read_event_id = await db.get_read_position(session_id)
         try:
             session_broadcaster = get_session_broadcaster()
             await session_broadcaster.emit_read_position_updated(

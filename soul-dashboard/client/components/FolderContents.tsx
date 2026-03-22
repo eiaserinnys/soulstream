@@ -89,9 +89,16 @@ const SessionItem = memo(function SessionItem({
         )}
         <div className="text-xs text-muted-foreground truncate">{timeStr}</div>
       </div>
-      <Badge variant="outline" className="text-xs shrink-0">
-        {session.status}
-      </Badge>
+      <div className="flex items-center gap-1 shrink-0">
+        {session.nodeId && (
+          <Badge variant="secondary" className="text-[10px] px-1 py-0 shrink-0">
+            {session.nodeId}
+          </Badge>
+        )}
+        <Badge variant="outline" className="text-xs shrink-0">
+          {session.status}
+        </Badge>
+      </div>
     </div>
   );
 });
@@ -262,12 +269,7 @@ export function FolderContents() {
               {f.name}
             </button>
           ))}
-          <button
-            className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent text-muted-foreground"
-            onClick={() => handleMoveToFolder(null)}
-          >
-            Uncategorized
-          </button>
+          {/* PostgreSQL 모드: Uncategorized 옵션 제거 — 모든 세션은 폴더에 배정됨 */}
         </div>
       )}
     </div>
