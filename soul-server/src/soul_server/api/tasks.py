@@ -33,10 +33,26 @@ from soul_server.service.task_manager import (
 from soul_server.service import resource_manager, get_soul_engine
 from soul_server.api.auth import verify_token
 from soul_server.cogito.reflector_setup import reflect
+from soul_server.config import get_settings
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _build_init_event(agent_session_id: str) -> dict:
+    """SSE init 이벤트 데이터를 생성한다."""
+    data: dict = {
+        "type": "init",
+        "agent_session_id": agent_session_id,
+    }
+    node_id = get_settings().soulstream_node_id
+    if node_id:
+        data["node_id"] = node_id
+    return {
+        "event": "init",
+        "data": json.dumps(data, ensure_ascii=False, default=str),
+    }
 
 
 def task_to_response(task: Task) -> SessionResponse:
@@ -137,14 +153,8 @@ async def execute_task(
         이후: 실행 이벤트들
         마지막: complete 또는 error
         """
-        # 첫 이벤트: agent_session_id 전달
-        yield {
-            "event": "init",
-            "data": json.dumps({
-                "type": "init",
-                "agent_session_id": agent_session_id,
-            }, ensure_ascii=False, default=str),
-        }
+        # 첫 이벤트: agent_session_id + node_id 전달
+        yield _build_init_event(agent_session_id)
 
         event_queue = asyncio.Queue()
         await task_manager.add_listener(agent_session_id, event_queue)
@@ -219,13 +229,7 @@ async def session_stream(
 
     async def event_generator():
         # init 이벤트 (세션 확인용)
-        yield {
-            "event": "init",
-            "data": json.dumps({
-                "type": "init",
-                "agent_session_id": agent_session_id,
-            }, ensure_ascii=False, default=str),
-        }
+        yield _build_init_event(agent_session_id)
 
         # 이미 완료된 세션이면 즉시 결과 반환
         if task.status == TaskStatus.COMPLETED:
