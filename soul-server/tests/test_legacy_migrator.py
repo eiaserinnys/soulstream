@@ -3,16 +3,17 @@
 import json
 import sqlite3
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from soul_server.service.legacy_migrator import (
-    _build_session_folder_map,
     _count_sources,
     _deprecate_files,
     _detect_legacy_files,
     _extract_searchable,
+    _is_system_folder,
+    _map_folder_id,
     _parse_dt,
     _verify_migration,
     auto_migrate,
@@ -30,47 +31,52 @@ def data_dir(tmp_path: Path) -> Path:
     return tmp_path
 
 
-@pytest.fixture
-def catalog_data() -> dict:
-    """샘플 session_catalog.json 데이터."""
-    return {
-        "folders": [
-            {"id": "uuid-claude", "name": "⚙️ 클로드 코드 세션", "sort_order": 0},
-            {"id": "uuid-llm", "name": "⚙️ LLM 세션", "sort_order": 1},
-            {"id": "custom-folder-1", "name": "내 작업", "sort_order": 2},
-        ],
-        "sessions": {
-            "sess-1": {"folder_id": "uuid-claude"},
-            "sess-2": {"folder_id": "custom-folder-1"},
-            "sess-3": {"folder_id": "unknown-id"},
-        },
-    }
-
-
-@pytest.fixture
-def populated_data_dir(data_dir: Path, catalog_data: dict) -> Path:
-    """레거시 파일이 모두 존재하는 데이터 디렉토리."""
-    # session_catalog.json
-    (data_dir / "session_catalog.json").write_text(json.dumps(catalog_data), encoding="utf-8")
-
-    # soulstream.db
-    db_path = data_dir / "soulstream.db"
+def _create_sqlite_db(db_path: Path, *, with_folders: bool = True, with_sessions: bool = True) -> None:
+    """테스트용 SQLite DB 생성."""
     conn = sqlite3.connect(str(db_path))
-    conn.execute(
-        "CREATE TABLE sessions (session_id TEXT PRIMARY KEY, status TEXT, "
-        "session_type TEXT, last_message TEXT, metadata TEXT, "
-        "created_at TEXT, updated_at TEXT)"
-    )
-    conn.execute(
-        "INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?, ?)",
-        ("sess-1", "completed", "claude", None, None, "2026-01-01T00:00:00Z", "2026-01-01T01:00:00Z"),
-    )
-    conn.execute(
-        "INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?, ?)",
-        ("sess-2", "active", "claude", "hello", None, "2026-01-02T00:00:00Z", "2026-01-02T01:00:00Z"),
-    )
+
+    if with_folders:
+        conn.execute(
+            "CREATE TABLE folders (id TEXT PRIMARY KEY, name TEXT, sort_order INTEGER)"
+        )
+        conn.executemany(
+            "INSERT INTO folders VALUES (?, ?, ?)",
+            [
+                ("uuid-claude", "⚙️ 클로드 코드 세션", 0),
+                ("uuid-llm", "⚙️ LLM 세션", 1),
+                ("custom-folder-1", "내 작업", 2),
+                ("custom-folder-2", "✨ 소울스트림", 3),
+            ],
+        )
+
+    if with_sessions:
+        conn.execute(
+            "CREATE TABLE sessions ("
+            "session_id TEXT PRIMARY KEY, folder_id TEXT, display_name TEXT, "
+            "status TEXT, session_type TEXT, last_message TEXT, metadata TEXT, "
+            "created_at TEXT, updated_at TEXT)"
+        )
+        conn.executemany(
+            "INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                ("sess-1", "uuid-claude", None, "completed", "claude", None, None,
+                 "2026-01-01T00:00:00Z", "2026-01-01T01:00:00Z"),
+                ("sess-2", "custom-folder-1", "🔨 내 작업 세션", "active", "claude", "hello", None,
+                 "2026-01-02T00:00:00Z", "2026-01-02T01:00:00Z"),
+                ("sess-3", "custom-folder-2", None, "completed", "claude", None, None,
+                 "2026-01-03T00:00:00Z", "2026-01-03T01:00:00Z"),
+            ],
+        )
+
     conn.commit()
     conn.close()
+
+
+@pytest.fixture
+def populated_data_dir(data_dir: Path) -> Path:
+    """레거시 파일이 모두 존재하는 데이터 디렉토리."""
+    # soulstream.db (folders + sessions 포함)
+    _create_sqlite_db(data_dir / "soulstream.db")
 
     # events/
     events_dir = data_dir / "events"
@@ -89,10 +95,7 @@ def populated_data_dir(data_dir: Path, catalog_data: dict) -> Path:
 
 
 def _make_mock_pool():
-    """asyncpg.Pool을 모방하는 mock.
-
-    pool.acquire()가 async context manager를 반환하도록 구성.
-    """
+    """asyncpg.Pool을 모방하는 mock."""
     conn = AsyncMock()
 
     class _AcquireCtx:
@@ -128,14 +131,12 @@ class TestDetectLegacyFiles:
 
     def test_all_files_present(self, populated_data_dir: Path):
         result = _detect_legacy_files(str(populated_data_dir))
-        assert "catalog" in result
         assert "sessions_db" in result
         assert "events_dir" in result
 
     def test_skips_deprecated(self, data_dir: Path):
         """이미 .deprecated 접미사가 붙은 파일은 감지하지 않는다."""
         (data_dir / "soulstream.db.deprecated").write_text("")
-        (data_dir / "session_catalog.json.deprecated").write_text("{}")
         (data_dir / "events.deprecated").mkdir()
 
         result = _detect_legacy_files(str(data_dir))
@@ -146,7 +147,6 @@ class TestDetectLegacyFiles:
         (data_dir / "soulstream.db").write_text("")
         result = _detect_legacy_files(str(data_dir))
         assert "sessions_db" in result
-        assert "catalog" not in result
         assert "events_dir" not in result
 
 
@@ -159,7 +159,7 @@ class TestCountSources:
     def test_sessions_count(self, populated_data_dir: Path):
         legacy = _detect_legacy_files(str(populated_data_dir))
         counts = _count_sources(legacy)
-        assert counts["sessions"] == 2
+        assert counts["sessions"] == 3
 
     def test_events_count(self, populated_data_dir: Path):
         """이벤트 수는 JSONL 행 수 합계이다 (파일 수가 아님)."""
@@ -167,40 +167,44 @@ class TestCountSources:
         counts = _count_sources(legacy)
         assert counts["events"] == 3  # sess-1: 2행, sess-2: 1행
 
-    def test_catalog_folders_count(self, populated_data_dir: Path):
+    def test_folders_count(self, populated_data_dir: Path):
         """사용자 정의 폴더만 카운트 (시스템 폴더 제외)."""
         legacy = _detect_legacy_files(str(populated_data_dir))
         counts = _count_sources(legacy)
-        assert counts["catalog_folders"] == 1  # "내 작업"만
+        assert counts["folders"] == 2  # "내 작업", "소울스트림"
 
     def test_empty_legacy(self):
         counts = _count_sources({})
-        assert counts == {"catalog_folders": 0, "sessions": 0, "events": 0}
+        assert counts == {"folders": 0, "sessions": 0, "events": 0}
 
 
 # ---------------------------------------------------------------------------
-# _build_session_folder_map
+# _is_system_folder / _map_folder_id
 # ---------------------------------------------------------------------------
 
 
-class TestBuildSessionFolderMap:
-    def test_maps_system_folders(self, populated_data_dir: Path):
-        catalog_path = populated_data_dir / "session_catalog.json"
-        sfm = _build_session_folder_map(catalog_path)
-        assert sfm["sess-1"] == "claude"  # uuid-claude → claude
+class TestFolderHelpers:
+    def test_system_folder_claude(self):
+        assert _is_system_folder("uuid-1", "⚙️ 클로드 코드 세션") is True
 
-    def test_maps_custom_folders(self, populated_data_dir: Path):
-        catalog_path = populated_data_dir / "session_catalog.json"
-        sfm = _build_session_folder_map(catalog_path)
-        assert sfm["sess-2"] == "custom-folder-1"
+    def test_system_folder_llm(self):
+        assert _is_system_folder("uuid-2", "⚙️ LLM 세션") is True
 
-    def test_unknown_folder_defaults_to_claude(self, populated_data_dir: Path):
-        catalog_path = populated_data_dir / "session_catalog.json"
-        sfm = _build_session_folder_map(catalog_path)
-        assert sfm["sess-3"] == "claude"  # unknown-id → claude
+    def test_system_folder_by_id(self):
+        assert _is_system_folder("claude", "anything") is True
+        assert _is_system_folder("llm", "anything") is True
 
-    def test_none_path(self):
-        assert _build_session_folder_map(None) == {}
+    def test_user_folder(self):
+        assert _is_system_folder("custom-1", "내 작업") is False
+
+    def test_map_claude(self):
+        assert _map_folder_id("uuid-1", "⚙️ 클로드 코드 세션") == "claude"
+
+    def test_map_llm(self):
+        assert _map_folder_id("uuid-2", "⚙️ LLM 세션") == "llm"
+
+    def test_map_custom(self):
+        assert _map_folder_id("custom-1", "내 작업") == "custom-1"
 
 
 # ---------------------------------------------------------------------------
@@ -213,14 +217,14 @@ class TestVerifyMigration:
     async def test_success(self):
         pool, conn = _make_mock_pool()
         conn.fetchval = AsyncMock(side_effect=[10, 50, 2])  # sessions, events, folders
-        source = {"sessions": 10, "events": 50, "catalog_folders": 2}
+        source = {"sessions": 10, "events": 50, "folders": 2}
         assert await _verify_migration(pool, source, "node-1") is True
 
     @pytest.mark.asyncio
     async def test_failure_sessions(self):
         pool, conn = _make_mock_pool()
         conn.fetchval = AsyncMock(side_effect=[5, 50, 2])  # sessions 부족
-        source = {"sessions": 10, "events": 50, "catalog_folders": 2}
+        source = {"sessions": 10, "events": 50, "folders": 2}
         assert await _verify_migration(pool, source, "node-1") is False
 
     @pytest.mark.asyncio
@@ -228,7 +232,7 @@ class TestVerifyMigration:
         """PG 레코드 수가 원본보다 많아도 통과."""
         pool, conn = _make_mock_pool()
         conn.fetchval = AsyncMock(side_effect=[15, 100, 5])
-        source = {"sessions": 10, "events": 50, "catalog_folders": 2}
+        source = {"sessions": 10, "events": 50, "folders": 2}
         assert await _verify_migration(pool, source, "node-1") is True
 
 
@@ -243,10 +247,8 @@ class TestDeprecateFiles:
         _deprecate_files(legacy)
 
         assert (populated_data_dir / "soulstream.db.deprecated").exists()
-        assert (populated_data_dir / "session_catalog.json.deprecated").exists()
         assert (populated_data_dir / "events.deprecated").exists()
         assert not (populated_data_dir / "soulstream.db").exists()
-        assert not (populated_data_dir / "session_catalog.json").exists()
         assert not (populated_data_dir / "events").exists()
 
     def test_skips_if_deprecated_exists(self, data_dir: Path):
@@ -287,10 +289,10 @@ class TestAutoMigrate:
 
     @pytest.mark.asyncio
     async def test_idempotent(self, populated_data_dir: Path):
-        """두 번 실행해도 안전 (ON CONFLICT DO NOTHING)."""
+        """두 번 실행해도 안전 (ON CONFLICT)."""
         pool, conn = _make_mock_pool()
         # 검증 통과 → deprecated
-        conn.fetchval = AsyncMock(side_effect=[2, 3, 1])
+        conn.fetchval = AsyncMock(side_effect=[3, 3, 2])
         session_db = _make_mock_session_db(pool)
 
         await auto_migrate(session_db, str(populated_data_dir))
