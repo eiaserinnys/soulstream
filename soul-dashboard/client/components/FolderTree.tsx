@@ -165,7 +165,7 @@ export function FolderTree() {
         <div className="flex items-center gap-1.5 min-w-0">
           <span className="truncate">{folder.name}</span>
           {runningFolderIds.has(folder.id) && (
-            <Spinner variant="bar" className="h-3 w-3 shrink-0" />
+            <Spinner className="h-3 w-3 shrink-0" />
           )}
         </div>
       )}
