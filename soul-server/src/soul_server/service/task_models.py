@@ -45,8 +45,13 @@ def datetime_to_str(dt: datetime) -> str:
     return dt.isoformat()
 
 
-def str_to_datetime(s: str) -> datetime:
-    """ISO 문자열을 datetime으로 변환"""
+def str_to_datetime(s: str | datetime) -> datetime:
+    """ISO 문자열 또는 datetime을 datetime으로 변환.
+
+    asyncpg는 datetime 객체를 직접 반환하므로 이미 datetime이면 그대로 반환.
+    """
+    if isinstance(s, datetime):
+        return s
     return datetime.fromisoformat(s)
 
 
