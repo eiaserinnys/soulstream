@@ -325,6 +325,31 @@ class TestInputResponseRequest:
             InputResponseRequest(answers={"Q1": "A1"})  # request_id 누락
 
 
+def _make_mock_session_db():
+    """TaskManager 테스트용 mock session_db 생성"""
+    mock_db = MagicMock()
+    mock_db.upsert_session = AsyncMock()
+    mock_db.get_session = AsyncMock(return_value=None)
+    mock_db.get_all_sessions = AsyncMock(return_value=([], 0))
+    mock_db.delete_session = AsyncMock()
+    mock_db.append_event = AsyncMock()
+    mock_db.get_next_event_id = AsyncMock(return_value=1)
+    mock_db.read_events = AsyncMock(return_value=[])
+    mock_db.update_last_read_event_id = AsyncMock()
+    mock_db.get_read_position = AsyncMock(return_value=0)
+    mock_db.get_all_folders = AsyncMock(return_value=[])
+    mock_db.get_folder = AsyncMock(return_value=None)
+    mock_db.get_default_folder = AsyncMock(return_value=None)
+    mock_db.assign_session_to_folder = AsyncMock()
+    mock_db.create_folder = AsyncMock()
+    mock_db.get_catalog = AsyncMock(return_value=[])
+    mock_db.update_last_message = AsyncMock()
+    mock_db.search_events = AsyncMock(return_value=[])
+    mock_db.DEFAULT_FOLDERS = {}
+    mock_db.node_id = "test-node"
+    return mock_db
+
+
 class TestTaskManagerDeliverInputResponse:
     """TaskManager.deliver_input_response 테스트"""
 
@@ -334,7 +359,7 @@ class TestTaskManagerDeliverInputResponse:
         from soul_server.service.task_manager import TaskManager
         from soul_server.service.task_models import Task, TaskStatus
 
-        manager = TaskManager()
+        manager = TaskManager(session_db=_make_mock_session_db())
         task = Task(agent_session_id="sess-1", prompt="test")
         task.status = TaskStatus.RUNNING
 
@@ -359,7 +384,7 @@ class TestTaskManagerDeliverInputResponse:
         from soul_server.service.task_manager import TaskManager
         from soul_server.service.task_models import TaskNotFoundError
 
-        manager = TaskManager()
+        manager = TaskManager(session_db=_make_mock_session_db())
 
         with pytest.raises(TaskNotFoundError):
             manager.deliver_input_response("nonexistent", "req-1", {"Q": "A"})
@@ -370,7 +395,7 @@ class TestTaskManagerDeliverInputResponse:
         from soul_server.service.task_manager import TaskManager
         from soul_server.service.task_models import Task, TaskStatus, TaskNotRunningError
 
-        manager = TaskManager()
+        manager = TaskManager(session_db=_make_mock_session_db())
         task = Task(agent_session_id="sess-2", prompt="test")
         task.status = TaskStatus.COMPLETED
         manager._tasks["sess-2"] = task
@@ -384,7 +409,7 @@ class TestTaskManagerDeliverInputResponse:
         from soul_server.service.task_manager import TaskManager
         from soul_server.service.task_models import Task, TaskStatus
 
-        manager = TaskManager()
+        manager = TaskManager(session_db=_make_mock_session_db())
         task = Task(agent_session_id="sess-3", prompt="test")
         task.status = TaskStatus.RUNNING
         task._deliver_input_response = None  # 콜백 없음
@@ -415,7 +440,7 @@ class TestRespondEndpoint:
         from soul_server.service.task_manager import TaskManager
         from soul_server.service.task_models import Task, TaskStatus
 
-        manager = TaskManager()
+        manager = TaskManager(session_db=_make_mock_session_db())
         task = Task(agent_session_id="sess-respond-1", prompt="test")
         task.status = TaskStatus.RUNNING
 
@@ -452,7 +477,7 @@ class TestRespondEndpoint:
         """세션 미발견 시 404"""
         from soul_server.service.task_manager import TaskManager
 
-        manager = TaskManager()
+        manager = TaskManager(session_db=_make_mock_session_db())
 
         monkeypatch.setattr(
             "soul_server.api.tasks.get_task_manager",
@@ -475,7 +500,7 @@ class TestRespondEndpoint:
         from soul_server.service.task_manager import TaskManager
         from soul_server.service.task_models import Task, TaskStatus
 
-        manager = TaskManager()
+        manager = TaskManager(session_db=_make_mock_session_db())
         task = Task(agent_session_id="sess-respond-3", prompt="test")
         task.status = TaskStatus.COMPLETED
         manager._tasks["sess-respond-3"] = task
@@ -501,7 +526,7 @@ class TestRespondEndpoint:
         from soul_server.service.task_manager import TaskManager
         from soul_server.service.task_models import Task, TaskStatus
 
-        manager = TaskManager()
+        manager = TaskManager(session_db=_make_mock_session_db())
         task = Task(agent_session_id="sess-respond-4", prompt="test")
         task.status = TaskStatus.RUNNING
 

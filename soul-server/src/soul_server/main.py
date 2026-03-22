@@ -35,7 +35,7 @@ from soul_server.claude.agent_runner import ClaudeRunner
 from soul_server.service.runner_pool import RunnerPool
 from soul_server.service.task_manager import get_task_manager, TaskManager, set_task_manager
 from soul_server.service.session_broadcaster import init_session_broadcaster
-from soul_server.service.session_db import SessionDB, init_session_db, get_session_db
+from soul_server.service.postgres_session_db import PostgresSessionDB, init_session_db, get_session_db
 from soul_server.models import HealthResponse
 from cogito.endpoint import mount_cogito as _mount_cogito
 from soul_server.cogito.mcp_tools import cogito_mcp, cogito_api_router, init as init_cogito_mcp
@@ -107,7 +107,7 @@ async def graceful_shutdown(task_manager, timeout: float = 50.0):
         ]
         session_db = get_session_db()
         active_ids = [t.agent_session_id for t in running_tasks]
-        session_db.mark_running_at_shutdown(active_ids)
+        await session_db.mark_running_at_shutdown(active_ids)
         logger.info(f"Graceful shutdown: {len(active_ids)}개 활성 세션 플래그 설정")
 
         # 각 세션에 종료 예고 intervention 전송
@@ -139,7 +139,7 @@ async def graceful_shutdown(task_manager, timeout: float = 50.0):
 
     except Exception:
         # 예외 발생 시 draining 상태를 복원하여 서버가 영구적으로 /execute를 거부하지 않도록 한다
-        session_db.clear_shutdown_flags()  # 플래그 정리
+        await session_db.clear_shutdown_flags()  # 플래그 정리
         _is_draining = False
         raise
 
@@ -211,14 +211,16 @@ async def lifespan(app: FastAPI):
     await pool.start_maintenance()
     logger.info(f"  Runner pool maintenance loop started (interval={settings.runner_pool_maintenance_interval}s)")
 
-    # SessionDB 초기화 (레거시 마이그레이션 → DB 생성)
+    # PostgresSessionDB 초기화
     data_dir = Path(settings.data_dir)
-    db_path = data_dir / "soulstream.db"
-    SessionDB.migrate_from_legacy(db_path, data_dir)
-    session_db = SessionDB(db_path)
-    session_db.ensure_default_folders()
+    session_db = PostgresSessionDB(
+        database_url=settings.database_url,
+        node_id=settings.soulstream_node_id,
+    )
+    await session_db.connect()
+    await session_db.ensure_default_folders()
     init_session_db(session_db)
-    logger.info(f"  SessionDB initialized: {db_path}")
+    logger.info(f"  PostgresSessionDB initialized: node_id={settings.soulstream_node_id}")
 
     # MetadataExtractor 초기화 (부가 기능 — 로드 실패해도 서비스 기동에 영향 없음)
     # DATA_DIR에 환경 특화 규칙이 있으면 우선 사용, 없으면 패키지 기본 규칙으로 폴백
@@ -248,7 +250,7 @@ async def lifespan(app: FastAPI):
     # 꼬인 읽음 상태 복구 (완료 세션의 last_read_event_id=0 → last_event_id로)
     # 순서 의존: load()가 좀비 세션을 completed로 전환한 뒤에 실행해야
     # 좀비→completed 전환된 세션도 함께 복구된다.
-    session_db.repair_broken_read_positions()
+    await session_db.repair_broken_read_positions()
 
     # SessionBroadcaster 초기화
     # pre_shutdown_sessions 처리보다 먼저 초기화해야 한다.
@@ -265,7 +267,7 @@ async def lifespan(app: FastAPI):
     logger.info("  Catalog API registered")
 
     # 이전 종료 시 저장된 세션 재개 (graceful_shutdown이 DB에 플래그로 저장)
-    shutdown_sessions = session_db.get_shutdown_sessions()
+    shutdown_sessions = await session_db.get_shutdown_sessions()
     if shutdown_sessions:
         try:
             for s in shutdown_sessions:
@@ -288,7 +290,7 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"  shutdown session resume 실패: {e}")
         finally:
-            session_db.clear_shutdown_flags()
+            await session_db.clear_shutdown_flags()
 
     # LLM Proxy 초기화
     global _llm_executor
@@ -399,6 +401,13 @@ async def lifespan(app: FastAPI):
     shutdown_count = await pool.shutdown()
     if shutdown_count > 0:
         logger.info(f"  Shut down {shutdown_count} pooled runners")
+
+    # PostgreSQL 연결 풀 종료
+    try:
+        await session_db.close()
+        logger.info("  PostgreSQL connection pool closed")
+    except Exception:
+        logger.warning("  Failed to close PostgreSQL pool", exc_info=True)
 
     # 오래된 첨부 파일 정리
     cleaned = file_manager.cleanup_old_files(max_age_hours=1)

@@ -81,7 +81,7 @@ export function createMockSoulServer(): Promise<{
     const soulApp = express();
     soulApp.use(express.json());
 
-    soulApp.post("/execute", (req, res) => {
+    soulApp.post("/execute", (req: express.Request, res: express.Response) => {
       requests.push({ type: "execute", body: req.body });
       const agentSessionId = req.body.agent_session_id ?? `sess-mock-${Date.now()}`;
 
@@ -97,7 +97,7 @@ export function createMockSoulServer(): Promise<{
       res.end();
     });
 
-    soulApp.post("/sessions/:agentSessionId/intervene", (req, res) => {
+    soulApp.post("/sessions/:agentSessionId/intervene", (req: express.Request, res: express.Response) => {
       requests.push({
         type: "intervene",
         body: req.body,

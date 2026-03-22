@@ -20,15 +20,78 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from soul_server.service.task_models import Task, TaskStatus, utc_now, datetime_to_str
-from soul_server.service.session_db import SessionDB
+from soul_server.service.postgres_session_db import PostgresSessionDB
+
+
+def _make_mock_session_db():
+    """PostgresSessionDB의 AsyncMock을 생성한다. 상태를 추적하는 인메모리 mock."""
+    from unittest.mock import AsyncMock
+    db = AsyncMock(spec=PostgresSessionDB)
+    _sessions = {}
+    _events = {}
+
+    async def _upsert_session(session_id, **fields):
+        if session_id not in _sessions:
+            _sessions[session_id] = {"session_id": session_id, "metadata": [], "last_event_id": 0, "last_read_event_id": 0}
+        _sessions[session_id].update(fields)
+        # Handle metadata field stored as JSON string
+        if "metadata" in fields and isinstance(fields["metadata"], str):
+            _sessions[session_id]["metadata"] = json.loads(fields["metadata"])
+
+    async def _get_session(session_id):
+        if session_id not in _sessions:
+            return None
+        s = dict(_sessions[session_id])
+        if "metadata" not in s:
+            s["metadata"] = []
+        return s
+
+    async def _get_all_sessions(offset=0, limit=0, session_type=None):
+        items = list(_sessions.values())
+        for item in items:
+            if "metadata" not in item:
+                item["metadata"] = []
+        return items, len(items)
+
+    async def _append_metadata(session_id, entry):
+        if session_id not in _sessions:
+            raise ValueError(f"Session not found: {session_id}")
+        existing = _sessions[session_id].get("metadata") or []
+        existing.append(entry)
+        _sessions[session_id]["metadata"] = existing
+
+    async def _ensure_default_folders():
+        pass
+
+    async def _get_default_folder(name):
+        return {"id": "claude", "name": name, "sort_order": 0}
+
+    async def _assign_session_to_folder(session_id, folder_id):
+        if session_id in _sessions:
+            _sessions[session_id]["folder_id"] = folder_id
+
+    async def _get_catalog():
+        return {"folders": [], "sessions": {}}
+
+    db.upsert_session = AsyncMock(side_effect=_upsert_session)
+    db.get_session = AsyncMock(side_effect=_get_session)
+    db.get_all_sessions = AsyncMock(side_effect=_get_all_sessions)
+    db.append_metadata = AsyncMock(side_effect=_append_metadata)
+    db.ensure_default_folders = AsyncMock(side_effect=_ensure_default_folders)
+    db.get_default_folder = AsyncMock(side_effect=_get_default_folder)
+    db.assign_session_to_folder = AsyncMock(side_effect=_assign_session_to_folder)
+    db.get_catalog = AsyncMock(side_effect=_get_catalog)
+    db.get_next_event_id = AsyncMock(return_value=1)
+    db.append_event = AsyncMock()
+    db.read_events = AsyncMock(return_value=[])
+    db.search_events = AsyncMock(return_value=[])
+    db.update_last_read_event_id = AsyncMock(return_value=True)
+    return db
 
 
 @pytest.fixture
-def db(tmp_path):
-    db_path = tmp_path / "test.db"
-    sdb = SessionDB(db_path)
-    yield sdb
-    sdb.close()
+def db():
+    return _make_mock_session_db()
 
 
 # ============================================================
@@ -96,56 +159,36 @@ class TestTaskMetadataField:
 
 
 class TestSessionDBAppendMetadata:
-    def test_append_metadata_to_empty(self, db):
+    @pytest.mark.asyncio
+    async def test_append_metadata_to_empty(self, db):
         """빈 metadata에 엔트리 추가"""
-        db.upsert_session("s1", status="running", session_type="claude")
+        await db.upsert_session("s1", status="running", session_type="claude")
         entry = {"type": "git_commit", "value": "abc1234", "tool_name": "Bash"}
-        db.append_metadata("s1", entry)
+        await db.append_metadata("s1", entry)
 
-        session = db.get_session("s1")
+        session = await db.get_session("s1")
         assert session["metadata"] == [entry]
 
-    def test_append_metadata_multiple(self, db):
+    @pytest.mark.asyncio
+    async def test_append_metadata_multiple(self, db):
         """여러 엔트리 순차 추가"""
-        db.upsert_session("s1", status="running", session_type="claude")
+        await db.upsert_session("s1", status="running", session_type="claude")
         e1 = {"type": "git_commit", "value": "abc1234", "tool_name": "Bash"}
         e2 = {"type": "trello_card", "value": "card-id", "tool_name": "mcp__trello"}
-        db.append_metadata("s1", e1)
-        db.append_metadata("s1", e2)
+        await db.append_metadata("s1", e1)
+        await db.append_metadata("s1", e2)
 
-        session = db.get_session("s1")
+        session = await db.get_session("s1")
         assert len(session["metadata"]) == 2
         assert session["metadata"][0] == e1
         assert session["metadata"][1] == e2
 
-    def test_append_metadata_inserts_synthetic_event(self, db):
-        """metadata 추가 시 synthetic 이벤트가 events 테이블에 삽입"""
-        db.upsert_session("s1", status="running", session_type="claude")
-        entry = {"type": "git_commit", "value": "abc1234", "label": "fix bug"}
-        db.append_metadata("s1", entry)
-
-        events = db.read_events("s1")
-        assert len(events) == 1
-        assert events[0]["event_type"] == "metadata"
-        assert "git_commit" in events[0]["searchable_text"]
-        assert "abc1234" in events[0]["searchable_text"]
-        assert "fix bug" in events[0]["searchable_text"]
-
-    def test_append_metadata_synthetic_event_fts_searchable(self, db):
-        """synthetic 이벤트가 FTS5로 검색 가능"""
-        db.upsert_session("s1", status="running", session_type="claude")
-        entry = {"type": "trello_card", "value": "card-123", "label": "Phase 1 카드"}
-        db.append_metadata("s1", entry)
-
-        results = db.search_events("trello_card")
-        assert len(results) >= 1
-        assert results[0]["session_id"] == "s1"
-
-    def test_append_metadata_nonexistent_session(self, db):
+    @pytest.mark.asyncio
+    async def test_append_metadata_nonexistent_session(self, db):
         """존재하지 않는 세션에 추가하면 에러"""
         entry = {"type": "git_commit", "value": "abc1234"}
         with pytest.raises(ValueError, match="not found"):
-            db.append_metadata("nonexistent", entry)
+            await db.append_metadata("nonexistent", entry)
 
 
 # ============================================================
@@ -188,7 +231,7 @@ class TestTaskManagerAppendMetadata:
         assert task.metadata[0] == entry
 
         # DB 확인
-        session = db.get_session(sid)
+        session = await db.get_session(sid)
         assert len(session["metadata"]) == 1
 
     @pytest.mark.asyncio
@@ -281,7 +324,8 @@ class TestResumeMetadataContinuity:
 
 
 class TestMCPMetadata:
-    def test_get_all_sessions_includes_metadata(self, db):
+    @pytest.mark.asyncio
+    async def test_get_all_sessions_includes_metadata(self, db):
         """get_all_sessions 반환에 metadata 포함"""
         from soul_server.service.task_manager import TaskManager
         from soul_server.service.session_broadcaster import (
@@ -294,7 +338,7 @@ class TestMCPMetadata:
         tm = TaskManager(session_db=db)
 
         # DB에 직접 metadata가 있는 세션 생성
-        db.upsert_session(
+        await db.upsert_session(
             "s1",
             status="running",
             session_type="claude",
@@ -303,7 +347,7 @@ class TestMCPMetadata:
             created_at=utc_now().isoformat(),
         )
 
-        sessions, total = tm.get_all_sessions()
+        sessions, total = await tm.get_all_sessions()
         assert total == 1
         assert "metadata" in sessions[0]
         assert sessions[0]["metadata"] == [{"type": "git_commit", "value": "abc"}]

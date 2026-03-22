@@ -28,7 +28,7 @@ from soul_server.models.schemas import (
     TextStartSSEEvent,
     ToolStartSSEEvent,
 )
-from soul_server.service.event_store import EventStore
+from soul_server.service.postgres_session_db import PostgresSessionDB
 from soul_server.service.task_executor import TaskExecutor
 from soul_server.service.task_models import Task, TaskStatus
 
@@ -99,10 +99,49 @@ def _make_task(session_id: str = "sess-test", prompt: str = "hello") -> Task:
     )
 
 
+def _make_mock_session_db():
+    """이벤트를 인메모리로 추적하는 PostgresSessionDB mock을 생성"""
+    db = AsyncMock(spec=PostgresSessionDB)
+    _events = {}  # session_id -> list of {id, event_type, payload, ...}
+    _next_ids = {}  # session_id -> next_id
+
+    async def _get_next_event_id(session_id):
+        if session_id not in _next_ids:
+            _next_ids[session_id] = 1
+        return _next_ids[session_id]
+
+    async def _append_event(session_id, event_id, event_type, payload, searchable_text, created_at):
+        if session_id not in _events:
+            _events[session_id] = []
+        _events[session_id].append({
+            "id": event_id,
+            "session_id": session_id,
+            "event_type": event_type,
+            "payload": payload,
+            "searchable_text": searchable_text,
+            "created_at": created_at,
+        })
+        _next_ids[session_id] = event_id + 1
+
+    async def _read_events(session_id, after_id=0):
+        events = _events.get(session_id, [])
+        return [e for e in events if e["id"] > after_id]
+
+    db.get_next_event_id = AsyncMock(side_effect=_get_next_event_id)
+    db.append_event = AsyncMock(side_effect=_append_event)
+    db.read_events = AsyncMock(side_effect=_read_events)
+    db.upsert_session = AsyncMock()
+    db.get_session = AsyncMock(return_value=None)
+    db.update_last_message = AsyncMock()
+    db.extract_searchable_text = PostgresSessionDB.extract_searchable_text
+    db._events = _events  # expose for test assertions
+    return db
+
+
 def _make_executor(
     tasks: dict,
-    event_store: Optional[EventStore] = None,
-) -> tuple[TaskExecutor, AsyncMock]:
+    session_db: Optional[AsyncMock] = None,
+) -> tuple[TaskExecutor, list]:
     """TaskExecutor와 broadcast를 캡처하는 listener_manager를 생성"""
     listener_manager = MagicMock()
     broadcast_calls = []
@@ -119,7 +158,7 @@ def _make_executor(
         complete_task_func=AsyncMock(),
         error_task_func=AsyncMock(),
         register_session_func=MagicMock(),
-        event_store=event_store,
+        session_db=session_db,
     )
 
     return executor, broadcast_calls
@@ -132,9 +171,9 @@ class TestParentEventIdFilling:
     """parent_event_id가 None인 이벤트에 user_request_id가 채워지는지 검증"""
 
     @pytest.mark.asyncio
-    async def test_complete_event_gets_user_request_id(self, tmp_path):
+    async def test_complete_event_gets_user_request_id(self):
         """CompleteEvent.parent_event_id가 user_message의 event_id로 채워진다"""
-        event_store = EventStore(base_dir=tmp_path / "events")
+        session_db = _make_mock_session_db()
         task = _make_task()
         tasks = {task.agent_session_id: task}
 
@@ -145,7 +184,7 @@ class TestParentEventIdFilling:
         )
         runner = FakeClaudeRunner(events=[complete_event])
 
-        executor, broadcasts = _make_executor(tasks, event_store=event_store)
+        executor, broadcasts = _make_executor(tasks, session_db=session_db)
         await executor._run_execution(task, runner, FakeResourceManager())
 
         # broadcast된 이벤트 중 complete 찾기
@@ -161,9 +200,9 @@ class TestParentEventIdFilling:
         assert complete_dict["parent_event_id"] == "1"  # EventStore 첫 번째 이벤트 ID
 
     @pytest.mark.asyncio
-    async def test_error_event_gets_user_request_id(self, tmp_path):
+    async def test_error_event_gets_user_request_id(self):
         """ErrorEvent.parent_event_id가 user_message의 event_id로 채워진다"""
-        event_store = EventStore(base_dir=tmp_path / "events")
+        session_db = _make_mock_session_db()
         task = _make_task()
         tasks = {task.agent_session_id: task}
 
@@ -173,7 +212,7 @@ class TestParentEventIdFilling:
         )
         runner = FakeClaudeRunner(events=[error_event])
 
-        executor, broadcasts = _make_executor(tasks, event_store=event_store)
+        executor, broadcasts = _make_executor(tasks, session_db=session_db)
         await executor._run_execution(task, runner, FakeResourceManager())
 
         error_broadcasts = [
@@ -185,9 +224,9 @@ class TestParentEventIdFilling:
         assert error_dict["parent_event_id"] == "1"
 
     @pytest.mark.asyncio
-    async def test_subagent_event_not_overwritten(self, tmp_path):
+    async def test_subagent_event_not_overwritten(self):
         """parent_event_id가 이미 설정된 이벤트(서브에이전트)는 변경하지 않는다"""
-        event_store = EventStore(base_dir=tmp_path / "events")
+        session_db = _make_mock_session_db()
         task = _make_task()
         tasks = {task.agent_session_id: task}
 
@@ -199,7 +238,7 @@ class TestParentEventIdFilling:
         )
         runner = FakeClaudeRunner(events=[complete_event])
 
-        executor, broadcasts = _make_executor(tasks, event_store=event_store)
+        executor, broadcasts = _make_executor(tasks, session_db=session_db)
         await executor._run_execution(task, runner, FakeResourceManager())
 
         complete_broadcasts = [
@@ -211,9 +250,9 @@ class TestParentEventIdFilling:
         assert complete_dict["parent_event_id"] == "toolu_AAA"
 
     @pytest.mark.asyncio
-    async def test_meta_events_have_no_parent_event_id(self, tmp_path):
+    async def test_meta_events_have_no_parent_event_id(self):
         """progress, session 등 메타 이벤트는 parent_event_id 필드가 없으므로 건너뛴다"""
-        event_store = EventStore(base_dir=tmp_path / "events")
+        session_db = _make_mock_session_db()
         task = _make_task()
         tasks = {task.agent_session_id: task}
 
@@ -223,7 +262,7 @@ class TestParentEventIdFilling:
 
         runner = FakeClaudeRunner(events=[progress_event, session_event, complete_event])
 
-        executor, broadcasts = _make_executor(tasks, event_store=event_store)
+        executor, broadcasts = _make_executor(tasks, session_db=session_db)
         await executor._run_execution(task, runner, FakeResourceManager())
 
         # progress에는 parent_event_id가 없어야 함
@@ -249,9 +288,9 @@ class TestInterventionUpdatesUserRequestId:
     """intervention 이후 이벤트가 새 user_request_id를 받는지 검증"""
 
     @pytest.mark.asyncio
-    async def test_events_after_intervention_get_new_user_request_id(self, tmp_path):
+    async def test_events_after_intervention_get_new_user_request_id(self):
         """intervention 후 이벤트의 parent_event_id가 intervention의 event_id로 갱신된다"""
-        event_store = EventStore(base_dir=tmp_path / "events")
+        session_db = _make_mock_session_db()
         task = _make_task()
         tasks = {task.agent_session_id: task}
 
@@ -262,7 +301,7 @@ class TestInterventionUpdatesUserRequestId:
 
         runner = FakeClaudeRunner(events=[first_complete, intervention, second_complete])
 
-        executor, broadcasts = _make_executor(tasks, event_store=event_store)
+        executor, broadcasts = _make_executor(tasks, session_db=session_db)
         await executor._run_execution(task, runner, FakeResourceManager())
 
         # complete 이벤트만 필터링
@@ -288,9 +327,9 @@ class TestInterventionBroadcastEventId:
     """intervention_sent 브로드캐스트에 _event_id가 포함되는지 검증"""
 
     @pytest.mark.asyncio
-    async def test_intervention_broadcast_includes_event_id(self, tmp_path):
+    async def test_intervention_broadcast_includes_event_id(self):
         """intervention_sent 브로드캐스트 dict에 _event_id가 JSONL event_id로 설정된다"""
-        event_store = EventStore(base_dir=tmp_path / "events")
+        session_db = _make_mock_session_db()
         task = _make_task()
         tasks = {task.agent_session_id: task}
 
@@ -299,7 +338,7 @@ class TestInterventionBroadcastEventId:
         complete_event = CompleteEvent(result="done", parent_event_id=None)
         runner = FakeClaudeRunner(events=[intervention, complete_event])
 
-        executor, broadcasts = _make_executor(tasks, event_store=event_store)
+        executor, broadcasts = _make_executor(tasks, session_db=session_db)
         await executor._run_execution(task, runner, FakeResourceManager())
 
         # intervention_sent 브로드캐스트 찾기
@@ -316,7 +355,7 @@ class TestInterventionBroadcastEventId:
 
     @pytest.mark.asyncio
     async def test_intervention_broadcast_no_event_id_without_store(self):
-        """EventStore 없으면 intervention_sent에 _event_id가 없다"""
+        """SessionDB 없으면 intervention_sent에 _event_id가 없다"""
         task = _make_task()
         tasks = {task.agent_session_id: task}
 
@@ -324,7 +363,7 @@ class TestInterventionBroadcastEventId:
         complete_event = CompleteEvent(result="done", parent_event_id=None)
         runner = FakeClaudeRunner(events=[intervention, complete_event])
 
-        executor, broadcasts = _make_executor(tasks, event_store=None)
+        executor, broadcasts = _make_executor(tasks, session_db=None)
         await executor._run_execution(task, runner, FakeResourceManager())
 
         intervention_broadcasts = [
@@ -334,13 +373,13 @@ class TestInterventionBroadcastEventId:
         assert len(intervention_broadcasts) == 1
         _, intv_dict = intervention_broadcasts[0]
 
-        # EventStore 없으면 _event_id가 설정되지 않음
+        # SessionDB 없으면 _event_id가 설정되지 않음
         assert "_event_id" not in intv_dict
 
     @pytest.mark.asyncio
-    async def test_intervention_event_id_matches_jsonl(self, tmp_path):
+    async def test_intervention_event_id_matches_jsonl(self):
         """intervention_sent의 _event_id가 JSONL에 기록된 user_message의 ID와 일치한다"""
-        event_store = EventStore(base_dir=tmp_path / "events")
+        session_db = _make_mock_session_db()
         task = _make_task()
         tasks = {task.agent_session_id: task}
 
@@ -348,14 +387,15 @@ class TestInterventionBroadcastEventId:
         complete_event = CompleteEvent(result="done", parent_event_id=None)
         runner = FakeClaudeRunner(events=[intervention, complete_event])
 
-        executor, broadcasts = _make_executor(tasks, event_store=event_store)
+        executor, broadcasts = _make_executor(tasks, session_db=session_db)
         await executor._run_execution(task, runner, FakeResourceManager())
 
-        # JSONL에서 intervention user_message 찾기 (user 필드로 구분)
-        all_events = event_store.read_all(task.agent_session_id)
+        # DB에서 intervention user_message 찾기 (user 필드로 구분)
+        all_events = session_db._events.get(task.agent_session_id, [])
         intervention_msgs = [
             e for e in all_events
-            if e["event"].get("type") == "user_message" and e["event"].get("user") == "user1"
+            if json.loads(e["payload"]).get("type") == "user_message"
+            and json.loads(e["payload"]).get("user") == "user1"
         ]
         assert len(intervention_msgs) == 1
         jsonl_id = intervention_msgs[0]["id"]
@@ -373,15 +413,15 @@ class TestExceptionPathParentEventId:
     """exception 경로에서 parent_event_id가 포함되는지 검증"""
 
     @pytest.mark.asyncio
-    async def test_runtime_error_includes_parent_event_id(self, tmp_path):
+    async def test_runtime_error_includes_parent_event_id(self):
         """resource acquire 실패 시 에러 dict에 parent_event_id가 None으로 포함된다"""
-        event_store = EventStore(base_dir=tmp_path / "events")
+        session_db = _make_mock_session_db()
         task = _make_task()
         tasks = {task.agent_session_id: task}
 
         runner = FakeClaudeRunner(events=[])
 
-        executor, broadcasts = _make_executor(tasks, event_store=event_store)
+        executor, broadcasts = _make_executor(tasks, session_db=session_db)
         await executor._run_execution(task, runner, FakeResourceManagerFailure())
 
         error_broadcasts = [
@@ -395,15 +435,15 @@ class TestExceptionPathParentEventId:
         assert error_dict["parent_event_id"] is None
 
     @pytest.mark.asyncio
-    async def test_exception_includes_parent_event_id(self, tmp_path):
+    async def test_exception_includes_parent_event_id(self):
         """claude_runner.execute() 예외 시 에러 dict에 parent_event_id가 포함된다"""
-        event_store = EventStore(base_dir=tmp_path / "events")
+        session_db = _make_mock_session_db()
         task = _make_task()
         tasks = {task.agent_session_id: task}
 
         runner = FakeClaudeRunnerException()
 
-        executor, broadcasts = _make_executor(tasks, event_store=event_store)
+        executor, broadcasts = _make_executor(tasks, session_db=session_db)
         await executor._run_execution(task, runner, FakeResourceManager())
 
         error_broadcasts = [
@@ -421,9 +461,9 @@ class TestJSONLPersistence:
     """JSONL에 parent_event_id가 올바르게 저장되는지 검증"""
 
     @pytest.mark.asyncio
-    async def test_parent_event_id_persisted_in_jsonl(self, tmp_path):
+    async def test_parent_event_id_persisted_in_jsonl(self):
         """JSONL 파일의 이벤트에 parent_event_id가 올바르게 기록된다"""
-        event_store = EventStore(base_dir=tmp_path / "events")
+        session_db = _make_mock_session_db()
         task = _make_task()
         tasks = {task.agent_session_id: task}
 
@@ -434,32 +474,32 @@ class TestJSONLPersistence:
         )
         runner = FakeClaudeRunner(events=[complete_event])
 
-        executor, _ = _make_executor(tasks, event_store=event_store)
+        executor, _ = _make_executor(tasks, session_db=session_db)
         await executor._run_execution(task, runner, FakeResourceManager())
 
-        # JSONL 파일에서 이벤트 읽기
-        all_events = event_store.read_all(task.agent_session_id)
+        # DB에서 이벤트 읽기
+        all_events = session_db._events.get(task.agent_session_id, [])
         assert len(all_events) >= 2  # user_message + complete
 
         # user_message
-        user_msg = all_events[0]["event"]
+        user_msg = json.loads(all_events[0]["payload"])
         assert user_msg["type"] == "user_message"
 
         # complete
         complete_record = [
-            e for e in all_events if e["event"].get("type") == "complete"
+            e for e in all_events if json.loads(e["payload"]).get("type") == "complete"
         ]
         assert len(complete_record) == 1
-        complete_ev = complete_record[0]["event"]
+        complete_ev = json.loads(complete_record[0]["payload"])
         assert complete_ev["parent_event_id"] == str(all_events[0]["id"])
 
 
-class TestWithoutEventStore:
-    """EventStore 없이 동작하는 경우 (current_user_request_id=None)"""
+class TestWithoutSessionDB:
+    """SessionDB 없이 동작하는 경우 (current_user_request_id=None)"""
 
     @pytest.mark.asyncio
-    async def test_parent_event_id_none_without_event_store(self):
-        """EventStore 없이도 parent_event_id=None으로 정상 동작"""
+    async def test_parent_event_id_none_without_session_db(self):
+        """SessionDB 없이도 parent_event_id=None으로 정상 동작"""
         task = _make_task()
         tasks = {task.agent_session_id: task}
 
@@ -469,7 +509,7 @@ class TestWithoutEventStore:
         )
         runner = FakeClaudeRunner(events=[complete_event])
 
-        executor, broadcasts = _make_executor(tasks, event_store=None)
+        executor, broadcasts = _make_executor(tasks, session_db=None)
         await executor._run_execution(task, runner, FakeResourceManager())
 
         complete_broadcasts = [
@@ -478,7 +518,7 @@ class TestWithoutEventStore:
         ]
         assert len(complete_broadcasts) == 1
         _, complete_dict = complete_broadcasts[0]
-        # EventStore 없으면 current_user_request_id=None → parent_event_id=None 유지
+        # SessionDB 없으면 current_user_request_id=None → parent_event_id=None 유지
         assert complete_dict["parent_event_id"] is None
 
 
@@ -490,10 +530,10 @@ class TestGranularEventParentEventId:
     """
 
     @pytest.mark.asyncio
-    async def test_top_level_thinking_gets_user_request_id(self, tmp_path):
+    async def test_top_level_thinking_gets_user_request_id(self):
         """최상위 thinking 이벤트(parent_event_id=None)가 user_request_id로 채워진다"""
         import time
-        event_store = EventStore(base_dir=tmp_path / "events")
+        session_db = _make_mock_session_db()
         task = _make_task()
         tasks = {task.agent_session_id: task}
 
@@ -506,7 +546,7 @@ class TestGranularEventParentEventId:
         complete_event = CompleteEvent(result="done", parent_event_id=None)
         runner = FakeClaudeRunner(events=[thinking_event, complete_event])
 
-        executor, broadcasts = _make_executor(tasks, event_store=event_store)
+        executor, broadcasts = _make_executor(tasks, session_db=session_db)
         await executor._run_execution(task, runner, FakeResourceManager())
 
         thinking_broadcasts = [
@@ -518,10 +558,10 @@ class TestGranularEventParentEventId:
         assert thinking_dict["parent_event_id"] == "1"  # user_message의 event_id
 
     @pytest.mark.asyncio
-    async def test_subagent_thinking_preserves_parent(self, tmp_path):
+    async def test_subagent_thinking_preserves_parent(self):
         """서브에이전트 thinking(parent_event_id=toolu_*)은 변경되지 않는다"""
         import time
-        event_store = EventStore(base_dir=tmp_path / "events")
+        session_db = _make_mock_session_db()
         task = _make_task()
         tasks = {task.agent_session_id: task}
 
@@ -534,7 +574,7 @@ class TestGranularEventParentEventId:
         complete_event = CompleteEvent(result="done", parent_event_id=None)
         runner = FakeClaudeRunner(events=[thinking_event, complete_event])
 
-        executor, broadcasts = _make_executor(tasks, event_store=event_store)
+        executor, broadcasts = _make_executor(tasks, session_db=session_db)
         await executor._run_execution(task, runner, FakeResourceManager())
 
         thinking_broadcasts = [
@@ -546,10 +586,10 @@ class TestGranularEventParentEventId:
         assert thinking_dict["parent_event_id"] == "toolu_AAA"
 
     @pytest.mark.asyncio
-    async def test_tool_start_gets_user_request_id(self, tmp_path):
+    async def test_tool_start_gets_user_request_id(self):
         """최상위 tool_start(parent_event_id=None)가 user_request_id로 채워진다"""
         import time
-        event_store = EventStore(base_dir=tmp_path / "events")
+        session_db = _make_mock_session_db()
         task = _make_task()
         tasks = {task.agent_session_id: task}
 
@@ -562,7 +602,7 @@ class TestGranularEventParentEventId:
         complete_event = CompleteEvent(result="done", parent_event_id=None)
         runner = FakeClaudeRunner(events=[tool_event, complete_event])
 
-        executor, broadcasts = _make_executor(tasks, event_store=event_store)
+        executor, broadcasts = _make_executor(tasks, session_db=session_db)
         await executor._run_execution(task, runner, FakeResourceManager())
 
         tool_broadcasts = [
