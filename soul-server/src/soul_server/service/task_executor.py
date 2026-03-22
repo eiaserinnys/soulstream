@@ -448,22 +448,23 @@ class TaskExecutor:
             await queue.put(reconnect_event)
             logger.debug(f"Sent reconnect status to listener for session {agent_session_id}")
 
-            # SessionDB에서 미수신 이벤트 재전송
+            # SessionDB에서 미수신 이벤트 스트리밍 재전송
             if self._db is not None and last_event_id is not None:
                 try:
-                    missed_events = await self._db.read_events(
-                        agent_session_id, after_id=last_event_id
-                    )
-                    for ev in missed_events:
+                    replayed = 0
+                    async for event_id, event_type, payload_text in self._db.stream_events_raw(
+                        agent_session_id, after_id=last_event_id,
+                    ):
                         try:
-                            normalized = json.loads(ev["payload"])
-                        except (json.JSONDecodeError, KeyError):
+                            normalized = json.loads(payload_text)
+                        except json.JSONDecodeError:
                             normalized = {}
-                        normalized["_event_id"] = ev["id"]
+                        normalized["_event_id"] = event_id
                         await queue.put(normalized)
-                    if missed_events:
+                        replayed += 1
+                    if replayed:
                         logger.info(
-                            f"Replayed {len(missed_events)} missed events for {agent_session_id} "
+                            f"Replayed {replayed} missed events for {agent_session_id} "
                             f"(after_id={last_event_id})"
                         )
                 except Exception as e:

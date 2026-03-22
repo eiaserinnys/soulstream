@@ -290,31 +290,25 @@ async def api_session_events(
     is_llm = (task is not None and task.session_type == "llm") or session_id.startswith("llm-")
 
     async def event_generator():
-        import json as _json
-        # Part 1: SessionDB에서 히스토리 읽기
+        # Part 1: SessionDB에서 히스토리 스트리밍
         from soul_server.service.postgres_session_db import get_session_db
         db = get_session_db()
         last_stored_id = 0
 
         try:
-            stored = await db.read_events(session_id, after_id=after_id)
+            async for event_id, event_type, payload_text in db.stream_events_raw(
+                session_id, after_id=after_id,
+            ):
+                last_stored_id = max(last_stored_id, event_id)
+                # payload_text는 PostgreSQL jsonb::text 캐스트 결과로,
+                # compact JSON(개행 없음)이 보장되어 SSE data: 필드에 안전하다.
+                yield (
+                    f"id: {event_id}\n"
+                    f"event: {event_type}\n"
+                    f"data: {payload_text}\n\n"
+                )
         except Exception as e:
             logger.error("Failed to read events for %s: %s", session_id, e)
-            stored = []
-
-        if stored:
-            for record in stored:
-                last_stored_id = max(last_stored_id, record["id"])
-                try:
-                    event = _json.loads(record["payload"])
-                except (_json.JSONDecodeError, KeyError):
-                    event = {}
-                event_type = event.get("type", "unknown") if isinstance(event, dict) else "unknown"
-                yield (
-                    f"id: {record['id']}\n"
-                    f"event: {event_type}\n"
-                    f"data: {json.dumps(event, ensure_ascii=False, default=str)}\n\n"
-                )
 
         if is_llm:
             # LLM 세션은 단발 요청이라 라이브 이벤트가 없다.
