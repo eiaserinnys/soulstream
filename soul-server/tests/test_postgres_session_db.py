@@ -12,6 +12,45 @@ import pytest
 from soul_server.service.postgres_session_db import PostgresSessionDB
 
 
+# === Mock helpers ===
+
+
+class _TxnCtx:
+    """conn.transaction() mock"""
+    async def __aenter__(self):
+        return self
+    async def __aexit__(self, *args):
+        pass
+
+
+class _AcquireCtx:
+    """pool.acquire() mock — returns a connection with transaction support"""
+    def __init__(self, conn):
+        self._conn = conn
+    async def __aenter__(self):
+        return self._conn
+    async def __aexit__(self, *args):
+        pass
+
+
+def _make_pool_with_conn():
+    """트랜잭션을 지원하는 pool + conn mock 쌍을 반환한다."""
+    conn = MagicMock()
+    conn.transaction.return_value = _TxnCtx()
+    conn.execute = AsyncMock()
+    conn.fetchrow = AsyncMock()
+    conn.fetchval = AsyncMock()
+    conn.fetch = AsyncMock()
+    pool = MagicMock()
+    pool.acquire.return_value = _AcquireCtx(conn)
+    # pool 직접 호출도 지원
+    pool.execute = AsyncMock()
+    pool.fetchrow = AsyncMock()
+    pool.fetchval = AsyncMock()
+    pool.fetch = AsyncMock()
+    return pool, conn
+
+
 # === Fixtures ===
 
 @pytest.fixture
@@ -23,6 +62,18 @@ def db():
     )
     sdb._pool = AsyncMock()
     return sdb
+
+
+@pytest.fixture
+def db_with_conn():
+    """트랜잭션 지원 pool + conn mock을 가진 DB 인스턴스"""
+    sdb = PostgresSessionDB(
+        database_url="postgresql://test:test@localhost/test",
+        node_id="test-node",
+    )
+    pool, conn = _make_pool_with_conn()
+    sdb._pool = pool
+    return sdb, conn
 
 
 def _make_record(data: dict):
@@ -48,38 +99,32 @@ def _make_record(data: dict):
 
 class TestSessionCRUD:
     @pytest.mark.asyncio
-    async def test_upsert_new_session(self, db):
-        db._pool.fetchrow = AsyncMock(return_value=None)  # get_session returns None
+    async def test_upsert_uses_on_conflict(self, db):
         db._pool.execute = AsyncMock()
 
         await db.upsert_session("s1", status="running", session_type="claude")
 
-        # INSERT was called
         db._pool.execute.assert_called_once()
-        call_args = db._pool.execute.call_args
-        assert "INSERT INTO sessions" in call_args[0][0]
+        sql = db._pool.execute.call_args[0][0]
+        assert "INSERT INTO sessions" in sql
+        assert "ON CONFLICT (session_id) DO UPDATE SET" in sql
 
     @pytest.mark.asyncio
-    async def test_upsert_update_existing(self, db):
-        existing = _make_record({
-            "session_id": "s1", "status": "running", "session_type": "claude",
-            "node_id": "test-node", "created_at": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc),
-            "last_message": None, "metadata": None,
-            "was_running_at_shutdown": False,
-        })
-        db._pool.fetchrow = AsyncMock(return_value=existing)
+    async def test_upsert_excludes_created_at_from_update(self, db):
         db._pool.execute = AsyncMock()
 
         await db.upsert_session("s1", status="completed")
 
-        db._pool.execute.assert_called_once()
-        call_args = db._pool.execute.call_args
-        assert "UPDATE sessions SET" in call_args[0][0]
+        sql = db._pool.execute.call_args[0][0]
+        conflict_clause = sql.split("DO UPDATE SET")[1]
+        # created_at과 session_id는 ON CONFLICT 절에서 제외
+        assert "created_at" not in conflict_clause
+        assert "session_id" not in conflict_clause
+        # EXCLUDED 참조 사용
+        assert "EXCLUDED." in conflict_clause
 
     @pytest.mark.asyncio
     async def test_upsert_auto_sets_node_id(self, db):
-        db._pool.fetchrow = AsyncMock(return_value=None)
         db._pool.execute = AsyncMock()
 
         await db.upsert_session("s1", status="running")
@@ -87,7 +132,6 @@ class TestSessionCRUD:
         call_args = db._pool.execute.call_args
         sql = call_args[0][0]
         assert "node_id" in sql
-        # node_id value should be "test-node"
         assert "test-node" in [str(a) for a in call_args[0][1:]]
 
     @pytest.mark.asyncio
@@ -166,8 +210,8 @@ class TestSessionCRUD:
 
 class TestEventCRUD:
     @pytest.mark.asyncio
-    async def test_append_event(self, db):
-        db._pool.execute = AsyncMock()
+    async def test_append_event(self, db_with_conn):
+        db, conn = db_with_conn
 
         await db.append_event(
             "s1", 1, "text_delta",
@@ -175,10 +219,12 @@ class TestEventCRUD:
             "2026-01-01T00:00:00+00:00",
         )
 
-        # Two calls: INSERT + UPDATE last_event_id
-        assert db._pool.execute.call_count == 2
-        insert_call = db._pool.execute.call_args_list[0]
-        assert "INSERT INTO events" in insert_call[0][0]
+        # 트랜잭션 내에서 INSERT + UPDATE last_event_id
+        assert conn.execute.call_count == 2
+        insert_sql = conn.execute.call_args_list[0][0][0]
+        update_sql = conn.execute.call_args_list[1][0][0]
+        assert "INSERT INTO events" in insert_sql
+        assert "last_event_id" in update_sql
 
     @pytest.mark.asyncio
     async def test_get_next_event_id(self, db):
@@ -230,6 +276,64 @@ class TestEventCRUD:
         db._pool.fetchrow = AsyncMock(return_value=None)
         event = await db.read_one_event("s1", 999)
         assert event is None
+
+
+# === append_metadata 원자적 처리 ===
+
+
+class TestAppendMetadata:
+    @pytest.mark.asyncio
+    async def test_append_metadata_uses_transaction(self, db_with_conn):
+        """트랜잭션 내에서 JSONB append + 이벤트 삽입이 원자적으로 수행되는지 확인"""
+        db, conn = db_with_conn
+        conn.execute = AsyncMock(return_value="UPDATE 1")
+
+        entry = {"type": "git_commit", "value": "abc1234"}
+        await db.append_metadata("s1", entry)
+
+        # 트랜잭션 내에서 2회 호출: UPDATE sessions + INSERT events
+        assert conn.execute.call_count == 2
+        update_sql = conn.execute.call_args_list[0][0][0]
+        insert_sql = conn.execute.call_args_list[1][0][0]
+        assert "COALESCE(metadata" in update_sql
+        assert "INSERT INTO events" in insert_sql
+
+    @pytest.mark.asyncio
+    async def test_append_metadata_atomic_jsonb_append(self, db_with_conn):
+        """SELECT 없이 JSONB || 연산자로 원자적 append하는지 확인"""
+        db, conn = db_with_conn
+        conn.execute = AsyncMock(return_value="UPDATE 1")
+
+        entry = {"type": "trello_card", "value": "card-123"}
+        await db.append_metadata("s1", entry)
+
+        update_sql = conn.execute.call_args_list[0][0][0]
+        # JSONB 배열 연결 연산자 사용
+        assert "||" in update_sql
+        # SELECT로 기존 메타데이터를 먼저 가져오지 않음
+        conn.fetchrow = AsyncMock()  # not called
+
+    @pytest.mark.asyncio
+    async def test_append_metadata_atomic_event_id(self, db_with_conn):
+        """이벤트 ID를 서브쿼리로 원자적으로 계산하는지 확인"""
+        db, conn = db_with_conn
+        conn.execute = AsyncMock(return_value="UPDATE 1")
+
+        entry = {"type": "git_commit", "value": "abc1234"}
+        await db.append_metadata("s1", entry)
+
+        insert_sql = conn.execute.call_args_list[1][0][0]
+        # MAX(id) + 1 서브쿼리가 INSERT 안에 포함
+        assert "COALESCE(MAX(id), 0) + 1" in insert_sql
+
+    @pytest.mark.asyncio
+    async def test_append_metadata_nonexistent_session(self, db_with_conn):
+        """존재하지 않는 세션에 append하면 ValueError"""
+        db, conn = db_with_conn
+        conn.execute = AsyncMock(return_value="UPDATE 0")
+
+        with pytest.raises(ValueError, match="not found"):
+            await db.append_metadata("nonexistent", {"type": "test"})
 
 
 # === 폴더 CRUD ===
@@ -352,7 +456,6 @@ class TestNodeId:
     @pytest.mark.asyncio
     async def test_upsert_sets_node_id(self, db):
         """upsert_session이 node_id를 자동 설정하는지 확인"""
-        db._pool.fetchrow = AsyncMock(return_value=None)
         db._pool.execute = AsyncMock()
 
         await db.upsert_session("s1", status="running")
