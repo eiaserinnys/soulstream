@@ -96,37 +96,23 @@ class PostgresSessionDB:
                 fields[col] = datetime.fromisoformat(fields[col])
 
         now = _utc_now()
+        fields.setdefault("created_at", now)
+        fields.setdefault("updated_at", now)
+        fields["session_id"] = session_id
 
-        existing = await self.get_session(session_id)
-        if existing is None:
-            fields.setdefault("created_at", now)
-            fields.setdefault("updated_at", now)
-            fields["session_id"] = session_id
+        cols = list(fields.keys())
+        placeholders = ", ".join(f"${i+1}" for i in range(len(cols)))
+        col_names = ", ".join(cols)
 
-            cols = list(fields.keys())
-            placeholders = ", ".join(f"${i+1}" for i in range(len(cols)))
-            col_names = ", ".join(cols)
+        # UPDATE 대상: session_id, created_at 제외 — EXCLUDED 참조로 파라미터 한 벌만 전달
+        update_cols = [c for c in cols if c not in ("session_id", "created_at")]
+        set_clause = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
 
-            await self._pool.execute(
-                f"INSERT INTO sessions ({col_names}) VALUES ({placeholders})",
-                *[fields[c] for c in cols],
-            )
-        else:
-            fields.setdefault("updated_at", now)
-            set_parts = []
-            values = []
-            idx = 1
-            for k, v in fields.items():
-                set_parts.append(f"{k} = ${idx}")
-                values.append(v)
-                idx += 1
-            values.append(session_id)
-            set_clause = ", ".join(set_parts)
-
-            await self._pool.execute(
-                f"UPDATE sessions SET {set_clause} WHERE session_id = ${idx}",
-                *values,
-            )
+        await self._pool.execute(
+            f"INSERT INTO sessions ({col_names}) VALUES ({placeholders}) "
+            f"ON CONFLICT (session_id) DO UPDATE SET {set_clause}",
+            *[fields[c] for c in cols],
+        )
 
     @staticmethod
     def _deserialize_session(row: asyncpg.Record) -> dict:
@@ -189,22 +175,10 @@ class PostgresSessionDB:
         )
 
     async def append_metadata(self, session_id: str, entry: dict) -> None:
-        """세션에 메타데이터 엔트리를 추가한다."""
-        session = await self.get_session(session_id)
-        if session is None:
-            raise ValueError(f"Session not found: {session_id}")
-
-        existing = session.get("metadata") or []
-        existing.append(entry)
-        metadata_json = json.dumps(existing, ensure_ascii=False)
-
+        """세션에 메타데이터 엔트리를 원자적으로 추가한다."""
         now = _utc_now()
-        await self._pool.execute(
-            "UPDATE sessions SET metadata = $1, updated_at = $2 WHERE session_id = $3",
-            metadata_json, now, session_id,
-        )
+        entry_json = json.dumps([entry], ensure_ascii=False)
 
-        # synthetic metadata 이벤트 삽입
         searchable = f"{entry.get('type', '')}: {entry.get('value', '')} {entry.get('label', '')}"
         event_payload = json.dumps({
             "type": "metadata",
@@ -213,12 +187,26 @@ class PostgresSessionDB:
             "label": entry.get("label"),
         }, ensure_ascii=False)
 
-        next_id = await self.get_next_event_id(session_id)
-        await self._pool.execute(
-            "INSERT INTO events (id, session_id, event_type, payload, searchable_text, created_at) "
-            "VALUES ($1, $2, $3, $4, $5, $6)",
-            next_id, session_id, "metadata", event_payload, searchable, now,
-        )
+        async with self._pool.acquire() as conn:
+            async with conn.transaction():
+                # 원자적 JSONB 배열 append (SELECT 없이)
+                result = await conn.execute(
+                    "UPDATE sessions "
+                    "SET metadata = COALESCE(metadata, '[]'::jsonb) || $1::jsonb, "
+                    "    updated_at = $2 "
+                    "WHERE session_id = $3",
+                    entry_json, now, session_id,
+                )
+                if result == "UPDATE 0":
+                    raise ValueError(f"Session not found: {session_id}")
+
+                # 이벤트 ID를 서브쿼리로 원자적 계산 + 삽입
+                await conn.execute(
+                    "INSERT INTO events (id, session_id, event_type, payload, searchable_text, created_at) "
+                    "VALUES ((SELECT COALESCE(MAX(id), 0) + 1 FROM events WHERE session_id = $1), "
+                    "$1, $2, $3, $4, $5)",
+                    session_id, "metadata", event_payload, searchable, now,
+                )
 
     async def update_last_message(self, session_id: str, last_message: dict) -> None:
         now = _utc_now()
@@ -301,15 +289,17 @@ class PostgresSessionDB:
             except ValueError:
                 created_at = _utc_now()
 
-        await self._pool.execute(
-            "INSERT INTO events (id, session_id, event_type, payload, searchable_text, created_at) "
-            "VALUES ($1, $2, $3, $4, $5, $6)",
-            event_id, session_id, event_type, payload, searchable_text, created_at,
-        )
-        await self._pool.execute(
-            "UPDATE sessions SET last_event_id = $1 WHERE session_id = $2",
-            event_id, session_id,
-        )
+        async with self._pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(
+                    "INSERT INTO events (id, session_id, event_type, payload, searchable_text, created_at) "
+                    "VALUES ($1, $2, $3, $4, $5, $6)",
+                    event_id, session_id, event_type, payload, searchable_text, created_at,
+                )
+                await conn.execute(
+                    "UPDATE sessions SET last_event_id = $1 WHERE session_id = $2",
+                    event_id, session_id,
+                )
 
     async def read_events(self, session_id: str, after_id: int = 0) -> list[dict]:
         rows = await self._pool.fetch(
