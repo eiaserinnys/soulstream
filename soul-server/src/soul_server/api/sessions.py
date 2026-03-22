@@ -30,12 +30,12 @@ async def stream_session_events(
     agent_session_id: str,
     last_stored_id: int,
     task_manager,
+    event_queue: asyncio.Queue,
 ) -> AsyncGenerator[dict, None]:
     """Parts 2+3: history_sync 발행 + 라이브 이벤트 스트리밍.
 
-    Part 1(저장소 읽기)은 호출자 책임:
-    - session_history(): EventStore 읽기 후 stream_session_events() 호출
-    - /api/sessions/{id}/events: SessionCache 읽기 후 stream_session_events() 호출
+    event_queue는 호출자가 히스토리 읽기 전에 add_listener로 등록한 큐.
+    last_stored_id 이하의 이벤트는 히스토리에서 이미 전송했으므로 건너뛴다.
 
     반환: raw event dict. 호출자가 SSE id/event/data 필드를 래핑.
     """
@@ -52,14 +52,16 @@ async def stream_session_events(
         sync_payload["status"] = current_task.status.value
     yield sync_payload
 
-    # Part 3: 라이브 스트리밍
-    event_queue = asyncio.Queue()
-    await task_manager.add_listener(agent_session_id, event_queue)
+    # Part 3: 라이브 스트리밍 (dedup)
     try:
         while True:
             try:
                 event = await asyncio.wait_for(event_queue.get(), timeout=30.0)
-                yield event  # _event_id를 포함한 원본 그대로 전달 (sse_wrapper가 SSE id: 필드로 변환)
+                # 히스토리에서 이미 전송된 이벤트는 건너뛴다
+                event_id = event.get("_event_id")
+                if event_id is not None and event_id <= last_stored_id:
+                    continue
+                yield event
             except asyncio.TimeoutError:
                 yield {"type": "keepalive"}
     finally:
@@ -209,36 +211,51 @@ def create_sessions_router() -> APIRouter:
                 logger.warning(f"Invalid Last-Event-ID header: {last_event_id!r}")
 
         async def sse_wrapper():
-            # Part 1: SessionDB에서 저장 이벤트 스트리밍
-            from soul_server.service.postgres_session_db import get_session_db
-            db = get_session_db()
-            last_stored_id = 0
+            # 리스너를 히스토리 읽기 전에 등록하여
+            # DB 읽기와 리스너 등록 사이의 경합으로 이벤트가 누락되는 것을 방지한다.
+            event_queue = asyncio.Queue()
+            await task_manager.add_listener(agent_session_id, event_queue)
+            entered_stream = False
 
             try:
-                async for event_id, event_type, payload_text in db.stream_events_raw(
-                    agent_session_id, after_id=after_id,
-                ):
-                    last_stored_id = max(last_stored_id, event_id)
-                    yield {
-                        "id": str(event_id),
-                        "event": event_type,
-                        "data": payload_text,
-                    }
-            except Exception as e:
-                logger.error(f"Failed to read events for {agent_session_id}: {e}")
+                # Part 1: SessionDB에서 저장 이벤트 스트리밍
+                from soul_server.service.postgres_session_db import get_session_db
+                db = get_session_db()
+                last_stored_id = 0
 
-            # Parts 2+3: stream_session_events에 위임 (history_sync 이중 발행 없음)
-            async for event_dict in stream_session_events(agent_session_id, last_stored_id, task_manager):
-                event_type = event_dict.get("type", "unknown")
-                if event_type == "keepalive":
-                    yield {"comment": "keepalive"}
-                else:
-                    # _event_id를 pop하여 data JSON에서 제거하되, SSE id: 필드로 전달
-                    event_id = event_dict.pop("_event_id", None)
-                    sse_event: dict = {"event": event_type, "data": json.dumps(event_dict, ensure_ascii=False, default=str)}
-                    if event_id is not None:
-                        sse_event["id"] = str(event_id)
-                    yield sse_event
+                try:
+                    async for event_id, event_type, payload_text in db.stream_events_raw(
+                        agent_session_id, after_id=after_id,
+                    ):
+                        last_stored_id = max(last_stored_id, event_id)
+                        yield {
+                            "id": str(event_id),
+                            "event": event_type,
+                            "data": payload_text,
+                        }
+                except Exception as e:
+                    logger.error(f"Failed to read events for {agent_session_id}: {e}")
+
+                # Parts 2+3: stream_session_events에 위임 (dedup은 stream_session_events 내부에서 처리)
+                # stream_session_events의 finally에서 remove_listener를 호출한다.
+                entered_stream = True
+                async for event_dict in stream_session_events(
+                    agent_session_id, last_stored_id, task_manager, event_queue,
+                ):
+                    event_type = event_dict.get("type", "unknown")
+                    if event_type == "keepalive":
+                        yield {"comment": "keepalive"}
+                    else:
+                        # _event_id를 pop하여 data JSON에서 제거하되, SSE id: 필드로 전달
+                        event_id = event_dict.pop("_event_id", None)
+                        sse_event: dict = {"event": event_type, "data": json.dumps(event_dict, ensure_ascii=False, default=str)}
+                        if event_id is not None:
+                            sse_event["id"] = str(event_id)
+                        yield sse_event
+            finally:
+                if not entered_stream:
+                    # stream_session_events에 진입하지 못했으면 직접 정리
+                    await task_manager.remove_listener(agent_session_id, event_queue)
 
         return EventSourceResponse(sse_wrapper())
 

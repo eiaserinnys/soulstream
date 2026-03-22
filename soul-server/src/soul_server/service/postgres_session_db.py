@@ -276,12 +276,16 @@ class PostgresSessionDB:
     async def append_event(
         self,
         session_id: str,
-        event_id: int,
         event_type: str,
         payload: str,
         searchable_text: str,
         created_at: str,
-    ) -> None:
+    ) -> int:
+        """이벤트를 원자적으로 저장하고 할당된 event_id를 반환한다.
+
+        ID 할당과 INSERT를 단일 트랜잭션에서 수행하여
+        동시 호출 시 ID 충돌을 방지한다.
+        """
         # created_at이 ISO 문자열이면 timestamptz로 변환
         if isinstance(created_at, str):
             try:
@@ -291,15 +295,26 @@ class PostgresSessionDB:
 
         async with self._pool.acquire() as conn:
             async with conn.transaction():
-                await conn.execute(
+                # 세션 행에 행 잠금을 걸어 같은 세션에 대한 동시 append를 직렬화한다.
+                # Read Committed에서 SELECT MAX(id)+1 서브쿼리의 동시 읽기로
+                # 중복 ID가 생기는 것을 방지한다.
+                await conn.fetchval(
+                    "SELECT session_id FROM sessions WHERE session_id = $1 FOR UPDATE",
+                    session_id,
+                )
+                event_id = await conn.fetchval(
                     "INSERT INTO events (id, session_id, event_type, payload, searchable_text, created_at) "
-                    "VALUES ($1, $2, $3, $4, $5, $6)",
-                    event_id, session_id, event_type, payload, searchable_text, created_at,
+                    "VALUES ("
+                    "  (SELECT COALESCE(MAX(id), 0) + 1 FROM events WHERE session_id = $1),"
+                    "  $1, $2, $3, $4, $5"
+                    ") RETURNING id",
+                    session_id, event_type, payload, searchable_text, created_at,
                 )
                 await conn.execute(
                     "UPDATE sessions SET last_event_id = $1 WHERE session_id = $2",
                     event_id, session_id,
                 )
+                return event_id
 
     async def read_events(self, session_id: str, after_id: int = 0) -> list[dict]:
         rows = await self._pool.fetch(
@@ -334,13 +349,6 @@ class PostgresSessionDB:
         )
         return self._event_to_dict(row) if row else None
 
-    async def get_next_event_id(self, session_id: str) -> int:
-        """세션별 독립 ID를 반환한다."""
-        row = await self._pool.fetchrow(
-            "SELECT COALESCE(MAX(id), 0) + 1 FROM events WHERE session_id = $1",
-            session_id,
-        )
-        return row[0]
 
     async def count_events(self, session_id: str) -> int:
         return await self._pool.fetchval(

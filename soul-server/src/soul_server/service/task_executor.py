@@ -72,7 +72,6 @@ class TaskExecutor:
         if self._db is None:
             return None
         from soul_server.service.postgres_session_db import PostgresSessionDB
-        event_id = await self._db.get_next_event_id(session_id)
         event_type = event_dict.get("type", "")
         payload = json.dumps(event_dict, ensure_ascii=False)
         searchable = PostgresSessionDB.extract_searchable_text(event_dict)
@@ -83,7 +82,7 @@ class TaskExecutor:
             created_at = ts
         else:
             created_at = utc_now().isoformat()
-        await self._db.append_event(session_id, event_id, event_type, payload, searchable, created_at)
+        event_id = await self._db.append_event(session_id, event_type, payload, searchable, created_at)
         return event_id
 
     async def start_execution(
