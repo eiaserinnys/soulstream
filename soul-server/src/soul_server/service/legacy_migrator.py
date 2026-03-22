@@ -50,8 +50,9 @@ async def auto_migrate(session_db: PostgresSessionDB, data_dir: str) -> None:
         if "sessions_db" in legacy:
             await _migrate_folders(pool, legacy["sessions_db"])
             await _migrate_sessions(pool, legacy["sessions_db"], node_id)
+            await _migrate_events_from_db(pool, legacy["sessions_db"], node_id)
         if "events_dir" in legacy:
-            await _migrate_events(pool, legacy["events_dir"], node_id)
+            await _migrate_events_from_jsonl(pool, legacy["events_dir"], node_id)
 
         if await _verify_migration(pool, source_counts, node_id):
             _deprecate_files(legacy)
@@ -148,25 +149,29 @@ def _count_sources(legacy: dict[str, Path]) -> dict[str, int]:
         except Exception:
             logger.warning("soulstream.db 카운트 실패", exc_info=True)
 
-    # events: JSONL 행 수 합계
+    # events: SQLite events 테이블 + JSONL 행 수 합계
+    if db_path:
+        try:
+            conn = sqlite3.connect(str(db_path))
+            counts["events"] += conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+            conn.close()
+        except Exception:
+            logger.warning("soulstream.db events 카운트 실패", exc_info=True)
+
     events_dir = legacy.get("events_dir")
     if events_dir:
-        total = 0
         for jsonl_file in events_dir.glob("*.jsonl"):
             try:
                 with open(jsonl_file, "r", encoding="utf-8") as f:
                     for line in f:
-                        line = line.strip()
-                        if not line:
-                            continue
-                        try:
-                            json.loads(line)
-                            total += 1
-                        except json.JSONDecodeError:
-                            continue
+                        if line.strip():
+                            try:
+                                json.loads(line)
+                                counts["events"] += 1
+                            except json.JSONDecodeError:
+                                continue
             except Exception:
                 logger.warning(f"이벤트 파일 카운트 실패: {jsonl_file}", exc_info=True)
-        counts["events"] = total
 
     return counts
 
@@ -320,11 +325,45 @@ async def _migrate_sessions(
     return session_count
 
 
-async def _migrate_events(pool: asyncpg.Pool, events_dir: Path, node_id: str) -> int:
-    """JSONL events/ → PostgreSQL events 테이블 이관."""
+async def _migrate_events_from_db(pool: asyncpg.Pool, db_path: Path, node_id: str) -> int:
+    """SQLite events 테이블 → PostgreSQL events 테이블 이관."""
+    conn_sqlite = sqlite3.connect(str(db_path))
+    conn_sqlite.row_factory = sqlite3.Row
+    rows = conn_sqlite.execute("SELECT * FROM events ORDER BY session_id, id").fetchall()
+    conn_sqlite.close()
+
+    event_count = 0
+    async with pool.acquire() as conn:
+        for row in rows:
+            await conn.execute(
+                """INSERT INTO events
+                   (session_id, id, event_type, payload, searchable_text, created_at)
+                   VALUES ($1, $2, $3, $4, $5, $6)
+                   ON CONFLICT (session_id, id) DO NOTHING""",
+                row["session_id"],
+                row["id"],
+                row["event_type"],
+                row["payload"],
+                row["searchable_text"] or "",
+                _parse_dt(row["created_at"]),
+            )
+            event_count += 1
+
+    logger.info(f"SQLite events에서 {event_count}개 이벤트 이관 완료")
+    return event_count
+
+
+async def _migrate_events_from_jsonl(pool: asyncpg.Pool, events_dir: Path, node_id: str) -> int:
+    """JSONL events/ → PostgreSQL events 테이블 이관.
+
+    JSONL 전용 레거시 노드용. 파일명(llm-*.jsonl / sess-*.jsonl)으로
+    세션 타입을 구분하여 세션 레코드가 없으면 자동 생성한다.
+    """
     event_count = 0
     for jsonl_file in sorted(events_dir.glob("*.jsonl")):
         sid = jsonl_file.stem
+        session_type = "llm" if sid.startswith("llm-") else "claude"
+        folder_id = "llm" if session_type == "llm" else "claude"
         events: list[dict] = []
         with open(jsonl_file, "r", encoding="utf-8") as f:
             for line in f:
@@ -339,7 +378,22 @@ async def _migrate_events(pool: asyncpg.Pool, events_dir: Path, node_id: str) ->
         if not events:
             continue
 
+        # 세션이 없으면 자동 생성
         async with pool.acquire() as conn:
+            existing = await conn.fetchval(
+                "SELECT 1 FROM sessions WHERE session_id = $1", sid
+            )
+            if not existing:
+                first_ts = _parse_dt(events[0].get("created_at"))
+                last_ts = _parse_dt(events[-1].get("created_at"))
+                await conn.execute(
+                    """INSERT INTO sessions
+                       (session_id, folder_id, node_id, status, session_type, created_at, updated_at)
+                       VALUES ($1, $2, $3, 'completed', $4, $5, $6)
+                       ON CONFLICT (session_id) DO NOTHING""",
+                    sid, folder_id, node_id, session_type, first_ts, last_ts,
+                )
+
             for evt in events:
                 eid = evt.get("id", 0)
                 event_type = evt.get("type", evt.get("event_type", "unknown"))
@@ -352,12 +406,7 @@ async def _migrate_events(pool: asyncpg.Pool, events_dir: Path, node_id: str) ->
                        (session_id, id, event_type, payload, searchable_text, created_at)
                        VALUES ($1, $2, $3, $4, $5, $6)
                        ON CONFLICT (session_id, id) DO NOTHING""",
-                    sid,
-                    eid,
-                    event_type,
-                    payload,
-                    searchable,
-                    created_at,
+                    sid, eid, event_type, payload, searchable, created_at,
                 )
                 event_count += 1
 
@@ -368,8 +417,7 @@ async def _migrate_events(pool: asyncpg.Pool, events_dir: Path, node_id: str) ->
                 await conn.execute(
                     "UPDATE sessions SET last_event_id = $1 "
                     "WHERE session_id = $2 AND (last_event_id IS NULL OR last_event_id < $1)",
-                    max_id,
-                    sid,
+                    max_id, sid,
                 )
 
     logger.info(f"JSONL에서 {event_count}개 이벤트 이관 완료")
