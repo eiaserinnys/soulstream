@@ -133,7 +133,7 @@ const SessionItem = memo(function SessionItem({ session, isActive, onClick }: Se
 
       {/* Session info */}
       <div className="flex-1 min-w-0">
-        <div className={cn("text-[15px] text-foreground truncate", isUnread && "font-semibold")}>
+        <div className={cn("text-[15px] truncate", isUnread ? "text-foreground font-semibold" : "text-muted-foreground")}>
           {isLlm && (
             <span className="mr-1" title="LLM session">{"\u{1F916}"}</span>
           )}
