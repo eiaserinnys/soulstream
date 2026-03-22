@@ -194,5 +194,78 @@ export function createSessionsProxyRouter(
     }
   });
 
+  /**
+   * PUT /api/sessions/:id/read-position
+   *
+   * Soul Server의 PUT /sessions/:id/read-position을 프록시합니다.
+   */
+  router.put("/:id/read-position", async (req: Request, res: Response) => {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(
+        () => controller.abort(),
+        SOUL_REQUEST_TIMEOUT_MS,
+      );
+
+      let soulResponse: globalThis.Response;
+      try {
+        soulResponse = await fetch(
+          `${soulBaseUrl}/sessions/${req.params.id}/read-position`,
+          {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+              ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+            },
+            body: JSON.stringify(req.body),
+            signal: controller.signal,
+          },
+        );
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") {
+          res.status(504).json({
+            error: {
+              code: "TIMEOUT",
+              message: "Soul server request timed out",
+            },
+          });
+          return;
+        }
+        throw err;
+      } finally {
+        clearTimeout(timeoutId);
+      }
+
+      if (!soulResponse.ok) {
+        const errorBody = await soulResponse.text();
+        console.error(
+          `[sessions-proxy] Soul PUT /sessions/${req.params.id}/read-position failed (${soulResponse.status}):`,
+          errorBody,
+        );
+        res.status(soulResponse.status).json({
+          error: {
+            code: "SOUL_ERROR",
+            message: `Soul server returned ${soulResponse.status}`,
+          },
+        });
+        return;
+      }
+
+      const data = await soulResponse.json();
+      res.json(data);
+    } catch (err) {
+      console.error(
+        `[sessions-proxy] Failed to proxy PUT /sessions/${req.params.id}/read-position:`,
+        err,
+      );
+      res.status(500).json({
+        error: {
+          code: "INTERNAL_ERROR",
+          message: "Failed to update read position",
+        },
+      });
+    }
+  });
+
   return router;
 }
