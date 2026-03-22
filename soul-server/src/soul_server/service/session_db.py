@@ -294,10 +294,27 @@ class SessionDB:
             raise ValueError(f"Session not found: {session_id}")
         return (row[0], row[1])
 
-    def mark_running_at_shutdown(self) -> None:
-        self._conn.execute(
-            "UPDATE sessions SET was_running_at_shutdown = 1 WHERE status = 'running'"
-        )
+    def mark_running_at_shutdown(self, session_ids: list[str] | None = None) -> None:
+        """실행 중인 세션에 shutdown 플래그를 설정한다.
+
+        Args:
+            session_ids: 플래그를 세팅할 세션 ID 목록.
+                         None이면 status='running'인 전체에 적용 (하위 호환).
+                         목록을 전달하면 해당 세션만 마킹하여 기존 좀비까지
+                         마킹되는 문제를 방지한다.
+        """
+        if session_ids is not None:
+            if not session_ids:
+                return
+            placeholders = ",".join("?" for _ in session_ids)
+            self._conn.execute(
+                f"UPDATE sessions SET was_running_at_shutdown = 1 WHERE session_id IN ({placeholders})",
+                session_ids,
+            )
+        else:
+            self._conn.execute(
+                "UPDATE sessions SET was_running_at_shutdown = 1 WHERE status = 'running'"
+            )
         self._conn.commit()
 
     def get_shutdown_sessions(self) -> list[dict]:

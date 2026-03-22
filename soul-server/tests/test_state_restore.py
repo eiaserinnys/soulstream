@@ -197,6 +197,20 @@ class TestZombieSessionCleanup:
 
         await _cancel_eviction(tm)
 
+    def test_mark_running_at_shutdown_only_marks_specified_sessions(self, db):
+        """T4b: mark_running_at_shutdown에 세션 ID 목록을 전달하면 해당 세션만 마킹"""
+        db.upsert_session("active1", session_type="claude", status="running")
+        db.upsert_session("zombie1", session_type="claude", status="running")
+
+        # active1만 마킹 (zombie1은 이미 좀비라 실제 프로세스가 없음)
+        db.mark_running_at_shutdown(["active1"])
+
+        s1 = db.get_session("active1")
+        assert s1["was_running_at_shutdown"] == 1
+
+        s2 = db.get_session("zombie1")
+        assert s2["was_running_at_shutdown"] == 0
+
 
 # ============================================================
 # T5. 꼬인 읽음 상태 복구
