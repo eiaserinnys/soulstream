@@ -89,8 +89,7 @@ def _make_mock_session_db():
     db.assign_session_to_folder = AsyncMock(side_effect=_assign_session_to_folder)
     db.get_catalog = AsyncMock(side_effect=_get_catalog)
     db.ensure_default_folders = AsyncMock(side_effect=_ensure_default_folders)
-    db.get_next_event_id = AsyncMock(return_value=1)
-    db.append_event = AsyncMock()
+    db.append_event = AsyncMock(return_value=1)
     db.read_events = AsyncMock(return_value=[])
     db.update_last_read_event_id = AsyncMock(return_value=True)
     return db

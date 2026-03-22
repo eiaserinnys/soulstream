@@ -213,27 +213,26 @@ class TestEventCRUD:
     async def test_append_event(self, db_with_conn):
         db, conn = db_with_conn
 
-        await db.append_event(
-            "s1", 1, "text_delta",
+        # fetchval은 2번 호출: FOR UPDATE(행 잠금) + INSERT RETURNING id
+        conn.fetchval = AsyncMock(side_effect=["s1", 1])
+
+        event_id = await db.append_event(
+            "s1", "text_delta",
             '{"text":"hello"}', "hello",
             "2026-01-01T00:00:00+00:00",
         )
 
-        # 트랜잭션 내에서 INSERT + UPDATE last_event_id
-        assert conn.execute.call_count == 2
-        insert_sql = conn.execute.call_args_list[0][0][0]
-        update_sql = conn.execute.call_args_list[1][0][0]
+        assert event_id == 1
+        # 트랜잭션 내에서 fetchval(FOR UPDATE) + fetchval(INSERT RETURNING) + execute(UPDATE)
+        assert conn.fetchval.call_count == 2
+        assert conn.execute.call_count == 1
+        lock_sql = conn.fetchval.call_args_list[0][0][0]
+        insert_sql = conn.fetchval.call_args_list[1][0][0]
+        update_sql = conn.execute.call_args[0][0]
+        assert "FOR UPDATE" in lock_sql
         assert "INSERT INTO events" in insert_sql
+        assert "RETURNING id" in insert_sql
         assert "last_event_id" in update_sql
-
-    @pytest.mark.asyncio
-    async def test_get_next_event_id(self, db):
-        record = _make_record({0: 5})
-        record.__getitem__ = lambda self, key: 5 if key == 0 else None
-        db._pool.fetchrow = AsyncMock(return_value=record)
-
-        next_id = await db.get_next_event_id("s1")
-        assert next_id == 5
 
     @pytest.mark.asyncio
     async def test_read_events(self, db):
