@@ -41,6 +41,7 @@ router = APIRouter()
 class CreateSessionBody(BaseModel):
     prompt: str
     agentSessionId: Optional[str] = None
+    folderId: Optional[str] = None
     use_mcp: bool = True
 
 
@@ -380,6 +381,7 @@ async def api_create_session(body: CreateSessionBody):
             prompt=body.prompt,
             agent_session_id=body.agentSessionId,
             use_mcp=body.use_mcp,
+            folder_id=body.folderId,
         )
     except TaskConflictError:
         raise HTTPException(
