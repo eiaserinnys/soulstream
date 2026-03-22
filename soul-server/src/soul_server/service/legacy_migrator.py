@@ -1,6 +1,6 @@
 """서버 기동 시 레거시 데이터(SQLite/JSONL) → PostgreSQL 자동 이관.
 
-서버 시작 시 레거시 파일(sessions.db, events/, session_catalog.json)이
+서버 시작 시 레거시 파일(soulstream.db, events/, session_catalog.json)이
 존재하면 PostgreSQL로 이관하고, 검증 후 원본을 .deprecated로 리네이밍한다.
 """
 
@@ -118,7 +118,7 @@ def _detect_legacy_files(data_dir: str) -> dict[str, Path]:
     if catalog.exists():
         result["catalog"] = catalog
 
-    sessions_db = base / "sessions.db"
+    sessions_db = base / "soulstream.db"
     if sessions_db.exists():
         result["sessions_db"] = sessions_db
 
@@ -170,7 +170,7 @@ def _count_sources(legacy: dict[str, Path]) -> dict[str, int]:
             counts["sessions"] = cursor.fetchone()[0]
             conn.close()
         except Exception:
-            logger.warning("sessions.db 카운트 실패", exc_info=True)
+            logger.warning("soulstream.db 카운트 실패", exc_info=True)
 
     # events: JSONL 행 수 합계
     events_dir = legacy.get("events_dir")
@@ -300,7 +300,7 @@ async def _migrate_sessions(
     *,
     session_folder_map: dict[str, str],
 ) -> int:
-    """SQLite sessions.db → PostgreSQL sessions 테이블 이관."""
+    """SQLite soulstream.db → PostgreSQL sessions 테이블 이관."""
     conn_sqlite = sqlite3.connect(str(db_path))
     conn_sqlite.row_factory = sqlite3.Row
     cursor = conn_sqlite.execute("SELECT * FROM sessions")
