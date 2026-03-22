@@ -239,14 +239,21 @@ class TestVerifyMigration:
     @pytest.mark.asyncio
     async def test_success(self):
         pool, conn = _make_mock_pool()
-        conn.fetchval = AsyncMock(side_effect=[10, 50, 2])  # sessions, events, folders
+        conn.fetchrow = AsyncMock(return_value={
+            "session_count": 10, "event_count": 50, "folder_count": 2,
+        })
         source = {"sessions": 10, "events": 50, "folders": 2}
         assert await _verify_migration(pool, source, "node-1") is True
+        conn.fetchrow.assert_awaited_once()
+        call_args = conn.fetchrow.await_args
+        assert "migration_verify" in call_args.args[0]
 
     @pytest.mark.asyncio
     async def test_failure_sessions(self):
         pool, conn = _make_mock_pool()
-        conn.fetchval = AsyncMock(side_effect=[5, 50, 2])  # sessions 부족
+        conn.fetchrow = AsyncMock(return_value={
+            "session_count": 5, "event_count": 50, "folder_count": 2,
+        })
         source = {"sessions": 10, "events": 50, "folders": 2}
         assert await _verify_migration(pool, source, "node-1") is False
 
@@ -254,7 +261,9 @@ class TestVerifyMigration:
     async def test_ge_comparison(self):
         """PG 레코드 수가 원본보다 많아도 통과."""
         pool, conn = _make_mock_pool()
-        conn.fetchval = AsyncMock(side_effect=[15, 100, 5])
+        conn.fetchrow = AsyncMock(return_value={
+            "session_count": 15, "event_count": 100, "folder_count": 5,
+        })
         source = {"sessions": 10, "events": 50, "folders": 2}
         assert await _verify_migration(pool, source, "node-1") is True
 
@@ -314,8 +323,10 @@ class TestAutoMigrate:
     async def test_idempotent(self, populated_data_dir: Path):
         """검증 통과 후 deprecated 처리되면, 두 번째 실행에서 감지 안 함."""
         pool, conn = _make_mock_pool()
-        # JSONL 세션 존재 확인(2회) + 검증(sessions=3, events=6, folders=2)
-        conn.fetchval = AsyncMock(side_effect=[1, 1, 3, 6, 2])
+        # migration_verify 결과
+        conn.fetchrow = AsyncMock(return_value={
+            "session_count": 3, "event_count": 6, "folder_count": 2,
+        })
         session_db = _make_mock_session_db(pool)
 
         await auto_migrate(session_db, str(populated_data_dir))
@@ -384,17 +395,16 @@ class TestJsonlFormatCompat:
         )
 
         pool, conn = _make_mock_pool()
-        conn.fetchval = AsyncMock(return_value=None)  # 세션 없음 → 자동 생성
 
         from soul_server.service.legacy_migrator import _migrate_events_from_jsonl
         await _migrate_events_from_jsonl(pool, events_dir, "test-node")
 
         # conn.execute 호출 인자를 검사
         calls = conn.execute.await_args_list
-        # 세션 자동 생성 INSERT + 이벤트 INSERT 2건 + last_event_id UPDATE
+        # migration_ensure_session + migration_insert_event 2건 + migration_update_last_event_id
         event_inserts = [
             c for c in calls
-            if "INSERT INTO events" in str(c.args[0])
+            if "migration_insert_event" in str(c.args[0])
         ]
         assert len(event_inserts) == 2
 
@@ -413,6 +423,20 @@ class TestJsonlFormatCompat:
         assert second_insert.args[3] == "tool_use"
         assert second_insert.args[5] == "test cmd"
 
+        # migration_ensure_session 호출 확인
+        ensure_calls = [
+            c for c in calls
+            if "migration_ensure_session" in str(c.args[0])
+        ]
+        assert len(ensure_calls) == 1
+
+        # migration_update_last_event_id 호출 확인
+        update_calls = [
+            c for c in calls
+            if "migration_update_last_event_id" in str(c.args[0])
+        ]
+        assert len(update_calls) == 1
+
     @pytest.mark.asyncio
     async def test_flat_event_format_compat(self, data_dir: Path):
         """레거시 flat 포맷 {"id": N, "type": "...", ...}도 여전히 호환된다."""
@@ -424,14 +448,13 @@ class TestJsonlFormatCompat:
         )
 
         pool, conn = _make_mock_pool()
-        conn.fetchval = AsyncMock(return_value=None)
 
         from soul_server.service.legacy_migrator import _migrate_events_from_jsonl
         await _migrate_events_from_jsonl(pool, events_dir, "test-node")
 
         event_inserts = [
             c for c in conn.execute.await_args_list
-            if "INSERT INTO events" in str(c.args[0])
+            if "migration_insert_event" in str(c.args[0])
         ]
         assert len(event_inserts) == 1
         assert event_inserts[0].args[3] == "text"
@@ -449,14 +472,13 @@ class TestJsonlFormatCompat:
         )
 
         pool, conn = _make_mock_pool()
-        conn.fetchval = AsyncMock(return_value=None)
 
         from soul_server.service.legacy_migrator import _migrate_events_from_jsonl
         await _migrate_events_from_jsonl(pool, events_dir, "test-node")
 
         event_inserts = [
             c for c in conn.execute.await_args_list
-            if "INSERT INTO events" in str(c.args[0])
+            if "migration_insert_event" in str(c.args[0])
         ]
         assert len(event_inserts) == 2
         assert event_inserts[0].args[3] == "text"
