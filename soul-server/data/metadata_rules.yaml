@@ -21,10 +21,13 @@
 #     url: 선택, 관련 URL
 
 rules:
+  # git commit 출력: [branch-name hash] message
+  # 예: [fix/metadata 1a2b3c4] feat: add extraction
+  # detached HEAD: [1a2b3c4] feat: add extraction
   - name: git_commit
     tool_name: Bash
     result_mode: regex
-    result_pattern: "\\[([a-f0-9]{7,12})\\]\\s+(.+)"
+    result_pattern: "\\[[^\\]]*?\\b([a-f0-9]{7,12})\\]\\s+(.+)"
     extract:
       type: git_commit
       value: "$1"
@@ -46,6 +49,16 @@ rules:
       type: git_worktree_create
       value: "$1"
 
+  # git push 출력: abc1234..def5678  branch -> branch
+  - name: git_push
+    tool_name: Bash
+    result_mode: regex
+    result_pattern: "([a-f0-9]{7,12})\\.\\.([a-f0-9]{7,12})\\s+(\\S+)\\s+->\\s+(\\S+)"
+    extract:
+      type: git_push
+      value: "$3"
+      label: "$1..$2"
+
   - name: git_branch_delete
     tool_name: Bash
     result_mode: regex
@@ -64,6 +77,17 @@ rules:
     extract:
       type: git_worktree_remove
       value: "worktree removed"
+
+  # 세렌디피티 배치 도구: batch_operations, batch_create_blocks, batch_sync_blocks
+  # 배치 결과에서 첫 번째 title 또는 pageId를 추출
+  - name: serendipity_batch
+    tool_name: "mcp__serendipity__batch_"
+    tool_name_regex: true
+    result_mode: regex
+    result_pattern: "\"title\":\\s*\"([^\"]+)\""
+    extract:
+      type: serendipity_batch
+      value: "$1"
 
   # 실제 result: "File created successfully at: {path}"
   - name: file_write
