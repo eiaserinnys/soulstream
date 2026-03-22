@@ -381,8 +381,7 @@ async def _migrate_folders(pool: asyncpg.Pool, db_path: Path) -> int:
                 continue
 
             await conn.execute(
-                "INSERT INTO folders (id, name, sort_order) VALUES ($1, $2, $3) "
-                "ON CONFLICT (id) DO NOTHING",
+                "SELECT migration_upsert_folder($1, $2, $3)",
                 new_id,
                 name,
                 row["sort_order"],
@@ -402,7 +401,8 @@ async def _migrate_sessions(
     """SQLite soulstream.db → PostgreSQL sessions 테이블 이관.
 
     SQLite의 folder_id(UUID)를 PostgreSQL ID로 매핑하고,
-    display_name을 포함한 전체 세션 데이터를 이관한다.
+    display_name을 포함한 전체 세션 데이터를 JSONB로 패킹하여
+    migration_upsert_session 프로시저에 전달한다.
     """
     conn_sqlite = sqlite3.connect(str(db_path))
     conn_sqlite.row_factory = sqlite3.Row
@@ -439,38 +439,28 @@ async def _migrate_sessions(
             created_at = _parse_dt(row["created_at"]) if "created_at" in keys else datetime.now(timezone.utc)
             updated_at = _parse_dt(row["updated_at"]) if "updated_at" in keys else created_at
 
+            session_data = {
+                "folder_id": folder_id,
+                "display_name": display_name,
+                "node_id": node_id,
+                "session_type": session_type,
+                "status": status,
+                "prompt": prompt,
+                "client_id": client_id,
+                "claude_session_id": claude_session_id,
+                "last_message": last_message,
+                "metadata": metadata,
+                "was_running_at_shutdown": was_running,
+                "last_event_id": last_event_id,
+                "last_read_event_id": last_read_event_id,
+                "created_at": created_at.isoformat(),
+                "updated_at": updated_at.isoformat(),
+            }
+
             await conn.execute(
-                """INSERT INTO sessions
-                   (session_id, folder_id, display_name, node_id, status, session_type,
-                    prompt, client_id, claude_session_id,
-                    last_message, metadata, was_running_at_shutdown,
-                    last_event_id, last_read_event_id, created_at, updated_at)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-                   ON CONFLICT (session_id) DO UPDATE SET
-                       folder_id = EXCLUDED.folder_id,
-                       display_name = EXCLUDED.display_name,
-                       prompt = EXCLUDED.prompt,
-                       client_id = EXCLUDED.client_id,
-                       claude_session_id = EXCLUDED.claude_session_id,
-                       was_running_at_shutdown = EXCLUDED.was_running_at_shutdown,
-                       last_event_id = EXCLUDED.last_event_id,
-                       last_read_event_id = EXCLUDED.last_read_event_id""",
+                "SELECT migration_upsert_session($1, $2::jsonb)",
                 sid,
-                folder_id,
-                display_name,
-                node_id,
-                status,
-                session_type,
-                prompt,
-                client_id,
-                claude_session_id,
-                last_message,
-                metadata,
-                was_running,
-                last_event_id,
-                last_read_event_id,
-                created_at,
-                updated_at,
+                json.dumps(session_data, ensure_ascii=False),
             )
             session_count += 1
 
@@ -509,12 +499,7 @@ async def _migrate_events_from_db(pool: asyncpg.Pool, db_path: Path, node_id: st
             _parse_dt(row["created_at"]),
         ))
 
-    query = (
-        "INSERT INTO events "
-        "(session_id, id, event_type, payload, searchable_text, created_at) "
-        "VALUES ($1, $2, $3, $4, $5, $6) "
-        "ON CONFLICT (session_id, id) DO NOTHING"
-    )
+    query = "SELECT migration_insert_event($1, $2, $3, $4::jsonb, $5, $6)"
 
     event_count = 0
     skipped = 0
@@ -571,23 +556,26 @@ async def _migrate_events_from_jsonl(pool: asyncpg.Pool, events_dir: Path, node_
         if not events:
             continue
 
-        # 세션이 없으면 자동 생성
+        # 세션이 없으면 자동 생성 (migration_ensure_session)
         async with pool.acquire() as conn:
-            existing = await conn.fetchval(
-                "SELECT 1 FROM sessions WHERE session_id = $1", sid
+            _, first_evt = _unwrap_event(events[0])
+            _, last_evt = _unwrap_event(events[-1])
+            first_ts = _parse_dt(first_evt.get("created_at"))
+            last_ts = _parse_dt(last_evt.get("created_at"))
+
+            session_data = {
+                "folder_id": folder_id,
+                "node_id": node_id,
+                "session_type": session_type,
+                "status": "completed",
+                "created_at": first_ts.isoformat(),
+                "updated_at": last_ts.isoformat(),
+            }
+            await conn.execute(
+                "SELECT migration_ensure_session($1, $2::jsonb)",
+                sid,
+                json.dumps(session_data, ensure_ascii=False),
             )
-            if not existing:
-                _, first_evt = _unwrap_event(events[0])
-                _, last_evt = _unwrap_event(events[-1])
-                first_ts = _parse_dt(first_evt.get("created_at"))
-                last_ts = _parse_dt(last_evt.get("created_at"))
-                await conn.execute(
-                    """INSERT INTO sessions
-                       (session_id, folder_id, node_id, status, session_type, created_at, updated_at)
-                       VALUES ($1, $2, $3, 'completed', $4, $5, $6)
-                       ON CONFLICT (session_id) DO NOTHING""",
-                    sid, folder_id, node_id, session_type, first_ts, last_ts,
-                )
 
             for raw in events:
                 # SessionCache 포맷: {"id": N, "event": {...}}
@@ -599,23 +587,18 @@ async def _migrate_events_from_jsonl(pool: asyncpg.Pool, events_dir: Path, node_
                 created_at = _parse_dt(evt.get("created_at")) if evt.get("created_at") else datetime.now(timezone.utc)
 
                 await conn.execute(
-                    """INSERT INTO events
-                       (session_id, id, event_type, payload, searchable_text, created_at)
-                       VALUES ($1, $2, $3, $4, $5, $6)
-                       ON CONFLICT (session_id, id) DO NOTHING""",
+                    "SELECT migration_insert_event($1, $2, $3, $4::jsonb, $5, $6)",
                     sid, eid, event_type, payload, searchable, created_at,
                 )
                 event_count += 1
 
         # 세션의 last_event_id 갱신
-        # events 리스트는 raw 형태를 유지하므로 id를 올바르게 읽는다
         if events:
             max_id = max(e.get("id", 0) for e in events)
             async with pool.acquire() as conn:
                 await conn.execute(
-                    "UPDATE sessions SET last_event_id = $1 "
-                    "WHERE session_id = $2 AND (last_event_id IS NULL OR last_event_id < $1)",
-                    max_id, sid,
+                    "SELECT migration_update_last_event_id($1, $2)",
+                    sid, max_id,
                 )
 
     logger.info(f"JSONL에서 {event_count}개 이벤트 이관 완료")
@@ -625,18 +608,17 @@ async def _migrate_events_from_jsonl(pool: asyncpg.Pool, events_dir: Path, node_
 async def _verify_migration(
     pool: asyncpg.Pool, source_counts: dict[str, int], node_id: str
 ) -> bool:
-    """PostgreSQL 레코드 수와 source_counts 비교. 모든 항목 >= 원본이면 True."""
+    """PostgreSQL 레코드 수와 source_counts 비교. 모든 항목 >= 원본이면 True.
+
+    migration_verify 프로시저는 전체 폴더 수(시스템 폴더 포함)를 반환하므로,
+    source_counts["folders"](사용자 정의 폴더만) 와의 비교에서는 항상 >=가 성립한다.
+    """
     async with pool.acquire() as conn:
-        pg_sessions = await conn.fetchval("SELECT COUNT(*) FROM sessions WHERE node_id = $1", node_id)
-        pg_events = await conn.fetchval(
-            "SELECT COUNT(*) FROM events e "
-            "JOIN sessions s ON e.session_id = s.session_id "
-            "WHERE s.node_id = $1",
-            node_id,
-        )
-        pg_folders = await conn.fetchval(
-            "SELECT COUNT(*) FROM folders WHERE id NOT IN ('claude', 'llm')"
-        )
+        row = await conn.fetchrow("SELECT * FROM migration_verify($1)", node_id)
+
+    pg_sessions = row["session_count"]
+    pg_events = row["event_count"]
+    pg_folders = row["folder_count"]
 
     ok = True
     if pg_sessions < source_counts["sessions"]:
@@ -650,7 +632,7 @@ async def _verify_migration(
         ok = False
 
     if ok:
-        logger.info(f"검증 통과: 세션={pg_sessions}, 이벤트={pg_events}, 사용자 폴더={pg_folders}")
+        logger.info(f"검증 통과: 세션={pg_sessions}, 이벤트={pg_events}, 폴더={pg_folders}")
     return ok
 
 
