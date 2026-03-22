@@ -18,6 +18,7 @@ import { formatTime } from "../lib/input-request-utils";
 import { ChatInput } from "./ChatInput";
 import { ProfileAvatar } from "./ProfileAvatar";
 import { ContextContentRenderer } from "./ContextContentRenderer";
+import { MarkdownContent } from "./MarkdownContent";
 import { cn } from "../lib/cn";
 
 /** 스크롤 하단 판정 threshold (px) */
@@ -273,7 +274,9 @@ const UserMessage = memo(function UserMessage({ msg, llmContext }: { msg: ChatMe
             </span>
           )}
         </div>
-        <div className="text-[15px] text-foreground whitespace-pre-wrap break-words">{msg.content}</div>
+        <div className="text-[15px] text-foreground break-words">
+          <MarkdownContent content={msg.content} />
+        </div>
         {msg.contextItems && msg.contextItems.length > 0 && (
           <ContextBlock items={msg.contextItems} />
         )}
@@ -375,10 +378,16 @@ const AssistantMessage = memo(function AssistantMessage({ msg, llmContext }: { m
             </span>
           )}
         </div>
-        <div className="text-[15px] text-foreground whitespace-pre-wrap break-words">
-          {msg.content}
-          {msg.isStreaming && <span className="inline-block w-1.5 h-3.5 bg-foreground/60 ml-0.5 animate-pulse" />}
-        </div>
+        {msg.isStreaming ? (
+          <div className="text-[15px] text-foreground whitespace-pre-wrap break-words">
+            {msg.content}
+            <span className="inline-block w-1.5 h-3.5 bg-foreground/60 ml-0.5 animate-pulse" />
+          </div>
+        ) : (
+          <div className="text-[15px] text-foreground break-words">
+            <MarkdownContent content={msg.content} />
+          </div>
+        )}
       </div>
     </div>
   );
