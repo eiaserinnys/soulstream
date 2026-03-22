@@ -11,16 +11,26 @@ import { renameSessionOptimistic } from "client/lib/rename-session";
 import {
   useDashboardStore,
   useIsMobile,
+  isSessionUnread,
   cn,
   Badge,
   type SessionSummary,
+  type SessionStatus,
 } from "@seosoyoung/soul-ui";
 
-const STATUS_COLORS: Record<string, string> = {
-  running: "bg-green-500",
-  completed: "bg-blue-500",
-  error: "bg-red-500",
-  interrupted: "bg-yellow-500",
+// === Status Config (ported from SessionList) ===
+
+interface StatusConfig {
+  dotClass: string;
+  animate: boolean;
+}
+
+const STATUS_CONFIG: Record<SessionStatus, StatusConfig> = {
+  running:      { dotClass: "bg-success",          animate: true  },
+  completed:    { dotClass: "bg-muted-foreground",  animate: false },
+  error:        { dotClass: "bg-accent-red",        animate: false },
+  interrupted:  { dotClass: "bg-accent-amber",      animate: false },
+  unknown:      { dotClass: "bg-muted-foreground",  animate: false },
 };
 
 const SessionItem = memo(function SessionItem({
@@ -45,6 +55,9 @@ const SessionItem = memo(function SessionItem({
   onEditCancel: () => void;
 }) {
   const [editValue, setEditValue] = useState(session.displayName ?? "");
+  const config = STATUS_CONFIG[session.status] ?? STATUS_CONFIG.unknown;
+  const isUnread = isSessionUnread(session);
+  const isReadCompleted = session.status === "completed" && !isUnread;
 
   const displayText = session.displayName
     ? `📌 ${session.displayName}`
@@ -52,9 +65,15 @@ const SessionItem = memo(function SessionItem({
       ? `🗨️ ${session.lastMessage.preview}`
       : session.prompt || session.agentSessionId;
 
-  const timeStr = session.updatedAt
-    ? new Date(session.updatedAt).toLocaleString()
-    : "";
+  const displayTime = session.lastMessage?.timestamp ?? session.updatedAt ?? session.createdAt;
+  const timeStr = displayTime
+    ? new Date(displayTime).toLocaleString("ko-KR", {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : "...";
 
   return (
     <div
@@ -63,14 +82,19 @@ const SessionItem = memo(function SessionItem({
         "flex items-center gap-2 px-3 py-2 cursor-pointer text-sm hover:bg-accent/50 border-b border-border/50",
         isActive && "bg-accent text-accent-foreground",
         isSelected && !isActive && "bg-primary/10",
+        isReadCompleted && "opacity-50",
       )}
       onClick={onClick}
       onContextMenu={onContextMenu}
       onDragStart={onDragStart}
       data-session-id={session.agentSessionId}
     >
-      <div
-        className={cn("w-2 h-2 rounded-full shrink-0", STATUS_COLORS[session.status] ?? "bg-gray-400")}
+      <span
+        className={cn(
+          "w-2 h-2 rounded-full shrink-0",
+          config.dotClass,
+          config.animate && "animate-[pulse_2s_infinite]",
+        )}
       />
       <div className="flex-1 min-w-0">
         {isEditing ? (
@@ -85,7 +109,9 @@ const SessionItem = memo(function SessionItem({
             }}
           />
         ) : (
-          <div className="truncate">{displayText}</div>
+          <div className={cn("truncate", isUnread ? "text-foreground font-semibold" : "text-muted-foreground")}>
+            {displayText}
+          </div>
         )}
         <div className="text-xs text-muted-foreground truncate">{timeStr}</div>
       </div>
@@ -95,9 +121,11 @@ const SessionItem = memo(function SessionItem({
             {session.nodeId}
           </Badge>
         )}
-        <Badge variant="outline" className="text-xs shrink-0">
-          {session.status}
-        </Badge>
+        {session.eventCount > 0 && (
+          <Badge variant="outline" size="sm" className="shrink-0">
+            {session.eventCount}
+          </Badge>
+        )}
       </div>
     </div>
   );
