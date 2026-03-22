@@ -1,6 +1,6 @@
 """서버 기동 시 레거시 데이터(SQLite/JSONL) → PostgreSQL 자동 이관.
 
-서버 시작 시 레거시 파일(soulstream.db, events/, session_catalog.json)이
+서버 시작 시 레거시 파일(soulstream.db, events/)이
 존재하면 PostgreSQL로 이관하고, 검증 후 원본을 .deprecated로 리네이밍한다.
 """
 
@@ -47,14 +47,9 @@ async def auto_migrate(session_db: PostgresSessionDB, data_dir: str) -> None:
         source_counts = _count_sources(legacy)
         logger.info(f"소스 레코드: {source_counts}")
 
-        session_folder_map = _build_session_folder_map(legacy.get("catalog"))
-
-        if "catalog" in legacy:
-            await _migrate_catalog(pool, legacy["catalog"], node_id)
         if "sessions_db" in legacy:
-            await _migrate_sessions(
-                pool, legacy["sessions_db"], node_id, session_folder_map=session_folder_map
-            )
+            await _migrate_folders(pool, legacy["sessions_db"])
+            await _migrate_sessions(pool, legacy["sessions_db"], node_id)
         if "events_dir" in legacy:
             await _migrate_events(pool, legacy["events_dir"], node_id)
 
@@ -68,7 +63,7 @@ async def auto_migrate(session_db: PostgresSessionDB, data_dir: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 헬퍼 — 날짜/텍스트 파싱 (기존 migrate_to_postgres.py에서 이동)
+# 헬퍼 — 날짜/텍스트 파싱
 # ---------------------------------------------------------------------------
 
 
@@ -114,10 +109,6 @@ def _detect_legacy_files(data_dir: str) -> dict[str, Path]:
     base = Path(data_dir)
     result: dict[str, Path] = {}
 
-    catalog = base / "session_catalog.json"
-    if catalog.exists():
-        result["catalog"] = catalog
-
     sessions_db = base / "soulstream.db"
     if sessions_db.exists():
         result["sessions_db"] = sessions_db
@@ -133,41 +124,26 @@ def _count_sources(legacy: dict[str, Path]) -> dict[str, int]:
     """이관 전 원본 레코드 수 집계.
 
     Returns:
-        {"catalog_folders": int, "sessions": int, "events": int}
-        - catalog_folders: 사용자 정의 폴더 수 (시스템 폴더 제외)
-        - sessions: SQLite 세션 레코드 수
+        {"folders": int, "sessions": int, "events": int}
+        - folders: SQLite folders 테이블의 사용자 정의 폴더 수
+        - sessions: SQLite sessions 테이블의 세션 수
         - events: 전체 JSONL 이벤트 레코드 수 (행 수 합계)
     """
-    counts: dict[str, int] = {"catalog_folders": 0, "sessions": 0, "events": 0}
+    counts: dict[str, int] = {"folders": 0, "sessions": 0, "events": 0}
 
-    # catalog_folders: 시스템 폴더 제외한 사용자 정의 폴더 수
-    catalog_path = legacy.get("catalog")
-    if catalog_path:
-        try:
-            catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
-            from soul_server.service.postgres_session_db import PostgresSessionDB
-
-            system_names = set(PostgresSessionDB.DEFAULT_FOLDERS.values())
-            system_ids = set(PostgresSessionDB.DEFAULT_FOLDERS.keys())
-            user_folders = 0
-            for folder in catalog.get("folders", []):
-                fid = folder.get("id", "")
-                fname = folder.get("name", "")
-                if fid not in system_ids and fname not in system_names:
-                    # 시스템 폴더 이름 패턴 매칭도 확인
-                    if not _is_system_folder(fname):
-                        user_folders += 1
-            counts["catalog_folders"] = user_folders
-        except Exception:
-            logger.warning("session_catalog.json 파싱 실패 (카운트)", exc_info=True)
-
-    # sessions
     db_path = legacy.get("sessions_db")
     if db_path:
         try:
             conn = sqlite3.connect(str(db_path))
-            cursor = conn.execute("SELECT COUNT(*) FROM sessions")
-            counts["sessions"] = cursor.fetchone()[0]
+            # 폴더 수 (시스템 폴더 제외)
+            rows = conn.execute("SELECT id, name FROM folders").fetchall()
+            user_folders = 0
+            for fid, fname in rows:
+                if not _is_system_folder(fid, fname):
+                    user_folders += 1
+            counts["folders"] = user_folders
+            # 세션 수
+            counts["sessions"] = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
             conn.close()
         except Exception:
             logger.warning("soulstream.db 카운트 실패", exc_info=True)
@@ -195,101 +171,68 @@ def _count_sources(legacy: dict[str, Path]) -> dict[str, int]:
     return counts
 
 
-def _is_system_folder(name: str) -> bool:
-    """시스템 폴더 이름인지 판별."""
-    lower = name.lower()
-    return "클로드" in name or "claude" in lower or "llm" in lower
+def _is_system_folder(folder_id: str, name: str) -> bool:
+    """시스템 폴더인지 판별.
 
-
-def _build_session_folder_map(catalog_path: Path | None) -> dict[str, str]:
-    """session_catalog.json에서 {session_id: folder_id} 매핑 구축.
-
-    session_catalog.json의 sessions 항목은 folder_id 키(snake_case)를 사용한다.
-    시스템 폴더(클로드/llm)는 고정 ID로 매핑하고,
-    사용자 정의 폴더는 원래 UUID를 그대로 사용한다.
+    PostgresSessionDB.DEFAULT_FOLDERS의 고정 ID('claude', 'llm')에 매핑되는
+    폴더를 시스템 폴더로 취급한다.
     """
-    if catalog_path is None or not catalog_path.exists():
-        return {}
-
-    try:
-        catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
-    except Exception:
-        logger.warning("session_catalog.json 파싱 실패 (폴더 매핑)", exc_info=True)
-        return {}
-
-    # UUID → 고정 ID 매핑
-    folder_id_map: dict[str, str] = {}
-    for folder in catalog.get("folders", []):
-        old_id = folder["id"]
-        name = folder.get("name", "")
-        if "클로드" in name or "claude" in name.lower():
-            folder_id_map[old_id] = "claude"
-        elif "llm" in name.lower():
-            folder_id_map[old_id] = "llm"
-        else:
-            folder_id_map[old_id] = old_id
-
-    # 세션 → 폴더 매핑
-    session_map: dict[str, str] = {}
-    for sid, info in catalog.get("sessions", {}).items():
-        old_fid = info.get("folder_id")
-        if old_fid and old_fid in folder_id_map:
-            session_map[sid] = folder_id_map[old_fid]
-        else:
-            session_map[sid] = "claude"  # 기본값
-
-    return session_map
+    lower = name.lower()
+    if folder_id in ("claude", "llm"):
+        return True
+    if "클로드" in name or "claude" in lower:
+        return True
+    if "llm" in lower:
+        return True
+    return False
 
 
-async def _migrate_catalog(pool: asyncpg.Pool, catalog_path: Path, node_id: str) -> int:
-    """session_catalog.json 이관: 폴더 삽입 + sessions.folder_id 갱신.
+def _map_folder_id(folder_id: str, name: str) -> str:
+    """SQLite 폴더 UUID → PostgreSQL 폴더 ID 매핑.
+
+    시스템 폴더는 고정 ID로, 사용자 정의 폴더는 원래 UUID를 유지한다.
+    """
+    lower = name.lower()
+    if "클로드" in name or "claude" in lower:
+        return "claude"
+    if "llm" in lower:
+        return "llm"
+    return folder_id
+
+
+async def _migrate_folders(pool: asyncpg.Pool, db_path: Path) -> int:
+    """SQLite folders 테이블 → PostgreSQL folders 테이블 이관.
 
     Returns:
         삽입된 사용자 정의 폴더 수.
     """
-    try:
-        catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
-    except Exception:
-        logger.warning("session_catalog.json 파싱 실패 (이관)", exc_info=True)
-        return 0
+    conn_sqlite = sqlite3.connect(str(db_path))
+    conn_sqlite.row_factory = sqlite3.Row
+    rows = conn_sqlite.execute("SELECT * FROM folders").fetchall()
+    conn_sqlite.close()
 
     user_folder_count = 0
-    folder_id_map: dict[str, str] = {}
+    async with pool.acquire() as conn:
+        for row in rows:
+            old_id = row["id"]
+            name = row["name"]
+            new_id = _map_folder_id(old_id, name)
 
-    # 1. 폴더 삽입
-    for folder in catalog.get("folders", []):
-        old_id = folder["id"]
-        name = folder.get("name", "")
+            if new_id in ("claude", "llm"):
+                # 시스템 폴더는 ensure_default_folders()에서 이미 생성됨
+                continue
 
-        if "클로드" in name or "claude" in name.lower():
-            folder_id_map[old_id] = "claude"
-        elif "llm" in name.lower():
-            folder_id_map[old_id] = "llm"
-        else:
-            folder_id_map[old_id] = old_id
-            async with pool.acquire() as conn:
-                await conn.execute(
-                    "INSERT INTO folders (id, name, sort_order) VALUES ($1, $2, $3) "
-                    "ON CONFLICT (id) DO NOTHING",
-                    old_id,
-                    name,
-                    folder.get("sort_order", 99),
-                )
-            user_folder_count += 1
-            logger.info(f"  사용자 폴더 생성: {name} ({old_id})")
-
-    # 2. 세션-폴더 매핑 갱신
-    for sid, info in catalog.get("sessions", {}).items():
-        old_fid = info.get("folder_id")
-        new_fid = folder_id_map.get(old_fid, "claude") if old_fid else "claude"
-        async with pool.acquire() as conn:
             await conn.execute(
-                "UPDATE sessions SET folder_id = $1 WHERE session_id = $2",
-                new_fid,
-                sid,
+                "INSERT INTO folders (id, name, sort_order) VALUES ($1, $2, $3) "
+                "ON CONFLICT (id) DO NOTHING",
+                new_id,
+                name,
+                row["sort_order"],
             )
+            user_folder_count += 1
+            logger.info(f"  사용자 폴더 생성: {name} ({new_id})")
 
-    logger.info(f"카탈로그 이관: 사용자 폴더 {user_folder_count}개, 세션 매핑 {len(catalog.get('sessions', {}))}개")
+    logger.info(f"폴더 이관: 사용자 폴더 {user_folder_count}개")
     return user_folder_count
 
 
@@ -297,12 +240,22 @@ async def _migrate_sessions(
     pool: asyncpg.Pool,
     db_path: Path,
     node_id: str,
-    *,
-    session_folder_map: dict[str, str],
 ) -> int:
-    """SQLite soulstream.db → PostgreSQL sessions 테이블 이관."""
+    """SQLite soulstream.db → PostgreSQL sessions 테이블 이관.
+
+    SQLite의 folder_id(UUID)를 PostgreSQL ID로 매핑하고,
+    display_name을 포함한 전체 세션 데이터를 이관한다.
+    """
     conn_sqlite = sqlite3.connect(str(db_path))
     conn_sqlite.row_factory = sqlite3.Row
+
+    # 폴더 ID 매핑 테이블 구축
+    folder_rows = conn_sqlite.execute("SELECT id, name FROM folders").fetchall()
+    folder_id_map: dict[str, str] = {}
+    for frow in folder_rows:
+        folder_id_map[frow["id"]] = _map_folder_id(frow["id"], frow["name"])
+
+    # 세션 이관
     cursor = conn_sqlite.execute("SELECT * FROM sessions")
     rows = cursor.fetchall()
     conn_sqlite.close()
@@ -311,7 +264,9 @@ async def _migrate_sessions(
     async with pool.acquire() as conn:
         for row in rows:
             sid = row["session_id"]
-            folder_id = session_folder_map.get(sid, "claude")
+            old_folder_id = row["folder_id"] if "folder_id" in row.keys() else None
+            folder_id = folder_id_map.get(old_folder_id, "claude") if old_folder_id else "claude"
+            display_name = row["display_name"] if "display_name" in row.keys() else None
             status = row["status"] if "status" in row.keys() else "completed"
             session_type = row["session_type"] if "session_type" in row.keys() else "claude"
             last_message = row["last_message"] if "last_message" in row.keys() else None
@@ -321,12 +276,15 @@ async def _migrate_sessions(
 
             await conn.execute(
                 """INSERT INTO sessions
-                   (session_id, folder_id, node_id, status, session_type,
+                   (session_id, folder_id, display_name, node_id, status, session_type,
                     last_message, metadata, created_at, updated_at)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                   ON CONFLICT (session_id) DO NOTHING""",
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                   ON CONFLICT (session_id) DO UPDATE SET
+                       folder_id = EXCLUDED.folder_id,
+                       display_name = EXCLUDED.display_name""",
                 sid,
                 folder_id,
+                display_name,
                 node_id,
                 status,
                 session_type,
@@ -420,8 +378,8 @@ async def _verify_migration(
     if pg_events < source_counts["events"]:
         logger.warning(f"이벤트 수 불일치: PG={pg_events}, 원본={source_counts['events']}")
         ok = False
-    if pg_folders < source_counts["catalog_folders"]:
-        logger.warning(f"폴더 수 불일치: PG={pg_folders}, 원본={source_counts['catalog_folders']}")
+    if pg_folders < source_counts["folders"]:
+        logger.warning(f"폴더 수 불일치: PG={pg_folders}, 원본={source_counts['folders']}")
         ok = False
 
     if ok:
