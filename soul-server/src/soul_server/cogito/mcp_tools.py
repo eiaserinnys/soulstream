@@ -20,7 +20,7 @@ from fastmcp import FastMCP
 from cogito.manifest import load_manifest
 from soul_server.cogito.reflector_setup import reflect
 from soul_server.service.task_manager import get_task_manager
-from soul_server.service.session_db import get_session_db
+from soul_server.service.postgres_session_db import get_session_db
 from soul_server.service.session_broadcaster import get_session_broadcaster
 
 if TYPE_CHECKING:
@@ -242,7 +242,7 @@ async def list_sessions(
     except RuntimeError as e:
         return {"error": str(e)}
     limit = min(limit, 100)
-    sessions, _total = tm.get_all_sessions(offset=cursor, limit=limit + 1)
+    sessions, _total = await tm.get_all_sessions(offset=cursor, limit=limit + 1)
     has_more = len(sessions) > limit
     return {
         "sessions": sessions[:limit],
@@ -277,10 +277,10 @@ async def list_session_events(
     except RuntimeError as e:
         return {"error": str(e)}
     limit = min(limit, 100)
-    session = db.get_session(session_id)
+    session = await db.get_session(session_id)
     if session is None:
         return {"error": f"세션을 찾을 수 없습니다: {session_id}"}
-    all_events = db.read_events(session_id, after_id=cursor)
+    all_events = await db.read_events(session_id, after_id=cursor)
     has_more = len(all_events) > limit
     result = []
     for entry in all_events[:limit]:
@@ -317,10 +317,10 @@ async def get_session_event(
         db = get_session_db()
     except RuntimeError as e:
         return {"error": str(e)}
-    session = db.get_session(session_id)
+    session = await db.get_session(session_id)
     if session is None:
         return {"error": f"세션을 찾을 수 없습니다: {session_id}"}
-    entry = db.read_one_event(session_id, event_id)
+    entry = await db.read_one_event(session_id, event_id)
     if entry is None:
         return {"error": f"이벤트를 찾을 수 없습니다: session={session_id}, event_id={event_id}"}
     try:
@@ -354,7 +354,7 @@ async def search_session_history(
     from soul_server.cogito.search import SessionSearchEngine
     try:
         engine = SessionSearchEngine(db)
-        results = engine.search(query=query, session_ids=session_ids, top_k=top_k)
+        results = await engine.search(query=query, session_ids=session_ids, top_k=top_k)
     except ValueError as e:
         return {"error": str(e)}
     return {"results": [r.to_dict() for r in results]}
@@ -379,7 +379,7 @@ async def get_session_name(session_id: str) -> dict:
         db = get_session_db()
     except RuntimeError as e:
         return {"error": str(e)}
-    session = db.get_session(session_id)
+    session = await db.get_session(session_id)
     if session is None:
         return {"error": f"세션을 찾을 수 없습니다: {session_id}"}
     return {
@@ -406,18 +406,18 @@ async def set_session_name(session_id: str, name: str = "") -> dict:
         db = get_session_db()
     except RuntimeError as e:
         return {"error": str(e)}
-    session = db.get_session(session_id)
+    session = await db.get_session(session_id)
     if session is None:
         return {"error": f"세션을 찾을 수 없습니다: {session_id}"}
     display_name = name.strip() or None
-    db.rename_session(session_id, display_name)
+    await db.rename_session(session_id, display_name)
     # 카탈로그 변경 브로드캐스트 (대시보드 실시간 반영)
     try:
         broadcaster = get_session_broadcaster()
     except RuntimeError:
         pass  # 서버 초기화 전이면 브로드캐스트 생략
     else:
-        catalog = db.get_catalog()
+        catalog = await db.get_catalog()
         await broadcaster.broadcast({"type": "catalog_updated", "catalog": catalog})
     return {
         "session_id": session_id,
@@ -460,7 +460,7 @@ async def api_search_sessions(
     ids = [s.strip() for s in session_ids.split(",") if s.strip()] if session_ids else None
     try:
         engine = SessionSearchEngine(db)
-        results = engine.search(query=q, session_ids=ids, top_k=top_k)
+        results = await engine.search(query=q, session_ids=ids, top_k=top_k)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {

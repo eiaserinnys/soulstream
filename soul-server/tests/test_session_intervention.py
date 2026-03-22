@@ -10,6 +10,7 @@ agent_session_id 기반 개입(intervention) 기능을 검증합니다.
 """
 
 import asyncio
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -22,10 +23,38 @@ from soul_server.service.task_models import (
 )
 
 
+def _make_mock_db():
+    db = MagicMock()
+    db._pool = AsyncMock()
+    db.node_id = "test-node"
+    db.upsert_session = AsyncMock()
+    db.get_session = AsyncMock(return_value=None)
+    db.get_all_sessions = AsyncMock(return_value=([], 0))
+    db.delete_session = AsyncMock()
+    db.append_event = AsyncMock()
+    db.get_next_event_id = AsyncMock(return_value=1)
+    db.read_events = AsyncMock(return_value=[])
+    db.update_last_read_event_id = AsyncMock(return_value=True)
+    db.get_read_position = AsyncMock(return_value=(0, 0))
+    db.get_all_folders = AsyncMock(return_value=[
+        {"id": "claude", "name": "⚙️ 클로드 코드 세션", "sort_order": 0},
+        {"id": "llm", "name": "⚙️ LLM 세션", "sort_order": 1},
+    ])
+    db.get_folder = AsyncMock(return_value={"id": "claude", "name": "⚙️ 클로드 코드 세션", "sort_order": 0})
+    db.create_folder = AsyncMock()
+    db.get_catalog = AsyncMock(return_value={"folders": [], "sessions": {}})
+    db.update_last_message = AsyncMock()
+    db.search_events = AsyncMock(return_value=[])
+    db.get_default_folder = AsyncMock(return_value={"id": "claude", "name": "⚙️ 클로드 코드 세션", "sort_order": 0})
+    db.assign_session_to_folder = AsyncMock()
+    db.DEFAULT_FOLDERS = {"claude": "⚙️ 클로드 코드 세션", "llm": "⚙️ LLM 세션"}
+    return db
+
+
 @pytest.fixture
 def manager():
-    """영속화 없는 TaskManager"""
-    m = TaskManager(storage_path=None)
+    """Mock DB를 가진 TaskManager"""
+    m = TaskManager(session_db=_make_mock_db())
     yield m
     set_task_manager(None)
 

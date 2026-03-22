@@ -10,7 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from soul_server.service.session_db import SessionDB
+from unittest.mock import AsyncMock
+
+from soul_server.service.postgres_session_db import PostgresSessionDB
 from soul_server.service.task_manager import TaskManager, set_task_manager
 from soul_server.service.task_models import (
     Task,
@@ -21,15 +23,87 @@ from soul_server.service.task_models import (
 )
 
 
+def _make_mock_session_db():
+    """PostgresSessionDB의 AsyncMock을 생성한다. 상태를 추적하는 인메모리 mock."""
+    db = AsyncMock(spec=PostgresSessionDB)
+    _sessions = {}
+    _folders = {
+        "claude": {"id": "claude", "name": "⚙️ 클로드 코드 세션", "sort_order": 0},
+        "llm": {"id": "llm", "name": "⚙️ LLM 세션", "sort_order": 0},
+    }
+
+    async def _upsert_session(session_id, **fields):
+        if session_id not in _sessions:
+            _sessions[session_id] = {"session_id": session_id, "metadata": [], "last_event_id": 0, "last_read_event_id": 0}
+        _sessions[session_id].update(fields)
+
+    async def _get_session(session_id):
+        if session_id not in _sessions:
+            return None
+        return dict(_sessions[session_id])
+
+    async def _get_all_sessions(offset=0, limit=0, session_type=None):
+        items = list(_sessions.values())
+        if session_type:
+            items = [s for s in items if s.get("session_type") == session_type]
+        return items, len(items)
+
+    async def _get_default_folder(name):
+        for f in _folders.values():
+            if f["name"] == name:
+                return f
+        return None
+
+    async def _assign_session_to_folder(session_id, folder_id):
+        if session_id in _sessions:
+            _sessions[session_id]["folder_id"] = folder_id
+
+    async def _get_catalog():
+        folder_list = [
+            {"id": f["id"], "name": f["name"], "sortOrder": f.get("sort_order", 0)}
+            for f in _folders.values()
+        ]
+        sessions = {}
+        for sid, s in _sessions.items():
+            sessions[sid] = {
+                "folderId": s.get("folder_id"),
+                "displayName": s.get("display_name"),
+            }
+        return {"folders": folder_list, "sessions": sessions}
+
+    async def _ensure_default_folders():
+        pass
+
+    async def _create_folder(folder_id, name, sort_order=0):
+        _folders[folder_id] = {"id": folder_id, "name": name, "sort_order": sort_order}
+
+    async def _get_all_folders():
+        return list(_folders.values())
+
+    db.upsert_session = AsyncMock(side_effect=_upsert_session)
+    db.get_session = AsyncMock(side_effect=_get_session)
+    db.get_all_sessions = AsyncMock(side_effect=_get_all_sessions)
+    db.get_default_folder = AsyncMock(side_effect=_get_default_folder)
+    db.assign_session_to_folder = AsyncMock(side_effect=_assign_session_to_folder)
+    db.get_catalog = AsyncMock(side_effect=_get_catalog)
+    db.ensure_default_folders = AsyncMock(side_effect=_ensure_default_folders)
+    db.create_folder = AsyncMock(side_effect=_create_folder)
+    db.get_all_folders = AsyncMock(side_effect=_get_all_folders)
+    db.get_next_event_id = AsyncMock(return_value=1)
+    db.append_event = AsyncMock()
+    db.read_events = AsyncMock(return_value=[])
+    db.update_last_read_event_id = AsyncMock(return_value=True)
+    db.append_metadata = AsyncMock()
+    return db
+
+
 @pytest.fixture
-def manager(tmp_path):
-    """인메모리 SQLite를 사용하는 TaskManager"""
-    db = SessionDB(tmp_path / "test_sessions.db")
-    db.ensure_default_folders()
+def manager():
+    """AsyncMock PostgresSessionDB를 사용하는 TaskManager"""
+    db = _make_mock_session_db()
     m = TaskManager(session_db=db)
     yield m
     set_task_manager(None)
-    db.close()
 
 
 class TestCreateTask:
@@ -107,7 +181,7 @@ class TestGetTask:
         await manager.create_task(prompt="world", agent_session_id="sess-2")
         await manager.complete_task("sess-1", "done")
 
-        sessions, total = manager.get_all_sessions()
+        sessions, total = await manager.get_all_sessions()
         assert len(sessions) == 2
         assert total == 2
 
@@ -332,7 +406,7 @@ class TestStats:
         await manager.create_task(prompt="world", agent_session_id="sess-2")
         await manager.complete_task("sess-1", "done")
 
-        stats = manager.get_stats()
+        stats = await manager.get_stats()
         assert stats["total_in_memory"] == 2
         assert stats["total_in_db"] == 2
         assert stats["running"] == 1
@@ -345,7 +419,7 @@ class TestFolderId:
     async def test_create_with_folder_id(self, manager):
         """folder_id 지정 시 해당 폴더에 세션이 배치된다"""
         # 커스텀 폴더 생성
-        manager._db.create_folder("custom-folder", "커스텀 폴더", sort_order=10)
+        await manager._db.create_folder("custom-folder", "커스텀 폴더", sort_order=10)
 
         task = await manager.create_task(
             prompt="hello",
@@ -354,7 +428,7 @@ class TestFolderId:
         )
 
         # DB에서 세션의 folder_id 확인
-        session = manager._db.get_session("sess-1")
+        session = await manager._db.get_session("sess-1")
         assert session["folder_id"] == "custom-folder"
 
     async def test_create_without_folder_id_uses_default(self, manager):
@@ -364,11 +438,11 @@ class TestFolderId:
             agent_session_id="sess-1",
         )
 
-        session = manager._db.get_session("sess-1")
+        session = await manager._db.get_session("sess-1")
         assert session["folder_id"] is not None
 
         # 기본 폴더의 이름 확인
-        folders = manager._db.get_all_folders()
+        folders = await manager._db.get_all_folders()
         folder_map = {f["id"]: f["name"] for f in folders}
         assigned_name = folder_map.get(session["folder_id"])
         assert assigned_name == "⚙️ 클로드 코드 세션"
@@ -382,10 +456,10 @@ class TestFolderId:
         )
         await manager.register_external_task(task)
 
-        session = manager._db.get_session("ext-1")
+        session = await manager._db.get_session("ext-1")
         assert session["folder_id"] is not None
 
-        folders = manager._db.get_all_folders()
+        folders = await manager._db.get_all_folders()
         folder_map = {f["id"]: f["name"] for f in folders}
         assigned_name = folder_map.get(session["folder_id"])
         assert assigned_name == "⚙️ LLM 세션"

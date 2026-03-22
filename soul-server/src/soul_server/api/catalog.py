@@ -10,7 +10,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from soul_server.service.session_db import SessionDB
+from soul_server.service.postgres_session_db import PostgresSessionDB
 from soul_server.service.session_broadcaster import SessionBroadcaster
 
 
@@ -35,12 +35,12 @@ class BatchMoveRequest(BaseModel):
 
 
 def create_catalog_router(
-    session_db: SessionDB, broadcaster: SessionBroadcaster
+    session_db: PostgresSessionDB, broadcaster: SessionBroadcaster
 ) -> APIRouter:
     router = APIRouter()
 
     async def _broadcast_catalog():
-        catalog = session_db.get_catalog()
+        catalog = await session_db.get_catalog()
         await broadcaster.broadcast({
             "type": "catalog_updated",
             "catalog": catalog,
@@ -48,12 +48,12 @@ def create_catalog_router(
 
     @router.get("")
     async def get_catalog():
-        return session_db.get_catalog()
+        return await session_db.get_catalog()
 
     @router.post("/folders", status_code=201)
     async def create_folder(body: FolderCreate):
         folder_id = str(uuid.uuid4())
-        session_db.create_folder(folder_id, body.name, body.sort_order)
+        await session_db.create_folder(folder_id, body.name, body.sort_order)
         await _broadcast_catalog()
         return {"id": folder_id, "name": body.name, "sortOrder": body.sort_order}
 
@@ -66,31 +66,31 @@ def create_catalog_router(
             fields["sort_order"] = body.sort_order
         if not fields:
             raise HTTPException(status_code=400, detail="No fields to update")
-        session_db.update_folder(folder_id, **fields)
+        await session_db.update_folder(folder_id, **fields)
         await _broadcast_catalog()
         return {"ok": True}
 
     @router.delete("/folders/{folder_id}", status_code=204)
     async def delete_folder(folder_id: str):
-        session_db.delete_folder(folder_id)
+        await session_db.delete_folder(folder_id)
         await _broadcast_catalog()
 
     @router.put("/sessions/{session_id}")
     async def update_session_catalog(session_id: str, body: SessionCatalogUpdate):
-        session = session_db.get_session(session_id)
+        session = await session_db.get_session(session_id)
         if session is None:
             raise HTTPException(status_code=404, detail="Session not found")
         if body.folderId is not None:
-            session_db.assign_session_to_folder(session_id, body.folderId)
+            await session_db.assign_session_to_folder(session_id, body.folderId)
         if body.displayName is not None:
-            session_db.rename_session(session_id, body.displayName)
+            await session_db.rename_session(session_id, body.displayName)
         await _broadcast_catalog()
         return {"ok": True}
 
     @router.put("/sessions/batch")
     async def batch_move_sessions(body: BatchMoveRequest):
         for sid in body.sessionIds:
-            session_db.assign_session_to_folder(sid, body.folderId)
+            await session_db.assign_session_to_folder(sid, body.folderId)
         await _broadcast_catalog()
         return {"ok": True}
 

@@ -39,8 +39,8 @@ export function useReadPositionSync() {
     const session = sessions.find(
       (s) => s.agentSessionId === activeSessionKey,
     );
-    if (session && session.lastEventId > session.lastReadEventId) {
-      markAsRead(activeSessionKey, session.lastEventId);
+    if (session && (session.lastEventId ?? 0) > (session.lastReadEventId ?? 0)) {
+      markAsRead(activeSessionKey, session.lastEventId ?? 0);
     }
   }, [activeSessionKey]); // eslint-disable-line react-hooks/exhaustive-deps
 

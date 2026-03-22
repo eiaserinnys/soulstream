@@ -18,7 +18,7 @@ export function useSessionSearch() {
   const [results, setResults] = useState<SearchResultItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const abortRef = useRef<AbortController>();
+  const abortRef = useRef<AbortController | undefined>(undefined);
 
   const search = useCallback(async (query: string, topK = 20) => {
     if (!query.trim()) {
