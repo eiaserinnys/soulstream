@@ -264,32 +264,53 @@ async def _migrate_sessions(
     async with pool.acquire() as conn:
         for row in rows:
             sid = row["session_id"]
-            old_folder_id = row["folder_id"] if "folder_id" in row.keys() else None
+            keys = row.keys()
+            old_folder_id = row["folder_id"] if "folder_id" in keys else None
             folder_id = folder_id_map.get(old_folder_id, "claude") if old_folder_id else "claude"
-            display_name = row["display_name"] if "display_name" in row.keys() else None
-            status = row["status"] if "status" in row.keys() else "completed"
-            session_type = row["session_type"] if "session_type" in row.keys() else "claude"
-            last_message = row["last_message"] if "last_message" in row.keys() else None
-            metadata = row["metadata"] if "metadata" in row.keys() else None
-            created_at = _parse_dt(row["created_at"]) if "created_at" in row.keys() else datetime.now(timezone.utc)
-            updated_at = _parse_dt(row["updated_at"]) if "updated_at" in row.keys() else created_at
+            display_name = row["display_name"] if "display_name" in keys else None
+            status = row["status"] if "status" in keys else "completed"
+            session_type = row["session_type"] if "session_type" in keys else "claude"
+            prompt = row["prompt"] if "prompt" in keys else None
+            client_id = row["client_id"] if "client_id" in keys else None
+            claude_session_id = row["claude_session_id"] if "claude_session_id" in keys else None
+            last_message = row["last_message"] if "last_message" in keys else None
+            metadata = row["metadata"] if "metadata" in keys else None
+            was_running = bool(row["was_running_at_shutdown"]) if "was_running_at_shutdown" in keys else False
+            last_event_id = row["last_event_id"] if "last_event_id" in keys else None
+            last_read_event_id = row["last_read_event_id"] if "last_read_event_id" in keys else None
+            created_at = _parse_dt(row["created_at"]) if "created_at" in keys else datetime.now(timezone.utc)
+            updated_at = _parse_dt(row["updated_at"]) if "updated_at" in keys else created_at
 
             await conn.execute(
                 """INSERT INTO sessions
                    (session_id, folder_id, display_name, node_id, status, session_type,
-                    last_message, metadata, created_at, updated_at)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                    prompt, client_id, claude_session_id,
+                    last_message, metadata, was_running_at_shutdown,
+                    last_event_id, last_read_event_id, created_at, updated_at)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
                    ON CONFLICT (session_id) DO UPDATE SET
                        folder_id = EXCLUDED.folder_id,
-                       display_name = EXCLUDED.display_name""",
+                       display_name = EXCLUDED.display_name,
+                       prompt = EXCLUDED.prompt,
+                       client_id = EXCLUDED.client_id,
+                       claude_session_id = EXCLUDED.claude_session_id,
+                       was_running_at_shutdown = EXCLUDED.was_running_at_shutdown,
+                       last_event_id = EXCLUDED.last_event_id,
+                       last_read_event_id = EXCLUDED.last_read_event_id""",
                 sid,
                 folder_id,
                 display_name,
                 node_id,
                 status,
                 session_type,
+                prompt,
+                client_id,
+                claude_session_id,
                 last_message,
                 metadata,
+                was_running,
+                last_event_id,
+                last_read_event_id,
                 created_at,
                 updated_at,
             )
