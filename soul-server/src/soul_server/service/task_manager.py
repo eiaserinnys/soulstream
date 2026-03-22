@@ -7,7 +7,7 @@ TaskManager - 세션 라이프사이클 관리
 
 이 모듈은 다음 서브모듈들을 조합합니다:
 - task_models: 데이터 모델 및 예외
-- task_storage: JSON 영속화
+- postgres_session_db: PostgreSQL 영속화
 - task_listener: SSE 리스너 관리
 - task_executor: 백그라운드 실행
 """
@@ -32,7 +32,7 @@ from soul_server.service.task_models import (
 )
 from soul_server.service.task_listener import TaskListenerManager
 from soul_server.service.task_executor import TaskExecutor
-from soul_server.service.session_db import SessionDB
+from soul_server.service.postgres_session_db import PostgresSessionDB
 from soul_server.service.session_broadcaster import get_session_broadcaster
 
 # Re-export for backward compatibility
@@ -69,13 +69,13 @@ class TaskManager:
 
     def __init__(
         self,
-        session_db: SessionDB,
+        session_db: PostgresSessionDB,
         eviction_ttl: int = 900,
         metadata_extractor=None,
     ):
         """
         Args:
-            session_db: SQLite 기반 세션 저장소
+            session_db: PostgreSQL 기반 세션 저장소
             eviction_ttl: 완료 세션 메모리 퇴거 TTL (초, 기본 15분)
             metadata_extractor: MetadataExtractor 인스턴스 (tool_result에서 자동 감지)
         """
@@ -85,7 +85,7 @@ class TaskManager:
         # claude_session_id → agent_session_id 역방향 인덱스
         self._session_index: Dict[str, str] = {}
 
-        # SQLite 기반 세션 저장소
+        # PostgreSQL 기반 세션 저장소
         self._db = session_db
 
         # LRU 퇴거 관리
@@ -148,10 +148,9 @@ class TaskManager:
     async def load(self) -> int:
         """SessionDB에서 세션 메타데이터를 로드하고 퇴거 루프를 시작한다.
 
-        SQLite 단일 DB이므로 고아 복구가 불필요하다.
         running 상태 세션만 _tasks에 올리고 나머지는 DB에서 온디맨드 조회한다.
         """
-        sessions, total = self._db.get_all_sessions()
+        sessions, total = await self._db.get_all_sessions()
 
         loaded = 0
         zombies = 0
@@ -160,7 +159,7 @@ class TaskManager:
                 # 좀비 세션 정리: was_running_at_shutdown=0인 running 세션은
                 # graceful shutdown 이전에 프로세스가 죽은 것이므로 completed로 전환
                 if not s.get("was_running_at_shutdown", 0):
-                    self._db.upsert_session(
+                    await self._db.upsert_session(
                         s["session_id"],
                         status=TaskStatus.COMPLETED.value,
                     )
@@ -212,20 +211,20 @@ class TaskManager:
         호출자의 핵심 동작(세션 생성/등록)에 영향을 주지 않는다.
         """
         if folder_id is not None:
-            self._db.assign_session_to_folder(session_id, folder_id)
+            await self._db.assign_session_to_folder(session_id, folder_id)
             folder = {"id": folder_id}
         else:
-            default_name = SessionDB.DEFAULT_FOLDERS.get(
-                session_type, SessionDB.DEFAULT_FOLDERS["claude"]
+            default_name = PostgresSessionDB.DEFAULT_FOLDERS.get(
+                session_type, PostgresSessionDB.DEFAULT_FOLDERS["claude"]
             )
-            folder = self._db.get_default_folder(default_name)
+            folder = await self._db.get_default_folder(default_name)
             if folder:
-                self._db.assign_session_to_folder(session_id, folder["id"])
+                await self._db.assign_session_to_folder(session_id, folder["id"])
 
         try:
             broadcaster = get_session_broadcaster()
             if folder:
-                catalog = self._db.get_catalog()
+                catalog = await self._db.get_catalog()
                 await broadcaster.broadcast({
                     "type": "catalog_updated",
                     "catalog": catalog,
@@ -249,7 +248,7 @@ class TaskManager:
         """
         async with self._lock:
             self._tasks[task.agent_session_id] = task
-        self._db.upsert_session(
+        await self._db.upsert_session(
             task.agent_session_id,
             status=task.status.value,
             prompt=task.prompt,
@@ -307,7 +306,7 @@ class TaskManager:
                     setattr(task, key, value)
 
         # DB 업데이트 + LRU 퇴거 후보 등록
-        self._db.upsert_session(
+        await self._db.upsert_session(
             agent_session_id,
             status=task.status.value,
             updated_at=datetime_to_str(task.completed_at),
@@ -323,7 +322,7 @@ class TaskManager:
         """실행 중인 태스크 목록 반환"""
         return [t for t in self._tasks.values() if t.status == TaskStatus.RUNNING]
 
-    def get_all_sessions(
+    async def get_all_sessions(
         self,
         offset: int = 0,
         limit: int = 0,
@@ -342,7 +341,7 @@ class TaskManager:
         Returns:
             (세션 dict 리스트, 전체 세션 수) 튜플
         """
-        sessions, total = self._db.get_all_sessions(
+        sessions, total = await self._db.get_all_sessions(
             offset=offset, limit=limit, session_type=session_type
         )
 
@@ -369,6 +368,7 @@ class TaskManager:
                 "last_event_id": last_event_id,
                 "last_read_event_id": last_read_event_id,
                 "display_name": s.get("display_name"),
+                "node_id": s.get("node_id"),
             }
             if s.get("session_type", "claude") != "claude":
                 info["llm_provider"] = s.get("llm_provider")
@@ -441,7 +441,7 @@ class TaskManager:
                 logger.info(f"Resuming session: {agent_session_id} (claude_session={resume_session_id})")
 
                 # DB에서 기존 metadata 로드 (메모리 퇴거 후 resume 시에도 유지)
-                db_session = self._db.get_session(agent_session_id)
+                db_session = await self._db.get_session(agent_session_id)
                 if db_session and db_session.get("metadata"):
                     existing.metadata = db_session["metadata"]
 
@@ -486,7 +486,7 @@ class TaskManager:
                 is_new = True
 
         # DB에 세션 등록/업데이트
-        self._db.upsert_session(
+        await self._db.upsert_session(
             agent_session_id,
             status=TaskStatus.RUNNING.value,
             prompt=prompt,
@@ -573,7 +573,7 @@ class TaskManager:
             logger.info(f"Completed session: {agent_session_id}")
 
         # DB 업데이트 + LRU 퇴거 후보 등록
-        self._db.upsert_session(
+        await self._db.upsert_session(
             agent_session_id,
             status=TaskStatus.COMPLETED.value,
             claude_session_id=claude_session_id,
@@ -624,7 +624,7 @@ class TaskManager:
             logger.info(f"Error session: {agent_session_id} - {error}")
 
         # DB 업데이트 + LRU 퇴거 후보 등록
-        self._db.upsert_session(
+        await self._db.upsert_session(
             agent_session_id,
             status=TaskStatus.ERROR.value,
             updated_at=datetime_to_str(task.completed_at),
@@ -742,7 +742,7 @@ class TaskManager:
         task.metadata.append(entry)
 
         # DB에 영속화
-        self._db.append_metadata(agent_session_id, entry)
+        await self._db.append_metadata(agent_session_id, entry)
 
         # SSE 브로드캐스트 (부가 기능 — 실패해도 메타데이터 저장에 영향 없음)
         try:
@@ -897,7 +897,7 @@ class TaskManager:
             logger.info(f"Fixed {fixed} orphaned running sessions")
             # DB 업데이트 + 퇴거 후보 등록
             for task in fixed_tasks:
-                self._db.upsert_session(
+                await self._db.upsert_session(
                     task.agent_session_id,
                     status=TaskStatus.INTERRUPTED.value,
                     updated_at=datetime_to_str(task.completed_at),
@@ -922,16 +922,17 @@ class TaskManager:
         except asyncio.QueueEmpty:
             pass
 
-    def get_stats(self) -> dict:
+    async def get_stats(self) -> dict:
         """통계 반환"""
         running = sum(1 for t in self._tasks.values() if t.status == TaskStatus.RUNNING)
         completed = sum(1 for t in self._tasks.values() if t.status == TaskStatus.COMPLETED)
         error = sum(1 for t in self._tasks.values() if t.status == TaskStatus.ERROR)
         interrupted = sum(1 for t in self._tasks.values() if t.status == TaskStatus.INTERRUPTED)
 
+        _, total_in_db = await self._db.get_all_sessions()
         return {
             "total_in_memory": len(self._tasks),
-            "total_in_db": self._db.get_all_sessions()[1],
+            "total_in_db": total_in_db,
             "running": running,
             "completed": completed,
             "error": error,
@@ -989,7 +990,7 @@ class TaskManager:
         Returns:
             복원된 Task 또는 None
         """
-        entry = self._db.get_session(agent_session_id)
+        entry = await self._db.get_session(agent_session_id)
         if not entry:
             return None
 

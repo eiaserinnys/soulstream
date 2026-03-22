@@ -383,6 +383,8 @@ export interface SessionSummary {
   lastEventId?: number;
   /** 마지막으로 읽은 이벤트 ID */
   lastReadEventId?: number;
+  /** 세션을 생성한 노드 ID */
+  nodeId?: string;
 }
 
 /** 세션 상세 정보 */

@@ -26,7 +26,7 @@ from soul_server.llm.adapters import LlmResult, LlmAdapter
 from soul_server.llm.executor import LlmExecutor
 from soul_server.service.task_models import Task, TaskStatus
 from soul_server.service.task_manager import TaskManager
-from soul_server.service.event_store import EventStore
+from soul_server.service.postgres_session_db import PostgresSessionDB
 from soul_server.service.session_broadcaster import SessionBroadcaster
 
 
@@ -132,16 +132,32 @@ class FailingAdapter:
 # === Executor Tests ===
 
 
-@pytest.fixture
-def event_store(tmp_path):
-    return EventStore(base_dir=tmp_path / "events")
+def _make_mock_session_db():
+    """PostgresSessionDB의 AsyncMock을 생성한다."""
+    db = AsyncMock(spec=PostgresSessionDB)
+    db.upsert_session = AsyncMock()
+    db.get_session = AsyncMock(return_value=None)
+    db.get_all_sessions = AsyncMock(return_value=([], 0))
+    db.get_next_event_id = AsyncMock(return_value=1)
+    db.append_event = AsyncMock()
+    db.ensure_default_folders = AsyncMock()
+    db.get_default_folder = AsyncMock(return_value={"id": "claude", "name": "클로드 코드 세션"})
+    db.assign_session_to_folder = AsyncMock()
+    db.get_catalog = AsyncMock(return_value={"folders": [], "sessions": {}})
+    db.read_events = AsyncMock(return_value=[])
+    db.extract_searchable_text = PostgresSessionDB.extract_searchable_text
+    return db
 
 
 @pytest.fixture
-def task_manager(tmp_path, event_store):
+def session_db():
+    return _make_mock_session_db()
+
+
+@pytest.fixture
+def task_manager(session_db):
     return TaskManager(
-        storage_path=tmp_path / "tasks.json",
-        event_store=event_store,
+        session_db=session_db,
     )
 
 
@@ -165,34 +181,34 @@ def failing_adapter():
 
 
 @pytest.fixture
-def executor(mock_adapter, task_manager, event_store, broadcaster):
+def executor(mock_adapter, task_manager, session_db, broadcaster):
     return LlmExecutor(
         adapters={"openai": mock_adapter},
         task_manager=task_manager,
-        event_store=event_store,
+        session_db=session_db,
         session_broadcaster=broadcaster,
     )
 
 
 @pytest.fixture
-def executor_with_both(mock_adapter, task_manager, event_store, broadcaster):
+def executor_with_both(mock_adapter, task_manager, session_db, broadcaster):
     return LlmExecutor(
         adapters={
             "openai": mock_adapter,
             "anthropic": MockAdapter(content="Anthropic response", input_tokens=15, output_tokens=8),
         },
         task_manager=task_manager,
-        event_store=event_store,
+        session_db=session_db,
         session_broadcaster=broadcaster,
     )
 
 
 @pytest.fixture
-def executor_with_failing(failing_adapter, task_manager, event_store, broadcaster):
+def executor_with_failing(failing_adapter, task_manager, session_db, broadcaster):
     return LlmExecutor(
         adapters={"openai": failing_adapter},
         task_manager=task_manager,
-        event_store=event_store,
+        session_db=session_db,
         session_broadcaster=broadcaster,
     )
 
@@ -272,7 +288,7 @@ class TestLlmExecutor:
         assert task.status == TaskStatus.COMPLETED
         assert task.llm_usage == {"input_tokens": 10, "output_tokens": 5}
 
-    async def test_execute_stores_events(self, executor, event_store):
+    async def test_execute_stores_events(self, executor, session_db):
         request = LlmCompletionRequest(
             provider="openai",
             model="gpt-4o-mini",
@@ -281,23 +297,22 @@ class TestLlmExecutor:
 
         response = await executor.execute(request)
 
-        # 이벤트가 기록되었는지 확인
-        events = event_store.read_all(response.session_id)
-        assert len(events) == 2
+        # 이벤트가 append_event로 기록되었는지 확인 (2회: request + response)
+        assert session_db.append_event.call_count == 2
 
         # 요청 이벤트
-        req_event = events[0]["event"]
-        assert req_event["type"] == "user_message"
-        assert req_event["provider"] == "openai"
-        assert req_event["model"] == "gpt-4o-mini"
+        first_call_payload = json.loads(session_db.append_event.call_args_list[0][0][3])
+        assert first_call_payload["type"] == "user_message"
+        assert first_call_payload["provider"] == "openai"
+        assert first_call_payload["model"] == "gpt-4o-mini"
 
         # 응답 이벤트
-        resp_event = events[1]["event"]
-        assert resp_event["type"] == "assistant_message"
-        assert resp_event["content"] == "Mock response"
-        assert resp_event["usage"] == {"input_tokens": 10, "output_tokens": 5}
+        second_call_payload = json.loads(session_db.append_event.call_args_list[1][0][3])
+        assert second_call_payload["type"] == "assistant_message"
+        assert second_call_payload["content"] == "Mock response"
+        assert second_call_payload["usage"] == {"input_tokens": 10, "output_tokens": 5}
 
-    async def test_execute_api_error(self, executor_with_failing, event_store, task_manager):
+    async def test_execute_api_error(self, executor_with_failing, session_db, task_manager):
         request = LlmCompletionRequest(
             provider="openai",
             model="gpt-4o-mini",
@@ -315,11 +330,10 @@ class TestLlmExecutor:
         assert len(tasks_with_error) == 1
         assert "rate limited" in tasks_with_error[0].error
 
-        # 에러 이벤트가 기록되었는지 확인
-        session_id = tasks_with_error[0].agent_session_id
-        events = event_store.read_all(session_id)
-        assert len(events) == 2  # request + error
-        assert events[1]["event"]["type"] == "error"
+        # 에러 이벤트가 기록되었는지 확인 (append_event 2회: request + error)
+        assert session_db.append_event.call_count == 2
+        error_payload = json.loads(session_db.append_event.call_args_list[1][0][3])
+        assert error_payload["type"] == "error"
 
     async def test_execute_broadcasts_session(self, executor, broadcaster):
         # 리스너 추가
@@ -334,14 +348,14 @@ class TestLlmExecutor:
 
         await executor.execute(request)
 
-        # session_created + session_updated 이벤트
+        # catalog_updated + session_created + session_updated 이벤트
         events = []
         while not queue.empty():
             events.append(queue.get_nowait())
 
-        assert len(events) == 2
-        assert events[0]["type"] == "session_created"
-        assert events[1]["type"] == "session_updated"
+        event_types = [e["type"] for e in events]
+        assert "session_created" in event_types
+        assert "session_updated" in event_types
 
 
 # === Task Model Serialization Tests ===
@@ -427,16 +441,15 @@ class TestLlmAPI:
     """LLM API 엔드포인트 통합 테스트"""
 
     @pytest.fixture
-    def app_with_llm(self, tmp_path):
+    def app_with_llm(self):
         """LLM 프록시가 설정된 FastAPI 앱"""
         from fastapi import FastAPI
         from soul_server.api.llm import create_llm_router
         from soul_server.service.session_broadcaster import set_session_broadcaster
 
-        event_store = EventStore(base_dir=tmp_path / "events")
+        mock_db = _make_mock_session_db()
         task_manager = TaskManager(
-            storage_path=tmp_path / "tasks.json",
-            event_store=event_store,
+            session_db=mock_db,
         )
         broadcaster = SessionBroadcaster()
         set_session_broadcaster(broadcaster)
@@ -445,7 +458,7 @@ class TestLlmAPI:
         executor = LlmExecutor(
             adapters={"openai": mock_adapter},
             task_manager=task_manager,
-            event_store=event_store,
+            session_db=mock_db,
             session_broadcaster=broadcaster,
         )
 

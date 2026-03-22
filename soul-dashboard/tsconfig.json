@@ -16,10 +16,11 @@
       "@shared/*": ["../packages/soul-ui/src/shared/*"],
       "@seosoyoung/soul-ui": ["../packages/soul-ui/src/index.ts"],
       "client/lib": ["./client/lib/index.ts"],
+      "client/lib/*": ["./client/lib/*"],
       "client/hooks/*": ["./client/hooks/*"],
       "client/components/*": ["./client/components/*"]
     }
   },
-  "include": ["shared/**/*.ts", "server/**/*.ts", "client/**/*.ts", "client/**/*.tsx", "tools/**/*.ts"],
+  "include": ["shared/**/*.ts", "server/**/*.ts", "client/**/*.ts", "client/**/*.tsx"],
   "exclude": ["node_modules", "dist"]
 }
