@@ -14,6 +14,7 @@ import asyncio
 import json
 import logging
 import os
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -240,6 +241,7 @@ async def api_sessions_stream():
             "data": json.dumps(
                 {"type": "session_list", "sessions": sessions, "total": total},
                 ensure_ascii=False,
+                default=str,
             ),
         }
 
@@ -251,7 +253,7 @@ async def api_sessions_stream():
                     event = await asyncio.wait_for(event_queue.get(), timeout=30.0)
                     yield {
                         "event": event.get("type", "unknown"),
-                        "data": json.dumps(event, ensure_ascii=False),
+                        "data": json.dumps(event, ensure_ascii=False, default=str),
                     }
                 except asyncio.TimeoutError:
                     yield {"comment": "keepalive"}
@@ -311,7 +313,7 @@ async def api_session_events(
                 yield (
                     f"id: {record['id']}\n"
                     f"event: {event_type}\n"
-                    f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                    f"data: {json.dumps(event, ensure_ascii=False, default=str)}\n\n"
                 )
 
         if is_llm:
@@ -325,7 +327,7 @@ async def api_session_events(
             }
             yield (
                 f"event: history_sync\n"
-                f"data: {json.dumps(sync_payload, ensure_ascii=False)}\n\n"
+                f"data: {json.dumps(sync_payload, ensure_ascii=False, default=str)}\n\n"
             )
             return
 
@@ -339,7 +341,7 @@ async def api_session_events(
             elif event_type == "history_sync":
                 yield (
                     f"event: history_sync\n"
-                    f"data: {json.dumps(event_dict, ensure_ascii=False)}\n\n"
+                    f"data: {json.dumps(event_dict, ensure_ascii=False, default=str)}\n\n"
                 )
             else:
                 # _event_id를 pop하여 data JSON에서 제거하되, SSE id: 필드로 전달
@@ -348,7 +350,7 @@ async def api_session_events(
                 yield (
                     f"{sse_id}"
                     f"event: {event_type}\n"
-                    f"data: {json.dumps(event_dict, ensure_ascii=False)}\n\n"
+                    f"data: {json.dumps(event_dict, ensure_ascii=False, default=str)}\n\n"
                 )
 
     return StreamingResponse(

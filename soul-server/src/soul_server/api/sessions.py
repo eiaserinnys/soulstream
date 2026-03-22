@@ -110,7 +110,7 @@ def create_sessions_router() -> APIRouter:
                     "type": "session_list",
                     "sessions": sessions,
                     "total": total,
-                }, ensure_ascii=False),
+                }, ensure_ascii=False, default=str),
             }
 
             # 리스너 등록
@@ -126,7 +126,7 @@ def create_sessions_router() -> APIRouter:
                         )
                         yield {
                             "event": event.get("type", "unknown"),
-                            "data": json.dumps(event, ensure_ascii=False),
+                            "data": json.dumps(event, ensure_ascii=False, default=str),
                         }
                     except asyncio.TimeoutError:
                         # keepalive
@@ -229,7 +229,7 @@ def create_sessions_router() -> APIRouter:
                 yield {
                     "id": str(record["id"]),
                     "event": event.get("type", "unknown"),
-                    "data": json.dumps(event, ensure_ascii=False),
+                    "data": json.dumps(event, ensure_ascii=False, default=str),
                 }
 
             # Parts 2+3: stream_session_events에 위임 (history_sync 이중 발행 없음)
@@ -240,7 +240,7 @@ def create_sessions_router() -> APIRouter:
                 else:
                     # _event_id를 pop하여 data JSON에서 제거하되, SSE id: 필드로 전달
                     event_id = event_dict.pop("_event_id", None)
-                    sse_event: dict = {"event": event_type, "data": json.dumps(event_dict, ensure_ascii=False)}
+                    sse_event: dict = {"event": event_type, "data": json.dumps(event_dict, ensure_ascii=False, default=str)}
                     if event_id is not None:
                         sse_event["id"] = str(event_id)
                     yield sse_event
