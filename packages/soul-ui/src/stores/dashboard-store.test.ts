@@ -103,21 +103,47 @@ describe("dashboard-store", () => {
         expect(sessions[1].agentSessionId).toBe("sess-old");
       });
 
-      it("should not add duplicate session", () => {
+      it("should merge server data into existing session (optimistic update補完)", () => {
+        // 낙관적 업데이트로 nodeId 없이 추가된 세션
         useDashboardStore.getState().setSessions([
-          { agentSessionId: "sess-abc", status: "running", eventCount: 3, createdAt: "2026-01-01T00:00:00Z" },
+          { agentSessionId: "sess-abc", status: "running", eventCount: 3, createdAt: "2026-01-01T00:00:00Z", prompt: "hello" },
         ]);
 
+        // SSE session_created로 서버 데이터가 도착 — nodeId 포함
         useDashboardStore.getState().addSession({
           agentSessionId: "sess-abc",
           status: "running",
           eventCount: 5,
           createdAt: "2026-01-01T00:00:00Z",
+          nodeId: "silent-manari",
         });
 
-        expect(useDashboardStore.getState().sessions).toHaveLength(1);
-        // 기존 값이 유지되어야 함
-        expect(useDashboardStore.getState().sessions[0].eventCount).toBe(3);
+        const sessions = useDashboardStore.getState().sessions;
+        expect(sessions).toHaveLength(1);
+        // 서버 데이터로 머지됨
+        expect(sessions[0].nodeId).toBe("silent-manari");
+        expect(sessions[0].eventCount).toBe(5);
+        // 낙관적 업데이트에만 있던 필드는 유지됨
+        expect(sessions[0].prompt).toBe("hello");
+      });
+
+      it("should preserve optimistic fields not present in server data", () => {
+        useDashboardStore.getState().setSessions([
+          { agentSessionId: "sess-abc", status: "running", eventCount: 0, createdAt: "2026-01-01T00:00:00Z", prompt: "test prompt", nodeId: "node-1" },
+        ]);
+
+        // 서버 데이터에 prompt/nodeId가 없는 경우 — 낙관적 값 유지
+        useDashboardStore.getState().addSession({
+          agentSessionId: "sess-abc",
+          status: "running",
+          eventCount: 2,
+          createdAt: "2026-01-01T00:00:00Z",
+        });
+
+        const session = useDashboardStore.getState().sessions[0];
+        expect(session.prompt).toBe("test prompt");
+        expect(session.nodeId).toBe("node-1");
+        expect(session.eventCount).toBe(2);
       });
 
       it("should clear sessionsError on add", () => {
@@ -853,6 +879,22 @@ describe("dashboard-store", () => {
         folderId: "folder-1",
         displayName: null,
       });
+    });
+
+    it("should include nodeId when provided", () => {
+      useDashboardStore.getState().addOptimisticSession("sess-node", "hi", null, "silent-manari");
+      const session = useDashboardStore.getState().sessions[0];
+
+      expect(session.agentSessionId).toBe("sess-node");
+      expect(session.nodeId).toBe("silent-manari");
+    });
+
+    it("should not include nodeId when not provided", () => {
+      useDashboardStore.getState().addOptimisticSession("sess-no-node", "hi");
+      const session = useDashboardStore.getState().sessions[0];
+
+      expect(session.agentSessionId).toBe("sess-no-node");
+      expect(session.nodeId).toBeUndefined();
     });
 
     it("should place session in correct folder via getSessionsInFolder", () => {
