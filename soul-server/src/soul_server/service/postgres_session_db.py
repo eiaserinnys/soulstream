@@ -190,23 +190,35 @@ class PostgresSessionDB:
 
         async with self._pool.acquire() as conn:
             async with conn.transaction():
-                # 원자적 JSONB 배열 append (SELECT 없이)
-                result = await conn.execute(
+                # 행 잠금으로 동시 append_event와의 ID 충돌 방지
+                row = await conn.fetchval(
+                    "SELECT session_id FROM sessions WHERE session_id = $1 FOR UPDATE",
+                    session_id,
+                )
+                if row is None:
+                    raise ValueError(f"Session not found: {session_id}")
+
+                # 메타데이터 JSONB 배열 append
+                await conn.execute(
                     "UPDATE sessions "
                     "SET metadata = COALESCE(metadata, '[]'::jsonb) || $1::jsonb, "
                     "    updated_at = $2 "
                     "WHERE session_id = $3",
                     entry_json, now, session_id,
                 )
-                if result == "UPDATE 0":
-                    raise ValueError(f"Session not found: {session_id}")
 
-                # 이벤트 ID를 서브쿼리로 원자적 계산 + 삽입
-                await conn.execute(
+                # 이벤트 삽입 + ID 회수
+                event_id = await conn.fetchval(
                     "INSERT INTO events (id, session_id, event_type, payload, searchable_text, created_at) "
                     "VALUES ((SELECT COALESCE(MAX(id), 0) + 1 FROM events WHERE session_id = $1), "
-                    "$1, $2, $3, $4, $5)",
+                    "$1, $2, $3, $4, $5) RETURNING id",
                     session_id, "metadata", event_payload, searchable, now,
+                )
+
+                # last_event_id 갱신 (append_event와 동일 패턴)
+                await conn.execute(
+                    "UPDATE sessions SET last_event_id = $1 WHERE session_id = $2",
+                    event_id, session_id,
                 )
 
     async def update_last_message(self, session_id: str, last_message: dict) -> None:
@@ -232,7 +244,8 @@ class PostgresSessionDB:
         )
         if row is None:
             raise ValueError(f"Session not found: {session_id}")
-        return (row["last_event_id"], row["last_read_event_id"])
+        # 마이그레이션 과도기: 레거시 세션의 컬럼이 NULL일 수 있으므로 0으로 fallback
+        return (row["last_event_id"] or 0, row["last_read_event_id"] or 0)
 
     async def mark_running_at_shutdown(self, session_ids: list[str] | None = None) -> None:
         if session_ids is not None:
