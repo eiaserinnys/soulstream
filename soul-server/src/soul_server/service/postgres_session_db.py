@@ -10,6 +10,7 @@ asyncpg 네이티브 async, tsvector 전문검색.
 import json
 import logging
 from datetime import datetime, timezone
+from collections.abc import AsyncGenerator
 from typing import Optional
 
 import asyncpg
@@ -308,6 +309,23 @@ class PostgresSessionDB:
         )
         return [self._event_to_dict(r) for r in rows]
 
+    async def stream_events_raw(
+        self, session_id: str, after_id: int = 0,
+    ) -> AsyncGenerator[tuple[int, str, str], None]:
+        """이벤트를 (id, event_type, payload_text) 튜플로 스트리밍.
+
+        payload를 파싱하지 않고 raw JSON text로 반환한다.
+        asyncpg cursor를 사용하여 행 단위로 yield한다.
+        """
+        async with self._pool.acquire() as conn:
+            async with conn.transaction():
+                async for row in conn.cursor(
+                    "SELECT id, event_type, payload::text as payload_text "
+                    "FROM events WHERE session_id = $1 AND id > $2 ORDER BY id",
+                    session_id, after_id,
+                ):
+                    yield row["id"], row["event_type"], row["payload_text"]
+
     async def read_one_event(self, session_id: str, event_id: int) -> Optional[dict]:
         row = await self._pool.fetchrow(
             "SELECT id, session_id, event_type, payload, searchable_text, created_at "
@@ -398,6 +416,13 @@ class PostgresSessionDB:
                 "ON CONFLICT (id) DO NOTHING",
                 folder_id, name, 0,
             )
+
+    async def ensure_indexes(self) -> None:
+        """히스토리 조회에 필요한 인덱스를 보장한다."""
+        await self._pool.execute(
+            "CREATE INDEX IF NOT EXISTS idx_events_session_id_id "
+            "ON events (session_id, id)"
+        )
 
     # --- 카탈로그 ---
 
