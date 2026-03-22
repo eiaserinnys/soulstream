@@ -334,36 +334,55 @@ def _sanitize_payload(payload: str) -> str:
 
 
 async def _migrate_events_from_db(pool: asyncpg.Pool, db_path: Path, node_id: str) -> int:
-    """SQLite events 테이블 → PostgreSQL events 테이블 이관."""
+    """SQLite events 테이블 → PostgreSQL events 테이블 이관.
+
+    executemany()로 배치 INSERT하여 성능을 확보한다.
+    배치 실패 시 해당 청크만 개별 INSERT로 폴백.
+    """
     conn_sqlite = sqlite3.connect(str(db_path))
     conn_sqlite.row_factory = sqlite3.Row
     rows = conn_sqlite.execute("SELECT * FROM events ORDER BY session_id, id").fetchall()
     conn_sqlite.close()
 
+    # 전체 레코드를 튜플 리스트로 변환
+    records = []
+    for row in rows:
+        records.append((
+            row["session_id"],
+            row["id"],
+            row["event_type"],
+            _sanitize_payload(row["payload"]),
+            _sanitize_payload(row["searchable_text"] or ""),
+            _parse_dt(row["created_at"]),
+        ))
+
+    query = (
+        "INSERT INTO events "
+        "(session_id, id, event_type, payload, searchable_text, created_at) "
+        "VALUES ($1, $2, $3, $4, $5, $6) "
+        "ON CONFLICT (session_id, id) DO NOTHING"
+    )
+
     event_count = 0
     skipped = 0
+    chunk_size = 1000
+
     async with pool.acquire() as conn:
-        for row in rows:
+        for i in range(0, len(records), chunk_size):
+            chunk = records[i:i + chunk_size]
             try:
-                await conn.execute(
-                    """INSERT INTO events
-                       (session_id, id, event_type, payload, searchable_text, created_at)
-                       VALUES ($1, $2, $3, $4, $5, $6)
-                       ON CONFLICT (session_id, id) DO NOTHING""",
-                    row["session_id"],
-                    row["id"],
-                    row["event_type"],
-                    _sanitize_payload(row["payload"]),
-                    _sanitize_payload(row["searchable_text"] or ""),
-                    _parse_dt(row["created_at"]),
-                )
-                event_count += 1
+                await conn.executemany(query, chunk)
+                event_count += len(chunk)
             except Exception as e:
-                skipped += 1
-                if skipped <= 5:
-                    logger.warning(
-                        f"이벤트 이관 실패 (skip): {row['session_id']}#{row['id']}: {e}"
-                    )
+                logger.warning(f"배치 INSERT 실패 (chunk {i}~{i+len(chunk)}), 개별 폴백: {e}")
+                for rec in chunk:
+                    try:
+                        await conn.execute(query, *rec)
+                        event_count += 1
+                    except Exception as e2:
+                        skipped += 1
+                        if skipped <= 5:
+                            logger.warning(f"이벤트 이관 실패 (skip): {rec[0]}#{rec[1]}: {e2}")
 
     if skipped:
         logger.warning(f"SQLite events: {skipped}개 이벤트 이관 실패 (건너뜀)")
