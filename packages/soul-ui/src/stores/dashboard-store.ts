@@ -193,7 +193,7 @@ export interface DashboardActions {
   processEvents: (events: Array<{ event: SoulSSEEvent; eventId: number }>) => void;
 
   // 낙관적 세션 추가 + 활성 세션 설정 (세션 생성 직후 즉시 목록 반영)
-  addOptimisticSession: (agentSessionId: string, prompt: string, folderId?: string | null) => void;
+  addOptimisticSession: (agentSessionId: string, prompt: string, folderId?: string | null, nodeId?: string) => void;
 
   // New Session 모달
   openNewSessionModal: () => void;
@@ -380,8 +380,15 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
 
       addSession: (session) => {
         const { sessions, sessionsTotal } = get();
-        // 중복 체크 (이미 존재하면 추가하지 않음)
-        if (sessions.some((s) => s.agentSessionId === session.agentSessionId)) {
+        const existingIdx = sessions.findIndex(
+          (s) => s.agentSessionId === session.agentSessionId,
+        );
+        if (existingIdx >= 0) {
+          // 낙관적 업데이트로 생성된 불완전한 세션을 서버 데이터로 머지
+          const merged = { ...sessions[existingIdx], ...session };
+          const updated = [...sessions];
+          updated[existingIdx] = merged;
+          set({ sessions: updated });
           return;
         }
         const updated = [session, ...sessions];
@@ -687,7 +694,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
 
       // --- 낙관적 세션 추가 ---
 
-      addOptimisticSession: (agentSessionId, prompt, folderId) => {
+      addOptimisticSession: (agentSessionId, prompt, folderId, nodeId) => {
         const sessions = get().sessions;
         let catalog = get().catalog;
         const newSession: SessionSummary = {
@@ -698,6 +705,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           prompt,
           lastEventId: 0,
           lastReadEventId: 0,
+          ...(nodeId ? { nodeId } : {}),
         };
         const updatedSessions = sessions.some(
           (s) => s.agentSessionId === agentSessionId,

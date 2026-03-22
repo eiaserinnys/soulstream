@@ -547,6 +547,7 @@ export interface CreateSessionRequest {
 export interface CreateSessionResponse {
   agentSessionId: string;
   status: "running";
+  nodeId?: string;
 }
 
 /** POST /api/sessions/:id/intervene 요청 */

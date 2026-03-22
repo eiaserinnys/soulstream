@@ -41,9 +41,14 @@ export interface ActionsRouterOptions {
  *   event: init
  *   data: {"type": "init", "agent_session_id": "sess-..."}
  */
+interface InitEventData {
+  agentSessionId: string;
+  nodeId?: string;
+}
+
 async function readInitEvent(
   response: globalThis.Response,
-): Promise<string> {
+): Promise<InitEventData> {
   if (!response.body) {
     throw new Error("No response body from Soul server");
   }
@@ -78,7 +83,10 @@ async function readInitEvent(
       if (data) {
         const parsed = JSON.parse(data);
         if (parsed.type === "init" && parsed.agent_session_id) {
-          return parsed.agent_session_id;
+          return {
+            agentSessionId: parsed.agent_session_id,
+            nodeId: parsed.node_id ?? undefined,
+          };
         }
       }
 
@@ -175,10 +183,10 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
         return;
       }
 
-      // SSE init 이벤트에서 agent_session_id 추출
-      let agentSessionId: string;
+      // SSE init 이벤트에서 agent_session_id + node_id 추출
+      let initData: InitEventData;
       try {
-        agentSessionId = await readInitEvent(soulResponse);
+        initData = await readInitEvent(soulResponse);
       } catch (err) {
         console.error("[actions] Failed to read init event:", err);
         res.status(502).json({
@@ -190,12 +198,15 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
         return;
       }
 
+      const agentSessionId = initData.agentSessionId;
+
       // 프록시 아키텍처에서는 대시보드가 세션을 직접 구독하지 않음
       // 대시보드 클라이언트가 /api/sessions/:id/events로 직접 구독
 
       const response: CreateSessionResponse = {
         agentSessionId,
         status: "running",
+        ...(initData.nodeId ? { nodeId: initData.nodeId } : {}),
       };
       res.status(201).json(response);
     } catch (err) {
