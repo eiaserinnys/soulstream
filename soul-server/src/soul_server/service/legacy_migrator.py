@@ -325,6 +325,14 @@ async def _migrate_sessions(
     return session_count
 
 
+def _sanitize_payload(payload: str) -> str:
+    """PostgreSQL jsonb에 넣을 수 없는 문자를 제거.
+
+    PostgreSQL은 jsonb/text에 \\u0000 (NULL 바이트)을 허용하지 않는다.
+    """
+    return payload.replace("\x00", "").replace("\\u0000", "")
+
+
 async def _migrate_events_from_db(pool: asyncpg.Pool, db_path: Path, node_id: str) -> int:
     """SQLite events 테이블 → PostgreSQL events 테이블 이관."""
     conn_sqlite = sqlite3.connect(str(db_path))
@@ -333,22 +341,32 @@ async def _migrate_events_from_db(pool: asyncpg.Pool, db_path: Path, node_id: st
     conn_sqlite.close()
 
     event_count = 0
+    skipped = 0
     async with pool.acquire() as conn:
         for row in rows:
-            await conn.execute(
-                """INSERT INTO events
-                   (session_id, id, event_type, payload, searchable_text, created_at)
-                   VALUES ($1, $2, $3, $4, $5, $6)
-                   ON CONFLICT (session_id, id) DO NOTHING""",
-                row["session_id"],
-                row["id"],
-                row["event_type"],
-                row["payload"],
-                row["searchable_text"] or "",
-                _parse_dt(row["created_at"]),
-            )
-            event_count += 1
+            try:
+                await conn.execute(
+                    """INSERT INTO events
+                       (session_id, id, event_type, payload, searchable_text, created_at)
+                       VALUES ($1, $2, $3, $4, $5, $6)
+                       ON CONFLICT (session_id, id) DO NOTHING""",
+                    row["session_id"],
+                    row["id"],
+                    row["event_type"],
+                    _sanitize_payload(row["payload"]),
+                    _sanitize_payload(row["searchable_text"] or ""),
+                    _parse_dt(row["created_at"]),
+                )
+                event_count += 1
+            except Exception as e:
+                skipped += 1
+                if skipped <= 5:
+                    logger.warning(
+                        f"이벤트 이관 실패 (skip): {row['session_id']}#{row['id']}: {e}"
+                    )
 
+    if skipped:
+        logger.warning(f"SQLite events: {skipped}개 이벤트 이관 실패 (건너뜀)")
     logger.info(f"SQLite events에서 {event_count}개 이벤트 이관 완료")
     return event_count
 
@@ -397,8 +415,8 @@ async def _migrate_events_from_jsonl(pool: asyncpg.Pool, events_dir: Path, node_
             for evt in events:
                 eid = evt.get("id", 0)
                 event_type = evt.get("type", evt.get("event_type", "unknown"))
-                payload = json.dumps(evt, ensure_ascii=False)
-                searchable = _extract_searchable(evt)
+                payload = _sanitize_payload(json.dumps(evt, ensure_ascii=False))
+                searchable = _sanitize_payload(_extract_searchable(evt))
                 created_at = _parse_dt(evt.get("created_at")) if evt.get("created_at") else datetime.now(timezone.utc)
 
                 await conn.execute(
