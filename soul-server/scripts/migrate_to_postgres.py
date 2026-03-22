@@ -14,12 +14,12 @@ import logging
 import asyncpg
 
 from soul_server.service.legacy_migrator import (
-    _build_session_folder_map,
     _count_sources,
     _deprecate_files,
     _detect_legacy_files,
-    _migrate_catalog,
-    _migrate_events,
+    _migrate_events_from_db,
+    _migrate_events_from_jsonl,
+    _migrate_folders,
     _migrate_sessions,
     _verify_migration,
 )
@@ -43,13 +43,12 @@ async def migrate(data_dir: str, database_url: str, node_id: str, dry_run: bool 
             logger.info("[DRY RUN] 실제 이관을 수행하지 않습니다")
             return
 
-        if "catalog" in legacy:
-            await _migrate_catalog(pool, legacy["catalog"], node_id)
         if "sessions_db" in legacy:
-            sfm = _build_session_folder_map(legacy.get("catalog"))
-            await _migrate_sessions(pool, legacy["sessions_db"], node_id, session_folder_map=sfm)
+            await _migrate_folders(pool, legacy["sessions_db"])
+            await _migrate_sessions(pool, legacy["sessions_db"], node_id)
+            await _migrate_events_from_db(pool, legacy["sessions_db"], node_id)
         if "events_dir" in legacy:
-            await _migrate_events(pool, legacy["events_dir"], node_id)
+            await _migrate_events_from_jsonl(pool, legacy["events_dir"], node_id)
 
         if await _verify_migration(pool, source_counts, node_id):
             _deprecate_files(legacy)
