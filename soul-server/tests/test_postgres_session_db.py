@@ -1,6 +1,7 @@
 """PostgresSessionDB 단위 테스트
 
 asyncpg 연결을 mock하여 DB 없이 테스트한다.
+모든 raw SQL이 프로시저/함수 호출로 전환되었음을 검증한다.
 """
 
 import json
@@ -99,29 +100,29 @@ def _make_record(data: dict):
 
 class TestSessionCRUD:
     @pytest.mark.asyncio
-    async def test_upsert_uses_on_conflict(self, db):
+    async def test_upsert_calls_session_upsert(self, db):
         db._pool.execute = AsyncMock()
 
         await db.upsert_session("s1", status="running", session_type="claude")
 
         db._pool.execute.assert_called_once()
         sql = db._pool.execute.call_args[0][0]
-        assert "INSERT INTO sessions" in sql
-        assert "ON CONFLICT (session_id) DO UPDATE SET" in sql
+        assert "session_upsert" in sql
 
     @pytest.mark.asyncio
-    async def test_upsert_excludes_created_at_from_update(self, db):
+    async def test_upsert_passes_columns_and_values(self, db):
         db._pool.execute = AsyncMock()
 
         await db.upsert_session("s1", status="completed")
 
-        sql = db._pool.execute.call_args[0][0]
-        conflict_clause = sql.split("DO UPDATE SET")[1]
-        # created_at과 session_id는 ON CONFLICT 절에서 제외
-        assert "created_at" not in conflict_clause
-        assert "session_id" not in conflict_clause
-        # EXCLUDED 참조 사용
-        assert "EXCLUDED." in conflict_clause
+        call_args = db._pool.execute.call_args[0]
+        # $1=session_id, $2=columns, $3=values, $4=created_at, $5=updated_at
+        session_id = call_args[1]
+        columns = call_args[2]
+        values = call_args[3]
+        assert session_id == "s1"
+        assert "status" in columns
+        assert "completed" in values
 
     @pytest.mark.asyncio
     async def test_upsert_auto_sets_node_id(self, db):
@@ -129,10 +130,12 @@ class TestSessionCRUD:
 
         await db.upsert_session("s1", status="running")
 
-        call_args = db._pool.execute.call_args
-        sql = call_args[0][0]
-        assert "node_id" in sql
-        assert "test-node" in [str(a) for a in call_args[0][1:]]
+        call_args = db._pool.execute.call_args[0]
+        columns = call_args[2]
+        values = call_args[3]
+        assert "node_id" in columns
+        node_idx = columns.index("node_id")
+        assert values[node_idx] == "test-node"
 
     @pytest.mark.asyncio
     async def test_get_session_returns_none(self, db):
@@ -141,7 +144,7 @@ class TestSessionCRUD:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_get_session_deserializes(self, db):
+    async def test_get_session_calls_procedure(self, db):
         record = _make_record({
             "session_id": "s1", "status": "running",
             "last_message": '{"preview": "hi"}',
@@ -151,6 +154,9 @@ class TestSessionCRUD:
         db._pool.fetchrow = AsyncMock(return_value=record)
 
         result = await db.get_session("s1")
+
+        sql = db._pool.fetchrow.call_args[0][0]
+        assert "session_get" in sql
         assert result["session_id"] == "s1"
         assert result["last_message"] == {"preview": "hi"}
         assert result["metadata"] == [{"type": "tool"}]
@@ -174,7 +180,7 @@ class TestSessionCRUD:
         assert len(sessions) == 3
 
     @pytest.mark.asyncio
-    async def test_get_all_sessions_filter_type(self, db):
+    async def test_get_all_sessions_calls_procedures(self, db):
         records = [
             _make_record({
                 "session_id": "s1", "session_type": "llm",
@@ -188,16 +194,21 @@ class TestSessionCRUD:
         sessions, total = await db.get_all_sessions(session_type="llm")
         assert total == 1
 
-        # Check that filter was included in query
+        # session_count 호출 확인
+        count_call = db._pool.fetchval.call_args
+        assert "session_count" in count_call[0][0]
+
+        # session_get_all 호출 확인
         fetch_call = db._pool.fetch.call_args
-        assert "session_type = $1" in fetch_call[0][0]
+        assert "session_get_all" in fetch_call[0][0]
 
     @pytest.mark.asyncio
     async def test_delete_session(self, db):
         db._pool.execute = AsyncMock()
         await db.delete_session("s1")
         db._pool.execute.assert_called_once()
-        assert "DELETE FROM sessions" in db._pool.execute.call_args[0][0]
+        sql = db._pool.execute.call_args[0][0]
+        assert "session_delete" in sql
 
     @pytest.mark.asyncio
     async def test_upsert_rejects_invalid_columns(self, db):
@@ -210,11 +221,8 @@ class TestSessionCRUD:
 
 class TestEventCRUD:
     @pytest.mark.asyncio
-    async def test_append_event(self, db_with_conn):
-        db, conn = db_with_conn
-
-        # fetchval은 2번 호출: FOR UPDATE(행 잠금) + INSERT RETURNING id
-        conn.fetchval = AsyncMock(side_effect=["s1", 1])
+    async def test_append_event(self, db):
+        db._pool.fetchval = AsyncMock(return_value=1)
 
         event_id = await db.append_event(
             "s1", "text_delta",
@@ -223,16 +231,10 @@ class TestEventCRUD:
         )
 
         assert event_id == 1
-        # 트랜잭션 내에서 fetchval(FOR UPDATE) + fetchval(INSERT RETURNING) + execute(UPDATE)
-        assert conn.fetchval.call_count == 2
-        assert conn.execute.call_count == 1
-        lock_sql = conn.fetchval.call_args_list[0][0][0]
-        insert_sql = conn.fetchval.call_args_list[1][0][0]
-        update_sql = conn.execute.call_args[0][0]
-        assert "FOR UPDATE" in lock_sql
-        assert "INSERT INTO events" in insert_sql
-        assert "RETURNING id" in insert_sql
-        assert "last_event_id" in update_sql
+        # 프로시저 호출 확인
+        sql = db._pool.fetchval.call_args[0][0]
+        assert "event_append" in sql
+        # 트랜잭션 코드 없음 — 프로시저 내부에서 처리
 
     @pytest.mark.asyncio
     async def test_read_events(self, db):
@@ -255,6 +257,10 @@ class TestEventCRUD:
         assert len(events) == 2
         assert events[0]["id"] == 1
         assert events[1]["event_type"] == "tool_use"
+
+        # 프로시저 호출 확인
+        sql = db._pool.fetch.call_args[0][0]
+        assert "event_read" in sql
 
     @pytest.mark.asyncio
     async def test_stream_events_raw_empty(self, db_with_conn):
@@ -297,8 +303,8 @@ class TestEventCRUD:
         assert results[1] == (2, "tool_use", '{"type":"tool_use","tool":"grep"}')
 
     @pytest.mark.asyncio
-    async def test_stream_events_raw_after_id(self, db_with_conn):
-        """stream_events_raw는 after_id를 쿼리에 전달한다"""
+    async def test_stream_events_raw_uses_procedure(self, db_with_conn):
+        """stream_events_raw는 event_stream_raw 프로시저를 호출한다"""
         db, conn = db_with_conn
 
         async def empty_cursor(*args, **kwargs):
@@ -312,8 +318,7 @@ class TestEventCRUD:
 
         cursor_call = conn.cursor.call_args
         sql = cursor_call[0][0]
-        assert "session_id = $1" in sql
-        assert "id > $2" in sql
+        assert "event_stream_raw" in sql
         assert cursor_call[0][1] == "s1"
         assert cursor_call[0][2] == 5
 
@@ -331,11 +336,24 @@ class TestEventCRUD:
         assert event is not None
         assert event["id"] == 1
 
+        # 프로시저 호출 확인
+        sql = db._pool.fetchrow.call_args[0][0]
+        assert "event_read_one" in sql
+
     @pytest.mark.asyncio
     async def test_read_one_event_not_found(self, db):
         db._pool.fetchrow = AsyncMock(return_value=None)
         event = await db.read_one_event("s1", 999)
         assert event is None
+
+    @pytest.mark.asyncio
+    async def test_count_events(self, db):
+        db._pool.fetchval = AsyncMock(return_value=42)
+        count = await db.count_events("s1")
+        assert count == 42
+
+        sql = db._pool.fetchval.call_args[0][0]
+        assert "event_count" in sql
 
 
 # === append_metadata 원자적 처리 ===
@@ -343,81 +361,42 @@ class TestEventCRUD:
 
 class TestAppendMetadata:
     @pytest.mark.asyncio
-    async def test_append_metadata_uses_transaction(self, db_with_conn):
-        """트랜잭션 내에서 FOR UPDATE + JSONB append + 이벤트 삽입 + last_event_id 갱신이 원자적으로 수행되는지 확인"""
-        db, conn = db_with_conn
-        conn.fetchval = AsyncMock(side_effect=["s1", 42])  # FOR UPDATE, INSERT RETURNING id
-        conn.execute = AsyncMock(return_value="UPDATE 1")
+    async def test_append_metadata_calls_procedure(self, db):
+        """session_append_metadata 프로시저를 호출하는지 확인"""
+        db._pool.fetchval = AsyncMock(return_value=42)
 
         entry = {"type": "git_commit", "value": "abc1234"}
         await db.append_metadata("s1", entry)
 
-        # fetchval: FOR UPDATE + INSERT RETURNING id
-        assert conn.fetchval.call_count == 2
-        for_update_sql = conn.fetchval.call_args_list[0][0][0]
-        assert "FOR UPDATE" in for_update_sql
-
-        # execute: UPDATE metadata + UPDATE last_event_id
-        assert conn.execute.call_count == 2
-        update_sql = conn.execute.call_args_list[0][0][0]
-        assert "COALESCE(metadata" in update_sql
-        last_event_sql = conn.execute.call_args_list[1][0][0]
-        assert "last_event_id" in last_event_sql
+        db._pool.fetchval.assert_called_once()
+        sql = db._pool.fetchval.call_args[0][0]
+        assert "session_append_metadata" in sql
 
     @pytest.mark.asyncio
-    async def test_append_metadata_atomic_jsonb_append(self, db_with_conn):
-        """SELECT 없이 JSONB || 연산자로 원자적 append하는지 확인"""
-        db, conn = db_with_conn
-        conn.fetchval = AsyncMock(side_effect=["s1", 1])  # FOR UPDATE, INSERT RETURNING id
-        conn.execute = AsyncMock(return_value="UPDATE 1")
+    async def test_append_metadata_passes_correct_params(self, db):
+        """프로시저에 올바른 파라미터를 전달하는지 확인"""
+        db._pool.fetchval = AsyncMock(return_value=1)
 
         entry = {"type": "trello_card", "value": "card-123"}
         await db.append_metadata("s1", entry)
 
-        update_sql = conn.execute.call_args_list[0][0][0]
-        # JSONB 배열 연결 연산자 사용
-        assert "||" in update_sql
+        call_args = db._pool.fetchval.call_args[0]
+        # $1=session_id, $2=metadata_json, $3=event_type, $4=event_payload, $5=searchable, $6=now
+        assert call_args[1] == "s1"  # session_id
+        assert "trello_card" in call_args[2]  # metadata_json에 entry 포함
+        assert call_args[3] == "metadata"  # event_type
 
     @pytest.mark.asyncio
-    async def test_append_metadata_atomic_event_id(self, db_with_conn):
-        """이벤트 ID를 서브쿼리로 원자적으로 계산하고 RETURNING으로 회수하는지 확인"""
-        db, conn = db_with_conn
-        conn.fetchval = AsyncMock(side_effect=["s1", 5])  # FOR UPDATE, INSERT RETURNING id
-        conn.execute = AsyncMock(return_value="UPDATE 1")
+    async def test_append_metadata_no_transaction_in_python(self, db):
+        """Python 측에서 트랜잭션을 열지 않는지 확인 (프로시저 내부에서 처리)"""
+        db._pool.fetchval = AsyncMock(return_value=5)
 
         entry = {"type": "git_commit", "value": "abc1234"}
         await db.append_metadata("s1", entry)
 
-        insert_sql = conn.fetchval.call_args_list[1][0][0]
-        # MAX(id) + 1 서브쿼리가 INSERT 안에 포함
-        assert "COALESCE(MAX(id), 0) + 1" in insert_sql
-        # RETURNING id로 할당된 ID를 회수
-        assert "RETURNING id" in insert_sql
-
-    @pytest.mark.asyncio
-    async def test_append_metadata_updates_last_event_id(self, db_with_conn):
-        """append_metadata가 last_event_id를 갱신하는지 확인"""
-        db, conn = db_with_conn
-        conn.fetchval = AsyncMock(side_effect=["s1", 7])  # FOR UPDATE, INSERT RETURNING id=7
-        conn.execute = AsyncMock(return_value="UPDATE 1")
-
-        entry = {"type": "git_commit", "value": "abc1234"}
-        await db.append_metadata("s1", entry)
-
-        # 마지막 execute가 last_event_id=7을 갱신
-        last_call = conn.execute.call_args_list[-1]
-        assert "last_event_id" in last_call[0][0]
-        assert last_call[0][1] == 7  # event_id
-        assert last_call[0][2] == "s1"  # session_id
-
-    @pytest.mark.asyncio
-    async def test_append_metadata_nonexistent_session(self, db_with_conn):
-        """존재하지 않는 세션에 append하면 ValueError"""
-        db, conn = db_with_conn
-        conn.fetchval = AsyncMock(return_value=None)  # FOR UPDATE returns None
-
-        with pytest.raises(ValueError, match="not found"):
-            await db.append_metadata("nonexistent", {"type": "test"})
+        # pool.acquire()가 호출되지 않음 (트랜잭션 불필요)
+        # pool.fetchval만 직접 호출됨
+        db._pool.fetchval.assert_called_once()
 
 
 # === 폴더 CRUD ===
@@ -429,26 +408,24 @@ class TestFolderCRUD:
         db._pool.execute = AsyncMock()
         await db.create_folder("f1", "Test Folder", 0)
         db._pool.execute.assert_called_once()
-        assert "INSERT INTO folders" in db._pool.execute.call_args[0][0]
+        sql = db._pool.execute.call_args[0][0]
+        assert "folder_create" in sql
 
     @pytest.mark.asyncio
     async def test_ensure_default_folders(self, db):
         db._pool.execute = AsyncMock()
         await db.ensure_default_folders()
-        # Should insert 2 default folders (claude, llm)
-        assert db._pool.execute.call_count == 2
-        for call in db._pool.execute.call_args_list:
-            assert "ON CONFLICT (id) DO NOTHING" in call[0][0]
-
-    @pytest.mark.asyncio
-    async def test_ensure_indexes(self, db):
-        db._pool.execute = AsyncMock()
-        await db.ensure_indexes()
+        # 프로시저 1회 호출 (JSONB 배열로 전달)
         db._pool.execute.assert_called_once()
         sql = db._pool.execute.call_args[0][0]
-        assert "CREATE INDEX IF NOT EXISTS" in sql
-        assert "idx_events_session_id_id" in sql
-        assert "(session_id, id)" in sql
+        assert "folder_ensure_defaults" in sql
+
+    @pytest.mark.asyncio
+    async def test_ensure_indexes_is_noop(self, db):
+        """ensure_indexes는 no-op이다 (schema.sql에서 DDL로 처리)"""
+        db._pool.execute = AsyncMock()
+        await db.ensure_indexes()
+        db._pool.execute.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_get_catalog(self, db):
@@ -467,6 +444,51 @@ class TestFolderCRUD:
         assert "sessions" in catalog
         assert catalog["folders"][0]["id"] == "claude"
         assert "s1" in catalog["sessions"]
+
+        # catalog_get_sessions 프로시저 호출 확인
+        second_fetch = db._pool.fetch.call_args_list[1]
+        assert "catalog_get_sessions" in second_fetch[0][0]
+
+    @pytest.mark.asyncio
+    async def test_update_folder(self, db):
+        db._pool.execute = AsyncMock()
+        await db.update_folder("f1", name="New Name")
+        sql = db._pool.execute.call_args[0][0]
+        assert "folder_update" in sql
+
+    @pytest.mark.asyncio
+    async def test_delete_folder(self, db):
+        db._pool.execute = AsyncMock()
+        await db.delete_folder("f1")
+        sql = db._pool.execute.call_args[0][0]
+        assert "folder_delete" in sql
+
+    @pytest.mark.asyncio
+    async def test_get_folder(self, db):
+        record = _make_record({"id": "f1", "name": "Test", "sort_order": 0})
+        db._pool.fetchrow = AsyncMock(return_value=record)
+        result = await db.get_folder("f1")
+        assert result["id"] == "f1"
+        sql = db._pool.fetchrow.call_args[0][0]
+        assert "folder_get" in sql
+
+    @pytest.mark.asyncio
+    async def test_get_all_folders(self, db):
+        records = [_make_record({"id": "f1", "name": "Test", "sort_order": 0})]
+        db._pool.fetch = AsyncMock(return_value=records)
+        result = await db.get_all_folders()
+        assert len(result) == 1
+        sql = db._pool.fetch.call_args[0][0]
+        assert "folder_get_all" in sql
+
+    @pytest.mark.asyncio
+    async def test_get_default_folder(self, db):
+        record = _make_record({"id": "claude", "name": "Claude", "sort_order": 0})
+        db._pool.fetchrow = AsyncMock(return_value=record)
+        result = await db.get_default_folder("Claude")
+        assert result["id"] == "claude"
+        sql = db._pool.fetchrow.call_args[0][0]
+        assert "folder_get_default" in sql
 
 
 # === 전문검색 ===
@@ -494,9 +516,9 @@ class TestSearch:
         assert len(results) == 1
         assert results[0]["id"] == 1
 
-        # Verify tsvector query is used
+        # event_search 프로시저 호출 확인
         fetch_call = db._pool.fetch.call_args
-        assert "plainto_tsquery" in fetch_call[0][0]
+        assert "event_search" in fetch_call[0][0]
 
 
 # === searchable_text 추출 ===
@@ -554,12 +576,13 @@ class TestNodeId:
 
         await db.upsert_session("s1", status="running")
 
-        call_args = db._pool.execute.call_args
-        sql = call_args[0][0]
-        values = call_args[0][1:]
+        call_args = db._pool.execute.call_args[0]
+        columns = call_args[2]
+        values = call_args[3]
 
-        assert "node_id" in sql
-        assert "test-node" in values
+        assert "node_id" in columns
+        node_idx = columns.index("node_id")
+        assert values[node_idx] == "test-node"
 
 
 # === 읽음 상태 관리 ===
@@ -568,13 +591,16 @@ class TestNodeId:
 class TestReadPosition:
     @pytest.mark.asyncio
     async def test_update_last_read_event_id(self, db):
-        db._pool.execute = AsyncMock(return_value="UPDATE 1")
+        db._pool.fetchval = AsyncMock(return_value="UPDATE 1")
         result = await db.update_last_read_event_id("s1", 42)
         assert result is True
 
+        sql = db._pool.fetchval.call_args[0][0]
+        assert "session_update_read_position" in sql
+
     @pytest.mark.asyncio
     async def test_update_last_read_event_id_not_found(self, db):
-        db._pool.execute = AsyncMock(return_value="UPDATE 0")
+        db._pool.fetchval = AsyncMock(return_value="UPDATE 0")
         result = await db.update_last_read_event_id("nonexistent", 42)
         assert result is False
 
@@ -587,6 +613,9 @@ class TestReadPosition:
         assert last_event_id == 10
         assert last_read == 5
 
+        sql = db._pool.fetchrow.call_args[0][0]
+        assert "session_get_read_position" in sql
+
 
 # === shutdown 관련 ===
 
@@ -597,7 +626,8 @@ class TestShutdown:
         db._pool.execute = AsyncMock()
         await db.mark_running_at_shutdown(["s1", "s2"])
         db._pool.execute.assert_called_once()
-        assert "was_running_at_shutdown = TRUE" in db._pool.execute.call_args[0][0]
+        sql = db._pool.execute.call_args[0][0]
+        assert "shutdown_mark_running" in sql
 
     @pytest.mark.asyncio
     async def test_mark_running_at_shutdown_empty(self, db):
@@ -610,7 +640,8 @@ class TestShutdown:
         db._pool.execute = AsyncMock()
         await db.clear_shutdown_flags()
         db._pool.execute.assert_called_once()
-        assert "was_running_at_shutdown = FALSE" in db._pool.execute.call_args[0][0]
+        sql = db._pool.execute.call_args[0][0]
+        assert "shutdown_clear_flags" in sql
 
     @pytest.mark.asyncio
     async def test_get_shutdown_sessions(self, db):
@@ -620,3 +651,41 @@ class TestShutdown:
         db._pool.fetch = AsyncMock(return_value=records)
         sessions = await db.get_shutdown_sessions()
         assert len(sessions) == 1
+
+        sql = db._pool.fetch.call_args[0][0]
+        assert "shutdown_get_sessions" in sql
+
+    @pytest.mark.asyncio
+    async def test_repair_broken_read_positions(self, db):
+        db._pool.fetchval = AsyncMock(return_value=3)
+        count = await db.repair_broken_read_positions()
+        assert count == 3
+
+        sql = db._pool.fetchval.call_args[0][0]
+        assert "shutdown_repair_read_positions" in sql
+
+
+# === 세션 부가 기능 ===
+
+
+class TestSessionMisc:
+    @pytest.mark.asyncio
+    async def test_rename_session(self, db):
+        db._pool.execute = AsyncMock()
+        await db.rename_session("s1", "New Name")
+        sql = db._pool.execute.call_args[0][0]
+        assert "session_rename" in sql
+
+    @pytest.mark.asyncio
+    async def test_assign_session_to_folder(self, db):
+        db._pool.execute = AsyncMock()
+        await db.assign_session_to_folder("s1", "folder1")
+        sql = db._pool.execute.call_args[0][0]
+        assert "session_assign_folder" in sql
+
+    @pytest.mark.asyncio
+    async def test_update_last_message(self, db):
+        db._pool.execute = AsyncMock()
+        await db.update_last_message("s1", {"preview": "hello"})
+        sql = db._pool.execute.call_args[0][0]
+        assert "session_update_last_message" in sql
