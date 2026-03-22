@@ -489,6 +489,7 @@ class TestSettingsValidation:
             allowed_email="test@example.com",
             soulstream_node_id="test-node",
             database_url="postgresql://test:test@localhost/test",
+            dashboard_cache_dir="/tmp/cache",
         )
         settings.validate()  # 에러 없이 통과
 

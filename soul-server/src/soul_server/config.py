@@ -145,6 +145,10 @@ class Settings:
     soulstream_upstream_url: str = ""          # ws://soulstream-host:5200/ws/node
     soulstream_upstream_enabled: bool = False   # False면 독립 실행 모드
 
+    # Dashboard (경로 설정)
+    dashboard_dir: str = "dist/client"     # SOUL_DASHBOARD_DIR — SPA 정적 파일 경로
+    dashboard_cache_dir: str = ""          # SOUL_DASHBOARD_CACHE_DIR — 세션 캐시 디렉토리 (필수)
+
     # Dashboard profile (선택 사항 — 미설정 시 기본 이름 표시, 초상화 없음)
     dash_user_name: str = "USER"
     dash_user_id: str = ""
@@ -239,6 +243,9 @@ class Settings:
             google_callback_url=os.getenv("GOOGLE_CALLBACK_URL", "/api/auth/google/callback"),
             allowed_email=os.getenv("ALLOWED_EMAIL", ""),
             jwt_secret=os.getenv("JWT_SECRET", ""),
+            # Dashboard (경로 설정)
+            dashboard_dir=os.getenv("SOUL_DASHBOARD_DIR", cls.dashboard_dir),
+            dashboard_cache_dir=os.getenv("SOUL_DASHBOARD_CACHE_DIR", ""),
             # Dashboard profile
             dash_user_name=os.getenv("DASH_USER_NAME", "USER"),
             dash_user_id=os.getenv("DASH_USER_ID", ""),
@@ -268,6 +275,9 @@ class Settings:
                 )
             if not self.allowed_email:
                 missing.append("ALLOWED_EMAIL")
+        # dashboard_cache_dir은 항상 필수
+        if not self.dashboard_cache_dir:
+            missing.append("SOUL_DASHBOARD_CACHE_DIR")
         # node_id와 database_url은 항상 필수
         if not self.soulstream_node_id:
             missing.append("SOULSTREAM_NODE_ID")
@@ -357,6 +367,8 @@ SETTINGS_REGISTRY: dict[str, SettingMeta] = {
     "warmup_allowed_tools": SettingMeta("WARMUP_ALLOWED_TOOLS", "허용 도구", "워밍업 시 허용할 도구 (쉼표 구분)", "warmup", "csv", hot_reloadable=False),
     "warmup_disallowed_tools": SettingMeta("WARMUP_DISALLOWED_TOOLS", "비허용 도구", "워밍업 시 비허용할 도구 (쉼표 구분)", "warmup", "csv", hot_reloadable=False),
     # --- dashboard ---
+    "dashboard_dir": SettingMeta("SOUL_DASHBOARD_DIR", "대시보드 디렉토리", "SPA 정적 파일 경로", "dashboard", "str"),
+    "dashboard_cache_dir": SettingMeta("SOUL_DASHBOARD_CACHE_DIR", "캐시 디렉토리", "세션 캐시 디렉토리", "dashboard", "str"),
     "dash_user_name": SettingMeta("DASH_USER_NAME", "사용자 이름", "대시보드에 표시할 사용자 이름", "dashboard", "str"),
     "dash_user_id": SettingMeta("DASH_USER_ID", "사용자 ID", "사용자 식별자", "dashboard", "str"),
     "dash_user_portrait": SettingMeta("DASH_USER_PORTRAIT", "사용자 초상화", "사용자 초상화 이미지 경로", "dashboard", "str"),
