@@ -48,6 +48,13 @@ class PostgresSessionDB:
     def node_id(self) -> str:
         return self._node_id
 
+    @property
+    def pool(self) -> asyncpg.Pool:
+        """연결 풀 반환. connect() 전 호출 시 RuntimeError."""
+        if self._pool is None:
+            raise RuntimeError("connect()를 먼저 호출하세요")
+        return self._pool
+
     async def connect(self) -> None:
         """연결 풀 생성 및 검증. 실패 시 예외 → 서버 기동 중단."""
         self._pool = await asyncpg.create_pool(
