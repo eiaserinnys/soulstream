@@ -106,8 +106,9 @@ async def graceful_shutdown(task_manager, timeout: float = 50.0):
             for t in running_tasks
         ]
         session_db = get_session_db()
-        session_db.mark_running_at_shutdown()
-        logger.info(f"Graceful shutdown: {len(active_sessions)}개 활성 세션 플래그 설정")
+        active_ids = [t.agent_session_id for t in running_tasks]
+        session_db.mark_running_at_shutdown(active_ids)
+        logger.info(f"Graceful shutdown: {len(active_ids)}개 활성 세션 플래그 설정")
 
         # 각 세션에 종료 예고 intervention 전송
         # skip_resume=True로 add_intervention을 호출하여 완료 세션의 auto-resume을 방지한다.
