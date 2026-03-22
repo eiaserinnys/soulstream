@@ -53,8 +53,8 @@ def populated_data_dir(data_dir: Path, catalog_data: dict) -> Path:
     # session_catalog.json
     (data_dir / "session_catalog.json").write_text(json.dumps(catalog_data), encoding="utf-8")
 
-    # sessions.db
-    db_path = data_dir / "sessions.db"
+    # soulstream.db
+    db_path = data_dir / "soulstream.db"
     conn = sqlite3.connect(str(db_path))
     conn.execute(
         "CREATE TABLE sessions (session_id TEXT PRIMARY KEY, status TEXT, "
@@ -134,7 +134,7 @@ class TestDetectLegacyFiles:
 
     def test_skips_deprecated(self, data_dir: Path):
         """이미 .deprecated 접미사가 붙은 파일은 감지하지 않는다."""
-        (data_dir / "sessions.db.deprecated").write_text("")
+        (data_dir / "soulstream.db.deprecated").write_text("")
         (data_dir / "session_catalog.json.deprecated").write_text("{}")
         (data_dir / "events.deprecated").mkdir()
 
@@ -143,7 +143,7 @@ class TestDetectLegacyFiles:
 
     def test_partial_files(self, data_dir: Path):
         """일부 파일만 존재할 때."""
-        (data_dir / "sessions.db").write_text("")
+        (data_dir / "soulstream.db").write_text("")
         result = _detect_legacy_files(str(data_dir))
         assert "sessions_db" in result
         assert "catalog" not in result
@@ -242,21 +242,21 @@ class TestDeprecateFiles:
         legacy = _detect_legacy_files(str(populated_data_dir))
         _deprecate_files(legacy)
 
-        assert (populated_data_dir / "sessions.db.deprecated").exists()
+        assert (populated_data_dir / "soulstream.db.deprecated").exists()
         assert (populated_data_dir / "session_catalog.json.deprecated").exists()
         assert (populated_data_dir / "events.deprecated").exists()
-        assert not (populated_data_dir / "sessions.db").exists()
+        assert not (populated_data_dir / "soulstream.db").exists()
         assert not (populated_data_dir / "session_catalog.json").exists()
         assert not (populated_data_dir / "events").exists()
 
     def test_skips_if_deprecated_exists(self, data_dir: Path):
         """이미 .deprecated 파일이 있으면 원본을 리네이밍하지 않는다."""
-        (data_dir / "sessions.db").write_text("")
-        (data_dir / "sessions.db.deprecated").write_text("old")
+        (data_dir / "soulstream.db").write_text("")
+        (data_dir / "soulstream.db.deprecated").write_text("old")
 
-        legacy = {"sessions_db": data_dir / "sessions.db"}
+        legacy = {"sessions_db": data_dir / "soulstream.db"}
         _deprecate_files(legacy)
-        assert (data_dir / "sessions.db").exists()  # 리네이밍 안 함
+        assert (data_dir / "soulstream.db").exists()  # 리네이밍 안 함
 
 
 # ---------------------------------------------------------------------------
