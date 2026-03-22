@@ -109,7 +109,7 @@ const SessionItem = memo(function SessionItem({
             }}
           />
         ) : (
-          <div className={cn("truncate", isUnread ? "text-foreground font-semibold" : "text-muted-foreground")}>
+          <div className={cn("truncate", isUnread ? "text-foreground font-semibold" : isReadCompleted ? "text-muted-foreground" : "text-foreground")}>
             {displayText}
           </div>
         )}
