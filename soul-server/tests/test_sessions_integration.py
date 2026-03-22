@@ -19,6 +19,31 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient
 
 
+def _make_mock_session_db():
+    """TaskManager 테스트용 mock session_db 생성"""
+    mock_db = MagicMock()
+    mock_db.upsert_session = AsyncMock()
+    mock_db.get_session = AsyncMock(return_value=None)
+    mock_db.get_all_sessions = AsyncMock(return_value=([], 0))
+    mock_db.delete_session = AsyncMock()
+    mock_db.append_event = AsyncMock()
+    mock_db.get_next_event_id = AsyncMock(return_value=1)
+    mock_db.read_events = AsyncMock(return_value=[])
+    mock_db.update_last_read_event_id = AsyncMock()
+    mock_db.get_read_position = AsyncMock(return_value=0)
+    mock_db.get_all_folders = AsyncMock(return_value=[])
+    mock_db.get_folder = AsyncMock(return_value=None)
+    mock_db.get_default_folder = AsyncMock(return_value=None)
+    mock_db.assign_session_to_folder = AsyncMock()
+    mock_db.create_folder = AsyncMock()
+    mock_db.get_catalog = AsyncMock(return_value=[])
+    mock_db.update_last_message = AsyncMock()
+    mock_db.search_events = AsyncMock(return_value=[])
+    mock_db.DEFAULT_FOLDERS = {}
+    mock_db.node_id = "test-node"
+    return mock_db
+
+
 # === Fixtures ===
 
 @pytest.fixture
@@ -74,7 +99,7 @@ def mock_task_manager():
             "last_message": None,
         },
     ]
-    manager.get_all_sessions = MagicMock(return_value=(session_dicts, 2))
+    manager.get_all_sessions = AsyncMock(return_value=(session_dicts, 2))
 
     return manager
 
@@ -166,7 +191,7 @@ class TestGetSessions:
             "updated_at": "2026-03-03T02:00:00+00:00",
         }
         # get_all_sessions이 session_type 파라미터를 올바르게 전달받는지 확인
-        manager.get_all_sessions = MagicMock(return_value=([claude_session], 1))
+        manager.get_all_sessions = AsyncMock(return_value=([claude_session], 1))
 
         app = FastAPI()
         with (
@@ -191,7 +216,7 @@ class TestGetSessions:
 
         # 빈 TaskManager
         empty_manager = MagicMock()
-        empty_manager.get_all_sessions = MagicMock(return_value=([], 0))
+        empty_manager.get_all_sessions = AsyncMock(return_value=([], 0))
 
         app = FastAPI()
         with (
@@ -554,16 +579,19 @@ class TestTaskManagerGetAllSessions:
         from soul_server.service.task_manager import TaskManager
         from soul_server.service.task_models import Task, TaskStatus
 
-        manager = TaskManager()
+        mock_db = _make_mock_session_db()
+        mock_db.get_all_sessions = AsyncMock(return_value=([
+            {"session_id": "sess-001", "status": "running", "prompt": "Test 1", "session_type": "claude", "created_at": "2026-03-03T02:00:00+00:00"},
+            {"session_id": "sess-002", "status": "completed", "prompt": "Test 2", "session_type": "claude", "created_at": "2026-03-03T01:00:00+00:00"},
+        ], 2))
+        manager = TaskManager(session_db=mock_db)
 
-        # _tasks에 추가 + 카탈로그 구축
         task1 = Task(agent_session_id="sess-001", prompt="Test 1", status=TaskStatus.RUNNING)
         task2 = Task(agent_session_id="sess-002", prompt="Test 2", status=TaskStatus.COMPLETED)
         manager._tasks["sess-001"] = task1
         manager._tasks["sess-002"] = task2
-        await manager._catalog.build_from_tasks(manager._tasks)
 
-        sessions, total = manager.get_all_sessions()
+        sessions, total = await manager.get_all_sessions()
 
         assert len(sessions) == 2
         assert total == 2
@@ -575,38 +603,33 @@ class TestTaskManagerGetAllSessions:
         """세션이 없을 때 빈 목록을 반환해야 한다"""
         from soul_server.service.task_manager import TaskManager
 
-        manager = TaskManager()
-        sessions, total = manager.get_all_sessions()
+        mock_db = _make_mock_session_db()
+        mock_db.get_all_sessions = AsyncMock(return_value=([], 0))
+        manager = TaskManager(session_db=mock_db)
+        sessions, total = await manager.get_all_sessions()
 
         assert sessions == []
         assert total == 0
 
     @pytest.mark.asyncio
     async def test_returns_sorted_by_created_at_desc(self):
-        """생성일 기준 내림차순으로 반환해야 한다"""
+        """생성일 기준 내림차순으로 반환해야 한다 (DB가 정렬하여 반환)"""
         from soul_server.service.task_manager import TaskManager
         from soul_server.service.task_models import Task, TaskStatus
 
-        manager = TaskManager()
-
         now = datetime(2026, 3, 3, 12, 0, 0, tzinfo=timezone.utc)
-        task1 = Task(
-            agent_session_id="sess-old",
-            prompt="Old",
-            status=TaskStatus.COMPLETED,
-            created_at=now - timedelta(hours=2),
-        )
-        task2 = Task(
-            agent_session_id="sess-new",
-            prompt="New",
-            status=TaskStatus.RUNNING,
-            created_at=now,
-        )
-        manager._tasks["sess-old"] = task1
-        manager._tasks["sess-new"] = task2
-        await manager._catalog.build_from_tasks(manager._tasks)
+        mock_db = _make_mock_session_db()
+        # DB가 이미 정렬된 결과를 반환
+        mock_db.get_all_sessions = AsyncMock(return_value=([
+            {"session_id": "sess-new", "status": "running", "prompt": "New", "session_type": "claude", "created_at": now.isoformat()},
+            {"session_id": "sess-old", "status": "completed", "prompt": "Old", "session_type": "claude", "created_at": (now - timedelta(hours=2)).isoformat()},
+        ], 2))
+        manager = TaskManager(session_db=mock_db)
 
-        sessions, total = manager.get_all_sessions()
+        task2 = Task(agent_session_id="sess-new", prompt="New", status=TaskStatus.RUNNING, created_at=now)
+        manager._tasks["sess-new"] = task2
+
+        sessions, total = await manager.get_all_sessions()
 
         # 최신이 먼저 (dict 반환)
         assert sessions[0]["agent_session_id"] == "sess-new"
@@ -615,79 +638,77 @@ class TestTaskManagerGetAllSessions:
 
     @pytest.mark.asyncio
     async def test_filter_by_session_type(self):
-        """session_type으로 필터링"""
+        """session_type으로 필터링 — DB에 위임"""
         from soul_server.service.task_manager import TaskManager
         from soul_server.service.task_models import Task, TaskStatus
 
-        manager = TaskManager()
+        mock_db = _make_mock_session_db()
 
-        claude_task = Task(
-            agent_session_id="sess-claude",
-            prompt="Claude task",
-            status=TaskStatus.RUNNING,
-            session_type="claude",
-        )
-        llm_task = Task(
-            agent_session_id="sess-llm",
-            prompt="LLM task",
-            status=TaskStatus.RUNNING,
-            session_type="llm",
-        )
+        async def mock_get_all_sessions(offset=0, limit=0, session_type=None):
+            all_sessions = [
+                {"session_id": "sess-claude", "status": "running", "prompt": "Claude task", "session_type": "claude", "created_at": "2026-03-03T02:00:00+00:00"},
+                {"session_id": "sess-llm", "status": "running", "prompt": "LLM task", "session_type": "llm", "created_at": "2026-03-03T01:00:00+00:00"},
+            ]
+            if session_type:
+                filtered = [s for s in all_sessions if s["session_type"] == session_type]
+                return filtered, len(filtered)
+            return all_sessions, len(all_sessions)
+
+        mock_db.get_all_sessions = mock_get_all_sessions
+        manager = TaskManager(session_db=mock_db)
+
+        claude_task = Task(agent_session_id="sess-claude", prompt="Claude task", status=TaskStatus.RUNNING, session_type="claude")
+        llm_task = Task(agent_session_id="sess-llm", prompt="LLM task", status=TaskStatus.RUNNING, session_type="llm")
         manager._tasks["sess-claude"] = claude_task
         manager._tasks["sess-llm"] = llm_task
-        manager._catalog.upsert_from_task(claude_task)
-        manager._catalog.upsert_from_task(llm_task)
 
         # 전체
-        sessions, total = manager.get_all_sessions()
+        sessions, total = await manager.get_all_sessions()
         assert total == 2
 
         # claude만
-        sessions, total = manager.get_all_sessions(session_type="claude")
+        sessions, total = await manager.get_all_sessions(session_type="claude")
         assert total == 1
         assert sessions[0]["agent_session_id"] == "sess-claude"
 
         # llm만
-        sessions, total = manager.get_all_sessions(session_type="llm")
+        sessions, total = await manager.get_all_sessions(session_type="llm")
         assert total == 1
         assert sessions[0]["agent_session_id"] == "sess-llm"
 
         # 없는 타입
-        sessions, total = manager.get_all_sessions(session_type="nonexistent")
+        sessions, total = await manager.get_all_sessions(session_type="nonexistent")
         assert total == 0
         assert sessions == []
 
     @pytest.mark.asyncio
     async def test_filter_and_pagination_combined(self):
-        """session_type 필터와 페이지네이션 조합"""
+        """session_type 필터와 페이지네이션 조합 — DB에 위임"""
         from soul_server.service.task_manager import TaskManager
         from soul_server.service.task_models import Task, TaskStatus
 
-        manager = TaskManager()
+        mock_db = _make_mock_session_db()
 
         now = datetime(2026, 3, 3, 12, 0, 0, tzinfo=timezone.utc)
-        for i in range(5):
-            task = Task(
-                agent_session_id=f"sess-claude-{i:03d}",
-                prompt=f"Claude {i}",
-                status=TaskStatus.COMPLETED,
-                session_type="claude",
-                created_at=now + timedelta(hours=i),
-            )
-            manager._tasks[f"sess-claude-{i:03d}"] = task
-            manager._catalog.upsert_from_task(task)
+        all_claude = [
+            {"session_id": f"sess-claude-{i:03d}", "status": "completed", "prompt": f"Claude {i}", "session_type": "claude", "created_at": (now + timedelta(hours=i)).isoformat()}
+            for i in range(5)
+        ]
 
-        llm_task = Task(
-            agent_session_id="sess-llm-001",
-            prompt="LLM task",
-            status=TaskStatus.RUNNING,
-            session_type="llm",
-        )
-        manager._tasks["sess-llm-001"] = llm_task
-        manager._catalog.upsert_from_task(llm_task)
+        async def mock_get_all_sessions(offset=0, limit=0, session_type=None):
+            filtered = all_claude if session_type == "claude" else all_claude
+            total = len(filtered)
+            if offset:
+                filtered = filtered[offset:]
+            if limit:
+                filtered = filtered[:limit]
+            return filtered, total
+
+        mock_db.get_all_sessions = mock_get_all_sessions
+        manager = TaskManager(session_db=mock_db)
 
         # claude만 + 페이지네이션
-        sessions, total = manager.get_all_sessions(
+        sessions, total = await manager.get_all_sessions(
             session_type="claude", offset=1, limit=2,
         )
         assert total == 5  # 전체 claude 수
@@ -695,35 +716,40 @@ class TestTaskManagerGetAllSessions:
 
     @pytest.mark.asyncio
     async def test_pagination_offset_limit(self):
-        """offset과 limit으로 페이지네이션"""
+        """offset과 limit으로 페이지네이션 — DB에 위임"""
         from soul_server.service.task_manager import TaskManager
         from soul_server.service.task_models import Task, TaskStatus
 
-        manager = TaskManager()
+        mock_db = _make_mock_session_db()
 
         now = datetime(2026, 3, 3, 12, 0, 0, tzinfo=timezone.utc)
-        for i in range(5):
-            task = Task(
-                agent_session_id=f"sess-{i:03d}",
-                prompt=f"Task {i}",
-                status=TaskStatus.COMPLETED,
-                created_at=now + timedelta(hours=i),
-            )
-            manager._tasks[f"sess-{i:03d}"] = task
-        await manager._catalog.build_from_tasks(manager._tasks)
+        all_sessions_data = [
+            {"session_id": f"sess-{i:03d}", "status": "completed", "prompt": f"Task {i}", "session_type": "claude", "created_at": (now + timedelta(hours=i)).isoformat()}
+            for i in range(5)
+        ]
+
+        async def mock_get_all_sessions(offset=0, limit=0, session_type=None):
+            total = len(all_sessions_data)
+            result = all_sessions_data[offset:]
+            if limit:
+                result = result[:limit]
+            return result, total
+
+        mock_db.get_all_sessions = mock_get_all_sessions
+        manager = TaskManager(session_db=mock_db)
 
         # 전체
-        sessions, total = manager.get_all_sessions()
+        sessions, total = await manager.get_all_sessions()
         assert len(sessions) == 5
         assert total == 5
 
         # offset=2, limit=2
-        sessions, total = manager.get_all_sessions(offset=2, limit=2)
+        sessions, total = await manager.get_all_sessions(offset=2, limit=2)
         assert len(sessions) == 2
         assert total == 5
 
         # offset=0, limit=3
-        sessions, total = manager.get_all_sessions(offset=0, limit=3)
+        sessions, total = await manager.get_all_sessions(offset=0, limit=3)
         assert len(sessions) == 3
         assert total == 5
 
@@ -802,7 +828,7 @@ class TestNonExistentSessionIntervention:
         from soul_server.service.task_manager import TaskManager
         from soul_server.service.task_models import TaskNotFoundError
 
-        manager = TaskManager()
+        manager = TaskManager(session_db=_make_mock_session_db())
 
         # 존재하지 않는 세션에 개입 시도
         with pytest.raises(TaskNotFoundError) as exc_info:
@@ -819,7 +845,7 @@ class TestNonExistentSessionIntervention:
         """존재하지 않는 세션 조회 시 None을 반환해야 한다"""
         from soul_server.service.task_manager import TaskManager
 
-        manager = TaskManager()
+        manager = TaskManager(session_db=_make_mock_session_db())
 
         # 존재하지 않는 세션 조회
         task = await manager.get_task("nonexistent-session-id")
@@ -837,7 +863,13 @@ class TestConcurrentSessions:
         from soul_server.service.task_manager import TaskManager
         from soul_server.service.task_models import Task, TaskStatus
 
-        manager = TaskManager()
+        mock_db = _make_mock_session_db()
+        mock_db.get_all_sessions = AsyncMock(return_value=([
+            {"session_id": "sess-a", "status": "running", "prompt": "Task A", "session_type": "claude", "created_at": "2026-03-03T02:00:00+00:00"},
+            {"session_id": "sess-b", "status": "running", "prompt": "Task B", "session_type": "claude", "created_at": "2026-03-03T01:00:00+00:00"},
+            {"session_id": "sess-c", "status": "running", "prompt": "Task C", "session_type": "claude", "created_at": "2026-03-03T00:00:00+00:00"},
+        ], 3))
+        manager = TaskManager(session_db=mock_db)
 
         # 여러 세션 생성
         task_a = Task(agent_session_id="sess-a", prompt="Task A", status=TaskStatus.RUNNING)
@@ -847,9 +879,8 @@ class TestConcurrentSessions:
         manager._tasks["sess-a"] = task_a
         manager._tasks["sess-b"] = task_b
         manager._tasks["sess-c"] = task_c
-        await manager._catalog.build_from_tasks(manager._tasks)
 
-        sessions, total = manager.get_all_sessions()
+        sessions, total = await manager.get_all_sessions()
 
         # 모든 세션이 목록에 있어야 함 (dict 반환)
         assert len(sessions) == 3

@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch, MagicMock
 from pathlib import Path
 
 from soul_server.cogito import mcp_tools
-from soul_server.service.session_db import SessionDB
+from soul_server.service.postgres_session_db import PostgresSessionDB
 
 
 @pytest.fixture(autouse=True)
@@ -280,17 +280,46 @@ class TestReflectorSetup:
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture
-def session_db(tmp_path):
-    """Create an in-memory SessionDB with a test session."""
-    db = SessionDB(tmp_path / "test.db")
-    db.upsert_session(
-        session_id="test-sess-001",
-        status="running",
-        prompt="hello",
-        session_type="claude",
-    )
+def _make_mock_session_db(sessions=None):
+    """PostgresSessionDB의 AsyncMock을 생성한다."""
+    db = AsyncMock(spec=PostgresSessionDB)
+    _sessions = dict(sessions) if sessions else {}
+
+    async def _get_session(sid):
+        return _sessions.get(sid)
+
+    async def _rename_session(sid, name):
+        if sid in _sessions:
+            _sessions[sid]["display_name"] = name if name and name.strip() else None
+
+    async def _get_catalog():
+        return {
+            "folders": [],
+            "sessions": {
+                sid: {"folderId": None, "displayName": s.get("display_name")}
+                for sid, s in _sessions.items()
+            },
+        }
+
+    db.get_session = AsyncMock(side_effect=_get_session)
+    db.rename_session = AsyncMock(side_effect=_rename_session)
+    db.get_catalog = AsyncMock(side_effect=_get_catalog)
     return db
+
+
+@pytest.fixture
+def session_db():
+    """Create a mock PostgresSessionDB with a test session."""
+    sessions = {
+        "test-sess-001": {
+            "session_id": "test-sess-001",
+            "status": "running",
+            "prompt": "hello",
+            "session_type": "claude",
+            "display_name": None,
+        }
+    }
+    return _make_mock_session_db(sessions)
 
 
 class TestGetSessionName:
@@ -315,7 +344,7 @@ class TestGetSessionName:
         assert result["display_name"] is None
 
     async def test_returns_display_name(self, session_db):
-        session_db.rename_session("test-sess-001", "작업 세션")
+        await session_db.rename_session("test-sess-001", "작업 세션")
         fn = _unwrap(mcp_tools.get_session_name)
         with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
             result = await fn("test-sess-001")
@@ -344,21 +373,21 @@ class TestSetSessionName:
         assert result["session_id"] == "test-sess-001"
         assert result["display_name"] == "세션 이름 테스트"
         # DB에도 반영 확인
-        session = session_db.get_session("test-sess-001")
+        session = await session_db.get_session("test-sess-001")
         assert session["display_name"] == "세션 이름 테스트"
 
     async def test_empty_string_removes_name(self, session_db):
-        session_db.rename_session("test-sess-001", "기존 이름")
+        await session_db.rename_session("test-sess-001", "기존 이름")
         fn = _unwrap(mcp_tools.set_session_name)
         with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
             with patch("soul_server.cogito.mcp_tools.get_session_broadcaster", side_effect=RuntimeError("not init")):
                 result = await fn("test-sess-001", "")
         assert result["display_name"] is None
-        session = session_db.get_session("test-sess-001")
+        session = await session_db.get_session("test-sess-001")
         assert session["display_name"] is None
 
     async def test_whitespace_only_removes_name(self, session_db):
-        session_db.rename_session("test-sess-001", "기존 이름")
+        await session_db.rename_session("test-sess-001", "기존 이름")
         fn = _unwrap(mcp_tools.set_session_name)
         with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
             with patch("soul_server.cogito.mcp_tools.get_session_broadcaster", side_effect=RuntimeError("not init")):

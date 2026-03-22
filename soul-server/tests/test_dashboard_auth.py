@@ -487,6 +487,8 @@ class TestSettingsValidation:
             google_client_secret="test-secret",
             jwt_secret="a" * 32,
             allowed_email="test@example.com",
+            soulstream_node_id="test-node",
+            database_url="postgresql://test:test@localhost/test",
         )
         settings.validate()  # 에러 없이 통과
 

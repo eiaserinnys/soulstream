@@ -31,9 +31,7 @@ export function NewSessionModal() {
   const draftKey = `__draft__${selectedFolderId ?? "null"}`;
 
   // 폴더명 계산
-  const folderName = selectedFolderId
-    ? catalog?.folders.find((f) => f.id === selectedFolderId)?.name ?? "Unknown"
-    : "Uncategorized";
+  const folderName = catalog?.folders.find((f) => f.id === selectedFolderId)?.name ?? "Claude Code";
 
   // 마운트 시 저장된 draft 복원
   const [text, setText] = useState("");

@@ -218,7 +218,7 @@ async def api_status(request: Request):
 @router.get("/api/sessions", dependencies=[Depends(require_dashboard_auth)])
 async def api_get_sessions(session_type: Optional[str] = None):
     task_manager = get_task_manager()
-    sessions, total = task_manager.get_all_sessions(
+    sessions, total = await task_manager.get_all_sessions(
         offset=0, limit=0, session_type=session_type
     )
     return {"sessions": sessions, "total": total}
@@ -234,7 +234,7 @@ async def api_sessions_stream():
         task_manager = get_task_manager()
         session_broadcaster = get_session_broadcaster()
 
-        sessions, total = task_manager.get_all_sessions()
+        sessions, total = await task_manager.get_all_sessions()
         yield {
             "event": "session_list",
             "data": json.dumps(
@@ -290,12 +290,12 @@ async def api_session_events(
     async def event_generator():
         import json as _json
         # Part 1: SessionDB에서 히스토리 읽기
-        from soul_server.service.session_db import get_session_db
+        from soul_server.service.postgres_session_db import get_session_db
         db = get_session_db()
         last_stored_id = 0
 
         try:
-            stored = db.read_events(session_id, after_id=after_id)
+            stored = await db.read_events(session_id, after_id=after_id)
         except Exception as e:
             logger.error("Failed to read events for %s: %s", session_id, e)
             stored = []

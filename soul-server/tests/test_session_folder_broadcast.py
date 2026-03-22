@@ -16,7 +16,7 @@ from soul_server.service.session_broadcaster import (
     SessionBroadcaster,
     set_session_broadcaster,
 )
-from soul_server.service.session_db import SessionDB
+from soul_server.service.postgres_session_db import PostgresSessionDB
 from soul_server.service.task_manager import TaskManager, set_task_manager
 from soul_server.service.task_models import Task, TaskStatus
 
@@ -33,15 +33,76 @@ def broadcaster():
     set_session_broadcaster(None)
 
 
+def _make_mock_session_db():
+    """PostgresSessionDB의 AsyncMock을 생성한다. 상태를 추적하는 인메모리 mock."""
+    db = AsyncMock(spec=PostgresSessionDB)
+    _sessions = {}
+    _folders = {
+        "claude": {"id": "claude", "name": "⚙️ 클로드 코드 세션", "sort_order": 0},
+        "llm": {"id": "llm", "name": "⚙️ LLM 세션", "sort_order": 0},
+    }
+
+    async def _upsert_session(session_id, **fields):
+        if session_id not in _sessions:
+            _sessions[session_id] = {"session_id": session_id}
+        _sessions[session_id].update(fields)
+
+    async def _get_session(session_id):
+        return dict(_sessions[session_id]) if session_id in _sessions else None
+
+    async def _get_all_sessions(offset=0, limit=0, session_type=None):
+        items = list(_sessions.values())
+        if session_type:
+            items = [s for s in items if s.get("session_type") == session_type]
+        return items, len(items)
+
+    async def _get_default_folder(name):
+        for f in _folders.values():
+            if f["name"] == name:
+                return f
+        return None
+
+    async def _assign_session_to_folder(session_id, folder_id):
+        if session_id in _sessions:
+            _sessions[session_id]["folder_id"] = folder_id
+
+    async def _get_catalog():
+        folder_list = [
+            {"id": f["id"], "name": f["name"], "sortOrder": f.get("sort_order", 0)}
+            for f in _folders.values()
+        ]
+        sessions = {}
+        for sid, s in _sessions.items():
+            sessions[sid] = {
+                "folderId": s.get("folder_id"),
+                "displayName": s.get("display_name"),
+            }
+        return {"folders": folder_list, "sessions": sessions}
+
+    async def _ensure_default_folders():
+        pass  # already initialized
+
+    db.upsert_session = AsyncMock(side_effect=_upsert_session)
+    db.get_session = AsyncMock(side_effect=_get_session)
+    db.get_all_sessions = AsyncMock(side_effect=_get_all_sessions)
+    db.get_default_folder = AsyncMock(side_effect=_get_default_folder)
+    db.assign_session_to_folder = AsyncMock(side_effect=_assign_session_to_folder)
+    db.get_catalog = AsyncMock(side_effect=_get_catalog)
+    db.ensure_default_folders = AsyncMock(side_effect=_ensure_default_folders)
+    db.get_next_event_id = AsyncMock(return_value=1)
+    db.append_event = AsyncMock()
+    db.read_events = AsyncMock(return_value=[])
+    db.update_last_read_event_id = AsyncMock(return_value=True)
+    return db
+
+
 @pytest.fixture
-def manager(tmp_path, broadcaster):
-    """TaskManager with broadcaster and in-memory SQLite"""
-    db = SessionDB(tmp_path / "test_sessions.db")
-    db.ensure_default_folders()
+def manager(broadcaster):
+    """TaskManager with broadcaster and mock PostgresSessionDB"""
+    db = _make_mock_session_db()
     m = TaskManager(session_db=db)
     yield m
     set_task_manager(None)
-    db.close()
 
 
 class TestCreateTaskCatalogBroadcast:
@@ -113,7 +174,7 @@ class TestCreateTaskCatalogBroadcast:
             agent_session_id="sess-folder-1",
         )
 
-        catalog = manager._db.get_catalog()
+        catalog = await manager._db.get_catalog()
         session_entry = catalog["sessions"].get("sess-folder-1")
         assert session_entry is not None
         assert session_entry["folderId"] is not None
@@ -124,7 +185,7 @@ class TestCreateTaskCatalogBroadcast:
             (f for f in catalog["folders"] if f["id"] == folder_id), None
         )
         assert folder is not None
-        assert folder["name"] == "클로드 코드 세션"
+        assert folder["name"] == "⚙️ 클로드 코드 세션"
 
 
 class TestRegisterExternalTaskCatalogBroadcast:
@@ -142,7 +203,7 @@ class TestRegisterExternalTaskCatalogBroadcast:
         )
         await manager.register_external_task(task)
 
-        catalog = manager._db.get_catalog()
+        catalog = await manager._db.get_catalog()
         session_entry = catalog["sessions"].get("llm-sess-1")
         assert session_entry is not None
         assert session_entry["folderId"] is not None
@@ -152,7 +213,7 @@ class TestRegisterExternalTaskCatalogBroadcast:
             (f for f in catalog["folders"] if f["id"] == folder_id), None
         )
         assert folder is not None
-        assert folder["name"] == "LLM 세션"
+        assert folder["name"] == "⚙️ LLM 세션"
 
     async def test_external_task_broadcasts_catalog(
         self, manager, broadcaster
@@ -184,7 +245,7 @@ class TestRegisterExternalTaskCatalogBroadcast:
         )
         await manager.register_external_task(task)
 
-        catalog = manager._db.get_catalog()
+        catalog = await manager._db.get_catalog()
         session_entry = catalog["sessions"].get("unknown-sess-1")
         assert session_entry is not None
 
@@ -193,4 +254,4 @@ class TestRegisterExternalTaskCatalogBroadcast:
             (f for f in catalog["folders"] if f["id"] == folder_id), None
         )
         assert folder is not None
-        assert folder["name"] == "클로드 코드 세션"
+        assert folder["name"] == "⚙️ 클로드 코드 세션"
