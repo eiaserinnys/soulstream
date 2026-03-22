@@ -137,9 +137,12 @@ class Settings:
     allowed_email: str = ""
     jwt_secret: str = ""
 
+    # PostgreSQL (필수)
+    database_url: str = ""                     # postgresql://soulstream:***@host:5432/soulstream
+    soulstream_node_id: str = ""               # 노드 식별자 (예: silent-manari)
+
     # Upstream (소울스트림 연결 — 미설정 시 독립 실행 모드)
     soulstream_upstream_url: str = ""          # ws://soulstream-host:5200/ws/node
-    soulstream_node_id: str = ""               # 노드 식별자 (예: soul-alpha)
     soulstream_upstream_enabled: bool = False   # False면 독립 실행 모드
 
     # Dashboard profile (선택 사항 — 미설정 시 기본 이름 표시, 초상화 없음)
@@ -225,6 +228,7 @@ class Settings:
             llm_anthropic_api_key=os.getenv("LLM_ANTHROPIC_API_KEY", ""),
             # Upstream (소울스트림 연결)
             soulstream_upstream_url=os.getenv("SOULSTREAM_UPSTREAM_URL", ""),
+            database_url=os.getenv("DATABASE_URL", ""),
             soulstream_node_id=os.getenv("SOULSTREAM_NODE_ID", ""),
             soulstream_upstream_enabled=os.getenv(
                 "SOULSTREAM_UPSTREAM_ENABLED", "false"
@@ -264,12 +268,15 @@ class Settings:
                 )
             if not self.allowed_email:
                 missing.append("ALLOWED_EMAIL")
-        # Upstream 활성 시 필수 변수 검증
+        # node_id와 database_url은 항상 필수
+        if not self.soulstream_node_id:
+            missing.append("SOULSTREAM_NODE_ID")
+        if not self.database_url:
+            missing.append("DATABASE_URL")
+        # Upstream 활성 시 추가 필수 변수
         if self.soulstream_upstream_enabled:
             if not self.soulstream_upstream_url:
                 missing.append("SOULSTREAM_UPSTREAM_URL")
-            if not self.soulstream_node_id:
-                missing.append("SOULSTREAM_NODE_ID")
         if missing:
             raise RuntimeError(
                 f"필수 환경변수 누락: {', '.join(missing)}. "
@@ -320,6 +327,7 @@ CATEGORY_LABELS: dict[str, str] = {
     "auth": "인증",
     "llm": "LLM 프록시",
     "upstream": "소울스트림 연결",
+    "database": "데이터베이스",
     "paths": "경로 (읽기 전용)",
 }
 
@@ -373,6 +381,8 @@ SETTINGS_REGISTRY: dict[str, SettingMeta] = {
     # --- llm ---
     "llm_openai_api_key": SettingMeta("LLM_OPENAI_API_KEY", "OpenAI API Key", "LLM 프록시용 OpenAI 키", "llm", "str", sensitive=True),
     "llm_anthropic_api_key": SettingMeta("LLM_ANTHROPIC_API_KEY", "Anthropic API Key", "LLM 프록시용 Anthropic 키", "llm", "str", sensitive=True),
+    # --- database ---
+    "database_url": SettingMeta("DATABASE_URL", "데이터베이스 URL", "PostgreSQL 연결 URL", "database", "str", sensitive=True, read_only=True),
     # --- paths (전부 read_only) ---
     "workspace_dir": SettingMeta("WORKSPACE_DIR", "워크스페이스 경로", "Claude Code 워크스페이스 디렉토리", "paths", "str", read_only=True),
     "claude_cli_dir": SettingMeta("CLAUDE_CLI_DIR", "Claude CLI 경로", "claude CLI 디렉토리 (PATH에 없는 경우)", "paths", "str", read_only=True),

@@ -17,7 +17,7 @@ from soul_server.service.engine_adapter import build_soulstream_context_item
 import json
 
 if TYPE_CHECKING:
-    from soul_server.service.session_db import SessionDB
+    from soul_server.service.postgres_session_db import PostgresSessionDB
     from soul_server.service.task_listener import TaskListenerManager
     from soul_server.service.metadata_extractor import MetadataExtractor
 
@@ -41,7 +41,7 @@ class TaskExecutor:
         complete_task_func: Callable[[str, str, Optional[str]], Awaitable[Optional[Task]]],
         error_task_func: Callable[[str, str], Awaitable[Optional[Task]]],
         register_session_func: Optional[Callable[[str, str], None]] = None,
-        session_db: Optional["SessionDB"] = None,
+        session_db: Optional["PostgresSessionDB"] = None,
         metadata_extractor: Optional["MetadataExtractor"] = None,
         append_metadata_func: Optional[Callable] = None,
     ):
@@ -53,7 +53,7 @@ class TaskExecutor:
             complete_task_func: 태스크 완료 처리 함수 (agent_session_id, result, claude_session_id?)
             error_task_func: 태스크 에러 처리 함수 (agent_session_id, error)
             register_session_func: claude_session_id 등록 함수 (claude_session_id, agent_session_id)
-            session_db: SQLite 기반 세션 저장소
+            session_db: PostgreSQL 기반 세션 저장소
             metadata_extractor: 메타데이터 추출기 (tool_result에서 자동 감지)
             append_metadata_func: 메타데이터 추가 함수 (agent_session_id, entry)
         """
@@ -67,15 +67,15 @@ class TaskExecutor:
         self._metadata_extractor = metadata_extractor
         self._append_metadata = append_metadata_func
 
-    def _persist_event(self, session_id: str, event_dict: dict) -> Optional[int]:
+    async def _persist_event(self, session_id: str, event_dict: dict) -> Optional[int]:
         """이벤트를 SessionDB에 영속화하고 event_id를 반환한다."""
         if self._db is None:
             return None
-        from soul_server.service.session_db import SessionDB
-        event_id = self._db.get_next_event_id(session_id)
+        from soul_server.service.postgres_session_db import PostgresSessionDB
+        event_id = await self._db.get_next_event_id(session_id)
         event_type = event_dict.get("type", "")
         payload = json.dumps(event_dict, ensure_ascii=False)
-        searchable = SessionDB.extract_searchable_text(event_dict)
+        searchable = PostgresSessionDB.extract_searchable_text(event_dict)
         ts = event_dict.get("timestamp")
         if isinstance(ts, (int, float)):
             created_at = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
@@ -83,7 +83,7 @@ class TaskExecutor:
             created_at = ts
         else:
             created_at = utc_now().isoformat()
-        self._db.append_event(session_id, event_id, event_type, payload, searchable, created_at)
+        await self._db.append_event(session_id, event_id, event_type, payload, searchable, created_at)
         return event_id
 
     async def start_execution(
@@ -141,9 +141,9 @@ class TaskExecutor:
                 # 세션의 폴더명 조회
                 folder_name: Optional[str] = None
                 if self._db is not None:
-                    session_row = self._db.get_session(session_id)
+                    session_row = await self._db.get_session(session_id)
                     if session_row and session_row.get("folder_id"):
-                        folder_row = self._db.get_folder(session_row["folder_id"])
+                        folder_row = await self._db.get_folder(session_row["folder_id"])
                         if folder_row:
                             folder_name = folder_row["name"]
 
@@ -166,7 +166,7 @@ class TaskExecutor:
                             "text": task.prompt,
                             "context": combined_context_items,
                         }
-                        event_id = self._persist_event(session_id, user_msg_event)
+                        event_id = await self._persist_event(session_id, user_msg_event)
                         user_msg_event["_event_id"] = event_id
                         current_user_request_id = str(event_id)
                         if event_id is not None:
@@ -204,7 +204,7 @@ class TaskExecutor:
                                 "text": text,
                                 "context": [intervention_soulstream],
                             }
-                            ev_id = self._persist_event(session_id, intervention_msg)
+                            ev_id = await self._persist_event(session_id, intervention_msg)
                             current_user_request_id = str(ev_id)
                             event["_event_id"] = ev_id  # SSE id: 필드에 JSONL event_id 전달
                             if ev_id is not None:
@@ -269,7 +269,7 @@ class TaskExecutor:
                     # 이벤트 영속화 (broadcast 전에 저장)
                     if self._db is not None:
                         try:
-                            event_id = self._persist_event(session_id, event_dict)
+                            event_id = await self._persist_event(session_id, event_dict)
                             event_dict["_event_id"] = event_id
                             # Task 메모리 객체의 last_event_id 갱신
                             if event_id is not None:
@@ -390,7 +390,7 @@ class TaskExecutor:
         else:
             ts_str = datetime_to_str(utc_now())
 
-        self._db.update_last_message(session_id, {
+        await self._db.update_last_message(session_id, {
             "type": event_type,
             "preview": text[:200],
             "timestamp": ts_str,
@@ -451,7 +451,7 @@ class TaskExecutor:
             # SessionDB에서 미수신 이벤트 재전송
             if self._db is not None and last_event_id is not None:
                 try:
-                    missed_events = self._db.read_events(
+                    missed_events = await self._db.read_events(
                         agent_session_id, after_id=last_event_id
                     )
                     for ev in missed_events:
