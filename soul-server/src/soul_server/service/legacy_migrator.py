@@ -9,9 +9,10 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     import asyncpg
@@ -22,16 +23,42 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# 데이터 클래스
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class DryRunReport:
+    """드라이런 결과 보고서."""
+
+    legacy_files: dict[str, str] = field(default_factory=dict)
+    source_counts: dict[str, int] = field(default_factory=dict)
+    event_type_distribution: dict[str, int] = field(default_factory=dict)
+    sample_mappings: list[dict] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    sessions_to_create: list[str] = field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
 # 공개 API
 # ---------------------------------------------------------------------------
 
 
-async def auto_migrate(session_db: PostgresSessionDB, data_dir: str) -> None:
+async def auto_migrate(
+    session_db: PostgresSessionDB,
+    data_dir: str,
+    *,
+    dry_run: bool = False,
+) -> Optional[DryRunReport]:
     """서버 기동 시 레거시 데이터 자동 이관.
 
     Args:
         session_db: connect() 완료된 PostgresSessionDB 인스턴스.
         data_dir: 데이터 디렉토리 경로 (settings.data_dir).
+        dry_run: True이면 DB에 쓰지 않고 DryRunReport를 반환.
+
+    Returns:
+        dry_run=True이면 DryRunReport, dry_run=False이면 None.
 
     레거시 파일이 없으면 즉시 리턴.
     이관 실패 시 경고 로그만 남기고 서버 기동은 계속.
@@ -39,13 +66,26 @@ async def auto_migrate(session_db: PostgresSessionDB, data_dir: str) -> None:
     try:
         legacy = _detect_legacy_files(data_dir)
         if not legacy:
-            return
+            return None
 
         logger.info(f"레거시 데이터 감지: {list(legacy.keys())}")
         node_id = session_db.node_id
         pool = session_db.pool
         source_counts = _count_sources(legacy)
         logger.info(f"소스 레코드: {source_counts}")
+
+        if dry_run:
+            report = DryRunReport(
+                legacy_files={k: str(v) for k, v in legacy.items()},
+                source_counts=source_counts,
+            )
+            # JSONL 이벤트 분석
+            if "events_dir" in legacy:
+                _analyze_jsonl_events(legacy["events_dir"], report)
+            # SQLite 세션 분석 — sessions_to_create에서 SQLite 세션 제외
+            if "sessions_db" in legacy:
+                _analyze_sqlite_sessions(legacy["sessions_db"], report)
+            return report
 
         if "sessions_db" in legacy:
             await _migrate_folders(pool, legacy["sessions_db"])
@@ -61,6 +101,35 @@ async def auto_migrate(session_db: PostgresSessionDB, data_dir: str) -> None:
             logger.warning("이관 검증 실패: 원본 파일을 유지합니다")
     except Exception:
         logger.warning("레거시 데이터 이관 중 오류 발생, 서버 기동은 계속합니다", exc_info=True)
+    return None
+
+
+async def auto_migrate_dry_run(data_dir: str) -> Optional[DryRunReport]:
+    """DB 연결 없이 파일 파싱과 매핑 검증만 수행하는 CLI 전용 드라이런.
+
+    Args:
+        data_dir: 데이터 디렉토리 경로.
+
+    Returns:
+        레거시 파일이 있으면 DryRunReport, 없으면 None.
+    """
+    legacy = _detect_legacy_files(data_dir)
+    if not legacy:
+        return None
+
+    source_counts = _count_sources(legacy)
+    report = DryRunReport(
+        legacy_files={k: str(v) for k, v in legacy.items()},
+        source_counts=source_counts,
+    )
+
+    if "events_dir" in legacy:
+        _analyze_jsonl_events(legacy["events_dir"], report)
+
+    if "sessions_db" in legacy:
+        _analyze_sqlite_sessions(legacy["sessions_db"], report)
+
+    return report
 
 
 # ---------------------------------------------------------------------------
@@ -95,6 +164,90 @@ def _extract_searchable(evt: dict) -> str:
     if t == "user_message":
         return evt.get("text", "")
     return ""
+
+
+def _unwrap_event(raw: dict) -> tuple[int, dict]:
+    """JSONL 라인의 raw dict에서 (event_id, event_dict)를 추출.
+
+    SessionCache 포맷: {"id": N, "event": {...}} → (N, event_dict)
+    레거시 flat 포맷: {"id": N, "type": "...", ...} → (N, raw 자체)
+    """
+    if "event" in raw and isinstance(raw["event"], dict):
+        return raw.get("id", 0), raw["event"]
+    return raw.get("id", 0), raw
+
+
+# ---------------------------------------------------------------------------
+# 드라이런 분석 헬퍼
+# ---------------------------------------------------------------------------
+
+
+def _analyze_jsonl_events(events_dir: Path, report: DryRunReport) -> None:
+    """JSONL 파일을 파싱하여 DryRunReport에 분석 결과를 채운다."""
+    sample_count = 0
+
+    for jsonl_file in sorted(events_dir.glob("*.jsonl")):
+        sid = jsonl_file.stem
+        parse_errors = 0
+
+        with open(jsonl_file, "r", encoding="utf-8") as f:
+            for line_num, line in enumerate(f, 1):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    raw = json.loads(line)
+                except json.JSONDecodeError:
+                    parse_errors += 1
+                    continue
+
+                eid, evt = _unwrap_event(raw)
+                event_type = evt.get("type", evt.get("event_type", "unknown"))
+                searchable = _extract_searchable(evt)
+
+                # 타입 분포
+                report.event_type_distribution[event_type] = (
+                    report.event_type_distribution.get(event_type, 0) + 1
+                )
+
+                # 샘플 매핑 (처음 3건)
+                if sample_count < 3:
+                    report.sample_mappings.append({
+                        "session_id": sid,
+                        "event_id": eid,
+                        "event_type": event_type,
+                        "searchable_preview": searchable[:100] if searchable else "",
+                    })
+                    sample_count += 1
+
+                # created_at 누락 경고
+                if not evt.get("created_at"):
+                    if len(report.warnings) < 20:
+                        report.warnings.append(
+                            f"{sid}#{eid}: created_at 누락 (현재 시각으로 대체됨)"
+                        )
+
+        if parse_errors:
+            report.warnings.append(
+                f"{jsonl_file.name}: {parse_errors}개 행 JSON 파싱 실패"
+            )
+
+        # JSONL에서 자동 생성될 세션 후보
+        report.sessions_to_create.append(sid)
+
+
+def _analyze_sqlite_sessions(db_path: Path, report: DryRunReport) -> None:
+    """SQLite에 존재하는 세션 ID를 sessions_to_create에서 제외한다."""
+    try:
+        conn = sqlite3.connect(str(db_path))
+        rows = conn.execute("SELECT session_id FROM sessions").fetchall()
+        conn.close()
+        existing_sids = {row[0] for row in rows}
+        report.sessions_to_create = [
+            sid for sid in report.sessions_to_create if sid not in existing_sids
+        ]
+    except Exception:
+        logger.warning("SQLite 세션 조회 실패", exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -395,6 +548,9 @@ async def _migrate_events_from_jsonl(pool: asyncpg.Pool, events_dir: Path, node_
 
     JSONL 전용 레거시 노드용. 파일명(llm-*.jsonl / sess-*.jsonl)으로
     세션 타입을 구분하여 세션 레코드가 없으면 자동 생성한다.
+
+    SessionCache 포맷 {"id": N, "event": {...}}과
+    레거시 flat 포맷 {"id": N, "type": "...", ...}을 모두 지원한다.
     """
     event_count = 0
     for jsonl_file in sorted(events_dir.glob("*.jsonl")):
@@ -421,8 +577,10 @@ async def _migrate_events_from_jsonl(pool: asyncpg.Pool, events_dir: Path, node_
                 "SELECT 1 FROM sessions WHERE session_id = $1", sid
             )
             if not existing:
-                first_ts = _parse_dt(events[0].get("created_at"))
-                last_ts = _parse_dt(events[-1].get("created_at"))
+                _, first_evt = _unwrap_event(events[0])
+                _, last_evt = _unwrap_event(events[-1])
+                first_ts = _parse_dt(first_evt.get("created_at"))
+                last_ts = _parse_dt(last_evt.get("created_at"))
                 await conn.execute(
                     """INSERT INTO sessions
                        (session_id, folder_id, node_id, status, session_type, created_at, updated_at)
@@ -431,8 +589,10 @@ async def _migrate_events_from_jsonl(pool: asyncpg.Pool, events_dir: Path, node_
                     sid, folder_id, node_id, session_type, first_ts, last_ts,
                 )
 
-            for evt in events:
-                eid = evt.get("id", 0)
+            for raw in events:
+                # SessionCache 포맷: {"id": N, "event": {...}}
+                # 레거시 flat 포맷: {"id": N, "type": "...", ...}
+                eid, evt = _unwrap_event(raw)
                 event_type = evt.get("type", evt.get("event_type", "unknown"))
                 payload = _sanitize_payload(json.dumps(evt, ensure_ascii=False))
                 searchable = _sanitize_payload(_extract_searchable(evt))
@@ -448,6 +608,7 @@ async def _migrate_events_from_jsonl(pool: asyncpg.Pool, events_dir: Path, node_
                 event_count += 1
 
         # 세션의 last_event_id 갱신
+        # events 리스트는 raw 형태를 유지하므로 id를 올바르게 읽는다
         if events:
             max_id = max(e.get("id", 0) for e in events)
             async with pool.acquire() as conn:
@@ -505,3 +666,44 @@ def _deprecate_files(legacy: dict[str, Path]) -> None:
             logger.info(f"  {path.name} → {deprecated.name}")
         except OSError as e:
             logger.warning(f"  리네이밍 실패 ({path.name}): {e}")
+
+
+# ---------------------------------------------------------------------------
+# CLI 진입점
+# ---------------------------------------------------------------------------
+
+
+if __name__ == "__main__":
+    import argparse
+    import asyncio
+
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+
+    parser = argparse.ArgumentParser(description="레거시 데이터 마이그레이션 드라이런")
+    parser.add_argument("--data-dir", required=True, help="데이터 디렉토리 경로")
+    args = parser.parse_args()
+
+    report = asyncio.run(auto_migrate_dry_run(args.data_dir))
+    if report is None:
+        print("레거시 파일이 감지되지 않았습니다.")
+    else:
+        print(f"\n=== 레거시 데이터 마이그레이션 드라이런 ===")
+        print(f"감지된 파일: {report.legacy_files}")
+        print(f"소스 레코드: {report.source_counts}")
+        print(f"\n이벤트 타입 분포:")
+        for t, c in sorted(report.event_type_distribution.items(), key=lambda x: -x[1]):
+            print(f"  {t}: {c}")
+        print(f"\n매핑 샘플 (처음 3건):")
+        for s in report.sample_mappings:
+            print(f"  {s}")
+        if report.sessions_to_create:
+            print(f"\n자동 생성될 세션 ({len(report.sessions_to_create)}개):")
+            for sid in report.sessions_to_create[:10]:
+                print(f"  {sid}")
+            if len(report.sessions_to_create) > 10:
+                print(f"  ... 외 {len(report.sessions_to_create) - 10}개")
+        if report.warnings:
+            print(f"\n⚠️  경고 ({len(report.warnings)}건):")
+            for w in report.warnings:
+                print(f"  - {w}")
+        print()
