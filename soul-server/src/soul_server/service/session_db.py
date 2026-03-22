@@ -306,6 +306,28 @@ class SessionDB:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    def repair_broken_read_positions(self) -> int:
+        """꼬인 읽음 상태 복구.
+
+        완료된 세션 중 last_read_event_id=0이고 last_event_id>0인 것을
+        '전부 읽음' 처리한다. 서버 시작 시 lifespan에서 호출한다.
+
+        Returns:
+            복구된 세션 수
+        """
+        cursor = self._conn.execute("""
+            UPDATE sessions
+            SET last_read_event_id = last_event_id
+            WHERE status != 'running'
+              AND last_read_event_id = 0
+              AND last_event_id > 0
+        """)
+        self._conn.commit()
+        count = cursor.rowcount
+        if count:
+            logger.info(f"Repaired {count} sessions with broken read positions")
+        return count
+
     def clear_shutdown_flags(self) -> None:
         self._conn.execute(
             "UPDATE sessions SET was_running_at_shutdown = 0 WHERE was_running_at_shutdown = 1"
