@@ -74,13 +74,20 @@ class TaskListenerManager:
         if not task:
             return 0
 
+        dead_listeners = []
         count = 0
         for queue in task.listeners:
             try:
-                await queue.put(event)
+                queue.put_nowait(event)
                 count += 1
+            except asyncio.QueueFull:
+                logger.warning(f"[LISTENER] Queue full, removing dead listener from {agent_session_id}")
+                dead_listeners.append(queue)
             except Exception as e:
                 logger.warning(f"Failed to broadcast to listener: {e}")
+
+        for dead in dead_listeners:
+            task.listeners.remove(dead)
 
         if count > 0:
             event_type = event.get("type", "unknown")

@@ -149,7 +149,7 @@ class TestCreateTaskCatalogBroadcast:
             prompt="hello",
             agent_session_id="sess-resume-1",
         )
-        await manager.complete_task("sess-resume-1", "done")
+        await manager.finalize_task("sess-resume-1", result="done")
 
         # 카운터 리셋
         broadcaster.broadcast.reset_mock()

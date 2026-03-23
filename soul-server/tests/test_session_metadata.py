@@ -307,7 +307,7 @@ class TestResumeMetadataContinuity:
         await task_manager.append_session_metadata(sid, entry)
 
         # 완료
-        await task_manager.complete_task(sid, "done", "claude-session-1")
+        await task_manager.finalize_task(sid, result="done", claude_session_id="claude-session-1")
 
         # resume
         resumed = await task_manager.create_task(prompt="second", agent_session_id=sid)
