@@ -378,6 +378,18 @@ class TaskManager:
             result.append(info)
         return result, total
 
+    async def list_sessions_summary(
+        self,
+        search: str | None = None,
+        session_type: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> tuple[list[dict], int]:
+        """경량 세션 목록을 반환한다 (display_name, status, event_count 등)."""
+        return await self._db.list_sessions_summary(
+            search=search, session_type=session_type, limit=limit, offset=offset,
+        )
+
     async def create_task(
         self,
         prompt: str,

@@ -301,10 +301,13 @@ class PostgresSessionDB:
         )
         return event_id
 
-    async def read_events(self, session_id: str, after_id: int = 0) -> list[dict]:
+    async def read_events(
+        self, session_id: str, after_id: int = 0,
+        limit: int | None = None, event_types: list[str] | None = None,
+    ) -> list[dict]:
         rows = await self._pool.fetch(
-            "SELECT * FROM event_read($1, $2)",
-            session_id, after_id,
+            "SELECT * FROM event_read($1, $2, $3, $4)",
+            session_id, after_id, limit, event_types,
         )
         return [self._event_to_dict(r) for r in rows]
 
@@ -442,6 +445,29 @@ class PostgresSessionDB:
             }
 
         return {"folders": folder_list, "sessions": sessions}
+
+    # --- 경량 세션 목록 ---
+
+    async def list_sessions_summary(
+        self,
+        search: str | None = None,
+        session_type: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> tuple[list[dict], int]:
+        """경량 세션 목록과 total count를 반환한다."""
+        rows = await self._pool.fetch(
+            "SELECT * FROM session_list_summary($1, $2, $3, $4)",
+            search, session_type, limit, offset,
+        )
+        if not rows:
+            return [], 0
+        total = rows[0]["total_count"]
+        sessions = [
+            {k: v for k, v in dict(r).items() if k != "total_count"}
+            for r in rows
+        ]
+        return sessions, total
 
     # --- 전문검색 (tsvector) ---
 
