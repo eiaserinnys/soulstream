@@ -12,7 +12,7 @@ import json
 import logging
 from datetime import datetime, timezone
 from collections.abc import AsyncGenerator
-from typing import Optional
+from typing import Optional, Union
 
 import asyncpg
 
@@ -179,6 +179,7 @@ class PostgresSessionDB:
         session_type: Optional[str] = None,
         folder_id: Optional[str] = None,
         node_id: Optional[str] = None,
+        status: Optional[Union[str, list[str]]] = None,
     ) -> tuple[list[dict], int]:
         # 필터를 JSONB dict으로 직렬화
         filters = {}
@@ -188,6 +189,8 @@ class PostgresSessionDB:
             filters["folder_id"] = folder_id
         if node_id:
             filters["node_id"] = node_id
+        if status is not None:
+            filters["status"] = status
         filters_json = json.dumps(filters) if filters else None
 
         total = await self._pool.fetchval(
