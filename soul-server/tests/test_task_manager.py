@@ -233,6 +233,73 @@ class TestErrorTask:
         assert task is None
 
 
+class TestFinalizeTask:
+    """finalize_task() 동작 검증.
+
+    finalize_task()는 complete_task() / error_task()의 통합 대체제이며,
+    양쪽과 동일한 부수 효과(_unregister_claude_session 호출)를 가져야 한다.
+    현재 코드는 _unregister_claude_session을 호출하지 않으므로 이 테스트들은 RED이다.
+    Phase 2 수정 후 GREEN이 된다.
+    """
+
+    async def test_finalize_result_sets_completed_status(self, manager):
+        """result= 전달 시 COMPLETED 상태로 전환된다."""
+        await manager.create_task(prompt="hello", agent_session_id="sess-1")
+        task = await manager.finalize_task("sess-1", result="done")
+
+        assert task is not None
+        assert task.status == TaskStatus.COMPLETED
+        assert task.result == "done"
+        assert task.completed_at is not None
+
+    async def test_finalize_error_sets_error_status(self, manager):
+        """error= 전달 시 ERROR 상태로 전환된다."""
+        await manager.create_task(prompt="hello", agent_session_id="sess-1")
+        task = await manager.finalize_task("sess-1", error="something broke")
+
+        assert task is not None
+        assert task.status == TaskStatus.ERROR
+        assert task.error == "something broke"
+        assert task.completed_at is not None
+
+    async def test_finalize_result_unregisters_claude_session(self, manager):
+        """finalize_task(result=) 호출 시 claude_session_id가 인덱스에서 제거된다.
+
+        complete_task()와 동일한 _unregister_claude_session 부수 효과가 있어야 한다.
+        현재 finalize_task()에는 이 호출이 없으므로 RED (assertion 실패).
+        Phase 2에서 추가되면 GREEN이 된다.
+        """
+        await manager.create_task(prompt="hello", agent_session_id="sess-1")
+        # claude_session_id를 인덱스에 등록
+        manager._session_index["claude-abc"] = "sess-1"
+        assert "claude-abc" in manager._session_index
+
+        await manager.finalize_task("sess-1", result="done")
+
+        # _unregister_claude_session이 호출되었으면 인덱스에서 제거되어야 한다
+        assert "claude-abc" not in manager._session_index
+
+    async def test_finalize_error_unregisters_claude_session(self, manager):
+        """finalize_task(error=) 호출 시 claude_session_id가 인덱스에서 제거된다.
+
+        error_task()와 동일한 _unregister_claude_session 부수 효과가 있어야 한다.
+        현재 finalize_task()에는 이 호출이 없으므로 RED (assertion 실패).
+        Phase 2에서 추가되면 GREEN이 된다.
+        """
+        await manager.create_task(prompt="hello", agent_session_id="sess-1")
+        manager._session_index["claude-abc"] = "sess-1"
+        assert "claude-abc" in manager._session_index
+
+        await manager.finalize_task("sess-1", error="failed")
+
+        assert "claude-abc" not in manager._session_index
+
+    async def test_finalize_nonexistent_returns_none(self, manager):
+        """존재하지 않는 세션에 finalize_task 호출 시 None을 반환한다."""
+        task = await manager.finalize_task("nonexistent", result="done")
+        assert task is None
+
+
 class TestIntervention:
     async def test_add_intervention_running(self, manager):
         """running 세션에 개입 메시지 추가"""
