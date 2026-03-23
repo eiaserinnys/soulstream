@@ -6,13 +6,17 @@ import { existsSync } from "fs";
 import express from "express";
 import cors from "cors";
 import { createServer } from "http";
+import { Pool } from "pg";
 import { NodeManager } from "./nodes/node-manager";
+import { SessionDB } from "./db/session-db";
 import { createNodesRouter } from "./api/nodes";
 import { createSessionsRouter } from "./api/sessions";
+import { createFoldersRouter } from "./api/folders";
 import { setupNodeWebSocket } from "./ws/node-handler";
 
 export interface ServerConfig {
   port: number;
+  databaseUrl: string;
   dashboardDir?: string;
 }
 
@@ -26,10 +30,13 @@ export function createSoulStreamServer(config: ServerConfig) {
 
   // Core modules
   const nodeManager = new NodeManager();
+  const pool = new Pool({ connectionString: config.databaseUrl });
+  const sessionDB = new SessionDB(pool);
 
   // API routes
   app.use("/api/nodes", createNodesRouter(nodeManager));
-  app.use("/api/sessions", createSessionsRouter(nodeManager));
+  app.use("/api/sessions", createSessionsRouter(nodeManager, sessionDB));
+  app.use("/api/folders", createFoldersRouter(sessionDB));
 
   // Health check
   app.get("/api/health", (_req, res) => {
