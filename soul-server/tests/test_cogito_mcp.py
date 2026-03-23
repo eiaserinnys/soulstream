@@ -454,7 +454,71 @@ class TestListSessions:
         with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=tm):
             await fn(search="테스트")
         tm.list_sessions_summary.assert_called_once_with(
-            search="테스트", limit=20, offset=0,
+            search="테스트", limit=20, offset=0, folder_id=None, node_id=None,
+        )
+
+    async def test_folder_id_filter_forwarded(self):
+        tm = _make_mock_task_manager(([], 0))
+        fn = _unwrap(mcp_tools.list_sessions)
+        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=tm):
+            await fn(folder_id="claude")
+        tm.list_sessions_summary.assert_called_once_with(
+            search=None, limit=20, offset=0, folder_id="claude", node_id=None,
+        )
+
+    async def test_folder_name_resolves_to_folder_id(self):
+        tm = _make_mock_task_manager(([], 0))
+        tm.get_all_folders = AsyncMock(return_value=[
+            {"id": "claude", "name": "⚙️ 클로드 코드 세션"},
+            {"id": "other", "name": "🪞 서소영"},
+        ])
+        fn = _unwrap(mcp_tools.list_sessions)
+        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=tm):
+            await fn(folder_name="⚙️ 클로드 코드 세션")
+        tm.list_sessions_summary.assert_called_once_with(
+            search=None, limit=20, offset=0, folder_id="claude", node_id=None,
+        )
+
+    async def test_folder_name_unknown_passes_none(self):
+        tm = _make_mock_task_manager(([], 0))
+        tm.get_all_folders = AsyncMock(return_value=[
+            {"id": "claude", "name": "⚙️ 클로드 코드 세션"},
+        ])
+        fn = _unwrap(mcp_tools.list_sessions)
+        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=tm):
+            await fn(folder_name="존재하지않는폴더")
+        tm.list_sessions_summary.assert_called_once_with(
+            search=None, limit=20, offset=0, folder_id=None, node_id=None,
+        )
+
+    async def test_node_id_filter_forwarded(self):
+        tm = _make_mock_task_manager(([], 0))
+        fn = _unwrap(mcp_tools.list_sessions)
+        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=tm):
+            await fn(node_id="haniel-01")
+        tm.list_sessions_summary.assert_called_once_with(
+            search=None, limit=20, offset=0, folder_id=None, node_id="haniel-01",
+        )
+
+    async def test_node_name_treated_as_node_id(self):
+        tm = _make_mock_task_manager(([], 0))
+        fn = _unwrap(mcp_tools.list_sessions)
+        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=tm):
+            await fn(node_name="haniel-01")
+        tm.list_sessions_summary.assert_called_once_with(
+            search=None, limit=20, offset=0, folder_id=None, node_id="haniel-01",
+        )
+
+    async def test_folder_id_takes_precedence_over_folder_name(self):
+        """folder_id와 folder_name 동시 제공 시 folder_id 우선."""
+        tm = _make_mock_task_manager(([], 0))
+        fn = _unwrap(mcp_tools.list_sessions)
+        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=tm):
+            await fn(folder_id="explicit-id", folder_name="⚙️ 클로드 코드 세션")
+        # folder_name이 있어도 get_all_folders를 호출하지 않아야 함
+        tm.get_all_folders.assert_not_called()
+        tm.list_sessions_summary.assert_called_once_with(
+            search=None, limit=20, offset=0, folder_id="explicit-id", node_id=None,
         )
 
     async def test_limit_capped_at_100(self):
