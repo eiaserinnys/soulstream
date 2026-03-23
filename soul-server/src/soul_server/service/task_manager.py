@@ -150,7 +150,7 @@ class TaskManager:
 
         running 상태 세션만 _tasks에 올리고 나머지는 DB에서 온디맨드 조회한다.
         """
-        sessions, total = await self._db.get_all_sessions()
+        sessions, total = await self._db.get_all_sessions(node_id=self._db.node_id)
 
         loaded = 0
         zombies = 0
@@ -166,11 +166,25 @@ class TaskManager:
                     zombies += 1
                     continue
 
+                # was_running_at_shutdown=1인 running 세션: DB에서 interrupted로 전환 후 _tasks에 올림
+                # 이렇게 해야 startup resume 시 add_intervention이 auto_resumed=True 경로를 타서
+                # start_execution이 호출된다.
+                try:
+                    await self._db.update_session_status(
+                        s["session_id"],
+                        TaskStatus.INTERRUPTED.value,
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to transition session {s['session_id']} to interrupted: {e}"
+                    )
+                    continue
+
                 try:
                     task = Task(
                         agent_session_id=s["session_id"],
                         prompt=s.get("prompt", ""),
-                        status=TaskStatus(s["status"]),
+                        status=TaskStatus.INTERRUPTED,
                         client_id=s.get("client_id"),
                         claude_session_id=s.get("claude_session_id"),
                         session_type=s.get("session_type", "claude"),
@@ -186,6 +200,8 @@ class TaskManager:
 
         if zombies:
             logger.info(f"Cleaned up {zombies} zombie sessions (running without shutdown flag)")
+        if loaded:
+            logger.info(f"Transitioned {loaded} shutdown sessions to interrupted status")
         logger.info(f"Loaded {loaded} running sessions from DB (total {total} in catalog)")
 
         # 퇴거 루프 시작

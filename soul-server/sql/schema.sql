@@ -325,16 +325,19 @@ END;
 $$;
 
 -- 13. shutdown_get_sessions
-CREATE OR REPLACE FUNCTION shutdown_get_sessions()
+CREATE OR REPLACE FUNCTION shutdown_get_sessions(p_node_id TEXT DEFAULT NULL)
 RETURNS SETOF sessions LANGUAGE sql STABLE AS $$
-    SELECT * FROM sessions WHERE was_running_at_shutdown = TRUE;
+    SELECT * FROM sessions
+    WHERE was_running_at_shutdown = TRUE
+    AND (p_node_id IS NULL OR node_id = p_node_id);
 $$;
 
 -- 14. shutdown_clear_flags
-CREATE OR REPLACE FUNCTION shutdown_clear_flags()
+CREATE OR REPLACE FUNCTION shutdown_clear_flags(p_node_id TEXT DEFAULT NULL)
 RETURNS void LANGUAGE sql AS $$
     UPDATE sessions SET was_running_at_shutdown = FALSE
-    WHERE was_running_at_shutdown = TRUE;
+    WHERE was_running_at_shutdown = TRUE
+    AND (p_node_id IS NULL OR node_id = p_node_id);
 $$;
 
 -- 15. shutdown_repair_read_positions
