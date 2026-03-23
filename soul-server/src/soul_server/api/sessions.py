@@ -83,11 +83,27 @@ def create_sessions_router() -> APIRouter:
         offset: int = Query(0, ge=0, description="건너뛸 항목 수"),
         limit: int = Query(0, ge=0, description="반환할 최대 항목 수 (0이면 전체)"),
         session_type: Literal["claude", "llm"] | None = Query(None, description="세션 타입 필터: claude | llm"),
+        folder_id: str | None = Query(None, description="폴더 ID 필터 (UUID 또는 시스템 ID, 예: 'claude')"),
+        folder_name: str | None = Query(None, description="폴더 표시 이름 필터 (folder_id와 동시 제공 시 folder_id 우선)"),
+        node_id: str | None = Query(None, description="노드 ID 필터 (SOULSTREAM_NODE_ID 값)"),
+        node_name: str | None = Query(None, description="노드 이름 필터 (node_id와 동일 컬럼, node_id 우선)"),
     ):
-        """세션 목록 조회 (페이지네이션, 타입 필터 지원)"""
+        """세션 목록 조회 (페이지네이션, 타입/폴더/노드 필터 지원)"""
         task_manager = get_task_manager()
+
+        # folder_name → folder_id 해소
+        resolved_folder_id = folder_id
+        if folder_name and not folder_id:
+            all_folders = await task_manager.get_all_folders()
+            matched = next((f for f in all_folders if f.get("name") == folder_name), None)
+            resolved_folder_id = matched["id"] if matched else None
+
+        # node_name → node_id (동일 컬럼)
+        resolved_node_id = node_id or node_name
+
         sessions, total = await task_manager.get_all_sessions(
             offset=offset, limit=limit, session_type=session_type,
+            folder_id=resolved_folder_id, node_id=resolved_node_id,
         )
         return {"sessions": sessions, "total": total}
 

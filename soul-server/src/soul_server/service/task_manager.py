@@ -330,8 +330,10 @@ class TaskManager:
         offset: int = 0,
         limit: int = 0,
         session_type: Optional[str] = None,
+        folder_id: Optional[str] = None,
+        node_id: Optional[str] = None,
     ) -> tuple[list[dict], int]:
-        """세션 목록 반환 (생성일 기준 내림차순, 페이지네이션 + 타입 필터 지원)
+        """세션 목록 반환 (생성일 기준 내림차순, 페이지네이션 + 타입/폴더/노드 필터 지원)
 
         카탈로그 기반으로 전체 세션 목록을 반환합니다.
         running 세션의 pid는 _tasks에서 보충합니다.
@@ -340,12 +342,15 @@ class TaskManager:
             offset: 건너뛸 항목 수 (기본 0)
             limit: 반환할 최대 항목 수 (0이면 전체)
             session_type: 세션 타입 필터 ("claude" | "llm", None이면 전체)
+            folder_id: 폴더 ID 필터 (None이면 전체)
+            node_id: 노드 ID 필터 (None이면 전체)
 
         Returns:
             (세션 dict 리스트, 전체 세션 수) 튜플
         """
         sessions, total = await self._db.get_all_sessions(
-            offset=offset, limit=limit, session_type=session_type
+            offset=offset, limit=limit, session_type=session_type,
+            folder_id=folder_id, node_id=node_id,
         )
 
         result = []
@@ -387,10 +392,13 @@ class TaskManager:
         session_type: str | None = None,
         limit: int = 20,
         offset: int = 0,
+        folder_id: str | None = None,
+        node_id: str | None = None,
     ) -> tuple[list[dict], int]:
         """경량 세션 목록을 반환한다 (display_name, status, event_count 등)."""
         return await self._db.list_sessions_summary(
             search=search, session_type=session_type, limit=limit, offset=offset,
+            folder_id=folder_id, node_id=node_id,
         )
 
     async def create_task(

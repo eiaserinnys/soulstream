@@ -173,12 +173,21 @@ class PostgresSessionDB:
         return self._deserialize_session(row)
 
     async def get_all_sessions(
-        self, offset: int = 0, limit: int = 0, session_type: Optional[str] = None
+        self,
+        offset: int = 0,
+        limit: int = 0,
+        session_type: Optional[str] = None,
+        folder_id: Optional[str] = None,
+        node_id: Optional[str] = None,
     ) -> tuple[list[dict], int]:
         # 필터를 JSONB dict으로 직렬화
         filters = {}
         if session_type:
             filters["session_type"] = session_type
+        if folder_id:
+            filters["folder_id"] = folder_id
+        if node_id:
+            filters["node_id"] = node_id
         filters_json = json.dumps(filters) if filters else None
 
         total = await self._pool.fetchval(
@@ -462,11 +471,13 @@ class PostgresSessionDB:
         session_type: str | None = None,
         limit: int = 20,
         offset: int = 0,
+        folder_id: str | None = None,
+        node_id: str | None = None,
     ) -> tuple[list[dict], int]:
         """경량 세션 목록과 total count를 반환한다."""
         rows = await self._pool.fetch(
-            "SELECT * FROM session_list_summary($1, $2, $3, $4)",
-            search, session_type, limit, offset,
+            "SELECT * FROM session_list_summary($1, $2, $3, $4, $5, $6)",
+            search, session_type, limit, offset, folder_id, node_id,
         )
         if not rows:
             return [], 0
