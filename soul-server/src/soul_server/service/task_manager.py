@@ -177,6 +177,7 @@ class TaskManager:
                         last_event_id=s.get("last_event_id", 0),
                         last_read_event_id=s.get("last_read_event_id", 0),
                         created_at=str_to_datetime(s["created_at"]),
+                        node_id=s.get("node_id"),
                     )
                     self._tasks[s["session_id"]] = task
                     loaded += 1
@@ -246,6 +247,7 @@ class TaskManager:
         Args:
             task: 등록할 Task 인스턴스
         """
+        task.node_id = self._db.node_id
         async with self._lock:
             self._tasks[task.agent_session_id] = task
         await self._db.upsert_session(
@@ -256,6 +258,7 @@ class TaskManager:
             client_id=task.client_id,
             claude_session_id=task.claude_session_id,
             created_at=datetime_to_str(task.created_at),
+            node_id=self._db.node_id,
         )
 
         # 기본 폴더 자동 배정 + 카탈로그 브로드캐스트
@@ -497,6 +500,8 @@ class TaskManager:
                 logger.info(f"Created new session: {agent_session_id}")
                 is_new = True
 
+        task.node_id = self._db.node_id
+
         # DB에 세션 등록/업데이트
         await self._db.upsert_session(
             agent_session_id,
@@ -506,6 +511,7 @@ class TaskManager:
             client_id=task.client_id,
             claude_session_id=task.claude_session_id,
             created_at=datetime_to_str(task.created_at),
+            node_id=self._db.node_id,
         )
 
         # 새 세션이면 폴더에 배치 + 카탈로그 브로드캐스트
