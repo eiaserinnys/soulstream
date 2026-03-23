@@ -4,6 +4,7 @@
  * soul-server가 기록한 sessions, events, folders 테이블을 조회한다.
  */
 
+import { randomUUID } from 'crypto'
 import type { Pool } from 'pg'
 import type { SessionSummary, Folder } from '../sessions/types'
 
@@ -157,6 +158,77 @@ export class SessionDB {
       parentId: row.parent_id,
       createdAt: row.created_at,
     }))
+  }
+
+  /**
+   * 폴더 생성. UUID는 Node.js crypto로 생성.
+   */
+  async createFolder(name: string): Promise<Folder> {
+    const id = randomUUID()
+    const { rows } = await this.pool.query<{
+      id: string
+      name: string
+      parent_id: string | null
+      created_at: string
+    }>(
+      `INSERT INTO folders (id, name) VALUES ($1, $2) RETURNING id, name, parent_id, created_at`,
+      [id, name]
+    )
+    const row = rows[0]!
+    return {
+      id: row.id,
+      name: row.name,
+      parentId: row.parent_id,
+      createdAt: row.created_at,
+    }
+  }
+
+  /**
+   * 폴더 이름 변경. 없으면 null 반환.
+   */
+  async updateFolder(id: string, name: string): Promise<Folder | null> {
+    const { rows } = await this.pool.query<{
+      id: string
+      name: string
+      parent_id: string | null
+      created_at: string
+    }>(
+      `UPDATE folders SET name = $2 WHERE id = $1 RETURNING id, name, parent_id, created_at`,
+      [id, name]
+    )
+    if (rows.length === 0) return null
+    const row = rows[0]!
+    return {
+      id: row.id,
+      name: row.name,
+      parentId: row.parent_id,
+      createdAt: row.created_at,
+    }
+  }
+
+  /**
+   * 폴더 삭제. 해당 폴더의 세션 folder_id를 NULL로 초기화 후 삭제.
+   */
+  async deleteFolder(id: string): Promise<void> {
+    await this.pool.query(
+      `UPDATE sessions SET folder_id = NULL WHERE folder_id = $1`,
+      [id]
+    )
+    await this.pool.query(`DELETE FROM folders WHERE id = $1`, [id])
+  }
+
+  /**
+   * 세션 목록을 특정 폴더로 이동. folderId = null이면 폴더 배정 해제.
+   */
+  async moveSessionsToFolder(
+    sessionIds: string[],
+    folderId: string | null
+  ): Promise<void> {
+    if (sessionIds.length === 0) return
+    await this.pool.query(
+      `UPDATE sessions SET folder_id = $1 WHERE agent_session_id = ANY($2::text[])`,
+      [folderId, sessionIds]
+    )
   }
 
   /**

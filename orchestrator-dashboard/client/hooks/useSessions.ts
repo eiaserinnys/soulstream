@@ -1,5 +1,5 @@
 /**
- * SSE 훅 — /api/sessions 에서 전체 세션 목록을 폴링.
+ * 폴링 훅 — /api/sessions 에서 전체 세션 목록을 주기적으로 조회.
  */
 
 import { useEffect, useRef } from "react";
@@ -11,7 +11,6 @@ const POLL_INTERVAL = 5000;
 export function useSessions() {
   const setNodeSessions = useOrchestratorStore((s) => s.setNodeSessions);
 
-  // nodes 변경을 ref로 추적 — useEffect 의존성에서 제외하여 interval 재생성 방지
   const nodesRef = useRef(useOrchestratorStore.getState().nodes);
   useEffect(() => {
     return useOrchestratorStore.subscribe((state) => {

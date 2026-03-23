@@ -9,18 +9,21 @@ import { createSoulStreamServer } from "./server";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const PORT = parseInt(process.env.SOUL_STREAM_PORT ?? "5200", 10);
-// 기본값: 프로젝트 내 dashboard/dist
-// ※ Phase 3 §8에서 SOUL_STREAM_DASHBOARD_DIR를 required로 변경한다.
-const DASHBOARD_DIR =
-  process.env.SOUL_STREAM_DASHBOARD_DIR ||
-  resolve(__dirname, "../dashboard/dist");
+// §8: SOUL_STREAM_DASHBOARD_DIR는 필수값. 없으면 즉시 에러.
+const DASHBOARD_DIR = process.env.SOUL_STREAM_DASHBOARD_DIR;
+if (!DASHBOARD_DIR) {
+  throw new Error(
+    "SOUL_STREAM_DASHBOARD_DIR is required. " +
+    "Set it to the orchestrator-dashboard dist directory path."
+  );
+}
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is required");
 
 const { start } = createSoulStreamServer({
   port: PORT,
-  dashboardDir: DASHBOARD_DIR || undefined,
+  dashboardDir: DASHBOARD_DIR,
   databaseUrl,
 });
 

@@ -57,10 +57,9 @@ export class SoulstreamSessionProvider implements SessionStorageProvider {
     };
   }
 
-  async fetchCards(sessionKey: string): Promise<EventTreeNode[]> {
+  async fetchCards(_sessionKey: string): Promise<EventTreeNode[]> {
     // SoulStream은 세션의 카드(이벤트 트리)를 직접 제공하지 않으므로
     // SSE 스트림에서 증분으로 빌드한다.
-    // 초기 상태는 빈 배열 — subscribe에서 채워진다.
     return [];
   }
 
@@ -74,7 +73,7 @@ export class SoulstreamSessionProvider implements SessionStorageProvider {
 
     let url = `/api/sessions/${sessionKey}/events`;
     if (options?.lastEventId !== undefined) {
-      url += `?lastEventId=${options.lastEventId}`;
+      url += `?after_id=${options.lastEventId}`;
     }
 
     const es = new EventSource(url);
@@ -83,9 +82,6 @@ export class SoulstreamSessionProvider implements SessionStorageProvider {
       onStatusChange?.("connected");
     };
 
-    // 타입별 이벤트 리스너 등록.
-    // 서버가 `event: text_start\ndata: {...}\n\n` 형태로 typed event를 보내므로
-    // onmessage(type 없는 메시지만 수신)가 아닌 addEventListener를 사용해야 한다.
     for (const eventType of SSE_EVENT_TYPES) {
       es.addEventListener(eventType, (e: MessageEvent) => {
         try {
@@ -100,7 +96,6 @@ export class SoulstreamSessionProvider implements SessionStorageProvider {
 
     es.onerror = (e) => {
       // 서버가 보낸 named "error" 이벤트는 MessageEvent로 도착.
-      // 세션 히스토리의 노드일 뿐이므로 연결을 끊지 않는다.
       if (e instanceof MessageEvent) return;
       onStatusChange?.("error");
     };
