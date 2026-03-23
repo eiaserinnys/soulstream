@@ -162,6 +162,7 @@ class TaskManager:
                     await self._db.upsert_session(
                         s["session_id"],
                         status=TaskStatus.COMPLETED.value,
+                        node_id=s.get("node_id"),
                     )
                     zombies += 1
                     continue
