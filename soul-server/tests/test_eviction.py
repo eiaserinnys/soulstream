@@ -19,6 +19,7 @@ def _make_mock_db():
     db.upsert_session = AsyncMock()
     db.get_session = AsyncMock(return_value=None)
     db.get_all_sessions = AsyncMock(return_value=([], 0))
+    db.update_session_status = AsyncMock()
     db.delete_session = AsyncMock()
     db.append_event = AsyncMock(return_value=1)
     db.read_events = AsyncMock(return_value=[])
