@@ -49,6 +49,13 @@ class HealthCheckCmd(TypedDict, total=False):
     request_id: str
 
 
+class SubscribeEventsCmd(TypedDict):
+    type: str            # "subscribe_events"
+    session_id: str
+    after_id: int        # 이 ID 초과 이벤트만 전송. 0이면 처음부터
+    request_id: str      # 현재 미사용, 향후 응답 라우팅용 예약 필드 (빈 문자열 허용)
+
+
 # ─────────────────────────────────────────────────────
 # Node → Upstream (소울 서버 → 소울스트림) 응답/이벤트
 # ─────────────────────────────────────────────────────
@@ -101,6 +108,7 @@ CMD_INTERVENE = "intervene"
 CMD_RESPOND = "respond"
 CMD_LIST_SESSIONS = "list_sessions"
 CMD_HEALTH_CHECK = "health_check"
+CMD_SUBSCRIBE_EVENTS = "subscribe_events"
 
 EVT_NODE_REGISTER = "node_register"
 EVT_SESSION_CREATED = "session_created"
