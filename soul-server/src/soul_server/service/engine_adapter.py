@@ -13,6 +13,7 @@ Serendipity 연동:
 import asyncio
 import json
 import logging
+import platform
 import re
 import socket
 from dataclasses import dataclass
@@ -144,6 +145,7 @@ def build_soulstream_context_item(
     claude_session_id: Optional[str],
     workspace_dir: str,
     folder_name: Optional[str] = None,
+    node_id: Optional[str] = None,
 ) -> dict:
     """소울스트림 자체 세션 메타데이터 context_item을 생성한다."""
     hostname = socket.gethostname()
@@ -155,6 +157,16 @@ def build_soulstream_context_item(
     except Exception:
         ip = "unknown"
 
+    host_os = platform.system()
+    os_version = platform.version()
+
+    resolved_node_id = node_id
+    if resolved_node_id is None:
+        try:
+            resolved_node_id = get_settings().soulstream_node_id or ""
+        except Exception:
+            resolved_node_id = ""
+
     content = {
         "agent_session_id": agent_session_id,
         "claude_session_id": claude_session_id if claude_session_id else "(new session)",
@@ -162,6 +174,9 @@ def build_soulstream_context_item(
         "folder": folder_name or "(unassigned)",
         "hostname": hostname,
         "ip_address": ip,
+        "current_node_id": resolved_node_id,
+        "host_os": host_os,
+        "os_version": os_version,
         "current_time": datetime.now(timezone.utc).isoformat(),
     }
     return {
