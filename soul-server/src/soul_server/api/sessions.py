@@ -87,8 +87,9 @@ def create_sessions_router() -> APIRouter:
         folder_name: str | None = Query(None, description="폴더 표시 이름 필터 (folder_id와 동시 제공 시 folder_id 우선)"),
         node_id: str | None = Query(None, description="노드 ID 필터 (SOULSTREAM_NODE_ID 값)"),
         node_name: str | None = Query(None, description="노드 이름 필터 (node_id와 동일 컬럼, node_id 우선)"),
+        status: str | None = Query(None, description="상태 필터 (쉼표 구분 가능, 예: running 또는 completed,error)"),
     ):
-        """세션 목록 조회 (페이지네이션, 타입/폴더/노드 필터 지원)"""
+        """세션 목록 조회 (페이지네이션, 타입/폴더/노드/상태 필터 지원)"""
         task_manager = get_task_manager()
 
         # folder_name → folder_id 해소
@@ -101,9 +102,16 @@ def create_sessions_router() -> APIRouter:
         # node_name → node_id (동일 컬럼)
         resolved_node_id = node_id or node_name
 
+        # status 파싱: 쉼표 구분 다중값 지원
+        status_filter: str | list[str] | None = None
+        if status:
+            parts = [s.strip() for s in status.split(",") if s.strip()]
+            status_filter = parts if len(parts) > 1 else (parts[0] if parts else None)
+
         sessions, total = await task_manager.get_all_sessions(
             offset=offset, limit=limit, session_type=session_type,
             folder_id=resolved_folder_id, node_id=resolved_node_id,
+            status=status_filter,
         )
         return {"sessions": sessions, "total": total}
 

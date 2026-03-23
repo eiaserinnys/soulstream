@@ -172,6 +172,13 @@ BEGIN
     IF p_filters IS NOT NULL AND p_filters ? 'node_id' THEN
         q := q || ' AND node_id = ' || quote_literal(p_filters->>'node_id');
     END IF;
+    IF p_filters IS NOT NULL AND p_filters ? 'status' THEN
+        IF jsonb_typeof(p_filters->'status') = 'array' THEN
+            q := q || ' AND status = ANY(ARRAY(SELECT jsonb_array_elements_text(p_filters->''status'')))';
+        ELSE
+            q := q || ' AND status = ' || quote_literal(p_filters->>'status');
+        END IF;
+    END IF;
 
     q := q || ' ORDER BY updated_at DESC';
 
@@ -202,6 +209,13 @@ BEGIN
     END IF;
     IF p_filters IS NOT NULL AND p_filters ? 'node_id' THEN
         q := q || ' AND node_id = ' || quote_literal(p_filters->>'node_id');
+    END IF;
+    IF p_filters IS NOT NULL AND p_filters ? 'status' THEN
+        IF jsonb_typeof(p_filters->'status') = 'array' THEN
+            q := q || ' AND status = ANY(ARRAY(SELECT jsonb_array_elements_text(p_filters->''status'')))';
+        ELSE
+            q := q || ' AND status = ' || quote_literal(p_filters->>'status');
+        END IF;
     END IF;
 
     EXECUTE q INTO result;
