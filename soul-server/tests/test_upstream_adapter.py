@@ -240,10 +240,10 @@ class TestHandleListSessions:
     @pytest.mark.asyncio
     async def test_returns_session_list(self):
         tm = MagicMock()
-        tm.get_all_sessions.return_value = (
+        tm.get_all_sessions = AsyncMock(return_value=(
             [{"session_id": "s1"}, {"session_id": "s2"}],
             2,
-        )
+        ))
 
         adapter = _make_adapter(task_manager=tm)
         adapter._ws = MagicMock()
