@@ -7,7 +7,7 @@ export interface SessionSummary {
   updatedAt?: string;
   lastMessage?: unknown; // soul-server가 {preview, timestamp, type} 객체를 보냄
   prompt?: string;
-  [key: string]: unknown;
+  folderId?: string | null; // sessions 테이블의 folder_id 컬럼. null = 폴더 미배정
 }
 
 export interface AggregatedSession {
@@ -16,11 +16,18 @@ export interface AggregatedSession {
   summary: SessionSummary;
 }
 
+export interface Folder {
+  id: string;
+  name: string;
+  parentId: string | null;
+  createdAt: string;
+}
+
 export interface SessionEvent {
+  id?: number; // DB 이벤트 ID (soul-server WS event 메시지의 event_id 필드)
   type: string;
   session_id: string;
   event?: Record<string, unknown>;
-  [key: string]: unknown;
 }
 
 export interface SessionListChangeEvent {

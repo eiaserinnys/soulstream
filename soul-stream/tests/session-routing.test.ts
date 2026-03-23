@@ -1,12 +1,11 @@
 /**
- * SessionRouter + SessionAggregator 단위 테스트.
+ * SessionRouter 단위 테스트.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { EventEmitter } from "events";
 import { NodeManager } from "../src/nodes/node-manager";
 import { SessionRouter } from "../src/sessions/session-router";
-import { SessionAggregator } from "../src/sessions/session-aggregator";
 import type { NodeRegistration } from "../src/nodes/types";
 
 function createMockWs() {
@@ -114,96 +113,5 @@ describe("SessionRouter", () => {
     // auto-route는 beta (세션 0개)를 선택해야 함
     const result = await router.createSession({ prompt: "3" });
     expect(result.nodeId).toBe("beta");
-  });
-});
-
-describe("SessionAggregator", () => {
-  let manager: NodeManager;
-  let aggregator: SessionAggregator;
-
-  beforeEach(() => {
-    manager = new NodeManager();
-    aggregator = new SessionAggregator(manager);
-  });
-
-  it("returns empty when no nodes", () => {
-    expect(aggregator.getAllSessions()).toHaveLength(0);
-  });
-
-  it("aggregates sessions from multiple nodes", () => {
-    const ws1 = createMockWs();
-    const ws2 = createMockWs();
-    manager.registerNode(ws1, REG_ALPHA);
-    manager.registerNode(ws2, REG_BETA);
-
-    // sessions_update로 세션 주입
-    (ws1 as unknown as EventEmitter).emit(
-      "message",
-      JSON.stringify({
-        type: "sessions_update",
-        sessions: [
-          { sessionId: "s1", status: "running" },
-          { sessionId: "s2", status: "completed" },
-        ],
-      })
-    );
-    (ws2 as unknown as EventEmitter).emit(
-      "message",
-      JSON.stringify({
-        type: "sessions_update",
-        sessions: [{ sessionId: "s3", status: "running" }],
-      })
-    );
-
-    const all = aggregator.getAllSessions();
-    expect(all).toHaveLength(3);
-  });
-
-  it("filters by nodeId", () => {
-    const ws1 = createMockWs();
-    const ws2 = createMockWs();
-    manager.registerNode(ws1, REG_ALPHA);
-    manager.registerNode(ws2, REG_BETA);
-
-    (ws1 as unknown as EventEmitter).emit(
-      "message",
-      JSON.stringify({
-        type: "sessions_update",
-        sessions: [{ sessionId: "s1", status: "running" }],
-      })
-    );
-    (ws2 as unknown as EventEmitter).emit(
-      "message",
-      JSON.stringify({
-        type: "sessions_update",
-        sessions: [{ sessionId: "s2", status: "running" }],
-      })
-    );
-
-    const alphaOnly = aggregator.getAllSessions("alpha");
-    expect(alphaOnly).toHaveLength(1);
-    expect(alphaOnly[0].nodeId).toBe("alpha");
-  });
-
-  it("findSession locates session across nodes", () => {
-    const ws1 = createMockWs();
-    manager.registerNode(ws1, REG_ALPHA);
-
-    (ws1 as unknown as EventEmitter).emit(
-      "message",
-      JSON.stringify({
-        type: "sessions_update",
-        sessions: [{ sessionId: "s1", status: "running" }],
-      })
-    );
-
-    const found = aggregator.findSession("s1");
-    expect(found).not.toBeNull();
-    expect(found?.nodeId).toBe("alpha");
-    expect(found?.session.sessionId).toBe("s1");
-  });
-
-  it("findSession returns null for unknown session", () => {
-    expect(aggregator.findSession("nonexistent")).toBeNull();
   });
 });

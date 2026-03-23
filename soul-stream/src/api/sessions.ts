@@ -5,76 +5,106 @@
 import { Router } from "express";
 import type { Response } from "express";
 import type { NodeManager } from "../nodes/node-manager";
-import { SessionAggregator } from "../sessions/session-aggregator";
+import { SessionDB } from "../db/session-db";
 import { SessionRouter } from "../sessions/session-router";
 import type { CreateSessionRequest, SessionEvent } from "../sessions/types";
-import { globalEventStore } from "../sessions/event-store";
 
 /**
- * SessionEvent에서 내부 이벤트를 추출하여 typed SSE로 전송한다.
+ * typed SSE 전송 헬퍼. event_id를 포함한다.
  *
- * 서버 내부 형식: { type: "event", session_id: "...", event: { type: "text_start", ... } }
- * SSE 출력 형식:  event: text_start\ndata: { "type": "text_start", ... }\n\n
- *
- * 이렇게 하면 클라이언트의 EventSource.addEventListener("text_start", ...)가 트리거된다.
+ * eventType: DB event_type 컬럼 값 그대로 (예: "text_start", "complete" 등)
+ * id: SSE id 필드 (Last-Event-ID 재연결용). 0이면 생략.
  */
-function writeTypedSSE(res: Response, sessionEvent: SessionEvent): void {
-  const inner = sessionEvent.event as Record<string, unknown> | undefined;
-  if (!inner) {
-    // event 필드가 없으면 래핑 없이 직접 전송
-    const eventType = sessionEvent.type ?? "message";
-    res.write(`event: ${eventType}\ndata: ${JSON.stringify(sessionEvent)}\n\n`);
-    return;
-  }
-  const eventType = (inner.type as string) ?? "message";
-  res.write(`event: ${eventType}\ndata: ${JSON.stringify(inner)}\n\n`);
+function writeTypedSSEWithId(
+  res: Response,
+  eventType: string,
+  data: unknown,
+  id: number
+): void {
+  const idLine = id > 0 ? `id: ${id}\n` : "";
+  res.write(`${idLine}event: ${eventType}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
-export function createSessionsRouter(nodeManager: NodeManager): Router {
+export function createSessionsRouter(
+  nodeManager: NodeManager,
+  sessionDB: SessionDB
+): Router {
   const router = Router();
-  const aggregator = new SessionAggregator(nodeManager);
   const sessionRouter = new SessionRouter(nodeManager);
 
-  /** GET /api/sessions — 전체 세션 목록, ?nodeId=xxx로 노드별 필터. */
-  router.get("/", (req, res) => {
-    const nodeId = req.query.nodeId as string | undefined;
-    const sessions = aggregator.getAllSessions(nodeId);
-    res.json({ sessions });
+  /** GET /api/sessions — DB에서 세션 목록 직접 조회. */
+  router.get("/", async (req, res) => {
+    try {
+      const folderId = req.query.folderId as string | undefined;
+      const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : undefined;
+      const cursor = req.query.cursor ? parseInt(req.query.cursor as string, 10) : undefined;
+      const result = await sessionDB.listSessions({ folderId, limit, cursor });
+      res.json(result);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      res.status(500).json({ error: message });
+    }
   });
 
-  /** POST /api/sessions — 세션 생성. */
+  /** POST /api/sessions — 세션 생성. nodeId 지정 시 해당 노드로 직접 라우팅. */
   router.post("/", async (req, res) => {
     try {
-      const body = req.body as CreateSessionRequest;
-      if (!body.prompt) {
+      const { prompt, nodeId, profile, allowed_tools, disallowed_tools, use_mcp } =
+        req.body as CreateSessionRequest;
+
+      if (!prompt) {
         res.status(400).json({ error: "prompt is required" });
         return;
       }
 
-      const result = await sessionRouter.createSession(body);
-      res.status(201).json(result);
+      if (nodeId) {
+        // nodeId 직접 지정 — orchestrator-dashboard 전용 경로
+        const nodeConnection = nodeManager.getNode(nodeId);
+        if (!nodeConnection) {
+          return res.status(503).json({ error: "node_unavailable", nodeId });
+        }
+        const sessionId = await nodeConnection.createSession(prompt, {
+          profile,
+          allowed_tools,
+          disallowed_tools,
+          use_mcp,
+        });
+        return res.status(201).json({ sessionId, nodeId });
+      } else {
+        // 기존 SessionRouter 자동 선택 유지
+        const result = await sessionRouter.createSession(
+          req.body as CreateSessionRequest
+        );
+        res.status(201).json(result);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
-      const status = message.includes("not found") || message.includes("No connected")
-        ? 404
-        : 500;
+      const status =
+        message.includes("not found") || message.includes("No connected")
+          ? 404
+          : 500;
       res.status(status).json({ error: message });
     }
   });
 
-  /** GET /api/sessions/:id/events — 세션 이벤트 히스토리 + 실시간 (SSE). */
+  /**
+   * GET /api/sessions/:id/events — DB 히스토리 → WS live relay (SSE).
+   *
+   * 1. DB에서 after_id 이후 이벤트를 순서대로 전송 (typed SSE + id 필드)
+   * 2. subscribeEvents로 라이브 이벤트 relay
+   */
   router.get("/:id/events", async (req, res) => {
     const sessionId = req.params.id;
-    const found = aggregator.findSession(sessionId);
 
-    if (!found) {
-      res.status(404).json({ error: "Session not found" });
+    const session = await sessionDB.getSession(sessionId).catch(() => null);
+    if (!session) {
+      res.status(404).json({ error: "session_not_found" });
       return;
     }
 
-    const node = nodeManager.getNode(found.nodeId);
+    const node = nodeManager.getNode(session.node_id);
     if (!node) {
-      res.status(404).json({ error: "Node not found" });
+      res.status(503).json({ error: "node_unavailable", nodeId: session.node_id });
       return;
     }
 
@@ -84,102 +114,67 @@ export function createSessionsRouter(nodeManager: NodeManager): Router {
       Connection: "keep-alive",
     });
 
-    // 초기 이벤트 — typed SSE
+    // 초기 이벤트
     res.write(
-      `event: init\ndata: ${JSON.stringify({ type: "init", sessionId, nodeId: found.nodeId })}\n\n`
+      `event: init\ndata: ${JSON.stringify({
+        type: "init",
+        sessionId,
+        nodeId: session.node_id,
+      })}\n\n`
     );
 
-    // 캐시된 이벤트 replay
-    const cached = globalEventStore.getEvents(sessionId);
+    // Last-Event-ID 헤더로 after_id 결정
+    const lastEventIdHeader = req.headers["last-event-id"];
+    const after_id = lastEventIdHeader ? parseInt(lastEventIdHeader as string, 10) : 0;
+    let lastEventId = after_id;
 
-    if (cached.length > 0) {
-      // in-memory 캐시에 이벤트가 있으면 typed SSE로 전송
-      for (const event of cached) {
-        writeTypedSSE(res, event);
-      }
-    } else {
-      // 캐시가 없으면 soul-server HTTP API에서 히스토리를 프록시
-      // (서버 재시작 후 in-memory 캐시가 비워진 경우 등)
-      try {
-        const baseUrl = node.getHttpBaseUrl();
-        const historyUrl = `${baseUrl}/sessions/${sessionId}/history`;
-        const upstream = await fetch(historyUrl, {
-          headers: { Accept: "text/event-stream" },
-          signal: AbortSignal.timeout(5000),
-        });
-
-        if (upstream.ok && upstream.body) {
-          const reader = upstream.body.getReader();
-          const decoder = new TextDecoder();
-          let buffer = "";
-
-          outer: while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split("\n");
-            buffer = lines.pop() ?? "";
-
-            for (const line of lines) {
-              if (!line.startsWith("data:")) continue;
-              const raw = line.slice(5).trim();
-              if (!raw) continue;
-
-              try {
-                const parsed = JSON.parse(raw) as Record<string, unknown>;
-                const eventType = parsed.type as string | undefined;
-
-                // history_sync = 히스토리 재생 완료 신호
-                if (eventType === "history_sync") break outer;
-                if (eventType === "keepalive") continue;
-
-                // soul-server 이벤트를 soul-stream 포맷으로 래핑 (캐시용)
-                const wrapped = {
-                  type: "event",
-                  session_id: sessionId,
-                  event: parsed,
-                };
-                // typed SSE로 전송 (내부 이벤트를 꺼내서 event: prefix 추가)
-                writeTypedSSE(res, wrapped);
-                // in-memory 캐시에도 저장 (이후 재요청 시 재활용)
-                globalEventStore.append(sessionId, wrapped);
-              } catch {
-                // 파싱 실패 — 건너뜀
-              }
-            }
-          }
-
-          reader.cancel().catch(() => {});
-        }
-      } catch {
-        // soul-server 접근 실패 시 조용히 계속 (라이브 구독만 유지)
-      }
+    // DB 히스토리 재생
+    for await (const event of sessionDB.streamEvents(sessionId, after_id)) {
+      writeTypedSSEWithId(res, event.eventType, event.eventData, event.id);
+      lastEventId = event.id;
     }
 
-    // 라이브 구독 — typed SSE
-    const unsub = node.onSessionEvent(sessionId, (event) => {
-      writeTypedSSE(res, event);
-    });
+    // WS live relay
+    // subscribeEvents는 soul-server 측에서 라이브 리스너를 먼저 등록 후
+    // DB 재읽기를 수행하므로 DB-live 전환 구간 gap 없음 (Phase 1 §3 설계 참조)
+    // sessionEvent.type = 내부 이벤트 타입 ("text_start", "complete", "error" 등)
+    const unsubscribe = node.subscribeEvents(
+      sessionId,
+      lastEventId,
+      (event: SessionEvent, eventId: number) =>
+        writeTypedSSEWithId(res, event.type, event, eventId)
+    );
 
     req.on("close", () => {
-      unsub();
+      unsubscribe();
     });
   });
 
-  /** POST /api/sessions/:id/intervene — 세션 개입. */
+  /** GET /api/sessions/:id/cards — 세션 이벤트 히스토리 스냅샷. */
+  router.get("/:id/cards", async (req, res) => {
+    try {
+      const sessionId = req.params.id;
+      const events = await sessionDB.listEvents(sessionId);
+      res.json({ events });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  /** POST /api/sessions/:id/intervene — 세션 개입. 원래 노드로 라우팅. */
   router.post("/:id/intervene", async (req, res) => {
     const sessionId = req.params.id;
-    const found = aggregator.findSession(sessionId);
 
-    if (!found) {
-      res.status(404).json({ error: "Session not found" });
+    const session = await sessionDB.getSession(sessionId).catch(() => null);
+    if (!session) {
+      res.status(404).json({ error: "session_not_found" });
       return;
     }
 
-    const node = nodeManager.getNode(found.nodeId);
+    const node = nodeManager.getNode(session.node_id);
     if (!node) {
-      res.status(404).json({ error: "Node not found" });
+      res.status(503).json({ error: "node_unavailable", nodeId: session.node_id });
       return;
     }
 
@@ -193,19 +188,19 @@ export function createSessionsRouter(nodeManager: NodeManager): Router {
     res.json({ sent: true });
   });
 
-  /** POST /api/sessions/:id/respond — AskUserQuestion 응답. */
+  /** POST /api/sessions/:id/respond — AskUserQuestion 응답. 원래 노드로 라우팅. */
   router.post("/:id/respond", async (req, res) => {
     const sessionId = req.params.id;
-    const found = aggregator.findSession(sessionId);
 
-    if (!found) {
-      res.status(404).json({ error: "Session not found" });
+    const session = await sessionDB.getSession(sessionId).catch(() => null);
+    if (!session) {
+      res.status(404).json({ error: "session_not_found" });
       return;
     }
 
-    const node = nodeManager.getNode(found.nodeId);
+    const node = nodeManager.getNode(session.node_id);
     if (!node) {
-      res.status(404).json({ error: "Node not found" });
+      res.status(503).json({ error: "node_unavailable", nodeId: session.node_id });
       return;
     }
 
