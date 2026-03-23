@@ -360,7 +360,7 @@ class UpstreamAdapter:
 
     async def _handle_list_sessions(self, cmd: dict) -> None:
         """세션 목록 반환."""
-        sessions, total = self._tm.get_all_sessions()
+        sessions, total = await self._tm.get_all_sessions()
         await self._send({
             "type": EVT_SESSIONS_UPDATE,
             "sessions": sessions,
