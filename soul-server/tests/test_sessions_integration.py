@@ -580,8 +580,8 @@ class TestTaskManagerGetAllSessions:
 
         mock_db = _make_mock_session_db()
         mock_db.get_all_sessions = AsyncMock(return_value=([
-            {"session_id": "sess-001", "status": "running", "prompt": "Test 1", "session_type": "claude", "created_at": "2026-03-03T02:00:00+00:00"},
-            {"session_id": "sess-002", "status": "completed", "prompt": "Test 2", "session_type": "claude", "created_at": "2026-03-03T01:00:00+00:00"},
+            {"session_id": "sess-001", "status": "running", "prompt": "Test 1", "session_type": "claude", "created_at": datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc)},
+            {"session_id": "sess-002", "status": "completed", "prompt": "Test 2", "session_type": "claude", "created_at": datetime(2026, 3, 3, 1, 0, 0, tzinfo=timezone.utc)},
         ], 2))
         manager = TaskManager(session_db=mock_db)
 
@@ -620,8 +620,8 @@ class TestTaskManagerGetAllSessions:
         mock_db = _make_mock_session_db()
         # DB가 이미 정렬된 결과를 반환
         mock_db.get_all_sessions = AsyncMock(return_value=([
-            {"session_id": "sess-new", "status": "running", "prompt": "New", "session_type": "claude", "created_at": now.isoformat()},
-            {"session_id": "sess-old", "status": "completed", "prompt": "Old", "session_type": "claude", "created_at": (now - timedelta(hours=2)).isoformat()},
+            {"session_id": "sess-new", "status": "running", "prompt": "New", "session_type": "claude", "created_at": now},
+            {"session_id": "sess-old", "status": "completed", "prompt": "Old", "session_type": "claude", "created_at": now - timedelta(hours=2)},
         ], 2))
         manager = TaskManager(session_db=mock_db)
 
@@ -643,10 +643,10 @@ class TestTaskManagerGetAllSessions:
 
         mock_db = _make_mock_session_db()
 
-        async def mock_get_all_sessions(offset=0, limit=0, session_type=None, folder_id=None, node_id=None):
+        async def mock_get_all_sessions(offset=0, limit=0, session_type=None, folder_id=None, node_id=None, status=None):
             all_sessions = [
-                {"session_id": "sess-claude", "status": "running", "prompt": "Claude task", "session_type": "claude", "created_at": "2026-03-03T02:00:00+00:00"},
-                {"session_id": "sess-llm", "status": "running", "prompt": "LLM task", "session_type": "llm", "created_at": "2026-03-03T01:00:00+00:00"},
+                {"session_id": "sess-claude", "status": "running", "prompt": "Claude task", "session_type": "claude", "created_at": datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc)},
+                {"session_id": "sess-llm", "status": "running", "prompt": "LLM task", "session_type": "llm", "created_at": datetime(2026, 3, 3, 1, 0, 0, tzinfo=timezone.utc)},
             ]
             if session_type:
                 filtered = [s for s in all_sessions if s["session_type"] == session_type]
@@ -690,11 +690,11 @@ class TestTaskManagerGetAllSessions:
 
         now = datetime(2026, 3, 3, 12, 0, 0, tzinfo=timezone.utc)
         all_claude = [
-            {"session_id": f"sess-claude-{i:03d}", "status": "completed", "prompt": f"Claude {i}", "session_type": "claude", "created_at": (now + timedelta(hours=i)).isoformat()}
+            {"session_id": f"sess-claude-{i:03d}", "status": "completed", "prompt": f"Claude {i}", "session_type": "claude", "created_at": now + timedelta(hours=i)}
             for i in range(5)
         ]
 
-        async def mock_get_all_sessions(offset=0, limit=0, session_type=None, folder_id=None, node_id=None):
+        async def mock_get_all_sessions(offset=0, limit=0, session_type=None, folder_id=None, node_id=None, status=None):
             filtered = all_claude if session_type == "claude" else all_claude
             total = len(filtered)
             if offset:
@@ -723,11 +723,11 @@ class TestTaskManagerGetAllSessions:
 
         now = datetime(2026, 3, 3, 12, 0, 0, tzinfo=timezone.utc)
         all_sessions_data = [
-            {"session_id": f"sess-{i:03d}", "status": "completed", "prompt": f"Task {i}", "session_type": "claude", "created_at": (now + timedelta(hours=i)).isoformat()}
+            {"session_id": f"sess-{i:03d}", "status": "completed", "prompt": f"Task {i}", "session_type": "claude", "created_at": now + timedelta(hours=i)}
             for i in range(5)
         ]
 
-        async def mock_get_all_sessions(offset=0, limit=0, session_type=None, folder_id=None, node_id=None):
+        async def mock_get_all_sessions(offset=0, limit=0, session_type=None, folder_id=None, node_id=None, status=None):
             total = len(all_sessions_data)
             result = all_sessions_data[offset:]
             if limit:
@@ -924,9 +924,9 @@ class TestConcurrentSessions:
 
         mock_db = _make_mock_session_db()
         mock_db.get_all_sessions = AsyncMock(return_value=([
-            {"session_id": "sess-a", "status": "running", "prompt": "Task A", "session_type": "claude", "created_at": "2026-03-03T02:00:00+00:00"},
-            {"session_id": "sess-b", "status": "running", "prompt": "Task B", "session_type": "claude", "created_at": "2026-03-03T01:00:00+00:00"},
-            {"session_id": "sess-c", "status": "running", "prompt": "Task C", "session_type": "claude", "created_at": "2026-03-03T00:00:00+00:00"},
+            {"session_id": "sess-a", "status": "running", "prompt": "Task A", "session_type": "claude", "created_at": datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc)},
+            {"session_id": "sess-b", "status": "running", "prompt": "Task B", "session_type": "claude", "created_at": datetime(2026, 3, 3, 1, 0, 0, tzinfo=timezone.utc)},
+            {"session_id": "sess-c", "status": "running", "prompt": "Task C", "session_type": "claude", "created_at": datetime(2026, 3, 3, 0, 0, 0, tzinfo=timezone.utc)},
         ], 3))
         manager = TaskManager(session_db=mock_db)
 
@@ -986,3 +986,141 @@ class TestMultipleClientsSSE:
         assert event_b["type"] == "session_created"
         assert event_a["session"]["agent_session_id"] == "sess-shared"
         assert event_b["session"]["agent_session_id"] == "sess-shared"
+
+
+# === Status Filter Tests ===
+
+class TestStatusFilter:
+    """GET /sessions?status= 필터 테스트"""
+
+    def _make_app(self, mock_session_broadcaster, manager):
+        from fastapi import FastAPI
+        from soul_server.api.sessions import create_sessions_router
+
+        app = FastAPI()
+        with (
+            patch("soul_server.api.sessions.get_task_manager", return_value=manager),
+            patch("soul_server.api.sessions.get_session_broadcaster", return_value=mock_session_broadcaster),
+        ):
+            router = create_sessions_router()
+            app.include_router(router)
+        return app, manager
+
+    def test_status_single_filter(self, mock_session_broadcaster):
+        """status=running → running 세션만 반환해야 한다"""
+        from fastapi import FastAPI
+        from soul_server.api.sessions import create_sessions_router
+
+        manager = MagicMock()
+        running_session = {
+            "agent_session_id": "sess-running",
+            "prompt": "Running task",
+            "status": "running",
+            "session_type": "claude",
+            "created_at": "2026-03-03T02:00:00+00:00",
+            "updated_at": "2026-03-03T02:00:00+00:00",
+        }
+        manager.get_all_sessions = AsyncMock(return_value=([running_session], 1))
+
+        app = FastAPI()
+        with (
+            patch("soul_server.api.sessions.get_task_manager", return_value=manager),
+            patch("soul_server.api.sessions.get_session_broadcaster", return_value=mock_session_broadcaster),
+        ):
+            router = create_sessions_router()
+            app.include_router(router)
+
+            client = TestClient(app=app)
+            response = client.get("/sessions?status=running")
+
+        assert response.status_code == 200
+        call_kwargs = manager.get_all_sessions.call_args
+        assert call_kwargs.kwargs.get("status") == "running"
+
+    def test_status_multi_filter(self, mock_session_broadcaster):
+        """status=completed,error → completed + error 세션 반환해야 한다"""
+        from fastapi import FastAPI
+        from soul_server.api.sessions import create_sessions_router
+
+        manager = MagicMock()
+        sessions = [
+            {
+                "agent_session_id": "sess-comp",
+                "prompt": "Completed",
+                "status": "completed",
+                "session_type": "claude",
+                "created_at": "2026-03-03T01:00:00+00:00",
+                "updated_at": "2026-03-03T01:00:00+00:00",
+            },
+            {
+                "agent_session_id": "sess-err",
+                "prompt": "Error",
+                "status": "error",
+                "session_type": "claude",
+                "created_at": "2026-03-03T00:00:00+00:00",
+                "updated_at": "2026-03-03T00:00:00+00:00",
+            },
+        ]
+        manager.get_all_sessions = AsyncMock(return_value=(sessions, 2))
+
+        app = FastAPI()
+        with (
+            patch("soul_server.api.sessions.get_task_manager", return_value=manager),
+            patch("soul_server.api.sessions.get_session_broadcaster", return_value=mock_session_broadcaster),
+        ):
+            router = create_sessions_router()
+            app.include_router(router)
+
+            client = TestClient(app=app)
+            response = client.get("/sessions?status=completed,error")
+
+        assert response.status_code == 200
+        call_kwargs = manager.get_all_sessions.call_args
+        assert call_kwargs.kwargs.get("status") == ["completed", "error"]
+
+    def test_status_multi_filter_with_limit(self, mock_session_broadcaster):
+        """status=completed,error&limit=5 → 최대 5개 반환해야 한다"""
+        from fastapi import FastAPI
+        from soul_server.api.sessions import create_sessions_router
+
+        manager = MagicMock()
+        manager.get_all_sessions = AsyncMock(return_value=([], 0))
+
+        app = FastAPI()
+        with (
+            patch("soul_server.api.sessions.get_task_manager", return_value=manager),
+            patch("soul_server.api.sessions.get_session_broadcaster", return_value=mock_session_broadcaster),
+        ):
+            router = create_sessions_router()
+            app.include_router(router)
+
+            client = TestClient(app=app)
+            response = client.get("/sessions?status=completed,error&limit=5")
+
+        assert response.status_code == 200
+        call_kwargs = manager.get_all_sessions.call_args
+        assert call_kwargs.kwargs.get("status") == ["completed", "error"]
+        assert call_kwargs.kwargs.get("limit") == 5
+
+    def test_status_none_when_not_provided(self, mock_session_broadcaster):
+        """status 파라미터 없으면 status=None으로 전달되어야 한다"""
+        from fastapi import FastAPI
+        from soul_server.api.sessions import create_sessions_router
+
+        manager = MagicMock()
+        manager.get_all_sessions = AsyncMock(return_value=([], 0))
+
+        app = FastAPI()
+        with (
+            patch("soul_server.api.sessions.get_task_manager", return_value=manager),
+            patch("soul_server.api.sessions.get_session_broadcaster", return_value=mock_session_broadcaster),
+        ):
+            router = create_sessions_router()
+            app.include_router(router)
+
+            client = TestClient(app=app)
+            response = client.get("/sessions")
+
+        assert response.status_code == 200
+        call_kwargs = manager.get_all_sessions.call_args
+        assert call_kwargs.kwargs.get("status") is None
