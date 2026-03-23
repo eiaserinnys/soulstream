@@ -577,6 +577,9 @@ async def _migrate_events_from_jsonl(pool: asyncpg.Pool, events_dir: Path, node_
                 json.dumps(session_data, ensure_ascii=False),
             )
 
+            # 이벤트 레코드 변환
+            query = "SELECT migration_insert_event($1, $2, $3, $4::jsonb, $5, $6)"
+            records = []
             for raw in events:
                 # SessionCache 포맷: {"id": N, "event": {...}}
                 # 레거시 flat 포맷: {"id": N, "type": "...", ...}
@@ -585,12 +588,28 @@ async def _migrate_events_from_jsonl(pool: asyncpg.Pool, events_dir: Path, node_
                 payload = _sanitize_payload(json.dumps(evt, ensure_ascii=False))
                 searchable = _sanitize_payload(_extract_searchable(evt))
                 created_at = _parse_dt(evt.get("created_at")) if evt.get("created_at") else datetime.now(timezone.utc)
+                records.append((sid, eid, event_type, payload, searchable, created_at))
 
-                await conn.execute(
-                    "SELECT migration_insert_event($1, $2, $3, $4::jsonb, $5, $6)",
-                    sid, eid, event_type, payload, searchable, created_at,
-                )
-                event_count += 1
+            # 배치 INSERT (chunk_size=1000, 실패 시 개별 폴백)
+            skipped = 0
+            chunk_size = 1000
+            for i in range(0, len(records), chunk_size):
+                chunk = records[i:i + chunk_size]
+                try:
+                    await conn.executemany(query, chunk)
+                    event_count += len(chunk)
+                except Exception as e:
+                    logger.warning(f"배치 INSERT 실패 (chunk {i}~{i+len(chunk)}), 개별 폴백: {e}")
+                    for rec in chunk:
+                        try:
+                            await conn.execute(query, *rec)
+                            event_count += 1
+                        except Exception as e2:
+                            skipped += 1
+                            if skipped <= 5:
+                                logger.warning(f"이벤트 이관 실패 (skip): {rec[0]}#{rec[1]}: {e2}")
+            if skipped:
+                logger.warning(f"{sid}: {skipped}개 이벤트 이관 실패 (건너뜀)")
 
         # 세션의 last_event_id 갱신
         if events:
