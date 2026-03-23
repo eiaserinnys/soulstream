@@ -4,10 +4,10 @@
  * 노드에 명령을 전송하고, 노드에서 오는 이벤트를 수신하여 구독자에게 전달한다.
  */
 
+import { randomUUID } from "crypto";
 import type { WebSocket } from "ws";
 import type { NodeRegistration, NodeInfo, NodeStatus } from "./types";
 import type { SessionSummary, SessionEvent } from "../sessions/types";
-import { globalEventStore } from "../sessions/event-store";
 
 let requestIdCounter = 0;
 function nextRequestId(): string {
@@ -26,6 +26,13 @@ export class NodeConnection {
   private _sessions: Map<string, SessionSummary> = new Map();
   private _eventListeners: Map<string, Set<(event: SessionEvent) => void>> =
     new Map();
+  /** subscribeEvents 리스너: (event, eventId) 콜백 */
+  private _subscribeListeners: Map<
+    string,
+    Map<string, (event: SessionEvent, eventId: number) => void>
+  > = new Map();
+  /** subscribeEvents 요청 추적: subscribeId → sessionId (에러 응답 라우팅용) */
+  private _subscribeRequestMap: Map<string, string> = new Map();
   private _pendingRequests: Map<
     string,
     { resolve: (data: unknown) => void; reject: (err: Error) => void }
@@ -127,7 +134,7 @@ export class NodeConnection {
     });
   }
 
-  /** 세션 이벤트 구독. 해제 함수를 반환한다. */
+  /** 세션 이벤트 구독 (기존 onSessionEvent). 해제 함수를 반환한다. */
   onSessionEvent(
     sessionId: string,
     listener: (event: SessionEvent) => void
@@ -144,6 +151,50 @@ export class NodeConnection {
       if (listeners!.size === 0) {
         this._eventListeners.delete(sessionId);
       }
+    };
+  }
+
+  /**
+   * subscribe_events 커맨드를 soul-server에 전송하고 라이브 이벤트를 수신한다.
+   *
+   * @param sessionId 구독할 세션 ID
+   * @param afterId DB 재생 시작 커서 (0이면 처음부터)
+   * @param listener (event, eventId) 콜백
+   * @returns 구독 해제 함수
+   */
+  subscribeEvents(
+    sessionId: string,
+    afterId: number,
+    listener: (event: SessionEvent, eventId: number) => void
+  ): () => void {
+    const subscribeId = randomUUID();
+
+    // 세션별 리스너 맵에 등록
+    let sessionListeners = this._subscribeListeners.get(sessionId);
+    if (!sessionListeners) {
+      sessionListeners = new Map();
+      this._subscribeListeners.set(sessionId, sessionListeners);
+    }
+    sessionListeners.set(subscribeId, listener);
+    this._subscribeRequestMap.set(subscribeId, sessionId);
+
+    // soul-server에 subscribe_events 커맨드 전송
+    this._send({
+      type: "subscribe_events",
+      session_id: sessionId,
+      after_id: afterId,
+      request_id: subscribeId,
+    });
+
+    return () => {
+      const map = this._subscribeListeners.get(sessionId);
+      if (map) {
+        map.delete(subscribeId);
+        if (map.size === 0) {
+          this._subscribeListeners.delete(sessionId);
+        }
+      }
+      this._subscribeRequestMap.delete(subscribeId);
     };
   }
 
@@ -210,24 +261,45 @@ export class NodeConnection {
       return;
     }
 
+    // subscribeEvents error 응답 처리
+    if (type === "error" && requestId && this._subscribeRequestMap.has(requestId)) {
+      // 에러 응답은 subscribeId로 식별. Map 순회 시 spread로 안전하게 처리.
+      for (const [subId, sessionId] of [...this._subscribeRequestMap]) {
+        if (subId === requestId) {
+          this._subscribeListeners.get(sessionId)?.delete(subId);
+          this._subscribeRequestMap.delete(subId);
+          break;
+        }
+      }
+      return;
+    }
+
     switch (type) {
       case "event": {
         const sessionId = msg.session_id as string;
-        const event = msg as SessionEvent;
+        const sessionEvent: SessionEvent = {
+          type: msg.type as string,
+          session_id: msg.session_id as string,
+          event: msg.event as Record<string, unknown> | undefined,
+          id: msg.event_id as number | undefined,
+        };
 
-        globalEventStore.append(sessionId, event); // 이벤트 캐싱
-
-        // 세션 이벤트 리스너에 전달
+        // 기존 onSessionEvent 리스너 (_eventListeners) — 제거하지 않음
         const listeners = this._eventListeners.get(sessionId);
         if (listeners) {
           for (const listener of listeners) {
             try {
-              listener(event);
+              listener(sessionEvent);
             } catch {
               // 리스너 에러 무시
             }
           }
         }
+
+        // subscribeEvents 리스너 (_subscribeListeners)
+        this._subscribeListeners.get(sessionId)?.forEach(
+          (listener) => listener(sessionEvent, sessionEvent.id ?? 0)
+        );
         break;
       }
 
@@ -239,7 +311,7 @@ export class NodeConnection {
           for (const s of sessions) {
             const id =
               s.sessionId ??
-              (s as Record<string, unknown>).agent_session_id ??
+              (s as unknown as Record<string, unknown>).agent_session_id ??
               "";
             if (id) {
               // sessionId를 정규화하여 저장 (upstream이 agent_session_id만 보내는 경우 대비)
@@ -256,7 +328,7 @@ export class NodeConnection {
         if (sessionId) {
           const sessionData = (msg.session as Record<string, unknown>) ?? {};
           this._sessions.set(sessionId, {
-            ...sessionData,
+            ...(sessionData as unknown as Partial<SessionSummary>),
             sessionId,
             status: (sessionData.status as string) ?? "running",
           });
@@ -294,7 +366,6 @@ export class NodeConnection {
           "";
         if (delId) {
           this._sessions.delete(delId);
-          globalEventStore.clear(delId); // 캐시 정리
         }
         break;
       }
