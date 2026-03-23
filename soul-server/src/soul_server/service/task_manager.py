@@ -354,18 +354,18 @@ class TaskManager:
             # running 세션의 pid를 _tasks에서 보충
             task = self._tasks.get(session_id)
             pid = task.pid if task else None
-            created_at = s.get("created_at", "")
+            created_at = s.get("created_at")
             # running 세션의 last_event_id는 Task 메모리에서 보충
             last_event_id = task.last_event_id if task else s.get("last_event_id", 0)
             last_read_event_id = task.last_read_event_id if task else s.get("last_read_event_id", 0)
             info = {
                 "agent_session_id": session_id,
-                "status": s.get("status", "unknown"),
-                "prompt": s.get("prompt", ""),
+                "status": s.get("status"),
+                "prompt": s.get("prompt"),
                 "created_at": created_at,
                 "updated_at": s.get("updated_at") or created_at,
                 "pid": pid,
-                "session_type": s.get("session_type", "claude"),
+                "session_type": s.get("session_type") or "claude",
                 "last_message": s.get("last_message"),
                 "metadata": s.get("metadata") or [],
                 "last_event_id": last_event_id,
