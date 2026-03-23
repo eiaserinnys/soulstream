@@ -395,16 +395,13 @@ class TestSetSessionName:
         assert result["display_name"] is None
 
     async def test_broadcasts_catalog_update(self, session_db):
-        mock_broadcaster = MagicMock()
-        mock_broadcaster.broadcast = AsyncMock(return_value=1)
+        mock_catalog_svc = AsyncMock()
+        mock_catalog_svc.rename_session = AsyncMock()
         fn = _unwrap(mcp_tools.set_session_name)
         with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
-            with patch("soul_server.cogito.mcp_tools.get_session_broadcaster", return_value=mock_broadcaster):
+            with patch("soul_server.cogito.mcp_tools.get_catalog_service", return_value=mock_catalog_svc):
                 await fn("test-sess-001", "브로드캐스트 테스트")
-        mock_broadcaster.broadcast.assert_awaited_once()
-        call_args = mock_broadcaster.broadcast.call_args[0][0]
-        assert call_args["type"] == "catalog_updated"
-        assert "catalog" in call_args
+        mock_catalog_svc.rename_session.assert_awaited_once_with("test-sess-001", "브로드캐스트 테스트")
 
 
 # ---------------------------------------------------------------------------

@@ -2,16 +2,15 @@
 Catalog API - 폴더 카탈로그 관리
 
 세션을 폴더로 분류·관리하는 카탈로그 API.
+CatalogService를 경유하여 비즈니스 로직 중복을 제거한다.
 """
 
-import uuid
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from soul_server.service.postgres_session_db import PostgresSessionDB
-from soul_server.service.session_broadcaster import SessionBroadcaster
+from soul_server.service.catalog_service import CatalogService
 
 
 class FolderCreate(BaseModel):
@@ -34,64 +33,51 @@ class BatchMoveRequest(BaseModel):
     folderId: Optional[str]
 
 
-def create_catalog_router(
-    session_db: PostgresSessionDB, broadcaster: SessionBroadcaster
-) -> APIRouter:
+def create_catalog_router(catalog_service: CatalogService) -> APIRouter:
     router = APIRouter()
-
-    async def _broadcast_catalog():
-        catalog = await session_db.get_catalog()
-        await broadcaster.broadcast({
-            "type": "catalog_updated",
-            "catalog": catalog,
-        })
 
     @router.get("")
     async def get_catalog():
-        return await session_db.get_catalog()
+        return await catalog_service.get_catalog()
 
     @router.post("/folders", status_code=201)
     async def create_folder(body: FolderCreate):
-        folder_id = str(uuid.uuid4())
-        await session_db.create_folder(folder_id, body.name, body.sort_order)
-        await _broadcast_catalog()
-        return {"id": folder_id, "name": body.name, "sortOrder": body.sort_order}
+        return await catalog_service.create_folder(body.name, body.sort_order)
 
     @router.put("/folders/{folder_id}")
     async def update_folder(folder_id: str, body: FolderUpdate):
-        fields = {}
-        if body.name is not None:
-            fields["name"] = body.name
-        if body.sort_order is not None:
-            fields["sort_order"] = body.sort_order
-        if not fields:
+        if body.name is None and body.sort_order is None:
             raise HTTPException(status_code=400, detail="No fields to update")
-        await session_db.update_folder(folder_id, **fields)
-        await _broadcast_catalog()
+        await catalog_service.update_folder(
+            folder_id, name=body.name, sort_order=body.sort_order,
+        )
         return {"ok": True}
 
     @router.delete("/folders/{folder_id}", status_code=204)
     async def delete_folder(folder_id: str):
-        await session_db.delete_folder(folder_id)
-        await _broadcast_catalog()
+        await catalog_service.delete_folder(folder_id)
+
+    # 固定パス "/sessions/batch" を先に登録し、
+    # パスパラメータ "/sessions/{session_id}" が "batch" にマッチしないようにする
+    @router.put("/sessions/batch")
+    async def batch_move_sessions(body: BatchMoveRequest):
+        await catalog_service.move_sessions_to_folder(
+            body.sessionIds, body.folderId,
+        )
+        return {"ok": True}
 
     @router.put("/sessions/{session_id}")
     async def update_session_catalog(session_id: str, body: SessionCatalogUpdate):
-        session = await session_db.get_session(session_id)
-        if session is None:
-            raise HTTPException(status_code=404, detail="Session not found")
         if body.folderId is not None:
-            await session_db.assign_session_to_folder(session_id, body.folderId)
+            await catalog_service.move_sessions_to_folder(
+                [session_id], body.folderId,
+            )
         if body.displayName is not None:
-            await session_db.rename_session(session_id, body.displayName)
-        await _broadcast_catalog()
+            await catalog_service.rename_session(session_id, body.displayName)
         return {"ok": True}
 
-    @router.put("/sessions/batch")
-    async def batch_move_sessions(body: BatchMoveRequest):
-        for sid in body.sessionIds:
-            await session_db.assign_session_to_folder(sid, body.folderId)
-        await _broadcast_catalog()
-        return {"ok": True}
+    @router.delete("/sessions/{session_id}", status_code=204)
+    async def delete_session(session_id: str):
+        await catalog_service.delete_session(session_id)
 
     return router
