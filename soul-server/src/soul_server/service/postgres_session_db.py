@@ -91,16 +91,17 @@ class PostgresSessionDB:
         if self._pool:
             await self._pool.close()
 
+    @property
+    def node_id(self) -> str:
+        """이 DB 인스턴스의 노드 식별자."""
+        return self._node_id
+
     # --- 세션 CRUD ---
 
     async def upsert_session(self, session_id: str, **fields) -> None:
         invalid = set(fields) - _SESSION_COLUMNS
         if invalid:
             raise ValueError(f"Invalid session columns: {invalid}")
-
-        # node_id 자동 설정
-        if "node_id" not in fields:
-            fields["node_id"] = self._node_id
 
         # JSONB 컬럼은 JSON 문자열로 직렬화
         for col in _JSONB_COLUMNS:

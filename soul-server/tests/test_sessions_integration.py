@@ -815,6 +815,66 @@ class TestSessionInfoSerialization:
         assert info["session_type"] == "llm"
         assert info["pid"] == 12345
 
+    def test_to_session_info_includes_node_id(self):
+        """node_id가 설정된 Task는 to_session_info()에 node_id를 포함해야 한다"""
+        from soul_server.service.task_models import Task, TaskStatus
+
+        task = Task(
+            agent_session_id="sess-node-001",
+            prompt="Hello",
+            status=TaskStatus.RUNNING,
+            node_id="eiaserinnys",
+        )
+
+        info = task.to_session_info()
+
+        assert info["node_id"] == "eiaserinnys"
+
+    def test_to_session_info_omits_node_id_when_none(self):
+        """node_id가 None인 Task는 to_session_info()에 node_id를 포함하지 않아야 한다"""
+        from soul_server.service.task_models import Task, TaskStatus
+
+        task = Task(
+            agent_session_id="sess-nonode-001",
+            prompt="Hello",
+            status=TaskStatus.RUNNING,
+        )
+
+        info = task.to_session_info()
+
+        assert "node_id" not in info
+
+    def test_session_info_schema_accepts_node_id(self):
+        """SessionInfo Pydantic 모델이 node_id 필드를 직렬화해야 한다"""
+        from soul_server.models.schemas import SessionInfo
+
+        info = SessionInfo(
+            agent_session_id="sess-001",
+            status="running",
+            prompt="Hello",
+            created_at=datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc),
+            node_id="eiaserinnys",
+        )
+
+        dumped = info.model_dump()
+        assert dumped["node_id"] == "eiaserinnys"
+
+    def test_session_info_schema_node_id_optional(self):
+        """SessionInfo의 node_id는 Optional이므로 없어도 유효해야 한다"""
+        from soul_server.models.schemas import SessionInfo
+
+        info = SessionInfo(
+            agent_session_id="sess-001",
+            status="running",
+            prompt="Hello",
+            created_at=datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc),
+        )
+
+        dumped = info.model_dump()
+        assert dumped["node_id"] is None
+
 
 # === TC-8: Non-existent Session Intervention ===
 
