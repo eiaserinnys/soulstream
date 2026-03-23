@@ -468,12 +468,21 @@ async def _migrate_sessions(
     return session_count
 
 
+_MAX_SEARCHABLE_LEN = 500_000
+"""tsvector 입력 최대 길이 (PG tsvector 한계 ~1MB 대비 안전 여유)."""
+
+
 def _sanitize_payload(payload: str) -> str:
     """PostgreSQL jsonb에 넣을 수 없는 문자를 제거.
 
     PostgreSQL은 jsonb/text에 \\u0000 (NULL 바이트)을 허용하지 않는다.
     """
     return payload.replace("\x00", "").replace("\\u0000", "")
+
+
+def _sanitize_searchable(text: str) -> str:
+    """searchable_text를 tsvector 한계 내로 정리한다."""
+    return _sanitize_payload(text)[:_MAX_SEARCHABLE_LEN]
 
 
 async def _migrate_events_from_db(pool: asyncpg.Pool, db_path: Path, node_id: str) -> int:
@@ -495,7 +504,7 @@ async def _migrate_events_from_db(pool: asyncpg.Pool, db_path: Path, node_id: st
             row["id"],
             row["event_type"],
             _sanitize_payload(row["payload"]),
-            _sanitize_payload(row["searchable_text"] or ""),
+            _sanitize_searchable(row["searchable_text"] or ""),
             _parse_dt(row["created_at"]),
         ))
 
@@ -562,12 +571,15 @@ async def _migrate_events_from_jsonl(pool: asyncpg.Pool, events_dir: Path, node_
             _, last_evt = _unwrap_event(events[-1])
             first_ts = _parse_dt(first_evt.get("created_at"))
             last_ts = _parse_dt(last_evt.get("created_at"))
+            max_event_id = max(e.get("id", 0) for e in events)
 
             session_data = {
                 "folder_id": folder_id,
                 "node_id": node_id,
                 "session_type": session_type,
                 "status": "completed",
+                "last_event_id": max_event_id,
+                "last_read_event_id": 0,
                 "created_at": first_ts.isoformat(),
                 "updated_at": last_ts.isoformat(),
             }
@@ -586,7 +598,7 @@ async def _migrate_events_from_jsonl(pool: asyncpg.Pool, events_dir: Path, node_
                 eid, evt = _unwrap_event(raw)
                 event_type = evt.get("type", evt.get("event_type", "unknown"))
                 payload = _sanitize_payload(json.dumps(evt, ensure_ascii=False))
-                searchable = _sanitize_payload(_extract_searchable(evt))
+                searchable = _sanitize_searchable(_extract_searchable(evt))
                 created_at = _parse_dt(evt.get("created_at")) if evt.get("created_at") else datetime.now(timezone.utc)
                 records.append((sid, eid, event_type, payload, searchable, created_at))
 
