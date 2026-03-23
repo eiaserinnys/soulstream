@@ -370,6 +370,7 @@ async def lifespan(app: FastAPI):
             session_broadcaster=broadcaster,
             upstream_url=settings.soulstream_upstream_url,
             node_id=settings.soulstream_node_id,
+            session_db=session_db,
             host=settings.host,
             port=settings.port,
         )

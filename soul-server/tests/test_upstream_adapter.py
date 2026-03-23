@@ -66,6 +66,7 @@ def _make_adapter(
         session_broadcaster=bc,
         upstream_url="ws://localhost:5200/ws/node",
         node_id="test-node",
+        session_db=MagicMock(),
         host="localhost",
         port=3105,
     )
