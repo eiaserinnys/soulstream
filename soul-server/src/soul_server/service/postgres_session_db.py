@@ -273,7 +273,7 @@ class PostgresSessionDB:
 
     async def get_shutdown_sessions(self) -> list[dict]:
         rows = await self._pool.fetch(
-            "SELECT * FROM shutdown_get_sessions()"
+            "SELECT * FROM shutdown_get_sessions($1)", self._node_id
         )
         return [dict(r) for r in rows]
 
@@ -287,7 +287,7 @@ class PostgresSessionDB:
 
     async def clear_shutdown_flags(self) -> None:
         await self._pool.execute(
-            "SELECT shutdown_clear_flags()"
+            "SELECT shutdown_clear_flags($1)", self._node_id
         )
 
     # --- 이벤트 CRUD ---

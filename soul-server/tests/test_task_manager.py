@@ -42,10 +42,14 @@ def _make_mock_session_db():
             return None
         return dict(_sessions[session_id])
 
-    async def _get_all_sessions(offset=0, limit=0, session_type=None):
+    async def _get_all_sessions(offset=0, limit=0, session_type=None, folder_id=None, node_id=None):
         items = list(_sessions.values())
         if session_type:
             items = [s for s in items if s.get("session_type") == session_type]
+        if folder_id:
+            items = [s for s in items if s.get("folder_id") == folder_id]
+        if node_id:
+            items = [s for s in items if s.get("node_id") == node_id]
         return items, len(items)
 
     async def _get_default_folder(name):
@@ -93,6 +97,8 @@ def _make_mock_session_db():
     db.read_events = AsyncMock(return_value=[])
     db.update_last_read_event_id = AsyncMock(return_value=True)
     db.append_metadata = AsyncMock()
+    db.update_session_status = AsyncMock()
+    db.node_id = "test-node"
     return db
 
 
@@ -462,5 +468,83 @@ class TestFolderId:
         folder_map = {f["id"]: f["name"] for f in folders}
         assigned_name = folder_map.get(session["folder_id"])
         assert assigned_name == "⚙️ LLM 세션"
+
+
+class TestLoad:
+    async def test_load_filters_by_node_id(self, manager):
+        """load()는 get_all_sessions()를 호출할 때 node_id 필터를 사용한다."""
+        await manager.load()
+
+        manager._db.get_all_sessions.assert_called_once()
+        call_kwargs = manager._db.get_all_sessions.call_args
+        # 키워드 인자로 node_id가 전달되었는지 확인
+        assert call_kwargs.kwargs.get("node_id") == "test-node"
+
+    async def test_load_transitions_shutdown_sessions_to_interrupted(self, manager):
+        """was_running_at_shutdown=1인 running 세션은 interrupted로 전환되어 _tasks에 올라간다."""
+        import datetime
+
+        async def _get_all_with_shutdown(offset=0, limit=0, session_type=None, node_id=None):
+            return [
+                {
+                    "session_id": "sess-shutdown",
+                    "status": "running",
+                    "was_running_at_shutdown": 1,
+                    "prompt": "test prompt",
+                    "client_id": None,
+                    "claude_session_id": None,
+                    "session_type": "claude",
+                    "last_event_id": 0,
+                    "last_read_event_id": 0,
+                    "created_at": datetime.datetime.now(datetime.timezone.utc),
+                    "node_id": "test-node",
+                }
+            ], 1
+
+        manager._db.get_all_sessions.side_effect = _get_all_with_shutdown
+
+        loaded = await manager.load()
+
+        # DB에서 interrupted로 전환 호출 확인
+        manager._db.update_session_status.assert_called_once_with(
+            "sess-shutdown", TaskStatus.INTERRUPTED.value
+        )
+        # _tasks에 INTERRUPTED 상태로 올라갔는지 확인
+        assert "sess-shutdown" in manager._tasks
+        assert manager._tasks["sess-shutdown"].status == TaskStatus.INTERRUPTED
+        assert loaded == 1
+
+    async def test_load_zombie_sessions_become_completed(self, manager):
+        """was_running_at_shutdown=0인 running 세션은 completed로 전환되고 _tasks에 올라가지 않는다."""
+        import datetime
+
+        async def _get_all_with_zombie(offset=0, limit=0, session_type=None, node_id=None):
+            return [
+                {
+                    "session_id": "sess-zombie",
+                    "status": "running",
+                    "was_running_at_shutdown": 0,
+                    "prompt": "zombie prompt",
+                    "client_id": None,
+                    "claude_session_id": None,
+                    "session_type": "claude",
+                    "last_event_id": 0,
+                    "last_read_event_id": 0,
+                    "created_at": datetime.datetime.now(datetime.timezone.utc),
+                    "node_id": "test-node",
+                }
+            ], 1
+
+        manager._db.get_all_sessions.side_effect = _get_all_with_zombie
+
+        loaded = await manager.load()
+
+        # DB에서 completed로 전환 호출 확인
+        manager._db.update_session_status.assert_called_once_with(
+            "sess-zombie", TaskStatus.COMPLETED.value
+        )
+        # _tasks에 올라가지 않았는지 확인
+        assert "sess-zombie" not in manager._tasks
+        assert loaded == 0
 
 
