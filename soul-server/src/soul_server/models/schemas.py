@@ -441,6 +441,7 @@ class SessionInfo(BaseModel):
     llm_usage: Optional[dict] = Field(None, description="LLM 토큰 사용량")
     client_id: Optional[str] = Field(None, description="LLM 클라이언트 식별자")
     metadata: Optional[List[dict]] = Field(None, description="세션 메타데이터 (커밋, 브랜치, 카드 등)")
+    display_name: Optional[str] = Field(None, description="세션 표시 이름")
 
 
 class SessionsListResponse(BaseModel):
