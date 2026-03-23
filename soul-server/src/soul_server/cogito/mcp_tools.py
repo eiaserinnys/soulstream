@@ -22,6 +22,7 @@ from soul_server.cogito.reflector_setup import reflect
 from soul_server.service.task_manager import get_task_manager
 from soul_server.service.postgres_session_db import get_session_db
 from soul_server.service.session_broadcaster import get_session_broadcaster
+from soul_server.service.catalog_service import get_catalog_service
 
 if TYPE_CHECKING:
     from soul_server.cogito.brief_composer import BriefComposer
@@ -32,7 +33,7 @@ logger = logging.getLogger(__name__)
 # FastMCP server instance (tools registered below)
 # ---------------------------------------------------------------------------
 
-cogito_mcp = FastMCP("soulstream-cogito")
+cogito_mcp = FastMCP("soulstream")
 
 # ---------------------------------------------------------------------------
 # Runtime state — set by init() from main.py lifespan
@@ -559,19 +560,136 @@ async def set_session_name(session_id: str, name: str = "") -> dict:
     if session is None:
         return {"error": f"세션을 찾을 수 없습니다: {session_id}"}
     display_name = name.strip() or None
-    await db.rename_session(session_id, display_name)
-    # 카탈로그 변경 브로드캐스트 (대시보드 실시간 반영)
     try:
-        broadcaster = get_session_broadcaster()
+        catalog_svc = get_catalog_service()
+        await catalog_svc.rename_session(session_id, display_name)
     except RuntimeError:
-        pass  # 서버 초기화 전이면 브로드캐스트 생략
-    else:
-        catalog = await db.get_catalog()
-        await broadcaster.broadcast({"type": "catalog_updated", "catalog": catalog})
+        # CatalogService 초기화 전이면 DB 직접 호출 (서버 시작 중)
+        await db.rename_session(session_id, display_name)
     return {
         "session_id": session_id,
         "display_name": display_name,
     }
+
+
+# ---------------------------------------------------------------------------
+# MCP Tools — Catalog management (folders & sessions)
+# ---------------------------------------------------------------------------
+
+
+@cogito_mcp.tool()
+async def list_folders() -> dict:
+    """전체 폴더 목록을 조회한다.
+
+    Returns:
+        {folders: [{id: str, name: str, sortOrder: int}, ...]}
+    """
+    try:
+        catalog_svc = get_catalog_service()
+    except RuntimeError as e:
+        return {"error": str(e)}
+    folders = await catalog_svc.list_folders()
+    return {"folders": folders}
+
+
+@cogito_mcp.tool()
+async def create_folder(name: str, sort_order: int = 0) -> dict:
+    """폴더를 생성한다.
+
+    Args:
+        name: 폴더 이름.
+        sort_order: 정렬 순서 (기본 0).
+
+    Returns:
+        {id: str, name: str, sortOrder: int}
+    """
+    try:
+        catalog_svc = get_catalog_service()
+    except RuntimeError as e:
+        return {"error": str(e)}
+    return await catalog_svc.create_folder(name, sort_order)
+
+
+@cogito_mcp.tool()
+async def rename_folder(folder_id: str, name: str) -> dict:
+    """폴더 이름을 변경한다.
+
+    Args:
+        folder_id: 폴더 ID.
+        name: 새 이름.
+
+    Returns:
+        {ok: true}
+    """
+    try:
+        catalog_svc = get_catalog_service()
+    except RuntimeError as e:
+        return {"error": str(e)}
+    await catalog_svc.rename_folder(folder_id, name)
+    return {"ok": True}
+
+
+@cogito_mcp.tool()
+async def delete_folder(folder_id: str) -> dict:
+    """폴더를 삭제한다.
+
+    Args:
+        folder_id: 폴더 ID.
+
+    Returns:
+        {ok: true}
+    """
+    try:
+        catalog_svc = get_catalog_service()
+    except RuntimeError as e:
+        return {"error": str(e)}
+    await catalog_svc.delete_folder(folder_id)
+    return {"ok": True}
+
+
+@cogito_mcp.tool()
+async def move_sessions_to_folder(
+    session_ids: list[str],
+    folder_id: str | None = None,
+) -> dict:
+    """세션들을 지정한 폴더로 이동한다.
+
+    단일 세션도 리스트로 감싸서 전달한다.
+    folder_id가 None이면 미배정(폴더 해제).
+
+    Args:
+        session_ids: 이동할 세션 ID 리스트.
+        folder_id: 대상 폴더 ID. None이면 폴더 해제.
+
+    Returns:
+        {ok: true, moved: int}
+    """
+    try:
+        catalog_svc = get_catalog_service()
+    except RuntimeError as e:
+        return {"error": str(e)}
+    await catalog_svc.move_sessions_to_folder(session_ids, folder_id)
+    return {"ok": True, "moved": len(session_ids)}
+
+
+@cogito_mcp.tool()
+async def delete_session(session_id: str) -> dict:
+    """세션을 삭제한다.
+
+    세션의 모든 이벤트 데이터도 함께 삭제된다.
+
+    Args:
+        session_id: 삭제할 세션 ID.
+
+    Returns:
+        {ok: true, session_id: str}
+    """
+    try:
+        catalog_svc = get_catalog_service()
+    except RuntimeError as e:
+        return {"error": str(e)}
+    await catalog_svc.delete_session(session_id)
+    return {"ok": True, "session_id": session_id}
 
 
 # ---------------------------------------------------------------------------

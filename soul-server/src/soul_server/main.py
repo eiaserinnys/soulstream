@@ -264,9 +264,14 @@ async def lifespan(app: FastAPI):
     broadcaster = init_session_broadcaster()
     logger.info("  SessionBroadcaster initialized")
 
+    # CatalogService 초기화
+    from soul_server.service.catalog_service import init_catalog_service
+    catalog_service = init_catalog_service(session_db, broadcaster)
+    logger.info("  CatalogService initialized")
+
     # 카탈로그 API 라우터 등록
     from soul_server.api.catalog import create_catalog_router
-    catalog_router = create_catalog_router(session_db=session_db, broadcaster=broadcaster)
+    catalog_router = create_catalog_router(catalog_service)
     app.include_router(catalog_router, prefix="/catalog", tags=["catalog"])
     app.include_router(catalog_router, prefix="/api/catalog", tags=["catalog"])
     logger.info("  Catalog API registered")
