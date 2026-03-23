@@ -313,6 +313,7 @@ class TaskManager:
             agent_session_id,
             status=task.status.value,
             updated_at=datetime_to_str(task.completed_at),
+            node_id=task.node_id,
         )
         self._eviction_candidates[agent_session_id] = time.time() + self._eviction_ttl
         try:
@@ -658,6 +659,7 @@ class TaskManager:
             agent_session_id,
             status=TaskStatus.ERROR.value,
             updated_at=datetime_to_str(task.completed_at),
+            node_id=task.node_id,
         )
         self._eviction_candidates[agent_session_id] = time.time() + self._eviction_ttl
         self._unregister_claude_session(agent_session_id)
