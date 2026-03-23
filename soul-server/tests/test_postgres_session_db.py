@@ -65,6 +65,40 @@ def db():
     return sdb
 
 
+class TestShutdownNodeIdFilter:
+    @pytest.mark.asyncio
+    async def test_get_shutdown_sessions_filters_by_node_id(self, db):
+        """get_shutdown_sessions()는 node_id를 shutdown_get_sessions SQL 함수에 전달한다."""
+        db._pool.fetch = AsyncMock(return_value=[])
+
+        await db.get_shutdown_sessions()
+
+        db._pool.fetch.assert_called_once()
+        call_args = db._pool.fetch.call_args
+        # 첫 번째 인자: SQL, 두 번째 인자: node_id
+        sql = call_args[0][0]
+        node_id_arg = call_args[0][1]
+        assert "shutdown_get_sessions" in sql
+        assert "$1" in sql
+        assert node_id_arg == "test-node"
+
+    @pytest.mark.asyncio
+    async def test_clear_shutdown_flags_filters_by_node_id(self, db):
+        """clear_shutdown_flags()는 node_id를 shutdown_clear_flags SQL 함수에 전달한다."""
+        db._pool.execute = AsyncMock()
+
+        await db.clear_shutdown_flags()
+
+        db._pool.execute.assert_called_once()
+        call_args = db._pool.execute.call_args
+        # 첫 번째 인자: SQL, 두 번째 인자: node_id
+        sql = call_args[0][0]
+        node_id_arg = call_args[0][1]
+        assert "shutdown_clear_flags" in sql
+        assert "$1" in sql
+        assert node_id_arg == "test-node"
+
+
 @pytest.fixture
 def db_with_conn():
     """트랜잭션 지원 pool + conn mock을 가진 DB 인스턴스"""
@@ -788,3 +822,4 @@ class TestListSessionsSummary:
         assert call_args[2] == "claude"    # session_type
         assert call_args[3] == 10          # limit
         assert call_args[4] == 5           # offset
+
