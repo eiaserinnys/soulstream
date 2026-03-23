@@ -14,9 +14,21 @@ import {
   isSessionUnread,
   cn,
   Badge,
+  useTheme,
   type SessionSummary,
   type SessionStatus,
 } from "@seosoyoung/soul-ui";
+
+// === Node ID Color Utils ===
+
+/** 노드 ID 문자열을 0~359 hue 값으로 해시한다 (djb2 XOR 변형) */
+function nodeIdToHue(nodeId: string): number {
+  let hash = 5381;
+  for (let i = 0; i < nodeId.length; i++) {
+    hash = ((hash << 5) + hash) ^ nodeId.charCodeAt(i);
+  }
+  return Math.abs(hash) % 360;
+}
 
 // === Status Config (ported from SessionList) ===
 
@@ -58,6 +70,7 @@ const SessionItem = memo(function SessionItem({
   const config = STATUS_CONFIG[session.status] ?? STATUS_CONFIG.unknown;
   const isUnread = isSessionUnread(session);
   const isReadCompleted = session.status === "completed" && !isUnread;
+  const [theme] = useTheme();
 
   const displayText = session.displayName
     ? `📌 ${session.displayName}`
@@ -116,11 +129,25 @@ const SessionItem = memo(function SessionItem({
         <div className="text-xs text-muted-foreground truncate">{timeStr}</div>
       </div>
       <div className="flex items-center gap-1 shrink-0">
-        {session.nodeId && (
-          <Badge variant="secondary" className="text-[10px] px-1 py-0 shrink-0">
-            {session.nodeId}
-          </Badge>
-        )}
+        {session.nodeId && (() => {
+          const hue = nodeIdToHue(session.nodeId);
+          const isDark = theme === "dark";
+          const bgStyle = isDark
+            ? `hsl(${hue}, 12%, 28%)`
+            : `hsl(${hue}, 20%, 88%)`;
+          const colorStyle = isDark
+            ? `hsl(${hue}, 18%, 72%)`
+            : `hsl(${hue}, 30%, 35%)`;
+          return (
+            <Badge
+              variant="secondary"
+              className="text-[10px] px-1 py-0 shrink-0"
+              style={{ backgroundColor: bgStyle, color: colorStyle }}
+            >
+              {session.nodeId}
+            </Badge>
+          );
+        })()}
         {session.eventCount > 0 && (
           <Badge variant="outline" size="sm" className="shrink-0">
             {session.eventCount}
