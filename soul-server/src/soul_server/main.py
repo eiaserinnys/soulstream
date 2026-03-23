@@ -410,8 +410,7 @@ async def lifespan(app: FastAPI):
     try:
         task_manager = get_task_manager()
         await graceful_shutdown(task_manager, timeout=50.0)
-        await task_manager.save()
-        logger.info("  Saved tasks to storage")
+        logger.info("  Graceful shutdown complete")
     except RuntimeError:
         pass  # TaskManager가 초기화되지 않은 경우
 
@@ -504,7 +503,6 @@ async def shutdown():
         try:
             task_manager = get_task_manager()
             await graceful_shutdown(task_manager, timeout=50.0)
-            await task_manager.save()
         except Exception as e:
             logger.warning(f"Shutdown cleanup error: {e}", exc_info=True)
 

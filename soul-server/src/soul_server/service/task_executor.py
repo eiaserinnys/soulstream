@@ -38,8 +38,7 @@ class TaskExecutor:
         tasks: Dict[str, Task],
         listener_manager: "TaskListenerManager",
         get_intervention_func: Callable[[str], Awaitable[Optional[dict]]],
-        complete_task_func: Callable[[str, str, Optional[str]], Awaitable[Optional[Task]]],
-        error_task_func: Callable[[str, str], Awaitable[Optional[Task]]],
+        finalize_task_func: Callable[..., Awaitable[Optional[Task]]],
         register_session_func: Optional[Callable[[str, str], None]] = None,
         session_db: Optional["PostgresSessionDB"] = None,
         metadata_extractor: Optional["MetadataExtractor"] = None,
@@ -50,8 +49,7 @@ class TaskExecutor:
             tasks: TaskManager의 태스크 딕셔너리 참조 (key = agent_session_id)
             listener_manager: 리스너 매니저
             get_intervention_func: 개입 메시지 가져오기 함수 (agent_session_id) -> dict?
-            complete_task_func: 태스크 완료 처리 함수 (agent_session_id, result, claude_session_id?)
-            error_task_func: 태스크 에러 처리 함수 (agent_session_id, error)
+            finalize_task_func: 태스크 완료/에러 처리 함수 (agent_session_id, *, result=None, claude_session_id=None, error=None)
             register_session_func: claude_session_id 등록 함수 (claude_session_id, agent_session_id)
             session_db: PostgreSQL 기반 세션 저장소
             metadata_extractor: 메타데이터 추출기 (tool_result에서 자동 감지)
@@ -60,8 +58,7 @@ class TaskExecutor:
         self._tasks = tasks
         self._listener_manager = listener_manager
         self._get_intervention = get_intervention_func
-        self._complete_task = complete_task_func
-        self._error_task = error_task_func
+        self._finalize_task = finalize_task_func
         self._register_session = register_session_func
         self._db = session_db
         self._metadata_extractor = metadata_extractor
@@ -307,18 +304,18 @@ class TaskExecutor:
 
                     # 완료 또는 오류 시 태스크 상태 업데이트
                     if event.type == "complete":
-                        await self._complete_task(
+                        await self._finalize_task(
                             session_id,
-                            event.result,
-                            event.claude_session_id,
+                            result=event.result,
+                            claude_session_id=event.claude_session_id,
                         )
                     elif event.type == "error":
-                        await self._error_task(session_id, event.message)
+                        await self._finalize_task(session_id, error=event.message)
 
         except RuntimeError as e:
             error_msg = str(e)
             logger.error(f"Resource acquisition failed for session {session_id}: {error_msg}")
-            await self._error_task(session_id, error_msg)
+            await self._finalize_task(session_id, error=error_msg)
             await self._listener_manager.broadcast(
                 session_id, {"type": "error", "message": error_msg, "parent_event_id": current_user_request_id}
             )
@@ -330,7 +327,7 @@ class TaskExecutor:
         except Exception as e:
             logger.exception(f"Task execution error for {session_id}: {e}")
             error_msg = f"실행 오류: {str(e)}"
-            await self._error_task(session_id, error_msg)
+            await self._finalize_task(session_id, error=error_msg)
             await self._listener_manager.broadcast(
                 session_id, {"type": "error", "message": error_msg, "parent_event_id": current_user_request_id}
             )

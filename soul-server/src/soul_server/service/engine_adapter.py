@@ -238,6 +238,19 @@ class SoulEngineAdapter:
             return config_path
         return None
 
+    async def _emit_serendipity(
+        self,
+        serendipity_ctx: Any,
+        event: Any,
+        label: str = "event",
+    ) -> None:
+        """세렌디피티에 단일 이벤트를 전달한다. 실패해도 세션을 중단하지 않는다."""
+        if serendipity_ctx and self._serendipity_adapter:
+            try:
+                await self._serendipity_adapter.on_event(serendipity_ctx, event)
+            except Exception as e:
+                logger.warning(f"Serendipity {label} failed: {e}")
+
     async def execute(
         self,
         prompt: str,
@@ -362,11 +375,7 @@ class SoulEngineAdapter:
                 await on_intervention_sent(msg.user, msg.text)
 
             # Serendipity에 전달
-            if serendipity_ctx and self._serendipity_adapter:
-                try:
-                    await self._serendipity_adapter.on_event(serendipity_ctx, intervention_event)
-                except Exception as e:
-                    logger.warning(f"Serendipity intervention event failed: {e}")
+            await self._emit_serendipity(serendipity_ctx, intervention_event, "intervention event")
 
             return _build_intervention_prompt(msg)
 
@@ -392,12 +401,8 @@ class SoulEngineAdapter:
             sse_events = event.to_sse()
             for sse in sse_events:
                 await queue.put(sse)
-            if serendipity_ctx and self._serendipity_adapter:
-                for sse in sse_events:
-                    try:
-                        await self._serendipity_adapter.on_event(serendipity_ctx, sse)
-                    except Exception as e:
-                        logger.warning(f"Serendipity event failed: {e}")
+            for sse in sse_events:
+                await self._emit_serendipity(serendipity_ctx, sse)
 
         # --- 백그라운드 실행 ---
 
@@ -464,11 +469,7 @@ class SoulEngineAdapter:
                     if self._pool is not None:
                         await self._pool.release(runner, session_id=result.session_id)
                     # Serendipity에 전달
-                    if serendipity_ctx and self._serendipity_adapter:
-                        try:
-                            await self._serendipity_adapter.on_event(serendipity_ctx, complete_event)
-                        except Exception as e:
-                            logger.warning(f"Serendipity complete event failed: {e}")
+                    await self._emit_serendipity(serendipity_ctx, complete_event, "complete event")
                 else:
                     error_msg = result.error or result.output or "실행 오류"
                     error_event = ErrorEvent(
@@ -480,11 +481,7 @@ class SoulEngineAdapter:
                     if self._pool is not None:
                         await self._pool.discard(runner, reason="run_error")
                     # Serendipity에 전달
-                    if serendipity_ctx and self._serendipity_adapter:
-                        try:
-                            await self._serendipity_adapter.on_event(serendipity_ctx, error_event)
-                        except Exception as e:
-                            logger.warning(f"Serendipity error event failed: {e}")
+                    await self._emit_serendipity(serendipity_ctx, error_event, "error event")
 
             except Exception as e:
                 logger.exception(f"SoulEngineAdapter execution error: {e}")
@@ -497,11 +494,7 @@ class SoulEngineAdapter:
                 if self._pool is not None:
                     await self._pool.discard(runner, reason="exception")
                 # Serendipity에 전달
-                if serendipity_ctx and self._serendipity_adapter:
-                    try:
-                        await self._serendipity_adapter.on_event(serendipity_ctx, error_event)
-                    except Exception as ex:
-                        logger.warning(f"Serendipity error event failed: {ex}")
+                await self._emit_serendipity(serendipity_ctx, error_event, "error event")
 
             finally:
                 await queue.put(_DONE)
