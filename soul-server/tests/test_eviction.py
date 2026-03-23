@@ -78,7 +78,7 @@ class TestCatalogIntegration:
     async def test_complete_task_updates_db(self, manager: TaskManager):
         """complete_task()가 DB 상태를 업데이트"""
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
-        await manager.complete_task("sess-1", "result", claude_session_id="claude-1")
+        await manager.finalize_task("sess-1", result="result", claude_session_id="claude-1")
 
         upsert_call = _find_upsert_call(
             manager._db, "sess-1", status="completed"
@@ -90,7 +90,7 @@ class TestCatalogIntegration:
     async def test_error_task_updates_db(self, manager: TaskManager):
         """error_task()가 DB 상태를 업데이트"""
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
-        await manager.error_task("sess-1", "boom")
+        await manager.finalize_task("sess-1", error="boom")
 
         upsert_call = _find_upsert_call(
             manager._db, "sess-1", status="error"
@@ -102,7 +102,7 @@ class TestCatalogIntegration:
         """get_all_sessions()가 DB 기반 결과를 반환"""
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
         await manager.create_task(prompt="world", agent_session_id="sess-2")
-        await manager.complete_task("sess-1", "done")
+        await manager.finalize_task("sess-1", result="done")
 
         # Mock DB의 get_all_sessions가 반환할 데이터 설정
         manager._db.get_all_sessions.return_value = ([
@@ -151,14 +151,14 @@ class TestEviction:
     async def test_completed_session_becomes_eviction_candidate(self, manager: TaskManager):
         """완료된 세션이 퇴거 후보에 등록"""
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
-        await manager.complete_task("sess-1", "done")
+        await manager.finalize_task("sess-1", result="done")
 
         assert "sess-1" in manager._eviction_candidates
 
     async def test_eviction_check_removes_expired(self, manager: TaskManager):
         """TTL 만료된 세션이 _tasks에서 제거"""
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
-        await manager.complete_task("sess-1", "done")
+        await manager.finalize_task("sess-1", result="done")
 
         # TTL을 과거로 조작
         manager._eviction_candidates["sess-1"] = time.time() - 1
@@ -176,7 +176,7 @@ class TestEviction:
     async def test_evicted_session_still_in_db(self, manager: TaskManager):
         """퇴거된 세션은 DB에 여전히 존재 (delete_session이 호출되지 않음)"""
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
-        await manager.complete_task("sess-1", "done")
+        await manager.finalize_task("sess-1", result="done")
 
         # 강제 퇴거
         manager._eviction_candidates["sess-1"] = time.time() - 1
@@ -193,7 +193,7 @@ class TestEviction:
     async def test_evicted_session_loadable_via_get_task(self, manager: TaskManager):
         """퇴거된 세션을 get_task()로 조회 가능 (on-demand 로드)"""
         await manager.create_task(prompt="hello", agent_session_id="sess-1", client_id="bot")
-        await manager.complete_task("sess-1", "done", claude_session_id="claude-1")
+        await manager.finalize_task("sess-1", result="done", claude_session_id="claude-1")
 
         # 강제 퇴거
         manager._eviction_candidates["sess-1"] = time.time() - 1
@@ -226,7 +226,7 @@ class TestEviction:
     async def test_lru_refresh_on_access(self, manager: TaskManager):
         """LRU 캐시 히트 시 TTL 갱신"""
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
-        await manager.complete_task("sess-1", "done")
+        await manager.finalize_task("sess-1", result="done")
 
         original_expiry = manager._eviction_candidates["sess-1"]
 
@@ -240,7 +240,7 @@ class TestEviction:
     async def test_resume_removes_from_eviction_candidates(self, manager: TaskManager):
         """resume 시 퇴거 후보에서 제거"""
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
-        await manager.complete_task("sess-1", "done")
+        await manager.finalize_task("sess-1", result="done")
         assert "sess-1" in manager._eviction_candidates
 
         # resume
@@ -250,7 +250,7 @@ class TestEviction:
     async def test_resume_evicted_session(self, manager: TaskManager):
         """퇴거된 세션의 resume"""
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
-        await manager.complete_task("sess-1", "done", claude_session_id="claude-1")
+        await manager.finalize_task("sess-1", result="done", claude_session_id="claude-1")
 
         # 강제 퇴거
         manager._eviction_candidates["sess-1"] = time.time() - 1
@@ -280,7 +280,7 @@ class TestEviction:
     async def test_add_intervention_evicted_session_auto_resume(self, manager: TaskManager):
         """퇴거된 세션에 개입 → 자동 resume"""
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
-        await manager.complete_task("sess-1", "done")
+        await manager.finalize_task("sess-1", result="done")
 
         # 강제 퇴거
         manager._eviction_candidates["sess-1"] = time.time() - 1
@@ -372,7 +372,7 @@ class TestGetStats:
         """통계에 퇴거 관련 정보 포함"""
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
         await manager.create_task(prompt="world", agent_session_id="sess-2")
-        await manager.complete_task("sess-1", "done")
+        await manager.finalize_task("sess-1", result="done")
 
         # Mock DB가 get_all_sessions에서 반환할 총 수 설정
         manager._db.get_all_sessions.return_value = ([], 2)
