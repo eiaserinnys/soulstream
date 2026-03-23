@@ -118,6 +118,9 @@ class Task:
     created_at: datetime = field(default_factory=utc_now)
     completed_at: Optional[datetime] = None
 
+    # 노드 식별 (런타임 전용, DB에서 별도 관리)
+    node_id: Optional[str] = None
+
     # 런타임 전용 (영속화 안 됨)
     listeners: List[asyncio.Queue] = field(default_factory=list, repr=False)
     intervention_queue: asyncio.Queue = field(default_factory=asyncio.Queue, repr=False)
@@ -155,6 +158,8 @@ class Task:
         info["metadata"] = self.metadata
         info["last_event_id"] = self.last_event_id
         info["last_read_event_id"] = self.last_read_event_id
+        if self.node_id:
+            info["node_id"] = self.node_id
         return info
 
     def to_dict(self) -> dict:

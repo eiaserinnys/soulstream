@@ -431,13 +431,13 @@ class TestInitialSessionSync:
     async def test_send_initial_sessions(self):
         """_send_initial_sessions가 현재 세션 목록을 sessions_update로 전송."""
         tm = MagicMock()
-        tm.get_all_sessions.return_value = (
+        tm.get_all_sessions = AsyncMock(return_value=(
             [
                 {"agent_session_id": "s1", "status": "running"},
                 {"agent_session_id": "s2", "status": "completed"},
             ],
             2,
-        )
+        ))
 
         adapter = _make_adapter(task_manager=tm)
         adapter._ws = MagicMock()
@@ -455,7 +455,7 @@ class TestInitialSessionSync:
     async def test_send_initial_sessions_empty(self):
         """세션이 없을 때도 빈 목록을 정상 전송."""
         tm = MagicMock()
-        tm.get_all_sessions.return_value = ([], 0)
+        tm.get_all_sessions = AsyncMock(return_value=([], 0))
 
         adapter = _make_adapter(task_manager=tm)
         adapter._ws = MagicMock()
