@@ -8,23 +8,19 @@ export default defineConfig({
   root: ".",
   resolve: {
     alias: {
-      "@shared": resolve(__dirname, "../../packages/soul-ui/src/shared"),
-      "@seosoyoung/soul-ui": resolve(__dirname, "../../packages/soul-ui/src"),
+      "@seosoyoung/soul-ui": resolve(__dirname, "../packages/soul-ui/src"),
       "client": resolve(__dirname, "client"),
+      // soul-ui 소스를 직접 alias로 참조할 때 soul-ui의 peer/deps를 찾을 수 있도록 명시적 alias 추가.
+      // pnpm의 node_modules 구조상 Rollup이 packages/soul-ui/node_modules를 자동으로 탐색하지 않음.
+      "@base-ui/react": resolve(__dirname, "../packages/soul-ui/node_modules/@base-ui/react"),
     },
-    // soul-ui 소스를 직접 alias로 참조하므로, soul-ui의 node_modules도 탐색 경로에 포함
-    modules: [
-      resolve(__dirname, "../../packages/soul-ui/node_modules"),
-      resolve(__dirname, "node_modules"),
-      "node_modules",
-    ],
   },
   build: {
     outDir: "dist",
     emptyOutDir: true,
   },
   server: {
-    port: 5201,
+    port: 5202,
     proxy: {
       "/api": {
         target: "http://localhost:5200",

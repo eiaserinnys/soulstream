@@ -54,7 +54,6 @@ export function useNodes() {
       };
     }
 
-    // SSE 연결 — snapshot 이벤트로 초기 상태를 수신하므로 별도 REST 불필요
     connect();
 
     return () => {

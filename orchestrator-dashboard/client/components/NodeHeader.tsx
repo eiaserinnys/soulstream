@@ -1,24 +1,21 @@
 /**
- * NodeHeader — 노드 컬럼 상단. 노드 이름, 호스트, 상태, 세션 수 표시.
+ * NodeHeader — 노드 헤더. 이름, 호스트, 상태, 세션 수 표시.
  */
 
 import { NODE_COLORS, cn } from "@seosoyoung/soul-ui";
 import type { OrchestratorNode } from "../store/types";
 
-// 노드 식별자에서 첫 글자 추출 (예: "soul-alpha" → "A")
 function nodeInitial(nodeId: string): string {
   const parts = nodeId.split("-");
   const last = parts[parts.length - 1];
-  return last[0].toUpperCase();
+  return last![0]!.toUpperCase();
 }
 
-// 노드별 색상 키 (순환)
 const NODE_COLOR_KEYS = ['user', 'response', 'tool', 'thinking', 'plan'] as const;
 
-/** 노드 인덱스에 대응하는 CSS 변수 문자열 반환 */
 export function nodeColor(index: number): string {
   const key = NODE_COLOR_KEYS[index % NODE_COLOR_KEYS.length];
-  return NODE_COLORS[key];
+  return NODE_COLORS[key!];
 }
 
 interface NodeHeaderProps {
@@ -47,7 +44,6 @@ export function NodeHeader({
       )}
       onClick={onClick}
     >
-      {/* Top row: icon + name + status dot */}
       <div className="flex items-center justify-between mb-1.5">
         <div className="flex items-center gap-1.5">
           <div
@@ -61,9 +57,7 @@ export function NodeHeader({
             {nodeInitial(node.nodeId)}
           </div>
           <div>
-            <div className="text-sm font-medium text-foreground">
-              {node.nodeId}
-            </div>
+            <div className="text-sm font-medium text-foreground">{node.nodeId}</div>
             <div className="text-[11px] font-mono text-muted-foreground/50 mt-px">
               {node.host}:{node.port}
             </div>
@@ -80,14 +74,10 @@ export function NodeHeader({
           />
         </div>
       </div>
-
-      {/* Stats row */}
       <div className="flex gap-2 mt-2">
         <div className="text-[11px] font-mono text-muted-foreground/50 flex items-center gap-1">
           Sessions{" "}
-          <span className="text-muted-foreground font-medium">
-            {sessionCount}
-          </span>
+          <span className="text-muted-foreground font-medium">{sessionCount}</span>
         </div>
       </div>
     </div>

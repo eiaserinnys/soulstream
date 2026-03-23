@@ -110,15 +110,3 @@ export function totalSessionCount(sessions: Map<string, OrchestratorSession[]>):
   for (const list of sessions.values()) count += list.length;
   return count;
 }
-
-/** 상태별 세션 수 */
-export function sessionCountByStatus(
-  sessions: Map<string, OrchestratorSession[]>,
-  status: OrchestratorSession["status"],
-): number {
-  let count = 0;
-  for (const list of sessions.values()) {
-    count += list.filter((s) => s.status === status).length;
-  }
-  return count;
-}

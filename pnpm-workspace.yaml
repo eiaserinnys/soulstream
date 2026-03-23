@@ -2,4 +2,4 @@ packages:
   - 'packages/*'
   - 'soul-dashboard'
   - 'soul-stream'
-  - 'soul-stream/dashboard'
+  - 'orchestrator-dashboard'

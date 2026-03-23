@@ -188,6 +188,29 @@ export function createSessionsRouter(
     res.json({ sent: true });
   });
 
+  /** PATCH /api/sessions/folder — 세션 배치를 폴더로 이동. */
+  router.patch("/folder", async (req, res) => {
+    try {
+      const { sessionIds, folderId } = req.body as {
+        sessionIds?: string[];
+        folderId?: string | null;
+      };
+      if (!Array.isArray(sessionIds) || sessionIds.length === 0) {
+        res.status(400).json({ error: "sessionIds (non-empty array) is required" });
+        return;
+      }
+      if (folderId !== undefined && folderId !== null && typeof folderId !== "string") {
+        res.status(400).json({ error: "folderId must be a string or null" });
+        return;
+      }
+      await sessionDB.moveSessionsToFolder(sessionIds, folderId ?? null);
+      res.json({ moved: sessionIds.length });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      res.status(500).json({ error: message });
+    }
+  });
+
   /** POST /api/sessions/:id/respond — AskUserQuestion 응답. 원래 노드로 라우팅. */
   router.post("/:id/respond", async (req, res) => {
     const sessionId = req.params.id;
