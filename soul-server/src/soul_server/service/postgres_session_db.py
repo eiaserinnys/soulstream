@@ -199,6 +199,13 @@ class PostgresSessionDB:
             "SELECT session_delete($1)", session_id
         )
 
+    async def update_session_status(self, session_id: str, status: str) -> None:
+        """세션 상태만 UPDATE한다. INSERT 없음, node_id 등 다른 필드 불변."""
+        await self._pool.execute(
+            "UPDATE sessions SET status = $1, updated_at = NOW() WHERE session_id = $2",
+            status, session_id,
+        )
+
     async def append_metadata(self, session_id: str, entry: dict) -> None:
         """세션에 메타데이터 엔트리를 원자적으로 추가한다."""
         now = _utc_now()
