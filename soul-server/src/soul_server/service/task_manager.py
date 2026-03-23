@@ -380,12 +380,13 @@ class TaskManager:
             # running 세션의 last_event_id는 Task 메모리에서 보충
             last_event_id = task.last_event_id if task else s.get("last_event_id", 0)
             last_read_event_id = task.last_read_event_id if task else s.get("last_read_event_id", 0)
+            updated_at = s.get("updated_at") or created_at
             info = {
                 "agent_session_id": session_id,
                 "status": s.get("status"),
                 "prompt": s.get("prompt"),
-                "created_at": created_at,
-                "updated_at": s.get("updated_at") or created_at,
+                "created_at": created_at.isoformat() if created_at else None,
+                "updated_at": updated_at.isoformat() if updated_at else None,
                 "pid": pid,
                 "session_type": s.get("session_type") or "claude",
                 "last_message": s.get("last_message"),
