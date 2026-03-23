@@ -137,6 +137,9 @@ export { useInputRequestTimer } from "./hooks/useInputRequestTimer";
 export { useIsMobile } from "./hooks/use-mobile";
 
 // === Components ===
+export { FolderTree } from "./components/FolderTree";
+export type { FolderTreeProps } from "./components/FolderTree";
+export { FolderDialog } from "./components/FolderDialog";
 export { ChatView } from "./components/ChatView";
 export { ChatInput } from "./components/ChatInput";
 export { RightPanel } from "./components/RightPanel";
