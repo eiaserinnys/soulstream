@@ -27,7 +27,9 @@ BEGIN
     END IF;
     IF p_filters IS NOT NULL AND p_filters ? 'status' THEN
         IF jsonb_typeof(p_filters->'status') = 'array' THEN
-            q := q || ' AND status = ANY(ARRAY(SELECT jsonb_array_elements_text(p_filters->''status'')))';
+            q := q || ' AND status IN (' ||
+                (SELECT string_agg(quote_literal(elem), ', ')
+                 FROM jsonb_array_elements_text(p_filters->'status') AS elem) || ')';
         ELSE
             q := q || ' AND status = ' || quote_literal(p_filters->>'status');
         END IF;
@@ -65,7 +67,9 @@ BEGIN
     END IF;
     IF p_filters IS NOT NULL AND p_filters ? 'status' THEN
         IF jsonb_typeof(p_filters->'status') = 'array' THEN
-            q := q || ' AND status = ANY(ARRAY(SELECT jsonb_array_elements_text(p_filters->''status'')))';
+            q := q || ' AND status IN (' ||
+                (SELECT string_agg(quote_literal(elem), ', ')
+                 FROM jsonb_array_elements_text(p_filters->'status') AS elem) || ')';
         ELSE
             q := q || ' AND status = ' || quote_literal(p_filters->>'status');
         END IF;
