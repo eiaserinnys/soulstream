@@ -123,10 +123,13 @@ export function useSessionListProvider(
         }
 
         case "session_updated": {
-          const updates: Parameters<typeof updateSession>[1] = {
-            status: event.status as SessionStatus,
-            updatedAt: event.updated_at,
-          };
+          const updates: Parameters<typeof updateSession>[1] = {};
+          if (event.status != null) {
+            updates.status = event.status as SessionStatus;
+          }
+          if (event.updated_at != null) {
+            updates.updatedAt = event.updated_at;
+          }
           if (event.last_message) {
             updates.lastMessage = {
               type: event.last_message.type,
