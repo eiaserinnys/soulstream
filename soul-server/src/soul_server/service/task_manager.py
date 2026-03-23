@@ -401,6 +401,10 @@ class TaskManager:
             folder_id=folder_id, node_id=node_id,
         )
 
+    async def get_all_folders(self) -> list[dict]:
+        """모든 폴더 목록을 반환한다."""
+        return await self._db.get_all_folders()
+
     async def create_task(
         self,
         prompt: str,
