@@ -689,3 +689,102 @@ class TestSessionMisc:
         await db.update_last_message("s1", {"preview": "hello"})
         sql = db._pool.execute.call_args[0][0]
         assert "session_update_last_message" in sql
+
+
+# === read_events with limit and event_types ===
+
+
+class TestReadEventsExtended:
+    @pytest.mark.asyncio
+    async def test_read_events_with_limit(self, db):
+        db._pool.fetch = AsyncMock(return_value=[])
+        await db.read_events("s1", after_id=0, limit=10)
+        call_args = db._pool.fetch.call_args[0]
+        sql = call_args[0]
+        assert "event_read" in sql
+        # $3 = limit
+        assert call_args[3] == 10
+
+    @pytest.mark.asyncio
+    async def test_read_events_with_event_types(self, db):
+        db._pool.fetch = AsyncMock(return_value=[])
+        await db.read_events("s1", after_id=0, event_types=["user_message", "result"])
+        call_args = db._pool.fetch.call_args[0]
+        # $4 = event_types
+        assert call_args[4] == ["user_message", "result"]
+
+    @pytest.mark.asyncio
+    async def test_read_events_default_params(self, db):
+        db._pool.fetch = AsyncMock(return_value=[])
+        await db.read_events("s1")
+        call_args = db._pool.fetch.call_args[0]
+        # $3 = limit (None), $4 = event_types (None)
+        assert call_args[3] is None
+        assert call_args[4] is None
+
+    @pytest.mark.asyncio
+    async def test_read_events_backward_compatible(self, db):
+        """기존 read_events(session_id, after_id) 호출이 동일하게 동작한다."""
+        now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        records = [
+            _make_record({
+                "id": 1, "session_id": "s1", "event_type": "text_delta",
+                "payload": '{"text":"hello"}', "searchable_text": "hello",
+                "created_at": now,
+            }),
+        ]
+        db._pool.fetch = AsyncMock(return_value=records)
+        events = await db.read_events("s1", after_id=0)
+        assert len(events) == 1
+        assert events[0]["id"] == 1
+
+
+# === list_sessions_summary ===
+
+
+class TestListSessionsSummary:
+    @pytest.mark.asyncio
+    async def test_calls_procedure(self, db):
+        db._pool.fetch = AsyncMock(return_value=[])
+        sessions, total = await db.list_sessions_summary()
+        assert sessions == []
+        assert total == 0
+        sql = db._pool.fetch.call_args[0][0]
+        assert "session_list_summary" in sql
+
+    @pytest.mark.asyncio
+    async def test_returns_sessions_and_total(self, db):
+        records = [
+            _make_record({
+                "session_id": "s1", "display_name": "Session 1",
+                "status": "idle", "session_type": "claude",
+                "created_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
+                "updated_at": datetime(2026, 1, 2, tzinfo=timezone.utc),
+                "event_count": 42, "total_count": 5,
+            }),
+            _make_record({
+                "session_id": "s2", "display_name": None,
+                "status": "running", "session_type": "claude",
+                "created_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
+                "updated_at": datetime(2026, 1, 2, tzinfo=timezone.utc),
+                "event_count": 10, "total_count": 5,
+            }),
+        ]
+        db._pool.fetch = AsyncMock(return_value=records)
+        sessions, total = await db.list_sessions_summary()
+        assert total == 5
+        assert len(sessions) == 2
+        assert sessions[0]["session_id"] == "s1"
+        assert sessions[0]["event_count"] == 42
+        # total_count는 제거됨
+        assert "total_count" not in sessions[0]
+
+    @pytest.mark.asyncio
+    async def test_passes_search_and_type(self, db):
+        db._pool.fetch = AsyncMock(return_value=[])
+        await db.list_sessions_summary(search="test", session_type="claude", limit=10, offset=5)
+        call_args = db._pool.fetch.call_args[0]
+        assert call_args[1] == "test"      # search
+        assert call_args[2] == "claude"    # session_type
+        assert call_args[3] == 10          # limit
+        assert call_args[4] == 5           # offset

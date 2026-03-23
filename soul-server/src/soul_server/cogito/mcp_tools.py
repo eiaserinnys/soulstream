@@ -204,6 +204,13 @@ async def reflect_refresh() -> dict:
 # Session query helpers
 # ---------------------------------------------------------------------------
 
+def _omit_tool_content(ev: dict) -> dict:
+    ev = dict(ev)
+    for field in ("input", "output", "content", "result"):
+        ev.pop(field, None)
+    return ev
+
+
 def _truncate_tool_event(ev: dict, max_chars: int) -> dict:
     ev = dict(ev)
     for field in ("input", "output", "content"):
@@ -226,15 +233,20 @@ def _truncate_tool_event(ev: dict, max_chars: int) -> dict:
 async def list_sessions(
     cursor: int = 0,
     limit: int = 20,
+    search: str | None = None,
 ) -> dict:
     """세션 목록을 페이지네이션하여 조회한다.
+
+    경량 필드(session_id, display_name, status, session_type, created_at,
+    updated_at, event_count)만 반환하여 토큰을 절약한다.
 
     Args:
         cursor: 시작 오프셋 (행 인덱스 기반 정수). 첫 호출 시 0.
         limit: 반환할 세션 수 (최대 100).
+        search: display_name 검색어 (부분 일치, 대소문자 무시).
 
     Returns:
-        {sessions: [...], next_cursor: int | None}
+        {total: int, sessions: [...], next_cursor: int | None}
         next_cursor가 None이면 마지막 페이지.
     """
     try:
@@ -242,10 +254,13 @@ async def list_sessions(
     except RuntimeError as e:
         return {"error": str(e)}
     limit = min(limit, 100)
-    sessions, _total = await tm.get_all_sessions(offset=cursor, limit=limit + 1)
-    has_more = len(sessions) > limit
+    sessions, total = await tm.list_sessions_summary(
+        search=search, limit=limit, offset=cursor,
+    )
+    has_more = cursor + limit < total
     return {
-        "sessions": sessions[:limit],
+        "total": total,
+        "sessions": sessions,
         "next_cursor": cursor + limit if has_more else None,
     }
 
@@ -256,6 +271,8 @@ async def list_session_events(
     cursor: int = 0,
     limit: int = 20,
     tool_truncate_chars: int = 500,
+    event_types: list[str] | None = None,
+    tool_content: str = "truncate",
 ) -> dict:
     """세션의 이벤트 목록을 페이지네이션하여 조회한다.
 
@@ -264,11 +281,16 @@ async def list_session_events(
         cursor: 마지막으로 수신한 이벤트 ID (이 ID는 포함하지 않음). 0이면 처음부터 반환.
                 행 오프셋이 아닌 이벤트 ID임에 주의.
         limit: 반환할 이벤트 수 (최대 100).
-        tool_truncate_chars: tool_use/tool_result 이벤트의 input/output/content 필드를
-                             잘라낼 글자 수. 0이면 자르지 않음.
+        tool_truncate_chars: tool_content="truncate"일 때 잘라낼 글자 수. 기본 500.
+        event_types: 반환할 이벤트 타입 목록 (None이면 전체).
+                     예: ["user_message", "result", "tool_start"]
+        tool_content: tool_use/tool_result 이벤트 처리 방식.
+                      "omit" — input/output/content/result 필드 제거.
+                      "truncate" — tool_truncate_chars까지 잘라냄 (기본값).
+                      "full" — 원본 그대로.
 
     Returns:
-        {events: [...], next_cursor: int | None}
+        {total: int, events: [...], next_cursor: int | None}
         next_cursor가 None이면 마지막 페이지.
     """
     import json as _json
@@ -280,7 +302,11 @@ async def list_session_events(
     session = await db.get_session(session_id)
     if session is None:
         return {"error": f"세션을 찾을 수 없습니다: {session_id}"}
-    all_events = await db.read_events(session_id, after_id=cursor)
+    total = await db.count_events(session_id)
+    # DB 레벨 LIMIT: limit+1로 조회하여 has_more 판단
+    all_events = await db.read_events(
+        session_id, after_id=cursor, limit=limit + 1, event_types=event_types,
+    )
     has_more = len(all_events) > limit
     result = []
     for entry in all_events[:limit]:
@@ -288,11 +314,16 @@ async def list_session_events(
             ev = _json.loads(entry["payload"])
         except (_json.JSONDecodeError, KeyError):
             ev = {}
-        if tool_truncate_chars > 0 and ev.get("type") in ("tool_use", "tool_result"):
-            ev = _truncate_tool_event(ev, tool_truncate_chars)
+        if ev.get("type") in ("tool_use", "tool_result"):
+            if tool_content == "omit":
+                ev = _omit_tool_content(ev)
+            elif tool_content == "truncate" and tool_truncate_chars > 0:
+                ev = _truncate_tool_event(ev, tool_truncate_chars)
+            # "full" → no modification
         result.append({"id": entry["id"], "event": ev})
     last_id = result[-1]["id"] if result else cursor
     return {
+        "total": total,
         "events": result,
         "next_cursor": last_id if has_more else None,
     }
@@ -358,6 +389,124 @@ async def search_session_history(
     except ValueError as e:
         return {"error": str(e)}
     return {"results": [r.to_dict() for r in results]}
+
+
+@cogito_mcp.tool()
+async def get_session_summary(
+    session_id: str,
+    max_response_chars: int = 500,
+) -> dict:
+    """세션의 턴별 요약을 반환한다 (LLM 미사용, 순수 DB 이벤트 순회).
+
+    user_message 이벤트를 기준으로 턴을 분리하고, 각 턴에서
+    사용자 입력, 최종 응답 미리보기, 컨텍스트 사용량, 도구 사용 현황을 집계한다.
+
+    Args:
+        session_id: 세션 ID.
+        max_response_chars: 응답 텍스트 최대 길이 (기본 500).
+
+    Returns:
+        {session_id, display_name, status, created_at, total_events, turns: [...]}
+    """
+    import json as _json
+    try:
+        db = get_session_db()
+    except RuntimeError as e:
+        return {"error": str(e)}
+
+    session = await db.get_session(session_id)
+    if session is None:
+        return {"error": f"세션을 찾을 수 없습니다: {session_id}"}
+
+    total_events = await db.count_events(session_id)
+
+    # 턴 구성에 필요한 이벤트 타입만 조회
+    relevant_types = ["user_message", "result", "context_usage", "tool_start"]
+    events = await db.read_events(
+        session_id, after_id=0, event_types=relevant_types,
+    )
+
+    turns = _assemble_turns(events, max_response_chars)
+
+    return {
+        "session_id": session_id,
+        "display_name": session.get("display_name"),
+        "status": session.get("status"),
+        "created_at": _serialize_datetime(session.get("created_at")),
+        "total_events": total_events,
+        "turns": turns,
+    }
+
+
+def _serialize_datetime(val: object) -> str | None:
+    """datetime 또는 문자열을 ISO 문자열로 변환한다."""
+    if val is None:
+        return None
+    if hasattr(val, "isoformat"):
+        return val.isoformat()
+    return str(val)
+
+
+def _assemble_turns(events: list[dict], max_response_chars: int) -> list[dict]:
+    """이벤트 목록을 턴 단위로 조립한다."""
+    import json as _json
+
+    turns: list[dict] = []
+    current_turn: dict | None = None
+
+    for entry in events:
+        try:
+            ev = _json.loads(entry["payload"])
+        except (_json.JSONDecodeError, KeyError):
+            continue
+
+        event_type = ev.get("type") or entry.get("event_type", "")
+
+        if event_type == "user_message":
+            # 새 턴 시작
+            if current_turn is not None:
+                turns.append(current_turn)
+            text = ev.get("text") or ev.get("content", "")
+            if isinstance(text, list):
+                text = " ".join(
+                    c.get("text", "") for c in text if isinstance(c, dict)
+                )
+            current_turn = {
+                "user_message": text,
+                "response_preview": None,
+                "context_usage": None,
+                "tools_used": {},
+            }
+
+        elif event_type == "result" and current_turn is not None:
+            text = ev.get("result", "")
+            if isinstance(text, list):
+                text = " ".join(
+                    c.get("text", "") for c in text if isinstance(c, dict)
+                )
+            if isinstance(text, str):
+                if len(text) > max_response_chars:
+                    text = text[:max_response_chars] + "..."
+                current_turn["response_preview"] = text
+
+        elif event_type == "context_usage" and current_turn is not None:
+            current_turn["context_usage"] = {
+                "percent": ev.get("percent"),
+                "used_tokens": ev.get("used_tokens"),
+                "max_tokens": ev.get("max_tokens"),
+            }
+
+        elif event_type == "tool_start" and current_turn is not None:
+            tool_name = ev.get("tool") or ev.get("name", "unknown")
+            current_turn["tools_used"][tool_name] = (
+                current_turn["tools_used"].get(tool_name, 0) + 1
+            )
+
+    # 마지막 턴 추가
+    if current_turn is not None:
+        turns.append(current_turn)
+
+    return turns
 
 
 # ---------------------------------------------------------------------------
