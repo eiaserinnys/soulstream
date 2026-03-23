@@ -14,7 +14,6 @@ TaskManager - 세션 라이프사이클 관리
 
 import asyncio
 import logging
-import time
 from datetime import timedelta
 from pathlib import Path
 from typing import Optional, Dict, List, Union
@@ -34,6 +33,7 @@ from soul_server.service.task_listener import TaskListenerManager
 from soul_server.service.task_executor import TaskExecutor
 from soul_server.service.postgres_session_db import PostgresSessionDB
 from soul_server.service.session_broadcaster import get_session_broadcaster
+from soul_server.service.session_eviction_manager import SessionEvictionManager
 
 # Re-export for backward compatibility
 __all__ = [
@@ -89,9 +89,10 @@ class TaskManager:
         self._db = session_db
 
         # LRU 퇴거 관리
-        self._eviction_ttl = eviction_ttl
-        self._eviction_candidates: Dict[str, float] = {}  # {session_id: expiry_timestamp}
-        self._eviction_task: Optional[asyncio.Task] = None
+        self._eviction_manager = SessionEvictionManager(
+            tasks=self._tasks,
+            eviction_ttl=eviction_ttl,
+        )
 
         # 서브 컴포넌트들
         self._listener_manager = TaskListenerManager(self._tasks)
@@ -204,7 +205,7 @@ class TaskManager:
         logger.info(f"Loaded {loaded} running sessions from DB (total {total} in catalog)")
 
         # 퇴거 루프 시작
-        self._eviction_task = asyncio.create_task(self._eviction_loop())
+        self._eviction_manager.start()
 
         return loaded
 
@@ -334,7 +335,7 @@ class TaskManager:
             updated_at=datetime_to_str(task.completed_at),
             node_id=task.node_id,
         )
-        self._eviction_candidates[agent_session_id] = time.time() + self._eviction_ttl
+        self._eviction_manager.register(agent_session_id)
         # complete_task() / error_task()와 동일하게 claude_session_id 인덱스를 제거한다.
         self._unregister_claude_session(agent_session_id)
         try:
@@ -479,7 +480,7 @@ class TaskManager:
 
             # 퇴거된 세션의 resume 지원: _tasks에 없으면 카탈로그/저장소에서 복원
             if not existing and is_resume:
-                existing = await self._load_evicted_task(agent_session_id)
+                existing = await self._eviction_manager.load_evicted_task(self._db, agent_session_id)
                 if existing:
                     self._tasks[agent_session_id] = existing
                     logger.info(f"Restored evicted session for resume: {agent_session_id}")
@@ -516,7 +517,7 @@ class TaskManager:
                     existing.client_id = client_id
 
                 # 퇴거 후보에서 제거
-                self._eviction_candidates.pop(agent_session_id, None)
+                self._eviction_manager.unregister(agent_session_id)
 
                 task = existing
                 is_new = False
@@ -573,20 +574,18 @@ class TaskManager:
         """세션 태스크 조회
 
         1. _tasks에서 먼저 조회 (running + LRU 캐시 히트)
-        2. _eviction_candidates에 있으면 LRU TTL 갱신
+        2. 퇴거 후보에 있으면 LRU TTL 갱신
         3. _tasks에 없으면 저장소에서 on-demand 로드 (메모리에 상주시키지 않음)
         """
         task = self._tasks.get(agent_session_id)
         if task:
             # LRU 캐시 히트 → TTL 갱신
-            if agent_session_id in self._eviction_candidates:
-                self._eviction_candidates[agent_session_id] = (
-                    time.time() + self._eviction_ttl
-                )
+            if self._eviction_manager.is_candidate(agent_session_id):
+                self._eviction_manager.register(agent_session_id)
             return task
 
         # on-demand 로드 (퇴거된 세션)
-        return await self._load_evicted_task(agent_session_id)
+        return await self._eviction_manager.load_evicted_task(self._db, agent_session_id)
 
     # === SSE 리스너 관리 (위임) ===
 
@@ -654,7 +653,7 @@ class TaskManager:
 
         if not task:
             # 퇴거된 세션 on-demand 로드
-            task = await self._load_evicted_task(agent_session_id)
+            task = await self._eviction_manager.load_evicted_task(self._db, agent_session_id)
             if not task:
                 raise TaskNotFoundError(f"Session not found: {agent_session_id}")
 
@@ -801,13 +800,7 @@ class TaskManager:
     async def cancel_running_tasks(self, timeout: float = 5.0) -> int:
         """실행 중인 모든 태스크 취소"""
         # 퇴거 루프 중지
-        if self._eviction_task:
-            self._eviction_task.cancel()
-            try:
-                await self._eviction_task
-            except asyncio.CancelledError:
-                pass
-            self._eviction_task = None
+        self._eviction_manager.stop()
 
         async with self._lock:
             return await self._executor.cancel_running_tasks(timeout)
@@ -852,9 +845,7 @@ class TaskManager:
                     status=TaskStatus.INTERRUPTED.value,
                     updated_at=datetime_to_str(task.completed_at),
                 )
-                self._eviction_candidates[task.agent_session_id] = (
-                    time.time() + self._eviction_ttl
-                )
+                self._eviction_manager.register(task.agent_session_id)
             try:
                 broadcaster = get_session_broadcaster()
                 for task in fixed_tasks:
@@ -879,96 +870,8 @@ class TaskManager:
             "completed": completed,
             "error": error,
             "interrupted": interrupted,
-            "eviction_candidates": len(self._eviction_candidates),
+            "eviction_candidates": self._eviction_manager.candidate_count,
         }
-
-    # === LRU 퇴거 관리 ===
-
-    async def _eviction_loop(self) -> None:
-        """주기적 퇴거 루프 (60초 간격)"""
-        while True:
-            try:
-                await asyncio.sleep(60)
-                evicted = self._run_eviction_check()
-                if evicted > 0:
-                    logger.info(f"Eviction loop: removed {evicted} sessions from memory")
-                    # SessionDB commits immediately, no schedule needed
-            except asyncio.CancelledError:
-                break
-            except Exception:
-                logger.exception("Eviction loop error")
-
-    def _run_eviction_check(self) -> int:
-        """퇴거 후보 검사 — TTL 만료된 세션을 _tasks에서 제거
-
-        race condition 방지: resume으로 RUNNING 상태가 된 세션은
-        퇴거 후보에서 제거만 하고 _tasks에서 삭제하지 않습니다.
-
-        Returns:
-            퇴거된 세션 수
-        """
-        now = time.time()
-        evicted = 0
-        for session_id in list(self._eviction_candidates):
-            if now >= self._eviction_candidates[session_id]:
-                task = self._tasks.get(session_id)
-                # running 세션은 퇴거하지 않음 (resume으로 재활성화된 경우)
-                if task and task.status == TaskStatus.RUNNING:
-                    del self._eviction_candidates[session_id]
-                    continue
-                if session_id in self._tasks:
-                    del self._tasks[session_id]
-                    logger.debug(f"Evicted session from memory: {session_id}")
-                del self._eviction_candidates[session_id]
-                evicted += 1
-        return evicted
-
-    async def _load_evicted_task(self, agent_session_id: str) -> Optional[Task]:
-        """퇴거된 세션을 카탈로그에서 온디맨드 로드 (메모리에 상주시키지 않음)
-
-        Args:
-            agent_session_id: 세션 식별자
-
-        Returns:
-            복원된 Task 또는 None
-        """
-        entry = await self._db.get_session(agent_session_id)
-        if not entry:
-            return None
-
-        # 필수 필드 누락 시 안전하게 처리
-        status_str = entry.get("status")
-        created_at_str = entry.get("created_at")
-        if not status_str or not created_at_str:
-            logger.warning(
-                f"Incomplete catalog entry for {agent_session_id}: "
-                f"status={status_str}, created_at={created_at_str}"
-            )
-            return None
-
-        try:
-            # SessionDB에서는 completed_at 대신 updated_at을 사용
-            completed_at = None
-            if status_str in (TaskStatus.COMPLETED.value, TaskStatus.ERROR.value, TaskStatus.INTERRUPTED.value):
-                updated_at_str = entry.get("updated_at")
-                if updated_at_str:
-                    completed_at = str_to_datetime(updated_at_str)
-
-            return Task(
-                agent_session_id=agent_session_id,
-                prompt=entry.get("prompt", ""),
-                status=TaskStatus(status_str),
-                client_id=entry.get("client_id"),
-                claude_session_id=entry.get("claude_session_id"),
-                session_type=entry.get("session_type", "claude"),
-                last_event_id=entry.get("last_event_id", 0),
-                last_read_event_id=entry.get("last_read_event_id", 0),
-                created_at=str_to_datetime(created_at_str),
-                completed_at=completed_at,
-            )
-        except (ValueError, KeyError) as e:
-            logger.error(f"Failed to restore task from DB: {agent_session_id}: {e}")
-            return None
 
 
 # 싱글톤 인스턴스는 main.py에서 초기화
