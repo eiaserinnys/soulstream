@@ -235,6 +235,10 @@ async def list_sessions(
     cursor: int = 0,
     limit: int = 20,
     search: str | None = None,
+    folder_id: str | None = None,
+    folder_name: str | None = None,
+    node_id: str | None = None,
+    node_name: str | None = None,
 ) -> dict:
     """세션 목록을 페이지네이션하여 조회한다.
 
@@ -245,6 +249,13 @@ async def list_sessions(
         cursor: 시작 오프셋 (행 인덱스 기반 정수). 첫 호출 시 0.
         limit: 반환할 세션 수 (최대 100).
         search: display_name 검색어 (부분 일치, 대소문자 무시).
+        folder_id: 폴더 UUID 또는 시스템 ID (예: "claude")로 필터.
+        folder_name: 폴더 표시 이름 (예: "⚙️ 클로드 코드 세션")으로 필터.
+            folder_id와 동시 제공 시 folder_id 우선.
+        node_id: soulstream 노드 식별자 exact match (SOULSTREAM_NODE_ID 환경변수 값).
+        node_name: node_id와 동일한 컬럼에 exact match.
+            node_id와 동시 제공 시 node_id 우선.
+            (node_id가 이미 사람이 읽을 수 있는 문자열 식별자이므로 동일 필드 사용)
 
     Returns:
         {total: int, sessions: [...], next_cursor: int | None}
@@ -255,8 +266,20 @@ async def list_sessions(
     except RuntimeError as e:
         return {"error": str(e)}
     limit = min(limit, 100)
+
+    # folder_name → folder_id 해소: get_all_folders()로 Python 레이어 필터링
+    resolved_folder_id = folder_id
+    if folder_name and not folder_id:
+        all_folders = await tm.get_all_folders()
+        matched = next((f for f in all_folders if f.get("name") == folder_name), None)
+        resolved_folder_id = matched["id"] if matched else None
+
+    # node_name → node_id (동일 컬럼, 별도 nodes 테이블 없음)
+    resolved_node_id = node_id or node_name
+
     sessions, total = await tm.list_sessions_summary(
         search=search, limit=limit, offset=cursor,
+        folder_id=resolved_folder_id, node_id=resolved_node_id,
     )
     has_more = cursor + limit < total
     return {

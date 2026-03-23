@@ -78,8 +78,10 @@ def _call_build(
     agent_session_id="sess-001",
     claude_session_id=None,
     workspace_dir="/workspace",
+    folder_name=None,
+    node_id=None,
 ) -> dict:
-    """build_soulstream_context_item 호출 헬퍼 (socket mock 포함)."""
+    """build_soulstream_context_item 호출 헬퍼 (socket/platform/settings mock 포함)."""
     mock_socket_instance = MagicMock()
     mock_socket_instance.getsockname.return_value = ("10.0.0.1", 80)
 
@@ -89,8 +91,20 @@ def _call_build(
     mock_socket_module.AF_INET = 2
     mock_socket_module.SOCK_DGRAM = 2
 
-    with patch("soul_server.service.engine_adapter.socket", mock_socket_module):
-        return build_soulstream_context_item(agent_session_id, claude_session_id, workspace_dir)
+    mock_platform = MagicMock()
+    mock_platform.system.return_value = "Linux"
+    mock_platform.version.return_value = "#1 SMP"
+
+    mock_settings = MagicMock()
+    mock_settings.soulstream_node_id = "test-node"
+
+    with patch("soul_server.service.engine_adapter.socket", mock_socket_module), \
+         patch("soul_server.service.engine_adapter.platform", mock_platform), \
+         patch("soul_server.service.engine_adapter.get_settings", return_value=mock_settings):
+        return build_soulstream_context_item(
+            agent_session_id, claude_session_id, workspace_dir,
+            folder_name=folder_name, node_id=node_id,
+        )
 
 
 class TestBuildSoulsreamContextItem:
@@ -113,6 +127,9 @@ class TestBuildSoulsreamContextItem:
         assert "hostname" in content
         assert "ip_address" in content
         assert "current_time" in content
+        assert "current_node_id" in content
+        assert "host_os" in content
+        assert "os_version" in content
 
     def test_current_time_is_iso8601_utc(self):
         """current_time이 ISO 8601 UTC 형식이다."""
@@ -132,3 +149,21 @@ class TestBuildSoulsreamContextItem:
         """claude_session_id가 제공되면 그대로 기록된다."""
         item = _call_build(claude_session_id="claude-abc123")
         assert item["content"]["claude_session_id"] == "claude-abc123"
+
+    def test_host_os_and_version_from_platform(self):
+        """host_os와 os_version이 platform 모듈에서 가져온 값으로 설정된다."""
+        item = _call_build()
+        content = item["content"]
+        assert content["host_os"] == "Linux"
+        assert content["os_version"] == "#1 SMP"
+
+    def test_current_node_id_from_explicit_param(self):
+        """node_id 파라미터가 명시되면 current_node_id에 그대로 기록된다."""
+        item = _call_build(node_id="my-node")
+        assert item["content"]["current_node_id"] == "my-node"
+
+    def test_current_node_id_from_settings_when_not_passed(self):
+        """node_id가 None이면 settings.soulstream_node_id 값이 사용된다."""
+        item = _call_build(node_id=None)
+        # _call_build 헬퍼가 settings mock에 "test-node"를 설정함
+        assert item["content"]["current_node_id"] == "test-node"

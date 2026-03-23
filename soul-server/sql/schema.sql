@@ -166,6 +166,12 @@ BEGIN
     IF p_filters IS NOT NULL AND p_filters ? 'session_type' THEN
         q := q || ' AND session_type = ' || quote_literal(p_filters->>'session_type');
     END IF;
+    IF p_filters IS NOT NULL AND p_filters ? 'folder_id' THEN
+        q := q || ' AND folder_id = ' || quote_literal(p_filters->>'folder_id');
+    END IF;
+    IF p_filters IS NOT NULL AND p_filters ? 'node_id' THEN
+        q := q || ' AND node_id = ' || quote_literal(p_filters->>'node_id');
+    END IF;
 
     q := q || ' ORDER BY updated_at DESC';
 
@@ -190,6 +196,12 @@ DECLARE
 BEGIN
     IF p_filters IS NOT NULL AND p_filters ? 'session_type' THEN
         q := q || ' AND session_type = ' || quote_literal(p_filters->>'session_type');
+    END IF;
+    IF p_filters IS NOT NULL AND p_filters ? 'folder_id' THEN
+        q := q || ' AND folder_id = ' || quote_literal(p_filters->>'folder_id');
+    END IF;
+    IF p_filters IS NOT NULL AND p_filters ? 'node_id' THEN
+        q := q || ' AND node_id = ' || quote_literal(p_filters->>'node_id');
     END IF;
 
     EXECUTE q INTO result;
@@ -473,7 +485,9 @@ CREATE OR REPLACE FUNCTION session_list_summary(
     p_search       TEXT DEFAULT NULL,
     p_session_type TEXT DEFAULT NULL,
     p_limit        INTEGER DEFAULT 20,
-    p_offset       INTEGER DEFAULT 0
+    p_offset       INTEGER DEFAULT 0,
+    p_folder_id    TEXT DEFAULT NULL,
+    p_node_id      TEXT DEFAULT NULL
 ) RETURNS TABLE(
     session_id   TEXT,
     display_name TEXT,
@@ -491,6 +505,8 @@ CREATE OR REPLACE FUNCTION session_list_summary(
         FROM sessions s
         WHERE (p_session_type IS NULL OR s.session_type = p_session_type)
           AND (p_search IS NULL OR s.display_name ILIKE '%' || p_search || '%')
+          AND (p_folder_id IS NULL OR s.folder_id = p_folder_id)
+          AND (p_node_id IS NULL OR s.node_id = p_node_id)
         ORDER BY s.updated_at DESC
     )
     SELECT f.*, (SELECT COUNT(*) FROM filtered)::BIGINT AS total_count
