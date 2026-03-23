@@ -159,10 +159,9 @@ class TaskManager:
                 # 좀비 세션 정리: was_running_at_shutdown=0인 running 세션은
                 # graceful shutdown 이전에 프로세스가 죽은 것이므로 completed로 전환
                 if not s.get("was_running_at_shutdown", 0):
-                    await self._db.upsert_session(
+                    await self._db.update_session_status(
                         s["session_id"],
-                        status=TaskStatus.COMPLETED.value,
-                        node_id=s.get("node_id"),
+                        TaskStatus.COMPLETED.value,
                     )
                     zombies += 1
                     continue
