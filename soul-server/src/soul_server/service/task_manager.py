@@ -17,7 +17,7 @@ import logging
 import time
 from datetime import timedelta
 from pathlib import Path
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Union
 
 from soul_server.service.task_models import (
     Task,
@@ -349,8 +349,9 @@ class TaskManager:
         session_type: Optional[str] = None,
         folder_id: Optional[str] = None,
         node_id: Optional[str] = None,
+        status: Optional[Union[str, list[str]]] = None,
     ) -> tuple[list[dict], int]:
-        """세션 목록 반환 (생성일 기준 내림차순, 페이지네이션 + 타입/폴더/노드 필터 지원)
+        """세션 목록 반환 (생성일 기준 내림차순, 페이지네이션 + 타입/폴더/노드/상태 필터 지원)
 
         카탈로그 기반으로 전체 세션 목록을 반환합니다.
         running 세션의 pid는 _tasks에서 보충합니다.
@@ -361,13 +362,14 @@ class TaskManager:
             session_type: 세션 타입 필터 ("claude" | "llm", None이면 전체)
             folder_id: 폴더 ID 필터 (None이면 전체)
             node_id: 노드 ID 필터 (None이면 전체)
+            status: 상태 필터 (str 또는 list[str], None이면 전체)
 
         Returns:
             (세션 dict 리스트, 전체 세션 수) 튜플
         """
         sessions, total = await self._db.get_all_sessions(
             offset=offset, limit=limit, session_type=session_type,
-            folder_id=folder_id, node_id=node_id,
+            folder_id=folder_id, node_id=node_id, status=status,
         )
 
         result = []
