@@ -13,6 +13,9 @@ export default defineConfig({
       "client/lib": resolve(__dirname, "client/lib"),
       "client/hooks": resolve(__dirname, "client/hooks"),
       "client/components": resolve(__dirname, "client/components"),
+      // soul-ui 소스를 직접 alias로 참조할 때 soul-ui의 peer/deps를 찾을 수 있도록 명시적 alias 추가.
+      // pnpm의 node_modules 구조상 Rollup이 packages/soul-ui/node_modules를 자동으로 탐색하지 않음.
+      "@base-ui/react": resolve(__dirname, "../packages/soul-ui/node_modules/@base-ui/react"),
     },
   },
   build: {

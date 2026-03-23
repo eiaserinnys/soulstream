@@ -17,7 +17,8 @@ import { setupNodeWebSocket } from "./ws/node-handler";
 export interface ServerConfig {
   port: number;
   databaseUrl: string;
-  dashboardDir?: string;
+  /** §8: orchestrator-dashboard dist 디렉토리 경로. 필수값. */
+  dashboardDir: string;
 }
 
 export function createSoulStreamServer(config: ServerConfig) {
@@ -47,12 +48,12 @@ export function createSoulStreamServer(config: ServerConfig) {
     });
   });
 
-  // Dashboard static files (Phase 4에서 빌드 결과물 서빙)
-  if (config.dashboardDir && existsSync(config.dashboardDir)) {
+  // Dashboard static files — orchestrator-dashboard dist 서빙
+  if (existsSync(config.dashboardDir)) {
     app.use(express.static(config.dashboardDir));
     // SPA fallback
     app.get("{*path}", (_req, res) => {
-      res.sendFile("index.html", { root: config.dashboardDir! });
+      res.sendFile("index.html", { root: config.dashboardDir });
     });
   }
 

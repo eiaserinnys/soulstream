@@ -8,8 +8,7 @@
     "jsx": "react-jsx",
     "noEmit": true,
     "paths": {
-      "@shared/*": ["../../packages/soul-ui/src/shared/*"],
-      "@seosoyoung/soul-ui": ["../../packages/soul-ui/src/index.ts"],
+      "@seosoyoung/soul-ui": ["../packages/soul-ui/src/index.ts"],
       "client/*": ["./client/*"]
     }
   },

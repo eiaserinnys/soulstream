@@ -27,10 +27,3 @@ export interface NodeChangeSSE {
   type: "node_connected" | "node_disconnected" | "node_updated";
   node: OrchestratorNode;
 }
-
-/** SSE로 수신하는 세션 변경 이벤트 */
-export interface SessionChangeSSE {
-  type: "session_list";
-  nodeId: string;
-  sessions: OrchestratorSession[];
-}
