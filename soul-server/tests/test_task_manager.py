@@ -42,7 +42,7 @@ def _make_mock_session_db():
             return None
         return dict(_sessions[session_id])
 
-    async def _get_all_sessions(offset=0, limit=0, session_type=None, folder_id=None, node_id=None):
+    async def _get_all_sessions(offset=0, limit=0, session_type=None, folder_id=None, node_id=None, status=None):
         items = list(_sessions.values())
         if session_type:
             items = [s for s in items if s.get("session_type") == session_type]
@@ -142,7 +142,7 @@ class TestCreateTask:
             prompt="hello",
             agent_session_id="sess-1",
         )
-        await manager.complete_task("sess-1", "done")
+        await manager.finalize_task("sess-1", result="done")
 
         task2 = await manager.create_task(
             prompt="new prompt",
@@ -174,7 +174,7 @@ class TestGetTask:
         """running 상태 세션 목록 조회"""
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
         await manager.create_task(prompt="world", agent_session_id="sess-2")
-        await manager.complete_task("sess-1", "done")
+        await manager.finalize_task("sess-1", result="done")
 
         running = manager.get_running_tasks()
         assert len(running) == 1
@@ -184,7 +184,7 @@ class TestGetTask:
         """전체 세션 목록 조회"""
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
         await manager.create_task(prompt="world", agent_session_id="sess-2")
-        await manager.complete_task("sess-1", "done")
+        await manager.finalize_task("sess-1", result="done")
 
         sessions, total = await manager.get_all_sessions()
         assert len(sessions) == 2
@@ -193,9 +193,9 @@ class TestGetTask:
 
 class TestCompleteTask:
     async def test_complete_basic(self, manager):
-        """기본 세션 완료"""
+        """기본 세션 완료 (finalize_task result=)"""
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
-        task = await manager.complete_task("sess-1", "result")
+        task = await manager.finalize_task("sess-1", result="result")
 
         assert task is not None
         assert task.status == TaskStatus.COMPLETED
@@ -205,22 +205,22 @@ class TestCompleteTask:
     async def test_complete_with_session_id(self, manager):
         """claude_session_id 포함 완료"""
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
-        task = await manager.complete_task(
-            "sess-1", "result", claude_session_id="claude-sess-1"
+        task = await manager.finalize_task(
+            "sess-1", result="result", claude_session_id="claude-sess-1"
         )
         assert task.claude_session_id == "claude-sess-1"
 
     async def test_complete_nonexistent(self, manager):
         """존재하지 않는 세션 완료 시도"""
-        task = await manager.complete_task("nonexistent", "result")
+        task = await manager.finalize_task("nonexistent", result="result")
         assert task is None
 
 
 class TestErrorTask:
     async def test_error_basic(self, manager):
-        """기본 세션 에러 처리"""
+        """기본 세션 에러 처리 (finalize_task error=)"""
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
-        task = await manager.error_task("sess-1", "something broke")
+        task = await manager.finalize_task("sess-1", error="something broke")
 
         assert task is not None
         assert task.status == TaskStatus.ERROR
@@ -229,7 +229,74 @@ class TestErrorTask:
 
     async def test_error_nonexistent(self, manager):
         """존재하지 않는 세션 에러 시도"""
-        task = await manager.error_task("nonexistent", "error")
+        task = await manager.finalize_task("nonexistent", error="error")
+        assert task is None
+
+
+class TestFinalizeTask:
+    """finalize_task() 동작 검증.
+
+    finalize_task()는 complete_task() / error_task()의 통합 대체제이며,
+    양쪽과 동일한 부수 효과(_unregister_claude_session 호출)를 가져야 한다.
+    현재 코드는 _unregister_claude_session을 호출하지 않으므로 이 테스트들은 RED이다.
+    Phase 2 수정 후 GREEN이 된다.
+    """
+
+    async def test_finalize_result_sets_completed_status(self, manager):
+        """result= 전달 시 COMPLETED 상태로 전환된다."""
+        await manager.create_task(prompt="hello", agent_session_id="sess-1")
+        task = await manager.finalize_task("sess-1", result="done")
+
+        assert task is not None
+        assert task.status == TaskStatus.COMPLETED
+        assert task.result == "done"
+        assert task.completed_at is not None
+
+    async def test_finalize_error_sets_error_status(self, manager):
+        """error= 전달 시 ERROR 상태로 전환된다."""
+        await manager.create_task(prompt="hello", agent_session_id="sess-1")
+        task = await manager.finalize_task("sess-1", error="something broke")
+
+        assert task is not None
+        assert task.status == TaskStatus.ERROR
+        assert task.error == "something broke"
+        assert task.completed_at is not None
+
+    async def test_finalize_result_unregisters_claude_session(self, manager):
+        """finalize_task(result=) 호출 시 claude_session_id가 인덱스에서 제거된다.
+
+        complete_task()와 동일한 _unregister_claude_session 부수 효과가 있어야 한다.
+        현재 finalize_task()에는 이 호출이 없으므로 RED (assertion 실패).
+        Phase 2에서 추가되면 GREEN이 된다.
+        """
+        await manager.create_task(prompt="hello", agent_session_id="sess-1")
+        # claude_session_id를 인덱스에 등록
+        manager._session_index["claude-abc"] = "sess-1"
+        assert "claude-abc" in manager._session_index
+
+        await manager.finalize_task("sess-1", result="done")
+
+        # _unregister_claude_session이 호출되었으면 인덱스에서 제거되어야 한다
+        assert "claude-abc" not in manager._session_index
+
+    async def test_finalize_error_unregisters_claude_session(self, manager):
+        """finalize_task(error=) 호출 시 claude_session_id가 인덱스에서 제거된다.
+
+        error_task()와 동일한 _unregister_claude_session 부수 효과가 있어야 한다.
+        현재 finalize_task()에는 이 호출이 없으므로 RED (assertion 실패).
+        Phase 2에서 추가되면 GREEN이 된다.
+        """
+        await manager.create_task(prompt="hello", agent_session_id="sess-1")
+        manager._session_index["claude-abc"] = "sess-1"
+        assert "claude-abc" in manager._session_index
+
+        await manager.finalize_task("sess-1", error="failed")
+
+        assert "claude-abc" not in manager._session_index
+
+    async def test_finalize_nonexistent_returns_none(self, manager):
+        """존재하지 않는 세션에 finalize_task 호출 시 None을 반환한다."""
+        task = await manager.finalize_task("nonexistent", result="done")
         assert task is None
 
 
@@ -248,7 +315,7 @@ class TestIntervention:
     async def test_add_intervention_auto_resume(self, manager):
         """완료된 세션에 개입 → 자동 resume"""
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
-        await manager.complete_task("sess-1", "done", claude_session_id="claude-sess-1")
+        await manager.finalize_task("sess-1", result="done", claude_session_id="claude-sess-1")
 
         result = await manager.add_intervention(
             agent_session_id="sess-1",
@@ -391,7 +458,7 @@ class TestCleanup:
     async def test_cleanup_preserves_completed_tasks(self, manager):
         """완료된 세션은 삭제하지 않고 유지"""
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
-        await manager.complete_task("sess-1", "result")
+        await manager.finalize_task("sess-1", result="result")
 
         # 오래된 세션이라도 삭제하지 않음
         task_ref = await manager.get_task("sess-1")
@@ -409,7 +476,7 @@ class TestStats:
         """통계 조회"""
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
         await manager.create_task(prompt="world", agent_session_id="sess-2")
-        await manager.complete_task("sess-1", "done")
+        await manager.finalize_task("sess-1", result="done")
 
         stats = await manager.get_stats()
         assert stats["total_in_memory"] == 2

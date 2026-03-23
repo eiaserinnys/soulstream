@@ -152,6 +152,48 @@ class TestGracefulShutdownExceptionRecovery:
         assert main_module._is_draining is False
 
 
+class TestGracefulShutdownSessionDbError:
+    """get_session_db() 실패 시나리오."""
+
+    async def test_session_db_unavailable_propagates_without_name_error(self):
+        """get_session_db()가 예외를 던지면 NameError 없이 원래 예외가 전파되어야 한다.
+
+        현재 코드 버그 (RED):
+          main.py L108: session_db = get_session_db()  ← 이 줄이 예외를 던지면
+          main.py L142: await session_db.clear_shutdown_flags()  ← session_db 미할당 → NameError
+          → _is_draining = False가 실행되지 않아 드레이닝 상태가 오염됨
+
+        Phase 1 수정 후 (GREEN):
+          - RuntimeError("db unavailable")가 그대로 전파됨 (NameError 아님)
+          - _is_draining이 False로 복원됨
+        """
+        tm = MagicMock()
+        tm.get_running_tasks.return_value = [make_task("sess-1")]
+        tm.add_intervention = AsyncMock()
+
+        # autouse mock_session_db fixture의 patch를 RuntimeError로 override
+        caught_exc = None
+        with patch(
+            "soul_server.main.get_session_db",
+            side_effect=RuntimeError("db unavailable"),
+        ):
+            try:
+                await graceful_shutdown(tm)
+            except (RuntimeError, NameError) as e:
+                caught_exc = e
+
+        assert caught_exc is not None, "graceful_shutdown이 예외를 발생시켜야 한다"
+
+        # GREEN 조건: NameError가 아닌 원래 RuntimeError가 전파되어야 한다
+        assert isinstance(caught_exc, RuntimeError), (
+            f"NameError가 발생했습니다 (버그): except 블록에서 session_db가 "
+            f"미할당 상태로 참조됩니다. 발생한 예외: {type(caught_exc).__name__}: {caught_exc}"
+        )
+
+        # _is_draining이 False로 복원되어야 한다
+        assert main_module._is_draining is False
+
+
 class TestGracefulShutdownDoubleCallGuard:
     """이중 호출 가드 시나리오."""
 

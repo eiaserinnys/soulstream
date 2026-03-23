@@ -159,7 +159,7 @@ class TestInterventionByAgentSession:
         task = await manager.create_task(
             prompt="hello", agent_session_id="agent-sess-1"
         )
-        await manager.complete_task("agent-sess-1", "done")
+        await manager.finalize_task("agent-sess-1", result="done")
 
         # 완료된 태스크에 개입 → 자동 resume
         result = await manager.add_intervention(
@@ -225,7 +225,7 @@ class TestTaskCompletion:
         """완료 시 claude_session_id 저장 (resume용)"""
         await manager.create_task(prompt="hello", agent_session_id="agent-sess-1")
 
-        await manager.complete_task(
+        await manager.finalize_task(
             "agent-sess-1", result="done", claude_session_id="claude-sess-xyz"
         )
 
@@ -239,7 +239,7 @@ class TestTaskCompletion:
         """에러 처리"""
         await manager.create_task(prompt="hello", agent_session_id="agent-sess-1")
 
-        await manager.error_task("agent-sess-1", error="Something went wrong")
+        await manager.finalize_task("agent-sess-1", error="Something went wrong")
 
         task = await manager.get_task("agent-sess-1")
         assert task is not None
@@ -248,12 +248,12 @@ class TestTaskCompletion:
 
     async def test_complete_nonexistent(self, manager):
         """존재하지 않는 태스크 완료 시도"""
-        result = await manager.complete_task("nonexistent", "done")
+        result = await manager.finalize_task("nonexistent", result="done")
         assert result is None
 
     async def test_error_nonexistent(self, manager):
         """존재하지 않는 태스크 에러 시도"""
-        result = await manager.error_task("nonexistent", "error")
+        result = await manager.finalize_task("nonexistent", error="error")
         assert result is None
 
 
@@ -265,7 +265,7 @@ class TestResumeSession:
         task = await manager.create_task(
             prompt="first", agent_session_id="agent-sess-1"
         )
-        await manager.complete_task(
+        await manager.finalize_task(
             "agent-sess-1", result="done", claude_session_id="claude-sess-xyz"
         )
 
@@ -281,7 +281,7 @@ class TestResumeSession:
     async def test_resume_errored_session(self, manager):
         """에러난 세션 resume"""
         await manager.create_task(prompt="first", agent_session_id="agent-sess-1")
-        await manager.error_task("agent-sess-1", error="crashed")
+        await manager.finalize_task("agent-sess-1", error="crashed")
 
         # resume
         task = await manager.create_task(

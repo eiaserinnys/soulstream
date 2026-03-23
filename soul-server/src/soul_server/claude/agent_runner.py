@@ -1358,19 +1358,3 @@ class ClaudeRunner:
             logger.error(f"세션 컴팩트 실패: {session_id}, {result.error}")
 
         return result
-
-
-
-# 테스트용
-async def main():
-    runner = ClaudeRunner()
-    result = await runner.run("안녕? 간단히 인사해줘. 3줄 이내로.")
-    print(f"Success: {result.success}")
-    print(f"Session ID: {result.session_id}")
-    print(f"Output:\n{result.output}")
-    if result.error:
-        print(f"Error: {result.error}")
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
