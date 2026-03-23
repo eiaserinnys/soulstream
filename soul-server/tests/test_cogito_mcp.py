@@ -405,3 +405,287 @@ class TestSetSessionName:
         call_args = mock_broadcaster.broadcast.call_args[0][0]
         assert call_args["type"] == "catalog_updated"
         assert "catalog" in call_args
+
+
+# ---------------------------------------------------------------------------
+# list_sessions (improved with search + summary)
+# ---------------------------------------------------------------------------
+
+
+def _make_mock_task_manager(summary_result=None):
+    """TaskManager의 AsyncMock을 생성한다."""
+    tm = AsyncMock()
+    if summary_result is None:
+        summary_result = ([], 0)
+    tm.list_sessions_summary = AsyncMock(return_value=summary_result)
+    return tm
+
+
+class TestListSessions:
+    async def test_no_task_manager_returns_error(self):
+        fn = _unwrap(mcp_tools.list_sessions)
+        with patch("soul_server.cogito.mcp_tools.get_task_manager", side_effect=RuntimeError("no tm")):
+            result = await fn()
+        assert "error" in result
+
+    async def test_returns_total_and_sessions(self):
+        sessions = [
+            {"session_id": "s1", "display_name": "세션1", "status": "idle",
+             "session_type": "claude", "created_at": "2026-01-01", "updated_at": "2026-01-02",
+             "event_count": 42},
+        ]
+        tm = _make_mock_task_manager((sessions, 1))
+        fn = _unwrap(mcp_tools.list_sessions)
+        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=tm):
+            result = await fn(cursor=0, limit=20)
+        assert result["total"] == 1
+        assert len(result["sessions"]) == 1
+        assert result["sessions"][0]["session_id"] == "s1"
+        assert result["next_cursor"] is None
+
+    async def test_next_cursor_when_has_more(self):
+        sessions = [{"session_id": f"s{i}"} for i in range(5)]
+        tm = _make_mock_task_manager((sessions, 10))
+        fn = _unwrap(mcp_tools.list_sessions)
+        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=tm):
+            result = await fn(cursor=0, limit=5)
+        assert result["next_cursor"] == 5
+
+    async def test_search_parameter_forwarded(self):
+        tm = _make_mock_task_manager(([], 0))
+        fn = _unwrap(mcp_tools.list_sessions)
+        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=tm):
+            await fn(search="테스트")
+        tm.list_sessions_summary.assert_called_once_with(
+            search="테스트", limit=20, offset=0,
+        )
+
+    async def test_limit_capped_at_100(self):
+        tm = _make_mock_task_manager(([], 0))
+        fn = _unwrap(mcp_tools.list_sessions)
+        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=tm):
+            await fn(limit=200)
+        call_kwargs = tm.list_sessions_summary.call_args
+        assert call_kwargs[1]["limit"] == 100 or call_kwargs[0][1] == 100
+
+
+# ---------------------------------------------------------------------------
+# list_session_events (improved with event_types + tool_content)
+# ---------------------------------------------------------------------------
+
+
+def _make_event_entry(event_id: int, event_type: str, payload_dict: dict) -> dict:
+    """테스트용 이벤트 dict를 생성한다."""
+    import json
+    return {
+        "id": event_id,
+        "session_id": "test-sess",
+        "event_type": event_type,
+        "payload": json.dumps(payload_dict),
+        "searchable_text": "",
+        "created_at": "2026-01-01T00:00:00+00:00",
+    }
+
+
+class TestListSessionEvents:
+    async def test_event_types_filter_forwarded(self, session_db):
+        fn = _unwrap(mcp_tools.list_session_events)
+        session_db.read_events = AsyncMock(return_value=[])
+        session_db.count_events = AsyncMock(return_value=0)
+        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
+            await fn("test-sess-001", event_types=["user_message", "result"])
+        call_args = session_db.read_events.call_args
+        assert call_args[1]["event_types"] == ["user_message", "result"]
+
+    async def test_tool_content_omit(self, session_db):
+        events = [
+            _make_event_entry(1, "tool_use", {"type": "tool_use", "input": "long input data", "tool": "Bash"}),
+        ]
+        fn = _unwrap(mcp_tools.list_session_events)
+        session_db.read_events = AsyncMock(return_value=events)
+        session_db.count_events = AsyncMock(return_value=1)
+        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
+            result = await fn("test-sess-001", tool_content="omit")
+        ev = result["events"][0]["event"]
+        assert "input" not in ev
+        assert ev["type"] == "tool_use"
+
+    async def test_tool_content_full(self, session_db):
+        events = [
+            _make_event_entry(1, "tool_use", {"type": "tool_use", "input": "x" * 1000, "tool": "Bash"}),
+        ]
+        fn = _unwrap(mcp_tools.list_session_events)
+        session_db.read_events = AsyncMock(return_value=events)
+        session_db.count_events = AsyncMock(return_value=1)
+        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
+            result = await fn("test-sess-001", tool_content="full")
+        ev = result["events"][0]["event"]
+        assert len(ev["input"]) == 1000  # 잘리지 않음
+
+    async def test_tool_content_truncate_default(self, session_db):
+        events = [
+            _make_event_entry(1, "tool_use", {"type": "tool_use", "input": "x" * 1000, "tool": "Bash"}),
+        ]
+        fn = _unwrap(mcp_tools.list_session_events)
+        session_db.read_events = AsyncMock(return_value=events)
+        session_db.count_events = AsyncMock(return_value=1)
+        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
+            result = await fn("test-sess-001")  # 기본값: truncate, 500
+        ev = result["events"][0]["event"]
+        assert len(ev["input"]) < 1000  # 잘려야 함
+
+    async def test_returns_total(self, session_db):
+        fn = _unwrap(mcp_tools.list_session_events)
+        session_db.read_events = AsyncMock(return_value=[])
+        session_db.count_events = AsyncMock(return_value=42)
+        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
+            result = await fn("test-sess-001")
+        assert result["total"] == 42
+
+    async def test_db_level_limit(self, session_db):
+        """DB에 limit+1로 요청하여 has_more를 판단한다."""
+        fn = _unwrap(mcp_tools.list_session_events)
+        session_db.read_events = AsyncMock(return_value=[])
+        session_db.count_events = AsyncMock(return_value=0)
+        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
+            await fn("test-sess-001", limit=10)
+        call_args = session_db.read_events.call_args
+        assert call_args[1]["limit"] == 11  # limit + 1
+
+
+# ---------------------------------------------------------------------------
+# get_session_summary
+# ---------------------------------------------------------------------------
+
+
+class TestGetSessionSummary:
+    async def test_session_not_found(self, session_db):
+        fn = _unwrap(mcp_tools.get_session_summary)
+        session_db.count_events = AsyncMock(return_value=0)
+        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
+            result = await fn("nonexistent")
+        assert "error" in result
+
+    async def test_empty_session(self, session_db):
+        fn = _unwrap(mcp_tools.get_session_summary)
+        session_db.count_events = AsyncMock(return_value=0)
+        session_db.read_events = AsyncMock(return_value=[])
+        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
+            result = await fn("test-sess-001")
+        assert result["session_id"] == "test-sess-001"
+        assert result["total_events"] == 0
+        assert result["turns"] == []
+
+    async def test_single_turn(self, session_db):
+        events = [
+            _make_event_entry(1, "user_message", {"type": "user_message", "text": "안녕하세요"}),
+            _make_event_entry(5, "tool_start", {"type": "tool_start", "tool": "Bash"}),
+            _make_event_entry(6, "tool_start", {"type": "tool_start", "tool": "Bash"}),
+            _make_event_entry(7, "tool_start", {"type": "tool_start", "tool": "Read"}),
+            _make_event_entry(10, "context_usage", {"type": "context_usage", "percent": 16.7, "used_tokens": 33359, "max_tokens": 200000}),
+            _make_event_entry(15, "result", {"type": "result", "result": "작업을 완료했습니다."}),
+        ]
+        fn = _unwrap(mcp_tools.get_session_summary)
+        session_db.count_events = AsyncMock(return_value=100)
+        session_db.read_events = AsyncMock(return_value=events)
+        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
+            result = await fn("test-sess-001")
+
+        assert result["total_events"] == 100
+        assert len(result["turns"]) == 1
+
+        turn = result["turns"][0]
+        assert turn["user_message"] == "안녕하세요"
+        assert turn["response_preview"] == "작업을 완료했습니다."
+        assert turn["context_usage"]["percent"] == 16.7
+        assert turn["tools_used"] == {"Bash": 2, "Read": 1}
+
+    async def test_multiple_turns(self, session_db):
+        events = [
+            _make_event_entry(1, "user_message", {"type": "user_message", "text": "첫 번째 질문"}),
+            _make_event_entry(5, "result", {"type": "result", "result": "첫 번째 답변"}),
+            _make_event_entry(10, "user_message", {"type": "user_message", "text": "두 번째 질문"}),
+            _make_event_entry(15, "result", {"type": "result", "result": "두 번째 답변"}),
+        ]
+        fn = _unwrap(mcp_tools.get_session_summary)
+        session_db.count_events = AsyncMock(return_value=200)
+        session_db.read_events = AsyncMock(return_value=events)
+        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
+            result = await fn("test-sess-001")
+        assert len(result["turns"]) == 2
+        assert result["turns"][0]["user_message"] == "첫 번째 질문"
+        assert result["turns"][1]["user_message"] == "두 번째 질문"
+
+    async def test_response_truncated(self, session_db):
+        long_response = "x" * 1000
+        events = [
+            _make_event_entry(1, "user_message", {"type": "user_message", "text": "질문"}),
+            _make_event_entry(5, "result", {"type": "result", "result": long_response}),
+        ]
+        fn = _unwrap(mcp_tools.get_session_summary)
+        session_db.count_events = AsyncMock(return_value=10)
+        session_db.read_events = AsyncMock(return_value=events)
+        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
+            result = await fn("test-sess-001", max_response_chars=100)
+        preview = result["turns"][0]["response_preview"]
+        assert len(preview) == 103  # 100 + "..."
+        assert preview.endswith("...")
+
+    async def test_event_types_filter_used(self, session_db):
+        """read_events에 event_types 필터가 전달되는지 확인한다."""
+        fn = _unwrap(mcp_tools.get_session_summary)
+        session_db.count_events = AsyncMock(return_value=0)
+        session_db.read_events = AsyncMock(return_value=[])
+        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
+            await fn("test-sess-001")
+        call_args = session_db.read_events.call_args
+        assert set(call_args[1]["event_types"]) == {"user_message", "result", "context_usage", "tool_start"}
+
+
+# ---------------------------------------------------------------------------
+# _omit_tool_content / _truncate_tool_event helpers
+# ---------------------------------------------------------------------------
+
+
+class TestOmitToolContent:
+    def test_removes_all_content_fields(self):
+        ev = {"type": "tool_use", "input": "data", "output": "out", "content": "c", "result": "r", "tool": "Bash"}
+        result = mcp_tools._omit_tool_content(ev)
+        assert "input" not in result
+        assert "output" not in result
+        assert "content" not in result
+        assert "result" not in result
+        assert result["type"] == "tool_use"
+        assert result["tool"] == "Bash"
+
+    def test_does_not_modify_original(self):
+        ev = {"type": "tool_use", "input": "data"}
+        mcp_tools._omit_tool_content(ev)
+        assert "input" in ev  # 원본 불변
+
+
+# ---------------------------------------------------------------------------
+# search_session_history (score from DB)
+# ---------------------------------------------------------------------------
+
+
+class TestSearchSessionHistoryScore:
+    async def test_score_from_db(self):
+        """search_session_history가 DB에서 반환된 score를 사용하는지 확인한다."""
+        from soul_server.cogito.search import SessionSearchEngine, SearchResult
+
+        mock_db = AsyncMock(spec=PostgresSessionDB)
+        mock_db.search_events = AsyncMock(return_value=[
+            {
+                "id": 1, "session_id": "s1", "event_type": "text_delta",
+                "searchable_text": "hello world",
+                "score": 0.75,
+            }
+        ])
+
+        fn = _unwrap(mcp_tools.search_session_history)
+        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=mock_db):
+            result = await fn(query="hello")
+
+        assert len(result["results"]) == 1
+        assert result["results"][0]["score"] == 0.75

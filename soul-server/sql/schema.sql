@@ -370,8 +370,10 @@ $$;
 
 -- 17. event_read
 CREATE OR REPLACE FUNCTION event_read(
-    p_session_id TEXT,
-    p_after_id   INTEGER DEFAULT 0
+    p_session_id   TEXT,
+    p_after_id     INTEGER DEFAULT 0,
+    p_limit        INTEGER DEFAULT NULL,
+    p_event_types  TEXT[] DEFAULT NULL
 ) RETURNS TABLE(
     id              INTEGER,
     session_id      TEXT,
@@ -380,10 +382,13 @@ CREATE OR REPLACE FUNCTION event_read(
     searchable_text TEXT,
     created_at      TIMESTAMPTZ
 ) LANGUAGE sql STABLE AS $$
-    SELECT id, session_id, event_type, payload, searchable_text, created_at
-    FROM events
-    WHERE session_id = p_session_id AND id > p_after_id
-    ORDER BY id;
+    SELECT e.id, e.session_id, e.event_type, e.payload, e.searchable_text, e.created_at
+    FROM events e
+    WHERE e.session_id = p_session_id
+      AND e.id > p_after_id
+      AND (p_event_types IS NULL OR e.event_type = ANY(p_event_types))
+    ORDER BY e.id
+    LIMIT p_limit;
 $$;
 
 -- 18. event_read_one
@@ -436,28 +441,61 @@ CREATE OR REPLACE FUNCTION event_search(
     event_type      TEXT,
     payload         JSONB,
     searchable_text TEXT,
-    created_at      TIMESTAMPTZ
+    created_at      TIMESTAMPTZ,
+    score           FLOAT
 ) LANGUAGE plpgsql STABLE AS $$
 BEGIN
     IF p_session_ids IS NOT NULL THEN
         RETURN QUERY
             SELECT e.id, e.session_id, e.event_type, e.payload,
-                   e.searchable_text, e.created_at
+                   e.searchable_text, e.created_at,
+                   ts_rank(e.search_vector, plainto_tsquery('simple', p_query))::FLOAT AS score
             FROM events e
             WHERE e.search_vector @@ plainto_tsquery('simple', p_query)
               AND e.session_id = ANY(p_session_ids)
-            ORDER BY ts_rank(e.search_vector, plainto_tsquery('simple', p_query)) DESC
+            ORDER BY score DESC
             LIMIT p_limit;
     ELSE
         RETURN QUERY
             SELECT e.id, e.session_id, e.event_type, e.payload,
-                   e.searchable_text, e.created_at
+                   e.searchable_text, e.created_at,
+                   ts_rank(e.search_vector, plainto_tsquery('simple', p_query))::FLOAT AS score
             FROM events e
             WHERE e.search_vector @@ plainto_tsquery('simple', p_query)
-            ORDER BY ts_rank(e.search_vector, plainto_tsquery('simple', p_query)) DESC
+            ORDER BY score DESC
             LIMIT p_limit;
     END IF;
 END;
+$$;
+
+-- 35. session_list_summary
+CREATE OR REPLACE FUNCTION session_list_summary(
+    p_search       TEXT DEFAULT NULL,
+    p_session_type TEXT DEFAULT NULL,
+    p_limit        INTEGER DEFAULT 20,
+    p_offset       INTEGER DEFAULT 0
+) RETURNS TABLE(
+    session_id   TEXT,
+    display_name TEXT,
+    status       TEXT,
+    session_type TEXT,
+    created_at   TIMESTAMPTZ,
+    updated_at   TIMESTAMPTZ,
+    event_count  BIGINT,
+    total_count  BIGINT
+) LANGUAGE sql STABLE AS $$
+    WITH filtered AS (
+        SELECT s.session_id, s.display_name, s.status, s.session_type,
+               s.created_at, s.updated_at,
+               (SELECT COUNT(*) FROM events e WHERE e.session_id = s.session_id) AS event_count
+        FROM sessions s
+        WHERE (p_session_type IS NULL OR s.session_type = p_session_type)
+          AND (p_search IS NULL OR s.display_name ILIKE '%' || p_search || '%')
+        ORDER BY s.updated_at DESC
+    )
+    SELECT f.*, (SELECT COUNT(*) FROM filtered)::BIGINT AS total_count
+    FROM filtered f
+    LIMIT p_limit OFFSET p_offset;
 $$;
 
 -- 폴더 도메인 ----------------------------------------------------

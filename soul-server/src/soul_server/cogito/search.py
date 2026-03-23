@@ -44,7 +44,7 @@ class SessionSearchEngine:
             search_results.append(SearchResult(
                 session_id=r["session_id"],
                 event_id=r["id"],
-                score=0.0,
+                score=r.get("score", 0.0),
                 preview=preview,
                 event_type=r.get("event_type", ""),
             ))
