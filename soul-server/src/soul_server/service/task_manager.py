@@ -99,8 +99,7 @@ class TaskManager:
             tasks=self._tasks,
             listener_manager=self._listener_manager,
             get_intervention_func=self.get_intervention,
-            complete_task_func=self._complete_task_internal,
-            error_task_func=self._error_task_internal,
+            finalize_task_func=self.finalize_task,
             register_session_func=self.register_session,
             session_db=session_db,
             metadata_extractor=metadata_extractor,
@@ -209,11 +208,6 @@ class TaskManager:
 
         return loaded
 
-    async def save(self) -> None:
-        """PostgreSQL은 각 메서드에서 즉시 커밋하므로 별도 저장이 불필요하다.
-        인터페이스 호환을 위해 유지."""
-        pass
-
     # === 내부 헬퍼 ===
 
     async def _assign_default_folder_and_broadcast(
@@ -303,7 +297,13 @@ class TaskManager:
 
         Returns:
             업데이트된 태스크 (없으면 None)
+
+        Raises:
+            ValueError: result와 error가 모두 None인 경우
         """
+        if result is None and error is None:
+            raise ValueError("finalize_task requires either result= or error=")
+
         async with self._lock:
             task = self._tasks.get(agent_session_id)
             if not task:
@@ -325,13 +325,18 @@ class TaskManager:
                     setattr(task, key, value)
 
         # DB 업데이트 + LRU 퇴거 후보 등록
+        # claude_session_id는 metadata로 전달되었거나 register_claude_session으로 설정된 값을 사용한다.
+        # complete_task()와 동일하게 claude_session_id를 DB에 기록하여 다음 resume 시 사용 가능하게 한다.
         await self._db.upsert_session(
             agent_session_id,
             status=task.status.value,
+            claude_session_id=task.claude_session_id,
             updated_at=datetime_to_str(task.completed_at),
             node_id=task.node_id,
         )
         self._eviction_candidates[agent_session_id] = time.time() + self._eviction_ttl
+        # complete_task() / error_task()와 동일하게 claude_session_id 인덱스를 제거한다.
+        self._unregister_claude_session(agent_session_id)
         try:
             await get_session_broadcaster().emit_session_updated(task)
         except Exception:
@@ -582,112 +587,6 @@ class TaskManager:
 
         # on-demand 로드 (퇴거된 세션)
         return await self._load_evicted_task(agent_session_id)
-
-    async def _complete_task_internal(
-        self,
-        agent_session_id: str,
-        result: str,
-        claude_session_id: Optional[str] = None,
-    ) -> Optional[Task]:
-        """태스크 완료 처리 (내부용 - executor에서 호출)"""
-        return await self.complete_task(agent_session_id, result, claude_session_id)
-
-    async def complete_task(
-        self,
-        agent_session_id: str,
-        result: str,
-        claude_session_id: Optional[str] = None,
-    ) -> Optional[Task]:
-        """
-        세션 태스크 완료 처리
-
-        Args:
-            agent_session_id: 세션 식별자
-            result: 실행 결과
-            claude_session_id: Claude Code 세션 ID (다음 resume에 사용)
-
-        Returns:
-            업데이트된 태스크 (없으면 None)
-        """
-        async with self._lock:
-            task = self._tasks.get(agent_session_id)
-            if not task:
-                logger.warning(f"Task not found for complete: {agent_session_id}")
-                return None
-
-            task.status = TaskStatus.COMPLETED
-            task.result = result
-            task.claude_session_id = claude_session_id
-            task.completed_at = utc_now()
-
-            logger.info(f"Completed session: {agent_session_id}")
-
-        # DB 업데이트 + LRU 퇴거 후보 등록
-        await self._db.upsert_session(
-            agent_session_id,
-            status=TaskStatus.COMPLETED.value,
-            claude_session_id=claude_session_id,
-            updated_at=datetime_to_str(task.completed_at),
-        )
-        self._eviction_candidates[agent_session_id] = time.time() + self._eviction_ttl
-        self._unregister_claude_session(agent_session_id)
-
-        try:
-            await get_session_broadcaster().emit_session_updated(task)
-        except Exception:
-            logger.warning(f"Failed to broadcast completion for {agent_session_id}", exc_info=True)
-        return task
-
-    async def _error_task_internal(
-        self,
-        agent_session_id: str,
-        error: str,
-    ) -> Optional[Task]:
-        """태스크 에러 처리 (내부용 - executor에서 호출)"""
-        return await self.error_task(agent_session_id, error)
-
-    async def error_task(
-        self,
-        agent_session_id: str,
-        error: str,
-    ) -> Optional[Task]:
-        """
-        세션 태스크 에러 처리
-
-        Args:
-            agent_session_id: 세션 식별자
-            error: 에러 메시지
-
-        Returns:
-            업데이트된 태스크 (없으면 None)
-        """
-        async with self._lock:
-            task = self._tasks.get(agent_session_id)
-            if not task:
-                logger.warning(f"Task not found for error: {agent_session_id}")
-                return None
-
-            task.status = TaskStatus.ERROR
-            task.error = error
-            task.completed_at = utc_now()
-
-            logger.info(f"Error session: {agent_session_id} - {error}")
-
-        # DB 업데이트 + LRU 퇴거 후보 등록
-        await self._db.upsert_session(
-            agent_session_id,
-            status=TaskStatus.ERROR.value,
-            updated_at=datetime_to_str(task.completed_at),
-            node_id=task.node_id,
-        )
-        self._eviction_candidates[agent_session_id] = time.time() + self._eviction_ttl
-        self._unregister_claude_session(agent_session_id)
-
-        try:
-            await get_session_broadcaster().emit_session_updated(task)
-        except Exception:
-            logger.warning(f"Failed to broadcast error for {agent_session_id}", exc_info=True)
-        return task
 
     # === SSE 리스너 관리 (위임) ===
 
@@ -964,14 +863,6 @@ class TaskManager:
                 logger.warning("Failed to broadcast orphaned session fixes", exc_info=True)
 
         return fixed
-
-    def _clear_queue(self, queue: asyncio.Queue) -> None:
-        """큐 내 모든 항목 제거"""
-        try:
-            while True:
-                queue.get_nowait()
-        except asyncio.QueueEmpty:
-            pass
 
     async def get_stats(self) -> dict:
         """통계 반환"""
