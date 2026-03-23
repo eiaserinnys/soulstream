@@ -177,7 +177,7 @@ class UpstreamAdapter:
 
     async def _send_initial_sessions(self) -> None:
         """현재 세션 목록을 오케스트레이터에 전송."""
-        sessions, total = self._tm.get_all_sessions()
+        sessions, total = await self._tm.get_all_sessions()
         await self._send({
             "type": EVT_SESSIONS_UPDATE,
             "sessions": sessions,
