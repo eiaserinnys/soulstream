@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import aiohttp
 
@@ -20,6 +20,7 @@ from .protocol import (
     CMD_INTERVENE,
     CMD_LIST_SESSIONS,
     CMD_RESPOND,
+    CMD_SUBSCRIBE_EVENTS,
     EVT_ERROR,
     EVT_EVENT,
     EVT_HEALTH_STATUS,
@@ -28,11 +29,13 @@ from .protocol import (
     EVT_SESSION_DELETED,
     EVT_SESSION_UPDATED,
     EVT_SESSIONS_UPDATE,
+    SubscribeEventsCmd,
 )
 from .reconnect import ReconnectPolicy
 
 if TYPE_CHECKING:
     from soul_server.service.engine_adapter import SoulEngineAdapter
+    from soul_server.service.postgres_session_db import PostgresSessionDB
     from soul_server.service.resource_manager import ResourceManager
     from soul_server.service.session_broadcaster import SessionBroadcaster
     from soul_server.service.task_manager import TaskManager
@@ -55,6 +58,7 @@ class UpstreamAdapter:
         session_broadcaster: SessionBroadcaster,
         upstream_url: str,
         node_id: str,
+        session_db: PostgresSessionDB,
         host: str = "",
         port: int = 0,
     ) -> None:
@@ -64,6 +68,7 @@ class UpstreamAdapter:
         self._broadcaster = session_broadcaster
         self._url = upstream_url
         self._node_id = node_id
+        self._session_db = session_db
         self._host = host
         self._port = port
 
@@ -276,6 +281,16 @@ class UpstreamAdapter:
                     await self._handle_list_sessions(cmd)
                 case "health_check":
                     await self._handle_health_check(cmd)
+                case "subscribe_events":
+                    cmd_obj = cast(SubscribeEventsCmd, cmd)
+                    old_task = self._stream_tasks.get(cmd_obj['session_id'])
+                    if old_task and not old_task.done():
+                        old_task.cancel()
+                    task = asyncio.create_task(
+                        self._handle_subscribe_events(cmd_obj),
+                        name=f"upstream-subscribe-{cmd_obj['session_id']}",
+                    )
+                    self._stream_tasks[cmd_obj['session_id']] = task
                 case _:
                     await self._send_error(
                         f"Unknown command type: {cmd_type}",
@@ -412,6 +427,65 @@ class UpstreamAdapter:
             pass
         except Exception:
             logger.exception("Error streaming events for session %s", session_id)
+        finally:
+            await self._tm.remove_listener(session_id, queue)
+            self._stream_tasks.pop(session_id, None)
+
+    async def _handle_subscribe_events(self, cmd: SubscribeEventsCmd) -> None:
+        """subscribe_events 명령 처리: DB 재생 후 라이브 relay."""
+        session_id = cmd['session_id']
+        after_id = cmd['after_id']
+
+        # 1. 라이브 리스너 먼저 등록 (DB 읽기 중 이벤트 누락 방지)
+        queue: asyncio.Queue = asyncio.Queue()
+        added = await self._tm.add_listener(session_id, queue)
+        if not added:
+            return  # 세션 종료/미존재
+
+        try:
+            # 2. DB에서 after_id 이후 이벤트 전송 (event_id 포함)
+            db_complete = False
+            async for event_id, event_type, event_data in \
+                    self._session_db.stream_events_raw(session_id, after_id=after_id):
+                event_obj = json.loads(event_data)
+                await self._send({
+                    "type": "event",
+                    "session_id": session_id,
+                    "event_id": event_id,
+                    "event": event_obj,
+                })
+                after_id = event_id
+                if event_obj.get("type") in ("complete", "error"):
+                    db_complete = True
+                    break
+
+            if db_complete:
+                return
+
+            # 3. 라이브 이벤트 relay
+            # ※ event_id 없이 전송 (설계 의도):
+            #   soul-server WS 메시지에 event_id 없음 (TaskManager Queue 직배송).
+            #   클라이언트는 DB 재생 구간 마지막 event_id를 Last-Event-ID로 유지하며
+            #   재연결 시 그 값을 after_id로 사용 → 라이브 구간 미추적은 허용 가능.
+            #   리스너를 DB 읽기 전에 등록했으므로 DB-live 전환 구간 gap 없음.
+            while self._running:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=30.0)
+                except asyncio.TimeoutError:
+                    continue
+                if event is None:
+                    break  # 세션 종료 시그널
+                await self._send({
+                    "type": "event",
+                    "session_id": session_id,
+                    "event": event,
+                })
+                if event.get("type") in ("complete", "error"):
+                    break
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.exception("Error in subscribe_events for session %s", session_id)
         finally:
             await self._tm.remove_listener(session_id, queue)
             self._stream_tasks.pop(session_id, None)
