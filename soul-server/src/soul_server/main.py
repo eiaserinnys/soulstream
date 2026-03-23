@@ -98,14 +98,20 @@ async def graceful_shutdown(task_manager, timeout: float = 50.0):
         return
     _is_draining = True
 
+    # session_db를 None으로 초기화하여 except 블록의 None 체크가 가능하게 한다.
+    # try 내부에서 get_session_db()를 호출하고 실패 시 session_db가 바인딩되지 않으면
+    # except 블록에서 NameError가 발생한다.
+    # session_db = None으로 초기화 후 None 체크를 사용하면 이 문제를 해결할 수 있다.
+    session_db = None
     try:
+        session_db = get_session_db()
+
         # 활성 세션을 DB에 플래그로 기록 (SIGKILL이 와도 DB에 남음)
         running_tasks = task_manager.get_running_tasks()
         active_sessions = [
             {"agent_session_id": t.agent_session_id, "claude_session_id": t.claude_session_id}
             for t in running_tasks
         ]
-        session_db = get_session_db()
         active_ids = [t.agent_session_id for t in running_tasks]
         await session_db.mark_running_at_shutdown(active_ids)
         logger.info(f"Graceful shutdown: {len(active_ids)}개 활성 세션 플래그 설정")
@@ -139,7 +145,9 @@ async def graceful_shutdown(task_manager, timeout: float = 50.0):
 
     except Exception:
         # 예외 발생 시 draining 상태를 복원하여 서버가 영구적으로 /execute를 거부하지 않도록 한다
-        await session_db.clear_shutdown_flags()  # 플래그 정리
+        # session_db가 None이면 get_session_db() 자체가 실패한 것이므로 플래그 정리를 건너뛴다
+        if session_db is not None:
+            await session_db.clear_shutdown_flags()
         _is_draining = False
         raise
 
@@ -633,7 +641,7 @@ async def spa_fallback(request: Request, call_next):
 @app.get("/", include_in_schema=False)
 async def serve_index_html() -> Response:
     """/ 요청에 index.html을 Cache-Control: no-cache와 함께 반환한다."""
-    _d = os.environ.get("SOUL_DASHBOARD_DIR", "dist/client")
+    _d = settings.dashboard_dir
     _p = Path(_d) if Path(_d).is_absolute() else Path.cwd() / _d
     _idx = _p / "index.html"
     if _idx.exists():
