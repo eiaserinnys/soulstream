@@ -169,12 +169,7 @@ export { AskQuestionBanner } from "./components/AskQuestionBanner";
 export { ProfileAvatar } from "./components/ProfileAvatar";
 export { ContextContentRenderer } from "./components/ContextContentRenderer";
 
-// === Dashboard Layout ===
-export { DashboardLayout } from "./components/DashboardLayout";
-export type { DashboardLayoutProps } from "./components/DashboardLayout";
-
 // === Dashboard Components (extracted from soul-dashboard) ===
-export { FolderContents } from "./components/FolderContents";
 export { SessionsTopBar } from "./components/SessionsTopBar";
 export { VerticalSplitPane } from "./components/VerticalSplitPane";
 export { MobileChatHeader } from "./components/MobileChatHeader";
@@ -193,13 +188,7 @@ export { useUrlSync } from "./hooks/useUrlSync";
 export { useDashboardConfig } from "./hooks/useDashboardConfig";
 export { useServerStatus } from "./hooks/useServerStatus";
 
-// === Catalog API Config ===
-export type { CatalogApiConfig } from "./lib/catalog-api-config";
-export { createFolderOperations } from "./lib/folder-operations";
-export { createMoveSessionsOperations } from "./lib/move-sessions-operations";
-
 // === Dashboard Lib (extracted from soul-dashboard) ===
-export { moveSessionsOptimistic } from "./lib/move-sessions";
 export { renameSessionOptimistic } from "./lib/rename-session";
 
 // === Detail Components ===
