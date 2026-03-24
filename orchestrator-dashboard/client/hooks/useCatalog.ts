@@ -39,8 +39,8 @@ export function useCatalog() {
         const sessions: CatalogState["sessions"] = {};
         for (const s of rawSessions ?? []) {
           sessions[s.session_id as string] = {
-            sessionId: s.session_id as string,
             folderId: (s.folder_id as string | null) ?? null,
+            displayName: null,
           };
         }
 
