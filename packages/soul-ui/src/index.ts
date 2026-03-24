@@ -157,6 +157,8 @@ export { useIsMobile } from "./hooks/use-mobile";
 // === Components ===
 export { FolderTree } from "./components/FolderTree";
 export type { FolderTreeProps } from "./components/FolderTree";
+export { FolderContents } from "./components/FolderContents";
+export type { FolderContentsProps } from "./components/FolderContents";
 export { FolderDialog } from "./components/FolderDialog";
 export { ChatView } from "./components/ChatView";
 export { ChatInput } from "./components/ChatInput";
