@@ -134,6 +134,20 @@ export type { ChatMessage } from "./lib/flatten-tree";
 export { submitInputResponse } from "./lib/input-request-actions";
 export { formatTime } from "./lib/input-request-utils";
 
+// === Layout Components ===
+export { DashboardShell } from "./components/DashboardShell";
+export type { DashboardShellProps } from "./components/DashboardShell";
+export { DragHandle } from "./components/DragHandle";
+export type { DragHandleProps } from "./components/DragHandle";
+export { ConnectionBadge } from "./components/ConnectionBadge";
+export type { ConnectionBadgeProps, ConnectionStatus } from "./components/ConnectionBadge";
+
+// === Folder / Session Operations ===
+export { createFolderOperations } from "./lib/folder-operations";
+export type { FolderApiConfig, FolderOperations } from "./lib/folder-operations";
+export { createMoveSessionsOperations } from "./lib/move-sessions";
+export type { MoveSessionsApiConfig, MoveSessionsOperations } from "./lib/move-sessions";
+
 // === Hooks ===
 export { useTheme, initTheme, setTheme } from "./hooks/useTheme";
 export type { Theme } from "./hooks/useTheme";

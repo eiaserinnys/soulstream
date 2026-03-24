@@ -1,11 +1,11 @@
 /**
- * DashboardLayout - 3패널 레이아웃 (리사이즈 가능)
+ * DashboardLayout - Soul Dashboard 메인 레이아웃
  *
- * SessionList | VerticalSplitPane(FolderContents + NodeGraph) | RightPanel (Detail + Chat) 구성.
- * SSE 구독, 세션 목록 폴링, 브라우저 알림을 여기서 초기화합니다.
+ * DashboardShell 위에 soul-dashboard 전용 훅과 컴포넌트를 조합합니다.
+ * 레이아웃 구조(3패널 리사이즈, 모바일 반응형)는 DashboardShell이 담당합니다.
  */
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { FolderTree } from "./components/FolderTree";
 import { FolderContents } from "./components/FolderContents";
 import { SessionsTopBar } from "./components/SessionsTopBar";
@@ -26,135 +26,13 @@ import { useUrlSync } from "./hooks/useUrlSync";
 import { useDashboardConfig } from "./hooks/useDashboardConfig";
 import { useServerStatus } from "./hooks/useServerStatus";
 import {
+  DashboardShell,
   RightPanel,
   ChatView,
   initTheme,
-  useIsMobile,
   useDashboardStore,
-  cn,
-  Badge,
-  Sheet, SheetContent, SheetFooter,
-  Button,
+  ConnectionBadge,
 } from "@seosoyoung/soul-ui";
-import { Menu, Search } from "lucide-react";
-
-// === Constants ===
-
-/** 패널 기본 비율 (%) */
-const DEFAULT_LEFT = 20;
-const DEFAULT_RIGHT = 30;
-
-/** 패널 최소/최대 비율 (%) */
-const MIN_PANEL = 10;
-const MIN_CENTER = 20;
-
-// === Drag Handle ===
-
-function DragHandle({
-  onDrag,
-}: {
-  onDrag: (deltaPercent: number) => void;
-}) {
-  const dragging = useRef(false);
-  const lastX = useRef(0);
-  const onDragRef = useRef(onDrag);
-  onDragRef.current = onDrag;
-
-  const lineRef = useRef<HTMLDivElement>(null);
-
-  const onMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      dragging.current = true;
-      lastX.current = e.clientX;
-
-      const onMouseMove = (ev: MouseEvent) => {
-        if (!dragging.current) return;
-        const dx = ev.clientX - lastX.current;
-        lastX.current = ev.clientX;
-        const containerWidth = document.documentElement.clientWidth;
-        if (containerWidth > 0) {
-          onDragRef.current((dx / containerWidth) * 100);
-        }
-      };
-
-      const onMouseUp = () => {
-        dragging.current = false;
-        document.removeEventListener("mousemove", onMouseMove);
-        document.removeEventListener("mouseup", onMouseUp);
-        document.body.style.cursor = "";
-        document.body.style.userSelect = "";
-      };
-
-      document.addEventListener("mousemove", onMouseMove);
-      document.addEventListener("mouseup", onMouseUp);
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-    },
-    [],
-  );
-
-  return (
-    <div
-      onMouseDown={onMouseDown}
-      className="w-1 cursor-col-resize bg-transparent shrink-0 relative z-10"
-    >
-      <div
-        className="absolute inset-y-0 -left-[3px] -right-[3px]"
-        onMouseEnter={() => {
-          if (lineRef.current) {
-            lineRef.current.style.backgroundColor = "var(--node-user)";
-            lineRef.current.style.opacity = "0.5";
-          }
-        }}
-        onMouseLeave={() => {
-          if (lineRef.current) {
-            lineRef.current.style.backgroundColor = "var(--border)";
-            lineRef.current.style.opacity = "1";
-          }
-        }}
-      >
-        <div
-          ref={lineRef}
-          className="absolute inset-y-0 left-[3px] w-px transition-colors duration-150 bg-border"
-        />
-      </div>
-    </div>
-  );
-}
-
-// === Connection Status Badge ===
-
-const CONNECTION_CONFIG = {
-  disconnected: { label: "Idle", variant: "outline" as const, dotClass: "bg-muted-foreground" },
-  connecting: { label: "Connecting...", variant: "warning" as const, dotClass: "bg-accent-amber" },
-  connected: { label: "Live", variant: "success" as const, dotClass: "bg-success" },
-  error: { label: "Reconnecting...", variant: "error" as const, dotClass: "bg-accent-red" },
-};
-
-function ConnectionBadge({
-  status,
-}: {
-  status: "disconnected" | "connecting" | "connected" | "error";
-}) {
-  const config = CONNECTION_CONFIG[status];
-  const shouldPulse = status === "connected" || status === "connecting";
-
-  return (
-    <Badge data-testid="connection-badge" variant={config.variant} size="sm">
-      <span
-        className={cn(
-          "w-1.5 h-1.5 rounded-full",
-          config.dotClass,
-          shouldPulse && "animate-[pulse_2s_infinite]",
-        )}
-      />
-      {config.label}
-    </Badge>
-  );
-}
-
-// === Main Layout ===
 
 export function DashboardLayout() {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
@@ -201,190 +79,70 @@ export function DashboardLayout() {
       });
   }, [setSerendipityAvailable]);
 
-  // Config 모달 상태
+  // Config / Search 모달 상태
   const [configOpen, setConfigOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
 
-  // 패널 비율 상태 (%)
-  const [leftPercent, setLeftPercent] = useState(DEFAULT_LEFT);
-  const [rightPercent, setRightPercent] = useState(DEFAULT_RIGHT);
-
-  // 드래그 중 최신 값을 참조하기 위한 refs (stale closure 방지)
-  const leftRef = useRef(leftPercent);
-  leftRef.current = leftPercent;
-  const rightRef = useRef(rightPercent);
-  rightRef.current = rightPercent;
-
-  const handleLeftDrag = useCallback(
-    (delta: number) => {
-      setLeftPercent((prev) => {
-        const maxLeft = 100 - rightRef.current - MIN_CENTER;
-        return Math.max(MIN_PANEL, Math.min(maxLeft, prev + delta));
-      });
-    },
-    [],
-  );
-
-  const handleRightDrag = useCallback(
-    (delta: number) => {
-      setRightPercent((prev) => {
-        const maxRight = 100 - leftRef.current - MIN_CENTER;
-        return Math.max(MIN_PANEL, Math.min(maxRight, prev - delta));
-      });
-    },
-    [],
-  );
-
-  // 모바일 여부 및 사이드바 상태
-  const isMobile = useIsMobile();
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const mobileView = useDashboardStore((s) => s.mobileView);
-  const setMobileView = useDashboardStore((s) => s.setMobileView);
-
-  // PC 전환 시 Sheet 닫힘 + mobileView 리셋
-  useEffect(() => {
-    if (!isMobile) {
-      setIsSidebarOpen(false);
-      setMobileView("sessions");
-    }
-  }, [isMobile, setMobileView]);
-
-  // 세션 선택 시 Sheet 자동 닫힘
-  useEffect(() => {
-    if (activeSessionKey && isMobile) { setIsSidebarOpen(false); }
-  }, [activeSessionKey, isMobile]);
-
-  const centerPercent = Math.max(MIN_CENTER, 100 - leftPercent - rightPercent);
-
   return (
-    <div
-      data-testid="dashboard-layout"
-      className="flex flex-col w-screen h-dvh bg-background text-foreground font-sans overflow-hidden"
-    >
-      {/* Top bar */}
-      <header className="flex items-center justify-between px-4 h-10 border-b border-border bg-popover shrink-0">
-        <div className="flex items-center gap-3">
-          {isMobile && (
-            <Button
-              data-testid="hamburger-button"
-              variant="ghost"
-              size="icon"
-              onClick={() => setIsSidebarOpen(true)}
-            >
-              <Menu className="h-5 w-5" />
-            </Button>
-          )}
-          <span className="text-[14px] font-semibold text-muted-foreground tracking-[0.02em]">
-            Soul Dashboard
-          </span>
-        </div>
-        {!isMobile && (
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" onClick={() => setSearchOpen(true)}>
-              <Search className="h-4 w-4" />
-            </Button>
-            <ThemeToggle />
-            <ConfigButton onClick={() => setConfigOpen(true)} />
-            <StorageModeToggleCompact />
-            <ConnectionBadge status={sseStatus} />
-          </div>
-        )}
-      </header>
-
-      {/* Draining 배너: 서버 재시작 중일 때 표시 */}
-      {isDraining && (
-        <div
-          role="status"
-          className="flex items-center justify-center px-4 py-1.5 text-sm font-medium bg-accent-amber text-black shrink-0"
-        >
-          서버가 재시작 중입니다. 재시작 완료 후 세션이 자동으로 재개됩니다.
-        </div>
-      )}
-
-      {isMobile ? (
+    <DashboardShell
+      title="Soul Dashboard"
+      leftPanel={<FolderTree />}
+      centerPanel={
         <>
-          {/* 모바일: Sheet 슬라이드 사이드바 */}
-          <Sheet open={isSidebarOpen} onOpenChange={setIsSidebarOpen}>
-            <SheetContent side="left" showCloseButton={false}>
-              <FolderTree />
-              <SheetFooter className="border-t border-border p-3 flex flex-row items-center gap-2">
-                <ThemeToggle />
-                <StorageModeToggleCompact />
-                <ConnectionBadge status={sseStatus} />
-              </SheetFooter>
-            </SheetContent>
-          </Sheet>
-          {/* 모바일: mobileView에 따른 뷰 전환 */}
-          <main data-testid="mobile-main" className="flex-1 overflow-hidden flex flex-col">
-            {mobileView === "sessions" && (
-              <>
-                <SessionsTopBar />
-                <FolderContents />
-              </>
-            )}
-            {mobileView === "chat" && (
-              <>
-                <MobileChatHeader onBack={() => setMobileView("sessions")} />
-                <ChatView />
-              </>
-            )}
-          </main>
+          <SessionsTopBar />
+          <VerticalSplitPane
+            className="flex-1 overflow-hidden"
+            top={<FolderContents />}
+            bottom={
+              <div className="flex-1 overflow-hidden h-full bg-muted/50 dark:bg-muted/30">
+                <NodeGraph />
+              </div>
+            }
+          />
         </>
-      ) : (
-        /* 데스크탑: 3-Panel content */
-        <div className="flex flex-1 overflow-hidden">
-          {/* Left: Folder Tree */}
-          <aside
-            data-testid="session-panel"
-            className="overflow-hidden"
-            style={{ width: `${leftPercent}%` }}
+      }
+      rightPanel={<RightPanel />}
+      connectionStatus={sseStatus}
+      onSearchClick={() => setSearchOpen(true)}
+      headerRight={
+        <>
+          <ThemeToggle />
+          <ConfigButton onClick={() => setConfigOpen(true)} />
+          <StorageModeToggleCompact />
+        </>
+      }
+      banner={
+        isDraining ? (
+          <div
+            role="status"
+            className="flex items-center justify-center px-4 py-1.5 text-sm font-medium bg-accent-amber text-black shrink-0"
           >
-            <FolderTree />
-          </aside>
-
-          {/* Left drag handle */}
-          <DragHandle onDrag={handleLeftDrag} />
-
-          {/* Center: SessionsTopBar + VerticalSplitPane (top: sessions, bottom: graph) */}
-          <main
-            data-testid="graph-panel"
-            className="overflow-hidden flex flex-col"
-            style={{ width: `${centerPercent}%` }}
-          >
-            <SessionsTopBar />
-            <VerticalSplitPane
-              className="flex-1 overflow-hidden"
-              top={<FolderContents />}
-              bottom={
-                <div className="flex-1 overflow-hidden h-full bg-muted/50 dark:bg-muted/30">
-                  <NodeGraph />
-                </div>
-              }
-            />
-          </main>
-
-          {/* Right drag handle */}
-          <DragHandle onDrag={handleRightDrag} />
-
-          {/* Right: Detail + Chat */}
-          <aside
-            data-testid="detail-panel"
-            className="overflow-hidden"
-            style={{ width: `${rightPercent}%` }}
-          >
-            <RightPanel />
-          </aside>
-        </div>
-      )}
-
-      {/* Config Modal */}
-      <ConfigModal open={configOpen} onOpenChange={setConfigOpen} />
-
-      {/* Search Modal */}
-      <SearchModal open={searchOpen} onOpenChange={setSearchOpen} />
-
-      {/* New Session Modal */}
-      <NewSessionModal />
-    </div>
+            서버가 재시작 중입니다. 재시작 완료 후 세션이 자동으로 재개됩니다.
+          </div>
+        ) : undefined
+      }
+      mobileSessionsView={
+        <>
+          <SessionsTopBar />
+          <FolderContents />
+        </>
+      }
+      mobileChatHeader={(onBack) => <MobileChatHeader onBack={onBack} />}
+      mobileChatView={<ChatView />}
+      mobileSheetFooter={
+        <>
+          <ThemeToggle />
+          <StorageModeToggleCompact />
+          <ConnectionBadge status={sseStatus} />
+        </>
+      }
+      modals={
+        <>
+          <ConfigModal open={configOpen} onOpenChange={setConfigOpen} />
+          <SearchModal open={searchOpen} onOpenChange={setSearchOpen} />
+          <NewSessionModal />
+        </>
+      }
+    />
   );
 }
