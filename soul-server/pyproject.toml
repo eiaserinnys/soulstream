@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Soulstream - Claude Code remote execution server"
 requires-python = ">=3.11"
 dependencies = [
+    "soul-common",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
     "pydantic>=2.0.0",
