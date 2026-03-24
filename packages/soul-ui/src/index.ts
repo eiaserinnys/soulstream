@@ -8,7 +8,7 @@
 export { NODE_COLORS } from "./styles/node-colors";
 
 // === Shared Constants ===
-export { SYSTEM_FOLDERS, DEFAULT_FOLDER_KEY } from "./shared/constants";
+export { SYSTEM_FOLDERS, DEFAULT_FOLDER_KEY, SSE_EVENT_TYPES } from "./shared/constants";
 
 // === Shared Types ===
 export type {
@@ -38,6 +38,7 @@ export type {
   InputRequestQuestion,
   InputRequestEvent,
   InputRequestExpiredEvent,
+  InputRequestRespondedEvent,
   AssistantMessageEvent,
   SoulSSEEvent,
   EventRecord,
@@ -83,6 +84,9 @@ export type {
 
 // === Shared Mappers ===
 export { toSessionSummary } from "./shared/mappers";
+
+// === SSE Session Provider ===
+export { SSESessionProvider, sseSessionProvider } from "./providers/SSESessionProvider";
 
 // === Provider Types ===
 export type {

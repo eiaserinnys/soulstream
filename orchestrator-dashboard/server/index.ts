@@ -18,8 +18,13 @@ import { fileURLToPath } from "url";
 import express from "express";
 import session from "express-session";
 import passport from "passport";
+import connectPgSimple from "connect-pg-simple";
+import pg from "pg";
 import { createProxyMiddleware } from "http-proxy-middleware";
 import { configurePassport, ensureAuthenticated } from "./auth.js";
+import { OrchestratorSessionDB } from "./db/session-db.js";
+import { createEventsCachedRouter } from "./routes/events-cached.js";
+import { createCatalogRouter } from "./routes/catalog.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -36,9 +41,22 @@ if (!ORCH_GOOGLE_CALLBACK_URL) throw new Error("ORCH_GOOGLE_CALLBACK_URL is requ
 if (!ORCH_SESSION_SECRET) throw new Error("ORCH_SESSION_SECRET is required");
 if (!ORCH_ALLOWED_EMAIL) throw new Error("ORCH_ALLOWED_EMAIL is required");
 
-const PORT = parseInt(process.env.ORCH_PORT ?? "3200", 10);
-const SOUL_STREAM_URL = process.env.SOUL_STREAM_URL ?? "http://localhost:5200";
-const DIST_DIR = process.env.ORCH_DIST_DIR ?? resolve(__dirname, "../dist");
+const ORCH_PORT_STR = process.env.ORCH_PORT;
+const SOUL_STREAM_URL = process.env.SOUL_STREAM_URL;
+const DIST_DIR = process.env.ORCH_DIST_DIR;
+const DATABASE_URL = process.env.DATABASE_URL;
+const isProduction = process.env.NODE_ENV === "production";
+
+if (!ORCH_PORT_STR) throw new Error("ORCH_PORT is required");
+if (!SOUL_STREAM_URL) throw new Error("SOUL_STREAM_URL is required");
+if (!DIST_DIR) throw new Error("ORCH_DIST_DIR is required");
+if (!DATABASE_URL) throw new Error("DATABASE_URL is required");
+
+const PORT = parseInt(ORCH_PORT_STR, 10);
+
+const PgSession = connectPgSimple(session);
+const pgPool = new pg.Pool({ connectionString: DATABASE_URL });
+const db = new OrchestratorSessionDB(pgPool);
 
 const app = express();
 
@@ -46,10 +64,15 @@ const app = express();
 
 app.use(
   session({
+    store: new PgSession({
+      pool: pgPool,
+      createTableIfMissing: true,
+      tableName: "orchestrator_sessions", // soul-stream DB 테이블과 충돌 방지
+    }),
     secret: ORCH_SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
-    cookie: { secure: false, maxAge: 7 * 24 * 60 * 60 * 1000 }, // 7일
+    cookie: { secure: isProduction, maxAge: 7 * 24 * 60 * 60 * 1000 }, // 7일
   }),
 );
 
@@ -119,6 +142,11 @@ app.get("/login", (req, res) => {
     </html>
   `);
 });
+
+// ── BFF 전용 /api 라우트 (인증 필요, 투명 프록시 앞에 등록) ─────────────
+
+app.use("/api", ensureAuthenticated, createEventsCachedRouter(db, SOUL_STREAM_URL));
+app.use("/api", ensureAuthenticated, createCatalogRouter(db));
 
 // ── /api 프록시 (인증 필요) ───────────────────────────────────────────────
 

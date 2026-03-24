@@ -9,6 +9,8 @@ export default defineConfig({
   resolve: {
     alias: {
       "@seosoyoung/soul-ui": resolve(__dirname, "../packages/soul-ui/src"),
+      // soul-ui 내부 @shared/* alias: soul-ui 소스를 직접 참조할 때 필요
+      "@shared": resolve(__dirname, "../packages/soul-ui/src/shared"),
       "client": resolve(__dirname, "client"),
       // soul-ui 소스를 직접 alias로 참조할 때 soul-ui의 peer/deps를 찾을 수 있도록 명시적 alias 추가.
       // pnpm의 node_modules 구조상 Rollup이 packages/soul-ui/node_modules를 자동으로 탐색하지 않음.
