@@ -87,10 +87,6 @@ async def lifespan(app: FastAPI):
         )
         app.include_router(auth_router)
 
-    # Dashboard
-    if settings.dashboard_dir:
-        mount_dashboard(app, settings.dashboard_dir)
-
     logger.info(
         "soulstream-server started on %s:%d", settings.host, settings.port
     )
@@ -119,6 +115,11 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Dashboard (미들웨어 등록은 앱 시작 전에 해야 함)
+    settings = get_settings()
+    if settings.dashboard_dir:
+        mount_dashboard(app, settings.dashboard_dir)
 
     # WebSocket 엔드포인트
     @app.websocket("/ws/node")
