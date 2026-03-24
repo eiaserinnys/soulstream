@@ -153,6 +153,34 @@ export { AskQuestionBanner } from "./components/AskQuestionBanner";
 export { ProfileAvatar } from "./components/ProfileAvatar";
 export { ContextContentRenderer } from "./components/ContextContentRenderer";
 
+// === Dashboard Layout ===
+export { DashboardLayout } from "./components/DashboardLayout";
+export type { DashboardLayoutProps } from "./components/DashboardLayout";
+
+// === Dashboard Components (extracted from soul-dashboard) ===
+export { FolderContents } from "./components/FolderContents";
+export { SessionsTopBar } from "./components/SessionsTopBar";
+export { VerticalSplitPane } from "./components/VerticalSplitPane";
+export { MobileChatHeader } from "./components/MobileChatHeader";
+export { ThemeToggle } from "./components/ThemeToggle";
+export { StorageModeToggle, StorageModeToggleCompact } from "./components/StorageModeToggle";
+export { ConfigButton } from "./components/ConfigButton";
+
+// === Dashboard Hooks (extracted from soul-dashboard) ===
+export { useSessionListProvider } from "./hooks/useSessionListProvider";
+export type { UseSessionListProviderOptions } from "./hooks/useSessionListProvider";
+export { useSessionProvider } from "./hooks/useSessionProvider";
+export type { UseSessionProviderOptions } from "./hooks/useSessionProvider";
+export { useReadPositionSync } from "./hooks/useReadPositionSync";
+export { useNotification } from "./hooks/useNotification";
+export { useUrlSync } from "./hooks/useUrlSync";
+export { useDashboardConfig } from "./hooks/useDashboardConfig";
+export { useServerStatus } from "./hooks/useServerStatus";
+
+// === Dashboard Lib (extracted from soul-dashboard) ===
+export { moveSessionsOptimistic } from "./lib/move-sessions";
+export { renameSessionOptimistic } from "./lib/rename-session";
+
 // === Detail Components ===
 export { ErrorDetail } from "./components/detail/ErrorDetail";
 export { SubAgentDetail } from "./components/detail/SubAgentDetail";
