@@ -85,6 +85,7 @@ export function ContextContentRenderer({ content }: ContextContentRendererProps)
 
   if (typeof content === "object") {
     // plain object → key-value 2컬럼 테이블
+    // val이 중첩 객체/배열일 수 있으므로 ContextContentRenderer로 재귀 렌더링
     const entries = Object.entries(content as Record<string, unknown>);
     return (
       <div className="overflow-x-auto flex-1">
@@ -93,7 +94,9 @@ export function ContextContentRenderer({ content }: ContextContentRendererProps)
             {entries.map(([key, val]) => (
               <tr key={key}>
                 <td className="border border-gray-200 px-2 py-1 bg-gray-50 font-medium text-gray-600 whitespace-nowrap">{key}</td>
-                <td className="border border-gray-200 px-2 py-1 text-gray-700">{String(val)}</td>
+                <td className="border border-gray-200 px-2 py-1 text-gray-700">
+                  <ContextContentRenderer content={val} />
+                </td>
               </tr>
             ))}
           </tbody>
