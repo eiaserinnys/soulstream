@@ -25,6 +25,21 @@ function writeTypedSSEWithId(
   res.write(`${idLine}event: ${eventType}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
+// soul-ui SSESessionProvider.ts 기준 허용 이벤트 타입 목록
+// 설계 기술 부채: soul-ui의 SSE_EVENT_TYPES와 동일한 목록을 중복 관리함.
+// 향후 순수 타입/상수 공용 패키지(@seosoyoung/soul-types)로 통합 예정.
+const KNOWN_SSE_EVENT_TYPES = new Set<string>([
+  "init", "reconnected",
+  "progress", "memory", "session", "intervention_sent", "user_message",
+  "assistant_message", "input_request", "input_request_expired",
+  "input_request_responded", "debug", "complete", "error",
+  "thinking", "text_start", "text_delta", "text_end",
+  "tool_start", "tool_result", "result",
+  "subagent_start", "subagent_stop",
+  "context_usage", "compact", "reconnect", "history_sync",
+  "metadata_updated",
+]);
+
 export function createSessionsRouter(
   nodeManager: NodeManager,
   sessionDB: SessionDB
@@ -141,8 +156,12 @@ export function createSessionsRouter(
     const unsubscribe = node.subscribeEvents(
       sessionId,
       lastEventId,
-      (event: SessionEvent, eventId: number) =>
-        writeTypedSSEWithId(res, event.type, event, eventId)
+      (event: SessionEvent, eventId: number) => {
+        if (!KNOWN_SSE_EVENT_TYPES.has(event.type)) {
+          console.warn(`[soul-stream] 알 수 없는 SSE 이벤트 타입: ${event.type}`);
+        }
+        writeTypedSSEWithId(res, event.type, event, eventId);
+      }
     );
 
     req.on("close", () => {
