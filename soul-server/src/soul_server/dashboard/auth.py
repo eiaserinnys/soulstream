@@ -1,62 +1,24 @@
 """
-Dashboard 인증 — Google OAuth JWT 쿠키 기반
+Dashboard 인증 — soul-common re-export 래퍼
 
-GOOGLE_CLIENT_ID가 설정되어 있으면 인증 활성, 미설정이면 바이패스.
-JWT는 httpOnly 쿠키(soul_dashboard_auth)로 전달되며,
-Authorization Bearer 헤더도 폴백으로 지원한다.
+JWT 유틸(generate_token, verify_token)은 soul_common.auth.jwt에 위치한다.
+require_dashboard_auth는 soul-server의 Settings에 의존하므로 여기에 유지한다.
 """
 
-from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-import jwt
 from fastapi import HTTPException, Request
 
+# soul-common re-export
+from soul_common.auth.jwt import (  # noqa: F401
+    COOKIE_NAME,
+    JWT_ALGORITHM,
+    JWT_EXPIRES_DAYS,
+    generate_token,
+    verify_token,
+)
+
 from soul_server.config import get_settings
-
-# 쿠키 이름 (프론트엔드와 일치)
-COOKIE_NAME = "soul_dashboard_auth"
-
-# JWT 설정
-JWT_ALGORITHM = "HS256"
-JWT_EXPIRES_DAYS = 7
-
-
-def generate_token(user: dict, secret: str, expires_days: int = JWT_EXPIRES_DAYS) -> str:
-    """사용자 정보로 JWT를 생성한다.
-
-    Args:
-        user: email, name, picture 키를 포함하는 dict
-        secret: JWT 서명 키
-        expires_days: 만료 기간 (일)
-
-    Returns:
-        JWT 문자열
-    """
-    payload = {
-        "sub": user["email"],
-        "email": user["email"],
-        "name": user.get("name", ""),
-        "picture": user.get("picture", ""),
-        "exp": datetime.now(timezone.utc) + timedelta(days=expires_days),
-    }
-    return jwt.encode(payload, secret, algorithm=JWT_ALGORITHM)
-
-
-def verify_token(token: str, secret: str) -> Optional[dict]:
-    """JWT를 검증하고 페이로드를 반환한다.
-
-    Args:
-        token: JWT 문자열
-        secret: JWT 서명 키
-
-    Returns:
-        검증 성공 시 페이로드 dict, 실패 시 None
-    """
-    try:
-        return jwt.decode(token, secret, algorithms=[JWT_ALGORITHM])
-    except jwt.PyJWTError:
-        return None
 
 
 async def require_dashboard_auth(request: Request) -> Optional[dict]:

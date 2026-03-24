@@ -20,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from soul_server.api import attachments_router, dashboard_router, create_sessions_router
 from soul_server.dashboard.session_cache import SessionCache
 from soul_server.dashboard.api_router import router as dash_api_router
-from soul_server.dashboard.auth_routes import router as dash_auth_router
+from soul_server.dashboard.auth_routes import create_soul_server_auth_router
 from soul_server.api.tasks import router as tasks_router
 from soul_server.api.credentials import create_credentials_router
 from soul_server.api.llm import create_llm_router
@@ -35,7 +35,7 @@ from soul_server.claude.agent_runner import ClaudeRunner
 from soul_server.service.runner_pool import RunnerPool
 from soul_server.service.task_manager import get_task_manager, TaskManager, set_task_manager
 from soul_server.service.session_broadcaster import init_session_broadcaster
-from soul_server.service.postgres_session_db import PostgresSessionDB, init_session_db, get_session_db
+from soul_server.service.postgres_session_db import PostgresSessionDB, create_soul_server_session_db, init_session_db, get_session_db
 from soul_server.models import HealthResponse
 from cogito.endpoint import mount_cogito as _mount_cogito
 from soul_server.cogito.mcp_tools import cogito_mcp, cogito_api_router, init as init_cogito_mcp
@@ -221,7 +221,7 @@ async def lifespan(app: FastAPI):
 
     # PostgresSessionDB 초기화
     data_dir = Path(settings.data_dir)
-    session_db = PostgresSessionDB(
+    session_db = create_soul_server_session_db(
         database_url=settings.database_url,
         node_id=settings.soulstream_node_id,
     )
@@ -604,7 +604,7 @@ claude_auth_router = create_claude_auth_router(session_manager=auth_session_mana
 app.include_router(claude_auth_router, prefix="/auth/claude", tags=["claude-auth"])
 
 # Dashboard Auth 라우터 (인증 불필요 — 공개 엔드포인트)
-app.include_router(dash_auth_router)
+app.include_router(create_soul_server_auth_router())
 
 # Dashboard /api/* 라우터 (기존 dashboard_router와 별개 변수명)
 # 등록 순서: GET /api/sessions/stream이 GET /api/sessions/{id}/events보다 먼저 매칭되도록

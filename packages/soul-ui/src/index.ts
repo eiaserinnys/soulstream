@@ -176,6 +176,8 @@ export { MobileChatHeader } from "./components/MobileChatHeader";
 export { ThemeToggle } from "./components/ThemeToggle";
 export { StorageModeToggle, StorageModeToggleCompact } from "./components/StorageModeToggle";
 export { ConfigButton } from "./components/ConfigButton";
+export { NewSessionDialog } from "./components/NewSessionDialog";
+export type { NewSessionDialogProps } from "./components/NewSessionDialog";
 
 // === Dashboard Hooks (extracted from soul-dashboard) ===
 export { useSessionListProvider } from "./hooks/useSessionListProvider";
