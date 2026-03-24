@@ -1,11 +1,8 @@
 /**
  * useCatalog — FolderTree 카탈로그 초기화 훅.
  *
- * /api/folders (폴더 목록) + /api/sessions (세션-폴더 배정)을 조합하여
+ * Phase 2에서 구현된 BFF /api/catalog 엔드포인트를 사용하여
  * soul-ui dashboard-store의 CatalogState를 초기화한다.
- *
- * soul-dashboard의 /api/catalog 통합 엔드포인트와 달리,
- * soul-stream은 별도 엔드포인트를 제공하므로 두 번의 fetch로 합성한다.
  */
 
 import { useEffect, useRef } from "react";
@@ -20,34 +17,30 @@ export function useCatalog() {
 
     async function loadCatalog() {
       try {
-        const [foldersRes, sessionsRes] = await Promise.all([
-          fetch("/api/folders"),
-          fetch("/api/sessions"),
-        ]);
-
-        if (!foldersRes.ok || !sessionsRes.ok) return;
+        const response = await fetch("/api/catalog");
+        if (!response.ok) return;
         if (!mountedRef.current) return;
 
-        const foldersData = await foldersRes.json();
-        const sessionsData = await sessionsRes.json();
+        const { folders: rawFolders, sessions: rawSessions } = await response.json();
 
         if (!mountedRef.current) return;
 
         // CatalogState 조합
-        const folders: CatalogState["folders"] = (foldersData.folders ?? []).map(
-          (f: { id: string; name: string; parentId?: string | null }) => ({
+        const folders: CatalogState["folders"] = (rawFolders ?? []).map(
+          (f: { id: string; name: string; parent_id?: string | null }) => ({
             id: f.id,
             name: f.name,
-            parentId: f.parentId ?? null,
+            parentId: f.parent_id ?? null,
           })
         );
 
         // sessions → CatalogAssignment 매핑
+        // BFF 응답: { session_id, node_id, folder_id, status, created_at, updated_at }
         const sessions: CatalogState["sessions"] = {};
-        for (const s of sessionsData.sessions ?? []) {
-          sessions[s.sessionId as string] = {
-            sessionId: s.sessionId as string,
-            folderId: (s.folderId as string | null) ?? null,
+        for (const s of rawSessions ?? []) {
+          sessions[s.session_id as string] = {
+            sessionId: s.session_id as string,
+            folderId: (s.folder_id as string | null) ?? null,
           };
         }
 
@@ -63,8 +56,8 @@ export function useCatalog() {
             useDashboardStore.getState().selectFolder(defaultFolderId);
           }
         }
-      } catch {
-        // 카탈로그 로드 실패: FolderTree가 빈 상태로 렌더링됨
+      } catch (err) {
+        console.error("[useCatalog] 카탈로그 로드 실패:", err);
       }
     }
 
