@@ -29,6 +29,7 @@ class SessionBroadcaster:
             try:
                 q.put_nowait(event)
             except asyncio.QueueFull:
+                logger.warning("SSE client queue full, disconnecting")
                 dead.append(q)
         for q in dead:
             try:

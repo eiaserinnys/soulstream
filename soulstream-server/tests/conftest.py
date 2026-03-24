@@ -1,7 +1,21 @@
 """Common test fixtures for soulstream-server tests."""
 
 import asyncio
+import os
 from unittest.mock import AsyncMock, MagicMock, patch
+
+
+def pytest_configure(config):
+    """Set required environment variables for Settings validation."""
+    defaults = {
+        "HOST": "0.0.0.0",
+        "PORT": "5200",
+        "DATABASE_URL": "postgresql://test:test@localhost:5432/test",
+        "ENVIRONMENT": "test",
+    }
+    for key, value in defaults.items():
+        if key not in os.environ:
+            os.environ[key] = value
 
 import pytest
 from fastapi import FastAPI

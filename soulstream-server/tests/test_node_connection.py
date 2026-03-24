@@ -42,7 +42,7 @@ class TestHandleMessage:
 
     async def test_session_created_resolves_pending_future(self, node):
         """session_created with matching requestId resolves the pending future."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         future = loop.create_future()
         node._pending["req-1-1000"] = future
 
@@ -59,7 +59,7 @@ class TestHandleMessage:
 
     async def test_error_rejects_pending_future(self, node):
         """error message with matching requestId sets exception on the future."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         future = loop.create_future()
         node._pending["req-2-2000"] = future
 
@@ -245,7 +245,7 @@ class TestClose:
 
     async def test_close_cancels_pending_futures(self, node, ws):
         """close() cancels all pending futures and clears listeners."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         future = loop.create_future()
         node._pending["req-1"] = future
         node._subscribe_listeners["sess-1"] = {"sub-1": AsyncMock()}

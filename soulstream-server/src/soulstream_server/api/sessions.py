@@ -156,7 +156,7 @@ def create_sessions_router(
                 try:
                     queue.put_nowait(data)
                 except asyncio.QueueFull:
-                    pass
+                    logger.warning("SSE queue full for session %s, dropping event", session_id)
 
             subscribe_id = await node.send_subscribe_events(session_id, on_event)
             try:
