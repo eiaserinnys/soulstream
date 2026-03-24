@@ -98,7 +98,7 @@ class NodeConnection:
         self, command: str, payload: dict, timeout: float = COMMAND_TIMEOUT
     ) -> dict:
         request_id = self._next_request_id()
-        future: asyncio.Future[dict] = asyncio.get_event_loop().create_future()
+        future: asyncio.Future[dict] = asyncio.get_running_loop().create_future()
         self._pending[request_id] = future
 
         message = {"type": command, "requestId": request_id, **payload}
