@@ -6,8 +6,9 @@
  */
 
 import { useState, useEffect } from "react";
-import { FolderTree } from "./components/FolderTree";
 import { FolderContents } from "./components/FolderContents";
+import { createFolder, renameFolderOptimistic, deleteFolderOptimistic } from "./lib/folder-operations";
+import { moveSessionsOptimistic } from "./lib/move-sessions";
 import { SessionsTopBar } from "./components/SessionsTopBar";
 import { MobileChatHeader } from "./components/MobileChatHeader";
 import { VerticalSplitPane } from "./components/VerticalSplitPane";
@@ -27,6 +28,7 @@ import { useDashboardConfig } from "./hooks/useDashboardConfig";
 import { useServerStatus } from "./hooks/useServerStatus";
 import {
   DashboardShell,
+  FolderTree,
   RightPanel,
   ChatView,
   initTheme,
@@ -86,7 +88,14 @@ export function DashboardLayout() {
   return (
     <DashboardShell
       title="Soul Dashboard"
-      leftPanel={<FolderTree />}
+      leftPanel={
+        <FolderTree
+          onMoveSessions={moveSessionsOptimistic}
+          onCreateFolder={createFolder}
+          onRenameFolder={renameFolderOptimistic}
+          onDeleteFolder={deleteFolderOptimistic}
+        />
+      }
       centerPanel={
         <>
           <SessionsTopBar />
