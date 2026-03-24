@@ -3,7 +3,7 @@
  */
 
 import { NODE_COLORS, cn } from "@seosoyoung/soul-ui";
-import type { OrchestratorNode } from "../store/types";
+import type { OrchestratorNode } from "../store/orchestrator-store";
 
 function nodeInitial(nodeId: string): string {
   const parts = nodeId.split("-");

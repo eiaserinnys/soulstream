@@ -1,5 +1,5 @@
 /**
- * NewSessionDialog — 새 세션 생성 다이얼로그.
+ * NewSessionDialog -- 새 세션 생성 다이얼로그.
  *
  * 노드 선택 드롭다운 + 프롬프트 입력.
  * 특정 노드에서 호출하면 해당 노드로 고정.
@@ -20,6 +20,7 @@ import {
   SelectValue,
   SelectPopup,
   SelectItem,
+  useDashboardStore,
 } from "@seosoyoung/soul-ui";
 import { useOrchestratorStore } from "../store/orchestrator-store";
 
@@ -31,7 +32,6 @@ interface NewSessionDialogProps {
 
 export function NewSessionDialog({ nodeId, nodeColor }: NewSessionDialogProps) {
   const nodes = useOrchestratorStore((s) => s.nodes);
-  const selectSession = useOrchestratorStore((s) => s.selectSession);
 
   const [open, setOpen] = useState(false);
   const [prompt, setPrompt] = useState("");
@@ -65,7 +65,8 @@ export function NewSessionDialog({ nodeId, nodeColor }: NewSessionDialogProps) {
       const { sessionId } = await res.json();
       setOpen(false);
       setPrompt("");
-      selectSession(targetNode, sessionId);
+      // 생성된 세션을 활성화
+      useDashboardStore.getState().setActiveSession(sessionId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -80,24 +81,24 @@ export function NewSessionDialog({ nodeId, nodeColor }: NewSessionDialogProps) {
           className="text-[10px] font-mono text-muted-foreground/40 hover:text-muted-foreground/70 py-1 transition-colors"
           style={nodeColor ? { color: `color-mix(in srgb, ${nodeColor} 50%, transparent)` } : undefined}
         >
-          + 새 세션
+          + New Session
         </button>
       </DialogTrigger>
       <DialogPopup className="max-w-md">
         <DialogHeader>
-          <DialogTitle>새 세션 생성</DialogTitle>
+          <DialogTitle>New Session</DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col gap-4 mt-4">
-          {/* 노드 선택 — nodeId가 고정되지 않은 경우 */}
+          {/* Node selection -- shown when nodeId is not fixed */}
           {!nodeId && (
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-medium text-muted-foreground">
-                노드
+                Node
               </label>
               <Select value={selectedNodeId} onValueChange={setSelectedNodeId}>
                 <SelectTrigger>
-                  <SelectValue placeholder="노드 선택…" />
+                  <SelectValue placeholder="Select a node..." />
                 </SelectTrigger>
                 <SelectPopup>
                   {aliveNodes.map((n) => (
@@ -113,11 +114,11 @@ export function NewSessionDialog({ nodeId, nodeColor }: NewSessionDialogProps) {
             </div>
           )}
 
-          {/* 노드가 고정인 경우 표시만 */}
+          {/* Fixed node display */}
           {nodeId && (
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-medium text-muted-foreground">
-                노드
+                Node
               </label>
               <div
                 className="text-sm font-mono px-3 py-2 rounded-md bg-muted border border-input"
@@ -128,15 +129,15 @@ export function NewSessionDialog({ nodeId, nodeColor }: NewSessionDialogProps) {
             </div>
           )}
 
-          {/* 프롬프트 */}
+          {/* Prompt */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-muted-foreground">
-              프롬프트
+              Prompt
             </label>
             <Textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder="세션에 전달할 프롬프트를 입력하세요…"
+              placeholder="Enter the prompt for the session..."
               rows={4}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
@@ -153,7 +154,7 @@ export function NewSessionDialog({ nodeId, nodeColor }: NewSessionDialogProps) {
           <div className="flex justify-end gap-2">
             <DialogClose asChild>
               <Button variant="outline" size="sm">
-                취소
+                Cancel
               </Button>
             </DialogClose>
             <Button
@@ -161,7 +162,7 @@ export function NewSessionDialog({ nodeId, nodeColor }: NewSessionDialogProps) {
               onClick={handleSubmit}
               disabled={loading || !prompt.trim() || (!nodeId && !selectedNodeId)}
             >
-              {loading ? "생성 중…" : "세션 생성"}
+              {loading ? "Creating..." : "Create Session"}
             </Button>
           </div>
         </div>
