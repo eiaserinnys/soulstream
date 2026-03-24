@@ -210,11 +210,18 @@ export class SessionDB {
    * 폴더 삭제. 해당 폴더의 세션 folder_id를 NULL로 초기화 후 삭제.
    */
   async deleteFolder(id: string): Promise<void> {
-    await this.pool.query(
-      `UPDATE sessions SET folder_id = NULL WHERE folder_id = $1`,
-      [id]
-    )
-    await this.pool.query(`DELETE FROM folders WHERE id = $1`, [id])
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      await client.query(`UPDATE sessions SET folder_id = NULL WHERE folder_id = $1`, [id])
+      await client.query(`DELETE FROM folders WHERE id = $1`, [id])
+      await client.query('COMMIT')
+    } catch (err) {
+      await client.query('ROLLBACK')
+      throw err
+    } finally {
+      client.release()
+    }
   }
 
   /**
