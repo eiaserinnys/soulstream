@@ -2,21 +2,18 @@
  * useSessionStream — ChatPanel용 SSE 세션 이벤트 구독 훅.
  *
  * orchestrator-store의 selectedSessionId를 dashboard-store의 activeSessionKey로 동기화.
- * SoulstreamSessionProvider를 통해 SSE 구독 + 배치 이벤트 처리.
+ * soul-ui sseSessionProvider를 통해 SSE 구독 + 배치 이벤트 처리.
  */
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
   useDashboardStore,
+  sseSessionProvider as provider,
   BATCH_SIZE,
   BATCH_FLUSH_MS,
 } from "@seosoyoung/soul-ui";
 import type { SoulSSEEvent, SessionSummary, SessionStatus } from "@seosoyoung/soul-ui";
 import { useOrchestratorStore } from "../store/orchestrator-store";
-import { SoulstreamSessionProvider } from "../providers/SoulstreamSessionProvider";
-
-/** 모듈 레벨 싱글턴 */
-const provider = new SoulstreamSessionProvider();
 
 type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 
