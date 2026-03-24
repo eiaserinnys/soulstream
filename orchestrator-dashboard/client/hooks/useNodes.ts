@@ -1,10 +1,10 @@
 /**
- * SSE 훅 — /api/nodes/stream 에서 노드 변경 이벤트를 수신.
+ * SSE hook -- /api/nodes/stream 에서 노드 변경 이벤트를 수신.
  */
 
 import { useEffect, useRef } from "react";
 import { useOrchestratorStore } from "../store/orchestrator-store";
-import type { OrchestratorNode } from "../store/types";
+import type { OrchestratorNode } from "../store/orchestrator-store";
 
 export function useNodes() {
   const { setNode, removeNode, setNodes, setConnectionStatus } =
@@ -47,7 +47,7 @@ export function useNodes() {
       es.onerror = () => {
         es?.close();
         setConnectionStatus("error");
-        // 지수 백오프 재연결
+        // Exponential backoff reconnect
         const delay = Math.min(1000 * 2 ** retryRef.current, 30000);
         retryRef.current++;
         setTimeout(connect, delay);
