@@ -28,6 +28,10 @@ function writeTypedSSEWithId(
 // soul-ui SSESessionProvider.ts 기준 허용 이벤트 타입 목록
 // 설계 기술 부채: soul-ui의 SSE_EVENT_TYPES와 동일한 목록을 중복 관리함.
 // 향후 순수 타입/상수 공용 패키지(@seosoyoung/soul-types)로 통합 예정.
+//
+// init, reconnected는 soul-stream이 직접 emit하는 시스템 이벤트로,
+// soul-ui의 SSE_EVENT_TYPES(클라이언트 핸들링 대상)에서 의도적으로 제외된다.
+// 여기서는 미등록 이벤트 경고 감지를 위해 포함한다.
 const KNOWN_SSE_EVENT_TYPES = new Set<string>([
   "init", "reconnected",
   "progress", "memory", "session", "intervention_sent", "user_message",

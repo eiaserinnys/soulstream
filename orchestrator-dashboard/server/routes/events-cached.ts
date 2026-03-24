@@ -47,7 +47,8 @@ export function createEventsCachedRouter(
       upstreamRes = await fetch(upstreamUrl, {
         headers: { 'Last-Event-ID': String(lastId) },
       });
-    } catch (_err) {
+    } catch (err) {
+      console.error('[events-cached] upstream 연결 실패:', err);
       res.write(`event: error\ndata: ${JSON.stringify({ message: 'upstream_connect_failed' })}\n\n`);
       res.end();
       return;
