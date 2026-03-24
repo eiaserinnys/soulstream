@@ -55,10 +55,10 @@ async def handle_node_ws(ws: WebSocket, node_manager: NodeManager) -> None:
         )
         return
 
-    node_id = data.get("nodeId")
+    node_id = data.get("node_id")
     if not node_id:
-        logger.warning("node_register missing nodeId")
-        await ws.close(code=WS_CLOSE_NODE_ID_REQUIRED, reason="nodeId required")
+        logger.warning("node_register missing node_id")
+        await ws.close(code=WS_CLOSE_NODE_ID_REQUIRED, reason="node_id required")
         return
 
     # 등록

@@ -43,7 +43,7 @@ class NodeManager:
     async def register_node(
         self, ws: WebSocket, registration: dict
     ) -> NodeConnection:
-        node_id = registration["nodeId"]
+        node_id = registration["node_id"]
         host = registration.get("host", "")
         port = registration.get("port", 0)
         capabilities = registration.get("capabilities", [])

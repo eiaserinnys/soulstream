@@ -38,7 +38,7 @@ class TestNodeSnapshotFormat:
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
         await node_manager.register_node(ws, {
-            "nodeId": "n1",
+            "node_id": "n1",
             "host": "10.0.0.1",
             "port": 4100,
             "capabilities": ["session"],
@@ -70,7 +70,7 @@ class TestNodeSnapshotFormat:
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
         await node_manager.register_node(ws, {
-            "nodeId": "info-node",
+            "node_id": "info-node",
             "host": "localhost",
             "port": 4100,
             "capabilities": ["session"],

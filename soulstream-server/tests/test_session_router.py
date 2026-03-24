@@ -48,7 +48,7 @@ class TestRouting:
 
         ws.send_json.side_effect = resolve_on_send
 
-        node = await manager.register_node(ws, {"nodeId": "target-node"})
+        node = await manager.register_node(ws, {"node_id": "target-node"})
 
         session_id, node_id = await router.route_create_session({
             "nodeId": "target-node",
@@ -68,8 +68,8 @@ class TestRouting:
         ws2.send_json = AsyncMock()
         ws2.close = AsyncMock()
 
-        node1 = await manager.register_node(ws1, {"nodeId": "busy-node"})
-        node2 = await manager.register_node(ws2, {"nodeId": "idle-node"})
+        node1 = await manager.register_node(ws1, {"node_id": "busy-node"})
+        node2 = await manager.register_node(ws2, {"node_id": "idle-node"})
 
         # Give node1 more sessions
         node1._sessions["s1"] = {}
@@ -101,7 +101,7 @@ class TestRouting:
         ws = AsyncMock()
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
-        await manager.register_node(ws, {"nodeId": "other-node"})
+        await manager.register_node(ws, {"node_id": "other-node"})
 
         with pytest.raises(HTTPException) as exc_info:
             await router.route_create_session({

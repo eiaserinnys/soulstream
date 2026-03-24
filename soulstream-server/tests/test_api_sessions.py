@@ -86,7 +86,7 @@ class TestCreateSession:
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
 
-        node = await node_manager.register_node(ws, {"nodeId": "api-node"})
+        node = await node_manager.register_node(ws, {"node_id": "api-node"})
 
         async def resolve_on_send(data):
             req_id = data.get("requestId")
@@ -120,7 +120,7 @@ class TestCreateSession:
         ws = AsyncMock()
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
-        await node_manager.register_node(ws, {"nodeId": "other-node"})
+        await node_manager.register_node(ws, {"node_id": "other-node"})
 
         resp = await client.post(
             "/api/sessions",
