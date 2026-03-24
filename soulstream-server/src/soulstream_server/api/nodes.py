@@ -16,6 +16,12 @@ from soulstream_server.service.session_broadcaster import SessionBroadcaster
 
 logger = logging.getLogger(__name__)
 
+# 서버 내부 이벤트 타입 → 클라이언트가 기대하는 SSE 이벤트 이름 매핑
+_EVENT_TYPE_MAP: dict[str, str] = {
+    "node_registered": "node_connected",
+    "node_unregistered": "node_disconnected",
+}
+
 
 def create_nodes_router(
     node_manager: NodeManager,
@@ -33,14 +39,20 @@ def create_nodes_router(
         """노드 변경 SSE 스트림.
 
         연결 시 현재 스냅샷을 전송한 뒤 변경 이벤트를 릴레이.
+
+        SSE 이벤트:
+        - snapshot: OrchestratorNode[] (배열)
+        - node_connected: OrchestratorNode
+        - node_disconnected: { nodeId: string }
+        - node_updated: OrchestratorNode
         """
 
         async def event_generator():
-            # 초기 스냅샷
+            # 초기 스냅샷 — 클라이언트는 OrchestratorNode[] 배열을 기대
             nodes = node_manager.get_nodes()
             yield {
                 "event": "snapshot",
-                "data": json.dumps({"nodes": nodes}),
+                "data": json.dumps(nodes),
             }
 
             # 변경 이벤트 구독
@@ -56,7 +68,10 @@ def create_nodes_router(
                         "data": data,
                     })
                 except asyncio.QueueFull:
-                    pass
+                    logger.warning(
+                        "Node stream queue full, event dropped: %s %s",
+                        event_type, node_id,
+                    )
 
             node_manager.add_change_listener(on_change)
             try:
@@ -72,9 +87,19 @@ def create_nodes_router(
                     if event is None:
                         break
 
+                    raw_type = event.get("type", "update")
+                    sse_event_name = _EVENT_TYPE_MAP.get(raw_type, raw_type)
+
+                    # node_connected / node_updated: 노드 정보 전체를 data에 전송
+                    # node_disconnected: { nodeId } 만 전송
+                    if sse_event_name == "node_disconnected":
+                        payload = {"nodeId": event["nodeId"]}
+                    else:
+                        payload = event.get("data") or {"nodeId": event["nodeId"]}
+
                     yield {
-                        "event": event.get("type", "update"),
-                        "data": json.dumps(event),
+                        "event": sse_event_name,
+                        "data": json.dumps(payload),
                     }
             finally:
                 node_manager.remove_change_listener(on_change)

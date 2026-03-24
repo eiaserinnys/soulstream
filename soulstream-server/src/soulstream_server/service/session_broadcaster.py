@@ -52,10 +52,22 @@ class SessionBroadcaster:
         """노드 상태 변경 이벤트를 브로드캐스트한다."""
         await self.broadcast(change)
 
+    def add_client(self, maxsize: int = 256) -> asyncio.Queue[dict | None]:
+        """새 클라이언트 큐를 등록하고 반환한다."""
+        queue: asyncio.Queue[dict | None] = asyncio.Queue(maxsize=maxsize)
+        self._clients.append(queue)
+        return queue
+
+    def remove_client(self, queue: asyncio.Queue[dict | None]) -> None:
+        """클라이언트 큐를 등록 해제한다."""
+        try:
+            self._clients.remove(queue)
+        except ValueError:
+            pass
+
     async def subscribe(self) -> AsyncIterator[dict]:
         """SSE 클라이언트 구독. 연결 해제 시 자동 정리."""
-        queue: asyncio.Queue[dict | None] = asyncio.Queue(maxsize=256)
-        self._clients.append(queue)
+        queue = self.add_client()
         try:
             while True:
                 event = await queue.get()
@@ -63,10 +75,7 @@ class SessionBroadcaster:
                     break
                 yield event
         finally:
-            try:
-                self._clients.remove(queue)
-            except ValueError:
-                pass
+            self.remove_client(queue)
 
     def disconnect_all(self) -> None:
         """모든 SSE 클라이언트 연결을 종료한다."""
