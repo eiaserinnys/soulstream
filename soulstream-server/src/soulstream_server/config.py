@@ -13,8 +13,8 @@ class Settings(BaseSettings):
     """soulstream-server 설정."""
 
     # Server
-    host: str = "0.0.0.0"
-    port: int = 5200
+    host: str
+    port: int
 
     # Database
     database_url: str
@@ -25,12 +25,12 @@ class Settings(BaseSettings):
     # Google OAuth
     google_client_id: str = ""
     google_client_secret: str = ""
-    google_callback_url: str = "/api/auth/google/callback"
+    google_callback_url: str = ""
     allowed_email: str = ""
     jwt_secret: str = ""
 
     # Environment
-    environment: str = "production"
+    environment: str
 
     @property
     def is_development(self) -> bool:

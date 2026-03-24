@@ -26,9 +26,6 @@ class NodeManager:
         self._change_listeners.append(listener)
 
     def remove_change_listener(self, listener: ChangeListener) -> None:
-        self._change_listeners.discard(listener) if hasattr(
-            self._change_listeners, "discard"
-        ) else None
         try:
             self._change_listeners.remove(listener)
         except ValueError:
