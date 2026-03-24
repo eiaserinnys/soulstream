@@ -11,6 +11,7 @@ import { SearchModal } from "./components/SearchModal";
 import { ConfigModal } from "./components/ConfigModal";
 import { NewSessionModal } from "./components/NewSessionModal";
 import { getSessionProvider } from "./providers";
+import { SOUL_DASHBOARD_API } from "./lib/api-config";
 
 export function App() {
   const [configOpen, setConfigOpen] = useState(false);
@@ -20,6 +21,7 @@ export function App() {
     <>
       <DashboardLayout
         getSessionProvider={getSessionProvider}
+        catalogApiConfig={SOUL_DASHBOARD_API}
         centerPanelBottom={
           <div className="flex-1 overflow-hidden h-full bg-muted/50 dark:bg-muted/30">
             <NodeGraph />
