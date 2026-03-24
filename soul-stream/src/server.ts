@@ -12,6 +12,7 @@ import { SessionDB } from "./db/session-db";
 import { createNodesRouter } from "./api/nodes";
 import { createSessionsRouter } from "./api/sessions";
 import { createFoldersRouter } from "./api/folders";
+import { createCatalogRouter } from "./api/catalog";
 import { setupNodeWebSocket } from "./ws/node-handler";
 
 export interface ServerConfig {
@@ -38,6 +39,7 @@ export function createSoulStreamServer(config: ServerConfig) {
   app.use("/api/nodes", createNodesRouter(nodeManager));
   app.use("/api/sessions", createSessionsRouter(nodeManager, sessionDB));
   app.use("/api/folders", createFoldersRouter(sessionDB));
+  app.use("/api", createCatalogRouter(sessionDB));
 
   // Health check
   app.get("/api/health", (_req, res) => {
