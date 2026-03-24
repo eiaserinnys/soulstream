@@ -63,7 +63,7 @@ services:
       signal: SIGTERM
       timeout: 15
     hooks:
-      post_pull: ./.services/soulstream/soul-server/.venv/Scripts/pip.exe install -e ./.services/soulstream/soul-server
+      post_pull: ./.services/soulstream/soul-server/.venv/Scripts/pip.exe install -e ./.services/soulstream/packages/soul-common -e ./.services/soulstream/soul-server
 
   soul-dashboard:
     run: pnpm exec tsx server/index.ts
@@ -91,6 +91,7 @@ install:
       type: python-venv
       path: ./.services/soulstream/soul-server/.venv
       requirements:
+        - ./.services/soulstream/packages/soul-common/pyproject.toml
         - ./.services/soulstream/soul-server/pyproject.toml
 
     dashboard-node:

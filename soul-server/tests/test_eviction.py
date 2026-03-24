@@ -4,6 +4,7 @@ test_eviction - TaskManager 세션 퇴거 + DB 통합 테스트
 
 import asyncio
 import time
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
@@ -114,8 +115,8 @@ class TestCatalogIntegration:
                 "session_type": "claude",
                 "last_event_id": 0,
                 "last_read_event_id": 0,
-                "created_at": "2026-01-01T00:00:00+00:00",
-                "updated_at": "2026-01-01T00:01:00+00:00",
+                "created_at": datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc),
+                "updated_at": datetime(2026, 1, 1, 0, 1, 0, tzinfo=timezone.utc),
                 "last_message": None,
                 "name": None,
             },
@@ -128,8 +129,8 @@ class TestCatalogIntegration:
                 "session_type": "claude",
                 "last_event_id": 0,
                 "last_read_event_id": 0,
-                "created_at": "2026-01-01T00:00:01+00:00",
-                "updated_at": "2026-01-01T00:00:01+00:00",
+                "created_at": datetime(2026, 1, 1, 0, 0, 1, tzinfo=timezone.utc),
+                "updated_at": datetime(2026, 1, 1, 0, 0, 1, tzinfo=timezone.utc),
                 "last_message": None,
                 "name": None,
             },
