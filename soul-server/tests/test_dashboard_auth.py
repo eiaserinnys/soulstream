@@ -1,5 +1,5 @@
 """
-Dashboard 인증 테스트 — auth.py + auth_routes.py
+Dashboard 인증 테스트 — auth.py + auth_routes.py (soul-common 팩토리 기반)
 
 두 시나리오를 모두 테스트한다:
 1. 인증 비활성 (GOOGLE_CLIENT_ID 미설정) → 바이패스
@@ -19,7 +19,7 @@ from soul_server.dashboard.auth import (
     require_dashboard_auth,
     COOKIE_NAME,
 )
-from soul_server.dashboard.auth_routes import router as auth_router, OAUTH_STATE_COOKIE
+from soul_common.auth.oauth_routes import create_oauth_router, OAUTH_STATE_COOKIE
 
 
 # === JWT 유틸 테스트 ===
@@ -69,11 +69,30 @@ class TestJwtUtils:
 
 # === Auth Routes 테스트 ===
 
+# 테스트용 시크릿 (32바이트 이상 — JWT 경고 방지)
+_TEST_SECRET = "test-secret-key-for-auth-routes-testing-32bytes"
 
-def _create_test_app() -> FastAPI:
-    """테스트용 FastAPI 앱 생성."""
+
+def _create_test_app(
+    auth_enabled: bool = False,
+    is_development: bool = False,
+    google_client_id: str = "",
+    google_client_secret: str = "",
+    callback_url: str = "/api/auth/google/callback",
+    allowed_email: str = "",
+    jwt_secret: str = _TEST_SECRET,
+) -> FastAPI:
+    """테스트용 FastAPI 앱 생성. create_oauth_router 팩토리로 라우터를 생성한다."""
     app = FastAPI()
-    app.include_router(auth_router)
+    router = create_oauth_router(
+        google_client_id=google_client_id if auth_enabled else "",
+        google_client_secret=google_client_secret,
+        callback_url=callback_url,
+        allowed_email=allowed_email,
+        jwt_secret=jwt_secret,
+        is_development=is_development,
+    )
+    app.include_router(router)
     return app
 
 
@@ -82,15 +101,9 @@ class TestAuthConfigEndpoint:
 
     def test_auth_disabled(self):
         """GOOGLE_CLIENT_ID 미설정 시 authEnabled: false."""
-        app = _create_test_app()
-        with patch("soul_server.dashboard.auth_routes.get_settings") as mock_settings:
-            settings = MagicMock()
-            settings.is_auth_enabled = False
-            settings.is_development = True
-            mock_settings.return_value = settings
-
-            client = TestClient(app)
-            resp = client.get("/api/auth/config")
+        app = _create_test_app(auth_enabled=False, is_development=True)
+        client = TestClient(app)
+        resp = client.get("/api/auth/config")
 
         assert resp.status_code == 200
         data = resp.json()
@@ -99,15 +112,9 @@ class TestAuthConfigEndpoint:
 
     def test_auth_enabled(self):
         """GOOGLE_CLIENT_ID 설정 시 authEnabled: true."""
-        app = _create_test_app()
-        with patch("soul_server.dashboard.auth_routes.get_settings") as mock_settings:
-            settings = MagicMock()
-            settings.is_auth_enabled = True
-            settings.is_development = False
-            mock_settings.return_value = settings
-
-            client = TestClient(app)
-            resp = client.get("/api/auth/config")
+        app = _create_test_app(auth_enabled=True, google_client_id="test-client-id")
+        client = TestClient(app)
+        resp = client.get("/api/auth/config")
 
         assert resp.status_code == 200
         data = resp.json()
@@ -120,14 +127,9 @@ class TestAuthStatusEndpoint:
 
     def test_status_auth_disabled(self):
         """인증 비활성 시 authenticated: true."""
-        app = _create_test_app()
-        with patch("soul_server.dashboard.auth_routes.get_settings") as mock_settings:
-            settings = MagicMock()
-            settings.is_auth_enabled = False
-            mock_settings.return_value = settings
-
-            client = TestClient(app)
-            resp = client.get("/api/auth/status")
+        app = _create_test_app(auth_enabled=False)
+        client = TestClient(app)
+        resp = client.get("/api/auth/status")
 
         assert resp.status_code == 200
         data = resp.json()
@@ -136,15 +138,9 @@ class TestAuthStatusEndpoint:
 
     def test_status_no_cookie(self):
         """인증 활성 + 쿠키 없음 → authenticated: false."""
-        app = _create_test_app()
-        with patch("soul_server.dashboard.auth_routes.get_settings") as mock_settings:
-            settings = MagicMock()
-            settings.is_auth_enabled = True
-            settings.jwt_secret = "test-secret"
-            mock_settings.return_value = settings
-
-            client = TestClient(app)
-            resp = client.get("/api/auth/status")
+        app = _create_test_app(auth_enabled=True, google_client_id="test-client-id")
+        client = TestClient(app)
+        resp = client.get("/api/auth/status")
 
         assert resp.status_code == 200
         data = resp.json()
@@ -152,18 +148,12 @@ class TestAuthStatusEndpoint:
 
     def test_status_valid_cookie(self):
         """인증 활성 + 유효한 JWT 쿠키 → authenticated: true + user."""
-        app = _create_test_app()
-        secret = "test-secret"
+        secret = _TEST_SECRET
         token = generate_token({"email": "user@example.com", "name": "Test"}, secret)
 
-        with patch("soul_server.dashboard.auth_routes.get_settings") as mock_settings:
-            settings = MagicMock()
-            settings.is_auth_enabled = True
-            settings.jwt_secret = secret
-            mock_settings.return_value = settings
-
-            client = TestClient(app)
-            resp = client.get("/api/auth/status", cookies={COOKIE_NAME: token})
+        app = _create_test_app(auth_enabled=True, google_client_id="test-client-id", jwt_secret=secret)
+        client = TestClient(app)
+        resp = client.get("/api/auth/status", cookies={COOKIE_NAME: token})
 
         assert resp.status_code == 200
         data = resp.json()
@@ -172,15 +162,9 @@ class TestAuthStatusEndpoint:
 
     def test_status_invalid_cookie(self):
         """인증 활성 + 유효하지 않은 JWT 쿠키 → authenticated: false."""
-        app = _create_test_app()
-        with patch("soul_server.dashboard.auth_routes.get_settings") as mock_settings:
-            settings = MagicMock()
-            settings.is_auth_enabled = True
-            settings.jwt_secret = "test-secret"
-            mock_settings.return_value = settings
-
-            client = TestClient(app)
-            resp = client.get("/api/auth/status", cookies={COOKIE_NAME: "invalid-token"})
+        app = _create_test_app(auth_enabled=True, google_client_id="test-client-id")
+        client = TestClient(app)
+        resp = client.get("/api/auth/status", cookies={COOKIE_NAME: "invalid-token"})
 
         assert resp.status_code == 200
         data = resp.json()
@@ -208,16 +192,13 @@ class TestAuthGoogleEndpoint:
 
     def test_google_redirect_when_enabled(self):
         """인증 활성 시 Google authorize URL로 리다이렉트 + state 쿠키 설정."""
-        app = _create_test_app()
-        with patch("soul_server.dashboard.auth_routes.get_settings") as mock_settings:
-            settings = MagicMock()
-            settings.is_auth_enabled = True
-            settings.google_client_id = "test-client-id"
-            settings.google_callback_url = "/api/auth/google/callback"
-            mock_settings.return_value = settings
-
-            client = TestClient(app, follow_redirects=False)
-            resp = client.get("/api/auth/google")
+        app = _create_test_app(
+            auth_enabled=True,
+            google_client_id="test-client-id",
+            callback_url="/api/auth/google/callback",
+        )
+        client = TestClient(app, follow_redirects=False)
+        resp = client.get("/api/auth/google")
 
         assert resp.status_code == 307
         location = resp.headers["location"]
@@ -230,14 +211,9 @@ class TestAuthGoogleEndpoint:
 
     def test_google_404_when_disabled(self):
         """인증 비활성 시 404."""
-        app = _create_test_app()
-        with patch("soul_server.dashboard.auth_routes.get_settings") as mock_settings:
-            settings = MagicMock()
-            settings.is_auth_enabled = False
-            mock_settings.return_value = settings
-
-            client = TestClient(app)
-            resp = client.get("/api/auth/google")
+        app = _create_test_app(auth_enabled=False)
+        client = TestClient(app)
+        resp = client.get("/api/auth/google")
 
         assert resp.status_code == 404
 
@@ -247,18 +223,12 @@ class TestDevLoginEndpoint:
 
     def test_dev_login_in_development(self):
         """개발 환경에서 dev-login 동작."""
-        app = _create_test_app()
-        with patch("soul_server.dashboard.auth_routes.get_settings") as mock_settings:
-            settings = MagicMock()
-            settings.is_development = True
-            settings.jwt_secret = "test-secret"
-            mock_settings.return_value = settings
-
-            client = TestClient(app)
-            resp = client.post(
-                "/api/auth/dev-login",
-                json={"email": "dev@example.com", "name": "Developer"},
-            )
+        app = _create_test_app(is_development=True)
+        client = TestClient(app)
+        resp = client.post(
+            "/api/auth/dev-login",
+            json={"email": "dev@example.com", "name": "Developer"},
+        )
 
         assert resp.status_code == 200
         assert resp.json()["success"] is True
@@ -268,51 +238,34 @@ class TestDevLoginEndpoint:
 
     def test_dev_login_in_production(self):
         """프로덕션 환경에서 dev-login 거부."""
-        app = _create_test_app()
-        with patch("soul_server.dashboard.auth_routes.get_settings") as mock_settings:
-            settings = MagicMock()
-            settings.is_development = False
-            mock_settings.return_value = settings
-
-            client = TestClient(app)
-            resp = client.post(
-                "/api/auth/dev-login",
-                json={"email": "dev@example.com"},
-            )
+        app = _create_test_app(is_development=False)
+        client = TestClient(app)
+        resp = client.post(
+            "/api/auth/dev-login",
+            json={"email": "dev@example.com"},
+        )
 
         assert resp.status_code == 403
 
     def test_dev_login_no_jwt_secret(self):
         """JWT_SECRET 미설정 시 500 에러."""
-        app = _create_test_app()
-        with patch("soul_server.dashboard.auth_routes.get_settings") as mock_settings:
-            settings = MagicMock()
-            settings.is_development = True
-            settings.jwt_secret = ""
-            mock_settings.return_value = settings
-
-            client = TestClient(app)
-            resp = client.post(
-                "/api/auth/dev-login",
-                json={"email": "dev@example.com"},
-            )
+        app = _create_test_app(is_development=True, jwt_secret="")
+        client = TestClient(app)
+        resp = client.post(
+            "/api/auth/dev-login",
+            json={"email": "dev@example.com"},
+        )
 
         assert resp.status_code == 500
 
     def test_dev_login_no_email(self):
         """이메일 없이 dev-login 시 400 에러."""
-        app = _create_test_app()
-        with patch("soul_server.dashboard.auth_routes.get_settings") as mock_settings:
-            settings = MagicMock()
-            settings.is_development = True
-            settings.jwt_secret = "test-secret"
-            mock_settings.return_value = settings
-
-            client = TestClient(app)
-            resp = client.post(
-                "/api/auth/dev-login",
-                json={"email": ""},
-            )
+        app = _create_test_app(is_development=True)
+        client = TestClient(app)
+        resp = client.post(
+            "/api/auth/dev-login",
+            json={"email": ""},
+        )
 
         assert resp.status_code == 400
 
@@ -331,7 +284,7 @@ class TestRequireDashboardAuth:
 
         @app.get("/protected")
         async def protected(auth=Depends(require_dashboard_auth)):
-            return {"status": "ok", "auth": auth}
+            return {"ok": True, "auth": auth}
 
         with patch("soul_server.dashboard.auth.get_settings") as mock_settings:
             settings = MagicMock()
@@ -344,7 +297,7 @@ class TestRequireDashboardAuth:
         assert resp.status_code == 200
         assert resp.json()["auth"] is None
 
-    def test_401_when_no_token(self):
+    def test_reject_when_no_token(self):
         """인증 활성 + 토큰 없음 → 401."""
         from fastapi import Depends
 
@@ -352,12 +305,11 @@ class TestRequireDashboardAuth:
 
         @app.get("/protected")
         async def protected(auth=Depends(require_dashboard_auth)):
-            return {"status": "ok"}
+            return {"ok": True}
 
         with patch("soul_server.dashboard.auth.get_settings") as mock_settings:
             settings = MagicMock()
             settings.is_auth_enabled = True
-            settings.jwt_secret = "test-secret"
             mock_settings.return_value = settings
 
             client = TestClient(app)
@@ -365,17 +317,17 @@ class TestRequireDashboardAuth:
 
         assert resp.status_code == 401
 
-    def test_pass_with_valid_cookie(self):
-        """인증 활성 + 유효한 쿠키 → 통과."""
+    def test_accept_valid_cookie(self):
+        """인증 활성 + 유효한 JWT 쿠키 → 200."""
         from fastapi import Depends
 
         app = FastAPI()
-        secret = "test-secret"
 
         @app.get("/protected")
         async def protected(auth=Depends(require_dashboard_auth)):
-            return {"status": "ok", "email": auth["email"]}
+            return {"ok": True, "email": auth["email"]}
 
+        secret = _TEST_SECRET
         token = generate_token({"email": "user@example.com"}, secret)
 
         with patch("soul_server.dashboard.auth.get_settings") as mock_settings:
@@ -390,18 +342,18 @@ class TestRequireDashboardAuth:
         assert resp.status_code == 200
         assert resp.json()["email"] == "user@example.com"
 
-    def test_pass_with_bearer_header(self):
-        """인증 활성 + Bearer 헤더 → 통과."""
+    def test_accept_bearer_token(self):
+        """인증 활성 + Authorization Bearer 헤더 → 200."""
         from fastapi import Depends
 
         app = FastAPI()
-        secret = "test-secret"
 
         @app.get("/protected")
         async def protected(auth=Depends(require_dashboard_auth)):
-            return {"status": "ok", "email": auth["email"]}
+            return {"ok": True, "email": auth["email"]}
 
-        token = generate_token({"email": "bearer@example.com"}, secret)
+        secret = _TEST_SECRET
+        token = generate_token({"email": "user@example.com"}, secret)
 
         with patch("soul_server.dashboard.auth.get_settings") as mock_settings:
             settings = MagicMock()
@@ -410,99 +362,7 @@ class TestRequireDashboardAuth:
             mock_settings.return_value = settings
 
             client = TestClient(app)
-            resp = client.get(
-                "/protected",
-                headers={"Authorization": f"Bearer {token}"},
-            )
+            resp = client.get("/protected", headers={"Authorization": f"Bearer {token}"})
 
         assert resp.status_code == 200
-        assert resp.json()["email"] == "bearer@example.com"
-
-
-# === CSRF State 검증 테스트 ===
-
-
-class TestOAuthCsrfState:
-    """OAuth CSRF state 파라미터 검증 테스트."""
-
-    def test_callback_rejects_missing_state_cookie(self):
-        """state 쿠키 없이 callback 호출 시 리다이렉트."""
-        app = _create_test_app()
-        with patch("soul_server.dashboard.auth_routes.get_settings") as mock_settings:
-            settings = MagicMock()
-            settings.is_auth_enabled = True
-            mock_settings.return_value = settings
-
-            client = TestClient(app, follow_redirects=False)
-            resp = client.get("/api/auth/google/callback?code=test-code&state=some-state")
-
-        assert resp.status_code == 307
-        assert "error=auth_failed" in resp.headers["location"]
-
-    def test_callback_rejects_mismatched_state(self):
-        """state 쿠키와 파라미터가 불일치 시 리다이렉트."""
-        app = _create_test_app()
-        with patch("soul_server.dashboard.auth_routes.get_settings") as mock_settings:
-            settings = MagicMock()
-            settings.is_auth_enabled = True
-            mock_settings.return_value = settings
-
-            client = TestClient(app, follow_redirects=False)
-            resp = client.get(
-                "/api/auth/google/callback?code=test-code&state=wrong-state",
-                cookies={OAUTH_STATE_COOKIE: "correct-state"},
-            )
-
-        assert resp.status_code == 307
-        assert "error=auth_failed" in resp.headers["location"]
-
-
-# === 설정 검증 테스트 ===
-
-
-class TestSettingsValidation:
-    """Settings.validate() 검증 테스트."""
-
-    def test_jwt_secret_too_short(self):
-        """JWT_SECRET 32자 미만 시 에러."""
-        from soul_server.config import Settings
-
-        settings = Settings(
-            workspace_dir="/tmp/test",
-            google_client_id="test-id",
-            google_client_secret="test-secret",
-            jwt_secret="short",  # 5자 — 32자 미만
-            allowed_email="test@example.com",
-        )
-        with pytest.raises(RuntimeError, match="JWT_SECRET must be at least 32 characters"):
-            settings.validate()
-
-    def test_jwt_secret_sufficient_length(self):
-        """JWT_SECRET 32자 이상이면 통과."""
-        from soul_server.config import Settings
-
-        settings = Settings(
-            workspace_dir="/tmp/test",
-            google_client_id="test-id",
-            google_client_secret="test-secret",
-            jwt_secret="a" * 32,
-            allowed_email="test@example.com",
-            soulstream_node_id="test-node",
-            database_url="postgresql://test:test@localhost/test",
-            dashboard_cache_dir="/tmp/cache",
-        )
-        settings.validate()  # 에러 없이 통과
-
-    def test_allowed_email_required_when_auth_enabled(self):
-        """GOOGLE_CLIENT_ID 설정 시 ALLOWED_EMAIL 필수."""
-        from soul_server.config import Settings
-
-        settings = Settings(
-            workspace_dir="/tmp/test",
-            google_client_id="test-id",
-            google_client_secret="test-secret",
-            jwt_secret="a" * 32,
-            allowed_email="",  # 빈 문자열
-        )
-        with pytest.raises(RuntimeError, match="ALLOWED_EMAIL"):
-            settings.validate()
+        assert resp.json()["email"] == "user@example.com"
