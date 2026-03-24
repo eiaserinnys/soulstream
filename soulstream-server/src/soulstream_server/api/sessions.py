@@ -17,6 +17,7 @@ from sse_starlette.sse import EventSourceResponse
 from soul_common.db.session_db import PostgresSessionDB
 
 from soulstream_server.nodes.node_manager import NodeManager
+from soulstream_server.service.session_broadcaster import SessionBroadcaster
 from soulstream_server.service.session_router import SessionRouter
 
 logger = logging.getLogger(__name__)
@@ -54,6 +55,7 @@ def create_sessions_router(
     db: PostgresSessionDB,
     node_manager: NodeManager,
     session_router: SessionRouter,
+    broadcaster: SessionBroadcaster | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/sessions", tags=["sessions"])
 
@@ -91,6 +93,67 @@ def create_sessions_router(
             "total": total,
             "cursor": next_cursor,
         }
+
+    @router.get("/stream")
+    async def session_stream(request: Request) -> EventSourceResponse:
+        """세션 목록 변경 SSE 스트림.
+
+        연결 시 현재 세션 목록을 session_list 이벤트로 전송한 뒤,
+        세션 생성/수정/삭제/카탈로그 변경 이벤트를 릴레이.
+
+        SSE 이벤트:
+        - session_list: { type, sessions, total }
+        - session_created: { type, session }
+        - session_updated: { type, agent_session_id, ... }
+        - session_deleted: { type, agent_session_id }
+        - catalog_updated: { type, catalog }
+        """
+
+        async def event_generator():
+            # 초기 세션 목록 전송
+            sessions, total = await db.get_all_sessions(offset=0, limit=200)
+            result = [_session_to_response(s) for s in sessions]
+            yield {
+                "event": "session_list",
+                "data": json.dumps({
+                    "type": "session_list",
+                    "sessions": result,
+                    "total": total,
+                }),
+            }
+
+            # broadcaster가 없으면 keepalive만 유지
+            if broadcaster is None:
+                while True:
+                    if await request.is_disconnected():
+                        return
+                    yield {"comment": "keepalive"}
+                    await asyncio.sleep(30)
+
+            # 브로드캐스터 구독 (공개 API 사용)
+            queue = broadcaster.add_client()
+            try:
+                while True:
+                    if await request.is_disconnected():
+                        break
+                    try:
+                        event = await asyncio.wait_for(queue.get(), timeout=30)
+                    except asyncio.TimeoutError:
+                        yield {"comment": "keepalive"}
+                        continue
+
+                    if event is None:
+                        break
+
+                    event_type = event.get("type", "message")
+                    yield {
+                        "event": event_type,
+                        "data": json.dumps(event),
+                    }
+            finally:
+                broadcaster.remove_client(queue)
+
+        return EventSourceResponse(event_generator())
 
     @router.post("", status_code=201)
     async def create_session(body: CreateSessionRequest) -> dict:
