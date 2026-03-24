@@ -37,12 +37,17 @@ export interface UseSessionListProviderOptions {
   enabled?: boolean;
   /** Provider 팩토리: storageMode를 받아 적절한 Provider를 반환 */
   getSessionProvider: (mode: StorageMode) => SessionStorageProvider;
+  /**
+   * 외부 세션 프로바이더. 지정하면 SSE/Serendipity 구독 대신
+   * 이 프로바이더의 fetchSessions를 intervalMs 간격으로 폴링한다.
+   */
+  externalProvider?: SessionStorageProvider;
 }
 
 export function useSessionListProvider(
   options: UseSessionListProviderOptions
 ) {
-  const { intervalMs = 5000, enabled = true, getSessionProvider } = options;
+  const { intervalMs = 5000, enabled = true, getSessionProvider, externalProvider } = options;
 
   const storageMode = useDashboardStore((s) => s.storageMode);
   const setSessions = useDashboardStore((s) => s.setSessions);
@@ -79,7 +84,7 @@ export function useSessionListProvider(
     try {
       abortRef.current = false;
 
-      const provider = getSessionProvider(storageMode);
+      const provider = externalProvider ?? getSessionProvider(storageMode);
       const typeFilter = sessionTypeFilter === "all" ? undefined : sessionTypeFilter;
       const result = await provider.fetchSessions(typeFilter);
 
@@ -96,7 +101,7 @@ export function useSessionListProvider(
       isFirstLoad.current = false;
       setSessionsLoading(false);
     }
-  }, [storageMode, sessionTypeFilter, setSessions, setSessionsLoading, setSessionsError, getSessionProvider]);
+  }, [storageMode, sessionTypeFilter, setSessions, setSessionsLoading, setSessionsError, getSessionProvider, externalProvider]);
 
   /**
    * SSE delta 이벤트 처리 (sse 모드)
@@ -262,25 +267,36 @@ export function useSessionListProvider(
 
   // Effect 2: SSE 구독 — storageMode 변경 시에만 재연결 (페이지/필터 변경과 무관)
   useEffect(() => {
-    if (!enabled || storageMode !== "sse") return;
+    if (!enabled || storageMode !== "sse" || externalProvider) return;
 
     connectSSE();
 
     return () => {
       disconnectSSE();
     };
-  }, [enabled, storageMode, connectSSE, disconnectSSE]);
+  }, [enabled, storageMode, connectSSE, disconnectSSE, externalProvider]);
 
   // Effect 3: Serendipity 폴링 — storageMode가 serendipity일 때만 활성화
   useEffect(() => {
-    if (!enabled || storageMode !== "serendipity") return;
+    if (!enabled || storageMode !== "serendipity" || externalProvider) return;
 
     const timer = setInterval(fetchSessions, intervalMs);
 
     return () => {
       clearInterval(timer);
     };
-  }, [enabled, storageMode, fetchSessions, intervalMs]);
+  }, [enabled, storageMode, fetchSessions, intervalMs, externalProvider]);
+
+  // Effect 4: externalProvider 폴링 — externalProvider가 있을 때 intervalMs 간격으로 fetch
+  useEffect(() => {
+    if (!enabled || !externalProvider) return;
+
+    const timer = setInterval(fetchSessions, intervalMs);
+
+    return () => {
+      clearInterval(timer);
+    };
+  }, [enabled, externalProvider, fetchSessions, intervalMs]);
 
   // storageMode 변경 시 첫 로드 플래그 리셋
   useEffect(() => {

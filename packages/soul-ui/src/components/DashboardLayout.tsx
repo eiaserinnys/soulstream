@@ -7,7 +7,7 @@
  * soul-ui 공유 컴포넌트: soul-dashboard와 orchestrator-dashboard가 props를 통해 커스터마이즈.
  */
 
-import { useState, useCallback, useRef, useEffect, type ReactNode } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo, type ReactNode } from "react";
 import { FolderTree } from "./FolderTree";
 import { FolderContents } from "./FolderContents";
 import { SessionsTopBar } from "./SessionsTopBar";
@@ -33,6 +33,9 @@ import { useServerStatus } from "../hooks/useServerStatus";
 import { useSessionListProvider } from "../hooks/useSessionListProvider";
 import { useSessionProvider } from "../hooks/useSessionProvider";
 import type { SessionStorageProvider, StorageMode } from "../providers/types";
+import type { CatalogApiConfig } from "../lib/catalog-api-config";
+import { createFolderOperations } from "../lib/folder-operations";
+import { createMoveSessionsOperations } from "../lib/move-sessions-operations";
 import { Menu, Search } from "lucide-react";
 
 // === Constants ===
@@ -170,6 +173,10 @@ export interface DashboardLayoutProps {
   newSessionDialog?: ReactNode;
   /** Provider 팩토리: storageMode를 받아 적절한 Provider를 반환 */
   getSessionProvider: (mode: StorageMode) => SessionStorageProvider;
+  /** 외부 세션 프로바이더. SSE/Serendipity 대신 이 프로바이더로 세션 목록을 가져옴 */
+  externalProvider?: SessionStorageProvider;
+  /** 폴더/세션 API 설정. 있으면 FolderTree에 CRUD 콜백이 자동 주입됨 */
+  catalogApiConfig?: CatalogApiConfig;
   /** Search 버튼 클릭 핸들러 (hideFeatures에 'search'가 없을 때 사용) */
   onSearchClick?: () => void;
   /** Config 버튼 클릭 핸들러 (hideFeatures에 'config'가 없을 때 사용) */
@@ -182,10 +189,21 @@ export function DashboardLayout(props: DashboardLayoutProps) {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const setSerendipityAvailable = useDashboardStore((s) => s.setSerendipityAvailable);
 
+  // catalogApiConfig가 있으면 FolderTree용 CRUD operations 생성
+  const folderOps = useMemo(
+    () => props.catalogApiConfig ? createFolderOperations(props.catalogApiConfig) : null,
+    [props.catalogApiConfig],
+  );
+  const moveOps = useMemo(
+    () => props.catalogApiConfig ? createMoveSessionsOperations(props.catalogApiConfig) : null,
+    [props.catalogApiConfig],
+  );
+
   // 세션 목록 구독 (SSE 모드: 실시간, Serendipity 모드: 폴링)
   const { sessions, loading, error } = useSessionListProvider({
     intervalMs: 5000,
     getSessionProvider: props.getSessionProvider,
+    externalProvider: props.externalProvider,
   });
 
   // 활성 세션 구독 (Provider 기반)
@@ -284,6 +302,17 @@ export function DashboardLayout(props: DashboardLayoutProps) {
 
   const hiddenFeatures = new Set(props.hideFeatures ?? []);
 
+  // catalogApiConfig가 있으면 FolderTree에 CRUD 콜백 주입
+  const folderTreeProps = useMemo(() => {
+    if (!folderOps || !moveOps) return {};
+    return {
+      onCreateFolder: (name: string) => folderOps.createFolder(name),
+      onRenameFolder: (folderId: string, newName: string) => folderOps.renameFolderOptimistic(folderId, newName),
+      onDeleteFolder: (folderId: string) => folderOps.deleteFolderOptimistic(folderId),
+      onMoveSessions: (ids: string[], folderId: string | null) => moveOps.moveSessionsOptimistic(ids, folderId),
+    };
+  }, [folderOps, moveOps]);
+
   return (
     <div
       data-testid="dashboard-layout"
@@ -339,7 +368,7 @@ export function DashboardLayout(props: DashboardLayoutProps) {
           {/* 모바일: Sheet 슬라이드 사이드바 */}
           <Sheet open={isSidebarOpen} onOpenChange={setIsSidebarOpen}>
             <SheetContent side="left" showCloseButton={false}>
-              <FolderTree />
+              <FolderTree {...folderTreeProps} />
               <SheetFooter className="border-t border-border p-3 flex flex-row items-center gap-2">
                 <ThemeToggle />
                 <StorageModeToggleCompact />
@@ -380,7 +409,7 @@ export function DashboardLayout(props: DashboardLayoutProps) {
                   : '100%',
               }}
             >
-              <FolderTree />
+              <FolderTree {...folderTreeProps} />
             </div>
             {props.leftPanelBottom && (
               <div

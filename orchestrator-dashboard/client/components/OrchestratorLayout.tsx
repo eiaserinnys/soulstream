@@ -13,26 +13,30 @@
  *   └─────────────────────┴──────────────────┘
  */
 
-import { useEffect } from "react";
-import { useDashboardStore, FolderTree } from "@seosoyoung/soul-ui";
+import { useEffect, useMemo } from "react";
+import {
+  useDashboardStore,
+  FolderTree,
+  createFolderOperations,
+  createMoveSessionsOperations,
+} from "@seosoyoung/soul-ui";
 import { TopBar } from "./TopBar";
 import { NodePanel } from "./NodePanel";
 import { ChatPanel } from "./ChatPanel";
 import { useNodes } from "../hooks/useNodes";
 import { useSessions } from "../hooks/useSessions";
 import { useCatalog } from "../hooks/useCatalog";
-import { moveSessionsOptimistic } from "../lib/move-sessions";
-import {
-  createFolder,
-  renameFolderOptimistic,
-  deleteFolderOptimistic,
-} from "../lib/folder-operations";
+import { ORCHESTRATOR_API } from "../lib/api-config";
 
 export function OrchestratorLayout() {
   // soul-ui 스토리지 모드 설정
   useEffect(() => {
     useDashboardStore.getState().setStorageMode("sse");
   }, []);
+
+  // 팩토리에서 CRUD operations 생성
+  const folderOps = useMemo(() => createFolderOperations(ORCHESTRATOR_API), []);
+  const moveOps = useMemo(() => createMoveSessionsOperations(ORCHESTRATOR_API), []);
 
   // 노드/세션/카탈로그 훅
   useNodes();
@@ -49,14 +53,14 @@ export function OrchestratorLayout() {
           <div className="flex-[7] flex flex-col overflow-hidden min-h-0">
             <FolderTree
               onMoveSessions={(ids, folderId) =>
-                moveSessionsOptimistic(ids, folderId)
+                moveOps.moveSessionsOptimistic(ids, folderId)
               }
-              onCreateFolder={(name) => createFolder(name)}
+              onCreateFolder={(name) => folderOps.createFolder(name)}
               onRenameFolder={(folderId, newName) =>
-                renameFolderOptimistic(folderId, newName)
+                folderOps.renameFolderOptimistic(folderId, newName)
               }
               onDeleteFolder={(folderId) =>
-                deleteFolderOptimistic(folderId)
+                folderOps.deleteFolderOptimistic(folderId)
               }
             />
           </div>

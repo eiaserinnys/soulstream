@@ -177,6 +177,11 @@ export { useUrlSync } from "./hooks/useUrlSync";
 export { useDashboardConfig } from "./hooks/useDashboardConfig";
 export { useServerStatus } from "./hooks/useServerStatus";
 
+// === Catalog API Config ===
+export type { CatalogApiConfig } from "./lib/catalog-api-config";
+export { createFolderOperations } from "./lib/folder-operations";
+export { createMoveSessionsOperations } from "./lib/move-sessions-operations";
+
 // === Dashboard Lib (extracted from soul-dashboard) ===
 export { moveSessionsOptimistic } from "./lib/move-sessions";
 export { renameSessionOptimistic } from "./lib/rename-session";
