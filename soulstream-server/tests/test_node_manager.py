@@ -21,7 +21,7 @@ def mock_ws():
 
 
 def make_registration(node_id="node-1", host="localhost", port=4100):
-    return {"nodeId": node_id, "host": host, "port": port, "capabilities": ["session"]}
+    return {"node_id": node_id, "host": host, "port": port, "capabilities": ["session"]}
 
 
 class TestRegisterNode:

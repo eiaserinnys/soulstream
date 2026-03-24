@@ -73,7 +73,7 @@ async def lifespan(app: FastAPI):
     )
     app.include_router(create_nodes_router(node_manager, broadcaster))
     app.include_router(create_folders_router(catalog_service))
-    app.include_router(create_catalog_router(catalog_service))
+    app.include_router(create_catalog_router(catalog_service, db))
 
     # Auth 라우터
     if settings.is_auth_enabled:
