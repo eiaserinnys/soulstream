@@ -39,6 +39,22 @@ class TestBuildHooksStructure:
         assert "SubagentStart" in hooks
         assert "SubagentStop" in hooks
 
+    def test_always_has_pre_tool_use_hook(self):
+        """PreToolUse 훅이 항상 포함된다"""
+        event_queue: deque[EngineEvent] = deque()
+        hooks = build_hooks(compact_events=None, event_queue=event_queue)
+
+        assert hooks is not None
+        assert "PreToolUse" in hooks
+
+    def test_pre_tool_use_hook_matches_agent_tool(self):
+        """PreToolUse 훅의 matcher가 'Agent'로 설정된다"""
+        event_queue: deque[EngineEvent] = deque()
+        hooks = build_hooks(compact_events=None, event_queue=event_queue)
+
+        matcher = hooks["PreToolUse"][0]
+        assert matcher.matcher == "Agent"
+
     def test_pre_compact_included_when_events_list_provided(self):
         """compact_events가 리스트일 때 PreCompact 훅이 포함된다"""
         event_queue: deque[EngineEvent] = deque()
@@ -194,3 +210,101 @@ class TestSubagentStopHook:
         await stop_fn({}, None, MagicMock())
 
         assert event_queue[0].agent_id == ""
+
+
+class TestPreToolUseAgentHook:
+    """PreToolUse Agent 훅 — run_in_background 차단 테스트"""
+
+    @pytest.mark.asyncio
+    async def test_removes_run_in_background_true(self):
+        """run_in_background=True가 있으면 해당 키를 제거한 updatedInput을 반환한다"""
+        event_queue: deque[EngineEvent] = deque()
+        hooks = build_hooks(compact_events=None, event_queue=event_queue)
+
+        pre_tool_use_fn = hooks["PreToolUse"][0].hooks[0]
+        hook_input = {
+            "tool_name": "Agent",
+            "tool_input": {
+                "description": "작업 설명",
+                "prompt": "작업 프롬프트",
+                "run_in_background": True,
+            },
+        }
+        result = await pre_tool_use_fn(hook_input, "toolu-abc", MagicMock())
+
+        assert result["hookEventName"] == "PreToolUse"
+        updated = result["updatedInput"]
+        assert "run_in_background" not in updated
+        assert updated["description"] == "작업 설명"
+        assert updated["prompt"] == "작업 프롬프트"
+
+    @pytest.mark.asyncio
+    async def test_passes_through_when_no_run_in_background(self):
+        """run_in_background가 없으면 빈 dict를 반환한다 (변경 없음)"""
+        event_queue: deque[EngineEvent] = deque()
+        hooks = build_hooks(compact_events=None, event_queue=event_queue)
+
+        pre_tool_use_fn = hooks["PreToolUse"][0].hooks[0]
+        hook_input = {
+            "tool_name": "Agent",
+            "tool_input": {
+                "description": "작업 설명",
+                "prompt": "작업 프롬프트",
+            },
+        }
+        result = await pre_tool_use_fn(hook_input, "toolu-def", MagicMock())
+
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_passes_through_when_run_in_background_false(self):
+        """run_in_background=False이면 빈 dict를 반환한다 (변경 없음)"""
+        event_queue: deque[EngineEvent] = deque()
+        hooks = build_hooks(compact_events=None, event_queue=event_queue)
+
+        pre_tool_use_fn = hooks["PreToolUse"][0].hooks[0]
+        hook_input = {
+            "tool_name": "Agent",
+            "tool_input": {
+                "description": "작업 설명",
+                "run_in_background": False,
+            },
+        }
+        result = await pre_tool_use_fn(hook_input, "toolu-ghi", MagicMock())
+
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_preserves_all_other_fields(self):
+        """run_in_background 외의 모든 필드는 그대로 유지한다"""
+        event_queue: deque[EngineEvent] = deque()
+        hooks = build_hooks(compact_events=None, event_queue=event_queue)
+
+        pre_tool_use_fn = hooks["PreToolUse"][0].hooks[0]
+        hook_input = {
+            "tool_name": "Agent",
+            "tool_input": {
+                "description": "설명",
+                "prompt": "프롬프트",
+                "tools": ["Read", "Write"],
+                "run_in_background": True,
+            },
+        }
+        result = await pre_tool_use_fn(hook_input, "toolu-jkl", MagicMock())
+
+        updated = result["updatedInput"]
+        assert updated["description"] == "설명"
+        assert updated["prompt"] == "프롬프트"
+        assert updated["tools"] == ["Read", "Write"]
+        assert "run_in_background" not in updated
+
+    @pytest.mark.asyncio
+    async def test_handles_empty_tool_input(self):
+        """tool_input이 없어도 에러 없이 빈 dict를 반환한다"""
+        event_queue: deque[EngineEvent] = deque()
+        hooks = build_hooks(compact_events=None, event_queue=event_queue)
+
+        pre_tool_use_fn = hooks["PreToolUse"][0].hooks[0]
+        result = await pre_tool_use_fn({}, None, MagicMock())
+
+        assert result == {}

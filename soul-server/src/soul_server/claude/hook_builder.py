@@ -1,7 +1,7 @@
 """훅 빌더 — agent_runner._build_hooks() 로직 분리
 
 ClaudeRunner의 훅 생성 로직을 독립 모듈로 분리한다.
-PreCompact, SubagentStart, SubagentStop 훅을 생성하며,
+PreToolUse, PreCompact, SubagentStart, SubagentStop 훅을 생성하며,
 서브에이전트 이벤트는 호출자가 전달한 event_queue에 추가한다.
 """
 
@@ -33,6 +33,7 @@ def build_hooks(
 ) -> Optional[dict]:
     """모든 훅을 생성한다.
 
+    - PreToolUse (Agent): run_in_background 플래그 차단
     - PreCompact: 컨텍스트 컴팩션 추적
     - SubagentStart: 서브에이전트 시작 추적
     - SubagentStop: 서브에이전트 종료 추적
@@ -50,6 +51,30 @@ def build_hooks(
     서브에이전트 이벤트를 Task 노드 하위에 배치할 수 있도록 한다.
     """
     hooks: dict = {}
+
+    # PreToolUse 훅 — Agent 도구의 run_in_background 차단
+    # 백그라운드 에이전트 완료 알림을 처리하는 인프라가 없어, 알림이
+    # 다음 사용자 턴에 스며드는 버그를 방지하기 위해 강제로 동기 실행시킨다.
+    async def on_pre_tool_use_agent(
+        hook_input: dict,
+        tool_use_id: Optional[str],
+        context: Any,
+    ) -> dict:
+        tool_input = hook_input.get("tool_input", {})
+        if tool_input.get("run_in_background"):
+            modified_input = {k: v for k, v in tool_input.items() if k != "run_in_background"}
+            logger.info(
+                f"[PRE_TOOL_USE] run_in_background 제거: tool_use_id={tool_use_id}"
+            )
+            return {
+                "hookEventName": "PreToolUse",
+                "updatedInput": modified_input,
+            }
+        return {}
+
+    hooks["PreToolUse"] = [
+        HookMatcher(matcher="Agent", hooks=[on_pre_tool_use_agent])
+    ]
 
     # PreCompact 훅
     if compact_events is not None:
