@@ -66,7 +66,8 @@ export function useSessions() {
         for (const [nodeId, sessions] of grouped) {
           setNodeSessions(nodeId, sessions);
         }
-      } catch {
+      } catch (err) {
+        console.error('[useSessions] catalog fetch failed:', err);
         // 네트워크 에러 — 다음 폴링에서 재시도
       }
     }
