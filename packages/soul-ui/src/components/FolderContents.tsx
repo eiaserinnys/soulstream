@@ -2,13 +2,15 @@
  * FolderContents - 선택된 폴더의 세션 목록
  *
  * 폴더 내 세션을 가상 스크롤로 표시. DnD/다중선택/인라인편집 지원.
+ * API 호출은 콜백 props로 주입받아 앱별 엔드포인트에 의존하지 않는다.
  */
 
 import { useMemo, useRef, useState, memo, useCallback } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { moveSessionsOptimistic } from "../lib/move-sessions";
-import { renameSessionOptimistic } from "../lib/rename-session";
-import { useDashboardStore, isSessionUnread } from "../stores/dashboard-store";
+import {
+  useDashboardStore,
+  isSessionUnread,
+} from "../stores/dashboard-store";
 import { useIsMobile } from "../hooks/use-mobile";
 import { cn } from "../lib/cn";
 import { Badge } from "./ui/badge";
@@ -26,7 +28,7 @@ function nodeIdToHue(nodeId: string): number {
   return Math.abs(hash) % 360;
 }
 
-// === Status Config (ported from SessionList) ===
+// === Status Config ===
 
 interface StatusConfig {
   dotClass: string;
@@ -62,7 +64,6 @@ const SessionItem = memo(function SessionItem({
   onEditSubmit: (name: string) => void;
   onEditCancel: () => void;
 }) {
-  const [editValue, setEditValue] = useState(session.displayName ?? "");
   const config = STATUS_CONFIG[session.status] ?? STATUS_CONFIG.unknown;
   const isUnread = isSessionUnread(session);
   const isReadCompleted = session.status === "completed" && !isUnread;
@@ -154,7 +155,14 @@ const SessionItem = memo(function SessionItem({
   );
 });
 
-export function FolderContents() {
+export interface FolderContentsProps {
+  /** 세션을 다른 폴더로 이동하는 콜백 */
+  onMoveSessions: (sessionIds: string[], targetFolderId: string | null) => Promise<void>;
+  /** 세션 이름 변경 콜백. 미지정 시 이름 변경 UI 비활성화 */
+  onRenameSession?: (sessionId: string, displayName: string | null) => Promise<void>;
+}
+
+export function FolderContents({ onMoveSessions, onRenameSession }: FolderContentsProps) {
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
   const getSessionsInFolder = useDashboardStore((s) => s.getSessionsInFolder);
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
@@ -208,9 +216,11 @@ export function FolderContents() {
     async (sessionId: string, name: string) => {
       const displayName = name.trim() || null;
       setEditingSession(null);
-      await renameSessionOptimistic(sessionId, displayName);
+      if (onRenameSession) {
+        await onRenameSession(sessionId, displayName);
+      }
     },
-    [setEditingSession],
+    [setEditingSession, onRenameSession],
   );
 
   const handleMoveToFolder = useCallback(
@@ -221,20 +231,20 @@ export function FolderContents() {
         ? Array.from(selectedSessionIds)
         : [sessionId];
       setContextMenu(null);
-      await moveSessionsOptimistic(ids, targetFolderId);
+      await onMoveSessions(ids, targetFolderId);
     },
-    [selectedSessionIds, contextMenu],
+    [selectedSessionIds, contextMenu, onMoveSessions],
   );
 
   const catalog = useDashboardStore((s) => s.catalog);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (e.key === "F2" && activeSessionKey) {
+      if (e.key === "F2" && activeSessionKey && onRenameSession) {
         setEditingSession(activeSessionKey);
       }
     },
-    [activeSessionKey, setEditingSession],
+    [activeSessionKey, setEditingSession, onRenameSession],
   );
 
   if (folderSessions.length === 0) {
@@ -278,7 +288,7 @@ export function FolderContents() {
                 session={session}
                 isActive={activeSessionKey === session.agentSessionId}
                 isSelected={selectedSessionIds.has(session.agentSessionId)}
-                isEditing={editingSessionId === session.agentSessionId}
+                isEditing={onRenameSession ? editingSessionId === session.agentSessionId : false}
                 onClick={(e) => {
                   toggleSessionSelection(session.agentSessionId, e.ctrlKey || e.metaKey, e.shiftKey);
                   if (isMobile) setMobileView("chat");
@@ -300,16 +310,20 @@ export function FolderContents() {
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onClick={(e) => e.stopPropagation()}
         >
-          <button
-            className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
-            onClick={() => {
-              setEditingSession(contextMenu.sessionId);
-              setContextMenu(null);
-            }}
-          >
-            Rename
-          </button>
-          <div className="border-t border-border my-1" />
+          {onRenameSession && (
+            <>
+              <button
+                className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
+                onClick={() => {
+                  setEditingSession(contextMenu.sessionId);
+                  setContextMenu(null);
+                }}
+              >
+                Rename
+              </button>
+              <div className="border-t border-border my-1" />
+            </>
+          )}
           <div className="px-3 py-1 text-xs text-muted-foreground">Move to:</div>
           {catalog?.folders.map((f) => (
             <button
@@ -320,7 +334,6 @@ export function FolderContents() {
               {f.name}
             </button>
           ))}
-          {/* PostgreSQL 모드: Uncategorized 옵션 제거 — 모든 세션은 폴더에 배정됨 */}
         </div>
       )}
     </div>
