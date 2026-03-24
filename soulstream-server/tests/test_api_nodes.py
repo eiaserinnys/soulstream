@@ -26,12 +26,12 @@ class TestListNodes:
         ws2.close = AsyncMock()
 
         await node_manager.register_node(ws1, {
-            "nodeId": "node-a",
+            "node_id": "node-a",
             "host": "10.0.0.1",
             "port": 4100,
         })
         await node_manager.register_node(ws2, {
-            "nodeId": "node-b",
+            "node_id": "node-b",
             "host": "10.0.0.2",
             "port": 4101,
         })
@@ -51,7 +51,7 @@ class TestListNodes:
         ws.close = AsyncMock()
 
         await node_manager.register_node(ws, {
-            "nodeId": "info-node",
+            "node_id": "info-node",
             "host": "localhost",
             "port": 4100,
             "capabilities": ["session", "mcp"],

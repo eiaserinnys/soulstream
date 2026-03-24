@@ -42,7 +42,7 @@ class TestRegistrationFlow:
         ws.receive_text.side_effect = [
             json.dumps({
                 "type": EVT_NODE_REGISTER,
-                "nodeId": "test-node",
+                "node_id": "test-node",
                 "host": "localhost",
                 "port": 4100,
             }),
@@ -117,7 +117,7 @@ class TestMessageLoop:
         ws.receive_text.side_effect = [
             json.dumps({
                 "type": EVT_NODE_REGISTER,
-                "nodeId": "msg-node",
+                "node_id": "msg-node",
             }),
             event_msg,
             WebSocketDisconnect(1000),
@@ -134,7 +134,7 @@ class TestMessageLoop:
         ws.receive_text.side_effect = [
             json.dumps({
                 "type": EVT_NODE_REGISTER,
-                "nodeId": "skip-node",
+                "node_id": "skip-node",
             }),
             "invalid json!!!",
             WebSocketDisconnect(1000),
