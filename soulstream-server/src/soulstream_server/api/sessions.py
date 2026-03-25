@@ -162,7 +162,7 @@ def create_sessions_router(
         session_id, node_id = await session_router.route_create_session(
             body.model_dump(exclude_none=True)
         )
-        return {"sessionId": session_id, "nodeId": node_id}
+        return {"agentSessionId": session_id, "nodeId": node_id}
 
     @router.get("/{session_id}/events")
     async def session_events(
@@ -180,7 +180,7 @@ def create_sessions_router(
             # init 이벤트
             yield {
                 "event": "init",
-                "data": json.dumps({"sessionId": session_id}),
+                "data": json.dumps({"agentSessionId": session_id}),
             }
 
             # Last-Event-ID로 히스토리 시작점 결정
