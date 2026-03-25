@@ -6,7 +6,7 @@
  * 엣지 생성은 processChildNodes가 담당합니다.
  */
 
-import type { EventTreeNode, UserMessageNode, InterventionNode } from "@shared/types";
+import type { EventTreeNode, UserMessageNode, InterventionNode } from "../../shared/types";
 import type { LayoutContext } from "../layout-context";
 import {
   createUserNode,

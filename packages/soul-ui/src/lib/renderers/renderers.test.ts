@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import type { EventTreeNode, ToolNode, ResultNode, InputRequestNodeDef } from "@shared/types";
+import type { EventTreeNode, ToolNode, ResultNode, InputRequestNodeDef } from "../../shared/types";
 import { createLayoutContext, type LayoutContext } from "../layout-context";
 
 /** toolTreeNode 팩토리 옵션 */
