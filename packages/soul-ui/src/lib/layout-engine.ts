@@ -20,7 +20,7 @@ import type {
   InputRequestQuestion,
 } from "../shared/types";
 import { createLayoutContext } from "./layout-context";
-import { processChildNodes } from "./renderers";
+import { processChildNodes, dispatchRenderer } from "./renderers";
 
 // === Graph Node Types ===
 
@@ -496,6 +496,8 @@ export function buildGraph(
 /** 자식 노드가 부모 노드 우측에 배치될 때의 수평 간격 */
 const TREE_H_GAP = 120;
 const V_GAP = 16;
+/** depth 0 (메인 플로우) 수직 간격 */
+const FLOW_GAP = 60;
 
 /**
  * 엣지 기반 재귀 레이아웃을 적용합니다.
@@ -512,7 +514,6 @@ export function applyDagreLayout(
   if (nodes.length === 0) return { nodes, edges };
 
   const MARGIN = 20;
-  const FLOW_GAP = 60; // depth 0 (메인 플로우) 수직 간격
 
   // 노드 맵
   const nodeMap = new Map<string, GraphNode>();
@@ -634,4 +635,76 @@ export function applyDagreLayout(
   });
 
   return { nodes: positioned, edges };
+}
+
+// === Incremental Node Addition ===
+
+/**
+ * 단일 트리 노드를 GraphNode로 변환하고 위치를 계산합니다.
+ * 기존 노드의 위치는 변경하지 않습니다.
+ *
+ * @param treeNode - 추가할 트리 노드
+ * @param parentGraphNodeId - 부모 그래프 노드의 ID (예: "node-xxx" 또는 "node-xxx-call")
+ * @param existingNodes - 현재 그래프의 모든 노드
+ * @param existingEdges - 현재 그래프의 모든 엣지
+ * @param collapsedNodeIds - 접힌 노드 ID 집합
+ */
+export function buildSingleNode(
+  treeNode: EventTreeNode,
+  parentGraphNodeId: string | null,
+  existingNodes: GraphNode[],
+  existingEdges: GraphEdge[],
+  collapsedNodeIds: Set<string>,
+): { newNode: GraphNode | null; newEdge: GraphEdge | null } {
+  // 1. 렌더러로 GraphNode 생성
+  const planMode = { nodeIds: new Set<string>(), entryIds: new Set<string>(), exitIds: new Set<string>() };
+  const ctx = createLayoutContext(planMode, collapsedNodeIds);
+  const nodeId = dispatchRenderer(treeNode, parentGraphNodeId, ctx);
+
+  if (!nodeId || ctx.nodes.length === 0) {
+    return { newNode: null, newEdge: null };
+  }
+
+  const newNode = ctx.nodes[0];
+
+  // 2. 위치 계산
+  if (parentGraphNodeId) {
+    const parentNode = existingNodes.find((n) => n.id === parentGraphNodeId);
+    if (parentNode) {
+      const parentW = parentNode.width ?? DEFAULT_NODE_WIDTH;
+      const childX = parentNode.position.x + parentW + TREE_H_GAP;
+
+      // 같은 부모의 기존 자식 중 마지막 자식의 위치를 찾는다
+      const siblingEdges = existingEdges.filter(
+        (e) => e.source === parentGraphNodeId && e.sourceHandle === "right",
+      );
+      if (siblingEdges.length > 0) {
+        // 기존 형제 중 가장 아래에 있는 노드를 찾는다
+        let maxY = -Infinity;
+        let maxH = DEFAULT_NODE_HEIGHT;
+        for (const se of siblingEdges) {
+          const siblingNode = existingNodes.find((n) => n.id === se.target);
+          if (siblingNode && siblingNode.position.y > maxY) {
+            maxY = siblingNode.position.y;
+            maxH = siblingNode.height ?? DEFAULT_NODE_HEIGHT;
+          }
+        }
+        newNode.position = { x: childX, y: maxY + maxH + V_GAP };
+      } else {
+        // 첫 번째 자식: 부모와 같은 y
+        newNode.position = { x: childX, y: parentNode.position.y };
+      }
+    }
+  }
+
+  // 3. 에지 생성
+  let newEdge: GraphEdge | null = null;
+  if (parentGraphNodeId && nodeId) {
+    const animated = treeNode.type === "tool"
+      && !(treeNode as ToolNode).completed
+      && !(treeNode as ToolNode).toolResult;
+    newEdge = createEdge(parentGraphNodeId, nodeId, animated, "right", "left");
+  }
+
+  return { newNode, newEdge };
 }

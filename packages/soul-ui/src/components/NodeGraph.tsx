@@ -32,6 +32,7 @@ import { useTheme } from "../hooks/useTheme";
 import { nodeTypes } from "./nodes";
 import {
   buildGraph,
+  buildSingleNode,
   DEFAULT_NODE_WIDTH,
   DEFAULT_NODE_HEIGHT,
   type GraphNode,
@@ -215,7 +216,81 @@ function NodeGraphInner() {
     return () => window.removeEventListener("keydown", handler);
   }, [activeSessionKey, treeVersion, lastEventId, tree, nodes, edges, processingCtx]);
 
-  // 트리/이벤트가 변경되면 그래프 재구성 (디바운스 적용)
+  const treeChangeInfo = useDashboardStore((s) => s.treeChangeInfo);
+
+  // 증분 업데이트: 텍스트/상태 변경 — 해당 노드의 data만 패치 (레이아웃 불변)
+  const handleNodeUpdated = useCallback((nodeId: string) => {
+    const treeNode = processingCtx.nodeMap.get(nodeId);
+    if (!treeNode) return;
+    setNodes((prev) => prev.map((n) =>
+      n.id === `node-${nodeId}` || n.id === `node-${nodeId}-call`
+        ? { ...n, data: { ...n.data, label: treeNode.content ? (n.data.label) : n.data.label, content: treeNode.content?.slice(0, 120) || n.data.content, streaming: !treeNode.completed } }
+        : n,
+    ));
+  }, [processingCtx, setNodes]);
+
+  // 증분 업데이트: 노드 추가 — 새 노드만 생성, 기존 노드 위치 불변
+  const handleNodeAdded = useCallback((nodeId: string) => {
+    const treeNode = processingCtx.nodeMap.get(nodeId);
+    if (!treeNode) return;
+
+    // 부모의 그래프 노드 ID를 결정
+    const parent = treeNode.parent;
+    let parentGraphNodeId: string | null = null;
+    if (parent) {
+      // tool 노드의 부모는 "node-xxx-call" 형식일 수 있음
+      const candidateIds = [`node-${parent.id}-call`, `node-${parent.id}`];
+      const currentNodes = store.getState().nodes as GraphNode[];
+      const currentEdges = store.getState().edges as GraphEdge[];
+      for (const cid of candidateIds) {
+        if (currentNodes.some((n) => n.id === cid)) {
+          parentGraphNodeId = cid;
+          break;
+        }
+      }
+
+      const result = buildSingleNode(treeNode, parentGraphNodeId, currentNodes, currentEdges, collapsedNodeIds);
+      if (!result.newNode) return;
+
+      setNodes((prev) => [...prev, result.newNode!]);
+      if (result.newEdge) setEdges((prev) => [...prev, result.newEdge!]);
+
+      prevNodeIdsRef.current.add(result.newNode.id);
+      lastNodeRef.current = result.newNode;
+
+      // autoScroll ON 시: 새 노드를 자동 선택하고 pan
+      if (autoScroll) {
+        const nodeType = result.newNode.data.nodeType as string | undefined;
+        const cardId = result.newNode.data.cardId as string | undefined;
+        isProgrammaticSelectRef.current = true;
+        if (nodeType && EVENT_NODE_TYPES.has(nodeType)) {
+          selectEventNode(
+            buildEventNodeData(result.newNode.data as GraphNodeData),
+            result.newNode.id,
+            false,
+          );
+        } else if (cardId) {
+          selectCard(cardId, result.newNode.id, false);
+        }
+
+        requestAnimationFrame(() => {
+          const { width: vpW, height: vpH } = store.getState();
+          if (vpW === 0 || vpH === 0) return;
+          const viewport = getViewport();
+          const { dx, dy } = calcPanToNode(result.newNode!, viewport, vpW, vpH);
+          if (dx !== 0 || dy !== 0) {
+            isProgrammaticMoveRef.current = true;
+            setViewport(
+              { x: viewport.x + dx, y: viewport.y + dy, zoom: viewport.zoom },
+              { duration: 300 },
+            );
+          }
+        });
+      }
+    }
+  }, [processingCtx, collapsedNodeIds, autoScroll, store, setNodes, setEdges, getViewport, setViewport, selectCard, selectEventNode]);
+
+  // 트리/이벤트가 변경되면 그래프 재구성 (전체 재빌드 또는 증분 업데이트)
   useEffect(() => {
     if (!activeSessionKey) {
       setNodes([]);
@@ -232,6 +307,20 @@ function NodeGraphInner() {
     }
     prevSessionKeyRef.current = activeSessionKey;
 
+    // 증분 업데이트 경로: treeChangeInfo가 있고, 세션이 동일하며, 초기화 완료 상태
+    if (treeChangeInfo && hasInitializedRef.current) {
+      if (treeChangeInfo.type === 'node-updated' && treeChangeInfo.nodeId) {
+        handleNodeUpdated(treeChangeInfo.nodeId);
+        return;
+      }
+      if (treeChangeInfo.type === 'node-added' && treeChangeInfo.nodeId) {
+        handleNodeAdded(treeChangeInfo.nodeId);
+        return;
+      }
+      // collapse-toggle, full-rebuild → 아래 전체 재빌드로 fall through
+    }
+
+    // 전체 재빌드 경로: 세션 전환, 최초 로드, collapse, changeInfo 없음
     let rafId: number | undefined;
 
     const timer = setTimeout(() => {
@@ -264,8 +353,6 @@ function NodeGraphInner() {
         const isFirstLoad = !hasInitializedRef.current;
 
         // Follow 모드 ON일 때 마지막 추가 노드를 자동 선택
-        // switchTab: false → detail 내용은 갱신하되 chat/detail 탭 전환은 하지 않음
-        // isProgrammaticSelectRef → 후속 onSelectionChange에서도 탭 전환 억제
         if (!isFirstLoad && autoScroll) {
           const lastAdded = addedNodes[addedNodes.length - 1];
           const nodeType = lastAdded.data.nodeType as string | undefined;
@@ -290,8 +377,6 @@ function NodeGraphInner() {
           if (isFirstLoad) {
             hasInitializedRef.current = true;
 
-            // 초기 로드 / 세션 전환: 마지막 노드 자동 선택 (D10)
-            // isProgrammaticSelectRef → 후속 onSelectionChange에서 탭 전환 억제
             const lastNode = nodesWithSelection[nodesWithSelection.length - 1];
             if (lastNode) {
               isProgrammaticSelectRef.current = true;
@@ -300,19 +385,18 @@ function NodeGraphInner() {
                 selectEventNode(
                   buildEventNodeData(lastNode.data as GraphNodeData),
                   lastNode.id,
-                  false,  // 초기 로드: 탭 전환 안 함 (CHAT 탭 유지)
+                  false,
                 );
               } else {
                 const cardId = lastNode.data.cardId as string | undefined;
                 if (cardId) {
-                  selectCard(cardId, lastNode.id, false);  // 초기 로드: 탭 전환 안 함
+                  selectCard(cardId, lastNode.id, false);
                 } else {
                   isProgrammaticSelectRef.current = false;
                 }
               }
             }
 
-            // 줌은 FIXED_ZOOM 고정, 마지막 노드가 보이도록 pan
             const viewport = { x: 0, y: 0, zoom: FIXED_ZOOM };
             const { dx, dy } = calcPanToNode(lastNode, viewport, vpW, vpH);
 
@@ -324,7 +408,6 @@ function NodeGraphInner() {
             return;
           }
 
-          // 스트리밍 중 auto-scroll이 OFF면 pan 하지 않음
           if (!autoScroll) return;
 
           hasInitializedRef.current = true;
@@ -350,6 +433,7 @@ function NodeGraphInner() {
     };
   }, [
     treeVersion,
+    treeChangeInfo,
     tree,
     activeSessionKey,
     autoScroll,
@@ -361,6 +445,8 @@ function NodeGraphInner() {
     store,
     selectCard,
     selectEventNode,
+    handleNodeUpdated,
+    handleNodeAdded,
   ]);
 
   // 선택 상태 변경 시 노드의 selected 속성만 업데이트

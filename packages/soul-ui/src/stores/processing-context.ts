@@ -7,6 +7,17 @@
 
 import type { EventTreeNode, EventTreeNodeType, TextNode } from "@shared/types";
 
+// === Tree Change Info ===
+
+/** 트리 변경 유형 — NodeGraph가 전체 재빌드 vs 증분 업데이트를 분기하는 기준 */
+export type TreeChangeType = 'node-added' | 'node-updated' | 'collapse-toggle' | 'full-rebuild';
+
+export interface TreeChangeInfo {
+  type: TreeChangeType;
+  /** node-added, node-updated 시 대상 노드 ID */
+  nodeId?: string;
+}
+
 // === ProcessingContext ===
 
 /** text_delta/text_end 대상 노드 타입 */
