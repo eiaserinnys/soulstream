@@ -21,7 +21,7 @@ import { ConfigModal } from "./components/ConfigModal";
 import { SearchModal } from "./components/SearchModal";
 import { useSessionListProvider } from "./hooks/useSessionListProvider";
 import { useSessionProvider } from "./hooks/useSessionProvider";
-import { useReadPositionSync } from "./hooks/useReadPositionSync";
+import { useReadPositionSync } from "@seosoyoung/soul-ui";
 import { useNotification } from "./hooks/useNotification";
 import { useUrlSync } from "./hooks/useUrlSync";
 import { useDashboardConfig } from "./hooks/useDashboardConfig";

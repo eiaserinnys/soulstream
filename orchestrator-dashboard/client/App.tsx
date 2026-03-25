@@ -14,12 +14,15 @@ import {
   SessionsTopBar,
   VerticalSplitPane,
   NodeGraph,
+  ThemeToggle,
   initTheme,
   useDashboardStore,
   createFolderOperations,
   createMoveSessionsOperations,
   useSessionListProvider,
   useSessionProvider,
+  useUrlSync,
+  useReadPositionSync,
 } from "@seosoyoung/soul-ui";
 import { useOrchestratorStore } from "./store/orchestrator-store";
 import { NodePanel } from "./components/NodePanel";
@@ -55,6 +58,12 @@ export function App() {
   // 테마 초기화
   useEffect(() => { initTheme(); }, []);
 
+  // URL 해시 ↔ activeSessionKey 동기화
+  useUrlSync();
+
+  // 읽음 위치 동기화 (unread 배지/볼드)
+  useReadPositionSync();
+
   // 노드 SSE → orchestrator-store
   useNodes();
 
@@ -72,18 +81,20 @@ export function App() {
 
   const connectionStatus = useOrchestratorStore((s) => s.connectionStatus);
 
-  // 활성 세션의 노드가 disconnected이면 ChatInput 비활성화
+  // 활성 세션의 노드가 없거나 disconnected이면 ChatInput 비활성화
+  // removeNode가 Map에서 노드를 삭제하므로 !node 체크가 핵심
   const isChatInputDisabled = useMemo(() => {
     if (!activeSessionKey) return false;
     const session = sessions.find((s) => s.agentSessionId === activeSessionKey);
-    if (!session?.nodeId) return false;
+    if (!session?.nodeId) return true;
     const node = nodes.get(session.nodeId);
-    return node?.status === "disconnected";
+    return !node || node.status === "disconnected";
   }, [activeSessionKey, sessions, nodes]);
 
   return (
     <DashboardShell
       title="Soulstream Orchestrator"
+      headerRight={<ThemeToggle />}
       leftPanel={
         <FolderTree
           onMoveSessions={moveOps.moveSessionsOptimistic}

@@ -878,6 +878,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
       addFolder: (folder) => {
         const { catalog } = get();
         if (!catalog) return;
+        if (catalog.folders.some((f) => f.id === folder.id)) return;
         set((state) => ({
           catalog: { ...catalog, folders: [...catalog.folders, folder] },
           catalogVersion: state.catalogVersion + 1,
