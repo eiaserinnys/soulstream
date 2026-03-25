@@ -6,7 +6,7 @@
  * 각 레벨은 오른쪽 컬럼으로 배치됩니다.
  */
 
-import type { EventTreeNode, ToolNode } from "@shared/types";
+import type { EventTreeNode, ToolNode } from "../../shared/types";
 import type { LayoutContext } from "../layout-context";
 import { createEdge } from "../layout-engine";
 import { dispatchRenderer } from "./index";

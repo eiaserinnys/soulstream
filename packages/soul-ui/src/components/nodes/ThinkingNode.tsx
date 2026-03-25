@@ -7,11 +7,11 @@
 
 import { memo, useCallback } from 'react';
 import { type NodeProps, type Node } from '@xyflow/react';
-import type { GraphNodeData } from '../lib/layout-engine';
-import { cn } from '@seosoyoung/soul-ui';
+import type { GraphNodeData } from '../../lib/layout-engine';
+import { cn } from '../../lib/cn';
 import { nodeBase, nodeContent, nodeHeader, nodeLabel, truncate2, collapseButton, NODE_COLORS } from './node-styles';
 import { NodeHandles } from './NodeHandles';
-import { useDashboardStore } from '@seosoyoung/soul-ui';
+import { useDashboardStore } from '../../stores/dashboard-store';
 
 type ThinkingNodeType = Node<GraphNodeData, 'thinking'>;
 

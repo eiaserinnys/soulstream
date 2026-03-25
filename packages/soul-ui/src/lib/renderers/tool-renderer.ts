@@ -6,7 +6,7 @@
  * 자식 노드를 processChildNodes로 재귀 처리합니다.
  */
 
-import type { EventTreeNode, ToolNode } from "@shared/types";
+import type { EventTreeNode, ToolNode } from "../../shared/types";
 import type { LayoutContext } from "../layout-context";
 import {
   createToolCallNode,

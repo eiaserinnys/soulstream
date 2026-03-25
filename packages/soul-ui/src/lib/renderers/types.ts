@@ -2,7 +2,7 @@
  * Renderer Types — 렌더러 공통 타입 정의
  */
 
-import type { EventTreeNode } from "@shared/types";
+import type { EventTreeNode } from "../../shared/types";
 import type { LayoutContext } from "../layout-context";
 
 /**

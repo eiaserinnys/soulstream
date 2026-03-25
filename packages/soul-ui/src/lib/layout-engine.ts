@@ -18,7 +18,7 @@ import type {
   CompactNode,
   InputRequestNodeDef,
   InputRequestQuestion,
-} from "@shared/types";
+} from "../shared/types";
 import { createLayoutContext } from "./layout-context";
 import { processChildNodes } from "./renderers";
 
