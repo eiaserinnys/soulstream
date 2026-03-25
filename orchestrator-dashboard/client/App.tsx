@@ -5,7 +5,7 @@
  * 노드 SSE, 세션 목록/상세 Provider, 카탈로그 팩토리를 여기서 초기화합니다.
  */
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import {
   DashboardShell,
   FolderTree,
@@ -44,6 +44,8 @@ const moveOps = createMoveSessionsOperations({
 
 export function App() {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
+  const sessions = useDashboardStore((s) => s.sessions);
+  const nodes = useOrchestratorStore((s) => s.nodes);
 
   // 스토리지 모드를 SSE로 설정
   useEffect(() => {
@@ -69,6 +71,15 @@ export function App() {
   });
 
   const connectionStatus = useOrchestratorStore((s) => s.connectionStatus);
+
+  // 활성 세션의 노드가 disconnected이면 ChatInput 비활성화
+  const isChatInputDisabled = useMemo(() => {
+    if (!activeSessionKey) return false;
+    const session = sessions.find((s) => s.agentSessionId === activeSessionKey);
+    if (!session?.nodeId) return false;
+    const node = nodes.get(session.nodeId);
+    return node?.status === "disconnected";
+  }, [activeSessionKey, sessions, nodes]);
 
   return (
     <DashboardShell
@@ -101,7 +112,7 @@ export function App() {
           />
         </>
       }
-      rightPanel={<RightPanel />}
+      rightPanel={<RightPanel chatInputDisabled={isChatInputDisabled} />}
       connectionStatus={connectionStatus}
       modals={<NewSessionDialog />}
     />
