@@ -14,8 +14,10 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
+from soul_common.catalog.catalog_service import CatalogService
 from soul_common.db.session_db import PostgresSessionDB
 
+from soulstream_server.nodes.node_connection import NodeConnection
 from soulstream_server.nodes.node_manager import NodeManager
 from soulstream_server.service.session_broadcaster import SessionBroadcaster
 from soulstream_server.service.session_router import SessionRouter
@@ -49,6 +51,10 @@ class BatchMoveRequest(BaseModel):
     folderId: Optional[str] = None
 
 
+class ReadPositionRequest(BaseModel):
+    last_read_event_id: int
+
+
 # --- Router Factory ---
 
 def create_sessions_router(
@@ -56,6 +62,7 @@ def create_sessions_router(
     node_manager: NodeManager,
     session_router: SessionRouter,
     broadcaster: SessionBroadcaster | None = None,
+    catalog_service: CatalogService | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/sessions", tags=["sessions"])
 
@@ -161,7 +168,7 @@ def create_sessions_router(
         session_id, node_id = await session_router.route_create_session(
             body.model_dump(exclude_none=True)
         )
-        return {"sessionId": session_id, "nodeId": node_id}
+        return {"agentSessionId": session_id, "nodeId": node_id}
 
     @router.get("/{session_id}/events")
     async def session_events(
@@ -179,7 +186,7 @@ def create_sessions_router(
             # init 이벤트
             yield {
                 "event": "init",
-                "data": json.dumps({"sessionId": session_id}),
+                "data": json.dumps({"agentSessionId": session_id}),
             }
 
             # Last-Event-ID로 히스토리 시작점 결정
@@ -258,21 +265,32 @@ def create_sessions_router(
 
         return EventSourceResponse(event_generator())
 
+    async def _find_node(session_id: str) -> NodeConnection:
+        """인메모리 → DB 폴백으로 세션의 노드를 찾는다.
+
+        NodeManager는 DB를 알지 않으므로(설계 원칙 §1 지식 경계),
+        DB 폴백은 이미 db를 보유한 API 핸들러 계층에서 수행한다.
+        """
+        node = node_manager.find_node_for_session(session_id)
+        if not node:
+            session_data = await db.get_session(session_id)
+            if session_data and session_data.get("node_id"):
+                node = node_manager.get_node(session_data["node_id"])
+        if not node:
+            raise HTTPException(status_code=404, detail="Session not found")
+        return node
+
     @router.post("/{session_id}/intervene")
     async def intervene(session_id: str, body: InterveneRequest) -> dict:
         """개입 메시지 전송."""
-        node = node_manager.find_node_for_session(session_id)
-        if not node:
-            raise HTTPException(status_code=404, detail="Session not found")
+        node = await _find_node(session_id)
         result = await node.send_intervene(session_id, body.text, body.user)
         return result
 
     @router.post("/{session_id}/respond")
     async def respond(session_id: str, body: RespondRequest) -> dict:
         """입력 요청 응답."""
-        node = node_manager.find_node_for_session(session_id)
-        if not node:
-            raise HTTPException(status_code=404, detail="Session not found")
+        node = await _find_node(session_id)
         result = await node.send_respond(
             session_id, body.request_id, body.answers
         )
@@ -280,9 +298,14 @@ def create_sessions_router(
 
     @router.patch("/folder")
     async def batch_move_folder(body: BatchMoveRequest) -> dict:
-        """세션 일괄 폴더 이동."""
-        for sid in body.sessionIds:
-            await db.assign_session_to_folder(sid, body.folderId)
+        """세션 일괄 폴더 이동. CatalogService 경유로 cross-tab SSE 동기화."""
+        if catalog_service:
+            await catalog_service.move_sessions_to_folder(
+                body.sessionIds, body.folderId
+            )
+        else:
+            for sid in body.sessionIds:
+                await db.assign_session_to_folder(sid, body.folderId)
         return {"success": True, "count": len(body.sessionIds)}
 
     @router.get("/{session_id}/cards")
@@ -304,6 +327,21 @@ def create_sessions_router(
                 "createdAt": evt.get("created_at"),
             })
         return result
+
+    @router.put("/{session_id}/read-position")
+    async def update_read_position(
+        session_id: str, body: ReadPositionRequest
+    ) -> dict:
+        """읽음 위치 갱신 + SSE 브로드캐스트."""
+        await db.update_last_read_event_id(session_id, body.last_read_event_id)
+        read_pos = await db.get_read_position(session_id)
+        if read_pos and broadcaster:
+            await broadcaster.emit_read_position_updated(
+                session_id,
+                read_pos["last_event_id"],
+                read_pos["last_read_event_id"],
+            )
+        return {"ok": True}
 
     return router
 
@@ -330,4 +368,6 @@ def _session_to_response(s: dict) -> dict:
         "displayName": s.get("display_name"),
         "nodeId": s.get("node_id"),
         "folderId": s.get("folder_id"),
+        "lastEventId": s.get("last_event_id", 0),
+        "lastReadEventId": s.get("last_read_event_id", 0),
     }
