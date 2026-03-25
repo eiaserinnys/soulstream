@@ -11,6 +11,8 @@
  * - SSE 구독과 API fetch를 독립된 이펙트로 분리하여,
  *   필터 변경 시 SSE 연결이 끊어지지 않도록 합니다.
  * - SSE delta 이벤트는 전역이므로 storageMode 변경 시에만 재연결합니다.
+ * - fetchSessions를 useRef로 래핑하여 useCallback 참조 변경이
+ *   SSE 재연결이나 Effect 재실행을 유발하지 않도록 합니다.
  */
 
 import { useEffect, useRef, useCallback } from "react";
@@ -103,6 +105,11 @@ export function useSessionListProvider(
     }
   }, [storageMode, sessionTypeFilter, setSessions, setSessionsLoading, setSessionsError, getSessionProvider, externalProvider]);
 
+  // fetchSessions를 ref로 래핑하여, connectSSE와 Effect들의 의존성에서 분리.
+  // useCallback 참조 변경이 SSE 재연결이나 Effect 재실행을 유발하지 않는다.
+  const fetchSessionsRef = useRef(fetchSessions);
+  fetchSessionsRef.current = fetchSessions;
+
   /**
    * SSE delta 이벤트 처리 (sse 모드)
    *
@@ -169,9 +176,10 @@ export function useSessionListProvider(
    * EventSource 자동 재연결은 서버가 200 + text/event-stream으로 응답할 때만 동작합니다.
    * 서버가 완전히 다운되어 TCP 연결 자체가 실패하면 EventSource가 CLOSED(readyState=2)로
    * 전환되고, 이 경우 자동 재연결이 중단됩니다.
-   * reconnectTimerRef로 CLOSED 상태를 감지하여 수동으로 재연결합니다.
+   * onerror에서 CLOSED 감지 시 exponential backoff (3s × 2^n, 최대 30초)로 재연결합니다.
    */
-  const reconnectTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectAttemptRef = useRef(0);
 
   const connectSSE = useCallback(() => {
     if (eventSourceRef.current) return;
@@ -183,9 +191,10 @@ export function useSessionListProvider(
     let hadError = false;
 
     eventSource.onopen = () => {
+      reconnectAttemptRef.current = 0; // 성공 시 backoff 카운터 리셋
       if (hadError) {
-        // 페이지 리로드 대신 세션 목록만 다시 fetch
-        fetchSessions();
+        // 페이지 리로드 대신 세션 목록만 다시 fetch (ref로 최신 참조 사용)
+        fetchSessionsRef.current();
       }
       hadError = false;
       setSessionsError(null);
@@ -204,39 +213,41 @@ export function useSessionListProvider(
 
     eventSource.onerror = () => {
       hadError = true;
-    };
-
-    // EventSource가 CLOSED(readyState=2)되면 수동 재연결
-    // (TCP 연결 실패, 비정상 상태 코드 등으로 자동 재연결이 중단된 경우)
-    if (reconnectTimerRef.current) clearInterval(reconnectTimerRef.current);
-    reconnectTimerRef.current = setInterval(() => {
-      if (eventSourceRef.current?.readyState === EventSource.CLOSED) {
-        console.warn("[SSE] EventSource CLOSED, reconnecting...");
+      // EventSource가 CLOSED(readyState=2)되면 수동 재연결
+      // (TCP 연결 실패, 비정상 상태 코드 등으로 자동 재연결이 중단된 경우)
+      if (eventSource.readyState === EventSource.CLOSED) {
+        console.warn("[SSE] EventSource CLOSED, reconnecting with backoff...");
         eventSourceRef.current = null;
-        connectSSE();
+        const delay = Math.min(3000 * Math.pow(2, reconnectAttemptRef.current), 30000);
+        reconnectAttemptRef.current++;
+        if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = setTimeout(() => {
+          connectSSE();
+        }, delay);
       }
-    }, 3000);
-  }, [handleSSEEvent, setSessionsError, fetchSessions]);
+    };
+  }, [handleSSEEvent, setSessionsError]); // fetchSessions 제거: ref로 접근
 
   /**
    * SSE 연결 해제
    */
   const disconnectSSE = useCallback(() => {
     if (reconnectTimerRef.current) {
-      clearInterval(reconnectTimerRef.current);
+      clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
     }
+    reconnectAttemptRef.current = 0; // 명시적 disconnect 시 카운터도 리셋
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
     }
   }, []);
 
-  // Effect 1: API fetch — 페이지/필터 변경 시 데이터 조회 (SSE 연결에 영향 없음)
+  // Effect 1: API fetch — enabled 변경 시에만 초기 로드 (fetchSessions는 ref로 접근)
   useEffect(() => {
     if (!enabled) return;
 
-    fetchSessions();
+    fetchSessionsRef.current();
 
     // 초기 카탈로그 로드 + 폴더 자동 선택
     fetch("/api/catalog")
@@ -263,7 +274,7 @@ export function useSessionListProvider(
     return () => {
       abortRef.current = true;
     };
-  }, [enabled, fetchSessions]);
+  }, [enabled]); // fetchSessions 제거: ref로 접근
 
   // Effect 2: SSE 구독 — storageMode 변경 시에만 재연결 (페이지/필터 변경과 무관)
   useEffect(() => {
@@ -280,23 +291,23 @@ export function useSessionListProvider(
   useEffect(() => {
     if (!enabled || storageMode !== "serendipity" || externalProvider) return;
 
-    const timer = setInterval(fetchSessions, intervalMs);
+    const timer = setInterval(() => fetchSessionsRef.current(), intervalMs);
 
     return () => {
       clearInterval(timer);
     };
-  }, [enabled, storageMode, fetchSessions, intervalMs, externalProvider]);
+  }, [enabled, storageMode, intervalMs, externalProvider]); // fetchSessions 제거: ref 클로저로 접근
 
   // Effect 4: externalProvider 폴링 — externalProvider가 있을 때 intervalMs 간격으로 fetch
   useEffect(() => {
     if (!enabled || !externalProvider) return;
 
-    const timer = setInterval(fetchSessions, intervalMs);
+    const timer = setInterval(() => fetchSessionsRef.current(), intervalMs);
 
     return () => {
       clearInterval(timer);
     };
-  }, [enabled, externalProvider, fetchSessions, intervalMs]);
+  }, [enabled, externalProvider, intervalMs]); // fetchSessions 제거: ref 클로저로 접근
 
   // storageMode 변경 시 첫 로드 플래그 리셋
   useEffect(() => {
