@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
+from soul_common.catalog.catalog_service import CatalogService
 from soul_common.db.session_db import PostgresSessionDB
 
 from soulstream_server.nodes.node_connection import NodeConnection
@@ -61,6 +62,7 @@ def create_sessions_router(
     node_manager: NodeManager,
     session_router: SessionRouter,
     broadcaster: SessionBroadcaster | None = None,
+    catalog_service: CatalogService | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/sessions", tags=["sessions"])
 
@@ -296,9 +298,14 @@ def create_sessions_router(
 
     @router.patch("/folder")
     async def batch_move_folder(body: BatchMoveRequest) -> dict:
-        """세션 일괄 폴더 이동."""
-        for sid in body.sessionIds:
-            await db.assign_session_to_folder(sid, body.folderId)
+        """세션 일괄 폴더 이동. CatalogService 경유로 cross-tab SSE 동기화."""
+        if catalog_service:
+            await catalog_service.move_sessions_to_folder(
+                body.sessionIds, body.folderId
+            )
+        else:
+            for sid in body.sessionIds:
+                await db.assign_session_to_folder(sid, body.folderId)
         return {"success": True, "count": len(body.sessionIds)}
 
     @router.get("/{session_id}/cards")
