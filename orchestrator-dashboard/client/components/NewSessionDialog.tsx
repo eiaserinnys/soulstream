@@ -3,6 +3,9 @@
  *
  * soul-ui의 공유 NewSessionDialog를 사용하되,
  * nodeSelector 슬롯으로 노드 선택 드롭다운을 주입한다.
+ *
+ * App.tsx modals 슬롯에서만 사용된다.
+ * nodeId/nodeColor prop 없음 — isNewSessionModalOpen 스토어 단일 경로.
  */
 
 import { useState, useCallback } from "react";
@@ -17,17 +20,11 @@ import {
 } from "@seosoyoung/soul-ui";
 import { useOrchestratorStore } from "../store/orchestrator-store";
 
-interface NewSessionDialogProps {
-  /** 특정 노드에서 열면 해당 노드로 고정. undefined면 드롭다운 표시. */
-  nodeId?: string;
-  nodeColor?: string;
-}
-
-export function NewSessionDialog({ nodeId, nodeColor }: NewSessionDialogProps) {
+export function NewSessionDialog() {
+  const isModalOpen = useDashboardStore((s) => s.isNewSessionModalOpen);
+  const closeNewSessionModal = useDashboardStore((s) => s.closeNewSessionModal);
   const nodes = useOrchestratorStore((s) => s.nodes);
-
-  const [open, setOpen] = useState(false);
-  const [selectedNodeId, setSelectedNodeId] = useState(nodeId ?? "");
+  const [selectedNodeId, setSelectedNodeId] = useState("");
 
   const aliveNodes = Array.from(nodes.values()).filter(
     (n) => n.status === "connected",
@@ -35,13 +32,12 @@ export function NewSessionDialog({ nodeId, nodeColor }: NewSessionDialogProps) {
 
   const handleSubmit = useCallback(
     async (prompt: string) => {
-      const targetNode = nodeId ?? selectedNodeId;
-      if (!targetNode) throw new Error("Please select a node");
+      if (!selectedNodeId) throw new Error("Please select a node");
 
       const res = await fetch("/api/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, nodeId: targetNode }),
+        body: JSON.stringify({ prompt, nodeId: selectedNodeId }),
       });
 
       if (!res.ok) {
@@ -50,14 +46,14 @@ export function NewSessionDialog({ nodeId, nodeColor }: NewSessionDialogProps) {
       }
 
       const { sessionId } = await res.json();
-      setOpen(false);
+      closeNewSessionModal();
+      setSelectedNodeId(""); // 선택 초기화
       useDashboardStore.getState().setActiveSession(sessionId);
     },
-    [nodeId, selectedNodeId],
+    [selectedNodeId, closeNewSessionModal],
   );
 
-  // 노드 선택 슬롯
-  const nodeSelector = !nodeId ? (
+  const nodeSelector = (
     <div className="flex flex-col gap-1.5">
       <label className="text-xs font-medium text-muted-foreground">Node</label>
       <Select value={selectedNodeId} onValueChange={setSelectedNodeId}>
@@ -76,44 +72,20 @@ export function NewSessionDialog({ nodeId, nodeColor }: NewSessionDialogProps) {
         </SelectPopup>
       </Select>
     </div>
-  ) : (
-    <div className="flex flex-col gap-1.5">
-      <label className="text-xs font-medium text-muted-foreground">Node</label>
-      <div
-        className="text-sm font-mono px-3 py-2 rounded-md bg-muted border border-input"
-        style={
-          nodeColor
-            ? { borderLeftColor: nodeColor, borderLeftWidth: 3 }
-            : undefined
-        }
-      >
-        {nodeId}
-      </div>
-    </div>
   );
 
   return (
-    <>
-      <button
-        className="text-[10px] font-mono text-muted-foreground/40 hover:text-muted-foreground/70 py-1 transition-colors"
-        style={
-          nodeColor
-            ? {
-                color: `color-mix(in srgb, ${nodeColor} 50%, transparent)`,
-              }
-            : undefined
+    <BaseNewSessionDialog
+      open={isModalOpen}
+      onOpenChange={(v) => {
+        if (!v) {
+          closeNewSessionModal();
+          setSelectedNodeId(""); // 닫힐 때 선택 초기화
         }
-        onClick={() => setOpen(true)}
-      >
-        + New Session
-      </button>
-      <BaseNewSessionDialog
-        open={open}
-        onOpenChange={setOpen}
-        onSubmit={handleSubmit}
-        nodeSelector={nodeSelector}
-        submitDisabled={!nodeId && !selectedNodeId}
-      />
-    </>
+      }}
+      onSubmit={handleSubmit}
+      nodeSelector={nodeSelector}
+      submitDisabled={!selectedNodeId}
+    />
   );
 }
