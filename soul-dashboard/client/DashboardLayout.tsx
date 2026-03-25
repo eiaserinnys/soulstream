@@ -29,6 +29,7 @@ import { useServerStatus } from "./hooks/useServerStatus";
 import {
   DashboardShell,
   FolderTree,
+  FeedView,
   RightPanel,
   ChatView,
   initTheme,
@@ -38,6 +39,7 @@ import {
 
 export function DashboardLayout() {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
+  const viewMode = useDashboardStore((s) => s.viewMode);
   const setSerendipityAvailable = useDashboardStore((s) => s.setSerendipityAvailable);
 
   // 세션 목록 구독 (SSE 모드: 실시간, Serendipity 모드: 폴링)
@@ -97,18 +99,22 @@ export function DashboardLayout() {
         />
       }
       centerPanel={
-        <>
-          <SessionsTopBar />
-          <VerticalSplitPane
-            className="flex-1 overflow-hidden"
-            top={<FolderContents />}
-            bottom={
-              <div className="flex-1 overflow-hidden h-full bg-muted/50 dark:bg-muted/30">
-                <NodeGraph />
-              </div>
-            }
-          />
-        </>
+        viewMode === "feed" ? (
+          <FeedView />
+        ) : (
+          <>
+            <SessionsTopBar />
+            <VerticalSplitPane
+              className="flex-1 overflow-hidden"
+              top={<FolderContents />}
+              bottom={
+                <div className="flex-1 overflow-hidden h-full bg-muted/50 dark:bg-muted/30">
+                  <NodeGraph />
+                </div>
+              }
+            />
+          </>
+        )
       }
       rightPanel={<RightPanel />}
       connectionStatus={sseStatus}
@@ -131,10 +137,14 @@ export function DashboardLayout() {
         ) : undefined
       }
       mobileSessionsView={
-        <>
-          <SessionsTopBar />
-          <FolderContents />
-        </>
+        viewMode === "feed" ? (
+          <FeedView />
+        ) : (
+          <>
+            <SessionsTopBar />
+            <FolderContents />
+          </>
+        )
       }
       mobileChatHeader={(onBack) => <MobileChatHeader onBack={onBack} />}
       mobileChatView={<ChatView />}

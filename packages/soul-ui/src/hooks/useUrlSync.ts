@@ -1,45 +1,66 @@
 /**
  * useUrlSync - URL ↔ 스토어 양방향 동기화
  *
- * 브라우저 주소창과 Zustand activeSessionKey를 동기화합니다.
- * - "/" → 세션 미선택 (폴더 콘텐츠 표시)
- * - "/#/{agentSessionId}" → 해당 세션 보기
+ * URL 해시 라우팅으로 뷰 모드와 활성 세션을 동기화합니다.
+ *
+ * URL 패턴:
+ *   /#/feed                  → 피드 뷰, 세션 미선택
+ *   /#/feed/{agentSessionId} → 피드 뷰 + 해당 세션 선택
+ *   /#/{agentSessionId}      → 폴더 뷰 + 해당 세션 선택
+ *   /#/ 또는 /               → 피드 뷰 (초기 진입)
  *
  * React Router를 사용하지 않고 네이티브 History API로 구현합니다.
- *
- * 해시 라우팅을 사용하는 이유:
- * 경로 라우팅(/sess-xxx)을 쓰면 탭 URL이 세션 ID로 바뀌어 기본 URL(/)을 식별하기 어렵다.
- * 해시 라우팅(#sess-xxx)은 세션이 활성화되어도 기본 URL이 localhost:PORT/로 유지된다.
  */
 
 import { useEffect, useRef } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
 
-/** hash에서 세션 ID를 추출합니다. "" → null, "#sess-abc" → "sess-abc" */
-function extractSessionId(hash: string): string | null {
-  const trimmed = hash.replace(/^#+/, "").replace(/\/+$/, "");
-  if (!trimmed || trimmed.includes("/")) return null;
-  return trimmed;
+interface ParsedHash {
+  viewMode: "feed" | "folder";
+  sessionId: string | null;
+}
+
+/** URL 해시를 파싱하여 viewMode + sessionId를 추출한다 */
+function parseHash(hash: string): ParsedHash {
+  // '#/feed/sess-xxx' → 'feed/sess-xxx', '#sess-xxx' → 'sess-xxx', '' → ''
+  const path = hash.replace(/^#\/?/, "").replace(/\/+$/, "");
+
+  if (!path || path === "feed") {
+    return { viewMode: "feed", sessionId: null };
+  }
+  if (path.startsWith("feed/")) {
+    return { viewMode: "feed", sessionId: path.slice(5) || null };
+  }
+  return { viewMode: "folder", sessionId: path };
+}
+
+/** viewMode + sessionId로 해시 문자열을 생성한다 */
+function buildHash(viewMode: "feed" | "folder", sessionId: string | null): string {
+  if (viewMode === "feed") {
+    return sessionId ? `#feed/${sessionId}` : "#feed";
+  }
+  return sessionId ? `#${sessionId}` : "";
 }
 
 export function useUrlSync() {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
+  const viewMode = useDashboardStore((s) => s.viewMode);
   const setActiveSession = useDashboardStore((s) => s.setActiveSession);
   const clearActiveSession = useDashboardStore((s) => s.clearActiveSession);
+  const setViewMode = useDashboardStore((s) => s.setViewMode);
   const catalog = useDashboardStore((s) => s.catalog);
 
-  // popstate 핸들러에서 최신 상태를 참조하기 위한 ref
+  // URL에서 스토어 갱신 중일 때 스토어→URL 역방향 push를 억제
   const skipNextPush = useRef(false);
 
-  // 1. 마운트 시: hash에서 세션 ID 읽어 스토어에 반영
+  // 1. 마운트 시: 해시에서 뷰 모드 + 세션 ID를 읽어 스토어에 반영
   useEffect(() => {
-    const sessionId = extractSessionId(window.location.hash);
+    const { viewMode: parsedMode, sessionId } = parseHash(window.location.hash);
+    skipNextPush.current = true;
+    setViewMode(parsedMode);
     if (sessionId) {
-      // URL에 세션 ID가 있으면 해당 세션 활성화
-      skipNextPush.current = true;
       setActiveSession(sessionId);
     }
-    // "/" 이면 기본 상태 (Composer) 유지
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -59,31 +80,32 @@ export function useUrlSync() {
     folderSyncDone.current = true;
   }, [activeSessionKey, catalog]);
 
-  // 2. activeSessionKey 변경 → URL 업데이트
+  // 2. 스토어 변경 → URL 해시 업데이트
   useEffect(() => {
     if (skipNextPush.current) {
       skipNextPush.current = false;
       return;
     }
 
-    if (activeSessionKey) {
-      const targetHash = `#${activeSessionKey}`;
-      if (window.location.hash !== targetHash) {
-        window.history.pushState(null, "", targetHash);
-      }
-    } else {
-      // 세션 없음: hash 제거하여 기본 URL(/)로 복귀
-      if (window.location.hash) {
-        window.history.pushState(null, "", "/");
-      }
-    }
-  }, [activeSessionKey]);
+    const targetHash = buildHash(viewMode, activeSessionKey);
+    const currentHash = window.location.hash;
 
-  // 3. 뒤로가기/앞으로가기 → 스토어 업데이트
+    // 같은 해시면 무시
+    if (currentHash === targetHash || (!currentHash && !targetHash)) return;
+
+    if (targetHash) {
+      window.history.pushState(null, "", targetHash);
+    } else {
+      window.history.pushState(null, "", "/");
+    }
+  }, [activeSessionKey, viewMode]);
+
+  // 3. 뒤로가기/앞으로가기 (popstate) → 스토어 업데이트
   useEffect(() => {
     const handlePopState = () => {
-      const sessionId = extractSessionId(window.location.hash);
+      const { viewMode: parsedMode, sessionId } = parseHash(window.location.hash);
       skipNextPush.current = true;
+      setViewMode(parsedMode);
       if (sessionId) {
         setActiveSession(sessionId);
       } else {
@@ -93,5 +115,5 @@ export function useUrlSync() {
 
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
-  }, [setActiveSession, clearActiveSession]);
+  }, [setActiveSession, clearActiveSession, setViewMode]);
 }
