@@ -21,6 +21,7 @@ import { ConfigModal } from "./components/ConfigModal";
 import { SearchModal } from "./components/SearchModal";
 import { useSessionListProvider } from "./hooks/useSessionListProvider";
 import { useSessionProvider } from "./hooks/useSessionProvider";
+import { getSessionProvider } from "./providers";
 import { useReadPositionSync } from "@seosoyoung/soul-ui";
 import { useNotification } from "./hooks/useNotification";
 import { useUrlSync } from "./hooks/useUrlSync";
@@ -43,7 +44,7 @@ export function DashboardLayout() {
   const setSerendipityAvailable = useDashboardStore((s) => s.setSerendipityAvailable);
 
   // 세션 목록 구독 (SSE 모드: 실시간, Serendipity 모드: 폴링)
-  const { sessions, loading, error } = useSessionListProvider({ intervalMs: 5000 });
+  const { sessions, loading, error } = useSessionListProvider({ intervalMs: 5000, getSessionProvider });
 
   // 활성 세션 구독 (Provider 기반)
   const { status: sseStatus } = useSessionProvider({
