@@ -624,7 +624,10 @@ const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, session
 
 // === ChatView ===
 
-export function ChatView() {
+interface ChatViewProps {
+  chatInputDisabled?: boolean;
+}
+export function ChatView({ chatInputDisabled = false }: ChatViewProps = {}) {
   const tree = useDashboardStore((s) => s.tree);
   const treeVersion = useDashboardStore((s) => s.treeVersion);
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
@@ -808,7 +811,7 @@ export function ChatView() {
       </div>
 
       {/* ChatInput */}
-      <ChatInput />
+      <ChatInput additionalDisabled={chatInputDisabled} />
     </div>
   );
 }
