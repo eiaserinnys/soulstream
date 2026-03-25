@@ -69,7 +69,9 @@ async def lifespan(app: FastAPI):
 
     # 라우터 마운트
     app.include_router(
-        create_sessions_router(db, node_manager, session_router, broadcaster)
+        create_sessions_router(
+            db, node_manager, session_router, broadcaster, catalog_service
+        )
     )
     app.include_router(create_nodes_router(node_manager, broadcaster))
     app.include_router(create_folders_router(catalog_service))
