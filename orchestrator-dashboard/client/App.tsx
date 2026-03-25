@@ -22,6 +22,7 @@ import {
   useSessionListProvider,
   useSessionProvider,
   useUrlSync,
+  useReadPositionSync,
 } from "@seosoyoung/soul-ui";
 import { useOrchestratorStore } from "./store/orchestrator-store";
 import { NodePanel } from "./components/NodePanel";
@@ -59,6 +60,9 @@ export function App() {
 
   // URL 해시 ↔ activeSessionKey 동기화
   useUrlSync();
+
+  // 읽음 위치 동기화 (unread 배지/볼드)
+  useReadPositionSync();
 
   // 노드 SSE → orchestrator-store
   useNodes();
