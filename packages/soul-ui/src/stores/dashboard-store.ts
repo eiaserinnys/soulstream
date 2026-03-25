@@ -76,6 +76,12 @@ export interface DashboardState {
   /** 스토리지 모드 */
   storageMode: StorageMode;
 
+  /** 뷰 모드 — URL 해시에서 파생. 'feed' = 피드 뷰, 'folder' = 기존 폴더 뷰 */
+  viewMode: "feed" | "folder";
+
+  /** 피드 스크롤 오프셋 (뷰 전환 시 위치 복원용) */
+  feedScrollOffset: number;
+
   /** 세션 목록 */
   sessions: SessionSummary[];
   sessionsTotal: number;
@@ -230,6 +236,12 @@ export interface DashboardActions {
   // 검색 포커스 이벤트 ID
   setFocusEventId: (eventId: number | null) => void;
 
+  // 뷰 모드 (URL 동기화 전용)
+  setViewMode: (mode: "feed" | "folder") => void;
+  selectFeed: () => void;
+  setFeedScrollOffset: (offset: number) => void;
+  getFeedSessions: () => SessionSummary[];
+
   // 카탈로그
   setCatalog: (catalog: CatalogState) => void;
   selectFolder: (folderId: string | null) => void;
@@ -289,6 +301,8 @@ function applyLlmMetadata(
 
 const initialState: DashboardState = {
   storageMode: "sse",
+  viewMode: "feed",
+  feedScrollOffset: 0,
   sessions: [],
   sessionsTotal: 0,
   sessionsLoading: true,
@@ -918,7 +932,43 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         }));
       },
 
-      selectFolder: (folderId) => set({ selectedFolderId: folderId }),
+      selectFolder: (folderId) => {
+        set({ selectedFolderId: folderId, viewMode: "folder" });
+        // FolderTree.handleSelectFolder에서 흡수: 첫 세션 자동 선택
+        const { getSessionsInFolder, setActiveSession, clearActiveSession } = get();
+        const folderSessions = getSessionsInFolder(folderId);
+        if (folderSessions.length > 0) {
+          setActiveSession(folderSessions[0].agentSessionId);
+        } else {
+          clearActiveSession();
+        }
+      },
+
+      // --- 뷰 모드 ---
+
+      setViewMode: (mode) => set({ viewMode: mode }),
+
+      selectFeed: () => {
+        set({ viewMode: "feed" });
+        // URL은 useUrlSync의 effect가 viewMode 변경을 감지하여 자동 반영
+      },
+
+      setFeedScrollOffset: (offset) => set({ feedScrollOffset: offset }),
+
+      getFeedSessions: () => {
+        const { sessions } = get();
+        const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+        return sessions
+          .filter((s) => {
+            const t = s.lastMessage?.timestamp ?? s.updatedAt ?? s.createdAt;
+            return t != null && new Date(t).getTime() > cutoff;
+          })
+          .sort((a, b) => {
+            const ta = new Date(a.updatedAt ?? a.createdAt ?? 0).getTime();
+            const tb = new Date(b.updatedAt ?? b.createdAt ?? 0).getTime();
+            return tb - ta;
+          });
+      },
 
       setMobileView: (mobileView) => set({ mobileView }),
 
