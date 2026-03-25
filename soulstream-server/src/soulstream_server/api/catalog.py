@@ -47,7 +47,7 @@ def create_catalog_router(
         # sessions dict: soul-ui CatalogState 호환 (Record<string, CatalogAssignment>)
         sessions_dict = {}
         for s in sessions_raw:
-            sid = s.get("agent_session_id", "")
+            sid = s.get("session_id", "")
             assignment = folder_assignments.get(sid, {})
             sessions_dict[sid] = {
                 "folderId": assignment.get("folderId"),
@@ -57,7 +57,7 @@ def create_catalog_router(
         # sessionList 배열: OrchestratorSessionProvider가 세션 목록 구성에 사용
         session_list = []
         for s in sessions_raw:
-            sid = s.get("agent_session_id", "")
+            sid = s.get("session_id", "")
             assignment = folder_assignments.get(sid, {})
             session_list.append({
                 "session_id": sid,
