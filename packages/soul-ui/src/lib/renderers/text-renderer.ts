@@ -4,7 +4,7 @@
  * 트리 구조에 따라 배치되며, 자식 노드를 processChildNodes로 재귀 처리합니다.
  */
 
-import type { EventTreeNode } from "@shared/types";
+import type { EventTreeNode } from "../../shared/types";
 import type { LayoutContext } from "../layout-context";
 import {
   createTextNode,

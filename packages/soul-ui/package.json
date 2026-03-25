@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.2.0",
+    "@xyflow/react": "^12.10.1",
     "@tanstack/react-virtual": "^3.13.21",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

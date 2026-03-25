@@ -27,7 +27,7 @@ export class OrchestratorSessionProvider implements SessionStorageProvider {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
     const data: {
-      sessions: Array<{
+      sessionList: Array<{
         session_id: string;
         node_id: string;
         folder_id: string | null;
@@ -37,7 +37,7 @@ export class OrchestratorSessionProvider implements SessionStorageProvider {
       }>;
     } = await res.json();
 
-    const sessions = data.sessions.map((s) => ({
+    const sessions = data.sessionList.map((s) => ({
       agentSessionId: s.session_id,
       status: mapStatus(s.status),
       eventCount: 0,

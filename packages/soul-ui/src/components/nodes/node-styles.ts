@@ -9,7 +9,7 @@
  * 노드 색상 CSS 변수 — soul-ui 패키지에서 정본을 가져온다.
  * globals.css의 :root / .dark에서 테마별 값이 결정된다.
  */
-export { NODE_COLORS } from "@seosoyoung/soul-ui";
+export { NODE_COLORS } from "../../styles/node-colors";
 
 /** 노드 기본 클래스 (260x84 고정, border-box) */
 export const nodeBase = "w-[260px] h-[84px] box-border rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.4)] flex overflow-hidden";

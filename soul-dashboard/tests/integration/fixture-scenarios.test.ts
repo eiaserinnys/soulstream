@@ -26,7 +26,7 @@ import {
 import {
   buildGraph,
   type GraphNode,
-} from "../../client/lib/layout-engine.js";
+} from "@seosoyoung/soul-ui";
 
 // === Fixture Loader ===
 

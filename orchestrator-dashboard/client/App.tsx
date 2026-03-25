@@ -11,6 +11,9 @@ import {
   FolderTree,
   FolderContents,
   RightPanel,
+  SessionsTopBar,
+  VerticalSplitPane,
+  NodeGraph,
   initTheme,
   useDashboardStore,
   createFolderOperations,
@@ -81,9 +84,22 @@ export function App() {
       leftPanelBottom={<NodePanel />}
       leftBottomRatio={3}
       centerPanel={
-        <FolderContents
-          onMoveSessions={moveOps.moveSessionsOptimistic}
-        />
+        <>
+          <SessionsTopBar />
+          <VerticalSplitPane
+            className="flex-1 overflow-hidden"
+            top={
+              <FolderContents
+                onMoveSessions={moveOps.moveSessionsOptimistic}
+              />
+            }
+            bottom={
+              <div className="flex-1 overflow-hidden h-full bg-muted/50 dark:bg-muted/30">
+                <NodeGraph />
+              </div>
+            }
+          />
+        </>
       }
       rightPanel={<RightPanel />}
       connectionStatus={connectionStatus}
