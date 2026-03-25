@@ -45,10 +45,17 @@ export function NewSessionDialog() {
         throw new Error(data.error ?? `HTTP ${res.status}`);
       }
 
-      const { sessionId } = await res.json();
+      const { agentSessionId } = await res.json();
+      const { addOptimisticSession, selectedFolderId } =
+        useDashboardStore.getState();
+      addOptimisticSession(
+        agentSessionId,
+        prompt,
+        selectedFolderId ?? null,
+        selectedNodeId,
+      );
       closeNewSessionModal();
-      setSelectedNodeId(""); // 선택 초기화
-      useDashboardStore.getState().setActiveSession(sessionId);
+      setSelectedNodeId("");
     },
     [selectedNodeId, closeNewSessionModal],
   );
