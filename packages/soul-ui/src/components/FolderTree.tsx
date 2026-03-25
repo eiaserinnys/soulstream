@@ -12,7 +12,7 @@ import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Spinner } from "./ui/spinner";
 import { SYSTEM_FOLDERS } from "../shared/constants";
-import { Plus } from "lucide-react";
+import { Plus, Newspaper } from "lucide-react";
 import { FolderDialog } from "./FolderDialog";
 
 const SYSTEM_FOLDER_NAMES: Set<string> = new Set(Object.values(SYSTEM_FOLDERS));
@@ -35,6 +35,9 @@ export function FolderTree({
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
   const selectFolder = useDashboardStore((s) => s.selectFolder);
   const sessions = useDashboardStore((s) => s.sessions);
+  const viewMode = useDashboardStore((s) => s.viewMode);
+  const selectFeed = useDashboardStore((s) => s.selectFeed);
+  const getFeedSessions = useDashboardStore((s) => s.getFeedSessions);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [dragOverId, setDragOverId] = useState<string | null>(null);
@@ -123,18 +126,16 @@ export function FolderTree({
     setEditingId(null);
   };
 
-  /** 폴더 선택 시 해당 폴더의 첫 세션을 자동 선택한다 */
+  /** 폴더 선택 — 세션 자동 선택 로직은 스토어의 selectFolder 액션이 담당 */
   const handleSelectFolder = useCallback((folderId: string | null) => {
-    const store = useDashboardStore.getState();
-    // 폴더 선택을 먼저 명시적으로 설정 (setActiveSession의 early return과 무관하게)
     selectFolder(folderId);
-    const folderSessions = store.getSessionsInFolder(folderId);
-    if (folderSessions.length > 0) {
-      store.setActiveSession(folderSessions[0].agentSessionId);
-    } else {
-      store.clearActiveSession();
-    }
   }, [selectFolder]);
+
+  /** 피드 미읽음 카운트 */
+  const feedUnreadCount = useMemo(() => {
+    const feed = getFeedSessions();
+    return feed.filter(isSessionUnread).length;
+  }, [sessions, getFeedSessions, catalogVersion]);
 
   const allFolders = catalog?.folders ?? [];
   const { normalFolders, systemFolders } = useMemo(() => {
@@ -148,7 +149,7 @@ export function FolderTree({
       key={folder.id}
       className={cn(
         "flex items-center justify-between px-3 py-1.5 cursor-pointer text-sm hover:bg-accent/50 group",
-        selectedFolderId === folder.id && "bg-accent text-accent-foreground",
+        viewMode === "folder" && selectedFolderId === folder.id && "bg-accent text-accent-foreground",
         dragOverId === folder.id && "ring-2 ring-primary",
       )}
       onClick={() => handleSelectFolder(folder.id)}
@@ -206,6 +207,28 @@ export function FolderTree({
       </div>
 
       <div className="flex-1 overflow-y-auto py-1">
+        {/* 📰 피드 */}
+        <div
+          className={cn(
+            "flex items-center justify-between px-3 py-1.5 cursor-pointer text-sm hover:bg-accent/50",
+            viewMode === "feed" && "bg-accent text-accent-foreground",
+          )}
+          onClick={selectFeed}
+        >
+          <div className="flex items-center gap-1.5">
+            <Newspaper className="h-3.5 w-3.5" />
+            <span>피드</span>
+          </div>
+          {feedUnreadCount > 0 ? (
+            <Badge variant="destructive" className="ml-2 text-xs font-bold">
+              {feedUnreadCount}
+            </Badge>
+          ) : null}
+        </div>
+
+        {/* 구분선 */}
+        <div className="border-t border-border my-1 mx-3" />
+
         {/* 일반 폴더 */}
         {normalFolders.map(renderFolder)}
 

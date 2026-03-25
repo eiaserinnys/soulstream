@@ -157,8 +157,11 @@ export { useIsMobile } from "./hooks/use-mobile";
 // === Components ===
 export { FolderTree } from "./components/FolderTree";
 export type { FolderTreeProps } from "./components/FolderTree";
-export { FolderContents, nodeIdToHue } from "./components/FolderContents";
-export type { FolderContentsProps } from "./components/FolderContents";
+export { FolderContents, nodeIdToHue, STATUS_CONFIG } from "./components/FolderContents";
+export type { FolderContentsProps, StatusConfig } from "./components/FolderContents";
+export { FeedCard } from "./components/FeedCard";
+export type { FeedCardProps } from "./components/FeedCard";
+export { FeedView } from "./components/FeedView";
 export { FolderDialog } from "./components/FolderDialog";
 export { ChatView } from "./components/ChatView";
 export { ChatInput } from "./components/ChatInput";

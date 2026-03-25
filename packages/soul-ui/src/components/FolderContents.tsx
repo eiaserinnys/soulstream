@@ -30,12 +30,12 @@ export function nodeIdToHue(nodeId: string): number {
 
 // === Status Config ===
 
-interface StatusConfig {
+export interface StatusConfig {
   dotClass: string;
   animate: boolean;
 }
 
-const STATUS_CONFIG: Record<SessionStatus, StatusConfig> = {
+export const STATUS_CONFIG: Record<SessionStatus, StatusConfig> = {
   running:      { dotClass: "bg-success",          animate: true  },
   completed:    { dotClass: "bg-muted-foreground",  animate: false },
   error:        { dotClass: "bg-accent-red",        animate: false },
