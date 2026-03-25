@@ -30,6 +30,7 @@ import type {
 import type { StorageMode } from "../providers/types";
 import {
   type ProcessingContext,
+  type TreeChangeInfo,
   createProcessingContext,
   ensureRoot,
 } from "./processing-context";
@@ -109,6 +110,9 @@ export interface DashboardState {
 
   /** 트리 변경 감지용 카운터 (mutable tree이므로 참조 비교 불가) */
   treeVersion: number;
+
+  /** 마지막 트리 변경의 유형 — NodeGraph가 증분 업데이트 vs 전체 재빌드를 분기하는 기준 */
+  treeChangeInfo: TreeChangeInfo | null;
 
   /** 마지막으로 수신한 이벤트 ID (SSE 재연결용) */
   lastEventId: number;
@@ -315,6 +319,7 @@ const initialState: DashboardState = {
   selectedEventNodeData: null,
   tree: null,
   treeVersion: 0,
+  treeChangeInfo: null,
   lastEventId: 0,
   pendingNotifications: [],
   isNewSessionModalOpen: false,
@@ -344,6 +349,7 @@ function getSessionResetState() {
     selectedEventNodeData: null as DashboardState["selectedEventNodeData"],
     tree: null as EventTreeNode | null,
     treeVersion: 0,
+    treeChangeInfo: null as TreeChangeInfo | null,
     lastEventId: 0,
     pendingNotifications: [] as SoulSSEEvent[],
     collapsedNodeIds: new Set<string>(),
@@ -373,6 +379,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           activeSession: null,
           tree: null,
           treeVersion: 0,
+          treeChangeInfo: null,
           lastEventId: 0,
           pendingNotifications: [],
           selectedCardId: null,
@@ -584,9 +591,14 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         // 히스토리 리플레이 중에는 알림도 억제 (과거 이벤트로 알림이 뜨면 안 됨)
         const notify = ctx.historySynced && shouldNotify(event);
         if (updated) {
+          // 변경 유형 분류: 노드가 새로 생성되었으면 node-added, 기존 노드 갱신이면 node-updated
+          const treeChangeInfo: TreeChangeInfo = node
+            ? { type: 'node-added', nodeId: node.id }
+            : { type: 'node-updated', nodeId: ctx.activeTextTarget?.id };
           set({
             tree: root,
             treeVersion: state.treeVersion + 1,
+            treeChangeInfo,
             lastEventId: eventId,
             ...sessionsUpdate,
             ...(notify
@@ -696,8 +708,9 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         }
 
         // 배치 전체에 대해 set() 1회만 호출
+        // treeChangeInfo: null → NodeGraph에서 full-rebuild로 간주 (세션 최초 로드)
         set({
-          ...(updated ? { tree: root, treeVersion: state.treeVersion + 1 } : {}),
+          ...(updated ? { tree: root, treeVersion: state.treeVersion + 1, treeChangeInfo: null } : {}),
           lastEventId: maxEventId,
           ...sessionsUpdate,
           ...(notifications.length > 0
@@ -758,6 +771,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         set({
           tree: null,
           treeVersion: 0,
+          treeChangeInfo: null,
           lastEventId: 0,
           pendingNotifications: [],
           selectedCardId: null,
@@ -791,7 +805,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         } else {
           newCollapsed.add(nodeId);
         }
-        set({ collapsedNodeIds: newCollapsed, treeVersion: get().treeVersion + 1 });
+        set({ collapsedNodeIds: newCollapsed, treeVersion: get().treeVersion + 1, treeChangeInfo: { type: 'collapse-toggle' } });
       },
 
       setNodeCollapsed: (nodeId, collapsed) => {
@@ -802,11 +816,11 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         } else {
           newCollapsed.delete(nodeId);
         }
-        set({ collapsedNodeIds: newCollapsed, treeVersion: get().treeVersion + 1 });
+        set({ collapsedNodeIds: newCollapsed, treeVersion: get().treeVersion + 1, treeChangeInfo: { type: 'collapse-toggle' } });
       },
 
       clearCollapsedNodes: () => {
-        set({ collapsedNodeIds: new Set<string>(), treeVersion: get().treeVersion + 1 });
+        set({ collapsedNodeIds: new Set<string>(), treeVersion: get().treeVersion + 1, treeChangeInfo: { type: 'collapse-toggle' } });
       },
 
       // --- 세렌디피티 가용 여부 ---
