@@ -5,7 +5,7 @@
  * 엣지 생성은 processChildNodes가 담당합니다.
  */
 
-import type { EventTreeNode, CompleteNode, ErrorNode, CompactNode, ResultNode } from "@shared/types";
+import type { EventTreeNode, CompleteNode, ErrorNode, CompactNode, ResultNode } from "../../shared/types";
 import type { LayoutContext } from "../layout-context";
 import {
   createSystemNodeFromTree,

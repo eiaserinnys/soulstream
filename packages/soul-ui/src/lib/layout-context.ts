@@ -5,7 +5,7 @@
  * LayoutContext 인터페이스로 추출하여, 모든 렌더러 함수가 파라미터로 받아 독립 테스트 가능하게 합니다.
  */
 
-import type { EventTreeNode } from "@shared/types";
+import type { EventTreeNode } from "../shared/types";
 import type { GraphNode, GraphEdge, GraphNodeData } from "./layout-engine";
 
 /** 플랜 모드 감지 결과 */

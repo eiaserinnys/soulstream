@@ -169,6 +169,15 @@ export { AskQuestionBanner } from "./components/AskQuestionBanner";
 export { ProfileAvatar } from "./components/ProfileAvatar";
 export { ContextContentRenderer } from "./components/ContextContentRenderer";
 
+// === NodeGraph (Execution Flow) ===
+export { NodeGraph } from "./components/NodeGraph";
+export {
+  buildGraph,
+  DEFAULT_NODE_WIDTH,
+  DEFAULT_NODE_HEIGHT,
+} from "./lib/layout-engine";
+export type { GraphNode, GraphEdge, GraphNodeData } from "./lib/layout-engine";
+
 // === Dashboard Components (extracted from soul-dashboard) ===
 export { SessionsTopBar } from "./components/SessionsTopBar";
 export { VerticalSplitPane } from "./components/VerticalSplitPane";
