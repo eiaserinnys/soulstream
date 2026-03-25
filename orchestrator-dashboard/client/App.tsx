@@ -10,6 +10,7 @@ import {
   DashboardShell,
   FolderTree,
   FolderContents,
+  FeedView,
   RightPanel,
   SessionsTopBar,
   VerticalSplitPane,
@@ -47,6 +48,7 @@ const moveOps = createMoveSessionsOperations({
 
 export function App() {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
+  const viewMode = useDashboardStore((s) => s.viewMode);
   const sessions = useDashboardStore((s) => s.sessions);
   const nodes = useOrchestratorStore((s) => s.nodes);
 
@@ -106,22 +108,26 @@ export function App() {
       leftPanelBottom={<NodePanel />}
       leftBottomRatio={3}
       centerPanel={
-        <>
-          <SessionsTopBar />
-          <VerticalSplitPane
-            className="flex-1 overflow-hidden"
-            top={
-              <FolderContents
-                onMoveSessions={moveOps.moveSessionsOptimistic}
-              />
-            }
-            bottom={
-              <div className="flex-1 overflow-hidden h-full bg-muted/50 dark:bg-muted/30">
-                <NodeGraph />
-              </div>
-            }
-          />
-        </>
+        viewMode === "feed" ? (
+          <FeedView />
+        ) : (
+          <>
+            <SessionsTopBar />
+            <VerticalSplitPane
+              className="flex-1 overflow-hidden"
+              top={
+                <FolderContents
+                  onMoveSessions={moveOps.moveSessionsOptimistic}
+                />
+              }
+              bottom={
+                <div className="flex-1 overflow-hidden h-full bg-muted/50 dark:bg-muted/30">
+                  <NodeGraph />
+                </div>
+              }
+            />
+          </>
+        )
       }
       rightPanel={<RightPanel chatInputDisabled={isChatInputDisabled} />}
       connectionStatus={connectionStatus}
