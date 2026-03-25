@@ -14,12 +14,14 @@ import {
   SessionsTopBar,
   VerticalSplitPane,
   NodeGraph,
+  ThemeToggle,
   initTheme,
   useDashboardStore,
   createFolderOperations,
   createMoveSessionsOperations,
   useSessionListProvider,
   useSessionProvider,
+  useUrlSync,
 } from "@seosoyoung/soul-ui";
 import { useOrchestratorStore } from "./store/orchestrator-store";
 import { NodePanel } from "./components/NodePanel";
@@ -55,6 +57,9 @@ export function App() {
   // 테마 초기화
   useEffect(() => { initTheme(); }, []);
 
+  // URL 해시 ↔ activeSessionKey 동기화
+  useUrlSync();
+
   // 노드 SSE → orchestrator-store
   useNodes();
 
@@ -84,6 +89,7 @@ export function App() {
   return (
     <DashboardShell
       title="Soulstream Orchestrator"
+      headerRight={<ThemeToggle />}
       leftPanel={
         <FolderTree
           onMoveSessions={moveOps.moveSessionsOptimistic}
