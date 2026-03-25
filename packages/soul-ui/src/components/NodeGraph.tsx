@@ -25,11 +25,11 @@ import "@xyflow/react/dist/style.css";
 import {
   useDashboardStore, countTreeNodes, countStreamingNodes,
   type SelectedEventNodeData,
-  AskQuestionBanner,
-  cn,
-  useTheme,
-} from "@seosoyoung/soul-ui";
-import { nodeTypes } from "../nodes";
+} from "../stores/dashboard-store";
+import { AskQuestionBanner } from "./AskQuestionBanner";
+import { cn } from "../lib/cn";
+import { useTheme } from "../hooks/useTheme";
+import { nodeTypes } from "./nodes";
 import {
   buildGraph,
   DEFAULT_NODE_WIDTH,

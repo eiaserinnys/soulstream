@@ -6,7 +6,7 @@
  * dispatchRenderer()를 호출하여 타입별 if-else 분기를 제거합니다.
  */
 
-import type { EventTreeNode, EventTreeNodeType } from "@shared/types";
+import type { EventTreeNode, EventTreeNodeType } from "../../shared/types";
 import type { LayoutContext } from "../layout-context";
 import type { NodeRenderer } from "./types";
 import { renderUserMessageTurn, renderInterventionTurn } from "./turn-renderer";

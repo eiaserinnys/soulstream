@@ -24,7 +24,7 @@ import {
   type ErrorEvent,
   type CompleteEvent,
 } from "@seosoyoung/soul-ui";
-import { buildGraph } from "../../client/lib/layout-engine";
+import { buildGraph } from "@seosoyoung/soul-ui";
 
 /** 트리에서 모든 노드를 수집합니다. */
 function collectNodes(
