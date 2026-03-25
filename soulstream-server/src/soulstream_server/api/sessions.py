@@ -50,6 +50,10 @@ class BatchMoveRequest(BaseModel):
     folderId: Optional[str] = None
 
 
+class ReadPositionRequest(BaseModel):
+    last_read_event_id: int
+
+
 # --- Router Factory ---
 
 def create_sessions_router(
@@ -317,6 +321,21 @@ def create_sessions_router(
             })
         return result
 
+    @router.put("/{session_id}/read-position")
+    async def update_read_position(
+        session_id: str, body: ReadPositionRequest
+    ) -> dict:
+        """읽음 위치 갱신 + SSE 브로드캐스트."""
+        await db.update_last_read_event_id(session_id, body.last_read_event_id)
+        read_pos = await db.get_read_position(session_id)
+        if read_pos and broadcaster:
+            await broadcaster.emit_read_position_updated(
+                session_id,
+                read_pos["last_event_id"],
+                read_pos["last_read_event_id"],
+            )
+        return {"ok": True}
+
     return router
 
 
@@ -342,4 +361,6 @@ def _session_to_response(s: dict) -> dict:
         "displayName": s.get("display_name"),
         "nodeId": s.get("node_id"),
         "folderId": s.get("folder_id"),
+        "lastEventId": s.get("last_event_id", 0),
+        "lastReadEventId": s.get("last_read_event_id", 0),
     }

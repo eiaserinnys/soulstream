@@ -44,6 +44,17 @@ class SessionBroadcaster:
             "agent_session_id": agent_session_id,
         })
 
+    async def emit_read_position_updated(
+        self, session_id: str, last_event_id: int, last_read_event_id: int
+    ) -> None:
+        """읽음 위치 변경을 브로드캐스트한다."""
+        await self.broadcast({
+            "type": "session_updated",
+            "session_id": session_id,
+            "last_event_id": last_event_id,
+            "last_read_event_id": last_read_event_id,
+        })
+
     async def broadcast_session_list_change(self, change: dict) -> None:
         """세션 목록 변경 이벤트를 브로드캐스트한다."""
         await self.broadcast(change)
