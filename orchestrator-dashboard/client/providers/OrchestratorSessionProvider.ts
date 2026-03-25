@@ -31,6 +31,12 @@ export class OrchestratorSessionProvider implements SessionStorageProvider {
         session_id: string;
         node_id: string;
         folder_id: string | null;
+        display_name: string | null;
+        last_message: {
+          preview: string;
+          timestamp: string;
+          role: string;
+        } | null;
         status: string;
         created_at: string;
         updated_at: string | null;
@@ -44,6 +50,8 @@ export class OrchestratorSessionProvider implements SessionStorageProvider {
       createdAt: s.created_at,
       updatedAt: s.updated_at ?? undefined,
       nodeId: s.node_id,
+      displayName: s.display_name ?? undefined,
+      lastMessage: s.last_message ?? undefined,
     }));
 
     return { sessions, total: sessions.length };

@@ -24,7 +24,12 @@ interface ActiveSessionInfo {
   clientId?: string;
 }
 
-export function ChatInput() {
+interface ChatInputProps {
+  /** 외부에서 주입하는 추가 비활성화 조건 (예: 오케스트레이터에서 노드 dead 상태) */
+  additionalDisabled?: boolean;
+}
+
+export function ChatInput({ additionalDisabled = false }: ChatInputProps = {}) {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const sessions = useDashboardStore((s) => s.sessions);
   const tree = useDashboardStore((s) => s.tree);
@@ -194,7 +199,7 @@ export function ChatInput() {
 
   if (!activeSessionKey) return null;
 
-  const isDisabled = sending || !text.trim();
+  const isDisabled = sending || !text.trim() || additionalDisabled;
 
   // LLM 완료 세션: 컨텍스트 누적 모드
   const ctxCount = llmMessages.length;
