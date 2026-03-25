@@ -8,7 +8,8 @@
  * Tool grouping: 연속된 tool 메시지를 접기/펼치기 그룹으로 묶어 표시.
  */
 
-import { memo, useMemo, useRef, useEffect, useState, useCallback } from "react";
+import { memo, useMemo, useRef, useEffect, useState, useCallback, type RefCallback } from "react";
+import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import type { SessionSummary, InputRequestQuestion, ContextItem } from "@shared/types";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { flattenTree, type ChatMessage } from "../lib/flatten-tree";
@@ -622,6 +623,49 @@ const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, session
   }
 });
 
+// === Virtualized Item ===
+
+const VirtualizedItem = memo(function VirtualizedItem({
+  vi,
+  item,
+  measureElement,
+  llmContext,
+  sessionId,
+}: {
+  vi: VirtualItem;
+  item: MessageOrGroup;
+  measureElement: (el: HTMLElement | null) => void;
+  llmContext?: LlmContext;
+  sessionId?: string;
+}) {
+  const ref: RefCallback<HTMLElement> = useCallback(
+    (el) => {
+      if (el) measureElement(el);
+    },
+    [measureElement],
+  );
+
+  return (
+    <div
+      ref={ref}
+      data-index={vi.index}
+      style={{
+        position: "absolute",
+        top: 0,
+        left: 0,
+        width: "100%",
+        transform: `translateY(${vi.start}px)`,
+      }}
+    >
+      {item.type === "tool-group" ? (
+        <ToolCallGroup messages={item.messages} />
+      ) : (
+        <ChatMessageItem msg={item.msg} llmContext={llmContext} sessionId={sessionId} />
+      )}
+    </div>
+  );
+});
+
 // === ChatView ===
 
 interface ChatViewProps {
@@ -638,6 +682,14 @@ export function ChatView({ chatInputDisabled = false }: ChatViewProps = {}) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const messages = useMemo(() => flattenTree(tree), [tree, treeVersion]);
   const grouped = useMemo(() => groupMessages(messages), [messages]);
+
+  // === Virtualizer ===
+  const virtualizer = useVirtualizer({
+    count: grouped.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 80,
+    overscan: 5,
+  });
 
   // === Follow mode ===
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -670,12 +722,10 @@ export function ChatView({ chatInputDisabled = false }: ChatViewProps = {}) {
     if (treeVersion === prevTreeVersion.current) return;
     prevTreeVersion.current = treeVersion;
 
-    if (isFollowingRef.current && scrollRef.current) {
-      // DOM 업데이트 후 스크롤하도록 rAF 사용
-      const el = scrollRef.current;
+    if (isFollowingRef.current && grouped.length > 0) {
       isProgrammaticScroll.current = true;
+      virtualizer.scrollToIndex(grouped.length - 1, { align: "end" });
       requestAnimationFrame(() => {
-        el.scrollTop = el.scrollHeight;
         isProgrammaticScroll.current = false;
       });
     } else if (!isFollowingRef.current) {
@@ -693,28 +743,44 @@ export function ChatView({ chatInputDisabled = false }: ChatViewProps = {}) {
   }, [activeSessionKey]);
 
   // 검색 결과 클릭 시: focusEventId에 해당하는 메시지로 스크롤 + 2초간 하이라이트
-  // treeVersion을 의존성에 포함하여 세션 로딩 완료 후 재시도한다.
+  // 가상화 환경: grouped 배열에서 인덱스를 찾아 scrollToIndex로 이동한 후, rAF로 DOM 요소에 하이라이트 적용
   const focusAttemptsRef = useRef(0);
   useEffect(() => {
     if (!focusEventId || !scrollRef.current) return;
-    // treeNodeId 패턴: {type}-{eventId} → suffix 매칭
-    const el = scrollRef.current.querySelector(
-      `[data-tree-node-id$="-${focusEventId}"]`,
-    ) as HTMLElement | null;
-    if (el) {
+
+    // grouped 배열에서 focusEventId와 매칭되는 인덱스 찾기
+    const targetIndex = grouped.findIndex((item) => {
+      if (item.type === "tool-group") {
+        return item.messages.some((m) => m.eventId === focusEventId || m.treeNodeId?.endsWith(`-${focusEventId}`));
+      }
+      return item.msg.eventId === focusEventId || item.msg.treeNodeId?.endsWith(`-${focusEventId}`);
+    });
+
+    if (targetIndex >= 0) {
       focusAttemptsRef.current = 0;
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-      el.classList.add("ring-2", "ring-accent-amber", "rounded");
-      const timer = setTimeout(() => {
-        el.classList.remove("ring-2", "ring-accent-amber", "rounded");
-        setFocusEventId(null);
-      }, 2000);
-      return () => {
-        clearTimeout(timer);
-        el.classList.remove("ring-2", "ring-accent-amber", "rounded");
-      };
+      isProgrammaticScroll.current = true;
+      virtualizer.scrollToIndex(targetIndex, { align: "center" });
+
+      // 스크롤 완료 후 DOM 요소에 하이라이트 적용
+      requestAnimationFrame(() => {
+        isProgrammaticScroll.current = false;
+        const el = scrollRef.current?.querySelector(
+          `[data-tree-node-id$="-${focusEventId}"]`,
+        ) as HTMLElement | null;
+        if (el) {
+          el.classList.add("ring-2", "ring-accent-amber", "rounded");
+          setTimeout(() => {
+            el.classList.remove("ring-2", "ring-accent-amber", "rounded");
+            setFocusEventId(null);
+          }, 2000);
+        } else {
+          setFocusEventId(null);
+        }
+      });
+      return;
     }
-    // DOM 요소 없음: 세션 로딩 중일 수 있으므로 treeVersion 갱신마다 재시도.
+
+    // grouped에서 못 찾음: 세션 로딩 중일 수 있으므로 treeVersion 갱신마다 재시도.
     // 최대 20회 시도 후 포기 (text_delta/tool_result 등 DOM 노드가 없는 이벤트 대응).
     focusAttemptsRef.current += 1;
     if (focusAttemptsRef.current >= 20) {
@@ -722,26 +788,26 @@ export function ChatView({ chatInputDisabled = false }: ChatViewProps = {}) {
       setFocusEventId(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusEventId, treeVersion, setFocusEventId]);
+  }, [focusEventId, treeVersion, setFocusEventId, grouped, virtualizer]);
 
   const scrollToBottom = useCallback(() => {
-    if (scrollRef.current) {
+    if (scrollRef.current && grouped.length > 0) {
       isProgrammaticScroll.current = true;
-      scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+      virtualizer.scrollToIndex(grouped.length - 1, { align: "end", behavior: "smooth" });
       setIsFollowing(true);
       setShowNewMessage(false);
       scrollRef.current.addEventListener("scrollend", () => {
         isProgrammaticScroll.current = false;
       }, { once: true });
     }
-  }, []);
+  }, [grouped.length, virtualizer]);
 
   const toggleFollow = useCallback(() => {
     setIsFollowing((prev) => {
       const next = !prev;
-      if (next && scrollRef.current) {
+      if (next && scrollRef.current && grouped.length > 0) {
         isProgrammaticScroll.current = true;
-        scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+        virtualizer.scrollToIndex(grouped.length - 1, { align: "end", behavior: "smooth" });
         setShowNewMessage(false);
         scrollRef.current.addEventListener("scrollend", () => {
           isProgrammaticScroll.current = false;
@@ -749,7 +815,7 @@ export function ChatView({ chatInputDisabled = false }: ChatViewProps = {}) {
       }
       return next;
     });
-  }, []);
+  }, [grouped.length, virtualizer]);
 
   if (!activeSessionKey) {
     return (
@@ -773,13 +839,27 @@ export function ChatView({ chatInputDisabled = false }: ChatViewProps = {}) {
           </div>
         )}
 
-        {grouped.map((item) =>
-          item.type === "tool-group" ? (
-            <ToolCallGroup key={item.messages[0].id} messages={item.messages} />
-          ) : (
-            <ChatMessageItem key={item.msg.id} msg={item.msg} llmContext={llmContext} sessionId={activeSessionKey ?? undefined} />
-          ),
-        )}
+        <div
+          style={{
+            height: `${virtualizer.getTotalSize()}px`,
+            width: "100%",
+            position: "relative",
+          }}
+        >
+          {virtualizer.getVirtualItems().map((vi) => {
+            const item = grouped[vi.index];
+            return (
+              <VirtualizedItem
+                key={vi.key}
+                vi={vi}
+                item={item}
+                measureElement={virtualizer.measureElement}
+                llmContext={llmContext}
+                sessionId={activeSessionKey ?? undefined}
+              />
+            );
+          })}
+        </div>
       </div>
 
       {/* "New Messages" banner */}
