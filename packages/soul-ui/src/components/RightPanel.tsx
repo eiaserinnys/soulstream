@@ -18,7 +18,10 @@ import { useDashboardStore } from "../stores/dashboard-store";
 const TAB_VALUES = { chat: 0, detail: 1, info: 2 } as const;
 const TAB_FROM_INDEX: Array<"chat" | "detail" | "info"> = ["chat", "detail", "info"];
 
-export function RightPanel() {
+interface RightPanelProps {
+  chatInputDisabled?: boolean;
+}
+export function RightPanel({ chatInputDisabled = false }: RightPanelProps = {}) {
   const activeRightTab = useDashboardStore((s) => s.activeRightTab);
   const setActiveRightTab = useDashboardStore((s) => s.setActiveRightTab);
 
@@ -48,7 +51,7 @@ export function RightPanel() {
         </TabsList>
 
         <TabsPanel value={0} className="flex-1 overflow-hidden" keepMounted>
-          <ChatView />
+          <ChatView chatInputDisabled={chatInputDisabled} />
         </TabsPanel>
 
         <TabsPanel value={1} className="flex-1 overflow-hidden" keepMounted>

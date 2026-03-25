@@ -6,7 +6,7 @@ Catalog API 라우터 — /api/catalog
 응답 형식:
 - folders: [{id, name, sortOrder}]
 - sessions: Record<string, {folderId, displayName}>  — soul-ui CatalogState 호환
-- sessionList: [{session_id, node_id, folder_id, display_name, status, created_at, updated_at}]
+- sessionList: [{session_id, node_id, folder_id, display_name, last_message, status, created_at, updated_at}]
 
 soul-common의 CatalogService.get_catalog()은 sessions를 dict(세션ID → 폴더배정)으로
 반환하므로, 오케스트레이터에서는 DB 세션 목록과 폴더 배정을 병합하여 두 가지 형식으로 제공한다.
@@ -64,6 +64,7 @@ def create_catalog_router(
                 "node_id": s.get("node_id", ""),
                 "folder_id": assignment.get("folderId"),
                 "display_name": assignment.get("displayName"),
+                "last_message": s.get("last_message"),  # JSONB dict or None
                 "status": s.get("status", "unknown"),
                 "created_at": s.get("created_at", ""),
                 "updated_at": s.get("updated_at"),
