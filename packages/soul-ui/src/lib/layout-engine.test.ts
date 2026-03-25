@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import type { EventTreeNode, ToolNode, ResultNode } from "@shared/types";
+import type { EventTreeNode, ToolNode, ResultNode } from "../shared/types";
 import {
   buildGraph,
   applyDagreLayout,

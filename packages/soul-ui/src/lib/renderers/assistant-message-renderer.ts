@@ -9,7 +9,7 @@
  * children 재귀 처리를 하지 않습니다.
  */
 
-import type { EventTreeNode, AssistantMessageNode } from "@shared/types";
+import type { EventTreeNode, AssistantMessageNode } from "../../shared/types";
 import type { LayoutContext } from "../layout-context";
 import {
   createTextNode,

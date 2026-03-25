@@ -12,7 +12,7 @@
  * - 처리 컨텍스트 (nodeMap 키 등)
  */
 
-import type { EventTreeNode, ProcessingContext } from "@seosoyoung/soul-ui";
+import type { EventTreeNode, ProcessingContext } from "../stores/processing-context";
 import type { GraphNode, GraphEdge } from "./layout-engine";
 
 /** 트리 노드를 재귀적으로 직렬화 (children의 순환 참조 방지) */

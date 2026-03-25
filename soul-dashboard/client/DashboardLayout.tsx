@@ -12,7 +12,7 @@ import { moveSessionsOptimistic } from "./lib/move-sessions";
 import { SessionsTopBar } from "./components/SessionsTopBar";
 import { MobileChatHeader } from "./components/MobileChatHeader";
 import { VerticalSplitPane } from "./components/VerticalSplitPane";
-import { NodeGraph } from "./components/NodeGraph";
+import { NodeGraph } from "@seosoyoung/soul-ui";
 import { NewSessionModal } from "./components/NewSessionModal";
 import { StorageModeToggleCompact } from "./components/StorageModeToggle";
 import { ThemeToggle } from "./components/ThemeToggle";
