@@ -9,12 +9,13 @@ import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { FeedCard } from "./FeedCard";
+import { FeedTopBar } from "./FeedTopBar";
 
 const CARD_HEIGHT = 220;
 const CARD_GAP = 12;
 const ESTIMATED_SIZE = CARD_HEIGHT + CARD_GAP;
 
-export function FeedView() {
+export function FeedView({ onNewSession }: { onNewSession?: () => void } = {}) {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const viewMode = useDashboardStore((s) => s.viewMode);
   const sessions = useDashboardStore((s) => s.sessions);
@@ -122,54 +123,54 @@ export function FeedView() {
     [catalog, selectFolder],
   );
 
-  // 빈 상태
-  if (feedSessions.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-        최근 24시간 이내 활동한 세션이 없습니다
-      </div>
-    );
-  }
-
   return (
-    <div
-      ref={parentRef}
-      className="h-full overflow-y-auto px-4 py-3"
-      onScroll={handleScroll}
-    >
-      <div
-        style={{
-          height: virtualizer.getTotalSize(),
-          width: "100%",
-          position: "relative",
-        }}
-      >
-        {virtualizer.getVirtualItems().map((virtualItem) => {
-          const session = feedSessions[virtualItem.index];
-          if (!session) return null;
-          return (
-            <div
-              key={session.agentSessionId}
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                width: "100%",
-                height: CARD_HEIGHT,
-                transform: `translateY(${virtualItem.start}px)`,
-              }}
-            >
-              <FeedCard
-                session={session}
-                isActive={session.agentSessionId === activeSessionKey}
-                folderName={getFolderName(session.agentSessionId)}
-                onClick={() => handleCardClick(session.agentSessionId)}
-                onDoubleClick={() => handleCardDoubleClick(session.agentSessionId)}
-              />
-            </div>
-          );
-        })}
-      </div>
+    <div className="flex flex-col h-full overflow-hidden">
+      <FeedTopBar onNewSession={onNewSession} />
+      {feedSessions.length === 0 ? (
+        <div className="flex items-center justify-center flex-1 text-muted-foreground text-sm">
+          최근 24시간 이내 활동한 세션이 없습니다
+        </div>
+      ) : (
+        <div
+          ref={parentRef}
+          className="flex-1 overflow-y-auto px-4 py-3"
+          onScroll={handleScroll}
+        >
+          <div
+            style={{
+              height: virtualizer.getTotalSize(),
+              width: "100%",
+              position: "relative",
+            }}
+          >
+            {virtualizer.getVirtualItems().map((virtualItem) => {
+              const session = feedSessions[virtualItem.index];
+              if (!session) return null;
+              return (
+                <div
+                  key={session.agentSessionId}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    height: CARD_HEIGHT,
+                    transform: `translateY(${virtualItem.start}px)`,
+                  }}
+                >
+                  <FeedCard
+                    session={session}
+                    isActive={session.agentSessionId === activeSessionKey}
+                    folderName={getFolderName(session.agentSessionId)}
+                    onClick={() => handleCardClick(session.agentSessionId)}
+                    onDoubleClick={() => handleCardDoubleClick(session.agentSessionId)}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

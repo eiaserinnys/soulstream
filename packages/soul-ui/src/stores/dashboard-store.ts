@@ -123,6 +123,9 @@ export interface DashboardState {
   /** New Session 모달 열림 상태 */
   isNewSessionModalOpen: boolean;
 
+  /** New Session 모달을 연 진입 경로 ('folder': 폴더 뷰, 'feed': 피드 뷰) */
+  newSessionSource: 'folder' | 'feed';
+
   /** 접힌 노드 ID 집합 (접기/펼치기 기능) */
   collapsedNodeIds: Set<string>;
 
@@ -206,7 +209,7 @@ export interface DashboardActions {
   addOptimisticSession: (agentSessionId: string, prompt: string, folderId?: string | null, nodeId?: string) => void;
 
   // New Session 모달
-  openNewSessionModal: () => void;
+  openNewSessionModal: (source?: 'folder' | 'feed') => void;
   closeNewSessionModal: () => void;
 
   // 상태 초기화
@@ -323,6 +326,7 @@ const initialState: DashboardState = {
   lastEventId: 0,
   pendingNotifications: [],
   isNewSessionModalOpen: false,
+  newSessionSource: 'folder',
   collapsedNodeIds: new Set<string>(),
   serendipityAvailable: false,
   activeRightTab: "chat",
@@ -762,7 +766,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
 
       // --- New Session 모달 ---
 
-      openNewSessionModal: () => set({ isNewSessionModalOpen: true }),
+      openNewSessionModal: (source = 'folder') => set({ isNewSessionModalOpen: true, newSessionSource: source }),
       closeNewSessionModal: () => set({ isNewSessionModalOpen: false }),
 
       // --- 초기화 ---
