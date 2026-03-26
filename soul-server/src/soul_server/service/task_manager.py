@@ -444,6 +444,7 @@ class TaskManager:
         extra_context_items: Optional[List[dict]] = None,
         model: Optional[str] = None,
         folder_id: Optional[str] = None,
+        system_prompt: Optional[str] = None,
     ) -> Task:
         """
         새 세션 태스크 생성 또는 기존 세션 resume
@@ -459,6 +460,7 @@ class TaskManager:
             context_items: StructuredContext.items에서 추출한 맥락 항목 (Pydantic 검증 완료)
             extra_context_items: 클라이언트가 직접 전달한 추가 맥락 항목 (raw dict)
             folder_id: 세션을 배치할 폴더 ID (None이면 session_type 기반 자동 배정)
+            system_prompt: Claude API system 파라미터로 전달할 시스템 프롬프트
 
         Returns:
             Task: 생성되거나 재활성화된 태스크
@@ -513,6 +515,7 @@ class TaskManager:
                 existing.context = context
                 existing.context_items = effective_context_items
                 existing.model = model
+                existing.system_prompt = system_prompt
                 if client_id:
                     existing.client_id = client_id
 
@@ -533,6 +536,7 @@ class TaskManager:
                     context=context,
                     context_items=effective_context_items,
                     model=model,
+                    system_prompt=system_prompt,
                 )
                 self._tasks[agent_session_id] = task
                 logger.info(f"Created new session: {agent_session_id}")
