@@ -149,6 +149,9 @@ class Settings:
     dashboard_dir: str = "dist/client"     # SOUL_DASHBOARD_DIR — SPA 정적 파일 경로
     dashboard_cache_dir: str = ""          # SOUL_DASHBOARD_CACHE_DIR — 세션 캐시 디렉토리 (필수)
 
+    # 에이전트 프로필 설정 (선택 사항 — 미설정 시 degraded mode)
+    agents_config_file: str = ""
+
     # Dashboard profile (선택 사항 — 미설정 시 기본 이름 표시, 초상화 없음)
     dash_user_name: str = "USER"
     dash_user_id: str = ""
@@ -253,6 +256,7 @@ class Settings:
             dash_assistant_name=os.getenv("DASH_ASSISTANT_NAME", "ASSISTANT"),
             dash_assistant_id=os.getenv("DASH_ASSISTANT_ID", ""),
             dash_assistant_portrait=os.getenv("DASH_ASSISTANT_PORTRAIT", ""),
+            agents_config_file=os.getenv("AGENTS_CONFIG_FILE", ""),
         )
 
         settings.validate()
@@ -291,6 +295,16 @@ class Settings:
             raise RuntimeError(
                 f"필수 환경변수 누락: {', '.join(missing)}. "
                 f".env 파일 또는 환경변수를 확인하세요."
+            )
+        # AGENTS_CONFIG_FILE 검증
+        _agents_logger = logging.getLogger("soul_server")
+        if not self.agents_config_file:
+            _agents_logger.warning(
+                "AGENTS_CONFIG_FILE이 설정되지 않았습니다. 에이전트 기능 없이 동작합니다."
+            )
+        elif not Path(self.agents_config_file).exists():
+            raise RuntimeError(
+                f"AGENTS_CONFIG_FILE 파일을 찾을 수 없음: {self.agents_config_file}"
             )
         ws = Path(self.workspace_dir)
         if not self.data_dir:
@@ -339,6 +353,7 @@ CATEGORY_LABELS: dict[str, str] = {
     "upstream": "소울스트림 연결",
     "database": "데이터베이스",
     "paths": "경로 (읽기 전용)",
+    "agent": "에이전트",
 }
 
 # Settings dataclass의 필드명 → 메타데이터 매핑
@@ -395,6 +410,8 @@ SETTINGS_REGISTRY: dict[str, SettingMeta] = {
     "llm_anthropic_api_key": SettingMeta("LLM_ANTHROPIC_API_KEY", "Anthropic API Key", "LLM 프록시용 Anthropic 키", "llm", "str", sensitive=True),
     # --- database ---
     "database_url": SettingMeta("DATABASE_URL", "데이터베이스 URL", "PostgreSQL 연결 URL", "database", "str", sensitive=True, read_only=True),
+    # --- agent ---
+    "agents_config_file": SettingMeta("AGENTS_CONFIG_FILE", "에이전트 설정 파일", "agents.yaml 파일 경로 (미설정 시 에이전트 기능 비활성)", "agent", "str", read_only=True),
     # --- paths (전부 read_only) ---
     "workspace_dir": SettingMeta("WORKSPACE_DIR", "워크스페이스 경로", "Claude Code 워크스페이스 디렉토리", "paths", "str", read_only=True),
     "claude_cli_dir": SettingMeta("CLAUDE_CLI_DIR", "Claude CLI 경로", "claude CLI 디렉토리 (PATH에 없는 경우)", "paths", "str", read_only=True),

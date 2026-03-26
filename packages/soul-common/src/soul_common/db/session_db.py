@@ -23,7 +23,7 @@ _SESSION_COLUMNS = frozenset({
     "prompt", "client_id", "claude_session_id", "last_message",
     "metadata", "was_running_at_shutdown",
     "last_event_id", "last_read_event_id",
-    "created_at", "updated_at", "node_id",
+    "created_at", "updated_at", "node_id", "agent_id",
 })
 
 _FOLDER_COLUMNS = frozenset({"name", "sort_order"})

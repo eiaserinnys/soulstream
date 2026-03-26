@@ -16,7 +16,10 @@ import asyncio
 import logging
 from datetime import timedelta
 from pathlib import Path
-from typing import Optional, Dict, List, Union
+from typing import Optional, Dict, List, Union, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from soul_server.service.agent_registry import AgentRegistry
 
 from soul_server.service.task_models import (
     Task,
@@ -72,18 +75,23 @@ class TaskManager:
         session_db: PostgresSessionDB,
         eviction_ttl: int = 900,
         metadata_extractor=None,
+        agent_registry: Optional["AgentRegistry"] = None,
     ):
         """
         Args:
             session_db: PostgreSQL 기반 세션 저장소
             eviction_ttl: 완료 세션 메모리 퇴거 TTL (초, 기본 15분)
             metadata_extractor: MetadataExtractor 인스턴스 (tool_result에서 자동 감지)
+            agent_registry: AgentRegistry 인스턴스 (profile_id 유효성 검사용)
         """
         # 핵심 데이터 (key = agent_session_id)
         self._tasks: Dict[str, Task] = {}
         self._lock = asyncio.Lock()
         # claude_session_id → agent_session_id 역방향 인덱스
         self._session_index: Dict[str, str] = {}
+
+        # AgentRegistry (profile_id 유효성 검사용)
+        self._agent_registry = agent_registry
 
         # PostgreSQL 기반 세션 저장소
         self._db = session_db
@@ -105,11 +113,17 @@ class TaskManager:
             session_db=session_db,
             metadata_extractor=metadata_extractor,
             append_metadata_func=self.append_session_metadata,
+            agent_registry=self._agent_registry,
         )
 
     # === claude_session_id 인덱스 ===
 
-    def register_session(self, claude_session_id: str, agent_session_id: str) -> None:
+    def register_session(
+        self,
+        claude_session_id: str,
+        agent_session_id: str,
+        agent_id: Optional[str] = None,
+    ) -> None:
         """claude_session_id → agent_session_id 매핑 등록
 
         SoulEngineAdapter가 session 이벤트를 발행할 때 호출합니다.
@@ -118,6 +132,8 @@ class TaskManager:
 
         asyncio 단일 이벤트 루프 특성상, 이 동기 함수는 await 지점 없이
         실행되므로 complete_task()의 _lock 없이도 레이스 컨디션이 발생하지 않는다.
+
+        agent_id: Phase 3에서 _SESSION_COLUMNS에 agent_id가 추가되면 DB에 저장됨.
         """
         self._session_index[claude_session_id] = agent_session_id
         # task.claude_session_id 즉시 저장: complete_task()보다 먼저 재시작이 오더라도 resume 가능
@@ -445,6 +461,7 @@ class TaskManager:
         model: Optional[str] = None,
         folder_id: Optional[str] = None,
         system_prompt: Optional[str] = None,
+        profile_id: Optional[str] = None,
     ) -> Task:
         """
         새 세션 태스크 생성 또는 기존 세션 resume
@@ -461,13 +478,20 @@ class TaskManager:
             extra_context_items: 클라이언트가 직접 전달한 추가 맥락 항목 (raw dict)
             folder_id: 세션을 배치할 폴더 ID (None이면 session_type 기반 자동 배정)
             system_prompt: Claude API system 파라미터로 전달할 시스템 프롬프트
+            profile_id: 에이전트 프로필 ID (AgentRegistry에서 유효성 검사)
 
         Returns:
             Task: 생성되거나 재활성화된 태스크
 
         Raises:
             TaskConflictError: 해당 세션에 이미 running 태스크가 존재
+            ValueError: 존재하지 않는 profile_id가 지정된 경우
         """
+        # profile_id 유효성 검사 (registry가 있을 때만)
+        if profile_id is not None and self._agent_registry is not None:
+            if not self._agent_registry.has(profile_id):
+                raise ValueError(f"존재하지 않는 에이전트 프로필: {profile_id}")
+
         # 두 소스 병합: StructuredContext.items + 클라이언트 직접 전달분
         merged = (context_items or []) + (extra_context_items or [])
         effective_context_items = merged or None
@@ -516,6 +540,7 @@ class TaskManager:
                 existing.context_items = effective_context_items
                 existing.model = model
                 existing.system_prompt = system_prompt
+                existing.profile_id = profile_id
                 if client_id:
                     existing.client_id = client_id
 
@@ -537,6 +562,7 @@ class TaskManager:
                     context_items=effective_context_items,
                     model=model,
                     system_prompt=system_prompt,
+                    profile_id=profile_id,
                 )
                 self._tasks[agent_session_id] = task
                 logger.info(f"Created new session: {agent_session_id}")
