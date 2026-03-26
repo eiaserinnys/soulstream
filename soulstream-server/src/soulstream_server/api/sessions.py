@@ -90,7 +90,8 @@ def create_sessions_router(
         # snake_case -> camelCase 변환
         result = []
         for s in sessions:
-            result.append(_session_to_response(s))
+            profiles = _get_profiles_for_session(s, node_manager)
+            result.append(_session_to_response(s, profiles))
 
         next_cursor = None
         if offset + limit < total:
@@ -120,7 +121,7 @@ def create_sessions_router(
         async def event_generator():
             # 초기 세션 목록 전송
             sessions, total = await db.get_all_sessions(offset=0, limit=200)
-            result = [_session_to_response(s) for s in sessions]
+            result = [_session_to_response(s, _get_profiles_for_session(s, node_manager)) for s in sessions]
             yield {
                 "event": "session_list",
                 "data": json.dumps({
@@ -361,7 +362,13 @@ def create_sessions_router(
     return router
 
 
-def _session_to_response(s: dict) -> dict:
+def _get_profiles_for_session(s: dict, node_manager: NodeManager) -> dict:
+    """세션이 속한 노드의 _agent_profiles 반환."""
+    node = node_manager.find_node_for_session(s.get("session_id", ""))
+    return node._agent_profiles if node else {}
+
+
+def _session_to_response(s: dict, agent_profiles: Optional[dict] = None) -> dict:
     """DB 세션 레코드를 API 응답 형식으로 변환."""
     created_at = s.get("created_at")
     if hasattr(created_at, "isoformat"):
@@ -370,7 +377,8 @@ def _session_to_response(s: dict) -> dict:
     if hasattr(updated_at, "isoformat"):
         updated_at = updated_at.isoformat()
 
-    return {
+    _profiles = agent_profiles or {}
+    result = {
         "agentSessionId": s.get("session_id"),
         "status": s.get("status"),
         "prompt": s.get("prompt"),
@@ -385,4 +393,12 @@ def _session_to_response(s: dict) -> dict:
         "folderId": s.get("folder_id"),
         "lastEventId": s.get("last_event_id", 0),
         "lastReadEventId": s.get("last_read_event_id", 0),
+        "agentId": s.get("agent_id"),
+        "agentName": None,
+        "agentPortraitUrl": None,
     }
+    if s.get("agent_id") and s["agent_id"] in _profiles:
+        profile = _profiles[s["agent_id"]]
+        result["agentName"] = profile.get("name")
+        result["agentPortraitUrl"] = profile.get("portrait_url")
+    return result
