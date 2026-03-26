@@ -7,12 +7,18 @@
 
 import { memo } from "react";
 import type { SessionSummary } from "../shared/types";
-import { isSessionUnread } from "../stores/dashboard-store";
+import { isSessionUnread, useDashboardStore } from "../stores/dashboard-store";
 import { STATUS_CONFIG, nodeIdToHue } from "./FolderContents";
 import { MarkdownContent } from "./MarkdownContent";
+import { ProfileAvatar } from "./ProfileAvatar";
 import { cn } from "../lib/cn";
 import { Badge } from "./ui/badge";
 import { useTheme } from "../hooks/useTheme";
+
+const DEFAULT_PROFILE = {
+  user: { name: "User", id: "", hasPortrait: false },
+  assistant: { name: "Assistant", id: "", hasPortrait: false },
+};
 
 export interface FeedCardProps {
   session: SessionSummary;
@@ -29,9 +35,11 @@ export const FeedCard = memo(function FeedCard({
   onClick,
   onDoubleClick,
 }: FeedCardProps) {
-  const config = STATUS_CONFIG[session.status] ?? STATUS_CONFIG.unknown;
+  const statusConfig = STATUS_CONFIG[session.status] ?? STATUS_CONFIG.unknown;
   const isUnread = isSessionUnread(session);
   const [theme] = useTheme();
+  const dashboardConfig = useDashboardStore((s) => s.dashboardConfig);
+  const profileConfig = dashboardConfig ?? DEFAULT_PROFILE;
 
   // --- 제목 ---
   const title = session.displayName
@@ -110,8 +118,8 @@ export const FeedCard = memo(function FeedCard({
           <span
             className={cn(
               "w-1.5 h-1.5 rounded-full inline-block",
-              config.dotClass,
-              config.animate && "animate-[pulse_2s_infinite]",
+              statusConfig.dotClass,
+              statusConfig.animate && "animate-[pulse_2s_infinite]",
             )}
           />
           {session.status}
@@ -121,23 +129,38 @@ export const FeedCard = memo(function FeedCard({
       {/* 메시지 미리보기 */}
       <div className="flex-1 overflow-hidden flex flex-col gap-1.5 text-sm">
         {session.prompt && (
-          <div className="overflow-hidden">
-            <span className="text-muted-foreground font-medium">User</span>
-            <div className="text-foreground/70 overflow-hidden mt-0.5">
-              <MarkdownContent content={session.prompt} compact />
+          <div className="flex items-start gap-1.5 overflow-hidden">
+            <ProfileAvatar role="user" hasPortrait={profileConfig.user.hasPortrait} fallbackEmoji="👤" />
+            <div className="flex-1 min-w-0 overflow-hidden">
+              <span className="text-xs font-medium shrink-0">{profileConfig.user.name}</span>
+              <span className="text-muted-foreground text-xs mx-1 shrink-0">|</span>
+              <div className="text-foreground/70 overflow-hidden mt-0.5 line-clamp-2">
+                <MarkdownContent content={session.prompt} compact />
+              </div>
             </div>
           </div>
         )}
-        {session.lastMessage?.preview && session.lastMessage.preview !== session.prompt && (
-          <div className="overflow-hidden">
-            <span className="text-muted-foreground font-medium">
-              {session.lastMessage.type === "user" ? "User" : "Assistant"}
-            </span>
-            <div className="text-foreground/70 overflow-hidden mt-0.5">
-              <MarkdownContent content={session.lastMessage.preview} compact />
+        {session.lastMessage?.preview && session.lastMessage.preview !== session.prompt && (() => {
+          const isUser = session.lastMessage.type === "user";
+          return (
+            <div className="flex items-start gap-1.5 overflow-hidden">
+              <ProfileAvatar
+                role={isUser ? "user" : "assistant"}
+                hasPortrait={isUser ? profileConfig.user.hasPortrait : profileConfig.assistant.hasPortrait}
+                fallbackEmoji={isUser ? "👤" : "🤖"}
+              />
+              <div className="flex-1 min-w-0 overflow-hidden">
+                <span className="text-xs font-medium shrink-0">
+                  {isUser ? profileConfig.user.name : profileConfig.assistant.name}
+                </span>
+                <span className="text-muted-foreground text-xs mx-1 shrink-0">|</span>
+                <div className="text-foreground/70 overflow-hidden mt-0.5 line-clamp-2">
+                  <MarkdownContent content={session.lastMessage.preview} compact />
+                </div>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
     </div>
   );
