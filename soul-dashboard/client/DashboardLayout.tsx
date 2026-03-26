@@ -42,6 +42,7 @@ export function DashboardLayout() {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const viewMode = useDashboardStore((s) => s.viewMode);
   const setSerendipityAvailable = useDashboardStore((s) => s.setSerendipityAvailable);
+  const openNewSessionModal = useDashboardStore((s) => s.openNewSessionModal);
 
   // 세션 목록 구독 (SSE 모드: 실시간, Serendipity 모드: 폴링)
   const { sessions, loading, error } = useSessionListProvider({ intervalMs: 5000, getSessionProvider });
@@ -101,7 +102,7 @@ export function DashboardLayout() {
       }
       centerPanel={
         viewMode === "feed" ? (
-          <FeedView />
+          <FeedView onNewSession={() => openNewSessionModal('feed')} />
         ) : (
           <>
             <SessionsTopBar />
@@ -139,7 +140,7 @@ export function DashboardLayout() {
       }
       mobileSessionsView={
         viewMode === "feed" ? (
-          <FeedView />
+          <FeedView onNewSession={() => openNewSessionModal('feed')} />
         ) : (
           <>
             <SessionsTopBar />

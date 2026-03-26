@@ -50,6 +50,7 @@ export function App() {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const viewMode = useDashboardStore((s) => s.viewMode);
   const sessions = useDashboardStore((s) => s.sessions);
+  const openNewSessionModal = useDashboardStore((s) => s.openNewSessionModal);
   const nodes = useOrchestratorStore((s) => s.nodes);
 
   // 스토리지 모드를 SSE로 설정
@@ -109,7 +110,7 @@ export function App() {
       leftBottomRatio={3}
       centerPanel={
         viewMode === "feed" ? (
-          <FeedView />
+          <FeedView onNewSession={() => openNewSessionModal('feed')} />
         ) : (
           <>
             <SessionsTopBar />
