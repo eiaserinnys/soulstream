@@ -761,6 +761,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           catalog,
           activeSessionKey: agentSessionId,
           activeSession: null,
+          selectedSessionIds: new Set([agentSessionId]),
         });
       },
 
@@ -1048,6 +1049,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         const { sessions, catalog } = get();
         if (!catalog?.sessions) return sessions;
         return sessions.filter((s) => {
+          if (s.sessionType === "llm") return false;
           const assignment = catalog.sessions[s.agentSessionId];
           if (folderId === null) {
             // 미분류: 카탈로그에 없거나 folderId가 null인 세션

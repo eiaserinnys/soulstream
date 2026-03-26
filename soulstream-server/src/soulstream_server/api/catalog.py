@@ -66,6 +66,7 @@ def create_catalog_router(
                 "display_name": assignment.get("displayName"),
                 "last_message": s.get("last_message"),  # JSONB dict or None
                 "status": s.get("status", "unknown"),
+                "session_type": s.get("session_type", "claude"),
                 "created_at": s.get("created_at", ""),
                 "updated_at": s.get("updated_at"),
                 "last_event_id": s.get("last_event_id", 0),

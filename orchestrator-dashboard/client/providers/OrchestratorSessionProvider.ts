@@ -38,6 +38,7 @@ export class OrchestratorSessionProvider implements SessionStorageProvider {
           role: string;
         } | null;
         status: string;
+        session_type: string | null;
         created_at: string;
         updated_at: string | null;
         last_event_id: number | null;
@@ -48,6 +49,7 @@ export class OrchestratorSessionProvider implements SessionStorageProvider {
     const sessions = data.sessionList.map((s) => ({
       agentSessionId: s.session_id,
       status: mapStatus(s.status),
+      sessionType: (s.session_type ?? "claude") as "claude" | "llm",
       eventCount: 0,
       createdAt: s.created_at,
       updatedAt: s.updated_at ?? undefined,
