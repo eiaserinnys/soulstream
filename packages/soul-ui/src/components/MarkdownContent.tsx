@@ -14,6 +14,7 @@ import "highlight.js/styles/github-dark.css";
 
 interface MarkdownContentProps {
   content: string;
+  compact?: boolean;
 }
 
 const components: Components = {
@@ -142,12 +143,52 @@ const components: Components = {
   ),
 };
 
-export function MarkdownContent({ content }: MarkdownContentProps) {
+// 피드 카드 등 컴팩트 레이아웃용 컴포넌트 맵 (모듈 레벨 상수, 렌더링마다 새 객체 생성 방지)
+const compactComponents: Components = {
+  p: ({ children }) => <p className="mb-1 last:mb-0">{children}</p>,
+  h1: ({ children }) => <h1 className="text-sm font-semibold mb-1 mt-1.5 first:mt-0">{children}</h1>,
+  h2: ({ children }) => <h2 className="text-sm font-semibold mb-1 mt-1.5 first:mt-0">{children}</h2>,
+  h3: ({ children }) => <h3 className="text-sm font-semibold mb-0.5 mt-1 first:mt-0">{children}</h3>,
+  h4: ({ children }) => <h4 className="text-sm font-medium mb-0.5 mt-1 first:mt-0">{children}</h4>,
+  ul: ({ children }) => <ul className="mb-1 last:mb-0 ml-3 list-disc">{children}</ul>,
+  ol: ({ children }) => <ol className="mb-1 last:mb-0 ml-3 list-decimal">{children}</ol>,
+  li: ({ children }) => <li className="mb-0">{children}</li>,
+  pre: ({ children }) => (
+    <pre className="text-[11px] text-muted-foreground bg-input rounded px-1.5 py-1 my-1 whitespace-pre-wrap break-words overflow-auto max-h-24 font-mono">
+      {children}
+    </pre>
+  ),
+  code: ({ className, children, ...props }) => {
+    const isBlock = className?.startsWith("language-") || className?.startsWith("hljs");
+    if (isBlock) {
+      return <code className={className} {...props}>{children}</code>;
+    }
+    return (
+      <code className="text-[12px] bg-input rounded px-0.5 py-0 font-mono" {...props}>
+        {children}
+      </code>
+    );
+  },
+  a: ({ children, ...props }) => (
+    <a className="text-accent-blue hover:underline" target="_blank" rel="noopener noreferrer" {...props}>
+      {children}
+    </a>
+  ),
+  strong: ({ children }) => <strong className="font-bold">{children}</strong>,
+  em: ({ children }) => <em className="italic">{children}</em>,
+  blockquote: ({ children }) => (
+    <blockquote className="border-l-2 border-muted-foreground/30 pl-2 my-1 text-muted-foreground italic">
+      {children}
+    </blockquote>
+  ),
+};
+
+export function MarkdownContent({ content, compact = false }: MarkdownContentProps) {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       rehypePlugins={[rehypeHighlight]}
-      components={components}
+      components={compact ? compactComponents : components}
     >
       {content}
     </ReactMarkdown>

@@ -68,6 +68,8 @@ def create_catalog_router(
                 "status": s.get("status", "unknown"),
                 "created_at": s.get("created_at", ""),
                 "updated_at": s.get("updated_at"),
+                "last_event_id": s.get("last_event_id", 0),
+                "last_read_event_id": s.get("last_read_event_id", 0),
             })
 
         return {
