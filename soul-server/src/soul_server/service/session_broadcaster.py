@@ -68,11 +68,34 @@ class SessionBroadcaster:
 
             return count
 
+    @staticmethod
+    def _resolve_agent_info(task: Task) -> tuple[Optional[str], Optional[str]]:
+        """Task의 profile_id로 AgentRegistry를 조회하여 이름과 portrait URL을 반환.
+
+        모델(Task)이 레지스트리를 직접 참조하지 않도록, 이 헬퍼가 중개한다.
+        """
+        if not task.profile_id:
+            return None, None
+        try:
+            from soul_server.main import get_agent_registry
+            registry = get_agent_registry()
+            agent = registry.get(task.profile_id)
+            if agent:
+                portrait_url = f"/api/agents/{agent.id}/portrait" if agent.portrait_path else None
+                return agent.name, portrait_url
+        except Exception:
+            pass
+        return None, None
+
     async def emit_session_created(self, task: Task) -> int:
         """세션 생성 이벤트 발행"""
+        agent_name, agent_portrait_url = self._resolve_agent_info(task)
         event = {
             "type": "session_created",
-            "session": task.to_session_info(),
+            "session": task.to_session_info(
+                agent_name=agent_name,
+                agent_portrait_url=agent_portrait_url,
+            ),
         }
         return await self.broadcast(event)
 
