@@ -267,21 +267,22 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.warning("  MetadataExtractor initialization failed", exc_info=True)
 
-    # TaskManager 초기화 및 로드
-    task_manager = TaskManager(
-        session_db=session_db,
-        eviction_ttl=settings.session_eviction_ttl_seconds,
-        metadata_extractor=metadata_extractor,
-    )
-    set_task_manager(task_manager)
-
-    # AgentRegistry 초기화
+    # AgentRegistry 초기화 (TaskManager보다 먼저 — TaskManager에 주입해야 함)
     if settings.agents_config_file:
         registry = load_agent_registry(settings.agents_config_file)
     else:
         registry = AgentRegistry([])  # degraded mode
     set_agent_registry(registry)
     logger.info(f"  AgentRegistry initialized: {len(registry.list())}개 에이전트")
+
+    # TaskManager 초기화 및 로드
+    task_manager = TaskManager(
+        session_db=session_db,
+        eviction_ttl=settings.session_eviction_ttl_seconds,
+        metadata_extractor=metadata_extractor,
+        agent_registry=get_agent_registry(),
+    )
+    set_task_manager(task_manager)
 
     loaded = await task_manager.load()
     logger.info(f"  Loaded {loaded} sessions from DB")

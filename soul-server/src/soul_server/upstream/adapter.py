@@ -306,16 +306,21 @@ class UpstreamAdapter:
 
     async def _handle_create_session(self, cmd: dict) -> None:
         """세션 생성 명령 처리."""
-        task = await self._tm.create_task(
-            prompt=cmd["prompt"],
-            agent_session_id=cmd.get("agentSessionId"),
-            allowed_tools=cmd.get("allowed_tools") or cmd.get("allowedTools"),
-            disallowed_tools=cmd.get("disallowed_tools") or cmd.get("disallowedTools"),
-            use_mcp=cmd.get("use_mcp") if cmd.get("use_mcp") is not None else cmd.get("useMcp", True),
-            context=cmd.get("context"),
-            context_items=cmd.get("context_items"),
-            extra_context_items=cmd.get("extra_context_items"),
-        )
+        try:
+            task = await self._tm.create_task(
+                prompt=cmd["prompt"],
+                agent_session_id=cmd.get("agentSessionId"),
+                allowed_tools=cmd.get("allowed_tools") or cmd.get("allowedTools"),
+                disallowed_tools=cmd.get("disallowed_tools") or cmd.get("disallowedTools"),
+                use_mcp=cmd.get("use_mcp") if cmd.get("use_mcp") is not None else cmd.get("useMcp", True),
+                context=cmd.get("context"),
+                context_items=cmd.get("context_items"),
+                extra_context_items=cmd.get("extra_context_items"),
+                profile_id=cmd.get("profile"),
+            )
+        except ValueError as e:
+            await self._send_error(str(e), request_id=cmd.get("requestId", ""))
+            return
         session_id = task.agent_session_id
 
         # 실행 시작

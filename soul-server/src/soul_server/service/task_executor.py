@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from soul_server.service.postgres_session_db import PostgresSessionDB
     from soul_server.service.task_listener import TaskListenerManager
     from soul_server.service.metadata_extractor import MetadataExtractor
+    from soul_server.service.agent_registry import AgentRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,7 @@ class TaskExecutor:
         session_db: Optional["PostgresSessionDB"] = None,
         metadata_extractor: Optional["MetadataExtractor"] = None,
         append_metadata_func: Optional[Callable] = None,
+        agent_registry: Optional["AgentRegistry"] = None,
     ):
         """
         Args:
@@ -54,6 +56,7 @@ class TaskExecutor:
             session_db: PostgreSQL 기반 세션 저장소
             metadata_extractor: 메타데이터 추출기 (tool_result에서 자동 감지)
             append_metadata_func: 메타데이터 추가 함수 (agent_session_id, entry)
+            agent_registry: AgentRegistry 인스턴스 (profile_id → 실행 옵션 조회용)
         """
         self._tasks = tasks
         self._listener_manager = listener_manager
@@ -63,6 +66,7 @@ class TaskExecutor:
         self._db = session_db
         self._metadata_extractor = metadata_extractor
         self._append_metadata = append_metadata_func
+        self._registry = agent_registry
 
     async def _persist_event(self, session_id: str, event_dict: dict) -> Optional[int]:
         """이벤트를 SessionDB에 영속화하고 event_id를 반환한다."""
@@ -220,6 +224,21 @@ class TaskExecutor:
                     task._deliver_input_response = runner.deliver_input_response
                     task.pid = runner.pid
 
+                # profile_id로 프로필 조회 및 실행 옵션 추출
+                if task.profile_id and self._registry:
+                    profile = self._registry.get(task.profile_id)
+                    working_dir = profile.workspace_dir if profile else None
+                    max_turns = profile.max_turns if profile else None
+                    override_tools = profile.allowed_tools if profile else None
+                else:
+                    working_dir = None
+                    max_turns = None
+                    override_tools = None
+
+                # allowed_tools 병합: task 설정 우선, None이면 profile 설정 사용
+                # task.allowed_tools or override_tools 사용 금지 — 빈 리스트([])를 falsy로 처리함
+                effective_allowed_tools = task.allowed_tools if task.allowed_tools is not None else override_tools
+
                 # 구조화된 맥락을 XML 섹션으로 조립
                 assembled_prompt = assemble_prompt(task.prompt, task.context)
 
@@ -229,7 +248,7 @@ class TaskExecutor:
                     resume_session_id=task.resume_session_id,
                     get_intervention=get_intervention,
                     on_intervention_sent=on_intervention_sent,
-                    allowed_tools=task.allowed_tools,
+                    allowed_tools=effective_allowed_tools,
                     disallowed_tools=task.disallowed_tools,
                     use_mcp=task.use_mcp,
                     on_runner_ready=on_runner_ready,
@@ -237,6 +256,8 @@ class TaskExecutor:
                     agent_session_id=task.agent_session_id,
                     model=task.model,
                     system_prompt=task.system_prompt,
+                    working_dir=working_dir,
+                    max_turns=max_turns,
                 ):
                     event_dict = event.model_dump()
 
@@ -257,6 +278,7 @@ class TaskExecutor:
                         self._register_session(
                             event_dict.get("session_id", ""),
                             session_id,
+                            agent_id=task.profile_id,
                         )
 
                     # 진행 상황 저장 (재연결용)
