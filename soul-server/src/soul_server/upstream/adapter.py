@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import aiohttp
 
@@ -29,7 +29,6 @@ from .protocol import (
     EVT_SESSION_DELETED,
     EVT_SESSION_UPDATED,
     EVT_SESSIONS_UPDATE,
-    SubscribeEventsCmd,
 )
 from .reconnect import ReconnectPolicy
 
@@ -243,12 +242,12 @@ class UpstreamAdapter:
 
         if event_type == "session_created":
             # broadcaster: {"type": "session_created", "session": to_session_info()}
-            # _handle_create_session이 request_id 포함 응답을 이미 보내므로,
+            # _handle_create_session이 requestId 포함 응답을 이미 보내므로,
             # broadcast 경로에서는 세션 정보를 포함한 보강 메시지를 전송
             session_info = event.get("session", {})
             await self._send({
                 "type": EVT_SESSION_CREATED,
-                "session_id": session_info.get("agent_session_id", ""),
+                "agentSessionId": session_info.get("agent_session_id", ""),
                 "session": session_info,
             })
         elif event_type == "session_updated":
@@ -267,7 +266,7 @@ class UpstreamAdapter:
     async def _handle_command(self, cmd: dict) -> None:
         """소울스트림에서 받은 명령을 TaskManager 메서드로 라우팅."""
         cmd_type = cmd.get("type", "")
-        request_id = cmd.get("request_id", "")
+        request_id = cmd.get("requestId", "")
 
         try:
             match cmd_type:
@@ -282,15 +281,15 @@ class UpstreamAdapter:
                 case "health_check":
                     await self._handle_health_check(cmd)
                 case "subscribe_events":
-                    cmd_obj = cast(SubscribeEventsCmd, cmd)
-                    old_task = self._stream_tasks.get(cmd_obj['session_id'])
+                    session_id_for_sub = cmd.get("agentSessionId", "")
+                    old_task = self._stream_tasks.get(session_id_for_sub)
                     if old_task and not old_task.done():
                         old_task.cancel()
                     task = asyncio.create_task(
-                        self._handle_subscribe_events(cmd_obj),
-                        name=f"upstream-subscribe-{cmd_obj['session_id']}",
+                        self._handle_subscribe_events(cmd),
+                        name=f"upstream-subscribe-{session_id_for_sub}",
                     )
-                    self._stream_tasks[cmd_obj['session_id']] = task
+                    self._stream_tasks[session_id_for_sub] = task
                 case _:
                     await self._send_error(
                         f"Unknown command type: {cmd_type}",
@@ -309,9 +308,10 @@ class UpstreamAdapter:
         """세션 생성 명령 처리."""
         task = await self._tm.create_task(
             prompt=cmd["prompt"],
-            allowed_tools=cmd.get("allowed_tools"),
-            disallowed_tools=cmd.get("disallowed_tools"),
-            use_mcp=cmd.get("use_mcp", True),
+            agent_session_id=cmd.get("agentSessionId"),
+            allowed_tools=cmd.get("allowed_tools") or cmd.get("allowedTools"),
+            disallowed_tools=cmd.get("disallowed_tools") or cmd.get("disallowedTools"),
+            use_mcp=cmd.get("use_mcp") if cmd.get("use_mcp") is not None else cmd.get("useMcp", True),
             context=cmd.get("context"),
             context_items=cmd.get("context_items"),
             extra_context_items=cmd.get("extra_context_items"),
@@ -332,18 +332,18 @@ class UpstreamAdapter:
         )
         self._stream_tasks[session_id] = stream_task
 
-        # request_id 응답만 전송. 세션 정보는 SessionBroadcaster 경로로 전달됨.
-        request_id = cmd.get("request_id", "")
+        # 응답 전송. 세션 정보는 SessionBroadcaster 경로로도 전달됨.
+        request_id = cmd.get("requestId", "")
         if request_id:
             await self._send({
                 "type": EVT_SESSION_CREATED,
-                "session_id": session_id,
-                "request_id": request_id,
+                "agentSessionId": session_id,
+                "requestId": request_id,
             })
 
     async def _handle_intervene(self, cmd: dict) -> None:
         """개입 명령 처리."""
-        session_id = cmd["session_id"]
+        session_id = cmd.get("agentSessionId") or cmd.get("session_id", "")
         result = await self._tm.add_intervention(
             agent_session_id=session_id,
             text=cmd["text"],
@@ -368,8 +368,8 @@ class UpstreamAdapter:
     async def _handle_respond(self, cmd: dict) -> None:
         """AskUserQuestion 응답 처리."""
         self._tm.deliver_input_response(
-            agent_session_id=cmd["session_id"],
-            request_id=cmd["request_id"],
+            agent_session_id=cmd.get("agentSessionId") or cmd.get("session_id", ""),
+            request_id=cmd.get("requestId") or cmd.get("request_id", ""),
             answers=cmd["answers"],
         )
 
@@ -380,7 +380,7 @@ class UpstreamAdapter:
             "type": EVT_SESSIONS_UPDATE,
             "sessions": sessions,
             "total": total,
-            "request_id": cmd.get("request_id", ""),
+            "requestId": cmd.get("requestId", ""),
         })
 
     async def _handle_health_check(self, cmd: dict) -> None:
@@ -390,7 +390,7 @@ class UpstreamAdapter:
             "type": EVT_HEALTH_STATUS,
             "runners": stats,
             "node_id": self._node_id,
-            "request_id": cmd.get("request_id", ""),
+            "requestId": cmd.get("requestId", ""),
         })
 
     # ─── Event Streaming ────────────────────────────
@@ -415,7 +415,7 @@ class UpstreamAdapter:
 
                 await self._send({
                     "type": EVT_EVENT,
-                    "session_id": session_id,
+                    "agentSessionId": session_id,
                     "event": event,
                 })
 
@@ -431,43 +431,22 @@ class UpstreamAdapter:
             await self._tm.remove_listener(session_id, queue)
             self._stream_tasks.pop(session_id, None)
 
-    async def _handle_subscribe_events(self, cmd: SubscribeEventsCmd) -> None:
-        """subscribe_events 명령 처리: DB 재생 후 라이브 relay."""
-        session_id = cmd['session_id']
-        after_id = cmd['after_id']
+    async def _handle_subscribe_events(self, cmd: dict) -> None:
+        """subscribe_events 명령 처리: 라이브 이벤트 relay.
 
-        # 1. 라이브 리스너 먼저 등록 (DB 읽기 중 이벤트 누락 방지)
+        DB 재생은 sessions.py(soulstream-server)가 이미 수행하므로 생략하고
+        라이브 이벤트만 relay한다.
+        """
+        session_id = cmd.get("agentSessionId") or cmd.get("session_id", "")
+        if not session_id:
+            return
+
         queue: asyncio.Queue = asyncio.Queue()
         added = await self._tm.add_listener(session_id, queue)
         if not added:
             return  # 세션 종료/미존재
 
         try:
-            # 2. DB에서 after_id 이후 이벤트 전송 (event_id 포함)
-            db_complete = False
-            async for event_id, event_type, event_data in \
-                    self._session_db.stream_events_raw(session_id, after_id=after_id):
-                event_obj = json.loads(event_data)
-                await self._send({
-                    "type": "event",
-                    "session_id": session_id,
-                    "event_id": event_id,
-                    "event": event_obj,
-                })
-                after_id = event_id
-                if event_obj.get("type") in ("complete", "error"):
-                    db_complete = True
-                    break
-
-            if db_complete:
-                return
-
-            # 3. 라이브 이벤트 relay
-            # ※ event_id 없이 전송 (설계 의도):
-            #   soul-server WS 메시지에 event_id 없음 (TaskManager Queue 직배송).
-            #   클라이언트는 DB 재생 구간 마지막 event_id를 Last-Event-ID로 유지하며
-            #   재연결 시 그 값을 after_id로 사용 → 라이브 구간 미추적은 허용 가능.
-            #   리스너를 DB 읽기 전에 등록했으므로 DB-live 전환 구간 gap 없음.
             while self._running:
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=30.0)
@@ -476,8 +455,8 @@ class UpstreamAdapter:
                 if event is None:
                     break  # 세션 종료 시그널
                 await self._send({
-                    "type": "event",
-                    "session_id": session_id,
+                    "type": EVT_EVENT,
+                    "agentSessionId": session_id,
                     "event": event,
                 })
                 if event.get("type") in ("complete", "error"):
@@ -507,7 +486,7 @@ class UpstreamAdapter:
         await self._send({
             "type": EVT_ERROR,
             "message": message,
-            "request_id": request_id,
+            "requestId": request_id,
             "command_type": command_type,
         })
 

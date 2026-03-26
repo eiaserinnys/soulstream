@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 class CreateSessionRequest(BaseModel):
     prompt: str = ""
     nodeId: Optional[str] = None
+    folderId: Optional[str] = None
     profile: Optional[str] = None
     allowed_tools: Optional[list[str]] = None
     disallowed_tools: Optional[list[str]] = None
@@ -168,6 +169,12 @@ def create_sessions_router(
         session_id, node_id = await session_router.route_create_session(
             body.model_dump(exclude_none=True)
         )
+        # 폴더 배정
+        if body.folderId:
+            if catalog_service:
+                await catalog_service.move_sessions_to_folder([session_id], body.folderId)
+            else:
+                await db.assign_session_to_folder(session_id, body.folderId)
         return {"agentSessionId": session_id, "nodeId": node_id}
 
     @router.get("/{session_id}/events")
