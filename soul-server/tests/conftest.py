@@ -67,6 +67,10 @@ def pytest_configure(config):
     # 테스트용 인증 토큰 설정
     os.environ["AUTH_BEARER_TOKEN"] = TEST_AUTH_TOKEN
 
+    # AGENTS_CONFIG_FILE — 미설정 시 degraded mode로 동작
+    if "AGENTS_CONFIG_FILE" not in os.environ:
+        os.environ["AGENTS_CONFIG_FILE"] = ""  # degraded mode
+
 
 @pytest.fixture(scope="session", autouse=True)
 def reset_settings_cache():
