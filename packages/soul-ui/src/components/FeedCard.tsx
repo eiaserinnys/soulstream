@@ -17,7 +17,7 @@ import { useTheme } from "../hooks/useTheme";
 
 const DEFAULT_PROFILE = {
   user: { name: "User", id: "", hasPortrait: false },
-  assistant: { name: "Assistant", id: "", hasPortrait: false },
+  agents: [] as { id: string; name: string; hasPortrait: boolean; portraitUrl: string | null }[],
 };
 
 export interface FeedCardProps {
@@ -152,12 +152,13 @@ export const FeedCard = memo(function FeedCard({
             <div className="flex items-start gap-1.5 overflow-hidden">
               <ProfileAvatar
                 role={isUser ? "user" : "assistant"}
-                hasPortrait={isUser ? profileConfig.user.hasPortrait : profileConfig.assistant.hasPortrait}
+                hasPortrait={isUser ? profileConfig.user.hasPortrait : !!session.agentPortraitUrl}
                 fallbackEmoji={isUser ? "👤" : "🤖"}
+                portraitUrl={isUser ? undefined : session.agentPortraitUrl}
               />
               <div className="flex-1 min-w-0 overflow-hidden">
                 <span className="text-xs font-medium shrink-0">
-                  {isUser ? profileConfig.user.name : profileConfig.assistant.name}
+                  {isUser ? profileConfig.user.name : (session.agentName ?? "Assistant")}
                 </span>
                 <span className="text-muted-foreground text-xs mx-1 shrink-0">|</span>
                 <div className="text-foreground/70 overflow-hidden mt-0.5 line-clamp-2">
