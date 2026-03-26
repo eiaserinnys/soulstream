@@ -153,12 +153,10 @@ class Settings:
     agents_config_file: str = ""
 
     # Dashboard profile (선택 사항 — 미설정 시 기본 이름 표시, 초상화 없음)
+    # 어시스턴트 프로필은 agents.yaml(AgentRegistry)에서 관리. DASH_ASSISTANT_* 폐기.
     dash_user_name: str = "USER"
     dash_user_id: str = ""
     dash_user_portrait: str = ""  # 빈 문자열이면 이미지 없음
-    dash_assistant_name: str = "ASSISTANT"
-    dash_assistant_id: str = ""
-    dash_assistant_portrait: str = ""  # 빈 문자열이면 이미지 없음
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -249,13 +247,10 @@ class Settings:
             # Dashboard (경로 설정)
             dashboard_dir=os.getenv("SOUL_DASHBOARD_DIR", cls.dashboard_dir),
             dashboard_cache_dir=os.getenv("SOUL_DASHBOARD_CACHE_DIR", ""),
-            # Dashboard profile
+            # Dashboard profile (어시스턴트 프로필은 agents.yaml에서 관리)
             dash_user_name=os.getenv("DASH_USER_NAME", "USER"),
             dash_user_id=os.getenv("DASH_USER_ID", ""),
             dash_user_portrait=os.getenv("DASH_USER_PORTRAIT", ""),
-            dash_assistant_name=os.getenv("DASH_ASSISTANT_NAME", "ASSISTANT"),
-            dash_assistant_id=os.getenv("DASH_ASSISTANT_ID", ""),
-            dash_assistant_portrait=os.getenv("DASH_ASSISTANT_PORTRAIT", ""),
             agents_config_file=os.getenv("AGENTS_CONFIG_FILE", ""),
         )
 
@@ -387,9 +382,6 @@ SETTINGS_REGISTRY: dict[str, SettingMeta] = {
     "dash_user_name": SettingMeta("DASH_USER_NAME", "사용자 이름", "대시보드에 표시할 사용자 이름", "dashboard", "str"),
     "dash_user_id": SettingMeta("DASH_USER_ID", "사용자 ID", "사용자 식별자", "dashboard", "str"),
     "dash_user_portrait": SettingMeta("DASH_USER_PORTRAIT", "사용자 초상화", "사용자 초상화 이미지 경로", "dashboard", "str"),
-    "dash_assistant_name": SettingMeta("DASH_ASSISTANT_NAME", "어시스턴트 이름", "대시보드에 표시할 어시스턴트 이름", "dashboard", "str"),
-    "dash_assistant_id": SettingMeta("DASH_ASSISTANT_ID", "어시스턴트 ID", "어시스턴트 식별자", "dashboard", "str"),
-    "dash_assistant_portrait": SettingMeta("DASH_ASSISTANT_PORTRAIT", "어시스턴트 초상화", "어시스턴트 초상화 이미지 경로", "dashboard", "str"),
     # --- integration ---
     "serendipity_enabled": SettingMeta("SERENDIPITY_ENABLED", "세렌디피티 활성화", "세렌디피티 저장 활성화 여부", "integration", "bool"),
     "serendipity_url": SettingMeta("SERENDIPITY_URL", "세렌디피티 URL", "세렌디피티 API URL", "integration", "str"),

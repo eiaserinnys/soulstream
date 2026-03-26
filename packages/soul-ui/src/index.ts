@@ -117,6 +117,7 @@ export {
 export type {
   ProfileConfig,
   DashboardConfig,
+  DashboardAgentConfig,
   SelectedEventNodeData,
   DashboardState,
   DashboardActions,
