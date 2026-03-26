@@ -18,7 +18,7 @@ export function SessionsTopBar() {
       <Button
         variant="ghost"
         size="sm"
-        onClick={openNewSessionModal}
+        onClick={() => openNewSessionModal('folder')}
         title="New session"
       >
         <Plus className="h-3.5 w-3.5 mr-1" />

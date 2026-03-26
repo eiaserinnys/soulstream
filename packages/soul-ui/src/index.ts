@@ -162,6 +162,8 @@ export type { FolderContentsProps, StatusConfig } from "./components/FolderConte
 export { FeedCard } from "./components/FeedCard";
 export type { FeedCardProps } from "./components/FeedCard";
 export { FeedView } from "./components/FeedView";
+export { FeedTopBar } from "./components/FeedTopBar";
+export type { FeedTopBarProps } from "./components/FeedTopBar";
 export { FolderDialog } from "./components/FolderDialog";
 export { ChatView } from "./components/ChatView";
 export { ChatInput } from "./components/ChatInput";

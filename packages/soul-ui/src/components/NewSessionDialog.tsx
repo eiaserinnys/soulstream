@@ -29,6 +29,8 @@ export interface NewSessionDialogProps {
   onOpenChange: (open: boolean) => void;
   /** 세션 생성 요청 콜백 */
   onSubmit: (prompt: string) => Promise<void>;
+  /** 폴더 선택 슬롯 (soul-dashboard와 orchestrator-dashboard에서 사용) */
+  folderSelector?: ReactNode;
   /** 노드 선택 슬롯 (orchestrator-dashboard에서만 사용) */
   nodeSelector?: ReactNode;
   /** 제출 버튼 비활성 조건 추가 (nodeSelector 미선택 등) */
@@ -49,6 +51,7 @@ export function NewSessionDialog({
   open,
   onOpenChange,
   onSubmit,
+  folderSelector,
   nodeSelector,
   submitDisabled = false,
   title = "New Session",
@@ -157,8 +160,11 @@ export function NewSessionDialog({
 
         {/* Body */}
         <div className="px-6 pb-3 flex flex-col gap-3">
+          {/* Folder selector slot */}
+          {folderSelector && <div className="mb-3">{folderSelector}</div>}
+
           {/* Node selector slot */}
-          {nodeSelector}
+          {nodeSelector && <div className="mb-3">{nodeSelector}</div>}
 
           {/* Prompt textarea */}
           <textarea
