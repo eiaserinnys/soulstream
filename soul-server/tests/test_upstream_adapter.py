@@ -95,7 +95,7 @@ class TestHandleCreateSession:
         cmd = {
             "type": CMD_CREATE_SESSION,
             "prompt": "Hello, world!",
-            "request_id": "req-1",
+            "requestId": "req-1",
         }
 
         await adapter._handle_command(cmd)
@@ -118,8 +118,8 @@ class TestHandleCreateSession:
         ]
         created_msgs = [m for m in sent_messages if m["type"] == EVT_SESSION_CREATED]
         assert len(created_msgs) == 1
-        assert created_msgs[0]["session_id"] == "session-abc"
-        assert created_msgs[0]["request_id"] == "req-1"
+        assert created_msgs[0]["agentSessionId"] == "session-abc"
+        assert created_msgs[0]["requestId"] == "req-1"
 
     @pytest.mark.asyncio
     async def test_passes_optional_parameters(self):
@@ -253,7 +253,7 @@ class TestHandleListSessions:
 
         cmd = {
             "type": CMD_LIST_SESSIONS,
-            "request_id": "req-list-1",
+            "requestId": "req-list-1",
         }
 
         await adapter._handle_command(cmd)
@@ -263,7 +263,7 @@ class TestHandleListSessions:
         assert sent["type"] == EVT_SESSIONS_UPDATE
         assert len(sent["sessions"]) == 2
         assert sent["total"] == 2
-        assert sent["request_id"] == "req-list-1"
+        assert sent["requestId"] == "req-list-1"
 
 
 class TestHandleHealthCheck:
@@ -282,7 +282,7 @@ class TestHandleHealthCheck:
 
         cmd = {
             "type": CMD_HEALTH_CHECK,
-            "request_id": "req-health-1",
+            "requestId": "req-health-1",
         }
 
         await adapter._handle_command(cmd)
@@ -291,7 +291,7 @@ class TestHandleHealthCheck:
         assert sent["type"] == EVT_HEALTH_STATUS
         assert sent["node_id"] == "test-node"
         assert sent["runners"]["max"] == 3
-        assert sent["request_id"] == "req-health-1"
+        assert sent["requestId"] == "req-health-1"
 
 
 class TestUnknownCommand:
@@ -356,12 +356,12 @@ class TestStreamEvents:
         assert len(sent_messages) == 2
 
         assert sent_messages[0]["type"] == EVT_EVENT
-        assert sent_messages[0]["session_id"] == "session-1"
+        assert sent_messages[0]["agentSessionId"] == "session-1"
         assert sent_messages[0]["event"]["type"] == "progress"
         assert sent_messages[0]["event"]["text"] == "Working..."
 
         assert sent_messages[1]["type"] == EVT_EVENT
-        assert sent_messages[1]["session_id"] == "session-1"
+        assert sent_messages[1]["agentSessionId"] == "session-1"
         assert sent_messages[1]["event"]["type"] == "complete"
         assert sent_messages[1]["event"]["result"] == "Done"
 
@@ -472,20 +472,20 @@ class TestInitialSessionSync:
 
 
 class TestBroadcastSessionChanges:
-    """SessionBroadcaster 이벤트 → 오케스트레이터 전달 테스트."""
+    """SessionBroadcaster 이벤트 → 오케스트레이터 전달 테스트.
+
+    _dispatch_broadcast_event를 직접 호출하여 이벤트 변환 로직을 검증한다.
+    """
 
     @pytest.mark.asyncio
     async def test_forwards_session_created(self):
-        """session_created 이벤트를 session_id 포함하여 전달."""
+        """session_created 이벤트를 agentSessionId 포함하여 전달."""
         adapter = _make_adapter()
         adapter._ws = MagicMock()
         adapter._ws.closed = False
         adapter._ws.send_json = AsyncMock()
-        adapter._running = True
-        adapter._broadcast_queue = asyncio.Queue()
 
-        # 이벤트를 큐에 넣고 running을 False로 바꿔 루프 종료
-        await adapter._broadcast_queue.put({
+        await adapter._dispatch_broadcast_event({
             "type": "session_created",
             "session": {
                 "agent_session_id": "new-session-1",
@@ -494,16 +494,9 @@ class TestBroadcastSessionChanges:
             },
         })
 
-        async def _stop_after_one():
-            await asyncio.sleep(0.05)
-            adapter._running = False
-
-        asyncio.create_task(_stop_after_one())
-        await adapter._broadcast_session_changes()
-
         sent = adapter._ws.send_json.call_args.args[0]
         assert sent["type"] == EVT_SESSION_CREATED
-        assert sent["session_id"] == "new-session-1"
+        assert sent["agentSessionId"] == "new-session-1"
         assert sent["session"]["agent_session_id"] == "new-session-1"
 
     @pytest.mark.asyncio
@@ -513,22 +506,13 @@ class TestBroadcastSessionChanges:
         adapter._ws = MagicMock()
         adapter._ws.closed = False
         adapter._ws.send_json = AsyncMock()
-        adapter._running = True
-        adapter._broadcast_queue = asyncio.Queue()
 
-        await adapter._broadcast_queue.put({
+        await adapter._dispatch_broadcast_event({
             "type": "session_updated",
             "agent_session_id": "session-1",
             "status": "completed",
             "updated_at": "2026-03-20T08:00:00Z",
         })
-
-        async def _stop_after_one():
-            await asyncio.sleep(0.05)
-            adapter._running = False
-
-        asyncio.create_task(_stop_after_one())
-        await adapter._broadcast_session_changes()
 
         sent = adapter._ws.send_json.call_args.args[0]
         assert sent["type"] == EVT_SESSION_UPDATED
@@ -542,10 +526,8 @@ class TestBroadcastSessionChanges:
         adapter._ws = MagicMock()
         adapter._ws.closed = False
         adapter._ws.send_json = AsyncMock()
-        adapter._running = True
-        adapter._broadcast_queue = asyncio.Queue()
 
-        await adapter._broadcast_queue.put({
+        await adapter._dispatch_broadcast_event({
             "type": "session_updated",
             "agent_session_id": "session-1",
             "status": "running",
@@ -556,13 +538,6 @@ class TestBroadcastSessionChanges:
                 "timestamp": "2026-03-20T08:00:00Z",
             },
         })
-
-        async def _stop_after_one():
-            await asyncio.sleep(0.05)
-            adapter._running = False
-
-        asyncio.create_task(_stop_after_one())
-        await adapter._broadcast_session_changes()
 
         sent = adapter._ws.send_json.call_args.args[0]
         assert sent["type"] == EVT_SESSION_UPDATED
@@ -575,20 +550,11 @@ class TestBroadcastSessionChanges:
         adapter._ws = MagicMock()
         adapter._ws.closed = False
         adapter._ws.send_json = AsyncMock()
-        adapter._running = True
-        adapter._broadcast_queue = asyncio.Queue()
 
-        await adapter._broadcast_queue.put({
+        await adapter._dispatch_broadcast_event({
             "type": "session_deleted",
             "agent_session_id": "session-to-delete",
         })
-
-        async def _stop_after_one():
-            await asyncio.sleep(0.05)
-            adapter._running = False
-
-        asyncio.create_task(_stop_after_one())
-        await adapter._broadcast_session_changes()
 
         sent = adapter._ws.send_json.call_args.args[0]
         assert sent["type"] == EVT_SESSION_DELETED
@@ -655,7 +621,7 @@ class TestCommandErrorHandling:
         cmd = {
             "type": CMD_CREATE_SESSION,
             "prompt": "Test",
-            "request_id": "req-err",
+            "requestId": "req-err",
         }
 
         await adapter._handle_command(cmd)
@@ -663,5 +629,5 @@ class TestCommandErrorHandling:
         sent = adapter._ws.send_json.call_args.args[0]
         assert sent["type"] == EVT_ERROR
         assert "No resources" in sent["message"]
-        assert sent["request_id"] == "req-err"
+        assert sent["requestId"] == "req-err"
         assert sent["command_type"] == CMD_CREATE_SESSION

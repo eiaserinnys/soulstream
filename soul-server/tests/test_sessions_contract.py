@@ -91,35 +91,36 @@ class TestSessionInfoSchema:
                 updated_at=datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc),
             )
 
-    def test_missing_status_rejected(self):
-        """status 누락 시 거부되어야 한다"""
-        with pytest.raises(ValidationError):
-            SessionInfo(
-                agent_session_id="sess-001",
-                prompt="Hello",
-                created_at=datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc),
-                updated_at=datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc),
-            )
+    def test_missing_status_defaults_to_none(self):
+        """status 누락 시 None으로 기본값이 설정되어야 한다"""
+        info = SessionInfo(
+            agent_session_id="sess-001",
+            prompt="Hello",
+            created_at=datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc),
+        )
+        assert info.status is None
 
-    def test_missing_prompt_rejected(self):
-        """prompt 누락 시 거부되어야 한다"""
-        with pytest.raises(ValidationError):
-            SessionInfo(
-                agent_session_id="sess-001",
-                status=TaskStatus.RUNNING,
-                created_at=datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc),
-                updated_at=datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc),
-            )
+    def test_missing_prompt_defaults_to_none(self):
+        """prompt 누락 시 None으로 기본값이 설정되어야 한다"""
+        info = SessionInfo(
+            agent_session_id="sess-001",
+            status=TaskStatus.RUNNING,
+            created_at=datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc),
+        )
+        assert info.prompt is None
 
-    def test_missing_timestamps_rejected(self):
-        """타임스탬프 누락 시 거부되어야 한다"""
-        with pytest.raises(ValidationError):
-            SessionInfo(
-                agent_session_id="sess-001",
-                status=TaskStatus.RUNNING,
-                prompt="Hello",
-                # created_at, updated_at 누락
-            )
+    def test_missing_timestamps_defaults_to_none(self):
+        """타임스탬프 누락 시 None으로 기본값이 설정되어야 한다"""
+        info = SessionInfo(
+            agent_session_id="sess-001",
+            status=TaskStatus.RUNNING,
+            prompt="Hello",
+            # created_at, updated_at 누락
+        )
+        assert info.created_at is None
+        assert info.updated_at is None
 
     def test_missing_session_type_defaults_to_claude(self):
         """session_type 누락 시 기본값 'claude'가 적용되어야 한다"""
