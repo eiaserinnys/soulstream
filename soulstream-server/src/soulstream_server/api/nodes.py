@@ -8,7 +8,7 @@ import asyncio
 import json
 import logging
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from sse_starlette.sse import EventSourceResponse
 
 from soulstream_server.nodes.node_manager import NodeManager
@@ -39,7 +39,7 @@ def create_nodes_router(
         """노드에 등록된 에이전트 프로필 목록."""
         node = node_manager.get_node(node_id)
         if not node:
-            return {"agents": []}
+            raise HTTPException(status_code=404, detail=f"노드를 찾을 수 없습니다: {node_id}")
         agents = [
             {
                 "id": agent_id,
@@ -47,7 +47,7 @@ def create_nodes_router(
                 "portrait_url": p.get("portrait_url"),
                 "max_turns": p.get("max_turns"),
             }
-            for agent_id, p in node._agent_profiles.items()
+            for agent_id, p in node.agent_profiles.items()
         ]
         return {"agents": agents}
 
