@@ -293,6 +293,7 @@ class ClaudeRunner:
         debug_send_fn: Optional[DebugSendFn] = None,
         pooled: bool = False,
         model: Optional[str] = None,
+        system_prompt: Optional[str] = None,
     ):
         import uuid as _uuid
         self.runner_id = _uuid.uuid4().hex[:8]
@@ -303,6 +304,7 @@ class ClaudeRunner:
         self.debug_send_fn = debug_send_fn
         self._pooled = pooled
         self.model = model
+        self.system_prompt = system_prompt
 
         # Rate limit tracking
         self.rate_limit_tracker = None  # RateLimitTracker instance (injected by adapter)
@@ -805,6 +807,7 @@ class ClaudeRunner:
             debug_stderr=_stderr_target,
             max_buffer_size=50 * 1024 * 1024,  # 50MB: 기본값 1MB가 대형 응답에서 오버플로우 발생
             model=self.model,
+            system_prompt=self.system_prompt,
         )
 
         if session_id:

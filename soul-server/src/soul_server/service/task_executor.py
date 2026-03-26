@@ -236,6 +236,7 @@ class TaskExecutor:
                     context_items=combined_context_items,
                     agent_session_id=task.agent_session_id,
                     model=task.model,
+                    system_prompt=task.system_prompt,
                 ):
                     event_dict = event.model_dump()
 
