@@ -80,6 +80,8 @@ export type {
   CatalogUpdatedStreamEvent,
   MetadataEntry,
   MetadataUpdatedStreamEvent,
+  AgentInfo,
+  AgentProfile,
 } from "./shared/types";
 
 // === Shared Mappers ===

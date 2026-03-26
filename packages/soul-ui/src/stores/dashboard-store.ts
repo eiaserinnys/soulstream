@@ -206,7 +206,7 @@ export interface DashboardActions {
   processEvents: (events: Array<{ event: SoulSSEEvent; eventId: number }>) => void;
 
   // 낙관적 세션 추가 + 활성 세션 설정 (세션 생성 직후 즉시 목록 반영)
-  addOptimisticSession: (agentSessionId: string, prompt: string, folderId?: string | null, nodeId?: string) => void;
+  addOptimisticSession: (agentSessionId: string, prompt: string, folderId?: string | null, nodeId?: string, agentId?: string | null, agentName?: string | null) => void;
 
   // New Session 모달
   openNewSessionModal: (source?: 'folder' | 'feed') => void;
@@ -725,7 +725,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
 
       // --- 낙관적 세션 추가 ---
 
-      addOptimisticSession: (agentSessionId, prompt, folderId, nodeId) => {
+      addOptimisticSession: (agentSessionId, prompt, folderId, nodeId, agentId, agentName) => {
         const sessions = get().sessions;
         let catalog = get().catalog;
         const newSession: SessionSummary = {
@@ -737,6 +737,8 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           lastEventId: 0,
           lastReadEventId: 0,
           ...(nodeId ? { nodeId } : {}),
+          ...(agentId ? { agentId } : {}),
+          ...(agentName ? { agentName } : {}),
         };
         const updatedSessions = sessions.some(
           (s) => s.agentSessionId === agentSessionId,
