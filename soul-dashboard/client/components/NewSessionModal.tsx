@@ -3,12 +3,21 @@
  *
  * 폴더별 draft 관리와 세션 생성 API 호출을 담당하는 얇은 래퍼.
  * UI 본체는 soul-ui의 NewSessionDialog에 위임한다.
+ *
+ * 진입 경로(newSessionSource)에 따라 초기 폴더를 다르게 설정한다:
+ * - 'feed' 진입: '클로드 코드 세션' 폴더 사전 선택
+ * - 'folder' 진입: 현재 선택된 폴더 사전 선택
  */
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   useDashboardStore,
   NewSessionDialog,
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectPopup,
+  SelectItem,
   type CreateSessionResponse,
 } from "@seosoyoung/soul-ui";
 
@@ -17,15 +26,32 @@ export function NewSessionModal() {
   const closeModal = useDashboardStore((s) => s.closeNewSessionModal);
   const addOptimisticSession = useDashboardStore((s) => s.addOptimisticSession);
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
+  const newSessionSource = useDashboardStore((s) => s.newSessionSource);
   const catalog = useDashboardStore((s) => s.catalog);
   const setDraft = useDashboardStore((s) => s.setDraft);
   const clearDraft = useDashboardStore((s) => s.clearDraft);
 
-  const draftKey = `__draft__${selectedFolderId ?? "null"}`;
+  const [selectedModalFolderId, setSelectedModalFolderId] = useState<string | null>(null);
 
-  // 폴더명 계산
-  const folderName =
-    catalog?.folders.find((f) => f.id === selectedFolderId)?.name ??
+  // '클로드 코드 세션' 폴더 ID
+  const claudeFolder = catalog?.folders.find((f) => f.name === '클로드 코드 세션');
+
+  // 모달이 열릴 때 진입 경로에 따라 초기 폴더 설정
+  useEffect(() => {
+    if (isOpen) {
+      if (newSessionSource === 'feed') {
+        setSelectedModalFolderId(claudeFolder?.id ?? null);
+      } else {
+        setSelectedModalFolderId(selectedFolderId);
+      }
+    }
+  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const draftKey = `__draft__${selectedModalFolderId ?? "null"}`;
+
+  // 선택된 폴더명 계산
+  const selectedModalFolderName =
+    catalog?.folders.find((f) => f.id === selectedModalFolderId)?.name ??
     "Claude Code";
 
   // 현재 draft 복원
@@ -47,7 +73,7 @@ export function NewSessionModal() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt,
-          ...(selectedFolderId ? { folderId: selectedFolderId } : {}),
+          ...(selectedModalFolderId ? { folderId: selectedModalFolderId } : {}),
         }),
       });
 
@@ -65,12 +91,12 @@ export function NewSessionModal() {
       addOptimisticSession(
         result.agentSessionId,
         prompt,
-        selectedFolderId,
+        selectedModalFolderId,
         result.nodeId,
       );
       closeModal();
     },
-    [selectedFolderId, addOptimisticSession, clearDraft, draftKey, closeModal],
+    [selectedModalFolderId, addOptimisticSession, clearDraft, draftKey, closeModal],
   );
 
   const handleOpenChange = useCallback(
@@ -80,12 +106,34 @@ export function NewSessionModal() {
     [closeModal],
   );
 
+  const folderSelector = (
+    <div className="flex flex-col gap-1.5">
+      <label className="text-xs font-medium text-muted-foreground">Folder</label>
+      <Select
+        value={selectedModalFolderId ?? ''}
+        onValueChange={(v) => setSelectedModalFolderId(v || null)}
+      >
+        <SelectTrigger>
+          <SelectValue placeholder="Select a folder..." />
+        </SelectTrigger>
+        <SelectPopup>
+          {catalog?.folders.map((f) => (
+            <SelectItem key={f.id} value={f.id}>
+              {f.name}
+            </SelectItem>
+          ))}
+        </SelectPopup>
+      </Select>
+    </div>
+  );
+
   return (
     <NewSessionDialog
       open={isOpen}
       onOpenChange={handleOpenChange}
       onSubmit={handleSubmit}
-      subtitle={`in ${folderName}`}
+      folderSelector={folderSelector}
+      subtitle={`in ${selectedModalFolderName}`}
       initialDraft={initialDraft}
       onDraftChange={handleDraftChange}
     />
