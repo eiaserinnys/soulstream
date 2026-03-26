@@ -125,6 +125,18 @@ async def execute_task(
             model=request.model,
             folder_id=request.folder_id,
             system_prompt=request.system_prompt,
+            profile_id=request.profile,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": {
+                    "code": "INVALID_PROFILE",
+                    "message": str(e),
+                    "details": {},
+                }
+            },
         )
     except TaskConflictError:
         raise HTTPException(

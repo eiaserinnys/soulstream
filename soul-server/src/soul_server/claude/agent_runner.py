@@ -294,6 +294,7 @@ class ClaudeRunner:
         pooled: bool = False,
         model: Optional[str] = None,
         system_prompt: Optional[str] = None,
+        max_turns: Optional[int] = None,
     ):
         import uuid as _uuid
         self.runner_id = _uuid.uuid4().hex[:8]
@@ -305,6 +306,7 @@ class ClaudeRunner:
         self._pooled = pooled
         self.model = model
         self.system_prompt = system_prompt
+        self.max_turns: Optional[int] = max_turns
 
         # Rate limit tracking
         self.rate_limit_tracker = None  # RateLimitTracker instance (injected by adapter)
@@ -808,6 +810,7 @@ class ClaudeRunner:
             max_buffer_size=50 * 1024 * 1024,  # 50MB: 기본값 1MB가 대형 응답에서 오버플로우 발생
             model=self.model,
             system_prompt=self.system_prompt,
+            max_turns=self.max_turns,
         )
 
         if session_id:
