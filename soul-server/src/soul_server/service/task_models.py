@@ -141,10 +141,18 @@ class Task:
         """세션 키 (= agent_session_id)"""
         return self.agent_session_id
 
-    def to_session_info(self) -> dict:
+    def to_session_info(
+        self,
+        agent_name: Optional[str] = None,
+        agent_portrait_url: Optional[str] = None,
+    ) -> dict:
         """대시보드용 세션 요약 정보 dict 변환
 
         GET /sessions 응답, SSE session_list/session_created 이벤트에서 사용합니다.
+
+        Args:
+            agent_name: 에이전트 이름 (AgentRegistry에서 호출자가 조회하여 전달).
+            agent_portrait_url: 에이전트 portrait 서빙 URL (호출자가 조회하여 전달).
         """
         updated_at = self.completed_at or self.created_at
         info = {
@@ -166,6 +174,11 @@ class Task:
         info["last_read_event_id"] = self.last_read_event_id
         if self.node_id:
             info["node_id"] = self.node_id
+        # 에이전트 프로필 정보
+        if self.profile_id:
+            info["agentId"] = self.profile_id
+            info["agentName"] = agent_name
+            info["agentPortraitUrl"] = agent_portrait_url
         return info
 
     def to_dict(self) -> dict:
@@ -189,6 +202,7 @@ class Task:
             "error": self.error,
             "created_at": datetime_to_str(self.created_at),
             "completed_at": datetime_to_str(self.completed_at) if self.completed_at else None,
+            "profile_id": self.profile_id,
         }
 
     @classmethod
@@ -213,6 +227,7 @@ class Task:
             error=data.get("error"),
             created_at=str_to_datetime(data["created_at"]),
             completed_at=str_to_datetime(data["completed_at"]) if data.get("completed_at") else None,
+            profile_id=data.get("profile_id"),
         )
 
 

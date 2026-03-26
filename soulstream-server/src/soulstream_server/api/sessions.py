@@ -405,5 +405,11 @@ def _session_to_response(s: dict, agent_profiles: Optional[dict] = None) -> dict
     if s.get("agent_id") and s["agent_id"] in _profiles:
         profile = _profiles[s["agent_id"]]
         result["agentName"] = profile.get("name")
-        result["agentPortraitUrl"] = profile.get("portrait_url")
+        # portrait_url을 오케스트레이터 프록시 URL로 변환
+        raw_portrait = profile.get("portrait_url")
+        node_id = s.get("node_id")
+        if raw_portrait and node_id:
+            result["agentPortraitUrl"] = f"/api/nodes/{node_id}/agents/{s['agent_id']}/portrait"
+        else:
+            result["agentPortraitUrl"] = raw_portrait
     return result

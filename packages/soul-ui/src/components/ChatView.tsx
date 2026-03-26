@@ -338,18 +338,23 @@ const ThinkingMessage = memo(function ThinkingMessage({ msg }: { msg: ChatMessag
 /** text 노드: 일반 텍스트 표시 */
 const AssistantMessage = memo(function AssistantMessage({ msg, llmContext }: { msg: ChatMessage; llmContext?: LlmContext }) {
   const config = useDashboardStore((s) => s.dashboardConfig);
-  const assistantConfig = config?.assistant;
+  const activeSession = useDashboardStore((s) => {
+    const key = s.activeSessionKey;
+    return key ? s.sessions.find((ss) => ss.agentSessionId === key) : null;
+  });
+
+  // 세션에 바인딩된 에이전트 정보
+  const agentName = activeSession?.agentName;
+  const agentPortraitUrl = activeSession?.agentPortraitUrl;
 
   const isLlm = llmContext?.isLlm ?? false;
   // LLM 세션: assistant_message에 model 정보가 있으면 표시, 없으면 llmContext에서 가져옴
   const modelLabel = msg.model ?? llmContext?.llmModel;
   const displayName = isLlm
     ? modelLabel ? `ASSISTANT (${modelLabel})` : "ASSISTANT"
-    : assistantConfig && assistantConfig.name !== "ASSISTANT"
-      ? `${assistantConfig.name}`
-      : "Assistant";
-  const displayId = isLlm ? null : assistantConfig?.id ? `${assistantConfig.id}` : null;
-  const hasPortrait = isLlm ? false : assistantConfig?.hasPortrait ?? false;
+    : agentName ?? "Assistant";
+  const displayId = isLlm ? null : activeSession?.agentId ?? null;
+  const hasPortrait = isLlm ? false : !!agentPortraitUrl;
 
   // 토큰 사용량 (assistant_message 노드에 usage가 있을 때 인라인 표시)
   const tokenInfo = msg.usage
@@ -362,6 +367,7 @@ const AssistantMessage = memo(function AssistantMessage({ msg, llmContext }: { m
         role="assistant"
         hasPortrait={hasPortrait}
         fallbackEmoji={"\u{1F916}"}
+        portraitUrl={agentPortraitUrl}
       />
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-1.5 mb-0.5">

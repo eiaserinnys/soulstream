@@ -13,7 +13,7 @@ class AgentProfile:
     id: str
     name: str
     workspace_dir: str
-    portrait_url: str = ""
+    portrait_path: str = ""
     max_turns: Optional[int] = None
     allowed_tools: Optional[list[str]] = None
     disallowed_tools: Optional[list[str]] = None

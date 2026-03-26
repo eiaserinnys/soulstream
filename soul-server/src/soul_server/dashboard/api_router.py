@@ -43,6 +43,7 @@ class CreateSessionBody(BaseModel):
     prompt: str
     agentSessionId: Optional[str] = None
     folderId: Optional[str] = None
+    agentId: Optional[str] = None  # 에이전트 프로필 ID (AgentRegistry 조회 키)
     use_mcp: bool = True
 
 
@@ -396,6 +397,7 @@ async def api_create_session(body: CreateSessionBody):
             agent_session_id=body.agentSessionId,
             use_mcp=body.use_mcp,
             folder_id=body.folderId,
+            profile_id=body.agentId,
         )
     except TaskConflictError:
         raise HTTPException(

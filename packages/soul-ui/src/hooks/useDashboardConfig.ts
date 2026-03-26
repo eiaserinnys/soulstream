@@ -10,7 +10,7 @@ import type { DashboardConfig } from "../stores/dashboard-store";
 
 const DEFAULT_CONFIG: DashboardConfig = {
   user: { name: "USER", id: "", hasPortrait: false },
-  assistant: { name: "ASSISTANT", id: "", hasPortrait: false },
+  agents: [],
 };
 
 export function useDashboardConfig() {
