@@ -380,6 +380,27 @@ class TestExtractSearchable:
 # ---------------------------------------------------------------------------
 
 
+def _extract_event_records(conn):
+    """executemany 호출에서 migration_insert_event 레코드를 추출한다.
+
+    executemany(query, records) 형태로 호출되므로,
+    records 리스트의 각 튜플은 (sid, eid, event_type, payload, searchable, created_at).
+    개별 폴백으로 conn.execute가 호출될 수도 있으므로 양쪽 모두 수집한다.
+    """
+    records = []
+    # executemany 배치 호출에서 수집
+    for call in conn.executemany.await_args_list:
+        query = call.args[0]
+        if "migration_insert_event" in str(query):
+            records.extend(call.args[1])
+    # 개별 폴백 execute 호출에서 수집
+    for call in conn.execute.await_args_list:
+        if "migration_insert_event" in str(call.args[0]):
+            # execute(query, sid, eid, event_type, payload, searchable, created_at)
+            records.append(call.args[1:])
+    return records
+
+
 class TestJsonlFormatCompat:
     """nested/flat/mixed JSONL 포맷이 올바르게 파싱되는지 검증."""
 
@@ -399,31 +420,27 @@ class TestJsonlFormatCompat:
         from soul_server.service.legacy_migrator import _migrate_events_from_jsonl
         await _migrate_events_from_jsonl(pool, events_dir, "test-node")
 
-        # conn.execute 호출 인자를 검사
-        calls = conn.execute.await_args_list
-        # migration_ensure_session + migration_insert_event 2건 + migration_update_last_event_id
-        event_inserts = [
-            c for c in calls
-            if "migration_insert_event" in str(c.args[0])
-        ]
-        assert len(event_inserts) == 2
+        # executemany/execute에서 이벤트 레코드 추출
+        # 레코드 튜플: (sid, eid, event_type, payload, searchable, created_at)
+        records = _extract_event_records(conn)
+        assert len(records) == 2
 
         # 첫 번째 이벤트: event_type이 "text"여야 함 (not "unknown")
-        first_insert = event_inserts[0]
-        # args: (query, sid, eid, event_type, payload, searchable, created_at)
-        assert first_insert.args[3] == "text"
-        assert first_insert.args[5] == "hello world"  # searchable_text
+        first = records[0]
+        assert first[2] == "text"  # event_type
+        assert first[4] == "hello world"  # searchable_text
         # payload에 래퍼 없이 이벤트만 포함
-        payload_dict = json.loads(first_insert.args[4])
+        payload_dict = json.loads(first[3])
         assert "event" not in payload_dict  # 래퍼 없음
         assert payload_dict["type"] == "text"
 
         # 두 번째 이벤트
-        second_insert = event_inserts[1]
-        assert second_insert.args[3] == "tool_use"
-        assert second_insert.args[5] == "test cmd"
+        second = records[1]
+        assert second[2] == "tool_use"
+        assert second[4] == "test cmd"
 
         # migration_ensure_session 호출 확인
+        calls = conn.execute.await_args_list
         ensure_calls = [
             c for c in calls
             if "migration_ensure_session" in str(c.args[0])
@@ -452,13 +469,10 @@ class TestJsonlFormatCompat:
         from soul_server.service.legacy_migrator import _migrate_events_from_jsonl
         await _migrate_events_from_jsonl(pool, events_dir, "test-node")
 
-        event_inserts = [
-            c for c in conn.execute.await_args_list
-            if "migration_insert_event" in str(c.args[0])
-        ]
-        assert len(event_inserts) == 1
-        assert event_inserts[0].args[3] == "text"
-        assert event_inserts[0].args[5] == "flat hello"
+        records = _extract_event_records(conn)
+        assert len(records) == 1
+        assert records[0][2] == "text"
+        assert records[0][4] == "flat hello"
 
     @pytest.mark.asyncio
     async def test_mixed_format(self, data_dir: Path):
@@ -476,15 +490,12 @@ class TestJsonlFormatCompat:
         from soul_server.service.legacy_migrator import _migrate_events_from_jsonl
         await _migrate_events_from_jsonl(pool, events_dir, "test-node")
 
-        event_inserts = [
-            c for c in conn.execute.await_args_list
-            if "migration_insert_event" in str(c.args[0])
-        ]
-        assert len(event_inserts) == 2
-        assert event_inserts[0].args[3] == "text"
-        assert event_inserts[0].args[5] == "nested"
-        assert event_inserts[1].args[3] == "user_message"
-        assert event_inserts[1].args[5] == "flat"
+        records = _extract_event_records(conn)
+        assert len(records) == 2
+        assert records[0][2] == "text"
+        assert records[0][4] == "nested"
+        assert records[1][2] == "user_message"
+        assert records[1][4] == "flat"
 
 
 # ---------------------------------------------------------------------------

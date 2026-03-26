@@ -159,10 +159,10 @@ class TestSessionCRUD:
         assert "completed" in values
 
     @pytest.mark.asyncio
-    async def test_upsert_auto_sets_node_id(self, db):
+    async def test_upsert_with_explicit_node_id(self, db):
         db._pool.execute = AsyncMock()
 
-        await db.upsert_session("s1", status="running")
+        await db.upsert_session("s1", status="running", node_id="test-node")
 
         call_args = db._pool.execute.call_args[0]
         columns = call_args[2]
@@ -604,11 +604,11 @@ class TestNodeId:
         assert db.node_id == "test-node"
 
     @pytest.mark.asyncio
-    async def test_upsert_sets_node_id(self, db):
-        """upsert_session이 node_id를 자동 설정하는지 확인"""
+    async def test_upsert_sets_node_id_when_passed(self, db):
+        """upsert_session에 node_id를 명시적으로 전달하면 설정되는지 확인"""
         db._pool.execute = AsyncMock()
 
-        await db.upsert_session("s1", status="running")
+        await db.upsert_session("s1", status="running", node_id="test-node")
 
         call_args = db._pool.execute.call_args[0]
         columns = call_args[2]

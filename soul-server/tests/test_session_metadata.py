@@ -31,12 +31,17 @@ def _make_mock_session_db():
     _events = {}
 
     async def _upsert_session(session_id, **fields):
+        from datetime import datetime
         if session_id not in _sessions:
             _sessions[session_id] = {"session_id": session_id, "metadata": [], "last_event_id": 0, "last_read_event_id": 0}
         _sessions[session_id].update(fields)
         # Handle metadata field stored as JSON string
         if "metadata" in fields and isinstance(fields["metadata"], str):
             _sessions[session_id]["metadata"] = json.loads(fields["metadata"])
+        # Handle created_at/updated_at: convert ISO strings to datetime (matching real DB behavior)
+        for ts_field in ("created_at", "updated_at"):
+            if ts_field in fields and isinstance(fields[ts_field], str):
+                _sessions[session_id][ts_field] = datetime.fromisoformat(fields[ts_field])
 
     async def _get_session(session_id):
         if session_id not in _sessions:
@@ -46,7 +51,7 @@ def _make_mock_session_db():
             s["metadata"] = []
         return s
 
-    async def _get_all_sessions(offset=0, limit=0, session_type=None):
+    async def _get_all_sessions(offset=0, limit=0, session_type=None, folder_id=None, node_id=None, status=None):
         items = list(_sessions.values())
         for item in items:
             if "metadata" not in item:

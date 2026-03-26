@@ -36,6 +36,11 @@ def _make_mock_session_db():
         if session_id not in _sessions:
             _sessions[session_id] = {"session_id": session_id, "metadata": [], "last_event_id": 0, "last_read_event_id": 0}
         _sessions[session_id].update(fields)
+        # Ensure created_at/updated_at are datetime objects (matching real DB behavior)
+        for ts_field in ("created_at", "updated_at"):
+            if ts_field in fields and isinstance(fields[ts_field], str):
+                from datetime import datetime
+                _sessions[session_id][ts_field] = datetime.fromisoformat(fields[ts_field])
 
     async def _get_session(session_id):
         if session_id not in _sessions:
