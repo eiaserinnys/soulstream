@@ -41,7 +41,7 @@ def load_agent_registry(config_path: str) -> AgentRegistry:
     """
     import yaml
     with open(config_path, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
+        data = yaml.safe_load(f) or {}  # 빈 파일이나 주석만 있는 경우 None → 빈 dict
     try:
         profiles = [AgentProfile(**agent) for agent in data.get("agents", [])]
     except (TypeError, KeyError) as e:
