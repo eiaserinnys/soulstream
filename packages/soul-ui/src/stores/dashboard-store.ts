@@ -970,10 +970,11 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
       setFeedScrollOffset: (offset) => set({ feedScrollOffset: offset }),
 
       getFeedSessions: () => {
-        const { sessions } = get();
+        const { sessions, catalog } = get();
         const cutoff = Date.now() - 24 * 60 * 60 * 1000;
         return sessions
           .filter((s) => {
+            if (s.sessionType === "llm") return false;
             const t = s.lastMessage?.timestamp ?? s.updatedAt ?? s.createdAt;
             return t != null && new Date(t).getTime() > cutoff;
           })
@@ -981,6 +982,13 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
             const ta = new Date(a.updatedAt ?? a.createdAt ?? 0).getTime();
             const tb = new Date(b.updatedAt ?? b.createdAt ?? 0).getTime();
             return tb - ta;
+          })
+          .map((s) => {
+            const assignment = catalog?.sessions[s.agentSessionId];
+            if (assignment?.displayName) {
+              return { ...s, displayName: assignment.displayName };
+            }
+            return s;
           });
       },
 

@@ -9,6 +9,7 @@ import { memo } from "react";
 import type { SessionSummary } from "../shared/types";
 import { isSessionUnread } from "../stores/dashboard-store";
 import { STATUS_CONFIG, nodeIdToHue } from "./FolderContents";
+import { MarkdownContent } from "./MarkdownContent";
 import { cn } from "../lib/cn";
 import { Badge } from "./ui/badge";
 import { useTheme } from "../hooks/useTheme";
@@ -77,7 +78,7 @@ export const FeedCard = memo(function FeedCard({
     >
       {/* 제목 */}
       <div className={cn(
-        "text-sm font-semibold truncate",
+        "text-base font-semibold truncate",
         isUnread ? "text-foreground" : "text-foreground/80",
       )}>
         {title}
@@ -118,11 +119,13 @@ export const FeedCard = memo(function FeedCard({
       </div>
 
       {/* 메시지 미리보기 */}
-      <div className="flex-1 overflow-hidden flex flex-col gap-1.5 text-xs">
+      <div className="flex-1 overflow-hidden flex flex-col gap-1.5 text-sm">
         {session.prompt && (
           <div className="overflow-hidden">
             <span className="text-muted-foreground font-medium">User</span>
-            <p className="text-foreground/70 line-clamp-2 mt-0.5">{session.prompt}</p>
+            <div className="text-foreground/70 overflow-hidden mt-0.5">
+              <MarkdownContent content={session.prompt} compact />
+            </div>
           </div>
         )}
         {session.lastMessage?.preview && session.lastMessage.preview !== session.prompt && (
@@ -130,7 +133,9 @@ export const FeedCard = memo(function FeedCard({
             <span className="text-muted-foreground font-medium">
               {session.lastMessage.type === "user" ? "User" : "Assistant"}
             </span>
-            <p className="text-foreground/70 line-clamp-2 mt-0.5">{session.lastMessage.preview}</p>
+            <div className="text-foreground/70 overflow-hidden mt-0.5">
+              <MarkdownContent content={session.lastMessage.preview} compact />
+            </div>
           </div>
         )}
       </div>
