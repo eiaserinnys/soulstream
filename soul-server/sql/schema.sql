@@ -28,7 +28,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     last_event_id           INTEGER,
     last_read_event_id      INTEGER,
     created_at              TIMESTAMPTZ DEFAULT NOW(),
-    updated_at              TIMESTAMPTZ DEFAULT NOW()
+    updated_at              TIMESTAMPTZ DEFAULT NOW(),
+    agent_id                VARCHAR
 );
 
 CREATE TABLE IF NOT EXISTS events (
@@ -87,7 +88,7 @@ DECLARE
         'prompt', 'client_id', 'claude_session_id', 'last_message',
         'metadata', 'was_running_at_shutdown',
         'last_event_id', 'last_read_event_id',
-        'created_at', 'updated_at', 'node_id'
+        'created_at', 'updated_at', 'node_id', 'agent_id'
     ];
     col_list  TEXT;
     val_list  TEXT;
@@ -651,7 +652,8 @@ BEGIN
         session_id, folder_id, display_name, node_id, session_type,
         status, prompt, client_id, claude_session_id,
         last_message, metadata, was_running_at_shutdown,
-        last_event_id, last_read_event_id, created_at, updated_at
+        last_event_id, last_read_event_id, created_at, updated_at,
+        agent_id
     ) VALUES (
         p_session_id,
         p_data->>'folder_id',
@@ -668,7 +670,8 @@ BEGIN
         (p_data->>'last_event_id')::integer,
         (p_data->>'last_read_event_id')::integer,
         COALESCE((p_data->>'created_at')::timestamptz, NOW()),
-        COALESCE((p_data->>'updated_at')::timestamptz, NOW())
+        COALESCE((p_data->>'updated_at')::timestamptz, NOW()),
+        p_data->>'agent_id'
     )
     ON CONFLICT (session_id) DO UPDATE SET
         folder_id = EXCLUDED.folder_id,
@@ -684,7 +687,8 @@ BEGIN
         was_running_at_shutdown = EXCLUDED.was_running_at_shutdown,
         last_event_id = EXCLUDED.last_event_id,
         last_read_event_id = EXCLUDED.last_read_event_id,
-        updated_at = EXCLUDED.updated_at;
+        updated_at = EXCLUDED.updated_at,
+        agent_id = EXCLUDED.agent_id;
 END;
 $$;
 
@@ -713,7 +717,8 @@ BEGIN
             session_id, folder_id, display_name, node_id, session_type,
             status, prompt, client_id, claude_session_id,
             last_message, metadata, was_running_at_shutdown,
-            last_event_id, last_read_event_id, created_at, updated_at
+            last_event_id, last_read_event_id, created_at, updated_at,
+            agent_id
         ) VALUES (
             p_session_id,
             p_data->>'folder_id',
@@ -730,7 +735,8 @@ BEGIN
             (p_data->>'last_event_id')::integer,
             (p_data->>'last_read_event_id')::integer,
             COALESCE((p_data->>'created_at')::timestamptz, NOW()),
-            COALESCE((p_data->>'updated_at')::timestamptz, NOW())
+            COALESCE((p_data->>'updated_at')::timestamptz, NOW()),
+            p_data->>'agent_id'
         );
     END IF;
 END;

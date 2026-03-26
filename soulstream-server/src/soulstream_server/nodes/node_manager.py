@@ -5,6 +5,7 @@ NodeManager — 연결된 soul-server 노드 관리.
 import logging
 from typing import Any, Callable, Coroutine
 
+import httpx
 from fastapi import WebSocket
 
 from soulstream_server.nodes.node_connection import NodeConnection
@@ -69,8 +70,22 @@ class NodeManager:
             "Node registered: %s (host=%s, port=%d, capabilities=%s)",
             node_id, host, port, capabilities,
         )
+        await self._fetch_agent_profiles(node, host, port)
         await self._emit_change("node_registered", node_id, node.to_info())
         return node
+
+    async def _fetch_agent_profiles(self, node: "NodeConnection", host: str, port: int) -> None:
+        """soul-server /api/agents에서 에이전트 프로필 조회.
+        실패 시 빈 목록으로 graceful degradation.
+        """
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as http:
+                resp = await http.get(f"http://{host}:{port}/api/agents")
+                data = resp.json()
+                node._agent_profiles = {p["id"]: p for p in data.get("agents", [])}
+        except Exception:
+            logger.warning("에이전트 프로필 조회 실패 (node=%s), 빈 목록으로 진행", node.node_id)
+            node._agent_profiles = {}
 
     async def _on_node_close(self, node: NodeConnection) -> None:
         self._nodes.pop(node.node_id, None)

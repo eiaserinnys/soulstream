@@ -351,8 +351,23 @@ export interface MetadataEntry {
   tool_name?: string;
 }
 
+/** 에이전트 기본 정보 (REST /api/nodes/{nodeId}/agents 응답 항목) */
+export interface AgentInfo {
+  id: string;
+  name: string;
+  portrait_url?: string | null;
+  max_turns?: number | null;
+}
+
+/** 에이전트 프로필 (SessionSummary에 포함되는 필드) */
+export interface AgentProfile {
+  agentId?: string | null;
+  agentName?: string | null;
+  agentPortraitUrl?: string | null;
+}
+
 /** 세션 요약 정보 (목록 조회용) */
-export interface SessionSummary {
+export interface SessionSummary extends AgentProfile {
   /** 세션의 유일한 키. JSONL 파일명. */
   agentSessionId: string;
   status: SessionStatus;
@@ -541,6 +556,8 @@ export interface CreateSessionRequest {
   agentSessionId?: string;
   /** 세션을 배치할 폴더 ID. 미지정 시 session_type 기반 자동 배정. */
   folderId?: string;
+  /** 에이전트 프로필 ID. 지정 시 해당 에이전트로 세션 실행. */
+  profile?: string;
 }
 
 /** POST /api/sessions 응답 */

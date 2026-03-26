@@ -90,7 +90,8 @@ def create_sessions_router(
         # snake_case -> camelCase 변환
         result = []
         for s in sessions:
-            result.append(_session_to_response(s))
+            profiles = _get_profiles_for_session(s, node_manager)
+            result.append(_session_to_response(s, profiles))
 
         next_cursor = None
         if offset + limit < total:
@@ -120,7 +121,7 @@ def create_sessions_router(
         async def event_generator():
             # 초기 세션 목록 전송
             sessions, total = await db.get_all_sessions(offset=0, limit=200)
-            result = [_session_to_response(s) for s in sessions]
+            result = [_session_to_response(s, _get_profiles_for_session(s, node_manager)) for s in sessions]
             yield {
                 "event": "session_list",
                 "data": json.dumps({
@@ -154,6 +155,11 @@ def create_sessions_router(
                         break
 
                     event_type = event.get("type", "message")
+                    # 브로드캐스터는 raw DB 딕셔너리를 그대로 전송한다.
+                    # session_created/session_updated 이벤트에는 agentId(DB 컬럼)가 포함되나,
+                    # agentName/agentPortraitUrl은 DB에 없으므로 포함되지 않는다.
+                    # 클라이언트는 초기 session_list(REST)에서 agentName/agentPortraitUrl을 캐시하고,
+                    # 실시간 이벤트에서 agentId로 lookup하는 방식을 사용한다. (의도된 설계)
                     yield {
                         "event": event_type,
                         "data": json.dumps(event),
@@ -361,7 +367,13 @@ def create_sessions_router(
     return router
 
 
-def _session_to_response(s: dict) -> dict:
+def _get_profiles_for_session(s: dict, node_manager: NodeManager) -> dict:
+    """세션이 속한 노드의 agent_profiles 반환."""
+    node = node_manager.find_node_for_session(s.get("session_id", ""))
+    return node.agent_profiles if node else {}
+
+
+def _session_to_response(s: dict, agent_profiles: Optional[dict] = None) -> dict:
     """DB 세션 레코드를 API 응답 형식으로 변환."""
     created_at = s.get("created_at")
     if hasattr(created_at, "isoformat"):
@@ -370,7 +382,8 @@ def _session_to_response(s: dict) -> dict:
     if hasattr(updated_at, "isoformat"):
         updated_at = updated_at.isoformat()
 
-    return {
+    _profiles = agent_profiles or {}
+    result = {
         "agentSessionId": s.get("session_id"),
         "status": s.get("status"),
         "prompt": s.get("prompt"),
@@ -385,4 +398,12 @@ def _session_to_response(s: dict) -> dict:
         "folderId": s.get("folder_id"),
         "lastEventId": s.get("last_event_id", 0),
         "lastReadEventId": s.get("last_read_event_id", 0),
+        "agentId": s.get("agent_id"),
+        "agentName": None,
+        "agentPortraitUrl": None,
     }
+    if s.get("agent_id") and s["agent_id"] in _profiles:
+        profile = _profiles[s["agent_id"]]
+        result["agentName"] = profile.get("name")
+        result["agentPortraitUrl"] = profile.get("portrait_url")
+    return result

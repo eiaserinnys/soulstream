@@ -123,7 +123,15 @@ const SessionItem = memo(function SessionItem({
             {displayText}
           </div>
         )}
-        <div className="text-xs text-muted-foreground truncate">{timeStr}</div>
+        <div className="text-xs text-muted-foreground truncate flex items-center gap-1">
+          {session.agentName && (
+            <>
+              <span className="shrink-0 text-[10px] opacity-70">{session.agentName}</span>
+              <span className="shrink-0 opacity-50">·</span>
+            </>
+          )}
+          <span>{timeStr}</span>
+        </div>
       </div>
       <div className="flex items-center gap-1 shrink-0">
         {session.nodeId && (() => {

@@ -8,7 +8,7 @@ import asyncio
 import json
 import logging
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from sse_starlette.sse import EventSourceResponse
 
 from soulstream_server.nodes.node_manager import NodeManager
@@ -33,6 +33,23 @@ def create_nodes_router(
     async def list_nodes() -> dict:
         """연결된 노드 목록."""
         return {"nodes": node_manager.get_nodes()}
+
+    @router.get("/{node_id}/agents")
+    async def list_node_agents(node_id: str) -> dict:
+        """노드에 등록된 에이전트 프로필 목록."""
+        node = node_manager.get_node(node_id)
+        if not node:
+            raise HTTPException(status_code=404, detail=f"노드를 찾을 수 없습니다: {node_id}")
+        agents = [
+            {
+                "id": agent_id,
+                "name": p.get("name"),
+                "portrait_url": p.get("portrait_url"),
+                "max_turns": p.get("max_turns"),
+            }
+            for agent_id, p in node.agent_profiles.items()
+        ]
+        return {"agents": agents}
 
     @router.get("/stream")
     async def node_stream(request: Request) -> EventSourceResponse:
