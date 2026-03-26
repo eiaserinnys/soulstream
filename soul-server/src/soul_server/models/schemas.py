@@ -111,6 +111,7 @@ class ExecuteRequest(BaseModel):
     context_items: Optional[List[dict]] = Field(None, description="추가 컨텍스트 항목 목록.")
     model: Optional[str] = Field(None, description="Claude 모델명.")
     folder_id: Optional[str] = Field(None, description="세션을 배치할 폴더 ID.")
+    system_prompt: Optional[str] = Field(None, description="Claude API system 파라미터로 전달할 시스템 프롬프트.")
 
 
 class SessionResponse(BaseModel):

@@ -94,6 +94,9 @@ class Task:
     # 모델 지정 (런타임 전용, 영속화 안 됨)
     model: Optional[str] = field(default=None, repr=False)
 
+    # 시스템 프롬프트 (런타임 전용, 영속화 안 됨)
+    system_prompt: Optional[str] = field(default=None, repr=False)
+
     # LLM 프록시 메타데이터
     session_type: str = "claude"        # "claude" | "llm"
     llm_provider: Optional[str] = None  # "openai" | "anthropic"

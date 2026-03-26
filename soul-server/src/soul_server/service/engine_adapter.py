@@ -268,6 +268,7 @@ class SoulEngineAdapter:
         context_items: Optional[List[dict]] = None,
         agent_session_id: Optional[str] = None,
         model: Optional[str] = None,
+        system_prompt: Optional[str] = None,
     ) -> AsyncIterator[SSEEvent]:
         """Claude Code 실행 (SSE 이벤트 스트림)
 
@@ -415,6 +416,8 @@ class SoulEngineAdapter:
                 # W-4: 풀에서 꺼낸 runner에 요청별 도구 설정 주입
                 runner.allowed_tools = effective_allowed
                 runner.disallowed_tools = effective_disallowed
+                # W-5: 풀에서 꺼낸 runner에 요청별 system_prompt 주입
+                runner.system_prompt = system_prompt
             else:
                 runner = ClaudeRunner(
                     working_dir=Path(self._workspace_dir),
@@ -423,6 +426,7 @@ class SoulEngineAdapter:
                     mcp_config_path=mcp_config_path,
                     debug_send_fn=debug_send_fn,
                     model=model,
+                    system_prompt=system_prompt,
                 )
 
             # rate limit tracker 주입
