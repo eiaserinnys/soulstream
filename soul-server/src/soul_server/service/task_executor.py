@@ -40,7 +40,7 @@ class TaskExecutor:
         listener_manager: "TaskListenerManager",
         get_intervention_func: Callable[[str], Awaitable[Optional[dict]]],
         finalize_task_func: Callable[..., Awaitable[Optional[Task]]],
-        register_session_func: Optional[Callable[[str, str], None]] = None,
+        register_session_func: Optional[Callable[..., None]] = None,
         session_db: Optional["PostgresSessionDB"] = None,
         metadata_extractor: Optional["MetadataExtractor"] = None,
         append_metadata_func: Optional[Callable] = None,
@@ -230,6 +230,9 @@ class TaskExecutor:
                     working_dir = profile.workspace_dir if profile else None
                     max_turns = profile.max_turns if profile else None
                     override_tools = profile.allowed_tools if profile else None
+                    # AgentProfile.disallowed_tools는 현재 사용하지 않음.
+                    # task.disallowed_tools (L252)가 그대로 적용된다.
+                    # 프로필 레벨 disallowed_tools 오버라이드는 필요 시 추가.
                 else:
                     working_dir = None
                     max_turns = None
