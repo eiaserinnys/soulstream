@@ -118,6 +118,7 @@ app.get("/api/config/settings", (_req, res) => {
 app.use("/api/sessions", requireAuth);
 app.use("/api/catalog", requireAuth);
 app.use("/api/llm", requireAuth);
+app.use("/api/nodes", requireAuth);
 app.use('/api/debug', requireAuth)
 
 app.get('/api/debug/memory', (_, res) => {
