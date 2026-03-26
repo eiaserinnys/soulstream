@@ -19,6 +19,7 @@ import {
   SelectPopup,
   SelectItem,
   type CreateSessionResponse,
+  type DashboardAgentConfig,
 } from "@seosoyoung/soul-ui";
 
 export function NewSessionModal() {
@@ -28,10 +29,15 @@ export function NewSessionModal() {
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
   const newSessionSource = useDashboardStore((s) => s.newSessionSource);
   const catalog = useDashboardStore((s) => s.catalog);
+  const dashboardConfig = useDashboardStore((s) => s.dashboardConfig);
   const setDraft = useDashboardStore((s) => s.setDraft);
   const clearDraft = useDashboardStore((s) => s.clearDraft);
 
   const [selectedModalFolderId, setSelectedModalFolderId] = useState<string | null>(null);
+  const [selectedAgentId, setSelectedAgentId] = useState("");
+
+  // 에이전트 목록 (dashboardConfig에서)
+  const agents: DashboardAgentConfig[] = dashboardConfig?.agents ?? [];
 
   // '클로드 코드 세션' 폴더 ID
   const claudeFolder = catalog?.folders.find((f) => f.name === '클로드 코드 세션');
@@ -43,6 +49,10 @@ export function NewSessionModal() {
         setSelectedModalFolderId(claudeFolder?.id ?? null);
       } else {
         setSelectedModalFolderId(selectedFolderId);
+      }
+      // 에이전트가 하나뿐이면 자동 선택
+      if (agents.length === 1) {
+        setSelectedAgentId(agents[0].id);
       }
     }
   }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -74,6 +84,7 @@ export function NewSessionModal() {
         body: JSON.stringify({
           prompt,
           ...(selectedModalFolderId ? { folderId: selectedModalFolderId } : {}),
+          ...(selectedAgentId ? { agentId: selectedAgentId } : {}),
         }),
       });
 
@@ -88,20 +99,28 @@ export function NewSessionModal() {
 
       // 성공: draft 삭제, 낙관적 추가, 모달 닫기
       clearDraft(draftKey);
+      const selectedAgent = agents.find((a) => a.id === selectedAgentId);
       addOptimisticSession(
         result.agentSessionId,
         prompt,
         selectedModalFolderId,
         result.nodeId,
+        selectedAgentId || null,
+        selectedAgent?.name ?? null,
+        selectedAgent?.portraitUrl ?? null,
       );
       closeModal();
+      setSelectedAgentId("");
     },
-    [selectedModalFolderId, addOptimisticSession, clearDraft, draftKey, closeModal],
+    [selectedModalFolderId, selectedAgentId, agents, addOptimisticSession, clearDraft, draftKey, closeModal],
   );
 
   const handleOpenChange = useCallback(
     (open: boolean) => {
-      if (!open) closeModal();
+      if (!open) {
+        closeModal();
+        setSelectedAgentId("");
+      }
     },
     [closeModal],
   );
@@ -127,12 +146,36 @@ export function NewSessionModal() {
     </div>
   );
 
+  const agentSelector = agents.length > 0 ? (
+    <div className="flex flex-col gap-1.5">
+      <label className="text-xs font-medium text-muted-foreground">Agent</label>
+      <Select value={selectedAgentId} onValueChange={setSelectedAgentId}>
+        <SelectTrigger>
+          <SelectValue placeholder="Select an agent..." />
+        </SelectTrigger>
+        <SelectPopup>
+          {agents.map((a) => (
+            <SelectItem key={a.id} value={a.id}>
+              <div className="flex items-center gap-2">
+                {a.portraitUrl && (
+                  <img src={a.portraitUrl} alt={a.name} className="w-5 h-5 rounded shrink-0 object-cover" />
+                )}
+                {a.name}
+              </div>
+            </SelectItem>
+          ))}
+        </SelectPopup>
+      </Select>
+    </div>
+  ) : undefined;
+
   return (
     <NewSessionDialog
       open={isOpen}
       onOpenChange={handleOpenChange}
       onSubmit={handleSubmit}
       folderSelector={folderSelector}
+      agentSelector={agentSelector}
       subtitle={`in ${selectedModalFolderName}`}
       initialDraft={initialDraft}
       onDraftChange={handleDraftChange}
