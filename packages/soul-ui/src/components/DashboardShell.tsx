@@ -20,7 +20,7 @@ import { Sheet, SheetContent, SheetFooter } from "../components/ui/sheet";
 
 /** 패널 기본 비율 (%) */
 const DEFAULT_LEFT = 20;
-const DEFAULT_RIGHT = 30;
+const DEFAULT_RIGHT = 40;
 
 /** 패널 최소/최대 비율 (%) */
 const MIN_PANEL = 10;
