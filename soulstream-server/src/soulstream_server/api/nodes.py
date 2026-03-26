@@ -8,7 +8,9 @@ import asyncio
 import json
 import logging
 
+import httpx
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import Response
 from sse_starlette.sse import EventSourceResponse
 
 from soulstream_server.nodes.node_manager import NodeManager
@@ -36,7 +38,11 @@ def create_nodes_router(
 
     @router.get("/{node_id}/agents")
     async def list_node_agents(node_id: str) -> dict:
-        """노드에 등록된 에이전트 프로필 목록."""
+        """노드에 등록된 에이전트 프로필 목록.
+
+        portrait_url은 오케스트레이터 프록시 URL로 변환하여 반환.
+        soul-server의 /api/agents/{id}/portrait → /api/nodes/{node_id}/agents/{id}/portrait
+        """
         node = node_manager.get_node(node_id)
         if not node:
             raise HTTPException(status_code=404, detail=f"노드를 찾을 수 없습니다: {node_id}")
@@ -44,12 +50,42 @@ def create_nodes_router(
             {
                 "id": agent_id,
                 "name": p.get("name"),
-                "portrait_url": p.get("portrait_url"),
+                "portrait_url": (
+                    f"/api/nodes/{node_id}/agents/{agent_id}/portrait"
+                    if p.get("portrait_url")
+                    else ""
+                ),
                 "max_turns": p.get("max_turns"),
             }
             for agent_id, p in node.agent_profiles.items()
         ]
         return {"agents": agents}
+
+    @router.get("/{node_id}/agents/{agent_id}/portrait")
+    async def proxy_agent_portrait(node_id: str, agent_id: str):
+        """에이전트 portrait 이미지 프록시.
+
+        해당 노드의 soul-server /api/agents/{agent_id}/portrait를 프록시한다.
+        """
+        node = node_manager.get_node(node_id)
+        if not node:
+            raise HTTPException(status_code=404, detail=f"노드를 찾을 수 없습니다: {node_id}")
+
+        url = f"http://{node.host}:{node.port}/api/agents/{agent_id}/portrait"
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url)
+        except httpx.RequestError:
+            return Response(status_code=502)
+
+        if resp.status_code != 200:
+            return Response(status_code=resp.status_code)
+
+        return Response(
+            content=resp.content,
+            media_type=resp.headers.get("content-type", "image/png"),
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
 
     @router.get("/stream")
     async def node_stream(request: Request) -> EventSourceResponse:
