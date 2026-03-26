@@ -286,6 +286,7 @@ class TaskManager:
             claude_session_id=task.claude_session_id,
             created_at=datetime_to_str(task.created_at),
             node_id=self._db.node_id,
+            agent_id=task.profile_id,
         )
 
         # 기본 폴더 자동 배정 + 카탈로그 브로드캐스트
@@ -580,6 +581,7 @@ class TaskManager:
             claude_session_id=task.claude_session_id,
             created_at=datetime_to_str(task.created_at),
             node_id=self._db.node_id,
+            agent_id=task.profile_id,
         )
 
         # 새 세션이면 폴더에 배치 + 카탈로그 브로드캐스트
