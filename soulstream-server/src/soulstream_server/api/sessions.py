@@ -284,8 +284,16 @@ def create_sessions_router(
     async def intervene(session_id: str, body: InterveneRequest) -> dict:
         """개입 메시지 전송."""
         node = await _find_node(session_id)
-        result = await node.send_intervene(session_id, body.text, body.user)
-        return result
+        try:
+            result = await node.send_intervene(session_id, body.text, body.user)
+            return result
+        except RuntimeError as e:
+            msg = str(e)
+            # soul-server SESSION_NOT_FOUND 에러 → 404
+            if "찾을 수 없" in msg or "not found" in msg.lower():
+                raise HTTPException(status_code=404, detail=msg)
+            # 그 외 처리 불가 → 422
+            raise HTTPException(status_code=422, detail=msg)
 
     @router.post("/{session_id}/respond")
     async def respond(session_id: str, body: RespondRequest) -> dict:

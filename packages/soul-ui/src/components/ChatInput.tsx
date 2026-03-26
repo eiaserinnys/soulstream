@@ -141,8 +141,8 @@ export function ChatInput({ additionalDisabled = false }: ChatInputProps = {}) {
         });
 
         if (!response.ok) {
-          const body = await response.json().catch(() => ({ error: { message: "Unknown error" } }));
-          throw new Error(body.error?.message ?? `HTTP ${response.status}`);
+          const body = await response.json().catch(() => ({ detail: "Unknown error" }));
+          throw new Error(body.detail ?? body.error?.message ?? `HTTP ${response.status}`);
         }
 
         const result = await response.json();
@@ -169,8 +169,8 @@ export function ChatInput({ additionalDisabled = false }: ChatInputProps = {}) {
         );
 
         if (!response.ok) {
-          const body = await response.json().catch(() => ({ error: { message: "Unknown error" } }));
-          throw new Error(body.error?.message ?? `HTTP ${response.status}`);
+          const body = await response.json().catch(() => ({ detail: "Unknown error" }));
+          throw new Error(body.detail ?? body.error?.message ?? `HTTP ${response.status}`);
         }
 
         await response.json();
