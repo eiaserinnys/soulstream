@@ -12,6 +12,7 @@ import time
 import logging
 from pathlib import Path
 from contextlib import asynccontextmanager
+from typing import Optional
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -34,6 +35,7 @@ from soul_server.service.engine_adapter import init_soul_engine, get_soul_engine
 from soul_server.claude.agent_runner import ClaudeRunner
 from soul_server.service.runner_pool import RunnerPool
 from soul_server.service.task_manager import get_task_manager, TaskManager, set_task_manager
+from soul_server.service.agent_registry import AgentRegistry, load_agent_registry
 from soul_server.service.session_broadcaster import init_session_broadcaster
 from soul_server.service.postgres_session_db import PostgresSessionDB, create_soul_server_session_db, init_session_db, get_session_db
 from soul_server.models import HealthResponse
@@ -62,6 +64,21 @@ _llm_executor: LlmExecutor | None = None
 
 # draining 상태 (신규 세션 거부 중 여부)
 _is_draining: bool = False
+
+# 전역 AgentRegistry 참조
+_agent_registry: Optional[AgentRegistry] = None
+
+
+def get_agent_registry() -> AgentRegistry:
+    """lifespan 이후에는 항상 AgentRegistry 인스턴스가 보장됨."""
+    if _agent_registry is None:
+        raise RuntimeError("AgentRegistry가 초기화되지 않았습니다. lifespan 이전에 호출되었습니다.")
+    return _agent_registry
+
+
+def set_agent_registry(registry: AgentRegistry) -> None:
+    global _agent_registry
+    _agent_registry = registry
 
 
 async def periodic_cleanup():
@@ -257,6 +274,15 @@ async def lifespan(app: FastAPI):
         metadata_extractor=metadata_extractor,
     )
     set_task_manager(task_manager)
+
+    # AgentRegistry 초기화
+    if settings.agents_config_file:
+        registry = load_agent_registry(settings.agents_config_file)
+    else:
+        registry = AgentRegistry([])  # degraded mode
+    set_agent_registry(registry)
+    logger.info(f"  AgentRegistry initialized: {len(registry.list())}개 에이전트")
+
     loaded = await task_manager.load()
     logger.info(f"  Loaded {loaded} sessions from DB")
 
@@ -610,6 +636,10 @@ app.include_router(create_soul_server_auth_router())
 # 등록 순서: GET /api/sessions/stream이 GET /api/sessions/{id}/events보다 먼저 매칭되도록
 # api_router.py 내부에서 이미 올바른 순서로 정의되어 있음
 app.include_router(dash_api_router)
+
+# Agents API
+from soul_server.api import agents as agents_module
+app.include_router(agents_module.router, tags=["agents"])
 
 # SPA fallback 미들웨어 — /sess-xxx 같은 클라이언트 라우트에서 index.html을 반환한다.
 # StaticFiles(html=True)가 /sess-xxx 에 대해 404를 반환할 때 index.html로 폴백한다.

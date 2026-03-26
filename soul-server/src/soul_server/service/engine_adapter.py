@@ -269,6 +269,8 @@ class SoulEngineAdapter:
         agent_session_id: Optional[str] = None,
         model: Optional[str] = None,
         system_prompt: Optional[str] = None,
+        working_dir: Optional[str] = None,   # Phase 1 추가 (Phase 2에서 실제 사용)
+        max_turns: Optional[int] = None,     # Phase 1 추가 (Phase 2에서 실제 사용)
     ) -> AsyncIterator[SSEEvent]:
         """Claude Code 실행 (SSE 이벤트 스트림)
 
