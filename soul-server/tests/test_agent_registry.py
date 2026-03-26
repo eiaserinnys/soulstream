@@ -41,7 +41,7 @@ agents:
   - id: seosoyoung
     name: 서소영
     workspace_dir: /tmp/workspace
-    portrait_url: "https://example.com/portrait.png"
+    portrait_path: "/tmp/portrait.png"
   - id: ariella
     name: 아리엘라
     workspace_dir: /tmp/ariella
