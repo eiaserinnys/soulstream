@@ -37,6 +37,8 @@ export type {
   EventRecord,
   SessionStatus,
   LlmUsage,
+  AgentInfo,
+  AgentProfile,
   SessionSummary,
   SessionDetail,
   EventTreeNodeType,
