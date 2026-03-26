@@ -124,6 +124,7 @@ async def execute_task(
             extra_context_items=request.context_items,
             model=request.model,
             folder_id=request.folder_id,
+            system_prompt=request.system_prompt,
         )
     except TaskConflictError:
         raise HTTPException(
