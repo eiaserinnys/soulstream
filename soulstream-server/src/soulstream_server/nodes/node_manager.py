@@ -5,6 +5,7 @@ NodeManager — 연결된 soul-server 노드 관리.
 import logging
 from typing import Any, Callable, Coroutine
 
+import httpx
 from fastapi import WebSocket
 
 from soulstream_server.nodes.node_connection import NodeConnection
@@ -77,7 +78,6 @@ class NodeManager:
         """soul-server /api/agents에서 에이전트 프로필 조회.
         실패 시 빈 목록으로 graceful degradation.
         """
-        import httpx
         try:
             async with httpx.AsyncClient(timeout=3.0) as http:
                 resp = await http.get(f"http://{host}:{port}/api/agents")

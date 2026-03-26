@@ -155,6 +155,11 @@ def create_sessions_router(
                         break
 
                     event_type = event.get("type", "message")
+                    # 브로드캐스터는 raw DB 딕셔너리를 그대로 전송한다.
+                    # session_created/session_updated 이벤트에는 agentId(DB 컬럼)가 포함되나,
+                    # agentName/agentPortraitUrl은 DB에 없으므로 포함되지 않는다.
+                    # 클라이언트는 초기 session_list(REST)에서 agentName/agentPortraitUrl을 캐시하고,
+                    # 실시간 이벤트에서 agentId로 lookup하는 방식을 사용한다. (의도된 설계)
                     yield {
                         "event": event_type,
                         "data": json.dumps(event),
@@ -363,9 +368,9 @@ def create_sessions_router(
 
 
 def _get_profiles_for_session(s: dict, node_manager: NodeManager) -> dict:
-    """세션이 속한 노드의 _agent_profiles 반환."""
+    """세션이 속한 노드의 agent_profiles 반환."""
     node = node_manager.find_node_for_session(s.get("session_id", ""))
-    return node._agent_profiles if node else {}
+    return node.agent_profiles if node else {}
 
 
 def _session_to_response(s: dict, agent_profiles: Optional[dict] = None) -> dict:
