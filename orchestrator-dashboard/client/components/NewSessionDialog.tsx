@@ -23,6 +23,7 @@ import {
   SelectItem,
   useDashboardStore,
 } from "@seosoyoung/soul-ui";
+import type { AgentInfo } from "@seosoyoung/soul-ui";
 import { useOrchestratorStore } from "../store/orchestrator-store";
 
 export function NewSessionDialog() {
@@ -34,6 +35,8 @@ export function NewSessionDialog() {
   const nodes = useOrchestratorStore((s) => s.nodes);
   const [selectedNodeId, setSelectedNodeId] = useState("");
   const [selectedModalFolderId, setSelectedModalFolderId] = useState<string | null>(null);
+  const [agents, setAgents] = useState<AgentInfo[]>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState("");
 
   const aliveNodes = Array.from(nodes.values()).filter(
     (n) => n.status === "connected",
@@ -53,6 +56,23 @@ export function NewSessionDialog() {
     }
   }, [isModalOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // nodeId 변경 시 에이전트 목록 조회
+  useEffect(() => {
+    setSelectedAgentId("");
+    setAgents([]);
+    if (!selectedNodeId) return;
+
+    fetch(`/api/nodes/${encodeURIComponent(selectedNodeId)}/agents`)
+      .then((res) => res.json())
+      .then((data: { agents: AgentInfo[] }) => {
+        setAgents(data.agents ?? []);
+      })
+      .catch(() => {
+        // 에이전트 목록 조회 실패 시 graceful degradation — 드롭다운 미표시
+        setAgents([]);
+      });
+  }, [selectedNodeId]);
+
   const handleSubmit = useCallback(
     async (prompt: string) => {
       if (!selectedNodeId) throw new Error("Please select a node");
@@ -64,6 +84,7 @@ export function NewSessionDialog() {
           prompt,
           nodeId: selectedNodeId,
           ...(selectedModalFolderId ? { folderId: selectedModalFolderId } : {}),
+          ...(selectedAgentId ? { profile: selectedAgentId } : {}),
         }),
       });
 
@@ -74,17 +95,21 @@ export function NewSessionDialog() {
 
       const { agentSessionId } = await res.json();
       const { addOptimisticSession } = useDashboardStore.getState();
+      const selectedAgent = agents.find((a) => a.id === selectedAgentId);
       addOptimisticSession(
         agentSessionId,
         prompt,
         selectedModalFolderId ?? null,
         selectedNodeId,
+        selectedAgentId || null,
+        selectedAgent?.name ?? null,
       );
       closeNewSessionModal();
       setSelectedNodeId("");
       setSelectedModalFolderId(null);
+      setSelectedAgentId("");
     },
-    [selectedNodeId, selectedModalFolderId, closeNewSessionModal],
+    [selectedNodeId, selectedModalFolderId, selectedAgentId, agents, closeNewSessionModal],
   );
 
   const folderSelector = (
@@ -129,6 +154,24 @@ export function NewSessionDialog() {
     </div>
   );
 
+  const agentSelector = agents.length > 0 ? (
+    <div className="flex flex-col gap-1.5">
+      <label className="text-xs font-medium text-muted-foreground">Agent</label>
+      <Select value={selectedAgentId} onValueChange={setSelectedAgentId}>
+        <SelectTrigger>
+          <SelectValue placeholder="Select an agent..." />
+        </SelectTrigger>
+        <SelectPopup>
+          {agents.map((a) => (
+            <SelectItem key={a.id} value={a.id}>
+              {a.name}
+            </SelectItem>
+          ))}
+        </SelectPopup>
+      </Select>
+    </div>
+  ) : undefined;
+
   return (
     <BaseNewSessionDialog
       open={isModalOpen}
@@ -137,11 +180,13 @@ export function NewSessionDialog() {
           closeNewSessionModal();
           setSelectedNodeId(""); // 닫힐 때 선택 초기화
           setSelectedModalFolderId(null);
+          setSelectedAgentId("");
         }
       }}
       onSubmit={handleSubmit}
       folderSelector={folderSelector}
       nodeSelector={nodeSelector}
+      agentSelector={agentSelector}
       submitDisabled={!selectedNodeId}
     />
   );
