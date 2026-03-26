@@ -39,6 +39,8 @@ const __dirname = path.dirname(__filename);
 const PORT = parseInt(process.env.DASHBOARD_PORT ?? "3109", 10);
 const SOUL_BASE_URL =
   process.env.SOUL_BASE_URL ?? "http://localhost:3105";
+const SOULSTREAM_BASE_URL =
+  process.env.SOULSTREAM_BASE_URL ?? "http://localhost:4105";
 const AUTH_TOKEN = process.env.CLAUDE_SERVICE_TOKEN ?? "";
 const SERENDIPITY_URL = process.env.SERENDIPITY_URL ?? "";
 const ALLOWED_ORIGINS =
@@ -116,6 +118,7 @@ app.get("/api/config/settings", (_req, res) => {
 app.use("/api/sessions", requireAuth);
 app.use("/api/catalog", requireAuth);
 app.use("/api/llm", requireAuth);
+app.use("/api/nodes", requireAuth);
 app.use('/api/debug', requireAuth)
 
 app.get('/api/debug/memory', (_, res) => {
@@ -189,6 +192,24 @@ app.use(
     authToken: AUTH_TOKEN,
   }),
 );
+
+// Nodes 프록시 → soulstream-server /api/nodes (orchestrator-dashboard 전용)
+app.get("/api/nodes/:nodeId/agents", async (req, res) => {
+  const { nodeId } = req.params;
+  try {
+    const headers: Record<string, string> = {};
+    if (AUTH_TOKEN) headers["Authorization"] = `Bearer ${AUTH_TOKEN}`;
+    const upstream = await fetch(
+      `${SOULSTREAM_BASE_URL}/api/nodes/${encodeURIComponent(nodeId)}/agents`,
+      { headers, signal: AbortSignal.timeout(10_000) },
+    );
+    const data = await upstream.json();
+    res.status(upstream.status).json(data);
+  } catch (err) {
+    console.error("[dashboard] Failed to proxy /api/nodes agents:", err);
+    res.status(502).json({ error: { message: "Failed to reach soulstream server" } });
+  }
+});
 
 // Cogito Search 프록시 → soul-server /cogito/search
 app.get("/api/cogito/search", async (req, res) => {

@@ -100,6 +100,12 @@ export const FeedCard = memo(function FeedCard({
             <span>·</span>
           </>
         )}
+        {session.agentName && (
+          <>
+            <span className="truncate max-w-[100px] opacity-70">{session.agentName}</span>
+            <span>·</span>
+          </>
+        )}
         {timeStr && <span>{timeStr}</span>}
         {nodeBadge && (
           <>

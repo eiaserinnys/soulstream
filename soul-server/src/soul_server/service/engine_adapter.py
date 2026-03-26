@@ -269,6 +269,8 @@ class SoulEngineAdapter:
         agent_session_id: Optional[str] = None,
         model: Optional[str] = None,
         system_prompt: Optional[str] = None,
+        working_dir: Optional[str] = None,   # Phase 1 추가 (Phase 2에서 실제 사용)
+        max_turns: Optional[int] = None,     # Phase 1 추가 (Phase 2에서 실제 사용)
     ) -> AsyncIterator[SSEEvent]:
         """Claude Code 실행 (SSE 이벤트 스트림)
 
@@ -408,8 +410,20 @@ class SoulEngineAdapter:
         # --- 백그라운드 실행 ---
 
         async def run_claude() -> None:
-            # 풀이 있으면 acquire, 없으면 직접 생성
-            if self._pool is not None:
+            # on-demand 경로: working_dir이 기본 workspace_dir와 다를 때 pool 우회
+            if working_dir and working_dir != str(self._workspace_dir):
+                runner = ClaudeRunner(
+                    working_dir=Path(working_dir),
+                    allowed_tools=effective_allowed,
+                    disallowed_tools=effective_disallowed,
+                    mcp_config_path=mcp_config_path,
+                    debug_send_fn=debug_send_fn,
+                    model=model,
+                    system_prompt=system_prompt,
+                    max_turns=max_turns,
+                )
+            # 풀이 있으면 acquire, 없으면 직접 생성 (기본 workspace_dir 경로)
+            elif self._pool is not None:
                 runner = await self._pool.acquire(session_id=resume_session_id)
                 # W-3: 풀에서 꺼낸 runner에 요청별 debug_send_fn 주입
                 runner.debug_send_fn = debug_send_fn
@@ -418,6 +432,9 @@ class SoulEngineAdapter:
                 runner.disallowed_tools = effective_disallowed
                 # W-5: 풀에서 꺼낸 runner에 요청별 system_prompt 주입
                 runner.system_prompt = system_prompt
+                # W-6: max_turns 주입 (profile에서 override된 경우)
+                if max_turns is not None:
+                    runner.max_turns = max_turns
             else:
                 runner = ClaudeRunner(
                     working_dir=Path(self._workspace_dir),
@@ -427,6 +444,7 @@ class SoulEngineAdapter:
                     debug_send_fn=debug_send_fn,
                     model=model,
                     system_prompt=system_prompt,
+                    max_turns=max_turns,
                 )
 
             # rate limit tracker 주입

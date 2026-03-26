@@ -151,6 +151,7 @@ export function createActionsRouter(options: ActionsRouterOptions): Router {
             // resume 시 기존 agent_session_id 전달 (없으면 서버가 생성)
             ...(body.agentSessionId ? { agent_session_id: body.agentSessionId } : {}),
             ...(body.folderId ? { folder_id: body.folderId } : {}),
+            ...(body.profile ? { profile: body.profile } : {}),
             use_mcp: true,
           }),
           signal: controller.signal,

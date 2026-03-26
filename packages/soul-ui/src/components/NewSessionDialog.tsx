@@ -33,6 +33,8 @@ export interface NewSessionDialogProps {
   folderSelector?: ReactNode;
   /** 노드 선택 슬롯 (orchestrator-dashboard에서만 사용) */
   nodeSelector?: ReactNode;
+  /** 에이전트 선택 슬롯 (orchestrator-dashboard에서만 사용) */
+  agentSelector?: ReactNode;
   /** 제출 버튼 비활성 조건 추가 (nodeSelector 미선택 등) */
   submitDisabled?: boolean;
   /** 다이얼로그 타이틀 */
@@ -53,6 +55,7 @@ export function NewSessionDialog({
   onSubmit,
   folderSelector,
   nodeSelector,
+  agentSelector,
   submitDisabled = false,
   title = "New Session",
   subtitle,
@@ -165,6 +168,9 @@ export function NewSessionDialog({
 
           {/* Node selector slot */}
           {nodeSelector && <div className="mb-3">{nodeSelector}</div>}
+
+          {/* Agent selector slot */}
+          {agentSelector && <div className="mb-3">{agentSelector}</div>}
 
           {/* Prompt textarea */}
           <textarea
