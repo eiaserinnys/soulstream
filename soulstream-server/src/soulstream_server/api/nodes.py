@@ -34,6 +34,23 @@ def create_nodes_router(
         """연결된 노드 목록."""
         return {"nodes": node_manager.get_nodes()}
 
+    @router.get("/{node_id}/agents")
+    async def list_node_agents(node_id: str) -> dict:
+        """노드에 등록된 에이전트 프로필 목록."""
+        node = node_manager.get_node(node_id)
+        if not node:
+            return {"agents": []}
+        agents = [
+            {
+                "id": agent_id,
+                "name": p.get("name"),
+                "portrait_url": p.get("portrait_url"),
+                "max_turns": p.get("max_turns"),
+            }
+            for agent_id, p in node._agent_profiles.items()
+        ]
+        return {"agents": agents}
+
     @router.get("/stream")
     async def node_stream(request: Request) -> EventSourceResponse:
         """노드 변경 SSE 스트림.

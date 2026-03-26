@@ -59,6 +59,7 @@ class NodeConnection:
         self.connected_at = datetime.now(timezone.utc)
 
         self._sessions: dict[str, dict] = {}
+        self._agent_profiles: dict = {}  # 연결 직후 _fetch_agent_profiles()로 populate됨
         self._request_counter = 0
         self._pending: dict[str, asyncio.Future] = {}
         self._subscribe_listeners: dict[str, dict[str, Callable]] = {}
