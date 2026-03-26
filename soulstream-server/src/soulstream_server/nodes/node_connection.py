@@ -72,6 +72,10 @@ class NodeConnection:
         return self._sessions
 
     @property
+    def agent_profiles(self) -> dict:
+        return self._agent_profiles
+
+    @property
     def session_count(self) -> int:
         return len(self._sessions)
 
