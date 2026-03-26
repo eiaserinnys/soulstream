@@ -61,6 +61,9 @@ describe("dashboard-store", () => {
           status: "running",
           eventCount: 5,
           createdAt: "2026-01-01T00:00:00Z",
+          agentId: "seo-soyoung",
+          agentName: "서소영",
+          agentPortraitUrl: null,
         },
       ];
       useDashboardStore.getState().setSessions(sessions);

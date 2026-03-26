@@ -367,7 +367,7 @@ export interface AgentProfile {
 }
 
 /** 세션 요약 정보 (목록 조회용) */
-export interface SessionSummary {
+export interface SessionSummary extends AgentProfile {
   /** 세션의 유일한 키. JSONL 파일명. */
   agentSessionId: string;
   status: SessionStatus;
@@ -400,12 +400,6 @@ export interface SessionSummary {
   lastReadEventId?: number;
   /** 세션을 생성한 노드 ID */
   nodeId?: string;
-  /** 에이전트 ID */
-  agentId?: string | null;
-  /** 에이전트 이름 */
-  agentName?: string | null;
-  /** 에이전트 포트레이트 URL */
-  agentPortraitUrl?: string | null;
 }
 
 /** 세션 상세 정보 */

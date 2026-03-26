@@ -125,9 +125,11 @@ const SessionItem = memo(function SessionItem({
         )}
         <div className="text-xs text-muted-foreground truncate flex items-center gap-1">
           {session.agentName && (
-            <span className="shrink-0 text-[10px] opacity-70">{session.agentName}</span>
+            <>
+              <span className="shrink-0 text-[10px] opacity-70">{session.agentName}</span>
+              <span className="shrink-0 opacity-50">·</span>
+            </>
           )}
-          {session.agentName && <span className="shrink-0 opacity-50">·</span>}
           <span>{timeStr}</span>
         </div>
       </div>
