@@ -40,6 +40,8 @@ export class OrchestratorSessionProvider implements SessionStorageProvider {
         status: string;
         created_at: string;
         updated_at: string | null;
+        last_event_id: number | null;
+        last_read_event_id: number | null;
       }>;
     } = await res.json();
 
@@ -52,6 +54,8 @@ export class OrchestratorSessionProvider implements SessionStorageProvider {
       nodeId: s.node_id,
       displayName: s.display_name ?? undefined,
       lastMessage: s.last_message ?? undefined,
+      lastEventId: s.last_event_id ?? 0,
+      lastReadEventId: s.last_read_event_id ?? 0,
     }));
 
     return { sessions, total: sessions.length };
