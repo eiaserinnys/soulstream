@@ -91,9 +91,8 @@ class TestSessionBroadcasterBroadcast:
         return SessionBroadcaster()
 
     async def test_broadcast_to_single_listener(self, broadcaster):
-        """단일 리스너에게 이벤트 브로드캐스트"""
-        queue = asyncio.Queue()
-        await broadcaster.add_listener(queue)
+        """단일 클라이언트에게 이벤트 브로드캐스트"""
+        queue = broadcaster.add_client()
 
         event = {"type": "test", "data": "hello"}
         count = await broadcaster.broadcast(event)
@@ -102,11 +101,9 @@ class TestSessionBroadcasterBroadcast:
         assert queue.get_nowait() == event
 
     async def test_broadcast_to_multiple_listeners(self, broadcaster):
-        """여러 리스너에게 이벤트 브로드캐스트"""
-        queue1 = asyncio.Queue()
-        queue2 = asyncio.Queue()
-        await broadcaster.add_listener(queue1)
-        await broadcaster.add_listener(queue2)
+        """여러 클라이언트에게 이벤트 브로드캐스트"""
+        queue1 = broadcaster.add_client()
+        queue2 = broadcaster.add_client()
 
         event = {"type": "test", "data": "hello"}
         count = await broadcaster.broadcast(event)
@@ -116,18 +113,15 @@ class TestSessionBroadcasterBroadcast:
         assert queue2.get_nowait() == event
 
     async def test_broadcast_removes_full_queue_listener(self, broadcaster):
-        """큐가 가득 찬 리스너는 자동으로 제거된다"""
+        """큐가 가득 찬 클라이언트는 자동으로 제거된다"""
         # maxsize=1로 제한된 큐 생성
-        full_queue = asyncio.Queue(maxsize=1)
-        normal_queue = asyncio.Queue()
-
-        await broadcaster.add_listener(full_queue)
-        await broadcaster.add_listener(normal_queue)
+        full_queue = broadcaster.add_client(maxsize=1)
+        normal_queue = broadcaster.add_client()
 
         # 첫 번째 이벤트로 full_queue를 채움
         full_queue.put_nowait({"type": "fill"})
 
-        assert broadcaster.listener_count == 2
+        assert broadcaster.client_count == 2
 
         # 두 번째 브로드캐스트 - full_queue는 가득 참
         event = {"type": "test", "data": "hello"}
@@ -135,33 +129,29 @@ class TestSessionBroadcasterBroadcast:
 
         # normal_queue만 성공, full_queue는 제거됨
         assert count == 1
-        assert broadcaster.listener_count == 1
+        assert broadcaster.client_count == 1
         assert normal_queue.get_nowait() == event
 
     async def test_broadcast_removes_multiple_full_queues(self, broadcaster):
         """여러 개의 가득 찬 큐가 동시에 제거된다"""
-        full_queue1 = asyncio.Queue(maxsize=1)
-        full_queue2 = asyncio.Queue(maxsize=1)
-        normal_queue = asyncio.Queue()
-
-        await broadcaster.add_listener(full_queue1)
-        await broadcaster.add_listener(full_queue2)
-        await broadcaster.add_listener(normal_queue)
+        full_queue1 = broadcaster.add_client(maxsize=1)
+        full_queue2 = broadcaster.add_client(maxsize=1)
+        normal_queue = broadcaster.add_client()
 
         # 두 큐를 채움
         full_queue1.put_nowait({"type": "fill"})
         full_queue2.put_nowait({"type": "fill"})
 
-        assert broadcaster.listener_count == 3
+        assert broadcaster.client_count == 3
 
         event = {"type": "test"}
         count = await broadcaster.broadcast(event)
 
         assert count == 1
-        assert broadcaster.listener_count == 1
+        assert broadcaster.client_count == 1
 
     async def test_broadcast_empty_listeners(self, broadcaster):
-        """리스너가 없으면 0 반환"""
+        """클라이언트가 없으면 0 반환"""
         count = await broadcaster.broadcast({"type": "test"})
         assert count == 0
 
@@ -174,9 +164,8 @@ class TestEmitSessionMessageUpdated:
         return SessionBroadcaster()
 
     async def test_emits_session_updated_with_last_message(self, broadcaster):
-        """session_updated 이벤트에 last_message 필드가 포함되어 리스너에 전달된다"""
-        queue = asyncio.Queue()
-        await broadcaster.add_listener(queue)
+        """session_updated 이벤트에 last_message 필드가 포함되어 클라이언트에 전달된다"""
+        queue = broadcaster.add_client()
 
         last_message = {"type": "thinking", "preview": "분석 중...", "timestamp": "2026-03-20T01:00:00+00:00"}
         count = await broadcaster.emit_session_message_updated(
@@ -195,11 +184,9 @@ class TestEmitSessionMessageUpdated:
         assert event["last_message"] == last_message
 
     async def test_emits_to_multiple_listeners(self, broadcaster):
-        """여러 리스너 모두에게 last_message가 포함된 이벤트를 전달한다"""
-        q1 = asyncio.Queue()
-        q2 = asyncio.Queue()
-        await broadcaster.add_listener(q1)
-        await broadcaster.add_listener(q2)
+        """여러 클라이언트 모두에게 last_message가 포함된 이벤트를 전달한다"""
+        q1 = broadcaster.add_client()
+        q2 = broadcaster.add_client()
 
         last_message = {"type": "text", "preview": "Hello", "timestamp": "2026-03-20T01:00:00+00:00"}
         count = await broadcaster.emit_session_message_updated(

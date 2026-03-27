@@ -94,8 +94,8 @@ def mock_task_manager():
 @pytest.fixture
 def mock_session_broadcaster():
     broadcaster = MagicMock()
-    broadcaster.add_listener = AsyncMock()
-    broadcaster.remove_listener = AsyncMock()
+    broadcaster.add_client = MagicMock(return_value=asyncio.Queue())
+    broadcaster.remove_client = MagicMock()
     return broadcaster
 
 

@@ -105,10 +105,10 @@ def mock_task_manager():
 
 @pytest.fixture
 def mock_session_broadcaster():
-    """SessionBroadcaster mock 생성 - 리스너 등록만 수행"""
+    """SessionBroadcaster mock 생성 - 클라이언트 등록만 수행"""
     broadcaster = MagicMock()
-    broadcaster.add_listener = AsyncMock()
-    broadcaster.remove_listener = AsyncMock()
+    broadcaster.add_client = MagicMock(return_value=asyncio.Queue())
+    broadcaster.remove_client = MagicMock()
     return broadcaster
 
 
@@ -396,7 +396,7 @@ class TestSessionsStreamEventGenerator:
             router = create_sessions_router()
 
             # 초기 리스너 수 확인
-            assert real_session_broadcaster.listener_count == 0
+            assert real_session_broadcaster.client_count == 0
 
             # 엔드포인트 호출
             stream_route = next(r for r in router.routes if getattr(r, 'path', '') == '/sessions/stream')
@@ -406,7 +406,7 @@ class TestSessionsStreamEventGenerator:
             # 첫 번째 이벤트 수신 (아직 리스너 미등록)
             await gen.__anext__()
             # 첫 번째 yield 후 일시 중단, add_listener는 아직 실행 안 됨
-            assert real_session_broadcaster.listener_count == 0
+            assert real_session_broadcaster.client_count == 0
 
             # 이벤트 발행을 백그라운드에서 예약
             async def broadcast_event():
@@ -427,14 +427,14 @@ class TestSessionsStreamEventGenerator:
                 pass
 
             # 리스너가 등록되었는지 확인
-            assert real_session_broadcaster.listener_count == 1
+            assert real_session_broadcaster.client_count == 1
 
             # 제너레이터 종료 (finally 블록에서 리스너 제거)
             await gen.aclose()
 
             # 리스너가 제거되었는지 확인
             await asyncio.sleep(0.01)
-            assert real_session_broadcaster.listener_count == 0
+            assert real_session_broadcaster.client_count == 0
 
             # 백그라운드 태스크 정리
             broadcast_task.cancel()
@@ -450,18 +450,17 @@ class TestSessionBroadcaster:
     """SessionBroadcaster 단위 테스트"""
 
     @pytest.mark.asyncio
-    async def test_add_and_remove_listener(self):
-        """리스너 추가/제거가 정상 동작해야 한다"""
+    async def test_add_and_remove_client(self):
+        """클라이언트 추가/제거가 정상 동작해야 한다"""
         from soul_server.service.session_broadcaster import SessionBroadcaster
 
         broadcaster = SessionBroadcaster()
-        queue = asyncio.Queue()
 
-        await broadcaster.add_listener(queue)
-        assert broadcaster.listener_count == 1
+        queue = broadcaster.add_client()
+        assert broadcaster.client_count == 1
 
-        await broadcaster.remove_listener(queue)
-        assert broadcaster.listener_count == 0
+        broadcaster.remove_client(queue)
+        assert broadcaster.client_count == 0
 
     @pytest.mark.asyncio
     async def test_broadcast_to_all_listeners(self):
@@ -469,11 +468,8 @@ class TestSessionBroadcaster:
         from soul_server.service.session_broadcaster import SessionBroadcaster
 
         broadcaster = SessionBroadcaster()
-        queue1 = asyncio.Queue()
-        queue2 = asyncio.Queue()
-
-        await broadcaster.add_listener(queue1)
-        await broadcaster.add_listener(queue2)
+        queue1 = broadcaster.add_client()
+        queue2 = broadcaster.add_client()
 
         event = {"type": "session_created", "session": {"agent_session_id": "new-sess"}}
         count = await broadcaster.broadcast(event)
@@ -495,8 +491,7 @@ class TestSessionBroadcaster:
         from soul_server.service.task_models import Task, TaskStatus
 
         broadcaster = SessionBroadcaster()
-        queue = asyncio.Queue()
-        await broadcaster.add_listener(queue)
+        queue = broadcaster.add_client()
 
         task = Task(
             agent_session_id="new-sess",
@@ -516,8 +511,7 @@ class TestSessionBroadcaster:
         from soul_server.service.task_models import Task, TaskStatus
 
         broadcaster = SessionBroadcaster()
-        queue = asyncio.Queue()
-        await broadcaster.add_listener(queue)
+        queue = broadcaster.add_client()
 
         task = Task(
             agent_session_id="sess-001",
@@ -538,8 +532,7 @@ class TestSessionBroadcaster:
         from soul_server.service.session_broadcaster import SessionBroadcaster
 
         broadcaster = SessionBroadcaster()
-        queue = asyncio.Queue()
-        await broadcaster.add_listener(queue)
+        queue = broadcaster.add_client()
 
         await broadcaster.emit_session_deleted("sess-001")
 
@@ -554,8 +547,7 @@ class TestSessionBroadcaster:
 
         broadcaster = SessionBroadcaster()
         # 최대 크기 1인 큐
-        small_queue = asyncio.Queue(maxsize=1)
-        await broadcaster.add_listener(small_queue)
+        small_queue = broadcaster.add_client(maxsize=1)
 
         # 첫 번째 이벤트는 성공
         await broadcaster.broadcast({"type": "event1"})
@@ -964,11 +956,8 @@ class TestMultipleClientsSSE:
         broadcaster = SessionBroadcaster()
 
         # 두 클라이언트의 큐
-        client_a_queue = asyncio.Queue()
-        client_b_queue = asyncio.Queue()
-
-        await broadcaster.add_listener(client_a_queue)
-        await broadcaster.add_listener(client_b_queue)
+        client_a_queue = broadcaster.add_client()
+        client_b_queue = broadcaster.add_client()
 
         # 이벤트 발행
         task = Task(
