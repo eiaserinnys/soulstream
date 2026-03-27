@@ -140,3 +140,22 @@ class NodeManager:
             if session_id in node.sessions:
                 return node
         return None
+
+    def find_agent_profile(
+        self, agent_id: str, preferred_node_id: str | None = None
+    ) -> tuple[dict, str] | None:
+        """어느 노드에서든 agent_id의 프로필을 찾아서 (profile, source_node_id) 반환.
+
+        preferred_node_id의 노드를 먼저 시도한다.
+        원격 노드에 agent_profiles가 비어있는 경우 다른 노드로 폴백한다.
+        """
+        if preferred_node_id:
+            node = self._nodes.get(preferred_node_id)
+            if node and agent_id in node.agent_profiles:
+                return node.agent_profiles[agent_id], preferred_node_id
+
+        for node_id, node in self._nodes.items():
+            if agent_id in node.agent_profiles:
+                return node.agent_profiles[agent_id], node_id
+
+        return None
