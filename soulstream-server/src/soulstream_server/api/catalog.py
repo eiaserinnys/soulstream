@@ -22,7 +22,7 @@ from fastapi import APIRouter
 from soul_common.catalog.catalog_service import CatalogService
 from soul_common.db.session_db import PostgresSessionDB
 from soulstream_server.api.sessions import _get_profiles_for_session
-from soulstream_server.node_manager import NodeManager
+from soulstream_server.nodes.node_manager import NodeManager
 
 logger = logging.getLogger(__name__)
 
