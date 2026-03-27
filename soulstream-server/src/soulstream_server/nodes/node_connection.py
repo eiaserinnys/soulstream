@@ -60,6 +60,7 @@ class NodeConnection:
 
         self._sessions: dict[str, dict] = {}
         self._agent_profiles: dict = {}  # 연결 직후 _fetch_agent_profiles()로 populate됨
+        self._portrait_cache: dict[str, bytes] = {}  # agent_id → portrait bytes (등록 메시지에서 수신)
         self._request_counter = 0
         self._pending: dict[str, asyncio.Future] = {}
         self._subscribe_listeners: dict[str, dict[str, Callable]] = {}
@@ -74,6 +75,10 @@ class NodeConnection:
     @property
     def agent_profiles(self) -> dict:
         return self._agent_profiles
+
+    @property
+    def portrait_cache(self) -> dict[str, bytes]:
+        return self._portrait_cache
 
     @property
     def session_count(self) -> int:
