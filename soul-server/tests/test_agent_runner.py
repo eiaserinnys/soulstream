@@ -17,6 +17,7 @@ from soul_server.claude.agent_runner import (
     INTERVENTION_POLL_INTERVAL,
     MAX_COMPACT_RETRIES,
     MessageState,
+    _client_lifecycle_task,
     _extract_last_assistant_text,
     _registry,
     _registry_lock,
@@ -2338,6 +2339,202 @@ class TestInterventionPollingParallel:
         """INTERVENTION_POLL_INTERVAL 상수가 올바르게 정의되어야 함"""
         assert INTERVENTION_POLL_INTERVAL > 0
         assert INTERVENTION_POLL_INTERVAL <= 5.0  # 합리적인 범위
+
+
+@pytest.mark.asyncio
+class TestClientLifecycleTask:
+    """_client_lifecycle_task 유닛 테스트
+
+    anyio cross-task 버그 방지: connect()와 disconnect()가 동일 asyncio 태스크에서
+    실행되는 것을 보장하는 lifecycle task 패턴 검증.
+    """
+
+    async def test_lifecycle_task_connect_and_disconnect(self):
+        """정상 흐름: connect() → shutdown_event → disconnect()"""
+        mock_client = AsyncMock()
+        ready_event = asyncio.Event()
+        shutdown_event = asyncio.Event()
+
+        task = asyncio.create_task(
+            _client_lifecycle_task(mock_client, ready_event, shutdown_event, "test-runner")
+        )
+
+        # connect() 완료 대기
+        await asyncio.wait_for(ready_event.wait(), timeout=5.0)
+        mock_client.connect.assert_called_once()
+
+        # shutdown 트리거
+        shutdown_event.set()
+        await asyncio.wait_for(task, timeout=5.0)
+        mock_client.disconnect.assert_called_once()
+
+    async def test_lifecycle_task_connect_failure_sets_ready_event(self):
+        """connect() 실패 시 ready_event가 set되고 태스크 예외를 저장"""
+        mock_client = AsyncMock()
+        mock_client.connect.side_effect = RuntimeError("connect 실패")
+        ready_event = asyncio.Event()
+        shutdown_event = asyncio.Event()
+
+        task = asyncio.create_task(
+            _client_lifecycle_task(mock_client, ready_event, shutdown_event, "test-runner")
+        )
+
+        # ready_event는 connect() 실패 시에도 set됨
+        await asyncio.wait_for(ready_event.wait(), timeout=5.0)
+
+        # 태스크가 예외와 함께 종료됨 (예외가 전파되므로 catch)
+        with pytest.raises(RuntimeError, match="connect 실패"):
+            await asyncio.wait_for(task, timeout=5.0)
+        assert task.done()
+        exc = task.exception()
+        assert isinstance(exc, RuntimeError)
+        assert "connect 실패" in str(exc)
+
+        # connect() 실패 시 disconnect()는 호출되지 않음
+        mock_client.disconnect.assert_not_called()
+
+    async def test_lifecycle_task_disconnect_failure_logged_not_raised(self):
+        """disconnect() 실패 시 예외가 전파되지 않고 경고만 로깅"""
+        mock_client = AsyncMock()
+        mock_client.disconnect.side_effect = RuntimeError("disconnect 실패")
+        ready_event = asyncio.Event()
+        shutdown_event = asyncio.Event()
+
+        task = asyncio.create_task(
+            _client_lifecycle_task(mock_client, ready_event, shutdown_event, "test-runner")
+        )
+
+        await asyncio.wait_for(ready_event.wait(), timeout=5.0)
+        shutdown_event.set()
+
+        # disconnect() 실패해도 태스크가 정상 종료 (예외 미전파)
+        await asyncio.wait_for(task, timeout=5.0)
+        assert task.done()
+        assert task.exception() is None
+
+    async def test_remove_client_uses_lifecycle_task_path(self):
+        """_remove_client()가 lifecycle task 경유 경로를 사용"""
+        runner = ClaudeRunner()
+        mock_client = AsyncMock()
+
+        ready_event = asyncio.Event()
+        shutdown_event = asyncio.Event()
+        lifecycle_task = asyncio.create_task(
+            _client_lifecycle_task(mock_client, ready_event, shutdown_event, runner.runner_id)
+        )
+        await asyncio.wait_for(ready_event.wait(), timeout=5.0)
+
+        # lifecycle task 경로로 설정
+        runner.client = mock_client
+        runner._lifecycle_task = lifecycle_task
+        runner._lifecycle_shutdown_event = shutdown_event
+
+        await runner._remove_client()
+
+        # shutdown_event가 set됐으므로 lifecycle task가 disconnect() 호출
+        assert lifecycle_task.done()
+        mock_client.disconnect.assert_called_once()
+        assert runner.client is None
+        assert runner._lifecycle_task is None
+        assert runner._lifecycle_shutdown_event is None
+
+    async def test_remove_client_fallback_without_lifecycle_task(self):
+        """lifecycle task 없이 client만 있으면 직접 disconnect (하위 호환)"""
+        runner = ClaudeRunner()
+        mock_client = AsyncMock()
+        runner.client = mock_client
+        # _lifecycle_task는 None (직접 설정 시나리오)
+
+        await runner._remove_client()
+
+        mock_client.disconnect.assert_called_once()
+        assert runner.client is None
+
+    async def test_remove_client_lifecycle_timeout_cancels_task(self):
+        """lifecycle task disconnect 타임아웃 시 태스크를 취소"""
+        runner = ClaudeRunner()
+        mock_client = AsyncMock()
+
+        async def slow_disconnect():
+            await asyncio.sleep(100)  # 매우 느린 disconnect
+
+        mock_client.disconnect.side_effect = slow_disconnect
+
+        ready_event = asyncio.Event()
+        shutdown_event = asyncio.Event()
+        lifecycle_task = asyncio.create_task(
+            _client_lifecycle_task(mock_client, ready_event, shutdown_event, runner.runner_id)
+        )
+        await asyncio.wait_for(ready_event.wait(), timeout=5.0)
+
+        runner.client = mock_client
+        runner._lifecycle_task = lifecycle_task
+        runner._lifecycle_shutdown_event = shutdown_event
+
+        # asyncio.wait_for timeout을 mock하여 즉시 타임아웃
+        original_wait_for = asyncio.wait_for
+
+        async def mock_wait_for(coro, timeout=None, **kwargs):
+            if timeout == 30.0:
+                raise asyncio.TimeoutError()
+            return await original_wait_for(coro, timeout=timeout, **kwargs)
+
+        with patch("soul_server.claude.agent_runner.asyncio.wait_for", side_effect=mock_wait_for):
+            await runner._remove_client()
+
+        assert lifecycle_task.done()
+        assert runner._lifecycle_task is None
+
+    async def test_get_or_create_client_lifecycle_fields_set(self):
+        """_get_or_create_client() 후 lifecycle 필드가 올바르게 설정됨"""
+        runner = ClaudeRunner()
+        mock_client = AsyncMock()
+
+        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+            with patch.object(runner, "_build_options") as mock_build:
+                mock_options = MagicMock()
+                mock_options.permission_mode = "bypassPermissions"
+                mock_options.cwd = None
+                mock_options.resume = None
+                mock_options.allowed_tools = []
+                mock_options.disallowed_tools = []
+                mock_options.hooks = None
+                mock_build.return_value = (mock_options, None)
+
+                client, _ = await runner._get_or_create_client()
+
+        assert runner._lifecycle_task is not None
+        assert runner._lifecycle_shutdown_event is not None
+        assert not runner._lifecycle_task.done()  # 아직 실행 중
+        mock_client.connect.assert_called_once()
+
+        # 정리
+        runner._lifecycle_shutdown_event.set()
+        await asyncio.wait_for(runner._lifecycle_task, timeout=5.0)
+
+    async def test_shutdown_all_with_lifecycle_task(self):
+        """lifecycle task가 있는 runner의 shutdown_all() 동작"""
+        _clear_all_client_state()
+
+        mock_client = AsyncMock()
+        ready_event = asyncio.Event()
+        shutdown_event = asyncio.Event()
+        lifecycle_task = asyncio.create_task(
+            _client_lifecycle_task(mock_client, ready_event, shutdown_event, "test")
+        )
+        await asyncio.wait_for(ready_event.wait(), timeout=5.0)
+
+        runner = ClaudeRunner()
+        runner.client = mock_client
+        runner._lifecycle_task = lifecycle_task
+        runner._lifecycle_shutdown_event = shutdown_event
+        register_runner(runner)
+
+        count = await shutdown_all()
+
+        assert count == 1
+        assert lifecycle_task.done()
+        mock_client.disconnect.assert_called_once()
 
 
 if __name__ == "__main__":
