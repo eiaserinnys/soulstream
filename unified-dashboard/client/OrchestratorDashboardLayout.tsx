@@ -1,17 +1,15 @@
 /**
- * DashboardLayout - unified-dashboard 메인 레이아웃 (single-node 모드)
+ * OrchestratorDashboardLayout - unified-dashboard orchestrator 모드 레이아웃
  *
- * DashboardShell 위에 unified-dashboard 전용 훅과 컴포넌트를 조합한다.
- * 레이아웃 구조(3패널 리사이즈, 모바일 반응형)는 DashboardShell이 담당한다.
+ * orchestrator-dashboard의 App.tsx를 unified-dashboard로 포팅.
+ * features.nodePanel = true일 때 NodePanel 표시,
+ * useNodes()로 /api/nodes/stream SSE 구독,
+ * 30초 폴링 안전망으로 SSE 누락 대비.
  *
- * soul-dashboard 대비 변경 사항:
- * - node-info 엔드포인트 제거 (BFF 없음) → isOtherNode = false 고정
- * - serendipityAvailable 로드 제거 (세렌디피티 기능 미사용)
- * - StorageModeToggleCompact 제거 (세렌디피티 관련)
- * - ConfigModal / SearchModal / NewSessionModal / DrainBanner 추가 (Phase 4)
+ * Phase 5 산출물. Phase 4의 ConfigModal/SearchModal/NewSessionModal 포함.
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { FolderContents } from "./components/FolderContents";
 import {
   createFolder,
@@ -19,12 +17,14 @@ import {
   deleteFolderOptimistic,
 } from "./lib/folder-operations";
 import { moveSessionsOptimistic } from "./lib/move-sessions";
-import { computeIsOtherNode } from "./lib/node-guard";
-import { NewSessionModal } from "./components/NewSessionModal";
+import { NodePanel } from "./components/NodePanel";
+import { OrchestratorNewSessionModal } from "./components/OrchestratorNewSessionModal";
 import { ConfigButton } from "./components/ConfigButton";
 import { ConfigModal } from "./components/ConfigModal";
 import { SearchModal } from "./components/SearchModal";
-import { useAppConfig } from "./config/AppConfigContext";
+import { useNodes } from "./hooks/useNodes";
+import { useOrchestratorStore } from "./store/orchestrator-store";
+import { orchestratorSessionProvider } from "./providers";
 import {
   NodeGraph,
   SessionsTopBar,
@@ -47,66 +47,73 @@ import {
   ConnectionBadge,
   useSessionListProvider,
 } from "@seosoyoung/soul-ui";
-import { getSessionProvider } from "./providers";
+import { useAppConfig } from "./config/AppConfigContext";
 
-export function DashboardLayout() {
+export function OrchestratorDashboardLayout() {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const viewMode = useDashboardStore((s) => s.viewMode);
+  const sessions = useDashboardStore((s) => s.sessions);
   const openNewSessionModal = useDashboardStore((s) => s.openNewSessionModal);
+  const nodes = useOrchestratorStore((s) => s.nodes);
+  const connectionStatus = useOrchestratorStore((s) => s.connectionStatus);
 
-  // 세션 목록 구독 (SSE 모드: 실시간)
-  const { folderCounts, hasMore, loadMore } = useSessionListProvider({
-    intervalMs: 5000,
-    getSessionProvider,
-  });
+  const { features } = useAppConfig();
 
-  // 활성 세션 구독 (Provider 기반)
-  const { status: sseStatus } = useSessionProvider({
-    sessionKey: activeSessionKey,
-    getSessionProvider,
-  });
-
-  // 테마 초기화 (localStorage → OS 설정 → dark 기본)
+  // 테마 초기화
   useEffect(() => { initTheme(); }, []);
 
-  // 읽음 상태 동기화 (세션 선택 시 즉시 + 활성 세션 이벤트 도착 시 debounce)
+  // URL ↔ 스토어 동기화
+  useUrlSync();
+
+  // 읽음 위치 동기화
   useReadPositionSync();
 
-  // 브라우저 알림 (완료/에러/인터벤션)
+  // 브라우저 알림
   useNotification();
-
-  // URL ↔ 스토어 동기화 (/{sessionId} 라우팅)
-  useUrlSync();
 
   // 대시보드 프로필 설정 로드
   useDashboardConfig();
 
-  // Soul Server 드레이닝 상태 폴링 (3초 간격)
+  // Soul Server 드레이닝 상태 폴링
   const { isDraining } = useServerStatus();
 
-  // features.nodeGuard = true인 single-node 모드에서 /api/node-info로 현재 노드 판별
-  // features.nodeGuard = false(orchestrator 모드)에서는 항상 false
-  const { features } = useAppConfig();
-  const activeSession = useDashboardStore((s) => s.activeSession);
-  const [currentNodeId, setCurrentNodeId] = useState<string | undefined>(undefined);
-  useEffect(() => {
-    if (!features.nodeGuard) return;
-    fetch("/api/node-info")
-      .then((r) => {
-        if (!r.ok) throw new Error(`node-info: ${r.status}`);
-        return r.json();
-      })
-      .then((data: { nodeId?: string }) => {
-        if (data.nodeId) setCurrentNodeId(data.nodeId);
-      })
-      .catch(() => {
-        // fetch 실패 → undefined 유지 → 판단 유보
-      });
-  }, [features.nodeGuard]);
+  // 노드 SSE 구독 (orchestrator 모드 전용)
+  useNodes();
 
-  const isOtherNode = features.nodeGuard
-    ? computeIsOtherNode(currentNodeId, activeSession?.nodeId)
-    : false;
+  // 세션 목록 구독
+  const { folderCounts, hasMore, loadMore } = useSessionListProvider({
+    intervalMs: 5000,
+    getSessionProvider: () => orchestratorSessionProvider,
+  });
+
+  // 30초마다 세션 목록 전체 재조회 (SSE 누락 대비 안전망)
+  useEffect(() => {
+    const refresh = async () => {
+      try {
+        const result = await orchestratorSessionProvider.fetchSessions();
+        useDashboardStore.getState().setSessions(result.sessions);
+      } catch {
+        // 갱신 실패는 조용히 무시
+      }
+    };
+    const timer = setInterval(refresh, 30_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // 활성 세션 구독
+  const { status: sseStatus } = useSessionProvider({
+    sessionKey: activeSessionKey,
+    getSessionProvider: () => orchestratorSessionProvider,
+  });
+
+  // 활성 세션의 노드가 없거나 disconnected이면 ChatInput 비활성화
+  const isChatInputDisabled = useMemo(() => {
+    if (!activeSessionKey) return false;
+    const session = sessions.find((s) => s.agentSessionId === activeSessionKey);
+    if (!session?.nodeId) return true;
+    const node = nodes.get(session.nodeId);
+    return !node || node.status === "disconnected";
+  }, [activeSessionKey, sessions, nodes]);
 
   // Config / Search 모달 상태
   const [configOpen, setConfigOpen] = useState(false);
@@ -114,7 +121,7 @@ export function DashboardLayout() {
 
   return (
     <DashboardShell
-      title="Soul Dashboard"
+      title="Soulstream Orchestrator"
       leftPanel={
         <FolderTree
           onMoveSessions={moveSessionsOptimistic}
@@ -124,6 +131,8 @@ export function DashboardLayout() {
           folderCounts={folderCounts}
         />
       }
+      leftPanelBottom={features.nodePanel ? <NodePanel /> : undefined}
+      leftBottomRatio={features.nodePanel ? 3 : undefined}
       centerPanel={
         viewMode === "feed" ? (
           <FeedView
@@ -146,8 +155,8 @@ export function DashboardLayout() {
           </>
         )
       }
-      rightPanel={<RightPanel chatInputDisabled={isOtherNode} />}
-      connectionStatus={sseStatus}
+      rightPanel={<RightPanel chatInputDisabled={isChatInputDisabled} />}
+      connectionStatus={connectionStatus ?? sseStatus}
       onSearchClick={() => setSearchOpen(true)}
       banner={
         isDraining ? (
@@ -180,7 +189,7 @@ export function DashboardLayout() {
         )
       }
       mobileChatHeader={(onBack) => <MobileChatHeader onBack={onBack} />}
-      mobileChatView={<ChatView chatInputDisabled={isOtherNode} />}
+      mobileChatView={<ChatView chatInputDisabled={isChatInputDisabled} />}
       mobileSheetFooter={
         <>
           <ThemeToggle />
@@ -191,7 +200,7 @@ export function DashboardLayout() {
         <>
           <ConfigModal open={configOpen} onOpenChange={setConfigOpen} />
           <SearchModal open={searchOpen} onOpenChange={setSearchOpen} />
-          <NewSessionModal />
+          <OrchestratorNewSessionModal />
         </>
       }
     />
