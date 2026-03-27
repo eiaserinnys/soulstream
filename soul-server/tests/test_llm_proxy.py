@@ -335,9 +335,8 @@ class TestLlmExecutor:
         assert error_payload["type"] == "error"
 
     async def test_execute_broadcasts_session(self, executor, broadcaster):
-        # 리스너 추가
-        queue = asyncio.Queue()
-        await broadcaster.add_listener(queue)
+        # 클라이언트 큐 등록
+        queue = broadcaster.add_client()
 
         request = LlmCompletionRequest(
             provider="openai",
