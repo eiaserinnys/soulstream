@@ -5,7 +5,7 @@
  * API 호출은 콜백 props로 주입받아 앱별 엔드포인트에 의존하지 않는다.
  */
 
-import { useMemo, useRef, useState, memo, useCallback } from "react";
+import { useMemo, useRef, useState, useEffect, memo, useCallback } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   useDashboardStore,
@@ -168,9 +168,13 @@ export interface FolderContentsProps {
   onMoveSessions: (sessionIds: string[], targetFolderId: string | null) => Promise<void>;
   /** 세션 이름 변경 콜백. 미지정 시 이름 변경 UI 비활성화 */
   onRenameSession?: (sessionId: string, displayName: string | null) => Promise<void>;
+  /** 스크롤 하단 도달 시 다음 페이지 로드 콜백 */
+  onLoadMore?: () => void;
+  /** 추가 로드 가능 여부 */
+  hasMore?: boolean;
 }
 
-export function FolderContents({ onMoveSessions, onRenameSession }: FolderContentsProps) {
+export function FolderContents({ onMoveSessions, onRenameSession, onLoadMore, hasMore }: FolderContentsProps) {
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
   const getSessionsInFolder = useDashboardStore((s) => s.getSessionsInFolder);
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
@@ -194,6 +198,25 @@ export function FolderContents({ onMoveSessions, onRenameSession }: FolderConten
   );
 
   const parentRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  // IntersectionObserver: 스크롤 하단 도달 시 다음 페이지 로드
+  useEffect(() => {
+    if (!onLoadMore || !hasMore) return;
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          onLoadMore();
+        }
+      },
+      { threshold: 0.1 },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [onLoadMore, hasMore]);
+
   const virtualizer = useVirtualizer({
     count: folderSessions.length,
     getScrollElement: () => parentRef.current,
@@ -310,6 +333,13 @@ export function FolderContents({ onMoveSessions, onRenameSession }: FolderConten
           );
         })}
       </div>
+
+      {/* IntersectionObserver 센티넬: 스크롤 하단 도달 감지 */}
+      {hasMore && (
+        <div ref={sentinelRef} className="flex items-center justify-center py-2 text-xs text-muted-foreground">
+          Loading...
+        </div>
+      )}
 
       {/* 컨텍스트 메뉴 */}
       {contextMenu && (

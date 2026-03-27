@@ -50,6 +50,7 @@ export function toSessionSummary(raw: Record<string, unknown>): SessionSummary {
     metadata: (raw.metadata as MetadataEntry[] | undefined) ?? [],
     lastEventId: (raw.last_event_id ?? raw.lastEventId ?? 0) as number,
     lastReadEventId: (raw.last_read_event_id ?? raw.lastReadEventId ?? 0) as number,
+    displayName: (raw.display_name ?? raw.displayName) as string | undefined,
     nodeId: (raw.node_id ?? raw.nodeId) as string | undefined,
     agentId: (raw.agent_id ?? raw.agentId) as string | undefined,
     agentName: (raw.agent_name ?? raw.agentName) as string | undefined,

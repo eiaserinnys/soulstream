@@ -176,6 +176,25 @@ def create_app() -> FastAPI:
             "uptime_seconds": uptime,
         }
 
+    # AppConfig — unified-dashboard 클라이언트 초기화용
+    @app.get("/api/config")
+    async def config():
+        """대시보드 AppConfig.
+
+        soulstream-server는 orchestrator 모드를 반환한다.
+        searchModal은 cogito가 soulstream-server에 없으므로 false.
+        """
+        return {
+            "mode": "orchestrator",
+            "auth": {"enabled": settings.is_auth_enabled},
+            "features": {
+                "configModal": True,
+                "searchModal": False,
+                "nodePanel": True,
+                "nodeGuard": False,
+            },
+        }
+
     return app
 
 
