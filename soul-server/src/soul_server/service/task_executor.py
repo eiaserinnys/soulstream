@@ -154,6 +154,7 @@ class TaskExecutor:
                     claude_session_id=task.resume_session_id,
                     workspace_dir=claude_runner.workspace_dir,
                     folder_name=folder_name,
+                    agent_id=task.profile_id,
                 )
                 combined_context_items = [soulstream_item] + (task.context_items or [])
 
@@ -197,6 +198,7 @@ class TaskExecutor:
                                 claude_session_id=task.resume_session_id,
                                 workspace_dir=claude_runner.workspace_dir,
                                 folder_name=folder_name,
+                                agent_id=task.profile_id,
                             )
                             intervention_msg = {
                                 "type": "user_message",

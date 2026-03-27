@@ -547,7 +547,8 @@ class TaskManager:
                 existing.context_items = effective_context_items
                 existing.model = model
                 existing.system_prompt = system_prompt
-                existing.profile_id = profile_id
+                if profile_id is not None:
+                    existing.profile_id = profile_id
                 if client_id:
                     existing.client_id = client_id
 
