@@ -93,6 +93,7 @@ export { SSESessionProvider, sseSessionProvider } from "./providers/SSESessionPr
 // === Provider Types ===
 export type {
   StorageMode,
+  FetchSessionsOptions,
   SessionListResult,
   SessionListProvider,
   SessionDetailProvider,
