@@ -112,6 +112,15 @@ app.get("/api/config/settings", (_req, res) => {
   });
 });
 
+// Node 정보 (현재 soul-dashboard가 연결된 soul-server의 nodeId 노출)
+app.get("/api/node-info", (_req, res) => {
+  const nodeId = process.env.SOULSTREAM_NODE_ID;
+  if (!nodeId) {
+    return res.status(500).json({ error: "SOULSTREAM_NODE_ID not configured" });
+  }
+  res.json({ nodeId });
+});
+
 // === 보호 대상 라우트 ===
 // GOOGLE_CLIENT_ID 미설정 시 requireAuth는 next()를 즉시 호출하여 통과
 
