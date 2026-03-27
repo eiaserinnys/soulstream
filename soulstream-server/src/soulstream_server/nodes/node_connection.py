@@ -80,6 +80,13 @@ class NodeConnection:
     def portrait_cache(self) -> dict[str, bytes]:
         return self._portrait_cache
 
+    def set_agent_data(
+        self, profiles: dict, portrait_cache: dict[str, bytes]
+    ) -> None:
+        """에이전트 프로필과 portrait 캐시를 설정한다."""
+        self._agent_profiles = profiles
+        self._portrait_cache = portrait_cache
+
     @property
     def session_count(self) -> int:
         return len(self._sessions)

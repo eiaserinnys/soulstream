@@ -1,6 +1,7 @@
 """Tests for NodeManager node tracking and change events."""
 
-from unittest.mock import AsyncMock, MagicMock
+import base64
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -170,3 +171,80 @@ class TestChangeListeners:
         await manager.register_node(mock_ws, make_registration("n1"))
 
         assert len(events) == 0
+
+
+class TestAgentProfileRegistration:
+    """등록 메시지에 agents 포함 시 처리 검증."""
+
+    async def test_agents_in_registration_sets_profiles(self, manager, mock_ws):
+        """agents 포함 등록 → agent_profiles가 설정된다."""
+        reg = make_registration("n1")
+        reg["agents"] = [{"id": "agent-1", "name": "에이전트1", "portrait_url": "/api/agents/agent-1/portrait"}]
+        node = await manager.register_node(mock_ws, reg)
+
+        assert "agent-1" in node.agent_profiles
+        assert node.agent_profiles["agent-1"]["name"] == "에이전트1"
+
+    async def test_agents_with_portrait_b64_populates_cache(self, manager, mock_ws):
+        """portrait_b64 포함 시 portrait_cache에 디코딩된 bytes가 저장된다."""
+        portrait_bytes = b"\x89PNGfakedata"
+        reg = make_registration("n1")
+        reg["agents"] = [{
+            "id": "agent-1",
+            "name": "에이전트1",
+            "portrait_url": "/api/agents/agent-1/portrait",
+            "portrait_b64": base64.b64encode(portrait_bytes).decode("ascii"),
+        }]
+        node = await manager.register_node(mock_ws, reg)
+
+        assert node.portrait_cache.get("agent-1") == portrait_bytes
+
+    async def test_agents_absent_falls_back_to_http(self, manager, mock_ws):
+        """agents 없는 등록 메시지 → _fetch_agent_profiles HTTP 조회가 호출된다."""
+        with patch.object(
+            manager, "_fetch_agent_profiles", new=AsyncMock()
+        ) as mock_fetch:
+            await manager.register_node(mock_ws, make_registration("n1"))
+            mock_fetch.assert_called_once()
+
+
+class TestFindAgentProfile:
+    """find_agent_profile 테스트."""
+
+    async def test_preferred_node_found(self, manager, mock_ws):
+        """preferred_node_id에 프로필이 있으면 해당 노드에서 반환."""
+        node = await manager.register_node(mock_ws, make_registration("n1"))
+        node.set_agent_data({"seosoyoung": {"name": "서소영"}}, {})
+
+        result = manager.find_agent_profile("seosoyoung", "n1")
+
+        assert result is not None
+        profile, source_node_id = result
+        assert source_node_id == "n1"
+        assert profile["name"] == "서소영"
+
+    async def test_fallback_to_other_node(self, manager):
+        """preferred_node에 없으면 다른 노드로 fallback."""
+        ws1 = AsyncMock()
+        ws1.send_json = AsyncMock()
+        ws1.close = AsyncMock()
+        ws2 = AsyncMock()
+        ws2.send_json = AsyncMock()
+        ws2.close = AsyncMock()
+
+        n1 = await manager.register_node(ws1, make_registration("n1"))
+        n2 = await manager.register_node(ws2, make_registration("n2"))
+        # n2에만 프로필 있음
+        n2.set_agent_data({"seosoyoung": {"name": "서소영"}}, {})
+
+        result = manager.find_agent_profile("seosoyoung", preferred_node_id="n1")
+
+        assert result is not None
+        _, source_node_id = result
+        assert source_node_id == "n2"
+
+    async def test_returns_none_when_not_found(self, manager, mock_ws):
+        """어느 노드에도 없으면 None 반환."""
+        await manager.register_node(mock_ws, make_registration("n1"))
+
+        assert manager.find_agent_profile("unknown-agent") is None
