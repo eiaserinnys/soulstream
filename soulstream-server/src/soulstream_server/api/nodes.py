@@ -18,6 +18,16 @@ from soulstream_server.service.session_broadcaster import SessionBroadcaster
 
 logger = logging.getLogger(__name__)
 
+
+def _detect_portrait_mime(data: bytes) -> str:
+    """magic bytes로 portrait 이미지 MIME type 감지."""
+    if data[:4] == b"\x89PNG":
+        return "image/png"
+    if data[:2] == b"\xff\xd8":
+        return "image/jpeg"
+    return "image/png"
+
+
 # 서버 내부 이벤트 타입 → 클라이언트가 기대하는 SSE 이벤트 이름 매핑
 _EVENT_TYPE_MAP: dict[str, str] = {
     "node_registered": "node_connected",
@@ -65,11 +75,22 @@ def create_nodes_router(
     async def proxy_agent_portrait(node_id: str, agent_id: str):
         """에이전트 portrait 이미지 프록시.
 
-        해당 노드의 soul-server /api/agents/{agent_id}/portrait를 프록시한다.
+        등록 메시지에서 캐시된 데이터가 있으면 우선 반환.
+        없으면 해당 노드의 soul-server /api/agents/{agent_id}/portrait를 프록시한다.
         """
         node = node_manager.get_node(node_id)
         if not node:
             raise HTTPException(status_code=404, detail=f"노드를 찾을 수 없습니다: {node_id}")
+
+        # 캐시된 portrait 데이터가 있으면 우선 서빙 (원격 노드 HTTP 불필요)
+        cached = node.portrait_cache.get(agent_id)
+        if cached:
+            media_type = _detect_portrait_mime(cached)
+            return Response(
+                content=cached,
+                media_type=media_type,
+                headers={"Cache-Control": "public, max-age=3600"},
+            )
 
         url = f"http://{node.host}:{node.port}/api/agents/{agent_id}/portrait"
         try:
