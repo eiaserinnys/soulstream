@@ -15,7 +15,15 @@ const CARD_HEIGHT = 220;
 const CARD_GAP = 12;
 const ESTIMATED_SIZE = CARD_HEIGHT + CARD_GAP;
 
-export function FeedView({ onNewSession }: { onNewSession?: () => void } = {}) {
+export interface FeedViewProps {
+  onNewSession?: () => void;
+  /** 인피니트 스크롤: 목록 끝 근처에 도달하면 호출 */
+  onLoadMore?: () => void;
+  /** 추가 로드 가능 여부 */
+  hasMore?: boolean;
+}
+
+export function FeedView({ onNewSession, onLoadMore, hasMore }: FeedViewProps = {}) {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const viewMode = useDashboardStore((s) => s.viewMode);
   const sessions = useDashboardStore((s) => s.sessions);
@@ -81,6 +89,25 @@ export function FeedView({ onNewSession }: { onNewSession?: () => void } = {}) {
     estimateSize: () => ESTIMATED_SIZE,
     overscan: 3,
   });
+
+  // 인피니트 스크롤: virtualizer가 목록 끝 근처에 도달하면 onLoadMore 호출
+  const loadMoreRef = useRef(onLoadMore);
+  loadMoreRef.current = onLoadMore;
+  const isLoadingMore = useRef(false);
+
+  useEffect(() => {
+    if (!hasMore || !onLoadMore) return;
+    const virtualItems = virtualizer.getVirtualItems();
+    if (virtualItems.length === 0) return;
+    const lastVirtual = virtualItems[virtualItems.length - 1];
+    // 마지막 virtualItem이 전체 아이템 수의 마지막 3개 이내에 들어오면 로드
+    if (lastVirtual.index >= feedSessions.length - 3 && !isLoadingMore.current) {
+      isLoadingMore.current = true;
+      Promise.resolve(loadMoreRef.current?.()).finally(() => {
+        isLoadingMore.current = false;
+      });
+    }
+  }, [virtualizer.getVirtualItems(), feedSessions.length, hasMore, onLoadMore]);
 
   // 스크롤 위치 복원 (마운트 시)
   const restored = useRef(false);

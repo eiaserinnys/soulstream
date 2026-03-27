@@ -9,6 +9,7 @@ import type {
   SessionStorageProvider,
   StorageMode,
   SessionListResult,
+  FetchSessionsOptions,
 } from "./types";
 import type { EventTreeNode, SoulSSEEvent } from "@shared/types";
 import { toSessionSummary } from "@shared/mappers";
@@ -35,14 +36,16 @@ export class SSESessionProvider implements SessionStorageProvider {
   readonly mode: StorageMode = "sse";
 
   /**
-   * 세션 목록 조회 (전체 목록 반환).
+   * 세션 목록 조회 (페이지네이션 지원).
    *
    * /api/sessions 엔드포인트에서 세션 목록을 가져옵니다.
-   * 가상 스크롤이 클라이언트 측에서 렌더링을 제어합니다.
+   * offset/limit으로 페이지 범위를 지정합니다.
    */
-  async fetchSessions(sessionType?: string): Promise<SessionListResult> {
+  async fetchSessions(options?: FetchSessionsOptions): Promise<SessionListResult> {
     const params = new URLSearchParams();
-    if (sessionType) params.set("session_type", sessionType);
+    if (options?.sessionType) params.set("session_type", options.sessionType);
+    if (options?.offset != null && options.offset > 0) params.set("offset", String(options.offset));
+    if (options?.limit != null) params.set("limit", String(options.limit));
     const qs = params.toString();
     const url = `/api/sessions${qs ? `?${qs}` : ""}`;
 
@@ -53,10 +56,28 @@ export class SSESessionProvider implements SessionStorageProvider {
     }
 
     const data: SessionListResponse = await res.json();
+    const loadedCount = (options?.offset ?? 0) + data.sessions.length;
     return {
       sessions: data.sessions.map(toSessionSummary),
       total: data.total,
+      hasMore: loadedCount < data.total,
     };
+  }
+
+  /**
+   * 폴더별 세션 수 조회.
+   *
+   * /api/sessions/folder-counts 엔드포인트에서 집계값을 가져옵니다.
+   */
+  async fetchFolderCounts(): Promise<Record<string, number>> {
+    try {
+      const res = await fetch("/api/sessions/folder-counts");
+      if (!res.ok) return {};
+      const data: { counts: Record<string, number> } = await res.json();
+      return data.counts ?? {};
+    } catch {
+      return {};
+    }
   }
 
   /**
