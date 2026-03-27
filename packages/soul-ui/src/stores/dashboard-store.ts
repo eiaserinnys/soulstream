@@ -772,6 +772,11 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           activeSessionKey: agentSessionId,
           activeSession: null,
           selectedSessionIds: new Set([agentSessionId]),
+          // 새 세션이 생성된 폴더로 뷰를 이동한다.
+          // folderId가 undefined이면 호출자가 폴더를 지정하지 않은 것이므로 현재 선택을 유지한다.
+          ...(folderId !== undefined
+            ? { selectedFolderId: folderId, viewMode: "folder" as const }
+            : {}),
         });
       },
 
