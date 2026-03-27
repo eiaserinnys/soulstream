@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Coroutine, Optional
 
 from fastapi import WebSocket
+from starlette.websockets import WebSocketDisconnect
 
 from soulstream_server.constants import (
     CMD_CREATE_SESSION,
@@ -109,7 +110,13 @@ class NodeConnection:
         return f"req-{self._request_counter}-{int(time.time() * 1000)}"
 
     async def _send(self, data: dict) -> None:
-        await self._ws.send_json(data)
+        try:
+            await self._ws.send_json(data)
+        except Exception as e:
+            # websockets 라이브러리가 close frame 이후 send를 시도하면
+            # "Cannot call 'send' once a close message has been sent." RuntimeError를 발생시킨다.
+            # 이를 WebSocketDisconnect로 정규화하여 호출자가 일관되게 처리할 수 있게 한다.
+            raise WebSocketDisconnect(code=1011, reason=str(e)) from e
 
     async def _send_command(
         self, command: str, payload: dict, timeout: float = COMMAND_TIMEOUT
