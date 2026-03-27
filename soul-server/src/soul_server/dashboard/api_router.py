@@ -66,6 +66,31 @@ async def api_health():
     return {"status": "ok"}
 
 
+# === /api/config ===
+
+@router.get("/api/config")
+async def api_config():
+    """대시보드 AppConfig — 클라이언트 초기화용.
+
+    unified-dashboard 클라이언트가 /api/config 로 모드·피처 플래그를 조회한다.
+    soul-server는 single-node 모드를 반환한다.
+    """
+    from soul_server.config import get_settings
+
+    settings = get_settings()
+    return {
+        "mode": "single",
+        "nodeId": settings.soulstream_node_id or None,
+        "auth": {"enabled": bool(settings.google_client_id)},
+        "features": {
+            "configModal": True,
+            "searchModal": True,
+            "nodePanel": False,
+            "nodeGuard": True,
+        },
+    }
+
+
 # === /api/config/settings ===
 
 @router.get(
