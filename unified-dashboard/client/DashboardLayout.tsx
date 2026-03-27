@@ -7,10 +7,11 @@
  * soul-dashboard 대비 변경 사항:
  * - node-info 엔드포인트 제거 (BFF 없음) → isOtherNode = false 고정
  * - serendipityAvailable 로드 제거 (세렌디피티 기능 미사용)
- * - ConfigModal / SearchModal / DrainBanner는 Phase 4에서 추가
+ * - StorageModeToggleCompact 제거 (세렌디피티 관련)
+ * - ConfigModal / SearchModal / NewSessionModal / DrainBanner 추가 (Phase 4)
  */
 
-import { useEffect } from "react";
+import { useState, useEffect } from "react";
 import { FolderContents } from "./components/FolderContents";
 import {
   createFolder,
@@ -18,18 +19,22 @@ import {
   deleteFolderOptimistic,
 } from "./lib/folder-operations";
 import { moveSessionsOptimistic } from "./lib/move-sessions";
+import { NewSessionModal } from "./components/NewSessionModal";
+import { ConfigButton } from "./components/ConfigButton";
+import { ConfigModal } from "./components/ConfigModal";
+import { SearchModal } from "./components/SearchModal";
 import {
   NodeGraph,
   SessionsTopBar,
   MobileChatHeader,
   VerticalSplitPane,
-  StorageModeToggleCompact,
   ThemeToggle,
   useSessionProvider,
   useReadPositionSync,
   useNotification,
   useUrlSync,
   useDashboardConfig,
+  useServerStatus,
   DashboardShell,
   FolderTree,
   FeedView,
@@ -47,8 +52,8 @@ export function DashboardLayout() {
   const viewMode = useDashboardStore((s) => s.viewMode);
   const openNewSessionModal = useDashboardStore((s) => s.openNewSessionModal);
 
-  // 세션 목록 구독 (SSE 모드: 실시간, Serendipity 모드: 폴링)
-  const { sessions: _sessions, loading: _loading, error: _error, folderCounts, hasMore, loadMore } = useSessionListProvider({
+  // 세션 목록 구독 (SSE 모드: 실시간)
+  const { folderCounts, hasMore, loadMore } = useSessionListProvider({
     intervalMs: 5000,
     getSessionProvider,
   });
@@ -74,9 +79,16 @@ export function DashboardLayout() {
   // 대시보드 프로필 설정 로드
   useDashboardConfig();
 
+  // Soul Server 드레이닝 상태 폴링 (3초 간격)
+  const { isDraining } = useServerStatus();
+
   // unified-dashboard: BFF 없음 → isOtherNode는 항상 false
   // (Phase 5 orchestrator 모드에서 노드별 판별이 필요하면 OrchestratorSessionProvider로 처리)
   const isOtherNode = false;
+
+  // Config / Search 모달 상태
+  const [configOpen, setConfigOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   return (
     <DashboardShell
@@ -114,10 +126,21 @@ export function DashboardLayout() {
       }
       rightPanel={<RightPanel chatInputDisabled={isOtherNode} />}
       connectionStatus={sseStatus}
+      onSearchClick={() => setSearchOpen(true)}
+      banner={
+        isDraining ? (
+          <div
+            role="status"
+            className="flex items-center justify-center px-4 py-1.5 text-sm font-medium bg-accent-amber text-black shrink-0"
+          >
+            서버가 재시작 중입니다. 재시작 완료 후 세션이 자동으로 재개됩니다.
+          </div>
+        ) : undefined
+      }
       headerRight={
         <>
           <ThemeToggle />
-          <StorageModeToggleCompact />
+          <ConfigButton onClick={() => setConfigOpen(true)} />
         </>
       }
       mobileSessionsView={
@@ -139,8 +162,14 @@ export function DashboardLayout() {
       mobileSheetFooter={
         <>
           <ThemeToggle />
-          <StorageModeToggleCompact />
           <ConnectionBadge status={sseStatus} />
+        </>
+      }
+      modals={
+        <>
+          <ConfigModal open={configOpen} onOpenChange={setConfigOpen} />
+          <SearchModal open={searchOpen} onOpenChange={setSearchOpen} />
+          <NewSessionModal />
         </>
       }
     />
