@@ -915,6 +915,41 @@ describe("dashboard-store", () => {
       expect(inFolder[0].agentSessionId).toBe("sess-in-folder");
       expect(inUncategorized).toHaveLength(0);
     });
+
+    it("should switch selectedFolderId to the new session's folder", () => {
+      // 초기 폴더 선택: 'other-folder'
+      useDashboardStore.getState().selectFolder("other-folder");
+      expect(useDashboardStore.getState().selectedFolderId).toBe("other-folder");
+
+      useDashboardStore.getState().addOptimisticSession("sess-new", "hi", "folder-1");
+
+      const state = useDashboardStore.getState();
+      expect(state.selectedFolderId).toBe("folder-1");
+      expect(state.viewMode).toBe("folder");
+    });
+
+    it("should switch selectedFolderId to null when folderId is null (uncategorized)", () => {
+      // 초기 폴더 선택: 'folder-1'
+      useDashboardStore.getState().selectFolder("folder-1");
+      expect(useDashboardStore.getState().selectedFolderId).toBe("folder-1");
+
+      useDashboardStore.getState().addOptimisticSession("sess-new", "hi", null);
+
+      const state = useDashboardStore.getState();
+      expect(state.selectedFolderId).toBeNull();
+      expect(state.viewMode).toBe("folder");
+    });
+
+    it("should not change selectedFolderId when folderId is undefined", () => {
+      // 초기 폴더 선택: 'folder-1'
+      useDashboardStore.getState().selectFolder("folder-1");
+      expect(useDashboardStore.getState().selectedFolderId).toBe("folder-1");
+
+      // folderId 인자 생략 (undefined)
+      useDashboardStore.getState().addOptimisticSession("sess-new", "hi");
+
+      expect(useDashboardStore.getState().selectedFolderId).toBe("folder-1");
+    });
   });
 
   // === 멀티턴 세션 상태 전환 ===
