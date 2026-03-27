@@ -116,9 +116,19 @@ class NodeManager:
         node.set_agent_data(profiles, {})
 
     async def _on_node_close(self, node: NodeConnection) -> None:
-        self._nodes.pop(node.node_id, None)
-        logger.info("Node disconnected: %s", node.node_id)
-        await self._emit_change("node_unregistered", node.node_id)
+        # 이 노드가 아직 등록된 노드와 동일한 경우에만 제거한다.
+        # soul-server 재연결 시 register_node()가 기존 노드를 close()하는데,
+        # 기존 ws_handler의 finally 블록이 뒤늦게 같은 close()를 다시 호출하면
+        # _nodes[node_id]가 이미 새 노드로 교체된 상태다. identity 비교로 오제거를 막는다.
+        if self._nodes.get(node.node_id) is node:
+            self._nodes.pop(node.node_id, None)
+            logger.info("Node disconnected: %s", node.node_id)
+            await self._emit_change("node_unregistered", node.node_id)
+        else:
+            logger.debug(
+                "Node %s close() called but already replaced — skipping unregister",
+                node.node_id,
+            )
 
     async def _on_session_change(
         self, node_id: str, change_type: str, data: dict | None

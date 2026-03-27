@@ -393,6 +393,16 @@ class UpstreamAdapter:
             user=cmd.get("user", "upstream"),
         )
 
+        # 오케스트레이터에 ACK 전송 — requestId가 있어야 Future.set_result()가 실행된다.
+        # 없으면 오케스트레이터가 30초 타임아웃 후 TimeoutError를 낸다.
+        request_id = cmd.get("requestId", "")
+        if request_id:
+            await self._send({
+                "type": "intervene_ack",
+                "requestId": request_id,
+                "status": "ok",
+            })
+
         # auto-resume 시 실행 재시작
         if result.get("auto_resumed"):
             await self._tm.start_execution(

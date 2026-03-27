@@ -11,6 +11,7 @@ from typing import Any, Optional  # Optional: _session_to_response, node_manager
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
+from starlette.websockets import WebSocketDisconnect
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
@@ -302,6 +303,12 @@ def create_sessions_router(
         try:
             result = await node.send_intervene(session_id, body.text, body.user)
             return result
+        except (WebSocketDisconnect, ConnectionError) as e:
+            # 노드 WebSocket 연결이 끊어진 경우 → 503 (클라이언트가 재시도 가능)
+            raise HTTPException(
+                status_code=503,
+                detail=f"Node disconnected, please retry: {e}",
+            )
         except RuntimeError as e:
             msg = str(e)
             # soul-server SESSION_NOT_FOUND 에러 → 404
@@ -357,12 +364,12 @@ def create_sessions_router(
     ) -> dict:
         """읽음 위치 갱신 + SSE 브로드캐스트."""
         await db.update_last_read_event_id(session_id, body.last_read_event_id)
-        read_pos = await db.get_read_position(session_id)
-        if read_pos and broadcaster:
+        last_event_id, last_read_event_id = await db.get_read_position(session_id)
+        if broadcaster:
             await broadcaster.emit_read_position_updated(
                 session_id,
-                read_pos["last_event_id"],
-                read_pos["last_read_event_id"],
+                last_event_id,
+                last_read_event_id,
             )
         return {"ok": True}
 
