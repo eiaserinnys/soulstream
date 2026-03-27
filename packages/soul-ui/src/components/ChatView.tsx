@@ -740,11 +740,17 @@ export function ChatView({ chatInputDisabled = false }: ChatViewProps = {}) {
   }, [treeVersion]);
 
   // 세션 변경 시: follow 리셋
+  // isProgrammaticScroll 가드: 프로그래매틱 스크롤이 checkScrollPosition을 트리거하여
+  // 방금 켠 isFollowing을 다시 끄는 경쟁 조건을 방지한다.
   useEffect(() => {
     setIsFollowing(true);
     setShowNewMessage(false);
     if (scrollRef.current) {
+      isProgrammaticScroll.current = true;
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      requestAnimationFrame(() => {
+        isProgrammaticScroll.current = false;
+      });
     }
   }, [activeSessionKey]);
 

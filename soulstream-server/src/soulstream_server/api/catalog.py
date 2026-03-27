@@ -6,7 +6,8 @@ Catalog API 라우터 — /api/catalog
 응답 형식:
 - folders: [{id, name, sortOrder}]
 - sessions: Record<string, {folderId, displayName}>  — soul-ui CatalogState 호환
-- sessionList: [{session_id, node_id, folder_id, display_name, last_message, status, created_at, updated_at}]
+- sessionList: [{session_id, node_id, folder_id, display_name, last_message, status,
+                 created_at, updated_at, prompt, agent_id, agentName, agentPortraitUrl}]
 
 soul-common의 CatalogService.get_catalog()은 sessions를 dict(세션ID → 폴더배정)으로
 반환하므로, 오케스트레이터에서는 DB 세션 목록과 폴더 배정을 병합하여 두 가지 형식으로 제공한다.
@@ -20,6 +21,8 @@ from fastapi import APIRouter
 
 from soul_common.catalog.catalog_service import CatalogService
 from soul_common.db.session_db import PostgresSessionDB
+from soulstream_server.api.sessions import _get_profiles_for_session
+from soulstream_server.node_manager import NodeManager
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +30,7 @@ logger = logging.getLogger(__name__)
 def create_catalog_router(
     catalog_service: CatalogService,
     db: PostgresSessionDB,
+    node_manager: NodeManager,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/catalog", tags=["catalog"])
 
@@ -59,6 +63,22 @@ def create_catalog_router(
         for s in sessions_raw:
             sid = s.get("session_id", "")
             assignment = folder_assignments.get(sid, {})
+
+            # agent 정보 조회 (_get_profiles_for_session은 동기 함수)
+            agent_id = s.get("agent_id")
+            agent_profiles = _get_profiles_for_session(s, node_manager)
+            agentName = None
+            agentPortraitUrl = None
+            if agent_id and agent_id in agent_profiles:
+                profile = agent_profiles[agent_id]
+                agentName = profile.get("name")
+                raw_portrait = profile.get("portrait_url")
+                node_id_val = s.get("node_id")
+                if raw_portrait and node_id_val:
+                    agentPortraitUrl = f"/api/nodes/{node_id_val}/agents/{agent_id}/portrait"
+                else:
+                    agentPortraitUrl = raw_portrait
+
             session_list.append({
                 "session_id": sid,
                 "node_id": s.get("node_id", ""),
@@ -71,6 +91,11 @@ def create_catalog_router(
                 "updated_at": s.get("updated_at"),
                 "last_event_id": s.get("last_event_id", 0),
                 "last_read_event_id": s.get("last_read_event_id", 0),
+                # 에이전트 및 사용자 메시지 정보
+                "prompt": s.get("prompt"),
+                "agent_id": agent_id,
+                "agentName": agentName,
+                "agentPortraitUrl": agentPortraitUrl,
             })
 
         return {
