@@ -17,7 +17,7 @@ soul-common의 CatalogService.get_catalog()은 sessions를 dict(세션ID → 폴
 
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 from soul_common.catalog.catalog_service import CatalogService
 from soul_common.db.session_db import PostgresSessionDB
@@ -35,7 +35,10 @@ def create_catalog_router(
     router = APIRouter(prefix="/api/catalog", tags=["catalog"])
 
     @router.get("")
-    async def get_catalog() -> dict:
+    async def get_catalog(
+        offset: int = Query(0, ge=0),
+        limit: int = Query(50, ge=0),
+    ) -> dict:
         """폴더 + 세션 카탈로그 조회.
 
         soul-common의 카탈로그(폴더 배정 맵)와 DB 세션 목록을 병합하여
@@ -45,8 +48,8 @@ def create_catalog_router(
         catalog = await catalog_service.get_catalog()
         folder_assignments = catalog.get("sessions", {})
 
-        # DB에서 전체 세션 목록 조회
-        sessions_raw, total = await db.get_all_sessions(offset=0, limit=2000)
+        # DB에서 세션 목록 조회 (페이지네이션 적용, limit=0이면 전체)
+        sessions_raw, total = await db.get_all_sessions(offset=offset, limit=limit)
 
         # sessions dict: soul-ui CatalogState 호환 (Record<string, CatalogAssignment>)
         sessions_dict = {}
@@ -103,6 +106,17 @@ def create_catalog_router(
             "folders": catalog.get("folders", []),
             "sessions": sessions_dict,
             "sessionList": session_list,
+            "total": total,
         }
+
+    @router.get("/folder-counts")
+    async def get_folder_counts_endpoint() -> dict:
+        """폴더별 세션 수 조회 (GET /api/catalog/folder-counts)
+
+        soulstream-server는 오케스트레이터이므로 node_id=None으로 전체 집계한다.
+        """
+        counts = await db.get_folder_counts(node_id=None)
+        # None 키(폴더 미지정)는 JSON 직렬화 시 "null" 문자열로 변환
+        return {"counts": {str(k) if k is not None else "null": v for k, v in counts.items()}}
 
     return router
