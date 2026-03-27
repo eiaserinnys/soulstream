@@ -25,7 +25,11 @@ def _detect_portrait_mime(data: bytes) -> str:
         return "image/png"
     if data[:2] == b"\xff\xd8":
         return "image/jpeg"
-    return "image/png"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    if data[:4] in (b"GIF8",):
+        return "image/gif"
+    return "application/octet-stream"
 
 
 # 서버 내부 이벤트 타입 → 클라이언트가 기대하는 SSE 이벤트 이름 매핑

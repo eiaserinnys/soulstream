@@ -7,7 +7,7 @@ Sessions API 라우터 — /api/sessions
 import asyncio
 import json
 import logging
-from typing import Any, Optional
+from typing import Any, Optional  # Optional: _session_to_response, node_manager 파라미터에 사용
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
@@ -364,24 +364,13 @@ def create_sessions_router(
     return router
 
 
-def _get_profiles_for_session(s: dict, node_manager: NodeManager) -> dict:
-    """세션이 속한 노드의 agent_profiles 반환.
-
-    node_id가 있으면 get_node()로 직접 조회한다.
-    find_node_for_session()은 in-memory sessions 집합만 탐색하여
-    이미 완료된 히스토리 세션은 찾지 못한다.
-    """
-    node_id = s.get("node_id")
-    if node_id:
-        node = node_manager.get_node(node_id)
-    else:
-        node = node_manager.find_node_for_session(s.get("session_id", ""))
-    return node.agent_profiles if node else {}
+def _build_portrait_proxy_url(source_node_id: str, agent_id: str) -> str:
+    """에이전트 portrait 프록시 URL을 조립한다. (API 계층 전용)"""
+    return f"/api/nodes/{source_node_id}/agents/{agent_id}/portrait"
 
 
 def _session_to_response(
     s: dict,
-    agent_profiles: Optional[dict] = None,
     node_manager: Optional[NodeManager] = None,
 ) -> dict:
     """DB 세션 레코드를 API 응답 형식으로 변환.
@@ -418,28 +407,14 @@ def _session_to_response(
     }
 
     agent_id = s.get("agent_id")
-    if agent_id:
-        profile = None
-        source_node_id = None
-
-        # node_manager가 있으면 크로스-노드 fallback 사용
-        if node_manager is not None:
-            preferred_node_id = s.get("node_id")
-            found = node_manager.find_agent_profile(agent_id, preferred_node_id)
-            if found:
-                profile, source_node_id = found
-        elif agent_profiles and agent_id in agent_profiles:
-            profile = agent_profiles[agent_id]
-            source_node_id = s.get("node_id")
-
-        if profile:
+    if agent_id and node_manager is not None:
+        found = node_manager.find_agent_profile(agent_id, s.get("node_id"))
+        if found:
+            profile, source_node_id = found
             result["agentName"] = profile.get("name")
-            raw_portrait = profile.get("portrait_url")
-            if raw_portrait and source_node_id:
-                result["agentPortraitUrl"] = (
-                    f"/api/nodes/{source_node_id}/agents/{agent_id}/portrait"
+            if profile.get("portrait_url") and source_node_id:
+                result["agentPortraitUrl"] = _build_portrait_proxy_url(
+                    source_node_id, agent_id
                 )
-            else:
-                result["agentPortraitUrl"] = raw_portrait
 
     return result
