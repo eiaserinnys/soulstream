@@ -620,3 +620,107 @@ class TestLoad:
         assert loaded == 0
 
 
+
+
+class TestNodeIdGuard:
+    """node_id 소속 검사 및 덮어쓰기 방지 테스트"""
+
+    async def test_resume_different_node_raises_node_mismatch_error(self, manager):
+        """다른 노드 소속 퇴거 세션 resume 시 NodeMismatchError 발생"""
+        from unittest.mock import patch, AsyncMock as MockAsync
+        from soul_server.service.task_models import Task, TaskStatus, NodeMismatchError
+
+        # 다른 노드 소속의 퇴거 Task 준비
+        evicted_task = Task(agent_session_id="sess-other", prompt="old")
+        evicted_task.status = TaskStatus.COMPLETED
+        evicted_task.node_id = "other-node"  # 다른 노드
+
+        # _eviction_manager.load_evicted_task가 evicted_task를 반환하도록 mock
+        with patch.object(
+            manager._eviction_manager,
+            "load_evicted_task",
+            new_callable=lambda: lambda *a, **kw: MockAsync(return_value=evicted_task)(),
+        ):
+            manager._eviction_manager.load_evicted_task = MockAsync(return_value=evicted_task)
+            with pytest.raises(NodeMismatchError) as exc_info:
+                await manager.create_task(
+                    prompt="resume attempt",
+                    agent_session_id="sess-other",
+                )
+
+        err = exc_info.value
+        assert err.session_node_id == "other-node"
+        assert err.current_node_id == "test-node"
+
+    async def test_resume_same_node_succeeds(self, manager):
+        """같은 노드 소속 퇴거 세션 resume 시 정상 동작"""
+        from unittest.mock import AsyncMock as MockAsync
+        from soul_server.service.task_models import Task, TaskStatus
+
+        evicted_task = Task(agent_session_id="sess-same", prompt="old")
+        evicted_task.status = TaskStatus.COMPLETED
+        evicted_task.node_id = "test-node"  # 동일 노드
+
+        manager._eviction_manager.load_evicted_task = MockAsync(return_value=evicted_task)
+
+        task = await manager.create_task(
+            prompt="resume",
+            agent_session_id="sess-same",
+        )
+        assert task.status == TaskStatus.RUNNING
+        assert task.agent_session_id == "sess-same"
+
+    async def test_resume_none_node_id_allowed(self, manager):
+        """퇴거 세션의 node_id가 None이면 현재 노드에서 resume 허용 (하위 호환)"""
+        from unittest.mock import AsyncMock as MockAsync
+        from soul_server.service.task_models import Task, TaskStatus
+
+        evicted_task = Task(agent_session_id="sess-legacy", prompt="old")
+        evicted_task.status = TaskStatus.COMPLETED
+        evicted_task.node_id = None  # node_id 없는 구버전 세션
+
+        manager._eviction_manager.load_evicted_task = MockAsync(return_value=evicted_task)
+
+        task = await manager.create_task(
+            prompt="resume legacy",
+            agent_session_id="sess-legacy",
+        )
+        assert task.status == TaskStatus.RUNNING
+
+    async def test_resume_preserves_node_id_in_db(self, manager):
+        """resume 시 DB upsert에 현재 node_id를 덮어쓰지 않고 원본 node_id를 보존"""
+        from unittest.mock import AsyncMock as MockAsync
+        from soul_server.service.task_models import Task, TaskStatus
+
+        evicted_task = Task(agent_session_id="sess-resume", prompt="old")
+        evicted_task.status = TaskStatus.COMPLETED
+        evicted_task.node_id = "test-node"  # 같은 노드이지만 원본 확인
+
+        manager._eviction_manager.load_evicted_task = MockAsync(return_value=evicted_task)
+
+        # node_id는 task.node_id 값이 그대로 유지돼야 함
+        # upsert_session 호출 시 node_id 인자를 캡처
+        upsert_calls = []
+        original_upsert = manager._db.upsert_session.side_effect
+
+        async def capture_upsert(session_id, **kwargs):
+            upsert_calls.append(kwargs.get("node_id"))
+            if original_upsert:
+                await original_upsert(session_id, **kwargs)
+
+        manager._db.upsert_session.side_effect = capture_upsert
+
+        await manager.create_task(prompt="resume", agent_session_id="sess-resume")
+
+        assert len(upsert_calls) == 1
+        # resume 시 DB에 저장되는 node_id는 task의 원본 node_id여야 함 (not self._db.node_id 강제 덮어쓰기 금지)
+        assert upsert_calls[0] == "test-node"
+
+    async def test_new_session_sets_current_node_id(self, manager):
+        """신규 세션 생성 시 node_id = self._db.node_id"""
+        task = await manager.create_task(prompt="new session")
+        assert task.node_id == "test-node"
+
+        # DB upsert에도 현재 node_id가 사용됐는지 확인
+        call_kwargs = manager._db.upsert_session.call_args
+        assert call_kwargs.kwargs.get("node_id") == "test-node"
