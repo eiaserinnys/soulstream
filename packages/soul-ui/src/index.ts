@@ -623,3 +623,9 @@ export {
   TooltipPopup,
   TooltipPopup as TooltipContent,
 } from "./components/ui/tooltip";
+
+// === Auth ===
+export { AuthProvider, useAuth } from "./providers/AuthProvider";
+export type { AuthContextValue, AuthUser } from "./providers/AuthProvider";
+export { Login } from "./components/auth/Login";
+export { AuthGate } from "./components/auth/AuthGate";
