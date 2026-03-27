@@ -400,6 +400,7 @@ async def lifespan(app: FastAPI):
             session_db=session_db,
             host=settings.host,
             port=settings.port,
+            agent_registry=get_agent_registry(),
         )
         upstream_task = asyncio.create_task(upstream_adapter.run())
         logger.info(
