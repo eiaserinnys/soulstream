@@ -39,6 +39,7 @@ export default defineConfig({
       "client/**/*.test.ts",
       "server/**/*.test.ts",
       "tests/**/*.test.ts",
+      "../packages/soul-ui/src/**/*.test.ts",
     ],
     alias: {
       "@shared": resolve(__dirname, "../packages/soul-ui/src/shared"),
