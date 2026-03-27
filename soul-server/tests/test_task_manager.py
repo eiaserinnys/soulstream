@@ -158,6 +158,40 @@ class TestCreateTask:
         # 같은 agent_session_id가 재활성화됨
         assert task2.agent_session_id == "sess-1"
 
+    async def test_resume_preserves_profile_id_when_none_passed(self, manager):
+        """resume 시 profile_id=None을 전달하면 기존 profile_id가 유지된다."""
+        await manager.create_task(
+            prompt="hello",
+            agent_session_id="sess-1",
+            profile_id="profile-abc",
+        )
+        await manager.finalize_task("sess-1", result="done")
+
+        # profile_id를 전달하지 않고 resume
+        task2 = await manager.create_task(
+            prompt="resume prompt",
+            agent_session_id="sess-1",
+            profile_id=None,
+        )
+        # 기존 profile_id가 유지되어야 한다
+        assert task2.profile_id == "profile-abc"
+
+    async def test_resume_updates_profile_id_when_new_value_passed(self, manager):
+        """resume 시 새 profile_id를 명시하면 기존 값이 덮어써진다."""
+        await manager.create_task(
+            prompt="hello",
+            agent_session_id="sess-1",
+            profile_id="profile-old",
+        )
+        await manager.finalize_task("sess-1", result="done")
+
+        task2 = await manager.create_task(
+            prompt="resume prompt",
+            agent_session_id="sess-1",
+            profile_id="profile-new",
+        )
+        assert task2.profile_id == "profile-new"
+
 
 class TestGetTask:
     async def test_get_existing(self, manager):
