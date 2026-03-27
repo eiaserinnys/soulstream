@@ -9,15 +9,13 @@ import { useState, useEffect } from "react";
 import { FolderContents } from "./components/FolderContents";
 import { createFolder, renameFolderOptimistic, deleteFolderOptimistic } from "./lib/folder-operations";
 import { moveSessionsOptimistic } from "./lib/move-sessions";
-import { NodeGraph, SessionsTopBar, MobileChatHeader, VerticalSplitPane, StorageModeToggleCompact, ThemeToggle } from "@seosoyoung/soul-ui";
+import { NodeGraph, SessionsTopBar, MobileChatHeader, VerticalSplitPane, StorageModeToggleCompact, ThemeToggle, useSessionProvider, useReadPositionSync } from "@seosoyoung/soul-ui";
 import { NewSessionModal } from "./components/NewSessionModal";
 import { ConfigButton } from "./components/ConfigButton";
 import { ConfigModal } from "./components/ConfigModal";
 import { SearchModal } from "./components/SearchModal";
 import { useSessionListProvider } from "./hooks/useSessionListProvider";
-import { useSessionProvider } from "./hooks/useSessionProvider";
 import { getSessionProvider } from "./providers";
-import { useReadPositionSync } from "@seosoyoung/soul-ui";
 import { useNotification } from "./hooks/useNotification";
 import { useUrlSync } from "./hooks/useUrlSync";
 import { useDashboardConfig } from "./hooks/useDashboardConfig";
@@ -45,6 +43,7 @@ export function DashboardLayout() {
   // 활성 세션 구독 (Provider 기반)
   const { status: sseStatus } = useSessionProvider({
     sessionKey: activeSessionKey,
+    getSessionProvider,
   });
 
   // 테마 초기화 (localStorage → OS 설정 → dark 기본)
