@@ -13,7 +13,7 @@
  * - 'folder' 진입: 현재 선택된 폴더 사전 선택
  */
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import {
   NewSessionDialog as BaseNewSessionDialog,
   Select,
@@ -45,16 +45,25 @@ export function NewSessionDialog() {
   // '클로드 코드 세션' 폴더 ID
   const claudeFolder = catalog?.folders.find((f) => f.name === '클로드 코드 세션');
 
+  // 폴더 초기화 1회 제한 — catalog 갱신 시 사용자 선택을 덮어쓰지 않도록
+  const folderInitialized = useRef(false);
+
   // 모달이 열릴 때 진입 경로에 따라 초기 폴더 설정
+  // catalog가 로드되기 전에는 설정하지 않는다 (Base UI Select가 UUID를 fallback 표시하는 것 방지)
   useEffect(() => {
-    if (isModalOpen) {
-      if (newSessionSource === 'feed') {
-        setSelectedModalFolderId(claudeFolder?.id ?? null);
-      } else {
-        setSelectedModalFolderId(selectedFolderId);
-      }
+    if (!isModalOpen) {
+      folderInitialized.current = false;
+      return;
     }
-  }, [isModalOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (folderInitialized.current || !catalog) return;
+
+    folderInitialized.current = true;
+    if (newSessionSource === 'feed') {
+      setSelectedModalFolderId(claudeFolder?.id ?? null);
+    } else {
+      setSelectedModalFolderId(selectedFolderId);
+    }
+  }, [isModalOpen, catalog]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // nodeId 변경 시 에이전트 목록 조회
   useEffect(() => {
