@@ -35,7 +35,7 @@ export class OrchestratorSessionProvider implements SessionStorageProvider {
         last_message: {
           preview: string;
           timestamp: string;
-          role: string;
+          type: string;
         } | null;
         status: string;
         session_type: string | null;
@@ -43,6 +43,10 @@ export class OrchestratorSessionProvider implements SessionStorageProvider {
         updated_at: string | null;
         last_event_id: number | null;
         last_read_event_id: number | null;
+        prompt?: string | null;
+        agent_id?: string | null;
+        agentName?: string | null;
+        agentPortraitUrl?: string | null;
       }>;
     } = await res.json();
 
@@ -58,6 +62,10 @@ export class OrchestratorSessionProvider implements SessionStorageProvider {
       lastMessage: s.last_message ?? undefined,
       lastEventId: s.last_event_id ?? 0,
       lastReadEventId: s.last_read_event_id ?? 0,
+      prompt: s.prompt ?? undefined,
+      agentId: s.agent_id ?? undefined,
+      agentName: s.agentName ?? undefined,
+      agentPortraitUrl: s.agentPortraitUrl ?? undefined,
     }));
 
     return { sessions, total: sessions.length };
