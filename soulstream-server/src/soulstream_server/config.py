@@ -2,14 +2,12 @@
 Settings — 환경변수 기반 설정.
 """
 
-import os
 from functools import lru_cache
-from pathlib import Path
 
-from pydantic_settings import BaseSettings
+from soul_common.config import BaseOAuthSettings
 
 
-class Settings(BaseSettings):
+class Settings(BaseOAuthSettings):
     """soulstream-server 설정."""
 
     # Server
@@ -22,23 +20,7 @@ class Settings(BaseSettings):
     # Dashboard
     dashboard_dir: str = ""
 
-    # Google OAuth
-    google_client_id: str = ""
-    google_client_secret: str = ""
-    google_callback_url: str = ""
-    allowed_email: str = ""
-    jwt_secret: str = ""
-
-    # Environment
-    environment: str
-
-    @property
-    def is_development(self) -> bool:
-        return self.environment.lower() in ("development", "dev")
-
-    @property
-    def is_auth_enabled(self) -> bool:
-        return bool(self.google_client_id)
+    # OAuth, environment, is_development, is_auth_enabled 는 BaseOAuthSettings에서 상속
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
