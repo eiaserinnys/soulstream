@@ -310,4 +310,6 @@ class NodeConnection:
             pass
 
         if self.on_close:
-            await self.on_close(self)
+            cb = self.on_close
+            self.on_close = None  # 이중 호출 방지 — ws_handler finally와 register_node 중복 호출
+            await cb(self)
