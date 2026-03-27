@@ -2,6 +2,7 @@
 NodeManager — 연결된 soul-server 노드 관리.
 """
 
+import base64
 import logging
 from typing import Any, Callable, Coroutine
 
@@ -74,8 +75,8 @@ class NodeManager:
         # 에이전트 정보: 등록 메시지에 포함된 경우 우선 사용, 없으면 HTTP 조회
         agents_from_registration = registration.get("agents")
         if agents_from_registration is not None:
-            import base64
             profiles = {}
+            portrait_cache: dict[str, bytes] = {}
             for a in agents_from_registration:
                 agent_id = a["id"]
                 profiles[agent_id] = {
@@ -86,10 +87,10 @@ class NodeManager:
                 }
                 if a.get("portrait_b64"):
                     try:
-                        node._portrait_cache[agent_id] = base64.b64decode(a["portrait_b64"])
+                        portrait_cache[agent_id] = base64.b64decode(a["portrait_b64"])
                     except Exception:
                         logger.warning("portrait_b64 디코딩 실패 (agent=%s)", agent_id)
-            node._agent_profiles = profiles
+            node.set_agent_data(profiles, portrait_cache)
             logger.info(
                 "에이전트 프로필 등록 메시지에서 로드: node=%s, count=%d",
                 node_id, len(profiles),
@@ -108,10 +109,11 @@ class NodeManager:
             async with httpx.AsyncClient(timeout=3.0) as http:
                 resp = await http.get(f"http://{host}:{port}/api/agents")
                 data = resp.json()
-                node._agent_profiles = {p["id"]: p for p in data.get("agents", [])}
+                profiles = {p["id"]: p for p in data.get("agents", [])}
         except Exception:
             logger.warning("에이전트 프로필 조회 실패 (node=%s), 빈 목록으로 진행", node.node_id)
-            node._agent_profiles = {}
+            profiles = {}
+        node.set_agent_data(profiles, {})
 
     async def _on_node_close(self, node: NodeConnection) -> None:
         self._nodes.pop(node.node_id, None)
