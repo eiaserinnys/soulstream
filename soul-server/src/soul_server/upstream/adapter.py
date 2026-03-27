@@ -218,8 +218,12 @@ class UpstreamAdapter:
     # ─── Session Sync ─────────────────────────────
 
     async def _send_initial_sessions(self) -> None:
-        """현재 세션 목록을 오케스트레이터에 전송."""
-        sessions, total = await self._tm.get_all_sessions()
+        """현재 활성 세션 목록을 오케스트레이터에 전송.
+
+        running 상태 세션만 전송한다. 완료된 세션은 오케스트레이터 DB에 있으므로
+        불필요한 동기화가 WebSocket 메시지 크기 제한(1MB)을 초과하는 것을 방지한다.
+        """
+        sessions, total = await self._tm.get_all_sessions(status="running")
         await self._send({
             "type": EVT_SESSIONS_UPDATE,
             "sessions": sessions,
