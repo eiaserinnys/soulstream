@@ -368,8 +368,17 @@ def create_sessions_router(
 
 
 def _get_profiles_for_session(s: dict, node_manager: NodeManager) -> dict:
-    """세션이 속한 노드의 agent_profiles 반환."""
-    node = node_manager.find_node_for_session(s.get("session_id", ""))
+    """세션이 속한 노드의 agent_profiles 반환.
+
+    node_id가 있으면 get_node()로 직접 조회한다.
+    find_node_for_session()은 in-memory sessions 집합만 탐색하여
+    이미 완료된 히스토리 세션은 찾지 못한다.
+    """
+    node_id = s.get("node_id")
+    if node_id:
+        node = node_manager.get_node(node_id)
+    else:
+        node = node_manager.find_node_for_session(s.get("session_id", ""))
     return node.agent_profiles if node else {}
 
 
