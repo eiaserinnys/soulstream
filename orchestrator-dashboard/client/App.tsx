@@ -76,6 +76,25 @@ export function App() {
     getSessionProvider: () => orchestratorSessionProvider,
   });
 
+  // 30초마다 세션 목록 전체 재조회 (SSE 누락 대비 안전망)
+  // TODO: soul-ui가 "SSE 유지 + 독립 폴링" 옵션을 지원하면 이 useEffect를 제거하고
+  //       useSessionListProvider의 공식 옵션으로 교체한다.
+  useEffect(() => {
+    const refresh = async () => {
+      try {
+        const result = await orchestratorSessionProvider.fetchSessions();
+        useDashboardStore.getState().setSessions(result.sessions);
+      } catch {
+        // 갱신 실패는 조용히 무시 (SSE가 주 경로이므로 fallback 실패는 치명적이지 않음)
+      }
+    };
+
+    // Effect 1(useSessionListProvider 내부)에서 마운트 시 이미 초기 fetch를 수행하므로,
+    // 여기서는 interval만 설정하고 마운트 즉시 호출은 생략한다.
+    const timer = setInterval(refresh, 30_000);
+    return () => clearInterval(timer);
+  }, []);
+
   // 활성 세션 구독 (Provider 기반)
   useSessionProvider({
     sessionKey: activeSessionKey,
