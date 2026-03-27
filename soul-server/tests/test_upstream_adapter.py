@@ -40,8 +40,8 @@ def _make_mock_task(agent_session_id: str = "test-session-1"):
 def _make_broadcaster():
     """테스트용 SessionBroadcaster mock 생성."""
     broadcaster = MagicMock()
-    broadcaster.add_listener = AsyncMock()
-    broadcaster.remove_listener = AsyncMock()
+    broadcaster.add_client = MagicMock(return_value=asyncio.Queue())
+    broadcaster.remove_client = MagicMock()
     return broadcaster
 
 
@@ -573,7 +573,7 @@ class TestStartStopBroadcast:
 
         await adapter._start_broadcast()
 
-        bc.add_listener.assert_awaited_once()
+        bc.add_client.assert_called_once()
         assert adapter._broadcast_queue is not None
         assert adapter._broadcast_task is not None
 
@@ -594,7 +594,7 @@ class TestStartStopBroadcast:
         adapter._running = False
         await adapter._stop_broadcast()
 
-        bc.remove_listener.assert_awaited_once_with(queue_ref)
+        bc.remove_client.assert_called_once_with(queue_ref)
         assert adapter._broadcast_queue is None
         assert adapter._broadcast_task is None
 

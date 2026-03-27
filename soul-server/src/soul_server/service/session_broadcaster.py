@@ -2,71 +2,31 @@
 SessionBroadcaster - 세션 목록 변경 이벤트 브로드캐스트
 
 대시보드의 세션 목록 SSE 구독을 위한 컴포넌트입니다.
-세션 생성/업데이트/삭제 시 모든 리스너에게 이벤트를 발행합니다.
+세션 생성/업데이트/삭제 시 모든 클라이언트에게 이벤트를 발행합니다.
+
+BaseSessionBroadcaster(soul-common)를 상속하여 큐 관리 로직을 재사용하며,
+soul-server 고유의 emit 메서드만 추가 구현합니다.
 """
 
-import asyncio
 import logging
-from typing import List, Optional
+from typing import Optional
+
+from soul_common.broadcaster import BaseSessionBroadcaster
 
 from soul_server.service.task_models import Task, utc_now
 
 logger = logging.getLogger(__name__)
 
 
-class SessionBroadcaster:
-    """세션 목록 변경 이벤트 브로드캐스터
+class SessionBroadcaster(BaseSessionBroadcaster):
+    """세션 목록 변경 이벤트 브로드캐스터.
 
-    리스너 등록/해제 및 이벤트 브로드캐스트를 관리합니다.
+    asyncio.Lock을 사용하는 use_lock=True 모드로 생성된다.
+    모듈 레벨 싱글톤으로 관리된다(init_session_broadcaster 참고).
     """
 
-    def __init__(self):
-        self._listeners: List[asyncio.Queue] = []
-        self._lock = asyncio.Lock()
-
-    @property
-    def listener_count(self) -> int:
-        """현재 리스너 수"""
-        return len(self._listeners)
-
-    async def add_listener(self, queue: asyncio.Queue) -> None:
-        """리스너 추가"""
-        async with self._lock:
-            self._listeners.append(queue)
-            logger.debug(f"Session broadcaster: listener added (total={len(self._listeners)})")
-
-    async def remove_listener(self, queue: asyncio.Queue) -> None:
-        """리스너 제거"""
-        async with self._lock:
-            if queue in self._listeners:
-                self._listeners.remove(queue)
-                logger.debug(f"Session broadcaster: listener removed (total={len(self._listeners)})")
-
-    async def broadcast(self, event: dict) -> int:
-        """모든 리스너에게 이벤트 브로드캐스트
-
-        Args:
-            event: 브로드캐스트할 이벤트
-
-        Returns:
-            브로드캐스트된 리스너 수
-        """
-        async with self._lock:
-            count = 0
-            failed_queues = []
-            for queue in self._listeners:
-                try:
-                    queue.put_nowait(event)
-                    count += 1
-                except asyncio.QueueFull:
-                    logger.warning("Session broadcaster: queue full, removing listener")
-                    failed_queues.append(queue)
-
-            # 실패한 리스너 제거 (메모리 누수 방지)
-            for queue in failed_queues:
-                self._listeners.remove(queue)
-
-            return count
+    def __init__(self) -> None:
+        super().__init__(use_lock=True)
 
     @staticmethod
     def _resolve_agent_info(task: Task) -> tuple[Optional[str], Optional[str]]:
@@ -145,28 +105,7 @@ class SessionBroadcaster:
         }
         return await self.broadcast(event)
 
-    async def emit_read_position_updated(
-        self,
-        session_id: str,
-        last_event_id: int,
-        last_read_event_id: int,
-    ) -> int:
-        """read-position 변경 시 크로스 대시보드 동기화용 브로드캐스트."""
-        event = {
-            "type": "session_updated",
-            "agent_session_id": session_id,
-            "last_event_id": last_event_id,
-            "last_read_event_id": last_read_event_id,
-        }
-        return await self.broadcast(event)
-
-    async def emit_session_deleted(self, agent_session_id: str) -> int:
-        """세션 삭제 이벤트 발행"""
-        event = {
-            "type": "session_deleted",
-            "agent_session_id": agent_session_id,
-        }
-        return await self.broadcast(event)
+    # emit_session_deleted, emit_read_position_updated는 BaseSessionBroadcaster에서 상속
 
 
 # 싱글톤 인스턴스
