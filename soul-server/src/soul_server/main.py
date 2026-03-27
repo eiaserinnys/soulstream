@@ -37,7 +37,11 @@ from soul_server.service.runner_pool import RunnerPool
 from soul_server.service.task_manager import get_task_manager, TaskManager, set_task_manager
 from soul_server.service.agent_registry import AgentRegistry, load_agent_registry
 from soul_server.service.session_broadcaster import init_session_broadcaster
-from soul_server.service.postgres_session_db import PostgresSessionDB, create_soul_server_session_db, init_session_db, get_session_db
+from soul_server.service.postgres_session_db import (
+    PostgresSessionDB, SqliteSessionDB,
+    create_soul_server_session_db, create_soul_server_sqlite_db,
+    init_session_db, get_session_db,
+)
 from soul_server.models import HealthResponse
 from cogito.endpoint import mount_cogito as _mount_cogito
 from soul_server.cogito.mcp_tools import cogito_mcp, cogito_api_router, init as init_cogito_mcp
@@ -236,21 +240,33 @@ async def lifespan(app: FastAPI):
     await pool.start_maintenance()
     logger.info(f"  Runner pool maintenance loop started (interval={settings.runner_pool_maintenance_interval}s)")
 
-    # PostgresSessionDB 초기화
+    # SessionDB 초기화 — database_url 유무로 PostgreSQL / SQLite 분기
     data_dir = Path(settings.data_dir)
-    session_db = create_soul_server_session_db(
-        database_url=settings.database_url,
-        node_id=settings.soulstream_node_id,
-    )
-    await session_db.connect()
-    await session_db.ensure_default_folders()
-    init_session_db(session_db)
-    logger.info(f"  PostgresSessionDB initialized: node_id={settings.soulstream_node_id}")
+    if settings.database_url:
+        session_db = create_soul_server_session_db(
+            database_url=settings.database_url,
+            node_id=settings.soulstream_node_id,
+        )
+        await session_db.connect()
+        await session_db.ensure_default_folders()
+        init_session_db(session_db)
+        logger.info(f"  PostgresSessionDB initialized: node_id={settings.soulstream_node_id}")
 
-    # 레거시 데이터 자동 이관 (SQLite/JSONL → PostgreSQL)
-    from soul_server.service.legacy_migrator import auto_migrate
+        # 레거시 데이터 자동 이관 (SQLite/JSONL → PostgreSQL) — PostgreSQL 모드에서만 실행
+        from soul_server.service.legacy_migrator import auto_migrate
 
-    await auto_migrate(session_db, settings.data_dir)
+        await auto_migrate(session_db, settings.data_dir)
+    else:
+        sqlite_path = settings.sqlite_path
+        data_dir.mkdir(parents=True, exist_ok=True)
+        session_db = create_soul_server_sqlite_db(
+            sqlite_path=sqlite_path,
+            node_id=settings.soulstream_node_id,
+        )
+        await session_db.connect()
+        await session_db.ensure_default_folders()
+        init_session_db(session_db)
+        logger.info(f"  SqliteSessionDB initialized: path={sqlite_path}, node_id={settings.soulstream_node_id}")
 
     # MetadataExtractor 초기화 (부가 기능 — 로드 실패해도 서비스 기동에 영향 없음)
     # DATA_DIR에 환경 특화 규칙이 있으면 우선 사용, 없으면 패키지 기본 규칙으로 폴백
