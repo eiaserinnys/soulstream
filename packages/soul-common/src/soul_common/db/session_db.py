@@ -220,6 +220,38 @@ class PostgresSessionDB:
         )
         return [self._deserialize_session(r) for r in rows], total
 
+    async def get_folder_counts(
+        self,
+        node_id: Optional[str] = None,
+    ) -> dict:
+        """folder_id별 세션 수를 반환한다.
+
+        Args:
+            node_id: 특정 노드로 필터링. None이면 전체.
+
+        Returns:
+            {folder_id: count} — folder_id가 None인 경우(폴더 미지정 세션)도 포함
+        """
+        if node_id:
+            rows = await self._pool.fetch(
+                """
+                SELECT folder_id, COUNT(*)::int AS cnt
+                FROM sessions
+                WHERE node_id = $1
+                GROUP BY folder_id
+                """,
+                node_id,
+            )
+        else:
+            rows = await self._pool.fetch(
+                """
+                SELECT folder_id, COUNT(*)::int AS cnt
+                FROM sessions
+                GROUP BY folder_id
+                """
+            )
+        return {row["folder_id"]: row["cnt"] for row in rows}
+
     async def delete_session(self, session_id: str) -> None:
         await self._pool.execute(
             "SELECT session_delete($1)", session_id
