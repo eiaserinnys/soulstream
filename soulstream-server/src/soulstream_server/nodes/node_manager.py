@@ -70,7 +70,33 @@ class NodeManager:
             "Node registered: %s (host=%s, port=%d, capabilities=%s)",
             node_id, host, port, capabilities,
         )
-        await self._fetch_agent_profiles(node, host, port)
+
+        # 에이전트 정보: 등록 메시지에 포함된 경우 우선 사용, 없으면 HTTP 조회
+        agents_from_registration = registration.get("agents")
+        if agents_from_registration is not None:
+            import base64
+            profiles = {}
+            for a in agents_from_registration:
+                agent_id = a["id"]
+                profiles[agent_id] = {
+                    "id": agent_id,
+                    "name": a.get("name", ""),
+                    "portrait_url": a.get("portrait_url", ""),
+                    "max_turns": a.get("max_turns"),
+                }
+                if a.get("portrait_b64"):
+                    try:
+                        node._portrait_cache[agent_id] = base64.b64decode(a["portrait_b64"])
+                    except Exception:
+                        logger.warning("portrait_b64 디코딩 실패 (agent=%s)", agent_id)
+            node._agent_profiles = profiles
+            logger.info(
+                "에이전트 프로필 등록 메시지에서 로드: node=%s, count=%d",
+                node_id, len(profiles),
+            )
+        else:
+            await self._fetch_agent_profiles(node, host, port)
+
         await self._emit_change("node_registered", node_id, node.to_info())
         return node
 

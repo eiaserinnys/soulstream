@@ -33,6 +33,7 @@ from .protocol import (
 from .reconnect import ReconnectPolicy
 
 if TYPE_CHECKING:
+    from soul_server.service.agent_registry import AgentRegistry
     from soul_server.service.engine_adapter import SoulEngineAdapter
     from soul_server.service.postgres_session_db import PostgresSessionDB
     from soul_server.service.resource_manager import ResourceManager
@@ -60,6 +61,7 @@ class UpstreamAdapter:
         session_db: PostgresSessionDB,
         host: str = "",
         port: int = 0,
+        agent_registry: "AgentRegistry | None" = None,
     ) -> None:
         self._tm = task_manager
         self._engine = soul_engine
@@ -70,6 +72,7 @@ class UpstreamAdapter:
         self._session_db = session_db
         self._host = host
         self._port = port
+        self._agent_registry = agent_registry
 
         self._ws: aiohttp.ClientWebSocketResponse | None = None
         self._session: aiohttp.ClientSession | None = None
@@ -145,7 +148,7 @@ class UpstreamAdapter:
         logger.info("Connected to upstream (node_id=%s)", self._node_id)
 
         # 노드 등록
-        await self._send({
+        registration_msg: dict = {
             "type": EVT_NODE_REGISTER,
             "node_id": self._node_id,
             "host": self._host,
@@ -153,7 +156,32 @@ class UpstreamAdapter:
             "capabilities": {
                 "max_concurrent": self._rm.max_concurrent,
             },
-        })
+        }
+
+        # 에이전트 정보 포함 — portrait는 base64로 인코딩하여 원격 HTTP 조회 불필요
+        if self._agent_registry:
+            import base64
+            agents = []
+            for profile in self._agent_registry.list():
+                agent_info: dict = {
+                    "id": profile.id,
+                    "name": profile.name,
+                    "portrait_url": (
+                        f"/api/agents/{profile.id}/portrait"
+                        if profile.portrait_path
+                        else ""
+                    ),
+                }
+                if profile.portrait_path:
+                    try:
+                        with open(profile.portrait_path, "rb") as f:
+                            agent_info["portrait_b64"] = base64.b64encode(f.read()).decode("ascii")
+                    except Exception:
+                        logger.warning("portrait 파일 읽기 실패: %s", profile.portrait_path)
+                agents.append(agent_info)
+            registration_msg["agents"] = agents
+
+        await self._send(registration_msg)
 
         # 세션 동기화: 구독 먼저 → 초기 전송 (이벤트 유실 방지)
         await self._start_broadcast()
