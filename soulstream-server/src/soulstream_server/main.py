@@ -32,6 +32,48 @@ logger = logging.getLogger(__name__)
 _start_time = time.time()
 
 
+async def _on_node_change(
+    broadcaster: SessionBroadcaster, event_type: str, node_id: str, data: dict | None
+) -> None:
+    """노드 변경 이벤트를 클라이언트 SSE 형식으로 변환하여 브로드캐스트.
+
+    node_manager._on_session_change가 이벤트 타입을 'node_session_{change_type}'으로
+    포장하므로, 클라이언트(useSessionListProvider.ts)가 인식하는 session_* 타입으로 언포장한다.
+    모든 이벤트에 대해 broadcast_node_change도 함께 호출(node graph 등에서 사용).
+    """
+    if event_type == "node_session_session_created":
+        await broadcaster.broadcast({
+            "type": "session_created",
+            "session": data,
+            "nodeId": node_id,
+        })
+    elif event_type == "node_session_session_updated":
+        # data에 agentSessionId(camelCase)가 오지만 클라이언트는 agent_session_id(snake_case)도 읽으므로
+        # 두 키 모두 포함하여 안전하게 전달.
+        session_id = (data or {}).get("agentSessionId") or (data or {}).get("agent_session_id")
+        await broadcaster.broadcast({
+            "type": "session_updated",
+            **(data or {}),
+            "agent_session_id": session_id,
+            "nodeId": node_id,
+        })
+    elif event_type == "node_session_session_deleted":
+        # data에 agentSessionId 또는 agent_session_id 두 가지 키가 올 수 있으므로 모두 시도.
+        session_id = (data or {}).get("agentSessionId") or (data or {}).get("agent_session_id")
+        if session_id:
+            await broadcaster.broadcast({
+                "type": "session_deleted",
+                "agent_session_id": session_id,
+            })
+
+    # 노드 상태 변경은 기존대로 broadcast_node_change로 전달 (node graph 등에서 사용).
+    await broadcaster.broadcast_node_change({
+        "type": event_type,
+        "nodeId": node_id,
+        "data": data,
+    })
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """앱 라이프스팬: DB 연결, 서비스 초기화."""
@@ -52,11 +94,7 @@ async def lifespan(app: FastAPI):
     async def on_node_change(
         event_type: str, node_id: str, data: dict | None
     ) -> None:
-        await broadcaster.broadcast_node_change({
-            "type": event_type,
-            "nodeId": node_id,
-            "data": data,
-        })
+        await _on_node_change(broadcaster, event_type, node_id, data)
 
     node_manager.add_change_listener(on_node_change)
 
