@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "paths": {
+      "@seosoyoung/soul-ui": ["../packages/soul-ui/src/index.ts"],
+      "client/*": ["./client/*"]
+    }
+  },
+  "include": ["client/**/*.ts", "client/**/*.tsx"],
+  "exclude": ["node_modules", "dist"]
+}
