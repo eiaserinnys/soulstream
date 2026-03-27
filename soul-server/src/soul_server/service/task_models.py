@@ -35,6 +35,18 @@ class TaskNotRunningError(Exception):
     pass
 
 
+class NodeMismatchError(Exception):
+    """세션이 다른 노드 소속임을 나타내는 예외."""
+
+    def __init__(self, session_node_id: str, current_node_id: str):
+        self.session_node_id = session_node_id
+        self.current_node_id = current_node_id
+        super().__init__(
+            f"Session belongs to node '{session_node_id}', "
+            f"but current node is '{current_node_id}'"
+        )
+
+
 def utc_now() -> datetime:
     """현재 UTC 시간 반환"""
     return datetime.now(timezone.utc)

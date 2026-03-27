@@ -28,6 +28,7 @@ from soul_server.service.task_manager import (
     TaskConflictError,
     TaskNotFoundError,
     TaskNotRunningError,
+    NodeMismatchError,
     TaskStatus,
 )
 from soul_server.service import resource_manager, get_soul_engine
@@ -147,6 +148,15 @@ async def execute_task(
                     "message": f"이미 실행 중인 세션입니다: {request.agent_session_id}",
                     "details": {},
                 }
+            },
+        )
+    except NodeMismatchError as e:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "node_mismatch",
+                "session_node_id": e.session_node_id,
+                "current_node_id": e.current_node_id,
             },
         )
 
@@ -382,6 +392,15 @@ async def intervene_session(
                 "queue_position": result["queue_position"],
             }
 
+    except NodeMismatchError as e:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "node_mismatch",
+                "session_node_id": e.session_node_id,
+                "current_node_id": e.current_node_id,
+            },
+        )
     except TaskNotFoundError:
         raise HTTPException(
             status_code=404,
@@ -438,6 +457,15 @@ async def respond_to_input_request(
                 },
             )
 
+    except NodeMismatchError as e:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "node_mismatch",
+                "session_node_id": e.session_node_id,
+                "current_node_id": e.current_node_id,
+            },
+        )
     except TaskNotFoundError:
         raise HTTPException(
             status_code=404,
