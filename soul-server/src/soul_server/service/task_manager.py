@@ -27,6 +27,7 @@ from soul_server.service.task_models import (
     TaskConflictError,
     TaskNotFoundError,
     TaskNotRunningError,
+    NodeMismatchError,
     generate_agent_session_id,
     utc_now,
     datetime_to_str,
@@ -45,6 +46,7 @@ __all__ = [
     "TaskConflictError",
     "TaskNotFoundError",
     "TaskNotRunningError",
+    "NodeMismatchError",
     "TaskManager",
     "task_manager",
     "get_task_manager",
@@ -509,6 +511,10 @@ class TaskManager:
             if not existing and is_resume:
                 existing = await self._eviction_manager.load_evicted_task(self._db, agent_session_id)
                 if existing:
+                    # 다른 노드 소속 세션은 이 노드에서 resume 불가
+                    session_node_id = existing.node_id
+                    if session_node_id is not None and session_node_id != self._db.node_id:
+                        raise NodeMismatchError(session_node_id, self._db.node_id)
                     self._tasks[agent_session_id] = existing
                     logger.info(f"Restored evicted session for resume: {agent_session_id}")
 
@@ -569,7 +575,8 @@ class TaskManager:
                 logger.info(f"Created new session: {agent_session_id}")
                 is_new = True
 
-        task.node_id = self._db.node_id
+        if not is_resume:
+            task.node_id = self._db.node_id
 
         # DB에 세션 등록/업데이트
         await self._db.upsert_session(
@@ -580,7 +587,7 @@ class TaskManager:
             client_id=task.client_id,
             claude_session_id=task.claude_session_id,
             created_at=datetime_to_str(task.created_at),
-            node_id=self._db.node_id,
+            node_id=task.node_id if is_resume else self._db.node_id,
             agent_id=task.profile_id,
         )
 

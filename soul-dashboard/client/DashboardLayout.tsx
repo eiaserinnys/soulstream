@@ -9,6 +9,7 @@ import { useState, useEffect } from "react";
 import { FolderContents } from "./components/FolderContents";
 import { createFolder, renameFolderOptimistic, deleteFolderOptimistic } from "./lib/folder-operations";
 import { moveSessionsOptimistic } from "./lib/move-sessions";
+import { computeIsOtherNode } from "./lib/node-guard";
 import { NodeGraph, SessionsTopBar, MobileChatHeader, VerticalSplitPane, StorageModeToggleCompact, ThemeToggle, useSessionProvider, useReadPositionSync } from "@seosoyoung/soul-ui";
 import { NewSessionModal } from "./components/NewSessionModal";
 import { ConfigButton } from "./components/ConfigButton";
@@ -79,6 +80,28 @@ export function DashboardLayout() {
       });
   }, [setSerendipityAvailable]);
 
+  // 현재 soul-server의 nodeId (다른 노드 세션 판별용)
+  const activeSession = useDashboardStore((s) => s.activeSession);
+  const [currentNodeId, setCurrentNodeId] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    fetch("/api/node-info")
+      .then((r) => {
+        if (!r.ok) throw new Error(`node-info: ${r.status}`);
+        return r.json();
+      })
+      .then((data: { nodeId?: string }) => {
+        if (data.nodeId) setCurrentNodeId(data.nodeId);
+        // nodeId 없으면 undefined 유지 → 판단 유보
+      })
+      .catch(() => {
+        // fetch 실패 → undefined 유지 → 판단 유보
+      });
+  }, []);
+
+  // 다른 노드 세션이면 채팅 입력 비활성화
+  // currentNodeId가 undefined(미로드/오류)면 판단 유보 → false
+  const isOtherNode = computeIsOtherNode(currentNodeId, activeSession?.nodeId);
+
   // Config / Search 모달 상태
   const [configOpen, setConfigOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -112,7 +135,7 @@ export function DashboardLayout() {
           </>
         )
       }
-      rightPanel={<RightPanel />}
+      rightPanel={<RightPanel chatInputDisabled={isOtherNode} />}
       connectionStatus={sseStatus}
       onSearchClick={() => setSearchOpen(true)}
       headerRight={
@@ -143,7 +166,7 @@ export function DashboardLayout() {
         )
       }
       mobileChatHeader={(onBack) => <MobileChatHeader onBack={onBack} />}
-      mobileChatView={<ChatView />}
+      mobileChatView={<ChatView chatInputDisabled={isOtherNode} />}
       mobileSheetFooter={
         <>
           <ThemeToggle />

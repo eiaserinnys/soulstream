@@ -28,6 +28,7 @@ from soul_server.service.task_manager import (
     TaskConflictError,
     TaskNotFoundError,
     TaskNotRunningError,
+    NodeMismatchError,
 )
 from soul_server.service import resource_manager, get_soul_engine
 from soul_server.service.session_broadcaster import get_session_broadcaster
@@ -408,6 +409,15 @@ async def api_create_session(body: CreateSessionBody):
                 }
             },
         )
+    except NodeMismatchError as e:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "node_mismatch",
+                "session_node_id": e.session_node_id,
+                "current_node_id": e.current_node_id,
+            },
+        )
 
     await task_manager.start_execution(
         agent_session_id=task.agent_session_id,
@@ -447,6 +457,15 @@ async def api_intervene(session_id: str, body: InterveneBody):
         else:
             return {"queued": True, "queue_position": result.get("queue_position", 0)}
 
+    except NodeMismatchError as e:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "node_mismatch",
+                "session_node_id": e.session_node_id,
+                "current_node_id": e.current_node_id,
+            },
+        )
     except TaskNotFoundError:
         raise HTTPException(
             status_code=404,
