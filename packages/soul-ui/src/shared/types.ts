@@ -355,7 +355,7 @@ export interface MetadataEntry {
 export interface AgentInfo {
   id: string;
   name: string;
-  portrait_url?: string | null;
+  portraitUrl?: string | null;
   max_turns?: number | null;
 }
 
