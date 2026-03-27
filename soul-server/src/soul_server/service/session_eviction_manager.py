@@ -156,6 +156,7 @@ class SessionEvictionManager:
                 last_read_event_id=entry.get("last_read_event_id", 0),
                 created_at=str_to_datetime(created_at_str),
                 completed_at=completed_at,
+                node_id=entry.get("node_id"),
             )
         except (ValueError, KeyError) as e:
             logger.error(f"Failed to restore task from DB: {agent_session_id}: {e}")
