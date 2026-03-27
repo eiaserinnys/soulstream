@@ -80,6 +80,7 @@ def _call_build(
     workspace_dir="/workspace",
     folder_name=None,
     node_id=None,
+    agent_id=None,
 ) -> dict:
     """build_soulstream_context_item 호출 헬퍼 (socket/platform/settings mock 포함)."""
     mock_socket_instance = MagicMock()
@@ -103,7 +104,7 @@ def _call_build(
          patch("soul_server.service.engine_adapter.get_settings", return_value=mock_settings):
         return build_soulstream_context_item(
             agent_session_id, claude_session_id, workspace_dir,
-            folder_name=folder_name, node_id=node_id,
+            folder_name=folder_name, node_id=node_id, agent_id=agent_id,
         )
 
 
@@ -167,3 +168,13 @@ class TestBuildSoulsreamContextItem:
         item = _call_build(node_id=None)
         # _call_build 헬퍼가 settings mock에 "test-node"를 설정함
         assert item["content"]["current_node_id"] == "test-node"
+
+    def test_agent_id_included_when_provided(self):
+        """agent_id가 제공되면 content에 포함된다."""
+        item = _call_build(agent_id="profile-abc")
+        assert item["content"]["agent_id"] == "profile-abc"
+
+    def test_agent_id_absent_when_none(self):
+        """agent_id=None이면 content에 agent_id 필드가 없다."""
+        item = _call_build(agent_id=None)
+        assert "agent_id" not in item["content"]
