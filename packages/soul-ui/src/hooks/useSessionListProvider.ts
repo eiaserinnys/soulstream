@@ -15,12 +15,14 @@
  *   SSE 재연결이나 Effect 재실행을 유발하지 않도록 합니다.
  */
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { toSessionSummary } from "../shared/mappers";
 import { SYSTEM_FOLDERS } from "../shared/constants";
 import type { SessionStreamEvent, SessionStatus } from "../shared/types";
 import type { SessionStorageProvider, StorageMode } from "../providers/types";
+
+const DEFAULT_PAGE_SIZE = 50;
 
 /** 서버가 named SSE event로 보내는 이벤트 타입 목록 */
 const SESSION_STREAM_EVENT_TYPES = [
@@ -53,6 +55,7 @@ export function useSessionListProvider(
 
   const storageMode = useDashboardStore((s) => s.storageMode);
   const setSessions = useDashboardStore((s) => s.setSessions);
+  const appendSessions = useDashboardStore((s) => s.appendSessions);
   const addSession = useDashboardStore((s) => s.addSession);
   const updateSession = useDashboardStore((s) => s.updateSession);
   const removeSession = useDashboardStore((s) => s.removeSession);
@@ -64,6 +67,8 @@ export function useSessionListProvider(
   const loading = useDashboardStore((s) => s.sessionsLoading);
   const error = useDashboardStore((s) => s.sessionsError);
 
+  const [folderCounts, setFolderCounts] = useState<Record<string, number>>({});
+
   // 필터 상태
   const sessionTypeFilter = useDashboardStore((s) => s.sessionTypeFilter);
 
@@ -73,8 +78,8 @@ export function useSessionListProvider(
   const eventSourceRef = useRef<EventSource | null>(null);
 
   /**
-   * 세션 목록을 API로 조회합니다.
-   * 현재 페이지와 필터 상태를 반영합니다.
+   * 세션 목록을 API로 조회합니다 (초기 로드 / 필터 변경 시).
+   * offset=0부터 DEFAULT_PAGE_SIZE만큼 가져와 store를 교체합니다.
    */
   const fetchSessions = useCallback(async () => {
     // 최초 마운트 시에만 로딩 인디케이터 표시.
@@ -88,11 +93,20 @@ export function useSessionListProvider(
 
       const provider = externalProvider ?? getSessionProvider(storageMode);
       const typeFilter = sessionTypeFilter === "all" ? undefined : sessionTypeFilter;
-      const result = await provider.fetchSessions(typeFilter);
+      const result = await provider.fetchSessions({
+        sessionType: typeFilter,
+        offset: 0,
+        limit: DEFAULT_PAGE_SIZE,
+      });
 
       if (abortRef.current) return;
 
       setSessions(result.sessions, result.total);
+
+      // 폴더별 세션 수 조회 (provider가 지원하는 경우)
+      if (provider.fetchFolderCounts) {
+        provider.fetchFolderCounts().then(setFolderCounts).catch(() => {});
+      }
     } catch (err: unknown) {
       if (abortRef.current) return;
 
@@ -109,6 +123,36 @@ export function useSessionListProvider(
   // useCallback 참조 변경이 SSE 재연결이나 Effect 재실행을 유발하지 않는다.
   const fetchSessionsRef = useRef(fetchSessions);
   fetchSessionsRef.current = fetchSessions;
+
+  /**
+   * 다음 페이지 세션을 추가 로드합니다.
+   *
+   * 현재 로드된 세션 수를 offset으로 사용하여 다음 페이지를 가져옵니다.
+   * store의 sessions에 append합니다.
+   */
+  const loadMore = useCallback(async () => {
+    const { sessions: currentSessions, sessionsTotal } = useDashboardStore.getState();
+    if (currentSessions.length >= sessionsTotal) return;
+
+    try {
+      const provider = externalProvider ?? getSessionProvider(storageMode);
+      const typeFilter = sessionTypeFilter === "all" ? undefined : sessionTypeFilter;
+      const result = await provider.fetchSessions({
+        sessionType: typeFilter,
+        offset: currentSessions.length,
+        limit: DEFAULT_PAGE_SIZE,
+      });
+
+      appendSessions(result.sessions, result.total);
+    } catch {
+      // loadMore 실패는 조용히 무시 (다음 스크롤 시 재시도)
+    }
+  }, [storageMode, sessionTypeFilter, appendSessions, getSessionProvider, externalProvider]);
+
+  const loadMoreRef = useRef(loadMore);
+  loadMoreRef.current = loadMore;
+
+  const hasMore = sessions.length < sessionsTotal;
 
   /**
    * SSE delta 이벤트 처리 (sse 모드)
@@ -184,7 +228,7 @@ export function useSessionListProvider(
   const connectSSE = useCallback(() => {
     if (eventSourceRef.current) return;
 
-    const eventSource = new EventSource("/api/sessions/stream");
+    const eventSource = new EventSource(`/api/sessions/stream?limit=${DEFAULT_PAGE_SIZE}`);
     eventSourceRef.current = eventSource;
 
     // 재연결 감지: 에러 후 다시 연결되면 세션 목록을 다시 fetch
@@ -319,6 +363,12 @@ export function useSessionListProvider(
     sessionsTotal,
     loading,
     error,
+    /** 추가 로드 가능 여부 */
+    hasMore,
+    /** 다음 페이지 세션 로드 */
+    loadMore,
+    /** 폴더별 세션 수 (서버 집계값, provider가 fetchFolderCounts를 지원하는 경우) */
+    folderCounts,
     /** 수동 새로고침 */
     refetch: fetchSessions,
     storageMode,

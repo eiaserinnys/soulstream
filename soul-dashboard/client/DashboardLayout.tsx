@@ -39,7 +39,7 @@ export function DashboardLayout() {
   const openNewSessionModal = useDashboardStore((s) => s.openNewSessionModal);
 
   // 세션 목록 구독 (SSE 모드: 실시간, Serendipity 모드: 폴링)
-  const { sessions, loading, error } = useSessionListProvider({ intervalMs: 5000, getSessionProvider });
+  const { sessions, loading, error, folderCounts, hasMore, loadMore } = useSessionListProvider({ intervalMs: 5000, getSessionProvider });
 
   // 활성 세션 구독 (Provider 기반)
   const { status: sseStatus } = useSessionProvider({
@@ -115,11 +115,12 @@ export function DashboardLayout() {
           onCreateFolder={createFolder}
           onRenameFolder={renameFolderOptimistic}
           onDeleteFolder={deleteFolderOptimistic}
+          folderCounts={folderCounts}
         />
       }
       centerPanel={
         viewMode === "feed" ? (
-          <FeedView onNewSession={() => openNewSessionModal('feed')} />
+          <FeedView onNewSession={() => openNewSessionModal('feed')} onLoadMore={loadMore} hasMore={hasMore} />
         ) : (
           <>
             <SessionsTopBar />
@@ -157,7 +158,7 @@ export function DashboardLayout() {
       }
       mobileSessionsView={
         viewMode === "feed" ? (
-          <FeedView onNewSession={() => openNewSessionModal('feed')} />
+          <FeedView onNewSession={() => openNewSessionModal('feed')} onLoadMore={loadMore} hasMore={hasMore} />
         ) : (
           <>
             <SessionsTopBar />

@@ -22,6 +22,12 @@ export interface FolderTreeProps {
   onCreateFolder?: (name: string) => void;
   onRenameFolder?: (folderId: string, newName: string) => void;
   onDeleteFolder?: (folderId: string) => void;
+  /**
+   * 폴더별 세션 수 (서버 집계값).
+   * 제공되면 sessions 배열 필터링 대신 이 값을 우선 사용합니다.
+   * 인피니트 스크롤로 부분 로드된 경우에도 정확한 수를 표시합니다.
+   */
+  folderCounts?: Record<string, number>;
 }
 
 export function FolderTree({
@@ -29,6 +35,7 @@ export function FolderTree({
   onCreateFolder,
   onRenameFolder,
   onDeleteFolder,
+  folderCounts,
 }: FolderTreeProps) {
   const catalog = useDashboardStore((s) => s.catalog);
   const catalogVersion = useDashboardStore((s) => s.catalogVersion);
@@ -57,6 +64,12 @@ export function FolderTree({
 
   const getSessionCount = useCallback(
     (folderId: string | null) => {
+      // folderCounts prop이 있으면 서버 집계값 우선 사용 (부분 로드 상황에서 정확성 보장)
+      if (folderCounts) {
+        const key = folderId === null ? "null" : folderId;
+        return folderCounts[key] ?? 0;
+      }
+      // fallback: sessions 배열 직접 필터링
       if (!catalog) return 0;
       return sessions.filter((s) => {
         const assignment = catalog.sessions[s.agentSessionId];
@@ -66,7 +79,7 @@ export function FolderTree({
         return assignment?.folderId === folderId;
       }).length;
     },
-    [catalog, sessions, catalogVersion],
+    [catalog, sessions, catalogVersion, folderCounts],
   );
 
   const getUnreadCount = useCallback(
