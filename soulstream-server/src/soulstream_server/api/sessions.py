@@ -222,12 +222,10 @@ def create_sessions_router(
                 }
 
             # 라이브 이벤트 릴레이
+            # 노드를 찾지 못해도 에러 이벤트 없이 조용히 종료한다.
+            # 완료된 세션은 노드에 없을 수 있으며, 히스토리 리플레이만으로 충분하다.
             node = node_manager.find_node_for_session(session_id)
             if not node:
-                yield {
-                    "event": "error",
-                    "data": json.dumps({"message": "Session not found on any node"}),
-                }
                 return
 
             queue: asyncio.Queue[dict | None] = asyncio.Queue(maxsize=512)
