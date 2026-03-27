@@ -13,6 +13,7 @@ import type {
   SessionStorageProvider,
   StorageMode,
   SessionListResult,
+  FetchSessionsOptions,
   EventTreeNode,
   SoulSSEEvent,
   SessionStatus,
@@ -22,8 +23,13 @@ import { SSE_EVENT_TYPES } from "@seosoyoung/soul-ui";
 export class OrchestratorSessionProvider implements SessionStorageProvider {
   readonly mode: StorageMode = "sse";
 
-  async fetchSessions(_sessionType?: string): Promise<SessionListResult> {
-    const res = await fetch("/api/catalog");
+  async fetchSessions(options?: FetchSessionsOptions): Promise<SessionListResult> {
+    const params = new URLSearchParams();
+    if (options?.sessionType) params.set("session_type", options.sessionType);
+    if (options?.offset != null && options.offset > 0) params.set("offset", String(options.offset));
+    if (options?.limit != null) params.set("limit", String(options.limit));
+    const qs = params.toString();
+    const res = await fetch(`/api/catalog${qs ? `?${qs}` : ""}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
     const data: {
@@ -48,6 +54,7 @@ export class OrchestratorSessionProvider implements SessionStorageProvider {
         agentName?: string | null;
         agentPortraitUrl?: string | null;
       }>;
+      total: number;
     } = await res.json();
 
     const sessions = data.sessionList.map((s) => ({
@@ -68,7 +75,20 @@ export class OrchestratorSessionProvider implements SessionStorageProvider {
       agentPortraitUrl: s.agentPortraitUrl ?? undefined,
     }));
 
-    return { sessions, total: sessions.length };
+    const total = data.total ?? sessions.length;
+    const loadedCount = (options?.offset ?? 0) + sessions.length;
+    return { sessions, total, hasMore: loadedCount < total };
+  }
+
+  async fetchFolderCounts(): Promise<Record<string, number>> {
+    try {
+      const res = await fetch("/api/catalog/folder-counts");
+      if (!res.ok) return {};
+      const data: { counts: Record<string, number> } = await res.json();
+      return data.counts ?? {};
+    } catch {
+      return {};
+    }
   }
 
   async fetchCards(_sessionKey: string): Promise<EventTreeNode[]> {

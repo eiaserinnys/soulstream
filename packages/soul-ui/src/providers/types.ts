@@ -15,6 +15,16 @@ export type StorageMode = "sse" | "serendipity";
 
 // === Provider 인터페이스 ===
 
+/** 세션 목록 조회 옵션 */
+export interface FetchSessionsOptions {
+  /** 세션 타입 필터 */
+  sessionType?: string;
+  /** 페이지네이션 오프셋 (0-based) */
+  offset?: number;
+  /** 페이지 크기 */
+  limit?: number;
+}
+
 /**
  * 세션 목록을 제공하는 Provider 인터페이스.
  *
@@ -24,11 +34,16 @@ export type StorageMode = "sse" | "serendipity";
 export interface SessionListResult {
   sessions: SessionSummary[];
   total: number;
+  /** 추가 로드 가능 여부 (loaded < total) */
+  hasMore?: boolean;
 }
 
 export interface SessionListProvider {
-  /** 세션 목록 조회 (전체 목록 반환, 가상 스크롤 전용 + 타입 필터) */
-  fetchSessions(sessionType?: string): Promise<SessionListResult>;
+  /** 세션 목록 조회 (페이지네이션 + 타입 필터 지원) */
+  fetchSessions(options?: FetchSessionsOptions): Promise<SessionListResult>;
+
+  /** 폴더별 세션 수 조회. 구현 선택 사항 — 없으면 sessions 배열로 클라이언트 집계. */
+  fetchFolderCounts?(): Promise<Record<string, number>>;
 
   /** Provider 타입 식별자 */
   readonly mode: StorageMode;
