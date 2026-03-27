@@ -195,6 +195,12 @@ def create_app() -> FastAPI:
             },
         }
 
+    # Dashboard status — unified-dashboard의 useServerStatus()가 3초마다 폴링하는 엔드포인트.
+    # soulstream-server는 graceful_shutdown이 없으므로 is_draining은 항상 False.
+    @app.get("/api/status")
+    async def api_status():
+        return {"is_draining": False, "healthy": True}
+
     return app
 
 
