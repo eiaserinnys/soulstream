@@ -319,7 +319,8 @@ class Settings:
 
     @property
     def is_development(self) -> bool:
-        return self.environment == "development"
+        # BaseOAuthSettings와 동일한 로직 — "dev" 단축형 허용
+        return self.environment.lower() in ("development", "dev")
 
 
 @dataclass
