@@ -7,17 +7,13 @@
 
 import { useAppConfig } from "./config/AppConfigContext";
 import { DashboardLayout } from "./DashboardLayout";
+import { OrchestratorDashboardLayout } from "./OrchestratorDashboardLayout";
 
 export function App() {
   const config = useAppConfig();
 
   if (config.mode === "orchestrator") {
-    // Phase 5에서 OrchestratorLayout으로 교체
-    return (
-      <div className="flex h-screen items-center justify-center text-muted-foreground text-sm">
-        Orchestrator mode — layout coming in Phase 5
-      </div>
-    );
+    return <OrchestratorDashboardLayout />;
   }
 
   return <DashboardLayout />;
