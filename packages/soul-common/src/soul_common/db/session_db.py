@@ -5,6 +5,15 @@ PostgresSessionDB - PostgreSQL 기반 세션 저장소
 
 asyncpg 네이티브 async, tsvector 전문검색.
 모든 쿼리는 schema.sql에 정의된 프로시저/함수를 호출한다.
+
+⚠️  DB 어댑터 동기화 규칙 ⚠️
+이 파일(PostgresSessionDB)과 sqlite_session_db.py(SqliteSessionDB)는
+항상 동일한 공개 인터페이스를 유지해야 한다.
+
+메서드를 추가·삭제·시그니처 변경할 때는 반드시 두 파일을 동시에 수정한다.
+한쪽만 바꾸면 로컬 모드(SQLite)와 프로덕션 모드(PostgreSQL)의 동작이 달라진다.
+
+  이 파일 변경 → sqlite_session_db.py 도 반드시 확인
 """
 
 import json
