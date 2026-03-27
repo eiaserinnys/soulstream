@@ -246,8 +246,7 @@ async def api_sessions_stream():
             ),
         }
 
-        event_queue: asyncio.Queue = asyncio.Queue()
-        await session_broadcaster.add_listener(event_queue)
+        event_queue = session_broadcaster.add_client()
         try:
             while True:
                 try:
@@ -259,7 +258,7 @@ async def api_sessions_stream():
                 except asyncio.TimeoutError:
                     yield {"comment": "keepalive"}
         finally:
-            await session_broadcaster.remove_listener(event_queue)
+            session_broadcaster.remove_client(event_queue)
 
     from sse_starlette.sse import EventSourceResponse
     return EventSourceResponse(event_generator())

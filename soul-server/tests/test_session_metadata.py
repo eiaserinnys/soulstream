@@ -246,10 +246,9 @@ class TestTaskManagerAppendMetadata:
         task = await task_manager.create_task(prompt="test")
         sid = task.agent_session_id
 
-        # SSE 리스너 등록
+        # SSE 클라이언트 등록
         broadcaster = get_session_broadcaster()
-        queue = asyncio.Queue()
-        await broadcaster.add_listener(queue)
+        queue = broadcaster.add_client()
 
         # 기존 이벤트 소비 (session_created 등)
         while not queue.empty():
@@ -278,7 +277,7 @@ class TestTaskManagerAppendMetadata:
         session_events = [e for e in events if e.get("type") == "session_updated"]
         assert len(session_events) >= 1
 
-        await broadcaster.remove_listener(queue)
+        broadcaster.remove_client(queue)
 
 
 # ============================================================

@@ -112,7 +112,7 @@ export function NewSessionDialog() {
         selectedNodeId,
         selectedAgentId || null,
         selectedAgent?.name ?? null,
-        selectedAgent?.portrait_url ?? null,
+        selectedAgent?.portraitUrl ?? null,
       );
       closeNewSessionModal();
       setSelectedNodeId("");
@@ -175,8 +175,8 @@ export function NewSessionDialog() {
           {agents.map((a) => (
             <SelectItem key={a.id} value={a.id}>
               <div className="flex items-center gap-2">
-                {a.portrait_url && (
-                  <img src={a.portrait_url} alt={a.name} className="w-5 h-5 rounded shrink-0 object-cover" />
+                {a.portraitUrl && (
+                  <img src={a.portraitUrl} alt={a.name} className="w-5 h-5 rounded shrink-0 object-cover" />
                 )}
                 {a.name}
               </div>

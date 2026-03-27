@@ -236,8 +236,7 @@ class UpstreamAdapter:
         # 이전 연결의 잔여 리스너가 있으면 정리
         await self._stop_broadcast()
 
-        self._broadcast_queue = asyncio.Queue()
-        await self._broadcaster.add_listener(self._broadcast_queue)
+        self._broadcast_queue = self._broadcaster.add_client()
         self._broadcast_task = asyncio.create_task(
             self._broadcast_session_changes(),
             name="upstream-broadcast-sessions",
@@ -254,7 +253,7 @@ class UpstreamAdapter:
         self._broadcast_task = None
 
         if self._broadcast_queue is not None:
-            await self._broadcaster.remove_listener(self._broadcast_queue)
+            self._broadcaster.remove_client(self._broadcast_queue)
             self._broadcast_queue = None
 
     async def _broadcast_session_changes(self) -> None:
