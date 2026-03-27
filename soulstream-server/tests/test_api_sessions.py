@@ -102,7 +102,7 @@ class TestCreateSession:
 
         assert resp.status_code == 201
         body = resp.json()
-        assert body["sessionId"] == "new-sess-id"
+        assert body["agentSessionId"] == "new-sess-id"
         assert body["nodeId"] == "api-node"
 
     async def test_create_session_no_nodes_returns_503(self, client):

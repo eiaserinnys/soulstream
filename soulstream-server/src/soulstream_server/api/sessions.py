@@ -222,12 +222,10 @@ def create_sessions_router(
                 }
 
             # 라이브 이벤트 릴레이
+            # 노드를 찾지 못해도 에러 이벤트 없이 조용히 종료한다.
+            # 완료된 세션은 노드에 없을 수 있으며, 히스토리 리플레이만으로 충분하다.
             node = node_manager.find_node_for_session(session_id)
             if not node:
-                yield {
-                    "event": "error",
-                    "data": json.dumps({"message": "Session not found on any node"}),
-                }
                 return
 
             queue: asyncio.Queue[dict | None] = asyncio.Queue(maxsize=512)
@@ -286,6 +284,13 @@ def create_sessions_router(
             session_data = await db.get_session(session_id)
             if session_data and session_data.get("node_id"):
                 node = node_manager.get_node(session_data["node_id"])
+        if not node:
+            # node_id가 stale하거나 노드가 재연결된 경우 (예: soul-server 재시작 3초 공백)
+            # — 활성 노드 중 첫 번째를 폴백으로 사용한다.
+            # soul-server는 단일 노드 구성이므로 활성 노드가 있으면 그것이 정답이다.
+            active_nodes = node_manager.get_connected_nodes()
+            if active_nodes:
+                node = active_nodes[0]
         if not node:
             raise HTTPException(status_code=404, detail="Session not found")
         return node
