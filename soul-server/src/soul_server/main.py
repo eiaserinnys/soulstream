@@ -118,6 +118,7 @@ async def graceful_shutdown(task_manager, timeout: float = 50.0):
     if _is_draining:
         return
     _is_draining = True
+    app.state.is_draining = True  # /api/status (dashboard)가 이 값을 폴링함
 
     # session_db를 None으로 초기화하여 except 블록의 None 체크가 가능하게 한다.
     # try 내부에서 get_session_db()를 호출하고 실패 시 session_db가 바인딩되지 않으면
@@ -170,6 +171,7 @@ async def graceful_shutdown(task_manager, timeout: float = 50.0):
         if session_db is not None:
             await session_db.clear_shutdown_flags()
         _is_draining = False
+        app.state.is_draining = False  # except 복구 경로에서도 동기화
         raise
 
 
@@ -390,6 +392,7 @@ async def lifespan(app: FastAPI):
     # Dashboard app.state 초기화 (api_router.py에서 접근)
     app.state.runner_pool = pool
     app.state.llm_executor = _llm_executor if llm_adapters else None
+    app.state.is_draining = False  # /api/status (dashboard) 엔드포인트가 이 값을 읽음
 
     # SessionCache 초기화
     _cache_dir = settings.dashboard_cache_dir
