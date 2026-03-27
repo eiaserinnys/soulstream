@@ -85,7 +85,10 @@ export function DashboardLayout() {
   const [currentNodeId, setCurrentNodeId] = useState<string | undefined>(undefined);
   useEffect(() => {
     fetch("/api/node-info")
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error(`node-info: ${r.status}`);
+        return r.json();
+      })
       .then((data: { nodeId?: string }) => {
         if (data.nodeId) setCurrentNodeId(data.nodeId);
         // nodeId 없으면 undefined 유지 → 판단 유보
