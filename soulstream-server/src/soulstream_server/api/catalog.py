@@ -21,7 +21,7 @@ from fastapi import APIRouter
 
 from soul_common.catalog.catalog_service import CatalogService
 from soul_common.db.session_db import PostgresSessionDB
-from soulstream_server.api.sessions import _get_profiles_for_session
+from soulstream_server.api.sessions import _build_portrait_proxy_url
 from soulstream_server.nodes.node_manager import NodeManager
 
 logger = logging.getLogger(__name__)
@@ -64,20 +64,21 @@ def create_catalog_router(
             sid = s.get("session_id", "")
             assignment = folder_assignments.get(sid, {})
 
-            # agent 정보 조회 (_get_profiles_for_session은 동기 함수)
+            # agent 정보 조회 (크로스-노드 fallback 포함)
             agent_id = s.get("agent_id")
-            agent_profiles = _get_profiles_for_session(s, node_manager)
             agentName = None
             agentPortraitUrl = None
-            if agent_id and agent_id in agent_profiles:
-                profile = agent_profiles[agent_id]
-                agentName = profile.get("name")
-                raw_portrait = profile.get("portrait_url")
-                node_id_val = s.get("node_id")
-                if raw_portrait and node_id_val:
-                    agentPortraitUrl = f"/api/nodes/{node_id_val}/agents/{agent_id}/portrait"
-                else:
-                    agentPortraitUrl = raw_portrait
+            if agent_id:
+                found = node_manager.find_agent_profile(
+                    agent_id, preferred_node_id=s.get("node_id")
+                )
+                if found:
+                    profile, source_node_id = found
+                    agentName = profile.get("name")
+                    if profile.get("portrait_url") and source_node_id:
+                        agentPortraitUrl = _build_portrait_proxy_url(
+                            source_node_id, agent_id
+                        )
 
             session_list.append({
                 "session_id": sid,

@@ -198,9 +198,47 @@ async def shutdown_all() -> int:
     for runner in runners:
         try:
             if runner.client:
-                await runner.client.disconnect()
-                count += 1
-                logger.info(f"클라이언트 종료 성공: runner={runner.runner_id}")
+                if (
+                    runner._lifecycle_task is not None
+                    and runner._lifecycle_shutdown_event is not None
+                ):
+                    # Lifecycle task 경유 종료 (anyio cross-task 버그 방지)
+                    shutdown_ev = runner._lifecycle_shutdown_event
+                    lifecycle = runner._lifecycle_task
+                    saved_pid = runner.pid  # 타임아웃 시 force_kill 경로용
+                    runner.client = None
+                    runner.pid = None
+                    runner._lifecycle_task = None
+                    runner._lifecycle_shutdown_event = None
+                    runner._client_session_id = None
+                    runner._client_options_fp = None
+
+                    shutdown_ev.set()
+                    done, _ = await asyncio.wait({lifecycle}, timeout=30.0)
+                    if done:
+                        try:
+                            await lifecycle  # 예외가 있으면 꺼냄; traceback 보존
+                            count += 1
+                            logger.info(f"클라이언트 종료 성공: runner={runner.runner_id}")
+                        except Exception as e:
+                            logger.warning(f"클라이언트 종료 실패: runner={runner.runner_id}, {e}")
+                            if saved_pid:
+                                ClaudeRunner._force_kill_process(saved_pid, runner.runner_id)
+                                count += 1
+                    else:
+                        logger.warning(f"클라이언트 종료 타임아웃: runner={runner.runner_id}")
+                        lifecycle.cancel()
+                        try:
+                            await lifecycle
+                        except (asyncio.CancelledError, Exception):
+                            pass
+                        if saved_pid:
+                            ClaudeRunner._force_kill_process(saved_pid, runner.runner_id)
+                else:
+                    # 직접 disconnect (lifecycle task 없음, 하위 호환)
+                    await runner.client.disconnect()
+                    count += 1
+                    logger.info(f"클라이언트 종료 성공: runner={runner.runner_id}")
         except Exception as e:
             logger.warning(f"클라이언트 종료 실패: runner={runner.runner_id}, {e}")
             if runner.pid:
@@ -227,6 +265,49 @@ def shutdown_all_sync() -> int:
     except Exception as e:
         logger.warning(f"클라이언트 동기 종료 중 오류: {e}")
         return 0
+
+
+async def _client_lifecycle_task(
+    client: "ClaudeSDKClient",
+    ready_event: asyncio.Event,
+    shutdown_event: asyncio.Event,
+    runner_id: str,
+) -> None:
+    """client.connect()와 disconnect()를 동일 asyncio 태스크에서 실행.
+
+    claude_agent_sdk 내부의 anyio TaskGroup은 __aenter__를 호출한 태스크와
+    __aexit__를 호출하는 태스크가 동일해야 한다. runner_pool의 maintenance task가
+    connect()를 호출하고 session task가 disconnect()를 호출하면 anyio CancelScope의
+    _deliver_cancellation이 무한 루프에 빠져 CPU busy loop을 유발한다.
+
+    이 함수를 asyncio.create_task()로 실행하면 connect()와 disconnect()가 같은
+    태스크에서 실행되므로 anyio cross-task 위반이 발생하지 않는다.
+
+    Args:
+        client: 연결할 ClaudeSDKClient
+        ready_event: connect() 완료(성공 또는 실패) 시 set되는 이벤트
+        shutdown_event: disconnect()를 트리거하기 위해 외부에서 set하는 이벤트
+        runner_id: 로깅용 러너 ID
+    """
+    try:
+        await client.connect()
+    except BaseException:
+        # connect() 실패 — ready_event를 set하여 호출자에게 알림.
+        # re-raise하여 태스크에 예외를 저장 (호출자가 task.exception()으로 확인).
+        ready_event.set()
+        raise
+
+    ready_event.set()
+    logger.debug(f"[LIFECYCLE] connect() 완료, shutdown 대기: runner={runner_id}")
+
+    await shutdown_event.wait()
+
+    logger.debug(f"[LIFECYCLE] shutdown_event 수신, disconnect() 호출: runner={runner_id}")
+    try:
+        await client.disconnect()
+        logger.info(f"[LIFECYCLE] disconnect() 완료: runner={runner_id}")
+    except Exception as e:
+        logger.warning(f"[LIFECYCLE] disconnect() 실패: runner={runner_id}, {e}")
 
 
 INTERVENTION_POLL_INTERVAL = 1.0  # 초: 인터벤션 폴링 주기
@@ -320,6 +401,13 @@ class ClaudeRunner:
         self._client_session_id: Optional[str] = None
         # 현재 클라이언트의 옵션 핑거프린트 (설정 불일치 감지용)
         self._client_options_fp: Optional[str] = None
+        # Lifecycle task (anyio cross-task 버그 방지)
+        # connect()와 disconnect()를 동일 asyncio 태스크에서 실행하기 위한 전용 태스크.
+        # claude_agent_sdk 내부의 anyio TaskGroup은 __aenter__를 호출한 태스크와
+        # __aexit__를 호출하는 태스크가 동일해야 한다. 다른 태스크에서 __aexit__를
+        # 호출하면 _deliver_cancellation 루프가 busy loop을 유발한다.
+        self._lifecycle_task: Optional[asyncio.Task] = None
+        self._lifecycle_shutdown_event: Optional[asyncio.Event] = None
 
         # Subagent 추적을 위한 상태
         self._pending_events: deque[EngineEvent] = deque()  # 이벤트 큐
@@ -439,20 +527,43 @@ class ClaudeRunner:
             on_rate_limit=self._observe_rate_limit,
             on_unknown_event=self._observe_unknown_event,
         )
-        logger.info(f"[DEBUG-CLIENT] InstrumentedClaudeClient 인스턴스 생성 완료, connect() 호출...")
+        logger.info(f"[DEBUG-CLIENT] InstrumentedClaudeClient 인스턴스 생성 완료, lifecycle task 시작...")
         t0 = _time.monotonic()
+
+        # Lifecycle task 생성: connect()와 disconnect()를 동일 asyncio 태스크에서 실행.
+        # anyio TaskGroup은 __aenter__ 호출 태스크와 __aexit__ 호출 태스크가 동일해야 한다.
+        ready_event = asyncio.Event()
+        shutdown_event = asyncio.Event()
+        lifecycle_task = asyncio.create_task(
+            _client_lifecycle_task(client, ready_event, shutdown_event, self.runner_id),
+            name=f"lifecycle-{self.runner_id}",
+        )
+
         try:
-            await client.connect()
-            elapsed = _time.monotonic() - t0
-            logger.info(f"[DEBUG-CLIENT] connect() 성공: {elapsed:.2f}s")
-        except Exception as e:
-            elapsed = _time.monotonic() - t0
-            logger.error(f"[DEBUG-CLIENT] connect() 실패: {elapsed:.2f}s, error={e}")
+            await asyncio.wait_for(ready_event.wait(), timeout=30.0)
+        except asyncio.TimeoutError:
+            lifecycle_task.cancel()
             try:
-                await client.disconnect()
-            except Exception:
+                await lifecycle_task
+            except (asyncio.CancelledError, Exception):
                 pass
-            raise
+            elapsed = _time.monotonic() - t0
+            logger.error(f"[DEBUG-CLIENT] connect() 타임아웃: {elapsed:.2f}s")
+            raise TimeoutError(f"ClaudeSDKClient connect() 타임아웃: runner={self.runner_id}")
+
+        elapsed = _time.monotonic() - t0
+
+        # connect() 실패 여부 확인: lifecycle task가 이미 종료됐으면 connect()에서 예외 발생
+        if lifecycle_task.done():
+            exc = lifecycle_task.exception() if not lifecycle_task.cancelled() else None
+            if exc is not None:
+                logger.error(f"[DEBUG-CLIENT] connect() 실패: {elapsed:.2f}s, error={exc}")
+            else:
+                logger.error(f"[DEBUG-CLIENT] lifecycle task 조기 종료: {elapsed:.2f}s")
+            await lifecycle_task  # 원본 traceback 보존하여 re-raise; 정상 종료면 None 반환
+            raise RuntimeError(f"lifecycle task 조기 종료: runner={self.runner_id}")
+
+        logger.info(f"[DEBUG-CLIENT] connect() 성공: {elapsed:.2f}s")
 
         # subprocess PID 추출
         pid: Optional[int] = None
@@ -471,6 +582,8 @@ class ClaudeRunner:
         self.pid = pid
         self._client_session_id = requested_session
         self._client_options_fp = requested_fp
+        self._lifecycle_task = lifecycle_task
+        self._lifecycle_shutdown_event = shutdown_event
         logger.info(
             f"ClaudeSDKClient 생성: runner={self.runner_id}, pid={pid}, "
             f"session={requested_session}, options_fp={requested_fp}"
@@ -481,19 +594,53 @@ class ClaudeRunner:
         """이 러너의 ClaudeSDKClient를 정리"""
         client = self.client
         pid = self.pid
+        lifecycle_task = self._lifecycle_task
+        shutdown_event = self._lifecycle_shutdown_event
+
         self.client = None
         self.pid = None
         self._client_session_id = None
         self._client_options_fp = None
+        self._lifecycle_task = None
+        self._lifecycle_shutdown_event = None
 
         if client is None:
             return
 
-        try:
-            await client.disconnect()
-            logger.info(f"ClaudeSDKClient 정상 종료: runner={self.runner_id}")
-        except Exception as e:
-            logger.warning(f"ClaudeSDKClient disconnect 실패: runner={self.runner_id}, {e}")
+        if lifecycle_task is not None and shutdown_event is not None:
+            # Lifecycle task 경유 종료: shutdown_event를 set하면 lifecycle task가
+            # disconnect()를 호출한다. connect()와 동일한 asyncio 태스크에서 실행되므로
+            # anyio cross-task 위반이 발생하지 않는다.
+            #
+            # asyncio.shield + wait_for 대신 asyncio.wait를 사용한다.
+            # wait_for(shield(task))는 타임아웃 시 shield 래퍼만 취소하고
+            # 원본 태스크를 백그라운드에 남겨 orphan task를 유발한다.
+            shutdown_event.set()
+            done, _ = await asyncio.wait({lifecycle_task}, timeout=30.0)
+            if done:
+                try:
+                    await lifecycle_task  # 예외가 있으면 꺼냄; traceback 보존
+                    logger.info(f"ClaudeSDKClient 정상 종료 (lifecycle): runner={self.runner_id}")
+                except Exception as e:
+                    logger.warning(
+                        f"ClaudeSDKClient lifecycle task 종료 실패: runner={self.runner_id}, {e}"
+                    )
+            else:
+                logger.warning(
+                    f"ClaudeSDKClient disconnect 타임아웃, 강제 취소: runner={self.runner_id}"
+                )
+                lifecycle_task.cancel()
+                try:
+                    await lifecycle_task
+                except (asyncio.CancelledError, Exception):
+                    pass
+        else:
+            # 직접 disconnect (lifecycle task 없음, 하위 호환)
+            try:
+                await client.disconnect()
+                logger.info(f"ClaudeSDKClient 정상 종료: runner={self.runner_id}")
+            except Exception as e:
+                logger.warning(f"ClaudeSDKClient disconnect 실패: runner={self.runner_id}, {e}")
 
         if pid:
             self._force_kill_process(pid, self.runner_id)
@@ -504,14 +651,28 @@ class ClaudeRunner:
         _remove_client()와 달리 disconnect를 호출하지 않습니다.
         반환된 client는 풀이 보유하여 재사용합니다.
 
+        lifecycle task는 disconnect() 없이 취소됩니다.
+        lifecycle task가 `await shutdown_event.wait()`에서 취소되면 그 이후의
+        `disconnect()`는 실행되지 않으므로 client가 disconnect되지 않은 채 반환됩니다.
+
         Returns:
             분리된 ClaudeSDKClient (없으면 None)
         """
         client = self.client
+        lifecycle_task = self._lifecycle_task
+
         self.client = None
         self.pid = None
         self._client_session_id = None
         self._client_options_fp = None
+        self._lifecycle_task = None
+        self._lifecycle_shutdown_event = None
+
+        # lifecycle task를 취소하여 orphan task 방지.
+        # shutdown_event 없이 취소하므로 disconnect()는 호출되지 않는다.
+        if lifecycle_task is not None and not lifecycle_task.done():
+            lifecycle_task.cancel()
+
         return client
 
     def is_idle(self) -> bool:
