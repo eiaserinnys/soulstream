@@ -21,6 +21,7 @@ from fastapi import APIRouter
 
 from soul_common.catalog.catalog_service import CatalogService
 from soul_common.db.session_db import PostgresSessionDB
+from soulstream_server.api.sessions import _build_portrait_proxy_url
 from soulstream_server.nodes.node_manager import NodeManager
 
 logger = logging.getLogger(__name__)
@@ -74,13 +75,10 @@ def create_catalog_router(
                 if found:
                     profile, source_node_id = found
                     agentName = profile.get("name")
-                    raw_portrait = profile.get("portrait_url")
-                    if raw_portrait and source_node_id:
-                        agentPortraitUrl = (
-                            f"/api/nodes/{source_node_id}/agents/{agent_id}/portrait"
+                    if profile.get("portrait_url") and source_node_id:
+                        agentPortraitUrl = _build_portrait_proxy_url(
+                            source_node_id, agent_id
                         )
-                    else:
-                        agentPortraitUrl = raw_portrait
 
             session_list.append({
                 "session_id": sid,
