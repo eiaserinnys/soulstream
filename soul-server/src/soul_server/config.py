@@ -137,8 +137,10 @@ class Settings:
     allowed_email: str = ""
     jwt_secret: str = ""
 
-    # PostgreSQL (필수)
+    # 데이터베이스 (PostgreSQL 또는 SQLite 로컬 모드)
+    # database_url 이 비어있으면 SQLite 로컬 모드로 동작한다.
     database_url: str = ""                     # postgresql://soulstream:***@host:5432/soulstream
+    sqlite_path: str = ""                      # SQLite 파일 경로 (로컬 모드). 비어있으면 {data_dir}/soulstream.db
     soulstream_node_id: str = ""               # 노드 식별자 (예: silent-manari)
 
     # Upstream (소울스트림 연결 — 미설정 시 독립 실행 모드)
@@ -234,6 +236,7 @@ class Settings:
             # Upstream (소울스트림 연결)
             soulstream_upstream_url=os.getenv("SOULSTREAM_UPSTREAM_URL", ""),
             database_url=os.getenv("DATABASE_URL", ""),
+            sqlite_path=os.getenv("SQLITE_PATH", ""),
             soulstream_node_id=os.getenv("SOULSTREAM_NODE_ID", ""),
             soulstream_upstream_enabled=os.getenv(
                 "SOULSTREAM_UPSTREAM_ENABLED", "false"
@@ -277,11 +280,9 @@ class Settings:
         # dashboard_cache_dir은 항상 필수
         if not self.dashboard_cache_dir:
             missing.append("SOUL_DASHBOARD_CACHE_DIR")
-        # node_id와 database_url은 항상 필수
+        # node_id는 항상 필수; database_url은 SQLite 로컬 모드에서 불필요
         if not self.soulstream_node_id:
             missing.append("SOULSTREAM_NODE_ID")
-        if not self.database_url:
-            missing.append("DATABASE_URL")
         # Upstream 활성 시 추가 필수 변수
         if self.soulstream_upstream_enabled:
             if not self.soulstream_upstream_url:
@@ -308,6 +309,9 @@ class Settings:
         if not self.incoming_file_dir:
             # 첨부 파일 → Claude Code가 접근해야 하므로 workspace 기준
             self.incoming_file_dir = str(ws / ".local" / "incoming")
+        if not self.sqlite_path and not self.database_url:
+            # SQLite 로컬 모드: database_url 없으면 data_dir/soulstream.db 사용
+            self.sqlite_path = str(Path(self.data_dir) / "soulstream.db")
 
     @property
     def is_auth_enabled(self) -> bool:
@@ -402,7 +406,8 @@ SETTINGS_REGISTRY: dict[str, SettingMeta] = {
     "llm_openai_api_key": SettingMeta("LLM_OPENAI_API_KEY", "OpenAI API Key", "LLM 프록시용 OpenAI 키", "llm", "str", sensitive=True),
     "llm_anthropic_api_key": SettingMeta("LLM_ANTHROPIC_API_KEY", "Anthropic API Key", "LLM 프록시용 Anthropic 키", "llm", "str", sensitive=True),
     # --- database ---
-    "database_url": SettingMeta("DATABASE_URL", "데이터베이스 URL", "PostgreSQL 연결 URL", "database", "str", sensitive=True, read_only=True),
+    "database_url": SettingMeta("DATABASE_URL", "데이터베이스 URL", "PostgreSQL 연결 URL (비어있으면 SQLite 로컬 모드)", "database", "str", sensitive=True, read_only=True),
+    "sqlite_path": SettingMeta("SQLITE_PATH", "SQLite 경로", "SQLite DB 파일 경로 (로컬 모드. 비어있으면 {data_dir}/soulstream.db 자동 설정)", "database", "str", read_only=True),
     # --- agent ---
     "agents_config_file": SettingMeta("AGENTS_CONFIG_FILE", "에이전트 설정 파일", "agents.yaml 파일 경로 (미설정 시 에이전트 기능 비활성)", "agent", "str", read_only=True),
     # --- paths (전부 read_only) ---
