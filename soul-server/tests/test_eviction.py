@@ -211,6 +211,7 @@ class TestEviction:
             "last_read_event_id": 0,
             "created_at": "2026-01-01T00:00:00+00:00",
             "updated_at": "2026-01-01T00:01:00+00:00",
+            "node_id": "test-node",
         }
 
         # on-demand 로드
@@ -219,6 +220,7 @@ class TestEviction:
         assert task.agent_session_id == "sess-1"
         assert task.status == TaskStatus.COMPLETED
         assert task.claude_session_id == "claude-1"
+        assert task.node_id == "test-node"
 
         # 메모리에 상주시키지 않음
         assert "sess-1" not in manager._tasks
@@ -269,12 +271,14 @@ class TestEviction:
             "last_read_event_id": 0,
             "created_at": "2026-01-01T00:00:00+00:00",
             "updated_at": "2026-01-01T00:01:00+00:00",
+            "node_id": "test-node",
         }
 
         # resume → DB에서 복원
         task = await manager.create_task(prompt="continue", agent_session_id="sess-1")
         assert task.status == TaskStatus.RUNNING
         assert task.resume_session_id == "claude-1"
+        assert task.node_id == "test-node"
         assert "sess-1" in manager._tasks
 
     async def test_add_intervention_evicted_session_auto_resume(self, manager: TaskManager):
@@ -298,12 +302,60 @@ class TestEviction:
             "last_read_event_id": 0,
             "created_at": "2026-01-01T00:00:00+00:00",
             "updated_at": "2026-01-01T00:01:00+00:00",
+            "node_id": "test-node",
         }
 
         # add_intervention → 자동 resume
         result = await manager.add_intervention("sess-1", "이어서", "user1")
         assert result["auto_resumed"] is True
         assert "sess-1" in manager._tasks
+        task = manager._tasks["sess-1"]
+        assert task.node_id == "test-node"
+
+
+class TestLoadEvictedTaskNodeId:
+    """load_evicted_task()가 node_id를 올바르게 복원하는지 단위 검증"""
+
+    async def test_load_evicted_task_restores_node_id(self, manager: TaskManager):
+        """DB에서 복원한 Task에 node_id가 올바르게 설정되는지 확인"""
+        manager._db.get_session.return_value = {
+            "session_id": "sess-node",
+            "status": "completed",
+            "prompt": "test",
+            "client_id": "bot",
+            "claude_session_id": "claude-abc",
+            "session_type": "claude",
+            "last_event_id": 5,
+            "last_read_event_id": 3,
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "updated_at": "2026-01-01T00:01:00+00:00",
+            "node_id": "node-xyz-123",
+        }
+
+        task = await manager._eviction_manager.load_evicted_task(manager._db, "sess-node")
+        assert task is not None
+        assert task.node_id == "node-xyz-123"
+        assert task.agent_session_id == "sess-node"
+        assert task.status == TaskStatus.COMPLETED
+
+    async def test_load_evicted_task_handles_missing_node_id(self, manager: TaskManager):
+        """node_id가 DB 레코드에 없는 경우 None으로 설정 (하위 호환)"""
+        manager._db.get_session.return_value = {
+            "session_id": "sess-legacy",
+            "status": "completed",
+            "prompt": "old session",
+            "client_id": None,
+            "claude_session_id": None,
+            "session_type": "claude",
+            "last_event_id": 0,
+            "last_read_event_id": 0,
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "updated_at": "2026-01-01T00:01:00+00:00",
+        }
+
+        task = await manager._eviction_manager.load_evicted_task(manager._db, "sess-legacy")
+        assert task is not None
+        assert task.node_id is None
 
 
 class TestStartupEviction:
