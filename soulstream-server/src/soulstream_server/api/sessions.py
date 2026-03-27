@@ -7,7 +7,7 @@ Sessions API 라우터 — /api/sessions
 import asyncio
 import json
 import logging
-from typing import Any, Optional
+from typing import Any, Optional  # Optional: _session_to_response, node_manager 파라미터에 사용
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
@@ -87,11 +87,8 @@ def create_sessions_router(
             folder_id=folderId,
         )
 
-        # snake_case -> camelCase 변환
-        result = []
-        for s in sessions:
-            profiles = _get_profiles_for_session(s, node_manager)
-            result.append(_session_to_response(s, profiles))
+        # snake_case -> camelCase 변환 (크로스-노드 에이전트 프로필 fallback 포함)
+        result = [_session_to_response(s, node_manager=node_manager) for s in sessions]
 
         next_cursor = None
         if offset + limit < total:
@@ -121,7 +118,7 @@ def create_sessions_router(
         async def event_generator():
             # 초기 세션 목록 전송
             sessions, total = await db.get_all_sessions(offset=0, limit=200)
-            result = [_session_to_response(s, _get_profiles_for_session(s, node_manager)) for s in sessions]
+            result = [_session_to_response(s, node_manager=node_manager) for s in sessions]
             yield {
                 "event": "session_list",
                 "data": json.dumps({
@@ -367,14 +364,21 @@ def create_sessions_router(
     return router
 
 
-def _get_profiles_for_session(s: dict, node_manager: NodeManager) -> dict:
-    """세션이 속한 노드의 agent_profiles 반환."""
-    node = node_manager.find_node_for_session(s.get("session_id", ""))
-    return node.agent_profiles if node else {}
+def _build_portrait_proxy_url(source_node_id: str, agent_id: str) -> str:
+    """에이전트 portrait 프록시 URL을 조립한다. (API 계층 전용)"""
+    return f"/api/nodes/{source_node_id}/agents/{agent_id}/portrait"
 
 
-def _session_to_response(s: dict, agent_profiles: Optional[dict] = None) -> dict:
-    """DB 세션 레코드를 API 응답 형식으로 변환."""
+def _session_to_response(
+    s: dict,
+    node_manager: Optional[NodeManager] = None,
+) -> dict:
+    """DB 세션 레코드를 API 응답 형식으로 변환.
+
+    node_manager가 제공되면 크로스-노드 에이전트 프로필 fallback을 사용한다.
+    원격 노드(eias-linegames 등)의 agent_profiles가 비어있을 때
+    다른 연결된 노드에서 같은 에이전트 프로필을 찾는다.
+    """
     created_at = s.get("created_at")
     if hasattr(created_at, "isoformat"):
         created_at = created_at.isoformat()
@@ -382,7 +386,6 @@ def _session_to_response(s: dict, agent_profiles: Optional[dict] = None) -> dict
     if hasattr(updated_at, "isoformat"):
         updated_at = updated_at.isoformat()
 
-    _profiles = agent_profiles or {}
     result = {
         "agentSessionId": s.get("session_id"),
         "status": s.get("status"),
@@ -402,14 +405,16 @@ def _session_to_response(s: dict, agent_profiles: Optional[dict] = None) -> dict
         "agentName": None,
         "agentPortraitUrl": None,
     }
-    if s.get("agent_id") and s["agent_id"] in _profiles:
-        profile = _profiles[s["agent_id"]]
-        result["agentName"] = profile.get("name")
-        # portrait_url을 오케스트레이터 프록시 URL로 변환
-        raw_portrait = profile.get("portrait_url")
-        node_id = s.get("node_id")
-        if raw_portrait and node_id:
-            result["agentPortraitUrl"] = f"/api/nodes/{node_id}/agents/{s['agent_id']}/portrait"
-        else:
-            result["agentPortraitUrl"] = raw_portrait
+
+    agent_id = s.get("agent_id")
+    if agent_id and node_manager is not None:
+        found = node_manager.find_agent_profile(agent_id, s.get("node_id"))
+        if found:
+            profile, source_node_id = found
+            result["agentName"] = profile.get("name")
+            if profile.get("portrait_url") and source_node_id:
+                result["agentPortraitUrl"] = _build_portrait_proxy_url(
+                    source_node_id, agent_id
+                )
+
     return result
