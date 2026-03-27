@@ -15,6 +15,10 @@ export default defineConfig({
       // soul-ui 소스를 직접 alias로 참조할 때 soul-ui의 peer/deps를 찾을 수 있도록 명시적 alias 추가.
       // pnpm의 node_modules 구조상 Rollup이 packages/soul-ui/node_modules를 자동으로 탐색하지 않음.
       "@base-ui/react": resolve(__dirname, "../packages/soul-ui/node_modules/@base-ui/react"),
+      "clsx": resolve(__dirname, "../packages/soul-ui/node_modules/clsx"),
+      "class-variance-authority": resolve(__dirname, "../packages/soul-ui/node_modules/class-variance-authority"),
+      "tailwind-merge": resolve(__dirname, "../packages/soul-ui/node_modules/tailwind-merge"),
+      "lucide-react": resolve(__dirname, "../packages/soul-ui/node_modules/lucide-react"),
       // @xyflow/react는 soul-dashboard 의존성이므로 soul-dashboard/node_modules에서 참조
       "@xyflow/react": resolve(__dirname, "../soul-dashboard/node_modules/@xyflow/react"),
     },
