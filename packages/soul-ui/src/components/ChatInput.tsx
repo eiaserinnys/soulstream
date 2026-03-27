@@ -176,6 +176,11 @@ export function ChatInput({ additionalDisabled = false }: ChatInputProps = {}) {
         await response.json();
         setText("");
         if (activeSessionKey) clearDraft(activeSessionKey);
+        // intervene 성공 즉시 세션 상태를 running으로 업데이트하여
+        // subscriptionEpoch를 즉시 증가시킨다 (5초 폴링 대기 없이 SSE 재구독).
+        if (activeSessionKey) {
+          useDashboardStore.getState().updateSession(activeSessionKey, { status: "running" });
+        }
       }
     } catch (err) {
       // AbortError는 의도적 취소이므로 무시
