@@ -209,6 +209,10 @@ export function useSessionListProvider(
         case "catalog_updated":
           useDashboardStore.getState().setCatalog(event.catalog);
           break;
+
+        case "metadata_updated":
+          updateSession(event.session_id, { metadata: event.metadata });
+          break;
       }
     },
     [addSession, updateSession, removeSession, setSessionsError]
