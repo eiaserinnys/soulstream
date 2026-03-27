@@ -1,0 +1,148 @@
+/**
+ * DashboardLayout - unified-dashboard 메인 레이아웃 (single-node 모드)
+ *
+ * DashboardShell 위에 unified-dashboard 전용 훅과 컴포넌트를 조합한다.
+ * 레이아웃 구조(3패널 리사이즈, 모바일 반응형)는 DashboardShell이 담당한다.
+ *
+ * soul-dashboard 대비 변경 사항:
+ * - node-info 엔드포인트 제거 (BFF 없음) → isOtherNode = false 고정
+ * - serendipityAvailable 로드 제거 (세렌디피티 기능 미사용)
+ * - ConfigModal / SearchModal / DrainBanner는 Phase 4에서 추가
+ */
+
+import { useEffect } from "react";
+import { FolderContents } from "./components/FolderContents";
+import {
+  createFolder,
+  renameFolderOptimistic,
+  deleteFolderOptimistic,
+} from "./lib/folder-operations";
+import { moveSessionsOptimistic } from "./lib/move-sessions";
+import {
+  NodeGraph,
+  SessionsTopBar,
+  MobileChatHeader,
+  VerticalSplitPane,
+  StorageModeToggleCompact,
+  ThemeToggle,
+  useSessionProvider,
+  useReadPositionSync,
+  useNotification,
+  useUrlSync,
+  useDashboardConfig,
+  DashboardShell,
+  FolderTree,
+  FeedView,
+  RightPanel,
+  ChatView,
+  initTheme,
+  useDashboardStore,
+  ConnectionBadge,
+  useSessionListProvider,
+} from "@seosoyoung/soul-ui";
+import { getSessionProvider } from "./providers";
+
+export function DashboardLayout() {
+  const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
+  const viewMode = useDashboardStore((s) => s.viewMode);
+  const openNewSessionModal = useDashboardStore((s) => s.openNewSessionModal);
+
+  // 세션 목록 구독 (SSE 모드: 실시간, Serendipity 모드: 폴링)
+  const { sessions: _sessions, loading: _loading, error: _error, folderCounts, hasMore, loadMore } = useSessionListProvider({
+    intervalMs: 5000,
+    getSessionProvider,
+  });
+
+  // 활성 세션 구독 (Provider 기반)
+  const { status: sseStatus } = useSessionProvider({
+    sessionKey: activeSessionKey,
+    getSessionProvider,
+  });
+
+  // 테마 초기화 (localStorage → OS 설정 → dark 기본)
+  useEffect(() => { initTheme(); }, []);
+
+  // 읽음 상태 동기화 (세션 선택 시 즉시 + 활성 세션 이벤트 도착 시 debounce)
+  useReadPositionSync();
+
+  // 브라우저 알림 (완료/에러/인터벤션)
+  useNotification();
+
+  // URL ↔ 스토어 동기화 (/{sessionId} 라우팅)
+  useUrlSync();
+
+  // 대시보드 프로필 설정 로드
+  useDashboardConfig();
+
+  // unified-dashboard: BFF 없음 → isOtherNode는 항상 false
+  // (Phase 5 orchestrator 모드에서 노드별 판별이 필요하면 OrchestratorSessionProvider로 처리)
+  const isOtherNode = false;
+
+  return (
+    <DashboardShell
+      title="Soul Dashboard"
+      leftPanel={
+        <FolderTree
+          onMoveSessions={moveSessionsOptimistic}
+          onCreateFolder={createFolder}
+          onRenameFolder={renameFolderOptimistic}
+          onDeleteFolder={deleteFolderOptimistic}
+          folderCounts={folderCounts}
+        />
+      }
+      centerPanel={
+        viewMode === "feed" ? (
+          <FeedView
+            onNewSession={() => openNewSessionModal("feed")}
+            onLoadMore={loadMore}
+            hasMore={hasMore}
+          />
+        ) : (
+          <>
+            <SessionsTopBar />
+            <VerticalSplitPane
+              className="flex-1 overflow-hidden"
+              top={<FolderContents onLoadMore={loadMore} hasMore={hasMore} />}
+              bottom={
+                <div className="flex-1 overflow-hidden h-full bg-muted/50 dark:bg-muted/30">
+                  <NodeGraph />
+                </div>
+              }
+            />
+          </>
+        )
+      }
+      rightPanel={<RightPanel chatInputDisabled={isOtherNode} />}
+      connectionStatus={sseStatus}
+      headerRight={
+        <>
+          <ThemeToggle />
+          <StorageModeToggleCompact />
+        </>
+      }
+      mobileSessionsView={
+        viewMode === "feed" ? (
+          <FeedView
+            onNewSession={() => openNewSessionModal("feed")}
+            onLoadMore={loadMore}
+            hasMore={hasMore}
+          />
+        ) : (
+          <>
+            <SessionsTopBar />
+            <FolderContents onLoadMore={loadMore} hasMore={hasMore} />
+          </>
+        )
+      }
+      mobileChatHeader={(onBack) => <MobileChatHeader onBack={onBack} />}
+      mobileChatView={<ChatView chatInputDisabled={isOtherNode} />}
+      mobileSheetFooter={
+        <>
+          <ThemeToggle />
+          <StorageModeToggleCompact />
+          <ConnectionBadge status={sseStatus} />
+        </>
+      }
+    />
+  );
+}

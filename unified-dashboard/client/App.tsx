@@ -6,6 +6,7 @@
  */
 
 import { useAppConfig } from "./config/AppConfigContext";
+import { DashboardLayout } from "./DashboardLayout";
 
 export function App() {
   const config = useAppConfig();
@@ -19,10 +20,5 @@ export function App() {
     );
   }
 
-  // single-node mode — Phase 2에서 DashboardLayout으로 교체
-  return (
-    <div className="flex h-screen items-center justify-center text-muted-foreground text-sm">
-      Single-node mode — layout coming in Phase 2
-    </div>
-  );
+  return <DashboardLayout />;
 }

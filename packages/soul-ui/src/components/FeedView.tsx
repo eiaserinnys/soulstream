@@ -28,6 +28,7 @@ export function FeedView({ onNewSession, onLoadMore, hasMore }: FeedViewProps = 
   const viewMode = useDashboardStore((s) => s.viewMode);
   const sessions = useDashboardStore((s) => s.sessions);
   const catalog = useDashboardStore((s) => s.catalog);
+  const catalogVersion = useDashboardStore((s) => s.catalogVersion);
   const getFeedSessions = useDashboardStore((s) => s.getFeedSessions);
   const setActiveSession = useDashboardStore((s) => s.setActiveSession);
   const clearActiveSession = useDashboardStore((s) => s.clearActiveSession);
@@ -42,8 +43,9 @@ export function FeedView({ onNewSession, onLoadMore, hasMore }: FeedViewProps = 
     return () => clearInterval(timer);
   }, []);
 
-  // sessions가 변경될 때마다 getFeedSessions 재계산 (memoized)
-  const feedSessions = useMemo(() => getFeedSessions(), [sessions, getFeedSessions]);
+  // sessions 또는 catalog가 변경될 때마다 getFeedSessions 재계산 (memoized)
+  // catalogVersion을 deps에 포함하여 세션 이름 변경 시 피드 카드 즉시 반영
+  const feedSessions = useMemo(() => getFeedSessions(), [sessions, getFeedSessions, catalogVersion]);
   const firstFeedId = feedSessions[0]?.agentSessionId ?? null;
 
   // 폴더명 조회 헬퍼
