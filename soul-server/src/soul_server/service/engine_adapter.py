@@ -146,6 +146,7 @@ def build_soulstream_context_item(
     workspace_dir: str,
     folder_name: Optional[str] = None,
     node_id: Optional[str] = None,
+    agent_id: Optional[str] = None,
 ) -> dict:
     """소울스트림 자체 세션 메타데이터 context_item을 생성한다."""
     hostname = socket.gethostname()
@@ -179,6 +180,8 @@ def build_soulstream_context_item(
         "os_version": os_version,
         "current_time": datetime.now(timezone.utc).isoformat(),
     }
+    if agent_id:
+        content["agent_id"] = agent_id
     return {
         "key": "soulstream_session",
         "label": "Soulstream 세션 정보",
