@@ -139,9 +139,8 @@ def create_sessions_router() -> APIRouter:
                 }, ensure_ascii=False, default=str),
             }
 
-            # 리스너 등록
-            event_queue = asyncio.Queue()
-            await session_broadcaster.add_listener(event_queue)
+            # 클라이언트 큐 등록
+            event_queue = session_broadcaster.add_client()
 
             try:
                 while True:
@@ -159,7 +158,7 @@ def create_sessions_router() -> APIRouter:
                         yield {"comment": "keepalive"}
 
             finally:
-                await session_broadcaster.remove_listener(event_queue)
+                session_broadcaster.remove_client(event_queue)
 
         return EventSourceResponse(event_generator())
 
