@@ -17,7 +17,7 @@ import os
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
@@ -219,25 +219,43 @@ async def api_status(request: Request):
 # === /api/sessions (GET) ===
 
 @router.get("/api/sessions", dependencies=[Depends(require_dashboard_auth)])
-async def api_get_sessions(session_type: Optional[str] = None):
+async def api_get_sessions(
+    session_type: Optional[str] = None,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=0),
+):
     task_manager = get_task_manager()
     sessions, total = await task_manager.get_all_sessions(
-        offset=0, limit=0, session_type=session_type
+        offset=offset, limit=limit, session_type=session_type
     )
     return {"sessions": sessions, "total": total}
+
+
+# === /api/sessions/folder-counts (GET) — 고정 경로, 반드시 stream/events보다 먼저 등록 ===
+
+@router.get("/api/sessions/folder-counts", dependencies=[Depends(require_dashboard_auth)])
+async def api_session_folder_counts():
+    """폴더별 세션 수 조회 (GET /api/sessions/folder-counts)"""
+    from soul_server.config import get_settings
+    from soul_server.service.postgres_session_db import get_session_db
+    node_id = get_settings().soulstream_node_id or None
+    db = get_session_db()
+    counts = await db.get_folder_counts(node_id=node_id)
+    # None 키(폴더 미지정)는 JSON 직렬화 시 "null" 문자열로 변환
+    return {"counts": {str(k) if k is not None else "null": v for k, v in counts.items()}}
 
 
 # === /api/sessions/stream (GET) — 고정 경로, 반드시 먼저 등록 ===
 
 @router.get("/api/sessions/stream", dependencies=[Depends(require_dashboard_auth)])
-async def api_sessions_stream():
+async def api_sessions_stream(limit: int = Query(50, ge=0)):
     """세션 목록 변경 SSE 스트림 (GET /api/sessions/stream)"""
 
     async def event_generator():
         task_manager = get_task_manager()
         session_broadcaster = get_session_broadcaster()
 
-        sessions, total = await task_manager.get_all_sessions()
+        sessions, total = await task_manager.get_all_sessions(offset=0, limit=limit)
         yield {
             "event": "session_list",
             "data": json.dumps(

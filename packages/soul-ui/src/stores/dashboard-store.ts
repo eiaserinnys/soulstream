@@ -185,6 +185,7 @@ export interface DashboardActions {
 
   // 세션 목록
   setSessions: (sessions: SessionSummary[], total?: number) => void;
+  appendSessions: (sessions: SessionSummary[], total: number) => void;
   addSession: (session: SessionSummary) => void;
   updateSession: (
     agentSessionId: string,
@@ -409,6 +410,12 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         sessionsTotal: total ?? sessions.length,
         sessionsError: null,
       }),
+
+      appendSessions: (newSessions, total) => set((state) => ({
+        sessions: [...state.sessions, ...newSessions],
+        sessionsTotal: total,
+        sessionsError: null,
+      })),
 
       addSession: (session) => {
         const { sessions, sessionsTotal } = get();

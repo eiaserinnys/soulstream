@@ -71,7 +71,7 @@ export function App() {
   useNodes();
 
   // 세션 목록 구독 (SSE 모드: 실시간)
-  useSessionListProvider({
+  const { folderCounts, hasMore, loadMore } = useSessionListProvider({
     intervalMs: 5000,
     getSessionProvider: () => orchestratorSessionProvider,
   });
@@ -123,13 +123,14 @@ export function App() {
           onCreateFolder={folderOps.createFolder}
           onRenameFolder={folderOps.renameFolderOptimistic}
           onDeleteFolder={folderOps.deleteFolderOptimistic}
+          folderCounts={folderCounts}
         />
       }
       leftPanelBottom={<NodePanel />}
       leftBottomRatio={3}
       centerPanel={
         viewMode === "feed" ? (
-          <FeedView onNewSession={() => openNewSessionModal('feed')} />
+          <FeedView onNewSession={() => openNewSessionModal('feed')} onLoadMore={loadMore} hasMore={hasMore} />
         ) : (
           <>
             <SessionsTopBar />
