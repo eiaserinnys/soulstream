@@ -44,6 +44,19 @@ export const STATUS_CONFIG: Record<SessionStatus, StatusConfig> = {
   unknown:      { dotClass: "bg-muted-foreground",  animate: false },
 };
 
+function SessionPortrait({ url }: { url: string }) {
+  const [error, setError] = useState(false);
+  if (error) return null;
+  return (
+    <img
+      src={url}
+      alt=""
+      className="self-stretch w-6 rounded object-cover shrink-0"
+      onError={() => setError(true)}
+    />
+  );
+}
+
 const SessionItem = memo(function SessionItem({
   session,
   isActive,
@@ -107,6 +120,9 @@ const SessionItem = memo(function SessionItem({
           config.animate && "animate-[pulse_2s_infinite]",
         )}
       />
+      {session.agentPortraitUrl && (
+        <SessionPortrait url={session.agentPortraitUrl} />
+      )}
       <div className="flex-1 min-w-0">
         {isEditing ? (
           <input
