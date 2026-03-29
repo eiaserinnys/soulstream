@@ -40,7 +40,7 @@ class TaskExecutor:
         listener_manager: "TaskListenerManager",
         get_intervention_func: Callable[[str], Awaitable[Optional[dict]]],
         finalize_task_func: Callable[..., Awaitable[Optional[Task]]],
-        register_session_func: Optional[Callable[..., None]] = None,
+        register_session_func: Optional[Callable[..., Awaitable[None]]] = None,
         session_db: Optional["PostgresSessionDB"] = None,
         metadata_extractor: Optional["MetadataExtractor"] = None,
         append_metadata_func: Optional[Callable] = None,
@@ -280,10 +280,9 @@ class TaskExecutor:
 
                     # claude_session_id 등록 (인터벤션 역인덱스)
                     if event.type == "session" and self._register_session:
-                        self._register_session(
+                        await self._register_session(
                             event_dict.get("session_id", ""),
                             session_id,
-                            agent_id=task.profile_id,
                         )
 
                     # 진행 상황 저장 (재연결용)
@@ -331,11 +330,11 @@ class TaskExecutor:
                             )
 
                     # 완료 또는 오류 시 태스크 상태 업데이트
+                    # claude_session_id는 register_session() 경로에서만 DB에 기록한다.
                     if event.type == "complete":
                         await self._finalize_task(
                             session_id,
                             result=event.result,
-                            claude_session_id=event.claude_session_id,
                         )
                     elif event.type == "error":
                         await self._finalize_task(session_id, error=event.message)

@@ -154,7 +154,7 @@ def _make_executor(
         listener_manager=listener_manager,
         get_intervention_func=AsyncMock(return_value=None),
         finalize_task_func=AsyncMock(),
-        register_session_func=MagicMock(),
+        register_session_func=AsyncMock(),
         session_db=session_db,
     )
 

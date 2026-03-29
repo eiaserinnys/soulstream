@@ -46,6 +46,9 @@ _TIMESTAMP_COLUMNS = frozenset({"created_at", "updated_at"})
 # JSONB 컬럼 목록 — Python dict ↔ PostgreSQL JSONB 자동 변환
 _JSONB_COLUMNS = frozenset({"last_message", "metadata"})
 
+# 최초 설정 이후 덮어쓸 수 없는 식별 필드
+IMMUTABLE_FIELDS: frozenset[str] = frozenset({"claude_session_id", "node_id", "agent_id"})
+
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
@@ -119,6 +122,23 @@ class PostgresSessionDB:
         invalid = set(fields) - _SESSION_COLUMNS
         if invalid:
             raise ValueError(f"Invalid session columns: {invalid}")
+
+        # 불변 필드 보호: non-null 값으로 덮어쓰기 시도 시 기존 값 확인 후 충돌 방지
+        immutable_updates = {k: v for k, v in fields.items() if k in IMMUTABLE_FIELDS and v is not None}
+        if immutable_updates:
+            row = await self._pool.fetchrow(
+                "SELECT claude_session_id, node_id, agent_id FROM sessions WHERE session_id = $1",
+                session_id,
+            )
+            if row:
+                existing = dict(row)
+                for field, new_val in immutable_updates.items():
+                    old_val = existing.get(field)
+                    if old_val is not None and old_val != new_val:
+                        raise ValueError(
+                            f"Immutable field '{field}' already set to {old_val!r}, "
+                            f"cannot overwrite with {new_val!r}"
+                        )
 
         # JSONB 컬럼은 JSON 문자열로 직렬화
         for col in _JSONB_COLUMNS:
