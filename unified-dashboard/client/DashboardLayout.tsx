@@ -20,6 +20,7 @@ import {
   updateFolderSettingsOptimistic,
 } from "./lib/folder-operations";
 import { moveSessionsOptimistic } from "./lib/move-sessions";
+import { renameSessionOptimistic } from "./lib/rename-session";
 import { computeIsOtherNode } from "./lib/node-guard";
 import { NewSessionModal } from "./components/NewSessionModal";
 import { ConfigButton } from "./components/ConfigButton";
@@ -132,6 +133,7 @@ export function DashboardLayout() {
             onNewSession={() => openNewSessionModal("feed")}
             onLoadMore={loadMore}
             hasMore={hasMore}
+            onRenameSession={renameSessionOptimistic}
           />
         ) : (
           <>
@@ -173,6 +175,7 @@ export function DashboardLayout() {
             onNewSession={() => openNewSessionModal("feed")}
             onLoadMore={loadMore}
             hasMore={hasMore}
+            onRenameSession={renameSessionOptimistic}
           />
         ) : (
           <>
