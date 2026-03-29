@@ -125,23 +125,43 @@ class TaskManager:
         claude_session_id: str,
         agent_session_id: str,
     ) -> None:
-        """claude_session_id → agent_session_id 매핑 등록 및 DB 영속화
+        """4-ID 원자적 등록 및 claude_session_id → agent_session_id 인덱스 설정.
 
         SoulEngineAdapter가 session 이벤트를 발행할 때 호출합니다.
-        task.claude_session_id를 여기서 저장하고 DB에도 기록함으로써,
-        graceful_shutdown 또는 서버 재기동 후에도 resume 가능하게 합니다.
+        create_task()는 DB INSERT를 하지 않으므로, 이 메서드가 단일 DB 등록 경로입니다.
+        session_register 프로시저(순수 INSERT, ON CONFLICT 없음)로 4-ID를 원자적으로 기록합니다.
 
-        claude_session_id는 이 메서드만이 DB에 기록하는 단일 쓰기 경로입니다.
-        finalize_task/start_task 등 다른 경로에서 claude_session_id를 DB에 쓰지 않습니다.
+        node_id, agent_id, claude_session_id, session_type은 이 메서드만이 DB에 기록합니다.
+        finalize_task/create_task(resume) 등 다른 경로에서는 불변 필드를 DB에 쓰지 않습니다.
         """
         self._session_index[claude_session_id] = agent_session_id
-        # task.claude_session_id 즉시 저장: complete_task()보다 먼저 재시작이 오더라도 resume 가능
+        # 인메모리 Task에 즉시 반영: complete_task()보다 먼저 재시작이 와도 resume 가능
         task = self._tasks.get(agent_session_id)
         if task:
             task.claude_session_id = claude_session_id
-        # DB에 영속화: 서버 재기동 후 resume 시 claude_session_id를 읽을 수 있게 한다
-        await self._db.upsert_session(agent_session_id, claude_session_id=claude_session_id)
-        logger.info(f"Session index registered: {claude_session_id} -> {agent_session_id}")
+        # 4-ID 원자적 DB 등록: server restart 후 resume 시 모든 식별자를 읽을 수 있게 한다
+        await self._db.register_session_initial(
+            session_id=agent_session_id,
+            node_id=task.node_id if task else self._db.node_id,
+            agent_id=task.profile_id if task else None,
+            claude_session_id=claude_session_id,
+            session_type=task.session_type if task else "claude",
+            prompt=task.prompt if task else None,
+            client_id=task.client_id if task else None,
+            status=TaskStatus.RUNNING.value if task else "running",
+            created_at=task.created_at if task else None,
+        )
+        logger.info(f"Session registered (4-ID): {claude_session_id} -> {agent_session_id}")
+
+        # DB 행이 생성된 후 폴더 배정 처리 (create_task()에서 task.pending_folder_id에 저장됨)
+        pending_folder = task.pending_folder_id if task else None
+        if task:
+            task.pending_folder_id = None  # 배정 완료 후 초기화
+        await self._assign_default_folder_and_broadcast(
+            agent_session_id,
+            task.session_type if task else "claude",
+            folder_id=pending_folder,
+        )
 
     def get_task_by_claude_session(self, claude_session_id: str) -> Optional[Task]:
         """claude_session_id로 태스크 조회"""
@@ -278,16 +298,17 @@ class TaskManager:
         task.node_id = self._db.node_id
         async with self._lock:
             self._tasks[task.agent_session_id] = task
-        await self._db.upsert_session(
-            task.agent_session_id,
-            status=task.status.value,
-            prompt=task.prompt,
-            session_type=task.session_type,
-            client_id=task.client_id,
-            claude_session_id=task.claude_session_id,
-            created_at=datetime_to_str(task.created_at),
+        # LLM 세션은 claude_session_id가 없으므로 None으로 등록한다
+        await self._db.register_session_initial(
+            session_id=task.agent_session_id,
             node_id=self._db.node_id,
             agent_id=task.profile_id,
+            claude_session_id=None,
+            session_type=task.session_type,
+            prompt=task.prompt,
+            client_id=task.client_id,
+            status=task.status.value,
+            created_at=task.created_at,
         )
 
         # 기본 폴더 자동 배정 + 카탈로그 브로드캐스트
@@ -344,9 +365,9 @@ class TaskManager:
                     setattr(task, key, value)
 
         # DB 업데이트 + LRU 퇴거 후보 등록
-        # claude_session_id와 node_id는 register_session / add_task에서만 기록한다.
-        # finalize_task에서는 상태와 완료 시각만 업데이트한다.
-        await self._db.upsert_session(
+        # 불변 필드는 register_session()에서만 기록한다.
+        # finalize_task는 상태와 완료 시각만 업데이트한다.
+        await self._db.update_session(
             agent_session_id,
             status=task.status.value,
             updated_at=datetime_to_str(task.completed_at),
@@ -575,27 +596,23 @@ class TaskManager:
 
         if is_new:
             task.node_id = self._db.node_id
-
-        # DB에 세션 등록/업데이트
-        # claude_session_id는 register_session()에서만 기록한다 (단일 쓰기 경로).
-        # node_id와 agent_id는 신규 세션 최초 등록 시에만 기록한다.
-        upsert_fields: dict = dict(
-            status=TaskStatus.RUNNING.value,
-            prompt=prompt,
-            session_type=task.session_type,
-            client_id=task.client_id,
-            created_at=datetime_to_str(task.created_at),
-        )
-        if is_new:
-            upsert_fields["node_id"] = task.node_id
-            upsert_fields["agent_id"] = task.profile_id
-        await self._db.upsert_session(agent_session_id, **upsert_fields)
-
-        # 새 세션이면 폴더에 배치 + 카탈로그 브로드캐스트
-        if is_new:
-            await self._assign_default_folder_and_broadcast(
-                agent_session_id, task.session_type, folder_id=folder_id
+            # 신규 세션: DB INSERT는 register_session()이 담당 (Claude Code session 이벤트 수신 시).
+            # 이 시점에는 claude_session_id가 아직 없으므로 4-ID 등록이 불완전하다.
+            # create_task()는 인메모리 _tasks에만 등록한다.
+            # 폴더 배정도 DB 행 생성 후 register_session()에서 처리 (DB 행 없으면 배정 불가).
+            task.pending_folder_id = folder_id
+        else:
+            # 재개 세션: 불변 필드를 제외한 상태만 업데이트한다.
+            await self._db.update_session(
+                agent_session_id,
+                status=TaskStatus.RUNNING.value,
+                prompt=prompt,
+                client_id=task.client_id,
             )
+
+        # 새 세션이면 브로드캐스트 (폴더 배정은 register_session() 시점에 처리)
+        if is_new:
+            pass  # 폴더 배정은 task.pending_folder_id를 통해 register_session()에서 처리
 
         # 세션 목록 변경을 대시보드에 브로드캐스트 (부가 기능 — 실패해도 태스크 생성에 영향 없음)
         try:
@@ -879,7 +896,7 @@ class TaskManager:
             logger.info(f"Fixed {fixed} orphaned running sessions")
             # DB 업데이트 + 퇴거 후보 등록
             for task in fixed_tasks:
-                await self._db.upsert_session(
+                await self._db.update_session(
                     task.agent_session_id,
                     status=TaskStatus.INTERRUPTED.value,
                     updated_at=datetime_to_str(task.completed_at),

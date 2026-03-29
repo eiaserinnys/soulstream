@@ -139,6 +139,10 @@ class Task:
     # 노드 식별 (런타임 전용, DB에서 별도 관리)
     node_id: Optional[str] = None
 
+    # 대기 중인 폴더 배정 (런타임 전용, 영속화 안 됨)
+    # create_task()에서 지정한 folder_id를 보관했다가 register_session() 시점(DB INSERT 완료 후)에 처리한다.
+    pending_folder_id: Optional[str] = field(default=None, repr=False)
+
     # 런타임 전용 (영속화 안 됨)
     intervention_queue: asyncio.Queue = field(default_factory=asyncio.Queue, repr=False)
     execution_task: Optional[asyncio.Task] = field(default=None, repr=False)
