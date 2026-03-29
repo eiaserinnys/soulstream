@@ -175,6 +175,13 @@ export function FeedView({ onNewSession, onLoadMore, hasMore, onRenameSession, o
   }>({ open: false, sessionId: "", currentName: "" });
   const [renameInput, setRenameInput] = useState("");
 
+  // 폴더 이동 모달
+  const [moveFolderDialog, setMoveFolderDialog] = useState<{
+    open: boolean;
+    sessionId: string;
+    selectedFolderId: string | null;
+  }>({ open: false, sessionId: "", selectedFolderId: null });
+
   const handleContextMenu = useCallback(
     (sessionId: string, e: React.MouseEvent) => {
       if (!onRenameSession && !onMoveSessions) return;
@@ -184,15 +191,19 @@ export function FeedView({ onNewSession, onLoadMore, hasMore, onRenameSession, o
     [onRenameSession, onMoveSessions],
   );
 
-  const handleMoveToFolder = useCallback(
-    async (targetFolderId: string | null) => {
-      const sessionId = contextMenu?.sessionId;
-      if (!sessionId || !onMoveSessions) return;
-      setContextMenu(null);
-      await onMoveSessions([sessionId], targetFolderId);
-    },
-    [contextMenu, onMoveSessions],
-  );
+  const handleMoveClick = useCallback(() => {
+    if (!contextMenu || !onMoveSessions) return;
+    const sessionId = contextMenu.sessionId;
+    setContextMenu(null);
+    setMoveFolderDialog({ open: true, sessionId, selectedFolderId: null });
+  }, [contextMenu, onMoveSessions]);
+
+  const handleMoveFolderSubmit = useCallback(async () => {
+    if (!onMoveSessions) return;
+    const { sessionId, selectedFolderId } = moveFolderDialog;
+    setMoveFolderDialog((d) => ({ ...d, open: false }));
+    await onMoveSessions([sessionId], selectedFolderId);
+  }, [onMoveSessions, moveFolderDialog]);
 
   const handleRenameClick = useCallback(() => {
     if (!contextMenu || !onRenameSession) return;
@@ -270,28 +281,22 @@ export function FeedView({ onNewSession, onLoadMore, hasMore, onRenameSession, o
           onClick={(e) => e.stopPropagation()}
         >
           {onRenameSession && (
+            <button
+              className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
+              onClick={handleRenameClick}
+            >
+              이름 변경
+            </button>
+          )}
+          {onMoveSessions && (
             <>
+              {onRenameSession && <div className="border-t border-border my-1" />}
               <button
                 className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
-                onClick={handleRenameClick}
+                onClick={handleMoveClick}
               >
-                이름 변경
+                다른 폴더로 이동
               </button>
-              <div className="border-t border-border my-1" />
-            </>
-          )}
-          {onMoveSessions && catalog?.folders && catalog.folders.length > 0 && (
-            <>
-              <div className="px-3 py-1 text-xs text-muted-foreground">폴더 이동:</div>
-              {catalog.folders.map((f) => (
-                <button
-                  key={f.id}
-                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
-                  onClick={() => handleMoveToFolder(f.id)}
-                >
-                  {f.name}
-                </button>
-              ))}
             </>
           )}
         </div>
@@ -341,6 +346,62 @@ export function FeedView({ onNewSession, onLoadMore, hasMore, onRenameSession, o
                 <Button type="submit">변경</Button>
               </DialogFooter>
             </form>
+          </DialogPopup>
+        </Dialog>
+      )}
+
+      {/* 폴더 이동 모달 */}
+      {onMoveSessions && (
+        <Dialog
+          open={moveFolderDialog.open}
+          onOpenChange={(open) => setMoveFolderDialog((d) => ({ ...d, open }))}
+        >
+          <DialogPopup className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>폴더 이동</DialogTitle>
+            </DialogHeader>
+            <DialogPanel>
+              <div className="flex flex-col gap-1">
+                {catalog?.folders && catalog.folders.length > 0 ? (
+                  catalog.folders.map((f) => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      className={`w-full text-left px-3 py-2 text-sm rounded-md transition-colors ${
+                        moveFolderDialog.selectedFolderId === f.id
+                          ? "bg-primary text-primary-foreground"
+                          : "hover:bg-accent"
+                      }`}
+                      onClick={() =>
+                        setMoveFolderDialog((d) => ({ ...d, selectedFolderId: f.id }))
+                      }
+                    >
+                      {f.name}
+                    </button>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground py-2">
+                    이동할 수 있는 폴더가 없습니다.
+                  </p>
+                )}
+              </div>
+            </DialogPanel>
+            <DialogFooter variant="bare">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setMoveFolderDialog((d) => ({ ...d, open: false }))}
+              >
+                취소
+              </Button>
+              <Button
+                type="button"
+                disabled={moveFolderDialog.selectedFolderId === null}
+                onClick={handleMoveFolderSubmit}
+              >
+                이동하기
+              </Button>
+            </DialogFooter>
           </DialogPopup>
         </Dialog>
       )}

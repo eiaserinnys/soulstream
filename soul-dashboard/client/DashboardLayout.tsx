@@ -9,6 +9,7 @@ import { useState, useEffect } from "react";
 import { FolderContents } from "./components/FolderContents";
 import { createFolder, renameFolderOptimistic, deleteFolderOptimistic, updateFolderSettingsOptimistic } from "./lib/folder-operations";
 import { moveSessionsOptimistic } from "./lib/move-sessions";
+import { renameSessionOptimistic } from "./lib/rename-session";
 import { computeIsOtherNode } from "./lib/node-guard";
 import { NodeGraph, SessionsTopBar, MobileChatHeader, VerticalSplitPane, StorageModeToggleCompact, ThemeToggle, useSessionProvider, useReadPositionSync } from "@seosoyoung/soul-ui";
 import { NewSessionModal } from "./components/NewSessionModal";
@@ -121,7 +122,13 @@ export function DashboardLayout() {
       }
       centerPanel={
         viewMode === "feed" ? (
-          <FeedView onNewSession={() => openNewSessionModal('feed')} onLoadMore={loadMore} hasMore={hasMore} />
+          <FeedView
+            onNewSession={() => openNewSessionModal('feed')}
+            onLoadMore={loadMore}
+            hasMore={hasMore}
+            onRenameSession={renameSessionOptimistic}
+            onMoveSessions={moveSessionsOptimistic}
+          />
         ) : (
           <>
             <SessionsTopBar />
@@ -159,7 +166,13 @@ export function DashboardLayout() {
       }
       mobileSessionsView={
         viewMode === "feed" ? (
-          <FeedView onNewSession={() => openNewSessionModal('feed')} onLoadMore={loadMore} hasMore={hasMore} />
+          <FeedView
+            onNewSession={() => openNewSessionModal('feed')}
+            onLoadMore={loadMore}
+            hasMore={hasMore}
+            onRenameSession={renameSessionOptimistic}
+            onMoveSessions={moveSessionsOptimistic}
+          />
         ) : (
           <>
             <SessionsTopBar />
