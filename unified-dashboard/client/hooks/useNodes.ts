@@ -14,6 +14,17 @@ export function useNodes() {
     useOrchestratorStore();
   const retryRef = useRef(0);
 
+  // Mount 시 즉시 REST로 초기 노드 목록 조회 (SSE snapshot 도착 전 빈 상태 방지)
+  // /api/nodes는 SSE snapshot과 동일한 node_manager.get_nodes()를 호출하므로 shape 동일
+  useEffect(() => {
+    fetch("/api/nodes")
+      .then((res) => res.json())
+      .then((data: { nodes: OrchestratorNode[] }) => {
+        if (data.nodes?.length) setNodes(data.nodes);
+      })
+      .catch((e) => console.warn("REST node fetch failed, SSE will recover:", e)); // graceful degradation
+  }, [setNodes]);
+
   useEffect(() => {
     let es: EventSource | null = null;
     let disposed = false;

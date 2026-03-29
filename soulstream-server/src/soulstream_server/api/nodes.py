@@ -64,7 +64,7 @@ def create_nodes_router(
             {
                 "id": agent_id,
                 "name": p.get("name"),
-                "portrait_url": (
+                "portraitUrl": (
                     f"/api/nodes/{node_id}/agents/{agent_id}/portrait"
                     if p.get("portrait_url")
                     else ""
