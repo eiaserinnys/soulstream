@@ -105,7 +105,7 @@ class TaskManager:
         )
 
         # 서브 컴포넌트들
-        self._listener_manager = TaskListenerManager(self._tasks)
+        self._listener_manager = TaskListenerManager()
         self._executor = TaskExecutor(
             tasks=self._tasks,
             listener_manager=self._listener_manager,
