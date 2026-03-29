@@ -108,6 +108,10 @@ class CatalogService:
             await self._db.assign_session_to_folder(sid, folder_id)
         await self._broadcast_catalog()
 
+    async def broadcast_catalog(self) -> None:
+        """카탈로그 상태를 브로드캐스트한다. DB 변경 없이 broadcast만 수행."""
+        await self._broadcast_catalog()
+
     async def rename_session(
         self,
         session_id: str,
