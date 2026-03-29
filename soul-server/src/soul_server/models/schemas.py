@@ -257,21 +257,8 @@ class InputRequestRespondedSSEEvent(BaseModel):
     timestamp: float
 
 
-class RateLimitProfileStatus(BaseModel):
-    """프로필별 rate limit 타입 상태"""
-    utilization: float | str
-    resets_at: Optional[str] = None
-
-
-class RateLimitProfileInfo(BaseModel):
-    """프로필의 rate limit 정보"""
-    name: str
-    five_hour: RateLimitProfileStatus
-    seven_day: RateLimitProfileStatus
-
-
 class CredentialAlertEvent(BaseModel):
-    """크레덴셜 rate limit 알림 이벤트"""
+    """rate limit 사용량 경고 이벤트"""
     type: str = "credential_alert"
-    active_profile: str
-    profiles: List[RateLimitProfileInfo]
+    utilization: float
+    rate_limit_type: str

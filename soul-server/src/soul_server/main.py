@@ -23,13 +23,10 @@ from soul_server.dashboard.session_cache import SessionCache
 from soul_server.dashboard.api_router import router as dash_api_router
 from soul_server.dashboard.auth_routes import create_soul_server_auth_router
 from soul_server.api.tasks import router as tasks_router
-from soul_server.api.credentials import create_credentials_router
 from soul_server.api.llm import create_llm_router
 from soul_server.api.claude_auth import create_claude_auth_router, AuthSessionManager
 from soul_server.llm import OpenAIAdapter, AnthropicAdapter, LlmExecutor
 from soul_server.service import resource_manager, file_manager
-from soul_server.service.credential_store import CredentialStore
-from soul_server.service.credential_swapper import CredentialSwapper
 from soul_server.service.rate_limit_tracker import RateLimitTracker
 from soul_server.service.engine_adapter import init_soul_engine, get_soul_engine
 from soul_server.claude.agent_runner import ClaudeRunner
@@ -599,21 +596,8 @@ async def get_status():
     return response
 
 
-# === Credential Profile 모듈 ===
-# 라우터 등록에 필요하므로 모듈 레벨에서 초기화합니다.
-# CredentialStore.__init__은 mkdir만 수행하며, CredentialSwapper.__init__은 참조만 저장합니다.
-# (비동기 초기화가 필요한 runner_pool, task_manager 등과는 달리 동기적 초기화만 필요)
-
-_profiles_dir = Path(settings.data_dir) / "profiles"
-_credentials_path = Path.home() / ".claude" / ".credentials.json"
-
-_credential_store = CredentialStore(profiles_dir=_profiles_dir)
-_credential_swapper = CredentialSwapper(
-    store=_credential_store, credentials_path=_credentials_path
-)
-_rate_limit_tracker = RateLimitTracker(
-    store=_credential_store, state_path=_profiles_dir / "_rate_limits.json"
-)
+# === Rate Limit Tracker ===
+_rate_limit_tracker = RateLimitTracker()
 
 # === API Routers ===
 
@@ -621,14 +605,6 @@ _rate_limit_tracker = RateLimitTracker(
 
 # Attachments API
 app.include_router(attachments_router, prefix="/attachments", tags=["attachments"])
-
-# Credentials API - 프로필 관리
-credentials_router = create_credentials_router(
-    store=_credential_store,
-    swapper=_credential_swapper,
-    rate_limit_tracker=_rate_limit_tracker,
-)
-app.include_router(credentials_router, prefix="/profiles", tags=["credentials"])
 
 
 # Sessions API - 세션 목록 조회/스트리밍

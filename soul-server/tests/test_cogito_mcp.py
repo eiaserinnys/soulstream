@@ -254,7 +254,6 @@ class TestReflectorSetup:
     def test_reflector_capabilities(self):
         """데코레이터 적용된 모듈을 임포트하면 capabilities가 등록된다."""
         import soul_server.api.tasks  # noqa: F401
-        import soul_server.api.credentials  # noqa: F401
         import soul_server.service.runner_pool  # noqa: F401
         import soul_server.api.llm  # noqa: F401
         import soul_server.cogito.mcp_tools  # noqa: F401

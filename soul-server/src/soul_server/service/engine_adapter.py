@@ -39,8 +39,6 @@ from soul_server.models import (
     InputRequestExpiredSSEEvent,
     InterventionSentEvent,
     ProgressEvent,
-    RateLimitProfileInfo,
-    RateLimitProfileStatus,
     SessionEvent,
 )
 
@@ -119,24 +117,9 @@ def _build_intervention_prompt(msg: InterventionMessage) -> str:
 
 def _build_credential_alert_event(alert: dict) -> CredentialAlertEvent:
     """RateLimitTracker의 alert dict → CredentialAlertEvent 변환."""
-    profiles = []
-    for p in alert.get("profiles", []):
-        five_hour = p.get("five_hour", {})
-        seven_day = p.get("seven_day", {})
-        profiles.append(RateLimitProfileInfo(
-            name=p["name"],
-            five_hour=RateLimitProfileStatus(
-                utilization=five_hour.get("utilization", "unknown"),
-                resets_at=five_hour.get("resets_at"),
-            ),
-            seven_day=RateLimitProfileStatus(
-                utilization=seven_day.get("utilization", "unknown"),
-                resets_at=seven_day.get("resets_at"),
-            ),
-        ))
     return CredentialAlertEvent(
-        active_profile=alert["active_profile"],
-        profiles=profiles,
+        utilization=alert["utilization"],
+        rate_limit_type=alert["rate_limit_type"],
     )
 
 
