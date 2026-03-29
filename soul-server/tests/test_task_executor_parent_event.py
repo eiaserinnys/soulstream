@@ -387,11 +387,11 @@ class TestInterventionBroadcastEventId:
         executor, broadcasts = _make_executor(tasks, session_db=session_db)
         await executor._run_execution(task, runner, FakeResourceManager())
 
-        # DB에서 intervention user_message 찾기 (user 필드로 구분)
+        # DB에서 intervention_sent 이벤트 찾기 (user 필드로 구분)
         all_events = session_db._events.get(task.agent_session_id, [])
         intervention_msgs = [
             e for e in all_events
-            if json.loads(e["payload"]).get("type") == "user_message"
+            if json.loads(e["payload"]).get("type") == "intervention_sent"
             and json.loads(e["payload"]).get("user") == "user1"
         ]
         assert len(intervention_msgs) == 1

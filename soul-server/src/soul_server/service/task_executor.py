@@ -201,7 +201,7 @@ class TaskExecutor:
                                 agent_id=task.profile_id,
                             )
                             intervention_msg = {
-                                "type": "user_message",
+                                "type": "intervention_sent",
                                 "user": user,
                                 "text": text,
                                 "context": [intervention_soulstream],

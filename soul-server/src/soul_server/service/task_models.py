@@ -140,7 +140,6 @@ class Task:
     node_id: Optional[str] = None
 
     # 런타임 전용 (영속화 안 됨)
-    listeners: List[asyncio.Queue] = field(default_factory=list, repr=False)
     intervention_queue: asyncio.Queue = field(default_factory=asyncio.Queue, repr=False)
     execution_task: Optional[asyncio.Task] = field(default=None, repr=False)
     last_progress_text: Optional[str] = field(default=None, repr=False)
