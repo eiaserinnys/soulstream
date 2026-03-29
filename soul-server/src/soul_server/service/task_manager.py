@@ -465,7 +465,6 @@ class TaskManager:
         folder_id: Optional[str] = None,
         system_prompt: Optional[str] = None,
         profile_id: Optional[str] = None,
-        node_id: Optional[str] = None,
     ) -> Task:
         """
         새 세션 태스크 생성 또는 기존 세션 resume
@@ -578,7 +577,7 @@ class TaskManager:
                 is_new = True
 
         if is_new:
-            task.node_id = node_id or self._db.node_id
+            task.node_id = self._db.node_id
 
         # DB에 세션 등록/업데이트
         await self._db.upsert_session(
