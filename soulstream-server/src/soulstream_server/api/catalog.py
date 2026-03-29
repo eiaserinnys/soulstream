@@ -52,14 +52,15 @@ def create_catalog_router(
         sessions_raw, total = await db.get_all_sessions(offset=offset, limit=limit)
 
         # sessions dict: soul-ui CatalogState 호환 (Record<string, CatalogAssignment>)
-        sessions_dict = {}
-        for s in sessions_raw:
-            sid = s.get("session_id", "")
-            assignment = folder_assignments.get(sid, {})
-            sessions_dict[sid] = {
+        # folder_assignments 전체를 사용한다. sessions_raw는 페이지네이션되어 있어
+        # 여기서 사용하면 51번째 이후 세션의 폴더 배정이 누락된다.
+        sessions_dict = {
+            sid: {
                 "folderId": assignment.get("folderId"),
                 "displayName": assignment.get("displayName"),
             }
+            for sid, assignment in folder_assignments.items()
+        }
 
         # sessionList 배열: OrchestratorSessionProvider가 세션 목록 구성에 사용
         session_list = []
