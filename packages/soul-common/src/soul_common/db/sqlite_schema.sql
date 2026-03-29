@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS folders (
     sort_order INTEGER DEFAULT 0
 );
 
+
 -- events_fts: 독립 FTS5 가상 테이블
 -- session_id + event_id를 함께 저장하여 검색 후 events 테이블 역참조에 사용
 -- content table 방식 미사용 — rowid 매핑 복잡성 회피

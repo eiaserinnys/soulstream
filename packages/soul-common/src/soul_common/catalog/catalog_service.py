@@ -50,7 +50,12 @@ class CatalogService:
         """전체 폴더 목록을 반환한다."""
         folders = await self._db.get_all_folders()
         return [
-            {"id": f["id"], "name": f["name"], "sortOrder": f["sort_order"]}
+            {
+                "id": f["id"],
+                "name": f["name"],
+                "sortOrder": f["sort_order"],
+                "settings": f.get("settings") or {},
+            }
             for f in folders
         ]
 
@@ -71,13 +76,16 @@ class CatalogService:
         folder_id: str,
         name: Optional[str] = None,
         sort_order: Optional[int] = None,
+        settings: Optional[dict] = None,
     ) -> None:
-        """폴더의 이름 및/또는 정렬 순서를 변경한다."""
+        """폴더의 이름, 정렬 순서, 설정을 변경한다."""
         fields: dict = {}
         if name is not None:
             fields["name"] = name
         if sort_order is not None:
             fields["sort_order"] = sort_order
+        if settings is not None:
+            fields["settings"] = settings
         if not fields:
             return
         await self._db.update_folder(folder_id, **fields)

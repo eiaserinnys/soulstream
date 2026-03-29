@@ -12,6 +12,9 @@ CREATE TABLE IF NOT EXISTS folders (
     sort_order  INTEGER NOT NULL DEFAULT 0
 );
 
+-- 기존 테이블에 settings 컬럼 추가 (멱등)
+ALTER TABLE folders ADD COLUMN IF NOT EXISTS settings JSONB NOT NULL DEFAULT '{}';
+
 CREATE TABLE IF NOT EXISTS sessions (
     session_id              TEXT PRIMARY KEY,
     folder_id               TEXT REFERENCES folders(id),
@@ -554,7 +557,7 @@ CREATE OR REPLACE FUNCTION folder_update(
     p_values  TEXT[]
 ) RETURNS void LANGUAGE plpgsql AS $$
 DECLARE
-    allowed TEXT[] := ARRAY['name', 'sort_order'];
+    allowed TEXT[] := ARRAY['name', 'sort_order', 'settings'];
     set_list TEXT := '';
     i INTEGER;
     col TEXT;
@@ -569,6 +572,8 @@ BEGIN
         END IF;
         IF col = 'sort_order' THEN
             set_list := set_list || col || ' = ' || p_values[i] || '::integer';
+        ELSIF col = 'settings' THEN
+            set_list := set_list || col || ' = ' || quote_literal(p_values[i]) || '::jsonb';
         ELSE
             set_list := set_list || col || ' = ' || quote_literal(p_values[i]);
         END IF;

@@ -265,6 +265,7 @@ export interface DashboardActions {
   renameSession: (sessionId: string, displayName: string | null) => void;
   addFolder: (folder: CatalogFolder) => void;
   updateFolderName: (folderId: string, name: string) => void;
+  updateFolderSettings: (folderId: string, settings: CatalogFolder["settings"]) => void;
   removeFolder: (folderId: string) => void;
 
   // 모바일 뷰 전환
@@ -954,6 +955,20 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         }));
       },
 
+      updateFolderSettings: (folderId, settings) => {
+        const { catalog } = get();
+        if (!catalog) return;
+        set((state) => ({
+          catalog: {
+            ...catalog,
+            folders: catalog.folders.map((f) =>
+              f.id === folderId ? { ...f, settings } : f,
+            ),
+          },
+          catalogVersion: state.catalogVersion + 1,
+        }));
+      },
+
       removeFolder: (folderId) => {
         const { catalog } = get();
         if (!catalog) return;
@@ -1002,6 +1017,16 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         return sessions
           .filter((s) => {
             if (s.sessionType === "llm") return false;
+            // 폴더 설정: excludeFromFeed가 true이면 피드에서 제외
+            // 단, 미분류 세션(folderId === null)은 항상 포함
+            if (catalog) {
+              const assignment = catalog.sessions[s.agentSessionId];
+              const folderId = assignment?.folderId ?? null;
+              if (folderId !== null) {
+                const folder = catalog.folders.find((f) => f.id === folderId);
+                if (folder?.settings?.excludeFromFeed) return false;
+              }
+            }
             const t = s.lastMessage?.timestamp ?? s.updatedAt ?? s.createdAt;
             return t != null && new Date(t).getTime() > cutoff;
           })

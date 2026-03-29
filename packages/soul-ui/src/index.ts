@@ -74,6 +74,7 @@ export type {
   SessionUpdatedStreamEvent,
   SessionDeletedStreamEvent,
   SessionStreamEvent,
+  FolderSettings,
   CatalogFolder,
   CatalogAssignment,
   CatalogState,

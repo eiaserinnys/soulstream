@@ -35,7 +35,10 @@ _SESSION_COLUMNS = frozenset({
     "created_at", "updated_at", "node_id", "agent_id",
 })
 
-_FOLDER_COLUMNS = frozenset({"name", "sort_order"})
+_FOLDER_COLUMNS = frozenset({"name", "sort_order", "settings"})
+
+# 폴더 컬럼 중 JSONB 직렬화가 필요한 컬럼
+_FOLDER_JSONB_COLUMNS = frozenset({"settings"})
 
 # timestamptz 컬럼 — 문자열이면 datetime으로 자동 변환
 _TIMESTAMP_COLUMNS = frozenset({"created_at", "updated_at"})
@@ -421,7 +424,10 @@ class PostgresSessionDB:
             raise ValueError(f"Invalid folder columns: {invalid}")
 
         columns = list(fields.keys())
-        values = [str(v) for v in fields.values()]
+        values = [
+            json.dumps(v, ensure_ascii=False) if k in _FOLDER_JSONB_COLUMNS else str(v)
+            for k, v in fields.items()
+        ]
 
         await self._pool.execute(
             "SELECT folder_update($1, $2, $3)",
@@ -483,7 +489,12 @@ class PostgresSessionDB:
     async def get_catalog(self) -> dict:
         folders = await self.get_all_folders()
         folder_list = [
-            {"id": f["id"], "name": f["name"], "sortOrder": f["sort_order"]}
+            {
+                "id": f["id"],
+                "name": f["name"],
+                "sortOrder": f["sort_order"],
+                "settings": f.get("settings") or {},
+            }
             for f in folders
         ]
 
