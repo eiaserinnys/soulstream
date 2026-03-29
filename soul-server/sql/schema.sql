@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     session_id              TEXT PRIMARY KEY,
     folder_id               TEXT REFERENCES folders(id),
     display_name            TEXT,
-    node_id                 TEXT,
+    node_id                 TEXT NOT NULL,
     session_type            TEXT,
     status                  TEXT,
     prompt                  TEXT,
