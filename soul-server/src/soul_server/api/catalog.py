@@ -29,6 +29,11 @@ class SessionCatalogUpdate(BaseModel):
     displayName: Optional[str] = None
 
 
+class FolderReorderItem(BaseModel):
+    id: str
+    sortOrder: int
+
+
 class BatchMoveRequest(BaseModel):
     sessionIds: list[str]
     folderId: Optional[str]
@@ -51,6 +56,13 @@ def create_catalog_router(catalog_service: CatalogService) -> APIRouter:
             raise HTTPException(status_code=400, detail="No fields to update")
         await catalog_service.update_folder(
             folder_id, name=body.name, sort_order=body.sort_order, settings=body.settings,
+        )
+        return {"ok": True}
+
+    @router.patch("/folders/reorder")
+    async def reorder_folders(body: list[FolderReorderItem]):
+        await catalog_service.reorder_folders(
+            [{"id": item.id, "sortOrder": item.sortOrder} for item in body]
         )
         return {"ok": True}
 
