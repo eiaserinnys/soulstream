@@ -645,6 +645,28 @@ async def api_update_read_position(
     return {"ok": True}
 
 
+# === /api/sessions/{id}/display-name (PATCH) ===
+
+class RenameSessionRequest(BaseModel):
+    displayName: Optional[str] = None
+
+
+@router.patch(
+    "/api/sessions/{session_id}/display-name",
+    dependencies=[Depends(require_dashboard_auth)],
+)
+async def api_rename_session(session_id: str, body: RenameSessionRequest):
+    """세션 표시 이름 변경 (PATCH /api/sessions/{id}/display-name).
+
+    soulstream-server 호환 경로. soul-server에서도 동일하게 동작하도록 추가.
+    기존 PUT /api/catalog/sessions/{id} (displayName 필드)는 그대로 유지한다.
+    """
+    from soul_server.service.catalog_service import get_catalog_service
+    catalog_service = get_catalog_service()
+    await catalog_service.rename_session(session_id, body.displayName)
+    return {"success": True}
+
+
 # === /api/llm/completions (POST) ===
 
 @router.post(
