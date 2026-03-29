@@ -40,7 +40,10 @@ _SESSION_COLUMNS = frozenset({
     "created_at", "updated_at", "node_id", "agent_id",
 })
 
-_FOLDER_COLUMNS = frozenset({"name", "sort_order"})
+_FOLDER_COLUMNS = frozenset({"name", "sort_order", "settings"})
+
+# 폴더 컬럼 중 JSONB 직렬화가 필요한 컬럼 (SQLite TEXT 저장)
+_FOLDER_JSONB_COLUMNS = frozenset({"settings"})
 
 _JSONB_COLUMNS = frozenset({"last_message", "metadata"})
 _TIMESTAMP_COLUMNS = frozenset({"created_at", "updated_at"})
@@ -157,6 +160,22 @@ class SqliteSessionDB:
         await self._conn.executescript(sql)
         await self._conn.commit()
         logger.info("SQLite schema applied from %s", self._schema_path.name)
+        await self._migrate_schema()
+
+    async def _migrate_schema(self) -> None:
+        """기존 테이블에 새 컬럼을 추가하는 마이그레이션 (멱등).
+
+        SQLite는 ALTER TABLE ... ADD COLUMN IF NOT EXISTS를 지원하지 않으므로
+        예외를 무시하는 방식으로 멱등성을 확보한다.
+        """
+        try:
+            await self._conn.execute(
+                "ALTER TABLE folders ADD COLUMN settings TEXT NOT NULL DEFAULT '{}'"
+            )
+            await self._conn.commit()
+        except Exception:
+            # 컬럼이 이미 존재하면 "duplicate column name" 오류 → 무시
+            pass
 
     async def close(self) -> None:
         if self._conn:
@@ -521,7 +540,10 @@ class SqliteSessionDB:
         if invalid:
             raise ValueError(f"Invalid folder columns: {invalid}")
         set_clauses = ", ".join(f"{c} = ?" for c in fields)
-        vals = list(fields.values()) + [folder_id]
+        vals = [
+            json.dumps(v, ensure_ascii=False) if k in _FOLDER_JSONB_COLUMNS else v
+            for k, v in fields.items()
+        ] + [folder_id]
         await self._conn.execute(
             f"UPDATE folders SET {set_clauses} WHERE id = ?", vals
         )
@@ -545,7 +567,16 @@ class SqliteSessionDB:
             "SELECT * FROM folders ORDER BY sort_order ASC"
         )
         rows = await cursor.fetchall()
-        return [dict(r) for r in rows]
+        result = []
+        for r in rows:
+            d = dict(r)
+            if "settings" in d and isinstance(d["settings"], str):
+                try:
+                    d["settings"] = json.loads(d["settings"])
+                except Exception:
+                    d["settings"] = {}
+            result.append(d)
+        return result
 
     async def get_default_folder(self, name: str) -> Optional[dict]:
         """DEFAULT_FOLDERS에 정의된 기본 폴더를 name으로 조회한다."""
@@ -588,7 +619,12 @@ class SqliteSessionDB:
     async def get_catalog(self) -> dict:
         folders = await self.get_all_folders()
         folder_list = [
-            {"id": f["id"], "name": f["name"], "sortOrder": f["sort_order"]}
+            {
+                "id": f["id"],
+                "name": f["name"],
+                "sortOrder": f["sort_order"],
+                "settings": f.get("settings") or {},
+            }
             for f in folders
         ]
 
