@@ -11,10 +11,10 @@ import {
   NewSessionDialog as BaseNewSessionDialog,
   Select,
   SelectTrigger,
-  SelectValue,
   SelectPopup,
   SelectItem,
   useDashboardStore,
+  cn,
 } from "@seosoyoung/soul-ui";
 import type { AgentInfo } from "@seosoyoung/soul-ui";
 import { useOrchestratorStore } from "../store/orchestrator-store";
@@ -90,11 +90,25 @@ export function OrchestratorNewSessionModal() {
       });
 
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error ?? `HTTP ${res.status}`);
+        let errorMessage = `HTTP ${res.status}`;
+        try {
+          const body = await res.json();
+          // FastAPI HTTPException → body.detail, custom error → body.error
+          errorMessage = body.detail ?? body.error ?? errorMessage;
+        } catch {
+          errorMessage = `Server error (${res.status})`;
+        }
+        throw new Error(errorMessage);
       }
 
-      const { agentSessionId } = await res.json();
+      let sessionData: { agentSessionId: string };
+      try {
+        sessionData = await res.json();
+      } catch {
+        throw new Error("Server returned an invalid response");
+      }
+
+      const { agentSessionId } = sessionData;
       const { addOptimisticSession } = useDashboardStore.getState();
       const selectedAgent = agents.find((a) => a.id === selectedAgentId);
       addOptimisticSession(
@@ -122,7 +136,11 @@ export function OrchestratorNewSessionModal() {
         onValueChange={(v) => setSelectedModalFolderId(v || null)}
       >
         <SelectTrigger>
-          <SelectValue placeholder="Select a folder..." />
+          <span className={cn("flex-1 truncate", !selectedModalFolderId && "text-muted-foreground/72")}>
+            {selectedModalFolderId
+              ? (catalog?.folders.find(f => f.id === selectedModalFolderId)?.name ?? "Select a folder...")
+              : "Select a folder..."}
+          </span>
         </SelectTrigger>
         <SelectPopup>
           {catalog?.folders.map((f) => (
@@ -140,7 +158,14 @@ export function OrchestratorNewSessionModal() {
       <label className="text-xs font-medium text-muted-foreground">Node</label>
       <Select value={selectedNodeId} onValueChange={setSelectedNodeId}>
         <SelectTrigger>
-          <SelectValue placeholder="Select a node..." />
+          <span className={cn("flex-1 truncate", !selectedNodeId && "text-muted-foreground/72")}>
+            {selectedNodeId
+              ? (() => {
+                  const node = aliveNodes.find(n => n.nodeId === selectedNodeId);
+                  return node ? `${node.nodeId} (${node.host}:${node.port})` : selectedNodeId;
+                })()
+              : "Select a node..."}
+          </span>
         </SelectTrigger>
         <SelectPopup>
           {aliveNodes.map((n) => (
@@ -161,7 +186,20 @@ export function OrchestratorNewSessionModal() {
       <label className="text-xs font-medium text-muted-foreground">Agent</label>
       <Select value={selectedAgentId} onValueChange={setSelectedAgentId}>
         <SelectTrigger>
-          <SelectValue placeholder="Select an agent..." />
+          {(() => {
+            const agent = selectedAgentId ? agents.find(a => a.id === selectedAgentId) : null;
+            if (agent) {
+              return (
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  {agent.portraitUrl && (
+                    <img src={agent.portraitUrl} alt={agent.name} className="w-5 h-5 rounded shrink-0 object-cover" />
+                  )}
+                  <span className="flex-1 truncate">{agent.name}</span>
+                </div>
+              );
+            }
+            return <span className="flex-1 truncate text-muted-foreground/72">Select an agent...</span>;
+          })()}
         </SelectTrigger>
         <SelectPopup>
           {agents.map((a) => (
