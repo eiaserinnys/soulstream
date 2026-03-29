@@ -21,6 +21,7 @@ class FolderCreate(BaseModel):
 class FolderUpdate(BaseModel):
     name: Optional[str] = None
     sort_order: Optional[int] = None
+    settings: Optional[dict] = None
 
 
 class SessionCatalogUpdate(BaseModel):
@@ -46,10 +47,10 @@ def create_catalog_router(catalog_service: CatalogService) -> APIRouter:
 
     @router.put("/folders/{folder_id}")
     async def update_folder(folder_id: str, body: FolderUpdate):
-        if body.name is None and body.sort_order is None:
+        if body.name is None and body.sort_order is None and body.settings is None:
             raise HTTPException(status_code=400, detail="No fields to update")
         await catalog_service.update_folder(
-            folder_id, name=body.name, sort_order=body.sort_order,
+            folder_id, name=body.name, sort_order=body.sort_order, settings=body.settings,
         )
         return {"ok": True}
 

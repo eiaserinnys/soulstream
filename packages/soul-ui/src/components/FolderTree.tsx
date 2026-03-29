@@ -14,6 +14,8 @@ import { Spinner } from "./ui/spinner";
 import { SYSTEM_FOLDERS } from "../shared/constants";
 import { Plus, Newspaper } from "lucide-react";
 import { FolderDialog } from "./FolderDialog";
+import { FolderSettingsDialog } from "./FolderSettingsDialog";
+import type { FolderSettings } from "../shared/types";
 
 const SYSTEM_FOLDER_NAMES: Set<string> = new Set(Object.values(SYSTEM_FOLDERS));
 
@@ -22,6 +24,7 @@ export interface FolderTreeProps {
   onCreateFolder?: (name: string) => void;
   onRenameFolder?: (folderId: string, newName: string) => void;
   onDeleteFolder?: (folderId: string) => void;
+  onUpdateFolderSettings?: (folderId: string, settings: FolderSettings) => void;
   /**
    * 폴더별 세션 수 (서버 집계값).
    * 제공되면 sessions 배열 필터링 대신 이 값을 우선 사용합니다.
@@ -35,6 +38,7 @@ export function FolderTree({
   onCreateFolder,
   onRenameFolder,
   onDeleteFolder,
+  onUpdateFolderSettings,
   folderCounts,
 }: FolderTreeProps) {
   const catalog = useDashboardStore((s) => s.catalog);
@@ -50,6 +54,8 @@ export function FolderTree({
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; folder: { id: string; name: string } } | null>(null);
+  const [settingsTarget, setSettingsTarget] = useState<{ id: string; name: string } | null>(null);
 
   const handleDrop = useCallback(async (folderId: string | null, e: React.DragEvent) => {
     e.preventDefault();
@@ -169,7 +175,7 @@ export function FolderTree({
       onDoubleClick={() => handleDoubleClick(folder.id, folder.name)}
       onContextMenu={(e) => {
         e.preventDefault();
-        setDeleteTarget({ id: folder.id, name: folder.name });
+        setContextMenu({ x: e.clientX, y: e.clientY, folder: { id: folder.id, name: folder.name } });
       }}
       onDragOver={(e) => { e.preventDefault(); setDragOverId(folder.id); }}
       onDragLeave={() => setDragOverId(null)}
@@ -267,6 +273,50 @@ export function FolderTree({
         onConfirm={handleDeleteFolder}
         folderName={deleteTarget?.name ?? ""}
       />
+      <FolderSettingsDialog
+        folder={catalog?.folders.find((f) => f.id === settingsTarget?.id) ?? null}
+        open={!!settingsTarget}
+        onOpenChange={(open) => { if (!open) setSettingsTarget(null); }}
+        onConfirm={(settings) => {
+          if (settingsTarget) onUpdateFolderSettings?.(settingsTarget.id, settings);
+          setSettingsTarget(null);
+        }}
+      />
+      {contextMenu && (
+        <div
+          className="fixed z-50 min-w-[140px] rounded-md border border-border bg-popover shadow-md py-1"
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          onMouseLeave={() => setContextMenu(null)}
+        >
+          <button
+            className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent/50"
+            onClick={() => {
+              handleDoubleClick(contextMenu.folder.id, contextMenu.folder.name);
+              setContextMenu(null);
+            }}
+          >
+            이름 변경
+          </button>
+          <button
+            className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent/50"
+            onClick={() => {
+              setSettingsTarget({ id: contextMenu.folder.id, name: contextMenu.folder.name });
+              setContextMenu(null);
+            }}
+          >
+            설정
+          </button>
+          <button
+            className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent/50 text-destructive"
+            onClick={() => {
+              setDeleteTarget({ id: contextMenu.folder.id, name: contextMenu.folder.name });
+              setContextMenu(null);
+            }}
+          >
+            삭제
+          </button>
+        </div>
+      )}
     </div>
   );
 }

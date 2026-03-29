@@ -662,11 +662,17 @@ export interface SessionDeletedStreamEvent {
   agent_session_id: string;
 }
 
+/** 폴더 설정 */
+export interface FolderSettings {
+  excludeFromFeed?: boolean;
+}
+
 /** 카탈로그 폴더 */
 export interface CatalogFolder {
   id: string;
   name: string;
   sortOrder: number;
+  settings?: FolderSettings;
 }
 
 /** 카탈로그 세션 배치 정보 */
