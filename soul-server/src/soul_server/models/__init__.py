@@ -39,8 +39,6 @@ from .schemas import (
     InputRequestQuestion,
     InputRequestSSEEvent,
     InputRequestExpiredSSEEvent,
-    RateLimitProfileStatus,
-    RateLimitProfileInfo,
     CredentialAlertEvent,
     # Session List API
     SessionInfo,
@@ -91,8 +89,6 @@ __all__ = [
     "InputRequestSSEEvent",
     "InputRequestExpiredSSEEvent",
     "InputResponseRequest",
-    "RateLimitProfileStatus",
-    "RateLimitProfileInfo",
     "CredentialAlertEvent",
     # Session List API
     "SessionInfo",
