@@ -13,7 +13,6 @@
 #   +-- .services/
 #       +-- soulstream/                <- soulstream repo
 #           +-- soul-server/           <- FastAPI backend
-#           +-- soul-dashboard/        <- Express + React frontend
 #           +-- logs/                  <- service stdout/stderr
 
 poll_interval: 60
@@ -65,16 +64,6 @@ services:
     hooks:
       post_pull: ./.services/soulstream/soul-server/.venv/Scripts/pip.exe install -e ./.services/soulstream/packages/soul-common -e ./.services/soulstream/soul-server
 
-  soul-dashboard:
-    run: pnpm exec tsx server/index.ts
-    cwd: ./.services/soulstream/soul-dashboard
-    repo: soulstream
-    after: soul-server
-    ready: port:3109
-    restart_delay: 3
-    hooks:
-      post_pull: pnpm -C ./.services/soulstream/soul-dashboard install && pnpm -C ./.services/soulstream/soul-dashboard run build
-
 install:
   requirements:
     python: ">=3.11"
@@ -93,10 +82,6 @@ install:
       requirements:
         - ./.services/soulstream/packages/soul-common/pyproject.toml
         - ./.services/soulstream/soul-server/pyproject.toml
-
-    dashboard-node:
-      type: pnpm
-      path: ./.services/soulstream/soul-dashboard
 
   configs:
     soul-server-env:
@@ -147,14 +132,6 @@ install:
           default: "assistant"
         - key: DASH_ASSISTANT_PORTRAIT
           default: ".local/portrait/assistant.png"
-
-    dashboard-env:
-      path: ./.services/soulstream/soul-dashboard/.env
-      keys:
-        - key: SOUL_API_URL
-          default: "http://localhost:3105"
-        - key: DASHBOARD_PORT
-          default: "3109"
 
   service:
     name: soulstream
