@@ -154,6 +154,7 @@ class TaskManager:
         logger.info(f"Session registered (4-ID): {claude_session_id} -> {agent_session_id}")
 
         # DB 행이 생성된 후 폴더 배정 처리 (create_task()에서 task.pending_folder_id에 저장됨)
+        # _assign_default_folder_and_broadcast 내부에서 catalog_updated가 발행된다.
         pending_folder = task.pending_folder_id if task else None
         if task:
             task.pending_folder_id = None  # 배정 완료 후 초기화
@@ -162,6 +163,14 @@ class TaskManager:
             task.session_type if task else "claude",
             folder_id=pending_folder,
         )
+
+        # 폴더 카탈로그 업데이트 후 session_created 발행 (부가 기능 — 실패해도 영향 없음)
+        # catalog_updated → session_created 순서 보장: UI가 폴더 정보와 함께 세션을 수신할 수 있다.
+        if task:
+            try:
+                await get_session_broadcaster().emit_session_created(task)
+            except Exception:
+                logger.warning(f"Failed to emit session_created for {agent_session_id}", exc_info=True)
 
     def get_task_by_claude_session(self, claude_session_id: str) -> Optional[Task]:
         """claude_session_id로 태스크 조회"""
@@ -610,19 +619,13 @@ class TaskManager:
                 client_id=task.client_id,
             )
 
-        # 새 세션이면 브로드캐스트 (폴더 배정은 register_session() 시점에 처리)
-        if is_new:
-            pass  # 폴더 배정은 task.pending_folder_id를 통해 register_session()에서 처리
-
-        # 세션 목록 변경을 대시보드에 브로드캐스트 (부가 기능 — 실패해도 태스크 생성에 영향 없음)
-        try:
-            broadcaster = get_session_broadcaster()
-            if is_new:
-                await broadcaster.emit_session_created(task)
-            else:
-                await broadcaster.emit_session_updated(task)
-        except Exception:
-            logger.warning(f"Failed to broadcast session event for {agent_session_id}", exc_info=True)
+        if not is_new:
+            # 재개 세션: 변경 사실을 즉시 브로드캐스트 (부가 기능 — 실패해도 영향 없음)
+            # 신규 세션의 session_created는 DB 등록 완료 후 register_session()에서 발행한다.
+            try:
+                await get_session_broadcaster().emit_session_updated(task)
+            except Exception:
+                logger.warning(f"Failed to broadcast session update for {agent_session_id}", exc_info=True)
 
         return task
 
