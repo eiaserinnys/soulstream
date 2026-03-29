@@ -129,12 +129,67 @@ class TestCreateSession:
 
         assert resp.status_code == 404
 
+    async def test_create_session_broadcasts_catalog_with_folder_id(
+        self, client, mock_db, node_manager, mock_catalog_service
+    ):
+        """folderId 있을 때 broadcast_catalog()가 호출되어야 한다."""
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+
+        node = await node_manager.register_node(ws, {"node_id": "api-node"})
+
+        async def resolve_on_send(data):
+            req_id = data.get("requestId")
+            if req_id and req_id in node._pending:
+                node._pending[req_id].set_result({"agentSessionId": "sess-with-folder"})
+
+        ws.send_json.side_effect = resolve_on_send
+
+        resp = await client.post(
+            "/api/sessions",
+            json={"prompt": "test", "folderId": "f-123"},
+        )
+
+        assert resp.status_code == 201
+        mock_catalog_service.broadcast_catalog.assert_awaited_once()
+
+    async def test_create_session_broadcasts_catalog_without_folder_id(
+        self, client, mock_db, node_manager, mock_catalog_service
+    ):
+        """folderId 없을 때도 broadcast_catalog()가 호출되어야 한다.
+
+        soul-server는 folderId=None이어도 _assign_default_folder_and_broadcast()로
+        기본 폴더를 배정하므로, broadcast_catalog()가 반드시 호출되어야 한다.
+        이 테스트는 버그(if body.folderId and catalog_service:)가 재발하지 않음을 검증한다.
+        """
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+
+        node = await node_manager.register_node(ws, {"node_id": "api-node"})
+
+        async def resolve_on_send(data):
+            req_id = data.get("requestId")
+            if req_id and req_id in node._pending:
+                node._pending[req_id].set_result({"agentSessionId": "sess-no-folder"})
+
+        ws.send_json.side_effect = resolve_on_send
+
+        resp = await client.post(
+            "/api/sessions",
+            json={"prompt": "test"},
+        )
+
+        assert resp.status_code == 201
+        mock_catalog_service.broadcast_catalog.assert_awaited_once()
+
 
 class TestBatchMoveFolder:
     """PATCH /api/sessions/folder tests."""
 
-    async def test_batch_move_sessions(self, client, mock_db):
-        """Moves multiple sessions to a folder."""
+    async def test_batch_move_sessions(self, client, mock_db, mock_catalog_service):
+        """Moves multiple sessions to a folder via catalog_service."""
         resp = await client.patch(
             "/api/sessions/folder",
             json={"sessionIds": ["s1", "s2"], "folderId": "f1"},
@@ -144,4 +199,6 @@ class TestBatchMoveFolder:
         body = resp.json()
         assert body["success"] is True
         assert body["count"] == 2
-        assert mock_db.assign_session_to_folder.call_count == 2
+        mock_catalog_service.move_sessions_to_folder.assert_awaited_once_with(
+            ["s1", "s2"], "f1"
+        )

@@ -179,8 +179,10 @@ def create_sessions_router(
         )
         # folderId DB 저장은 soul-server create_task에서 처리.
         # soul-stream은 대시보드 폴더 뷰 실시간 반영을 위한 catalog broadcast만 담당.
+        # soul-server는 folderId=None인 경우에도 _assign_default_folder_and_broadcast()로
+        # 기본 폴더를 배정하므로, folderId 유무와 무관하게 broadcast_catalog()를 호출해야 한다.
         # catalog_service=None(테스트/독립 실행)이면 broadcast할 클라이언트가 없으므로 생략이 의도된 동작.
-        if body.folderId and catalog_service:
+        if catalog_service:
             await catalog_service.broadcast_catalog()
         return {"agentSessionId": session_id, "nodeId": node_id}
 
