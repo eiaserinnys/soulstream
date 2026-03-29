@@ -119,11 +119,17 @@ export function FolderTree({
     if (!draggedId || draggedId === targetFolderId) return;
     // 일반 폴더 순서만 재계산 (시스템 폴더 제외)
     const currentOrder = sortedNormalFolders.map((f) => f.id);
+    const originalDraggedIdx = currentOrder.indexOf(draggedId);
+    const originalTargetIdx = currentOrder.indexOf(targetFolderId);
     const withoutDragged = currentOrder.filter((id) => id !== draggedId);
     const targetIdx = withoutDragged.indexOf(targetFolderId);
     if (targetIdx === -1) {
       withoutDragged.push(draggedId);
+    } else if (originalDraggedIdx < originalTargetIdx) {
+      // 앞→뒤 드래그: target 이후에 삽입 (target 앞에 삽입하면 원위치와 동일)
+      withoutDragged.splice(targetIdx + 1, 0, draggedId);
     } else {
+      // 뒤→앞 드래그: target 이전에 삽입
       withoutDragged.splice(targetIdx, 0, draggedId);
     }
     await onReorderFolders?.(withoutDragged);
