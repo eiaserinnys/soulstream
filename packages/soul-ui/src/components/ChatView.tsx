@@ -8,7 +8,7 @@
  * Tool grouping: 연속된 tool 메시지를 접기/펼치기 그룹으로 묶어 표시.
  */
 
-import { memo, useMemo, useRef, useEffect, useState, useCallback, type RefCallback } from "react";
+import { memo, useMemo, useRef, useEffect, useState, useCallback } from "react";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import type { SessionSummary, InputRequestQuestion, ContextItem } from "@shared/types";
 import { useDashboardStore } from "../stores/dashboard-store";
@@ -644,16 +644,9 @@ const VirtualizedItem = memo(function VirtualizedItem({
   llmContext?: LlmContext;
   sessionId?: string;
 }) {
-  const ref: RefCallback<HTMLElement> = useCallback(
-    (el) => {
-      if (el) measureElement(el);
-    },
-    [measureElement],
-  );
-
   return (
     <div
-      ref={ref}
+      ref={measureElement}
       data-index={vi.index}
       style={{
         position: "absolute",
@@ -731,9 +724,14 @@ export function ChatView({ chatInputDisabled = false }: ChatViewProps = {}) {
     if (isFollowingRef.current && grouped.length > 0) {
       isProgrammaticScroll.current = true;
       virtualizer.scrollToIndex(grouped.length - 1, { align: "end" });
-      requestAnimationFrame(() => {
-        isProgrammaticScroll.current = false;
-      });
+      const scrollEl = scrollRef.current;
+      if (scrollEl) {
+        scrollEl.addEventListener("scrollend", () => {
+          isProgrammaticScroll.current = false;
+        }, { once: true });
+        // fallback: scrollend가 발생하지 않는 경우 (스크롤 없이 콘텐츠 추가 등)
+        setTimeout(() => { isProgrammaticScroll.current = false; }, 150);
+      }
     } else if (!isFollowingRef.current) {
       setShowNewMessage(true);
     }
@@ -811,6 +809,8 @@ export function ChatView({ chatInputDisabled = false }: ChatViewProps = {}) {
       scrollRef.current.addEventListener("scrollend", () => {
         isProgrammaticScroll.current = false;
       }, { once: true });
+      // fallback: scrollend가 발생하지 않는 경우 (이미 맨 아래에 있을 때 등)
+      setTimeout(() => { isProgrammaticScroll.current = false; }, 150);
     }
   }, [grouped.length, virtualizer]);
 
@@ -824,6 +824,8 @@ export function ChatView({ chatInputDisabled = false }: ChatViewProps = {}) {
         scrollRef.current.addEventListener("scrollend", () => {
           isProgrammaticScroll.current = false;
         }, { once: true });
+        // fallback: scrollend가 발생하지 않는 경우 (이미 맨 아래에 있을 때 등)
+        setTimeout(() => { isProgrammaticScroll.current = false; }, 150);
       }
       return next;
     });
