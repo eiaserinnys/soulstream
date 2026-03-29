@@ -358,7 +358,6 @@ class UpstreamAdapter:
                 context_items=cmd.get("context_items"),
                 extra_context_items=cmd.get("extra_context_items"),
                 profile_id=cmd.get("profile"),
-                node_id=cmd.get("nodeId"),
                 folder_id=cmd.get("folderId"),
             )
         except ValueError as e:
