@@ -86,8 +86,12 @@ def mock_catalog_service():
     cs.rename_folder = AsyncMock()
     cs.update_folder = AsyncMock()
     cs.delete_folder = AsyncMock()
+    cs.reorder_folders = AsyncMock()
     cs.broadcast_catalog = AsyncMock()
     cs.move_sessions_to_folder = AsyncMock()
+    cs.rename_session = AsyncMock()
+    cs.delete_session = AsyncMock()
+    cs.get_catalog = AsyncMock(return_value={"folders": [], "sessions": {}})
     return cs
 
 
@@ -100,6 +104,7 @@ def broadcaster():
 @pytest.fixture
 def test_app(mock_db, node_manager, session_router, mock_catalog_service, broadcaster):
     """FastAPI test app with all routers mounted."""
+    from soulstream_server.api.catalog import create_catalog_router
     from soulstream_server.api.folders import create_folders_router
     from soulstream_server.api.nodes import create_nodes_router
     from soulstream_server.api.sessions import create_sessions_router
@@ -108,6 +113,7 @@ def test_app(mock_db, node_manager, session_router, mock_catalog_service, broadc
     app.include_router(create_sessions_router(mock_db, node_manager, session_router, broadcaster, mock_catalog_service))
     app.include_router(create_nodes_router(node_manager, broadcaster))
     app.include_router(create_folders_router(mock_catalog_service))
+    app.include_router(create_catalog_router(mock_catalog_service, mock_db, node_manager))
     return app
 
 
