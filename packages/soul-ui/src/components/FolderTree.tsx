@@ -20,6 +20,11 @@ import type { FolderSettings } from "../shared/types";
 
 const SYSTEM_FOLDER_NAMES: Set<string> = new Set(Object.values(SYSTEM_FOLDERS));
 
+/** 이름 정렬 키 — 앞쪽 이모지+공백 제거 후 텍스트 반환 */
+function sortKey(name: string): string {
+  return name.replace(/^[\p{Emoji_Presentation}\p{Extended_Pictographic}\s]+/u, '').trim() || name;
+}
+
 export interface FolderTreeProps {
   onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => void;
   onCreateFolder?: (name: string) => void;
@@ -70,9 +75,9 @@ export function FolderTree({
     const normal = allFolders.filter((f) => !SYSTEM_FOLDER_NAMES.has(f.name));
     switch (folderSortMode) {
       case "name-asc":
-        return [...normal].sort((a, b) => a.name.localeCompare(b.name));
+        return [...normal].sort((a, b) => sortKey(a.name).localeCompare(sortKey(b.name)));
       case "name-desc":
-        return [...normal].sort((a, b) => b.name.localeCompare(a.name));
+        return [...normal].sort((a, b) => sortKey(b.name).localeCompare(sortKey(a.name)));
       case "created-desc":
         return [...normal].sort((a, b) =>
           new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime()
@@ -114,11 +119,17 @@ export function FolderTree({
     if (!draggedId || draggedId === targetFolderId) return;
     // 일반 폴더 순서만 재계산 (시스템 폴더 제외)
     const currentOrder = sortedNormalFolders.map((f) => f.id);
+    const originalDraggedIdx = currentOrder.indexOf(draggedId);
+    const originalTargetIdx = currentOrder.indexOf(targetFolderId);
     const withoutDragged = currentOrder.filter((id) => id !== draggedId);
     const targetIdx = withoutDragged.indexOf(targetFolderId);
     if (targetIdx === -1) {
       withoutDragged.push(draggedId);
+    } else if (originalDraggedIdx < originalTargetIdx) {
+      // 앞→뒤 드래그: target 이후에 삽입 (target 앞에 삽입하면 원위치와 동일)
+      withoutDragged.splice(targetIdx + 1, 0, draggedId);
     } else {
+      // 뒤→앞 드래그: target 이전에 삽입
       withoutDragged.splice(targetIdx, 0, draggedId);
     }
     await onReorderFolders?.(withoutDragged);
@@ -223,7 +234,7 @@ export function FolderTree({
       key={folder.id}
       draggable={isDraggableFolder}
       className={cn(
-        "flex items-center justify-between px-3 py-1.5 cursor-pointer text-sm hover:bg-accent/50 group",
+        "flex items-center justify-between px-3 py-1.5 cursor-pointer text-sm hover:bg-accent/50 group select-none",
         viewMode === "folder" && selectedFolderId === folder.id && "bg-accent text-accent-foreground",
         dragOverId === folder.id && "ring-2 ring-primary",
         isDraggableFolder && dragFolderId === folder.id && "opacity-50",

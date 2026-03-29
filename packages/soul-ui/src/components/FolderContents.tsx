@@ -90,7 +90,7 @@ const SessionItem = memo(function SessionItem({
     <div
       draggable
       className={cn(
-        "flex items-center gap-2 px-3 py-2 cursor-pointer text-sm hover:bg-accent/50 border-b border-border/50",
+        "flex items-center gap-2 px-3 py-2 cursor-pointer text-sm hover:bg-accent/50 border-b border-border/50 select-none",
         isActive && "bg-accent text-accent-foreground",
         isSelected && !isActive && "bg-primary/10",
         isReadCompleted && "opacity-50",
