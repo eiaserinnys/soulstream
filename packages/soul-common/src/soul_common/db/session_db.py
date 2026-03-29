@@ -449,7 +449,14 @@ class PostgresSessionDB:
         rows = await self._pool.fetch(
             "SELECT * FROM folder_get_all()"
         )
-        return [dict(r) for r in rows]
+        result = []
+        for r in rows:
+            d = dict(r)
+            # asyncpg는 TIMESTAMPTZ를 Python datetime 객체로 반환 — JSON 직렬화를 위해 변환
+            if d.get("created_at") is not None:
+                d["created_at"] = d["created_at"].isoformat()
+            result.append(d)
+        return result
 
     async def get_default_folder(self, name: str) -> Optional[dict]:
         row = await self._pool.fetchrow(

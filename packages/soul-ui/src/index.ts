@@ -123,6 +123,7 @@ export type {
   SelectedEventNodeData,
   DashboardState,
   DashboardActions,
+  FolderSortMode,
 } from "./stores/dashboard-store";
 
 export type { ProcessingContext, TextTargetNode } from "./stores/processing-context";
