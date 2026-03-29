@@ -6,10 +6,14 @@
  */
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import type React from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { FeedCard } from "./FeedCard";
 import { FeedTopBar } from "./FeedTopBar";
+import { Dialog, DialogPopup, DialogHeader, DialogTitle, DialogPanel, DialogFooter } from "./ui/dialog";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
 
 const CARD_HEIGHT = 220;
 const CARD_GAP = 12;
@@ -21,9 +25,13 @@ export interface FeedViewProps {
   onLoadMore?: () => void;
   /** 추가 로드 가능 여부 */
   hasMore?: boolean;
+  /** 세션 이름 변경 콜백. 미지정 시 이름 변경 메뉴 비활성화 */
+  onRenameSession?: (sessionId: string, displayName: string | null) => Promise<void>;
+  /** 세션 폴더 이동 콜백. 미지정 시 폴더 이동 메뉴 비활성화 */
+  onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => Promise<void>;
 }
 
-export function FeedView({ onNewSession, onLoadMore, hasMore }: FeedViewProps = {}) {
+export function FeedView({ onNewSession, onLoadMore, hasMore, onRenameSession, onMoveSessions }: FeedViewProps = {}) {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const viewMode = useDashboardStore((s) => s.viewMode);
   const sessions = useDashboardStore((s) => s.sessions);
@@ -152,6 +160,58 @@ export function FeedView({ onNewSession, onLoadMore, hasMore }: FeedViewProps = 
     [catalog, selectFolder],
   );
 
+  // 컨텍스트 메뉴
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    sessionId: string;
+  } | null>(null);
+
+  // 이름 변경 모달
+  const [renameDialog, setRenameDialog] = useState<{
+    open: boolean;
+    sessionId: string;
+    currentName: string;
+  }>({ open: false, sessionId: "", currentName: "" });
+  const [renameInput, setRenameInput] = useState("");
+
+  const handleContextMenu = useCallback(
+    (sessionId: string, e: React.MouseEvent) => {
+      if (!onRenameSession && !onMoveSessions) return;
+      e.preventDefault();
+      setContextMenu({ x: e.clientX, y: e.clientY, sessionId });
+    },
+    [onRenameSession, onMoveSessions],
+  );
+
+  const handleMoveToFolder = useCallback(
+    async (targetFolderId: string | null) => {
+      const sessionId = contextMenu?.sessionId;
+      if (!sessionId || !onMoveSessions) return;
+      setContextMenu(null);
+      await onMoveSessions([sessionId], targetFolderId);
+    },
+    [contextMenu, onMoveSessions],
+  );
+
+  const handleRenameClick = useCallback(() => {
+    if (!contextMenu || !onRenameSession) return;
+    const sessionId = contextMenu.sessionId;
+    setContextMenu(null);
+    const currentName = feedSessions.find(
+      (s) => s.agentSessionId === sessionId
+    )?.displayName ?? "";
+    setRenameInput(currentName);
+    setRenameDialog({ open: true, sessionId, currentName });
+  }, [contextMenu, onRenameSession, feedSessions]);
+
+  const handleRenameSubmit = useCallback(async () => {
+    if (!onRenameSession) return;
+    const { sessionId } = renameDialog;
+    setRenameDialog((d) => ({ ...d, open: false }));
+    await onRenameSession(sessionId, renameInput.trim() || null);
+  }, [onRenameSession, renameDialog, renameInput]);
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <FeedTopBar onNewSession={onNewSession} />
@@ -193,12 +253,96 @@ export function FeedView({ onNewSession, onLoadMore, hasMore }: FeedViewProps = 
                     folderName={getFolderName(session.agentSessionId)}
                     onClick={() => handleCardClick(session.agentSessionId)}
                     onDoubleClick={() => handleCardDoubleClick(session.agentSessionId)}
+                    onContextMenu={(e) => handleContextMenu(session.agentSessionId, e)}
                   />
                 </div>
               );
             })}
           </div>
         </div>
+      )}
+
+      {/* 컨텍스트 메뉴 */}
+      {contextMenu && (
+        <div
+          className="fixed z-50 bg-popover border border-border rounded-md shadow-lg py-1 min-w-[160px]"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {onRenameSession && (
+            <>
+              <button
+                className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
+                onClick={handleRenameClick}
+              >
+                이름 변경
+              </button>
+              <div className="border-t border-border my-1" />
+            </>
+          )}
+          {onMoveSessions && catalog?.folders && catalog.folders.length > 0 && (
+            <>
+              <div className="px-3 py-1 text-xs text-muted-foreground">폴더 이동:</div>
+              {catalog.folders.map((f) => (
+                <button
+                  key={f.id}
+                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
+                  onClick={() => handleMoveToFolder(f.id)}
+                >
+                  {f.name}
+                </button>
+              ))}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* 컨텍스트 메뉴 닫기 오버레이 */}
+      {contextMenu && (
+        <div
+          className="fixed inset-0 z-40"
+          onClick={() => setContextMenu(null)}
+          onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }}
+        />
+      )}
+
+      {/* 이름 변경 모달 */}
+      {onRenameSession && (
+        <Dialog
+          open={renameDialog.open}
+          onOpenChange={(open) => setRenameDialog((d) => ({ ...d, open }))}
+        >
+          <DialogPopup className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>세션 이름 변경</DialogTitle>
+            </DialogHeader>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleRenameSubmit();
+              }}
+            >
+              <DialogPanel>
+                <Input
+                  autoFocus
+                  placeholder="세션 이름 (비워두면 기본 이름으로 초기화)"
+                  value={renameInput}
+                  onChange={(e) => setRenameInput(e.target.value)}
+                />
+              </DialogPanel>
+              <DialogFooter variant="bare">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setRenameDialog((d) => ({ ...d, open: false }))}
+                >
+                  취소
+                </Button>
+                <Button type="submit">변경</Button>
+              </DialogFooter>
+            </form>
+          </DialogPopup>
+        </Dialog>
       )}
     </div>
   );
