@@ -11,7 +11,7 @@
  * - ConfigModal / SearchModal / NewSessionModal / DrainBanner 추가 (Phase 4)
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { FolderContents } from "./components/FolderContents";
 import {
   createFolder,
@@ -111,6 +111,17 @@ export function DashboardLayout() {
     ? computeIsOtherNode(currentNodeId, activeSession?.nodeId)
     : false;
 
+  // 세션 이동 후 빈 자리 보충 — 이동으로 폴더 표시 세션 수가 줄면 더 있으면 loadMore
+  const handleMoveSessions = useCallback(
+    async (sessionIds: string[], targetFolderId: string | null) => {
+      await moveSessionsOptimistic(sessionIds, targetFolderId);
+      if (hasMore) {
+        loadMore();
+      }
+    },
+    [hasMore, loadMore],
+  );
+
   // Config / Search 모달 상태
   const [configOpen, setConfigOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -120,7 +131,7 @@ export function DashboardLayout() {
       title="Soul Dashboard"
       leftPanel={
         <FolderTree
-          onMoveSessions={moveSessionsOptimistic}
+          onMoveSessions={handleMoveSessions}
           onCreateFolder={createFolder}
           onRenameFolder={renameFolderOptimistic}
           onDeleteFolder={deleteFolderOptimistic}
@@ -142,7 +153,7 @@ export function DashboardLayout() {
             <SessionsTopBar />
             <VerticalSplitPane
               className="flex-1 overflow-hidden"
-              top={<FolderContents onLoadMore={loadMore} hasMore={hasMore} />}
+              top={<FolderContents onLoadMore={loadMore} hasMore={hasMore} onMoveSessions={handleMoveSessions} />}
               bottom={
                 <div className="flex-1 overflow-hidden h-full bg-muted/50 dark:bg-muted/30">
                   <NodeGraph />
@@ -182,7 +193,7 @@ export function DashboardLayout() {
         ) : (
           <>
             <SessionsTopBar />
-            <FolderContents onLoadMore={loadMore} hasMore={hasMore} />
+            <FolderContents onLoadMore={loadMore} hasMore={hasMore} onMoveSessions={handleMoveSessions} />
           </>
         )
       }
