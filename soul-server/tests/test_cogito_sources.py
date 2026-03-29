@@ -17,7 +17,6 @@ class TestSoulstreamCogitoSources:
     def _import_decorated_modules(self):
         """데코레이터가 적용된 모듈을 임포트하여 capability를 등록한다."""
         import soul_server.api.tasks  # session_management
-        import soul_server.api.credentials  # credential_management
         import soul_server.service.runner_pool  # runner_pool
         import soul_server.api.llm  # llm_proxy
         import soul_server.cogito.mcp_tools  # cogito
@@ -26,7 +25,7 @@ class TestSoulstreamCogitoSources:
         from soul_server.cogito.reflector_setup import reflect
 
         sources = reflect.get_sources()
-        assert len(sources) == 5
+        assert len(sources) == 4
 
     def test_source_capability_names(self):
         from soul_server.cogito.reflector_setup import reflect
@@ -35,7 +34,6 @@ class TestSoulstreamCogitoSources:
         names = {s.capability for s in sources}
         assert names == {
             "session_management",
-            "credential_management",
             "runner_pool",
             "llm_proxy",
             "cogito",
