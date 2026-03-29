@@ -84,6 +84,7 @@ def mock_catalog_service():
     cs.list_folders = AsyncMock(return_value=[])
     cs.create_folder = AsyncMock(return_value={"id": "f1", "name": "Test", "sortOrder": 0})
     cs.rename_folder = AsyncMock()
+    cs.update_folder = AsyncMock()
     cs.delete_folder = AsyncMock()
     return cs
 
