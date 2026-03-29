@@ -212,7 +212,8 @@ export { useDashboardConfig } from "./hooks/useDashboardConfig";
 export { useServerStatus } from "./hooks/useServerStatus";
 
 // === Dashboard Lib (extracted from soul-dashboard) ===
-export { renameSessionOptimistic } from "./lib/rename-session";
+export { renameSessionOptimistic, createRenameSessionOperation } from "./lib/rename-session";
+export type { RenameSessionApiConfig, RenameSessionOperations } from "./lib/rename-session";
 
 // === Detail Components ===
 export { ErrorDetail } from "./components/detail/ErrorDetail";
