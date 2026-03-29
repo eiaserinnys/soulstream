@@ -123,8 +123,8 @@ class PostgresSessionDB:
         if invalid:
             raise ValueError(f"Invalid session columns: {invalid}")
 
-        # 불변 필드 보호: non-null 값으로 덮어쓰기 시도 시 기존 값 확인 후 충돌 방지
-        immutable_updates = {k: v for k, v in fields.items() if k in IMMUTABLE_FIELDS and v is not None}
+        # 불변 필드 보호: None 포함 모든 덮어쓰기 시도 시 기존 값 확인 후 충돌 방지
+        immutable_updates = {k: v for k, v in fields.items() if k in IMMUTABLE_FIELDS}
         if immutable_updates:
             row = await self._pool.fetchrow(
                 "SELECT claude_session_id, node_id, agent_id FROM sessions WHERE session_id = $1",
@@ -183,6 +183,86 @@ class PostgresSessionDB:
         await self._pool.execute(
             "SELECT session_upsert($1, $2, $3, $4, $5)",
             session_id, columns, values, created_at, updated_at,
+        )
+
+    async def register_session_initial(
+        self,
+        session_id: str,
+        node_id: str,
+        agent_id: str,
+        claude_session_id: str,
+        session_type: str,
+        prompt: Optional[str] = None,
+        client_id: Optional[str] = None,
+        status: str = "running",
+        created_at: Optional[datetime] = None,
+        updated_at: Optional[datetime] = None,
+    ) -> None:
+        """세션 최초 등록 (순수 INSERT).
+
+        4개 불변 ID(session_id, node_id, agent_id, claude_session_id)를 원자적으로 기록한다.
+        중복 호출 시 DB 고유 제약 위반 예외 발생 (ON CONFLICT 없음).
+        """
+        now = _utc_now()
+        await self._pool.execute(
+            "SELECT session_register($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+            session_id,
+            node_id,
+            agent_id,
+            claude_session_id,
+            session_type,
+            prompt,
+            client_id,
+            status,
+            created_at or now,
+            updated_at or now,
+        )
+
+    _UPDATE_SESSION_IMMUTABLE = frozenset({
+        "node_id", "agent_id", "claude_session_id", "session_type", "created_at",
+    })
+
+    async def update_session(self, session_id: str, **fields) -> None:
+        """세션 속성 갱신 (순수 UPDATE).
+
+        불변 필드(node_id, agent_id, claude_session_id, session_type, created_at)는
+        허용하지 않는다 — ValueError를 발생시킨다.
+        DB 프로시저(session_update)도 해당 필드를 거부한다.
+        """
+        invalid = set(fields) & self._UPDATE_SESSION_IMMUTABLE
+        if invalid:
+            raise ValueError(f"Immutable fields cannot be updated via update_session: {invalid}")
+
+        now = _utc_now()
+        if "updated_at" in fields:
+            v = fields.pop("updated_at")
+            updated_at = v if isinstance(v, datetime) else datetime.fromisoformat(v) if isinstance(v, str) else now
+        else:
+            updated_at = now
+
+        fields.pop("session_id", None)
+
+        # JSONB 직렬화
+        for col in _JSONB_COLUMNS:
+            if col in fields and isinstance(fields[col], (dict, list)):
+                fields[col] = json.dumps(fields[col], ensure_ascii=False)
+
+        columns = list(fields.keys())
+        values = []
+        for c in columns:
+            v = fields[c]
+            if v is None:
+                values.append(None)
+            elif isinstance(v, bool):
+                values.append(str(v).lower())
+            elif isinstance(v, (int, float)):
+                values.append(str(v))
+            else:
+                values.append(str(v))
+
+        await self._pool.execute(
+            "SELECT session_update($1, $2, $3, $4)",
+            session_id, columns, values, updated_at,
         )
 
     @staticmethod
