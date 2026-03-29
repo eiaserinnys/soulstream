@@ -53,6 +53,10 @@ class BatchMoveRequest(BaseModel):
     folderId: Optional[str] = None
 
 
+class RenameSessionRequest(BaseModel):
+    displayName: Optional[str] = None
+
+
 class ReadPositionRequest(BaseModel):
     last_read_event_id: int
 
@@ -324,6 +328,15 @@ def create_sessions_router(
             session_id, body.request_id, body.answers
         )
         return result
+
+    @router.patch("/{session_id}/display-name")
+    async def rename_session(session_id: str, body: RenameSessionRequest) -> dict:
+        """세션 표시 이름 변경."""
+        if catalog_service:
+            await catalog_service.rename_session(session_id, body.displayName)
+        else:
+            await db.rename_session(session_id, body.displayName)
+        return {"success": True}
 
     @router.patch("/folder")
     async def batch_move_folder(body: BatchMoveRequest) -> dict:
