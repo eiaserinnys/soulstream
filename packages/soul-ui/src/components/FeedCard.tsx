@@ -39,6 +39,8 @@ export const FeedCard = memo(function FeedCard({
   onContextMenu,
 }: FeedCardProps) {
   const statusConfig = STATUS_CONFIG[session.status] ?? STATUS_CONFIG.unknown;
+  const isRunning = session.status === 'running';
+  const isError = session.status === 'error';
   const isUnread = isSessionUnread(session);
   const [theme] = useTheme();
   const dashboardConfig = useDashboardStore((s) => s.dashboardConfig);
@@ -76,12 +78,36 @@ export const FeedCard = memo(function FeedCard({
   return (
     <div
       className={cn(
-        "h-[220px] rounded-lg border p-4 cursor-pointer transition-colors overflow-hidden flex flex-col gap-2",
-        isUnread
-          ? "border-l-[3px] border-l-info bg-info/[0.04] border-t border-r border-b border-border"
-          : "border-border",
-        isActive && "ring-1 ring-accent-blue bg-accent-blue/[0.06]",
-        !isActive && "hover:bg-accent/30",
+        "h-[220px] rounded-lg border relative p-4 cursor-pointer transition-colors overflow-hidden flex flex-col gap-2",
+        isRunning
+          ? [
+              // 배경과 테두리는 animation keyframe(box-shadow)에서 처리
+              // unread: 왼쪽 테두리만 초록으로 유지, 나머지는 너비 0으로 제거
+              isUnread
+                ? "border-t-0 border-r-0 border-b-0 border-l-[3px] border-l-success"
+                : "border-transparent",
+              // running variant CSS class (::before shimmer + background animation)
+              isActive ? "card-running-base card-running-active"
+                : isUnread ? "card-running-base card-running-unread"
+                : "card-running-base card-running",
+            ]
+          : isUnread
+            ? [
+                "border-l-[3px] border-t border-r border-b border-border",
+                isError
+                  ? "border-l-accent-red bg-accent-red/[0.06]"
+                  : "border-l-info bg-info/[0.04]",
+              ]
+            : [
+                "border-border",
+                isActive && (
+                  isError
+                    ? "ring-[1.5px] ring-accent-red/80 bg-accent-red/[0.06]"
+                    : "ring-1 ring-accent-blue bg-accent-blue/[0.06]"
+                ),
+                !isActive && isError && "bg-accent-red/[0.06]",
+              ],
+        !isActive && !isRunning && "hover:bg-accent/30",
       )}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
