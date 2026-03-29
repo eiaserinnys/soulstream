@@ -74,6 +74,7 @@ export type {
   SessionUpdatedStreamEvent,
   SessionDeletedStreamEvent,
   SessionStreamEvent,
+  FolderSettings,
   CatalogFolder,
   CatalogAssignment,
   CatalogState,
@@ -169,6 +170,8 @@ export { FeedView } from "./components/FeedView";
 export { FeedTopBar } from "./components/FeedTopBar";
 export type { FeedTopBarProps } from "./components/FeedTopBar";
 export { FolderDialog } from "./components/FolderDialog";
+export { FolderSettingsDialog } from "./components/FolderSettingsDialog";
+export type { FolderSettingsDialogProps } from "./components/FolderSettingsDialog";
 export { ChatView } from "./components/ChatView";
 export { ChatInput } from "./components/ChatInput";
 export { RightPanel } from "./components/RightPanel";

@@ -16,8 +16,8 @@ from soul_server.service.catalog_service import (
 def mock_db():
     db = AsyncMock()
     db.get_all_folders = AsyncMock(return_value=[
-        {"id": "f1", "name": "Folder 1", "sort_order": 0},
-        {"id": "f2", "name": "Folder 2", "sort_order": 1},
+        {"id": "f1", "name": "Folder 1", "sort_order": 0, "settings": {}},
+        {"id": "f2", "name": "Folder 2", "sort_order": 1, "settings": {}},
     ])
     db.create_folder = AsyncMock()
     db.update_folder = AsyncMock()
@@ -46,9 +46,14 @@ class TestListFolders:
     async def test_returns_formatted_folders(self, catalog_service, mock_db):
         result = await catalog_service.list_folders()
         assert len(result) == 2
-        assert result[0] == {"id": "f1", "name": "Folder 1", "sortOrder": 0}
-        assert result[1] == {"id": "f2", "name": "Folder 2", "sortOrder": 1}
+        assert result[0] == {"id": "f1", "name": "Folder 1", "sortOrder": 0, "settings": {}}
+        assert result[1] == {"id": "f2", "name": "Folder 2", "sortOrder": 1, "settings": {}}
         mock_db.get_all_folders.assert_awaited_once()
+
+    async def test_update_folder_settings(self, catalog_service, mock_db):
+        settings = {"excludeFromFeed": True}
+        await catalog_service.update_folder("f1", settings=settings)
+        mock_db.update_folder.assert_awaited_once_with("f1", settings=settings)
 
 
 class TestCreateFolder:

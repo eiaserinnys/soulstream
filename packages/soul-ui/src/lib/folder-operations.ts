@@ -14,7 +14,7 @@
  */
 
 import { useDashboardStore } from "../stores/dashboard-store";
-import type { CatalogFolder } from "../shared/types";
+import type { CatalogFolder, FolderSettings } from "../shared/types";
 
 export interface FolderApiConfig {
   createUrl: string;
@@ -32,6 +32,7 @@ export interface FolderOperations {
   createFolder: (name: string) => Promise<void>;
   renameFolderOptimistic: (folderId: string, name: string) => Promise<void>;
   deleteFolderOptimistic: (folderId: string) => Promise<void>;
+  updateFolderSettingsOptimistic: (folderId: string, settings: FolderSettings) => Promise<void>;
 }
 
 export function createFolderOperations(config: FolderApiConfig): FolderOperations {
@@ -146,5 +147,32 @@ export function createFolderOperations(config: FolderApiConfig): FolderOperation
     }
   }
 
-  return { createFolder, renameFolderOptimistic, deleteFolderOptimistic };
+  /**
+   * 폴더 설정 낙관적 업데이트.
+   *
+   * 로컬 settings를 즉시 갱신 → API → 실패 시 원래 settings로 롤백.
+   */
+  async function updateFolderSettingsOptimistic(
+    folderId: string,
+    settings: FolderSettings,
+  ): Promise<void> {
+    const { updateFolderSettings, catalog } = useDashboardStore.getState();
+    const prevSettings = catalog?.folders.find((f) => f.id === folderId)?.settings;
+
+    updateFolderSettings(folderId, settings);
+
+    try {
+      const res = await fetch(config.updateUrl(folderId), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ settings }),
+      });
+      if (!res.ok) throw new Error(`Update folder settings failed: ${res.status}`);
+    } catch (err) {
+      updateFolderSettings(folderId, prevSettings);
+      console.error("Folder settings update failed, rolled back:", err);
+    }
+  }
+
+  return { createFolder, renameFolderOptimistic, deleteFolderOptimistic, updateFolderSettingsOptimistic };
 }
