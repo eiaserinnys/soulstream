@@ -20,6 +20,8 @@ export interface FolderApiConfig {
   createUrl: string;
   updateUrl: (id: string) => string;
   deleteUrl: (id: string) => string;
+  /** 폴더 순서 재정렬 API URL */
+  reorderUrl: string;
   /**
    * 삭제 후 폴백 폴더 결정 로직:
    * - string: 해당 이름의 폴더를 catalog에서 찾아 폴백 (soul-dashboard: SYSTEM_FOLDERS.claude)
@@ -33,6 +35,7 @@ export interface FolderOperations {
   renameFolderOptimistic: (folderId: string, name: string) => Promise<void>;
   deleteFolderOptimistic: (folderId: string) => Promise<void>;
   updateFolderSettingsOptimistic: (folderId: string, settings: FolderSettings) => Promise<void>;
+  reorderFoldersOptimistic: (orderedFolderIds: string[]) => Promise<void>;
 }
 
 export function createFolderOperations(config: FolderApiConfig): FolderOperations {
@@ -174,5 +177,33 @@ export function createFolderOperations(config: FolderApiConfig): FolderOperation
     }
   }
 
-  return { createFolder, renameFolderOptimistic, deleteFolderOptimistic, updateFolderSettingsOptimistic };
+  /**
+   * 폴더 순서 낙관적 업데이트.
+   *
+   * 로컬 store의 folders 순서를 즉시 갱신 → API → 실패 시 이전 순서로 롤백.
+   * SSE `catalog_updated`가 서버 정본으로 최종 덮어쓴다.
+   */
+  async function reorderFoldersOptimistic(orderedFolderIds: string[]): Promise<void> {
+    const { reorderFolders, catalog } = useDashboardStore.getState();
+    const prevFolders = catalog?.folders ? [...catalog.folders] : [];
+
+    // 낙관적 갱신
+    reorderFolders(orderedFolderIds);
+
+    try {
+      const items = orderedFolderIds.map((id, index) => ({ id, sortOrder: index }));
+      const res = await fetch(config.reorderUrl, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(items),
+      });
+      if (!res.ok) throw new Error(`Reorder folders failed: ${res.status}`);
+    } catch (err) {
+      // 롤백: 이전 순서의 ID 배열로 복원
+      reorderFolders(prevFolders.map((f) => f.id));
+      console.error("Folder reorder failed, rolled back:", err);
+    }
+  }
+
+  return { createFolder, renameFolderOptimistic, deleteFolderOptimistic, updateFolderSettingsOptimistic, reorderFoldersOptimistic };
 }

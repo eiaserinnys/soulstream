@@ -78,6 +78,10 @@ export interface SelectedEventNodeData {
   isError?: boolean;
 }
 
+// === Folder Sort Mode ===
+
+export type FolderSortMode = "name-asc" | "name-desc" | "created-desc" | "created-asc" | "custom";
+
 // === State Interface ===
 
 export interface DashboardState {
@@ -175,6 +179,9 @@ export interface DashboardState {
 
   /** 카탈로그 변경 감지용 카운터 */
   catalogVersion: number;
+
+  /** 폴더 목록 정렬 모드 (localStorage에 저장) */
+  folderSortMode: FolderSortMode;
 }
 
 // === Actions Interface ===
@@ -267,6 +274,11 @@ export interface DashboardActions {
   updateFolderName: (folderId: string, name: string) => void;
   updateFolderSettings: (folderId: string, settings: CatalogFolder["settings"]) => void;
   removeFolder: (folderId: string) => void;
+  /** 폴더 순서 낙관적 갱신: orderedFolderIds 순서대로 sortOrder를 재계산하여 store에 반영 */
+  reorderFolders: (orderedFolderIds: string[]) => void;
+
+  // 폴더 정렬 모드
+  setFolderSortMode: (mode: FolderSortMode) => void;
 
   // 모바일 뷰 전환
   setMobileView: (view: "sessions" | "chat") => void;
@@ -350,6 +362,7 @@ const initialState: DashboardState = {
   catalog: null,
   selectedFolderId: null,
   catalogVersion: 0,
+  folderSortMode: "custom",
 };
 
 /** 세션 전환 시 초기화할 상태를 매번 새 인스턴스로 생성 (Set 공유 방지) */
@@ -988,6 +1001,26 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         }));
       },
 
+      reorderFolders: (orderedFolderIds) => {
+        const { catalog } = get();
+        if (!catalog) return;
+        const folderMap = new Map(catalog.folders.map((f) => [f.id, f]));
+        const reordered = orderedFolderIds
+          .map((id, index) => {
+            const f = folderMap.get(id);
+            return f ? { ...f, sortOrder: index } : null;
+          })
+          .filter((f): f is CatalogFolder => f !== null);
+        set((state) => ({
+          catalog: { ...catalog, folders: reordered },
+          catalogVersion: state.catalogVersion + 1,
+        }));
+      },
+
+      setFolderSortMode: (mode) => {
+        set({ folderSortMode: mode });
+      },
+
       selectFolder: (folderId) => {
         set({ selectedFolderId: folderId, viewMode: "folder" });
         // FolderTree.handleSelectFolder에서 흡수: 첫 세션 자동 선택
@@ -1115,7 +1148,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
     {
       name: "soul-dashboard-storage",
       // 스토리지 모드 + 입력창 draft 영속화 (세션 데이터는 제외)
-      partialize: (state) => ({ storageMode: state.storageMode, drafts: state.drafts }),
+      partialize: (state) => ({ storageMode: state.storageMode, drafts: state.drafts, folderSortMode: state.folderSortMode }),
     },
   ),
 );

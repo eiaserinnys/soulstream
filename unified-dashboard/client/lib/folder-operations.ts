@@ -7,10 +7,16 @@
 
 import { createFolderOperations, SYSTEM_FOLDERS } from "@seosoyoung/soul-ui";
 
-export const { createFolder, renameFolderOptimistic, deleteFolderOptimistic, updateFolderSettingsOptimistic } =
-  createFolderOperations({
-    createUrl: "/api/catalog/folders",
-    updateUrl: (id) => `/api/catalog/folders/${id}`,
-    deleteUrl: (id) => `/api/catalog/folders/${id}`,
-    deleteFallbackFolderName: SYSTEM_FOLDERS.claude,
-  });
+export const {
+  createFolder,
+  renameFolderOptimistic,
+  deleteFolderOptimistic,
+  updateFolderSettingsOptimistic,
+  reorderFoldersOptimistic,
+} = createFolderOperations({
+  createUrl: "/api/catalog/folders",
+  updateUrl: (id) => `/api/catalog/folders/${id}`,
+  deleteUrl: (id) => `/api/catalog/folders/${id}`,
+  reorderUrl: "/api/catalog/folders/reorder",
+  deleteFallbackFolderName: SYSTEM_FOLDERS.claude,
+});
