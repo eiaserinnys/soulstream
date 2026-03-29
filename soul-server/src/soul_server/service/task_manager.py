@@ -575,25 +575,19 @@ class TaskManager:
 
         if is_new:
             task.node_id = self._db.node_id
-        elif task.node_id is None:
-            # 레거시 세션(node_id=null)이 resume될 때 현재 노드로 보정
-            task.node_id = self._db.node_id
 
         # DB에 세션 등록/업데이트
         # claude_session_id는 register_session()에서만 기록한다 (단일 쓰기 경로).
-        # agent_id는 신규 세션 최초 등록 시에만 기록한다.
-        # node_id: NOT NULL 제약 때문에 INSERT 시 반드시 포함해야 한다.
-        #   (session_upsert가 INSERT ON CONFLICT DO UPDATE를 사용하므로
-        #    ON CONFLICT 평가 전에 NOT NULL이 먼저 검사됨)
+        # node_id와 agent_id는 신규 세션 최초 등록 시에만 기록한다.
         upsert_fields: dict = dict(
             status=TaskStatus.RUNNING.value,
             prompt=prompt,
             session_type=task.session_type,
             client_id=task.client_id,
             created_at=datetime_to_str(task.created_at),
-            node_id=task.node_id,  # NOT NULL 제약 만족 — INSERT/UPDATE 모두 필요
         )
         if is_new:
+            upsert_fields["node_id"] = task.node_id
             upsert_fields["agent_id"] = task.profile_id
         await self._db.upsert_session(agent_session_id, **upsert_fields)
 

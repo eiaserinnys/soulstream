@@ -721,13 +721,8 @@ class TestNodeIdGuard:
         )
         assert task.status == TaskStatus.RUNNING
 
-    async def test_resume_writes_node_id_to_db(self, manager):
-        """resume 시 DB upsert에 node_id를 항상 전달한다.
-
-        session_upsert가 INSERT ON CONFLICT DO UPDATE를 사용하므로
-        ON CONFLICT 평가 전에 NOT NULL 제약이 먼저 검사된다.
-        node_id가 INSERT 컬럼 목록에 없으면 행이 이미 DB에 존재해도 NOT NULL 위반이 발생한다.
-        """
+    async def test_resume_does_not_write_node_id_to_db(self, manager):
+        """resume 시 DB upsert에 node_id를 전달하지 않는다 (불변 필드 — 최초 등록 시에만 기록)"""
         from unittest.mock import AsyncMock as MockAsync
         from soul_server.service.task_models import Task, TaskStatus
 
@@ -751,8 +746,8 @@ class TestNodeIdGuard:
         await manager.create_task(prompt="resume", agent_session_id="sess-resume")
 
         assert len(upsert_calls) == 1
-        # resume(is_new=False) 시에도 node_id를 DB에 전달해야 한다 (NOT NULL 제약 만족)
-        assert upsert_calls[0] == "test-node"
+        # resume(is_new=False) 시에는 node_id를 DB에 전달하지 않는다 (불변 필드 보호)
+        assert upsert_calls[0] is None
 
     async def test_new_session_sets_current_node_id(self, manager):
         """신규 세션 생성 시 node_id = self._db.node_id"""
