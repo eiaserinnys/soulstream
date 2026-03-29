@@ -16,6 +16,7 @@ soul-common의 CatalogService.get_catalog()은 sessions를 dict(세션ID → 폴
 """
 
 import logging
+from typing import Optional
 
 from fastapi import APIRouter, Query
 
@@ -38,6 +39,7 @@ def create_catalog_router(
     async def get_catalog(
         offset: int = Query(0, ge=0),
         limit: int = Query(50, ge=0),
+        folder_id: Optional[str] = None,
     ) -> dict:
         """폴더 + 세션 카탈로그 조회.
 
@@ -49,7 +51,7 @@ def create_catalog_router(
         folder_assignments = catalog.get("sessions", {})
 
         # DB에서 세션 목록 조회 (페이지네이션 적용, limit=0이면 전체)
-        sessions_raw, total = await db.get_all_sessions(offset=offset, limit=limit)
+        sessions_raw, total = await db.get_all_sessions(offset=offset, limit=limit, folder_id=folder_id)
 
         # sessions dict: soul-ui CatalogState 호환 (Record<string, CatalogAssignment>)
         # folder_assignments 전체를 사용한다. sessions_raw는 페이지네이션되어 있어
