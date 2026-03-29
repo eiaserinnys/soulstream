@@ -86,6 +86,8 @@ def mock_catalog_service():
     cs.rename_folder = AsyncMock()
     cs.update_folder = AsyncMock()
     cs.delete_folder = AsyncMock()
+    cs.broadcast_catalog = AsyncMock()
+    cs.move_sessions_to_folder = AsyncMock()
     return cs
 
 
@@ -103,7 +105,7 @@ def test_app(mock_db, node_manager, session_router, mock_catalog_service, broadc
     from soulstream_server.api.sessions import create_sessions_router
 
     app = FastAPI()
-    app.include_router(create_sessions_router(mock_db, node_manager, session_router, broadcaster))
+    app.include_router(create_sessions_router(mock_db, node_manager, session_router, broadcaster, mock_catalog_service))
     app.include_router(create_nodes_router(node_manager, broadcaster))
     app.include_router(create_folders_router(mock_catalog_service))
     return app
