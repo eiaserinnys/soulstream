@@ -55,6 +55,7 @@ class CatalogService:
                 "name": f["name"],
                 "sortOrder": f["sort_order"],
                 "settings": f.get("settings") or {},
+                "createdAt": f.get("created_at"),
             }
             for f in folders
         ]
@@ -94,6 +95,16 @@ class CatalogService:
     async def delete_folder(self, folder_id: str) -> None:
         """폴더를 삭제한다."""
         await self._db.delete_folder(folder_id)
+        await self._broadcast_catalog()
+
+    async def reorder_folders(self, items: list[dict]) -> None:
+        """여러 폴더의 sort_order를 한 번에 업데이트한다.
+
+        Args:
+            items: [{"id": str, "sortOrder": int}, ...] 형태의 목록
+        """
+        for item in items:
+            await self._db.update_folder(item["id"], sort_order=item["sortOrder"])
         await self._broadcast_catalog()
 
     # --- 세션 관리 ---

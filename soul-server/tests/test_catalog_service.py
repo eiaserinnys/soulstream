@@ -46,8 +46,8 @@ class TestListFolders:
     async def test_returns_formatted_folders(self, catalog_service, mock_db):
         result = await catalog_service.list_folders()
         assert len(result) == 2
-        assert result[0] == {"id": "f1", "name": "Folder 1", "sortOrder": 0, "settings": {}}
-        assert result[1] == {"id": "f2", "name": "Folder 2", "sortOrder": 1, "settings": {}}
+        assert result[0] == {"id": "f1", "name": "Folder 1", "sortOrder": 0, "settings": {}, "createdAt": None}
+        assert result[1] == {"id": "f2", "name": "Folder 2", "sortOrder": 1, "settings": {}, "createdAt": None}
         mock_db.get_all_folders.assert_awaited_once()
 
     async def test_update_folder_settings(self, catalog_service, mock_db):
@@ -89,6 +89,21 @@ class TestUpdateFolder:
     async def test_noop_when_no_fields(self, catalog_service, mock_db):
         await catalog_service.update_folder("f1")
         mock_db.update_folder.assert_not_awaited()
+
+
+class TestReorderFolders:
+    async def test_updates_sort_order_and_broadcasts(self, catalog_service, mock_db, mock_broadcaster):
+        items = [{"id": "f1", "sortOrder": 2}, {"id": "f2", "sortOrder": 0}]
+        await catalog_service.reorder_folders(items)
+        assert mock_db.update_folder.await_count == 2
+        mock_db.update_folder.assert_any_await("f1", sort_order=2)
+        mock_db.update_folder.assert_any_await("f2", sort_order=0)
+        mock_broadcaster.broadcast.assert_awaited()
+
+    async def test_empty_list_noop(self, catalog_service, mock_db, mock_broadcaster):
+        await catalog_service.reorder_folders([])
+        mock_db.update_folder.assert_not_awaited()
+        mock_broadcaster.broadcast.assert_awaited()
 
 
 class TestDeleteFolder:

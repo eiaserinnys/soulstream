@@ -673,6 +673,7 @@ export interface CatalogFolder {
   name: string;
   sortOrder: number;
   settings?: FolderSettings;
+  createdAt?: string;
 }
 
 /** 카탈로그 세션 배치 정보 */
