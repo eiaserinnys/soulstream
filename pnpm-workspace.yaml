@@ -1,6 +1,4 @@
 packages:
   - 'packages/*'
-  - 'soul-dashboard'
   - 'soul-stream'
-  - 'orchestrator-dashboard'
   - 'unified-dashboard'
