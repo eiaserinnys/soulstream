@@ -15,6 +15,7 @@ import {
   createFolder,
   renameFolderOptimistic,
   deleteFolderOptimistic,
+  updateFolderSettingsOptimistic,
 } from "./lib/folder-operations";
 import { moveSessionsOptimistic } from "./lib/move-sessions";
 import { NodePanel } from "./components/NodePanel";
@@ -128,6 +129,7 @@ export function OrchestratorDashboardLayout() {
           onCreateFolder={createFolder}
           onRenameFolder={renameFolderOptimistic}
           onDeleteFolder={deleteFolderOptimistic}
+          onUpdateFolderSettings={updateFolderSettingsOptimistic}
           folderCounts={folderCounts}
         />
       }
