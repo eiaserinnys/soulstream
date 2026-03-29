@@ -57,8 +57,6 @@ class TestTaskCreation:
     def test_task_runtime_fields_initialized(self):
         """런타임 필드 초기화 확인"""
         task = Task(agent_session_id="sess-1", prompt="hello")
-        assert isinstance(task.listeners, list)
-        assert len(task.listeners) == 0
         assert isinstance(task.intervention_queue, asyncio.Queue)
         assert task.execution_task is None
         assert task.last_progress_text is None
