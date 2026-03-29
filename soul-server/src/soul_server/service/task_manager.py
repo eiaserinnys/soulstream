@@ -576,7 +576,7 @@ class TaskManager:
                 logger.info(f"Created new session: {agent_session_id}")
                 is_new = True
 
-        if is_new:
+        if not is_resume:
             task.node_id = self._db.node_id
 
         # DB에 세션 등록/업데이트
@@ -588,7 +588,7 @@ class TaskManager:
             client_id=task.client_id,
             claude_session_id=task.claude_session_id,
             created_at=datetime_to_str(task.created_at),
-            node_id=self._db.node_id if is_new else task.node_id,
+            node_id=task.node_id if is_resume else self._db.node_id,
             agent_id=task.profile_id,
         )
 
