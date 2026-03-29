@@ -71,6 +71,8 @@ export function useSessionListProvider(
 
   // 필터 상태
   const sessionTypeFilter = useDashboardStore((s) => s.sessionTypeFilter);
+  const viewMode = useDashboardStore((s) => s.viewMode);
+  const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
 
   // 첫 로드 추적 (최초 마운트 시에만 로딩 표시, 이후 페이지/필터 변경은 백그라운드 갱신)
   const isFirstLoad = useRef(true);
@@ -93,10 +95,16 @@ export function useSessionListProvider(
 
       const provider = externalProvider ?? getSessionProvider(storageMode);
       const typeFilter = sessionTypeFilter === "all" ? undefined : sessionTypeFilter;
+      // 폴더가 선택된 경우 folder_id를 전달하여 서버에서 필터링
+      const folderFilter =
+        viewMode === "folder" && selectedFolderId !== null
+          ? { folderId: selectedFolderId }
+          : {};
       const result = await provider.fetchSessions({
         sessionType: typeFilter,
         offset: 0,
         limit: DEFAULT_PAGE_SIZE,
+        ...folderFilter,
       });
 
       if (abortRef.current) return;
@@ -117,7 +125,7 @@ export function useSessionListProvider(
       isFirstLoad.current = false;
       setSessionsLoading(false);
     }
-  }, [storageMode, sessionTypeFilter, setSessions, setSessionsLoading, setSessionsError, getSessionProvider, externalProvider]);
+  }, [storageMode, sessionTypeFilter, viewMode, selectedFolderId, setSessions, setSessionsLoading, setSessionsError, getSessionProvider, externalProvider]);
 
   // fetchSessions를 ref로 래핑하여, connectSSE와 Effect들의 의존성에서 분리.
   // useCallback 참조 변경이 SSE 재연결이나 Effect 재실행을 유발하지 않는다.
@@ -322,7 +330,7 @@ export function useSessionListProvider(
     return () => {
       abortRef.current = true;
     };
-  }, [enabled]); // fetchSessions 제거: ref로 접근
+  }, [enabled, viewMode, selectedFolderId]); // fetchSessions 제거: ref로 접근
 
   // Effect 2: SSE 구독 — storageMode 변경 시에만 재연결 (페이지/필터 변경과 무관)
   useEffect(() => {
