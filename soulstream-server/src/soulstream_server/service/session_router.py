@@ -58,10 +58,9 @@ class SessionRouter:
             allowed_tools=request.get("allowed_tools"),
             disallowed_tools=request.get("disallowed_tools"),
             use_mcp=request.get("use_mcp"),
-            node_id=target_node_id,
             folder_id=request.get("folderId"),
         )
 
         # 노드가 반환한 세션 ID를 우선 사용
         actual_session_id = result.get("agentSessionId", session_id)
-        return actual_session_id, target_node_id or node.node_id
+        return actual_session_id, node.node_id
