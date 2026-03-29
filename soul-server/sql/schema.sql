@@ -138,18 +138,100 @@ BEGIN
         END IF;
     END LOOP;
 
-    -- UPDATE SET 생성: session_id, created_at 제외
+    -- UPDATE SET 생성: session_id, created_at 제외; 불변 필드는 COALESCE로 보호
     set_list := 'updated_at = EXCLUDED.updated_at';
     FOR i IN 1..array_length(p_columns, 1) LOOP
         col := p_columns[i];
         IF col NOT IN ('created_at') THEN
-            set_list := set_list || ', ' || col || ' = EXCLUDED.' || col;
+            IF col = ANY(ARRAY['node_id', 'agent_id', 'claude_session_id']) THEN
+                -- 불변 필드: 기존 값이 있으면 유지, 없을 때만 새 값 사용
+                set_list := set_list || ', ' || col
+                    || ' = COALESCE(sessions.' || col || ', EXCLUDED.' || col || ')';
+            ELSE
+                set_list := set_list || ', ' || col || ' = EXCLUDED.' || col;
+            END IF;
         END IF;
     END LOOP;
 
     EXECUTE format(
         'INSERT INTO sessions (%s) VALUES (%s) ON CONFLICT (session_id) DO UPDATE SET %s',
         col_list, val_list, set_list
+    );
+END;
+$$;
+
+-- session_register (4-ID 최초 등록 — 순수 INSERT, ON CONFLICT 없음)
+CREATE OR REPLACE FUNCTION session_register(
+    p_session_id        TEXT,
+    p_node_id           TEXT,
+    p_agent_id          TEXT,
+    p_claude_session_id TEXT,
+    p_session_type      TEXT,
+    p_prompt            TEXT,
+    p_client_id         TEXT,
+    p_status            TEXT,
+    p_created_at        TIMESTAMPTZ,
+    p_updated_at        TIMESTAMPTZ
+) RETURNS void LANGUAGE sql AS $$
+    INSERT INTO sessions (
+        session_id, node_id, agent_id, claude_session_id,
+        session_type, prompt, client_id, status,
+        created_at, updated_at
+    ) VALUES (
+        p_session_id, p_node_id, p_agent_id, p_claude_session_id,
+        p_session_type, p_prompt, p_client_id, p_status,
+        p_created_at, p_updated_at
+    );
+$$;
+
+-- session_update (불변 필드 제외 동적 UPDATE)
+CREATE OR REPLACE FUNCTION session_update(
+    p_session_id TEXT,
+    p_columns    TEXT[],
+    p_values     TEXT[],
+    p_updated_at TIMESTAMPTZ
+) RETURNS void LANGUAGE plpgsql AS $$
+DECLARE
+    allowed TEXT[] := ARRAY[
+        'folder_id', 'display_name', 'status',
+        'prompt', 'client_id', 'last_message',
+        'metadata', 'was_running_at_shutdown',
+        'last_event_id', 'last_read_event_id'
+    ];
+    set_list  TEXT;
+    i         INTEGER;
+    col       TEXT;
+    jsonb_cols TEXT[] := ARRAY['last_message', 'metadata'];
+    bool_cols  TEXT[] := ARRAY['was_running_at_shutdown'];
+    int_cols   TEXT[] := ARRAY['last_event_id', 'last_read_event_id'];
+BEGIN
+    -- 화이트리스트 검증 (불변 필드는 화이트리스트에 없음)
+    FOR i IN 1..array_length(p_columns, 1) LOOP
+        IF NOT (p_columns[i] = ANY(allowed)) THEN
+            RAISE EXCEPTION 'Invalid or immutable session column: %', p_columns[i];
+        END IF;
+    END LOOP;
+
+    -- UPDATE SET 생성
+    set_list := 'updated_at = ' || quote_literal(p_updated_at::text) || '::timestamptz';
+    FOR i IN 1..array_length(p_columns, 1) LOOP
+        col := p_columns[i];
+        IF p_values[i] IS NULL THEN
+            set_list := set_list || ', ' || col || ' = NULL';
+        ELSIF col = ANY(jsonb_cols) THEN
+            set_list := set_list || ', ' || col || ' = ' || quote_literal(p_values[i]) || '::jsonb';
+        ELSIF col = ANY(bool_cols) THEN
+            set_list := set_list || ', ' || col || ' = ' || p_values[i] || '::boolean';
+        ELSIF col = ANY(int_cols) THEN
+            set_list := set_list || ', ' || col || ' = ' || p_values[i] || '::integer';
+        ELSE
+            set_list := set_list || ', ' || col || ' = ' || quote_literal(p_values[i]);
+        END IF;
+    END LOOP;
+
+    EXECUTE format(
+        'UPDATE sessions SET %s WHERE session_id = %s',
+        set_list, quote_literal(p_session_id)
     );
 END;
 $$;
@@ -684,19 +766,20 @@ BEGIN
     ON CONFLICT (session_id) DO UPDATE SET
         folder_id = EXCLUDED.folder_id,
         display_name = EXCLUDED.display_name,
-        node_id = EXCLUDED.node_id,
+        -- 불변 필드: 기존 값이 있으면 유지, 없을 때만 새 값 사용
+        node_id = COALESCE(sessions.node_id, EXCLUDED.node_id),
         session_type = EXCLUDED.session_type,
         status = EXCLUDED.status,
         prompt = EXCLUDED.prompt,
         client_id = EXCLUDED.client_id,
-        claude_session_id = EXCLUDED.claude_session_id,
+        claude_session_id = COALESCE(sessions.claude_session_id, EXCLUDED.claude_session_id),
         last_message = EXCLUDED.last_message,
         metadata = EXCLUDED.metadata,
         was_running_at_shutdown = EXCLUDED.was_running_at_shutdown,
         last_event_id = EXCLUDED.last_event_id,
         last_read_event_id = EXCLUDED.last_read_event_id,
         updated_at = EXCLUDED.updated_at,
-        agent_id = EXCLUDED.agent_id;
+        agent_id = COALESCE(sessions.agent_id, EXCLUDED.agent_id);
 END;
 $$;
 

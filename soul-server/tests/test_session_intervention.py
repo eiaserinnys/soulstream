@@ -28,6 +28,8 @@ def _make_mock_db():
     db._pool = AsyncMock()
     db.node_id = "test-node"
     db.upsert_session = AsyncMock()
+    db.register_session_initial = AsyncMock()
+    db.update_session = AsyncMock()
     db.get_session = AsyncMock(return_value=None)
     db.get_all_sessions = AsyncMock(return_value=([], 0))
     db.delete_session = AsyncMock()

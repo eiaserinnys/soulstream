@@ -89,7 +89,33 @@ def _make_mock_session_db():
     async def _get_all_folders():
         return list(_folders.values())
 
+    async def _register_session_initial(session_id, node_id, agent_id=None, claude_session_id=None, session_type="claude", prompt=None, client_id=None, status="running", created_at=None, updated_at=None):
+        _sessions[session_id] = {
+            "session_id": session_id,
+            "node_id": node_id,
+            "agent_id": agent_id,
+            "claude_session_id": claude_session_id,
+            "session_type": session_type,
+            "prompt": prompt,
+            "client_id": client_id,
+            "status": status,
+            "metadata": [],
+            "last_event_id": 0,
+            "last_read_event_id": 0,
+        }
+
+    async def _update_session(session_id, **fields):
+        if session_id in _sessions:
+            _sessions[session_id].update(fields)
+            # Ensure created_at/updated_at are datetime objects (matching real DB behavior)
+            for ts_field in ("created_at", "updated_at"):
+                if ts_field in fields and isinstance(fields[ts_field], str):
+                    from datetime import datetime
+                    _sessions[session_id][ts_field] = datetime.fromisoformat(fields[ts_field])
+
     db.upsert_session = AsyncMock(side_effect=_upsert_session)
+    db.register_session_initial = AsyncMock(side_effect=_register_session_initial)
+    db.update_session = AsyncMock(side_effect=_update_session)
     db.get_session = AsyncMock(side_effect=_get_session)
     db.get_all_sessions = AsyncMock(side_effect=_get_all_sessions)
     db.get_default_folder = AsyncMock(side_effect=_get_default_folder)
@@ -220,9 +246,15 @@ class TestGetTask:
         assert running[0].agent_session_id == "sess-2"
 
     async def test_get_all_sessions(self, manager):
-        """전체 세션 목록 조회"""
+        """전체 세션 목록 조회.
+
+        신규 세션은 register_session() 호출 시점(4-ID 등록)에 DB에 기록되므로,
+        create_task() 후 register_session()을 호출해야 get_all_sessions()에 반영된다.
+        """
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
+        await manager.register_session("claude-1", "sess-1")
         await manager.create_task(prompt="world", agent_session_id="sess-2")
+        await manager.register_session("claude-2", "sess-2")
         await manager.finalize_task("sess-1", result="done")
 
         sessions, total = await manager.get_all_sessions()
@@ -512,9 +544,15 @@ class TestCleanup:
 
 class TestStats:
     async def test_stats(self, manager):
-        """통계 조회"""
+        """통계 조회.
+
+        신규 세션은 register_session() 시점에 DB에 기록되므로,
+        total_in_db를 검증하려면 register_session()이 먼저 호출되어야 한다.
+        """
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
+        await manager.register_session("claude-1", "sess-1")
         await manager.create_task(prompt="world", agent_session_id="sess-2")
+        await manager.register_session("claude-2", "sess-2")
         await manager.finalize_task("sess-1", result="done")
 
         stats = await manager.get_stats()
@@ -528,26 +566,33 @@ class TestStats:
 
 class TestFolderId:
     async def test_create_with_folder_id(self, manager):
-        """folder_id 지정 시 해당 폴더에 세션이 배치된다"""
+        """folder_id 지정 시 register_session() 후 해당 폴더에 세션이 배치된다.
+
+        폴더 배정은 DB 행이 존재해야 하므로, register_session()(= DB INSERT) 이후에 처리된다.
+        """
         # 커스텀 폴더 생성
         await manager._db.create_folder("custom-folder", "커스텀 폴더", sort_order=10)
 
-        task = await manager.create_task(
+        await manager.create_task(
             prompt="hello",
             agent_session_id="sess-1",
             folder_id="custom-folder",
         )
+        # register_session() 이후 폴더 배정이 처리된다
+        await manager.register_session("claude-1", "sess-1")
 
         # DB에서 세션의 folder_id 확인
         session = await manager._db.get_session("sess-1")
         assert session["folder_id"] == "custom-folder"
 
     async def test_create_without_folder_id_uses_default(self, manager):
-        """folder_id 미지정 시 session_type 기반 기본 폴더에 자동 배정된다"""
-        task = await manager.create_task(
+        """folder_id 미지정 시 register_session() 후 session_type 기반 기본 폴더에 자동 배정된다."""
+        await manager.create_task(
             prompt="hello",
             agent_session_id="sess-1",
         )
+        # register_session() 이후 폴더 배정이 처리된다
+        await manager.register_session("claude-1", "sess-1")
 
         session = await manager._db.get_session("sess-1")
         assert session["folder_id"] is not None
@@ -722,7 +767,7 @@ class TestNodeIdGuard:
         assert task.status == TaskStatus.RUNNING
 
     async def test_resume_does_not_write_node_id_to_db(self, manager):
-        """resume 시 DB upsert에 node_id를 전달하지 않는다 (불변 필드 — 최초 등록 시에만 기록)"""
+        """resume 시 update_session에 node_id를 전달하지 않는다 (불변 필드 — 최초 등록 시에만 기록)"""
         from unittest.mock import AsyncMock as MockAsync
         from soul_server.service.task_models import Task, TaskStatus
 
@@ -732,51 +777,57 @@ class TestNodeIdGuard:
 
         manager._eviction_manager.load_evicted_task = MockAsync(return_value=evicted_task)
 
-        # upsert_session 호출 시 node_id 인자를 캡처
-        upsert_calls = []
-        original_upsert = manager._db.upsert_session.side_effect
+        # update_session 호출 시 인자를 캡처
+        update_calls = []
+        original_update = manager._db.update_session.side_effect
 
-        async def capture_upsert(session_id, **kwargs):
-            upsert_calls.append(kwargs.get("node_id"))
-            if original_upsert:
-                await original_upsert(session_id, **kwargs)
+        async def capture_update(session_id, **kwargs):
+            update_calls.append(kwargs)
+            if original_update:
+                await original_update(session_id, **kwargs)
 
-        manager._db.upsert_session.side_effect = capture_upsert
+        manager._db.update_session.side_effect = capture_update
 
         await manager.create_task(prompt="resume", agent_session_id="sess-resume")
 
-        assert len(upsert_calls) == 1
+        assert len(update_calls) == 1
         # resume(is_new=False) 시에는 node_id를 DB에 전달하지 않는다 (불변 필드 보호)
-        assert upsert_calls[0] is None
+        assert "node_id" not in update_calls[0]
 
     async def test_new_session_sets_current_node_id(self, manager):
-        """신규 세션 생성 시 node_id = self._db.node_id"""
+        """신규 세션 생성 시 task.node_id = self._db.node_id"""
         task = await manager.create_task(prompt="new session")
         assert task.node_id == "test-node"
 
-        # DB upsert에도 현재 node_id가 사용됐는지 확인
-        call_kwargs = manager._db.upsert_session.call_args
-        assert call_kwargs.kwargs.get("node_id") == "test-node"
+        # 신규 세션은 create_task에서 DB에 직접 쓰지 않는다 (deferred — register_session 에서 기록)
+        # upsert_session은 호출되지 않는다
+        manager._db.upsert_session.assert_not_called()
+
+    async def test_new_session_register_writes_node_id_to_db(self, manager):
+        """신규 세션의 register_session 호출 시 node_id가 DB에 기록된다."""
+        task = await manager.create_task(prompt="new session", agent_session_id="sess-new")
+        await manager.register_session("claude-abc", "sess-new")
+
+        # register_session_initial이 node_id와 함께 호출됐는지 확인
+        call_kwargs = manager._db.register_session_initial.call_args.kwargs
+        assert call_kwargs.get("node_id") == "test-node"
 
 
 class TestRegisterSessionDBWrite:
     """register_session이 DB에 claude_session_id를 영속화하는지 검증"""
 
-    async def test_register_session_writes_claude_session_id_to_db(self, manager):
-        """register_session 호출 후 DB에 claude_session_id가 저장된다."""
+    async def test_register_session_writes_all_four_ids_to_db(self, manager):
+        """register_session 호출 후 DB에 4-ID가 원자적으로 기록된다."""
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
 
         # register_session 호출 (session 이벤트 수신 시뮬레이션)
         await manager.register_session("claude-abc", "sess-1")
 
-        # DB upsert 중 claude_session_id=claude-abc 인 호출이 있어야 한다
-        found = False
-        for call in manager._db.upsert_session.call_args_list:
-            args, kwargs = call.args, call.kwargs
-            if args[0] == "sess-1" and kwargs.get("claude_session_id") == "claude-abc":
-                found = True
-                break
-        assert found, "register_session이 DB에 claude_session_id를 기록하지 않았습니다"
+        # register_session_initial이 4-ID 모두를 포함하여 호출됐어야 한다
+        manager._db.register_session_initial.assert_called_once()
+        call_kwargs = manager._db.register_session_initial.call_args.kwargs
+        assert call_kwargs.get("claude_session_id") == "claude-abc"
+        assert call_kwargs.get("node_id") == "test-node"  # DB node_id
 
     async def test_register_session_sets_task_claude_session_id(self, manager):
         """register_session 호출 후 task.claude_session_id가 설정된다."""
@@ -793,11 +844,12 @@ class TestRegisterSessionDBWrite:
         await manager.register_session("claude-abc", "sess-1")
 
         # 완료 처리
-        manager._db.upsert_session.reset_mock()
+        manager._db.update_session.reset_mock()
         await manager.finalize_task("sess-1", result="done")
 
-        # finalize 시 호출된 upsert_session에 claude_session_id가 없어야 한다
-        for call in manager._db.upsert_session.call_args_list:
+        # finalize 시 호출된 update_session에 claude_session_id가 없어야 한다
+        # (update_session 자체가 불변 필드를 거부하므로 이 테스트는 방어적 검증)
+        for call in manager._db.update_session.call_args_list:
             args, kwargs = call.args, call.kwargs
             if args[0] == "sess-1":
                 assert "claude_session_id" not in kwargs, (

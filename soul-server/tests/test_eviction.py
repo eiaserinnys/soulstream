@@ -18,6 +18,8 @@ def _make_mock_db():
     db._pool = AsyncMock()
     db.node_id = "test-node"
     db.upsert_session = AsyncMock()
+    db.register_session_initial = AsyncMock()
+    db.update_session = AsyncMock()
     db.get_session = AsyncMock(return_value=None)
     db.get_all_sessions = AsyncMock(return_value=([], 0))
     db.update_session_status = AsyncMock()
@@ -65,39 +67,42 @@ def manager():
 
 class TestCatalogIntegration:
     async def test_create_task_registers_in_db(self, manager: TaskManager):
-        """create_task()가 DB에 세션을 등록"""
+        """register_session()이 DB에 세션을 등록 (create_task()는 인메모리만 등록)"""
         await manager.create_task(prompt="hello", agent_session_id="sess-1", client_id="bot")
+        # create_task() 단독으로는 DB에 등록하지 않는다 (claude_session_id 미확보 상태)
+        manager._db.register_session_initial.assert_not_called()
 
-        upsert_call = _find_upsert_call(
-            manager._db, "sess-1", status="running"
-        )
-        assert upsert_call is not None
-        assert upsert_call.kwargs["prompt"] == "hello"
-        assert upsert_call.kwargs["client_id"] == "bot"
+        # register_session() 호출 시 DB에 4-ID로 원자적 등록
+        await manager.register_session("claude-1", "sess-1")
+        manager._db.register_session_initial.assert_called_once()
+        call_kwargs = manager._db.register_session_initial.call_args
+        assert call_kwargs.kwargs["session_id"] == "sess-1"
+        assert call_kwargs.kwargs["prompt"] == "hello"
+        assert call_kwargs.kwargs["client_id"] == "bot"
 
     async def test_complete_task_updates_db(self, manager: TaskManager):
-        """complete_task()가 DB 상태를 업데이트 (claude_session_id는 finalize에서 기록하지 않음)"""
+        """finalize_task()가 update_session()으로 DB 상태를 업데이트 (불변 필드 보호)"""
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
         await manager.finalize_task("sess-1", result="result")
 
-        upsert_call = _find_upsert_call(
-            manager._db, "sess-1", status="completed"
-        )
-        assert upsert_call is not None
-        # claude_session_id는 register_session() 경로에서만 기록한다
-        assert "claude_session_id" not in upsert_call.kwargs
-        assert upsert_call.kwargs.get("updated_at") is not None
+        manager._db.update_session.assert_called()
+        update_call = manager._db.update_session.call_args
+        assert update_call.args[0] == "sess-1"
+        assert update_call.kwargs.get("status") == "completed"
+        # claude_session_id는 update_session()으로 전달하지 않는다 (불변 필드)
+        assert "claude_session_id" not in update_call.kwargs
+        assert update_call.kwargs.get("updated_at") is not None
 
     async def test_error_task_updates_db(self, manager: TaskManager):
-        """error_task()가 DB 상태를 업데이트"""
+        """finalize_task(error=)가 update_session()으로 DB 상태를 업데이트"""
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
         await manager.finalize_task("sess-1", error="boom")
 
-        upsert_call = _find_upsert_call(
-            manager._db, "sess-1", status="error"
-        )
-        assert upsert_call is not None
-        assert upsert_call.kwargs.get("updated_at") is not None
+        manager._db.update_session.assert_called()
+        update_call = manager._db.update_session.call_args
+        assert update_call.args[0] == "sess-1"
+        assert update_call.kwargs.get("status") == "error"
+        assert update_call.kwargs.get("updated_at") is not None
 
     async def test_get_all_sessions_from_db(self, manager: TaskManager):
         """get_all_sessions()가 DB 기반 결과를 반환"""
@@ -187,9 +192,10 @@ class TestEviction:
         assert "sess-1" not in manager._tasks
         manager._db.delete_session.assert_not_called()
 
-        # DB에 completed 상태로 upsert된 기록이 있음
-        upsert_call = _find_upsert_call(manager._db, "sess-1", status="completed")
-        assert upsert_call is not None
+        # DB에 completed 상태로 update_session이 호출되었음 (finalize_task에서)
+        manager._db.update_session.assert_called()
+        update_call = manager._db.update_session.call_args
+        assert update_call.kwargs.get("status") == "completed"
 
     async def test_evicted_session_loadable_via_get_task(self, manager: TaskManager):
         """퇴거된 세션을 get_task()로 조회 가능 (on-demand 로드)"""
