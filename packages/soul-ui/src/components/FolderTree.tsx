@@ -12,9 +12,10 @@ import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Spinner } from "./ui/spinner";
 import { SYSTEM_FOLDERS } from "../shared/constants";
-import { Plus, Newspaper } from "lucide-react";
+import { Plus, Newspaper, GripVertical } from "lucide-react";
 import { FolderDialog } from "./FolderDialog";
 import { FolderSettingsDialog } from "./FolderSettingsDialog";
+import { FolderSortButton } from "./FolderSortButton";
 import type { FolderSettings } from "../shared/types";
 
 const SYSTEM_FOLDER_NAMES: Set<string> = new Set(Object.values(SYSTEM_FOLDERS));
@@ -25,6 +26,8 @@ export interface FolderTreeProps {
   onRenameFolder?: (folderId: string, newName: string) => void;
   onDeleteFolder?: (folderId: string) => void;
   onUpdateFolderSettings?: (folderId: string, settings: FolderSettings) => void;
+  /** 폴더 순서 변경 완료 콜백 (사용자 지정 DnD 모드). orderedFolderIds는 재정렬된 일반 폴더 ID 배열 */
+  onReorderFolders?: (orderedFolderIds: string[]) => Promise<void>;
   /**
    * 폴더별 세션 수 (서버 집계값).
    * 제공되면 sessions 배열 필터링 대신 이 값을 우선 사용합니다.
@@ -39,6 +42,7 @@ export function FolderTree({
   onRenameFolder,
   onDeleteFolder,
   onUpdateFolderSettings,
+  onReorderFolders,
   folderCounts,
 }: FolderTreeProps) {
   const catalog = useDashboardStore((s) => s.catalog);
@@ -49,24 +53,76 @@ export function FolderTree({
   const viewMode = useDashboardStore((s) => s.viewMode);
   const selectFeed = useDashboardStore((s) => s.selectFeed);
   const getFeedSessions = useDashboardStore((s) => s.getFeedSessions);
+  const folderSortMode = useDashboardStore((s) => s.folderSortMode);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [dragFolderId, setDragFolderId] = useState<string | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; folder: { id: string; name: string } } | null>(null);
   const [settingsTarget, setSettingsTarget] = useState<{ id: string; name: string } | null>(null);
 
+  const allFolders = catalog?.folders ?? [];
+
+  /** 정렬된 일반 폴더 목록 */
+  const sortedNormalFolders = useMemo(() => {
+    const normal = allFolders.filter((f) => !SYSTEM_FOLDER_NAMES.has(f.name));
+    switch (folderSortMode) {
+      case "name-asc":
+        return [...normal].sort((a, b) => a.name.localeCompare(b.name));
+      case "name-desc":
+        return [...normal].sort((a, b) => b.name.localeCompare(a.name));
+      case "created-desc":
+        return [...normal].sort((a, b) =>
+          new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime()
+        );
+      case "created-asc":
+        return [...normal].sort((a, b) =>
+          new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime()
+        );
+      case "custom":
+      default:
+        return [...normal].sort((a, b) => a.sortOrder - b.sortOrder);
+    }
+  }, [allFolders, folderSortMode, catalogVersion]);
+
+  const systemFolders = useMemo(
+    () => allFolders.filter((f) => SYSTEM_FOLDER_NAMES.has(f.name)),
+    [allFolders, catalogVersion],
+  );
+
   const handleDrop = useCallback(async (folderId: string | null, e: React.DragEvent) => {
     e.preventDefault();
     setDragOverId(null);
-    try {
-      const ids: string[] = JSON.parse(e.dataTransfer.getData("text/plain"));
-      onMoveSessions?.(ids, folderId);
-    } catch {
-      // JSON parse error — ignore
+    // 폴더 재정렬 DnD가 아닌 경우에만 세션 이동 처리
+    if (!e.dataTransfer.types.includes("application/x-folder-reorder")) {
+      try {
+        const ids: string[] = JSON.parse(e.dataTransfer.getData("text/plain"));
+        onMoveSessions?.(ids, folderId);
+      } catch {
+        // JSON parse error — ignore
+      }
     }
   }, [onMoveSessions]);
+
+  const handleFolderReorderDrop = useCallback(async (targetFolderId: string, e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOverId(null);
+    const draggedId = e.dataTransfer.getData("application/x-folder-reorder");
+    setDragFolderId(null);
+    if (!draggedId || draggedId === targetFolderId) return;
+    // 일반 폴더 순서만 재계산 (시스템 폴더 제외)
+    const currentOrder = sortedNormalFolders.map((f) => f.id);
+    const withoutDragged = currentOrder.filter((id) => id !== draggedId);
+    const targetIdx = withoutDragged.indexOf(targetFolderId);
+    if (targetIdx === -1) {
+      withoutDragged.push(draggedId);
+    } else {
+      withoutDragged.splice(targetIdx, 0, draggedId);
+    }
+    await onReorderFolders?.(withoutDragged);
+  }, [onReorderFolders, sortedNormalFolders]);
 
   const getSessionCount = useCallback(
     (folderId: string | null) => {
@@ -156,20 +212,21 @@ export function FolderTree({
     return feed.filter(isSessionUnread).length;
   }, [sessions, getFeedSessions, catalogVersion]);
 
-  const allFolders = catalog?.folders ?? [];
-  const { normalFolders, systemFolders } = useMemo(() => {
-    const normal = allFolders.filter((f) => !SYSTEM_FOLDER_NAMES.has(f.name));
-    const system = allFolders.filter((f) => SYSTEM_FOLDER_NAMES.has(f.name));
-    return { normalFolders: normal, systemFolders: system };
-  }, [allFolders]);
+  // normalFolders alias (기존 코드와의 호환성 유지)
+  const normalFolders = sortedNormalFolders;
 
-  const renderFolder = (folder: typeof allFolders[number]) => (
+  const renderFolder = (folder: typeof allFolders[number]) => {
+    const isSystem = SYSTEM_FOLDER_NAMES.has(folder.name);
+    const isDraggableFolder = folderSortMode === "custom" && !isSystem;
+    return (
     <div
       key={folder.id}
+      draggable={isDraggableFolder}
       className={cn(
         "flex items-center justify-between px-3 py-1.5 cursor-pointer text-sm hover:bg-accent/50 group",
         viewMode === "folder" && selectedFolderId === folder.id && "bg-accent text-accent-foreground",
         dragOverId === folder.id && "ring-2 ring-primary",
+        isDraggableFolder && dragFolderId === folder.id && "opacity-50",
       )}
       onClick={() => handleSelectFolder(folder.id)}
       onDoubleClick={() => handleDoubleClick(folder.id, folder.name)}
@@ -177,9 +234,21 @@ export function FolderTree({
         e.preventDefault();
         setContextMenu({ x: e.clientX, y: e.clientY, folder: { id: folder.id, name: folder.name } });
       }}
+      onDragStart={isDraggableFolder ? (e) => {
+        e.dataTransfer.setData("application/x-folder-reorder", folder.id);
+        e.dataTransfer.effectAllowed = "move";
+        setDragFolderId(folder.id);
+      } : undefined}
+      onDragEnd={isDraggableFolder ? () => setDragFolderId(null) : undefined}
       onDragOver={(e) => { e.preventDefault(); setDragOverId(folder.id); }}
       onDragLeave={() => setDragOverId(null)}
-      onDrop={(e) => handleDrop(folder.id, e)}
+      onDrop={(e) => {
+        if (e.dataTransfer.types.includes("application/x-folder-reorder") && isDraggableFolder) {
+          handleFolderReorderDrop(folder.id, e);
+        } else {
+          handleDrop(folder.id, e);
+        }
+      }}
     >
       {editingId === folder.id ? (
         <input
@@ -195,6 +264,9 @@ export function FolderTree({
         />
       ) : (
         <div className="flex items-center gap-1.5 min-w-0">
+          {isDraggableFolder && (
+            <GripVertical className="h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-60 cursor-grab" />
+          )}
           <span className="truncate">{folder.name}</span>
           {runningFolderIds.has(folder.id) && (
             <Spinner className="h-3 w-3 shrink-0" />
@@ -215,14 +287,18 @@ export function FolderTree({
       })()}
     </div>
   );
+  };
 
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-3 py-2 border-b border-border">
         <span className="text-sm font-medium">Folders</span>
-        <Button variant="ghost" size="icon" onClick={() => setCreateDialogOpen(true)} title="New folder">
-          <Plus className="h-3.5 w-3.5" />
-        </Button>
+        <div className="flex items-center gap-0.5">
+          <FolderSortButton />
+          <Button variant="ghost" size="icon" onClick={() => setCreateDialogOpen(true)} title="New folder">
+            <Plus className="h-3.5 w-3.5" />
+          </Button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto py-1">
