@@ -1004,6 +1004,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
       reorderFolders: (orderedFolderIds) => {
         const { catalog } = get();
         if (!catalog) return;
+        const idSet = new Set(orderedFolderIds);
         const folderMap = new Map(catalog.folders.map((f) => [f.id, f]));
         const reordered = orderedFolderIds
           .map((id, index) => {
@@ -1011,8 +1012,10 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
             return f ? { ...f, sortOrder: index } : null;
           })
           .filter((f): f is CatalogFolder => f !== null);
+        // orderedFolderIds에 없는 폴더(시스템 폴더 등) 보존
+        const others = catalog.folders.filter((f) => !idSet.has(f.id));
         set((state) => ({
-          catalog: { ...catalog, folders: reordered },
+          catalog: { ...catalog, folders: [...others, ...reordered] },
           catalogVersion: state.catalogVersion + 1,
         }));
       },
