@@ -11,9 +11,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { FeedCard } from "./FeedCard";
 import { FeedTopBar } from "./FeedTopBar";
-import { Dialog, DialogPopup, DialogHeader, DialogTitle, DialogPanel, DialogFooter } from "./ui/dialog";
-import { Button } from "./ui/button";
-import { Input } from "./ui/input";
+import { SessionContextMenu } from "./SessionContextMenu";
 
 const CARD_HEIGHT = 220;
 const CARD_GAP = 12;
@@ -167,21 +165,6 @@ export function FeedView({ onNewSession, onLoadMore, hasMore, onRenameSession, o
     sessionId: string;
   } | null>(null);
 
-  // 이름 변경 모달
-  const [renameDialog, setRenameDialog] = useState<{
-    open: boolean;
-    sessionId: string;
-    currentName: string;
-  }>({ open: false, sessionId: "", currentName: "" });
-  const [renameInput, setRenameInput] = useState("");
-
-  // 폴더 이동 모달
-  const [moveFolderDialog, setMoveFolderDialog] = useState<{
-    open: boolean;
-    sessionId: string;
-    selectedFolderId: string | null;
-  }>({ open: false, sessionId: "", selectedFolderId: null });
-
   const handleContextMenu = useCallback(
     (sessionId: string, e: React.MouseEvent) => {
       if (!onRenameSession && !onMoveSessions) return;
@@ -191,37 +174,11 @@ export function FeedView({ onNewSession, onLoadMore, hasMore, onRenameSession, o
     [onRenameSession, onMoveSessions],
   );
 
-  const handleMoveClick = useCallback(() => {
-    if (!contextMenu || !onMoveSessions) return;
-    const sessionId = contextMenu.sessionId;
-    setContextMenu(null);
-    setMoveFolderDialog({ open: true, sessionId, selectedFolderId: null });
-  }, [contextMenu, onMoveSessions]);
-
-  const handleMoveFolderSubmit = useCallback(async () => {
-    if (!onMoveSessions) return;
-    const { sessionId, selectedFolderId } = moveFolderDialog;
-    setMoveFolderDialog((d) => ({ ...d, open: false }));
-    await onMoveSessions([sessionId], selectedFolderId);
-  }, [onMoveSessions, moveFolderDialog]);
-
-  const handleRenameClick = useCallback(() => {
-    if (!contextMenu || !onRenameSession) return;
-    const sessionId = contextMenu.sessionId;
-    setContextMenu(null);
-    const currentName = feedSessions.find(
-      (s) => s.agentSessionId === sessionId
-    )?.displayName ?? "";
-    setRenameInput(currentName);
-    setRenameDialog({ open: true, sessionId, currentName });
-  }, [contextMenu, onRenameSession, feedSessions]);
-
-  const handleRenameSubmit = useCallback(async () => {
-    if (!onRenameSession) return;
-    const { sessionId } = renameDialog;
-    setRenameDialog((d) => ({ ...d, open: false }));
-    await onRenameSession(sessionId, renameInput.trim() || null);
-  }, [onRenameSession, renameDialog, renameInput]);
+  const getSessionName = useCallback(
+    (sessionId: string) =>
+      feedSessions.find((s) => s.agentSessionId === sessionId)?.displayName ?? "",
+    [feedSessions],
+  );
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -273,138 +230,14 @@ export function FeedView({ onNewSession, onLoadMore, hasMore, onRenameSession, o
         </div>
       )}
 
-      {/* 컨텍스트 메뉴 */}
-      {contextMenu && (
-        <div
-          className="fixed z-50 bg-popover border border-border rounded-md shadow-lg py-1 min-w-[160px]"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {onRenameSession && (
-            <button
-              className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
-              onClick={handleRenameClick}
-            >
-              이름 변경
-            </button>
-          )}
-          {onMoveSessions && (
-            <>
-              {onRenameSession && <div className="border-t border-border my-1" />}
-              <button
-                className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
-                onClick={handleMoveClick}
-              >
-                다른 폴더로 이동
-              </button>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* 컨텍스트 메뉴 닫기 오버레이 */}
-      {contextMenu && (
-        <div
-          className="fixed inset-0 z-40"
-          onClick={() => setContextMenu(null)}
-          onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }}
-        />
-      )}
-
-      {/* 이름 변경 모달 */}
-      {onRenameSession && (
-        <Dialog
-          open={renameDialog.open}
-          onOpenChange={(open) => setRenameDialog((d) => ({ ...d, open }))}
-        >
-          <DialogPopup className="max-w-sm">
-            <DialogHeader>
-              <DialogTitle>세션 이름 변경</DialogTitle>
-            </DialogHeader>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleRenameSubmit();
-              }}
-            >
-              <DialogPanel>
-                <Input
-                  autoFocus
-                  placeholder="세션 이름 (비워두면 기본 이름으로 초기화)"
-                  value={renameInput}
-                  onChange={(e) => setRenameInput(e.target.value)}
-                />
-              </DialogPanel>
-              <DialogFooter variant="bare">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setRenameDialog((d) => ({ ...d, open: false }))}
-                >
-                  취소
-                </Button>
-                <Button type="submit">변경</Button>
-              </DialogFooter>
-            </form>
-          </DialogPopup>
-        </Dialog>
-      )}
-
-      {/* 폴더 이동 모달 */}
-      {onMoveSessions && (
-        <Dialog
-          open={moveFolderDialog.open}
-          onOpenChange={(open) => setMoveFolderDialog((d) => ({ ...d, open }))}
-        >
-          <DialogPopup className="max-w-sm">
-            <DialogHeader>
-              <DialogTitle>폴더 이동</DialogTitle>
-            </DialogHeader>
-            <DialogPanel>
-              <div className="flex flex-col gap-1">
-                {catalog?.folders && catalog.folders.length > 0 ? (
-                  catalog.folders.map((f) => (
-                    <button
-                      key={f.id}
-                      type="button"
-                      className={`w-full text-left px-3 py-2 text-sm rounded-md transition-colors ${
-                        moveFolderDialog.selectedFolderId === f.id
-                          ? "bg-primary text-primary-foreground"
-                          : "hover:bg-accent"
-                      }`}
-                      onClick={() =>
-                        setMoveFolderDialog((d) => ({ ...d, selectedFolderId: f.id }))
-                      }
-                    >
-                      {f.name}
-                    </button>
-                  ))
-                ) : (
-                  <p className="text-sm text-muted-foreground py-2">
-                    이동할 수 있는 폴더가 없습니다.
-                  </p>
-                )}
-              </div>
-            </DialogPanel>
-            <DialogFooter variant="bare">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setMoveFolderDialog((d) => ({ ...d, open: false }))}
-              >
-                취소
-              </Button>
-              <Button
-                type="button"
-                disabled={moveFolderDialog.selectedFolderId === null}
-                onClick={handleMoveFolderSubmit}
-              >
-                이동하기
-              </Button>
-            </DialogFooter>
-          </DialogPopup>
-        </Dialog>
-      )}
+      <SessionContextMenu
+        contextMenu={contextMenu}
+        onClose={() => setContextMenu(null)}
+        onRenameSession={onRenameSession}
+        onMoveSessions={onMoveSessions}
+        getSessionName={getSessionName}
+        resolveSessionIds={(sessionId) => [sessionId]}
+      />
     </div>
   );
 }

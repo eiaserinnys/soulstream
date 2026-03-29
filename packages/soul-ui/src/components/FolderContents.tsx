@@ -16,6 +16,7 @@ import { cn } from "../lib/cn";
 import { Badge } from "./ui/badge";
 import { useTheme } from "../hooks/useTheme";
 import type { SessionSummary, SessionStatus } from "../shared/types";
+import { SessionContextMenu } from "./SessionContextMenu";
 
 // === Node ID Color Utils ===
 
@@ -237,10 +238,11 @@ export function FolderContents({ onMoveSessions, onRenameSession, onLoadMore, ha
 
   const handleContextMenu = useCallback(
     (sessionId: string, e: React.MouseEvent) => {
+      if (!onRenameSession && !onMoveSessions) return;
       e.preventDefault();
       setContextMenu({ x: e.clientX, y: e.clientY, sessionId });
     },
-    [],
+    [onRenameSession, onMoveSessions],
   );
 
   const handleEditSubmit = useCallback(
@@ -254,21 +256,6 @@ export function FolderContents({ onMoveSessions, onRenameSession, onLoadMore, ha
     [setEditingSession, onRenameSession],
   );
 
-  const handleMoveToFolder = useCallback(
-    async (targetFolderId: string | null) => {
-      const sessionId = contextMenu?.sessionId;
-      if (!sessionId) return;
-      const ids = selectedSessionIds.has(sessionId)
-        ? Array.from(selectedSessionIds)
-        : [sessionId];
-      setContextMenu(null);
-      await onMoveSessions(ids, targetFolderId);
-    },
-    [selectedSessionIds, contextMenu, onMoveSessions],
-  );
-
-  const catalog = useDashboardStore((s) => s.catalog);
-
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === "F2" && activeSessionKey && onRenameSession) {
@@ -278,102 +265,83 @@ export function FolderContents({ onMoveSessions, onRenameSession, onLoadMore, ha
     [activeSessionKey, setEditingSession, onRenameSession],
   );
 
-  if (folderSessions.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-        No sessions in this folder
-      </div>
-    );
-  }
-
   return (
-    <div
-      ref={parentRef}
-      className="h-full overflow-y-auto outline-none"
-      tabIndex={0}
-      onKeyDown={handleKeyDown}
-      onClick={() => setContextMenu(null)}
-    >
-      <div
-        style={{
-          height: `${virtualizer.getTotalSize()}px`,
-          width: "100%",
-          position: "relative",
-        }}
-      >
-        {virtualizer.getVirtualItems().map((virtualItem) => {
-          const session = folderSessions[virtualItem.index];
-          return (
-            <div
-              key={session.agentSessionId}
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                width: "100%",
-                height: `${virtualItem.size}px`,
-                transform: `translateY(${virtualItem.start}px)`,
-              }}
-            >
-              <SessionItem
-                session={session}
-                isActive={activeSessionKey === session.agentSessionId}
-                isSelected={selectedSessionIds.has(session.agentSessionId)}
-                isEditing={onRenameSession ? editingSessionId === session.agentSessionId : false}
-                onClick={(e) => {
-                  toggleSessionSelection(session.agentSessionId, e.ctrlKey || e.metaKey, e.shiftKey);
-                  if (isMobile) setMobileView("chat");
-                }}
-                onContextMenu={(e) => handleContextMenu(session.agentSessionId, e)}
-                onDragStart={(e) => handleDragStart(session.agentSessionId, e)}
-                onEditSubmit={(name) => handleEditSubmit(session.agentSessionId, name)}
-                onEditCancel={() => setEditingSession(null)}
-              />
-            </div>
-          );
-        })}
-      </div>
-
-      {/* IntersectionObserver 센티넬: 스크롤 하단 도달 감지 */}
-      {hasMore && (
-        <div ref={sentinelRef} className="flex items-center justify-center py-2 text-xs text-muted-foreground">
-          Loading...
+    <>
+      {folderSessions.length === 0 ? (
+        <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+          No sessions in this folder
         </div>
-      )}
-
-      {/* 컨텍스트 메뉴 */}
-      {contextMenu && (
+      ) : (
         <div
-          className="fixed z-50 bg-popover border border-border rounded-md shadow-lg py-1 min-w-[160px]"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-          onClick={(e) => e.stopPropagation()}
+          ref={parentRef}
+          className="h-full overflow-y-auto outline-none"
+          tabIndex={0}
+          onKeyDown={handleKeyDown}
+          onClick={() => setContextMenu(null)}
         >
-          {onRenameSession && (
-            <>
-              <button
-                className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
-                onClick={() => {
-                  setEditingSession(contextMenu.sessionId);
-                  setContextMenu(null);
-                }}
-              >
-                Rename
-              </button>
-              <div className="border-t border-border my-1" />
-            </>
+          <div
+            style={{
+              height: `${virtualizer.getTotalSize()}px`,
+              width: "100%",
+              position: "relative",
+            }}
+          >
+            {virtualizer.getVirtualItems().map((virtualItem) => {
+              const session = folderSessions[virtualItem.index];
+              return (
+                <div
+                  key={session.agentSessionId}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    height: `${virtualItem.size}px`,
+                    transform: `translateY(${virtualItem.start}px)`,
+                  }}
+                >
+                  <SessionItem
+                    session={session}
+                    isActive={activeSessionKey === session.agentSessionId}
+                    isSelected={selectedSessionIds.has(session.agentSessionId)}
+                    isEditing={onRenameSession ? editingSessionId === session.agentSessionId : false}
+                    onClick={(e) => {
+                      toggleSessionSelection(session.agentSessionId, e.ctrlKey || e.metaKey, e.shiftKey);
+                      if (isMobile) setMobileView("chat");
+                    }}
+                    onContextMenu={(e) => handleContextMenu(session.agentSessionId, e)}
+                    onDragStart={(e) => handleDragStart(session.agentSessionId, e)}
+                    onEditSubmit={(name) => handleEditSubmit(session.agentSessionId, name)}
+                    onEditCancel={() => setEditingSession(null)}
+                  />
+                </div>
+              );
+            })}
+          </div>
+
+          {/* IntersectionObserver 센티넬: 스크롤 하단 도달 감지 */}
+          {hasMore && (
+            <div ref={sentinelRef} className="flex items-center justify-center py-2 text-xs text-muted-foreground">
+              Loading...
+            </div>
           )}
-          <div className="px-3 py-1 text-xs text-muted-foreground">Move to:</div>
-          {catalog?.folders.map((f) => (
-            <button
-              key={f.id}
-              className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
-              onClick={() => handleMoveToFolder(f.id)}
-            >
-              {f.name}
-            </button>
-          ))}
         </div>
       )}
-    </div>
+
+      <SessionContextMenu
+        contextMenu={contextMenu}
+        onClose={() => setContextMenu(null)}
+        onRenameSession={onRenameSession}
+        onMoveSessions={onMoveSessions}
+        getSessionName={(sessionId) =>
+          folderSessions.find((s) => s.agentSessionId === sessionId)?.displayName ?? ""
+        }
+        resolveSessionIds={(sessionId) =>
+          selectedSessionIds.has(sessionId)
+            ? Array.from(selectedSessionIds)
+            : [sessionId]
+        }
+      />
+    </>
   );
 }
