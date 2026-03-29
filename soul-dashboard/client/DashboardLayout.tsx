@@ -7,7 +7,7 @@
 
 import { useState, useEffect } from "react";
 import { FolderContents } from "./components/FolderContents";
-import { createFolder, renameFolderOptimistic, deleteFolderOptimistic } from "./lib/folder-operations";
+import { createFolder, renameFolderOptimistic, deleteFolderOptimistic, updateFolderSettingsOptimistic } from "./lib/folder-operations";
 import { moveSessionsOptimistic } from "./lib/move-sessions";
 import { computeIsOtherNode } from "./lib/node-guard";
 import { NodeGraph, SessionsTopBar, MobileChatHeader, VerticalSplitPane, StorageModeToggleCompact, ThemeToggle, useSessionProvider, useReadPositionSync } from "@seosoyoung/soul-ui";
@@ -115,6 +115,7 @@ export function DashboardLayout() {
           onCreateFolder={createFolder}
           onRenameFolder={renameFolderOptimistic}
           onDeleteFolder={deleteFolderOptimistic}
+          onUpdateFolderSettings={updateFolderSettingsOptimistic}
           folderCounts={folderCounts}
         />
       }
