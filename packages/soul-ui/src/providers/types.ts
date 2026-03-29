@@ -23,6 +23,8 @@ export interface FetchSessionsOptions {
   offset?: number;
   /** 페이지 크기 */
   limit?: number;
+  /** 폴더 ID 필터 (UUID). 없으면 전체 조회. */
+  folderId?: string;
 }
 
 /**

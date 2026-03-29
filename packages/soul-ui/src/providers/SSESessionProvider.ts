@@ -46,6 +46,7 @@ export class SSESessionProvider implements SessionStorageProvider {
     if (options?.sessionType) params.set("session_type", options.sessionType);
     if (options?.offset != null && options.offset > 0) params.set("offset", String(options.offset));
     if (options?.limit != null) params.set("limit", String(options.limit));
+    if (options?.folderId) params.set("folder_id", options.folderId);
     const qs = params.toString();
     const url = `/api/sessions${qs ? `?${qs}` : ""}`;
 
