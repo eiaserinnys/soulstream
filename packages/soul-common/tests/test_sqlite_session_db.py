@@ -405,3 +405,127 @@ class TestCountEvents:
         await db.append_event("sess-cnt", "text_delta", "{}", "", "2024-01-01T00:00:00+00:00")
         await db.append_event("sess-cnt", "text_delta", "{}", "", "2024-01-01T00:00:01+00:00")
         assert await db.count_events("sess-cnt") == 2
+
+
+class TestRegisterSessionInitial:
+    """register_session_initial: 4-ID 원자적 INSERT (ON CONFLICT 없음)"""
+
+    async def test_creates_session_with_all_four_ids(self, db: SqliteSessionDB):
+        await db.register_session_initial(
+            session_id="sess-r1",
+            node_id="node-1",
+            agent_id="agent-1",
+            claude_session_id="claude-1",
+            session_type="claude",
+        )
+        result = await db.get_session("sess-r1")
+        assert result is not None
+        assert result["session_id"] == "sess-r1"
+        assert result["node_id"] == "node-1"
+        assert result["agent_id"] == "agent-1"
+        assert result["claude_session_id"] == "claude-1"
+        assert result["session_type"] == "claude"
+
+    async def test_duplicate_raises_integrity_error(self, db: SqliteSessionDB):
+        await db.register_session_initial(
+            session_id="sess-dup",
+            node_id="node-1",
+            agent_id="agent-1",
+            claude_session_id="claude-1",
+            session_type="claude",
+        )
+        with pytest.raises(Exception):
+            await db.register_session_initial(
+                session_id="sess-dup",
+                node_id="node-2",
+                agent_id="agent-2",
+                claude_session_id="claude-2",
+                session_type="claude",
+            )
+
+    async def test_optional_fields_stored(self, db: SqliteSessionDB):
+        await db.register_session_initial(
+            session_id="sess-r2",
+            node_id="node-1",
+            agent_id="agent-1",
+            claude_session_id="claude-1",
+            session_type="claude",
+            prompt="test prompt",
+            client_id="client-1",
+            status="running",
+        )
+        result = await db.get_session("sess-r2")
+        assert result["prompt"] == "test prompt"
+        assert result["client_id"] == "client-1"
+        assert result["status"] == "running"
+
+    async def test_default_status_is_running(self, db: SqliteSessionDB):
+        await db.register_session_initial(
+            session_id="sess-r3",
+            node_id="node-1",
+            agent_id="agent-1",
+            claude_session_id="claude-1",
+            session_type="claude",
+        )
+        result = await db.get_session("sess-r3")
+        assert result["status"] == "running"
+
+
+class TestUpdateSession:
+    """update_session: 불변 필드를 제외한 순수 UPDATE"""
+
+    async def test_update_status(self, db: SqliteSessionDB):
+        await db.upsert_session("sess-upd1", status="running")
+        await db.update_session("sess-upd1", status="stopped")
+        result = await db.get_session("sess-upd1")
+        assert result["status"] == "stopped"
+
+    async def test_update_multiple_fields(self, db: SqliteSessionDB):
+        await db.upsert_session("sess-upd2", status="running", display_name="old")
+        await db.update_session("sess-upd2", status="stopped", display_name="new")
+        result = await db.get_session("sess-upd2")
+        assert result["status"] == "stopped"
+        assert result["display_name"] == "new"
+
+    async def test_update_node_id_raises(self, db: SqliteSessionDB):
+        await db.upsert_session("sess-upd3", status="running")
+        with pytest.raises(ValueError, match="[Ii]mmutable"):
+            await db.update_session("sess-upd3", node_id="new-node")
+
+    async def test_update_agent_id_raises(self, db: SqliteSessionDB):
+        await db.upsert_session("sess-upd4", status="running")
+        with pytest.raises(ValueError, match="[Ii]mmutable"):
+            await db.update_session("sess-upd4", agent_id="new-agent")
+
+    async def test_update_claude_session_id_raises(self, db: SqliteSessionDB):
+        await db.upsert_session("sess-upd5", status="running")
+        with pytest.raises(ValueError, match="[Ii]mmutable"):
+            await db.update_session("sess-upd5", claude_session_id="new-claude")
+
+    async def test_update_session_type_raises(self, db: SqliteSessionDB):
+        await db.upsert_session("sess-upd6", session_type="claude")
+        with pytest.raises(ValueError, match="[Ii]mmutable"):
+            await db.update_session("sess-upd6", session_type="llm")
+
+    async def test_update_created_at_raises(self, db: SqliteSessionDB):
+        await db.upsert_session("sess-upd7", status="running")
+        with pytest.raises(ValueError, match="[Ii]mmutable"):
+            await db.update_session("sess-upd7", created_at="2020-01-01T00:00:00+00:00")
+
+
+class TestImmutableFieldCheckFix:
+    """upsert_session 불변 필드 None 우회 버그 수정 검증"""
+
+    async def test_none_immutable_raises_if_existing_value(self, db: SqliteSessionDB):
+        """기존 값이 있는 불변 필드를 None으로 덮어쓰기 시도 시 에러를 발생시킨다."""
+        await db.upsert_session("sess-imm-fix", node_id="original-node", status="running")
+        with pytest.raises(ValueError):
+            await db.upsert_session("sess-imm-fix", node_id=None)
+
+    async def test_none_immutable_allowed_if_not_yet_set(self, db: SqliteSessionDB):
+        """기존 값이 없는 불변 필드는 None 설정을 허용한다."""
+        await db.upsert_session("sess-imm-none", status="running")
+        # node_id가 아직 None이면 None 설정은 no-op으로 허용
+        await db.upsert_session("sess-imm-none", node_id=None)
+        result = await db.get_session("sess-imm-none")
+        assert result["node_id"] is None

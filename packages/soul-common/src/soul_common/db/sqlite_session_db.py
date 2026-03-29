@@ -192,8 +192,8 @@ class SqliteSessionDB:
         if invalid:
             raise ValueError(f"Invalid session columns: {invalid}")
 
-        # 불변 필드 보호: non-null 값으로 덮어쓰기 시도 시 기존 값 확인 후 충돌 방지
-        immutable_updates = {k: v for k, v in fields.items() if k in IMMUTABLE_FIELDS and v is not None}
+        # 불변 필드 보호: None 포함 모든 덮어쓰기 시도 시 기존 값 확인 후 충돌 방지
+        immutable_updates = {k: v for k, v in fields.items() if k in IMMUTABLE_FIELDS}
         if immutable_updates:
             cursor = await self._conn.execute(
                 "SELECT claude_session_id, node_id, agent_id FROM sessions WHERE session_id = ?",
@@ -239,6 +239,79 @@ class SqliteSessionDB:
             update_vals = extra_vals + [updated_at, session_id]
             update_sql = f"UPDATE sessions SET {set_clauses} WHERE session_id = ?"
             await self._conn.execute(update_sql, update_vals)
+
+        await self._conn.commit()
+
+    async def register_session_initial(
+        self,
+        session_id: str,
+        node_id: str,
+        agent_id: Optional[str] = None,
+        claude_session_id: Optional[str] = None,
+        session_type: str = "claude",
+        prompt: Optional[str] = None,
+        client_id: Optional[str] = None,
+        status: str = "running",
+        created_at=None,
+        updated_at=None,
+    ) -> None:
+        """세션 최초 등록 (순수 INSERT).
+
+        4개 불변 ID(session_id, node_id, agent_id, claude_session_id)를 원자적으로 기록한다.
+        중복 호출 시 UNIQUE 제약 위반 예외 발생 (INSERT OR IGNORE 없음).
+        """
+        now = _utc_now()
+        await self._conn.execute(
+            """INSERT INTO sessions
+               (session_id, node_id, agent_id, claude_session_id,
+                session_type, prompt, client_id, status, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                session_id,
+                node_id,
+                agent_id,
+                claude_session_id,
+                session_type,
+                prompt,
+                client_id,
+                status,
+                _to_iso(created_at) or now,
+                _to_iso(updated_at) or now,
+            ),
+        )
+        await self._conn.commit()
+
+    _UPDATE_SESSION_IMMUTABLE = frozenset({
+        "node_id", "agent_id", "claude_session_id", "session_type", "created_at",
+    })
+
+    async def update_session(self, session_id: str, **fields) -> None:
+        """세션 속성 갱신 (순수 UPDATE).
+
+        불변 필드(node_id, agent_id, claude_session_id, session_type, created_at)는
+        허용하지 않는다 — ValueError를 발생시킨다.
+        """
+        invalid = set(fields) & self._UPDATE_SESSION_IMMUTABLE
+        if invalid:
+            raise ValueError(f"Immutable fields cannot be updated via update_session: {invalid}")
+
+        now = _utc_now()
+        updated_at = _to_iso(fields.pop("updated_at", None)) or now
+        fields.pop("session_id", None)
+
+        if not fields:
+            await self._conn.execute(
+                "UPDATE sessions SET updated_at = ? WHERE session_id = ?",
+                (updated_at, session_id),
+            )
+        else:
+            extra_cols = list(fields.keys())
+            extra_vals = [_serialize_field(c, fields[c]) for c in extra_cols]
+            set_clauses = ", ".join(f"{c} = ?" for c in extra_cols + ["updated_at"])
+            await self._conn.execute(
+                f"UPDATE sessions SET {set_clauses} WHERE session_id = ?",
+                extra_vals + [updated_at, session_id],
+            )
 
         await self._conn.commit()
 

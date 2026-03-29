@@ -71,6 +71,10 @@ def pytest_configure(config):
     if "AGENTS_CONFIG_FILE" not in os.environ:
         os.environ["AGENTS_CONFIG_FILE"] = ""  # degraded mode
 
+    # 캐시 디렉토리 (테스트 환경에서는 /tmp 사용)
+    if "SOUL_DASHBOARD_CACHE_DIR" not in os.environ:
+        os.environ["SOUL_DASHBOARD_CACHE_DIR"] = "/tmp/soul-server-test-cache"
+
 
 @pytest.fixture(scope="session", autouse=True)
 def reset_settings_cache():
