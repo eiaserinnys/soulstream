@@ -1,5 +1,5 @@
 """
-Folders API 라우터 — /api/folders
+Folders API 라우터 — /api/catalog/folders
 
 폴더 CRUD.
 """
@@ -7,7 +7,7 @@ Folders API 라우터 — /api/folders
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pydantic import BaseModel
 
 from soul_common.catalog.catalog_service import CatalogService
@@ -20,12 +20,14 @@ class CreateFolderRequest(BaseModel):
     sortOrder: int = 0
 
 
-class RenameFolderRequest(BaseModel):
-    name: str
+class UpdateFolderRequest(BaseModel):
+    name: Optional[str] = None
+    sortOrder: Optional[int] = None
+    settings: Optional[dict] = None
 
 
 def create_folders_router(catalog_service: CatalogService) -> APIRouter:
-    router = APIRouter(prefix="/api/folders", tags=["folders"])
+    router = APIRouter(prefix="/api/catalog/folders", tags=["folders"])
 
     @router.get("")
     async def list_folders() -> dict:
@@ -40,9 +42,14 @@ def create_folders_router(catalog_service: CatalogService) -> APIRouter:
         return folder
 
     @router.put("/{folder_id}")
-    async def rename_folder(folder_id: str, body: RenameFolderRequest) -> dict:
-        """폴더 이름 변경."""
-        await catalog_service.rename_folder(folder_id, body.name)
+    async def update_folder(folder_id: str, body: UpdateFolderRequest) -> dict:
+        """폴더 업데이트 (이름/설정 변경)."""
+        await catalog_service.update_folder(
+            folder_id,
+            name=body.name,
+            sort_order=body.sortOrder,
+            settings=body.settings,
+        )
         return {"success": True}
 
     @router.delete("/{folder_id}")
