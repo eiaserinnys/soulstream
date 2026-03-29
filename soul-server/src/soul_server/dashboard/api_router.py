@@ -248,10 +248,12 @@ async def api_get_sessions(
     session_type: Optional[str] = None,
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=0),
+    folder_id: Optional[str] = None,
 ):
     task_manager = get_task_manager()
     sessions, total = await task_manager.get_all_sessions(
-        offset=offset, limit=limit, session_type=session_type
+        offset=offset, limit=limit, session_type=session_type,
+        folder_id=folder_id,  # None이면 전체 조회 (기존 동작 유지)
     )
     return {"sessions": sessions, "total": total}
 
@@ -261,11 +263,9 @@ async def api_get_sessions(
 @router.get("/api/sessions/folder-counts", dependencies=[Depends(require_dashboard_auth)])
 async def api_session_folder_counts():
     """폴더별 세션 수 조회 (GET /api/sessions/folder-counts)"""
-    from soul_server.config import get_settings
     from soul_server.service.postgres_session_db import get_session_db
-    node_id = get_settings().soulstream_node_id or None
     db = get_session_db()
-    counts = await db.get_folder_counts(node_id=node_id)
+    counts = await db.get_folder_counts()  # node_id 필터 제거 → 전체 노드 집계
     # None 키(폴더 미지정)는 JSON 직렬화 시 "null" 문자열로 변환
     return {"counts": {str(k) if k is not None else "null": v for k, v in counts.items()}}
 
