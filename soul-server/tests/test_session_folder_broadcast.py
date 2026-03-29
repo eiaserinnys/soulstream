@@ -82,7 +82,24 @@ def _make_mock_session_db():
     async def _ensure_default_folders():
         pass  # already initialized
 
+    async def _register_session_initial(session_id, node_id, agent_id=None, claude_session_id=None,
+                                        session_type="claude", prompt=None, client_id=None,
+                                        status="running", created_at=None, updated_at=None):
+        if session_id not in _sessions:
+            _sessions[session_id] = {"session_id": session_id}
+        _sessions[session_id].update({
+            "node_id": node_id, "agent_id": agent_id, "claude_session_id": claude_session_id,
+            "session_type": session_type, "prompt": prompt, "client_id": client_id,
+            "status": status,
+        })
+
+    async def _update_session(session_id, **fields):
+        if session_id in _sessions:
+            _sessions[session_id].update(fields)
+
     db.upsert_session = AsyncMock(side_effect=_upsert_session)
+    db.register_session_initial = AsyncMock(side_effect=_register_session_initial)
+    db.update_session = AsyncMock(side_effect=_update_session)
     db.get_session = AsyncMock(side_effect=_get_session)
     db.get_all_sessions = AsyncMock(side_effect=_get_all_sessions)
     db.get_default_folder = AsyncMock(side_effect=_get_default_folder)
@@ -110,11 +127,22 @@ class TestCreateTaskCatalogBroadcast:
     async def test_new_session_broadcasts_catalog_before_session_created(
         self, manager, broadcaster
     ):
-        """새 세션 생성 시 catalog_updated가 session_created 전에 발행된다"""
+        """신규 세션은 register_session() 시점에 catalog_updated 후 session_created 순으로 발행된다.
+
+        Phase 2 변경: create_task()는 DB 미등록 상태이므로 아무 broadcast도 하지 않는다.
+        register_session()에서 DB 등록 완료 후 catalog_updated → session_created 순서가 보장된다.
+        """
         await manager.create_task(
             prompt="hello",
             agent_session_id="sess-broadcast-1",
         )
+
+        # create_task()만으로는 broadcast가 발생하지 않는다
+        assert broadcaster.broadcast.call_count == 0
+        assert broadcaster.emit_session_created.call_count == 0
+
+        # register_session() 호출 시 DB 등록 완료 후 broadcast
+        await manager.register_session("claude-1", "sess-broadcast-1")
 
         # broadcast (catalog_updated)와 emit_session_created 모두 호출됨
         assert broadcaster.broadcast.call_count == 1
@@ -127,7 +155,6 @@ class TestCreateTaskCatalogBroadcast:
         assert "catalog" in event
 
         # 호출 순서 검증: catalog_updated가 session_created보다 먼저
-        # mock의 call 순서로 검증
         all_calls = broadcaster.method_calls
         catalog_idx = next(
             i for i, c in enumerate(all_calls) if c[0] == "broadcast"
@@ -172,6 +199,9 @@ class TestCreateTaskCatalogBroadcast:
             prompt="hello",
             agent_session_id="sess-folder-1",
         )
+
+        # Phase 2: DB 등록 + 폴더 배정은 register_session() 시점에 수행됨
+        await manager.register_session("claude-1", "sess-folder-1")
 
         catalog = await manager._db.get_catalog()
         session_entry = catalog["sessions"].get("sess-folder-1")

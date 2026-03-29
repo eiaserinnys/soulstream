@@ -78,7 +78,24 @@ def _make_mock_session_db():
     async def _get_catalog():
         return {"folders": [], "sessions": {}}
 
+    async def _register_session_initial(session_id, node_id, agent_id=None, claude_session_id=None,
+                                        session_type="claude", prompt=None, client_id=None,
+                                        status="running", created_at=None, updated_at=None):
+        if session_id not in _sessions:
+            _sessions[session_id] = {"session_id": session_id, "metadata": [], "last_event_id": 0, "last_read_event_id": 0}
+        _sessions[session_id].update({
+            "node_id": node_id, "agent_id": agent_id, "claude_session_id": claude_session_id,
+            "session_type": session_type, "prompt": prompt, "client_id": client_id,
+            "status": status,
+        })
+
+    async def _update_session(session_id, **fields):
+        if session_id in _sessions:
+            _sessions[session_id].update(fields)
+
     db.upsert_session = AsyncMock(side_effect=_upsert_session)
+    db.register_session_initial = AsyncMock(side_effect=_register_session_initial)
+    db.update_session = AsyncMock(side_effect=_update_session)
     db.get_session = AsyncMock(side_effect=_get_session)
     db.get_all_sessions = AsyncMock(side_effect=_get_all_sessions)
     db.append_metadata = AsyncMock(side_effect=_append_metadata)
@@ -220,6 +237,8 @@ class TestTaskManagerAppendMetadata:
         """Task.metadata와 DB에 모두 기록"""
         task = await task_manager.create_task(prompt="test")
         sid = task.agent_session_id
+        # Phase 2: DB 행은 register_session() 시점에 생성됨
+        await task_manager.register_session("claude-meta-1", sid)
 
         entry = {
             "type": "git_commit",
@@ -245,6 +264,8 @@ class TestTaskManagerAppendMetadata:
 
         task = await task_manager.create_task(prompt="test")
         sid = task.agent_session_id
+        # Phase 2: DB 행은 register_session() 시점에 생성됨
+        await task_manager.register_session("claude-meta-2", sid)
 
         # SSE 클라이언트 등록
         broadcaster = get_session_broadcaster()
@@ -306,6 +327,8 @@ class TestResumeMetadataContinuity:
         # 새 세션 생성 + metadata 추가
         task = await task_manager.create_task(prompt="first")
         sid = task.agent_session_id
+        # Phase 2: DB 행은 register_session() 시점에 생성됨
+        await task_manager.register_session("claude-resume-1", sid)
         entry = {"type": "git_commit", "value": "abc1234", "tool_name": "Bash",
                  "timestamp": utc_now().isoformat()}
         await task_manager.append_session_metadata(sid, entry)
