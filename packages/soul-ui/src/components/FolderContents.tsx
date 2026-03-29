@@ -51,7 +51,7 @@ function SessionPortrait({ url }: { url: string }) {
     <img
       src={url}
       alt=""
-      className="self-stretch w-6 rounded object-cover shrink-0"
+      className="self-stretch aspect-square rounded object-cover shrink-0"
       onError={() => setError(true)}
     />
   );
