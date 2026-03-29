@@ -42,9 +42,13 @@ async def _on_node_change(
     모든 이벤트에 대해 broadcast_node_change도 함께 호출(node graph 등에서 사용).
     """
     if event_type == "node_session_session_created":
+        # soul-server adapter._dispatch_broadcast_event는 session_created 이벤트를
+        # {"type": "session_created", "agentSessionId": ..., "session": {full_info}} 형태로 전송.
+        # "session" 키가 있으면 그것을 추출하고, 없으면 data 자체를 사용.
+        session_info = (data or {}).get("session") or data
         await broadcaster.broadcast({
             "type": "session_created",
-            "session": data,
+            "session": session_info,
             "nodeId": node_id,
         })
     elif event_type == "node_session_session_updated":

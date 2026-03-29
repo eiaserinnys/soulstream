@@ -106,3 +106,32 @@ async def test_other_event_only_broadcasts_node_change(mock_broadcaster):
         "nodeId": "node-1",
         "data": data,
     })
+
+
+@pytest.mark.asyncio
+async def test_session_created_with_nested_session_extracts_session_field(mock_broadcaster):
+    """broadcaster 경로에서 오는 데이터는 session 필드에 전체 세션 정보를 담고 있다.
+    _on_node_change는 data["session"]을 추출하여 broadcast해야 한다."""
+    session_info = {
+        "agent_session_id": "sess-123",
+        "status": "running",
+        "created_at": "2026-01-01T00:00:00",
+        "session_type": "claude",
+    }
+    data = {
+        "type": "session_created",
+        "agentSessionId": "sess-123",
+        "session": session_info,
+    }
+    await _on_node_change(mock_broadcaster, "node_session_session_created", "node-1", data)
+
+    mock_broadcaster.broadcast.assert_awaited_once_with({
+        "type": "session_created",
+        "session": session_info,  # data 전체가 아닌 data["session"]을 사용해야 함
+        "nodeId": "node-1",
+    })
+    mock_broadcaster.broadcast_node_change.assert_awaited_once_with({
+        "type": "node_session_session_created",
+        "nodeId": "node-1",
+        "data": data,
+    })
