@@ -18,6 +18,7 @@ import {
   renameFolderOptimistic,
   deleteFolderOptimistic,
   updateFolderSettingsOptimistic,
+  reorderFoldersOptimistic,
 } from "./lib/folder-operations";
 import { moveSessionsOptimistic } from "./lib/move-sessions";
 import { renameSessionOptimistic } from "./lib/rename-session";
@@ -124,6 +125,7 @@ export function DashboardLayout() {
           onRenameFolder={renameFolderOptimistic}
           onDeleteFolder={deleteFolderOptimistic}
           onUpdateFolderSettings={updateFolderSettingsOptimistic}
+          onReorderFolders={reorderFoldersOptimistic}
           folderCounts={folderCounts}
         />
       }
