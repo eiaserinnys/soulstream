@@ -124,6 +124,7 @@ export function App() {
           onCreateFolder={folderOps.createFolder}
           onRenameFolder={folderOps.renameFolderOptimistic}
           onDeleteFolder={folderOps.deleteFolderOptimistic}
+          onUpdateFolderSettings={folderOps.updateFolderSettingsOptimistic}
           folderCounts={folderCounts}
         />
       }

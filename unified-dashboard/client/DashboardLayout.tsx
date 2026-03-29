@@ -17,6 +17,7 @@ import {
   createFolder,
   renameFolderOptimistic,
   deleteFolderOptimistic,
+  updateFolderSettingsOptimistic,
 } from "./lib/folder-operations";
 import { moveSessionsOptimistic } from "./lib/move-sessions";
 import { computeIsOtherNode } from "./lib/node-guard";
@@ -121,6 +122,7 @@ export function DashboardLayout() {
           onCreateFolder={createFolder}
           onRenameFolder={renameFolderOptimistic}
           onDeleteFolder={deleteFolderOptimistic}
+          onUpdateFolderSettings={updateFolderSettingsOptimistic}
           folderCounts={folderCounts}
         />
       }

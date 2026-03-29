@@ -7,7 +7,7 @@
 
 import { createFolderOperations, SYSTEM_FOLDERS } from "@seosoyoung/soul-ui";
 
-export const { createFolder, renameFolderOptimistic, deleteFolderOptimistic } =
+export const { createFolder, renameFolderOptimistic, deleteFolderOptimistic, updateFolderSettingsOptimistic } =
   createFolderOperations({
     createUrl: "/api/catalog/folders",
     updateUrl: (id) => `/api/catalog/folders/${id}`,
