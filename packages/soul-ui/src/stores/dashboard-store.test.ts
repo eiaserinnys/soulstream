@@ -1999,4 +1999,51 @@ describe("dashboard-store", () => {
       expect(useDashboardStore.getState().processingCtx.historySynced).toBe(true);
     });
   });
+
+  describe("reorderFolders", () => {
+    const makeFolder = (id: string, name: string, sortOrder: number): CatalogState["folders"][number] => ({
+      id,
+      name,
+      sortOrder,
+      createdAt: "2026-01-01T00:00:00Z",
+    });
+
+    it("시스템 폴더와 일반 폴더가 혼재할 때 reorderFolders 호출 후 시스템 폴더가 보존된다", () => {
+      const store = useDashboardStore.getState();
+
+      const systemFolder = makeFolder("sys-1", "⚙️ 클로드 코드 세션", 0);
+      const folderA = makeFolder("folder-a", "Alpha", 1);
+      const folderB = makeFolder("folder-b", "Beta", 2);
+      const folderC = makeFolder("folder-c", "Gamma", 3);
+
+      store.setCatalog({
+        folders: [systemFolder, folderA, folderB, folderC],
+        sessions: {},
+      });
+
+      // 일반 폴더를 역순으로 재정렬 (시스템 폴더 ID는 포함하지 않음)
+      store.reorderFolders(["folder-c", "folder-b", "folder-a"]);
+
+      const { catalog } = useDashboardStore.getState();
+      expect(catalog).not.toBeNull();
+
+      const folderIds = catalog!.folders.map((f) => f.id);
+      // 시스템 폴더가 반드시 포함되어야 함
+      expect(folderIds).toContain("sys-1");
+      // 일반 폴더 3개 모두 포함
+      expect(folderIds).toContain("folder-a");
+      expect(folderIds).toContain("folder-b");
+      expect(folderIds).toContain("folder-c");
+      // 전체 개수 유지 (시스템 1 + 일반 3)
+      expect(catalog!.folders).toHaveLength(4);
+
+      // 재정렬된 일반 폴더의 sortOrder 확인
+      const reorderedC = catalog!.folders.find((f) => f.id === "folder-c");
+      const reorderedB = catalog!.folders.find((f) => f.id === "folder-b");
+      const reorderedA = catalog!.folders.find((f) => f.id === "folder-a");
+      expect(reorderedC!.sortOrder).toBe(0);
+      expect(reorderedB!.sortOrder).toBe(1);
+      expect(reorderedA!.sortOrder).toBe(2);
+    });
+  });
 });

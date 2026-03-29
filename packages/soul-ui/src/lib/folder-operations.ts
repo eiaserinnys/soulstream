@@ -15,6 +15,9 @@
 
 import { useDashboardStore } from "../stores/dashboard-store";
 import type { CatalogFolder, FolderSettings } from "../shared/types";
+import { SYSTEM_FOLDERS } from "../shared/constants";
+
+const SYSTEM_FOLDER_NAME_SET = new Set(Object.values(SYSTEM_FOLDERS));
 
 export interface FolderApiConfig {
   createUrl: string;
@@ -172,7 +175,9 @@ export function createFolderOperations(config: FolderApiConfig): FolderOperation
       });
       if (!res.ok) throw new Error(`Update folder settings failed: ${res.status}`);
     } catch (err) {
-      updateFolderSettings(folderId, prevSettings);
+      if (prevSettings !== undefined) {
+        updateFolderSettings(folderId, prevSettings);
+      }
       console.error("Folder settings update failed, rolled back:", err);
     }
   }
@@ -199,8 +204,11 @@ export function createFolderOperations(config: FolderApiConfig): FolderOperation
       });
       if (!res.ok) throw new Error(`Reorder folders failed: ${res.status}`);
     } catch (err) {
-      // 롤백: 이전 순서의 ID 배열로 복원
-      reorderFolders(prevFolders.map((f) => f.id));
+      // 롤백: 이전 순서에서 일반 폴더 ID만 전달 (시스템 폴더는 reorderFolders 내부에서 보존됨)
+      const prevNormalIds = prevFolders
+        .filter((f) => !SYSTEM_FOLDER_NAME_SET.has(f.name))
+        .map((f) => f.id);
+      reorderFolders(prevNormalIds);
       console.error("Folder reorder failed, rolled back:", err);
     }
   }
