@@ -6,6 +6,7 @@
  */
 
 import { memo } from "react";
+import type React from "react";
 import type { SessionSummary } from "../shared/types";
 import { isSessionUnread, useDashboardStore } from "../stores/dashboard-store";
 import { STATUS_CONFIG, nodeIdToHue } from "./FolderContents";
@@ -26,6 +27,7 @@ export interface FeedCardProps {
   folderName?: string;
   onClick: () => void;
   onDoubleClick: () => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
 }
 
 export const FeedCard = memo(function FeedCard({
@@ -34,6 +36,7 @@ export const FeedCard = memo(function FeedCard({
   folderName,
   onClick,
   onDoubleClick,
+  onContextMenu,
 }: FeedCardProps) {
   const statusConfig = STATUS_CONFIG[session.status] ?? STATUS_CONFIG.unknown;
   const isUnread = isSessionUnread(session);
@@ -82,6 +85,7 @@ export const FeedCard = memo(function FeedCard({
       )}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
+      onContextMenu={onContextMenu}
       data-session-id={session.agentSessionId}
     >
       {/* 제목 */}

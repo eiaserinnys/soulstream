@@ -30,6 +30,7 @@ import { NodePanel } from "./components/NodePanel";
 import { NewSessionDialog } from "./components/NewSessionDialog";
 import { useNodes } from "./hooks/useNodes";
 import { orchestratorSessionProvider } from "./providers/OrchestratorSessionProvider";
+import { renameSessionOptimistic } from "./lib/rename-session";
 
 // === 팩토리 인스턴스 (모듈 레벨 싱글턴) ===
 
@@ -130,7 +131,13 @@ export function App() {
       leftBottomRatio={3}
       centerPanel={
         viewMode === "feed" ? (
-          <FeedView onNewSession={() => openNewSessionModal('feed')} onLoadMore={loadMore} hasMore={hasMore} />
+          <FeedView
+            onNewSession={() => openNewSessionModal('feed')}
+            onLoadMore={loadMore}
+            hasMore={hasMore}
+            onRenameSession={renameSessionOptimistic}
+            onMoveSessions={moveOps.moveSessionsOptimistic}
+          />
         ) : (
           <>
             <SessionsTopBar />
@@ -139,6 +146,7 @@ export function App() {
               top={
                 <FolderContents
                   onMoveSessions={moveOps.moveSessionsOptimistic}
+                  onRenameSession={renameSessionOptimistic}
                 />
               }
               bottom={
