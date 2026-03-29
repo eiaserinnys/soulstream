@@ -16,9 +16,9 @@ import {
   NewSessionDialog,
   Select,
   SelectTrigger,
-  SelectValue,
   SelectPopup,
   SelectItem,
+  cn,
   type CreateSessionResponse,
   type DashboardAgentConfig,
 } from "@seosoyoung/soul-ui";
@@ -94,18 +94,27 @@ export function NewSessionModal() {
         body: JSON.stringify({
           prompt,
           ...(selectedModalFolderId ? { folderId: selectedModalFolderId } : {}),
-          ...(selectedAgentId ? { agentId: selectedAgentId } : {}),
+          ...(selectedAgentId ? { profile: selectedAgentId } : {}),
         }),
       });
 
       if (!response.ok) {
-        const body = await response
-          .json()
-          .catch(() => ({ error: { message: "Unknown error" } }));
-        throw new Error(body.error?.message ?? `HTTP ${response.status}`);
+        let errorMessage = `HTTP ${response.status}`;
+        try {
+          const body = await response.json();
+          errorMessage = body.detail ?? body.error?.message ?? body.error ?? errorMessage;
+        } catch {
+          errorMessage = `Server error (${response.status})`;
+        }
+        throw new Error(errorMessage);
       }
 
-      const result: CreateSessionResponse = await response.json();
+      let result: CreateSessionResponse;
+      try {
+        result = await response.json();
+      } catch {
+        throw new Error("Server returned an invalid response");
+      }
 
       // 성공: draft 삭제, 낙관적 추가, 모달 닫기
       clearDraft(draftKey);
@@ -143,7 +152,11 @@ export function NewSessionModal() {
         onValueChange={(v) => setSelectedModalFolderId(v || null)}
       >
         <SelectTrigger>
-          <SelectValue placeholder="Select a folder..." />
+          <span className={cn("flex-1 truncate", !selectedModalFolderId && "text-muted-foreground/72")}>
+            {selectedModalFolderId
+              ? (catalog?.folders.find(f => f.id === selectedModalFolderId)?.name ?? "Select a folder...")
+              : "Select a folder..."}
+          </span>
         </SelectTrigger>
         <SelectPopup>
           {catalog?.folders.map((f) => (
@@ -161,7 +174,20 @@ export function NewSessionModal() {
       <label className="text-xs font-medium text-muted-foreground">Agent</label>
       <Select value={selectedAgentId} onValueChange={setSelectedAgentId}>
         <SelectTrigger>
-          <SelectValue placeholder="Select an agent..." />
+          {(() => {
+            const agent = selectedAgentId ? agents.find(a => a.id === selectedAgentId) : null;
+            if (agent) {
+              return (
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  {agent.portraitUrl && (
+                    <img src={agent.portraitUrl} alt={agent.name} className="w-5 h-5 rounded shrink-0 object-cover" />
+                  )}
+                  <span className="flex-1 truncate">{agent.name}</span>
+                </div>
+              );
+            }
+            return <span className="flex-1 truncate text-muted-foreground/72">Select an agent...</span>;
+          })()}
         </SelectTrigger>
         <SelectPopup>
           {agents.map((a) => (
