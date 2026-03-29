@@ -173,12 +173,11 @@ def create_sessions_router(
         session_id, node_id = await session_router.route_create_session(
             body.model_dump(exclude_none=True)
         )
-        # 폴더 배정
-        if body.folderId:
-            if catalog_service:
-                await catalog_service.move_sessions_to_folder([session_id], body.folderId)
-            else:
-                await db.assign_session_to_folder(session_id, body.folderId)
+        # folderId DB 저장은 soul-server create_task에서 처리.
+        # soul-stream은 대시보드 폴더 뷰 실시간 반영을 위한 catalog broadcast만 담당.
+        # catalog_service=None(테스트/독립 실행)이면 broadcast할 클라이언트가 없으므로 생략이 의도된 동작.
+        if body.folderId and catalog_service:
+            await catalog_service.broadcast_catalog()
         return {"agentSessionId": session_id, "nodeId": node_id}
 
     @router.get("/{session_id}/events")
