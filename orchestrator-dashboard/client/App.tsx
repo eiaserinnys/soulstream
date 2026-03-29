@@ -34,9 +34,9 @@ import { orchestratorSessionProvider } from "./providers/OrchestratorSessionProv
 // === 팩토리 인스턴스 (모듈 레벨 싱글턴) ===
 
 const folderOps = createFolderOperations({
-  createUrl: "/api/folders",
-  updateUrl: (id) => `/api/folders/${id}`,
-  deleteUrl: (id) => `/api/folders/${id}`,
+  createUrl: "/api/catalog/folders",
+  updateUrl: (id) => `/api/catalog/folders/${id}`,
+  deleteUrl: (id) => `/api/catalog/folders/${id}`,
   // deleteFallbackFolderName 미지정 → 인덱스 기반 폴백
 });
 

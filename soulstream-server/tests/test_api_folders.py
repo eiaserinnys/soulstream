@@ -1,16 +1,16 @@
-"""Tests for Folders API (/api/folders)."""
+"""Tests for Folders API (/api/catalog/folders)."""
 
 import pytest
 
 
 class TestListFolders:
-    """GET /api/folders tests."""
+    """GET /api/catalog/folders tests."""
 
     async def test_returns_empty_list(self, client, mock_catalog_service):
         """Returns empty folder list."""
         mock_catalog_service.list_folders.return_value = []
 
-        resp = await client.get("/api/folders")
+        resp = await client.get("/api/catalog/folders")
 
         assert resp.status_code == 200
         body = resp.json()
@@ -23,7 +23,7 @@ class TestListFolders:
             {"id": "f2", "name": "Folder 2", "sortOrder": 1},
         ]
 
-        resp = await client.get("/api/folders")
+        resp = await client.get("/api/catalog/folders")
 
         assert resp.status_code == 200
         body = resp.json()
@@ -32,7 +32,7 @@ class TestListFolders:
 
 
 class TestCreateFolder:
-    """POST /api/folders tests."""
+    """POST /api/catalog/folders tests."""
 
     async def test_creates_folder_returns_201(self, client, mock_catalog_service):
         """Creates a folder and returns 201."""
@@ -43,7 +43,7 @@ class TestCreateFolder:
         }
 
         resp = await client.post(
-            "/api/folders",
+            "/api/catalog/folders",
             json={"name": "New Folder", "sortOrder": 0},
         )
 
@@ -62,7 +62,7 @@ class TestCreateFolder:
         }
 
         resp = await client.post(
-            "/api/folders",
+            "/api/catalog/folders",
             json={"name": "Default"},
         )
 
@@ -71,11 +71,11 @@ class TestCreateFolder:
 
 
 class TestDeleteFolder:
-    """DELETE /api/folders/{id} tests."""
+    """DELETE /api/catalog/folders/{id} tests."""
 
     async def test_deletes_folder(self, client, mock_catalog_service):
         """Deletes a folder and returns success."""
-        resp = await client.delete("/api/folders/f-del")
+        resp = await client.delete("/api/catalog/folders/f-del")
 
         assert resp.status_code == 200
         body = resp.json()
@@ -83,17 +83,51 @@ class TestDeleteFolder:
         mock_catalog_service.delete_folder.assert_called_once_with("f-del")
 
 
-class TestRenameFolder:
-    """PUT /api/folders/{id} tests."""
+class TestUpdateFolder:
+    """PUT /api/catalog/folders/{id} tests."""
 
     async def test_renames_folder(self, client, mock_catalog_service):
         """Renames a folder and returns success."""
         resp = await client.put(
-            "/api/folders/f-rename",
+            "/api/catalog/folders/f-rename",
             json={"name": "Renamed"},
         )
 
         assert resp.status_code == 200
         body = resp.json()
         assert body["success"] is True
-        mock_catalog_service.rename_folder.assert_called_once_with("f-rename", "Renamed")
+        mock_catalog_service.update_folder.assert_called_once_with(
+            "f-rename", name="Renamed", sort_order=None, settings=None
+        )
+
+    async def test_updates_settings(self, client, mock_catalog_service):
+        """Updates folder settings and returns success."""
+        resp = await client.put(
+            "/api/catalog/folders/f-settings",
+            json={"settings": {"excludeFromFeed": True}},
+        )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["success"] is True
+        mock_catalog_service.update_folder.assert_called_once_with(
+            "f-settings",
+            name=None,
+            sort_order=None,
+            settings={"excludeFromFeed": True},
+        )
+
+    async def test_updates_name_and_settings(self, client, mock_catalog_service):
+        """Updates both name and settings in a single request."""
+        resp = await client.put(
+            "/api/catalog/folders/f-both",
+            json={"name": "New Name", "settings": {"excludeFromFeed": False}},
+        )
+
+        assert resp.status_code == 200
+        mock_catalog_service.update_folder.assert_called_once_with(
+            "f-both",
+            name="New Name",
+            sort_order=None,
+            settings={"excludeFromFeed": False},
+        )
