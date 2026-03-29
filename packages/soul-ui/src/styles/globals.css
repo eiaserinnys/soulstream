@@ -131,6 +131,52 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* Feed card: running state (Style E: Breathing + Shimmer + Border Glow) */
+@keyframes card-running-breathe {
+  0%, 100% {
+    background-color: color-mix(in srgb, var(--color-success) 0%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-success) 12%, transparent);
+  }
+  50% {
+    background-color: color-mix(in srgb, var(--color-success) 7%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-success) 50%, transparent),
+                0 0 14px color-mix(in srgb, var(--color-success) 14%, transparent);
+  }
+}
+
+@keyframes card-running-breathe-tint {
+  /* running + unread/active 기반 variant: 4% tint를 베이스로 숨쉬기 */
+  0%, 100% {
+    background-color: color-mix(in srgb, var(--color-success) 4%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-success) 12%, transparent);
+  }
+  50% {
+    background-color: color-mix(in srgb, var(--color-success) 7%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-success) 50%, transparent),
+                0 0 14px color-mix(in srgb, var(--color-success) 14%, transparent);
+  }
+}
+
+@keyframes card-running-breathe-active {
+  /* running + isActive: ring 고정(숨쉬기 없음), glow만 맥동 */
+  0%, 100% {
+    background-color: color-mix(in srgb, var(--color-success) 4%, transparent);
+    box-shadow: 0 0 0 1.5px var(--color-success),
+                0 0 0px transparent;
+  }
+  50% {
+    background-color: color-mix(in srgb, var(--color-success) 7%, transparent);
+    box-shadow: 0 0 0 1.5px var(--color-success),
+                0 0 14px color-mix(in srgb, var(--color-success) 14%, transparent);
+  }
+}
+
+@keyframes card-running-shimmer {
+  0%   { transform: translateX(-100%); }
+  60%  { transform: translateX(100%); }
+  100% { transform: translateX(100%); }
+}
+
 /* Component-level shimmer classes */
 @layer components {
   .shimmer-purple {
@@ -147,6 +193,31 @@
     background: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--node-response) 6%, transparent) 50%, transparent 100%);
     background-size: 200px 100%;
     animation: node-shimmer 1.5s infinite linear;
+  }
+
+  /* Feed card: running state CSS classes */
+  .card-running-base::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      105deg,
+      transparent 30%,
+      color-mix(in srgb, var(--color-success) 10%, transparent) 50%,
+      transparent 70%
+    );
+    transform: translateX(-100%);
+    animation: card-running-shimmer 2.8s ease-in-out infinite;
+    pointer-events: none;
+  }
+  .card-running {
+    animation: card-running-breathe 3s ease-in-out infinite;
+  }
+  .card-running-unread {
+    animation: card-running-breathe-tint 3s ease-in-out infinite;
+  }
+  .card-running-active {
+    animation: card-running-breathe-active 3s ease-in-out infinite;
   }
 }
 
