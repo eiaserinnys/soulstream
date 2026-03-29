@@ -26,6 +26,11 @@ class UpdateFolderRequest(BaseModel):
     settings: Optional[dict] = None
 
 
+class FolderReorderItem(BaseModel):
+    id: str
+    sortOrder: int
+
+
 def create_folders_router(catalog_service: CatalogService) -> APIRouter:
     router = APIRouter(prefix="/api/catalog/folders", tags=["folders"])
 
@@ -56,6 +61,14 @@ def create_folders_router(catalog_service: CatalogService) -> APIRouter:
     async def delete_folder(folder_id: str) -> dict:
         """폴더 삭제. 소속 세션은 미배정으로 이동."""
         await catalog_service.delete_folder(folder_id)
+        return {"success": True}
+
+    @router.patch("/reorder")
+    async def reorder_folders(body: list[FolderReorderItem]) -> dict:
+        """폴더 순서 일괄 변경."""
+        await catalog_service.reorder_folders(
+            [{"id": item.id, "sortOrder": item.sortOrder} for item in body]
+        )
         return {"success": True}
 
     return router
