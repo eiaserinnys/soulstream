@@ -358,6 +358,7 @@ class UpstreamAdapter:
                 context_items=cmd.get("context_items"),
                 extra_context_items=cmd.get("extra_context_items"),
                 profile_id=cmd.get("profile"),
+                node_id=cmd.get("nodeId"),
             )
         except ValueError as e:
             await self._send_error(str(e), request_id=cmd.get("requestId", ""))
