@@ -19,6 +19,7 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, Query
+from pydantic import BaseModel
 
 from soul_common.catalog.catalog_service import CatalogService
 from soul_common.db.session_db import PostgresSessionDB
@@ -26,6 +27,16 @@ from soulstream_server.api.sessions import _build_portrait_proxy_url
 from soulstream_server.nodes.node_manager import NodeManager
 
 logger = logging.getLogger(__name__)
+
+
+class BatchMoveRequest(BaseModel):
+    sessionIds: list[str]
+    folderId: Optional[str] = None
+
+
+class SessionCatalogUpdate(BaseModel):
+    folderId: Optional[str] = None
+    displayName: Optional[str] = None
 
 
 def create_catalog_router(
@@ -121,5 +132,26 @@ def create_catalog_router(
         counts = await db.get_folder_counts(node_id=None)
         # None 키(폴더 미지정)는 JSON 직렬화 시 "null" 문자열로 변환
         return {"counts": {str(k) if k is not None else "null": v for k, v in counts.items()}}
+
+    # 고정 경로 "/sessions/batch"를 파라미터화 경로 "/{session_id}" 보다 먼저 등록
+    @router.put("/sessions/batch")
+    async def batch_move_sessions(body: BatchMoveRequest) -> dict:
+        """세션 일괄 폴더 이동."""
+        await catalog_service.move_sessions_to_folder(body.sessionIds, body.folderId)
+        return {"ok": True}
+
+    @router.put("/sessions/{session_id}")
+    async def update_session_catalog(session_id: str, body: SessionCatalogUpdate) -> dict:
+        """세션 폴더 이동 + 이름 변경 (개별)."""
+        if body.folderId is not None:
+            await catalog_service.move_sessions_to_folder([session_id], body.folderId)
+        if body.displayName is not None:
+            await catalog_service.rename_session(session_id, body.displayName)
+        return {"ok": True}
+
+    @router.delete("/sessions/{session_id}", status_code=204)
+    async def delete_session(session_id: str):
+        """세션 삭제."""
+        await catalog_service.delete_session(session_id)
 
     return router
