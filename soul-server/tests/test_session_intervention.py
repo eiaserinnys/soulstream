@@ -87,7 +87,7 @@ class TestClaudeSessionIndex:
     async def test_register_and_lookup(self, manager):
         """claude_session_id 등록 후 조회"""
         task = await manager.create_task(prompt="hello", agent_session_id="agent-sess-1")
-        manager.register_session("claude-sess-abc", "agent-sess-1")
+        await manager.register_session("claude-sess-abc", "agent-sess-1")
 
         found = manager.get_task_by_claude_session("claude-sess-abc")
         assert found is not None
@@ -104,8 +104,8 @@ class TestClaudeSessionIndex:
         await manager.create_task(prompt="hello", agent_session_id="agent-sess-1")
         await manager.create_task(prompt="world", agent_session_id="agent-sess-2")
 
-        manager.register_session("claude-1", "agent-sess-1")
-        manager.register_session("claude-2", "agent-sess-2")
+        await manager.register_session("claude-1", "agent-sess-1")
+        await manager.register_session("claude-2", "agent-sess-2")
 
         t1 = manager.get_task_by_claude_session("claude-1")
         t2 = manager.get_task_by_claude_session("claude-2")
@@ -120,8 +120,8 @@ class TestClaudeSessionIndex:
         await manager.create_task(prompt="hello", agent_session_id="agent-sess-1")
         await manager.create_task(prompt="world", agent_session_id="agent-sess-2")
 
-        manager.register_session("claude-shared", "agent-sess-1")
-        manager.register_session("claude-shared", "agent-sess-2")  # 덮어쓰기
+        await manager.register_session("claude-shared", "agent-sess-1")
+        await manager.register_session("claude-shared", "agent-sess-2")  # 덮어쓰기
 
         found = manager.get_task_by_claude_session("claude-shared")
         assert found is not None

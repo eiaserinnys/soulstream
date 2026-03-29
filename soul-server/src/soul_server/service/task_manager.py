@@ -120,28 +120,27 @@ class TaskManager:
 
     # === claude_session_id 인덱스 ===
 
-    def register_session(
+    async def register_session(
         self,
         claude_session_id: str,
         agent_session_id: str,
-        agent_id: Optional[str] = None,
     ) -> None:
-        """claude_session_id → agent_session_id 매핑 등록
+        """claude_session_id → agent_session_id 매핑 등록 및 DB 영속화
 
         SoulEngineAdapter가 session 이벤트를 발행할 때 호출합니다.
-        task.claude_session_id를 여기서 저장함으로써 graceful_shutdown 시
-        pre_shutdown_sessions.json에 유효한 claude_session_id가 기록된다.
+        task.claude_session_id를 여기서 저장하고 DB에도 기록함으로써,
+        graceful_shutdown 또는 서버 재기동 후에도 resume 가능하게 합니다.
 
-        asyncio 단일 이벤트 루프 특성상, 이 동기 함수는 await 지점 없이
-        실행되므로 complete_task()의 _lock 없이도 레이스 컨디션이 발생하지 않는다.
-
-        agent_id: Phase 3에서 _SESSION_COLUMNS에 agent_id가 추가되면 DB에 저장됨.
+        claude_session_id는 이 메서드만이 DB에 기록하는 단일 쓰기 경로입니다.
+        finalize_task/start_task 등 다른 경로에서 claude_session_id를 DB에 쓰지 않습니다.
         """
         self._session_index[claude_session_id] = agent_session_id
         # task.claude_session_id 즉시 저장: complete_task()보다 먼저 재시작이 오더라도 resume 가능
         task = self._tasks.get(agent_session_id)
         if task:
             task.claude_session_id = claude_session_id
+        # DB에 영속화: 서버 재기동 후 resume 시 claude_session_id를 읽을 수 있게 한다
+        await self._db.upsert_session(agent_session_id, claude_session_id=claude_session_id)
         logger.info(f"Session index registered: {claude_session_id} -> {agent_session_id}")
 
     def get_task_by_claude_session(self, claude_session_id: str) -> Optional[Task]:
@@ -345,14 +344,12 @@ class TaskManager:
                     setattr(task, key, value)
 
         # DB 업데이트 + LRU 퇴거 후보 등록
-        # claude_session_id는 metadata로 전달되었거나 register_claude_session으로 설정된 값을 사용한다.
-        # complete_task()와 동일하게 claude_session_id를 DB에 기록하여 다음 resume 시 사용 가능하게 한다.
+        # claude_session_id와 node_id는 register_session / add_task에서만 기록한다.
+        # finalize_task에서는 상태와 완료 시각만 업데이트한다.
         await self._db.upsert_session(
             agent_session_id,
             status=task.status.value,
-            claude_session_id=task.claude_session_id,
             updated_at=datetime_to_str(task.completed_at),
-            node_id=task.node_id,
         )
         self._eviction_manager.register(agent_session_id)
         # complete_task() / error_task()와 동일하게 claude_session_id 인덱스를 제거한다.
@@ -580,17 +577,19 @@ class TaskManager:
             task.node_id = self._db.node_id
 
         # DB에 세션 등록/업데이트
-        await self._db.upsert_session(
-            agent_session_id,
+        # claude_session_id는 register_session()에서만 기록한다 (단일 쓰기 경로).
+        # node_id와 agent_id는 신규 세션 최초 등록 시에만 기록한다.
+        upsert_fields: dict = dict(
             status=TaskStatus.RUNNING.value,
             prompt=prompt,
             session_type=task.session_type,
             client_id=task.client_id,
-            claude_session_id=task.claude_session_id,
             created_at=datetime_to_str(task.created_at),
-            node_id=task.node_id,
-            agent_id=task.profile_id,
         )
+        if is_new:
+            upsert_fields["node_id"] = task.node_id
+            upsert_fields["agent_id"] = task.profile_id
+        await self._db.upsert_session(agent_session_id, **upsert_fields)
 
         # 새 세션이면 폴더에 배치 + 카탈로그 브로드캐스트
         if is_new:

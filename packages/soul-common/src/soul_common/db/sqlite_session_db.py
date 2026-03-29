@@ -48,6 +48,9 @@ _FOLDER_JSONB_COLUMNS = frozenset({"settings"})
 _JSONB_COLUMNS = frozenset({"last_message", "metadata"})
 _TIMESTAMP_COLUMNS = frozenset({"created_at", "updated_at"})
 
+# 최초 설정 이후 덮어쓸 수 없는 식별 필드
+IMMUTABLE_FIELDS: frozenset[str] = frozenset({"claude_session_id", "node_id", "agent_id"})
+
 
 def _utc_now() -> str:
     """현재 UTC 시각을 ISO 8601 문자열로 반환한다."""
@@ -188,6 +191,24 @@ class SqliteSessionDB:
         invalid = set(fields) - _SESSION_COLUMNS
         if invalid:
             raise ValueError(f"Invalid session columns: {invalid}")
+
+        # 불변 필드 보호: non-null 값으로 덮어쓰기 시도 시 기존 값 확인 후 충돌 방지
+        immutable_updates = {k: v for k, v in fields.items() if k in IMMUTABLE_FIELDS and v is not None}
+        if immutable_updates:
+            cursor = await self._conn.execute(
+                "SELECT claude_session_id, node_id, agent_id FROM sessions WHERE session_id = ?",
+                (session_id,),
+            )
+            row = await cursor.fetchone()
+            if row:
+                existing = dict(row)
+                for field, new_val in immutable_updates.items():
+                    old_val = existing.get(field)
+                    if old_val is not None and old_val != new_val:
+                        raise ValueError(
+                            f"Immutable field '{field}' already set to {old_val!r}, "
+                            f"cannot overwrite with {new_val!r}"
+                        )
 
         now = _utc_now()
 

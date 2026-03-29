@@ -76,15 +76,16 @@ class TestCatalogIntegration:
         assert upsert_call.kwargs["client_id"] == "bot"
 
     async def test_complete_task_updates_db(self, manager: TaskManager):
-        """complete_task()가 DB 상태를 업데이트"""
+        """complete_task()가 DB 상태를 업데이트 (claude_session_id는 finalize에서 기록하지 않음)"""
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
-        await manager.finalize_task("sess-1", result="result", claude_session_id="claude-1")
+        await manager.finalize_task("sess-1", result="result")
 
         upsert_call = _find_upsert_call(
             manager._db, "sess-1", status="completed"
         )
         assert upsert_call is not None
-        assert upsert_call.kwargs["claude_session_id"] == "claude-1"
+        # claude_session_id는 register_session() 경로에서만 기록한다
+        assert "claude_session_id" not in upsert_call.kwargs
         assert upsert_call.kwargs.get("updated_at") is not None
 
     async def test_error_task_updates_db(self, manager: TaskManager):
@@ -193,7 +194,7 @@ class TestEviction:
     async def test_evicted_session_loadable_via_get_task(self, manager: TaskManager):
         """퇴거된 세션을 get_task()로 조회 가능 (on-demand 로드)"""
         await manager.create_task(prompt="hello", agent_session_id="sess-1", client_id="bot")
-        await manager.finalize_task("sess-1", result="done", claude_session_id="claude-1")
+        await manager.finalize_task("sess-1", result="done")
 
         # 강제 퇴거
         manager._eviction_manager._eviction_candidates["sess-1"] = time.time() - 1
@@ -252,7 +253,7 @@ class TestEviction:
     async def test_resume_evicted_session(self, manager: TaskManager):
         """퇴거된 세션의 resume"""
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
-        await manager.finalize_task("sess-1", result="done", claude_session_id="claude-1")
+        await manager.finalize_task("sess-1", result="done")
 
         # 강제 퇴거
         manager._eviction_manager._eviction_candidates["sess-1"] = time.time() - 1

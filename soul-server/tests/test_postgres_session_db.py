@@ -161,6 +161,7 @@ class TestSessionCRUD:
     @pytest.mark.asyncio
     async def test_upsert_with_explicit_node_id(self, db):
         db._pool.execute = AsyncMock()
+        db._pool.fetchrow = AsyncMock(return_value=None)  # 신규 세션: 기존 row 없음
 
         await db.upsert_session("s1", status="running", node_id="test-node")
 
@@ -607,6 +608,7 @@ class TestNodeId:
     async def test_upsert_sets_node_id_when_passed(self, db):
         """upsert_session에 node_id를 명시적으로 전달하면 설정되는지 확인"""
         db._pool.execute = AsyncMock()
+        db._pool.fetchrow = AsyncMock(return_value=None)  # 신규 세션: 기존 row 없음
 
         await db.upsert_session("s1", status="running", node_id="test-node")
 

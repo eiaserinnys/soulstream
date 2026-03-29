@@ -354,7 +354,7 @@ class TestIntervention:
     async def test_add_intervention_auto_resume(self, manager):
         """완료된 세션에 개입 → 자동 resume"""
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
-        await manager.finalize_task("sess-1", result="done", claude_session_id="claude-sess-1")
+        await manager.finalize_task("sess-1", result="done")
 
         result = await manager.add_intervention(
             agent_session_id="sess-1",
@@ -402,7 +402,7 @@ class TestClaudeSessionIndex:
     async def test_register_and_get_by_claude_session(self, manager):
         """claude_session_id 인덱스 등록 및 조회"""
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
-        manager.register_session("claude-sess-abc", "sess-1")
+        await manager.register_session("claude-sess-abc", "sess-1")
 
         task = manager.get_task_by_claude_session("claude-sess-abc")
         assert task is not None
@@ -425,7 +425,7 @@ class TestClaudeSessionIndex:
         task = await manager.get_task("sess-1")
         assert task.claude_session_id is None
 
-        manager.register_session("claude-abc", "sess-1")
+        await manager.register_session("claude-abc", "sess-1")
 
         # register_session 후 즉시 설정되어 있어야 한다
         assert task.claude_session_id == "claude-abc"
@@ -433,7 +433,7 @@ class TestClaudeSessionIndex:
     async def test_register_session_for_nonexistent_task_does_not_fail(self, manager):
         """존재하지 않는 agent_session_id에 register_session 해도 에러가 없다"""
         # 에러 없이 완료되어야 함
-        manager.register_session("claude-xyz", "sess-nonexistent")
+        await manager.register_session("claude-xyz", "sess-nonexistent")
         # 인덱스는 등록됨
         task = manager.get_task_by_claude_session("claude-xyz")
         assert task is None  # 태스크가 없으므로 None
@@ -441,7 +441,7 @@ class TestClaudeSessionIndex:
     async def test_get_running_tasks_has_claude_session_id_after_register(self, manager):
         """register_session 후 get_running_tasks()로 조회한 태스크의 claude_session_id가 None이 아니다."""
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
-        manager.register_session("claude-abc", "sess-1")
+        await manager.register_session("claude-abc", "sess-1")
 
         running = manager.get_running_tasks()
         assert len(running) == 1
@@ -458,7 +458,7 @@ class TestClaudeSessionIndex:
         5. 새 태스크의 resume_session_id가 register_session에서 설정된 값임을 확인
         """
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
-        manager.register_session("claude-abc", "sess-1")
+        await manager.register_session("claude-abc", "sess-1")
 
         # 재시작 상황: complete_task가 불리지 않고 INTERRUPTED로 마킹
         task = await manager.get_task("sess-1")
@@ -721,18 +721,17 @@ class TestNodeIdGuard:
         )
         assert task.status == TaskStatus.RUNNING
 
-    async def test_resume_preserves_node_id_in_db(self, manager):
-        """resume 시 DB upsert에 현재 node_id를 덮어쓰지 않고 원본 node_id를 보존"""
+    async def test_resume_does_not_write_node_id_to_db(self, manager):
+        """resume 시 DB upsert에 node_id를 전달하지 않는다 (불변 필드 — 최초 등록 시에만 기록)"""
         from unittest.mock import AsyncMock as MockAsync
         from soul_server.service.task_models import Task, TaskStatus
 
         evicted_task = Task(agent_session_id="sess-resume", prompt="old")
         evicted_task.status = TaskStatus.COMPLETED
-        evicted_task.node_id = "test-node"  # 같은 노드이지만 원본 확인
+        evicted_task.node_id = "test-node"
 
         manager._eviction_manager.load_evicted_task = MockAsync(return_value=evicted_task)
 
-        # node_id는 task.node_id 값이 그대로 유지돼야 함
         # upsert_session 호출 시 node_id 인자를 캡처
         upsert_calls = []
         original_upsert = manager._db.upsert_session.side_effect
@@ -747,8 +746,8 @@ class TestNodeIdGuard:
         await manager.create_task(prompt="resume", agent_session_id="sess-resume")
 
         assert len(upsert_calls) == 1
-        # resume 시 DB에 저장되는 node_id는 task의 원본 node_id여야 함 (not self._db.node_id 강제 덮어쓰기 금지)
-        assert upsert_calls[0] == "test-node"
+        # resume(is_new=False) 시에는 node_id를 DB에 전달하지 않는다 (불변 필드 보호)
+        assert upsert_calls[0] is None
 
     async def test_new_session_sets_current_node_id(self, manager):
         """신규 세션 생성 시 node_id = self._db.node_id"""
@@ -758,3 +757,64 @@ class TestNodeIdGuard:
         # DB upsert에도 현재 node_id가 사용됐는지 확인
         call_kwargs = manager._db.upsert_session.call_args
         assert call_kwargs.kwargs.get("node_id") == "test-node"
+
+
+class TestRegisterSessionDBWrite:
+    """register_session이 DB에 claude_session_id를 영속화하는지 검증"""
+
+    async def test_register_session_writes_claude_session_id_to_db(self, manager):
+        """register_session 호출 후 DB에 claude_session_id가 저장된다."""
+        await manager.create_task(prompt="hello", agent_session_id="sess-1")
+
+        # register_session 호출 (session 이벤트 수신 시뮬레이션)
+        await manager.register_session("claude-abc", "sess-1")
+
+        # DB upsert 중 claude_session_id=claude-abc 인 호출이 있어야 한다
+        found = False
+        for call in manager._db.upsert_session.call_args_list:
+            args, kwargs = call.args, call.kwargs
+            if args[0] == "sess-1" and kwargs.get("claude_session_id") == "claude-abc":
+                found = True
+                break
+        assert found, "register_session이 DB에 claude_session_id를 기록하지 않았습니다"
+
+    async def test_register_session_sets_task_claude_session_id(self, manager):
+        """register_session 호출 후 task.claude_session_id가 설정된다."""
+        await manager.create_task(prompt="hello", agent_session_id="sess-1")
+        await manager.register_session("claude-xyz", "sess-1")
+
+        task = manager._tasks.get("sess-1")
+        assert task is not None
+        assert task.claude_session_id == "claude-xyz"
+
+    async def test_finalize_does_not_write_claude_session_id_to_db(self, manager):
+        """finalize_task는 DB에 claude_session_id를 기록하지 않는다."""
+        await manager.create_task(prompt="hello", agent_session_id="sess-1")
+        await manager.register_session("claude-abc", "sess-1")
+
+        # 완료 처리
+        manager._db.upsert_session.reset_mock()
+        await manager.finalize_task("sess-1", result="done")
+
+        # finalize 시 호출된 upsert_session에 claude_session_id가 없어야 한다
+        for call in manager._db.upsert_session.call_args_list:
+            args, kwargs = call.args, call.kwargs
+            if args[0] == "sess-1":
+                assert "claude_session_id" not in kwargs, (
+                    f"finalize_task가 DB에 claude_session_id를 기록했습니다: {kwargs}"
+                )
+
+    async def test_finalize_none_does_not_overwrite_claude_session_id(self, manager):
+        """session 이벤트 없이 완료된 경우(None), DB의 claude_session_id가 덮어써지지 않는다."""
+        await manager.create_task(prompt="hello", agent_session_id="sess-1")
+        # register_session으로 claude_session_id 설정
+        await manager.register_session("claude-abc", "sess-1")
+
+        # finalize_task는 claude_session_id를 전달하지 않음 (무출력 종료 시나리오)
+        await manager.finalize_task("sess-1", result="done")
+
+        # task.claude_session_id는 여전히 register_session이 설정한 값이어야 한다
+        # (finalize에서 None으로 덮어써지지 않음)
+        task = manager._tasks.get("sess-1")
+        assert task is not None
+        assert task.claude_session_id == "claude-abc"
