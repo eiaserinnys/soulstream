@@ -106,6 +106,30 @@ class TestImmutableFields:
         row = await db.get_session("sess-3")
         assert row["agent_id"] == "profile-x"
 
+    # --- set_claude_session_id 직접 테스트 ---
+
+    async def test_set_claude_session_id_initial(self, db: SqliteSessionDB):
+        """NULL → SET (최초 설정)"""
+        await db.upsert_session("sess-5", status="running")
+        await db.set_claude_session_id("sess-5", "claude-abc")
+        row = await db.get_session("sess-5")
+        assert row["claude_session_id"] == "claude-abc"
+
+    async def test_set_claude_session_id_same_value_is_noop(self, db: SqliteSessionDB):
+        """같은 값 → no-op (컴팩션/재진입 시나리오)"""
+        await db.upsert_session("sess-5", status="running")
+        await db.set_claude_session_id("sess-5", "claude-abc")
+        await db.set_claude_session_id("sess-5", "claude-abc")  # 두 번 호출 → no-op
+        row = await db.get_session("sess-5")
+        assert row["claude_session_id"] == "claude-abc"
+
+    async def test_set_claude_session_id_different_value_raises(self, db: SqliteSessionDB):
+        """다른 값 → ValueError (불변성 위반)"""
+        await db.upsert_session("sess-5", status="running")
+        await db.set_claude_session_id("sess-5", "claude-abc")
+        with pytest.raises(ValueError, match="claude_session_id immutability violation"):
+            await db.set_claude_session_id("sess-5", "claude-xyz")
+
     # --- 복합 시나리오 ---
 
     async def test_mutable_fields_can_always_be_updated(self, db: SqliteSessionDB):
