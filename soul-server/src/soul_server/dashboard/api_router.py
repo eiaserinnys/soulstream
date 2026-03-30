@@ -18,10 +18,11 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sse_starlette.sse import EventSourceResponse
 
-from soul_server.api.sessions import stream_session_events
+from soul_server.api.sessions import session_events_sse_generator
 from soul_server.dashboard.auth import require_dashboard_auth
 from soul_server.service.task_manager import (
     get_task_manager,
@@ -336,83 +337,10 @@ async def api_session_events(
     task = await task_manager.get_task(session_id)
     is_llm = (task is not None and task.session_type == "llm") or session_id.startswith("llm-")
 
-    async def event_generator():
-        # 리스너를 히스토리 읽기 전에 등록하여
-        # DB 읽기와 리스너 등록 사이의 경합으로 이벤트가 누락되는 것을 방지한다.
-        event_queue = asyncio.Queue()
-        await task_manager.add_listener(session_id, event_queue)
-        entered_stream = False
-
-        try:
-            # Part 1: SessionDB에서 히스토리 스트리밍
-            from soul_server.service.postgres_session_db import get_session_db
-            db = get_session_db()
-            last_stored_id = 0
-
-            try:
-                async for event_id, event_type, payload_text in db.stream_events_raw(
-                    session_id, after_id=after_id,
-                ):
-                    last_stored_id = max(last_stored_id, event_id)
-                    # payload_text는 PostgreSQL jsonb::text 캐스트 결과로,
-                    # compact JSON(개행 없음)이 보장되어 SSE data: 필드에 안전하다.
-                    yield (
-                        f"id: {event_id}\n"
-                        f"event: {event_type}\n"
-                        f"data: {payload_text}\n\n"
-                    )
-            except Exception as e:
-                logger.error("Failed to read events for %s: %s", session_id, e)
-
-            if is_llm:
-                # LLM 세션은 단발 요청이라 라이브 이벤트가 없다.
-                # history_sync만 보내고 스트림을 종료한다.
-                sync_payload = {
-                    "type": "history_sync",
-                    "last_event_id": last_stored_id,
-                    "is_live": False,
-                    "status": "completed",
-                }
-                yield (
-                    f"event: history_sync\n"
-                    f"data: {json.dumps(sync_payload, ensure_ascii=False, default=str)}\n\n"
-                )
-                return
-
-            # Part 2+3: history_sync + 라이브 이벤트 스트리밍 (Claude 세션)
-            # stream_session_events의 finally에서 remove_listener를 호출한다.
-            entered_stream = True
-            async for event_dict in stream_session_events(
-                session_id, last_stored_id=last_stored_id, task_manager=task_manager,
-                event_queue=event_queue,
-            ):
-                event_type = event_dict.get("type", "unknown")
-                if event_type == "keepalive":
-                    yield ": keepalive\n\n"
-                elif event_type == "history_sync":
-                    yield (
-                        f"event: history_sync\n"
-                        f"data: {json.dumps(event_dict, ensure_ascii=False, default=str)}\n\n"
-                    )
-                else:
-                    # _event_id를 pop하여 data JSON에서 제거하되, SSE id: 필드로 전달
-                    event_id = event_dict.pop("_event_id", None)
-                    sse_id = f"id: {event_id}\n" if event_id is not None else ""
-                    yield (
-                        f"{sse_id}"
-                        f"event: {event_type}\n"
-                        f"data: {json.dumps(event_dict, ensure_ascii=False, default=str)}\n\n"
-                    )
-        finally:
-            if not entered_stream:
-                # stream_session_events에 진입하지 못했으면 직접 정리
-                # (LLM 세션 조기 return, 히스토리 읽기 중 연결 해제 등)
-                await task_manager.remove_listener(session_id, event_queue)
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    return EventSourceResponse(
+        session_events_sse_generator(
+            session_id, after_id, task_manager, is_llm=is_llm,
+        )
     )
 
 
