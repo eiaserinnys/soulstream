@@ -218,6 +218,23 @@ class PostgresSessionDB:
             updated_at or now,
         )
 
+    async def set_claude_session_id(
+        self,
+        session_id: str,
+        claude_session_id: str,
+    ) -> None:
+        """claude_session_id 불변 설정.
+
+        - NULL → SET (최초 설정)
+        - 같은 값 → no-op (idempotent)
+        - 다른 값 → RAISE EXCEPTION (버그 탐지) → asyncpg.PostgresError로 전파
+        """
+        await self._pool.execute(
+            "SELECT session_set_claude_id($1, $2)",
+            session_id,
+            claude_session_id,
+        )
+
     _UPDATE_SESSION_IMMUTABLE = frozenset({
         "node_id", "agent_id", "claude_session_id", "session_type", "created_at",
     })

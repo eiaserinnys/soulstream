@@ -437,8 +437,17 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           (s) => s.agentSessionId === session.agentSessionId,
         );
         if (existingIdx >= 0) {
-          // 낙관적 업데이트로 생성된 불완전한 세션을 서버 데이터로 머지
-          const merged = { ...sessions[existingIdx], ...session };
+          // 낙관적 업데이트로 생성된 불완전한 세션을 서버 데이터로 머지.
+          // agentPortraitUrl/agentId/agentName은 새 데이터에 값이 없으면 기존 값을 유지한다.
+          // (SSE 이벤트에 누락될 경우 optimistic update의 portrait URL을 덮어쓰지 않도록 방어)
+          const existing = sessions[existingIdx];
+          const merged = {
+            ...existing,
+            ...session,
+            agentPortraitUrl: session.agentPortraitUrl ?? existing.agentPortraitUrl,
+            agentId: session.agentId ?? existing.agentId,
+            agentName: session.agentName ?? existing.agentName,
+          };
           const updated = [...sessions];
           updated[existingIdx] = merged;
           set({ sessions: updated });
