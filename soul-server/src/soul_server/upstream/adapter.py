@@ -483,7 +483,8 @@ class UpstreamAdapter:
             logger.exception("Error streaming events for session %s", session_id)
         finally:
             await self._tm.remove_listener(session_id, queue)
-            self._stream_tasks.pop(session_id, None)
+            if self._stream_tasks.get(session_id) is asyncio.current_task():
+                self._stream_tasks.pop(session_id, None)
 
     async def _handle_subscribe_events(self, cmd: dict) -> None:
         """subscribe_events 명령 처리: 라이브 이벤트 relay.
@@ -519,7 +520,8 @@ class UpstreamAdapter:
             logger.exception("Error in subscribe_events for session %s", session_id)
         finally:
             await self._tm.remove_listener(session_id, queue)
-            self._stream_tasks.pop(session_id, None)
+            if self._stream_tasks.get(session_id) is asyncio.current_task():
+                self._stream_tasks.pop(session_id, None)
 
     # ─── Helpers ────────────────────────────────────
 
