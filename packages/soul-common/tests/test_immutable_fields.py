@@ -1,7 +1,10 @@
 """불변 필드(claude_session_id, node_id, agent_id) 제약 테스트.
 
 SqliteSessionDB의 upsert_session에서 이미 설정된 불변 필드를
-다른 값으로 덮어쓰려 하면 ValueError가 발생해야 한다.
+다른 값(None 포함)으로 덮어쓰려 하면 ValueError가 발생해야 한다.
+
+register_session_initial: 순수 INSERT, 중복 호출 시 예외.
+update_session: 불변 필드 전달 시 ValueError.
 """
 
 from pathlib import Path
@@ -55,14 +58,11 @@ class TestImmutableFields:
         row = await db.get_session("sess-1")
         assert row["claude_session_id"] == "claude-abc"
 
-    async def test_write_none_does_not_overwrite_claude_session_id(self, db: SqliteSessionDB):
-        """None 값 쓰기는 불변 제약을 발동하지 않는다 (기존 값 유지)"""
+    async def test_write_none_overwrites_claude_session_id_raises(self, db: SqliteSessionDB):
+        """None 값 쓰기도 불변 제약을 발동한다 — 이미 설정된 값을 None으로 지우는 시도를 차단"""
         await db.upsert_session("sess-1", claude_session_id="claude-abc")
-        # None을 전달하면 제약을 건너뜀 (덮어쓰기 의도 없음)
-        await db.upsert_session("sess-1", claude_session_id=None, status="completed")
-        row = await db.get_session("sess-1")
-        # SQLite UPDATE는 None을 그대로 쓰므로 NULL이 될 수 있으나, 제약은 발동하지 않아야 함
-        # (None 덮어쓰기 허용 여부는 DB 구현에 따라 다름 — 여기서는 ValueError가 나지 않음만 검증)
+        with pytest.raises(ValueError, match="Immutable field 'claude_session_id'"):
+            await db.upsert_session("sess-1", claude_session_id=None, status="completed")
 
     # --- node_id ---
 
@@ -115,3 +115,125 @@ class TestImmutableFields:
         row = await db.get_session("sess-4")
         assert row["status"] == "completed"
         assert row["claude_session_id"] == "claude-1"  # 불변 필드 유지
+
+
+class TestRegisterSessionInitial:
+    """register_session_initial — 순수 INSERT, 중복 시 예외"""
+
+    async def test_register_inserts_session(self, db: SqliteSessionDB):
+        """정상 등록: 4개 ID가 저장된다"""
+        await db.register_session_initial(
+            "sess-reg-1",
+            node_id="node-A",
+            agent_id="agent-X",
+            claude_session_id="claude-C",
+            session_type="claude",
+            prompt="hello",
+            status="running",
+        )
+        row = await db.get_session("sess-reg-1")
+        assert row is not None
+        assert row["node_id"] == "node-A"
+        assert row["agent_id"] == "agent-X"
+        assert row["claude_session_id"] == "claude-C"
+        assert row["session_type"] == "claude"
+        assert row["status"] == "running"
+
+    async def test_register_duplicate_raises(self, db: SqliteSessionDB):
+        """중복 호출 시 UNIQUE 제약 위반 예외 발생 (ON CONFLICT 없음)"""
+        await db.register_session_initial(
+            "sess-reg-2",
+            node_id="node-A",
+            agent_id="agent-X",
+        )
+        with pytest.raises(Exception):
+            await db.register_session_initial(
+                "sess-reg-2",
+                node_id="node-A",
+                agent_id="agent-X",
+            )
+
+    async def test_register_with_null_claude_session_id(self, db: SqliteSessionDB):
+        """claude_session_id=None 허용 (LLM 세션 등록 시나리오)"""
+        await db.register_session_initial(
+            "sess-reg-3",
+            node_id="node-B",
+            agent_id="agent-Y",
+            claude_session_id=None,
+        )
+        row = await db.get_session("sess-reg-3")
+        assert row is not None
+        assert row["claude_session_id"] is None
+        assert row["node_id"] == "node-B"
+
+
+class TestUpdateSession:
+    """update_session — 순수 UPDATE, 불변 필드 전달 시 ValueError"""
+
+    async def test_update_mutable_field(self, db: SqliteSessionDB):
+        """가변 필드 업데이트 성공"""
+        await db.register_session_initial(
+            "sess-upd-1",
+            node_id="node-A",
+            agent_id="agent-X",
+        )
+        await db.update_session("sess-upd-1", status="completed")
+        row = await db.get_session("sess-upd-1")
+        assert row["status"] == "completed"
+
+    async def test_update_node_id_raises(self, db: SqliteSessionDB):
+        """node_id 전달 시 ValueError"""
+        await db.register_session_initial(
+            "sess-upd-2",
+            node_id="node-A",
+            agent_id="agent-X",
+        )
+        with pytest.raises(ValueError, match="Immutable fields"):
+            await db.update_session("sess-upd-2", node_id="node-B")
+
+    async def test_update_agent_id_raises(self, db: SqliteSessionDB):
+        """agent_id 전달 시 ValueError"""
+        await db.register_session_initial(
+            "sess-upd-3",
+            node_id="node-A",
+            agent_id="agent-X",
+        )
+        with pytest.raises(ValueError, match="Immutable fields"):
+            await db.update_session("sess-upd-3", agent_id="agent-Z")
+
+    async def test_update_claude_session_id_raises(self, db: SqliteSessionDB):
+        """claude_session_id 전달 시 ValueError"""
+        await db.register_session_initial(
+            "sess-upd-4",
+            node_id="node-A",
+            agent_id="agent-X",
+            claude_session_id="claude-original",
+        )
+        with pytest.raises(ValueError, match="Immutable fields"):
+            await db.update_session("sess-upd-4", claude_session_id="claude-new")
+
+    async def test_update_session_type_raises(self, db: SqliteSessionDB):
+        """session_type 전달 시 ValueError"""
+        await db.register_session_initial(
+            "sess-upd-5",
+            node_id="node-A",
+            agent_id="agent-X",
+        )
+        with pytest.raises(ValueError, match="Immutable fields"):
+            await db.update_session("sess-upd-5", session_type="llm")
+
+    async def test_update_preserves_immutable_fields(self, db: SqliteSessionDB):
+        """가변 필드 업데이트 후 불변 필드가 유지된다"""
+        await db.register_session_initial(
+            "sess-upd-6",
+            node_id="node-A",
+            agent_id="agent-X",
+            claude_session_id="claude-stable",
+        )
+        await db.update_session("sess-upd-6", status="completed", display_name="My Session")
+        row = await db.get_session("sess-upd-6")
+        assert row["node_id"] == "node-A"
+        assert row["agent_id"] == "agent-X"
+        assert row["claude_session_id"] == "claude-stable"
+        assert row["status"] == "completed"
+        assert row["display_name"] == "My Session"
