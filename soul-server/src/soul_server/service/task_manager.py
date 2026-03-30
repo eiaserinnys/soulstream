@@ -419,6 +419,13 @@ class TaskManager:
             folder_id=folder_id, node_id=node_id, status=status,
         )
 
+        # AgentRegistry는 루프 밖에서 1회만 조회한다.
+        try:
+            from soul_server.main import get_agent_registry
+            registry = get_agent_registry()
+        except Exception:
+            registry = None
+
         result = []
         for s in sessions:
             session_id = s["session_id"]
@@ -450,6 +457,23 @@ class TaskManager:
                 info["llm_model"] = s.get("llm_model")
                 info["llm_usage"] = s.get("llm_usage")
                 info["client_id"] = s.get("client_id")
+
+            # agent 정보 보충 (soul-dashboard에서 포트레이트 표시용)
+            agent_id = s.get("agent_id")
+            if agent_id:
+                if registry:
+                    agent = registry.get(agent_id)
+                    if agent:
+                        info["agentId"] = agent_id
+                        info["agentName"] = agent.name
+                        info["agentPortraitUrl"] = (
+                            f"/api/agents/{agent.id}/portrait" if agent.portrait_path else None
+                        )
+                    else:
+                        info["agentId"] = agent_id
+                else:
+                    info["agentId"] = agent_id
+
             result.append(info)
         return result, total
 
