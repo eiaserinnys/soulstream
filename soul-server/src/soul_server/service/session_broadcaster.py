@@ -13,6 +13,7 @@ from typing import Optional
 
 from soul_common.broadcaster import BaseSessionBroadcaster
 
+from soul_server.service.agent_registry import AgentRegistry
 from soul_server.service.task_models import Task, utc_now
 
 logger = logging.getLogger(__name__)
@@ -25,11 +26,11 @@ class SessionBroadcaster(BaseSessionBroadcaster):
     모듈 레벨 싱글톤으로 관리된다(init_session_broadcaster 참고).
     """
 
-    def __init__(self) -> None:
+    def __init__(self, agent_registry: AgentRegistry) -> None:
         super().__init__(use_lock=True)
+        self._agent_registry = agent_registry
 
-    @staticmethod
-    def _resolve_agent_info(task: Task) -> tuple[Optional[str], Optional[str]]:
+    def _resolve_agent_info(self, task: Task) -> tuple[Optional[str], Optional[str]]:
         """Task의 profile_id로 AgentRegistry를 조회하여 이름과 portrait URL을 반환.
 
         모델(Task)이 레지스트리를 직접 참조하지 않도록, 이 헬퍼가 중개한다.
@@ -37,14 +38,12 @@ class SessionBroadcaster(BaseSessionBroadcaster):
         if not task.profile_id:
             return None, None
         try:
-            from soul_server.main import get_agent_registry
-            registry = get_agent_registry()
-            agent = registry.get(task.profile_id)
+            agent = self._agent_registry.get(task.profile_id)
             if agent:
                 portrait_url = f"/api/agents/{agent.id}/portrait" if agent.portrait_path else None
                 return agent.name, portrait_url
         except Exception:
-            pass
+            pass  # 방어 로직 유지 — registry 조회 실패 시 None 반환
         return None, None
 
     async def emit_session_created(self, task: Task) -> int:
@@ -126,10 +125,10 @@ def get_session_broadcaster() -> SessionBroadcaster:
     return _session_broadcaster
 
 
-def init_session_broadcaster() -> SessionBroadcaster:
+def init_session_broadcaster(agent_registry: AgentRegistry) -> SessionBroadcaster:
     """SessionBroadcaster 초기화"""
     global _session_broadcaster
-    _session_broadcaster = SessionBroadcaster()
+    _session_broadcaster = SessionBroadcaster(agent_registry=agent_registry)
     return _session_broadcaster
 
 
