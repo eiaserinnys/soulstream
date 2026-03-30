@@ -572,6 +572,13 @@ class PostgresSessionDB:
             # asyncpg는 TIMESTAMPTZ를 Python datetime 객체로 반환 — JSON 직렬화를 위해 변환
             if d.get("created_at") is not None:
                 d["created_at"] = d["created_at"].isoformat()
+            # asyncpg가 JSONB 컬럼을 문자열로 반환하는 경우 역직렬화
+            # (JSON 코덱 미등록 시 JSONB → str로 반환됨)
+            if isinstance(d.get("settings"), str):
+                try:
+                    d["settings"] = json.loads(d["settings"])
+                except (json.JSONDecodeError, ValueError):
+                    d["settings"] = {}
             result.append(d)
         return result
 
