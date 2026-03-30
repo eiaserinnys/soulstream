@@ -162,6 +162,49 @@ describe("dashboard-store", () => {
       });
     });
 
+    describe("appendSessions", () => {
+      it("appendSessions는 이미 존재하는 세션을 중복 삽입하지 않아야 한다", () => {
+        const sessionA: SessionSummary = { agentSessionId: "sess-a", status: "completed", eventCount: 1, createdAt: "2026-01-01T00:00:00Z" };
+        const sessionB: SessionSummary = { agentSessionId: "sess-b", status: "running", eventCount: 2, createdAt: "2026-01-02T00:00:00Z" };
+        const sessionC: SessionSummary = { agentSessionId: "sess-c", status: "running", eventCount: 3, createdAt: "2026-01-03T00:00:00Z" };
+        const sessionD: SessionSummary = { agentSessionId: "sess-d", status: "completed", eventCount: 4, createdAt: "2026-01-04T00:00:00Z" };
+
+        useDashboardStore.getState().setSessions([sessionA, sessionB, sessionC], 10);
+        useDashboardStore.getState().appendSessions([sessionB, sessionD], 10);
+
+        const sessions = useDashboardStore.getState().sessions;
+        expect(sessions).toHaveLength(4);
+        expect(sessions.map((s) => s.agentSessionId)).toEqual(["sess-a", "sess-b", "sess-c", "sess-d"]);
+      });
+
+      it("appendSessions는 완전히 새로운 세션만 추가한다", () => {
+        const sessionA: SessionSummary = { agentSessionId: "sess-a", status: "completed", eventCount: 1, createdAt: "2026-01-01T00:00:00Z" };
+        const sessionB: SessionSummary = { agentSessionId: "sess-b", status: "running", eventCount: 2, createdAt: "2026-01-02T00:00:00Z" };
+        const sessionC: SessionSummary = { agentSessionId: "sess-c", status: "running", eventCount: 3, createdAt: "2026-01-03T00:00:00Z" };
+        const sessionD: SessionSummary = { agentSessionId: "sess-d", status: "completed", eventCount: 4, createdAt: "2026-01-04T00:00:00Z" };
+
+        useDashboardStore.getState().setSessions([sessionA, sessionB], 10);
+        useDashboardStore.getState().appendSessions([sessionC, sessionD], 10);
+
+        const sessions = useDashboardStore.getState().sessions;
+        expect(sessions).toHaveLength(4);
+        expect(sessions.map((s) => s.agentSessionId)).toEqual(["sess-a", "sess-b", "sess-c", "sess-d"]);
+      });
+
+      it("appendSessions는 모두 중복이면 기존 sessions를 변경하지 않는다", () => {
+        const sessionA: SessionSummary = { agentSessionId: "sess-a", status: "completed", eventCount: 1, createdAt: "2026-01-01T00:00:00Z" };
+        const sessionB: SessionSummary = { agentSessionId: "sess-b", status: "running", eventCount: 2, createdAt: "2026-01-02T00:00:00Z" };
+
+        useDashboardStore.getState().setSessions([sessionA, sessionB], 5);
+        useDashboardStore.getState().appendSessions([sessionA, sessionB], 99);
+
+        const state = useDashboardStore.getState();
+        expect(state.sessions).toHaveLength(2);
+        expect(state.sessions.map((s) => s.agentSessionId)).toEqual(["sess-a", "sess-b"]);
+        expect(state.sessionsTotal).toBe(99);
+      });
+    });
+
     describe("updateSession", () => {
       it("should update existing session's status", () => {
         useDashboardStore.getState().setSessions([
