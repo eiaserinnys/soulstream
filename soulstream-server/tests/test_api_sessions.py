@@ -248,3 +248,71 @@ class TestBatchMoveFolder:
         mock_catalog_service.move_sessions_to_folder.assert_awaited_once_with(
             ["s1", "s2"], "f1"
         )
+
+
+class TestSessionToResponseUserInfo:
+    """_session_to_response의 userName/userPortraitUrl 테스트."""
+
+    def test_user_info_included_when_node_has_user_info(self):
+        """node_manager에 user_info가 있으면 userName/userPortraitUrl이 설정된다."""
+        from unittest.mock import MagicMock
+        from soulstream_server.api.sessions import _session_to_response
+
+        node_manager = MagicMock()
+        node_manager.find_agent_profile.return_value = None
+        node_manager.get_user_info.return_value = {
+            "name": "테스터",
+            "hasPortrait": True,
+        }
+
+        session = {
+            "session_id": "s1",
+            "status": "running",
+            "node_id": "n1",
+            "agent_id": None,
+        }
+
+        result = _session_to_response(session, node_manager)
+
+        assert result["userName"] == "테스터"
+        assert result["userPortraitUrl"] == "/api/nodes/n1/user/portrait"
+
+    def test_user_portrait_url_none_when_no_portrait(self):
+        """hasPortrait=False이면 userPortraitUrl이 None이다."""
+        from unittest.mock import MagicMock
+        from soulstream_server.api.sessions import _session_to_response
+
+        node_manager = MagicMock()
+        node_manager.find_agent_profile.return_value = None
+        node_manager.get_user_info.return_value = {
+            "name": "테스터",
+            "hasPortrait": False,
+        }
+
+        session = {
+            "session_id": "s1",
+            "status": "running",
+            "node_id": "n1",
+            "agent_id": None,
+        }
+
+        result = _session_to_response(session, node_manager)
+
+        assert result["userName"] == "테스터"
+        assert result["userPortraitUrl"] is None
+
+    def test_user_info_none_when_no_node_manager(self):
+        """node_manager가 없으면 userName/userPortraitUrl이 None이다."""
+        from soulstream_server.api.sessions import _session_to_response
+
+        session = {
+            "session_id": "s1",
+            "status": "running",
+            "node_id": "n1",
+            "agent_id": None,
+        }
+
+        result = _session_to_response(session, node_manager=None)
+
+        assert result["userName"] is None
+        assert result["userPortraitUrl"] is None

@@ -417,6 +417,11 @@ def _build_portrait_proxy_url(source_node_id: str, agent_id: str) -> str:
     return f"/api/nodes/{source_node_id}/agents/{agent_id}/portrait"
 
 
+def _build_user_portrait_proxy_url(node_id: str) -> str:
+    """사용자 portrait 프록시 URL을 조립한다. (API 계층 전용)"""
+    return f"/api/nodes/{node_id}/user/portrait"
+
+
 def _session_to_response(
     s: dict,
     node_manager: Optional[NodeManager] = None,
@@ -452,11 +457,14 @@ def _session_to_response(
         "agentId": s.get("agent_id"),
         "agentName": None,
         "agentPortraitUrl": None,
+        "userName": None,
+        "userPortraitUrl": None,
     }
 
     agent_id = s.get("agent_id")
+    node_id = s.get("node_id")
     if agent_id and node_manager is not None:
-        found = node_manager.find_agent_profile(agent_id, s.get("node_id"))
+        found = node_manager.find_agent_profile(agent_id, node_id)
         if found:
             profile, source_node_id = found
             result["agentName"] = profile.get("name")
@@ -464,5 +472,12 @@ def _session_to_response(
                 result["agentPortraitUrl"] = _build_portrait_proxy_url(
                     source_node_id, agent_id
                 )
+
+    if node_id and node_manager is not None:
+        user_info = node_manager.get_user_info(node_id)
+        if user_info:
+            result["userName"] = user_info.get("name")
+            if user_info.get("hasPortrait"):
+                result["userPortraitUrl"] = _build_user_portrait_proxy_url(node_id)
 
     return result

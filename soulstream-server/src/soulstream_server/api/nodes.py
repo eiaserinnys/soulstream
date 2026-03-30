@@ -112,6 +112,32 @@ def create_nodes_router(
             headers={"Cache-Control": "public, max-age=3600"},
         )
 
+    @router.get("/{node_id}/user/portrait")
+    async def proxy_user_portrait(node_id: str):
+        """사용자 portrait 이미지 프록시.
+
+        해당 노드의 soul-server /api/dashboard/portrait/user를 프록시한다.
+        """
+        node = node_manager.get_node(node_id)
+        if not node:
+            raise HTTPException(status_code=404, detail=f"노드를 찾을 수 없습니다: {node_id}")
+
+        url = f"http://{node.host}:{node.port}/api/dashboard/portrait/user"
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url)
+        except httpx.RequestError:
+            return Response(status_code=502)
+
+        if resp.status_code != 200:
+            return Response(status_code=resp.status_code)
+
+        return Response(
+            content=resp.content,
+            media_type=resp.headers.get("content-type", "image/png"),
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
+
     @router.get("/stream")
     async def node_stream(request: Request) -> EventSourceResponse:
         """노드 변경 SSE 스트림.

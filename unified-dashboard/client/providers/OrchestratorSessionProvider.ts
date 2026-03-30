@@ -56,6 +56,8 @@ export class OrchestratorSessionProvider implements SessionStorageProvider {
         agent_id?: string | null;
         agentName?: string | null;
         agentPortraitUrl?: string | null;
+        userName?: string | null;
+        userPortraitUrl?: string | null;
       }>;
       total: number;
     } = await res.json();
@@ -76,6 +78,8 @@ export class OrchestratorSessionProvider implements SessionStorageProvider {
       agentId: s.agent_id ?? undefined,
       agentName: s.agentName ?? undefined,
       agentPortraitUrl: s.agentPortraitUrl ?? undefined,
+      userName: s.userName ?? undefined,
+      userPortraitUrl: s.userPortraitUrl ?? undefined,
     }));
 
     const total = data.total ?? sessions.length;

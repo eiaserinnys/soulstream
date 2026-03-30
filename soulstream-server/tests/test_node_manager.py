@@ -248,3 +248,68 @@ class TestFindAgentProfile:
         await manager.register_node(mock_ws, make_registration("n1"))
 
         assert manager.find_agent_profile("unknown-agent") is None
+
+
+class TestUserInfo:
+    """사용자 정보 조회 테스트."""
+
+    async def test_fetch_user_info_called_on_registration(self, manager, mock_ws):
+        """register_node 시 _fetch_user_info가 호출된다."""
+        with patch.object(
+            manager, "_fetch_user_info", new=AsyncMock()
+        ) as mock_fetch:
+            await manager.register_node(mock_ws, make_registration("n1"))
+            mock_fetch.assert_called_once()
+
+    async def test_get_user_info_returns_node_data(self, manager, mock_ws):
+        """get_user_info는 노드에 설정된 user_info를 반환한다."""
+        node = await manager.register_node(mock_ws, make_registration("n1"))
+        node.set_user_info({"name": "테스터", "hasPortrait": True})
+
+        result = manager.get_user_info("n1")
+
+        assert result["name"] == "테스터"
+        assert result["hasPortrait"] is True
+
+    async def test_get_user_info_returns_empty_for_unknown_node(self, manager):
+        """알 수 없는 node_id에 대해 빈 dict를 반환한다."""
+        result = manager.get_user_info("non-existent-node")
+
+        assert result == {}
+
+    async def test_fetch_user_info_sets_data_from_http(self, manager, mock_ws):
+        """_fetch_user_info가 HTTP 응답에서 user_info를 설정한다."""
+        import httpx
+        from unittest.mock import patch as _patch
+
+        user_data = {"name": "HTTP유저", "hasPortrait": False}
+
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"user": user_data}
+
+        with _patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(return_value=mock_resp)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_cls.return_value = mock_client
+
+            node = await manager.register_node(mock_ws, make_registration("n1"))
+
+        assert node.user_info.get("name") == "HTTP유저"
+
+    async def test_fetch_user_info_graceful_on_http_error(self, manager, mock_ws):
+        """HTTP 실패 시 user_info가 빈 dict로 graceful degradation."""
+        import httpx
+        from unittest.mock import patch as _patch
+
+        with _patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(side_effect=httpx.RequestError("connection refused"))
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_cls.return_value = mock_client
+
+            node = await manager.register_node(mock_ws, make_registration("n1"))
+
+        assert node.user_info == {}
