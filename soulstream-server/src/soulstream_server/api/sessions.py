@@ -237,8 +237,24 @@ def create_sessions_router(
                 return
 
             queue: asyncio.Queue[dict | None] = asyncio.Queue(maxsize=512)
+            seen_event_ids: set[int] = set()
 
             async def on_event(data: dict) -> None:
+                # _stream_events + _handle_subscribe_events 이중 경로로 인한 중복 방지
+                payload = data.get("event") or data.get("payload", {})
+                raw_id = (
+                    data.get("eventId")
+                    or data.get("id")
+                    or (payload.get("_event_id") if isinstance(payload, dict) else None)
+                )
+                if raw_id is not None:
+                    try:
+                        int_id = int(raw_id)
+                        if int_id in seen_event_ids:
+                            return
+                        seen_event_ids.add(int_id)
+                    except (ValueError, TypeError):
+                        pass
                 try:
                     queue.put_nowait(data)
                 except asyncio.QueueFull:
