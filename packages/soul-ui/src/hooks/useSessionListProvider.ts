@@ -67,6 +67,9 @@ export function useSessionListProvider(
   const loading = useDashboardStore((s) => s.sessionsLoading);
   const error = useDashboardStore((s) => s.sessionsError);
 
+  // hasMore 계산 전용 구독 — loadMore는 getState()로 직접 접근
+  const getSessionsInFolder = useDashboardStore((s) => s.getSessionsInFolder);
+
   const [folderCounts, setFolderCounts] = useState<Record<string, number>>({});
 
   // 필터 상태
@@ -139,28 +142,46 @@ export function useSessionListProvider(
    * store의 sessions에 append합니다.
    */
   const loadMore = useCallback(async () => {
-    const { sessions: currentSessions, sessionsTotal } = useDashboardStore.getState();
-    if (currentSessions.length >= sessionsTotal) return;
+    const state = useDashboardStore.getState();
+    const { sessionsTotal } = state;
+
+    const isFolderView = viewMode === "folder" && selectedFolderId !== null;
+    // SSE로 타 폴더 세션이 sessions에 추가될 수 있으므로 sessions.length가 아닌
+    // getSessionsInFolder로 이 폴더에 실제 로드된 세션 수를 계산한다
+    const offset = isFolderView
+      ? state.getSessionsInFolder(selectedFolderId).length
+      : state.sessions.length;
+
+    if (offset >= sessionsTotal) return;
 
     try {
       const provider = externalProvider ?? getSessionProvider(storageMode);
       const typeFilter = sessionTypeFilter === "all" ? undefined : sessionTypeFilter;
       const result = await provider.fetchSessions({
         sessionType: typeFilter,
-        offset: currentSessions.length,
+        offset,
         limit: DEFAULT_PAGE_SIZE,
+        ...(isFolderView ? { folderId: selectedFolderId } : {}),
       });
+
+      // race condition guard: 폴더 A → 폴더 B 전환 중 폴더 A의 loadMore가 완료된 경우 버림
+      // 폴더 → 전체 뷰 전환은 fetchSessions의 setSessions가 최종 정정하므로 별도 가드 불필요
+      if (isFolderView && useDashboardStore.getState().selectedFolderId !== selectedFolderId) return;
 
       appendSessions(result.sessions, result.total);
     } catch {
       // loadMore 실패는 조용히 무시 (다음 스크롤 시 재시도)
     }
-  }, [storageMode, sessionTypeFilter, appendSessions, getSessionProvider, externalProvider]);
+  }, [storageMode, sessionTypeFilter, viewMode, selectedFolderId, appendSessions, getSessionProvider, externalProvider]);
 
   const loadMoreRef = useRef(loadMore);
   loadMoreRef.current = loadMore;
 
-  const hasMore = sessions.length < sessionsTotal;
+  // hasMore: 폴더 뷰에서는 폴더별 실제 로드 수 기준
+  // (sessions.length는 SSE로 추가된 타 폴더 세션 포함으로 부정확)
+  const hasMore = viewMode === "folder" && selectedFolderId !== null
+    ? getSessionsInFolder(selectedFolderId).length < sessionsTotal
+    : sessions.length < sessionsTotal;
 
   /**
    * SSE delta 이벤트 처리 (sse 모드)
