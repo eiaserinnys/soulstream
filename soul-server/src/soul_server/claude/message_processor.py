@@ -80,27 +80,39 @@ class MessageProcessor:
             await self._handle_result_message(message)
 
     async def _handle_system_message(self, message: Any) -> None:
-        """SystemMessage 처리 — 세션 ID 추출"""
-        if hasattr(message, "session_id"):
-            # path b 필터링: TaskStartedMessage(SystemMessage)는 session_id + tool_use_id를 가짐
-            # - 메인 세션 시작: tool_use_id = None → on_session 발화
-            # - 서브에이전트 시작: tool_use_id = non-None → on_session 발화 안 함
-            # SDK 독립적으로 tool_use_id 속성 직접 확인 (임포트 불필요)
-            if getattr(message, "tool_use_id", None) is not None:
-                logger.debug(f"Subagent task start skipped for on_session: {message.session_id}")
-                return
+        """SystemMessage 처리 — 세션 ID 추출
 
-            self.msg_state.session_id = message.session_id
-            # 클라이언트의 실제 세션 ID를 갱신 (풀 재사용 시 올바른 세션 매칭용)
-            if self.msg_state.session_id and self.on_client_session_update:
-                self.on_client_session_update(self.msg_state.session_id)
-            logger.info(f"세션 ID: {self.msg_state.session_id}")
-            # 세션 ID 조기 통지 콜백
-            if self.on_session and self.msg_state.session_id:
-                try:
-                    await self.on_session(self.msg_state.session_id)
-                except Exception as e:
-                    logger.warning(f"세션 ID 콜백 오류: {e}")
+        SDK의 SystemMessage 계층:
+        - SystemMessage(subtype='init', data={session_id: ...}): 메인 세션 시작.
+          session_id는 data 딕셔너리 안에만 있고 직접 속성이 아님.
+        - TaskStartedMessage(SystemMessage 서브클래스): 서브에이전트 태스크 시작.
+          session_id와 tool_use_id가 직접 속성으로 있음.
+        """
+        # 메인 세션: data['session_id'], 서브에이전트 태스크: 직접 속성 session_id
+        session_id = getattr(message, "session_id", None) or (
+            message.data.get("session_id") if getattr(message, "data", None) else None
+        )
+        if not session_id:
+            return
+
+        # path b 필터링: TaskStartedMessage(SystemMessage)는 session_id + tool_use_id를 가짐
+        # - 메인 세션 시작(init): tool_use_id 없음 → on_session 발화
+        # - 서브에이전트 시작(task_started): tool_use_id = non-None → on_session 발화 안 함
+        if getattr(message, "tool_use_id", None) is not None:
+            logger.debug(f"Subagent task start skipped for on_session: {session_id}")
+            return
+
+        self.msg_state.session_id = session_id
+        # 클라이언트의 실제 세션 ID를 갱신 (풀 재사용 시 올바른 세션 매칭용)
+        if self.msg_state.session_id and self.on_client_session_update:
+            self.on_client_session_update(self.msg_state.session_id)
+        logger.info(f"세션 ID: {self.msg_state.session_id}")
+        # 세션 ID 조기 통지 콜백
+        if self.on_session and self.msg_state.session_id:
+            try:
+                await self.on_session(self.msg_state.session_id)
+            except Exception as e:
+                logger.warning(f"세션 ID 콜백 오류: {e}")
 
     async def _handle_assistant_message(self, message: Any) -> None:
         """AssistantMessage 처리 — 블록 순회 및 이벤트 발행"""
