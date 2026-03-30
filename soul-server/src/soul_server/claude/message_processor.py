@@ -82,6 +82,14 @@ class MessageProcessor:
     async def _handle_system_message(self, message: Any) -> None:
         """SystemMessage 처리 — 세션 ID 추출"""
         if hasattr(message, "session_id"):
+            # path b 필터링: TaskStartedMessage(SystemMessage)는 session_id + tool_use_id를 가짐
+            # - 메인 세션 시작: tool_use_id = None → on_session 발화
+            # - 서브에이전트 시작: tool_use_id = non-None → on_session 발화 안 함
+            # SDK 독립적으로 tool_use_id 속성 직접 확인 (임포트 불필요)
+            if getattr(message, "tool_use_id", None) is not None:
+                logger.debug(f"Subagent task start skipped for on_session: {message.session_id}")
+                return
+
             self.msg_state.session_id = message.session_id
             # 클라이언트의 실제 세션 ID를 갱신 (풀 재사용 시 올바른 세션 매칭용)
             if self.msg_state.session_id and self.on_client_session_update:

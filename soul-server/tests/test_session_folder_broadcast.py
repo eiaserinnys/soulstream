@@ -97,8 +97,13 @@ def _make_mock_session_db():
         if session_id in _sessions:
             _sessions[session_id].update(fields)
 
+    async def _set_claude_session_id(session_id, claude_session_id):
+        if session_id in _sessions and _sessions[session_id].get("claude_session_id") is None:
+            _sessions[session_id]["claude_session_id"] = claude_session_id
+
     db.upsert_session = AsyncMock(side_effect=_upsert_session)
     db.register_session_initial = AsyncMock(side_effect=_register_session_initial)
+    db.set_claude_session_id = AsyncMock(side_effect=_set_claude_session_id)
     db.update_session = AsyncMock(side_effect=_update_session)
     db.get_session = AsyncMock(side_effect=_get_session)
     db.get_all_sessions = AsyncMock(side_effect=_get_all_sessions)
@@ -109,6 +114,7 @@ def _make_mock_session_db():
     db.append_event = AsyncMock(return_value=1)
     db.read_events = AsyncMock(return_value=[])
     db.update_last_read_event_id = AsyncMock(return_value=True)
+    db.node_id = "test-node"
     return db
 
 
@@ -127,24 +133,13 @@ class TestCreateTaskCatalogBroadcast:
     async def test_new_session_broadcasts_catalog_before_session_created(
         self, manager, broadcaster
     ):
-        """신규 세션은 register_session() 시점에 catalog_updated 후 session_created 순으로 발행된다.
-
-        Phase 2 변경: create_task()는 DB 미등록 상태이므로 아무 broadcast도 하지 않는다.
-        register_session()에서 DB 등록 완료 후 catalog_updated → session_created 순서가 보장된다.
-        """
+        """신규 세션은 create_task() 에서 catalog_updated → session_created 순으로 발행된다."""
         await manager.create_task(
             prompt="hello",
             agent_session_id="sess-broadcast-1",
         )
 
-        # create_task()만으로는 broadcast가 발생하지 않는다
-        assert broadcaster.broadcast.call_count == 0
-        assert broadcaster.emit_session_created.call_count == 0
-
-        # register_session() 호출 시 DB 등록 완료 후 broadcast
-        await manager.register_session("claude-1", "sess-broadcast-1")
-
-        # broadcast (catalog_updated)와 emit_session_created 모두 호출됨
+        # create_task()에서 broadcast (catalog_updated)와 emit_session_created 모두 호출됨
         assert broadcaster.broadcast.call_count == 1
         assert broadcaster.emit_session_created.call_count == 1
 
@@ -200,7 +195,6 @@ class TestCreateTaskCatalogBroadcast:
             agent_session_id="sess-folder-1",
         )
 
-        # Phase 2: DB 등록 + 폴더 배정은 register_session() 시점에 수행됨
         await manager.register_session("claude-1", "sess-folder-1")
 
         catalog = await manager._db.get_catalog()

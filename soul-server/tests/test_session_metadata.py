@@ -93,8 +93,13 @@ def _make_mock_session_db():
         if session_id in _sessions:
             _sessions[session_id].update(fields)
 
+    async def _set_claude_session_id(session_id, claude_session_id):
+        if session_id in _sessions and _sessions[session_id].get("claude_session_id") is None:
+            _sessions[session_id]["claude_session_id"] = claude_session_id
+
     db.upsert_session = AsyncMock(side_effect=_upsert_session)
     db.register_session_initial = AsyncMock(side_effect=_register_session_initial)
+    db.set_claude_session_id = AsyncMock(side_effect=_set_claude_session_id)
     db.update_session = AsyncMock(side_effect=_update_session)
     db.get_session = AsyncMock(side_effect=_get_session)
     db.get_all_sessions = AsyncMock(side_effect=_get_all_sessions)
@@ -107,6 +112,7 @@ def _make_mock_session_db():
     db.read_events = AsyncMock(return_value=[])
     db.search_events = AsyncMock(return_value=[])
     db.update_last_read_event_id = AsyncMock(return_value=True)
+    db.node_id = "test-node"
     return db
 
 
@@ -237,7 +243,7 @@ class TestTaskManagerAppendMetadata:
         """Task.metadata와 DB에 모두 기록"""
         task = await task_manager.create_task(prompt="test")
         sid = task.agent_session_id
-        # Phase 2: DB 행은 register_session() 시점에 생성됨
+        # DB 행은 create_task() 시점에 pending INSERT로 생성됨
         await task_manager.register_session("claude-meta-1", sid)
 
         entry = {
@@ -264,7 +270,7 @@ class TestTaskManagerAppendMetadata:
 
         task = await task_manager.create_task(prompt="test")
         sid = task.agent_session_id
-        # Phase 2: DB 행은 register_session() 시점에 생성됨
+        # DB 행은 create_task() 시점에 pending INSERT로 생성됨
         await task_manager.register_session("claude-meta-2", sid)
 
         # SSE 클라이언트 등록
@@ -327,7 +333,7 @@ class TestResumeMetadataContinuity:
         # 새 세션 생성 + metadata 추가
         task = await task_manager.create_task(prompt="first")
         sid = task.agent_session_id
-        # Phase 2: DB 행은 register_session() 시점에 생성됨
+        # DB 행은 create_task() 시점에 pending INSERT로 생성됨
         await task_manager.register_session("claude-resume-1", sid)
         entry = {"type": "git_commit", "value": "abc1234", "tool_name": "Bash",
                  "timestamp": utc_now().isoformat()}
