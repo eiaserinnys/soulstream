@@ -211,6 +211,7 @@ export { useNotification } from "./hooks/useNotification";
 export { useUrlSync } from "./hooks/useUrlSync";
 export { useDashboardConfig } from "./hooks/useDashboardConfig";
 export { useServerStatus } from "./hooks/useServerStatus";
+export { useFlipAnimation } from "./hooks/useFlipAnimation";
 
 // === Dashboard Lib (extracted from soul-dashboard) ===
 export { renameSessionOptimistic, createRenameSessionOperation } from "./lib/rename-session";
