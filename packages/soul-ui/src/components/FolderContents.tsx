@@ -49,7 +49,7 @@ function SessionPortrait({ url }: { url: string }) {
   const [error, setError] = useState(false);
   if (error) return null;
   return (
-    <div className="h-10 w-10 shrink-0 rounded overflow-hidden">
+    <div className="h-10 w-10 shrink-0 rounded-full overflow-hidden">
       <img
         src={url}
         alt=""
