@@ -163,7 +163,7 @@ def task_manager(session_db):
 @pytest.fixture
 def broadcaster():
     from soul_server.service.session_broadcaster import set_session_broadcaster
-    b = SessionBroadcaster()
+    b = SessionBroadcaster(agent_registry=MagicMock())
     set_session_broadcaster(b)
     yield b
     set_session_broadcaster(None)
@@ -449,7 +449,7 @@ class TestLlmAPI:
         task_manager = TaskManager(
             session_db=mock_db,
         )
-        broadcaster = SessionBroadcaster()
+        broadcaster = SessionBroadcaster(agent_registry=MagicMock())
         set_session_broadcaster(broadcaster)
 
         mock_adapter = MockAdapter()

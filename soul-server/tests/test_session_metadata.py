@@ -15,7 +15,7 @@ import asyncio
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -232,7 +232,7 @@ class TestTaskManagerAppendMetadata:
             set_session_broadcaster,
         )
 
-        broadcaster = SessionBroadcaster()
+        broadcaster = SessionBroadcaster(agent_registry=MagicMock())
         set_session_broadcaster(broadcaster)
         tm = TaskManager(session_db=db)
         yield tm
@@ -321,7 +321,7 @@ class TestResumeMetadataContinuity:
             set_session_broadcaster,
         )
 
-        broadcaster = SessionBroadcaster()
+        broadcaster = SessionBroadcaster(agent_registry=MagicMock())
         set_session_broadcaster(broadcaster)
         tm = TaskManager(session_db=db)
         yield tm
@@ -365,7 +365,7 @@ class TestMCPMetadata:
             set_session_broadcaster,
         )
 
-        broadcaster = SessionBroadcaster()
+        broadcaster = SessionBroadcaster(agent_registry=MagicMock())
         set_session_broadcaster(broadcaster)
         tm = TaskManager(session_db=db)
 

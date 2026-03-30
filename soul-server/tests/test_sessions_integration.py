@@ -116,7 +116,7 @@ def mock_session_broadcaster():
 def real_session_broadcaster():
     """실제 SessionBroadcaster 인스턴스 - 이벤트 테스트용"""
     from soul_server.service.session_broadcaster import SessionBroadcaster
-    return SessionBroadcaster()
+    return SessionBroadcaster(agent_registry=MagicMock())
 
 
 @pytest.fixture
@@ -454,7 +454,7 @@ class TestSessionBroadcaster:
         """클라이언트 추가/제거가 정상 동작해야 한다"""
         from soul_server.service.session_broadcaster import SessionBroadcaster
 
-        broadcaster = SessionBroadcaster()
+        broadcaster = SessionBroadcaster(agent_registry=MagicMock())
 
         queue = broadcaster.add_client()
         assert broadcaster.client_count == 1
@@ -467,7 +467,7 @@ class TestSessionBroadcaster:
         """모든 리스너에게 이벤트를 브로드캐스트해야 한다"""
         from soul_server.service.session_broadcaster import SessionBroadcaster
 
-        broadcaster = SessionBroadcaster()
+        broadcaster = SessionBroadcaster(agent_registry=MagicMock())
         queue1 = broadcaster.add_client()
         queue2 = broadcaster.add_client()
 
@@ -490,7 +490,7 @@ class TestSessionBroadcaster:
         from soul_server.service.session_broadcaster import SessionBroadcaster
         from soul_server.service.task_models import Task, TaskStatus
 
-        broadcaster = SessionBroadcaster()
+        broadcaster = SessionBroadcaster(agent_registry=MagicMock())
         queue = broadcaster.add_client()
 
         task = Task(
@@ -510,7 +510,7 @@ class TestSessionBroadcaster:
         from soul_server.service.session_broadcaster import SessionBroadcaster
         from soul_server.service.task_models import Task, TaskStatus
 
-        broadcaster = SessionBroadcaster()
+        broadcaster = SessionBroadcaster(agent_registry=MagicMock())
         queue = broadcaster.add_client()
 
         task = Task(
@@ -531,7 +531,7 @@ class TestSessionBroadcaster:
         """세션 삭제 이벤트를 발행해야 한다"""
         from soul_server.service.session_broadcaster import SessionBroadcaster
 
-        broadcaster = SessionBroadcaster()
+        broadcaster = SessionBroadcaster(agent_registry=MagicMock())
         queue = broadcaster.add_client()
 
         await broadcaster.emit_session_deleted("sess-001")
@@ -545,7 +545,7 @@ class TestSessionBroadcaster:
         """큐가 가득 찼을 때 에러 없이 스킵해야 한다"""
         from soul_server.service.session_broadcaster import SessionBroadcaster
 
-        broadcaster = SessionBroadcaster()
+        broadcaster = SessionBroadcaster(agent_registry=MagicMock())
         # 최대 크기 1인 큐
         small_queue = broadcaster.add_client(maxsize=1)
 
@@ -953,7 +953,7 @@ class TestMultipleClientsSSE:
         from soul_server.service.session_broadcaster import SessionBroadcaster
         from soul_server.service.task_models import Task, TaskStatus
 
-        broadcaster = SessionBroadcaster()
+        broadcaster = SessionBroadcaster(agent_registry=MagicMock())
 
         # 두 클라이언트의 큐
         client_a_queue = broadcaster.add_client()

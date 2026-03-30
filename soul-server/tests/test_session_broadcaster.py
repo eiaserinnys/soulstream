@@ -8,12 +8,21 @@ TDD 방식으로 작성:
 """
 
 import pytest
+from unittest.mock import MagicMock
+from soul_server.service.agent_registry import AgentRegistry
 from soul_server.service.session_broadcaster import (
     SessionBroadcaster,
     get_session_broadcaster,
     init_session_broadcaster,
     set_session_broadcaster,
 )
+
+
+@pytest.fixture
+def mock_registry():
+    registry = MagicMock(spec=AgentRegistry)
+    registry.get.return_value = None
+    return registry
 
 
 @pytest.fixture(autouse=True)
@@ -33,15 +42,15 @@ class TestGetSessionBroadcaster:
             get_session_broadcaster()
         assert "not initialized" in str(exc_info.value)
 
-    def test_returns_broadcaster_after_init(self):
+    def test_returns_broadcaster_after_init(self, mock_registry):
         """초기화 후 정상적으로 SessionBroadcaster 반환"""
-        init_session_broadcaster()
+        init_session_broadcaster(mock_registry)
         broadcaster = get_session_broadcaster()
         assert isinstance(broadcaster, SessionBroadcaster)
 
-    def test_returns_same_instance(self):
+    def test_returns_same_instance(self, mock_registry):
         """동일한 인스턴스를 반환한다"""
-        init_session_broadcaster()
+        init_session_broadcaster(mock_registry)
         b1 = get_session_broadcaster()
         b2 = get_session_broadcaster()
         assert b1 is b2
@@ -50,15 +59,15 @@ class TestGetSessionBroadcaster:
 class TestInitSessionBroadcaster:
     """init_session_broadcaster 테스트"""
 
-    def test_creates_new_instance(self):
+    def test_creates_new_instance(self, mock_registry):
         """새 SessionBroadcaster 인스턴스 생성"""
-        broadcaster = init_session_broadcaster()
+        broadcaster = init_session_broadcaster(mock_registry)
         assert isinstance(broadcaster, SessionBroadcaster)
 
-    def test_replaces_existing_instance(self):
+    def test_replaces_existing_instance(self, mock_registry):
         """기존 인스턴스를 교체한다"""
-        b1 = init_session_broadcaster()
-        b2 = init_session_broadcaster()
+        b1 = init_session_broadcaster(mock_registry)
+        b2 = init_session_broadcaster(mock_registry)
         assert b1 is not b2
         assert get_session_broadcaster() is b2
 
@@ -66,15 +75,15 @@ class TestInitSessionBroadcaster:
 class TestSetSessionBroadcaster:
     """set_session_broadcaster 테스트 (테스트용)"""
 
-    def test_set_custom_instance(self):
+    def test_set_custom_instance(self, mock_registry):
         """커스텀 인스턴스 설정"""
-        custom = SessionBroadcaster()
+        custom = SessionBroadcaster(agent_registry=mock_registry)
         set_session_broadcaster(custom)
         assert get_session_broadcaster() is custom
 
-    def test_set_none_clears_instance(self):
+    def test_set_none_clears_instance(self, mock_registry):
         """None 설정 시 인스턴스 제거"""
-        init_session_broadcaster()
+        init_session_broadcaster(mock_registry)
         set_session_broadcaster(None)
         with pytest.raises(RuntimeError):
             get_session_broadcaster()
@@ -87,8 +96,8 @@ class TestSessionBroadcasterBroadcast:
     """broadcast 메서드 테스트"""
 
     @pytest.fixture
-    def broadcaster(self):
-        return SessionBroadcaster()
+    def broadcaster(self, mock_registry):
+        return SessionBroadcaster(agent_registry=mock_registry)
 
     async def test_broadcast_to_single_listener(self, broadcaster):
         """단일 클라이언트에게 이벤트 브로드캐스트"""
@@ -160,8 +169,8 @@ class TestEmitSessionMessageUpdated:
     """emit_session_message_updated 메서드 테스트"""
 
     @pytest.fixture
-    def broadcaster(self):
-        return SessionBroadcaster()
+    def broadcaster(self, mock_registry):
+        return SessionBroadcaster(agent_registry=mock_registry)
 
     async def test_emits_session_updated_with_last_message(self, broadcaster):
         """session_updated 이벤트에 last_message 필드가 포함되어 클라이언트에 전달된다"""
