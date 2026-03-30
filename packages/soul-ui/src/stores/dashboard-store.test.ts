@@ -2089,4 +2089,90 @@ describe("dashboard-store", () => {
       expect(reorderedA!.sortOrder).toBe(2);
     });
   });
+
+  // === getFeedSessions — excludeFromFeed 필터 ===
+
+  describe("getFeedSessions", () => {
+    const recentTs = new Date(Date.now() - 60 * 1000).toISOString(); // 1분 전 (24h 안)
+
+    function makeSession(id: string): SessionSummary {
+      return {
+        agentSessionId: id,
+        sessionType: "task",
+        status: "completed",
+        createdAt: recentTs,
+        updatedAt: recentTs,
+        lastMessage: { timestamp: recentTs, preview: "hello" },
+      } as unknown as SessionSummary;
+    }
+
+    it("catalog이 null이면 모든 세션을 포함한다", () => {
+      const store = useDashboardStore.getState();
+      store.setSessions([makeSession("s1"), makeSession("s2")]);
+      // catalog 미설정 (null)
+      const feed = store.getFeedSessions();
+      expect(feed.map((s) => s.agentSessionId)).toContain("s1");
+      expect(feed.map((s) => s.agentSessionId)).toContain("s2");
+    });
+
+    it("excludeFromFeed=true 폴더의 세션은 피드에서 제외된다", () => {
+      const store = useDashboardStore.getState();
+      store.setSessions([makeSession("s-excl"), makeSession("s-norm")]);
+      const catalog: CatalogState = {
+        folders: [
+          { id: "f-excl", name: "숨김폴더", sortOrder: 0, settings: { excludeFromFeed: true } },
+          { id: "f-norm", name: "일반폴더", sortOrder: 1, settings: { excludeFromFeed: false } },
+        ],
+        sessions: {
+          "s-excl": { folderId: "f-excl", displayName: null },
+          "s-norm": { folderId: "f-norm", displayName: null },
+        },
+      };
+      store.setCatalog(catalog);
+      const feed = store.getFeedSessions();
+      const ids = feed.map((s) => s.agentSessionId);
+      expect(ids).not.toContain("s-excl");
+      expect(ids).toContain("s-norm");
+    });
+
+    it("excludeFromFeed=false 폴더의 세션은 피드에 포함된다", () => {
+      const store = useDashboardStore.getState();
+      store.setSessions([makeSession("s1")]);
+      const catalog: CatalogState = {
+        folders: [
+          { id: "f1", name: "표시폴더", sortOrder: 0, settings: { excludeFromFeed: false } },
+        ],
+        sessions: { s1: { folderId: "f1", displayName: null } },
+      };
+      store.setCatalog(catalog);
+      const feed = store.getFeedSessions();
+      expect(feed.map((s) => s.agentSessionId)).toContain("s1");
+    });
+
+    it("폴더가 미배정된 세션(folderId=null)은 항상 피드에 포함된다", () => {
+      const store = useDashboardStore.getState();
+      store.setSessions([makeSession("s-unassigned")]);
+      const catalog: CatalogState = {
+        folders: [],
+        sessions: { "s-unassigned": { folderId: null, displayName: null } },
+      };
+      store.setCatalog(catalog);
+      const feed = store.getFeedSessions();
+      expect(feed.map((s) => s.agentSessionId)).toContain("s-unassigned");
+    });
+
+    it("catalog에 없는 세션(미등록)은 항상 피드에 포함된다", () => {
+      const store = useDashboardStore.getState();
+      store.setSessions([makeSession("s-unknown")]);
+      const catalog: CatalogState = {
+        folders: [
+          { id: "f-excl", name: "숨김폴더", sortOrder: 0, settings: { excludeFromFeed: true } },
+        ],
+        sessions: {}, // s-unknown 미등록
+      };
+      store.setCatalog(catalog);
+      const feed = store.getFeedSessions();
+      expect(feed.map((s) => s.agentSessionId)).toContain("s-unknown");
+    });
+  });
 });
