@@ -91,6 +91,10 @@ export { toSessionSummary } from "./shared/mappers";
 // === SSE Session Provider ===
 export { SSESessionProvider, sseSessionProvider } from "./providers/SSESessionProvider";
 
+// === SSE Subscribe Utility ===
+export { createSSESubscribe } from "./providers/sse-subscribe";
+export type { SSESubscribeOptions } from "./providers/sse-subscribe";
+
 // === Provider Types ===
 export type {
   StorageMode,

@@ -311,7 +311,7 @@ async def lifespan(app: FastAPI):
     # pre_shutdown_sessions 처리보다 먼저 초기화해야 한다.
     # add_intervention() → create_task() → get_session_broadcaster() 경로로 호출되므로,
     # broadcaster가 준비되지 않으면 세션 재개 시 emit 호출이 항상 실패한다.
-    broadcaster = init_session_broadcaster()
+    broadcaster = init_session_broadcaster(agent_registry=get_agent_registry())
     logger.info("  SessionBroadcaster initialized")
 
     # CatalogService 초기화
