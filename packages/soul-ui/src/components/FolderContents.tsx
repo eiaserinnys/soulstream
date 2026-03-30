@@ -17,6 +17,7 @@ import { Badge } from "./ui/badge";
 import { useTheme } from "../hooks/useTheme";
 import type { SessionSummary, SessionStatus } from "../shared/types";
 import { SessionContextMenu } from "./SessionContextMenu";
+import { useFlipAnimation } from "../hooks/useFlipAnimation";
 
 // === Node ID Color Utils ===
 
@@ -243,6 +244,9 @@ export function FolderContents({ onMoveSessions, onRenameSession, onLoadMore, ha
     overscan: 5,
   });
 
+  const virtualItems = virtualizer.getVirtualItems();
+  const { setRef } = useFlipAnimation(folderSessions, virtualItems);
+
   const handleDragStart = useCallback(
     (sessionId: string, e: React.DragEvent) => {
       const ids = selectedSessionIds.has(sessionId)
@@ -304,7 +308,7 @@ export function FolderContents({ onMoveSessions, onRenameSession, onLoadMore, ha
               position: "relative",
             }}
           >
-            {virtualizer.getVirtualItems().map((virtualItem) => {
+            {virtualItems.map((virtualItem) => {
               const session = folderSessions[virtualItem.index];
               return (
                 <div
@@ -318,20 +322,25 @@ export function FolderContents({ onMoveSessions, onRenameSession, onLoadMore, ha
                     transform: `translateY(${virtualItem.start}px)`,
                   }}
                 >
-                  <SessionItem
-                    session={session}
-                    isActive={activeSessionKey === session.agentSessionId}
-                    isSelected={selectedSessionIds.has(session.agentSessionId)}
-                    isEditing={onRenameSession ? editingSessionId === session.agentSessionId : false}
-                    onClick={(e) => {
-                      toggleSessionSelection(session.agentSessionId, e.ctrlKey || e.metaKey, e.shiftKey);
-                      if (isMobile) setMobileView("chat");
-                    }}
-                    onContextMenu={(e) => handleContextMenu(session.agentSessionId, e)}
-                    onDragStart={(e) => handleDragStart(session.agentSessionId, e)}
-                    onEditSubmit={(name) => handleEditSubmit(session.agentSessionId, name)}
-                    onEditCancel={() => setEditingSession(null)}
-                  />
+                  <div
+                    ref={(el) => setRef(session.agentSessionId, el)}
+                    style={{ width: "100%", height: "100%" }}
+                  >
+                    <SessionItem
+                      session={session}
+                      isActive={activeSessionKey === session.agentSessionId}
+                      isSelected={selectedSessionIds.has(session.agentSessionId)}
+                      isEditing={onRenameSession ? editingSessionId === session.agentSessionId : false}
+                      onClick={(e) => {
+                        toggleSessionSelection(session.agentSessionId, e.ctrlKey || e.metaKey, e.shiftKey);
+                        if (isMobile) setMobileView("chat");
+                      }}
+                      onContextMenu={(e) => handleContextMenu(session.agentSessionId, e)}
+                      onDragStart={(e) => handleDragStart(session.agentSessionId, e)}
+                      onEditSubmit={(name) => handleEditSubmit(session.agentSessionId, name)}
+                      onEditCancel={() => setEditingSession(null)}
+                    />
+                  </div>
                 </div>
               );
             })}
