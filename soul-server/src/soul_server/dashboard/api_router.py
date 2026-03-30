@@ -251,12 +251,20 @@ async def api_get_sessions(
     limit: int = Query(50, ge=0),
     folder_id: Optional[str] = None,
 ):
+    from soul_server.config import get_settings
     task_manager = get_task_manager()
     sessions, total = await task_manager.get_all_sessions(
         offset=offset, limit=limit, session_type=session_type,
         folder_id=folder_id,  # None이면 전체 조회 (기존 동작 유지)
     )
-    return {"sessions": sessions, "total": total}
+    settings = get_settings()
+    user_name = settings.dash_user_name
+    user_portrait_url = "/api/dashboard/portrait/user" if settings.dash_user_portrait else None
+    sessions_with_user = [
+        {**s, "userName": user_name, "userPortraitUrl": user_portrait_url}
+        for s in sessions
+    ]
+    return {"sessions": sessions_with_user, "total": total}
 
 
 # === /api/sessions/folder-counts (GET) — 고정 경로, 반드시 stream/events보다 먼저 등록 ===

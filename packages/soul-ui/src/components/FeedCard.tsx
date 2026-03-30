@@ -166,9 +166,14 @@ export const FeedCard = memo(function FeedCard({
       <div className="flex-1 overflow-hidden flex flex-col gap-1.5 text-sm">
         {session.prompt && (
           <div className="flex items-start gap-1.5 overflow-hidden">
-            <ProfileAvatar role="user" hasPortrait={profileConfig.user.hasPortrait} fallbackEmoji="👤" />
+            <ProfileAvatar
+              role="user"
+              hasPortrait={session.userPortraitUrl ? true : profileConfig.user.hasPortrait}
+              portraitUrl={session.userPortraitUrl ?? undefined}
+              fallbackEmoji="👤"
+            />
             <div className="flex-1 min-w-0 overflow-hidden">
-              <span className="text-xs font-medium shrink-0">{profileConfig.user.name}</span>
+              <span className="text-xs font-medium shrink-0">{session.userName ?? profileConfig.user.name}</span>
               <span className="text-muted-foreground text-xs mx-1 shrink-0">|</span>
               <div className="text-foreground/70 overflow-hidden mt-0.5 line-clamp-2">
                 <MarkdownContent content={session.prompt} compact />
@@ -182,13 +187,13 @@ export const FeedCard = memo(function FeedCard({
             <div className="flex items-start gap-1.5 overflow-hidden">
               <ProfileAvatar
                 role={isUser ? "user" : "assistant"}
-                hasPortrait={isUser ? profileConfig.user.hasPortrait : !!session.agentPortraitUrl}
+                hasPortrait={isUser ? (session.userPortraitUrl ? true : profileConfig.user.hasPortrait) : !!session.agentPortraitUrl}
                 fallbackEmoji={isUser ? "👤" : "🤖"}
-                portraitUrl={isUser ? undefined : session.agentPortraitUrl}
+                portraitUrl={isUser ? (session.userPortraitUrl ?? undefined) : session.agentPortraitUrl}
               />
               <div className="flex-1 min-w-0 overflow-hidden">
                 <span className="text-xs font-medium shrink-0">
-                  {isUser ? profileConfig.user.name : (session.agentName ?? "Assistant")}
+                  {isUser ? (session.userName ?? profileConfig.user.name) : (session.agentName ?? "Assistant")}
                 </span>
                 <span className="text-muted-foreground text-xs mx-1 shrink-0">|</span>
                 <div className="text-foreground/70 overflow-hidden mt-0.5 line-clamp-2">

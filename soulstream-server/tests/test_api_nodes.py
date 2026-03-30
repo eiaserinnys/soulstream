@@ -124,3 +124,27 @@ class TestPortraitProxy:
 
         # 9999 포트에 서버 없음 → 연결 실패 → 502
         assert resp.status_code in (502, 503, 504)
+
+
+class TestUserPortraitProxy:
+    """사용자 portrait 프록시 테스트."""
+
+    async def test_user_portrait_proxies_http(self, client, node_manager):
+        """user portrait 요청 시 soul-server HTTP 프록시 호출 — 연결 불가 시 502."""
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+        await node_manager.register_node(ws, {
+            "node_id": "n1", "host": "localhost", "port": 9999,
+        })
+
+        resp = await client.get("/api/nodes/n1/user/portrait")
+
+        # 9999 포트에 서버 없음 → 연결 실패 → 502
+        assert resp.status_code in (502, 503, 504)
+
+    async def test_user_portrait_404_for_unknown_node(self, client):
+        """알 수 없는 node_id에 대해 404를 반환한다."""
+        resp = await client.get("/api/nodes/unknown-node/user/portrait")
+
+        assert resp.status_code == 404

@@ -98,8 +98,24 @@ class NodeManager:
         else:
             await self._fetch_agent_profiles(node, host, port)
 
+        await self._fetch_user_info(node, host, port)
+
         await self._emit_change("node_registered", node_id, node.to_info())
         return node
+
+    async def _fetch_user_info(self, node: "NodeConnection", host: str, port: int) -> None:
+        """soul-server /api/dashboard/config에서 사용자 정보 조회.
+        실패 시 빈 dict로 graceful degradation.
+        """
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as http:
+                resp = await http.get(f"http://{host}:{port}/api/dashboard/config")
+                data = resp.json()
+                user_info = data.get("user", {})
+        except Exception:
+            logger.warning("사용자 정보 조회 실패 (node=%s), 빈 정보로 진행", node.node_id)
+            user_info = {}
+        node.set_user_info(user_info)
 
     async def _fetch_agent_profiles(self, node: "NodeConnection", host: str, port: int) -> None:
         """soul-server /api/agents에서 에이전트 프로필 조회.
@@ -152,6 +168,11 @@ class NodeManager:
             if session_id in node.sessions:
                 return node
         return None
+
+    def get_user_info(self, node_id: str) -> dict:
+        """node_id에 연결된 사용자 정보를 반환. 없으면 빈 dict."""
+        node = self._nodes.get(node_id)
+        return node.user_info if node else {}
 
     def find_agent_profile(
         self, agent_id: str, preferred_node_id: str | None = None
