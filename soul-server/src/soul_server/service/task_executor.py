@@ -247,6 +247,11 @@ class TaskExecutor:
                 # 구조화된 맥락을 XML 섹션으로 조립
                 assembled_prompt = assemble_prompt(task.prompt, task.context)
 
+                # 멀티턴 추적: complete/error는 '턴 종료'이지 '세션 종료'가 아니다.
+                # async for 루프가 끝나야 진짜 세션이 끝난 것이므로, finalize는 루프 밖에서 한다.
+                last_result: Optional[str] = None
+                last_error: Optional[str] = None
+
                 # Claude Code 실행
                 async for event in claude_runner.execute(
                     prompt=assembled_prompt,
@@ -329,15 +334,26 @@ class TaskExecutor:
                                 exc_info=True,
                             )
 
-                    # 완료 또는 오류 시 태스크 상태 업데이트
-                    # claude_session_id는 register_session() 경로에서만 DB에 기록한다.
+                    # 완료 또는 오류: 결과만 추적하고 finalize하지 않는다.
+                    # complete는 '턴 종료'이지 '세션 종료'가 아니다.
+                    # 멀티턴에서는 complete 후 intervention이 오면 같은 스트림에서 다음 턴이 이어진다.
+                    # finalize는 async for 루프 종료 후(스트림이 진짜 끝난 후)에 한다.
                     if event.type == "complete":
-                        await self._finalize_task(
-                            session_id,
-                            result=event.result,
-                        )
+                        last_result = event.result
                     elif event.type == "error":
-                        await self._finalize_task(session_id, error=event.message)
+                        last_error = event.message
+
+                # 스트림 종료 후 finalize — 여기서야 진짜 세션이 끝난 것
+                # error 우선 정책: error와 complete가 모두 발생한 경우 error를 최종 상태로 사용한다.
+                # SDK가 error 후 recovery하여 complete를 보내더라도, error가 있었다는 사실이 중요하다.
+                if last_error is not None:
+                    await self._finalize_task(session_id, error=last_error)
+                elif last_result is not None:
+                    await self._finalize_task(session_id, result=last_result)
+                else:
+                    # 정상 흐름에서는 발생하지 않음. SDK가 complete/error 없이 스트림을 닫은 경우.
+                    logger.warning(f"Stream ended without complete/error for {session_id}")
+                    await self._finalize_task(session_id, error="Stream ended without completion event")
 
         except RuntimeError as e:
             error_msg = str(e)
