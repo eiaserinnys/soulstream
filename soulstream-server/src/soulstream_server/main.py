@@ -46,6 +46,15 @@ async def _on_node_change(
         # {"type": "session_created", "agentSessionId": ..., "session": {full_info}} 형태로 전송.
         # "session" 키가 있으면 그것을 추출하고, 없으면 data 자체를 사용.
         session_info = (data or {}).get("session") or data
+        # soul-server가 보내는 agentPortraitUrl은 soul-server 로컬 URL(/api/agents/{id}/portrait).
+        # 브라우저는 soul-server에 직접 접근할 수 없으므로 프록시 URL로 교체한다.
+        # {**session_info, key: value} 패턴은 기존 키도 덮어쓴다.
+        agent_id = session_info.get("agentId") if isinstance(session_info, dict) else None
+        if agent_id:
+            session_info = {
+                **session_info,
+                "agentPortraitUrl": f"/api/nodes/{node_id}/agents/{agent_id}/portrait",
+            }
         await broadcaster.broadcast({
             "type": "session_created",
             "session": session_info,
@@ -55,12 +64,17 @@ async def _on_node_change(
         # data에 agentSessionId(camelCase)가 오지만 클라이언트는 agent_session_id(snake_case)도 읽으므로
         # 두 키 모두 포함하여 안전하게 전달.
         session_id = (data or {}).get("agentSessionId") or (data or {}).get("agent_session_id")
-        await broadcaster.broadcast({
+        broadcast_data = {
             "type": "session_updated",
             **(data or {}),
             "agent_session_id": session_id,
             "nodeId": node_id,
-        })
+        }
+        # session_updated에도 agentPortraitUrl이 포함될 수 있으므로 동일하게 프록시 URL로 교체.
+        agent_id = (data or {}).get("agentId")
+        if agent_id:
+            broadcast_data["agentPortraitUrl"] = f"/api/nodes/{node_id}/agents/{agent_id}/portrait"
+        await broadcaster.broadcast(broadcast_data)
     elif event_type == "node_session_session_deleted":
         # data에 agentSessionId 또는 agent_session_id 두 가지 키가 올 수 있으므로 모두 시도.
         session_id = (data or {}).get("agentSessionId") or (data or {}).get("agent_session_id")
