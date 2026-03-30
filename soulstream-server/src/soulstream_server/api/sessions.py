@@ -267,7 +267,11 @@ def create_sessions_router(
                         event_type = "message"
                         event_data = json.dumps(data, ensure_ascii=False)
 
-                    event_id = data.get("eventId") or data.get("id")
+                    event_id = (
+                        data.get("eventId")
+                        or data.get("id")
+                        or (event_payload.get("_event_id") if isinstance(event_payload, dict) else None)
+                    )
                     sse_event: dict[str, Any] = {
                         "event": event_type,
                         "data": event_data,
