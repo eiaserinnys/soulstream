@@ -218,6 +218,22 @@ class PostgresSessionDB:
             updated_at or now,
         )
 
+    async def set_claude_session_id(
+        self,
+        session_id: str,
+        claude_session_id: str,
+    ) -> None:
+        """claude_session_id 최초 설정 (UPDATE WHERE claude_session_id IS NULL).
+
+        register_session()에서 호출. path a(메인 세션 시작)에서만 유효.
+        이미 설정된 경우(path c 재진입) WHERE 조건이 false → no-op.
+        """
+        await self._pool.execute(
+            "SELECT session_set_claude_id($1, $2)",
+            session_id,
+            claude_session_id,
+        )
+
     _UPDATE_SESSION_IMMUTABLE = frozenset({
         "node_id", "agent_id", "claude_session_id", "session_type", "created_at",
     })

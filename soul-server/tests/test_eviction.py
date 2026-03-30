@@ -19,6 +19,7 @@ def _make_mock_db():
     db.node_id = "test-node"
     db.upsert_session = AsyncMock()
     db.register_session_initial = AsyncMock()
+    db.set_claude_session_id = AsyncMock()
     db.update_session = AsyncMock()
     db.get_session = AsyncMock(return_value=None)
     db.get_all_sessions = AsyncMock(return_value=([], 0))
@@ -67,18 +68,22 @@ def manager():
 
 class TestCatalogIntegration:
     async def test_create_task_registers_in_db(self, manager: TaskManager):
-        """register_session()이 DB에 세션을 등록 (create_task()는 인메모리만 등록)"""
+        """create_task()가 pending 상태로 DB에 등록; register_session()이 claude_session_id를 확정"""
         await manager.create_task(prompt="hello", agent_session_id="sess-1", client_id="bot")
-        # create_task() 단독으로는 DB에 등록하지 않는다 (claude_session_id 미확보 상태)
-        manager._db.register_session_initial.assert_not_called()
-
-        # register_session() 호출 시 DB에 4-ID로 원자적 등록
-        await manager.register_session("claude-1", "sess-1")
+        # create_task() 즉시 pending INSERT (FK 오류 방지)
         manager._db.register_session_initial.assert_called_once()
         call_kwargs = manager._db.register_session_initial.call_args
         assert call_kwargs.kwargs["session_id"] == "sess-1"
         assert call_kwargs.kwargs["prompt"] == "hello"
         assert call_kwargs.kwargs["client_id"] == "bot"
+        assert call_kwargs.kwargs["claude_session_id"] is None  # pending
+
+        # register_session() 호출 시 claude_session_id 확정
+        await manager.register_session("claude-1", "sess-1")
+        manager._db.set_claude_session_id.assert_called_once()
+        set_call = manager._db.set_claude_session_id.call_args
+        assert set_call.args[0] == "sess-1"
+        assert set_call.args[1] == "claude-1"
 
     async def test_complete_task_updates_db(self, manager: TaskManager):
         """finalize_task()가 update_session()으로 DB 상태를 업데이트 (불변 필드 보호)"""
