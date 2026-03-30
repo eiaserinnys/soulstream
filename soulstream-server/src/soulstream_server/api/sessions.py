@@ -18,6 +18,7 @@ from sse_starlette.sse import EventSourceResponse
 from soul_common.catalog.catalog_service import CatalogService
 from soul_common.db.session_db import PostgresSessionDB
 
+from soulstream_server.models import BatchMoveRequest
 from soulstream_server.nodes.node_connection import NodeConnection
 from soulstream_server.nodes.node_manager import NodeManager
 from soulstream_server.service.session_broadcaster import SessionBroadcaster
@@ -47,11 +48,6 @@ class RespondRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     request_id: str = Field(alias="requestId")
     answers: dict
-
-
-class BatchMoveRequest(BaseModel):
-    sessionIds: list[str]
-    folderId: Optional[str] = None
 
 
 class RenameSessionRequest(BaseModel):

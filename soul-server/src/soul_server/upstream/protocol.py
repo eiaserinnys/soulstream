@@ -17,6 +17,7 @@ class CreateSessionCmd(TypedDict, total=False):
     prompt: str
     profile: str
     request_id: str
+    folderId: str
     allowed_tools: list[str]
     disallowed_tools: list[str]
     use_mcp: bool
@@ -27,14 +28,14 @@ class CreateSessionCmd(TypedDict, total=False):
 
 class InterveneCmd(TypedDict):
     type: str            # "intervene"
-    session_id: str
+    agentSessionId: str  # 실제 전송 키와 일치 (구: session_id)
     text: str
     user: str
 
 
 class RespondCmd(TypedDict):
     type: str            # "respond"
-    session_id: str
+    agentSessionId: str  # 실제 전송 키와 일치 (구: session_id)
     request_id: str
     answers: dict[str, Any]
 
