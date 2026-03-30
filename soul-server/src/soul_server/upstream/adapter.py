@@ -495,6 +495,15 @@ class UpstreamAdapter:
         if not session_id:
             return
 
+        # _stream_events가 실행 중이면 중단 — 이중 브로드캐스트 방지
+        existing_task = self._stream_tasks.pop(session_id, None)
+        if existing_task and not existing_task.done():
+            existing_task.cancel()
+            try:
+                await existing_task
+            except asyncio.CancelledError:
+                pass
+
         queue: asyncio.Queue = asyncio.Queue()
         await self._tm.add_listener(session_id, queue)
 
