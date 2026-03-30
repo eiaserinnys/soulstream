@@ -290,3 +290,27 @@ class TestToInfo:
         assert info["status"] == "connected"
         assert info["sessionCount"] == 0
         assert "connectedAt" in info
+
+
+class TestUserInfo:
+    """user_info 관련 테스트."""
+
+    def test_user_info_initial_is_empty_dict(self, node):
+        """초기 user_info는 빈 dict이다."""
+        assert node.user_info == {}
+
+    def test_set_user_info_stores_data(self, node):
+        """set_user_info로 설정된 데이터를 user_info 프로퍼티로 조회할 수 있다."""
+        user_data = {"name": "테스터", "hasPortrait": True}
+        node.set_user_info(user_data)
+
+        assert node.user_info == user_data
+        assert node.user_info["name"] == "테스터"
+        assert node.user_info["hasPortrait"] is True
+
+    def test_set_user_info_overwrites_previous(self, node):
+        """set_user_info 재호출 시 이전 값을 덮어쓴다."""
+        node.set_user_info({"name": "이전"})
+        node.set_user_info({"name": "새값"})
+
+        assert node.user_info["name"] == "새값"
