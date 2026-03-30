@@ -125,52 +125,36 @@ class TaskManager:
         claude_session_id: str,
         agent_session_id: str,
     ) -> None:
-        """4-ID 원자적 등록 및 claude_session_id → agent_session_id 인덱스 설정.
+        """path a(메인 세션 시작)에서 claude_session_id를 DB에 설정한다.
 
-        SoulEngineAdapter가 session 이벤트를 발행할 때 호출합니다.
-        create_task()는 DB INSERT를 하지 않으므로, 이 메서드가 단일 DB 등록 경로입니다.
-        session_register 프로시저(순수 INSERT, ON CONFLICT 없음)로 4-ID를 원자적으로 기록합니다.
+        create_task()에서 이미 pending 행(claude_session_id=NULL)이 INSERT되어 있으므로,
+        이 메서드는 UPDATE only (set_claude_session_id 프로시저 호출).
 
-        node_id, agent_id, claude_session_id, session_type은 이 메서드만이 DB에 기록합니다.
-        finalize_task/create_task(resume) 등 다른 경로에서는 불변 필드를 DB에 쓰지 않습니다.
+        path b(서브에이전트 TaskStartedMessage)는 message_processor에서 필터링되어 여기 도달하지 않는다.
+        path c(컴팩션 후 재진입)는 task.claude_session_id가 이미 설정된 경우 early return.
         """
+        # path c 방어: 이미 claude_session_id가 설정된 세션 → no-op
+        task = self._tasks.get(agent_session_id)
+        if task and task.claude_session_id is not None:
+            logger.debug(f"register_session skipped (already registered): {agent_session_id}")
+            return
+
         self._session_index[claude_session_id] = agent_session_id
         # 인메모리 Task에 즉시 반영: complete_task()보다 먼저 재시작이 와도 resume 가능
-        task = self._tasks.get(agent_session_id)
         if task:
             task.claude_session_id = claude_session_id
-        # 4-ID 원자적 DB 등록: server restart 후 resume 시 모든 식별자를 읽을 수 있게 한다
-        await self._db.register_session_initial(
-            session_id=agent_session_id,
-            node_id=task.node_id if task else self._db.node_id,
-            agent_id=task.profile_id if task else None,
-            claude_session_id=claude_session_id,
-            session_type=task.session_type if task else "claude",
-            prompt=task.prompt if task else None,
-            client_id=task.client_id if task else None,
-            status=TaskStatus.RUNNING.value if task else "running",
-            created_at=task.created_at if task else None,
-        )
+
+        # claude_session_id UPDATE only (pending 행은 create_task()에서 이미 INSERT됨)
+        # WHERE claude_session_id IS NULL 조건으로 이중 등록 방지 (이중 안전장치)
+        await self._db.set_claude_session_id(agent_session_id, claude_session_id)
         logger.info(f"Session registered (4-ID): {claude_session_id} -> {agent_session_id}")
 
-        # DB 행이 생성된 후 폴더 배정 처리 (create_task()에서 task.pending_folder_id에 저장됨)
-        # _assign_default_folder_and_broadcast 내부에서 catalog_updated가 발행된다.
-        pending_folder = task.pending_folder_id if task else None
-        if task:
-            task.pending_folder_id = None  # 배정 완료 후 초기화
-        await self._assign_default_folder_and_broadcast(
-            agent_session_id,
-            task.session_type if task else "claude",
-            folder_id=pending_folder,
-        )
-
-        # 폴더 카탈로그 업데이트 후 session_created 발행 (부가 기능 — 실패해도 영향 없음)
-        # catalog_updated → session_created 순서 보장: UI가 폴더 정보와 함께 세션을 수신할 수 있다.
+        # session_updated 브로드캐스트 (claude_session_id 확정 알림 — 부가 기능)
         if task:
             try:
-                await get_session_broadcaster().emit_session_created(task)
+                await get_session_broadcaster().emit_session_updated(task)
             except Exception:
-                logger.warning(f"Failed to emit session_created for {agent_session_id}", exc_info=True)
+                logger.warning(f"Failed to emit session_updated for {agent_session_id}", exc_info=True)
 
     def get_task_by_claude_session(self, claude_session_id: str) -> Optional[Task]:
         """claude_session_id로 태스크 조회"""
@@ -605,11 +589,31 @@ class TaskManager:
 
         if is_new:
             task.node_id = self._db.node_id
-            # 신규 세션: DB INSERT는 register_session()이 담당 (Claude Code session 이벤트 수신 시).
-            # 이 시점에는 claude_session_id가 아직 없으므로 4-ID 등록이 불완전하다.
-            # create_task()는 인메모리 _tasks에만 등록한다.
-            # 폴더 배정도 DB 행 생성 후 register_session()에서 처리 (DB 행 없으면 배정 불가).
-            task.pending_folder_id = folder_id
+            # 신규 세션: 즉시 pending 행 INSERT (claude_session_id=NULL)
+            # events 테이블 FK 위반 방지 — register_session() 이전에도 events 기록 가능.
+            await self._db.register_session_initial(
+                session_id=agent_session_id,
+                node_id=self._db.node_id,
+                agent_id=task.profile_id,
+                claude_session_id=None,  # pending; register_session()에서 set_claude_session_id()로 설정
+                session_type=task.session_type,
+                prompt=task.prompt,
+                client_id=task.client_id,
+                status=TaskStatus.RUNNING.value,
+                created_at=task.created_at,
+            )
+            # 폴더 배정 + catalog_updated 브로드캐스트
+            # _assign_default_folder_and_broadcast 내부에서 catalog_updated가 발행된다.
+            await self._assign_default_folder_and_broadcast(
+                agent_session_id,
+                task.session_type,
+                folder_id=folder_id,
+            )
+            # catalog_updated 이후 session_created 발행 (순서 보장 — 부가 기능)
+            try:
+                await get_session_broadcaster().emit_session_created(task)
+            except Exception:
+                logger.warning(f"Failed to emit session_created for {agent_session_id}", exc_info=True)
         else:
             # 재개 세션: 불변 필드를 제외한 상태만 업데이트한다.
             await self._db.update_session(
@@ -621,7 +625,6 @@ class TaskManager:
 
         if not is_new:
             # 재개 세션: 변경 사실을 즉시 브로드캐스트 (부가 기능 — 실패해도 영향 없음)
-            # 신규 세션의 session_created는 DB 등록 완료 후 register_session()에서 발행한다.
             try:
                 await get_session_broadcaster().emit_session_updated(task)
             except Exception:

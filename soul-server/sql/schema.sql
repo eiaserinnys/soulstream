@@ -184,6 +184,20 @@ CREATE OR REPLACE FUNCTION session_register(
     );
 $$;
 
+-- session_set_claude_id (claude_session_id 최초 설정 — UPDATE WHERE IS NULL)
+-- register_session()에서 호출. path a(메인 세션 시작)에서만 유효.
+-- 이미 설정된 경우(path c 재진입) WHERE 조건이 false → no-op.
+CREATE OR REPLACE FUNCTION session_set_claude_id(
+    p_session_id        TEXT,
+    p_claude_session_id TEXT
+) RETURNS void LANGUAGE sql AS $$
+    UPDATE sessions
+    SET claude_session_id = p_claude_session_id,
+        updated_at = NOW()
+    WHERE session_id = p_session_id
+      AND claude_session_id IS NULL;
+$$;
+
 -- session_update (불변 필드 제외 동적 UPDATE)
 CREATE OR REPLACE FUNCTION session_update(
     p_session_id TEXT,
