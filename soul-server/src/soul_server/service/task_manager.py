@@ -686,10 +686,10 @@ class TaskManager:
 
     # === SSE 리스너 관리 (위임) ===
 
-    async def add_listener(self, agent_session_id: str, queue: asyncio.Queue) -> bool:
+    async def add_listener(self, agent_session_id: str, queue: asyncio.Queue) -> None:
         """SSE 리스너 추가"""
         async with self._lock:
-            return await self._listener_manager.add_listener(agent_session_id, queue)
+            await self._listener_manager.add_listener(agent_session_id, queue)
 
     async def remove_listener(self, agent_session_id: str, queue: asyncio.Queue) -> None:
         """SSE 리스너 제거"""

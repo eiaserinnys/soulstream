@@ -455,10 +455,7 @@ class UpstreamAdapter:
     async def _stream_events(self, session_id: str) -> None:
         """TaskManager에서 이벤트를 받아 WebSocket으로 소울스트림에 전송."""
         queue: asyncio.Queue = asyncio.Queue()
-        added = await self._tm.add_listener(session_id, queue)
-        if not added:
-            logger.warning("Failed to add listener for session %s", session_id)
-            return
+        await self._tm.add_listener(session_id, queue)
 
         try:
             while self._running:
@@ -499,9 +496,7 @@ class UpstreamAdapter:
             return
 
         queue: asyncio.Queue = asyncio.Queue()
-        added = await self._tm.add_listener(session_id, queue)
-        if not added:
-            return  # 세션 종료/미존재
+        await self._tm.add_listener(session_id, queue)
 
         try:
             while self._running:
