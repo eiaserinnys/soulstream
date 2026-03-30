@@ -680,7 +680,16 @@ class SqliteSessionDB:
             "SELECT * FROM folders WHERE id = ?", (folder_id,)
         )
         row = await cursor.fetchone()
-        return dict(row) if row else None
+        if row is None:
+            return None
+        d = dict(row)
+        # SQLite는 settings를 TEXT로 저장하므로 항상 문자열 역직렬화 필요
+        if "settings" in d and isinstance(d["settings"], str):
+            try:
+                d["settings"] = json.loads(d["settings"])
+            except (json.JSONDecodeError, ValueError):
+                d["settings"] = {}
+        return d
 
     async def delete_folder(self, folder_id: str) -> None:
         await self._conn.execute(
