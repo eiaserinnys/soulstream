@@ -12,7 +12,7 @@ from typing import Any, Optional  # Optional: _session_to_response, node_manager
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from starlette.websockets import WebSocketDisconnect
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sse_starlette.sse import EventSourceResponse
 
 from soul_common.catalog.catalog_service import CatalogService
@@ -44,7 +44,8 @@ class InterveneRequest(BaseModel):
 
 
 class RespondRequest(BaseModel):
-    request_id: str
+    model_config = ConfigDict(populate_by_name=True)
+    request_id: str = Field(alias="requestId")
     answers: dict
 
 
