@@ -32,6 +32,7 @@ def mock_db():
     """Mock PostgresSessionDB with async methods."""
     db = MagicMock()
     db.get_all_sessions = AsyncMock(return_value=([], 0))
+    db.get_session = AsyncMock(return_value=None)
     db.read_events = AsyncMock(return_value=[])
     db.assign_session_to_folder = AsyncMock()
     db.get_all_folders = AsyncMock(return_value=[])

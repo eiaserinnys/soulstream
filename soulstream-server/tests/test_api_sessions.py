@@ -185,6 +185,52 @@ class TestCreateSession:
         mock_catalog_service.broadcast_catalog.assert_awaited_once()
 
 
+class TestRespond:
+    """POST /api/sessions/{session_id}/respond tests."""
+
+    @staticmethod
+    def _make_resolve(node):
+        """send_respond 페이로드는 requestId를 오버라이드하여 _pending 키와 불일치한다.
+        모든 미완료 pending future를 한 번에 resolve하는 side_effect를 반환한다."""
+        async def resolve_on_send(data):
+            for future in list(node._pending.values()):
+                if not future.done():
+                    future.set_result({"success": True})
+        return resolve_on_send
+
+    async def test_camel_case_request_id(self, client, node_manager):
+        """camelCase requestId 필드로 응답 전송 시 200 반환."""
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+        node = await node_manager.register_node(ws, {"node_id": "resp-node"})
+        ws.send_json.side_effect = self._make_resolve(node)
+
+        resp = await client.post(
+            "/api/sessions/test-session/respond",
+            json={"requestId": "r123", "answers": {"question": "answer"}},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json() == {"success": True}
+
+    async def test_snake_case_request_id_backward_compat(self, client, node_manager):
+        """snake_case request_id 필드로 응답 전송 시 200 반환 (하위 호환)."""
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+        node = await node_manager.register_node(ws, {"node_id": "resp-node-2"})
+        ws.send_json.side_effect = self._make_resolve(node)
+
+        resp = await client.post(
+            "/api/sessions/test-session/respond",
+            json={"request_id": "r456", "answers": {"question": "answer"}},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json() == {"success": True}
+
+
 class TestBatchMoveFolder:
     """PATCH /api/sessions/folder tests."""
 
