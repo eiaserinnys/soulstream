@@ -204,7 +204,7 @@ class SqliteSessionDB:
                 existing = dict(row)
                 for field, new_val in immutable_updates.items():
                     old_val = existing.get(field)
-                    if old_val is not None and old_val != new_val:
+                    if old_val is not None and new_val is not None and old_val != new_val:
                         raise ValueError(
                             f"Immutable field '{field}' already set to {old_val!r}, "
                             f"cannot overwrite with {new_val!r}"
@@ -286,20 +286,32 @@ class SqliteSessionDB:
         session_id: str,
         claude_session_id: str,
     ) -> None:
-        """claude_session_id 최초 설정 (UPDATE WHERE claude_session_id IS NULL).
+        """claude_session_id 불변 설정.
 
-        register_session()에서 호출. path a(메인 세션 시작)에서만 유효.
-        이미 설정된 경우(path c 재진입) WHERE 조건이 false → no-op.
+        - NULL → SET (최초 설정)
+        - 같은 값 → no-op (idempotent)
+        - 다른 값 → ValueError (버그 탐지)
         """
-        await self._conn.execute(
-            """
-            UPDATE sessions
-            SET claude_session_id = ?, updated_at = ?
-            WHERE session_id = ? AND claude_session_id IS NULL
-            """,
-            (claude_session_id, _utc_now(), session_id),
+        cursor = await self._conn.execute(
+            "SELECT claude_session_id FROM sessions WHERE session_id = ?",
+            (session_id,),
         )
-        await self._conn.commit()
+        row = await cursor.fetchone()
+        existing = row[0] if row else None
+
+        if existing is None:
+            await self._conn.execute(
+                "UPDATE sessions SET claude_session_id = ?, updated_at = ? WHERE session_id = ?",
+                (claude_session_id, _utc_now(), session_id),
+            )
+            await self._conn.commit()
+        elif existing == claude_session_id:
+            pass  # no-op
+        else:
+            raise ValueError(
+                f"claude_session_id immutability violation: "
+                f"session_id={session_id}, existing={existing!r}, new={claude_session_id!r}"
+            )
 
     _UPDATE_SESSION_IMMUTABLE = frozenset({
         "node_id", "agent_id", "claude_session_id", "session_type", "created_at",

@@ -125,29 +125,40 @@ class TaskManager:
         claude_session_id: str,
         agent_session_id: str,
     ) -> None:
-        """path a(메인 세션 시작)에서 claude_session_id를 DB에 설정한다.
+        """claude_session_id를 DB에 설정한다 (idempotent).
+
+        DB 레이어에서 불변성 보장:
+        - NULL → SET (최초 설정)
+        - 같은 값 → no-op (컴팩션/재시작 재진입 정상 처리)
+        - 다른 값 → EXCEPTION (버그 탐지)
 
         create_task()에서 이미 pending 행(claude_session_id=NULL)이 INSERT되어 있으므로,
         이 메서드는 UPDATE only (set_claude_session_id 프로시저 호출).
-
-        path b(서브에이전트 TaskStartedMessage)는 message_processor에서 필터링되어 여기 도달하지 않는다.
-        path c(컴팩션 후 재진입)는 task.claude_session_id가 이미 설정된 경우 early return.
         """
-        # path c 방어: 이미 claude_session_id가 설정된 세션 → no-op
         task = self._tasks.get(agent_session_id)
-        if task and task.claude_session_id is not None:
-            logger.debug(f"register_session skipped (already registered): {agent_session_id}")
-            return
+        in_memory_existing = task.claude_session_id if task else None
+        logger.info(
+            f"register_session: claude_session_id={claude_session_id}, "
+            f"agent_session_id={agent_session_id}, "
+            f"in_memory_existing={in_memory_existing}"
+        )
 
         self._session_index[claude_session_id] = agent_session_id
         # 인메모리 Task에 즉시 반영: complete_task()보다 먼저 재시작이 와도 resume 가능
         if task:
             task.claude_session_id = claude_session_id
 
-        # claude_session_id UPDATE only (pending 행은 create_task()에서 이미 INSERT됨)
-        # WHERE claude_session_id IS NULL 조건으로 이중 등록 방지 (이중 안전장치)
-        await self._db.set_claude_session_id(agent_session_id, claude_session_id)
-        logger.info(f"Session registered (4-ID): {claude_session_id} -> {agent_session_id}")
+        # DB 불변성은 session_set_claude_id 프로시저가 보장
+        # 같은 값이면 no-op, 다른 값이면 EXCEPTION
+        try:
+            await self._db.set_claude_session_id(agent_session_id, claude_session_id)
+            logger.info(f"Session registered (4-ID): {claude_session_id} -> {agent_session_id}")
+        except Exception as e:
+            logger.error(
+                f"register_session DB failed: agent_session_id={agent_session_id}, "
+                f"claude_session_id={claude_session_id}, error={e}"
+            )
+            raise
 
         # session_updated 브로드캐스트 (claude_session_id 확정 알림 — 부가 기능)
         if task:

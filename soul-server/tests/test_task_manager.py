@@ -114,8 +114,18 @@ def _make_mock_session_db():
                     _sessions[session_id][ts_field] = datetime.fromisoformat(fields[ts_field])
 
     async def _set_claude_session_id(session_id, claude_session_id):
-        if session_id in _sessions and _sessions[session_id].get("claude_session_id") is None:
+        if session_id not in _sessions:
+            return
+        existing = _sessions[session_id].get("claude_session_id")
+        if existing is None:
             _sessions[session_id]["claude_session_id"] = claude_session_id
+        elif existing == claude_session_id:
+            pass  # no-op (idempotent)
+        else:
+            raise ValueError(
+                f"claude_session_id immutability violation: "
+                f"session_id={session_id}, existing={existing!r}, new={claude_session_id!r}"
+            )
 
     db.upsert_session = AsyncMock(side_effect=_upsert_session)
     db.register_session_initial = AsyncMock(side_effect=_register_session_initial)

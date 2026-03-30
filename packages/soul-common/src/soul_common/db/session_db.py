@@ -223,10 +223,11 @@ class PostgresSessionDB:
         session_id: str,
         claude_session_id: str,
     ) -> None:
-        """claude_session_id 최초 설정 (UPDATE WHERE claude_session_id IS NULL).
+        """claude_session_id 불변 설정.
 
-        register_session()에서 호출. path a(메인 세션 시작)에서만 유효.
-        이미 설정된 경우(path c 재진입) WHERE 조건이 false → no-op.
+        - NULL → SET (최초 설정)
+        - 같은 값 → no-op (idempotent)
+        - 다른 값 → RAISE EXCEPTION (버그 탐지) → asyncpg.PostgresError로 전파
         """
         await self._pool.execute(
             "SELECT session_set_claude_id($1, $2)",
