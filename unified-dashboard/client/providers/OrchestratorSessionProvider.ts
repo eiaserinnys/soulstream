@@ -20,7 +20,7 @@ import type {
   SoulSSEEvent,
   SessionStatus,
 } from "@seosoyoung/soul-ui";
-import { SSE_EVENT_TYPES } from "@seosoyoung/soul-ui";
+import { createSSESubscribe } from "@seosoyoung/soul-ui";
 
 export class OrchestratorSessionProvider implements SessionStorageProvider {
   readonly mode: StorageMode = "sse";
@@ -110,96 +110,18 @@ export class OrchestratorSessionProvider implements SessionStorageProvider {
     onStatusChange?: (status: "connecting" | "connected" | "error") => void,
     options?: { lastEventId?: number },
   ): () => void {
-    let eventSource: EventSource | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let reconnectAttempt = 0;
-    let lastEventId = options?.lastEventId ?? 0;
-    const maxReconnectAttempts = 20;
-    const reconnectIntervalMs = 3000;
-    const maxReconnectIntervalMs = 30000;
+    const debugPrefix =
+      import.meta.env.VITE_SSE_DEBUG === "true"
+        ? `[OrchestratorSSE][${sessionKey.slice(0, 12)}]`
+        : undefined;
 
-    const debug = import.meta.env.VITE_SSE_DEBUG === "true";
-    const log = debug
-      ? (...args: unknown[]) =>
-          console.log(`[OrchestratorSSE][${sessionKey.slice(0, 12)}]`, ...args)
-      : () => {};
-
-    const connect = () => {
-      if (!sessionKey) return;
-
-      onStatusChange?.("connecting");
-
-      let url = `/api/sessions/${encodeURIComponent(sessionKey)}/events`;
-      if (lastEventId > 0) {
-        url += `?lastEventId=${lastEventId}`;
-      }
-
-      log(`connecting → ${url} (attempt=${reconnectAttempt})`);
-
-      const es = new EventSource(url);
-      eventSource = es;
-
-      es.onopen = () => {
-        reconnectAttempt = 0;
-        log("connected ✓");
-        onStatusChange?.("connected");
-      };
-
-      for (const eventType of SSE_EVENT_TYPES) {
-        es.addEventListener(eventType, (e: MessageEvent) => {
-          try {
-            const data = JSON.parse(e.data) as SoulSSEEvent;
-            const eventId = e.lastEventId ? parseInt(e.lastEventId, 10) : 0;
-            if (eventId > lastEventId) lastEventId = eventId;
-            log(`event type=${eventType} id=${eventId}`, data);
-            onEvent(data, eventId);
-          } catch (err) {
-            log(`JSON parse error on type=${eventType}`, err);
-          }
-        });
-      }
-
-      es.onerror = (e) => {
-        // Named "error" event from server is a MessageEvent — not a connection error
-        if (e instanceof MessageEvent) {
-          log("server 'error' event (MessageEvent):", e.data);
-          return;
-        }
-
-        log(`connection error → closing. attempt=${reconnectAttempt}/${maxReconnectAttempts}`);
-        es.close();
-        eventSource = null;
-        onStatusChange?.("error");
-
-        if (reconnectAttempt < maxReconnectAttempts) {
-          const delay = Math.min(
-            reconnectIntervalMs * Math.pow(2, reconnectAttempt),
-            maxReconnectIntervalMs,
-          );
-          reconnectAttempt++;
-          log(`reconnecting in ${delay}ms (attempt=${reconnectAttempt})`);
-          reconnectTimer = setTimeout(() => {
-            reconnectTimer = null;
-            connect();
-          }, delay);
-        } else {
-          log("max reconnect attempts reached — giving up");
-        }
-      };
-    };
-
-    connect();
-
-    return () => {
-      if (reconnectTimer) {
-        clearTimeout(reconnectTimer);
-        reconnectTimer = null;
-      }
-      if (eventSource) {
-        eventSource.close();
-        eventSource = null;
-      }
-    };
+    return createSSESubscribe({
+      baseUrl: `/api/sessions/${encodeURIComponent(sessionKey)}/events`,
+      onEvent,
+      onStatusChange,
+      initialLastEventId: options?.lastEventId,
+      debugPrefix,
+    });
   }
 }
 

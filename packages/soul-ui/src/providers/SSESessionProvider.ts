@@ -13,12 +13,15 @@ import type {
 } from "./types";
 import type { EventTreeNode, SoulSSEEvent } from "@shared/types";
 import { toSessionSummary } from "@shared/mappers";
-import { SSE_EVENT_TYPES } from "@shared/constants";
+import { createSSESubscribe } from "./sse-subscribe";
 
 // 주의: complete/error는 "턴" 종료이지 "세션" 종료가 아닙니다.
 // 멀티턴 세션(resume)에서는 complete 이후 새 user_message가 올 수 있으므로
 // 클라이언트가 임의로 SSE 연결을 끊으면 안 됩니다.
 // 연결 해제는 unsubscribe() 또는 서버 종료에 의해서만 수행됩니다.
+
+// createSSESubscribe가 이 의미를 준수한다:
+// complete/error 이벤트가 와도 연결을 유지하며, unsubscribe() 호출 시에만 종료한다.
 
 interface SessionListResponse {
   sessions: Record<string, unknown>[];
@@ -111,91 +114,12 @@ export class SSESessionProvider implements SessionStorageProvider {
     onStatusChange?: (status: "connecting" | "connected" | "error") => void,
     options?: { lastEventId?: number },
   ): () => void {
-    let eventSource: EventSource | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let reconnectAttempt = 0;
-    let lastEventId = options?.lastEventId ?? 0;
-    const maxReconnectAttempts = 20;
-    const reconnectIntervalMs = 3000;
-    const maxReconnectIntervalMs = 30000;
-
-    const connect = () => {
-      if (!sessionKey) return;
-
-      onStatusChange?.("connecting");
-
-      // URL 구성
-      let url = `/api/sessions/${encodeURIComponent(sessionKey)}/events`;
-      if (lastEventId > 0) {
-        url += `?lastEventId=${lastEventId}`;
-      }
-
-      const es = new EventSource(url);
-      eventSource = es;
-
-      es.onopen = () => {
-        reconnectAttempt = 0;
-        onStatusChange?.("connected");
-      };
-
-      // 타입별 이벤트 리스너 등록
-      for (const eventType of SSE_EVENT_TYPES) {
-        es.addEventListener(eventType, (e: MessageEvent) => {
-          try {
-            const data = JSON.parse(e.data) as SoulSSEEvent;
-            const eventId = e.lastEventId ? parseInt(e.lastEventId, 10) : 0;
-
-            if (eventId > lastEventId) {
-              lastEventId = eventId;
-            }
-
-            onEvent(data, eventId);
-          } catch {
-            // JSON 파싱 실패: 무시
-          }
-        });
-      }
-
-      // 에러 처리 & 재연결
-      es.onerror = (e) => {
-        // 서버가 보낸 named "error" 이벤트는 MessageEvent로 도착.
-        // 세션 히스토리의 노드일 뿐이므로 연결을 끊지 않는다.
-        if (e instanceof MessageEvent) return;
-
-        es.close();
-        eventSource = null;
-        onStatusChange?.("error");
-
-        const attempt = reconnectAttempt;
-        if (attempt < maxReconnectAttempts) {
-          const delay = Math.min(
-            reconnectIntervalMs * Math.pow(2, attempt),
-            maxReconnectIntervalMs
-          );
-          reconnectAttempt = attempt + 1;
-
-          reconnectTimer = setTimeout(() => {
-            reconnectTimer = null;
-            connect();
-          }, delay);
-        }
-      };
-    };
-
-    // 초기 연결
-    connect();
-
-    // 구독 해제 함수
-    return () => {
-      if (reconnectTimer) {
-        clearTimeout(reconnectTimer);
-        reconnectTimer = null;
-      }
-      if (eventSource) {
-        eventSource.close();
-        eventSource = null;
-      }
-    };
+    return createSSESubscribe({
+      baseUrl: `/api/sessions/${encodeURIComponent(sessionKey)}/events`,
+      onEvent,
+      onStatusChange,
+      initialLastEventId: options?.lastEventId,
+    });
   }
 }
 
