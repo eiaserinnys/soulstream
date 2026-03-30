@@ -12,6 +12,7 @@ import { useDashboardStore } from "../stores/dashboard-store";
 import { FeedCard } from "./FeedCard";
 import { FeedTopBar } from "./FeedTopBar";
 import { SessionContextMenu } from "./SessionContextMenu";
+import { useFlipAnimation } from "../hooks/useFlipAnimation";
 
 const CARD_HEIGHT = 220;
 const CARD_GAP = 12;
@@ -98,6 +99,9 @@ export function FeedView({ onNewSession, onLoadMore, hasMore, onRenameSession, o
     overscan: 3,
   });
 
+  const virtualItems = virtualizer.getVirtualItems();
+  const { setRef } = useFlipAnimation(feedSessions, virtualItems);
+
   // 인피니트 스크롤: virtualizer가 목록 끝 근처에 도달하면 onLoadMore 호출
   const loadMoreRef = useRef(onLoadMore);
   loadMoreRef.current = onLoadMore;
@@ -105,7 +109,6 @@ export function FeedView({ onNewSession, onLoadMore, hasMore, onRenameSession, o
 
   useEffect(() => {
     if (!hasMore || !onLoadMore) return;
-    const virtualItems = virtualizer.getVirtualItems();
     if (virtualItems.length === 0) return;
     const lastVirtual = virtualItems[virtualItems.length - 1];
     // 마지막 virtualItem이 전체 아이템 수의 마지막 3개 이내에 들어오면 로드
@@ -115,7 +118,7 @@ export function FeedView({ onNewSession, onLoadMore, hasMore, onRenameSession, o
         isLoadingMore.current = false;
       });
     }
-  }, [virtualizer.getVirtualItems(), feedSessions.length, hasMore, onLoadMore]);
+  }, [virtualItems, feedSessions.length, hasMore, onLoadMore]);
 
   // 스크롤 위치 복원 (마운트 시)
   const restored = useRef(false);
@@ -200,7 +203,7 @@ export function FeedView({ onNewSession, onLoadMore, hasMore, onRenameSession, o
               position: "relative",
             }}
           >
-            {virtualizer.getVirtualItems().map((virtualItem) => {
+            {virtualItems.map((virtualItem) => {
               const session = feedSessions[virtualItem.index];
               if (!session) return null;
               return (
@@ -215,14 +218,19 @@ export function FeedView({ onNewSession, onLoadMore, hasMore, onRenameSession, o
                     transform: `translateY(${virtualItem.start}px)`,
                   }}
                 >
-                  <FeedCard
-                    session={session}
-                    isActive={session.agentSessionId === activeSessionKey}
-                    folderName={getFolderName(session.agentSessionId)}
-                    onClick={() => handleCardClick(session.agentSessionId)}
-                    onDoubleClick={() => handleCardDoubleClick(session.agentSessionId)}
-                    onContextMenu={(e) => handleContextMenu(session.agentSessionId, e)}
-                  />
+                  <div
+                    ref={(el) => setRef(session.agentSessionId, el)}
+                    style={{ width: "100%", height: "100%" }}
+                  >
+                    <FeedCard
+                      session={session}
+                      isActive={session.agentSessionId === activeSessionKey}
+                      folderName={getFolderName(session.agentSessionId)}
+                      onClick={() => handleCardClick(session.agentSessionId)}
+                      onDoubleClick={() => handleCardDoubleClick(session.agentSessionId)}
+                      onContextMenu={(e) => handleContextMenu(session.agentSessionId, e)}
+                    />
+                  </div>
                 </div>
               );
             })}
