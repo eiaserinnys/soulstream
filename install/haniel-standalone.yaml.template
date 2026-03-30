@@ -1,0 +1,67 @@
+# Soulstream Standalone — Haniel Configuration Template
+#
+# This file is a template. __INSTALL_DIR__, __WORKSPACE_DIR__, and __PORT__
+# are substituted by install.ps1 before use.
+#
+# Do not use this file directly with haniel — use the generated
+# haniel.yaml in your install directory instead.
+
+poll_interval: 60
+
+repos:
+  soulstream:
+    url: https://github.com/eiaserinnys/soulstream.git
+    branch: main
+    path: __INSTALL_DIR__/soulstream
+
+services:
+  soul-server:
+    run: __INSTALL_DIR__/soulstream/soul-server/.venv/Scripts/python.exe -X utf8 -m soul_server.main
+    cwd: __INSTALL_DIR__/soulstream/soul-server
+    repo: soulstream
+    ready: port:__PORT__
+    restart_delay: 3
+    hooks:
+      # Use venv pip explicitly — post_pull runs without venv activation
+      post_pull: __INSTALL_DIR__/soulstream/soul-server/.venv/Scripts/pip.exe install -e __INSTALL_DIR__/soulstream/packages/soul-common -e __INSTALL_DIR__/soulstream/soul-server
+
+install:
+  requirements:
+    python: ">=3.11"
+    node: ">=18"
+  directories:
+    - __INSTALL_DIR__/cache
+    - __WORKSPACE_DIR__
+  environments:
+    soul-venv:
+      type: python-venv
+      path: __INSTALL_DIR__/soulstream/soul-server/.venv
+      requirements:
+        - __INSTALL_DIR__/soulstream/packages/soul-common/pyproject.toml
+        - __INSTALL_DIR__/soulstream/soul-server/pyproject.toml
+  configs:
+    soul-server-env:
+      path: __INSTALL_DIR__/soulstream/soul-server/.env
+      keys:
+        - key: WORKSPACE_DIR
+          default: __WORKSPACE_DIR__
+        - key: SOULSTREAM_NODE_ID
+          prompt: "노드 ID (이 서버의 고유 식별자, 영문으로 입력)"
+          default: standalone
+        - key: SOUL_DASHBOARD_CACHE_DIR
+          default: __INSTALL_DIR__/cache
+        - key: AUTH_BEARER_TOKEN
+          prompt: "API 인증 토큰 (공백으로 두면 인증 없이 사용)"
+          default: ""
+        - key: PORT
+          default: __PORT__
+        - key: HOST
+          default: "0.0.0.0"
+        - key: ENVIRONMENT
+          default: production
+        - key: SOUL_DASHBOARD_DIR
+          default: __INSTALL_DIR__/soulstream/unified-dashboard/dist
+  service:
+    name: soulstream
+    display: "Soulstream Server"
+    working_directory: __INSTALL_DIR__
