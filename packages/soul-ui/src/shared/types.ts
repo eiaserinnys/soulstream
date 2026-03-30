@@ -366,8 +366,14 @@ export interface AgentProfile {
   agentPortraitUrl?: string | null;
 }
 
+/** 사용자 프로필 (SessionSummary에 포함되는 필드) */
+export interface UserProfile {
+  userName?: string | null;
+  userPortraitUrl?: string | null;
+}
+
 /** 세션 요약 정보 (목록 조회용) */
-export interface SessionSummary extends AgentProfile {
+export interface SessionSummary extends AgentProfile, UserProfile {
   /** 세션의 유일한 키. JSONL 파일명. */
   agentSessionId: string;
   status: SessionStatus;

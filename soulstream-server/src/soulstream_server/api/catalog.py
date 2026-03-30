@@ -23,7 +23,7 @@ from pydantic import BaseModel
 
 from soul_common.catalog.catalog_service import CatalogService
 from soul_common.db.session_db import PostgresSessionDB
-from soulstream_server.api.sessions import _build_portrait_proxy_url
+from soulstream_server.api.sessions import _build_portrait_proxy_url, _build_user_portrait_proxy_url
 from soulstream_server.nodes.node_manager import NodeManager
 
 logger = logging.getLogger(__name__)
@@ -83,11 +83,12 @@ def create_catalog_router(
 
             # agent 정보 조회 (크로스-노드 fallback 포함)
             agent_id = s.get("agent_id")
+            node_id = s.get("node_id", "")
             agentName = None
             agentPortraitUrl = None
             if agent_id:
                 found = node_manager.find_agent_profile(
-                    agent_id, preferred_node_id=s.get("node_id")
+                    agent_id, preferred_node_id=node_id
                 )
                 if found:
                     profile, source_node_id = found
@@ -97,9 +98,19 @@ def create_catalog_router(
                             source_node_id, agent_id
                         )
 
+            # 사용자 정보 조회
+            userName = None
+            userPortraitUrl = None
+            if node_id:
+                user_info = node_manager.get_user_info(node_id)
+                if user_info:
+                    userName = user_info.get("name")
+                    if user_info.get("hasPortrait"):
+                        userPortraitUrl = _build_user_portrait_proxy_url(node_id)
+
             session_list.append({
                 "session_id": sid,
-                "node_id": s.get("node_id", ""),
+                "node_id": node_id,
                 "folder_id": assignment.get("folderId"),
                 "display_name": assignment.get("displayName"),
                 "last_message": s.get("last_message"),  # JSONB dict or None
@@ -114,6 +125,8 @@ def create_catalog_router(
                 "agent_id": agent_id,
                 "agentName": agentName,
                 "agentPortraitUrl": agentPortraitUrl,
+                "userName": userName,
+                "userPortraitUrl": userPortraitUrl,
             })
 
         return {
