@@ -114,8 +114,11 @@ export class OrchestratorSessionProvider implements SessionStorageProvider {
     const reconnectIntervalMs = 3000;
     const maxReconnectIntervalMs = 30000;
 
-    const log = (...args: unknown[]) =>
-      console.log(`[OrchestratorSSE][${sessionKey.slice(0, 12)}]`, ...args);
+    const debug = import.meta.env.VITE_SSE_DEBUG === "true";
+    const log = debug
+      ? (...args: unknown[]) =>
+          console.log(`[OrchestratorSSE][${sessionKey.slice(0, 12)}]`, ...args)
+      : () => {};
 
     const connect = () => {
       if (!sessionKey) return;
