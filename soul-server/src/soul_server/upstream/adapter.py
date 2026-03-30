@@ -351,8 +351,8 @@ class UpstreamAdapter:
             task = await self._tm.create_task(
                 prompt=cmd["prompt"],
                 agent_session_id=cmd.get("agentSessionId"),
-                allowed_tools=cmd.get("allowed_tools") or cmd.get("allowedTools"),
-                disallowed_tools=cmd.get("disallowed_tools") or cmd.get("disallowedTools"),
+                allowed_tools=cmd.get("allowedTools"),
+                disallowed_tools=cmd.get("disallowedTools"),
                 use_mcp=cmd.get("use_mcp") if cmd.get("use_mcp") is not None else cmd.get("useMcp", True),
                 context=cmd.get("context"),
                 context_items=cmd.get("context_items"),

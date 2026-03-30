@@ -138,8 +138,8 @@ class TestHandleCreateSession:
         cmd = {
             "type": CMD_CREATE_SESSION,
             "prompt": "Test",
-            "allowed_tools": ["Read", "Grep"],
-            "disallowed_tools": ["Bash"],
+            "allowedTools": ["Read", "Grep"],   # camelCase — 실제 soulstream이 전송하는 형식
+            "disallowedTools": ["Bash"],         # camelCase — 실제 soulstream이 전송하는 형식
             "use_mcp": False,
             "request_id": "req-2",
         }
