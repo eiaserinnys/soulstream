@@ -113,8 +113,13 @@ def _make_mock_session_db():
                     from datetime import datetime
                     _sessions[session_id][ts_field] = datetime.fromisoformat(fields[ts_field])
 
+    async def _set_claude_session_id(session_id, claude_session_id):
+        if session_id in _sessions and _sessions[session_id].get("claude_session_id") is None:
+            _sessions[session_id]["claude_session_id"] = claude_session_id
+
     db.upsert_session = AsyncMock(side_effect=_upsert_session)
     db.register_session_initial = AsyncMock(side_effect=_register_session_initial)
+    db.set_claude_session_id = AsyncMock(side_effect=_set_claude_session_id)
     db.update_session = AsyncMock(side_effect=_update_session)
     db.get_session = AsyncMock(side_effect=_get_session)
     db.get_all_sessions = AsyncMock(side_effect=_get_all_sessions)
@@ -246,11 +251,7 @@ class TestGetTask:
         assert running[0].agent_session_id == "sess-2"
 
     async def test_get_all_sessions(self, manager):
-        """전체 세션 목록 조회.
-
-        신규 세션은 register_session() 호출 시점(4-ID 등록)에 DB에 기록되므로,
-        create_task() 후 register_session()을 호출해야 get_all_sessions()에 반영된다.
-        """
+        """전체 세션 목록 조회."""
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
         await manager.register_session("claude-1", "sess-1")
         await manager.create_task(prompt="world", agent_session_id="sess-2")
@@ -544,11 +545,7 @@ class TestCleanup:
 
 class TestStats:
     async def test_stats(self, manager):
-        """통계 조회.
-
-        신규 세션은 register_session() 시점에 DB에 기록되므로,
-        total_in_db를 검증하려면 register_session()이 먼저 호출되어야 한다.
-        """
+        """통계 조회."""
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
         await manager.register_session("claude-1", "sess-1")
         await manager.create_task(prompt="world", agent_session_id="sess-2")
@@ -566,10 +563,7 @@ class TestStats:
 
 class TestFolderId:
     async def test_create_with_folder_id(self, manager):
-        """folder_id 지정 시 register_session() 후 해당 폴더에 세션이 배치된다.
-
-        폴더 배정은 DB 행이 존재해야 하므로, register_session()(= DB INSERT) 이후에 처리된다.
-        """
+        """folder_id 지정 시 create_task() 에서 해당 폴더에 세션이 배치된다."""
         # 커스텀 폴더 생성
         await manager._db.create_folder("custom-folder", "커스텀 폴더", sort_order=10)
 
@@ -578,7 +572,6 @@ class TestFolderId:
             agent_session_id="sess-1",
             folder_id="custom-folder",
         )
-        # register_session() 이후 폴더 배정이 처리된다
         await manager.register_session("claude-1", "sess-1")
 
         # DB에서 세션의 folder_id 확인
@@ -586,12 +579,11 @@ class TestFolderId:
         assert session["folder_id"] == "custom-folder"
 
     async def test_create_without_folder_id_uses_default(self, manager):
-        """folder_id 미지정 시 register_session() 후 session_type 기반 기본 폴더에 자동 배정된다."""
+        """folder_id 미지정 시 create_task() 에서 session_type 기반 기본 폴더에 자동 배정된다."""
         await manager.create_task(
             prompt="hello",
             agent_session_id="sess-1",
         )
-        # register_session() 이후 폴더 배정이 처리된다
         await manager.register_session("claude-1", "sess-1")
 
         session = await manager._db.get_session("sess-1")
@@ -799,35 +791,38 @@ class TestNodeIdGuard:
         task = await manager.create_task(prompt="new session")
         assert task.node_id == "test-node"
 
-        # 신규 세션은 create_task에서 DB에 직접 쓰지 않는다 (deferred — register_session 에서 기록)
-        # upsert_session은 호출되지 않는다
+        # upsert_session(deprecated)은 호출되지 않는다 — register_session_initial로 대체됨
         manager._db.upsert_session.assert_not_called()
 
-    async def test_new_session_register_writes_node_id_to_db(self, manager):
-        """신규 세션의 register_session 호출 시 node_id가 DB에 기록된다."""
+    async def test_new_session_create_task_writes_node_id_to_db(self, manager):
+        """신규 세션의 create_task 호출 시 node_id가 pending INSERT로 DB에 기록된다."""
         task = await manager.create_task(prompt="new session", agent_session_id="sess-new")
-        await manager.register_session("claude-abc", "sess-new")
 
-        # register_session_initial이 node_id와 함께 호출됐는지 확인
+        # create_task가 register_session_initial을 node_id와 함께 호출했는지 확인
         call_kwargs = manager._db.register_session_initial.call_args.kwargs
         assert call_kwargs.get("node_id") == "test-node"
+        assert call_kwargs.get("claude_session_id") is None  # pending 상태
 
 
 class TestRegisterSessionDBWrite:
-    """register_session이 DB에 claude_session_id를 영속화하는지 검증"""
+    """create_task/register_session의 DB 영속화 분리 검증"""
 
-    async def test_register_session_writes_all_four_ids_to_db(self, manager):
-        """register_session 호출 후 DB에 4-ID가 원자적으로 기록된다."""
+    async def test_create_task_pending_insert_and_register_session_set_claude_id(self, manager):
+        """create_task가 pending INSERT, register_session이 claude_session_id를 확정한다."""
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
 
-        # register_session 호출 (session 이벤트 수신 시뮬레이션)
-        await manager.register_session("claude-abc", "sess-1")
-
-        # register_session_initial이 4-ID 모두를 포함하여 호출됐어야 한다
+        # create_task → register_session_initial(claude_session_id=None, node_id=...)
         manager._db.register_session_initial.assert_called_once()
-        call_kwargs = manager._db.register_session_initial.call_args.kwargs
-        assert call_kwargs.get("claude_session_id") == "claude-abc"
-        assert call_kwargs.get("node_id") == "test-node"  # DB node_id
+        init_kwargs = manager._db.register_session_initial.call_args.kwargs
+        assert init_kwargs.get("claude_session_id") is None   # pending
+        assert init_kwargs.get("node_id") == "test-node"
+
+        # register_session → set_claude_session_id(session_id, claude_session_id)
+        await manager.register_session("claude-abc", "sess-1")
+        manager._db.set_claude_session_id.assert_called_once()
+        set_args = manager._db.set_claude_session_id.call_args.args
+        assert set_args[0] == "sess-1"
+        assert set_args[1] == "claude-abc"
 
     async def test_register_session_sets_task_claude_session_id(self, manager):
         """register_session 호출 후 task.claude_session_id가 설정된다."""
