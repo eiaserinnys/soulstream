@@ -419,11 +419,16 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
 
       // --- 세션 목록 ---
 
-      setSessions: (sessions, total) => set({
-        sessions,
-        sessionsTotal: total ?? sessions.length,
-        sessionsError: null,
-      }),
+      setSessions: (sessions, total) => {
+        const prev = get().sessions;
+        const caller = new Error().stack?.split('\n').slice(2, 4).map(l => l.trim()).join(' ← ') ?? '?';
+        console.log(`[🔵 setSessions] ${prev.length} → ${sessions.length} (total=${total ?? sessions.length}) | caller: ${caller}`);
+        set({
+          sessions,
+          sessionsTotal: total ?? sessions.length,
+          sessionsError: null,
+        });
+      },
 
       appendSessions: (newSessions, total) => set((state) => {
         const existingIds = new Set(state.sessions.map(s => s.agentSessionId));
@@ -485,6 +490,9 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         const sessions = get().sessions;
         const filtered = sessions.filter((s) => s.agentSessionId !== agentSessionId);
         const removed = sessions.length - filtered.length;
+        if (removed > 0) {
+          console.log(`[🔴 removeSession] ${agentSessionId} → sessions: ${sessions.length} → ${filtered.length}`);
+        }
         set({
           sessions: filtered,
           sessionsTotal: Math.max(0, get().sessionsTotal - removed),
@@ -923,8 +931,15 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
 
       // --- 카탈로그 ---
 
-      setCatalog: (catalog) =>
-        set((state) => ({ catalog, catalogVersion: state.catalogVersion + 1 })),
+      setCatalog: (catalog) => {
+        const prev = get().catalog;
+        const excludeFolders = (catalog.folders ?? []).filter(f => f.settings?.excludeFromFeed).map(f => f.name);
+        console.log(`[🟡 setCatalog] folders=${catalog.folders?.length ?? 0}, sessions=${Object.keys(catalog.sessions ?? {}).length} | excludeFromFeed: [${excludeFolders.join(', ')}]`);
+        if (!prev) {
+          console.log(`[🟡 setCatalog] 최초 catalog 설정`);
+        }
+        set((state) => ({ catalog, catalogVersion: state.catalogVersion + 1 }));
+      },
 
       moveSessionsToFolder: (sessionIds, folderId) => {
         if (sessionIds.length === 0) return;
@@ -1063,7 +1078,8 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
       getFeedSessions: () => {
         const { sessions, catalog } = get();
         const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-        return sessions
+        const beforeFilter = sessions.length;
+        const result = sessions
           .filter((s) => {
             if (s.sessionType === "llm") return false;
             // 폴더 설정: excludeFromFeed가 true이면 피드에서 제외
@@ -1091,6 +1107,13 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
             }
             return s;
           });
+        // 결과가 달라질 때만 로그 (렌더링마다 찍히지 않도록 throttle 없이 조건부로만)
+        const _lastFeedCount = (get() as unknown as { _lastFeedLogCount?: number })._lastFeedLogCount;
+        if (_lastFeedCount !== result.length) {
+          console.log(`[🟢 getFeedSessions] ${beforeFilter} sessions → ${result.length} feed items (catalog=${catalog ? `yes, ${Object.keys(catalog.sessions).length} assigned` : 'null'})`);
+          (get() as unknown as { _lastFeedLogCount?: number })._lastFeedLogCount = result.length;
+        }
+        return result;
       },
 
       setMobileView: (mobileView) => set({ mobileView }),
