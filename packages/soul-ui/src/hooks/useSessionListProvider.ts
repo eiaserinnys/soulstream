@@ -335,7 +335,8 @@ export function useSessionListProvider(
           store.setCatalog(data);
 
           // selectedFolderId가 아직 설정되지 않았으면 기본 폴더 자동 선택
-          if (store.selectedFolderId === null && !store.activeSessionKey) {
+          // 피드 뷰에서는 자동 선택하지 않음 — viewMode를 "folder"로 강제 변경하지 않기 위함
+          if (store.selectedFolderId === null && !store.activeSessionKey && store.viewMode !== "feed") {
             const claudeFolder = data.folders.find(
               (f: { name: string }) => f.name === SYSTEM_FOLDERS.claude,
             );
