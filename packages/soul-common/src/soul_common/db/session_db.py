@@ -443,7 +443,9 @@ class PostgresSessionDB:
         rows = await self._pool.fetch(
             "SELECT * FROM shutdown_get_sessions($1)", self._node_id
         )
-        return [dict(r) for r in rows]
+        # shutdown_get_sessions은 SETOF sessions (SELECT *)를 반환하므로
+        # last_message, metadata 등 JSONB 컬럼이 포함됨 → _deserialize_session() 적용
+        return [self._deserialize_session(r) for r in rows]
 
     async def repair_broken_read_positions(self) -> int:
         count = await self._pool.fetchval(
@@ -555,7 +557,16 @@ class PostgresSessionDB:
         row = await self._pool.fetchrow(
             "SELECT * FROM folder_get($1)", folder_id
         )
-        return dict(row) if row else None
+        if row is None:
+            return None
+        d = dict(row)
+        # asyncpg가 JSONB 코덱 미등록 시 settings를 문자열로 반환하는 경우 역직렬화
+        if isinstance(d.get("settings"), str):
+            try:
+                d["settings"] = json.loads(d["settings"])
+            except (json.JSONDecodeError, ValueError):
+                d["settings"] = {}
+        return d
 
     async def delete_folder(self, folder_id: str) -> None:
         await self._pool.execute(

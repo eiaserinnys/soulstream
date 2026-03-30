@@ -286,6 +286,33 @@ class TestFolderCRUD:
         assert "claude" in folder_ids
         assert "llm" in folder_ids
 
+    async def test_folder_settings_jsonb_roundtrip(self, db: SqliteSessionDB):
+        """get_folder()가 settings를 dict으로 역직렬화한다 (excludeFromFeed 포함)"""
+        await db.create_folder("ftest_settings", "Test Settings", sort_order=0)
+        await db.update_folder("ftest_settings", settings={"excludeFromFeed": True})
+        folder = await db.get_folder("ftest_settings")
+        assert folder is not None
+        assert isinstance(folder["settings"], dict), (
+            f"settings must be dict, got {type(folder['settings'])}: {folder['settings']!r}"
+        )
+        assert folder["settings"]["excludeFromFeed"] is True
+
+    async def test_get_all_folders_settings_jsonb_roundtrip(self, db: SqliteSessionDB):
+        """get_all_folders()가 settings를 dict으로 역직렬화한다"""
+        await db.create_folder("ftest_all", "All Settings Test", sort_order=0)
+        await db.update_folder(
+            "ftest_all",
+            settings={"excludeFromFeed": True, "color": "#ff0000"},
+        )
+        folders = await db.get_all_folders()
+        target = next((f for f in folders if f["id"] == "ftest_all"), None)
+        assert target is not None
+        assert isinstance(target["settings"], dict), (
+            f"settings must be dict, got {type(target['settings'])}: {target['settings']!r}"
+        )
+        assert target["settings"]["excludeFromFeed"] is True
+        assert target["settings"]["color"] == "#ff0000"
+
     async def test_invalid_folder_column_raises(self, db: SqliteSessionDB):
         await db.create_folder("f4", "Test")
         with pytest.raises(ValueError):
