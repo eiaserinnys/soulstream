@@ -48,12 +48,14 @@ function SessionPortrait({ url }: { url: string }) {
   const [error, setError] = useState(false);
   if (error) return null;
   return (
-    <img
-      src={url}
-      alt=""
-      className="self-stretch aspect-square rounded object-cover shrink-0"
-      onError={() => setError(true)}
-    />
+    <div className="self-stretch aspect-square shrink-0 rounded overflow-hidden">
+      <img
+        src={url}
+        alt=""
+        className="w-full h-full object-cover"
+        onError={() => setError(true)}
+      />
+    </div>
   );
 }
 
