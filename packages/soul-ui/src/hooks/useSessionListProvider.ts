@@ -112,6 +112,7 @@ export function useSessionListProvider(
 
       if (abortRef.current) return;
 
+      console.log(`[🔵 fetchSessions] 완료 → sessions=${result.sessions.length}, total=${result.total}`);
       setSessions(result.sessions, result.total);
 
       // 폴더별 세션 수 조회 (provider가 지원하는 경우)
@@ -191,6 +192,7 @@ export function useSessionListProvider(
   const handleSSEEvent = useCallback(
     (event: SessionStreamEvent) => {
       setSessionsError(null);
+      console.log(`[⚡ SSE] type=${event.type}`, event.type === "session_list" ? `(무시)` : "");
       switch (event.type) {
         case "session_list":
           // 무시: fetchSessions API 호출로 대체
@@ -232,10 +234,12 @@ export function useSessionListProvider(
         }
 
         case "session_deleted":
+          console.log(`[⚡ SSE] session_deleted → ${event.agent_session_id}`);
           removeSession(event.agent_session_id);
           break;
 
         case "catalog_updated":
+          console.log(`[⚡ SSE] catalog_updated → folders=${event.catalog?.folders?.length}, sessions=${Object.keys(event.catalog?.sessions ?? {}).length}`);
           useDashboardStore.getState().setCatalog(event.catalog);
           break;
 
