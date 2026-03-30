@@ -425,11 +425,15 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         sessionsError: null,
       }),
 
-      appendSessions: (newSessions, total) => set((state) => ({
-        sessions: [...state.sessions, ...newSessions],
-        sessionsTotal: total,
-        sessionsError: null,
-      })),
+      appendSessions: (newSessions, total) => set((state) => {
+        const existingIds = new Set(state.sessions.map(s => s.agentSessionId));
+        const uniqueNew = newSessions.filter(s => !existingIds.has(s.agentSessionId));
+        return {
+          sessions: [...state.sessions, ...uniqueNew],
+          sessionsTotal: total,
+          sessionsError: null,
+        };
+      }),
 
       addSession: (session) => {
         const { sessions, sessionsTotal } = get();
