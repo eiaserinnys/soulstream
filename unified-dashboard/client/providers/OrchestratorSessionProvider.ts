@@ -114,6 +114,9 @@ export class OrchestratorSessionProvider implements SessionStorageProvider {
     const reconnectIntervalMs = 3000;
     const maxReconnectIntervalMs = 30000;
 
+    const log = (...args: unknown[]) =>
+      console.log(`[OrchestratorSSE][${sessionKey.slice(0, 12)}]`, ...args);
+
     const connect = () => {
       if (!sessionKey) return;
 
@@ -124,11 +127,14 @@ export class OrchestratorSessionProvider implements SessionStorageProvider {
         url += `?lastEventId=${lastEventId}`;
       }
 
+      log(`connecting → ${url} (attempt=${reconnectAttempt})`);
+
       const es = new EventSource(url);
       eventSource = es;
 
       es.onopen = () => {
         reconnectAttempt = 0;
+        log("connected ✓");
         onStatusChange?.("connected");
       };
 
@@ -138,17 +144,22 @@ export class OrchestratorSessionProvider implements SessionStorageProvider {
             const data = JSON.parse(e.data) as SoulSSEEvent;
             const eventId = e.lastEventId ? parseInt(e.lastEventId, 10) : 0;
             if (eventId > lastEventId) lastEventId = eventId;
+            log(`event type=${eventType} id=${eventId}`, data);
             onEvent(data, eventId);
-          } catch {
-            // JSON parse error: ignore
+          } catch (err) {
+            log(`JSON parse error on type=${eventType}`, err);
           }
         });
       }
 
       es.onerror = (e) => {
         // Named "error" event from server is a MessageEvent — not a connection error
-        if (e instanceof MessageEvent) return;
+        if (e instanceof MessageEvent) {
+          log("server 'error' event (MessageEvent):", e.data);
+          return;
+        }
 
+        log(`connection error → closing. attempt=${reconnectAttempt}/${maxReconnectAttempts}`);
         es.close();
         eventSource = null;
         onStatusChange?.("error");
@@ -159,10 +170,13 @@ export class OrchestratorSessionProvider implements SessionStorageProvider {
             maxReconnectIntervalMs,
           );
           reconnectAttempt++;
+          log(`reconnecting in ${delay}ms (attempt=${reconnectAttempt})`);
           reconnectTimer = setTimeout(() => {
             reconnectTimer = null;
             connect();
           }, delay);
+        } else {
+          log("max reconnect attempts reached — giving up");
         }
       };
     };
