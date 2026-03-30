@@ -184,18 +184,33 @@ CREATE OR REPLACE FUNCTION session_register(
     );
 $$;
 
--- session_set_claude_id (claude_session_id 최초 설정 — UPDATE WHERE IS NULL)
--- register_session()에서 호출. path a(메인 세션 시작)에서만 유효.
--- 이미 설정된 경우(path c 재진입) WHERE 조건이 false → no-op.
+-- session_set_claude_id (claude_session_id 불변 설정)
+-- NULL → SET (최초 설정)
+-- 같은 값 → no-op (idempotent, 컴팩션/재시작 재진입 허용)
+-- 다른 값 → RAISE EXCEPTION (버그 탐지)
 CREATE OR REPLACE FUNCTION session_set_claude_id(
     p_session_id        TEXT,
     p_claude_session_id TEXT
-) RETURNS void LANGUAGE sql AS $$
-    UPDATE sessions
-    SET claude_session_id = p_claude_session_id,
-        updated_at = NOW()
-    WHERE session_id = p_session_id
-      AND claude_session_id IS NULL;
+) RETURNS void LANGUAGE plpgsql AS $$
+DECLARE
+    v_existing TEXT;
+BEGIN
+    SELECT claude_session_id INTO v_existing
+    FROM sessions
+    WHERE session_id = p_session_id;
+
+    IF v_existing IS NULL THEN
+        UPDATE sessions
+        SET claude_session_id = p_claude_session_id,
+            updated_at = NOW()
+        WHERE session_id = p_session_id;
+    ELSIF v_existing = p_claude_session_id THEN
+        NULL;
+    ELSE
+        RAISE EXCEPTION 'claude_session_id immutability violation: session_id=%, existing=%, new=%',
+            p_session_id, v_existing, p_claude_session_id;
+    END IF;
+END;
 $$;
 
 -- session_update (불변 필드 제외 동적 UPDATE)
