@@ -83,6 +83,31 @@ class TestShutdownNodeIdFilter:
         assert node_id_arg == "test-node"
 
     @pytest.mark.asyncio
+    async def test_get_shutdown_sessions_deserializes_jsonb(self, db):
+        """get_shutdown_sessions()가 JSONB 컬럼을 역직렬화한다.
+        shutdown_get_sessions은 SETOF sessions (SELECT *)을 반환하므로
+        last_message, metadata 등 JSONB 컬럼이 포함됨."""
+        import json
+        record = _make_record({
+            "session_id": "s1",
+            "status": "running",
+            "last_message": json.dumps({"preview": "hello"}),  # JSONB → str
+            "metadata": None,
+            "was_running_at_shutdown": True,
+        })
+        db._pool.fetch = AsyncMock(return_value=[record])
+
+        results = await db.get_shutdown_sessions()
+
+        assert len(results) == 1
+        # JSONB 문자열이 dict으로 역직렬화되어야 함
+        assert isinstance(results[0]["last_message"], dict), (
+            f"last_message must be dict, got {type(results[0]['last_message'])}"
+        )
+        assert results[0]["last_message"]["preview"] == "hello"
+        assert results[0]["was_running_at_shutdown"] is True
+
+    @pytest.mark.asyncio
     async def test_clear_shutdown_flags_filters_by_node_id(self, db):
         """clear_shutdown_flags()는 node_id를 shutdown_clear_flags SQL 함수에 전달한다."""
         db._pool.execute = AsyncMock()
@@ -508,6 +533,26 @@ class TestFolderCRUD:
         assert "folder_get" in sql
 
     @pytest.mark.asyncio
+    async def test_get_folder_settings_jsonb_deserialization(self, db):
+        """get_folder()가 settings JSONB 문자열을 dict으로 역직렬화한다.
+        asyncpg가 JSON 코덱 미등록 시 JSONB → str로 반환하는 경우를 방어한다."""
+        import json
+        settings_dict = {"excludeFromFeed": True}
+        record = _make_record({
+            "id": "f1", "name": "Test", "sort_order": 0,
+            "settings": json.dumps(settings_dict),  # JSONB 미등록 시 문자열로 반환
+            "created_at": None,
+        })
+        db._pool.fetchrow = AsyncMock(return_value=record)
+
+        result = await db.get_folder("f1")
+
+        assert isinstance(result["settings"], dict), (
+            f"settings must be dict, got {type(result['settings'])}: {result['settings']!r}"
+        )
+        assert result["settings"]["excludeFromFeed"] is True
+
+    @pytest.mark.asyncio
     async def test_get_all_folders(self, db):
         records = [_make_record({"id": "f1", "name": "Test", "sort_order": 0})]
         db._pool.fetch = AsyncMock(return_value=records)
@@ -515,6 +560,24 @@ class TestFolderCRUD:
         assert len(result) == 1
         sql = db._pool.fetch.call_args[0][0]
         assert "folder_get_all" in sql
+
+    @pytest.mark.asyncio
+    async def test_get_all_folders_settings_jsonb_deserialization(self, db):
+        """get_all_folders()가 settings JSONB 문자열을 dict으로 역직렬화한다."""
+        import json
+        settings_dict = {"excludeFromFeed": True, "color": "#ff0000"}
+        records = [_make_record({
+            "id": "f1", "name": "Test", "sort_order": 0,
+            "settings": json.dumps(settings_dict),
+            "created_at": None,
+        })]
+        db._pool.fetch = AsyncMock(return_value=records)
+
+        result = await db.get_all_folders()
+
+        assert isinstance(result[0]["settings"], dict)
+        assert result[0]["settings"]["excludeFromFeed"] is True
+        assert result[0]["settings"]["color"] == "#ff0000"
 
     @pytest.mark.asyncio
     async def test_get_default_folder(self, db):
