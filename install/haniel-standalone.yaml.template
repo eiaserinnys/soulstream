@@ -8,6 +8,15 @@
 
 poll_interval: 60
 
+# auto_apply controls whether detected upstream changes are automatically applied.
+# false (default): changes are shown in the Haniel dashboard but NOT pulled/restarted
+#   automatically. Use the dashboard to manually trigger updates.
+# true: any new commit in tracked repos (including soulstream) triggers an automatic
+#   pull and service restart — suitable for unattended servers, not for dev machines.
+# Note: haniel self-update is separately controlled by the 'self' section, which is
+#   intentionally absent here (haniel will not auto-update itself).
+auto_apply: false
+
 repos:
   soulstream:
     url: https://github.com/eiaserinnys/soulstream.git
