@@ -57,7 +57,7 @@ export function FolderTree({
   const sessions = useDashboardStore((s) => s.sessions);
   const viewMode = useDashboardStore((s) => s.viewMode);
   const selectFeed = useDashboardStore((s) => s.selectFeed);
-  const getFeedSessions = useDashboardStore((s) => s.getFeedSessions);
+  const getFeedUnreadCount = useDashboardStore((s) => s.getFeedUnreadCount);
   const folderSortMode = useDashboardStore((s) => s.folderSortMode);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
@@ -217,11 +217,10 @@ export function FolderTree({
     selectFolder(folderId);
   }, [selectFolder]);
 
-  /** 피드 미읽음 카운트 */
-  const feedUnreadCount = useMemo(() => {
-    const feed = getFeedSessions();
-    return feed.filter(isSessionUnread).length;
-  }, [sessions, getFeedSessions, catalogVersion]);
+  /** 피드 미읽음 카운트 — getFeedUnreadCount로 정렬 없이 O(n) 계산 */
+  const feedUnreadCount = useMemo(() =>
+    getFeedUnreadCount(),
+    [sessions, getFeedUnreadCount, catalogVersion]);
 
   // normalFolders alias (기존 코드와의 호환성 유지)
   const normalFolders = sortedNormalFolders;
