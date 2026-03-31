@@ -263,6 +263,8 @@ export interface DashboardActions {
   selectFeed: () => void;
   setFeedScrollOffset: (offset: number) => void;
   getFeedSessions: () => SessionSummary[];
+  /** 피드 배지용 미읽음 세션 수. getFeedSessions와 동일한 필터 기준으로 정렬 없이 O(n) 계산 */
+  getFeedUnreadCount: () => number;
 
   // 카탈로그
   setCatalog: (catalog: CatalogState) => void;
@@ -1114,6 +1116,26 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           (get() as unknown as { _lastFeedLogCount?: number })._lastFeedLogCount = result.length;
         }
         return result;
+      },
+
+      getFeedUnreadCount: () => {
+        const { sessions, catalog } = get();
+        const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+        return sessions.filter((s) => {
+          if (s.sessionType === "llm") return false;
+          // getFeedSessions와 동일한 excludeFromFeed 필터 적용
+          if (catalog) {
+            const assignment = catalog.sessions[s.agentSessionId];
+            const folderId = assignment?.folderId ?? null;
+            if (folderId !== null) {
+              const folder = catalog.folders.find((f) => f.id === folderId);
+              if (folder?.settings?.excludeFromFeed) return false;
+            }
+          }
+          if (!isSessionUnread(s)) return false;
+          const t = s.lastMessage?.timestamp ?? s.updatedAt ?? s.createdAt;
+          return t != null && new Date(t).getTime() > cutoff;
+        }).length;
       },
 
       setMobileView: (mobileView) => set({ mobileView }),

@@ -99,9 +99,12 @@ export function useSessionListProvider(
       const provider = externalProvider ?? getSessionProvider(storageMode);
       const typeFilter = sessionTypeFilter === "all" ? undefined : sessionTypeFilter;
       // 폴더가 선택된 경우 folder_id를 전달하여 서버에서 필터링
+      // stale closure 방지: viewMode와 selectedFolderId를 클로저가 아닌 store에서 직접 읽음
+      const { viewMode: currentViewMode, selectedFolderId: currentFolderId } =
+        useDashboardStore.getState();
       const folderFilter =
-        viewMode === "folder" && selectedFolderId !== null
-          ? { folderId: selectedFolderId }
+        currentViewMode === "folder" && currentFolderId !== null
+          ? { folderId: currentFolderId }
           : {};
       const result = await provider.fetchSessions({
         sessionType: typeFilter,
@@ -129,7 +132,7 @@ export function useSessionListProvider(
       isFirstLoad.current = false;
       setSessionsLoading(false);
     }
-  }, [storageMode, sessionTypeFilter, viewMode, selectedFolderId, setSessions, setSessionsLoading, setSessionsError, getSessionProvider, externalProvider]);
+  }, [storageMode, sessionTypeFilter, setSessions, setSessionsLoading, setSessionsError, getSessionProvider, externalProvider]);
 
   // fetchSessions를 ref로 래핑하여, connectSSE와 Effect들의 의존성에서 분리.
   // useCallback 참조 변경이 SSE 재연결이나 Effect 재실행을 유발하지 않는다.
