@@ -10,6 +10,7 @@ error dicts gracefully when cogito is not configured.
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -816,7 +817,8 @@ def init_multi_node_tools(settings) -> None:
     (Python 데코레이터 실행 시점 원칙 + FastMCP 런타임 등록 지원).
     """
     global _orch_base
-    import re
+    if _orch_base is not None:
+        return  # 중복 호출 방어 — lifespan에서 1회만 호출되어야 함
     # ws://host:port/ws/node → http://host:port
     # wss://host:port/ws/node → https://host:port
     url = settings.soulstream_upstream_url
