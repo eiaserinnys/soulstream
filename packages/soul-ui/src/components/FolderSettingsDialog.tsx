@@ -2,7 +2,7 @@
  * FolderSettingsDialog - 폴더 설정 다이얼로그
  *
  * 폴더별 설정을 편집하는 다이얼로그.
- * 현재 지원하는 설정: 피드에서 제외 (excludeFromFeed)
+ * 지원하는 설정: 피드에서 제외 (excludeFromFeed), 폴더 프롬프트 (folderPrompt)
  */
 
 import { useState, useEffect } from "react";
@@ -32,21 +32,26 @@ export function FolderSettingsDialog({
   onConfirm,
 }: FolderSettingsDialogProps) {
   const [excludeFromFeed, setExcludeFromFeed] = useState(false);
+  const [folderPrompt, setFolderPrompt] = useState("");
 
   useEffect(() => {
     if (open && folder) {
       setExcludeFromFeed(folder.settings?.excludeFromFeed ?? false);
+      setFolderPrompt(folder.settings?.folderPrompt ?? "");
     }
   }, [open, folder]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onConfirm({ excludeFromFeed });
+    onConfirm({
+      excludeFromFeed,
+      folderPrompt: folderPrompt || undefined,
+    });
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogPopup className="max-w-sm">
+      <DialogPopup className="max-w-md">
         <DialogHeader>
           <DialogTitle>폴더 설정</DialogTitle>
           <DialogDescription>{folder?.name}</DialogDescription>
@@ -62,6 +67,18 @@ export function FolderSettingsDialog({
               />
               피드에서 제외
             </label>
+            <div className="mt-3 flex flex-col gap-1">
+              <label className="text-sm text-[--color-text-secondary]">
+                폴더 프롬프트
+              </label>
+              <textarea
+                value={folderPrompt}
+                onChange={(e) => setFolderPrompt(e.target.value)}
+                placeholder="새 세션 시작 시 Claude에게 전달할 지시사항을 입력하세요"
+                rows={4}
+                className="w-full rounded border border-[--color-border] bg-[--color-surface-1] px-2 py-1 text-sm resize-none"
+              />
+            </div>
           </DialogPanel>
           <DialogFooter variant="bare">
             <Button

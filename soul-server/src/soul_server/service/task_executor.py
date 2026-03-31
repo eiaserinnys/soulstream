@@ -142,14 +142,20 @@ class TaskExecutor:
         try:
             current_user_request_id: Optional[str] = None  # except에서 NameError 방지
             async with resource_manager.acquire(timeout=5.0):
-                # 세션의 폴더명 조회
+                # 세션의 폴더명 및 폴더 프롬프트 조회
                 folder_name: Optional[str] = None
+                folder_prompt: Optional[str] = None
                 if self._db is not None:
                     session_row = await self._db.get_session(session_id)
                     if session_row and session_row.get("folder_id"):
                         folder_row = await self._db.get_folder(session_row["folder_id"])
                         if folder_row:
                             folder_name = folder_row["name"]
+                            # 새 세션에서만 폴더 프롬프트 주입 (resume/intervention 제외)
+                            if task.resume_session_id is None:
+                                settings = folder_row.get("settings")
+                                if isinstance(settings, dict):
+                                    folder_prompt = settings.get("folderPrompt") or None
 
                 # 서버 컨텍스트 빌드 + 클라이언트 컨텍스트 머지
                 # SSE 이벤트와 프롬프트 주입 양쪽에 동일한 머지 결과를 사용
@@ -160,7 +166,16 @@ class TaskExecutor:
                     folder_name=folder_name,
                     agent_id=task.profile_id,
                 )
-                combined_context_items = [soulstream_item] + (task.context_items or [])
+                folder_prompt_items = (
+                    [{"key": "folder_prompt", "label": "폴더 프롬프트", "content": folder_prompt}]
+                    if folder_prompt
+                    else []
+                )
+                combined_context_items = (
+                    [soulstream_item]           # 세션 메타데이터 (최우선)
+                    + folder_prompt_items       # 폴더별 지시사항 (새 세션에만 포함)
+                    + (task.context_items or [])  # 클라이언트 전달 컨텍스트
+                )
 
                 # user_message 기록
                 if self._db is not None:
