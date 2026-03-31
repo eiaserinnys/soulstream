@@ -65,6 +65,15 @@ The installer checks prerequisites, installs [Haniel](https://github.com/eiaseri
 | `-Force` | — | Overwrite existing installation without confirmation |
 | `-SkipDashboard` | — | Skip dashboard build step |
 
+**After installation**
+
+| Service | URL | Notes |
+|---------|-----|-------|
+| Soulstream | `http://localhost:3105` | API + dashboard |
+| Haniel | `http://localhost:3200` | Process manager dashboard |
+
+Auto-update is **disabled by default**. When new commits arrive in the soulstream repo, Haniel detects the change and shows it in the dashboard — but will not pull or restart automatically. Use the Haniel dashboard at `http://localhost:3200` to manually apply updates.
+
 ### Manual setup
 
 **soul-server**
