@@ -440,6 +440,33 @@ class TestIntervention:
         msg = await manager.get_intervention("sess-1")
         assert msg is None
 
+    async def test_add_intervention_evicted_running_task_forced_to_interrupted(self, manager):
+        """퇴거된 세션이 RUNNING 상태일 때 add_intervention이 INTERRUPTED로 강제 전환 후 resume한다."""
+        # RUNNING 상태의 퇴거 Task 준비
+        evicted_task = Task(agent_session_id="sess-evicted-running", prompt="old prompt")
+        evicted_task.status = TaskStatus.RUNNING
+        evicted_task.node_id = "test-node"
+
+        # load_evicted_task가 RUNNING 상태 Task를 반환하도록 mock
+        manager._eviction_manager.load_evicted_task = AsyncMock(return_value=evicted_task)
+
+        result = await manager.add_intervention(
+            agent_session_id="sess-evicted-running",
+            text="이어서 해줘",
+            user="user1",
+        )
+
+        # INTERRUPTED로 강제 전환 호출 확인
+        manager._db.update_session_status.assert_called_with(
+            "sess-evicted-running", TaskStatus.INTERRUPTED.value
+        )
+        # auto_resumed 응답 확인
+        assert result["auto_resumed"] is True
+        # create_task가 호출되어 세션이 재활성화됨 (TaskConflictError 없음)
+        task = await manager.get_task("sess-evicted-running")
+        assert task.status == TaskStatus.RUNNING
+        assert task.prompt == "이어서 해줘"
+
 
 class TestClaudeSessionIndex:
     async def test_register_and_get_by_claude_session(self, manager):
@@ -667,8 +694,8 @@ class TestLoad:
         assert manager._tasks["sess-shutdown"].status == TaskStatus.INTERRUPTED
         assert loaded == 1
 
-    async def test_load_zombie_sessions_become_completed(self, manager):
-        """was_running_at_shutdown=0인 running 세션은 completed로 전환되고 _tasks에 올라가지 않는다."""
+    async def test_load_zombie_sessions_become_interrupted(self, manager):
+        """was_running_at_shutdown=0인 running 세션도 interrupted로 전환되고 _tasks에 올라간다."""
         import datetime
 
         async def _get_all_with_zombie(offset=0, limit=0, session_type=None, node_id=None):
@@ -692,13 +719,14 @@ class TestLoad:
 
         loaded = await manager.load()
 
-        # DB에서 completed로 전환 호출 확인
+        # DB에서 interrupted로 전환 호출 확인
         manager._db.update_session_status.assert_called_once_with(
-            "sess-zombie", TaskStatus.COMPLETED.value
+            "sess-zombie", TaskStatus.INTERRUPTED.value
         )
-        # _tasks에 올라가지 않았는지 확인
-        assert "sess-zombie" not in manager._tasks
-        assert loaded == 0
+        # _tasks에 INTERRUPTED 상태로 올라갔는지 확인
+        assert "sess-zombie" in manager._tasks
+        assert manager._tasks["sess-zombie"].status == TaskStatus.INTERRUPTED
+        assert loaded == 1
 
 
 
