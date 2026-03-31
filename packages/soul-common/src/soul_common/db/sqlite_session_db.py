@@ -180,6 +180,15 @@ class SqliteSessionDB:
             # 컬럼이 이미 존재하면 "duplicate column name" 오류 → 무시
             pass
 
+        try:
+            await self._conn.execute(
+                "ALTER TABLE sessions ADD COLUMN caller_session_id TEXT"
+            )
+            await self._conn.commit()
+        except Exception:
+            # 컬럼이 이미 존재하면 "duplicate column name" 오류 → 무시
+            pass
+
     async def close(self) -> None:
         if self._conn:
             await self._conn.close()
@@ -254,6 +263,7 @@ class SqliteSessionDB:
         status: str = "running",
         created_at=None,
         updated_at=None,
+        caller_session_id: Optional[str] = None,
     ) -> None:
         """세션 최초 등록 (순수 INSERT).
 
@@ -264,8 +274,9 @@ class SqliteSessionDB:
         await self._conn.execute(
             """INSERT INTO sessions
                (session_id, node_id, agent_id, claude_session_id,
-                session_type, prompt, client_id, status, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                session_type, prompt, client_id, status, created_at, updated_at,
+                caller_session_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 session_id,
                 node_id,
@@ -277,6 +288,7 @@ class SqliteSessionDB:
                 status,
                 _to_iso(created_at) or now,
                 _to_iso(updated_at) or now,
+                caller_session_id,
             ),
         )
         await self._conn.commit()

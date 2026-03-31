@@ -3,7 +3,7 @@
 신규 툴:
 - list_local_agents
 - create_agent_session
-- reply_to_session
+- send_message_to_session (구: reply_to_session)
 """
 
 from __future__ import annotations
@@ -85,8 +85,10 @@ class TestCreateAgentSession:
         return task
 
     async def test_creates_session_without_caller(self):
-        """caller_session_id 없을 때 system_prompt가 None이어야 한다."""
+        """caller_session_id 없을 때 caller_session_id=None으로 create_task를 호출해야 한다."""
         mock_task = self._make_task()
+        mock_task.profile_id = None
+        mock_task.caller_agent_info = None
         mock_tm = MagicMock()
         mock_tm.create_task = AsyncMock(return_value=mock_task)
 
@@ -101,14 +103,18 @@ class TestCreateAgentSession:
             prompt="작업 수행해줘",
             profile_id="agent-alpha",
             folder_id=None,
-            system_prompt=None,
+            caller_session_id=None,
         )
 
     async def test_creates_session_with_caller_session_id(self):
-        """caller_session_id가 있으면 system_prompt에 포함되어야 한다."""
+        """caller_session_id가 있으면 create_task에 caller_session_id로 전달되어야 한다."""
         mock_task = self._make_task()
+        mock_task.profile_id = None
+        mock_task.caller_agent_info = None
         mock_tm = MagicMock()
         mock_tm.create_task = AsyncMock(return_value=mock_task)
+        mock_tm.get_task = AsyncMock(return_value=None)
+        mock_tm._agent_registry = None
 
         fn = _unwrap(mcp_tools.create_agent_session)
         with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=mock_tm):
@@ -121,9 +127,9 @@ class TestCreateAgentSession:
         assert result["agent_session_id"] == "sess-abc123"
 
         call_kwargs = mock_tm.create_task.call_args.kwargs
-        assert call_kwargs["system_prompt"] is not None
-        assert "sess-caller-999" in call_kwargs["system_prompt"]
-        assert "reply_to_session" in call_kwargs["system_prompt"]
+        assert call_kwargs["caller_session_id"] == "sess-caller-999"
+        # system_prompt는 전달하지 않음 (자동 완료 보고 방식으로 변경됨)
+        assert "system_prompt" not in call_kwargs
 
     async def test_creates_session_with_folder_id(self):
         """folder_id가 전달되면 create_task에 그대로 전달되어야 한다."""
@@ -153,16 +159,16 @@ class TestCreateAgentSession:
 
 
 # ---------------------------------------------------------------------------
-# reply_to_session
+# send_message_to_session (구: reply_to_session)
 # ---------------------------------------------------------------------------
 
-class TestReplyToSession:
+class TestSendMessageToSession:
     async def test_ok_on_success(self):
         """add_intervention 성공 시 ok=True와 detail을 반환해야 한다."""
         mock_tm = MagicMock()
         mock_tm.add_intervention = AsyncMock(return_value={"queue_position": 1})
 
-        fn = _unwrap(mcp_tools.reply_to_session)
+        fn = _unwrap(mcp_tools.send_message_to_session)
         with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=mock_tm):
             result = await fn(target_session_id="sess-target-123", message="작업 완료됐습니다")
 
@@ -180,7 +186,7 @@ class TestReplyToSession:
         mock_tm = MagicMock()
         mock_tm.add_intervention = AsyncMock(side_effect=RuntimeError("세션 없음"))
 
-        fn = _unwrap(mcp_tools.reply_to_session)
+        fn = _unwrap(mcp_tools.send_message_to_session)
         with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=mock_tm):
             result = await fn(target_session_id="sess-missing", message="응답")
 
@@ -192,7 +198,7 @@ class TestReplyToSession:
         mock_tm = MagicMock()
         mock_tm.add_intervention = AsyncMock(return_value={"auto_resumed": True})
 
-        fn = _unwrap(mcp_tools.reply_to_session)
+        fn = _unwrap(mcp_tools.send_message_to_session)
         with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=mock_tm):
             await fn(target_session_id="sess-xyz", message="hello")
 
