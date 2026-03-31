@@ -59,6 +59,7 @@ class SessionRouter:
             disallowed_tools=request.get("disallowed_tools"),
             use_mcp=request.get("use_mcp"),
             folder_id=request.get("folderId"),
+            oauth_profile_name=request.get("oauth_profile_name"),
         )
 
         # 노드가 반환한 세션 ID를 우선 사용

@@ -35,6 +35,8 @@ export interface NewSessionDialogProps {
   nodeSelector?: ReactNode;
   /** 에이전트 선택 슬롯 (orchestrator-dashboard에서만 사용) */
   agentSelector?: ReactNode;
+  /** OAuth 토큰 프로필 선택 슬롯 (orchestrator-dashboard에서만 사용) */
+  oauthProfileSelector?: ReactNode;
   /** 제출 버튼 비활성 조건 추가 (nodeSelector 미선택 등) */
   submitDisabled?: boolean;
   /** 다이얼로그 타이틀 */
@@ -56,6 +58,7 @@ export function NewSessionDialog({
   folderSelector,
   nodeSelector,
   agentSelector,
+  oauthProfileSelector,
   submitDisabled = false,
   title = "New Session",
   subtitle,
@@ -171,6 +174,9 @@ export function NewSessionDialog({
 
           {/* Agent selector slot */}
           {agentSelector && <div className="mb-3">{agentSelector}</div>}
+
+          {/* OAuth profile selector slot */}
+          {oauthProfileSelector && <div className="mb-3">{oauthProfileSelector}</div>}
 
           {/* Prompt textarea */}
           <textarea
