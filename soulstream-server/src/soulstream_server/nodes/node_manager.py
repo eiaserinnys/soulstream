@@ -98,7 +98,17 @@ class NodeManager:
         else:
             await self._fetch_agent_profiles(node, host, port)
 
-        await self._fetch_user_info(node, host, port)
+        # 사용자 정보: 등록 메시지에 포함된 경우 우선 사용 (에이전트 프로필과 동일 패턴)
+        user_info = registration.get("user", {})
+        if user_info:
+            node.set_user_info(user_info)
+            logger.info(
+                "사용자 정보 등록 메시지에서 로드: node=%s, name=%s",
+                node_id, user_info.get("name"),
+            )
+        else:
+            # HTTP 폴백: 구 버전 soul-server 호환 또는 메시지에 user 없는 경우
+            await self._fetch_user_info(node, host, port)
 
         await self._emit_change("node_registered", node_id, node.to_info())
         return node

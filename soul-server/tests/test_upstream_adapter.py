@@ -729,3 +729,91 @@ class TestRegistration:
             assert "agents" in reg_msg
             # portrait_b64 없어야 함
             assert "portrait_b64" not in reg_msg["agents"][0]
+
+    @pytest.mark.asyncio
+    async def test_registration_includes_user_when_user_name_provided(self, tmp_path):
+        """user_name이 있으면 등록 메시지에 user 필드 포함."""
+        import base64
+
+        portrait_bytes = b"\x89PNGfakeuserportrait"
+        portrait_file = tmp_path / "user.png"
+        portrait_file.write_bytes(portrait_bytes)
+
+        adapter = _make_adapter()
+        adapter._user_name = "서소영"
+        adapter._user_portrait_path = str(portrait_file)
+
+        with patch.object(adapter, "_start_broadcast", AsyncMock()), \
+             patch.object(adapter, "_send_initial_sessions", AsyncMock()), \
+             patch.object(adapter, "_session", create=True) as mock_session:
+            mock_ws = MagicMock()
+            mock_ws.__aiter__ = MagicMock(return_value=iter([]))
+            mock_ws.closed = False
+            mock_ws.send_json = AsyncMock()
+            mock_session.ws_connect = AsyncMock(return_value=mock_ws)
+            adapter._session = mock_session
+            try:
+                await adapter._connect_and_serve()
+            except Exception:
+                pass
+
+        assert mock_ws.send_json.call_count > 0
+        reg_msg = mock_ws.send_json.call_args_list[0].args[0]
+        assert "user" in reg_msg
+        assert reg_msg["user"]["name"] == "서소영"
+        assert reg_msg["user"]["hasPortrait"] is True
+        assert "portrait_b64" in reg_msg["user"]
+        assert base64.b64decode(reg_msg["user"]["portrait_b64"]) == portrait_bytes
+
+    @pytest.mark.asyncio
+    async def test_registration_user_field_absent_when_no_user_name(self):
+        """user_name이 없으면 등록 메시지에 user 필드 포함되지 않는다."""
+        adapter = _make_adapter()
+        adapter._user_name = ""
+        adapter._user_portrait_path = ""
+
+        with patch.object(adapter, "_start_broadcast", AsyncMock()), \
+             patch.object(adapter, "_send_initial_sessions", AsyncMock()), \
+             patch.object(adapter, "_session", create=True) as mock_session:
+            mock_ws = MagicMock()
+            mock_ws.__aiter__ = MagicMock(return_value=iter([]))
+            mock_ws.closed = False
+            mock_ws.send_json = AsyncMock()
+            mock_session.ws_connect = AsyncMock(return_value=mock_ws)
+            adapter._session = mock_session
+            try:
+                await adapter._connect_and_serve()
+            except Exception:
+                pass
+
+        assert mock_ws.send_json.call_count > 0
+        reg_msg = mock_ws.send_json.call_args_list[0].args[0]
+        assert "user" not in reg_msg
+
+    @pytest.mark.asyncio
+    async def test_registration_user_without_portrait_path(self):
+        """user_name만 있고 portrait_path가 없으면 hasPortrait=False, portrait_b64 없음."""
+        adapter = _make_adapter()
+        adapter._user_name = "서소영"
+        adapter._user_portrait_path = ""
+
+        with patch.object(adapter, "_start_broadcast", AsyncMock()), \
+             patch.object(adapter, "_send_initial_sessions", AsyncMock()), \
+             patch.object(adapter, "_session", create=True) as mock_session:
+            mock_ws = MagicMock()
+            mock_ws.__aiter__ = MagicMock(return_value=iter([]))
+            mock_ws.closed = False
+            mock_ws.send_json = AsyncMock()
+            mock_session.ws_connect = AsyncMock(return_value=mock_ws)
+            adapter._session = mock_session
+            try:
+                await adapter._connect_and_serve()
+            except Exception:
+                pass
+
+        assert mock_ws.send_json.call_count > 0
+        reg_msg = mock_ws.send_json.call_args_list[0].args[0]
+        assert "user" in reg_msg
+        assert reg_msg["user"]["name"] == "서소영"
+        assert reg_msg["user"]["hasPortrait"] is False
+        assert "portrait_b64" not in reg_msg["user"]

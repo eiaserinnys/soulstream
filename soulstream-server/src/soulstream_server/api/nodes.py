@@ -5,6 +5,7 @@ Nodes API 라우터 — /api/nodes
 """
 
 import asyncio
+import base64
 import json
 import logging
 
@@ -116,12 +117,28 @@ def create_nodes_router(
     async def proxy_user_portrait(node_id: str):
         """사용자 portrait 이미지 프록시.
 
-        해당 노드의 soul-server /api/dashboard/portrait/user를 프록시한다.
+        캐시된 portrait_b64가 있으면 우선 서빙 (원격 노드 HTTP 불필요).
+        없으면 해당 노드의 soul-server /api/dashboard/portrait/user를 프록시한다.
         """
         node = node_manager.get_node(node_id)
         if not node:
             raise HTTPException(status_code=404, detail=f"노드를 찾을 수 없습니다: {node_id}")
 
+        # 캐시된 portrait_b64가 있으면 우선 서빙 (원격 노드 HTTP 불필요)
+        portrait_b64 = node.user_info.get("portrait_b64")
+        if portrait_b64:
+            try:
+                data = base64.b64decode(portrait_b64)
+                media_type = _detect_portrait_mime(data)
+                return Response(
+                    content=data,
+                    media_type=media_type,
+                    headers={"Cache-Control": "public, max-age=3600"},
+                )
+            except Exception:
+                logger.warning("user portrait_b64 디코딩 실패 (node=%s)", node_id)
+
+        # HTTP 폴백 (b64 없는 경우 — 구 버전 soul-server 또는 portrait_path 미설정)
         url = f"http://{node.host}:{node.port}/api/dashboard/portrait/user"
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
