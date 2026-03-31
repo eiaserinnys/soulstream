@@ -260,11 +260,10 @@ export function FolderContents({ onMoveSessions, onRenameSession, onLoadMore, ha
 
   const handleContextMenu = useCallback(
     (sessionId: string, e: React.MouseEvent) => {
-      if (!onRenameSession && !onMoveSessions) return;
       e.preventDefault();
       setContextMenu({ x: e.clientX, y: e.clientY, sessionId });
     },
-    [onRenameSession, onMoveSessions],
+    [],
   );
 
   const handleEditSubmit = useCallback(
