@@ -41,7 +41,6 @@ import {
   useServerStatus,
   DashboardShell,
   FolderTree,
-  FeedView,
   RightPanel,
   ChatView,
   initTheme,
@@ -49,6 +48,7 @@ import {
   ConnectionBadge,
   useSessionListProvider,
 } from "@seosoyoung/soul-ui";
+import { FeedView } from "./components/FeedView";
 import { useAppConfig } from "./config/AppConfigContext";
 
 export function OrchestratorDashboardLayout() {
