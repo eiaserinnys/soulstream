@@ -22,6 +22,7 @@ import type {
   CompleteEvent,
   ErrorEvent,
   UserMessageEvent,
+  SystemMessageEvent,
   InterventionSentEvent,
   CompactEvent,
   InputRequestEvent,
@@ -62,7 +63,7 @@ function extractLastUserContent(messages?: Array<{role: string; content: unknown
  * 반환된 노드는 아직 트리에 삽입되지 않았고, Map에도 등록되지 않았습니다.
  * placeInTree()가 트리 삽입과 Map 등록을 담당합니다.
  *
- * 생성형: user_message, intervention_sent, thinking, tool_start, complete, error, result, compact, input_request, assistant_message
+ * 생성형: user_message, system_message, intervention_sent, thinking, tool_start, complete, error, result, compact, input_request, assistant_message
  * 무시: subagent_start, subagent_stop (R4: 가상 노드 미생성)
  * 업데이트형 (null 반환): session, text_start/delta/end, tool_result
  */
@@ -78,6 +79,19 @@ export function createNodeFromEvent(
         completed: true,
         user: e.user ?? e.client_id ?? "llm-proxy",
         context: e.context,
+        agentInfo: e.source === "agent" ? {
+          source: e.source,
+          agent_node: e.agent_node,
+          agent_id: e.agent_id ?? null,
+          agent_name: e.agent_name ?? null,
+        } : undefined,
+      });
+    }
+
+    case "system_message": {
+      const e = event as SystemMessageEvent;
+      return makeNode(`system-msg-${eventId}`, "system_message", e.text, {
+        completed: true,
       });
     }
 
