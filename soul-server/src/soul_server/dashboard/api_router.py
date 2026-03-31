@@ -47,6 +47,7 @@ class CreateSessionBody(BaseModel):
     folderId: Optional[str] = None
     agentId: Optional[str] = None  # 에이전트 프로필 ID (AgentRegistry 조회 키)
     use_mcp: bool = True
+    attachmentPaths: Optional[list[str]] = None  # 세션 시작 전 업로드된 파일 절대 경로 목록
 
 
 class InterveneBody(BaseModel):
@@ -370,6 +371,19 @@ async def api_create_session(body: CreateSessionBody):
             },
         )
 
+    extra_context_items = None
+    if body.attachmentPaths:
+        extra_context_items = [
+            {
+                "key": "attached_files",
+                "label": "첨부 파일",
+                "content": (
+                    "다음 파일들이 첨부되었습니다. Read 도구로 내용을 확인하세요:\n"
+                    + "\n".join(f"- {p}" for p in body.attachmentPaths)
+                ),
+            }
+        ]
+
     try:
         task = await task_manager.create_task(
             prompt=body.prompt,
@@ -377,6 +391,7 @@ async def api_create_session(body: CreateSessionBody):
             use_mcp=body.use_mcp,
             folder_id=body.folderId,
             profile_id=body.agentId,
+            extra_context_items=extra_context_items,
         )
     except TaskConflictError:
         raise HTTPException(
