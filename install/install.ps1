@@ -328,10 +328,12 @@ if ($LASTEXITCODE -ne 0) {
     $hanielLogPath = Join-Path $installDir "logs\haniel-run.log"
     New-Item -ItemType Directory -Force -Path (Join-Path $installDir "logs") | Out-Null
     $env:PYTHONUTF8 = "1"
-    Start-Process -FilePath "haniel" -ArgumentList "run", $hanielYamlPath `
-        -RedirectStandardOutput $hanielLogPath `
-        -RedirectStandardError "$hanielLogPath.err" `
-        -NoNewWindow
+    # Use cmd.exe wrapper so stdout/stderr are captured to file while the process
+    # is fully detached (WindowStyle Hidden) and survives parent PowerShell exit.
+    # -NoNewWindow ties the child to the parent console session and kills it on exit.
+    Start-Process -FilePath "cmd.exe" `
+        -ArgumentList "/c", "set PYTHONUTF8=1 && haniel run `"$hanielYamlPath`" > `"$hanielLogPath`" 2>&1" `
+        -WindowStyle Hidden
     Write-Host "    Waiting for service to start... (log: $hanielLogPath)" -ForegroundColor DarkGray
     $maxWait = 60
     $elapsed = 0
