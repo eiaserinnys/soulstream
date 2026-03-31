@@ -40,11 +40,30 @@ soulstream/
 
 ### Standalone installer (Windows)
 
+**Interactive** — prompts for install path, workspace path, and port:
+
 ```powershell
 irm https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/install.ps1 | iex
 ```
 
-The installer checks prerequisites, installs [Haniel](https://github.com/eiaserinnys/haniel) as the process manager, clones this repo, sets up a Python venv, prompts for configuration, builds the dashboard, and registers a Windows service — all in one pass.
+**One-liner with defaults** — installs to `%USERPROFILE%\soulstream`, workspace at `%USERPROFILE%\workspace`, port 3105, no prompts:
+
+```powershell
+& ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/install.ps1'))) -NonInteractive
+```
+
+The installer checks prerequisites, installs [Haniel](https://github.com/eiaserinnys/haniel) as the process manager, clones this repo, sets up a Python venv, builds the dashboard, and registers a Windows service — all in one pass.
+
+**Parameters**
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `-InstallDir` | `%USERPROFILE%\soulstream` | Installation directory |
+| `-WorkspaceDir` | `%USERPROFILE%\workspace` | Claude Code workspace directory |
+| `-Port` | `3105` | Server port |
+| `-NonInteractive` | — | Skip all prompts, use defaults |
+| `-Force` | — | Overwrite existing installation without confirmation |
+| `-SkipDashboard` | — | Skip dashboard build step |
 
 ### Manual setup
 
@@ -72,15 +91,18 @@ pnpm run dev
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `WORKSPACE_DIR` | *(required)* | Claude Code working directory |
-| `SOULSTREAM_NODE_ID` | *(required)* | Unique node identifier |
+| `SOULSTREAM_NODE_ID` | `standalone` ¹ | Unique node identifier |
 | `SOUL_DASHBOARD_CACHE_DIR` | *(required)* | Dashboard session cache directory |
 | `PORT` | `3105` | Server port |
 | `HOST` | `0.0.0.0` | Server host |
 | `ENVIRONMENT` | `development` | `development` or `production` |
-| `AUTH_BEARER_TOKEN` | *(none)* | API bearer token (leave empty to disable auth) |
-| `SOUL_DASHBOARD_DIR` | `dist/client` | Path to built dashboard files |
-| `DATABASE_URL` | *(none)* | PostgreSQL URL (SQLite used if unset) |
+| `AUTH_BEARER_TOKEN` | *(empty — auth disabled)* | API bearer token |
+| `SOUL_DASHBOARD_DIR` | `dist/client` ² | Path to built dashboard files |
+| `DATABASE_URL` | *(empty — SQLite used)* | PostgreSQL URL |
 | `MAX_CONCURRENT_SESSIONS` | `3` | Maximum parallel Claude Code sessions |
+
+¹ Standalone installer default. Without the installer, this variable is required.  
+² Standalone installer sets this to `<install-dir>/soulstream/unified-dashboard/dist`.
 
 See `soul-server/.env.example` for the full list.
 
