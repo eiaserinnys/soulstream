@@ -452,6 +452,46 @@ class TestFinalizeTask:
         )
         assert task is not None
 
+    async def test_finalize_auto_resumes_completed_caller(self, manager):
+        """caller 세션이 completed 상태일 때 child 완료 시 start_execution()이 호출된다.
+
+        버그 재현: finalize_task()에서 add_intervention()의 반환값을 무시하면
+        DB는 RUNNING이지만 Claude Code가 실행되지 않는 zombie 상태가 된다.
+        """
+        from unittest.mock import patch
+
+        # caller 세션을 먼저 완료 상태로 만든다
+        await manager.create_task(prompt="parent work", agent_session_id="sess-caller")
+        await manager.finalize_task("sess-caller", result="parent done")
+
+        caller_task = manager._tasks.get("sess-caller")
+        assert caller_task.status.value == "completed"
+
+        # child 세션 생성 (caller_session_id = "sess-caller")
+        await manager.create_task(
+            prompt="child work",
+            agent_session_id="sess-child",
+            caller_session_id="sess-caller",
+        )
+
+        # start_execution을 mock으로 교체하여 호출 여부 추적
+        start_exec_calls = []
+
+        async def mock_start_execution(agent_session_id, claude_runner, resource_manager):
+            start_exec_calls.append(agent_session_id)
+            return True
+
+        with patch.object(manager, "start_execution", mock_start_execution):
+            await manager.finalize_task("sess-child", result="child done")
+
+        # completed였던 caller 세션에 start_execution이 호출되어야 한다
+        assert "sess-caller" in start_exec_calls, (
+            "start_execution should be called for the completed caller session. "
+            "Without this, DB is RUNNING but Claude Code never executes (zombie state)."
+        )
+        # caller 세션 상태가 RUNNING으로 전환되어야 한다
+        assert caller_task.status.value == "running"
+
 
 class TestIntervention:
     async def test_add_intervention_running(self, manager):
