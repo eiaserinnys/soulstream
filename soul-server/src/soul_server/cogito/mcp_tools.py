@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
@@ -41,6 +41,7 @@ cogito_mcp = FastMCP("soulstream")
 
 _brief_composer: BriefComposer | None = None
 _manifest_path: str | None = None
+_orch_base: str | None = None  # multi-node 모드에서 init_multi_node_tools()가 설정
 
 
 def init(brief_composer: BriefComposer, manifest_path: str) -> None:
@@ -287,6 +288,82 @@ async def list_sessions(
         "sessions": sessions,
         "next_cursor": cursor + limit if has_more else None,
     }
+
+
+@cogito_mcp.tool()
+async def list_local_agents() -> dict:
+    """현재 노드에서 사용 가능한 에이전트 목록 반환."""
+    # 순환 참조 방지를 위해 지연 import
+    # get_agent_registry()는 미초기화 시 RuntimeError를 던짐 (main.py L73~77)
+    from soul_server.main import get_agent_registry
+    try:
+        registry = get_agent_registry()
+    except RuntimeError:
+        return {"agents": []}
+    return {
+        "agents": [
+            {"id": p.id, "name": p.name, "max_turns": p.max_turns}
+            for p in registry.list()
+        ]
+    }
+
+
+@cogito_mcp.tool()
+async def create_agent_session(
+    agent_id: Optional[str],
+    prompt: str,
+    caller_session_id: Optional[str] = None,
+    folder_id: Optional[str] = None,
+) -> dict:
+    """현재 노드에 새 에이전트 세션을 생성한다. 비동기 (세션 ID만 반환).
+
+    Args:
+        agent_id: 에이전트 프로필 ID (None이면 기본 에이전트 사용)
+        prompt: 수행할 작업 프롬프트
+        caller_session_id: 발신 세션 ID (콜백용). 지정하면 수신 에이전트의 system_prompt에 포함됨.
+        folder_id: 세션을 배치할 폴더 ID (None이면 기본 배치)
+    """
+    task_manager = get_task_manager()
+    system = None
+    if caller_session_id:
+        system = (
+            f"[발신 세션: {caller_session_id}] "
+            "이 작업이 완료되면 reply_to_session 도구로 발신 세션에 결과를 전달할 수 있습니다."
+        )
+    task = await task_manager.create_task(
+        prompt=prompt,
+        profile_id=agent_id,
+        folder_id=folder_id,
+        system_prompt=system,
+    )
+    return {"agent_session_id": task.agent_session_id, "status": task.status.value}
+
+
+@cogito_mcp.tool()
+async def reply_to_session(target_session_id: str, message: str) -> dict:
+    """발신 세션에 결과/응답 메시지를 전달한다.
+
+    내부적으로 task_manager.add_intervention()을 사용하며,
+    세션 상태에 따라 동작이 다르다:
+    - Running/paused 세션: intervention queue에 추가
+    - 완료/유휴/에러 세션: 자동 resume하여 메시지 전달
+
+    로컬 세션에만 지원 (Phase 1). 크로스 노드는 Phase 2에서 확장.
+
+    Returns:
+        {"ok": True, "detail": ...} 또는 {"ok": False, "error": "..."}
+    """
+    task_manager = get_task_manager()
+    try:
+        result = await task_manager.add_intervention(
+            agent_session_id=target_session_id,
+            text=message,
+            user="agent",  # user는 기본값 없는 필수값 (HTTP API InterveneRequest.user와 다름)
+        )
+        return {"ok": True, "detail": result}
+    except Exception as local_err:
+        # Phase 2에서 _orch_base가 설정되면 크로스 노드 폴백이 여기에 추가됨
+        return {"ok": False, "error": str(local_err)}
 
 
 @cogito_mcp.tool()
@@ -713,6 +790,28 @@ async def delete_session(session_id: str) -> dict:
         return {"error": str(e)}
     await catalog_svc.delete_session(session_id)
     return {"ok": True, "session_id": session_id}
+
+
+def init_multi_node_tools(settings) -> None:
+    """multi-node 전용 툴을 cogito MCP에 등록하고 _orch_base를 설정한다.
+
+    SOULSTREAM_UPSTREAM_ENABLED=true일 때만 호출해야 한다.
+    이 함수를 호출하지 않으면 해당 툴들은 MCP 서버에 등록되지 않는다.
+
+    Phase 1: _orch_base 설정만 수행 (등록할 multi-node 툴 없음).
+    Phase 2: list_nodes, list_node_agents, create_remote_agent_session 툴이 추가됨.
+
+    내부에서 @cogito_mcp.tool()을 적용하면 이 함수 호출 시점에 등록이 이루어진다
+    (Python 데코레이터 실행 시점 원칙 + FastMCP 런타임 등록 지원).
+    """
+    global _orch_base
+    import re
+    # ws://host:port/ws/node → http://host:port
+    # wss://host:port/ws/node → https://host:port
+    url = settings.soulstream_upstream_url
+    url = re.sub(r'^wss://', 'https://', url)
+    url = re.sub(r'^ws://', 'http://', url)
+    _orch_base = re.sub(r'/ws/.*$', '', url)
 
 
 # ---------------------------------------------------------------------------

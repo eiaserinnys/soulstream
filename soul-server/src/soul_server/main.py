@@ -404,6 +404,8 @@ async def lifespan(app: FastAPI):
     upstream_adapter = None
     upstream_task = None
     if settings.soulstream_upstream_enabled:
+        from soul_server.cogito.mcp_tools import init_multi_node_tools
+        init_multi_node_tools(settings)  # _orch_base 설정 (Phase 2에서 multi-node 툴 등록 추가)
         from soul_server.upstream import UpstreamAdapter
 
         upstream_adapter = UpstreamAdapter(
