@@ -390,7 +390,7 @@ class TaskManager:
             else:
                 notify_text = f"❌ 에이전트 세션 오류 (ID: `{agent_session_id}`)\n\n{task_error or ''}"
             try:
-                await self.add_intervention(
+                intervention_result = await self.add_intervention(
                     agent_session_id=caller_session_id_to_notify,
                     text=notify_text,
                     user="agent",
@@ -399,6 +399,23 @@ class TaskManager:
                     f"Completion notification sent to caller {caller_session_id_to_notify} "
                     f"from {agent_session_id}"
                 )
+                # caller session이 이미 completed 상태였다면 add_intervention()이
+                # create_task()로 RUNNING으로 전환하고 auto_resumed=True를 반환한다.
+                # 이 경우 start_execution()을 호출해야 Claude Code가 실제로 실행된다.
+                # (api_intervene()과 동일한 패턴 — 반환값을 무시하면 DB만 RUNNING이고
+                #  실제 실행이 없는 zombie 상태가 된다.)
+                if intervention_result.get("auto_resumed"):
+                    from soul_server.service.resource_manager import resource_manager as _rm
+                    from soul_server.service.engine_adapter import get_soul_engine as _get_engine
+                    await self.start_execution(
+                        agent_session_id=caller_session_id_to_notify,
+                        claude_runner=_get_engine(),
+                        resource_manager=_rm,
+                    )
+                    logger.info(
+                        f"Auto-resumed caller session {caller_session_id_to_notify} "
+                        f"after child {agent_session_id} completed"
+                    )
             except Exception as local_err:
                 logger.warning(
                     f"Local notification to caller {caller_session_id_to_notify} failed: {local_err}",
