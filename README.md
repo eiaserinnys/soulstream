@@ -1,6 +1,27 @@
 # Soulstream
 
-Soulstream is a server that hosts Claude Code sessions remotely. It manages session lifecycle, SSE streaming, credential management, and runner pool warm-up — exposing Claude Code as a service that Slack bots and other clients can connect to over HTTP/SSE.
+![Soulstream](soulstream.jpg)
+
+**Run Claude Code as a service.** Point your Slack bot, Discord bot, or any HTTP client
+at Soulstream and it handles the rest — session lifecycle, SSE streaming, multi-turn
+conversations, credential rotation, and a built-in dashboard.
+
+No Claude SDK in your bot. No process management. Just HTTP.
+
+## Multi-agent
+
+Define multiple agents, each with its own workspace and `CLAUDE.md` instructions.
+Route requests to a specific agent by name — your Slack bot talks to one agent,
+your Discord bot to another, each operating in a fully isolated environment.
+
+```json
+// POST /sessions  →  { "agent_id": "my-agent", "prompt": "..." }
+```
+
+Agent definitions live in the server config. Each agent gets:
+- Its own `workspace_dir` (Claude Code's working directory)
+- Its own `CLAUDE.md` (instructions, tools, persona)
+- Its own credential profile (independent Claude account / API key)
 
 ## Repository layout
 
@@ -46,34 +67,6 @@ pnpm install
 pnpm run dev
 ```
 
-## Architecture: dual storage mode
-
-### File mode (default)
-
-```
-SERENDIPITY_ENABLED=false
-```
-
-Session data is stored on the local filesystem. No external dependencies.
-
-### Serendipity mode
-
-```
-SERENDIPITY_ENABLED=true
-SERENDIPITY_URL=http://localhost:4002
-```
-
-Session data is stored in [Serendipity](https://github.com/eiaserinnys/serendipity) using a block-based hierarchy. Metadata (title, category labels, date tags) is generated automatically.
-
-| SSE event | Block type | Description |
-|-----------|------------|-------------|
-| prompt (first) | `soul:user` | User prompt |
-| `text_delta` | `soul:response` | Claude response text |
-| `tool_start` | `soul:tool-call` | Tool call start |
-| `tool_result` | `soul:tool-result` | Tool execution result |
-| `intervention_sent` | `soul:intervention` | User intervention |
-| `error` | `soul:system` | System error |
-
 ## Environment variables
 
 | Variable | Default | Description |
@@ -86,8 +79,6 @@ Session data is stored in [Serendipity](https://github.com/eiaserinnys/serendipi
 | `ENVIRONMENT` | `development` | `development` or `production` |
 | `AUTH_BEARER_TOKEN` | *(none)* | API bearer token (leave empty to disable auth) |
 | `SOUL_DASHBOARD_DIR` | `dist/client` | Path to built dashboard files |
-| `SERENDIPITY_ENABLED` | `true` | Enable Serendipity storage mode |
-| `SERENDIPITY_URL` | `http://localhost:4002` | Serendipity API URL |
 | `DATABASE_URL` | *(none)* | PostgreSQL URL (SQLite used if unset) |
 | `MAX_CONCURRENT_SESSIONS` | `3` | Maximum parallel Claude Code sessions |
 
@@ -96,3 +87,13 @@ See `soul-server/.env.example` for the full list.
 ## Building a bot client
 
 See **[docs/bot-client-api.md](docs/bot-client-api.md)** for the complete HTTP/SSE API reference for Slack bots, Discord bots, and other clients.
+
+## MCP server
+
+Soulstream ships with a built-in MCP server. Claude Code sessions can connect to it and use tools to inspect service capabilities, search past session history, manage folders, and more — without leaving the session.
+
+See **[docs/mcp.md](docs/mcp.md)** for the full tool reference and connection instructions.
+
+## Authentication setup
+
+See **[docs/google-auth.md](docs/google-auth.md)** for configuring Google OAuth (dashboard login) and connecting a Claude.ai account for running sessions.
