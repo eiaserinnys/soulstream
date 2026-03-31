@@ -104,29 +104,10 @@ jobs:
           }
           Write-Host "SQLite DB found: $dbPath"
 
-          $folderId  = $folder.id
-          $sessionId = $session.agentSessionId
-          $py = @"
-import sqlite3, sys
-db = sqlite3.connect(r'$dbPath')
-cur = db.cursor()
-
-cur.execute("SELECT id, name FROM folders WHERE id=?", ('$folderId',))
-frow = cur.fetchone()
-if not frow:
-    print("FAIL: folder not in DB", file=sys.stderr)
-    sys.exit(1)
-print(f"  folder  OK : id={frow[0]}  name={frow[1]}")
-
-cur.execute("SELECT session_id, status, folder_id FROM sessions WHERE session_id=?", ('$sessionId',))
-srow = cur.fetchone()
-if not srow:
-    print("FAIL: session not in DB", file=sys.stderr)
-    sys.exit(1)
-print(f"  session OK : id={srow[0]}  status={srow[1]}  folder_id={srow[2]}")
-db.close()
-"@
-          python -c $py
+          python .github\scripts\verify_db.py `
+            --db       $dbPath `
+            --folder-id  $folder.id `
+            --session-id $session.agentSessionId
           if ($LASTEXITCODE -ne 0) {
             Write-Error "SQLite verification failed"
             exit 1
