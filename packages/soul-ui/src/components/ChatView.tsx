@@ -249,20 +249,36 @@ const UserMessage = memo(function UserMessage({ msg, llmContext }: { msg: ChatMe
   const userConfig = config?.user;
 
   const isLlm = llmContext?.isLlm ?? false;
-  const displayName = isLlm
-    ? "USER"
-    : userConfig && userConfig.name !== "USER"
-      ? `${userConfig.name}`
-      : "User";
-  const displayId = isLlm ? null : userConfig?.id ? `${userConfig.id}` : null;
-  const hasPortrait = isLlm ? false : userConfig?.hasPortrait ?? false;
+  const isAgent = !!msg.agentInfo;
+
+  // 에이전트 발신: agentInfo에서 이름 추출
+  const agentDisplayName = isAgent
+    ? msg.agentInfo!.agent_name ?? msg.agentInfo!.agent_id ?? "Agent"
+    : null;
+  const agentDisplayId = isAgent
+    ? `${agentDisplayName}@${msg.agentInfo!.agent_node}`
+    : null;
+  const agentPortraitUrl = isAgent && msg.agentInfo!.agent_id
+    ? `/api/nodes/${msg.agentInfo!.agent_node}/agents/${msg.agentInfo!.agent_id}/portrait`
+    : null;
+
+  const displayName = isAgent
+    ? agentDisplayName ?? "Agent"
+    : isLlm
+      ? "USER"
+      : userConfig && userConfig.name !== "USER"
+        ? `${userConfig.name}`
+        : "User";
+  const displayId = isAgent ? agentDisplayId : isLlm ? null : userConfig?.id ? `${userConfig.id}` : null;
+  const hasPortrait = isAgent ? !!agentPortraitUrl : isLlm ? false : userConfig?.hasPortrait ?? false;
 
   return (
     <div className="flex gap-2 px-3 py-1.5" data-tree-node-id={msg.treeNodeId}>
       <ProfileAvatar
         role="user"
         hasPortrait={hasPortrait}
-        fallbackEmoji={"\u{1F464}"}
+        fallbackEmoji={isAgent ? "\u{1F916}" : "\u{1F464}"}
+        portraitUrl={agentPortraitUrl}
       />
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-1.5 mb-0.5">
@@ -280,6 +296,31 @@ const UserMessage = memo(function UserMessage({ msg, llmContext }: { msg: ChatMe
         </div>
         {msg.contextItems && msg.contextItems.length > 0 && (
           <ContextBlock items={msg.contextItems} />
+        )}
+      </div>
+    </div>
+  );
+});
+
+/** system_message 노드: 시스템 프롬프트 접기/펼치기 */
+const SystemPromptMessage = memo(function SystemPromptMessage({ msg }: { msg: ChatMessage }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="flex gap-2 px-3 py-1" data-tree-node-id={msg.treeNodeId}>
+      <span className="w-8 shrink-0" />
+      <div className="flex-1 min-w-0">
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="text-[13px] text-muted-foreground hover:text-foreground flex items-center gap-1.5"
+        >
+          <span className="text-[11px]">{expanded ? "\u25BC" : "\u25B6"}</span>
+          <span>{"\u2699\uFE0F"}</span>
+          <span className="font-medium">시스템 프롬프트</span>
+        </button>
+        {expanded && (
+          <pre className="text-[12px] text-muted-foreground bg-input rounded px-2 py-1.5 mt-1 whitespace-pre-wrap break-words overflow-auto max-h-60 font-mono">
+            {msg.content}
+          </pre>
         )}
       </div>
     </div>
@@ -622,6 +663,8 @@ const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, session
       return <ToolMessage msg={msg} />;
     case "system":
       return <SystemMessage msg={msg} />;
+    case "system_message":
+      return <SystemPromptMessage msg={msg} />;
     case "input_request":
       return sessionId ? <ChatInputRequest msg={msg} sessionId={sessionId} /> : null;
     default:
