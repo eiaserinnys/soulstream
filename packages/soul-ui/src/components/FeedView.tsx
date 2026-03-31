@@ -70,12 +70,14 @@ export function FeedView({ onNewSession, onLoadMore, hasMore, onRenameSession, o
   useEffect(() => {
     if (viewMode !== "feed") return;
     if (activeSessionKey) {
-      // activeSessionKey가 sessions 배열에 존재하는지 확인
-      const existsInSessions = sessions.some(
+      // activeSessionKey가 피드 세션 목록에 존재하는지 확인.
+      // 주기적 리프레시로 sessions 배열이 교체되어도 피드에 여전히 보이는 세션은 선택을 유지한다.
+      // (sessions 전체가 아닌 feedSessions 기준으로 체크해야 리프레시 시 선택이 초기화되지 않는다)
+      const existsInFeed = feedSessions.some(
         (s) => s.agentSessionId === activeSessionKey,
       );
-      if (!existsInSessions) {
-        // 세션이 삭제됨 → 피드 첫 세션 선택
+      if (!existsInFeed) {
+        // 세션이 피드에서 사라짐 (삭제되었거나 24시간 윈도우 밖으로 밀림) → 피드 첫 세션 선택
         if (firstFeedId) {
           setActiveSession(firstFeedId);
         } else {
@@ -88,7 +90,7 @@ export function FeedView({ onNewSession, onLoadMore, hasMore, onRenameSession, o
     if (firstFeedId) {
       setActiveSession(firstFeedId);
     }
-  }, [viewMode, activeSessionKey, firstFeedId, sessions, setActiveSession, clearActiveSession]);
+  }, [viewMode, activeSessionKey, firstFeedId, feedSessions, setActiveSession, clearActiveSession]);
 
   // 가상 스크롤
   const parentRef = useRef<HTMLDivElement>(null);
