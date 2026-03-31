@@ -678,6 +678,7 @@ export interface SessionDeletedStreamEvent {
 /** 폴더 설정 */
 export interface FolderSettings {
   excludeFromFeed?: boolean;
+  folderPrompt?: string;  // 새 세션 시작 시 컨텍스트에 주입할 지시사항
 }
 
 /** 카탈로그 폴더 */
