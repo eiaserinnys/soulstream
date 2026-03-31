@@ -13,6 +13,9 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 30
 
+    env:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
