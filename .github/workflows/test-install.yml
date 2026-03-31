@@ -1,0 +1,89 @@
+name: Test Windows Installer
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'install/**'
+      - '.github/workflows/test-install.yml'
+  workflow_dispatch:
+
+jobs:
+  test-install:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Setup Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ~/.pnpm-store
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Run installer (non-interactive)
+        shell: pwsh
+        run: |
+          .\install\install.ps1 `
+            -NonInteractive `
+            -Force `
+            -InstallDir "C:\soulstream-test" `
+            -WorkspaceDir "C:\workspace-test" `
+            -Port 3105
+
+      - name: Verify service health
+        shell: pwsh
+        run: |
+          $maxRetry = 10
+          $attempt = 0
+          $ok = $false
+          while ($attempt -lt $maxRetry) {
+            try {
+              $res = Invoke-RestMethod "http://localhost:3105/health" -TimeoutSec 3
+              Write-Host "Health check OK: $($res | ConvertTo-Json -Compress)"
+              $ok = $true
+              break
+            } catch {
+              Write-Host "Attempt $($attempt+1)/$maxRetry failed: $_"
+              Start-Sleep -Seconds 3
+              $attempt++
+            }
+          }
+          if (-not $ok) {
+            Write-Error "Service did not respond after $maxRetry attempts"
+            exit 1
+          }
+
+      - name: Print service info
+        shell: pwsh
+        run: |
+          Write-Host "=== Installation Summary ==="
+          Write-Host "Install dir : C:\soulstream-test"
+          Write-Host "Workspace   : C:\workspace-test"
+          Write-Host "Port        : 3105"
+          try {
+            $info = Invoke-RestMethod "http://localhost:3105/health"
+            Write-Host "Service     : UP"
+          } catch {
+            Write-Host "Service     : DOWN (health check failed)"
+          }
+          Write-Host "Dashboard   : C:\soulstream-test\soulstream\unified-dashboard\dist"
+          if (Test-Path "C:\soulstream-test\soulstream\unified-dashboard\dist\index.html") {
+            Write-Host "Dashboard build: OK"
+          } else {
+            Write-Host "Dashboard build: MISSING"
+          }
