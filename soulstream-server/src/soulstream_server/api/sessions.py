@@ -40,11 +40,13 @@ class CreateSessionRequest(BaseModel):
     system_prompt: Optional[str] = None
     oauth_profile_name: Optional[str] = None
     caller_session_id: Optional[str] = None
+    attachmentPaths: Optional[list[str]] = None
 
 
 class InterveneRequest(BaseModel):
     text: str
     user: str = ""
+    attachmentPaths: Optional[list[str]] = None
 
 
 class RespondRequest(BaseModel):
@@ -327,7 +329,10 @@ def create_sessions_router(
         """개입 메시지 전송."""
         node = await _find_node(session_id)
         try:
-            result = await node.send_intervene(session_id, body.text, body.user)
+            result = await node.send_intervene(
+                session_id, body.text, body.user,
+                attachment_paths=body.attachmentPaths,
+            )
             return result
         except (WebSocketDisconnect, ConnectionError) as e:
             # 노드 WebSocket 연결이 끊어진 경우 → 503 (클라이언트가 재시도 가능)

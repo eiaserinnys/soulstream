@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from soul_common.catalog.catalog_service import CatalogService
 from soul_common.db.session_db import PostgresSessionDB
 
+from soulstream_server.api.attachments import create_attachments_router
 from soulstream_server.api.catalog import create_catalog_router
 from soulstream_server.api.folders import create_folders_router
 from soulstream_server.api.nodes import create_nodes_router
@@ -132,6 +133,7 @@ async def lifespan(app: FastAPI):
     app.include_router(create_nodes_router(node_manager, broadcaster))
     app.include_router(create_folders_router(catalog_service))
     app.include_router(create_catalog_router(catalog_service, db, node_manager))
+    app.include_router(create_attachments_router(node_manager))
 
     # Auth 라우터
     if settings.is_auth_enabled:

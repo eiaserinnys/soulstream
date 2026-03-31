@@ -158,6 +158,7 @@ class NodeConnection:
         system_prompt: str | None = None,
         oauth_profile_name: str | None = None,
         caller_session_id: str | None = None,
+        attachment_paths: list[str] | None = None,
     ) -> dict:
         payload: dict[str, Any] = {"prompt": prompt}
         if session_id:
@@ -178,15 +179,33 @@ class NodeConnection:
             payload["oauth_profile_name"] = oauth_profile_name
         if caller_session_id is not None:
             payload["caller_session_id"] = caller_session_id
+        if attachment_paths:
+            # soul-server upstream/adapter.py가 extra_context_items=cmd.get("extra_context_items")로
+            # 처리하므로 여기서 변환한다. adapter.py 수정 불필요 (create_session 경로).
+            # 변환 책임은 soul-server WS 프로토콜을 아는 node_connection.py에 있다.
+            payload["extra_context_items"] = [{
+                "key": "attached_files",
+                "label": "첨부 파일",
+                "content": (
+                    "다음 파일들이 첨부되었습니다. Read 도구로 내용을 확인하세요:\n"
+                    + "\n".join(f"- {p}" for p in attachment_paths)
+                ),
+            }]
         return await self._send_command(CMD_CREATE_SESSION, payload)
 
     async def send_intervene(
-        self, session_id: str, text: str, user: str = ""
+        self,
+        session_id: str,
+        text: str,
+        user: str = "",
+        attachment_paths: list[str] | None = None,
     ) -> dict:
-        return await self._send_command(
-            CMD_INTERVENE,
-            {"agentSessionId": session_id, "text": text, "user": user},
-        )
+        payload: dict[str, Any] = {"agentSessionId": session_id, "text": text, "user": user}
+        if attachment_paths:
+            # soul-server adapter.py _handle_intervene이 cmd.get("attachment_paths")로 처리한다.
+            # (Phase 1에서 _handle_intervene에 attachment_paths 지원이 추가됨)
+            payload["attachment_paths"] = attachment_paths
+        return await self._send_command(CMD_INTERVENE, payload)
 
     async def send_respond(
         self, session_id: str, request_id: str, answers: dict
