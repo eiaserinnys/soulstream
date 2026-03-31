@@ -65,6 +65,8 @@ class UpstreamAdapter:
         host: str = "",
         port: int = 0,
         agent_registry: "AgentRegistry | None" = None,
+        user_name: str = "",
+        user_portrait_path: str = "",
     ) -> None:
         self._tm = task_manager
         self._engine = soul_engine
@@ -76,6 +78,8 @@ class UpstreamAdapter:
         self._host = host
         self._port = port
         self._agent_registry = agent_registry
+        self._user_name = user_name
+        self._user_portrait_path = user_portrait_path
 
         self._ws: aiohttp.ClientWebSocketResponse | None = None
         self._session: aiohttp.ClientSession | None = None
@@ -190,6 +194,28 @@ class UpstreamAdapter:
                         logger.warning("portrait 파일 읽기 실패: %s", profile.portrait_path)
                 agents.append(agent_info)
             registration_msg["agents"] = agents
+
+        # 사용자 정보 포함 — portrait는 base64로 인코딩하여 원격 HTTP 조회 불필요 (에이전트 프로필과 동일)
+        if self._user_name:
+            user_info: dict = {
+                "name": self._user_name,
+                "hasPortrait": bool(self._user_portrait_path),
+            }
+            if self._user_portrait_path:
+                try:
+                    with open(self._user_portrait_path, "rb") as f:
+                        data = f.read()
+                    if len(data) > _MAX_PORTRAIT_SIZE:
+                        logger.warning(
+                            "user portrait 파일이 너무 큼, base64 스킵: %s (%d bytes)",
+                            self._user_portrait_path,
+                            len(data),
+                        )
+                    else:
+                        user_info["portrait_b64"] = base64.b64encode(data).decode("ascii")
+                except Exception:
+                    logger.warning("user portrait 파일 읽기 실패: %s", self._user_portrait_path)
+            registration_msg["user"] = user_info
 
         await self._send(registration_msg)
 

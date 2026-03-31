@@ -253,8 +253,30 @@ class TestFindAgentProfile:
 class TestUserInfo:
     """사용자 정보 조회 테스트."""
 
-    async def test_fetch_user_info_called_on_registration(self, manager, mock_ws):
-        """register_node 시 _fetch_user_info가 호출된다."""
+    async def test_user_in_registration_sets_user_info(self, manager, mock_ws):
+        """등록 메시지에 user 포함 시 user_info가 설정되고 HTTP 조회는 생략된다."""
+        reg = make_registration("n1")
+        reg["user"] = {"name": "WS유저", "hasPortrait": False}
+
+        with patch.object(manager, "_fetch_user_info", new=AsyncMock()) as mock_fetch:
+            node = await manager.register_node(mock_ws, reg)
+            mock_fetch.assert_not_called()
+
+        assert node.user_info.get("name") == "WS유저"
+
+    async def test_user_with_portrait_b64_in_registration(self, manager, mock_ws):
+        """등록 메시지에 portrait_b64 포함 시 user_info에 그대로 저장된다."""
+        portrait_bytes = b"\x89PNGfakedata"
+        portrait_b64 = base64.b64encode(portrait_bytes).decode("ascii")
+        reg = make_registration("n1")
+        reg["user"] = {"name": "WS유저", "hasPortrait": True, "portrait_b64": portrait_b64}
+
+        node = await manager.register_node(mock_ws, reg)
+
+        assert node.user_info.get("portrait_b64") == portrait_b64
+
+    async def test_user_absent_falls_back_to_http(self, manager, mock_ws):
+        """등록 메시지에 user 없으면 _fetch_user_info HTTP 조회가 호출된다."""
         with patch.object(
             manager, "_fetch_user_info", new=AsyncMock()
         ) as mock_fetch:

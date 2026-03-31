@@ -129,6 +129,42 @@ class TestPortraitProxy:
 class TestUserPortraitProxy:
     """사용자 portrait 프록시 테스트."""
 
+    async def test_user_portrait_b64_cache_hit_returns_bytes(self, client, node_manager):
+        """user_info에 portrait_b64가 있으면 HTTP 없이 바로 반환한다."""
+        import base64
+
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+        node = await node_manager.register_node(ws, {
+            "node_id": "n1", "host": "localhost", "port": 9999,
+        })
+        portrait_bytes = b"\x89PNGfakeuserportrait"
+        portrait_b64 = base64.b64encode(portrait_bytes).decode("ascii")
+        node.set_user_info({"name": "유저", "hasPortrait": True, "portrait_b64": portrait_b64})
+
+        resp = await client.get("/api/nodes/n1/user/portrait")
+
+        assert resp.status_code == 200
+        assert resp.content == portrait_bytes
+        assert resp.headers["content-type"].startswith("image/png")
+
+    async def test_user_portrait_b64_cache_miss_proxies_http(self, client, node_manager):
+        """user_info에 portrait_b64가 없으면 soul-server HTTP 프록시 호출 — 연결 불가 시 502."""
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+        node = await node_manager.register_node(ws, {
+            "node_id": "n1", "host": "localhost", "port": 9999,
+        })
+        # portrait_b64 없는 user_info
+        node.set_user_info({"name": "유저", "hasPortrait": True})
+
+        resp = await client.get("/api/nodes/n1/user/portrait")
+
+        # 9999 포트에 서버 없음 → 연결 실패 → 502
+        assert resp.status_code in (502, 503, 504)
+
     async def test_user_portrait_proxies_http(self, client, node_manager):
         """user portrait 요청 시 soul-server HTTP 프록시 호출 — 연결 불가 시 502."""
         ws = AsyncMock()
