@@ -170,11 +170,10 @@ export function FeedView({ onNewSession, onLoadMore, hasMore, onRenameSession, o
 
   const handleContextMenu = useCallback(
     (sessionId: string, e: React.MouseEvent) => {
-      if (!onRenameSession && !onMoveSessions) return;
       e.preventDefault();
       setContextMenu({ x: e.clientX, y: e.clientY, sessionId });
     },
-    [onRenameSession, onMoveSessions],
+    [],
   );
 
   const getSessionName = useCallback(
