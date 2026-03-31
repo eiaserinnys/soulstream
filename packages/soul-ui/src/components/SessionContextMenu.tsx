@@ -2,7 +2,7 @@
  * SessionContextMenu - 세션 우클릭 컨텍스트 메뉴 공통 컴포넌트
  *
  * FeedView, FolderContents 등에서 세션 우클릭 시 동일한 메뉴와 모달을 제공한다.
- * 이름 변경 · 폴더 이동 기능을 Modal Dialog 방식으로 처리한다.
+ * 세션 ID 복사 · 이름 변경 · 폴더 이동 기능을 제공한다.
  */
 
 import { useState, useCallback } from "react";
@@ -89,8 +89,6 @@ export function SessionContextMenu({
     await onMoveSessions(sessionIds, selectedFolderId);
   }, [onMoveSessions, moveFolderDialog]);
 
-  if (!onRenameSession && !onMoveSessions) return null;
-
   return (
     <>
       {/* 컨텍스트 메뉴 닫기 오버레이 */}
@@ -109,17 +107,29 @@ export function SessionContextMenu({
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onClick={(e) => e.stopPropagation()}
         >
+          <button
+            className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
+            onClick={() => {
+              navigator.clipboard.writeText(contextMenu.sessionId);
+              onClose();
+            }}
+          >
+            세션 ID 복사
+          </button>
           {onRenameSession && (
-            <button
-              className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
-              onClick={handleRenameClick}
-            >
-              이름 변경
-            </button>
+            <>
+              <div className="border-t border-border my-1" />
+              <button
+                className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
+                onClick={handleRenameClick}
+              >
+                이름 변경
+              </button>
+            </>
           )}
           {onMoveSessions && (
             <>
-              {onRenameSession && <div className="border-t border-border my-1" />}
+              <div className="border-t border-border my-1" />
               <button
                 className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
                 onClick={handleMoveClick}
