@@ -201,22 +201,10 @@ class TaskManager:
         sessions, total = await self._db.get_all_sessions(node_id=self._db.node_id)
 
         loaded = 0
-        zombies = 0
         for s in sessions:
             if s["status"] == TaskStatus.RUNNING.value:
-                # 좀비 세션 정리: was_running_at_shutdown=0인 running 세션은
-                # graceful shutdown 이전에 프로세스가 죽은 것이므로 completed로 전환
-                if not s.get("was_running_at_shutdown", 0):
-                    await self._db.update_session_status(
-                        s["session_id"],
-                        TaskStatus.COMPLETED.value,
-                    )
-                    zombies += 1
-                    continue
-
-                # was_running_at_shutdown=1인 running 세션: DB에서 interrupted로 전환 후 _tasks에 올림
-                # 이렇게 해야 startup resume 시 add_intervention이 auto_resumed=True 경로를 타서
-                # start_execution이 호출된다.
+                # 재시작 복구: was_running_at_shutdown 여부와 무관하게
+                # 서버 기동 시 RUNNING 세션은 모두 INTERRUPTED로 전환 → 재개 가능
                 try:
                     await self._db.update_session_status(
                         s["session_id"],
@@ -246,8 +234,6 @@ class TaskManager:
                 except (ValueError, KeyError) as e:
                     logger.warning(f"Failed to load session {s['session_id']}: {e}")
 
-        if zombies:
-            logger.info(f"Cleaned up {zombies} zombie sessions (running without shutdown flag)")
         if loaded:
             logger.info(f"Transitioned {loaded} shutdown sessions to interrupted status")
         logger.info(f"Loaded {loaded} running sessions from DB (total {total} in catalog)")
@@ -770,6 +756,17 @@ class TaskManager:
             task = await self._eviction_manager.load_evicted_task(self._db, agent_session_id)
             if not task:
                 raise TaskNotFoundError(f"Session not found: {agent_session_id}")
+            # 방어 코드: startup에서 처리 누락되거나 레이스컨디션으로 RUNNING 상태가
+            # 남아있을 경우 INTERRUPTED로 강제 전환하여 재개 가능하게 함
+            if task.status == TaskStatus.RUNNING:
+                logger.warning(
+                    f"Evicted task has RUNNING status: {agent_session_id}. "
+                    "Forcing to INTERRUPTED for safe resume."
+                )
+                task.status = TaskStatus.INTERRUPTED
+                await self._db.update_session_status(
+                    agent_session_id, TaskStatus.INTERRUPTED.value
+                )
 
         # 완료/에러/중단 → 자동 resume (같은 세션 재활성화)
         await self.create_task(
