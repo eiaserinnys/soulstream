@@ -93,7 +93,7 @@ export function OrchestratorDashboardLayout() {
     const refresh = async () => {
       try {
         const result = await orchestratorSessionProvider.fetchSessions();
-        useDashboardStore.getState().setSessions(result.sessions);
+        useDashboardStore.getState().setSessions(result.sessions, result.total);
       } catch {
         // 갱신 실패는 조용히 무시
       }
