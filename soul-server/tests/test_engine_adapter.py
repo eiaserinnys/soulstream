@@ -233,7 +233,8 @@ class TestSoulEngineAdapterCallbacks:
 
         async def fake_run(prompt, session_id=None, on_progress=None,
                            on_compact=None, on_intervention=None,
-                           on_session=None, on_event=None):
+                           on_session=None, on_event=None,
+                           extra_env=None):
             if on_progress:
                 await on_progress("진행 중...")
                 await on_progress("거의 완료...")
@@ -258,7 +259,8 @@ class TestSoulEngineAdapterCallbacks:
 
         async def fake_run(prompt, session_id=None, on_progress=None,
                            on_compact=None, on_intervention=None,
-                           on_session=None, on_event=None):
+                           on_session=None, on_event=None,
+                           extra_env=None):
             if on_compact:
                 await on_compact("auto", "컨텍스트 컴팩트 실행됨")
             return EngineResult(success=True, output="done")
@@ -282,7 +284,8 @@ class TestSoulEngineAdapterCallbacks:
 
         async def fake_run(prompt, session_id=None, on_progress=None,
                            on_compact=None, on_intervention=None,
-                           on_session=None, on_event=None):
+                           on_session=None, on_event=None,
+                           extra_env=None):
             if on_intervention:
                 result = await on_intervention()
                 if result:
@@ -339,7 +342,8 @@ class TestSoulEngineAdapterCallbacks:
 
         async def fake_run(prompt, session_id=None, on_progress=None,
                            on_compact=None, on_intervention=None,
-                           on_session=None, on_event=None):
+                           on_session=None, on_event=None,
+                           extra_env=None):
             if on_intervention:
                 result = await on_intervention()
                 if result:
@@ -547,7 +551,8 @@ class TestSoulEngineAdapterDebugEvent:
 
         async def fake_run(prompt, session_id=None, on_progress=None,
                            on_compact=None, on_intervention=None,
-                           on_session=None, on_event=None):
+                           on_session=None, on_event=None,
+                           extra_env=None):
             # debug_send_fn을 동기적으로 호출 (ClaudeRunner._debug()와 동일한 패턴)
             if captured_debug_fn:
                 captured_debug_fn("rate limit warning: 80% used")
@@ -582,7 +587,8 @@ class TestSoulEngineAdapterDebugEvent:
 
         async def fake_run(prompt, session_id=None, on_progress=None,
                            on_compact=None, on_intervention=None,
-                           on_session=None, on_event=None):
+                           on_session=None, on_event=None,
+                           extra_env=None):
             if captured_debug_fn:
                 captured_debug_fn("warning 1")
                 captured_debug_fn("warning 2")
@@ -783,7 +789,8 @@ class TestEngineEventConversion:
 
         async def fake_run(prompt, session_id=None, on_progress=None,
                            on_compact=None, on_intervention=None,
-                           on_session=None, on_event=None):
+                           on_session=None, on_event=None,
+                           extra_env=None):
             if on_event:
                 await on_event(TextDeltaEngineEvent(
                     text="모델이 응답 중...",
@@ -816,7 +823,8 @@ class TestEngineEventConversion:
 
         async def fake_run(prompt, session_id=None, on_progress=None,
                            on_compact=None, on_intervention=None,
-                           on_session=None, on_event=None):
+                           on_session=None, on_event=None,
+                           extra_env=None):
             if on_event:
                 await on_event(ToolStartEngineEvent(
                     tool_name="Read",
@@ -844,7 +852,8 @@ class TestEngineEventConversion:
 
         async def fake_run(prompt, session_id=None, on_progress=None,
                            on_compact=None, on_intervention=None,
-                           on_session=None, on_event=None):
+                           on_session=None, on_event=None,
+                           extra_env=None):
             if on_event:
                 await on_event(ToolResultEngineEvent(
                     tool_name="Bash",
@@ -874,7 +883,8 @@ class TestEngineEventConversion:
 
         async def fake_run(prompt, session_id=None, on_progress=None,
                            on_compact=None, on_intervention=None,
-                           on_session=None, on_event=None):
+                           on_session=None, on_event=None,
+                           extra_env=None):
             if on_event:
                 await on_event(ResultEngineEvent(
                     success=True,
@@ -903,7 +913,8 @@ class TestEngineEventConversion:
 
         async def fake_run(prompt, session_id=None, on_progress=None,
                            on_compact=None, on_intervention=None,
-                           on_session=None, on_event=None):
+                           on_session=None, on_event=None,
+                           extra_env=None):
             # 기존 on_progress (슬랙봇용)
             if on_progress:
                 await on_progress("작업 중...")
@@ -959,7 +970,8 @@ class TestThinkingEvent:
 
         async def fake_run(prompt, session_id=None, on_progress=None,
                            on_compact=None, on_intervention=None,
-                           on_session=None, on_event=None):
+                           on_session=None, on_event=None,
+                           extra_env=None):
             if on_event:
                 await on_event(ThinkingEngineEvent(
                     thinking="사용자가 무엇을 원하는지 분석 중...",
@@ -995,7 +1007,8 @@ class TestParentToolUseIdPropagation:
 
         async def fake_run(prompt, session_id=None, on_progress=None,
                            on_compact=None, on_intervention=None,
-                           on_session=None, on_event=None):
+                           on_session=None, on_event=None,
+                           extra_env=None):
             if on_event:
                 await on_event(ThinkingEngineEvent(
                     thinking="서브에이전트 내 사고",
@@ -1023,7 +1036,8 @@ class TestParentToolUseIdPropagation:
 
         async def fake_run(prompt, session_id=None, on_progress=None,
                            on_compact=None, on_intervention=None,
-                           on_session=None, on_event=None):
+                           on_session=None, on_event=None,
+                           extra_env=None):
             if on_event:
                 await on_event(TextDeltaEngineEvent(
                     text="서브에이전트 내 응답",
@@ -1050,7 +1064,8 @@ class TestParentToolUseIdPropagation:
 
         async def fake_run(prompt, session_id=None, on_progress=None,
                            on_compact=None, on_intervention=None,
-                           on_session=None, on_event=None):
+                           on_session=None, on_event=None,
+                           extra_env=None):
             if on_event:
                 await on_event(ToolStartEngineEvent(
                     tool_name="Read",
@@ -1078,7 +1093,8 @@ class TestParentToolUseIdPropagation:
 
         async def fake_run(prompt, session_id=None, on_progress=None,
                            on_compact=None, on_intervention=None,
-                           on_session=None, on_event=None):
+                           on_session=None, on_event=None,
+                           extra_env=None):
             if on_event:
                 await on_event(ToolResultEngineEvent(
                     tool_name="Read",
@@ -1107,7 +1123,8 @@ class TestParentToolUseIdPropagation:
 
         async def fake_run(prompt, session_id=None, on_progress=None,
                            on_compact=None, on_intervention=None,
-                           on_session=None, on_event=None):
+                           on_session=None, on_event=None,
+                           extra_env=None):
             if on_event:
                 await on_event(SubagentStartEngineEvent(
                     agent_id="agent-001",
@@ -1135,7 +1152,8 @@ class TestParentToolUseIdPropagation:
 
         async def fake_run(prompt, session_id=None, on_progress=None,
                            on_compact=None, on_intervention=None,
-                           on_session=None, on_event=None):
+                           on_session=None, on_event=None,
+                           extra_env=None):
             if on_event:
                 await on_event(ResultEngineEvent(
                     success=True,
@@ -1170,7 +1188,8 @@ class TestParentToolUseIdPropagation:
 
         async def fake_run(prompt, session_id=None, on_progress=None,
                            on_compact=None, on_intervention=None,
-                           on_session=None, on_event=None):
+                           on_session=None, on_event=None,
+                           extra_env=None):
             if on_event:
                 # parent_event_id 없이 이벤트 발행
                 await on_event(ThinkingEngineEvent(

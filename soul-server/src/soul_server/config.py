@@ -154,6 +154,9 @@ class Settings:
     # 에이전트 프로필 설정 (선택 사항 — 미설정 시 degraded mode)
     agents_config_file: str = ""
 
+    # OAuth 토큰 프로필 설정 (선택 사항 — 미설정 시 degraded mode)
+    oauth_tokens_config_file: str = ""
+
     # Dashboard profile (선택 사항 — 미설정 시 기본 이름 표시, 초상화 없음)
     # 어시스턴트 프로필은 agents.yaml(AgentRegistry)에서 관리. DASH_ASSISTANT_* 폐기.
     dash_user_name: str = "USER"
@@ -255,6 +258,7 @@ class Settings:
             dash_user_id=os.getenv("DASH_USER_ID", ""),
             dash_user_portrait=os.getenv("DASH_USER_PORTRAIT", ""),
             agents_config_file=os.getenv("AGENTS_CONFIG_FILE", ""),
+            oauth_tokens_config_file=os.getenv("OAUTH_TOKENS_CONFIG_FILE", ""),
         )
 
         settings.validate()
@@ -410,6 +414,7 @@ SETTINGS_REGISTRY: dict[str, SettingMeta] = {
     "sqlite_path": SettingMeta("SQLITE_PATH", "SQLite 경로", "SQLite DB 파일 경로 (로컬 모드. 비어있으면 {data_dir}/soulstream.db 자동 설정)", "database", "str", read_only=True),
     # --- agent ---
     "agents_config_file": SettingMeta("AGENTS_CONFIG_FILE", "에이전트 설정 파일", "agents.yaml 파일 경로 (미설정 시 에이전트 기능 비활성)", "agent", "str", read_only=True),
+    "oauth_tokens_config_file": SettingMeta("OAUTH_TOKENS_CONFIG_FILE", "OAuth 토큰 프로필 파일", "oauth_tokens.yaml 파일 경로 (미설정 시 프로필 기능 비활성)", "agent", "str", read_only=True),
     # --- paths (전부 read_only) ---
     "workspace_dir": SettingMeta("WORKSPACE_DIR", "워크스페이스 경로", "Claude Code 워크스페이스 디렉토리", "paths", "str", read_only=True),
     "claude_cli_dir": SettingMeta("CLAUDE_CLI_DIR", "Claude CLI 경로", "claude CLI 디렉토리 (PATH에 없는 경우)", "paths", "str", read_only=True),
