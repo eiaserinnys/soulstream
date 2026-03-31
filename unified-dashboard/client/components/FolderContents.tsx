@@ -6,7 +6,7 @@
 
 import { FolderContents as SoulUIFolderContents } from "@seosoyoung/soul-ui";
 import { moveSessionsOptimistic } from "client/lib/move-sessions";
-import { renameSessionOptimistic } from "@seosoyoung/soul-ui";
+import { renameSessionOptimistic } from "client/lib/rename-session";
 
 interface FolderContentsWrapperProps {
   onLoadMore?: () => void;

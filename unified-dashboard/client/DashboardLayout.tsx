@@ -21,7 +21,6 @@ import {
   reorderFoldersOptimistic,
 } from "./lib/folder-operations";
 import { moveSessionsOptimistic } from "./lib/move-sessions";
-import { renameSessionOptimistic } from "./lib/rename-session";
 import { computeIsOtherNode } from "./lib/node-guard";
 import { NewSessionModal } from "./components/NewSessionModal";
 import { ConfigButton } from "./components/ConfigButton";
@@ -42,7 +41,6 @@ import {
   useServerStatus,
   DashboardShell,
   FolderTree,
-  FeedView,
   RightPanel,
   ChatView,
   initTheme,
@@ -50,6 +48,7 @@ import {
   ConnectionBadge,
   useSessionListProvider,
 } from "@seosoyoung/soul-ui";
+import { FeedView } from "./components/FeedView";
 import { getSessionProvider } from "./providers";
 
 export function DashboardLayout() {
@@ -146,14 +145,13 @@ export function DashboardLayout() {
             onNewSession={() => openNewSessionModal("feed")}
             onLoadMore={loadMore}
             hasMore={hasMore}
-            onRenameSession={renameSessionOptimistic}
           />
         ) : (
           <>
             <SessionsTopBar />
             <VerticalSplitPane
               className="flex-1 overflow-hidden"
-              top={<FolderContents onLoadMore={loadMore} hasMore={hasMore} onMoveSessions={handleMoveSessions} />}
+              top={<FolderContents onLoadMore={loadMore} hasMore={hasMore} />}
               bottom={
                 <div className="flex-1 overflow-hidden h-full bg-muted/50 dark:bg-muted/30">
                   <NodeGraph />
@@ -188,12 +186,11 @@ export function DashboardLayout() {
             onNewSession={() => openNewSessionModal("feed")}
             onLoadMore={loadMore}
             hasMore={hasMore}
-            onRenameSession={renameSessionOptimistic}
           />
         ) : (
           <>
             <SessionsTopBar />
-            <FolderContents onLoadMore={loadMore} hasMore={hasMore} onMoveSessions={handleMoveSessions} />
+            <FolderContents onLoadMore={loadMore} hasMore={hasMore} />
           </>
         )
       }
