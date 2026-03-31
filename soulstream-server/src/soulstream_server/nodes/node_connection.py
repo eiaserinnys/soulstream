@@ -155,6 +155,7 @@ class NodeConnection:
         disallowed_tools: list[str] | None = None,
         use_mcp: bool | None = None,
         folder_id: str | None = None,
+        system_prompt: str | None = None,
     ) -> dict:
         payload: dict[str, Any] = {"prompt": prompt}
         if session_id:
@@ -169,6 +170,8 @@ class NodeConnection:
             payload["useMcp"] = use_mcp
         if folder_id is not None:
             payload["folderId"] = folder_id
+        if system_prompt is not None:
+            payload["systemPrompt"] = system_prompt
         return await self._send_command(CMD_CREATE_SESSION, payload)
 
     async def send_intervene(

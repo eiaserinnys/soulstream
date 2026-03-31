@@ -349,7 +349,7 @@ async def reply_to_session(target_session_id: str, message: str) -> dict:
     - Running/paused 세션: intervention queue에 추가
     - 완료/유휴/에러 세션: 자동 resume하여 메시지 전달
 
-    로컬 세션에만 지원 (Phase 1). 크로스 노드는 Phase 2에서 확장.
+    로컬 세션 실패 시 _orch_base가 설정되어 있으면 오케스트레이터 경유 폴백을 시도한다.
 
     Returns:
         {"ok": True, "detail": ...} 또는 {"ok": False, "error": "..."}
@@ -363,9 +363,19 @@ async def reply_to_session(target_session_id: str, message: str) -> dict:
         )
         return {"ok": True, "detail": result}
     except Exception as local_err:
-        # Phase 2에서 _orch_base가 설정되면 크로스 노드 폴백이 여기에 추가됨
         logger.warning("reply_to_session 로컬 실패: %s", local_err, exc_info=True)
-        return {"ok": False, "error": str(local_err)}
+        if _orch_base is None:
+            return {"ok": False, "error": str(local_err)}
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    f"{_orch_base}/api/sessions/{target_session_id}/intervene",
+                    json={"text": message, "user": "agent"},
+                )
+                resp.raise_for_status()
+                return {"ok": True, "detail": resp.json()}
+        except Exception as remote_err:
+            return {"ok": False, "error": f"local: {local_err}, remote: {remote_err}"}
 
 
 @cogito_mcp.tool()
@@ -800,8 +810,7 @@ def init_multi_node_tools(settings) -> None:
     SOULSTREAM_UPSTREAM_ENABLED=true일 때만 호출해야 한다.
     이 함수를 호출하지 않으면 해당 툴들은 MCP 서버에 등록되지 않는다.
 
-    Phase 1: _orch_base 설정만 수행 (등록할 multi-node 툴 없음).
-    Phase 2: list_nodes, list_node_agents, create_remote_agent_session 툴이 추가됨.
+    Phase 2: list_nodes, list_node_agents, create_remote_agent_session 툴 등록.
 
     내부에서 @cogito_mcp.tool()을 적용하면 이 함수 호출 시점에 등록이 이루어진다
     (Python 데코레이터 실행 시점 원칙 + FastMCP 런타임 등록 지원).
@@ -814,6 +823,66 @@ def init_multi_node_tools(settings) -> None:
     url = re.sub(r'^wss://', 'https://', url)
     url = re.sub(r'^ws://', 'http://', url)
     _orch_base = re.sub(r'/ws/.*$', '', url)
+
+    _settings = settings  # 클로저 캡처를 위해 로컬 변수에 바인딩
+
+    @cogito_mcp.tool()
+    async def list_nodes() -> dict:
+        """오케스트레이터에 연결된 노드 목록 반환."""
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(f"{_orch_base}/api/nodes")
+            resp.raise_for_status()
+            return resp.json()
+
+    @cogito_mcp.tool()
+    async def list_node_agents(node_id: str) -> dict:
+        """특정 노드에서 사용 가능한 에이전트 목록 반환."""
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(f"{_orch_base}/api/nodes/{node_id}/agents")
+            resp.raise_for_status()
+            return resp.json()
+
+    @cogito_mcp.tool()
+    async def create_remote_agent_session(
+        node_id: str,
+        agent_id: Optional[str],
+        prompt: str,
+        caller_session_id: Optional[str] = None,
+        folder_id: Optional[str] = None,
+    ) -> dict:
+        """다른 노드에 새 에이전트 세션을 생성한다. 비동기 (세션 ID만 반환).
+
+        오케스트레이터 POST /api/sessions에 nodeId를 포함하여 호출한다.
+
+        Args:
+            node_id: 대상 노드 ID
+            agent_id: 에이전트 프로필 ID (None이면 기본 에이전트 사용)
+            prompt: 수행할 작업 프롬프트
+            caller_session_id: 발신 세션 ID (콜백용). 지정하면 수신 에이전트의 system_prompt에 포함됨.
+            folder_id: 세션을 배치할 폴더 ID (None이면 기본 배치)
+        """
+        system = None
+        if caller_session_id:
+            node_id_self = _settings.soulstream_node_id if hasattr(_settings, "soulstream_node_id") else None
+            if node_id_self:
+                prefix = f"[발신 노드: {node_id_self}, 발신 세션: {caller_session_id}]"
+            else:
+                prefix = f"[발신 세션: {caller_session_id}]"
+            system = f"{prefix} 이 작업이 완료되면 reply_to_session 도구로 발신 세션에 결과를 전달할 수 있습니다."
+
+        body = {
+            "prompt": prompt,
+            "nodeId": node_id,
+            "profile": agent_id,
+            "folderId": folder_id,
+            "system_prompt": system,
+        }
+        # None 값 제거 (exclude_none 상당)
+        body = {k: v for k, v in body.items() if v is not None}
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(f"{_orch_base}/api/sessions", json=body)
+            resp.raise_for_status()
+            return resp.json()
 
 
 # ---------------------------------------------------------------------------
