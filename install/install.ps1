@@ -331,8 +331,11 @@ if ($LASTEXITCODE -ne 0) {
     # Use cmd.exe wrapper so stdout/stderr are captured to file while the process
     # is fully detached (WindowStyle Hidden) and survives parent PowerShell exit.
     # -NoNewWindow ties the child to the parent console session and kills it on exit.
+    # $env:PYTHONUTF8="1" is already set above and inherited by cmd.exe.
+    # Do NOT re-set it inside cmd.exe — "set PYTHONUTF8=1 &&" adds a trailing
+    # space to the value, which Python rejects as an invalid PYTHONUTF8 value.
     Start-Process -FilePath "cmd.exe" `
-        -ArgumentList "/c", "set PYTHONUTF8=1 && haniel run `"$hanielYamlPath`" > `"$hanielLogPath`" 2>&1" `
+        -ArgumentList "/c", "haniel run `"$hanielYamlPath`" > `"$hanielLogPath`" 2>&1" `
         -WindowStyle Hidden
     Write-Host "    Waiting for service to start... (log: $hanielLogPath)" -ForegroundColor DarkGray
     $maxWait = 60
