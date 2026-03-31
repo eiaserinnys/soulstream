@@ -113,6 +113,28 @@ def create_nodes_router(
             headers={"Cache-Control": "public, max-age=3600"},
         )
 
+    @router.get("/{node_id}/oauth-profiles")
+    async def list_node_oauth_profiles(node_id: str) -> dict:
+        """노드의 OAuth 토큰 프로필 목록.
+
+        soul-server의 GET /api/oauth-profiles를 HTTP 프록시하여 반환한다.
+        """
+        node = node_manager.get_node(node_id)
+        if not node:
+            raise HTTPException(status_code=404, detail=f"노드를 찾을 수 없습니다: {node_id}")
+
+        url = f"http://{node.host}:{node.port}/api/oauth-profiles"
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url)
+        except httpx.RequestError:
+            return Response(status_code=502)
+
+        if resp.status_code != 200:
+            return Response(status_code=resp.status_code)
+
+        return resp.json()
+
     @router.get("/{node_id}/user/portrait")
     async def proxy_user_portrait(node_id: str):
         """사용자 portrait 이미지 프록시.
