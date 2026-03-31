@@ -87,12 +87,13 @@ export function NewSessionModal() {
   );
 
   const handleSubmit = useCallback(
-    async (prompt: string) => {
+    async (prompt: string, attachmentPaths?: string[]) => {
       const response = await fetch("/api/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt,
+          ...(attachmentPaths?.length ? { attachmentPaths } : {}),
           ...(selectedModalFolderId ? { folderId: selectedModalFolderId } : {}),
           ...(selectedAgentId ? { profile: selectedAgentId } : {}),
         }),
@@ -215,6 +216,7 @@ export function NewSessionModal() {
       subtitle={`in ${selectedModalFolderName}`}
       initialDraft={initialDraft}
       onDraftChange={handleDraftChange}
+      fileUploadUrl="/attachments/sessions"
     />
   );
 }
