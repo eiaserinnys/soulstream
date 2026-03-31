@@ -191,7 +191,7 @@ class TestInitMultiNodeTools:
 
     @patch("soul_server.cogito.mcp_tools.httpx")
     async def test_create_remote_agent_session_includes_caller_info(self, mock_httpx):
-        """caller_session_id가 있으면 system_prompt에 발신 노드/세션 정보가 포함된다."""
+        """caller_session_id가 있으면 body에 caller_session_id가 포함되어야 한다."""
         settings = _make_settings("ws://orch:5200/ws/n1", node_id="node-alpha")
         mcp_tools.init_multi_node_tools(settings)
 
@@ -215,13 +215,15 @@ class TestInitMultiNodeTools:
         assert mock_client.post.called
         call_args = mock_client.post.call_args
         body = call_args.kwargs.get("json") or call_args[1].get("json") or call_args[0][1]
-        assert "system_prompt" in body
-        assert "node-alpha" in body["system_prompt"]
-        assert "sess-caller" in body["system_prompt"]
+        # system_prompt 대신 caller_session_id를 직접 전달하는 방식으로 변경됨
+        assert "caller_session_id" in body
+        assert body["caller_session_id"] == "sess-caller"
+        # system_prompt는 더 이상 생성하지 않음
+        assert "system_prompt" not in body
 
     @patch("soul_server.cogito.mcp_tools.httpx")
-    async def test_create_remote_agent_session_no_system_prompt_when_no_caller(self, mock_httpx):
-        """caller_session_id가 없으면 body에 system_prompt 키가 없어야 한다."""
+    async def test_create_remote_agent_session_no_caller_session_when_no_caller(self, mock_httpx):
+        """caller_session_id가 없으면 body에 caller_session_id 키가 없어야 한다."""
         settings = _make_settings("ws://orch:5200/ws/n1")
         mcp_tools.init_multi_node_tools(settings)
 
@@ -244,6 +246,7 @@ class TestInitMultiNodeTools:
         call_args = mock_client.post.call_args
         body = call_args.kwargs.get("json") or call_args[1].get("json") or call_args[0][1]
         assert "system_prompt" not in body
+        assert "caller_session_id" not in body
 
 
 # ---------------------------------------------------------------------------
@@ -264,7 +267,7 @@ class TestReplyToSessionFallback:
         tm.add_intervention = AsyncMock(side_effect=RuntimeError("session not found"))
         mock_get_tm.return_value = tm
 
-        fn = _unwrap(mcp_tools.reply_to_session)
+        fn = _unwrap(mcp_tools.send_message_to_session)
         result = await fn(target_session_id="sess-remote", message="hello")
 
         assert result["ok"] is False
@@ -288,7 +291,7 @@ class TestReplyToSessionFallback:
         mock_httpx.AsyncClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
         mock_httpx.AsyncClient.return_value.__aexit__ = AsyncMock(return_value=None)
 
-        fn = _unwrap(mcp_tools.reply_to_session)
+        fn = _unwrap(mcp_tools.send_message_to_session)
         result = await fn(target_session_id="sess-remote", message="result from agent")
 
         assert result["ok"] is True
@@ -312,7 +315,7 @@ class TestReplyToSessionFallback:
         mock_httpx.AsyncClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
         mock_httpx.AsyncClient.return_value.__aexit__ = AsyncMock(return_value=None)
 
-        fn = _unwrap(mcp_tools.reply_to_session)
+        fn = _unwrap(mcp_tools.send_message_to_session)
         result = await fn(target_session_id="sess-remote", message="hi")
 
         assert result["ok"] is False
@@ -328,7 +331,7 @@ class TestReplyToSessionFallback:
         tm.add_intervention = AsyncMock(return_value={"status": "ok"})
         mock_get_tm.return_value = tm
 
-        fn = _unwrap(mcp_tools.reply_to_session)
+        fn = _unwrap(mcp_tools.send_message_to_session)
         with patch("soul_server.cogito.mcp_tools.httpx") as mock_httpx:
             result = await fn(target_session_id="sess-local", message="hi")
 

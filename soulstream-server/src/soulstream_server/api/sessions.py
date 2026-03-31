@@ -39,6 +39,7 @@ class CreateSessionRequest(BaseModel):
     use_mcp: Optional[bool] = None
     system_prompt: Optional[str] = None
     oauth_profile_name: Optional[str] = None
+    caller_session_id: Optional[str] = None
 
 
 class InterveneRequest(BaseModel):

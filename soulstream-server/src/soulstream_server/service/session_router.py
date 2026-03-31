@@ -61,6 +61,7 @@ class SessionRouter:
             folder_id=request.get("folderId"),
             system_prompt=request.get("system_prompt"),
             oauth_profile_name=request.get("oauth_profile_name"),
+            caller_session_id=request.get("caller_session_id"),
         )
 
         # 노드가 반환한 세션 ID를 우선 사용
