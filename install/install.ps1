@@ -159,11 +159,26 @@ if (-not (Test-CommandExists "claude")) {
 Write-Step "Checking Haniel process manager..."
 
 if (-not (Test-CommandExists "haniel")) {
-    Write-Warn "Haniel not found. Installing..."
-    Invoke-RestMethod $HANIEL_INSTALL_URL | Invoke-Expression
-    # Refresh PATH so haniel is available in this session
-    $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" +
-                [System.Environment]::GetEnvironmentVariable("PATH", "User")
+    if ($NonInteractive) {
+        # CI: install haniel as a CLI tool only — the full install-haniel.ps1 bootstrapper
+        # requires interactive prompts (service account password, config URL) that cannot
+        # be automated. We only need the haniel binary to run `haniel install`.
+        Write-Warn "Haniel not found. Installing via pip (non-interactive)..."
+        pip install git+https://github.com/eiaserinnys/haniel.git
+        if ($LASTEXITCODE -ne 0) {
+            Write-Fail "Haniel pip install failed."
+            exit 1
+        }
+        $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" +
+                    [System.Environment]::GetEnvironmentVariable("PATH", "User") + ";" +
+                    (python -c "import sysconfig; print(sysconfig.get_path('scripts'))" 2>$null)
+    } else {
+        Write-Warn "Haniel not found. Installing..."
+        Invoke-RestMethod $HANIEL_INSTALL_URL | Invoke-Expression
+        # Refresh PATH so haniel is available in this session
+        $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" +
+                    [System.Environment]::GetEnvironmentVariable("PATH", "User")
+    }
     if (-not (Test-CommandExists "haniel")) {
         Write-Fail "Haniel installation failed. Please install manually:"
         Write-Host "    irm $HANIEL_INSTALL_URL | iex" -ForegroundColor DarkGray
