@@ -71,6 +71,25 @@ jobs:
             exit 1
           }
 
+      - name: Dump service logs on failure
+        if: failure()
+        shell: pwsh
+        run: |
+          Write-Host "=== haniel-run.log ==="
+          if (Test-Path "C:\soulstream-test\logs\haniel-run.log") {
+            Get-Content "C:\soulstream-test\logs\haniel-run.log" -Tail 60
+          } else { Write-Host "(not found)" }
+          Write-Host "=== haniel-run.log.err ==="
+          if (Test-Path "C:\soulstream-test\logs\haniel-run.log.err") {
+            Get-Content "C:\soulstream-test\logs\haniel-run.log.err" -Tail 30
+          } else { Write-Host "(not found)" }
+          Write-Host "=== .env ==="
+          if (Test-Path "C:\soulstream-test\soulstream\soul-server\.env") {
+            Get-Content "C:\soulstream-test\soulstream\soul-server\.env"
+          } else { Write-Host "(not found)" }
+          Write-Host "=== Processes ==="
+          Get-Process | Where-Object { $_.ProcessName -match "python|haniel" } | Format-Table Name, Id, CPU
+
       - name: Print service info
         shell: pwsh
         run: |

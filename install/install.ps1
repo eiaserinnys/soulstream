@@ -325,9 +325,15 @@ sc.exe start soulstream 2>$null
 if ($LASTEXITCODE -ne 0) {
     # Service may not be registered as Windows service — try haniel run in background
     Write-Warn "Windows service not found. Starting with haniel run..."
-    Start-Process -FilePath "haniel" -ArgumentList "run", $hanielYamlPath -WindowStyle Hidden
-    Write-Host "    Waiting for service to start..." -ForegroundColor DarkGray
-    $maxWait = 30
+    $hanielLogPath = Join-Path $installDir "logs\haniel-run.log"
+    New-Item -ItemType Directory -Force -Path (Join-Path $installDir "logs") | Out-Null
+    $env:PYTHONUTF8 = "1"
+    Start-Process -FilePath "haniel" -ArgumentList "run", $hanielYamlPath `
+        -RedirectStandardOutput $hanielLogPath `
+        -RedirectStandardError "$hanielLogPath.err" `
+        -NoNewWindow
+    Write-Host "    Waiting for service to start... (log: $hanielLogPath)" -ForegroundColor DarkGray
+    $maxWait = 60
     $elapsed = 0
     $running = $false
     while ($elapsed -lt $maxWait) {
