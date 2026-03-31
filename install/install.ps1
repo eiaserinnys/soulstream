@@ -274,7 +274,14 @@ New-Item -ItemType Directory -Force -Path $installDir | Out-Null
 
 Write-Step "Generating haniel.yaml..."
 
-$template = Invoke-RestMethod $TEMPLATE_URL
+# Prefer local template (CI checkout) — fall back to remote URL (irm | iex usage)
+$localTemplate = Join-Path $PSScriptRoot "haniel-standalone.yaml.template"
+if (Test-Path $localTemplate) {
+    $template = Get-Content $localTemplate -Raw
+    Write-Host "    Using local template: $localTemplate" -ForegroundColor DarkGray
+} else {
+    $template = Invoke-RestMethod $TEMPLATE_URL
+}
 
 # Normalize paths to forward slashes (Haniel / Python work fine with them on Windows)
 $installDirFwd  = $installDir  -replace "\\", "/"
