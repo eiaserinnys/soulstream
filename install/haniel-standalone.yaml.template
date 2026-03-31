@@ -54,7 +54,7 @@ install:
           prompt: "API 인증 토큰 (공백으로 두면 인증 없이 사용)"
           default: ""
         - key: PORT
-          default: __PORT__
+          default: "__PORT__"
         - key: HOST
           default: "0.0.0.0"
         - key: ENVIRONMENT
