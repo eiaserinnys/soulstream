@@ -303,6 +303,9 @@ Write-Host "    Haniel will clone soulstream, create a Python venv, and" -Foregr
 Write-Host "    prompt you for .env settings (node ID, auth token, etc.)" -ForegroundColor DarkGray
 Write-Host ""
 
+# Ensure Python subprocesses use UTF-8 stdout (haniel prints unicode checkmarks)
+$env:PYTHONUTF8 = "1"
+
 $hanielArgs = @($hanielYamlPath)
 if ($NonInteractive) { $hanielArgs += "--skip-interactive" }
 haniel install @hanielArgs
