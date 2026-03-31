@@ -204,8 +204,12 @@ export { StorageModeToggle, StorageModeToggleCompact } from "./components/Storag
 export { ConfigButton } from "./components/ConfigButton";
 export { NewSessionDialog } from "./components/NewSessionDialog";
 export type { NewSessionDialogProps } from "./components/NewSessionDialog";
+export { FileAttachmentPreview } from "./components/FileAttachmentPreview";
+export type { FileAttachmentPreviewProps } from "./components/FileAttachmentPreview";
 
 // === Dashboard Hooks (extracted from soul-dashboard) ===
+export { useFileUpload } from "./hooks/useFileUpload";
+export type { UseFileUploadOptions, UseFileUploadReturn, UploadedFile } from "./hooks/useFileUpload";
 export { useSessionListProvider } from "./hooks/useSessionListProvider";
 export type { UseSessionListProviderOptions } from "./hooks/useSessionListProvider";
 export { useSessionProvider } from "./hooks/useSessionProvider";
