@@ -257,6 +257,7 @@ class SoulEngineAdapter:
         system_prompt: Optional[str] = None,
         working_dir: Optional[str] = None,   # Phase 1 추가 (Phase 2에서 실제 사용)
         max_turns: Optional[int] = None,     # Phase 1 추가 (Phase 2에서 실제 사용)
+        extra_env: Optional[dict] = None,    # per-process 환경변수 오버라이드 (os.environ 미수정)
     ) -> AsyncIterator[SSEEvent]:
         """Claude Code 실행 (SSE 이벤트 스트림)
 
@@ -455,6 +456,7 @@ class SoulEngineAdapter:
                     on_intervention=on_intervention_callback,
                     on_session=on_session_callback,
                     on_event=on_engine_event,
+                    extra_env=extra_env,
                 )
 
                 # 컨텍스트 사용량 이벤트
