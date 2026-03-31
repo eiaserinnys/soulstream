@@ -786,6 +786,56 @@ async def move_sessions_to_folder(
 
 
 @cogito_mcp.tool()
+async def get_folder_system_prompt(folder_id: str) -> dict:
+    """폴더의 시스템 프롬프트(folderPrompt)를 조회한다.
+
+    Args:
+        folder_id: 조회할 폴더 ID.
+
+    Returns:
+        {folder_id: str, system_prompt: str | null}
+        또는 {error: str}
+    """
+    try:
+        catalog_svc = get_catalog_service()
+    except RuntimeError as e:
+        return {"error": str(e)}
+    try:
+        prompt = await catalog_svc.get_folder_system_prompt(folder_id)
+    except ValueError as e:
+        return {"error": str(e)}
+    return {"folder_id": folder_id, "system_prompt": prompt}
+
+
+@cogito_mcp.tool()
+async def set_folder_system_prompt(
+    folder_id: str,
+    system_prompt: str | None = None,
+) -> dict:
+    """폴더의 시스템 프롬프트(folderPrompt)를 설정하거나 삭제한다.
+
+    빈 문자열 또는 null을 전달하면 folderPrompt를 삭제한다.
+    다른 settings 키는 보존된다.
+
+    Args:
+        folder_id: 대상 폴더 ID.
+        system_prompt: 설정할 프롬프트. 빈 문자열 또는 null이면 삭제.
+
+    Returns:
+        {ok: true} 또는 {error: str}
+    """
+    try:
+        catalog_svc = get_catalog_service()
+    except RuntimeError as e:
+        return {"error": str(e)}
+    try:
+        await catalog_svc.set_folder_system_prompt(folder_id, system_prompt)
+    except ValueError as e:
+        return {"error": str(e)}
+    return {"ok": True}
+
+
+@cogito_mcp.tool()
 async def delete_session(session_id: str) -> dict:
     """세션을 삭제한다.
 

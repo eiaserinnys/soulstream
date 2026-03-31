@@ -143,3 +143,47 @@ class CatalogService:
     async def get_catalog(self) -> dict:
         """전체 카탈로그(폴더 + 세션 배정)를 반환한다."""
         return await self._db.get_catalog()
+
+    # --- 폴더 시스템 프롬프트 ---
+
+    async def get_folder_system_prompt(self, folder_id: str) -> Optional[str]:
+        """폴더의 시스템 프롬프트(folderPrompt)를 반환한다.
+
+        Args:
+            folder_id: 폴더 ID.
+
+        Returns:
+            folderPrompt 문자열, 설정되지 않았으면 None.
+
+        Raises:
+            ValueError: 폴더가 존재하지 않으면.
+        """
+        folder = await self._db.get_folder(folder_id)
+        if folder is None:
+            raise ValueError(f"Folder not found: {folder_id}")
+        return (folder.get("settings") or {}).get("folderPrompt")
+
+    async def set_folder_system_prompt(
+        self, folder_id: str, prompt: Optional[str]
+    ) -> None:
+        """폴더의 시스템 프롬프트(folderPrompt)를 설정하거나 삭제한다.
+
+        빈 문자열 또는 None을 전달하면 folderPrompt 키를 삭제한다.
+        다른 settings 키는 보존된다.
+
+        Args:
+            folder_id: 폴더 ID.
+            prompt: 설정할 프롬프트. 빈 문자열 또는 None이면 삭제.
+
+        Raises:
+            ValueError: 폴더가 존재하지 않으면.
+        """
+        folder = await self._db.get_folder(folder_id)
+        if folder is None:
+            raise ValueError(f"Folder not found: {folder_id}")
+        settings = dict(folder.get("settings") or {})
+        if prompt:
+            settings["folderPrompt"] = prompt
+        else:
+            settings.pop("folderPrompt", None)
+        await self.update_folder(folder_id, settings=settings)

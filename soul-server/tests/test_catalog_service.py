@@ -141,6 +141,76 @@ class TestDeleteSession:
         mock_broadcaster.emit_session_deleted.assert_awaited_once_with("s1")
 
 
+class TestGetFolderSystemPrompt:
+    async def test_returns_prompt(self, catalog_service, mock_db):
+        mock_db.get_folder = AsyncMock(return_value={
+            "id": "f1", "name": "Folder 1", "sort_order": 0,
+            "settings": {"folderPrompt": "You are a helpful assistant."},
+        })
+        result = await catalog_service.get_folder_system_prompt("f1")
+        assert result == "You are a helpful assistant."
+        mock_db.get_folder.assert_awaited_once_with("f1")
+
+    async def test_returns_none_when_not_set(self, catalog_service, mock_db):
+        mock_db.get_folder = AsyncMock(return_value={
+            "id": "f1", "name": "Folder 1", "sort_order": 0, "settings": {},
+        })
+        result = await catalog_service.get_folder_system_prompt("f1")
+        assert result is None
+
+    async def test_returns_none_when_settings_is_none(self, catalog_service, mock_db):
+        mock_db.get_folder = AsyncMock(return_value={
+            "id": "f1", "name": "Folder 1", "sort_order": 0, "settings": None,
+        })
+        result = await catalog_service.get_folder_system_prompt("f1")
+        assert result is None
+
+    async def test_raises_when_folder_not_found(self, catalog_service, mock_db):
+        mock_db.get_folder = AsyncMock(return_value=None)
+        with pytest.raises(ValueError, match="Folder not found"):
+            await catalog_service.get_folder_system_prompt("nonexistent")
+
+
+class TestSetFolderSystemPrompt:
+    async def test_sets_prompt(self, catalog_service, mock_db):
+        mock_db.get_folder = AsyncMock(return_value={
+            "id": "f1", "name": "Folder 1", "sort_order": 0, "settings": {},
+        })
+        await catalog_service.set_folder_system_prompt("f1", "New prompt")
+        mock_db.update_folder.assert_awaited_once_with("f1", settings={"folderPrompt": "New prompt"})
+
+    async def test_clears_when_empty_string(self, catalog_service, mock_db):
+        mock_db.get_folder = AsyncMock(return_value={
+            "id": "f1", "name": "Folder 1", "sort_order": 0,
+            "settings": {"folderPrompt": "Old prompt"},
+        })
+        await catalog_service.set_folder_system_prompt("f1", "")
+        mock_db.update_folder.assert_awaited_once_with("f1", settings={})
+
+    async def test_clears_when_none(self, catalog_service, mock_db):
+        mock_db.get_folder = AsyncMock(return_value={
+            "id": "f1", "name": "Folder 1", "sort_order": 0,
+            "settings": {"folderPrompt": "Old prompt"},
+        })
+        await catalog_service.set_folder_system_prompt("f1", None)
+        mock_db.update_folder.assert_awaited_once_with("f1", settings={})
+
+    async def test_preserves_other_settings(self, catalog_service, mock_db):
+        mock_db.get_folder = AsyncMock(return_value={
+            "id": "f1", "name": "Folder 1", "sort_order": 0,
+            "settings": {"excludeFromFeed": True, "folderPrompt": "Old"},
+        })
+        await catalog_service.set_folder_system_prompt("f1", "New prompt")
+        mock_db.update_folder.assert_awaited_once_with(
+            "f1", settings={"excludeFromFeed": True, "folderPrompt": "New prompt"}
+        )
+
+    async def test_raises_when_folder_not_found(self, catalog_service, mock_db):
+        mock_db.get_folder = AsyncMock(return_value=None)
+        with pytest.raises(ValueError, match="Folder not found"):
+            await catalog_service.set_folder_system_prompt("nonexistent", "prompt")
+
+
 class TestGlobalAccessor:
     def test_get_raises_before_init(self):
         import soul_server.service.catalog_service as mod
