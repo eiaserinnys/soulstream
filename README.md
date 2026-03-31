@@ -1,66 +1,44 @@
 # Soulstream
 
-Soulstream은 Claude Code 세션을 원격으로 호스팅하는 서버입니다. 세션 생성, SSE 스트리밍, 크레덴셜 관리, 러너 풀 예열 등을 통해 Claude Code를 서비스로 제공하며, 슬랙봇이나 다른 클라이언트가 HTTP/SSE로 연결하여 AI 세션을 위임할 수 있습니다.
+Soulstream is a server that hosts Claude Code sessions remotely. It manages session lifecycle, SSE streaming, credential management, and runner pool warm-up — exposing Claude Code as a service that Slack bots and other clients can connect to over HTTP/SSE.
 
-## 구조
+## Repository layout
 
 ```
 soulstream/
-├── soul-server/          # FastAPI 실행 서버 (Python)
-└── unified-dashboard/    # React 통합 대시보드 (TypeScript)
+├── soul-server/          # FastAPI execution server (Python)
+├── unified-dashboard/    # React dashboard (TypeScript)
+├── packages/
+│   └── soul-ui/          # Shared UI component library
+└── install/              # Standalone installer
+    ├── install.ps1                       # One-liner Windows installer
+    └── haniel-standalone.yaml.template   # Haniel config template
 ```
 
-## 아키텍처: 듀얼 모드 저장소
+## Quick start
 
-Soulstream은 두 가지 저장 모드를 지원합니다:
+### Standalone installer (Windows)
 
-### 파일 모드 (기본)
-
-```
-SERENDIPITY_ENABLED=false
+```powershell
+irm https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/install.ps1 | iex
 ```
 
-- 세션 데이터를 로컬 파일 시스템에 저장
-- 세렌디피티 서버 불필요
-- 단독 배포 가능
+The installer checks prerequisites, installs [Haniel](https://github.com/eiaserinnys/haniel) as the process manager, clones this repo, sets up a Python venv, prompts for configuration, builds the dashboard, and registers a Windows service — all in one pass.
 
-### 세렌디피티 모드
+### Manual setup
 
-```
-SERENDIPITY_ENABLED=true
-SERENDIPITY_URL=http://localhost:4002
-```
-
-- 세션 데이터를 세렌디피티에 저장
-- 블록 기반 계층 구조로 대화 기록
-- 자동 메타데이터 생성 (제목, 카테고리 라벨)
-- 날짜별 레이블 자동 부착
-
-### 블록 타입 매핑 (세렌디피티 모드)
-
-| SSE Event | Block Type | 설명 |
-|-----------|------------|------|
-| prompt (최초) | `soul:user` | 사용자 프롬프트 |
-| TextDeltaSSEEvent | `soul:response` | Claude 응답 텍스트 |
-| ToolStartSSEEvent | `soul:tool-call` | 도구 호출 시작 |
-| ToolResultSSEEvent | `soul:tool-result` | 도구 실행 결과 |
-| InterventionSentEvent | `soul:intervention` | 사용자 개입 |
-| ErrorEvent | `soul:system` | 시스템 오류 |
-
-## 빠른 시작
-
-### soul-server
+**soul-server**
 
 ```bash
 cd soul-server
 python -m venv .venv
-source .venv/bin/activate   # Linux/Mac
+source .venv/bin/activate   # Linux/macOS
 # .venv\Scripts\activate    # Windows
-pip install -r requirements.txt
+pip install -e ../packages/soul-common -e .
 python -m soul_server.main
 ```
 
-### unified-dashboard
+**unified-dashboard**
 
 ```bash
 cd unified-dashboard
@@ -68,15 +46,53 @@ pnpm install
 pnpm run dev
 ```
 
-## 환경 변수
+## Architecture: dual storage mode
 
-### soul-server
+### File mode (default)
 
-| 변수 | 기본값 | 설명 |
-|------|--------|------|
-| `WORKSPACE_DIR` | (필수) | Claude Code 작업 디렉토리 |
-| `SERENDIPITY_ENABLED` | `true` | 세렌디피티 모드 활성화 |
-| `SERENDIPITY_URL` | `http://localhost:4002` | 세렌디피티 API URL |
-| `PORT` | `3105` | 서버 포트 |
+```
+SERENDIPITY_ENABLED=false
+```
 
-전체 목록은 `soul-server/.env.example` 참조
+Session data is stored on the local filesystem. No external dependencies.
+
+### Serendipity mode
+
+```
+SERENDIPITY_ENABLED=true
+SERENDIPITY_URL=http://localhost:4002
+```
+
+Session data is stored in [Serendipity](https://github.com/eiaserinnys/serendipity) using a block-based hierarchy. Metadata (title, category labels, date tags) is generated automatically.
+
+| SSE event | Block type | Description |
+|-----------|------------|-------------|
+| prompt (first) | `soul:user` | User prompt |
+| `text_delta` | `soul:response` | Claude response text |
+| `tool_start` | `soul:tool-call` | Tool call start |
+| `tool_result` | `soul:tool-result` | Tool execution result |
+| `intervention_sent` | `soul:intervention` | User intervention |
+| `error` | `soul:system` | System error |
+
+## Environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `WORKSPACE_DIR` | *(required)* | Claude Code working directory |
+| `SOULSTREAM_NODE_ID` | *(required)* | Unique node identifier |
+| `SOUL_DASHBOARD_CACHE_DIR` | *(required)* | Dashboard session cache directory |
+| `PORT` | `3105` | Server port |
+| `HOST` | `0.0.0.0` | Server host |
+| `ENVIRONMENT` | `development` | `development` or `production` |
+| `AUTH_BEARER_TOKEN` | *(none)* | API bearer token (leave empty to disable auth) |
+| `SOUL_DASHBOARD_DIR` | `dist/client` | Path to built dashboard files |
+| `SERENDIPITY_ENABLED` | `true` | Enable Serendipity storage mode |
+| `SERENDIPITY_URL` | `http://localhost:4002` | Serendipity API URL |
+| `DATABASE_URL` | *(none)* | PostgreSQL URL (SQLite used if unset) |
+| `MAX_CONCURRENT_SESSIONS` | `3` | Maximum parallel Claude Code sessions |
+
+See `soul-server/.env.example` for the full list.
+
+## Building a bot client
+
+See **[docs/bot-client-api.md](docs/bot-client-api.md)** for the complete HTTP/SSE API reference for Slack bots, Discord bots, and other clients.
