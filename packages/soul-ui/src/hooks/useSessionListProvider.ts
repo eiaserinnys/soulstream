@@ -79,7 +79,7 @@ export function useSessionListProvider(
 
   // 첫 로드 추적 (최초 마운트 시에만 로딩 표시, 이후 페이지/필터 변경은 백그라운드 갱신)
   const isFirstLoad = useRef(true);
-  const abortRef = useRef(false);
+  const fetchGenerationRef = useRef(0);
   const eventSourceRef = useRef<EventSource | null>(null);
 
   /**
@@ -94,7 +94,7 @@ export function useSessionListProvider(
     }
 
     try {
-      abortRef.current = false;
+      const generation = ++fetchGenerationRef.current;
 
       const provider = externalProvider ?? getSessionProvider(storageMode);
       const typeFilter = sessionTypeFilter === "all" ? undefined : sessionTypeFilter;
@@ -113,9 +113,8 @@ export function useSessionListProvider(
         ...folderFilter,
       });
 
-      if (abortRef.current) return;
+      if (fetchGenerationRef.current !== generation) return;
 
-      console.log(`[🔵 fetchSessions] 완료 → sessions=${result.sessions.length}, total=${result.total}`);
       setSessions(result.sessions, result.total);
 
       // 폴더별 세션 수 조회 (provider가 지원하는 경우)
@@ -123,7 +122,7 @@ export function useSessionListProvider(
         provider.fetchFolderCounts().then(setFolderCounts).catch(() => {});
       }
     } catch (err: unknown) {
-      if (abortRef.current) return;
+      if (fetchGenerationRef.current !== generation) return;
 
       const message =
         err instanceof Error ? err.message : "세션 목록 조회 실패";
@@ -372,7 +371,7 @@ export function useSessionListProvider(
     fetchSessionsRef.current();
 
     return () => {
-      abortRef.current = true;
+      fetchGenerationRef.current++;
     };
   }, [enabled, viewMode, selectedFolderId]); // fetchSessions 제거: ref로 접근
 
