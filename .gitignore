@@ -32,6 +32,9 @@ soul-dashboard/e2e/test-results/
 # Environment
 .env
 .env.local
+.env.test
+.env.test.local
+.env.*.local
 
 # Runtime data (soulstream_runtime에서만 존재)
 logs/
