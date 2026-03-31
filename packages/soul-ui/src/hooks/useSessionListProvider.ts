@@ -327,14 +327,15 @@ export function useSessionListProvider(
     }
   }, []);
 
-  // Effect 1: API fetch — enabled 변경 시에만 초기 로드 (fetchSessions는 ref로 접근)
+  // Effect 1a: 초기 카탈로그 로드 — enabled 변경 시에만 실행 (viewMode/selectedFolderId 변경과 무관)
+  // catalog fetch는 viewMode/selectedFolderId가 바뀔 때 재실행할 이유가 없으며,
+  // 재실행되면 async 완료 시점에 selectFolder가 잘못 호출되는 race condition이 발생한다.
   useEffect(() => {
     if (!enabled) return;
 
-    fetchSessionsRef.current();
+    const controller = new AbortController();
 
-    // 초기 카탈로그 로드 + 폴더 자동 선택
-    fetch("/api/catalog")
+    fetch("/api/catalog", { signal: controller.signal })
       .then((r) => { if (r.ok) return r.json(); throw new Error("catalog fetch failed"); })
       .then((data) => {
         if (data?.folders && data?.sessions) {
@@ -354,7 +355,21 @@ export function useSessionListProvider(
           }
         }
       })
-      .catch(() => {});
+      .catch((err) => {
+        // AbortError는 cleanup에 의한 정상 취소이므로 무시
+        if (err instanceof DOMException && err.name === "AbortError") return;
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [enabled]); // viewMode/selectedFolderId 제거: catalog 로드는 마운트 시 1회만 필요
+
+  // Effect 1b: fetchSessions — viewMode/selectedFolderId 변경 시 세션 재조회
+  useEffect(() => {
+    if (!enabled) return;
+
+    fetchSessionsRef.current();
 
     return () => {
       abortRef.current = true;
