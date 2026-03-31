@@ -367,8 +367,8 @@ class TestClaudeRunnerCompact:
 
         original_build = runner._build_options
 
-        def patched_build(session_id=None, compact_events=None):
-            options, stderr_f = original_build(session_id=session_id, compact_events=compact_events)
+        def patched_build(session_id=None, compact_events=None, extra_env=None):
+            options, stderr_f = original_build(session_id=session_id, compact_events=compact_events, extra_env=extra_env)
             if compact_events is not None:
                 compact_events.append({
                     "trigger": "auto",
@@ -405,8 +405,8 @@ class TestClaudeRunnerCompact:
 
         original_build = runner._build_options
 
-        def patched_build(session_id=None, compact_events=None):
-            options, stderr_f = original_build(session_id=session_id, compact_events=compact_events)
+        def patched_build(session_id=None, compact_events=None, extra_env=None):
+            options, stderr_f = original_build(session_id=session_id, compact_events=compact_events, extra_env=extra_env)
             if compact_events is not None:
                 compact_events.append({
                     "trigger": "auto",
@@ -441,8 +441,8 @@ class TestClaudeRunnerCompact:
 
         original_build = runner._build_options
 
-        def patched_build(session_id=None, compact_events=None):
-            options, stderr_f = original_build(session_id=session_id, compact_events=compact_events)
+        def patched_build(session_id=None, compact_events=None, extra_env=None):
+            options, stderr_f = original_build(session_id=session_id, compact_events=compact_events, extra_env=extra_env)
             if compact_events is not None:
                 compact_events.append({
                     "trigger": "auto",
@@ -1352,9 +1352,9 @@ class TestCompactRetryHangFix:
 
         original_build = runner._build_options
 
-        def patched_build(session_id=None, compact_events=None):
+        def patched_build(session_id=None, compact_events=None, extra_env=None):
             options, stderr_f = original_build(
-                session_id=session_id, compact_events=compact_events,
+                session_id=session_id, compact_events=compact_events, extra_env=extra_env,
             )
             if compact_events is not None:
                 compact_events.append({
@@ -1401,9 +1401,9 @@ class TestCompactRetryHangFix:
 
         original_build = runner._build_options
 
-        def patched_build(session_id=None, compact_events=None):
+        def patched_build(session_id=None, compact_events=None, extra_env=None):
             options, stderr_f = original_build(
-                session_id=session_id, compact_events=compact_events,
+                session_id=session_id, compact_events=compact_events, extra_env=extra_env,
             )
             if compact_events is not None:
                 compact_events.append({
@@ -1454,9 +1454,9 @@ class TestCompactRetryHangFix:
 
         original_build = runner._build_options
 
-        def patched_build(session_id=None, compact_events=None):
+        def patched_build(session_id=None, compact_events=None, extra_env=None):
             options, stderr_f = original_build(
-                session_id=session_id, compact_events=compact_events,
+                session_id=session_id, compact_events=compact_events, extra_env=extra_env,
             )
             if compact_events is not None:
                 compact_events.append({
@@ -1520,9 +1520,9 @@ class TestCompactRetryHangFix:
 
         original_build = runner._build_options
 
-        def patched_build(session_id=None, compact_events=None):
+        def patched_build(session_id=None, compact_events=None, extra_env=None):
             options, stderr_f = original_build(
-                session_id=session_id, compact_events=compact_events,
+                session_id=session_id, compact_events=compact_events, extra_env=extra_env,
             )
             # compact_events 리스트 참조를 캡처 (내부 루프에서 이벤트 주입용)
             captured_compact_events[0] = compact_events

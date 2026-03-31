@@ -468,6 +468,7 @@ class ClaudeRunner:
         self,
         session_id: Optional[str] = None,
         compact_events: Optional[list] = None,
+        extra_env: Optional[dict] = None,
     ) -> tuple[ClaudeSDKClient, Optional["IO[str]"]]:
         """ClaudeSDKClient를 가져오거나 새로 생성
 
@@ -484,7 +485,7 @@ class ClaudeRunner:
         Returns:
             (client, stderr_file) - stderr_file은 호출자가 닫아야 함
         """
-        options, stderr_file = self._build_options(session_id, compact_events)
+        options, stderr_file = self._build_options(session_id, compact_events, extra_env=extra_env)
         # HIGH-3: 프로덕션에서는 디버그 로깅 억제
         # logger.isEnabledFor(DEBUG)로 문자열 포맷팅 비용도 회피
         if logger.isEnabledFor(logging.DEBUG):
@@ -916,6 +917,7 @@ class ClaudeRunner:
         self,
         session_id: Optional[str] = None,
         compact_events: Optional[list] = None,
+        extra_env: Optional[dict] = None,
     ) -> tuple[ClaudeAgentOptions, Optional[IO[str]]]:
         """ClaudeAgentOptions와 stderr 파일을 반환합니다.
 
@@ -972,6 +974,7 @@ class ClaudeRunner:
             model=self.model,
             system_prompt=self.system_prompt,
             max_turns=self.max_turns,
+            env=extra_env or {},
         )
 
         if session_id:
@@ -1390,6 +1393,7 @@ class ClaudeRunner:
         on_intervention: Optional[InterventionCallback] = None,
         on_session: Optional[Callable[[str], Awaitable[None]]] = None,
         on_event: Optional[EventCallback] = None,
+        extra_env: Optional[dict] = None,
     ) -> EngineResult:
         """Claude Code 실행
 
@@ -1425,7 +1429,7 @@ class ClaudeRunner:
                     error=validation_error,
                 )
 
-        return await self._execute(prompt, session_id, on_progress, on_compact, on_intervention, on_session, on_event)
+        return await self._execute(prompt, session_id, on_progress, on_compact, on_intervention, on_session, on_event, extra_env=extra_env)
 
     async def _execute(
         self,
@@ -1436,6 +1440,7 @@ class ClaudeRunner:
         on_intervention: Optional[InterventionCallback] = None,
         on_session: Optional[Callable[[str], Awaitable[None]]] = None,
         on_event: Optional[EventCallback] = None,
+        extra_env: Optional[dict] = None,
     ) -> EngineResult:
         """실제 실행 로직 - 오케스트레이션만 담당
 
@@ -1450,6 +1455,7 @@ class ClaudeRunner:
             client, ctx.stderr_file = await self._get_or_create_client(
                 session_id=session_id,
                 compact_events=compact_handler.events,
+                extra_env=extra_env,
             )
             logger.info(f"Claude Code SDK 실행 시작 (cwd={self.working_dir})")
 

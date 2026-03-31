@@ -19,6 +19,10 @@ import {
 import type { AgentInfo } from "@seosoyoung/soul-ui";
 import { useOrchestratorStore } from "../store/orchestrator-store";
 
+interface OAuthProfile {
+  name: string;
+}
+
 export function OrchestratorNewSessionModal() {
   const isModalOpen = useDashboardStore((s) => s.isNewSessionModalOpen);
   const closeNewSessionModal = useDashboardStore((s) => s.closeNewSessionModal);
@@ -30,6 +34,8 @@ export function OrchestratorNewSessionModal() {
   const [selectedModalFolderId, setSelectedModalFolderId] = useState<string | null>(null);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState("");
+  const [oauthProfiles, setOauthProfiles] = useState<OAuthProfile[]>([]);
+  const [selectedOAuthProfile, setSelectedOAuthProfile] = useState<string | null>(null);
 
   const aliveNodes = Array.from(nodes.values()).filter(
     (n) => n.status === "connected",
@@ -57,10 +63,12 @@ export function OrchestratorNewSessionModal() {
     }
   }, [isModalOpen, catalog]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // nodeId 변경 시 에이전트 목록 조회
+  // nodeId 변경 시 에이전트 목록 및 OAuth 프로필 조회
   useEffect(() => {
     setSelectedAgentId("");
     setAgents([]);
+    setSelectedOAuthProfile(null);
+    setOauthProfiles([]);
     if (!selectedNodeId) return;
 
     fetch(`/api/nodes/${encodeURIComponent(selectedNodeId)}/agents`)
@@ -71,6 +79,16 @@ export function OrchestratorNewSessionModal() {
       .catch(() => {
         // 에이전트 목록 조회 실패 시 graceful degradation
         setAgents([]);
+      });
+
+    fetch(`/api/nodes/${encodeURIComponent(selectedNodeId)}/oauth-profiles`)
+      .then((res) => res.json())
+      .then((data: { profiles: OAuthProfile[] }) => {
+        setOauthProfiles(data.profiles ?? []);
+      })
+      .catch(() => {
+        // OAuth 프로필 조회 실패 시 graceful degradation
+        setOauthProfiles([]);
       });
   }, [selectedNodeId]);
 
@@ -86,6 +104,7 @@ export function OrchestratorNewSessionModal() {
           nodeId: selectedNodeId,
           ...(selectedModalFolderId ? { folderId: selectedModalFolderId } : {}),
           ...(selectedAgentId ? { profile: selectedAgentId } : {}),
+          ...(selectedOAuthProfile ? { oauth_profile_name: selectedOAuthProfile } : {}),
         }),
       });
 
@@ -124,8 +143,9 @@ export function OrchestratorNewSessionModal() {
       setSelectedNodeId("");
       setSelectedModalFolderId(null);
       setSelectedAgentId("");
+      setSelectedOAuthProfile(null);
     },
-    [selectedNodeId, selectedModalFolderId, selectedAgentId, agents, closeNewSessionModal],
+    [selectedNodeId, selectedModalFolderId, selectedAgentId, selectedOAuthProfile, agents, closeNewSessionModal],
   );
 
   const folderSelector = (
@@ -181,6 +201,27 @@ export function OrchestratorNewSessionModal() {
     </div>
   );
 
+  const oauthProfileSelector = oauthProfiles.length > 0 ? (
+    <div className="flex flex-col gap-1.5">
+      <label className="text-xs font-medium text-muted-foreground">OAuth Profile</label>
+      <Select value={selectedOAuthProfile ?? ''} onValueChange={(v) => setSelectedOAuthProfile(v || null)}>
+        <SelectTrigger>
+          <span className={cn("flex-1 truncate", !selectedOAuthProfile && "text-muted-foreground/72")}>
+            {selectedOAuthProfile ?? "없음 (기본 토큰 사용)"}
+          </span>
+        </SelectTrigger>
+        <SelectPopup>
+          <SelectItem value="">없음 (기본 토큰 사용)</SelectItem>
+          {oauthProfiles.map((p) => (
+            <SelectItem key={p.name} value={p.name}>
+              {p.name}
+            </SelectItem>
+          ))}
+        </SelectPopup>
+      </Select>
+    </div>
+  ) : undefined;
+
   const agentSelector = agents.length > 0 ? (
     <div className="flex flex-col gap-1.5">
       <label className="text-xs font-medium text-muted-foreground">Agent</label>
@@ -226,12 +267,14 @@ export function OrchestratorNewSessionModal() {
           setSelectedNodeId("");
           setSelectedModalFolderId(null);
           setSelectedAgentId("");
+          setSelectedOAuthProfile(null);
         }
       }}
       onSubmit={handleSubmit}
       folderSelector={folderSelector}
       nodeSelector={nodeSelector}
       agentSelector={agentSelector}
+      oauthProfileSelector={oauthProfileSelector}
       submitDisabled={!selectedNodeId}
     />
   );

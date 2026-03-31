@@ -106,6 +106,9 @@ class Task:
     # 에이전트 프로필 ID (런타임 전용, 영속화 안 됨)
     profile_id: Optional[str] = field(default=None, repr=False)
 
+    # OAuth 토큰 프로필 이름 (런타임 전용, 영속화 안 됨)
+    oauth_profile_name: Optional[str] = field(default=None, repr=False)
+
     # 모델 지정 (런타임 전용, 영속화 안 됨)
     model: Optional[str] = field(default=None, repr=False)
 
