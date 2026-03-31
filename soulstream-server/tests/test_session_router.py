@@ -111,3 +111,58 @@ class TestRouting:
 
         assert exc_info.value.status_code == 404
         assert "nonexistent-node" in exc_info.value.detail
+
+
+class TestAttachmentPathsRelay:
+    """session_router가 attachmentPaths를 send_create_session에 전달하는지 테스트."""
+
+    async def test_relay_attachment_paths_to_node(self, manager, router):
+        """attachmentPaths가 request에 있으면 node.send_create_session에 전달된다."""
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+
+        async def resolve_on_send(data):
+            req_id = data.get("requestId")
+            if req_id and req_id in node._pending:
+                node._pending[req_id].set_result({"agentSessionId": "sess-r"})
+
+        ws.send_json.side_effect = resolve_on_send
+        node = await manager.register_node(ws, {"node_id": "node-att"})
+
+        session_id, node_id = await router.route_create_session({
+            "nodeId": "node-att",
+            "prompt": "hello",
+            "attachmentPaths": ["/incoming/s1/file.txt"],
+        })
+
+        # send_create_session이 attachment_paths를 받았는지 WS 페이로드로 확인
+        sent = ws.send_json.call_args[0][0]
+        # node_connection.py가 extra_context_items로 변환하므로 payload에 존재해야 함
+        assert "extra_context_items" in sent
+        assert any(
+            "/incoming/s1/file.txt" in item.get("content", "")
+            for item in sent["extra_context_items"]
+        )
+
+    async def test_no_attachment_paths_does_not_include_extra_context_items(self, manager, router):
+        """attachmentPaths가 없으면 extra_context_items가 payload에 포함되지 않는다."""
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+
+        async def resolve_on_send(data):
+            req_id = data.get("requestId")
+            if req_id and req_id in node._pending:
+                node._pending[req_id].set_result({"agentSessionId": "sess-r"})
+
+        ws.send_json.side_effect = resolve_on_send
+        node = await manager.register_node(ws, {"node_id": "node-noatt"})
+
+        await router.route_create_session({
+            "nodeId": "node-noatt",
+            "prompt": "hello",
+        })
+
+        sent = ws.send_json.call_args[0][0]
+        assert "extra_context_items" not in sent
