@@ -93,7 +93,7 @@ export function OrchestratorNewSessionModal() {
   }, [selectedNodeId]);
 
   const handleSubmit = useCallback(
-    async (prompt: string) => {
+    async (prompt: string, attachmentPaths?: string[]) => {
       if (!selectedNodeId) throw new Error("Please select a node");
 
       const res = await fetch("/api/sessions", {
@@ -102,6 +102,7 @@ export function OrchestratorNewSessionModal() {
         body: JSON.stringify({
           prompt,
           nodeId: selectedNodeId,
+          ...(attachmentPaths?.length ? { attachmentPaths } : {}),
           ...(selectedModalFolderId ? { folderId: selectedModalFolderId } : {}),
           ...(selectedAgentId ? { profile: selectedAgentId } : {}),
           ...(selectedOAuthProfile ? { oauth_profile_name: selectedOAuthProfile } : {}),
@@ -276,6 +277,11 @@ export function OrchestratorNewSessionModal() {
       agentSelector={agentSelector}
       oauthProfileSelector={oauthProfileSelector}
       submitDisabled={!selectedNodeId}
+      fileUploadUrl={
+        selectedNodeId
+          ? `/api/attachments/sessions?nodeId=${selectedNodeId}`
+          : undefined
+      }
     />
   );
 }
