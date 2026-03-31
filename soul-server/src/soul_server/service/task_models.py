@@ -106,6 +106,13 @@ class Task:
     # 에이전트 프로필 ID (런타임 전용, 영속화 안 됨)
     profile_id: Optional[str] = field(default=None, repr=False)
 
+    # 발신 세션 ID (DB 저장 — 완료 시 자동 보고 대상)
+    caller_session_id: Optional[str] = None
+
+    # 발신자 메타데이터 (런타임 전용, 영속화 안 됨)
+    # {"source": "agent", "agent_node": str, "agent_id": str, "agent_name": str}
+    caller_agent_info: Optional[dict] = field(default=None, repr=False)
+
     # OAuth 토큰 프로필 이름 (런타임 전용, 영속화 안 됨)
     oauth_profile_name: Optional[str] = field(default=None, repr=False)
 
@@ -221,6 +228,7 @@ class Task:
             "created_at": datetime_to_str(self.created_at),
             "completed_at": datetime_to_str(self.completed_at) if self.completed_at else None,
             "profile_id": self.profile_id,
+            "caller_session_id": self.caller_session_id,
         }
 
     @classmethod
@@ -246,6 +254,7 @@ class Task:
             created_at=str_to_datetime(data["created_at"]),
             completed_at=str_to_datetime(data["completed_at"]) if data.get("completed_at") else None,
             profile_id=data.get("profile_id"),
+            caller_session_id=data.get("caller_session_id"),
         )
 
 

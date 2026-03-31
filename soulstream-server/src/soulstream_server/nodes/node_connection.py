@@ -157,6 +157,7 @@ class NodeConnection:
         folder_id: str | None = None,
         system_prompt: str | None = None,
         oauth_profile_name: str | None = None,
+        caller_session_id: str | None = None,
     ) -> dict:
         payload: dict[str, Any] = {"prompt": prompt}
         if session_id:
@@ -175,6 +176,8 @@ class NodeConnection:
             payload["systemPrompt"] = system_prompt
         if oauth_profile_name is not None:
             payload["oauth_profile_name"] = oauth_profile_name
+        if caller_session_id is not None:
+            payload["caller_session_id"] = caller_session_id
         return await self._send_command(CMD_CREATE_SESSION, payload)
 
     async def send_intervene(

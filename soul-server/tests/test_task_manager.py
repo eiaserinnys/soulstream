@@ -89,7 +89,7 @@ def _make_mock_session_db():
     async def _get_all_folders():
         return list(_folders.values())
 
-    async def _register_session_initial(session_id, node_id, agent_id=None, claude_session_id=None, session_type="claude", prompt=None, client_id=None, status="running", created_at=None, updated_at=None):
+    async def _register_session_initial(session_id, node_id, agent_id=None, claude_session_id=None, session_type="claude", prompt=None, client_id=None, status="running", created_at=None, updated_at=None, caller_session_id=None):
         _sessions[session_id] = {
             "session_id": session_id,
             "node_id": node_id,
@@ -99,6 +99,7 @@ def _make_mock_session_db():
             "prompt": prompt,
             "client_id": client_id,
             "status": status,
+            "caller_session_id": caller_session_id,
             "metadata": [],
             "last_event_id": 0,
             "last_read_event_id": 0,
@@ -380,6 +381,76 @@ class TestFinalizeTask:
         """존재하지 않는 세션에 finalize_task 호출 시 None을 반환한다."""
         task = await manager.finalize_task("nonexistent", result="done")
         assert task is None
+
+    async def test_finalize_notifies_caller_session_on_result(self, manager):
+        """caller_session_id가 있으면 완료 시 caller 세션의 intervention_queue에 메시지가 추가된다."""
+        # caller 세션 생성
+        await manager.create_task(prompt="parent work", agent_session_id="sess-caller")
+        # 서브 세션 생성 (caller_session_id 지정)
+        await manager.create_task(
+            prompt="sub work",
+            agent_session_id="sess-child",
+            caller_session_id="sess-caller",
+        )
+
+        await manager.finalize_task("sess-child", result="sub task done")
+
+        # caller 세션의 intervention_queue에 메시지가 추가되어 있어야 한다
+        caller_task = manager._tasks.get("sess-caller")
+        assert caller_task is not None
+        assert not caller_task.intervention_queue.empty()
+        iv = caller_task.intervention_queue.get_nowait()
+        assert "sess-child" in iv["text"]
+        assert "sub task done" in iv["text"]
+        assert iv["user"] == "agent"
+
+    async def test_finalize_notifies_caller_session_on_error(self, manager):
+        """caller_session_id가 있고 오류 완료 시에도 caller 세션에 notification이 전달된다."""
+        await manager.create_task(prompt="parent work", agent_session_id="sess-caller")
+        await manager.create_task(
+            prompt="sub work",
+            agent_session_id="sess-child",
+            caller_session_id="sess-caller",
+        )
+
+        await manager.finalize_task("sess-child", error="something went wrong")
+
+        caller_task = manager._tasks.get("sess-caller")
+        assert caller_task is not None
+        assert not caller_task.intervention_queue.empty()
+        iv = caller_task.intervention_queue.get_nowait()
+        assert "sess-child" in iv["text"]
+        assert iv["user"] == "agent"
+
+    async def test_finalize_no_notification_when_no_caller(self, manager):
+        """caller_session_id가 없으면 intervention_queue에 메시지가 추가되지 않는다."""
+        await manager.create_task(prompt="standalone work", agent_session_id="sess-solo")
+
+        task = await manager.finalize_task("sess-solo", result="done alone")
+
+        assert task is not None
+        assert task.status.value == "completed"
+        # sess-solo 자체의 큐에는 아무것도 없어야 한다
+        solo_task = manager._tasks.get("sess-solo")
+        assert solo_task is not None
+        assert solo_task.intervention_queue.empty()
+
+    async def test_finalize_caller_notification_does_not_deadlock(self, manager):
+        """caller 세션 알림이 락 데드락을 일으키지 않는다 (타임아웃 내에 완료되어야 한다)."""
+        import asyncio
+        await manager.create_task(prompt="parent", agent_session_id="sess-parent")
+        await manager.create_task(
+            prompt="child",
+            agent_session_id="sess-sub",
+            caller_session_id="sess-parent",
+        )
+
+        # 5초 타임아웃 내에 완료되어야 한다 (데드락이면 타임아웃 발생)
+        task = await asyncio.wait_for(
+            manager.finalize_task("sess-sub", result="finished"),
+            timeout=5.0,
+        )
+        assert task is not None
 
 
 class TestIntervention:

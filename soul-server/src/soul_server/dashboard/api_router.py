@@ -48,6 +48,7 @@ class CreateSessionBody(BaseModel):
     agentId: Optional[str] = None  # 에이전트 프로필 ID (AgentRegistry 조회 키)
     use_mcp: bool = True
     attachmentPaths: Optional[list[str]] = None  # 세션 시작 전 업로드된 파일 절대 경로 목록
+    caller_session_id: Optional[str] = None  # 발신 세션 ID (완료 시 자동 보고 대상)
 
 
 class InterveneBody(BaseModel):
@@ -392,6 +393,7 @@ async def api_create_session(body: CreateSessionBody):
             folder_id=body.folderId,
             profile_id=body.agentId,
             extra_context_items=extra_context_items,
+            caller_session_id=body.caller_session_id,
         )
     except TaskConflictError:
         raise HTTPException(

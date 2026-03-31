@@ -197,6 +197,7 @@ class PostgresSessionDB:
         status: str = "running",
         created_at: Optional[datetime] = None,
         updated_at: Optional[datetime] = None,
+        caller_session_id: Optional[str] = None,
     ) -> None:
         """세션 최초 등록 (순수 INSERT).
 
@@ -205,7 +206,7 @@ class PostgresSessionDB:
         """
         now = _utc_now()
         await self._pool.execute(
-            "SELECT session_register($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+            "SELECT session_register($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
             session_id,
             node_id,
             agent_id,
@@ -216,6 +217,7 @@ class PostgresSessionDB:
             status,
             created_at or now,
             updated_at or now,
+            caller_session_id,
         )
 
     async def set_claude_session_id(

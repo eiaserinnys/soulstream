@@ -228,6 +228,7 @@ class TaskManager:
                         last_read_event_id=s.get("last_read_event_id", 0),
                         created_at=str_to_datetime(s["created_at"]),
                         node_id=s.get("node_id"),
+                        caller_session_id=s.get("caller_session_id"),
                     )
                     self._tasks[s["session_id"]] = task
                     loaded += 1
@@ -361,6 +362,11 @@ class TaskManager:
                 if hasattr(task, key):
                     setattr(task, key, value)
 
+            # 락 블록 안에서 로컬 변수로 추출 (완료 보고 코드는 락 바깥에서 실행)
+            caller_session_id_to_notify = task.caller_session_id
+            task_result = task.result
+            task_error = task.error
+
         # DB 업데이트 + LRU 퇴거 후보 등록
         # 불변 필드는 register_session()에서만 기록한다.
         # finalize_task는 상태와 완료 시각만 업데이트한다.
@@ -376,6 +382,52 @@ class TaskManager:
             await get_session_broadcaster().emit_session_updated(task)
         except Exception:
             logger.warning(f"Failed to broadcast finalize for {agent_session_id}", exc_info=True)
+
+        # 완료 보고 — add_intervention이 동일 락을 획득하므로 반드시 락 블록 바깥에서 실행
+        if caller_session_id_to_notify:
+            if task_result:
+                notify_text = f"✅ 에이전트 세션 완료 (ID: `{agent_session_id}`)\n\n{task_result}"
+            else:
+                notify_text = f"❌ 에이전트 세션 오류 (ID: `{agent_session_id}`)\n\n{task_error or ''}"
+            try:
+                await self.add_intervention(
+                    agent_session_id=caller_session_id_to_notify,
+                    text=notify_text,
+                    user="agent",
+                )
+                logger.info(
+                    f"Completion notification sent to caller {caller_session_id_to_notify} "
+                    f"from {agent_session_id}"
+                )
+            except Exception as local_err:
+                logger.warning(
+                    f"Local notification to caller {caller_session_id_to_notify} failed: {local_err}",
+                    exc_info=True,
+                )
+                # cross-node 릴레이 시도
+                try:
+                    from soul_server.config import get_settings
+                    settings = get_settings()
+                    upstream_url = getattr(settings, "soulstream_upstream_url", None)
+                    if upstream_url:
+                        import re
+                        import httpx
+                        http_url = re.sub(r'^wss://', 'https://', upstream_url)
+                        http_url = re.sub(r'^ws://', 'http://', http_url)
+                        http_url = re.sub(r'/ws/.*$', '', http_url)
+                        async with httpx.AsyncClient(timeout=10.0) as client:
+                            await client.post(
+                                f"{http_url}/api/sessions/{caller_session_id_to_notify}/intervene",
+                                json={"text": notify_text, "user": "agent"},
+                            )
+                        logger.info(
+                            f"Cross-node notification sent to {caller_session_id_to_notify} via upstream"
+                        )
+                except Exception as remote_err:
+                    logger.warning(
+                        f"Cross-node notification also failed for {caller_session_id_to_notify}: {remote_err}"
+                    )
+
         return task
 
     def get_running_tasks(self) -> List[Task]:
@@ -505,6 +557,7 @@ class TaskManager:
         system_prompt: Optional[str] = None,
         profile_id: Optional[str] = None,
         oauth_profile_name: Optional[str] = None,
+        caller_session_id: Optional[str] = None,
     ) -> Task:
         """
         새 세션 태스크 생성 또는 기존 세션 resume
@@ -523,6 +576,7 @@ class TaskManager:
             system_prompt: Claude API system 파라미터로 전달할 시스템 프롬프트
             profile_id: 에이전트 프로필 ID (AgentRegistry에서 유효성 검사)
             oauth_profile_name: OAuth 토큰 프로필 이름 (OAuthTokenRegistry에서 유효성 검사)
+            caller_session_id: 발신 세션 ID (완료 시 자동 보고 대상)
 
         Returns:
             Task: 생성되거나 재활성화된 태스크
@@ -620,6 +674,7 @@ class TaskManager:
                     system_prompt=system_prompt,
                     profile_id=profile_id,
                     oauth_profile_name=oauth_profile_name,
+                    caller_session_id=caller_session_id,
                 )
                 self._tasks[agent_session_id] = task
                 logger.info(f"Created new session: {agent_session_id}")
@@ -639,6 +694,7 @@ class TaskManager:
                 client_id=task.client_id,
                 status=TaskStatus.RUNNING.value,
                 created_at=task.created_at,
+                caller_session_id=task.caller_session_id,
             )
             # 폴더 배정 + catalog_updated 브로드캐스트
             # _assign_default_folder_and_broadcast 내부에서 catalog_updated가 발행된다.

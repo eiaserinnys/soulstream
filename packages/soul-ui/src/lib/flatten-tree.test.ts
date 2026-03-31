@@ -6,7 +6,7 @@
 
 import { describe, it, expect } from "vitest";
 import { flattenTree, type ChatMessage } from "./flatten-tree";
-import type { EventTreeNode, SessionNode, UserMessageNode, ThinkingNode, TextNode, ToolNode, ResultNode, ErrorNode, CompactNode, CompleteNode } from "@shared/types";
+import type { EventTreeNode, SessionNode, UserMessageNode, SystemMessageNode, ThinkingNode, TextNode, ToolNode, ResultNode, ErrorNode, CompactNode, CompleteNode } from "@shared/types";
 
 function makeSession(children: EventTreeNode[] = []): SessionNode {
   return { type: "session", id: "session-root", content: "", completed: false, children };
@@ -53,6 +53,26 @@ function makeCompact(id: string, message: string): CompactNode {
 
 function makeComplete(id: string, message: string): CompleteNode {
   return { type: "complete", id, content: message, completed: true, children: [] };
+}
+
+function makeSystemMessage(id: string, text: string): SystemMessageNode {
+  return { type: "system_message", id, content: text, completed: true, children: [] };
+}
+
+function makeAgentUserMessage(
+  id: string,
+  text: string,
+  agentInfo: { agent_node: string; agent_id: string | null; agent_name: string | null },
+): UserMessageNode {
+  return {
+    type: "user_message",
+    id,
+    content: text,
+    completed: true,
+    user: "agent",
+    children: [],
+    agentInfo: { source: "agent", ...agentInfo },
+  };
 }
 
 // === Tests ===
@@ -234,5 +254,46 @@ describe("flattenTree", () => {
 
     const msgs = flattenTree(tree);
     expect(msgs[1].content).toContain("running");
+  });
+
+  it("system_message 노드 → role='system_message'", () => {
+    const tree = makeSession([
+      makeSystemMessage("sm1", "당신은 유용한 AI 어시스턴트입니다."),
+    ]);
+
+    const msgs = flattenTree(tree);
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].role).toBe("system_message");
+    expect(msgs[0].content).toBe("당신은 유용한 AI 어시스턴트입니다.");
+    expect(msgs[0].treeNodeType).toBe("system_message");
+  });
+
+  it("user_message agentInfo 전파", () => {
+    const tree = makeSession([
+      makeAgentUserMessage("u1", "에이전트가 보낸 메시지", {
+        agent_node: "node-1",
+        agent_id: "agent-abc",
+        agent_name: "TestAgent",
+      }),
+    ]);
+
+    const msgs = flattenTree(tree);
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].role).toBe("user");
+    expect(msgs[0].agentInfo).toEqual({
+      source: "agent",
+      agent_node: "node-1",
+      agent_id: "agent-abc",
+      agent_name: "TestAgent",
+    });
+  });
+
+  it("user_message agentInfo 없을 때 undefined", () => {
+    const tree = makeSession([
+      makeUserMessage("u1", "일반 사용자 메시지"),
+    ]);
+
+    const msgs = flattenTree(tree);
+    expect(msgs[0].agentInfo).toBeUndefined();
   });
 });

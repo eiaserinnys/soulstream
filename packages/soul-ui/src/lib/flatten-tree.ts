@@ -13,6 +13,7 @@ import type {
   ToolNode,
   ResultNode,
   UserMessageNode,
+  SystemMessageNode,
   InterventionNode,
   AssistantMessageNode,
   InputRequestNodeDef,
@@ -23,7 +24,7 @@ import type {
 /** Chat 탭에 표시되는 메시지 단위 */
 export interface ChatMessage {
   id: string;
-  role: "user" | "assistant" | "tool" | "system" | "intervention" | "input_request";
+  role: "user" | "assistant" | "tool" | "system" | "system_message" | "intervention" | "input_request";
   /** 메인 표시 텍스트 */
   content: string;
   timestamp?: number;
@@ -68,6 +69,13 @@ export interface ChatMessage {
   timeoutSec?: number;
   /** user_message 전용: 구조화된 맥락 항목 배열 */
   contextItems?: ContextItem[];
+  /** user_message 전용: 에이전트 발신자 메타데이터 */
+  agentInfo?: {
+    source: "agent";
+    agent_node: string;
+    agent_id: string | null;
+    agent_name: string | null;
+  };
 }
 
 /**
@@ -136,6 +144,19 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
         treeNodeId: n.id,
         treeNodeType: n.type,
         contextItems: n.context,
+        agentInfo: n.agentInfo,
+      };
+    }
+
+    case "system_message": {
+      const n = node as SystemMessageNode;
+      return {
+        id: n.id,
+        role: "system_message",
+        content: n.content,
+        timestamp: n.timestamp,
+        treeNodeId: n.id,
+        treeNodeType: n.type,
       };
     }
 

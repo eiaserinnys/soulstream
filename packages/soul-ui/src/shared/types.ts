@@ -18,6 +18,7 @@ export type SSEEventType =
   | "session"
   | "intervention_sent"
   | "user_message"
+  | "system_message"
   | "debug"
   | "complete"
   | "error"
@@ -96,6 +97,20 @@ export interface UserMessageEvent {
   client_id?: string;
   /** 부모 이벤트 ID (Phase 2: 타입 통일용, 서버에서 설정하지 않음) */
   parent_event_id?: string;
+  /** 에이전트가 발신한 경우 "agent" */
+  source?: "agent";
+  /** 에이전트가 실행 중인 노드 ID */
+  agent_node?: string;
+  /** 에이전트 ID (에이전트 발신 시) */
+  agent_id?: string | null;
+  /** 에이전트 이름 (에이전트 발신 시) */
+  agent_name?: string | null;
+}
+
+/** 시스템 프롬프트 이벤트 (에이전트 세션 시작 시 emit) */
+export interface SystemMessageEvent {
+  type: "system_message";
+  text: string;
 }
 
 export interface DebugEvent {
@@ -301,6 +316,7 @@ export type SoulSSEEvent =
   | SessionEvent
   | InterventionSentEvent
   | UserMessageEvent
+  | SystemMessageEvent
   | DebugEvent
   | CompleteEvent
   | ErrorEvent
@@ -460,6 +476,18 @@ export interface UserMessageNode extends BaseNode {
   type: "user_message";
   user: string;
   context?: ContextItem[];
+  /** 에이전트가 발신한 경우 채워지는 메타데이터 */
+  agentInfo?: {
+    source: "agent";
+    agent_node: string;
+    agent_id: string | null;
+    agent_name: string | null;
+  };
+}
+
+/** 시스템 메시지 노드 (system_message 이벤트 → 노드) */
+export interface SystemMessageNode extends BaseNode {
+  type: "system_message";
 }
 
 /** 인터벤션 노드 */
@@ -549,6 +577,7 @@ export interface AssistantMessageNode extends BaseNode {
 export type EventTreeNode =
   | SessionNode
   | UserMessageNode
+  | SystemMessageNode
   | InterventionNode
   | ThinkingNode
   | TextNode

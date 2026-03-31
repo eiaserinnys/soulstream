@@ -319,31 +319,42 @@ async def create_agent_session(
 ) -> dict:
     """현재 노드에 새 에이전트 세션을 생성한다. 비동기 (세션 ID만 반환).
 
+    caller_session_id가 지정되면 에이전트 세션 완료 시 자동으로 해당 세션에 결과를 보고한다.
+
     Args:
         agent_id: 에이전트 프로필 ID (None이면 기본 에이전트 사용)
         prompt: 수행할 작업 프롬프트
-        caller_session_id: 발신 세션 ID (콜백용). 지정하면 수신 에이전트의 system_prompt에 포함됨.
+        caller_session_id: 발신 세션 ID. 지정하면 에이전트 완료 시 자동 완료 보고 전송.
         folder_id: 세션을 배치할 폴더 ID (None이면 기본 배치)
     """
     task_manager = get_task_manager()
-    system = None
-    if caller_session_id:
-        system = (
-            f"[발신 세션: {caller_session_id}] "
-            "이 작업이 완료되면 reply_to_session 도구로 발신 세션에 결과를 전달할 수 있습니다."
-        )
     task = await task_manager.create_task(
         prompt=prompt,
         profile_id=agent_id,
         folder_id=folder_id,
-        system_prompt=system,
+        caller_session_id=caller_session_id,
     )
+
+    if caller_session_id:
+        # caller_agent_info 설정: 발신자 메타데이터 (user_message 이벤트에 포함됨)
+        caller_task = await task_manager.get_task(caller_session_id)
+        caller_profile = None
+        if caller_task and caller_task.profile_id and task_manager._agent_registry:
+            caller_profile = task_manager._agent_registry.get(caller_task.profile_id)
+
+        task.caller_agent_info = {
+            "source": "agent",
+            "agent_node": task_manager._db.node_id,
+            "agent_id": caller_task.profile_id if caller_task else None,
+            "agent_name": caller_profile.name if caller_profile else None,
+        }
+
     return {"agent_session_id": task.agent_session_id, "status": task.status.value}
 
 
 @cogito_mcp.tool()
-async def reply_to_session(target_session_id: str, message: str) -> dict:
-    """발신 세션에 결과/응답 메시지를 전달한다.
+async def send_message_to_session(target_session_id: str, message: str) -> dict:
+    """대상 세션에 메시지를 전달한다.
 
     내부적으로 task_manager.add_intervention()을 사용하며,
     세션 상태에 따라 동작이 다르다:
@@ -364,7 +375,7 @@ async def reply_to_session(target_session_id: str, message: str) -> dict:
         )
         return {"ok": True, "detail": result}
     except Exception as local_err:
-        logger.warning("reply_to_session 로컬 실패: %s", local_err, exc_info=True)
+        logger.warning("send_message_to_session 로컬 실패: %s", local_err, exc_info=True)
         if _orch_base is None:
             return {"ok": False, "error": str(local_err)}
         try:
@@ -905,29 +916,21 @@ def init_multi_node_tools(settings) -> None:
         """다른 노드에 새 에이전트 세션을 생성한다. 비동기 (세션 ID만 반환).
 
         오케스트레이터 POST /api/sessions에 nodeId를 포함하여 호출한다.
+        caller_session_id가 지정되면 에이전트 세션 완료 시 자동으로 해당 세션에 결과를 보고한다.
 
         Args:
             node_id: 대상 노드 ID
             agent_id: 에이전트 프로필 ID (None이면 기본 에이전트 사용)
             prompt: 수행할 작업 프롬프트
-            caller_session_id: 발신 세션 ID (콜백용). 지정하면 수신 에이전트의 system_prompt에 포함됨.
+            caller_session_id: 발신 세션 ID. 지정하면 에이전트 완료 시 자동 완료 보고 전송.
             folder_id: 세션을 배치할 폴더 ID (None이면 기본 배치)
         """
-        system = None
-        if caller_session_id:
-            node_id_self = _settings.soulstream_node_id if hasattr(_settings, "soulstream_node_id") else None
-            if node_id_self:
-                prefix = f"[발신 노드: {node_id_self}, 발신 세션: {caller_session_id}]"
-            else:
-                prefix = f"[발신 세션: {caller_session_id}]"
-            system = f"{prefix} 이 작업이 완료되면 reply_to_session 도구로 발신 세션에 결과를 전달할 수 있습니다."
-
         body = {
             "prompt": prompt,
             "nodeId": node_id,
             "profile": agent_id,
             "folderId": folder_id,
-            "system_prompt": system,
+            "caller_session_id": caller_session_id,
         }
         # None 값 제거 (exclude_none 상당)
         body = {k: v for k, v in body.items() if v is not None}
