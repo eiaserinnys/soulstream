@@ -298,7 +298,8 @@ async def list_local_agents() -> dict:
     from soul_server.main import get_agent_registry
     try:
         registry = get_agent_registry()
-    except RuntimeError:
+    except RuntimeError as e:
+        logger.warning("AgentRegistry 미초기화 — list_local_agents: %s", e)
         return {"agents": []}
     return {
         "agents": [
@@ -363,6 +364,7 @@ async def reply_to_session(target_session_id: str, message: str) -> dict:
         return {"ok": True, "detail": result}
     except Exception as local_err:
         # Phase 2에서 _orch_base가 설정되면 크로스 노드 폴백이 여기에 추가됨
+        logger.warning("reply_to_session 로컬 실패: %s", local_err, exc_info=True)
         return {"ok": False, "error": str(local_err)}
 
 
