@@ -56,7 +56,7 @@ jobs:
           $ok = $false
           while ($attempt -lt $maxRetry) {
             try {
-              $res = Invoke-RestMethod "http://localhost:3105/health" -TimeoutSec 3
+              $res = Invoke-RestMethod "http://localhost:3105/api/health" -TimeoutSec 3
               Write-Host "Health check OK: $($res | ConvertTo-Json -Compress)"
               $ok = $true
               break
@@ -98,7 +98,7 @@ jobs:
           Write-Host "Workspace   : C:\workspace-test"
           Write-Host "Port        : 3105"
           try {
-            $info = Invoke-RestMethod "http://localhost:3105/health"
+            $info = Invoke-RestMethod "http://localhost:3105/api/health"
             Write-Host "Service     : UP"
           } catch {
             Write-Host "Service     : DOWN (health check failed)"
