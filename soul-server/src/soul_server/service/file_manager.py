@@ -177,6 +177,74 @@ class FileManager:
         except Exception:
             return False
 
+    async def save_file_for_session(
+        self,
+        filename: str,
+        content: bytes,
+        session_id: str,
+    ) -> dict:
+        """
+        세션 생성 전 파일 업로드.
+
+        {base_dir}/{session_id}/ 에 저장한다. cleanup_old_files()가
+        _base_dir.iterdir()로 모든 하위 디렉토리를 순회하므로 추가 변경 없이 자동 정리됨.
+
+        Args:
+            filename: 원본 파일명
+            content: 파일 내용
+            session_id: 세션 식별자 (UUID 또는 임시 ID)
+
+        Returns:
+            저장 결과 딕셔너리 (path, filename, size, content_type)
+
+        Raises:
+            AttachmentError: 검증 실패
+        """
+        self.validate_file(filename, len(content))
+
+        session_dir = self._base_dir / session_id
+        session_dir.mkdir(parents=True, exist_ok=True)
+
+        timestamp = int(time.time() * 1000)
+        safe_name = f"{timestamp}_{filename}"
+        file_path = session_dir / safe_name
+
+        async with aiofiles.open(file_path, "wb") as f:
+            await f.write(content)
+
+        content_type, _ = mimetypes.guess_type(filename)
+        if not content_type:
+            content_type = "application/octet-stream"
+
+        return {
+            "path": str(file_path.resolve()),
+            "filename": safe_name,
+            "size": len(content),
+            "content_type": content_type,
+        }
+
+    def cleanup_session(self, session_id: str) -> int:
+        """
+        세션 첨부 파일 정리.
+
+        cleanup_thread()와 동일한 패턴이나 str session_id를 받는다.
+
+        Args:
+            session_id: 세션 식별자
+
+        Returns:
+            삭제된 파일 수
+        """
+        session_dir = self._base_dir / session_id
+        if not session_dir.exists():
+            return 0
+        try:
+            files_removed = sum(1 for _ in session_dir.iterdir() if _.is_file())
+            shutil.rmtree(session_dir)
+            return files_removed
+        except Exception:
+            return 0
+
     def cleanup_thread(self, thread_id: int) -> int:
         """
         스레드의 첨부 파일 정리

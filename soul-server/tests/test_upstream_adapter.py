@@ -178,6 +178,7 @@ class TestHandleIntervene:
             agent_session_id="session-1",
             text="Please stop",
             user="admin",
+            attachment_paths=None,
         )
 
     @pytest.mark.asyncio

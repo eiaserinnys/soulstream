@@ -423,6 +423,7 @@ class UpstreamAdapter:
             agent_session_id=session_id,
             text=cmd["text"],
             user=cmd.get("user", "upstream"),
+            attachment_paths=cmd.get("attachment_paths") or None,  # soulstream-server에서 전달한 파일 경로
         )
 
         # 오케스트레이터에 ACK 전송 — requestId가 있어야 Future.set_result()가 실행된다.
