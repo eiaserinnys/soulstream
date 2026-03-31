@@ -71,6 +71,68 @@ jobs:
             exit 1
           }
 
+      - name: Smoke test — folder, session, SQLite
+        shell: pwsh
+        run: |
+          $env:PYTHONUTF8 = "1"
+          $base = "http://localhost:3105"
+
+          # 1. Create a folder
+          $folder = Invoke-RestMethod "$base/api/catalog/folders" `
+            -Method POST -ContentType "application/json" `
+            -Body '{"name": "ci-smoke-test", "sort_order": 0}'
+          Write-Host "Folder created: id=$($folder.id) name=$($folder.name)"
+
+          # 2. Create a session in that folder (use_mcp=false skips MCP server setup)
+          $body = [ordered]@{
+            prompt   = "Print: CI_TEST_OK"
+            folderId = $folder.id
+            use_mcp  = $false
+          } | ConvertTo-Json
+          $session = Invoke-RestMethod "$base/api/sessions" `
+            -Method POST -ContentType "application/json" -Body $body
+          Write-Host "Session created: agentSessionId=$($session.agentSessionId) status=$($session.status)"
+
+          # 3. Wait briefly for the DB INSERT to complete
+          Start-Sleep -Seconds 2
+
+          # 4. Verify SQLite — soul-server cwd is the install dir, data_dir defaults to {cwd}/.local/data
+          $dbPath = "C:\soulstream-test\soulstream\soul-server\.local\data\soulstream.db"
+          if (-not (Test-Path $dbPath)) {
+            Write-Error "SQLite DB not found: $dbPath"
+            exit 1
+          }
+          Write-Host "SQLite DB found: $dbPath"
+
+          $folderId  = $folder.id
+          $sessionId = $session.agentSessionId
+          $py = @"
+import sqlite3, sys
+db = sqlite3.connect(r'$dbPath')
+cur = db.cursor()
+
+cur.execute("SELECT id, name FROM folders WHERE id=?", ('$folderId',))
+frow = cur.fetchone()
+if not frow:
+    print("FAIL: folder not in DB", file=sys.stderr)
+    sys.exit(1)
+print(f"  folder  OK : id={frow[0]}  name={frow[1]}")
+
+cur.execute("SELECT session_id, status, folder_id FROM sessions WHERE session_id=?", ('$sessionId',))
+srow = cur.fetchone()
+if not srow:
+    print("FAIL: session not in DB", file=sys.stderr)
+    sys.exit(1)
+print(f"  session OK : id={srow[0]}  status={srow[1]}  folder_id={srow[2]}")
+db.close()
+"@
+          python -c $py
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "SQLite verification failed"
+            exit 1
+          }
+          Write-Host "Smoke tests passed"
+
       - name: Dump service logs on failure
         if: failure()
         shell: pwsh
