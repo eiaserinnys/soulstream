@@ -14,6 +14,15 @@
 #   8. Starts the service
 #   9. Builds the dashboard
 
+param(
+    [string]$InstallDir      = "",
+    [string]$WorkspaceDir    = "",
+    [int]$Port               = 0,
+    [switch]$Force,
+    [switch]$NonInteractive,
+    [switch]$SkipDashboard
+)
+
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
 chcp 65001 | Out-Null
@@ -190,22 +199,32 @@ Write-Host ""
 $defaultInstallDir = Join-Path $env:USERPROFILE "soulstream"
 $defaultWorkspace  = Join-Path $env:USERPROFILE "workspace"
 
-$installDir  = Read-HostWithDefault "  Install path  " $defaultInstallDir
-$workspaceDir = Read-HostWithDefault "  Workspace path" $defaultWorkspace
+if ($NonInteractive) {
+    $installDir   = if ($InstallDir)   { $InstallDir }   else { $defaultInstallDir }
+    $workspaceDir = if ($WorkspaceDir) { $WorkspaceDir } else { $defaultWorkspace }
+} else {
+    $installDir   = Read-HostWithDefault "  Install path  " $defaultInstallDir
+    $workspaceDir = Read-HostWithDefault "  Workspace path" $defaultWorkspace
+}
 
 # Port selection with conflict detection
-$defaultPort = 3105
+$defaultPort = if ($Port -gt 0) { $Port } else { 3105 }
 $portInUse = Test-PortOpen $defaultPort
 if ($portInUse) {
     $suggestedPort = Find-FreePort -StartPort ($defaultPort + 1)
     Write-Warn "Port $defaultPort is already in use."
-    $useAlt = Read-Host "  Use port $suggestedPort instead? [Y/n]"
-    if ($useAlt -eq "" -or $useAlt -match "^[Yy]") {
+    if ($NonInteractive) {
         $port = $suggestedPort
-        Write-Ok "Using port $port."
+        Write-Ok "Auto-selected port $port."
     } else {
-        $portInput = Read-Host "  Enter port number"
-        $port = [int]$portInput
+        $useAlt = Read-Host "  Use port $suggestedPort instead? [Y/n]"
+        if ($useAlt -eq "" -or $useAlt -match "^[Yy]") {
+            $port = $suggestedPort
+            Write-Ok "Using port $port."
+        } else {
+            $portInput = Read-Host "  Enter port number"
+            $port = [int]$portInput
+        }
     }
 } else {
     $port = $defaultPort
@@ -221,11 +240,15 @@ Write-Host ""
 
 $soulstreamDir = Join-Path $installDir "soulstream"
 if (Test-Path $soulstreamDir) {
-    Write-Warn "Existing installation found at $soulstreamDir"
-    $reinstall = Read-Host "  Reinstall? This will overwrite existing files. [y/N]"
-    if ($reinstall -notmatch "^[Yy]") {
-        Write-Host "  Aborted." -ForegroundColor DarkGray
-        exit 0
+    if ($Force -or $NonInteractive) {
+        Write-Warn "Existing installation found at $soulstreamDir — overwriting (Force/NonInteractive)."
+    } else {
+        Write-Warn "Existing installation found at $soulstreamDir"
+        $reinstall = Read-Host "  Reinstall? This will overwrite existing files. [y/N]"
+        if ($reinstall -notmatch "^[Yy]") {
+            Write-Host "  Aborted." -ForegroundColor DarkGray
+            exit 0
+        }
     }
 }
 
@@ -258,7 +281,9 @@ Write-Host "    Haniel will clone soulstream, create a Python venv, and" -Foregr
 Write-Host "    prompt you for .env settings (node ID, auth token, etc.)" -ForegroundColor DarkGray
 Write-Host ""
 
-haniel install $hanielYamlPath
+$hanielArgs = @($hanielYamlPath)
+if ($NonInteractive) { $hanielArgs += "--skip-interactive" }
+haniel install @hanielArgs
 if ($LASTEXITCODE -ne 0) {
     Write-Fail "haniel install failed (exit code: $LASTEXITCODE)."
     Write-Host "    Check the output above for details." -ForegroundColor DarkGray
@@ -276,10 +301,20 @@ if ($LASTEXITCODE -ne 0) {
     # Service may not be registered as Windows service — try haniel run in background
     Write-Warn "Windows service not found. Starting with haniel run..."
     Start-Process -FilePath "haniel" -ArgumentList "run", $hanielYamlPath -WindowStyle Hidden
-    Start-Sleep -Seconds 3
-    $running = Test-PortOpen $port
+    Write-Host "    Waiting for service to start..." -ForegroundColor DarkGray
+    $maxWait = 30
+    $elapsed = 0
+    $running = $false
+    while ($elapsed -lt $maxWait) {
+        Start-Sleep -Seconds 2
+        $elapsed += 2
+        if (Test-PortOpen $port) {
+            $running = $true
+            break
+        }
+    }
     if (-not $running) {
-        Write-Warn "Service may still be starting. Check: haniel status $hanielYamlPath"
+        Write-Warn "Service did not respond within ${maxWait}s. Check: haniel status $hanielYamlPath"
     } else {
         Write-Ok "Service is up on port $port."
     }
@@ -294,7 +329,9 @@ Write-Step "Building dashboard..."
 $monoRepoDir  = Join-Path $installDir "soulstream"
 $dashboardDir = Join-Path $monoRepoDir "unified-dashboard"
 
-if (-not (Test-Path $dashboardDir)) {
+if ($SkipDashboard) {
+    Write-Warn "Dashboard build skipped (-SkipDashboard)."
+} elseif (-not (Test-Path $dashboardDir)) {
     Write-Warn "Dashboard directory not found at $dashboardDir — skipping build."
 } else {
     Write-Host "    Installing Node.js dependencies..." -ForegroundColor DarkGray
