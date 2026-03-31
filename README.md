@@ -1,6 +1,6 @@
 # Soulstream
 
-![Soulstream](soulstream.jpg)
+![Soulstream](assets/soulstream.jpg)
 
 **Run Claude Code as a service.** Point your Slack bot, Discord bot, or any HTTP client
 at Soulstream and it handles the rest — session lifecycle, SSE streaming, multi-turn
