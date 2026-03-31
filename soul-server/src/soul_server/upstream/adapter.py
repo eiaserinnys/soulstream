@@ -387,6 +387,7 @@ class UpstreamAdapter:
                 folder_id=cmd.get("folderId"),
                 system_prompt=cmd.get("systemPrompt"),
                 oauth_profile_name=cmd.get("oauth_profile_name"),
+                caller_session_id=cmd.get("caller_session_id"),
             )
         except ValueError as e:
             await self._send_error(str(e), request_id=cmd.get("requestId", ""))

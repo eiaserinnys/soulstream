@@ -177,6 +177,21 @@ class TaskExecutor:
                     + (task.context_items or [])  # 클라이언트 전달 컨텍스트
                 )
 
+                # system_message 기록 (system_prompt 있을 때, user_message 직전)
+                if self._db is not None and task.system_prompt:
+                    try:
+                        sys_msg_event = {
+                            "type": "system_message",
+                            "text": task.system_prompt,
+                        }
+                        event_id = await self._persist_event(session_id, sys_msg_event)
+                        sys_msg_event["_event_id"] = event_id
+                        if event_id is not None:
+                            task.last_event_id = event_id
+                        await self._listener_manager.broadcast(session_id, sys_msg_event)
+                    except Exception as e:
+                        logger.warning(f"Failed to persist system_message for {session_id}: {e}")
+
                 # user_message 기록
                 if self._db is not None:
                     try:
@@ -186,6 +201,8 @@ class TaskExecutor:
                             "text": task.prompt,
                             "context": combined_context_items,
                         }
+                        if task.caller_agent_info:
+                            user_msg_event.update(task.caller_agent_info)
                         event_id = await self._persist_event(session_id, user_msg_event)
                         user_msg_event["_event_id"] = event_id
                         current_user_request_id = str(event_id)

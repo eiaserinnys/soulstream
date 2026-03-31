@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     last_event_id INTEGER,
     last_read_event_id INTEGER,
     created_at TEXT,                     -- TIMESTAMPTZ → TEXT (ISO 8601)
-    updated_at TEXT
+    updated_at TEXT,
+    caller_session_id TEXT               -- 에이전트 세션 발신자 ID (완료 보고용)
 );
 
 -- events 테이블
