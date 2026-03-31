@@ -156,6 +156,7 @@ class NodeConnection:
         use_mcp: bool | None = None,
         folder_id: str | None = None,
         system_prompt: str | None = None,
+        oauth_profile_name: str | None = None,
     ) -> dict:
         payload: dict[str, Any] = {"prompt": prompt}
         if session_id:
@@ -172,6 +173,8 @@ class NodeConnection:
             payload["folderId"] = folder_id
         if system_prompt is not None:
             payload["systemPrompt"] = system_prompt
+        if oauth_profile_name is not None:
+            payload["oauth_profile_name"] = oauth_profile_name
         return await self._send_command(CMD_CREATE_SESSION, payload)
 
     async def send_intervene(

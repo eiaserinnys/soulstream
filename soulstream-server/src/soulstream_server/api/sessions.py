@@ -38,6 +38,7 @@ class CreateSessionRequest(BaseModel):
     disallowed_tools: Optional[list[str]] = None
     use_mcp: Optional[bool] = None
     system_prompt: Optional[str] = None
+    oauth_profile_name: Optional[str] = None
 
 
 class InterveneRequest(BaseModel):
