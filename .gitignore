@@ -45,3 +45,6 @@ requirements.txt
 # OS
 .DS_Store
 Thumbs.db
+
+# docgen auto-generated
+.docs/ARCHITECTURE.*.md
