@@ -88,20 +88,6 @@ export function OrchestratorDashboardLayout() {
     getSessionProvider: () => orchestratorSessionProvider,
   });
 
-  // 30초마다 세션 목록 전체 재조회 (SSE 누락 대비 안전망)
-  useEffect(() => {
-    const refresh = async () => {
-      try {
-        const result = await orchestratorSessionProvider.fetchSessions();
-        useDashboardStore.getState().setSessions(result.sessions, result.total);
-      } catch {
-        // 갱신 실패는 조용히 무시
-      }
-    };
-    const timer = setInterval(refresh, 30_000);
-    return () => clearInterval(timer);
-  }, []);
-
   // 활성 세션 구독
   const { status: sseStatus } = useSessionProvider({
     sessionKey: activeSessionKey,
