@@ -527,7 +527,8 @@ class UpstreamAdapter:
             return
 
         queue: asyncio.Queue = asyncio.Queue()
-        await self._tm.add_listener(session_id, queue)
+        if not await self._tm.add_listener(session_id, queue):
+            return
 
         try:
             while self._running:
