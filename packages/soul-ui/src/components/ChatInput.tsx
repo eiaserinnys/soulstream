@@ -17,6 +17,22 @@ import { useFileUpload } from "../hooks/useFileUpload";
 
 /** Soul 서버의 MAX_MESSAGE_LENGTH과 일치 (인터벤션 메시지의 최대 길이) */
 const MAX_LENGTH = 50_000;
+/** 에러 응답에서 사용자에게 표시할 메시지를 추출한다.
+ *  서버가 detail을 객체로 반환하는 경우(예: node_mismatch)를 처리한다. */
+function extractErrorMessage(body: Record<string, unknown>, status: number): string {
+  const detail = body.detail;
+  if (typeof detail === "string") return detail;
+  if (detail && typeof detail === "object") {
+    const d = detail as Record<string, unknown>;
+    return (d.message ?? d.error ?? JSON.stringify(detail)) as string;
+  }
+  const errMsg = body.error;
+  if (errMsg && typeof errMsg === "object") {
+    return ((errMsg as Record<string, unknown>).message ?? JSON.stringify(errMsg)) as string;
+  }
+  if (typeof errMsg === "string") return errMsg;
+  return `HTTP ${status}`;
+}
 
 interface ActiveSessionInfo {
   status: string | null;
@@ -180,7 +196,7 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
 
         if (!response.ok) {
           const body = await response.json().catch(() => ({ detail: "Unknown error" }));
-          throw new Error(body.detail ?? body.error?.message ?? `HTTP ${response.status}`);
+          throw new Error(extractErrorMessage(body, response.status));
         }
 
         const result = await response.json();
@@ -213,7 +229,7 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
 
         if (!response.ok) {
           const body = await response.json().catch(() => ({ detail: "Unknown error" }));
-          throw new Error(body.detail ?? body.error?.message ?? `HTTP ${response.status}`);
+          throw new Error(extractErrorMessage(body, response.status));
         }
 
         await response.json();
