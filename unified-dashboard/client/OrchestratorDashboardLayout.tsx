@@ -154,7 +154,7 @@ export function OrchestratorDashboardLayout() {
       }
       rightPanel={<RightPanel chatInputDisabled={isChatInputDisabled} isOtherNodeSession={isOtherNodeSession} />}
       connectionStatus={connectionStatus ?? sseStatus}
-      onSearchClick={features.searchModal ? () => setSearchOpen(true) : undefined}
+      onSearchClick={() => setSearchOpen(true)}
       banner={
         isDraining ? (
           <div
