@@ -23,6 +23,8 @@ def create_cogito_router(node_manager: NodeManager) -> APIRouter:
     async def search(
         q: str = Query(..., description="검색 쿼리"),
         top_k: int = Query(default=10, ge=1, le=100, description="최대 결과 수"),
+        event_types: str | None = Query(default=None, description="콤마 구분 이벤트 타입 필터"),
+        search_session_id: bool = Query(default=False, description="session_id ILIKE 검색 포함 여부"),
     ):
         """연결된 모든 soul-server 노드에 검색 요청을 fan-out하고 결과를 병합한다.
 
@@ -35,11 +37,15 @@ def create_cogito_router(node_manager: NodeManager) -> APIRouter:
 
         all_results: list[dict] = []
 
+        params: dict = {"q": q, "top_k": top_k, "search_session_id": search_session_id}
+        if event_types is not None:
+            params["event_types"] = event_types
+
         async with httpx.AsyncClient(timeout=10.0) as client:
             for node in nodes:
                 url = f"http://{node.host}:{node.port}/cogito/search"
                 try:
-                    resp = await client.get(url, params={"q": q, "top_k": top_k})
+                    resp = await client.get(url, params=params)
                     if resp.status_code == 200:
                         data = resp.json()
                         all_results.extend(data.get("results", []))

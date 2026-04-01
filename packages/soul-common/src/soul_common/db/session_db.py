@@ -686,18 +686,38 @@ class PostgresSessionDB:
         query: str,
         session_ids: Optional[list[str]] = None,
         limit: int = 50,
+        event_types: Optional[list[str]] = None,
     ) -> list[dict]:
         if not query.strip():
             return []
 
         try:
             rows = await self._pool.fetch(
-                "SELECT * FROM event_search($1, $2, $3)",
-                query, session_ids, limit,
+                "SELECT * FROM event_search($1, $2, $3, $4)",
+                query, session_ids, limit, event_types,
             )
             return [self._event_to_dict(r) for r in rows]
         except asyncpg.PostgresError as e:
             logger.warning(f"tsvector search failed: {e}")
+            return []
+
+    async def search_events_by_session_id(
+        self,
+        session_id_query: str,
+        event_types: Optional[list[str]] = None,
+        limit: int = 50,
+    ) -> list[dict]:
+        """session_id ILIKE 매칭으로 이벤트를 검색한다."""
+        if not session_id_query.strip():
+            return []
+        try:
+            rows = await self._pool.fetch(
+                "SELECT * FROM session_id_search($1, $2, $3)",
+                session_id_query, event_types, limit,
+            )
+            return [self._event_to_dict(r) for r in rows]
+        except asyncpg.PostgresError as e:
+            logger.warning(f"session_id_search failed: {e}")
             return []
 
     # --- searchable_text 추출 유틸 ---
