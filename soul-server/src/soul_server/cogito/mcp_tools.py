@@ -381,6 +381,15 @@ async def send_message_to_session(target_session_id: str, message: str) -> dict:
             text=message,
             user="agent",  # user는 기본값 없는 필수값 (HTTP API InterveneRequest.user와 다름)
         )
+        if result.get("auto_resumed"):
+            await task_manager.start_execution(
+                agent_session_id=target_session_id,
+                claude_runner=get_soul_engine(),
+                resource_manager=resource_manager,
+            )
+            logger.info(
+                "send_message_to_session: auto-resumed session %s", target_session_id
+            )
         return {"ok": True, "detail": result}
     except Exception as local_err:
         logger.warning("send_message_to_session 로컬 실패: %s", local_err, exc_info=True)
