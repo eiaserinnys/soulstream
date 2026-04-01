@@ -206,6 +206,7 @@ def create_app() -> FastAPI:
         """
         return {
             "mode": "orchestrator",
+            "nodeId": settings.node_name,  # NODE_NAME env var. 다른 노드 세션 판별에 사용
             "auth": {"enabled": settings.is_auth_enabled},
             "features": {
                 "configModal": True,
