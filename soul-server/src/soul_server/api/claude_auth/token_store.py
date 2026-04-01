@@ -13,6 +13,8 @@ import os
 import re
 from pathlib import Path
 
+import yaml
+
 logger = logging.getLogger(__name__)
 
 # 환경변수 키
@@ -143,3 +145,41 @@ def get_env_path() -> Path:
     load_dotenv()가 시작 시 이 파일을 읽으므로, 재시작 후에도 변경이 유지됩니다.
     """
     return Path.cwd() / ".env"
+
+
+PROFILES_FILENAME = "oauth_token.yaml"
+
+
+def get_profiles_path() -> Path:
+    """oauth_token.yaml 경로 반환 (.env와 같은 CWD 기준)"""
+    return Path.cwd() / PROFILES_FILENAME
+
+
+def load_profiles(profiles_path: Path) -> dict[str, str]:
+    """oauth_token.yaml에서 {프로필명: token} dict 반환
+
+    파일이 없거나 비어 있으면 빈 dict 반환.
+    형식: {name: {token: sk-ant-oat01-xxx}}
+    """
+    if not profiles_path.exists():
+        return {}
+    with open(profiles_path, "r", encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+    if not data or not isinstance(data, dict):
+        return {}
+    result = {}
+    for name, value in data.items():
+        if isinstance(value, dict) and isinstance(value.get("token"), str):
+            result[str(name)] = value["token"]
+    return result
+
+
+def get_current_profile_name(profiles: dict[str, str]) -> str | None:
+    """현재 os.environ 토큰과 일치하는 프로필 이름 반환. 없으면 None."""
+    current_token = get_oauth_token()
+    if not current_token:
+        return None
+    for name, token in profiles.items():
+        if token == current_token:
+            return name
+    return None

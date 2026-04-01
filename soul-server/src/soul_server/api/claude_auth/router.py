@@ -15,6 +15,7 @@ Claude Code OAuth 인증 API 라우터
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import Any, Optional
 
@@ -31,6 +32,9 @@ from .token_store import (
     save_oauth_token,
     get_env_path,
     is_valid_token,
+    load_profiles,
+    get_current_profile_name,
+    get_profiles_path,
 )
 
 logger = logging.getLogger(__name__)
@@ -99,6 +103,20 @@ class ErrorResponse(BaseModel):
 
     error: str
     details: dict[str, Any] | None = None
+
+
+class ProfilesResponse(BaseModel):
+    """GET /profiles 응답"""
+
+    node_id: str
+    profiles: list[str]
+    current_profile: Optional[str] = None
+
+
+class ActivateProfileRequest(BaseModel):
+    """POST /profiles/activate 요청"""
+
+    profile: str
 
 
 # === Router Factory ===
@@ -294,5 +312,53 @@ def create_claude_auth_router(
         except Exception as e:
             logger.exception(f"Failed to delete OAuth token: {e}")
             return TokenResponse(success=False, error=f"토큰 삭제 실패: {str(e)}")
+
+    @router.get("/profiles", response_model=ProfilesResponse)
+    async def get_profiles(_: str = Depends(verify_token)):
+        """OAuth 프로필 목록 조회
+
+        oauth_token.yaml에서 프로필을 읽어 반환합니다.
+        current_profile은 현재 CLAUDE_CODE_OAUTH_TOKEN과 일치하는 프로필명입니다.
+        """
+        profiles = load_profiles(get_profiles_path())
+        current = get_current_profile_name(profiles)
+        node_id = os.environ["SOULSTREAM_NODE_ID"]
+        return ProfilesResponse(
+            node_id=node_id,
+            profiles=list(profiles.keys()),
+            current_profile=current,
+        )
+
+    @router.post("/profiles/activate", response_model=TokenResponse)
+    async def activate_profile(
+        request: ActivateProfileRequest, _: str = Depends(verify_token)
+    ) -> TokenResponse:
+        """OAuth 프로필 활성화
+
+        지정된 프로필의 토큰을 os.environ과 .env 파일에 저장합니다.
+        다음 Claude Code spawn 시 즉시 반영됩니다.
+        """
+        profiles = load_profiles(get_profiles_path())
+        if request.profile not in profiles:
+            return TokenResponse(
+                success=False,
+                error=f"프로필 '{request.profile}'이(가) 없습니다. oauth_token.yaml을 확인해주세요.",
+            )
+        token = profiles[request.profile]
+        if not is_valid_token(token):
+            return TokenResponse(
+                success=False,
+                error=f"프로필 '{request.profile}'의 토큰 형식이 유효하지 않습니다. oauth_token.yaml을 확인해주세요.",
+            )
+        try:
+            save_oauth_token(token, _get_env_path())
+            logger.info(f"OAuth 프로필 전환: '{request.profile}'")
+            return TokenResponse(
+                success=True,
+                message=f"프로필 '{request.profile}'(으)로 전환했습니다.",
+            )
+        except Exception as e:
+            logger.exception(f"프로필 활성화 실패: {e}")
+            return TokenResponse(success=False, error=f"프로필 활성화 실패: {str(e)}")
 
     return router

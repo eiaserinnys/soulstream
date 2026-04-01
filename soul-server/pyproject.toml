@@ -28,6 +28,7 @@ dependencies = [
     "PyJWT>=2.8.0",
     "rank-bm25>=0.2.2",
     "asyncpg>=0.29.0",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
