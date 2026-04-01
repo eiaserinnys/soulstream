@@ -24,6 +24,7 @@ from soul_server.service.task_manager import get_task_manager
 from soul_server.service.postgres_session_db import get_session_db
 from soul_server.service.session_broadcaster import get_session_broadcaster
 from soul_server.service.catalog_service import get_catalog_service
+from soul_server.service import get_soul_engine, resource_manager
 
 if TYPE_CHECKING:
     from soul_server.cogito.brief_composer import BriefComposer
@@ -348,6 +349,13 @@ async def create_agent_session(
             "agent_id": caller_task.profile_id if caller_task else None,
             "agent_name": caller_profile.name if caller_profile else None,
         }
+
+    # 백그라운드에서 Claude 실행 시작
+    await task_manager.start_execution(
+        agent_session_id=task.agent_session_id,
+        claude_runner=get_soul_engine(),
+        resource_manager=resource_manager,
+    )
 
     return {"agent_session_id": task.agent_session_id, "status": task.status.value}
 
