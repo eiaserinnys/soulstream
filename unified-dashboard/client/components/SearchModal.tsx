@@ -8,7 +8,7 @@
  * 검색 엔드포인트: /cogito/search (BFF 없이 soul-server 직접 접근)
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Dialog,
   DialogPopup,
@@ -19,7 +19,49 @@ import {
   cn,
 } from "@seosoyoung/soul-ui";
 import { Search } from "lucide-react";
-import { useSessionSearch, type SearchResultItem } from "../hooks/useSessionSearch";
+import {
+  useSessionSearch,
+  type SearchResultItem,
+  type SearchFilters,
+} from "../hooks/useSessionSearch";
+
+// === Filter state ===
+
+interface FilterState {
+  sessionId: boolean;
+  userMessage: boolean;
+  agentResponse: boolean;
+  agentThinking: boolean;
+  toolUse: boolean;
+}
+
+const DEFAULT_FILTER_STATE: FilterState = {
+  sessionId: true,
+  userMessage: true,
+  agentResponse: true,
+  agentThinking: false,
+  toolUse: false,
+};
+
+const FILTER_LABELS: { key: keyof FilterState; label: string }[] = [
+  { key: "sessionId", label: "세션 아이디" },
+  { key: "userMessage", label: "사용자 메시지" },
+  { key: "agentResponse", label: "에이전트 응답" },
+  { key: "agentThinking", label: "에이전트 내부 사고" },
+  { key: "toolUse", label: "툴 사용" },
+];
+
+function toSearchFilters(state: FilterState): SearchFilters {
+  const eventTypes: string[] = [];
+  if (state.userMessage) eventTypes.push("user_message");
+  if (state.agentResponse) eventTypes.push("text_delta");
+  if (state.agentThinking) eventTypes.push("thinking");
+  if (state.toolUse) eventTypes.push("tool_use", "tool_start", "tool_result");
+  return {
+    searchSessionId: state.sessionId,
+    eventTypes: eventTypes.length > 0 ? eventTypes : null,
+  };
+}
 
 // === Event type label mapping ===
 
@@ -85,26 +127,43 @@ export function SearchModal({ open, onOpenChange }: SearchModalProps) {
   const setFocusEventId = useDashboardStore((s) => s.setFocusEventId);
   const { results, loading, error, search, clear } = useSessionSearch();
   const [query, setQuery] = useState("");
+  const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTER_STATE);
+
+  // stale closure 방지용 ref
+  const queryRef = useRef(query);
+  queryRef.current = query;
+  const filtersRef = useRef(filters);
+  filtersRef.current = filters;
 
   // 모달 닫힐 때 상태 초기화
   useEffect(() => {
     if (!open) {
       setQuery("");
+      setFilters(DEFAULT_FILTER_STATE);
       clear();
     }
   }, [open, clear]);
 
-  // 300ms debounce 자동 검색
+  // Effect 1: query 변경 시 300ms debounce 검색
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (query) {
-        search(query);
+      if (query.trim()) {
+        search(query, toSearchFilters(filtersRef.current));
       } else {
         clear();
       }
     }, 300);
     return () => clearTimeout(timer);
   }, [query, search, clear]);
+
+  // Effect 2: filters 변경 시 즉시 재검색 (query가 비어있지 않을 때)
+  useEffect(() => {
+    if (queryRef.current.trim()) {
+      search(queryRef.current, toSearchFilters(filters));
+    }
+    // queryRef로 최신 query를 읽으므로 query는 deps에서 제외
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters, search]);
 
   const handleResultClick = (result: SearchResultItem) => {
     setActiveSession(result.session_id);
@@ -121,7 +180,7 @@ export function SearchModal({ open, onOpenChange }: SearchModalProps) {
 
         <DialogPanel scrollFade={false}>
           {/* 검색 입력창 */}
-          <div className="relative mb-3">
+          <div className="relative mb-2">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
             <input
               autoFocus
@@ -135,6 +194,26 @@ export function SearchModal({ open, onOpenChange }: SearchModalProps) {
                 "placeholder:text-muted-foreground",
               )}
             />
+          </div>
+
+          {/* 필터 체크박스 */}
+          <div className="flex flex-wrap gap-x-4 gap-y-1 mb-3">
+            {FILTER_LABELS.map(({ key, label }) => (
+              <label
+                key={key}
+                className="flex items-center gap-1.5 cursor-pointer select-none"
+              >
+                <input
+                  type="checkbox"
+                  checked={filters[key]}
+                  onChange={(e) =>
+                    setFilters((prev) => ({ ...prev, [key]: e.target.checked }))
+                  }
+                  className="w-3.5 h-3.5 rounded accent-primary"
+                />
+                <span className="text-[12px] text-muted-foreground">{label}</span>
+              </label>
+            ))}
           </div>
 
           {/* 상태 표시 */}
@@ -159,7 +238,7 @@ export function SearchModal({ open, onOpenChange }: SearchModalProps) {
 
           {!loading && !error && results.length === 0 && !query.trim() && (
             <div className="py-6 text-center text-[13px] text-muted-foreground">
-              user 메시지, assistant 응답, thinking, tool 호출을 검색합니다
+              위 필터를 선택하여 세션 기록을 검색합니다
             </div>
           )}
 

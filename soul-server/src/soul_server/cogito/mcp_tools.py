@@ -982,6 +982,8 @@ async def api_search_sessions(
     q: str,
     top_k: int = Query(default=10, ge=1, le=100),
     session_ids: str | None = None,  # 콤마 구분 문자열
+    event_types: str | None = None,  # 콤마 구분 문자열
+    search_session_id: bool = False,
 ) -> dict:
     """세션 기록 FTS5 검색 REST 엔드포인트."""
     try:
@@ -990,9 +992,13 @@ async def api_search_sessions(
         raise HTTPException(status_code=503, detail=str(e))
     from soul_server.cogito.search import SessionSearchEngine
     ids = [s.strip() for s in session_ids.split(",") if s.strip()] if session_ids else None
+    types = [s.strip() for s in event_types.split(",") if s.strip()] if event_types else None
     try:
         engine = SessionSearchEngine(db)
-        results = await engine.search(query=q, session_ids=ids, top_k=top_k)
+        results = await engine.search(
+            query=q, session_ids=ids, top_k=top_k,
+            event_types=types, search_session_id=search_session_id,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {

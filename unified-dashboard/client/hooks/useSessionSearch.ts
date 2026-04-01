@@ -17,42 +17,62 @@ export interface SearchResultItem {
   event_type: string;
 }
 
+export interface SearchFilters {
+  searchSessionId: boolean;
+  eventTypes: string[] | null; // null = 전체 (필터 없음)
+}
+
+export const DEFAULT_SEARCH_FILTERS: SearchFilters = {
+  searchSessionId: true,
+  eventTypes: ["user_message", "text_delta"],
+};
+
 export function useSessionSearch() {
   const [results, setResults] = useState<SearchResultItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | undefined>(undefined);
 
-  const search = useCallback(async (query: string, topK = 20) => {
-    if (!query.trim()) {
-      setResults([]);
-      return;
-    }
-    // 진행 중인 이전 요청 취소
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    setLoading(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams({ q: query, top_k: String(topK) });
-      const res = await fetch(`/cogito/search?${params}`, {
-        signal: controller.signal,
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.detail ?? `Search failed: ${res.status}`);
+  const search = useCallback(
+    async (query: string, filters: SearchFilters = DEFAULT_SEARCH_FILTERS, topK = 20) => {
+      if (!query.trim()) {
+        setResults([]);
+        return;
       }
-      const data = await res.json();
-      setResults(data.results ?? []);
-    } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") return;
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      // 진행 중인 이전 요청 취소
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      setLoading(true);
+      setError(null);
+      try {
+        const params = new URLSearchParams({
+          q: query,
+          top_k: String(topK),
+          search_session_id: String(filters.searchSessionId),
+        });
+        if (filters.eventTypes !== null) {
+          params.set("event_types", filters.eventTypes.join(","));
+        }
+        const res = await fetch(`/cogito/search?${params}`, {
+          signal: controller.signal,
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.detail ?? `Search failed: ${res.status}`);
+        }
+        const data = await res.json();
+        setResults(data.results ?? []);
+      } catch (e) {
+        if (e instanceof DOMException && e.name === "AbortError") return;
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [],
+  );
 
   const clear = useCallback(() => {
     setResults([]);
