@@ -6,8 +6,12 @@ Task Executor - 백그라운드 태스크 실행 관리
 
 import asyncio
 import logging
+import os
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Dict, Callable, Awaitable, Optional, TYPE_CHECKING
+
+from dotenv import dotenv_values
 
 from soul_server.service.task_models import Task, TaskStatus, PREVIEW_FIELD_MAP, datetime_to_str, utc_now
 from soul_server.service.prompt_assembler import assemble_prompt
@@ -21,7 +25,6 @@ if TYPE_CHECKING:
     from soul_server.service.task_listener import TaskListenerManager
     from soul_server.service.metadata_extractor import MetadataExtractor
     from soul_server.service.agent_registry import AgentRegistry
-    from soul_server.service.oauth_token_registry import OAuthTokenRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +49,6 @@ class TaskExecutor:
         metadata_extractor: Optional["MetadataExtractor"] = None,
         append_metadata_func: Optional[Callable] = None,
         agent_registry: Optional["AgentRegistry"] = None,
-        oauth_token_registry: Optional["OAuthTokenRegistry"] = None,
     ):
         """
         Args:
@@ -59,7 +61,6 @@ class TaskExecutor:
             metadata_extractor: 메타데이터 추출기 (tool_result에서 자동 감지)
             append_metadata_func: 메타데이터 추가 함수 (agent_session_id, entry)
             agent_registry: AgentRegistry 인스턴스 (profile_id → 실행 옵션 조회용)
-            oauth_token_registry: OAuthTokenRegistry 인스턴스 (oauth_profile_name → 토큰 조회용)
         """
         self._tasks = tasks
         self._listener_manager = listener_manager
@@ -70,7 +71,6 @@ class TaskExecutor:
         self._metadata_extractor = metadata_extractor
         self._append_metadata = append_metadata_func
         self._registry = agent_registry
-        self._oauth_token_registry = oauth_token_registry
 
     async def _persist_event(self, session_id: str, event_dict: dict) -> Optional[int]:
         """이벤트를 SessionDB에 영속화하고 event_id를 반환한다."""
@@ -280,17 +280,17 @@ class TaskExecutor:
                 # task.allowed_tools or override_tools 사용 금지 — 빈 리스트([])를 falsy로 처리함
                 effective_allowed_tools = task.allowed_tools if task.allowed_tools is not None else override_tools
 
-                # OAuth 토큰 프로필로 extra_env 구성
+                # CLAUDE_CODE_OAUTH_TOKEN 주입: 직접 지정 > .env > OS env
                 extra_env: Optional[dict] = None
-                if task.oauth_profile_name and self._oauth_token_registry:
-                    oauth_profile = self._oauth_token_registry.get(task.oauth_profile_name)
-                    if oauth_profile:
-                        extra_env = {"CLAUDE_CODE_OAUTH_TOKEN": oauth_profile.token}
-                    else:
-                        logger.warning(
-                            f"OAuth token profile not found at execution time: "
-                            f"{task.oauth_profile_name!r} (session={session_id})"
-                        )
+                token = task.oauth_token  # 1순위: 세션별 직접 지정
+                if not token:
+                    env_file = Path.cwd() / ".env"
+                    if env_file.exists():
+                        token = dotenv_values(env_file).get("CLAUDE_CODE_OAUTH_TOKEN")  # 2순위: .env
+                if not token:
+                    token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")  # 3순위: OS env
+                if token:
+                    extra_env = {"CLAUDE_CODE_OAUTH_TOKEN": token}
 
                 # 구조화된 맥락을 XML 섹션으로 조립
                 assembled_prompt = assemble_prompt(task.prompt, task.context)

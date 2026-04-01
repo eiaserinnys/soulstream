@@ -33,7 +33,6 @@ from soul_server.claude.agent_runner import ClaudeRunner
 from soul_server.service.runner_pool import RunnerPool
 from soul_server.service.task_manager import get_task_manager, TaskManager, set_task_manager
 from soul_server.service.agent_registry import AgentRegistry, load_agent_registry
-from soul_server.service.oauth_token_registry import OAuthTokenRegistry, load_oauth_token_registry
 from soul_server.service.session_broadcaster import init_session_broadcaster
 from soul_server.service.postgres_session_db import (
     PostgresSessionDB, SqliteSessionDB,
@@ -82,19 +81,6 @@ def set_agent_registry(registry: AgentRegistry) -> None:
     global _agent_registry
     _agent_registry = registry
 
-
-# 전역 OAuthTokenRegistry 참조
-_oauth_token_registry: OAuthTokenRegistry = OAuthTokenRegistry([])
-
-
-def get_oauth_token_registry() -> OAuthTokenRegistry:
-    """OAuthTokenRegistry 인스턴스를 반환한다. degraded mode에서는 빈 레지스트리."""
-    return _oauth_token_registry
-
-
-def set_oauth_token_registry(registry: OAuthTokenRegistry) -> None:
-    global _oauth_token_registry
-    _oauth_token_registry = registry
 
 
 async def periodic_cleanup():
@@ -305,18 +291,12 @@ async def lifespan(app: FastAPI):
     set_agent_registry(registry)
     logger.info(f"  AgentRegistry initialized: {len(registry.list())}개 에이전트")
 
-    # OAuthTokenRegistry 초기화 (TaskManager보다 먼저 — TaskManager/TaskExecutor에 주입해야 함)
-    oauth_registry = load_oauth_token_registry(settings.oauth_tokens_config_file)
-    set_oauth_token_registry(oauth_registry)
-    logger.info(f"  OAuthTokenRegistry initialized: {len(oauth_registry.list_names())}개 프로필")
-
     # TaskManager 초기화 및 로드
     task_manager = TaskManager(
         session_db=session_db,
         eviction_ttl=settings.session_eviction_ttl_seconds,
         metadata_extractor=metadata_extractor,
         agent_registry=get_agent_registry(),
-        oauth_token_registry=get_oauth_token_registry(),
     )
     set_task_manager(task_manager)
 
@@ -663,9 +643,6 @@ app.include_router(dash_api_router)
 from soul_server.api import agents as agents_module
 app.include_router(agents_module.router, tags=["agents"])
 
-# OAuth Profiles API
-from soul_server.api import oauth_profiles as oauth_profiles_module
-app.include_router(oauth_profiles_module.router, tags=["oauth-profiles"])
 
 # SPA fallback 미들웨어 — /sess-xxx 같은 클라이언트 라우트에서 index.html을 반환한다.
 # StaticFiles(html=True)가 /sess-xxx 에 대해 404를 반환할 때 index.html로 폴백한다.
