@@ -124,6 +124,7 @@ class TestCreateAgentSession:
         mock_tm = MagicMock()
         mock_tm.create_task = AsyncMock(return_value=mock_task)
         mock_tm.get_task = AsyncMock(return_value=None)
+        mock_tm.start_execution = AsyncMock()
         mock_tm._agent_registry = None
         mock_tm.start_execution = AsyncMock(return_value=True)
 
