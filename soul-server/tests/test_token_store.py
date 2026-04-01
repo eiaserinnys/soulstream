@@ -12,6 +12,8 @@ from soul_server.api.claude_auth.token_store import (
     save_oauth_token,
     delete_oauth_token,
     get_oauth_token,
+    load_profiles,
+    get_current_profile_name,
 )
 
 
@@ -167,3 +169,95 @@ class TestGetOAuthToken:
         token = get_oauth_token()
 
         assert token is None
+
+
+class TestLoadProfiles:
+    """load_profiles 테스트"""
+
+    def test_load_profiles_file_missing(self, tmp_path: Path):
+        """파일이 없으면 빈 dict 반환"""
+        profiles_path = tmp_path / "oauth_token.yaml"
+        assert not profiles_path.exists()
+
+        result = load_profiles(profiles_path)
+
+        assert result == {}
+
+    def test_load_profiles_valid(self, tmp_path: Path):
+        """정상 yaml 파싱"""
+        profiles_path = tmp_path / "oauth_token.yaml"
+        profiles_path.write_text(
+            "eias@gmail.com:\n"
+            "  token: sk-ant-oat01-aaaa\n"
+            "other@account.com:\n"
+            "  token: sk-ant-oat01-bbbb\n",
+            encoding="utf-8",
+        )
+
+        result = load_profiles(profiles_path)
+
+        assert result == {
+            "eias@gmail.com": "sk-ant-oat01-aaaa",
+            "other@account.com": "sk-ant-oat01-bbbb",
+        }
+
+    def test_load_profiles_empty_file(self, tmp_path: Path):
+        """빈 파일이면 빈 dict 반환"""
+        profiles_path = tmp_path / "oauth_token.yaml"
+        profiles_path.write_text("", encoding="utf-8")
+
+        result = load_profiles(profiles_path)
+
+        assert result == {}
+
+    def test_load_profiles_malformed_entry_skipped(self, tmp_path: Path):
+        """token 키가 없는 항목은 무시"""
+        profiles_path = tmp_path / "oauth_token.yaml"
+        profiles_path.write_text(
+            "valid@gmail.com:\n"
+            "  token: sk-ant-oat01-aaaa\n"
+            "invalid@gmail.com:\n"
+            "  other_key: something\n",
+            encoding="utf-8",
+        )
+
+        result = load_profiles(profiles_path)
+
+        assert result == {"valid@gmail.com": "sk-ant-oat01-aaaa"}
+
+
+class TestGetCurrentProfileName:
+    """get_current_profile_name 테스트"""
+
+    def test_get_current_profile_name_match(self):
+        """토큰 일치 시 프로필명 반환"""
+        os.environ[TOKEN_ENV_KEY] = "sk-ant-oat01-aaaa"
+        profiles = {
+            "eias@gmail.com": "sk-ant-oat01-aaaa",
+            "other@account.com": "sk-ant-oat01-bbbb",
+        }
+
+        result = get_current_profile_name(profiles)
+
+        assert result == "eias@gmail.com"
+
+    def test_get_current_profile_name_no_match(self):
+        """불일치 시 None 반환"""
+        os.environ[TOKEN_ENV_KEY] = "sk-ant-oat01-cccc"
+        profiles = {
+            "eias@gmail.com": "sk-ant-oat01-aaaa",
+            "other@account.com": "sk-ant-oat01-bbbb",
+        }
+
+        result = get_current_profile_name(profiles)
+
+        assert result is None
+
+    def test_get_current_profile_name_no_env_token(self):
+        """환경변수 토큰 없으면 None 반환"""
+        # cleanup_env fixture가 TOKEN_ENV_KEY를 삭제함
+        profiles = {"eias@gmail.com": "sk-ant-oat01-aaaa"}
+
+        result = get_current_profile_name(profiles)
+
+        assert result is None
