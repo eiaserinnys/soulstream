@@ -322,22 +322,25 @@ class TestStreamEvents:
     """이벤트 스트리밍 테스트."""
 
     @pytest.mark.asyncio
-    async def test_streams_events_until_complete(self):
+    async def test_streams_events_across_turns(self):
+        """complete 이후에도 스트림이 종료되지 않고 다음 turn 이벤트를 이어서 전달한다."""
         tm = MagicMock()
 
-        # add_listener가 호출되면 queue에 이벤트를 넣는다
+        # turn 1 + turn 2 이벤트 + None 센티넬(세션 종료)
         events_to_send = [
-            {"type": "progress", "text": "Working..."},
-            {"type": "complete", "result": "Done"},
+            {"type": "progress", "text": "Turn 1 thinking..."},
+            {"type": "complete", "result": "Turn 1 done"},
+            {"type": "user_message", "text": "Turn 2 input"},
+            {"type": "progress", "text": "Turn 2 thinking..."},
+            {"type": "complete", "result": "Turn 2 done"},
+            None,  # 세션 종료 센티넬
         ]
 
         async def mock_add_listener(session_id, queue):
-            # 별도 태스크에서 이벤트를 큐에 넣는다
             async def _feed():
                 for e in events_to_send:
                     await queue.put(e)
             asyncio.create_task(_feed())
-            return True
 
         tm.add_listener = AsyncMock(side_effect=mock_add_listener)
         tm.remove_listener = AsyncMock()
@@ -350,21 +353,17 @@ class TestStreamEvents:
 
         await adapter._stream_events("session-1")
 
-        # 이벤트 전송 확인
+        # None 센티넬 이전의 모든 이벤트(5개)가 전달돼야 한다
         sent_messages = [
             call.args[0] for call in adapter._ws.send_json.call_args_list
         ]
-        assert len(sent_messages) == 2
+        assert len(sent_messages) == 5, f"기대 5개, 실제 {len(sent_messages)}개"
 
-        assert sent_messages[0]["type"] == EVT_EVENT
-        assert sent_messages[0]["agentSessionId"] == "session-1"
         assert sent_messages[0]["event"]["type"] == "progress"
-        assert sent_messages[0]["event"]["text"] == "Working..."
-
-        assert sent_messages[1]["type"] == EVT_EVENT
-        assert sent_messages[1]["agentSessionId"] == "session-1"
-        assert sent_messages[1]["event"]["type"] == "complete"
-        assert sent_messages[1]["event"]["result"] == "Done"
+        assert sent_messages[1]["event"]["type"] == "complete"   # 종료 없이 계속
+        assert sent_messages[2]["event"]["type"] == "user_message"
+        assert sent_messages[3]["event"]["type"] == "progress"
+        assert sent_messages[4]["event"]["type"] == "complete"
 
         # 리스너 제거 확인
         tm.remove_listener.assert_awaited_once()
