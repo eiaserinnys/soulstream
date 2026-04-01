@@ -80,7 +80,8 @@ def _make_mock_session_db():
 
     async def _register_session_initial(session_id, node_id, agent_id=None, claude_session_id=None,
                                         session_type="claude", prompt=None, client_id=None,
-                                        status="running", created_at=None, updated_at=None):
+                                        status="running", created_at=None, updated_at=None,
+                                        caller_session_id=None):
         if session_id not in _sessions:
             _sessions[session_id] = {"session_id": session_id, "metadata": [], "last_event_id": 0, "last_read_event_id": 0}
         _sessions[session_id].update({
