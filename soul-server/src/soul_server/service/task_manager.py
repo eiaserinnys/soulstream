@@ -20,7 +20,6 @@ from typing import Optional, Dict, List, Union, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from soul_server.service.agent_registry import AgentRegistry
-    from soul_server.service.oauth_token_registry import OAuthTokenRegistry
 
 from soul_server.service.task_models import (
     Task,
@@ -79,7 +78,6 @@ class TaskManager:
         eviction_ttl: int = 900,
         metadata_extractor=None,
         agent_registry: Optional["AgentRegistry"] = None,
-        oauth_token_registry: Optional["OAuthTokenRegistry"] = None,
     ):
         """
         Args:
@@ -87,7 +85,6 @@ class TaskManager:
             eviction_ttl: 완료 세션 메모리 퇴거 TTL (초, 기본 15분)
             metadata_extractor: MetadataExtractor 인스턴스 (tool_result에서 자동 감지)
             agent_registry: AgentRegistry 인스턴스 (profile_id 유효성 검사용)
-            oauth_token_registry: OAuthTokenRegistry 인스턴스 (oauth_profile_name 유효성 검사용)
         """
         # 핵심 데이터 (key = agent_session_id)
         self._tasks: Dict[str, Task] = {}
@@ -97,9 +94,6 @@ class TaskManager:
 
         # AgentRegistry (profile_id 유효성 검사용)
         self._agent_registry = agent_registry
-
-        # OAuthTokenRegistry (oauth_profile_name 유효성 검사용)
-        self._oauth_token_registry = oauth_token_registry
 
         # PostgreSQL 기반 세션 저장소
         self._db = session_db
@@ -122,7 +116,6 @@ class TaskManager:
             metadata_extractor=metadata_extractor,
             append_metadata_func=self.append_session_metadata,
             agent_registry=self._agent_registry,
-            oauth_token_registry=self._oauth_token_registry,
         )
 
     # === claude_session_id 인덱스 ===
@@ -573,7 +566,7 @@ class TaskManager:
         folder_id: Optional[str] = None,
         system_prompt: Optional[str] = None,
         profile_id: Optional[str] = None,
-        oauth_profile_name: Optional[str] = None,
+        oauth_token: Optional[str] = None,
         caller_session_id: Optional[str] = None,
     ) -> Task:
         """
@@ -592,7 +585,7 @@ class TaskManager:
             folder_id: 세션을 배치할 폴더 ID (None이면 session_type 기반 자동 배정)
             system_prompt: Claude API system 파라미터로 전달할 시스템 프롬프트
             profile_id: 에이전트 프로필 ID (AgentRegistry에서 유효성 검사)
-            oauth_profile_name: OAuth 토큰 프로필 이름 (OAuthTokenRegistry에서 유효성 검사)
+            oauth_token: 세션별 OAuth 토큰 직접 지정 (없으면 .env / OS env에서 폴백)
             caller_session_id: 발신 세션 ID (완료 시 자동 보고 대상)
 
         Returns:
@@ -600,17 +593,12 @@ class TaskManager:
 
         Raises:
             TaskConflictError: 해당 세션에 이미 running 태스크가 존재
-            ValueError: 존재하지 않는 profile_id 또는 oauth_profile_name이 지정된 경우
+            ValueError: 존재하지 않는 profile_id가 지정된 경우
         """
         # profile_id 유효성 검사 (registry가 있을 때만)
         if profile_id is not None and self._agent_registry is not None:
             if not self._agent_registry.has(profile_id):
                 raise ValueError(f"존재하지 않는 에이전트 프로필: {profile_id}")
-
-        # oauth_profile_name 유효성 검사 (registry가 있을 때만)
-        if oauth_profile_name is not None and self._oauth_token_registry is not None:
-            if not self._oauth_token_registry.has(oauth_profile_name):
-                raise ValueError(f"OAuth token profile not found: {oauth_profile_name!r}")
 
         # 두 소스 병합: StructuredContext.items + 클라이언트 직접 전달분
         merged = (context_items or []) + (extra_context_items or [])
@@ -666,8 +654,8 @@ class TaskManager:
                 existing.system_prompt = system_prompt
                 if profile_id is not None:
                     existing.profile_id = profile_id
-                if oauth_profile_name is not None:
-                    existing.oauth_profile_name = oauth_profile_name
+                if oauth_token is not None:
+                    existing.oauth_token = oauth_token
                 if client_id:
                     existing.client_id = client_id
 
@@ -690,7 +678,7 @@ class TaskManager:
                     model=model,
                     system_prompt=system_prompt,
                     profile_id=profile_id,
-                    oauth_profile_name=oauth_profile_name,
+                    oauth_token=oauth_token,
                     caller_session_id=caller_session_id,
                 )
                 self._tasks[agent_session_id] = task
