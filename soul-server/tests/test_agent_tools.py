@@ -84,6 +84,13 @@ class TestCreateAgentSession:
         task.status.value = status
         return task
 
+    def _patch_execution_deps(self):
+        """start_execution에 필요한 soul_engine, resource_manager 패치를 반환한다."""
+        return (
+            patch("soul_server.cogito.mcp_tools.get_soul_engine", return_value=MagicMock()),
+            patch("soul_server.cogito.mcp_tools.resource_manager", MagicMock()),
+        )
+
     async def test_creates_session_without_caller(self):
         """caller_session_id 없을 때 caller_session_id=None으로 create_task를 호출해야 한다."""
         mock_task = self._make_task()
@@ -91,9 +98,11 @@ class TestCreateAgentSession:
         mock_task.caller_agent_info = None
         mock_tm = MagicMock()
         mock_tm.create_task = AsyncMock(return_value=mock_task)
+        mock_tm.start_execution = AsyncMock(return_value=True)
 
         fn = _unwrap(mcp_tools.create_agent_session)
-        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=mock_tm):
+        p_engine, p_rm = self._patch_execution_deps()
+        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=mock_tm), p_engine, p_rm:
             result = await fn(agent_id="agent-alpha", prompt="작업 수행해줘")
 
         assert result["agent_session_id"] == "sess-abc123"
@@ -105,6 +114,7 @@ class TestCreateAgentSession:
             folder_id=None,
             caller_session_id=None,
         )
+        mock_tm.start_execution.assert_called_once()
 
     async def test_creates_session_with_caller_session_id(self):
         """caller_session_id가 있으면 create_task에 caller_session_id로 전달되어야 한다."""
@@ -115,9 +125,11 @@ class TestCreateAgentSession:
         mock_tm.create_task = AsyncMock(return_value=mock_task)
         mock_tm.get_task = AsyncMock(return_value=None)
         mock_tm._agent_registry = None
+        mock_tm.start_execution = AsyncMock(return_value=True)
 
         fn = _unwrap(mcp_tools.create_agent_session)
-        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=mock_tm):
+        p_engine, p_rm = self._patch_execution_deps()
+        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=mock_tm), p_engine, p_rm:
             result = await fn(
                 agent_id="agent-alpha",
                 prompt="작업 수행해줘",
@@ -136,9 +148,11 @@ class TestCreateAgentSession:
         mock_task = self._make_task()
         mock_tm = MagicMock()
         mock_tm.create_task = AsyncMock(return_value=mock_task)
+        mock_tm.start_execution = AsyncMock(return_value=True)
 
         fn = _unwrap(mcp_tools.create_agent_session)
-        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=mock_tm):
+        p_engine, p_rm = self._patch_execution_deps()
+        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=mock_tm), p_engine, p_rm:
             await fn(agent_id=None, prompt="테스트", folder_id="folder-xyz")
 
         call_kwargs = mock_tm.create_task.call_args.kwargs
@@ -150,12 +164,35 @@ class TestCreateAgentSession:
         mock_task = self._make_task(agent_session_id="sess-new-001", status="running")
         mock_tm = MagicMock()
         mock_tm.create_task = AsyncMock(return_value=mock_task)
+        mock_tm.start_execution = AsyncMock(return_value=True)
 
         fn = _unwrap(mcp_tools.create_agent_session)
-        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=mock_tm):
+        p_engine, p_rm = self._patch_execution_deps()
+        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=mock_tm), p_engine, p_rm:
             result = await fn(agent_id=None, prompt="test")
 
         assert result == {"agent_session_id": "sess-new-001", "status": "running"}
+
+    async def test_start_execution_called_with_correct_session_id(self):
+        """start_execution이 생성된 세션 ID로 호출되어야 한다."""
+        mock_task = self._make_task(agent_session_id="sess-exec-test", status="running")
+        mock_tm = MagicMock()
+        mock_tm.create_task = AsyncMock(return_value=mock_task)
+        mock_tm.start_execution = AsyncMock(return_value=True)
+
+        fn = _unwrap(mcp_tools.create_agent_session)
+        mock_engine = MagicMock()
+        mock_rm = MagicMock()
+        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=mock_tm), \
+             patch("soul_server.cogito.mcp_tools.get_soul_engine", return_value=mock_engine), \
+             patch("soul_server.cogito.mcp_tools.resource_manager", mock_rm):
+            await fn(agent_id=None, prompt="test")
+
+        mock_tm.start_execution.assert_called_once_with(
+            agent_session_id="sess-exec-test",
+            claude_runner=mock_engine,
+            resource_manager=mock_rm,
+        )
 
 
 # ---------------------------------------------------------------------------
