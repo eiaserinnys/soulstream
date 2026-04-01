@@ -712,8 +712,9 @@ const VirtualizedItem = memo(function VirtualizedItem({
 
 interface ChatViewProps {
   chatInputDisabled?: boolean;
+  isOtherNodeSession?: boolean;
 }
-export function ChatView({ chatInputDisabled = false }: ChatViewProps = {}) {
+export function ChatView({ chatInputDisabled = false, isOtherNodeSession = false }: ChatViewProps = {}) {
   const tree = useDashboardStore((s) => s.tree);
   const treeVersion = useDashboardStore((s) => s.treeVersion);
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
@@ -948,7 +949,7 @@ export function ChatView({ chatInputDisabled = false }: ChatViewProps = {}) {
       </div>
 
       {/* ChatInput */}
-      <ChatInput additionalDisabled={chatInputDisabled} />
+      <ChatInput additionalDisabled={chatInputDisabled} isOtherNodeSession={isOtherNodeSession} />
     </div>
   );
 }

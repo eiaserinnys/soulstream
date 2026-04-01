@@ -29,6 +29,8 @@ interface ActiveSessionInfo {
 interface ChatInputProps {
   /** 외부에서 주입하는 추가 비활성화 조건 (예: 오케스트레이터에서 노드 dead 상태) */
   additionalDisabled?: boolean;
+  /** 다른 노드 소속 세션. true이면 입력/버튼 비활성화 + 안내 문구 표시 */
+  isOtherNodeSession?: boolean;
   /**
    * 파일 업로드 URL.
    * 있으면 파일 첨부 버튼이 활성화된다.
@@ -39,7 +41,7 @@ interface ChatInputProps {
   fileUploadUrl?: string;
 }
 
-export function ChatInput({ additionalDisabled = false, fileUploadUrl }: ChatInputProps = {}) {
+export function ChatInput({ additionalDisabled = false, isOtherNodeSession = false, fileUploadUrl }: ChatInputProps = {}) {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const sessions = useDashboardStore((s) => s.sessions);
   const tree = useDashboardStore((s) => s.tree);
@@ -250,7 +252,7 @@ export function ChatInput({ additionalDisabled = false, fileUploadUrl }: ChatInp
   if (!activeSessionKey) return null;
 
   const fileUploadDisabled = fileUploadUrl ? isUploading : false;
-  const isDisabled = sending || !text.trim() || additionalDisabled || fileUploadDisabled;
+  const isDisabled = sending || !text.trim() || additionalDisabled || fileUploadDisabled || isOtherNodeSession;
 
   // LLM 완료 세션: 컨텍스트 누적 모드
   const ctxCount = llmMessages.length;
@@ -343,7 +345,7 @@ export function ChatInput({ additionalDisabled = false, fileUploadUrl }: ChatInp
             }}
             onKeyDown={handleKeyDown}
             placeholder={placeholder}
-            disabled={sending}
+            disabled={sending || additionalDisabled || isOtherNodeSession}
             rows={1}
             className={cn(
               "w-full bg-input border border-border rounded-md py-1.5 px-2.5",
@@ -364,6 +366,13 @@ export function ChatInput({ additionalDisabled = false, fileUploadUrl }: ChatInp
           {buttonLabel}
         </Button>
       </div>
+
+      {/* Other node session notice */}
+      {isOtherNodeSession && (
+        <div className="text-[11px] text-muted-foreground py-1 px-2 text-center">
+          다른 노드에서 실행된 세션은 재개하거나 개입할 수 없습니다
+        </div>
+      )}
 
       {/* Error */}
       {error && (
