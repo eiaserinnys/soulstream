@@ -504,6 +504,66 @@ async def get_session_event(
 
 
 @cogito_mcp.tool()
+async def download_session_history(
+    session_id: str,
+    output_dir: str | None = None,
+) -> dict:
+    """세션의 전체 이벤트 히스토리를 JSONL 파일로 저장한다.
+
+    list_session_events는 최대 100개/호출 제한이 있어 대규모 세션 열람이 비효율적이다.
+    이 함수는 stream_events_raw()로 limit 없이 전체를 한 번에 파일로 저장한다.
+
+    Args:
+        session_id: 세션 ID.
+        output_dir: 저장 디렉토리 경로. 미지정 시 /tmp/soulstream_sessions/.
+
+    Returns:
+        {"session_id": str, "file_path": str, "event_count": int}
+        에러 시: {"error": str}
+    """
+    import json as _json
+    from pathlib import Path
+
+    try:
+        db = get_session_db()
+    except RuntimeError as e:
+        return {"error": str(e)}
+
+    # 세션 존재 확인
+    session = await db.get_session(session_id)
+    if session is None:
+        return {"error": f"세션을 찾을 수 없습니다: {session_id}"}
+
+    # 저장 경로 결정
+    out_dir = Path(output_dir) if output_dir else Path("/tmp/soulstream_sessions")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    file_path = str(out_dir / f"session_{session_id}.jsonl")
+
+    # stream_events_raw로 전체 스트리밍 저장
+    # stream_events_raw(session_id, after_id=0) → AsyncGenerator[tuple[int, str, str], None]
+    # 튜플: (id, event_type, payload_text) — session_db.py L499-L509
+    event_count = 0
+    with open(file_path, "w", encoding="utf-8") as f:
+        async for ev_id, ev_type, payload_text in db.stream_events_raw(session_id):
+            try:
+                event = _json.loads(payload_text) if payload_text else {}
+            except _json.JSONDecodeError:
+                event = {}
+            line = _json.dumps(
+                {"id": ev_id, "event_type": ev_type, "event": event},
+                ensure_ascii=False,
+            )
+            f.write(line + "\n")
+            event_count += 1
+
+    return {
+        "session_id": session_id,
+        "file_path": file_path,
+        "event_count": event_count,
+    }
+
+
+@cogito_mcp.tool()
 async def search_session_history(
     query: str,
     session_ids: list[str] | None = None,
