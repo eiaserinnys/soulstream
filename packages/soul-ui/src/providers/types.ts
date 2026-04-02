@@ -25,6 +25,8 @@ export interface FetchSessionsOptions {
   limit?: number;
   /** 폴더 ID 필터 (UUID). 없으면 전체 조회. */
   folderId?: string;
+  /** true이면 excludeFromFeed=true인 폴더의 세션을 서버에서 제외. */
+  feedOnly?: boolean;
 }
 
 /**

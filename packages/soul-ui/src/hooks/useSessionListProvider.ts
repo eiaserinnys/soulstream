@@ -106,11 +106,13 @@ export function useSessionListProvider(
         currentViewMode === "folder" && currentFolderId !== null
           ? { folderId: currentFolderId }
           : {};
+      const feedFilter = currentViewMode === "feed" ? { feedOnly: true } : {};
       const result = await provider.fetchSessions({
         sessionType: typeFilter,
         offset: 0,
         limit: DEFAULT_PAGE_SIZE,
         ...folderFilter,
+        ...feedFilter,
       });
 
       if (fetchGenerationRef.current !== generation) return;
@@ -165,6 +167,7 @@ export function useSessionListProvider(
         offset,
         limit: DEFAULT_PAGE_SIZE,
         ...(isFolderView ? { folderId: selectedFolderId } : {}),
+        ...(!isFolderView && viewMode === "feed" ? { feedOnly: true } : {}),
       });
 
       // race condition guard: 폴더 A → 폴더 B 전환 중 폴더 A의 loadMore가 완료된 경우 버림
