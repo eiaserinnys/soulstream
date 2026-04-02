@@ -252,12 +252,14 @@ async def api_get_sessions(
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=0),
     folder_id: Optional[str] = None,
+    feed_only: bool = Query(False),
 ):
     from soul_server.config import get_settings
     task_manager = get_task_manager()
     sessions, total = await task_manager.get_all_sessions(
         offset=offset, limit=limit, session_type=session_type,
         folder_id=folder_id,  # None이면 전체 조회 (기존 동작 유지)
+        feed_only=feed_only,
     )
     settings = get_settings()
     user_name = settings.dash_user_name

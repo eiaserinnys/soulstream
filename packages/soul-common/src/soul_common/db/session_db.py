@@ -316,6 +316,7 @@ class PostgresSessionDB:
         folder_id: Optional[str] = None,
         node_id: Optional[str] = None,
         status: Optional[Union[str, list[str]]] = None,
+        feed_only: bool = False,
     ) -> tuple[list[dict], int]:
         # 필터를 JSONB dict으로 직렬화
         filters = {}
@@ -327,6 +328,8 @@ class PostgresSessionDB:
             filters["node_id"] = node_id
         if status is not None:
             filters["status"] = status
+        if feed_only:
+            filters["feed_only"] = True
         filters_json = json.dumps(filters) if filters else None
 
         total = await self._pool.fetchval(
