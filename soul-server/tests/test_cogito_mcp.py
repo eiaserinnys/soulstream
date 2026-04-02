@@ -842,3 +842,73 @@ class TestSendMessageToSession:
             "http://orch:3000/api/sessions/sess-abc/intervene",
             json={"text": "via orch", "user": "agent"},
         )
+
+
+# ---------------------------------------------------------------------------
+# download_session_history
+# ---------------------------------------------------------------------------
+
+
+async def _async_gen_from_list(items):
+    """리스트를 AsyncGenerator로 변환하는 헬퍼."""
+    for item in items:
+        yield item
+
+
+class TestDownloadSessionHistory:
+    async def test_session_not_found(self, session_db, tmp_path):
+        fn = _unwrap(mcp_tools.download_session_history)
+        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
+            result = await fn("nonexistent", output_dir=str(tmp_path))
+        assert "error" in result
+        assert "찾을 수 없습니다" in result["error"]
+
+    async def test_empty_session(self, session_db, tmp_path):
+        import json
+
+        session_db.stream_events_raw = MagicMock(
+            return_value=_async_gen_from_list([])
+        )
+        fn = _unwrap(mcp_tools.download_session_history)
+        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
+            result = await fn("test-sess-001", output_dir=str(tmp_path))
+
+        assert "error" not in result
+        assert result["session_id"] == "test-sess-001"
+        assert result["event_count"] == 0
+        assert (tmp_path / "session_test-sess-001.jsonl").exists()
+
+    async def test_normal(self, session_db, tmp_path):
+        import json
+
+        raw_events = [
+            (1, "user_message", json.dumps({"type": "user_message", "text": "안녕"})),
+            (2, "tool_use", json.dumps({"type": "tool_use", "tool": "Bash"})),
+            (3, "result", json.dumps({"type": "result", "result": "완료"})),
+        ]
+        session_db.stream_events_raw = MagicMock(
+            return_value=_async_gen_from_list(raw_events)
+        )
+        fn = _unwrap(mcp_tools.download_session_history)
+        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
+            result = await fn("test-sess-001", output_dir=str(tmp_path))
+
+        assert "error" not in result
+        assert result["session_id"] == "test-sess-001"
+        assert result["event_count"] == 3
+
+        file_path = tmp_path / "session_test-sess-001.jsonl"
+        assert file_path.exists()
+
+        lines = file_path.read_text(encoding="utf-8").splitlines()
+        assert len(lines) == 3
+
+        first = json.loads(lines[0])
+        assert first["id"] == 1
+        assert first["event_type"] == "user_message"
+        assert first["event"]["text"] == "안녕"
+
+        last = json.loads(lines[2])
+        assert last["id"] == 3
+        assert last["event_type"] == "result"
+        assert last["event"]["result"] == "완료"
