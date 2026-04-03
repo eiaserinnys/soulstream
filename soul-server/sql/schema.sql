@@ -306,6 +306,7 @@ BEGIN
     END IF;
     IF p_filters IS NOT NULL AND p_filters ? 'feed_only' AND (p_filters->>'feed_only')::boolean THEN
         q := q || ' AND (s.folder_id IS NULL OR COALESCE(f.settings->>''excludeFromFeed'', ''false'') != ''true'')';
+        q := q || ' AND COALESCE(session_type, ''claude'') != ''llm''';
     END IF;
 
     q := q || ' ORDER BY s.updated_at DESC';
@@ -349,6 +350,7 @@ BEGIN
     END IF;
     IF p_filters IS NOT NULL AND p_filters ? 'feed_only' AND (p_filters->>'feed_only')::boolean THEN
         q := q || ' AND (s.folder_id IS NULL OR COALESCE(f.settings->>''excludeFromFeed'', ''false'') != ''true'')';
+        q := q || ' AND COALESCE(session_type, ''claude'') != ''llm''';
     END IF;
 
     EXECUTE q INTO result;
