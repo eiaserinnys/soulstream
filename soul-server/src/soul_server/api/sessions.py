@@ -52,6 +52,13 @@ async def stream_session_events(
         sync_payload["status"] = current_task.status.value
     yield sync_payload
 
+    # 세션이 실행 중이 아니면 히스토리 + history_sync 이후 연결을 종료한다.
+    # 완료된 세션에 keepalive를 무한 전송하는 것을 방지한다.
+    # Part 3 try...finally에 진입하지 않으므로 리스너를 명시적으로 정리한다.
+    if not is_live:
+        await task_manager.remove_listener(agent_session_id, event_queue)
+        return
+
     # Part 3: 라이브 스트리밍 (dedup)
     try:
         while True:
