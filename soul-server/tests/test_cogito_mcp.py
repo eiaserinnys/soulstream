@@ -250,7 +250,7 @@ class TestReflectorSetup:
 
         level0 = reflect.get_level0()
 
-        assert level0["identity"]["name"] == "soulstream-server"
+        assert level0["identity"]["name"] == "soulstream-soul-server"
         assert level0["identity"]["port"] == get_settings().port
 
     def test_reflector_capabilities(self):

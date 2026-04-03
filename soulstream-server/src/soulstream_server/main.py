@@ -150,7 +150,7 @@ async def lifespan(app: FastAPI):
         app.include_router(auth_router)
 
     logger.info(
-        "soulstream-server started on %s:%d", settings.host, settings.port
+        "soulstream-orch-server started on %s:%d", settings.host, settings.port
     )
 
     yield
@@ -158,13 +158,13 @@ async def lifespan(app: FastAPI):
     # 종료
     broadcaster.disconnect_all()
     await db.close()
-    logger.info("soulstream-server stopped")
+    logger.info("soulstream-orch-server stopped")
 
 
 def create_app() -> FastAPI:
     """FastAPI 앱 생성."""
     app = FastAPI(
-        title="soulstream-server",
+        title="soulstream-orch-server",
         description="Claude Code 오케스트레이터",
         lifespan=lifespan,
     )
