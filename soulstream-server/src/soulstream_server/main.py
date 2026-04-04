@@ -15,7 +15,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from soul_common.catalog.catalog_service import CatalogService
 from soul_common.db.session_db import PostgresSessionDB
 
+from soulstream_server.api.attachments import create_attachments_router
 from soulstream_server.api.catalog import create_catalog_router
+from soulstream_server.api.cogito import create_cogito_router
 from soulstream_server.api.folders import create_folders_router
 from soulstream_server.api.nodes import create_nodes_router
 from soulstream_server.api.sessions import create_sessions_router
@@ -132,6 +134,8 @@ async def lifespan(app: FastAPI):
     app.include_router(create_nodes_router(node_manager, broadcaster))
     app.include_router(create_folders_router(catalog_service))
     app.include_router(create_catalog_router(catalog_service, db, node_manager))
+    app.include_router(create_attachments_router(node_manager))
+    app.include_router(create_cogito_router(node_manager))
 
     # Auth 라우터
     if settings.is_auth_enabled:
@@ -146,7 +150,7 @@ async def lifespan(app: FastAPI):
         app.include_router(auth_router)
 
     logger.info(
-        "soulstream-server started on %s:%d", settings.host, settings.port
+        "soulstream-orch-server started on %s:%d", settings.host, settings.port
     )
 
     yield
@@ -154,13 +158,13 @@ async def lifespan(app: FastAPI):
     # 종료
     broadcaster.disconnect_all()
     await db.close()
-    logger.info("soulstream-server stopped")
+    logger.info("soulstream-orch-server stopped")
 
 
 def create_app() -> FastAPI:
     """FastAPI 앱 생성."""
     app = FastAPI(
-        title="soulstream-server",
+        title="soulstream-orch-server",
         description="Claude Code 오케스트레이터",
         lifespan=lifespan,
     )
@@ -204,10 +208,11 @@ def create_app() -> FastAPI:
         """
         return {
             "mode": "orchestrator",
+            "nodeId": settings.node_name,  # NODE_NAME env var. 다른 노드 세션 판별에 사용
             "auth": {"enabled": settings.is_auth_enabled},
             "features": {
                 "configModal": True,
-                "searchModal": False,
+                "searchModal": True,
                 "nodePanel": True,
                 "nodeGuard": False,
             },

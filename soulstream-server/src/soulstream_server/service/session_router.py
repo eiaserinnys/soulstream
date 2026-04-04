@@ -62,6 +62,7 @@ class SessionRouter:
             system_prompt=request.get("system_prompt"),
             oauth_profile_name=request.get("oauth_profile_name"),
             caller_session_id=request.get("caller_session_id"),
+            attachment_paths=request.get("attachmentPaths"),
         )
 
         # 노드가 반환한 세션 ID를 우선 사용

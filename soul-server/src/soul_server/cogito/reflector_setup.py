@@ -18,7 +18,7 @@ from soul_server.config import get_settings
 source_root = str(Path(__file__).resolve().parents[3])
 
 reflect = Reflector(
-    name="soulstream-server",
+    name="soulstream-soul-server",
     description=(
         "Claude Code 원격 실행 서비스. "
         "세션 관리, 크레덴셜 프로필 관리, 러너 풀, LLM 프록시 기능을 제공한다."

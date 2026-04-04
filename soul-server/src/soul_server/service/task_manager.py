@@ -452,6 +452,7 @@ class TaskManager:
         folder_id: Optional[str] = None,
         node_id: Optional[str] = None,
         status: Optional[Union[str, list[str]]] = None,
+        feed_only: bool = False,
     ) -> tuple[list[dict], int]:
         """세션 목록 반환 (생성일 기준 내림차순, 페이지네이션 + 타입/폴더/노드/상태 필터 지원)
 
@@ -465,6 +466,7 @@ class TaskManager:
             folder_id: 폴더 ID 필터 (None이면 전체)
             node_id: 노드 ID 필터 (None이면 전체)
             status: 상태 필터 (str 또는 list[str], None이면 전체)
+            feed_only: True이면 excludeFromFeed=true인 폴더의 세션을 제외
 
         Returns:
             (세션 dict 리스트, 전체 세션 수) 튜플
@@ -472,6 +474,7 @@ class TaskManager:
         sessions, total = await self._db.get_all_sessions(
             offset=offset, limit=limit, session_type=session_type,
             folder_id=folder_id, node_id=node_id, status=status,
+            feed_only=feed_only,
         )
 
         # AgentRegistry는 루프 밖에서 1회만 조회한다.

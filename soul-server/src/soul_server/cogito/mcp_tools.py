@@ -381,6 +381,15 @@ async def send_message_to_session(target_session_id: str, message: str) -> dict:
             text=message,
             user="agent",  # user는 기본값 없는 필수값 (HTTP API InterveneRequest.user와 다름)
         )
+        if result.get("auto_resumed"):
+            await task_manager.start_execution(
+                agent_session_id=target_session_id,
+                claude_runner=get_soul_engine(),
+                resource_manager=resource_manager,
+            )
+            logger.info(
+                "send_message_to_session: auto-resumed session %s", target_session_id
+            )
         return {"ok": True, "detail": result}
     except Exception as local_err:
         logger.warning("send_message_to_session 로컬 실패: %s", local_err, exc_info=True)
@@ -492,6 +501,66 @@ async def get_session_event(
     except (_json.JSONDecodeError, KeyError):
         ev = {}
     return {"id": entry["id"], "event": ev}
+
+
+@cogito_mcp.tool()
+async def download_session_history(
+    session_id: str,
+    output_dir: str | None = None,
+) -> dict:
+    """세션의 전체 이벤트 히스토리를 JSONL 파일로 저장한다.
+
+    list_session_events는 최대 100개/호출 제한이 있어 대규모 세션 열람이 비효율적이다.
+    이 함수는 stream_events_raw()로 limit 없이 전체를 한 번에 파일로 저장한다.
+
+    Args:
+        session_id: 세션 ID.
+        output_dir: 저장 디렉토리 경로. 미지정 시 /tmp/soulstream_sessions/.
+
+    Returns:
+        {"session_id": str, "file_path": str, "event_count": int}
+        에러 시: {"error": str}
+    """
+    import json as _json
+    from pathlib import Path
+
+    try:
+        db = get_session_db()
+    except RuntimeError as e:
+        return {"error": str(e)}
+
+    # 세션 존재 확인
+    session = await db.get_session(session_id)
+    if session is None:
+        return {"error": f"세션을 찾을 수 없습니다: {session_id}"}
+
+    # 저장 경로 결정
+    out_dir = Path(output_dir) if output_dir else Path("/tmp/soulstream_sessions")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    file_path = str(out_dir / f"session_{session_id}.jsonl")
+
+    # stream_events_raw로 전체 스트리밍 저장
+    # stream_events_raw(session_id, after_id=0) → AsyncGenerator[tuple[int, str, str], None]
+    # 튜플: (id, event_type, payload_text) — session_db.py L499-L509
+    event_count = 0
+    with open(file_path, "w", encoding="utf-8") as f:
+        async for ev_id, ev_type, payload_text in db.stream_events_raw(session_id):
+            try:
+                event = _json.loads(payload_text) if payload_text else {}
+            except _json.JSONDecodeError:
+                event = {}
+            line = _json.dumps(
+                {"id": ev_id, "event_type": ev_type, "event": event},
+                ensure_ascii=False,
+            )
+            f.write(line + "\n")
+            event_count += 1
+
+    return {
+        "session_id": session_id,
+        "file_path": file_path,
+        "event_count": event_count,
+    }
 
 
 @cogito_mcp.tool()
@@ -973,6 +1042,8 @@ async def api_search_sessions(
     q: str,
     top_k: int = Query(default=10, ge=1, le=100),
     session_ids: str | None = None,  # 콤마 구분 문자열
+    event_types: str | None = None,  # 콤마 구분 문자열
+    search_session_id: bool = False,
 ) -> dict:
     """세션 기록 FTS5 검색 REST 엔드포인트."""
     try:
@@ -981,9 +1052,13 @@ async def api_search_sessions(
         raise HTTPException(status_code=503, detail=str(e))
     from soul_server.cogito.search import SessionSearchEngine
     ids = [s.strip() for s in session_ids.split(",") if s.strip()] if session_ids else None
+    types = [s.strip() for s in event_types.split(",") if s.strip()] if event_types else None
     try:
         engine = SessionSearchEngine(db)
-        results = await engine.search(query=q, session_ids=ids, top_k=top_k)
+        results = await engine.search(
+            query=q, session_ids=ids, top_k=top_k,
+            event_types=types, search_session_id=search_session_id,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {

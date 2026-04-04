@@ -59,7 +59,7 @@ export function OrchestratorDashboardLayout() {
   const nodes = useOrchestratorStore((s) => s.nodes);
   const connectionStatus = useOrchestratorStore((s) => s.connectionStatus);
 
-  const { features } = useAppConfig();
+  const { features, nodeId: localNodeId } = useAppConfig();
 
   // 테마 초기화
   useEffect(() => { initTheme(); }, []);
@@ -103,6 +103,13 @@ export function OrchestratorDashboardLayout() {
     return !node || node.status === "disconnected";
   }, [activeSessionKey, sessions, nodes]);
 
+  // 활성 세션이 다른 노드 소속이면 true (localNodeId가 없으면 판별 불가 → false)
+  const isOtherNodeSession = useMemo(() => {
+    if (!activeSessionKey || !localNodeId) return false;
+    const session = sessions.find((s) => s.agentSessionId === activeSessionKey);
+    return !!session?.nodeId && session.nodeId !== localNodeId;
+  }, [activeSessionKey, sessions, localNodeId]);
+
   // Config / Search 모달 상태
   const [configOpen, setConfigOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -145,7 +152,7 @@ export function OrchestratorDashboardLayout() {
           </>
         )
       }
-      rightPanel={<RightPanel chatInputDisabled={isChatInputDisabled} />}
+      rightPanel={<RightPanel chatInputDisabled={isChatInputDisabled} isOtherNodeSession={isOtherNodeSession} />}
       connectionStatus={connectionStatus ?? sseStatus}
       onSearchClick={() => setSearchOpen(true)}
       banner={
@@ -179,7 +186,7 @@ export function OrchestratorDashboardLayout() {
         )
       }
       mobileChatHeader={(onBack) => <MobileChatHeader onBack={onBack} />}
-      mobileChatView={<ChatView chatInputDisabled={isChatInputDisabled} />}
+      mobileChatView={<ChatView chatInputDisabled={isChatInputDisabled} isOtherNodeSession={isOtherNodeSession} />}
       mobileSheetFooter={
         <>
           <ThemeToggle />

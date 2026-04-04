@@ -28,6 +28,8 @@ htmlcov/
 .coverage
 soul-dashboard/e2e/screenshots/
 soul-dashboard/e2e/test-results/
+unified-dashboard/e2e/screenshots/
+unified-dashboard/e2e/test-results/
 
 # Environment
 .env
@@ -47,4 +49,4 @@ requirements.txt
 Thumbs.db
 
 # docgen auto-generated
-.docs/ARCHITECTURE.*.md
+**/.docs/

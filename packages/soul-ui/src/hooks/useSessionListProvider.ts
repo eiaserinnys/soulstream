@@ -106,11 +106,13 @@ export function useSessionListProvider(
         currentViewMode === "folder" && currentFolderId !== null
           ? { folderId: currentFolderId }
           : {};
+      const feedFilter = currentViewMode === "feed" ? { feedOnly: true } : {};
       const result = await provider.fetchSessions({
         sessionType: typeFilter,
         offset: 0,
         limit: DEFAULT_PAGE_SIZE,
         ...folderFilter,
+        ...feedFilter,
       });
 
       if (fetchGenerationRef.current !== generation) return;
@@ -165,6 +167,7 @@ export function useSessionListProvider(
         offset,
         limit: DEFAULT_PAGE_SIZE,
         ...(isFolderView ? { folderId: selectedFolderId } : {}),
+        ...(!isFolderView && viewMode === "feed" ? { feedOnly: true } : {}),
       });
 
       // race condition guard: 폴더 A → 폴더 B 전환 중 폴더 A의 loadMore가 완료된 경우 버림
@@ -364,6 +367,11 @@ export function useSessionListProvider(
     };
   }, [enabled]); // viewMode/selectedFolderId 제거: catalog 로드는 마운트 시 1회만 필요
 
+  // 피드 뷰에서는 selectedFolderId 변경 시 재조회 불필요
+  // (fetchSessions가 viewMode:"feed"이면 folder filter를 적용하지 않으므로)
+  // setActiveSession()이 selectedFolderId를 변경해도 피드 뷰에서는 무시한다.
+  const effectiveFolderId = viewMode === "folder" ? selectedFolderId : null;
+
   // Effect 1b: fetchSessions — viewMode/selectedFolderId 변경 시 세션 재조회
   useEffect(() => {
     if (!enabled) return;
@@ -373,7 +381,7 @@ export function useSessionListProvider(
     return () => {
       fetchGenerationRef.current++;
     };
-  }, [enabled, viewMode, selectedFolderId]); // fetchSessions 제거: ref로 접근
+  }, [enabled, viewMode, effectiveFolderId]); // selectedFolderId → effectiveFolderId: 피드 뷰에서 불필요한 refetch 방지
 
   // Effect 2: SSE 구독 — storageMode 변경 시에만 재연결 (페이지/필터 변경과 무관)
   useEffect(() => {

@@ -20,6 +20,7 @@ dependencies = [
     "websockets>=13.0",
     "sse-starlette>=1.6.0",
     "aiofiles>=23.0.0",
+    "python-multipart>=0.0.6",
 ]
 
 [project.optional-dependencies]

@@ -20,8 +20,9 @@ const TAB_FROM_INDEX: Array<"chat" | "detail" | "info"> = ["chat", "detail", "in
 
 interface RightPanelProps {
   chatInputDisabled?: boolean;
+  isOtherNodeSession?: boolean;
 }
-export function RightPanel({ chatInputDisabled = false }: RightPanelProps = {}) {
+export function RightPanel({ chatInputDisabled = false, isOtherNodeSession = false }: RightPanelProps = {}) {
   const activeRightTab = useDashboardStore((s) => s.activeRightTab);
   const setActiveRightTab = useDashboardStore((s) => s.setActiveRightTab);
 
@@ -51,7 +52,7 @@ export function RightPanel({ chatInputDisabled = false }: RightPanelProps = {}) 
         </TabsList>
 
         <TabsPanel value={0} className="flex-1 overflow-hidden" keepMounted>
-          <ChatView chatInputDisabled={chatInputDisabled} />
+          <ChatView chatInputDisabled={chatInputDisabled} isOtherNodeSession={isOtherNodeSession} />
         </TabsPanel>
 
         <TabsPanel value={1} className="flex-1 overflow-hidden" keepMounted>

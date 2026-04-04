@@ -10,6 +10,9 @@ from soul_common.config import BaseOAuthSettings
 class Settings(BaseOAuthSettings):
     """soulstream-server 설정."""
 
+    # Node identification — NODE_NAME env var. 다른 노드 세션 판별에 사용.
+    node_name: str | None = None
+
     # Server
     host: str
     port: int

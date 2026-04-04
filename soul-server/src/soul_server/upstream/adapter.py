@@ -502,11 +502,9 @@ class UpstreamAdapter:
                     "agentSessionId": session_id,
                     "event": event,
                 })
-
-                # complete/error 이벤트면 스트리밍 종료
-                event_type = event.get("type", "")
-                if event_type in ("complete", "error"):
-                    break
+                # complete/error에서 종료하지 않는다.
+                # 세션이 완료된 후 새 turn이 시작되면 동일 스트림으로 이벤트가 계속 전달돼야 한다.
+                # 세션 종료는 None 센티넬 또는 WebSocket 연결 해제로 처리한다.
         except asyncio.CancelledError:
             pass
         except Exception:
@@ -526,9 +524,22 @@ class UpstreamAdapter:
         if not session_id:
             return
 
+        # _stream_events가 실행 중이면 중단 — 이중 브로드캐스트 방지
+        existing_task = self._stream_tasks.pop(session_id, None)
+        if existing_task and not existing_task.done():
+            existing_task.cancel()
+            try:
+                await existing_task
+            except asyncio.CancelledError:
+                pass
+
         queue: asyncio.Queue = asyncio.Queue()
-        if not await self._tm.add_listener(session_id, queue):
-            return
+        await self._tm.add_listener(session_id, queue)
+        # add_listener는 항상 성공(-> None)하므로 반환값 체크 불필요
+
+        # _handle_subscribe_events 자신도 _stream_tasks에 등록해야
+        # _handle_intervene이 중복으로 _stream_events를 생성하지 않는다.
+        self._stream_tasks[session_id] = asyncio.current_task()  # type: ignore[assignment]
 
         try:
             while self._running:
@@ -543,8 +554,7 @@ class UpstreamAdapter:
                     "agentSessionId": session_id,
                     "event": event,
                 })
-                if event.get("type") in ("complete", "error"):
-                    break
+                # complete/error에서 종료하지 않는다 — _stream_events와 동일한 정책
         except asyncio.CancelledError:
             pass
         except Exception:

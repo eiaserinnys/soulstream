@@ -314,3 +314,82 @@ class TestUserInfo:
         node.set_user_info({"name": "새값"})
 
         assert node.user_info["name"] == "새값"
+
+
+class TestAttachmentPaths:
+    """attachment_paths 관련 send_create_session / send_intervene 테스트."""
+
+    async def test_send_create_session_includes_extra_context_items_when_attachment_paths(self, node, ws):
+        """attachment_paths가 있으면 extra_context_items를 payload에 포함한다."""
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            req_id = data["requestId"]
+            if req_id in node._pending:
+                node._pending[req_id].set_result({"agentSessionId": "sess-r"})
+
+        ws.send_json.side_effect = resolve_future
+
+        await node.send_create_session(
+            prompt="test",
+            session_id="sid-1",
+            attachment_paths=["/incoming/abc/file.txt", "/incoming/abc/img.png"],
+        )
+
+        sent = ws.send_json.call_args[0][0]
+        assert "extra_context_items" in sent
+        items = sent["extra_context_items"]
+        assert isinstance(items, list)
+        assert len(items) == 1
+        assert items[0]["key"] == "attached_files"
+        assert "/incoming/abc/file.txt" in items[0]["content"]
+        assert "/incoming/abc/img.png" in items[0]["content"]
+
+    async def test_send_create_session_no_extra_context_items_when_no_attachment_paths(self, node, ws):
+        """attachment_paths가 None이면 extra_context_items를 payload에 포함하지 않는다."""
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            req_id = data["requestId"]
+            if req_id in node._pending:
+                node._pending[req_id].set_result({"agentSessionId": "sess-r"})
+
+        ws.send_json.side_effect = resolve_future
+
+        await node.send_create_session(prompt="test", session_id="sid-1")
+
+        sent = ws.send_json.call_args[0][0]
+        assert "extra_context_items" not in sent
+
+    async def test_send_intervene_includes_attachment_paths_when_provided(self, node, ws):
+        """attachment_paths가 있으면 send_intervene payload에 포함한다."""
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            req_id = data["requestId"]
+            if req_id in node._pending:
+                node._pending[req_id].set_result({"ok": True})
+
+        ws.send_json.side_effect = resolve_future
+
+        await node.send_intervene(
+            "sess-1", "add file context", user="admin",
+            attachment_paths=["/incoming/sess-1/doc.pdf"],
+        )
+
+        sent = ws.send_json.call_args[0][0]
+        assert sent["type"] == CMD_INTERVENE
+        assert "attachment_paths" in sent
+        assert sent["attachment_paths"] == ["/incoming/sess-1/doc.pdf"]
+
+    async def test_send_intervene_no_attachment_paths_key_when_none(self, node, ws):
+        """attachment_paths가 None이면 payload에 해당 키가 없다."""
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            req_id = data["requestId"]
+            if req_id in node._pending:
+                node._pending[req_id].set_result({"ok": True})
+
+        ws.send_json.side_effect = resolve_future
+
+        await node.send_intervene("sess-1", "hello", user="u")
+
+        sent = ws.send_json.call_args[0][0]
+        assert "attachment_paths" not in sent

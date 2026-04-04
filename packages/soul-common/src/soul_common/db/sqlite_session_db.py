@@ -926,6 +926,7 @@ class SqliteSessionDB:
         query: str,
         session_ids: Optional[list[str]] = None,
         limit: int = 50,
+        event_types: Optional[list[str]] = None,
     ) -> list[dict]:
         if not query.strip():
             return []
@@ -959,10 +960,46 @@ class SqliteSessionDB:
                 event = await self.read_one_event(sid, eid)
                 if event:
                     results.append(event)
+
+            # event_types 후처리 필터 (SQLite FTS5는 JOIN 복잡도 피하기 위해 Python 레벨 적용)
+            if event_types is not None:
+                results = [r for r in results if r.get("event_type") in event_types]
             return results
 
         except Exception as e:
             logger.warning("FTS5 search failed: %s", e)
+            return []
+
+    async def search_events_by_session_id(
+        self,
+        session_id_query: str,
+        event_types: Optional[list[str]] = None,
+        limit: int = 50,
+    ) -> list[dict]:
+        """session_id LIKE 매칭으로 이벤트를 검색한다 (SQLite 테스트용).
+
+        PostgreSQL의 session_id_search() SQL 함수와 동등한 동작.
+        SQLite events 테이블의 PK 컬럼: id (sqlite_schema.sql L29 확인됨).
+        """
+        if not session_id_query.strip():
+            return []
+        try:
+            cursor = await self._conn.execute(
+                "SELECT session_id, id AS event_id FROM events"
+                " WHERE session_id LIKE ? LIMIT ?",
+                (f"%{session_id_query}%", limit),
+            )
+            rows = await cursor.fetchall()
+            results = []
+            for r in rows:
+                event = await self.read_one_event(r[0], r[1])
+                if event:
+                    results.append(event)
+            if event_types is not None:
+                results = [r for r in results if r.get("event_type") in event_types]
+            return results
+        except Exception as e:
+            logger.warning("session_id_search failed: %s", e)
             return []
 
     # --- searchable_text 추출 유틸 ---

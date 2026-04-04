@@ -15,9 +15,11 @@ def reset_mcp_state():
     """Reset module-level state before each test."""
     mcp_tools._brief_composer = None
     mcp_tools._manifest_path = None
+    mcp_tools._orch_base = None
     yield
     mcp_tools._brief_composer = None
     mcp_tools._manifest_path = None
+    mcp_tools._orch_base = None
 
 
 def _unwrap(tool_or_func):
@@ -248,7 +250,7 @@ class TestReflectorSetup:
 
         level0 = reflect.get_level0()
 
-        assert level0["identity"]["name"] == "soulstream-server"
+        assert level0["identity"]["name"] == "soulstream-soul-server"
         assert level0["identity"]["port"] == get_settings().port
 
     def test_reflector_capabilities(self):
@@ -749,3 +751,164 @@ class TestSearchSessionHistoryScore:
 
         assert len(result["results"]) == 1
         assert result["results"][0]["score"] == 0.75
+
+
+# ---------------------------------------------------------------------------
+# send_message_to_session
+# ---------------------------------------------------------------------------
+
+class TestSendMessageToSession:
+    """send_message_to_session()의 auto_resumed 처리 및 폴백 동작 검증."""
+
+    async def test_normal_queued(self):
+        """auto_resumed 없는 정상 케이스 → start_execution 호출 안 함, ok=True 반환."""
+        mock_tm = AsyncMock()
+        mock_tm.add_intervention.return_value = {"queue_position": 0}
+        mock_tm.start_execution = AsyncMock()
+
+        fn = _unwrap(mcp_tools.send_message_to_session)
+        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=mock_tm):
+            result = await fn(target_session_id="sess-123", message="hello")
+
+        assert result["ok"] is True
+        mock_tm.add_intervention.assert_called_once_with(
+            agent_session_id="sess-123",
+            text="hello",
+            user="agent",
+        )
+        mock_tm.start_execution.assert_not_called()
+
+    async def test_auto_resumed_calls_start_execution(self):
+        """auto_resumed=True → start_execution 호출, ok=True 반환."""
+        mock_tm = AsyncMock()
+        mock_tm.add_intervention.return_value = {"auto_resumed": True}
+        mock_tm.start_execution = AsyncMock()
+        mock_engine = MagicMock()
+        mock_rm = MagicMock()
+
+        fn = _unwrap(mcp_tools.send_message_to_session)
+        with (
+            patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=mock_tm),
+            patch("soul_server.cogito.mcp_tools.get_soul_engine", return_value=mock_engine),
+            patch("soul_server.cogito.mcp_tools.resource_manager", mock_rm),
+        ):
+            result = await fn(target_session_id="sess-456", message="resume me")
+
+        assert result["ok"] is True
+        mock_tm.start_execution.assert_called_once_with(
+            agent_session_id="sess-456",
+            claude_runner=mock_engine,
+            resource_manager=mock_rm,
+        )
+
+    async def test_local_failure_no_orch(self):
+        """로컬 add_intervention 예외 + _orch_base=None → ok=False 반환, start_execution 호출 안 함."""
+        mock_tm = AsyncMock()
+        mock_tm.add_intervention.side_effect = RuntimeError("session not found")
+        mock_tm.start_execution = AsyncMock()
+
+        fn = _unwrap(mcp_tools.send_message_to_session)
+        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=mock_tm):
+            result = await fn(target_session_id="sess-789", message="fail")
+
+        assert result["ok"] is False
+        assert "session not found" in result["error"]
+        mock_tm.start_execution.assert_not_called()
+
+    async def test_local_failure_with_orch_fallback(self):
+        """로컬 실패 + _orch_base 설정 + orchestrator 성공 → ok=True 반환."""
+        mock_tm = AsyncMock()
+        mock_tm.add_intervention.side_effect = RuntimeError("local error")
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"queued": True}
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        fn = _unwrap(mcp_tools.send_message_to_session)
+        with (
+            patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=mock_tm),
+            patch("soul_server.cogito.mcp_tools.httpx.AsyncClient", return_value=mock_client),
+        ):
+            mcp_tools._orch_base = "http://orch:3000"
+            result = await fn(target_session_id="sess-abc", message="via orch")
+
+        assert result["ok"] is True
+        mock_client.post.assert_called_once_with(
+            "http://orch:3000/api/sessions/sess-abc/intervene",
+            json={"text": "via orch", "user": "agent"},
+        )
+
+
+# ---------------------------------------------------------------------------
+# download_session_history
+# ---------------------------------------------------------------------------
+
+
+async def _async_gen_from_list(items):
+    """리스트를 AsyncGenerator로 변환하는 헬퍼."""
+    for item in items:
+        yield item
+
+
+class TestDownloadSessionHistory:
+    async def test_session_not_found(self, session_db, tmp_path):
+        fn = _unwrap(mcp_tools.download_session_history)
+        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
+            result = await fn("nonexistent", output_dir=str(tmp_path))
+        assert "error" in result
+        assert "찾을 수 없습니다" in result["error"]
+
+    async def test_empty_session(self, session_db, tmp_path):
+        import json
+
+        session_db.stream_events_raw = MagicMock(
+            return_value=_async_gen_from_list([])
+        )
+        fn = _unwrap(mcp_tools.download_session_history)
+        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
+            result = await fn("test-sess-001", output_dir=str(tmp_path))
+
+        assert "error" not in result
+        assert result["session_id"] == "test-sess-001"
+        assert result["event_count"] == 0
+        assert (tmp_path / "session_test-sess-001.jsonl").exists()
+
+    async def test_normal(self, session_db, tmp_path):
+        import json
+
+        raw_events = [
+            (1, "user_message", json.dumps({"type": "user_message", "text": "안녕"})),
+            (2, "tool_use", json.dumps({"type": "tool_use", "tool": "Bash"})),
+            (3, "result", json.dumps({"type": "result", "result": "완료"})),
+        ]
+        session_db.stream_events_raw = MagicMock(
+            return_value=_async_gen_from_list(raw_events)
+        )
+        fn = _unwrap(mcp_tools.download_session_history)
+        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
+            result = await fn("test-sess-001", output_dir=str(tmp_path))
+
+        assert "error" not in result
+        assert result["session_id"] == "test-sess-001"
+        assert result["event_count"] == 3
+
+        file_path = tmp_path / "session_test-sess-001.jsonl"
+        assert file_path.exists()
+
+        lines = file_path.read_text(encoding="utf-8").splitlines()
+        assert len(lines) == 3
+
+        first = json.loads(lines[0])
+        assert first["id"] == 1
+        assert first["event_type"] == "user_message"
+        assert first["event"]["text"] == "안녕"
+
+        last = json.loads(lines[2])
+        assert last["id"] == 3
+        assert last["event_type"] == "result"
+        assert last["event"]["result"] == "완료"
