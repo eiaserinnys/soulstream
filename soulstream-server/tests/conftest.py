@@ -6,16 +6,21 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 
 def pytest_configure(config):
-    """Set required environment variables for Settings validation."""
-    defaults = {
+    """Set required environment variables for Settings validation.
+
+    셸에 어떤 값이 있든 무조건 덮어쓴다. 부모 프로세스에서 prod .env가 export된 경우
+    (예: 봇 프로세스 하위에서 테스트 실행) `if KEY not in os.environ` 가드는 무력해지고,
+    테스트가 prod 설정으로 동작하게 된다. 특히 DATABASE_URL이 prod로 새면
+    test-db-safety.md 위반이며 데이터 손실 위험이 있다.
+    """
+    overrides = {
         "HOST": "0.0.0.0",
         "PORT": "5200",
         "DATABASE_URL": "postgresql://test:test@localhost:5432/test",
         "ENVIRONMENT": "test",
     }
-    for key, value in defaults.items():
-        if key not in os.environ:
-            os.environ[key] = value
+    for key, value in overrides.items():
+        os.environ[key] = value
 
 import pytest
 from fastapi import FastAPI
