@@ -704,10 +704,18 @@ export interface SessionDeletedStreamEvent {
   agent_session_id: string;
 }
 
+/** atom 트리 주입 설정 */
+export interface AtomContextNodeSettings {
+  nodeId: string;       // atom 트리 노드 ID
+  depth?: number;       // 컴파일 깊이 (기본 3)
+  titlesOnly?: boolean; // 제목만 가져올지 (기본 false)
+}
+
 /** 폴더 설정 */
 export interface FolderSettings {
   excludeFromFeed?: boolean;
-  folderPrompt?: string;  // 새 세션 시작 시 컨텍스트에 주입할 지시사항
+  folderPrompt?: string;          // 새 세션 시작 시 컨텍스트에 주입할 지시사항
+  atomContextNode?: AtomContextNodeSettings; // atom 트리 주입 설정
 }
 
 /** 카탈로그 폴더 */
