@@ -5,6 +5,7 @@ Task Executor - 백그라운드 태스크 실행 관리
 """
 
 import asyncio
+import httpx
 import logging
 import os
 from datetime import datetime, timezone
@@ -17,6 +18,7 @@ from soul_server.service.task_models import Task, TaskStatus, PREVIEW_FIELD_MAP,
 from soul_server.service.prompt_assembler import assemble_prompt
 from soul_server.service.session_broadcaster import get_session_broadcaster
 from soul_server.service.engine_adapter import build_soulstream_context_item
+from soul_server.config import get_settings
 
 import json
 
@@ -145,17 +147,26 @@ class TaskExecutor:
                 # 세션의 폴더명 및 폴더 프롬프트 조회
                 folder_name: Optional[str] = None
                 folder_prompt: Optional[str] = None
+                atom_context_markdown: str | None = None
                 if self._db is not None:
                     session_row = await self._db.get_session(session_id)
                     if session_row and session_row.get("folder_id"):
                         folder_row = await self._db.get_folder(session_row["folder_id"])
                         if folder_row:
                             folder_name = folder_row["name"]
-                            # 새 세션에서만 폴더 프롬프트 주입 (resume/intervention 제외)
+                            # 새 세션에서만 폴더 프롬프트 + atom 트리 주입 (resume/intervention 제외)
                             if task.resume_session_id is None:
-                                settings = folder_row.get("settings")
-                                if isinstance(settings, dict):
-                                    folder_prompt = settings.get("folderPrompt") or None
+                                folder_settings = folder_row.get("settings")
+                                if isinstance(folder_settings, dict):
+                                    folder_prompt = folder_settings.get("folderPrompt") or None
+                                    # atom 트리 주입
+                                    atom_node_cfg = folder_settings.get("atomContextNode")
+                                    if isinstance(atom_node_cfg, dict) and atom_node_cfg.get("nodeId"):
+                                        atom_context_markdown = await _fetch_atom_context(
+                                            node_id=atom_node_cfg["nodeId"],
+                                            depth=int(atom_node_cfg.get("depth", 3)),
+                                            titles_only=bool(atom_node_cfg.get("titlesOnly", False)),
+                                        )
 
                 # 서버 컨텍스트 빌드 + 클라이언트 컨텍스트 머지
                 # SSE 이벤트와 프롬프트 주입 양쪽에 동일한 머지 결과를 사용
@@ -171,9 +182,15 @@ class TaskExecutor:
                     if folder_prompt
                     else []
                 )
+                atom_context_items = (
+                    [{"key": "atom_context", "label": "atom 트리", "content": atom_context_markdown}]
+                    if atom_context_markdown
+                    else []
+                )
                 combined_context_items = (
                     [soulstream_item]           # 세션 메타데이터 (최우선)
                     + folder_prompt_items       # 폴더별 지시사항 (새 세션에만 포함)
+                    + atom_context_items        # atom 트리 컨텍스트
                     + (task.context_items or [])  # 클라이언트 전달 컨텍스트
                 )
 
@@ -598,3 +615,28 @@ class TaskExecutor:
         cancelled_count = sum(1 for _, t in tasks_to_cancel if t.done())
         logger.info(f"Cancelled {cancelled_count}/{len(tasks_to_cancel)} running tasks")
         return cancelled_count
+
+
+async def _fetch_atom_context(node_id: str, depth: int, titles_only: bool) -> str | None:
+    """atom API에서 subtree를 compile하여 마크다운 텍스트를 반환한다.
+    실패 시 None 반환 (fallback)."""
+    settings = get_settings()
+    if not settings.atom_enabled or not settings.atom_server_url:
+        return None
+    url = f"{settings.atom_server_url.rstrip('/')}/api/tree/{node_id}/compile"
+    payload = {"depth": depth, "titlesOnly": titles_only, "maxChars": 50000}
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.post(
+                url,
+                json=payload,
+                headers={"x-api-key": settings.atom_api_key, "Content-Type": "application/json"},
+            )
+        if resp.status_code == 200:
+            data = resp.json()
+            return data.get("markdown") or None
+        logger.warning("[atom] compile failed: status=%s node_id=%s", resp.status_code, node_id)
+        return None
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[atom] compile error: %s node_id=%s", exc, node_id)
+        return None

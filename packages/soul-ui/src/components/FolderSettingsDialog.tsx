@@ -16,7 +16,8 @@ import {
   DialogFooter,
 } from "./ui/dialog";
 import { Button } from "./ui/button";
-import type { CatalogFolder, FolderSettings } from "../shared/types";
+import { useServerStatus } from "../hooks/useServerStatus";
+import type { AtomContextNodeSettings, CatalogFolder, FolderSettings } from "../shared/types";
 
 export interface FolderSettingsDialogProps {
   folder: CatalogFolder | null;
@@ -34,18 +35,31 @@ export function FolderSettingsDialog({
   const [excludeFromFeed, setExcludeFromFeed] = useState(false);
   const [folderPrompt, setFolderPrompt] = useState("");
 
+  const { atomEnabled } = useServerStatus();
+  const [atomNodeId, setAtomNodeId] = useState("");
+  const [atomDepth, setAtomDepth] = useState(3);
+  const [atomTitlesOnly, setAtomTitlesOnly] = useState(false);
+
   useEffect(() => {
     if (open && folder) {
       setExcludeFromFeed(folder.settings?.excludeFromFeed ?? false);
       setFolderPrompt(folder.settings?.folderPrompt ?? "");
+      setAtomNodeId(folder.settings?.atomContextNode?.nodeId ?? "");
+      setAtomDepth(folder.settings?.atomContextNode?.depth ?? 3);
+      setAtomTitlesOnly(folder.settings?.atomContextNode?.titlesOnly ?? false);
     }
   }, [open, folder]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const atomContextNode: AtomContextNodeSettings | undefined =
+      atomNodeId.trim()
+        ? { nodeId: atomNodeId.trim(), depth: atomDepth, titlesOnly: atomTitlesOnly }
+        : undefined;
     onConfirm({
       excludeFromFeed,
       folderPrompt: folderPrompt || undefined,
+      atomContextNode,
     });
   };
 
@@ -79,6 +93,46 @@ export function FolderSettingsDialog({
                 className="w-full rounded border border-[--color-border] bg-[--color-surface-1] px-2 py-1 text-sm resize-none"
               />
             </div>
+            {atomEnabled && (
+              <div className="mt-4 flex flex-col gap-2 border-t border-[--color-border] pt-4">
+                <p className="text-sm font-medium">atom 트리 주입</p>
+                <p className="text-xs text-[--color-text-secondary]">
+                  세션 시작 시 지정한 atom 노드의 서브트리가 컨텍스트로 주입됩니다.
+                </p>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-[--color-text-secondary]">노드 ID</label>
+                  <input
+                    type="text"
+                    value={atomNodeId}
+                    onChange={(e) => setAtomNodeId(e.target.value)}
+                    placeholder="예: d71af4b5-c53a-49a4-9e07-9b6ee531fb56"
+                    className="w-full rounded border border-[--color-border] bg-[--color-surface-1] px-2 py-1 text-sm font-mono"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-[--color-text-secondary]">
+                    깊이: {atomDepth}
+                  </label>
+                  <input
+                    type="range"
+                    min={1}
+                    max={5}
+                    value={atomDepth}
+                    onChange={(e) => setAtomDepth(parseInt(e.target.value))}
+                    className="w-full"
+                  />
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer text-sm">
+                  <input
+                    type="checkbox"
+                    checked={atomTitlesOnly}
+                    onChange={(e) => setAtomTitlesOnly(e.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  제목만 가져오기
+                </label>
+              </div>
+            )}
           </DialogPanel>
           <DialogFooter variant="bare">
             <Button

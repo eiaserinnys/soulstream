@@ -23,6 +23,11 @@ class Settings(BaseOAuthSettings):
     # Dashboard
     dashboard_dir: str = ""
 
+    # Atom 연동 (선택 사항 — 미설정/ATOM_ENABLED=false 시 비활성)
+    atom_enabled: bool = False
+    atom_server_url: str = ""   # 예: https://atom.eiaserinnys.me
+    atom_api_key: str = ""      # x-api-key 헤더 값
+
     # OAuth, environment, is_development, is_auth_enabled 는 BaseOAuthSettings에서 상속
 
     model_config = {"env_file": ".env", "extra": "ignore"}

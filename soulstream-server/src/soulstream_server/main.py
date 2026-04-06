@@ -16,6 +16,7 @@ from soul_common.catalog.catalog_service import CatalogService
 from soul_common.db.session_db import PostgresSessionDB
 
 from soulstream_server.api.attachments import create_attachments_router
+from soulstream_server.api.atom import create_atom_router
 from soulstream_server.api.catalog import create_catalog_router
 from soulstream_server.api.cogito import create_cogito_router
 from soulstream_server.api.folders import create_folders_router
@@ -136,6 +137,7 @@ async def lifespan(app: FastAPI):
     app.include_router(create_catalog_router(catalog_service, db, node_manager))
     app.include_router(create_attachments_router(node_manager))
     app.include_router(create_cogito_router(node_manager))
+    app.include_router(create_atom_router())
 
     # Auth 라우터
     if settings.is_auth_enabled:
@@ -222,7 +224,11 @@ def create_app() -> FastAPI:
     # soulstream-server는 graceful_shutdown이 없으므로 is_draining은 항상 False.
     @app.get("/api/status")
     async def api_status():
-        return {"is_draining": False, "healthy": True}
+        return {
+            "is_draining": False,
+            "healthy": True,
+            "atom_enabled": settings.atom_enabled,
+        }
 
     return app
 

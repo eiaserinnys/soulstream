@@ -9,10 +9,12 @@ import { useState, useEffect } from "react";
 
 interface ServerStatus {
   isDraining: boolean;
+  atomEnabled: boolean;
 }
 
 export function useServerStatus(intervalMs = 3000): ServerStatus {
   const [isDraining, setIsDraining] = useState(false);
+  const [atomEnabled, setAtomEnabled] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -29,6 +31,7 @@ export function useServerStatus(intervalMs = 3000): ServerStatus {
         const data = await res.json();
         if (!cancelled) {
           setIsDraining(data.is_draining ?? false);
+          setAtomEnabled(data.atom_enabled ?? false);
         }
       } catch {
         // 네트워크 오류 → draining으로 간주
@@ -45,5 +48,5 @@ export function useServerStatus(intervalMs = 3000): ServerStatus {
     };
   }, [intervalMs]);
 
-  return { isDraining };
+  return { isDraining, atomEnabled };
 }
