@@ -130,6 +130,11 @@ class Settings:
     # Cogito (선택 사항 — 미설정 시 브리프 생성 비활성화)
     cogito_manifest_path: str = ""
 
+    # Atom 연동 (선택 사항 — 미설정/ATOM_ENABLED=false 시 비활성)
+    atom_enabled: bool = False
+    atom_server_url: str = ""   # 예: https://atom.eiaserinnys.me
+    atom_api_key: str = ""      # x-api-key 헤더 값
+
     # Google OAuth (선택 — 미설정 시 인증 비활성)
     google_client_id: str = ""
     google_client_secret: str = ""
@@ -230,6 +235,10 @@ class Settings:
             serendipity_url=os.getenv("SERENDIPITY_URL", cls.serendipity_url),
             # Cogito
             cogito_manifest_path=os.getenv("COGITO_MANIFEST_PATH", ""),
+            # Atom 연동
+            atom_enabled=os.getenv("ATOM_ENABLED", "false").lower() in ("true", "1", "yes"),
+            atom_server_url=os.getenv("ATOM_SERVER_URL", ""),
+            atom_api_key=os.getenv("ATOM_API_KEY", ""),
             # LLM Proxy
             llm_openai_api_key=os.getenv("LLM_OPENAI_API_KEY", ""),
             llm_anthropic_api_key=os.getenv("LLM_ANTHROPIC_API_KEY", ""),
@@ -391,6 +400,9 @@ SETTINGS_REGISTRY: dict[str, SettingMeta] = {
     "serendipity_enabled": SettingMeta("SERENDIPITY_ENABLED", "세렌디피티 활성화", "세렌디피티 저장 활성화 여부", "integration", "bool"),
     "serendipity_url": SettingMeta("SERENDIPITY_URL", "세렌디피티 URL", "세렌디피티 API URL", "integration", "str"),
     "cogito_manifest_path": SettingMeta("COGITO_MANIFEST_PATH", "Cogito 매니페스트", "cogito 매니페스트 파일 경로", "integration", "str"),
+    "atom_enabled": SettingMeta("ATOM_ENABLED", "Atom 활성화", "atom 트리 주입 활성화 여부", "integration", "bool"),
+    "atom_server_url": SettingMeta("ATOM_SERVER_URL", "Atom 서버 URL", "atom API URL", "integration", "str"),
+    "atom_api_key": SettingMeta("ATOM_API_KEY", "Atom API Key", "atom x-api-key 헤더 값", "integration", "str", sensitive=True),
     # --- upstream (전부 !hot — 소울스트림 연결은 init 시 설정) ---
     "soulstream_upstream_url": SettingMeta("SOULSTREAM_UPSTREAM_URL", "Upstream URL", "소울스트림 오케스트레이터 WebSocket URL", "upstream", "str", hot_reloadable=False),
     "soulstream_node_id": SettingMeta("SOULSTREAM_NODE_ID", "노드 ID", "소울스트림 노드 식별자", "upstream", "str", hot_reloadable=False),
