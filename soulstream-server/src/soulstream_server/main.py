@@ -20,6 +20,7 @@ from soulstream_server.api.atom import create_atom_router
 from soulstream_server.api.catalog import create_catalog_router
 from soulstream_server.api.claude_auth import create_claude_auth_router
 from soulstream_server.api.cogito import create_cogito_router
+from soulstream_server.api.config import create_config_router
 from soulstream_server.api.folders import create_folders_router
 from soulstream_server.api.nodes import create_nodes_router
 from soulstream_server.api.sessions import create_sessions_router
@@ -134,6 +135,7 @@ async def lifespan(app: FastAPI):
         )
     )
     app.include_router(create_nodes_router(node_manager, broadcaster))
+    app.include_router(create_config_router(node_manager))
     app.include_router(create_claude_auth_router(node_manager))
     app.include_router(create_folders_router(catalog_service))
     app.include_router(create_catalog_router(catalog_service, db, node_manager))
