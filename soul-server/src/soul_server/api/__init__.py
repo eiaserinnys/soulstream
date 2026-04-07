@@ -3,7 +3,7 @@ from .attachments import router as attachments_router
 from .auth import verify_token
 from .dashboard import router as dashboard_router
 from .sessions import create_sessions_router
-from .claude_auth import create_claude_auth_router, AuthSessionManager
+from .claude_auth import create_claude_auth_router
 
 __all__ = [
     "attachments_router",
@@ -11,5 +11,4 @@ __all__ = [
     "verify_token",
     "create_sessions_router",
     "create_claude_auth_router",
-    "AuthSessionManager",
 ]
