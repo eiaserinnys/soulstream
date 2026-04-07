@@ -20,6 +20,10 @@ from soulstream_server.constants import (
     CMD_INTERVENE,
     CMD_RESPOND,
     CMD_SUBSCRIBE_EVENTS,
+    CMD_CLAUDE_AUTH_STATUS,
+    CMD_CLAUDE_AUTH_SET_TOKEN,
+    CMD_CLAUDE_AUTH_DELETE_TOKEN,
+    CMD_CLAUDE_AUTH_GET_USAGE,
     COMMAND_TIMEOUT,
     EVT_ERROR,
     EVT_EVENT,
@@ -206,6 +210,22 @@ class NodeConnection:
             # (Phase 1에서 _handle_intervene에 attachment_paths 지원이 추가됨)
             payload["attachment_paths"] = attachment_paths
         return await self._send_command(CMD_INTERVENE, payload)
+
+    async def send_claude_auth_status(self) -> dict:
+        """Claude Code OAuth 토큰 존재 여부 조회."""
+        return await self._send_command(CMD_CLAUDE_AUTH_STATUS, {})
+
+    async def send_claude_auth_set_token(self, token: str) -> dict:
+        """Claude Code OAuth 토큰 설정."""
+        return await self._send_command(CMD_CLAUDE_AUTH_SET_TOKEN, {"token": token})
+
+    async def send_claude_auth_delete_token(self) -> dict:
+        """Claude Code OAuth 토큰 삭제."""
+        return await self._send_command(CMD_CLAUDE_AUTH_DELETE_TOKEN, {})
+
+    async def send_claude_auth_get_usage(self) -> dict:
+        """Claude Code OAuth 사용량 조회."""
+        return await self._send_command(CMD_CLAUDE_AUTH_GET_USAGE, {})
 
     async def send_respond(
         self, session_id: str, request_id: str, answers: dict

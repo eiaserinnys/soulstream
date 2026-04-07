@@ -3,15 +3,18 @@
  *
  * orchestrator-dashboard의 NodePanel.tsx에서 포팅.
  * orchestrator 모드(features.nodePanel = true)에서만 사용된다.
+ * 노드 헤더 클릭 시 NodeClaudeAuthPanel이 확장된다.
  */
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { cn, nodeIdToHue, useTheme } from "@seosoyoung/soul-ui";
 import { useOrchestratorStore } from "../store/orchestrator-store";
+import { NodeClaudeAuthPanel } from "./NodeClaudeAuthPanel";
 
 export function NodePanel() {
   const nodes = useOrchestratorStore((s) => s.nodes);
   const { theme } = useTheme();
+  const [expandedNodeId, setExpandedNodeId] = useState<string | null>(null);
 
   const nodeList = useMemo(() => Array.from(nodes.values()), [nodes]);
 
@@ -38,14 +41,20 @@ export function NodePanel() {
           const hue = nodeIdToHue(node.nodeId);
           const isDead = node.status === "disconnected";
           const isDark = theme === "dark";
+          const isExpanded = expandedNodeId === node.nodeId;
 
           return (
             <div
               key={node.nodeId}
               className={cn("border-b border-border", isDead && "opacity-60")}
             >
-              {/* Node header row */}
-              <div className="flex items-center gap-2 px-3 py-2 select-none">
+              {/* Node header row — 클릭 시 Claude Auth 패널 토글 */}
+              <div
+                className="flex items-center gap-2 px-3 py-2 select-none cursor-pointer hover:bg-muted/30"
+                onClick={() =>
+                  setExpandedNodeId(isExpanded ? null : node.nodeId)
+                }
+              >
                 <div
                   className="w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold font-mono shrink-0"
                   style={{
@@ -67,7 +76,12 @@ export function NodePanel() {
                       : "bg-success shadow-[0_0_6px_rgba(16,185,129,0.3)]",
                   )}
                 />
+                <span className="text-[10px] text-muted-foreground">
+                  {isExpanded ? "▲" : "▼"}
+                </span>
               </div>
+              {/* 확장 패널 — Claude Code 크레덴셜 */}
+              {isExpanded && <NodeClaudeAuthPanel nodeId={node.nodeId} />}
             </div>
           );
         })}

@@ -1,0 +1,122 @@
+"""soulstream-server Claude Code OAuth 프록시 API
+
+방화벽 뒤 soul-server를 대신하여 PKCE 흐름을 처리:
+1. GET /api/nodes/{node_id}/claude-auth/start  → PKCE state 생성, auth_url 반환
+2. GET /api/nodes/claude-auth/callback         → code 수신, token 교환, WS로 soul-server push
+3. GET /api/nodes/{node_id}/claude-auth/status → soul-server 토큰 존재 여부
+4. GET /api/nodes/{node_id}/claude-auth/usage  → soul-server Usage 대리 조회
+5. DELETE /api/nodes/{node_id}/claude-auth/token → soul-server 토큰 삭제
+"""
+from __future__ import annotations
+
+import logging
+import os
+from urllib.parse import urlencode
+
+import httpx
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import RedirectResponse
+
+from soulstream_server.nodes.node_manager import NodeManager
+from soulstream_server.utils.pkce import generate_verifier, generate_challenge, generate_state
+from soulstream_server.utils.web_session import WebSessionStore
+
+logger = logging.getLogger(__name__)
+
+CLAUDE_OAUTH_AUTHORIZE_URL = "https://claude.com/cai/oauth/authorize"
+CLAUDE_OAUTH_TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
+
+# 모듈 레벨 PKCE state 저장소
+_web_sessions = WebSessionStore()
+
+
+def create_claude_auth_router(node_manager: NodeManager) -> APIRouter:
+    router = APIRouter(prefix="/api", tags=["claude-auth"])
+
+    @router.get("/nodes/{node_id}/claude-auth/start")
+    async def node_claude_auth_start(node_id: str):
+        """PKCE OAuth 흐름 시작 — auth_url 반환."""
+        client_id = os.environ["CLAUDE_OAUTH_CLIENT_ID"]
+        callback_url = os.environ["CLAUDE_OAUTH_CALLBACK_URL"]
+        verifier = generate_verifier()
+        challenge = generate_challenge(verifier)
+        state = generate_state()
+        # state에 node_id 연결 — callback 때 어느 노드인지 식별
+        _web_sessions.create(state, verifier, metadata={"node_id": node_id})
+        params = {
+            "client_id": client_id,
+            "response_type": "code",
+            "redirect_uri": callback_url,
+            "code_challenge": challenge,
+            "code_challenge_method": "S256",
+            "scope": "org:create_api_key user:profile user:inference",
+            "state": state,
+        }
+        return {"auth_url": f"{CLAUDE_OAUTH_AUTHORIZE_URL}?{urlencode(params)}"}
+
+    # ⚠️ 동적 경로 /nodes/{node_id}/... 보다 먼저 등록 (FastAPI 정적 경로 우선)
+    @router.get("/nodes/claude-auth/callback")
+    async def node_claude_auth_callback(code: str, state: str):
+        """OAuth 콜백 — code 수신 후 토큰 교환 및 WS로 soul-server에 push."""
+        session = _web_sessions.pop(state)
+        if session is None:
+            raise HTTPException(status_code=400, detail="Invalid or expired OAuth state")
+        node_id = session.metadata.get("node_id")
+        if not node_id:
+            raise HTTPException(status_code=400, detail="Missing node_id in session")
+        client_id = os.environ["CLAUDE_OAUTH_CLIENT_ID"]
+        callback_url = os.environ["CLAUDE_OAUTH_CALLBACK_URL"]
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                CLAUDE_OAUTH_TOKEN_URL,
+                json={
+                    "grant_type": "authorization_code",
+                    "client_id": client_id,
+                    "code": code,
+                    "redirect_uri": callback_url,
+                    "code_verifier": session.verifier,
+                },
+            )
+            if resp.status_code != 200:
+                raise HTTPException(
+                    status_code=400, detail=f"Token exchange failed: {resp.text}"
+                )
+            data = resp.json()
+        access_token = data["access_token"]
+        node_conn = node_manager.get_node(node_id)
+        if node_conn is None:
+            raise HTTPException(status_code=404, detail=f"Node {node_id} not connected")
+        await node_conn.send_claude_auth_set_token(access_token)
+        logger.info(f"Claude Code OAuth token pushed to node {node_id}")
+        return RedirectResponse(url="/?claude_auth=success")
+
+    @router.get("/nodes/{node_id}/claude-auth/status")
+    async def node_claude_auth_status(node_id: str):
+        """soul-server의 토큰 존재 여부 조회."""
+        node_conn = node_manager.get_node(node_id)
+        if node_conn is None:
+            raise HTTPException(status_code=404, detail=f"Node {node_id} not connected")
+        return await node_conn.send_claude_auth_status()
+
+    @router.get("/nodes/{node_id}/claude-auth/usage")
+    async def node_claude_auth_usage(node_id: str):
+        """soul-server를 통해 Anthropic Usage 대리 조회."""
+        node_conn = node_manager.get_node(node_id)
+        if node_conn is None:
+            raise HTTPException(status_code=404, detail=f"Node {node_id} not connected")
+        result = await node_conn.send_claude_auth_get_usage()
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=400, detail=result.get("error", "unknown")
+            )
+        return result["data"]
+
+    @router.delete("/nodes/{node_id}/claude-auth/token")
+    async def node_claude_auth_delete_token(node_id: str):
+        """soul-server의 토큰 삭제."""
+        node_conn = node_manager.get_node(node_id)
+        if node_conn is None:
+            raise HTTPException(status_code=404, detail=f"Node {node_id} not connected")
+        return await node_conn.send_claude_auth_delete_token()
+
+    return router

@@ -1,15 +1,15 @@
 """
 Claude Code OAuth 인증 API 라우터
 
-엔드포인트 (session_manager 제공 시):
-- POST /auth/claude/start - CLI 기반 인증 세션 시작
-- POST /auth/claude/code - 인증 코드 제출
-- DELETE /auth/claude/cancel - 세션 취소
-
-공통 엔드포인트:
-- POST /auth/claude/token - 토큰 직접 설정
-- GET /auth/claude/token - 토큰 존재 여부 확인
-- DELETE /auth/claude/token - 토큰 삭제
+엔드포인트:
+- GET  /auth/claude/web/start     - PKCE OAuth 흐름 시작 (auth_url 반환)
+- GET  /auth/claude/web/callback  - OAuth 콜백 수신 및 토큰 교환
+- GET  /auth/claude/usage         - Anthropic 사용량 조회
+- POST /auth/claude/token         - 토큰 직접 설정
+- GET  /auth/claude/token         - 토큰 존재 여부 확인
+- DELETE /auth/claude/token       - 토큰 삭제
+- GET  /auth/claude/profiles      - 프로필 목록 조회
+- POST /auth/claude/profiles/activate - 프로필 활성화
 """
 
 from __future__ import annotations
@@ -18,14 +18,16 @@ import logging
 import os
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlencode
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 from soul_server.api.auth import verify_token
-
-from . import cli_runner
-from .session import AuthSessionManager, SessionStatus
+from .pkce import generate_verifier, generate_challenge, generate_state
+from .web_session import web_session_store
 from .token_store import (
     delete_oauth_token,
     get_oauth_token,
@@ -39,37 +41,12 @@ from .token_store import (
 
 logger = logging.getLogger(__name__)
 
+CLAUDE_OAUTH_AUTHORIZE_URL = "https://claude.com/cai/oauth/authorize"
+CLAUDE_OAUTH_TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
+ANTHROPIC_USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
+
 
 # === Request/Response Models ===
-
-
-class StartResponse(BaseModel):
-    """POST /start 응답"""
-
-    session_id: str
-    auth_url: str
-    status: str
-
-
-class CodeRequest(BaseModel):
-    """POST /code 요청"""
-
-    session_id: str
-    code: str
-
-
-class CodeResponse(BaseModel):
-    """POST /code 응답"""
-
-    success: bool
-    message: str
-
-
-class CancelResponse(BaseModel):
-    """DELETE /cancel 응답"""
-
-    cancelled: bool
-    session_id: str | None = None
 
 
 class SetTokenRequest(BaseModel):
@@ -123,14 +100,12 @@ class ActivateProfileRequest(BaseModel):
 
 
 def create_claude_auth_router(
-    session_manager: AuthSessionManager | None = None,
     env_path: Path | None = None,
 ) -> APIRouter:
     """
     Claude Auth API 라우터 팩토리
 
     Args:
-        session_manager: 인증 세션 관리자
         env_path: .env 파일 경로 (None이면 기본 경로 사용)
 
     Returns:
@@ -142,129 +117,91 @@ def create_claude_auth_router(
         """env_path가 None이면 기본 경로 사용"""
         return env_path if env_path is not None else get_env_path()
 
-    # === CLI 기반 인증 엔드포인트 (session_manager 필요) ===
+    # === PKCE OAuth 웹 흐름 엔드포인트 ===
 
-    if session_manager is not None:
-        @router.post("/start", response_model=StartResponse)
-        async def start_auth(_: str = Depends(verify_token)):
-            """
-            POST /auth/claude/start - 인증 세션 시작
+    @router.get("/web/start")
+    async def web_start(_: str = Depends(verify_token)):
+        """
+        GET /auth/claude/web/start - PKCE OAuth 흐름 시작
 
-            subprocess로 `claude setup-token`을 실행하고
-            OAuth URL을 반환합니다.
+        code_verifier를 생성하고 OAuth 인증 URL을 반환합니다.
+        브라우저에서 새 탭으로 열어 인증을 진행합니다.
+        """
+        client_id = os.environ["CLAUDE_OAUTH_CLIENT_ID"]
+        callback_url = os.environ["CLAUDE_OAUTH_CALLBACK_URL"]
+        verifier = generate_verifier()
+        challenge = generate_challenge(verifier)
+        state = generate_state()
+        web_session_store.create(state, verifier)
+        params = {
+            "client_id": client_id,
+            "response_type": "code",
+            "redirect_uri": callback_url,
+            "code_challenge": challenge,
+            "code_challenge_method": "S256",
+            "scope": "org:create_api_key user:profile user:inference",
+            "state": state,
+        }
+        return {"auth_url": f"{CLAUDE_OAUTH_AUTHORIZE_URL}?{urlencode(params)}"}
 
-            기존 활성 세션이 있으면 자동으로 취소됩니다.
-            """
-            # 세션 생성
-            session = await session_manager.create_session()
+    @router.get("/web/callback")
+    async def web_callback(code: str, state: str):
+        """
+        GET /auth/claude/web/callback - OAuth 콜백 수신
 
-            try:
-                # CLI 시작
-                result = await cli_runner.start_cli()
-
-                # 세션 업데이트
-                session_manager.set_process(session, result.process)
-                session_manager.update_status(
-                    session,
-                    status=SessionStatus.WAITING_CODE,
-                    auth_url=result.auth_url,
-                )
-
-                return StartResponse(
-                    session_id=session.id,
-                    auth_url=result.auth_url,
-                    status=session.status.value,
-                )
-
-            except cli_runner.CliRunnerError as e:
-                logger.error(f"CLI start failed: {e}")
-                session_manager.update_status(
-                    session,
-                    status=SessionStatus.FAILED,
-                    error=str(e),
-                )
-                raise HTTPException(
-                    status_code=500,
-                    detail={"error": "CLI 시작 실패", "details": str(e)},
-                )
-
-        @router.post("/code", response_model=CodeResponse)
-        async def submit_code(request: CodeRequest, _: str = Depends(verify_token)):
-            """
-            POST /auth/claude/code - 인증 코드 제출
-
-            사용자가 입력한 인증 코드를 CLI에 전달하고
-            토큰을 추출하여 저장합니다.
-            """
-            session = session_manager.get_session(request.session_id)
-            if session is None:
-                raise HTTPException(
-                    status_code=404,
-                    detail="세션을 찾을 수 없습니다",
-                )
-
-            if session.status != SessionStatus.WAITING_CODE:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"세션 상태가 올바르지 않습니다: {session.status.value}",
-                )
-
-            if session._process is None:
-                raise HTTPException(
-                    status_code=500,
-                    detail="CLI 프로세스가 없습니다",
-                )
-
-            # 상태 업데이트
-            session_manager.update_status(session, status=SessionStatus.SUBMITTING)
-
-            try:
-                # 코드 제출 및 토큰 추출
-                result = await cli_runner.submit_code(session._process, request.code)
-
-                # 토큰 저장
-                save_oauth_token(result.token, _get_env_path())
-
-                # 세션 완료
-                session_manager.update_status(session, status=SessionStatus.COMPLETED)
-
-                return CodeResponse(
-                    success=True,
-                    message="인증 완료 (1년 유효)",
-                )
-
-            except cli_runner.CliRunnerError as e:
-                logger.error(f"Code submit failed: {e}")
-                session_manager.update_status(
-                    session,
-                    status=SessionStatus.FAILED,
-                    error=str(e),
-                )
-                raise HTTPException(
-                    status_code=400,
-                    detail={"error": "코드 제출 실패", "details": str(e)},
-                )
-
-        @router.delete("/cancel", response_model=CancelResponse)
-        async def cancel_session(_: str = Depends(verify_token)):
-            """
-            DELETE /auth/claude/cancel - 진행 중인 세션 취소
-
-            현재 활성 세션이 있으면 취소하고 subprocess를 종료합니다.
-            """
-            current = session_manager.current_session
-            if current is None or not current.is_active():
-                return CancelResponse(cancelled=False, session_id=None)
-
-            session_id = current.id
-            cancelled = await session_manager.cancel_session(session_id)
-
-            return CancelResponse(
-                cancelled=cancelled,
-                session_id=session_id if cancelled else None,
+        Anthropic이 리디렉션하는 엔드포인트. verify_token 불필요.
+        code_verifier로 토큰 교환 후 저장합니다.
+        """
+        session = web_session_store.pop(state)
+        if session is None:
+            raise HTTPException(status_code=400, detail="Invalid or expired OAuth state")
+        client_id = os.environ["CLAUDE_OAUTH_CLIENT_ID"]
+        callback_url = os.environ["CLAUDE_OAUTH_CALLBACK_URL"]
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                CLAUDE_OAUTH_TOKEN_URL,
+                json={
+                    "grant_type": "authorization_code",
+                    "client_id": client_id,
+                    "code": code,
+                    "redirect_uri": callback_url,
+                    "code_verifier": session.verifier,
+                },
             )
+            if resp.status_code != 200:
+                raise HTTPException(
+                    status_code=400, detail=f"Token exchange failed: {resp.text}"
+                )
+            data = resp.json()
+        access_token = data["access_token"]
+        save_oauth_token(access_token, _get_env_path())
+        logger.info("Claude Code OAuth token saved via PKCE web flow")
+        return RedirectResponse(url="/?claude_auth=success")
 
-    # === 직접 토큰 설정 엔드포인트 (항상 활성화) ===
+    @router.get("/usage")
+    async def get_usage(_: str = Depends(verify_token)):
+        """
+        GET /auth/claude/usage - Anthropic 사용량 조회
+        """
+        token = get_oauth_token()
+        if not token:
+            raise HTTPException(status_code=404, detail="No OAuth token stored")
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                ANTHROPIC_USAGE_URL,
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "anthropic-beta": "oauth-2025-04-20",
+                },
+            )
+            if resp.status_code != 200:
+                raise HTTPException(
+                    status_code=resp.status_code,
+                    detail=f"Usage API error: {resp.text}",
+                )
+            return resp.json()
+
+    # === 직접 토큰 설정 엔드포인트 ===
 
     @router.post("/token", response_model=TokenResponse)
     async def set_token(

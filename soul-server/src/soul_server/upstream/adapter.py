@@ -22,6 +22,10 @@ from .protocol import (
     CMD_LIST_SESSIONS,
     CMD_RESPOND,
     CMD_SUBSCRIBE_EVENTS,
+    CMD_CLAUDE_AUTH_STATUS,
+    CMD_CLAUDE_AUTH_SET_TOKEN,
+    CMD_CLAUDE_AUTH_DELETE_TOKEN,
+    CMD_CLAUDE_AUTH_GET_USAGE,
     EVT_ERROR,
     EVT_EVENT,
     EVT_HEALTH_STATUS,
@@ -31,6 +35,16 @@ from .protocol import (
     EVT_SESSION_UPDATED,
     EVT_SESSIONS_UPDATE,
 )
+from soul_server.api.claude_auth.token_store import (
+    get_oauth_token,
+    save_oauth_token,
+    delete_oauth_token,
+    get_env_path,
+)
+
+import httpx
+
+ANTHROPIC_USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 from .reconnect import ReconnectPolicy
 
 if TYPE_CHECKING:
@@ -357,6 +371,65 @@ class UpstreamAdapter:
                         name=f"upstream-subscribe-{session_id_for_sub}",
                     )
                     self._stream_tasks[session_id_for_sub] = task
+                case CMD_CLAUDE_AUTH_STATUS:
+                    token = get_oauth_token()
+                    await self._send({
+                        "type": CMD_CLAUDE_AUTH_STATUS,
+                        "has_token": token is not None,
+                        "requestId": request_id,
+                    })
+                case CMD_CLAUDE_AUTH_SET_TOKEN:
+                    token_val = cmd.get("token", "")
+                    if not token_val:
+                        await self._send_error("token is required", request_id=request_id, command_type=cmd_type)
+                    else:
+                        save_oauth_token(token_val, get_env_path())
+                        logger.info("Claude Code OAuth token set via WS command")
+                        await self._send({
+                            "type": CMD_CLAUDE_AUTH_SET_TOKEN,
+                            "success": True,
+                            "requestId": request_id,
+                        })
+                case CMD_CLAUDE_AUTH_DELETE_TOKEN:
+                    delete_oauth_token(get_env_path())
+                    logger.info("Claude Code OAuth token deleted via WS command")
+                    await self._send({
+                        "type": CMD_CLAUDE_AUTH_DELETE_TOKEN,
+                        "success": True,
+                        "requestId": request_id,
+                    })
+                case CMD_CLAUDE_AUTH_GET_USAGE:
+                    token = get_oauth_token()
+                    if not token:
+                        await self._send({
+                            "type": CMD_CLAUDE_AUTH_GET_USAGE,
+                            "success": False,
+                            "error": "no token",
+                            "requestId": request_id,
+                        })
+                    else:
+                        async with httpx.AsyncClient() as client:
+                            resp = await client.get(
+                                ANTHROPIC_USAGE_URL,
+                                headers={
+                                    "Authorization": f"Bearer {token}",
+                                    "anthropic-beta": "oauth-2025-04-20",
+                                },
+                            )
+                        if resp.status_code != 200:
+                            await self._send({
+                                "type": CMD_CLAUDE_AUTH_GET_USAGE,
+                                "success": False,
+                                "error": resp.text,
+                                "requestId": request_id,
+                            })
+                        else:
+                            await self._send({
+                                "type": CMD_CLAUDE_AUTH_GET_USAGE,
+                                "success": True,
+                                "data": resp.json(),
+                                "requestId": request_id,
+                            })
                 case _:
                     await self._send_error(
                         f"Unknown command type: {cmd_type}",
