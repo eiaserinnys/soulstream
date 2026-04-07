@@ -23,6 +23,8 @@ import {
   cn,
 } from "@seosoyoung/soul-ui";
 import { Eye, EyeOff, RotateCcw } from "lucide-react";
+import { useAppConfig } from "../config/AppConfigContext";
+import { ClaudeAuthTab } from "./ClaudeAuthTab";
 
 // === Types ===
 
@@ -292,7 +294,14 @@ function ResultMessage({
 
 // === Main Modal ===
 
+const CLAUDE_AUTH_TAB_NAME = "claude_auth";
+const CLAUDE_AUTH_TAB_LABEL = "Claude Code 인증";
+
 export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
+  const config = useAppConfig();
+  // orchestrator 모드에서는 NodePanel에서 처리하므로 ConfigModal에 탭 미표시
+  const showClaudeAuthTab = config.mode !== "orchestrator";
+
   const [categories, setCategories] = useState<SettingCategory[]>([]);
   const [selectedTab, setSelectedTab] = useState<string>("");
   const [formData, setFormData] = useState<Record<string, string>>({});
@@ -424,8 +433,27 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
                     {cat.label}
                   </button>
                 ))}
+                {showClaudeAuthTab && (
+                  <button
+                    key={CLAUDE_AUTH_TAB_NAME}
+                    type="button"
+                    role="tab"
+                    aria-selected={selectedTab === CLAUDE_AUTH_TAB_NAME}
+                    onClick={() => setSelectedTab(CLAUDE_AUTH_TAB_NAME)}
+                    className={cn(
+                      "px-3 py-1.5 text-xs rounded-t transition-colors",
+                      selectedTab === CLAUDE_AUTH_TAB_NAME
+                        ? "bg-muted text-foreground border-b-2 border-primary"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+                    )}
+                  >
+                    {CLAUDE_AUTH_TAB_LABEL}
+                  </button>
+                )}
               </div>
-              {(() => {
+              {selectedTab === CLAUDE_AUTH_TAB_NAME ? (
+                <ClaudeAuthTab />
+              ) : (() => {
                 const cat = categories.find((c) => c.name === selectedTab);
                 return cat ? (
                   <CategorySection
