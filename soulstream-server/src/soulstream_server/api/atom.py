@@ -18,6 +18,24 @@ logger = logging.getLogger(__name__)
 def create_atom_router() -> APIRouter:
     router = APIRouter(prefix="/api/catalog/atom", tags=["atom"])
 
+    @router.get("/nodes")
+    async def list_atom_root_nodes() -> dict:
+        """atom project 루트 노드의 자식 목록 조회 (폴더 설정 UI 드롭다운 초기 로드용)."""
+        s = get_settings()
+        if not s.atom_enabled or not s.atom_server_url:
+            raise HTTPException(status_code=503, detail="atom integration not enabled")
+        url = f"{s.atom_server_url.rstrip('/')}/api/tree/{s.atom_root_node_id}/children"
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(url, headers={"x-api-key": s.atom_api_key})
+            resp.raise_for_status()
+            return {"children": resp.json()}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.warning("[atom proxy] error: %s", exc)
+            raise HTTPException(status_code=502, detail="atom API unavailable") from exc
+
     @router.get("/nodes/{node_id}/children")
     async def list_atom_node_children(node_id: str) -> dict:
         """atom 트리 노드의 자식 목록 조회 (폴더 설정 UI 드롭다운용)."""

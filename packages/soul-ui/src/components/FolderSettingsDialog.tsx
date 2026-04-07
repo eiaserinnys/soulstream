@@ -17,6 +17,7 @@ import {
 } from "./ui/dialog";
 import { Button } from "./ui/button";
 import { useServerStatus } from "../hooks/useServerStatus";
+import { AtomNodeSelector } from "./AtomNodeSelector";
 import type { AtomContextNodeSettings, CatalogFolder, FolderSettings } from "../shared/types";
 
 export interface FolderSettingsDialogProps {
@@ -37,6 +38,7 @@ export function FolderSettingsDialog({
 
   const { atomEnabled } = useServerStatus();
   const [atomNodeId, setAtomNodeId] = useState("");
+  const [atomNodeTitle, setAtomNodeTitle] = useState("");
   const [atomDepth, setAtomDepth] = useState(3);
   const [atomTitlesOnly, setAtomTitlesOnly] = useState(false);
 
@@ -45,6 +47,7 @@ export function FolderSettingsDialog({
       setExcludeFromFeed(folder.settings?.excludeFromFeed ?? false);
       setFolderPrompt(folder.settings?.folderPrompt ?? "");
       setAtomNodeId(folder.settings?.atomContextNode?.nodeId ?? "");
+      setAtomNodeTitle("");
       setAtomDepth(folder.settings?.atomContextNode?.depth ?? 3);
       setAtomTitlesOnly(folder.settings?.atomContextNode?.titlesOnly ?? false);
     }
@@ -100,13 +103,14 @@ export function FolderSettingsDialog({
                   세션 시작 시 지정한 atom 노드의 서브트리가 컨텍스트로 주입됩니다.
                 </p>
                 <div className="flex flex-col gap-1">
-                  <label className="text-xs text-[--color-text-secondary]">노드 ID</label>
-                  <input
-                    type="text"
+                  <label className="text-xs text-[--color-text-secondary]">노드</label>
+                  <AtomNodeSelector
                     value={atomNodeId}
-                    onChange={(e) => setAtomNodeId(e.target.value)}
-                    placeholder="예: d71af4b5-c53a-49a4-9e07-9b6ee531fb56"
-                    className="w-full rounded border border-[--color-border] bg-[--color-surface-1] px-2 py-1 text-sm font-mono"
+                    selectedTitle={atomNodeTitle}
+                    onChange={(nodeId, title) => {
+                      setAtomNodeId(nodeId);
+                      setAtomNodeTitle(title);
+                    }}
                   />
                 </div>
                 <div className="flex flex-col gap-1">

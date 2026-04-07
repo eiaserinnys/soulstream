@@ -27,6 +27,7 @@ class Settings(BaseOAuthSettings):
     atom_enabled: bool = False
     atom_server_url: str = ""   # 예: https://atom.eiaserinnys.me
     atom_api_key: str = ""      # x-api-key 헤더 값
+    atom_root_node_id: str = "5bcf91e0-4981-4c3d-9995-d04a296aa06d"  # project 루트 노드
 
     # OAuth, environment, is_development, is_auth_enabled 는 BaseOAuthSettings에서 상속
 
