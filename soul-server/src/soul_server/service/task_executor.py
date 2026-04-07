@@ -624,13 +624,15 @@ async def _fetch_atom_context(node_id: str, depth: int, titles_only: bool) -> st
     if not settings.atom_enabled or not settings.atom_server_url:
         return None
     url = f"{settings.atom_server_url.rstrip('/')}/api/tree/{node_id}/compile"
-    payload = {"depth": depth, "titlesOnly": titles_only, "maxChars": 50000}
+    params: dict[str, str | int] = {"depth": depth, "max_chars": 50000}
+    if titles_only:
+        params["titles_only"] = "true"
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.post(
+            resp = await client.get(
                 url,
-                json=payload,
-                headers={"x-api-key": settings.atom_api_key, "Content-Type": "application/json"},
+                params=params,
+                headers={"x-api-key": settings.atom_api_key},
             )
         if resp.status_code == 200:
             data = resp.json()
