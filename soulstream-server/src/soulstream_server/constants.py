@@ -10,6 +10,12 @@ CMD_LIST_SESSIONS = "list_sessions"
 CMD_HEALTH_CHECK = "health_check"
 CMD_SUBSCRIBE_EVENTS = "subscribe_events"
 
+# Claude Code OAuth 명령 — soul-server protocol.py와 mirror
+CMD_CLAUDE_AUTH_STATUS = "claude_auth_status"
+CMD_CLAUDE_AUTH_SET_TOKEN = "claude_auth_set_token"
+CMD_CLAUDE_AUTH_DELETE_TOKEN = "claude_auth_delete_token"
+CMD_CLAUDE_AUTH_GET_USAGE = "claude_auth_get_usage"
+
 # Events (node -> soulstream-server)
 EVT_NODE_REGISTER = "node_register"
 EVT_SESSION_CREATED = "session_created"

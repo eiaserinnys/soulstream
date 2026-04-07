@@ -111,6 +111,12 @@ CMD_LIST_SESSIONS = "list_sessions"
 CMD_HEALTH_CHECK = "health_check"
 CMD_SUBSCRIBE_EVENTS = "subscribe_events"
 
+# Claude Code OAuth 명령 (orchestrator → soul-server)
+CMD_CLAUDE_AUTH_STATUS = "claude_auth_status"           # 토큰 존재 여부 조회
+CMD_CLAUDE_AUTH_SET_TOKEN = "claude_auth_set_token"     # 토큰 설정
+CMD_CLAUDE_AUTH_DELETE_TOKEN = "claude_auth_delete_token"  # 토큰 삭제
+CMD_CLAUDE_AUTH_GET_USAGE = "claude_auth_get_usage"     # Usage 조회 (Anthropic API 호출)
+
 EVT_NODE_REGISTER = "node_register"
 EVT_SESSION_CREATED = "session_created"
 EVT_EVENT = "event"
