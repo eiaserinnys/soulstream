@@ -371,14 +371,14 @@ class UpstreamAdapter:
                         name=f"upstream-subscribe-{session_id_for_sub}",
                     )
                     self._stream_tasks[session_id_for_sub] = task
-                case CMD_CLAUDE_AUTH_STATUS:
+                case "claude_auth_status":
                     token = get_oauth_token()
                     await self._send({
                         "type": CMD_CLAUDE_AUTH_STATUS,
                         "has_token": token is not None,
                         "requestId": request_id,
                     })
-                case CMD_CLAUDE_AUTH_SET_TOKEN:
+                case "claude_auth_set_token":
                     token_val = cmd.get("token", "")
                     if not token_val:
                         await self._send_error("token is required", request_id=request_id, command_type=cmd_type)
@@ -390,7 +390,7 @@ class UpstreamAdapter:
                             "success": True,
                             "requestId": request_id,
                         })
-                case CMD_CLAUDE_AUTH_DELETE_TOKEN:
+                case "claude_auth_delete_token":
                     delete_oauth_token(get_env_path())
                     logger.info("Claude Code OAuth token deleted via WS command")
                     await self._send({
@@ -398,7 +398,7 @@ class UpstreamAdapter:
                         "success": True,
                         "requestId": request_id,
                     })
-                case CMD_CLAUDE_AUTH_GET_USAGE:
+                case "claude_auth_get_usage":
                     token = get_oauth_token()
                     if not token:
                         await self._send({
