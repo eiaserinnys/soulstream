@@ -158,6 +158,7 @@ class SessionEvictionManager:
                 completed_at=completed_at,
                 node_id=entry.get("node_id"),
                 caller_session_id=entry.get("caller_session_id"),
+                profile_id=entry.get("agent_id"),  # 서버 재시작 후 resume 시 working_dir 복원용
             )
         except (ValueError, KeyError) as e:
             logger.error(f"Failed to restore task from DB: {agent_session_id}: {e}")

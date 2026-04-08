@@ -369,6 +369,51 @@ class TestLoadEvictedTaskNodeId:
         assert task is not None
         assert task.node_id is None
 
+    async def test_load_evicted_task_restores_profile_id(self, manager: TaskManager):
+        """DB에서 복원한 Task에 profile_id(agent_id)가 올바르게 복원되는지 확인
+
+        서버 재시작 후 resume 시 working_dir를 올바르게 결정하기 위해 필수.
+        profile_id 누락 시 engine_adapter가 기본 WORKSPACE_DIR를 사용하여
+        Claude Code가 잘못된 project directory에서 session 파일을 탐색하게 된다.
+        """
+        manager._db.get_session.return_value = {
+            "session_id": "sess-agent",
+            "status": "completed",
+            "prompt": "test",
+            "client_id": "bot",
+            "claude_session_id": "claude-xyz",
+            "session_type": "claude",
+            "last_event_id": 0,
+            "last_read_event_id": 0,
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "updated_at": "2026-01-01T00:01:00+00:00",
+            "node_id": "node-abc",
+            "agent_id": "seosoyoung",
+        }
+
+        task = await manager._eviction_manager.load_evicted_task(manager._db, "sess-agent")
+        assert task is not None
+        assert task.profile_id == "seosoyoung"
+
+    async def test_load_evicted_task_handles_missing_agent_id(self, manager: TaskManager):
+        """agent_id가 DB에 없는 경우 profile_id가 None (하위 호환)"""
+        manager._db.get_session.return_value = {
+            "session_id": "sess-no-agent",
+            "status": "completed",
+            "prompt": "test",
+            "client_id": None,
+            "claude_session_id": None,
+            "session_type": "claude",
+            "last_event_id": 0,
+            "last_read_event_id": 0,
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "updated_at": "2026-01-01T00:01:00+00:00",
+        }
+
+        task = await manager._eviction_manager.load_evicted_task(manager._db, "sess-no-agent")
+        assert task is not None
+        assert task.profile_id is None
+
 
 class TestStartupEviction:
     async def test_non_running_sessions_evicted_at_startup(self, manager: TaskManager):
