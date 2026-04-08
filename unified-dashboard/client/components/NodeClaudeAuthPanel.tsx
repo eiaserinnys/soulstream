@@ -37,7 +37,13 @@ const BUCKET_LABELS: Record<string, string> = {
 };
 
 function formatResetsAt(isoStr: string): string {
-  return new Date(isoStr).toLocaleString();
+  const d = new Date(isoStr);
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  const opts: Intl.DateTimeFormatOptions = sameDay
+    ? { hour: "numeric", minute: "2-digit" }
+    : { month: "long", day: "numeric", hour: "numeric", minute: "2-digit" };
+  return d.toLocaleString(undefined, opts);
 }
 
 function getBarColor(utilization: number): string {
