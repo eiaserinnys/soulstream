@@ -15,6 +15,10 @@ from soulstream_server.nodes.node_manager import NodeManager
 
 logger = logging.getLogger(__name__)
 
+# 노드 미연결 또는 HTTP 실패 시 반환할 기본 구조
+# {} 대신 user 필드가 있는 구조를 반환하여 프론트엔드 TypeError 방지
+_DEFAULT_DASHBOARD_CONFIG = {"user": {"name": "User", "id": "", "hasPortrait": False}, "agents": []}
+
 
 def create_config_router(node_manager: NodeManager) -> APIRouter:
     router = APIRouter(prefix="/api", tags=["config"])
@@ -71,7 +75,7 @@ def create_config_router(node_manager: NodeManager) -> APIRouter:
         """soul-server의 GET /api/dashboard/config 프록시."""
         nodes = node_manager.get_connected_nodes()
         if not nodes:
-            return JSONResponse({})
+            return JSONResponse(_DEFAULT_DASHBOARD_CONFIG)
         node = nodes[0]
         url = f"http://{node.host}:{node.port}/api/dashboard/config"
         try:
@@ -79,7 +83,7 @@ def create_config_router(node_manager: NodeManager) -> APIRouter:
                 resp = await client.get(url)
         except httpx.RequestError as e:
             logger.warning("dashboard/config 프록시 실패: %s", e)
-            return JSONResponse({})
+            return JSONResponse(_DEFAULT_DASHBOARD_CONFIG)
         if resp.status_code != 200:
             return Response(
                 status_code=resp.status_code,
