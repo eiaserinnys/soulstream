@@ -88,6 +88,7 @@ def create_claude_auth_router(node_manager: NodeManager) -> APIRouter:
                     "code": code,
                     "redirect_uri": callback_url,
                     "code_verifier": session.verifier,
+                    "state": state,
                 },
             )
             if resp.status_code != 200:
@@ -195,6 +196,7 @@ def create_claude_auth_router(node_manager: NodeManager) -> APIRouter:
                     "code": authorization_code,
                     "redirect_uri": HEADLESS_REDIRECT_URI,
                     "code_verifier": session.verifier,
+                    "state": state,
                 },
             )
             if resp.status_code != 200:
