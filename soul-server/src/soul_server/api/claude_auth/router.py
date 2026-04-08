@@ -120,12 +120,12 @@ def create_claude_auth_router(
     # === PKCE OAuth 웹 흐름 엔드포인트 ===
 
     @router.get("/web/start")
-    async def web_start(_: str = Depends(verify_token)):
+    async def web_start():
         """
         GET /auth/claude/web/start - PKCE OAuth 흐름 시작
 
-        code_verifier를 생성하고 OAuth 인증 URL을 반환합니다.
-        브라우저에서 새 탭으로 열어 인증을 진행합니다.
+        code_verifier를 생성하고 Claude OAuth 인증 URL로 직접 302 리다이렉트합니다.
+        브라우저에서 직접 열어야 하므로 인증 토큰 없이 접근 가능합니다.
         """
         client_id = os.environ["CLAUDE_OAUTH_CLIENT_ID"]
         callback_url = os.environ["CLAUDE_OAUTH_CALLBACK_URL"]
@@ -139,10 +139,10 @@ def create_claude_auth_router(
             "redirect_uri": callback_url,
             "code_challenge": challenge,
             "code_challenge_method": "S256",
-            "scope": "org:create_api_key user:profile user:inference",
+            "scope": "user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload",
             "state": state,
         }
-        return {"auth_url": f"{CLAUDE_OAUTH_AUTHORIZE_URL}?{urlencode(params)}"}
+        return RedirectResponse(url=f"{CLAUDE_OAUTH_AUTHORIZE_URL}?{urlencode(params)}")
 
     @router.get("/web/callback")
     async def web_callback(code: str, state: str):

@@ -49,10 +49,10 @@ def create_claude_auth_router(node_manager: NodeManager) -> APIRouter:
             "redirect_uri": callback_url,
             "code_challenge": challenge,
             "code_challenge_method": "S256",
-            "scope": "org:create_api_key user:profile user:inference",
+            "scope": "user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload",
             "state": state,
         }
-        return {"auth_url": f"{CLAUDE_OAUTH_AUTHORIZE_URL}?{urlencode(params)}"}
+        return RedirectResponse(url=f"{CLAUDE_OAUTH_AUTHORIZE_URL}?{urlencode(params)}")
 
     # ⚠️ 동적 경로 /nodes/{node_id}/... 보다 먼저 등록 (FastAPI 정적 경로 우선)
     @router.get("/nodes/claude-auth/callback")
