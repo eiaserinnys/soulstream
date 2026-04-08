@@ -17,6 +17,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.types import ASGIApp, Scope, Receive, Send
 
 from soul_server.api import attachments_router, dashboard_router, create_sessions_router
 from soul_server.dashboard.session_cache import SessionCache
@@ -515,15 +516,99 @@ app.add_middleware(
 )
 
 
-@app.middleware("http")
-async def check_draining(request: Request, call_next):
-    """드레이닝 중 신규 세션 실행 요청을 거부한다."""
-    if _is_draining and request.url.path == "/execute":
-        return JSONResponse(
-            {"error": "server_draining", "message": "서버 재시작 중입니다. 잠시 후 다시 시도하세요."},
-            status_code=503,
-        )
-    return await call_next(request)
+class _CheckDrainingMiddleware:
+    """드레이닝 중 신규 세션 실행 요청을 거부하는 순수 ASGI 미들웨어.
+
+    BaseHTTPMiddleware 대신 순수 ASGI로 구현하여 SSE 스트리밍 응답과의 충돌을 방지한다.
+    Starlette의 BaseHTTPMiddleware는 body_stream 제너레이터에서 http.response.body만 기대하여
+    SSE 서브앱이 두 번째 http.response.start를 보내면 AssertionError가 발생한다.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if (
+            scope["type"] == "http"
+            and _is_draining
+            and scope.get("path") == "/execute"
+        ):
+            response = JSONResponse(
+                {"error": "server_draining", "message": "서버 재시작 중입니다. 잠시 후 다시 시도하세요."},
+                status_code=503,
+            )
+            await response(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
+
+
+class _SPAFallbackMiddleware:
+    """SPA fallback — /api/* 이외의 GET 요청에서 404 발생 시 index.html을 반환한다.
+
+    BaseHTTPMiddleware 대신 순수 ASGI로 구현하여 SSE 스트리밍 응답과의 충돌을 방지한다.
+    non-404 응답은 intercept_send에서 즉시 send(message)하므로 버퍼링이 전혀 없어
+    SSE 스트리밍에 안전하다.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        # WebSocket이나 non-GET 요청, /api/* 요청은 그대로 패스스루
+        if (
+            scope["type"] != "http"
+            or scope.get("method") != "GET"
+            or scope.get("path", "").startswith("/api/")
+        ):
+            await self.app(scope, receive, send)
+            return
+
+        response_status: int | None = None
+        start_message: dict | None = None
+
+        async def intercept_send(message: dict) -> None:
+            nonlocal response_status, start_message
+            if message["type"] == "http.response.start":
+                response_status = message["status"]
+                if response_status != 404:
+                    await send(message)  # non-404: 즉시 패스스루 (SSE 안전)
+                else:
+                    start_message = message  # 404: start 메시지 버퍼링
+            elif message["type"] == "http.response.body":
+                if response_status != 404:
+                    await send(message)  # non-404: 즉시 패스스루
+                # 404 body는 버려짐 (index.html로 대체)
+            else:
+                await send(message)  # 기타 메시지 패스스루
+
+        await self.app(scope, receive, intercept_send)
+
+        # 404였으면 index.html로 폴백
+        if response_status == 404:
+            _d = settings.dashboard_dir
+            _p = Path(_d) if Path(_d).is_absolute() else Path.cwd() / _d
+            _idx = _p / "index.html"
+            if _idx.exists():
+                from starlette.responses import HTMLResponse
+
+                fallback = HTMLResponse(
+                    _idx.read_text(),
+                    headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"},
+                )
+                await fallback(scope, receive, send)
+                return
+            # index.html 없음: 원래 404 응답 그대로 반환
+            if start_message is not None:
+                await send(start_message)
+            await send({"type": "http.response.body", "body": b"", "more_body": False})
+
+
+# 순수 ASGI 미들웨어 등록 — add_middleware는 insert(0, ...)이므로 나중에 추가한 것이 outermost.
+# 결과 스택: _SPAFallbackMiddleware → _CheckDrainingMiddleware → CORSMiddleware → Router
+app.add_middleware(_CheckDrainingMiddleware)
+app.add_middleware(_SPAFallbackMiddleware)
+
+
 
 
 # === Cogito: /reflect endpoints + MCP SSE + REST API ===
@@ -643,27 +728,6 @@ from soul_server.api import agents as agents_module
 app.include_router(agents_module.router, tags=["agents"])
 
 
-# SPA fallback 미들웨어 — /sess-xxx 같은 클라이언트 라우트에서 index.html을 반환한다.
-# StaticFiles(html=True)가 /sess-xxx 에 대해 404를 반환할 때 index.html로 폴백한다.
-@app.middleware("http")
-async def spa_fallback(request: Request, call_next):
-    """SPA fallback — /api/* 이외의 경로에서 404 발생 시 index.html을 반환한다."""
-    response = await call_next(request)
-    if (
-        response.status_code == 404
-        and request.method == "GET"
-        and not request.url.path.startswith("/api/")
-    ):
-        _d = settings.dashboard_dir
-        _p = Path(_d) if Path(_d).is_absolute() else Path.cwd() / _d
-        _idx = _p / "index.html"
-        if _idx.exists():
-            from starlette.responses import HTMLResponse
-            return HTMLResponse(
-                _idx.read_text(),
-                headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"},
-            )
-    return response
 
 
 # GET / 전용 라우트 — StaticFiles보다 먼저 등록되어 index.html에 no-cache 헤더를 보장한다.
