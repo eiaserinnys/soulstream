@@ -629,7 +629,7 @@ _ATOM_CONTEXT_HEADER = (
 
 
 def _format_atom_context(markdown: str) -> str:
-    """titles_only + include_ids 출력의 HTML 주석을 [node_id[:8]] (N chars) 포맷으로 변환한다.
+    """include_ids 출력의 HTML 주석을 [node_id[:8]] (N chars) 포맷으로 변환한다.
 
     입력 예시 (일반 노드):
         soulstream <!-- node:d71af4b5-c53a-... card:... chars:123 -->
@@ -657,9 +657,9 @@ async def _fetch_atom_context(node_id: str, depth: int, titles_only: bool) -> st
         return None
     url = f"{settings.atom_server_url.rstrip('/')}/api/tree/{node_id}/compile"
     params: dict[str, str | int] = {"depth": depth, "max_chars": 50000}
+    params["include_ids"] = "true"  # Claude용: titles_only 여부와 무관하게 항상 포함
     if titles_only:
         params["titles_only"] = "true"
-        params["include_ids"] = "true"  # node_id 포함 (titles_only 모드에서만)
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(
@@ -670,7 +670,7 @@ async def _fetch_atom_context(node_id: str, depth: int, titles_only: bool) -> st
         if resp.status_code == 200:
             data = resp.json()
             markdown = data.get("markdown") or None
-            if markdown and titles_only:
+            if markdown:
                 markdown = _format_atom_context(markdown)
             return markdown
         logger.warning("[atom] compile failed: status=%s node_id=%s", resp.status_code, node_id)
