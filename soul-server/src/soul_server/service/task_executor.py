@@ -8,6 +8,7 @@ import asyncio
 import httpx
 import logging
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Callable, Awaitable, Optional, TYPE_CHECKING
@@ -617,6 +618,37 @@ class TaskExecutor:
         return cancelled_count
 
 
+_ATOM_ID_PATTERN = re.compile(
+    r"<!-- node:([a-f0-9]{8})[a-f0-9\-]+ .*?chars:(\d+).*?-->"
+)
+_ATOM_CONTEXT_HEADER = (
+    "# atom 트리 | 드릴다운: "
+    "mcp__atom__list_children(parent_node_id) · "
+    "compile_subtree(node_id)\n"
+)
+
+
+def _format_atom_context(markdown: str) -> str:
+    """titles_only + include_ids 출력의 HTML 주석을 [node_id[:8]] (N chars) 포맷으로 변환한다.
+
+    입력 예시 (일반 노드):
+        soulstream <!-- node:d71af4b5-c53a-... card:... chars:123 -->
+    입력 예시 (symlink 노드, chars 뒤에 symlink:true 필드 있음):
+        ~ 심링크 <!-- node:a1b2c3d4-... card:... chars:0 symlink:true -->
+    출력 예시:
+        soulstream [d71af4b5] (123 chars)
+    """
+    lines = []
+    for line in markdown.splitlines():
+        m = _ATOM_ID_PATTERN.search(line)
+        if m:
+            short_id = m.group(1)  # node_id 앞 8자리
+            chars = m.group(2)
+            line = _ATOM_ID_PATTERN.sub(f"[{short_id}] ({chars} chars)", line)
+        lines.append(line)
+    return _ATOM_CONTEXT_HEADER + "\n".join(lines)
+
+
 async def _fetch_atom_context(node_id: str, depth: int, titles_only: bool) -> str | None:
     """atom API에서 subtree를 compile하여 마크다운 텍스트를 반환한다.
     실패 시 None 반환 (fallback)."""
@@ -627,6 +659,7 @@ async def _fetch_atom_context(node_id: str, depth: int, titles_only: bool) -> st
     params: dict[str, str | int] = {"depth": depth, "max_chars": 50000}
     if titles_only:
         params["titles_only"] = "true"
+        params["include_ids"] = "true"  # node_id 포함 (titles_only 모드에서만)
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(
@@ -636,7 +669,10 @@ async def _fetch_atom_context(node_id: str, depth: int, titles_only: bool) -> st
             )
         if resp.status_code == 200:
             data = resp.json()
-            return data.get("markdown") or None
+            markdown = data.get("markdown") or None
+            if markdown and titles_only:
+                markdown = _format_atom_context(markdown)
+            return markdown
         logger.warning("[atom] compile failed: status=%s node_id=%s", resp.status_code, node_id)
         return None
     except Exception as exc:  # noqa: BLE001
