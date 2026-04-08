@@ -51,6 +51,7 @@ export interface ProfileConfig {
   name: string;
   id: string;
   hasPortrait: boolean;
+  portraitUrl?: string | null;
 }
 
 export interface DashboardAgentConfig {

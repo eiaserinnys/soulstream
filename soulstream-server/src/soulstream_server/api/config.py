@@ -69,9 +69,11 @@ def create_config_router(node_manager: NodeManager) -> APIRouter:
     @router.get("/dashboard/config")
     async def proxy_dashboard_config():
         """soul-server의 GET /api/dashboard/config 프록시."""
-        url = _first_node_url("/api/dashboard/config")
-        if not url:
+        nodes = node_manager.get_connected_nodes()
+        if not nodes:
             return JSONResponse({})
+        node = nodes[0]
+        url = f"http://{node.host}:{node.port}/api/dashboard/config"
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(url)
@@ -84,6 +86,11 @@ def create_config_router(node_manager: NodeManager) -> APIRouter:
                 content=resp.content,
                 media_type="application/json",
             )
-        return JSONResponse(resp.json())
+        data = resp.json()
+        user = data.get("user", {})
+        if user.get("hasPortrait"):
+            user["portraitUrl"] = f"/api/nodes/{node.node_id}/user/portrait"
+            data["user"] = user
+        return JSONResponse(data)
 
     return router

@@ -278,7 +278,7 @@ const UserMessage = memo(function UserMessage({ msg, llmContext }: { msg: ChatMe
         role="user"
         hasPortrait={hasPortrait}
         fallbackEmoji={isAgent ? "\u{1F916}" : "\u{1F464}"}
-        portraitUrl={agentPortraitUrl}
+        portraitUrl={isAgent ? agentPortraitUrl : (userConfig?.portraitUrl ?? null)}
       />
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-1.5 mb-0.5">
@@ -341,6 +341,7 @@ const InterventionMessage = memo(function InterventionMessage({ msg }: { msg: Ch
         role="user"
         hasPortrait={userConfig?.hasPortrait ?? false}
         fallbackEmoji={"\u270B"}
+        portraitUrl={userConfig?.portraitUrl ?? null}
       />
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-1.5 mb-0.5">
