@@ -112,7 +112,7 @@ class TestPortraitProxy:
         assert resp.headers["content-type"].startswith("image/png")
 
     async def test_portrait_cache_miss_proxies_http(self, client, node_manager):
-        """portrait_cache에 없으면 soul-server HTTP 프록시 호출 — 연결 불가 시 502."""
+        """portrait_cache에 없으면 soul-server HTTP 프록시 호출 — 연결 불가 시 404."""
         ws = AsyncMock()
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
@@ -122,8 +122,8 @@ class TestPortraitProxy:
 
         resp = await client.get("/api/nodes/n1/agents/agent-1/portrait")
 
-        # 9999 포트에 서버 없음 → 연결 실패 → 502
-        assert resp.status_code in (502, 503, 504)
+        # 9999 포트에 서버 없음 → 연결 실패 → 404
+        assert resp.status_code == 404
 
 
 class TestUserPortraitProxy:
@@ -150,7 +150,7 @@ class TestUserPortraitProxy:
         assert resp.headers["content-type"].startswith("image/png")
 
     async def test_user_portrait_b64_cache_miss_proxies_http(self, client, node_manager):
-        """user_info에 portrait_b64가 없으면 soul-server HTTP 프록시 호출 — 연결 불가 시 502."""
+        """user_info에 portrait_b64가 없으면 soul-server HTTP 프록시 호출 — 연결 불가 시 404."""
         ws = AsyncMock()
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
@@ -162,11 +162,11 @@ class TestUserPortraitProxy:
 
         resp = await client.get("/api/nodes/n1/user/portrait")
 
-        # 9999 포트에 서버 없음 → 연결 실패 → 502
-        assert resp.status_code in (502, 503, 504)
+        # 9999 포트에 서버 없음 → 연결 실패 → 404
+        assert resp.status_code == 404
 
     async def test_user_portrait_proxies_http(self, client, node_manager):
-        """user portrait 요청 시 soul-server HTTP 프록시 호출 — 연결 불가 시 502."""
+        """user portrait 요청 시 soul-server HTTP 프록시 호출 — 연결 불가 시 404."""
         ws = AsyncMock()
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
@@ -176,8 +176,8 @@ class TestUserPortraitProxy:
 
         resp = await client.get("/api/nodes/n1/user/portrait")
 
-        # 9999 포트에 서버 없음 → 연결 실패 → 502
-        assert resp.status_code in (502, 503, 504)
+        # 9999 포트에 서버 없음 → 연결 실패 → 404
+        assert resp.status_code == 404
 
     async def test_user_portrait_404_for_unknown_node(self, client):
         """알 수 없는 node_id에 대해 404를 반환한다."""
