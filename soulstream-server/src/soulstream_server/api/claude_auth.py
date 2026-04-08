@@ -82,7 +82,7 @@ def create_claude_auth_router(node_manager: NodeManager) -> APIRouter:
         async with httpx.AsyncClient() as client:
             resp = await client.post(
                 CLAUDE_OAUTH_TOKEN_URL,
-                json={
+                data={
                     "grant_type": "authorization_code",
                     "client_id": client_id,
                     "code": code,
@@ -189,7 +189,7 @@ def create_claude_auth_router(node_manager: NodeManager) -> APIRouter:
         async with httpx.AsyncClient() as client:
             resp = await client.post(
                 CLAUDE_OAUTH_TOKEN_URL,
-                json={
+                data={
                     "grant_type": "authorization_code",
                     "client_id": client_id,
                     "code": authorization_code,
