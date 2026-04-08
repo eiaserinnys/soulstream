@@ -38,6 +38,7 @@ export function FeedView({ onNewSession, onLoadMore, hasMore, onRenameSession, o
   const catalogVersion = useDashboardStore((s) => s.catalogVersion);
   const getFeedSessions = useDashboardStore((s) => s.getFeedSessions);
   const setActiveSession = useDashboardStore((s) => s.setActiveSession);
+  const setMobileView = useDashboardStore((s) => s.setMobileView);
   const clearActiveSession = useDashboardStore((s) => s.clearActiveSession);
   const selectFolder = useDashboardStore((s) => s.selectFolder);
   const feedScrollOffset = useDashboardStore((s) => s.feedScrollOffset);
@@ -147,8 +148,9 @@ export function FeedView({ onNewSession, onLoadMore, hasMore, onRenameSession, o
   const handleCardClick = useCallback(
     (sessionId: string) => {
       setActiveSession(sessionId);
+      setMobileView("chat"); // 모바일에서 채팅 뷰로 전환 (데스크탑에서는 무해)
     },
-    [setActiveSession],
+    [setActiveSession, setMobileView],
   );
 
   // 카드 더블클릭 → 폴더 뷰로 전환

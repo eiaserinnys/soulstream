@@ -890,7 +890,7 @@ export function ChatView({ chatInputDisabled = false, isOtherNodeSession = false
       <div
         ref={scrollRef}
         onScroll={checkScrollPosition}
-        className="flex-1 overflow-y-auto py-2"
+        className="flex-1 overflow-y-auto overflow-x-hidden py-2 overscroll-none"
       >
         {messages.length === 0 && (
           <div className="p-5 text-center text-muted-foreground text-[13px]">

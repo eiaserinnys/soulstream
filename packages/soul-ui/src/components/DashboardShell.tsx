@@ -83,7 +83,7 @@ export interface DashboardShellProps {
  */
 function DefaultMobileChatHeader({ onBack }: { onBack: () => void }) {
   return (
-    <div className="flex items-center gap-2 px-2 h-10 border-b border-border bg-popover shrink-0">
+    <div className="flex items-center gap-2 px-2 h-[44px] border-b border-border bg-popover shrink-0">
       <Button
         variant="ghost"
         size="icon"
@@ -190,7 +190,10 @@ export function DashboardShell({
       className="flex flex-col w-screen h-dvh bg-background text-foreground font-sans overflow-hidden"
     >
       {/* Top bar */}
-      <header className="flex items-center justify-between px-4 h-10 border-b border-border bg-popover shrink-0">
+      <header
+        className="flex items-center justify-between px-4 border-b border-border bg-popover shrink-0"
+        style={{ height: 'calc(44px + env(safe-area-inset-top, 0px))', paddingTop: 'env(safe-area-inset-top, 0px)' }}
+      >
         <div className="flex items-center gap-3">
           {isMobile && (
             <Button
