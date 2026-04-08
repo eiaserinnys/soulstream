@@ -2,14 +2,16 @@
 Claude Code OAuth 인증 API 라우터
 
 엔드포인트:
-- GET  /auth/claude/web/start     - PKCE OAuth 흐름 시작 (auth_url 반환)
-- GET  /auth/claude/web/callback  - OAuth 콜백 수신 및 토큰 교환
-- GET  /auth/claude/usage         - Anthropic 사용량 조회
-- POST /auth/claude/token         - 토큰 직접 설정
-- GET  /auth/claude/token         - 토큰 존재 여부 확인
-- DELETE /auth/claude/token       - 토큰 삭제
-- GET  /auth/claude/profiles      - 프로필 목록 조회
-- POST /auth/claude/profiles/activate - 프로필 활성화
+- GET  /auth/claude/web/start          - PKCE OAuth 흐름 시작 (auth_url 반환)
+- GET  /auth/claude/web/callback       - OAuth 콜백 수신 및 토큰 교환
+- GET  /auth/claude/headless/start     - Headless OAuth 흐름 시작 (auth_url JSON 반환)
+- POST /auth/claude/headless/submit-code - paste-code 수신, 토큰 교환, 저장
+- GET  /auth/claude/usage              - Anthropic 사용량 조회
+- POST /auth/claude/token              - 토큰 직접 설정
+- GET  /auth/claude/token              - 토큰 존재 여부 확인
+- DELETE /auth/claude/token            - 토큰 삭제
+- GET  /auth/claude/profiles           - 프로필 목록 조회
+- POST /auth/claude/profiles/activate  - 프로필 활성화
 """
 
 from __future__ import annotations
@@ -44,6 +46,11 @@ logger = logging.getLogger(__name__)
 CLAUDE_OAUTH_AUTHORIZE_URL = "https://claude.com/cai/oauth/authorize"
 CLAUDE_OAUTH_TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
 ANTHROPIC_USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
+
+# Headless paste-code 흐름 상수
+# Anthropic이 허용하는 고정 redirect_uri — 인증 코드를 화면에 표시하는 흐름
+HEADLESS_REDIRECT_URI = "https://platform.claude.com/oauth/code/callback"
+HEADLESS_SCOPE = "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload"
 
 
 # === Request/Response Models ===
@@ -94,6 +101,12 @@ class ActivateProfileRequest(BaseModel):
     """POST /profiles/activate 요청"""
 
     profile: str
+
+
+class HeadlessSubmitCodeRequest(BaseModel):
+    """POST /headless/submit-code 요청 본문"""
+
+    code: str
 
 
 # === Router Factory ===
@@ -177,6 +190,76 @@ def create_claude_auth_router(
         save_oauth_token(access_token, _get_env_path())
         logger.info("Claude Code OAuth token saved via PKCE web flow")
         return RedirectResponse(url="/?claude_auth=success")
+
+    @router.get("/headless/start")
+    async def headless_start():
+        """
+        GET /auth/claude/headless/start - Headless OAuth 흐름 시작
+
+        auth_url을 JSON으로 반환한다. 사용자가 URL을 브라우저에서 열면
+        Anthropic이 {authorization_code}#{state} 형식의 코드를 화면에 표시한다.
+        사용자가 해당 코드를 복사하여 headless/submit-code에 제출한다.
+        인증 토큰 없이 접근 가능 (브라우저 직접 접근 상황 고려).
+        """
+        client_id = os.environ["CLAUDE_OAUTH_CLIENT_ID"]
+        verifier = generate_verifier()
+        challenge = generate_challenge(verifier)
+        state = generate_state()
+        web_session_store.create(state, verifier)
+        params = {
+            "code": "true",
+            "client_id": client_id,
+            "response_type": "code",
+            "redirect_uri": HEADLESS_REDIRECT_URI,
+            "scope": HEADLESS_SCOPE,
+            "code_challenge": challenge,
+            "code_challenge_method": "S256",
+            "state": state,
+        }
+        return {"authUrl": f"{CLAUDE_OAUTH_AUTHORIZE_URL}?{urlencode(params)}"}
+
+    @router.post("/headless/submit-code", response_model=TokenResponse)
+    async def headless_submit_code(body: HeadlessSubmitCodeRequest) -> TokenResponse:
+        """
+        POST /auth/claude/headless/submit-code - paste-code 수신 및 토큰 교환
+
+        body.code는 Anthropic 화면에 표시된 {authorization_code}#{state} 형식이다.
+        code와 state를 분리하여 PKCE verifier로 토큰을 교환하고 저장한다.
+        인증 토큰 없이 접근 가능 (로컬 headless 환경 고려).
+        """
+        raw = body.code.strip()
+        if not raw:
+            raise HTTPException(status_code=400, detail="missing_code")
+        hash_idx = raw.find("#")
+        if hash_idx == -1:
+            raise HTTPException(status_code=400, detail="invalid_code_format")
+        authorization_code = raw[:hash_idx]
+        state = raw[hash_idx + 1:]
+        session = web_session_store.pop(state)
+        if session is None:
+            raise HTTPException(status_code=400, detail="invalid_state")
+        client_id = os.environ["CLAUDE_OAUTH_CLIENT_ID"]
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                CLAUDE_OAUTH_TOKEN_URL,
+                json={
+                    "grant_type": "authorization_code",
+                    "client_id": client_id,
+                    "code": authorization_code,
+                    "redirect_uri": HEADLESS_REDIRECT_URI,
+                    "code_verifier": session.verifier,
+                },
+            )
+            if resp.status_code != 200:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"token_exchange_failed: {resp.text}",
+                )
+            data = resp.json()
+        access_token = data["access_token"]
+        save_oauth_token(access_token, _get_env_path())
+        logger.info("Claude Code OAuth token saved via headless flow")
+        return TokenResponse(success=True, message="토큰이 설정되었습니다.")
 
     @router.get("/usage")
     async def get_usage(_: str = Depends(verify_token)):
