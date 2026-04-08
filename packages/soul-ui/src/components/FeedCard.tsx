@@ -44,7 +44,8 @@ export const FeedCard = memo(function FeedCard({
   const isUnread = isSessionUnread(session);
   const [theme] = useTheme();
   const dashboardConfig = useDashboardStore((s) => s.dashboardConfig);
-  const profileConfig = dashboardConfig ?? DEFAULT_PROFILE;
+  // dashboardConfig가 {}처럼 user 필드 없는 객체일 때도 DEFAULT_PROFILE로 fallback
+  const profileConfig = (dashboardConfig?.user != null ? dashboardConfig : null) ?? DEFAULT_PROFILE;
 
   // --- 제목 ---
   const title = session.displayName

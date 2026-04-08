@@ -25,7 +25,8 @@ export function useDashboardConfig() {
         return res.json();
       })
       .then((data: DashboardConfig) => {
-        if (!cancelled) setDashboardConfig(data);
+        // user 필드 없는 불완전한 응답({}  등)은 DEFAULT_CONFIG으로 대체
+        if (!cancelled) setDashboardConfig(data?.user ? data : DEFAULT_CONFIG);
       })
       .catch(() => {
         if (!cancelled) setDashboardConfig(DEFAULT_CONFIG);
