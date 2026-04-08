@@ -1,8 +1,88 @@
 import { useState, useEffect, useCallback } from "react";
-import { Button } from "@seosoyoung/soul-ui";
+import { Button, cn } from "@seosoyoung/soul-ui";
 
 interface Props {
   nodeId: string;
+}
+
+type BucketUsage = {
+  utilization: number;
+  resets_at: string;
+};
+
+type UsageData = {
+  five_hour: BucketUsage | null;
+  seven_day: BucketUsage | null;
+  seven_day_sonnet: BucketUsage | null;
+  seven_day_opus: BucketUsage | null;
+  seven_day_oauth_apps: BucketUsage | null;
+  seven_day_cowork: BucketUsage | null;
+  iguana_necktie: BucketUsage | null;
+  extra_usage: {
+    is_enabled: boolean;
+    monthly_limit: number | null;
+    used_credits: number | null;
+    utilization: number | null;
+  } | null;
+};
+
+const BUCKET_LABELS: Record<string, string> = {
+  five_hour: "5시간",
+  seven_day: "7일",
+  seven_day_sonnet: "7일 (Sonnet)",
+  seven_day_opus: "7일 (Opus)",
+  seven_day_oauth_apps: "7일 (OAuth Apps)",
+  seven_day_cowork: "7일 (협업)",
+  iguana_necktie: "기타",
+};
+
+function formatResetsAt(isoStr: string): string {
+  return new Date(isoStr).toLocaleString();
+}
+
+function getBarColor(utilization: number): string {
+  if (utilization >= 80) return "bg-accent-red";
+  if (utilization >= 50) return "bg-accent-amber";
+  return "bg-success";
+}
+
+function UsageBarChart({ usage }: { usage: UsageData }) {
+  const entries = (
+    Object.entries(usage) as [keyof UsageData, UsageData[keyof UsageData]][]
+  ).filter(
+    ([key, value]) =>
+      key !== "extra_usage" && value !== null && (value as BucketUsage).utilization !== null
+  ) as [string, BucketUsage][];
+
+  if (entries.length === 0) {
+    return (
+      <div className="text-xs text-muted-foreground">사용량 데이터 없음</div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {entries.map(([key, bucket]) => (
+        <div key={key} className="space-y-0.5">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground">
+              {BUCKET_LABELS[key] ?? key}
+            </span>
+            <span className="tabular-nums">{bucket.utilization}%</span>
+          </div>
+          <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+            <div
+              className={cn("h-full rounded-full", getBarColor(bucket.utilization))}
+              style={{ width: `${bucket.utilization}%` }}
+            />
+          </div>
+          <div className="text-[10px] text-muted-foreground/70">
+            초기화: {formatResetsAt(bucket.resets_at)}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 const errorMessages: Record<string, string> = {
@@ -23,7 +103,7 @@ const parseErrorDetail = (detail: string): string => {
 
 export function NodeClaudeAuthPanel({ nodeId }: Props) {
   const [status, setStatus] = useState<{ has_token: boolean } | null>(null);
-  const [usage, setUsage] = useState<unknown>(null);
+  const [usage, setUsage] = useState<UsageData | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(false);
   const [loadingUsage, setLoadingUsage] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -184,11 +264,7 @@ export function NodeClaudeAuthPanel({ nodeId }: Props) {
               </div>
             </div>
           )}
-          {usage && (
-            <pre className="text-xs bg-background p-1.5 rounded overflow-auto max-h-24">
-              {JSON.stringify(usage, null, 2)}
-            </pre>
-          )}
+          {usage && <UsageBarChart usage={usage} />}
           {error && <div className="text-xs text-accent-red">{error}</div>}
         </div>
       ) : (
