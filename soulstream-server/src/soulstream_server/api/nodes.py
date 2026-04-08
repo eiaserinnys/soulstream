@@ -101,8 +101,8 @@ def create_nodes_router(
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(url)
-        except httpx.RequestError:
-            return Response(status_code=502)
+        except (httpx.RequestError, httpx.TimeoutException):
+            return Response(status_code=404)
 
         if resp.status_code != 200:
             return Response(status_code=resp.status_code)
@@ -165,8 +165,8 @@ def create_nodes_router(
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(url)
-        except httpx.RequestError:
-            return Response(status_code=502)
+        except (httpx.RequestError, httpx.TimeoutException):
+            return Response(status_code=404)
 
         if resp.status_code != 200:
             return Response(status_code=resp.status_code)
