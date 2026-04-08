@@ -47,7 +47,7 @@ export function FolderSettingsDialog({
       setExcludeFromFeed(folder.settings?.excludeFromFeed ?? false);
       setFolderPrompt(folder.settings?.folderPrompt ?? "");
       setAtomNodeId(folder.settings?.atomContextNode?.nodeId ?? "");
-      setAtomNodeTitle("");
+      setAtomNodeTitle(folder.settings?.atomContextNode?.nodeTitle ?? "");
       setAtomDepth(folder.settings?.atomContextNode?.depth ?? 3);
       setAtomTitlesOnly(folder.settings?.atomContextNode?.titlesOnly ?? false);
     }
@@ -57,7 +57,7 @@ export function FolderSettingsDialog({
     e.preventDefault();
     const atomContextNode: AtomContextNodeSettings | undefined =
       atomNodeId.trim()
-        ? { nodeId: atomNodeId.trim(), depth: atomDepth, titlesOnly: atomTitlesOnly }
+        ? { nodeId: atomNodeId.trim(), nodeTitle: atomNodeTitle || undefined, depth: atomDepth, titlesOnly: atomTitlesOnly }
         : undefined;
     onConfirm({
       excludeFromFeed,
