@@ -81,11 +81,11 @@ class RunnerPool:
     def _make_runner(self) -> ClaudeRunner:
         """runner_factory를 사용하여 새 Runner 인스턴스 생성"""
         return self._runner_factory(
+            pooled=self._max_size > 0,
             working_dir=Path(self._workspace_dir) if self._workspace_dir else None,
             allowed_tools=self._allowed_tools,
             disallowed_tools=self._disallowed_tools,
             mcp_config_path=self._mcp_config_path,
-            pooled=True,
         )
 
     async def discard(self, runner: ClaudeRunner, reason: str = "") -> None:
@@ -198,10 +198,15 @@ class RunnerPool:
     ) -> None:
         """실행 완료 후 runner 반환
 
+        - max_size=0 이면 풀 비활성화 — runner를 즉시 폐기
         - session_id 있으면 session pool에 저장 (LRU update)
         - 없으면 generic pool에 반환
         - 풀 full → LRU evict 후 저장
         """
+        if self._max_size == 0:
+            await self._discard(runner, reason="pool_disabled")
+            return
+
         async with self._lock:
             now = time.monotonic()
 
