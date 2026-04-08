@@ -187,11 +187,18 @@ export function OrchestratorDashboardLayout() {
       }
       mobileChatHeader={(onBack) => <MobileChatHeader onBack={onBack} />}
       mobileChatView={<ChatView chatInputDisabled={isChatInputDisabled} isOtherNodeSession={isOtherNodeSession} />}
-      mobileSheetFooter={
-        <>
-          <ThemeToggle />
-          <ConnectionBadge status={sseStatus} />
-        </>
+      mobileSettingsContent={
+        <div className="p-4 space-y-4">
+          <h2 className="text-base font-semibold">설정</h2>
+          <div className="flex items-center justify-between">
+            <span className="text-sm">테마</span>
+            <ThemeToggle />
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm">연결 상태</span>
+            <ConnectionBadge status={sseStatus} />
+          </div>
+        </div>
       }
       modals={
         <>

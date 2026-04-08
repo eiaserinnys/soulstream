@@ -83,6 +83,10 @@ export interface SelectedEventNodeData {
 
 export type FolderSortMode = "name-asc" | "name-desc" | "created-desc" | "created-asc" | "custom";
 
+// === Mobile Tab ===
+
+export type MobileTab = "feed" | "folder" | "chat" | "settings";
+
 // === State Interface ===
 
 export interface DashboardState {
@@ -169,8 +173,8 @@ export interface DashboardState {
   /** 인라인 편집 중인 세션 */
   editingSessionId: string | null;
 
-  /** 모바일 뷰 상태 ('sessions': 세션 리스트, 'chat': 채팅 뷰) */
-  mobileView: "sessions" | "chat";
+  /** 모바일 활성 탭 */
+  activeTab: MobileTab;
 
   /** 폴더 카탈로그 상태 */
   catalog: CatalogState | null;
@@ -283,8 +287,8 @@ export interface DashboardActions {
   // 폴더 정렬 모드
   setFolderSortMode: (mode: FolderSortMode) => void;
 
-  // 모바일 뷰 전환
-  setMobileView: (view: "sessions" | "chat") => void;
+  // 모바일 탭 전환
+  setActiveTab: (tab: MobileTab) => void;
 
   // 활성 세션 해제 (selectedFolderId를 유지하면서 세션만 해제)
   clearActiveSession: () => void;
@@ -361,7 +365,7 @@ const initialState: DashboardState = {
   selectedSessionIds: new Set<string>(),
   lastSelectedSessionId: null,
   editingSessionId: null,
-  mobileView: "sessions",
+  activeTab: "feed",
   catalog: null,
   selectedFolderId: null,
   catalogVersion: 0,
@@ -1149,7 +1153,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         }).length;
       },
 
-      setMobileView: (mobileView) => set({ mobileView }),
+      setActiveTab: (activeTab) => set({ activeTab }),
 
       clearActiveSession: () => {
         // selectedFolderId를 유지하면서 세션 관련 상태만 초기화

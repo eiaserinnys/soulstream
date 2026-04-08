@@ -202,7 +202,7 @@ export function FolderContents({ onMoveSessions, onRenameSession, onLoadMore, ha
   const selectedSessionIds = useDashboardStore((s) => s.selectedSessionIds);
   const editingSessionId = useDashboardStore((s) => s.editingSessionId);
   const setEditingSession = useDashboardStore((s) => s.setEditingSession);
-  const setMobileView = useDashboardStore((s) => s.setMobileView);
+  const setActiveTab = useDashboardStore((s) => s.setActiveTab);
   const catalogVersion = useDashboardStore((s) => s.catalogVersion);
   const sessions = useDashboardStore((s) => s.sessions);
   const isMobile = useIsMobile();
@@ -332,7 +332,7 @@ export function FolderContents({ onMoveSessions, onRenameSession, onLoadMore, ha
                       isEditing={onRenameSession ? editingSessionId === session.agentSessionId : false}
                       onClick={(e) => {
                         toggleSessionSelection(session.agentSessionId, e.ctrlKey || e.metaKey, e.shiftKey);
-                        if (isMobile) setMobileView("chat");
+                        if (isMobile) setActiveTab("chat");
                       }}
                       onContextMenu={(e) => handleContextMenu(session.agentSessionId, e)}
                       onDragStart={(e) => handleDragStart(session.agentSessionId, e)}

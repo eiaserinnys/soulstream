@@ -5,18 +5,18 @@
  * 레이아웃 구조만 제공하며, 앱 레벨 훅이나 구체적 컴포넌트는 포함하지 않습니다.
  *
  * 데스크탑: leftPanel | DragHandle | centerPanel | DragHandle | rightPanel
- * 모바일: Sheet(leftPanel) + mobileView에 따른 뷰 전환
+ * 모바일: BottomTabBar + 탭별 콘텐츠 (hidden 방식으로 언마운트 없이 전환)
  */
 
 import { useState, useCallback, useRef, useEffect, type ReactNode } from "react";
-import { ArrowLeft, Menu, Search } from "lucide-react";
+import { ArrowLeft, MessageSquare, Search } from "lucide-react";
 import { DragHandle } from "./DragHandle";
+import { BottomTabBar } from "./BottomTabBar";
 import { ConnectionBadge, type ConnectionStatus } from "./ConnectionBadge";
 import { useIsMobile } from "../hooks/use-mobile";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { cn } from "../lib/cn";
 import { Button } from "../components/ui/button";
-import { Sheet, SheetContent, SheetFooter } from "../components/ui/sheet";
 
 /** 패널 기본 비율 (%) */
 const DEFAULT_LEFT = 20;
@@ -69,8 +69,8 @@ export interface DashboardShellProps {
    * onMobileBack 콜백을 받아 뒤로가기 동작을 구현할 수 있다.
    */
   mobileChatHeader?: (onBack: () => void) => ReactNode;
-  /** 모바일 사이드바 Sheet 하단에 표시할 요소 */
-  mobileSheetFooter?: ReactNode;
+  /** 모바일 설정 탭에 표시할 내용물 */
+  mobileSettingsContent?: ReactNode;
   /** 모바일 검색 버튼 클릭 콜백. 미지정 시 검색 버튼 표시 안 함 */
   onSearchClick?: () => void;
 }
@@ -112,7 +112,7 @@ export function DashboardShell({
   mobileSessionsView,
   mobileChatView,
   mobileChatHeader,
-  mobileSheetFooter,
+  mobileSettingsContent,
   onSearchClick,
 }: DashboardShellProps) {
   // 패널 비율 상태 (%)
@@ -145,27 +145,24 @@ export function DashboardShell({
     [],
   );
 
-  // 모바일 여부 및 사이드바 상태
   const isMobile = useIsMobile();
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const mobileView = useDashboardStore((s) => s.mobileView);
-  const setMobileView = useDashboardStore((s) => s.setMobileView);
+  const activeTab = useDashboardStore((s) => s.activeTab);
+  const setActiveTab = useDashboardStore((s) => s.setActiveTab);
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
 
-  // PC 전환 시 Sheet 닫힘 + mobileView 리셋
+  // PC 전환 시 피드 탭으로 초기화
   useEffect(() => {
     if (!isMobile) {
-      setIsSidebarOpen(false);
-      setMobileView("sessions");
+      setActiveTab("feed");
     }
-  }, [isMobile, setMobileView]);
+  }, [isMobile, setActiveTab]);
 
-  // 세션 선택 시 Sheet 자동 닫힘
+  // 세션 선택 시 채팅 탭으로 자동 이동 (모바일)
   useEffect(() => {
     if (activeSessionKey && isMobile) {
-      setIsSidebarOpen(false);
+      setActiveTab("chat");
     }
-  }, [activeSessionKey, isMobile]);
+  }, [activeSessionKey, isMobile, setActiveTab]);
 
   const centerPercent = Math.max(MIN_CENTER, 100 - leftPercent - rightPercent);
 
@@ -195,16 +192,6 @@ export function DashboardShell({
         style={{ height: 'calc(44px + env(safe-area-inset-top, 0px))', paddingTop: 'env(safe-area-inset-top, 0px)' }}
       >
         <div className="flex items-center gap-3">
-          {isMobile && (
-            <Button
-              data-testid="hamburger-button"
-              variant="ghost"
-              size="icon"
-              onClick={() => setIsSidebarOpen(true)}
-            >
-              <Menu className="h-5 w-5" />
-            </Button>
-          )}
           <span className="text-[14px] font-semibold text-muted-foreground tracking-[0.02em]">
             {title}
           </span>
@@ -227,30 +214,45 @@ export function DashboardShell({
 
       {isMobile ? (
         <>
-          {/* 모바일: Sheet 슬라이드 사이드바 */}
-          <Sheet open={isSidebarOpen} onOpenChange={setIsSidebarOpen}>
-            <SheetContent side="left" showCloseButton={false}>
-              {leftPanelContent}
-              {mobileSheetFooter && (
-                <SheetFooter className="border-t border-border p-3 flex flex-row items-center gap-2">
-                  {mobileSheetFooter}
-                </SheetFooter>
-              )}
-            </SheetContent>
-          </Sheet>
-          {/* 모바일: mobileView에 따른 뷰 전환 */}
+          {/* 모바일: 탭별 콘텐츠 */}
           <main data-testid="mobile-main" className="flex-1 overflow-hidden flex flex-col">
-            {mobileView === "sessions" && (mobileSessionsView ?? centerPanel)}
-            {mobileView === "chat" && (
-              <>
-                {mobileChatHeader
-                  ? mobileChatHeader(() => setMobileView("sessions"))
-                  : <DefaultMobileChatHeader onBack={() => setMobileView("sessions")} />
-                }
-                {mobileChatView ?? rightPanel}
-              </>
-            )}
+            {/* 피드 탭 */}
+            <div className={cn("h-full", activeTab !== "feed" && "hidden")}>
+              {mobileSessionsView ?? centerPanel}
+            </div>
+
+            {/* 폴더 탭 — leftPanelContent: leftPanel + leftPanelBottom(NodePanel 포함) */}
+            <div className={cn("h-full", activeTab !== "folder" && "hidden")}>
+              {leftPanelContent}
+            </div>
+
+            {/* 채팅 탭 */}
+            <div className={cn("h-full flex flex-col", activeTab !== "chat" && "hidden")}>
+              {activeSessionKey ? (
+                <>
+                  {mobileChatHeader
+                    ? mobileChatHeader(() => setActiveTab("feed"))
+                    : <DefaultMobileChatHeader onBack={() => setActiveTab("feed")} />}
+                  {mobileChatView ?? rightPanel}
+                </>
+              ) : (
+                <div className="flex-1 flex items-center justify-center p-8 text-center text-muted-foreground">
+                  <div>
+                    <MessageSquare className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                    <p className="text-base">피드 또는 폴더에서<br />세션을 선택하세요</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 설정 탭 */}
+            <div className={cn("h-full overflow-y-auto", activeTab !== "settings" && "hidden")}>
+              {mobileSettingsContent}
+            </div>
           </main>
+
+          {/* 하단 탭바 */}
+          <BottomTabBar />
         </>
       ) : (
         /* 데스크탑: 3-Panel content */
