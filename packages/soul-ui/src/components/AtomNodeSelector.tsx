@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 
 interface AtomNode {
   id: string;
@@ -44,7 +45,11 @@ export function AtomNodeSelector({
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbEntry[]>([
     { nodeId: null, title: "루트" },
   ]);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const [panelStyle, setPanelStyle] = useState<React.CSSProperties>({
+    visibility: "hidden",
+  });
 
   const loadNodes = async (nodeId: string | null) => {
     setLoading(true);
@@ -66,11 +71,45 @@ export function AtomNodeSelector({
     }
   };
 
+  // 열릴 때 브레드크럼 초기화 및 루트 노드 로드
   useEffect(() => {
     if (open) {
       setBreadcrumbs([{ nodeId: null, title: "루트" }]);
       loadNodes(null);
     }
+  }, [open]);
+
+  // 열릴 때 포지션 계산 (scroll/resize 이벤트도 구독)
+  useEffect(() => {
+    if (!open || !triggerRef.current) return;
+    const updatePos = () => {
+      const rect = triggerRef.current!.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      const openUpward = spaceBelow < 200 && spaceAbove > spaceBelow;
+      setPanelStyle(
+        openUpward
+          ? {
+              position: "fixed",
+              bottom: window.innerHeight - rect.top + 4,
+              left: rect.left,
+              width: Math.max(rect.width, 256),
+            }
+          : {
+              position: "fixed",
+              top: rect.bottom + 4,
+              left: rect.left,
+              width: Math.max(rect.width, 256),
+            }
+      );
+    };
+    updatePos();
+    window.addEventListener("scroll", updatePos, true);
+    window.addEventListener("resize", updatePos);
+    return () => {
+      window.removeEventListener("scroll", updatePos, true);
+      window.removeEventListener("resize", updatePos);
+    };
   }, [open]);
 
   const navigateInto = (node: AtomNode) => {
@@ -97,11 +136,15 @@ export function AtomNodeSelector({
     setOpen(false);
   };
 
-  // 패널 바깥 클릭 시 닫기
+  // 패널/트리거 바깥 클릭 시 닫기
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+      const t = e.target as Node;
+      if (
+        !panelRef.current?.contains(t) &&
+        !triggerRef.current?.contains(t)
+      ) {
         setOpen(false);
       }
     };
@@ -110,105 +153,124 @@ export function AtomNodeSelector({
   }, [open]);
 
   const displayLabel = value
-    ? (selectedTitle || value.slice(0, 8) + "…")
+    ? selectedTitle || value.slice(0, 8) + "…"
     : "노드 선택...";
 
   return (
-    <div className="relative" ref={panelRef}>
+    <div className="relative">
       <button
+        ref={triggerRef}
         type="button"
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
-        className="w-full rounded border border-[--color-border] bg-[--color-surface-1] px-2 py-1 text-sm text-left flex items-center justify-between gap-2 disabled:opacity-50"
+        className="w-full rounded-lg border border-input bg-background dark:bg-input/32 px-3 py-1.5 text-sm text-left flex items-center justify-between gap-2 disabled:opacity-50 disabled:pointer-events-none"
       >
-        <span className={value ? "" : "text-[--color-text-secondary]"}>
+        <span className={value ? "" : "text-muted-foreground"}>
           {displayLabel}
         </span>
-        <span className="text-[--color-text-secondary] text-xs flex-shrink-0">
-          ▼
-        </span>
+        <span className="text-muted-foreground text-xs flex-shrink-0">▼</span>
       </button>
 
-      {open && (
-        <div className="absolute z-50 mt-1 w-full min-w-64 rounded border border-[--color-border] bg-[--color-surface-1] shadow-lg">
-          {/* 브레드크럼 네비게이션 */}
-          <div className="flex flex-wrap items-center gap-0.5 px-2 py-1.5 border-b border-[--color-border] text-xs">
-            {breadcrumbs.map((crumb, i) => (
-              <span key={i} className="flex items-center gap-0.5">
-                {i > 0 && (
-                  <span className="text-[--color-text-secondary] mx-0.5">/</span>
-                )}
+      {open &&
+        createPortal(
+          <div
+            ref={panelRef}
+            style={panelStyle}
+            className="z-[200] min-w-64 rounded-lg border bg-popover not-dark:bg-clip-padding shadow-lg/5"
+          >
+            {/* 브레드크럼 + 뒤로가기 버튼 */}
+            <div className="flex items-center gap-1 px-2 py-1.5 border-b border-border text-xs">
+              {breadcrumbs.length > 1 && (
                 <button
                   type="button"
-                  onClick={() => navigateToBreadcrumb(i)}
-                  className={
-                    i === breadcrumbs.length - 1
-                      ? "font-medium"
-                      : "text-[--color-text-secondary] hover:underline"
-                  }
+                  onClick={() => navigateToBreadcrumb(breadcrumbs.length - 2)}
+                  className="flex-shrink-0 text-muted-foreground hover:text-foreground px-1"
+                  title="뒤로 가기"
                 >
-                  {crumb.title}
+                  ←
                 </button>
-              </span>
-            ))}
-          </div>
-
-          {/* 노드 목록 */}
-          <div className="max-h-48 overflow-y-auto">
-            {loading && (
-              <div className="px-3 py-2 text-xs text-[--color-text-secondary]">
-                불러오는 중...
+              )}
+              <div className="flex flex-wrap items-center gap-0.5 min-w-0">
+                {breadcrumbs.map((crumb, i) => (
+                  <span key={i} className="flex items-center gap-0.5">
+                    {i > 0 && (
+                      <span className="text-muted-foreground mx-0.5">/</span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => navigateToBreadcrumb(i)}
+                      className={
+                        i === breadcrumbs.length - 1
+                          ? "font-medium"
+                          : "text-muted-foreground hover:text-foreground hover:underline"
+                      }
+                    >
+                      {crumb.title}
+                    </button>
+                  </span>
+                ))}
               </div>
-            )}
-            {error && (
-              <div className="px-3 py-2 text-xs text-destructive">{error}</div>
-            )}
-            {!loading && !error && nodes.length === 0 && (
-              <div className="px-3 py-2 text-xs text-[--color-text-secondary]">
-                하위 노드 없음
-              </div>
-            )}
-            {!loading &&
-              nodes.map((node) => (
-                <div
-                  key={node.id}
-                  className={`flex items-center hover:bg-accent/50 ${
-                    node.id === value ? "bg-accent/30" : ""
-                  }`}
-                >
-                  <button
-                    type="button"
-                    onClick={() => selectNode(node)}
-                    className="flex-1 text-left text-sm px-3 py-1.5 truncate"
-                  >
-                    {node.card.title}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => navigateInto(node)}
-                    className="flex-shrink-0 text-xs text-[--color-text-secondary] hover:text-foreground px-2 py-1.5"
-                    title="자식 보기"
-                  >
-                    ▶
-                  </button>
-                </div>
-              ))}
-          </div>
-
-          {/* 선택 해제 */}
-          {value && (
-            <div className="border-t border-[--color-border] px-2 py-1.5">
-              <button
-                type="button"
-                onClick={clearSelection}
-                className="text-xs text-[--color-text-secondary] hover:text-foreground"
-              >
-                선택 해제
-              </button>
             </div>
-          )}
-        </div>
-      )}
+
+            {/* 노드 목록 */}
+            <div className="max-h-48 overflow-y-auto">
+              {loading && (
+                <div className="px-3 py-2 text-xs text-muted-foreground">
+                  불러오는 중...
+                </div>
+              )}
+              {error && (
+                <div className="px-3 py-2 text-xs text-destructive">
+                  {error}
+                </div>
+              )}
+              {!loading && !error && nodes.length === 0 && (
+                <div className="px-3 py-2 text-xs text-muted-foreground">
+                  하위 노드 없음
+                </div>
+              )}
+              {!loading &&
+                nodes.map((node) => (
+                  <div
+                    key={node.id}
+                    className={`flex items-center hover:bg-accent/50 ${
+                      node.id === value ? "bg-accent/30" : ""
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => selectNode(node)}
+                      className="flex-1 text-left text-sm px-3 py-1.5 truncate"
+                    >
+                      {node.card.title}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => navigateInto(node)}
+                      className="flex-shrink-0 text-xs text-muted-foreground hover:text-foreground px-2 py-1.5"
+                      title="자식 보기"
+                    >
+                      ▶
+                    </button>
+                  </div>
+                ))}
+            </div>
+
+            {/* 선택 해제 */}
+            {value && (
+              <div className="border-t border-border px-2 py-1.5">
+                <button
+                  type="button"
+                  onClick={clearSelection}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                >
+                  선택 해제
+                </button>
+              </div>
+            )}
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
