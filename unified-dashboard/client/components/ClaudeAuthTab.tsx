@@ -42,14 +42,8 @@ export function ClaudeAuthTab() {
     fetchStatus();
   }, [fetchStatus]);
 
-  const handleLogin = async () => {
-    const res = await fetch("/auth/claude/web/start");
-    const { auth_url } = (await res.json()) as { auth_url: string };
-    window.open(auth_url, "_blank");
-    // 로그인 완료 후 상태 갱신 (단순 폴링)
-    setTimeout(() => {
-      fetchStatus();
-    }, 5000);
+  const handleLogin = () => {
+    window.location.href = "/auth/claude/web/start";
   };
 
   const handleDeleteToken = async () => {
