@@ -20,11 +20,19 @@ def create_atom_router() -> APIRouter:
 
     @router.get("/nodes")
     async def list_atom_root_nodes() -> dict:
-        """atom project 루트 노드의 자식 목록 조회 (폴더 설정 UI 드롭다운 초기 로드용)."""
+        """atom 루트 노드 목록 조회 (폴더 설정 UI 드롭다운 초기 로드용).
+
+        ATOM_ROOT_NODE_ID가 설정된 경우 해당 노드의 자식을 반환하고,
+        미설정 시 atom 전체 루트 노드 목록을 반환한다.
+        """
         s = get_settings()
         if not s.atom_enabled or not s.atom_server_url:
             raise HTTPException(status_code=503, detail="atom integration not enabled")
-        url = f"{s.atom_server_url.rstrip('/')}/api/tree/{s.atom_root_node_id}/children"
+        base = s.atom_server_url.rstrip("/")
+        if s.atom_root_node_id:
+            url = f"{base}/api/tree/{s.atom_root_node_id}/children"
+        else:
+            url = f"{base}/api/tree"
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 resp = await client.get(url, headers={"x-api-key": s.atom_api_key})
