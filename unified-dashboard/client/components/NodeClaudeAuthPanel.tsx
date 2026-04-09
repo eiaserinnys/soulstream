@@ -114,6 +114,7 @@ export function NodeClaudeAuthPanel({ nodeId }: Props) {
   const [loadingUsage, setLoadingUsage] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCodeInput, setShowCodeInput] = useState(false);
+  const [authUrl, setAuthUrl] = useState<string | null>(null);
   const [codeValue, setCodeValue] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -149,7 +150,9 @@ export function NodeClaudeAuthPanel({ nodeId }: Props) {
       }
       const data = await res.json();
       if (!data.authUrl) throw new Error("authUrl 없음");
-      window.open(data.authUrl, "_blank");
+      // iOS Safari는 async 컨텍스트의 window.open()을 팝업으로 간주하여 차단함.
+      // authUrl을 상태로 저장하고 사용자가 직접 탭할 수 있는 <a> 링크로 노출.
+      setAuthUrl(data.authUrl);
       setShowCodeInput(true);
     } catch (e) {
       setError(String(e instanceof Error ? e.message : e));
@@ -187,6 +190,7 @@ export function NodeClaudeAuthPanel({ nodeId }: Props) {
 
   const handleCancelCode = () => {
     setShowCodeInput(false);
+    setAuthUrl(null);
     setCodeValue("");
     setError(null);
   };
@@ -242,6 +246,16 @@ export function NodeClaudeAuthPanel({ nodeId }: Props) {
           </div>
           {showCodeInput && (
             <div className="mt-2 space-y-1.5">
+              {authUrl && (
+                <a
+                  href={authUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-primary underline"
+                >
+                  Anthropic 인증 페이지 열기 →
+                </a>
+              )}
               <div className="text-xs text-muted-foreground">
                 Anthropic 페이지에 표시된 코드를 붙여넣으세요.
               </div>
@@ -284,6 +298,16 @@ export function NodeClaudeAuthPanel({ nodeId }: Props) {
           </div>
           {showCodeInput && (
             <div className="mt-2 space-y-1.5">
+              {authUrl && (
+                <a
+                  href={authUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-primary underline"
+                >
+                  Anthropic 인증 페이지 열기 →
+                </a>
+              )}
               <div className="text-xs text-muted-foreground">
                 Anthropic 페이지에 표시된 코드를 붙여넣으세요.
               </div>
