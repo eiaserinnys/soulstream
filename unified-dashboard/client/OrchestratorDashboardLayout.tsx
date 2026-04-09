@@ -47,6 +47,7 @@ import {
   useDashboardStore,
   ConnectionBadge,
   useSessionListProvider,
+  useIsMobile,
 } from "@seosoyoung/soul-ui";
 import { FeedView } from "./components/FeedView";
 import { useAppConfig } from "./config/AppConfigContext";
@@ -110,6 +111,8 @@ export function OrchestratorDashboardLayout() {
     return !!session?.nodeId && session.nodeId !== localNodeId;
   }, [activeSessionKey, sessions, localNodeId]);
 
+  const isMobile = useIsMobile();
+
   // Config / Search 모달 상태
   const [configOpen, setConfigOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -128,8 +131,8 @@ export function OrchestratorDashboardLayout() {
           folderCounts={folderCounts}
         />
       }
-      leftPanelBottom={features.nodePanel ? <NodePanel /> : undefined}
-      leftBottomRatio={features.nodePanel ? 3 : undefined}
+      leftPanelBottom={features.nodePanel && !isMobile ? <NodePanel /> : undefined}
+      leftBottomRatio={features.nodePanel && !isMobile ? 3 : undefined}
       centerPanel={
         viewMode === "feed" ? (
           <FeedView
@@ -190,6 +193,11 @@ export function OrchestratorDashboardLayout() {
       mobileSettingsContent={
         <div className="p-4 space-y-4">
           <h2 className="text-base font-semibold">설정</h2>
+          {features.nodePanel && (
+            <div className="rounded-lg border border-border overflow-hidden">
+              <NodePanel />
+            </div>
+          )}
           <div className="flex items-center justify-between">
             <span className="text-sm">테마</span>
             <ThemeToggle />
