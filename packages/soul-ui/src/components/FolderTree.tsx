@@ -14,6 +14,7 @@ import { useDroppable } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useDashboardStore, isSessionUnread } from "../stores/dashboard-store";
+import { useIsMobile } from "../hooks/use-mobile";
 import { cn } from "../lib/cn";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
@@ -219,6 +220,8 @@ export function FolderTree({
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; folder: { id: string; name: string } } | null>(null);
   const [settingsTarget, setSettingsTarget] = useState<{ id: string; name: string } | null>(null);
 
+  const isMobile = useIsMobile();
+
   const allFolders = catalog?.folders ?? [];
 
   /** 정렬된 일반 폴더 목록 */
@@ -328,10 +331,10 @@ export function FolderTree({
     setEditingId(null);
   };
 
-  /** 폴더 선택 — 세션 자동 선택 로직은 스토어의 selectFolder 액션이 담당 */
+  /** 폴더 선택 — 모바일에서는 자동 세션 선택을 건너뛰어 폴더 탭 2단계 뷰를 유지한다 */
   const handleSelectFolder = useCallback((folderId: string | null) => {
-    selectFolder(folderId);
-  }, [selectFolder]);
+    selectFolder(folderId, { skipAutoSelect: isMobile });
+  }, [selectFolder, isMobile]);
 
   /** 피드 미읽음 카운트 — getFeedUnreadCount로 정렬 없이 O(n) 계산 */
   const feedUnreadCount = useMemo(() =>

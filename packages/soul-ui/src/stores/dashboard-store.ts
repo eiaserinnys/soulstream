@@ -273,7 +273,8 @@ export interface DashboardActions {
 
   // 카탈로그
   setCatalog: (catalog: CatalogState) => void;
-  selectFolder: (folderId: string | null) => void;
+  selectFolder: (folderId: string | null, options?: { skipAutoSelect?: boolean }) => void;
+  clearSelectedFolder: () => void;
   getSessionsInFolder: (folderId: string | null) => SessionSummary[];
   moveSessionsToFolder: (sessionIds: string[], folderId: string | null) => void;
   renameSession: (sessionId: string, displayName: string | null) => void;
@@ -1064,17 +1065,21 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         set({ folderSortMode: mode });
       },
 
-      selectFolder: (folderId) => {
+      selectFolder: (folderId, options?: { skipAutoSelect?: boolean }) => {
         set({ selectedFolderId: folderId, viewMode: "folder" });
-        // FolderTree.handleSelectFolder에서 흡수: 첫 세션 자동 선택
-        const { getSessionsInFolder, setActiveSession, clearActiveSession } = get();
-        const folderSessions = getSessionsInFolder(folderId);
-        if (folderSessions.length > 0) {
-          setActiveSession(folderSessions[0].agentSessionId);
-        } else {
-          clearActiveSession();
+        if (!options?.skipAutoSelect) {
+          // FolderTree.handleSelectFolder에서 흡수: 첫 세션 자동 선택
+          const { getSessionsInFolder, setActiveSession, clearActiveSession } = get();
+          const folderSessions = getSessionsInFolder(folderId);
+          if (folderSessions.length > 0) {
+            setActiveSession(folderSessions[0].agentSessionId);
+          } else {
+            clearActiveSession();
+          }
         }
       },
+
+      clearSelectedFolder: () => set({ selectedFolderId: null, viewMode: "feed" }),
 
       // --- 뷰 모드 ---
 
