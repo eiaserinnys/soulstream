@@ -43,6 +43,7 @@ export function FeedView({ onNewSession, onLoadMore, hasMore, onRenameSession, o
   const selectFolder = useDashboardStore((s) => s.selectFolder);
   const feedScrollOffset = useDashboardStore((s) => s.feedScrollOffset);
   const setFeedScrollOffset = useDashboardStore((s) => s.setFeedScrollOffset);
+  const dashboardConfig = useDashboardStore((s) => s.dashboardConfig);
 
   // 1분 주기 갱신 (24시간 윈도우 밖으로 밀린 세션 제거용)
   const [, setTick] = useState(0);
@@ -53,7 +54,8 @@ export function FeedView({ onNewSession, onLoadMore, hasMore, onRenameSession, o
 
   // sessions 또는 catalog가 변경될 때마다 getFeedSessions 재계산 (memoized)
   // catalogVersion을 deps에 포함하여 세션 이름 변경 시 피드 카드 즉시 반영
-  const feedSessions = useMemo(() => getFeedSessions(), [sessions, getFeedSessions, catalogVersion]);
+  // getFeedSessions는 Zustand store 내부 get() 클로저를 반환하므로 참조 자체가 안정적 → deps 제외
+  const feedSessions = useMemo(() => getFeedSessions(), [sessions, catalogVersion]);
   const firstFeedId = feedSessions[0]?.agentSessionId ?? null;
 
   // 폴더명 조회 헬퍼
@@ -229,9 +231,10 @@ export function FeedView({ onNewSession, onLoadMore, hasMore, onRenameSession, o
                       session={session}
                       isActive={session.agentSessionId === activeSessionKey}
                       folderName={getFolderName(session.agentSessionId)}
-                      onClick={() => handleCardClick(session.agentSessionId)}
-                      onDoubleClick={() => handleCardDoubleClick(session.agentSessionId)}
-                      onContextMenu={(e) => handleContextMenu(session.agentSessionId, e)}
+                      dashboardConfig={dashboardConfig}
+                      onCardClick={handleCardClick}
+                      onCardDoubleClick={handleCardDoubleClick}
+                      onCardContextMenu={handleContextMenu}
                     />
                   </div>
                 </div>

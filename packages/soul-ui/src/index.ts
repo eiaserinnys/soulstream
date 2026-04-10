@@ -171,6 +171,8 @@ export { FolderContents, nodeIdToHue, STATUS_CONFIG } from "./components/FolderC
 export type { FolderContentsProps, StatusConfig } from "./components/FolderContents";
 export { FeedCard } from "./components/FeedCard";
 export type { FeedCardProps } from "./components/FeedCard";
+export { NodeBadge } from "./components/NodeBadge";
+export type { NodeBadgeProps } from "./components/NodeBadge";
 export { FeedView } from "./components/FeedView";
 export { FeedTopBar } from "./components/FeedTopBar";
 export type { FeedTopBarProps } from "./components/FeedTopBar";
