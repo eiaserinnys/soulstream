@@ -6,6 +6,7 @@
  */
 
 import { useMemo, useRef, useState, useEffect, memo, useCallback } from "react";
+import { useDraggable } from "@dnd-kit/core";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   useDashboardStore,
@@ -58,9 +59,10 @@ interface SessionItemProps {
   isActive: boolean;
   isSelected: boolean;
   isEditing: boolean;
+  /** DnD 시 전달할 세션 ID 목록 (다중 선택 포함) */
+  dragSessionIds: string[];
   onClick: (e: React.MouseEvent) => void;
   onContextMenu: (e: React.MouseEvent) => void;
-  onDragStart: (e: React.DragEvent) => void;
   onEditSubmit: (name: string) => void;
   onEditCancel: () => void;
 }
@@ -70,12 +72,17 @@ const SessionItem = memo(function SessionItem({
   isActive,
   isSelected,
   isEditing,
+  dragSessionIds,
   onClick,
   onContextMenu,
-  onDragStart,
   onEditSubmit,
   onEditCancel,
 }: SessionItemProps) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: session.agentSessionId,
+    data: { type: "session", sessionIds: dragSessionIds },
+  });
+
   const config = STATUS_CONFIG[session.status] ?? STATUS_CONFIG.unknown;
   const isUnread = isSessionUnread(session);
   const isReadCompleted = session.status === "completed" && !isUnread;
@@ -98,16 +105,19 @@ const SessionItem = memo(function SessionItem({
 
   return (
     <div
-      draggable
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      data-testid="draggable-session"
       className={cn(
         "flex items-center gap-2 px-3 py-2 cursor-pointer text-sm hover:bg-accent/50 border-b border-border/50 select-none",
         isActive && "bg-accent text-accent-foreground",
         isSelected && !isActive && "bg-primary/10",
         isReadCompleted && "opacity-50",
+        isDragging && "opacity-50",
       )}
       onClick={onClick}
       onContextMenu={onContextMenu}
-      onDragStart={onDragStart}
       data-session-id={session.agentSessionId}
     >
       <span
@@ -160,8 +170,12 @@ const SessionItem = memo(function SessionItem({
 });
 
 export interface FolderContentsProps {
-  /** 세션을 다른 폴더로 이동하는 콜백 */
-  onMoveSessions: (sessionIds: string[], targetFolderId: string | null) => Promise<void>;
+  /**
+   * 세션을 다른 폴더로 이동하는 콜백.
+   * DashboardDndProvider를 사용하는 경우 DndContext의 onDragEnd가 이동을 처리하므로 생략 가능.
+   * @deprecated DashboardDndProvider 사용 시 불필요. 레거시 호환 및 직접 이동 트리거용으로 유지.
+   */
+  onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => Promise<void>;
   /** 세션 이름 변경 콜백. 미지정 시 이름 변경 UI 비활성화 */
   onRenameSession?: (sessionId: string, displayName: string | null) => Promise<void>;
   /** 스크롤 하단 도달 시 다음 페이지 로드 콜백 */
@@ -222,17 +236,6 @@ export function FolderContents({ onMoveSessions, onRenameSession, onLoadMore, ha
 
   const virtualItems = virtualizer.getVirtualItems();
   const { setRef } = useFlipAnimation(folderSessions, virtualItems);
-
-  const handleDragStart = useCallback(
-    (sessionId: string, e: React.DragEvent) => {
-      const ids = selectedSessionIds.has(sessionId)
-        ? Array.from(selectedSessionIds)
-        : [sessionId];
-      e.dataTransfer.setData("text/plain", JSON.stringify(ids));
-      e.dataTransfer.effectAllowed = "move";
-    },
-    [selectedSessionIds],
-  );
 
   const handleContextMenu = useCallback(
     (sessionId: string, e: React.MouseEvent) => {
@@ -306,12 +309,16 @@ export function FolderContents({ onMoveSessions, onRenameSession, onLoadMore, ha
                       isActive={activeSessionKey === session.agentSessionId}
                       isSelected={selectedSessionIds.has(session.agentSessionId)}
                       isEditing={onRenameSession ? editingSessionId === session.agentSessionId : false}
+                      dragSessionIds={
+                        selectedSessionIds.has(session.agentSessionId)
+                          ? Array.from(selectedSessionIds)
+                          : [session.agentSessionId]
+                      }
                       onClick={(e) => {
                         toggleSessionSelection(session.agentSessionId, e.ctrlKey || e.metaKey, e.shiftKey);
                         if (isMobile) setActiveTab("chat");
                       }}
                       onContextMenu={(e) => handleContextMenu(session.agentSessionId, e)}
-                      onDragStart={(e) => handleDragStart(session.agentSessionId, e)}
                       onEditSubmit={(name) => handleEditSubmit(session.agentSessionId, name)}
                       onEditCancel={() => setEditingSession(null)}
                     />

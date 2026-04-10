@@ -3,9 +3,16 @@
  *
  * 왼쪽 패널에서 폴더 목록을 표시하고 폴더 선택/생성/삭제를 관리한다.
  * 실제 API 호출은 props 콜백으로 위임한다 (호스트가 구현).
+ *
+ * DnD는 DashboardDndProvider(DndContext)에 위임한다:
+ *  - 세션 드래그 → 폴더 드롭: useDroppable로 drop target 등록
+ *  - 폴더 재정렬: SortableContext + FolderItem(useSortable)
  */
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, memo } from "react";
+import { useDroppable } from "@dnd-kit/core";
+import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { useDashboardStore, isSessionUnread } from "../stores/dashboard-store";
 import { cn } from "../lib/cn";
 import { Button } from "./ui/button";
@@ -41,6 +48,144 @@ export interface FolderTreeProps {
   folderCounts?: Record<string, number>;
 }
 
+// ── FolderItem (개별 폴더 행) ─────────────────────────────────────────────────
+
+interface FolderItemProps {
+  folder: { id: string; name: string; sortOrder: number; createdAt?: string };
+  isSystem: boolean;
+  isDraggableFolder: boolean;
+  sortedNormalFolderIds: string[];
+  isSelected: boolean;
+  isEditingThis: boolean;
+  editName: string;
+  dragOverId: string | null;
+  unreadCount: number;
+  sessionCount: number;
+  isRunning: boolean;
+  onSelect: () => void;
+  onDoubleClick: () => void;
+  onContextMenu: (e: React.MouseEvent) => void;
+  onEditChange: (v: string) => void;
+  onEditSubmit: () => void;
+  onEditCancel: () => void;
+}
+
+/** FolderItem — useSortable(폴더 재정렬) + useDroppable(세션 drop target) */
+const FolderItem = memo(function FolderItem({
+  folder,
+  isSystem,
+  isDraggableFolder,
+  sortedNormalFolderIds,
+  isSelected,
+  isEditingThis,
+  editName,
+  dragOverId,
+  unreadCount,
+  sessionCount,
+  isRunning,
+  onSelect,
+  onDoubleClick,
+  onContextMenu,
+  onEditChange,
+  onEditSubmit,
+  onEditCancel,
+}: FolderItemProps) {
+  // 폴더 재정렬용 (custom 모드에서만 active)
+  const {
+    attributes,
+    listeners,
+    setNodeRef: setSortableRef,
+    transform,
+    transition,
+    isDragging: isSortableDragging,
+  } = useSortable({
+    id: folder.id,
+    disabled: !isDraggableFolder,
+    data: {
+      type: "folder",
+      currentOrder: sortedNormalFolderIds,
+    },
+  });
+
+  // 세션 drop target
+  const { setNodeRef: setDroppableRef, isOver } = useDroppable({
+    id: folder.id,
+    data: { type: "folder", folderId: folder.id },
+  });
+
+  // 두 ref를 합성
+  const setRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      setSortableRef(el);
+      setDroppableRef(el);
+    },
+    [setSortableRef, setDroppableRef],
+  );
+
+  const style = isDraggableFolder
+    ? {
+        transform: CSS.Transform.toString(transform),
+        transition,
+      }
+    : undefined;
+
+  return (
+    <div
+      ref={setRef}
+      style={style}
+      data-testid={isDraggableFolder ? "draggable-folder" : undefined}
+      className={cn(
+        "flex items-center justify-between px-3 py-1.5 cursor-pointer text-sm hover:bg-accent/50 group select-none",
+        isSelected && "bg-accent text-accent-foreground",
+        (isOver || dragOverId === folder.id) && "ring-2 ring-primary",
+        isDraggableFolder && isSortableDragging && "opacity-50",
+      )}
+      onClick={onSelect}
+      onDoubleClick={onDoubleClick}
+      onContextMenu={onContextMenu}
+    >
+      {isEditingThis ? (
+        <input
+          autoFocus
+          className="flex-1 bg-transparent border-b border-primary outline-none text-sm"
+          value={editName}
+          onChange={(e) => onEditChange(e.target.value)}
+          onBlur={onEditSubmit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") onEditSubmit();
+            if (e.key === "Escape") onEditCancel();
+          }}
+        />
+      ) : (
+        <div className="flex items-center gap-1.5 min-w-0">
+          {isDraggableFolder && (
+            <GripVertical
+              {...attributes}
+              {...listeners}
+              className="h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-60 cursor-grab"
+            />
+          )}
+          <span className="truncate">{folder.name}</span>
+          {isRunning && (
+            <Spinner className="h-3 w-3 shrink-0" />
+          )}
+        </div>
+      )}
+      {unreadCount > 0 ? (
+        <Badge variant="destructive" className="ml-2 text-xs font-bold">
+          {unreadCount}
+        </Badge>
+      ) : (
+        <Badge variant="secondary" className="ml-2 text-xs">
+          {sessionCount}
+        </Badge>
+      )}
+    </div>
+  );
+});
+
+// ── FolderTree ────────────────────────────────────────────────────────────────
+
 export function FolderTree({
   onMoveSessions,
   onCreateFolder,
@@ -61,8 +206,7 @@ export function FolderTree({
   const folderSortMode = useDashboardStore((s) => s.folderSortMode);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
-  const [dragOverId, setDragOverId] = useState<string | null>(null);
-  const [dragFolderId, setDragFolderId] = useState<string | null>(null);
+  const [dragOverId] = useState<string | null>(null); // isOver는 useDroppable에서 관리
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; folder: { id: string; name: string } } | null>(null);
@@ -92,57 +236,22 @@ export function FolderTree({
     }
   }, [allFolders, folderSortMode, catalogVersion]);
 
+  const sortedNormalFolderIds = useMemo(
+    () => sortedNormalFolders.map((f) => f.id),
+    [sortedNormalFolders],
+  );
+
   const systemFolders = useMemo(
     () => allFolders.filter((f) => SYSTEM_FOLDER_NAMES.has(f.name)),
     [allFolders, catalogVersion],
   );
 
-  const handleDrop = useCallback(async (folderId: string | null, e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOverId(null);
-    // 폴더 재정렬 DnD가 아닌 경우에만 세션 이동 처리
-    if (!e.dataTransfer.types.includes("application/x-folder-reorder")) {
-      try {
-        const ids: string[] = JSON.parse(e.dataTransfer.getData("text/plain"));
-        onMoveSessions?.(ids, folderId);
-      } catch {
-        // JSON parse error — ignore
-      }
-    }
-  }, [onMoveSessions]);
-
-  const handleFolderReorderDrop = useCallback(async (targetFolderId: string, e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOverId(null);
-    const draggedId = e.dataTransfer.getData("application/x-folder-reorder");
-    setDragFolderId(null);
-    if (!draggedId || draggedId === targetFolderId) return;
-    // 일반 폴더 순서만 재계산 (시스템 폴더 제외)
-    const currentOrder = sortedNormalFolders.map((f) => f.id);
-    const originalDraggedIdx = currentOrder.indexOf(draggedId);
-    const originalTargetIdx = currentOrder.indexOf(targetFolderId);
-    const withoutDragged = currentOrder.filter((id) => id !== draggedId);
-    const targetIdx = withoutDragged.indexOf(targetFolderId);
-    if (targetIdx === -1) {
-      withoutDragged.push(draggedId);
-    } else if (originalDraggedIdx < originalTargetIdx) {
-      // 앞→뒤 드래그: target 이후에 삽입 (target 앞에 삽입하면 원위치와 동일)
-      withoutDragged.splice(targetIdx + 1, 0, draggedId);
-    } else {
-      // 뒤→앞 드래그: target 이전에 삽입
-      withoutDragged.splice(targetIdx, 0, draggedId);
-    }
-    await onReorderFolders?.(withoutDragged);
-  }, [onReorderFolders, sortedNormalFolders]);
-
   const getSessionCount = useCallback(
     (folderId: string | null) => {
-      // folderCounts prop이 있으면 서버 집계값 우선 사용 (부분 로드 상황에서 정확성 보장)
       if (folderCounts) {
         const key = folderId === null ? "null" : folderId;
         return folderCounts[key] ?? 0;
       }
-      // fallback: sessions 배열 직접 필터링
       if (!catalog) return 0;
       return sessions.filter((s) => {
         const assignment = catalog.sessions[s.agentSessionId];
@@ -225,78 +334,34 @@ export function FolderTree({
   // normalFolders alias (기존 코드와의 호환성 유지)
   const normalFolders = sortedNormalFolders;
 
-  const renderFolder = (folder: typeof allFolders[number]) => {
+  const renderFolderItem = (folder: typeof allFolders[number]) => {
     const isSystem = SYSTEM_FOLDER_NAMES.has(folder.name);
     const isDraggableFolder = folderSortMode === "custom" && !isSystem;
     return (
-    <div
-      key={folder.id}
-      draggable={isDraggableFolder}
-      className={cn(
-        "flex items-center justify-between px-3 py-1.5 cursor-pointer text-sm hover:bg-accent/50 group select-none",
-        viewMode === "folder" && selectedFolderId === folder.id && "bg-accent text-accent-foreground",
-        dragOverId === folder.id && "ring-2 ring-primary",
-        isDraggableFolder && dragFolderId === folder.id && "opacity-50",
-      )}
-      onClick={() => handleSelectFolder(folder.id)}
-      onDoubleClick={() => handleDoubleClick(folder.id, folder.name)}
-      onContextMenu={(e) => {
-        e.preventDefault();
-        setContextMenu({ x: e.clientX, y: e.clientY, folder: { id: folder.id, name: folder.name } });
-      }}
-      onDragStart={isDraggableFolder ? (e) => {
-        e.dataTransfer.setData("application/x-folder-reorder", folder.id);
-        e.dataTransfer.effectAllowed = "move";
-        setDragFolderId(folder.id);
-      } : undefined}
-      onDragEnd={isDraggableFolder ? () => setDragFolderId(null) : undefined}
-      onDragOver={(e) => { e.preventDefault(); setDragOverId(folder.id); }}
-      onDragLeave={() => setDragOverId(null)}
-      onDrop={(e) => {
-        if (e.dataTransfer.types.includes("application/x-folder-reorder") && isDraggableFolder) {
-          handleFolderReorderDrop(folder.id, e);
-        } else {
-          handleDrop(folder.id, e);
-        }
-      }}
-    >
-      {editingId === folder.id ? (
-        <input
-          autoFocus
-          className="flex-1 bg-transparent border-b border-primary outline-none text-sm"
-          value={editName}
-          onChange={(e) => setEditName(e.target.value)}
-          onBlur={() => handleRenameSubmit(folder.id)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") handleRenameSubmit(folder.id);
-            if (e.key === "Escape") setEditingId(null);
-          }}
-        />
-      ) : (
-        <div className="flex items-center gap-1.5 min-w-0">
-          {isDraggableFolder && (
-            <GripVertical className="h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-60 cursor-grab" />
-          )}
-          <span className="truncate">{folder.name}</span>
-          {runningFolderIds.has(folder.id) && (
-            <Spinner className="h-3 w-3 shrink-0" />
-          )}
-        </div>
-      )}
-      {(() => {
-        const unreadCount = getUnreadCount(folder.id);
-        return unreadCount > 0 ? (
-          <Badge variant="destructive" className="ml-2 text-xs font-bold">
-            {unreadCount}
-          </Badge>
-        ) : (
-          <Badge variant="secondary" className="ml-2 text-xs">
-            {getSessionCount(folder.id)}
-          </Badge>
-        );
-      })()}
-    </div>
-  );
+      <FolderItem
+        key={folder.id}
+        folder={folder}
+        isSystem={isSystem}
+        isDraggableFolder={isDraggableFolder}
+        sortedNormalFolderIds={sortedNormalFolderIds}
+        isSelected={viewMode === "folder" && selectedFolderId === folder.id}
+        isEditingThis={editingId === folder.id}
+        editName={editName}
+        dragOverId={dragOverId}
+        unreadCount={getUnreadCount(folder.id)}
+        sessionCount={getSessionCount(folder.id)}
+        isRunning={runningFolderIds.has(folder.id)}
+        onSelect={() => handleSelectFolder(folder.id)}
+        onDoubleClick={() => handleDoubleClick(folder.id, folder.name)}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setContextMenu({ x: e.clientX, y: e.clientY, folder: { id: folder.id, name: folder.name } });
+        }}
+        onEditChange={setEditName}
+        onEditSubmit={() => handleRenameSubmit(folder.id)}
+        onEditCancel={() => setEditingId(null)}
+      />
+    );
   };
 
   return (
@@ -334,8 +399,10 @@ export function FolderTree({
         {/* 구분선 */}
         <div className="border-t border-border my-1 mx-3" />
 
-        {/* 일반 폴더 */}
-        {normalFolders.map(renderFolder)}
+        {/* 일반 폴더 — SortableContext로 재정렬 가능 */}
+        <SortableContext items={sortedNormalFolderIds} strategy={verticalListSortingStrategy}>
+          {normalFolders.map(renderFolderItem)}
+        </SortableContext>
 
         {/* 구분선 (일반 폴더가 1개 이상일 때만) */}
         {normalFolders.length > 0 && (
@@ -343,7 +410,7 @@ export function FolderTree({
         )}
 
         {/* 시스템 폴더 */}
-        {systemFolders.map(renderFolder)}
+        {systemFolders.map(renderFolderItem)}
       </div>
 
       <FolderDialog

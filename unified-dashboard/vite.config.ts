@@ -19,6 +19,13 @@ export default defineConfig({
       "@base-ui/react": resolve(__dirname, "../packages/soul-ui/node_modules/@base-ui/react"),
       // @xyflow/react: soul-ui 내 NodeGraph 컴포넌트 빌드 시 필요
       "@xyflow/react": resolve(__dirname, "../packages/soul-ui/node_modules/@xyflow/react"),
+      // @dnd-kit: soul-ui DashboardDndProvider/FolderTree에서 사용
+      "@dnd-kit/core": resolve(__dirname, "../packages/soul-ui/node_modules/@dnd-kit/core"),
+      "@dnd-kit/sortable": resolve(__dirname, "../packages/soul-ui/node_modules/@dnd-kit/sortable"),
+      "@dnd-kit/utilities": resolve(__dirname, "../packages/soul-ui/node_modules/@dnd-kit/utilities"),
+      // zod: soul-ui FolderDialog/FolderSettingsDialog에서 사용 (@hookform/resolvers 포함)
+      // pnpm 모듈 해석 경로 불일치로 zod/v4/core를 못 찾는 문제 해결
+      "zod": resolve(__dirname, "../packages/soul-ui/node_modules/zod"),
     },
   },
   build: {

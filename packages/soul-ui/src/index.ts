@@ -88,6 +88,10 @@ export type {
 // === Shared Mappers ===
 export { toSessionSummary } from "./shared/mappers";
 
+// === Dashboard DnD Provider ===
+export { DashboardDndProvider } from "./providers/DashboardDndProvider";
+export type { DashboardDndProviderProps } from "./providers/DashboardDndProvider";
+
 // === SSE Session Provider ===
 export { SSESessionProvider, sseSessionProvider } from "./providers/SSESessionProvider";
 

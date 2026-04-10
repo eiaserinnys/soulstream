@@ -40,6 +40,7 @@ import {
   useDashboardConfig,
   useServerStatus,
   DashboardShell,
+  DashboardDndProvider,
   FolderTree,
   RightPanel,
   ChatView,
@@ -126,6 +127,10 @@ export function DashboardLayout() {
   const [searchOpen, setSearchOpen] = useState(false);
 
   return (
+    <DashboardDndProvider
+      onMoveSessions={handleMoveSessions}
+      onReorderFolders={reorderFoldersOptimistic}
+    >
     <DashboardShell
       title="Soul Dashboard"
       leftPanel={
@@ -217,5 +222,6 @@ export function DashboardLayout() {
         </>
       }
     />
+    </DashboardDndProvider>
   );
 }
