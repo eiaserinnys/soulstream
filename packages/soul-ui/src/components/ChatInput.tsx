@@ -281,7 +281,7 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
     : isFinished
       ? "Continue the conversation..."
       : "Send a message to Claude...";
-  const buttonLabel = sending ? "..." : isLlmFinished ? "Send" : isFinished ? "Resume" : "Send";
+  const buttonLabel = sending ? "..." : isLlmFinished ? "Send" : isFinished ? "Send" : "Intervene";
   const modeIcon = isLlmFinished ? "\u{1F916}" : isFinished ? "\u{1F4AC}" : "\u270B";
   const modeLabel = isLlmFinished
     ? `LLM (${ctxCount} ctx)`
