@@ -205,6 +205,22 @@ export function useSessionListProvider(
 
         case "session_created": {
           const newSession = toSessionSummary(event.session as unknown as Record<string, unknown>);
+          // folder_id가 있으면 catalog.sessions에 낙관적으로 반영
+          // → catalog_updated 이벤트 도착 순서에 무관하게 피드 필터링이 즉시 올바르게 작동
+          // setCatalog는 catalogVersion을 올려 getFeedSessions useMemo 재계산을 트리거한다 (의도된 동작)
+          const folderId = (event as Record<string, unknown>).folder_id as string | undefined;
+          if (folderId) {
+            const state = useDashboardStore.getState();
+            if (state.catalog) {
+              state.setCatalog({
+                ...state.catalog,
+                sessions: {
+                  ...state.catalog.sessions,
+                  [newSession.agentSessionId]: { folderId, displayName: null },
+                },
+              });
+            }
+          }
           // 현재 탭 필터와 일치하는 경우에만 목록에 추가
           const currentFilter = useDashboardStore.getState().sessionTypeFilter;
           if (currentFilter === "all" || newSession.sessionType === currentFilter) {

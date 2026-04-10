@@ -241,7 +241,7 @@ class TaskManager:
 
     async def _assign_default_folder_and_broadcast(
         self, session_id: str, session_type: str, folder_id: str | None = None
-    ) -> None:
+    ) -> str | None:
         """새 세션을 폴더에 배정하고 catalog_updated를 브로드캐스트한다.
 
         folder_id가 지정되면 해당 폴더에 배치하고,
@@ -249,6 +249,9 @@ class TaskManager:
 
         부가 기능이므로, 폴더 배정이나 브로드캐스트에 실패해도
         호출자의 핵심 동작(세션 생성/등록)에 영향을 주지 않는다.
+
+        Returns:
+            배정된 folder_id. 폴더가 없거나 배정되지 않으면 None.
         """
         if folder_id is not None:
             await self._db.assign_session_to_folder(session_id, folder_id)
@@ -274,6 +277,8 @@ class TaskManager:
                 f"Failed to broadcast catalog for {session_id}",
                 exc_info=True,
             )
+
+        return folder["id"] if folder else None
 
     # === CRUD 작업 ===
 
@@ -706,14 +711,15 @@ class TaskManager:
             )
             # 폴더 배정 + catalog_updated 브로드캐스트
             # _assign_default_folder_and_broadcast 내부에서 catalog_updated가 발행된다.
-            await self._assign_default_folder_and_broadcast(
+            # 반환된 folder_id를 session_created payload에 포함하여 이벤트 순서 의존성을 제거한다.
+            assigned_folder_id = await self._assign_default_folder_and_broadcast(
                 agent_session_id,
                 task.session_type,
                 folder_id=folder_id,
             )
             # catalog_updated 이후 session_created 발행 (순서 보장 — 부가 기능)
             try:
-                await get_session_broadcaster().emit_session_created(task)
+                await get_session_broadcaster().emit_session_created(task, folder_id=assigned_folder_id)
             except Exception:
                 logger.warning(f"Failed to emit session_created for {agent_session_id}", exc_info=True)
         else:

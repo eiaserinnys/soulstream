@@ -46,8 +46,13 @@ class SessionBroadcaster(BaseSessionBroadcaster):
             pass  # 방어 로직 유지 — registry 조회 실패 시 None 반환
         return None, None
 
-    async def emit_session_created(self, task: Task) -> int:
-        """세션 생성 이벤트 발행"""
+    async def emit_session_created(self, task: Task, folder_id: str | None = None) -> int:
+        """세션 생성 이벤트 발행
+
+        Args:
+            task: 생성된 세션 태스크
+            folder_id: 배정된 폴더 ID. None이면 미분류 세션.
+        """
         agent_name, agent_portrait_url = self._resolve_agent_info(task)
         event = {
             "type": "session_created",
@@ -55,6 +60,7 @@ class SessionBroadcaster(BaseSessionBroadcaster):
                 agent_name=agent_name,
                 agent_portrait_url=agent_portrait_url,
             ),
+            "folder_id": folder_id,
         }
         return await self.broadcast(event)
 
