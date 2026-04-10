@@ -222,22 +222,39 @@ export function FolderContents({ onMoveSessions, onRenameSession, onLoadMore, ha
       if (!data) continue;
       for (const page of data.pages) allSessions.push(...page.sessions);
     }
-    return filterSessionsInFolder(allSessions, catalog, selectedFolderId);
+    // agentSessionId 기준 중복 제거 — 피드/폴더 등 여러 캐시가 동시에 존재할 때
+    // exact: false로 수집된 같은 세션이 중복 포함되는 것을 방지 (useFeedSessions와 동일 패턴)
+    const uniqueSessions = Array.from(
+      new Map(allSessions.map((s) => [s.agentSessionId, s])).values(),
+    );
+    return filterSessionsInFolder(uniqueSessions, catalog, selectedFolderId);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cacheVersion, catalog, selectedFolderId, queryClient]);
 
-  // 폴더 전환 시 자동 세션 선택 (모바일 제외)
+  const prevFolderIdRef = useRef<string | null | undefined>(undefined);
+  const parentRef = useRef<HTMLDivElement>(null);
+
+  // 폴더 전환 시 스크롤 초기화 + 자동 세션 선택 (모바일 제외)
   // ⚠️ !isMobile 조건 필수 — 모바일에서는 폴더 탭 2단계 뷰를 유지해야 함
   // (기존 selectFolder의 skipAutoSelect: isMobile 동작 대체)
   useEffect(() => {
+    // 이전 폴더와 다른 경우에만 스크롤 초기화 (같은 폴더 재선택 시 스크롤 위치 유지)
+    // prevFolderIdRef 초기값 undefined → 첫 렌더 시 초기화 생략
+    // scrollTo({ behavior: "instant" })는 DOM scrollTop을 동기적으로 변경하며,
+    // useVirtualizer는 scroll 이벤트로 자체 오프셋을 즉시 동기화하므로
+    // 가상화 리스트 렌더링이 scrollTop과 일치하는 상태로 유지된다
+    if (prevFolderIdRef.current !== undefined && prevFolderIdRef.current !== selectedFolderId) {
+      parentRef.current?.scrollTo({ top: 0, behavior: "instant" });
+    }
+    prevFolderIdRef.current = selectedFolderId;
+
     if (!isMobile && displaySessions.length > 0 && !activeSessionKey) {
       setActiveSession(displaySessions[0].agentSessionId);
       setActiveSessionSummary(displaySessions[0]);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- 폴더 전환 시에만 실행. displaySessions/activeSessionKey를 deps에 넣으면 캐시 갱신·세션 선택마다 스크롤이 초기화됨
   }, [selectedFolderId]);
 
-  const parentRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   // IntersectionObserver: 스크롤 하단 도달 시 다음 페이지 로드
