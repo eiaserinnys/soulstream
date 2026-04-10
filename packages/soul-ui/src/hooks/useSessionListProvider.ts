@@ -83,6 +83,7 @@ export function useSessionListProvider(
   const addSession = useDashboardStore((s) => s.addSession);
   const updateSession = useDashboardStore((s) => s.updateSession);
   const removeSession = useDashboardStore((s) => s.removeSession);
+  const setActiveSessionSummary = useDashboardStore((s) => s.setActiveSessionSummary);
 
   const [folderCounts, setFolderCounts] = useState<Record<string, number>>({});
 
@@ -311,6 +312,30 @@ export function useSessionListProvider(
 
           // store 동기화
           updateSession(event.agent_session_id, updates);
+
+          // activeSessionSummary 동기화
+          {
+            const storeState = useDashboardStore.getState();
+            if (event.agent_session_id === storeState.activeSessionKey) {
+              const current = storeState.activeSessionSummary;
+              if (current) {
+                setActiveSessionSummary({ ...current, ...updates });
+              } else {
+                // ⚠️ URL 직접 진입 시 current가 null → 쿼리 캐시에서 bootstrap
+                const allQueries = queryClient.getQueriesData<InfiniteData<SessionPage>>({ queryKey: ["sessions"], exact: false });
+                for (const [, data] of allQueries) {
+                  if (!data) continue;
+                  for (const page of data.pages) {
+                    const found = page.sessions.find((s) => s.agentSessionId === event.agent_session_id);
+                    if (found) {
+                      setActiveSessionSummary({ ...found, ...updates });
+                      break;
+                    }
+                  }
+                }
+              }
+            }
+          }
           break;
         }
 
@@ -363,7 +388,7 @@ export function useSessionListProvider(
           break;
       }
     },
-    [queryClient, queryKey, addSession, updateSession, removeSession],
+    [queryClient, queryKey, addSession, updateSession, removeSession, setActiveSessionSummary],
   );
 
   // --- SSE 연결 설정 ---

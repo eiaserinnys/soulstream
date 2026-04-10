@@ -5,7 +5,7 @@
  * @tanstack/react-virtual로 가상 스크롤을 적용한다.
  */
 
-import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import type React from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useDashboardStore } from "../stores/dashboard-store";
@@ -13,6 +13,7 @@ import { FeedCard } from "./FeedCard";
 import { FeedTopBar } from "./FeedTopBar";
 import { SessionContextMenu } from "./SessionContextMenu";
 import { useFlipAnimation } from "../hooks/useFlipAnimation";
+import { useFeedSessions } from "../hooks/useFeedSessions";
 
 const CARD_HEIGHT = 220;
 const CARD_GAP = 12;
@@ -33,11 +34,9 @@ export interface FeedViewProps {
 export function FeedView({ onNewSession, onLoadMore, hasMore, onRenameSession, onMoveSessions }: FeedViewProps = {}) {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const viewMode = useDashboardStore((s) => s.viewMode);
-  const sessions = useDashboardStore((s) => s.sessions);
   const catalog = useDashboardStore((s) => s.catalog);
-  const catalogVersion = useDashboardStore((s) => s.catalogVersion);
-  const getFeedSessions = useDashboardStore((s) => s.getFeedSessions);
   const setActiveSession = useDashboardStore((s) => s.setActiveSession);
+  const setActiveSessionSummary = useDashboardStore((s) => s.setActiveSessionSummary);
   const setActiveTab = useDashboardStore((s) => s.setActiveTab);
   const clearActiveSession = useDashboardStore((s) => s.clearActiveSession);
   const selectFolder = useDashboardStore((s) => s.selectFolder);
@@ -52,10 +51,8 @@ export function FeedView({ onNewSession, onLoadMore, hasMore, onRenameSession, o
     return () => clearInterval(timer);
   }, []);
 
-  // sessions 또는 catalog가 변경될 때마다 getFeedSessions 재계산 (memoized)
-  // catalogVersion을 deps에 포함하여 세션 이름 변경 시 피드 카드 즉시 반영
-  // getFeedSessions는 Zustand store 내부 get() 클로저를 반환하므로 참조 자체가 안정적 → deps 제외
-  const feedSessions = useMemo(() => getFeedSessions(), [sessions, catalogVersion]);
+  // useFeedSessions: Zustand sessions + catalog 구독 → filterFeedSessions로 반응형 계산
+  const feedSessions = useFeedSessions();
   const firstFeedId = feedSessions[0]?.agentSessionId ?? null;
 
   // 폴더명 조회 헬퍼
@@ -150,9 +147,11 @@ export function FeedView({ onNewSession, onLoadMore, hasMore, onRenameSession, o
   const handleCardClick = useCallback(
     (sessionId: string) => {
       setActiveSession(sessionId);
+      const session = feedSessions.find((s) => s.agentSessionId === sessionId);
+      if (session) setActiveSessionSummary(session);
       setActiveTab("chat"); // 모바일에서 채팅 탭으로 전환 (데스크탑에서는 무해)
     },
-    [setActiveSession, setActiveTab],
+    [setActiveSession, setActiveSessionSummary, setActiveTab, feedSessions],
   );
 
   // 카드 더블클릭 → 폴더 뷰로 전환

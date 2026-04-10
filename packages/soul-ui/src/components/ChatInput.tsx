@@ -7,7 +7,6 @@
  */
 
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import type { SessionSummary } from "@shared/types";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { flattenTree } from "../lib/flatten-tree";
 import { cn } from "../lib/cn";
@@ -59,7 +58,7 @@ interface ChatInputProps {
 
 export function ChatInput({ additionalDisabled = false, isOtherNodeSession = false, fileUploadUrl }: ChatInputProps = {}) {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
-  const sessions = useDashboardStore((s) => s.sessions);
+  const activeSessionSummary = useDashboardStore((s) => s.activeSessionSummary);
   const tree = useDashboardStore((s) => s.tree);
   const treeVersion = useDashboardStore((s) => s.treeVersion);
   const setActiveSession = useDashboardStore((s) => s.setActiveSession);
@@ -68,19 +67,15 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
 
   // 활성 세션의 상태 + LLM 메타데이터
   const sessionInfo = useMemo((): ActiveSessionInfo => {
-    if (!activeSessionKey) return { status: null, isLlm: false };
-    const session = sessions.find(
-      (s: SessionSummary) => s.agentSessionId === activeSessionKey,
-    );
-    if (!session) return { status: null, isLlm: false };
+    if (!activeSessionSummary) return { status: null, isLlm: false };
     return {
-      status: session.status,
-      isLlm: session.sessionType === "llm",
-      llmProvider: session.llmProvider,
-      llmModel: session.llmModel,
-      clientId: session.clientId,
+      status: activeSessionSummary.status,
+      isLlm: activeSessionSummary.sessionType === "llm",
+      llmProvider: activeSessionSummary.llmProvider,
+      llmModel: activeSessionSummary.llmModel,
+      clientId: activeSessionSummary.clientId,
     };
-  }, [activeSessionKey, sessions]);
+  }, [activeSessionSummary]);
 
   const isLlm = sessionInfo.isLlm;
   const isCompleted = sessionInfo.status === "completed";

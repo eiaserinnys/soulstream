@@ -119,6 +119,9 @@ export interface DashboardState {
   activeSessionKey: string | null;
   activeSession: SessionDetail | null;
 
+  /** 활성 세션의 SessionSummary 스냅샷 — sessions.find 대체용 (단일 구독 포인트) */
+  activeSessionSummary: SessionSummary | null;
+
   /** 선택된 카드 (상세 뷰에 표시) */
   selectedCardId: string | null;
 
@@ -219,6 +222,7 @@ export interface DashboardActions {
 
   // 활성 세션
   setActiveSession: (key: string | null, detail?: SessionDetail) => void;
+  setActiveSessionSummary: (summary: SessionSummary | null) => void;
 
   // 카드 선택 (nodeId: React Flow 노드의 고유 ID, switchTab: detail 탭 전환 여부)
   selectCard: (cardId: string | null, nodeId?: string | null, switchTab?: boolean) => void;
@@ -353,6 +357,7 @@ const initialState: DashboardState = {
   sessionTypeFilter: "all",
   activeSessionKey: null,
   activeSession: null,
+  activeSessionSummary: null,
   selectedCardId: null,
   selectedNodeId: null,
   selectedEventNodeData: null,
@@ -549,6 +554,8 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           selectedFolderId: folderId,
         });
       },
+
+      setActiveSessionSummary: (summary) => set({ activeSessionSummary: summary }),
 
       // --- 카드 선택 ---
 
@@ -1129,6 +1136,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           ...getSessionResetState(),
           activeSessionKey: null,
           activeSession: null,
+          activeSessionSummary: null,
           selectedFolderId,
         });
       },

@@ -39,8 +39,8 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
 
   // Resume 감지: 활성 세션이 completed/error → running으로 바뀌면 구독을 재시작.
   // subscriptionEpoch를 effect 의존성에 넣어, 값이 바뀔 때 구독 effect가 재실행됨.
-  const sessions = useDashboardStore((s) => s.sessions);
-  const activeStatus = sessions.find((s) => s.agentSessionId === sessionKey)?.status ?? null;
+  const activeSessionSummary = useDashboardStore((s) => s.activeSessionSummary);
+  const activeStatus = activeSessionSummary?.status ?? null;
   const prevStatusRef = useRef<string | null>(null);
   const [subscriptionEpoch, setSubscriptionEpoch] = useState(0);
 

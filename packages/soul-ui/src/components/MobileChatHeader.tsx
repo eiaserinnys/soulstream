@@ -14,11 +14,7 @@ export function MobileChatHeader({
   onBack: () => void;
 }) {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
-  const sessions = useDashboardStore((s) => s.sessions);
-
-  const activeSession = activeSessionKey
-    ? sessions.find((s) => s.agentSessionId === activeSessionKey)
-    : null;
+  const activeSession = useDashboardStore((s) => s.activeSessionSummary);
 
   const displayText =
     activeSession?.displayName ||

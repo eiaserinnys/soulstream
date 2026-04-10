@@ -11,10 +11,7 @@ import { ScrollArea } from "./ui/scroll-area";
 
 export function SessionInfoView() {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
-  const sessions = useDashboardStore((s) => s.sessions);
-  const metadata = activeSessionKey
-    ? sessions.find((s) => s.agentSessionId === activeSessionKey)?.metadata
-    : undefined;
+  const metadata = useDashboardStore((s) => s.activeSessionSummary?.metadata);
 
   if (!activeSessionKey) {
     return (

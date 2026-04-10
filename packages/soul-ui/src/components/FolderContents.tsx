@@ -193,6 +193,7 @@ export function FolderContents({ onMoveSessions, onRenameSession, onLoadMore, ha
   const editingSessionId = useDashboardStore((s) => s.editingSessionId);
   const setEditingSession = useDashboardStore((s) => s.setEditingSession);
   const setActiveTab = useDashboardStore((s) => s.setActiveTab);
+  const setActiveSessionSummary = useDashboardStore((s) => s.setActiveSessionSummary);
   const catalogVersion = useDashboardStore((s) => s.catalogVersion);
   const sessions = useDashboardStore((s) => s.sessions);
   const isMobile = useIsMobile();
@@ -315,6 +316,9 @@ export function FolderContents({ onMoveSessions, onRenameSession, onLoadMore, ha
                           : [session.agentSessionId]
                       }
                       onClick={(e) => {
+                        if (!e.ctrlKey && !e.metaKey && !e.shiftKey) {
+                          setActiveSessionSummary(session);
+                        }
                         toggleSessionSelection(session.agentSessionId, e.ctrlKey || e.metaKey, e.shiftKey);
                         if (isMobile) setActiveTab("chat");
                       }}

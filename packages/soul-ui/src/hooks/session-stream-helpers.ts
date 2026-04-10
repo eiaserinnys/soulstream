@@ -7,11 +7,53 @@
  */
 
 import type { InfiniteData } from "@tanstack/react-query";
-import type { SessionSummary } from "../shared/types";
+import type { SessionSummary, CatalogState } from "../shared/types";
 
 export interface SessionPage {
   sessions: SessionSummary[];
   total: number;
+}
+
+/**
+ * 피드 세션 필터링 + 정렬 순수 함수.
+ * Zustand getFeedSessions와 동일한 로직 — 훅/컴포넌트에서 import하여 사용.
+ *
+ * - llm 세션 제외
+ * - excludeFromFeed 폴더 제외 (미분류 세션은 항상 포함)
+ * - 24시간 이내 활동한 세션만 포함
+ * - updatedAt/createdAt 내림차순 정렬
+ */
+export function filterFeedSessions(
+  sessions: SessionSummary[],
+  catalog: CatalogState | null,
+): SessionSummary[] {
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  return sessions
+    .filter((s) => {
+      if (s.sessionType === "llm") return false;
+      if (catalog) {
+        const assignment = catalog.sessions[s.agentSessionId];
+        const folderId = assignment?.folderId ?? null;
+        if (folderId !== null) {
+          const folder = catalog.folders.find((f) => f.id === folderId);
+          if (folder?.settings?.excludeFromFeed) return false;
+        }
+      }
+      const t = s.lastMessage?.timestamp ?? s.updatedAt ?? s.createdAt;
+      return t != null && new Date(t).getTime() > cutoff;
+    })
+    .sort((a, b) => {
+      const ta = new Date(a.updatedAt ?? a.createdAt ?? 0).getTime();
+      const tb = new Date(b.updatedAt ?? b.createdAt ?? 0).getTime();
+      return tb - ta;
+    })
+    .map((s) => {
+      const assignment = catalog?.sessions[s.agentSessionId];
+      if (assignment?.displayName) {
+        return { ...s, displayName: assignment.displayName };
+      }
+      return s;
+    });
 }
 
 /**

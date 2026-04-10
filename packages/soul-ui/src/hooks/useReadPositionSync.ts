@@ -13,7 +13,7 @@ const DEBOUNCE_MS = 2000;
 
 export function useReadPositionSync() {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
-  const sessions = useDashboardStore((s) => s.sessions);
+  const activeSessionSummary = useDashboardStore((s) => s.activeSessionSummary);
   const updateSession = useDashboardStore((s) => s.updateSession);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -35,21 +35,15 @@ export function useReadPositionSync() {
 
   // 세션 선택 시 즉시 읽음 처리
   useEffect(() => {
-    if (!activeSessionKey) return;
-    const session = sessions.find(
-      (s) => s.agentSessionId === activeSessionKey,
-    );
-    if (session && (session.lastEventId ?? 0) > (session.lastReadEventId ?? 0)) {
-      markAsRead(activeSessionKey, session.lastEventId ?? 0);
+    if (!activeSessionKey || !activeSessionSummary) return;
+    if ((activeSessionSummary.lastEventId ?? 0) > (activeSessionSummary.lastReadEventId ?? 0)) {
+      markAsRead(activeSessionKey, activeSessionSummary.lastEventId ?? 0);
     }
   }, [activeSessionKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 활성 세션의 lastEventId 변경 시 debounce로 읽음 처리
-  const activeSession = sessions.find(
-    (s) => s.agentSessionId === activeSessionKey,
-  );
-  const activeLastEventId = activeSession?.lastEventId ?? 0;
-  const activeLastReadEventId = activeSession?.lastReadEventId ?? 0;
+  const activeLastEventId = activeSessionSummary?.lastEventId ?? 0;
+  const activeLastReadEventId = activeSessionSummary?.lastReadEventId ?? 0;
 
   useEffect(() => {
     if (!activeSessionKey || activeLastEventId === 0) return;
