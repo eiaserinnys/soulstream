@@ -36,7 +36,7 @@ export const ResponseNode = memo(function ResponseNode({ data, selected }: NodeP
         {/* Header row */}
         <div className={cn(nodeHeader, "mb-2")}>
           <span className="text-sm shrink-0">{'\u{1F4AC}'}</span>
-          <span className="text-[13px] text-node-response uppercase tracking-[0.05em] font-bold">
+          <span className="text-caption text-node-response uppercase tracking-[0.05em] font-bold">
             Response
           </span>
           {isStreaming && (

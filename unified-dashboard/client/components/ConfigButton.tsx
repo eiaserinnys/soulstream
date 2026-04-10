@@ -13,14 +13,14 @@ export function ConfigButton({ onClick }: { onClick: () => void }) {
       data-testid="config-button"
       onClick={onClick}
       className={cn(
-        "flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-medium",
+        "flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium",
         "border border-border text-muted-foreground hover:bg-input",
         "transition-colors cursor-pointer",
       )}
       title="서버 설정"
       aria-label="Open server configuration"
     >
-      <span className="text-[12px]">⚙️</span>
+      <span className="text-xs">⚙️</span>
       <span>Config</span>
     </button>
   );

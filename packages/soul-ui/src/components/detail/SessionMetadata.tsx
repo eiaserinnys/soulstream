@@ -72,11 +72,11 @@ function MetadataItem({ entry }: { entry: MetadataEntry }) {
   return (
     <div className="flex items-start gap-2 py-1">
       {shortValue && (
-        <code className="text-[12px] text-accent-blue font-mono shrink-0">
+        <code className="text-xs text-accent-blue font-mono shrink-0">
           {shortValue}
         </code>
       )}
-      <span className="text-[13px] text-foreground break-words min-w-0">
+      <span className="text-caption text-foreground break-words min-w-0">
         {entry.url ? (
           <a
             href={entry.url}
@@ -98,7 +98,7 @@ function MetadataItem({ entry }: { entry: MetadataEntry }) {
 export function SessionMetadata({ metadata }: { metadata: MetadataEntry[] }) {
   if (!metadata || metadata.length === 0) {
     return (
-      <div className="p-4 text-center text-muted-foreground text-[13px]">
+      <div className="p-4 text-center text-muted-foreground text-caption">
         No metadata recorded yet
       </div>
     );
@@ -110,10 +110,10 @@ export function SessionMetadata({ metadata }: { metadata: MetadataEntry[] }) {
     <div className="p-4 flex flex-col gap-4">
       <div className="flex items-center gap-2">
         <span className="text-base">{"\uD83D\uDCE6"}</span>
-        <div className="text-[12px] text-muted-foreground uppercase tracking-[0.05em] font-semibold">
+        <div className="text-xs text-muted-foreground uppercase tracking-[0.05em] font-semibold">
           Session Artifacts
         </div>
-        <span className="text-[11px] text-muted-foreground/60">
+        <span className="text-xs text-muted-foreground/60">
           {metadata.length}
         </span>
       </div>
@@ -131,11 +131,11 @@ export function SessionMetadata({ metadata }: { metadata: MetadataEntry[] }) {
               {dedupedEntries
                 ? dedupedEntries.map(({ entry, count }) => (
                     <div key={entry.value} className="flex items-start gap-2 py-1">
-                      <span className="text-[13px] text-foreground break-words min-w-0 font-mono text-[12px]">
+                      <span className="text-caption text-foreground break-words min-w-0 font-mono text-xs">
                         {entry.value}
                       </span>
                       {count > 1 && (
-                        <span className="text-[11px] text-muted-foreground shrink-0">{"\u00D7"}{count}</span>
+                        <span className="text-xs text-muted-foreground shrink-0">{"\u00D7"}{count}</span>
                       )}
                     </div>
                   ))

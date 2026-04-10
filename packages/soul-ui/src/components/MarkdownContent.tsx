@@ -1,7 +1,7 @@
 /**
  * MarkdownContent - 채팅 메시지용 마크다운 렌더링
  *
- * 기존 채팅 스타일(text-[15px], text-foreground)을 유지하면서
+ * 기존 채팅 스타일(text-base, text-foreground)을 유지하면서
  * 마크다운 구조(코드블록, 링크, 리스트 등)만 렌더링합니다.
  * @tailwindcss/typography (prose)를 사용하지 않고 커스텀 컴포넌트로 스타일링합니다.
  */
@@ -21,16 +21,16 @@ const components: Components = {
   // 블록 요소
   p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
   h1: ({ children }) => (
-    <h1 className="text-[17px] font-bold mb-2 mt-3 first:mt-0">{children}</h1>
+    <h1 className="text-xl font-bold mb-2 mt-3 first:mt-0">{children}</h1>
   ),
   h2: ({ children }) => (
-    <h2 className="text-[16px] font-bold mb-2 mt-3 first:mt-0">{children}</h2>
+    <h2 className="text-base font-bold mb-2 mt-3 first:mt-0">{children}</h2>
   ),
   h3: ({ children }) => (
-    <h3 className="text-[15px] font-bold mb-1.5 mt-2 first:mt-0">{children}</h3>
+    <h3 className="text-base font-bold mb-1.5 mt-2 first:mt-0">{children}</h3>
   ),
   h4: ({ children }) => (
-    <h4 className="text-[15px] font-semibold mb-1 mt-2 first:mt-0">{children}</h4>
+    <h4 className="text-base font-semibold mb-1 mt-2 first:mt-0">{children}</h4>
   ),
 
   // 리스트
@@ -65,7 +65,7 @@ const components: Components = {
 
   // 코드 — 기존 CollapsibleContent/ToolCallItem의 <pre> 스타일과 통일
   pre: ({ children }) => (
-    <pre className="text-[12px] text-muted-foreground bg-input rounded px-2 py-1.5 my-1.5 whitespace-pre-wrap break-words overflow-auto max-h-60 font-mono">
+    <pre className="text-xs text-muted-foreground bg-input rounded px-2 py-1.5 my-1.5 whitespace-pre-wrap break-words overflow-auto max-h-60 font-mono">
       {children}
     </pre>
   ),
@@ -82,7 +82,7 @@ const components: Components = {
     // 인라인 코드
     return (
       <code
-        className="text-[13px] bg-input rounded px-1 py-0.5 font-mono"
+        className="text-caption bg-input rounded px-1 py-0.5 font-mono"
         {...props}
       >
         {children}
@@ -130,7 +130,7 @@ const components: Components = {
   // 테이블
   table: ({ children }) => (
     <div className="overflow-auto my-2">
-      <table className="text-[13px] border-collapse w-full">{children}</table>
+      <table className="text-caption border-collapse w-full">{children}</table>
     </div>
   ),
   th: ({ children }) => (
@@ -154,7 +154,7 @@ const compactComponents: Components = {
   ol: ({ children }) => <ol className="mb-1 last:mb-0 ml-3 list-decimal">{children}</ol>,
   li: ({ children }) => <li className="mb-0">{children}</li>,
   pre: ({ children }) => (
-    <pre className="text-[11px] text-muted-foreground bg-input rounded px-1.5 py-1 my-1 whitespace-pre-wrap break-words overflow-auto max-h-24 font-mono">
+    <pre className="text-xs text-muted-foreground bg-input rounded px-1.5 py-1 my-1 whitespace-pre-wrap break-words overflow-auto max-h-24 font-mono">
       {children}
     </pre>
   ),
@@ -164,7 +164,7 @@ const compactComponents: Components = {
       return <code className={className} {...props}>{children}</code>;
     }
     return (
-      <code className="text-[12px] bg-input rounded px-0.5 py-0 font-mono" {...props}>
+      <code className="text-xs bg-input rounded px-0.5 py-0 font-mono" {...props}>
         {children}
       </code>
     );

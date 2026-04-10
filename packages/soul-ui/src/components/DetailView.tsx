@@ -30,18 +30,18 @@ function CompleteDetail({ card }: { card: EventTreeNode }) {
     <div className="p-4 flex flex-col gap-3">
       <div className="flex items-center gap-2">
         <span className="text-base">{"\u2699\uFE0F"}</span>
-        <div className="text-[12px] text-success uppercase tracking-[0.05em] font-semibold">
+        <div className="text-xs text-success uppercase tracking-[0.05em] font-semibold">
           Complete
         </div>
       </div>
       <pre
-        className="text-[14px] text-foreground whitespace-pre-wrap break-words leading-relaxed m-0"
+        className="text-base text-foreground whitespace-pre-wrap break-words leading-relaxed m-0"
         style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" }}
       >
         {card.content || "Session completed"}
       </pre>
       {card.content && (
-        <div className="text-[11px] text-muted-foreground/60 text-right">
+        <div className="text-xs text-muted-foreground/60 text-right">
           {card.content.length.toLocaleString()} chars
         </div>
       )}
@@ -112,7 +112,7 @@ function EventNodeDetail({
       <div className="flex items-center gap-2">
         <span className="text-base">{isUser ? "\u{1F464}" : "\u270B"}</span>
         <div
-          className={`text-[12px] font-semibold uppercase tracking-[0.05em] ${isUser ? "text-accent-blue" : "text-accent-orange"}`}
+          className={`text-xs font-semibold uppercase tracking-[0.05em] ${isUser ? "text-accent-blue" : "text-accent-orange"}`}
         >
           {isUser ? "User Message" : "Intervention"}
         </div>
@@ -121,14 +121,14 @@ function EventNodeDetail({
       {/* From */}
       <div>
         <SectionLabel>From</SectionLabel>
-        <div className="text-[14px] text-foreground font-medium">
+        <div className="text-base text-foreground font-medium">
           {data.label}
         </div>
       </div>
 
       {/* Full content */}
       <pre
-        className="text-[14px] text-foreground whitespace-pre-wrap break-words leading-relaxed m-0"
+        className="text-base text-foreground whitespace-pre-wrap break-words leading-relaxed m-0"
         style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" }}
       >
         {data.content || "(empty)"}
@@ -136,7 +136,7 @@ function EventNodeDetail({
 
       {/* Character count */}
       {data.content && (
-        <div className="text-[11px] text-muted-foreground/60 text-right">
+        <div className="text-xs text-muted-foreground/60 text-right">
           {data.content.length.toLocaleString()} chars
         </div>
       )}
@@ -159,7 +159,7 @@ function ResultNodeDetail({ data }: { data: SelectedEventNodeData }) {
       {/* Header */}
       <div className="flex items-center gap-1.5 mb-3">
         <span className="w-1.5 h-1.5 rounded-full bg-success" />
-        <span className="text-[12px] font-semibold uppercase tracking-[0.05em] text-success">
+        <span className="text-xs font-semibold uppercase tracking-[0.05em] text-success">
           Session Complete
         </span>
       </div>
@@ -170,19 +170,19 @@ function ResultNodeDetail({ data }: { data: SelectedEventNodeData }) {
           {durationStr && (
             <div>
               <SectionLabel>Duration</SectionLabel>
-              <div className="text-[14px] text-foreground font-medium">{durationStr}</div>
+              <div className="text-base text-foreground font-medium">{durationStr}</div>
             </div>
           )}
           {costStr && (
             <div>
               <SectionLabel>Cost</SectionLabel>
-              <div className="text-[14px] text-foreground font-medium">{costStr}</div>
+              <div className="text-base text-foreground font-medium">{costStr}</div>
             </div>
           )}
           {data.usage && (
             <div className="col-span-2">
               <SectionLabel>Tokens</SectionLabel>
-              <div className="text-[14px] text-foreground font-medium">
+              <div className="text-base text-foreground font-medium">
                 {data.usage.input_tokens.toLocaleString()} in / {data.usage.output_tokens.toLocaleString()} out
               </div>
             </div>
@@ -211,7 +211,7 @@ function SystemNodeDetail({ data }: { data: SelectedEventNodeData }) {
       <div className="flex items-center gap-1.5 mb-3">
         <span className={`w-1.5 h-1.5 rounded-full ${isError ? "bg-accent-red" : "bg-muted-foreground"}`} />
         <span
-          className={`text-[12px] font-semibold uppercase tracking-[0.05em] ${isError ? "text-accent-red" : "text-muted-foreground"}`}
+          className={`text-xs font-semibold uppercase tracking-[0.05em] ${isError ? "text-accent-red" : "text-muted-foreground"}`}
         >
           {isError ? "Error" : data.label || "System"}
         </span>
@@ -248,7 +248,7 @@ export function DetailView() {
     >
       {!hasSelection && (
         <div className="flex-1 flex items-center justify-center h-full">
-          <div className="text-muted-foreground text-[13px]">
+          <div className="text-muted-foreground text-caption">
             Select a node to view details
           </div>
         </div>

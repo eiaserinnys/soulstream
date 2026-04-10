@@ -96,17 +96,17 @@ function SearchResultRow({
       )}
     >
       <div className="flex items-center gap-2 mb-1">
-        <span className="text-[11px] font-mono text-muted-foreground bg-input px-1.5 py-0.5 rounded shrink-0">
+        <span className="text-xs font-mono text-muted-foreground bg-input px-1.5 py-0.5 rounded shrink-0">
           {eventTypeLabel(result.event_type)}
         </span>
-        <span className="text-[11px] text-muted-foreground truncate font-mono">
+        <span className="text-xs text-muted-foreground truncate font-mono">
           {result.session_id.slice(0, 20)}…
         </span>
-        <span className="text-[11px] text-muted-foreground/60 ml-auto shrink-0">
+        <span className="text-xs text-muted-foreground/60 ml-auto shrink-0">
           #{result.event_id}
         </span>
       </div>
-      <p className="text-[13px] text-foreground line-clamp-2 break-words">
+      <p className="text-caption text-foreground line-clamp-2 break-words">
         {result.preview}
       </p>
     </button>
@@ -189,7 +189,7 @@ export function SearchModal({ open, onOpenChange }: SearchModalProps) {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               className={cn(
-                "w-full rounded-lg border border-border bg-background pl-9 pr-3 py-2 text-[14px]",
+                "w-full rounded-lg border border-border bg-background pl-9 pr-3 py-2 text-base",
                 "focus:outline-none focus:ring-1 focus:ring-ring",
                 "placeholder:text-muted-foreground",
               )}
@@ -211,33 +211,33 @@ export function SearchModal({ open, onOpenChange }: SearchModalProps) {
                   }
                   className="w-3.5 h-3.5 rounded accent-primary"
                 />
-                <span className="text-[12px] text-muted-foreground">{label}</span>
+                <span className="text-xs text-muted-foreground">{label}</span>
               </label>
             ))}
           </div>
 
           {/* 상태 표시 */}
           {loading && (
-            <div className="flex items-center justify-center py-6 text-muted-foreground text-[13px]">
+            <div className="flex items-center justify-center py-6 text-muted-foreground text-caption">
               <span className="inline-block w-4 h-4 border border-muted-foreground/40 border-t-muted-foreground rounded-full animate-spin mr-2" />
               검색 중...
             </div>
           )}
 
           {error && !loading && (
-            <div className="py-4 text-center text-[13px] text-accent-red">
+            <div className="py-4 text-center text-caption text-accent-red">
               ❌ {error}
             </div>
           )}
 
           {!loading && !error && results.length === 0 && query.trim() && (
-            <div className="py-6 text-center text-[13px] text-muted-foreground">
+            <div className="py-6 text-center text-caption text-muted-foreground">
               검색 결과가 없습니다
             </div>
           )}
 
           {!loading && !error && results.length === 0 && !query.trim() && (
-            <div className="py-6 text-center text-[13px] text-muted-foreground">
+            <div className="py-6 text-center text-caption text-muted-foreground">
               위 필터를 선택하여 세션 기록을 검색합니다
             </div>
           )}
@@ -245,7 +245,7 @@ export function SearchModal({ open, onOpenChange }: SearchModalProps) {
           {/* 결과 목록 */}
           {!loading && results.length > 0 && (
             <div className="space-y-1 max-h-[400px] overflow-y-auto">
-              <div className="text-[11px] text-muted-foreground mb-2 px-1">
+              <div className="text-xs text-muted-foreground mb-2 px-1">
                 {results.length}개 결과
               </div>
               {results.map((result) => (

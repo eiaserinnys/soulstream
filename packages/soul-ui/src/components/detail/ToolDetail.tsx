@@ -85,11 +85,11 @@ export function ToolDetail({ card }: ToolDetailProps) {
       {/* Header */}
       <div className="flex items-center gap-2 shrink-0">
         <span className="text-base">{"\u{1F527}"}</span>
-        <div className="text-[12px] uppercase tracking-[0.05em] font-semibold text-accent-amber">
+        <div className="text-xs uppercase tracking-[0.05em] font-semibold text-accent-amber">
           Tool Call
         </div>
         {!card.completed && (
-          <span className="ml-auto flex items-center gap-1.5 text-[12px] text-accent-amber">
+          <span className="ml-auto flex items-center gap-1.5 text-xs text-accent-amber">
             <span className="w-1.5 h-1.5 rounded-full bg-accent-amber animate-[pulse_2s_infinite]" />
             Running...
           </span>
@@ -99,7 +99,7 @@ export function ToolDetail({ card }: ToolDetailProps) {
       {/* Tool name */}
       <div className="shrink-0">
         <SectionLabel>Tool</SectionLabel>
-        <div className="text-[15px] text-foreground font-semibold font-mono">
+        <div className="text-base text-foreground font-semibold font-mono">
           {card.toolName}
         </div>
       </div>

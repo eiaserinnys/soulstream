@@ -512,7 +512,7 @@ function NodeGraphInner() {
   if (!activeSessionKey) {
     return (
       <div className="flex-1 flex items-center justify-center h-full">
-        <div className="text-muted-foreground text-[13px]">Select a session</div>
+        <div className="text-muted-foreground text-caption">Select a session</div>
       </div>
     );
   }
@@ -520,7 +520,7 @@ function NodeGraphInner() {
   if (!tree) {
     return (
       <div className="flex-1 flex items-center justify-center h-full">
-        <div className="text-muted-foreground text-[13px]">
+        <div className="text-muted-foreground text-caption">
           <span className="inline-block w-1.5 h-1.5 rounded-full bg-success animate-[pulse_2s_infinite] mr-2 align-middle" />
           Waiting for events...
         </div>
@@ -582,7 +582,7 @@ function NodeGraphInner() {
               );
               downloadDump(dump);
             }}
-            className="flex items-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-medium transition-colors border shadow-md bg-popover border-border text-muted-foreground hover:bg-input"
+            className="flex items-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium transition-colors border shadow-md bg-popover border-border text-muted-foreground hover:bg-input"
             title="Dump graph state (Ctrl+Shift+D)"
           >
             Dump
@@ -590,7 +590,7 @@ function NodeGraphInner() {
           <button
             onClick={handleToggleAutoScroll}
             className={cn(
-              "flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-colors",
+              "flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors",
               "border shadow-md",
               autoScroll
                 ? "bg-accent-blue/15 border-accent-blue/30 text-accent-blue hover:bg-accent-blue/25"
@@ -654,7 +654,7 @@ function GraphHeader() {
       <span>Execution Flow</span>
       <div className="flex items-center gap-2">
         {streamingCount > 0 && (
-          <span className="flex items-center gap-1 text-success font-normal text-[11px] normal-case">
+          <span className="flex items-center gap-1 text-success font-normal text-xs normal-case">
             <span className="w-[5px] h-[5px] rounded-full bg-success animate-[pulse_2s_infinite]" />
             {streamingCount} active
           </span>

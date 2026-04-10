@@ -343,11 +343,11 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
         <div className="flex-1 flex flex-col gap-1">
           {/* Labels row */}
           <div className="flex justify-between items-center">
-            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground uppercase tracking-[0.05em] font-semibold">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground uppercase tracking-[0.05em] font-semibold">
               <span className="text-xs">{modeIcon}</span>
               {modeLabel}
             </div>
-            <div className="text-[10px] text-muted-foreground/60">
+            <div className="text-xs text-muted-foreground/60">
               Ctrl+Enter to send
             </div>
           </div>
@@ -365,7 +365,7 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
             rows={1}
             className={cn(
               "w-full bg-input border border-border rounded-md py-1.5 px-2.5",
-              "text-[16px] sm:text-[15px] text-foreground font-sans resize-none outline-none",
+              "text-base sm:text-base text-foreground font-sans resize-none outline-none",
               "h-9 sm:h-8 max-h-[120px] leading-[1.4] transition-colors duration-150",
               borderColor,
             )}
@@ -377,7 +377,7 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
           onClick={sendMessage}
           disabled={isDisabled}
           size="sm"
-          className={cn("self-end h-9 sm:h-8 text-[16px] sm:text-[14px]", buttonColor)}
+          className={cn("self-end h-9 sm:h-8 text-base sm:text-sm", buttonColor)}
         >
           {buttonLabel}
         </Button>
@@ -385,14 +385,14 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
 
       {/* Other node session notice */}
       {isOtherNodeSession && (
-        <div className="text-[11px] text-muted-foreground py-1 px-2 text-center">
+        <div className="text-xs text-muted-foreground py-1 px-2 text-center">
           다른 노드에서 실행된 세션은 재개하거나 개입할 수 없습니다
         </div>
       )}
 
       {/* Error */}
       {error && (
-        <div className="text-[11px] text-accent-red py-1 px-2 rounded bg-accent-red/8">
+        <div className="text-xs text-accent-red py-1 px-2 rounded bg-accent-red/8">
           {error}
         </div>
       )}

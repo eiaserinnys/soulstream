@@ -80,7 +80,7 @@ function FileTypeIcon({ label }: { label: string }) {
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
         <polyline points="14 2 14 8 20 8" />
       </svg>
-      <span className="text-[9px] font-bold text-muted-foreground/60 uppercase tracking-wide">
+      <span className="text-xs font-bold text-muted-foreground/60 uppercase tracking-wide">
         {label}
       </span>
     </div>
@@ -110,7 +110,7 @@ export function FileAttachmentPreview({
       ) : (
         <div className="w-full h-full flex flex-col items-center justify-center gap-0.5 p-1">
           <FileTypeIcon label={fileTypeLabel} />
-          <span className="text-[9px] text-muted-foreground/50 w-full text-center truncate px-1 leading-tight">
+          <span className="text-xs text-muted-foreground/50 w-full text-center truncate px-1 leading-tight">
             {truncatedName}
           </span>
         </div>

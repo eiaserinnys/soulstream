@@ -24,7 +24,7 @@ export function NodeBadge({ nodeId, className }: NodeBadgeProps) {
   return (
     <Badge
       variant="secondary"
-      className={cn("text-[10px] px-1 py-0", className)}
+      className={cn("text-xs px-1 py-0", className)}
       style={{ backgroundColor: bg, color }}
     >
       {nodeId}

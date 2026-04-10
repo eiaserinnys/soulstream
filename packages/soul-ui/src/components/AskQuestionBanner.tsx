@@ -80,9 +80,9 @@ function AskQuestionBannerInner({ node, sessionId }: AskQuestionBannerInnerProps
         <div className="text-center text-muted-foreground">⏱️ 시간 초과</div>
       ) : (
         <>
-          <div className="mb-2 text-[13px] text-muted-foreground">🔔 Claude가 질문합니다</div>
+          <div className="mb-2 text-caption text-muted-foreground">🔔 Claude가 질문합니다</div>
           {question.header && (
-            <div className="mb-1 text-[11px] text-muted-foreground uppercase tracking-wide">
+            <div className="mb-1 text-xs text-muted-foreground uppercase tracking-wide">
               {question.header}
             </div>
           )}
@@ -94,7 +94,7 @@ function AskQuestionBannerInner({ node, sessionId }: AskQuestionBannerInnerProps
                 onClick={() => handleSelect(opt.label)}
                 disabled={!!selectedAnswer}
                 className={cn(
-                  "px-3.5 py-1.5 rounded border text-[13px] transition-colors",
+                  "px-3.5 py-1.5 rounded border text-caption transition-colors",
                   selectedAnswer === opt.label
                     ? "bg-success border-success text-white"
                     : "border-border bg-popover text-foreground hover:bg-muted/50",
@@ -103,13 +103,13 @@ function AskQuestionBannerInner({ node, sessionId }: AskQuestionBannerInnerProps
               >
                 {opt.label}
                 {opt.description && (
-                  <span className="ml-1 opacity-60 text-[11px]">— {opt.description}</span>
+                  <span className="ml-1 opacity-60 text-xs">— {opt.description}</span>
                 )}
               </button>
             ))}
           </div>
           {!isEffectivelyExpired && (
-            <div className="text-[12px] text-muted-foreground text-right">
+            <div className="text-xs text-muted-foreground text-right">
               ⏱️ {formatTime(remainingSec)}
             </div>
           )}

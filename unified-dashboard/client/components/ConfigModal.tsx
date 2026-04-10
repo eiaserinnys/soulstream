@@ -245,7 +245,7 @@ function CategorySection({
                   </span>
                 )}
               </div>
-              <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">
+              <p className="text-xs text-muted-foreground leading-tight mt-0.5">
                 {field.description}
               </p>
             </div>

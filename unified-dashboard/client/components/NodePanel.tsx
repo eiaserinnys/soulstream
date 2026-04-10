@@ -56,7 +56,7 @@ export function NodePanel() {
                 }
               >
                 <div
-                  className="w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold font-mono shrink-0"
+                  className="w-5 h-5 rounded flex items-center justify-center text-xs font-bold font-mono shrink-0"
                   style={{
                     background: `hsl(${hue}, 12%, ${isDark ? "28%" : "88%"})`,
                     color: `hsl(${hue}, ${isDark ? "18%, 72%" : "30%, 35%"})`,
@@ -76,7 +76,7 @@ export function NodePanel() {
                       : "bg-success shadow-[0_0_6px_rgba(16,185,129,0.3)]",
                   )}
                 />
-                <span className="text-[10px] text-muted-foreground">
+                <span className="text-xs text-muted-foreground">
                   {isExpanded ? "▲" : "▼"}
                 </span>
               </div>

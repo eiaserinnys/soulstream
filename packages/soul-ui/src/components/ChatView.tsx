@@ -126,7 +126,7 @@ const ShowFullContentButton = memo(function ShowFullContentButton({
       <button
         onClick={onClick}
         disabled={loading}
-        className="text-[11px] text-accent-blue hover:text-accent-blue/80 flex items-center gap-1 disabled:opacity-50"
+        className="text-xs text-accent-blue hover:text-accent-blue/80 flex items-center gap-1 disabled:opacity-50"
       >
         {loading ? (
           <>
@@ -138,7 +138,7 @@ const ShowFullContentButton = memo(function ShowFullContentButton({
         )}
       </button>
       {error && (
-        <span className="text-[11px] text-accent-red">{error}</span>
+        <span className="text-xs text-accent-red">{error}</span>
       )}
     </div>
   );
@@ -196,17 +196,17 @@ const CollapsibleContent = memo(function CollapsibleContent({
       {needsCollapse ? (
         <button
           onClick={() => setExpanded((v) => !v)}
-          className="text-[13px] text-muted-foreground hover:text-foreground mb-0.5 flex items-center gap-1"
+          className="text-caption text-muted-foreground hover:text-foreground mb-0.5 flex items-center gap-1"
         >
-          <span className="text-[11px]">{expanded ? "\u25BC" : "\u25B6"}</span>
+          <span className="text-xs">{expanded ? "\u25BC" : "\u25B6"}</span>
           {label}
         </button>
       ) : (
-        <span className="text-[13px] text-muted-foreground mb-0.5 flex items-center gap-1">
+        <span className="text-caption text-muted-foreground mb-0.5 flex items-center gap-1">
           {label}
         </span>
       )}
-      <pre className="text-[12px] text-muted-foreground bg-input rounded px-2 py-1.5 whitespace-pre-wrap break-words overflow-auto max-h-60 font-mono">
+      <pre className="text-xs text-muted-foreground bg-input rounded px-2 py-1.5 whitespace-pre-wrap break-words overflow-auto max-h-60 font-mono">
         {expanded || !needsCollapse ? content : preview}
       </pre>
     </div>
@@ -220,9 +220,9 @@ const ContextBlock = memo(function ContextBlock({ items }: { items: ContextItem[
     <div className="mt-1.5">
       <button
         onClick={() => setExpanded((v) => !v)}
-        className="text-[13px] text-muted-foreground hover:text-foreground flex items-center gap-1.5"
+        className="text-caption text-muted-foreground hover:text-foreground flex items-center gap-1.5"
       >
-        <span className="text-[11px]">{expanded ? "\u25BC" : "\u25B6"}</span>
+        <span className="text-xs">{expanded ? "\u25BC" : "\u25B6"}</span>
         <span>{"\u{1F4CB}"}</span>
         <span className="font-medium">Context ({items.length})</span>
       </button>
@@ -230,7 +230,7 @@ const ContextBlock = memo(function ContextBlock({ items }: { items: ContextItem[
         <div className="ml-4 mt-1 space-y-1.5">
           {items.map((item: ContextItem) => (
             <div key={item.key}>
-              <div className="text-[11px] text-muted-foreground uppercase tracking-wide mb-0.5">
+              <div className="text-xs text-muted-foreground uppercase tracking-wide mb-0.5">
                 {item.label}
               </div>
               <ContextContentRenderer content={item.content} />
@@ -282,16 +282,16 @@ const UserMessage = memo(function UserMessage({ msg, llmContext }: { msg: ChatMe
       />
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-1.5 mb-0.5">
-          <span className="text-[15px] font-bold text-accent-blue uppercase tracking-wide">
+          <span className="text-base font-bold text-accent-blue uppercase tracking-wide">
             {displayName}
           </span>
           {displayId && (
-            <span className="text-[11px] text-muted-foreground">
+            <span className="text-xs text-muted-foreground">
               {displayId}
             </span>
           )}
         </div>
-        <div className="text-[15px] text-foreground break-words">
+        <div className="text-base text-foreground break-words">
           <MarkdownContent content={msg.content} />
         </div>
         {msg.contextItems && msg.contextItems.length > 0 && (
@@ -311,14 +311,14 @@ const SystemPromptMessage = memo(function SystemPromptMessage({ msg }: { msg: Ch
       <div className="flex-1 min-w-0">
         <button
           onClick={() => setExpanded((v) => !v)}
-          className="text-[13px] text-muted-foreground hover:text-foreground flex items-center gap-1.5"
+          className="text-caption text-muted-foreground hover:text-foreground flex items-center gap-1.5"
         >
-          <span className="text-[11px]">{expanded ? "\u25BC" : "\u25B6"}</span>
+          <span className="text-xs">{expanded ? "\u25BC" : "\u25B6"}</span>
           <span>{"\u2699\uFE0F"}</span>
           <span className="font-medium">시스템 프롬프트</span>
         </button>
         {expanded && (
-          <pre className="text-[12px] text-muted-foreground bg-input rounded px-2 py-1.5 mt-1 whitespace-pre-wrap break-words overflow-auto max-h-60 font-mono">
+          <pre className="text-xs text-muted-foreground bg-input rounded px-2 py-1.5 mt-1 whitespace-pre-wrap break-words overflow-auto max-h-60 font-mono">
             {msg.content}
           </pre>
         )}
@@ -345,16 +345,16 @@ const InterventionMessage = memo(function InterventionMessage({ msg }: { msg: Ch
       />
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-1.5 mb-0.5">
-          <span className="text-[15px] font-bold text-accent-orange uppercase tracking-wide">
+          <span className="text-base font-bold text-accent-orange uppercase tracking-wide">
             {displayName}
           </span>
           {displayId && (
-            <span className="text-[11px] text-muted-foreground">
+            <span className="text-xs text-muted-foreground">
               {displayId}
             </span>
           )}
         </div>
-        <div className="text-[15px] text-foreground whitespace-pre-wrap break-words">{msg.content}</div>
+        <div className="text-base text-foreground whitespace-pre-wrap break-words">{msg.content}</div>
       </div>
     </div>
   );
@@ -413,27 +413,27 @@ const AssistantMessage = memo(function AssistantMessage({ msg, llmContext }: { m
       />
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-1.5 mb-0.5">
-          <span className="text-[15px] font-bold text-foreground uppercase tracking-wide">
+          <span className="text-base font-bold text-foreground uppercase tracking-wide">
             {displayName}
           </span>
           {displayId && (
-            <span className="text-[11px] text-muted-foreground">
+            <span className="text-xs text-muted-foreground">
               {displayId}
             </span>
           )}
           {isLlm && tokenInfo && (
-            <span className="text-[11px] text-muted-foreground/70 font-normal normal-case">
+            <span className="text-xs text-muted-foreground/70 font-normal normal-case">
               {tokenInfo}
             </span>
           )}
         </div>
         {msg.isStreaming ? (
-          <div className="text-[15px] text-foreground whitespace-pre-wrap break-words">
+          <div className="text-base text-foreground whitespace-pre-wrap break-words">
             {msg.content}
             <span className="inline-block w-1.5 h-3.5 bg-foreground/60 ml-0.5 animate-pulse" />
           </div>
         ) : (
-          <div className="text-[15px] text-foreground break-words">
+          <div className="text-base text-foreground break-words">
             <MarkdownContent content={msg.content} />
           </div>
         )}
@@ -456,24 +456,24 @@ const ToolCallItem = memo(function ToolCallItem({ msg }: { msg: ChatMessage }) {
       <button
         onClick={() => setExpanded((v) => !v)}
         className={cn(
-          "text-[13px] font-mono flex items-center gap-1",
+          "text-caption font-mono flex items-center gap-1",
           msg.isError ? "text-accent-red" : "text-muted-foreground",
           "hover:text-foreground",
         )}
       >
-        <span className="text-[11px]">{expanded ? "\u25BC" : "\u25B6"}</span>
+        <span className="text-xs">{expanded ? "\u25BC" : "\u25B6"}</span>
         <span>{statusIcon}</span>
         <span className="truncate">{msg.content}</span>
       </button>
       {expanded && msg.toolInput && (
-        <pre className="text-[12px] text-muted-foreground bg-input rounded px-2 py-1.5 ml-5 mt-0.5 whitespace-pre-wrap break-words overflow-auto max-h-40 font-mono">
+        <pre className="text-xs text-muted-foreground bg-input rounded px-2 py-1.5 ml-5 mt-0.5 whitespace-pre-wrap break-words overflow-auto max-h-40 font-mono">
           {typeof msg.toolInput === "string" ? msg.toolInput : JSON.stringify(msg.toolInput, null, 2)}
         </pre>
       )}
       {expanded && displayContent && (
         <div className="ml-5 mt-0.5">
           <pre className={cn(
-            "text-[12px] bg-input rounded px-2 py-1.5 whitespace-pre-wrap break-words overflow-auto max-h-40 font-mono",
+            "text-xs bg-input rounded px-2 py-1.5 whitespace-pre-wrap break-words overflow-auto max-h-40 font-mono",
             msg.isError ? "text-accent-red/80" : "text-muted-foreground",
           )}>
             {displayContent}
@@ -499,13 +499,13 @@ const ToolCallGroup = memo(function ToolCallGroup({ messages }: { messages: Chat
       <div className="flex-1 min-w-0">
         <button
           onClick={() => setExpanded((v) => !v)}
-          className="text-[13px] text-muted-foreground hover:text-foreground flex items-center gap-1.5"
+          className="text-caption text-muted-foreground hover:text-foreground flex items-center gap-1.5"
         >
-          <span className="text-[11px]">{expanded ? "\u25BC" : "\u25B6"}</span>
+          <span className="text-xs">{expanded ? "\u25BC" : "\u25B6"}</span>
           <span>{"\u{1F527}"}</span>
           <span className="font-medium">Tool Calls ({messages.length})</span>
-          {hasError && <span className="text-accent-red text-[10px]">{"\u25CF"} error</span>}
-          {!hasError && allDone && <span className="text-success text-[10px]">{"\u25CF"} done</span>}
+          {hasError && <span className="text-accent-red text-xs">{"\u25CF"} error</span>}
+          {!hasError && allDone && <span className="text-success text-xs">{"\u25CF"} done</span>}
         </button>
         {expanded && (
           <div className="ml-4 mt-1 space-y-0.5">
@@ -526,7 +526,7 @@ const ToolMessage = memo(function ToolMessage({ msg }: { msg: ChatMessage }) {
       <span className="w-8 shrink-0" />
       <div className={cn(
         "flex-1 min-w-0 flex items-center gap-1",
-        "text-[12px] font-mono truncate",
+        "text-xs font-mono truncate",
         msg.isError ? "text-accent-red" : "text-muted-foreground",
       )}>
         <span>{"\u{1F527}"}</span>
@@ -557,7 +557,7 @@ const SystemMessage = memo(function SystemMessage({ msg }: { msg: ChatMessage })
     <div className="flex gap-2 px-3 py-1" data-tree-node-id={msg.treeNodeId}>
       <span className="w-8 shrink-0" />
       <div className={cn(
-        "flex-1 min-w-0 text-[12px] px-2 py-1 rounded text-center",
+        "flex-1 min-w-0 text-xs px-2 py-1 rounded text-center",
         isError
           ? "text-accent-red bg-accent-red/8"
           : isResult
@@ -609,15 +609,15 @@ const ChatInputRequest = memo(function ChatInputRequest({
     <div className="flex gap-2 px-3 py-1.5" data-tree-node-id={msg.treeNodeId}>
       <span className="w-8 shrink-0 text-center">🔔</span>
       <div className="flex-1 min-w-0">
-        <div className="text-[13px] text-muted-foreground mb-1">Claude가 질문합니다</div>
+        <div className="text-caption text-muted-foreground mb-1">Claude가 질문합니다</div>
         {question.header && (
-          <div className="text-[11px] text-muted-foreground uppercase tracking-wide mb-1">{question.header}</div>
+          <div className="text-xs text-muted-foreground uppercase tracking-wide mb-1">{question.header}</div>
         )}
-        <div className="text-[14px] font-medium text-foreground mb-2">{question.question}</div>
+        <div className="text-base font-medium text-foreground mb-2">{question.question}</div>
         {isTimedOut ? (
-          <div className="text-[12px] text-muted-foreground">⏱️ 시간 초과</div>
+          <div className="text-xs text-muted-foreground">⏱️ 시간 초과</div>
         ) : isDone ? (
-          <div className="text-[12px] text-success">✅ {selectedAnswer || '응답 완료'}</div>
+          <div className="text-xs text-success">✅ {selectedAnswer || '응답 완료'}</div>
         ) : (
           <>
             <div className="flex flex-wrap gap-1.5 mb-1.5">
@@ -627,19 +627,19 @@ const ChatInputRequest = memo(function ChatInputRequest({
                   onClick={() => handleSelect(opt.label)}
                   disabled={isDisabled}
                   className={cn(
-                    "px-3 py-1 rounded text-[12px] border transition-colors",
+                    "px-3 py-1 rounded text-xs border transition-colors",
                     "border-border bg-input text-foreground",
                     "hover:bg-muted/50 disabled:opacity-50 disabled:cursor-default",
                   )}
                 >
                   {opt.label}
                   {opt.description && (
-                    <span className="text-muted-foreground ml-1 text-[11px]">— {opt.description}</span>
+                    <span className="text-muted-foreground ml-1 text-xs">— {opt.description}</span>
                   )}
                 </button>
               ))}
             </div>
-            <div className="text-[11px] text-muted-foreground">⏱️ {formatTime(remainingSec)}</div>
+            <div className="text-xs text-muted-foreground">⏱️ {formatTime(remainingSec)}</div>
           </>
         )}
       </div>
@@ -878,7 +878,7 @@ export function ChatView({ chatInputDisabled = false, isOtherNodeSession = false
 
   if (!activeSessionKey) {
     return (
-      <div className="flex items-center justify-center h-full text-muted-foreground text-[13px]">
+      <div className="flex items-center justify-center h-full text-muted-foreground text-caption">
         Select a session to view chat
       </div>
     );
@@ -893,7 +893,7 @@ export function ChatView({ chatInputDisabled = false, isOtherNodeSession = false
         className="flex-1 overflow-y-auto overflow-x-hidden py-2 overscroll-none"
       >
         {messages.length === 0 && (
-          <div className="p-5 text-center text-muted-foreground text-[13px]">
+          <div className="p-5 text-center text-muted-foreground text-caption">
             Waiting for events...
           </div>
         )}
@@ -926,7 +926,7 @@ export function ChatView({ chatInputDisabled = false, isOtherNodeSession = false
         <div className="relative">
           <button
             onClick={scrollToBottom}
-            className="absolute bottom-[var(--panel-inset)] left-1/2 -translate-x-1/2 text-[11px] text-muted-foreground bg-popover/90 border border-border rounded-full px-3 py-1 hover:text-foreground hover:bg-popover transition-colors shadow-sm z-10"
+            className="absolute bottom-[var(--panel-inset)] left-1/2 -translate-x-1/2 text-xs text-muted-foreground bg-popover/90 border border-border rounded-full px-3 py-1 hover:text-foreground hover:bg-popover transition-colors shadow-sm z-10"
           >
             {"\u2193"} New Messages
           </button>
@@ -938,7 +938,7 @@ export function ChatView({ chatInputDisabled = false, isOtherNodeSession = false
         <button
           onClick={toggleFollow}
           className={cn(
-            "absolute bottom-[15px] right-[15px] flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-colors",
+            "absolute bottom-[15px] right-[15px] flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors",
             "border shadow-md z-10",
             isFollowing
               ? "bg-accent-blue/15 border-accent-blue/30 text-accent-blue hover:bg-accent-blue/25"
