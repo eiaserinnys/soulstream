@@ -31,11 +31,11 @@ export default defineConfig({
     // VITE_API_BASE=http://localhost:5200  (soulstream-server, orchestrator)
     proxy: {
       "/api": {
-        target: process.env.VITE_API_BASE ?? "http://localhost:3105",
+        target: process.env.VITE_API_BASE,
         changeOrigin: true,
       },
       "/cogito": {
-        target: process.env.VITE_API_BASE ?? "http://localhost:3105",
+        target: process.env.VITE_API_BASE,
         changeOrigin: true,
       },
     },

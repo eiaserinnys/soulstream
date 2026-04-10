@@ -60,6 +60,18 @@ function SessionPortrait({ url }: { url: string }) {
   );
 }
 
+interface SessionItemProps {
+  session: SessionSummary;
+  isActive: boolean;
+  isSelected: boolean;
+  isEditing: boolean;
+  onClick: (e: React.MouseEvent) => void;
+  onContextMenu: (e: React.MouseEvent) => void;
+  onDragStart: (e: React.DragEvent) => void;
+  onEditSubmit: (name: string) => void;
+  onEditCancel: () => void;
+}
+
 const SessionItem = memo(function SessionItem({
   session,
   isActive,
@@ -70,17 +82,7 @@ const SessionItem = memo(function SessionItem({
   onDragStart,
   onEditSubmit,
   onEditCancel,
-}: {
-  session: SessionSummary;
-  isActive: boolean;
-  isSelected: boolean;
-  isEditing: boolean;
-  onClick: (e: React.MouseEvent) => void;
-  onContextMenu: (e: React.MouseEvent) => void;
-  onDragStart: (e: React.DragEvent) => void;
-  onEditSubmit: (name: string) => void;
-  onEditCancel: () => void;
-}) {
+}: SessionItemProps) {
   const config = STATUS_CONFIG[session.status] ?? STATUS_CONFIG.unknown;
   const isUnread = isSessionUnread(session);
   const isReadCompleted = session.status === "completed" && !isUnread;
