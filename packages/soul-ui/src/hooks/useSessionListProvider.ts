@@ -29,6 +29,11 @@ import type {
   SessionSummary,
 } from "../shared/types";
 import type { SessionStorageProvider, StorageMode } from "../providers/types";
+import {
+  applySessionCreated,
+  applySessionUpdated,
+  applySessionDeleted,
+} from "./session-stream-helpers";
 
 const DEFAULT_PAGE_SIZE = 50;
 
@@ -260,27 +265,9 @@ export function useSessionListProvider(
           // TanStack Query 캐시 업데이트
           queryClient.setQueryData(
             queryKey,
-            (
-              old:
-                | InfiniteData<SessionPage>
-                | undefined,
-            ) => {
+            (old: InfiniteData<SessionPage> | undefined) => {
               if (!old) return old;
-              if (
-                currentFilter !== "all" &&
-                newSession.sessionType !== currentFilter
-              )
-                return old;
-              const newPages = old.pages.map((page, i) =>
-                i === 0
-                  ? {
-                      ...page,
-                      sessions: [newSession, ...page.sessions],
-                      total: page.total + 1,
-                    }
-                  : page,
-              );
-              return { ...old, pages: newPages };
+              return applySessionCreated(old, newSession, currentFilter);
             },
           );
 
@@ -318,15 +305,7 @@ export function useSessionListProvider(
             queryKey,
             (old: InfiniteData<SessionPage> | undefined) => {
               if (!old) return old;
-              const newPages = old.pages.map((page) => ({
-                ...page,
-                sessions: page.sessions.map((s) =>
-                  s.agentSessionId === event.agent_session_id
-                    ? { ...s, ...updates }
-                    : s,
-                ),
-              }));
-              return { ...old, pages: newPages };
+              return applySessionUpdated(old, event.agent_session_id, updates);
             },
           );
 
@@ -345,13 +324,7 @@ export function useSessionListProvider(
             queryKey,
             (old: InfiniteData<SessionPage> | undefined) => {
               if (!old) return old;
-              const newPages = old.pages.map((page) => ({
-                ...page,
-                sessions: page.sessions.filter(
-                  (s) => s.agentSessionId !== event.agent_session_id,
-                ),
-              }));
-              return { ...old, pages: newPages };
+              return applySessionDeleted(old, event.agent_session_id);
             },
           );
 

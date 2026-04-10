@@ -2201,4 +2201,89 @@ describe("dashboard-store", () => {
       expect(feed.map((s) => s.agentSessionId)).toContain("s-unknown");
     });
   });
+
+  // === getFeedUnreadCount ===
+
+  describe("getFeedUnreadCount", () => {
+    const recentTs = new Date(Date.now() - 60 * 1000).toISOString(); // 1분 전 (24h 안)
+    const oldTs = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(); // 25시간 전 (24h 밖)
+
+    function makeUnreadSession(id: string, overrides?: Partial<SessionSummary>): SessionSummary {
+      return {
+        agentSessionId: id,
+        sessionType: "task",
+        status: "completed",
+        createdAt: recentTs,
+        updatedAt: recentTs,
+        lastMessage: { timestamp: recentTs, preview: "hello" },
+        lastEventId: 10,
+        lastReadEventId: 0, // unread: lastEventId(10) > lastReadEventId(0)
+        ...overrides,
+      } as unknown as SessionSummary;
+    }
+
+    it("sessions가 비어 있으면 0을 반환한다", () => {
+      const store = useDashboardStore.getState();
+      store.setSessions([]);
+      expect(store.getFeedUnreadCount()).toBe(0);
+    });
+
+    it("24h 이내 unread 비-llm 세션이 있으면 카운트한다", () => {
+      const store = useDashboardStore.getState();
+      store.setSessions([
+        makeUnreadSession("s1"),
+        makeUnreadSession("s2"),
+      ]);
+      expect(store.getFeedUnreadCount()).toBe(2);
+    });
+
+    it("24h 이전 세션은 카운트에서 제외된다", () => {
+      const store = useDashboardStore.getState();
+      store.setSessions([
+        makeUnreadSession("s-old", {
+          lastMessage: { timestamp: oldTs, preview: "old" },
+          updatedAt: oldTs,
+          createdAt: oldTs,
+        }),
+      ]);
+      expect(store.getFeedUnreadCount()).toBe(0);
+    });
+
+    it("read 세션(lastReadEventId >= lastEventId)은 카운트에서 제외된다", () => {
+      const store = useDashboardStore.getState();
+      store.setSessions([
+        makeUnreadSession("s-read", {
+          lastEventId: 5,
+          lastReadEventId: 5, // 읽음: lastReadEventId === lastEventId
+        }),
+      ]);
+      expect(store.getFeedUnreadCount()).toBe(0);
+    });
+
+    it("excludeFromFeed=true 폴더의 세션은 카운트에서 제외된다", () => {
+      const store = useDashboardStore.getState();
+      store.setSessions([makeUnreadSession("s-excl"), makeUnreadSession("s-norm")]);
+      const catalog: CatalogState = {
+        folders: [
+          { id: "f-excl", name: "숨김폴더", sortOrder: 0, settings: { excludeFromFeed: true } },
+          { id: "f-norm", name: "일반폴더", sortOrder: 1, settings: { excludeFromFeed: false } },
+        ],
+        sessions: {
+          "s-excl": { folderId: "f-excl", displayName: null },
+          "s-norm": { folderId: "f-norm", displayName: null },
+        },
+      };
+      store.setCatalog(catalog);
+      expect(store.getFeedUnreadCount()).toBe(1); // s-norm만 카운트
+    });
+
+    it("sessionType === 'llm' 세션은 카운트에서 제외된다", () => {
+      const store = useDashboardStore.getState();
+      store.setSessions([
+        makeUnreadSession("s-llm", { sessionType: "llm" }),
+        makeUnreadSession("s-task"),
+      ]);
+      expect(store.getFeedUnreadCount()).toBe(1); // s-task만 카운트
+    });
+  });
 });
