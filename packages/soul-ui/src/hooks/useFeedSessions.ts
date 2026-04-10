@@ -3,25 +3,45 @@
  *
  * 피드 뷰에서 사용하는 세션 목록과 미읽음 카운트 훅.
  *
- * Phase 3: Zustand sessions + catalog 구독 방식으로 구현.
- * - sessions 동기화 effect(useSessionListProvider.ts)가 Phase 5까지 유지되므로 반응성 보장.
- * - queryClient.getQueriesData()는 스냅샷만 반환하고 React 구독이 없으므로 사용 금지.
- *
- * Phase 5에서 sessions 상태가 제거될 때 queryCache.subscribe() 패턴으로 교체된다.
+ * Phase 5: queryCache.subscribe() 패턴으로 전환.
+ * - TanStack Query 캐시에서 전체 세션을 읽어 filterFeedSessions로 필터링한다.
+ * - queryCache 변경 시 cacheVersion을 증가시켜 useMemo를 재계산한다.
  */
 
+import { useState, useEffect, useMemo } from "react";
+import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import type { SessionSummary } from "../shared/types";
 import { useDashboardStore, isSessionUnread } from "../stores/dashboard-store";
-import { filterFeedSessions } from "./session-stream-helpers";
+import { filterFeedSessions, type SessionPage } from "./session-stream-helpers";
 
 /**
  * 피드 세션 목록 훅.
  * - llm 세션 제외, excludeFromFeed 폴더 제외, 24시간 이내 활동 세션만 반환.
  */
 export function useFeedSessions(): SessionSummary[] {
-  const sessions = useDashboardStore((s) => s.sessions);
+  const queryClient = useQueryClient();
   const catalog = useDashboardStore((s) => s.catalog);
-  return filterFeedSessions(sessions, catalog);
+  const [cacheVersion, setCacheVersion] = useState(0);
+
+  useEffect(() => {
+    const unsubscribe = queryClient.getQueryCache().subscribe(() => {
+      setCacheVersion((v) => v + 1);
+    });
+    return unsubscribe;
+  }, [queryClient]);
+
+  return useMemo(() => {
+    const allData = queryClient.getQueriesData<InfiniteData<SessionPage>>({
+      queryKey: ["sessions"],
+      exact: false,
+    });
+    const allSessions: SessionSummary[] = [];
+    for (const [, data] of allData) {
+      if (!data) continue;
+      for (const page of data.pages) allSessions.push(...page.sessions);
+    }
+    return filterFeedSessions(allSessions, catalog);
+  }, [cacheVersion, catalog, queryClient]);
 }
 
 /**

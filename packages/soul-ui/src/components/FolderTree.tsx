@@ -9,11 +9,14 @@
  *  - 폴더 재정렬: SortableContext + FolderItem(useSortable)
  */
 
-import { useState, useCallback, useMemo, memo } from "react";
+import { useState, useCallback, useMemo, memo, useEffect } from "react";
+import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { useDroppable } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useDashboardStore, isSessionUnread } from "../stores/dashboard-store";
+import { useFeedUnreadCount } from "../hooks/useFeedSessions";
+import type { SessionPage } from "../hooks/session-stream-helpers";
 import { useIsMobile } from "../hooks/use-mobile";
 import { cn } from "../lib/cn";
 import { Button } from "./ui/button";
@@ -47,11 +50,6 @@ export interface FolderTreeProps {
    * 인피니트 스크롤로 부분 로드된 경우에도 정확한 수를 표시합니다.
    */
   folderCounts?: Record<string, number>;
-  /**
-   * 세션 목록 (useSessionListProvider에서 전달).
-   * 제공되지 않으면 store에서 직접 구독합니다 (하위 호환성 유지).
-   */
-  sessions?: import("../shared/types").SessionSummary[];
 }
 
 // ── FolderItem (개별 폴더 행) ─────────────────────────────────────────────────
@@ -200,18 +198,36 @@ export function FolderTree({
   onUpdateFolderSettings,
   onReorderFolders,
   folderCounts,
-  sessions: sessionsProp,
 }: FolderTreeProps) {
   const catalog = useDashboardStore((s) => s.catalog);
   const catalogVersion = useDashboardStore((s) => s.catalogVersion);
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
   const selectFolder = useDashboardStore((s) => s.selectFolder);
-  const storeSessions = useDashboardStore((s) => s.sessions);
-  const sessions = sessionsProp ?? storeSessions;
   const viewMode = useDashboardStore((s) => s.viewMode);
   const selectFeed = useDashboardStore((s) => s.selectFeed);
-  const getFeedUnreadCount = useDashboardStore((s) => s.getFeedUnreadCount);
   const folderSortMode = useDashboardStore((s) => s.folderSortMode);
+
+  const queryClient = useQueryClient();
+  const [cacheVersion, setCacheVersion] = useState(0);
+  useEffect(() => {
+    const unsubscribe = queryClient.getQueryCache().subscribe(() => {
+      setCacheVersion((v) => v + 1);
+    });
+    return unsubscribe;
+  }, [queryClient]);
+
+  const sessions = useMemo(() => {
+    const allData = queryClient.getQueriesData<InfiniteData<SessionPage>>({
+      queryKey: ["sessions"],
+      exact: false,
+    });
+    const all: import("../shared/types").SessionSummary[] = [];
+    for (const [, data] of allData) {
+      if (!data) continue;
+      for (const page of data.pages) all.push(...page.sessions);
+    }
+    return all;
+  }, [cacheVersion, queryClient]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [dragOverId] = useState<string | null>(null); // isOver는 useDroppable에서 관리
@@ -336,10 +352,8 @@ export function FolderTree({
     selectFolder(folderId);
   }, [selectFolder]);
 
-  /** 피드 미읽음 카운트 — getFeedUnreadCount로 정렬 없이 O(n) 계산 */
-  const feedUnreadCount = useMemo(() =>
-    getFeedUnreadCount(),
-    [sessions, getFeedUnreadCount, catalogVersion]);
+  /** 피드 미읽음 카운트 */
+  const feedUnreadCount = useFeedUnreadCount();
 
   // normalFolders alias (기존 코드와의 호환성 유지)
   const normalFolders = sortedNormalFolders;

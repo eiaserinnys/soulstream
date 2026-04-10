@@ -108,12 +108,6 @@ export interface DashboardState {
   /** 피드 스크롤 오프셋 (뷰 전환 시 위치 복원용) */
   feedScrollOffset: number;
 
-  /** 세션 목록 */
-  sessions: SessionSummary[];
-  sessionsTotal: number;
-  sessionsLoading: boolean;
-  sessionsError: string | null;
-
   /** 세션 타입 필터 */
   sessionTypeFilter: "all" | "claude" | "llm";
 
@@ -207,18 +201,6 @@ export interface DashboardActions {
   // 스토리지 모드
   setStorageMode: (mode: StorageMode) => void;
 
-  // 세션 목록
-  setSessions: (sessions: SessionSummary[], total?: number) => void;
-  appendSessions: (sessions: SessionSummary[], total: number) => void;
-  addSession: (session: SessionSummary) => void;
-  updateSession: (
-    agentSessionId: string,
-    updates: Partial<Pick<SessionSummary, "status" | "updatedAt" | "completedAt" | "eventCount" | "lastEventType" | "lastMessage" | "metadata" | "lastEventId" | "lastReadEventId">>
-  ) => void;
-  removeSession: (agentSessionId: string) => void;
-  setSessionsLoading: (loading: boolean) => void;
-  setSessionsError: (error: string | null) => void;
-
   // 세션 타입 필터
   setSessionTypeFilter: (type: "all" | "claude" | "llm") => void;
 
@@ -280,9 +262,6 @@ export interface DashboardActions {
   setViewMode: (mode: "feed" | "folder") => void;
   selectFeed: () => void;
   setFeedScrollOffset: (offset: number) => void;
-  getFeedSessions: () => SessionSummary[];
-  /** 피드 배지용 미읽음 세션 수. getFeedSessions와 동일한 필터 기준으로 정렬 없이 O(n) 계산 */
-  getFeedUnreadCount: () => number;
 
   // 카탈로그
   setCatalog: (catalog: CatalogState) => void;
@@ -330,18 +309,16 @@ const NEEDS_ROOT = new Set([
  */
 function applyLlmMetadata(
   root: EventTreeNode,
-  sessions: SessionSummary[],
-  activeSessionKey: string | null,
+  activeSessionSummary: SessionSummary | null,
 ): void {
-  if (!activeSessionKey || root.type !== "session") return;
+  if (!activeSessionSummary || root.type !== "session") return;
   const sessionRoot = root as SessionNode;
   if (sessionRoot.sessionType != null) return; // 이미 설정됨
 
-  const info = sessions.find((s) => s.agentSessionId === activeSessionKey);
-  if (info?.sessionType === "llm") {
-    sessionRoot.sessionType = info.sessionType;
-    sessionRoot.llmProvider = info.llmProvider;
-    sessionRoot.llmModel = info.llmModel;
+  if (activeSessionSummary.sessionType === "llm") {
+    sessionRoot.sessionType = activeSessionSummary.sessionType;
+    sessionRoot.llmProvider = activeSessionSummary.llmProvider;
+    sessionRoot.llmModel = activeSessionSummary.llmModel;
   }
 }
 
@@ -351,10 +328,6 @@ const initialState: DashboardState = {
   storageMode: "sse",
   viewMode: "feed",
   feedScrollOffset: 0,
-  sessions: [],
-  sessionsTotal: 0,
-  sessionsLoading: true,
-  sessionsError: null,
   sessionTypeFilter: "all",
   activeSessionKey: null,
   activeSession: null,
@@ -417,10 +390,6 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
       setStorageMode: (storageMode) => {
         set({
           storageMode,
-          sessions: [],
-          sessionsTotal: 0,
-          sessionsLoading: true,
-          sessionsError: null,
           sessionTypeFilter: "all",
           activeSessionKey: null,
           activeSession: null,
@@ -437,98 +406,6 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           processingCtx: createProcessingContext(),
         });
       },
-
-      // --- 세션 목록 ---
-
-      setSessions: (sessions, total) => {
-        const prev = get().sessions;
-        const prevTotal = get().sessionsTotal;
-        const newTotal = total ?? sessions.length;
-        const unchanged =
-          prev.length === sessions.length &&
-          prevTotal === newTotal &&
-          prev.every((s, i) => s.agentSessionId === sessions[i].agentSessionId);
-        if (unchanged) return;
-        set({
-          sessions,
-          sessionsTotal: newTotal,
-          sessionsError: null,
-        });
-      },
-
-      appendSessions: (newSessions, total) => set((state) => {
-        const existingIds = new Set(state.sessions.map(s => s.agentSessionId));
-        const uniqueNew = newSessions.filter(s => !existingIds.has(s.agentSessionId));
-        return {
-          sessions: [...state.sessions, ...uniqueNew],
-          sessionsTotal: total,
-          sessionsError: null,
-        };
-      }),
-
-      addSession: (session) => {
-        const { sessions, sessionsTotal } = get();
-        const existingIdx = sessions.findIndex(
-          (s) => s.agentSessionId === session.agentSessionId,
-        );
-        if (existingIdx >= 0) {
-          // 낙관적 업데이트로 생성된 불완전한 세션을 서버 데이터로 머지.
-          // agentPortraitUrl/agentId/agentName은 새 데이터에 값이 없으면 기존 값을 유지한다.
-          // (SSE 이벤트에 누락될 경우 optimistic update의 portrait URL을 덮어쓰지 않도록 방어)
-          const existing = sessions[existingIdx];
-          const merged = {
-            ...existing,
-            ...session,
-            agentPortraitUrl: session.agentPortraitUrl ?? existing.agentPortraitUrl,
-            agentId: session.agentId ?? existing.agentId,
-            agentName: session.agentName ?? existing.agentName,
-          };
-          const updated = [...sessions];
-          updated[existingIdx] = merged;
-          set({ sessions: updated });
-          return;
-        }
-        const updated = [session, ...sessions];
-        set({
-          sessions: updated,
-          sessionsTotal: sessionsTotal + 1,
-          sessionsError: null,
-        });
-      },
-
-      updateSession: (agentSessionId, updates) => {
-        const sessions = get().sessions;
-        const idx = sessions.findIndex((s) => s.agentSessionId === agentSessionId);
-        if (idx < 0) return;
-
-        const newSessions = sessions.map((s) =>
-          s.agentSessionId === agentSessionId ? { ...s, ...updates } : s
-        );
-        newSessions.sort((a, b) => {
-          const aTime = a.updatedAt ?? a.createdAt ?? "";
-          const bTime = b.updatedAt ?? b.createdAt ?? "";
-          return bTime.localeCompare(aTime);
-        });
-        set({ sessions: newSessions });
-      },
-
-      removeSession: (agentSessionId) => {
-        const sessions = get().sessions;
-        const filtered = sessions.filter((s) => s.agentSessionId !== agentSessionId);
-        const removed = sessions.length - filtered.length;
-        if (removed > 0) {
-          console.log(`[🔴 removeSession] ${agentSessionId} → sessions: ${sessions.length} → ${filtered.length}`);
-        }
-        set({
-          sessions: filtered,
-          sessionsTotal: Math.max(0, get().sessionsTotal - removed),
-        });
-      },
-
-      setSessionsLoading: (sessionsLoading) => set({ sessionsLoading }),
-
-      setSessionsError: (sessionsError) =>
-        set({ sessionsError, sessionsLoading: false }),
 
       // --- 세션 타입 필터 ---
 
@@ -594,7 +471,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         // Dedup: 이미 처리한 이벤트 건너뛰기 (resume/reconnect 시 중복 방지)
         // history_sync는 eventId=0이므로 이 가드에 걸리지 않는다
         if (eventId > 0 && eventId <= state.lastEventId) {
-          return;
+          return null;
         }
 
         const ctx = state.processingCtx;
@@ -617,7 +494,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         // root가 필요한 이벤트에 대해 보장
         if (NEEDS_ROOT.has(event.type)) {
           root = ensureRoot(root, ctx);
-          applyLlmMetadata(root, state.sessions, state.activeSessionKey);
+          applyLlmMetadata(root, state.activeSessionSummary);
         }
 
         // 1. 노드 생성 시도 (생성형 이벤트만 노드 반환)
@@ -715,7 +592,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           // root 보장
           if (NEEDS_ROOT.has(event.type)) {
             root = ensureRoot(root, ctx);
-            applyLlmMetadata(root, state.sessions, state.activeSessionKey);
+            applyLlmMetadata(root, state.activeSessionSummary);
           }
 
           // 노드 생성/배치/업데이트
@@ -1072,67 +949,6 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
       },
 
       setFeedScrollOffset: (offset) => set({ feedScrollOffset: offset }),
-
-      getFeedSessions: () => {
-        const { sessions, catalog } = get();
-        const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-        const beforeFilter = sessions.length;
-        const result = sessions
-          .filter((s) => {
-            if (s.sessionType === "llm") return false;
-            // 폴더 설정: excludeFromFeed가 true이면 피드에서 제외
-            // 단, 미분류 세션(folderId === null)은 항상 포함
-            if (catalog) {
-              const assignment = catalog.sessions[s.agentSessionId];
-              const folderId = assignment?.folderId ?? null;
-              if (folderId !== null) {
-                const folder = catalog.folders.find((f) => f.id === folderId);
-                if (folder?.settings?.excludeFromFeed) return false;
-              }
-            }
-            const t = s.lastMessage?.timestamp ?? s.updatedAt ?? s.createdAt;
-            return t != null && new Date(t).getTime() > cutoff;
-          })
-          .sort((a, b) => {
-            const ta = new Date(a.updatedAt ?? a.createdAt ?? 0).getTime();
-            const tb = new Date(b.updatedAt ?? b.createdAt ?? 0).getTime();
-            return tb - ta;
-          })
-          .map((s) => {
-            const assignment = catalog?.sessions[s.agentSessionId];
-            if (assignment?.displayName) {
-              return { ...s, displayName: assignment.displayName };
-            }
-            return s;
-          });
-        // 결과가 달라질 때만 로그 (렌더링마다 찍히지 않도록 throttle 없이 조건부로만)
-        const _lastFeedCount = (get() as unknown as { _lastFeedLogCount?: number })._lastFeedLogCount;
-        if (_lastFeedCount !== result.length) {
-          console.log(`[🟢 getFeedSessions] ${beforeFilter} sessions → ${result.length} feed items (catalog=${catalog ? `yes, ${Object.keys(catalog.sessions).length} assigned` : 'null'})`);
-          (get() as unknown as { _lastFeedLogCount?: number })._lastFeedLogCount = result.length;
-        }
-        return result;
-      },
-
-      getFeedUnreadCount: () => {
-        const { sessions, catalog } = get();
-        const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-        return sessions.filter((s) => {
-          if (s.sessionType === "llm") return false;
-          // getFeedSessions와 동일한 excludeFromFeed 필터 적용
-          if (catalog) {
-            const assignment = catalog.sessions[s.agentSessionId];
-            const folderId = assignment?.folderId ?? null;
-            if (folderId !== null) {
-              const folder = catalog.folders.find((f) => f.id === folderId);
-              if (folder?.settings?.excludeFromFeed) return false;
-            }
-          }
-          if (!isSessionUnread(s)) return false;
-          const t = s.lastMessage?.timestamp ?? s.updatedAt ?? s.createdAt;
-          return t != null && new Date(t).getTime() > cutoff;
-        }).length;
-      },
 
       setActiveTab: (activeTab) => set({ activeTab }),
 

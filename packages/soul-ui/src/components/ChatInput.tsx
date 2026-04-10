@@ -7,7 +7,9 @@
  */
 
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { useDashboardStore } from "../stores/dashboard-store";
+import { applySessionUpdated, type SessionPage } from "../hooks/session-stream-helpers";
 import { flattenTree } from "../lib/flatten-tree";
 import { cn } from "../lib/cn";
 import { Button } from "./ui/button";
@@ -57,6 +59,7 @@ interface ChatInputProps {
 }
 
 export function ChatInput({ additionalDisabled = false, isOtherNodeSession = false, fileUploadUrl }: ChatInputProps = {}) {
+  const queryClient = useQueryClient();
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const activeSessionSummary = useDashboardStore((s) => s.activeSessionSummary);
   const tree = useDashboardStore((s) => s.tree);
@@ -237,7 +240,13 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
         // intervene 성공 즉시 세션 상태를 running으로 업데이트하여
         // subscriptionEpoch를 즉시 증가시킨다 (5초 폴링 대기 없이 SSE 재구독).
         if (activeSessionKey) {
-          useDashboardStore.getState().updateSession(activeSessionKey, { status: "running" });
+          queryClient.setQueriesData<InfiniteData<SessionPage>>(
+            { queryKey: ["sessions"], exact: false },
+            (old) => {
+              if (!old) return old;
+              return applySessionUpdated(old, activeSessionKey, { status: "running" });
+            },
+          );
         }
       }
     } catch (err) {
@@ -247,7 +256,7 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
     } finally {
       setSending(false);
     }
-  }, [activeSessionKey, text, sending, isLlmFinished, sessionInfo, llmMessages, setActiveSession, clearDraft, fileUploadUrl, uploadedPaths, files, resetLocal]);
+  }, [activeSessionKey, text, sending, isLlmFinished, sessionInfo, llmMessages, setActiveSession, clearDraft, fileUploadUrl, uploadedPaths, files, resetLocal, queryClient]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {

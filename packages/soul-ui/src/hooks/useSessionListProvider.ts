@@ -10,7 +10,7 @@
  * 설계 핵심:
  * - TanStack Query가 서버 상태(sessions 페이지 목록)를 관리한다.
  * - SSE delta 이벤트는 queryClient.setQueryData로 캐시를 직접 수정한다.
- * - store의 sessions 상태는 내부 로직(processEvent, addOptimisticSession 등) 호환성을 위해 유지한다.
+ * - SSE delta 이벤트 처리와 낙관적 세션 추가는 queryClient.setQueryData/setQueriesData로 직접 캐시를 업데이트한다.
  * - SSE 연결은 storageMode 변경 시에만 재연결된다.
  */
 
@@ -79,7 +79,6 @@ export function useSessionListProvider(
   const queryClient = useQueryClient();
 
   const storageMode = useDashboardStore((s) => s.storageMode);
-  const setSessions = useDashboardStore((s) => s.setSessions);
   const setActiveSessionSummary = useDashboardStore((s) => s.setActiveSessionSummary);
 
   const [folderCounts, setFolderCounts] = useState<Record<string, number>>({});
@@ -167,14 +166,6 @@ export function useSessionListProvider(
   // sessionsTotal: 마지막 페이지의 total
   const sessionsTotal =
     data?.pages[data.pages.length - 1]?.total ?? 0;
-
-  // Zustand store에 sessions 동기화 (다른 컴포넌트들의 하위 호환성 유지)
-  const prevSessionsRef = useRef<SessionSummary[]>([]);
-  useEffect(() => {
-    if (sessions === prevSessionsRef.current) return;
-    prevSessionsRef.current = sessions;
-    setSessions(sessions, sessionsTotal);
-  }, [sessions, sessionsTotal, setSessions]);
 
   // hasMore
   const hasMore = hasNextPage ?? false;
@@ -272,7 +263,7 @@ export function useSessionListProvider(
         }
 
         case "session_updated": {
-          const updates: Parameters<typeof updateSession>[1] = {};
+          const updates: Partial<Pick<SessionSummary, "status" | "updatedAt" | "lastMessage" | "lastEventId" | "lastReadEventId">> = {};
           if (event.status != null) {
             updates.status = event.status as SessionStatus;
           }
