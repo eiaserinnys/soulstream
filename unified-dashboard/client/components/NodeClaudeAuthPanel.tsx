@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Button, cn } from "@seosoyoung/soul-ui";
 
 interface Props {
@@ -117,6 +117,8 @@ export function NodeClaudeAuthPanel({ nodeId }: Props) {
   const [authUrl, setAuthUrl] = useState<string | null>(null);
   const [codeValue, setCodeValue] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // popup은 useRef로 관리하여 handleCancelCode에서도 닫을 수 있게 한다.
+  const popupRef = useRef<Window | null>(null);
 
   const fetchStatus = useCallback(async () => {
     setLoadingStatus(true);
@@ -136,11 +138,17 @@ export function NodeClaudeAuthPanel({ nodeId }: Props) {
 
   const handleLogin = async () => {
     setError(null);
+    // 팝업 차단 우회: 버튼 클릭 직후 동기 컨텍스트에서 빈 탭을 먼저 열고,
+    // fetch 완료 후 authUrl로 navigate한다.
+    // iOS Safari는 async 호출 후 window.open()을 차단하지만 동기 호출은 허용한다.
+    popupRef.current = window.open('about:blank', '_blank');
     try {
       const res = await fetch(
         `/api/nodes/${nodeId}/claude-auth/headless/start`
       );
       if (!res.ok) {
+        popupRef.current?.close();
+        popupRef.current = null;
         const data = await res.json().catch(() => null);
         throw new Error(
           data?.detail
@@ -149,12 +157,20 @@ export function NodeClaudeAuthPanel({ nodeId }: Props) {
         );
       }
       const data = await res.json();
-      if (!data.authUrl) throw new Error("authUrl 없음");
-      // iOS Safari는 async 컨텍스트의 window.open()을 팝업으로 간주하여 차단함.
-      // authUrl을 상태로 저장하고 사용자가 직접 탭할 수 있는 <a> 링크로 노출.
-      setAuthUrl(data.authUrl);
+      if (!data.authUrl) {
+        popupRef.current?.close();
+        popupRef.current = null;
+        throw new Error("authUrl 없음");
+      }
+      if (popupRef.current && !popupRef.current.closed) {
+        popupRef.current.location.href = data.authUrl; // 팝업이 열렸으면 직접 navigate
+      } else {
+        setAuthUrl(data.authUrl); // 차단된 경우 <a> 링크 fallback
+      }
       setShowCodeInput(true);
     } catch (e) {
+      popupRef.current?.close();
+      popupRef.current = null;
       setError(String(e instanceof Error ? e.message : e));
     }
   };
@@ -189,6 +205,8 @@ export function NodeClaudeAuthPanel({ nodeId }: Props) {
   };
 
   const handleCancelCode = () => {
+    popupRef.current?.close();
+    popupRef.current = null;
     setShowCodeInput(false);
     setAuthUrl(null);
     setCodeValue("");
