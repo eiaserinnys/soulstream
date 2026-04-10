@@ -6,10 +6,12 @@
  */
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { useDashboardStore } from "../stores/dashboard-store";
 import type { SoulSSEEvent } from "../shared/types";
 import type { SessionStorageProvider, StorageMode } from "../providers/types";
 import { BATCH_SIZE, BATCH_FLUSH_MS } from "../lib/event-batch";
+import { applySessionUpdated, type SessionPage } from "./session-stream-helpers";
 
 export interface UseSessionProviderOptions {
   /** 구독할 세션 키. null이면 구독 안 함 */
@@ -28,6 +30,7 @@ interface QueuedEvent {
 export function useSessionProvider(options: UseSessionProviderOptions) {
   const { sessionKey, getSessionProvider } = options;
 
+  const queryClient = useQueryClient();
   const storageMode = useDashboardStore((s) => s.storageMode);
   const processEvents = useDashboardStore((s) => s.processEvents);
   const clearTree = useDashboardStore((s) => s.clearTree);
@@ -36,8 +39,8 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
 
   // Resume 감지: 활성 세션이 completed/error → running으로 바뀌면 구독을 재시작.
   // subscriptionEpoch를 effect 의존성에 넣어, 값이 바뀔 때 구독 effect가 재실행됨.
-  const sessions = useDashboardStore((s) => s.sessions);
-  const activeStatus = sessions.find((s) => s.agentSessionId === sessionKey)?.status ?? null;
+  const activeSessionSummary = useDashboardStore((s) => s.activeSessionSummary);
+  const activeStatus = activeSessionSummary?.status ?? null;
   const prevStatusRef = useRef<string | null>(null);
   const [subscriptionEpoch, setSubscriptionEpoch] = useState(0);
 
@@ -83,7 +86,17 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
     }
 
     const chunk = queue.splice(0, BATCH_SIZE);
-    processEventsRef.current(chunk);
+    const result = processEventsRef.current(chunk);
+    // status 변경을 TanStack Query sessions 캐시에 반영
+    for (const { agentSessionId, status } of result.statusUpdates) {
+      queryClient.setQueriesData(
+        { queryKey: ["sessions"] },
+        (old: InfiniteData<SessionPage> | undefined) => {
+          if (!old) return old;
+          return applySessionUpdated(old, agentSessionId, { status });
+        },
+      );
+    }
 
     if (queue.length > 0) {
       drainTimerRef.current = setTimeout(() => {
@@ -214,7 +227,17 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
           }
         }
         if (batch.length > 0) {
-          processEvents(batch);
+          const result = processEvents(batch);
+          // status 변경을 TanStack Query sessions 캐시에 반영
+          for (const { agentSessionId, status } of result.statusUpdates) {
+            queryClient.setQueriesData(
+              { queryKey: ["sessions"] },
+              (old: InfiniteData<SessionPage> | undefined) => {
+                if (!old) return old;
+                return applySessionUpdated(old, agentSessionId, { status });
+              },
+            );
+          }
         }
 
         setStatus("connected");
@@ -242,7 +265,7 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
     };
   // subscriptionEpoch: resume 감지 시 변경되어 구독을 재시작
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionKey, storageMode, processEvents, clearTree, enqueueEvent, clearTimersAndQueue, subscriptionEpoch]);
+  }, [sessionKey, storageMode, processEvents, clearTree, enqueueEvent, clearTimersAndQueue, subscriptionEpoch, queryClient]);
 
   const reconnect = useCallback(() => {
     // 재연결은 sessionKey 변경으로 트리거됨

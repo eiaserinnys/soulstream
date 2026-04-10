@@ -11,6 +11,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useDashboardStore,
   NewSessionDialog,
@@ -24,6 +25,7 @@ import {
 } from "@seosoyoung/soul-ui";
 
 export function NewSessionModal() {
+  const queryClient = useQueryClient();
   const isOpen = useDashboardStore((s) => s.isNewSessionModalOpen);
   const closeModal = useDashboardStore((s) => s.closeNewSessionModal);
   const addOptimisticSession = useDashboardStore((s) => s.addOptimisticSession);
@@ -121,6 +123,7 @@ export function NewSessionModal() {
       clearDraft(draftKey);
       const selectedAgent = agents.find((a) => a.id === selectedAgentId);
       addOptimisticSession(
+        queryClient,
         result.agentSessionId,
         prompt,
         selectedModalFolderId,
@@ -132,7 +135,7 @@ export function NewSessionModal() {
       closeModal();
       setSelectedAgentId("");
     },
-    [selectedModalFolderId, selectedAgentId, agents, addOptimisticSession, clearDraft, draftKey, closeModal],
+    [queryClient, selectedModalFolderId, selectedAgentId, agents, addOptimisticSession, clearDraft, draftKey, closeModal],
   );
 
   const handleOpenChange = useCallback(

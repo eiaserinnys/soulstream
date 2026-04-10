@@ -14,6 +14,8 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import type { QueryClient, InfiniteData } from "@tanstack/react-query";
+import type { SessionPage } from "../hooks/session-stream-helpers";
 import type {
   SessionSummary,
   SessionDetail,
@@ -87,6 +89,13 @@ export type FolderSortMode = "name-asc" | "name-desc" | "created-desc" | "create
 
 export type MobileTab = "feed" | "folder" | "chat" | "settings";
 
+// === ProcessEventsResult ===
+
+/** processEvents 반환 타입: SSE 이벤트 배치 처리 결과 */
+export interface ProcessEventsResult {
+  statusUpdates: Array<{ agentSessionId: string; status: SessionStatus }>;
+}
+
 // === State Interface ===
 
 export interface DashboardState {
@@ -99,18 +108,15 @@ export interface DashboardState {
   /** 피드 스크롤 오프셋 (뷰 전환 시 위치 복원용) */
   feedScrollOffset: number;
 
-  /** 세션 목록 */
-  sessions: SessionSummary[];
-  sessionsTotal: number;
-  sessionsLoading: boolean;
-  sessionsError: string | null;
-
   /** 세션 타입 필터 */
   sessionTypeFilter: "all" | "claude" | "llm";
 
   /** 활성 세션 (현재 보고 있는 세션) */
   activeSessionKey: string | null;
   activeSession: SessionDetail | null;
+
+  /** 활성 세션의 SessionSummary 스냅샷 — sessions.find 대체용 (단일 구독 포인트) */
+  activeSessionSummary: SessionSummary | null;
 
   /** 선택된 카드 (상세 뷰에 표시) */
   selectedCardId: string | null;
@@ -195,23 +201,12 @@ export interface DashboardActions {
   // 스토리지 모드
   setStorageMode: (mode: StorageMode) => void;
 
-  // 세션 목록
-  setSessions: (sessions: SessionSummary[], total?: number) => void;
-  appendSessions: (sessions: SessionSummary[], total: number) => void;
-  addSession: (session: SessionSummary) => void;
-  updateSession: (
-    agentSessionId: string,
-    updates: Partial<Pick<SessionSummary, "status" | "updatedAt" | "completedAt" | "eventCount" | "lastEventType" | "lastMessage" | "metadata" | "lastEventId" | "lastReadEventId">>
-  ) => void;
-  removeSession: (agentSessionId: string) => void;
-  setSessionsLoading: (loading: boolean) => void;
-  setSessionsError: (error: string | null) => void;
-
   // 세션 타입 필터
   setSessionTypeFilter: (type: "all" | "claude" | "llm") => void;
 
   // 활성 세션
   setActiveSession: (key: string | null, detail?: SessionDetail) => void;
+  setActiveSessionSummary: (summary: SessionSummary | null) => void;
 
   // 카드 선택 (nodeId: React Flow 노드의 고유 ID, switchTab: detail 탭 전환 여부)
   selectCard: (cardId: string | null, nodeId?: string | null, switchTab?: boolean) => void;
@@ -220,13 +215,13 @@ export interface DashboardActions {
   selectEventNode: (data: SelectedEventNodeData | null, nodeId?: string | null, switchTab?: boolean) => void;
 
   // SSE 이벤트 처리
-  processEvent: (event: SoulSSEEvent, eventId: number) => void;
+  processEvent: (event: SoulSSEEvent, eventId: number) => { agentSessionId: string; status: SessionStatus } | null;
 
   // SSE 이벤트 배치 처리 (히스토리 리플레이 최적화: N개 이벤트를 트리에 적용 후 set() 1회)
-  processEvents: (events: Array<{ event: SoulSSEEvent; eventId: number }>) => void;
+  processEvents: (events: Array<{ event: SoulSSEEvent; eventId: number }>) => ProcessEventsResult;
 
   // 낙관적 세션 추가 + 활성 세션 설정 (세션 생성 직후 즉시 목록 반영)
-  addOptimisticSession: (agentSessionId: string, prompt: string, folderId?: string | null, nodeId?: string, agentId?: string | null, agentName?: string | null, agentPortraitUrl?: string | null) => void;
+  addOptimisticSession: (queryClient: QueryClient, agentSessionId: string, prompt: string, folderId?: string | null, nodeId?: string, agentId?: string | null, agentName?: string | null, agentPortraitUrl?: string | null) => void;
 
   // New Session 모달
   openNewSessionModal: (source?: 'folder' | 'feed') => void;
@@ -267,15 +262,11 @@ export interface DashboardActions {
   setViewMode: (mode: "feed" | "folder") => void;
   selectFeed: () => void;
   setFeedScrollOffset: (offset: number) => void;
-  getFeedSessions: () => SessionSummary[];
-  /** 피드 배지용 미읽음 세션 수. getFeedSessions와 동일한 필터 기준으로 정렬 없이 O(n) 계산 */
-  getFeedUnreadCount: () => number;
 
   // 카탈로그
   setCatalog: (catalog: CatalogState) => void;
-  selectFolder: (folderId: string | null, options?: { skipAutoSelect?: boolean }) => void;
+  selectFolder: (folderId: string | null) => void;
   clearSelectedFolder: () => void;
-  getSessionsInFolder: (folderId: string | null) => SessionSummary[];
   moveSessionsToFolder: (sessionIds: string[], folderId: string | null) => void;
   renameSession: (sessionId: string, displayName: string | null) => void;
   addFolder: (folder: CatalogFolder) => void;
@@ -295,7 +286,7 @@ export interface DashboardActions {
   clearActiveSession: () => void;
 
   // 다중 선택
-  toggleSessionSelection: (id: string, ctrlKey: boolean, shiftKey: boolean) => void;
+  toggleSessionSelection: (id: string, ctrlKey: boolean, shiftKey: boolean, folderSessions?: SessionSummary[]) => void;
   clearSelection: () => void;
   setEditingSession: (id: string | null) => void;
 }
@@ -318,18 +309,16 @@ const NEEDS_ROOT = new Set([
  */
 function applyLlmMetadata(
   root: EventTreeNode,
-  sessions: SessionSummary[],
-  activeSessionKey: string | null,
+  activeSessionSummary: SessionSummary | null,
 ): void {
-  if (!activeSessionKey || root.type !== "session") return;
+  if (!activeSessionSummary || root.type !== "session") return;
   const sessionRoot = root as SessionNode;
   if (sessionRoot.sessionType != null) return; // 이미 설정됨
 
-  const info = sessions.find((s) => s.agentSessionId === activeSessionKey);
-  if (info?.sessionType === "llm") {
-    sessionRoot.sessionType = info.sessionType;
-    sessionRoot.llmProvider = info.llmProvider;
-    sessionRoot.llmModel = info.llmModel;
+  if (activeSessionSummary.sessionType === "llm") {
+    sessionRoot.sessionType = activeSessionSummary.sessionType;
+    sessionRoot.llmProvider = activeSessionSummary.llmProvider;
+    sessionRoot.llmModel = activeSessionSummary.llmModel;
   }
 }
 
@@ -339,13 +328,10 @@ const initialState: DashboardState = {
   storageMode: "sse",
   viewMode: "feed",
   feedScrollOffset: 0,
-  sessions: [],
-  sessionsTotal: 0,
-  sessionsLoading: true,
-  sessionsError: null,
   sessionTypeFilter: "all",
   activeSessionKey: null,
   activeSession: null,
+  activeSessionSummary: null,
   selectedCardId: null,
   selectedNodeId: null,
   selectedEventNodeData: null,
@@ -404,10 +390,6 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
       setStorageMode: (storageMode) => {
         set({
           storageMode,
-          sessions: [],
-          sessionsTotal: 0,
-          sessionsLoading: true,
-          sessionsError: null,
           sessionTypeFilter: "all",
           activeSessionKey: null,
           activeSession: null,
@@ -424,98 +406,6 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           processingCtx: createProcessingContext(),
         });
       },
-
-      // --- 세션 목록 ---
-
-      setSessions: (sessions, total) => {
-        const prev = get().sessions;
-        const prevTotal = get().sessionsTotal;
-        const newTotal = total ?? sessions.length;
-        const unchanged =
-          prev.length === sessions.length &&
-          prevTotal === newTotal &&
-          prev.every((s, i) => s.agentSessionId === sessions[i].agentSessionId);
-        if (unchanged) return;
-        set({
-          sessions,
-          sessionsTotal: newTotal,
-          sessionsError: null,
-        });
-      },
-
-      appendSessions: (newSessions, total) => set((state) => {
-        const existingIds = new Set(state.sessions.map(s => s.agentSessionId));
-        const uniqueNew = newSessions.filter(s => !existingIds.has(s.agentSessionId));
-        return {
-          sessions: [...state.sessions, ...uniqueNew],
-          sessionsTotal: total,
-          sessionsError: null,
-        };
-      }),
-
-      addSession: (session) => {
-        const { sessions, sessionsTotal } = get();
-        const existingIdx = sessions.findIndex(
-          (s) => s.agentSessionId === session.agentSessionId,
-        );
-        if (existingIdx >= 0) {
-          // 낙관적 업데이트로 생성된 불완전한 세션을 서버 데이터로 머지.
-          // agentPortraitUrl/agentId/agentName은 새 데이터에 값이 없으면 기존 값을 유지한다.
-          // (SSE 이벤트에 누락될 경우 optimistic update의 portrait URL을 덮어쓰지 않도록 방어)
-          const existing = sessions[existingIdx];
-          const merged = {
-            ...existing,
-            ...session,
-            agentPortraitUrl: session.agentPortraitUrl ?? existing.agentPortraitUrl,
-            agentId: session.agentId ?? existing.agentId,
-            agentName: session.agentName ?? existing.agentName,
-          };
-          const updated = [...sessions];
-          updated[existingIdx] = merged;
-          set({ sessions: updated });
-          return;
-        }
-        const updated = [session, ...sessions];
-        set({
-          sessions: updated,
-          sessionsTotal: sessionsTotal + 1,
-          sessionsError: null,
-        });
-      },
-
-      updateSession: (agentSessionId, updates) => {
-        const sessions = get().sessions;
-        const idx = sessions.findIndex((s) => s.agentSessionId === agentSessionId);
-        if (idx < 0) return;
-
-        const newSessions = sessions.map((s) =>
-          s.agentSessionId === agentSessionId ? { ...s, ...updates } : s
-        );
-        newSessions.sort((a, b) => {
-          const aTime = a.updatedAt ?? a.createdAt ?? "";
-          const bTime = b.updatedAt ?? b.createdAt ?? "";
-          return bTime.localeCompare(aTime);
-        });
-        set({ sessions: newSessions });
-      },
-
-      removeSession: (agentSessionId) => {
-        const sessions = get().sessions;
-        const filtered = sessions.filter((s) => s.agentSessionId !== agentSessionId);
-        const removed = sessions.length - filtered.length;
-        if (removed > 0) {
-          console.log(`[🔴 removeSession] ${agentSessionId} → sessions: ${sessions.length} → ${filtered.length}`);
-        }
-        set({
-          sessions: filtered,
-          sessionsTotal: Math.max(0, get().sessionsTotal - removed),
-        });
-      },
-
-      setSessionsLoading: (sessionsLoading) => set({ sessionsLoading }),
-
-      setSessionsError: (sessionsError) =>
-        set({ sessionsError, sessionsLoading: false }),
 
       // --- 세션 타입 필터 ---
 
@@ -542,6 +432,8 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           selectedFolderId: folderId,
         });
       },
+
+      setActiveSessionSummary: (summary) => set({ activeSessionSummary: summary }),
 
       // --- 카드 선택 ---
 
@@ -579,7 +471,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         // Dedup: 이미 처리한 이벤트 건너뛰기 (resume/reconnect 시 중복 방지)
         // history_sync는 eventId=0이므로 이 가드에 걸리지 않는다
         if (eventId > 0 && eventId <= state.lastEventId) {
-          return;
+          return null;
         }
 
         const ctx = state.processingCtx;
@@ -590,30 +482,19 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           ctx.historySynced = true;
           const syncEvent = event as HistorySyncEvent;
 
-          // 서버가 보내준 status를 세션 목록에 즉시 반영 (정본)
-          let sessionsUpdate: { sessions: SessionSummary[] } | Record<string, never> = {};
+          // history_sync의 status는 processEvent 호출자(useSessionProvider)가
+          // ProcessEventsResult.statusUpdates를 통해 TanStack Query 캐시에 반영한다.
+          set({ ...(eventId > 0 ? { lastEventId: eventId } : {}) });
           if (syncEvent.status && state.activeSessionKey) {
-            const idx = state.sessions.findIndex(
-              (s) => s.agentSessionId === state.activeSessionKey,
-            );
-            if (idx >= 0 && state.sessions[idx].status !== syncEvent.status) {
-              const updatedSessions = [...state.sessions];
-              updatedSessions[idx] = {
-                ...updatedSessions[idx],
-                status: syncEvent.status as SessionStatus,
-              };
-              sessionsUpdate = { sessions: updatedSessions };
-            }
+            return { agentSessionId: state.activeSessionKey, status: syncEvent.status as SessionStatus };
           }
-
-          set({ ...(eventId > 0 ? { lastEventId: eventId } : {}), ...sessionsUpdate });
-          return;
+          return null;
         }
 
         // root가 필요한 이벤트에 대해 보장
         if (NEEDS_ROOT.has(event.type)) {
           root = ensureRoot(root, ctx);
-          applyLlmMetadata(root, state.sessions, state.activeSessionKey);
+          applyLlmMetadata(root, state.activeSessionSummary);
         }
 
         // 1. 노드 생성 시도 (생성형 이벤트만 노드 반환)
@@ -635,21 +516,12 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         // 3. 세션 상태 갱신 — 히스토리 리플레이 중에는 억제
         // history_sync 수신 전에는 저장된 이벤트를 리플레이하는 단계이므로
         // 이벤트별로 status를 갱신하면 running → completed 깜빡임이 발생한다.
-        let sessionsUpdate: { sessions: SessionSummary[] } | Record<string, never> = {};
+        // status 업데이트는 반환값으로 호출자에게 전달한다 (Zustand sessions 직접 변경 안 함).
+        let statusUpdate: { agentSessionId: string; status: SessionStatus } | null = null;
         if (ctx.historySynced) {
           const derivedStatus = deriveSessionStatus(event);
           if (derivedStatus && state.activeSessionKey) {
-            const idx = state.sessions.findIndex(
-              (s) => s.agentSessionId === state.activeSessionKey,
-            );
-            if (idx >= 0 && state.sessions[idx].status !== derivedStatus) {
-              const updatedSessions = [...state.sessions];
-              updatedSessions[idx] = {
-                ...updatedSessions[idx],
-                status: derivedStatus,
-              };
-              sessionsUpdate = { sessions: updatedSessions };
-            }
+            statusUpdate = { agentSessionId: state.activeSessionKey, status: derivedStatus };
           }
         }
 
@@ -666,7 +538,6 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
             treeVersion: state.treeVersion + 1,
             treeChangeInfo,
             lastEventId: eventId,
-            ...sessionsUpdate,
             ...(notify
               ? { pendingNotifications: [...state.pendingNotifications, event] }
               : {}),
@@ -674,12 +545,13 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         } else {
           set({
             lastEventId: eventId,
-            ...sessionsUpdate,
             ...(notify
               ? { pendingNotifications: [...state.pendingNotifications, event] }
               : {}),
           });
         }
+
+        return statusUpdate;
       },
 
       // --- SSE 이벤트 배치 처리 ---
@@ -688,14 +560,14 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
       // 972개 이벤트 → set() 1회로 렌더 비용을 O(N)에서 O(1)로 줄입니다.
 
       processEvents: (events) => {
-        if (events.length === 0) return;
+        if (events.length === 0) return { statusUpdates: [] };
 
         const state = get();
         const ctx = state.processingCtx;
         let root = state.tree;
         let updated = false;
         let maxEventId = state.lastEventId;
-        let sessionsUpdate: { sessions: SessionSummary[] } | Record<string, never> = {};
+        const statusUpdates: Array<{ agentSessionId: string; status: SessionStatus }> = [];
         const notifications: SoulSSEEvent[] = [];
 
         for (const { event, eventId } of events) {
@@ -710,20 +582,9 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
             ctx.historySynced = true;
             const syncEvent = event as HistorySyncEvent;
 
+            // history_sync의 status는 반환값으로 호출자에게 전달한다.
             if (syncEvent.status && state.activeSessionKey) {
-              const sessions: SessionSummary[] =
-                "sessions" in sessionsUpdate ? sessionsUpdate.sessions : state.sessions;
-              const idx = sessions.findIndex(
-                (s) => s.agentSessionId === state.activeSessionKey,
-              );
-              if (idx >= 0 && sessions[idx].status !== syncEvent.status) {
-                const updatedSessions: SessionSummary[] = [...sessions];
-                updatedSessions[idx] = {
-                  ...updatedSessions[idx],
-                  status: syncEvent.status as SessionStatus,
-                };
-                sessionsUpdate = { sessions: updatedSessions };
-              }
+              statusUpdates.push({ agentSessionId: state.activeSessionKey, status: syncEvent.status as SessionStatus });
             }
             continue;
           }
@@ -731,7 +592,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           // root 보장
           if (NEEDS_ROOT.has(event.type)) {
             root = ensureRoot(root, ctx);
-            applyLlmMetadata(root, state.sessions, state.activeSessionKey);
+            applyLlmMetadata(root, state.activeSessionSummary);
           }
 
           // 노드 생성/배치/업데이트
@@ -750,21 +611,11 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           }
 
           // 세션 상태 갱신 (히스토리 리플레이 중에는 억제)
+          // status 업데이트는 반환값으로 호출자에게 전달한다 (Zustand sessions 직접 변경 안 함).
           if (ctx.historySynced) {
             const derivedStatus = deriveSessionStatus(event);
             if (derivedStatus && state.activeSessionKey) {
-              const sessions = sessionsUpdate.sessions ?? state.sessions;
-              const idx = sessions.findIndex(
-                (s) => s.agentSessionId === state.activeSessionKey,
-              );
-              if (idx >= 0 && sessions[idx].status !== derivedStatus) {
-                const updatedSessions = [...sessions];
-                updatedSessions[idx] = {
-                  ...updatedSessions[idx],
-                  status: derivedStatus,
-                };
-                sessionsUpdate = { sessions: updatedSessions };
-              }
+              statusUpdates.push({ agentSessionId: state.activeSessionKey, status: derivedStatus });
             }
 
             if (shouldNotify(event)) {
@@ -778,17 +629,17 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         set({
           ...(updated ? { tree: root, treeVersion: state.treeVersion + 1, treeChangeInfo: null } : {}),
           lastEventId: maxEventId,
-          ...sessionsUpdate,
           ...(notifications.length > 0
             ? { pendingNotifications: [...state.pendingNotifications, ...notifications] }
             : {}),
         });
+
+        return { statusUpdates };
       },
 
       // --- 낙관적 세션 추가 ---
 
-      addOptimisticSession: (agentSessionId, prompt, folderId, nodeId, agentId, agentName, agentPortraitUrl) => {
-        const sessions = get().sessions;
+      addOptimisticSession: (queryClient, agentSessionId, prompt, folderId, nodeId, agentId, agentName, agentPortraitUrl) => {
         let catalog = get().catalog;
         const newSession: SessionSummary = {
           agentSessionId,
@@ -803,11 +654,27 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           ...(agentName ? { agentName } : {}),
           ...(agentPortraitUrl ? { agentPortraitUrl } : {}),
         };
-        const updatedSessions = sessions.some(
-          (s) => s.agentSessionId === agentSessionId,
-        )
-          ? sessions
-          : [newSession, ...sessions];
+
+        // TanStack Query 캐시에 낙관적 prepend
+        queryClient.setQueriesData<InfiniteData<SessionPage>>(
+          { queryKey: ["sessions"], exact: false },
+          (old) => {
+            if (!old) return old;
+            // 이미 존재하면 중복 삽입 방지
+            const exists = old.pages.some((page) =>
+              page.sessions.some((s) => s.agentSessionId === agentSessionId),
+            );
+            if (exists) return old;
+            return {
+              ...old,
+              pages: old.pages.map((page, i) =>
+                i === 0
+                  ? { ...page, sessions: [newSession, ...page.sessions], total: page.total + 1 }
+                  : page,
+              ),
+            };
+          },
+        );
 
         // catalog.sessions에도 낙관적으로 폴더 할당 추가
         if (catalog && folderId) {
@@ -822,7 +689,6 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
 
         set({
           ...getSessionResetState(),
-          sessions: updatedSessions,
           catalog,
           activeSessionKey: agentSessionId,
           activeSession: null,
@@ -833,6 +699,8 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
             ? { selectedFolderId: folderId, viewMode: "folder" as const }
             : {}),
         });
+
+        get().setActiveSessionSummary(newSession);
       },
 
       // --- New Session 모달 ---
@@ -1065,18 +933,8 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         set({ folderSortMode: mode });
       },
 
-      selectFolder: (folderId, options?: { skipAutoSelect?: boolean }) => {
+      selectFolder: (folderId) => {
         set({ selectedFolderId: folderId, viewMode: "folder" });
-        if (!options?.skipAutoSelect) {
-          // FolderTree.handleSelectFolder에서 흡수: 첫 세션 자동 선택
-          const { getSessionsInFolder, setActiveSession, clearActiveSession } = get();
-          const folderSessions = getSessionsInFolder(folderId);
-          if (folderSessions.length > 0) {
-            setActiveSession(folderSessions[0].agentSessionId);
-          } else {
-            clearActiveSession();
-          }
-        }
       },
 
       clearSelectedFolder: () => set({ selectedFolderId: null, viewMode: "feed" }),
@@ -1092,67 +950,6 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
 
       setFeedScrollOffset: (offset) => set({ feedScrollOffset: offset }),
 
-      getFeedSessions: () => {
-        const { sessions, catalog } = get();
-        const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-        const beforeFilter = sessions.length;
-        const result = sessions
-          .filter((s) => {
-            if (s.sessionType === "llm") return false;
-            // 폴더 설정: excludeFromFeed가 true이면 피드에서 제외
-            // 단, 미분류 세션(folderId === null)은 항상 포함
-            if (catalog) {
-              const assignment = catalog.sessions[s.agentSessionId];
-              const folderId = assignment?.folderId ?? null;
-              if (folderId !== null) {
-                const folder = catalog.folders.find((f) => f.id === folderId);
-                if (folder?.settings?.excludeFromFeed) return false;
-              }
-            }
-            const t = s.lastMessage?.timestamp ?? s.updatedAt ?? s.createdAt;
-            return t != null && new Date(t).getTime() > cutoff;
-          })
-          .sort((a, b) => {
-            const ta = new Date(a.updatedAt ?? a.createdAt ?? 0).getTime();
-            const tb = new Date(b.updatedAt ?? b.createdAt ?? 0).getTime();
-            return tb - ta;
-          })
-          .map((s) => {
-            const assignment = catalog?.sessions[s.agentSessionId];
-            if (assignment?.displayName) {
-              return { ...s, displayName: assignment.displayName };
-            }
-            return s;
-          });
-        // 결과가 달라질 때만 로그 (렌더링마다 찍히지 않도록 throttle 없이 조건부로만)
-        const _lastFeedCount = (get() as unknown as { _lastFeedLogCount?: number })._lastFeedLogCount;
-        if (_lastFeedCount !== result.length) {
-          console.log(`[🟢 getFeedSessions] ${beforeFilter} sessions → ${result.length} feed items (catalog=${catalog ? `yes, ${Object.keys(catalog.sessions).length} assigned` : 'null'})`);
-          (get() as unknown as { _lastFeedLogCount?: number })._lastFeedLogCount = result.length;
-        }
-        return result;
-      },
-
-      getFeedUnreadCount: () => {
-        const { sessions, catalog } = get();
-        const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-        return sessions.filter((s) => {
-          if (s.sessionType === "llm") return false;
-          // getFeedSessions와 동일한 excludeFromFeed 필터 적용
-          if (catalog) {
-            const assignment = catalog.sessions[s.agentSessionId];
-            const folderId = assignment?.folderId ?? null;
-            if (folderId !== null) {
-              const folder = catalog.folders.find((f) => f.id === folderId);
-              if (folder?.settings?.excludeFromFeed) return false;
-            }
-          }
-          if (!isSessionUnread(s)) return false;
-          const t = s.lastMessage?.timestamp ?? s.updatedAt ?? s.createdAt;
-          return t != null && new Date(t).getTime() > cutoff;
-        }).length;
-      },
-
       setActiveTab: (activeTab) => set({ activeTab }),
 
       clearActiveSession: () => {
@@ -1162,11 +959,12 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           ...getSessionResetState(),
           activeSessionKey: null,
           activeSession: null,
+          activeSessionSummary: null,
           selectedFolderId,
         });
       },
 
-      toggleSessionSelection: (id, ctrlKey, shiftKey) => {
+      toggleSessionSelection: (id, ctrlKey, shiftKey, folderSessions) => {
         const state = get();
         if (!ctrlKey && !shiftKey) {
           // 일반 클릭: 선택 초기화 + activeSession 설정
@@ -1185,7 +983,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           return;
         }
         if (shiftKey && state.lastSelectedSessionId) {
-          const folder = state.getSessionsInFolder(state.selectedFolderId);
+          const folder = folderSessions ?? [];
           const lastIdx = folder.findIndex((s) => s.agentSessionId === state.lastSelectedSessionId);
           const curIdx = folder.findIndex((s) => s.agentSessionId === id);
           if (lastIdx >= 0 && curIdx >= 0) {
@@ -1200,26 +998,6 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
       clearSelection: () => set({ selectedSessionIds: new Set() }),
 
       setEditingSession: (id) => set({ editingSessionId: id }),
-
-      getSessionsInFolder: (folderId) => {
-        const { sessions, catalog } = get();
-        if (!catalog?.sessions) return sessions;
-        return sessions.filter((s) => {
-          if (s.sessionType === "llm") return false;
-          const assignment = catalog.sessions[s.agentSessionId];
-          if (folderId === null) {
-            // 미분류: 카탈로그에 없거나 folderId가 null인 세션
-            return !assignment || assignment.folderId === null;
-          }
-          return assignment?.folderId === folderId;
-        }).map((s) => {
-          const assignment = catalog.sessions[s.agentSessionId];
-          if (assignment?.displayName) {
-            return { ...s, displayName: assignment.displayName };
-          }
-          return s;
-        });
-      },
     }),
     {
       name: "soul-dashboard-storage",

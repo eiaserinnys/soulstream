@@ -8,6 +8,7 @@
 import { useMemo, useRef, useState, useEffect, memo, useCallback } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import {
   useDashboardStore,
   isSessionUnread,
@@ -19,6 +20,7 @@ import type { SessionSummary, SessionStatus } from "../shared/types";
 import { SessionContextMenu } from "./SessionContextMenu";
 import { useFlipAnimation } from "../hooks/useFlipAnimation";
 import { NodeBadge } from "./NodeBadge";
+import { filterSessionsInFolder, type SessionPage } from "../hooks/session-stream-helpers";
 
 // === Node ID Color Utils ===
 
@@ -186,26 +188,54 @@ export interface FolderContentsProps {
 
 export function FolderContents({ onMoveSessions, onRenameSession, onLoadMore, hasMore }: FolderContentsProps) {
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
-  const getSessionsInFolder = useDashboardStore((s) => s.getSessionsInFolder);
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
+  const setActiveSession = useDashboardStore((s) => s.setActiveSession);
   const toggleSessionSelection = useDashboardStore((s) => s.toggleSessionSelection);
   const selectedSessionIds = useDashboardStore((s) => s.selectedSessionIds);
   const editingSessionId = useDashboardStore((s) => s.editingSessionId);
   const setEditingSession = useDashboardStore((s) => s.setEditingSession);
   const setActiveTab = useDashboardStore((s) => s.setActiveTab);
-  const catalogVersion = useDashboardStore((s) => s.catalogVersion);
-  const sessions = useDashboardStore((s) => s.sessions);
+  const setActiveSessionSummary = useDashboardStore((s) => s.setActiveSessionSummary);
+  const catalog = useDashboardStore((s) => s.catalog);
   const isMobile = useIsMobile();
+  const queryClient = useQueryClient();
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
     sessionId: string;
   } | null>(null);
 
-  const folderSessions = useMemo(
-    () => getSessionsInFolder(selectedFolderId),
-    [selectedFolderId, getSessionsInFolder, catalogVersion, sessions],
-  );
+  // TanStack Query 캐시 변경 감지: queryCache.subscribe로 cacheVersion 증가 → useMemo 재계산
+  const [cacheVersion, setCacheVersion] = useState(0);
+  useEffect(() => {
+    const unsubscribe = queryClient.getQueryCache().subscribe(() => {
+      setCacheVersion((v) => v + 1);
+    });
+    return unsubscribe;
+  }, [queryClient]);
+
+  // TanStack Query 캐시에서 전체 세션 추출 → 폴더 필터링
+  const displaySessions = useMemo(() => {
+    const allData = queryClient.getQueriesData<InfiniteData<SessionPage>>({ queryKey: ["sessions"], exact: false });
+    const allSessions: SessionSummary[] = [];
+    for (const [, data] of allData) {
+      if (!data) continue;
+      for (const page of data.pages) allSessions.push(...page.sessions);
+    }
+    return filterSessionsInFolder(allSessions, catalog, selectedFolderId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cacheVersion, catalog, selectedFolderId, queryClient]);
+
+  // 폴더 전환 시 자동 세션 선택 (모바일 제외)
+  // ⚠️ !isMobile 조건 필수 — 모바일에서는 폴더 탭 2단계 뷰를 유지해야 함
+  // (기존 selectFolder의 skipAutoSelect: isMobile 동작 대체)
+  useEffect(() => {
+    if (!isMobile && displaySessions.length > 0 && !activeSessionKey) {
+      setActiveSession(displaySessions[0].agentSessionId);
+      setActiveSessionSummary(displaySessions[0]);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedFolderId]);
 
   const parentRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -228,14 +258,14 @@ export function FolderContents({ onMoveSessions, onRenameSession, onLoadMore, ha
   }, [onLoadMore, hasMore]);
 
   const virtualizer = useVirtualizer({
-    count: folderSessions.length,
+    count: displaySessions.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => 56,
     overscan: 5,
   });
 
   const virtualItems = virtualizer.getVirtualItems();
-  const { setRef } = useFlipAnimation(folderSessions, virtualItems);
+  const { setRef } = useFlipAnimation(displaySessions, virtualItems);
 
   const handleContextMenu = useCallback(
     (sessionId: string, e: React.MouseEvent) => {
@@ -267,7 +297,7 @@ export function FolderContents({ onMoveSessions, onRenameSession, onLoadMore, ha
 
   return (
     <>
-      {folderSessions.length === 0 ? (
+      {displaySessions.length === 0 ? (
         <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
           No sessions in this folder
         </div>
@@ -287,7 +317,7 @@ export function FolderContents({ onMoveSessions, onRenameSession, onLoadMore, ha
             }}
           >
             {virtualItems.map((virtualItem) => {
-              const session = folderSessions[virtualItem.index];
+              const session = displaySessions[virtualItem.index];
               return (
                 <div
                   key={session.agentSessionId}
@@ -315,7 +345,10 @@ export function FolderContents({ onMoveSessions, onRenameSession, onLoadMore, ha
                           : [session.agentSessionId]
                       }
                       onClick={(e) => {
-                        toggleSessionSelection(session.agentSessionId, e.ctrlKey || e.metaKey, e.shiftKey);
+                        if (!e.ctrlKey && !e.metaKey && !e.shiftKey) {
+                          setActiveSessionSummary(session);
+                        }
+                        toggleSessionSelection(session.agentSessionId, e.ctrlKey || e.metaKey, e.shiftKey, displaySessions);
                         if (isMobile) setActiveTab("chat");
                       }}
                       onContextMenu={(e) => handleContextMenu(session.agentSessionId, e)}
@@ -343,7 +376,7 @@ export function FolderContents({ onMoveSessions, onRenameSession, onLoadMore, ha
         onRenameSession={onRenameSession}
         onMoveSessions={onMoveSessions}
         getSessionName={(sessionId) =>
-          folderSessions.find((s) => s.agentSessionId === sessionId)?.displayName ?? ""
+          displaySessions.find((s) => s.agentSessionId === sessionId)?.displayName ?? ""
         }
         resolveSessionIds={(sessionId) =>
           selectedSessionIds.has(sessionId)

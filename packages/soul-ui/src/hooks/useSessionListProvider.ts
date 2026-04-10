@@ -10,7 +10,7 @@
  * 설계 핵심:
  * - TanStack Query가 서버 상태(sessions 페이지 목록)를 관리한다.
  * - SSE delta 이벤트는 queryClient.setQueryData로 캐시를 직접 수정한다.
- * - store의 sessions 상태는 내부 로직(processEvent, addOptimisticSession 등) 호환성을 위해 유지한다.
+ * - SSE delta 이벤트 처리와 낙관적 세션 추가는 queryClient.setQueryData/setQueriesData로 직접 캐시를 업데이트한다.
  * - SSE 연결은 storageMode 변경 시에만 재연결된다.
  */
 
@@ -29,6 +29,11 @@ import type {
   SessionSummary,
 } from "../shared/types";
 import type { SessionStorageProvider, StorageMode } from "../providers/types";
+import {
+  applySessionCreated,
+  applySessionUpdated,
+  applySessionDeleted,
+} from "./session-stream-helpers";
 
 const DEFAULT_PAGE_SIZE = 50;
 
@@ -74,10 +79,7 @@ export function useSessionListProvider(
   const queryClient = useQueryClient();
 
   const storageMode = useDashboardStore((s) => s.storageMode);
-  const setSessions = useDashboardStore((s) => s.setSessions);
-  const addSession = useDashboardStore((s) => s.addSession);
-  const updateSession = useDashboardStore((s) => s.updateSession);
-  const removeSession = useDashboardStore((s) => s.removeSession);
+  const setActiveSessionSummary = useDashboardStore((s) => s.setActiveSessionSummary);
 
   const [folderCounts, setFolderCounts] = useState<Record<string, number>>({});
 
@@ -164,14 +166,6 @@ export function useSessionListProvider(
   // sessionsTotal: 마지막 페이지의 total
   const sessionsTotal =
     data?.pages[data.pages.length - 1]?.total ?? 0;
-
-  // Zustand store에 sessions 동기화 (다른 컴포넌트들의 하위 호환성 유지)
-  const prevSessionsRef = useRef<SessionSummary[]>([]);
-  useEffect(() => {
-    if (sessions === prevSessionsRef.current) return;
-    prevSessionsRef.current = sessions;
-    setSessions(sessions, sessionsTotal);
-  }, [sessions, sessionsTotal, setSessions]);
 
   // hasMore
   const hasMore = hasNextPage ?? false;
@@ -260,39 +254,16 @@ export function useSessionListProvider(
           // TanStack Query 캐시 업데이트
           queryClient.setQueryData(
             queryKey,
-            (
-              old:
-                | InfiniteData<SessionPage>
-                | undefined,
-            ) => {
+            (old: InfiniteData<SessionPage> | undefined) => {
               if (!old) return old;
-              if (
-                currentFilter !== "all" &&
-                newSession.sessionType !== currentFilter
-              )
-                return old;
-              const newPages = old.pages.map((page, i) =>
-                i === 0
-                  ? {
-                      ...page,
-                      sessions: [newSession, ...page.sessions],
-                      total: page.total + 1,
-                    }
-                  : page,
-              );
-              return { ...old, pages: newPages };
+              return applySessionCreated(old, newSession, currentFilter);
             },
           );
-
-          // store 동기화 (addSession은 중복 처리 포함)
-          if (currentFilter === "all" || newSession.sessionType === currentFilter) {
-            addSession(newSession);
-          }
           break;
         }
 
         case "session_updated": {
-          const updates: Parameters<typeof updateSession>[1] = {};
+          const updates: Partial<Pick<SessionSummary, "status" | "updatedAt" | "lastMessage" | "lastEventId" | "lastReadEventId">> = {};
           if (event.status != null) {
             updates.status = event.status as SessionStatus;
           }
@@ -318,20 +289,33 @@ export function useSessionListProvider(
             queryKey,
             (old: InfiniteData<SessionPage> | undefined) => {
               if (!old) return old;
-              const newPages = old.pages.map((page) => ({
-                ...page,
-                sessions: page.sessions.map((s) =>
-                  s.agentSessionId === event.agent_session_id
-                    ? { ...s, ...updates }
-                    : s,
-                ),
-              }));
-              return { ...old, pages: newPages };
+              return applySessionUpdated(old, event.agent_session_id, updates);
             },
           );
 
-          // store 동기화
-          updateSession(event.agent_session_id, updates);
+          // activeSessionSummary 동기화
+          {
+            const storeState = useDashboardStore.getState();
+            if (event.agent_session_id === storeState.activeSessionKey) {
+              const current = storeState.activeSessionSummary;
+              if (current) {
+                setActiveSessionSummary({ ...current, ...updates });
+              } else {
+                // ⚠️ URL 직접 진입 시 current가 null → 쿼리 캐시에서 bootstrap
+                const allQueries = queryClient.getQueriesData<InfiniteData<SessionPage>>({ queryKey: ["sessions"], exact: false });
+                for (const [, data] of allQueries) {
+                  if (!data) continue;
+                  for (const page of data.pages) {
+                    const found = page.sessions.find((s) => s.agentSessionId === event.agent_session_id);
+                    if (found) {
+                      setActiveSessionSummary({ ...found, ...updates });
+                      break;
+                    }
+                  }
+                }
+              }
+            }
+          }
           break;
         }
 
@@ -345,18 +329,9 @@ export function useSessionListProvider(
             queryKey,
             (old: InfiniteData<SessionPage> | undefined) => {
               if (!old) return old;
-              const newPages = old.pages.map((page) => ({
-                ...page,
-                sessions: page.sessions.filter(
-                  (s) => s.agentSessionId !== event.agent_session_id,
-                ),
-              }));
-              return { ...old, pages: newPages };
+              return applySessionDeleted(old, event.agent_session_id);
             },
           );
-
-          // store 동기화
-          removeSession(event.agent_session_id);
           break;
         }
 
@@ -385,12 +360,10 @@ export function useSessionListProvider(
             },
           );
 
-          // store 동기화
-          updateSession(event.session_id, { metadata: event.metadata });
           break;
       }
     },
-    [queryClient, queryKey, addSession, updateSession, removeSession],
+    [queryClient, queryKey, setActiveSessionSummary],
   );
 
   // --- SSE 연결 설정 ---

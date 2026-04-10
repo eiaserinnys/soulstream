@@ -34,20 +34,15 @@ interface LlmContext {
 }
 
 function useLlmContext(): LlmContext {
-  const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
-  const sessions = useDashboardStore((s) => s.sessions);
+  const activeSessionSummary = useDashboardStore((s) => s.activeSessionSummary);
   return useMemo(() => {
-    if (!activeSessionKey) return { isLlm: false };
-    const session = sessions.find(
-      (s: SessionSummary) => s.agentSessionId === activeSessionKey,
-    );
-    if (!session || session.sessionType !== "llm") return { isLlm: false };
+    if (!activeSessionSummary || activeSessionSummary.sessionType !== "llm") return { isLlm: false };
     return {
       isLlm: true,
-      llmModel: session.llmModel,
-      llmProvider: session.llmProvider,
+      llmModel: activeSessionSummary.llmModel,
+      llmProvider: activeSessionSummary.llmProvider,
     };
-  }, [activeSessionKey, sessions]);
+  }, [activeSessionSummary]);
 }
 
 // === Truncation Lazy Load ===
@@ -380,10 +375,7 @@ const ThinkingMessage = memo(function ThinkingMessage({ msg }: { msg: ChatMessag
 /** text 노드: 일반 텍스트 표시 */
 const AssistantMessage = memo(function AssistantMessage({ msg, llmContext }: { msg: ChatMessage; llmContext?: LlmContext }) {
   const config = useDashboardStore((s) => s.dashboardConfig);
-  const activeSession = useDashboardStore((s) => {
-    const key = s.activeSessionKey;
-    return key ? s.sessions.find((ss) => ss.agentSessionId === key) : null;
-  });
+  const activeSession = useDashboardStore((s) => s.activeSessionSummary);
 
   // 세션에 바인딩된 에이전트 정보
   const agentName = activeSession?.agentName;

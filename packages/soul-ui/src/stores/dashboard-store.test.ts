@@ -6,7 +6,10 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
+import { QueryClient } from "@tanstack/react-query";
+import type { InfiniteData } from "@tanstack/react-query";
 import { useDashboardStore, findTreeNode } from "./dashboard-store";
+import { filterSessionsInFolder, type SessionPage } from "../hooks/session-stream-helpers";
 import type {
   TextStartEvent,
   TextDeltaEvent,
@@ -46,244 +49,33 @@ function collectNodes(
   return result;
 }
 
+// === QueryClient 테스트 헬퍼 ===
+
+/** addOptimisticSession 테스트용 QueryClient 생성 */
+function makeTestQueryClient() {
+  return new QueryClient({ defaultOptions: { queries: { retry: false } } });
+}
+
+/** QueryClient에 초기 세션 데이터를 시드 */
+function seedQueryClient(qc: QueryClient, sessions: import("../../shared/types").SessionSummary[]) {
+  qc.setQueryData<InfiniteData<SessionPage>>(["sessions"], {
+    pages: [{ sessions, total: sessions.length }],
+    pageParams: [0],
+  });
+}
+
+/** QueryClient 캐시에서 세션 목록 조회 */
+function getQuerySessions(qc: QueryClient): import("../../shared/types").SessionSummary[] {
+  const data = qc.getQueryData<InfiniteData<SessionPage>>(["sessions"]);
+  return data?.pages.flatMap((p) => p.sessions) ?? [];
+}
+
 describe("dashboard-store", () => {
   beforeEach(() => {
     useDashboardStore.getState().reset();
   });
 
   // === 세션 관리 ===
-
-  describe("sessions", () => {
-    it("should set sessions", () => {
-      const sessions: SessionSummary[] = [
-        {
-          agentSessionId: "sess-abc",
-          status: "running",
-          eventCount: 5,
-          createdAt: "2026-01-01T00:00:00Z",
-          agentId: "seo-soyoung",
-          agentName: "서소영",
-          agentPortraitUrl: null,
-        },
-      ];
-      useDashboardStore.getState().setSessions(sessions);
-      expect(useDashboardStore.getState().sessions).toEqual(sessions);
-      expect(useDashboardStore.getState().sessionsError).toBeNull();
-    });
-
-    it("should set loading state", () => {
-      useDashboardStore.getState().setSessionsLoading(true);
-      expect(useDashboardStore.getState().sessionsLoading).toBe(true);
-    });
-
-    it("should set error and clear loading", () => {
-      useDashboardStore.getState().setSessionsLoading(true);
-      useDashboardStore.getState().setSessionsError("Network error");
-      expect(useDashboardStore.getState().sessionsError).toBe("Network error");
-      expect(useDashboardStore.getState().sessionsLoading).toBe(false);
-    });
-
-    // === 세션 목록 CRUD (SSE 구독 지원) ===
-
-    describe("addSession", () => {
-      it("should add new session to the beginning of the list", () => {
-        const existing: SessionSummary[] = [
-          { agentSessionId: "sess-old", status: "completed", eventCount: 10, createdAt: "2026-01-01T00:00:00Z" },
-        ];
-        useDashboardStore.getState().setSessions(existing);
-
-        const newSession: SessionSummary = {
-          agentSessionId: "sess-new",
-          status: "running",
-          eventCount: 0,
-          createdAt: "2026-01-02T00:00:00Z",
-        };
-        useDashboardStore.getState().addSession(newSession);
-
-        const sessions = useDashboardStore.getState().sessions;
-        expect(sessions).toHaveLength(2);
-        expect(sessions[0].agentSessionId).toBe("sess-new");
-        expect(sessions[1].agentSessionId).toBe("sess-old");
-      });
-
-      it("should merge server data into existing session (optimistic update補完)", () => {
-        // 낙관적 업데이트로 nodeId 없이 추가된 세션
-        useDashboardStore.getState().setSessions([
-          { agentSessionId: "sess-abc", status: "running", eventCount: 3, createdAt: "2026-01-01T00:00:00Z", prompt: "hello" },
-        ]);
-
-        // SSE session_created로 서버 데이터가 도착 — nodeId 포함
-        useDashboardStore.getState().addSession({
-          agentSessionId: "sess-abc",
-          status: "running",
-          eventCount: 5,
-          createdAt: "2026-01-01T00:00:00Z",
-          nodeId: "silent-manari",
-        });
-
-        const sessions = useDashboardStore.getState().sessions;
-        expect(sessions).toHaveLength(1);
-        // 서버 데이터로 머지됨
-        expect(sessions[0].nodeId).toBe("silent-manari");
-        expect(sessions[0].eventCount).toBe(5);
-        // 낙관적 업데이트에만 있던 필드는 유지됨
-        expect(sessions[0].prompt).toBe("hello");
-      });
-
-      it("should preserve optimistic fields not present in server data", () => {
-        useDashboardStore.getState().setSessions([
-          { agentSessionId: "sess-abc", status: "running", eventCount: 0, createdAt: "2026-01-01T00:00:00Z", prompt: "test prompt", nodeId: "node-1" },
-        ]);
-
-        // 서버 데이터에 prompt/nodeId가 없는 경우 — 낙관적 값 유지
-        useDashboardStore.getState().addSession({
-          agentSessionId: "sess-abc",
-          status: "running",
-          eventCount: 2,
-          createdAt: "2026-01-01T00:00:00Z",
-        });
-
-        const session = useDashboardStore.getState().sessions[0];
-        expect(session.prompt).toBe("test prompt");
-        expect(session.nodeId).toBe("node-1");
-        expect(session.eventCount).toBe(2);
-      });
-
-      it("should clear sessionsError on add", () => {
-        useDashboardStore.getState().setSessionsError("some error");
-        useDashboardStore.getState().addSession({
-          agentSessionId: "sess-new",
-          status: "running",
-          eventCount: 0,
-          createdAt: "2026-01-01T00:00:00Z",
-        });
-
-        expect(useDashboardStore.getState().sessionsError).toBeNull();
-      });
-    });
-
-    describe("appendSessions", () => {
-      it("appendSessions는 이미 존재하는 세션을 중복 삽입하지 않아야 한다", () => {
-        const sessionA: SessionSummary = { agentSessionId: "sess-a", status: "completed", eventCount: 1, createdAt: "2026-01-01T00:00:00Z" };
-        const sessionB: SessionSummary = { agentSessionId: "sess-b", status: "running", eventCount: 2, createdAt: "2026-01-02T00:00:00Z" };
-        const sessionC: SessionSummary = { agentSessionId: "sess-c", status: "running", eventCount: 3, createdAt: "2026-01-03T00:00:00Z" };
-        const sessionD: SessionSummary = { agentSessionId: "sess-d", status: "completed", eventCount: 4, createdAt: "2026-01-04T00:00:00Z" };
-
-        useDashboardStore.getState().setSessions([sessionA, sessionB, sessionC], 10);
-        useDashboardStore.getState().appendSessions([sessionB, sessionD], 10);
-
-        const sessions = useDashboardStore.getState().sessions;
-        expect(sessions).toHaveLength(4);
-        expect(sessions.map((s) => s.agentSessionId)).toEqual(["sess-a", "sess-b", "sess-c", "sess-d"]);
-      });
-
-      it("appendSessions는 완전히 새로운 세션만 추가한다", () => {
-        const sessionA: SessionSummary = { agentSessionId: "sess-a", status: "completed", eventCount: 1, createdAt: "2026-01-01T00:00:00Z" };
-        const sessionB: SessionSummary = { agentSessionId: "sess-b", status: "running", eventCount: 2, createdAt: "2026-01-02T00:00:00Z" };
-        const sessionC: SessionSummary = { agentSessionId: "sess-c", status: "running", eventCount: 3, createdAt: "2026-01-03T00:00:00Z" };
-        const sessionD: SessionSummary = { agentSessionId: "sess-d", status: "completed", eventCount: 4, createdAt: "2026-01-04T00:00:00Z" };
-
-        useDashboardStore.getState().setSessions([sessionA, sessionB], 10);
-        useDashboardStore.getState().appendSessions([sessionC, sessionD], 10);
-
-        const sessions = useDashboardStore.getState().sessions;
-        expect(sessions).toHaveLength(4);
-        expect(sessions.map((s) => s.agentSessionId)).toEqual(["sess-a", "sess-b", "sess-c", "sess-d"]);
-      });
-
-      it("appendSessions는 모두 중복이면 기존 sessions를 변경하지 않는다", () => {
-        const sessionA: SessionSummary = { agentSessionId: "sess-a", status: "completed", eventCount: 1, createdAt: "2026-01-01T00:00:00Z" };
-        const sessionB: SessionSummary = { agentSessionId: "sess-b", status: "running", eventCount: 2, createdAt: "2026-01-02T00:00:00Z" };
-
-        useDashboardStore.getState().setSessions([sessionA, sessionB], 5);
-        useDashboardStore.getState().appendSessions([sessionA, sessionB], 99);
-
-        const state = useDashboardStore.getState();
-        expect(state.sessions).toHaveLength(2);
-        expect(state.sessions.map((s) => s.agentSessionId)).toEqual(["sess-a", "sess-b"]);
-        expect(state.sessionsTotal).toBe(99);
-      });
-    });
-
-    describe("updateSession", () => {
-      it("should update existing session's status", () => {
-        useDashboardStore.getState().setSessions([
-          { agentSessionId: "sess-abc", status: "running", eventCount: 5, createdAt: "2026-01-01T00:00:00Z" },
-          { agentSessionId: "sess-def", status: "running", eventCount: 3, createdAt: "2026-01-01T00:00:00Z" },
-        ]);
-
-        useDashboardStore.getState().updateSession("sess-abc", {
-          status: "completed",
-          completedAt: "2026-01-02T00:00:00Z",
-        });
-
-        const sessions = useDashboardStore.getState().sessions;
-        expect(sessions[0].status).toBe("completed");
-        expect(sessions[0].completedAt).toBe("2026-01-02T00:00:00Z");
-        // 다른 세션은 변경되지 않아야 함
-        expect(sessions[1].status).toBe("running");
-      });
-
-      it("should do nothing if session not found", () => {
-        useDashboardStore.getState().setSessions([
-          { agentSessionId: "sess-abc", status: "running", eventCount: 5, createdAt: "2026-01-01T00:00:00Z" },
-        ]);
-
-        useDashboardStore.getState().updateSession("sess-nonexistent", { status: "completed" });
-
-        expect(useDashboardStore.getState().sessions).toHaveLength(1);
-        expect(useDashboardStore.getState().sessions[0].status).toBe("running");
-      });
-
-      it("should allow partial updates", () => {
-        useDashboardStore.getState().setSessions([
-          { agentSessionId: "sess-abc", status: "running", eventCount: 5, createdAt: "2026-01-01T00:00:00Z", prompt: "test" },
-        ]);
-
-        useDashboardStore.getState().updateSession("sess-abc", { eventCount: 10 });
-
-        const session = useDashboardStore.getState().sessions[0];
-        expect(session.eventCount).toBe(10);
-        expect(session.status).toBe("running"); // 변경되지 않음
-        expect(session.prompt).toBe("test"); // 변경되지 않음
-      });
-    });
-
-    describe("removeSession", () => {
-      it("should remove session from list", () => {
-        useDashboardStore.getState().setSessions([
-          { agentSessionId: "sess-abc", status: "running", eventCount: 5, createdAt: "2026-01-01T00:00:00Z" },
-          { agentSessionId: "sess-def", status: "completed", eventCount: 3, createdAt: "2026-01-01T00:00:00Z" },
-        ]);
-
-        useDashboardStore.getState().removeSession("sess-abc");
-
-        const sessions = useDashboardStore.getState().sessions;
-        expect(sessions).toHaveLength(1);
-        expect(sessions[0].agentSessionId).toBe("sess-def");
-      });
-
-      it("should do nothing if session not found", () => {
-        useDashboardStore.getState().setSessions([
-          { agentSessionId: "sess-abc", status: "running", eventCount: 5, createdAt: "2026-01-01T00:00:00Z" },
-        ]);
-
-        useDashboardStore.getState().removeSession("sess-nonexistent");
-
-        expect(useDashboardStore.getState().sessions).toHaveLength(1);
-      });
-
-      it("should handle removing last session", () => {
-        useDashboardStore.getState().setSessions([
-          { agentSessionId: "sess-abc", status: "running", eventCount: 5, createdAt: "2026-01-01T00:00:00Z" },
-        ]);
-
-        useDashboardStore.getState().removeSession("sess-abc");
-
-        expect(useDashboardStore.getState().sessions).toHaveLength(0);
-      });
-    });
-  });
 
   // === 활성 세션 ===
 
@@ -795,21 +587,22 @@ describe("dashboard-store", () => {
 
   describe("addOptimisticSession", () => {
     it("should add session and set it as active", () => {
-      useDashboardStore.getState().addOptimisticSession("sess-new", "hello");
+      const qc = makeTestQueryClient();
+      useDashboardStore.getState().addOptimisticSession(qc, "sess-new", "hello");
       const state = useDashboardStore.getState();
 
-      expect(state.sessions).toHaveLength(1);
-      expect(state.sessions[0].agentSessionId).toBe("sess-new");
-      expect(state.sessions[0].prompt).toBe("hello");
+      expect(state.activeSessionSummary?.agentSessionId).toBe("sess-new");
+      expect(state.activeSessionSummary?.prompt).toBe("hello");
       expect(state.activeSessionKey).toBe("sess-new");
     });
 
     it("should not duplicate session if already exists", () => {
-      useDashboardStore.getState().addOptimisticSession("sess-new", "hello");
-      useDashboardStore.getState().addOptimisticSession("sess-new", "hello again");
-      const state = useDashboardStore.getState();
+      const qc = makeTestQueryClient();
+      seedQueryClient(qc, [{ agentSessionId: "sess-new", status: "running", eventCount: 0, createdAt: "2026-01-01T00:00:00Z", prompt: "hello" }]);
 
-      expect(state.sessions).toHaveLength(1);
+      useDashboardStore.getState().addOptimisticSession(qc, "sess-new", "hello again");
+
+      expect(getQuerySessions(qc)).toHaveLength(1);
     });
   });
 
@@ -845,11 +638,7 @@ describe("dashboard-store", () => {
       expect(state.selectedEventNodeData).toBeNull();
     });
 
-    it("should not affect sessions or activeSessionKey", () => {
-      const sessions: SessionSummary[] = [
-        { agentSessionId: "sess-abc", status: "running", eventCount: 5, createdAt: "2026-01-01T00:00:00Z" },
-      ];
-      useDashboardStore.getState().setSessions(sessions);
+    it("should not affect activeSessionKey", () => {
       useDashboardStore.getState().setActiveSession("sess-abc");
       useDashboardStore.getState().processEvent(
         { type: "user_message", user: "u", text: "hi" } as UserMessageEvent,
@@ -859,21 +648,21 @@ describe("dashboard-store", () => {
 
       useDashboardStore.getState().clearTree();
 
-      expect(useDashboardStore.getState().sessions).toEqual(sessions);
+      expect(useDashboardStore.getState().activeSessionKey).toBe("sess-abc");
     });
   });
 
   // === 낙관적 세션 추가 ===
 
   describe("addOptimisticSession", () => {
-    it("should prepend new session to sessions array", () => {
-      const existing: SessionSummary[] = [
+    it("should prepend new session to queryClient cache", () => {
+      const qc = makeTestQueryClient();
+      seedQueryClient(qc, [
         { agentSessionId: "sess-old", status: "completed", eventCount: 10, createdAt: "2026-01-01T00:00:00Z" },
-      ];
-      useDashboardStore.getState().setSessions(existing);
+      ]);
 
-      useDashboardStore.getState().addOptimisticSession("sess-new", "hello");
-      const sessions = useDashboardStore.getState().sessions;
+      useDashboardStore.getState().addOptimisticSession(qc, "sess-new", "hello");
+      const sessions = getQuerySessions(qc);
 
       expect(sessions).toHaveLength(2);
       expect(sessions[0].agentSessionId).toBe("sess-new");
@@ -883,13 +672,14 @@ describe("dashboard-store", () => {
       expect(sessions[1].agentSessionId).toBe("sess-old");
     });
 
-    it("should not duplicate if session already exists", () => {
-      useDashboardStore.getState().setSessions([
+    it("should not duplicate if session already exists in cache", () => {
+      const qc = makeTestQueryClient();
+      seedQueryClient(qc, [
         { agentSessionId: "sess-abc", status: "running", eventCount: 3, createdAt: "2026-01-01T00:00:00Z" },
       ]);
 
-      useDashboardStore.getState().addOptimisticSession("sess-abc", "dup");
-      expect(useDashboardStore.getState().sessions).toHaveLength(1);
+      useDashboardStore.getState().addOptimisticSession(qc, "sess-abc", "dup");
+      expect(getQuerySessions(qc)).toHaveLength(1);
     });
 
     it("should assign folderId in catalog.sessions when folderId is provided", () => {
@@ -899,14 +689,16 @@ describe("dashboard-store", () => {
       };
       useDashboardStore.getState().setCatalog(catalog);
 
-      useDashboardStore.getState().addOptimisticSession("sess-folder", "hi", "folder-1");
+      const qc = makeTestQueryClient();
+      useDashboardStore.getState().addOptimisticSession(qc, "sess-folder", "hi", "folder-1");
       const state = useDashboardStore.getState();
 
       expect(state.catalog?.sessions["sess-folder"]).toEqual({
         folderId: "folder-1",
         displayName: null,
       });
-      expect(state.sessions[0].agentSessionId).toBe("sess-folder");
+      // activeSessionSummary로 새 세션 확인
+      expect(state.activeSessionSummary?.agentSessionId).toBe("sess-folder");
     });
 
     it("should not modify catalog.sessions when folderId is null/undefined", () => {
@@ -916,7 +708,8 @@ describe("dashboard-store", () => {
       };
       useDashboardStore.getState().setCatalog(catalog);
 
-      useDashboardStore.getState().addOptimisticSession("sess-no-folder", "hi");
+      const qc = makeTestQueryClient();
+      useDashboardStore.getState().addOptimisticSession(qc, "sess-no-folder", "hi");
       const state = useDashboardStore.getState();
 
       // 기존 catalog.sessions는 그대로, 새 세션에 대한 할당은 없음
@@ -928,31 +721,38 @@ describe("dashboard-store", () => {
     });
 
     it("should include nodeId when provided", () => {
-      useDashboardStore.getState().addOptimisticSession("sess-node", "hi", null, "silent-manari");
-      const session = useDashboardStore.getState().sessions[0];
+      const qc = makeTestQueryClient();
+      useDashboardStore.getState().addOptimisticSession(qc, "sess-node", "hi", null, "silent-manari");
 
-      expect(session.agentSessionId).toBe("sess-node");
-      expect(session.nodeId).toBe("silent-manari");
+      expect(useDashboardStore.getState().activeSessionSummary?.agentSessionId).toBe("sess-node");
+      expect(useDashboardStore.getState().activeSessionSummary?.nodeId).toBe("silent-manari");
     });
 
     it("should not include nodeId when not provided", () => {
-      useDashboardStore.getState().addOptimisticSession("sess-no-node", "hi");
-      const session = useDashboardStore.getState().sessions[0];
+      const qc = makeTestQueryClient();
+      useDashboardStore.getState().addOptimisticSession(qc, "sess-no-node", "hi");
 
-      expect(session.agentSessionId).toBe("sess-no-node");
-      expect(session.nodeId).toBeUndefined();
+      expect(useDashboardStore.getState().activeSessionSummary?.agentSessionId).toBe("sess-no-node");
+      expect(useDashboardStore.getState().activeSessionSummary?.nodeId).toBeUndefined();
     });
 
-    it("should place session in correct folder via getSessionsInFolder", () => {
+    it("should place session in correct folder via catalog assignment and filterSessionsInFolder", () => {
       const catalog: CatalogState = {
         folders: [{ id: "folder-1", name: "Test Folder" }],
         sessions: {},
       };
       useDashboardStore.getState().setCatalog(catalog);
 
-      useDashboardStore.getState().addOptimisticSession("sess-in-folder", "hi", "folder-1");
-      const inFolder = useDashboardStore.getState().getSessionsInFolder("folder-1");
-      const inUncategorized = useDashboardStore.getState().getSessionsInFolder(null);
+      const qc = makeTestQueryClient();
+      // queryClient에 빈 페이지를 시드해야 setQueriesData updater가 동작함
+      seedQueryClient(qc, []);
+      useDashboardStore.getState().addOptimisticSession(qc, "sess-in-folder", "hi", "folder-1");
+      const updatedCatalog = useDashboardStore.getState().catalog;
+      const querySessions = getQuerySessions(qc);
+
+      // filterSessionsInFolder로 폴더 기준 필터링 확인
+      const inFolder = filterSessionsInFolder(querySessions, updatedCatalog, "folder-1");
+      const inUncategorized = filterSessionsInFolder(querySessions, updatedCatalog, null);
 
       expect(inFolder).toHaveLength(1);
       expect(inFolder[0].agentSessionId).toBe("sess-in-folder");
@@ -964,7 +764,8 @@ describe("dashboard-store", () => {
       useDashboardStore.getState().selectFolder("other-folder");
       expect(useDashboardStore.getState().selectedFolderId).toBe("other-folder");
 
-      useDashboardStore.getState().addOptimisticSession("sess-new", "hi", "folder-1");
+      const qc = makeTestQueryClient();
+      useDashboardStore.getState().addOptimisticSession(qc, "sess-new", "hi", "folder-1");
 
       const state = useDashboardStore.getState();
       expect(state.selectedFolderId).toBe("folder-1");
@@ -976,7 +777,8 @@ describe("dashboard-store", () => {
       useDashboardStore.getState().selectFolder("folder-1");
       expect(useDashboardStore.getState().selectedFolderId).toBe("folder-1");
 
-      useDashboardStore.getState().addOptimisticSession("sess-new", "hi", null);
+      const qc = makeTestQueryClient();
+      useDashboardStore.getState().addOptimisticSession(qc, "sess-new", "hi", null);
 
       const state = useDashboardStore.getState();
       expect(state.selectedFolderId).toBeNull();
@@ -989,7 +791,8 @@ describe("dashboard-store", () => {
       expect(useDashboardStore.getState().selectedFolderId).toBe("folder-1");
 
       // folderId 인자 생략 (undefined)
-      useDashboardStore.getState().addOptimisticSession("sess-new", "hi");
+      const qc = makeTestQueryClient();
+      useDashboardStore.getState().addOptimisticSession(qc, "sess-new", "hi");
 
       expect(useDashboardStore.getState().selectedFolderId).toBe("folder-1");
     });
@@ -999,10 +802,7 @@ describe("dashboard-store", () => {
 
   describe("processEvent - session status derivation (multi-turn)", () => {
     beforeEach(() => {
-      // 세션 목록에 running 세션 등록 + 활성 세션 설정
-      useDashboardStore.getState().setSessions([
-        { agentSessionId: "sess-mt", status: "running", eventCount: 0, createdAt: "2026-01-01T00:00:00Z" },
-      ]);
+      // 활성 세션 설정
       useDashboardStore.getState().setActiveSession("sess-mt");
 
       // history_sync를 보내 히스토리 리플레이 완료 상태로 전환
@@ -1018,19 +818,18 @@ describe("dashboard-store", () => {
       processEvent({ type: "user_message", user: "u", text: "Turn 1" } as UserMessageEvent, 0);
       processEvent({ type: "text_start" } as TextStartEvent, 1);
       processEvent({ type: "text_end" } as TextEndEvent, 2);
-      processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 3);
-
-      const session = useDashboardStore.getState().sessions.find(s => s.agentSessionId === "sess-mt");
-      expect(session?.status).toBe("completed");
+      // processEvent는 이제 statusUpdate를 반환한다 (Zustand sessions 직접 변경 안 함)
+      const result = processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 3);
+      expect(result?.agentSessionId).toBe("sess-mt");
+      expect(result?.status).toBe("completed");
     });
 
     it("should set status to 'error' on error event", () => {
       const { processEvent } = useDashboardStore.getState();
       processEvent({ type: "user_message", user: "u", text: "Turn 1" } as UserMessageEvent, 0);
-      processEvent({ type: "error", message: "failed" } as ErrorEvent, 1);
-
-      const session = useDashboardStore.getState().sessions.find(s => s.agentSessionId === "sess-mt");
-      expect(session?.status).toBe("error");
+      const result = processEvent({ type: "error", message: "failed" } as ErrorEvent, 1);
+      expect(result?.agentSessionId).toBe("sess-mt");
+      expect(result?.status).toBe("error");
     });
 
     it("should reset status to 'running' on user_message after complete (multi-turn)", () => {
@@ -1040,79 +839,76 @@ describe("dashboard-store", () => {
       processEvent({ type: "user_message", user: "u", text: "Turn 1" } as UserMessageEvent, 0);
       processEvent({ type: "text_start" } as TextStartEvent, 1);
       processEvent({ type: "text_end" } as TextEndEvent, 2);
-      processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 3);
+      const r1 = processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 3);
+      expect(r1?.status).toBe("completed");
 
-      expect(useDashboardStore.getState().sessions.find(s => s.agentSessionId === "sess-mt")?.status).toBe("completed");
-
-      // Turn 2: new user_message (resume)
-      processEvent({ type: "user_message", user: "u", text: "Turn 2" } as UserMessageEvent, 4);
-
-      expect(useDashboardStore.getState().sessions.find(s => s.agentSessionId === "sess-mt")?.status).toBe("running");
+      // Turn 2: new user_message (resume) → status는 반환값으로 확인
+      const r2 = processEvent({ type: "user_message", user: "u", text: "Turn 2" } as UserMessageEvent, 4);
+      expect(r2?.status).toBe("running");
     });
 
     it("should reset status to 'running' on intervention_sent after complete", () => {
       const { processEvent } = useDashboardStore.getState();
 
       processEvent({ type: "user_message", user: "u", text: "Turn 1" } as UserMessageEvent, 0);
-      processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 1);
+      const r1 = processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 1);
+      expect(r1?.status).toBe("completed");
 
-      expect(useDashboardStore.getState().sessions.find(s => s.agentSessionId === "sess-mt")?.status).toBe("completed");
-
-      // Intervention resumes the session
-      processEvent({ type: "intervention_sent", user: "admin", text: "continue" } as InterventionSentEvent, 2);
-
-      expect(useDashboardStore.getState().sessions.find(s => s.agentSessionId === "sess-mt")?.status).toBe("running");
+      // Intervention resumes the session → status는 반환값으로 확인
+      const r2 = processEvent({ type: "intervention_sent", user: "admin", text: "continue" } as InterventionSentEvent, 2);
+      expect(r2?.status).toBe("running");
     });
 
     it("should handle full multi-turn cycle: running → completed → running → completed", () => {
       const { processEvent } = useDashboardStore.getState();
-      const getStatus = () =>
-        useDashboardStore.getState().sessions.find(s => s.agentSessionId === "sess-mt")?.status;
 
-      // Turn 1
-      processEvent({ type: "user_message", user: "u", text: "Turn 1" } as UserMessageEvent, 0);
-      expect(getStatus()).toBe("running");
+      // Turn 1: user_message → running
+      const rUser1 = processEvent({ type: "user_message", user: "u", text: "Turn 1" } as UserMessageEvent, 0);
+      expect(rUser1?.status).toBe("running");
 
       processEvent({ type: "text_start" } as TextStartEvent, 1);
       processEvent({ type: "text_end" } as TextEndEvent, 2);
-      processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 3);
-      expect(getStatus()).toBe("completed");
+      const rComplete1 = processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 3);
+      expect(rComplete1?.status).toBe("completed");
 
-      // Turn 2
-      processEvent({ type: "user_message", user: "u", text: "Turn 2" } as UserMessageEvent, 4);
-      expect(getStatus()).toBe("running");
+      // Turn 2: user_message → running
+      const rUser2 = processEvent({ type: "user_message", user: "u", text: "Turn 2" } as UserMessageEvent, 4);
+      expect(rUser2?.status).toBe("running");
 
       processEvent({ type: "text_start" } as TextStartEvent, 5);
       processEvent({ type: "text_end" } as TextEndEvent, 6);
-      processEvent({ type: "complete", result: "done again", attachments: [] } as CompleteEvent, 7);
-      expect(getStatus()).toBe("completed");
+      const rComplete2 = processEvent({ type: "complete", result: "done again", attachments: [] } as CompleteEvent, 7);
+      expect(rComplete2?.status).toBe("completed");
     });
 
     it("should not update status for unrelated event types (text_start, text_delta, etc.)", () => {
       const { processEvent } = useDashboardStore.getState();
 
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
-      expect(useDashboardStore.getState().sessions.find(s => s.agentSessionId === "sess-mt")?.status).toBe("running");
 
-      // These should NOT change status
-      processEvent({ type: "text_start" } as TextStartEvent, 1);
-      processEvent({ type: "text_delta", text: "hello" } as TextDeltaEvent, 2);
-      processEvent({ type: "text_end" } as TextEndEvent, 3);
-      processEvent({ type: "tool_start", timestamp: 0, tool_name: "Bash", tool_input: {} } as ToolStartEvent, 4);
-      processEvent({ type: "tool_result", tool_name: "Bash", result: "ok", is_error: false } as ToolResultEvent, 5);
+      // These should NOT change status — processEvent returns null for non-status events
+      const r1 = processEvent({ type: "text_start" } as TextStartEvent, 1);
+      const r2 = processEvent({ type: "text_delta", text: "hello" } as TextDeltaEvent, 2);
+      const r3 = processEvent({ type: "text_end" } as TextEndEvent, 3);
+      const r4 = processEvent({ type: "tool_start", timestamp: 0, tool_name: "Bash", tool_input: {} } as ToolStartEvent, 4);
+      const r5 = processEvent({ type: "tool_result", tool_name: "Bash", result: "ok", is_error: false } as ToolResultEvent, 5);
 
-      expect(useDashboardStore.getState().sessions.find(s => s.agentSessionId === "sess-mt")?.status).toBe("running");
+      expect(r1).toBeNull();
+      expect(r2).toBeNull();
+      expect(r3).toBeNull();
+      expect(r4).toBeNull();
+      expect(r5).toBeNull();
     });
 
-    it("should not update sessions when activeSessionKey is null", () => {
+    it("should not update status when activeSessionKey is null", () => {
       useDashboardStore.getState().setActiveSession(null);
-      useDashboardStore.getState().processEvent(
+      const result = useDashboardStore.getState().processEvent(
         { type: "complete", result: "done", attachments: [] } as CompleteEvent,
         0,
       );
 
-      // sessions[0] should still be "running" (unchanged)
-      expect(useDashboardStore.getState().sessions[0].status).toBe("running");
+      // activeSessionKey가 null이면 statusUpdate 반환값도 null
+      expect(result).toBeNull();
     });
   });
 
@@ -1918,12 +1714,9 @@ describe("dashboard-store", () => {
 
   describe("reset", () => {
     it("should reset all state to initial values", () => {
-      const { processEvent, setSessions, setActiveSession, selectCard } =
+      const { processEvent, setActiveSession, selectCard } =
         useDashboardStore.getState();
 
-      setSessions([
-        { agentSessionId: "sess-abc", status: "running", eventCount: 1 },
-      ]);
       setActiveSession("sess-abc");
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
       processEvent({ type: "text_start" } as TextStartEvent, 1);
@@ -1932,7 +1725,6 @@ describe("dashboard-store", () => {
       useDashboardStore.getState().reset();
       const state = useDashboardStore.getState();
 
-      expect(state.sessions).toEqual([]);
       expect(state.activeSessionKey).toBeNull();
       expect(state.tree).toBeNull();
       expect(state.selectedCardId).toBeNull();
@@ -1946,10 +1738,6 @@ describe("dashboard-store", () => {
     it("processEvent should skip events with eventId <= lastEventId", () => {
       const store = useDashboardStore.getState();
 
-      // 먼저 세션 설정
-      store.setSessions([
-        { agentSessionId: "sess-dedup", status: "running", eventCount: 0, createdAt: "2026-01-01T00:00:00Z" },
-      ]);
       store.setActiveSession("sess-dedup");
 
       // 이벤트를 처리하여 lastEventId를 5로 설정
@@ -1972,9 +1760,6 @@ describe("dashboard-store", () => {
     it("processEvent should allow eventId=0 (history_sync)", () => {
       const store = useDashboardStore.getState();
 
-      store.setSessions([
-        { agentSessionId: "sess-dedup2", status: "running", eventCount: 0, createdAt: "2026-01-01T00:00:00Z" },
-      ]);
       store.setActiveSession("sess-dedup2");
 
       // lastEventId를 10으로 설정
@@ -1994,9 +1779,6 @@ describe("dashboard-store", () => {
     it("processEvents batch should skip duplicate events", () => {
       const store = useDashboardStore.getState();
 
-      store.setSessions([
-        { agentSessionId: "sess-batch", status: "running", eventCount: 0, createdAt: "2026-01-01T00:00:00Z" },
-      ]);
       store.setActiveSession("sess-batch");
 
       // lastEventId를 5로 설정
@@ -2022,9 +1804,6 @@ describe("dashboard-store", () => {
     it("processEvents batch should handle history_sync with eventId=0", () => {
       const store = useDashboardStore.getState();
 
-      store.setSessions([
-        { agentSessionId: "sess-sync", status: "running", eventCount: 0, createdAt: "2026-01-01T00:00:00Z" },
-      ]);
       store.setActiveSession("sess-sync");
 
       // lastEventId를 5로 설정
@@ -2040,6 +1819,93 @@ describe("dashboard-store", () => {
 
       // 에러 없이 처리되고, processingCtx.historySynced가 true가 되어야 함
       expect(useDashboardStore.getState().processingCtx.historySynced).toBe(true);
+    });
+
+    it("processEvents returns statusUpdates from history_sync", () => {
+      const store = useDashboardStore.getState();
+
+      store.setActiveSession("sess-status");
+
+      const result = store.processEvents([
+        {
+          event: {
+            type: "history_sync",
+            last_event_id: 5,
+            is_live: true,
+            status: "completed",
+          } as unknown as import("../../shared/types").SoulSSEEvent,
+          eventId: 0,
+        },
+      ]);
+
+      expect(result.statusUpdates).toHaveLength(1);
+      expect(result.statusUpdates[0]).toEqual({ agentSessionId: "sess-status", status: "completed" });
+    });
+
+    it("processEvents returns statusUpdates from deriveSessionStatus after historySynced", () => {
+      const store = useDashboardStore.getState();
+
+      store.setActiveSession("sess-derive");
+
+      // historySynced를 먼저 true로 만듦
+      store.processEvents([
+        {
+          event: {
+            type: "history_sync",
+            last_event_id: 0,
+            is_live: true,
+          } as unknown as import("../../shared/types").SoulSSEEvent,
+          eventId: 0,
+        },
+      ]);
+
+      // complete 이벤트 → "completed" 도출
+      const result = store.processEvents([
+        {
+          event: {
+            type: "complete",
+            result: "done",
+            attachments: [],
+            timestamp: 0,
+          } as unknown as import("../../shared/types").SoulSSEEvent,
+          eventId: 10,
+        },
+      ]);
+
+      // deriveSessionStatus("complete") → "completed"
+      expect(result.statusUpdates.some((u) => u.agentSessionId === "sess-derive" && u.status === "completed")).toBe(true);
+    });
+
+    it("processEvents returns empty statusUpdates for events that don't affect status", () => {
+      const store = useDashboardStore.getState();
+
+      store.setActiveSession("sess-notrigger");
+
+      // historySynced = true
+      store.processEvents([
+        {
+          event: {
+            type: "history_sync",
+            last_event_id: 0,
+            is_live: true,
+          } as unknown as import("../../shared/types").SoulSSEEvent,
+          eventId: 0,
+        },
+      ]);
+
+      // text_delta는 status 변경 없음
+      const result = store.processEvents([
+        {
+          event: { type: "text_start", timestamp: 0 } as TextStartEvent,
+          eventId: 20,
+        },
+        {
+          event: { type: "text_delta", text: "hello", timestamp: 0 } as TextDeltaEvent,
+          eventId: 21,
+        },
+      ]);
+
+      expect(result.statusUpdates).toHaveLength(0);
     });
   });
 
@@ -2116,89 +1982,4 @@ describe("dashboard-store", () => {
     });
   });
 
-  // === getFeedSessions — excludeFromFeed 필터 ===
-
-  describe("getFeedSessions", () => {
-    const recentTs = new Date(Date.now() - 60 * 1000).toISOString(); // 1분 전 (24h 안)
-
-    function makeSession(id: string): SessionSummary {
-      return {
-        agentSessionId: id,
-        sessionType: "task",
-        status: "completed",
-        createdAt: recentTs,
-        updatedAt: recentTs,
-        lastMessage: { timestamp: recentTs, preview: "hello" },
-      } as unknown as SessionSummary;
-    }
-
-    it("catalog이 null이면 모든 세션을 포함한다", () => {
-      const store = useDashboardStore.getState();
-      store.setSessions([makeSession("s1"), makeSession("s2")]);
-      // catalog 미설정 (null)
-      const feed = store.getFeedSessions();
-      expect(feed.map((s) => s.agentSessionId)).toContain("s1");
-      expect(feed.map((s) => s.agentSessionId)).toContain("s2");
-    });
-
-    it("excludeFromFeed=true 폴더의 세션은 피드에서 제외된다", () => {
-      const store = useDashboardStore.getState();
-      store.setSessions([makeSession("s-excl"), makeSession("s-norm")]);
-      const catalog: CatalogState = {
-        folders: [
-          { id: "f-excl", name: "숨김폴더", sortOrder: 0, settings: { excludeFromFeed: true } },
-          { id: "f-norm", name: "일반폴더", sortOrder: 1, settings: { excludeFromFeed: false } },
-        ],
-        sessions: {
-          "s-excl": { folderId: "f-excl", displayName: null },
-          "s-norm": { folderId: "f-norm", displayName: null },
-        },
-      };
-      store.setCatalog(catalog);
-      const feed = store.getFeedSessions();
-      const ids = feed.map((s) => s.agentSessionId);
-      expect(ids).not.toContain("s-excl");
-      expect(ids).toContain("s-norm");
-    });
-
-    it("excludeFromFeed=false 폴더의 세션은 피드에 포함된다", () => {
-      const store = useDashboardStore.getState();
-      store.setSessions([makeSession("s1")]);
-      const catalog: CatalogState = {
-        folders: [
-          { id: "f1", name: "표시폴더", sortOrder: 0, settings: { excludeFromFeed: false } },
-        ],
-        sessions: { s1: { folderId: "f1", displayName: null } },
-      };
-      store.setCatalog(catalog);
-      const feed = store.getFeedSessions();
-      expect(feed.map((s) => s.agentSessionId)).toContain("s1");
-    });
-
-    it("폴더가 미배정된 세션(folderId=null)은 항상 피드에 포함된다", () => {
-      const store = useDashboardStore.getState();
-      store.setSessions([makeSession("s-unassigned")]);
-      const catalog: CatalogState = {
-        folders: [],
-        sessions: { "s-unassigned": { folderId: null, displayName: null } },
-      };
-      store.setCatalog(catalog);
-      const feed = store.getFeedSessions();
-      expect(feed.map((s) => s.agentSessionId)).toContain("s-unassigned");
-    });
-
-    it("catalog에 없는 세션(미등록)은 항상 피드에 포함된다", () => {
-      const store = useDashboardStore.getState();
-      store.setSessions([makeSession("s-unknown")]);
-      const catalog: CatalogState = {
-        folders: [
-          { id: "f-excl", name: "숨김폴더", sortOrder: 0, settings: { excludeFromFeed: true } },
-        ],
-        sessions: {}, // s-unknown 미등록
-      };
-      store.setCatalog(catalog);
-      const feed = store.getFeedSessions();
-      expect(feed.map((s) => s.agentSessionId)).toContain("s-unknown");
-    });
-  });
 });
