@@ -9,7 +9,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect, type ReactNode } from "react";
-import { ArrowLeft, MessageSquare, Search } from "lucide-react";
+import { ArrowLeft, ChevronLeft, MessageSquare, Search } from "lucide-react";
 import { DragHandle } from "./DragHandle";
 import { BottomTabBar } from "./BottomTabBar";
 import { ConnectionBadge, type ConnectionStatus } from "./ConnectionBadge";
@@ -61,6 +61,8 @@ export interface DashboardShellProps {
 
   /** 모바일 세션 뷰 내용물. 미지정 시 centerPanel 사용 */
   mobileSessionsView?: ReactNode;
+  /** 모바일 폴더 탭에서 폴더 선택 후 표시할 세션 목록 뷰 */
+  mobileFolderContents?: ReactNode;
   /** 모바일 채팅 뷰 내용물. 미지정 시 rightPanel 사용 */
   mobileChatView?: ReactNode;
   /**
@@ -110,6 +112,7 @@ export function DashboardShell({
   defaultRightPercent = DEFAULT_RIGHT,
   leftBottomRatio = 0,
   mobileSessionsView,
+  mobileFolderContents,
   mobileChatView,
   mobileChatHeader,
   mobileSettingsContent,
@@ -149,6 +152,16 @@ export function DashboardShell({
   const activeTab = useDashboardStore((s) => s.activeTab);
   const setActiveTab = useDashboardStore((s) => s.setActiveTab);
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
+  const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
+  const clearSelectedFolder = useDashboardStore((s) => s.clearSelectedFolder);
+
+  // 채팅 탭 뒤로가기 시 돌아갈 이전 탭 추적
+  const [previousTab, setPreviousTab] = useState<typeof activeTab>("feed");
+  useEffect(() => {
+    if (activeTab !== "chat") {
+      setPreviousTab(activeTab);
+    }
+  }, [activeTab]);
 
   // PC 전환 시 피드 탭으로 초기화
   useEffect(() => {
@@ -156,13 +169,6 @@ export function DashboardShell({
       setActiveTab("feed");
     }
   }, [isMobile, setActiveTab]);
-
-  // 세션 선택 시 채팅 탭으로 자동 이동 (모바일)
-  useEffect(() => {
-    if (activeSessionKey && isMobile) {
-      setActiveTab("chat");
-    }
-  }, [activeSessionKey, isMobile, setActiveTab]);
 
   const centerPercent = Math.max(MIN_CENTER, 100 - leftPercent - rightPercent);
 
@@ -221,9 +227,27 @@ export function DashboardShell({
               {mobileSessionsView ?? centerPanel}
             </div>
 
-            {/* 폴더 탭 — leftPanelContent: leftPanel + leftPanelBottom(NodePanel 포함) */}
+            {/* 폴더 탭 — 모바일에서 폴더 선택 시 2단계 뷰 (트리 → 세션 목록) */}
             <div className={cn("h-full", activeTab !== "folder" && "hidden")}>
-              {leftPanelContent}
+              {isMobile && selectedFolderId ? (
+                <div className="flex flex-col h-full">
+                  <div className="flex items-center gap-2 px-3 py-2 border-b shrink-0">
+                    <button
+                      onClick={() => clearSelectedFolder()}
+                      className="p-1 rounded hover:bg-muted"
+                      aria-label="폴더 목록으로 돌아가기"
+                    >
+                      <ChevronLeft className="h-5 w-5" />
+                    </button>
+                    <span className="text-sm font-medium">세션</span>
+                  </div>
+                  <div className="flex-1 overflow-hidden">
+                    {mobileFolderContents}
+                  </div>
+                </div>
+              ) : (
+                leftPanelContent
+              )}
             </div>
 
             {/* 채팅 탭 */}
@@ -231,8 +255,8 @@ export function DashboardShell({
               {activeSessionKey ? (
                 <>
                   {mobileChatHeader
-                    ? mobileChatHeader(() => setActiveTab("feed"))
-                    : <DefaultMobileChatHeader onBack={() => setActiveTab("feed")} />}
+                    ? mobileChatHeader(() => setActiveTab(previousTab))
+                    : <DefaultMobileChatHeader onBack={() => setActiveTab(previousTab)} />}
                   {mobileChatView ?? rightPanel}
                 </>
               ) : (

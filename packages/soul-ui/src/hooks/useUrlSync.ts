@@ -14,6 +14,7 @@
 
 import { useEffect, useRef } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
+import { useIsMobile } from "./use-mobile";
 
 interface ParsedHash {
   viewMode: "feed" | "folder";
@@ -48,7 +49,9 @@ export function useUrlSync() {
   const setActiveSession = useDashboardStore((s) => s.setActiveSession);
   const clearActiveSession = useDashboardStore((s) => s.clearActiveSession);
   const setViewMode = useDashboardStore((s) => s.setViewMode);
+  const setActiveTab = useDashboardStore((s) => s.setActiveTab);
   const catalog = useDashboardStore((s) => s.catalog);
+  const isMobile = useIsMobile();
 
   // URL에서 스토어 갱신 중일 때 스토어→URL 역방향 push를 억제
   const skipNextPush = useRef(false);
@@ -60,6 +63,7 @@ export function useUrlSync() {
     setViewMode(parsedMode);
     if (sessionId) {
       setActiveSession(sessionId);
+      if (isMobile) setActiveTab("chat");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

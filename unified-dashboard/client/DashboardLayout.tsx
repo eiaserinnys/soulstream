@@ -56,6 +56,7 @@ export function DashboardLayout() {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const viewMode = useDashboardStore((s) => s.viewMode);
   const openNewSessionModal = useDashboardStore((s) => s.openNewSessionModal);
+  const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
 
   // 세션 목록 구독 (SSE 모드: 실시간)
   const { folderCounts, hasMore, loadMore, sessions } = useSessionListProvider({
@@ -187,18 +188,19 @@ export function DashboardLayout() {
         </>
       }
       mobileSessionsView={
-        viewMode === "feed" ? (
-          <FeedView
-            onNewSession={() => openNewSessionModal("feed")}
+        <FeedView
+          onNewSession={() => openNewSessionModal("feed")}
+          onLoadMore={loadMore}
+          hasMore={hasMore}
+        />
+      }
+      mobileFolderContents={
+        selectedFolderId ? (
+          <FolderContents
             onLoadMore={loadMore}
             hasMore={hasMore}
           />
-        ) : (
-          <>
-            <SessionsTopBar />
-            <FolderContents onLoadMore={loadMore} hasMore={hasMore} />
-          </>
-        )
+        ) : undefined
       }
       mobileChatHeader={(onBack) => <MobileChatHeader onBack={onBack} />}
       mobileChatView={<ChatView chatInputDisabled={isOtherNode} />}
