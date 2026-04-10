@@ -1018,19 +1018,18 @@ describe("dashboard-store", () => {
       processEvent({ type: "user_message", user: "u", text: "Turn 1" } as UserMessageEvent, 0);
       processEvent({ type: "text_start" } as TextStartEvent, 1);
       processEvent({ type: "text_end" } as TextEndEvent, 2);
-      processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 3);
-
-      const session = useDashboardStore.getState().sessions.find(s => s.agentSessionId === "sess-mt");
-      expect(session?.status).toBe("completed");
+      // processEvent는 이제 statusUpdate를 반환한다 (Zustand sessions 직접 변경 안 함)
+      const result = processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 3);
+      expect(result?.agentSessionId).toBe("sess-mt");
+      expect(result?.status).toBe("completed");
     });
 
     it("should set status to 'error' on error event", () => {
       const { processEvent } = useDashboardStore.getState();
       processEvent({ type: "user_message", user: "u", text: "Turn 1" } as UserMessageEvent, 0);
-      processEvent({ type: "error", message: "failed" } as ErrorEvent, 1);
-
-      const session = useDashboardStore.getState().sessions.find(s => s.agentSessionId === "sess-mt");
-      expect(session?.status).toBe("error");
+      const result = processEvent({ type: "error", message: "failed" } as ErrorEvent, 1);
+      expect(result?.agentSessionId).toBe("sess-mt");
+      expect(result?.status).toBe("error");
     });
 
     it("should reset status to 'running' on user_message after complete (multi-turn)", () => {
@@ -1040,52 +1039,46 @@ describe("dashboard-store", () => {
       processEvent({ type: "user_message", user: "u", text: "Turn 1" } as UserMessageEvent, 0);
       processEvent({ type: "text_start" } as TextStartEvent, 1);
       processEvent({ type: "text_end" } as TextEndEvent, 2);
-      processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 3);
+      const r1 = processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 3);
+      expect(r1?.status).toBe("completed");
 
-      expect(useDashboardStore.getState().sessions.find(s => s.agentSessionId === "sess-mt")?.status).toBe("completed");
-
-      // Turn 2: new user_message (resume)
-      processEvent({ type: "user_message", user: "u", text: "Turn 2" } as UserMessageEvent, 4);
-
-      expect(useDashboardStore.getState().sessions.find(s => s.agentSessionId === "sess-mt")?.status).toBe("running");
+      // Turn 2: new user_message (resume) → status는 반환값으로 확인
+      const r2 = processEvent({ type: "user_message", user: "u", text: "Turn 2" } as UserMessageEvent, 4);
+      expect(r2?.status).toBe("running");
     });
 
     it("should reset status to 'running' on intervention_sent after complete", () => {
       const { processEvent } = useDashboardStore.getState();
 
       processEvent({ type: "user_message", user: "u", text: "Turn 1" } as UserMessageEvent, 0);
-      processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 1);
+      const r1 = processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 1);
+      expect(r1?.status).toBe("completed");
 
-      expect(useDashboardStore.getState().sessions.find(s => s.agentSessionId === "sess-mt")?.status).toBe("completed");
-
-      // Intervention resumes the session
-      processEvent({ type: "intervention_sent", user: "admin", text: "continue" } as InterventionSentEvent, 2);
-
-      expect(useDashboardStore.getState().sessions.find(s => s.agentSessionId === "sess-mt")?.status).toBe("running");
+      // Intervention resumes the session → status는 반환값으로 확인
+      const r2 = processEvent({ type: "intervention_sent", user: "admin", text: "continue" } as InterventionSentEvent, 2);
+      expect(r2?.status).toBe("running");
     });
 
     it("should handle full multi-turn cycle: running → completed → running → completed", () => {
       const { processEvent } = useDashboardStore.getState();
-      const getStatus = () =>
-        useDashboardStore.getState().sessions.find(s => s.agentSessionId === "sess-mt")?.status;
 
-      // Turn 1
-      processEvent({ type: "user_message", user: "u", text: "Turn 1" } as UserMessageEvent, 0);
-      expect(getStatus()).toBe("running");
+      // Turn 1: user_message → running
+      const rUser1 = processEvent({ type: "user_message", user: "u", text: "Turn 1" } as UserMessageEvent, 0);
+      expect(rUser1?.status).toBe("running");
 
       processEvent({ type: "text_start" } as TextStartEvent, 1);
       processEvent({ type: "text_end" } as TextEndEvent, 2);
-      processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 3);
-      expect(getStatus()).toBe("completed");
+      const rComplete1 = processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 3);
+      expect(rComplete1?.status).toBe("completed");
 
-      // Turn 2
-      processEvent({ type: "user_message", user: "u", text: "Turn 2" } as UserMessageEvent, 4);
-      expect(getStatus()).toBe("running");
+      // Turn 2: user_message → running
+      const rUser2 = processEvent({ type: "user_message", user: "u", text: "Turn 2" } as UserMessageEvent, 4);
+      expect(rUser2?.status).toBe("running");
 
       processEvent({ type: "text_start" } as TextStartEvent, 5);
       processEvent({ type: "text_end" } as TextEndEvent, 6);
-      processEvent({ type: "complete", result: "done again", attachments: [] } as CompleteEvent, 7);
-      expect(getStatus()).toBe("completed");
+      const rComplete2 = processEvent({ type: "complete", result: "done again", attachments: [] } as CompleteEvent, 7);
+      expect(rComplete2?.status).toBe("completed");
     });
 
     it("should not update status for unrelated event types (text_start, text_delta, etc.)", () => {
@@ -2040,6 +2033,102 @@ describe("dashboard-store", () => {
 
       // 에러 없이 처리되고, processingCtx.historySynced가 true가 되어야 함
       expect(useDashboardStore.getState().processingCtx.historySynced).toBe(true);
+    });
+
+    it("processEvents returns statusUpdates from history_sync", () => {
+      const store = useDashboardStore.getState();
+
+      store.setSessions([
+        { agentSessionId: "sess-status", status: "running", eventCount: 0, createdAt: "2026-01-01T00:00:00Z" },
+      ]);
+      store.setActiveSession("sess-status");
+
+      const result = store.processEvents([
+        {
+          event: {
+            type: "history_sync",
+            last_event_id: 5,
+            is_live: true,
+            status: "completed",
+          } as unknown as import("../../shared/types").SoulSSEEvent,
+          eventId: 0,
+        },
+      ]);
+
+      expect(result.statusUpdates).toHaveLength(1);
+      expect(result.statusUpdates[0]).toEqual({ agentSessionId: "sess-status", status: "completed" });
+    });
+
+    it("processEvents returns statusUpdates from deriveSessionStatus after historySynced", () => {
+      const store = useDashboardStore.getState();
+
+      store.setSessions([
+        { agentSessionId: "sess-derive", status: "running", eventCount: 0, createdAt: "2026-01-01T00:00:00Z" },
+      ]);
+      store.setActiveSession("sess-derive");
+
+      // historySynced를 먼저 true로 만듦
+      store.processEvents([
+        {
+          event: {
+            type: "history_sync",
+            last_event_id: 0,
+            is_live: true,
+          } as unknown as import("../../shared/types").SoulSSEEvent,
+          eventId: 0,
+        },
+      ]);
+
+      // complete 이벤트 → "completed" 도출
+      const result = store.processEvents([
+        {
+          event: {
+            type: "complete",
+            result: "done",
+            attachments: [],
+            timestamp: 0,
+          } as unknown as import("../../shared/types").SoulSSEEvent,
+          eventId: 10,
+        },
+      ]);
+
+      // deriveSessionStatus("complete") → "completed"
+      expect(result.statusUpdates.some((u) => u.agentSessionId === "sess-derive" && u.status === "completed")).toBe(true);
+    });
+
+    it("processEvents returns empty statusUpdates for events that don't affect status", () => {
+      const store = useDashboardStore.getState();
+
+      store.setSessions([
+        { agentSessionId: "sess-notrigger", status: "running", eventCount: 0, createdAt: "2026-01-01T00:00:00Z" },
+      ]);
+      store.setActiveSession("sess-notrigger");
+
+      // historySynced = true
+      store.processEvents([
+        {
+          event: {
+            type: "history_sync",
+            last_event_id: 0,
+            is_live: true,
+          } as unknown as import("../../shared/types").SoulSSEEvent,
+          eventId: 0,
+        },
+      ]);
+
+      // text_delta는 status 변경 없음
+      const result = store.processEvents([
+        {
+          event: { type: "text_start", timestamp: 0 } as TextStartEvent,
+          eventId: 20,
+        },
+        {
+          event: { type: "text_delta", text: "hello", timestamp: 0 } as TextDeltaEvent,
+          eventId: 21,
+        },
+      ]);
+
+      expect(result.statusUpdates).toHaveLength(0);
     });
   });
 

@@ -87,6 +87,13 @@ export type FolderSortMode = "name-asc" | "name-desc" | "created-desc" | "create
 
 export type MobileTab = "feed" | "folder" | "chat" | "settings";
 
+// === ProcessEventsResult ===
+
+/** processEvents 반환 타입: SSE 이벤트 배치 처리 결과 */
+export interface ProcessEventsResult {
+  statusUpdates: Array<{ agentSessionId: string; status: SessionStatus }>;
+}
+
 // === State Interface ===
 
 export interface DashboardState {
@@ -220,10 +227,10 @@ export interface DashboardActions {
   selectEventNode: (data: SelectedEventNodeData | null, nodeId?: string | null, switchTab?: boolean) => void;
 
   // SSE 이벤트 처리
-  processEvent: (event: SoulSSEEvent, eventId: number) => void;
+  processEvent: (event: SoulSSEEvent, eventId: number) => { agentSessionId: string; status: SessionStatus } | null;
 
   // SSE 이벤트 배치 처리 (히스토리 리플레이 최적화: N개 이벤트를 트리에 적용 후 set() 1회)
-  processEvents: (events: Array<{ event: SoulSSEEvent; eventId: number }>) => void;
+  processEvents: (events: Array<{ event: SoulSSEEvent; eventId: number }>) => ProcessEventsResult;
 
   // 낙관적 세션 추가 + 활성 세션 설정 (세션 생성 직후 즉시 목록 반영)
   addOptimisticSession: (agentSessionId: string, prompt: string, folderId?: string | null, nodeId?: string, agentId?: string | null, agentName?: string | null, agentPortraitUrl?: string | null) => void;
@@ -590,24 +597,13 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           ctx.historySynced = true;
           const syncEvent = event as HistorySyncEvent;
 
-          // 서버가 보내준 status를 세션 목록에 즉시 반영 (정본)
-          let sessionsUpdate: { sessions: SessionSummary[] } | Record<string, never> = {};
+          // history_sync의 status는 processEvent 호출자(useSessionProvider)가
+          // ProcessEventsResult.statusUpdates를 통해 TanStack Query 캐시에 반영한다.
+          set({ ...(eventId > 0 ? { lastEventId: eventId } : {}) });
           if (syncEvent.status && state.activeSessionKey) {
-            const idx = state.sessions.findIndex(
-              (s) => s.agentSessionId === state.activeSessionKey,
-            );
-            if (idx >= 0 && state.sessions[idx].status !== syncEvent.status) {
-              const updatedSessions = [...state.sessions];
-              updatedSessions[idx] = {
-                ...updatedSessions[idx],
-                status: syncEvent.status as SessionStatus,
-              };
-              sessionsUpdate = { sessions: updatedSessions };
-            }
+            return { agentSessionId: state.activeSessionKey, status: syncEvent.status as SessionStatus };
           }
-
-          set({ ...(eventId > 0 ? { lastEventId: eventId } : {}), ...sessionsUpdate });
-          return;
+          return null;
         }
 
         // root가 필요한 이벤트에 대해 보장
@@ -635,21 +631,12 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         // 3. 세션 상태 갱신 — 히스토리 리플레이 중에는 억제
         // history_sync 수신 전에는 저장된 이벤트를 리플레이하는 단계이므로
         // 이벤트별로 status를 갱신하면 running → completed 깜빡임이 발생한다.
-        let sessionsUpdate: { sessions: SessionSummary[] } | Record<string, never> = {};
+        // status 업데이트는 반환값으로 호출자에게 전달한다 (Zustand sessions 직접 변경 안 함).
+        let statusUpdate: { agentSessionId: string; status: SessionStatus } | null = null;
         if (ctx.historySynced) {
           const derivedStatus = deriveSessionStatus(event);
           if (derivedStatus && state.activeSessionKey) {
-            const idx = state.sessions.findIndex(
-              (s) => s.agentSessionId === state.activeSessionKey,
-            );
-            if (idx >= 0 && state.sessions[idx].status !== derivedStatus) {
-              const updatedSessions = [...state.sessions];
-              updatedSessions[idx] = {
-                ...updatedSessions[idx],
-                status: derivedStatus,
-              };
-              sessionsUpdate = { sessions: updatedSessions };
-            }
+            statusUpdate = { agentSessionId: state.activeSessionKey, status: derivedStatus };
           }
         }
 
@@ -666,7 +653,6 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
             treeVersion: state.treeVersion + 1,
             treeChangeInfo,
             lastEventId: eventId,
-            ...sessionsUpdate,
             ...(notify
               ? { pendingNotifications: [...state.pendingNotifications, event] }
               : {}),
@@ -674,12 +660,13 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         } else {
           set({
             lastEventId: eventId,
-            ...sessionsUpdate,
             ...(notify
               ? { pendingNotifications: [...state.pendingNotifications, event] }
               : {}),
           });
         }
+
+        return statusUpdate;
       },
 
       // --- SSE 이벤트 배치 처리 ---
@@ -688,14 +675,14 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
       // 972개 이벤트 → set() 1회로 렌더 비용을 O(N)에서 O(1)로 줄입니다.
 
       processEvents: (events) => {
-        if (events.length === 0) return;
+        if (events.length === 0) return { statusUpdates: [] };
 
         const state = get();
         const ctx = state.processingCtx;
         let root = state.tree;
         let updated = false;
         let maxEventId = state.lastEventId;
-        let sessionsUpdate: { sessions: SessionSummary[] } | Record<string, never> = {};
+        const statusUpdates: Array<{ agentSessionId: string; status: SessionStatus }> = [];
         const notifications: SoulSSEEvent[] = [];
 
         for (const { event, eventId } of events) {
@@ -710,20 +697,9 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
             ctx.historySynced = true;
             const syncEvent = event as HistorySyncEvent;
 
+            // history_sync의 status는 반환값으로 호출자에게 전달한다.
             if (syncEvent.status && state.activeSessionKey) {
-              const sessions: SessionSummary[] =
-                "sessions" in sessionsUpdate ? sessionsUpdate.sessions : state.sessions;
-              const idx = sessions.findIndex(
-                (s) => s.agentSessionId === state.activeSessionKey,
-              );
-              if (idx >= 0 && sessions[idx].status !== syncEvent.status) {
-                const updatedSessions: SessionSummary[] = [...sessions];
-                updatedSessions[idx] = {
-                  ...updatedSessions[idx],
-                  status: syncEvent.status as SessionStatus,
-                };
-                sessionsUpdate = { sessions: updatedSessions };
-              }
+              statusUpdates.push({ agentSessionId: state.activeSessionKey, status: syncEvent.status as SessionStatus });
             }
             continue;
           }
@@ -750,21 +726,11 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           }
 
           // 세션 상태 갱신 (히스토리 리플레이 중에는 억제)
+          // status 업데이트는 반환값으로 호출자에게 전달한다 (Zustand sessions 직접 변경 안 함).
           if (ctx.historySynced) {
             const derivedStatus = deriveSessionStatus(event);
             if (derivedStatus && state.activeSessionKey) {
-              const sessions = sessionsUpdate.sessions ?? state.sessions;
-              const idx = sessions.findIndex(
-                (s) => s.agentSessionId === state.activeSessionKey,
-              );
-              if (idx >= 0 && sessions[idx].status !== derivedStatus) {
-                const updatedSessions = [...sessions];
-                updatedSessions[idx] = {
-                  ...updatedSessions[idx],
-                  status: derivedStatus,
-                };
-                sessionsUpdate = { sessions: updatedSessions };
-              }
+              statusUpdates.push({ agentSessionId: state.activeSessionKey, status: derivedStatus });
             }
 
             if (shouldNotify(event)) {
@@ -778,11 +744,12 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         set({
           ...(updated ? { tree: root, treeVersion: state.treeVersion + 1, treeChangeInfo: null } : {}),
           lastEventId: maxEventId,
-          ...sessionsUpdate,
           ...(notifications.length > 0
             ? { pendingNotifications: [...state.pendingNotifications, ...notifications] }
             : {}),
         });
+
+        return { statusUpdates };
       },
 
       // --- 낙관적 세션 추가 ---
