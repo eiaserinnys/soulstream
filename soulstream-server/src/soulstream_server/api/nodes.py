@@ -123,7 +123,7 @@ def create_nodes_router(
         if not node:
             raise HTTPException(status_code=404, detail=f"노드를 찾을 수 없습니다: {node_id}")
 
-        url = f"http://{node.host}:{node.port}/api/oauth-profiles"
+        url = f"http://{node.host}:{node.port}/auth/claude/profiles"
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(url)

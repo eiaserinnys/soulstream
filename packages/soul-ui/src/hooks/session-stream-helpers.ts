@@ -104,6 +104,11 @@ export function applySessionCreated(
   if (filter !== "all" && newSession.sessionType !== filter) {
     return data;
   }
+  // 낙관적 업데이트(addOptimisticSession)와의 중복 삽입 방지
+  const exists = data.pages.some((page) =>
+    page.sessions.some((s) => s.agentSessionId === newSession.agentSessionId),
+  );
+  if (exists) return data;
   return {
     ...data,
     pages: data.pages.map((page, i) =>

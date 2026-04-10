@@ -42,7 +42,7 @@ def mount_dashboard(app: FastAPI, dashboard_dir: str) -> None:
     async def spa_fallback(request: Request, call_next):
         response = await call_next(request)
 
-        # 404인 GET 요청이고 API/WS 경로가 아니면 index.html 반환
+        # 404인 GET 요청이고 API/WS 경로가 아니면 정적 파일 또는 index.html 반환
         if (
             response.status_code == 404
             and request.method == "GET"
@@ -50,6 +50,14 @@ def mount_dashboard(app: FastAPI, dashboard_dir: str) -> None:
             and not request.url.path.startswith("/ws/")
             and not request.url.path.startswith("/assets/")
         ):
+            # dist 루트의 정적 파일(PWA: registerSW.js, manifest.webmanifest, sw.js 등) 직접 서빙
+            # dashboard_path는 mount_dashboard 함수 스코프의 변수 (L21: dashboard_path = Path(dashboard_dir))
+            relative_path = request.url.path.lstrip("/")
+            if relative_path:
+                static_file = dashboard_path / relative_path
+                if static_file.exists() and static_file.is_file():
+                    return FileResponse(str(static_file))
+            # 실제 파일이 없으면 SPA fallback
             return FileResponse(str(index_html))
 
         return response
