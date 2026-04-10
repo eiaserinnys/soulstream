@@ -284,10 +284,10 @@ export function useSessionListProvider(
             updates.lastReadEventId = event.last_read_event_id;
           }
 
-          // TanStack Query 캐시 업데이트
-          queryClient.setQueryData(
-            queryKey,
-            (old: InfiniteData<SessionPage> | undefined) => {
+          // TanStack Query 캐시 업데이트 — 모든 뷰/폴더 캐시를 동시에 갱신
+          queryClient.setQueriesData<InfiniteData<SessionPage>>(
+            { queryKey: ["sessions"], exact: false },
+            (old) => {
               if (!old) return old;
               return applySessionUpdated(old, event.agent_session_id, updates);
             },
@@ -324,10 +324,10 @@ export function useSessionListProvider(
             `[⚡ SSE] session_deleted → ${event.agent_session_id}`,
           );
 
-          // TanStack Query 캐시 업데이트
-          queryClient.setQueryData(
-            queryKey,
-            (old: InfiniteData<SessionPage> | undefined) => {
+          // TanStack Query 캐시 업데이트 — 모든 뷰/폴더 캐시를 동시에 갱신
+          queryClient.setQueriesData<InfiniteData<SessionPage>>(
+            { queryKey: ["sessions"], exact: false },
+            (old) => {
               if (!old) return old;
               return applySessionDeleted(old, event.agent_session_id);
             },
@@ -343,10 +343,10 @@ export function useSessionListProvider(
           break;
 
         case "metadata_updated":
-          // TanStack Query 캐시 업데이트
-          queryClient.setQueryData(
-            queryKey,
-            (old: InfiniteData<SessionPage> | undefined) => {
+          // TanStack Query 캐시 업데이트 — 모든 뷰/폴더 캐시를 동시에 갱신
+          queryClient.setQueriesData<InfiniteData<SessionPage>>(
+            { queryKey: ["sessions"], exact: false },
+            (old) => {
               if (!old) return old;
               const newPages = old.pages.map((page) => ({
                 ...page,
