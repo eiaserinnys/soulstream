@@ -430,16 +430,11 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         const prev = get().sessions;
         const prevTotal = get().sessionsTotal;
         const newTotal = total ?? sessions.length;
-        const caller = new Error().stack?.split('\n').slice(2, 4).map(l => l.trim()).join(' ← ') ?? '?';
         const unchanged =
           prev.length === sessions.length &&
           prevTotal === newTotal &&
           prev.every((s, i) => s.agentSessionId === sessions[i].agentSessionId);
-        if (unchanged) {
-          console.log(`[🔵 setSessions] skip (unchanged, ${sessions.length} sessions) | caller: ${caller}`);
-          return;
-        }
-        console.log(`[🔵 setSessions] ${prev.length} → ${sessions.length} (total=${newTotal}) | caller: ${caller}`);
+        if (unchanged) return;
         set({
           sessions,
           sessionsTotal: newTotal,
