@@ -192,7 +192,7 @@ export function OrchestratorNewSessionModal() {
           {aliveNodes.map((n) => (
             <SelectItem key={n.nodeId} value={n.nodeId}>
               {n.nodeId}
-              <span className="ml-2 text-[10px] font-mono text-muted-foreground/50">
+              <span className="ml-2 text-xs font-mono text-muted-foreground/50">
                 {n.host}:{n.port}
               </span>
             </SelectItem>

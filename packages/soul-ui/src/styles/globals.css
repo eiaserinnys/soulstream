@@ -38,6 +38,9 @@
   --font-mono: 'Cascadia Code', 'Fira Code', monospace;
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 
+  /* Custom text-size tokens */
+  --text-caption: 0.8125rem;  /* 13px — 타임스탬프, 안내 문구, 메뉴 아이템 등 보조 텍스트 */
+
   /* Coss UI semantic color mappings */
   --color-background: var(--background);
   --color-foreground: var(--foreground);

@@ -60,7 +60,7 @@ export const ThinkingNode = memo(function ThinkingNode({ data, selected }: NodeP
             {data.nodeType === "text" ? "Assistant" : "Thinking"}
           </span>
           {isPlanMode && (
-            <span className="text-[9px] text-node-plan font-medium px-[5px] py-px rounded-[3px] bg-node-plan/12">
+            <span className="text-xs text-node-plan font-medium px-[5px] py-px rounded-[3px] bg-node-plan/12">
               PLAN
             </span>
           )}
@@ -83,7 +83,7 @@ export const ThinkingNode = memo(function ThinkingNode({ data, selected }: NodeP
         </div>
 
         {/* Truncated content */}
-        <div className={cn("text-[12px] text-muted-foreground leading-normal italic", truncate2)}>
+        <div className={cn("text-xs text-muted-foreground leading-normal italic", truncate2)}>
           {data.content || data.label || '(thinking...)'}
         </div>
       </div>

@@ -19,7 +19,7 @@ export function NodeGuardBadge({ nodeId, className }: NodeGuardBadgeProps) {
   return (
     <div
       className={cn(
-        "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium",
+        "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium",
         "bg-accent-amber/15 text-accent-amber border border-accent-amber/30",
         className,
       )}

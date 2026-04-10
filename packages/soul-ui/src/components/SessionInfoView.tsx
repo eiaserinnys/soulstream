@@ -19,7 +19,7 @@ export function SessionInfoView() {
   if (!activeSessionKey) {
     return (
       <div className="flex-1 flex items-center justify-center h-full">
-        <div className="text-muted-foreground text-[13px]">Select a session</div>
+        <div className="text-muted-foreground text-caption">Select a session</div>
       </div>
     );
   }

@@ -39,7 +39,7 @@ export const InterventionNode = memo(function InterventionNode({ data, selected 
 
         {/* User label if subAgentId or label differs */}
         {data.label && data.label !== data.content && (
-          <div className="text-[11px] text-node-intervention font-semibold mb-1 truncate">
+          <div className="text-xs text-node-intervention font-semibold mb-1 truncate">
             {data.label}
           </div>
         )}

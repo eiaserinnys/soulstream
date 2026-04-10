@@ -89,7 +89,7 @@ export function StorageModeToggleCompact() {
       onClick={handleClick}
       disabled={!canToggle}
       className={cn(
-        "flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-medium",
+        "flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium",
         "border transition-colors",
         canToggle
           ? "border-border text-muted-foreground hover:bg-input cursor-pointer"
@@ -101,7 +101,7 @@ export function StorageModeToggleCompact() {
           : currentMode.label
       }
     >
-      <span className="text-[10px]">{currentMode.icon}</span>
+      <span className="text-xs">{currentMode.icon}</span>
       <span>{currentMode.label}</span>
     </button>
   );

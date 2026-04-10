@@ -23,14 +23,14 @@ export function ThemeToggle() {
     <button
       onClick={toggle}
       className={cn(
-        "flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-medium",
+        "flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium",
         "border border-border text-muted-foreground hover:bg-input",
         "transition-colors cursor-pointer",
       )}
       title={isDark ? "라이트 모드로 전환" : "다크 모드로 전환"}
       aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
     >
-      <span className="text-[12px]">{isDark ? "☀️" : "🌙"}</span>
+      <span className="text-xs">{isDark ? "☀️" : "🌙"}</span>
       <span>{isDark ? "Light" : "Dark"}</span>
     </button>
   );

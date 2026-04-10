@@ -259,7 +259,7 @@ export function NewSessionDialog({
             placeholder="What would you like to work on?"
             disabled={sending}
             rows={3}
-            className="w-full bg-input border border-input rounded-lg py-3 px-4 text-[15px] text-foreground font-sans resize-none outline-none min-h-20 max-h-[200px] leading-normal transition-colors duration-150 focus:border-accent-blue/40"
+            className="w-full bg-input border border-input rounded-lg py-3 px-4 text-base text-foreground font-sans resize-none outline-none min-h-20 max-h-[200px] leading-normal transition-colors duration-150 focus:border-accent-blue/40"
           />
 
           {/* File attachment area (fileUploadUrl이 있을 때만 표시) */}
@@ -283,7 +283,7 @@ export function NewSessionDialog({
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded border border-border hover:border-border/80"
+                  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded border border-border hover:border-border/80"
                   title="Attach files"
                 >
                   {/* Paperclip icon */}
@@ -303,12 +303,12 @@ export function NewSessionDialog({
                   Attach files
                 </button>
                 {files.length === 0 && (
-                  <span className="text-[10px] text-muted-foreground/40">
+                  <span className="text-xs text-muted-foreground/40">
                     or drag & drop
                   </span>
                 )}
                 {isUploading && (
-                  <span className="text-[10px] text-muted-foreground/60">
+                  <span className="text-xs text-muted-foreground/60">
                     Uploading...
                   </span>
                 )}
@@ -333,7 +333,7 @@ export function NewSessionDialog({
 
         {/* Footer */}
         <div className="flex gap-2 justify-end items-center px-6 pb-5">
-          <span className="text-[11px] text-muted-foreground/60 flex-1">
+          <span className="text-xs text-muted-foreground/60 flex-1">
             Ctrl+Enter to submit
           </span>
           <DialogClose asChild>

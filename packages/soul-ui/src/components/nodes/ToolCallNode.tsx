@@ -122,19 +122,19 @@ export const ToolCallNode = memo(function ToolCallNode({ data, selected }: NodeP
           {/* 카테고리 배지 (SKILL / AGENT) */}
           {categoryConfig && !isPlanEntry && !isPlanExit && (
             <span
-              className="text-[9px] font-bold px-[5px] py-px rounded-[3px]"
+              className="text-xs font-bold px-[5px] py-px rounded-[3px]"
               style={{ color: categoryConfig.color, backgroundColor: `color-mix(in srgb, ${categoryConfig.color} 12%, transparent)` }}
             >
               {categoryConfig.label}
             </span>
           )}
           {isStreaming && (
-            <span className="ml-auto text-[10px] font-medium" style={{ color: accentColor }}>
+            <span className="ml-auto text-xs font-medium" style={{ color: accentColor }}>
               running...
             </span>
           )}
           {isPlanMode && !isPlanEntry && !isPlanExit && !categoryConfig && (
-            <span className="ml-auto text-[9px] text-node-plan font-medium px-[5px] py-px rounded-[3px] bg-node-plan/12">
+            <span className="ml-auto text-xs text-node-plan font-medium px-[5px] py-px rounded-[3px] bg-node-plan/12">
               PLAN
             </span>
           )}
@@ -153,7 +153,7 @@ export const ToolCallNode = memo(function ToolCallNode({ data, selected }: NodeP
         {/* Input params (2-line clamp) */}
         {data.toolInput && (
           <div
-            className={cn("text-[11px] text-muted-foreground font-mono whitespace-pre-wrap", truncate2)}
+            className={cn("text-xs text-muted-foreground font-mono whitespace-pre-wrap", truncate2)}
           >
             {formatInputPreview(data.toolName, data.toolInput)}
           </div>
