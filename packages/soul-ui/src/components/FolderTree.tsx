@@ -331,10 +331,10 @@ export function FolderTree({
     setEditingId(null);
   };
 
-  /** 폴더 선택 — 모바일에서는 자동 세션 선택을 건너뛰어 폴더 탭 2단계 뷰를 유지한다 */
+  /** 폴더 선택 — 자동 세션 선택은 FolderContents의 useEffect(!isMobile 조건)가 처리한다 */
   const handleSelectFolder = useCallback((folderId: string | null) => {
-    selectFolder(folderId, { skipAutoSelect: isMobile });
-  }, [selectFolder, isMobile]);
+    selectFolder(folderId);
+  }, [selectFolder]);
 
   /** 피드 미읽음 카운트 — getFeedUnreadCount로 정렬 없이 O(n) 계산 */
   const feedUnreadCount = useMemo(() =>

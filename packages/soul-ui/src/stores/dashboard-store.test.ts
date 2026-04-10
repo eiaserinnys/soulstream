@@ -6,7 +6,10 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
+import { QueryClient } from "@tanstack/react-query";
+import type { InfiniteData } from "@tanstack/react-query";
 import { useDashboardStore, findTreeNode } from "./dashboard-store";
+import { filterSessionsInFolder, type SessionPage } from "../hooks/session-stream-helpers";
 import type {
   TextStartEvent,
   TextDeltaEvent,
@@ -44,6 +47,27 @@ function collectNodes(
     result.push(...collectNodes(child, type));
   }
   return result;
+}
+
+// === QueryClient 테스트 헬퍼 ===
+
+/** addOptimisticSession 테스트용 QueryClient 생성 */
+function makeTestQueryClient() {
+  return new QueryClient({ defaultOptions: { queries: { retry: false } } });
+}
+
+/** QueryClient에 초기 세션 데이터를 시드 */
+function seedQueryClient(qc: QueryClient, sessions: import("../../shared/types").SessionSummary[]) {
+  qc.setQueryData<InfiniteData<SessionPage>>(["sessions"], {
+    pages: [{ sessions, total: sessions.length }],
+    pageParams: [0],
+  });
+}
+
+/** QueryClient 캐시에서 세션 목록 조회 */
+function getQuerySessions(qc: QueryClient): import("../../shared/types").SessionSummary[] {
+  const data = qc.getQueryData<InfiniteData<SessionPage>>(["sessions"]);
+  return data?.pages.flatMap((p) => p.sessions) ?? [];
 }
 
 describe("dashboard-store", () => {
@@ -795,21 +819,22 @@ describe("dashboard-store", () => {
 
   describe("addOptimisticSession", () => {
     it("should add session and set it as active", () => {
-      useDashboardStore.getState().addOptimisticSession("sess-new", "hello");
+      const qc = makeTestQueryClient();
+      useDashboardStore.getState().addOptimisticSession(qc, "sess-new", "hello");
       const state = useDashboardStore.getState();
 
-      expect(state.sessions).toHaveLength(1);
-      expect(state.sessions[0].agentSessionId).toBe("sess-new");
-      expect(state.sessions[0].prompt).toBe("hello");
+      expect(state.activeSessionSummary?.agentSessionId).toBe("sess-new");
+      expect(state.activeSessionSummary?.prompt).toBe("hello");
       expect(state.activeSessionKey).toBe("sess-new");
     });
 
     it("should not duplicate session if already exists", () => {
-      useDashboardStore.getState().addOptimisticSession("sess-new", "hello");
-      useDashboardStore.getState().addOptimisticSession("sess-new", "hello again");
-      const state = useDashboardStore.getState();
+      const qc = makeTestQueryClient();
+      seedQueryClient(qc, [{ agentSessionId: "sess-new", status: "running", eventCount: 0, createdAt: "2026-01-01T00:00:00Z", prompt: "hello" }]);
 
-      expect(state.sessions).toHaveLength(1);
+      useDashboardStore.getState().addOptimisticSession(qc, "sess-new", "hello again");
+
+      expect(getQuerySessions(qc)).toHaveLength(1);
     });
   });
 
@@ -866,14 +891,14 @@ describe("dashboard-store", () => {
   // === 낙관적 세션 추가 ===
 
   describe("addOptimisticSession", () => {
-    it("should prepend new session to sessions array", () => {
-      const existing: SessionSummary[] = [
+    it("should prepend new session to queryClient cache", () => {
+      const qc = makeTestQueryClient();
+      seedQueryClient(qc, [
         { agentSessionId: "sess-old", status: "completed", eventCount: 10, createdAt: "2026-01-01T00:00:00Z" },
-      ];
-      useDashboardStore.getState().setSessions(existing);
+      ]);
 
-      useDashboardStore.getState().addOptimisticSession("sess-new", "hello");
-      const sessions = useDashboardStore.getState().sessions;
+      useDashboardStore.getState().addOptimisticSession(qc, "sess-new", "hello");
+      const sessions = getQuerySessions(qc);
 
       expect(sessions).toHaveLength(2);
       expect(sessions[0].agentSessionId).toBe("sess-new");
@@ -883,13 +908,14 @@ describe("dashboard-store", () => {
       expect(sessions[1].agentSessionId).toBe("sess-old");
     });
 
-    it("should not duplicate if session already exists", () => {
-      useDashboardStore.getState().setSessions([
+    it("should not duplicate if session already exists in cache", () => {
+      const qc = makeTestQueryClient();
+      seedQueryClient(qc, [
         { agentSessionId: "sess-abc", status: "running", eventCount: 3, createdAt: "2026-01-01T00:00:00Z" },
       ]);
 
-      useDashboardStore.getState().addOptimisticSession("sess-abc", "dup");
-      expect(useDashboardStore.getState().sessions).toHaveLength(1);
+      useDashboardStore.getState().addOptimisticSession(qc, "sess-abc", "dup");
+      expect(getQuerySessions(qc)).toHaveLength(1);
     });
 
     it("should assign folderId in catalog.sessions when folderId is provided", () => {
@@ -899,14 +925,16 @@ describe("dashboard-store", () => {
       };
       useDashboardStore.getState().setCatalog(catalog);
 
-      useDashboardStore.getState().addOptimisticSession("sess-folder", "hi", "folder-1");
+      const qc = makeTestQueryClient();
+      useDashboardStore.getState().addOptimisticSession(qc, "sess-folder", "hi", "folder-1");
       const state = useDashboardStore.getState();
 
       expect(state.catalog?.sessions["sess-folder"]).toEqual({
         folderId: "folder-1",
         displayName: null,
       });
-      expect(state.sessions[0].agentSessionId).toBe("sess-folder");
+      // activeSessionSummary로 새 세션 확인
+      expect(state.activeSessionSummary?.agentSessionId).toBe("sess-folder");
     });
 
     it("should not modify catalog.sessions when folderId is null/undefined", () => {
@@ -916,7 +944,8 @@ describe("dashboard-store", () => {
       };
       useDashboardStore.getState().setCatalog(catalog);
 
-      useDashboardStore.getState().addOptimisticSession("sess-no-folder", "hi");
+      const qc = makeTestQueryClient();
+      useDashboardStore.getState().addOptimisticSession(qc, "sess-no-folder", "hi");
       const state = useDashboardStore.getState();
 
       // 기존 catalog.sessions는 그대로, 새 세션에 대한 할당은 없음
@@ -928,31 +957,38 @@ describe("dashboard-store", () => {
     });
 
     it("should include nodeId when provided", () => {
-      useDashboardStore.getState().addOptimisticSession("sess-node", "hi", null, "silent-manari");
-      const session = useDashboardStore.getState().sessions[0];
+      const qc = makeTestQueryClient();
+      useDashboardStore.getState().addOptimisticSession(qc, "sess-node", "hi", null, "silent-manari");
 
-      expect(session.agentSessionId).toBe("sess-node");
-      expect(session.nodeId).toBe("silent-manari");
+      expect(useDashboardStore.getState().activeSessionSummary?.agentSessionId).toBe("sess-node");
+      expect(useDashboardStore.getState().activeSessionSummary?.nodeId).toBe("silent-manari");
     });
 
     it("should not include nodeId when not provided", () => {
-      useDashboardStore.getState().addOptimisticSession("sess-no-node", "hi");
-      const session = useDashboardStore.getState().sessions[0];
+      const qc = makeTestQueryClient();
+      useDashboardStore.getState().addOptimisticSession(qc, "sess-no-node", "hi");
 
-      expect(session.agentSessionId).toBe("sess-no-node");
-      expect(session.nodeId).toBeUndefined();
+      expect(useDashboardStore.getState().activeSessionSummary?.agentSessionId).toBe("sess-no-node");
+      expect(useDashboardStore.getState().activeSessionSummary?.nodeId).toBeUndefined();
     });
 
-    it("should place session in correct folder via getSessionsInFolder", () => {
+    it("should place session in correct folder via catalog assignment and filterSessionsInFolder", () => {
       const catalog: CatalogState = {
         folders: [{ id: "folder-1", name: "Test Folder" }],
         sessions: {},
       };
       useDashboardStore.getState().setCatalog(catalog);
 
-      useDashboardStore.getState().addOptimisticSession("sess-in-folder", "hi", "folder-1");
-      const inFolder = useDashboardStore.getState().getSessionsInFolder("folder-1");
-      const inUncategorized = useDashboardStore.getState().getSessionsInFolder(null);
+      const qc = makeTestQueryClient();
+      // queryClient에 빈 페이지를 시드해야 setQueriesData updater가 동작함
+      seedQueryClient(qc, []);
+      useDashboardStore.getState().addOptimisticSession(qc, "sess-in-folder", "hi", "folder-1");
+      const updatedCatalog = useDashboardStore.getState().catalog;
+      const querySessions = getQuerySessions(qc);
+
+      // filterSessionsInFolder로 폴더 기준 필터링 확인
+      const inFolder = filterSessionsInFolder(querySessions, updatedCatalog, "folder-1");
+      const inUncategorized = filterSessionsInFolder(querySessions, updatedCatalog, null);
 
       expect(inFolder).toHaveLength(1);
       expect(inFolder[0].agentSessionId).toBe("sess-in-folder");
@@ -964,7 +1000,8 @@ describe("dashboard-store", () => {
       useDashboardStore.getState().selectFolder("other-folder");
       expect(useDashboardStore.getState().selectedFolderId).toBe("other-folder");
 
-      useDashboardStore.getState().addOptimisticSession("sess-new", "hi", "folder-1");
+      const qc = makeTestQueryClient();
+      useDashboardStore.getState().addOptimisticSession(qc, "sess-new", "hi", "folder-1");
 
       const state = useDashboardStore.getState();
       expect(state.selectedFolderId).toBe("folder-1");
@@ -976,7 +1013,8 @@ describe("dashboard-store", () => {
       useDashboardStore.getState().selectFolder("folder-1");
       expect(useDashboardStore.getState().selectedFolderId).toBe("folder-1");
 
-      useDashboardStore.getState().addOptimisticSession("sess-new", "hi", null);
+      const qc = makeTestQueryClient();
+      useDashboardStore.getState().addOptimisticSession(qc, "sess-new", "hi", null);
 
       const state = useDashboardStore.getState();
       expect(state.selectedFolderId).toBeNull();
@@ -989,7 +1027,8 @@ describe("dashboard-store", () => {
       expect(useDashboardStore.getState().selectedFolderId).toBe("folder-1");
 
       // folderId 인자 생략 (undefined)
-      useDashboardStore.getState().addOptimisticSession("sess-new", "hi");
+      const qc = makeTestQueryClient();
+      useDashboardStore.getState().addOptimisticSession(qc, "sess-new", "hi");
 
       expect(useDashboardStore.getState().selectedFolderId).toBe("folder-1");
     });

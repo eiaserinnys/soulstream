@@ -80,9 +80,6 @@ export function useSessionListProvider(
 
   const storageMode = useDashboardStore((s) => s.storageMode);
   const setSessions = useDashboardStore((s) => s.setSessions);
-  const addSession = useDashboardStore((s) => s.addSession);
-  const updateSession = useDashboardStore((s) => s.updateSession);
-  const removeSession = useDashboardStore((s) => s.removeSession);
   const setActiveSessionSummary = useDashboardStore((s) => s.setActiveSessionSummary);
 
   const [folderCounts, setFolderCounts] = useState<Record<string, number>>({});
@@ -271,11 +268,6 @@ export function useSessionListProvider(
               return applySessionCreated(old, newSession, currentFilter);
             },
           );
-
-          // store 동기화 (addSession은 중복 처리 포함)
-          if (currentFilter === "all" || newSession.sessionType === currentFilter) {
-            addSession(newSession);
-          }
           break;
         }
 
@@ -309,9 +301,6 @@ export function useSessionListProvider(
               return applySessionUpdated(old, event.agent_session_id, updates);
             },
           );
-
-          // store 동기화
-          updateSession(event.agent_session_id, updates);
 
           // activeSessionSummary 동기화
           {
@@ -352,9 +341,6 @@ export function useSessionListProvider(
               return applySessionDeleted(old, event.agent_session_id);
             },
           );
-
-          // store 동기화
-          removeSession(event.agent_session_id);
           break;
         }
 
@@ -383,12 +369,10 @@ export function useSessionListProvider(
             },
           );
 
-          // store 동기화
-          updateSession(event.session_id, { metadata: event.metadata });
           break;
       }
     },
-    [queryClient, queryKey, addSession, updateSession, removeSession, setActiveSessionSummary],
+    [queryClient, queryKey, setActiveSessionSummary],
   );
 
   // --- SSE 연결 설정 ---

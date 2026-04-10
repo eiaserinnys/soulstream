@@ -57,6 +57,40 @@ export function filterFeedSessions(
 }
 
 /**
+ * 폴더 내 세션 필터링 순수 함수.
+ * FolderContents에서 TanStack Query 캐시의 전체 세션을 필터링할 때 사용.
+ *
+ * - llm 세션 제외
+ * - folderId가 null이면 미분류(카탈로그 미등록 or folderId=null) 세션만 반환
+ * - folderId가 있으면 해당 폴더 세션만 반환
+ * - catalog.sessions의 displayName 오버라이드 적용
+ */
+export function filterSessionsInFolder(
+  sessions: SessionSummary[],
+  catalog: CatalogState | null,
+  folderId: string | null,
+): SessionSummary[] {
+  if (!catalog?.sessions) return sessions;
+  return sessions
+    .filter((s) => {
+      if (s.sessionType === "llm") return false;
+      const assignment = catalog.sessions[s.agentSessionId];
+      if (folderId === null) {
+        // 미분류: 카탈로그에 없거나 folderId가 null인 세션
+        return !assignment || assignment.folderId === null;
+      }
+      return assignment?.folderId === folderId;
+    })
+    .map((s) => {
+      const assignment = catalog.sessions[s.agentSessionId];
+      if (assignment?.displayName) {
+        return { ...s, displayName: assignment.displayName };
+      }
+      return s;
+    });
+}
+
+/**
  * session_created 이벤트:
  * filter가 'all'이거나 newSession.sessionType이 filter와 일치할 때
  * pages[0] 앞에 newSession을 prepend한다.

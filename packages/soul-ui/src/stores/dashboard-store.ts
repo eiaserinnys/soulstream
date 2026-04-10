@@ -14,6 +14,8 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import type { QueryClient, InfiniteData } from "@tanstack/react-query";
+import type { SessionPage } from "../hooks/session-stream-helpers";
 import type {
   SessionSummary,
   SessionDetail,
@@ -237,7 +239,7 @@ export interface DashboardActions {
   processEvents: (events: Array<{ event: SoulSSEEvent; eventId: number }>) => ProcessEventsResult;
 
   // 낙관적 세션 추가 + 활성 세션 설정 (세션 생성 직후 즉시 목록 반영)
-  addOptimisticSession: (agentSessionId: string, prompt: string, folderId?: string | null, nodeId?: string, agentId?: string | null, agentName?: string | null, agentPortraitUrl?: string | null) => void;
+  addOptimisticSession: (queryClient: QueryClient, agentSessionId: string, prompt: string, folderId?: string | null, nodeId?: string, agentId?: string | null, agentName?: string | null, agentPortraitUrl?: string | null) => void;
 
   // New Session 모달
   openNewSessionModal: (source?: 'folder' | 'feed') => void;
@@ -284,9 +286,8 @@ export interface DashboardActions {
 
   // 카탈로그
   setCatalog: (catalog: CatalogState) => void;
-  selectFolder: (folderId: string | null, options?: { skipAutoSelect?: boolean }) => void;
+  selectFolder: (folderId: string | null) => void;
   clearSelectedFolder: () => void;
-  getSessionsInFolder: (folderId: string | null) => SessionSummary[];
   moveSessionsToFolder: (sessionIds: string[], folderId: string | null) => void;
   renameSession: (sessionId: string, displayName: string | null) => void;
   addFolder: (folder: CatalogFolder) => void;
@@ -306,7 +307,7 @@ export interface DashboardActions {
   clearActiveSession: () => void;
 
   // 다중 선택
-  toggleSessionSelection: (id: string, ctrlKey: boolean, shiftKey: boolean) => void;
+  toggleSessionSelection: (id: string, ctrlKey: boolean, shiftKey: boolean, folderSessions?: SessionSummary[]) => void;
   clearSelection: () => void;
   setEditingSession: (id: string | null) => void;
 }
@@ -761,8 +762,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
 
       // --- 낙관적 세션 추가 ---
 
-      addOptimisticSession: (agentSessionId, prompt, folderId, nodeId, agentId, agentName, agentPortraitUrl) => {
-        const sessions = get().sessions;
+      addOptimisticSession: (queryClient, agentSessionId, prompt, folderId, nodeId, agentId, agentName, agentPortraitUrl) => {
         let catalog = get().catalog;
         const newSession: SessionSummary = {
           agentSessionId,
@@ -777,11 +777,27 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           ...(agentName ? { agentName } : {}),
           ...(agentPortraitUrl ? { agentPortraitUrl } : {}),
         };
-        const updatedSessions = sessions.some(
-          (s) => s.agentSessionId === agentSessionId,
-        )
-          ? sessions
-          : [newSession, ...sessions];
+
+        // TanStack Query 캐시에 낙관적 prepend
+        queryClient.setQueriesData<InfiniteData<SessionPage>>(
+          { queryKey: ["sessions"], exact: false },
+          (old) => {
+            if (!old) return old;
+            // 이미 존재하면 중복 삽입 방지
+            const exists = old.pages.some((page) =>
+              page.sessions.some((s) => s.agentSessionId === agentSessionId),
+            );
+            if (exists) return old;
+            return {
+              ...old,
+              pages: old.pages.map((page, i) =>
+                i === 0
+                  ? { ...page, sessions: [newSession, ...page.sessions], total: page.total + 1 }
+                  : page,
+              ),
+            };
+          },
+        );
 
         // catalog.sessions에도 낙관적으로 폴더 할당 추가
         if (catalog && folderId) {
@@ -796,7 +812,6 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
 
         set({
           ...getSessionResetState(),
-          sessions: updatedSessions,
           catalog,
           activeSessionKey: agentSessionId,
           activeSession: null,
@@ -807,6 +822,8 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
             ? { selectedFolderId: folderId, viewMode: "folder" as const }
             : {}),
         });
+
+        get().setActiveSessionSummary(newSession);
       },
 
       // --- New Session 모달 ---
@@ -1039,18 +1056,8 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         set({ folderSortMode: mode });
       },
 
-      selectFolder: (folderId, options?: { skipAutoSelect?: boolean }) => {
+      selectFolder: (folderId) => {
         set({ selectedFolderId: folderId, viewMode: "folder" });
-        if (!options?.skipAutoSelect) {
-          // FolderTree.handleSelectFolder에서 흡수: 첫 세션 자동 선택
-          const { getSessionsInFolder, setActiveSession, clearActiveSession } = get();
-          const folderSessions = getSessionsInFolder(folderId);
-          if (folderSessions.length > 0) {
-            setActiveSession(folderSessions[0].agentSessionId);
-          } else {
-            clearActiveSession();
-          }
-        }
       },
 
       clearSelectedFolder: () => set({ selectedFolderId: null, viewMode: "feed" }),
@@ -1141,7 +1148,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         });
       },
 
-      toggleSessionSelection: (id, ctrlKey, shiftKey) => {
+      toggleSessionSelection: (id, ctrlKey, shiftKey, folderSessions) => {
         const state = get();
         if (!ctrlKey && !shiftKey) {
           // 일반 클릭: 선택 초기화 + activeSession 설정
@@ -1160,7 +1167,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           return;
         }
         if (shiftKey && state.lastSelectedSessionId) {
-          const folder = state.getSessionsInFolder(state.selectedFolderId);
+          const folder = folderSessions ?? [];
           const lastIdx = folder.findIndex((s) => s.agentSessionId === state.lastSelectedSessionId);
           const curIdx = folder.findIndex((s) => s.agentSessionId === id);
           if (lastIdx >= 0 && curIdx >= 0) {
@@ -1175,26 +1182,6 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
       clearSelection: () => set({ selectedSessionIds: new Set() }),
 
       setEditingSession: (id) => set({ editingSessionId: id }),
-
-      getSessionsInFolder: (folderId) => {
-        const { sessions, catalog } = get();
-        if (!catalog?.sessions) return sessions;
-        return sessions.filter((s) => {
-          if (s.sessionType === "llm") return false;
-          const assignment = catalog.sessions[s.agentSessionId];
-          if (folderId === null) {
-            // 미분류: 카탈로그에 없거나 folderId가 null인 세션
-            return !assignment || assignment.folderId === null;
-          }
-          return assignment?.folderId === folderId;
-        }).map((s) => {
-          const assignment = catalog.sessions[s.agentSessionId];
-          if (assignment?.displayName) {
-            return { ...s, displayName: assignment.displayName };
-          }
-          return s;
-        });
-      },
     }),
     {
       name: "soul-dashboard-storage",

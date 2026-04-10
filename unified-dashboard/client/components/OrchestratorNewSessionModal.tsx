@@ -7,6 +7,7 @@
  */
 
 import { useState, useCallback, useEffect, useRef } from "react";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import {
   NewSessionDialog as BaseNewSessionDialog,
   Select,
@@ -24,6 +25,11 @@ interface OAuthProfile {
 }
 
 export function OrchestratorNewSessionModal() {
+  // useCallback 내부에서 항상 최신 queryClient를 참조하기 위해 ref 패턴 사용
+  const queryClientRef = useRef<QueryClient | null>(null);
+  const queryClient = useQueryClient();
+  queryClientRef.current = queryClient;
+
   const isModalOpen = useDashboardStore((s) => s.isNewSessionModalOpen);
   const closeNewSessionModal = useDashboardStore((s) => s.closeNewSessionModal);
   const newSessionSource = useDashboardStore((s) => s.newSessionSource);
@@ -132,6 +138,7 @@ export function OrchestratorNewSessionModal() {
       const { addOptimisticSession } = useDashboardStore.getState();
       const selectedAgent = agents.find((a) => a.id === selectedAgentId);
       addOptimisticSession(
+        queryClientRef.current!,
         agentSessionId,
         prompt,
         selectedModalFolderId ?? null,
