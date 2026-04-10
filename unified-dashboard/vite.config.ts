@@ -2,9 +2,37 @@ import { defineConfig } from "vite";
 import { resolve } from "path";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
-  plugins: [tailwindcss(), react()],
+  plugins: [
+    tailwindcss(),
+    react(),
+    VitePWA({
+      registerType: "autoUpdate",
+      workbox: {
+        navigateFallback: "/index.html",
+        navigateFallbackDenylist: [/^\/api/, /^\/cogito/],
+        // API/SSE fetch 요청을 Service Worker 캐시에서 완전 제외.
+        // navigateFallbackDenylist는 navigate 요청에만 적용되므로,
+        // runtimeCaching을 비워서 fetch 요청도 캐시하지 않게 한다.
+        runtimeCaching: [],
+      },
+      manifest: {
+        name: "Soulstream",
+        short_name: "Soulstream",
+        description: "Claude Code session hosting dashboard",
+        start_url: "/",
+        theme_color: "#000000",
+        background_color: "#000000",
+        display: "standalone",
+        icons: [
+          { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+          { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+        ],
+      },
+    }),
+  ],
   root: ".",
   resolve: {
     alias: {
