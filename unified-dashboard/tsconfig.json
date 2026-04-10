@@ -9,6 +9,7 @@
     "noEmit": true,
     "paths": {
       "@seosoyoung/soul-ui": ["../packages/soul-ui/src/index.ts"],
+      "@shared/*": ["../packages/soul-ui/src/shared/*"],
       "client/*": ["./client/*"]
     }
   },

@@ -5,7 +5,10 @@
  * 지원하는 설정: 피드에서 제외 (excludeFromFeed), 폴더 프롬프트 (folderPrompt)
  */
 
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
 import {
   Dialog,
   DialogPopup,
@@ -20,6 +23,16 @@ import { useServerStatus } from "../hooks/useServerStatus";
 import { AtomNodeSelector } from "./AtomNodeSelector";
 import type { AtomContextNodeSettings, CatalogFolder, FolderSettings } from "../shared/types";
 
+const settingsSchema = z.object({
+  excludeFromFeed: z.boolean(),
+  folderPrompt: z.string(),
+  atomNodeId: z.string(),
+  atomNodeTitle: z.string(),
+  atomDepth: z.number().min(1).max(5),
+  atomTitlesOnly: z.boolean(),
+});
+type SettingsFormValues = z.infer<typeof settingsSchema>;
+
 export interface FolderSettingsDialogProps {
   folder: CatalogFolder | null;
   open: boolean;
@@ -33,35 +46,47 @@ export function FolderSettingsDialog({
   onOpenChange,
   onConfirm,
 }: FolderSettingsDialogProps) {
-  const [excludeFromFeed, setExcludeFromFeed] = useState(false);
-  const [folderPrompt, setFolderPrompt] = useState("");
-
   const { atomEnabled } = useServerStatus();
-  const [atomNodeId, setAtomNodeId] = useState("");
-  const [atomNodeTitle, setAtomNodeTitle] = useState("");
-  const [atomDepth, setAtomDepth] = useState(3);
-  const [atomTitlesOnly, setAtomTitlesOnly] = useState(false);
+
+  const { register, handleSubmit, reset, watch, setValue } =
+    useForm<SettingsFormValues>({
+      resolver: zodResolver(settingsSchema),
+      defaultValues: {
+        excludeFromFeed: false,
+        folderPrompt: "",
+        atomNodeId: "",
+        atomNodeTitle: "",
+        atomDepth: 3,
+        atomTitlesOnly: false,
+      },
+    });
 
   useEffect(() => {
     if (open && folder) {
-      setExcludeFromFeed(folder.settings?.excludeFromFeed ?? false);
-      setFolderPrompt(folder.settings?.folderPrompt ?? "");
-      setAtomNodeId(folder.settings?.atomContextNode?.nodeId ?? "");
-      setAtomNodeTitle(folder.settings?.atomContextNode?.nodeTitle ?? "");
-      setAtomDepth(folder.settings?.atomContextNode?.depth ?? 3);
-      setAtomTitlesOnly(folder.settings?.atomContextNode?.titlesOnly ?? false);
+      reset({
+        excludeFromFeed: folder.settings?.excludeFromFeed ?? false,
+        folderPrompt: folder.settings?.folderPrompt ?? "",
+        atomNodeId: folder.settings?.atomContextNode?.nodeId ?? "",
+        atomNodeTitle: folder.settings?.atomContextNode?.nodeTitle ?? "",
+        atomDepth: folder.settings?.atomContextNode?.depth ?? 3,
+        atomTitlesOnly: folder.settings?.atomContextNode?.titlesOnly ?? false,
+      });
     }
-  }, [open, folder]);
+  }, [open, folder, reset]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const onSubmit = (data: SettingsFormValues) => {
     const atomContextNode: AtomContextNodeSettings | undefined =
-      atomNodeId.trim()
-        ? { nodeId: atomNodeId.trim(), nodeTitle: atomNodeTitle || undefined, depth: atomDepth, titlesOnly: atomTitlesOnly }
+      data.atomNodeId.trim()
+        ? {
+            nodeId: data.atomNodeId.trim(),
+            nodeTitle: data.atomNodeTitle || undefined,
+            depth: data.atomDepth,
+            titlesOnly: data.atomTitlesOnly,
+          }
         : undefined;
     onConfirm({
-      excludeFromFeed,
-      folderPrompt: folderPrompt || undefined,
+      excludeFromFeed: data.excludeFromFeed,
+      folderPrompt: data.folderPrompt || undefined,
       atomContextNode,
     });
   };
@@ -73,13 +98,12 @@ export function FolderSettingsDialog({
           <DialogTitle>폴더 설정</DialogTitle>
           <DialogDescription>{folder?.name}</DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit(onSubmit)}>
           <DialogPanel>
             <label className="flex items-center gap-2 cursor-pointer text-sm">
               <input
                 type="checkbox"
-                checked={excludeFromFeed}
-                onChange={(e) => setExcludeFromFeed(e.target.checked)}
+                {...register("excludeFromFeed")}
                 className="h-4 w-4"
               />
               피드에서 제외
@@ -89,8 +113,7 @@ export function FolderSettingsDialog({
                 폴더 프롬프트
               </label>
               <textarea
-                value={folderPrompt}
-                onChange={(e) => setFolderPrompt(e.target.value)}
+                {...register("folderPrompt")}
                 placeholder="새 세션 시작 시 Claude에게 전달할 지시사항을 입력하세요"
                 rows={4}
                 className="w-full rounded border border-[--color-border] bg-[--color-surface-1] px-2 py-1 text-sm resize-none"
@@ -105,32 +128,30 @@ export function FolderSettingsDialog({
                 <div className="flex flex-col gap-1">
                   <label className="text-xs text-[--color-text-secondary]">노드</label>
                   <AtomNodeSelector
-                    value={atomNodeId}
-                    selectedTitle={atomNodeTitle}
+                    value={watch("atomNodeId")}
+                    selectedTitle={watch("atomNodeTitle")}
                     onChange={(nodeId, title) => {
-                      setAtomNodeId(nodeId);
-                      setAtomNodeTitle(title);
+                      setValue("atomNodeId", nodeId);
+                      setValue("atomNodeTitle", title);
                     }}
                   />
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-xs text-[--color-text-secondary]">
-                    깊이: {atomDepth}
+                    깊이: {watch("atomDepth")}
                   </label>
                   <input
                     type="range"
                     min={1}
                     max={5}
-                    value={atomDepth}
-                    onChange={(e) => setAtomDepth(parseInt(e.target.value))}
+                    {...register("atomDepth", { valueAsNumber: true })}
                     className="w-full"
                   />
                 </div>
                 <label className="flex items-center gap-2 cursor-pointer text-sm">
                   <input
                     type="checkbox"
-                    checked={atomTitlesOnly}
-                    onChange={(e) => setAtomTitlesOnly(e.target.checked)}
+                    {...register("atomTitlesOnly")}
                     className="h-4 w-4"
                   />
                   제목만 가져오기

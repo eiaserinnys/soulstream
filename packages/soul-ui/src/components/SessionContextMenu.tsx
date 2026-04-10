@@ -6,6 +6,7 @@
  */
 
 import { useState, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { Dialog, DialogPopup, DialogHeader, DialogTitle, DialogPanel, DialogFooter } from "./ui/dialog";
 import { Button } from "./ui/button";
@@ -91,54 +92,55 @@ export function SessionContextMenu({
 
   return (
     <>
-      {/* 컨텍스트 메뉴 닫기 오버레이 */}
-      {contextMenu && (
-        <div
-          className="fixed inset-0 z-40"
-          onClick={onClose}
-          onContextMenu={(e) => { e.preventDefault(); onClose(); }}
-        />
-      )}
+      {contextMenu && createPortal(
+        <>
+          {/* 컨텍스트 메뉴 닫기 오버레이 */}
+          <div
+            className="fixed inset-0 z-40"
+            onClick={onClose}
+            onContextMenu={(e) => { e.preventDefault(); onClose(); }}
+          />
 
-      {/* 컨텍스트 메뉴 */}
-      {contextMenu && (
-        <div
-          className="fixed z-50 bg-popover border border-border rounded-md shadow-lg py-1 min-w-[160px]"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button
-            className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
-            onClick={() => {
-              navigator.clipboard.writeText(contextMenu.sessionId);
-              onClose();
-            }}
+          {/* 컨텍스트 메뉴 */}
+          <div
+            className="fixed z-50 bg-popover border border-border rounded-md shadow-lg py-1 min-w-[160px]"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+            onClick={(e) => e.stopPropagation()}
           >
-            세션 ID 복사
-          </button>
-          {onRenameSession && (
-            <>
-              <div className="border-t border-border my-1" />
-              <button
-                className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
-                onClick={handleRenameClick}
-              >
-                이름 변경
-              </button>
-            </>
-          )}
-          {onMoveSessions && (
-            <>
-              <div className="border-t border-border my-1" />
-              <button
-                className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
-                onClick={handleMoveClick}
-              >
-                다른 폴더로 이동
-              </button>
-            </>
-          )}
-        </div>
+            <button
+              className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
+              onClick={() => {
+                navigator.clipboard.writeText(contextMenu.sessionId);
+                onClose();
+              }}
+            >
+              세션 ID 복사
+            </button>
+            {onRenameSession && (
+              <>
+                <div className="border-t border-border my-1" />
+                <button
+                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
+                  onClick={handleRenameClick}
+                >
+                  이름 변경
+                </button>
+              </>
+            )}
+            {onMoveSessions && (
+              <>
+                <div className="border-t border-border my-1" />
+                <button
+                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
+                  onClick={handleMoveClick}
+                >
+                  다른 폴더로 이동
+                </button>
+              </>
+            )}
+          </div>
+        </>,
+        document.body,
       )}
 
       {/* 이름 변경 모달 */}

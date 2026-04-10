@@ -55,7 +55,6 @@ import { useAppConfig } from "./config/AppConfigContext";
 export function OrchestratorDashboardLayout() {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const viewMode = useDashboardStore((s) => s.viewMode);
-  const sessions = useDashboardStore((s) => s.sessions);
   const openNewSessionModal = useDashboardStore((s) => s.openNewSessionModal);
   const nodes = useOrchestratorStore((s) => s.nodes);
   const connectionStatus = useOrchestratorStore((s) => s.connectionStatus);
@@ -84,7 +83,7 @@ export function OrchestratorDashboardLayout() {
   useNodes();
 
   // 세션 목록 구독
-  const { folderCounts, hasMore, loadMore } = useSessionListProvider({
+  const { folderCounts, hasMore, loadMore, sessions } = useSessionListProvider({
     intervalMs: 5000,
     getSessionProvider: () => orchestratorSessionProvider,
   });
@@ -129,6 +128,7 @@ export function OrchestratorDashboardLayout() {
           onUpdateFolderSettings={updateFolderSettingsOptimistic}
           onReorderFolders={reorderFoldersOptimistic}
           folderCounts={folderCounts}
+          sessions={sessions}
         />
       }
       leftPanelBottom={features.nodePanel && !isMobile ? <NodePanel /> : undefined}

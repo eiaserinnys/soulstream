@@ -5,16 +5,16 @@
  * FolderContents의 SessionItem과 동일한 스타일 토큰을 재사용한다.
  */
 
-import { memo } from "react";
+import { memo, useCallback } from "react";
 import type React from "react";
 import type { SessionSummary } from "../shared/types";
-import { isSessionUnread, useDashboardStore } from "../stores/dashboard-store";
-import { STATUS_CONFIG, nodeIdToHue } from "./FolderContents";
+import type { DashboardConfig } from "../stores/dashboard-store";
+import { isSessionUnread } from "../stores/dashboard-store";
+import { STATUS_CONFIG } from "./FolderContents";
+import { NodeBadge } from "./NodeBadge";
 import { MarkdownContent } from "./MarkdownContent";
 import { ProfileAvatar } from "./ProfileAvatar";
 import { cn } from "../lib/cn";
-import { Badge } from "./ui/badge";
-import { useTheme } from "../hooks/useTheme";
 
 const DEFAULT_PROFILE = {
   user: { name: "User", id: "", hasPortrait: false },
@@ -25,27 +25,40 @@ export interface FeedCardProps {
   session: SessionSummary;
   isActive: boolean;
   folderName?: string;
-  onClick: () => void;
-  onDoubleClick: () => void;
-  onContextMenu?: (e: React.MouseEvent) => void;
+  dashboardConfig?: DashboardConfig | null;
+  onCardClick: (sessionId: string) => void;
+  onCardDoubleClick: (sessionId: string) => void;
+  onCardContextMenu?: (sessionId: string, e: React.MouseEvent) => void;
 }
 
 export const FeedCard = memo(function FeedCard({
   session,
   isActive,
   folderName,
-  onClick,
-  onDoubleClick,
-  onContextMenu,
+  dashboardConfig,
+  onCardClick,
+  onCardDoubleClick,
+  onCardContextMenu,
 }: FeedCardProps) {
   const statusConfig = STATUS_CONFIG[session.status] ?? STATUS_CONFIG.unknown;
   const isRunning = session.status === 'running';
   const isError = session.status === 'error';
   const isUnread = isSessionUnread(session);
-  const [theme] = useTheme();
-  const dashboardConfig = useDashboardStore((s) => s.dashboardConfig);
   // dashboardConfig가 {}처럼 user 필드 없는 객체일 때도 DEFAULT_PROFILE로 fallback
   const profileConfig = (dashboardConfig?.user != null ? dashboardConfig : null) ?? DEFAULT_PROFILE;
+
+  const handleClick = useCallback(
+    () => onCardClick(session.agentSessionId),
+    [onCardClick, session.agentSessionId],
+  );
+  const handleDoubleClick = useCallback(
+    () => onCardDoubleClick(session.agentSessionId),
+    [onCardDoubleClick, session.agentSessionId],
+  );
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent) => onCardContextMenu?.(session.agentSessionId, e),
+    [onCardContextMenu, session.agentSessionId],
+  );
 
   // --- 제목 ---
   const title = session.displayName
@@ -64,17 +77,6 @@ export const FeedCard = memo(function FeedCard({
         minute: "2-digit",
       })
     : "";
-
-  // --- 노드 뱃지 스타일 ---
-  const nodeBadge = session.nodeId ? (() => {
-    const hue = nodeIdToHue(session.nodeId);
-    const isDark = theme === "dark";
-    return {
-      bg: isDark ? `hsl(${hue}, 12%, 28%)` : `hsl(${hue}, 20%, 88%)`,
-      color: isDark ? `hsl(${hue}, 18%, 72%)` : `hsl(${hue}, 30%, 35%)`,
-      label: session.nodeId,
-    };
-  })() : null;
 
   return (
     <div
@@ -110,9 +112,9 @@ export const FeedCard = memo(function FeedCard({
               ],
         !isActive && !isRunning && "hover:bg-accent/30",
       )}
-      onClick={onClick}
-      onDoubleClick={onDoubleClick}
-      onContextMenu={onContextMenu}
+      onClick={handleClick}
+      onDoubleClick={handleDoubleClick}
+      onContextMenu={handleContextMenu}
       data-session-id={session.agentSessionId}
     >
       {/* 제목 */}
@@ -138,16 +140,10 @@ export const FeedCard = memo(function FeedCard({
           </>
         )}
         {timeStr && <span>{timeStr}</span>}
-        {nodeBadge && (
+        {session.nodeId && (
           <>
             <span>·</span>
-            <Badge
-              variant="secondary"
-              className="text-[10px] px-1 py-0"
-              style={{ backgroundColor: nodeBadge.bg, color: nodeBadge.color }}
-            >
-              {nodeBadge.label}
-            </Badge>
+            <NodeBadge nodeId={session.nodeId} />
           </>
         )}
         <span>·</span>

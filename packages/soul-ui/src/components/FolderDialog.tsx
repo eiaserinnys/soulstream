@@ -6,7 +6,10 @@
  * mode="delete": 삭제 확인 메시지 → 삭제
  */
 
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
 import {
   Dialog,
   DialogPopup,
@@ -56,6 +59,11 @@ export function FolderDialog(props: FolderDialogProps) {
   );
 }
 
+const createSchema = z.object({
+  name: z.string().trim().min(1),
+});
+type CreateFormValues = z.infer<typeof createSchema>;
+
 function CreateFolderDialog({
   open,
   onOpenChange,
@@ -65,17 +73,23 @@ function CreateFolderDialog({
   onOpenChange: (open: boolean) => void;
   onConfirm: (name: string) => void;
 }) {
-  const [name, setName] = useState("");
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { isValid },
+  } = useForm<CreateFormValues>({
+    resolver: zodResolver(createSchema),
+    defaultValues: { name: "" },
+    mode: "onChange",
+  });
 
   useEffect(() => {
-    if (open) setName("");
-  }, [open]);
+    if (open) reset({ name: "" });
+  }, [open, reset]);
 
-  const canSubmit = name.trim().length > 0;
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (canSubmit) onConfirm(name.trim());
+  const onSubmit = (data: CreateFormValues) => {
+    onConfirm(data.name);
   };
 
   return (
@@ -85,13 +99,12 @@ function CreateFolderDialog({
           <DialogTitle>새 폴더</DialogTitle>
           <DialogDescription>폴더 이름을 입력하세요.</DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit(onSubmit)}>
           <DialogPanel>
             <Input
               autoFocus
               placeholder="폴더 이름"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+              {...register("name")}
             />
           </DialogPanel>
           <DialogFooter variant="bare">
@@ -102,7 +115,7 @@ function CreateFolderDialog({
             >
               취소
             </Button>
-            <Button type="submit" disabled={!canSubmit}>
+            <Button type="submit" disabled={!isValid}>
               만들기
             </Button>
           </DialogFooter>

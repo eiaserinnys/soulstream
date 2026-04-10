@@ -9,8 +9,7 @@
  * 대상 URL: http://localhost:5200 (soul-stream 서비스)
  *
  * DOM 구조 (FolderTree.tsx 기준):
- * - 폴더 아이템: folderSortMode=custom 시 draggable=true인 div
- *   (className에 flex items-center justify-between px-3 py-1.5 포함)
+ * - 폴더 아이템: folderSortMode=custom 시 data-testid="draggable-folder" 속성 설정
  * - GripVertical 아이콘: lucide GripVertical (h-3.5 w-3.5 cursor-grab)
  * - 정렬 버튼: FolderSortButton → DropdownMenu trigger (ListFilter 아이콘)
  * - 정렬 옵션: "사용자 지정" 텍스트의 DropdownMenuItem
@@ -81,8 +80,6 @@ test.describe("폴더 커스텀 정렬 DnD", () => {
     });
 
     // ── 2. localStorage에서 folderSortMode를 "custom"으로 미리 설정 ─────────────
-    // 대시보드를 로드하기 전에 localStorage를 직접 설정하여
-    // FolderSortButton UI를 거치지 않고도 custom 모드로 시작한다.
     await page.addInitScript(() => {
       const key = "soul-dashboard-storage";
       try {
@@ -105,25 +102,21 @@ test.describe("폴더 커스텀 정렬 DnD", () => {
     console.log("스크린샷 01-initial.png 저장");
 
     // ── 4. 폴더 트리가 로드될 때까지 대기 ────────────────────────────────────
-    // FolderTree는 "Folders" 헤더 텍스트를 가진 섹션으로 시작함
     await page.waitForSelector('text=Folders', { timeout: 10000 });
     console.log("FolderTree 로드 확인");
 
     // ── 5. 일반 폴더 아이템 목록 확인 ────────────────────────────────────────
-    // custom 모드에서는 draggable=true 속성이 설정됨
-    // GripVertical 아이콘(cursor-grab)이 있는 폴더 아이템을 찾는다
-    const draggableFolders = page.locator('[draggable="true"]');
-    await page.waitForTimeout(1000); // 카탈로그 로드 대기
+    // custom 모드에서 draggable 폴더는 data-testid="draggable-folder" 로 식별한다
+    const draggableFolders = page.locator('[data-testid="draggable-folder"]');
+    // 카탈로그 로드 완료를 DOM 변화로 대기
+    await draggableFolders.first().waitFor({ state: "attached", timeout: 5000 }).catch(() => {});
     const folderCount = await draggableFolders.count();
     console.log(`draggable 폴더 수: ${folderCount}`);
 
     if (folderCount < 2) {
-      // folderSortMode가 custom이 아니거나 폴더가 부족한 경우
-      // FolderSortButton을 직접 클릭하여 custom 모드로 변경 시도
       console.log("draggable 폴더가 부족함. FolderSortButton으로 custom 모드 설정 시도...");
       await page.screenshot({ path: path.join(SCREENSHOT_DIR, "02-no-draggable.png") });
 
-      // ListFilter 아이콘 버튼 (폴더 정렬 버튼) 클릭
       const sortButton = page.locator('button[title="폴더 정렬"]');
       const sortButtonVisible = await sortButton.isVisible().catch(() => false);
       if (!sortButtonVisible) {
@@ -133,13 +126,12 @@ test.describe("폴더 커스텀 정렬 DnD", () => {
       await sortButton.click();
       await page.screenshot({ path: path.join(SCREENSHOT_DIR, "03-sort-menu.png") });
 
-      // "사용자 지정" 메뉴 아이템 클릭
       const customOption = page.getByText("사용자 지정");
       await customOption.click();
-      await page.waitForTimeout(500);
+      // custom 모드로 전환 후 DOM 반영 대기
+      await draggableFolders.first().waitFor({ state: "attached", timeout: 3000 }).catch(() => {});
       await page.screenshot({ path: path.join(SCREENSHOT_DIR, "04-custom-mode.png") });
 
-      // draggable 폴더 재확인
       const folderCountAfter = await draggableFolders.count();
       console.log(`custom 모드 설정 후 draggable 폴더 수: ${folderCountAfter}`);
 
@@ -157,82 +149,24 @@ test.describe("폴더 커스텀 정렬 DnD", () => {
     console.log(`드래그 전 순서: [0]=${folder0Text?.trim()} [1]=${folder1Text?.trim()}`);
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, "02-before-drag.png") });
 
-    // ── 7. DnD 수행: 첫 번째 폴더를 두 번째 폴더 위에 드롭 ──────────────────
+    // ── 7. DnD 수행: Playwright dragTo (@dnd-kit 포인터 이벤트와 호환) ────────
     const source = draggableFolders.nth(0);
     const target = draggableFolders.nth(1);
 
-    // HTML5 native drag-and-drop 시뮬레이션
-    // Playwright의 dragTo는 HTML5 drag events를 트리거한다
-    const sourceBB = await source.boundingBox();
-    const targetBB = await target.boundingBox();
+    console.log("dragTo 실행 중...");
+    await source.dragTo(target);
 
-    if (!sourceBB || !targetBB) {
-      console.log("폴더 boundingBox를 구할 수 없음");
-      return;
-    }
-
-    console.log(`source: (${sourceBB.x}, ${sourceBB.y}), target: (${targetBB.x}, ${targetBB.y})`);
-
-    // dragStart → dragOver → drop 수동 시뮬레이션
-    // Playwright의 dragTo가 HTML5 DnD를 지원하지 않을 수 있으므로
-    // dispatchEvent로 직접 drag events를 발생시킨다
-    await page.evaluate(
-      ({ sourceSelector, targetSelector }) => {
-        // draggable=true인 요소들을 순서대로 가져옴
-        const draggables = Array.from(document.querySelectorAll('[draggable="true"]'));
-        const src = draggables[0] as HTMLElement;
-        const tgt = draggables[1] as HTMLElement;
-
-        if (!src || !tgt) {
-          console.error("DnD 대상 요소를 찾을 수 없음");
-          return;
-        }
-
-        // dragstart
-        const dragStartEvent = new DragEvent("dragstart", {
-          bubbles: true,
-          cancelable: true,
-          dataTransfer: new DataTransfer(),
-        });
-        src.dispatchEvent(dragStartEvent);
-
-        // dragover on target
-        const dragOverEvent = new DragEvent("dragover", {
-          bubbles: true,
-          cancelable: true,
-          dataTransfer: dragStartEvent.dataTransfer ?? undefined,
-        });
-        tgt.dispatchEvent(dragOverEvent);
-
-        // drop on target
-        const dropEvent = new DragEvent("drop", {
-          bubbles: true,
-          cancelable: true,
-          dataTransfer: dragStartEvent.dataTransfer ?? undefined,
-        });
-        tgt.dispatchEvent(dropEvent);
-
-        // dragend
-        const dragEndEvent = new DragEvent("dragend", {
-          bubbles: true,
-          cancelable: true,
-        });
-        src.dispatchEvent(dragEndEvent);
-
-        console.log("DnD events dispatched");
-      },
-      { sourceSelector: "", targetSelector: "" }
-    );
-
-    await page.waitForTimeout(1000); // API 호출 완료 대기
+    // PATCH 요청 또는 최대 3초 대기
+    await page.waitForResponse(
+      (res) => res.url().includes("/api/catalog/folders/reorder"),
+      { timeout: 3000 },
+    ).catch(() => {});
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, "03-after-drag.png") });
 
     // ── 8. 네트워크 요청 분석 ────────────────────────────────────────────────
     console.log("\n=== PATCH /api/catalog/folders/reorder 요청 분석 ===");
     if (reorderRequests.length === 0) {
       console.log("❌ PATCH 요청 없음 — DnD 이벤트가 onReorderFolders를 트리거하지 못했을 수 있음");
-      console.log("   원인 1: dataTransfer의 application/x-folder-reorder 데이터가 비어있을 수 있음");
-      console.log("   원인 2: dispatchEvent로 생성된 DragEvent의 dataTransfer가 실제와 다를 수 있음");
     } else {
       for (const req of reorderRequests) {
         console.log(`✅ PATCH ${req.url}`);
@@ -241,21 +175,8 @@ test.describe("폴더 커스텀 정렬 DnD", () => {
       }
     }
 
-    // ── 9. dragTo API로 한 번 더 시도 (Playwright 내장 DnD) ─────────────────
-    if (reorderRequests.length === 0) {
-      console.log("\n--- Playwright dragTo API로 재시도 ---");
-      try {
-        await source.dragTo(target);
-        await page.waitForTimeout(1000);
-        await page.screenshot({ path: path.join(SCREENSHOT_DIR, "04-after-dragto.png") });
-        console.log(`dragTo 후 PATCH 요청 수: ${reorderRequests.length}`);
-      } catch (err) {
-        console.log(`dragTo 실패: ${err}`);
-      }
-    }
-
-    // ── 10. 최종 결과 보고 ────────────────────────────────────────────────────
-    await page.screenshot({ path: path.join(SCREENSHOT_DIR, "05-final.png") });
+    // ── 9. 최종 결과 보고 ────────────────────────────────────────────────────
+    await page.screenshot({ path: path.join(SCREENSHOT_DIR, "04-final.png") });
 
     console.log("\n=== 최종 결과 ===");
     const patchSent = reorderRequests.length > 0;
@@ -267,12 +188,12 @@ test.describe("폴더 커스텀 정렬 DnD", () => {
       console.log(`PATCH 응답 성공: ${patchSucceeded ? "✅ YES" : "❌ NO"} (status: ${firstReq.status})`);
 
       if (patchSucceeded) {
-        // ── 11. 리로드 후 순서 유지 확인 ──────────────────────────────────────
+        // ── 10. 리로드 후 순서 유지 확인 ──────────────────────────────────────
         await page.reload({ waitUntil: "networkidle" });
-        await page.waitForTimeout(1000);
-        await page.screenshot({ path: path.join(SCREENSHOT_DIR, "06-after-reload.png") });
+        await draggableFolders.first().waitFor({ state: "attached", timeout: 5000 }).catch(() => {});
+        await page.screenshot({ path: path.join(SCREENSHOT_DIR, "05-after-reload.png") });
 
-        const draggableAfterReload = page.locator('[draggable="true"]');
+        const draggableAfterReload = page.locator('[data-testid="draggable-folder"]');
         const folder0AfterReload = await draggableAfterReload.nth(0).textContent();
         const folder1AfterReload = await draggableAfterReload.nth(1).textContent();
 
@@ -281,7 +202,6 @@ test.describe("폴더 커스텀 정렬 DnD", () => {
         console.log(`[1]=${folder1AfterReload?.trim()}`);
         console.log(`원래 순서: [0]=${folder0Text?.trim()} [1]=${folder1Text?.trim()}`);
 
-        // DnD로 첫 번째가 두 번째 앞으로 삽입됐으므로 순서가 바뀌어야 함
         const orderChanged =
           folder0AfterReload?.trim() !== folder0Text?.trim() ||
           folder1AfterReload?.trim() !== folder1Text?.trim();
@@ -289,7 +209,6 @@ test.describe("폴더 커스텀 정렬 DnD", () => {
       }
     }
 
-    // 테스트는 PATCH가 전송됐는지를 주 검증으로 삼는다
     expect(
       patchSent,
       "DnD 발생 시 PATCH /api/catalog/folders/reorder 요청이 전송되어야 합니다."
@@ -297,14 +216,13 @@ test.describe("폴더 커스텀 정렬 DnD", () => {
   });
 
   test("FolderSortButton으로 custom 모드 활성화 확인", async ({ page }) => {
-    // localStorage에서 custom이 아닌 상태로 시작
     await page.addInitScript(() => {
       const key = "soul-dashboard-storage";
       try {
         const existing = localStorage.getItem(key);
         const parsed = existing ? JSON.parse(existing) : {};
         parsed.state = parsed.state ?? {};
-        parsed.state.folderSortMode = "name-asc"; // 강제로 다른 모드로 시작
+        parsed.state.folderSortMode = "name-asc";
         localStorage.setItem(key, JSON.stringify(parsed));
       } catch {
         localStorage.setItem(
@@ -319,8 +237,9 @@ test.describe("폴더 커스텀 정렬 DnD", () => {
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, "sort-01-name-asc-mode.png") });
 
     // name-asc 모드에서는 draggable 폴더가 없어야 함
-    const draggableBefore = page.locator('[draggable="true"]');
-    await page.waitForTimeout(500);
+    const draggableBefore = page.locator('[data-testid="draggable-folder"]');
+    // DOM이 안정화될 때까지 대기 (없는 요소이므로 detached/timeout 대기)
+    await page.waitForSelector('[data-testid="draggable-folder"]', { state: "detached", timeout: 3000 }).catch(() => {});
     const countBefore = await draggableBefore.count();
     console.log(`name-asc 모드에서 draggable 폴더 수: ${countBefore}`);
     expect(countBefore).toBe(0);
@@ -333,11 +252,11 @@ test.describe("폴더 커스텀 정렬 DnD", () => {
 
     // "사용자 지정" 선택
     await page.getByText("사용자 지정").click();
-    await page.waitForTimeout(500);
+    // custom 모드 전환 후 draggable 폴더 DOM 등장 대기
+    await page.waitForSelector('[data-testid="draggable-folder"]', { timeout: 3000 }).catch(() => {});
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, "sort-03-custom-mode.png") });
 
-    // custom 모드에서는 일반 폴더가 draggable이어야 함
-    const draggableAfter = page.locator('[draggable="true"]');
+    const draggableAfter = page.locator('[data-testid="draggable-folder"]');
     const countAfter = await draggableAfter.count();
     console.log(`custom 모드 전환 후 draggable 폴더 수: ${countAfter}`);
 
