@@ -58,7 +58,7 @@ export function DashboardLayout() {
   const openNewSessionModal = useDashboardStore((s) => s.openNewSessionModal);
 
   // 세션 목록 구독 (SSE 모드: 실시간)
-  const { folderCounts, hasMore, loadMore } = useSessionListProvider({
+  const { folderCounts, hasMore, loadMore, sessions } = useSessionListProvider({
     intervalMs: 5000,
     getSessionProvider,
   });
@@ -142,6 +142,7 @@ export function DashboardLayout() {
           onUpdateFolderSettings={updateFolderSettingsOptimistic}
           onReorderFolders={reorderFoldersOptimistic}
           folderCounts={folderCounts}
+          sessions={sessions}
         />
       }
       centerPanel={

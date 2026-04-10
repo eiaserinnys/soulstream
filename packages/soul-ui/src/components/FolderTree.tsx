@@ -46,6 +46,11 @@ export interface FolderTreeProps {
    * 인피니트 스크롤로 부분 로드된 경우에도 정확한 수를 표시합니다.
    */
   folderCounts?: Record<string, number>;
+  /**
+   * 세션 목록 (useSessionListProvider에서 전달).
+   * 제공되지 않으면 store에서 직접 구독합니다 (하위 호환성 유지).
+   */
+  sessions?: import("../shared/types").SessionSummary[];
 }
 
 // ── FolderItem (개별 폴더 행) ─────────────────────────────────────────────────
@@ -194,12 +199,14 @@ export function FolderTree({
   onUpdateFolderSettings,
   onReorderFolders,
   folderCounts,
+  sessions: sessionsProp,
 }: FolderTreeProps) {
   const catalog = useDashboardStore((s) => s.catalog);
   const catalogVersion = useDashboardStore((s) => s.catalogVersion);
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
   const selectFolder = useDashboardStore((s) => s.selectFolder);
-  const sessions = useDashboardStore((s) => s.sessions);
+  const storeSessions = useDashboardStore((s) => s.sessions);
+  const sessions = sessionsProp ?? storeSessions;
   const viewMode = useDashboardStore((s) => s.viewMode);
   const selectFeed = useDashboardStore((s) => s.selectFeed);
   const getFeedUnreadCount = useDashboardStore((s) => s.getFeedUnreadCount);
