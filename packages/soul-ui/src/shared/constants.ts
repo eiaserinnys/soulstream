@@ -17,6 +17,7 @@ export const SSE_EVENT_TYPES = [
   "session",
   "intervention_sent",
   "user_message",
+  "system_message",
   "assistant_message",
   "input_request",
   "input_request_expired",
