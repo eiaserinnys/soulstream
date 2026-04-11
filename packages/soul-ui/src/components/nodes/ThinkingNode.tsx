@@ -83,7 +83,7 @@ export const ThinkingNode = memo(function ThinkingNode({ data, selected }: NodeP
         </div>
 
         {/* Truncated content */}
-        <div className={cn("text-xs text-muted-foreground leading-normal italic", truncate2)}>
+        <div className={cn("text-xs text-muted-foreground italic", truncate2)}>
           {data.content || data.label || '(thinking...)'}
         </div>
       </div>

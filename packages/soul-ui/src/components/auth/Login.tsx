@@ -69,7 +69,7 @@ export function Login({ title = "Dashboard" }: LoginProps) {
       <div className="w-full max-w-sm bg-card border border-border rounded-xl p-8 shadow-lg flex flex-col gap-6">
         {/* 제목 */}
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-foreground">{title}</h1>
+          <h1 className="text-xl font-bold text-foreground">{title}</h1>
           <p className="text-sm text-muted-foreground mt-1">계속하려면 로그인하세요</p>
         </div>
 
@@ -127,7 +127,7 @@ export function Login({ title = "Dashboard" }: LoginProps) {
             </div>
 
             <div className="flex flex-col gap-3">
-              <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-[0.05em]">
+              <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                 Development Login
               </h2>
               <form onSubmit={handleDevLogin} className="flex flex-col gap-3">

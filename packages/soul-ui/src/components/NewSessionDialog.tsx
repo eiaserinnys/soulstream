@@ -259,7 +259,7 @@ export function NewSessionDialog({
             placeholder="What would you like to work on?"
             disabled={sending}
             rows={3}
-            className="w-full bg-input border border-input rounded-lg py-3 px-4 text-base text-foreground font-sans resize-none outline-none min-h-20 max-h-[200px] leading-normal transition-colors duration-150 focus:border-accent-blue/40"
+            className="w-full bg-input border border-input rounded-lg py-3 px-4 text-base text-foreground font-sans resize-none outline-none min-h-20 max-h-[200px] transition-colors duration-150 focus:border-accent-blue/40"
           />
 
           {/* File attachment area (fileUploadUrl이 있을 때만 표시) */}

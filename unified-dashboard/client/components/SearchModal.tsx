@@ -106,7 +106,7 @@ function SearchResultRow({
           #{result.event_id}
         </span>
       </div>
-      <p className="text-caption text-foreground line-clamp-2 break-words">
+      <p className="text-sm text-foreground line-clamp-2 break-words">
         {result.preview}
       </p>
     </button>
@@ -218,26 +218,26 @@ export function SearchModal({ open, onOpenChange }: SearchModalProps) {
 
           {/* 상태 표시 */}
           {loading && (
-            <div className="flex items-center justify-center py-6 text-muted-foreground text-caption">
+            <div className="flex items-center justify-center py-6 text-muted-foreground text-sm">
               <span className="inline-block w-4 h-4 border border-muted-foreground/40 border-t-muted-foreground rounded-full animate-spin mr-2" />
               검색 중...
             </div>
           )}
 
           {error && !loading && (
-            <div className="py-4 text-center text-caption text-accent-red">
+            <div className="py-4 text-center text-sm text-accent-red">
               ❌ {error}
             </div>
           )}
 
           {!loading && !error && results.length === 0 && query.trim() && (
-            <div className="py-6 text-center text-caption text-muted-foreground">
+            <div className="py-6 text-center text-sm text-muted-foreground">
               검색 결과가 없습니다
             </div>
           )}
 
           {!loading && !error && results.length === 0 && !query.trim() && (
-            <div className="py-6 text-center text-caption text-muted-foreground">
+            <div className="py-6 text-center text-sm text-muted-foreground">
               위 필터를 선택하여 세션 기록을 검색합니다
             </div>
           )}

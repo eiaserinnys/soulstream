@@ -14,7 +14,7 @@ export function ErrorDetail({ card }: { card: ToolNode }) {
       {/* Header */}
       <div className="flex items-center gap-2">
         <span className="text-base">{"\u274C"}</span>
-        <div className="text-xs text-accent-red uppercase tracking-[0.05em] font-semibold">
+        <div className="text-sm text-accent-red uppercase tracking-wide font-semibold">
           Error
         </div>
       </div>
@@ -25,7 +25,7 @@ export function ErrorDetail({ card }: { card: ToolNode }) {
           {card.toolName} failed
         </div>
         <pre
-          className="text-xs text-destructive-foreground whitespace-pre-wrap break-words leading-normal m-0 font-mono"
+          className="text-xs text-destructive-foreground whitespace-pre-wrap break-words m-0 font-mono"
         >
           {card.toolResult || "(no error message)"}
         </pre>
@@ -35,7 +35,7 @@ export function ErrorDetail({ card }: { card: ToolNode }) {
       <div>
         <SectionLabel>Tool</SectionLabel>
         <div
-          className="text-base text-foreground font-semibold font-mono"
+          className="text-xs text-foreground font-medium font-mono"
         >
           {card.toolName}
         </div>

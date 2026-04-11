@@ -24,7 +24,7 @@ export function NodePanel() {
         <div className="px-3 py-1.5 shrink-0 border-b border-border">
           <span className="text-sm font-semibold">Nodes</span>
         </div>
-        <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground/40 text-xs">
+        <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground/40 text-sm">
           No nodes
         </div>
       </div>

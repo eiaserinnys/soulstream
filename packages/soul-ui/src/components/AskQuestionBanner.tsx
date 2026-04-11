@@ -80,7 +80,7 @@ function AskQuestionBannerInner({ node, sessionId }: AskQuestionBannerInnerProps
         <div className="text-center text-muted-foreground">⏱️ 시간 초과</div>
       ) : (
         <>
-          <div className="mb-2 text-caption text-muted-foreground">🔔 Claude가 질문합니다</div>
+          <div className="mb-2 text-xs text-muted-foreground">🔔 Claude가 질문합니다</div>
           {question.header && (
             <div className="mb-1 text-xs text-muted-foreground uppercase tracking-wide">
               {question.header}
@@ -94,7 +94,7 @@ function AskQuestionBannerInner({ node, sessionId }: AskQuestionBannerInnerProps
                 onClick={() => handleSelect(opt.label)}
                 disabled={!!selectedAnswer}
                 className={cn(
-                  "px-3.5 py-1.5 rounded border text-caption transition-colors",
+                  "px-3.5 py-1.5 rounded border text-xs transition-colors",
                   selectedAnswer === opt.label
                     ? "bg-success border-success text-white"
                     : "border-border bg-popover text-foreground hover:bg-muted/50",

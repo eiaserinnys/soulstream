@@ -347,7 +347,7 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
         <div className="flex-1 flex flex-col gap-1">
           {/* Labels row */}
           <div className="flex justify-between items-center">
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground uppercase tracking-[0.05em] font-semibold">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground uppercase tracking-wide font-semibold">
               <span className="text-xs">{modeIcon}</span>
               {modeLabel}
             </div>

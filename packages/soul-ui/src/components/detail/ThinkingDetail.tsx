@@ -13,7 +13,7 @@ export function ThinkingDetail({ card }: { card: ThinkingNode | TextNode }) {
       {/* Header */}
       <div className="flex items-center gap-2">
         <span className="text-base">{"\u{1F4AD}"}</span>
-        <div className="text-xs text-accent-purple uppercase tracking-[0.05em] font-semibold">
+        <div className="text-sm text-accent-purple uppercase tracking-wide font-semibold">
           Thinking
         </div>
         {!card.completed && (
@@ -26,8 +26,7 @@ export function ThinkingDetail({ card }: { card: ThinkingNode | TextNode }) {
 
       {/* Full text content */}
       <pre
-        className="text-base text-foreground whitespace-pre-wrap break-words leading-relaxed m-0"
-        style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" }}
+        className="text-base text-foreground whitespace-pre-wrap break-words m-0 font-sans"
       >
         {card.content || "(streaming...)"}
       </pre>

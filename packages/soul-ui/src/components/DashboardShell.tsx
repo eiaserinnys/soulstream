@@ -198,7 +198,7 @@ export function DashboardShell({
         style={{ height: 'calc(44px + env(safe-area-inset-top, 0px))', paddingTop: 'env(safe-area-inset-top, 0px)' }}
       >
         <div className="flex items-center gap-3">
-          <span className="text-base font-semibold text-muted-foreground tracking-[0.02em]">
+          <span className="text-base font-semibold text-muted-foreground">
             {title}
           </span>
         </div>

@@ -110,7 +110,7 @@ export function FileAttachmentPreview({
       ) : (
         <div className="w-full h-full flex flex-col items-center justify-center gap-0.5 p-1">
           <FileTypeIcon label={fileTypeLabel} />
-          <span className="text-xs text-muted-foreground/50 w-full text-center truncate px-1 leading-tight">
+          <span className="text-xs text-muted-foreground/50 w-full text-center truncate px-1">
             {truncatedName}
           </span>
         </div>

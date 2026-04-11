@@ -45,7 +45,7 @@ export const InterventionNode = memo(function InterventionNode({ data, selected 
         )}
 
         {/* Truncated message */}
-        <div className={cn("text-xs text-foreground leading-normal", truncate2)}>
+        <div className={cn("text-xs text-foreground", truncate2)}>
           {data.content || '(empty)'}
         </div>
       </div>

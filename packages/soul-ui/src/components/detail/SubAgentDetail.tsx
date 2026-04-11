@@ -19,7 +19,7 @@ export function SubAgentDetail({ card }: { card: ToolNode }) {
       {/* Header */}
       <div className="flex items-center gap-2">
         <span className="text-base">{"\u{1F916}"}</span>
-        <div className="text-xs text-accent-blue uppercase tracking-[0.05em] font-semibold">
+        <div className="text-sm text-accent-blue uppercase tracking-wide font-semibold">
           Sub-Agent
         </div>
         {!card.completed && (
@@ -44,7 +44,7 @@ export function SubAgentDetail({ card }: { card: ToolNode }) {
       {description && (
         <div>
           <SectionLabel>Description</SectionLabel>
-          <div className="text-base text-foreground leading-normal">
+          <div className="text-base text-foreground">
             {description}
           </div>
         </div>
