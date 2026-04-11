@@ -241,7 +241,7 @@ export function DashboardShell({
                     </button>
                     <span className="text-sm font-medium">세션</span>
                   </div>
-                  <div className="flex-1 overflow-hidden">
+                  <div className="flex-1 min-h-0 overflow-hidden">
                     {mobileFolderContents}
                   </div>
                 </div>
