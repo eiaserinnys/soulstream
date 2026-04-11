@@ -56,7 +56,6 @@ export function DashboardLayout() {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const viewMode = useDashboardStore((s) => s.viewMode);
   const openNewSessionModal = useDashboardStore((s) => s.openNewSessionModal);
-  const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
 
   // 세션 목록 구독 (SSE 모드: 실시간)
   const { folderCounts, hasMore, loadMore, sessions } = useSessionListProvider({
@@ -195,12 +194,12 @@ export function DashboardLayout() {
         />
       }
       mobileFolderContents={
-        selectedFolderId ? (
-          <FolderContents
-            onLoadMore={loadMore}
-            hasMore={hasMore}
-          />
-        ) : undefined
+        // DashboardShell의 isMobile && selectedFolderId 조건이 표시 여부를 제어하므로
+        // 항상 FolderContents를 전달한다. 조건부로 undefined를 전달하면 타이밍 이슈로 빈 화면이 보인다.
+        <FolderContents
+          onLoadMore={loadMore}
+          hasMore={hasMore}
+        />
       }
       mobileChatHeader={(onBack) => <MobileChatHeader onBack={onBack} />}
       mobileChatView={<ChatView chatInputDisabled={isOtherNode} />}
