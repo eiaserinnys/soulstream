@@ -1,16 +1,21 @@
 """
 Claude OAuth 토큰 저장/삭제 유틸리티
 
-OAuth 토큰을 현재 프로세스(os.environ)와 .env 파일에 동시 저장/삭제합니다.
-- os.environ: 다음 Claude Code spawn 시 즉시 반영
-- .env: soulstream 재시작 시 자동 로드 (load_dotenv)
+두 가지 저장 경로를 지원한다:
+1. .env + os.environ: setup-token(headless) 방식. CLAUDE_CODE_OAUTH_TOKEN 환경변수.
+2. ~/.claude/.credentials.json: PKCE OAuth(/login) 방식. refreshToken 자동 갱신 지원.
+
+PKCE OAuth로 로그인하면 credentials.json에 저장하고, .env에는 쓰지 않는다.
+CLAUDE_CODE_OAUTH_TOKEN 환경변수가 있으면 Claude Code가 credentials.json을 무시하기 때문.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
+import time
 from pathlib import Path
 
 import yaml
@@ -19,6 +24,10 @@ logger = logging.getLogger(__name__)
 
 # 환경변수 키
 TOKEN_ENV_KEY = "CLAUDE_CODE_OAUTH_TOKEN"
+REFRESH_TOKEN_ENV_KEY = "CLAUDE_CODE_OAUTH_REFRESH_TOKEN"
+
+# credentials.json 경로
+CREDENTIALS_PATH = Path.home() / ".claude" / ".credentials.json"
 
 # Claude OAuth 토큰 형식: sk-ant-oat01-{base64-like characters}
 _TOKEN_PATTERN = re.compile(r"^sk-ant-oat01-[A-Za-z0-9_-]+$")
@@ -48,10 +57,13 @@ def get_oauth_token() -> str | None:
 
 
 def save_oauth_token(token: str, env_path: Path) -> None:
-    """OAuth 토큰을 현재 프로세스 + .env 파일에 저장
+    """OAuth access token을 현재 프로세스 + .env 파일에 저장 (setup-token 방식).
+
+    PKCE OAuth의 경우 이 함수 대신 save_credentials_json()을 사용한다.
+    CLAUDE_CODE_OAUTH_TOKEN 환경변수가 있으면 Claude Code가 credentials.json을 무시하기 때문.
 
     Args:
-        token: 저장할 토큰 (형식 검증은 호출자 책임)
+        token: 저장할 access token (형식 검증은 호출자 책임)
         env_path: .env 파일 경로
     """
     token = token.strip()
@@ -91,6 +103,8 @@ def save_oauth_token(token: str, env_path: Path) -> None:
 def delete_oauth_token(env_path: Path) -> bool:
     """OAuth 토큰을 현재 프로세스 + .env 파일에서 삭제
 
+    credentials.json도 함께 삭제한다 (PKCE OAuth 토큰 정리).
+
     Args:
         env_path: .env 파일 경로
 
@@ -105,6 +119,11 @@ def delete_oauth_token(env_path: Path) -> bool:
         had_token = True
         logger.info(f"Deleted OAuth token from os.environ['{TOKEN_ENV_KEY}']")
 
+    # 이전 잘못된 구현이 남긴 REFRESH_TOKEN 환경변수도 정리
+    if REFRESH_TOKEN_ENV_KEY in os.environ:
+        del os.environ[REFRESH_TOKEN_ENV_KEY]
+        logger.info(f"Cleaned up legacy os.environ['{REFRESH_TOKEN_ENV_KEY}']")
+
     # 2. .env 파일에서 삭제
     if env_path.exists():
         lines: list[str] = []
@@ -112,9 +131,13 @@ def delete_oauth_token(env_path: Path) -> bool:
 
         with open(env_path, "r", encoding="utf-8") as f:
             for line in f:
-                # 토큰 라인 제거
+                # 토큰 라인 제거 (access + legacy refresh)
                 if line.startswith(f"{TOKEN_ENV_KEY}="):
                     had_token = True
+                    skip_next_empty = True
+                    continue
+
+                if line.startswith(f"{REFRESH_TOKEN_ENV_KEY}="):
                     skip_next_empty = True
                     continue
 
@@ -135,7 +158,68 @@ def delete_oauth_token(env_path: Path) -> bool:
             f.writelines(lines)
         logger.info(f"Deleted OAuth token from {env_path}")
 
+    # 3. credentials.json 삭제
+    delete_credentials_json()
+
     return had_token
+
+
+def save_credentials_json(
+    access_token: str,
+    refresh_token: str,
+    expires_in: int | None = None,
+    scope: str = "",
+) -> None:
+    """OAuth 크레덴셜을 ~/.claude/.credentials.json에 저장.
+
+    Claude Code /login과 동일한 형식. refreshToken 자동 갱신을 지원한다.
+    PKCE OAuth 경로에서만 호출한다 (setup-token 경로는 save_oauth_token 사용).
+    """
+    expires_at = None
+    if expires_in is not None:
+        expires_at = int(time.time() * 1000) + expires_in * 1000
+    scopes = [s for s in scope.split(" ") if s] if scope else []
+
+    creds: dict = {}
+    if CREDENTIALS_PATH.exists():
+        try:
+            creds = json.loads(CREDENTIALS_PATH.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            creds = {}
+
+    oauth_data: dict = {
+        "accessToken": access_token,
+        "refreshToken": refresh_token,
+    }
+    if expires_at is not None:
+        oauth_data["expiresAt"] = expires_at
+    if scopes:
+        oauth_data["scopes"] = scopes
+    creds["claudeAiOauth"] = oauth_data
+
+    CREDENTIALS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    CREDENTIALS_PATH.write_text(
+        json.dumps(creds, indent=2) + "\n", encoding="utf-8"
+    )
+    logger.info("Saved OAuth credentials to %s", CREDENTIALS_PATH)
+
+
+def delete_credentials_json() -> bool:
+    """~/.claude/.credentials.json에서 claudeAiOauth 섹션 삭제."""
+    if not CREDENTIALS_PATH.exists():
+        return False
+    try:
+        creds = json.loads(CREDENTIALS_PATH.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return False
+    if "claudeAiOauth" not in creds:
+        return False
+    del creds["claudeAiOauth"]
+    CREDENTIALS_PATH.write_text(
+        json.dumps(creds, indent=2) + "\n", encoding="utf-8"
+    )
+    logger.info("Deleted claudeAiOauth from %s", CREDENTIALS_PATH)
+    return True
 
 
 def get_env_path() -> Path:

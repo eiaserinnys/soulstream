@@ -38,6 +38,7 @@ from .protocol import (
 from soul_server.api.claude_auth.token_store import (
     get_oauth_token,
     save_oauth_token,
+    save_credentials_json,
     delete_oauth_token,
     get_env_path,
 )
@@ -383,7 +384,18 @@ class UpstreamAdapter:
                     if not token_val:
                         await self._send_error("token is required", request_id=request_id, command_type=cmd_type)
                     else:
-                        save_oauth_token(token_val, get_env_path())
+                        refresh_val = cmd.get("refresh_token")
+                        if refresh_val:
+                            # PKCE OAuth → credentials.json에 저장
+                            # .env에 access_token을 쓰지 않음 (환경변수가 있으면 credentials.json 무시됨)
+                            save_credentials_json(
+                                token_val, refresh_val,
+                                expires_in=cmd.get("expires_in"),
+                                scope=cmd.get("scope", ""),
+                            )
+                        else:
+                            # setup-token → .env에 저장 (하위 호환)
+                            save_oauth_token(token_val, get_env_path())
                         logger.info("Claude Code OAuth token set via WS command")
                         await self._send({
                             "type": CMD_CLAUDE_AUTH_SET_TOKEN,

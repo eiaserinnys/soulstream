@@ -13,8 +13,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Callable, Awaitable, Optional, TYPE_CHECKING
 
-from dotenv import dotenv_values
-
 from soul_server.service.task_models import Task, TaskStatus, PREVIEW_FIELD_MAP, datetime_to_str, utc_now
 from soul_server.service.prompt_assembler import assemble_prompt
 from soul_server.service.session_broadcaster import get_session_broadcaster
@@ -298,17 +296,13 @@ class TaskExecutor:
                 # task.allowed_tools or override_tools 사용 금지 — 빈 리스트([])를 falsy로 처리함
                 effective_allowed_tools = task.allowed_tools if task.allowed_tools is not None else override_tools
 
-                # CLAUDE_CODE_OAUTH_TOKEN 주입: 직접 지정 > .env > OS env
+                # CLAUDE_CODE_OAUTH_TOKEN 주입 — task.oauth_token 직접 지정 시에만.
+                # PKCE OAuth는 credentials.json에 저장되어 Claude Code가 자동으로 읽으므로 주입 불필요.
+                # setup-token은 프로세스 환경변수 상속으로 충분.
+                # task.oauth_token만 extra_env로 명시 주입 (프로필 전환 등).
                 extra_env: Optional[dict] = None
-                token = task.oauth_token  # 1순위: 세션별 직접 지정
-                if not token:
-                    env_file = Path.cwd() / ".env"
-                    if env_file.exists():
-                        token = dotenv_values(env_file).get("CLAUDE_CODE_OAUTH_TOKEN")  # 2순위: .env
-                if not token:
-                    token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")  # 3순위: OS env
-                if token:
-                    extra_env = {"CLAUDE_CODE_OAUTH_TOKEN": token}
+                if task.oauth_token:
+                    extra_env = {"CLAUDE_CODE_OAUTH_TOKEN": task.oauth_token}
 
                 # 구조화된 맥락을 XML 섹션으로 조립
                 assembled_prompt = assemble_prompt(task.prompt, task.context)

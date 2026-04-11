@@ -97,10 +97,16 @@ def create_claude_auth_router(node_manager: NodeManager) -> APIRouter:
                 )
             data = resp.json()
         access_token = data["access_token"]
+        refresh_token = data.get("refresh_token")
         node_conn = node_manager.get_node(node_id)
         if node_conn is None:
             raise HTTPException(status_code=404, detail=f"Node {node_id} not connected")
-        await node_conn.send_claude_auth_set_token(access_token)
+        await node_conn.send_claude_auth_set_token(
+            access_token,
+            refresh_token=refresh_token,
+            expires_in=data.get("expires_in"),
+            scope=data.get("scope", ""),
+        )
         logger.info(f"Claude Code OAuth token pushed to node {node_id}")
         return RedirectResponse(url="/?claude_auth=success")
 
@@ -206,7 +212,13 @@ def create_claude_auth_router(node_manager: NodeManager) -> APIRouter:
                 )
             data = resp.json()
         access_token = data["access_token"]
-        await node_conn.send_claude_auth_set_token(access_token)
+        refresh_token = data.get("refresh_token")
+        await node_conn.send_claude_auth_set_token(
+            access_token,
+            refresh_token=refresh_token,
+            expires_in=data.get("expires_in"),
+            scope=data.get("scope", ""),
+        )
         logger.info(f"Claude Code OAuth token pushed to node {node_id} (headless)")
         return {"success": True}
 

@@ -33,7 +33,7 @@ from .web_session import web_session_store
 from .token_store import (
     delete_oauth_token,
     get_oauth_token,
-    save_oauth_token,
+    save_credentials_json,
     get_env_path,
     is_valid_token,
     load_profiles,
@@ -188,7 +188,19 @@ def create_claude_auth_router(
                 )
             data = resp.json()
         access_token = data["access_token"]
-        save_oauth_token(access_token, _get_env_path())
+        refresh_token = data.get("refresh_token")
+        if refresh_token:
+            # PKCE OAuth → credentials.json에 저장 (Claude Code가 auto-refresh)
+            save_credentials_json(
+                access_token, refresh_token,
+                expires_in=data.get("expires_in"),
+                scope=data.get("scope", ""),
+            )
+        else:
+            logger.warning(
+                "PKCE web flow: OAuth response missing refresh_token — "
+                "credentials.json not saved, token auto-refresh unavailable"
+            )
         logger.info("Claude Code OAuth token saved via PKCE web flow")
         return RedirectResponse(url="/?claude_auth=success")
 
@@ -259,7 +271,19 @@ def create_claude_auth_router(
                 )
             data = resp.json()
         access_token = data["access_token"]
-        save_oauth_token(access_token, _get_env_path())
+        refresh_token = data.get("refresh_token")
+        if refresh_token:
+            # PKCE OAuth → credentials.json에 저장 (Claude Code가 auto-refresh)
+            save_credentials_json(
+                access_token, refresh_token,
+                expires_in=data.get("expires_in"),
+                scope=data.get("scope", ""),
+            )
+        else:
+            logger.warning(
+                "Headless flow: OAuth response missing refresh_token — "
+                "credentials.json not saved, token auto-refresh unavailable"
+            )
         logger.info("Claude Code OAuth token saved via headless flow")
         return TokenResponse(success=True, message="토큰이 설정되었습니다.")
 
