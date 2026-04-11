@@ -116,6 +116,7 @@ CMD_CLAUDE_AUTH_STATUS = "claude_auth_status"           # 토큰 존재 여부 �
 CMD_CLAUDE_AUTH_SET_TOKEN = "claude_auth_set_token"     # 토큰 설정
 CMD_CLAUDE_AUTH_DELETE_TOKEN = "claude_auth_delete_token"  # 토큰 삭제
 CMD_CLAUDE_AUTH_GET_USAGE = "claude_auth_get_usage"     # Usage 조회 (Anthropic API 호출)
+CMD_CLAUDE_AUTH_GET_PROFILE = "claude_auth_get_profile" # 계정 프로필(email 등) 조회
 
 EVT_NODE_REGISTER = "node_register"
 EVT_SESSION_CREATED = "session_created"

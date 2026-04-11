@@ -107,8 +107,15 @@ const parseErrorDetail = (detail: string): string => {
   return detail || "오류가 발생했습니다.";
 };
 
+type AccountProfile = {
+  email: string;
+  display_name: string;
+  has_claude_max: boolean;
+};
+
 export function NodeClaudeAuthPanel({ nodeId }: Props) {
   const [status, setStatus] = useState<{ has_token: boolean } | null>(null);
+  const [profile, setProfile] = useState<AccountProfile | null>(null);
   const [usage, setUsage] = useState<UsageData | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(false);
   const [loadingUsage, setLoadingUsage] = useState(false);
@@ -120,17 +127,33 @@ export function NodeClaudeAuthPanel({ nodeId }: Props) {
   // popup은 useRef로 관리하여 handleCancelCode에서도 닫을 수 있게 한다.
   const popupRef = useRef<Window | null>(null);
 
+  const fetchProfile = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/nodes/${nodeId}/claude-auth/profile`);
+      if (res.ok) {
+        const data = await res.json();
+        setProfile(data.account ?? null);
+      }
+    } catch {
+      // 프로필 조회 실패는 무시 — 인증 상태 표시에는 영향 없음
+    }
+  }, [nodeId]);
+
   const fetchStatus = useCallback(async () => {
     setLoadingStatus(true);
     try {
       const res = await fetch(`/api/nodes/${nodeId}/claude-auth/status`);
-      setStatus(await res.json());
+      const data = await res.json();
+      setStatus(data);
+      if (data.has_token) {
+        fetchProfile();
+      }
     } catch (e) {
       setError(String(e));
     } finally {
       setLoadingStatus(false);
     }
-  }, [nodeId]);
+  }, [nodeId, fetchProfile]);
 
   useEffect(() => {
     fetchStatus();
@@ -216,6 +239,7 @@ export function NodeClaudeAuthPanel({ nodeId }: Props) {
   const handleDeleteToken = async () => {
     await fetch(`/api/nodes/${nodeId}/claude-auth/token`, { method: "DELETE" });
     setStatus({ has_token: false });
+    setProfile(null);
     setUsage(null);
   };
 
@@ -245,6 +269,11 @@ export function NodeClaudeAuthPanel({ nodeId }: Props) {
           <div className="flex items-center gap-1.5">
             <div className="w-1.5 h-1.5 rounded-full bg-success" />
             <span className="text-xs">인증됨</span>
+            {profile && (
+              <span className="text-xs text-muted-foreground truncate">
+                {profile.email}
+              </span>
+            )}
           </div>
           <div className="flex flex-wrap gap-1.5">
             <Button

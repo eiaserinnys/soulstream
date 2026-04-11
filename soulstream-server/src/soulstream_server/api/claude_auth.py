@@ -131,6 +131,19 @@ def create_claude_auth_router(node_manager: NodeManager) -> APIRouter:
             )
         return result["data"]
 
+    @router.get("/nodes/{node_id}/claude-auth/profile")
+    async def node_claude_auth_profile(node_id: str):
+        """soul-server를 통해 Anthropic 계정 프로필 대리 조회."""
+        node_conn = node_manager.get_node(node_id)
+        if node_conn is None:
+            raise HTTPException(status_code=404, detail=f"Node {node_id} not connected")
+        result = await node_conn.send_claude_auth_get_profile()
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=400, detail=result.get("error", "unknown")
+            )
+        return result["data"]
+
     @router.delete("/nodes/{node_id}/claude-auth/token")
     async def node_claude_auth_delete_token(node_id: str):
         """soul-server의 토큰 삭제."""

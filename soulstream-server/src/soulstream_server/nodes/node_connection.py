@@ -24,6 +24,7 @@ from soulstream_server.constants import (
     CMD_CLAUDE_AUTH_SET_TOKEN,
     CMD_CLAUDE_AUTH_DELETE_TOKEN,
     CMD_CLAUDE_AUTH_GET_USAGE,
+    CMD_CLAUDE_AUTH_GET_PROFILE,
     COMMAND_TIMEOUT,
     EVT_ERROR,
     EVT_EVENT,
@@ -239,6 +240,10 @@ class NodeConnection:
     async def send_claude_auth_get_usage(self) -> dict:
         """Claude Code OAuth 사용량 조회."""
         return await self._send_command(CMD_CLAUDE_AUTH_GET_USAGE, {})
+
+    async def send_claude_auth_get_profile(self) -> dict:
+        """Anthropic 계정 프로필(email 등) 조회."""
+        return await self._send_command(CMD_CLAUDE_AUTH_GET_PROFILE, {})
 
     async def send_respond(
         self, session_id: str, request_id: str, answers: dict

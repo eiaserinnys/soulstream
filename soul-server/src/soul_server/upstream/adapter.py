@@ -26,6 +26,7 @@ from .protocol import (
     CMD_CLAUDE_AUTH_SET_TOKEN,
     CMD_CLAUDE_AUTH_DELETE_TOKEN,
     CMD_CLAUDE_AUTH_GET_USAGE,
+    CMD_CLAUDE_AUTH_GET_PROFILE,
     EVT_ERROR,
     EVT_EVENT,
     EVT_HEALTH_STATUS,
@@ -46,6 +47,7 @@ from soul_server.api.claude_auth.token_store import (
 import httpx
 
 ANTHROPIC_USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
+ANTHROPIC_PROFILE_URL = "https://api.anthropic.com/api/oauth/profile"
 from .reconnect import ReconnectPolicy
 
 if TYPE_CHECKING:
@@ -438,6 +440,38 @@ class UpstreamAdapter:
                         else:
                             await self._send({
                                 "type": CMD_CLAUDE_AUTH_GET_USAGE,
+                                "success": True,
+                                "data": resp.json(),
+                                "requestId": request_id,
+                            })
+                case "claude_auth_get_profile":
+                    token = get_oauth_token()
+                    if not token:
+                        await self._send({
+                            "type": CMD_CLAUDE_AUTH_GET_PROFILE,
+                            "success": False,
+                            "error": "no token",
+                            "requestId": request_id,
+                        })
+                    else:
+                        async with httpx.AsyncClient() as client:
+                            resp = await client.get(
+                                ANTHROPIC_PROFILE_URL,
+                                headers={
+                                    "Authorization": f"Bearer {token}",
+                                    "anthropic-beta": "oauth-2025-04-20",
+                                },
+                            )
+                        if resp.status_code != 200:
+                            await self._send({
+                                "type": CMD_CLAUDE_AUTH_GET_PROFILE,
+                                "success": False,
+                                "error": resp.text,
+                                "requestId": request_id,
+                            })
+                        else:
+                            await self._send({
+                                "type": CMD_CLAUDE_AUTH_GET_PROFILE,
                                 "success": True,
                                 "data": resp.json(),
                                 "requestId": request_id,

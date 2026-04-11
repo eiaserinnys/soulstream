@@ -47,13 +47,35 @@ def is_valid_token(token: str) -> bool:
     return bool(_TOKEN_PATTERN.match(token.strip()))
 
 
+def _get_token_from_credentials_json() -> str | None:
+    """~/.claude/.credentials.json에서 accessToken 반환.
+
+    PKCE OAuth 경로는 이 파일에만 저장하고 환경변수를 쓰지 않으므로
+    get_oauth_token()의 fallback으로 사용한다.
+    """
+    if not CREDENTIALS_PATH.exists():
+        return None
+    try:
+        creds = json.loads(CREDENTIALS_PATH.read_text(encoding="utf-8"))
+        return creds.get("claudeAiOauth", {}).get("accessToken")
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
 def get_oauth_token() -> str | None:
-    """현재 저장된 OAuth 토큰 반환
+    """현재 저장된 OAuth 토큰 반환.
+
+    환경변수 우선, 없으면 ~/.claude/.credentials.json에서 조회한다.
+    - 환경변수(CLAUDE_CODE_OAUTH_TOKEN): setup-token(레거시) 경로
+    - credentials.json: PKCE OAuth 경로 (현재 주 경로)
 
     Returns:
         토큰 문자열 또는 None
     """
-    return os.environ.get(TOKEN_ENV_KEY)
+    token = os.environ.get(TOKEN_ENV_KEY)
+    if token:
+        return token
+    return _get_token_from_credentials_json()
 
 
 def save_oauth_token(token: str, env_path: Path) -> None:
