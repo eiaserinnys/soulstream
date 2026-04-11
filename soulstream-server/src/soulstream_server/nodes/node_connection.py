@@ -215,9 +215,22 @@ class NodeConnection:
         """Claude Code OAuth 토큰 존재 여부 조회."""
         return await self._send_command(CMD_CLAUDE_AUTH_STATUS, {})
 
-    async def send_claude_auth_set_token(self, token: str) -> dict:
+    async def send_claude_auth_set_token(
+        self,
+        token: str,
+        refresh_token: str | None = None,
+        expires_in: int | None = None,
+        scope: str = "",
+    ) -> dict:
         """Claude Code OAuth 토큰 설정."""
-        return await self._send_command(CMD_CLAUDE_AUTH_SET_TOKEN, {"token": token})
+        payload: dict = {"token": token}
+        if refresh_token is not None:
+            payload["refresh_token"] = refresh_token
+        if expires_in is not None:
+            payload["expires_in"] = expires_in
+        if scope:
+            payload["scope"] = scope
+        return await self._send_command(CMD_CLAUDE_AUTH_SET_TOKEN, payload)
 
     async def send_claude_auth_delete_token(self) -> dict:
         """Claude Code OAuth 토큰 삭제."""

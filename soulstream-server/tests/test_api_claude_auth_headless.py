@@ -132,7 +132,57 @@ class TestHeadlessSubmitCode:
 
         assert resp.status_code == 200
         assert resp.json()["success"] is True
-        conn.send_claude_auth_set_token.assert_called_once_with("sk-ant-oat01-faketoken")
+        # OAuth 응답에 refresh_token이 없으면 refresh_token=None, expires_in=None, scope="" 으로 호출
+        conn.send_claude_auth_set_token.assert_called_once_with(
+            "sk-ant-oat01-faketoken",
+            refresh_token=None,
+            expires_in=None,
+            scope="",
+        )
+
+    async def test_success_with_refresh_token(self, client, node_manager, monkeypatch):
+        """정상 동작: refresh_token + expires_in + scope이 있으면 함께 전달."""
+        monkeypatch.setenv("CLAUDE_OAUTH_CLIENT_ID", "test-client-id")
+        node_id = await _register_node(node_manager)
+
+        start_resp = await client.get(f"/api/nodes/{node_id}/claude-auth/headless/start")
+        auth_url = start_resp.json()["authUrl"]
+        from urllib.parse import urlparse, parse_qs
+        parsed = urlparse(auth_url)
+        state = parse_qs(parsed.query)["state"][0]
+        paste_code = f"authcode-abc123#{state}"
+
+        conn = node_manager.get_node(node_id)
+        conn.send_claude_auth_set_token = AsyncMock(return_value={"success": True})
+
+        fake_token_resp = MagicMock()
+        fake_token_resp.status_code = 200
+        fake_token_resp.json.return_value = {
+            "access_token": "sk-ant-oat01-faketoken",
+            "refresh_token": "refresh-xyz",
+            "expires_in": 28800,
+            "scope": "user:inference user:profile",
+        }
+
+        with patch("soulstream_server.api.claude_auth.httpx.AsyncClient") as mock_client_cls:
+            mock_http = AsyncMock()
+            mock_http.post = AsyncMock(return_value=fake_token_resp)
+            mock_client_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
+            mock_client_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            resp = await client.post(
+                f"/api/nodes/{node_id}/claude-auth/headless/submit-code",
+                json={"code": paste_code},
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["success"] is True
+        conn.send_claude_auth_set_token.assert_called_once_with(
+            "sk-ant-oat01-faketoken",
+            refresh_token="refresh-xyz",
+            expires_in=28800,
+            scope="user:inference user:profile",
+        )
 
     async def test_missing_code(self, client, node_manager, monkeypatch):
         """빈 code: 400 missing_code."""
@@ -179,7 +229,7 @@ class TestHeadlessSubmitCode:
         node_id = await _register_node(node_manager, "node-a")
         await _register_node(node_manager, "node-b")
 
-        # node-a의 state를 node-b 엔드포인트에 제출
+        # node-a의 state를 node-b 엔드��인트에 제출
         start_resp = await client.get(f"/api/nodes/node-a/claude-auth/headless/start")
         auth_url = start_resp.json()["authUrl"]
         from urllib.parse import urlparse, parse_qs
