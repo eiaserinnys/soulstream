@@ -43,7 +43,10 @@ function DialogViewport({
   return (
     <DialogPrimitive.Viewport
       className={cn(
-        "fixed inset-0 z-50 grid grid-rows-[1fr_auto_3fr] justify-items-center p-4",
+        "fixed inset-x-0 top-0 z-50 grid grid-rows-[1fr_auto_3fr] justify-items-center p-4",
+        // 모바일: dvh 단위로 키보드가 올라와도 다이얼로그가 가려지지 않게 한다.
+        // dvh(dynamic viewport height)는 가상 키보드를 제외한 가시 영역 높이다.
+        "h-dvh max-sm:h-dvh",
         className,
       )}
       data-slot="dialog-viewport"

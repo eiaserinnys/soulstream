@@ -3,11 +3,15 @@
  *
  * FeedView, FolderContents 등에서 세션 우클릭 시 동일한 메뉴와 모달을 제공한다.
  * 세션 ID 복사 · 이름 변경 · 폴더 이동 기능을 제공한다.
+ *
+ * 모바일: Dialog 하단 시트 (bottomStickOnMobile)
+ * 데스크탑: fixed div 컨텍스트 메뉴
  */
 
 import { useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useDashboardStore } from "../stores/dashboard-store";
+import { useIsMobile } from "../hooks/use-mobile";
 import { Dialog, DialogPopup, DialogHeader, DialogTitle, DialogPanel, DialogFooter } from "./ui/dialog";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -37,6 +41,56 @@ export interface SessionContextMenuProps {
   resolveSessionIds: (sessionId: string) => string[];
 }
 
+/** 메뉴 항목 리스트 (모바일/데스크탑 공용) */
+function MenuItems({
+  onCopyId,
+  onRename,
+  onMove,
+  hasRename,
+  hasMove,
+  className,
+}: {
+  onCopyId: () => void;
+  onRename?: () => void;
+  onMove?: () => void;
+  hasRename: boolean;
+  hasMove: boolean;
+  className?: string;
+}) {
+  return (
+    <div className={className}>
+      <button
+        className="w-full text-left px-3 py-2 text-sm hover:bg-accent rounded-md"
+        onClick={onCopyId}
+      >
+        세션 ID 복사
+      </button>
+      {hasRename && onRename && (
+        <>
+          <div className="border-t border-border my-1" />
+          <button
+            className="w-full text-left px-3 py-2 text-sm hover:bg-accent rounded-md"
+            onClick={onRename}
+          >
+            이름 변경
+          </button>
+        </>
+      )}
+      {hasMove && onMove && (
+        <>
+          <div className="border-t border-border my-1" />
+          <button
+            className="w-full text-left px-3 py-2 text-sm hover:bg-accent rounded-md"
+            onClick={onMove}
+          >
+            다른 폴더로 이동
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function SessionContextMenu({
   contextMenu,
   onClose,
@@ -46,6 +100,7 @@ export function SessionContextMenu({
   resolveSessionIds,
 }: SessionContextMenuProps) {
   const catalog = useDashboardStore((s) => s.catalog);
+  const isMobile = useIsMobile();
 
   // 이름 변경 모달
   const [renameDialog, setRenameDialog] = useState<{
@@ -60,6 +115,12 @@ export function SessionContextMenu({
     sessionIds: string[];
     selectedFolderId: string | null;
   }>({ open: false, sessionIds: [], selectedFolderId: null });
+
+  const handleCopyId = useCallback(() => {
+    if (!contextMenu) return;
+    navigator.clipboard.writeText(contextMenu.sessionId);
+    onClose();
+  }, [contextMenu, onClose]);
 
   const handleRenameClick = useCallback(() => {
     if (!contextMenu || !onRenameSession) return;
@@ -92,55 +153,48 @@ export function SessionContextMenu({
 
   return (
     <>
-      {contextMenu && createPortal(
-        <>
-          {/* 컨텍스트 메뉴 닫기 오버레이 */}
-          <div
-            className="fixed inset-0 z-40"
-            onClick={onClose}
-            onContextMenu={(e) => { e.preventDefault(); onClose(); }}
-          />
-
-          {/* 컨텍스트 메뉴 */}
-          <div
-            className="fixed z-50 bg-popover border border-border rounded-md shadow-lg py-1 min-w-[160px]"
-            style={{ left: contextMenu.x, top: contextMenu.y }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
-              onClick={() => {
-                navigator.clipboard.writeText(contextMenu.sessionId);
-                onClose();
-              }}
-            >
-              세션 ID 복사
-            </button>
-            {onRenameSession && (
-              <>
-                <div className="border-t border-border my-1" />
-                <button
-                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
-                  onClick={handleRenameClick}
-                >
-                  이름 변경
-                </button>
-              </>
-            )}
-            {onMoveSessions && (
-              <>
-                <div className="border-t border-border my-1" />
-                <button
-                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent"
-                  onClick={handleMoveClick}
-                >
-                  다른 폴더로 이동
-                </button>
-              </>
-            )}
-          </div>
-        </>,
-        document.body,
+      {/* 컨텍스트 메뉴 — 모바일: Dialog 하단 시트, 데스크탑: fixed div */}
+      {contextMenu && (
+        isMobile ? (
+          <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+            <DialogPopup className="max-w-sm" showCloseButton={false}>
+              <div className="py-2 px-2">
+                <MenuItems
+                  onCopyId={handleCopyId}
+                  onRename={onRenameSession ? handleRenameClick : undefined}
+                  onMove={onMoveSessions ? handleMoveClick : undefined}
+                  hasRename={!!onRenameSession}
+                  hasMove={!!onMoveSessions}
+                />
+              </div>
+            </DialogPopup>
+          </Dialog>
+        ) : (
+          createPortal(
+            <>
+              <div
+                className="fixed inset-0 z-40"
+                onClick={onClose}
+                onContextMenu={(e) => { e.preventDefault(); onClose(); }}
+              />
+              <div
+                className="fixed z-50 bg-popover border border-border rounded-md shadow-lg py-1 min-w-[160px]"
+                style={{ left: contextMenu.x, top: contextMenu.y }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <MenuItems
+                  onCopyId={handleCopyId}
+                  onRename={onRenameSession ? handleRenameClick : undefined}
+                  onMove={onMoveSessions ? handleMoveClick : undefined}
+                  hasRename={!!onRenameSession}
+                  hasMove={!!onMoveSessions}
+                  className="py-0"
+                />
+              </div>
+            </>,
+            document.body,
+          )
+        )
       )}
 
       {/* 이름 변경 모달 */}

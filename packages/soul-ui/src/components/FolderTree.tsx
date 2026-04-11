@@ -24,6 +24,7 @@ import { Badge } from "./ui/badge";
 import { Spinner } from "./ui/spinner";
 import { SYSTEM_FOLDERS } from "../shared/constants";
 import { Plus, Newspaper, GripVertical } from "lucide-react";
+import { Dialog, DialogPopup } from "./ui/dialog";
 import { FolderDialog } from "./FolderDialog";
 import { FolderSettingsDialog } from "./FolderSettingsDialog";
 import { FolderSortButton } from "./FolderSortButton";
@@ -460,39 +461,77 @@ export function FolderTree({
         }}
       />
       {contextMenu && (
-        <div
-          className="fixed z-50 min-w-[140px] rounded-md border border-border bg-popover shadow-md py-1"
-          style={{ top: contextMenu.y, left: contextMenu.x }}
-          onMouseLeave={() => setContextMenu(null)}
-        >
-          <button
-            className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent/50"
-            onClick={() => {
-              handleDoubleClick(contextMenu.folder.id, contextMenu.folder.name);
-              setContextMenu(null);
-            }}
+        isMobile ? (
+          <Dialog open onOpenChange={(open) => { if (!open) setContextMenu(null); }}>
+            <DialogPopup className="max-w-sm" showCloseButton={false}>
+              <div className="py-2 px-2">
+                <button
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-accent rounded-md"
+                  onClick={() => {
+                    handleDoubleClick(contextMenu.folder.id, contextMenu.folder.name);
+                    setContextMenu(null);
+                  }}
+                >
+                  이름 변경
+                </button>
+                <div className="border-t border-border my-1" />
+                <button
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-accent rounded-md"
+                  onClick={() => {
+                    setSettingsTarget({ id: contextMenu.folder.id, name: contextMenu.folder.name });
+                    setContextMenu(null);
+                  }}
+                >
+                  설정
+                </button>
+                <div className="border-t border-border my-1" />
+                <button
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-accent rounded-md text-destructive"
+                  onClick={() => {
+                    setDeleteTarget({ id: contextMenu.folder.id, name: contextMenu.folder.name });
+                    setContextMenu(null);
+                  }}
+                >
+                  삭제
+                </button>
+              </div>
+            </DialogPopup>
+          </Dialog>
+        ) : (
+          <div
+            className="fixed z-50 min-w-[140px] rounded-md border border-border bg-popover shadow-md py-1"
+            style={{ top: contextMenu.y, left: contextMenu.x }}
+            onMouseLeave={() => setContextMenu(null)}
           >
-            이름 변경
-          </button>
-          <button
-            className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent/50"
-            onClick={() => {
-              setSettingsTarget({ id: contextMenu.folder.id, name: contextMenu.folder.name });
-              setContextMenu(null);
-            }}
-          >
-            설정
-          </button>
-          <button
-            className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent/50 text-destructive"
-            onClick={() => {
-              setDeleteTarget({ id: contextMenu.folder.id, name: contextMenu.folder.name });
-              setContextMenu(null);
-            }}
-          >
-            삭제
-          </button>
-        </div>
+            <button
+              className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent/50"
+              onClick={() => {
+                handleDoubleClick(contextMenu.folder.id, contextMenu.folder.name);
+                setContextMenu(null);
+              }}
+            >
+              이름 변경
+            </button>
+            <button
+              className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent/50"
+              onClick={() => {
+                setSettingsTarget({ id: contextMenu.folder.id, name: contextMenu.folder.name });
+                setContextMenu(null);
+              }}
+            >
+              설정
+            </button>
+            <button
+              className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent/50 text-destructive"
+              onClick={() => {
+                setDeleteTarget({ id: contextMenu.folder.id, name: contextMenu.folder.name });
+                setContextMenu(null);
+              }}
+            >
+              삭제
+            </button>
+          </div>
+        )
       )}
     </div>
   );
