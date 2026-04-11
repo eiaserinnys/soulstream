@@ -46,7 +46,7 @@ export const InputRequestNode = memo(function InputRequestNode({ data, selected 
         </div>
 
         {/* Truncated question */}
-        <div className={cn("text-xs text-foreground leading-normal", truncate2)}>
+        <div className={cn("text-xs text-foreground", truncate2)}>
           {data.content || '(waiting for input...)'}
         </div>
       </div>

@@ -76,7 +76,7 @@ function MetadataItem({ entry }: { entry: MetadataEntry }) {
           {shortValue}
         </code>
       )}
-      <span className="text-caption text-foreground break-words min-w-0">
+      <span className="text-sm text-foreground break-words min-w-0">
         {entry.url ? (
           <a
             href={entry.url}
@@ -98,7 +98,7 @@ function MetadataItem({ entry }: { entry: MetadataEntry }) {
 export function SessionMetadata({ metadata }: { metadata: MetadataEntry[] }) {
   if (!metadata || metadata.length === 0) {
     return (
-      <div className="p-4 text-center text-muted-foreground text-caption">
+      <div className="p-4 text-center text-muted-foreground text-sm">
         No metadata recorded yet
       </div>
     );
@@ -110,7 +110,7 @@ export function SessionMetadata({ metadata }: { metadata: MetadataEntry[] }) {
     <div className="p-4 flex flex-col gap-4">
       <div className="flex items-center gap-2">
         <span className="text-base">{"\uD83D\uDCE6"}</span>
-        <div className="text-xs text-muted-foreground uppercase tracking-[0.05em] font-semibold">
+        <div className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">
           Session Artifacts
         </div>
         <span className="text-xs text-muted-foreground/60">
@@ -131,7 +131,7 @@ export function SessionMetadata({ metadata }: { metadata: MetadataEntry[] }) {
               {dedupedEntries
                 ? dedupedEntries.map(({ entry, count }) => (
                     <div key={entry.value} className="flex items-start gap-2 py-1">
-                      <span className="text-caption text-foreground break-words min-w-0 font-mono text-xs">
+                      <span className="text-foreground break-words min-w-0 font-mono text-xs">
                         {entry.value}
                       </span>
                       {count > 1 && (

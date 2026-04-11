@@ -191,13 +191,13 @@ const CollapsibleContent = memo(function CollapsibleContent({
       {needsCollapse ? (
         <button
           onClick={() => setExpanded((v) => !v)}
-          className="text-caption text-muted-foreground hover:text-foreground mb-0.5 flex items-center gap-1"
+          className="text-sm text-muted-foreground hover:text-foreground mb-0.5 flex items-center gap-1"
         >
           <span className="text-xs">{expanded ? "\u25BC" : "\u25B6"}</span>
           {label}
         </button>
       ) : (
-        <span className="text-caption text-muted-foreground mb-0.5 flex items-center gap-1">
+        <span className="text-sm text-muted-foreground mb-0.5 flex items-center gap-1">
           {label}
         </span>
       )}
@@ -215,7 +215,7 @@ const ContextBlock = memo(function ContextBlock({ items }: { items: ContextItem[
     <div className="mt-1.5">
       <button
         onClick={() => setExpanded((v) => !v)}
-        className="text-caption text-muted-foreground hover:text-foreground flex items-center gap-1.5"
+        className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1.5"
       >
         <span className="text-xs">{expanded ? "\u25BC" : "\u25B6"}</span>
         <span>{"\u{1F4CB}"}</span>
@@ -306,7 +306,7 @@ const SystemPromptMessage = memo(function SystemPromptMessage({ msg }: { msg: Ch
       <div className="flex-1 min-w-0">
         <button
           onClick={() => setExpanded((v) => !v)}
-          className="text-caption text-muted-foreground hover:text-foreground flex items-center gap-1.5"
+          className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1.5"
         >
           <span className="text-xs">{expanded ? "\u25BC" : "\u25B6"}</span>
           <span>{"\u2699\uFE0F"}</span>
@@ -448,7 +448,7 @@ const ToolCallItem = memo(function ToolCallItem({ msg }: { msg: ChatMessage }) {
       <button
         onClick={() => setExpanded((v) => !v)}
         className={cn(
-          "text-caption font-mono flex items-center gap-1",
+          "text-xs font-mono flex items-center gap-1",
           msg.isError ? "text-accent-red" : "text-muted-foreground",
           "hover:text-foreground",
         )}
@@ -491,7 +491,7 @@ const ToolCallGroup = memo(function ToolCallGroup({ messages }: { messages: Chat
       <div className="flex-1 min-w-0">
         <button
           onClick={() => setExpanded((v) => !v)}
-          className="text-caption text-muted-foreground hover:text-foreground flex items-center gap-1.5"
+          className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1.5"
         >
           <span className="text-xs">{expanded ? "\u25BC" : "\u25B6"}</span>
           <span>{"\u{1F527}"}</span>
@@ -601,7 +601,7 @@ const ChatInputRequest = memo(function ChatInputRequest({
     <div className="flex gap-2 px-3 py-1.5" data-tree-node-id={msg.treeNodeId}>
       <span className="w-8 shrink-0 text-center">🔔</span>
       <div className="flex-1 min-w-0">
-        <div className="text-caption text-muted-foreground mb-1">Claude가 질문합니다</div>
+        <div className="text-xs text-muted-foreground mb-1">Claude가 질문합니다</div>
         {question.header && (
           <div className="text-xs text-muted-foreground uppercase tracking-wide mb-1">{question.header}</div>
         )}
@@ -870,7 +870,7 @@ export function ChatView({ chatInputDisabled = false, isOtherNodeSession = false
 
   if (!activeSessionKey) {
     return (
-      <div className="flex items-center justify-center h-full text-muted-foreground text-caption">
+      <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
         Select a session to view chat
       </div>
     );
@@ -885,7 +885,7 @@ export function ChatView({ chatInputDisabled = false, isOtherNodeSession = false
         className="flex-1 overflow-y-auto overflow-x-hidden py-2 overscroll-none"
       >
         {messages.length === 0 && (
-          <div className="p-5 text-center text-muted-foreground text-caption">
+          <div className="p-5 text-center text-muted-foreground text-sm">
             Waiting for events...
           </div>
         )}

@@ -512,7 +512,7 @@ function NodeGraphInner() {
   if (!activeSessionKey) {
     return (
       <div className="flex-1 flex items-center justify-center h-full">
-        <div className="text-muted-foreground text-caption">Select a session</div>
+        <div className="text-muted-foreground text-sm">Select a session</div>
       </div>
     );
   }
@@ -520,7 +520,7 @@ function NodeGraphInner() {
   if (!tree) {
     return (
       <div className="flex-1 flex items-center justify-center h-full">
-        <div className="text-muted-foreground text-caption">
+        <div className="text-muted-foreground text-sm">
           <span className="inline-block w-1.5 h-1.5 rounded-full bg-success animate-[pulse_2s_infinite] mr-2 align-middle" />
           Waiting for events...
         </div>
@@ -650,7 +650,7 @@ function GraphHeader() {
   );
 
   return (
-    <div className="py-3 px-3.5 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-[0.05em] flex justify-between items-center">
+    <div className="py-3 px-3.5 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wide flex justify-between items-center">
       <span>Execution Flow</span>
       <div className="flex items-center gap-2">
         {streamingCount > 0 && (

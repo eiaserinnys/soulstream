@@ -391,7 +391,7 @@ export function FolderTree({
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-3 py-2 border-b border-border">
-        <span className="text-sm font-medium">Folders</span>
+        <span className="text-sm font-semibold">Folders</span>
         <div className="flex items-center gap-0.5">
           <FolderSortButton />
           <Button variant="ghost" size="icon" onClick={() => setCreateDialogOpen(true)} title="New folder">

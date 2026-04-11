@@ -38,8 +38,16 @@
   --font-mono: 'Cascadia Code', 'Fira Code', monospace;
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 
-  /* Custom text-size tokens */
-  --text-caption: 0.8125rem;  /* 13px — 타임스탬프, 안내 문구, 메뉴 아이템 등 보조 텍스트 */
+  /*
+   * Typography scale — 4 tiers, Tailwind built-in only.
+   *   title:   text-xl   20px / 28px  (page titles, markdown H1)
+   *   body:    text-base 16px / 24px  (chat messages, thinking, inputs)
+   *   ui:      text-sm   14px / 20px  (panel headers, labels, toggles)
+   *   caption: text-xs   12px / 16px  (timestamps, badges, code blocks)
+   *
+   * Do NOT use: text-2xl, text-lg, text-[13px], text-[10px], leading-*.
+   * Letter-spacing: tracking-wide only, for uppercase caption labels.
+   */
 
   /* Coss UI semantic color mappings */
   --color-background: var(--background);

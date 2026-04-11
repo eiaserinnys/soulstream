@@ -50,7 +50,7 @@ export const SystemNode = memo(function SystemNode({ data, selected }: NodeProps
 
         {/* Content text */}
         <div className={cn(
-          "text-xs leading-normal",
+          "text-xs",
           isError ? "text-destructive-foreground" : "text-muted-foreground",
           truncate2,
         )}>

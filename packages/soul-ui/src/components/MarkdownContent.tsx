@@ -82,7 +82,7 @@ const components: Components = {
     // 인라인 코드
     return (
       <code
-        className="text-caption bg-input rounded px-1 py-0.5 font-mono"
+        className="text-xs bg-input rounded px-1 py-0.5 font-mono"
         {...props}
       >
         {children}
@@ -130,7 +130,7 @@ const components: Components = {
   // 테이블
   table: ({ children }) => (
     <div className="overflow-auto my-2">
-      <table className="text-caption border-collapse w-full">{children}</table>
+      <table className="text-xs border-collapse w-full">{children}</table>
     </div>
   ),
   th: ({ children }) => (

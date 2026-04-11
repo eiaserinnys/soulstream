@@ -41,7 +41,7 @@ export const UserNode = memo(function UserNode({ data, selected }: NodeProps<Use
         </div>
 
         {/* Truncated content */}
-        <div className={cn("text-xs text-foreground leading-normal", truncate2)}>
+        <div className={cn("text-xs text-foreground", truncate2)}>
           {data.content || data.label || '(empty)'}
         </div>
       </div>

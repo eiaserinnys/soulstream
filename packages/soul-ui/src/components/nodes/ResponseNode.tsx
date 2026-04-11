@@ -36,7 +36,7 @@ export const ResponseNode = memo(function ResponseNode({ data, selected }: NodeP
         {/* Header row */}
         <div className={cn(nodeHeader, "mb-2")}>
           <span className="text-sm shrink-0">{'\u{1F4AC}'}</span>
-          <span className="text-caption text-node-response uppercase tracking-[0.05em] font-bold">
+          <span className="text-xs text-node-response uppercase tracking-wide font-bold">
             Response
           </span>
           {isStreaming && (
@@ -45,7 +45,7 @@ export const ResponseNode = memo(function ResponseNode({ data, selected }: NodeP
         </div>
 
         {/* Truncated content (3 lines for response) */}
-        <div className={cn("text-xs text-foreground leading-relaxed", truncate2)}>
+        <div className={cn("text-xs text-foreground", truncate2)}>
           {data.content || data.label || '(empty response)'}
         </div>
       </div>
