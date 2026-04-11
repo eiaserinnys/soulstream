@@ -9,7 +9,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect, type ReactNode } from "react";
-import { ArrowLeft, ChevronLeft, MessageSquare, Search } from "lucide-react";
+import { ArrowLeft, ChevronLeft, MessageSquare, Plus, Search } from "lucide-react";
 import { DragHandle } from "./DragHandle";
 import { BottomTabBar } from "./BottomTabBar";
 import { ConnectionBadge, type ConnectionStatus } from "./ConnectionBadge";
@@ -75,6 +75,8 @@ export interface DashboardShellProps {
   mobileSettingsContent?: ReactNode;
   /** 모바일 검색 버튼 클릭 콜백. 미지정 시 검색 버튼 표시 안 함 */
   onSearchClick?: () => void;
+  /** 모바일 폴더 세션 리스트에서 '새 세션' 버튼 클릭 시 콜백 */
+  onNewSession?: () => void;
 }
 
 /**
@@ -117,6 +119,7 @@ export function DashboardShell({
   mobileChatHeader,
   mobileSettingsContent,
   onSearchClick,
+  onNewSession,
 }: DashboardShellProps) {
   // 패널 비율 상태 (%)
   const [leftPercent, setLeftPercent] = useState(defaultLeftPercent);
@@ -240,9 +243,19 @@ export function DashboardShell({
                     >
                       <ChevronLeft className="h-5 w-5" />
                     </button>
-                    <span className="text-sm font-medium">
+                    <span className="text-sm font-medium flex-1">
                       {catalog?.folders?.find(f => f.id === selectedFolderId)?.name ?? "세션"}
                     </span>
+                    {onNewSession && (
+                      <button
+                        onClick={onNewSession}
+                        className="p-1 rounded hover:bg-muted"
+                        title="New session"
+                        data-testid="mobile-new-session-btn"
+                      >
+                        <Plus className="h-4 w-4" />
+                      </button>
+                    )}
                   </div>
                   <div className="flex-1 min-h-0 overflow-hidden">
                     {mobileFolderContents}

@@ -201,6 +201,7 @@ export function DashboardLayout() {
           hasMore={hasMore}
         />
       }
+      onNewSession={() => openNewSessionModal("folder")}
       mobileChatHeader={(onBack) => <MobileChatHeader onBack={onBack} />}
       mobileChatView={<ChatView chatInputDisabled={isOtherNode} />}
       mobileSettingsContent={
