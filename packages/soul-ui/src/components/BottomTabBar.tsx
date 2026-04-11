@@ -14,6 +14,7 @@ const TABS: { id: MobileTab; label: string; icon: React.ReactNode }[] = [
 export function BottomTabBar() {
   const activeTab = useDashboardStore((s) => s.activeTab);
   const setActiveTab = useDashboardStore((s) => s.setActiveTab);
+  const clearSelectedFolder = useDashboardStore((s) => s.clearSelectedFolder);
 
   return (
     <nav
@@ -23,7 +24,12 @@ export function BottomTabBar() {
       {TABS.map((tab) => (
         <button
           key={tab.id}
-          onClick={() => setActiveTab(tab.id)}
+          onClick={() => {
+            setActiveTab(tab.id);
+            // 피드 탭 전환 시 viewMode·selectedFolderId를 초기화하여
+            // 폴더 선택 상태가 피드 탭에 잔류하지 않도록 한다
+            if (tab.id === "feed") clearSelectedFolder();
+          }}
           className={cn(
             "flex-1 flex flex-col items-center justify-center gap-0.5 py-2 min-h-[52px] text-xs",
             "transition-colors",
