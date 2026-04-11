@@ -167,6 +167,15 @@ class TaskExecutor:
                                             titles_only=bool(atom_node_cfg.get("titlesOnly", False)),
                                         )
 
+                # 폴더 프롬프트를 system_prompt로 사용 (context_items 대신)
+                # 새 세션에서만 주입 (folder_prompt는 resume_session_id is None일 때만 설정됨)
+                effective_system_prompt = task.system_prompt
+                if folder_prompt:
+                    if effective_system_prompt:
+                        effective_system_prompt = folder_prompt + "\n\n" + effective_system_prompt
+                    else:
+                        effective_system_prompt = folder_prompt
+
                 # 서버 컨텍스트 빌드 + 클라이언트 컨텍스트 머지
                 # SSE 이벤트와 프롬프트 주입 양쪽에 동일한 머지 결과를 사용
                 soulstream_item = build_soulstream_context_item(
@@ -176,11 +185,6 @@ class TaskExecutor:
                     folder_name=folder_name,
                     agent_id=task.profile_id,
                 )
-                folder_prompt_items = (
-                    [{"key": "folder_prompt", "label": "폴더 프롬프트", "content": folder_prompt}]
-                    if folder_prompt
-                    else []
-                )
                 atom_context_items = (
                     [{"key": "atom_context", "label": "atom 트리", "content": atom_context_markdown}]
                     if atom_context_markdown
@@ -188,17 +192,17 @@ class TaskExecutor:
                 )
                 combined_context_items = (
                     [soulstream_item]           # 세션 메타데이터 (최우선)
-                    + folder_prompt_items       # 폴더별 지시사항 (새 세션에만 포함)
                     + atom_context_items        # atom 트리 컨텍스트
                     + (task.context_items or [])  # 클라이언트 전달 컨텍스트
                 )
 
                 # system_message 기록 (system_prompt 있을 때, user_message 직전)
-                if self._db is not None and task.system_prompt:
+                # effective_system_prompt = folder_prompt + task.system_prompt (합산)
+                if self._db is not None and effective_system_prompt:
                     try:
                         sys_msg_event = {
                             "type": "system_message",
-                            "text": task.system_prompt,
+                            "text": effective_system_prompt,
                         }
                         event_id = await self._persist_event(session_id, sys_msg_event)
                         sys_msg_event["_event_id"] = event_id
@@ -325,7 +329,7 @@ class TaskExecutor:
                     context_items=combined_context_items,
                     agent_session_id=task.agent_session_id,
                     model=task.model,
-                    system_prompt=task.system_prompt,
+                    system_prompt=effective_system_prompt,
                     working_dir=working_dir,
                     max_turns=max_turns,
                     extra_env=extra_env,
