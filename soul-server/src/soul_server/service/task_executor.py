@@ -617,7 +617,7 @@ class TaskExecutor:
 
 
 _ATOM_ID_PATTERN = re.compile(
-    r"<!-- node:([a-f0-9]{8})[a-f0-9\-]+ .*?chars:(\d+).*?-->"
+    r"<!-- node:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}) .*?chars:(\d+).*?-->"
 )
 _ATOM_CONTEXT_HEADER = (
     "# atom 트리 | 드릴다운: "
@@ -627,22 +627,22 @@ _ATOM_CONTEXT_HEADER = (
 
 
 def _format_atom_context(markdown: str) -> str:
-    """include_ids 출력의 HTML 주석을 [node_id[:8]] (N chars) 포맷으로 변환한다.
+    """include_ids 출력의 HTML 주석을 [node_id] (N chars) 포맷으로 변환한다.
 
     입력 예시 (일반 노드):
-        soulstream <!-- node:d71af4b5-c53a-... card:... chars:123 -->
+        soulstream <!-- node:d71af4b5-c53a-49a4-9e07-9b6ee531fb56 card:... chars:123 -->
     입력 예시 (symlink 노드, chars 뒤에 symlink:true 필드 있음):
-        ~ 심링크 <!-- node:a1b2c3d4-... card:... chars:0 symlink:true -->
+        ~ 심링크 <!-- node:a1b2c3d4-0000-0000-0000-000000000000 card:... chars:0 symlink:true -->
     출력 예시:
-        soulstream [d71af4b5] (123 chars)
+        soulstream [d71af4b5-c53a-49a4-9e07-9b6ee531fb56] (123 chars)
     """
     lines = []
     for line in markdown.splitlines():
         m = _ATOM_ID_PATTERN.search(line)
         if m:
-            short_id = m.group(1)  # node_id 앞 8자리
+            node_id = m.group(1)  # node_id 전체 UUID
             chars = m.group(2)
-            line = _ATOM_ID_PATTERN.sub(f"[{short_id}] ({chars} chars)", line)
+            line = _ATOM_ID_PATTERN.sub(f"[{node_id}] ({chars} chars)", line)
         lines.append(line)
     return _ATOM_CONTEXT_HEADER + "\n".join(lines)
 
