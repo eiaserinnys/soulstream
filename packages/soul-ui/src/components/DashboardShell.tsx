@@ -153,6 +153,7 @@ export function DashboardShell({
   const setActiveTab = useDashboardStore((s) => s.setActiveTab);
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
+  const catalog = useDashboardStore((s) => s.catalog);
   const clearSelectedFolder = useDashboardStore((s) => s.clearSelectedFolder);
 
   // 채팅 탭 뒤로가기 시 돌아갈 이전 탭 추적
@@ -239,7 +240,9 @@ export function DashboardShell({
                     >
                       <ChevronLeft className="h-5 w-5" />
                     </button>
-                    <span className="text-sm font-medium">세션</span>
+                    <span className="text-sm font-medium">
+                      {catalog?.folders?.find(f => f.id === selectedFolderId)?.name ?? "세션"}
+                    </span>
                   </div>
                   <div className="flex-1 min-h-0 overflow-hidden">
                     {mobileFolderContents}

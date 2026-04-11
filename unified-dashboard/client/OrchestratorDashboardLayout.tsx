@@ -188,6 +188,9 @@ export function OrchestratorDashboardLayout() {
           </>
         )
       }
+      mobileFolderContents={
+        <FolderContents onLoadMore={loadMore} hasMore={hasMore} />
+      }
       mobileChatHeader={(onBack) => <MobileChatHeader onBack={onBack} />}
       mobileChatView={<ChatView chatInputDisabled={isChatInputDisabled} isOtherNodeSession={isOtherNodeSession} />}
       mobileSettingsContent={
