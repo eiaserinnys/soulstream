@@ -26,9 +26,14 @@ export function BottomTabBar() {
           key={tab.id}
           onClick={() => {
             setActiveTab(tab.id);
-            // 피드 탭 전환 시 viewMode·selectedFolderId를 초기화하여
-            // 폴더 선택 상태가 피드 탭에 잔류하지 않도록 한다
-            if (tab.id === "feed") clearSelectedFolder();
+            if (tab.id === "feed") {
+              // 피드 탭: viewMode도 함께 초기화
+              clearSelectedFolder();
+            } else if (tab.id === "folder") {
+              // 폴더 탭: 항상 폴더 리스트에서 시작하도록 selectedFolderId만 초기화
+              // viewMode는 건드리지 않아 세션 쿼리가 꼬이지 않게 한다
+              useDashboardStore.setState({ selectedFolderId: null });
+            }
           }}
           className={cn(
             "flex-1 flex flex-col items-center justify-center gap-0.5 py-2 min-h-[52px] text-xs",
