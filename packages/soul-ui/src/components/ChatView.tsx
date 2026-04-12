@@ -268,7 +268,7 @@ const UserMessage = memo(function UserMessage({ msg, llmContext }: { msg: ChatMe
   const hasPortrait = isAgent ? !!agentPortraitUrl : isLlm ? false : userConfig?.hasPortrait ?? false;
 
   return (
-    <div className="flex gap-2 px-3 py-1.5" data-tree-node-id={msg.treeNodeId}>
+    <div className="flex gap-2 px-3 py-1" data-tree-node-id={msg.treeNodeId}>
       <ProfileAvatar
         role="user"
         hasPortrait={hasPortrait}
@@ -286,7 +286,7 @@ const UserMessage = memo(function UserMessage({ msg, llmContext }: { msg: ChatMe
             </span>
           )}
         </div>
-        <div className="text-base text-foreground break-words">
+        <div className="text-base leading-snug text-foreground break-words">
           <MarkdownContent content={msg.content} />
         </div>
         {msg.contextItems && msg.contextItems.length > 0 && (
@@ -331,7 +331,7 @@ const InterventionMessage = memo(function InterventionMessage({ msg }: { msg: Ch
   const displayId = userConfig?.id ? `${userConfig.id}` : null;
 
   return (
-    <div className="flex gap-2 px-3 py-1.5" data-tree-node-id={msg.treeNodeId}>
+    <div className="flex gap-2 px-3 py-1" data-tree-node-id={msg.treeNodeId}>
       <ProfileAvatar
         role="user"
         hasPortrait={userConfig?.hasPortrait ?? false}
@@ -349,7 +349,7 @@ const InterventionMessage = memo(function InterventionMessage({ msg }: { msg: Ch
             </span>
           )}
         </div>
-        <div className="text-base text-foreground whitespace-pre-wrap break-words">{msg.content}</div>
+        <div className="text-base leading-snug text-foreground whitespace-pre-wrap break-words">{msg.content}</div>
       </div>
     </div>
   );
@@ -360,7 +360,7 @@ const ThinkingMessage = memo(function ThinkingMessage({ msg }: { msg: ChatMessag
   const { displayContent, isTruncated, loading, error, loadFullContent } = useLazyLoadContent(msg);
 
   return (
-    <div className="flex gap-2 px-3 py-1.5" data-tree-node-id={msg.treeNodeId}>
+    <div className="flex gap-2 px-3 py-1" data-tree-node-id={msg.treeNodeId}>
       <span className="w-8 shrink-0" />
       <div className="flex-1 min-w-0">
         <CollapsibleContent content={displayContent ?? msg.content} label={"\u{1F4AD} Thinking"} />
@@ -396,7 +396,7 @@ const AssistantMessage = memo(function AssistantMessage({ msg, llmContext }: { m
     : null;
 
   return (
-    <div className="flex gap-2 px-3 py-1.5" data-tree-node-id={msg.treeNodeId}>
+    <div className="flex gap-2 px-3 py-1" data-tree-node-id={msg.treeNodeId}>
       <ProfileAvatar
         role="assistant"
         hasPortrait={hasPortrait}
@@ -420,12 +420,12 @@ const AssistantMessage = memo(function AssistantMessage({ msg, llmContext }: { m
           )}
         </div>
         {msg.isStreaming ? (
-          <div className="text-base text-foreground whitespace-pre-wrap break-words">
+          <div className="text-base leading-snug text-foreground whitespace-pre-wrap break-words">
             {msg.content}
             <span className="inline-block w-1.5 h-3.5 bg-foreground/60 ml-0.5 animate-pulse" />
           </div>
         ) : (
-          <div className="text-base text-foreground break-words">
+          <div className="text-base leading-snug text-foreground break-words">
             <MarkdownContent content={msg.content} />
           </div>
         )}
@@ -536,7 +536,7 @@ const SystemMessage = memo(function SystemMessage({ msg }: { msg: ChatMessage })
   // complete 노드: thinking과 동일한 접기/펼치기 컴포넌트 사용
   if (isComplete && msg.content && msg.content !== "Turn completed") {
     return (
-      <div className="flex gap-2 px-3 py-1.5" data-tree-node-id={msg.treeNodeId}>
+      <div className="flex gap-2 px-3 py-1" data-tree-node-id={msg.treeNodeId}>
         <span className="w-8 shrink-0" />
         <div className="flex-1 min-w-0">
           <CollapsibleContent content={msg.content} label={"\u2705 Complete"} />
@@ -598,7 +598,7 @@ const ChatInputRequest = memo(function ChatInputRequest({
   const isTimedOut = msg.expired || (isExpired && !isDone);
 
   return (
-    <div className="flex gap-2 px-3 py-1.5" data-tree-node-id={msg.treeNodeId}>
+    <div className="flex gap-2 px-3 py-1" data-tree-node-id={msg.treeNodeId}>
       <span className="w-8 shrink-0 text-center">🔔</span>
       <div className="flex-1 min-w-0">
         <div className="text-xs text-muted-foreground mb-1">Claude가 질문합니다</div>

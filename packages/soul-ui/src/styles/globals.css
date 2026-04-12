@@ -1,5 +1,25 @@
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * Non-inline theme: values become CSS custom properties on :root,
+ * allowing runtime override via @media queries (mobile typography).
+ * Values here are identical to Tailwind v4 defaults — the purpose
+ * is solely to force CSS-variable-based output (not inline).
+ */
+@theme {
+  --breakpoint-sm: 48rem; /* 768px — unified with useIsMobile() and globals.css @media */
+
+  /* Font sizes — same as Tailwind defaults, re-declared non-inline for mobile override */
+  --font-size-xs: 0.75rem;
+  --font-size-xs--line-height: 1rem;
+  --font-size-sm: 0.875rem;
+  --font-size-sm--line-height: 1.25rem;
+  --font-size-base: 1rem;
+  --font-size-base--line-height: 1.5rem;
+  --font-size-xl: 1.25rem;
+  --font-size-xl--line-height: 1.75rem;
+}
+
 @theme inline {
   /*
    * Dashboard accent colors — mapped to node color CSS variables.
@@ -39,13 +59,16 @@
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 
   /*
-   * Typography scale — 4 tiers, Tailwind built-in only.
-   *   title:   text-xl   20px / 28px  (page titles, markdown H1)
-   *   body:    text-base 16px / 24px  (chat messages, thinking, inputs)
-   *   ui:      text-sm   14px / 20px  (panel headers, labels, toggles)
-   *   caption: text-xs   12px / 16px  (timestamps, badges, code blocks)
+   * Typography scale — 4 tiers, responsive.
+   *   Desktop (>=768px)        | Mobile (<768px)
+   *   title:   text-xl  20/28  | 21/28
+   *   body:    text-base 16/24 | 17/24
+   *   ui:      text-sm   14/20 | 15/22
+   *   caption: text-xs   12/16 | 13/18
    *
-   * Do NOT use: text-2xl, text-lg, text-[13px], text-[10px], leading-*.
+   * Mobile sizes are set via CSS variable override in @media (max-width: 767px).
+   * Do NOT use: text-2xl, text-lg, text-[13px], text-[10px].
+   * leading-*: allowed in chat message components only (leading-snug).
    * Letter-spacing: tracking-wide only, for uppercase caption labels.
    */
 
@@ -310,14 +333,25 @@
  *   gray:    S  5-> 8%, L 47->55%  — slightly brighter for readability
  * ============================================================ */
 @media (max-width: 767px) {
+  :root {
+    font-size: 16px;
+
+    /* Mobile typography scale — proportionally scaled from 17px body.
+     * Variable names are --text-*, matching Tailwind v4's compiled output
+     * (not --font-size-* which is the @theme namespace). */
+    --text-xs: 0.8125rem;            /* 13px */
+    --text-xs--line-height: 1.385;   /* 18/13 */
+    --text-sm: 0.9375rem;            /* 15px */
+    --text-sm--line-height: 1.467;   /* 22/15 */
+    --text-base: 1.0625rem;          /* 17px */
+    --text-base--line-height: 1.412; /* 24/17 */
+    --text-xl: 1.3125rem;            /* 21px */
+    --text-xl--line-height: 1.333;   /* 28/21 */
+  }
+
   /* iOS 모멘텀 스크롤 활성화 */
   .overflow-y-auto {
     -webkit-overflow-scrolling: touch;
-  }
-
-  /* 폰트 시인성 개선 */
-  :root {
-    font-size: 16px;
   }
 }
 
