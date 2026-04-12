@@ -369,8 +369,8 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
             rows={1}
             className={cn(
               "w-full bg-input border border-border rounded-md py-1.5 px-2.5",
-              "text-base sm:text-base text-foreground font-sans resize-none outline-none",
-              "h-9 sm:h-8 max-h-[120px] leading-[1.4] transition-colors duration-150",
+              "text-base text-foreground font-sans resize-none outline-none",
+              "h-9 sm:h-8 max-h-[120px] leading-snug transition-colors duration-150",
               borderColor,
             )}
           />
