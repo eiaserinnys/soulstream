@@ -1,0 +1,10 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicholasyager/tauri-v2-schema/main/capabilities-schema.json",
+  "identifier": "default",
+  "description": "Default capabilities for soul-desktop",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "store:default"
+  ]
+}
