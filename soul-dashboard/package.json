@@ -1,9 +1,0 @@
-{
-  "name": "soul-dashboard-e2e",
-  "version": "0.0.1",
-  "private": true,
-  "type": "commonjs",
-  "scripts": {
-    "test:e2e": "playwright test"
-  }
-}

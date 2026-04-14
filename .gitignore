@@ -17,7 +17,6 @@ venv/
 
 # Node
 node_modules/
-soul-dashboard/dist/
 
 # Local data
 soul-server/.local/
@@ -26,8 +25,6 @@ soul-server/.local/
 .pytest_cache/
 htmlcov/
 .coverage
-soul-dashboard/e2e/screenshots/
-soul-dashboard/e2e/test-results/
 unified-dashboard/e2e/screenshots/
 unified-dashboard/e2e/test-results/
 
