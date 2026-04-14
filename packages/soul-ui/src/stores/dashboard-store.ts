@@ -297,9 +297,9 @@ export interface DashboardActions {
 
 /** ensureRoot가 필요한 이벤트 타입 (text_delta, text_end, tool_result, subagent_stop 제외) */
 const NEEDS_ROOT = new Set([
-  "user_message", "session", "intervention_sent", "thinking",
+  "user_message", "session", "system_message", "intervention_sent", "thinking",
   "text_start", "subagent_start", "tool_start",
-  "complete", "error", "result", "input_request",
+  "complete", "error", "result", "compact", "input_request",
   "assistant_message",
 ]);
 
@@ -503,11 +503,13 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
 
         if (node) {
           // 2a. 생성된 노드를 트리에 배치 + Map 등록
-          placeInTree(node, event, eventId, ctx, root!);
+          root = ensureRoot(root, ctx);
+          placeInTree(node, event, eventId, ctx, root);
           updated = true;
         } else if (event.type === "text_start") {
           // 2b. text_start: 조건부 노드 생성 + 트리 배치 (tree-placer 책임)
-          updated = handleTextStart(event as TextStartEvent, eventId, ctx, root!);
+          root = ensureRoot(root, ctx);
+          updated = handleTextStart(event as TextStartEvent, eventId, ctx, root);
         } else {
           // 2c. 업데이트 이벤트 처리 (session, text_delta/end, tool_result, subagent_stop)
           updated = applyUpdate(event, eventId, ctx, root);
@@ -598,10 +600,12 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
           // 노드 생성/배치/업데이트
           const node = createNodeFromEvent(event, eventId);
           if (node) {
-            placeInTree(node, event, eventId, ctx, root!);
+            root = ensureRoot(root, ctx);
+            placeInTree(node, event, eventId, ctx, root);
             updated = true;
           } else if (event.type === "text_start") {
-            if (handleTextStart(event as TextStartEvent, eventId, ctx, root!)) {
+            root = ensureRoot(root, ctx);
+            if (handleTextStart(event as TextStartEvent, eventId, ctx, root)) {
               updated = true;
             }
           } else {

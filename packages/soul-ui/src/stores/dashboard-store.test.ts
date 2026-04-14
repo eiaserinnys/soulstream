@@ -1907,6 +1907,71 @@ describe("dashboard-store", () => {
 
       expect(result.statusUpdates).toHaveLength(0);
     });
+
+    it("processEvents should not crash when system_message is the first event (tree=null)", () => {
+      const store = useDashboardStore.getState();
+      store.clearTree(); // tree=null, nodeMap=empty
+
+      // system_message가 root 없는 상태에서 첫 번째로 도착
+      const result = store.processEvents([
+        {
+          event: { type: "system_message", text: "init", timestamp: 0 } as import("../../shared/types").SystemMessageEvent,
+          eventId: 1,
+        },
+      ]);
+
+      const tree = useDashboardStore.getState().tree;
+      expect(tree).not.toBeNull();
+      expect(tree!.children).toHaveLength(1);
+      expect(tree!.children[0].type).toBe("system_message");
+      expect(result.statusUpdates).toHaveLength(0);
+    });
+
+    it("processEvents should not crash when compact is the first event (tree=null)", () => {
+      const store = useDashboardStore.getState();
+      store.clearTree();
+
+      const result = store.processEvents([
+        {
+          event: { type: "compact", message: "Context compacted", timestamp: 0 } as import("../../shared/types").CompactEvent,
+          eventId: 1,
+        },
+      ]);
+
+      const tree = useDashboardStore.getState().tree;
+      expect(tree).not.toBeNull();
+      expect(tree!.children).toHaveLength(1);
+      expect(tree!.children[0].type).toBe("compact");
+      expect(result.statusUpdates).toHaveLength(0);
+    });
+
+    it("processEvents should not crash when parent_event_id references missing node", () => {
+      const store = useDashboardStore.getState();
+      store.clearTree();
+
+      // parent_event_id="2"를 참조하지만, eventId=2 노드가 없음
+      const result = store.processEvents([
+        {
+          event: { type: "user_message", text: "hello", timestamp: 0 } as UserMessageEvent,
+          eventId: 1,
+        },
+        {
+          event: {
+            type: "thinking",
+            thinking: "test",
+            timestamp: 0,
+            parent_event_id: "999",
+          } as ThinkingEvent,
+          eventId: 3,
+        },
+      ]);
+
+      const tree = useDashboardStore.getState().tree;
+      expect(tree).not.toBeNull();
+      // parent "999"를 찾지 못해 root로 폴백 — crash 없이 처리
+      expect(tree!.children).toHaveLength(2);
+      expect(result.statusUpdates).toHaveLength(0);
+    });
   });
 
   describe("reorderFolders", () => {
