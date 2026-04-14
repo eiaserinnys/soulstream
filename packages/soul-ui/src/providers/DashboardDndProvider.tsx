@@ -34,7 +34,7 @@ export function DashboardDndProvider({
   onReorderFolders,
   children,
 }: DashboardDndProviderProps) {
-  const sensors = useSensors(useSensor(PointerSensor));
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {

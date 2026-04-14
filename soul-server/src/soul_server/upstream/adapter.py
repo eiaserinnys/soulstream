@@ -329,11 +329,15 @@ class UpstreamAdapter:
             # _handle_create_session이 requestId 포함 응답을 이미 보내므로,
             # broadcast 경로에서는 세션 정보를 포함한 보강 메시지를 전송
             session_info = event.get("session", {})
-            await self._send({
+            folder_id = event.get("folder_id")
+            msg: dict = {
                 "type": EVT_SESSION_CREATED,
                 "agentSessionId": session_info.get("agent_session_id", ""),
                 "session": session_info,
-            })
+            }
+            if folder_id is not None:
+                msg["folderId"] = folder_id
+            await self._send(msg)
         elif event_type == "session_updated":
             await self._send({
                 "type": EVT_SESSION_UPDATED,

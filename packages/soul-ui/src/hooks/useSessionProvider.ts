@@ -96,6 +96,14 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
           return applySessionUpdated(old, agentSessionId, { status });
         },
       );
+      // 활성 세션의 status를 Zustand store에도 즉시 반영 (ChatInput 버튼 라벨 갱신)
+      const storeState = useDashboardStore.getState();
+      if (agentSessionId === storeState.activeSessionKey) {
+        const current = storeState.activeSessionSummary;
+        if (current) {
+          storeState.setActiveSessionSummary({ ...current, status });
+        }
+      }
     }
 
     if (queue.length > 0) {
