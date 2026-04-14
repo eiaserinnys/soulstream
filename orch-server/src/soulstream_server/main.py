@@ -60,11 +60,16 @@ async def _on_node_change(
                 **session_info,
                 "agentPortraitUrl": f"/api/nodes/{node_id}/agents/{agent_id}/portrait",
             }
-        await broadcaster.broadcast({
+        broadcast_data = {
             "type": "session_created",
             "session": session_info,
             "nodeId": node_id,
-        })
+        }
+        # folder_id가 있으면 SSE 이벤트에 포함 (클라이언트가 즉시 올바른 폴더에 배치)
+        folder_id = (data or {}).get("folderId")
+        if folder_id is not None:
+            broadcast_data["folder_id"] = folder_id
+        await broadcaster.broadcast(broadcast_data)
     elif event_type == "node_session_session_updated":
         # data에 agentSessionId(camelCase)가 오지만 클라이언트는 agent_session_id(snake_case)도 읽으므로
         # 두 키 모두 포함하여 안전하게 전달.

@@ -9,7 +9,7 @@
  * Phase 5 산출물. Phase 4의 ConfigModal/SearchModal/NewSessionModal 포함.
  */
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { FolderContents } from "./components/FolderContents";
 import {
   createFolder,
@@ -40,6 +40,7 @@ import {
   useDashboardConfig,
   useServerStatus,
   DashboardShell,
+  DashboardDndProvider,
   FolderTree,
   RightPanel,
   ChatView,
@@ -112,16 +113,29 @@ export function OrchestratorDashboardLayout() {
 
   const isMobile = useIsMobile();
 
+  // 세션 이동 후 빈 자리 보충
+  const handleMoveSessions = useCallback(
+    async (sessionIds: string[], targetFolderId: string | null) => {
+      await moveSessionsOptimistic(sessionIds, targetFolderId);
+      if (hasMore) loadMore();
+    },
+    [hasMore, loadMore],
+  );
+
   // Config / Search 모달 상태
   const [configOpen, setConfigOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
 
   return (
+    <DashboardDndProvider
+      onMoveSessions={handleMoveSessions}
+      onReorderFolders={reorderFoldersOptimistic}
+    >
     <DashboardShell
       title="Soulstream Orchestrator"
       leftPanel={
         <FolderTree
-          onMoveSessions={moveSessionsOptimistic}
+          onMoveSessions={handleMoveSessions}
           onCreateFolder={createFolder}
           onRenameFolder={renameFolderOptimistic}
           onDeleteFolder={deleteFolderOptimistic}
@@ -220,5 +234,6 @@ export function OrchestratorDashboardLayout() {
         </>
       }
     />
+    </DashboardDndProvider>
   );
 }

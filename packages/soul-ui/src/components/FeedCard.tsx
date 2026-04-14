@@ -7,6 +7,7 @@
 
 import { memo, useCallback } from "react";
 import type React from "react";
+import { useDraggable } from "@dnd-kit/core";
 import type { SessionSummary } from "../shared/types";
 import type { DashboardConfig } from "../stores/dashboard-store";
 import { isSessionUnread } from "../stores/dashboard-store";
@@ -40,6 +41,11 @@ export const FeedCard = memo(function FeedCard({
   onCardDoubleClick,
   onCardContextMenu,
 }: FeedCardProps) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: session.agentSessionId,
+    data: { type: "session", sessionIds: [session.agentSessionId] },
+  });
+
   const statusConfig = STATUS_CONFIG[session.status] ?? STATUS_CONFIG.unknown;
   const isRunning = session.status === 'running';
   const isError = session.status === 'error';
@@ -80,8 +86,12 @@ export const FeedCard = memo(function FeedCard({
 
   return (
     <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
       className={cn(
         "h-[220px] rounded-lg border relative p-4 cursor-pointer transition-colors overflow-hidden flex flex-col gap-2",
+        isDragging && "opacity-50",
         isRunning
           ? [
               // 배경과 테두리는 animation keyframe(box-shadow)에서 처리
