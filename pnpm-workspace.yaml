@@ -1,3 +1,4 @@
 packages:
   - 'packages/*'
   - 'unified-dashboard'
+  - 'soul-desktop'
