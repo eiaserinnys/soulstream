@@ -20,11 +20,8 @@ import type {
   SessionSummary,
   SessionDetail,
   SessionStatus,
-  SessionNode,
   SoulSSEEvent,
   EventTreeNode,
-  TextStartEvent,
-  HistorySyncEvent,
   InputRequestNodeDef,
   CatalogState,
   CatalogFolder,
@@ -34,11 +31,17 @@ import {
   type ProcessingContext,
   type TreeChangeInfo,
   createProcessingContext,
-  ensureRoot,
 } from "./processing-context";
-import { createNodeFromEvent, applyUpdate } from "./node-factory";
-import { placeInTree, handleTextStart } from "./tree-placer";
-import { shouldNotify, deriveSessionStatus } from "./session-updater";
+import { processEventSingle, processEventsBatch } from "./event-processor";
+import {
+  moveSessionsInCatalog,
+  renameSessionInCatalog,
+  addFolderToCatalog,
+  updateFolderNameInCatalog,
+  updateFolderSettingsInCatalog,
+  removeFolderFromCatalog,
+  reorderFoldersInCatalog,
+} from "./catalog-actions";
 
 // === Unread Utility ===
 
@@ -291,37 +294,6 @@ export interface DashboardActions {
   setEditingSession: (id: string | null) => void;
 }
 
-// === Internal Processing Context ===
-// Phase 6: ProcessingContext를 store state 내부로 이동.
-// nodeMap이 store 관할이 되어, 세션 전환/리셋 시 store.set()으로 완전 격리.
-
-/** ensureRoot가 필요한 이벤트 타입 (text_delta, text_end, tool_result, subagent_stop 제외) */
-const NEEDS_ROOT = new Set([
-  "user_message", "session", "system_message", "intervention_sent", "thinking",
-  "text_start", "subagent_start", "tool_start",
-  "complete", "error", "result", "compact", "input_request",
-  "assistant_message",
-]);
-
-/**
- * 세션 루트 노드에 LLM 메타데이터를 설정한다.
- * ensureRoot() 직후 호출하여 루트가 처음 생성될 때만 메타데이터를 반영한다.
- */
-function applyLlmMetadata(
-  root: EventTreeNode,
-  activeSessionSummary: SessionSummary | null,
-): void {
-  if (!activeSessionSummary || root.type !== "session") return;
-  const sessionRoot = root as SessionNode;
-  if (sessionRoot.sessionType != null) return; // 이미 설정됨
-
-  if (activeSessionSummary.sessionType === "llm") {
-    sessionRoot.sessionType = activeSessionSummary.sessionType;
-    sessionRoot.llmProvider = activeSessionSummary.llmProvider;
-    sessionRoot.llmModel = activeSessionSummary.llmModel;
-  }
-}
-
 // === Initial State ===
 
 const initialState: DashboardState = {
@@ -467,178 +439,58 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
 
       processEvent: (event, eventId) => {
         const state = get();
+        const result = processEventSingle(
+          event, eventId, state.processingCtx, state.tree,
+          state.activeSessionKey, state.activeSessionSummary, state.lastEventId,
+        );
 
-        // Dedup: 이미 처리한 이벤트 건너뛰기 (resume/reconnect 시 중복 방지)
-        // history_sync는 eventId=0이므로 이 가드에 걸리지 않는다
-        if (eventId > 0 && eventId <= state.lastEventId) {
-          return null;
+        if (result.isHistorySync) {
+          set({ ...(result.newLastEventId > state.lastEventId ? { lastEventId: result.newLastEventId } : {}) });
+          return result.statusUpdate;
         }
 
-        const ctx = state.processingCtx;
-        let root = state.tree;
-
-        // history_sync 이벤트: 히스토리 리플레이 완료 → 서버의 정본 상태 적용
-        if (event.type === "history_sync") {
-          ctx.historySynced = true;
-          const syncEvent = event as HistorySyncEvent;
-
-          // history_sync의 status는 processEvent 호출자(useSessionProvider)가
-          // ProcessEventsResult.statusUpdates를 통해 TanStack Query 캐시에 반영한다.
-          set({ ...(eventId > 0 ? { lastEventId: eventId } : {}) });
-          if (syncEvent.status && state.activeSessionKey) {
-            return { agentSessionId: state.activeSessionKey, status: syncEvent.status as SessionStatus };
-          }
-          return null;
-        }
-
-        // root가 필요한 이벤트에 대해 보장
-        if (NEEDS_ROOT.has(event.type)) {
-          root = ensureRoot(root, ctx);
-          applyLlmMetadata(root, state.activeSessionSummary);
-        }
-
-        // 1. 노드 생성 시도 (생성형 이벤트만 노드 반환)
-        const node = createNodeFromEvent(event, eventId);
-        let updated: boolean;
-
-        if (node) {
-          // 2a. 생성된 노드를 트리에 배치 + Map 등록
-          root = ensureRoot(root, ctx);
-          placeInTree(node, event, eventId, ctx, root);
-          updated = true;
-        } else if (event.type === "text_start") {
-          // 2b. text_start: 조건부 노드 생성 + 트리 배치 (tree-placer 책임)
-          root = ensureRoot(root, ctx);
-          updated = handleTextStart(event as TextStartEvent, eventId, ctx, root);
-        } else {
-          // 2c. 업데이트 이벤트 처리 (session, text_delta/end, tool_result, subagent_stop)
-          updated = applyUpdate(event, eventId, ctx, root);
-        }
-
-        // 3. 세션 상태 갱신 — 히스토리 리플레이 중에는 억제
-        // history_sync 수신 전에는 저장된 이벤트를 리플레이하는 단계이므로
-        // 이벤트별로 status를 갱신하면 running → completed 깜빡임이 발생한다.
-        // status 업데이트는 반환값으로 호출자에게 전달한다 (Zustand sessions 직접 변경 안 함).
-        let statusUpdate: { agentSessionId: string; status: SessionStatus } | null = null;
-        if (ctx.historySynced) {
-          const derivedStatus = deriveSessionStatus(event);
-          if (derivedStatus && state.activeSessionKey) {
-            statusUpdate = { agentSessionId: state.activeSessionKey, status: derivedStatus };
-          }
-        }
-
-        // 4. 알림 큐 + store 갱신
-        // 히스토리 리플레이 중에는 알림도 억제 (과거 이벤트로 알림이 뜨면 안 됨)
-        const notify = ctx.historySynced && shouldNotify(event);
-        if (updated) {
-          // 변경 유형 분류: 노드가 새로 생성되었으면 node-added, 기존 노드 갱신이면 node-updated
-          const treeChangeInfo: TreeChangeInfo = node
-            ? { type: 'node-added', nodeId: node.id }
-            : { type: 'node-updated', nodeId: ctx.activeTextTarget?.id };
+        if (result.updated) {
           set({
-            tree: root,
+            tree: result.root,
             treeVersion: state.treeVersion + 1,
-            treeChangeInfo,
-            lastEventId: eventId,
-            ...(notify
+            treeChangeInfo: result.treeChangeInfo,
+            lastEventId: result.newLastEventId,
+            ...(result.notify
               ? { pendingNotifications: [...state.pendingNotifications, event] }
               : {}),
           });
         } else {
           set({
-            lastEventId: eventId,
-            ...(notify
+            lastEventId: result.newLastEventId,
+            ...(result.notify
               ? { pendingNotifications: [...state.pendingNotifications, event] }
               : {}),
           });
         }
 
-        return statusUpdate;
+        return result.statusUpdate;
       },
 
       // --- SSE 이벤트 배치 처리 ---
-      // 히스토리 리플레이 최적화: N개 이벤트의 트리 변경을 수행 후 set() 1회만 호출.
-      // 개별 processEvent가 매번 set()을 호출하는 것과 달리,
-      // 972개 이벤트 → set() 1회로 렌더 비용을 O(N)에서 O(1)로 줄입니다.
 
       processEvents: (events) => {
         if (events.length === 0) return { statusUpdates: [] };
 
         const state = get();
-        const ctx = state.processingCtx;
-        let root = state.tree;
-        let updated = false;
-        let maxEventId = state.lastEventId;
-        const statusUpdates: Array<{ agentSessionId: string; status: SessionStatus }> = [];
-        const notifications: SoulSSEEvent[] = [];
+        const result = processEventsBatch(
+          events, state.processingCtx, state.tree,
+          state.activeSessionKey, state.activeSessionSummary, state.lastEventId,
+        );
 
-        for (const { event, eventId } of events) {
-          // Dedup: 이미 처리한 이벤트 건너뛰기 (resume/reconnect 시 중복 방지)
-          if (eventId > 0 && eventId <= state.lastEventId) {
-            continue;
-          }
-          if (eventId > maxEventId) maxEventId = eventId;
-
-          // history_sync 이벤트
-          if (event.type === "history_sync") {
-            ctx.historySynced = true;
-            const syncEvent = event as HistorySyncEvent;
-
-            // history_sync의 status는 반환값으로 호출자에게 전달한다.
-            if (syncEvent.status && state.activeSessionKey) {
-              statusUpdates.push({ agentSessionId: state.activeSessionKey, status: syncEvent.status as SessionStatus });
-            }
-            continue;
-          }
-
-          // root 보장
-          if (NEEDS_ROOT.has(event.type)) {
-            root = ensureRoot(root, ctx);
-            applyLlmMetadata(root, state.activeSessionSummary);
-          }
-
-          // 노드 생성/배치/업데이트
-          const node = createNodeFromEvent(event, eventId);
-          if (node) {
-            root = ensureRoot(root, ctx);
-            placeInTree(node, event, eventId, ctx, root);
-            updated = true;
-          } else if (event.type === "text_start") {
-            root = ensureRoot(root, ctx);
-            if (handleTextStart(event as TextStartEvent, eventId, ctx, root)) {
-              updated = true;
-            }
-          } else {
-            if (applyUpdate(event, eventId, ctx, root)) {
-              updated = true;
-            }
-          }
-
-          // 세션 상태 갱신 (히스토리 리플레이 중에는 억제)
-          // status 업데이트는 반환값으로 호출자에게 전달한다 (Zustand sessions 직접 변경 안 함).
-          if (ctx.historySynced) {
-            const derivedStatus = deriveSessionStatus(event);
-            if (derivedStatus && state.activeSessionKey) {
-              statusUpdates.push({ agentSessionId: state.activeSessionKey, status: derivedStatus });
-            }
-
-            if (shouldNotify(event)) {
-              notifications.push(event);
-            }
-          }
-        }
-
-        // 배치 전체에 대해 set() 1회만 호출
-        // treeChangeInfo: null → NodeGraph에서 full-rebuild로 간주 (세션 최초 로드)
         set({
-          ...(updated ? { tree: root, treeVersion: state.treeVersion + 1, treeChangeInfo: null } : {}),
-          lastEventId: maxEventId,
-          ...(notifications.length > 0
-            ? { pendingNotifications: [...state.pendingNotifications, ...notifications] }
+          ...(result.updated ? { tree: result.root, treeVersion: state.treeVersion + 1, treeChangeInfo: null } : {}),
+          lastEventId: result.maxEventId,
+          ...(result.notifications.length > 0
+            ? { pendingNotifications: [...state.pendingNotifications, ...result.notifications] }
             : {}),
         });
 
-        return { statusUpdates };
+        return { statusUpdates: result.statusUpdates };
       },
 
       // --- 낙관적 세션 추가 ---
@@ -830,14 +682,8 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         if (sessionIds.length === 0) return;
         const { catalog } = get();
         if (!catalog) return;
-        const updatedSessions = { ...catalog.sessions };
-        for (const id of sessionIds) {
-          if (updatedSessions[id]) {
-            updatedSessions[id] = { ...updatedSessions[id], folderId };
-          }
-        }
         set((state) => ({
-          catalog: { ...catalog, sessions: updatedSessions },
+          catalog: moveSessionsInCatalog(catalog, sessionIds, folderId),
           catalogVersion: state.catalogVersion + 1,
         }));
       },
@@ -846,13 +692,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         const { catalog } = get();
         if (!catalog || !catalog.sessions[sessionId]) return;
         set((state) => ({
-          catalog: {
-            ...catalog,
-            sessions: {
-              ...catalog.sessions,
-              [sessionId]: { ...catalog.sessions[sessionId], displayName },
-            },
-          },
+          catalog: renameSessionInCatalog(catalog, sessionId, displayName),
           catalogVersion: state.catalogVersion + 1,
         }));
       },
@@ -860,23 +700,16 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
       addFolder: (folder) => {
         const { catalog } = get();
         if (!catalog) return;
-        if (catalog.folders.some((f) => f.id === folder.id)) return;
-        set((state) => ({
-          catalog: { ...catalog, folders: [...catalog.folders, folder] },
-          catalogVersion: state.catalogVersion + 1,
-        }));
+        const updated = addFolderToCatalog(catalog, folder);
+        if (updated === catalog) return; // 이미 존재
+        set((state) => ({ catalog: updated, catalogVersion: state.catalogVersion + 1 }));
       },
 
       updateFolderName: (folderId, name) => {
         const { catalog } = get();
         if (!catalog) return;
         set((state) => ({
-          catalog: {
-            ...catalog,
-            folders: catalog.folders.map((f) =>
-              f.id === folderId ? { ...f, name } : f,
-            ),
-          },
+          catalog: updateFolderNameInCatalog(catalog, folderId, name),
           catalogVersion: state.catalogVersion + 1,
         }));
       },
@@ -885,12 +718,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         const { catalog } = get();
         if (!catalog) return;
         set((state) => ({
-          catalog: {
-            ...catalog,
-            folders: catalog.folders.map((f) =>
-              f.id === folderId ? { ...f, settings } : f,
-            ),
-          },
+          catalog: updateFolderSettingsInCatalog(catalog, folderId, settings),
           catalogVersion: state.catalogVersion + 1,
         }));
       },
@@ -898,18 +726,8 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
       removeFolder: (folderId) => {
         const { catalog } = get();
         if (!catalog) return;
-        const updatedSessions = { ...catalog.sessions };
-        for (const [id, assignment] of Object.entries(updatedSessions)) {
-          if (assignment.folderId === folderId) {
-            updatedSessions[id] = { ...assignment, folderId: null };
-          }
-        }
         set((state) => ({
-          catalog: {
-            ...catalog,
-            folders: catalog.folders.filter((f) => f.id !== folderId),
-            sessions: updatedSessions,
-          },
+          catalog: removeFolderFromCatalog(catalog, folderId),
           catalogVersion: state.catalogVersion + 1,
         }));
       },
@@ -917,18 +735,8 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
       reorderFolders: (orderedFolderIds) => {
         const { catalog } = get();
         if (!catalog) return;
-        const idSet = new Set(orderedFolderIds);
-        const folderMap = new Map(catalog.folders.map((f) => [f.id, f]));
-        const reordered = orderedFolderIds
-          .map((id, index) => {
-            const f = folderMap.get(id);
-            return f ? { ...f, sortOrder: index } : null;
-          })
-          .filter((f): f is CatalogFolder => f !== null);
-        // orderedFolderIds에 없는 폴더(시스템 폴더 등) 보존
-        const others = catalog.folders.filter((f) => !idSet.has(f.id));
         set((state) => ({
-          catalog: { ...catalog, folders: [...others, ...reordered] },
+          catalog: reorderFoldersInCatalog(catalog, orderedFolderIds),
           catalogVersion: state.catalogVersion + 1,
         }));
       },
@@ -1011,39 +819,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
   ),
 );
 
-// === Tree Utility Functions (외부에서 사용) ===
+// === Tree Utility Functions (re-export for backward compat) ===
 
-/** 트리의 전체 노드 수를 카운트합니다. */
-export function countTreeNodes(node: EventTreeNode | null): number {
-  if (!node) return 0;
-  let count = 1;
-  for (const child of node.children) {
-    count += countTreeNodes(child);
-  }
-  return count;
-}
-
-/** 트리에서 미완료 노드 수를 카운트합니다. */
-export function countStreamingNodes(node: EventTreeNode | null): number {
-  if (!node) return 0;
-  let count = node.completed ? 0 : 1;
-  for (const child of node.children) {
-    count += countStreamingNodes(child);
-  }
-  return count;
-}
-
-/** 트리에서 ID로 노드를 찾습니다. */
-export function findTreeNode(
-  root: EventTreeNode | null,
-  id: string,
-): EventTreeNode | null {
-  if (!root) return null;
-  if (root.id === id) return root;
-  for (const child of root.children) {
-    const found = findTreeNode(child, id);
-    if (found) return found;
-  }
-  return null;
-}
+export { countTreeNodes, countStreamingNodes, findTreeNode } from "./tree-utils";
 
