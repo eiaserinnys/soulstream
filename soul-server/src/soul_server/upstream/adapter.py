@@ -36,18 +36,14 @@ from .protocol import (
     EVT_SESSION_UPDATED,
     EVT_SESSIONS_UPDATE,
 )
-from soul_server.api.claude_auth.token_store import (
-    get_oauth_token,
-    save_oauth_token,
-    save_credentials_json,
-    delete_oauth_token,
-    get_env_path,
+from soul_server.upstream.claude_auth_handlers import (
+    ANTHROPIC_PROFILE_URL,
+    ANTHROPIC_USAGE_URL,
+    handle_auth_api_request,
+    handle_auth_delete_token,
+    handle_auth_set_token,
+    handle_auth_status,
 )
-
-import httpx
-
-ANTHROPIC_USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
-ANTHROPIC_PROFILE_URL = "https://api.anthropic.com/api/oauth/profile"
 from .reconnect import ReconnectPolicy
 
 if TYPE_CHECKING:
@@ -379,107 +375,23 @@ class UpstreamAdapter:
                     )
                     self._stream_tasks[session_id_for_sub] = task
                 case "claude_auth_status":
-                    token = get_oauth_token()
-                    await self._send({
-                        "type": CMD_CLAUDE_AUTH_STATUS,
-                        "has_token": token is not None,
-                        "requestId": request_id,
-                    })
+                    await self._send(handle_auth_status(request_id, CMD_CLAUDE_AUTH_STATUS))
                 case "claude_auth_set_token":
-                    token_val = cmd.get("token", "")
-                    if not token_val:
-                        await self._send_error("token is required", request_id=request_id, command_type=cmd_type)
+                    resp, err = handle_auth_set_token(cmd, request_id, CMD_CLAUDE_AUTH_SET_TOKEN)
+                    if err:
+                        await self._send_error(err, request_id=request_id, command_type=cmd_type)
                     else:
-                        refresh_val = cmd.get("refresh_token")
-                        if refresh_val:
-                            # PKCE OAuth → credentials.json에 저장
-                            # .env에 access_token을 쓰지 않음 (환경변수가 있으면 credentials.json 무시됨)
-                            save_credentials_json(
-                                token_val, refresh_val,
-                                expires_in=cmd.get("expires_in"),
-                                scope=cmd.get("scope", ""),
-                            )
-                        else:
-                            # setup-token → .env에 저장 (하위 호환)
-                            save_oauth_token(token_val, get_env_path())
-                        logger.info("Claude Code OAuth token set via WS command")
-                        await self._send({
-                            "type": CMD_CLAUDE_AUTH_SET_TOKEN,
-                            "success": True,
-                            "requestId": request_id,
-                        })
+                        await self._send(resp)
                 case "claude_auth_delete_token":
-                    delete_oauth_token(get_env_path())
-                    logger.info("Claude Code OAuth token deleted via WS command")
-                    await self._send({
-                        "type": CMD_CLAUDE_AUTH_DELETE_TOKEN,
-                        "success": True,
-                        "requestId": request_id,
-                    })
+                    await self._send(handle_auth_delete_token(request_id, CMD_CLAUDE_AUTH_DELETE_TOKEN))
                 case "claude_auth_get_usage":
-                    token = get_oauth_token()
-                    if not token:
-                        await self._send({
-                            "type": CMD_CLAUDE_AUTH_GET_USAGE,
-                            "success": False,
-                            "error": "no token",
-                            "requestId": request_id,
-                        })
-                    else:
-                        async with httpx.AsyncClient() as client:
-                            resp = await client.get(
-                                ANTHROPIC_USAGE_URL,
-                                headers={
-                                    "Authorization": f"Bearer {token}",
-                                    "anthropic-beta": "oauth-2025-04-20",
-                                },
-                            )
-                        if resp.status_code != 200:
-                            await self._send({
-                                "type": CMD_CLAUDE_AUTH_GET_USAGE,
-                                "success": False,
-                                "error": resp.text,
-                                "requestId": request_id,
-                            })
-                        else:
-                            await self._send({
-                                "type": CMD_CLAUDE_AUTH_GET_USAGE,
-                                "success": True,
-                                "data": resp.json(),
-                                "requestId": request_id,
-                            })
+                    await self._send(await handle_auth_api_request(
+                        request_id, CMD_CLAUDE_AUTH_GET_USAGE, ANTHROPIC_USAGE_URL,
+                    ))
                 case "claude_auth_get_profile":
-                    token = get_oauth_token()
-                    if not token:
-                        await self._send({
-                            "type": CMD_CLAUDE_AUTH_GET_PROFILE,
-                            "success": False,
-                            "error": "no token",
-                            "requestId": request_id,
-                        })
-                    else:
-                        async with httpx.AsyncClient() as client:
-                            resp = await client.get(
-                                ANTHROPIC_PROFILE_URL,
-                                headers={
-                                    "Authorization": f"Bearer {token}",
-                                    "anthropic-beta": "oauth-2025-04-20",
-                                },
-                            )
-                        if resp.status_code != 200:
-                            await self._send({
-                                "type": CMD_CLAUDE_AUTH_GET_PROFILE,
-                                "success": False,
-                                "error": resp.text,
-                                "requestId": request_id,
-                            })
-                        else:
-                            await self._send({
-                                "type": CMD_CLAUDE_AUTH_GET_PROFILE,
-                                "success": True,
-                                "data": resp.json(),
-                                "requestId": request_id,
-                            })
+                    await self._send(await handle_auth_api_request(
+                        request_id, CMD_CLAUDE_AUTH_GET_PROFILE, ANTHROPIC_PROFILE_URL,
+                    ))
                 case _:
                     await self._send_error(
                         f"Unknown command type: {cmd_type}",
