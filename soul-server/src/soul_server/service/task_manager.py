@@ -191,42 +191,43 @@ class TaskManager:
 
         running 상태 세션만 _tasks에 올리고 나머지는 DB에서 온디맨드 조회한다.
         """
-        sessions, total = await self._db.get_all_sessions(node_id=self._db.node_id)
+        sessions, total = await self._db.get_all_sessions(
+            node_id=self._db.node_id,
+            status=TaskStatus.RUNNING.value,
+        )
 
         loaded = 0
         for s in sessions:
-            if s["status"] == TaskStatus.RUNNING.value:
-                # 재시작 복구: was_running_at_shutdown 여부와 무관하게
-                # 서버 기동 시 RUNNING 세션은 모두 INTERRUPTED로 전환 → 재개 가능
-                try:
-                    await self._db.update_session_status(
-                        s["session_id"],
-                        TaskStatus.INTERRUPTED.value,
-                    )
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to transition session {s['session_id']} to interrupted: {e}"
-                    )
-                    continue
+            # 재시작 복구: 서버 기동 시 RUNNING 세션은 모두 INTERRUPTED로 전환 → 재개 가능
+            try:
+                await self._db.update_session_status(
+                    s["session_id"],
+                    TaskStatus.INTERRUPTED.value,
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to transition session {s['session_id']} to interrupted: {e}"
+                )
+                continue
 
-                try:
-                    task = Task(
-                        agent_session_id=s["session_id"],
-                        prompt=s.get("prompt", ""),
-                        status=TaskStatus.INTERRUPTED,
-                        client_id=s.get("client_id"),
-                        claude_session_id=s.get("claude_session_id"),
-                        session_type=s.get("session_type", "claude"),
-                        last_event_id=s.get("last_event_id", 0),
-                        last_read_event_id=s.get("last_read_event_id", 0),
-                        created_at=str_to_datetime(s["created_at"]),
-                        node_id=s.get("node_id"),
-                        caller_session_id=s.get("caller_session_id"),
-                    )
-                    self._tasks[s["session_id"]] = task
-                    loaded += 1
-                except (ValueError, KeyError) as e:
-                    logger.warning(f"Failed to load session {s['session_id']}: {e}")
+            try:
+                task = Task(
+                    agent_session_id=s["session_id"],
+                    prompt=s.get("prompt", ""),
+                    status=TaskStatus.INTERRUPTED,
+                    client_id=s.get("client_id"),
+                    claude_session_id=s.get("claude_session_id"),
+                    session_type=s.get("session_type", "claude"),
+                    last_event_id=s.get("last_event_id", 0),
+                    last_read_event_id=s.get("last_read_event_id", 0),
+                    created_at=str_to_datetime(s["created_at"]),
+                    node_id=s.get("node_id"),
+                    caller_session_id=s.get("caller_session_id"),
+                )
+                self._tasks[s["session_id"]] = task
+                loaded += 1
+            except (ValueError, KeyError) as e:
+                logger.warning(f"Failed to load session {s['session_id']}: {e}")
 
         if loaded:
             logger.info(f"Transitioned {loaded} shutdown sessions to interrupted status")

@@ -416,11 +416,10 @@ class TestLoadEvictedTaskNodeId:
 
 
 class TestStartupEviction:
-    async def test_non_running_sessions_evicted_at_startup(self, manager: TaskManager):
-        """서버 기동 시 비실행 세션은 _tasks에 로드되지 않음 (DB에서 온디맨드 조회)"""
-        from soul_server.service.task_models import Task
+    async def test_load_only_fetches_running_sessions(self, manager: TaskManager):
+        """load()는 DB에 status='running' 필터를 전달하여 running 세션만 가져온다."""
 
-        # Mock DB가 load()에서 반환할 데이터 설정
+        # DB가 status='running' 필터에 의해 running 세션만 반환
         manager._db.get_all_sessions.return_value = ([
             {
                 "session_id": "sess-run",
@@ -435,40 +434,16 @@ class TestStartupEviction:
                 "updated_at": "2026-01-01T00:00:00+00:00",
                 "was_running_at_shutdown": 1,
             },
-            {
-                "session_id": "sess-done",
-                "status": "completed",
-                "prompt": "done",
-                "client_id": None,
-                "claude_session_id": None,
-                "session_type": "claude",
-                "last_event_id": 0,
-                "last_read_event_id": 0,
-                "created_at": "2026-01-01T00:00:01+00:00",
-                "updated_at": "2026-01-01T00:00:01+00:00",
-            },
-            {
-                "session_id": "sess-err",
-                "status": "error",
-                "prompt": "error",
-                "client_id": None,
-                "claude_session_id": None,
-                "session_type": "claude",
-                "last_event_id": 0,
-                "last_read_event_id": 0,
-                "created_at": "2026-01-01T00:00:02+00:00",
-                "updated_at": "2026-01-01T00:00:02+00:00",
-            },
-        ], 3)
+        ], 1)
 
         loaded = await manager.load()
 
-        # running만 메모리에 남음
-        assert "sess-run" in manager._tasks
-        assert "sess-done" not in manager._tasks
-        assert "sess-err" not in manager._tasks
+        # status 필터가 전달되었는지 확인
+        call_kwargs = manager._db.get_all_sessions.call_args
+        assert call_kwargs.kwargs.get("status") == "running"
 
-        # running 1개만 로드됨
+        # running 세션이 interrupted로 전환되어 로드됨
+        assert "sess-run" in manager._tasks
         assert loaded == 1
 
         # 퇴거 루프 정리
