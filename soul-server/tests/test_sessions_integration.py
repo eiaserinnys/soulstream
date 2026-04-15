@@ -635,7 +635,7 @@ class TestTaskManagerGetAllSessions:
 
         mock_db = _make_mock_session_db()
 
-        async def mock_get_all_sessions(offset=0, limit=0, session_type=None, folder_id=None, node_id=None, status=None):
+        async def mock_get_all_sessions(offset=0, limit=0, session_type=None, folder_id=None, node_id=None, status=None, feed_only=False):
             all_sessions = [
                 {"session_id": "sess-claude", "status": "running", "prompt": "Claude task", "session_type": "claude", "created_at": datetime(2026, 3, 3, 2, 0, 0, tzinfo=timezone.utc)},
                 {"session_id": "sess-llm", "status": "running", "prompt": "LLM task", "session_type": "llm", "created_at": datetime(2026, 3, 3, 1, 0, 0, tzinfo=timezone.utc)},
@@ -686,7 +686,7 @@ class TestTaskManagerGetAllSessions:
             for i in range(5)
         ]
 
-        async def mock_get_all_sessions(offset=0, limit=0, session_type=None, folder_id=None, node_id=None, status=None):
+        async def mock_get_all_sessions(offset=0, limit=0, session_type=None, folder_id=None, node_id=None, status=None, feed_only=False):
             filtered = all_claude if session_type == "claude" else all_claude
             total = len(filtered)
             if offset:
@@ -719,7 +719,7 @@ class TestTaskManagerGetAllSessions:
             for i in range(5)
         ]
 
-        async def mock_get_all_sessions(offset=0, limit=0, session_type=None, folder_id=None, node_id=None, status=None):
+        async def mock_get_all_sessions(offset=0, limit=0, session_type=None, folder_id=None, node_id=None, status=None, feed_only=False):
             total = len(all_sessions_data)
             result = all_sessions_data[offset:]
             if limit:

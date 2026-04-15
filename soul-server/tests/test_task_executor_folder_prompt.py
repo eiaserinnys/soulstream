@@ -62,12 +62,14 @@ def _make_executor(task: Task, db=None) -> TaskExecutor:
     )
 
 
-def _make_claude_runner(captured_context: list) -> MagicMock:
-    """execute() 호출 시 context_items 캡처하는 runner mock"""
+def _make_claude_runner(captured_context: list, captured_kwargs: dict = None) -> MagicMock:
+    """execute() 호출 시 context_items와 system_prompt를 캡처하는 runner mock"""
     runner = MagicMock()
 
     async def mock_execute(**kwargs):
         captured_context.extend(kwargs.get("context_items", []))
+        if captured_kwargs is not None:
+            captured_kwargs.update(kwargs)
         yield MagicMock(
             type="complete",
             result="done",
@@ -107,7 +109,7 @@ class TestFolderPromptInjection:
     async def test_folder_prompt_injected_for_new_session(
         self, mock_broadcaster, mock_assemble, mock_build_ctx
     ):
-        """새 세션에서 folderPrompt가 있으면 context item에 주입된다."""
+        """새 세션에서 folderPrompt가 있으면 system_prompt에 주입된다."""
         mock_broadcaster.return_value = MagicMock(
             emit_session_updated=AsyncMock(),
             emit_session_message_updated=AsyncMock(),
@@ -117,20 +119,17 @@ class TestFolderPromptInjection:
         task = _make_task(resume_session_id=None)  # 새 세션
 
         captured_context: list = []
-        runner = _make_claude_runner(captured_context)
+        captured_kwargs: dict = {}
+        runner = _make_claude_runner(captured_context, captured_kwargs)
         executor = _make_executor(task, db)
         rm = _make_resource_manager()
 
         await executor._run_execution(task=task, claude_runner=runner, resource_manager=rm)
 
-        # folder_prompt context item이 포함되어야 함
-        folder_prompt_items = [
-            item for item in captured_context
-            if isinstance(item, dict) and item.get("key") == "folder_prompt"
-        ]
-        assert len(folder_prompt_items) == 1
-        assert folder_prompt_items[0]["content"] == "항상 한국어로 답하세요."
-        assert folder_prompt_items[0]["label"] == "폴더 프롬프트"
+        # folder_prompt가 system_prompt로 주입되어야 함
+        system_prompt = captured_kwargs.get("system_prompt")
+        assert system_prompt is not None
+        assert "항상 한국어로 답하세요." in system_prompt
 
     @pytest.mark.asyncio
     @patch("soul_server.service.task_executor.build_soulstream_context_item",
@@ -141,7 +140,7 @@ class TestFolderPromptInjection:
     async def test_folder_prompt_not_injected_for_resume(
         self, mock_broadcaster, mock_assemble, mock_build_ctx
     ):
-        """resume 세션에서는 folderPrompt가 있어도 주입하지 않는다."""
+        """resume 세션에서는 folderPrompt가 있어도 system_prompt에 주입하지 않는다."""
         mock_broadcaster.return_value = MagicMock(
             emit_session_updated=AsyncMock(),
             emit_session_message_updated=AsyncMock(),
@@ -151,18 +150,17 @@ class TestFolderPromptInjection:
         task = _make_task(resume_session_id="prev-claude-session-id")  # resume 세션
 
         captured_context: list = []
-        runner = _make_claude_runner(captured_context)
+        captured_kwargs: dict = {}
+        runner = _make_claude_runner(captured_context, captured_kwargs)
         executor = _make_executor(task, db)
         rm = _make_resource_manager()
 
         await executor._run_execution(task=task, claude_runner=runner, resource_manager=rm)
 
-        # folder_prompt context item이 없어야 함
-        folder_prompt_items = [
-            item for item in captured_context
-            if isinstance(item, dict) and item.get("key") == "folder_prompt"
-        ]
-        assert len(folder_prompt_items) == 0
+        # resume 세션에서는 system_prompt에 folder_prompt가 포함되지 않아야 함
+        system_prompt = captured_kwargs.get("system_prompt")
+        if system_prompt:
+            assert "항상 한국어로 답하세요." not in system_prompt
 
     @pytest.mark.asyncio
     @patch("soul_server.service.task_executor.build_soulstream_context_item",
@@ -173,7 +171,7 @@ class TestFolderPromptInjection:
     async def test_folder_prompt_not_injected_when_empty(
         self, mock_broadcaster, mock_assemble, mock_build_ctx
     ):
-        """folderPrompt가 빈 문자열이면 context item을 추가하지 않는다."""
+        """folderPrompt가 빈 문자열이면 system_prompt에 주입하지 않는다."""
         mock_broadcaster.return_value = MagicMock(
             emit_session_updated=AsyncMock(),
             emit_session_message_updated=AsyncMock(),
@@ -183,17 +181,17 @@ class TestFolderPromptInjection:
         task = _make_task(resume_session_id=None)
 
         captured_context: list = []
-        runner = _make_claude_runner(captured_context)
+        captured_kwargs: dict = {}
+        runner = _make_claude_runner(captured_context, captured_kwargs)
         executor = _make_executor(task, db)
         rm = _make_resource_manager()
 
         await executor._run_execution(task=task, claude_runner=runner, resource_manager=rm)
 
-        folder_prompt_items = [
-            item for item in captured_context
-            if isinstance(item, dict) and item.get("key") == "folder_prompt"
-        ]
-        assert len(folder_prompt_items) == 0
+        # 빈 folderPrompt는 system_prompt에 포함되지 않아야 함
+        system_prompt = captured_kwargs.get("system_prompt")
+        # system_prompt가 None이거나, 있더라도 빈 폴더 프롬프트는 불포함
+        assert system_prompt is None or system_prompt == ""
 
     @pytest.mark.asyncio
     @patch("soul_server.service.task_executor.build_soulstream_context_item",
@@ -214,15 +212,14 @@ class TestFolderPromptInjection:
         task = _make_task(resume_session_id=None)
 
         captured_context: list = []
-        runner = _make_claude_runner(captured_context)
+        captured_kwargs: dict = {}
+        runner = _make_claude_runner(captured_context, captured_kwargs)
         executor = _make_executor(task, db)
         rm = _make_resource_manager()
 
         # 에러 없이 완료되어야 함
         await executor._run_execution(task=task, claude_runner=runner, resource_manager=rm)
 
-        folder_prompt_items = [
-            item for item in captured_context
-            if isinstance(item, dict) and item.get("key") == "folder_prompt"
-        ]
-        assert len(folder_prompt_items) == 0
+        # settings가 없으면 system_prompt에 folder_prompt가 없어야 함
+        system_prompt = captured_kwargs.get("system_prompt")
+        assert system_prompt is None or system_prompt == ""
