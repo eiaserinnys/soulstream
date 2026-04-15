@@ -13,7 +13,7 @@ import logging
 
 import asyncpg
 
-from soul_server.service.legacy_migrator import (
+from soul_server.migration.legacy_migrator import (
     _count_sources,
     _deprecate_files,
     _detect_legacy_files,

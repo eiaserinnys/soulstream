@@ -253,7 +253,7 @@ async def lifespan(app: FastAPI):
         logger.info(f"  PostgresSessionDB initialized: node_id={settings.soulstream_node_id}")
 
         # 레거시 데이터 자동 이관 (SQLite/JSONL → PostgreSQL) — PostgreSQL 모드에서만 실행
-        from soul_server.service.legacy_migrator import auto_migrate
+        from soul_server.migration import auto_migrate
 
         await auto_migrate(session_db, settings.data_dir)
     else:

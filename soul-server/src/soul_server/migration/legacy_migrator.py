@@ -471,6 +471,9 @@ async def _migrate_sessions(
 _MAX_SEARCHABLE_LEN = 500_000
 """tsvector 입력 최대 길이 (PG tsvector 한계 ~1MB 대비 안전 여유)."""
 
+_INSERT_EVENT_QUERY = "SELECT migration_insert_event($1, $2, $3, $4::jsonb, $5, $6)"
+_BATCH_CHUNK_SIZE = 1000
+
 
 def _sanitize_payload(payload: str) -> str:
     """PostgreSQL jsonb에 넣을 수 없는 문자를 제거.
@@ -485,18 +488,44 @@ def _sanitize_searchable(text: str) -> str:
     return _sanitize_payload(text)[:_MAX_SEARCHABLE_LEN]
 
 
-async def _migrate_events_from_db(pool: asyncpg.Pool, db_path: Path, node_id: str) -> int:
-    """SQLite events 테이블 → PostgreSQL events 테이블 이관.
+async def _batch_insert_events(
+    conn: "asyncpg.Connection",
+    records: list[tuple],
+    label: str,
+) -> tuple[int, int]:
+    """이벤트 레코드를 배치 INSERT하고 (성공 수, 실패 수)를 반환.
 
-    executemany()로 배치 INSERT하여 성능을 확보한다.
-    배치 실패 시 해당 청크만 개별 INSERT로 폴백.
+    chunk 단위로 executemany()를 시도하고, 실패 시 개별 INSERT로 폴백한다.
     """
+    inserted = 0
+    skipped = 0
+    for i in range(0, len(records), _BATCH_CHUNK_SIZE):
+        chunk = records[i:i + _BATCH_CHUNK_SIZE]
+        try:
+            await conn.executemany(_INSERT_EVENT_QUERY, chunk)
+            inserted += len(chunk)
+        except Exception as e:
+            logger.warning(f"배치 INSERT 실패 (chunk {i}~{i+len(chunk)}), 개별 폴백: {e}")
+            for rec in chunk:
+                try:
+                    await conn.execute(_INSERT_EVENT_QUERY, *rec)
+                    inserted += 1
+                except Exception as e2:
+                    skipped += 1
+                    if skipped <= 5:
+                        logger.warning(f"이벤트 이관 실패 (skip): {rec[0]}#{rec[1]}: {e2}")
+    if skipped:
+        logger.warning(f"{label}: {skipped}개 이벤트 이관 실패 (건너뜀)")
+    return inserted, skipped
+
+
+async def _migrate_events_from_db(pool: asyncpg.Pool, db_path: Path, node_id: str) -> int:
+    """SQLite events 테이블 → PostgreSQL events 테이블 이관."""
     conn_sqlite = sqlite3.connect(str(db_path))
     conn_sqlite.row_factory = sqlite3.Row
     rows = conn_sqlite.execute("SELECT * FROM events ORDER BY session_id, id").fetchall()
     conn_sqlite.close()
 
-    # 전체 레코드를 튜플 리스트로 변환
     records = []
     for row in rows:
         records.append((
@@ -508,33 +537,11 @@ async def _migrate_events_from_db(pool: asyncpg.Pool, db_path: Path, node_id: st
             _parse_dt(row["created_at"]),
         ))
 
-    query = "SELECT migration_insert_event($1, $2, $3, $4::jsonb, $5, $6)"
-
-    event_count = 0
-    skipped = 0
-    chunk_size = 1000
-
     async with pool.acquire() as conn:
-        for i in range(0, len(records), chunk_size):
-            chunk = records[i:i + chunk_size]
-            try:
-                await conn.executemany(query, chunk)
-                event_count += len(chunk)
-            except Exception as e:
-                logger.warning(f"배치 INSERT 실패 (chunk {i}~{i+len(chunk)}), 개별 폴백: {e}")
-                for rec in chunk:
-                    try:
-                        await conn.execute(query, *rec)
-                        event_count += 1
-                    except Exception as e2:
-                        skipped += 1
-                        if skipped <= 5:
-                            logger.warning(f"이벤트 이관 실패 (skip): {rec[0]}#{rec[1]}: {e2}")
+        inserted, _ = await _batch_insert_events(conn, records, "SQLite events")
 
-    if skipped:
-        logger.warning(f"SQLite events: {skipped}개 이벤트 이관 실패 (건너뜀)")
-    logger.info(f"SQLite events에서 {event_count}개 이벤트 이관 완료")
-    return event_count
+    logger.info(f"SQLite events에서 {inserted}개 이벤트 이관 완료")
+    return inserted
 
 
 async def _migrate_events_from_jsonl(pool: asyncpg.Pool, events_dir: Path, node_id: str) -> int:
@@ -590,11 +597,8 @@ async def _migrate_events_from_jsonl(pool: asyncpg.Pool, events_dir: Path, node_
             )
 
             # 이벤트 레코드 변환
-            query = "SELECT migration_insert_event($1, $2, $3, $4::jsonb, $5, $6)"
             records = []
             for raw in events:
-                # SessionCache 포맷: {"id": N, "event": {...}}
-                # 레거시 flat 포맷: {"id": N, "type": "...", ...}
                 eid, evt = _unwrap_event(raw)
                 event_type = evt.get("type", evt.get("event_type", "unknown"))
                 payload = _sanitize_payload(json.dumps(evt, ensure_ascii=False))
@@ -602,26 +606,8 @@ async def _migrate_events_from_jsonl(pool: asyncpg.Pool, events_dir: Path, node_
                 created_at = _parse_dt(evt.get("created_at")) if evt.get("created_at") else datetime.now(timezone.utc)
                 records.append((sid, eid, event_type, payload, searchable, created_at))
 
-            # 배치 INSERT (chunk_size=1000, 실패 시 개별 폴백)
-            skipped = 0
-            chunk_size = 1000
-            for i in range(0, len(records), chunk_size):
-                chunk = records[i:i + chunk_size]
-                try:
-                    await conn.executemany(query, chunk)
-                    event_count += len(chunk)
-                except Exception as e:
-                    logger.warning(f"배치 INSERT 실패 (chunk {i}~{i+len(chunk)}), 개별 폴백: {e}")
-                    for rec in chunk:
-                        try:
-                            await conn.execute(query, *rec)
-                            event_count += 1
-                        except Exception as e2:
-                            skipped += 1
-                            if skipped <= 5:
-                                logger.warning(f"이벤트 이관 실패 (skip): {rec[0]}#{rec[1]}: {e2}")
-            if skipped:
-                logger.warning(f"{sid}: {skipped}개 이벤트 이관 실패 (건너뜀)")
+            inserted, _ = await _batch_insert_events(conn, records, sid)
+            event_count += inserted
 
         # 세션의 last_event_id 갱신
         if events:

@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from soul_server.service.legacy_migrator import (
+from soul_server.migration.legacy_migrator import (
     DryRunReport,
     _count_sources,
     _deprecate_files,
@@ -417,7 +417,7 @@ class TestJsonlFormatCompat:
 
         pool, conn = _make_mock_pool()
 
-        from soul_server.service.legacy_migrator import _migrate_events_from_jsonl
+        from soul_server.migration.legacy_migrator import _migrate_events_from_jsonl
         await _migrate_events_from_jsonl(pool, events_dir, "test-node")
 
         # executemany/execute에서 이벤트 레코드 추출
@@ -466,7 +466,7 @@ class TestJsonlFormatCompat:
 
         pool, conn = _make_mock_pool()
 
-        from soul_server.service.legacy_migrator import _migrate_events_from_jsonl
+        from soul_server.migration.legacy_migrator import _migrate_events_from_jsonl
         await _migrate_events_from_jsonl(pool, events_dir, "test-node")
 
         records = _extract_event_records(conn)
@@ -487,7 +487,7 @@ class TestJsonlFormatCompat:
 
         pool, conn = _make_mock_pool()
 
-        from soul_server.service.legacy_migrator import _migrate_events_from_jsonl
+        from soul_server.migration.legacy_migrator import _migrate_events_from_jsonl
         await _migrate_events_from_jsonl(pool, events_dir, "test-node")
 
         records = _extract_event_records(conn)
