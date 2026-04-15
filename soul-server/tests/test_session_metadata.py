@@ -51,7 +51,7 @@ def _make_mock_session_db():
             s["metadata"] = []
         return s
 
-    async def _get_all_sessions(offset=0, limit=0, session_type=None, folder_id=None, node_id=None, status=None):
+    async def _get_all_sessions(offset=0, limit=0, session_type=None, folder_id=None, node_id=None, status=None, feed_only=False):
         items = list(_sessions.values())
         for item in items:
             if "metadata" not in item:

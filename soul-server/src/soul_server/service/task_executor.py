@@ -176,12 +176,30 @@ class TaskExecutor:
                     else:
                         effective_system_prompt = folder_prompt
 
+                # profile_id로 프로필 조회 및 실행 옵션 추출
+                # context item 빌드보다 먼저 해석하여 실제 CLI cwd를 컨텍스트에 반영
+                if task.profile_id and self._registry:
+                    profile = self._registry.get(task.profile_id)
+                    working_dir = profile.workspace_dir if profile else None
+                    max_turns = profile.max_turns if profile else None
+                    override_tools = profile.allowed_tools if profile else None
+                    # AgentProfile.disallowed_tools는 현재 사용하지 않음.
+                    # task.disallowed_tools가 execute() 호출에서 그대로 적용된다.
+                    # 프로필 레벨 disallowed_tools 오버라이드는 필요 시 추가.
+                else:
+                    working_dir = None
+                    max_turns = None
+                    override_tools = None
+
+                # 실제 CLI 프로세스의 cwd: profile에서 가져온 값 우선, 없으면 .env fallback
+                effective_workspace_dir = working_dir or claude_runner.workspace_dir
+
                 # 서버 컨텍스트 빌드 + 클라이언트 컨텍스트 머지
                 # SSE 이벤트와 프롬프트 주입 양쪽에 동일한 머지 결과를 사용
                 soulstream_item = build_soulstream_context_item(
                     agent_session_id=task.agent_session_id,
                     claude_session_id=task.resume_session_id,
-                    workspace_dir=claude_runner.workspace_dir,
+                    workspace_dir=effective_workspace_dir,
                     folder_name=folder_name,
                     agent_id=task.profile_id,
                 )
@@ -252,7 +270,7 @@ class TaskExecutor:
                             intervention_soulstream = build_soulstream_context_item(
                                 agent_session_id=task.agent_session_id,
                                 claude_session_id=task.resume_session_id,
-                                workspace_dir=claude_runner.workspace_dir,
+                                workspace_dir=effective_workspace_dir,
                                 folder_name=folder_name,
                                 agent_id=task.profile_id,
                             )
@@ -281,20 +299,6 @@ class TaskExecutor:
                 def on_runner_ready(runner):
                     task._deliver_input_response = runner.deliver_input_response
                     task.pid = runner.pid
-
-                # profile_id로 프로필 조회 및 실행 옵션 추출
-                if task.profile_id and self._registry:
-                    profile = self._registry.get(task.profile_id)
-                    working_dir = profile.workspace_dir if profile else None
-                    max_turns = profile.max_turns if profile else None
-                    override_tools = profile.allowed_tools if profile else None
-                    # AgentProfile.disallowed_tools는 현재 사용하지 않음.
-                    # task.disallowed_tools (L252)가 그대로 적용된다.
-                    # 프로필 레벨 disallowed_tools 오버라이드는 필요 시 추가.
-                else:
-                    working_dir = None
-                    max_turns = None
-                    override_tools = None
 
                 # allowed_tools 병합: task 설정 우선, None이면 profile 설정 사용
                 # task.allowed_tools or override_tools 사용 금지 — 빈 리스트([])를 falsy로 처리함

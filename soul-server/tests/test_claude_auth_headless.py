@@ -91,15 +91,21 @@ class TestHeadlessSubmitCode:
         return parse_qs(urlparse(resp.json()["authUrl"]).query)["state"][0]
 
     def test_success(self, client, monkeypatch, test_env_path: Path):
-        """정상 동작: 토큰 교환 후 저장, success 반환."""
+        """정상 동작: 토큰 교환 후 credentials.json에 저장, success 반환."""
         state = self._get_state_from_start(client, monkeypatch)
         paste_code = f"authcode-abc#{state}"
 
         fake_token_resp = MagicMock()
         fake_token_resp.status_code = 200
-        fake_token_resp.json.return_value = {"access_token": "sk-ant-oat01-faketoken"}
+        fake_token_resp.json.return_value = {
+            "access_token": "sk-ant-oat01-faketoken",
+            "refresh_token": "rt-fake-refresh",
+            "expires_in": 3600,
+            "scope": "org:create_api_key",
+        }
 
-        with patch("soul_server.api.claude_auth.router.httpx.AsyncClient") as mock_cls:
+        with patch("soul_server.api.claude_auth.router.httpx.AsyncClient") as mock_cls, \
+             patch("soul_server.api.claude_auth.router.save_credentials_json") as mock_save_creds:
             mock_http = AsyncMock()
             mock_http.post = AsyncMock(return_value=fake_token_resp)
             mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_http)
@@ -113,9 +119,11 @@ class TestHeadlessSubmitCode:
         assert resp.status_code == 200
         data = resp.json()
         assert data["success"] is True
-        # 파일에 저장되었는지 확인
-        assert test_env_path.exists()
-        assert "CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-faketoken" in test_env_path.read_text()
+        # credentials.json에 저장되었는지 확인
+        mock_save_creds.assert_called_once_with(
+            "sk-ant-oat01-faketoken", "rt-fake-refresh",
+            expires_in=3600, scope="org:create_api_key",
+        )
 
     def test_missing_code(self, client, monkeypatch):
         """빈 code: 400 missing_code."""
