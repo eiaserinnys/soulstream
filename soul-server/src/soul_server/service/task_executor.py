@@ -32,6 +32,7 @@ class _PreparedContext:
     working_dir: Optional[Path] = None
     max_turns: Optional[int] = None
     effective_allowed_tools: Optional[list] = None
+    effective_disallowed_tools: Optional[list] = None
     extra_env: Optional[dict] = None
     assembled_prompt: str = ""
 
@@ -192,10 +193,12 @@ class TaskExecutor:
             working_dir = profile.workspace_dir if profile else None
             max_turns = profile.max_turns if profile else None
             override_tools = profile.allowed_tools if profile else None
+            override_disallowed = profile.disallowed_tools if profile else None
         else:
             working_dir = None
             max_turns = None
             override_tools = None
+            override_disallowed = None
 
         effective_workspace_dir = working_dir or claude_runner.workspace_dir
 
@@ -218,8 +221,9 @@ class TaskExecutor:
             + (task.context_items or [])
         )
 
-        # allowed_tools 병합: task 설정 우선, None이면 profile 설정 사용
+        # allowed_tools / disallowed_tools 병합: task 설정 우선, None이면 profile 설정 사용
         effective_allowed_tools = task.allowed_tools if task.allowed_tools is not None else override_tools
+        effective_disallowed_tools = task.disallowed_tools if task.disallowed_tools is not None else override_disallowed
 
         # CLAUDE_CODE_OAUTH_TOKEN 주입
         extra_env: Optional[dict] = None
@@ -235,6 +239,7 @@ class TaskExecutor:
             working_dir=working_dir,
             max_turns=max_turns,
             effective_allowed_tools=effective_allowed_tools,
+            effective_disallowed_tools=effective_disallowed_tools,
             extra_env=extra_env,
             assembled_prompt=assembled_prompt,
         )
@@ -366,7 +371,7 @@ class TaskExecutor:
                     get_intervention=get_intervention,
                     on_intervention_sent=on_intervention_sent,
                     allowed_tools=ctx.effective_allowed_tools,
-                    disallowed_tools=task.disallowed_tools,
+                    disallowed_tools=ctx.effective_disallowed_tools,
                     use_mcp=task.use_mcp,
                     on_runner_ready=on_runner_ready,
                     context_items=ctx.combined_context_items,
