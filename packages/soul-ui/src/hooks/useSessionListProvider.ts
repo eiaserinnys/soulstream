@@ -126,13 +126,11 @@ export function useSessionListProvider(
         currentViewMode === "folder" && currentFolderId !== null
           ? { folderId: currentFolderId }
           : {};
-      const feedFilter = currentViewMode === "feed" ? { feedOnly: true } : {};
       const result = await provider.fetchSessions({
         sessionType: typeFilter,
         offset: pageParam as number,
         limit: DEFAULT_PAGE_SIZE,
         ...folderFilter,
-        ...feedFilter,
       });
 
       // 폴더별 세션 수 조회 (provider가 지원하는 경우)
@@ -249,7 +247,13 @@ export function useSessionListProvider(
             }
           }
 
-          const currentFilter = useDashboardStore.getState().sessionTypeFilter;
+          const { sessionTypeFilter: currentFilter, viewMode: currentViewMode, selectedFolderId: currentFolderId } =
+            useDashboardStore.getState();
+
+          // 폴더 뷰에서는 현재 폴더에 속한 세션만 캐시에 추가
+          if (currentViewMode === "folder" && currentFolderId !== null && folderId !== currentFolderId) {
+            break;
+          }
 
           // TanStack Query 캐시 업데이트
           queryClient.setQueryData(
