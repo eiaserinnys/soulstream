@@ -6,7 +6,7 @@
 
 import pytest
 
-from soul_server.service.session_analyzer import (
+from soul_server.serendipity.session_analyzer import (
     SessionAnalyzer,
     SessionEvent,
     SessionSummary,

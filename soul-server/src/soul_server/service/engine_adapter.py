@@ -28,7 +28,7 @@ from soul_server.config import get_settings
 if TYPE_CHECKING:
     from soul_server.cogito.brief_composer import BriefComposer
     from soul_server.service.runner_pool import RunnerPool
-    from soul_server.service.serendipity_adapter import SerendipityAdapter, SessionContext
+    from soul_server.serendipity import SerendipityAdapter, SessionContext
 from soul_server.models import (
     CompactEvent,
     CompleteEvent,

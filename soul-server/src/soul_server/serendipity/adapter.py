@@ -54,14 +54,14 @@ from soul_server.models import (
     ToolResultSSEEvent,
     ToolStartSSEEvent,
 )
-from soul_server.service.serendipity_client import (
+from soul_server.serendipity.client import (
     AsyncSerendipityClient,
     create_text_content,
     create_soul_content,
     date_label_title,
     generate_key,
 )
-from soul_server.service.session_analyzer import (
+from soul_server.serendipity.session_analyzer import (
     SessionAnalyzer,
     SessionEvent,
     SessionSummary,

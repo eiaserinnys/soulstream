@@ -23,8 +23,8 @@ from soul_server.models import (
     ToolResultSSEEvent,
 )
 from soul_server.service.engine_adapter import SoulEngineAdapter
-from soul_server.service.serendipity_adapter import SerendipityAdapter, SessionContext
-from soul_server.service.session_analyzer import SessionAnalyzer, WorkCategory
+from soul_server.serendipity.adapter import SerendipityAdapter, SessionContext
+from soul_server.serendipity.session_analyzer import SessionAnalyzer, WorkCategory
 from soul_server.engine.types import EngineResult
 
 

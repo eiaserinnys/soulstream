@@ -8,7 +8,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import date
 
-from soul_server.service.serendipity_adapter import (
+from soul_server.serendipity.adapter import (
     SerendipityAdapter,
     SessionContext,
     BLOCK_TYPE_USER,
@@ -31,7 +31,7 @@ from soul_server.service.serendipity_adapter import (
     MAX_ANALYZER_RESULT_LENGTH,
     MAX_ANALYZER_PROMPT_LENGTH,
 )
-from soul_server.service.serendipity_client import (
+from soul_server.serendipity.client import (
     create_text_content,
     create_soul_content,
     generate_key,
