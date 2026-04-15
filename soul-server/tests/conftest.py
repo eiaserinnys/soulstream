@@ -51,29 +51,17 @@ def pytest_configure(config):
         mock_fastmcp.FastMCP = lambda *args, **kwargs: MagicMock()
         sys.modules["fastmcp"] = mock_fastmcp
 
-    # 테스트 환경으로 설정
+    # 테스트 환경변수는 셸에 어떤 값이 있든 무조건 덮어쓴다.
+    # 부모 프로세스에서 prod .env가 export된 경우 (예: 봇 프로세스 하위에서 테스트 실행)
+    # `if KEY not in os.environ` 가드는 무력해지고, 테스트가 prod 설정으로 동작하게 된다.
+    # 특히 DATABASE_URL이 prod로 새면 test-db-safety.md 위반이며 데이터 손실 위험이 있다.
     os.environ["ENVIRONMENT"] = "development"
-
-    # 필수 환경변수 설정 (임시 경로 사용)
-    if "WORKSPACE_DIR" not in os.environ:
-        os.environ["WORKSPACE_DIR"] = "/tmp/soul-server-test-workspace"
-
-    # 필수 환경변수 설정 (테스트용 더미 값)
-    if "SOULSTREAM_NODE_ID" not in os.environ:
-        os.environ["SOULSTREAM_NODE_ID"] = "test-node"
-    if "DATABASE_URL" not in os.environ:
-        os.environ["DATABASE_URL"] = "postgresql://test:test@localhost:5432/test"
-
-    # 테스트용 인증 토큰 설정
+    os.environ["WORKSPACE_DIR"] = "/tmp/soul-server-test-workspace"
+    os.environ["SOULSTREAM_NODE_ID"] = "test-node"
+    os.environ["DATABASE_URL"] = "postgresql://test:test@localhost:5432/test"
     os.environ["AUTH_BEARER_TOKEN"] = TEST_AUTH_TOKEN
-
-    # AGENTS_CONFIG_FILE — 미설정 시 degraded mode로 동작
-    if "AGENTS_CONFIG_FILE" not in os.environ:
-        os.environ["AGENTS_CONFIG_FILE"] = ""  # degraded mode
-
-    # 캐시 디렉토리 (테스트 환경에서는 /tmp 사용)
-    if "SOUL_DASHBOARD_CACHE_DIR" not in os.environ:
-        os.environ["SOUL_DASHBOARD_CACHE_DIR"] = "/tmp/soul-server-test-cache"
+    os.environ["AGENTS_CONFIG_FILE"] = ""  # degraded mode
+    os.environ["SOUL_DASHBOARD_CACHE_DIR"] = "/tmp/soul-server-test-cache"
 
 
 @pytest.fixture(scope="session", autouse=True)
