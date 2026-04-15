@@ -17,6 +17,7 @@ import { cn } from "../../lib/cn";
 import { useLlmContext } from "./hooks";
 import { groupMessages } from "./grouping";
 import { VirtualizedItem } from "./VirtualizedItem";
+import { useEstimateSize } from "../../hooks/useEstimateSize";
 
 /** 스크롤 하단 판정 threshold (px) */
 const SCROLL_THRESHOLD = 50;
@@ -38,16 +39,17 @@ export function ChatView({ chatInputDisabled = false, isOtherNodeSession = false
   const messages = useMemo(() => flattenTree(tree), [tree, treeVersion]);
   const grouped = useMemo(() => groupMessages(messages), [messages]);
 
+  // === Follow mode ===
+  const scrollRef = useRef<HTMLDivElement>(null);
+
   // === Virtualizer ===
+  const estimateSize = useEstimateSize(scrollRef, grouped, activeSessionKey);
   const virtualizer = useVirtualizer({
     count: grouped.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => 80,
+    estimateSize,
     overscan: 5,
   });
-
-  // === Follow mode ===
-  const scrollRef = useRef<HTMLDivElement>(null);
   const [isFollowing, setIsFollowing] = useState(true);
   const [showNewMessage, setShowNewMessage] = useState(false);
   const prevTreeVersion = useRef(treeVersion);
