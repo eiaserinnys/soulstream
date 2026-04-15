@@ -183,7 +183,7 @@ export type { FeedTopBarProps } from "./components/FeedTopBar";
 export { FolderDialog } from "./components/FolderDialog";
 export { FolderSettingsDialog } from "./components/FolderSettingsDialog";
 export type { FolderSettingsDialogProps } from "./components/FolderSettingsDialog";
-export { ChatView } from "./components/ChatView";
+export { ChatView } from "./components/chat";
 export { ChatInput } from "./components/ChatInput";
 export { RightPanel } from "./components/RightPanel";
 export { DetailView } from "./components/DetailView";

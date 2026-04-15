@@ -11,7 +11,7 @@
 import { useCallback } from "react";
 import { Tabs, TabsList, TabsTab, TabsPanel } from "./ui/tabs";
 import { DetailView } from "./DetailView";
-import { ChatView } from "./ChatView";
+import { ChatView } from "./chat";
 import { SessionInfoView } from "./SessionInfoView";
 import { useDashboardStore } from "../stores/dashboard-store";
 
