@@ -4,6 +4,9 @@ on:
     tags:
       - 'soul-desktop-v*'
 
+permissions:
+  contents: write
+
 jobs:
   build-tauri:
     strategy:
@@ -28,7 +31,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: soul-desktop/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -36,7 +39,7 @@ jobs:
           targets: ${{ matrix.rust_targets }}
 
       - name: Install frontend deps
-        run: pnpm --dir soul-desktop install
+        run: pnpm install --filter soul-desktop...
 
       - uses: tauri-apps/tauri-action@v0
         env:
@@ -45,6 +48,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: soul-desktop
+          tauriScript: pnpm tauri
+          args: ${{ matrix.args }}
           tagName: ${{ github.ref_name }}
           releaseName: 'Soul Desktop ${{ github.ref_name }}'
           releaseBody: 'See the assets below to download.'
