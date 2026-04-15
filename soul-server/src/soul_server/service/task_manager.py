@@ -560,6 +560,63 @@ class TaskManager:
         """모든 폴더 목록을 반환한다."""
         return await self._db.get_all_folders()
 
+    async def _resume_existing_task(
+        self,
+        task: Task,
+        *,
+        prompt: str,
+        client_id: Optional[str],
+        allowed_tools: Optional[List[str]],
+        disallowed_tools: Optional[List[str]],
+        use_mcp: bool,
+        context: Optional[dict],
+        context_items: Optional[List[dict]],
+        model: Optional[str],
+        system_prompt: Optional[str],
+        profile_id: Optional[str],
+        oauth_token: Optional[str],
+    ) -> None:
+        """완료/에러 상태의 기존 세션을 RUNNING으로 재활성화한다.
+
+        Task 객체의 필드를 in-place로 갱신한다. _lock 안에서 호출되어야 한다.
+        """
+        resume_session_id = task.claude_session_id
+        logger.info(
+            f"Resuming session: {task.agent_session_id} "
+            f"(claude_session={resume_session_id})"
+        )
+
+        # DB에서 기존 metadata 로드 (메모리 퇴거 후 resume 시에도 유지)
+        db_session = await self._db.get_session(task.agent_session_id)
+        if db_session and db_session.get("metadata"):
+            task.metadata = db_session["metadata"]
+
+        # 기존 태스크를 RUNNING으로 재활성화
+        task.prompt = prompt
+        task.status = TaskStatus.RUNNING
+        task.resume_session_id = resume_session_id
+        task.result = None
+        task.error = None
+        task.completed_at = None
+        task.last_progress_text = None
+        task.intervention_queue = asyncio.Queue()
+        task.allowed_tools = allowed_tools
+        task.disallowed_tools = disallowed_tools
+        task.use_mcp = use_mcp
+        task.context = context
+        task.context_items = context_items
+        task.model = model
+        task.system_prompt = system_prompt
+        if profile_id is not None:
+            task.profile_id = profile_id
+        if oauth_token is not None:
+            task.oauth_token = oauth_token
+        if client_id:
+            task.client_id = client_id
+
+        # 퇴거 후보에서 제거
+        self._eviction_manager.unregister(task.agent_session_id)
+
     async def create_task(
         self,
         prompt: str,
@@ -636,41 +693,20 @@ class TaskManager:
                 if existing.status == TaskStatus.RUNNING:
                     raise TaskConflictError(f"Session already running: {agent_session_id}")
 
-                # 완료/에러 세션 → resume
-                resume_session_id = existing.claude_session_id
-                logger.info(f"Resuming session: {agent_session_id} (claude_session={resume_session_id})")
-
-                # DB에서 기존 metadata 로드 (메모리 퇴거 후 resume 시에도 유지)
-                db_session = await self._db.get_session(agent_session_id)
-                if db_session and db_session.get("metadata"):
-                    existing.metadata = db_session["metadata"]
-
-                # 기존 태스크를 RUNNING으로 재활성화
-                existing.prompt = prompt
-                existing.status = TaskStatus.RUNNING
-                existing.resume_session_id = resume_session_id
-                existing.result = None
-                existing.error = None
-                existing.completed_at = None
-                existing.last_progress_text = None
-                existing.intervention_queue = asyncio.Queue()
-                existing.allowed_tools = allowed_tools
-                existing.disallowed_tools = disallowed_tools
-                existing.use_mcp = use_mcp
-                existing.context = context
-                existing.context_items = effective_context_items
-                existing.model = model
-                existing.system_prompt = system_prompt
-                if profile_id is not None:
-                    existing.profile_id = profile_id
-                if oauth_token is not None:
-                    existing.oauth_token = oauth_token
-                if client_id:
-                    existing.client_id = client_id
-
-                # 퇴거 후보에서 제거
-                self._eviction_manager.unregister(agent_session_id)
-
+                await self._resume_existing_task(
+                    existing,
+                    prompt=prompt,
+                    client_id=client_id,
+                    allowed_tools=allowed_tools,
+                    disallowed_tools=disallowed_tools,
+                    use_mcp=use_mcp,
+                    context=context,
+                    context_items=effective_context_items,
+                    model=model,
+                    system_prompt=system_prompt,
+                    profile_id=profile_id,
+                    oauth_token=oauth_token,
+                )
                 task = existing
                 is_new = False
             else:
