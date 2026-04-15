@@ -58,6 +58,13 @@ from soul_server.claude.diagnostics import (
     classify_process_error,
     format_rate_limit_warning,
 )
+from soul_server.claude.error_handlers import (
+    finalize_result as _finalize_result_fn,
+    handle_file_not_found as _handle_file_not_found_fn,
+    handle_process_error as _handle_process_error_fn,
+    handle_parse_error as _handle_parse_error_fn,
+    handle_unknown_error as _handle_unknown_error_fn,
+)
 from soul_server.engine.types import (
     EngineResult,
     InputRequestEngineEvent,
@@ -1217,82 +1224,25 @@ class ClaudeRunner:
         )
 
     def _finalize_result(self, msg_state: MessageState) -> EngineResult:
-        """정상 완료 시 결과 생성
-
-        Args:
-            msg_state: 메시지 상태
-
-        Returns:
-            EngineResult: 엔진 실행 결과
-        """
-        output = msg_state.result_text or msg_state.current_text
-
-        return EngineResult(
-            success=not msg_state.is_error,
-            output=output,
-            session_id=msg_state.session_id,
-            collected_messages=msg_state.collected_messages,
-            is_error=msg_state.is_error,
-            usage=msg_state.usage,
-        )
+        """정상 완료 시 결과 생성 — error_handlers.finalize_result 위임"""
+        return _finalize_result_fn(msg_state)
 
     def _handle_file_not_found(self, e: FileNotFoundError) -> EngineResult:
-        """FileNotFoundError 처리
-
-        Args:
-            e: FileNotFoundError 예외
-
-        Returns:
-            EngineResult: 에러 결과
-        """
-        logger.error(f"Claude Code CLI를 찾을 수 없습니다: {e}")
-        return EngineResult(
-            success=False,
-            output="",
-            error="Claude Code CLI를 찾을 수 없습니다. claude 명령어가 PATH에 있는지 확인하세요."
-        )
+        """FileNotFoundError 처리 — error_handlers.handle_file_not_found 위임"""
+        return _handle_file_not_found_fn(e)
 
     def _handle_process_error(
         self,
         e: "ProcessError",
         ctx: ExecutionContext,
     ) -> EngineResult:
-        """ProcessError 처리
-
-        Args:
-            e: ProcessError 예외
-            ctx: 실행 컨텍스트
-
-        Returns:
-            EngineResult: 에러 결과
-        """
-        msg_state = ctx.msg_state
-        friendly_msg = classify_process_error(e)
-        logger.error(
-            f"Claude Code CLI 프로세스 오류: exit_code={e.exit_code}, "
-            f"stderr={e.stderr}, friendly={friendly_msg}"
-        )
-        _dur = (datetime.now(timezone.utc) - ctx.session_start).total_seconds()
-        dump = build_session_dump(
-            reason="ProcessError",
+        """ProcessError 처리 — error_handlers.handle_process_error 위임"""
+        return _handle_process_error_fn(
+            e,
+            ctx,
             pid=self.pid,
-            duration_sec=_dur,
-            message_count=msg_state.msg_count,
-            last_tool="",
-            current_text_len=len(msg_state.current_text),
-            result_text_len=len(msg_state.result_text),
-            session_id=msg_state.session_id,
-            exit_code=e.exit_code,
-            error_detail=str(e.stderr or e),
+            debug_fn=self.debug_send_fn,
             active_clients_count=len(_registry),
-            runner_id=ctx.runner_id,
-        )
-        self._debug(dump)
-        return EngineResult(
-            success=False,
-            output=msg_state.current_text,
-            session_id=msg_state.session_id,
-            error=friendly_msg,
         )
 
     def _handle_parse_error(
@@ -1300,65 +1250,16 @@ class ClaudeRunner:
         e: "MessageParseError",
         msg_state: MessageState,
     ) -> EngineResult:
-        """MessageParseError 처리
-
-        Args:
-            e: MessageParseError 예외
-            msg_state: 메시지 상태
-
-        Returns:
-            EngineResult: 에러 결과
-        """
-        action, msg_type = classify_parse_error(e.data, log_fn=logger)
-
-        if msg_type == "rate_limit_event":
-            logger.warning(f"rate_limit_event (외부 catch): {e}")
-            return EngineResult(
-                success=False,
-                output=msg_state.current_text,
-                session_id=msg_state.session_id,
-                error="사용량 제한에 도달했습니다. 잠시 후 다시 시도해주세요.",
-            )
-
-        if action is ParseAction.CONTINUE:
-            # unknown type이 외부까지 전파된 경우
-            logger.warning(f"Unknown message type escaped loop: {msg_type}")
-            return EngineResult(
-                success=False,
-                output=msg_state.current_text,
-                session_id=msg_state.session_id,
-                error=f"알 수 없는 메시지 타입: {msg_type}",
-            )
-
-        logger.exception(f"SDK 메시지 파싱 오류: {e}")
-        return EngineResult(
-            success=False,
-            output=msg_state.current_text,
-            session_id=msg_state.session_id,
-            error="Claude 응답 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
-        )
+        """MessageParseError 처리 — error_handlers.handle_parse_error 위임"""
+        return _handle_parse_error_fn(e, msg_state)
 
     def _handle_unknown_error(
         self,
         e: Exception,
         msg_state: MessageState,
     ) -> EngineResult:
-        """알 수 없는 예외 처리
-
-        Args:
-            e: Exception 예외
-            msg_state: 메시지 상태
-
-        Returns:
-            EngineResult: 에러 결과
-        """
-        logger.exception(f"Claude Code SDK 실행 오류: {e}")
-        return EngineResult(
-            success=False,
-            output=msg_state.current_text,
-            session_id=msg_state.session_id,
-            error=str(e)
-        )
+        """알 수 없는 예외 처리 — error_handlers.handle_unknown_error 위임"""
+        return _handle_unknown_error_fn(e, msg_state)
 
     async def _cleanup_execution(self, ctx: ExecutionContext) -> None:
         """실행 후 정리 로직
