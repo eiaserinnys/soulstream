@@ -5,7 +5,7 @@
  * 엣지 생성은 processChildNodes가 담당합니다.
  */
 
-import type { EventTreeNode, CompleteNode, ErrorNode, CompactNode, ResultNode } from "../../shared/types";
+import type { EventTreeNode, CompleteNode, ErrorNode, AssistantErrorNode, CompactNode, ResultNode } from "../../shared/types";
 import type { LayoutContext } from "../layout-context";
 import {
   createSystemNodeFromTree,
@@ -20,7 +20,7 @@ export function renderCompletionNode(
   _parentNodeId: string | null,
   ctx: LayoutContext,
 ): string | null {
-  const sysNode = createSystemNodeFromTree(treeNode as CompleteNode | ErrorNode);
+  const sysNode = createSystemNodeFromTree(treeNode as CompleteNode | ErrorNode | AssistantErrorNode);
   ctx.nodes.push(sysNode);
   return sysNode.id;
 }

@@ -32,6 +32,7 @@ class SSEEventType(str, Enum):
     TOOL_RESULT = "tool_result"
     RESULT = "result"
     CREDENTIAL_ALERT = "credential_alert"
+    ASSISTANT_ERROR = "assistant_error"
     # 서브에이전트 이벤트
     SUBAGENT_START = "subagent_start"
     SUBAGENT_STOP = "subagent_stop"

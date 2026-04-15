@@ -918,7 +918,8 @@ class ClaudeRunner:
 
     def _observe_unknown_event(self, msg_type: str, data: dict) -> None:
         """InstrumentedClaudeClient 콜백: unknown event 관찰"""
-        logger.debug(f"Unknown event observed: {msg_type}")
+        data_summary = str(data)[:200] if data else ""
+        logger.warning(f"Unknown event observed: {msg_type} — {data_summary}")
 
     def _build_options(
         self,

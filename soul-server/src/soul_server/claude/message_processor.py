@@ -15,7 +15,9 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional
 
 from soul_server.engine.types import (
+    AssistantErrorEngineEvent,
     EventCallback,
+    RateLimitEngineEvent,
     ResultEngineEvent,
     TextDeltaEngineEvent,
     ThinkingEngineEvent,
@@ -26,7 +28,9 @@ from soul_server.engine.types import (
 try:
     from claude_agent_sdk.types import (
         AssistantMessage,
+        RateLimitEvent,
         ResultMessage,
+        StreamEvent,
         SystemMessage,
         TextBlock,
         ThinkingBlock,
@@ -78,6 +82,10 @@ class MessageProcessor:
             await self._handle_user_message(message)
         elif isinstance(message, ResultMessage):
             await self._handle_result_message(message)
+        elif SDK_AVAILABLE and isinstance(message, RateLimitEvent):
+            await self._handle_rate_limit_event(message)
+        elif SDK_AVAILABLE and isinstance(message, StreamEvent):
+            self._handle_stream_event(message)
 
     async def _handle_system_message(self, message: Any) -> None:
         """SystemMessage 처리 — 세션 ID 추출
@@ -115,8 +123,29 @@ class MessageProcessor:
                 logger.warning(f"세션 ID 콜백 오류: {e}")
 
     async def _handle_assistant_message(self, message: Any) -> None:
-        """AssistantMessage 처리 — 블록 순회 및 이벤트 발행"""
+        """AssistantMessage 처리 — error 필드 감지 및 블록 순회"""
         msg_parent = getattr(message, "parent_tool_use_id", None)
+
+        # error 필드 처리: authentication_failed, billing_error, rate_limit 등
+        error = getattr(message, "error", None)
+        if error:
+            logger.warning(
+                f"[ASSISTANT_ERROR] {error}, model={getattr(message, 'model', '')}"
+            )
+            if self.on_event:
+                try:
+                    await self.on_event(
+                        AssistantErrorEngineEvent(
+                            error_type=error,
+                            model=getattr(message, "model", ""),
+                            message_id=getattr(message, "message_id", None),
+                            parent_event_id=msg_parent,
+                        )
+                    )
+                except Exception as e:
+                    logger.warning(f"이벤트 콜백 오류 (ASSISTANT_ERROR): {e}")
+
+        # content 블록 처리
         if hasattr(message, "content"):
             for block in message.content:
                 await self._process_block(block, msg_parent)
@@ -332,7 +361,41 @@ class MessageProcessor:
                         error=result_output if self.msg_state.is_error else None,
                         usage=self.msg_state.usage,
                         parent_event_id=None,  # task_executor가 user_request_id로 채움
+                        total_cost_usd=getattr(message, "total_cost_usd", None),
+                        stop_reason=getattr(message, "stop_reason", None),
+                        errors=getattr(message, "errors", None),
+                        model_usage=getattr(message, "model_usage", None),
+                        permission_denials=getattr(message, "permission_denials", None),
                     )
                 )
             except Exception as e:
                 logger.warning(f"이벤트 콜백 오류 (RESULT): {e}")
+
+    async def _handle_rate_limit_event(self, message: Any) -> None:
+        """RateLimitEvent 처리 — RateLimitEngineEvent로 변환하여 발행"""
+        info = getattr(message, "rate_limit_info", None)
+        if not info:
+            return
+        status = getattr(info, "status", "")
+        logger.info(
+            f"[RATE_LIMIT] status={status}, "
+            f"type={getattr(info, 'rate_limit_type', '')}, "
+            f"utilization={getattr(info, 'utilization', None)}"
+        )
+        if self.on_event:
+            try:
+                await self.on_event(
+                    RateLimitEngineEvent(
+                        status=status,
+                        resets_at=getattr(info, "resets_at", None),
+                        rate_limit_type=getattr(info, "rate_limit_type", None),
+                        utilization=getattr(info, "utilization", None),
+                    )
+                )
+            except Exception as e:
+                logger.warning(f"이벤트 콜백 오류 (RATE_LIMIT): {e}")
+
+    def _handle_stream_event(self, message: Any) -> None:
+        """StreamEvent 처리 — 로그 기록만 (대시보드 전달 불필요)"""
+        event = getattr(message, "event", {})
+        logger.info(f"[STREAM_EVENT] {event}")

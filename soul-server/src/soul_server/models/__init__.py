@@ -39,6 +39,7 @@ from .schemas import (
     InputRequestQuestion,
     InputRequestSSEEvent,
     InputRequestExpiredSSEEvent,
+    AssistantErrorSSEEvent,
     CredentialAlertEvent,
     # Session List API
     SessionInfo,
@@ -89,6 +90,7 @@ __all__ = [
     "InputRequestSSEEvent",
     "InputRequestExpiredSSEEvent",
     "InputResponseRequest",
+    "AssistantErrorSSEEvent",
     "CredentialAlertEvent",
     # Session List API
     "SessionInfo",

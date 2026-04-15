@@ -15,6 +15,7 @@ import type {
   ResultNode,
   CompleteNode,
   ErrorNode,
+  AssistantErrorNode,
   CompactNode,
   InputRequestNodeDef,
   InputRequestQuestion,
@@ -56,6 +57,10 @@ export interface GraphNodeData extends Record<string, unknown> {
   durationMs?: number;
   usage?: { input_tokens: number; output_tokens: number };
   totalCostUsd?: number;
+  stopReason?: string;
+  errors?: string[];
+  modelUsage?: Record<string, unknown>;
+  permissionDenials?: string[];
 
   // 기존 필드들
   toolName?: string;
@@ -310,7 +315,7 @@ export function createInputRequestNodeFromTree(
   };
 }
 
-export function createSystemNodeFromTree(treeNode: SessionNode | CompleteNode | ErrorNode): GraphNode {
+export function createSystemNodeFromTree(treeNode: SessionNode | CompleteNode | ErrorNode | AssistantErrorNode): GraphNode {
   let label: string;
   let content: string;
 
@@ -322,6 +327,10 @@ export function createSystemNodeFromTree(treeNode: SessionNode | CompleteNode | 
   } else if (treeNode.type === "error") {
     label = "Error";
     content = treeNode.content;
+  } else if (treeNode.type === "assistant_error") {
+    const errNode = treeNode as AssistantErrorNode;
+    label = `API Error: ${errNode.errorType}`;
+    content = errNode.model ? `Model: ${errNode.model}` : errNode.content;
   } else {
     const sn = treeNode as SessionNode;
     if (sn.sessionType === "llm") {
@@ -396,6 +405,10 @@ export function createResultNode(
       durationMs: treeNode.durationMs,
       usage: treeNode.usage,
       totalCostUsd: treeNode.totalCostUsd,
+      stopReason: treeNode.stopReason,
+      errors: treeNode.errors,
+      modelUsage: treeNode.modelUsage,
+      permissionDenials: treeNode.permissionDenials,
       collapsed: collapseInfo?.collapsed ?? false,
       hasChildren: collapseInfo?.hasChildren ?? false,
       childCount: collapseInfo?.childCount ?? 0,

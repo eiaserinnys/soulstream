@@ -26,6 +26,7 @@ const renderers = new Map<EventTreeNodeType, NodeRenderer>([
   ["compact", renderCompactNode],
   ["complete", renderCompletionNode],
   ["error", renderCompletionNode],
+  ["assistant_error", renderCompletionNode],
   ["result", renderResultNode],
   ["input_request", renderInputRequestNode],
   ["assistant_message", renderAssistantMessageNode],

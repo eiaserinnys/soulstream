@@ -71,9 +71,11 @@ class CompactEvent(BaseModel):
 
 
 class DebugEvent(BaseModel):
-    """디버그 정보 이벤트 (rate_limit 경고 등)"""
+    """디버그 정보 이벤트 (rate_limit 경고, SDK Notification 등)"""
     type: str = "debug"
     message: str = Field(..., description="디버그 메시지")
+    timestamp: float = 0.0
+    parent_event_id: Optional[str] = None
 
 
 class ContextItem(BaseModel):
@@ -202,6 +204,10 @@ class ResultSSEEvent(BaseModel):
     usage: Optional[dict] = None
     total_cost_usd: Optional[float] = None
     parent_event_id: Optional[str] = None
+    stop_reason: Optional[str] = None
+    errors: Optional[List[str]] = None
+    model_usage: Optional[dict] = None
+    permission_denials: Optional[List[str]] = None
 
 
 class SubagentStartSSEEvent(BaseModel):
@@ -257,8 +263,22 @@ class InputRequestRespondedSSEEvent(BaseModel):
     timestamp: float
 
 
+class AssistantErrorSSEEvent(BaseModel):
+    """Claude API 에러 이벤트 (인증 실패, 과금 에러 등)"""
+    type: str = "assistant_error"
+    timestamp: float
+    error_type: str = Field(..., description="에러 타입: authentication_failed, billing_error, rate_limit 등")
+    model: str = ""
+    message_id: Optional[str] = None
+    parent_event_id: Optional[str] = None
+
+
 class CredentialAlertEvent(BaseModel):
     """rate limit 사용량 경고 이벤트"""
     type: str = "credential_alert"
-    utilization: float
-    rate_limit_type: str
+    utilization: Optional[float] = None
+    rate_limit_type: Optional[str] = None
+    status: Optional[str] = None
+    resets_at: Optional[str] = None
+    timestamp: float = 0.0
+    parent_event_id: Optional[str] = None

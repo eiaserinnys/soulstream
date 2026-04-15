@@ -1,8 +1,8 @@
 """훅 빌더 — agent_runner._build_hooks() 로직 분리
 
 ClaudeRunner의 훅 생성 로직을 독립 모듈로 분리한다.
-PreToolUse, PreCompact, SubagentStart, SubagentStop 훅을 생성하며,
-서브에이전트 이벤트는 호출자가 전달한 event_queue에 추가한다.
+PreToolUse, PreCompact, SubagentStart, SubagentStop, Notification, Stop 훅을 생성하며,
+서브에이전트/알림 이벤트는 호출자가 전달한 event_queue에 추가한다.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from typing import Any, Optional
 
 from soul_server.engine.types import (
     EngineEvent,
+    NotificationEngineEvent,
     SubagentStartEngineEvent,
     SubagentStopEngineEvent,
 )
@@ -37,6 +38,8 @@ def build_hooks(
     - PreCompact: 컨텍스트 컴팩션 추적
     - SubagentStart: 서브에이전트 시작 추적
     - SubagentStop: 서브에이전트 종료 추적
+    - Notification: CLI 알림을 이벤트 큐에 추가
+    - Stop: 세션 종료 사유 로깅
 
     Args:
         compact_events: 컴팩션 이벤트 추적 리스트. None이면 PreCompact 훅 생략.
@@ -142,6 +145,45 @@ def build_hooks(
 
     hooks["SubagentStop"] = [
         HookMatcher(matcher=None, hooks=[on_subagent_stop_hook])
+    ]
+
+    # Notification 훅 — CLI 알림을 이벤트 큐에 추가
+    async def on_notification(
+        hook_input: dict,
+        tool_use_id: Optional[str],
+        context: Any,
+    ) -> dict:
+        title = hook_input.get("title", "")
+        message = hook_input.get("message", "")
+        notification_type = hook_input.get("notification_type", "")
+        logger.info(
+            f"[NOTIFICATION] {notification_type}: {title} - {message}"
+        )
+        event_queue.append(
+            NotificationEngineEvent(
+                title=title,
+                message=message,
+                notification_type=notification_type,
+            )
+        )
+        return {}
+
+    hooks["Notification"] = [
+        HookMatcher(matcher=None, hooks=[on_notification])
+    ]
+
+    # Stop 훅 — 세션 종료 사유 로깅
+    async def on_stop(
+        hook_input: dict,
+        tool_use_id: Optional[str],
+        context: Any,
+    ) -> dict:
+        reason = hook_input.get("reason", "unknown")
+        logger.info(f"[STOP] reason={reason}")
+        return {}
+
+    hooks["Stop"] = [
+        HookMatcher(matcher=None, hooks=[on_stop])
     ]
 
     return hooks if hooks else None

@@ -163,6 +163,10 @@ class ResultEngineEvent(EngineEvent):
     error: Optional[str] = None
     usage: Optional[dict] = None
     total_cost_usd: Optional[float] = None
+    stop_reason: Optional[str] = None
+    errors: Optional[list[str]] = None
+    model_usage: Optional[dict] = None
+    permission_denials: Optional[list[str]] = None
 
     def to_sse(self) -> list[BaseModel]:
         from soul_server.models.schemas import ResultSSEEvent
@@ -174,6 +178,10 @@ class ResultEngineEvent(EngineEvent):
             total_cost_usd=self.total_cost_usd,
             parent_event_id=self.parent_event_id,
             timestamp=self.timestamp,
+            stop_reason=self.stop_reason,
+            errors=self.errors,
+            model_usage=self.model_usage,
+            permission_denials=self.permission_denials,
         )]
 
 
@@ -281,19 +289,71 @@ class InputRequestRespondedEngineEvent(EngineEvent):
 
 
 @dataclass
-class InputRequestRespondedEngineEvent(EngineEvent):
-    """사용자 입력 요청 응답 완료 이벤트
+class AssistantErrorEngineEvent(EngineEvent):
+    """AssistantMessage.error 감지 이벤트
 
-    사용자가 AskUserQuestion에 응답하면 발행됩니다.
-    클라이언트는 이 이벤트를 받아 선택 창을 닫고 응답 완료 상태로 갱신합니다.
+    SDK의 AssistantMessage에 error 필드가 설정된 경우 발행된다.
+    authentication_failed, billing_error, rate_limit 등 API 수준 에러를 대시보드에 전달한다.
     """
-    request_id: str = ""
+
+    error_type: str = ""
+    model: str = ""
+    message_id: Optional[str] = None
 
     def to_sse(self) -> list[BaseModel]:
-        from soul_server.models.schemas import InputRequestRespondedSSEEvent
-        return [InputRequestRespondedSSEEvent(
-            request_id=self.request_id,
+        from soul_server.models.schemas import AssistantErrorSSEEvent
+        return [AssistantErrorSSEEvent(
+            error_type=self.error_type,
+            model=self.model,
+            message_id=self.message_id,
+            parent_event_id=self.parent_event_id,
             timestamp=self.timestamp,
+        )]
+
+
+@dataclass
+class RateLimitEngineEvent(EngineEvent):
+    """SDK RateLimitEvent → EngineEvent 변환
+
+    SDK가 rate_limit_event로 보고하는 상태를 대시보드에 전달한다.
+    기존 CredentialAlertEvent SSE 모델을 확장하여 사용한다.
+    """
+
+    status: str = ""
+    resets_at: Optional[str] = None
+    rate_limit_type: Optional[str] = None
+    utilization: Optional[float] = None
+
+    def to_sse(self) -> list[BaseModel]:
+        from soul_server.models.schemas import CredentialAlertEvent
+        return [CredentialAlertEvent(
+            utilization=self.utilization,
+            rate_limit_type=self.rate_limit_type,
+            status=self.status,
+            resets_at=self.resets_at,
+            timestamp=self.timestamp,
+            parent_event_id=self.parent_event_id,
+        )]
+
+
+@dataclass
+class NotificationEngineEvent(EngineEvent):
+    """SDK Notification 훅 이벤트
+
+    CLI가 Notification 훅으로 보내는 알림을 대시보드에 전달한다.
+    DebugEvent SSE 모델을 재사용한다.
+    """
+
+    title: str = ""
+    message: str = ""
+    notification_type: str = ""
+
+    def to_sse(self) -> list[BaseModel]:
+        from soul_server.models.schemas import DebugEvent
+        return [DebugEvent(
+            message=f"[{self.notification_type}] {self.title}: {self.message}",
+            timestamp=self.timestamp,
+            parent_event_id=self.parent_event_id,
         )]
 
 

@@ -36,6 +36,8 @@ export const SSE_EVENT_TYPES = [
   "subagent_stop",
   "context_usage",
   "compact",
+  "assistant_error",
+  "credential_alert",
   "reconnect",
   "history_sync",
   "metadata_updated",

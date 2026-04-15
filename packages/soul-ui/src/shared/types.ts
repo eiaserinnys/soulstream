@@ -23,6 +23,8 @@ export type SSEEventType =
   | "complete"
   | "error"
   // 세분화 이벤트 (대시보드용)
+  | "assistant_error"
+  | "credential_alert"
   | "thinking"
   | "text_start"
   | "text_delta"
@@ -116,6 +118,30 @@ export interface SystemMessageEvent {
 export interface DebugEvent {
   type: "debug";
   message: string;
+  timestamp?: number;
+  parent_event_id?: string;
+}
+
+/** Claude API 에러 이벤트 (인증 실패, 과금 에러 등) */
+export interface AssistantErrorEvent {
+  type: "assistant_error";
+  timestamp: number;
+  /** 에러 타입: authentication_failed, billing_error, rate_limit, invalid_request, server_error, unknown */
+  error_type: string;
+  model?: string;
+  message_id?: string;
+  parent_event_id?: string;
+}
+
+/** Rate limit 사용량 경고 이벤트 */
+export interface CredentialAlertEvent {
+  type: "credential_alert";
+  utilization?: number;
+  rate_limit_type?: string;
+  status?: string;
+  resets_at?: string;
+  timestamp?: number;
+  parent_event_id?: string;
 }
 
 export interface CompleteEvent {
@@ -217,6 +243,14 @@ export interface ResultEvent {
   usage?: { input_tokens: number; output_tokens: number };
   /** 총 비용 (USD) */
   total_cost_usd?: number;
+  /** 종료 사유 */
+  stop_reason?: string;
+  /** 에러 목록 */
+  errors?: string[];
+  /** 모델별 사용량 */
+  model_usage?: Record<string, unknown>;
+  /** 권한 거부 목록 */
+  permission_denials?: string[];
   /** 부모 이벤트 ID (서브에이전트 내부 노드 배치용) */
   parent_event_id?: string;
 }
@@ -315,6 +349,8 @@ export type SoulSSEEvent =
   | ErrorEvent
   | ContextUsageEvent
   | CompactEvent
+  | AssistantErrorEvent
+  | CredentialAlertEvent
   | ThinkingEvent
   | TextStartEvent
   | TextDeltaEvent
@@ -527,6 +563,10 @@ export interface ResultNode extends BaseNode {
   durationMs?: number;
   usage?: { input_tokens: number; output_tokens: number };
   totalCostUsd?: number;
+  stopReason?: string;
+  errors?: string[];
+  modelUsage?: Record<string, unknown>;
+  permissionDenials?: string[];
 }
 
 /** 컨텍스트 압축 노드 */
@@ -566,6 +606,14 @@ export interface AssistantMessageNode extends BaseNode {
   usage?: { input_tokens: number; output_tokens: number };
 }
 
+/** Claude API 에러 노드 (인증 실패, 과금 에러 등) */
+export interface AssistantErrorNode extends BaseNode {
+  type: "assistant_error";
+  errorType: string;
+  model?: string;
+  messageId?: string;
+}
+
 /** 이벤트 트리 노드 — 소스 오브 트루스 (discriminated union) */
 export type EventTreeNode =
   | SessionNode
@@ -580,7 +628,8 @@ export type EventTreeNode =
   | CompleteNode
   | ErrorNode
   | InputRequestNodeDef
-  | AssistantMessageNode;
+  | AssistantMessageNode
+  | AssistantErrorNode;
 
 // === API Request/Response ===
 
