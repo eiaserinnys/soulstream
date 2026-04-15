@@ -9,6 +9,7 @@ import httpx
 import logging
 import os
 import re
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Callable, Awaitable, Optional, TYPE_CHECKING
@@ -20,6 +21,19 @@ from soul_server.service.engine_adapter import build_soulstream_context_item
 from soul_server.config import get_settings
 
 import json
+
+
+@dataclass
+class _PreparedContext:
+    """_run_execution의 컨텍스트 준비 단계 결과물"""
+    effective_system_prompt: Optional[str] = None
+    combined_context_items: list = field(default_factory=list)
+    folder_name: Optional[str] = None
+    working_dir: Optional[Path] = None
+    max_turns: Optional[int] = None
+    effective_allowed_tools: Optional[list] = None
+    extra_env: Optional[dict] = None
+    assembled_prompt: str = ""
 
 if TYPE_CHECKING:
     from soul_server.service.postgres_session_db import PostgresSessionDB
@@ -131,6 +145,156 @@ class TaskExecutor:
 
         return True
 
+    async def _prepare_context(
+        self,
+        task: Task,
+        claude_runner,
+    ) -> _PreparedContext:
+        """_run_execution의 컨텍스트 준비 단계를 담당한다.
+
+        폴더 설정 조회, atom 트리 fetch, 프로필 해석, 프롬프트 조립을 수행한다.
+        """
+        session_id = task.agent_session_id
+        folder_name: Optional[str] = None
+        folder_prompt: Optional[str] = None
+        atom_context_markdown: str | None = None
+
+        if self._db is not None:
+            session_row = await self._db.get_session(session_id)
+            if session_row and session_row.get("folder_id"):
+                folder_row = await self._db.get_folder(session_row["folder_id"])
+                if folder_row:
+                    folder_name = folder_row["name"]
+                    # 새 세션에서만 폴더 프롬프트 + atom 트리 주입 (resume/intervention 제외)
+                    if task.resume_session_id is None:
+                        folder_settings = folder_row.get("settings")
+                        if isinstance(folder_settings, dict):
+                            folder_prompt = folder_settings.get("folderPrompt") or None
+                            atom_node_cfg = folder_settings.get("atomContextNode")
+                            if isinstance(atom_node_cfg, dict) and atom_node_cfg.get("nodeId"):
+                                atom_context_markdown = await _fetch_atom_context(
+                                    node_id=atom_node_cfg["nodeId"],
+                                    depth=int(atom_node_cfg.get("depth", 3)),
+                                    titles_only=bool(atom_node_cfg.get("titlesOnly", False)),
+                                )
+
+        # 폴더 프롬프트를 system_prompt에 합산 (새 세션에서만)
+        effective_system_prompt = task.system_prompt
+        if folder_prompt:
+            if effective_system_prompt:
+                effective_system_prompt = folder_prompt + "\n\n" + effective_system_prompt
+            else:
+                effective_system_prompt = folder_prompt
+
+        # profile_id로 프로필 조회 및 실행 옵션 추출
+        if task.profile_id and self._registry:
+            profile = self._registry.get(task.profile_id)
+            working_dir = profile.workspace_dir if profile else None
+            max_turns = profile.max_turns if profile else None
+            override_tools = profile.allowed_tools if profile else None
+        else:
+            working_dir = None
+            max_turns = None
+            override_tools = None
+
+        effective_workspace_dir = working_dir or claude_runner.workspace_dir
+
+        # 서버 컨텍스트 빌드 + 클라이언트 컨텍스트 머지
+        soulstream_item = build_soulstream_context_item(
+            agent_session_id=task.agent_session_id,
+            claude_session_id=task.resume_session_id,
+            workspace_dir=effective_workspace_dir,
+            folder_name=folder_name,
+            agent_id=task.profile_id,
+        )
+        atom_context_items = (
+            [{"key": "atom_context", "label": "atom 트리", "content": atom_context_markdown}]
+            if atom_context_markdown
+            else []
+        )
+        combined_context_items = (
+            [soulstream_item]
+            + atom_context_items
+            + (task.context_items or [])
+        )
+
+        # allowed_tools 병합: task 설정 우선, None이면 profile 설정 사용
+        effective_allowed_tools = task.allowed_tools if task.allowed_tools is not None else override_tools
+
+        # CLAUDE_CODE_OAUTH_TOKEN 주입
+        extra_env: Optional[dict] = None
+        if task.oauth_token:
+            extra_env = {"CLAUDE_CODE_OAUTH_TOKEN": task.oauth_token}
+
+        assembled_prompt = assemble_prompt(task.prompt, task.context)
+
+        return _PreparedContext(
+            effective_system_prompt=effective_system_prompt,
+            combined_context_items=combined_context_items,
+            folder_name=folder_name,
+            working_dir=working_dir,
+            max_turns=max_turns,
+            effective_allowed_tools=effective_allowed_tools,
+            extra_env=extra_env,
+            assembled_prompt=assembled_prompt,
+        )
+
+    async def _persist_initial_messages(
+        self,
+        task: Task,
+        ctx: _PreparedContext,
+    ) -> Optional[str]:
+        """system_message와 user_message를 영속화하고 브로드캐스트한다.
+
+        Returns:
+            current_user_request_id: user_message의 event_id (parent_event_id 채움용)
+        """
+        session_id = task.agent_session_id
+        current_user_request_id: Optional[str] = None
+
+        # system_message 기록
+        if self._db is not None and ctx.effective_system_prompt:
+            try:
+                sys_msg_event = {
+                    "type": "system_message",
+                    "text": ctx.effective_system_prompt,
+                }
+                event_id = await self._persist_event(session_id, sys_msg_event)
+                sys_msg_event["_event_id"] = event_id
+                if event_id is not None:
+                    task.last_event_id = event_id
+                await self._listener_manager.broadcast(session_id, sys_msg_event)
+            except Exception as e:
+                logger.warning(f"Failed to persist system_message for {session_id}: {e}")
+
+        # user_message 기록
+        if self._db is not None:
+            try:
+                user_msg_event = {
+                    "type": "user_message",
+                    "user": task.client_id or "unknown",
+                    "text": task.prompt,
+                    "context": ctx.combined_context_items,
+                }
+                if task.caller_agent_info:
+                    user_msg_event.update(task.caller_agent_info)
+                event_id = await self._persist_event(session_id, user_msg_event)
+                user_msg_event["_event_id"] = event_id
+                current_user_request_id = str(event_id)
+                if event_id is not None:
+                    task.last_event_id = event_id
+                await self._listener_manager.broadcast(session_id, user_msg_event)
+                try:
+                    await self._update_and_broadcast_last_message(
+                        session_id, user_msg_event, task
+                    )
+                except Exception:
+                    logger.debug("last_message update failed for user_message")
+            except Exception as e:
+                logger.warning(f"Failed to persist user_message for {session_id}: {e}")
+
+        return current_user_request_id
+
     async def _run_execution(
         self,
         task: Task,
@@ -143,118 +307,10 @@ class TaskExecutor:
         try:
             current_user_request_id: Optional[str] = None  # except에서 NameError 방지
             async with resource_manager.acquire(timeout=5.0):
-                # 세션의 폴더명 및 폴더 프롬프트 조회
-                folder_name: Optional[str] = None
-                folder_prompt: Optional[str] = None
-                atom_context_markdown: str | None = None
-                if self._db is not None:
-                    session_row = await self._db.get_session(session_id)
-                    if session_row and session_row.get("folder_id"):
-                        folder_row = await self._db.get_folder(session_row["folder_id"])
-                        if folder_row:
-                            folder_name = folder_row["name"]
-                            # 새 세션에서만 폴더 프롬프트 + atom 트리 주입 (resume/intervention 제외)
-                            if task.resume_session_id is None:
-                                folder_settings = folder_row.get("settings")
-                                if isinstance(folder_settings, dict):
-                                    folder_prompt = folder_settings.get("folderPrompt") or None
-                                    # atom 트리 주입
-                                    atom_node_cfg = folder_settings.get("atomContextNode")
-                                    if isinstance(atom_node_cfg, dict) and atom_node_cfg.get("nodeId"):
-                                        atom_context_markdown = await _fetch_atom_context(
-                                            node_id=atom_node_cfg["nodeId"],
-                                            depth=int(atom_node_cfg.get("depth", 3)),
-                                            titles_only=bool(atom_node_cfg.get("titlesOnly", False)),
-                                        )
+                ctx = await self._prepare_context(task, claude_runner)
+                current_user_request_id = await self._persist_initial_messages(task, ctx)
 
-                # 폴더 프롬프트를 system_prompt로 사용 (context_items 대신)
-                # 새 세션에서만 주입 (folder_prompt는 resume_session_id is None일 때만 설정됨)
-                effective_system_prompt = task.system_prompt
-                if folder_prompt:
-                    if effective_system_prompt:
-                        effective_system_prompt = folder_prompt + "\n\n" + effective_system_prompt
-                    else:
-                        effective_system_prompt = folder_prompt
-
-                # profile_id로 프로필 조회 및 실행 옵션 추출
-                # context item 빌드보다 먼저 해석하여 실제 CLI cwd를 컨텍스트에 반영
-                if task.profile_id and self._registry:
-                    profile = self._registry.get(task.profile_id)
-                    working_dir = profile.workspace_dir if profile else None
-                    max_turns = profile.max_turns if profile else None
-                    override_tools = profile.allowed_tools if profile else None
-                    # AgentProfile.disallowed_tools는 현재 사용하지 않음.
-                    # task.disallowed_tools가 execute() 호출에서 그대로 적용된다.
-                    # 프로필 레벨 disallowed_tools 오버라이드는 필요 시 추가.
-                else:
-                    working_dir = None
-                    max_turns = None
-                    override_tools = None
-
-                # 실제 CLI 프로세스의 cwd: profile에서 가져온 값 우선, 없으면 .env fallback
-                effective_workspace_dir = working_dir or claude_runner.workspace_dir
-
-                # 서버 컨텍스트 빌드 + 클라이언트 컨텍스트 머지
-                # SSE 이벤트와 프롬프트 주입 양쪽에 동일한 머지 결과를 사용
-                soulstream_item = build_soulstream_context_item(
-                    agent_session_id=task.agent_session_id,
-                    claude_session_id=task.resume_session_id,
-                    workspace_dir=effective_workspace_dir,
-                    folder_name=folder_name,
-                    agent_id=task.profile_id,
-                )
-                atom_context_items = (
-                    [{"key": "atom_context", "label": "atom 트리", "content": atom_context_markdown}]
-                    if atom_context_markdown
-                    else []
-                )
-                combined_context_items = (
-                    [soulstream_item]           # 세션 메타데이터 (최우선)
-                    + atom_context_items        # atom 트리 컨텍스트
-                    + (task.context_items or [])  # 클라이언트 전달 컨텍스트
-                )
-
-                # system_message 기록 (system_prompt 있을 때, user_message 직전)
-                # effective_system_prompt = folder_prompt + task.system_prompt (합산)
-                if self._db is not None and effective_system_prompt:
-                    try:
-                        sys_msg_event = {
-                            "type": "system_message",
-                            "text": effective_system_prompt,
-                        }
-                        event_id = await self._persist_event(session_id, sys_msg_event)
-                        sys_msg_event["_event_id"] = event_id
-                        if event_id is not None:
-                            task.last_event_id = event_id
-                        await self._listener_manager.broadcast(session_id, sys_msg_event)
-                    except Exception as e:
-                        logger.warning(f"Failed to persist system_message for {session_id}: {e}")
-
-                # user_message 기록
-                if self._db is not None:
-                    try:
-                        user_msg_event = {
-                            "type": "user_message",
-                            "user": task.client_id or "unknown",
-                            "text": task.prompt,
-                            "context": combined_context_items,
-                        }
-                        if task.caller_agent_info:
-                            user_msg_event.update(task.caller_agent_info)
-                        event_id = await self._persist_event(session_id, user_msg_event)
-                        user_msg_event["_event_id"] = event_id
-                        current_user_request_id = str(event_id)
-                        if event_id is not None:
-                            task.last_event_id = event_id
-                        await self._listener_manager.broadcast(session_id, user_msg_event)
-                        try:
-                            await self._update_and_broadcast_last_message(
-                                session_id, user_msg_event, task
-                            )
-                        except Exception:
-                            logger.debug("last_message update failed for user_message")
-                    except Exception as e:
-                        logger.warning(f"Failed to persist user_message for {session_id}: {e}")
+                effective_workspace_dir = ctx.working_dir or claude_runner.workspace_dir
 
                 # 개입 메시지 가져오기 함수
                 async def get_intervention():
@@ -264,14 +320,13 @@ class TaskExecutor:
                 async def on_intervention_sent(user: str, text: str):
                     nonlocal current_user_request_id
                     event = {"type": "intervention_sent", "user": user, "text": text}
-                    # intervention을 user_message로도 JSONL에 기록
                     if self._db is not None:
                         try:
                             intervention_soulstream = build_soulstream_context_item(
                                 agent_session_id=task.agent_session_id,
                                 claude_session_id=task.resume_session_id,
                                 workspace_dir=effective_workspace_dir,
-                                folder_name=folder_name,
+                                folder_name=ctx.folder_name,
                                 agent_id=task.profile_id,
                             )
                             intervention_msg = {
@@ -282,7 +337,7 @@ class TaskExecutor:
                             }
                             ev_id = await self._persist_event(session_id, intervention_msg)
                             current_user_request_id = str(ev_id)
-                            event["_event_id"] = ev_id  # SSE id: 필드에 JSONL event_id 전달
+                            event["_event_id"] = ev_id
                             if ev_id is not None:
                                 task.last_event_id = ev_id
                         except Exception as e:
@@ -300,55 +355,35 @@ class TaskExecutor:
                     task._deliver_input_response = runner.deliver_input_response
                     task.pid = runner.pid
 
-                # allowed_tools 병합: task 설정 우선, None이면 profile 설정 사용
-                # task.allowed_tools or override_tools 사용 금지 — 빈 리스트([])를 falsy로 처리함
-                effective_allowed_tools = task.allowed_tools if task.allowed_tools is not None else override_tools
-
-                # CLAUDE_CODE_OAUTH_TOKEN 주입 — task.oauth_token 직접 지정 시에만.
-                # PKCE OAuth는 credentials.json에 저장되어 Claude Code가 자동으로 읽으므로 주입 불필요.
-                # setup-token은 프로세스 환경변수 상속으로 충분.
-                # task.oauth_token만 extra_env로 명시 주입 (프로필 전환 등).
-                extra_env: Optional[dict] = None
-                if task.oauth_token:
-                    extra_env = {"CLAUDE_CODE_OAUTH_TOKEN": task.oauth_token}
-
-                # 구조화된 맥락을 XML 섹션으로 조립
-                assembled_prompt = assemble_prompt(task.prompt, task.context)
-
-                # 멀티턴 추적: complete/error는 '턴 종료'이지 '세션 종료'가 아니다.
-                # async for 루프가 끝나야 진짜 세션이 끝난 것이므로, finalize는 루프 밖에서 한다.
+                # 멀티턴 추적
                 last_result: Optional[str] = None
                 last_error: Optional[str] = None
 
                 # Claude Code 실행
                 async for event in claude_runner.execute(
-                    prompt=assembled_prompt,
+                    prompt=ctx.assembled_prompt,
                     resume_session_id=task.resume_session_id,
                     get_intervention=get_intervention,
                     on_intervention_sent=on_intervention_sent,
-                    allowed_tools=effective_allowed_tools,
+                    allowed_tools=ctx.effective_allowed_tools,
                     disallowed_tools=task.disallowed_tools,
                     use_mcp=task.use_mcp,
                     on_runner_ready=on_runner_ready,
-                    context_items=combined_context_items,
+                    context_items=ctx.combined_context_items,
                     agent_session_id=task.agent_session_id,
                     model=task.model,
-                    system_prompt=effective_system_prompt,
-                    working_dir=working_dir,
-                    max_turns=max_turns,
-                    extra_env=extra_env,
+                    system_prompt=ctx.effective_system_prompt,
+                    working_dir=ctx.working_dir,
+                    max_turns=ctx.max_turns,
+                    extra_env=ctx.extra_env,
                 ):
                     event_dict = event.model_dump()
 
-                    # intervention_sent는 on_intervention_sent 콜백에서
-                    # 이미 영속화 + 브로드캐스트를 수행했으므로 메인 루프에서 중복 처리하지 않는다.
+                    # intervention_sent는 콜백에서 이미 처리됨
                     if event.type == "intervention_sent":
                         continue
 
-                    # parent_event_id 채움 (규칙 3: parent_tool_use_id 없음 → user_request의 자식)
-                    # parent_event_id 필드를 가진 이벤트에만 적용.
-                    # progress, session, memory, compact 등 메타 이벤트는
-                    # 해당 필드가 model에 없으므로 model_dump()에 키가 없어 자동 제외.
+                    # parent_event_id 채움
                     if "parent_event_id" in event_dict and event_dict["parent_event_id"] is None:
                         event_dict["parent_event_id"] = current_user_request_id
 
@@ -363,18 +398,17 @@ class TaskExecutor:
                     if event.type == "progress":
                         task.last_progress_text = event_dict.get("text", "")
 
-                    # 이벤트 영속화 (broadcast 전에 저장)
+                    # 이벤트 영속화
                     if self._db is not None:
                         try:
                             event_id = await self._persist_event(session_id, event_dict)
                             event_dict["_event_id"] = event_id
-                            # Task 메모리 객체의 last_event_id 갱신
                             if event_id is not None:
                                 task.last_event_id = event_id
                         except Exception as e:
                             logger.warning(f"Failed to persist event for {session_id}: {e}")
 
-                    # 리스너들에게 브로드캐스트
+                    # 브로드캐스트
                     await self._listener_manager.broadcast(session_id, event_dict)
                     try:
                         await self._update_and_broadcast_last_message(
@@ -383,7 +417,7 @@ class TaskExecutor:
                     except Exception:
                         logger.debug("last_message update failed")
 
-                    # tool_result 이벤트에서 메타데이터 자동 추출
+                    # tool_result 메타데이터 자동 추출
                     if (
                         event.type == "tool_result"
                         and self._metadata_extractor
@@ -403,24 +437,18 @@ class TaskExecutor:
                                 exc_info=True,
                             )
 
-                    # 완료 또는 오류: 결과만 추적하고 finalize하지 않는다.
-                    # complete는 '턴 종료'이지 '세션 종료'가 아니다.
-                    # 멀티턴에서는 complete 후 intervention이 오면 같은 스트림에서 다음 턴이 이어진다.
-                    # finalize는 async for 루프 종료 후(스트림이 진짜 끝난 후)에 한다.
+                    # 완료/오류 추적 (finalize는 루프 밖에서)
                     if event.type == "complete":
                         last_result = event.result
                     elif event.type == "error":
                         last_error = event.message
 
-                # 스트림 종료 후 finalize — 여기서야 진짜 세션이 끝난 것
-                # error 우선 정책: error와 complete가 모두 발생한 경우 error를 최종 상태로 사용한다.
-                # SDK가 error 후 recovery하여 complete를 보내더라도, error가 있었다는 사실이 중요하다.
+                # 스트림 종료 후 finalize
                 if last_error is not None:
                     await self._finalize_task(session_id, error=last_error)
                 elif last_result is not None:
                     await self._finalize_task(session_id, result=last_result)
                 else:
-                    # 정상 흐름에서는 발생하지 않음. SDK가 complete/error 없이 스트림을 닫은 경우.
                     logger.warning(f"Stream ended without complete/error for {session_id}")
                     await self._finalize_task(session_id, error="Stream ended without completion event")
 
