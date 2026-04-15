@@ -58,6 +58,38 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 
+async def _relay_cross_node_intervention(
+    caller_session_id: str, text: str
+) -> None:
+    """로컬 알림 실패 시 upstream을 통해 cross-node 인터벤션을 시도한다."""
+    try:
+        from soul_server.config import get_settings
+        import re
+        import httpx
+
+        settings = get_settings()
+        upstream_url = getattr(settings, "soulstream_upstream_url", None)
+        if not upstream_url:
+            return
+
+        http_url = re.sub(r"^wss://", "https://", upstream_url)
+        http_url = re.sub(r"^ws://", "http://", http_url)
+        http_url = re.sub(r"/ws/.*$", "", http_url)
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            await client.post(
+                f"{http_url}/api/sessions/{caller_session_id}/intervene",
+                json={"text": text, "user": "agent"},
+            )
+        logger.info(
+            f"Cross-node notification sent to {caller_session_id} via upstream"
+        )
+    except Exception as remote_err:
+        logger.warning(
+            f"Cross-node notification also failed for {caller_session_id}: {remote_err}"
+        )
+
+
 class TaskManager:
     """
     세션 라이프사이클 관리자
@@ -421,28 +453,9 @@ class TaskManager:
                     exc_info=True,
                 )
                 # cross-node 릴레이 시도
-                try:
-                    from soul_server.config import get_settings
-                    settings = get_settings()
-                    upstream_url = getattr(settings, "soulstream_upstream_url", None)
-                    if upstream_url:
-                        import re
-                        import httpx
-                        http_url = re.sub(r'^wss://', 'https://', upstream_url)
-                        http_url = re.sub(r'^ws://', 'http://', http_url)
-                        http_url = re.sub(r'/ws/.*$', '', http_url)
-                        async with httpx.AsyncClient(timeout=10.0) as client:
-                            await client.post(
-                                f"{http_url}/api/sessions/{caller_session_id_to_notify}/intervene",
-                                json={"text": notify_text, "user": "agent"},
-                            )
-                        logger.info(
-                            f"Cross-node notification sent to {caller_session_id_to_notify} via upstream"
-                        )
-                except Exception as remote_err:
-                    logger.warning(
-                        f"Cross-node notification also failed for {caller_session_id_to_notify}: {remote_err}"
-                    )
+                await _relay_cross_node_intervention(
+                    caller_session_id_to_notify, notify_text
+                )
 
         return task
 
