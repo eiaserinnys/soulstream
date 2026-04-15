@@ -159,7 +159,7 @@ export function OrchestratorDashboardLayout() {
             <SessionsTopBar />
             <VerticalSplitPane
               className="flex-1 overflow-hidden"
-              top={<FolderContents onLoadMore={loadMore} hasMore={hasMore} />}
+              top={<FolderContents sessions={sessions} onLoadMore={loadMore} hasMore={hasMore} />}
               bottom={
                 <div className="flex-1 overflow-hidden h-full bg-muted/50 dark:bg-muted/30">
                   <NodeGraph />
@@ -198,12 +198,12 @@ export function OrchestratorDashboardLayout() {
         ) : (
           <>
             <SessionsTopBar />
-            <FolderContents onLoadMore={loadMore} hasMore={hasMore} />
+            <FolderContents sessions={sessions} onLoadMore={loadMore} hasMore={hasMore} />
           </>
         )
       }
       mobileFolderContents={
-        <FolderContents onLoadMore={loadMore} hasMore={hasMore} />
+        <FolderContents sessions={sessions} onLoadMore={loadMore} hasMore={hasMore} />
       }
       onNewSession={() => openNewSessionModal("folder")}
       mobileChatHeader={(onBack) => <MobileChatHeader onBack={onBack} />}

@@ -157,7 +157,7 @@ export function DashboardLayout() {
             <SessionsTopBar />
             <VerticalSplitPane
               className="flex-1 overflow-hidden"
-              top={<FolderContents onLoadMore={loadMore} hasMore={hasMore} />}
+              top={<FolderContents sessions={sessions} onLoadMore={loadMore} hasMore={hasMore} />}
               bottom={
                 <div className="flex-1 overflow-hidden h-full bg-muted/50 dark:bg-muted/30">
                   <NodeGraph />
@@ -197,6 +197,7 @@ export function DashboardLayout() {
         // DashboardShell의 isMobile && selectedFolderId 조건이 표시 여부를 제어하므로
         // 항상 FolderContents를 전달한다. 조건부로 undefined를 전달하면 타이밍 이슈로 빈 화면이 보인다.
         <FolderContents
+          sessions={sessions}
           onLoadMore={loadMore}
           hasMore={hasMore}
         />

@@ -173,6 +173,16 @@ const SessionItem = memo(function SessionItem({
 
 export interface FolderContentsProps {
   /**
+   * useSessionListProvider가 반환하는 세션 배열.
+   * 지정하면 이 배열에 폴더 필터링 + displayName 오버라이드를 적용하여 표시한다.
+   * 미지정 시 queryClient.getQueriesData로 전체 캐시에서 수집하는 레거시 경로를 사용한다.
+   *
+   * ⚠️ sessions prop을 사용하는 것을 강하게 권장한다.
+   * 레거시 캐시 수집 경로는 폴더 전환 시 새 queryKey의 데이터가 getQueriesData에 즉시 반영되지 않아
+   * 폴더를 처음 열 때 세션이 보이지 않는 버그가 있다 (SSE keepalive 30초 후에야 표시됨).
+   */
+  sessions?: SessionSummary[];
+  /**
    * 세션을 다른 폴더로 이동하는 콜백.
    * DashboardDndProvider를 사용하는 경우 DndContext의 onDragEnd가 이동을 처리하므로 생략 가능.
    * @deprecated DashboardDndProvider 사용 시 불필요. 레거시 호환 및 직접 이동 트리거용으로 유지.
@@ -186,7 +196,7 @@ export interface FolderContentsProps {
   hasMore?: boolean;
 }
 
-export function FolderContents({ onMoveSessions, onRenameSession, onLoadMore, hasMore }: FolderContentsProps) {
+export function FolderContents({ sessions: sessionsProp, onMoveSessions, onRenameSession, onLoadMore, hasMore }: FolderContentsProps) {
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const setActiveSession = useDashboardStore((s) => s.setActiveSession);
@@ -205,31 +215,37 @@ export function FolderContents({ onMoveSessions, onRenameSession, onLoadMore, ha
     sessionId: string;
   } | null>(null);
 
+  // --- 레거시 캐시 수집 경로 (sessions prop 미제공 시에만 사용) ---
   // TanStack Query 캐시 변경 감지: queryCache.subscribe로 cacheVersion 증가 → useMemo 재계산
   const [cacheVersion, setCacheVersion] = useState(0);
   useEffect(() => {
+    if (sessionsProp) return; // sessions prop이 있으면 캐시 구독 불필요
     const unsubscribe = queryClient.getQueryCache().subscribe(() => {
       setCacheVersion((v) => v + 1);
     });
     return unsubscribe;
-  }, [queryClient]);
+  }, [queryClient, sessionsProp]);
 
-  // TanStack Query 캐시에서 전체 세션 추출 → 폴더 필터링
+  // sessions prop이 있으면 직접 사용, 없으면 레거시 캐시 수집 경로
   const displaySessions = useMemo(() => {
+    if (sessionsProp) {
+      // useSessionListProvider의 sessions는 현재 queryKey(폴더 포함)의 정확한 데이터.
+      // filterSessionsInFolder로 displayName 오버라이드 + llm 세션 제외만 적용한다.
+      return filterSessionsInFolder(sessionsProp, catalog, selectedFolderId);
+    }
+    // 레거시 경로: 전체 캐시에서 수집 → 폴더 필터링
     const allData = queryClient.getQueriesData<InfiniteData<SessionPage>>({ queryKey: ["sessions"], exact: false });
     const allSessions: SessionSummary[] = [];
     for (const [, data] of allData) {
       if (!data) continue;
       for (const page of data.pages) allSessions.push(...page.sessions);
     }
-    // agentSessionId 기준 중복 제거 — 피드/폴더 등 여러 캐시가 동시에 존재할 때
-    // exact: false로 수집된 같은 세션이 중복 포함되는 것을 방지 (useFeedSessions와 동일 패턴)
     const uniqueSessions = Array.from(
       new Map(allSessions.map((s) => [s.agentSessionId, s])).values(),
     );
     return filterSessionsInFolder(uniqueSessions, catalog, selectedFolderId);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cacheVersion, catalog, selectedFolderId, queryClient]);
+  }, [sessionsProp, cacheVersion, catalog, selectedFolderId, queryClient]);
 
   const prevFolderIdRef = useRef<string | null | undefined>(undefined);
   const parentRef = useRef<HTMLDivElement>(null);
