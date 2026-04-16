@@ -6,14 +6,8 @@ PostgresSessionDB - PostgreSQL 기반 세션 저장소
 asyncpg 네이티브 async, tsvector 전문검색.
 모든 쿼리는 schema.sql에 정의된 프로시저/함수를 호출한다.
 
-⚠️  DB 어댑터 동기화 규칙 ⚠️
-이 파일(PostgresSessionDB)과 sqlite_session_db.py(SqliteSessionDB)는
-항상 동일한 공개 인터페이스를 유지해야 한다.
-
-메서드를 추가·삭제·시그니처 변경할 때는 반드시 두 파일을 동시에 수정한다.
-한쪽만 바꾸면 로컬 모드(SQLite)와 프로덕션 모드(PostgreSQL)의 동작이 달라진다.
-
-  이 파일 변경 → sqlite_session_db.py 도 반드시 확인
+인터페이스 정본은 SessionDBBase(session_db_base.py)에 정의되어 있다.
+메서드를 추가·삭제·시그니처 변경할 때는 SessionDBBase를 먼저 수정한다.
 """
 
 import json
@@ -25,36 +19,28 @@ from typing import Optional, Union
 
 import asyncpg
 
+from soul_common.db.session_db_base import (
+    SESSION_COLUMNS as _SESSION_COLUMNS,
+    FOLDER_COLUMNS as _FOLDER_COLUMNS,
+    FOLDER_JSONB_COLUMNS as _FOLDER_JSONB_COLUMNS,
+    JSONB_COLUMNS as _JSONB_COLUMNS,
+    TIMESTAMP_COLUMNS as _TIMESTAMP_COLUMNS,
+    IMMUTABLE_FIELDS,
+    UPDATE_SESSION_IMMUTABLE,
+    DEFAULT_FOLDERS,
+    SessionDBBase,
+    validate_immutable_fields,
+)
+
 logger = logging.getLogger(__name__)
 
-_SESSION_COLUMNS = frozenset({
-    "folder_id", "display_name", "session_type", "status",
-    "prompt", "client_id", "claude_session_id", "last_message",
-    "metadata", "was_running_at_shutdown",
-    "last_event_id", "last_read_event_id",
-    "created_at", "updated_at", "node_id", "agent_id",
-})
-
-_FOLDER_COLUMNS = frozenset({"name", "sort_order", "settings"})
-
-# 폴더 컬럼 중 JSONB 직렬화가 필요한 컬럼
-_FOLDER_JSONB_COLUMNS = frozenset({"settings"})
-
-# timestamptz 컬럼 — 문자열이면 datetime으로 자동 변환
-_TIMESTAMP_COLUMNS = frozenset({"created_at", "updated_at"})
-
-# JSONB 컬럼 목록 — Python dict ↔ PostgreSQL JSONB 자동 변환
-_JSONB_COLUMNS = frozenset({"last_message", "metadata"})
-
-# 최초 설정 이후 덮어쓸 수 없는 식별 필드
-IMMUTABLE_FIELDS: frozenset[str] = frozenset({"claude_session_id", "node_id", "agent_id"})
 
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-class PostgresSessionDB:
+class PostgresSessionDB(SessionDBBase):
     """PostgreSQL 기반 세션 저장소
 
     Args:
@@ -62,8 +48,6 @@ class PostgresSessionDB:
         node_id: 노드 식별자. None이면 전역 뷰 (오케스트레이터용)
         schema_path: DDL 파일 경로. None이면 스키마 배포 생략.
     """
-
-    DEFAULT_FOLDERS = {"claude": "⚙️ 클로드 코드 세션", "llm": "⚙️ LLM 세션"}
 
     def __init__(
         self,
@@ -123,7 +107,7 @@ class PostgresSessionDB:
         if invalid:
             raise ValueError(f"Invalid session columns: {invalid}")
 
-        # 불변 필드 보호: None 포함 모든 덮어쓰기 시도 시 기존 값 확인 후 충돌 방지
+        # 불변 필드 보호
         immutable_updates = {k: v for k, v in fields.items() if k in IMMUTABLE_FIELDS}
         if immutable_updates:
             row = await self._pool.fetchrow(
@@ -131,14 +115,7 @@ class PostgresSessionDB:
                 session_id,
             )
             if row:
-                existing = dict(row)
-                for field, new_val in immutable_updates.items():
-                    old_val = existing.get(field)
-                    if old_val is not None and old_val != new_val:
-                        raise ValueError(
-                            f"Immutable field '{field}' already set to {old_val!r}, "
-                            f"cannot overwrite with {new_val!r}"
-                        )
+                validate_immutable_fields(dict(row), immutable_updates)
 
         # JSONB 컬럼은 JSON 문자열로 직렬화
         for col in _JSONB_COLUMNS:
@@ -237,10 +214,6 @@ class PostgresSessionDB:
             claude_session_id,
         )
 
-    _UPDATE_SESSION_IMMUTABLE = frozenset({
-        "node_id", "agent_id", "claude_session_id", "session_type", "created_at",
-    })
-
     async def update_session(self, session_id: str, **fields) -> None:
         """세션 속성 갱신 (순수 UPDATE).
 
@@ -248,7 +221,7 @@ class PostgresSessionDB:
         허용하지 않는다 — ValueError를 발생시킨다.
         DB 프로시저(session_update)도 해당 필드를 거부한다.
         """
-        invalid = set(fields) & self._UPDATE_SESSION_IMMUTABLE
+        invalid = set(fields) & UPDATE_SESSION_IMMUTABLE
         if invalid:
             raise ValueError(f"Immutable fields cannot be updated via update_session: {invalid}")
 
@@ -607,7 +580,7 @@ class PostgresSessionDB:
     async def ensure_default_folders(self) -> None:
         folders_json = json.dumps([
             {"id": fid, "name": fname, "sort_order": 0}
-            for fid, fname in self.DEFAULT_FOLDERS.items()
+            for fid, fname in DEFAULT_FOLDERS.items()
         ])
         await self._pool.execute(
             "SELECT folder_ensure_defaults($1::jsonb)", folders_json,
@@ -723,33 +696,5 @@ class PostgresSessionDB:
             logger.warning(f"session_id_search failed: {e}")
             return []
 
-    # --- searchable_text 추출 유틸 ---
-
-    @staticmethod
-    def extract_searchable_text(event: dict) -> str:
-        event_type = event.get("type")
-        if event_type == "text_delta":
-            return event.get("text", "")
-        elif event_type == "thinking":
-            return event.get("thinking", "")
-        elif event_type in ("tool_use", "tool_start"):
-            inp = event.get("input") or event.get("tool_input")
-            if isinstance(inp, str):
-                return inp
-            if isinstance(inp, dict):
-                return json.dumps(inp, ensure_ascii=False)
-        elif event_type == "tool_result":
-            content = event.get("result") or event.get("content")
-            if isinstance(content, str):
-                return content
-            if isinstance(content, list):
-                texts = [c.get("text", "") for c in content if isinstance(c, dict)]
-                return " ".join(filter(None, texts))
-        elif event_type in ("user", "user_message"):
-            text = event.get("text") or event.get("content")
-            if isinstance(text, str):
-                return text
-            if isinstance(text, list):
-                texts = [c.get("text", "") for c in text if isinstance(c, dict)]
-                return " ".join(filter(None, texts))
-        return ""
+    # extract_searchable_text는 SessionDBBase에서 상속 (하위 호환 staticmethod)
+    # 독립 함수: soul_common.db.session_db_base.extract_searchable_text

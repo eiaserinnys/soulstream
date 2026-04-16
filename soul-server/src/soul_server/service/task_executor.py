@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Callable, Awaitable, Optional, TYPE_CHECKING
 
+from soul_common.db.session_db_base import extract_searchable_text
 from soul_server.service.task_models import Task, TaskStatus, PREVIEW_FIELD_MAP, datetime_to_str, utc_now
 from soul_server.service.prompt_assembler import assemble_prompt
 from soul_server.service.session_broadcaster import get_session_broadcaster
@@ -92,10 +93,9 @@ class TaskExecutor:
         """이벤트를 SessionDB에 영속화하고 event_id를 반환한다."""
         if self._db is None:
             return None
-        from soul_server.service.postgres_session_db import PostgresSessionDB
         event_type = event_dict.get("type", "")
         payload = json.dumps(event_dict, ensure_ascii=False)
-        searchable = PostgresSessionDB.extract_searchable_text(event_dict)
+        searchable = extract_searchable_text(event_dict)
         ts = event_dict.get("timestamp")
         if isinstance(ts, (int, float)):
             created_at = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()

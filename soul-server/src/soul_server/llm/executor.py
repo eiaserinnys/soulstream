@@ -16,7 +16,7 @@ from soul_server.service.task_models import (
     utc_now,
 )
 from soul_server.service.task_manager import TaskManager
-from soul_server.service.postgres_session_db import PostgresSessionDB
+from soul_common.db.session_db_base import SessionDBBase, extract_searchable_text
 from soul_server.service.session_broadcaster import SessionBroadcaster
 from soul_server.llm.adapters import LlmAdapter
 
@@ -47,7 +47,7 @@ class LlmExecutor:
         self,
         adapters: dict[str, LlmAdapter],
         task_manager: TaskManager,
-        session_db: PostgresSessionDB,
+        session_db: SessionDBBase,
         session_broadcaster: SessionBroadcaster,
     ) -> None:
         self._adapters = adapters
@@ -59,7 +59,7 @@ class LlmExecutor:
         """이벤트를 SessionDB에 영속화하고 event_id를 반환한다."""
         event_type = event_dict.get("type", "")
         payload = json.dumps(event_dict, ensure_ascii=False)
-        searchable = PostgresSessionDB.extract_searchable_text(event_dict)
+        searchable = extract_searchable_text(event_dict)
         ts = event_dict.get("timestamp")
         created_at = utc_now().isoformat() if not isinstance(ts, str) else ts
         event_id = await self._db.append_event(session_id, event_type, payload, searchable, created_at)

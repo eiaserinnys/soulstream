@@ -17,9 +17,11 @@ import sqlite3
 import sys
 from pathlib import Path
 
-# SessionDB.extract_searchable_text를 직접 import
+# extract_searchable_text를 직접 import
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-from soul_server.service.session_db import SessionDB
+# soul-common 패키지 경로도 추가
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "packages" / "soul-common" / "src"))
+from soul_common.db.session_db_base import extract_searchable_text
 
 
 def reindex(db_path: str, dry_run: bool = False) -> None:
@@ -52,7 +54,7 @@ def reindex(db_path: str, dry_run: bool = False) -> None:
                 skipped += 1
                 continue
 
-            new_text = SessionDB.extract_searchable_text(event)
+            new_text = extract_searchable_text(event)
             old_text = db.execute(
                 "SELECT searchable_text FROM events WHERE id = ?", (row["id"],)
             ).fetchone()[0]

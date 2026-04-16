@@ -7,8 +7,9 @@ DI 함수(init/get)는 soul-server 내부 전용이므로 여기에 유지한다
 
 import soul_common.db as _soul_common_db
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional
 
+from soul_common.db.session_db_base import SessionDBBase  # noqa: F401
 from soul_common.db.session_db import PostgresSessionDB  # noqa: F401
 from soul_common.db.sqlite_session_db import SqliteSessionDB  # noqa: F401
 
@@ -19,7 +20,7 @@ _PG_SCHEMA_PATH = Path(__file__).resolve().parent.parent.parent.parent / "sql" /
 # → 올바른 경로: .../soul_common/db/sqlite_schema.sql
 _SQLITE_SCHEMA_PATH = Path(_soul_common_db.__file__).parent / "sqlite_schema.sql"
 
-AnySessionDB = Union[PostgresSessionDB, SqliteSessionDB]
+AnySessionDB = SessionDBBase
 
 
 def create_soul_server_session_db(database_url: str, node_id: str) -> PostgresSessionDB:
