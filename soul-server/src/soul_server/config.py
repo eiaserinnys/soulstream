@@ -4,6 +4,7 @@ Soulstream - Configuration
 환경변수 기반 설정 관리.
 """
 
+import dataclasses
 import os
 import logging
 import sys
@@ -167,105 +168,42 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
-        """환경변수에서 설정 로드"""
-        workspace_dir = os.getenv("WORKSPACE_DIR", "")
+        """환경변수에서 설정 로드.
 
-        # 웜업 도구 기본값 (슬랙봇 어드민 유즈케이스)
-        _default_warmup_allowed = "Read,Glob,Grep,Task,WebFetch,WebSearch,Edit,Write,Bash"
-        _default_warmup_disallowed = "NotebookEdit,TodoWrite"
+        SETTINGS_REGISTRY의 env_key·value_type과 dataclass 필드 기본값을
+        조합하여 자동으로 파싱한다. 새 필드를 추가할 때 Settings dataclass와
+        SETTINGS_REGISTRY만 갱신하면 되며, 이 메서드는 수정할 필요 없다.
+        """
+        # dataclass 필드별 기본값 매핑
+        defaults: dict[str, object] = {}
+        for f in dataclasses.fields(cls):
+            if f.default is not dataclasses.MISSING:
+                defaults[f.name] = f.default
+            elif f.default_factory is not dataclasses.MISSING:
+                defaults[f.name] = f.default_factory()
+            # MISSING인 경우는 없음 (모든 필드에 기본값 있음)
 
-        settings = cls(
-            service_name=os.getenv("SERVICE_NAME", cls.service_name),
-            version=os.getenv("SERVICE_VERSION", cls.version),
-            environment=os.getenv("ENVIRONMENT", cls.environment),
-            host=os.getenv("HOST", cls.host),
-            port=_parse_int(os.getenv("PORT", str(cls.port)), "PORT"),
-            auth_bearer_token=os.getenv("AUTH_BEARER_TOKEN", ""),
-            workspace_dir=workspace_dir,
-            claude_cli_dir=os.getenv("CLAUDE_CLI_DIR", ""),
-            data_dir=os.getenv("DATA_DIR", ""),
-            incoming_file_dir=os.getenv("INCOMING_FILE_DIR", ""),
-            max_concurrent_sessions=_parse_int(
-                os.getenv("MAX_CONCURRENT_SESSIONS", str(cls.max_concurrent_sessions)),
-                "MAX_CONCURRENT_SESSIONS"
-            ),
-            session_timeout_seconds=_parse_int(
-                os.getenv("SESSION_TIMEOUT_SECONDS", str(cls.session_timeout_seconds)),
-                "SESSION_TIMEOUT_SECONDS"
-            ),
-            session_eviction_ttl_seconds=_parse_int(
-                os.getenv("SESSION_EVICTION_TTL_SECONDS", str(cls.session_eviction_ttl_seconds)),
-                "SESSION_EVICTION_TTL_SECONDS"
-            ),
-            runner_pool_max_size=_parse_int(
-                os.getenv("RUNNER_POOL_MAX_SIZE", str(cls.runner_pool_max_size)),
-                "RUNNER_POOL_MAX_SIZE"
-            ),
-            runner_pool_idle_ttl=_parse_float(
-                os.getenv("RUNNER_POOL_IDLE_TTL", str(cls.runner_pool_idle_ttl)),
-                "RUNNER_POOL_IDLE_TTL"
-            ),
-            runner_pool_pre_warm=_parse_int(
-                os.getenv("RUNNER_POOL_PRE_WARM", str(cls.runner_pool_pre_warm)),
-                "RUNNER_POOL_PRE_WARM"
-            ),
-            runner_pool_maintenance_interval=_parse_float(
-                os.getenv("RUNNER_POOL_MAINTENANCE_INTERVAL", str(cls.runner_pool_maintenance_interval)),
-                "RUNNER_POOL_MAINTENANCE_INTERVAL"
-            ),
-            runner_pool_min_generic=_parse_int(
-                os.getenv("RUNNER_POOL_MIN_GENERIC", str(cls.runner_pool_min_generic)),
-                "RUNNER_POOL_MIN_GENERIC"
-            ),
-            warmup_allowed_tools=_parse_csv_list(
-                os.getenv("WARMUP_ALLOWED_TOOLS"),
-                _default_warmup_allowed.split(","),
-            ),
-            warmup_disallowed_tools=_parse_csv_list(
-                os.getenv("WARMUP_DISALLOWED_TOOLS"),
-                _default_warmup_disallowed.split(","),
-            ),
-            log_level=os.getenv("LOG_LEVEL", cls.log_level),
-            log_format=os.getenv("LOG_FORMAT", cls.log_format),
-            health_check_interval=_parse_int(
-                os.getenv("HEALTH_CHECK_INTERVAL", str(cls.health_check_interval)),
-                "HEALTH_CHECK_INTERVAL"
-            ),
-            serendipity_enabled=os.getenv("SERENDIPITY_ENABLED", "true").lower() in ("true", "1", "yes"),
-            serendipity_url=os.getenv("SERENDIPITY_URL", cls.serendipity_url),
-            # Cogito
-            cogito_manifest_path=os.getenv("COGITO_MANIFEST_PATH", ""),
-            # Atom 연동
-            atom_enabled=os.getenv("ATOM_ENABLED", "false").lower() in ("true", "1", "yes"),
-            atom_server_url=os.getenv("ATOM_SERVER_URL", ""),
-            atom_api_key=os.getenv("ATOM_API_KEY", ""),
-            # LLM Proxy
-            llm_openai_api_key=os.getenv("LLM_OPENAI_API_KEY", ""),
-            llm_anthropic_api_key=os.getenv("LLM_ANTHROPIC_API_KEY", ""),
-            # Upstream (소울스트림 연결)
-            soulstream_upstream_url=os.getenv("SOULSTREAM_UPSTREAM_URL", ""),
-            database_url=os.getenv("DATABASE_URL", ""),
-            sqlite_path=os.getenv("SQLITE_PATH", ""),
-            soulstream_node_id=os.getenv("SOULSTREAM_NODE_ID", ""),
-            soulstream_upstream_enabled=os.getenv(
-                "SOULSTREAM_UPSTREAM_ENABLED", "false"
-            ).lower() in ("true", "1", "yes"),
-            # Google OAuth
-            google_client_id=os.getenv("GOOGLE_CLIENT_ID", ""),
-            google_client_secret=os.getenv("GOOGLE_CLIENT_SECRET", ""),
-            google_callback_url=os.getenv("GOOGLE_CALLBACK_URL", "/api/auth/google/callback"),
-            allowed_email=os.getenv("ALLOWED_EMAIL", ""),
-            jwt_secret=os.getenv("JWT_SECRET", ""),
-            # Dashboard (경로 설정)
-            dashboard_dir=os.getenv("SOUL_DASHBOARD_DIR", cls.dashboard_dir),
-            dashboard_cache_dir=os.getenv("SOUL_DASHBOARD_CACHE_DIR", ""),
-            # Dashboard profile (어시스턴트 프로필은 agents.yaml에서 관리)
-            dash_user_name=os.getenv("DASH_USER_NAME", "USER"),
-            dash_user_id=os.getenv("DASH_USER_ID", ""),
-            dash_user_portrait=os.getenv("DASH_USER_PORTRAIT", ""),
-            agents_config_file=os.getenv("AGENTS_CONFIG_FILE", ""),
-        )
+        # value_type → 파서 디스패치
+        def _parse_field(name: str, meta: "SettingMeta") -> object:
+            vtype = meta.value_type
+            default = defaults.get(name)
 
+            if vtype == "str":
+                return os.getenv(meta.env_key, str(default) if default is not None else "")
+            elif vtype == "int":
+                return _parse_int(os.getenv(meta.env_key, str(default)), meta.env_key)
+            elif vtype == "float":
+                return _parse_float(os.getenv(meta.env_key, str(default)), meta.env_key)
+            elif vtype == "bool":
+                default_str = str(default).lower() if default is not None else "false"
+                return os.getenv(meta.env_key, default_str).lower() in ("true", "1", "yes")
+            elif vtype == "csv":
+                return _parse_csv_list(os.getenv(meta.env_key), default if isinstance(default, list) else [])
+            else:
+                raise ValueError(f"Unknown value_type '{vtype}' for field '{name}'")
+
+        kwargs = {name: _parse_field(name, meta) for name, meta in SETTINGS_REGISTRY.items()}
+        settings = cls(**kwargs)
         settings.validate()
         return settings
 
