@@ -90,7 +90,7 @@ export const FeedCard = memo(function FeedCard({
       {...attributes}
       {...listeners}
       className={cn(
-        "h-[220px] rounded-lg border relative p-4 cursor-pointer transition-colors overflow-hidden flex flex-col gap-2",
+        "h-[220px] rounded-lg border relative p-4 cursor-pointer transition-[background-color,box-shadow,border-color] duration-200 ease-out overflow-hidden flex flex-col gap-2",
         isDragging && "opacity-50",
         isRunning
           ? [

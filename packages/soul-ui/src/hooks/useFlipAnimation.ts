@@ -21,6 +21,9 @@ export function useFlipAnimation<T extends { agentSessionId: string }>(
 ): { setRef: (id: string, el: HTMLElement | null) => void } {
   const itemRefs = useRef<Map<string, HTMLElement>>(new Map());
   const prevStartMap = useRef<Map<string, number>>(new Map());
+  // 뷰포트 첫 노출 1회 한정 enter 재생을 위한 seen 집합 (훅 인스턴스 캡슐화).
+  // overscan 밖으로 나갔다가 돌아와도 enter가 다시 재생되지 않는다.
+  const seenIdsRef = useRef<Set<string>>(new Set());
 
   // dependency array 없음 — 의도적 매 렌더 실행
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -37,7 +40,29 @@ export function useFlipAnimation<T extends { agentSessionId: string }>(
         if (!el) return;
 
         const prevStart = prevStartMap.current.get(id);
-        if (prevStart === undefined) return; // 새 아이템 — 즉시 표시
+
+        if (prevStart === undefined) {
+          // 새 아이템: seen에 없을 때만 enter 재생, 재생 여부와 무관하게 seen에 기록
+          if (seenIdsRef.current.has(id)) {
+            seenIdsRef.current.add(id);
+            return;
+          }
+          seenIdsRef.current.add(id);
+
+          // Enter: opacity 0 → 1, translateY 8 → 0
+          el.style.transition = "none";
+          el.style.opacity = "0";
+          el.style.transform = "translateY(8px)";
+
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              el.style.transition = `opacity ${duration}ms ease-out, transform ${duration}ms cubic-bezier(0.25, 0.46, 0.45, 0.94)`;
+              el.style.opacity = "1";
+              el.style.transform = "translateY(0)";
+            });
+          });
+          return;
+        }
 
         const delta = prevStart - vi.start;
         if (Math.abs(delta) < 1) return; // 이동 없음
@@ -53,6 +78,12 @@ export function useFlipAnimation<T extends { agentSessionId: string }>(
             el.style.transform = "translateY(0)";
           });
         });
+      });
+    } else {
+      // reduced motion: enter/reorder 모두 스킵, seen 집합만 갱신한다.
+      virtualItems.forEach((vi) => {
+        const id = items[vi.index]?.agentSessionId;
+        if (id) seenIdsRef.current.add(id);
       });
     }
 

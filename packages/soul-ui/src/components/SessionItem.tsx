@@ -103,7 +103,7 @@ export const SessionItem = memo(function SessionItem({
       {...listeners}
       data-testid="draggable-session"
       className={cn(
-        "flex items-center gap-2 px-3 py-2 cursor-pointer text-sm hover:bg-accent/50 border-b border-border/50 select-none",
+        "flex items-center gap-2 px-3 py-2 cursor-pointer text-sm hover:bg-accent/50 border-b border-border/50 select-none transition-[background-color] duration-200 ease-out",
         isActive && "bg-accent text-accent-foreground",
         isSelected && !isActive && "bg-primary/10",
         isReadCompleted && "opacity-50",
