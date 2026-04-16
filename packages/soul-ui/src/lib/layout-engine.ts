@@ -1,27 +1,28 @@
 /**
- * Soul Dashboard - Layout Engine
+ * Soul Dashboard - Layout Engine (Facade)
  *
- * EventTreeNode 트리를 DFS 순회하여 React Flow 노드/엣지로 변환하는 레이아웃 엔진.
- * 원점 기반 메인 플로우 열 + 상대 오프셋(COL_STEP) 배치 + 순차 Y 누적 방식으로 레이아웃을 적용합니다.
+ * EventTreeNode 트리를 React Flow 노드/엣지로 변환하는 레이아웃 엔진의 facade.
+ *
+ * 노드 생성 책임은 ./node-builders.ts, 위치 배정 알고리즘은 ./tree-layout.ts로 분리되어 있다.
+ * 이 파일은 다음을 담당한다:
+ * - 공유 타입/상수 정본 (GraphNode, GraphEdge, GraphNodeData, DEFAULT_NODE_WIDTH/HEIGHT)
+ * - 그래프 구성 진입점 (buildGraph, buildSingleNode)
+ * - 플랜 모드 감지 (detectPlanModeRanges)
+ * - 엣지 생성 (createEdge)
+ * - 기존 consumer 호환을 위한 노드 빌더/레이아웃 re-export
  */
 
 import type { Node, Edge } from "@xyflow/react";
 import type {
   EventTreeNode,
   ToolNode,
-  UserMessageNode,
-  InterventionNode,
   SessionNode,
-  ResultNode,
-  CompleteNode,
-  ErrorNode,
-  AssistantErrorNode,
-  CompactNode,
-  InputRequestNodeDef,
   InputRequestQuestion,
 } from "../shared/types";
 import { createLayoutContext } from "./layout-context";
 import { processChildNodes, dispatchRenderer } from "./renderers";
+import { createSystemNodeFromTree } from "./node-builders";
+import { applyDagreLayout, TREE_H_GAP, V_GAP } from "./tree-layout";
 
 // === Graph Node Types ===
 
@@ -164,307 +165,24 @@ export function detectPlanModeRanges(tree: EventTreeNode | null): { nodeIds: Set
   return { nodeIds, entryIds, exitIds };
 }
 
-// === Node Creation Helpers ===
-
-function truncate(text: string, maxLen: number): string {
-  return text.length > maxLen ? text.slice(0, maxLen - 3) + "..." : text;
-}
-
-/** 추가 접기/펼치기 정보 */
-export interface CollapseInfo {
-  collapsed?: boolean;
-  hasChildren?: boolean;
-  childCount?: number;
-}
-
-export function createTextNode(
-  treeNode: EventTreeNode,
-  planFlags?: { isPlanMode?: boolean },
-  collapseInfo?: CollapseInfo,
-): GraphNode {
-  // thinking 노드와 text 노드를 독립 타입으로 구분
-  const isThinking = treeNode.type === "thinking";
-  const nodeType: GraphNodeType = isThinking ? "thinking" : "text";
-  const label = isThinking ? "Thinking" : "Text";
-
-  return {
-    id: `node-${treeNode.id}`,
-    type: nodeType,
-    position: { x: 0, y: 0 },
-    width: DEFAULT_NODE_WIDTH,
-    height: DEFAULT_NODE_HEIGHT,
-    data: {
-      nodeType,
-      cardId: treeNode.id,
-      label,
-      content: truncate(treeNode.content, 120) || "(streaming...)",
-      streaming: !treeNode.completed,
-      isPlanMode: planFlags?.isPlanMode,
-      collapsed: collapseInfo?.collapsed ?? false,
-      hasChildren: collapseInfo?.hasChildren ?? false,
-      childCount: collapseInfo?.childCount ?? 0,
-    },
-  };
-}
-
-/** 도구 이름으로 카테고리를 판정합니다. */
-function getToolCategory(toolName?: string): "skill" | "sub-agent" | undefined {
-  if (!toolName) return undefined;
-  if (toolName === "Skill") return "skill";
-  if (toolName === "Agent" || toolName === "Task") return "sub-agent";
-  return undefined;
-}
-
-export function createToolCallNode(
-  treeNode: ToolNode,
-  planFlags?: { isPlanMode?: boolean; isPlanModeEntry?: boolean; isPlanModeExit?: boolean },
-  collapseInfo?: CollapseInfo,
-): GraphNode {
-  return {
-    id: `node-${treeNode.id}-call`,
-    type: "tool_call",
-    position: { x: 0, y: 0 },
-    width: DEFAULT_NODE_WIDTH,
-    height: DEFAULT_NODE_HEIGHT,
-    data: {
-      nodeType: "tool_call",
-      cardId: treeNode.id,
-      label: treeNode.toolName,
-      content: formatToolInput(treeNode.toolInput),
-      toolName: treeNode.toolName,
-      toolInput: treeNode.toolInput,
-      streaming: !treeNode.completed && !treeNode.toolResult,
-      isError: treeNode.isError,
-      isPlanMode: planFlags?.isPlanMode,
-      isPlanModeEntry: planFlags?.isPlanModeEntry,
-      isPlanModeExit: planFlags?.isPlanModeExit,
-      toolCategory: getToolCategory(treeNode.toolName),
-      collapsed: collapseInfo?.collapsed ?? false,
-      hasChildren: collapseInfo?.hasChildren ?? false,
-      childCount: collapseInfo?.childCount ?? 0,
-    },
-  };
-}
-
-export function createUserNode(treeNode: UserMessageNode): GraphNode {
-  return {
-    id: `node-${treeNode.id}`,
-    type: "user",
-    position: { x: 0, y: 0 },
-    width: DEFAULT_NODE_WIDTH,
-    height: DEFAULT_NODE_HEIGHT,
-    data: {
-      nodeType: "user",
-      label: `User (${treeNode.user})`,
-      content: truncate(treeNode.content, 120),
-      streaming: false,
-      fullContent: treeNode.content,
-    },
-  };
-}
-
-export function createInterventionNodeFromTree(
-  treeNode: InterventionNode,
-  collapseInfo?: CollapseInfo,
-): GraphNode {
-  return {
-    id: `node-${treeNode.id}`,
-    type: "intervention",
-    position: { x: 0, y: 0 },
-    width: DEFAULT_NODE_WIDTH,
-    height: DEFAULT_NODE_HEIGHT,
-    data: {
-      nodeType: "intervention",
-      cardId: treeNode.id,
-      label: `Intervention (${treeNode.user ?? "unknown"})`,
-      content: truncate(treeNode.content, 120),
-      streaming: false,
-      fullContent: treeNode.content,
-      collapsed: collapseInfo?.collapsed ?? false,
-      hasChildren: collapseInfo?.hasChildren ?? false,
-      childCount: collapseInfo?.childCount ?? 0,
-    },
-  };
-}
-
-export function createInputRequestNodeFromTree(
-  treeNode: InputRequestNodeDef,
-  collapseInfo?: CollapseInfo,
-): GraphNode {
-  const firstQuestion = treeNode.questions[0]?.question ?? "Input requested";
-  return {
-    id: `node-${treeNode.id}`,
-    type: "input_request",
-    position: { x: 0, y: 0 },
-    width: DEFAULT_NODE_WIDTH,
-    height: DEFAULT_NODE_HEIGHT,
-    data: {
-      nodeType: "input_request",
-      cardId: treeNode.id,
-      label: "Input Request",
-      content: truncate(firstQuestion, 120),
-      streaming: !treeNode.completed,
-      requestId: treeNode.requestId,
-      questions: treeNode.questions,
-      responded: treeNode.responded,
-      expired: treeNode.expired,
-      collapsed: collapseInfo?.collapsed ?? false,
-      hasChildren: collapseInfo?.hasChildren ?? false,
-      childCount: collapseInfo?.childCount ?? 0,
-    },
-  };
-}
-
-export function createSystemNodeFromTree(treeNode: SessionNode | CompleteNode | ErrorNode | AssistantErrorNode): GraphNode {
-  let label: string;
-  let content: string;
-
-  if (treeNode.type === "complete") {
-    label = "Complete";
-    content = treeNode.content
-      ? truncate(treeNode.content, 100)
-      : "Session completed";
-  } else if (treeNode.type === "error") {
-    label = "Error";
-    content = treeNode.content;
-  } else if (treeNode.type === "assistant_error") {
-    const errNode = treeNode as AssistantErrorNode;
-    label = `API Error: ${errNode.errorType}`;
-    content = errNode.model ? `Model: ${errNode.model}` : errNode.content;
-  } else {
-    const sn = treeNode as SessionNode;
-    if (sn.sessionType === "llm") {
-      const parts = ["LLM Session"];
-      if (sn.llmProvider) parts.push(sn.llmProvider);
-      if (sn.llmModel) parts.push(sn.llmModel);
-      label = parts.join(" \u00B7 ");
-      content = "";
-    } else {
-      label = "Session Started";
-      content = `Session ID: ${treeNode.sessionId ?? treeNode.content}`;
-    }
-  }
-
-  return {
-    id: `node-${treeNode.id}`,
-    type: "system",
-    position: { x: 0, y: 0 },
-    width: DEFAULT_NODE_WIDTH,
-    height: DEFAULT_NODE_HEIGHT,
-    data: {
-      nodeType: "system",
-      label,
-      content,
-      isError: treeNode.type === "error",
-      streaming: false,
-      fullContent: treeNode.content,
-    },
-  };
-}
-
-export function createCompactNode(treeNode: CompactNode): GraphNode {
-  return {
-    id: `node-${treeNode.id}`,
-    type: "system",
-    position: { x: 0, y: 0 },
-    width: DEFAULT_NODE_WIDTH,
-    height: DEFAULT_NODE_HEIGHT,
-    data: {
-      nodeType: "system",
-      label: "\u26A1 Context Compaction",
-      content: treeNode.content || "Context compaction occurred",
-      streaming: false,
-    },
-  };
-}
-
-export function createResultNode(
-  treeNode: ResultNode,
-  collapseInfo?: CollapseInfo,
-): GraphNode {
-  const durationStr = treeNode.durationMs
-    ? `${(treeNode.durationMs / 1000).toFixed(1)}s`
-    : "";
-  const costStr = treeNode.totalCostUsd
-    ? `$${treeNode.totalCostUsd.toFixed(4)}`
-    : "";
-
-  return {
-    id: `node-${treeNode.id}`,
-    type: "system",
-    position: { x: 0, y: 0 },
-    width: DEFAULT_NODE_WIDTH,
-    height: DEFAULT_NODE_HEIGHT,
-    data: {
-      nodeType: "result",
-      cardId: treeNode.id,
-      label: "Session Complete",
-      content: [durationStr, costStr].filter(Boolean).join(" | ") || "Completed",
-      streaming: false,
-      fullContent: treeNode.content,
-      durationMs: treeNode.durationMs,
-      usage: treeNode.usage,
-      totalCostUsd: treeNode.totalCostUsd,
-      stopReason: treeNode.stopReason,
-      errors: treeNode.errors,
-      modelUsage: treeNode.modelUsage,
-      permissionDenials: treeNode.permissionDenials,
-      collapsed: collapseInfo?.collapsed ?? false,
-      hasChildren: collapseInfo?.hasChildren ?? false,
-      childCount: collapseInfo?.childCount ?? 0,
-    },
-  };
-}
-
-// === Utility ===
-
-/**
- * 노드의 모든 자손 수를 재귀적으로 카운트합니다.
- */
-export function countAllDescendants(node: EventTreeNode): number {
-  let count = node.children.length;
-  for (const child of node.children) {
-    count += countAllDescendants(child);
-  }
-  return count;
-}
-
-function formatToolInput(input?: Record<string, unknown>): string {
-  if (!input) return "(no input)";
-
-  const keys = Object.keys(input);
-  if (keys.length === 0) return "(no input)";
-
-  const parts: string[] = [];
-  for (const key of keys.slice(0, 3)) {
-    const val = input[key];
-    const str = typeof val === "string" ? val : JSON.stringify(val);
-    const truncated = str && str.length > 50 ? str.slice(0, 47) + "..." : str;
-    parts.push(`${key}: ${truncated}`);
-  }
-
-  if (keys.length > 3) {
-    parts.push(`+${keys.length - 3} more`);
-  }
-
-  return parts.join("\n");
-}
-
-// === Collapse Info Helper ===
-
-/**
- * 노드의 접기/펼치기 정보를 계산합니다.
- * 렌더러 함수에서 사용합니다.
- */
-export function getCollapseInfo(treeNode: EventTreeNode, collapsedNodeIds: Set<string>): CollapseInfo {
-  const hasChildren = treeNode.children.length > 0;
-  const isCollapsed = collapsedNodeIds.has(treeNode.id);
-  return {
-    collapsed: isCollapsed,
-    hasChildren,
-    childCount: countAllDescendants(treeNode),
-  };
-}
+// === Re-exports for consumer backward compatibility ===
+//
+// 노드 빌더와 레이아웃 알고리즘은 별도 모듈로 분리되었으나, 기존 import 경로(`./layout-engine`)를
+// 유지하기 위해 여기서 다시 export 한다. 신규 코드는 가능하면 원본 모듈에서 직접 import 한다.
+export {
+  createTextNode,
+  createToolCallNode,
+  createUserNode,
+  createInterventionNodeFromTree,
+  createInputRequestNodeFromTree,
+  createSystemNodeFromTree,
+  createCompactNode,
+  createResultNode,
+  countAllDescendants,
+  getCollapseInfo,
+  type CollapseInfo,
+} from "./node-builders";
+export { applyDagreLayout } from "./tree-layout";
 
 // === Main Build Function ===
 
@@ -502,152 +220,6 @@ export function buildGraph(
   processChildNodes(tree, sessionNode.id, ctx);
 
   return applyDagreLayout(ctx.nodes, ctx.edges);
-}
-
-// === Grid Layout ===
-
-/** 자식 노드가 부모 노드 우측에 배치될 때의 수평 간격 */
-const TREE_H_GAP = 120;
-const V_GAP = 16;
-/** depth 0 (메인 플로우) 수직 간격 */
-const FLOW_GAP = 60;
-
-/**
- * 엣지 기반 재귀 레이아웃을 적용합니다.
- *
- * 트리 구조 레이아웃:
- * - 자식 노드: 부모 우측에 수평 배치 (right→left 엣지)
- * - 형제 노드: 같은 x에서 아래로 V_GAP 간격 스택
- * - effectiveHeight: 재귀적으로 모든 자손의 높이를 포함
- */
-export function applyDagreLayout(
-  nodes: GraphNode[],
-  edges: GraphEdge[],
-): { nodes: GraphNode[]; edges: GraphEdge[] } {
-  if (nodes.length === 0) return { nodes, edges };
-
-  const MARGIN = 20;
-
-  // 노드 맵
-  const nodeMap = new Map<string, GraphNode>();
-  for (const node of nodes) nodeMap.set(node.id, node);
-
-  // 엣지에서 부모→자식 인접 리스트 구성
-  type ChildRef = { id: string; horizontal: boolean; sibling: boolean };
-  const childrenOf = new Map<string, ChildRef[]>();
-  const incoming = new Set<string>();
-
-  for (const edge of edges) {
-    const h = edge.sourceHandle === "right" && edge.targetHandle === "left";
-    const s = !!(edge.data as Record<string, unknown> | undefined)?.sibling;
-    if (!childrenOf.has(edge.source)) childrenOf.set(edge.source, []);
-    childrenOf.get(edge.source)!.push({ id: edge.target, horizontal: h, sibling: s });
-    incoming.add(edge.target);
-  }
-
-  // 루트 = incoming 엣지 없는 최상위 노드
-  const roots = nodes.filter((n) => !incoming.has(n.id));
-
-  // depth 계산: 수평 엣지 +1, 수직 엣지 동일 (사이클 방어 포함)
-  const depthOf = new Map<string, number>();
-  function assignDepth(id: string, d: number) {
-    if (depthOf.has(id)) return;
-    depthOf.set(id, d);
-    for (const c of childrenOf.get(id) ?? []) {
-      assignDepth(c.id, c.horizontal ? d + 1 : d);
-    }
-  }
-  for (const r of roots) assignDepth(r.id, 0);
-
-  // 높이 계산 (bottom-up, memoized)
-  const rowHeightOf = new Map<string, number>();
-  const effHeightOf = new Map<string, number>();
-
-  function computeHeights(id: string): { row: number; eff: number } {
-    if (effHeightOf.has(id)) {
-      return { row: rowHeightOf.get(id)!, eff: effHeightOf.get(id)! };
-    }
-
-    // 사이클 방어: 계산 진입 즉시 기본값으로 마킹
-    const fallback = DEFAULT_NODE_HEIGHT;
-    rowHeightOf.set(id, fallback);
-    effHeightOf.set(id, fallback);
-
-    const node = nodeMap.get(id);
-    const selfH = node?.height ?? fallback;
-
-    const ch = childrenOf.get(id) ?? [];
-    const hCh = ch.filter((c) => c.horizontal);
-    const vCh = ch.filter((c) => !c.horizontal);
-
-    // rowHeight = max(자신, 수평 자식 스택 높이)
-    let hStack = 0;
-    for (let i = 0; i < hCh.length; i++) {
-      if (i > 0) hStack += V_GAP;
-      hStack += computeHeights(hCh[i].id).eff;
-    }
-    const row = Math.max(selfH, hStack);
-
-    // effectiveHeight = rowHeight + 수직 자식 전체
-    const vGap = (depthOf.get(id) ?? 0) === 0 ? FLOW_GAP : V_GAP;
-    let eff = row;
-    for (const vc of vCh) {
-      eff += vGap + computeHeights(vc.id).eff;
-    }
-
-    rowHeightOf.set(id, row);
-    effHeightOf.set(id, eff);
-    return { row, eff };
-  }
-
-  // 위치 배정 (top-down)
-  const positions = new Map<string, { x: number; y: number }>();
-
-  function placeSubtree(id: string, x: number, y: number, isRootLevel: boolean = false) {
-    if (positions.has(id)) return; // 사이클 방어
-    positions.set(id, { x, y });
-
-    const ch = childrenOf.get(id) ?? [];
-    const hCh = ch.filter((c) => c.horizontal);
-    const vCh = ch.filter((c) => !c.horizontal);
-
-    // 수평 자식: 부모 width + H_GAP만큼 오른쪽으로, V_GAP 간격으로 아래로 스택
-    const parentW = nodeMap.get(id)?.width ?? DEFAULT_NODE_WIDTH;
-    const colStep = parentW + TREE_H_GAP;
-    let hy = y;
-    for (const hc of hCh) {
-      placeSubtree(hc.id, x + colStep, hy, false);
-      hy += computeHeights(hc.id).eff + V_GAP;
-    }
-
-    // 수직 자식: sibling 엣지는 같은 x (형제 체인), 그 외는 들여쓰기
-    const row = rowHeightOf.get(id) ?? DEFAULT_NODE_HEIGHT;
-    const vGap = (depthOf.get(id) ?? 0) === 0 ? FLOW_GAP : V_GAP;
-    let vy = y + row + vGap;
-    for (const vc of vCh) {
-      // sibling 엣지: 형제이므로 같은 x 유지
-      // isRootLevel: 세션 루트에서 첫째 자식도 같은 x 유지
-      const childX = x;
-      placeSubtree(vc.id, childX, vy, false);
-      vy += computeHeights(vc.id).eff + vGap;
-    }
-  }
-
-  // 루트부터 배치
-  let rootY = MARGIN;
-  for (const r of roots) {
-    computeHeights(r.id);
-    placeSubtree(r.id, MARGIN, rootY, true);
-    rootY += (effHeightOf.get(r.id) ?? 84) + FLOW_GAP;
-  }
-
-  // 위치 반영
-  const positioned = nodes.map((node) => {
-    const p = positions.get(node.id);
-    return p ? { ...node, position: p } : node;
-  });
-
-  return { nodes: positioned, edges };
 }
 
 // === Incremental Node Addition ===
