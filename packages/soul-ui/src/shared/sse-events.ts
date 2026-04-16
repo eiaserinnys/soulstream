@@ -1,0 +1,386 @@
+/**
+ * Soul Dashboard - SSE 이벤트 타입 정의
+ *
+ * Soul SSE 이벤트의 페이로드 타입과 유니온, 그리고 대시보드 SSE 래퍼.
+ * Python Soul 서버의 schemas.py와 동기화를 유지합니다.
+ */
+
+import type { SessionStatus } from "./session-types";
+
+// === SSE Event Types ===
+
+/** Soul SSE 이벤트 타입 (Python SSEEventType과 동기화) */
+export type SSEEventType =
+  // 제어 이벤트
+  | "init"
+  | "reconnected"
+  // 기본 이벤트
+  | "progress"
+  | "memory"
+  | "session"
+  | "intervention_sent"
+  | "user_message"
+  | "system_message"
+  | "debug"
+  | "complete"
+  | "error"
+  // 세분화 이벤트 (대시보드용)
+  | "assistant_error"
+  | "credential_alert"
+  | "thinking"
+  | "text_start"
+  | "text_delta"
+  | "text_end"
+  | "tool_start"
+  | "tool_result"
+  | "result"
+  // 서브에이전트 이벤트
+  | "subagent_start"
+  | "subagent_stop"
+  // 대시보드 내부 이벤트
+  | "context_usage"
+  | "compact"
+  | "reconnect"
+  // 사용자 입력 요청 이벤트
+  | "input_request"
+  | "input_request_expired"
+  | "input_request_responded"
+  // 히스토리 동기화 이벤트
+  | "history_sync"
+  // LLM 프록시 이벤트
+  | "assistant_message"
+  // 메타데이터 이벤트
+  | "metadata_updated";
+
+// === Soul SSE Event Payloads ===
+
+export interface ProgressEvent {
+  type: "progress";
+  text: string;
+}
+
+export interface MemoryEvent {
+  type: "memory";
+  used_gb: number;
+  total_gb: number;
+  percent: number;
+}
+
+export interface SessionEvent {
+  type: "session";
+  session_id: string;
+  pid?: number;
+}
+
+export interface InterventionSentEvent {
+  type: "intervention_sent";
+  user: string;
+  text: string;
+  /** 부모 이벤트 ID (Phase 2: 타입 통일용, 서버에서 설정하지 않음) */
+  parent_event_id?: string;
+}
+
+export interface ContextItem {
+  key: string;
+  label: string;
+  content: unknown;
+}
+
+/** 사용자가 보낸 초기 프롬프트 (세션 시작 시 대시보드가 생성) */
+export interface UserMessageEvent {
+  type: "user_message";
+  /** Claude 세션: 프롬프트 전체 텍스트 */
+  text?: string;
+  /** Claude 세션: 사용자 ID */
+  user?: string;
+  /** Claude 세션: 구조화된 맥락 항목 배열 (Phase 2에서 렌더링) */
+  context?: ContextItem[];
+  /** LLM 세션: OpenAI 형식 메시지 배열 (정본) */
+  messages?: Array<{role: string; content: unknown}>;
+  /** LLM 세션: 클라이언트 ID */
+  client_id?: string;
+  /** 부모 이벤트 ID (Phase 2: 타입 통일용, 서버에서 설정하지 않음) */
+  parent_event_id?: string;
+  /** 에이전트가 발신한 경우 "agent" */
+  source?: "agent";
+  /** 에이전트가 실행 중인 노드 ID */
+  agent_node?: string;
+  /** 에이전트 ID (에이전트 발신 시) */
+  agent_id?: string | null;
+  /** 에이전트 이름 (에이전트 발신 시) */
+  agent_name?: string | null;
+}
+
+/** 시스템 프롬프트 이벤트 (에이전트 세션 시작 시 emit) */
+export interface SystemMessageEvent {
+  type: "system_message";
+  text: string;
+}
+
+export interface DebugEvent {
+  type: "debug";
+  message: string;
+  timestamp?: number;
+  parent_event_id?: string;
+}
+
+/** Claude API 에러 이벤트 (인증 실패, 과금 에러 등) */
+export interface AssistantErrorEvent {
+  type: "assistant_error";
+  timestamp: number;
+  /** 에러 타입: authentication_failed, billing_error, rate_limit, invalid_request, server_error, unknown */
+  error_type: string;
+  model?: string;
+  message_id?: string;
+  parent_event_id?: string;
+}
+
+/** Rate limit 사용량 경고 이벤트 */
+export interface CredentialAlertEvent {
+  type: "credential_alert";
+  utilization?: number;
+  rate_limit_type?: string;
+  status?: string;
+  resets_at?: string;
+  timestamp?: number;
+  parent_event_id?: string;
+}
+
+export interface CompleteEvent {
+  type: "complete";
+  result: string;
+  attachments: string[];
+  claude_session_id?: string;
+  /** 부모 이벤트 ID (Phase 2: 순수 parent 기반 배치용) */
+  parent_event_id?: string;
+}
+
+export interface ErrorEvent {
+  type: "error";
+  message: string;
+  error_code?: string;
+  /** 부모 이벤트 ID (Phase 2: 순수 parent 기반 배치용) */
+  parent_event_id?: string;
+}
+
+export interface ContextUsageEvent {
+  type: "context_usage";
+  used_tokens: number;
+  max_tokens: number;
+  percent: number;
+}
+
+export interface CompactEvent {
+  type: "compact";
+  trigger: string;
+  message: string;
+  /** 부모 이벤트 ID (Phase 2: 순수 parent 기반 배치용) */
+  parent_event_id?: string;
+}
+
+// === 세분화 SSE Events (대시보드 전용) ===
+
+/** Extended Thinking 이벤트 */
+export interface ThinkingEvent {
+  type: "thinking";
+  timestamp: number;
+  thinking: string;
+  signature?: string;
+  /** 부모 이벤트 ID (서브에이전트 내부 노드 배치용) */
+  parent_event_id?: string;
+}
+
+export interface TextStartEvent {
+  type: "text_start";
+  timestamp: number;
+  /** 부모 이벤트 ID (서브에이전트 내부 노드 배치용) */
+  parent_event_id?: string;
+}
+
+export interface TextDeltaEvent {
+  type: "text_delta";
+  timestamp: number;
+  text: string;
+  /** 부모 이벤트 ID (서브에이전트 내부 노드 배치용) */
+  parent_event_id?: string;
+}
+
+export interface TextEndEvent {
+  type: "text_end";
+  timestamp: number;
+  /** 부모 이벤트 ID (서브에이전트 내부 노드 배치용) */
+  parent_event_id?: string;
+}
+
+export interface ToolStartEvent {
+  type: "tool_start";
+  timestamp: number;
+  tool_name: string;
+  tool_input: Record<string, unknown>;
+  /** SDK ToolUseBlock ID (tool_result 매칭용) */
+  tool_use_id?: string;
+  /** 부모 이벤트 ID (서브에이전트 내부 노드 배치용) */
+  parent_event_id?: string;
+}
+
+export interface ToolResultEvent {
+  type: "tool_result";
+  timestamp: number;
+  tool_name: string;
+  result: string;
+  is_error: boolean;
+  /** SDK ToolUseBlock ID (tool_start 매칭용) */
+  tool_use_id?: string;
+  /** 부모 이벤트 ID (서브에이전트 내부 노드 배치용) */
+  parent_event_id?: string;
+}
+
+export interface ResultEvent {
+  type: "result";
+  timestamp: number;
+  success: boolean;
+  output: string;
+  error?: string;
+  /** 토큰 사용량 */
+  usage?: { input_tokens: number; output_tokens: number };
+  /** 총 비용 (USD) */
+  total_cost_usd?: number;
+  /** 종료 사유 */
+  stop_reason?: string;
+  /** 에러 목록 */
+  errors?: string[];
+  /** 모델별 사용량 */
+  model_usage?: Record<string, unknown>;
+  /** 권한 거부 목록 */
+  permission_denials?: string[];
+  /** 부모 이벤트 ID (서브에이전트 내부 노드 배치용) */
+  parent_event_id?: string;
+}
+
+/** 서브에이전트 시작 이벤트 */
+export interface SubagentStartEvent {
+  type: "subagent_start";
+  timestamp: number;
+  agent_id: string;
+  agent_type: string;
+  parent_event_id: string;
+}
+
+/** 서브에이전트 종료 이벤트 */
+export interface SubagentStopEvent {
+  type: "subagent_stop";
+  timestamp: number;
+  agent_id: string;
+  parent_event_id?: string;
+}
+
+export interface ReconnectEvent {
+  type: "reconnect";
+  last_event_id?: number;
+}
+
+/** 히스토리 동기화 완료 이벤트 (저장된 이벤트 전송 후 서버가 발행) */
+export interface HistorySyncEvent {
+  type: "history_sync";
+  last_event_id: number;
+  is_live: boolean;
+  /** 서버가 판정한 현재 세션 상태 (정본) */
+  status?: SessionStatus;
+}
+
+/** 사용자 입력 요청 — 질문 항목 */
+export interface InputRequestQuestion {
+  question: string;
+  header?: string;
+  options: Array<{ label: string; description?: string }>;
+  multiSelect?: boolean;
+}
+
+/** 사용자 입력 요청 이벤트 (AskUserQuestion) */
+export interface InputRequestEvent {
+  type: "input_request";
+  timestamp: number;
+  request_id: string;
+  tool_use_id?: string;
+  questions: InputRequestQuestion[];
+  parent_event_id?: string;
+  /** 서버가 타이머를 시작한 시각 (Unix epoch) */
+  started_at: number;
+  /** 응답 대기 타임아웃 (초) */
+  timeout_sec: number;
+}
+
+/** 사용자 입력 요청 만료 이벤트 — 클라이언트가 선택 창을 닫아야 함 */
+export interface InputRequestExpiredEvent {
+  type: "input_request_expired";
+  request_id: string;
+  parent_event_id?: string;
+  timestamp: number;
+}
+
+/** 사용자 입력 요청 응답 완료 이벤트 — 클라이언트가 선택 창을 닫아야 함 */
+export interface InputRequestRespondedEvent {
+  type: "input_request_responded";
+  request_id: string;
+  parent_event_id?: string;
+  timestamp: number;
+}
+
+/** LLM 프록시 응답 이벤트 */
+export interface AssistantMessageEvent {
+  type: "assistant_message";
+  content: string;
+  usage?: { input_tokens: number; output_tokens: number };
+  model?: string;
+  provider?: string;
+  timestamp?: number;
+  /** 부모 이벤트 ID (Phase 2: 순수 parent 기반 배치용) */
+  parent_event_id?: string;
+}
+
+/** Soul에서 수신하는 모든 SSE 이벤트 유니온 */
+export type SoulSSEEvent =
+  | ProgressEvent
+  | MemoryEvent
+  | SessionEvent
+  | InterventionSentEvent
+  | UserMessageEvent
+  | SystemMessageEvent
+  | DebugEvent
+  | CompleteEvent
+  | ErrorEvent
+  | ContextUsageEvent
+  | CompactEvent
+  | AssistantErrorEvent
+  | CredentialAlertEvent
+  | ThinkingEvent
+  | TextStartEvent
+  | TextDeltaEvent
+  | TextEndEvent
+  | ToolStartEvent
+  | ToolResultEvent
+  | ResultEvent
+  | SubagentStartEvent
+  | SubagentStopEvent
+  | ReconnectEvent
+  | InputRequestEvent
+  | InputRequestExpiredEvent
+  | InputRequestRespondedEvent
+  | HistorySyncEvent
+  | AssistantMessageEvent;
+
+// === Dashboard SSE Event (서버 → 클라이언트) ===
+
+/**
+ * 대시보드 서버가 클라이언트에 보내는 SSE 이벤트 래퍼.
+ *
+ * Soul의 이벤트를 그대로 중계하되, 세션 식별자를 추가합니다.
+ */
+export interface DashboardSSEEvent {
+  /** EventStore의 단조증가 ID */
+  eventId: number;
+  /** 세션 식별자 (agentSessionId) */
+  agentSessionId: string;
+  /** 원본 Soul 이벤트 */
+  event: SoulSSEEvent;
+}
