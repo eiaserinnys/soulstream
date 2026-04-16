@@ -1,0 +1,461 @@
+"""세션 라이프사이클 + SSE 라우터 (/api/sessions/*, /api/status)
+
+엔드포인트 등록 순서 (중요):
+- GET /api/sessions/stream, /api/sessions/folder-counts는
+  GET /api/sessions/{session_id}/events보다 먼저 등록해야 한다.
+  그렇지 않으면 고정 경로가 {session_id} path parameter로 매칭됨.
+"""
+
+import asyncio
+import json
+import logging
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel
+from sse_starlette.sse import EventSourceResponse
+
+from soul_server.api.sessions import session_events_sse_generator
+from soul_server.dashboard.auth import require_dashboard_auth
+from soul_server.service.task_manager import (
+    get_task_manager,
+    TaskConflictError,
+    TaskNotFoundError,
+    TaskNotRunningError,
+    NodeMismatchError,
+)
+from soul_server.service import resource_manager, get_soul_engine
+from soul_server.service.session_broadcaster import get_session_broadcaster
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+
+# === 요청 모델 ===
+
+class CreateSessionBody(BaseModel):
+    prompt: str
+    agentSessionId: Optional[str] = None
+    folderId: Optional[str] = None
+    agentId: Optional[str] = None  # 에이전트 프로필 ID (AgentRegistry 조회 키)
+    use_mcp: bool = True
+    attachmentPaths: Optional[list[str]] = None  # 세션 시작 전 업로드된 파일 절대 경로 목록
+    caller_session_id: Optional[str] = None  # 발신 세션 ID (완료 시 자동 보고 대상)
+
+
+class InterveneBody(BaseModel):
+    text: str
+    user: str
+    attachmentPaths: Optional[list] = None
+
+
+class RespondBody(BaseModel):
+    requestId: str
+    answers: dict
+
+
+class ReadPositionBody(BaseModel):
+    last_read_event_id: int
+
+
+class RenameSessionRequest(BaseModel):
+    displayName: Optional[str] = None
+
+
+# === /api/status ===
+
+@router.get("/api/status", dependencies=[Depends(require_dashboard_auth)])
+async def api_status(request: Request):
+    task_manager = get_task_manager()
+    running_tasks = task_manager.get_running_tasks()
+
+    response: dict = {
+        "active_tasks": len(running_tasks),
+        "max_concurrent": resource_manager.max_concurrent,
+        "is_draining": getattr(request.app.state, "is_draining", False),
+        "tasks": [
+            {
+                "client_id": t.client_id,
+                "agent_session_id": t.agent_session_id,
+                "status": t.status,
+                "created_at": t.created_at.isoformat(),
+            }
+            for t in running_tasks
+        ],
+    }
+
+    runner_pool = getattr(request.app.state, "runner_pool", None)
+    if runner_pool is not None:
+        response["runner_pool"] = runner_pool.stats()
+
+    return response
+
+
+# === /api/sessions (GET) ===
+
+@router.get("/api/sessions", dependencies=[Depends(require_dashboard_auth)])
+async def api_get_sessions(
+    session_type: Optional[str] = None,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=0),
+    folder_id: Optional[str] = None,
+    feed_only: bool = Query(False),
+):
+    from soul_server.config import get_settings
+    task_manager = get_task_manager()
+    sessions, total = await task_manager.get_all_sessions(
+        offset=offset, limit=limit, session_type=session_type,
+        folder_id=folder_id,  # None이면 전체 조회 (기존 동작 유지)
+        feed_only=feed_only,
+    )
+    settings = get_settings()
+    user_name = settings.dash_user_name
+    user_portrait_url = "/api/dashboard/portrait/user" if settings.dash_user_portrait else None
+    sessions_with_user = [
+        {**s, "userName": user_name, "userPortraitUrl": user_portrait_url}
+        for s in sessions
+    ]
+    return {"sessions": sessions_with_user, "total": total}
+
+
+# === /api/sessions/folder-counts (GET) — 고정 경로, 반드시 stream/events보다 먼저 등록 ===
+
+@router.get("/api/sessions/folder-counts", dependencies=[Depends(require_dashboard_auth)])
+async def api_session_folder_counts():
+    """폴더별 세션 수 조회 (GET /api/sessions/folder-counts)"""
+    from soul_server.service.postgres_session_db import get_session_db
+    db = get_session_db()
+    counts = await db.get_folder_counts()  # node_id 필터 제거 → 전체 노드 집계
+    # None 키(폴더 미지정)는 JSON 직렬화 시 "null" 문자열로 변환
+    return {"counts": {str(k) if k is not None else "null": v for k, v in counts.items()}}
+
+
+# === /api/sessions/stream (GET) — 고정 경로, 반드시 먼저 등록 ===
+
+@router.get("/api/sessions/stream", dependencies=[Depends(require_dashboard_auth)])
+async def api_sessions_stream(limit: int = Query(50, ge=0)):
+    """세션 목록 변경 SSE 스트림 (GET /api/sessions/stream)"""
+
+    async def event_generator():
+        task_manager = get_task_manager()
+        session_broadcaster = get_session_broadcaster()
+
+        sessions, total = await task_manager.get_all_sessions(offset=0, limit=limit)
+        yield {
+            "event": "session_list",
+            "data": json.dumps(
+                {"type": "session_list", "sessions": sessions, "total": total},
+                ensure_ascii=False,
+                default=str,
+            ),
+        }
+
+        event_queue = session_broadcaster.add_client()
+        try:
+            while True:
+                try:
+                    event = await asyncio.wait_for(event_queue.get(), timeout=30.0)
+                    yield {
+                        "event": event.get("type", "unknown"),
+                        "data": json.dumps(event, ensure_ascii=False, default=str),
+                    }
+                except asyncio.TimeoutError:
+                    yield {"comment": "keepalive"}
+        finally:
+            session_broadcaster.remove_client(event_queue)
+
+    return EventSourceResponse(event_generator())
+
+
+# === /api/sessions/{session_id}/events (GET) — 파라미터화 경로, 나중에 등록 ===
+
+@router.get(
+    "/api/sessions/{session_id}/events",
+    dependencies=[Depends(require_dashboard_auth)],
+)
+async def api_session_events(
+    session_id: str,
+    request: Request,
+):
+    """EventStore 기반 SSE 스트림 (GET /api/sessions/{id}/events)
+
+    EventStore에서 히스토리를 읽고, 이후 라이브 이벤트를 스트리밍한다.
+    LLM 세션은 단발 HTTP 요청이라 라이브 이벤트가 없으므로 히스토리 전송 후 종료한다.
+    SessionCache는 사용하지 않는다.
+    """
+    task_manager = get_task_manager()
+
+    last_event_id_str = request.headers.get("Last-Event-ID") or request.query_params.get("lastEventId")
+    try:
+        after_id = int(last_event_id_str) if last_event_id_str else 0
+    except (ValueError, TypeError):
+        after_id = 0
+
+    # LLM 세션 여부 판단: task 조회 우선, 없으면 session_id 패턴으로 fallback
+    task = await task_manager.get_task(session_id)
+    is_llm = (task is not None and task.session_type == "llm") or session_id.startswith("llm-")
+
+    return EventSourceResponse(
+        session_events_sse_generator(
+            session_id, after_id, task_manager, is_llm=is_llm,
+        )
+    )
+
+
+# === /api/sessions (POST) ===
+
+@router.post("/api/sessions", status_code=201, dependencies=[Depends(require_dashboard_auth)])
+async def api_create_session(body: CreateSessionBody):
+    """새 Claude Code 세션을 시작합니다."""
+    task_manager = get_task_manager()
+
+    if not resource_manager.can_acquire():
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": {
+                    "code": "RATE_LIMIT_EXCEEDED",
+                    "message": f"동시 실행 제한 초과 (max={resource_manager.max_concurrent})",
+                }
+            },
+        )
+
+    extra_context_items = None
+    if body.attachmentPaths:
+        extra_context_items = [
+            {
+                "key": "attached_files",
+                "label": "첨부 파일",
+                "content": (
+                    "다음 파일들이 첨부되었습니다. Read 도구로 내용을 확인하세요:\n"
+                    + "\n".join(f"- {p}" for p in body.attachmentPaths)
+                ),
+            }
+        ]
+
+    try:
+        task = await task_manager.create_task(
+            prompt=body.prompt,
+            agent_session_id=body.agentSessionId,
+            use_mcp=body.use_mcp,
+            folder_id=body.folderId,
+            profile_id=body.agentId,
+            extra_context_items=extra_context_items,
+            caller_session_id=body.caller_session_id,
+        )
+    except TaskConflictError:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": {
+                    "code": "SESSION_CONFLICT",
+                    "message": f"이미 실행 중인 세션입니다: {body.agentSessionId}",
+                }
+            },
+        )
+    except NodeMismatchError as e:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "node_mismatch",
+                "session_node_id": e.session_node_id,
+                "current_node_id": e.current_node_id,
+            },
+        )
+
+    await task_manager.start_execution(
+        agent_session_id=task.agent_session_id,
+        claude_runner=get_soul_engine(),
+        resource_manager=resource_manager,
+    )
+
+    return {"agentSessionId": task.agent_session_id, "status": "running"}
+
+
+# === /api/sessions/{id}/intervene (POST) ===
+
+@router.post(
+    "/api/sessions/{session_id}/intervene",
+    status_code=202,
+    dependencies=[Depends(require_dashboard_auth)],
+)
+async def api_intervene(session_id: str, body: InterveneBody):
+    """실행 중/완료된 세션에 메시지 전송 (자동 resume)"""
+    task_manager = get_task_manager()
+
+    try:
+        result = await task_manager.add_intervention(
+            agent_session_id=session_id,
+            text=body.text,
+            user=body.user,
+            attachment_paths=body.attachmentPaths or [],
+        )
+
+        if result.get("auto_resumed"):
+            await task_manager.start_execution(
+                agent_session_id=session_id,
+                claude_runner=get_soul_engine(),
+                resource_manager=resource_manager,
+            )
+            return {"auto_resumed": True, "agent_session_id": session_id}
+        else:
+            return {"queued": True, "queue_position": result.get("queue_position", 0)}
+
+    except NodeMismatchError as e:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "node_mismatch",
+                "session_node_id": e.session_node_id,
+                "current_node_id": e.current_node_id,
+            },
+        )
+    except TaskNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": {
+                    "code": "SESSION_NOT_FOUND",
+                    "message": f"세션을 찾을 수 없습니다: {session_id}",
+                }
+            },
+        )
+
+
+# === /api/sessions/{id}/message (POST, 레거시 호환) ===
+
+@router.post(
+    "/api/sessions/{session_id}/message",
+    status_code=202,
+    dependencies=[Depends(require_dashboard_auth)],
+)
+async def api_message(session_id: str, body: InterveneBody):
+    """intervene의 레거시 호환 경로"""
+    return await api_intervene(session_id, body)
+
+
+# === /api/sessions/{id}/respond (POST) ===
+
+@router.post(
+    "/api/sessions/{session_id}/respond",
+    dependencies=[Depends(require_dashboard_auth)],
+)
+async def api_respond(session_id: str, body: RespondBody):
+    """AskUserQuestion에 대한 사용자 응답 전달"""
+    task_manager = get_task_manager()
+
+    try:
+        success = task_manager.deliver_input_response(
+            agent_session_id=session_id,
+            request_id=body.requestId,
+            answers=body.answers,
+        )
+
+        if success:
+            return {"delivered": True, "request_id": body.requestId}
+        else:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": {
+                        "code": "REQUEST_NOT_PENDING",
+                        "message": f"대기 중인 input_request가 없습니다: {body.requestId}",
+                    }
+                },
+            )
+
+    except TaskNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": {
+                    "code": "SESSION_NOT_FOUND",
+                    "message": f"세션을 찾을 수 없습니다: {session_id}",
+                }
+            },
+        )
+    except TaskNotRunningError:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": {
+                    "code": "SESSION_NOT_RUNNING",
+                    "message": f"세션이 실행 중이 아닙니다: {session_id}",
+                }
+            },
+        )
+
+
+# === /api/sessions/{id}/read-position (PUT) ===
+
+@router.put(
+    "/api/sessions/{session_id}/read-position",
+    dependencies=[Depends(require_dashboard_auth)],
+)
+async def api_update_read_position(
+    session_id: str,
+    body: ReadPositionBody,
+):
+    """읽음 위치 갱신 (PUT /api/sessions/{id}/read-position)"""
+    from soul_server.service.postgres_session_db import get_session_db
+    db = get_session_db()
+
+    success = await db.update_last_read_event_id(session_id, body.last_read_event_id)
+    if not success:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": {
+                    "code": "SESSION_NOT_FOUND",
+                    "message": f"세션을 찾을 수 없습니다: {session_id}",
+                    "details": {},
+                }
+            },
+        )
+
+    # Task 객체도 갱신 (이중 저장소 정합성 유지)
+    try:
+        task_manager = get_task_manager()
+        task = await task_manager.get_task(session_id)
+        if task:
+            task.last_read_event_id = body.last_read_event_id
+    except KeyError:
+        pass  # 퇴거된 세션은 Task가 없을 수 있음
+    except RuntimeError:
+        logger.warning(f"TaskManager not available when syncing read position for {session_id}")
+
+    # SSE 브로드캐스트
+    last_event_id, last_read_event_id = await db.get_read_position(session_id)
+    try:
+        session_broadcaster = get_session_broadcaster()
+        await session_broadcaster.emit_read_position_updated(
+            session_id=session_id,
+            last_event_id=last_event_id,
+            last_read_event_id=last_read_event_id,
+        )
+    except Exception:
+        logger.warning(
+            f"Failed to broadcast read-position update for {session_id}",
+            exc_info=True,
+        )
+
+    return {"ok": True}
+
+
+# === /api/sessions/{id}/display-name (PATCH) ===
+
+@router.patch(
+    "/api/sessions/{session_id}/display-name",
+    dependencies=[Depends(require_dashboard_auth)],
+)
+async def api_rename_session(session_id: str, body: RenameSessionRequest):
+    """세션 표시 이름 변경 (PATCH /api/sessions/{id}/display-name).
+
+    soulstream-server 호환 경로. soul-server에서도 동일하게 동작하도록 추가.
+    기존 PUT /api/catalog/sessions/{id} (displayName 필드)는 그대로 유지한다.
+    """
+    from soul_server.service.catalog_service import get_catalog_service
+    catalog_service = get_catalog_service()
+    await catalog_service.rename_session(session_id, body.displayName)
+    return {"success": True}

@@ -93,10 +93,10 @@ class TestEventSourceResponseUsed:
     async def test_returns_event_source_response(self, mock_task_manager, mock_db):
         """api_session_events가 EventSourceResponse를 반환하는지 확인"""
         with (
-            patch("soul_server.dashboard.api_router.get_task_manager", return_value=mock_task_manager),
+            patch("soul_server.dashboard.routes.sessions.get_task_manager", return_value=mock_task_manager),
             patch("soul_server.service.postgres_session_db.get_session_db", return_value=mock_db),
         ):
-            from soul_server.dashboard.api_router import api_session_events
+            from soul_server.dashboard.routes.sessions import api_session_events
 
             # Request mock
             request = MagicMock()
@@ -116,7 +116,7 @@ class TestLLMSessionEarlyExit:
         _append_event(mock_db, "llm-001", {"type": "text_start", "text": "LLM response"})
 
         with (
-            patch("soul_server.dashboard.api_router.get_task_manager", return_value=mock_task_manager),
+            patch("soul_server.dashboard.routes.sessions.get_task_manager", return_value=mock_task_manager),
             patch("soul_server.service.postgres_session_db.get_session_db", return_value=mock_db),
         ):
             from soul_server.api.sessions import session_events_sse_generator
@@ -199,10 +199,10 @@ class TestLastEventIdQueryParam:
         _append_event(mock_db, "sess-001", {"type": "text_end", "text": "Second"}, event_id=2)
 
         with (
-            patch("soul_server.dashboard.api_router.get_task_manager", return_value=mock_task_manager),
+            patch("soul_server.dashboard.routes.sessions.get_task_manager", return_value=mock_task_manager),
             patch("soul_server.service.postgres_session_db.get_session_db", return_value=mock_db),
         ):
-            from soul_server.dashboard.api_router import api_session_events
+            from soul_server.dashboard.routes.sessions import api_session_events
 
             request = MagicMock()
             request.headers = {"Last-Event-ID": "1"}
