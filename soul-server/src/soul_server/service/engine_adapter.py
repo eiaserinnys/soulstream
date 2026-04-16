@@ -71,6 +71,23 @@ class InterventionMessage:
     attachment_paths: List[str]
 
 
+@dataclass
+class _ExecutionHandlers:
+    """execute() 백그라운드 실행에 필요한 콜백 묶음.
+
+    _make_handlers()로 생성하여 _run_claude_task()에 전달한다.
+    runner.run()에 전달되는 async 콜백과, ClaudeRunner 생성 시 주입되는
+    동기 콜백(debug/alert)을 한 묶음으로 관리한다.
+    """
+    on_progress: Callable[[str], Awaitable[None]]
+    on_compact: Callable[[str, str], Awaitable[None]]
+    on_intervention_callback: Callable[[], Awaitable[Optional[str]]]
+    on_session_callback: Callable[[str], Awaitable[None]]
+    on_engine_event: Callable[[EngineEvent], Awaitable[None]]
+    debug_send_fn: Callable[[str], None]
+    alert_send_fn: Callable[[dict], None]
+
+
 def _extract_context_usage(usage: Optional[dict]) -> Optional[ContextUsageEvent]:
     """EngineResult.usage에서 컨텍스트 사용량 이벤트 생성"""
     if not usage:
@@ -227,6 +244,187 @@ class SoulEngineAdapter:
 
         return runner
 
+    def _make_handlers(
+        self,
+        queue: asyncio.Queue,
+        loop: asyncio.AbstractEventLoop,
+        serendipity_ctx: Optional["SessionContext"],
+        runner_ref: List[Optional[ClaudeRunner]],
+        get_intervention: Optional[Callable[[], Awaitable[Optional[dict]]]],
+        on_intervention_sent: Optional[Callable[[str, str], Awaitable[None]]],
+    ) -> _ExecutionHandlers:
+        """ClaudeRunner와 SSE 큐 사이의 콜백 어댑터들을 생성한다.
+
+        모든 콜백은 queue/loop/serendipity_ctx/runner_ref를 클로저로 공유한다.
+        runner_ref는 _run_claude_task가 runner 생성 후 [0]에 채워 넣는 list이며,
+        on_session_callback이 runner.pid에 접근하기 위해 사용한다.
+        """
+
+        # debug_send_fn: 동기 콜백 → 큐 어댑터
+        # ClaudeRunner._debug()는 동기 함수이므로 call_soon_threadsafe로 큐에 enqueue
+        def debug_send_fn(message: str) -> None:
+            try:
+                loop.call_soon_threadsafe(
+                    queue.put_nowait,
+                    DebugEvent(message=message),
+                )
+            except Exception:
+                pass  # 큐 닫힘 등 무시
+
+        # alert_send_fn: RateLimitTracker 알림 → 큐 어댑터
+        def alert_send_fn(alert: dict) -> None:
+            try:
+                event = _build_credential_alert_event(alert)
+                loop.call_soon_threadsafe(queue.put_nowait, event)
+            except Exception:
+                pass
+
+        async def on_progress(text: str) -> None:
+            await queue.put(ProgressEvent(text=text))
+
+        async def on_compact(trigger: str, message: str) -> None:
+            await queue.put(CompactEvent(trigger=trigger, message=message))
+
+        async def on_intervention_callback() -> Optional[str]:
+            """인터벤션 폴링: dict → prompt 문자열 변환"""
+            if not get_intervention:
+                return None
+
+            intervention = await get_intervention()
+            if not intervention:
+                return None
+
+            msg = InterventionMessage(
+                text=intervention.get("text", ""),
+                user=intervention.get("user", ""),
+                attachment_paths=intervention.get("attachment_paths", []),
+            )
+
+            # 이벤트 발행 + 콜백 호출
+            intervention_event = InterventionSentEvent(user=msg.user, text=msg.text)
+            await queue.put(intervention_event)
+            if on_intervention_sent:
+                await on_intervention_sent(msg.user, msg.text)
+
+            # Serendipity에 전달
+            await self._emit_serendipity(serendipity_ctx, intervention_event, "intervention event")
+
+            return _build_intervention_prompt(msg)
+
+        async def on_session_callback(session_id: str) -> None:
+            """SystemMessage의 session_id 수신 시 SSE 이벤트 발행. runner.pid 접근 안전."""
+            runner_pid = runner_ref[0].pid if runner_ref[0] else None
+            await queue.put(SessionEvent(session_id=session_id, pid=runner_pid))
+
+        async def on_engine_event(event: EngineEvent) -> None:
+            """EngineEvent → SSE 이벤트 변환 (각 이벤트가 to_sse()로 자기 변환)."""
+            sse_events = event.to_sse()
+            for sse in sse_events:
+                await queue.put(sse)
+            for sse in sse_events:
+                await self._emit_serendipity(serendipity_ctx, sse)
+
+        return _ExecutionHandlers(
+            on_progress=on_progress,
+            on_compact=on_compact,
+            on_intervention_callback=on_intervention_callback,
+            on_session_callback=on_session_callback,
+            on_engine_event=on_engine_event,
+            debug_send_fn=debug_send_fn,
+            alert_send_fn=alert_send_fn,
+        )
+
+    async def _run_claude_task(
+        self,
+        queue: asyncio.Queue,
+        handlers: _ExecutionHandlers,
+        effective_prompt: str,
+        resume_session_id: Optional[str],
+        extra_env: Optional[dict],
+        on_runner_ready: Optional[Callable[["ClaudeRunner"], None]],
+        serendipity_ctx: Optional["SessionContext"],
+        runner_ref: List[Optional[ClaudeRunner]],
+        acquire_runner_kwargs: dict,
+    ) -> None:
+        """백그라운드 ClaudeRunner 실행 태스크.
+
+        runner 획득 → run() 실행 → 성공/에러/예외 분기 처리 후
+        반드시 _DONE을 큐에 발행하여 execute()의 drain loop를 종료시킨다.
+        """
+        runner = await self._acquire_runner(
+            **acquire_runner_kwargs,
+            debug_send_fn=handlers.debug_send_fn,
+            alert_send_fn=handlers.alert_send_fn,
+        )
+
+        # runner 참조 저장 (on_session_callback에서 pid 접근용)
+        runner_ref[0] = runner
+
+        # runner 준비 알림 (AskUserQuestion 응답 전달 경로 구축용)
+        if on_runner_ready:
+            on_runner_ready(runner)
+
+        try:
+            result = await runner.run(
+                prompt=effective_prompt,
+                session_id=resume_session_id,
+                on_progress=handlers.on_progress,
+                on_compact=handlers.on_compact,
+                on_intervention=handlers.on_intervention_callback,
+                on_session=handlers.on_session_callback,
+                on_event=handlers.on_engine_event,
+                extra_env=extra_env,
+            )
+
+            # 컨텍스트 사용량 이벤트
+            ctx_event = _extract_context_usage(result.usage)
+            if ctx_event:
+                await queue.put(ctx_event)
+
+            # 완료/에러 이벤트
+            if result.success and not result.is_error:
+                final_text = result.output or "(결과 없음)"
+                complete_event = CompleteEvent(
+                    result=final_text,
+                    attachments=[],
+                    claude_session_id=result.session_id,
+                    parent_event_id=None,  # task_executor가 user_request_id로 채움
+                )
+                await queue.put(complete_event)
+                # 성공 시 풀에 반환
+                if self._pool is not None:
+                    await self._pool.release(runner, session_id=result.session_id)
+                # Serendipity에 전달
+                await self._emit_serendipity(serendipity_ctx, complete_event, "complete event")
+            else:
+                error_msg = result.error or result.output or "실행 오류"
+                error_event = ErrorEvent(
+                    message=error_msg,
+                    parent_event_id=None,  # task_executor가 user_request_id로 채움
+                )
+                await queue.put(error_event)
+                # C-1: 에러 시 runner 폐기 (오염 방지)
+                if self._pool is not None:
+                    await self._pool.discard(runner, reason="run_error")
+                # Serendipity에 전달
+                await self._emit_serendipity(serendipity_ctx, error_event, "error event")
+
+        except Exception as e:
+            logger.exception(f"SoulEngineAdapter execution error: {e}")
+            error_event = ErrorEvent(
+                message=f"실행 오류: {str(e)}",
+                parent_event_id=None,  # task_executor가 user_request_id로 채움
+            )
+            await queue.put(error_event)
+            # C-1: 예외 시 runner 폐기 (고아 프로세스 방지)
+            if self._pool is not None:
+                await self._pool.discard(runner, reason="exception")
+            # Serendipity에 전달
+            await self._emit_serendipity(serendipity_ctx, error_event, "error event")
+
+        finally:
+            await queue.put(_DONE)
+
     async def execute(
         self,
         prompt: str,
@@ -306,172 +504,41 @@ class SoulEngineAdapter:
             except Exception as e:
                 logger.warning(f"Serendipity session start failed: {e}")
 
-        # debug_send_fn: 동기 콜백 → 큐 어댑터
-        # ClaudeRunner._debug()는 동기 함수이므로 call_soon_threadsafe로 큐에 enqueue
-        def debug_send_fn(message: str) -> None:
-            try:
-                loop.call_soon_threadsafe(
-                    queue.put_nowait,
-                    DebugEvent(message=message),
-                )
-            except Exception:
-                pass  # 큐 닫힘 등 무시
+        # runner 참조: _run_claude_task가 runner 생성 후 [0]에 채워 넣는 list.
+        # on_session_callback이 runner.pid에 접근하기 위해 사용한다.
+        runner_ref: List[Optional[ClaudeRunner]] = [None]
 
-        # alert_send_fn: RateLimitTracker 알림 → 큐 어댑터
-        def alert_send_fn(alert: dict) -> None:
-            try:
-                event = _build_credential_alert_event(alert)
-                loop.call_soon_threadsafe(queue.put_nowait, event)
-            except Exception:
-                pass
-
-        # --- 콜백 → 큐 어댑터 ---
-
-        async def on_progress(text: str) -> None:
-            await queue.put(ProgressEvent(text=text))
-
-        async def on_compact(trigger: str, message: str) -> None:
-            await queue.put(CompactEvent(trigger=trigger, message=message))
-
-        async def on_intervention_callback() -> Optional[str]:
-            """인터벤션 폴링: dict → prompt 문자열 변환"""
-            if not get_intervention:
-                return None
-
-            intervention = await get_intervention()
-            if not intervention:
-                return None
-
-            msg = InterventionMessage(
-                text=intervention.get("text", ""),
-                user=intervention.get("user", ""),
-                attachment_paths=intervention.get("attachment_paths", []),
-            )
-
-            # 이벤트 발행 + 콜백 호출
-            intervention_event = InterventionSentEvent(user=msg.user, text=msg.text)
-            await queue.put(intervention_event)
-            if on_intervention_sent:
-                await on_intervention_sent(msg.user, msg.text)
-
-            # Serendipity에 전달
-            await self._emit_serendipity(serendipity_ctx, intervention_event, "intervention event")
-
-            return _build_intervention_prompt(msg)
-
-        # --- 세션 ID 조기 통지 ---
-
-        # runner 참조: run_claude() 내에서 runner 생성 후 설정.
-        # on_session_callback은 runner.run() → _receive_messages() 시점에 호출되므로
-        # _get_or_create_client()에서 pid가 이미 설정된 이후다. 타이밍 안전.
-        _runner_ref: list[Optional[ClaudeRunner]] = [None]
-
-        async def on_session_callback(session_id: str) -> None:
-            """ClaudeRunner가 SystemMessage에서 session_id를 받으면 즉시 SSE 이벤트 발행"""
-            runner_pid = _runner_ref[0].pid if _runner_ref[0] else None
-            await queue.put(SessionEvent(session_id=session_id, pid=runner_pid))
-
-        # --- 세분화 이벤트 (dashboard용) ---
-
-        async def on_engine_event(event: EngineEvent) -> None:
-            """EngineEvent → SSE 이벤트 변환. 상태 없음, 분기 없음.
-
-            각 이벤트가 to_sse()로 자기 변환을 담당합니다.
-            """
-            sse_events = event.to_sse()
-            for sse in sse_events:
-                await queue.put(sse)
-            for sse in sse_events:
-                await self._emit_serendipity(serendipity_ctx, sse)
-
-        # --- 백그라운드 실행 ---
-
-        async def run_claude() -> None:
-            runner = await self._acquire_runner(
-                working_dir=working_dir,
-                resume_session_id=resume_session_id,
-                effective_allowed=effective_allowed,
-                effective_disallowed=effective_disallowed,
-                mcp_config_path=mcp_config_path,
-                debug_send_fn=debug_send_fn,
-                alert_send_fn=alert_send_fn,
-                model=model,
-                system_prompt=system_prompt,
-                max_turns=max_turns,
-            )
-
-            # runner 참조 저장 (on_session_callback에서 pid 접근용)
-            _runner_ref[0] = runner
-
-            # runner 준비 알림 (AskUserQuestion 응답 전달 경로 구축용)
-            if on_runner_ready:
-                on_runner_ready(runner)
-
-            success = False
-            try:
-                result = await runner.run(
-                    prompt=effective_prompt,
-                    session_id=resume_session_id,
-                    on_progress=on_progress,
-                    on_compact=on_compact,
-                    on_intervention=on_intervention_callback,
-                    on_session=on_session_callback,
-                    on_event=on_engine_event,
-                    extra_env=extra_env,
-                )
-
-                # 컨텍스트 사용량 이벤트
-                ctx_event = _extract_context_usage(result.usage)
-                if ctx_event:
-                    await queue.put(ctx_event)
-
-                # 완료/에러 이벤트
-                if result.success and not result.is_error:
-                    final_text = result.output or "(결과 없음)"
-                    complete_event = CompleteEvent(
-                        result=final_text,
-                        attachments=[],
-                        claude_session_id=result.session_id,
-                        parent_event_id=None,  # task_executor가 user_request_id로 채움
-                    )
-                    await queue.put(complete_event)
-                    success = True
-                    # 성공 시 풀에 반환
-                    if self._pool is not None:
-                        await self._pool.release(runner, session_id=result.session_id)
-                    # Serendipity에 전달
-                    await self._emit_serendipity(serendipity_ctx, complete_event, "complete event")
-                else:
-                    error_msg = result.error or result.output or "실행 오류"
-                    error_event = ErrorEvent(
-                        message=error_msg,
-                        parent_event_id=None,  # task_executor가 user_request_id로 채움
-                    )
-                    await queue.put(error_event)
-                    # C-1: 에러 시 runner 폐기 (오염 방지)
-                    if self._pool is not None:
-                        await self._pool.discard(runner, reason="run_error")
-                    # Serendipity에 전달
-                    await self._emit_serendipity(serendipity_ctx, error_event, "error event")
-
-            except Exception as e:
-                logger.exception(f"SoulEngineAdapter execution error: {e}")
-                error_event = ErrorEvent(
-                    message=f"실행 오류: {str(e)}",
-                    parent_event_id=None,  # task_executor가 user_request_id로 채움
-                )
-                await queue.put(error_event)
-                # C-1: 예외 시 runner 폐기 (고아 프로세스 방지)
-                if self._pool is not None:
-                    await self._pool.discard(runner, reason="exception")
-                # Serendipity에 전달
-                await self._emit_serendipity(serendipity_ctx, error_event, "error event")
-
-            finally:
-                await queue.put(_DONE)
+        # 콜백 묶음 생성
+        handlers = self._make_handlers(
+            queue=queue,
+            loop=loop,
+            serendipity_ctx=serendipity_ctx,
+            runner_ref=runner_ref,
+            get_intervention=get_intervention,
+            on_intervention_sent=on_intervention_sent,
+        )
 
         # 백그라운드 태스크 시작
-        task = asyncio.create_task(run_claude())
+        task = asyncio.create_task(self._run_claude_task(
+            queue=queue,
+            handlers=handlers,
+            effective_prompt=effective_prompt,
+            resume_session_id=resume_session_id,
+            extra_env=extra_env,
+            on_runner_ready=on_runner_ready,
+            serendipity_ctx=serendipity_ctx,
+            runner_ref=runner_ref,
+            acquire_runner_kwargs={
+                "working_dir": working_dir,
+                "resume_session_id": resume_session_id,
+                "effective_allowed": effective_allowed,
+                "effective_disallowed": effective_disallowed,
+                "mcp_config_path": mcp_config_path,
+                "model": model,
+                "system_prompt": system_prompt,
+                "max_turns": max_turns,
+            },
+        ))
 
         try:
             while True:
