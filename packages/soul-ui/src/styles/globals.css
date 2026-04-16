@@ -176,9 +176,48 @@
   animation: caret-blink 1s steps(2, end) infinite;
 }
 
+/* 모바일 탭 패널 fade 전환 — keepMounted + [hidden] 오버라이드.
+   base-ui TabsPanel(ui/tabs.tsx L70-78)은 data-slot="tabs-content"를 부여한다.
+   .mobile-tabs 스코프 내에서만 동작하여 다른 Tabs 사용처에는 영향을 주지 않는다. */
+.mobile-tabs [data-slot="tabs-content"] {
+  transition: opacity 180ms ease-out;
+}
+.mobile-tabs [data-slot="tabs-content"][hidden] {
+  display: block;
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  position: absolute;
+  inset: 0;
+}
+.mobile-tabs [data-slot="tabs-content"]:not([hidden]) {
+  visibility: visible;
+}
+
+/* 폴더 2단계 네비게이션 — 2-패널 translateX 스택.
+   .folder-stack.show-content가 붙으면 트랙이 좌측 절반만큼 이동하여 우측 패널이 노출된다. */
+.folder-stack {
+  display: flex;
+  width: 200%;
+  height: 100%;
+  transform: translateX(0);
+  transition: transform 220ms ease-out;
+}
+.folder-stack.show-content {
+  transform: translateX(-50%);
+}
+.folder-stack > .folder-panel {
+  flex: 0 0 50%;
+  height: 100%;
+  overflow: hidden;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .message-enter { animation: none; }
   .animate-caret-blink { animation: none; opacity: 1; }
+  .mobile-tabs [data-slot="tabs-content"] { transition: none; }
+  .folder-stack { transition: none; }
+  .mobile-tabs [data-slot="tab-indicator"] { transition: none; }
 }
 
 /* Feed card: running state (Style E: Breathing + Shimmer + Border Glow) */

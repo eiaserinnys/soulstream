@@ -5,16 +5,18 @@
  * 레이아웃 구조만 제공하며, 앱 레벨 훅이나 구체적 컴포넌트는 포함하지 않습니다.
  *
  * 데스크탑: leftPanel | DragHandle | centerPanel | DragHandle | rightPanel
- * 모바일: BottomTabBar + 탭별 콘텐츠 (hidden 방식으로 언마운트 없이 전환)
+ * 모바일: base-ui Tabs(keepMounted) + BottomTabBar. inactive 패널은 DOM을 유지한 채 페이드 전환된다.
  */
 
 import { useState, useCallback, useRef, useEffect, type ReactNode } from "react";
-import { ArrowLeft, ChevronLeft, MessageSquare, Plus, Search } from "lucide-react";
+import { ArrowLeft, MessageSquare, Search } from "lucide-react";
 import { DragHandle } from "./DragHandle";
 import { BottomTabBar } from "./BottomTabBar";
 import { ConnectionBadge, type ConnectionStatus } from "./ConnectionBadge";
+import { Tabs, TabsPanel } from "./ui/tabs";
+import { FolderStack } from "./dashboard/FolderStack";
 import { useIsMobile } from "../hooks/use-mobile";
-import { useDashboardStore } from "../stores/dashboard-store";
+import { useDashboardStore, type MobileTab } from "../stores/dashboard-store";
 import { cn } from "../lib/cn";
 import { Button } from "../components/ui/button";
 
@@ -174,6 +176,29 @@ export function DashboardShell({
     }
   }, [isMobile, setActiveTab]);
 
+  /**
+   * 모바일 탭 변경 핸들러.
+   *
+   * 기존 BottomTabBar의 onClick 로직(setActiveTab + feed/folder 분기 사이드 이펙트)을
+   * base-ui Tabs의 onValueChange 콜백으로 그대로 이동한 것이다.
+   *
+   * base-ui v1.3.0 `Tabs.Root.onValueChange`는 `(value: TabsTab.Value, eventDetails) => void`로,
+   * TabsTab.Value는 `any | null` 타입이다. TABS 배열의 id가 유일한 value이므로
+   * 런타임 가드 후 MobileTab으로 좁힌다.
+   */
+  const handleMobileTabChange = useCallback((value: unknown) => {
+    if (value == null) return;
+    const tabId = value as MobileTab;
+    setActiveTab(tabId);
+    if (tabId === "feed") {
+      // 피드 탭: viewMode도 함께 초기화 (기존 BottomTabBar L29-32 동작)
+      clearSelectedFolder();
+    } else if (tabId === "folder") {
+      // 폴더 탭: 항상 폴더 리스트에서 시작. viewMode는 건드리지 않아 세션 쿼리가 꼬이지 않게 한다 (기존 BottomTabBar L33-36 동작)
+      useDashboardStore.setState({ selectedFolderId: null });
+    }
+  }, [setActiveTab, clearSelectedFolder]);
+
   const centerPercent = Math.max(MIN_CENTER, 100 - leftPercent - rightPercent);
 
   // leftPanel에 하단 영역이 있을 때 flex 분할
@@ -223,51 +248,37 @@ export function DashboardShell({
       {banner}
 
       {isMobile ? (
-        <>
-          {/* 모바일: 탭별 콘텐츠 */}
-          <main data-testid="mobile-main" className="flex-1 overflow-hidden flex flex-col">
+        /**
+         * 모바일: base-ui Tabs로 탭 상태·키보드 네비게이션·Indicator 슬라이드를 위임하고,
+         * keepMounted로 inactive 패널을 언마운트 없이 유지하여 탭 전환 시 스크롤/상태를 보존한다.
+         * [hidden] 패널은 globals.css의 `.mobile-tabs [data-slot="tabs-content"][hidden]` 규칙으로
+         * `display:none` 대신 opacity/visibility 페이드로 전환된다.
+         */
+        <Tabs
+          value={activeTab}
+          onValueChange={handleMobileTabChange}
+          className="mobile-tabs flex flex-col flex-1 overflow-hidden gap-0"
+        >
+          <main data-testid="mobile-main" className="flex-1 overflow-hidden relative">
             {/* 피드 탭 */}
-            <div className={cn("h-full", activeTab !== "feed" && "hidden")}>
+            <TabsPanel value="feed" keepMounted className="h-full">
               {mobileSessionsView ?? centerPanel}
-            </div>
+            </TabsPanel>
 
-            {/* 폴더 탭 — 모바일에서 폴더 선택 시 2단계 뷰 (트리 → 세션 목록) */}
-            <div className={cn("h-full", activeTab !== "folder" && "hidden")}>
-              {isMobile && selectedFolderId ? (
-                <div className="flex flex-col h-full">
-                  <div className="flex items-center gap-2 px-3 py-2 border-b shrink-0">
-                    <button
-                      onClick={() => clearSelectedFolder()}
-                      className="p-1 rounded hover:bg-muted"
-                      aria-label="폴더 목록으로 돌아가기"
-                    >
-                      <ChevronLeft className="h-5 w-5" />
-                    </button>
-                    <span className="text-sm font-medium flex-1">
-                      {catalog?.folders?.find(f => f.id === selectedFolderId)?.name ?? "세션"}
-                    </span>
-                    {onNewSession && (
-                      <button
-                        onClick={onNewSession}
-                        className="p-1 rounded hover:bg-muted"
-                        title="New session"
-                        data-testid="mobile-new-session-btn"
-                      >
-                        <Plus className="h-4 w-4" />
-                      </button>
-                    )}
-                  </div>
-                  <div className="flex-1 min-h-0 overflow-hidden">
-                    {mobileFolderContents}
-                  </div>
-                </div>
-              ) : (
-                leftPanelContent
-              )}
-            </div>
+            {/* 폴더 탭 — 2단계 네비게이션(폴더 목록 ↔ 폴더 내용)은 FolderStack이 슬라이드로 처리 */}
+            <TabsPanel value="folder" keepMounted className="h-full">
+              <FolderStack
+                selectedFolderId={selectedFolderId}
+                leftPanelContent={leftPanelContent}
+                mobileFolderContents={mobileFolderContents}
+                folderName={catalog?.folders?.find((f) => f.id === selectedFolderId)?.name ?? "세션"}
+                onBack={() => clearSelectedFolder()}
+                onNewSession={onNewSession}
+              />
+            </TabsPanel>
 
             {/* 채팅 탭 */}
-            <div className={cn("h-full flex flex-col", activeTab !== "chat" && "hidden")}>
+            <TabsPanel value="chat" keepMounted className="h-full flex flex-col">
               {activeSessionKey ? (
                 <>
                   {mobileChatHeader
@@ -283,17 +294,17 @@ export function DashboardShell({
                   </div>
                 </div>
               )}
-            </div>
+            </TabsPanel>
 
             {/* 설정 탭 */}
-            <div className={cn("h-full overflow-y-auto", activeTab !== "settings" && "hidden")}>
+            <TabsPanel value="settings" keepMounted className="h-full overflow-y-auto">
               {mobileSettingsContent}
-            </div>
+            </TabsPanel>
           </main>
 
-          {/* 하단 탭바 */}
+          {/* 하단 탭바 — Tabs 컨텍스트 내부에 두어야 TabsTrigger가 동작한다 */}
           <BottomTabBar />
-        </>
+        </Tabs>
       ) : (
         /* 데스크탑: 3-Panel content */
         <div className="flex flex-1 overflow-hidden">
