@@ -99,7 +99,6 @@ async def api_config_settings_get():
     ]
 
     return {
-        "serendipityAvailable": bool(settings.serendipity_url),
         "categories": categories,
     }
 

@@ -4,10 +4,6 @@ ClaudeRunner를 soul API용으로 래핑합니다.
 ClaudeRunner.run()의 콜백(on_progress, on_compact, on_intervention)을
 asyncio.Queue를 통해 SSE 이벤트 스트림으로 변환하여
 기존 soul 스트리밍 인터페이스와 호환합니다.
-
-Serendipity 연동:
-  세션 시작/종료 및 SSE 이벤트를 SerendipityAdapter를 통해
-  세렌디피티 블록으로 변환하여 저장합니다.
 """
 
 import asyncio
@@ -24,7 +20,6 @@ from soul_server.service.context_builder import build_soulstream_context_item, f
 if TYPE_CHECKING:
     from soul_server.cogito.brief_composer import BriefComposer
     from soul_server.service.runner_pool import RunnerPool
-    from soul_server.serendipity import SerendipityAdapter, SessionContext
 from soul_server.models import (
     CompactEvent,
     CompleteEvent,
@@ -142,9 +137,6 @@ class SoulEngineAdapter:
     ClaudeRunner.run()의 콜백(on_progress, on_compact, on_intervention)을
     asyncio.Queue를 통해 SSE 이벤트 스트림으로 변환합니다.
     기존 soul의 ClaudeCodeRunner.execute()와 동일한 인터페이스를 제공합니다.
-
-    Serendipity 연동:
-      세션 시작/종료 및 SSE 이벤트를 세렌디피티에 저장합니다.
     """
 
     def __init__(
@@ -152,13 +144,11 @@ class SoulEngineAdapter:
         workspace_dir: Optional[str] = None,
         pool: Optional["RunnerPool"] = None,
         rate_limit_tracker: Optional[Any] = None,
-        serendipity_adapter: Optional["SerendipityAdapter"] = None,
         brief_composer: Optional["BriefComposer"] = None,
     ):
         self._workspace_dir = workspace_dir or get_settings().workspace_dir
         self._pool = pool
         self._rate_limit_tracker = rate_limit_tracker
-        self._serendipity_adapter = serendipity_adapter
         self._brief_composer = brief_composer
 
     @property
@@ -171,19 +161,6 @@ class SoulEngineAdapter:
         if config_path.exists():
             return config_path
         return None
-
-    async def _emit_serendipity(
-        self,
-        serendipity_ctx: Any,
-        event: Any,
-        label: str = "event",
-    ) -> None:
-        """세렌디피티에 단일 이벤트를 전달한다. 실패해도 세션을 중단하지 않는다."""
-        if serendipity_ctx and self._serendipity_adapter:
-            try:
-                await self._serendipity_adapter.on_event(serendipity_ctx, event)
-            except Exception as e:
-                logger.warning(f"Serendipity {label} failed: {e}")
 
     async def _acquire_runner(
         self,
@@ -248,14 +225,13 @@ class SoulEngineAdapter:
         self,
         queue: asyncio.Queue,
         loop: asyncio.AbstractEventLoop,
-        serendipity_ctx: Optional["SessionContext"],
         runner_ref: List[Optional[ClaudeRunner]],
         get_intervention: Optional[Callable[[], Awaitable[Optional[dict]]]],
         on_intervention_sent: Optional[Callable[[str, str], Awaitable[None]]],
     ) -> _ExecutionHandlers:
         """ClaudeRunner와 SSE 큐 사이의 콜백 어댑터들을 생성한다.
 
-        모든 콜백은 queue/loop/serendipity_ctx/runner_ref를 클로저로 공유한다.
+        모든 콜백은 queue/loop/runner_ref를 클로저로 공유한다.
         runner_ref는 _run_claude_task가 runner 생성 후 [0]에 채워 넣는 list이며,
         on_session_callback이 runner.pid에 접근하기 위해 사용한다.
         """
@@ -306,9 +282,6 @@ class SoulEngineAdapter:
             if on_intervention_sent:
                 await on_intervention_sent(msg.user, msg.text)
 
-            # Serendipity에 전달
-            await self._emit_serendipity(serendipity_ctx, intervention_event, "intervention event")
-
             return _build_intervention_prompt(msg)
 
         async def on_session_callback(session_id: str) -> None:
@@ -321,8 +294,6 @@ class SoulEngineAdapter:
             sse_events = event.to_sse()
             for sse in sse_events:
                 await queue.put(sse)
-            for sse in sse_events:
-                await self._emit_serendipity(serendipity_ctx, sse)
 
         return _ExecutionHandlers(
             on_progress=on_progress,
@@ -342,7 +313,6 @@ class SoulEngineAdapter:
         resume_session_id: Optional[str],
         extra_env: Optional[dict],
         on_runner_ready: Optional[Callable[["ClaudeRunner"], None]],
-        serendipity_ctx: Optional["SessionContext"],
         runner_ref: List[Optional[ClaudeRunner]],
         acquire_runner_kwargs: dict,
     ) -> None:
@@ -394,8 +364,6 @@ class SoulEngineAdapter:
                 # 성공 시 풀에 반환
                 if self._pool is not None:
                     await self._pool.release(runner, session_id=result.session_id)
-                # Serendipity에 전달
-                await self._emit_serendipity(serendipity_ctx, complete_event, "complete event")
             else:
                 error_msg = result.error or result.output or "실행 오류"
                 error_event = ErrorEvent(
@@ -406,8 +374,6 @@ class SoulEngineAdapter:
                 # C-1: 에러 시 runner 폐기 (오염 방지)
                 if self._pool is not None:
                     await self._pool.discard(runner, reason="run_error")
-                # Serendipity에 전달
-                await self._emit_serendipity(serendipity_ctx, error_event, "error event")
 
         except Exception as e:
             logger.exception(f"SoulEngineAdapter execution error: {e}")
@@ -419,8 +385,6 @@ class SoulEngineAdapter:
             # C-1: 예외 시 runner 폐기 (고아 프로세스 방지)
             if self._pool is not None:
                 await self._pool.discard(runner, reason="exception")
-            # Serendipity에 전달
-            await self._emit_serendipity(serendipity_ctx, error_event, "error event")
 
         finally:
             await queue.put(_DONE)
@@ -459,9 +423,9 @@ class SoulEngineAdapter:
             allowed_tools: 허용 도구 목록 (None이면 기본값 사용)
             disallowed_tools: 금지 도구 목록 (None이면 기본값 사용)
             use_mcp: MCP 서버 연결 여부
-            client_id: 클라이언트 ID (세렌디피티 저장용)
-            request_id: 요청 ID (세렌디피티 저장용)
-            persona: 페르소나 이름 (세렌디피티 저장용)
+            client_id: 클라이언트 ID
+            request_id: 요청 ID
+            persona: 페르소나 이름
             context_items: 클라이언트가 전달한 추가 컨텍스트 항목 목록
             agent_session_id: 세션 식별자 (소울스트림 자체 context_item에 포함)
 
@@ -491,19 +455,6 @@ class SoulEngineAdapter:
         context_block = format_context_items(context_items or [])
         effective_prompt = context_block + "\n\n" + prompt
 
-        # Serendipity 세션 시작
-        serendipity_ctx: Optional["SessionContext"] = None
-        if self._serendipity_adapter is not None and client_id and request_id:
-            try:
-                serendipity_ctx = await self._serendipity_adapter.start_session(
-                    client_id=client_id,
-                    request_id=request_id,
-                    prompt=prompt,
-                    persona=persona,
-                )
-            except Exception as e:
-                logger.warning(f"Serendipity session start failed: {e}")
-
         # runner 참조: _run_claude_task가 runner 생성 후 [0]에 채워 넣는 list.
         # on_session_callback이 runner.pid에 접근하기 위해 사용한다.
         runner_ref: List[Optional[ClaudeRunner]] = [None]
@@ -512,7 +463,6 @@ class SoulEngineAdapter:
         handlers = self._make_handlers(
             queue=queue,
             loop=loop,
-            serendipity_ctx=serendipity_ctx,
             runner_ref=runner_ref,
             get_intervention=get_intervention,
             on_intervention_sent=on_intervention_sent,
@@ -526,7 +476,6 @@ class SoulEngineAdapter:
             resume_session_id=resume_session_id,
             extra_env=extra_env,
             on_runner_ready=on_runner_ready,
-            serendipity_ctx=serendipity_ctx,
             runner_ref=runner_ref,
             acquire_runner_kwargs={
                 "working_dir": working_dir,
@@ -571,7 +520,6 @@ def get_soul_engine() -> SoulEngineAdapter:
 def init_soul_engine(
     pool: Optional["RunnerPool"] = None,
     rate_limit_tracker: Optional[Any] = None,
-    serendipity_adapter: Optional["SerendipityAdapter"] = None,
     brief_composer: Optional["BriefComposer"] = None,
 ) -> SoulEngineAdapter:
     """soul_engine 싱글톤을 (재)초기화한다.
@@ -581,7 +529,6 @@ def init_soul_engine(
     Args:
         pool: 주입할 RunnerPool. None이면 풀 없이 초기화.
         rate_limit_tracker: RateLimitTracker 인스턴스. None이면 추적 비활성화.
-        serendipity_adapter: SerendipityAdapter 인스턴스. None이면 세렌디피티 저장 비활성화.
         brief_composer: BriefComposer 인스턴스. None이면 브리프 생성 비활성화.
 
     Returns:
@@ -591,7 +538,6 @@ def init_soul_engine(
     soul_engine = SoulEngineAdapter(
         pool=pool,
         rate_limit_tracker=rate_limit_tracker,
-        serendipity_adapter=serendipity_adapter,
         brief_composer=brief_composer,
     )
     return soul_engine

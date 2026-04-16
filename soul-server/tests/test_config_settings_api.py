@@ -102,7 +102,6 @@ class TestGetConfigSettings:
         assert response.status_code == 200
         data = response.json()
         assert "categories" in data
-        assert "serendipityAvailable" in data
         assert isinstance(data["categories"], list)
 
     def test_categories_have_expected_structure(self, client):
