@@ -3,190 +3,35 @@
  *
  * 폴더 내 세션을 가상 스크롤로 표시. DnD/다중선택/인라인편집 지원.
  * API 호출은 콜백 props로 주입받아 앱별 엔드포인트에 의존하지 않는다.
+ * 세션 행 렌더링은 SessionItem 컴포넌트에 위임한다.
  */
 
-import { useMemo, useRef, useState, useEffect, memo, useCallback } from "react";
-import { useDraggable } from "@dnd-kit/core";
+import { useMemo, useRef, useState, useEffect, useCallback } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
-import {
-  useDashboardStore,
-  isSessionUnread,
-} from "../stores/dashboard-store";
+import { useDashboardStore } from "../stores/dashboard-store";
 import { useIsMobile } from "../hooks/use-mobile";
-import { cn } from "../lib/cn";
-import { Badge } from "./ui/badge";
-import type { SessionSummary, SessionStatus } from "../shared/types";
+import type { SessionSummary } from "../shared/types";
 import { SessionContextMenu } from "./SessionContextMenu";
 import { useFlipAnimation } from "../hooks/useFlipAnimation";
-import { NodeBadge } from "./NodeBadge";
 import { filterSessionsInFolder, type SessionPage } from "../hooks/session-stream-helpers";
+import { SessionItem } from "./SessionItem";
 
-// === Node ID Color Utils ===
-
+// Re-exports for backward compatibility (FeedCard, soul-ui index 등이 참조)
 export { nodeIdToHue } from "../lib/nodeColors";
-
-// === Status Config ===
-
-export interface StatusConfig {
-  dotClass: string;
-  animate: boolean;
-}
-
-export const STATUS_CONFIG: Record<SessionStatus, StatusConfig> = {
-  running:      { dotClass: "bg-success",          animate: true  },
-  completed:    { dotClass: "bg-muted-foreground",  animate: false },
-  error:        { dotClass: "bg-accent-red",        animate: false },
-  interrupted:  { dotClass: "bg-accent-amber",      animate: false },
-  unknown:      { dotClass: "bg-muted-foreground",  animate: false },
-};
-
-function SessionPortrait({ url }: { url: string }) {
-  const [error, setError] = useState(false);
-  if (error) return null;
-  return (
-    <div className="h-10 w-10 shrink-0 rounded-full overflow-hidden">
-      <img
-        src={url}
-        alt=""
-        className="w-full h-full object-cover"
-        onError={() => setError(true)}
-      />
-    </div>
-  );
-}
-
-interface SessionItemProps {
-  session: SessionSummary;
-  isActive: boolean;
-  isSelected: boolean;
-  isEditing: boolean;
-  /** DnD 시 전달할 세션 ID 목록 (다중 선택 포함) */
-  dragSessionIds: string[];
-  onClick: (e: React.MouseEvent) => void;
-  onContextMenu: (e: React.MouseEvent) => void;
-  onEditSubmit: (name: string) => void;
-  onEditCancel: () => void;
-}
-
-const SessionItem = memo(function SessionItem({
-  session,
-  isActive,
-  isSelected,
-  isEditing,
-  dragSessionIds,
-  onClick,
-  onContextMenu,
-  onEditSubmit,
-  onEditCancel,
-}: SessionItemProps) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: session.agentSessionId,
-    data: { type: "session", sessionIds: dragSessionIds },
-  });
-
-  const config = STATUS_CONFIG[session.status] ?? STATUS_CONFIG.unknown;
-  const isUnread = isSessionUnread(session);
-  const isReadCompleted = session.status === "completed" && !isUnread;
-
-  const displayText = session.displayName
-    ? `📌 ${session.displayName}`
-    : session.lastMessage?.preview
-      ? `🗨️ ${session.lastMessage.preview}`
-      : session.prompt || session.agentSessionId;
-
-  const displayTime = session.lastMessage?.timestamp ?? session.updatedAt ?? session.createdAt;
-  const timeStr = displayTime
-    ? new Date(displayTime).toLocaleString("ko-KR", {
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : "...";
-
-  return (
-    <div
-      ref={setNodeRef}
-      {...attributes}
-      {...listeners}
-      data-testid="draggable-session"
-      className={cn(
-        "flex items-center gap-2 px-3 py-2 cursor-pointer text-sm hover:bg-accent/50 border-b border-border/50 select-none",
-        isActive && "bg-accent text-accent-foreground",
-        isSelected && !isActive && "bg-primary/10",
-        isReadCompleted && "opacity-50",
-        isDragging && "opacity-50",
-      )}
-      onClick={onClick}
-      onContextMenu={onContextMenu}
-      data-session-id={session.agentSessionId}
-    >
-      <span
-        className={cn(
-          "w-2 h-2 rounded-full shrink-0",
-          config.dotClass,
-          config.animate && "animate-[pulse_2s_infinite]",
-        )}
-      />
-      {session.agentPortraitUrl && (
-        <SessionPortrait url={session.agentPortraitUrl} />
-      )}
-      <div className="flex-1 min-w-0">
-        {isEditing ? (
-          <input
-            autoFocus
-            className="w-full bg-transparent border-b border-primary outline-none text-sm"
-            defaultValue={session.displayName ?? ""}
-            onBlur={(e) => onEditSubmit(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") onEditSubmit((e.target as HTMLInputElement).value);
-              if (e.key === "Escape") onEditCancel();
-            }}
-          />
-        ) : (
-          <div className={cn("truncate", isUnread ? "text-foreground font-semibold" : isReadCompleted ? "text-muted-foreground" : "text-foreground")}>
-            {displayText}
-          </div>
-        )}
-        <div className="text-xs text-muted-foreground truncate flex items-center gap-1">
-          {session.agentName && (
-            <>
-              <span className="shrink-0 text-xs opacity-70">{session.agentName}</span>
-              <span className="shrink-0 opacity-50">·</span>
-            </>
-          )}
-          <span>{timeStr}</span>
-        </div>
-      </div>
-      <div className="flex items-center gap-1 shrink-0">
-        {session.nodeId && <NodeBadge nodeId={session.nodeId} className="shrink-0" />}
-        {session.eventCount > 0 && (
-          <Badge variant="outline" size="sm" className="shrink-0">
-            {session.eventCount}
-          </Badge>
-        )}
-      </div>
-    </div>
-  );
-});
+export { STATUS_CONFIG } from "./SessionItem";
+export type { StatusConfig } from "./SessionItem";
 
 export interface FolderContentsProps {
   /**
-   * useSessionListProvider가 반환하는 세션 배열.
-   * 지정하면 이 배열에 폴더 필터링 + displayName 오버라이드를 적용하여 표시한다.
+   * useSessionListProvider가 반환하는 세션 배열. 폴더 필터링 + displayName 오버라이드가 적용된다.
    * 미지정 시 queryClient.getQueriesData로 전체 캐시에서 수집하는 레거시 경로를 사용한다.
    *
-   * ⚠️ sessions prop을 사용하는 것을 강하게 권장한다.
-   * 레거시 캐시 수집 경로는 폴더 전환 시 새 queryKey의 데이터가 getQueriesData에 즉시 반영되지 않아
-   * 폴더를 처음 열 때 세션이 보이지 않는 버그가 있다 (SSE keepalive 30초 후에야 표시됨).
+   * ⚠️ sessions prop 사용을 강하게 권장. 레거시 경로는 폴더 전환 시 새 queryKey의 데이터가
+   * 즉시 반영되지 않아 처음 열 때 세션이 비어 보이는 버그가 있다 (SSE keepalive 후 회복).
    */
   sessions?: SessionSummary[];
-  /**
-   * 세션을 다른 폴더로 이동하는 콜백.
-   * DashboardDndProvider를 사용하는 경우 DndContext의 onDragEnd가 이동을 처리하므로 생략 가능.
-   * @deprecated DashboardDndProvider 사용 시 불필요. 레거시 호환 및 직접 이동 트리거용으로 유지.
-   */
+  /** @deprecated DashboardDndProvider 사용 시 불필요. 레거시 직접 이동 트리거용. */
   onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => Promise<void>;
   /** 세션 이름 변경 콜백. 미지정 시 이름 변경 UI 비활성화 */
   onRenameSession?: (sessionId: string, displayName: string | null) => Promise<void>;
@@ -209,40 +54,29 @@ export function FolderContents({ sessions: sessionsProp, onMoveSessions, onRenam
   const catalog = useDashboardStore((s) => s.catalog);
   const isMobile = useIsMobile();
   const queryClient = useQueryClient();
-  const [contextMenu, setContextMenu] = useState<{
-    x: number;
-    y: number;
-    sessionId: string;
-  } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; sessionId: string } | null>(null);
 
-  // --- 레거시 캐시 수집 경로 (sessions prop 미제공 시에만 사용) ---
-  // TanStack Query 캐시 변경 감지: queryCache.subscribe로 cacheVersion 증가 → useMemo 재계산
+  // 레거시 캐시 수집 경로: queryCache.subscribe로 cacheVersion 증가 → useMemo 재계산
   const [cacheVersion, setCacheVersion] = useState(0);
   useEffect(() => {
-    if (sessionsProp) return; // sessions prop이 있으면 캐시 구독 불필요
+    if (sessionsProp) return;
     const unsubscribe = queryClient.getQueryCache().subscribe(() => {
       setCacheVersion((v) => v + 1);
     });
     return unsubscribe;
   }, [queryClient, sessionsProp]);
 
-  // sessions prop이 있으면 직접 사용, 없으면 레거시 캐시 수집 경로
   const displaySessions = useMemo(() => {
     if (sessionsProp) {
-      // useSessionListProvider의 sessions는 현재 queryKey(폴더 포함)의 정확한 데이터.
-      // filterSessionsInFolder로 displayName 오버라이드 + llm 세션 제외만 적용한다.
       return filterSessionsInFolder(sessionsProp, catalog, selectedFolderId);
     }
-    // 레거시 경로: 전체 캐시에서 수집 → 폴더 필터링
     const allData = queryClient.getQueriesData<InfiniteData<SessionPage>>({ queryKey: ["sessions"], exact: false });
     const allSessions: SessionSummary[] = [];
     for (const [, data] of allData) {
       if (!data) continue;
       for (const page of data.pages) allSessions.push(...page.sessions);
     }
-    const uniqueSessions = Array.from(
-      new Map(allSessions.map((s) => [s.agentSessionId, s])).values(),
-    );
+    const uniqueSessions = Array.from(new Map(allSessions.map((s) => [s.agentSessionId, s])).values());
     return filterSessionsInFolder(uniqueSessions, catalog, selectedFolderId);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionsProp, cacheVersion, catalog, selectedFolderId, queryClient]);
@@ -250,15 +84,8 @@ export function FolderContents({ sessions: sessionsProp, onMoveSessions, onRenam
   const prevFolderIdRef = useRef<string | null | undefined>(undefined);
   const parentRef = useRef<HTMLDivElement>(null);
 
-  // 폴더 전환 시 스크롤 초기화 + 자동 세션 선택 (모바일 제외)
-  // ⚠️ !isMobile 조건 필수 — 모바일에서는 폴더 탭 2단계 뷰를 유지해야 함
-  // (기존 selectFolder의 skipAutoSelect: isMobile 동작 대체)
+  // 폴더 전환 시 스크롤 초기화 + 자동 세션 선택 (모바일 제외 — 2단계 뷰 유지)
   useEffect(() => {
-    // 이전 폴더와 다른 경우에만 스크롤 초기화 (같은 폴더 재선택 시 스크롤 위치 유지)
-    // prevFolderIdRef 초기값 undefined → 첫 렌더 시 초기화 생략
-    // scrollTo({ behavior: "instant" })는 DOM scrollTop을 동기적으로 변경하며,
-    // useVirtualizer는 scroll 이벤트로 자체 오프셋을 즉시 동기화하므로
-    // 가상화 리스트 렌더링이 scrollTop과 일치하는 상태로 유지된다
     if (prevFolderIdRef.current !== undefined && prevFolderIdRef.current !== selectedFolderId) {
       parentRef.current?.scrollTo({ top: 0, behavior: "instant" });
     }
@@ -268,7 +95,7 @@ export function FolderContents({ sessions: sessionsProp, onMoveSessions, onRenam
       setActiveSession(displaySessions[0].agentSessionId);
       setActiveSessionSummary(displaySessions[0]);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- 폴더 전환 시에만 실행. displaySessions/activeSessionKey를 deps에 넣으면 캐시 갱신·세션 선택마다 스크롤이 초기화됨
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- 폴더 전환 시에만 실행
   }, [selectedFolderId]);
 
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -280,9 +107,7 @@ export function FolderContents({ sessions: sessionsProp, onMoveSessions, onRenam
     if (!sentinel) return;
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0]?.isIntersecting) {
-          onLoadMore();
-        }
+        if (entries[0]?.isIntersecting) onLoadMore();
       },
       { threshold: 0.1 },
     );
@@ -300,30 +125,32 @@ export function FolderContents({ sessions: sessionsProp, onMoveSessions, onRenam
   const virtualItems = virtualizer.getVirtualItems();
   const { setRef } = useFlipAnimation(displaySessions, virtualItems);
 
-  const handleContextMenu = useCallback(
-    (sessionId: string, e: React.MouseEvent) => {
-      e.preventDefault();
-      setContextMenu({ x: e.clientX, y: e.clientY, sessionId });
-    },
-    [],
-  );
+  const handleContextMenu = useCallback((sessionId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, sessionId });
+  }, []);
 
   const handleEditSubmit = useCallback(
     async (sessionId: string, name: string) => {
       const displayName = name.trim() || null;
       setEditingSession(null);
-      if (onRenameSession) {
-        await onRenameSession(sessionId, displayName);
-      }
+      if (onRenameSession) await onRenameSession(sessionId, displayName);
     },
     [setEditingSession, onRenameSession],
   );
 
+  const handleSessionClick = useCallback(
+    (session: SessionSummary, e: React.MouseEvent) => {
+      if (!e.ctrlKey && !e.metaKey && !e.shiftKey) setActiveSessionSummary(session);
+      toggleSessionSelection(session.agentSessionId, e.ctrlKey || e.metaKey, e.shiftKey, displaySessions);
+      if (isMobile) setActiveTab("chat");
+    },
+    [setActiveSessionSummary, toggleSessionSelection, displaySessions, isMobile, setActiveTab],
+  );
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (e.key === "F2" && activeSessionKey && onRenameSession) {
-        setEditingSession(activeSessionKey);
-      }
+      if (e.key === "F2" && activeSessionKey && onRenameSession) setEditingSession(activeSessionKey);
     },
     [activeSessionKey, setEditingSession, onRenameSession],
   );
@@ -342,13 +169,7 @@ export function FolderContents({ sessions: sessionsProp, onMoveSessions, onRenam
           onKeyDown={handleKeyDown}
           onClick={() => setContextMenu(null)}
         >
-          <div
-            style={{
-              height: `${virtualizer.getTotalSize()}px`,
-              width: "100%",
-              position: "relative",
-            }}
-          >
+          <div style={{ height: `${virtualizer.getTotalSize()}px`, width: "100%", position: "relative" }}>
             {virtualItems.map((virtualItem) => {
               const session = displaySessions[virtualItem.index];
               return (
@@ -363,10 +184,7 @@ export function FolderContents({ sessions: sessionsProp, onMoveSessions, onRenam
                     transform: `translateY(${virtualItem.start}px)`,
                   }}
                 >
-                  <div
-                    ref={(el) => setRef(session.agentSessionId, el)}
-                    style={{ width: "100%", height: "100%" }}
-                  >
+                  <div ref={(el) => setRef(session.agentSessionId, el)} style={{ width: "100%", height: "100%" }}>
                     <SessionItem
                       session={session}
                       isActive={activeSessionKey === session.agentSessionId}
@@ -377,13 +195,7 @@ export function FolderContents({ sessions: sessionsProp, onMoveSessions, onRenam
                           ? Array.from(selectedSessionIds)
                           : [session.agentSessionId]
                       }
-                      onClick={(e) => {
-                        if (!e.ctrlKey && !e.metaKey && !e.shiftKey) {
-                          setActiveSessionSummary(session);
-                        }
-                        toggleSessionSelection(session.agentSessionId, e.ctrlKey || e.metaKey, e.shiftKey, displaySessions);
-                        if (isMobile) setActiveTab("chat");
-                      }}
+                      onClick={(e) => handleSessionClick(session, e)}
                       onContextMenu={(e) => handleContextMenu(session.agentSessionId, e)}
                       onEditSubmit={(name) => handleEditSubmit(session.agentSessionId, name)}
                       onEditCancel={() => setEditingSession(null)}
@@ -394,7 +206,6 @@ export function FolderContents({ sessions: sessionsProp, onMoveSessions, onRenam
             })}
           </div>
 
-          {/* IntersectionObserver 센티넬: 스크롤 하단 도달 감지 */}
           {hasMore && (
             <div ref={sentinelRef} className="flex items-center justify-center py-2 text-xs text-muted-foreground">
               Loading...
@@ -412,9 +223,7 @@ export function FolderContents({ sessions: sessionsProp, onMoveSessions, onRenam
           displaySessions.find((s) => s.agentSessionId === sessionId)?.displayName ?? ""
         }
         resolveSessionIds={(sessionId) =>
-          selectedSessionIds.has(sessionId)
-            ? Array.from(selectedSessionIds)
-            : [sessionId]
+          selectedSessionIds.has(sessionId) ? Array.from(selectedSessionIds) : [sessionId]
         }
       />
     </>
