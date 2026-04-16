@@ -159,16 +159,23 @@ class UpstreamAdapter:
 
     # ─── Connection ─────────────────────────────────
 
-    async def _connect_and_serve(self) -> None:
-        """WebSocket 연결 + 노드 등록 + 세션 동기화 + 명령 수신 루프."""
-        logger.info("Connecting to upstream: %s", self._url)
+    @staticmethod
+    def _encode_portrait(path: str) -> str | None:
+        """portrait 파일을 base64 문자열로 인코딩. 실패/초과 시 None."""
+        try:
+            with open(path, "rb") as f:
+                data = f.read()
+            if len(data) > _MAX_PORTRAIT_SIZE:
+                logger.warning("portrait 파일이 너무 큼, base64 스킵: %s (%d bytes)", path, len(data))
+                return None
+            return base64.b64encode(data).decode("ascii")
+        except Exception:
+            logger.warning("portrait 파일 읽기 실패: %s", path)
+            return None
 
-        self._ws = await self._session.ws_connect(self._url)
-        self._reconnect.reset()
-        logger.info("Connected to upstream (node_id=%s)", self._node_id)
-
-        # 노드 등록
-        registration_msg: dict = {
+    def _build_registration_msg(self) -> dict:
+        """노드 등록 메시지를 조립한다."""
+        msg: dict = {
             "type": EVT_NODE_REGISTER,
             "node_id": self._node_id,
             "host": self._host,
@@ -178,7 +185,7 @@ class UpstreamAdapter:
             },
         }
 
-        # 에이전트 정보 포함 — portrait는 base64로 인코딩하여 원격 HTTP 조회 불필요
+        # 에이전트 정보 — portrait는 base64로 인코딩하여 원격 HTTP 조회 불필요
         if self._agent_registry:
             agents = []
             for profile in self._agent_registry.list():
@@ -192,45 +199,35 @@ class UpstreamAdapter:
                     ),
                 }
                 if profile.portrait_path:
-                    try:
-                        with open(profile.portrait_path, "rb") as f:
-                            data = f.read()
-                        if len(data) > _MAX_PORTRAIT_SIZE:
-                            logger.warning(
-                                "portrait 파일이 너무 큼, base64 스킵: %s (%d bytes)",
-                                profile.portrait_path,
-                                len(data),
-                            )
-                        else:
-                            agent_info["portrait_b64"] = base64.b64encode(data).decode("ascii")
-                    except Exception:
-                        logger.warning("portrait 파일 읽기 실패: %s", profile.portrait_path)
+                    b64 = self._encode_portrait(profile.portrait_path)
+                    if b64:
+                        agent_info["portrait_b64"] = b64
                 agents.append(agent_info)
-            registration_msg["agents"] = agents
+            msg["agents"] = agents
 
-        # 사용자 정보 포함 — portrait는 base64로 인코딩하여 원격 HTTP 조회 불필요 (에이전트 프로필과 동일)
+        # 사용자 정보 — portrait 인코딩은 에이전트와 동일 패턴
         if self._user_name:
             user_info: dict = {
                 "name": self._user_name,
                 "hasPortrait": bool(self._user_portrait_path),
             }
             if self._user_portrait_path:
-                try:
-                    with open(self._user_portrait_path, "rb") as f:
-                        data = f.read()
-                    if len(data) > _MAX_PORTRAIT_SIZE:
-                        logger.warning(
-                            "user portrait 파일이 너무 큼, base64 스킵: %s (%d bytes)",
-                            self._user_portrait_path,
-                            len(data),
-                        )
-                    else:
-                        user_info["portrait_b64"] = base64.b64encode(data).decode("ascii")
-                except Exception:
-                    logger.warning("user portrait 파일 읽기 실패: %s", self._user_portrait_path)
-            registration_msg["user"] = user_info
+                b64 = self._encode_portrait(self._user_portrait_path)
+                if b64:
+                    user_info["portrait_b64"] = b64
+            msg["user"] = user_info
 
-        await self._send(registration_msg)
+        return msg
+
+    async def _connect_and_serve(self) -> None:
+        """WebSocket 연결 + 노드 등록 + 세션 동기화 + 명령 수신 루프."""
+        logger.info("Connecting to upstream: %s", self._url)
+
+        self._ws = await self._session.ws_connect(self._url)
+        self._reconnect.reset()
+        logger.info("Connected to upstream (node_id=%s)", self._node_id)
+
+        await self._send(self._build_registration_msg())
 
         # 세션 동기화: 구독 먼저 → 초기 전송 (이벤트 유실 방지)
         await self._start_broadcast()
@@ -517,8 +514,13 @@ class UpstreamAdapter:
 
     # ─── Event Streaming ────────────────────────────
 
-    async def _stream_events(self, session_id: str) -> None:
-        """TaskManager에서 이벤트를 받아 WebSocket으로 소울스트림에 전송."""
+    async def _relay_events(self, session_id: str) -> None:
+        """TaskManager 이벤트를 WebSocket으로 relay하는 공통 루프.
+
+        complete/error에서 종료하지 않는다.
+        세션이 완료된 후 새 turn이 시작되면 동일 스트림으로 이벤트가 계속 전달돼야 한다.
+        세션 종료는 None 센티넬 또는 WebSocket 연결 해제로 처리한다.
+        """
         queue: asyncio.Queue = asyncio.Queue()
         await self._tm.add_listener(session_id, queue)
 
@@ -537,20 +539,21 @@ class UpstreamAdapter:
                     "agentSessionId": session_id,
                     "event": event,
                 })
-                # complete/error에서 종료하지 않는다.
-                # 세션이 완료된 후 새 turn이 시작되면 동일 스트림으로 이벤트가 계속 전달돼야 한다.
-                # 세션 종료는 None 센티넬 또는 WebSocket 연결 해제로 처리한다.
         except asyncio.CancelledError:
             pass
         except Exception:
-            logger.exception("Error streaming events for session %s", session_id)
+            logger.exception("Error relaying events for session %s", session_id)
         finally:
             await self._tm.remove_listener(session_id, queue)
             if self._stream_tasks.get(session_id) is asyncio.current_task():
                 self._stream_tasks.pop(session_id, None)
 
+    async def _stream_events(self, session_id: str) -> None:
+        """create_session에서 시작되는 이벤트 스트리밍."""
+        await self._relay_events(session_id)
+
     async def _handle_subscribe_events(self, cmd: dict) -> None:
-        """subscribe_events 명령 처리: 라이브 이벤트 relay.
+        """subscribe_events 명령 처리: 기존 스트림 교체 후 라이브 이벤트 relay.
 
         DB 재생은 sessions.py(soulstream-server)가 이미 수행하므로 생략하고
         라이브 이벤트만 relay한다.
@@ -559,7 +562,7 @@ class UpstreamAdapter:
         if not session_id:
             return
 
-        # _stream_events가 실행 중이면 중단 — 이중 브로드캐스트 방지
+        # 기존 스트림이 실행 중이면 중단 — 이중 브로드캐스트 방지
         existing_task = self._stream_tasks.pop(session_id, None)
         if existing_task and not existing_task.done():
             existing_task.cancel()
@@ -568,36 +571,11 @@ class UpstreamAdapter:
             except asyncio.CancelledError:
                 pass
 
-        queue: asyncio.Queue = asyncio.Queue()
-        await self._tm.add_listener(session_id, queue)
-        # add_listener는 항상 성공(-> None)하므로 반환값 체크 불필요
-
         # _handle_subscribe_events 자신도 _stream_tasks에 등록해야
         # _handle_intervene이 중복으로 _stream_events를 생성하지 않는다.
         self._stream_tasks[session_id] = asyncio.current_task()  # type: ignore[assignment]
 
-        try:
-            while self._running:
-                try:
-                    event = await asyncio.wait_for(queue.get(), timeout=30.0)
-                except asyncio.TimeoutError:
-                    continue
-                if event is None:
-                    break  # 세션 종료 시그널
-                await self._send({
-                    "type": EVT_EVENT,
-                    "agentSessionId": session_id,
-                    "event": event,
-                })
-                # complete/error에서 종료하지 않는다 — _stream_events와 동일한 정책
-        except asyncio.CancelledError:
-            pass
-        except Exception:
-            logger.exception("Error in subscribe_events for session %s", session_id)
-        finally:
-            await self._tm.remove_listener(session_id, queue)
-            if self._stream_tasks.get(session_id) is asyncio.current_task():
-                self._stream_tasks.pop(session_id, None)
+        await self._relay_events(session_id)
 
     # ─── Helpers ────────────────────────────────────
 
