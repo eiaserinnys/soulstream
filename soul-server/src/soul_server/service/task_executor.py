@@ -5,23 +5,21 @@ Task Executor - 백그라운드 태스크 실행 관리
 """
 
 import asyncio
-import httpx
+import json
 import logging
 import os
-import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Callable, Awaitable, Optional, TYPE_CHECKING
 
 from soul_common.db.session_db_base import extract_searchable_text
+from soul_server.service.atom_context import fetch_atom_context
 from soul_server.service.task_models import Task, TaskStatus, PREVIEW_FIELD_MAP, datetime_to_str, utc_now
 from soul_server.service.prompt_assembler import assemble_prompt
 from soul_server.service.session_broadcaster import get_session_broadcaster
 from soul_server.service.context_builder import build_soulstream_context_item
 from soul_server.config import get_settings
-
-import json
 
 
 @dataclass
@@ -173,7 +171,7 @@ class TaskExecutor:
                             folder_prompt = folder_settings.get("folderPrompt") or None
                             atom_node_cfg = folder_settings.get("atomContextNode")
                             if isinstance(atom_node_cfg, dict) and atom_node_cfg.get("nodeId"):
-                                atom_context_markdown = await _fetch_atom_context(
+                                atom_context_markdown = await fetch_atom_context(
                                     node_id=atom_node_cfg["nodeId"],
                                     depth=int(atom_node_cfg.get("depth", 3)),
                                     titles_only=bool(atom_node_cfg.get("titlesOnly", False)),
@@ -651,65 +649,3 @@ class TaskExecutor:
         cancelled_count = sum(1 for _, t in tasks_to_cancel if t.done())
         logger.info(f"Cancelled {cancelled_count}/{len(tasks_to_cancel)} running tasks")
         return cancelled_count
-
-
-_ATOM_ID_PATTERN = re.compile(
-    r"<!-- node:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}) .*?chars:(\d+).*?-->"
-)
-_ATOM_CONTEXT_HEADER = (
-    "# atom 트리 | 드릴다운: "
-    "mcp__atom__list_children(parent_node_id) · "
-    "compile_subtree(node_id)\n"
-)
-
-
-def _format_atom_context(markdown: str) -> str:
-    """include_ids 출력의 HTML 주석을 [node_id] (N chars) 포맷으로 변환한다.
-
-    입력 예시 (일반 노드):
-        soulstream <!-- node:d71af4b5-c53a-49a4-9e07-9b6ee531fb56 card:... chars:123 -->
-    입력 예시 (symlink 노드, chars 뒤에 symlink:true 필드 있음):
-        ~ 심링크 <!-- node:a1b2c3d4-0000-0000-0000-000000000000 card:... chars:0 symlink:true -->
-    출력 예시:
-        soulstream [d71af4b5-c53a-49a4-9e07-9b6ee531fb56] (123 chars)
-    """
-    lines = []
-    for line in markdown.splitlines():
-        m = _ATOM_ID_PATTERN.search(line)
-        if m:
-            node_id = m.group(1)  # node_id 전체 UUID
-            chars = m.group(2)
-            line = _ATOM_ID_PATTERN.sub(f"[{node_id}] ({chars} chars)", line)
-        lines.append(line)
-    return _ATOM_CONTEXT_HEADER + "\n".join(lines)
-
-
-async def _fetch_atom_context(node_id: str, depth: int, titles_only: bool) -> str | None:
-    """atom API에서 subtree를 compile하여 마크다운 텍스트를 반환한다.
-    실패 시 None 반환 (fallback)."""
-    settings = get_settings()
-    if not settings.atom_enabled or not settings.atom_server_url:
-        return None
-    url = f"{settings.atom_server_url.rstrip('/')}/api/tree/{node_id}/compile"
-    params: dict[str, str | int] = {"depth": depth, "max_chars": 50000}
-    params["include_ids"] = "true"  # Claude용: titles_only 여부와 무관하게 항상 포함
-    if titles_only:
-        params["titles_only"] = "true"
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(
-                url,
-                params=params,
-                headers={"x-api-key": settings.atom_api_key},
-            )
-        if resp.status_code == 200:
-            data = resp.json()
-            markdown = data.get("markdown") or None
-            if markdown:
-                markdown = _format_atom_context(markdown)
-            return markdown
-        logger.warning("[atom] compile failed: status=%s node_id=%s", resp.status_code, node_id)
-        return None
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("[atom] compile error: %s node_id=%s", exc, node_id)
-        return None
