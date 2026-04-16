@@ -4,119 +4,42 @@
  * Soul 실행 이벤트를 노드 기반 그래프로 시각화합니다.
  * thinking-tool 관계를 React Flow로 표현하며
  * 스트리밍 실시간 업데이트를 지원합니다.
+ *
+ * 컴포넌트는 렌더링과 훅 조합만 담당하며, 실제 동작은 4개 커스텀 훅에 위임합니다:
+ *  - useGraphBuilder    : 트리 → 그래프 변환 + 디바운싱 + 증분 업데이트
+ *  - useAutoScroll      : 새 노드 pan, fitView, autoScroll 토글
+ *  - useNodeSelection   : ReactFlow 선택 ↔ dashboard-store 동기화 + 키보드 네비
+ *  - useGraphDump       : 그래프 덤프 생성/다운로드 + Ctrl+Shift+D
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo } from "react";
 import {
   ReactFlow,
   Background,
   Controls,
   Panel,
-  useNodesState,
-  useEdgesState,
-  useReactFlow,
-  useStoreApi,
   ReactFlowProvider,
   PanOnScrollMode,
-  type OnSelectionChangeParams,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
 import {
-  useDashboardStore, countTreeNodes, countStreamingNodes,
-  type SelectedEventNodeData,
+  useDashboardStore,
+  countTreeNodes,
+  countStreamingNodes,
 } from "../stores/dashboard-store";
 import { AskQuestionBanner } from "./AskQuestionBanner";
 import { cn } from "../lib/cn";
 import { useTheme } from "../hooks/useTheme";
 import { nodeTypes } from "./nodes";
+import type { GraphNode } from "../lib/layout-engine";
+import { FIXED_ZOOM, MIN_ZOOM, useAutoScroll } from "../hooks/useAutoScroll";
+import { useGraphBuilder } from "../hooks/useGraphBuilder";
 import {
-  buildGraph,
-  buildSingleNode,
-  DEFAULT_NODE_WIDTH,
-  DEFAULT_NODE_HEIGHT,
-  type GraphNode,
-  type GraphEdge,
-  type GraphNodeData,
-} from "../lib/layout-engine";
-import { createGraphDump, downloadDump } from "../lib/graph-dump";
-
-/** selectEventNode 경로로 라우팅하는 노드 타입 (트리 조회 불필요, 데이터 직접 전달) */
-const EVENT_NODE_TYPES = new Set(["user", "intervention", "system", "result"]);
-
-/** 그래프 노드 데이터에서 이벤트 노드 선택 데이터를 추출합니다. */
-function buildEventNodeData(nodeData: GraphNodeData): SelectedEventNodeData {
-  return {
-    nodeType: nodeData.nodeType as SelectedEventNodeData["nodeType"],
-    label: nodeData.label,
-    content: nodeData.fullContent ?? nodeData.content ?? "",
-    durationMs: nodeData.durationMs,
-    usage: nodeData.usage,
-    totalCostUsd: nodeData.totalCostUsd,
-    isError: nodeData.isError,
-  };
-}
-
-/** 그래프 재구성 디바운스 간격 (ms) - 고빈도 text_delta 이벤트 대응 */
-const REBUILD_DEBOUNCE_MS = 100;
-
-/** 고정 줌 비율 (Complete 상태 기준) */
-const FIXED_ZOOM = 0.9;
-
-/** 최소 줌 비율 (ReactFlow minZoom과 동기화) */
-const MIN_ZOOM = 0.1;
-
-/** 뷰포트 가장자리와 새 노드 사이의 최소 마진 (px) */
-const PAN_MARGIN = 80;
-
-/**
- * 특정 노드가 뷰포트에 보이도록 하기 위해 필요한 pan(dx, dy)을 계산합니다.
- * 줌은 절대 변경하지 않습니다. 이미 보이면 { dx: 0, dy: 0 }을 반환합니다.
- */
-function calcPanToNode(
-  node: GraphNode,
-  viewport: { x: number; y: number; zoom: number },
-  vpW: number,
-  vpH: number,
-): { dx: number; dy: number } {
-  const { zoom } = viewport;
-  const screenX = node.position.x * zoom + viewport.x;
-  const screenY = node.position.y * zoom + viewport.y;
-  const nodeW = (node.width ?? DEFAULT_NODE_WIDTH) * zoom;
-  const nodeH = (node.height ?? DEFAULT_NODE_HEIGHT) * zoom;
-
-  if (
-    screenX + nodeW > PAN_MARGIN &&
-    screenX < vpW - PAN_MARGIN &&
-    screenY + nodeH > PAN_MARGIN &&
-    screenY < vpH - PAN_MARGIN
-  ) {
-    return { dx: 0, dy: 0 };
-  }
-
-  let dx = 0;
-  let dy = 0;
-
-  if (screenX + nodeW <= PAN_MARGIN) {
-    dx = PAN_MARGIN - screenX;
-  } else if (screenX >= vpW - PAN_MARGIN) {
-    dx = vpW - PAN_MARGIN - nodeW - screenX;
-    if (nodeW > vpW - 2 * PAN_MARGIN) {
-      dx = PAN_MARGIN - screenX;
-    }
-  }
-
-  if (screenY + nodeH <= PAN_MARGIN) {
-    dy = PAN_MARGIN - screenY;
-  } else if (screenY >= vpH - PAN_MARGIN) {
-    dy = vpH - PAN_MARGIN - nodeH - screenY;
-    if (nodeH > vpH - 2 * PAN_MARGIN) {
-      dy = PAN_MARGIN - screenY;
-    }
-  }
-
-  return { dx, dy };
-}
+  useNodeSelection,
+  useNodesSelectedSync,
+} from "../hooks/useNodeSelection";
+import { useGraphDump } from "../hooks/useGraphDump";
 
 // === Inner Graph (needs ReactFlow context) ===
 
@@ -124,389 +47,86 @@ function NodeGraphInner() {
   const [theme] = useTheme();
   const tree = useDashboardStore((s) => s.tree);
   const treeVersion = useDashboardStore((s) => s.treeVersion);
+  const treeChangeInfo = useDashboardStore((s) => s.treeChangeInfo);
   const selectedCardId = useDashboardStore((s) => s.selectedCardId);
   const selectedNodeId = useDashboardStore((s) => s.selectedNodeId);
-  const selectCard = useDashboardStore((s) => s.selectCard);
-  const selectEventNode = useDashboardStore((s) => s.selectEventNode);
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const collapsedNodeIds = useDashboardStore((s) => s.collapsedNodeIds);
   const lastEventId = useDashboardStore((s) => s.lastEventId);
   const processingCtx = useDashboardStore((s) => s.processingCtx);
 
-  const { getViewport, setViewport } = useReactFlow();
-  const store = useStoreApi();
+  // 1. 자동 스크롤 + lastNode/뷰포트 조작
+  const {
+    autoScroll,
+    onMoveEnd,
+    handleToggleAutoScroll,
+    setLastNode,
+    panToNode,
+    panOnFirstLoad,
+  } = useAutoScroll(activeSessionKey);
 
-  const [nodes, setNodes, onNodesChange] = useNodesState<GraphNode>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<GraphEdge>([]);
+  // 2. ReactFlow 선택 ↔ store 동기화 + 프로그래밍 select 헬퍼
+  const selection = useNodeSelection();
 
-  const prevNodeIdsRef = useRef<Set<string>>(new Set());
-  const hasInitializedRef = useRef(false);
-  const prevSessionKeyRef = useRef<string | null>(null);
-  const selectedCardIdRef = useRef(selectedCardId);
-  const selectedNodeIdRef = useRef(selectedNodeId);
-  selectedCardIdRef.current = selectedCardId;
-  selectedNodeIdRef.current = selectedNodeId;
-
-  // 프로그래밍적 선택 변경 시 onSelectionChange에서 탭 전환을 억제하기 위한 플래그
-  const isProgrammaticSelectRef = useRef(false);
-
-  // 자동 스크롤 상태 (기본 ON)
-  const [autoScroll, setAutoScroll] = useState(true);
-  // 프로그래밍적 뷰포트 이동을 구분하기 위한 플래그
-  const isProgrammaticMoveRef = useRef(false);
-  // 현재 그래프의 마지막 노드 참조 (토글 ON 시 즉시 이동용)
-  const lastNodeRef = useRef<GraphNode | null>(null);
-
-  // 세션 변경 시 auto-scroll 리셋
-  useEffect(() => {
-    setAutoScroll(true);
-  }, [activeSessionKey]);
-
-  // 사용자 수동 이동 감지 → auto-scroll OFF
-  const onMoveEnd = useCallback(
-    (event: MouseEvent | TouchEvent | null) => {
-      // event가 null이면 프로그래밍적 이동
-      if (event && !isProgrammaticMoveRef.current) {
-        setAutoScroll(false);
-      }
-      isProgrammaticMoveRef.current = false;
-    },
-    [],
+  // 3. 빌더가 호출할 콜백 묶음 (selection + autoScroll 결합)
+  const handleFollowSelect = useCallback(
+    (node: GraphNode) => selection.selectGraphNodeForFollow(node),
+    [selection],
   );
 
-  // auto-scroll 토글 ON → 즉시 마지막 노드로 이동
-  const handleToggleAutoScroll = useCallback(() => {
-    setAutoScroll((prev) => {
-      const next = !prev;
-      if (next && lastNodeRef.current) {
-        const { width: vpW, height: vpH } = store.getState();
-        if (vpW === 0 || vpH === 0) return next;
-        const viewport = getViewport();
-        const { dx, dy } = calcPanToNode(lastNodeRef.current, viewport, vpW, vpH);
-        if (dx !== 0 || dy !== 0) {
-          isProgrammaticMoveRef.current = true;
-          setViewport(
-            { x: viewport.x + dx, y: viewport.y + dy, zoom: viewport.zoom },
-            { duration: 300 },
-          );
-        }
-      }
-      return next;
-    });
-  }, [getViewport, setViewport, store]);
+  const handleFirstLoad = useCallback(
+    (node: GraphNode) => {
+      selection.selectGraphNodeOnFirstLoad(node);
+      panOnFirstLoad(node);
+    },
+    [selection, panOnFirstLoad],
+  );
 
-  // Ctrl+Shift+D → 그래프 상태 덤프 다운로드
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.shiftKey && e.key === "D") {
-        e.preventDefault();
-        const dump = createGraphDump(
-          activeSessionKey,
-          treeVersion,
-          lastEventId,
-          tree,
-          nodes as GraphNode[],
-          edges as GraphEdge[],
-          processingCtx,
-        );
-        downloadDump(dump);
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [activeSessionKey, treeVersion, lastEventId, tree, nodes, edges, processingCtx]);
-
-  const treeChangeInfo = useDashboardStore((s) => s.treeChangeInfo);
-
-  // 증분 업데이트: 텍스트/상태 변경 — 해당 노드의 data만 패치 (레이아웃 불변)
-  const handleNodeUpdated = useCallback((nodeId: string) => {
-    const treeNode = processingCtx.nodeMap.get(nodeId);
-    if (!treeNode) return;
-    setNodes((prev) => prev.map((n) =>
-      n.id === `node-${nodeId}` || n.id === `node-${nodeId}-call`
-        ? { ...n, data: { ...n.data, label: treeNode.content ? (n.data.label) : n.data.label, content: treeNode.content?.slice(0, 120) || n.data.content, streaming: !treeNode.completed } }
-        : n,
-    ));
-  }, [processingCtx, setNodes]);
-
-  // 증분 업데이트: 노드 추가 — 새 노드만 생성, 기존 노드 위치 불변
-  const handleNodeAdded = useCallback((nodeId: string) => {
-    const treeNode = processingCtx.nodeMap.get(nodeId);
-    if (!treeNode) return;
-
-    // 부모의 그래프 노드 ID를 결정
-    const parent = treeNode.parent;
-    let parentGraphNodeId: string | null = null;
-    if (parent) {
-      // tool 노드의 부모는 "node-xxx-call" 형식일 수 있음
-      const candidateIds = [`node-${parent.id}-call`, `node-${parent.id}`];
-      const currentNodes = store.getState().nodes as GraphNode[];
-      const currentEdges = store.getState().edges as GraphEdge[];
-      for (const cid of candidateIds) {
-        if (currentNodes.some((n) => n.id === cid)) {
-          parentGraphNodeId = cid;
-          break;
-        }
-      }
-
-      const result = buildSingleNode(treeNode, parentGraphNodeId, currentNodes, currentEdges, collapsedNodeIds);
-      if (!result.newNode) return;
-
-      setNodes((prev) => [...prev, result.newNode!]);
-      if (result.newEdge) setEdges((prev) => [...prev, result.newEdge!]);
-
-      prevNodeIdsRef.current.add(result.newNode.id);
-      lastNodeRef.current = result.newNode;
-
+  const handleIncrementalAdded = useCallback(
+    (node: GraphNode) => {
       // autoScroll ON 시: 새 노드를 자동 선택하고 pan
-      if (autoScroll) {
-        const nodeType = result.newNode.data.nodeType as string | undefined;
-        const cardId = result.newNode.data.cardId as string | undefined;
-        isProgrammaticSelectRef.current = true;
-        if (nodeType && EVENT_NODE_TYPES.has(nodeType)) {
-          selectEventNode(
-            buildEventNodeData(result.newNode.data as GraphNodeData),
-            result.newNode.id,
-            false,
-          );
-        } else if (cardId) {
-          selectCard(cardId, result.newNode.id, false);
-        }
+      if (!autoScroll) return;
+      selection.selectGraphNodeForFollow(node);
+      requestAnimationFrame(() => {
+        panToNode(node);
+      });
+    },
+    [autoScroll, selection, panToNode],
+  );
 
-        requestAnimationFrame(() => {
-          const { width: vpW, height: vpH } = store.getState();
-          if (vpW === 0 || vpH === 0) return;
-          const viewport = getViewport();
-          const { dx, dy } = calcPanToNode(result.newNode!, viewport, vpW, vpH);
-          if (dx !== 0 || dy !== 0) {
-            isProgrammaticMoveRef.current = true;
-            setViewport(
-              { x: viewport.x + dx, y: viewport.y + dy, zoom: viewport.zoom },
-              { duration: 300 },
-            );
-          }
-        });
-      }
-    }
-  }, [processingCtx, collapsedNodeIds, autoScroll, store, setNodes, setEdges, getViewport, setViewport, selectCard, selectEventNode]);
+  const getAutoScroll = useCallback(() => autoScroll, [autoScroll]);
 
-  // 트리/이벤트가 변경되면 그래프 재구성 (전체 재빌드 또는 증분 업데이트)
-  useEffect(() => {
-    if (!activeSessionKey) {
-      setNodes([]);
-      setEdges([]);
-      prevNodeIdsRef.current = new Set();
-      hasInitializedRef.current = false;
-      prevSessionKeyRef.current = null;
-      return;
-    }
-
-    if (prevSessionKeyRef.current !== null && prevSessionKeyRef.current !== activeSessionKey) {
-      prevNodeIdsRef.current = new Set();
-      hasInitializedRef.current = false;
-    }
-    prevSessionKeyRef.current = activeSessionKey;
-
-    // 증분 업데이트 경로: treeChangeInfo가 있고, 세션이 동일하며, 초기화 완료 상태
-    if (treeChangeInfo && hasInitializedRef.current) {
-      if (treeChangeInfo.type === 'node-updated' && treeChangeInfo.nodeId) {
-        handleNodeUpdated(treeChangeInfo.nodeId);
-        return;
-      }
-      if (treeChangeInfo.type === 'node-added' && treeChangeInfo.nodeId) {
-        handleNodeAdded(treeChangeInfo.nodeId);
-        return;
-      }
-      // collapse-toggle, full-rebuild → 아래 전체 재빌드로 fall through
-    }
-
-    // 전체 재빌드 경로: 세션 전환, 최초 로드, collapse, changeInfo 없음
-    let rafId: number | undefined;
-
-    const timer = setTimeout(() => {
-      const { nodes: newNodes, edges: newEdges } = buildGraph(tree, collapsedNodeIds);
-
-      const curSelectedNodeId = selectedNodeIdRef.current;
-      const curSelectedCardId = selectedCardIdRef.current;
-      const nodesWithSelection = newNodes.map((n) => ({
-        ...n,
-        selected: curSelectedNodeId
-          ? n.id === curSelectedNodeId
-          : n.data.cardId === curSelectedCardId,
-      }));
-
-      setNodes(nodesWithSelection);
-      setEdges(newEdges);
-
-      const currentIds = new Set(nodesWithSelection.map((n) => n.id));
-      const addedNodes = nodesWithSelection.filter(
-        (n) => !prevNodeIdsRef.current.has(n.id),
-      );
-      prevNodeIdsRef.current = currentIds;
-
-      // 마지막 노드 참조 갱신
-      if (nodesWithSelection.length > 0) {
-        lastNodeRef.current = nodesWithSelection[nodesWithSelection.length - 1];
-      }
-
-      if (addedNodes.length > 0) {
-        const isFirstLoad = !hasInitializedRef.current;
-
-        // Follow 모드 ON일 때 마지막 추가 노드를 자동 선택
-        if (!isFirstLoad && autoScroll) {
-          const lastAdded = addedNodes[addedNodes.length - 1];
-          const nodeType = lastAdded.data.nodeType as string | undefined;
-          const cardId = lastAdded.data.cardId as string | undefined;
-
-          isProgrammaticSelectRef.current = true;
-          if (nodeType && EVENT_NODE_TYPES.has(nodeType)) {
-            selectEventNode(
-              buildEventNodeData(lastAdded.data as GraphNodeData),
-              lastAdded.id,
-              false,
-            );
-          } else if (cardId) {
-            selectCard(cardId, lastAdded.id, false);
-          }
-        }
-
-        rafId = requestAnimationFrame(() => {
-          const { width: vpW, height: vpH } = store.getState();
-          if (vpW === 0 || vpH === 0) return;
-
-          if (isFirstLoad) {
-            hasInitializedRef.current = true;
-
-            const lastNode = nodesWithSelection[nodesWithSelection.length - 1];
-            if (lastNode) {
-              isProgrammaticSelectRef.current = true;
-              const nodeType = lastNode.data.nodeType as string | undefined;
-              if (nodeType && EVENT_NODE_TYPES.has(nodeType)) {
-                selectEventNode(
-                  buildEventNodeData(lastNode.data as GraphNodeData),
-                  lastNode.id,
-                  false,
-                );
-              } else {
-                const cardId = lastNode.data.cardId as string | undefined;
-                if (cardId) {
-                  selectCard(cardId, lastNode.id, false);
-                } else {
-                  isProgrammaticSelectRef.current = false;
-                }
-              }
-            }
-
-            const viewport = { x: 0, y: 0, zoom: FIXED_ZOOM };
-            const { dx, dy } = calcPanToNode(lastNode, viewport, vpW, vpH);
-
-            isProgrammaticMoveRef.current = true;
-            setViewport(
-              { x: viewport.x + dx, y: viewport.y + dy, zoom: FIXED_ZOOM },
-              { duration: 300 },
-            );
-            return;
-          }
-
-          if (!autoScroll) return;
-
-          hasInitializedRef.current = true;
-
-          const viewport = getViewport();
-          const targetNode = addedNodes[addedNodes.length - 1];
-          const { dx, dy } = calcPanToNode(targetNode, viewport, vpW, vpH);
-
-          if (dx === 0 && dy === 0) return;
-
-          isProgrammaticMoveRef.current = true;
-          setViewport(
-            { x: viewport.x + dx, y: viewport.y + dy, zoom: viewport.zoom },
-            { duration: 300 },
-          );
-        });
-      }
-    }, REBUILD_DEBOUNCE_MS);
-
-    return () => {
-      clearTimeout(timer);
-      if (rafId !== undefined) cancelAnimationFrame(rafId);
-    };
-  }, [
+  // 4. 트리 → 그래프 변환 (디바운싱 + 증분 업데이트)
+  const builder = useGraphBuilder({
+    tree,
     treeVersion,
     treeChangeInfo,
-    tree,
     activeSessionKey,
-    autoScroll,
     collapsedNodeIds,
-    setNodes,
-    setEdges,
-    getViewport,
-    setViewport,
-    store,
-    selectCard,
-    selectEventNode,
-    handleNodeUpdated,
-    handleNodeAdded,
-  ]);
+    processingCtx,
+    selectedCardId,
+    selectedNodeId,
+    getAutoScroll,
+    setLastNode,
+    onIncrementalNodeAdded: handleIncrementalAdded,
+    onFirstLoadAdded: handleFirstLoad,
+    onFollowSelect: handleFollowSelect,
+    onFollowPan: panToNode,
+  });
 
-  // 선택 상태 변경 시 노드의 selected 속성만 업데이트
-  useEffect(() => {
-    setNodes((prev) =>
-      prev.map((n) => {
-        const shouldSelect = selectedNodeId
-          ? n.id === selectedNodeId
-          : n.data.cardId === selectedCardId;
-        return n.selected === shouldSelect ? n : { ...n, selected: shouldSelect };
-      }),
-    );
-  }, [selectedCardId, selectedNodeId, setNodes]);
+  // 5. store 선택 → ReactFlow 노드 selected 동기화
+  useNodesSelectedSync(builder.setNodes, selectedCardId, selectedNodeId);
 
-  // 노드 선택 → 카드 선택 또는 이벤트 노드 선택 동기화
-  // nodeType 기반 라우팅: user/intervention/system/result → selectEventNode, 나머지 → selectCard
-  // isProgrammaticSelectRef가 true이면 프로그래밍적 선택 변경이므로 탭 전환 억제
-  const onSelectionChange = useCallback(
-    ({ nodes: selectedNodes }: OnSelectionChangeParams) => {
-      const switchTab = !isProgrammaticSelectRef.current;
-      isProgrammaticSelectRef.current = false;
-
-      if (selectedNodes.length === 1) {
-        const nodeData = selectedNodes[0].data as GraphNodeData;
-        const nodeType = nodeData?.nodeType as string | undefined;
-
-        // 이벤트 노드: 데이터 직접 전달 (트리 조회 불필요)
-        if (nodeType && EVENT_NODE_TYPES.has(nodeType)) {
-          selectEventNode(
-            buildEventNodeData(nodeData),
-            selectedNodes[0].id,
-            switchTab,
-          );
-          return;
-        }
-
-        // 카드 노드: 트리 조회 기반 (thinking, tool_call)
-        const cardId = nodeData?.cardId as string | undefined;
-        if (cardId) {
-          selectCard(cardId, selectedNodes[0].id, switchTab);
-          return;
-        }
-      }
-      // 노드 해제(deselect)에서는 탭 전환하지 않음
-      // 세션 전환 시 노드가 클리어되면서 onSelectionChange가 호출되는데,
-      // 이때 detail 탭으로 전환하면 사용자가 보고 있던 chat 탭이 초기화됨
-      selectCard(null, null, false);
-    },
-    [selectCard, selectEventNode],
-  );
-
-  // 이미 선택된 노드를 재클릭해도 탭을 전환한다.
-  // onSelectionChange는 이미 선택된 노드 재클릭 시 발화하지 않으므로,
-  // 탭 전환만 별도로 처리한다. 노드 선택 자체는 onSelectionChange가 담당.
-  const onNodeClick = useCallback(() => {
-    const currentTab = useDashboardStore.getState().activeRightTab;
-    if (currentTab === "chat") {
-      useDashboardStore.getState().setActiveRightTab("detail");
-    }
-  }, []);
+  // 6. 그래프 덤프 다운로드 (Ctrl+Shift+D + Dump 버튼)
+  const { dumpGraph } = useGraphDump({
+    activeSessionKey,
+    treeVersion,
+    lastEventId,
+    tree,
+    nodes: builder.nodes,
+    edges: builder.edges,
+    processingCtx,
+  });
 
   // 빈 상태
   if (!activeSessionKey) {
@@ -529,14 +149,14 @@ function NodeGraphInner() {
   }
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+    <div style={{ position: "relative", width: "100%", height: "100%" }}>
       <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onSelectionChange={onSelectionChange}
-        onNodeClick={onNodeClick}
+        nodes={builder.nodes}
+        edges={builder.edges}
+        onNodesChange={builder.onNodesChange}
+        onEdgesChange={builder.onEdgesChange}
+        onSelectionChange={selection.onSelectionChange}
+        onNodeClick={selection.onNodeClick}
         onMoveEnd={onMoveEnd}
         nodeTypes={nodeTypes}
         nodesDraggable={false}
@@ -557,7 +177,12 @@ function NodeGraphInner() {
         }}
         style={{ width: "100%", height: "100%" }}
       >
-        <Background color="var(--muted-foreground)" gap={20} size={1} style={{ opacity: 0.15 }} />
+        <Background
+          color="var(--muted-foreground)"
+          gap={20}
+          size={1}
+          style={{ opacity: 0.15 }}
+        />
         <Controls
           showInteractive={false}
           style={{
@@ -567,48 +192,11 @@ function NodeGraphInner() {
           }}
         />
         {/* Auto-scroll 토글 + Dump */}
-        <Panel position="bottom-right">
-          <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => {
-              const dump = createGraphDump(
-                activeSessionKey,
-                treeVersion,
-                lastEventId,
-                tree,
-                nodes as GraphNode[],
-                edges as GraphEdge[],
-                processingCtx,
-              );
-              downloadDump(dump);
-            }}
-            className="flex items-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium transition-colors border shadow-md bg-popover border-border text-muted-foreground hover:bg-input"
-            title="Dump graph state (Ctrl+Shift+D)"
-          >
-            Dump
-          </button>
-          <button
-            onClick={handleToggleAutoScroll}
-            className={cn(
-              "flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors",
-              "border shadow-md",
-              autoScroll
-                ? "bg-accent-blue/15 border-accent-blue/30 text-accent-blue hover:bg-accent-blue/25"
-                : "bg-popover border-border text-muted-foreground hover:bg-input",
-            )}
-            title={autoScroll ? "Auto-scroll ON — click to disable" : "Auto-scroll OFF — click to follow latest node"}
-          >
-            <span className="text-xs">{autoScroll ? "\u{2193}" : "\u{21E3}"}</span>
-            {autoScroll ? "Follow" : "Follow"}
-            <span
-              className={cn(
-                "w-1.5 h-1.5 rounded-full",
-                autoScroll ? "bg-accent-blue" : "bg-muted-foreground/40",
-              )}
-            />
-          </button>
-          </div>
-        </Panel>
+        <GraphControlsPanel
+          autoScroll={autoScroll}
+          onToggleAutoScroll={handleToggleAutoScroll}
+          onDump={dumpGraph}
+        />
       </ReactFlow>
       {/* AskUserQuestion 배너: 캔버스 하단 중앙 오버레이 */}
       <AskQuestionBanner />
@@ -620,10 +208,7 @@ function NodeGraphInner() {
 
 export function NodeGraph() {
   return (
-    <div
-      data-testid="node-graph"
-      className="flex flex-col h-full overflow-hidden"
-    >
+    <div data-testid="node-graph" className="flex flex-col h-full overflow-hidden">
       {/* Header */}
       <GraphHeader />
 
@@ -634,6 +219,56 @@ export function NodeGraph() {
         </ReactFlowProvider>
       </div>
     </div>
+  );
+}
+
+// === Bottom-right Controls Panel (Dump + Follow toggle) ===
+
+function GraphControlsPanel({
+  autoScroll,
+  onToggleAutoScroll,
+  onDump,
+}: {
+  autoScroll: boolean;
+  onToggleAutoScroll: () => void;
+  onDump: () => void;
+}) {
+  return (
+    <Panel position="bottom-right">
+      <div className="flex items-center gap-1.5">
+        <button
+          onClick={onDump}
+          className="flex items-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium transition-colors border shadow-md bg-popover border-border text-muted-foreground hover:bg-input"
+          title="Dump graph state (Ctrl+Shift+D)"
+        >
+          Dump
+        </button>
+        <button
+          onClick={onToggleAutoScroll}
+          className={cn(
+            "flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors",
+            "border shadow-md",
+            autoScroll
+              ? "bg-accent-blue/15 border-accent-blue/30 text-accent-blue hover:bg-accent-blue/25"
+              : "bg-popover border-border text-muted-foreground hover:bg-input",
+          )}
+          title={
+            autoScroll
+              ? "Auto-scroll ON — click to disable"
+              : "Auto-scroll OFF — click to follow latest node"
+          }
+        >
+          <span className="text-xs">{autoScroll ? "\u{2193}" : "\u{21E3}"}</span>
+          {autoScroll ? "Follow" : "Follow"}
+          <span
+            className={cn(
+              "w-1.5 h-1.5 rounded-full",
+              autoScroll ? "bg-accent-blue" : "bg-muted-foreground/40",
+            )}
+          />
+        </button>
+      </div>
+    </Panel>
   );
 }
 
@@ -659,9 +294,7 @@ function GraphHeader() {
             {streamingCount} active
           </span>
         )}
-        <span className="text-muted-foreground font-normal">
-          {nodeCount}
-        </span>
+        <span className="text-muted-foreground font-normal">{nodeCount}</span>
       </div>
     </div>
   );
