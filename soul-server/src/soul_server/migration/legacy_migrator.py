@@ -14,6 +14,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
+from soul_common.db.session_db_base import (
+    extract_searchable_text as _canonical_extract_searchable,
+)
+
 if TYPE_CHECKING:
     import asyncpg
 
@@ -150,20 +154,19 @@ def _parse_dt(val: object) -> datetime:
 
 
 def _extract_searchable(evt: dict) -> str:
-    """이벤트에서 검색 가능 텍스트 추출."""
-    t = evt.get("type", evt.get("event_type", ""))
-    if t in ("text_delta", "text"):
-        return evt.get("text", "")
-    if t == "thinking":
-        return evt.get("thinking", "")
-    if t == "tool_use":
-        inp = evt.get("input", "")
-        return inp if isinstance(inp, str) else json.dumps(inp, ensure_ascii=False)
-    if t == "tool_result":
-        return evt.get("result", "")
-    if t == "user_message":
-        return evt.get("text", "")
-    return ""
+    """이벤트에서 검색 가능 텍스트 추출 (레거시 데이터 형식 호환 어댑터).
+
+    정본은 soul_common.db.session_db_base.extract_searchable_text.
+    레거시 JSONL의 호환을 위해 두 가지 정규화를 적용한 뒤 정본에 위임한다:
+      1. type 키가 없고 event_type 키가 있으면 type으로 복사.
+      2. type == "text" (레거시 표기) → "text_delta" (정본 표기)로 정규화.
+    """
+    raw_type = evt.get("type") or evt.get("event_type")
+    if raw_type == "text":
+        evt = {**evt, "type": "text_delta"}
+    elif "type" not in evt and "event_type" in evt:
+        evt = {**evt, "type": evt["event_type"]}
+    return _canonical_extract_searchable(evt)
 
 
 def _unwrap_event(raw: dict) -> tuple[int, dict]:
