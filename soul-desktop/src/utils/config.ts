@@ -11,7 +11,8 @@ async function getStore(): Promise<Store> {
 
 export async function getServerUrl(): Promise<string | null> {
   const s = await getStore();
-  return await s.get<string>("server_url");
+  const value = await s.get<string>("server_url");
+  return value ?? null;
 }
 
 export async function setServerUrl(url: string): Promise<void> {

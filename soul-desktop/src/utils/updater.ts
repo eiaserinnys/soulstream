@@ -29,9 +29,12 @@ export async function startInstall(
   update: Update,
   onProgress?: (chunkLength: number, contentLength: number) => void,
 ): Promise<void> {
+  let contentLength = 0;
   await update.downloadAndInstall((event) => {
-    if (event.event === "Progress" && onProgress) {
-      onProgress(event.data.chunkLength, event.data.contentLength ?? 0);
+    if (event.event === "Started") {
+      contentLength = event.data.contentLength ?? 0;
+    } else if (event.event === "Progress" && onProgress) {
+      onProgress(event.data.chunkLength, contentLength);
     }
   });
 }
