@@ -8,6 +8,7 @@ import asyncio
 import json
 import logging
 import os
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -298,6 +299,126 @@ class TaskExecutor:
 
         return current_user_request_id
 
+    async def _consume_event_stream(
+        self,
+        task: Task,
+        event_iter,
+        request_id_ref: list,
+    ) -> tuple[Optional[str], Optional[str]]:
+        """Claude 이벤트 스트림 소비: 영속화, 브로드캐스트, 메타데이터 추출, 완료 추적.
+
+        request_id_ref: [current_user_request_id] — parent_event_id 채움용 mutable 참조
+        Returns: (last_result, last_error) — 스트림 종료 시의 완료/오류 상태
+        """
+        session_id = task.agent_session_id
+        last_result: Optional[str] = None
+        last_error: Optional[str] = None
+
+        async for event in event_iter:
+            event_dict = event.model_dump()
+
+            # intervention_sent는 콜백에서 이미 처리됨
+            if event.type == "intervention_sent":
+                continue
+
+            # parent_event_id 채움
+            if "parent_event_id" in event_dict and event_dict["parent_event_id"] is None:
+                event_dict["parent_event_id"] = request_id_ref[0]
+
+            # claude_session_id 등록 (인터벤션 역인덱스)
+            if event.type == "session" and self._register_session:
+                await self._register_session(
+                    event_dict.get("session_id", ""),
+                    session_id,
+                )
+
+            # 진행 상황 저장 (재연결용)
+            if event.type == "progress":
+                task.last_progress_text = event_dict.get("text", "")
+
+            # 이벤트 영속화
+            if self._db is not None:
+                try:
+                    event_id = await self._persist_event(session_id, event_dict)
+                    event_dict["_event_id"] = event_id
+                    if event_id is not None:
+                        task.last_event_id = event_id
+                except Exception as e:
+                    logger.warning(f"Failed to persist event for {session_id}: {e}")
+
+            # 브로드캐스트
+            await self._listener_manager.broadcast(session_id, event_dict)
+            try:
+                await self._update_and_broadcast_last_message(
+                    session_id, event_dict, task
+                )
+            except Exception:
+                logger.debug("last_message update failed")
+
+            # tool_result 메타데이터 자동 추출
+            if (
+                event.type == "tool_result"
+                and self._metadata_extractor
+                and self._append_metadata
+            ):
+                try:
+                    entry = self._metadata_extractor.extract(
+                        tool_name=event_dict.get("tool_name", ""),
+                        result=event_dict.get("result", ""),
+                        is_error=event_dict.get("is_error", False),
+                    )
+                    if entry:
+                        await self._append_metadata(session_id, entry)
+                except Exception:
+                    logger.warning(
+                        f"Metadata extraction failed for {session_id}",
+                        exc_info=True,
+                    )
+
+            # 완료/오류 추적 (finalize는 루프 밖에서)
+            if event.type == "complete":
+                last_result = event.result
+            elif event.type == "error":
+                last_error = event.message
+
+        return last_result, last_error
+
+    @asynccontextmanager
+    async def _handle_execution_errors(
+        self,
+        task: Task,
+        session_id: str,
+        request_id_ref: list,
+    ):
+        """_run_execution의 에러 처리 + finally 블록 캡슐화.
+
+        request_id_ref: [current_user_request_id] — 에러 시 broadcast의 parent_event_id로 사용
+        """
+        try:
+            yield
+        except RuntimeError as e:
+            error_msg = str(e)
+            logger.error(f"Resource acquisition failed for session {session_id}: {error_msg}")
+            await self._finalize_task(session_id, error=error_msg)
+            await self._listener_manager.broadcast(
+                session_id, {"type": "error", "message": error_msg, "parent_event_id": request_id_ref[0]}
+            )
+        except asyncio.CancelledError:
+            logger.info(f"Task execution cancelled: {session_id}")
+            raise
+        except Exception as e:
+            logger.exception(f"Task execution error for {session_id}: {e}")
+            error_msg = f"실행 오류: {str(e)}"
+            await self._finalize_task(session_id, error=error_msg)
+            await self._listener_manager.broadcast(
+                session_id, {"type": "error", "message": error_msg, "parent_event_id": request_id_ref[0]}
+            )
+        finally:
+            task.execution_task = None
+            task._deliver_input_response = None
+            task.pid = None  # 프로세스 종료 후 stale PID 방지
+            logger.info(f"Background execution finished for session: {session_id}")
+
     async def _run_execution(
         self,
         task: Task,
@@ -306,12 +427,12 @@ class TaskExecutor:
     ) -> None:
         """백그라운드에서 Claude 실행 및 이벤트 브로드캐스트"""
         session_id = task.agent_session_id
+        request_id_ref: list = [None]  # current_user_request_id 공유 참조
 
-        try:
-            current_user_request_id: Optional[str] = None  # except에서 NameError 방지
+        async with self._handle_execution_errors(task, session_id, request_id_ref):
             async with resource_manager.acquire(timeout=5.0):
                 ctx = await self._prepare_context(task, claude_runner)
-                current_user_request_id = await self._persist_initial_messages(task, ctx)
+                request_id_ref[0] = await self._persist_initial_messages(task, ctx)
 
                 effective_workspace_dir = ctx.working_dir or claude_runner.workspace_dir
 
@@ -321,7 +442,6 @@ class TaskExecutor:
 
                 # 개입 메시지 전송 콜백
                 async def on_intervention_sent(user: str, text: str):
-                    nonlocal current_user_request_id
                     event = {"type": "intervention_sent", "user": user, "text": text}
                     if self._db is not None:
                         try:
@@ -339,7 +459,7 @@ class TaskExecutor:
                                 "context": [intervention_soulstream],
                             }
                             ev_id = await self._persist_event(session_id, intervention_msg)
-                            current_user_request_id = str(ev_id)
+                            request_id_ref[0] = str(ev_id)
                             event["_event_id"] = ev_id
                             if ev_id is not None:
                                 task.last_event_id = ev_id
@@ -358,12 +478,7 @@ class TaskExecutor:
                     task._deliver_input_response = runner.deliver_input_response
                     task.pid = runner.pid
 
-                # 멀티턴 추적
-                last_result: Optional[str] = None
-                last_error: Optional[str] = None
-
-                # Claude Code 실행
-                async for event in claude_runner.execute(
+                event_iter = claude_runner.execute(
                     prompt=ctx.assembled_prompt,
                     resume_session_id=task.resume_session_id,
                     get_intervention=get_intervention,
@@ -379,72 +494,11 @@ class TaskExecutor:
                     working_dir=ctx.working_dir,
                     max_turns=ctx.max_turns,
                     extra_env=ctx.extra_env,
-                ):
-                    event_dict = event.model_dump()
+                )
 
-                    # intervention_sent는 콜백에서 이미 처리됨
-                    if event.type == "intervention_sent":
-                        continue
-
-                    # parent_event_id 채움
-                    if "parent_event_id" in event_dict and event_dict["parent_event_id"] is None:
-                        event_dict["parent_event_id"] = current_user_request_id
-
-                    # claude_session_id 등록 (인터벤션 역인덱스)
-                    if event.type == "session" and self._register_session:
-                        await self._register_session(
-                            event_dict.get("session_id", ""),
-                            session_id,
-                        )
-
-                    # 진행 상황 저장 (재연결용)
-                    if event.type == "progress":
-                        task.last_progress_text = event_dict.get("text", "")
-
-                    # 이벤트 영속화
-                    if self._db is not None:
-                        try:
-                            event_id = await self._persist_event(session_id, event_dict)
-                            event_dict["_event_id"] = event_id
-                            if event_id is not None:
-                                task.last_event_id = event_id
-                        except Exception as e:
-                            logger.warning(f"Failed to persist event for {session_id}: {e}")
-
-                    # 브로드캐스트
-                    await self._listener_manager.broadcast(session_id, event_dict)
-                    try:
-                        await self._update_and_broadcast_last_message(
-                            session_id, event_dict, task
-                        )
-                    except Exception:
-                        logger.debug("last_message update failed")
-
-                    # tool_result 메타데이터 자동 추출
-                    if (
-                        event.type == "tool_result"
-                        and self._metadata_extractor
-                        and self._append_metadata
-                    ):
-                        try:
-                            entry = self._metadata_extractor.extract(
-                                tool_name=event_dict.get("tool_name", ""),
-                                result=event_dict.get("result", ""),
-                                is_error=event_dict.get("is_error", False),
-                            )
-                            if entry:
-                                await self._append_metadata(session_id, entry)
-                        except Exception:
-                            logger.warning(
-                                f"Metadata extraction failed for {session_id}",
-                                exc_info=True,
-                            )
-
-                    # 완료/오류 추적 (finalize는 루프 밖에서)
-                    if event.type == "complete":
-                        last_result = event.result
-                    elif event.type == "error":
-                        last_error = event.message
+                last_result, last_error = await self._consume_event_stream(
+                    task, event_iter, request_id_ref
+                )
 
                 # 스트림 종료 후 finalize
                 if last_error is not None:
@@ -454,32 +508,6 @@ class TaskExecutor:
                 else:
                     logger.warning(f"Stream ended without complete/error for {session_id}")
                     await self._finalize_task(session_id, error="Stream ended without completion event")
-
-        except RuntimeError as e:
-            error_msg = str(e)
-            logger.error(f"Resource acquisition failed for session {session_id}: {error_msg}")
-            await self._finalize_task(session_id, error=error_msg)
-            await self._listener_manager.broadcast(
-                session_id, {"type": "error", "message": error_msg, "parent_event_id": current_user_request_id}
-            )
-
-        except asyncio.CancelledError:
-            logger.info(f"Task execution cancelled: {session_id}")
-            raise
-
-        except Exception as e:
-            logger.exception(f"Task execution error for {session_id}: {e}")
-            error_msg = f"실행 오류: {str(e)}"
-            await self._finalize_task(session_id, error=error_msg)
-            await self._listener_manager.broadcast(
-                session_id, {"type": "error", "message": error_msg, "parent_event_id": current_user_request_id}
-            )
-
-        finally:
-            task.execution_task = None
-            task._deliver_input_response = None
-            task.pid = None  # 프로세스 종료 후 stale PID 방지
-            logger.info(f"Background execution finished for session: {session_id}")
 
     def is_execution_running(self, agent_session_id: str) -> bool:
         """세션 실행이 진행 중인지 확인"""
