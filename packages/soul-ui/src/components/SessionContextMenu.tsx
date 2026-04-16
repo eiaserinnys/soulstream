@@ -5,16 +5,17 @@
  * 세션 ID 복사 · 이름 변경 · 폴더 이동 기능을 제공한다.
  *
  * 모바일: Dialog 하단 시트 (bottomStickOnMobile)
- * 데스크탑: fixed div 컨텍스트 메뉴
+ * 데스크탑: base-ui Menu 프리미티브 (VirtualElement anchor + scale/opacity 진입·퇴장 전환)
  */
 
-import { useState, useCallback } from "react";
-import { createPortal } from "react-dom";
+import { useState, useCallback, useMemo } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { useIsMobile } from "../hooks/use-mobile";
 import { Dialog, DialogPopup, DialogHeader, DialogTitle, DialogPanel, DialogFooter } from "./ui/dialog";
+import { Menu, MenuPopup, MenuItem, MenuSeparator } from "./ui/menu";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
+import { cn } from "../lib/cn";
 
 export interface SessionContextMenuState {
   x: number;
@@ -102,6 +103,19 @@ export function SessionContextMenu({
   const catalog = useDashboardStore((s) => s.catalog);
   const isMobile = useIsMobile();
 
+  // 데스크톱 컨텍스트 메뉴: 마우스 좌표를 VirtualElement anchor로 변환
+  const desktopAnchor = useMemo(() => {
+    if (!contextMenu || isMobile) return null;
+    const { x, y } = contextMenu;
+    return {
+      getBoundingClientRect: () => ({
+        x, y, width: 0, height: 0,
+        top: y, left: x, right: x, bottom: y,
+        toJSON: () => ({}),
+      }),
+    };
+  }, [contextMenu, isMobile]);
+
   // 이름 변경 모달
   const [renameDialog, setRenameDialog] = useState<{
     open: boolean;
@@ -153,48 +167,56 @@ export function SessionContextMenu({
 
   return (
     <>
-      {/* 컨텍스트 메뉴 — 모바일: Dialog 하단 시트, 데스크탑: fixed div */}
-      {contextMenu && (
-        isMobile ? (
-          <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-            <DialogPopup className="max-w-sm" showCloseButton={false}>
-              <div className="py-2 px-2">
-                <MenuItems
-                  onCopyId={handleCopyId}
-                  onRename={onRenameSession ? handleRenameClick : undefined}
-                  onMove={onMoveSessions ? handleMoveClick : undefined}
-                  hasRename={!!onRenameSession}
-                  hasMove={!!onMoveSessions}
-                />
-              </div>
-            </DialogPopup>
-          </Dialog>
-        ) : (
-          createPortal(
-            <>
-              <div
-                className="fixed inset-0 z-40"
-                onClick={onClose}
-                onContextMenu={(e) => { e.preventDefault(); onClose(); }}
+      {/* 컨텍스트 메뉴 — 모바일: Dialog 하단 시트, 데스크탑: base-ui Menu */}
+      {isMobile ? (
+        <Dialog open={contextMenu !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
+          <DialogPopup className="max-w-sm" showCloseButton={false}>
+            <div className="py-2 px-2">
+              <MenuItems
+                onCopyId={handleCopyId}
+                onRename={onRenameSession ? handleRenameClick : undefined}
+                onMove={onMoveSessions ? handleMoveClick : undefined}
+                hasRename={!!onRenameSession}
+                hasMove={!!onMoveSessions}
               />
-              <div
-                className="fixed z-50 bg-popover border border-border rounded-md shadow-lg py-1 min-w-[160px]"
-                style={{ left: contextMenu.x, top: contextMenu.y }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <MenuItems
-                  onCopyId={handleCopyId}
-                  onRename={onRenameSession ? handleRenameClick : undefined}
-                  onMove={onMoveSessions ? handleMoveClick : undefined}
-                  hasRename={!!onRenameSession}
-                  hasMove={!!onMoveSessions}
-                  className="py-0"
-                />
-              </div>
-            </>,
-            document.body,
-          )
-        )
+            </div>
+          </DialogPopup>
+        </Dialog>
+      ) : (
+        <Menu
+          open={contextMenu !== null}
+          onOpenChange={(open) => { if (!open) onClose(); }}
+          modal={false}
+        >
+          <MenuPopup
+            anchor={desktopAnchor}
+            side="bottom"
+            align="start"
+            sideOffset={4}
+            className={cn(
+              "transition-[opacity,scale] duration-150 ease-out",
+              "data-[starting-style]:scale-95 data-[starting-style]:opacity-0",
+              "data-[ending-style]:scale-95 data-[ending-style]:opacity-0",
+              "motion-reduce:transition-none",
+              "motion-reduce:data-[starting-style]:scale-100 motion-reduce:data-[starting-style]:opacity-100",
+              "motion-reduce:data-[ending-style]:scale-100 motion-reduce:data-[ending-style]:opacity-100",
+            )}
+          >
+            <MenuItem onClick={handleCopyId}>세션 ID 복사</MenuItem>
+            {!!onRenameSession && (
+              <>
+                <MenuSeparator />
+                <MenuItem onClick={handleRenameClick}>이름 변경</MenuItem>
+              </>
+            )}
+            {!!onMoveSessions && (
+              <>
+                <MenuSeparator />
+                <MenuItem onClick={handleMoveClick}>다른 폴더로 이동</MenuItem>
+              </>
+            )}
+          </MenuPopup>
+        </Menu>
       )}
 
       {/* 이름 변경 모달 */}
