@@ -13,17 +13,7 @@
     "security": {
       "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://*; img-src 'self' data:"
     },
-    "windows": [
-      {
-        "title": "Soulstream",
-        "width": 1280,
-        "height": 800,
-        "minWidth": 800,
-        "minHeight": 600,
-        "resizable": true,
-        "fullscreen": false
-      }
-    ]
+    "windows": []
   },
   "plugins": {
     "updater": {
