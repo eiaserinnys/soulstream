@@ -1,153 +1,52 @@
-import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@seosoyoung/soul-ui";
-
-interface TokenStatus {
-  has_token: boolean;
-}
-
-const errorMessages: Record<string, string> = {
-  missing_code: "코드를 입력해주세요.",
-  invalid_code_format:
-    "코드 형식이 올바르지 않습니다. (#이 포함된 코드를 붙여넣으세요)",
-  invalid_state: "인증 요청이 만료되었습니다. 다시 시도해주세요.",
-};
-
-const parseErrorDetail = (detail: string): string => {
-  if (errorMessages[detail]) return errorMessages[detail];
-  if (detail.startsWith("token_exchange_failed"))
-    return "토큰 교환 중 오류가 발생했습니다.";
-  if (detail.includes("not connected"))
-    return "노드가 연결되지 않았습니다. 연결 상태를 확인해주세요.";
-  return detail || "오류가 발생했습니다.";
-};
+import { useClaudeAuthFlow } from "../hooks/useClaudeAuthFlow";
 
 export function ClaudeAuthTab() {
-  const [tokenStatus, setTokenStatus] = useState<TokenStatus | null>(null);
-  const [usage, setUsage] = useState<unknown>(null);
-  const [loadingStatus, setLoadingStatus] = useState(false);
-  const [loadingUsage, setLoadingUsage] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [showCodeInput, setShowCodeInput] = useState(false);
-  const [authUrl, setAuthUrl] = useState<string | null>(null);
-  const [codeValue, setCodeValue] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  // popup은 useRef로 관리하여 handleCancelCode에서도 닫을 수 있게 한다.
-  const popupRef = useRef<Window | null>(null);
+  const flow = useClaudeAuthFlow({ basePath: "/auth/claude" });
 
-  const fetchStatus = useCallback(async () => {
-    setLoadingStatus(true);
-    try {
-      const res = await fetch("/auth/claude/token");
-      setTokenStatus(await res.json());
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setLoadingStatus(false);
-    }
-  }, []);
-
-  const fetchUsage = useCallback(async () => {
-    setLoadingUsage(true);
-    setError(null);
-    try {
-      const res = await fetch("/auth/claude/usage");
-      if (!res.ok) throw new Error(await res.text());
-      setUsage(await res.json());
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setLoadingUsage(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchStatus();
-  }, [fetchStatus]);
-
-  const handleLogin = async () => {
-    setError(null);
-    // 팝업 차단 우회: 버튼 클릭 직후 동기 컨텍스트에서 빈 탭을 먼저 열고,
-    // fetch 완료 후 authUrl로 navigate한다.
-    // iOS Safari는 async 호출 후 window.open()을 차단하지만 동기 호출은 허용한다.
-    popupRef.current = window.open('about:blank', '_blank');
-    try {
-      const res = await fetch("/auth/claude/headless/start");
-      if (!res.ok) {
-        popupRef.current?.close();
-        popupRef.current = null;
-        const data = await res.json().catch(() => null);
-        throw new Error(
-          data?.detail
-            ? parseErrorDetail(data.detail)
-            : "인증 URL을 가져오는 중 오류가 발생했습니다."
-        );
-      }
-      const data = await res.json();
-      if (!data.authUrl) {
-        popupRef.current?.close();
-        popupRef.current = null;
-        throw new Error("authUrl 없음");
-      }
-      if (popupRef.current && !popupRef.current.closed) {
-        popupRef.current.location.href = data.authUrl; // 팝업이 열렸으면 직접 navigate
-      } else {
-        setAuthUrl(data.authUrl); // 차단된 경우 <a> 링크 fallback
-      }
-      setShowCodeInput(true);
-    } catch (e) {
-      popupRef.current?.close();
-      popupRef.current = null;
-      setError(String(e instanceof Error ? e.message : e));
-    }
-  };
-
-  const handleSubmitCode = async () => {
-    const trimmed = codeValue.trim();
-    if (!trimmed) return;
-    setSubmitting(true);
-    setError(null);
-    try {
-      const res = await fetch("/auth/claude/headless/submit-code", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: trimmed }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        setError(parseErrorDetail(data?.detail ?? ""));
-        return;
-      }
-      setShowCodeInput(false);
-      setCodeValue("");
-      fetchStatus();
-    } catch (e) {
-      setError(String(e instanceof Error ? e.message : e));
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleCancelCode = () => {
-    popupRef.current?.close();
-    popupRef.current = null;
-    setShowCodeInput(false);
-    setAuthUrl(null);
-    setCodeValue("");
-    setError(null);
-  };
-
-  const handleDeleteToken = async () => {
-    await fetch("/auth/claude/token", { method: "DELETE" });
-    setTokenStatus({ has_token: false });
-    setUsage(null);
-  };
+  const codeInput = flow.showCodeInput && (
+    <div className="mt-2 space-y-1.5">
+      {flow.authUrl && (
+        <a
+          href={flow.authUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-xs text-primary underline"
+        >
+          Anthropic 인증 페이지 열기 →
+        </a>
+      )}
+      <div className="text-xs text-muted-foreground">
+        Anthropic 페이지에 표시된 코드를 붙여넣으세요.
+      </div>
+      <textarea
+        className="w-full text-xs font-mono p-1.5 border border-border rounded resize-none bg-background"
+        rows={2}
+        placeholder="YSrAXqZq...#7RVDts..."
+        value={flow.codeValue}
+        onChange={(e) => flow.setCodeValue(e.target.value)}
+      />
+      <div className="flex gap-1.5">
+        <Button
+          size="sm"
+          onClick={flow.handleSubmitCode}
+          disabled={flow.submitting}
+        >
+          {flow.submitting ? "..." : "확인"}
+        </Button>
+        <Button size="sm" variant="outline" onClick={flow.handleCancelCode}>
+          취소
+        </Button>
+      </div>
+    </div>
+  );
 
   return (
     <div className="space-y-4">
       <div className="text-sm font-medium">Claude Code 인증 상태</div>
-      {loadingStatus ? (
+      {flow.loadingStatus ? (
         <div className="text-xs text-muted-foreground">확인 중...</div>
-      ) : tokenStatus?.has_token ? (
+      ) : flow.tokenStatus?.has_token ? (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-success" />
@@ -157,64 +56,31 @@ export function ClaudeAuthTab() {
             <Button
               size="sm"
               variant="outline"
-              onClick={fetchUsage}
-              disabled={loadingUsage}
+              onClick={flow.fetchUsage}
+              disabled={flow.loadingUsage}
             >
-              {loadingUsage ? "조회 중..." : "사용량 확인"}
+              {flow.loadingUsage ? "조회 중..." : "사용량 확인"}
             </Button>
-            <Button size="sm" variant="outline" onClick={handleLogin}>
+            <Button size="sm" variant="outline" onClick={flow.handleLogin}>
               재로그인
             </Button>
-            <Button size="sm" variant="destructive" onClick={handleDeleteToken}>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={flow.handleDeleteToken}
+            >
               토큰 삭제
             </Button>
           </div>
-          {showCodeInput && (
-            <div className="mt-2 space-y-1.5">
-              {authUrl && (
-                <a
-                  href={authUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-xs text-primary underline"
-                >
-                  Anthropic 인증 페이지 열기 →
-                </a>
-              )}
-              <div className="text-xs text-muted-foreground">
-                Anthropic 페이지에 표시된 코드를 붙여넣으세요.
-              </div>
-              <textarea
-                className="w-full text-xs font-mono p-1.5 border border-border rounded resize-none bg-background"
-                rows={2}
-                placeholder="YSrAXqZq...#7RVDts..."
-                value={codeValue}
-                onChange={(e) => setCodeValue(e.target.value)}
-              />
-              <div className="flex gap-1.5">
-                <Button
-                  size="sm"
-                  onClick={handleSubmitCode}
-                  disabled={submitting}
-                >
-                  {submitting ? "..." : "확인"}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleCancelCode}
-                >
-                  취소
-                </Button>
-              </div>
-            </div>
-          )}
-          {usage && (
+          {codeInput}
+          {flow.usage != null && (
             <pre className="text-xs bg-muted p-2 rounded overflow-auto max-h-32">
-              {JSON.stringify(usage, null, 2)}
+              {JSON.stringify(flow.usage, null, 2)}
             </pre>
           )}
-          {error && <div className="text-xs text-accent-red">{error}</div>}
+          {flow.error && (
+            <div className="text-xs text-accent-red">{flow.error}</div>
+          )}
         </div>
       ) : (
         <div className="space-y-3">
@@ -222,50 +88,13 @@ export function ClaudeAuthTab() {
             <div className="w-2 h-2 rounded-full bg-muted-foreground/30" />
             <span className="text-xs text-muted-foreground">미인증</span>
           </div>
-          <Button size="sm" onClick={handleLogin}>
+          <Button size="sm" onClick={flow.handleLogin}>
             Claude Code 로그인
           </Button>
-          {showCodeInput && (
-            <div className="mt-2 space-y-1.5">
-              {authUrl && (
-                <a
-                  href={authUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-xs text-primary underline"
-                >
-                  Anthropic 인증 페이지 열기 →
-                </a>
-              )}
-              <div className="text-xs text-muted-foreground">
-                Anthropic 페이지에 표시된 코드를 붙여넣으세요.
-              </div>
-              <textarea
-                className="w-full text-xs font-mono p-1.5 border border-border rounded resize-none bg-background"
-                rows={2}
-                placeholder="YSrAXqZq...#7RVDts..."
-                value={codeValue}
-                onChange={(e) => setCodeValue(e.target.value)}
-              />
-              <div className="flex gap-1.5">
-                <Button
-                  size="sm"
-                  onClick={handleSubmitCode}
-                  disabled={submitting}
-                >
-                  {submitting ? "..." : "확인"}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleCancelCode}
-                >
-                  취소
-                </Button>
-              </div>
-            </div>
+          {codeInput}
+          {flow.error && (
+            <div className="text-xs text-accent-red">{flow.error}</div>
           )}
-          {error && <div className="text-xs text-accent-red">{error}</div>}
         </div>
       )}
     </div>
