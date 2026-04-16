@@ -19,7 +19,6 @@ export interface SettingCategory {
 
 interface ConfigResponse {
   categories: SettingCategory[];
-  // serendipityAvailable 등 기타 필드는 unified-dashboard에서 무시
   [key: string]: unknown;
 }
 

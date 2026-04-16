@@ -1,9 +1,8 @@
 /**
  * useSessionListProvider - Provider 기반 세션 목록 훅 (TanStack Query 기반)
  *
- * 현재 스토리지 모드에 따라 적절한 방식으로 세션 목록을 조회합니다:
- * - sse 모드: useInfiniteQuery + SSE delta 이벤트 (session_created/updated/deleted)
- * - serendipity 모드: useInfiniteQuery (5초 간격 refetch)
+ * useInfiniteQuery + SSE delta 이벤트 (session_created/updated/deleted)로
+ * 세션 목록을 조회하고 실시간 동기화합니다.
  *
  * 세션 타입 필터를 지원합니다.
  *
@@ -17,7 +16,7 @@ import { useCallback, useState, useMemo } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useDashboardStore } from "../stores/dashboard-store";
 import type { SessionSummary } from "../shared/types";
-import type { SessionStorageProvider, StorageMode } from "../providers/types";
+import type { SessionStorageProvider } from "../providers/types";
 import { useInitialCatalogLoad } from "./useInitialCatalogLoad";
 import { useSessionStreamCacheSync } from "./useSessionStreamCacheSync";
 
@@ -29,14 +28,14 @@ interface SessionPage {
 }
 
 export interface UseSessionListProviderOptions {
-  /** 폴링 간격 (ms). serendipity 모드에서만 사용. 기본 5000 */
+  /** 폴링 간격 (ms). externalProvider 폴링에서만 사용. 기본 5000 */
   intervalMs?: number;
   /** 자동 조회/구독 활성화. 기본 true */
   enabled?: boolean;
-  /** Provider 팩토리: storageMode를 받아 적절한 Provider를 반환 */
-  getSessionProvider: (mode: StorageMode) => SessionStorageProvider;
+  /** Provider 팩토리 */
+  getSessionProvider: () => SessionStorageProvider;
   /**
-   * 외부 세션 프로바이더. 지정하면 SSE/Serendipity 구독 대신
+   * 외부 세션 프로바이더. 지정하면 SSE 구독 대신
    * 이 프로바이더의 fetchSessions를 intervalMs 간격으로 폴링한다.
    */
   externalProvider?: SessionStorageProvider;
@@ -52,8 +51,6 @@ export function useSessionListProvider(
     externalProvider,
   } = options;
 
-  const storageMode = useDashboardStore((s) => s.storageMode);
-
   const [folderCounts, setFolderCounts] = useState<Record<string, number>>({});
 
   // 필터 상태
@@ -66,15 +63,11 @@ export function useSessionListProvider(
 
   // 현재 쿼리 키 — SSE setQueryData에서도 동일 키 사용
   const queryKey = useMemo(
-    () => ["sessions", storageMode, sessionTypeFilter, viewMode, effectiveFolderId] as const,
-    [storageMode, sessionTypeFilter, viewMode, effectiveFolderId],
+    () => ["sessions", sessionTypeFilter, viewMode, effectiveFolderId] as const,
+    [sessionTypeFilter, viewMode, effectiveFolderId],
   );
 
   // --- TanStack Query ---
-
-  const isSSEEnabled =
-    enabled &&
-    (storageMode === "sse" || storageMode === "serendipity" || !!externalProvider);
 
   const {
     data,
@@ -86,7 +79,7 @@ export function useSessionListProvider(
   } = useInfiniteQuery({
     queryKey,
     queryFn: async ({ pageParam = 0 }) => {
-      const provider = externalProvider ?? getSessionProvider(storageMode);
+      const provider = externalProvider ?? getSessionProvider();
       const typeFilter = sessionTypeFilter === "all" ? undefined : sessionTypeFilter;
       const { viewMode: currentViewMode, selectedFolderId: currentFolderId } =
         useDashboardStore.getState();
@@ -114,13 +107,10 @@ export function useSessionListProvider(
       const total = _lastPage.total;
       return loaded < total ? loaded : undefined;
     },
-    enabled: isSSEEnabled,
-    // serendipity 모드에서는 폴링 활성화
-    refetchInterval:
-      !externalProvider && storageMode === "serendipity" ? intervalMs : false,
+    enabled,
     // externalProvider 폴링
-    ...(externalProvider ? { refetchInterval: intervalMs } : {}),
-    staleTime: storageMode === "sse" ? Infinity : 0,
+    refetchInterval: externalProvider ? intervalMs : false,
+    staleTime: externalProvider ? 0 : Infinity,
   });
 
   // TanStack Query 데이터에서 sessions 추출
@@ -144,7 +134,7 @@ export function useSessionListProvider(
 
   // --- SSE 구독: 연결 + 캐시/store 동기화 ---
   useSessionStreamCacheSync({
-    enabled: enabled && storageMode === "sse" && !externalProvider,
+    enabled: enabled && !externalProvider,
     url: `/api/sessions/stream?limit=${DEFAULT_PAGE_SIZE}`,
     queryKey,
     onReconnect: queryRefetch,
@@ -163,6 +153,5 @@ export function useSessionListProvider(
     folderCounts,
     /** 수동 새로고침 */
     refetch: queryRefetch,
-    storageMode,
   };
 }

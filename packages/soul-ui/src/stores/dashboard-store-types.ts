@@ -16,7 +16,6 @@ import type {
   CatalogState,
   CatalogFolder,
 } from "@shared/types";
-import type { StorageMode } from "../providers/types";
 import type { ProcessingContext, TreeChangeInfo } from "./processing-context";
 
 // === Dashboard Config ===
@@ -76,9 +75,6 @@ export interface ProcessEventsResult {
 // === State Interface ===
 
 export interface DashboardState {
-  /** 스토리지 모드 */
-  storageMode: StorageMode;
-
   /** 뷰 모드 — URL 해시에서 파생. 'feed' = 피드 뷰, 'folder' = 기존 폴더 뷰 */
   viewMode: "feed" | "folder";
 
@@ -128,9 +124,6 @@ export interface DashboardState {
   /** 접힌 노드 ID 집합 (접기/펼치기 기능) */
   collapsedNodeIds: Set<string>;
 
-  /** 세렌디피티 모드 사용 가능 여부 (서버 설정 기반) */
-  serendipityAvailable: boolean;
-
   /** 오른쪽 패널 활성 탭 */
   activeRightTab: "detail" | "chat" | "info";
 
@@ -175,9 +168,6 @@ export interface DashboardState {
 // === Actions Interface ===
 
 export interface DashboardActions {
-  // 스토리지 모드
-  setStorageMode: (mode: StorageMode) => void;
-
   // 세션 타입 필터
   setSessionTypeFilter: (type: "all" | "claude" | "llm") => void;
 
@@ -233,9 +223,6 @@ export interface DashboardActions {
   toggleNodeCollapse: (nodeId: string) => void;
   setNodeCollapsed: (nodeId: string, collapsed: boolean) => void;
   clearCollapsedNodes: () => void;
-
-  // 세렌디피티 가용 여부
-  setSerendipityAvailable: (available: boolean) => void;
 
   // 오른쪽 패널 탭
   setActiveRightTab: (tab: "detail" | "chat" | "info") => void;

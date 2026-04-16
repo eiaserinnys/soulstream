@@ -6,8 +6,6 @@
  *
  * soul-dashboard 대비 변경 사항:
  * - node-info 엔드포인트 제거 (BFF 없음) → isOtherNode = false 고정
- * - serendipityAvailable 로드 제거 (세렌디피티 기능 미사용)
- * - StorageModeToggleCompact 제거 (세렌디피티 관련)
  * - ConfigModal / SearchModal / NewSessionModal / DrainBanner 추가 (Phase 4)
  */
 

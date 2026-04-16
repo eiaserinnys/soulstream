@@ -120,10 +120,6 @@ class Settings:
     # 헬스 체크
     health_check_interval: int = 30
 
-    # Serendipity 연동
-    serendipity_enabled: bool = True  # 세렌디피티 저장 활성화
-    serendipity_url: str = "http://localhost:4002"  # 세렌디피티 API URL
-
     # LLM Proxy (선택 사항 — 미설정 프로바이더 호출 시 에러)
     llm_openai_api_key: str = ""
     llm_anthropic_api_key: str = ""
@@ -335,8 +331,6 @@ SETTINGS_REGISTRY: dict[str, SettingMeta] = {
     "dash_user_id": SettingMeta("DASH_USER_ID", "사용자 ID", "사용자 식별자", "dashboard", "str"),
     "dash_user_portrait": SettingMeta("DASH_USER_PORTRAIT", "사용자 초상화", "사용자 초상화 이미지 경로", "dashboard", "str"),
     # --- integration ---
-    "serendipity_enabled": SettingMeta("SERENDIPITY_ENABLED", "세렌디피티 활성화", "세렌디피티 저장 활성화 여부", "integration", "bool"),
-    "serendipity_url": SettingMeta("SERENDIPITY_URL", "세렌디피티 URL", "세렌디피티 API URL", "integration", "str"),
     "cogito_manifest_path": SettingMeta("COGITO_MANIFEST_PATH", "Cogito 매니페스트", "cogito 매니페스트 파일 경로", "integration", "str"),
     "atom_enabled": SettingMeta("ATOM_ENABLED", "Atom 활성화", "atom 트리 주입 활성화 여부", "integration", "bool"),
     "atom_server_url": SettingMeta("ATOM_SERVER_URL", "Atom 서버 URL", "atom API URL", "integration", "str"),

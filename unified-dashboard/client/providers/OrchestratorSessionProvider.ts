@@ -1,9 +1,8 @@
 /**
- * OrchestratorSessionProvider - orchestrator 모드용 세션 Provider (unified-dashboard)
+ * OrchestratorSessionProvider - unified-dashboard용 세션 Provider
  *
  * orchestrator-dashboard의 OrchestratorSessionProvider를 unified-dashboard로 포팅.
- * soul-ui SessionStorageProvider 인터페이스를 구현하여
- * getSessionProvider 팩토리에서 orchestrator 모드일 때 반환된다.
+ * soul-ui SessionStorageProvider 인터페이스를 구현한다.
  *
  * - fetchSessions: /api/catalog 에서 세션 목록 조회 (orchestrator BFF 경로)
  * - fetchCards: SSE 이벤트로 카드를 구성하므로 빈 배열 반환
@@ -13,7 +12,6 @@
 
 import type {
   SessionStorageProvider,
-  StorageMode,
   SessionListResult,
   FetchSessionsOptions,
   EventTreeNode,
@@ -23,8 +21,6 @@ import type {
 import { createSSESubscribe } from "@seosoyoung/soul-ui";
 
 export class OrchestratorSessionProvider implements SessionStorageProvider {
-  readonly mode: StorageMode = "sse";
-
   async fetchSessions(options?: FetchSessionsOptions): Promise<SessionListResult> {
     const params = new URLSearchParams();
     if (options?.sessionType) params.set("session_type", options.sessionType);

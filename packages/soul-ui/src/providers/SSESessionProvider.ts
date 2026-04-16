@@ -7,7 +7,6 @@
 
 import type {
   SessionStorageProvider,
-  StorageMode,
   SessionListResult,
   FetchSessionsOptions,
 } from "./types";
@@ -36,8 +35,6 @@ interface SessionListResponse {
  * /api/sessions/:id/events SSE 스트림으로 실시간 이벤트를 수신합니다.
  */
 export class SSESessionProvider implements SessionStorageProvider {
-  readonly mode: StorageMode = "sse";
-
   /**
    * 세션 목록 조회 (페이지네이션 지원).
    *

@@ -110,37 +110,6 @@ rules:
       label: "$.name"
       url: "$.url"
 
-  - name: serendipity_page
-    tool_name: mcp__serendipity__create_page
-    result_mode: json
-    extract:
-      type: serendipity_page
-      value: "$.id"
-      label: "$.title"
-
-  - name: serendipity_page_update
-    tool_name: mcp__serendipity__update_page
-    result_mode: json
-    extract:
-      type: serendipity_page_update
-      value: "$.id"
-      label: "$.title"
-
-  - name: serendipity_block_create
-    tool_name: mcp__serendipity__create_block
-    result_mode: json
-    extract:
-      type: serendipity_block
-      value: "$.id"
-      label: "$.type"
-
-  - name: serendipity_block_update
-    tool_name: mcp__serendipity__update_block
-    result_mode: json
-    extract:
-      type: serendipity_block
-      value: "$.id"
-      label: "$.type"
 """,
         encoding="utf-8",
     )
@@ -169,7 +138,7 @@ class TestInit:
 
     def test_load_specialized_rules(self, specialized_extractor):
         """특화 규칙 로드 성공"""
-        assert len(specialized_extractor._rules) == 6
+        assert len(specialized_extractor._rules) == 2
 
     def test_file_not_found(self, tmp_path):
         """존재하지 않는 규칙 파일"""
@@ -301,19 +270,6 @@ class TestJsonMode:
         assert entry["label"] == "Phase 1 카드"
         assert entry["url"] == "https://trello.com/c/abc123"
 
-    def test_serendipity_page(self, specialized_extractor):
-        """세렌디피티 페이지 생성 결과에서 추출"""
-        result = json.dumps({
-            "id": "page-uuid-123",
-            "title": "작업 문서",
-        })
-        entry = specialized_extractor.extract("mcp__serendipity__create_page", result, is_error=False)
-
-        assert entry is not None
-        assert entry["type"] == "serendipity_page"
-        assert entry["value"] == "page-uuid-123"
-        assert entry["label"] == "작업 문서"
-
     def test_invalid_json(self, specialized_extractor):
         """잘못된 JSON 결과"""
         entry = specialized_extractor.extract("mcp__trello__add_card_to_list", "not json", is_error=False)
@@ -332,44 +288,6 @@ class TestJsonMode:
         assert entry["type"] == "trello_card_move"
         assert entry["value"] == "card-456"
         assert entry["label"] == "Phase 2"
-
-    def test_serendipity_page_update(self, specialized_extractor):
-        """세렌디피티 페이지 갱신 결과에서 추출"""
-        result = json.dumps({
-            "id": "page-uuid",
-            "title": "Updated Doc",
-        })
-        entry = specialized_extractor.extract("mcp__serendipity__update_page", result, is_error=False)
-
-        assert entry is not None
-        assert entry["type"] == "serendipity_page_update"
-        assert entry["value"] == "page-uuid"
-        assert entry["label"] == "Updated Doc"
-
-    def test_serendipity_block_create(self, specialized_extractor):
-        """세렌디피티 블록 생성 결과에서 추출"""
-        result = json.dumps({
-            "id": "block-uuid",
-            "type": "paragraph",
-        })
-        entry = specialized_extractor.extract("mcp__serendipity__create_block", result, is_error=False)
-
-        assert entry is not None
-        assert entry["type"] == "serendipity_block"
-        assert entry["value"] == "block-uuid"
-        assert entry["label"] == "paragraph"
-
-    def test_serendipity_block_update(self, specialized_extractor):
-        """세렌디피티 블록 갱신 결과에서 추출"""
-        result = json.dumps({
-            "id": "block-uuid-2",
-            "type": "heading",
-        })
-        entry = specialized_extractor.extract("mcp__serendipity__update_block", result, is_error=False)
-
-        assert entry is not None
-        assert entry["type"] == "serendipity_block"
-        assert entry["value"] == "block-uuid-2"
 
     def test_missing_required_field(self, specialized_extractor):
         """필수 필드(value 경로) 누락"""
@@ -404,22 +322,6 @@ class TestMcpContentBlockUnwrap:
         assert entry["value"] == "card-mcp-123"
         assert entry["label"] == "MCP 래핑 카드"
         assert entry["url"] == "https://trello.com/c/mcp123"
-
-    def test_mcp_wrapped_serendipity_page(self, specialized_extractor):
-        """MCP 래핑된 세렌디피티 페이지 생성 결과에서 추출"""
-        inner_json = json.dumps({
-            "id": "page-mcp-uuid",
-            "title": "MCP 래핑 문서",
-        })
-        result = json.dumps([{"type": "text", "text": inner_json}])
-        entry = specialized_extractor.extract(
-            "mcp__serendipity__create_page", result, is_error=False
-        )
-
-        assert entry is not None
-        assert entry["type"] == "serendipity_page"
-        assert entry["value"] == "page-mcp-uuid"
-        assert entry["label"] == "MCP 래핑 문서"
 
     def test_mcp_wrapped_invalid_inner_json(self, specialized_extractor):
         """MCP 래핑 내부에 유효하지 않은 JSON"""
