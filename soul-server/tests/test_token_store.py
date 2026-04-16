@@ -44,9 +44,13 @@ def cleanup_env():
             del os.environ[key]
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def creds_path(tmp_path: Path, monkeypatch):
-    """임시 credentials.json 경로로 CREDENTIALS_PATH를 교체"""
+    """임시 credentials.json 경로로 CREDENTIALS_PATH를 교체.
+
+    autouse: get_oauth_token()이 _get_token_from_credentials_json()으로
+    fallback할 때 실제 ~/.claude/.credentials.json을 읽지 않도록 보호한다.
+    """
     fake_path = tmp_path / ".claude" / ".credentials.json"
     import soul_server.api.claude_auth.token_store as ts
     monkeypatch.setattr(ts, "CREDENTIALS_PATH", fake_path)

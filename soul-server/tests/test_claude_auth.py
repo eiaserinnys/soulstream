@@ -42,6 +42,25 @@ delete_oauth_token = token_store.delete_oauth_token
 get_env_path = token_store.get_env_path
 
 
+@pytest.fixture(autouse=True)
+def safe_credentials_path(tmp_path, monkeypatch):
+    """CREDENTIALS_PATH를 tmp_path로 교체하여 실제 ~/.claude/.credentials.json을 보호.
+
+    delete_oauth_token() 내부에서 delete_credentials_json()을 호출하는데,
+    CREDENTIALS_PATH를 패치하지 않으면 프로덕션 OAuth 크레덴셜이 삭제된다.
+    """
+    fake_path = tmp_path / ".claude" / ".credentials.json"
+    # 직접 import된 모듈 (TestDeleteOAuthToken 등)
+    monkeypatch.setattr(token_store, "CREDENTIALS_PATH", fake_path)
+    # 정규 모듈 (TestDeleteTokenEndpoint — 라우터 경유)
+    try:
+        import soul_server.api.claude_auth.token_store as ts
+        monkeypatch.setattr(ts, "CREDENTIALS_PATH", fake_path)
+    except ImportError:
+        pass  # cogito 미설치 환경에서는 정규 모듈 로드 불가
+    return fake_path
+
+
 # === token_store 유닛 테스트 ===
 
 
