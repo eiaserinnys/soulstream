@@ -9,43 +9,19 @@
  *
  * 설계 핵심:
  * - TanStack Query가 서버 상태(sessions 페이지 목록)를 관리한다.
- * - SSE delta 이벤트는 queryClient.setQueryData로 캐시를 직접 수정한다.
- * - SSE delta 이벤트 처리와 낙관적 세션 추가는 queryClient.setQueryData/setQueriesData로 직접 캐시를 업데이트한다.
- * - SSE 연결은 storageMode 변경 시에만 재연결된다.
+ * - EventSource 연결/재연결은 useSessionStreamSSE 훅이 전담한다.
+ * - SSE delta 이벤트 → 캐시/store 동기화는 useSessionStreamCacheSync 훅이 전담한다.
  */
 
-import { useEffect, useRef, useCallback, useState, useMemo } from "react";
-import {
-  useInfiniteQuery,
-  useQueryClient,
-  type InfiniteData,
-} from "@tanstack/react-query";
+import { useCallback, useState, useMemo } from "react";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { useDashboardStore } from "../stores/dashboard-store";
-import { toSessionSummary } from "../shared/mappers";
-import { SYSTEM_FOLDERS } from "../shared/constants";
-import type {
-  SessionStreamEvent,
-  SessionStatus,
-  SessionSummary,
-} from "../shared/types";
+import type { SessionSummary } from "../shared/types";
 import type { SessionStorageProvider, StorageMode } from "../providers/types";
-import {
-  applySessionCreated,
-  applySessionUpdated,
-  applySessionDeleted,
-} from "./session-stream-helpers";
+import { useInitialCatalogLoad } from "./useInitialCatalogLoad";
+import { useSessionStreamCacheSync } from "./useSessionStreamCacheSync";
 
 const DEFAULT_PAGE_SIZE = 50;
-
-/** 서버가 named SSE event로 보내는 이벤트 타입 목록 */
-const SESSION_STREAM_EVENT_TYPES = [
-  "session_list",
-  "session_created",
-  "session_updated",
-  "session_deleted",
-  "catalog_updated",
-  "metadata_updated",
-] as const;
 
 interface SessionPage {
   sessions: SessionSummary[];
@@ -76,10 +52,7 @@ export function useSessionListProvider(
     externalProvider,
   } = options;
 
-  const queryClient = useQueryClient();
-
   const storageMode = useDashboardStore((s) => s.storageMode);
-  const setActiveSessionSummary = useDashboardStore((s) => s.setActiveSessionSummary);
 
   const [folderCounts, setFolderCounts] = useState<Record<string, number>>({});
 
@@ -96,11 +69,6 @@ export function useSessionListProvider(
     () => ["sessions", storageMode, sessionTypeFilter, viewMode, effectiveFolderId] as const,
     [storageMode, sessionTypeFilter, viewMode, effectiveFolderId],
   );
-
-  // SSE 관련 ref
-  const eventSourceRef = useRef<EventSource | null>(null);
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const reconnectAttemptRef = useRef(0);
 
   // --- TanStack Query ---
 
@@ -165,285 +133,22 @@ export function useSessionListProvider(
   const sessionsTotal =
     data?.pages[data.pages.length - 1]?.total ?? 0;
 
-  // hasMore
   const hasMore = hasNextPage ?? false;
 
-  // loadMore
   const loadMore = useCallback(() => {
     fetchNextPage();
   }, [fetchNextPage]);
 
   // --- 초기 카탈로그 로드 ---
-  useEffect(() => {
-    if (!enabled) return;
+  useInitialCatalogLoad(enabled);
 
-    const controller = new AbortController();
-
-    fetch("/api/catalog", { signal: controller.signal })
-      .then((r) => {
-        if (r.ok) return r.json();
-        throw new Error("catalog fetch failed");
-      })
-      .then((data) => {
-        if (data?.folders && data?.sessions) {
-          const store = useDashboardStore.getState();
-          store.setCatalog(data);
-
-          if (
-            store.selectedFolderId === null &&
-            !store.activeSessionKey &&
-            store.viewMode !== "feed"
-          ) {
-            const claudeFolder = data.folders.find(
-              (f: { name: string }) => f.name === SYSTEM_FOLDERS.claude,
-            );
-            const defaultFolderId =
-              claudeFolder?.id ?? data.folders[0]?.id ?? null;
-            if (defaultFolderId) {
-              useDashboardStore.getState().selectFolder(defaultFolderId);
-            }
-          }
-        }
-      })
-      .catch((err) => {
-        if (err instanceof DOMException && err.name === "AbortError") return;
-      });
-
-    return () => {
-      controller.abort();
-    };
-  }, [enabled]);
-
-  // --- SSE delta 이벤트 처리 ---
-  const handleSSEEvent = useCallback(
-    (event: SessionStreamEvent) => {
-      console.log(
-        `[⚡ SSE] type=${event.type}`,
-        event.type === "session_list" ? `(무시)` : "",
-      );
-      switch (event.type) {
-        case "session_list":
-          // 무시: TanStack Query fetch로 대체
-          break;
-
-        case "session_created": {
-          const newSession = toSessionSummary(
-            event.session as unknown as Record<string, unknown>,
-          );
-          // folder_id가 있으면 catalog.sessions에 낙관적으로 반영
-          const folderId = (event as Record<string, unknown>).folder_id as
-            | string
-            | undefined;
-          if (folderId) {
-            const state = useDashboardStore.getState();
-            if (state.catalog) {
-              state.setCatalog({
-                ...state.catalog,
-                sessions: {
-                  ...state.catalog.sessions,
-                  [newSession.agentSessionId]: { folderId, displayName: null },
-                },
-              });
-            }
-          }
-
-          const { sessionTypeFilter: currentFilter, viewMode: currentViewMode, selectedFolderId: currentFolderId } =
-            useDashboardStore.getState();
-
-          // 폴더 뷰에서는 현재 폴더에 속한 세션만 캐시에 추가
-          if (currentViewMode === "folder" && currentFolderId !== null && folderId !== currentFolderId) {
-            break;
-          }
-
-          // TanStack Query 캐시 업데이트
-          queryClient.setQueryData(
-            queryKey,
-            (old: InfiniteData<SessionPage> | undefined) => {
-              if (!old) return old;
-              return applySessionCreated(old, newSession, currentFilter);
-            },
-          );
-          break;
-        }
-
-        case "session_updated": {
-          const updates: Partial<Pick<SessionSummary, "status" | "updatedAt" | "lastMessage" | "lastEventId" | "lastReadEventId">> = {};
-          if (event.status != null) {
-            updates.status = event.status as SessionStatus;
-          }
-          if (event.updated_at != null) {
-            updates.updatedAt = event.updated_at;
-          }
-          if (event.last_message) {
-            updates.lastMessage = {
-              type: event.last_message.type,
-              preview: event.last_message.preview,
-              timestamp: event.last_message.timestamp,
-            };
-          }
-          if (event.last_event_id != null) {
-            updates.lastEventId = event.last_event_id;
-          }
-          if (event.last_read_event_id != null) {
-            updates.lastReadEventId = event.last_read_event_id;
-          }
-
-          // TanStack Query 캐시 업데이트 — 모든 뷰/폴더 캐시를 동시에 갱신
-          queryClient.setQueriesData<InfiniteData<SessionPage>>(
-            { queryKey: ["sessions"], exact: false },
-            (old) => {
-              if (!old) return old;
-              return applySessionUpdated(old, event.agent_session_id, updates);
-            },
-          );
-
-          // activeSessionSummary 동기화
-          {
-            const storeState = useDashboardStore.getState();
-            if (event.agent_session_id === storeState.activeSessionKey) {
-              const current = storeState.activeSessionSummary;
-              if (current) {
-                setActiveSessionSummary({ ...current, ...updates });
-              } else {
-                // ⚠️ URL 직접 진입 시 current가 null → 쿼리 캐시에서 bootstrap
-                const allQueries = queryClient.getQueriesData<InfiniteData<SessionPage>>({ queryKey: ["sessions"], exact: false });
-                for (const [, data] of allQueries) {
-                  if (!data) continue;
-                  for (const page of data.pages) {
-                    const found = page.sessions.find((s) => s.agentSessionId === event.agent_session_id);
-                    if (found) {
-                      setActiveSessionSummary({ ...found, ...updates });
-                      break;
-                    }
-                  }
-                }
-              }
-            }
-          }
-          break;
-        }
-
-        case "session_deleted": {
-          console.log(
-            `[⚡ SSE] session_deleted → ${event.agent_session_id}`,
-          );
-
-          // TanStack Query 캐시 업데이트 — 모든 뷰/폴더 캐시를 동시에 갱신
-          queryClient.setQueriesData<InfiniteData<SessionPage>>(
-            { queryKey: ["sessions"], exact: false },
-            (old) => {
-              if (!old) return old;
-              return applySessionDeleted(old, event.agent_session_id);
-            },
-          );
-          break;
-        }
-
-        case "catalog_updated":
-          console.log(
-            `[⚡ SSE] catalog_updated → folders=${event.catalog?.folders?.length}, sessions=${Object.keys(event.catalog?.sessions ?? {}).length}`,
-          );
-          useDashboardStore.getState().setCatalog(event.catalog);
-          break;
-
-        case "metadata_updated":
-          // TanStack Query 캐시 업데이트 — 모든 뷰/폴더 캐시를 동시에 갱신
-          queryClient.setQueriesData<InfiniteData<SessionPage>>(
-            { queryKey: ["sessions"], exact: false },
-            (old) => {
-              if (!old) return old;
-              const newPages = old.pages.map((page) => ({
-                ...page,
-                sessions: page.sessions.map((s) =>
-                  s.agentSessionId === event.session_id
-                    ? { ...s, metadata: event.metadata }
-                    : s,
-                ),
-              }));
-              return { ...old, pages: newPages };
-            },
-          );
-
-          break;
-      }
-    },
-    [queryClient, queryKey, setActiveSessionSummary],
-  );
-
-  // --- SSE 연결 설정 ---
-  const connectSSE = useCallback(() => {
-    if (eventSourceRef.current) return;
-
-    const eventSource = new EventSource(
-      `/api/sessions/stream?limit=${DEFAULT_PAGE_SIZE}`,
-    );
-    eventSourceRef.current = eventSource;
-
-    let hadError = false;
-
-    eventSource.onopen = () => {
-      reconnectAttemptRef.current = 0;
-      if (hadError) {
-        queryRefetch();
-      }
-      hadError = false;
-    };
-
-    for (const eventType of SESSION_STREAM_EVENT_TYPES) {
-      eventSource.addEventListener(eventType, (e: MessageEvent) => {
-        try {
-          const data = JSON.parse(e.data) as SessionStreamEvent;
-          handleSSEEvent(data);
-        } catch {
-          // JSON 파싱 실패: 무시
-        }
-      });
-    }
-
-    eventSource.onerror = () => {
-      hadError = true;
-      if (eventSource.readyState === EventSource.CLOSED) {
-        console.warn(
-          "[SSE] EventSource CLOSED, reconnecting with backoff...",
-        );
-        eventSourceRef.current = null;
-        const delay = Math.min(
-          3000 * Math.pow(2, reconnectAttemptRef.current),
-          30000,
-        );
-        reconnectAttemptRef.current++;
-        if (reconnectTimerRef.current)
-          clearTimeout(reconnectTimerRef.current);
-        reconnectTimerRef.current = setTimeout(() => {
-          connectSSE();
-        }, delay);
-      }
-    };
-  }, [handleSSEEvent, queryRefetch]);
-
-  // --- SSE 연결 해제 ---
-  const disconnectSSE = useCallback(() => {
-    if (reconnectTimerRef.current) {
-      clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
-    }
-    reconnectAttemptRef.current = 0;
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
-    }
-  }, []);
-
-  // Effect: SSE 구독 — storageMode 변경 시에만 재연결
-  useEffect(() => {
-    if (!enabled || storageMode !== "sse" || externalProvider) return;
-
-    connectSSE();
-
-    return () => {
-      disconnectSSE();
-    };
-  }, [enabled, storageMode, connectSSE, disconnectSSE, externalProvider]);
+  // --- SSE 구독: 연결 + 캐시/store 동기화 ---
+  useSessionStreamCacheSync({
+    enabled: enabled && storageMode === "sse" && !externalProvider,
+    url: `/api/sessions/stream?limit=${DEFAULT_PAGE_SIZE}`,
+    queryKey,
+    onReconnect: queryRefetch,
+  });
 
   return {
     sessions,
