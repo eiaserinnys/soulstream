@@ -1,0 +1,178 @@
+"""Cogito reflection MCP tools.
+
+서비스 리플렉션 데이터를 MCP 도구로 노출한다.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any, TYPE_CHECKING
+
+import httpx
+
+from cogito.manifest import load_manifest
+from soul_server.cogito.reflector_setup import reflect
+from soul_server.cogito.mcp_tools import cogito_mcp
+
+if TYPE_CHECKING:
+    from soul_server.cogito.brief_composer import BriefComposer
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Runtime state — set by init() from mcp_tools.py
+# ---------------------------------------------------------------------------
+
+_brief_composer: BriefComposer | None = None
+_manifest_path: str | None = None
+
+
+def init(brief_composer: BriefComposer, manifest_path: str) -> None:
+    """cogito 도구의 런타임 의존성을 주입한다."""
+    global _brief_composer, _manifest_path
+    if _brief_composer is not None:
+        logger.warning("mcp_cogito.init() called more than once; overwriting previous state")
+    _brief_composer = brief_composer
+    _manifest_path = manifest_path
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _load_manifest() -> dict[str, Any]:
+    if not _manifest_path:
+        raise RuntimeError("Cogito not configured: COGITO_MANIFEST_PATH not set")
+    return load_manifest(_manifest_path)
+
+
+def _find_service(manifest: dict[str, Any], name: str) -> dict[str, Any] | None:
+    for svc in manifest.get("services", []):
+        if svc.get("name") == name:
+            return svc
+    return None
+
+
+async def _http_get(url: str, timeout: float = 5.0) -> dict[str, Any]:
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        resp = await client.get(url)
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def do_refresh() -> tuple[bool, str]:
+    """브리프 갱신 공통 로직. REST API에서도 사용.
+
+    Returns:
+        ``(True, path_str)`` on success, ``(False, error_message)`` on failure.
+    """
+    if not _brief_composer:
+        return False, "BriefComposer not initialized"
+    path = await _brief_composer.write_brief()
+    return True, str(path)
+
+
+# ---------------------------------------------------------------------------
+# MCP Tools
+# ---------------------------------------------------------------------------
+
+@cogito_mcp.tool()
+@reflect.capability(
+    name="cogito",
+    description="서비스 리플렉션 데이터 조회 (MCP 도구)",
+    tools=["reflect_service", "reflect_brief", "reflect_refresh"],
+)
+async def reflect_service(
+    service: str,
+    level: int = 0,
+    capability: str | None = None,
+) -> dict:
+    """서비스의 리플렉션 데이터를 조회한다.
+
+    Args:
+        service: 서비스 이름 (mcp-seosoyoung, supervisor, soulstream-server 등)
+        level: 조회 깊이 (0=기능목록, 1=설정, 2=소스위치, 3=런타임상태)
+        capability: 특정 capability만 조회 (선택)
+
+    Returns:
+        Level 0: {"identity": {...}, "capabilities": [...]}
+        Level 1: {"configs": [...]}
+        Level 2: {"sources": [...]}
+        Level 3: {"status": "healthy", "pid": ..., "uptime_seconds": ...}
+    """
+    try:
+        manifest = _load_manifest()
+    except Exception as e:
+        return {"error": str(e)}
+
+    svc = _find_service(manifest, service)
+    if not svc:
+        available = [s.get("name") for s in manifest.get("services", [])]
+        return {"error": f"서비스를 찾을 수 없습니다: {service}", "available": available}
+
+    svc_type = svc.get("type", "internal")
+
+    # External services only support Level 0 (static data)
+    if svc_type == "external":
+        if level > 0:
+            return {"error": f"외부 서비스 {service}는 Level 0만 지원합니다"}
+        return svc.get("static", {})
+
+    endpoint = svc.get("endpoint", "")
+    if not endpoint:
+        return {"error": f"서비스 {service}에 endpoint가 설정되지 않았습니다"}
+
+    # Build URL based on level
+    url = endpoint
+    if level == 1:
+        url += "/config"
+        if capability:
+            url += f"/{capability}"
+    elif level == 2:
+        url += "/source"
+        if capability:
+            url += f"/{capability}"
+    elif level == 3:
+        url += "/runtime"
+
+    try:
+        return await _http_get(url)
+    except Exception as e:
+        return {"error": f"서비스 {service} 조회 실패: {e}"}
+
+
+@cogito_mcp.tool()
+async def reflect_brief() -> dict:
+    """전체 서비스의 Level 0 브리프를 반환한다.
+
+    Returns:
+        {"services": [{"name": ..., "type": ..., "data": {...}}, ...]}
+    """
+    if not _brief_composer:
+        return {"error": "BriefComposer가 초기화되지 않았습니다"}
+
+    try:
+        services = await _brief_composer.compose()
+        result = []
+        for name, svc_type, data in services:
+            result.append({"name": name, "type": svc_type, "data": data})
+        return {"services": result}
+    except Exception as e:
+        return {"error": f"브리프 조회 실패: {e}"}
+
+
+@cogito_mcp.tool()
+async def reflect_refresh() -> dict:
+    """브리프 파일(brief.md)을 즉시 갱신한다.
+
+    Returns:
+        {"refreshed": true, "path": "...brief.md"}
+    """
+    try:
+        ok, result = await do_refresh()
+    except Exception as e:
+        return {"error": f"브리프 갱신 실패: {e}"}
+
+    if not ok:
+        return {"error": result}
+    return {"refreshed": True, "path": result}

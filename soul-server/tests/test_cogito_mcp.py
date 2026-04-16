@@ -6,7 +6,7 @@ import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from pathlib import Path
 
-from soul_server.cogito import mcp_tools
+from soul_server.cogito import mcp_tools, mcp_cogito, mcp_multi_node
 from soul_server.service.postgres_session_db import PostgresSessionDB
 
 
@@ -16,10 +16,16 @@ def reset_mcp_state():
     mcp_tools._brief_composer = None
     mcp_tools._manifest_path = None
     mcp_tools._orch_base = None
+    mcp_cogito._brief_composer = None
+    mcp_cogito._manifest_path = None
+    mcp_multi_node._orch_base = None
     yield
     mcp_tools._brief_composer = None
     mcp_tools._manifest_path = None
     mcp_tools._orch_base = None
+    mcp_cogito._brief_composer = None
+    mcp_cogito._manifest_path = None
+    mcp_multi_node._orch_base = None
 
 
 def _unwrap(tool_or_func):
@@ -67,6 +73,7 @@ class TestReflectService:
         manifest_file = tmp_path / "manifest.yaml"
         manifest_file.write_text("services:\n  - name: foo\n    type: external\n    static: {}\n")
         mcp_tools._manifest_path = str(manifest_file)
+        mcp_cogito._manifest_path = str(manifest_file)
 
         fn = _unwrap(mcp_tools.reflect_service)
         result = await fn("nonexistent")
@@ -87,6 +94,7 @@ class TestReflectService:
             "        port: 3101\n"
         )
         mcp_tools._manifest_path = str(manifest_file)
+        mcp_cogito._manifest_path = str(manifest_file)
 
         fn = _unwrap(mcp_tools.reflect_service)
         result = await fn("mcp-slack", level=0)
@@ -99,19 +107,21 @@ class TestReflectService:
             "services:\n  - name: ext\n    type: external\n    static: {}\n"
         )
         mcp_tools._manifest_path = str(manifest_file)
+        mcp_cogito._manifest_path = str(manifest_file)
 
         fn = _unwrap(mcp_tools.reflect_service)
         result = await fn("ext", level=1)
         assert "error" in result
         assert "Level 0" in result["error"]
 
-    @patch("soul_server.cogito.mcp_tools._http_get")
+    @patch("soul_server.cogito.mcp_cogito._http_get")
     async def test_internal_service_level0(self, mock_get, tmp_path):
         manifest_file = tmp_path / "manifest.yaml"
         manifest_file.write_text(
             "services:\n  - name: svc\n    endpoint: http://localhost:3104/reflect\n"
         )
         mcp_tools._manifest_path = str(manifest_file)
+        mcp_cogito._manifest_path = str(manifest_file)
         mock_get.return_value = {"identity": {"name": "svc"}, "capabilities": []}
 
         fn = _unwrap(mcp_tools.reflect_service)
@@ -119,26 +129,28 @@ class TestReflectService:
         mock_get.assert_called_once_with("http://localhost:3104/reflect")
         assert result["identity"]["name"] == "svc"
 
-    @patch("soul_server.cogito.mcp_tools._http_get")
+    @patch("soul_server.cogito.mcp_cogito._http_get")
     async def test_internal_service_level1_with_capability(self, mock_get, tmp_path):
         manifest_file = tmp_path / "manifest.yaml"
         manifest_file.write_text(
             "services:\n  - name: svc\n    endpoint: http://localhost:3104/reflect\n"
         )
         mcp_tools._manifest_path = str(manifest_file)
+        mcp_cogito._manifest_path = str(manifest_file)
         mock_get.return_value = {"configs": []}
 
         fn = _unwrap(mcp_tools.reflect_service)
         result = await fn("svc", level=1, capability="image_gen")
         mock_get.assert_called_once_with("http://localhost:3104/reflect/config/image_gen")
 
-    @patch("soul_server.cogito.mcp_tools._http_get")
+    @patch("soul_server.cogito.mcp_cogito._http_get")
     async def test_internal_service_level3(self, mock_get, tmp_path):
         manifest_file = tmp_path / "manifest.yaml"
         manifest_file.write_text(
             "services:\n  - name: svc\n    endpoint: http://localhost:3104/reflect\n"
         )
         mcp_tools._manifest_path = str(manifest_file)
+        mcp_cogito._manifest_path = str(manifest_file)
         mock_get.return_value = {"status": "healthy", "pid": 1234}
 
         fn = _unwrap(mcp_tools.reflect_service)
@@ -146,13 +158,14 @@ class TestReflectService:
         mock_get.assert_called_once_with("http://localhost:3104/reflect/runtime")
         assert result["status"] == "healthy"
 
-    @patch("soul_server.cogito.mcp_tools._http_get", side_effect=Exception("connection refused"))
+    @patch("soul_server.cogito.mcp_cogito._http_get", side_effect=Exception("connection refused"))
     async def test_internal_service_http_error(self, mock_get, tmp_path):
         manifest_file = tmp_path / "manifest.yaml"
         manifest_file.write_text(
             "services:\n  - name: svc\n    endpoint: http://localhost:3104/reflect\n"
         )
         mcp_tools._manifest_path = str(manifest_file)
+        mcp_cogito._manifest_path = str(manifest_file)
 
         fn = _unwrap(mcp_tools.reflect_service)
         result = await fn("svc", level=0)
@@ -177,6 +190,7 @@ class TestReflectBrief:
             ("svc2", "external", {"identity": {"name": "svc2"}}),
         ])
         mcp_tools._brief_composer = composer
+        mcp_cogito._brief_composer = composer
 
         fn = _unwrap(mcp_tools.reflect_brief)
         result = await fn()
@@ -200,6 +214,7 @@ class TestReflectRefresh:
         composer = MagicMock()
         composer.write_brief = AsyncMock(return_value=Path("/output/brief.md"))
         mcp_tools._brief_composer = composer
+        mcp_cogito._brief_composer = composer
 
         fn = _unwrap(mcp_tools.reflect_refresh)
         result = await fn()
@@ -223,6 +238,7 @@ class TestApiRefresh:
         composer = MagicMock()
         composer.write_brief = AsyncMock(return_value=Path("/output/brief.md"))
         mcp_tools._brief_composer = composer
+        mcp_cogito._brief_composer = composer
 
         result = await mcp_tools.api_refresh()
         assert result["refreshed"] is True
@@ -233,6 +249,7 @@ class TestApiRefresh:
         composer = MagicMock()
         composer.write_brief = AsyncMock(side_effect=RuntimeError("disk full"))
         mcp_tools._brief_composer = composer
+        mcp_cogito._brief_composer = composer
 
         with pytest.raises(HTTPException) as exc_info:
             await mcp_tools.api_refresh()
@@ -326,20 +343,20 @@ def session_db():
 class TestGetSessionName:
     async def test_no_db_returns_error(self):
         fn = _unwrap(mcp_tools.get_session_name)
-        with patch("soul_server.cogito.mcp_tools.get_session_db", side_effect=RuntimeError("no db")):
+        with patch("soul_server.cogito.mcp_session_mgmt.get_session_db", side_effect=RuntimeError("no db")):
             result = await fn("test-sess-001")
         assert "error" in result
 
     async def test_session_not_found(self, session_db):
         fn = _unwrap(mcp_tools.get_session_name)
-        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
+        with patch("soul_server.cogito.mcp_session_mgmt.get_session_db", return_value=session_db):
             result = await fn("nonexistent")
         assert "error" in result
         assert "찾을 수 없습니다" in result["error"]
 
     async def test_returns_none_when_no_name_set(self, session_db):
         fn = _unwrap(mcp_tools.get_session_name)
-        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
+        with patch("soul_server.cogito.mcp_session_mgmt.get_session_db", return_value=session_db):
             result = await fn("test-sess-001")
         assert result["session_id"] == "test-sess-001"
         assert result["display_name"] is None
@@ -347,7 +364,7 @@ class TestGetSessionName:
     async def test_returns_display_name(self, session_db):
         await session_db.rename_session("test-sess-001", "작업 세션")
         fn = _unwrap(mcp_tools.get_session_name)
-        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
+        with patch("soul_server.cogito.mcp_session_mgmt.get_session_db", return_value=session_db):
             result = await fn("test-sess-001")
         assert result["display_name"] == "작업 세션"
 
@@ -355,21 +372,21 @@ class TestGetSessionName:
 class TestSetSessionName:
     async def test_no_db_returns_error(self):
         fn = _unwrap(mcp_tools.set_session_name)
-        with patch("soul_server.cogito.mcp_tools.get_session_db", side_effect=RuntimeError("no db")):
+        with patch("soul_server.cogito.mcp_session_mgmt.get_session_db", side_effect=RuntimeError("no db")):
             result = await fn("test-sess-001", "name")
         assert "error" in result
 
     async def test_session_not_found(self, session_db):
         fn = _unwrap(mcp_tools.set_session_name)
-        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
-            with patch("soul_server.cogito.mcp_tools.get_session_broadcaster", side_effect=RuntimeError("not init")):
+        with patch("soul_server.cogito.mcp_session_mgmt.get_session_db", return_value=session_db):
+            with patch("soul_server.cogito.mcp_session_mgmt.get_catalog_service", side_effect=RuntimeError("not init")):
                 result = await fn("nonexistent", "name")
         assert "error" in result
 
     async def test_sets_name(self, session_db):
         fn = _unwrap(mcp_tools.set_session_name)
-        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
-            with patch("soul_server.cogito.mcp_tools.get_session_broadcaster", side_effect=RuntimeError("not init")):
+        with patch("soul_server.cogito.mcp_session_mgmt.get_session_db", return_value=session_db):
+            with patch("soul_server.cogito.mcp_session_mgmt.get_catalog_service", side_effect=RuntimeError("not init")):
                 result = await fn("test-sess-001", "세션 이름 테스트")
         assert result["session_id"] == "test-sess-001"
         assert result["display_name"] == "세션 이름 테스트"
@@ -380,8 +397,8 @@ class TestSetSessionName:
     async def test_empty_string_removes_name(self, session_db):
         await session_db.rename_session("test-sess-001", "기존 이름")
         fn = _unwrap(mcp_tools.set_session_name)
-        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
-            with patch("soul_server.cogito.mcp_tools.get_session_broadcaster", side_effect=RuntimeError("not init")):
+        with patch("soul_server.cogito.mcp_session_mgmt.get_session_db", return_value=session_db):
+            with patch("soul_server.cogito.mcp_session_mgmt.get_catalog_service", side_effect=RuntimeError("not init")):
                 result = await fn("test-sess-001", "")
         assert result["display_name"] is None
         session = await session_db.get_session("test-sess-001")
@@ -390,8 +407,8 @@ class TestSetSessionName:
     async def test_whitespace_only_removes_name(self, session_db):
         await session_db.rename_session("test-sess-001", "기존 이름")
         fn = _unwrap(mcp_tools.set_session_name)
-        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
-            with patch("soul_server.cogito.mcp_tools.get_session_broadcaster", side_effect=RuntimeError("not init")):
+        with patch("soul_server.cogito.mcp_session_mgmt.get_session_db", return_value=session_db):
+            with patch("soul_server.cogito.mcp_session_mgmt.get_catalog_service", side_effect=RuntimeError("not init")):
                 result = await fn("test-sess-001", "   ")
         assert result["display_name"] is None
 
@@ -399,8 +416,8 @@ class TestSetSessionName:
         mock_catalog_svc = AsyncMock()
         mock_catalog_svc.rename_session = AsyncMock()
         fn = _unwrap(mcp_tools.set_session_name)
-        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
-            with patch("soul_server.cogito.mcp_tools.get_catalog_service", return_value=mock_catalog_svc):
+        with patch("soul_server.cogito.mcp_session_mgmt.get_session_db", return_value=session_db):
+            with patch("soul_server.cogito.mcp_session_mgmt.get_catalog_service", return_value=mock_catalog_svc):
                 await fn("test-sess-001", "브로드캐스트 테스트")
         mock_catalog_svc.rename_session.assert_awaited_once_with("test-sess-001", "브로드캐스트 테스트")
 
@@ -422,7 +439,7 @@ def _make_mock_task_manager(summary_result=None):
 class TestListSessions:
     async def test_no_task_manager_returns_error(self):
         fn = _unwrap(mcp_tools.list_sessions)
-        with patch("soul_server.cogito.mcp_tools.get_task_manager", side_effect=RuntimeError("no tm")):
+        with patch("soul_server.cogito.mcp_session_query.get_task_manager", side_effect=RuntimeError("no tm")):
             result = await fn()
         assert "error" in result
 
@@ -434,7 +451,7 @@ class TestListSessions:
         ]
         tm = _make_mock_task_manager((sessions, 1))
         fn = _unwrap(mcp_tools.list_sessions)
-        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=tm):
+        with patch("soul_server.cogito.mcp_session_query.get_task_manager", return_value=tm):
             result = await fn(cursor=0, limit=20)
         assert result["total"] == 1
         assert len(result["sessions"]) == 1
@@ -445,14 +462,14 @@ class TestListSessions:
         sessions = [{"session_id": f"s{i}"} for i in range(5)]
         tm = _make_mock_task_manager((sessions, 10))
         fn = _unwrap(mcp_tools.list_sessions)
-        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=tm):
+        with patch("soul_server.cogito.mcp_session_query.get_task_manager", return_value=tm):
             result = await fn(cursor=0, limit=5)
         assert result["next_cursor"] == 5
 
     async def test_search_parameter_forwarded(self):
         tm = _make_mock_task_manager(([], 0))
         fn = _unwrap(mcp_tools.list_sessions)
-        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=tm):
+        with patch("soul_server.cogito.mcp_session_query.get_task_manager", return_value=tm):
             await fn(search="테스트")
         tm.list_sessions_summary.assert_called_once_with(
             search="테스트", limit=20, offset=0, folder_id=None, node_id=None,
@@ -461,7 +478,7 @@ class TestListSessions:
     async def test_folder_id_filter_forwarded(self):
         tm = _make_mock_task_manager(([], 0))
         fn = _unwrap(mcp_tools.list_sessions)
-        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=tm):
+        with patch("soul_server.cogito.mcp_session_query.get_task_manager", return_value=tm):
             await fn(folder_id="claude")
         tm.list_sessions_summary.assert_called_once_with(
             search=None, limit=20, offset=0, folder_id="claude", node_id=None,
@@ -474,7 +491,7 @@ class TestListSessions:
             {"id": "other", "name": "🪞 서소영"},
         ])
         fn = _unwrap(mcp_tools.list_sessions)
-        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=tm):
+        with patch("soul_server.cogito.mcp_session_query.get_task_manager", return_value=tm):
             await fn(folder_name="⚙️ 클로드 코드 세션")
         tm.list_sessions_summary.assert_called_once_with(
             search=None, limit=20, offset=0, folder_id="claude", node_id=None,
@@ -486,7 +503,7 @@ class TestListSessions:
             {"id": "claude", "name": "⚙️ 클로드 코드 세션"},
         ])
         fn = _unwrap(mcp_tools.list_sessions)
-        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=tm):
+        with patch("soul_server.cogito.mcp_session_query.get_task_manager", return_value=tm):
             await fn(folder_name="존재하지않는폴더")
         tm.list_sessions_summary.assert_called_once_with(
             search=None, limit=20, offset=0, folder_id=None, node_id=None,
@@ -495,7 +512,7 @@ class TestListSessions:
     async def test_node_id_filter_forwarded(self):
         tm = _make_mock_task_manager(([], 0))
         fn = _unwrap(mcp_tools.list_sessions)
-        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=tm):
+        with patch("soul_server.cogito.mcp_session_query.get_task_manager", return_value=tm):
             await fn(node_id="haniel-01")
         tm.list_sessions_summary.assert_called_once_with(
             search=None, limit=20, offset=0, folder_id=None, node_id="haniel-01",
@@ -504,7 +521,7 @@ class TestListSessions:
     async def test_node_name_treated_as_node_id(self):
         tm = _make_mock_task_manager(([], 0))
         fn = _unwrap(mcp_tools.list_sessions)
-        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=tm):
+        with patch("soul_server.cogito.mcp_session_query.get_task_manager", return_value=tm):
             await fn(node_name="haniel-01")
         tm.list_sessions_summary.assert_called_once_with(
             search=None, limit=20, offset=0, folder_id=None, node_id="haniel-01",
@@ -514,7 +531,7 @@ class TestListSessions:
         """folder_id와 folder_name 동시 제공 시 folder_id 우선."""
         tm = _make_mock_task_manager(([], 0))
         fn = _unwrap(mcp_tools.list_sessions)
-        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=tm):
+        with patch("soul_server.cogito.mcp_session_query.get_task_manager", return_value=tm):
             await fn(folder_id="explicit-id", folder_name="⚙️ 클로드 코드 세션")
         # folder_name이 있어도 get_all_folders를 호출하지 않아야 함
         tm.get_all_folders.assert_not_called()
@@ -525,7 +542,7 @@ class TestListSessions:
     async def test_limit_capped_at_100(self):
         tm = _make_mock_task_manager(([], 0))
         fn = _unwrap(mcp_tools.list_sessions)
-        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=tm):
+        with patch("soul_server.cogito.mcp_session_query.get_task_manager", return_value=tm):
             await fn(limit=200)
         call_kwargs = tm.list_sessions_summary.call_args
         assert call_kwargs[1]["limit"] == 100 or call_kwargs[0][1] == 100
@@ -554,7 +571,7 @@ class TestListSessionEvents:
         fn = _unwrap(mcp_tools.list_session_events)
         session_db.read_events = AsyncMock(return_value=[])
         session_db.count_events = AsyncMock(return_value=0)
-        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
+        with patch("soul_server.cogito.mcp_session_query.get_session_db", return_value=session_db):
             await fn("test-sess-001", event_types=["user_message", "result"])
         call_args = session_db.read_events.call_args
         assert call_args[1]["event_types"] == ["user_message", "result"]
@@ -566,7 +583,7 @@ class TestListSessionEvents:
         fn = _unwrap(mcp_tools.list_session_events)
         session_db.read_events = AsyncMock(return_value=events)
         session_db.count_events = AsyncMock(return_value=1)
-        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
+        with patch("soul_server.cogito.mcp_session_query.get_session_db", return_value=session_db):
             result = await fn("test-sess-001", tool_content="omit")
         ev = result["events"][0]["event"]
         assert "input" not in ev
@@ -579,7 +596,7 @@ class TestListSessionEvents:
         fn = _unwrap(mcp_tools.list_session_events)
         session_db.read_events = AsyncMock(return_value=events)
         session_db.count_events = AsyncMock(return_value=1)
-        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
+        with patch("soul_server.cogito.mcp_session_query.get_session_db", return_value=session_db):
             result = await fn("test-sess-001", tool_content="full")
         ev = result["events"][0]["event"]
         assert len(ev["input"]) == 1000  # 잘리지 않음
@@ -591,7 +608,7 @@ class TestListSessionEvents:
         fn = _unwrap(mcp_tools.list_session_events)
         session_db.read_events = AsyncMock(return_value=events)
         session_db.count_events = AsyncMock(return_value=1)
-        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
+        with patch("soul_server.cogito.mcp_session_query.get_session_db", return_value=session_db):
             result = await fn("test-sess-001")  # 기본값: truncate, 500
         ev = result["events"][0]["event"]
         assert len(ev["input"]) < 1000  # 잘려야 함
@@ -600,7 +617,7 @@ class TestListSessionEvents:
         fn = _unwrap(mcp_tools.list_session_events)
         session_db.read_events = AsyncMock(return_value=[])
         session_db.count_events = AsyncMock(return_value=42)
-        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
+        with patch("soul_server.cogito.mcp_session_query.get_session_db", return_value=session_db):
             result = await fn("test-sess-001")
         assert result["total"] == 42
 
@@ -609,7 +626,7 @@ class TestListSessionEvents:
         fn = _unwrap(mcp_tools.list_session_events)
         session_db.read_events = AsyncMock(return_value=[])
         session_db.count_events = AsyncMock(return_value=0)
-        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
+        with patch("soul_server.cogito.mcp_session_query.get_session_db", return_value=session_db):
             await fn("test-sess-001", limit=10)
         call_args = session_db.read_events.call_args
         assert call_args[1]["limit"] == 11  # limit + 1
@@ -624,7 +641,7 @@ class TestGetSessionSummary:
     async def test_session_not_found(self, session_db):
         fn = _unwrap(mcp_tools.get_session_summary)
         session_db.count_events = AsyncMock(return_value=0)
-        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
+        with patch("soul_server.cogito.mcp_session_query.get_session_db", return_value=session_db):
             result = await fn("nonexistent")
         assert "error" in result
 
@@ -632,7 +649,7 @@ class TestGetSessionSummary:
         fn = _unwrap(mcp_tools.get_session_summary)
         session_db.count_events = AsyncMock(return_value=0)
         session_db.read_events = AsyncMock(return_value=[])
-        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
+        with patch("soul_server.cogito.mcp_session_query.get_session_db", return_value=session_db):
             result = await fn("test-sess-001")
         assert result["session_id"] == "test-sess-001"
         assert result["total_events"] == 0
@@ -650,7 +667,7 @@ class TestGetSessionSummary:
         fn = _unwrap(mcp_tools.get_session_summary)
         session_db.count_events = AsyncMock(return_value=100)
         session_db.read_events = AsyncMock(return_value=events)
-        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
+        with patch("soul_server.cogito.mcp_session_query.get_session_db", return_value=session_db):
             result = await fn("test-sess-001")
 
         assert result["total_events"] == 100
@@ -672,7 +689,7 @@ class TestGetSessionSummary:
         fn = _unwrap(mcp_tools.get_session_summary)
         session_db.count_events = AsyncMock(return_value=200)
         session_db.read_events = AsyncMock(return_value=events)
-        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
+        with patch("soul_server.cogito.mcp_session_query.get_session_db", return_value=session_db):
             result = await fn("test-sess-001")
         assert len(result["turns"]) == 2
         assert result["turns"][0]["user_message"] == "첫 번째 질문"
@@ -687,7 +704,7 @@ class TestGetSessionSummary:
         fn = _unwrap(mcp_tools.get_session_summary)
         session_db.count_events = AsyncMock(return_value=10)
         session_db.read_events = AsyncMock(return_value=events)
-        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
+        with patch("soul_server.cogito.mcp_session_query.get_session_db", return_value=session_db):
             result = await fn("test-sess-001", max_response_chars=100)
         preview = result["turns"][0]["response_preview"]
         assert len(preview) == 103  # 100 + "..."
@@ -698,7 +715,7 @@ class TestGetSessionSummary:
         fn = _unwrap(mcp_tools.get_session_summary)
         session_db.count_events = AsyncMock(return_value=0)
         session_db.read_events = AsyncMock(return_value=[])
-        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
+        with patch("soul_server.cogito.mcp_session_query.get_session_db", return_value=session_db):
             await fn("test-sess-001")
         call_args = session_db.read_events.call_args
         assert set(call_args[1]["event_types"]) == {"user_message", "result", "context_usage", "tool_start"}
@@ -746,7 +763,7 @@ class TestSearchSessionHistoryScore:
         ])
 
         fn = _unwrap(mcp_tools.search_session_history)
-        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=mock_db):
+        with patch("soul_server.cogito.mcp_session_query.get_session_db", return_value=mock_db):
             result = await fn(query="hello")
 
         assert len(result["results"]) == 1
@@ -767,7 +784,7 @@ class TestSendMessageToSession:
         mock_tm.start_execution = AsyncMock()
 
         fn = _unwrap(mcp_tools.send_message_to_session)
-        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=mock_tm):
+        with patch("soul_server.cogito.mcp_session_mgmt.get_task_manager", return_value=mock_tm):
             result = await fn(target_session_id="sess-123", message="hello")
 
         assert result["ok"] is True
@@ -788,9 +805,9 @@ class TestSendMessageToSession:
 
         fn = _unwrap(mcp_tools.send_message_to_session)
         with (
-            patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=mock_tm),
-            patch("soul_server.cogito.mcp_tools.get_soul_engine", return_value=mock_engine),
-            patch("soul_server.cogito.mcp_tools.resource_manager", mock_rm),
+            patch("soul_server.cogito.mcp_session_mgmt.get_task_manager", return_value=mock_tm),
+            patch("soul_server.cogito.mcp_session_mgmt.get_soul_engine", return_value=mock_engine),
+            patch("soul_server.cogito.mcp_session_mgmt.resource_manager", mock_rm),
         ):
             result = await fn(target_session_id="sess-456", message="resume me")
 
@@ -808,7 +825,7 @@ class TestSendMessageToSession:
         mock_tm.start_execution = AsyncMock()
 
         fn = _unwrap(mcp_tools.send_message_to_session)
-        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=mock_tm):
+        with patch("soul_server.cogito.mcp_session_mgmt.get_task_manager", return_value=mock_tm):
             result = await fn(target_session_id="sess-789", message="fail")
 
         assert result["ok"] is False
@@ -831,10 +848,11 @@ class TestSendMessageToSession:
 
         fn = _unwrap(mcp_tools.send_message_to_session)
         with (
-            patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=mock_tm),
-            patch("soul_server.cogito.mcp_tools.httpx.AsyncClient", return_value=mock_client),
+            patch("soul_server.cogito.mcp_session_mgmt.get_task_manager", return_value=mock_tm),
+            patch("soul_server.cogito.mcp_session_mgmt.httpx.AsyncClient", return_value=mock_client),
         ):
             mcp_tools._orch_base = "http://orch:3000"
+            mcp_multi_node._orch_base = "http://orch:3000"
             result = await fn(target_session_id="sess-abc", message="via orch")
 
         assert result["ok"] is True
@@ -858,7 +876,7 @@ async def _async_gen_from_list(items):
 class TestDownloadSessionHistory:
     async def test_session_not_found(self, session_db, tmp_path):
         fn = _unwrap(mcp_tools.download_session_history)
-        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
+        with patch("soul_server.cogito.mcp_session_query.get_session_db", return_value=session_db):
             result = await fn("nonexistent", output_dir=str(tmp_path))
         assert "error" in result
         assert "찾을 수 없습니다" in result["error"]
@@ -870,7 +888,7 @@ class TestDownloadSessionHistory:
             return_value=_async_gen_from_list([])
         )
         fn = _unwrap(mcp_tools.download_session_history)
-        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
+        with patch("soul_server.cogito.mcp_session_query.get_session_db", return_value=session_db):
             result = await fn("test-sess-001", output_dir=str(tmp_path))
 
         assert "error" not in result
@@ -890,7 +908,7 @@ class TestDownloadSessionHistory:
             return_value=_async_gen_from_list(raw_events)
         )
         fn = _unwrap(mcp_tools.download_session_history)
-        with patch("soul_server.cogito.mcp_tools.get_session_db", return_value=session_db):
+        with patch("soul_server.cogito.mcp_session_query.get_session_db", return_value=session_db):
             result = await fn("test-sess-001", output_dir=str(tmp_path))
 
         assert "error" not in result
