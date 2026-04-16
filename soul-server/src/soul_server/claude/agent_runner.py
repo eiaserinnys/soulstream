@@ -2,14 +2,11 @@
 
 import asyncio
 import logging
-import time
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import IO, Any, Optional, Callable, Awaitable
-
-import psutil
 
 try:
     from claude_agent_sdk import (
@@ -51,6 +48,12 @@ from soul_server.claude.diagnostics import (
     classify_process_error,
     format_rate_limit_warning,
 )
+from soul_server.claude.client_lifecycle import (
+    ClientLifecycle,
+    _client_lifecycle_task,  # noqa: F401 — re-export for backwards compat
+    compute_options_fingerprint,
+    force_kill_process,
+)
 from soul_server.claude.error_handlers import (
     finalize_result as _finalize_result_fn,
     handle_file_not_found as _handle_file_not_found_fn,
@@ -71,7 +74,6 @@ from soul_server.claude.compact_retry import (
 from soul_server.claude.hook_builder import build_hooks as _build_hooks_fn
 from soul_server.claude.input_request import InputRequestHandler
 from soul_server.claude.message_processor import MessageProcessor
-from soul_server.claude.instrumented_client import InstrumentedClaudeClient
 from soul_server.claude.runner_registry import (
     get_runner,  # noqa: F401 — re-export
     register_runner,
@@ -134,49 +136,6 @@ class ClaudeResult(EngineResult):
         )
 
 
-async def _client_lifecycle_task(
-    client: "ClaudeSDKClient",
-    ready_event: asyncio.Event,
-    shutdown_event: asyncio.Event,
-    runner_id: str,
-) -> None:
-    """client.connect()와 disconnect()를 동일 asyncio 태스크에서 실행.
-
-    claude_agent_sdk 내부의 anyio TaskGroup은 __aenter__를 호출한 태스크와
-    __aexit__를 호출하는 태스크가 동일해야 한다. runner_pool의 maintenance task가
-    connect()를 호출하고 session task가 disconnect()를 호출하면 anyio CancelScope의
-    _deliver_cancellation이 무한 루프에 빠져 CPU busy loop을 유발한다.
-
-    이 함수를 asyncio.create_task()로 실행하면 connect()와 disconnect()가 같은
-    태스크에서 실행되므로 anyio cross-task 위반이 발생하지 않는다.
-
-    Args:
-        client: 연결할 ClaudeSDKClient
-        ready_event: connect() 완료(성공 또는 실패) 시 set되는 이벤트
-        shutdown_event: disconnect()를 트리거하기 위해 외부에서 set하는 이벤트
-        runner_id: 로깅용 러너 ID
-    """
-    try:
-        await client.connect()
-    except BaseException:
-        # connect() 실패 — ready_event를 set하여 호출자에게 알림.
-        # re-raise하여 태스크에 예외를 저장 (호출자가 task.exception()으로 확인).
-        ready_event.set()
-        raise
-
-    ready_event.set()
-    logger.debug(f"[LIFECYCLE] connect() 완료, shutdown 대기: runner={runner_id}")
-
-    await shutdown_event.wait()
-
-    logger.debug(f"[LIFECYCLE] shutdown_event 수신, disconnect() 호출: runner={runner_id}")
-    try:
-        await client.disconnect()
-        logger.info(f"[LIFECYCLE] disconnect() 완료: runner={runner_id}")
-    except Exception as e:
-        logger.warning(f"[LIFECYCLE] disconnect() 실패: runner={runner_id}, {e}")
-
-
 INTERVENTION_POLL_INTERVAL = 1.0  # 초: 인터벤션 폴링 주기
 MAX_INTERVENTION_DRAIN = 100  # _drain_interventions 안전 상한
 
@@ -229,6 +188,7 @@ class ClaudeRunner:
     """Claude Code SDK 기반 실행기
 
     runner_id 단위 인스턴스: 각 인스턴스가 자신의 client/pid/execution_loop를 소유합니다.
+    SDK 클라이언트 라이프사이클은 ClientLifecycle에 위임합니다.
     """
 
     def __init__(
@@ -260,21 +220,7 @@ class ClaudeRunner:
         self.rate_limit_tracker = None  # RateLimitTracker instance (injected by adapter)
         self.alert_send_fn: Optional[Callable] = None  # credential_alert 전송 콜백
 
-        # Instance-level client state
-        self.client: Optional[ClaudeSDKClient] = None
-        self.pid: Optional[int] = None
         self.execution_loop: Optional[asyncio.AbstractEventLoop] = None
-        # 현재 클라이언트가 연결된 세션 ID (세션 불일치 감지용)
-        self._client_session_id: Optional[str] = None
-        # 현재 클라이언트의 옵션 핑거프린트 (설정 불일치 감지용)
-        self._client_options_fp: Optional[str] = None
-        # Lifecycle task (anyio cross-task 버그 방지)
-        # connect()와 disconnect()를 동일 asyncio 태스크에서 실행하기 위한 전용 태스크.
-        # claude_agent_sdk 내부의 anyio TaskGroup은 __aenter__를 호출한 태스크와
-        # __aexit__를 호출하는 태스크가 동일해야 한다. 다른 태스크에서 __aexit__를
-        # 호출하면 _deliver_cancellation 루프가 busy loop을 유발한다.
-        self._lifecycle_task: Optional[asyncio.Task] = None
-        self._lifecycle_shutdown_event: Optional[asyncio.Event] = None
 
         # Subagent 추적을 위한 상태
         self._pending_events: deque[EngineEvent] = deque()  # 이벤트 큐
@@ -286,6 +232,77 @@ class ClaudeRunner:
         # AskUserQuestion 핸들러 (컴포지션)
         self._input_handler = InputRequestHandler(timeout=300.0)
         self._input_handler.bind_pending_events(self._pending_events.append)
+
+        # SDK 클라이언트 라이프사이클 (컴포지션)
+        # force_kill_fn은 ClaudeRunner._force_kill_process에 위임한다.
+        # 테스트가 patch.object(ClaudeRunner, "_force_kill_process")로 교체하면
+        # 런타임 호출이 그 patch를 통과하도록 동적 dispatch한다.
+        self._lifecycle = ClientLifecycle(
+            runner_id=self.runner_id,
+            working_dir=self.working_dir,
+            model=self.model,
+            system_prompt=self.system_prompt,
+            max_turns=self.max_turns,
+            allowed_tools=self.allowed_tools,
+            disallowed_tools=self.disallowed_tools,
+            mcp_config_path=self.mcp_config_path,
+            hooks_factory=lambda compact_events: _build_hooks_fn(
+                compact_events, self._pending_events
+            ),
+            can_use_tool_factory=self._make_can_use_tool,
+            rate_limit_observer=self._observe_rate_limit,
+            unknown_event_observer=self._observe_unknown_event,
+            force_kill_fn=lambda pid, runner_id: type(self)._force_kill_process(
+                pid, runner_id
+            ),
+        )
+
+    # Lifecycle 위임 property — 외부 호출자/테스트가 기존 속성 접근을 유지
+    @property
+    def client(self) -> Optional[ClaudeSDKClient]:
+        return self._lifecycle.client
+    @client.setter
+    def client(self, value: Optional[ClaudeSDKClient]) -> None:
+        self._lifecycle.client = value
+
+    @property
+    def pid(self) -> Optional[int]:
+        return self._lifecycle.pid
+    @pid.setter
+    def pid(self, value: Optional[int]) -> None:
+        self._lifecycle.pid = value
+
+    @property
+    def _client_session_id(self) -> Optional[str]:
+        return self._lifecycle._session_id
+    @_client_session_id.setter
+    def _client_session_id(self, value: Optional[str]) -> None:
+        self._lifecycle._session_id = value
+
+    @property
+    def _client_options_fp(self) -> Optional[str]:
+        return self._lifecycle._options_fp
+    @_client_options_fp.setter
+    def _client_options_fp(self, value: Optional[str]) -> None:
+        self._lifecycle._options_fp = value
+
+    @property
+    def _lifecycle_task(self) -> Optional[asyncio.Task]:
+        return self._lifecycle._lifecycle_task
+    @_lifecycle_task.setter
+    def _lifecycle_task(self, value: Optional[asyncio.Task]) -> None:
+        self._lifecycle._lifecycle_task = value
+
+    @property
+    def _lifecycle_shutdown_event(self) -> Optional[asyncio.Event]:
+        return self._lifecycle._shutdown_event
+    @_lifecycle_shutdown_event.setter
+    def _lifecycle_shutdown_event(self, value: Optional[asyncio.Event]) -> None:
+        self._lifecycle._shutdown_event = value
+
+    # Static re-exports: 테스트가 ClaudeRunner._force_kill_process를 patch할 수 있게 함
+    _compute_options_fingerprint = staticmethod(compute_options_fingerprint)
+    _force_kill_process = staticmethod(force_kill_process)
 
     @classmethod
     async def shutdown_all_clients(cls) -> int:
@@ -301,281 +318,65 @@ class ClaudeRunner:
         """동기 컨텍스트에서 코루틴을 실행하는 브릿지"""
         return run_in_new_loop(coro)
 
-    @staticmethod
-    def _compute_options_fingerprint(options) -> Optional[str]:
-        """options의 핵심 설정을 해싱하여 fingerprint를 생성
-
-        setting_sources, allowed_tools, disallowed_tools의 조합으로
-        클라이언트 설정 불일치를 감지합니다.
-        """
-        if options is None:
-            return None
-        import hashlib
-        key_parts = (
-            str(getattr(options, "setting_sources", None)),
-            str(sorted(getattr(options, "allowed_tools", None) or [])),
-            str(sorted(getattr(options, "disallowed_tools", None) or [])),
-        )
-        return hashlib.md5("|".join(key_parts).encode()).hexdigest()[:8]
-
     def _drain_events(self) -> list[EngineEvent]:
         """큐의 모든 이벤트를 반환하고 비움"""
         events = list(self._pending_events)
         self._pending_events.clear()
         return events
 
+    # Lifecycle 위임 메서드
     async def _get_or_create_client(
         self,
         session_id: Optional[str] = None,
         compact_events: Optional[list] = None,
         extra_env: Optional[dict] = None,
     ) -> tuple[ClaudeSDKClient, Optional["IO[str]"]]:
-        """ClaudeSDKClient를 가져오거나 새로 생성
+        """ClaudeSDKClient를 가져오거나 새로 생성 — ClientLifecycle에 위임.
 
-        내부에서 _build_options()를 호출하여 옵션을 생성합니다.
-        웜업과 실행 모두 이 메서드를 통해 클라이언트를 생성하므로
-        동일한 옵션 빌드 경로를 보장합니다.
-
-        불일치 감지:
-        1. 세션 불일치: 기존 클라이언트의 세션과 요청 세션이 다른 경우
-           - requested_session이 None이고 기존 세션이 있으면 오염 방지를 위해 재생성
-           - requested_session이 있는데 기존 세션과 다르면 재생성
-        2. 설정 불일치: MCP 서버, 허용/금지 도구 설정이 다른 경우
-
-        Returns:
-            (client, stderr_file) - stderr_file은 호출자가 닫아야 함
+        테스트가 patch.object(runner, "_build_options", ...)로 옵션 빌드를
+        인터셉트할 수 있도록, Runner의 _build_options를 lifecycle에 전달한다.
         """
-        options, stderr_file = self._build_options(session_id, compact_events, extra_env=extra_env)
-        # HIGH-3: 프로덕션에서는 디버그 로깅 억제
-        # logger.isEnabledFor(DEBUG)로 문자열 포맷팅 비용도 회피
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"[OPTIONS] permission_mode={options.permission_mode}")
-            logger.debug(f"[OPTIONS] cwd={options.cwd}")
-            logger.debug(f"[OPTIONS] resume={options.resume}")
-            logger.debug(f"[OPTIONS] allowed_tools count={len(options.allowed_tools) if options.allowed_tools else 0}")
-            logger.debug(f"[OPTIONS] disallowed_tools count={len(options.disallowed_tools) if options.disallowed_tools else 0}")
-            logger.debug(f"[OPTIONS] hooks={'yes' if options.hooks else 'no'}")
-        requested_session = session_id
-        requested_fp = self._compute_options_fingerprint(options)
-
-        if self.client is not None:
-            session_mismatch = self._client_session_id != requested_session
-            config_mismatch = (
-                requested_fp is not None
-                and self._client_options_fp is not None
-                and requested_fp != self._client_options_fp
-            )
-
-            if session_mismatch or config_mismatch:
-                logger.info(
-                    f"[DEBUG-CLIENT] 클라이언트 불일치 감지: "
-                    f"session_mismatch={session_mismatch} "
-                    f"(current={self._client_session_id}, requested={requested_session}), "
-                    f"config_mismatch={config_mismatch} "
-                    f"(current_fp={self._client_options_fp}, requested_fp={requested_fp}) "
-                    f"→ 클라이언트 재생성, runner={self.runner_id}"
-                )
-                await self._remove_client()
-                # _remove_client() 후 self.client = None이 되므로 아래 생성 로직으로 진행
-            else:
-                logger.info(f"[DEBUG-CLIENT] 기존 클라이언트 재사용: runner={self.runner_id}")
-                return self.client, stderr_file
-
-        import time as _time
-        logger.info(f"[DEBUG-CLIENT] 새 InstrumentedClaudeClient 생성 시작: runner={self.runner_id}")
-        client = InstrumentedClaudeClient(
-            options=options,
-            on_rate_limit=self._observe_rate_limit,
-            on_unknown_event=self._observe_unknown_event,
+        return await self._lifecycle.get_or_create(
+            session_id=session_id,
+            compact_events=compact_events,
+            extra_env=extra_env,
+            build_options_fn=self._build_options,
         )
-        logger.info(f"[DEBUG-CLIENT] InstrumentedClaudeClient 인스턴스 생성 완료, lifecycle task 시작...")
-        t0 = _time.monotonic()
-
-        # Lifecycle task 생성: connect()와 disconnect()를 동일 asyncio 태스크에서 실행.
-        # anyio TaskGroup은 __aenter__ 호출 태스크와 __aexit__ 호출 태스크가 동일해야 한다.
-        ready_event = asyncio.Event()
-        shutdown_event = asyncio.Event()
-        lifecycle_task = asyncio.create_task(
-            _client_lifecycle_task(client, ready_event, shutdown_event, self.runner_id),
-            name=f"lifecycle-{self.runner_id}",
-        )
-
-        try:
-            await asyncio.wait_for(ready_event.wait(), timeout=30.0)
-        except asyncio.TimeoutError:
-            lifecycle_task.cancel()
-            try:
-                await lifecycle_task
-            except (asyncio.CancelledError, Exception):
-                pass
-            elapsed = _time.monotonic() - t0
-            logger.error(f"[DEBUG-CLIENT] connect() 타임아웃: {elapsed:.2f}s")
-            raise TimeoutError(f"ClaudeSDKClient connect() 타임아웃: runner={self.runner_id}")
-
-        elapsed = _time.monotonic() - t0
-
-        # connect() 실패 여부 확인: lifecycle task가 이미 종료됐으면 connect()에서 예외 발생
-        if lifecycle_task.done():
-            exc = lifecycle_task.exception() if not lifecycle_task.cancelled() else None
-            if exc is not None:
-                logger.error(f"[DEBUG-CLIENT] connect() 실패: {elapsed:.2f}s, error={exc}")
-            else:
-                logger.error(f"[DEBUG-CLIENT] lifecycle task 조기 종료: {elapsed:.2f}s")
-            await lifecycle_task  # 원본 traceback 보존하여 re-raise; 정상 종료면 None 반환
-            raise RuntimeError(f"lifecycle task 조기 종료: runner={self.runner_id}")
-
-        logger.info(f"[DEBUG-CLIENT] connect() 성공: {elapsed:.2f}s")
-
-        # subprocess PID 추출
-        pid: Optional[int] = None
-        try:
-            transport = getattr(client, "_transport", None)
-            if transport:
-                process = getattr(transport, "_process", None)
-                if process:
-                    pid = getattr(process, "pid", None)
-                    if pid:
-                        logger.info(f"[DEBUG-CLIENT] subprocess PID 추출: {pid}")
-        except Exception as e:
-            logger.warning(f"[DEBUG-CLIENT] PID 추출 실패 (무시): {e}")
-
-        self.client = client
-        self.pid = pid
-        self._client_session_id = requested_session
-        self._client_options_fp = requested_fp
-        self._lifecycle_task = lifecycle_task
-        self._lifecycle_shutdown_event = shutdown_event
-        logger.info(
-            f"ClaudeSDKClient 생성: runner={self.runner_id}, pid={pid}, "
-            f"session={requested_session}, options_fp={requested_fp}"
-        )
-        return client, stderr_file
 
     async def _remove_client(self) -> None:
-        """이 러너의 ClaudeSDKClient를 정리"""
-        client = self.client
-        pid = self.pid
-        lifecycle_task = self._lifecycle_task
-        shutdown_event = self._lifecycle_shutdown_event
-
-        self.client = None
-        self.pid = None
-        self._client_session_id = None
-        self._client_options_fp = None
-        self._lifecycle_task = None
-        self._lifecycle_shutdown_event = None
-
-        if client is None:
-            return
-
-        if lifecycle_task is not None and shutdown_event is not None:
-            # Lifecycle task 경유 종료: shutdown_event를 set하면 lifecycle task가
-            # disconnect()를 호출한다. connect()와 동일한 asyncio 태스크에서 실행되므로
-            # anyio cross-task 위반이 발생하지 않는다.
-            #
-            # asyncio.shield + wait_for 대신 asyncio.wait를 사용한다.
-            # wait_for(shield(task))는 타임아웃 시 shield 래퍼만 취소하고
-            # 원본 태스크를 백그라운드에 남겨 orphan task를 유발한다.
-            shutdown_event.set()
-            done, _ = await asyncio.wait({lifecycle_task}, timeout=30.0)
-            if done:
-                try:
-                    await lifecycle_task  # 예외가 있으면 꺼냄; traceback 보존
-                    logger.info(f"ClaudeSDKClient 정상 종료 (lifecycle): runner={self.runner_id}")
-                except Exception as e:
-                    logger.warning(
-                        f"ClaudeSDKClient lifecycle task 종료 실패: runner={self.runner_id}, {e}"
-                    )
-            else:
-                logger.warning(
-                    f"ClaudeSDKClient disconnect 타임아웃, 강제 취소: runner={self.runner_id}"
-                )
-                lifecycle_task.cancel()
-                try:
-                    await lifecycle_task
-                except (asyncio.CancelledError, Exception):
-                    pass
-        else:
-            # 직접 disconnect (lifecycle task 없음, 하위 호환)
-            try:
-                await client.disconnect()
-                logger.info(f"ClaudeSDKClient 정상 종료: runner={self.runner_id}")
-            except Exception as e:
-                logger.warning(f"ClaudeSDKClient disconnect 실패: runner={self.runner_id}, {e}")
-
-        if pid:
-            self._force_kill_process(pid, self.runner_id)
+        """이 러너의 ClaudeSDKClient를 정리 — ClientLifecycle에 위임."""
+        await self._lifecycle.remove()
 
     def detach_client(self) -> Optional[ClaudeSDKClient]:
-        """풀이 runner를 회수할 때 client/pid를 안전하게 분리
-
-        _remove_client()와 달리 disconnect를 호출하지 않습니다.
-        반환된 client는 풀이 보유하여 재사용합니다.
-
-        lifecycle task는 disconnect() 없이 취소됩니다.
-        lifecycle task가 `await shutdown_event.wait()`에서 취소되면 그 이후의
-        `disconnect()`는 실행되지 않으므로 client가 disconnect되지 않은 채 반환됩니다.
-
-        Returns:
-            분리된 ClaudeSDKClient (없으면 None)
-        """
-        client = self.client
-        lifecycle_task = self._lifecycle_task
-
-        self.client = None
-        self.pid = None
-        self._client_session_id = None
-        self._client_options_fp = None
-        self._lifecycle_task = None
-        self._lifecycle_shutdown_event = None
-
-        # lifecycle task를 취소하여 orphan task 방지.
-        # shutdown_event 없이 취소하므로 disconnect()는 호출되지 않는다.
-        if lifecycle_task is not None and not lifecycle_task.done():
-            lifecycle_task.cancel()
-
-        return client
+        """풀이 runner를 회수할 때 client/pid를 안전하게 분리 — ClientLifecycle에 위임."""
+        return self._lifecycle.detach()
 
     def is_idle(self) -> bool:
-        """client가 연결되어 있고 현재 실행 중이 아닌지 확인
-
-        Returns:
-            True이면 풀에서 재사용 가능한 상태
-        """
-        if self.client is None:
-            return False
-        if self.execution_loop is not None and self.execution_loop.is_running():
-            return False
-        return True
-
-    @staticmethod
-    def _force_kill_process(pid: int, runner_id: str) -> None:
-        """psutil을 사용하여 프로세스를 강제 종료"""
-        try:
-            proc = psutil.Process(pid)
-            proc.terminate()
-            try:
-                proc.wait(timeout=3)
-                logger.info(f"프로세스 강제 종료 성공 (terminate): PID {pid}, runner={runner_id}")
-            except psutil.TimeoutExpired:
-                proc.kill()
-                proc.wait(timeout=2)
-                logger.info(f"프로세스 강제 종료 성공 (kill): PID {pid}, runner={runner_id}")
-        except psutil.NoSuchProcess:
-            logger.info(f"프로세스 이미 종료됨: PID {pid}, runner={runner_id}")
-        except Exception as kill_error:
-            logger.error(f"프로세스 강제 종료 실패: PID {pid}, runner={runner_id}, {kill_error}")
+        """client가 연결되어 있고 현재 실행 중이 아닌지 확인."""
+        return self._lifecycle.is_idle(
+            is_execution_running=(
+                self.execution_loop is not None and self.execution_loop.is_running()
+            )
+        )
 
     def _is_cli_alive(self) -> bool:
-        """CLI 서브프로세스가 아직 살아있는지 확인"""
-        if not isinstance(self.pid, int):
-            return False
-        try:
-            proc = psutil.Process(self.pid)
-            return proc.is_running()
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            return False
+        """CLI 서브프로세스가 아직 살아있는지 확인 — ClientLifecycle에 위임."""
+        return self._lifecycle.is_cli_alive()
 
+    def _build_options(
+        self,
+        session_id: Optional[str] = None,
+        compact_events: Optional[list] = None,
+        extra_env: Optional[dict] = None,
+    ) -> tuple[ClaudeAgentOptions, Optional[IO[str]]]:
+        """ClaudeAgentOptions를 빌드 — ClientLifecycle에 위임."""
+        return self._lifecycle.build_options(
+            session_id=session_id,
+            compact_events=compact_events,
+            extra_env=extra_env,
+        )
+
+    # Runner 고유 메서드
     def interrupt(self) -> bool:
         """이 러너에 인터럽트 전송 (동기)"""
         client = self.client
@@ -648,75 +449,6 @@ class ClaudeRunner:
         """InstrumentedClaudeClient 콜백: unknown event 관찰"""
         data_summary = str(data)[:200] if data else ""
         logger.warning(f"Unknown event observed: {msg_type} — {data_summary}")
-
-    def _build_options(
-        self,
-        session_id: Optional[str] = None,
-        compact_events: Optional[list] = None,
-        extra_env: Optional[dict] = None,
-    ) -> tuple[ClaudeAgentOptions, Optional[IO[str]]]:
-        """ClaudeAgentOptions와 stderr 파일을 반환합니다.
-
-        Args:
-            session_id: 재개할 세션 ID
-            compact_events: 컴팩션 이벤트 목록
-
-        Returns:
-            (options, stderr_file)
-            - stderr_file은 호출자가 닫아야 함 (sys.stderr이면 None)
-        """
-        runner_id = self.runner_id
-        hooks = _build_hooks_fn(compact_events, self._pending_events)
-
-        # CLI stderr를 세션별 파일에 캡처
-        import sys as _sys
-        _runtime_dir = Path(__file__).resolve().parents[4]
-        _stderr_suffix = runner_id or "default"
-        _stderr_log_path = _runtime_dir / "logs" / f"cli_stderr_{_stderr_suffix}.log"
-        logger.info(f"[DEBUG] CLI stderr 로그 경로: {_stderr_log_path}")
-        _stderr_file = None
-        _stderr_target = _sys.stderr
-        try:
-            _stderr_file = open(_stderr_log_path, "a", encoding="utf-8")
-            _stderr_file.write(f"\n--- CLI stderr capture start: {datetime.now(timezone.utc).isoformat()} ---\n")
-            _stderr_file.flush()
-            _stderr_target = _stderr_file
-        except Exception as _e:
-            logger.warning(f"[DEBUG] stderr 캡처 파일 열기 실패: {_e}")
-            if _stderr_file:
-                _stderr_file.close()
-            _stderr_file = None
-
-        # setting_sources로 프로젝트 설정(.mcp.json)을 자동 발견
-        # 웜업과 실행 모두 동일한 경로를 사용하여 fingerprint 일치 보장
-        logger.info(
-            f"[BUILD_OPTIONS] runner={runner_id}, "
-            f"setting_sources=['project'], "
-            f"session_id={session_id}, "
-            f"allowed_tools={self.allowed_tools}"
-        )
-
-        options = ClaudeAgentOptions(
-            allowed_tools=self.allowed_tools,
-            disallowed_tools=self.disallowed_tools,
-            permission_mode="bypassPermissions",
-            can_use_tool=self._make_can_use_tool(),
-            cwd=self.working_dir,
-            setting_sources=["project"],
-            hooks=hooks,
-            extra_args={"debug-to-stderr": None},
-            debug_stderr=_stderr_target,
-            max_buffer_size=50 * 1024 * 1024,  # 50MB: 기본값 1MB가 대형 응답에서 오버플로우 발생
-            model=self.model,
-            system_prompt=self.system_prompt,
-            max_turns=self.max_turns,
-            env=extra_env or {},
-        )
-
-        if session_id:
-            options.resume = session_id
-
-        return options, _stderr_file
 
     async def _poll_intervention(
         self,

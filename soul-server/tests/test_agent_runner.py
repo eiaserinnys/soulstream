@@ -171,7 +171,7 @@ class TestClaudeRunnerPurity:
             MockResultMessage(result="완료", session_id="purity-test"),
         )
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                 result = await runner.run("테스트")
 
@@ -210,7 +210,7 @@ class TestClaudeRunnerAsync:
             MockResultMessage(result="완료되었습니다.", session_id="test-sdk-123"),
         )
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             with patch("soul_server.claude.message_processor.SystemMessage", MockSystemMessage):
                 with patch("soul_server.claude.message_processor.AssistantMessage", MockAssistantMessage):
                     with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
@@ -232,7 +232,7 @@ class TestClaudeRunnerAsync:
             ),
         )
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                 result = await runner.run("테스트")
 
@@ -246,7 +246,7 @@ class TestClaudeRunnerAsync:
         mock_client = AsyncMock()
         mock_client.connect.side_effect = FileNotFoundError("claude not found")
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             result = await runner.run("테스트")
 
         assert result.success is False
@@ -259,7 +259,7 @@ class TestClaudeRunnerAsync:
         mock_client = AsyncMock()
         mock_client.connect.side_effect = RuntimeError("SDK error")
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             result = await runner.run("테스트")
 
         assert result.success is False
@@ -273,7 +273,7 @@ class TestClaudeRunnerAsync:
             MockResultMessage(result="Compacted.", session_id="compact-123"),
         )
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                 result = await runner.compact_session("test-session-id")
 
@@ -318,7 +318,7 @@ class TestClaudeRunnerProgress:
         mock_loop = MagicMock()
         mock_loop.time = mock_time
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             with patch("soul_server.claude.message_processor.SystemMessage", MockSystemMessage):
                 with patch("soul_server.claude.message_processor.AssistantMessage", MockAssistantMessage):
                     with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
@@ -380,7 +380,7 @@ class TestClaudeRunnerCompact:
                 })
             return options, stderr_f
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             with patch("soul_server.claude.message_processor.SystemMessage", MockSystemMessage):
                 with patch("soul_server.claude.message_processor.AssistantMessage", MockAssistantMessage):
                     with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
@@ -422,7 +422,7 @@ class TestClaudeRunnerCompact:
                 })
             return options, stderr_f
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                 with patch.object(runner, "_build_options", patched_build):
                     result = await runner.run("테스트", on_compact=on_compact)
@@ -454,7 +454,7 @@ class TestClaudeRunnerCompact:
                 })
             return options, stderr_f
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                 with patch.object(runner, "_build_options", patched_build):
                     result = await runner.run("테스트", on_compact=failing_compact)
@@ -470,7 +470,7 @@ class TestClaudeRunnerCompact:
             MockResultMessage(result="완료", session_id="test"),
         )
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                 result = await runner.run("테스트")
 
@@ -549,7 +549,7 @@ class TestProcessErrorHandling:
             "Command failed with exit code 1", exit_code=1, stderr="Check stderr output for details"
         )
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             result = await runner.run("테스트")
 
         assert result.success is False
@@ -567,7 +567,7 @@ class TestProcessErrorHandling:
             "usage limit reached", exit_code=1, stderr="usage limit"
         )
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             result = await runner.run("테스트")
 
         assert result.success is False
@@ -611,7 +611,7 @@ class TestRateLimitEventHandling:
 
         mock_client.receive_response = MagicMock(return_value=RateLimitThenStop())
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             result = await runner.run("테스트")
 
         # rate_limit_event는 continue하므로 정상 종료
@@ -633,7 +633,7 @@ class TestRateLimitEventHandling:
             {"type": "rate_limit_event"}
         )
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             result = await runner.run("테스트")
 
         assert result.success is False
@@ -655,7 +655,7 @@ class TestRateLimitEventHandling:
             {"type": "some_unknown_type"}
         )
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             result = await runner.run("테스트")
 
         assert result.success is False
@@ -675,7 +675,7 @@ class TestRateLimitEventHandling:
             None
         )
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             result = await runner.run("테스트")
 
         assert result.success is False
@@ -714,7 +714,7 @@ class TestRateLimitEventHandling:
 
         mock_client.receive_response = MagicMock(return_value=WarningThenText())
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             result = await runner.run("테스트")
 
         # allowed_warning은 break하지 않으므로 정상 종료
@@ -1036,7 +1036,7 @@ class TestPidTrackingAndForceKill:
         mock_client = AsyncMock()
         mock_client._transport = mock_transport
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             client, _ = await runner._get_or_create_client()
 
         assert runner.pid == 54321
@@ -1049,7 +1049,7 @@ class TestPidTrackingAndForceKill:
         mock_client = AsyncMock()
         mock_client._transport = None
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             client, _ = await runner._get_or_create_client()
 
         assert runner.pid is None
@@ -1115,7 +1115,7 @@ class TestForceKillProcess:
         mock_proc = MagicMock()
 
         # agent_runner 모듈 내부에서 psutil을 import하므로 해당 경로로 패치
-        with patch("soul_server.claude.agent_runner.psutil") as mock_psutil:
+        with patch("soul_server.claude.client_lifecycle.psutil") as mock_psutil:
             mock_psutil.Process.return_value = mock_proc
             ClaudeRunner._force_kill_process(12345, "test_thread")
 
@@ -1126,7 +1126,7 @@ class TestForceKillProcess:
         """_force_kill_process: terminate 타임아웃 시 kill 사용"""
         mock_proc = MagicMock()
 
-        with patch("soul_server.claude.agent_runner.psutil") as mock_psutil:
+        with patch("soul_server.claude.client_lifecycle.psutil") as mock_psutil:
             # TimeoutExpired 예외 시뮬레이션
             mock_psutil.TimeoutExpired = type("TimeoutExpired", (Exception,), {})
             mock_proc.wait.side_effect = [mock_psutil.TimeoutExpired(3), None]
@@ -1139,7 +1139,7 @@ class TestForceKillProcess:
 
     def test_force_kill_process_no_such_process(self):
         """_force_kill_process: 프로세스가 이미 종료된 경우"""
-        with patch("soul_server.claude.agent_runner.psutil") as mock_psutil:
+        with patch("soul_server.claude.client_lifecycle.psutil") as mock_psutil:
             # NoSuchProcess 예외 시뮬레이션
             mock_psutil.NoSuchProcess = type("NoSuchProcess", (Exception,), {})
             mock_psutil.Process.side_effect = mock_psutil.NoSuchProcess(12345)
@@ -1149,7 +1149,7 @@ class TestForceKillProcess:
     def test_force_kill_process_general_error(self):
         """_force_kill_process: 일반 오류 발생 시 로깅만"""
         import psutil as real_psutil
-        with patch("soul_server.claude.agent_runner.psutil") as mock_psutil:
+        with patch("soul_server.claude.client_lifecycle.psutil") as mock_psutil:
             # 실제 예외 클래스들을 유지
             mock_psutil.NoSuchProcess = real_psutil.NoSuchProcess
             mock_psutil.TimeoutExpired = real_psutil.TimeoutExpired
@@ -1317,7 +1317,7 @@ class TestIsCliAlive:
         mock_proc = MagicMock()
         mock_proc.is_running.return_value = True
 
-        with patch("soul_server.claude.agent_runner.psutil") as mock_psutil:
+        with patch("soul_server.claude.client_lifecycle.psutil") as mock_psutil:
             mock_psutil.Process.return_value = mock_proc
             mock_psutil.NoSuchProcess = type("NoSuchProcess", (Exception,), {})
             mock_psutil.AccessDenied = type("AccessDenied", (Exception,), {})
@@ -1328,7 +1328,7 @@ class TestIsCliAlive:
         runner = ClaudeRunner()
         runner.pid = 99999
 
-        with patch("soul_server.claude.agent_runner.psutil") as mock_psutil:
+        with patch("soul_server.claude.client_lifecycle.psutil") as mock_psutil:
             mock_psutil.NoSuchProcess = type("NoSuchProcess", (Exception,), {})
             mock_psutil.AccessDenied = type("AccessDenied", (Exception,), {})
             mock_psutil.Process.side_effect = mock_psutil.NoSuchProcess(99999)
@@ -1367,7 +1367,7 @@ class TestCompactRetryHangFix:
                 })
             return options, stderr_f
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             with patch("soul_server.claude.message_processor.SystemMessage", MockSystemMessage):
                 with patch("soul_server.claude.message_processor.AssistantMessage", MockAssistantMessage):
                     with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
@@ -1416,7 +1416,7 @@ class TestCompactRetryHangFix:
                 })
             return options, stderr_f
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             with patch.object(runner, "_build_options", patched_build):
                 with patch.object(runner, "_is_cli_alive", return_value=False):
                     result = await runner.run("테스트")
@@ -1469,7 +1469,7 @@ class TestCompactRetryHangFix:
                 })
             return options, stderr_f
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             with patch("soul_server.claude.message_processor.AssistantMessage", MockAssistantMessage):
                 with patch("soul_server.claude.message_processor.TextBlock", MockTextBlock):
                     with patch.object(runner, "_build_options", patched_build):
@@ -1534,7 +1534,7 @@ class TestCompactRetryHangFix:
 
         # timeout을 짧게 설정하여 테스트 빠르게 완료
         with patch("soul_server.claude.agent_runner.COMPACT_RETRY_READ_TIMEOUT", 0.1):
-            with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+            with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
                 with patch.object(runner, "_build_options", patched_build):
                     with patch.object(runner, "_is_cli_alive", return_value=True):
                         result = await runner.run("테스트")
@@ -1586,7 +1586,7 @@ class TestClaudeRunnerIsErrorFromResultMessage:
             error_result,
         )
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             with patch("soul_server.claude.message_processor.SystemMessage", MockSystemMessage):
                 with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                     result = await runner.run("테스트")
@@ -1608,7 +1608,7 @@ class TestClaudeRunnerIsErrorFromResultMessage:
             ),
         )
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                 result = await runner.run("테스트")
 
@@ -1631,7 +1631,7 @@ class TestInlineIntervention:
             MockResultMessage(result="완료", session_id="no-intervention"),
         )
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             with patch("soul_server.claude.message_processor.SystemMessage", MockSystemMessage):
                 with patch("soul_server.claude.message_processor.AssistantMessage", MockAssistantMessage):
                     with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
@@ -1660,7 +1660,7 @@ class TestInlineIntervention:
             MockResultMessage(result="완료", session_id="none-intervention"),
         )
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             with patch("soul_server.claude.message_processor.AssistantMessage", MockAssistantMessage):
                 with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                     with patch("soul_server.claude.message_processor.TextBlock", MockTextBlock):
@@ -1691,7 +1691,7 @@ class TestInlineIntervention:
             MockResultMessage(result="최종 결과", session_id="with-intervention"),
         )
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             with patch("soul_server.claude.message_processor.AssistantMessage", MockAssistantMessage):
                 with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                     with patch("soul_server.claude.message_processor.TextBlock", MockTextBlock):
@@ -1716,7 +1716,7 @@ class TestInlineIntervention:
             MockResultMessage(result="완료", session_id="error-intervention"),
         )
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             with patch("soul_server.claude.message_processor.AssistantMessage", MockAssistantMessage):
                 with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                     with patch("soul_server.claude.message_processor.TextBlock", MockTextBlock):
@@ -1768,7 +1768,7 @@ class TestInlineIntervention:
         mock_loop = MagicMock()
         mock_loop.time = mock_time
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             with patch("soul_server.claude.message_processor.AssistantMessage", MockAssistantMessage):
                 with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                     with patch("soul_server.claude.message_processor.TextBlock", MockTextBlock):
@@ -1804,7 +1804,7 @@ class TestClaudeRunnerPooled:
             MockResultMessage(result="완료", session_id="s1"),
         )
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                 result = await runner.run("테스트")
 
@@ -1823,7 +1823,7 @@ class TestClaudeRunnerPooled:
             MockResultMessage(result="완료", session_id="s1"),
         )
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                 result = await runner.run("테스트")
 
@@ -1887,7 +1887,7 @@ class TestClaudeRunnerPooled:
             MockResultMessage(result="완료", session_id="s1"),
         )
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                 result = await runner.run("테스트")
 
@@ -1915,7 +1915,7 @@ class TestEngineEventCallback:
             MockResultMessage(result="완료", session_id="evt-test"),
         )
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             with patch("soul_server.claude.message_processor.AssistantMessage", MockAssistantMessage):
                 with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                     with patch("soul_server.claude.message_processor.TextBlock", MockTextBlock):
@@ -1945,7 +1945,7 @@ class TestEngineEventCallback:
             MockResultMessage(result="완료", session_id="tool-test"),
         )
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             with patch("soul_server.claude.message_processor.AssistantMessage", MockAssistantMessage):
                 with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                     with patch("soul_server.claude.message_processor.ToolUseBlock", MockToolUseBlock):
@@ -1986,7 +1986,7 @@ class TestEngineEventCallback:
             MockResultMessage(result="완료", session_id="result-test"),
         )
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             with patch("soul_server.claude.message_processor.AssistantMessage", MockAssistantMessage):
                 with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                     with patch("soul_server.claude.message_processor.ToolUseBlock", MockToolUseBlock):
@@ -2013,7 +2013,7 @@ class TestEngineEventCallback:
             MockResultMessage(result="최종 결과물", session_id="final-test"),
         )
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                 await runner.run("테스트", on_event=on_event)
 
@@ -2031,7 +2031,7 @@ class TestEngineEventCallback:
             MockResultMessage(result="완료", session_id="compat-test"),
         )
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             with patch("soul_server.claude.message_processor.AssistantMessage", MockAssistantMessage):
                 with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                     with patch("soul_server.claude.message_processor.TextBlock", MockTextBlock):
@@ -2055,7 +2055,7 @@ class TestEngineEventCallback:
             MockResultMessage(result="완료", session_id="err-test"),
         )
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             with patch("soul_server.claude.message_processor.AssistantMessage", MockAssistantMessage):
                 with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                     with patch("soul_server.claude.message_processor.TextBlock", MockTextBlock):
@@ -2106,7 +2106,7 @@ class TestToolResultFromUserMessage:
             MockResultMessage(result="완료", session_id="user-msg-test"),
         )
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             with patch("soul_server.claude.message_processor.AssistantMessage", MockAssistantMessage):
                 with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                     with patch("soul_server.claude.message_processor.ToolUseBlock", MockToolUseBlock):
@@ -2168,7 +2168,7 @@ class TestToolResultFromUserMessage:
             MockResultMessage(result="완료", session_id="multi-tool-test"),
         )
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             with patch("soul_server.claude.message_processor.AssistantMessage", MockAssistantMessage):
                 with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                     with patch("soul_server.claude.message_processor.ToolUseBlock", MockToolUseBlock):
@@ -2234,7 +2234,7 @@ class TestInterventionPollingParallel:
                 return "사용자 중간 메시지"
             return None
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             with patch("soul_server.claude.message_processor.SystemMessage", MockSystemMessage):
                 with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                     with patch("soul_server.claude.agent_runner.INTERVENTION_POLL_INTERVAL", 0.3):
@@ -2260,7 +2260,7 @@ class TestInterventionPollingParallel:
             MockResultMessage(result="완료", session_id="no-intv-test"),
         )
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             with patch("soul_server.claude.message_processor.SystemMessage", MockSystemMessage):
                 with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                     result = await runner.run("테스트")
@@ -2295,7 +2295,7 @@ class TestInterventionPollingParallel:
                 return pending_messages.pop(0)
             return None
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             with patch("soul_server.claude.message_processor.SystemMessage", MockSystemMessage):
                 with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
                     result = await runner.run(
@@ -2326,7 +2326,7 @@ class TestInterventionPollingParallel:
                 raise RuntimeError("인터벤션 오류")
             return None
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             with patch("soul_server.claude.message_processor.SystemMessage", MockSystemMessage):
                 with patch("soul_server.claude.message_processor.AssistantMessage", MockAssistantMessage):
                     with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
@@ -2494,7 +2494,7 @@ class TestClientLifecycleTask:
         runner = ClaudeRunner()
         mock_client = AsyncMock()
 
-        with patch("soul_server.claude.agent_runner.InstrumentedClaudeClient", return_value=mock_client):
+        with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             with patch.object(runner, "_build_options") as mock_build:
                 mock_options = MagicMock()
                 mock_options.permission_mode = "bypassPermissions"
