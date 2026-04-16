@@ -5,37 +5,32 @@
  * 실제 API 호출은 props 콜백으로 위임한다 (호스트가 구현).
  *
  * DnD는 DashboardDndProvider(DndContext)에 위임한다:
- *  - 세션 드래그 → 폴더 드롭: useDroppable로 drop target 등록
+ *  - 세션 드래그 → 폴더 드롭: FolderItem 내부 useDroppable
  *  - 폴더 재정렬: SortableContext + FolderItem(useSortable)
+ *
+ * 본 컴포넌트는 컨테이너 역할만 수행한다:
+ *  - 다이얼로그/컨텍스트 메뉴 상태 관리
+ *  - 폴더 정렬·세션 카운트 훅 연결
+ *  - FeedItem / FolderItem 자식 렌더링
  */
 
-import { useState, useCallback, useMemo, memo, useEffect } from "react";
-import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
-import { useDroppable } from "@dnd-kit/core";
-import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
-import { useDashboardStore, isSessionUnread } from "../stores/dashboard-store";
-import { useFeedUnreadCount } from "../hooks/useFeedSessions";
-import type { SessionPage } from "../hooks/session-stream-helpers";
-import { useIsMobile } from "../hooks/use-mobile";
-import { cn } from "../lib/cn";
+import { useState, useCallback } from "react";
+import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { useDashboardStore } from "../stores/dashboard-store";
+import { useSortedFolders } from "../hooks/useSortedFolders";
+import { useFolderSessionStats } from "../hooks/useFolderSessionStats";
 import { Button } from "./ui/button";
-import { Badge } from "./ui/badge";
-import { Spinner } from "./ui/spinner";
 import { SYSTEM_FOLDERS } from "../shared/constants";
-import { Plus, Newspaper, GripVertical } from "lucide-react";
-import { Dialog, DialogPopup } from "./ui/dialog";
+import { Plus } from "lucide-react";
 import { FolderDialog } from "./FolderDialog";
 import { FolderSettingsDialog } from "./FolderSettingsDialog";
 import { FolderSortButton } from "./FolderSortButton";
+import { FeedItem } from "./FeedItem";
+import { FolderItem } from "./FolderItem";
+import { FolderContextMenu, type FolderContextMenuTarget } from "./FolderContextMenu";
 import type { FolderSettings } from "../shared/types";
 
 const SYSTEM_FOLDER_NAMES: Set<string> = new Set(Object.values(SYSTEM_FOLDERS));
-
-/** 이름 정렬 키 — 앞쪽 이모지+공백 제거 후 텍스트 반환 */
-function sortKey(name: string): string {
-  return name.replace(/^[\p{Emoji_Presentation}\p{Extended_Pictographic}\s]+/u, '').trim() || name;
-}
 
 export interface FolderTreeProps {
   onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => void;
@@ -53,257 +48,31 @@ export interface FolderTreeProps {
   folderCounts?: Record<string, number>;
 }
 
-// ── FolderItem (개별 폴더 행) ─────────────────────────────────────────────────
-
-interface FolderItemProps {
-  folder: { id: string; name: string; sortOrder: number; createdAt?: string };
-  isSystem: boolean;
-  isDraggableFolder: boolean;
-  sortedNormalFolderIds: string[];
-  isSelected: boolean;
-  isEditingThis: boolean;
-  editName: string;
-  dragOverId: string | null;
-  unreadCount: number;
-  sessionCount: number;
-  isRunning: boolean;
-  onSelect: () => void;
-  onDoubleClick: () => void;
-  onContextMenu: (e: React.MouseEvent) => void;
-  onEditChange: (v: string) => void;
-  onEditSubmit: () => void;
-  onEditCancel: () => void;
-}
-
-/** FolderItem — useSortable(폴더 재정렬) + useDroppable(세션 drop target) */
-const FolderItem = memo(function FolderItem({
-  folder,
-  isSystem,
-  isDraggableFolder,
-  sortedNormalFolderIds,
-  isSelected,
-  isEditingThis,
-  editName,
-  dragOverId,
-  unreadCount,
-  sessionCount,
-  isRunning,
-  onSelect,
-  onDoubleClick,
-  onContextMenu,
-  onEditChange,
-  onEditSubmit,
-  onEditCancel,
-}: FolderItemProps) {
-  // 폴더 재정렬용 (custom 모드에서만 active)
-  const {
-    attributes,
-    listeners,
-    setNodeRef: setSortableRef,
-    transform,
-    transition,
-    isDragging: isSortableDragging,
-  } = useSortable({
-    id: folder.id,
-    disabled: !isDraggableFolder,
-    data: {
-      type: "folder",
-      currentOrder: sortedNormalFolderIds,
-    },
-  });
-
-  // 세션 drop target
-  const { setNodeRef: setDroppableRef, isOver } = useDroppable({
-    id: folder.id,
-    data: { type: "folder", folderId: folder.id },
-  });
-
-  // 두 ref를 합성
-  const setRef = useCallback(
-    (el: HTMLDivElement | null) => {
-      setSortableRef(el);
-      setDroppableRef(el);
-    },
-    [setSortableRef, setDroppableRef],
-  );
-
-  const style = isDraggableFolder
-    ? {
-        transform: CSS.Transform.toString(transform),
-        transition,
-      }
-    : undefined;
-
-  return (
-    <div
-      ref={setRef}
-      style={style}
-      data-testid={isDraggableFolder ? "draggable-folder" : undefined}
-      className={cn(
-        "flex items-center justify-between px-3 py-1.5 cursor-pointer text-sm hover:bg-accent/50 group select-none",
-        isSelected && "bg-accent text-accent-foreground",
-        (isOver || dragOverId === folder.id) && "ring-2 ring-primary",
-        isDraggableFolder && isSortableDragging && "opacity-50",
-      )}
-      onClick={onSelect}
-      onDoubleClick={onDoubleClick}
-      onContextMenu={onContextMenu}
-    >
-      {isEditingThis ? (
-        <input
-          autoFocus
-          className="flex-1 bg-transparent border-b border-primary outline-none text-sm"
-          value={editName}
-          onChange={(e) => onEditChange(e.target.value)}
-          onBlur={onEditSubmit}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") onEditSubmit();
-            if (e.key === "Escape") onEditCancel();
-          }}
-        />
-      ) : (
-        <div className="flex items-center gap-1.5 min-w-0">
-          {isDraggableFolder && (
-            <GripVertical
-              {...attributes}
-              {...listeners}
-              className="h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-60 cursor-grab"
-            />
-          )}
-          <span className="truncate">{folder.name}</span>
-          {isRunning && (
-            <Spinner className="h-3 w-3 shrink-0" />
-          )}
-        </div>
-      )}
-      {unreadCount > 0 ? (
-        <Badge variant="destructive" className="ml-2 text-xs font-bold">
-          {unreadCount}
-        </Badge>
-      ) : (
-        <Badge variant="secondary" className="ml-2 text-xs">
-          {sessionCount}
-        </Badge>
-      )}
-    </div>
-  );
-});
-
-// ── FolderTree ────────────────────────────────────────────────────────────────
-
 export function FolderTree({
-  onMoveSessions,
   onCreateFolder,
   onRenameFolder,
   onDeleteFolder,
   onUpdateFolderSettings,
-  onReorderFolders,
   folderCounts,
 }: FolderTreeProps) {
   const catalog = useDashboardStore((s) => s.catalog);
-  const catalogVersion = useDashboardStore((s) => s.catalogVersion);
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
   const selectFolder = useDashboardStore((s) => s.selectFolder);
   const viewMode = useDashboardStore((s) => s.viewMode);
-  const selectFeed = useDashboardStore((s) => s.selectFeed);
   const folderSortMode = useDashboardStore((s) => s.folderSortMode);
 
-  const queryClient = useQueryClient();
-  const [cacheVersion, setCacheVersion] = useState(0);
-  useEffect(() => {
-    const unsubscribe = queryClient.getQueryCache().subscribe(() => {
-      setCacheVersion((v) => v + 1);
-    });
-    return unsubscribe;
-  }, [queryClient]);
-
-  const sessions = useMemo(() => {
-    const allData = queryClient.getQueriesData<InfiniteData<SessionPage>>({
-      queryKey: ["sessions"],
-      exact: false,
-    });
-    const all: import("../shared/types").SessionSummary[] = [];
-    for (const [, data] of allData) {
-      if (!data) continue;
-      for (const page of data.pages) all.push(...page.sessions);
-    }
-    return all;
-  }, [cacheVersion, queryClient]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [dragOverId] = useState<string | null>(null); // isOver는 useDroppable에서 관리
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; folder: { id: string; name: string } } | null>(null);
+  const [contextMenu, setContextMenu] = useState<FolderContextMenuTarget | null>(null);
   const [settingsTarget, setSettingsTarget] = useState<{ id: string; name: string } | null>(null);
-
-  const isMobile = useIsMobile();
 
   const allFolders = catalog?.folders ?? [];
 
-  /** 정렬된 일반 폴더 목록 */
-  const sortedNormalFolders = useMemo(() => {
-    const normal = allFolders.filter((f) => !SYSTEM_FOLDER_NAMES.has(f.name));
-    switch (folderSortMode) {
-      case "name-asc":
-        return [...normal].sort((a, b) => sortKey(a.name).localeCompare(sortKey(b.name)));
-      case "name-desc":
-        return [...normal].sort((a, b) => sortKey(b.name).localeCompare(sortKey(a.name)));
-      case "created-desc":
-        return [...normal].sort((a, b) =>
-          new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime()
-        );
-      case "created-asc":
-        return [...normal].sort((a, b) =>
-          new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime()
-        );
-      case "custom":
-      default:
-        return [...normal].sort((a, b) => a.sortOrder - b.sortOrder);
-    }
-  }, [allFolders, folderSortMode, catalogVersion]);
-
-  const sortedNormalFolderIds = useMemo(
-    () => sortedNormalFolders.map((f) => f.id),
-    [sortedNormalFolders],
-  );
-
-  const systemFolders = useMemo(
-    () => allFolders.filter((f) => SYSTEM_FOLDER_NAMES.has(f.name)),
-    [allFolders, catalogVersion],
-  );
-
-  const getSessionCount = useCallback(
-    (folderId: string | null) => {
-      if (folderCounts) {
-        const key = folderId === null ? "null" : folderId;
-        return folderCounts[key] ?? 0;
-      }
-      if (!catalog) return 0;
-      return sessions.filter((s) => {
-        const assignment = catalog.sessions[s.agentSessionId];
-        if (folderId === null) {
-          return !assignment || assignment.folderId === null;
-        }
-        return assignment?.folderId === folderId;
-      }).length;
-    },
-    [catalog, sessions, catalogVersion, folderCounts],
-  );
-
-  const getUnreadCount = useCallback(
-    (folderId: string | null) => {
-      if (!catalog) return 0;
-      return sessions.filter((s) => {
-        const assignment = catalog.sessions[s.agentSessionId];
-        if (folderId === null) {
-          return (!assignment || assignment.folderId === null) && isSessionUnread(s);
-        }
-        return assignment?.folderId === folderId && isSessionUnread(s);
-      }).length;
-    },
-    [catalog, sessions, catalogVersion],
-  );
+  const { sortedNormalFolders, sortedNormalFolderIds, systemFolders } = useSortedFolders(allFolders);
+  const { getSessionCount, getUnreadCount, runningFolderIds } = useFolderSessionStats(folderCounts);
 
   const handleCreateFolder = async (name: string) => {
     try {
@@ -324,18 +93,6 @@ export function FolderTree({
     }
   };
 
-  const runningFolderIds = useMemo(() => {
-    if (!catalog) return new Set<string>();
-    const set = new Set<string>();
-    for (const s of sessions) {
-      if (s.status === "running") {
-        const fid = catalog.sessions[s.agentSessionId]?.folderId;
-        if (fid) set.add(fid);
-      }
-    }
-    return set;
-  }, [catalog, sessions, catalogVersion]);
-
   const handleDoubleClick = (folderId: string, currentName: string) => {
     setEditingId(folderId);
     setEditName(currentName);
@@ -352,12 +109,6 @@ export function FolderTree({
   const handleSelectFolder = useCallback((folderId: string | null) => {
     selectFolder(folderId);
   }, [selectFolder]);
-
-  /** 피드 미읽음 카운트 */
-  const feedUnreadCount = useFeedUnreadCount();
-
-  // normalFolders alias (기존 코드와의 호환성 유지)
-  const normalFolders = sortedNormalFolders;
 
   const renderFolderItem = (folder: typeof allFolders[number]) => {
     const isSystem = SYSTEM_FOLDER_NAMES.has(folder.name);
@@ -402,35 +153,17 @@ export function FolderTree({
       </div>
 
       <div className="flex-1 overflow-y-auto py-1">
-        {/* 📰 피드 */}
-        <div
-          className={cn(
-            "flex items-center justify-between px-3 py-1.5 cursor-pointer text-sm hover:bg-accent/50",
-            viewMode === "feed" && "bg-accent text-accent-foreground",
-          )}
-          onClick={selectFeed}
-        >
-          <div className="flex items-center gap-1.5">
-            <Newspaper className="h-3.5 w-3.5" />
-            <span>피드</span>
-          </div>
-          {feedUnreadCount > 0 ? (
-            <Badge variant="destructive" className="ml-2 text-xs font-bold">
-              {feedUnreadCount}
-            </Badge>
-          ) : null}
-        </div>
+        <FeedItem />
 
-        {/* 구분선 */}
         <div className="border-t border-border my-1 mx-3" />
 
         {/* 일반 폴더 — SortableContext로 재정렬 가능 */}
         <SortableContext items={sortedNormalFolderIds} strategy={verticalListSortingStrategy}>
-          {normalFolders.map(renderFolderItem)}
+          {sortedNormalFolders.map(renderFolderItem)}
         </SortableContext>
 
         {/* 구분선 (일반 폴더가 1개 이상일 때만) */}
-        {normalFolders.length > 0 && (
+        {sortedNormalFolders.length > 0 && (
           <div className="border-t border-border my-1 mx-3" />
         )}
 
@@ -460,79 +193,13 @@ export function FolderTree({
           setSettingsTarget(null);
         }}
       />
-      {contextMenu && (
-        isMobile ? (
-          <Dialog open onOpenChange={(open) => { if (!open) setContextMenu(null); }}>
-            <DialogPopup className="max-w-sm" showCloseButton={false}>
-              <div className="py-2 px-2">
-                <button
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-accent rounded-md"
-                  onClick={() => {
-                    handleDoubleClick(contextMenu.folder.id, contextMenu.folder.name);
-                    setContextMenu(null);
-                  }}
-                >
-                  이름 변경
-                </button>
-                <div className="border-t border-border my-1" />
-                <button
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-accent rounded-md"
-                  onClick={() => {
-                    setSettingsTarget({ id: contextMenu.folder.id, name: contextMenu.folder.name });
-                    setContextMenu(null);
-                  }}
-                >
-                  설정
-                </button>
-                <div className="border-t border-border my-1" />
-                <button
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-accent rounded-md text-destructive"
-                  onClick={() => {
-                    setDeleteTarget({ id: contextMenu.folder.id, name: contextMenu.folder.name });
-                    setContextMenu(null);
-                  }}
-                >
-                  삭제
-                </button>
-              </div>
-            </DialogPopup>
-          </Dialog>
-        ) : (
-          <div
-            className="fixed z-50 min-w-[140px] rounded-md border border-border bg-popover shadow-md py-1"
-            style={{ top: contextMenu.y, left: contextMenu.x }}
-            onMouseLeave={() => setContextMenu(null)}
-          >
-            <button
-              className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent/50"
-              onClick={() => {
-                handleDoubleClick(contextMenu.folder.id, contextMenu.folder.name);
-                setContextMenu(null);
-              }}
-            >
-              이름 변경
-            </button>
-            <button
-              className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent/50"
-              onClick={() => {
-                setSettingsTarget({ id: contextMenu.folder.id, name: contextMenu.folder.name });
-                setContextMenu(null);
-              }}
-            >
-              설정
-            </button>
-            <button
-              className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent/50 text-destructive"
-              onClick={() => {
-                setDeleteTarget({ id: contextMenu.folder.id, name: contextMenu.folder.name });
-                setContextMenu(null);
-              }}
-            >
-              삭제
-            </button>
-          </div>
-        )
-      )}
+      <FolderContextMenu
+        target={contextMenu}
+        onClose={() => setContextMenu(null)}
+        onRename={(folder) => handleDoubleClick(folder.id, folder.name)}
+        onOpenSettings={(folder) => setSettingsTarget(folder)}
+        onDelete={(folder) => setDeleteTarget(folder)}
+      />
     </div>
   );
 }
