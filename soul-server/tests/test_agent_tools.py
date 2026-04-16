@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from soul_server.cogito import mcp_tools
+from soul_server.cogito import mcp_tools, mcp_multi_node
 
 
 def _unwrap(tool_or_func):
@@ -87,8 +87,8 @@ class TestCreateAgentSession:
     def _patch_execution_deps(self):
         """start_execution에 필요한 soul_engine, resource_manager 패치를 반환한다."""
         return (
-            patch("soul_server.cogito.mcp_tools.get_soul_engine", return_value=MagicMock()),
-            patch("soul_server.cogito.mcp_tools.resource_manager", MagicMock()),
+            patch("soul_server.cogito.mcp_session_mgmt.get_soul_engine", return_value=MagicMock()),
+            patch("soul_server.cogito.mcp_session_mgmt.resource_manager", MagicMock()),
         )
 
     async def test_creates_session_without_caller(self):
@@ -102,7 +102,7 @@ class TestCreateAgentSession:
 
         fn = _unwrap(mcp_tools.create_agent_session)
         p_engine, p_rm = self._patch_execution_deps()
-        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=mock_tm), p_engine, p_rm:
+        with patch("soul_server.cogito.mcp_session_mgmt.get_task_manager", return_value=mock_tm), p_engine, p_rm:
             result = await fn(agent_id="agent-alpha", prompt="작업 수행해줘")
 
         assert result["agent_session_id"] == "sess-abc123"
@@ -130,7 +130,7 @@ class TestCreateAgentSession:
 
         fn = _unwrap(mcp_tools.create_agent_session)
         p_engine, p_rm = self._patch_execution_deps()
-        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=mock_tm), p_engine, p_rm:
+        with patch("soul_server.cogito.mcp_session_mgmt.get_task_manager", return_value=mock_tm), p_engine, p_rm:
             result = await fn(
                 agent_id="agent-alpha",
                 prompt="작업 수행해줘",
@@ -153,7 +153,7 @@ class TestCreateAgentSession:
 
         fn = _unwrap(mcp_tools.create_agent_session)
         p_engine, p_rm = self._patch_execution_deps()
-        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=mock_tm), p_engine, p_rm:
+        with patch("soul_server.cogito.mcp_session_mgmt.get_task_manager", return_value=mock_tm), p_engine, p_rm:
             await fn(agent_id=None, prompt="테스트", folder_id="folder-xyz")
 
         call_kwargs = mock_tm.create_task.call_args.kwargs
@@ -169,7 +169,7 @@ class TestCreateAgentSession:
 
         fn = _unwrap(mcp_tools.create_agent_session)
         p_engine, p_rm = self._patch_execution_deps()
-        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=mock_tm), p_engine, p_rm:
+        with patch("soul_server.cogito.mcp_session_mgmt.get_task_manager", return_value=mock_tm), p_engine, p_rm:
             result = await fn(agent_id=None, prompt="test")
 
         assert result == {"agent_session_id": "sess-new-001", "status": "running"}
@@ -184,9 +184,9 @@ class TestCreateAgentSession:
         fn = _unwrap(mcp_tools.create_agent_session)
         mock_engine = MagicMock()
         mock_rm = MagicMock()
-        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=mock_tm), \
-             patch("soul_server.cogito.mcp_tools.get_soul_engine", return_value=mock_engine), \
-             patch("soul_server.cogito.mcp_tools.resource_manager", mock_rm):
+        with patch("soul_server.cogito.mcp_session_mgmt.get_task_manager", return_value=mock_tm), \
+             patch("soul_server.cogito.mcp_session_mgmt.get_soul_engine", return_value=mock_engine), \
+             patch("soul_server.cogito.mcp_session_mgmt.resource_manager", mock_rm):
             await fn(agent_id=None, prompt="test")
 
         mock_tm.start_execution.assert_called_once_with(
@@ -207,7 +207,7 @@ class TestSendMessageToSession:
         mock_tm.add_intervention = AsyncMock(return_value={"queue_position": 1})
 
         fn = _unwrap(mcp_tools.send_message_to_session)
-        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=mock_tm):
+        with patch("soul_server.cogito.mcp_session_mgmt.get_task_manager", return_value=mock_tm):
             result = await fn(target_session_id="sess-target-123", message="작업 완료됐습니다")
 
         assert result["ok"] is True
@@ -225,7 +225,7 @@ class TestSendMessageToSession:
         mock_tm.add_intervention = AsyncMock(side_effect=RuntimeError("세션 없음"))
 
         fn = _unwrap(mcp_tools.send_message_to_session)
-        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=mock_tm):
+        with patch("soul_server.cogito.mcp_session_mgmt.get_task_manager", return_value=mock_tm):
             result = await fn(target_session_id="sess-missing", message="응답")
 
         assert result["ok"] is False
@@ -237,7 +237,7 @@ class TestSendMessageToSession:
         mock_tm.add_intervention = AsyncMock(return_value={"auto_resumed": True})
 
         fn = _unwrap(mcp_tools.send_message_to_session)
-        with patch("soul_server.cogito.mcp_tools.get_task_manager", return_value=mock_tm):
+        with patch("soul_server.cogito.mcp_session_mgmt.get_task_manager", return_value=mock_tm):
             await fn(target_session_id="sess-xyz", message="hello")
 
         call_kwargs = mock_tm.add_intervention.call_args.kwargs
@@ -255,6 +255,7 @@ class TestInitMultiNodeTools:
         settings.soulstream_upstream_url = "ws://localhost:3200/ws/my-node"
 
         mcp_tools._orch_base = None
+        mcp_multi_node._orch_base = None
         mcp_tools.init_multi_node_tools(settings)
 
         assert mcp_tools._orch_base == "http://localhost:3200"
@@ -265,6 +266,7 @@ class TestInitMultiNodeTools:
         settings.soulstream_upstream_url = "wss://prod.example.com:443/ws/node-1"
 
         mcp_tools._orch_base = None
+        mcp_multi_node._orch_base = None
         mcp_tools.init_multi_node_tools(settings)
 
         assert mcp_tools._orch_base == "https://prod.example.com:443"
@@ -272,3 +274,4 @@ class TestInitMultiNodeTools:
     def teardown_method(self, method):
         """각 테스트 후 _orch_base 초기화."""
         mcp_tools._orch_base = None
+        mcp_multi_node._orch_base = None

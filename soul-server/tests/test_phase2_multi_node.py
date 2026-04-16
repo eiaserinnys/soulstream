@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import httpx
 
-from soul_server.cogito import mcp_tools
+from soul_server.cogito import mcp_tools, mcp_multi_node
 from soul_server.upstream.adapter import UpstreamAdapter
 from soul_server.upstream.protocol import CMD_CREATE_SESSION
 
@@ -123,10 +123,12 @@ class TestInitMultiNodeTools:
     def setup_method(self):
         """각 테스트 전에 _orch_base 초기화."""
         mcp_tools._orch_base = None
+        mcp_multi_node._orch_base = None
 
     def teardown_method(self):
         """각 테스트 후 _orch_base 초기화."""
         mcp_tools._orch_base = None
+        mcp_multi_node._orch_base = None
 
     def test_sets_orch_base_ws(self):
         """ws:// URL에서 _orch_base를 http://로 변환한다."""
@@ -167,7 +169,7 @@ class TestInitMultiNodeTools:
         tool_names = [t.name for t in tools]
         assert "create_remote_agent_session" in tool_names
 
-    @patch("soul_server.cogito.mcp_tools.httpx")
+    @patch("soul_server.cogito.mcp_multi_node.httpx")
     async def test_list_nodes_calls_orch_api(self, mock_httpx):
         """list_nodes가 _orch_base/api/nodes를 GET한다."""
         settings = _make_settings("ws://orch:5200/ws/n1")
@@ -189,7 +191,7 @@ class TestInitMultiNodeTools:
         mock_client.get.assert_called_once_with("http://orch:5200/api/nodes")
         assert result == {"nodes": []}
 
-    @patch("soul_server.cogito.mcp_tools.httpx")
+    @patch("soul_server.cogito.mcp_multi_node.httpx")
     async def test_create_remote_agent_session_includes_caller_info(self, mock_httpx):
         """caller_session_id가 있으면 body에 caller_session_id가 포함되어야 한다."""
         settings = _make_settings("ws://orch:5200/ws/n1", node_id="node-alpha")
@@ -221,7 +223,7 @@ class TestInitMultiNodeTools:
         # system_prompt는 더 이상 생성하지 않음
         assert "system_prompt" not in body
 
-    @patch("soul_server.cogito.mcp_tools.httpx")
+    @patch("soul_server.cogito.mcp_multi_node.httpx")
     async def test_create_remote_agent_session_no_caller_session_when_no_caller(self, mock_httpx):
         """caller_session_id가 없으면 body에 caller_session_id 키가 없어야 한다."""
         settings = _make_settings("ws://orch:5200/ws/n1")
@@ -256,11 +258,13 @@ class TestInitMultiNodeTools:
 class TestReplyToSessionFallback:
     def setup_method(self):
         mcp_tools._orch_base = None
+        mcp_multi_node._orch_base = None
 
     def teardown_method(self):
         mcp_tools._orch_base = None
+        mcp_multi_node._orch_base = None
 
-    @patch("soul_server.cogito.mcp_tools.get_task_manager")
+    @patch("soul_server.cogito.mcp_session_mgmt.get_task_manager")
     async def test_returns_error_when_local_fails_and_no_orch_base(self, mock_get_tm):
         """로컬 실패 + _orch_base 없음 → error 반환."""
         tm = MagicMock()
@@ -273,11 +277,11 @@ class TestReplyToSessionFallback:
         assert result["ok"] is False
         assert "session not found" in result["error"]
 
-    @patch("soul_server.cogito.mcp_tools.get_task_manager")
-    @patch("soul_server.cogito.mcp_tools.httpx")
+    @patch("soul_server.cogito.mcp_session_mgmt.get_task_manager")
+    @patch("soul_server.cogito.mcp_session_mgmt.httpx")
     async def test_falls_back_to_orch_when_local_fails(self, mock_httpx, mock_get_tm):
         """로컬 실패 + _orch_base 있음 → 오케스트레이터 경유 성공."""
-        mcp_tools._orch_base = "http://orch:5200"
+        mcp_multi_node._orch_base = "http://orch:5200"
 
         tm = MagicMock()
         tm.add_intervention = AsyncMock(side_effect=RuntimeError("not found locally"))
@@ -300,11 +304,11 @@ class TestReplyToSessionFallback:
         assert "sess-remote" in call_url
         assert "intervene" in call_url
 
-    @patch("soul_server.cogito.mcp_tools.get_task_manager")
-    @patch("soul_server.cogito.mcp_tools.httpx")
+    @patch("soul_server.cogito.mcp_session_mgmt.get_task_manager")
+    @patch("soul_server.cogito.mcp_session_mgmt.httpx")
     async def test_returns_combined_error_when_both_fail(self, mock_httpx, mock_get_tm):
         """로컬 실패 + 원격 실패 → 둘 다 에러 메시지 포함."""
-        mcp_tools._orch_base = "http://orch:5200"
+        mcp_multi_node._orch_base = "http://orch:5200"
 
         tm = MagicMock()
         tm.add_intervention = AsyncMock(side_effect=RuntimeError("local error"))
@@ -322,17 +326,17 @@ class TestReplyToSessionFallback:
         assert "local error" in result["error"]
         assert "remote error" in result["error"]
 
-    @patch("soul_server.cogito.mcp_tools.get_task_manager")
+    @patch("soul_server.cogito.mcp_session_mgmt.get_task_manager")
     async def test_local_success_does_not_call_orch(self, mock_get_tm):
         """로컬 성공 시 오케스트레이터를 호출하지 않는다."""
-        mcp_tools._orch_base = "http://orch:5200"
+        mcp_multi_node._orch_base = "http://orch:5200"
 
         tm = MagicMock()
         tm.add_intervention = AsyncMock(return_value={"status": "ok"})
         mock_get_tm.return_value = tm
 
         fn = _unwrap(mcp_tools.send_message_to_session)
-        with patch("soul_server.cogito.mcp_tools.httpx") as mock_httpx:
+        with patch("soul_server.cogito.mcp_session_mgmt.httpx") as mock_httpx:
             result = await fn(target_session_id="sess-local", message="hi")
 
         assert result["ok"] is True
