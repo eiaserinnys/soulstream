@@ -2,7 +2,7 @@
 test_engine_adapter_context - context_items 관련 함수 유닛 테스트
 
 커버리지 시나리오:
-_format_context_items:
+format_context_items:
   1. 정상 key → XML 태그로 사용
   2. 특수문자 key → 밑줄로 sanitize
   3. 빈 key → 'item' fallback
@@ -19,19 +19,19 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from soul_server.service.engine_adapter import (
+from soul_server.service.context_builder import (
     build_soulstream_context_item,
-    _format_context_items,
+    format_context_items,
 )
 
 
 class TestFormatContextItems:
-    """_format_context_items 함수 테스트."""
+    """format_context_items 함수 테스트."""
 
     def test_normal_key_becomes_xml_tag(self):
         """정상 key는 그대로 XML 태그명으로 사용된다."""
         items = [{"key": "soulstream_session", "content": "hello"}]
-        result = _format_context_items(items)
+        result = format_context_items(items)
         assert "<soulstream_session>" in result
         assert "</soulstream_session>" in result
         assert "hello" in result
@@ -39,7 +39,7 @@ class TestFormatContextItems:
     def test_special_char_key_sanitized(self):
         """영문/숫자/밑줄 외 특수문자는 밑줄로 치환된다."""
         items = [{"key": "a-b:c", "content": "x"}]
-        result = _format_context_items(items)
+        result = format_context_items(items)
         assert "<a_b_c>" in result
         assert "</a_b_c>" in result
         # 원본 특수문자 key가 태그에 포함되지 않는다
@@ -48,7 +48,7 @@ class TestFormatContextItems:
     def test_empty_key_falls_back_to_item(self):
         """빈 key는 'item'으로 대체된다."""
         items = [{"key": "", "content": "x"}]
-        result = _format_context_items(items)
+        result = format_context_items(items)
         assert "<item>" in result
         assert "</item>" in result
 
@@ -56,20 +56,20 @@ class TestFormatContextItems:
         """dict content는 ensure_ascii=False, indent=2 JSON으로 직렬화된다."""
         content = {"name": "서소영", "value": 42}
         items = [{"key": "test", "content": content}]
-        result = _format_context_items(items)
+        result = format_context_items(items)
         expected = json.dumps(content, ensure_ascii=False, indent=2)
         assert expected in result
 
     def test_string_content_included_as_is(self):
         """string content는 변환 없이 그대로 포함된다."""
         items = [{"key": "test", "content": "plain text 한글"}]
-        result = _format_context_items(items)
+        result = format_context_items(items)
         assert "plain text 한글" in result
 
     def test_output_wrapped_in_context_tag(self):
         """출력 전체는 <context> 태그로 감싸진다."""
         items = [{"key": "k", "content": "v"}]
-        result = _format_context_items(items)
+        result = format_context_items(items)
         assert result.startswith("<context>")
         assert result.endswith("</context>")
 
@@ -99,9 +99,9 @@ def _call_build(
     mock_settings = MagicMock()
     mock_settings.soulstream_node_id = "test-node"
 
-    with patch("soul_server.service.engine_adapter.socket", mock_socket_module), \
-         patch("soul_server.service.engine_adapter.platform", mock_platform), \
-         patch("soul_server.service.engine_adapter.get_settings", return_value=mock_settings):
+    with patch("soul_server.service.context_builder.socket", mock_socket_module), \
+         patch("soul_server.service.context_builder.platform", mock_platform), \
+         patch("soul_server.service.context_builder.get_settings", return_value=mock_settings):
         return build_soulstream_context_item(
             agent_session_id, claude_session_id, workspace_dir,
             folder_name=folder_name, node_id=node_id, agent_id=agent_id,

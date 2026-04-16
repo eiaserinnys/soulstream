@@ -18,7 +18,7 @@ from soul_common.db.session_db_base import extract_searchable_text
 from soul_server.service.task_models import Task, TaskStatus, PREVIEW_FIELD_MAP, datetime_to_str, utc_now
 from soul_server.service.prompt_assembler import assemble_prompt
 from soul_server.service.session_broadcaster import get_session_broadcaster
-from soul_server.service.engine_adapter import build_soulstream_context_item
+from soul_server.service.context_builder import build_soulstream_context_item
 from soul_server.config import get_settings
 
 import json

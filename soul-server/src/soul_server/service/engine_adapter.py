@@ -11,19 +11,15 @@ Serendipity 연동:
 """
 
 import asyncio
-import json
 import logging
-import platform
-import re
-import socket
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncIterator, Awaitable, Callable, List, Optional, Union
 
 from soul_server.claude.agent_runner import ClaudeRunner
-from soul_server.engine.types import EngineEvent
 from soul_server.config import get_settings
+from soul_server.engine.types import EngineEvent
+from soul_server.service.context_builder import build_soulstream_context_item, format_context_items
 
 if TYPE_CHECKING:
     from soul_server.cogito.brief_composer import BriefComposer
@@ -123,71 +119,6 @@ def _build_credential_alert_event(alert: dict) -> CredentialAlertEvent:
     )
 
 
-def build_soulstream_context_item(
-    agent_session_id: str,
-    claude_session_id: Optional[str],
-    workspace_dir: str,
-    folder_name: Optional[str] = None,
-    node_id: Optional[str] = None,
-    agent_id: Optional[str] = None,
-) -> dict:
-    """소울스트림 자체 세션 메타데이터 context_item을 생성한다."""
-    hostname = socket.gethostname()
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-    except Exception:
-        ip = "unknown"
-
-    host_os = platform.system()
-    os_version = platform.version()
-
-    resolved_node_id = node_id
-    if resolved_node_id is None:
-        try:
-            resolved_node_id = get_settings().soulstream_node_id or ""
-        except Exception:
-            resolved_node_id = ""
-
-    content = {
-        "agent_session_id": agent_session_id,
-        "claude_session_id": claude_session_id if claude_session_id else "(new session)",
-        "workspace_dir": workspace_dir,
-        "folder": folder_name or "(unassigned)",
-        "hostname": hostname,
-        "ip_address": ip,
-        "current_node_id": resolved_node_id,
-        "host_os": host_os,
-        "os_version": os_version,
-        "current_time": datetime.now(timezone.utc).isoformat(),
-    }
-    if agent_id:
-        content["agent_id"] = agent_id
-    return {
-        "key": "soulstream_session",
-        "label": "Soulstream 세션 정보",
-        "content": content,
-    }
-
-
-def _format_context_items(context_items: List[dict]) -> str:
-    """context_items를 Claude Code가 읽을 수 있는 XML 블록으로 직렬화한다."""
-    parts = []
-    for item in context_items:
-        raw_key = item.get("key", "item")
-        # XML 태그명으로 안전한 문자만 허용 (영문/숫자/밑줄)
-        key = re.sub(r'[^a-zA-Z0-9_]', '_', raw_key) or "item"
-        content = item.get("content", "")
-        if isinstance(content, (dict, list)):
-            content_str = json.dumps(content, ensure_ascii=False, indent=2)
-        else:
-            content_str = str(content)
-        parts.append(f"<{key}>\n{content_str}\n</{key}>")
-    return "<context>\n" + "\n".join(parts) + "\n</context>"
-
-
 class SoulEngineAdapter:
     """ClaudeRunner -> AsyncIterator[SSE Event] 어댑터
 
@@ -236,6 +167,65 @@ class SoulEngineAdapter:
                 await self._serendipity_adapter.on_event(serendipity_ctx, event)
             except Exception as e:
                 logger.warning(f"Serendipity {label} failed: {e}")
+
+    async def _acquire_runner(
+        self,
+        *,
+        working_dir: Optional[str],
+        resume_session_id: Optional[str],
+        effective_allowed: Optional[List[str]],
+        effective_disallowed: Optional[List[str]],
+        mcp_config_path: Optional[Path],
+        debug_send_fn: Any,
+        alert_send_fn: Any,
+        model: Optional[str],
+        system_prompt: Optional[str],
+        max_turns: Optional[int],
+    ) -> "ClaudeRunner":
+        """Runner 획득: on-demand / pool / direct 3분기.
+
+        working_dir이 기본 workspace_dir와 다르면 풀을 우회하고 on-demand 생성한다.
+        풀이 있으면 acquire, 없으면 기본 workspace_dir로 직접 생성한다.
+
+        Returns:
+            ClaudeRunner 인스턴스 (rate_limit_tracker 주입 완료)
+        """
+        if working_dir and working_dir != str(self._workspace_dir):
+            runner = ClaudeRunner(
+                working_dir=Path(working_dir),
+                allowed_tools=effective_allowed,
+                disallowed_tools=effective_disallowed,
+                mcp_config_path=mcp_config_path,
+                debug_send_fn=debug_send_fn,
+                model=model,
+                system_prompt=system_prompt,
+                max_turns=max_turns,
+            )
+        elif self._pool is not None:
+            runner = await self._pool.acquire(session_id=resume_session_id)
+            runner.debug_send_fn = debug_send_fn
+            runner.allowed_tools = effective_allowed
+            runner.disallowed_tools = effective_disallowed
+            runner.system_prompt = system_prompt
+            if max_turns is not None:
+                runner.max_turns = max_turns
+        else:
+            runner = ClaudeRunner(
+                working_dir=Path(self._workspace_dir),
+                allowed_tools=effective_allowed,
+                disallowed_tools=effective_disallowed,
+                mcp_config_path=mcp_config_path,
+                debug_send_fn=debug_send_fn,
+                model=model,
+                system_prompt=system_prompt,
+                max_turns=max_turns,
+            )
+
+        if self._rate_limit_tracker is not None:
+            runner.rate_limit_tracker = self._rate_limit_tracker
+            runner.alert_send_fn = alert_send_fn
+
+        return runner
 
     async def execute(
         self,
@@ -300,7 +290,7 @@ class SoulEngineAdapter:
 
         # 프롬프트 앞에 context 블록 삽입
         # context_items는 task_executor에서 서버 컨텍스트와 머지된 상태로 전달됨
-        context_block = _format_context_items(context_items or [])
+        context_block = format_context_items(context_items or [])
         effective_prompt = context_block + "\n\n" + prompt
 
         # Serendipity 세션 시작
@@ -397,47 +387,18 @@ class SoulEngineAdapter:
         # --- 백그라운드 실행 ---
 
         async def run_claude() -> None:
-            # on-demand 경로: working_dir이 기본 workspace_dir와 다를 때 pool 우회
-            if working_dir and working_dir != str(self._workspace_dir):
-                runner = ClaudeRunner(
-                    working_dir=Path(working_dir),
-                    allowed_tools=effective_allowed,
-                    disallowed_tools=effective_disallowed,
-                    mcp_config_path=mcp_config_path,
-                    debug_send_fn=debug_send_fn,
-                    model=model,
-                    system_prompt=system_prompt,
-                    max_turns=max_turns,
-                )
-            # 풀이 있으면 acquire, 없으면 직접 생성 (기본 workspace_dir 경로)
-            elif self._pool is not None:
-                runner = await self._pool.acquire(session_id=resume_session_id)
-                # W-3: 풀에서 꺼낸 runner에 요청별 debug_send_fn 주입
-                runner.debug_send_fn = debug_send_fn
-                # W-4: 풀에서 꺼낸 runner에 요청별 도구 설정 주입
-                runner.allowed_tools = effective_allowed
-                runner.disallowed_tools = effective_disallowed
-                # W-5: 풀에서 꺼낸 runner에 요청별 system_prompt 주입
-                runner.system_prompt = system_prompt
-                # W-6: max_turns 주입 (profile에서 override된 경우)
-                if max_turns is not None:
-                    runner.max_turns = max_turns
-            else:
-                runner = ClaudeRunner(
-                    working_dir=Path(self._workspace_dir),
-                    allowed_tools=effective_allowed,
-                    disallowed_tools=effective_disallowed,
-                    mcp_config_path=mcp_config_path,
-                    debug_send_fn=debug_send_fn,
-                    model=model,
-                    system_prompt=system_prompt,
-                    max_turns=max_turns,
-                )
-
-            # rate limit tracker 주입
-            if self._rate_limit_tracker is not None:
-                runner.rate_limit_tracker = self._rate_limit_tracker
-                runner.alert_send_fn = alert_send_fn
+            runner = await self._acquire_runner(
+                working_dir=working_dir,
+                resume_session_id=resume_session_id,
+                effective_allowed=effective_allowed,
+                effective_disallowed=effective_disallowed,
+                mcp_config_path=mcp_config_path,
+                debug_send_fn=debug_send_fn,
+                alert_send_fn=alert_send_fn,
+                model=model,
+                system_prompt=system_prompt,
+                max_turns=max_turns,
+            )
 
             # runner 참조 저장 (on_session_callback에서 pid 접근용)
             _runner_ref[0] = runner
