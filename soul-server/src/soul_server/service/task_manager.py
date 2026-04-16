@@ -58,6 +58,65 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 
+def _build_session_dict(
+    row: dict,
+    task: Optional[Task] = None,
+    registry: Optional["AgentRegistry"] = None,
+) -> dict:
+    """DB 행과 메모리 Task를 API 응답 dict로 변환하는 순수 함수.
+
+    Args:
+        row: DB에서 조회한 세션 행 (dict)
+        task: 메모리에 있는 Task (running 세션의 pid/event_id 보충용, 없을 수 있음)
+        registry: AgentRegistry (에이전트 정보 보충용, 없을 수 있음)
+
+    Returns:
+        API 응답용 세션 dict
+    """
+    session_id = row["session_id"]
+    pid = task.pid if task else None
+    created_at = row.get("created_at")
+    last_event_id = task.last_event_id if task else row.get("last_event_id", 0)
+    last_read_event_id = task.last_read_event_id if task else row.get("last_read_event_id", 0)
+    updated_at = row.get("updated_at") or created_at
+
+    info: dict = {
+        "agent_session_id": session_id,
+        "status": row.get("status"),
+        "prompt": row.get("prompt"),
+        "created_at": created_at.isoformat() if created_at else None,
+        "updated_at": updated_at.isoformat() if updated_at else None,
+        "pid": pid,
+        "session_type": row.get("session_type") or "claude",
+        "last_message": row.get("last_message"),
+        "metadata": row.get("metadata") or [],
+        "last_event_id": last_event_id,
+        "last_read_event_id": last_read_event_id,
+        "display_name": row.get("display_name"),
+        "node_id": row.get("node_id"),
+    }
+
+    if row.get("session_type", "claude") != "claude":
+        info["llm_provider"] = row.get("llm_provider")
+        info["llm_model"] = row.get("llm_model")
+        info["llm_usage"] = row.get("llm_usage")
+        info["client_id"] = row.get("client_id")
+
+    # agent 정보 보충 (soul-dashboard에서 포트레이트 표시용)
+    agent_id = row.get("agent_id")
+    if agent_id:
+        info["agentId"] = agent_id
+        if registry:
+            agent = registry.get(agent_id)
+            if agent:
+                info["agentName"] = agent.name
+                info["agentPortraitUrl"] = (
+                    f"/api/agents/{agent.id}/portrait" if agent.portrait_path else None
+                )
+
+    return info
+
+
 async def _relay_cross_node_intervention(
     caller_session_id: str, text: str
 ) -> None:
@@ -416,48 +475,65 @@ class TaskManager:
 
         # 완료 보고 — add_intervention이 동일 락을 획득하므로 반드시 락 블록 바깥에서 실행
         if caller_session_id_to_notify:
-            if task_result:
-                notify_text = f"✅ 에이전트 세션 완료 (ID: `{agent_session_id}`)\n\n{task_result}"
-            else:
-                notify_text = f"❌ 에이전트 세션 오류 (ID: `{agent_session_id}`)\n\n{task_error or ''}"
-            try:
-                intervention_result = await self.add_intervention(
-                    agent_session_id=caller_session_id_to_notify,
-                    text=notify_text,
-                    user="agent",
-                )
-                logger.info(
-                    f"Completion notification sent to caller {caller_session_id_to_notify} "
-                    f"from {agent_session_id}"
-                )
-                # caller session이 이미 completed 상태였다면 add_intervention()이
-                # create_task()로 RUNNING으로 전환하고 auto_resumed=True를 반환한다.
-                # 이 경우 start_execution()을 호출해야 Claude Code가 실제로 실행된다.
-                # (api_intervene()과 동일한 패턴 — 반환값을 무시하면 DB만 RUNNING이고
-                #  실제 실행이 없는 zombie 상태가 된다.)
-                if intervention_result.get("auto_resumed"):
-                    from soul_server.service.resource_manager import resource_manager as _rm
-                    from soul_server.service.engine_adapter import get_soul_engine as _get_engine
-                    await self.start_execution(
-                        agent_session_id=caller_session_id_to_notify,
-                        claude_runner=_get_engine(),
-                        resource_manager=_rm,
-                    )
-                    logger.info(
-                        f"Auto-resumed caller session {caller_session_id_to_notify} "
-                        f"after child {agent_session_id} completed"
-                    )
-            except Exception as local_err:
-                logger.warning(
-                    f"Local notification to caller {caller_session_id_to_notify} failed: {local_err}",
-                    exc_info=True,
-                )
-                # cross-node 릴레이 시도
-                await _relay_cross_node_intervention(
-                    caller_session_id_to_notify, notify_text
-                )
+            await self._notify_caller_completion(
+                agent_session_id, caller_session_id_to_notify, task_result, task_error
+            )
 
         return task
+
+    async def _notify_caller_completion(
+        self,
+        agent_session_id: str,
+        caller_session_id: str,
+        result_text: Optional[str],
+        error_text: Optional[str],
+    ) -> None:
+        """완료된 세션의 결과를 caller 세션에 인터벤션으로 통지한다.
+
+        caller 세션이 이미 완료 상태이면 auto-resume하고 실행을 시작한다.
+        로컬 통지 실패 시 cross-node 릴레이를 시도한다.
+
+        finalize_task()의 락 블록 바깥에서 호출되어야 한다
+        (add_intervention이 동일 락을 획득하므로).
+        """
+        if result_text:
+            notify_text = f"✅ 에이전트 세션 완료 (ID: `{agent_session_id}`)\n\n{result_text}"
+        else:
+            notify_text = f"❌ 에이전트 세션 오류 (ID: `{agent_session_id}`)\n\n{error_text or ''}"
+
+        try:
+            intervention_result = await self.add_intervention(
+                agent_session_id=caller_session_id,
+                text=notify_text,
+                user="agent",
+            )
+            logger.info(
+                f"Completion notification sent to caller {caller_session_id} "
+                f"from {agent_session_id}"
+            )
+            # caller session이 이미 completed 상태였다면 add_intervention()이
+            # create_task()로 RUNNING으로 전환하고 auto_resumed=True를 반환한다.
+            # 이 경우 start_execution()을 호출해야 Claude Code가 실제로 실행된다.
+            # (api_intervene()과 동일한 패턴 — 반환값을 무시하면 DB만 RUNNING이고
+            #  실제 실행이 없는 zombie 상태가 된다.)
+            if intervention_result.get("auto_resumed"):
+                from soul_server.service.resource_manager import resource_manager as _rm
+                from soul_server.service.engine_adapter import get_soul_engine as _get_engine
+                await self.start_execution(
+                    agent_session_id=caller_session_id,
+                    claude_runner=_get_engine(),
+                    resource_manager=_rm,
+                )
+                logger.info(
+                    f"Auto-resumed caller session {caller_session_id} "
+                    f"after child {agent_session_id} completed"
+                )
+        except Exception as local_err:
+            logger.warning(
+                f"Local notification to caller {caller_session_id} failed: {local_err}",
+                exc_info=True,
+            )
+            await _relay_cross_node_intervention(caller_session_id, notify_text)
 
     def get_running_tasks(self) -> List[Task]:
         """실행 중인 태스크 목록 반환"""
@@ -503,55 +579,10 @@ class TaskManager:
         except Exception:
             registry = None
 
-        result = []
-        for s in sessions:
-            session_id = s["session_id"]
-            # running 세션의 pid를 _tasks에서 보충
-            task = self._tasks.get(session_id)
-            pid = task.pid if task else None
-            created_at = s.get("created_at")
-            # running 세션의 last_event_id는 Task 메모리에서 보충
-            last_event_id = task.last_event_id if task else s.get("last_event_id", 0)
-            last_read_event_id = task.last_read_event_id if task else s.get("last_read_event_id", 0)
-            updated_at = s.get("updated_at") or created_at
-            info = {
-                "agent_session_id": session_id,
-                "status": s.get("status"),
-                "prompt": s.get("prompt"),
-                "created_at": created_at.isoformat() if created_at else None,
-                "updated_at": updated_at.isoformat() if updated_at else None,
-                "pid": pid,
-                "session_type": s.get("session_type") or "claude",
-                "last_message": s.get("last_message"),
-                "metadata": s.get("metadata") or [],
-                "last_event_id": last_event_id,
-                "last_read_event_id": last_read_event_id,
-                "display_name": s.get("display_name"),
-                "node_id": s.get("node_id"),
-            }
-            if s.get("session_type", "claude") != "claude":
-                info["llm_provider"] = s.get("llm_provider")
-                info["llm_model"] = s.get("llm_model")
-                info["llm_usage"] = s.get("llm_usage")
-                info["client_id"] = s.get("client_id")
-
-            # agent 정보 보충 (soul-dashboard에서 포트레이트 표시용)
-            agent_id = s.get("agent_id")
-            if agent_id:
-                if registry:
-                    agent = registry.get(agent_id)
-                    if agent:
-                        info["agentId"] = agent_id
-                        info["agentName"] = agent.name
-                        info["agentPortraitUrl"] = (
-                            f"/api/agents/{agent.id}/portrait" if agent.portrait_path else None
-                        )
-                    else:
-                        info["agentId"] = agent_id
-                else:
-                    info["agentId"] = agent_id
-
-            result.append(info)
+        result = [
+            _build_session_dict(s, self._tasks.get(s["session_id"]), registry)
+            for s in sessions
+        ]
         return result, total
 
     async def list_sessions_summary(
