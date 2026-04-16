@@ -7,7 +7,13 @@
  */
 
 import type { InfiniteData } from "@tanstack/react-query";
-import type { SessionSummary, CatalogState } from "../shared/types";
+import type {
+  SessionStatus,
+  SessionSummary,
+  CatalogState,
+  MetadataEntry,
+} from "../shared/types";
+import type { SessionUpdatedStreamEvent } from "../shared/stream-events";
 
 export interface SessionPage {
   sessions: SessionSummary[];
@@ -139,6 +145,103 @@ export function applySessionUpdated(
       ...page,
       sessions: page.sessions.map((s) =>
         s.agentSessionId === agentSessionId ? { ...s, ...updates } : s,
+      ),
+    })),
+  };
+}
+
+/**
+ * TanStack Query 캐시의 모든 SessionPage 데이터를 순회하여
+ * agentSessionId와 일치하는 첫 번째 SessionSummary를 찾는다.
+ * 없으면 null을 반환한다.
+ */
+export function findSessionInPages(
+  allPages: ReadonlyArray<readonly [unknown, InfiniteData<SessionPage> | undefined]>,
+  agentSessionId: string,
+): SessionSummary | null {
+  for (const [, data] of allPages) {
+    if (!data) continue;
+    for (const page of data.pages) {
+      const found = page.sessions.find(
+        (s) => s.agentSessionId === agentSessionId,
+      );
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+/**
+ * catalog.sessions에 { agentSessionId → { folderId, displayName: null } } 매핑을
+ * 낙관적으로 추가한 새 CatalogState를 반환한다.
+ * (session_created에서 서버가 folder_id를 함께 보내는 경우 사용)
+ */
+export function upsertSessionAssignmentInCatalog(
+  catalog: CatalogState,
+  agentSessionId: string,
+  folderId: string,
+): CatalogState {
+  return {
+    ...catalog,
+    sessions: {
+      ...catalog.sessions,
+      [agentSessionId]: { folderId, displayName: null },
+    },
+  };
+}
+
+export type SessionUpdatesPatch = Partial<
+  Pick<
+    SessionSummary,
+    "status" | "updatedAt" | "lastMessage" | "lastEventId" | "lastReadEventId"
+  >
+>;
+
+/**
+ * session_updated 이벤트 페이로드에서 SessionSummary에 적용할 업데이트 조각만 추출한다.
+ * 이벤트 필드가 null/undefined일 때는 기존 값을 보존하기 위해 해당 키를 건너뛴다.
+ */
+export function buildSessionUpdates(
+  event: SessionUpdatedStreamEvent,
+): SessionUpdatesPatch {
+  const updates: SessionUpdatesPatch = {};
+  if (event.status != null) {
+    updates.status = event.status as SessionStatus;
+  }
+  if (event.updated_at != null) {
+    updates.updatedAt = event.updated_at;
+  }
+  if (event.last_message) {
+    updates.lastMessage = {
+      type: event.last_message.type,
+      preview: event.last_message.preview,
+      timestamp: event.last_message.timestamp,
+    };
+  }
+  if (event.last_event_id != null) {
+    updates.lastEventId = event.last_event_id;
+  }
+  if (event.last_read_event_id != null) {
+    updates.lastReadEventId = event.last_read_event_id;
+  }
+  return updates;
+}
+
+/**
+ * metadata_updated 이벤트:
+ * 모든 페이지에서 agentSessionId가 일치하는 세션의 metadata를 교체한다.
+ */
+export function applyMetadataUpdated(
+  data: InfiniteData<SessionPage>,
+  agentSessionId: string,
+  metadata: MetadataEntry[],
+): InfiniteData<SessionPage> {
+  return {
+    ...data,
+    pages: data.pages.map((page) => ({
+      ...page,
+      sessions: page.sessions.map((s) =>
+        s.agentSessionId === agentSessionId ? { ...s, metadata } : s,
       ),
     })),
   };
