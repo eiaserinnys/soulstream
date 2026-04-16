@@ -44,7 +44,7 @@ class TestMakeCanUseTool:
         async def capture_event(event):
             captured_events.append(event)
 
-        runner._on_event_callback = capture_event
+        runner._input_handler.bind_event_callback(capture_event)
 
         # 질문 입력
         tool_input = {
@@ -93,7 +93,7 @@ class TestMakeCanUseTool:
     async def test_ask_user_question_timeout(self):
         """응답 없이 타임아웃되면 deny 반환"""
         runner = ClaudeRunner()
-        runner.input_request_timeout = 0.1  # 빠른 테스트를 위해 짧은 타임아웃
+        runner._input_handler.timeout = 0.1  # 빠른 테스트를 위해 짧은 타임아웃
         callback = runner._make_can_use_tool()
 
         tool_input = {
@@ -113,11 +113,11 @@ class TestMakeCanUseTool:
     async def test_ask_user_question_without_on_event(self):
         """on_event 콜백 없으면 pending_events에 추가"""
         runner = ClaudeRunner()
-        runner.input_request_timeout = 0.1
+        runner._input_handler.timeout = 0.1
         callback = runner._make_can_use_tool()
 
         # on_event 설정하지 않음
-        runner._on_event_callback = None
+        runner._input_handler.bind_event_callback(None)
 
         tool_input = {
             "questions": [{"question": "test?", "options": [{"label": "A"}]}]
@@ -141,7 +141,7 @@ class TestDeliverInputResponse:
 
         # 수동으로 대기 이벤트 생성
         event = asyncio.Event()
-        runner._input_response_events["req-123"] = event
+        runner._input_handler._response_events["req-123"] = event
 
         result = runner.deliver_input_response(
             "req-123", {"q1": "answer1"}
@@ -149,7 +149,7 @@ class TestDeliverInputResponse:
 
         assert result is True
         assert event.is_set()
-        assert runner._input_responses["req-123"] == {"q1": "answer1"}
+        assert runner._input_handler._responses["req-123"] == {"q1": "answer1"}
 
     def test_deliver_to_nonexistent_request(self):
         """존재하지 않는 요청에 응답 시 False 반환"""
@@ -166,14 +166,14 @@ class TestDeliverInputResponse:
         runner = ClaudeRunner()
 
         event = asyncio.Event()
-        runner._input_response_events["req-456"] = event
+        runner._input_handler._response_events["req-456"] = event
 
         runner.deliver_input_response("req-456", {"q1": "a1"})
 
         # deliver_input_response는 event와 response를 설정만 함
         # 정리는 can_use_tool 콜백의 finally에서 수행
-        assert "req-456" in runner._input_response_events
-        assert "req-456" in runner._input_responses
+        assert "req-456" in runner._input_handler._response_events
+        assert "req-456" in runner._input_handler._responses
 
 
 class TestBuildOptionsCanUseTool:

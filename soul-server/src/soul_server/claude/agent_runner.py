@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -22,8 +21,6 @@ try:
     )
     from claude_agent_sdk._errors import MessageParseError
     from claude_agent_sdk.types import (
-        PermissionResultAllow,
-        PermissionResultDeny,
         ResultMessage,
         ToolPermissionContext,
     )
@@ -45,10 +42,6 @@ except ImportError:
         pass
     class ResultMessage:
         pass
-    class PermissionResultAllow:
-        pass
-    class PermissionResultDeny:
-        pass
     class ToolPermissionContext:
         pass
 
@@ -67,23 +60,27 @@ from soul_server.claude.error_handlers import (
 )
 from soul_server.engine.types import (
     EngineResult,
-    InputRequestEngineEvent,
-    InputRequestExpiredEngineEvent,
-    InputRequestRespondedEngineEvent,
     InterventionCallback,
     EngineEvent,
     EventCallback,
 )
 from soul_server.claude.compact_retry import (
     CompactRetryHandler,
-    CompactRetryState,  # re-export for backward compat
-    COMPACT_RETRY_READ_TIMEOUT,  # re-export
-    MAX_COMPACT_RETRIES,  # re-export
-    _extract_last_assistant_text,  # re-export
+    COMPACT_RETRY_READ_TIMEOUT,
 )
 from soul_server.claude.hook_builder import build_hooks as _build_hooks_fn
+from soul_server.claude.input_request import InputRequestHandler
 from soul_server.claude.message_processor import MessageProcessor
 from soul_server.claude.instrumented_client import InstrumentedClaudeClient
+from soul_server.claude.runner_registry import (
+    get_runner,  # noqa: F401 — re-export
+    register_runner,
+    remove_runner,
+    get_registry_size,
+    shutdown_all,
+    shutdown_all_sync,
+    reset_shutdown_state,  # noqa: F401 — re-export
+)
 from soul_server.claude.sdk_compat import ParseAction, classify_parse_error
 from soul_server.claude.session_validator import validate_session
 from soul_server.utils.async_bridge import run_in_new_loop
@@ -135,143 +132,6 @@ class ClaudeResult(EngineResult):
             restart_requested=getattr(markers, "restart_requested", False),
             list_run=getattr(markers, "list_run", None),
         )
-
-
-# ---------------------------------------------------------------------------
-# Module-level registry: runner_id → ClaudeRunner
-# ---------------------------------------------------------------------------
-_registry: dict[str, "ClaudeRunner"] = {}
-_registry_lock = threading.Lock()
-_shutting_down = False
-
-
-def get_runner(runner_id: str) -> Optional["ClaudeRunner"]:
-    """레지스트리에서 러너 조회"""
-    with _registry_lock:
-        return _registry.get(runner_id)
-
-
-def register_runner(runner: "ClaudeRunner") -> bool:
-    """레지스트리에 러너 등록
-
-    Args:
-        runner: 등록할 ClaudeRunner 인스턴스
-
-    Returns:
-        True: 등록 성공
-        False: 셧다운 중이라 등록 거부
-    """
-    with _registry_lock:
-        if _shutting_down:
-            return False  # 셧다운 중 등록 거부
-        _registry[runner.runner_id] = runner
-        return True
-
-
-def reset_shutdown_state() -> None:
-    """테스트용: _shutting_down 플래그 초기화"""
-    global _shutting_down
-    with _registry_lock:
-        _shutting_down = False
-
-
-def remove_runner(runner_id: str) -> Optional["ClaudeRunner"]:
-    """레지스트리에서 러너 제거"""
-    with _registry_lock:
-        return _registry.pop(runner_id, None)
-
-
-async def shutdown_all() -> int:
-    """모든 등록된 러너의 클라이언트를 종료
-
-    프로세스 종료 전에 호출하여 고아 프로세스를 방지합니다.
-    셧다운 시작 후 새 러너 등록은 거부됩니다.
-
-    Returns:
-        종료된 클라이언트 수
-    """
-    global _shutting_down
-
-    with _registry_lock:
-        _shutting_down = True
-        runners = list(_registry.values())
-        _registry.clear()
-
-    if not runners:
-        logger.info("종료할 활성 클라이언트 없음")
-        return 0
-
-    count = 0
-    for runner in runners:
-        try:
-            if runner.client:
-                if (
-                    runner._lifecycle_task is not None
-                    and runner._lifecycle_shutdown_event is not None
-                ):
-                    # Lifecycle task 경유 종료 (anyio cross-task 버그 방지)
-                    shutdown_ev = runner._lifecycle_shutdown_event
-                    lifecycle = runner._lifecycle_task
-                    saved_pid = runner.pid  # 타임아웃 시 force_kill 경로용
-                    runner.client = None
-                    runner.pid = None
-                    runner._lifecycle_task = None
-                    runner._lifecycle_shutdown_event = None
-                    runner._client_session_id = None
-                    runner._client_options_fp = None
-
-                    shutdown_ev.set()
-                    done, _ = await asyncio.wait({lifecycle}, timeout=30.0)
-                    if done:
-                        try:
-                            await lifecycle  # 예외가 있으면 꺼냄; traceback 보존
-                            count += 1
-                            logger.info(f"클라이언트 종료 성공: runner={runner.runner_id}")
-                        except Exception as e:
-                            logger.warning(f"클라이언트 종료 실패: runner={runner.runner_id}, {e}")
-                            if saved_pid:
-                                ClaudeRunner._force_kill_process(saved_pid, runner.runner_id)
-                                count += 1
-                    else:
-                        logger.warning(f"클라이언트 종료 타임아웃: runner={runner.runner_id}")
-                        lifecycle.cancel()
-                        try:
-                            await lifecycle
-                        except (asyncio.CancelledError, Exception):
-                            pass
-                        if saved_pid:
-                            ClaudeRunner._force_kill_process(saved_pid, runner.runner_id)
-                else:
-                    # 직접 disconnect (lifecycle task 없음, 하위 호환)
-                    await runner.client.disconnect()
-                    count += 1
-                    logger.info(f"클라이언트 종료 성공: runner={runner.runner_id}")
-        except Exception as e:
-            logger.warning(f"클라이언트 종료 실패: runner={runner.runner_id}, {e}")
-            if runner.pid:
-                ClaudeRunner._force_kill_process(runner.pid, runner.runner_id)
-                count += 1
-
-    logger.info(f"총 {count}개 클라이언트 종료 완료")
-    return count
-
-
-def shutdown_all_sync() -> int:
-    """모든 등록된 러너의 클라이언트를 종료 (동기 버전)
-
-    시그널 핸들러 등 동기 컨텍스트에서 사용합니다.
-
-    Returns:
-        종료된 클라이언트 수
-    """
-    try:
-        loop = asyncio.new_event_loop()
-        count = loop.run_until_complete(shutdown_all())
-        loop.close()
-        return count
-    except Exception as e:
-        logger.warning(f"클라이언트 동기 종료 중 오류: {e}")
-        return 0
 
 
 async def _client_lifecycle_task(
@@ -423,16 +283,9 @@ class ClaudeRunner:
         # Task 도구는 isConcurrencySafe=true라 병렬 실행 시 순서 보장 불가.
         # → parent_event_id를 빈 문자열로 전달, 대시보드가 턴 루트에 연결.
 
-        # AskUserQuestion 응답 대기용
-        # request_id → asyncio.Event (응답 도착 알림)
-        self._input_response_events: dict[str, asyncio.Event] = {}
-        # request_id → 응답 데이터 (answers dict)
-        self._input_responses: dict[str, dict] = {}
-        # AskUserQuestion 응답 대기 타임아웃 (초)
-        self.input_request_timeout: float = 300.0
-        # can_use_tool 콜백에서 직접 이벤트를 발행하기 위한 런타임 콜백
-        # _execute()에서 on_event가 설정되면 여기에 바인딩됩니다.
-        self._on_event_callback: Optional[EventCallback] = None
+        # AskUserQuestion 핸들러 (컴포지션)
+        self._input_handler = InputRequestHandler(timeout=300.0)
+        self._input_handler.bind_pending_events(self._pending_events.append)
 
     @classmethod
     async def shutdown_all_clients(cls) -> int:
@@ -739,137 +592,12 @@ class ClaudeRunner:
             return False
 
     def deliver_input_response(self, request_id: str, answers: dict) -> bool:
-        """외부에서 AskUserQuestion 응답을 전달
-
-        API 엔드포인트에서 호출합니다.
-        can_use_tool 콜백이 이 응답을 수신하여 SDK에 전달합니다.
-
-        Args:
-            request_id: input_request 이벤트의 request_id
-            answers: 질문별 응답 dict
-
-        Returns:
-            True: 대기 중인 요청이 있어 응답 전달 성공
-            False: 대기 중인 요청 없음
-        """
-        event = self._input_response_events.get(request_id)
-        if event is None:
-            return False
-        self._input_responses[request_id] = answers
-        event.set()
-        return True
+        """외부에서 AskUserQuestion 응답을 전달 — InputRequestHandler에 위임"""
+        return self._input_handler.deliver_response(request_id, answers)
 
     def _make_can_use_tool(self):
-        """AskUserQuestion을 감지하는 can_use_tool 콜백 팩토리
-
-        AskUserQuestion 외의 도구는 항상 허용합니다
-        (permission_mode=bypassPermissions와 동등한 동작).
-
-        AskUserQuestion이 감지되면:
-        1. InputRequestEngineEvent를 _on_event_callback으로 직접 발행
-        2. asyncio.Event로 클라이언트 응답을 대기
-        3. 응답을 PermissionResultAllow로 변환하여 반환
-
-        NOTE: can_use_tool 콜백은 SDK 내부의 Query._handle_control_request()에서
-        호출됩니다. 이 동안 receive_messages() 스트림은 대기 상태이므로,
-        _pending_events가 아닌 _on_event_callback으로 직접 이벤트를 발행해야 합니다.
-        """
-        import uuid as _uuid
-
-        async def can_use_tool(tool_name, tool_input, context):
-            if tool_name != "AskUserQuestion":
-                return PermissionResultAllow()
-
-            request_id = _uuid.uuid4().hex[:12]
-            questions = tool_input.get("questions", [])
-
-            logger.info(
-                f"[ASK_USER] AskUserQuestion 감지: "
-                f"runner={self.runner_id}, request_id={request_id}, "
-                f"questions={len(questions)}"
-            )
-
-            # InputRequestEngineEvent를 직접 발행
-            started_at = time.time()
-            event = InputRequestEngineEvent(
-                request_id=request_id,
-                tool_use_id="",
-                questions=questions,
-                started_at=started_at,
-                timeout_sec=self.input_request_timeout,
-            )
-            if self._on_event_callback:
-                try:
-                    await self._on_event_callback(event)
-                except Exception as e:
-                    logger.warning(f"[ASK_USER] 이벤트 발행 실패: {e}")
-            else:
-                logger.warning(
-                    f"[ASK_USER] on_event 콜백 없음, 이벤트 큐에 추가: "
-                    f"request_id={request_id}"
-                )
-                self._pending_events.append(event)
-
-            # 응답 대기용 Event 생성
-            response_event = asyncio.Event()
-            self._input_response_events[request_id] = response_event
-
-            try:
-                # 응답 대기 (타임아웃 포함)
-                try:
-                    await asyncio.wait_for(
-                        response_event.wait(),
-                        timeout=self.input_request_timeout,
-                    )
-                except asyncio.TimeoutError:
-                    logger.warning(
-                        f"[ASK_USER] 응답 타임아웃: "
-                        f"runner={self.runner_id}, request_id={request_id}"
-                    )
-                    # 만료 이벤트 발행 — 클라이언트가 선택 창을 닫도록
-                    expired_event = InputRequestExpiredEngineEvent(
-                        request_id=request_id,
-                        parent_event_id=request_id,
-                    )
-                    if self._on_event_callback:
-                        try:
-                            await self._on_event_callback(expired_event)
-                        except Exception as e:
-                            logger.warning(f"[ASK_USER] 만료 이벤트 발행 실패: {e}")
-                    return PermissionResultDeny(
-                        message="사용자 응답 대기 시간이 초과되었습니다."
-                    )
-
-                # 응답 수신
-                answers = self._input_responses.get(request_id, {})
-                logger.info(
-                    f"[ASK_USER] 응답 수신: "
-                    f"runner={self.runner_id}, request_id={request_id}, "
-                    f"answers={answers}"
-                )
-
-                # 응답 완료 이벤트 발행 — 클라이언트가 배너를 닫도록
-                responded_event = InputRequestRespondedEngineEvent(
-                    request_id=request_id,
-                    parent_event_id=request_id,
-                )
-                if self._on_event_callback:
-                    try:
-                        await self._on_event_callback(responded_event)
-                    except Exception as e:
-                        logger.warning(f"[ASK_USER] 응답 완료 이벤트 발행 실패: {e}")
-
-                # updated_input 구성: 원본 questions + answers
-                updated_input = dict(tool_input)
-                updated_input["answers"] = answers
-
-                return PermissionResultAllow(updated_input=updated_input)
-            finally:
-                # 정리
-                self._input_response_events.pop(request_id, None)
-                self._input_responses.pop(request_id, None)
-
-        return can_use_tool
+        """AskUserQuestion 콜백 팩토리 — InputRequestHandler에 위임"""
+        return self._input_handler.make_can_use_tool(self.runner_id)
 
     def _debug(self, message: str) -> None:
         """디버그 메시지 전송 (debug_send_fn이 있을 때만)"""
@@ -1204,11 +932,10 @@ class ClaudeRunner:
 
         # 이전 실행의 잔여 상태 정리 (풀링된 runner 재사용 대비)
         self._pending_events.clear()
-        self._input_response_events.clear()
-        self._input_responses.clear()
+        self._input_handler.clear()
 
         # can_use_tool 콜백에서 사용할 on_event 바인딩
-        self._on_event_callback = on_event
+        self._input_handler.bind_event_callback(on_event)
 
         # 현재 실행 루프를 인스턴스에 등록 (interrupt에서 사용)
         self.execution_loop = asyncio.get_running_loop()
@@ -1243,7 +970,7 @@ class ClaudeRunner:
             ctx,
             pid=self.pid,
             debug_fn=self.debug_send_fn,
-            active_clients_count=len(_registry),
+            active_clients_count=get_registry_size(),
         )
 
     def _handle_parse_error(
@@ -1272,12 +999,8 @@ class ClaudeRunner:
             await self._remove_client()
         # pooled 모드: client 유지, registry와 execution_loop만 정리
         self.execution_loop = None
-        self._on_event_callback = None
-        # 미응답 input_request 정리 (타임아웃 중인 콜백이 있으면 깨움)
-        for evt in self._input_response_events.values():
-            evt.set()
-        self._input_response_events.clear()
-        self._input_responses.clear()
+        self._input_handler.unbind_event_callback()
+        self._input_handler.clear()
         if ctx.runner_id:
             remove_runner(ctx.runner_id)
         if ctx.stderr_file is not None:

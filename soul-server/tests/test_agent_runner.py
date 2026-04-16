@@ -11,14 +11,18 @@ from pathlib import Path
 from soul_server.claude.agent_runner import (
     ClaudeRunner,
     ClaudeResult,
-    COMPACT_RETRY_READ_TIMEOUT,
-    CompactRetryState,
     DEFAULT_DISALLOWED_TOOLS,
     INTERVENTION_POLL_INTERVAL,
-    MAX_COMPACT_RETRIES,
     MessageState,
     _client_lifecycle_task,
+)
+from soul_server.claude.compact_retry import (
+    CompactRetryState,
+    COMPACT_RETRY_READ_TIMEOUT,
+    MAX_COMPACT_RETRIES,
     _extract_last_assistant_text,
+)
+from soul_server.claude.runner_registry import (
     _registry,
     _registry_lock,
     get_runner,
@@ -851,7 +855,7 @@ class TestObserveRateLimitAllowed:
 
 def _clear_all_client_state():
     """테스트용: 모듈 레벨 레지스트리 초기화 (shutdown 플래그도 리셋)"""
-    from soul_server.claude.agent_runner import reset_shutdown_state
+    from soul_server.claude.runner_registry import reset_shutdown_state
     with _registry_lock:
         _registry.clear()
     reset_shutdown_state()
@@ -961,7 +965,7 @@ class TestShutdownAllClients:
 
     async def test_register_rejected_during_shutdown(self):
         """셧다운 중에는 새 러너 등록이 거부된다"""
-        from soul_server.claude.agent_runner import (
+        from soul_server.claude.runner_registry import (
             _shutting_down,
             reset_shutdown_state,
         )
@@ -998,7 +1002,7 @@ class TestShutdownAllClients:
 
     async def test_shutdown_sets_shutting_down_flag(self):
         """shutdown_all이 _shutting_down 플래그를 설정하는지 확인"""
-        from soul_server.claude.agent_runner import (
+        from soul_server.claude.runner_registry import (
             _shutting_down,
             reset_shutdown_state,
         )
@@ -1008,8 +1012,8 @@ class TestShutdownAllClients:
         await shutdown_all()
 
         # _shutting_down 모듈 변수 직접 확인
-        import soul_server.claude.agent_runner as ar
-        assert ar._shutting_down is True
+        import soul_server.claude.runner_registry as rr
+        assert rr._shutting_down is True
 
         # 상태 복원
         reset_shutdown_state()
