@@ -44,7 +44,7 @@ class TestListLocalAgents:
         mock_registry.list.return_value = [profile1, profile2]
 
         fn = _unwrap(mcp_tools.list_local_agents)
-        with patch("soul_server.main.get_agent_registry", return_value=mock_registry):
+        with patch("soul_server.bootstrap.get_agent_registry", return_value=mock_registry):
             result = await fn()
 
         assert "agents" in result
@@ -55,7 +55,7 @@ class TestListLocalAgents:
     async def test_returns_empty_list_on_runtime_error(self):
         """AgentRegistry 미초기화(RuntimeError) 시 빈 목록을 반환한다."""
         fn = _unwrap(mcp_tools.list_local_agents)
-        with patch("soul_server.main.get_agent_registry", side_effect=RuntimeError("미초기화")):
+        with patch("soul_server.bootstrap.get_agent_registry", side_effect=RuntimeError("미초기화")):
             result = await fn()
 
         assert result == {"agents": []}
@@ -66,7 +66,7 @@ class TestListLocalAgents:
         mock_registry.list.return_value = []
 
         fn = _unwrap(mcp_tools.list_local_agents)
-        with patch("soul_server.main.get_agent_registry", return_value=mock_registry):
+        with patch("soul_server.bootstrap.get_agent_registry", return_value=mock_registry):
             result = await fn()
 
         assert result == {"agents": []}

@@ -59,7 +59,7 @@ class TestGetDashboardConfig:
 
         with (
             patch("soul_server.api.dashboard.get_settings", return_value=mock_settings),
-            patch("soul_server.main.get_agent_registry", return_value=mock_registry_with_agents),
+            patch("soul_server.bootstrap.get_agent_registry", return_value=mock_registry_with_agents),
         ):
             client = TestClient(app)
             resp = client.get("/api/dashboard/config")
@@ -90,7 +90,7 @@ class TestGetDashboardConfig:
 
         with (
             patch("soul_server.api.dashboard.get_settings", return_value=mock_settings),
-            patch("soul_server.main.get_agent_registry", return_value=mock_registry_empty),
+            patch("soul_server.bootstrap.get_agent_registry", return_value=mock_registry_empty),
         ):
             client = TestClient(app)
             resp = client.get("/api/dashboard/config")

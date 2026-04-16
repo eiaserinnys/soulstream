@@ -34,7 +34,7 @@ async def list_agents():
     workspace_dir은 보안상 미노출.
     portrait_url은 portrait_path에서 서빙 URL로 변환하여 반환.
     """
-    from soul_server.main import get_agent_registry
+    from soul_server.bootstrap import get_agent_registry
     registry = get_agent_registry()
     agents = [
         AgentInfo(
@@ -55,7 +55,7 @@ async def get_agent_portrait(agent_id: str):
     AgentRegistry에서 agent_id로 프로필을 조회하고,
     portrait_path에서 이미지를 로드하여 리사이즈 후 반환한다.
     """
-    from soul_server.main import get_agent_registry
+    from soul_server.bootstrap import get_agent_registry
     registry = get_agent_registry()
     profile = registry.get(agent_id)
     if not profile or not profile.portrait_path:

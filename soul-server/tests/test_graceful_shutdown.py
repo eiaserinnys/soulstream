@@ -1,12 +1,12 @@
 """
 test_graceful_shutdown - graceful_shutdown 함수 유닛 테스트
 
-전역 상태(_is_draining) 격리를 위해 autouse fixture를 사용합니다.
+app.state.is_draining 기반 격리를 위해 autouse fixture를 사용합니다.
 
 커버리지 시나리오:
 - 활성 세션 0개: DB 플래그 설정 (빈 목록), intervention 미호출
 - 활성 세션 N개: DB 플래그 설정 + intervention(skip_resume=True) 전송 + 완료 대기
-- 예외 발생: DB 플래그 정리 + _is_draining=False 복원
+- 예외 발생: DB 플래그 정리 + is_draining=False 복원
 - 이중 호출 가드: 두 번째 호출은 즉시 반환
 """
 
@@ -17,8 +17,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-import soul_server.main as main_module
 from soul_server.main import graceful_shutdown
+
+
+def make_mock_app():
+    """graceful_shutdown에 전달할 mock FastAPI app을 생성한다."""
+    app = MagicMock()
+    app.state.is_draining = False
+    return app
 
 
 @pytest.fixture(autouse=True)
@@ -29,14 +35,6 @@ def mock_session_db():
     mock_db.clear_shutdown_flags = AsyncMock()
     with patch("soul_server.main.get_session_db", return_value=mock_db):
         yield mock_db
-
-
-@pytest.fixture(autouse=True)
-def reset_is_draining():
-    """각 테스트 전후로 _is_draining 전역 상태를 False로 초기화한다."""
-    main_module._is_draining = False
-    yield
-    main_module._is_draining = False
 
 
 def make_task(session_id: str, claude_session_id: str = None) -> MagicMock:
@@ -52,22 +50,24 @@ class TestGracefulShutdownNoSessions:
 
     async def test_empty_sessions_marks_empty_in_db(self, mock_session_db):
         """활성 세션이 없으면 DB에 빈 목록으로 mark_running_at_shutdown을 호출한다."""
+        app = make_mock_app()
         tm = MagicMock()
         tm.get_running_tasks.return_value = []
         tm.add_intervention = AsyncMock()
         tm.cancel_running_tasks = AsyncMock()
 
-        await graceful_shutdown(tm)
+        await graceful_shutdown(app, tm)
 
         mock_session_db.mark_running_at_shutdown.assert_called_once_with([])
 
     async def test_empty_sessions_no_intervention(self, mock_session_db):
         """활성 세션이 없으면 add_intervention을 호출하지 않는다."""
+        app = make_mock_app()
         tm = MagicMock()
         tm.get_running_tasks.return_value = []
         tm.add_intervention = AsyncMock()
 
-        await graceful_shutdown(tm)
+        await graceful_shutdown(app, tm)
 
         tm.add_intervention.assert_not_called()
 
@@ -77,6 +77,7 @@ class TestGracefulShutdownActiveSessions:
 
     async def test_active_sessions_marked_in_db(self, mock_session_db):
         """활성 세션 ID를 DB에 mark_running_at_shutdown으로 기록한다."""
+        app = make_mock_app()
         task1 = make_task("sess-1", "claude-abc")
         task2 = make_task("sess-2", "claude-def")
 
@@ -86,7 +87,7 @@ class TestGracefulShutdownActiveSessions:
         tm.add_intervention = AsyncMock()
         tm.cancel_running_tasks = AsyncMock()
 
-        await graceful_shutdown(tm)
+        await graceful_shutdown(app, tm)
 
         mock_session_db.mark_running_at_shutdown.assert_called_once_with(
             ["sess-1", "sess-2"]
@@ -94,6 +95,7 @@ class TestGracefulShutdownActiveSessions:
 
     async def test_intervention_sent_with_skip_resume(self, mock_session_db):
         """단일 활성 세션에 skip_resume=True로 add_intervention을 호출한다."""
+        app = make_mock_app()
         task1 = make_task("sess-1")
 
         tm = MagicMock()
@@ -101,7 +103,7 @@ class TestGracefulShutdownActiveSessions:
         tm.add_intervention = AsyncMock()
         tm.cancel_running_tasks = AsyncMock()
 
-        await graceful_shutdown(tm)
+        await graceful_shutdown(app, tm)
 
         tm.add_intervention.assert_called_with(
             "sess-1",
@@ -112,6 +114,7 @@ class TestGracefulShutdownActiveSessions:
 
     async def test_multiple_sessions_all_receive_intervention(self, mock_session_db):
         """여러 활성 세션 모두에 intervention이 전송된다."""
+        app = make_mock_app()
         tasks = [make_task(f"sess-{i}") for i in range(3)]
 
         tm = MagicMock()
@@ -119,7 +122,7 @@ class TestGracefulShutdownActiveSessions:
         tm.add_intervention = AsyncMock()
         tm.cancel_running_tasks = AsyncMock()
 
-        await graceful_shutdown(tm)
+        await graceful_shutdown(app, tm)
 
         assert tm.add_intervention.call_count == 3
         for c in tm.add_intervention.call_args_list:
@@ -130,7 +133,8 @@ class TestGracefulShutdownExceptionRecovery:
     """예외 발생 시 복원 시나리오."""
 
     async def test_exception_clears_flags_and_restores_draining(self, mock_session_db):
-        """예외 발생 시 DB 플래그를 정리하고 _is_draining을 False로 복원한다."""
+        """예외 발생 시 DB 플래그를 정리하고 is_draining을 False로 복원한다."""
+        app = make_mock_app()
         task1 = make_task("sess-1")
 
         tm = MagicMock()
@@ -143,30 +147,21 @@ class TestGracefulShutdownExceptionRecovery:
 
         with patch("asyncio.sleep", side_effect=raise_error):
             with pytest.raises(RuntimeError, match="unexpected error"):
-                await graceful_shutdown(tm)
+                await graceful_shutdown(app, tm)
 
         # DB 플래그가 정리되었는지 확인
         mock_session_db.clear_shutdown_flags.assert_called_once()
 
-        # _is_draining이 False로 복원되었는지 확인
-        assert main_module._is_draining is False
+        # is_draining이 False로 복원되었는지 확인
+        assert app.state.is_draining is False
 
 
 class TestGracefulShutdownSessionDbError:
     """get_session_db() 실패 시나리오."""
 
     async def test_session_db_unavailable_propagates_without_name_error(self):
-        """get_session_db()가 예외를 던지면 NameError 없이 원래 예외가 전파되어야 한다.
-
-        현재 코드 버그 (RED):
-          main.py L108: session_db = get_session_db()  ← 이 줄이 예외를 던지면
-          main.py L142: await session_db.clear_shutdown_flags()  ← session_db 미할당 → NameError
-          → _is_draining = False가 실행되지 않아 드레이닝 상태가 오염됨
-
-        Phase 1 수정 후 (GREEN):
-          - RuntimeError("db unavailable")가 그대로 전파됨 (NameError 아님)
-          - _is_draining이 False로 복원됨
-        """
+        """get_session_db()가 예외를 던지면 NameError 없이 원래 예외가 전파되어야 한다."""
+        app = make_mock_app()
         tm = MagicMock()
         tm.get_running_tasks.return_value = [make_task("sess-1")]
         tm.add_intervention = AsyncMock()
@@ -178,7 +173,7 @@ class TestGracefulShutdownSessionDbError:
             side_effect=RuntimeError("db unavailable"),
         ):
             try:
-                await graceful_shutdown(tm)
+                await graceful_shutdown(app, tm)
             except (RuntimeError, NameError) as e:
                 caught_exc = e
 
@@ -190,8 +185,8 @@ class TestGracefulShutdownSessionDbError:
             f"미할당 상태로 참조됩니다. 발생한 예외: {type(caught_exc).__name__}: {caught_exc}"
         )
 
-        # _is_draining이 False로 복원되어야 한다
-        assert main_module._is_draining is False
+        # is_draining이 False로 복원되어야 한다
+        assert app.state.is_draining is False
 
 
 class TestGracefulShutdownDoubleCallGuard:
@@ -199,19 +194,20 @@ class TestGracefulShutdownDoubleCallGuard:
 
     async def test_second_call_returns_immediately(self, mock_session_db):
         """이미 draining 중이면 두 번째 호출은 즉시 반환하고 get_running_tasks를 추가 호출하지 않는다."""
+        app = make_mock_app()
         tm = MagicMock()
         tm.get_running_tasks.return_value = []
         tm.add_intervention = AsyncMock()
 
         # 첫 번째 호출
-        await graceful_shutdown(tm)
-        assert main_module._is_draining is True
+        await graceful_shutdown(app, tm)
+        assert app.state.is_draining is True
 
         # 첫 번째 호출의 카운트를 초기화하고 두 번째 호출 시 추가 호출이 없는지 검증
         tm.get_running_tasks.reset_mock()
 
         # 두 번째 호출 (즉시 반환)
-        await graceful_shutdown(tm)
+        await graceful_shutdown(app, tm)
 
         # 두 번째 호출에서는 get_running_tasks가 호출되지 않아야 함
         assert tm.get_running_tasks.call_count == 0

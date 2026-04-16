@@ -3,6 +3,8 @@ test_status_endpoint - /status 엔드포인트 테스트
 
 runner_pool stats가 /status 응답에 포함되는지 검증합니다.
 TaskManager와 pool을 mock으로 대체합니다.
+
+pool은 app.state.runner_pool로 접근하므로 직접 설정합니다.
 """
 
 import pytest
@@ -10,7 +12,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
 
-import soul_server.main as main_module
 from soul_server.main import app
 from soul_server.service.runner_pool import RunnerPool
 
@@ -52,15 +53,16 @@ class TestStatusEndpoint:
         mock_pool = make_mock_pool()
         mock_task_manager = make_mock_task_manager()
 
-        with (
-            patch.object(main_module, "_runner_pool", mock_pool),
-            patch(
+        app.state.runner_pool = mock_pool
+        try:
+            with patch(
                 "soul_server.main.get_task_manager",
                 return_value=mock_task_manager,
-            ),
-        ):
-            client = TestClient(app)
-            response = client.get("/status")
+            ):
+                client = TestClient(app)
+                response = client.get("/status")
+        finally:
+            app.state.runner_pool = None
 
         assert response.status_code == 200
         data = response.json()
@@ -79,12 +81,10 @@ class TestStatusEndpoint:
         """/status 응답에서 pool=None이면 runner_pool 필드 없음"""
         mock_task_manager = make_mock_task_manager()
 
-        with (
-            patch.object(main_module, "_runner_pool", None),
-            patch(
-                "soul_server.main.get_task_manager",
-                return_value=mock_task_manager,
-            ),
+        app.state.runner_pool = None
+        with patch(
+            "soul_server.main.get_task_manager",
+            return_value=mock_task_manager,
         ):
             client = TestClient(app)
             response = client.get("/status")
@@ -104,12 +104,10 @@ class TestStatusEndpoint:
         mock_task_manager = MagicMock()
         mock_task_manager.get_running_tasks.return_value = [mock_task]
 
-        with (
-            patch.object(main_module, "_runner_pool", None),
-            patch(
-                "soul_server.main.get_task_manager",
-                return_value=mock_task_manager,
-            ),
+        app.state.runner_pool = None
+        with patch(
+            "soul_server.main.get_task_manager",
+            return_value=mock_task_manager,
         ):
             client = TestClient(app)
             response = client.get("/status")
@@ -133,15 +131,16 @@ class TestStatusEndpoint:
         })
         mock_task_manager = make_mock_task_manager()
 
-        with (
-            patch.object(main_module, "_runner_pool", mock_pool),
-            patch(
+        app.state.runner_pool = mock_pool
+        try:
+            with patch(
                 "soul_server.main.get_task_manager",
                 return_value=mock_task_manager,
-            ),
-        ):
-            client = TestClient(app)
-            response = client.get("/status")
+            ):
+                client = TestClient(app)
+                response = client.get("/status")
+        finally:
+            app.state.runner_pool = None
 
         assert response.status_code == 200
         data = response.json()

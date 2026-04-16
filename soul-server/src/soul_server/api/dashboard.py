@@ -24,7 +24,7 @@ async def get_dashboard_config():
     """
     settings = get_settings()
 
-    from soul_server.main import get_agent_registry
+    from soul_server.bootstrap import get_agent_registry
     registry = get_agent_registry()
     agents = [
         {

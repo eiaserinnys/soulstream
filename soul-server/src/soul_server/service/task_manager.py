@@ -498,7 +498,7 @@ class TaskManager:
 
         # AgentRegistry는 루프 밖에서 1회만 조회한다.
         try:
-            from soul_server.main import get_agent_registry
+            from soul_server.bootstrap import get_agent_registry
             registry = get_agent_registry()
         except Exception:
             registry = None

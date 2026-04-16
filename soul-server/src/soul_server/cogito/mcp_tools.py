@@ -296,8 +296,8 @@ async def list_sessions(
 async def list_local_agents() -> dict:
     """현재 노드에서 사용 가능한 에이전트 목록 반환."""
     # 순환 참조 방지를 위해 지연 import
-    # get_agent_registry()는 미초기화 시 RuntimeError를 던짐 (main.py L73~77)
-    from soul_server.main import get_agent_registry
+    # get_agent_registry()는 미초기화 시 RuntimeError를 던짐
+    from soul_server.bootstrap import get_agent_registry
     try:
         registry = get_agent_registry()
     except RuntimeError as e:

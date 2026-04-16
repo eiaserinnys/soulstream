@@ -1,4 +1,4 @@
-"""Tests for /api/status (dashboard) endpoint reflecting actual _is_draining state.
+"""Tests for /api/status (dashboard) endpoint reflecting actual is_draining state.
 
 app.dependency_overrides를 사용하여 인증을 우회하고,
 get_task_manager / resource_manager를 mock으로 대체한다.
@@ -19,11 +19,9 @@ from soul_server.dashboard.auth import require_dashboard_auth
 
 @pytest.fixture(autouse=True)
 def reset_draining_state():
-    """각 테스트 전후 _is_draining 전역 변수와 app.state.is_draining을 초기화한다."""
-    main_module._is_draining = False
+    """각 테스트 전후 app.state.is_draining을 초기화한다."""
     main_module.app.state.is_draining = False
     yield
-    main_module._is_draining = False
     main_module.app.state.is_draining = False
 
 
@@ -65,7 +63,6 @@ def test_api_status_returns_not_draining_by_default(client_no_auth):
 def test_api_status_returns_draining_when_draining(client_no_auth):
     """드레이닝 상태에서 /api/status는 is_draining: true를 반환한다."""
     # graceful_shutdown()이 설정할 값을 직접 시뮬레이션
-    main_module._is_draining = True
     main_module.app.state.is_draining = True
 
     resp = client_no_auth.get("/api/status")
@@ -75,11 +72,9 @@ def test_api_status_returns_draining_when_draining(client_no_auth):
 
 def test_api_status_returns_not_draining_after_recovery(client_no_auth):
     """복구 후 /api/status는 is_draining: false로 돌아온다."""
-    main_module._is_draining = True
     main_module.app.state.is_draining = True
 
     # except 복구 경로 시뮬레이션
-    main_module._is_draining = False
     main_module.app.state.is_draining = False
 
     resp = client_no_auth.get("/api/status")
