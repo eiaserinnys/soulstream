@@ -160,9 +160,25 @@
   animation: pulse-border-pink 2s ease-in-out infinite;
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+@keyframes message-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.message-enter {
+  animation: message-enter 180ms ease-out;
+}
+
+@keyframes caret-blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+.animate-caret-blink {
+  animation: caret-blink 1s steps(2, end) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .message-enter { animation: none; }
+  .animate-caret-blink { animation: none; opacity: 1; }
 }
 
 /* Feed card: running state (Style E: Breathing + Shimmer + Border Glow) */

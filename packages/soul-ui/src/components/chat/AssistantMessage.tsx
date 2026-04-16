@@ -54,7 +54,7 @@ export const AssistantMessage = memo(function AssistantMessage({ msg, llmContext
         {msg.isStreaming ? (
           <div className="text-base leading-snug text-foreground whitespace-pre-wrap break-words">
             {msg.content}
-            <span className="inline-block w-1.5 h-3.5 bg-foreground/60 ml-0.5 animate-pulse" />
+            <span className="inline-block w-1.5 h-3.5 bg-foreground/60 ml-0.5 align-text-bottom animate-caret-blink" aria-hidden="true" />
           </div>
         ) : (
           <div className="text-base leading-snug text-foreground break-words">
