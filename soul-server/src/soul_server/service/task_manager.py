@@ -754,8 +754,7 @@ class TaskManager:
                 task = existing
                 is_new = False
             else:
-                # 새 세션
-                task = Task(
+                task = self._create_new_task_locked(
                     agent_session_id=agent_session_id,
                     prompt=prompt,
                     client_id=client_id,
@@ -770,56 +769,115 @@ class TaskManager:
                     oauth_token=oauth_token,
                     caller_session_id=caller_session_id,
                 )
-                self._tasks[agent_session_id] = task
-                logger.info(f"Created new session: {agent_session_id}")
                 is_new = True
 
         if is_new:
-            task.node_id = self._db.node_id
-            # 신규 세션: 즉시 pending 행 INSERT (claude_session_id=NULL)
-            # events 테이블 FK 위반 방지 — register_session() 이전에도 events 기록 가능.
-            await self._db.register_session_initial(
-                session_id=agent_session_id,
-                node_id=self._db.node_id,
-                agent_id=task.profile_id,
-                claude_session_id=None,  # pending; register_session()에서 set_claude_session_id()로 설정
-                session_type=task.session_type,
-                prompt=task.prompt,
-                client_id=task.client_id,
-                status=TaskStatus.RUNNING.value,
-                created_at=task.created_at,
-                caller_session_id=task.caller_session_id,
-            )
-            # 폴더 배정 + catalog_updated 브로드캐스트
-            # _assign_default_folder_and_broadcast 내부에서 catalog_updated가 발행된다.
-            # 반환된 folder_id를 session_created payload에 포함하여 이벤트 순서 의존성을 제거한다.
-            assigned_folder_id = await self._assign_default_folder_and_broadcast(
-                agent_session_id,
-                task.session_type,
-                folder_id=folder_id,
-            )
-            # catalog_updated 이후 session_created 발행 (순서 보장 — 부가 기능)
-            try:
-                await get_session_broadcaster().emit_session_created(task, folder_id=assigned_folder_id)
-            except Exception:
-                logger.warning(f"Failed to emit session_created for {agent_session_id}", exc_info=True)
+            await self._register_new_session_async(task, folder_id)
         else:
-            # 재개 세션: 불변 필드를 제외한 상태만 업데이트한다.
-            await self._db.update_session(
-                agent_session_id,
-                status=TaskStatus.RUNNING.value,
-                prompt=prompt,
-                client_id=task.client_id,
-            )
-
-        if not is_new:
-            # 재개 세션: 변경 사실을 즉시 브로드캐스트 (부가 기능 — 실패해도 영향 없음)
-            try:
-                await get_session_broadcaster().emit_session_updated(task)
-            except Exception:
-                logger.warning(f"Failed to broadcast session update for {agent_session_id}", exc_info=True)
+            await self._resume_task(task, prompt=prompt, client_id=task.client_id)
 
         return task
+
+    def _create_new_task_locked(
+        self,
+        *,
+        agent_session_id: str,
+        prompt: str,
+        client_id: Optional[str],
+        allowed_tools: Optional[List[str]],
+        disallowed_tools: Optional[List[str]],
+        use_mcp: bool,
+        context: Optional[dict],
+        context_items: Optional[List[dict]],
+        model: Optional[str],
+        system_prompt: Optional[str],
+        profile_id: Optional[str],
+        oauth_token: Optional[str],
+        caller_session_id: Optional[str],
+    ) -> Task:
+        """신규 Task 생성 + _tasks 등록. create_task의 락 보유 상태에서 호출된다."""
+        task = Task(
+            agent_session_id=agent_session_id,
+            prompt=prompt,
+            client_id=client_id,
+            allowed_tools=allowed_tools,
+            disallowed_tools=disallowed_tools,
+            use_mcp=use_mcp,
+            context=context,
+            context_items=context_items,
+            model=model,
+            system_prompt=system_prompt,
+            profile_id=profile_id,
+            oauth_token=oauth_token,
+            caller_session_id=caller_session_id,
+        )
+        self._tasks[agent_session_id] = task
+        logger.info(f"Created new session: {agent_session_id}")
+        return task
+
+    async def _register_new_session_async(
+        self,
+        task: Task,
+        folder_id: Optional[str],
+    ) -> None:
+        """신규 세션의 락 외부 후속 처리.
+
+        node_id 설정 → DB pending 행 INSERT → 폴더 배정/catalog_updated 브로드캐스트
+        → session_created 이벤트 발행 순서로 진행한다.
+        """
+        agent_session_id = task.agent_session_id
+        task.node_id = self._db.node_id
+        # 신규 세션: 즉시 pending 행 INSERT (claude_session_id=NULL)
+        # events 테이블 FK 위반 방지 — register_session() 이전에도 events 기록 가능.
+        await self._db.register_session_initial(
+            session_id=agent_session_id,
+            node_id=self._db.node_id,
+            agent_id=task.profile_id,
+            claude_session_id=None,  # pending; register_session()에서 set_claude_session_id()로 설정
+            session_type=task.session_type,
+            prompt=task.prompt,
+            client_id=task.client_id,
+            status=TaskStatus.RUNNING.value,
+            created_at=task.created_at,
+            caller_session_id=task.caller_session_id,
+        )
+        # 폴더 배정 + catalog_updated 브로드캐스트
+        # _assign_default_folder_and_broadcast 내부에서 catalog_updated가 발행된다.
+        # 반환된 folder_id를 session_created payload에 포함하여 이벤트 순서 의존성을 제거한다.
+        assigned_folder_id = await self._assign_default_folder_and_broadcast(
+            agent_session_id,
+            task.session_type,
+            folder_id=folder_id,
+        )
+        # catalog_updated 이후 session_created 발행 (순서 보장 — 부가 기능)
+        try:
+            await get_session_broadcaster().emit_session_created(task, folder_id=assigned_folder_id)
+        except Exception:
+            logger.warning(f"Failed to emit session_created for {agent_session_id}", exc_info=True)
+
+    async def _resume_task(
+        self,
+        task: Task,
+        prompt: str,
+        client_id: Optional[str],
+    ) -> None:
+        """재개 세션의 락 외부 후속 처리.
+
+        DB 상태 업데이트 후 session_updated 브로드캐스트(부가 기능 — 실패 시 경고만).
+        """
+        agent_session_id = task.agent_session_id
+        # 재개 세션: 불변 필드를 제외한 상태만 업데이트한다.
+        await self._db.update_session(
+            agent_session_id,
+            status=TaskStatus.RUNNING.value,
+            prompt=prompt,
+            client_id=client_id,
+        )
+        # 재개 세션: 변경 사실을 즉시 브로드캐스트 (부가 기능 — 실패해도 영향 없음)
+        try:
+            await get_session_broadcaster().emit_session_updated(task)
+        except Exception:
+            logger.warning(f"Failed to broadcast session update for {agent_session_id}", exc_info=True)
 
     async def get_task(self, agent_session_id: str) -> Optional[Task]:
         """세션 태스크 조회
