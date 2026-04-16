@@ -41,7 +41,6 @@ export { SessionsTopBar } from "./SessionsTopBar";
 export { VerticalSplitPane } from "./VerticalSplitPane";
 export { MobileChatHeader } from "./MobileChatHeader";
 export { ThemeToggle } from "./ThemeToggle";
-export { StorageModeToggle, StorageModeToggleCompact } from "./StorageModeToggle";
 export { ConfigButton } from "./ConfigButton";
 export { NewSessionDialog } from "./NewSessionDialog";
 export type { NewSessionDialogProps } from "./NewSessionDialog";

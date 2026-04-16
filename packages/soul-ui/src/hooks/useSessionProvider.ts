@@ -1,23 +1,22 @@
 /**
  * useSessionProvider - Provider 기반 세션 상세 훅
  *
- * 현재 스토리지 모드에 따라 적절한 Provider를 사용하여
- * 세션 상세 정보와 실시간 업데이트를 처리합니다.
+ * Provider를 사용하여 세션 상세 정보와 실시간 업데이트를 처리합니다.
  */
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { useDashboardStore } from "../stores/dashboard-store";
 import type { SoulSSEEvent } from "../shared/types";
-import type { SessionStorageProvider, StorageMode } from "../providers/types";
+import type { SessionStorageProvider } from "../providers/types";
 import { BATCH_SIZE, BATCH_FLUSH_MS } from "../lib/event-batch";
 import { applySessionUpdated, type SessionPage } from "./session-stream-helpers";
 
 export interface UseSessionProviderOptions {
   /** 구독할 세션 키. null이면 구독 안 함 */
   sessionKey: string | null;
-  /** Provider 팩토리: storageMode를 받아 적절한 Provider를 반환 */
-  getSessionProvider: (mode: StorageMode) => SessionStorageProvider;
+  /** Provider 팩토리 */
+  getSessionProvider: () => SessionStorageProvider;
 }
 
 type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
@@ -31,7 +30,6 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
   const { sessionKey, getSessionProvider } = options;
 
   const queryClient = useQueryClient();
-  const storageMode = useDashboardStore((s) => s.storageMode);
   const processEvents = useDashboardStore((s) => s.processEvents);
   const clearTree = useDashboardStore((s) => s.clearTree);
 
@@ -167,7 +165,7 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
     prevSessionKeyRef.current = sessionKey;
     prevEpochRef.current = subscriptionEpoch;
 
-    const provider = getSessionProvider(storageMode);
+    const provider = getSessionProvider();
 
     if (isResume) {
       // Resume: 기존 대화를 유지하고, 마지막 eventId 이후부터만 구독
@@ -194,7 +192,7 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
     lastEventIdRef.current = 0;
     setStatus("connecting");
 
-    // 초기 카드 로드 (Serendipity 모드에서 필요, SSE 모드에서는 빈 배열)
+    // 초기 카드 로드 (SSE 모드에서는 빈 배열, fetchCards를 구현한 Provider만 채움)
     const loadInitialCards = async () => {
       try {
         const cards = await provider.fetchCards(sessionKey);
@@ -273,7 +271,7 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
     };
   // subscriptionEpoch: resume 감지 시 변경되어 구독을 재시작
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionKey, storageMode, processEvents, clearTree, enqueueEvent, clearTimersAndQueue, subscriptionEpoch, queryClient]);
+  }, [sessionKey, processEvents, clearTree, enqueueEvent, clearTimersAndQueue, subscriptionEpoch, queryClient]);
 
   const reconnect = useCallback(() => {
     // 재연결은 sessionKey 변경으로 트리거됨
@@ -286,6 +284,5 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
   return {
     status,
     reconnect,
-    storageMode,
   };
 }

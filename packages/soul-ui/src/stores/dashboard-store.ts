@@ -82,9 +82,8 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
     },
     {
       name: "soul-dashboard-storage",
-      // 스토리지 모드 + 입력창 draft 영속화 (세션 데이터는 제외)
+      // 입력창 draft + 폴더 정렬 영속화 (세션 데이터는 제외)
       partialize: (state) => ({
-        storageMode: state.storageMode,
         drafts: state.drafts,
         folderSortMode: state.folderSortMode,
       }),

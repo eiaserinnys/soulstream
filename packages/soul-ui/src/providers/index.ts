@@ -15,18 +15,11 @@ export type { SSESubscribeOptions } from "./sse-subscribe";
 
 // === Provider Types ===
 export type {
-  StorageMode,
   FetchSessionsOptions,
   SessionListResult,
   SessionListProvider,
   SessionDetailProvider,
   SessionStorageProvider,
-  SoulBlockType,
-  SerendipityBlock,
-  PortableTextContent,
-  PortableTextBlock,
-  PortableTextSpan,
-  PortableTextMarkDef,
   SessionKey,
 } from "./types";
 
