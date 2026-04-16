@@ -10,38 +10,37 @@
  * Mutable tree + version counter 전략:
  * - 트리 노드는 in-place 변경 (text_delta가 가장 빈번, O(1) 필요)
  * - 변경 후 treeVersion++로 리렌더 트리거
+ *
+ * 구조:
+ * - 타입 정의는 ./dashboard-store-types.ts
+ * - 5개 slice로 액션 분리 (slices/)
+ * - 본 파일은 슬라이스 합성 + reset + persist 설정만 담당
  */
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { QueryClient, InfiniteData } from "@tanstack/react-query";
-import type { SessionPage } from "../hooks/session-stream-helpers";
-import type {
-  SessionSummary,
-  SessionDetail,
-  SessionStatus,
-  SoulSSEEvent,
-  EventTreeNode,
-  InputRequestNodeDef,
-  CatalogState,
-  CatalogFolder,
-} from "@shared/types";
-import type { StorageMode } from "../providers/types";
-import {
-  type ProcessingContext,
-  type TreeChangeInfo,
-  createProcessingContext,
-} from "./processing-context";
-import { processEventSingle, processEventsBatch } from "./event-processor";
-import {
-  moveSessionsInCatalog,
-  renameSessionInCatalog,
-  addFolderToCatalog,
-  updateFolderNameInCatalog,
-  updateFolderSettingsInCatalog,
-  removeFolderFromCatalog,
-  reorderFoldersInCatalog,
-} from "./catalog-actions";
+import type { SessionSummary } from "@shared/types";
+import { createProcessingContext } from "./processing-context";
+import type { DashboardState, DashboardActions } from "./dashboard-store-types";
+import { createUISlice } from "./slices/ui-slice";
+import { createCatalogSlice } from "./slices/catalog-slice";
+import { createSelectionSlice } from "./slices/selection-slice";
+import { createDraftSlice } from "./slices/draft-slice";
+import { createSessionSlice } from "./slices/session-slice";
+
+// === Re-exports for backward compatibility ===
+
+export type {
+  ProfileConfig,
+  DashboardAgentConfig,
+  DashboardConfig,
+  SelectedEventNodeData,
+  FolderSortMode,
+  MobileTab,
+  ProcessEventsResult,
+  DashboardState,
+  DashboardActions,
+} from "./dashboard-store-types";
 
 // === Unread Utility ===
 
@@ -50,771 +49,45 @@ export function isSessionUnread(session: SessionSummary): boolean {
   return (session.lastEventId ?? 0) > (session.lastReadEventId ?? 0);
 }
 
-// === Dashboard Config ===
-
-export interface ProfileConfig {
-  name: string;
-  id: string;
-  hasPortrait: boolean;
-  portraitUrl?: string | null;
-}
-
-export interface DashboardAgentConfig {
-  id: string;
-  name: string;
-  hasPortrait: boolean;
-  portraitUrl: string | null;
-}
-
-export interface DashboardConfig {
-  user: ProfileConfig;
-  agents: DashboardAgentConfig[];
-}
-
-// === Selected Event Node Data ===
-
-/** selectEventNode로 선택된 이벤트 노드의 데이터 (user, intervention, system, result) */
-export interface SelectedEventNodeData {
-  nodeType: "user" | "intervention" | "system" | "result";
-  label: string;
-  content: string;
-  durationMs?: number;
-  usage?: { input_tokens: number; output_tokens: number };
-  totalCostUsd?: number;
-  isError?: boolean;
-}
-
-// === Folder Sort Mode ===
-
-export type FolderSortMode = "name-asc" | "name-desc" | "created-desc" | "created-asc" | "custom";
-
-// === Mobile Tab ===
-
-export type MobileTab = "feed" | "folder" | "chat" | "settings";
-
-// === ProcessEventsResult ===
-
-/** processEvents 반환 타입: SSE 이벤트 배치 처리 결과 */
-export interface ProcessEventsResult {
-  statusUpdates: Array<{ agentSessionId: string; status: SessionStatus }>;
-}
-
-// === State Interface ===
-
-export interface DashboardState {
-  /** 스토리지 모드 */
-  storageMode: StorageMode;
-
-  /** 뷰 모드 — URL 해시에서 파생. 'feed' = 피드 뷰, 'folder' = 기존 폴더 뷰 */
-  viewMode: "feed" | "folder";
-
-  /** 피드 스크롤 오프셋 (뷰 전환 시 위치 복원용) */
-  feedScrollOffset: number;
-
-  /** 세션 타입 필터 */
-  sessionTypeFilter: "all" | "claude" | "llm";
-
-  /** 활성 세션 (현재 보고 있는 세션) */
-  activeSessionKey: string | null;
-  activeSession: SessionDetail | null;
-
-  /** 활성 세션의 SessionSummary 스냅샷 — sessions.find 대체용 (단일 구독 포인트) */
-  activeSessionSummary: SessionSummary | null;
-
-  /** 선택된 카드 (상세 뷰에 표시) */
-  selectedCardId: string | null;
-
-  /** 선택된 React Flow 노드 ID */
-  selectedNodeId: string | null;
-
-  /** 선택된 이벤트 노드 데이터 (user/intervention/system/result 노드용) */
-  selectedEventNodeData: SelectedEventNodeData | null;
-
-  /** 이벤트 트리 루트 (소스 오브 트루스) */
-  tree: EventTreeNode | null;
-
-  /** 트리 변경 감지용 카운터 (mutable tree이므로 참조 비교 불가) */
-  treeVersion: number;
-
-  /** 마지막 트리 변경의 유형 — NodeGraph가 증분 업데이트 vs 전체 재빌드를 분기하는 기준 */
-  treeChangeInfo: TreeChangeInfo | null;
-
-  /** 마지막으로 수신한 이벤트 ID (SSE 재연결용) */
-  lastEventId: number;
-
-  /** 알림 대상 이벤트 큐 (complete, error, intervention_sent) */
-  pendingNotifications: SoulSSEEvent[];
-
-  /** New Session 모달 열림 상태 */
-  isNewSessionModalOpen: boolean;
-
-  /** New Session 모달을 연 진입 경로 ('folder': 폴더 뷰, 'feed': 피드 뷰) */
-  newSessionSource: 'folder' | 'feed';
-
-  /** 접힌 노드 ID 집합 (접기/펼치기 기능) */
-  collapsedNodeIds: Set<string>;
-
-  /** 세렌디피티 모드 사용 가능 여부 (서버 설정 기반) */
-  serendipityAvailable: boolean;
-
-  /** 오른쪽 패널 활성 탭 */
-  activeRightTab: "detail" | "chat" | "info";
-
-  /** 대시보드 프로필 설정 */
-  dashboardConfig: DashboardConfig | null;
-
-  /** 이벤트 처리 컨텍스트 (nodeMap, activeTextTarget 등) */
-  processingCtx: ProcessingContext;
-
-  /** 입력창 임시 저장 (키: 세션ID / '__draft__{folderId}')
-   * ⚠️ getSessionResetState()에 포함하지 않는 것이 이 기능의 핵심 — drafts는 세션 전환 시 초기화하지 않는다 */
-  drafts: Record<string, string>;
-
-  /** 검색 결과 클릭 시 스크롤할 이벤트 ID (ChatView가 감지하여 해당 메시지로 스크롤) */
-  focusEventId: number | null;
-
-  /** 세션 다중 선택 ID 집합 */
-  selectedSessionIds: Set<string>;
-
-  /** Shift+클릭 범위 기준점 */
-  lastSelectedSessionId: string | null;
-
-  /** 인라인 편집 중인 세션 */
-  editingSessionId: string | null;
-
-  /** 모바일 활성 탭 */
-  activeTab: MobileTab;
-
-  /** 폴더 카탈로그 상태 */
-  catalog: CatalogState | null;
-
-  /** 선택된 폴더 ID (null = 미분류) */
-  selectedFolderId: string | null;
-
-  /** 카탈로그 변경 감지용 카운터 */
-  catalogVersion: number;
-
-  /** 폴더 목록 정렬 모드 (localStorage에 저장) */
-  folderSortMode: FolderSortMode;
-}
-
-// === Actions Interface ===
-
-export interface DashboardActions {
-  // 스토리지 모드
-  setStorageMode: (mode: StorageMode) => void;
-
-  // 세션 타입 필터
-  setSessionTypeFilter: (type: "all" | "claude" | "llm") => void;
-
-  // 활성 세션
-  setActiveSession: (key: string | null, detail?: SessionDetail) => void;
-  setActiveSessionSummary: (summary: SessionSummary | null) => void;
-
-  // 카드 선택 (nodeId: React Flow 노드의 고유 ID, switchTab: detail 탭 전환 여부)
-  selectCard: (cardId: string | null, nodeId?: string | null, switchTab?: boolean) => void;
-
-  // 이벤트 노드 선택 (user/intervention/system/result 등 카드가 아닌 노드)
-  selectEventNode: (data: SelectedEventNodeData | null, nodeId?: string | null, switchTab?: boolean) => void;
-
-  // SSE 이벤트 처리
-  processEvent: (event: SoulSSEEvent, eventId: number) => { agentSessionId: string; status: SessionStatus } | null;
-
-  // SSE 이벤트 배치 처리 (히스토리 리플레이 최적화: N개 이벤트를 트리에 적용 후 set() 1회)
-  processEvents: (events: Array<{ event: SoulSSEEvent; eventId: number }>) => ProcessEventsResult;
-
-  // 낙관적 세션 추가 + 활성 세션 설정 (세션 생성 직후 즉시 목록 반영)
-  addOptimisticSession: (queryClient: QueryClient, agentSessionId: string, prompt: string, folderId?: string | null, nodeId?: string, agentId?: string | null, agentName?: string | null, agentPortraitUrl?: string | null) => void;
-
-  // New Session 모달
-  openNewSessionModal: (source?: 'folder' | 'feed') => void;
-  closeNewSessionModal: () => void;
-
-  // 상태 초기화
-  clearTree: () => void;
-  reset: () => void;
-
-  // 하위 호환 alias
-  clearCards: () => void;
-
-  // 접기/펼치기
-  toggleNodeCollapse: (nodeId: string) => void;
-  setNodeCollapsed: (nodeId: string, collapsed: boolean) => void;
-  clearCollapsedNodes: () => void;
-
-  // 세렌디피티 가용 여부
-  setSerendipityAvailable: (available: boolean) => void;
-
-  // 오른쪽 패널 탭
-  setActiveRightTab: (tab: "detail" | "chat" | "info") => void;
-
-  // 대시보드 프로필 설정
-  setDashboardConfig: (config: DashboardConfig) => void;
-
-  // input_request 타임아웃 만료 처리
-  expireInputRequest: (nodeId: string) => void;
-
-  // draft 저장/삭제
-  setDraft: (key: string, text: string) => void;
-  clearDraft: (key: string) => void;
-
-  // 검색 포커스 이벤트 ID
-  setFocusEventId: (eventId: number | null) => void;
-
-  // 뷰 모드 (URL 동기화 전용)
-  setViewMode: (mode: "feed" | "folder") => void;
-  selectFeed: () => void;
-  setFeedScrollOffset: (offset: number) => void;
-
-  // 카탈로그
-  setCatalog: (catalog: CatalogState) => void;
-  selectFolder: (folderId: string | null) => void;
-  clearSelectedFolder: () => void;
-  moveSessionsToFolder: (sessionIds: string[], folderId: string | null) => void;
-  renameSession: (sessionId: string, displayName: string | null) => void;
-  addFolder: (folder: CatalogFolder) => void;
-  updateFolderName: (folderId: string, name: string) => void;
-  updateFolderSettings: (folderId: string, settings: CatalogFolder["settings"]) => void;
-  removeFolder: (folderId: string) => void;
-  /** 폴더 순서 낙관적 갱신: orderedFolderIds 순서대로 sortOrder를 재계산하여 store에 반영 */
-  reorderFolders: (orderedFolderIds: string[]) => void;
-
-  // 폴더 정렬 모드
-  setFolderSortMode: (mode: FolderSortMode) => void;
-
-  // 모바일 탭 전환
-  setActiveTab: (tab: MobileTab) => void;
-
-  // 활성 세션 해제 (selectedFolderId를 유지하면서 세션만 해제)
-  clearActiveSession: () => void;
-
-  // 다중 선택
-  toggleSessionSelection: (id: string, ctrlKey: boolean, shiftKey: boolean, folderSessions?: SessionSummary[]) => void;
-  clearSelection: () => void;
-  setEditingSession: (id: string | null) => void;
-}
-
-// === Initial State ===
-
-const initialState: DashboardState = {
-  storageMode: "sse",
-  viewMode: "feed",
-  feedScrollOffset: 0,
-  sessionTypeFilter: "all",
-  activeSessionKey: null,
-  activeSession: null,
-  activeSessionSummary: null,
-  selectedCardId: null,
-  selectedNodeId: null,
-  selectedEventNodeData: null,
-  tree: null,
-  treeVersion: 0,
-  treeChangeInfo: null,
-  lastEventId: 0,
-  pendingNotifications: [],
-  isNewSessionModalOpen: false,
-  newSessionSource: 'folder',
-  collapsedNodeIds: new Set<string>(),
-  serendipityAvailable: false,
-  activeRightTab: "chat",
-  dashboardConfig: null,
-  processingCtx: createProcessingContext(),
-  drafts: {},
-  focusEventId: null,
-  selectedSessionIds: new Set<string>(),
-  lastSelectedSessionId: null,
-  editingSessionId: null,
-  activeTab: "feed",
-  catalog: null,
-  selectedFolderId: null,
-  catalogVersion: 0,
-  folderSortMode: "custom",
-};
-
-/** 세션 전환 시 초기화할 상태를 매번 새 인스턴스로 생성 (Set 공유 방지) */
-function getSessionResetState() {
-  return {
-    activeSessionKey: null as string | null,
-    activeSession: null as SessionDetail | null,
-    selectedCardId: null as string | null,
-    selectedNodeId: null as string | null,
-    selectedEventNodeData: null as DashboardState["selectedEventNodeData"],
-    tree: null as EventTreeNode | null,
-    treeVersion: 0,
-    treeChangeInfo: null as TreeChangeInfo | null,
-    lastEventId: 0,
-    pendingNotifications: [] as SoulSSEEvent[],
-    collapsedNodeIds: new Set<string>(),
-    activeRightTab: "chat" as const,
-    processingCtx: createProcessingContext(),
-  };
-}
-
 // === Store ===
 
 export const useDashboardStore = create<DashboardState & DashboardActions>()(
   persist(
-    (set, get) => ({
-      ...initialState,
+    (set, get, store) => {
+      const slices = {
+        ...createUISlice(set, get, store),
+        ...createCatalogSlice(set, get, store),
+        ...createSelectionSlice(set, get, store),
+        ...createDraftSlice(set, get, store),
+        ...createSessionSlice(set, get, store),
+      };
 
-      // --- 스토리지 모드 ---
+      // 초기 state 스냅샷 (모든 slice의 초기 필드 값) — reset의 정본.
+      // `Object.fromEntries`의 타입은 일반화되어 직접 캐스팅이 어려우므로 `unknown` 경유.
+      const initialStateSnapshot = Object.fromEntries(
+        Object.entries(slices).filter(([, v]) => typeof v !== "function"),
+      ) as unknown as DashboardState;
 
-      setStorageMode: (storageMode) => {
-        set({
-          storageMode,
-          sessionTypeFilter: "all",
-          activeSessionKey: null,
-          activeSession: null,
-          tree: null,
-          treeVersion: 0,
-          treeChangeInfo: null,
-          lastEventId: 0,
-          pendingNotifications: [],
-          selectedCardId: null,
-          selectedNodeId: null,
-          selectedEventNodeData: null,
-          collapsedNodeIds: new Set<string>(),
-          activeRightTab: "chat",
-          processingCtx: createProcessingContext(),
-        });
-      },
-
-      // --- 세션 타입 필터 ---
-
-      setSessionTypeFilter: (sessionTypeFilter) => set({ sessionTypeFilter }),
-
-      // --- 활성 세션 ---
-
-      setActiveSession: (key, detail) => {
-        // 같은 세션이면 아무것도 하지 않음 (resume 등에서 불필요한 리셋 방지)
-        if (key !== null && key === get().activeSessionKey) return;
-
-        // 세션이 속한 폴더를 찾아 selectedFolderId도 갱신
-        let folderId: string | null = null;
-        const { catalog } = get();
-        if (key && catalog?.sessions) {
-          const entry = catalog.sessions[key];
-          folderId = entry?.folderId ?? null; // 미등록 세션이면 null(미분류)
-        }
-
-        set({
-          ...getSessionResetState(),
-          activeSessionKey: key,
-          activeSession: detail ?? null,
-          selectedFolderId: folderId,
-        });
-      },
-
-      setActiveSessionSummary: (summary) => set({ activeSessionSummary: summary }),
-
-      // --- 카드 선택 ---
-
-      selectCard: (cardId, nodeId, switchTab = true) => {
-        const current = get().activeRightTab;
-        const shouldSwitch = switchTab && current === "chat";
-        set({
-          selectedCardId: cardId,
-          selectedNodeId: nodeId ?? null,
-          selectedEventNodeData: null,
-          ...(shouldSwitch ? { activeRightTab: "detail" as const } : {}),
-        });
-      },
-
-      // --- 이벤트 노드 선택 ---
-
-      selectEventNode: (data, nodeId, switchTab = true) => {
-        const current = get().activeRightTab;
-        const shouldSwitch = switchTab && current === "chat";
-        set({
-          selectedEventNodeData: data,
-          selectedCardId: null,
-          selectedNodeId: nodeId ?? null,
-          ...(shouldSwitch ? { activeRightTab: "detail" as const } : {}),
-        });
-      },
-
-      // --- SSE 이벤트 처리 ---
-      // createNodeFromEvent + placeInTree + applyUpdate + updateSessionStatus + enqueueNotification
-      // 트리에 in-place 변경 후 treeVersion++ 으로 리렌더 트리거
-
-      processEvent: (event, eventId) => {
-        const state = get();
-        const result = processEventSingle(
-          event, eventId, state.processingCtx, state.tree,
-          state.activeSessionKey, state.activeSessionSummary, state.lastEventId,
-        );
-
-        if (result.isHistorySync) {
-          set({ ...(result.newLastEventId > state.lastEventId ? { lastEventId: result.newLastEventId } : {}) });
-          return result.statusUpdate;
-        }
-
-        if (result.updated) {
+      return {
+        ...slices,
+        reset: () => {
+          // collapsedNodeIds, processingCtx는 매번 새 인스턴스로 생성하여 Set/객체 공유 방지
           set({
-            tree: result.root,
-            treeVersion: state.treeVersion + 1,
-            treeChangeInfo: result.treeChangeInfo,
-            lastEventId: result.newLastEventId,
-            ...(result.notify
-              ? { pendingNotifications: [...state.pendingNotifications, event] }
-              : {}),
+            ...initialStateSnapshot,
+            collapsedNodeIds: new Set<string>(),
+            processingCtx: createProcessingContext(),
           });
-        } else {
-          set({
-            lastEventId: result.newLastEventId,
-            ...(result.notify
-              ? { pendingNotifications: [...state.pendingNotifications, event] }
-              : {}),
-          });
-        }
-
-        return result.statusUpdate;
-      },
-
-      // --- SSE 이벤트 배치 처리 ---
-
-      processEvents: (events) => {
-        if (events.length === 0) return { statusUpdates: [] };
-
-        const state = get();
-        const result = processEventsBatch(
-          events, state.processingCtx, state.tree,
-          state.activeSessionKey, state.activeSessionSummary, state.lastEventId,
-        );
-
-        set({
-          ...(result.updated ? { tree: result.root, treeVersion: state.treeVersion + 1, treeChangeInfo: null } : {}),
-          lastEventId: result.maxEventId,
-          ...(result.notifications.length > 0
-            ? { pendingNotifications: [...state.pendingNotifications, ...result.notifications] }
-            : {}),
-        });
-
-        return { statusUpdates: result.statusUpdates };
-      },
-
-      // --- 낙관적 세션 추가 ---
-
-      addOptimisticSession: (queryClient, agentSessionId, prompt, folderId, nodeId, agentId, agentName, agentPortraitUrl) => {
-        let catalog = get().catalog;
-        const newSession: SessionSummary = {
-          agentSessionId,
-          status: "running",
-          eventCount: 0,
-          createdAt: new Date().toISOString(),
-          prompt,
-          lastEventId: 0,
-          lastReadEventId: 0,
-          ...(nodeId ? { nodeId } : {}),
-          ...(agentId ? { agentId } : {}),
-          ...(agentName ? { agentName } : {}),
-          ...(agentPortraitUrl ? { agentPortraitUrl } : {}),
-        };
-
-        // TanStack Query 캐시에 낙관적 prepend
-        queryClient.setQueriesData<InfiniteData<SessionPage>>(
-          { queryKey: ["sessions"], exact: false },
-          (old) => {
-            if (!old) return old;
-            // 이미 존재하면 중복 삽입 방지
-            const exists = old.pages.some((page) =>
-              page.sessions.some((s) => s.agentSessionId === agentSessionId),
-            );
-            if (exists) return old;
-            return {
-              ...old,
-              pages: old.pages.map((page, i) =>
-                i === 0
-                  ? { ...page, sessions: [newSession, ...page.sessions], total: page.total + 1 }
-                  : page,
-              ),
-            };
-          },
-        );
-
-        // catalog.sessions에도 낙관적으로 폴더 할당 추가
-        if (catalog && folderId) {
-          catalog = {
-            ...catalog,
-            sessions: {
-              ...catalog.sessions,
-              [agentSessionId]: { folderId, displayName: null },
-            },
-          };
-        }
-
-        set({
-          ...getSessionResetState(),
-          catalog,
-          activeSessionKey: agentSessionId,
-          activeSession: null,
-          selectedSessionIds: new Set([agentSessionId]),
-          // 새 세션이 생성된 폴더로 뷰를 이동한다.
-          // folderId가 undefined이면 호출자가 폴더를 지정하지 않은 것이므로 현재 선택을 유지한다.
-          ...(folderId !== undefined
-            ? { selectedFolderId: folderId, viewMode: "folder" as const }
-            : {}),
-        });
-
-        get().setActiveSessionSummary(newSession);
-      },
-
-      // --- New Session 모달 ---
-
-      openNewSessionModal: (source = 'folder') => set({ isNewSessionModalOpen: true, newSessionSource: source }),
-      closeNewSessionModal: () => set({ isNewSessionModalOpen: false }),
-
-      // --- 초기화 ---
-
-      clearTree: () => {
-        set({
-          tree: null,
-          treeVersion: 0,
-          treeChangeInfo: null,
-          lastEventId: 0,
-          pendingNotifications: [],
-          selectedCardId: null,
-          selectedNodeId: null,
-          selectedEventNodeData: null,
-          collapsedNodeIds: new Set<string>(),
-          processingCtx: createProcessingContext(),
-        });
-      },
-
-      // 하위 호환 alias
-      clearCards() {
-        get().clearTree();
-      },
-
-      reset: () => {
-        set({
-          ...initialState,
-          collapsedNodeIds: new Set<string>(),
-          processingCtx: createProcessingContext(),
-        });
-      },
-
-      // --- 접기/펼치기 ---
-
-      toggleNodeCollapse: (nodeId) => {
-        const currentCollapsed = get().collapsedNodeIds;
-        const newCollapsed = new Set(currentCollapsed);
-        if (newCollapsed.has(nodeId)) {
-          newCollapsed.delete(nodeId);
-        } else {
-          newCollapsed.add(nodeId);
-        }
-        set({ collapsedNodeIds: newCollapsed, treeVersion: get().treeVersion + 1, treeChangeInfo: { type: 'collapse-toggle' } });
-      },
-
-      setNodeCollapsed: (nodeId, collapsed) => {
-        const currentCollapsed = get().collapsedNodeIds;
-        const newCollapsed = new Set(currentCollapsed);
-        if (collapsed) {
-          newCollapsed.add(nodeId);
-        } else {
-          newCollapsed.delete(nodeId);
-        }
-        set({ collapsedNodeIds: newCollapsed, treeVersion: get().treeVersion + 1, treeChangeInfo: { type: 'collapse-toggle' } });
-      },
-
-      clearCollapsedNodes: () => {
-        set({ collapsedNodeIds: new Set<string>(), treeVersion: get().treeVersion + 1, treeChangeInfo: { type: 'collapse-toggle' } });
-      },
-
-      // --- 세렌디피티 가용 여부 ---
-
-      setSerendipityAvailable: (serendipityAvailable) => set({ serendipityAvailable }),
-
-      // --- 오른쪽 패널 탭 ---
-
-      setActiveRightTab: (activeRightTab) => set({ activeRightTab }),
-
-      // --- draft 저장/삭제 ---
-
-      setDraft: (key, text) => {
-        // 빈 문자열은 저장하지 않고 삭제 — localStorage 무한 누적 방지
-        if (!text) {
-          get().clearDraft(key);
-          return;
-        }
-        const { drafts } = get();
-        set({ drafts: { ...drafts, [key]: text } });
-      },
-      clearDraft: (key) => {
-        const { drafts } = get();
-        const { [key]: _, ...rest } = drafts;
-        set({ drafts: rest });
-      },
-
-      // --- 검색 포커스 이벤트 ID ---
-
-      setFocusEventId: (focusEventId) => set({ focusEventId }),
-
-      // --- 대시보드 프로필 설정 ---
-
-      setDashboardConfig: (dashboardConfig) => set({ dashboardConfig }),
-
-      // --- input_request 타임아웃 만료 처리 ---
-      // 타임아웃 경과 시 트리 노드의 expired 상태를 갱신
-      expireInputRequest: (nodeId) => {
-        const ctx = get().processingCtx;
-        const node = ctx.nodeMap.get(nodeId);
-        if (node && node.type === "input_request") {
-          (node as InputRequestNodeDef).expired = true;
-          set((state) => ({ treeVersion: state.treeVersion + 1 }));
-        }
-      },
-
-      // --- 카탈로그 ---
-
-      setCatalog: (catalog) => {
-        const prev = get().catalog;
-        const excludeFolders = (catalog.folders ?? []).filter(f => f.settings?.excludeFromFeed).map(f => f.name);
-        console.log(`[🟡 setCatalog] folders=${catalog.folders?.length ?? 0}, sessions=${Object.keys(catalog.sessions ?? {}).length} | excludeFromFeed: [${excludeFolders.join(', ')}]`);
-        if (!prev) {
-          console.log(`[🟡 setCatalog] 최초 catalog 설정`);
-        }
-        set((state) => ({ catalog, catalogVersion: state.catalogVersion + 1 }));
-      },
-
-      moveSessionsToFolder: (sessionIds, folderId) => {
-        if (sessionIds.length === 0) return;
-        const { catalog } = get();
-        if (!catalog) return;
-        set((state) => ({
-          catalog: moveSessionsInCatalog(catalog, sessionIds, folderId),
-          catalogVersion: state.catalogVersion + 1,
-        }));
-      },
-
-      renameSession: (sessionId, displayName) => {
-        const { catalog } = get();
-        if (!catalog || !catalog.sessions[sessionId]) return;
-        set((state) => ({
-          catalog: renameSessionInCatalog(catalog, sessionId, displayName),
-          catalogVersion: state.catalogVersion + 1,
-        }));
-      },
-
-      addFolder: (folder) => {
-        const { catalog } = get();
-        if (!catalog) return;
-        const updated = addFolderToCatalog(catalog, folder);
-        if (updated === catalog) return; // 이미 존재
-        set((state) => ({ catalog: updated, catalogVersion: state.catalogVersion + 1 }));
-      },
-
-      updateFolderName: (folderId, name) => {
-        const { catalog } = get();
-        if (!catalog) return;
-        set((state) => ({
-          catalog: updateFolderNameInCatalog(catalog, folderId, name),
-          catalogVersion: state.catalogVersion + 1,
-        }));
-      },
-
-      updateFolderSettings: (folderId, settings) => {
-        const { catalog } = get();
-        if (!catalog) return;
-        set((state) => ({
-          catalog: updateFolderSettingsInCatalog(catalog, folderId, settings),
-          catalogVersion: state.catalogVersion + 1,
-        }));
-      },
-
-      removeFolder: (folderId) => {
-        const { catalog } = get();
-        if (!catalog) return;
-        set((state) => ({
-          catalog: removeFolderFromCatalog(catalog, folderId),
-          catalogVersion: state.catalogVersion + 1,
-        }));
-      },
-
-      reorderFolders: (orderedFolderIds) => {
-        const { catalog } = get();
-        if (!catalog) return;
-        set((state) => ({
-          catalog: reorderFoldersInCatalog(catalog, orderedFolderIds),
-          catalogVersion: state.catalogVersion + 1,
-        }));
-      },
-
-      setFolderSortMode: (mode) => {
-        set({ folderSortMode: mode });
-      },
-
-      selectFolder: (folderId) => {
-        set({ selectedFolderId: folderId, viewMode: "folder" });
-      },
-
-      clearSelectedFolder: () => set({ selectedFolderId: null, viewMode: "feed" }),
-
-      // --- 뷰 모드 ---
-
-      setViewMode: (mode) => set({ viewMode: mode }),
-
-      selectFeed: () => {
-        set({ viewMode: "feed" });
-        // URL은 useUrlSync의 effect가 viewMode 변경을 감지하여 자동 반영
-      },
-
-      setFeedScrollOffset: (offset) => set({ feedScrollOffset: offset }),
-
-      setActiveTab: (activeTab) => set({ activeTab }),
-
-      clearActiveSession: () => {
-        // selectedFolderId를 유지하면서 세션 관련 상태만 초기화
-        const { selectedFolderId } = get();
-        set({
-          ...getSessionResetState(),
-          activeSessionKey: null,
-          activeSession: null,
-          activeSessionSummary: null,
-          selectedFolderId,
-        });
-      },
-
-      toggleSessionSelection: (id, ctrlKey, shiftKey, folderSessions) => {
-        const state = get();
-        if (!ctrlKey && !shiftKey) {
-          // 일반 클릭: 선택 초기화 + activeSession 설정
-          set({
-            selectedSessionIds: new Set([id]),
-            lastSelectedSessionId: id,
-          });
-          state.setActiveSession(id);
-          return;
-        }
-        if (ctrlKey) {
-          const next = new Set(state.selectedSessionIds);
-          if (next.has(id)) next.delete(id);
-          else next.add(id);
-          set({ selectedSessionIds: next, lastSelectedSessionId: id });
-          return;
-        }
-        if (shiftKey && state.lastSelectedSessionId) {
-          const folder = folderSessions ?? [];
-          const lastIdx = folder.findIndex((s) => s.agentSessionId === state.lastSelectedSessionId);
-          const curIdx = folder.findIndex((s) => s.agentSessionId === id);
-          if (lastIdx >= 0 && curIdx >= 0) {
-            const [from, to] = lastIdx < curIdx ? [lastIdx, curIdx] : [curIdx, lastIdx];
-            const next = new Set(state.selectedSessionIds);
-            for (let i = from; i <= to; i++) next.add(folder[i].agentSessionId);
-            set({ selectedSessionIds: next });
-          }
-        }
-      },
-
-      clearSelection: () => set({ selectedSessionIds: new Set() }),
-
-      setEditingSession: (id) => set({ editingSessionId: id }),
-    }),
+        },
+      };
+    },
     {
       name: "soul-dashboard-storage",
       // 스토리지 모드 + 입력창 draft 영속화 (세션 데이터는 제외)
-      partialize: (state) => ({ storageMode: state.storageMode, drafts: state.drafts, folderSortMode: state.folderSortMode }),
+      partialize: (state) => ({
+        storageMode: state.storageMode,
+        drafts: state.drafts,
+        folderSortMode: state.folderSortMode,
+      }),
     },
   ),
 );
@@ -822,4 +95,3 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
 // === Tree Utility Functions (re-export for backward compat) ===
 
 export { countTreeNodes, countStreamingNodes, findTreeNode } from "./tree-utils";
-
