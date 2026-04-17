@@ -210,6 +210,14 @@ class ResultSSEEvent(BaseModel):
     permission_denials: Optional[List[str]] = None
 
 
+class AwaySummarySSEEvent(BaseModel):
+    """away_summary (recap) 이벤트 — 세션 복귀 시 요약"""
+    type: str = "away_summary"
+    timestamp: float
+    content: str
+    parent_event_id: Optional[str] = None
+
+
 class SubagentStartSSEEvent(BaseModel):
     """서브에이전트 시작 이벤트"""
     type: str = "subagent_start"

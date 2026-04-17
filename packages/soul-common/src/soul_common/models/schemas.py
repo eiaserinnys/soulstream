@@ -42,6 +42,8 @@ class SSEEventType(str, Enum):
     INPUT_REQUEST = "input_request"
     INPUT_REQUEST_EXPIRED = "input_request_expired"
     INPUT_REQUEST_RESPONDED = "input_request_responded"
+    # 세션 복귀 요약
+    AWAY_SUMMARY = "away_summary"
 
 
 class TaskStatus(str, Enum):

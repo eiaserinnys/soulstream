@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock
 from soul_server.claude.agent_runner import MessageState
 from soul_server.claude.message_processor import MessageProcessor
 from soul_server.engine.types import (
+    AwaySummaryEngineEvent,
     ResultEngineEvent,
     TextDeltaEngineEvent,
     ThinkingEngineEvent,
@@ -20,6 +21,8 @@ from soul_server.engine.types import (
 @dataclass
 class MockSystemMessage:
     session_id: Optional[str] = None
+    subtype: Optional[str] = None
+    data: Optional[dict] = None
 
 
 @dataclass
@@ -70,17 +73,47 @@ class MockResultMessage:
 # isinstance 패치: SDK 타입을 Mock 타입으로 매핑
 @pytest.fixture(autouse=True)
 def _patch_sdk_types(monkeypatch):
-    """message_processor 모듈의 SDK 타입 참조를 Mock으로 치환"""
+    """message_processor 모듈의 SDK 타입 참조를 Mock으로 치환
+
+    claude_agent_sdk가 설치되지 않은 환경(SDK_AVAILABLE=False)에서는
+    모듈에 타입 어트리뷰트가 존재하지 않으므로 직접 생성한다.
+    테스트 종료 시 원래 상태로 복원한다.
+    """
     import soul_server.claude.message_processor as mp
 
-    monkeypatch.setattr(mp, "SystemMessage", MockSystemMessage)
-    monkeypatch.setattr(mp, "AssistantMessage", MockAssistantMessage)
-    monkeypatch.setattr(mp, "UserMessage", MockUserMessage)
-    monkeypatch.setattr(mp, "ResultMessage", MockResultMessage)
-    monkeypatch.setattr(mp, "ThinkingBlock", MockThinkingBlock)
-    monkeypatch.setattr(mp, "TextBlock", MockTextBlock)
-    monkeypatch.setattr(mp, "ToolUseBlock", MockToolUseBlock)
-    monkeypatch.setattr(mp, "ToolResultBlock", MockToolResultBlock)
+    sdk_types = {
+        "SystemMessage": MockSystemMessage,
+        "AssistantMessage": MockAssistantMessage,
+        "UserMessage": MockUserMessage,
+        "ResultMessage": MockResultMessage,
+        "ThinkingBlock": MockThinkingBlock,
+        "TextBlock": MockTextBlock,
+        "ToolUseBlock": MockToolUseBlock,
+        "ToolResultBlock": MockToolResultBlock,
+    }
+
+    # SDK 미설치 시 어트리뷰트가 없으므로, 원본 존재 여부를 기록 후 생성
+    originals: dict[str, object] = {}
+    created: list[str] = []
+    for attr, mock_cls in sdk_types.items():
+        if hasattr(mp, attr):
+            originals[attr] = getattr(mp, attr)
+        else:
+            created.append(attr)
+        setattr(mp, attr, mock_cls)
+
+    orig_sdk = getattr(mp, "SDK_AVAILABLE", False)
+    setattr(mp, "SDK_AVAILABLE", True)
+
+    yield
+
+    # 복원
+    for attr in created:
+        if hasattr(mp, attr):
+            delattr(mp, attr)
+    for attr, orig in originals.items():
+        setattr(mp, attr, orig)
+    setattr(mp, "SDK_AVAILABLE", orig_sdk)
 
 
 def _make_processor(**kwargs):
@@ -137,6 +170,82 @@ class TestSystemMessage:
         await proc.process(msg)
 
         assert state.session_id == "sess-err"
+
+
+class TestAwaySummary:
+    """away_summary (recap) 처리 테스트"""
+
+    @pytest.mark.asyncio
+    async def test_away_summary_emits_engine_event(self):
+        """subtype='away_summary'인 SystemMessage가 AwaySummaryEngineEvent를 발행한다"""
+        events = []
+        on_event = AsyncMock(side_effect=lambda e: events.append(e))
+        proc, state = _make_processor(on_event=on_event)
+
+        msg = MockSystemMessage(
+            subtype="away_summary",
+            data={"content": "세션 요약 텍스트"},
+        )
+        await proc.process(msg)
+
+        assert len(events) == 1
+        event = events[0]
+        assert isinstance(event, AwaySummaryEngineEvent)
+        assert event.content == "세션 요약 텍스트"
+
+    @pytest.mark.asyncio
+    async def test_away_summary_does_not_update_session_id(self):
+        """away_summary는 session_id를 추출하지 않는다 (early return)"""
+        on_session = AsyncMock()
+        proc, state = _make_processor(on_session=on_session)
+
+        msg = MockSystemMessage(
+            subtype="away_summary",
+            data={"content": "recap text"},
+        )
+        await proc.process(msg)
+
+        assert state.session_id is None
+        on_session.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_away_summary_empty_content_no_event(self):
+        """content가 비어 있으면 이벤트를 발행하지 않는다"""
+        on_event = AsyncMock()
+        proc, _ = _make_processor(on_event=on_event)
+
+        msg = MockSystemMessage(
+            subtype="away_summary",
+            data={"content": ""},
+        )
+        await proc.process(msg)
+
+        on_event.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_away_summary_no_data_no_event(self):
+        """data가 None이면 이벤트를 발행하지 않는다"""
+        on_event = AsyncMock()
+        proc, _ = _make_processor(on_event=on_event)
+
+        msg = MockSystemMessage(subtype="away_summary", data=None)
+        await proc.process(msg)
+
+        on_event.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_away_summary_callback_error_handled(self):
+        """on_event 콜백 예외가 프로세서를 중단시키지 않는다"""
+        on_event = AsyncMock(side_effect=RuntimeError("callback failed"))
+        proc, state = _make_processor(on_event=on_event)
+
+        msg = MockSystemMessage(
+            subtype="away_summary",
+            data={"content": "recap"},
+        )
+        # 예외 없이 처리 완료
+        await proc.process(msg)
+        assert state.msg_count == 1
 
 
 class TestThinkingBlock:

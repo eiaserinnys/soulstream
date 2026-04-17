@@ -180,6 +180,9 @@ class SessionDBBase(ABC):
     @abstractmethod
     async def update_last_message(self, session_id: str, last_message: dict) -> None: ...
 
+    @abstractmethod
+    async def update_away_summary(self, session_id: str, summary: str) -> None: ...
+
     # ── 읽음 상태 관리 ──
 
     @abstractmethod

@@ -42,6 +42,9 @@ CREATE TABLE IF NOT EXISTS sessions (
 -- 기존 테이블에 caller_session_id 컬럼 추가 (멱등)
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS caller_session_id TEXT;
 
+-- away_summary 컬럼 추가 (멱등)
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS away_summary TEXT;
+
 CREATE TABLE IF NOT EXISTS events (
     session_id      TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
     id              INTEGER NOT NULL,
@@ -717,18 +720,19 @@ CREATE OR REPLACE FUNCTION session_list_summary(
     p_folder_id    TEXT DEFAULT NULL,
     p_node_id      TEXT DEFAULT NULL
 ) RETURNS TABLE(
-    session_id   TEXT,
-    display_name TEXT,
-    status       TEXT,
-    session_type TEXT,
-    created_at   TIMESTAMPTZ,
-    updated_at   TIMESTAMPTZ,
-    event_count  BIGINT,
-    total_count  BIGINT
+    session_id    TEXT,
+    display_name  TEXT,
+    status        TEXT,
+    session_type  TEXT,
+    created_at    TIMESTAMPTZ,
+    updated_at    TIMESTAMPTZ,
+    event_count   BIGINT,
+    away_summary  TEXT,
+    total_count   BIGINT
 ) LANGUAGE sql STABLE AS $$
     WITH filtered AS (
         SELECT s.session_id, s.display_name, s.status, s.session_type,
-               s.created_at, s.updated_at,
+               s.created_at, s.updated_at, s.away_summary,
                (SELECT COUNT(*) FROM events e WHERE e.session_id = s.session_id) AS event_count
         FROM sessions s
         WHERE (p_session_type IS NULL OR s.session_type = p_session_type)

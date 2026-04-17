@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional
 
 from soul_server.engine.types import (
     AssistantErrorEngineEvent,
+    AwaySummaryEngineEvent,
     EventCallback,
     RateLimitEngineEvent,
     ResultEngineEvent,
@@ -88,17 +89,30 @@ class MessageProcessor:
             self._handle_stream_event(message)
 
     async def _handle_system_message(self, message: Any) -> None:
-        """SystemMessage 처리 — 세션 ID 추출
+        """SystemMessage 처리 — away_summary 감지 + 세션 ID 추출
 
         SDK의 SystemMessage 계층:
         - SystemMessage(subtype='init', data={session_id: ...}): 메인 세션 시작.
           session_id는 data 딕셔너리 안에만 있고 직접 속성이 아님.
+        - SystemMessage(subtype='away_summary', data={content: ...}): 세션 복귀 요약.
         - TaskStartedMessage(SystemMessage 서브클래스): 서브에이전트 태스크 시작.
           session_id와 tool_use_id가 직접 속성으로 있음.
         """
+        # away_summary 처리: session_id 추출 이전에 분기
+        subtype = getattr(message, "subtype", None)
+        data = getattr(message, "data", None) or {}
+        if subtype == "away_summary":
+            content = data.get("content", "") if isinstance(data, dict) else ""
+            if content and self.on_event:
+                try:
+                    await self.on_event(AwaySummaryEngineEvent(content=content))
+                except Exception as e:
+                    logger.warning(f"이벤트 콜백 오류 (AWAY_SUMMARY): {e}")
+            return
+
         # 메인 세션: data['session_id'], 서브에이전트 태스크: 직접 속성 session_id
         session_id = getattr(message, "session_id", None) or (
-            message.data.get("session_id") if getattr(message, "data", None) else None
+            data.get("session_id") if data else None
         )
         if not session_id:
             return

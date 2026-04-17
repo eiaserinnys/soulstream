@@ -186,6 +186,25 @@ class ResultEngineEvent(EngineEvent):
 
 
 @dataclass
+class AwaySummaryEngineEvent(EngineEvent):
+    """away_summary (recap) 이벤트
+
+    Claude Code CLI가 세션 복귀 시 발행하는 요약 메시지.
+    SDK의 SystemMessage(subtype="away_summary")에서 변환된다.
+    """
+
+    content: str = ""
+
+    def to_sse(self) -> list[BaseModel]:
+        from soul_server.models.schemas import AwaySummarySSEEvent
+        return [AwaySummarySSEEvent(
+            content=self.content,
+            parent_event_id=self.parent_event_id,
+            timestamp=self.timestamp,
+        )]
+
+
+@dataclass
 class SubagentStartEngineEvent(EngineEvent):
     """서브에이전트 시작 이벤트"""
 

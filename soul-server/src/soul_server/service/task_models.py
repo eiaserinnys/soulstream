@@ -266,9 +266,10 @@ class Task:
 # - error: ErrorEvent.message
 # intervention_sent는 별도 처리 (_update_and_broadcast_last_message L291~292)
 PREVIEW_FIELD_MAP: dict[str, str] = {
-    "thinking":   "thinking",
-    "text_delta": "text",
-    "result":     "output",
-    "complete":   "result",
-    "error":      "error",
+    "thinking":      "thinking",
+    "text_delta":    "text",
+    "result":        "output",
+    "complete":      "result",
+    "error":         "error",
+    "away_summary":  "content",
 }

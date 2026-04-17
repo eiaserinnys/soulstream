@@ -387,6 +387,13 @@ class PostgresSessionDB(SessionDBBase):
             session_id, json.dumps(last_message, ensure_ascii=False), now,
         )
 
+    async def update_away_summary(self, session_id: str, summary: str) -> None:
+        now = _utc_now()
+        await self._pool.execute(
+            "UPDATE sessions SET away_summary = $1, updated_at = $2 WHERE session_id = $3",
+            summary, now, session_id,
+        )
+
     # --- 읽음 상태 관리 ---
 
     async def update_last_read_event_id(self, session_id: str, event_id: int) -> bool:

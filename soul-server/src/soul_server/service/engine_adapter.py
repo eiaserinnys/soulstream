@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from soul_server.cogito.brief_composer import BriefComposer
     from soul_server.service.runner_pool import RunnerPool
 from soul_server.models import (
+    AwaySummarySSEEvent,
     CompactEvent,
     CompleteEvent,
     ContextUsageEvent,
@@ -47,6 +48,7 @@ SSEEvent = Union[
     ErrorEvent,
     CredentialAlertEvent,
     InputRequestExpiredSSEEvent,
+    AwaySummarySSEEvent,
 ]
 
 DEFAULT_DISALLOWED_TOOLS = ["NotebookEdit", "TodoWrite"]

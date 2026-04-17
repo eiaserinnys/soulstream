@@ -406,6 +406,15 @@ class TaskExecutor:
                         exc_info=True,
                     )
 
+            # away_summary → sessions.away_summary에 저장
+            if event.type == "away_summary" and self._db is not None:
+                try:
+                    await self._db.update_away_summary(
+                        session_id, event_dict.get("content", "")
+                    )
+                except Exception:
+                    logger.debug("away_summary DB update failed")
+
             # 완료/오류 추적 (finalize는 루프 밖에서)
             if event.type == "complete":
                 last_result = event.result

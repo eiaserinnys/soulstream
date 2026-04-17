@@ -175,6 +175,14 @@ class SqliteSessionDB(SessionDBBase):
             # 컬럼이 이미 존재하면 "duplicate column name" 오류 → 무시
             pass
 
+        try:
+            await self._conn.execute(
+                "ALTER TABLE sessions ADD COLUMN away_summary TEXT"
+            )
+            await self._conn.commit()
+        except Exception:
+            pass
+
     async def close(self) -> None:
         if self._conn:
             await self._conn.close()
@@ -459,6 +467,14 @@ class SqliteSessionDB(SessionDBBase):
         await self._conn.execute(
             "UPDATE sessions SET last_message = ?, updated_at = ? WHERE session_id = ?",
             (msg_json, now, session_id),
+        )
+        await self._conn.commit()
+
+    async def update_away_summary(self, session_id: str, summary: str) -> None:
+        now = _utc_now()
+        await self._conn.execute(
+            "UPDATE sessions SET away_summary = ?, updated_at = ? WHERE session_id = ?",
+            (summary, now, session_id),
         )
         await self._conn.commit()
 
@@ -851,7 +867,7 @@ class SqliteSessionDB(SessionDBBase):
         summary_cols = (
             "session_id, display_name, session_type, status, folder_id,"
             " node_id, last_message, last_event_id, last_read_event_id,"
-            " created_at, updated_at"
+            " away_summary, created_at, updated_at"
         )
         data_sql = (
             f"SELECT {summary_cols} FROM sessions{where}"
@@ -918,7 +934,7 @@ class SqliteSessionDB(SessionDBBase):
         summary_cols = (
             "session_id, display_name, session_type, status, folder_id,"
             " node_id, last_message, last_event_id, last_read_event_id,"
-            " created_at, updated_at"
+            " away_summary, created_at, updated_at"
         )
         data_sql = (
             f"SELECT {summary_cols} FROM sessions{where}"
