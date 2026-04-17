@@ -53,12 +53,37 @@ CREATE TABLE IF NOT EXISTS events (
     PRIMARY KEY (session_id, id)
 );
 
+-- 뷰포트 가상화 지원: parent_event_id 컬럼 승격 (payload → 정본 컬럼)
+ALTER TABLE events ADD COLUMN IF NOT EXISTS parent_event_id INTEGER;
+
+-- FK 제약은 IF NOT EXISTS를 지원하지 않으므로 pg_constraint 확인 후 추가 (멱등)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'events_parent_fk'
+    ) THEN
+        ALTER TABLE events
+            ADD CONSTRAINT events_parent_fk
+            FOREIGN KEY (session_id, parent_event_id)
+            REFERENCES events(session_id, id) ON DELETE CASCADE;
+    END IF;
+END$$;
+
+-- 뷰포트 가상화 지원: subtree_height — DFS로 계산된 자기 포함 서브트리 크기
+ALTER TABLE events ADD COLUMN IF NOT EXISTS subtree_height INTEGER NOT NULL DEFAULT 1;
+
 -- ============================================================
 -- 2. 인덱스
 -- ============================================================
 
 CREATE INDEX IF NOT EXISTS idx_events_session_id_id ON events (session_id, id);
 CREATE INDEX IF NOT EXISTS idx_events_search_vector ON events USING GIN (search_vector);
+
+-- 뷰포트 가상화 지원: parent_event_id 기반 자식 조회 인덱스
+CREATE INDEX IF NOT EXISTS idx_events_parent ON events (session_id, parent_event_id);
+
+-- /messages 페이지네이션용 복합 인덱스 (created_at DESC + id DESC 커서 지원)
+CREATE INDEX IF NOT EXISTS idx_events_created_at ON events (session_id, created_at DESC, id DESC);
 
 -- ============================================================
 -- 3. 트리거 (search_vector 자동 갱신)

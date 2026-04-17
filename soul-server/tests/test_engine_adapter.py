@@ -1013,7 +1013,7 @@ class TestParentToolUseIdPropagation:
                 await on_event(ThinkingEngineEvent(
                     thinking="서브에이전트 내 사고",
                     signature="sig",
-                    parent_event_id="toolu_parent_task_123",
+                    parent_event_id=123,
                 ))
             return EngineResult(success=True, output="done")
 
@@ -1026,7 +1026,7 @@ class TestParentToolUseIdPropagation:
 
         thinking_events = [e for e in events if isinstance(e, ThinkingSSEEvent)]
         assert len(thinking_events) == 1
-        assert thinking_events[0].parent_event_id == "toolu_parent_task_123"
+        assert thinking_events[0].parent_event_id == 123
 
     async def test_text_start_event_with_parent_event_id(self):
         """TextDeltaEngineEvent → TextStartSSEEvent에 parent_event_id가 전파됨"""
@@ -1041,7 +1041,7 @@ class TestParentToolUseIdPropagation:
             if on_event:
                 await on_event(TextDeltaEngineEvent(
                     text="서브에이전트 내 응답",
-                    parent_event_id="toolu_parent_task_456",
+                    parent_event_id=456,
                 ))
             return EngineResult(success=True, output="done")
 
@@ -1054,7 +1054,7 @@ class TestParentToolUseIdPropagation:
 
         start_events = [e for e in events if isinstance(e, TextStartSSEEvent)]
         assert len(start_events) == 1
-        assert start_events[0].parent_event_id == "toolu_parent_task_456"
+        assert start_events[0].parent_event_id == 456
 
     async def test_tool_start_event_with_parent_event_id(self):
         """ToolStartEngineEvent에 parent_event_id가 전파됨"""
@@ -1070,7 +1070,7 @@ class TestParentToolUseIdPropagation:
                 await on_event(ToolStartEngineEvent(
                     tool_name="Read",
                     tool_input={"file_path": "/test"},
-                    parent_event_id="toolu_parent_task_789",
+                    parent_event_id=789,
                 ))
             return EngineResult(success=True, output="done")
 
@@ -1083,7 +1083,7 @@ class TestParentToolUseIdPropagation:
 
         tool_events = [e for e in events if isinstance(e, ToolStartSSEEvent)]
         assert len(tool_events) == 1
-        assert tool_events[0].parent_event_id == "toolu_parent_task_789"
+        assert tool_events[0].parent_event_id == 789
 
     async def test_tool_result_event_with_parent_event_id(self):
         """ToolResultEngineEvent에 parent_event_id가 전파됨"""
@@ -1100,7 +1100,7 @@ class TestParentToolUseIdPropagation:
                     tool_name="Read",
                     result="content",
                     is_error=False,
-                    parent_event_id="toolu_parent_task_abc",
+                    parent_event_id=1001,
                 ))
             return EngineResult(success=True, output="done")
 
@@ -1113,7 +1113,7 @@ class TestParentToolUseIdPropagation:
 
         result_events = [e for e in events if isinstance(e, ToolResultSSEEvent)]
         assert len(result_events) == 1
-        assert result_events[0].parent_event_id == "toolu_parent_task_abc"
+        assert result_events[0].parent_event_id == 1001
 
     async def test_subagent_start_event_with_parent_event_id(self):
         """SubagentStartEngineEvent에 parent_event_id가 전파됨"""
@@ -1129,7 +1129,7 @@ class TestParentToolUseIdPropagation:
                 await on_event(SubagentStartEngineEvent(
                     agent_id="agent-001",
                     agent_type="explore",
-                    parent_event_id="toolu_task_tool_xyz",
+                    parent_event_id=2002,
                 ))
             return EngineResult(success=True, output="done")
 
@@ -1142,7 +1142,7 @@ class TestParentToolUseIdPropagation:
 
         subagent_events = [e for e in events if isinstance(e, SubagentStartSSEEvent)]
         assert len(subagent_events) == 1
-        assert subagent_events[0].parent_event_id == "toolu_task_tool_xyz"
+        assert subagent_events[0].parent_event_id == 2002
 
     async def test_result_event_with_parent_event_id(self):
         """ResultEngineEvent에 parent_event_id가 전파됨"""
@@ -1159,7 +1159,7 @@ class TestParentToolUseIdPropagation:
                     success=True,
                     output="완료",
                     error=None,
-                    parent_event_id="parent-task-final",
+                    parent_event_id=3003,
                 ))
             return EngineResult(success=True, output="완료")
 
@@ -1172,7 +1172,7 @@ class TestParentToolUseIdPropagation:
 
         result_events = [e for e in events if isinstance(e, ResultSSEEvent)]
         assert len(result_events) == 1
-        assert result_events[0].parent_event_id == "parent-task-final"
+        assert result_events[0].parent_event_id == 3003
 
     async def test_events_without_parent_event_id(self):
         """parent_event_id 없는 이벤트도 정상 처리"""

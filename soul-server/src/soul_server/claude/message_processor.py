@@ -123,9 +123,12 @@ class MessageProcessor:
                 logger.warning(f"세션 ID 콜백 오류: {e}")
 
     async def _handle_assistant_message(self, message: Any) -> None:
-        """AssistantMessage 처리 — error 필드 감지 및 블록 순회"""
-        msg_parent = getattr(message, "parent_tool_use_id", None)
+        """AssistantMessage 처리 — error 필드 감지 및 블록 순회
 
+        SDK의 parent_tool_use_id는 문자열 UUID이며 events.id(INTEGER PK)와 호환되지
+        않으므로 parent_event_id로 사용하지 않는다. task_executor가 현재 user_message
+        event_id(int)로 parent_event_id를 채운다.
+        """
         # error 필드 처리: authentication_failed, billing_error, rate_limit 등
         error = getattr(message, "error", None)
         if error:
@@ -139,7 +142,7 @@ class MessageProcessor:
                             error_type=error,
                             model=getattr(message, "model", ""),
                             message_id=getattr(message, "message_id", None),
-                            parent_event_id=msg_parent,
+                            parent_event_id=None,
                         )
                     )
                 except Exception as e:
@@ -148,7 +151,7 @@ class MessageProcessor:
         # content 블록 처리
         if hasattr(message, "content"):
             for block in message.content:
-                await self._process_block(block, msg_parent)
+                await self._process_block(block, None)
 
     async def _process_block(self, block: Any, msg_parent: Optional[str]) -> None:
         """단일 블록 처리"""
@@ -328,14 +331,15 @@ class MessageProcessor:
         ToolResultBlock으로 반환한다.
         AssistantMessage.content에 ToolResultBlock이 포함되는 경우도 대비하여
         양쪽 모두 처리하되, emitted_tool_result_ids로 중복 발행을 방지한다.
-        """
-        msg_parent = getattr(message, "parent_tool_use_id", None)
 
+        SDK의 parent_tool_use_id는 문자열 UUID이며 events.id(INTEGER PK)와 호환되지
+        않으므로 parent_event_id로 사용하지 않는다. task_executor가 채운다.
+        """
         if hasattr(message, "content") and isinstance(message.content, list):
             for block in message.content:
                 if isinstance(block, ToolResultBlock):
                     await self._handle_tool_result(
-                        block, msg_parent, source="UserMessage"
+                        block, None, source="UserMessage"
                     )
 
     async def _handle_result_message(self, message: Any) -> None:

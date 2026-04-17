@@ -139,7 +139,7 @@ class CompleteEvent(BaseModel):
     result: str
     attachments: List[str] = Field(default_factory=list)
     claude_session_id: Optional[str] = Field(None, description="Claude Code 세션 ID (resume용)")
-    parent_event_id: Optional[str] = Field(None, description="부모 이벤트 ID")
+    parent_event_id: Optional[int] = Field(None, description="부모 이벤트 ID")
 
 
 class ErrorEvent(BaseModel):
@@ -147,7 +147,7 @@ class ErrorEvent(BaseModel):
     type: str = "error"
     message: str
     error_code: Optional[str] = Field(None, description="에러 코드")
-    parent_event_id: Optional[str] = Field(None, description="부모 이벤트 ID")
+    parent_event_id: Optional[int] = Field(None, description="부모 이벤트 ID")
 
 
 # === Session List API Models ===

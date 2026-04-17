@@ -108,10 +108,13 @@ def build_hooks(
         agent_id = hook_input.get("agent_id", "")
         agent_type = hook_input.get("agent_type", "")
 
+        # parent_event_id는 task_executor가 현재 user_message의 event_id(int)로 채운다.
+        # tool_use_id는 SDK의 문자열 UUID이며 events.id(INTEGER PK)와 호환되지 않으므로
+        # 여기서는 None으로 두고, logger에서만 추적 용도로 남긴다.
         event_queue.append(
             SubagentStartEngineEvent(
                 agent_type=agent_type,
-                parent_event_id=tool_use_id or "",
+                parent_event_id=None,
                 agent_id=agent_id,
             )
         )
@@ -133,10 +136,13 @@ def build_hooks(
     ) -> dict:
         agent_id = hook_input.get("agent_id", "")
 
+        # parent_event_id는 task_executor가 현재 user_message의 event_id(int)로 채운다.
+        # tool_use_id는 SDK의 문자열 UUID이며 events.id(INTEGER PK)와 호환되지 않으므로
+        # 여기서는 None으로 두고, logger에서만 추적 용도로 남긴다.
         event_queue.append(
             SubagentStopEngineEvent(
                 agent_id=agent_id,
-                parent_event_id=tool_use_id or "",
+                parent_event_id=None,
             )
         )
 

@@ -75,7 +75,7 @@ class DebugEvent(BaseModel):
     type: str = "debug"
     message: str = Field(..., description="디버그 메시지")
     timestamp: float = 0.0
-    parent_event_id: Optional[str] = None
+    parent_event_id: Optional[int] = None
 
 
 class ContextItem(BaseModel):
@@ -148,14 +148,14 @@ class ThinkingSSEEvent(BaseModel):
     timestamp: float
     thinking: str
     signature: str = ""
-    parent_event_id: Optional[str] = None
+    parent_event_id: Optional[int] = None
 
 
 class TextStartSSEEvent(BaseModel):
     """텍스트 블록 시작 이벤트"""
     type: str = "text_start"
     timestamp: float
-    parent_event_id: Optional[str] = None
+    parent_event_id: Optional[int] = None
 
 
 class TextDeltaSSEEvent(BaseModel):
@@ -163,14 +163,14 @@ class TextDeltaSSEEvent(BaseModel):
     type: str = "text_delta"
     timestamp: float
     text: str
-    parent_event_id: Optional[str] = None
+    parent_event_id: Optional[int] = None
 
 
 class TextEndSSEEvent(BaseModel):
     """텍스트 블록 완료 이벤트"""
     type: str = "text_end"
     timestamp: float
-    parent_event_id: Optional[str] = None
+    parent_event_id: Optional[int] = None
 
 
 class ToolStartSSEEvent(BaseModel):
@@ -180,7 +180,7 @@ class ToolStartSSEEvent(BaseModel):
     tool_name: str
     tool_input: dict = Field(default_factory=dict)
     tool_use_id: Optional[str] = None
-    parent_event_id: Optional[str] = None
+    parent_event_id: Optional[int] = None
 
 
 class ToolResultSSEEvent(BaseModel):
@@ -191,7 +191,7 @@ class ToolResultSSEEvent(BaseModel):
     result: str
     is_error: bool = False
     tool_use_id: Optional[str] = None
-    parent_event_id: Optional[str] = None
+    parent_event_id: Optional[int] = None
 
 
 class ResultSSEEvent(BaseModel):
@@ -203,7 +203,7 @@ class ResultSSEEvent(BaseModel):
     error: Optional[str] = None
     usage: Optional[dict] = None
     total_cost_usd: Optional[float] = None
-    parent_event_id: Optional[str] = None
+    parent_event_id: Optional[int] = None
     stop_reason: Optional[str] = None
     errors: Optional[List[str]] = None
     model_usage: Optional[dict] = None
@@ -216,7 +216,7 @@ class SubagentStartSSEEvent(BaseModel):
     timestamp: float
     agent_id: str
     agent_type: str
-    parent_event_id: Optional[str] = None
+    parent_event_id: Optional[int] = None
 
 
 class SubagentStopSSEEvent(BaseModel):
@@ -224,7 +224,7 @@ class SubagentStopSSEEvent(BaseModel):
     type: str = "subagent_stop"
     timestamp: float
     agent_id: str
-    parent_event_id: Optional[str] = None
+    parent_event_id: Optional[int] = None
 
 
 class InputRequestQuestion(BaseModel):
@@ -242,7 +242,7 @@ class InputRequestSSEEvent(BaseModel):
     request_id: str
     tool_use_id: str = ""
     questions: List[InputRequestQuestion]
-    parent_event_id: Optional[str] = None
+    parent_event_id: Optional[int] = None
     started_at: float
     timeout_sec: float
 
@@ -251,7 +251,7 @@ class InputRequestExpiredSSEEvent(BaseModel):
     """사용자 입력 요청 만료 이벤트"""
     type: str = "input_request_expired"
     request_id: str
-    parent_event_id: Optional[str] = None
+    parent_event_id: Optional[int] = None
     timestamp: float
 
 
@@ -259,7 +259,7 @@ class InputRequestRespondedSSEEvent(BaseModel):
     """사용자 입력 요청 응답 완료 이벤트"""
     type: str = "input_request_responded"
     request_id: str
-    parent_event_id: Optional[str] = None
+    parent_event_id: Optional[int] = None
     timestamp: float
 
 
@@ -270,7 +270,7 @@ class AssistantErrorSSEEvent(BaseModel):
     error_type: str = Field(..., description="에러 타입: authentication_failed, billing_error, rate_limit 등")
     model: str = ""
     message_id: Optional[str] = None
-    parent_event_id: Optional[str] = None
+    parent_event_id: Optional[int] = None
 
 
 class CredentialAlertEvent(BaseModel):
@@ -281,4 +281,4 @@ class CredentialAlertEvent(BaseModel):
     status: Optional[str] = None
     resets_at: Optional[str] = None
     timestamp: float = 0.0
-    parent_event_id: Optional[str] = None
+    parent_event_id: Optional[int] = None

@@ -247,14 +247,14 @@ class TaskExecutor:
         self,
         task: Task,
         ctx: _PreparedContext,
-    ) -> Optional[str]:
+    ) -> Optional[int]:
         """system_message와 user_message를 영속화하고 브로드캐스트한다.
 
         Returns:
-            current_user_request_id: user_message의 event_id (parent_event_id 채움용)
+            current_user_request_id: user_message의 event_id (parent_event_id 채움용, int)
         """
         session_id = task.agent_session_id
-        current_user_request_id: Optional[str] = None
+        current_user_request_id: Optional[int] = None
 
         # system_message 기록
         if self._db is not None and ctx.effective_system_prompt:
@@ -284,7 +284,7 @@ class TaskExecutor:
                     user_msg_event.update(task.caller_agent_info)
                 event_id = await self._persist_event(session_id, user_msg_event)
                 user_msg_event["_event_id"] = event_id
-                current_user_request_id = str(event_id)
+                current_user_request_id = event_id  # int 유지 (parent_event_id 컬럼이 INTEGER)
                 if event_id is not None:
                     task.last_event_id = event_id
                 await self._listener_manager.broadcast(session_id, user_msg_event)
@@ -459,7 +459,7 @@ class TaskExecutor:
                                 "context": [intervention_soulstream],
                             }
                             ev_id = await self._persist_event(session_id, intervention_msg)
-                            request_id_ref[0] = str(ev_id)
+                            request_id_ref[0] = ev_id  # int 유지 (parent_event_id 컬럼이 INTEGER)
                             event["_event_id"] = ev_id
                             if ev_id is not None:
                                 task.last_event_id = ev_id

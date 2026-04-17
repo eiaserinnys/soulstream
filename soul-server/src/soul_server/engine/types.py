@@ -61,7 +61,7 @@ class EngineEvent:
     """
 
     timestamp: float = field(default_factory=time.time)
-    parent_event_id: Optional[str] = None
+    parent_event_id: Optional[int] = None
     agent_id: Optional[str] = None
 
     def to_sse(self) -> list[BaseModel]:

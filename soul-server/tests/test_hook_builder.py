@@ -132,12 +132,14 @@ class TestSubagentStartHook:
         assert isinstance(event, SubagentStartEngineEvent)
         assert event.agent_id == "agent-1"
         assert event.agent_type == "task"
-        assert event.parent_event_id == "toolu-y"
+        # parent_event_id는 tool_use_id(SDK 문자열 UUID)와 호환되지 않으므로 None으로 둔다.
+        # task_executor가 현재 user_message event_id(int)로 채운다.
+        assert event.parent_event_id is None
         assert result == {}
 
     @pytest.mark.asyncio
-    async def test_parent_event_id_from_tool_use_id(self):
-        """parent_event_id는 SDK가 전달한 tool_use_id를 사용한다"""
+    async def test_parent_event_id_is_none_regardless_of_tool_use_id(self):
+        """parent_event_id는 항상 None — task_executor가 현재 user_message event_id로 채움"""
         event_queue: deque[EngineEvent] = deque()
         hooks = build_hooks(compact_events=None, event_queue=event_queue)
 
@@ -148,11 +150,11 @@ class TestSubagentStartHook:
             MagicMock(),
         )
 
-        assert event_queue[0].parent_event_id == "toolu-z"
+        assert event_queue[0].parent_event_id is None
 
     @pytest.mark.asyncio
-    async def test_parent_event_id_empty_when_no_tool_use_id(self):
-        """tool_use_id가 None이면 parent_event_id는 빈 문자열"""
+    async def test_parent_event_id_none_when_no_tool_use_id(self):
+        """tool_use_id가 None이어도 parent_event_id는 None — 항상 task_executor가 채움"""
         event_queue: deque[EngineEvent] = deque()
         hooks = build_hooks(compact_events=None, event_queue=event_queue)
 
@@ -163,7 +165,7 @@ class TestSubagentStartHook:
             MagicMock(),
         )
 
-        assert event_queue[0].parent_event_id == ""
+        assert event_queue[0].parent_event_id is None
 
     @pytest.mark.asyncio
     async def test_default_agent_fields(self):
@@ -197,7 +199,9 @@ class TestSubagentStopHook:
         event = event_queue[0]
         assert isinstance(event, SubagentStopEngineEvent)
         assert event.agent_id == "agent-1"
-        assert event.parent_event_id == "toolu-w"
+        # parent_event_id는 tool_use_id(SDK 문자열 UUID)와 호환되지 않으므로 None으로 둔다.
+        # task_executor가 현재 user_message event_id(int)로 채운다.
+        assert event.parent_event_id is None
         assert result == {}
 
     @pytest.mark.asyncio

@@ -160,7 +160,10 @@ class TestThinkingBlock:
         assert event.signature == "sig-1"
 
     @pytest.mark.asyncio
-    async def test_thinking_event_parent_tool_use_id(self):
+    async def test_thinking_event_parent_event_id_is_none(self):
+        """SDK의 parent_tool_use_id는 문자열 UUID이며 INTEGER event_id와 호환되지 않는다.
+        message_processor는 parent_event_id=None을 발행하고, task_executor가 채운다.
+        """
         events = []
         on_event = AsyncMock(side_effect=lambda e: events.append(e))
         proc, _ = _make_processor(on_event=on_event)
@@ -171,7 +174,7 @@ class TestThinkingBlock:
         )
         await proc.process(msg)
 
-        assert events[0].parent_event_id == "parent-1"
+        assert events[0].parent_event_id is None
 
     @pytest.mark.asyncio
     async def test_empty_thinking_no_event(self):
@@ -250,7 +253,10 @@ class TestTextBlock:
         assert state.current_text == "final text"
 
     @pytest.mark.asyncio
-    async def test_text_parent_tool_use_id(self):
+    async def test_text_parent_event_id_is_none(self):
+        """SDK의 parent_tool_use_id는 문자열 UUID이며 INTEGER event_id와 호환되지 않는다.
+        message_processor는 parent_event_id=None을 발행한다.
+        """
         events = []
         on_event = AsyncMock(side_effect=lambda e: events.append(e))
         proc, _ = _make_processor(on_event=on_event)
@@ -261,7 +267,7 @@ class TestTextBlock:
         )
         await proc.process(msg)
 
-        assert events[0].parent_event_id == "parent-2"
+        assert events[0].parent_event_id is None
 
 
 class TestToolUseBlock:
@@ -423,7 +429,8 @@ class TestUserMessage:
         event = events[0]
         assert isinstance(event, ToolResultEngineEvent)
         assert event.tool_name == "Write"
-        assert event.parent_event_id == "parent-u"
+        # SDK의 parent_tool_use_id는 문자열 UUID이며 INTEGER event_id와 호환되지 않음.
+        assert event.parent_event_id is None
 
     @pytest.mark.asyncio
     async def test_user_message_no_last_msg_parent_attribute(self):

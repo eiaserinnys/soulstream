@@ -29,7 +29,7 @@ class MockEvent:
     text: Optional[str] = None
     user: Optional[str] = None
     is_error: bool = False
-    parent_event_id: Optional[str] = None
+    parent_event_id: Optional[int] = None
     _extra: dict = field(default_factory=dict)
 
     def model_dump(self):

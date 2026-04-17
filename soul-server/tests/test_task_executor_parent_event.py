@@ -192,9 +192,9 @@ class TestParentEventIdFilling:
         assert len(complete_broadcasts) == 1
         _, complete_dict = complete_broadcasts[0]
 
-        # parent_event_id가 user_message의 event_id(문자열)로 채워져야 함
+        # parent_event_id가 user_message의 event_id(int)로 채워져야 함
         assert complete_dict["parent_event_id"] is not None
-        assert complete_dict["parent_event_id"] == "1"  # EventStore 첫 번째 이벤트 ID
+        assert complete_dict["parent_event_id"] == 1  # EventStore 첫 번째 이벤트 ID (int)
 
     @pytest.mark.asyncio
     async def test_error_event_gets_user_request_id(self):
@@ -218,7 +218,7 @@ class TestParentEventIdFilling:
         ]
         assert len(error_broadcasts) == 1
         _, error_dict = error_broadcasts[0]
-        assert error_dict["parent_event_id"] == "1"
+        assert error_dict["parent_event_id"] == 1
 
     @pytest.mark.asyncio
     async def test_subagent_event_not_overwritten(self):
@@ -227,11 +227,11 @@ class TestParentEventIdFilling:
         task = _make_task()
         tasks = {task.agent_session_id: task}
 
-        # 서브에이전트 이벤트: parent_event_id가 이미 toolu_AAA
+        # 서브에이전트 이벤트: parent_event_id가 이미 특정 int 값(999)
         complete_event = CompleteEvent(
             result="subagent done",
             claude_session_id="claude-sub",
-            parent_event_id="toolu_AAA",
+            parent_event_id=999,
         )
         runner = FakeClaudeRunner(events=[complete_event])
 
@@ -244,7 +244,7 @@ class TestParentEventIdFilling:
         ]
         assert len(complete_broadcasts) == 1
         _, complete_dict = complete_broadcasts[0]
-        assert complete_dict["parent_event_id"] == "toolu_AAA"
+        assert complete_dict["parent_event_id"] == 999
 
     @pytest.mark.asyncio
     async def test_meta_events_have_no_parent_event_id(self):
@@ -311,11 +311,11 @@ class TestInterventionUpdatesUserRequestId:
         first_parent = complete_broadcasts[0][1]["parent_event_id"]
         second_parent = complete_broadcasts[1][1]["parent_event_id"]
 
-        # 첫 번째는 최초 user_message의 ID (1)
-        assert first_parent == "1"
+        # 첫 번째는 최초 user_message의 ID (1, int)
+        assert first_parent == 1
         # 두 번째는 intervention user_message의 ID (intervention은 2번째 저장 이벤트)
         # EventStore ID: 1=user_message, 2=first_complete, 3=intervention_user_message
-        # → second_complete의 parent_event_id = "3"
+        # → second_complete의 parent_event_id = 3 (int)
         assert second_parent != first_parent
         assert second_parent is not None
 
@@ -450,8 +450,8 @@ class TestExceptionPathParentEventId:
         assert len(error_broadcasts) == 1
         _, error_dict = error_broadcasts[0]
         assert "parent_event_id" in error_dict
-        # user_message가 기록된 후 예외가 발생하므로 parent_event_id = "1"
-        assert error_dict["parent_event_id"] == "1"
+        # user_message가 기록된 후 예외가 발생하므로 parent_event_id = 1 (int)
+        assert error_dict["parent_event_id"] == 1
 
 
 class TestJSONLPersistence:
@@ -488,7 +488,7 @@ class TestJSONLPersistence:
         ]
         assert len(complete_record) == 1
         complete_ev = json.loads(complete_record[0]["payload"])
-        assert complete_ev["parent_event_id"] == str(all_events[0]["id"])
+        assert complete_ev["parent_event_id"] == all_events[0]["id"]
 
 
 class TestWithoutSessionDB:
@@ -552,7 +552,7 @@ class TestGranularEventParentEventId:
         ]
         assert len(thinking_broadcasts) == 1
         _, thinking_dict = thinking_broadcasts[0]
-        assert thinking_dict["parent_event_id"] == "1"  # user_message의 event_id
+        assert thinking_dict["parent_event_id"] == 1  # user_message의 event_id (int)
 
     @pytest.mark.asyncio
     async def test_subagent_thinking_preserves_parent(self):
@@ -566,7 +566,7 @@ class TestGranularEventParentEventId:
             thinking="subagent thought",
             signature="sig-2",
             timestamp=time.time(),
-            parent_event_id="toolu_AAA",  # SDK가 설정한 값 보존
+            parent_event_id=888,  # 기존에 설정된 int parent_event_id 보존
         )
         complete_event = CompleteEvent(result="done", parent_event_id=None)
         runner = FakeClaudeRunner(events=[thinking_event, complete_event])
@@ -580,7 +580,7 @@ class TestGranularEventParentEventId:
         ]
         assert len(thinking_broadcasts) == 1
         _, thinking_dict = thinking_broadcasts[0]
-        assert thinking_dict["parent_event_id"] == "toolu_AAA"
+        assert thinking_dict["parent_event_id"] == 888
 
     @pytest.mark.asyncio
     async def test_tool_start_gets_user_request_id(self):
@@ -608,4 +608,4 @@ class TestGranularEventParentEventId:
         ]
         assert len(tool_broadcasts) == 1
         _, tool_dict = tool_broadcasts[0]
-        assert tool_dict["parent_event_id"] == "1"
+        assert tool_dict["parent_event_id"] == 1

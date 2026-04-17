@@ -108,12 +108,36 @@ def tmp_workspace(tmp_path: Path) -> Path:
     return workspace
 
 
+def ensure_test_db_url(url: str) -> None:
+    """TEST_DATABASE_URL이 프로덕션 DB를 가리키지 않음을 보장한다.
+
+    test-db-safety.md 규칙에 따라, 테스트 DB URL은 반드시 "test"를 포함해야 한다.
+    `atom_db`, `reverie`, `soulstream_db`, `soul_dashboard_db` 등 프로덕션 DB 이름이
+    들어있으면 즉시 RuntimeError로 거부한다.
+    """
+    if "test" not in url.lower():
+        raise RuntimeError(
+            f"TEST_DATABASE_URL must point to a test database (name containing 'test'). "
+            f"Got: {url}"
+        )
+
+    forbidden = ("atom_db", "reverie", "soulstream_db", "soul_dashboard_db", "serendipity")
+    for name in forbidden:
+        if name in url.lower():
+            raise RuntimeError(
+                f"TEST_DATABASE_URL must not reference production DB '{name}'. "
+                f"Got: {url}"
+            )
+
+
 @pytest_asyncio.fixture
 async def test_db():
     """실제 PostgreSQL DB에 연결하여 프로시저를 테스트하는 fixture.
 
     TEST_DATABASE_URL 환경변수가 없으면 skip한다.
     기존 mock 기반 테스트에 영향 없음.
+
+    test-db-safety.md 규칙에 따라 프로덕션 DB URL을 감지하면 RuntimeError를 발생시킨다.
     """
     try:
         import asyncpg
@@ -123,6 +147,9 @@ async def test_db():
     url = os.environ.get("TEST_DATABASE_URL")
     if not url:
         pytest.skip("TEST_DATABASE_URL not set")
+
+    # 프로덕션 DB 차단 가드 — test-db-safety.md
+    ensure_test_db_url(url)
 
     pool = await asyncpg.create_pool(url)
     schema_path = Path(__file__).resolve().parent.parent / "sql" / "schema.sql"
