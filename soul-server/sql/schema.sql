@@ -732,8 +732,9 @@ CREATE OR REPLACE FUNCTION session_list_summary(
 ) LANGUAGE sql STABLE AS $$
     WITH filtered AS (
         SELECT s.session_id, s.display_name, s.status, s.session_type,
-               s.created_at, s.updated_at, s.away_summary,
-               (SELECT COUNT(*) FROM events e WHERE e.session_id = s.session_id) AS event_count
+               s.created_at, s.updated_at,
+               (SELECT COUNT(*) FROM events e WHERE e.session_id = s.session_id) AS event_count,
+               s.away_summary
         FROM sessions s
         WHERE (p_session_type IS NULL OR s.session_type = p_session_type)
           AND (p_search IS NULL OR s.display_name ILIKE '%' || p_search || '%')
