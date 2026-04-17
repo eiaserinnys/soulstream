@@ -637,6 +637,51 @@ class SqliteSessionDB(SessionDBBase):
         )
         return (await cursor.fetchone())[0]
 
+    # --- 뷰포트 API (SQLite 미지원) ---
+
+    async def update_subtree_heights(
+        self,
+        session_id: str,
+        trigger_event_id: int,
+        increment: int = 1,
+    ) -> tuple[dict[int, int], int]:
+        """SQLite는 뷰포트 API를 지원하지 않는다. PostgreSQL 전용."""
+        raise NotImplementedError(
+            "update_subtree_heights is not supported on SQLite. "
+            "Viewport API requires PostgreSQL (WITH RECURSIVE + subtree_height backfill)."
+        )
+
+    async def read_viewport(
+        self,
+        session_id: str,
+        y_min: int,
+        y_max: int,
+    ) -> list[dict]:
+        """SQLite는 뷰포트 API를 지원하지 않는다. PostgreSQL 전용."""
+        raise NotImplementedError(
+            "read_viewport is not supported on SQLite. "
+            "Viewport API requires PostgreSQL events_viewport() function."
+        )
+
+    async def read_total_subtree_height(self, session_id: str) -> int:
+        """SQLite는 뷰포트 API를 지원하지 않는다. PostgreSQL 전용."""
+        raise NotImplementedError(
+            "read_total_subtree_height is not supported on SQLite. "
+            "Viewport API requires PostgreSQL."
+        )
+
+    async def read_messages(
+        self,
+        session_id: str,
+        before: Optional[str] = None,
+        limit: int = 50,
+    ) -> tuple[list[dict], Optional[str]]:
+        """SQLite는 뷰포트 API를 지원하지 않는다. PostgreSQL 전용."""
+        raise NotImplementedError(
+            "read_messages is not supported on SQLite. "
+            "Viewport API requires PostgreSQL."
+        )
+
     # --- 폴더 CRUD ---
 
     async def create_folder(self, folder_id: str, name: str, sort_order: int = 0) -> None:

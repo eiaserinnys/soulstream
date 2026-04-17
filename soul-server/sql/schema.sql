@@ -619,6 +619,57 @@ CREATE OR REPLACE FUNCTION event_count(
     SELECT COUNT(*) FROM events WHERE session_id = p_session_id;
 $$;
 
+-- 20b. events_viewport — 가상 Y축 범위 [y_min, y_max]와 겹치는 이벤트 조회
+--
+-- 전제 조건 (§9 참조):
+--   - session_id에 parent_event_id IS NULL인 이벤트는 정확히 1개(단일 루트)여야 한다.
+--   - subtree_height는 미리 백필되어 있어야 한다(backfill_subtree_height.py).
+--   - 여러 루트가 있으면 y_start가 루트별로 독립적으로 시작하여 구간이 겹치거나 어긋난다.
+--     Python 측 read_viewport()가 이 경우 경고 로그를 남긴다.
+--
+-- y_start/y_end는 1-based 가상 Y축 좌표이며, 자식들의 y_start는
+-- (부모 y_start + 1) + 형제 중 id가 더 작은 자식들의 subtree_height 합으로 계산한다.
+-- depth는 루트=0부터 계단식 증가.
+CREATE OR REPLACE FUNCTION events_viewport(
+    p_session_id TEXT,
+    p_y_min BIGINT,
+    p_y_max BIGINT
+) RETURNS TABLE (
+    id              INTEGER,
+    parent_event_id INTEGER,
+    event_type      TEXT,
+    depth           INTEGER,
+    y_start         BIGINT,
+    y_end           BIGINT,
+    payload         JSONB
+) LANGUAGE sql STABLE AS $$
+    WITH RECURSIVE tree AS (
+        SELECT e.id, e.parent_event_id, e.event_type, e.payload, e.subtree_height,
+               0::INTEGER AS depth,
+               1::BIGINT AS y_start
+        FROM events e
+        WHERE e.session_id = p_session_id AND e.parent_event_id IS NULL
+        UNION ALL
+        SELECT c.id, c.parent_event_id, c.event_type, c.payload, c.subtree_height,
+               t.depth + 1,
+               t.y_start + 1 + COALESCE((
+                   SELECT SUM(s.subtree_height)
+                   FROM events s
+                   WHERE s.session_id = p_session_id
+                     AND s.parent_event_id = c.parent_event_id
+                     AND s.id < c.id
+               ), 0)
+        FROM events c
+        JOIN tree t ON c.parent_event_id = t.id
+        WHERE c.session_id = p_session_id
+    )
+    SELECT id, parent_event_id, event_type, depth, y_start,
+           y_start + subtree_height - 1 AS y_end, payload
+    FROM tree
+    WHERE NOT (y_start + subtree_height - 1 < p_y_min OR y_start > p_y_max)
+    ORDER BY y_start;
+$$;
+
 -- 21. event_search
 CREATE OR REPLACE FUNCTION event_search(
     p_query       TEXT,

@@ -8,6 +8,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -336,18 +337,48 @@ class TaskExecutor:
             if event.type == "progress":
                 task.last_progress_text = event_dict.get("text", "")
 
-            # 이벤트 영속화
+            # 이벤트 영속화 + subtree_update 계산
+            subtree_update_dict: Optional[dict] = None
             if self._db is not None:
                 try:
                     event_id = await self._persist_event(session_id, event_dict)
                     event_dict["_event_id"] = event_id
                     if event_id is not None:
                         task.last_event_id = event_id
+
+                    # 조상 이벤트들의 subtree_height 전파 + subtree_update SSE 이벤트 생성
+                    # parent_event_id가 있을 때만 (루트 이벤트는 조상 없음)
+                    if event_id is not None and event_dict.get("parent_event_id") is not None:
+                        try:
+                            deltas, new_total = await self._db.update_subtree_heights(
+                                session_id, event_id, increment=1
+                            )
+                            subtree_update_dict = {
+                                "type": "subtree_update",
+                                "timestamp": time.time(),
+                                "affected_event_ids": list(deltas.keys()),
+                                "deltas": deltas,
+                                "new_total_subtree_height": new_total,
+                                "trigger_event_id": event_id,
+                            }
+                            # subtree_update도 영속화 (재연결 복구용)
+                            subtree_event_id = await self._persist_event(
+                                session_id, subtree_update_dict
+                            )
+                            subtree_update_dict["_event_id"] = subtree_event_id
+                        except Exception as e:
+                            logger.warning(
+                                f"Failed to compute subtree_update for {session_id}: {e}"
+                            )
+                            subtree_update_dict = None
                 except Exception as e:
                     logger.warning(f"Failed to persist event for {session_id}: {e}")
+                    subtree_update_dict = None
 
-            # 브로드캐스트
+            # 브로드캐스트 (원본 이벤트 → subtree_update 순)
             await self._listener_manager.broadcast(session_id, event_dict)
+            if subtree_update_dict is not None:
+                await self._listener_manager.broadcast(session_id, subtree_update_dict)
             try:
                 await self._update_and_broadcast_last_message(
                     session_id, event_dict, task

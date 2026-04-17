@@ -255,6 +255,67 @@ def create_sessions_router() -> APIRouter:
 
         return EventSourceResponse(event_generator())
 
+    @router.get("/sessions/{agent_session_id}/events/viewport")
+    async def get_events_viewport(
+        agent_session_id: str,
+        y_min: int = Query(..., ge=1, description="가상 Y축 시작 (1-based inclusive)"),
+        y_max: int = Query(..., ge=1, description="가상 Y축 끝 (inclusive)"),
+    ):
+        """뷰포트 영역과 겹치는 이벤트 조회 (가상화 API).
+
+        클라이언트는 현재 화면의 Y축 범위를 넘기고, 서버는 해당 범위와 겹치는
+        트리 노드만 반환한다. 렌더링 비용을 상수화한다.
+
+        Returns:
+            {
+                "events": [{id, parent_event_id, event_type, depth, y_start, y_end, payload}, ...],
+                "total_subtree_height": <세션 전체 높이 합계>
+            }
+        """
+        if y_min > y_max:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": {
+                        "code": "INVALID_RANGE",
+                        "message": f"y_min ({y_min}) must be <= y_max ({y_max})",
+                        "details": {},
+                    }
+                },
+            )
+
+        from soul_server.service.postgres_session_db import get_session_db
+        db = get_session_db()
+
+        events = await db.read_viewport(agent_session_id, y_min, y_max)
+        total = await db.read_total_subtree_height(agent_session_id)
+        return {"events": events, "total_subtree_height": total}
+
+    @router.get("/sessions/{agent_session_id}/messages")
+    async def get_session_messages(
+        agent_session_id: str,
+        before: Optional[str] = Query(None, description="커서 (ISO timestamp). 이보다 이전 메시지만 조회"),
+        limit: int = Query(50, ge=1, le=200, description="페이지 크기"),
+    ):
+        """메시지 페이지네이션 조회.
+
+        created_at 역순으로 메시지성 이벤트를 페이지 단위로 반환한다.
+        next_cursor가 있으면 다음 페이지 요청 시 before 파라미터로 전달한다.
+
+        Returns:
+            {
+                "messages": [{id, parent_event_id, event_type, payload, created_at}, ...],
+                "next_cursor": <ISO timestamp 또는 null>
+            }
+        """
+        from soul_server.service.postgres_session_db import get_session_db
+        db = get_session_db()
+
+        messages, next_cursor = await db.read_messages(
+            agent_session_id, before=before, limit=limit,
+        )
+        return {"messages": messages, "next_cursor": next_cursor}
+
     @router.get("/sessions/{agent_session_id}/events/{event_id}")
     async def get_event(
         agent_session_id: str,

@@ -282,3 +282,52 @@ class CredentialAlertEvent(BaseModel):
     resets_at: Optional[str] = None
     timestamp: float = 0.0
     parent_event_id: Optional[int] = None
+
+
+class SubtreeUpdateSSEEvent(BaseModel):
+    """서브트리 높이 전파 이벤트.
+
+    새 이벤트가 추가되어 조상 이벤트들의 subtree_height가 증가할 때 발행된다.
+    클라이언트는 이 이벤트로 가상화된 뷰포트의 높이 정보를 동기화한다.
+
+    Note: deltas는 dict[int, int]이지만 JSON 직렬화 시 키가 문자열이 된다
+    (JSON 스펙상 object key는 string만 허용). 클라이언트는 Number()로 재변환해야 한다.
+    """
+    type: str = "subtree_update"
+    timestamp: float
+    affected_event_ids: List[int] = Field(..., description="subtree_height가 변경된 조상 이벤트 ID 목록")
+    deltas: dict[int, int] = Field(..., description="{event_id: subtree_height 증가량}. JSON 직렬화 시 key는 str.")
+    new_total_subtree_height: int = Field(..., description="세션 전체의 새로운 subtree_height 합계")
+    trigger_event_id: Optional[int] = Field(None, description="이 업데이트를 유발한 신규 이벤트 ID")
+
+
+class ViewportEvent(BaseModel):
+    """뷰포트 쿼리 결과의 개별 이벤트 항목."""
+    id: int
+    parent_event_id: Optional[int] = None
+    event_type: str
+    depth: int = Field(..., description="트리 깊이 (루트=0)")
+    y_start: int = Field(..., description="가상 Y축 시작 위치 (1-based)")
+    y_end: int = Field(..., description="가상 Y축 끝 위치 (inclusive)")
+    payload: dict = Field(default_factory=dict)
+
+
+class ViewportResponse(BaseModel):
+    """뷰포트 조회 응답."""
+    events: List[ViewportEvent]
+    total_subtree_height: int = Field(..., description="세션 전체의 subtree_height 합계")
+
+
+class MessageItem(BaseModel):
+    """메시지 페이지네이션 항목."""
+    id: int
+    parent_event_id: Optional[int] = None
+    event_type: str
+    payload: dict = Field(default_factory=dict)
+    created_at: str
+
+
+class MessagesResponse(BaseModel):
+    """메시지 페이지네이션 응답."""
+    messages: List[MessageItem]
+    next_cursor: Optional[str] = Field(None, description="다음 페이지 커서 (ISO timestamp)")

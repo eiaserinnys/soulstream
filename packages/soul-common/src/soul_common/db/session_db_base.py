@@ -229,6 +229,35 @@ class SessionDBBase(ABC):
     @abstractmethod
     async def count_events(self, session_id: str) -> int: ...
 
+    # ── 뷰포트 API ──
+
+    @abstractmethod
+    async def update_subtree_heights(
+        self,
+        session_id: str,
+        trigger_event_id: int,
+        increment: int = 1,
+    ) -> tuple[dict[int, int], int]: ...
+
+    @abstractmethod
+    async def read_viewport(
+        self,
+        session_id: str,
+        y_min: int,
+        y_max: int,
+    ) -> list[dict]: ...
+
+    @abstractmethod
+    async def read_total_subtree_height(self, session_id: str) -> int: ...
+
+    @abstractmethod
+    async def read_messages(
+        self,
+        session_id: str,
+        before: Optional[str] = None,
+        limit: int = 50,
+    ) -> tuple[list[dict], Optional[str]]: ...
+
     # ── 폴더 CRUD ──
 
     @abstractmethod
