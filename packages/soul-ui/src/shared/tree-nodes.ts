@@ -149,6 +149,11 @@ export interface AssistantMessageNode extends BaseNode {
   usage?: { input_tokens: number; output_tokens: number };
 }
 
+/** away_summary (recap) 노드 — 세션 복귀 시 요약 */
+export interface AwaySummaryNode extends BaseNode {
+  type: "away_summary";
+}
+
 /** Claude API 에러 노드 (인증 실패, 과금 에러 등) */
 export interface AssistantErrorNode extends BaseNode {
   type: "assistant_error";
@@ -172,4 +177,5 @@ export type EventTreeNode =
   | ErrorNode
   | InputRequestNodeDef
   | AssistantMessageNode
-  | AssistantErrorNode;
+  | AssistantErrorNode
+  | AwaySummaryNode;

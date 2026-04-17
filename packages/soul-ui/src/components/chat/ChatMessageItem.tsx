@@ -10,6 +10,7 @@ import { SystemPromptMessage } from "./SystemPromptMessage";
 import { SystemMessage } from "./SystemMessage";
 import { ToolMessage } from "./ToolMessage";
 import { ChatInputRequest } from "./ChatInputRequest";
+import { AwaySummaryMessage } from "./AwaySummaryMessage";
 
 /**
  * 모듈 범위의 seen 집합.
@@ -53,6 +54,9 @@ export const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, 
       break;
     case "input_request":
       body = sessionId ? <ChatInputRequest msg={msg} sessionId={sessionId} /> : null;
+      break;
+    case "away_summary":
+      body = <AwaySummaryMessage msg={msg} />;
       break;
     default:
       return null;

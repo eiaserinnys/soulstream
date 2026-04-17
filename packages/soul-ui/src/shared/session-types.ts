@@ -86,6 +86,8 @@ export interface SessionSummary extends AgentProfile, UserProfile {
   lastEventId?: number;
   /** 마지막으로 읽은 이벤트 ID */
   lastReadEventId?: number;
+  /** away_summary (세션 복귀 시 요약) */
+  awaySummary?: string | null;
   /** 세션을 생성한 노드 ID */
   nodeId?: string;
 }

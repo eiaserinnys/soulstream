@@ -456,6 +456,9 @@ export function estimateItemHeight(item: MessageOrGroup, containerWidth: number)
       return 28;
     case "input_request":
       return estimateInputRequest(msg, cw);
+    case "away_summary":
+      // recap: py-2(16) + text-sm 여러 줄 — 시스템 메시지와 유사하게 추정
+      return estimateSystemMessage(msg, cw);
     default:
       return 80;
   }

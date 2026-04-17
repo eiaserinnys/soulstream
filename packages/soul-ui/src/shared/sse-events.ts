@@ -34,6 +34,7 @@ export type SSEEventType =
   | "tool_start"
   | "tool_result"
   | "result"
+  | "away_summary"
   // 서브에이전트 이벤트
   | "subagent_start"
   | "subagent_stop"
@@ -259,6 +260,14 @@ export interface ResultEvent {
   parent_event_id?: string;
 }
 
+/** away_summary (recap) 이벤트 — 세션 복귀 시 요약 */
+export interface AwaySummaryEvent {
+  type: "away_summary";
+  timestamp: number;
+  content: string;
+  parent_event_id?: string;
+}
+
 /** 서브에이전트 시작 이벤트 */
 export interface SubagentStartEvent {
   type: "subagent_start";
@@ -392,6 +401,7 @@ export type SoulSSEEvent =
   | InputRequestRespondedEvent
   | HistorySyncEvent
   | AssistantMessageEvent
+  | AwaySummaryEvent
   | SubtreeUpdateSSEEvent;
 
 // === Dashboard SSE Event (서버 → 클라이언트) ===

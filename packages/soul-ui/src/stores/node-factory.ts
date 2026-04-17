@@ -30,6 +30,7 @@ import type {
   InputRequestRespondedEvent,
   AssistantMessageEvent,
   AssistantErrorEvent,
+  AwaySummaryEvent,
 } from "@shared/types";
 import type { ProcessingContext } from "./processing-context";
 import { makeNode } from "./processing-context";
@@ -203,6 +204,15 @@ export function createNodeFromEvent(
         model: e.model,
         provider: e.provider,
         usage: e.usage,
+        timestamp: e.timestamp,
+      });
+    }
+
+    case "away_summary": {
+      const e = event as AwaySummaryEvent;
+      return makeNode(`away-summary-${eventId}`, "away_summary", e.content, {
+        completed: true,
+        parentEventId: e.parent_event_id,
         timestamp: e.timestamp,
       });
     }

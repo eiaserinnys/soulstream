@@ -29,7 +29,7 @@ const NEEDS_ROOT = new Set([
   "user_message", "session", "system_message", "intervention_sent", "thinking",
   "text_start", "subagent_start", "tool_start",
   "complete", "error", "result", "compact", "input_request",
-  "assistant_message", "assistant_error",
+  "assistant_message", "assistant_error", "away_summary",
 ]);
 
 /**

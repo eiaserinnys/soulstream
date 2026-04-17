@@ -24,7 +24,7 @@ import type {
 /** Chat 탭에 표시되는 메시지 단위 */
 export interface ChatMessage {
   id: string;
-  role: "user" | "assistant" | "tool" | "system" | "system_message" | "intervention" | "input_request";
+  role: "user" | "assistant" | "tool" | "system" | "system_message" | "intervention" | "input_request" | "away_summary";
   /** 메인 표시 텍스트 */
   content: string;
   timestamp?: number;
@@ -295,6 +295,17 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
         provider: n.provider,
         treeNodeId: n.id,
         treeNodeType: n.type,
+      };
+    }
+
+    case "away_summary": {
+      return {
+        id: node.id,
+        role: "away_summary",
+        content: node.content,
+        timestamp: node.timestamp,
+        treeNodeId: node.id,
+        treeNodeType: node.type,
       };
     }
 
