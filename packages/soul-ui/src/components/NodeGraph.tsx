@@ -12,7 +12,7 @@
  *  - useGraphDump       : 그래프 덤프 생성/다운로드 + Ctrl+Shift+D
  */
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import {
   ReactFlow,
   Background,
@@ -20,6 +20,8 @@ import {
   Panel,
   ReactFlowProvider,
   PanOnScrollMode,
+  useReactFlow,
+  useStoreApi,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
@@ -32,7 +34,7 @@ import { AskQuestionBanner } from "./AskQuestionBanner";
 import { cn } from "../lib/cn";
 import { useTheme } from "../hooks/useTheme";
 import { nodeTypes } from "./nodes";
-import type { GraphNode } from "../lib/layout-engine";
+import { DEFAULT_NODE_HEIGHT, type GraphNode } from "../lib/layout-engine";
 import { FIXED_ZOOM, MIN_ZOOM, useAutoScroll } from "../hooks/useAutoScroll";
 import { useGraphBuilder } from "../hooks/useGraphBuilder";
 import {
@@ -40,6 +42,7 @@ import {
   useNodesSelectedSync,
 } from "../hooks/useNodeSelection";
 import { useGraphDump } from "../hooks/useGraphDump";
+import { useViewportFetch } from "../hooks/useViewportFetch";
 
 // === Inner Graph (needs ReactFlow context) ===
 
@@ -54,6 +57,9 @@ function NodeGraphInner() {
   const collapsedNodeIds = useDashboardStore((s) => s.collapsedNodeIds);
   const lastEventId = useDashboardStore((s) => s.lastEventId);
   const processingCtx = useDashboardStore((s) => s.processingCtx);
+  const setTotalSubtreeHeight = useDashboardStore(
+    (s) => s.setTotalSubtreeHeight,
+  );
 
   // 1. 자동 스크롤 + lastNode/뷰포트 조작
   const {
@@ -64,6 +70,73 @@ function NodeGraphInner() {
     panToNode,
     panOnFirstLoad,
   } = useAutoScroll(activeSessionKey);
+
+  // 1-1. 뷰포트 API fetch (Phase 3)
+  // - 서버가 알려주는 total_subtree_height를 store에 정본으로 반영
+  // - ReactFlow의 onlyRenderVisibleElements=true가 DOM 가상화를 담당하고,
+  //   이 fetch는 뷰포트 API 엔드포인트 동작을 검증하며 서버 드리프트를 교정한다.
+  // - 기존 store.tree (SSE 히스토리) 파이프라인은 그대로 소스 오브 트루스로 유지.
+  const reactFlow = useReactFlow();
+  const rfStore = useStoreApi();
+  const viewportFetcher = useCallback(
+    async (range: { yStart: number; yEnd: number }) => {
+      if (!activeSessionKey) return;
+      const qs = new URLSearchParams({
+        y_min: String(Math.max(1, Math.floor(range.yStart))),
+        y_max: String(Math.max(1, Math.ceil(range.yEnd))),
+      });
+      try {
+        const res = await fetch(
+          `/api/sessions/${encodeURIComponent(activeSessionKey)}/events/viewport?${qs}`,
+          { credentials: "include" },
+        );
+        if (!res.ok) return;
+        const data = (await res.json()) as { total_subtree_height?: number };
+        if (typeof data.total_subtree_height === "number") {
+          setTotalSubtreeHeight(data.total_subtree_height);
+        }
+      } catch {
+        // 네트워크 오류는 무시 — 라이브 SSE 파이프라인이 소스 오브 트루스이므로
+        // 뷰포트 fetch 실패가 UI를 망가뜨리지 않는다.
+      }
+    },
+    [activeSessionKey, setTotalSubtreeHeight],
+  );
+
+  const { request: requestViewport } = useViewportFetch(viewportFetcher);
+
+  // ReactFlow 뷰포트 → {yStart, yEnd} (subtree_height 단위)
+  const computeViewportRange = useCallback(() => {
+    const { height: vpH } = rfStore.getState();
+    if (!vpH || vpH === 0) return null;
+    const viewport = reactFlow.getViewport();
+    if (!viewport.zoom) return null;
+    const worldYTop = -viewport.y / viewport.zoom;
+    const worldYBottom = (vpH - viewport.y) / viewport.zoom;
+    return {
+      yStart: worldYTop / DEFAULT_NODE_HEIGHT,
+      yEnd: worldYBottom / DEFAULT_NODE_HEIGHT,
+    };
+  }, [reactFlow, rfStore]);
+
+  // 세션 전환 시 초기 fetch (뷰포트 크기가 아직 0일 수 있으므로 기본 범위로 대체)
+  useEffect(() => {
+    if (!activeSessionKey) return;
+    const range = computeViewportRange() ?? { yStart: 1, yEnd: 50 };
+    requestViewport(range);
+  }, [activeSessionKey, computeViewportRange, requestViewport]);
+
+  // onMoveEnd 래퍼: 기존 훅 호출 + 뷰포트 fetch 트리거
+  // - 사용자 조작(event != null)일 때만 fetch (프로그래매틱 이동은 스킵)
+  const wrappedOnMoveEnd = useCallback(
+    (event: MouseEvent | TouchEvent | null) => {
+      onMoveEnd(event);
+      if (event === null) return;
+      const range = computeViewportRange();
+      if (range) requestViewport(range);
+    },
+    [onMoveEnd, computeViewportRange, requestViewport],
+  );
 
   // 2. ReactFlow 선택 ↔ store 동기화 + 프로그래밍 select 헬퍼
   const selection = useNodeSelection();
@@ -157,12 +230,16 @@ function NodeGraphInner() {
         onEdgesChange={builder.onEdgesChange}
         onSelectionChange={selection.onSelectionChange}
         onNodeClick={selection.onNodeClick}
-        onMoveEnd={onMoveEnd}
+        onMoveEnd={wrappedOnMoveEnd}
         nodeTypes={nodeTypes}
         nodesDraggable={false}
         defaultViewport={{ x: 0, y: 0, zoom: FIXED_ZOOM }}
         minZoom={MIN_ZOOM}
         maxZoom={2}
+        // Phase 3: DOM 가상화 — 745노드 세션에서도 뷰포트에 있는 노드만 렌더링.
+        // ReactFlow가 내부적으로 node.position + width/height + viewport로 가시성 판정.
+        // translateExtent는 설정하지 않아 기존 pan UX(무제한 탐색)를 보존한다.
+        onlyRenderVisibleElements={true}
         // Phase 1: UX 개선 - 줌/스크롤 동작 변경
         zoomOnDoubleClick={false}
         zoomOnScroll={false}

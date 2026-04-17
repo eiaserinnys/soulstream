@@ -198,6 +198,13 @@ export interface DashboardActions {
     eventId: number,
   ) => { agentSessionId: string; status: SessionStatus } | null;
 
+  /**
+   * 뷰포트 API 응답의 total_subtree_height로 totalSubtreeHeight 상태를 덮어쓴다.
+   * subtree_update SSE delta는 증분 갱신이지만 이 setter는 서버가 알려준 정본을 반영한다.
+   * 초기 로드 / 세션 전환 / 드리프트 교정에 사용한다.
+   */
+  setTotalSubtreeHeight: (total: number) => void;
+
   // SSE 이벤트 배치 처리 (히스토리 리플레이 최적화: N개 이벤트를 트리에 적용 후 set() 1회)
   processEvents: (
     events: Array<{ event: SoulSSEEvent; eventId: number }>,

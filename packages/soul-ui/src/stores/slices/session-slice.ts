@@ -72,6 +72,7 @@ export type SessionSlice = Pick<
     | "selectEventNode"
     | "processEvent"
     | "processEvents"
+    | "setTotalSubtreeHeight"
     | "addOptimisticSession"
     | "clearTree"
     | "clearCards"
@@ -270,6 +271,15 @@ export const createSessionSlice: StateCreator<
     });
 
     return { statusUpdates: result.statusUpdates };
+  },
+
+  // --- 뷰포트 API: totalSubtreeHeight 덮어쓰기 ---
+  //
+  // 뷰포트 응답의 total_subtree_height를 정본으로 반영한다.
+  // 같은 값이면 set을 건너뛰어 불필요한 리렌더를 방지한다.
+  setTotalSubtreeHeight: (total) => {
+    if (get().totalSubtreeHeight === total) return;
+    set({ totalSubtreeHeight: total });
   },
 
   // --- 낙관적 세션 추가 ---

@@ -168,6 +168,66 @@ async def api_sessions_stream(limit: int = Query(50, ge=0)):
     return EventSourceResponse(event_generator())
 
 
+# === /api/sessions/{session_id}/events/viewport (GET) — Phase 3 뷰포트 API ===
+# 파라미터화 경로(`/events`)가 `/events/viewport`를 prefix-match하지 않도록 먼저 등록한다.
+
+@router.get(
+    "/api/sessions/{agent_session_id}/events/viewport",
+    dependencies=[Depends(require_dashboard_auth)],
+)
+async def api_session_events_viewport(
+    agent_session_id: str,
+    y_min: int = Query(..., ge=1, description="가상 Y축 시작 (1-based inclusive)"),
+    y_max: int = Query(..., ge=1, description="가상 Y축 끝 (inclusive)"),
+):
+    """뷰포트 영역과 겹치는 이벤트 조회 (가상화 API, Phase 3).
+
+    브라우저(soul-ui)는 Vite proxy를 통해 `/api/*`만 접근 가능하므로,
+    `api/sessions.py`의 `/sessions/{id}/events/viewport`를 같은 DB 호출로 미러링한다.
+    """
+    if y_min > y_max:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": {
+                    "code": "INVALID_RANGE",
+                    "message": f"y_min ({y_min}) must be <= y_max ({y_max})",
+                    "details": {},
+                }
+            },
+        )
+
+    from soul_server.service.postgres_session_db import get_session_db
+    db = get_session_db()
+    events = await db.read_viewport(agent_session_id, y_min, y_max)
+    total = await db.read_total_subtree_height(agent_session_id)
+    return {"events": events, "total_subtree_height": total}
+
+
+# === /api/sessions/{session_id}/messages (GET) — Phase 3 커서 페이지네이션 ===
+
+@router.get(
+    "/api/sessions/{agent_session_id}/messages",
+    dependencies=[Depends(require_dashboard_auth)],
+)
+async def api_session_messages(
+    agent_session_id: str,
+    before: Optional[str] = Query(None, description="커서 (ISO timestamp). 이보다 이전 메시지만 조회"),
+    limit: int = Query(50, ge=1, le=200, description="페이지 크기"),
+):
+    """메시지 페이지네이션 조회 (Phase 3).
+
+    created_at 역순으로 메시지성 이벤트를 페이지 단위로 반환한다.
+    `api/sessions.py`의 `/sessions/{id}/messages`와 같은 DB 호출을 사용한다.
+    """
+    from soul_server.service.postgres_session_db import get_session_db
+    db = get_session_db()
+    messages, next_cursor = await db.read_messages(
+        agent_session_id, before=before, limit=limit,
+    )
+    return {"messages": messages, "next_cursor": next_cursor}
+
+
 # === /api/sessions/{session_id}/events (GET) — 파라미터화 경로, 나중에 등록 ===
 
 @router.get(
