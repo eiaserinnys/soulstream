@@ -2047,4 +2047,123 @@ describe("dashboard-store", () => {
     });
   });
 
+  // === Phase 3: subtree_update SSE 이벤트 처리 ===
+
+  describe("subtree_update SSE 이벤트 처리 (Phase 3 viewport API)", () => {
+    beforeEach(() => {
+      // 활성 세션 설정 + history_sync 이후로 전환
+      useDashboardStore.getState().setActiveSession("sess-st");
+      useDashboardStore.getState().processEvent(
+        { type: "history_sync", last_event_id: 0, is_live: true, status: "running" } as any,
+        -1,
+      );
+    });
+
+    it("processEvent(subtree_update)는 nodeMap의 subtreeHeight를 증분 갱신하고 totalSubtreeHeight를 갱신한다", () => {
+      const { processEvent } = useDashboardStore.getState();
+
+      // 조상 노드로 사용할 user_message를 생성
+      processEvent(
+        { type: "user_message", user: "u", text: "hello" } as UserMessageEvent,
+        10,
+      );
+      const ctxBefore = useDashboardStore.getState().processingCtx;
+      const ancestor = ctxBefore.nodeMap.get("10");
+      expect(ancestor).toBeDefined();
+
+      // subtree_update 이벤트: ancestor(event_id=10)에 +3 delta
+      const subtreeEvent = {
+        type: "subtree_update",
+        timestamp: Date.now() / 1000,
+        affected_event_ids: [42],
+        deltas: { "10": 3 },
+        new_total_subtree_height: 7,
+        trigger_event_id: 42,
+      } as any;
+      processEvent(subtreeEvent, 42);
+
+      const stateAfter = useDashboardStore.getState();
+      const ancestorAfter = stateAfter.processingCtx.nodeMap.get("10");
+      expect(ancestorAfter?.subtreeHeight).toBe(4); // 초기값 1 + 3
+      expect(stateAfter.totalSubtreeHeight).toBe(7);
+      // subtree_update는 트리 자체를 바꾸지 않으므로 lastEventId는 갱신되지만 tree는 그대로
+      expect(stateAfter.lastEventId).toBe(42);
+    });
+
+    it("알 수 없는 ancestor id는 조용히 무시한다 (아직 배치되지 않은 원격 조상)", () => {
+      const { processEvent } = useDashboardStore.getState();
+
+      const subtreeEvent = {
+        type: "subtree_update",
+        timestamp: Date.now() / 1000,
+        affected_event_ids: [999],
+        deltas: { "9999": 5 }, // nodeMap에 없는 id
+        new_total_subtree_height: 12,
+      } as any;
+      // 에러 없이 처리
+      expect(() => processEvent(subtreeEvent, 999)).not.toThrow();
+      // totalSubtreeHeight는 서버 정본값으로 갱신됨
+      expect(useDashboardStore.getState().totalSubtreeHeight).toBe(12);
+    });
+
+    it("processEvents 배치: 여러 subtree_update의 deltas를 합산하고 마지막 newTotal을 사용한다", () => {
+      const { processEvent, processEvents } = useDashboardStore.getState();
+
+      // 조상 노드 생성
+      processEvent(
+        { type: "user_message", user: "u", text: "hi" } as UserMessageEvent,
+        10,
+      );
+
+      // 배치에 subtree_update 두 개 포함
+      processEvents([
+        {
+          event: {
+            type: "subtree_update",
+            timestamp: 1,
+            affected_event_ids: [50],
+            deltas: { "10": 2 },
+            new_total_subtree_height: 3,
+          } as any,
+          eventId: 50,
+        },
+        {
+          event: {
+            type: "subtree_update",
+            timestamp: 2,
+            affected_event_ids: [51],
+            deltas: { "10": 1 },
+            new_total_subtree_height: 4,
+          } as any,
+          eventId: 51,
+        },
+      ]);
+
+      const state = useDashboardStore.getState();
+      // 초기 1 + 2 + 1 = 4
+      expect(state.processingCtx.nodeMap.get("10")?.subtreeHeight).toBe(4);
+      // newTotal은 배치 내 마지막 이벤트의 값
+      expect(state.totalSubtreeHeight).toBe(4);
+    });
+
+    it("세션 전환 시 totalSubtreeHeight가 0으로 초기화된다", () => {
+      const { processEvent, setActiveSession } = useDashboardStore.getState();
+
+      processEvent(
+        {
+          type: "subtree_update",
+          timestamp: 1,
+          affected_event_ids: [1],
+          deltas: {},
+          new_total_subtree_height: 999,
+        } as any,
+        1,
+      );
+      expect(useDashboardStore.getState().totalSubtreeHeight).toBe(999);
+
+      setActiveSession("sess-other");
+      expect(useDashboardStore.getState().totalSubtreeHeight).toBe(0);
+    });
+  });
+
 });

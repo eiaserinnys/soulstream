@@ -41,6 +41,7 @@ export const SSE_EVENT_TYPES = [
   "reconnect",
   "history_sync",
   "metadata_updated",
+  "subtree_update",
 ] as const satisfies readonly Exclude<SSEEventType, _SSEExcludedTypes>[];
 
 // 컴파일 타임 검증: 시스템 이벤트를 제외한 모든 SSEEventType이 SSE_EVENT_TYPES에 포함되는지 확인

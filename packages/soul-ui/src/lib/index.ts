@@ -23,3 +23,6 @@ export type { GraphNode, GraphEdge, GraphNodeData } from "./layout-engine";
 // === Rename Session ===
 export { renameSessionOptimistic, createRenameSessionOperation } from "./rename-session";
 export type { RenameSessionApiConfig, RenameSessionOperations } from "./rename-session";
+
+// === Viewport API (Phase 3) ===
+export { encodeCursor, decodeCursor } from "./cursor-codec";

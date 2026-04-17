@@ -13,6 +13,7 @@ import type {
   SessionNode,
   TextStartEvent,
   HistorySyncEvent,
+  SubtreeUpdateSSEEvent,
 } from "@shared/types";
 import {
   type ProcessingContext,
@@ -50,6 +51,22 @@ function applyLlmMetadata(
   }
 }
 
+/**
+ * subtree_update 결과 — nodeMap 증분 적용용.
+ *
+ * 서버가 Python `dict[int, int]`로 보내지만 JSON 직렬화로 key는 string.
+ * 소비자(store reducer)가 `nodeMap.get(String(idStr))`로 조회한다
+ * (nodeMap key는 _event_id가 `String(eventId)`로 등록되어 있음).
+ */
+export interface SubtreeHeightUpdate {
+  /** ancestor_id(string) → +delta 매핑 */
+  deltas: Record<string, number>;
+  /** 갱신 후 totalSubtreeHeight 정본 */
+  newTotal: number;
+  /** 이 배치에서 영향받은 이벤트 ID 목록 (디버깅용) */
+  affectedIds: number[];
+}
+
 /** processEventSingle의 반환값 */
 export interface SingleEventResult {
   root: EventTreeNode | null;
@@ -59,6 +76,8 @@ export interface SingleEventResult {
   notify: boolean;
   newLastEventId: number;
   isHistorySync: boolean;
+  /** subtree_update 이벤트 발생 시 설정됨 — store reducer가 nodeMap·totalSubtreeHeight 증분 적용 */
+  subtreeHeightUpdate?: SubtreeHeightUpdate | null;
 }
 
 /**
@@ -77,6 +96,26 @@ export function processEventSingle(
   // Dedup
   if (eventId > 0 && eventId <= lastEventId) {
     return { root, updated: false, treeChangeInfo: null, statusUpdate: null, notify: false, newLastEventId: lastEventId, isHistorySync: false };
+  }
+
+  // subtree_update — 노드 생성·트리 변경 없이 nodeMap 증분만 갱신한다.
+  // store reducer가 subtreeHeightUpdate를 받아 nodeMap과 totalSubtreeHeight에 적용한다.
+  if (event.type === "subtree_update") {
+    const ev = event as SubtreeUpdateSSEEvent;
+    return {
+      root,
+      updated: false,
+      treeChangeInfo: null,
+      statusUpdate: null,
+      notify: false,
+      newLastEventId: eventId > 0 ? eventId : lastEventId,
+      isHistorySync: false,
+      subtreeHeightUpdate: {
+        deltas: ev.deltas,
+        newTotal: ev.new_total_subtree_height,
+        affectedIds: ev.affected_event_ids,
+      },
+    };
   }
 
   // history_sync
@@ -154,6 +193,11 @@ export interface BatchEventResult {
   maxEventId: number;
   statusUpdates: Array<{ agentSessionId: string; status: SessionStatus }>;
   notifications: SoulSSEEvent[];
+  /**
+   * 배치 내 subtree_update 집계 결과 — deltas는 합산, newTotal은 마지막 값.
+   * subtree_update가 없으면 null.
+   */
+  subtreeHeightUpdate: SubtreeHeightUpdate | null;
 }
 
 /**
@@ -174,10 +218,27 @@ export function processEventsBatch(
   const statusUpdates: Array<{ agentSessionId: string; status: SessionStatus }> = [];
   const notifications: SoulSSEEvent[] = [];
 
+  // subtree_update 집계 상태 — 배치 내 여러 subtree_update가 올 수 있으므로 합산한다.
+  let aggregatedDeltas: Record<string, number> | null = null;
+  let latestNewTotal: number | null = null;
+  const aggregatedAffectedIds: number[] = [];
+
   for (const { event, eventId } of events) {
     // Dedup
     if (eventId > 0 && eventId <= lastEventId) continue;
     if (eventId > maxEventId) maxEventId = eventId;
+
+    // subtree_update — 트리 변경 없이 deltas만 집계한다.
+    if (event.type === "subtree_update") {
+      const ev = event as SubtreeUpdateSSEEvent;
+      if (aggregatedDeltas === null) aggregatedDeltas = {};
+      for (const [idStr, delta] of Object.entries(ev.deltas)) {
+        aggregatedDeltas[idStr] = (aggregatedDeltas[idStr] ?? 0) + delta;
+      }
+      latestNewTotal = ev.new_total_subtree_height;
+      for (const id of ev.affected_event_ids) aggregatedAffectedIds.push(id);
+      continue;
+    }
 
     // history_sync
     if (event.type === "history_sync") {
@@ -224,5 +285,10 @@ export function processEventsBatch(
     }
   }
 
-  return { root, updated, maxEventId, statusUpdates, notifications };
+  const subtreeHeightUpdate: SubtreeHeightUpdate | null =
+    aggregatedDeltas !== null && latestNewTotal !== null
+      ? { deltas: aggregatedDeltas, newTotal: latestNewTotal, affectedIds: aggregatedAffectedIds }
+      : null;
+
+  return { root, updated, maxEventId, statusUpdates, notifications, subtreeHeightUpdate };
 }

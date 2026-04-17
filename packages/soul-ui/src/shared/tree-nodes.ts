@@ -22,6 +22,12 @@ interface BaseNode {
   parentEventId?: string;
   /** 이벤트 발행 시각 (Unix epoch, 초) */
   timestamp?: number;
+  /**
+   * 이 노드를 루트로 하는 서브트리의 총 높이 (Phase 3 viewport API).
+   * 서버 events_viewport 함수가 계산하며, subtree_update SSE 이벤트로 증분 갱신된다.
+   * 뷰포트 가상화에서 스크롤 영역 크기 계산에 사용된다.
+   */
+  subtreeHeight?: number;
 }
 
 /** 가상 세션 루트 노드 */

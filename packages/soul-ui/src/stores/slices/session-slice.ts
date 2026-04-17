@@ -20,9 +20,32 @@ import type {
 import type { DashboardState, DashboardActions } from "../dashboard-store-types";
 import {
   type TreeChangeInfo,
+  type ProcessingContext,
   createProcessingContext,
 } from "../processing-context";
-import { processEventSingle, processEventsBatch } from "../event-processor";
+import {
+  processEventSingle,
+  processEventsBatch,
+  type SubtreeHeightUpdate,
+} from "../event-processor";
+
+/**
+ * subtree_update 결과를 nodeMap에 증분 적용한다.
+ *
+ * nodeMap은 `_event_id`(String(eventId))로 노드를 등록해두므로,
+ * 서버 deltas key(JSON 직렬화로 string)를 그대로 조회에 사용한다.
+ * 매칭되지 않는 id는 아직 클라이언트에 배치되지 않은 원격 조상이므로 무시한다.
+ */
+function applySubtreeHeightUpdate(
+  ctx: ProcessingContext,
+  update: SubtreeHeightUpdate,
+): void {
+  for (const [idStr, delta] of Object.entries(update.deltas)) {
+    const node = ctx.nodeMap.get(idStr);
+    if (!node) continue;
+    node.subtreeHeight = (node.subtreeHeight ?? 1) + delta;
+  }
+}
 
 export type SessionSlice = Pick<
   DashboardState,
@@ -36,6 +59,7 @@ export type SessionSlice = Pick<
   | "treeVersion"
   | "treeChangeInfo"
   | "lastEventId"
+  | "totalSubtreeHeight"
   | "pendingNotifications"
   | "collapsedNodeIds"
   | "processingCtx"
@@ -70,6 +94,7 @@ function getSessionResetState() {
     treeVersion: 0,
     treeChangeInfo: null as TreeChangeInfo | null,
     lastEventId: 0,
+    totalSubtreeHeight: 0,
     pendingNotifications: [] as SoulSSEEvent[],
     collapsedNodeIds: new Set<string>(),
     activeRightTab: "chat" as const,
@@ -93,6 +118,7 @@ export const createSessionSlice: StateCreator<
   treeVersion: 0,
   treeChangeInfo: null,
   lastEventId: 0,
+  totalSubtreeHeight: 0,
   pendingNotifications: [],
   collapsedNodeIds: new Set<string>(),
   processingCtx: createProcessingContext(),
@@ -172,6 +198,17 @@ export const createSessionSlice: StateCreator<
       return result.statusUpdate;
     }
 
+    // subtree_update 증분 적용 — nodeMap 변경 후 totalSubtreeHeight 갱신
+    if (result.subtreeHeightUpdate) {
+      applySubtreeHeightUpdate(state.processingCtx, result.subtreeHeightUpdate);
+      set({
+        totalSubtreeHeight: result.subtreeHeightUpdate.newTotal,
+        lastEventId: result.newLastEventId,
+        treeVersion: state.treeVersion + 1,
+      });
+      return result.statusUpdate;
+    }
+
     if (result.updated) {
       set({
         tree: result.root,
@@ -209,9 +246,22 @@ export const createSessionSlice: StateCreator<
       state.lastEventId,
     );
 
+    // subtree_update 배치 집계가 있으면 nodeMap에 증분 적용
+    if (result.subtreeHeightUpdate) {
+      applySubtreeHeightUpdate(state.processingCtx, result.subtreeHeightUpdate);
+    }
+
     set({
       ...(result.updated
         ? { tree: result.root, treeVersion: state.treeVersion + 1, treeChangeInfo: null }
+        : {}),
+      ...(result.subtreeHeightUpdate
+        ? {
+            totalSubtreeHeight: result.subtreeHeightUpdate.newTotal,
+            ...(result.updated
+              ? {}
+              : { treeVersion: state.treeVersion + 1 }),
+          }
         : {}),
       lastEventId: result.maxEventId,
       ...(result.notifications.length > 0
@@ -309,6 +359,7 @@ export const createSessionSlice: StateCreator<
       treeVersion: 0,
       treeChangeInfo: null,
       lastEventId: 0,
+      totalSubtreeHeight: 0,
       pendingNotifications: [],
       selectedCardId: null,
       selectedNodeId: null,

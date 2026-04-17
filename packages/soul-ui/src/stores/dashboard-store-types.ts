@@ -112,6 +112,13 @@ export interface DashboardState {
   /** 마지막으로 수신한 이벤트 ID (SSE 재연결용) */
   lastEventId: number;
 
+  /**
+   * 현재 활성 세션 트리의 총 서브트리 높이 (Phase 3 viewport API).
+   * subtree_update SSE 이벤트로 증분 갱신되며, 뷰포트 가상화 컨테이너 크기 계산에 사용된다.
+   * 세션 전환 시 0으로 초기화되고, 이후 events_viewport 응답의 new_total_subtree_height로 재동기화된다.
+   */
+  totalSubtreeHeight: number;
+
   /** 알림 대상 이벤트 큐 (complete, error, intervention_sent) */
   pendingNotifications: SoulSSEEvent[];
 

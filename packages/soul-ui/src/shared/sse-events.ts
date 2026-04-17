@@ -50,7 +50,9 @@ export type SSEEventType =
   // LLM 프록시 이벤트
   | "assistant_message"
   // 메타데이터 이벤트
-  | "metadata_updated";
+  | "metadata_updated"
+  // 뷰포트 가상화 이벤트 (Phase 3 viewport API)
+  | "subtree_update";
 
 // === Soul SSE Event Payloads ===
 
@@ -338,6 +340,28 @@ export interface AssistantMessageEvent {
   parent_event_id?: string;
 }
 
+/**
+ * 뷰포트 subtree_height 증분 갱신 이벤트 (Phase 3 viewport API).
+ *
+ * 새 이벤트가 추가될 때 조상 노드의 subtree_height가 증가한 사실을
+ * 실시간으로 클라이언트에 전달한다. 클라이언트는 이 이벤트를 받아
+ * 로컬 트리의 subtree_height와 totalSubtreeHeight를 갱신한다.
+ *
+ * **JSON 직렬화 주의**: Python 서버는 `dict[int, int]`로 송신하지만
+ * JSON 표준상 object key는 항상 string이므로 TypeScript 수신 타입은
+ * `Record<string, number>`다. 소비자는 `Number(idStr)`로 재변환하여
+ * 조상 노드를 조회해야 한다.
+ */
+export interface SubtreeUpdateSSEEvent {
+  type: "subtree_update";
+  timestamp: number;
+  affected_event_ids: number[];
+  /** ancestor_id(string) → +delta 매핑. JSON 직렬화로 key가 string. */
+  deltas: Record<string, number>;
+  new_total_subtree_height: number;
+  trigger_event_id?: number | null;
+}
+
 /** Soul에서 수신하는 모든 SSE 이벤트 유니온 */
 export type SoulSSEEvent =
   | ProgressEvent
@@ -367,7 +391,8 @@ export type SoulSSEEvent =
   | InputRequestExpiredEvent
   | InputRequestRespondedEvent
   | HistorySyncEvent
-  | AssistantMessageEvent;
+  | AssistantMessageEvent
+  | SubtreeUpdateSSEEvent;
 
 // === Dashboard SSE Event (서버 → 클라이언트) ===
 
