@@ -233,8 +233,8 @@ class ClientLifecycle:
         )
 
         options = ClaudeAgentOptions(
-            allowed_tools=self.allowed_tools,
-            disallowed_tools=self.disallowed_tools,
+            allowed_tools=self.allowed_tools or [],
+            disallowed_tools=self.disallowed_tools or [],
             permission_mode="bypassPermissions",
             can_use_tool=self._can_use_tool_factory(),
             cwd=self.working_dir,
