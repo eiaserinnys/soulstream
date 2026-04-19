@@ -503,6 +503,13 @@ class PostgresSessionDB(SessionDBBase):
             "SELECT event_count($1)", session_id
         )
 
+    async def read_last_event_id(self, session_id: str) -> int:
+        val = await self._pool.fetchval(
+            "SELECT COALESCE(MAX(id), 0) FROM events WHERE session_id = $1",
+            session_id,
+        )
+        return val or 0
+
     @staticmethod
     def _event_to_dict(row: asyncpg.Record) -> dict:
         d = dict(row)

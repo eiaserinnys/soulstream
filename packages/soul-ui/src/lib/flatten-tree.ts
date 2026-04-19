@@ -76,6 +76,8 @@ export interface ChatMessage {
     agent_id: string | null;
     agent_name: string | null;
   };
+  /** DB 이벤트 ID. 히스토리-라이브 병합 시 dedup 기준. */
+  eventId?: number;
 }
 
 /**
@@ -132,7 +134,14 @@ function collectMessages(
   }
 }
 
+/** 트리 노드 ID (node-{type}-{eventId}) 에서 DB 이벤트 ID를 추출한다 */
+function extractEventId(nodeId: string): number | undefined {
+  const match = nodeId.match(/-(\d+)$/);
+  return match ? Number(match[1]) : undefined;
+}
+
 function nodeToMessage(node: EventTreeNode): ChatMessage | null {
+  const eventId = extractEventId(node.id);
   switch (node.type) {
     case "user_message": {
       const n = node as UserMessageNode;
@@ -143,6 +152,7 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
         timestamp: n.timestamp,
         treeNodeId: n.id,
         treeNodeType: n.type,
+        eventId,
         contextItems: n.context,
         agentInfo: n.agentInfo,
       };
@@ -157,6 +167,7 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
         timestamp: n.timestamp,
         treeNodeId: n.id,
         treeNodeType: n.type,
+        eventId,
       };
     }
 
@@ -169,6 +180,7 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
         timestamp: n.timestamp,
         treeNodeId: n.id,
         treeNodeType: n.type,
+        eventId,
       };
     }
 
@@ -182,6 +194,7 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
         timestamp: n.timestamp,
         treeNodeId: n.id,
         treeNodeType: n.type,
+        eventId,
         isTruncated: n.isTruncated,
         fullContentEventId: n.fullContentEventId,
       };
@@ -197,6 +210,7 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
         isStreaming: !n.textCompleted,
         treeNodeId: n.id,
         treeNodeType: n.type,
+        eventId,
       };
     }
 
@@ -225,6 +239,7 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
         toolResult: n.toolResult,
         treeNodeId: n.id,
         treeNodeType: n.type,
+        eventId,
         isTruncated: n.isTruncated,
         fullContentEventId: n.fullContentEventId,
       };
@@ -246,6 +261,7 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
         durationMs: n.durationMs,
         treeNodeId: n.id,
         treeNodeType: n.type,
+        eventId,
       };
     }
 
@@ -295,6 +311,7 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
         provider: n.provider,
         treeNodeId: n.id,
         treeNodeType: n.type,
+        eventId,
       };
     }
 
@@ -306,6 +323,7 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
         timestamp: node.timestamp,
         treeNodeId: node.id,
         treeNodeType: node.type,
+        eventId,
       };
     }
 
@@ -325,6 +343,7 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
         timeoutSec: n.timeoutSec,
         treeNodeId: n.id,
         treeNodeType: n.type,
+        eventId,
       };
     }
 

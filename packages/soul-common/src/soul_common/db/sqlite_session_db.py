@@ -653,6 +653,13 @@ class SqliteSessionDB(SessionDBBase):
         )
         return (await cursor.fetchone())[0]
 
+    async def read_last_event_id(self, session_id: str) -> int:
+        cursor = await self._conn.execute(
+            "SELECT COALESCE(MAX(id), 0) FROM events WHERE session_id = ?",
+            (session_id,),
+        )
+        return (await cursor.fetchone())[0]
+
     # --- 뷰포트 API (SQLite 미지원) ---
 
     async def update_subtree_heights(

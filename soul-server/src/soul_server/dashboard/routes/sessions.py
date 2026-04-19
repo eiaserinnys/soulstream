@@ -9,7 +9,7 @@
 import asyncio
 import json
 import logging
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
@@ -237,10 +237,12 @@ async def api_session_messages(
 async def api_session_events(
     session_id: str,
     request: Request,
+    mode: Literal["full", "live"] = Query("full", description="'full'=히스토리+라이브, 'live'=라이브만"),
 ):
     """EventStore 기반 SSE 스트림 (GET /api/sessions/{id}/events)
 
     EventStore에서 히스토리를 읽고, 이후 라이브 이벤트를 스트리밍한다.
+    mode='live'이면 히스토리를 건너뛰고 라이브 이벤트만 스트리밍한다.
     LLM 세션은 단발 HTTP 요청이라 라이브 이벤트가 없으므로 히스토리 전송 후 종료한다.
     SessionCache는 사용하지 않는다.
     """
@@ -258,7 +260,8 @@ async def api_session_events(
 
     return EventSourceResponse(
         session_events_sse_generator(
-            session_id, after_id, task_manager, is_llm=is_llm,
+            session_id, after_id, task_manager,
+            is_llm=is_llm, live_only=(mode == "live"),
         )
     )
 
