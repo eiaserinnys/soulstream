@@ -232,6 +232,9 @@ class SessionDBBase(ABC):
     @abstractmethod
     async def count_events(self, session_id: str) -> int: ...
 
+    @abstractmethod
+    async def read_last_event_id(self, session_id: str) -> int: ...
+
     # ── 뷰포트 API ──
 
     @abstractmethod

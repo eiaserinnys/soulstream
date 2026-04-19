@@ -30,6 +30,13 @@ export interface SSESubscribeOptions {
   initialLastEventId?: number;
 
   /**
+   * SSE 모드.
+   * - "full": 히스토리 + 라이브 이벤트 (기본값)
+   * - "live": 라이브 이벤트만 (히스토리 건너뛰기)
+   */
+  mode?: "full" | "live";
+
+  /**
    * 디버그 로그 접두어.
    * 전달하면 console.log로 연결·이벤트·재연결 상태를 출력한다.
    * undefined면 로그를 출력하지 않는다.
@@ -47,7 +54,7 @@ export interface SSESubscribeOptions {
  * @returns 구독 해제 함수
  */
 export function createSSESubscribe(options: SSESubscribeOptions): () => void {
-  const { baseUrl, onEvent, onStatusChange, debugPrefix } = options;
+  const { baseUrl, onEvent, onStatusChange, mode, debugPrefix } = options;
 
   let currentLastEventId = options.initialLastEventId ?? 0;
   let eventSource: EventSource | null = null;
@@ -65,10 +72,15 @@ export function createSSESubscribe(options: SSESubscribeOptions): () => void {
   const connect = () => {
     onStatusChange?.("connecting");
 
-    const url =
-      currentLastEventId > 0
-        ? `${baseUrl}?lastEventId=${currentLastEventId}`
-        : baseUrl;
+    const params = new URLSearchParams();
+    if (currentLastEventId > 0) {
+      params.set("lastEventId", String(currentLastEventId));
+    }
+    if (mode === "live") {
+      params.set("mode", "live");
+    }
+    const qs = params.toString();
+    const url = qs ? `${baseUrl}?${qs}` : baseUrl;
 
     log(`connecting → ${url} (attempt=${reconnectAttempt})`);
 

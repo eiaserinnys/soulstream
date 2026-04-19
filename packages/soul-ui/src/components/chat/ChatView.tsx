@@ -19,6 +19,7 @@ import { groupMessages } from "./grouping";
 import { VirtualizedItem } from "./VirtualizedItem";
 import { useEstimateSize } from "../../hooks/useEstimateSize";
 import { useMessageHistoryBuffer } from "./useMessageHistoryBuffer";
+import { historicalToChatMessages } from "../../lib/history-to-chat";
 
 /** 스크롤 하단 판정 threshold (px) */
 const SCROLL_THRESHOLD = 50;
@@ -43,36 +44,33 @@ export function ChatView({ chatInputDisabled = false, isOtherNodeSession = false
   // 라이브 SSE 기반 store.tree와 공존하며, 렌더러가 eventId로 dedup하여 병합한다.
   const history = useMessageHistoryBuffer(activeSessionKey);
 
+  // SSE 라이브 이벤트 (tree에 쌓인 것)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const treeMessages = useMemo(() => flattenTree(tree), [tree, treeVersion]);
-  // 버퍼의 메시지 id 중 tree에 없는 것만 표기용 placeholder 카운트에 사용.
-  // 현재 SSE 히스토리 파이프라인은 모든 이벤트를 store.tree에 적재하므로
-  // 실제 렌더는 treeMessages를 그대로 사용한다. 향후 Phase에서 tree가 live-tail-only로
-  // 축소되면 버퍼의 메시지가 treeMessages와 병합되어 실제 렌더에 기여한다.
-  const historyOnlyCount = useMemo(() => {
-    if (history.messages.length === 0) return 0;
-    const treeEventIds = new Set<number>();
-    for (const m of treeMessages) {
-      // ChatMessage.treeNodeId는 "node-xxx-{eventId}" 패턴. 마지막 숫자만 추출.
-      const match = m.treeNodeId.match(/-(\d+)$/);
-      if (match) treeEventIds.add(Number(match[1]));
+  const liveMessages = useMemo(() => flattenTree(tree), [tree, treeVersion]);
+
+  // DB 히스토리 → ChatMessage 변환
+  const historicalMessages = useMemo(
+    () => historicalToChatMessages(history.messages),
+    [history.messages],
+  );
+
+  // 히스토리 + 라이브 병합: eventId 기준 dedup, 시간순 정렬
+  const messages = useMemo(() => {
+    if (historicalMessages.length === 0) return liveMessages;
+    if (liveMessages.length === 0) return historicalMessages;
+
+    // 라이브 메시지의 eventId 집합 (dedup 기준)
+    const liveEventIds = new Set<number>();
+    for (const m of liveMessages) {
+      if (m.eventId != null) liveEventIds.add(m.eventId);
     }
-    return history.messages.reduce(
-      (acc, m) => (treeEventIds.has(m.id) ? acc : acc + 1),
-      0,
+
+    // 히스토리에만 있는 메시지 + 라이브 전체
+    const historyOnly = historicalMessages.filter(
+      (m) => m.eventId == null || !liveEventIds.has(m.eventId),
     );
-  }, [history.messages, treeMessages]);
-
-  // 버퍼가 유의미한 신규 이벤트를 기여할 때만 콘솔에 기록 (디버깅용, 렌더에는 영향 없음)
-  useEffect(() => {
-    if (historyOnlyCount > 0 && process.env.NODE_ENV !== "production") {
-      console.debug(
-        `[ChatView] history buffer contributes ${historyOnlyCount} event(s) not in store.tree`,
-      );
-    }
-  }, [historyOnlyCount]);
-
-  const messages = treeMessages;
+    return [...historyOnly, ...liveMessages];
+  }, [historicalMessages, liveMessages]);
   const grouped = useMemo(() => groupMessages(messages), [messages]);
 
   // === Follow mode ===

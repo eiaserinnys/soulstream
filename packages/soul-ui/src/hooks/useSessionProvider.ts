@@ -177,7 +177,7 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
           enqueueEvent(event, eventId);
         },
         setStatus,
-        { lastEventId: lastEventIdRef.current },
+        { lastEventId: lastEventIdRef.current, mode: "live" },
       );
 
       return () => {
@@ -255,13 +255,14 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
 
     loadInitialCards();
 
-    // 실시간 구독 — 이벤트를 큐에 버퍼링하여 배치 처리
+    // 실시간 구독 — 히스토리는 messages API로, SSE는 라이브만
     const unsubscribe = provider.subscribe(
       sessionKey,
       (event, eventId) => {
         enqueueEvent(event, eventId);
       },
       setStatus,
+      { mode: "live" },
     );
 
     return () => {

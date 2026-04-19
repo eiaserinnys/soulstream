@@ -81,6 +81,7 @@ async def session_events_sse_generator(
     task_manager,
     *,
     is_llm: bool = False,
+    live_only: bool = False,
 ) -> AsyncGenerator[dict, None]:
     """히스토리 + 라이브 이벤트 SSE generator.
 
@@ -92,6 +93,8 @@ async def session_events_sse_generator(
         after_id: 이 ID 이후의 이벤트만 전송 (Last-Event-ID).
         task_manager: TaskManager 인스턴스.
         is_llm: True이면 히스토리 전송 후 history_sync만 보내고 종료.
+        live_only: True이면 DB 히스토리를 건너뛰고 라이브 이벤트만 전송.
+            대시보드가 messages/viewport API로 과거 데이터를 별도 로드할 때 사용.
 
     Yields:
         EventSourceResponse가 기대하는 dict:
@@ -108,18 +111,23 @@ async def session_events_sse_generator(
         db = get_session_db()
         last_stored_id = 0
 
-        try:
-            async for event_id, event_type, payload_text in db.stream_events_raw(
-                agent_session_id, after_id=after_id,
-            ):
-                last_stored_id = max(last_stored_id, event_id)
-                yield {
-                    "id": str(event_id),
-                    "event": event_type,
-                    "data": payload_text,
-                }
-        except Exception as e:
-            logger.error("Failed to read events for %s: %s", agent_session_id, e)
+        if live_only:
+            # live_only 모드: 히스토리를 건너뛰되, DB 최신 event_id를 조회하여
+            # history_sync에 정확한 last_event_id를 포함시킨다.
+            last_stored_id = await db.read_last_event_id(agent_session_id)
+        else:
+            try:
+                async for event_id, event_type, payload_text in db.stream_events_raw(
+                    agent_session_id, after_id=after_id,
+                ):
+                    last_stored_id = max(last_stored_id, event_id)
+                    yield {
+                        "id": str(event_id),
+                        "event": event_type,
+                        "data": payload_text,
+                    }
+            except Exception as e:
+                logger.error("Failed to read events for %s: %s", agent_session_id, e)
 
         # LLM 세션은 단발 요청이라 라이브 이벤트가 없다.
         # history_sync만 보내고 종료. generator return → finally 실행 → remove_listener.
