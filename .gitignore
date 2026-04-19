@@ -47,3 +47,5 @@ Thumbs.db
 
 # docgen auto-generated
 **/.docs/
+node_modules
+packages/soul-ui/node_modules
