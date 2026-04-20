@@ -1,15 +1,23 @@
 /**
  * ChatView - SSE 이벤트를 시간순 채팅 로그로 표시
  *
- * 트리를 flat 메시지 리스트로 변환하여 DM 스타일 채팅 UI로 렌더링합니다.
- * 하단에 ChatInput을 배치하여 인터벤션/리줌 메시지를 전송합니다.
+ * 트리를 flat 메시지 리스트로 변환하여 DM 스타일 채팅 UI로 렌더링한다.
+ * 하단에 ChatInput을 배치하여 인터벤션/리줌 메시지를 전송한다.
+ *
+ * Phase 4 재설계:
+ * - react-virtuoso + `alignToBottom + followOutput="auto"` 로 "첫 paint가 이미 최하단" 을 달성.
+ *   이동 궤적 없이 하단 고정.
+ * - prepend는 virtuoso 공식 패턴 `firstItemIndex -= N` (useMessageHistoryBuffer.prependedCount 참조).
+ * - 시각 상단 진입 판정은 virtuoso `startReached` 콜백으로 일원화.
+ * - focusEventId 하이라이트는 `itemsRendered` 콜백에서 `scrollerRef` 범위로 한정한 querySelector로 처리.
+ * - 세션 전환은 Virtuoso `key={activeSessionKey}` 재마운트로 처리.
  *
  * Follow mode: NodeGraph 패턴과 동일한 follow/unfollow 토글.
  * Tool grouping: 연속된 tool 메시지를 접기/펼치기 그룹으로 묶어 표시.
  */
 
-import { useMemo, useRef, useEffect, useLayoutEffect, useState, useCallback } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { useMemo, useRef, useEffect, useState, useCallback } from "react";
+import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { useDashboardStore } from "../../stores/dashboard-store";
 import { flattenTree } from "../../lib/flatten-tree";
 import { ChatInput } from "../ChatInput";
@@ -17,19 +25,9 @@ import { cn } from "../../lib/cn";
 import { useLlmContext } from "./hooks";
 import { groupMessages } from "./grouping";
 import { VirtualizedItem } from "./VirtualizedItem";
-import { useEstimateSize } from "../../hooks/useEstimateSize";
 import { useMessageHistoryBuffer } from "./useMessageHistoryBuffer";
 import { historicalToChatMessages } from "../../lib/history-to-chat";
-import {
-  shouldRunInitialBottomScroll,
-  computePrependAnchorDelta,
-} from "./ChatView.scroll-helpers";
-
-/** 스크롤 하단 판정 threshold (px) */
-const SCROLL_THRESHOLD = 50;
-
-/** 스크롤 상단 판정 threshold (px) — 이 이하로 올라오면 과거 메시지 prepend 요청 */
-const SCROLL_TOP_THRESHOLD = 80;
+import { computeFirstItemIndex, findFocusIndex } from "./ChatView.reverse-helpers";
 
 interface ChatViewProps {
   chatInputDisabled?: boolean;
@@ -77,233 +75,80 @@ export function ChatView({ chatInputDisabled = false, isOtherNodeSession = false
   }, [historicalMessages, liveMessages]);
   const grouped = useMemo(() => groupMessages(messages), [messages]);
 
-  // === Follow mode ===
-  const scrollRef = useRef<HTMLDivElement>(null);
+  // virtuoso prepend 패턴: START_INDEX - 누적 prepend 개수
+  const firstItemIndex = useMemo(
+    () => computeFirstItemIndex(history.prependedCount),
+    [history.prependedCount],
+  );
 
-  // === Virtualizer ===
-  const estimateSize = useEstimateSize(scrollRef, grouped, activeSessionKey);
-  const virtualizer = useVirtualizer({
-    count: grouped.length,
-    getScrollElement: () => scrollRef.current,
-    estimateSize,
-    overscan: 5,
-  });
+  // === Follow mode ===
+  const virtuosoRef = useRef<VirtuosoHandle>(null);
+  /**
+   * virtuoso 내부 스크롤러 DOM 레퍼런스. `itemsRendered` 콜백에서 포커스 타겟을
+   * 찾을 때 `document.querySelector` 전역 쿼리 대신 이 범위로 한정한다.
+   */
+  const scrollerRef = useRef<HTMLElement | null>(null);
   const [isFollowing, setIsFollowing] = useState(true);
   const [showNewMessage, setShowNewMessage] = useState(false);
   const prevTreeVersion = useRef(treeVersion);
   // ref로 effect 내부에서 최신 상태를 참조 (effect deps에서 제거하여 불필요한 재실행 방지)
   const isFollowingRef = useRef(true);
   useEffect(() => { isFollowingRef.current = isFollowing; }, [isFollowing]);
-  // 프로그래밍 스크롤 중 scroll 이벤트가 follow를 해제하지 않도록 가드
-  const isProgrammaticScroll = useRef(false);
 
-  // 세션당 최초 1회만 초기 하단 이동을 수행하기 위한 guard
-  const didInitialScrollRef = useRef<string | null>(null);
-
-  // 과거 메시지 prepend 직전 스냅샷 — prepend 반영 후 scroll anchor 복원에 사용
-  const prependAnchorRef = useRef<{
-    scrollHeight: number;
-    messagesLength: number;
-  } | null>(null);
-
-  const checkScrollPosition = useCallback(() => {
-    // 프로그래밍 스크롤 중에는 follow 해제하지 않음
-    if (isProgrammaticScroll.current) return;
-    const el = scrollRef.current;
-    if (!el) return;
-    const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - SCROLL_THRESHOLD;
-    if (atBottom && !isFollowingRef.current) {
-      // 사용자가 직접 맨 아래로 스크롤하면 follow 재활성화
-      setIsFollowing(true);
-      setShowNewMessage(false);
-    } else if (!atBottom && isFollowingRef.current) {
-      setIsFollowing(false);
-    }
-    // Phase 3: 위로 스크롤 시 과거 메시지 prepend 요청.
-    // 훅 내부에서 loading/reachedTop/cursor null 가드 → 중복/무의미한 호출 자동 무시.
-    if (el.scrollTop <= SCROLL_TOP_THRESHOLD) {
-      // 초기 하단 이동이 완료된 세션에서만 anchor 스냅샷을 찍는다.
-      // 초기화 과정 중 measure 프레임에서 scrollTop이 0 근처일 수 있는데,
-      // 그 시점에 snapshot이 세팅되면 이후 history 로드로 발화하는 initial-bottom
-      // effect와 prepend anchor 보정이 중복 조작될 위험이 있다.
-      if (didInitialScrollRef.current === activeSessionKey) {
-        prependAnchorRef.current = {
-          scrollHeight: el.scrollHeight,
-          messagesLength: history.messages.length,
-        };
-      }
-      history.requestOlder();
-    }
-  }, [history, activeSessionKey]);
-
-  // 새 이벤트 시: following이면 스크롤, 아니면 "New Messages" 배너 표시
+  // 새 이벤트 시: following이 아니면 "New Messages" 배너 표시.
+  // 실제 하단 유지는 virtuoso `followOutput="auto"` 가 담당하므로 여기서는
+  // 배너 상태만 제어한다. (수동 scrollToIndex 호출 제거)
   useEffect(() => {
     if (treeVersion === prevTreeVersion.current) return;
     prevTreeVersion.current = treeVersion;
-
-    if (isFollowingRef.current && grouped.length > 0) {
-      isProgrammaticScroll.current = true;
-      virtualizer.scrollToIndex(grouped.length - 1, { align: "end" });
-      const scrollEl = scrollRef.current;
-      if (scrollEl) {
-        scrollEl.addEventListener("scrollend", () => {
-          isProgrammaticScroll.current = false;
-        }, { once: true });
-        // fallback: scrollend가 발생하지 않는 경우 (스크롤 없이 콘텐츠 추가 등)
-        setTimeout(() => { isProgrammaticScroll.current = false; }, 150);
-      }
-    } else if (!isFollowingRef.current) {
-      setShowNewMessage(true);
-    }
+    if (!isFollowingRef.current) setShowNewMessage(true);
   }, [treeVersion]);
 
   // 세션 변경 시: follow 리셋만 수행.
-  // scrollTop 조작은 하지 않는다 — 이 시점에는 아직 히스토리가 비어 있어 scrollHeight가 0이므로
-  // 여기서 scrollTop을 만져봐야 무의미하다. 실제 하단 이동은 아래의 초기 하단 이동 effect가 담당.
+  // 실제 스크롤 위치 리셋은 Virtuoso `key={activeSessionKey}` 재마운트로 처리된다.
   useEffect(() => {
     setIsFollowing(true);
     setShowNewMessage(false);
   }, [activeSessionKey]);
 
-  // 세션 전환 후 첫 히스토리 로드 완료 시 하단 이동 (세션당 1회).
-  // shouldRunInitialBottomScroll: grouped.length>0 && !history.loading && 아직 안 한 세션일 때 true.
-  // measure가 순차 진행되므로 rAF 2회로 최종 보정까지 수행.
-  //  1) scrollToIndex로 estimate 기반 대략 이동
-  //  2) rAF 후 scrollToIndex 재호출 → measure가 실측치로 totalSize 갱신된 상태로 정확 이동
-  //  3) rAF 후 scrollTop=scrollHeight로 rounding 오차까지 확정
+  // 검색 결과 클릭 시: focusEventId에 해당하는 메시지로 스크롤.
+  // 하이라이트는 itemsRendered 콜백에서 DOM 쿼리 후 적용.
   useEffect(() => {
-    if (
-      !shouldRunInitialBottomScroll({
-        sessionKey: activeSessionKey,
-        groupedLength: grouped.length,
-        historyLoading: history.loading,
-        lastScrolledSessionKey: didInitialScrollRef.current,
-      })
-    ) {
-      return;
-    }
-    didInitialScrollRef.current = activeSessionKey;
-
-    isProgrammaticScroll.current = true;
-    virtualizer.scrollToIndex(grouped.length - 1, { align: "end" });
-    requestAnimationFrame(() => {
-      virtualizer.scrollToIndex(grouped.length - 1, { align: "end" });
-      requestAnimationFrame(() => {
-        if (scrollRef.current) {
-          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-        }
-        isProgrammaticScroll.current = false;
-      });
+    if (!focusEventId || grouped.length === 0) return;
+    const targetIndex = findFocusIndex(grouped, focusEventId);
+    if (targetIndex < 0) return; // 다음 treeVersion tick에서 재시도
+    virtuosoRef.current?.scrollToIndex({
+      index: targetIndex + firstItemIndex,
+      align: "center",
     });
-  }, [activeSessionKey, grouped.length, history.loading, virtualizer]);
-
-  // 과거 메시지 prepend 후 scroll anchor 복원.
-  // onScroll이 requestOlder 직전 snapshot을 찍어 두었다가,
-  // history.messages.length 증가(= prepend 반영)를 감지한 layout 단계에서
-  // (새 scrollHeight - 이전 scrollHeight)만큼 scrollTop을 밀어 시각적 위치를 유지한다.
-  // useLayoutEffect로 paint 이전에 보정해야 점프가 시각적으로 나타나지 않는다.
-  useLayoutEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const delta = computePrependAnchorDelta({
-      snapshot: prependAnchorRef.current,
-      currentScrollHeight: el.scrollHeight,
-      currentMessagesLength: history.messages.length,
-    });
-    if (delta != null) {
-      isProgrammaticScroll.current = true;
-      el.scrollTop = el.scrollTop + delta;
-      requestAnimationFrame(() => {
-        isProgrammaticScroll.current = false;
-      });
-    }
-    // snapshot은 한 번 반영되면 폐기 (다음 requestOlder 때 다시 세팅된다)
-    if (
-      prependAnchorRef.current &&
-      history.messages.length > prependAnchorRef.current.messagesLength
-    ) {
-      prependAnchorRef.current = null;
-    }
-  }, [history.messages.length]);
-
-  // 검색 결과 클릭 시: focusEventId에 해당하는 메시지로 스크롤 + 2초간 하이라이트
-  // 가상화 환경: grouped 배열에서 인덱스를 찾아 scrollToIndex로 이동한 후, rAF로 DOM 요소에 하이라이트 적용
-  const focusAttemptsRef = useRef(0);
-  useEffect(() => {
-    if (!focusEventId || !scrollRef.current) return;
-
-    // grouped 배열에서 focusEventId와 매칭되는 인덱스 찾기
-    const targetIndex = grouped.findIndex((item) => {
-      if (item.type === "tool-group") {
-        return item.messages.some((m) => m.eventId === focusEventId || m.treeNodeId?.endsWith(`-${focusEventId}`));
-      }
-      return item.msg.eventId === focusEventId || item.msg.treeNodeId?.endsWith(`-${focusEventId}`);
-    });
-
-    if (targetIndex >= 0) {
-      focusAttemptsRef.current = 0;
-      isProgrammaticScroll.current = true;
-      virtualizer.scrollToIndex(targetIndex, { align: "center" });
-
-      // 스크롤 완료 후 DOM 요소에 하이라이트 적용
-      requestAnimationFrame(() => {
-        isProgrammaticScroll.current = false;
-        const el = scrollRef.current?.querySelector(
-          `[data-tree-node-id$="-${focusEventId}"]`,
-        ) as HTMLElement | null;
-        if (el) {
-          el.classList.add("ring-2", "ring-accent-amber", "rounded");
-          setTimeout(() => {
-            el.classList.remove("ring-2", "ring-accent-amber", "rounded");
-            setFocusEventId(null);
-          }, 2000);
-        } else {
-          setFocusEventId(null);
-        }
-      });
-      return;
-    }
-
-    // grouped에서 못 찾음: 세션 로딩 중일 수 있으므로 treeVersion 갱신마다 재시도.
-    // 최대 20회 시도 후 포기 (text_delta/tool_result 등 DOM 노드가 없는 이벤트 대응).
-    focusAttemptsRef.current += 1;
-    if (focusAttemptsRef.current >= 20) {
-      focusAttemptsRef.current = 0;
-      setFocusEventId(null);
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusEventId, treeVersion, setFocusEventId, grouped, virtualizer]);
+  }, [focusEventId, treeVersion, grouped, firstItemIndex]);
 
   const scrollToBottom = useCallback(() => {
-    if (scrollRef.current && grouped.length > 0) {
-      isProgrammaticScroll.current = true;
-      virtualizer.scrollToIndex(grouped.length - 1, { align: "end", behavior: "smooth" });
-      setIsFollowing(true);
-      setShowNewMessage(false);
-      scrollRef.current.addEventListener("scrollend", () => {
-        isProgrammaticScroll.current = false;
-      }, { once: true });
-      // fallback: scrollend가 발생하지 않는 경우 (이미 맨 아래에 있을 때 등)
-      setTimeout(() => { isProgrammaticScroll.current = false; }, 150);
-    }
-  }, [grouped.length, virtualizer]);
+    if (grouped.length === 0) return;
+    virtuosoRef.current?.scrollToIndex({
+      index: grouped.length - 1 + firstItemIndex,
+      align: "end",
+      behavior: "smooth",
+    });
+    setIsFollowing(true);
+    setShowNewMessage(false);
+  }, [grouped.length, firstItemIndex]);
 
   const toggleFollow = useCallback(() => {
     setIsFollowing((prev) => {
       const next = !prev;
-      if (next && scrollRef.current && grouped.length > 0) {
-        isProgrammaticScroll.current = true;
-        virtualizer.scrollToIndex(grouped.length - 1, { align: "end", behavior: "smooth" });
+      if (next && grouped.length > 0) {
+        virtuosoRef.current?.scrollToIndex({
+          index: grouped.length - 1 + firstItemIndex,
+          align: "end",
+          behavior: "smooth",
+        });
         setShowNewMessage(false);
-        scrollRef.current.addEventListener("scrollend", () => {
-          isProgrammaticScroll.current = false;
-        }, { once: true });
-        // fallback: scrollend가 발생하지 않는 경우 (이미 맨 아래에 있을 때 등)
-        setTimeout(() => { isProgrammaticScroll.current = false; }, 150);
       }
       return next;
     });
-  }, [grouped.length, virtualizer]);
+  }, [grouped.length, firstItemIndex]);
 
   if (!activeSessionKey) {
     return (
@@ -315,52 +160,65 @@ export function ChatView({ chatInputDisabled = false, isOtherNodeSession = false
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Message list */}
-      <div
-        ref={scrollRef}
-        onScroll={checkScrollPosition}
-        className="flex-1 overflow-y-auto overflow-x-hidden py-2 overscroll-none"
-      >
-        {messages.length === 0 && (
-          <div className="p-5 text-center text-muted-foreground text-sm">
-            Waiting for events...
-          </div>
-        )}
-
-        {/* Phase 3: 과거 페이지 로딩 / 맨 위 도달 인디케이터 */}
-        {history.loading && (
-          <div className="p-2 text-center text-muted-foreground text-xs">
-            Loading earlier messages...
-          </div>
-        )}
-        {history.reachedTop && messages.length > 0 && (
-          <div className="py-2 px-3 text-center text-muted-foreground text-xs opacity-60">
-            {"\u2014"} Beginning of conversation {"\u2014"}
-          </div>
-        )}
-
-        <div
-          style={{
-            height: `${virtualizer.getTotalSize()}px`,
-            width: "100%",
-            position: "relative",
-          }}
-        >
-          {virtualizer.getVirtualItems().map((vi) => {
-            const item = grouped[vi.index];
-            return (
-              <VirtualizedItem
-                key={vi.key}
-                vi={vi}
-                item={item}
-                measureElement={virtualizer.measureElement}
-                llmContext={llmContext}
-                sessionId={activeSessionKey ?? undefined}
-              />
-            );
-          })}
+      {messages.length === 0 && !history.loading && (
+        <div className="p-5 text-center text-muted-foreground text-sm">
+          Waiting for events...
         </div>
-      </div>
+      )}
+      {/* Phase 3: 과거 페이지 로딩 / 맨 위 도달 인디케이터 */}
+      {history.loading && (
+        <div className="p-2 text-center text-muted-foreground text-xs">
+          Loading earlier messages...
+        </div>
+      )}
+      {history.reachedTop && messages.length > 0 && (
+        <div className="py-2 px-3 text-center text-muted-foreground text-xs opacity-60">
+          {"\u2014"} Beginning of conversation {"\u2014"}
+        </div>
+      )}
+
+      {messages.length > 0 && (
+        <Virtuoso
+          key={activeSessionKey ?? "empty"}
+          ref={virtuosoRef}
+          scrollerRef={(ref) => {
+            scrollerRef.current = ref as HTMLElement | null;
+          }}
+          data={grouped}
+          firstItemIndex={firstItemIndex}
+          initialTopMostItemIndex={grouped.length > 0 ? grouped.length - 1 : 0}
+          alignToBottom
+          followOutput="auto"
+          atBottomStateChange={(atBottom) => {
+            setIsFollowing(atBottom);
+            if (atBottom) setShowNewMessage(false);
+          }}
+          startReached={() => {
+            history.requestOlder();
+          }}
+          itemContent={(_, item) => (
+            <VirtualizedItem
+              item={item}
+              llmContext={llmContext}
+              sessionId={activeSessionKey ?? undefined}
+            />
+          )}
+          itemsRendered={() => {
+            if (focusEventId == null) return;
+            // scrollerRef로 virtuoso 내부 스크롤러 DOM 범위 한정 (document 전역 쿼리 금지)
+            const el = scrollerRef.current?.querySelector(
+              `[data-tree-node-id$="-${focusEventId}"]`,
+            ) as HTMLElement | null;
+            if (!el) return;
+            el.classList.add("ring-2", "ring-accent-amber", "rounded");
+            window.setTimeout(() => {
+              el.classList.remove("ring-2", "ring-accent-amber", "rounded");
+              setFocusEventId(null);
+            }, 2000);
+          }}
+          className="flex-1 overflow-x-hidden py-2 overscroll-none"
+        />
+      )}
 
       {/* "New Messages" banner */}
       {showNewMessage && !isFollowing && (

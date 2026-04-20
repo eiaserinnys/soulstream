@@ -46,6 +46,11 @@ export interface UseMessageHistoryBufferResult {
   reachedTop: boolean;
   /** 위로 스크롤 시 호출하여 과거 페이지 prepend. 중복 호출은 자동 무시된다. */
   requestOlder: () => void;
+  /**
+   * 누적 prepend 개수. virtuoso `firstItemIndex = START_INDEX - prependedCount`
+   * 패턴에서 사용한다. 세션 전환 시 0으로 리셋된다.
+   */
+  prependedCount: number;
 }
 
 export function useMessageHistoryBuffer(
@@ -55,12 +60,23 @@ export function useMessageHistoryBuffer(
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [reachedTop, setReachedTop] = useState(false);
+  const [prependedCount, setPrependedCount] = useState(0);
 
   // 동시성 가드 — 세션 전환/언마운트 시 stale fetch 결과를 버리기 위함
   const sessionTokenRef = useRef<symbol>(Symbol("initial"));
   const loadingRef = useRef(false);
   const nextCursorRef = useRef<string | null>(null);
   const reachedTopRef = useRef(false);
+  /**
+   * strict mode에서 이펙트가 2회 실행될 때 stale closure 상태를 피하기 위해
+   * messages의 현재 값을 ref에 미러링한다. requestOlder의 중복 가드가
+   * setMessages 콜백의 `prev` 대신 이 ref를 사용하여 setPrependedCount와
+   * 일관된 unique 개수를 계산한다.
+   */
+  const messagesRef = useRef<HistoricalMessage[]>([]);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   useEffect(() => {
     nextCursorRef.current = nextCursor;
@@ -83,6 +99,7 @@ export function useMessageHistoryBuffer(
     setNextCursor(null);
     setReachedTop(false);
     setLoading(false);
+    setPrependedCount(0);
 
     if (!sessionId) return;
 
@@ -141,12 +158,13 @@ export function useMessageHistoryBuffer(
         const data = (await res.json()) as MessagesResponse;
         if (sessionTokenRef.current !== token) return;
         const asc = [...(data.messages ?? [])].reverse();
-        setMessages((prev) => {
-          // 중복 가드: 이미 버퍼에 있는 id는 제외 (동일 커서 연속 호출 시 안전 장치)
-          const existingIds = new Set(prev.map((m) => m.id));
-          const unique = asc.filter((m) => !existingIds.has(m.id));
-          return [...unique, ...prev];
-        });
+        // 중복 가드: 이미 버퍼에 있는 id는 제외 (동일 커서 연속 호출 시 안전 장치)
+        const existingIds = new Set(messagesRef.current.map((m) => m.id));
+        const unique = asc.filter((m) => !existingIds.has(m.id));
+        if (unique.length > 0) {
+          setMessages((prev) => [...unique, ...prev]);
+          setPrependedCount((c) => c + unique.length);
+        }
         setNextCursor(data.next_cursor ?? null);
         if (data.next_cursor === null) setReachedTop(true);
       } catch {
@@ -160,5 +178,5 @@ export function useMessageHistoryBuffer(
     })();
   }, [sessionId]);
 
-  return { messages, loading, reachedTop, requestOlder };
+  return { messages, loading, reachedTop, requestOlder, prependedCount };
 }
