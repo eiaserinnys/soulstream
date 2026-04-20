@@ -21,6 +21,13 @@ import {
 import type { GraphNode, GraphEdge } from "../lib/layout-engine";
 import { useDashboardStore } from "../stores/dashboard-store";
 
+/**
+ * 세션 진입 시 초기 viewport fetch 범위.
+ * DEFAULT_NODE_HEIGHT 84px 기준, 일반 모니터(1080px) 세로에
+ * 약 12-13개 노드가 보이므로 50개면 4배 여유가 있다.
+ */
+const INITIAL_VIEWPORT_HEIGHT = 50;
+
 export interface ViewportRange {
   yStart: number;
   yEnd: number;
@@ -146,11 +153,12 @@ export function useViewportNodes(
     }
 
     // 세션 전환 시 기본 범위로 초기 fetch
-    const initialRange: ViewportRange = { yStart: 1, yEnd: 50 };
+    const initialRange: ViewportRange = { yStart: 1, yEnd: INITIAL_VIEWPORT_HEIGHT };
     void doFetch(initialRange);
 
     return () => {
       abortRef.current?.abort();
+      setIsLoading(false);
     };
   }, [sessionKey, doFetch]);
 
