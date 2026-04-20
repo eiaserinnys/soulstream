@@ -25,6 +25,9 @@ def pytest_configure(config):
         # reset_settings_cache fixture의 assert가 이 값을 요구한다.
         "ENVIRONMENT": "development",
         "AUTH_BEARER_TOKEN": TEST_AUTH_TOKEN,
+        # JSON 형식으로 지정하여 field_validator의 JSON 경로(startswith("[") branch)를
+        # exercise. CSV 경로 커버리지는 tests/test_cors.py 단위 테스트가 담당.
+        "CORS_ALLOWED_ORIGINS": '["http://testserver"]',
     }
     for key, value in overrides.items():
         os.environ[key] = value

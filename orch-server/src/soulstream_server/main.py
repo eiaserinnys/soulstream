@@ -39,6 +39,19 @@ logger = logging.getLogger(__name__)
 _start_time = time.time()
 
 
+def _check_production_cors(settings: Settings) -> None:
+    """프로덕션 CORS 가드 — `is_production`이면 cors_allowed_origins가 비어 있지 않아야 한다.
+
+    lifespan 내부에서 DB 연결 전에 호출한다 (fail-fast). 테스트에서는 이 함수를 직접
+    호출하여 lifespan 컨텍스트를 진입하지 않고도 동일 조건을 검증할 수 있다.
+    """
+    if settings.is_production and not settings.cors_allowed_origins:
+        raise RuntimeError(
+            "CORS_ALLOWED_ORIGINS must be set in production "
+            "(set env var as CSV: https://a,https://b)"
+        )
+
+
 async def _on_node_change(
     broadcaster: SessionBroadcaster, event_type: str, node_id: str, data: dict | None
 ) -> None:
@@ -161,6 +174,9 @@ async def lifespan(app: FastAPI):
     """앱 라이프스팬: DB 연결, 서비스 초기화, API 라우터 마운트."""
     settings = get_settings()
 
+    # 프로덕션 CORS 가드 — DB 연결 전 fail-fast
+    _check_production_cors(settings)
+
     # DB 연결 (node_id=None → 전역 뷰)
     db = PostgresSessionDB(database_url=settings.database_url, node_id=None)
     await db.connect()
@@ -236,16 +252,17 @@ def create_app(
         lifespan=None if test_mode else lifespan,
     )
 
-    # CORS
+    settings = get_settings()
+
+    # CORS — 환경변수 기반 허용 origin 목록 + JWT 쿠키 전달을 위한 credentials 허용.
+    # 프로덕션에서 빈 값이면 lifespan의 _check_production_cors가 startup을 실패시킨다.
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=False,
+        allow_origins=settings.cors_allowed_origins,
+        allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
-    settings = get_settings()
 
     # Dashboard (미들웨어 등록은 앱 시작 전에 해야 함)
     if settings.dashboard_dir:
