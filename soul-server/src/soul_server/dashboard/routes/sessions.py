@@ -12,7 +12,7 @@ import logging
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from sse_starlette.sse import EventSourceResponse
 
 from soul_server.api.sessions import session_events_sse_generator
@@ -35,10 +35,19 @@ router = APIRouter()
 # === 요청 모델 ===
 
 class CreateSessionBody(BaseModel):
+    # 'agentId'와 'profile' 양쪽을 모두 수용한다.
+    # - soul-server 고유 용어: agentId (AgentRegistry 조회 키)
+    # - orch-server / cron 공용 용어: profile (동일 값의 다른 이름)
+    # 두 서버 API를 대칭으로 유지하여 호출자가 용어를 바꾸지 않아도 동작하게 한다.
+    model_config = ConfigDict(populate_by_name=True)
+
     prompt: str
     agentSessionId: Optional[str] = None
     folderId: Optional[str] = None
-    agentId: Optional[str] = None  # 에이전트 프로필 ID (AgentRegistry 조회 키)
+    agentId: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("agentId", "profile"),
+    )
     use_mcp: bool = True
     attachmentPaths: Optional[list[str]] = None  # 세션 시작 전 업로드된 파일 절대 경로 목록
     caller_session_id: Optional[str] = None  # 발신 세션 ID (완료 시 자동 보고 대상)

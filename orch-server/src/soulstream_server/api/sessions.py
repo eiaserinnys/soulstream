@@ -12,7 +12,7 @@ from typing import Any, Optional  # Optional: _session_to_response, node_manager
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from starlette.websockets import WebSocketDisconnect
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from sse_starlette.sse import EventSourceResponse
 
 from soul_common.catalog.catalog_service import CatalogService
@@ -30,10 +30,19 @@ logger = logging.getLogger(__name__)
 # --- Request/Response Models ---
 
 class CreateSessionRequest(BaseModel):
+    # 'profile'과 'agentId' 양쪽을 모두 수용한다.
+    # - orch-server 고유 용어: profile (노드 위임 WS 페이로드 키)
+    # - soul-server 공용 용어: agentId (동일 값의 다른 이름)
+    # 두 서버 API를 대칭으로 유지하여 호출자가 용어를 바꾸지 않아도 동작하게 한다.
+    model_config = ConfigDict(populate_by_name=True)
+
     prompt: str = ""
     nodeId: Optional[str] = None
     folderId: Optional[str] = None
-    profile: Optional[str] = None
+    profile: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("profile", "agentId"),
+    )
     allowed_tools: Optional[list[str]] = None
     disallowed_tools: Optional[list[str]] = None
     use_mcp: Optional[bool] = None
