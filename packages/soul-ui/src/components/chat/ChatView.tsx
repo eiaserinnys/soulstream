@@ -8,7 +8,7 @@
  * Tool grouping: 연속된 tool 메시지를 접기/펼치기 그룹으로 묶어 표시.
  */
 
-import { useMemo, useRef, useEffect, useState, useCallback } from "react";
+import { useMemo, useRef, useEffect, useLayoutEffect, useState, useCallback } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useDashboardStore } from "../../stores/dashboard-store";
 import { flattenTree } from "../../lib/flatten-tree";
@@ -20,6 +20,10 @@ import { VirtualizedItem } from "./VirtualizedItem";
 import { useEstimateSize } from "../../hooks/useEstimateSize";
 import { useMessageHistoryBuffer } from "./useMessageHistoryBuffer";
 import { historicalToChatMessages } from "../../lib/history-to-chat";
+import {
+  shouldRunInitialBottomScroll,
+  computePrependAnchorDelta,
+} from "./ChatView.scroll-helpers";
 
 /** 스크롤 하단 판정 threshold (px) */
 const SCROLL_THRESHOLD = 50;
@@ -93,6 +97,15 @@ export function ChatView({ chatInputDisabled = false, isOtherNodeSession = false
   // 프로그래밍 스크롤 중 scroll 이벤트가 follow를 해제하지 않도록 가드
   const isProgrammaticScroll = useRef(false);
 
+  // 세션당 최초 1회만 초기 하단 이동을 수행하기 위한 guard
+  const didInitialScrollRef = useRef<string | null>(null);
+
+  // 과거 메시지 prepend 직전 스냅샷 — prepend 반영 후 scroll anchor 복원에 사용
+  const prependAnchorRef = useRef<{
+    scrollHeight: number;
+    messagesLength: number;
+  } | null>(null);
+
   const checkScrollPosition = useCallback(() => {
     // 프로그래밍 스크롤 중에는 follow 해제하지 않음
     if (isProgrammaticScroll.current) return;
@@ -109,9 +122,19 @@ export function ChatView({ chatInputDisabled = false, isOtherNodeSession = false
     // Phase 3: 위로 스크롤 시 과거 메시지 prepend 요청.
     // 훅 내부에서 loading/reachedTop/cursor null 가드 → 중복/무의미한 호출 자동 무시.
     if (el.scrollTop <= SCROLL_TOP_THRESHOLD) {
+      // 초기 하단 이동이 완료된 세션에서만 anchor 스냅샷을 찍는다.
+      // 초기화 과정 중 measure 프레임에서 scrollTop이 0 근처일 수 있는데,
+      // 그 시점에 snapshot이 세팅되면 이후 history 로드로 발화하는 initial-bottom
+      // effect와 prepend anchor 보정이 중복 조작될 위험이 있다.
+      if (didInitialScrollRef.current === activeSessionKey) {
+        prependAnchorRef.current = {
+          scrollHeight: el.scrollHeight,
+          messagesLength: history.messages.length,
+        };
+      }
       history.requestOlder();
     }
-  }, [history]);
+  }, [history, activeSessionKey]);
 
   // 새 이벤트 시: following이면 스크롤, 아니면 "New Messages" 배너 표시
   useEffect(() => {
@@ -134,20 +157,74 @@ export function ChatView({ chatInputDisabled = false, isOtherNodeSession = false
     }
   }, [treeVersion]);
 
-  // 세션 변경 시: follow 리셋
-  // isProgrammaticScroll 가드: 프로그래매틱 스크롤이 checkScrollPosition을 트리거하여
-  // 방금 켠 isFollowing을 다시 끄는 경쟁 조건을 방지한다.
+  // 세션 변경 시: follow 리셋만 수행.
+  // scrollTop 조작은 하지 않는다 — 이 시점에는 아직 히스토리가 비어 있어 scrollHeight가 0이므로
+  // 여기서 scrollTop을 만져봐야 무의미하다. 실제 하단 이동은 아래의 초기 하단 이동 effect가 담당.
   useEffect(() => {
     setIsFollowing(true);
     setShowNewMessage(false);
-    if (scrollRef.current) {
+  }, [activeSessionKey]);
+
+  // 세션 전환 후 첫 히스토리 로드 완료 시 하단 이동 (세션당 1회).
+  // shouldRunInitialBottomScroll: grouped.length>0 && !history.loading && 아직 안 한 세션일 때 true.
+  // measure가 순차 진행되므로 rAF 2회로 최종 보정까지 수행.
+  //  1) scrollToIndex로 estimate 기반 대략 이동
+  //  2) rAF 후 scrollToIndex 재호출 → measure가 실측치로 totalSize 갱신된 상태로 정확 이동
+  //  3) rAF 후 scrollTop=scrollHeight로 rounding 오차까지 확정
+  useEffect(() => {
+    if (
+      !shouldRunInitialBottomScroll({
+        sessionKey: activeSessionKey,
+        groupedLength: grouped.length,
+        historyLoading: history.loading,
+        lastScrolledSessionKey: didInitialScrollRef.current,
+      })
+    ) {
+      return;
+    }
+    didInitialScrollRef.current = activeSessionKey;
+
+    isProgrammaticScroll.current = true;
+    virtualizer.scrollToIndex(grouped.length - 1, { align: "end" });
+    requestAnimationFrame(() => {
+      virtualizer.scrollToIndex(grouped.length - 1, { align: "end" });
+      requestAnimationFrame(() => {
+        if (scrollRef.current) {
+          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        }
+        isProgrammaticScroll.current = false;
+      });
+    });
+  }, [activeSessionKey, grouped.length, history.loading, virtualizer]);
+
+  // 과거 메시지 prepend 후 scroll anchor 복원.
+  // onScroll이 requestOlder 직전 snapshot을 찍어 두었다가,
+  // history.messages.length 증가(= prepend 반영)를 감지한 layout 단계에서
+  // (새 scrollHeight - 이전 scrollHeight)만큼 scrollTop을 밀어 시각적 위치를 유지한다.
+  // useLayoutEffect로 paint 이전에 보정해야 점프가 시각적으로 나타나지 않는다.
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const delta = computePrependAnchorDelta({
+      snapshot: prependAnchorRef.current,
+      currentScrollHeight: el.scrollHeight,
+      currentMessagesLength: history.messages.length,
+    });
+    if (delta != null) {
       isProgrammaticScroll.current = true;
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      el.scrollTop = el.scrollTop + delta;
       requestAnimationFrame(() => {
         isProgrammaticScroll.current = false;
       });
     }
-  }, [activeSessionKey]);
+    // snapshot은 한 번 반영되면 폐기 (다음 requestOlder 때 다시 세팅된다)
+    if (
+      prependAnchorRef.current &&
+      history.messages.length > prependAnchorRef.current.messagesLength
+    ) {
+      prependAnchorRef.current = null;
+    }
+  }, [history.messages.length]);
 
   // 검색 결과 클릭 시: focusEventId에 해당하는 메시지로 스크롤 + 2초간 하이라이트
   // 가상화 환경: grouped 배열에서 인덱스를 찾아 scrollToIndex로 이동한 후, rAF로 DOM 요소에 하이라이트 적용

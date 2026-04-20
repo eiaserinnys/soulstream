@@ -20,13 +20,7 @@ import {
 } from "../lib/viewport-graph-builder";
 import type { GraphNode, GraphEdge } from "../lib/layout-engine";
 import { useDashboardStore } from "../stores/dashboard-store";
-
-/**
- * 세션 진입 시 초기 viewport fetch 범위.
- * DEFAULT_NODE_HEIGHT 84px 기준, 일반 모니터(1080px) 세로에
- * 약 12-13개 노드가 보이므로 50개면 4배 여유가 있다.
- */
-const INITIAL_VIEWPORT_HEIGHT = 50;
+import { runTailAnchoredFetch } from "./useViewportNodes.tail-helpers";
 
 export interface ViewportRange {
   yStart: number;
@@ -142,7 +136,14 @@ export function useViewportNodes(
     }
   }, [doFetch]);
 
-  // 세션 전환 시 초기화
+  // 세션 전환 시 tail-anchoring 2단계 fetch:
+  //  1단계: y_max=1로 total_subtree_height만 획득 (nodes/edges는 설정 안 해서 중간 플래시 방지)
+  //  2단계: tail 범위 max(1, total-49) ~ total 로 실제 fetch
+  // total <= 50이면 1단계의 total을 기반으로 yStart=1 유지.
+  //
+  // AbortController 소유권:
+  //  - probe가 abortRef에 임시로 등록 → 이후 doFetch 호출이 abortRef를 자연스럽게 교체.
+  //  - cleanup은 기존과 동일한 abortRef.current?.abort() 한 줄로 양 단계 모두 취소 가능.
   useEffect(() => {
     if (!sessionKey) {
       setEvents([]);
@@ -152,15 +153,25 @@ export function useViewportNodes(
       return;
     }
 
-    // 세션 전환 시 기본 범위로 초기 fetch
-    const initialRange: ViewportRange = { yStart: 1, yEnd: INITIAL_VIEWPORT_HEIGHT };
-    void doFetch(initialRange);
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    void runTailAnchoredFetch({
+      sessionKey,
+      fetchImpl: fetch,
+      signal: controller.signal,
+      setTotalSubtreeHeight,
+      doFetch: (range) => {
+        void doFetch(range);
+      },
+    });
 
     return () => {
       abortRef.current?.abort();
       setIsLoading(false);
     };
-  }, [sessionKey, doFetch]);
+  }, [sessionKey, doFetch, setTotalSubtreeHeight]);
 
   return {
     nodes,
