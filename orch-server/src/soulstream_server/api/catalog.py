@@ -39,8 +39,13 @@ def create_catalog_router(
     catalog_service: CatalogService,
     db: PostgresSessionDB,
     node_manager: NodeManager,
+    dependencies: list | None = None,
 ) -> APIRouter:
-    router = APIRouter(prefix="/api/catalog", tags=["catalog"])
+    router = APIRouter(
+        prefix="/api/catalog",
+        tags=["catalog"],
+        dependencies=dependencies or [],
+    )
 
     @router.get("")
     async def get_catalog(

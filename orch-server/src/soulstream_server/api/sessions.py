@@ -80,8 +80,13 @@ def create_sessions_router(
     session_router: SessionRouter,
     broadcaster: SessionBroadcaster | None = None,
     catalog_service: CatalogService | None = None,
+    dependencies: list | None = None,
 ) -> APIRouter:
-    router = APIRouter(prefix="/api/sessions", tags=["sessions"])
+    router = APIRouter(
+        prefix="/api/sessions",
+        tags=["sessions"],
+        dependencies=dependencies or [],
+    )
 
     @router.get("")
     async def list_sessions(

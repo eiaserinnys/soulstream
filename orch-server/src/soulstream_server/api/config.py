@@ -20,8 +20,15 @@ logger = logging.getLogger(__name__)
 _DEFAULT_DASHBOARD_CONFIG = {"user": {"name": "User", "id": "", "hasPortrait": False}, "agents": []}
 
 
-def create_config_router(node_manager: NodeManager) -> APIRouter:
-    router = APIRouter(prefix="/api", tags=["config"])
+def create_config_router(
+    node_manager: NodeManager,
+    dependencies: list | None = None,
+) -> APIRouter:
+    router = APIRouter(
+        prefix="/api",
+        tags=["config"],
+        dependencies=dependencies or [],
+    )
 
     def _first_node_url(path: str) -> str | None:
         """첫 번째 연결된 노드의 URL을 반환. 노드 없으면 None."""

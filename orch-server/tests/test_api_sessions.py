@@ -8,11 +8,11 @@ import pytest
 class TestListSessions:
     """GET /api/sessions tests."""
 
-    async def test_returns_empty_list(self, client, mock_db):
+    async def test_returns_empty_list(self, client, mock_db, auth_headers):
         """Returns empty session list when no sessions exist."""
         mock_db.get_all_sessions.return_value = ([], 0)
 
-        resp = await client.get("/api/sessions")
+        resp = await client.get("/api/sessions", headers=auth_headers)
 
         assert resp.status_code == 200
         body = resp.json()

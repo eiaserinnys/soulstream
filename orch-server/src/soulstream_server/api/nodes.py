@@ -43,8 +43,13 @@ _EVENT_TYPE_MAP: dict[str, str] = {
 def create_nodes_router(
     node_manager: NodeManager,
     broadcaster: SessionBroadcaster,
+    dependencies: list | None = None,
 ) -> APIRouter:
-    router = APIRouter(prefix="/api/nodes", tags=["nodes"])
+    router = APIRouter(
+        prefix="/api/nodes",
+        tags=["nodes"],
+        dependencies=dependencies or [],
+    )
 
     @router.get("")
     async def list_nodes() -> dict:

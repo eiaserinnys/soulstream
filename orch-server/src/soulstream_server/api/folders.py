@@ -31,8 +31,15 @@ class FolderReorderItem(BaseModel):
     sortOrder: int
 
 
-def create_folders_router(catalog_service: CatalogService) -> APIRouter:
-    router = APIRouter(prefix="/api/catalog/folders", tags=["folders"])
+def create_folders_router(
+    catalog_service: CatalogService,
+    dependencies: list | None = None,
+) -> APIRouter:
+    router = APIRouter(
+        prefix="/api/catalog/folders",
+        tags=["folders"],
+        dependencies=dependencies or [],
+    )
 
     @router.get("")
     async def list_folders() -> dict:

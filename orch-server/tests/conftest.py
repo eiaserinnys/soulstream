@@ -5,6 +5,10 @@ import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
+# === 테스트 환경 상수 ===
+TEST_AUTH_TOKEN = "test-bearer-token-for-testing"
+
+
 def pytest_configure(config):
     """Set required environment variables for Settings validation.
 
@@ -17,7 +21,10 @@ def pytest_configure(config):
         "HOST": "0.0.0.0",
         "PORT": "5200",
         "DATABASE_URL": "postgresql://test:test@localhost:5432/test",
-        "ENVIRONMENT": "test",
+        # soul-server conftest와 대칭으로 "development"를 사용한다.
+        # reset_settings_cache fixture의 assert가 이 값을 요구한다.
+        "ENVIRONMENT": "development",
+        "AUTH_BEARER_TOKEN": TEST_AUTH_TOKEN,
     }
     for key, value in overrides.items():
         os.environ[key] = value
@@ -30,6 +37,42 @@ from soulstream_server.nodes.node_connection import NodeConnection
 from soulstream_server.nodes.node_manager import NodeManager
 from soulstream_server.service.session_broadcaster import SessionBroadcaster
 from soulstream_server.service.session_router import SessionRouter
+
+
+@pytest.fixture(scope="session", autouse=True)
+def reset_settings_cache():
+    """세션 시작 시 settings 캐시 초기화.
+
+    lru_cache된 get_settings가 프로덕션 설정을 캐시했을 수 있으므로
+    테스트 시작 전에 초기화한다. soul-server conftest와 동일한 정본 패턴.
+    """
+    from soulstream_server.config import get_settings
+
+    # 캐시 초기화
+    get_settings.cache_clear()
+
+    # 테스트 환경 설정이 적용되었는지 확인
+    settings = get_settings()
+    assert settings.environment == "development", (
+        f"테스트 환경이 development가 아닙니다: {settings.environment}"
+    )
+
+    yield
+
+    # 테스트 종료 후 캐시 정리
+    get_settings.cache_clear()
+
+
+@pytest.fixture
+def auth_token() -> str:
+    """테스트용 인증 토큰 반환."""
+    return TEST_AUTH_TOKEN
+
+
+@pytest.fixture
+def auth_headers(auth_token: str) -> dict:
+    """인증된 요청을 위한 Authorization 헤더 반환."""
+    return {"Authorization": f"Bearer {auth_token}"}
 
 
 @pytest.fixture
@@ -109,23 +152,37 @@ def broadcaster():
 
 @pytest.fixture
 def test_app(mock_db, node_manager, session_router, mock_catalog_service, broadcaster):
-    """FastAPI test app with all routers mounted."""
-    from soulstream_server.api.catalog import create_catalog_router
-    from soulstream_server.api.folders import create_folders_router
-    from soulstream_server.api.nodes import create_nodes_router
-    from soulstream_server.api.sessions import create_sessions_router
+    """FastAPI test app with all API routers mounted (auth guard included).
 
-    app = FastAPI()
-    app.include_router(create_sessions_router(mock_db, node_manager, session_router, broadcaster, mock_catalog_service))
-    app.include_router(create_nodes_router(node_manager, broadcaster))
-    app.include_router(create_folders_router(mock_catalog_service))
-    app.include_router(create_catalog_router(mock_catalog_service, mock_db, node_manager))
-    return app
+    main.create_app을 테스트 모드로 호출하여 프로덕션과 동일한 라우터 구성과
+    인증 가드를 재사용한다 ("정본은 하나" 원칙).
+    """
+    from soulstream_server.main import create_app
+
+    return create_app(
+        db=mock_db,
+        node_manager=node_manager,
+        session_router=session_router,
+        broadcaster=broadcaster,
+        catalog_service=mock_catalog_service,
+    )
 
 
 @pytest.fixture
 async def client(test_app):
-    """Async HTTP client for test app."""
+    """Async HTTP client for test app.
+
+    기본 Bearer 토큰을 헤더에 포함한다 — 대부분의 테스트는 인증된 요청을
+    가정하므로, AsyncClient의 기본 헤더로 인증을 주입하여 개별 호출마다
+    headers=auth_headers를 명시하지 않아도 되도록 한다.
+
+    인증 실패 시나리오(test_auth.py)는 `c.headers.pop("Authorization")` 또는
+    `headers={"Authorization": "..."}`로 명시적 오버라이드하여 사용한다.
+    """
     transport = ASGITransport(app=test_app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"Authorization": f"Bearer {TEST_AUTH_TOKEN}"},
+    ) as c:
         yield c
