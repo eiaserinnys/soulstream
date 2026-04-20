@@ -17,7 +17,7 @@
  *  - useGraphDump       : 그래프 덤프 생성/다운로드 + Ctrl+Shift+D
  */
 
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   ReactFlow,
   Background,
@@ -46,6 +46,7 @@ import { useNodeSelection } from "../hooks/useNodeSelection";
 import { useGraphDump } from "../hooks/useGraphDump";
 import { useViewportFetch } from "../hooks/useViewportFetch";
 import { useViewportNodes } from "../hooks/useViewportNodes";
+import { shouldRunViewportPan } from "../hooks/useViewportNodes.tail-helpers";
 
 // === Inner Graph (needs ReactFlow context) ===
 
@@ -73,6 +74,37 @@ function NodeGraphInner() {
 
   // 1-1. Viewport API — 뷰포트 범위의 이벤트를 서버에서 로드
   const viewport = useViewportNodes(activeSessionKey);
+
+  // 1-2. Viewport 데이터 첫 로드 시 pan-to-latest.
+  // 완료된 세션(라이브 이벤트 없음)에서도 최신 노드로 pan되도록 한다.
+  // useGraphBuilder의 onFirstLoadAdded와 독립적으로 동작 — 둘 중 먼저 발화한 쪽이 pan하고,
+  // 나머지는 세션당 1회 가드(didRef 상 상호 독립)로 이중 pan이 발생할 수 있으나 rAF로 지연시켜
+  // 시각적 경합은 발생하지 않는다. panOnFirstLoad 자체는 세션당 1회 내부 가드가 있다.
+  const didViewportPanRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!activeSessionKey) {
+      didViewportPanRef.current = null;
+      return;
+    }
+    if (
+      !shouldRunViewportPan({
+        sessionKey: activeSessionKey,
+        viewportNodesLength: viewport.nodes.length,
+        lastPannedSessionKey: didViewportPanRef.current,
+      })
+    ) {
+      return;
+    }
+    didViewportPanRef.current = activeSessionKey;
+
+    const lastNode = viewport.nodes[viewport.nodes.length - 1];
+    if (lastNode) {
+      // useGraphBuilder가 이미 pan을 수행했을 수 있으므로 rAF로 지연시켜 경합 최소화
+      requestAnimationFrame(() => {
+        panOnFirstLoad(lastNode);
+      });
+    }
+  }, [activeSessionKey, viewport.nodes, panOnFirstLoad]);
 
   const reactFlow = useReactFlow();
   const rfStore = useStoreApi();
