@@ -42,10 +42,7 @@ import { nodeTypes } from "./nodes";
 import { DEFAULT_NODE_HEIGHT, type GraphNode } from "../lib/layout-engine";
 import { FIXED_ZOOM, MIN_ZOOM, useAutoScroll } from "../hooks/useAutoScroll";
 import { useGraphBuilder } from "../hooks/useGraphBuilder";
-import {
-  useNodeSelection,
-  useNodesSelectedSync,
-} from "../hooks/useNodeSelection";
+import { useNodeSelection } from "../hooks/useNodeSelection";
 import { useGraphDump } from "../hooks/useGraphDump";
 import { useViewportFetch } from "../hooks/useViewportFetch";
 import { useViewportNodes } from "../hooks/useViewportNodes";
@@ -103,9 +100,9 @@ function NodeGraphInner() {
 
   // onMoveEnd 래퍼: 기존 훅 호출 + 뷰포트 fetch 트리거
   // - 사용자 조작(event != null)일 때만 fetch (프로그래매틱 이동은 스킵)
-  const wrappedOnMoveEnd = useCallback(
-    (event: MouseEvent | TouchEvent | null) => {
-      onMoveEnd(event);
+  const wrappedOnMoveEnd: typeof onMoveEnd = useCallback(
+    (event, _viewport) => {
+      onMoveEnd(event, _viewport);
       if (event === null) return;
       const range = computeViewportRange();
       if (range) requestViewport(range);
@@ -162,18 +159,29 @@ function NodeGraphInner() {
     onFollowPan: panToNode,
   });
 
-  // 5. viewport + live 노드 병합
-  // viewport API 노드가 주 데이터소스, 라이브 SSE 노드를 dedup 후 병합
+  // 5. viewport + live 노드 병합 + selection 동기화
+  // viewport API 노드가 주 데이터소스, 라이브 SSE 노드를 dedup 후 병합.
+  // selection을 병합 단계에서 적용하여 모든 소스의 노드에 반영한다.
   const mergedNodes = useMemo(() => {
-    if (viewport.nodes.length === 0) return builder.nodes;
-    if (builder.nodes.length === 0) return viewport.nodes;
+    let combined: GraphNode[];
+    if (viewport.nodes.length === 0) {
+      combined = builder.nodes;
+    } else if (builder.nodes.length === 0) {
+      combined = viewport.nodes;
+    } else {
+      const vpNodeIds = new Set(viewport.nodes.map((n) => n.id));
+      const liveOnly = builder.nodes.filter((n) => !vpNodeIds.has(n.id));
+      combined = [...viewport.nodes, ...liveOnly];
+    }
 
-    // viewport 노드 ID set — dedup 기준
-    const vpNodeIds = new Set(viewport.nodes.map((n) => n.id));
-    // 라이브 노드 중 viewport에 없는 것만 추가
-    const liveOnly = builder.nodes.filter((n) => !vpNodeIds.has(n.id));
-    return [...viewport.nodes, ...liveOnly];
-  }, [viewport.nodes, builder.nodes]);
+    // selection 동기화 — useNodesSelectedSync 대체
+    return combined.map((n) => {
+      const shouldSelect = selectedNodeId
+        ? n.id === selectedNodeId
+        : n.data.cardId === selectedCardId;
+      return n.selected === shouldSelect ? n : { ...n, selected: shouldSelect };
+    });
+  }, [viewport.nodes, builder.nodes, selectedCardId, selectedNodeId]);
 
   const mergedEdges = useMemo(() => {
     if (viewport.edges.length === 0) return builder.edges;
@@ -183,9 +191,6 @@ function NodeGraphInner() {
     const liveOnly = builder.edges.filter((e) => !vpEdgeIds.has(e.id));
     return [...viewport.edges, ...liveOnly];
   }, [viewport.edges, builder.edges]);
-
-  // 6. store 선택 → ReactFlow 노드 selected 동기화
-  useNodesSelectedSync(builder.setNodes, selectedCardId, selectedNodeId);
 
   // 7. 그래프 덤프 다운로드 (Ctrl+Shift+D + Dump 버튼)
   const { dumpGraph } = useGraphDump({
