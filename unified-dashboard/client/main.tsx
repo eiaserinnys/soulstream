@@ -23,15 +23,20 @@ const queryClient = new QueryClient({
 const root = document.getElementById("root");
 if (!root) throw new Error("Root element not found");
 
+// Provider 중첩 순서 설계:
+//   AuthProvider → AuthGate → AppConfigProvider → App
+// AppConfigProvider를 AuthGate 안으로 옮겨, /api/config 로드 실패가
+// 로그인 화면 도달을 막지 않도록 한다. Login.tsx는 AppConfig를 참조하지 않으므로
+// 로그인 전 UX는 그대로 유지된다.
 createRoot(root).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <AppConfigProvider>
-          <AuthGate loginTitle="Soul Dashboard">
+        <AuthGate loginTitle="Soul Dashboard">
+          <AppConfigProvider>
             <App />
-          </AuthGate>
-        </AppConfigProvider>
+          </AppConfigProvider>
+        </AuthGate>
       </AuthProvider>
     </QueryClientProvider>
   </StrictMode>,

@@ -1,5 +1,9 @@
 """Tests for orch-server 이중 인증 가드 (Bearer OR JWT 쿠키).
 
+대상 엔드포인트: `/api/status` — verify_auth로 보호 유지되는 정상 엔드포인트.
+(`/api/health`는 공개로 전환되어 더 이상 이중 인증 가드 시나리오 대상이 아니다.
+ 공개 상태 회귀 검증은 test_api_public_routes.py에서 수행한다.)
+
 7개 시나리오:
 1. Bearer 정상 토큰 → 200
 2. Authorization 헤더 누락 → 401 UNAUTHORIZED
@@ -24,19 +28,19 @@ def _make_jwt_cookie(secret: str, email: str = "dev@example.com") -> str:
 
 
 class TestBearerAuth:
-    """Bearer 토큰 인증 시나리오."""
+    """Bearer 토큰 인증 시나리오 (/api/status 대상)."""
 
     async def test_valid_bearer_token_returns_200(self, client, auth_headers):
-        """정상 Bearer 토큰 → 200 (/api/health)."""
-        resp = await client.get("/api/health", headers=auth_headers)
+        """정상 Bearer 토큰 → 200 (/api/status)."""
+        resp = await client.get("/api/status", headers=auth_headers)
         assert resp.status_code == 200
-        assert resp.json()["status"] == "ok"
+        assert resp.json()["healthy"] is True
 
     async def test_missing_authorization_header_returns_401(self, client):
         """Authorization 헤더 누락 → 401 UNAUTHORIZED."""
         # conftest의 client는 기본 Bearer 헤더를 포함하므로 명시적으로 제거한다.
         client.headers.pop("Authorization", None)
-        resp = await client.get("/api/health")
+        resp = await client.get("/api/status")
         assert resp.status_code == 401
         # HTTPException의 detail 구조: {"detail": {"error": {"code": "UNAUTHORIZED", ...}}}
         # 또는 Bearer/JWT 이중 실패 시 Bearer 쪽 에러가 올라온다.
@@ -48,7 +52,7 @@ class TestBearerAuth:
         # 기본 Bearer 헤더를 제거하고 Basic 스킴으로 교체한다.
         client.headers.pop("Authorization", None)
         resp = await client.get(
-            "/api/health",
+            "/api/status",
             headers={"Authorization": "Basic some-base64-value"},
         )
         assert resp.status_code == 401
@@ -58,14 +62,14 @@ class TestBearerAuth:
         # 기본 헤더를 제거하고 잘못된 토큰으로 교체한다.
         client.headers.pop("Authorization", None)
         resp = await client.get(
-            "/api/health",
+            "/api/status",
             headers={"Authorization": "Bearer wrong-token"},
         )
         assert resp.status_code == 401
 
 
 class TestJWTCookieAuth:
-    """JWT 쿠키 인증 시나리오."""
+    """JWT 쿠키 인증 시나리오 (/api/status 대상)."""
 
     async def test_valid_jwt_cookie_returns_200(self, client):
         """유효 JWT 쿠키만 있고 Bearer 없음 → 200.
@@ -89,7 +93,7 @@ class TestJWTCookieAuth:
             cookie_value = _make_jwt_cookie(settings.jwt_secret)
             client.cookies.set(COOKIE_NAME, cookie_value)
 
-        resp = await client.get("/api/health")
+        resp = await client.get("/api/status")
         assert resp.status_code == 200
 
     async def test_both_bearer_and_jwt_invalid_returns_401(self, client):
@@ -98,7 +102,7 @@ class TestJWTCookieAuth:
         client.headers.pop("Authorization", None)
         client.cookies.set(COOKIE_NAME, "invalid-jwt-value")
         resp = await client.get(
-            "/api/health",
+            "/api/status",
             headers={"Authorization": "Bearer wrong-token"},
         )
         assert resp.status_code == 401
