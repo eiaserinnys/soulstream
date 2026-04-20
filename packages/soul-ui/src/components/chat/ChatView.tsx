@@ -94,6 +94,11 @@ export function ChatView({ chatInputDisabled = false, isOtherNodeSession = false
   // ref로 effect 내부에서 최신 상태를 참조 (effect deps에서 제거하여 불필요한 재실행 방지)
   const isFollowingRef = useRef(true);
   useEffect(() => { isFollowingRef.current = isFollowing; }, [isFollowing]);
+  /**
+   * 같은 focusEventId에 대해 `itemsRendered`가 반복 호출되어도 하이라이트 타이머가
+   * 중첩되지 않도록 1회 처리 후 여기에 기록한다. 세션 전환 시 null로 초기화.
+   */
+  const handledFocusRef = useRef<number | null>(null);
 
   // 새 이벤트 시: following이 아니면 "New Messages" 배너 표시.
   // 실제 하단 유지는 virtuoso `followOutput="auto"` 가 담당하므로 여기서는
@@ -104,12 +109,16 @@ export function ChatView({ chatInputDisabled = false, isOtherNodeSession = false
     if (!isFollowingRef.current) setShowNewMessage(true);
   }, [treeVersion]);
 
-  // 세션 변경 시: follow 리셋만 수행.
+  // 세션 변경 시: follow 리셋 + 이전 세션의 focusEventId 잔재 정리.
+  // 다른 세션에 우연히 같은 eventId가 존재하면 엉뚱한 메시지를 하이라이트할 수 있으므로
+  // 세션이 바뀌는 순간 focusEventId와 handledFocusRef를 모두 비운다.
   // 실제 스크롤 위치 리셋은 Virtuoso `key={activeSessionKey}` 재마운트로 처리된다.
   useEffect(() => {
     setIsFollowing(true);
     setShowNewMessage(false);
-  }, [activeSessionKey]);
+    setFocusEventId(null);
+    handledFocusRef.current = null;
+  }, [activeSessionKey, setFocusEventId]);
 
   // 검색 결과 클릭 시: focusEventId에 해당하는 메시지로 스크롤.
   // 하이라이트는 itemsRendered 콜백에서 DOM 쿼리 후 적용.
@@ -179,7 +188,7 @@ export function ChatView({ chatInputDisabled = false, isOtherNodeSession = false
 
       {messages.length > 0 && (
         <Virtuoso
-          key={activeSessionKey ?? "empty"}
+          key={activeSessionKey}
           ref={virtuosoRef}
           scrollerRef={(ref) => {
             scrollerRef.current = ref as HTMLElement | null;
@@ -205,11 +214,14 @@ export function ChatView({ chatInputDisabled = false, isOtherNodeSession = false
           )}
           itemsRendered={() => {
             if (focusEventId == null) return;
+            // 이미 이 focusEventId를 처리했다면 중복 예약 방지
+            if (handledFocusRef.current === focusEventId) return;
             // scrollerRef로 virtuoso 내부 스크롤러 DOM 범위 한정 (document 전역 쿼리 금지)
             const el = scrollerRef.current?.querySelector(
               `[data-tree-node-id$="-${focusEventId}"]`,
             ) as HTMLElement | null;
             if (!el) return;
+            handledFocusRef.current = focusEventId;
             el.classList.add("ring-2", "ring-accent-amber", "rounded");
             window.setTimeout(() => {
               el.classList.remove("ring-2", "ring-accent-amber", "rounded");
