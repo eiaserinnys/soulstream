@@ -93,12 +93,18 @@ def mock_db():
 
 @pytest.fixture
 def mock_ws():
-    """Mock FastAPI WebSocket."""
+    """Mock FastAPI WebSocket.
+
+    ws.headers는 Starlette WebSocket.headers 객체를 대체한다.
+    dict는 .get()이 가능하므로 `ws.headers.get("authorization", "")` 호출을 지원한다.
+    test_ws_node_auth.py와 test_ws_handler.py에서 공유된다.
+    """
     ws = AsyncMock()
     ws.send_json = AsyncMock()
     ws.close = AsyncMock()
     ws.accept = AsyncMock()
     ws.receive_text = AsyncMock()
+    ws.headers = {"authorization": f"Bearer {TEST_AUTH_TOKEN}"}
     return ws
 
 

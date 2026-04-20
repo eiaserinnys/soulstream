@@ -50,6 +50,7 @@ def _make_adapter(
     soul_engine: MagicMock | None = None,
     resource_manager: MagicMock | None = None,
     session_broadcaster: MagicMock | None = None,
+    auth_bearer_token: str = "test-token",
 ) -> UpstreamAdapter:
     """테스트용 UpstreamAdapter 인스턴스 생성."""
     tm = task_manager or MagicMock()
@@ -69,6 +70,7 @@ def _make_adapter(
         session_db=MagicMock(),
         host="localhost",
         port=3105,
+        auth_bearer_token=auth_bearer_token,
     )
 
 
@@ -817,3 +819,126 @@ class TestRegistration:
         assert reg_msg["user"]["name"] == "서소영"
         assert reg_msg["user"]["hasPortrait"] is False
         assert "portrait_b64" not in reg_msg["user"]
+
+
+class TestUpstreamAuthHeader:
+    """ws_connect Authorization 헤더 전달 + _auth_warned 중복 방지 테스트.
+
+    _connect_and_serve는 무한 루프이므로 ws_connect를 AsyncMock(side_effect=[...])로
+    교체하여 단일 사이클만 관찰한 뒤 CancelledError로 루프를 종료시키는 패턴을 사용한다.
+    """
+
+    @pytest.mark.asyncio
+    async def test_ws_connect_called_with_bearer_header(self):
+        """auth_bearer_token이 있으면 ws_connect에 Bearer 헤더를 전달."""
+        adapter = _make_adapter(auth_bearer_token="test-token")
+
+        mock_session = MagicMock()
+        # 첫 호출은 CancelledError를 던져 루프를 즉시 종료 — headers 인자만 검증
+        mock_session.ws_connect = AsyncMock(side_effect=asyncio.CancelledError())
+        adapter._session = mock_session
+
+        with pytest.raises(asyncio.CancelledError):
+            await adapter._connect_and_serve()
+
+        mock_session.ws_connect.assert_called_once_with(
+            adapter._url,
+            headers={"Authorization": "Bearer test-token"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_ws_connect_without_token_sends_empty_headers(self):
+        """auth_bearer_token이 빈 값이면 headers는 빈 dict로 전달."""
+        adapter = _make_adapter(auth_bearer_token="")
+
+        mock_session = MagicMock()
+        mock_session.ws_connect = AsyncMock(side_effect=asyncio.CancelledError())
+        adapter._session = mock_session
+
+        # development 모드에서만 빈 토큰이 허용되므로 get_settings.is_production=False 보장
+        from soul_server.upstream import adapter as adapter_module
+
+        with patch.object(adapter_module, "__name__", adapter_module.__name__):
+            # config.get_settings는 adapter 내부에서 lazy import되므로 그대로 사용 가능
+            # (conftest에서 ENVIRONMENT=development 설정됨)
+            with pytest.raises(asyncio.CancelledError):
+                await adapter._connect_and_serve()
+
+        mock_session.ws_connect.assert_called_once_with(
+            adapter._url,
+            headers={},
+        )
+
+    @pytest.mark.asyncio
+    async def test_auth_warned_logs_error_only_once_in_production(self, caplog):
+        """프로덕션 + 빈 토큰으로 _connect_and_serve를 3회 호출해도 error 로그는 1회만."""
+        import logging
+        from types import SimpleNamespace
+
+        from soul_server import config as config_module
+
+        adapter = _make_adapter(auth_bearer_token="")
+        adapter._auth_warned = False
+
+        mock_session = MagicMock()
+        # 3회 호출 모두 CancelledError로 루프 종료
+        mock_session.ws_connect = AsyncMock(
+            side_effect=[
+                asyncio.CancelledError(),
+                asyncio.CancelledError(),
+                asyncio.CancelledError(),
+            ]
+        )
+        adapter._session = mock_session
+
+        fake_settings = SimpleNamespace(is_production=True)
+        with patch.object(config_module, "get_settings", lambda: fake_settings):
+            with caplog.at_level(logging.DEBUG, logger="soul_server.upstream.adapter"):
+                for _ in range(3):
+                    with pytest.raises(asyncio.CancelledError):
+                        await adapter._connect_and_serve()
+
+        error_records = [
+            r for r in caplog.records
+            if r.levelname == "ERROR" and "AUTH_BEARER_TOKEN empty in production" in r.message
+        ]
+        debug_records = [
+            r for r in caplog.records
+            if r.levelname == "DEBUG" and "still empty" in r.message
+        ]
+        assert len(error_records) == 1, f"기대 error 1회, 실제 {len(error_records)}"
+        assert len(debug_records) == 2, f"기대 debug 2회, 실제 {len(debug_records)}"
+        assert adapter._auth_warned is True
+
+    @pytest.mark.asyncio
+    async def test_auth_warned_resets_on_successful_connection(self):
+        """연결 성공 시 _auth_warned가 False로 리셋되어 이후 새 문제는 다시 error로 기록."""
+        from types import SimpleNamespace
+
+        from soul_server import config as config_module
+
+        adapter = _make_adapter(auth_bearer_token="t1")
+        adapter._auth_warned = True  # 이전 경고 상태 시뮬레이션
+
+        # async for msg in self._ws 를 즉시 끝낼 수 있는 async iterator를 만든다.
+        async def _empty_aiter():
+            if False:
+                yield None  # pragma: no cover — generator 시그니처만 필요
+
+        mock_ws = MagicMock()
+        mock_ws.__aiter__ = lambda self: _empty_aiter()
+        mock_ws.closed = False
+        mock_ws.send_json = AsyncMock()
+
+        mock_session = MagicMock()
+        mock_session.ws_connect = AsyncMock(return_value=mock_ws)
+        adapter._session = mock_session
+
+        fake_settings = SimpleNamespace(is_production=False)
+        with patch.object(config_module, "get_settings", lambda: fake_settings), \
+             patch.object(adapter, "_start_broadcast", AsyncMock()), \
+             patch.object(adapter, "_send_initial_sessions", AsyncMock()):
+            await adapter._connect_and_serve()
+
+        # 연결 성공 시 플래그가 리셋되어야 한다
+        assert adapter._auth_warned is False

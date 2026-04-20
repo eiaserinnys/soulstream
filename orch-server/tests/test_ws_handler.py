@@ -14,6 +14,7 @@ from soulstream_server.constants import (
 )
 from soulstream_server.nodes.node_manager import NodeManager
 from soulstream_server.nodes.ws_handler import handle_node_ws
+from tests.conftest import TEST_AUTH_TOKEN
 
 
 @pytest.fixture
@@ -23,6 +24,9 @@ def ws():
     mock.close = AsyncMock()
     mock.receive_text = AsyncMock()
     mock.send_json = AsyncMock()
+    # handle_node_ws가 accept 전 Authorization 헤더를 검증하므로
+    # 유효한 Bearer 토큰을 주입하여 기존 시나리오(등록 흐름)가 통과하도록 한다.
+    mock.headers = {"authorization": f"Bearer {TEST_AUTH_TOKEN}"}
     return mock
 
 

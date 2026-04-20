@@ -248,6 +248,7 @@ async def bootstrap_upstream(
         agent_registry=agent_registry,
         user_name=settings.dash_user_name,
         user_portrait_path=settings.dash_user_portrait,
+        auth_bearer_token=settings.auth_bearer_token,
     )
     upstream_task = asyncio.create_task(upstream_adapter.run())
     logger.info(
