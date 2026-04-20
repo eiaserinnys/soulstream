@@ -195,7 +195,9 @@ export function ChatView({ chatInputDisabled = false, isOtherNodeSession = false
           }}
           data={grouped}
           firstItemIndex={firstItemIndex}
-          initialTopMostItemIndex={grouped.length > 0 ? grouped.length - 1 : 0}
+          initialTopMostItemIndex={
+            grouped.length > 0 ? { index: grouped.length - 1, align: "end" } : 0
+          }
           alignToBottom
           followOutput="auto"
           atBottomStateChange={(atBottom) => {
