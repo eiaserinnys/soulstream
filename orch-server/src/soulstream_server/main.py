@@ -18,6 +18,7 @@ from soul_common.db.session_db import PostgresSessionDB
 from soulstream_server.api.attachments import create_attachments_router
 from soulstream_server.api.atom import create_atom_router
 from soulstream_server.api.auth import verify_auth
+from soulstream_server.api.auth_bearer import router as auth_bearer_router
 from soulstream_server.api.catalog import create_catalog_router
 from soulstream_server.api.claude_auth import create_claude_auth_router
 from soulstream_server.api.cogito import create_cogito_router
@@ -136,6 +137,11 @@ def _mount_api_routers(
     app.include_router(create_attachments_router(node_manager, dependencies=api_deps))
     app.include_router(create_cogito_router(node_manager, dependencies=api_deps))
     app.include_router(create_atom_router(dependencies=api_deps))
+
+    # /api/auth/token — 네이티브 JWT handoff.
+    # 라우터 내부에서 이미 verify_auth로 보호하므로 여기서 추가 dep을 주입하지 않는다
+    # (정본은 하나 — 보호 수준을 라우터가 소유). OAuth 라우터와 유사한 외부 mount 패턴.
+    app.include_router(auth_bearer_router)
 
     # Auth 라우터 (OAuth 로그인 — /api/auth/* 면제 대상)
     if settings.is_auth_enabled:
