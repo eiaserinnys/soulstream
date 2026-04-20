@@ -273,8 +273,9 @@ def create_app(
     async def ws_node(websocket: WebSocket):
         await handle_node_ws(websocket, app.state.node_manager)
 
-    # 헬스 체크 — 인증 필수 (로드밸런서 헬스체크는 /ws/node 또는 별도 경로 사용 가정)
-    @app.get("/api/health", dependencies=[Depends(verify_auth)])
+    # 헬스 체크 — 공개 엔드포인트.
+    # 응답에 민감 정보가 없고, 로드밸런서·CI의 표준적 무인증 헬스체크 관행을 따른다.
+    @app.get("/api/health")
     async def health():
         uptime = int(time.time() - _start_time)
         return {
@@ -283,8 +284,10 @@ def create_app(
             "uptime_seconds": uptime,
         }
 
-    # AppConfig — unified-dashboard 클라이언트 초기화용
-    @app.get("/api/config", dependencies=[Depends(verify_auth)])
+    # AppConfig — unified-dashboard 클라이언트 초기화용 (공개 엔드포인트).
+    # AppConfigProvider가 로그인 UI를 그리기 위한 설정(mode, nodeId, features.*)을 얻는 경로로,
+    # 로그인 전에 호출되어야 한다. 응답 본문에 민감정보 없음.
+    @app.get("/api/config")
     async def config():
         """대시보드 AppConfig.
 
