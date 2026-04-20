@@ -7,12 +7,17 @@ soul-server 노드의 등록 및 메시지 수신 루프.
 import asyncio
 import json
 import logging
+import secrets
 
 from fastapi import WebSocket, WebSocketDisconnect
 
+from soulstream_server.config import get_settings
 from soulstream_server.constants import (
     EVT_NODE_REGISTER,
     REGISTRATION_TIMEOUT,
+    WS_CLOSE_AUTH_INVALID,
+    WS_CLOSE_AUTH_REQUIRED,
+    WS_CLOSE_CONFIG_ERROR,
     WS_CLOSE_INVALID_FIRST_MSG,
     WS_CLOSE_INVALID_JSON,
     WS_CLOSE_NODE_ID_REQUIRED,
@@ -26,10 +31,36 @@ logger = logging.getLogger(__name__)
 async def handle_node_ws(ws: WebSocket, node_manager: NodeManager) -> None:
     """soul-server 노드의 WebSocket 연결을 처리한다.
 
-    1. 연결 수락
-    2. 10초 이내에 node_register 메시지 대기
-    3. 등록 성공 후 메시지 수신 루프
+    1. Authorization 헤더 검증 (accept 전)
+    2. 연결 수락
+    3. 10초 이내에 node_register 메시지 대기
+    4. 등록 성공 후 메시지 수신 루프
     """
+    settings = get_settings()
+    configured_token = settings.auth_bearer_token
+
+    # ── 인증 검사 (accept 전) ──
+    # Starlette는 accept 전에 ws.close(code)가 호출되면 ASGI websocket.close 메시지만
+    # 내보내고 핸드셰이크를 완료하지 않는다. 클라이언트(aiohttp)는 이를
+    # WSServerHandshakeError로 수신한다.
+    if not configured_token:
+        if settings.is_production:
+            logger.error("AUTH_BEARER_TOKEN not configured in production")
+            await ws.close(code=WS_CLOSE_CONFIG_ERROR, reason="server misconfigured")
+            return
+        # 개발 모드: 토큰 미설정 시 인증 우회
+    else:
+        auth_header = ws.headers.get("authorization", "")
+        parts = auth_header.split()
+        if len(parts) != 2 or parts[0].lower() != "bearer":
+            logger.warning("/ws/node: missing or malformed Authorization header")
+            await ws.close(code=WS_CLOSE_AUTH_REQUIRED, reason="auth required")
+            return
+        if not secrets.compare_digest(parts[1], configured_token):
+            logger.warning("/ws/node: invalid token")
+            await ws.close(code=WS_CLOSE_AUTH_INVALID, reason="invalid token")
+            return
+
     await ws.accept()
 
     # 등록 대기

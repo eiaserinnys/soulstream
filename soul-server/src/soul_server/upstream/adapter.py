@@ -80,6 +80,7 @@ class UpstreamAdapter:
         agent_registry: "AgentRegistry | None" = None,
         user_name: str = "",
         user_portrait_path: str = "",
+        auth_bearer_token: str = "",
     ) -> None:
         self._tm = task_manager
         self._engine = soul_engine
@@ -93,6 +94,10 @@ class UpstreamAdapter:
         self._agent_registry = agent_registry
         self._user_name = user_name
         self._user_portrait_path = user_portrait_path
+        self._auth_bearer_token = auth_bearer_token
+        # 재연결 루프에서 매 시도마다 같은 error 로그를 쏟지 않도록 플래그로 억제한다.
+        # 연결 성공 시 리셋되어 이후 새 문제는 다시 error로 기록된다.
+        self._auth_warned = False
 
         self._ws: aiohttp.ClientWebSocketResponse | None = None
         self._session: aiohttp.ClientSession | None = None
@@ -223,8 +228,31 @@ class UpstreamAdapter:
         """WebSocket 연결 + 노드 등록 + 세션 동기화 + 명령 수신 루프."""
         logger.info("Connecting to upstream: %s", self._url)
 
-        self._ws = await self._session.ws_connect(self._url)
+        # 프로덕션 미설정 경고 — 최초 1회 error, 이후 debug (재연결 스팸 억제)
+        if not self._auth_bearer_token:
+            from soul_server.config import get_settings
+
+            if get_settings().is_production:
+                if not self._auth_warned:
+                    logger.error(
+                        "Upstream adapter: AUTH_BEARER_TOKEN empty in production — "
+                        "orch-server will likely reject this connection"
+                    )
+                    self._auth_warned = True
+                else:
+                    logger.debug(
+                        "Upstream adapter: AUTH_BEARER_TOKEN still empty (reconnect)"
+                    )
+
+        # aiohttp는 `headers` 파라미터를 사용한다 (websockets 라이브러리의 extra_headers가 아니다).
+        headers: dict[str, str] = {}
+        if self._auth_bearer_token:
+            headers["Authorization"] = f"Bearer {self._auth_bearer_token}"
+
+        self._ws = await self._session.ws_connect(self._url, headers=headers)
         self._reconnect.reset()
+        # 연결 성공 — auth 경고 플래그 리셋하여 다음 새 문제는 다시 error로 기록되게 한다.
+        self._auth_warned = False
         logger.info("Connected to upstream (node_id=%s)", self._node_id)
 
         await self._send(self._build_registration_msg())

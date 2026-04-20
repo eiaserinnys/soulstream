@@ -16,8 +16,15 @@ from soulstream_server.nodes.node_manager import NodeManager
 logger = logging.getLogger(__name__)
 
 
-def create_cogito_router(node_manager: NodeManager) -> APIRouter:
-    router = APIRouter(prefix="/cogito", tags=["cogito"])
+def create_cogito_router(
+    node_manager: NodeManager,
+    dependencies: list | None = None,
+) -> APIRouter:
+    router = APIRouter(
+        prefix="/cogito",
+        tags=["cogito"],
+        dependencies=dependencies or [],
+    )
 
     @router.get("/search")
     async def search(

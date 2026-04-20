@@ -43,8 +43,15 @@ class SubmitCodeRequest(BaseModel):
     code: str
 
 
-def create_claude_auth_router(node_manager: NodeManager) -> APIRouter:
-    router = APIRouter(prefix="/api", tags=["claude-auth"])
+def create_claude_auth_router(
+    node_manager: NodeManager,
+    dependencies: list | None = None,
+) -> APIRouter:
+    router = APIRouter(
+        prefix="/api",
+        tags=["claude-auth"],
+        dependencies=dependencies or [],
+    )
 
     @router.get("/nodes/{node_id}/claude-auth/start")
     async def node_claude_auth_start(node_id: str):

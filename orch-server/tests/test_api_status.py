@@ -3,6 +3,8 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from tests.conftest import TEST_AUTH_TOKEN
+
 
 @pytest.mark.asyncio
 async def test_api_status_returns_not_draining():
@@ -11,7 +13,9 @@ async def test_api_status_returns_not_draining():
 
     app = create_app()
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        headers={"Authorization": f"Bearer {TEST_AUTH_TOKEN}"},
     ) as client:
         resp = await client.get("/api/status")
 
@@ -28,7 +32,9 @@ async def test_api_status_is_stable_across_requests():
 
     app = create_app()
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        headers={"Authorization": f"Bearer {TEST_AUTH_TOKEN}"},
     ) as client:
         for _ in range(3):
             resp = await client.get("/api/status")

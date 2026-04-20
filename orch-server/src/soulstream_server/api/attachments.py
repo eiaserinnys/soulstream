@@ -11,13 +11,20 @@ import httpx
 from soulstream_server.nodes.node_manager import NodeManager
 
 
-def create_attachments_router(node_manager: NodeManager) -> APIRouter:
+def create_attachments_router(
+    node_manager: NodeManager,
+    dependencies: list | None = None,
+) -> APIRouter:
     """attachments 라우터 팩토리.
 
     기존 api/sessions.py의 팩토리 클로저 패턴을 따른다.
     node_manager는 FastAPI DI가 아니라 클로저로 주입받는다.
     """
-    router = APIRouter(prefix="/api/attachments", tags=["attachments"])
+    router = APIRouter(
+        prefix="/api/attachments",
+        tags=["attachments"],
+        dependencies=dependencies or [],
+    )
 
     @router.post("/sessions", status_code=201)
     async def proxy_upload(

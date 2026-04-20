@@ -15,8 +15,12 @@ from soulstream_server.config import get_settings
 logger = logging.getLogger(__name__)
 
 
-def create_atom_router() -> APIRouter:
-    router = APIRouter(prefix="/api/catalog/atom", tags=["atom"])
+def create_atom_router(dependencies: list | None = None) -> APIRouter:
+    router = APIRouter(
+        prefix="/api/catalog/atom",
+        tags=["atom"],
+        dependencies=dependencies or [],
+    )
 
     @router.get("/nodes")
     async def list_atom_root_nodes() -> dict:
