@@ -102,7 +102,7 @@ export function FeedView({ onNewSession, onLoadMore, hasMore, onRenameSession, o
   });
 
   const virtualItems = virtualizer.getVirtualItems();
-  const { setRef } = useFlipAnimation(feedSessions, virtualItems);
+  const { getItemRef } = useFlipAnimation(feedSessions, virtualItems);
 
   // 인피니트 스크롤: virtualizer가 목록 끝 근처에 도달하면 onLoadMore 호출
   const loadMoreRef = useRef(onLoadMore);
@@ -223,7 +223,7 @@ export function FeedView({ onNewSession, onLoadMore, hasMore, onRenameSession, o
                   }}
                 >
                   <div
-                    ref={(el) => setRef(session.agentSessionId, el)}
+                    ref={getItemRef(session.agentSessionId)}
                     style={{ width: "100%", height: "100%" }}
                   >
                     <FeedCard

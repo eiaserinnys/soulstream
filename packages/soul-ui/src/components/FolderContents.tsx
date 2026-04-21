@@ -123,7 +123,7 @@ export function FolderContents({ sessions: sessionsProp, onMoveSessions, onRenam
   });
 
   const virtualItems = virtualizer.getVirtualItems();
-  const { setRef } = useFlipAnimation(displaySessions, virtualItems);
+  const { getItemRef } = useFlipAnimation(displaySessions, virtualItems);
 
   const handleContextMenu = useCallback((sessionId: string, e: React.MouseEvent) => {
     e.preventDefault();
@@ -184,7 +184,7 @@ export function FolderContents({ sessions: sessionsProp, onMoveSessions, onRenam
                     transform: `translateY(${virtualItem.start}px)`,
                   }}
                 >
-                  <div ref={(el) => setRef(session.agentSessionId, el)} style={{ width: "100%", height: "100%" }}>
+                  <div ref={getItemRef(session.agentSessionId)} style={{ width: "100%", height: "100%" }}>
                     <SessionItem
                       session={session}
                       isActive={activeSessionKey === session.agentSessionId}
