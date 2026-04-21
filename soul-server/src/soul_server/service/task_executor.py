@@ -209,6 +209,7 @@ class TaskExecutor:
             workspace_dir=effective_workspace_dir,
             folder_name=folder_name,
             agent_id=task.profile_id,
+            caller_info=task.caller_info,
         )
         atom_context_items = (
             [{"key": "atom_context", "label": "atom 트리", "content": atom_context_markdown}]
@@ -281,8 +282,8 @@ class TaskExecutor:
                     "text": task.prompt,
                     "context": ctx.combined_context_items,
                 }
-                if task.caller_agent_info:
-                    user_msg_event.update(task.caller_agent_info)
+                if task.caller_info:
+                    user_msg_event["caller_info"] = task.caller_info
                 event_id = await self._persist_event(session_id, user_msg_event)
                 user_msg_event["_event_id"] = event_id
                 current_user_request_id = event_id  # int 유지 (parent_event_id 컬럼이 INTEGER)

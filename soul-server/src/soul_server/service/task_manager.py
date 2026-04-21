@@ -678,6 +678,7 @@ class TaskManager:
         profile_id: Optional[str] = None,
         oauth_token: Optional[str] = None,
         caller_session_id: Optional[str] = None,
+        caller_info: Optional[dict] = None,
     ) -> Task:
         """
         새 세션 태스크 생성 또는 기존 세션 resume
@@ -697,6 +698,9 @@ class TaskManager:
             profile_id: 에이전트 프로필 ID (AgentRegistry에서 유효성 검사)
             oauth_token: 세션별 OAuth 토큰 직접 지정 (없으면 .env / OS env에서 폴백)
             caller_session_id: 발신 세션 ID (완료 시 자동 보고 대상)
+            caller_info: 발신자 정보 dict. 신규 세션에만 적용되며 Task.caller_info에 설정됨과
+                동시에 DB metadata에 {"type":"caller_info","value":caller_info} 엔트리로 영속화된다.
+                재개(resume) 경로는 이미 caller_info를 보유하므로 수용하지 않는다.
 
         Returns:
             Task: 생성되거나 재활성화된 태스크
@@ -768,6 +772,7 @@ class TaskManager:
                     profile_id=profile_id,
                     oauth_token=oauth_token,
                     caller_session_id=caller_session_id,
+                    caller_info=caller_info,
                 )
                 is_new = True
 
@@ -794,6 +799,7 @@ class TaskManager:
         profile_id: Optional[str],
         oauth_token: Optional[str],
         caller_session_id: Optional[str],
+        caller_info: Optional[dict] = None,
     ) -> Task:
         """신규 Task 생성 + _tasks 등록. create_task의 락 보유 상태에서 호출된다."""
         task = Task(
@@ -810,6 +816,7 @@ class TaskManager:
             profile_id=profile_id,
             oauth_token=oauth_token,
             caller_session_id=caller_session_id,
+            caller_info=caller_info,
         )
         self._tasks[agent_session_id] = task
         logger.info(f"Created new session: {agent_session_id}")
@@ -841,6 +848,13 @@ class TaskManager:
             created_at=task.created_at,
             caller_session_id=task.caller_session_id,
         )
+        # caller_info를 Task.metadata와 DB에 동시 저장
+        # (session_created 이벤트 전 타이밍 — SSE 브로드캐스트 금지. 고수준 append_session_metadata 사용 시
+        #  metadata_updated/session_updated가 session_created보다 먼저 발행되어 클라이언트가 혼동한다.)
+        if task.caller_info:
+            entry = {"type": "caller_info", "value": task.caller_info}
+            task.metadata.append(entry)
+            await self._db.append_metadata(agent_session_id, entry)
         # 폴더 배정 + catalog_updated 브로드캐스트
         # _assign_default_folder_and_broadcast 내부에서 catalog_updated가 발행된다.
         # 반환된 folder_id를 session_created payload에 포함하여 이벤트 순서 의존성을 제거한다.

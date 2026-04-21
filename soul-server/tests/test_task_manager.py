@@ -240,6 +240,66 @@ class TestCreateTask:
         assert task2.profile_id == "profile-new"
 
 
+class TestCreateTaskCallerInfo:
+    """create_task()의 caller_info 처리 검증 (Phase 1)."""
+
+    async def test_caller_info_stored_on_task(self, manager):
+        """caller_info 전달 시 Task.caller_info 필드에 그대로 보관된다."""
+        info = {"source": "slack", "ip": "1.2.3.4", "slack": {"channel_id": "C1"}}
+        task = await manager.create_task(
+            prompt="hello",
+            agent_session_id="sess-1",
+            caller_info=info,
+        )
+        assert task.caller_info == info
+
+    async def test_caller_info_appended_to_task_metadata(self, manager):
+        """caller_info truthy면 Task.metadata에 {type:"caller_info", value:...} 엔트리가 추가된다."""
+        info = {"source": "browser", "user_agent": "Mozilla/5.0"}
+        task = await manager.create_task(
+            prompt="hello",
+            agent_session_id="sess-1",
+            caller_info=info,
+        )
+        entries = [m for m in task.metadata if m.get("type") == "caller_info"]
+        assert len(entries) == 1
+        assert entries[0]["value"] == info
+
+    async def test_caller_info_persisted_to_db_metadata(self, manager):
+        """caller_info truthy면 db.append_metadata가 {type:"caller_info", value:...}로 호출된다."""
+        info = {"source": "agent", "parent_session_id": "sess-parent", "agent_node": "node-A"}
+        await manager.create_task(
+            prompt="hello",
+            agent_session_id="sess-1",
+            caller_info=info,
+        )
+        calls = manager._db.append_metadata.call_args_list
+        caller_info_calls = [
+            c for c in calls
+            if len(c.args) >= 2 and isinstance(c.args[1], dict) and c.args[1].get("type") == "caller_info"
+        ]
+        assert len(caller_info_calls) == 1
+        assert caller_info_calls[0].args[0] == "sess-1"
+        assert caller_info_calls[0].args[1]["value"] == info
+
+    async def test_caller_info_none_skips_metadata_write(self, manager):
+        """caller_info가 None이면 metadata에 엔트리가 생기지 않고 db.append_metadata도 caller_info로 호출되지 않는다."""
+        task = await manager.create_task(
+            prompt="hello",
+            agent_session_id="sess-1",
+            caller_info=None,
+        )
+        assert task.caller_info is None
+        entries = [m for m in task.metadata if m.get("type") == "caller_info"]
+        assert entries == []
+        calls = manager._db.append_metadata.call_args_list
+        caller_info_calls = [
+            c for c in calls
+            if len(c.args) >= 2 and isinstance(c.args[1], dict) and c.args[1].get("type") == "caller_info"
+        ]
+        assert caller_info_calls == []
+
+
 class TestGetTask:
     async def test_get_existing(self, manager):
         """존재하는 세션 조회"""

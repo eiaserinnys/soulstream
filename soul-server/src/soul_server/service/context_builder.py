@@ -21,8 +21,12 @@ def build_soulstream_context_item(
     folder_name: Optional[str] = None,
     node_id: Optional[str] = None,
     agent_id: Optional[str] = None,
+    caller_info: Optional[dict] = None,
 ) -> dict:
-    """소울스트림 자체 세션 메타데이터 context_item을 생성한다."""
+    """소울스트림 자체 세션 메타데이터 context_item을 생성한다.
+
+    caller_info: 발신자 정보 dict. None이면 content dict에서 생략된다.
+    """
     hostname = socket.gethostname()
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -56,6 +60,8 @@ def build_soulstream_context_item(
     }
     if agent_id:
         content["agent_id"] = agent_id
+    if caller_info:
+        content["caller_info"] = caller_info
     return {
         "key": "soulstream_session",
         "label": "Soulstream 세션 정보",

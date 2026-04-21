@@ -95,7 +95,7 @@ class TestCreateAgentSession:
         """caller_session_id 없을 때 caller_session_id=None으로 create_task를 호출해야 한다."""
         mock_task = self._make_task()
         mock_task.profile_id = None
-        mock_task.caller_agent_info = None
+        mock_task.caller_info = None
         mock_tm = MagicMock()
         mock_tm.create_task = AsyncMock(return_value=mock_task)
         mock_tm.start_execution = AsyncMock(return_value=True)
@@ -120,7 +120,7 @@ class TestCreateAgentSession:
         """caller_session_id가 있으면 create_task에 caller_session_id로 전달되어야 한다."""
         mock_task = self._make_task()
         mock_task.profile_id = None
-        mock_task.caller_agent_info = None
+        mock_task.caller_info = None
         mock_tm = MagicMock()
         mock_tm.create_task = AsyncMock(return_value=mock_task)
         mock_tm.get_task = AsyncMock(return_value=None)

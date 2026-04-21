@@ -109,9 +109,12 @@ class Task:
     # 발신 세션 ID (DB 저장 — 완료 시 자동 보고 대상)
     caller_session_id: Optional[str] = None
 
-    # 발신자 메타데이터 (런타임 전용, 영속화 안 됨)
-    # {"source": "agent", "agent_node": str, "agent_id": str, "agent_name": str}
-    caller_agent_info: Optional[dict] = field(default=None, repr=False)
+    # 발신자 정보 (runtime + DB metadata 양쪽에 저장)
+    # {"source": "slack"|"browser"|"agent"|"api",
+    #  "ip": str?, "user_agent": str?, "referer": str?, "forwarded_for": str?,
+    #  "parent_session_id": str?, "agent_node": str?, "agent_id": str?, "agent_name": str?,
+    #  "slack": dict?, "bot_name": str?}
+    caller_info: Optional[dict] = field(default=None, repr=False)
 
     # OAuth 토큰 직접 지정 (런타임 전용, 영속화 안 됨)
     oauth_token: Optional[str] = field(default=None, repr=False)
