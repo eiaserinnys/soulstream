@@ -191,11 +191,20 @@ class TestInitMultiNodeTools:
         mock_client.get.assert_called_once_with("http://orch:5200/api/nodes")
         assert result == {"nodes": []}
 
+    @patch("soul_server.cogito.mcp_multi_node.get_task_manager")
     @patch("soul_server.cogito.mcp_multi_node.httpx")
-    async def test_create_remote_agent_session_includes_caller_info(self, mock_httpx):
+    async def test_create_remote_agent_session_includes_caller_info(self, mock_httpx, mock_get_tm):
         """caller_session_id가 있으면 body에 caller_session_id가 포함되어야 한다."""
         settings = _make_settings("ws://orch:5200/ws/n1", node_id="node-alpha")
         mcp_tools.init_multi_node_tools(settings)
+
+        # caller_session_id가 있으면 내부에서 get_task_manager() 호출됨 → mock 필요
+        tm = MagicMock()
+        tm.get_task = AsyncMock(return_value=None)  # caller_task 조회 실패 시나리오
+        tm._agent_registry = None
+        tm._db = MagicMock()
+        tm._db.node_id = "node-alpha"
+        mock_get_tm.return_value = tm
 
         mock_client = AsyncMock()
         mock_resp = MagicMock()
@@ -225,7 +234,7 @@ class TestInitMultiNodeTools:
 
     @patch("soul_server.cogito.mcp_multi_node.httpx")
     async def test_create_remote_agent_session_no_caller_session_when_no_caller(self, mock_httpx):
-        """caller_session_id가 없으면 body에 caller_session_id 키가 없어야 한다."""
+        """caller_session_id가 없으면 body에 caller_session_id·caller_info 키가 없어야 한다."""
         settings = _make_settings("ws://orch:5200/ws/n1")
         mcp_tools.init_multi_node_tools(settings)
 
@@ -249,6 +258,65 @@ class TestInitMultiNodeTools:
         body = call_args.kwargs.get("json") or call_args[1].get("json") or call_args[0][1]
         assert "system_prompt" not in body
         assert "caller_session_id" not in body
+        # caller_session_id가 없으면 caller_info도 없다 (None은 필터링됨)
+        assert "caller_info" not in body
+
+    @patch("soul_server.cogito.mcp_multi_node.get_task_manager")
+    @patch("soul_server.cogito.mcp_multi_node.httpx")
+    async def test_create_remote_agent_session_body_includes_caller_info(
+        self, mock_httpx, mock_get_tm
+    ):
+        """caller_session_id가 있으면 body.caller_info에 source='agent'와 발신 세션의 프로필 정보가 포함되어야 한다.
+
+        이 값이 orch→soul WS 페이로드를 거쳐 원격 노드의 Task.caller_info까지 도달한다.
+        """
+        settings = _make_settings("ws://orch:5200/ws/n1", node_id="node-src")
+        mcp_tools.init_multi_node_tools(settings)
+
+        # 발신 세션의 Task와 Profile 모킹
+        caller_task = MagicMock()
+        caller_task.profile_id = "agent-parent"
+
+        caller_profile = MagicMock()
+        caller_profile.name = "Parent Agent"
+
+        mock_registry = MagicMock()
+        mock_registry.get.return_value = caller_profile
+
+        tm = MagicMock()
+        tm.get_task = AsyncMock(return_value=caller_task)
+        tm._agent_registry = mock_registry
+        tm._db = MagicMock()
+        tm._db.node_id = "node-src"
+        mock_get_tm.return_value = tm
+
+        # httpx mock
+        mock_client = AsyncMock()
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json = MagicMock(return_value={"agentSessionId": "remote-sess"})
+        mock_client.post = AsyncMock(return_value=mock_resp)
+        mock_httpx.AsyncClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_httpx.AsyncClient.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        tools = await mcp_tools.cogito_mcp.list_tools()
+        create_tool = next(t for t in tools if t.name == "create_remote_agent_session")
+        await create_tool.fn(
+            node_id="node-dest",
+            agent_id="agent-child",
+            prompt="sub-task",
+            caller_session_id="sess-parent-1",
+        )
+
+        call_args = mock_client.post.call_args
+        body = call_args.kwargs.get("json") or call_args[1].get("json") or call_args[0][1]
+        assert "caller_info" in body, f"body={body}"
+        ci = body["caller_info"]
+        assert ci["source"] == "agent"
+        assert ci["parent_session_id"] == "sess-parent-1"
+        assert ci["agent_node"] == "node-src"
+        assert ci["agent_id"] == "agent-parent"
+        assert ci["agent_name"] == "Parent Agent"
 
 
 # ---------------------------------------------------------------------------

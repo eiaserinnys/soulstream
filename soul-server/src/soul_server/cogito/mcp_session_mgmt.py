@@ -66,25 +66,31 @@ async def create_agent_session(
         folder_id: 세션을 배치할 폴더 ID (None이면 기본 배치)
     """
     task_manager = get_task_manager()
-    task = await task_manager.create_task(
-        prompt=prompt,
-        profile_id=agent_id,
-        folder_id=folder_id,
-        caller_session_id=caller_session_id,
-    )
 
+    # caller_info 조립: MCP 진입점이므로 source="agent"로 고정하며,
+    # caller_session_id가 지정된 경우 발신 세션의 프로필 정보를 포함한다.
+    caller_info: Optional[dict] = None
     if caller_session_id:
         caller_task = await task_manager.get_task(caller_session_id)
         caller_profile = None
         if caller_task and caller_task.profile_id and task_manager._agent_registry:
             caller_profile = task_manager._agent_registry.get(caller_task.profile_id)
 
-        task.caller_agent_info = {
+        caller_info = {
             "source": "agent",
+            "parent_session_id": caller_session_id,
             "agent_node": task_manager._db.node_id,
             "agent_id": caller_task.profile_id if caller_task else None,
             "agent_name": caller_profile.name if caller_profile else None,
         }
+
+    task = await task_manager.create_task(
+        prompt=prompt,
+        profile_id=agent_id,
+        folder_id=folder_id,
+        caller_session_id=caller_session_id,
+        caller_info=caller_info,
+    )
 
     await task_manager.start_execution(
         agent_session_id=task.agent_session_id,

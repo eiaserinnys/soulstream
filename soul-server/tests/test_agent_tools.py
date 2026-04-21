@@ -113,6 +113,7 @@ class TestCreateAgentSession:
             profile_id="agent-alpha",
             folder_id=None,
             caller_session_id=None,
+            caller_info=None,
         )
         mock_tm.start_execution.assert_called_once()
 
@@ -173,6 +174,67 @@ class TestCreateAgentSession:
             result = await fn(agent_id=None, prompt="test")
 
         assert result == {"agent_session_id": "sess-new-001", "status": "running"}
+
+    async def test_caller_info_assembled_with_caller_session_id(self):
+        """caller_session_id가 있으면 caller_info가 source='agent'와 발신 세션 프로필 정보로 조립되어 create_task에 전달된다."""
+        # 발신 세션의 Task와 Profile 준비
+        caller_task = MagicMock()
+        caller_task.profile_id = "agent-parent"
+
+        caller_profile = MagicMock()
+        caller_profile.name = "Parent Agent"
+
+        mock_registry = MagicMock()
+        mock_registry.get.return_value = caller_profile
+
+        # 새로 생성되는 Task
+        new_task = self._make_task(agent_session_id="sess-new")
+        new_task.profile_id = "agent-alpha"
+        new_task.caller_info = None
+
+        mock_tm = MagicMock()
+        mock_tm.create_task = AsyncMock(return_value=new_task)
+        mock_tm.get_task = AsyncMock(return_value=caller_task)
+        mock_tm.start_execution = AsyncMock(return_value=True)
+        mock_tm._agent_registry = mock_registry
+        mock_tm._db = MagicMock()
+        mock_tm._db.node_id = "node-alpha"
+
+        fn = _unwrap(mcp_tools.create_agent_session)
+        p_engine, p_rm = self._patch_execution_deps()
+        with patch("soul_server.cogito.mcp_session_mgmt.get_task_manager", return_value=mock_tm), p_engine, p_rm:
+            await fn(
+                agent_id="agent-alpha",
+                prompt="작업",
+                caller_session_id="sess-parent-1",
+            )
+
+        call_kwargs = mock_tm.create_task.call_args.kwargs
+        caller_info = call_kwargs["caller_info"]
+        assert caller_info is not None
+        assert caller_info["source"] == "agent"
+        assert caller_info["parent_session_id"] == "sess-parent-1"
+        assert caller_info["agent_node"] == "node-alpha"
+        assert caller_info["agent_id"] == "agent-parent"
+        assert caller_info["agent_name"] == "Parent Agent"
+
+    async def test_caller_info_none_without_caller_session_id(self):
+        """caller_session_id가 없으면 create_task에 caller_info=None이 전달된다."""
+        new_task = self._make_task(agent_session_id="sess-orphan")
+        new_task.profile_id = None
+        new_task.caller_info = None
+
+        mock_tm = MagicMock()
+        mock_tm.create_task = AsyncMock(return_value=new_task)
+        mock_tm.start_execution = AsyncMock(return_value=True)
+
+        fn = _unwrap(mcp_tools.create_agent_session)
+        p_engine, p_rm = self._patch_execution_deps()
+        with patch("soul_server.cogito.mcp_session_mgmt.get_task_manager", return_value=mock_tm), p_engine, p_rm:
+            await fn(agent_id=None, prompt="작업")
+
+        call_kwargs = mock_tm.create_task.call_args.kwargs
+        assert call_kwargs["caller_info"] is None
 
     async def test_start_execution_called_with_correct_session_id(self):
         """start_execution이 생성된 세션 ID로 호출되어야 한다."""

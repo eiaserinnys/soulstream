@@ -12,6 +12,7 @@ from typing import Optional
 import httpx
 
 from soul_server.cogito.mcp_tools import cogito_mcp
+from soul_server.service.task_manager import get_task_manager
 
 logger = logging.getLogger(__name__)
 
@@ -74,12 +75,32 @@ def init(settings) -> None:
             caller_session_id: 발신 세션 ID.
             folder_id: 세션을 배치할 폴더 ID
         """
+        # caller_info 조립: MCP 진입점이므로 source="agent" 고정.
+        # caller_session_id가 지정된 경우 발신 세션의 프로필 정보를 함께 전달한다.
+        # orch-server가 이 값을 그대로 node로 전파하여 원격 노드의 Task.caller_info에 도달한다.
+        caller_info: dict | None = None
+        if caller_session_id:
+            task_manager = get_task_manager()
+            caller_task = await task_manager.get_task(caller_session_id)
+            caller_profile = None
+            if caller_task and caller_task.profile_id and task_manager._agent_registry:
+                caller_profile = task_manager._agent_registry.get(caller_task.profile_id)
+
+            caller_info = {
+                "source": "agent",
+                "parent_session_id": caller_session_id,
+                "agent_node": task_manager._db.node_id,
+                "agent_id": caller_task.profile_id if caller_task else None,
+                "agent_name": caller_profile.name if caller_profile else None,
+            }
+
         body = {
             "prompt": prompt,
             "nodeId": node_id,
             "profile": agent_id,
             "folderId": folder_id,
             "caller_session_id": caller_session_id,
+            "caller_info": caller_info,
         }
         body = {k: v for k, v in body.items() if v is not None}
         async with httpx.AsyncClient(timeout=30.0) as client:
