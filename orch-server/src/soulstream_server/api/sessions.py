@@ -51,6 +51,7 @@ class CreateSessionRequest(BaseModel):
     caller_session_id: Optional[str] = None
     attachmentPaths: Optional[list[str]] = None
     caller_info: Optional[dict] = None  # 발신자 정보. 비어있으면 서버가 HTTP Request에서 조립한다.
+    model: Optional[str] = None
 
 
 class InterveneRequest(BaseModel):

@@ -165,6 +165,7 @@ class NodeConnection:
         caller_session_id: str | None = None,
         attachment_paths: list[str] | None = None,
         caller_info: dict | None = None,
+        model: str | None = None,
     ) -> dict:
         payload: dict[str, Any] = {"prompt": prompt}
         if session_id:
@@ -199,6 +200,8 @@ class NodeConnection:
                     + "\n".join(f"- {p}" for p in attachment_paths)
                 ),
             }]
+        if model is not None:
+            payload["model"] = model
         return await self._send_command(CMD_CREATE_SESSION, payload)
 
     async def send_intervene(
