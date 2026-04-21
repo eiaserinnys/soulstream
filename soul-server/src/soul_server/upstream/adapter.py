@@ -448,6 +448,7 @@ class UpstreamAdapter:
                 system_prompt=cmd.get("systemPrompt"),
                 oauth_token=cmd.get("oauth_token"),
                 caller_session_id=cmd.get("caller_session_id"),
+                caller_info=cmd.get("caller_info"),
             )
         except ValueError as e:
             await self._send_error(str(e), request_id=cmd.get("requestId", ""))

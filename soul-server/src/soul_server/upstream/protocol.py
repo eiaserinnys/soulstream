@@ -24,6 +24,7 @@ class CreateSessionCmd(TypedDict, total=False):
     context: dict[str, Any]
     context_items: list[dict[str, Any]]
     extra_context_items: list[dict[str, Any]]
+    caller_info: dict[str, Any]
 
 
 class InterveneCmd(TypedDict):

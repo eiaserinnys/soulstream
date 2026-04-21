@@ -164,6 +164,7 @@ class NodeConnection:
         oauth_profile_name: str | None = None,
         caller_session_id: str | None = None,
         attachment_paths: list[str] | None = None,
+        caller_info: dict | None = None,
     ) -> dict:
         payload: dict[str, Any] = {"prompt": prompt}
         if session_id:
@@ -184,6 +185,8 @@ class NodeConnection:
             payload["oauth_profile_name"] = oauth_profile_name
         if caller_session_id is not None:
             payload["caller_session_id"] = caller_session_id
+        if caller_info is not None:
+            payload["caller_info"] = caller_info
         if attachment_paths:
             # soul-server upstream/adapter.py가 extra_context_items=cmd.get("extra_context_items")로
             # 처리하므로 여기서 변환한다. adapter.py 수정 불필요 (create_session 경로).

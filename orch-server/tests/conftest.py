@@ -2,7 +2,20 @@
 
 import asyncio
 import os
+import sys
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
+
+
+# venv의 editable install 경로(원본 리포)보다 로컬 worktree 소스를 우선하도록
+# sys.path 앞에 삽입한다. soul-server conftest와 동일한 정본 패턴.
+# 이렇게 하지 않으면 .test-venv에 설치된 main 브랜치 soulstream_server가 로드되어
+# worktree에서 수정한 코드가 테스트에 반영되지 않는다.
+# ⚠️ 반드시 soulstream_server import 전에 실행되어야 하므로 모듈 최상단에 배치한다
+# (pytest_configure 내부로 옮기면 conftest.py가 먼저 import되며 이미 stale import가 캐시됨).
+_local_src = Path(__file__).parent.parent / "src"
+if str(_local_src) not in sys.path:
+    sys.path.insert(0, str(_local_src))
 
 
 # === 테스트 환경 상수 ===

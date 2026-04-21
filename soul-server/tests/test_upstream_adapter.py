@@ -153,6 +153,63 @@ class TestHandleCreateSession:
         assert call_kwargs["disallowed_tools"] == ["Bash"]
         assert call_kwargs["use_mcp"] is False
 
+    @pytest.mark.asyncio
+    async def test_passes_caller_info_to_task_manager(self):
+        """WS payload의 caller_info가 create_task 인자로 그대로 전달된다."""
+        tm = MagicMock()
+        tm.create_task = AsyncMock(return_value=_make_mock_task())
+        tm.start_execution = AsyncMock(return_value=True)
+        tm.add_listener = AsyncMock(return_value=True)
+        tm.remove_listener = AsyncMock()
+
+        adapter = _make_adapter(task_manager=tm)
+        adapter._ws = MagicMock()
+        adapter._ws.closed = False
+        adapter._ws.send_json = AsyncMock()
+        adapter._running = True
+
+        caller_info = {
+            "source": "browser",
+            "ip": "10.0.0.5",
+            "user_agent": "Mozilla/5.0",
+            "referer": "https://dashboard.example/",
+        }
+        cmd = {
+            "type": CMD_CREATE_SESSION,
+            "prompt": "Test",
+            "caller_info": caller_info,
+        }
+
+        await adapter._handle_command(cmd)
+
+        call_kwargs = tm.create_task.call_args.kwargs
+        assert call_kwargs["caller_info"] == caller_info
+
+    @pytest.mark.asyncio
+    async def test_caller_info_absent_passes_none(self):
+        """WS payload에 caller_info가 없으면 create_task에 None이 전달된다 (소비부에서 .get())."""
+        tm = MagicMock()
+        tm.create_task = AsyncMock(return_value=_make_mock_task())
+        tm.start_execution = AsyncMock(return_value=True)
+        tm.add_listener = AsyncMock(return_value=True)
+        tm.remove_listener = AsyncMock()
+
+        adapter = _make_adapter(task_manager=tm)
+        adapter._ws = MagicMock()
+        adapter._ws.closed = False
+        adapter._ws.send_json = AsyncMock()
+        adapter._running = True
+
+        cmd = {
+            "type": CMD_CREATE_SESSION,
+            "prompt": "Test",
+        }
+
+        await adapter._handle_command(cmd)
+
+        call_kwargs = tm.create_task.call_args.kwargs
+        assert call_kwargs["caller_info"] is None
+
 
 class TestHandleIntervene:
     """intervene 명령 처리 테스트."""

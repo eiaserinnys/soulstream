@@ -50,6 +50,7 @@ class CreateSessionRequest(BaseModel):
     oauth_profile_name: Optional[str] = None
     caller_session_id: Optional[str] = None
     attachmentPaths: Optional[list[str]] = None
+    caller_info: Optional[dict] = None  # 발신자 정보. 비어있으면 서버가 HTTP Request에서 조립한다.
 
 
 class InterveneRequest(BaseModel):
@@ -188,11 +189,19 @@ def create_sessions_router(
         return EventSourceResponse(event_generator())
 
     @router.post("", status_code=201)
-    async def create_session(body: CreateSessionRequest) -> dict:
+    async def create_session(body: CreateSessionRequest, request: Request) -> dict:
         """세션 생성. 노드에 라우팅."""
-        session_id, node_id = await session_router.route_create_session(
-            body.model_dump(exclude_none=True)
-        )
+        # caller_info 조립: body에 있으면 그대로, 없으면 HTTP Request에서 수집 (source="browser")
+        caller_info = body.caller_info or {
+            "source": "browser",
+            "ip": request.client.host if request.client else None,
+            "user_agent": request.headers.get("user-agent"),
+            "referer": request.headers.get("referer"),
+            "forwarded_for": request.headers.get("x-forwarded-for"),
+        }
+        payload = body.model_dump(exclude_none=True)
+        payload["caller_info"] = caller_info
+        session_id, node_id = await session_router.route_create_session(payload)
         # folderId DB 저장은 soul-server create_task에서 처리.
         # soul-stream은 대시보드 폴더 뷰 실시간 반영을 위한 catalog broadcast만 담당.
         # soul-server는 folderId=None인 경우에도 _assign_default_folder_and_broadcast()로

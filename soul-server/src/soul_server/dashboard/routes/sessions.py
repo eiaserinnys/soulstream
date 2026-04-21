@@ -51,6 +51,7 @@ class CreateSessionBody(BaseModel):
     use_mcp: bool = True
     attachmentPaths: Optional[list[str]] = None  # 세션 시작 전 업로드된 파일 절대 경로 목록
     caller_session_id: Optional[str] = None  # 발신 세션 ID (완료 시 자동 보고 대상)
+    caller_info: Optional[dict] = None  # 발신자 정보. 비어있으면 서버가 HTTP Request에서 조립한다.
 
 
 class InterveneBody(BaseModel):
@@ -278,7 +279,7 @@ async def api_session_events(
 # === /api/sessions (POST) ===
 
 @router.post("/api/sessions", status_code=201, dependencies=[Depends(require_dashboard_auth)])
-async def api_create_session(body: CreateSessionBody):
+async def api_create_session(body: CreateSessionBody, request: Request):
     """새 Claude Code 세션을 시작합니다."""
     task_manager = get_task_manager()
 
@@ -306,6 +307,15 @@ async def api_create_session(body: CreateSessionBody):
             }
         ]
 
+    # caller_info 조립: body에 있으면 그대로, 없으면 HTTP Request에서 수집 (source="browser")
+    caller_info = body.caller_info or {
+        "source": "browser",
+        "ip": request.client.host if request.client else None,
+        "user_agent": request.headers.get("user-agent"),
+        "referer": request.headers.get("referer"),
+        "forwarded_for": request.headers.get("x-forwarded-for"),
+    }
+
     try:
         task = await task_manager.create_task(
             prompt=body.prompt,
@@ -315,6 +325,7 @@ async def api_create_session(body: CreateSessionBody):
             profile_id=body.agentId,
             extra_context_items=extra_context_items,
             caller_session_id=body.caller_session_id,
+            caller_info=caller_info,
         )
     except TaskConflictError:
         raise HTTPException(

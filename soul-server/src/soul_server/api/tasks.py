@@ -11,7 +11,7 @@ import asyncio
 import logging
 import json
 from typing import Optional
-from fastapi import APIRouter, Header, HTTPException, Depends
+from fastapi import APIRouter, Header, HTTPException, Depends, Request
 from sse_starlette.sse import EventSourceResponse
 
 from soul_server.models import (
@@ -84,7 +84,8 @@ def task_to_response(task: Task) -> SessionResponse:
     tools=["execute", "sessions_list", "sessions_stream"],
 )
 async def execute_task(
-    request: ExecuteRequest,
+    body: ExecuteRequest,
+    http_request: Request,
     _: str = Depends(verify_token),
 ):
     """
@@ -111,22 +112,32 @@ async def execute_task(
             },
         )
 
+    # caller_info 조립: body에 있으면 그대로, 없으면 HTTP Request에서 수집 (source="api")
+    caller_info = body.caller_info or {
+        "source": "api",
+        "ip": http_request.client.host if http_request.client else None,
+        "user_agent": http_request.headers.get("user-agent"),
+        "referer": http_request.headers.get("referer"),
+        "forwarded_for": http_request.headers.get("x-forwarded-for"),
+    }
+
     # 세션 생성 또는 resume
     try:
         task = await task_manager.create_task(
-            prompt=request.prompt,
-            agent_session_id=request.agent_session_id,
-            client_id=request.client_id,
-            allowed_tools=request.allowed_tools,
-            disallowed_tools=request.disallowed_tools,
-            use_mcp=request.use_mcp,
-            context=request.context.model_dump() if request.context else None,
-            context_items=[item.model_dump() for item in request.context.items] if request.context else None,
-            extra_context_items=request.context_items,
-            model=request.model,
-            folder_id=request.folder_id,
-            system_prompt=request.system_prompt,
-            profile_id=request.profile,
+            prompt=body.prompt,
+            agent_session_id=body.agent_session_id,
+            client_id=body.client_id,
+            allowed_tools=body.allowed_tools,
+            disallowed_tools=body.disallowed_tools,
+            use_mcp=body.use_mcp,
+            context=body.context.model_dump() if body.context else None,
+            context_items=[item.model_dump() for item in body.context.items] if body.context else None,
+            extra_context_items=body.context_items,
+            model=body.model,
+            folder_id=body.folder_id,
+            system_prompt=body.system_prompt,
+            profile_id=body.profile,
+            caller_info=caller_info,
         )
     except ValueError as e:
         raise HTTPException(
@@ -145,7 +156,7 @@ async def execute_task(
             detail={
                 "error": {
                     "code": "SESSION_CONFLICT",
-                    "message": f"이미 실행 중인 세션입니다: {request.agent_session_id}",
+                    "message": f"이미 실행 중인 세션입니다: {body.agent_session_id}",
                     "details": {},
                 }
             },
