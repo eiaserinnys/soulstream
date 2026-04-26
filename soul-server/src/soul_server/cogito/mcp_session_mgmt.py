@@ -25,6 +25,12 @@ def _get_orch_base() -> str | None:
     return mcp_multi_node.get_orch_base()
 
 
+def _get_orch_headers() -> dict[str, str]:
+    """multi-node 모드의 오케스트레이터 인증 헤더를 반환한다."""
+    from soul_server.cogito import mcp_multi_node
+    return mcp_multi_node.get_orch_headers()
+
+
 # ---------------------------------------------------------------------------
 # MCP Tools
 # ---------------------------------------------------------------------------
@@ -138,7 +144,7 @@ async def send_message_to_session(target_session_id: str, message: str) -> dict:
         if orch_base is None:
             return {"ok": False, "error": str(local_err)}
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(timeout=10.0, headers=_get_orch_headers()) as client:
                 resp = await client.post(
                     f"{orch_base}/api/sessions/{target_session_id}/intervene",
                     json={"text": message, "user": "agent"},

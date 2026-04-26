@@ -19,6 +19,7 @@ def reset_mcp_state():
     mcp_cogito._brief_composer = None
     mcp_cogito._manifest_path = None
     mcp_multi_node._orch_base = None
+    mcp_multi_node._orch_headers = {}
     yield
     mcp_tools._brief_composer = None
     mcp_tools._manifest_path = None
@@ -26,6 +27,7 @@ def reset_mcp_state():
     mcp_cogito._brief_composer = None
     mcp_cogito._manifest_path = None
     mcp_multi_node._orch_base = None
+    mcp_multi_node._orch_headers = {}
 
 
 def _unwrap(tool_or_func):
@@ -853,12 +855,46 @@ class TestSendMessageToSession:
         ):
             mcp_tools._orch_base = "http://orch:3000"
             mcp_multi_node._orch_base = "http://orch:3000"
+            mcp_multi_node._orch_headers = {"Authorization": "Bearer test-token"}
             result = await fn(target_session_id="sess-abc", message="via orch")
 
         assert result["ok"] is True
         mock_client.post.assert_called_once_with(
             "http://orch:3000/api/sessions/sess-abc/intervene",
             json={"text": "via orch", "user": "agent"},
+        )
+
+    async def test_orch_fallback_sends_auth_headers(self):
+        """오케스트레이터 폴백 시 인증 헤더가 httpx.AsyncClient에 전달되는지 검증."""
+        mock_tm = AsyncMock()
+        mock_tm.add_intervention.side_effect = RuntimeError("local error")
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"queued": True}
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        mock_client_cls = MagicMock(return_value=mock_client)
+
+        fn = _unwrap(mcp_tools.send_message_to_session)
+        with (
+            patch("soul_server.cogito.mcp_session_mgmt.get_task_manager", return_value=mock_tm),
+            patch("soul_server.cogito.mcp_session_mgmt.httpx.AsyncClient", mock_client_cls),
+        ):
+            mcp_tools._orch_base = "http://orch:3000"
+            mcp_multi_node._orch_base = "http://orch:3000"
+            mcp_multi_node._orch_headers = {"Authorization": "Bearer secret-xyz"}
+            result = await fn(target_session_id="sess-auth", message="auth test")
+
+        assert result["ok"] is True
+        # httpx.AsyncClient가 인증 헤더와 함께 생성되었는지 검증
+        mock_client_cls.assert_called_once_with(
+            timeout=10.0,
+            headers={"Authorization": "Bearer secret-xyz"},
         )
 
 
@@ -930,3 +966,45 @@ class TestDownloadSessionHistory:
         assert last["id"] == 3
         assert last["event_type"] == "result"
         assert last["event"]["result"] == "완료"
+
+
+# ---------------------------------------------------------------------------
+# mcp_multi_node.init — auth header capture
+# ---------------------------------------------------------------------------
+
+
+class TestMultiNodeInit:
+    """mcp_multi_node.init()이 인증 헤더를 올바르게 캡처하는지 검증."""
+
+    def test_init_captures_auth_token(self):
+        """settings.auth_bearer_token이 있으면 _orch_headers에 Bearer 헤더가 설정된다."""
+        settings = MagicMock()
+        settings.soulstream_upstream_url = "wss://orch.example.com/ws/node1"
+        settings.auth_bearer_token = "my-secret-token"
+
+        mcp_multi_node.init(settings)
+
+        assert mcp_multi_node._orch_base == "https://orch.example.com"
+        assert mcp_multi_node._orch_headers == {
+            "Authorization": "Bearer my-secret-token"
+        }
+
+    def test_init_no_token(self):
+        """settings.auth_bearer_token이 빈 문자열이면 _orch_headers는 빈 dict."""
+        settings = MagicMock()
+        settings.soulstream_upstream_url = "ws://localhost:5200/ws/node1"
+        settings.auth_bearer_token = ""
+
+        mcp_multi_node.init(settings)
+
+        assert mcp_multi_node._orch_base == "http://localhost:5200"
+        assert mcp_multi_node._orch_headers == {}
+
+    def test_init_no_token_attr(self):
+        """settings에 auth_bearer_token 속성이 없으면 _orch_headers는 빈 dict."""
+        settings = MagicMock(spec=[])
+        settings.soulstream_upstream_url = "wss://orch.example.com/ws/node1"
+
+        mcp_multi_node.init(settings)
+
+        assert mcp_multi_node._orch_headers == {}

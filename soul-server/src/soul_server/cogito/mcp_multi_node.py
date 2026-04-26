@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _orch_base: str | None = None
+_orch_headers: dict[str, str] = {}
 
 
 def get_orch_base() -> str | None:
@@ -28,12 +29,17 @@ def get_orch_base() -> str | None:
     return _orch_base
 
 
+def get_orch_headers() -> dict[str, str]:
+    """오케스트레이터 요청에 사용할 인증 헤더를 반환한다."""
+    return _orch_headers
+
+
 def init(settings) -> None:
     """multi-node 전용 도구를 cogito MCP에 등록하고 _orch_base를 설정한다.
 
     SOULSTREAM_UPSTREAM_ENABLED=true일 때만 호출해야 한다.
     """
-    global _orch_base
+    global _orch_base, _orch_headers
     if _orch_base is not None:
         return  # 중복 호출 방어
 
@@ -42,10 +48,14 @@ def init(settings) -> None:
     url = re.sub(r'^ws://', 'http://', url)
     _orch_base = re.sub(r'/ws/.*$', '', url)
 
+    token = getattr(settings, "auth_bearer_token", "")
+    if token:
+        _orch_headers = {"Authorization": f"Bearer {token}"}
+
     @cogito_mcp.tool()
     async def list_nodes() -> dict:
         """오케스트레이터에 연결된 노드 목록 반환."""
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=10.0, headers=_orch_headers) as client:
             resp = await client.get(f"{_orch_base}/api/nodes")
             resp.raise_for_status()
             return resp.json()
@@ -53,7 +63,7 @@ def init(settings) -> None:
     @cogito_mcp.tool()
     async def list_node_agents(node_id: str) -> dict:
         """특정 노드에서 사용 가능한 에이전트 목록 반환."""
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=10.0, headers=_orch_headers) as client:
             resp = await client.get(f"{_orch_base}/api/nodes/{node_id}/agents")
             resp.raise_for_status()
             return resp.json()
@@ -103,7 +113,7 @@ def init(settings) -> None:
             "caller_info": caller_info,
         }
         body = {k: v for k, v in body.items() if v is not None}
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, headers=_orch_headers) as client:
             resp = await client.post(f"{_orch_base}/api/sessions", json=body)
             resp.raise_for_status()
             return resp.json()
