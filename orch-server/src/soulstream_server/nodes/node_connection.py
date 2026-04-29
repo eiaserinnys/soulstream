@@ -166,6 +166,7 @@ class NodeConnection:
         attachment_paths: list[str] | None = None,
         caller_info: dict | None = None,
         model: str | None = None,
+        extra_context_items: list[dict] | None = None,
     ) -> dict:
         payload: dict[str, Any] = {"prompt": prompt}
         if session_id:
@@ -188,7 +189,10 @@ class NodeConnection:
             payload["caller_session_id"] = caller_session_id
         if caller_info is not None:
             payload["caller_info"] = caller_info
-        if attachment_paths:
+        if extra_context_items:
+            # 호출자가 직접 extra_context_items를 제공한 경우 그대로 전달
+            payload["extra_context_items"] = extra_context_items
+        elif attachment_paths:
             # soul-server upstream/adapter.py가 extra_context_items=cmd.get("extra_context_items")로
             # 처리하므로 여기서 변환한다. adapter.py 수정 불필요 (create_session 경로).
             # 변환 책임은 soul-server WS 프로토콜을 아는 node_connection.py에 있다.
