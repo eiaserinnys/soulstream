@@ -19,6 +19,7 @@ from soulstream_server.api.attachments import create_attachments_router
 from soulstream_server.api.atom import create_atom_router
 from soulstream_server.api.auth import verify_auth
 from soulstream_server.api.auth_bearer import router as auth_bearer_router
+from soulstream_server.api.execute_proxy import create_execute_proxy_router
 from soulstream_server.api.catalog import create_catalog_router
 from soulstream_server.api.claude_auth import create_claude_auth_router
 from soulstream_server.api.cogito import create_cogito_router
@@ -150,6 +151,12 @@ def _mount_api_routers(
     app.include_router(create_attachments_router(node_manager, dependencies=api_deps))
     app.include_router(create_cogito_router(node_manager, dependencies=api_deps))
     app.include_router(create_atom_router(dependencies=api_deps))
+    app.include_router(
+        create_execute_proxy_router(
+            db, node_manager, session_router, catalog_service,
+            dependencies=api_deps,
+        )
+    )
 
     # /api/auth/token — 네이티브 JWT handoff.
     # 라우터 내부에서 이미 verify_auth로 보호하므로 여기서 추가 dep을 주입하지 않는다

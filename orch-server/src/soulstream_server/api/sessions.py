@@ -18,6 +18,7 @@ from sse_starlette.sse import EventSourceResponse
 from soul_common.catalog.catalog_service import CatalogService
 from soul_common.db.session_db import PostgresSessionDB
 
+from soulstream_server.api.node_utils import find_session_node
 from soulstream_server.models import BatchMoveRequest
 from soulstream_server.nodes.node_connection import NodeConnection
 from soulstream_server.nodes.node_manager import NodeManager
@@ -257,7 +258,7 @@ def create_sessions_router(
             # 완료된 세션은 노드에 없을 수 있으며, 히스토리 리플레이만으로 충분하다.
             # _find_node()로 인메모리 → DB → 활성 노드 순으로 폴백하여 찾는다.
             try:
-                node = await _find_node(session_id)
+                node = await find_session_node(session_id, db, node_manager)
             except HTTPException:
                 return
 
@@ -326,32 +327,10 @@ def create_sessions_router(
 
         return EventSourceResponse(event_generator())
 
-    async def _find_node(session_id: str) -> NodeConnection:
-        """인메모리 → DB 폴백으로 세션의 노드를 찾는다.
-
-        NodeManager는 DB를 알지 않으므로(설계 원칙 §1 지식 경계),
-        DB 폴백은 이미 db를 보유한 API 핸들러 계층에서 수행한다.
-        """
-        node = node_manager.find_node_for_session(session_id)
-        if not node:
-            session_data = await db.get_session(session_id)
-            if session_data and session_data.get("node_id"):
-                node = node_manager.get_node(session_data["node_id"])
-        if not node:
-            # node_id가 stale하거나 노드가 재연결된 경우 (예: soul-server 재시작 3초 공백)
-            # — 활성 노드 중 첫 번째를 폴백으로 사용한다.
-            # soul-server는 단일 노드 구성이므로 활성 노드가 있으면 그것이 정답이다.
-            active_nodes = node_manager.get_connected_nodes()
-            if active_nodes:
-                node = active_nodes[0]
-        if not node:
-            raise HTTPException(status_code=404, detail="Session not found")
-        return node
-
     @router.post("/{session_id}/intervene")
     async def intervene(session_id: str, body: InterveneRequest) -> dict:
         """개입 메시지 전송."""
-        node = await _find_node(session_id)
+        node = await find_session_node(session_id, db, node_manager)
         try:
             result = await node.send_intervene(
                 session_id, body.text, body.user,
@@ -375,7 +354,7 @@ def create_sessions_router(
     @router.post("/{session_id}/respond")
     async def respond(session_id: str, body: RespondRequest) -> dict:
         """입력 요청 응답."""
-        node = await _find_node(session_id)
+        node = await find_session_node(session_id, db, node_manager)
         result = await node.send_respond(
             session_id, body.request_id, body.answers
         )

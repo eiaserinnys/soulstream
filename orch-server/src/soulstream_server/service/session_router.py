@@ -65,6 +65,7 @@ class SessionRouter:
             attachment_paths=request.get("attachmentPaths"),
             caller_info=request.get("caller_info"),
             model=request.get("model"),
+            extra_context_items=request.get("extra_context_items"),
         )
 
         # 노드가 반환한 세션 ID를 우선 사용
