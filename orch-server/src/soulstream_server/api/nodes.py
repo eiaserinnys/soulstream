@@ -87,10 +87,15 @@ def create_nodes_router(
 
         등록 메시지에서 캐시된 데이터가 있으면 우선 반환.
         없으면 해당 노드의 soul-server /api/agents/{agent_id}/portrait를 프록시한다.
+
+        "자원 없음" 케이스(노드 미연결, HTTP 실패, 원격 404)는 404 대신 204 No Content를
+        반환하여 브라우저 콘솔의 빨간 에러 노이즈를 줄인다. 클라이언트(ProfileAvatar)는
+        onError + onLoad+naturalWidth 가드로 fallback emoji를 일관되게 표시한다.
+        5xx는 운영상 의미가 있으므로 그대로 전파.
         """
         node = node_manager.get_node(node_id)
         if not node:
-            raise HTTPException(status_code=404, detail=f"노드를 찾을 수 없습니다: {node_id}")
+            return Response(status_code=204)
 
         # 캐시된 portrait 데이터가 있으면 우선 서빙 (원격 노드 HTTP 불필요)
         cached = node.portrait_cache.get(agent_id)
@@ -107,9 +112,11 @@ def create_nodes_router(
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(url)
         except (httpx.RequestError, httpx.TimeoutException):
-            return Response(status_code=404)
+            return Response(status_code=204)
 
         if resp.status_code != 200:
+            if resp.status_code == 404:
+                return Response(status_code=204)
             return Response(status_code=resp.status_code)
 
         return Response(
@@ -146,10 +153,13 @@ def create_nodes_router(
 
         캐시된 portrait_b64가 있으면 우선 서빙 (원격 노드 HTTP 불필요).
         없으면 해당 노드의 soul-server /api/dashboard/portrait/user를 프록시한다.
+
+        "자원 없음" 케이스(노드 미연결, HTTP 실패, 원격 404)는 204 No Content를
+        반환하여 브라우저 콘솔 노이즈를 줄인다. 5xx는 그대로 전파.
         """
         node = node_manager.get_node(node_id)
         if not node:
-            raise HTTPException(status_code=404, detail=f"노드를 찾을 수 없습니다: {node_id}")
+            return Response(status_code=204)
 
         # 캐시된 portrait_b64가 있으면 우선 서빙 (원격 노드 HTTP 불필요)
         portrait_b64 = node.user_info.get("portrait_b64")
@@ -171,9 +181,11 @@ def create_nodes_router(
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(url)
         except (httpx.RequestError, httpx.TimeoutException):
-            return Response(status_code=404)
+            return Response(status_code=204)
 
         if resp.status_code != 200:
+            if resp.status_code == 404:
+                return Response(status_code=204)
             return Response(status_code=resp.status_code)
 
         return Response(

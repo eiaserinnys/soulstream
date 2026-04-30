@@ -3,7 +3,12 @@
  *
  * portraitUrl이 있으면 해당 URL에서 이미지를 로드하여 32x32 둥근 사각형으로 표시.
  * portraitUrl이 없으면 이모지 fallback으로 표시.
- * 이미지 로드 실패 시 이모지 fallback.
+ *
+ * Fallback 트리거:
+ *  - onError: HTTP 4xx/5xx, 네트워크 실패, 이미지 디코딩 실패.
+ *  - onLoad + naturalWidth === 0: 204 No Content 같은 빈 응답 (orch-server가
+ *    portrait 미존재 시 노이즈 감소를 위해 204를 반환). 일부 브라우저는 이런
+ *    경우 onError 대신 onLoad를 발생시키므로 두 가드를 함께 둔다.
  */
 
 import { useState } from "react";
@@ -36,6 +41,13 @@ export function ProfileAvatar({ role, hasPortrait, fallbackEmoji, portraitUrl }:
       alt={role}
       className="w-8 h-8 rounded-lg shrink-0 object-cover"
       onError={() => setImgError(true)}
+      onLoad={(e) => {
+        // 204 No Content 또는 이미지 디코딩 실패 시 naturalWidth === 0
+        // 일부 브라우저는 이런 경우 onError 대신 onLoad를 발생시키므로 같이 가드
+        if (e.currentTarget.naturalWidth === 0) {
+          setImgError(true);
+        }
+      }}
     />
   );
 }

@@ -1,6 +1,6 @@
 """Tests for Nodes API (/api/nodes)."""
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -112,7 +112,11 @@ class TestPortraitProxy:
         assert resp.headers["content-type"].startswith("image/png")
 
     async def test_portrait_cache_miss_proxies_http(self, client, node_manager):
-        """portrait_cache에 없으면 soul-server HTTP 프록시 호출 — 연결 불가 시 404."""
+        """portrait_cache에 없으면 soul-server HTTP 프록시 호출 — 연결 불가 시 204.
+
+        구버전은 404를 반환했으나, 콘솔 노이즈 감소를 위해 204 No Content로 마스킹.
+        클라이언트(ProfileAvatar)는 onError + onLoad+naturalWidth 가드로 fallback emoji 표시.
+        """
         ws = AsyncMock()
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
@@ -122,8 +126,8 @@ class TestPortraitProxy:
 
         resp = await client.get("/api/nodes/n1/agents/agent-1/portrait")
 
-        # 9999 포트에 서버 없음 → 연결 실패 → 404
-        assert resp.status_code == 404
+        # 9999 포트에 서버 없음 → 연결 실패 → 204
+        assert resp.status_code == 204
 
 
 class TestUserPortraitProxy:
@@ -150,7 +154,7 @@ class TestUserPortraitProxy:
         assert resp.headers["content-type"].startswith("image/png")
 
     async def test_user_portrait_b64_cache_miss_proxies_http(self, client, node_manager):
-        """user_info에 portrait_b64가 없으면 soul-server HTTP 프록시 호출 — 연결 불가 시 404."""
+        """portrait_b64 없으면 soul-server HTTP 프록시 호출 — 연결 불가 시 204."""
         ws = AsyncMock()
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
@@ -162,11 +166,11 @@ class TestUserPortraitProxy:
 
         resp = await client.get("/api/nodes/n1/user/portrait")
 
-        # 9999 포트에 서버 없음 → 연결 실패 → 404
-        assert resp.status_code == 404
+        # 9999 포트에 서버 없음 → 연결 실패 → 204 (콘솔 노이즈 마스킹)
+        assert resp.status_code == 204
 
     async def test_user_portrait_proxies_http(self, client, node_manager):
-        """user portrait 요청 시 soul-server HTTP 프록시 호출 — 연결 불가 시 404."""
+        """user portrait 요청 시 soul-server HTTP 프록시 호출 — 연결 불가 시 204."""
         ws = AsyncMock()
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
@@ -176,11 +180,72 @@ class TestUserPortraitProxy:
 
         resp = await client.get("/api/nodes/n1/user/portrait")
 
-        # 9999 포트에 서버 없음 → 연결 실패 → 404
-        assert resp.status_code == 404
+        # 9999 포트에 서버 없음 → 연결 실패 → 204
+        assert resp.status_code == 204
 
-    async def test_user_portrait_404_for_unknown_node(self, client):
-        """알 수 없는 node_id에 대해 404를 반환한다."""
+    async def test_user_portrait_204_for_unknown_node(self, client):
+        """알 수 없는 node_id에 대해 204를 반환한다 (콘솔 노이즈 마스킹).
+
+        구버전은 404를 반환했다. 미연결 노드(eias-linegames 등)의 portrait 요청이
+        매번 빨간 콘솔 에러를 발생시키던 문제를 해소.
+        """
         resp = await client.get("/api/nodes/unknown-node/user/portrait")
 
-        assert resp.status_code == 404
+        assert resp.status_code == 204
+
+    async def test_agent_portrait_204_for_unknown_node(self, client):
+        """agent/portrait도 알 수 없는 node_id에 204 (대칭성)."""
+        resp = await client.get("/api/nodes/unknown-node/agents/agent-x/portrait")
+
+        assert resp.status_code == 204
+
+    async def test_user_portrait_remote_404_masked_to_204(self, client, node_manager):
+        """원격 soul-server가 404를 반환해도 클라이언트는 204를 받는다."""
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+        await node_manager.register_node(ws, {
+            "node_id": "n1", "host": "localhost", "port": 4100,
+        })
+
+        # httpx mock으로 404 응답
+        from unittest.mock import patch
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 404
+        mock_resp.headers = {"content-type": "application/json"}
+        mock_resp.content = b""
+
+        with patch("soulstream_server.api.nodes.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(return_value=mock_resp)
+            mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+            resp = await client.get("/api/nodes/n1/user/portrait")
+
+        assert resp.status_code == 204
+
+    async def test_user_portrait_remote_500_passes_through(self, client, node_manager):
+        """원격 soul-server 5xx는 그대로 전파 (운영 의미가 있음 — 마스킹 금지)."""
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+        await node_manager.register_node(ws, {
+            "node_id": "n1", "host": "localhost", "port": 4100,
+        })
+
+        from unittest.mock import patch
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 500
+        mock_resp.headers = {"content-type": "application/json"}
+        mock_resp.content = b'{"error": "internal"}'
+
+        with patch("soulstream_server.api.nodes.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(return_value=mock_resp)
+            mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+            resp = await client.get("/api/nodes/n1/user/portrait")
+
+        assert resp.status_code == 500
