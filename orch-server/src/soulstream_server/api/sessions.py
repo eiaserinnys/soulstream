@@ -228,10 +228,10 @@ def create_sessions_router(
         """soul-server `/api/sessions/{id}/events/viewport`로 GET 프록시.
 
         unified-dashboard(orch-server origin)에서 호출되는 viewport 가상화 API를
-        세션의 노드로 forward한다. _find_node가 raise하는 HTTPException(404)은
+        세션의 노드로 forward한다. find_session_node가 raise하는 HTTPException(404)은
         FastAPI가 자동 처리하므로 핸들러에서 catch하지 않는다.
         """
-        node = await _find_node(session_id)
+        node = await find_session_node(session_id, db, node_manager)
         url = f"http://{node.host}:{node.port}/api/sessions/{session_id}/events/viewport"
         params = {"y_min": y_min, "y_max": y_max}
         try:
@@ -256,7 +256,7 @@ def create_sessions_router(
 
         커서 기반 메시지 페이지네이션. before/limit 쿼리 파라미터를 그대로 전달.
         """
-        node = await _find_node(session_id)
+        node = await find_session_node(session_id, db, node_manager)
         url = f"http://{node.host}:{node.port}/api/sessions/{session_id}/messages"
         params: dict[str, object] = {"limit": limit}
         if before is not None:
