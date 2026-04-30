@@ -23,10 +23,15 @@ export interface LastMessage {
   timestamp: string;
 }
 
-/** 세션 메타데이터 엔트리 */
+/** 세션 메타데이터 엔트리.
+ *
+ * `value`는 본래 string이었으나 caller_info(2026-04-21 도입)처럼
+ * 서버가 객체를 영속하는 타입이 추가되어 `string | Record<string, unknown>`로 확장한다.
+ * 렌더러는 `typeof entry.value === "object"`로 분기하여 처리해야 한다.
+ */
 export interface MetadataEntry {
   type: string;
-  value: string;
+  value: string | Record<string, unknown>;
   label?: string;
   url?: string;
   timestamp?: string;

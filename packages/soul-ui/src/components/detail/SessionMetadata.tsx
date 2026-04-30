@@ -3,28 +3,36 @@
  *
  * 세션에 기록된 메타데이터 엔트리(커밋, 브랜치, 카드 등)를
  * 타입별로 그룹화하여 표시합니다.
+ *
+ * `entry.value`는 string 또는 객체일 수 있다 (caller_info 2026-04-21~ 도입).
+ * MetadataItem이 분기:
+ *   - caller_info → CallerInfoItem (전용 라벨)
+ *   - 기타 객체 → ObjectMetadataItem (key-value fallback)
+ *   - string → 기존 경로
  */
 
 import type { MetadataEntry } from "@shared/types";
 import { SectionLabel } from "./shared";
+import { buildCallerInfoLines, getDedupKey } from "./session-metadata-helpers";
 
 /** 메타데이터 타입별 아이콘 및 라벨 */
 const TYPE_CONFIG: Record<string, { icon: string; label: string }> = {
-  git_commit: { icon: "\uD83D\uDCDD", label: "Commits" },
-  git_branch_create: { icon: "\uD83C\uDF3F", label: "Branches" },
-  git_branch_delete: { icon: "\uD83D\uDDD1\uFE0F", label: "Branches Deleted" },
-  git_worktree_create: { icon: "\uD83C\uDF33", label: "Worktrees" },
-  git_worktree_remove: { icon: "\uD83D\uDDD1\uFE0F", label: "Worktrees Removed" },
-  trello_card: { icon: "\uD83D\uDCCB", label: "Trello Cards" },
-  trello_card_update: { icon: "\uD83D\uDCCB", label: "Trello Updates" },
-  trello_card_move: { icon: "\uD83D\uDCCB", label: "Trello Moves" },
-  file_write: { icon: "\uD83D\uDCC4", label: "Files Created" },
-  file_edit: { icon: "\u270F\uFE0F", label: "Files Modified" },
-  arbor_item: { icon: "\uD83C\uDFF0", label: "Arbor" },
+  git_commit: { icon: "📝", label: "Commits" },
+  git_branch_create: { icon: "🌿", label: "Branches" },
+  git_branch_delete: { icon: "🗑️", label: "Branches Deleted" },
+  git_worktree_create: { icon: "🌳", label: "Worktrees" },
+  git_worktree_remove: { icon: "🗑️", label: "Worktrees Removed" },
+  trello_card: { icon: "📋", label: "Trello Cards" },
+  trello_card_update: { icon: "📋", label: "Trello Updates" },
+  trello_card_move: { icon: "📋", label: "Trello Moves" },
+  file_write: { icon: "📄", label: "Files Created" },
+  file_edit: { icon: "✏️", label: "Files Modified" },
+  arbor_item: { icon: "🏰", label: "Arbor" },
+  caller_info: { icon: "☎️", label: "Caller" },
 };
 
 function getTypeConfig(type: string) {
-  return TYPE_CONFIG[type] ?? { icon: "\uD83D\uDD39", label: type };
+  return TYPE_CONFIG[type] ?? { icon: "🔹", label: type };
 }
 
 /** 타입별 그룹화 */
@@ -41,11 +49,15 @@ function groupByType(entries: MetadataEntry[]): Map<string, MetadataEntry[]> {
   return groups;
 }
 
-/** file_write/file_edit 타입에서 동일 파일 경로를 합쳐 카운트를 집계한다 */
+/** file_write/file_edit 타입에서 동일 파일 경로를 합쳐 카운트를 집계한다.
+ *
+ * file_* 타입의 value는 항상 string이지만, 미래 회귀를 막기 위해 getDedupKey로
+ * 객체 value도 안전하게 키화한다.
+ */
 function deduplicateFileEntries(entries: MetadataEntry[]): Array<{ entry: MetadataEntry; count: number }> {
   const counts = new Map<string, { entry: MetadataEntry; count: number }>();
   for (const entry of entries) {
-    const key = entry.value;
+    const key = getDedupKey(entry.value);
     const existing = counts.get(key);
     if (existing) {
       existing.count++;
@@ -59,11 +71,54 @@ function deduplicateFileEntries(entries: MetadataEntry[]): Array<{ entry: Metada
 /** 파일 타입 판별용 상수 */
 const FILE_TYPES = new Set(["file_write", "file_edit"]);
 
-/** 개별 메타데이터 엔트리 */
+/** caller_info 전용 렌더러 — source/parent/node/agent 등 라벨화하여 표시 */
+function CallerInfoItem({ value }: { value: Record<string, unknown> }) {
+  const lines = buildCallerInfoLines(value);
+  return (
+    <div className="flex flex-col gap-0.5 py-1">
+      {lines.map((l) => (
+        <div key={l.label} className="flex items-baseline gap-2 text-xs">
+          <span className="text-muted-foreground uppercase tracking-wide w-16 shrink-0">{l.label}</span>
+          <span className="text-foreground break-words">{l.text}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** 미지 객체 타입 fallback — 모든 키를 key-value로 표시 */
+function ObjectMetadataItem({ entry }: { entry: MetadataEntry }) {
+  const obj = entry.value as Record<string, unknown>;
+  const entries = Object.entries(obj);
+  return (
+    <div className="flex flex-col gap-0.5 py-1">
+      {entries.map(([k, v]) => (
+        <div key={k} className="flex items-baseline gap-2 text-xs">
+          <span className="text-muted-foreground uppercase tracking-wide w-24 shrink-0">{k}</span>
+          <span className="text-foreground break-words">
+            {typeof v === "object" ? JSON.stringify(v) : String(v)}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** 개별 메타데이터 엔트리 — value 타입에 따라 분기 */
 function MetadataItem({ entry }: { entry: MetadataEntry }) {
-  const value = entry.label || entry.value;
-  const shortValue = entry.type.startsWith("git_commit")
-    ? entry.value.slice(0, 7)
+  // caller_info 전용 렌더러 (value가 객체)
+  if (entry.type === "caller_info" && typeof entry.value === "object" && entry.value !== null) {
+    return <CallerInfoItem value={entry.value as Record<string, unknown>} />;
+  }
+  // 기타 객체 value → 일반 key-value fallback
+  if (typeof entry.value === "object" && entry.value !== null) {
+    return <ObjectMetadataItem entry={entry} />;
+  }
+  // string 경로 (기존)
+  const valueStr = entry.value as string;
+  const value = entry.label || valueStr;
+  const shortValue = entry.type.startsWith("git_commit") && typeof entry.value === "string"
+    ? valueStr.slice(0, 7)
     : null;
 
   return (
@@ -106,7 +161,7 @@ export function SessionMetadata({ metadata }: { metadata: MetadataEntry[] }) {
   return (
     <div className="p-4 flex flex-col gap-4">
       <div className="flex items-center gap-2">
-        <span className="text-base">{"\uD83D\uDCE6"}</span>
+        <span className="text-base">{"📦"}</span>
         <div className="text-xs text-muted-foreground uppercase tracking-wide font-semibold">
           Session Artifacts
         </div>
@@ -127,17 +182,17 @@ export function SessionMetadata({ metadata }: { metadata: MetadataEntry[] }) {
             <div className="flex flex-col">
               {dedupedEntries
                 ? dedupedEntries.map(({ entry, count }) => (
-                    <div key={entry.value} className="flex items-start gap-2 py-1">
+                    <div key={getDedupKey(entry.value)} className="flex items-start gap-2 py-1">
                       <span className="text-foreground break-words min-w-0 font-mono text-xs">
-                        {entry.value}
+                        {typeof entry.value === "string" ? entry.value : JSON.stringify(entry.value)}
                       </span>
                       {count > 1 && (
-                        <span className="text-xs text-muted-foreground shrink-0">{"\u00D7"}{count}</span>
+                        <span className="text-xs text-muted-foreground shrink-0">{"×"}{count}</span>
                       )}
                     </div>
                   ))
                 : entries.map((entry, i) => (
-                    <MetadataItem key={`${entry.value}-${i}`} entry={entry} />
+                    <MetadataItem key={`${getDedupKey(entry.value)}-${i}`} entry={entry} />
                   ))}
             </div>
           </div>
