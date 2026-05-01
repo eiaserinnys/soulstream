@@ -13,6 +13,7 @@ import { ArrowLeft, MessageSquare, Search } from "lucide-react";
 import { DragHandle } from "./DragHandle";
 import { BottomTabBar } from "./BottomTabBar";
 import { ConnectionBadge, type ConnectionStatus } from "./ConnectionBadge";
+import { VerticalSplitPane } from "./VerticalSplitPane";
 import { Tabs, TabsPanel } from "./ui/tabs";
 import { FolderStack } from "./dashboard/FolderStack";
 import { useIsMobile } from "../hooks/use-mobile";
@@ -57,9 +58,15 @@ export interface DashboardShellProps {
   /**
    * leftPanel 하단 영역 비율. 기본 0.
    * 0이면 leftPanelBottom 미표시, leftPanel이 전체 높이 사용.
-   * 3이면 leftPanel flex-7 : leftPanelBottom flex-3.
+   * 3이면 leftPanel flex-7 : leftPanelBottom flex-3 (초기 비율, 드래그로 조절 가능).
    */
   leftBottomRatio?: number;
+  /**
+   * 좌측 상하 분할 비율의 localStorage 영속화 키.
+   * 미지정 시 영속화 없이 마운트 동안만 메모리에 유지된다.
+   * 호출자가 모드별로 다른 키를 주거나, 영속화를 원치 않는 환경(테스트·스토리북)에서는 생략한다.
+   */
+  leftSplitStorageKey?: string;
 
   /** 모바일 세션 뷰 내용물. 미지정 시 centerPanel 사용 */
   mobileSessionsView?: ReactNode;
@@ -115,6 +122,7 @@ export function DashboardShell({
   defaultLeftPercent = DEFAULT_LEFT,
   defaultRightPercent = DEFAULT_RIGHT,
   leftBottomRatio = 0,
+  leftSplitStorageKey,
   mobileSessionsView,
   mobileFolderContents,
   mobileChatView,
@@ -201,17 +209,20 @@ export function DashboardShell({
 
   const centerPercent = Math.max(MIN_CENTER, 100 - leftPercent - rightPercent);
 
-  // leftPanel에 하단 영역이 있을 때 flex 분할
+  // leftPanel에 하단 영역이 있을 때 드래그 가능한 상하 분할 (VerticalSplitPane 재사용)
+  // leftBottomRatio(0~10) → defaultTopPercent(0~100): leftBottomRatio=3 → top=70%
+  // 영속화 키는 호출자가 leftSplitStorageKey로 결정한다 (leftBottomRatio와 정책 소유권 일치).
   const leftPanelContent =
     leftBottomRatio > 0 && leftPanelBottom ? (
-      <div className="flex flex-col h-full">
-        <div className={cn("overflow-hidden")} style={{ flex: 10 - leftBottomRatio }}>
-          {leftPanel}
-        </div>
-        <div className={cn("overflow-hidden border-t border-border")} style={{ flex: leftBottomRatio }}>
-          {leftPanelBottom}
-        </div>
-      </div>
+      <VerticalSplitPane
+        className="h-full"
+        top={leftPanel}
+        bottom={leftPanelBottom}
+        defaultTopPercent={(10 - leftBottomRatio) * 10}
+        minTopPx={120}
+        minBottomPx={80}
+        storageKey={leftSplitStorageKey}
+      />
     ) : (
       leftPanel
     );

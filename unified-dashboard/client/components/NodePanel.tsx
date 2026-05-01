@@ -7,7 +7,7 @@
  */
 
 import { useMemo, useState } from "react";
-import { cn, nodeIdToHue, useTheme } from "@seosoyoung/soul-ui";
+import { cn, nodeIdToHue, useTheme, ScrollArea } from "@seosoyoung/soul-ui";
 import { useOrchestratorStore } from "../store/orchestrator-store";
 import { NodeClaudeAuthPanel } from "./NodeClaudeAuthPanel";
 
@@ -20,7 +20,8 @@ export function NodePanel() {
 
   if (nodeList.length === 0) {
     return (
-      <div className="flex-1 flex flex-col overflow-hidden">
+      // 외곽은 h-full + min-h-0: 부모(VerticalSplitPane 하단 슬롯)가 flex container가 아니므로 명시적 height 필요
+      <div className="h-full flex flex-col overflow-hidden min-h-0">
         <div className="px-3 py-1.5 shrink-0 border-b border-border">
           <span className="text-sm font-semibold">Nodes</span>
         </div>
@@ -32,11 +33,11 @@ export function NodePanel() {
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="h-full flex flex-col overflow-hidden min-h-0">
       <div className="px-3 py-1.5 shrink-0 border-b border-border">
         <span className="text-sm font-semibold">Nodes</span>
       </div>
-      <div className="flex-1 overflow-y-auto">
+      <ScrollArea className="flex-1 min-h-0">
         {nodeList.map((node) => {
           const hue = nodeIdToHue(node.nodeId);
           const isDead = node.status === "disconnected";
@@ -85,7 +86,7 @@ export function NodePanel() {
             </div>
           );
         })}
-      </div>
+      </ScrollArea>
     </div>
   );
 }

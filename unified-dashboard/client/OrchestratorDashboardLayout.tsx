@@ -147,6 +147,7 @@ export function OrchestratorDashboardLayout() {
       }
       leftPanelBottom={features.nodePanel && !isMobile ? <NodePanel /> : undefined}
       leftBottomRatio={features.nodePanel && !isMobile ? 3 : undefined}
+      leftSplitStorageKey="soulstream:orchestrator-dashboard:left-split-top-percent:v1"
       centerPanel={
         viewMode === "feed" ? (
           <FeedView
