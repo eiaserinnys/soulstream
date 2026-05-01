@@ -17,5 +17,6 @@ tauri = { version = "2", features = [] }
 tauri-plugin-store = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+open = "5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
