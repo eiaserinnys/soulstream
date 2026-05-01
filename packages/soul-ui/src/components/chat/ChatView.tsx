@@ -28,6 +28,7 @@ import { VirtualizedItem } from "./VirtualizedItem";
 import { useMessageHistoryBuffer } from "./useMessageHistoryBuffer";
 import { historicalToChatMessages } from "../../lib/history-to-chat";
 import { computeFirstItemIndex, findFocusIndex } from "./ChatView.reverse-helpers";
+import { decideFollowOnAtBottomChange } from "./ChatView.follow-helpers";
 
 interface ChatViewProps {
   chatInputDisabled?: boolean;
@@ -99,6 +100,26 @@ export function ChatView({ chatInputDisabled = false, isOtherNodeSession = false
    * 중첩되지 않도록 1회 처리 후 여기에 기록한다. 세션 전환 시 null로 초기화.
    */
   const handledFocusRef = useRef<number | null>(null);
+
+  /**
+   * 세션 전환 시점 기록 (auto-follow 가드용).
+   *
+   * `key={activeSessionKey}`는 `<Virtuoso>`에만 붙어 있어 ChatView 컴포넌트
+   * 자체는 재마운트되지 않는다. 따라서 useRef 초기값은 최초 마운트 1회만 유효.
+   * 세션 전환 시 갱신은 render 본체에서 prev/curr 비교로 즉시 수행한다 —
+   * useEffect로 미루면 Virtuoso remount 직후의 첫 atBottomStateChange(false)
+   * 콜백이 effect보다 먼저 호출되어 sessionMs가 직전 세션 시각 기준이 되고
+   * 가드가 무력화될 수 있다.
+   *
+   * decideFollowOnAtBottomChange가 이 ref 기반 sessionMs로 measure 깜빡임 윈도를
+   * 판정한다.
+   */
+  const sessionStartedAtRef = useRef<number>(performance.now());
+  const prevSessionKeyForFollowRef = useRef<string | null>(activeSessionKey);
+  if (prevSessionKeyForFollowRef.current !== activeSessionKey) {
+    prevSessionKeyForFollowRef.current = activeSessionKey;
+    sessionStartedAtRef.current = performance.now();
+  }
 
   // 새 이벤트 시: following이 아니면 "New Messages" 배너 표시.
   // 실제 하단 유지는 virtuoso `followOutput="auto"` 가 담당하므로 여기서는
@@ -201,7 +222,15 @@ export function ChatView({ chatInputDisabled = false, isOtherNodeSession = false
           alignToBottom
           followOutput="auto"
           atBottomStateChange={(atBottom) => {
-            setIsFollowing(atBottom);
+            // 세션 전환 직후 Virtuoso measure 깜빡임으로 atBottom=false가 일시적으로
+            // 보고될 수 있다. 안정화 임계값까지 false 보고를 무시 (헬퍼 default 사용).
+            const sessionMs = performance.now() - sessionStartedAtRef.current;
+            const next = decideFollowOnAtBottomChange(atBottom, sessionMs);
+            if (next !== null) {
+              setIsFollowing(next);
+            }
+            // helper가 null 반환하는 경우는 atBottom=false일 때뿐이므로
+            // setShowNewMessage(false) 호출은 atBottom=true일 때만 발생 — 부작용 없음.
             if (atBottom) setShowNewMessage(false);
           }}
           startReached={() => {

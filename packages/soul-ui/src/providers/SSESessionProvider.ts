@@ -110,14 +110,13 @@ export class SSESessionProvider implements SessionStorageProvider {
     sessionKey: string,
     onEvent: (event: SoulSSEEvent, eventId: number) => void,
     onStatusChange?: (status: "connecting" | "connected" | "error") => void,
-    options?: { lastEventId?: number; mode?: "full" | "live" },
+    options?: { lastEventId?: number },
   ): () => void {
     return createSSESubscribe({
       baseUrl: `/api/sessions/${encodeURIComponent(sessionKey)}/events`,
       onEvent,
       onStatusChange,
       initialLastEventId: options?.lastEventId,
-      mode: options?.mode,
     });
   }
 }

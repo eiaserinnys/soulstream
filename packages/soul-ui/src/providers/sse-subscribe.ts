@@ -30,13 +30,6 @@ export interface SSESubscribeOptions {
   initialLastEventId?: number;
 
   /**
-   * SSE 모드.
-   * - "full": 히스토리 + 라이브 이벤트 (기본값)
-   * - "live": 라이브 이벤트만 (히스토리 건너뛰기)
-   */
-  mode?: "full" | "live";
-
-  /**
    * 디버그 로그 접두어.
    * 전달하면 console.log로 연결·이벤트·재연결 상태를 출력한다.
    * undefined면 로그를 출력하지 않는다.
@@ -54,7 +47,7 @@ export interface SSESubscribeOptions {
  * @returns 구독 해제 함수
  */
 export function createSSESubscribe(options: SSESubscribeOptions): () => void {
-  const { baseUrl, onEvent, onStatusChange, mode, debugPrefix } = options;
+  const { baseUrl, onEvent, onStatusChange, debugPrefix } = options;
 
   let currentLastEventId = options.initialLastEventId ?? 0;
   let eventSource: EventSource | null = null;
@@ -76,9 +69,6 @@ export function createSSESubscribe(options: SSESubscribeOptions): () => void {
     if (currentLastEventId > 0) {
       params.set("lastEventId", String(currentLastEventId));
     }
-    if (mode === "live") {
-      params.set("mode", "live");
-    }
     const qs = params.toString();
     const url = qs ? `${baseUrl}?${qs}` : baseUrl;
 
@@ -99,7 +89,15 @@ export function createSSESubscribe(options: SSESubscribeOptions): () => void {
           const data = JSON.parse(e.data) as SoulSSEEvent;
           const eventId = e.lastEventId ? parseInt(e.lastEventId, 10) : 0;
 
-          if (eventId > currentLastEventId) {
+          // history_sync는 SSE id 없이 payload.last_event_id로 baseline 전달.
+          // 재연결 시 정확한 lastEventId를 보내려면 이 baseline을 currentLastEventId에 반영해야 한다.
+          // SoulSSEEvent union에서 type narrowing으로 HistorySyncEvent로 좁혀 직접 접근.
+          if (data?.type === "history_sync") {
+            const syncId = data.last_event_id ?? 0;
+            if (syncId > currentLastEventId) {
+              currentLastEventId = syncId;
+            }
+          } else if (eventId > currentLastEventId) {
             currentLastEventId = eventId;
           }
 

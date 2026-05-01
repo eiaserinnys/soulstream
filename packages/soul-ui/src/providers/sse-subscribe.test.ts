@@ -235,6 +235,47 @@ describe("createSSESubscribe — 재연결 및 lastEventId 전달", () => {
     expect(instances).toHaveLength(1);
   });
 
+  it("history_sync 이벤트의 last_event_id로 currentLastEventId가 갱신된다 (재연결 시 baseline)", async () => {
+    const createSSESubscribe = await loadModule();
+    const baseUrl = "/api/sessions/abc/events";
+    const onEvent = vi.fn();
+    const unsubscribe = createSSESubscribe({ baseUrl, onEvent });
+
+    // history_sync는 SSE id 필드 없이 (lastEventId=0) payload.last_event_id로 baseline 전달
+    instances[0].emit(
+      "history_sync",
+      { type: "history_sync", last_event_id: 99, is_live: true },
+      0,
+    );
+
+    expect(onEvent).toHaveBeenCalledTimes(1);
+
+    // 재연결 시 history_sync.last_event_id가 currentLastEventId에 반영되어
+    // URL에 ?lastEventId=99로 전송되어야 함
+    instances[0].emitError();
+    vi.advanceTimersByTime(3000);
+    expect(instances).toHaveLength(2);
+    expect(instances[1].url).toBe(`${baseUrl}?lastEventId=99`);
+
+    unsubscribe();
+  });
+
+  it("subscribe URL에 mode 파라미터가 포함되지 않는다 (회귀 가드)", async () => {
+    const createSSESubscribe = await loadModule();
+    const baseUrl = "/api/sessions/abc/events";
+    const unsubscribe = createSSESubscribe({
+      baseUrl,
+      onEvent: vi.fn(),
+      initialLastEventId: 5,
+    });
+
+    // mode 파라미터는 양 서버에서 모두 제거됨 — URL에 포함되어선 안 됨
+    expect(instances[0].url).not.toContain("mode=");
+    expect(instances[0].url).toBe(`${baseUrl}?lastEventId=5`);
+
+    unsubscribe();
+  });
+
   it("서버가 named 'error' 이벤트(MessageEvent)를 보내면 재연결하지 않는다", async () => {
     const createSSESubscribe = await loadModule();
     const baseUrl = "/api/sessions/abc/events";
