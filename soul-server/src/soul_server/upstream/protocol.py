@@ -34,10 +34,17 @@ class InterveneCmd(TypedDict):
     user: str
 
 
-class RespondCmd(TypedDict):
-    type: str            # "respond"
-    agentSessionId: str  # 실제 전송 키와 일치 (구: session_id)
-    request_id: str
+class RespondCmd(TypedDict, total=False):
+    """AskUserQuestion 응답 명령.
+
+    inputRequestId가 신규 정본(input_request의 request_id).
+    request_id는 구버전 orch-server 호환 fallback (deprecated).
+    requestId는 _send_command가 부여하는 WS 명령 ID(payload에 직접 넣지 않음).
+    """
+    type: str             # "respond"
+    agentSessionId: str   # 실제 전송 키와 일치 (구: session_id)
+    inputRequestId: str   # 신규 정본 — input_request의 request_id
+    request_id: str       # 구버전 호환 fallback (deprecated)
     answers: dict[str, Any]
 
 

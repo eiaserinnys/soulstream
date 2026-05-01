@@ -258,11 +258,16 @@ class NodeConnection:
     async def send_respond(
         self, session_id: str, request_id: str, answers: dict
     ) -> dict:
+        """input_request의 request_id는 inputRequestId 별도 키로 보낸다.
+
+        payload에 'requestId'를 포함하면 _send_command line 142의 `{**payload}` spread가
+        WS 명령 ID를 덮어쓰는 결함이 발현된다 (_pending 매칭 실패 → 30초 타임아웃).
+        """
         return await self._send_command(
             CMD_RESPOND,
             {
                 "agentSessionId": session_id,
-                "requestId": request_id,
+                "inputRequestId": request_id,
                 "answers": answers,
             },
         )

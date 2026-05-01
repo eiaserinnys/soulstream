@@ -189,13 +189,16 @@ class TestRespond:
     """POST /api/sessions/{session_id}/respond tests."""
 
     @staticmethod
-    def _make_resolve(node):
-        """send_respond 페이로드는 requestId를 오버라이드하여 _pending 키와 불일치한다.
-        모든 미완료 pending future를 한 번에 resolve하는 side_effect를 반환한다."""
+    def _make_resolve_by_request_id(node):
+        """send_respond payload는 'inputRequestId' 별도 키로 input_request의 request_id를
+        보내고, 'requestId'는 _send_command가 생성한 WS 명령 ID로 유지된다.
+        _pending 키(WS 명령 ID)와 정확히 매칭되는 future를 resolve하는 side_effect를 반환한다.
+        """
         async def resolve_on_send(data):
-            for future in list(node._pending.values()):
-                if not future.done():
-                    future.set_result({"success": True})
+            ws_command_id = data.get("requestId", "")
+            future = node._pending.get(ws_command_id)
+            if future is not None and not future.done():
+                future.set_result({"success": True})
         return resolve_on_send
 
     async def test_camel_case_request_id(self, client, node_manager):
@@ -204,7 +207,7 @@ class TestRespond:
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
         node = await node_manager.register_node(ws, {"node_id": "resp-node"})
-        ws.send_json.side_effect = self._make_resolve(node)
+        ws.send_json.side_effect = self._make_resolve_by_request_id(node)
 
         resp = await client.post(
             "/api/sessions/test-session/respond",
@@ -214,13 +217,22 @@ class TestRespond:
         assert resp.status_code == 200
         assert resp.json() == {"success": True}
 
+        # send_respond가 inputRequestId 키로 input_request의 request_id를 보냈는지 검증.
+        # 'requestId'는 _send_command가 덮어쓴 WS 명령 ID(req-N)이며 분리되어 있어야 한다.
+        sent_payloads = [call.args[0] for call in ws.send_json.await_args_list]
+        respond_payloads = [p for p in sent_payloads if p.get("type") == "respond"]
+        assert len(respond_payloads) == 1
+        assert respond_payloads[0].get("inputRequestId") == "r123"
+        # WS 명령 ID는 _send_command가 부여한 형식 (input_request hex가 아님)
+        assert respond_payloads[0].get("requestId") != "r123"
+
     async def test_snake_case_request_id_backward_compat(self, client, node_manager):
         """snake_case request_id 필드로 응답 전송 시 200 반환 (하위 호환)."""
         ws = AsyncMock()
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
         node = await node_manager.register_node(ws, {"node_id": "resp-node-2"})
-        ws.send_json.side_effect = self._make_resolve(node)
+        ws.send_json.side_effect = self._make_resolve_by_request_id(node)
 
         resp = await client.post(
             "/api/sessions/test-session/respond",
@@ -229,6 +241,11 @@ class TestRespond:
 
         assert resp.status_code == 200
         assert resp.json() == {"success": True}
+
+        sent_payloads = [call.args[0] for call in ws.send_json.await_args_list]
+        respond_payloads = [p for p in sent_payloads if p.get("type") == "respond"]
+        assert len(respond_payloads) == 1
+        assert respond_payloads[0].get("inputRequestId") == "r456"
 
 
 class TestBatchMoveFolder:
