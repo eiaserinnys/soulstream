@@ -81,7 +81,7 @@ async def session_events_sse_generator(
     task_manager,
     *,
     is_llm: bool = False,
-    live_only: bool = False,
+    replay_history_from_start: bool = False,
 ) -> AsyncGenerator[dict, None]:
     """히스토리 + 라이브 이벤트 SSE generator.
 
@@ -90,11 +90,15 @@ async def session_events_sse_generator(
 
     Args:
         agent_session_id: 세션 식별자.
-        after_id: 이 ID 이후의 이벤트만 전송 (Last-Event-ID).
+        after_id: Last-Event-ID 의미.
+            - 0이면 히스토리 skip (신규 구독). baseline은 history_sync로 전달.
+              messages/viewport API로 과거 데이터를 별도 로드하는 대시보드 패턴에 맞춤.
+            - >0이면 그 이후 이벤트만 리플레이 (재연결 catch-up).
         task_manager: TaskManager 인스턴스.
         is_llm: True이면 히스토리 전송 후 history_sync만 보내고 종료.
-        live_only: True이면 DB 히스토리를 건너뛰고 라이브 이벤트만 전송.
-            대시보드가 messages/viewport API로 과거 데이터를 별도 로드할 때 사용.
+        replay_history_from_start: True이면 after_id 무시하고 모든 이벤트를 리플레이한다.
+            레거시 /sessions/{id}/history 엔드포인트의 "이름 그대로 history 반환" 의미를
+            유지하기 위한 옵션. 신규 /api/sessions/{id}/events 엔드포인트는 사용하지 않는다.
 
     Yields:
         EventSourceResponse가 기대하는 dict:
@@ -111,11 +115,15 @@ async def session_events_sse_generator(
         db = get_session_db()
         last_stored_id = 0
 
-        if live_only:
-            # live_only 모드: 히스토리를 건너뛰되, DB 최신 event_id를 조회하여
-            # history_sync에 정확한 last_event_id를 포함시킨다.
+        # 히스토리 phase 분기:
+        # - replay_history_from_start=True (레거시 /history): 항상 스트리밍 (after_id 적용)
+        # - after_id == 0 (신규 dashboard /events 첫 구독): skip
+        # - after_id > 0 (재연결 catch-up): after_id 이후 스트리밍
+        if not replay_history_from_start and after_id == 0:
+            # 신규 구독: 히스토리 skip. baseline은 history_sync로 클라이언트에 전달.
             last_stored_id = await db.read_last_event_id(agent_session_id)
         else:
+            # 레거시 /history 또는 재연결: after_id 이후 이벤트 스트리밍.
             try:
                 async for event_id, event_type, payload_text in db.stream_events_raw(
                     agent_session_id, after_id=after_id,
@@ -396,7 +404,10 @@ def create_sessions_router() -> APIRouter:
                 logger.warning(f"Invalid Last-Event-ID header: {last_event_id!r}")
 
         return EventSourceResponse(
-            session_events_sse_generator(agent_session_id, after_id, task_manager)
+            session_events_sse_generator(
+                agent_session_id, after_id, task_manager,
+                replay_history_from_start=True,
+            )
         )
 
     class ReadPositionRequest(BaseModel):

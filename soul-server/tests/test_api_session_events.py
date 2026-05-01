@@ -109,7 +109,7 @@ class TestEventSourceResponseUsed:
             request.headers = {}
             request.query_params = {}
 
-            response = await api_session_events("sess-001", request, mode="full")
+            response = await api_session_events("sess-001", request)
             assert isinstance(response, EventSourceResponse)
 
 
@@ -117,8 +117,11 @@ class TestEventSourceResponseUsed:
 
 class TestLLMSessionEarlyExit:
     @pytest.mark.asyncio
-    async def test_llm_session_sends_history_sync_and_exits(self, mock_task_manager, mock_db):
-        """LLM 세션은 히스토리 전송 후 history_sync만 보내고 종료"""
+    async def test_llm_session_after_id_zero_sends_only_history_sync(self, mock_task_manager, mock_db):
+        """LLM 세션 + after_id=0: 히스토리 skip → history_sync 1발 + 종료.
+
+        과거 데이터는 클라이언트가 /messages API로 별도 로드한다.
+        """
         _append_event(mock_db, "llm-001", {"type": "text_start", "text": "LLM response"})
 
         with (
@@ -133,15 +136,38 @@ class TestLLMSessionEarlyExit:
             ):
                 events.append(event)
 
-            # 히스토리 이벤트 + history_sync만 전송
-            assert len(events) == 2
-            assert events[0]["event"] == "text_start"
-            assert events[1]["event"] == "history_sync"
+            # history_sync 1개만
+            assert len(events) == 1
+            assert events[0]["event"] == "history_sync"
 
             # history_sync 내용 확인
-            sync_data = json.loads(events[1]["data"])
+            sync_data = json.loads(events[0]["data"])
             assert sync_data["is_live"] is False
             assert sync_data["status"] == "completed"
+            assert sync_data["last_event_id"] == 1  # DB의 최신 event_id
+
+    @pytest.mark.asyncio
+    async def test_llm_session_after_id_n_replays_then_history_sync(self, mock_task_manager, mock_db):
+        """LLM 세션 + after_id>0: 그 이후 이벤트 리플레이 + history_sync + 종료."""
+        _append_event(mock_db, "llm-001", {"type": "text_start", "text": "first"}, event_id=1)
+        _append_event(mock_db, "llm-001", {"type": "text_end", "text": "second"}, event_id=2)
+
+        with (
+            patch("soul_server.dashboard.routes.sessions.get_task_manager", return_value=mock_task_manager),
+            patch("soul_server.service.postgres_session_db.get_session_db", return_value=mock_db),
+        ):
+            from soul_server.api.sessions import session_events_sse_generator
+
+            events = []
+            async for event in session_events_sse_generator(
+                "llm-001", 1, mock_task_manager, is_llm=True,
+            ):
+                events.append(event)
+
+            # event_id=2 + history_sync
+            assert len(events) == 2
+            assert events[0]["id"] == "2"
+            assert events[1]["event"] == "history_sync"
 
     @pytest.mark.asyncio
     async def test_llm_session_remove_listener_called(self, mock_task_manager, mock_db):
@@ -214,7 +240,7 @@ class TestLastEventIdQueryParam:
             request.headers = {"Last-Event-ID": "1"}
             request.query_params = {}
 
-            response = await api_session_events("sess-001", request, mode="full")
+            response = await api_session_events("sess-001", request)
             assert isinstance(response, EventSourceResponse)
 
 
@@ -222,8 +248,47 @@ class TestLastEventIdQueryParam:
 
 class TestHistoryEventDelivery:
     @pytest.mark.asyncio
-    async def test_sends_stored_events(self, mock_task_manager, mock_db):
-        """저장된 이벤트가 dict 형태로 yield되는지 확인"""
+    async def test_after_id_n_streams_after_n(self, mock_task_manager, mock_db):
+        """after_id>0 시 그 이후 이벤트가 dict 형태로 yield되는지 확인 (재연결 catch-up 경로)."""
+        _append_event(mock_db, "sess-001", {"type": "text_start", "text": "Hello"}, event_id=1)
+        _append_event(mock_db, "sess-001", {"type": "text_delta", "delta": " world"}, event_id=2)
+        _append_event(mock_db, "sess-001", {"type": "text_end", "text": "!"}, event_id=3)
+
+        with (
+            patch("soul_server.service.postgres_session_db.get_session_db", return_value=mock_db),
+        ):
+            from soul_server.api.sessions import session_events_sse_generator
+
+            # after_id=1 → event_id 2, 3만 리플레이
+            events = []
+            gen = session_events_sse_generator("sess-001", 1, mock_task_manager)
+
+            try:
+                async for event in gen:
+                    events.append(event)
+                    if event.get("event") == "history_sync":
+                        break
+            except asyncio.TimeoutError:
+                pass
+
+            # 히스토리 2개(id=2,3) + history_sync
+            history = [e for e in events if e.get("event") not in ("history_sync",)]
+            assert len(history) == 2
+            assert {e["id"] for e in history} == {"2", "3"}
+
+            # dict 형태 확인 (raw SSE 문자열이 아님)
+            assert isinstance(history[0], dict)
+            assert "id" in history[0]
+            assert "event" in history[0]
+            assert "data" in history[0]
+
+
+# === after_id 의미: 0=skip, >0=replay ===
+
+class TestAfterIdSemantics:
+    @pytest.mark.asyncio
+    async def test_after_id_zero_skips_history_sends_history_sync(self, mock_task_manager, mock_db):
+        """after_id=0 시 히스토리 이벤트를 건너뛰고 history_sync만 전송 (신규 구독 경로)."""
         _append_event(mock_db, "sess-001", {"type": "text_start", "text": "Hello"}, event_id=1)
         _append_event(mock_db, "sess-001", {"type": "text_delta", "delta": " world"}, event_id=2)
 
@@ -234,44 +299,6 @@ class TestHistoryEventDelivery:
 
             events = []
             gen = session_events_sse_generator("sess-001", 0, mock_task_manager)
-
-            try:
-                async for event in gen:
-                    events.append(event)
-                    if event.get("event") == "history_sync":
-                        break
-            except asyncio.TimeoutError:
-                pass
-
-            # 히스토리 2개 + history_sync
-            history = [e for e in events if e.get("event") not in ("history_sync",)]
-            assert len(history) == 2
-
-            # dict 형태 확인 (raw SSE 문자열이 아님)
-            assert isinstance(history[0], dict)
-            assert "id" in history[0]
-            assert "event" in history[0]
-            assert "data" in history[0]
-
-
-# === live_only 모드 ===
-
-class TestLiveOnlyMode:
-    @pytest.mark.asyncio
-    async def test_live_only_skips_history_sends_history_sync(self, mock_task_manager, mock_db):
-        """live_only=True일 때 히스토리 이벤트를 건너뛰고 history_sync만 전송"""
-        _append_event(mock_db, "sess-001", {"type": "text_start", "text": "Hello"}, event_id=1)
-        _append_event(mock_db, "sess-001", {"type": "text_delta", "delta": " world"}, event_id=2)
-
-        with (
-            patch("soul_server.service.postgres_session_db.get_session_db", return_value=mock_db),
-        ):
-            from soul_server.api.sessions import session_events_sse_generator
-
-            events = []
-            gen = session_events_sse_generator(
-                "sess-001", 0, mock_task_manager, live_only=True,
-            )
 
             try:
                 async for event in gen:
@@ -290,17 +317,15 @@ class TestLiveOnlyMode:
             assert sync_data["last_event_id"] == 2
 
     @pytest.mark.asyncio
-    async def test_live_only_empty_session(self, mock_task_manager, mock_db):
-        """live_only=True, 빈 세션에서 history_sync의 last_event_id가 0"""
+    async def test_after_id_zero_empty_session(self, mock_task_manager, mock_db):
+        """after_id=0, 빈 세션에서 history_sync의 last_event_id가 0."""
         with (
             patch("soul_server.service.postgres_session_db.get_session_db", return_value=mock_db),
         ):
             from soul_server.api.sessions import session_events_sse_generator
 
             events = []
-            gen = session_events_sse_generator(
-                "sess-new", 0, mock_task_manager, live_only=True,
-            )
+            gen = session_events_sse_generator("sess-new", 0, mock_task_manager)
 
             try:
                 async for event in gen:
@@ -313,31 +338,6 @@ class TestLiveOnlyMode:
             assert len(events) == 1
             sync_data = json.loads(events[0]["data"])
             assert sync_data["last_event_id"] == 0
-
-    @pytest.mark.asyncio
-    async def test_full_mode_still_sends_history(self, mock_task_manager, mock_db):
-        """live_only=False(기본값)일 때 히스토리 이벤트가 정상 전송"""
-        _append_event(mock_db, "sess-001", {"type": "text_start", "text": "Hello"}, event_id=1)
-
-        with (
-            patch("soul_server.service.postgres_session_db.get_session_db", return_value=mock_db),
-        ):
-            from soul_server.api.sessions import session_events_sse_generator
-
-            events = []
-            gen = session_events_sse_generator("sess-001", 0, mock_task_manager)
-
-            try:
-                async for event in gen:
-                    events.append(event)
-                    if event.get("event") == "history_sync":
-                        break
-            except asyncio.TimeoutError:
-                pass
-
-            # 히스토리 1개 + history_sync
-            history = [e for e in events if e.get("event") != "history_sync"]
-            assert len(history) == 1
 
 
 # === 라이브 스트림 중 disconnect 시 cleanup 확인 ===
@@ -383,6 +383,7 @@ class TestMidStreamDisconnectCleanup:
 
         과거 내역 전송 도중 브라우저가 끊기는 에지 케이스.
         entered_stream=False이므로 외부 finally에서 직접 cleanup.
+        after_id>0 경로(재연결 catch-up)에서만 히스토리가 yield되므로 after_id>0으로 호출.
         """
         # 이벤트를 여러 개 추가
         for i in range(1, 6):
@@ -393,7 +394,8 @@ class TestMidStreamDisconnectCleanup:
         ):
             from soul_server.api.sessions import session_events_sse_generator
 
-            gen = session_events_sse_generator("sess-001", 0, mock_task_manager)
+            # after_id=0은 history skip이므로 catch-up 경로(after_id>0)로 진입
+            gen = session_events_sse_generator("sess-001", 1, mock_task_manager)
 
             # 히스토리 이벤트 하나만 받고 즉시 close (히스토리 전송 중 disconnect)
             event = await gen.__anext__()
