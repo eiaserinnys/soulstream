@@ -515,12 +515,32 @@ class UpstreamAdapter:
                 self._stream_tasks[session_id] = stream_task
 
     async def _handle_respond(self, cmd: dict) -> None:
-        """AskUserQuestion 응답 처리."""
+        """AskUserQuestion 응답 처리.
+
+        cmd['requestId']는 WS 명령 ID(orch-server _send_command가 Future 매칭에 사용).
+        cmd['inputRequestId']는 input_request의 request_id (deliver_input_response 인자).
+        구버전 호환을 위해 'request_id' snake_case도 fallback으로 받는다.
+
+        ACK 누락 시 orch-server _send_command가 30초 타임아웃에 걸린다.
+        동일 ACK 패턴: _handle_intervene (line 482).
+        """
         self._tm.deliver_input_response(
             agent_session_id=cmd.get("agentSessionId") or cmd.get("session_id", ""),
-            request_id=cmd.get("requestId") or cmd.get("request_id", ""),
+            request_id=(
+                cmd.get("inputRequestId")
+                or cmd.get("request_id", "")
+            ),
             answers=cmd["answers"],
         )
+
+        # 오케스트레이터에 ACK — requestId가 있어야 Future.set_result()가 실행된다.
+        request_id = cmd.get("requestId", "")
+        if request_id:
+            await self._send({
+                "type": "respond_ack",
+                "requestId": request_id,
+                "status": "ok",
+            })
 
     async def _handle_list_sessions(self, cmd: dict) -> None:
         """세션 목록 반환."""

@@ -282,7 +282,7 @@ class TestHandleRespond:
         cmd = {
             "type": CMD_RESPOND,
             "session_id": "session-1",
-            "request_id": "input-req-1",
+            "request_id": "input-req-1",  # 구버전 snake_case fallback
             "answers": {"q1": "yes"},
         }
 
@@ -292,6 +292,81 @@ class TestHandleRespond:
             agent_session_id="session-1",
             request_id="input-req-1",
             answers={"q1": "yes"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_sends_ack_with_ws_command_id(self):
+        """_handle_respond는 WS 명령 ID(cmd['requestId'])를 ACK으로 돌려보내야 한다.
+
+        회귀 방지: ACK 누락 시 orch-server _send_command future가 30초 타임아웃에 걸린다.
+        send_respond가 inputRequestId 별도 키로 input_request의 request_id를 보내고,
+        cmd['requestId']는 WS 명령 ID(orch-server _pending 매칭용)로 사용된다.
+        """
+        tm = MagicMock()
+        tm.deliver_input_response.return_value = True
+
+        adapter = _make_adapter(task_manager=tm)
+        adapter._ws = MagicMock()
+        adapter._ws.closed = False
+        sent_messages = []
+
+        async def fake_send_json(msg):
+            sent_messages.append(msg)
+
+        adapter._ws.send_json = fake_send_json
+
+        cmd = {
+            "type": CMD_RESPOND,
+            "requestId": "orch-cmd-001",          # WS 명령 ID
+            "agentSessionId": "sess-1",
+            "inputRequestId": "f88617569028",     # input_request의 hex
+            "answers": {"q": "a"},
+        }
+
+        await adapter._handle_command(cmd)
+
+        # deliver_input_response에는 inputRequestId가 전달되어야 한다
+        tm.deliver_input_response.assert_called_once_with(
+            agent_session_id="sess-1",
+            request_id="f88617569028",
+            answers={"q": "a"},
+        )
+        # ACK은 WS 명령 ID로 돌아가야 한다 (input_request hex가 아님)
+        assert any(
+            msg.get("type") == "respond_ack" and msg.get("requestId") == "orch-cmd-001"
+            for msg in sent_messages
+        ), f"respond_ack with requestId='orch-cmd-001' not found in {sent_messages}"
+
+    @pytest.mark.asyncio
+    async def test_legacy_request_id_fallback(self):
+        """구버전 orch-server 호환 — request_id snake_case로 폴백."""
+        tm = MagicMock()
+        tm.deliver_input_response.return_value = True
+
+        adapter = _make_adapter(task_manager=tm)
+        adapter._ws = MagicMock()
+        adapter._ws.closed = False
+        sent_messages = []
+
+        async def fake_send_json(msg):
+            sent_messages.append(msg)
+
+        adapter._ws.send_json = fake_send_json
+
+        cmd = {
+            "type": CMD_RESPOND,
+            "requestId": "orch-cmd-002",
+            "agentSessionId": "sess-2",
+            "request_id": "legacy-input-id",  # snake_case fallback
+            "answers": {"q": "a"},
+        }
+
+        await adapter._handle_command(cmd)
+
+        tm.deliver_input_response.assert_called_once_with(
+            agent_session_id="sess-2",
+            request_id="legacy-input-id",
+            answers={"q": "a"},
         )
 
 
