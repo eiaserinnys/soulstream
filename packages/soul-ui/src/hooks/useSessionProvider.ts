@@ -115,8 +115,16 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
   /** 이벤트를 큐에 추가 */
   const enqueueEvent = useCallback(
     (event: SoulSSEEvent, eventId: number) => {
-      if (eventId > lastEventIdRef.current) {
-        lastEventIdRef.current = eventId;
+      // history_sync는 SSE id 없이 payload.last_event_id로 baseline 전달 (eventId=0).
+      // resume 경로(아래 L181)에서 정확한 lastEventId를 보내려면 history_sync도
+      // baseline 후보로 인식해야 한다. createSSESubscribe 내부의 currentLastEventId와는
+      // 별도 변수이므로 useSessionProvider 측에서도 동일한 갱신 로직이 필요하다.
+      let effectiveId = eventId;
+      if (event.type === "history_sync") {
+        effectiveId = event.last_event_id ?? 0;
+      }
+      if (effectiveId > lastEventIdRef.current) {
+        lastEventIdRef.current = effectiveId;
       }
       eventQueueRef.current.push({ event, eventId });
 
@@ -177,7 +185,7 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
           enqueueEvent(event, eventId);
         },
         setStatus,
-        { lastEventId: lastEventIdRef.current, mode: "live" },
+        { lastEventId: lastEventIdRef.current },
       );
 
       return () => {
@@ -255,14 +263,14 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
 
     loadInitialCards();
 
-    // 실시간 구독 — 히스토리는 messages API로, SSE는 라이브만
+    // 실시간 구독 — 히스토리는 messages API로 별도 로드, SSE는 라이브만.
+    // mode 옵션은 제거됨: 서버는 lastEventId 미전송 시 자동으로 히스토리 skip.
     const unsubscribe = provider.subscribe(
       sessionKey,
       (event, eventId) => {
         enqueueEvent(event, eventId);
       },
       setStatus,
-      { mode: "live" },
     );
 
     return () => {
