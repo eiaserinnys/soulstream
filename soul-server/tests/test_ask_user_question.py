@@ -325,6 +325,112 @@ class TestInputResponseRequest:
             InputResponseRequest(answers={"Q1": "A1"})  # request_id 누락
 
 
+class TestSseSerializationRegression:
+    """SSE 발행 회귀 테스트.
+
+    parent_event_id에 hex string(request_id)을 전달했던 결함이 영구적으로 SSE 발행을
+    실패시키지 않도록 회귀 가드를 추가한다.
+    """
+
+    def test_responded_event_smoke_serialization(self):
+        """SSE 모델 스모크: parent_event_id=None 인스턴스가 직렬화에 통과하는지 가드.
+
+        실제 결함 회귀는 test_handler_emits_responded_event_with_serializable_parent_event_id가
+        잡는다. 이 테스트는 모델 스키마 자체의 정상 동작 가드 역할.
+        """
+        from soul_server.engine.types import InputRequestRespondedEngineEvent
+
+        event = InputRequestRespondedEngineEvent(
+            request_id="f88617569028",
+            parent_event_id=None,
+        )
+        sse_events = event.to_sse()
+        assert len(sse_events) == 1
+        assert sse_events[0].type == "input_request_responded"
+        assert sse_events[0].request_id == "f88617569028"
+        assert sse_events[0].parent_event_id is None
+
+    def test_expired_event_smoke_serialization(self):
+        """SSE 모델 스모크 (expired)."""
+        from soul_server.engine.types import InputRequestExpiredEngineEvent
+
+        event = InputRequestExpiredEngineEvent(
+            request_id="f88617569028",
+            parent_event_id=None,
+        )
+        sse_events = event.to_sse()
+        assert len(sse_events) == 1
+        assert sse_events[0].type == "input_request_expired"
+        assert sse_events[0].request_id == "f88617569028"
+
+    @pytest.mark.asyncio
+    async def test_handler_emits_responded_event_with_serializable_parent_event_id(self):
+        """InputRequestHandler.can_use_tool가 응답 수신 후 발행하는 responded_event는
+        반드시 to_sse()가 ValidationError 없이 통과해야 한다.
+
+        결함 history: parent_event_id=request_id (hex string)을 전달하여 영구 SSE 발행 실패.
+        이 테스트는 핸들러가 발행하는 실제 event 객체의 to_sse를 호출해서 회귀를 잡는다.
+        """
+        from soul_server.claude.input_request import InputRequestHandler
+        from soul_server.engine.types import InputRequestRespondedEngineEvent
+
+        handler = InputRequestHandler(timeout=5.0)
+        captured = []
+
+        async def on_event(ev):
+            captured.append(ev)
+
+        handler.bind_event_callback(on_event)
+        callback = handler.make_can_use_tool(runner_id="test-runner")
+
+        # can_use_tool을 백그라운드에서 실행 (응답 대기)
+        task = asyncio.create_task(callback(
+            "AskUserQuestion",
+            {"questions": [{"question": "Test?", "options": [{"label": "A"}]}]},
+            MagicMock(),
+        ))
+
+        # 첫 이벤트(InputRequestEngineEvent) 발행 대기
+        for _ in range(50):
+            if captured:
+                break
+            await asyncio.sleep(0.02)
+
+        assert len(captured) >= 1
+        first_event = captured[0]
+        request_id = first_event.request_id
+
+        # 응답 전달
+        handler.deliver_response(request_id, {"Test?": "A"})
+        result = await task
+
+        # responded_event가 발행되었는지 확인 + to_sse 직렬화 통과
+        responded_events = [
+            e for e in captured if isinstance(e, InputRequestRespondedEngineEvent)
+        ]
+        assert len(responded_events) == 1
+        sse = responded_events[0].to_sse()  # ValidationError 없어야 한다
+        assert sse[0].type == "input_request_responded"
+
+
+class TestRespondBodyAlias:
+    """대시보드 라우터의 RespondBody가 양쪽 키(snake/camel)를 수용하는지 검증."""
+
+    def test_respond_body_accepts_snake_case(self):
+        """슬랙봇 등 외부 클라이언트가 보내는 request_id(snake)를 수용."""
+        from soul_server.dashboard.routes.sessions import RespondBody
+
+        body = RespondBody.model_validate({"request_id": "abc", "answers": {"q": "a"}})
+        assert body.request_id == "abc"
+
+    def test_respond_body_accepts_camel_case(self):
+        """대시보드(soul-ui)가 보내는 requestId(camel) 하위 호환."""
+        from soul_server.dashboard.routes.sessions import RespondBody
+
+        body = RespondBody.model_validate({"requestId": "abc", "answers": {"q": "a"}})
+        assert body.request_id == "abc"
+
+
 def _make_mock_session_db():
     """TaskManager 테스트용 mock session_db 생성"""
     mock_db = MagicMock()

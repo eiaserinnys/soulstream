@@ -61,7 +61,12 @@ class InterveneBody(BaseModel):
 
 
 class RespondBody(BaseModel):
-    requestId: str
+    # snake_case(슬랙봇 등 외부 클라이언트)와 camelCase(대시보드)를 모두 수용한다.
+    # Field(alias=...)는 alias→필드 방향, populate_by_name=True는 필드명→필드 방향을
+    # 추가로 연다. AliasChoices는 alias가 여러 개일 때 사용하므로 여기서는 불필요.
+    # 동일 패턴: orch-server RespondRequest (api/sessions.py:65).
+    model_config = ConfigDict(populate_by_name=True)
+    request_id: str = Field(alias="requestId")
     answers: dict
 
 
@@ -431,19 +436,19 @@ async def api_respond(session_id: str, body: RespondBody):
     try:
         success = task_manager.deliver_input_response(
             agent_session_id=session_id,
-            request_id=body.requestId,
+            request_id=body.request_id,
             answers=body.answers,
         )
 
         if success:
-            return {"delivered": True, "request_id": body.requestId}
+            return {"delivered": True, "request_id": body.request_id}
         else:
             raise HTTPException(
                 status_code=422,
                 detail={
                     "error": {
                         "code": "REQUEST_NOT_PENDING",
-                        "message": f"대기 중인 input_request가 없습니다: {body.requestId}",
+                        "message": f"대기 중인 input_request가 없습니다: {body.request_id}",
                     }
                 },
             )

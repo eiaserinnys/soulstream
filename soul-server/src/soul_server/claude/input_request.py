@@ -158,10 +158,12 @@ class InputRequestHandler:
                         f"[ASK_USER] 응답 타임아웃: "
                         f"runner={runner_id}, request_id={request_id}"
                     )
-                    # 만료 이벤트 발행 — 클라이언트가 선택 창을 닫도록
+                    # 만료 이벤트 발행 — 클라이언트가 선택 창을 닫도록.
+                    # parent_event_id는 SSE 모델에서 Optional[int]이므로 hex request_id를 넣지 않는다.
+                    # (이전 결함: parent_event_id=request_id로 SSE 발행이 영구 실패했음)
                     expired_event = InputRequestExpiredEngineEvent(
                         request_id=request_id,
-                        parent_event_id=request_id,
+                        parent_event_id=None,
                     )
                     if self._on_event_callback:
                         try:
@@ -180,10 +182,11 @@ class InputRequestHandler:
                     f"answers={answers}"
                 )
 
-                # 응답 완료 이벤트 발행 — 클라이언트가 배너를 닫도록
+                # 응답 완료 이벤트 발행 — 클라이언트가 배너를 닫도록.
+                # parent_event_id는 SSE 모델에서 Optional[int]이므로 hex request_id를 넣지 않는다.
                 responded_event = InputRequestRespondedEngineEvent(
                     request_id=request_id,
-                    parent_event_id=request_id,
+                    parent_event_id=None,
                 )
                 if self._on_event_callback:
                     try:
