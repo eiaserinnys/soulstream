@@ -16,7 +16,7 @@
  * Tool grouping: 연속된 tool 메시지를 접기/펼치기 그룹으로 묶어 표시.
  */
 
-import { useMemo, useRef, useEffect, useState, useCallback } from "react";
+import { useMemo, useRef, useEffect, useLayoutEffect, useState, useCallback } from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { useDashboardStore } from "../../stores/dashboard-store";
 import { flattenTree } from "../../lib/flatten-tree";
@@ -65,6 +65,9 @@ export function ChatView({ chatInputDisabled = false, isOtherNodeSession = false
    * 찾을 때 `document.querySelector` 전역 쿼리 대신 이 범위로 한정한다.
    */
   const scrollerRef = useRef<HTMLElement | null>(null);
+  /** prepend 직전 스크롤 상태 스냅샷 — useLayoutEffect에서 delta 보정에 사용 */
+  const scrollSnapshotRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
+  const prevPrependedCountRef = useRef(history.prependedCount);
   const [isFollowing, setIsFollowing] = useState(true);
   const [showNewMessage, setShowNewMessage] = useState(false);
   const prevTreeVersion = useRef(treeVersion);
@@ -129,6 +132,24 @@ export function ChatView({ chatInputDisabled = false, isOtherNodeSession = false
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusEventId, treeVersion, grouped, firstItemIndex]);
+
+  // prepend 후 스크롤 위치 보존: DOM 갱신 직후(paint 직전) scrollTop을 보정한다.
+  // startReached에서 캡처한 스냅샷과 현재 scrollHeight의 델타를 scrollTop에 가산하여
+  // 사용자가 보던 메시지가 같은 화면 위치에 유지되도록 한다.
+  useLayoutEffect(() => {
+    if (history.prependedCount === prevPrependedCountRef.current) return;
+    prevPrependedCountRef.current = history.prependedCount;
+
+    const snap = scrollSnapshotRef.current;
+    const scroller = scrollerRef.current;
+    if (!snap || !scroller) return;
+
+    const delta = scroller.scrollHeight - snap.scrollHeight;
+    if (delta > 0) {
+      scroller.scrollTop = snap.scrollTop + delta;
+    }
+    scrollSnapshotRef.current = null;
+  }, [history.prependedCount]);
 
   const scrollToBottom = useCallback(() => {
     if (grouped.length === 0) return;
@@ -210,6 +231,12 @@ export function ChatView({ chatInputDisabled = false, isOtherNodeSession = false
             if (atBottom) setShowNewMessage(false);
           }}
           startReached={() => {
+            if (scrollerRef.current) {
+              scrollSnapshotRef.current = {
+                scrollHeight: scrollerRef.current.scrollHeight,
+                scrollTop: scrollerRef.current.scrollTop,
+              };
+            }
             history.requestOlder();
           }}
           itemContent={(_, item) => (

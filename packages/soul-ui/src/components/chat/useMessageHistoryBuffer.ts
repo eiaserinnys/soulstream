@@ -27,6 +27,10 @@ import { diag } from "../../lib/diag";
 /** 초기 로드 / prepend 페이지 크기 */
 export const HISTORY_PAGE_SIZE = 50;
 
+/** prepend 응답 후 다음 요청까지 최소 대기 시간 (ms).
+ *  startReached 연쇄 트리거(scrollTop이 상단 근처인 채로 유지되는 경우)를 방지한다. */
+export const PREPEND_COOLDOWN_MS = 500;
+
 /** 서버 응답의 단일 메시지 (soul_common.db.session_db.read_messages) */
 export interface HistoricalMessage {
   id: number;
@@ -99,6 +103,10 @@ export function useMessageHistoryBuffer(
   const loadingRef = useRef(false);
   const nextCursorRef = useRef<string | null>(null);
   const reachedTopRef = useRef(false);
+  /** prepend 후 cooldown 활성 여부 */
+  const cooldownRef = useRef(false);
+  /** cooldown 해제 타이머 — 세션 전환 시 clearTimeout으로 정리 */
+  const cooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     nextCursorRef.current = nextCursor;
@@ -119,6 +127,12 @@ export function useMessageHistoryBuffer(
     setReachedTop(false);
     setLoading(false);
     setPrependedCount(0);
+    // 이전 세션의 cooldown 타이머가 새 세션의 cooldown을 오염하지 않도록 정리
+    if (cooldownTimerRef.current) {
+      clearTimeout(cooldownTimerRef.current);
+      cooldownTimerRef.current = null;
+    }
+    cooldownRef.current = false;
 
     if (!sessionId) return;
 
@@ -171,6 +185,7 @@ export function useMessageHistoryBuffer(
   const requestOlder = useCallback(() => {
     if (!sessionId) return;
     if (loadingRef.current) return;
+    if (cooldownRef.current) return;
     if (reachedTopRef.current) return;
     const cursor = nextCursorRef.current;
     if (!cursor) return;
@@ -213,6 +228,12 @@ export function useMessageHistoryBuffer(
         if (sessionTokenRef.current === token) {
           setLoading(false);
           loadingRef.current = false;
+          cooldownRef.current = true;
+          if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
+          cooldownTimerRef.current = setTimeout(() => {
+            cooldownRef.current = false;
+            cooldownTimerRef.current = null;
+          }, PREPEND_COOLDOWN_MS);
         }
       }
     })();
