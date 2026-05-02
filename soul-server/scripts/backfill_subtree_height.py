@@ -36,9 +36,10 @@ logger = logging.getLogger("backfill_subtree_height")
 async def migrate_parent_column(conn: asyncpg.Connection) -> int:
     """단계 2: payload.parent_event_id 문자열 값을 정본 INTEGER 컬럼으로 이관한다.
 
-    정수 문자열만 캐스트한다. 일부 레거시 이벤트(tool_start/tool_result/subagent_*)는
-    같은 키에 tool_use_id 또는 UUID를 저장해 두었으므로 정수 형식이 아닌 값은 백필 대상
-    아님 — 정본 컬럼은 NULL로 둔다. 정본 컬럼에 이미 값이 있으면 덮어쓰지 않는다.
+    INTEGER 범위(1..2147483647) 안에 있는 정수 문자열만 캐스트한다. 다음 케이스는 모두 NULL:
+      - 비정수 문자열 (tool_use_id 'toolu_...', UUID 등 — 의미가 다른 레거시 키)
+      - INT 범위를 초과하는 정수 (timestamp 등 잘못 들어간 값)
+    정본 컬럼에 이미 값이 있으면 덮어쓰지 않는다.
 
     Returns:
         변환에 성공한 행 수.
@@ -48,7 +49,8 @@ async def migrate_parent_column(conn: asyncpg.Connection) -> int:
         UPDATE events
         SET parent_event_id = (payload->>'parent_event_id')::integer
         WHERE parent_event_id IS NULL
-          AND payload->>'parent_event_id' ~ '^\d+$'
+          AND payload->>'parent_event_id' ~ '^\d{1,10}$'
+          AND (payload->>'parent_event_id')::BIGINT BETWEEN 1 AND 2147483647
         """
     )
     # asyncpg execute는 "UPDATE {n}" 형태의 문자열을 반환한다
@@ -145,7 +147,8 @@ async def run(dsn: str, dry_run: bool) -> None:
                 pending = await conn.fetchval(
                     r"SELECT COUNT(*) FROM events "
                     r"WHERE parent_event_id IS NULL "
-                    r"  AND payload->>'parent_event_id' ~ '^\d+$'"
+                    r"  AND payload->>'parent_event_id' ~ '^\d{1,10}$' "
+                    r"  AND (payload->>'parent_event_id')::BIGINT BETWEEN 1 AND 2147483647"
                 )
                 total_sessions = await conn.fetchval("SELECT COUNT(*) FROM sessions")
                 total_events = await conn.fetchval("SELECT COUNT(*) FROM events")

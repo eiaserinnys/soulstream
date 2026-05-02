@@ -38,13 +38,16 @@
    UPDATE events
    SET parent_event_id = (payload->>'parent_event_id')::integer
    WHERE parent_event_id IS NULL
-     AND payload->>'parent_event_id' ~ '^\d+$';
+     AND payload->>'parent_event_id' ~ '^\d{1,10}$'
+     AND (payload->>'parent_event_id')::BIGINT BETWEEN 1 AND 2147483647;
    ```
 
-   **정수 형식 필터 사유**: 일부 레거시 이벤트(tool_start/tool_result/subagent_*)가
-   같은 키에 tool_use_id (`toolu_...`) 또는 UUID를 저장하고 있다. 의미가 다른 키이므로
-   정수 형식이 아닌 값은 백필 대상이 아니며 정본 컬럼은 NULL로 남겨둔다.
-   필터 없이 캐스트하면 `InvalidTextRepresentationError`로 백필이 실패한다 (2026-05-02 사고).
+   **필터 사유**: 일부 레거시 이벤트(tool_start/tool_result/subagent_*/input_request_responded)가
+   같은 키에 의미가 다른 값을 저장하고 있다. 다음 두 종류가 백필 대상에서 제외된다:
+   1. 비정수 문자열 — tool_use_id (`toolu_...`), UUID 등
+   2. INT 범위 초과 — `407885725189` 같은 timestamp 형 12자리 값 (events.id는 INTEGER이므로 INT MAX 안)
+   필터 없이 캐스트하면 `InvalidTextRepresentationError` 또는 `NumericValueOutOfRangeError`로
+   백필이 실패한다 (2026-05-02 사고 2건).
 
 3. **단계 3 — Python DFS로 `subtree_height` 재계산**
    - `backfill_subtree_height.py`의 `backfill_session()`이 세션별로 수행.
