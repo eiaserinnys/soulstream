@@ -36,10 +36,15 @@
 
    ```sql
    UPDATE events
-   SET parent_event_id = NULLIF(payload->>'parent_event_id', '')::integer
-   WHERE payload ? 'parent_event_id'
-     AND parent_event_id IS NULL;
+   SET parent_event_id = (payload->>'parent_event_id')::integer
+   WHERE parent_event_id IS NULL
+     AND payload->>'parent_event_id' ~ '^\d+$';
    ```
+
+   **정수 형식 필터 사유**: 일부 레거시 이벤트(tool_start/tool_result/subagent_*)가
+   같은 키에 tool_use_id (`toolu_...`) 또는 UUID를 저장하고 있다. 의미가 다른 키이므로
+   정수 형식이 아닌 값은 백필 대상이 아니며 정본 컬럼은 NULL로 남겨둔다.
+   필터 없이 캐스트하면 `InvalidTextRepresentationError`로 백필이 실패한다 (2026-05-02 사고).
 
 3. **단계 3 — Python DFS로 `subtree_height` 재계산**
    - `backfill_subtree_height.py`의 `backfill_session()`이 세션별로 수행.
@@ -74,10 +79,13 @@ FROM information_schema.columns
 WHERE table_name = 'events'
   AND column_name IN ('parent_event_id', 'subtree_height');
 
--- 2) 이관된 행 수 (음수면 미이관, 0이면 이미 이관됨)
+-- 2) 이관된 행 수 (unmigrated_int=0이면 이관 완료, non_integer는 의미가 다른 키라 컬럼 NULL이 정상)
 SELECT
-    COUNT(*) FILTER (WHERE payload ? 'parent_event_id' AND parent_event_id IS NULL)
-        AS unmigrated_rows,
+    COUNT(*) FILTER (WHERE parent_event_id IS NULL
+                       AND payload->>'parent_event_id' ~ '^\d+$') AS unmigrated_int,
+    COUNT(*) FILTER (WHERE parent_event_id IS NULL
+                       AND payload->>'parent_event_id' IS NOT NULL
+                       AND payload->>'parent_event_id' !~ '^\d+$') AS non_integer_legacy,
     COUNT(*) FILTER (WHERE parent_event_id IS NOT NULL) AS migrated_rows
 FROM events;
 

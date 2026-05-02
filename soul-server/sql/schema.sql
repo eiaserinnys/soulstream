@@ -547,8 +547,14 @@ DECLARE
     v_payload  JSONB := p_payload::jsonb;
     v_parent   INTEGER;
 BEGIN
-    -- payload에서 parent_event_id 추출 (없으면 NULL)
-    v_parent := (v_payload->>'parent_event_id')::INTEGER;
+    -- payload에서 parent_event_id 추출 (정수 문자열만, 그 외는 NULL)
+    -- 일부 레거시 이벤트는 payload.parent_event_id에 tool_use_id/UUID를 넣었음.
+    -- 의미적으로 다른 키이므로 INSERT 자체가 실패하지 않도록 정수 형식만 캐스트.
+    v_parent := CASE
+        WHEN v_payload->>'parent_event_id' ~ '^\d+$'
+        THEN (v_payload->>'parent_event_id')::INTEGER
+        ELSE NULL
+    END;
 
     -- 행 잠금으로 동시 append 직렬화
     PERFORM session_id FROM sessions WHERE session_id = p_session_id FOR UPDATE;
@@ -987,11 +993,12 @@ LANGUAGE sql STABLE AS $$
         (SELECT COUNT(*) FROM folders) AS folder_count;
 $$;
 
--- 백필: parent_event_id 컬럼이 NULL이지만 payload에 값이 있는 기존 이벤트 채우기
+-- 백필: parent_event_id 컬럼이 NULL이지만 payload에 정수 형식 값이 있는 기존 이벤트 채우기
 -- 멱등: parent_event_id가 이미 채워진 행은 WHERE 조건으로 건너뜀
 -- event_append가 parent_event_id 컬럼을 INSERT에 포함하지 않던 결함(2026-05-02 발견) 보정
+-- 정수 형식 필터: payload.parent_event_id에 tool_use_id/UUID 등 비정수 값이 섞여 있어
+-- 그 행들은 의미가 다른 키이므로 백필 대상 아님
 UPDATE events
 SET parent_event_id = (payload->>'parent_event_id')::INTEGER
 WHERE parent_event_id IS NULL
-  AND payload ? 'parent_event_id'
-  AND payload->>'parent_event_id' IS NOT NULL;
+  AND payload->>'parent_event_id' ~ '^\d+$';
