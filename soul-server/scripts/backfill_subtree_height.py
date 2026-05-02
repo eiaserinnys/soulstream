@@ -36,9 +36,11 @@ logger = logging.getLogger("backfill_subtree_height")
 async def migrate_parent_column(conn: asyncpg.Connection) -> int:
     """단계 2: payload.parent_event_id 문자열 값을 정본 INTEGER 컬럼으로 이관한다.
 
-    INTEGER 범위(1..2147483647) 안에 있는 정수 문자열만 캐스트한다. 다음 케이스는 모두 NULL:
+    INTEGER 범위(1..2147483647) 안에 있는 정수 문자열이고, 같은 session_id에 해당
+    id의 이벤트 행이 실제로 존재하는 경우에만 캐스트한다. 다음 케이스는 모두 NULL:
       - 비정수 문자열 (tool_use_id 'toolu_...', UUID 등 — 의미가 다른 레거시 키)
       - INT 범위를 초과하는 정수 (timestamp 등 잘못 들어간 값)
+      - 부모 이벤트 행이 사라진 dangling 정수 (events_parent_fk 위반 회피)
     정본 컬럼에 이미 값이 있으면 덮어쓰지 않는다.
 
     Returns:
@@ -46,11 +48,16 @@ async def migrate_parent_column(conn: asyncpg.Connection) -> int:
     """
     result = await conn.execute(
         r"""
-        UPDATE events
-        SET parent_event_id = (payload->>'parent_event_id')::integer
-        WHERE parent_event_id IS NULL
-          AND payload->>'parent_event_id' ~ '^\d{1,10}$'
-          AND (payload->>'parent_event_id')::BIGINT BETWEEN 1 AND 2147483647
+        UPDATE events e
+        SET parent_event_id = (e.payload->>'parent_event_id')::integer
+        WHERE e.parent_event_id IS NULL
+          AND e.payload->>'parent_event_id' ~ '^\d{1,10}$'
+          AND (e.payload->>'parent_event_id')::BIGINT BETWEEN 1 AND 2147483647
+          AND EXISTS (
+            SELECT 1 FROM events p
+            WHERE p.session_id = e.session_id
+              AND p.id = (e.payload->>'parent_event_id')::INTEGER
+          )
         """
     )
     # asyncpg execute는 "UPDATE {n}" 형태의 문자열을 반환한다
