@@ -4,7 +4,9 @@
  * 목적:
  * - `GET /api/sessions/{id}/messages` 응답을 라이브 SSE와 동일한 event-processor
  *   파이프라인을 통해 store.tree에 통합한다 (단일 정본).
- * - 위로 스크롤 시 `before` 커서로 과거 메시지를 prepend하고 prependedCount를 누적한다.
+ * - 위로 스크롤 시 `before` 커서로 과거 메시지를 prepend한다.
+ *   누적 prepend 개수(좌표)는 store.chatPrependedCount가 관리한다 — processHistoryEvents가
+ *   tree와 같은 set() 안에서 atomic 갱신하므로 본 훅은 별도 카운터를 들지 않는다.
  * - `next_cursor === null` 도달 시 "맨 위" 인디케이터를 표시한다.
  *
  * 설계 (옵션 D):
@@ -14,7 +16,8 @@
  *   (event-processor.ts:228). 외부 dedup 불필요.
  * - **orphan queue**: prepend 페이지 경계에서 부모가 아직 미수신인 자식 노드는
  *   ProcessingContext.orphans에 보관 → 부모 도착 시 자동 attach (tree-placer.ts).
- * - **세션 전환 시 초기화**: activeSessionKey가 바뀌면 prependedCount, 커서, 상태 모두 리셋.
+ * - **세션 전환 시 초기화**: activeSessionKey가 바뀌면 커서/상태 리셋.
+ *   chatPrependedCount는 store가 setActiveSession에서 자동 리셋(getSessionResetState).
  * - **중복 요청 방지**: loading 중에는 추가 prepend 요청을 무시한다.
  * - **fetch 실패 격리**: 예외를 삼키고 라이브 SSE 파이프라인을 단독 소스로 유지한다.
  */
@@ -51,12 +54,6 @@ export interface UseMessageHistoryBufferResult {
   reachedTop: boolean;
   /** 위로 스크롤 시 호출하여 과거 페이지 prepend. 중복 호출은 자동 무시된다. */
   requestOlder: () => void;
-  /**
-   * 누적 prepend 메시지 수 (flattenTree 차분 기반).
-   * virtuoso `firstItemIndex = START_INDEX - prependedCount` 패턴에서 사용한다.
-   * 세션 전환 시 0으로 리셋된다.
-   */
-  prependedCount: number;
 }
 
 /**
@@ -92,7 +89,6 @@ export function useMessageHistoryBuffer(
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [reachedTop, setReachedTop] = useState(false);
-  const [prependedCount, setPrependedCount] = useState(0);
 
   // 동시성 가드 — 세션 전환/언마운트 시 stale fetch 결과를 버리기 위함
   const sessionTokenRef = useRef<symbol>(Symbol("initial"));
@@ -118,7 +114,7 @@ export function useMessageHistoryBuffer(
     setNextCursor(null);
     setReachedTop(false);
     setLoading(false);
-    setPrependedCount(0);
+    // chatPrependedCount는 store가 setActiveSession에서 자동 리셋한다.
 
     if (!sessionId) return;
 
@@ -151,7 +147,7 @@ export function useMessageHistoryBuffer(
         const result = useDashboardStore.getState().processHistoryEvents(events);
         diag("history", "initial load done", { addedCount: result.addedCount });
 
-        // 초기 로드는 prepend가 아니므로 prependedCount에 더하지 않는다.
+        // 초기 로드는 prepend가 아니므로 store.chatPrependedCount에 더하지 않는다.
         // (virtuoso는 START_INDEX 기준으로 자연스럽게 표시)
 
         setNextCursor(data.next_cursor ?? null);
@@ -202,9 +198,7 @@ export function useMessageHistoryBuffer(
         const { addedCount } = useDashboardStore.getState().processHistoryEvents(events);
         diag("history", "prepend done", { addedCount });
 
-        if (addedCount > 0) {
-          setPrependedCount((c) => c + addedCount);
-        }
+        // chatPrependedCount 누적은 processHistoryEvents가 store에 atomic 갱신한다.
         setNextCursor(data.next_cursor ?? null);
         if (data.next_cursor === null) setReachedTop(true);
       } catch {
@@ -218,5 +212,5 @@ export function useMessageHistoryBuffer(
     })();
   }, [sessionId]);
 
-  return { loading, reachedTop, requestOlder, prependedCount };
+  return { loading, reachedTop, requestOlder };
 }

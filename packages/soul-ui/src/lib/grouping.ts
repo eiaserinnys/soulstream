@@ -4,7 +4,7 @@
  * 연속된 tool 메시지를 하나의 그룹으로 묶어서 접기/펼치기 UI로 표시한다.
  */
 
-import type { ChatMessage } from "../../lib/flatten-tree";
+import type { ChatMessage } from "./flatten-tree";
 
 export type MessageOrGroup =
   | { type: "single"; msg: ChatMessage }

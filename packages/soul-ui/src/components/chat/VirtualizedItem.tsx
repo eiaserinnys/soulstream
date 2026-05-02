@@ -1,6 +1,6 @@
 import { memo } from "react";
 import type { LlmContext } from "./hooks";
-import type { MessageOrGroup } from "./grouping";
+import type { MessageOrGroup } from "../../lib/grouping";
 import { ToolCallGroup } from "./ToolCallGroup";
 import { ChatMessageItem } from "./ChatMessageItem";
 

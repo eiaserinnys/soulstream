@@ -4,8 +4,8 @@
  * 트리 → flat ChatMessage 리스트 변환의 정확성을 검증합니다.
  */
 
-import { describe, it, expect } from "vitest";
-import { flattenTree, type ChatMessage } from "./flatten-tree";
+import { describe, it, expect, beforeEach } from "vitest";
+import { flattenTree, clearFlattenTreeCache, type ChatMessage } from "./flatten-tree";
 import type { EventTreeNode, SessionNode, UserMessageNode, SystemMessageNode, ThinkingNode, TextNode, ToolNode, ResultNode, ErrorNode, CompactNode, CompleteNode } from "@shared/types";
 
 function makeSession(children: EventTreeNode[] = []): SessionNode {
@@ -295,5 +295,89 @@ describe("flattenTree", () => {
 
     const msgs = flattenTree(tree);
     expect(msgs[0].agentInfo).toBeUndefined();
+  });
+});
+
+// === Identity 보존 캐시 ===
+
+describe("flattenTree identity 보존", () => {
+  beforeEach(() => {
+    clearFlattenTreeCache();
+  });
+
+  it("같은 트리를 두 번 호출하면 모든 ChatMessage가 동일 reference (===)", () => {
+    const tree = makeSession([
+      makeUserMessage("u1", "hello", [
+        makeThinking("t1", "thinking"),
+        makeText("txt1", "response", { textCompleted: true }),
+        makeTool("tool1", "Read", { completed: true }),
+      ]),
+    ]);
+
+    const first = flattenTree(tree);
+    const second = flattenTree(tree);
+    expect(first).toHaveLength(second.length);
+    for (let i = 0; i < first.length; i++) {
+      expect(first[i]).toBe(second[i]);
+    }
+  });
+
+  it("자식 push로 트리를 mutate한 후 — 변경되지 않은 노드는 동일 reference, 새 노드만 새 reference", () => {
+    const userNode = makeUserMessage("u1", "hello", [
+      makeThinking("t1", "thinking"),
+      makeText("txt1", "response", { textCompleted: true }),
+    ]);
+    const tree = makeSession([userNode]);
+
+    const before = flattenTree(tree);
+
+    // 자식 push (in-place mutation)
+    userNode.children.push(makeTool("tool1", "Read", { completed: true }));
+
+    const after = flattenTree(tree);
+    expect(after).toHaveLength(before.length + 1);
+    // 기존 노드들 reference 보존
+    expect(after[0]).toBe(before[0]); // user
+    expect(after[1]).toBe(before[1]); // thinking
+    expect(after[2]).toBe(before[2]); // text
+    // 새 노드는 추가됨
+    expect(after[3].toolName).toBe("Read");
+  });
+
+  it("text content가 변경된 노드만 새 reference, 나머지는 보존 (text_delta 시뮬)", () => {
+    const textNode = makeText("txt1", "initial", { textCompleted: false });
+    const userNode = makeUserMessage("u1", "hello", [textNode]);
+    const tree = makeSession([userNode]);
+
+    const before = flattenTree(tree);
+
+    // text_delta 적용 시뮬레이션 (content 변경)
+    textNode.content = "updated content";
+
+    const after = flattenTree(tree);
+    expect(after[0]).toBe(before[0]); // user 노드 보존
+    expect(after[1]).not.toBe(before[1]); // text 노드는 새 reference
+    expect(after[1].content).toBe("updated content");
+  });
+
+  it("clearFlattenTreeCache() 호출 후 — 모든 ChatMessage가 새 reference로 갱신", () => {
+    const tree = makeSession([
+      makeUserMessage("u1", "hello", [
+        makeThinking("t1", "thinking"),
+      ]),
+    ]);
+
+    const before = flattenTree(tree);
+    clearFlattenTreeCache();
+    const after = flattenTree(tree);
+
+    expect(after).toHaveLength(before.length);
+    for (let i = 0; i < before.length; i++) {
+      // 캐시 클리어 후이므로 reference는 모두 새것
+      expect(after[i]).not.toBe(before[i]);
+      // 단 값은 동일
+      expect(after[i].id).toBe(before[i].id);
+      expect(after[i].content).toBe(before[i].content);
+    }
   });
 });

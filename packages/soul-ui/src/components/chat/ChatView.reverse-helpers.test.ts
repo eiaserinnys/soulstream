@@ -10,7 +10,7 @@ import {
   computeFirstItemIndex,
   findFocusIndex,
 } from "./ChatView.reverse-helpers";
-import type { MessageOrGroup } from "./grouping";
+import type { MessageOrGroup } from "../../lib/grouping";
 import type { ChatMessage } from "../../lib/flatten-tree";
 
 const makeMsg = (overrides: Partial<ChatMessage>): ChatMessage => ({
