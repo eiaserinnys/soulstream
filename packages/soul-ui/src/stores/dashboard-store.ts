@@ -94,3 +94,18 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
 // === Tree Utility Functions (re-export for backward compat) ===
 
 export { countTreeNodes, countStreamingNodes, findTreeNode } from "./tree-utils";
+
+// === 진단 후크 (영구 노출) ===
+//
+// e2e/Playwright/브라우저 콘솔에서 store 상태를 직접 조회할 수 있도록 window에 노출한다.
+// 사용 예:
+//   const state = window.__SOULSTREAM_STORE__.getState();
+//   const tree = state.tree;
+//   const orphans = Array.from(state.processingCtx.orphans.entries());
+//   const nodeMapKeys = Array.from(state.processingCtx.nodeMap.keys());
+//
+// 보안: 인증된 사용자만 대시보드 접근 가능하므로 노출에 따른 추가 위험 없음.
+if (typeof window !== "undefined") {
+  (window as unknown as { __SOULSTREAM_STORE__?: typeof useDashboardStore })
+    .__SOULSTREAM_STORE__ = useDashboardStore;
+}

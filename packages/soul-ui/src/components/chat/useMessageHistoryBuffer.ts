@@ -22,6 +22,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SoulSSEEvent } from "@shared/types";
 import { useDashboardStore } from "../../stores/dashboard-store";
+import { diag } from "../../lib/diag";
 
 /** 초기 로드 / prepend 페이지 크기 */
 export const HISTORY_PAGE_SIZE = 50;
@@ -136,7 +137,19 @@ export function useMessageHistoryBuffer(
 
         // 시간 ASC로 뒤집어서 store에 흘림 (부모가 자식 이전에 처리되도록)
         const events = [...(data.messages ?? [])].reverse().map(toSSEEvent);
-        useDashboardStore.getState().processHistoryEvents(events);
+        diag("history", "initial load", {
+          sessionId,
+          received: data.messages?.length ?? 0,
+          eventTypes: events.reduce<Record<string, number>>((acc, { event }) => {
+            acc[event.type] = (acc[event.type] ?? 0) + 1;
+            return acc;
+          }, {}),
+          firstEventId: events[0]?.eventId,
+          lastEventId: events[events.length - 1]?.eventId,
+          nextCursor: data.next_cursor,
+        });
+        const result = useDashboardStore.getState().processHistoryEvents(events);
+        diag("history", "initial load done", { addedCount: result.addedCount });
 
         // 초기 로드는 prepend가 아니므로 prependedCount에 더하지 않는다.
         // (virtuoso는 START_INDEX 기준으로 자연스럽게 표시)
@@ -181,7 +194,13 @@ export function useMessageHistoryBuffer(
         if (sessionTokenRef.current !== token) return;
 
         const events = [...(data.messages ?? [])].reverse().map(toSSEEvent);
+        diag("history", "prepend page", {
+          sessionId,
+          before: cursor,
+          received: data.messages?.length ?? 0,
+        });
         const { addedCount } = useDashboardStore.getState().processHistoryEvents(events);
+        diag("history", "prepend done", { addedCount });
 
         if (addedCount > 0) {
           setPrependedCount((c) => c + addedCount);
