@@ -18,6 +18,7 @@ import json
 import logging
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime
 from typing import Optional
 from unittest.mock import AsyncMock, MagicMock
 
@@ -314,6 +315,51 @@ class TestReadMessagesPagination:
 
         assert len(messages) == 1
         assert cursor is None
+
+    @pytest.mark.asyncio
+    async def test_before_iso_string_passed_as_datetime_to_asyncpg(self):
+        """before가 ISO 8601 string일 때 asyncpg에 datetime 객체로 변환되어 전달되는지 검증.
+
+        asyncpg는 binary protocol에서 timestamptz 컬럼에 datetime 객체를 요구한다.
+        string을 그대로 전달하면 timestamptz_encode가 TypeError를 던져 ASGI 500 발생.
+        prod 결함 (2026-05-02 prepend 500) 회귀 방지.
+        """
+        db = PostgresSessionDB.__new__(PostgresSessionDB)
+        db._pool = MagicMock()
+        db._pool.fetch = AsyncMock(return_value=[])
+
+        await db.read_messages("s1", before="2026-05-02T05:28:03.888060+00:00", limit=50)
+
+        call_args = db._pool.fetch.call_args
+        sql_text = call_args[0][0]
+        params = call_args[0][1:]
+
+        # SQL에 timestamptz 캐스팅이 없어야 함 (datetime 객체로 전달하므로 불필요)
+        assert "::timestamptz" not in sql_text, (
+            "before가 datetime으로 변환된 후엔 SQL의 ::timestamptz 캐스팅이 불필요하다"
+        )
+        # 두 번째 파라미터(before)가 datetime 객체여야 함
+        assert isinstance(params[1], datetime), (
+            f"before는 asyncpg에 datetime 객체로 전달되어야 한다. 실제: {type(params[1])}"
+        )
+        # 파싱이 정확한지 검증
+        from datetime import timezone
+        expected = datetime(2026, 5, 2, 5, 28, 3, 888060, tzinfo=timezone.utc)
+        assert params[1] == expected
+
+    @pytest.mark.asyncio
+    async def test_before_datetime_passed_through(self):
+        """before가 이미 datetime 객체이면 그대로 전달 (방어 코드)."""
+        db = PostgresSessionDB.__new__(PostgresSessionDB)
+        db._pool = MagicMock()
+        db._pool.fetch = AsyncMock(return_value=[])
+
+        from datetime import timezone
+        before_dt = datetime(2026, 5, 2, 5, 28, 3, tzinfo=timezone.utc)
+        await db.read_messages("s1", before=before_dt, limit=50)  # type: ignore[arg-type]
+
+        params = db._pool.fetch.call_args[0][1:]
+        assert params[1] is before_dt
 
 
 # === DB 통합 테스트 (TEST_DATABASE_URL 필요) ===
