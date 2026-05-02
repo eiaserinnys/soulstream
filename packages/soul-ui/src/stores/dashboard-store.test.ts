@@ -2166,4 +2166,67 @@ describe("dashboard-store", () => {
     });
   });
 
+  describe("processHistoryEvents - 옵션 D 단일 트리 통합", () => {
+    it("빈 events 배열 → addedCount 0, store 무영향", () => {
+      const before = useDashboardStore.getState();
+      const beforeTree = before.tree;
+      const beforeLastEventId = before.lastEventId;
+
+      const result = useDashboardStore.getState().processHistoryEvents([]);
+
+      expect(result.addedCount).toBe(0);
+      const after = useDashboardStore.getState();
+      expect(after.tree).toBe(beforeTree);
+      expect(after.lastEventId).toBe(beforeLastEventId);
+    });
+
+    it("historyMode와 activeTextTarget이 호출 후 복원됨", () => {
+      // 라이브 SSE로 진행 중인 text 시퀀스 시뮬레이션
+      useDashboardStore.getState().processEvent(
+        { type: "user_message", content: "u" } as UserMessageEvent,
+        100,
+      );
+      useDashboardStore.getState().processEvent(
+        { type: "text_start", parent_event_id: "100" } as TextStartEvent,
+        101,
+      );
+      const ctx = useDashboardStore.getState().processingCtx;
+      const liveTextTarget = ctx.activeTextTarget;
+      expect(liveTextTarget).not.toBeNull();
+      expect(ctx.historyMode).toBe(false);
+
+      // history 페이지 처리 (페이지에 다른 text_start 포함)
+      useDashboardStore.getState().processHistoryEvents([
+        {
+          event: { type: "user_message", content: "old-u" } as UserMessageEvent,
+          eventId: 50,
+        },
+        {
+          event: { type: "text_start", parent_event_id: "50" } as TextStartEvent,
+          eventId: 51,
+        },
+      ]);
+
+      // 둘 다 복원되어야 함 — 라이브 text 노드가 보호됨
+      expect(ctx.historyMode).toBe(false);
+      expect(ctx.activeTextTarget).toBe(liveTextTarget);
+    });
+
+    it("동일 eventId 중복 호출 시 두 번째는 dedup으로 addedCount 0", () => {
+      const events = [
+        {
+          event: { type: "user_message", content: "u" } as UserMessageEvent,
+          eventId: 1000,
+        },
+      ];
+
+      const first = useDashboardStore.getState().processHistoryEvents(events);
+      expect(first.addedCount).toBeGreaterThan(0);
+
+      // 같은 eventId 두 번째 호출 — processEventsBatch 내부 `eventId <= lastEventId` dedup
+      const second = useDashboardStore.getState().processHistoryEvents(events);
+      expect(second.addedCount).toBe(0);
+    });
+  });
+
 });

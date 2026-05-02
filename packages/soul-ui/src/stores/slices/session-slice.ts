@@ -28,6 +28,7 @@ import {
   processEventsBatch,
   type SubtreeHeightUpdate,
 } from "../event-processor";
+import { flattenTree } from "../../lib/flatten-tree";
 
 /**
  * subtree_update 결과를 nodeMap에 증분 적용한다.
@@ -72,6 +73,7 @@ export type SessionSlice = Pick<
     | "selectEventNode"
     | "processEvent"
     | "processEvents"
+    | "processHistoryEvents"
     | "setTotalSubtreeHeight"
     | "addOptimisticSession"
     | "clearTree"
@@ -271,6 +273,59 @@ export const createSessionSlice: StateCreator<
     });
 
     return { statusUpdates: result.statusUpdates };
+  },
+
+  // --- 히스토리 prepend 처리 ---
+  //
+  // messages API에서 받은 raw 이벤트들을 라이브 SSE와 동일한 event-processor 파이프라인을
+  // 거쳐 store.tree에 통합한다. processingCtx.historyMode를 try/finally로 토글하여
+  // 부모 부재 자식을 orphan 큐로 분기시킨다 (tree-placer.ts:resolveParent).
+  //
+  // 반환: addedCount (flattenTree 차분) — virtuoso prependedCount 갱신용.
+  // (eventId dedup은 processEventsBatch 내부에서 처리되므로 차분이 페이지 크기와 다를 수 있음)
+  processHistoryEvents: (events) => {
+    if (events.length === 0) return { addedCount: 0 };
+
+    const state = get();
+    const beforeCount = flattenTree(state.tree).length;
+
+    // historyMode + activeTextTarget을 try/finally로 격리한다.
+    //
+    // historyMode: 부모 부재 자식을 orphan으로 분기 (tree-placer.ts:resolveParent).
+    // activeTextTarget: 라이브 SSE의 진행 중 text 스트림 노드를 prepend 페이지의
+    //   handleTextStart가 덮어쓰지 않도록 격리. 격리 없으면 prepend 처리 후 라이브
+    //   text_delta가 과거 text 노드에 잘못 누적되어 메시지가 오염된다.
+    state.processingCtx.historyMode = true;
+    const savedActiveTextTarget = state.processingCtx.activeTextTarget;
+    state.processingCtx.activeTextTarget = null;
+    try {
+      const result = processEventsBatch(
+        events,
+        state.processingCtx,
+        state.tree,
+        state.activeSessionKey,
+        state.activeSessionSummary,
+        state.lastEventId,
+      );
+
+      if (result.subtreeHeightUpdate) {
+        applySubtreeHeightUpdate(state.processingCtx, result.subtreeHeightUpdate);
+      }
+
+      set({
+        ...(result.updated
+          ? { tree: result.root, treeVersion: state.treeVersion + 1, treeChangeInfo: null }
+          : {}),
+        lastEventId: result.maxEventId,
+      });
+    } finally {
+      // 라이브 SSE 동작 보존을 위해 항상 복원
+      state.processingCtx.historyMode = false;
+      state.processingCtx.activeTextTarget = savedActiveTextTarget;
+    }
+
+    const afterCount = flattenTree(get().tree).length;
+    return { addedCount: afterCount - beforeCount };
   },
 
   // --- 뷰포트 API: totalSubtreeHeight 덮어쓰기 ---
