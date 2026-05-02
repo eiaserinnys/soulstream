@@ -637,6 +637,9 @@ class PostgresSessionDB(SessionDBBase):
     ) -> tuple[list[dict], Optional[str]]:
         """메시지성 이벤트를 created_at 기준 역순으로 페이지네이션하여 반환한다.
 
+        페이지 이벤트의 부모 체인(ancestor)을 WITH RECURSIVE로 함께 조회하여
+        클라이언트가 한 번의 요청으로 트리를 합류할 수 있게 한다.
+
         Args:
             session_id: 대상 세션
             before: ISO timestamp 커서. None이면 가장 최근부터.
@@ -645,15 +648,26 @@ class PostgresSessionDB(SessionDBBase):
         Returns:
             (messages, next_cursor)
             - messages: [{id, parent_event_id, event_type, payload, created_at}]
-            - next_cursor: 다음 페이지의 커서 (없으면 None)
+              ancestor가 포함되어 created_at DESC 정렬. 클라이언트가 reverse()하면
+              부모→자식 ASC 순서가 보장된다.
+            - next_cursor: 다음 페이지의 커서 (없으면 None). 페이지 이벤트 기준이며
+              ancestor는 커서 계산에 포함되지 않는다.
         """
+        # --- 다중 root 경고 (read_viewport line 589-599 패턴) ---
+        root_count = await self._pool.fetchval(
+            "SELECT COUNT(*)::int FROM events "
+            "WHERE session_id = $1 AND parent_event_id IS NULL",
+            session_id,
+        )
+        if root_count is not None and root_count > 1:
+            logger.warning(
+                "read_messages: session %s has %d root events "
+                "(parent_event_id IS NULL)",
+                session_id, root_count,
+            )
+
+        # --- Step 1: 페이지 이벤트 fetch (기존과 동일) ---
         if before is not None:
-            # asyncpg는 binary protocol에서 timestamptz 컬럼에 datetime 객체를 요구한다.
-            # ISO 8601 string을 그대로 전달하면 클라이언트 측 인코더(timestamptz_encode)가
-            # `TypeError: expected a datetime.date or datetime.datetime instance, got 'str'`
-            # 으로 실패하고 ASGI에서 500을 던진다. SQL 캐스팅(`$2::timestamptz`)은
-            # 서버 측 캐스팅이라 클라이언트 인코딩 단계에서 적용되지 않는다.
-            # 같은 파일 라인 138, 141, 231, 462에서 이미 동일 패턴을 사용한다.
             before_dt = (
                 before
                 if isinstance(before, datetime)
@@ -681,10 +695,82 @@ class PostgresSessionDB(SessionDBBase):
                 session_id, limit + 1,
             )
 
+        # --- Step 2: 페이지네이션 계산 (ancestor 합산 전) ---
         has_more = len(rows) > limit
-        rows = rows[:limit]
+        page_rows = list(rows[:limit])
+
+        # next_cursor는 페이지 이벤트 기준만 사용 (ancestor 미포함)
+        next_cursor: Optional[str] = None
+        if has_more and page_rows:
+            last_ts = page_rows[-1]["created_at"]
+            next_cursor = (
+                last_ts.isoformat() if isinstance(last_ts, datetime) else last_ts
+            )
+
+        # --- Step 3: ancestor 보강 ---
+        page_ids = {int(r["id"]) for r in page_rows}
+        missing_parents = {
+            int(r["parent_event_id"])
+            for r in page_rows
+            if r["parent_event_id"] is not None
+            and int(r["parent_event_id"]) not in page_ids
+        }
+
+        ancestor_rows: list = []
+        if missing_parents:
+            ancestor_rows = await self._pool.fetch(
+                """
+                WITH RECURSIVE ancestors AS (
+                    SELECT session_id, id, parent_event_id,
+                           event_type, payload, created_at
+                    FROM events
+                    WHERE session_id = $1 AND id = ANY($2::int[])
+                    UNION
+                    SELECT e.session_id, e.id, e.parent_event_id,
+                           e.event_type, e.payload, e.created_at
+                    FROM events e
+                    JOIN ancestors a
+                      ON a.parent_event_id = e.id
+                     AND a.session_id = e.session_id
+                    WHERE e.session_id = $1
+                )
+                SELECT id, parent_event_id, event_type, payload, created_at
+                FROM ancestors
+                """,
+                session_id, list(missing_parents),
+            )
+
+            if ancestor_rows:
+                logger.debug(
+                    "read_messages: ancestor chain for session %s: "
+                    "%d missing parents → %d ancestors",
+                    session_id, len(missing_parents), len(ancestor_rows),
+                )
+
+            # 고아 가지 감지: DB에 부모 행이 없는 데이터 손상
+            fetched_ids = {int(ar["id"]) for ar in ancestor_rows}
+            orphaned = missing_parents - fetched_ids
+            if orphaned:
+                logger.warning(
+                    "read_messages: session %s has %d orphaned parent refs: %s",
+                    session_id, len(orphaned), orphaned,
+                )
+
+        # --- Step 4: 합산 + DESC 정렬 ---
+        all_rows = list(page_rows)
+        seen_ids = set(page_ids)
+        for ar in ancestor_rows:
+            aid = int(ar["id"])
+            if aid not in seen_ids:
+                all_rows.append(ar)
+                seen_ids.add(aid)
+
+        # created_at DESC, id DESC — 어댑터 reverse() 후 부모→자식 ASC 보장
+        all_rows.sort(key=lambda r: (r["created_at"], r["id"]), reverse=True)
+
+        # --- Step 5: 직렬화 ---
         messages = []
-        for r in rows:
+        for r in all_rows:
             d = dict(r)
             if isinstance(d.get("created_at"), datetime):
                 d["created_at"] = d["created_at"].isoformat()
@@ -697,7 +783,6 @@ class PostgresSessionDB(SessionDBBase):
                 d["payload"] = {}
             messages.append(d)
 
-        next_cursor = messages[-1]["created_at"] if has_more and messages else None
         return messages, next_cursor
 
     # --- 폴더 CRUD ---

@@ -132,6 +132,14 @@ export function placeInTree(
   ctx: ProcessingContext,
   root: EventTreeNode,
 ): void {
+  // ancestor 동봉으로 이미 처리된 노드가 같은 배치 내에서 재진입할 수 있다.
+  // 기존 노드를 새 객체로 덮어쓰면 기존 자식 링크가 끊어지므로 skip.
+  // (event-processor dedup은 배치 간 중복만 차단 — 같은 배치 내 중복은 여기서 처리)
+  if (ctx.nodeMap.has(String(eventId))) {
+    diag("tree-placer", "→ skip (already in nodeMap)", { eventId, nodeId: node.id });
+    return;
+  }
+
   // nodeMap 등록 (모든 노드 공통)
   registerNode(ctx, node);
 
@@ -168,6 +176,11 @@ export function handleTextStart(
   ctx: ProcessingContext,
   root: EventTreeNode,
 ): boolean {
+  // ancestor 동봉으로 이미 처리된 text 노드의 재진입 방지
+  if (ctx.nodeMap.has(String(eventId))) {
+    diag("tree-placer", "→ skip text (already in nodeMap)", { eventId });
+    return false; // activeTextTarget 변경하지 않음
+  }
   const textParent = resolveParent(event.parent_event_id, ctx, root);
   const textNode = makeNode(`text-${eventId}`, "text", "");
   registerNode(ctx, textNode);
