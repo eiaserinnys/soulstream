@@ -134,7 +134,9 @@ export const createSessionSlice: StateCreator<
   // --- 활성 세션 ---
 
   setActiveSession: (key, detail) => {
-    // 같은 세션이면 아무것도 하지 않음 (resume 등에서 불필요한 리셋 방지)
+    // 같은 세션이면 아무것도 하지 않음 (resume 등에서 불필요한 리셋 방지).
+    // 이 경로에서는 clearFlattenTreeCache를 호출하지 않음 — 같은 세션의 ChatMessage
+    // identity reference를 그대로 재사용하여 React.memo 효과 유지.
     if (key !== null && key === get().activeSessionKey) return;
 
     // 세션이 속한 폴더를 찾아 selectedFolderId도 갱신

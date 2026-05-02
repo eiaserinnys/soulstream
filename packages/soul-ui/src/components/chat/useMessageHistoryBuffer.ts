@@ -147,7 +147,7 @@ export function useMessageHistoryBuffer(
         const result = useDashboardStore.getState().processHistoryEvents(events);
         diag("history", "initial load done", { addedCount: result.addedCount });
 
-        // 초기 로드는 prepend가 아니므로 prependedCount에 더하지 않는다.
+        // 초기 로드는 prepend가 아니므로 store.chatPrependedCount에 더하지 않는다.
         // (virtuoso는 START_INDEX 기준으로 자연스럽게 표시)
 
         setNextCursor(data.next_cursor ?? null);

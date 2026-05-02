@@ -7,7 +7,7 @@
  * Phase 4 재설계:
  * - react-virtuoso + `alignToBottom + followOutput="auto"` 로 "첫 paint가 이미 최하단" 을 달성.
  *   이동 궤적 없이 하단 고정.
- * - prepend는 virtuoso 공식 패턴 `firstItemIndex -= N` (useMessageHistoryBuffer.prependedCount 참조).
+ * - prepend는 virtuoso 공식 패턴 `firstItemIndex -= N` (store.chatPrependedCount 참조 — 정본은 store).
  * - 시각 상단 진입 판정은 virtuoso `startReached` 콜백으로 일원화.
  * - focusEventId 하이라이트는 `itemsRendered` 콜백에서 `scrollerRef` 범위로 한정한 querySelector로 처리.
  * - 세션 전환은 Virtuoso `key={activeSessionKey}` 재마운트로 처리.
