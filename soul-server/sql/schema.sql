@@ -544,14 +544,21 @@ CREATE OR REPLACE FUNCTION event_append(
 ) RETURNS INTEGER LANGUAGE plpgsql AS $$
 DECLARE
     v_event_id INTEGER;
+    v_payload  JSONB := p_payload::jsonb;
+    v_parent   INTEGER;
 BEGIN
+    -- payload에서 parent_event_id 추출 (없으면 NULL)
+    v_parent := (v_payload->>'parent_event_id')::INTEGER;
+
     -- 행 잠금으로 동시 append 직렬화
     PERFORM session_id FROM sessions WHERE session_id = p_session_id FOR UPDATE;
 
-    INSERT INTO events (id, session_id, event_type, payload, searchable_text, created_at)
+    INSERT INTO events (id, session_id, event_type, payload, searchable_text,
+                        created_at, parent_event_id)
     VALUES (
         (SELECT COALESCE(MAX(id), 0) + 1 FROM events WHERE session_id = p_session_id),
-        p_session_id, p_event_type, p_payload::jsonb, p_searchable_text, p_created_at
+        p_session_id, p_event_type, v_payload, p_searchable_text,
+        p_created_at, v_parent
     ) RETURNING id INTO v_event_id;
 
     UPDATE sessions SET last_event_id = v_event_id WHERE session_id = p_session_id;
@@ -979,3 +986,12 @@ LANGUAGE sql STABLE AS $$
          WHERE s.node_id = p_node_id) AS event_count,
         (SELECT COUNT(*) FROM folders) AS folder_count;
 $$;
+
+-- 백필: parent_event_id 컬럼이 NULL이지만 payload에 값이 있는 기존 이벤트 채우기
+-- 멱등: parent_event_id가 이미 채워진 행은 WHERE 조건으로 건너뜀
+-- event_append가 parent_event_id 컬럼을 INSERT에 포함하지 않던 결함(2026-05-02 발견) 보정
+UPDATE events
+SET parent_event_id = (payload->>'parent_event_id')::INTEGER
+WHERE parent_event_id IS NULL
+  AND payload ? 'parent_event_id'
+  AND payload->>'parent_event_id' IS NOT NULL;
