@@ -343,6 +343,141 @@ async def test_event_count(test_db):
     assert count == 3
 
 
+async def test_event_append_parent_event_id_integer(test_db):
+    """payload.parent_event_id가 정수 문자열이면 컬럼에 INTEGER로 저장된다."""
+    await _create_session(test_db, "ev-pe-int")
+    now = _utc_now()
+
+    eid1 = await test_db.fetchval(
+        "SELECT event_append($1, $2, $3, $4, $5)",
+        "ev-pe-int", "text_delta", '{"text":"first"}', "first", now,
+    )
+    eid2 = await test_db.fetchval(
+        "SELECT event_append($1, $2, $3, $4, $5)",
+        "ev-pe-int", "text_delta",
+        json.dumps({"text": "second", "parent_event_id": str(eid1)}),
+        "second", now,
+    )
+
+    row = await test_db.fetchrow("SELECT * FROM event_read_one($1, $2)", "ev-pe-int", eid2)
+    assert row["parent_event_id"] == eid1
+
+
+async def test_event_append_parent_event_id_uuid_does_not_crash(test_db):
+    """payload.parent_event_id가 UUID여도 INSERT가 성공하고 컬럼은 NULL로 남는다.
+
+    레거시 이벤트(tool_use_id, subagent UUID)가 같은 키에 들어 있는 사례가 5,252건 존재.
+    의미가 다른 키이므로 컬럼은 NULL로 두되, INSERT 자체가 실패해서는 안 된다.
+    """
+    await _create_session(test_db, "ev-pe-uuid")
+    now = _utc_now()
+
+    eid = await test_db.fetchval(
+        "SELECT event_append($1, $2, $3, $4, $5)",
+        "ev-pe-uuid", "subagent_start",
+        json.dumps({"parent_event_id": "f5848770-5933-4f4c-8f08-107d790bfe4b"}),
+        "sub", now,
+    )
+    row = await test_db.fetchrow("SELECT * FROM event_read_one($1, $2)", "ev-pe-uuid", eid)
+    assert row["parent_event_id"] is None
+
+
+async def test_event_append_parent_event_id_tool_use_id_does_not_crash(test_db):
+    """payload.parent_event_id가 'toolu_...' tool_use_id여도 NULL로 떨어진다."""
+    await _create_session(test_db, "ev-pe-tool")
+    now = _utc_now()
+
+    eid = await test_db.fetchval(
+        "SELECT event_append($1, $2, $3, $4, $5)",
+        "ev-pe-tool", "tool_start",
+        json.dumps({"parent_event_id": "toolu_01Y3nys4t9Dqk6tznWFuFTam"}),
+        "tool", now,
+    )
+    row = await test_db.fetchrow("SELECT * FROM event_read_one($1, $2)", "ev-pe-tool", eid)
+    assert row["parent_event_id"] is None
+
+
+async def test_event_append_parent_event_id_absent(test_db):
+    """payload에 parent_event_id가 없으면 컬럼 NULL."""
+    await _create_session(test_db, "ev-pe-none")
+    now = _utc_now()
+
+    eid = await test_db.fetchval(
+        "SELECT event_append($1, $2, $3, $4, $5)",
+        "ev-pe-none", "text_delta", '{"text":"x"}', "x", now,
+    )
+    row = await test_db.fetchrow("SELECT * FROM event_read_one($1, $2)", "ev-pe-none", eid)
+    assert row["parent_event_id"] is None
+
+
+async def test_event_append_parent_event_id_empty_string(test_db):
+    """payload.parent_event_id가 빈 문자열이어도 NULL로 떨어진다.
+
+    과거 backfill 스크립트가 NULLIF(..., '') 패턴을 썼던 흔적으로, 빈 문자열 형태가
+    잠재적으로 들어올 수 있어 회귀 표면.
+    """
+    await _create_session(test_db, "ev-pe-empty")
+    now = _utc_now()
+
+    eid = await test_db.fetchval(
+        "SELECT event_append($1, $2, $3, $4, $5)",
+        "ev-pe-empty", "text_delta",
+        json.dumps({"parent_event_id": ""}),
+        "x", now,
+    )
+    row = await test_db.fetchrow("SELECT * FROM event_read_one($1, $2)", "ev-pe-empty", eid)
+    assert row["parent_event_id"] is None
+
+
+async def test_parent_event_id_backfill_mixed_legacy(test_db):
+    """schema.sql 끝의 백필 UPDATE가 혼합 레거시 데이터에서 깨지지 않고 정수만 채운다.
+
+    이번 사고의 직접 원인이 백필 SQL이었으므로, 정수/UUID/tool_use_id/빈문자열/이미채워짐
+    이 섞인 상태에서 백필을 재실행해도 에러 없이 정수 행만 컬럼이 채워지는 것을 검증한다.
+    """
+    await _create_session(test_db, "ev-bf-mix")
+    now = _utc_now()
+
+    # 직접 INSERT로 레거시 상태 재현 (event_append를 우회 — 컬럼 NULL인 행을 만들기 위해)
+    await test_db.execute(
+        """
+        INSERT INTO events (id, session_id, event_type, payload, searchable_text,
+                            created_at, parent_event_id)
+        VALUES
+            (10, 'ev-bf-mix', 'legacy_int', '{"parent_event_id":"42"}'::jsonb, '', $1, NULL),
+            (11, 'ev-bf-mix', 'legacy_uuid',
+                '{"parent_event_id":"f5848770-5933-4f4c-8f08-107d790bfe4b"}'::jsonb, '', $1, NULL),
+            (12, 'ev-bf-mix', 'legacy_tool',
+                '{"parent_event_id":"toolu_01Y3"}'::jsonb, '', $1, NULL),
+            (13, 'ev-bf-mix', 'legacy_empty', '{"parent_event_id":""}'::jsonb, '', $1, NULL),
+            (14, 'ev-bf-mix', 'already_filled', '{"parent_event_id":"99"}'::jsonb, '', $1, 7)
+        """,
+        now,
+    )
+
+    # schema.sql 끝의 백필 UPDATE를 재실행 (멱등 검증 포함)
+    await test_db.execute(
+        r"""
+        UPDATE events
+        SET parent_event_id = (payload->>'parent_event_id')::INTEGER
+        WHERE parent_event_id IS NULL
+          AND payload->>'parent_event_id' ~ '^\d+$'
+        """
+    )
+
+    rows = {
+        r["id"]: r["parent_event_id"]
+        for r in await test_db.fetch(
+            "SELECT id, parent_event_id FROM events WHERE session_id = 'ev-bf-mix'"
+        )
+    }
+    assert rows[10] == 42, "정수 문자열은 백필되어야 함"
+    assert rows[11] is None, "UUID는 컬럼 NULL 유지"
+    assert rows[12] is None, "tool_use_id는 컬럼 NULL 유지"
+    assert rows[13] is None, "빈 문자열은 컬럼 NULL 유지"
+    assert rows[14] == 7, "이미 채워진 컬럼은 덮어쓰지 않음"
+
+
 async def test_event_append_concurrency(test_db):
     """동시에 10개 이벤트를 append해도 ID 중복이 없어야 한다."""
     await _create_session(test_db, "ev-conc")

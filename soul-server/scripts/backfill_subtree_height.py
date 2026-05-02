@@ -36,19 +36,19 @@ logger = logging.getLogger("backfill_subtree_height")
 async def migrate_parent_column(conn: asyncpg.Connection) -> int:
     """단계 2: payload.parent_event_id 문자열 값을 정본 INTEGER 컬럼으로 이관한다.
 
-    payload JSONB에 parent_event_id 키가 있는 이벤트만 대상으로 한다.
-    빈 문자열은 NULL로, 숫자 문자열은 int로 변환한다.
-    정본 컬럼에 이미 값이 있으면 덮어쓰지 않는다.
+    정수 문자열만 캐스트한다. 일부 레거시 이벤트(tool_start/tool_result/subagent_*)는
+    같은 키에 tool_use_id 또는 UUID를 저장해 두었으므로 정수 형식이 아닌 값은 백필 대상
+    아님 — 정본 컬럼은 NULL로 둔다. 정본 컬럼에 이미 값이 있으면 덮어쓰지 않는다.
 
     Returns:
         변환에 성공한 행 수.
     """
     result = await conn.execute(
-        """
+        r"""
         UPDATE events
-        SET parent_event_id = NULLIF(payload->>'parent_event_id', '')::integer
-        WHERE payload ? 'parent_event_id'
-          AND parent_event_id IS NULL
+        SET parent_event_id = (payload->>'parent_event_id')::integer
+        WHERE parent_event_id IS NULL
+          AND payload->>'parent_event_id' ~ '^\d+$'
         """
     )
     # asyncpg execute는 "UPDATE {n}" 형태의 문자열을 반환한다
@@ -143,8 +143,9 @@ async def run(dsn: str, dry_run: bool) -> None:
         async with pool.acquire() as conn:
             if dry_run:
                 pending = await conn.fetchval(
-                    "SELECT COUNT(*) FROM events "
-                    "WHERE payload ? 'parent_event_id' AND parent_event_id IS NULL"
+                    r"SELECT COUNT(*) FROM events "
+                    r"WHERE parent_event_id IS NULL "
+                    r"  AND payload->>'parent_event_id' ~ '^\d+$'"
                 )
                 total_sessions = await conn.fetchval("SELECT COUNT(*) FROM sessions")
                 total_events = await conn.fetchval("SELECT COUNT(*) FROM events")
