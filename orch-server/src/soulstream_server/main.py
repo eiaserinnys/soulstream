@@ -19,6 +19,7 @@ from soulstream_server.api.attachments import create_attachments_router
 from soulstream_server.api.atom import create_atom_router
 from soulstream_server.api.auth import verify_auth
 from soulstream_server.api.auth_bearer import router as auth_bearer_router
+from soulstream_server.api.auth_native import create_native_auth_router
 from soulstream_server.api.execute_proxy import create_execute_proxy_router
 from soulstream_server.api.catalog import create_catalog_router
 from soulstream_server.api.claude_auth import create_claude_auth_router
@@ -162,6 +163,16 @@ def _mount_api_routers(
     # 라우터 내부에서 이미 verify_auth로 보호하므로 여기서 추가 dep을 주입하지 않는다
     # (정본은 하나 — 보호 수준을 라우터가 소유). OAuth 라우터와 유사한 외부 mount 패턴.
     app.include_router(auth_bearer_router)
+
+    # /api/auth/google/native — 모바일 PKCE 인증 (인증 전 단계, dep 면제).
+    # google_ios_client_id가 비어 있으면 라우터 미등록 (모바일 미사용 환경 호환).
+    if settings.is_auth_enabled and settings.google_ios_client_id:
+        app.include_router(
+            create_native_auth_router(
+                google_ios_client_id=settings.google_ios_client_id,
+                jwt_secret=settings.jwt_secret,
+            )
+        )
 
     # Auth 라우터 (OAuth 로그인 — /api/auth/* 면제 대상)
     if settings.is_auth_enabled:

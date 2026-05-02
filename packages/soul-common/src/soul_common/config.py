@@ -18,6 +18,7 @@ class BaseOAuthSettings(BaseSettings):
     google_client_id: str = ""
     google_client_secret: str = ""
     google_callback_url: str = ""
+    google_ios_client_id: str = ""  # iOS 앱용 OAuth client ID (PKCE audience 검증)
     allowed_email: str = ""
     jwt_secret: str = ""
 

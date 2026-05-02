@@ -17,6 +17,13 @@ _local_src = Path(__file__).parent.parent / "src"
 if str(_local_src) not in sys.path:
     sys.path.insert(0, str(_local_src))
 
+# soul-common도 동일하게 worktree 경로를 우선시한다.
+# worktree에서 BaseOAuthSettings에 새 필드를 추가했는데 .test-venv에 install된
+# main 리포 soul_common이 우선되면 AttributeError가 발생한다.
+_local_common = Path(__file__).parent.parent.parent / "packages" / "soul-common" / "src"
+if str(_local_common) not in sys.path:
+    sys.path.insert(0, str(_local_common))
+
 
 # === 테스트 환경 상수 ===
 TEST_AUTH_TOKEN = "test-bearer-token-for-testing"

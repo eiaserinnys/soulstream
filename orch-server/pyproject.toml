@@ -21,6 +21,8 @@ dependencies = [
     "sse-starlette>=1.6.0",
     "aiofiles>=23.0.0",
     "python-multipart>=0.0.6",
+    "google-auth>=2.0.0",
+    "requests>=2.32.0",  # google-auth의 Request transport 의존성
 ]
 
 [project.optional-dependencies]
