@@ -62,15 +62,61 @@ export function resolveParent(
 }
 
 /**
+ * 노드 ID(`...-{eventId}`)에서 정렬 키를 추출한다.
+ *
+ * placeInTree/handleTextStart가 만든 모든 노드는 끝에 eventId가 붙은 형식이며 (예:
+ * `user-msg-100`, `tool-242`, `thinking-70`, `text-169`), `extractEventId`(flatten-tree)와
+ * 동일한 정규식 시맨틱을 사용한다.
+ *
+ * 매칭 실패 시 Number.POSITIVE_INFINITY로 fallback. 이 fallback이 발동하는 노드(`root-session`,
+ * ORPHAN_PARENT sentinel `__orphan__` 등)는 children 배열에 들어가지 않으므로 실제 정렬 결과에
+ * 영향을 주지 않는다. 만에 하나 들어가더라도 INFINITY는 항상 끝으로 정렬되어 push 동작과 동일.
+ */
+function nodeEventId(node: EventTreeNode): number {
+  const m = node.id.match(/-(\d+)$/);
+  return m ? Number(m[1]) : Number.POSITIVE_INFINITY;
+}
+
+/**
+ * eventId ASC 위치를 binary search로 찾는다 (lower_bound 시맨틱).
+ *
+ * 같은 eventId가 이미 있어도 그 앞 위치를 반환 — placeInTree가 nodeMap.has 가드로 중복을
+ * 미리 거르므로 같은 eventId가 children에 두 번 들어가는 일은 없다.
+ */
+function lowerBoundByEventId(children: EventTreeNode[], eventId: number): number {
+  let lo = 0;
+  let hi = children.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (nodeEventId(children[mid]) < eventId) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/** historyMode 정렬 삽입 — children 배열에 eventId ASC 위치로 splice. */
+function insertSortedByEventId(
+  children: EventTreeNode[],
+  node: EventTreeNode,
+  eventId: number,
+): void {
+  const idx = lowerBoundByEventId(children, eventId);
+  children.splice(idx, 0, node);
+}
+
+/**
  * 노드를 부모에 attach하고 자신의 adoptees를 함께 처리한다.
  *
  * - parent === ORPHAN_PARENT (history mode + 부모 부재) → ctx.orphans 큐에 보관
- * - 그 외 → parent.children.push(node) (정상 attach)
+ * - 그 외 정상 attach:
+ *   - historyMode=true → parent.children에 eventId ASC sorted insert (prepend 시 시간순 보존)
+ *   - historyMode=false → parent.children.push (라이브 SSE 경로, 시간 ASC 도착 보장이 있어 push 정합)
  * - 두 경우 모두 본 노드가 다른 orphan들의 부모일 수 있으므로 adoptees 조회·attach.
+ *   adoptees 합류도 historyMode일 때 sorted insert로 처리 (페이지 경계 부모 도착 케이스).
  *
  * 다층 체인 자동 처리: A→B→C에서 B가 orphan map에 들어가도 nodeMap에는 등록되어 있어
- * 후속 자식 A가 resolveParent로 B를 정상 lookup → B.children.push(A). C 도착 시
- * C.children.push(B)로 B(A 포함)가 통째로 이동.
+ * 후속 자식 A가 resolveParent로 B를 정상 lookup → B.children에 attach (history면 sorted, live면
+ * push). C 도착 시 C.children에 B(A 포함)가 통째로 이동.
  */
 function attachToParent(
   node: EventTreeNode,
@@ -92,25 +138,36 @@ function attachToParent(
       waitingFor: parentEventId,
     });
   } else {
-    parent.children.push(node);
+    if (ctx.historyMode) {
+      insertSortedByEventId(parent.children, node, eventId);
+    } else {
+      parent.children.push(node);
+    }
     diag("tree-placer", "→ attach", {
       eventId,
       nodeType: node.type,
       nodeId: node.id,
       parentId: parent.id,
       parentType: parent.type,
+      sorted: ctx.historyMode,
     });
   }
 
-  // 새 노드가 다른 orphan들의 부모일 수 있음 — 자식 후보 attach
+  // 새 노드가 다른 orphan들의 부모일 수 있음 — 자식 후보 attach.
+  // historyMode면 도착 순서가 아닌 eventId ASC로 합류시켜 prepend 페이지 경계에서도 시간순 보존.
   const adoptees = ctx.orphans.get(String(eventId));
   if (adoptees && adoptees.length > 0) {
     for (const child of adoptees) {
-      node.children.push(child);
+      if (ctx.historyMode) {
+        insertSortedByEventId(node.children, child, nodeEventId(child));
+      } else {
+        node.children.push(child);
+      }
     }
     diag("tree-placer", "→ adopt", {
       newParentEventId: eventId,
       adopteeIds: adoptees.map((c) => c.id),
+      sorted: ctx.historyMode,
     });
     ctx.orphans.delete(String(eventId));
   }
