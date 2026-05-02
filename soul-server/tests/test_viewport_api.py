@@ -292,10 +292,11 @@ class TestReadMessagesPagination:
         ]
         db._pool = MagicMock()
         db._pool.fetch = AsyncMock(return_value=rows)
+        db._pool.fetchval = AsyncMock(return_value=1)  # root_count
 
         messages, cursor = await db.read_messages("s1", before=None, limit=3)
 
-        # limit개만 반환
+        # limit개만 반환 (ancestor 추가 가능하나 parent_event_id=None → missing_parents 없음)
         assert len(messages) == 3
         # 마지막(=가장 오래된) 항목의 created_at이 next_cursor
         assert cursor == "2026-04-17T12:01:00+00:00"
@@ -310,6 +311,7 @@ class TestReadMessagesPagination:
         ]
         db._pool = MagicMock()
         db._pool.fetch = AsyncMock(return_value=rows)
+        db._pool.fetchval = AsyncMock(return_value=1)
 
         messages, cursor = await db.read_messages("s1", before=None, limit=3)
 
@@ -327,6 +329,7 @@ class TestReadMessagesPagination:
         db = PostgresSessionDB.__new__(PostgresSessionDB)
         db._pool = MagicMock()
         db._pool.fetch = AsyncMock(return_value=[])
+        db._pool.fetchval = AsyncMock(return_value=1)
 
         await db.read_messages("s1", before="2026-05-02T05:28:03.888060+00:00", limit=50)
 
@@ -353,6 +356,7 @@ class TestReadMessagesPagination:
         db = PostgresSessionDB.__new__(PostgresSessionDB)
         db._pool = MagicMock()
         db._pool.fetch = AsyncMock(return_value=[])
+        db._pool.fetchval = AsyncMock(return_value=1)
 
         from datetime import timezone
         before_dt = datetime(2026, 5, 2, 5, 28, 3, tzinfo=timezone.utc)
@@ -360,6 +364,123 @@ class TestReadMessagesPagination:
 
         params = db._pool.fetch.call_args[0][1:]
         assert params[1] is before_dt
+
+
+class TestReadMessagesAncestor:
+    """read_messages ancestor 보강 단위 테스트."""
+
+    def _make_db(self, page_rows, ancestor_rows=None, root_count=1):
+        """read_messages 테스트용 mock DB를 구성한다."""
+        db = PostgresSessionDB.__new__(PostgresSessionDB)
+        db._pool = MagicMock()
+
+        fetch_calls = [page_rows]
+        if ancestor_rows is not None:
+            fetch_calls.append(ancestor_rows)
+
+        db._pool.fetch = AsyncMock(side_effect=fetch_calls)
+        db._pool.fetchval = AsyncMock(return_value=root_count)
+        return db
+
+    @pytest.mark.asyncio
+    async def test_includes_ancestors(self):
+        """부모가 페이지 밖에 있으면 ancestor가 응답에 포함된다."""
+        # 페이지: child(id=10, parent=5) — 부모 5는 페이지에 없음
+        page_rows = [
+            {"id": 10, "parent_event_id": 5, "event_type": "tool_start",
+             "payload": {"type": "tool_start"}, "created_at": "2026-05-02T12:10:00+00:00"},
+        ]
+        # ancestor: parent(id=5)
+        ancestor_rows = [
+            {"id": 5, "parent_event_id": None, "event_type": "user_message",
+             "payload": {"type": "user_message"}, "created_at": "2026-05-02T12:05:00+00:00"},
+        ]
+        db = self._make_db(page_rows, ancestor_rows)
+
+        messages, cursor = await db.read_messages("s1", before=None, limit=50)
+
+        # ancestor(id=5)가 포함되어야 함
+        ids = [m["id"] for m in messages]
+        assert 5 in ids
+        assert 10 in ids
+        # DESC 순서: 10이 먼저, 5가 나중 (어댑터가 reverse→ASC하면 5→10)
+        assert ids.index(10) < ids.index(5)
+
+    @pytest.mark.asyncio
+    async def test_next_cursor_excludes_ancestors(self):
+        """next_cursor는 페이지 이벤트 기준이며 ancestor를 포함하지 않는다."""
+        # 4개 반환 (limit=3이므로 has_more=True, page_rows=3개)
+        page_rows = [
+            {"id": 10, "parent_event_id": 5, "event_type": "tool_start",
+             "payload": {}, "created_at": "2026-05-02T12:10:00+00:00"},
+            {"id": 9, "parent_event_id": 5, "event_type": "text_start",
+             "payload": {}, "created_at": "2026-05-02T12:09:00+00:00"},
+            {"id": 8, "parent_event_id": 5, "event_type": "text_delta",
+             "payload": {}, "created_at": "2026-05-02T12:08:00+00:00"},
+            {"id": 7, "parent_event_id": 5, "event_type": "progress",
+             "payload": {}, "created_at": "2026-05-02T12:07:00+00:00"},
+        ]
+        ancestor_rows = [
+            {"id": 5, "parent_event_id": None, "event_type": "user_message",
+             "payload": {}, "created_at": "2026-05-02T12:05:00+00:00"},
+        ]
+        db = self._make_db(page_rows, ancestor_rows)
+
+        messages, cursor = await db.read_messages("s1", before=None, limit=3)
+
+        # cursor는 페이지 마지막(id=8)의 created_at — ancestor(id=5)가 아님
+        assert cursor == "2026-05-02T12:08:00+00:00"
+
+    @pytest.mark.asyncio
+    async def test_multi_root_warning(self, caplog):
+        """parent_event_id IS NULL이 2개 이상이면 경고 로그를 남긴다."""
+        page_rows = [
+            {"id": 10, "parent_event_id": None, "event_type": "user_message",
+             "payload": {}, "created_at": "2026-05-02T12:10:00+00:00"},
+        ]
+        db = self._make_db(page_rows, root_count=3)
+
+        with caplog.at_level(logging.WARNING):
+            await db.read_messages("s1", before=None, limit=50)
+
+        assert any("3 root events" in r.message for r in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_orphaned_parent_warning(self, caplog):
+        """parent_event_id가 가리키는 행이 DB에 없으면 경고 로그를 남긴다."""
+        page_rows = [
+            {"id": 10, "parent_event_id": 999, "event_type": "tool_start",
+             "payload": {}, "created_at": "2026-05-02T12:10:00+00:00"},
+        ]
+        # ancestor fetch가 빈 배열 반환 → 999는 orphan
+        ancestor_rows = []
+        db = self._make_db(page_rows, ancestor_rows)
+
+        with caplog.at_level(logging.WARNING):
+            await db.read_messages("s1", before=None, limit=50)
+
+        assert any("orphaned parent refs" in r.message for r in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_prepend_includes_ancestors(self):
+        """before 커서로 두 번째 페이지 요청 시에도 ancestor가 동봉된다."""
+        page_rows = [
+            {"id": 20, "parent_event_id": 15, "event_type": "tool_result",
+             "payload": {}, "created_at": "2026-05-02T12:20:00+00:00"},
+        ]
+        ancestor_rows = [
+            {"id": 15, "parent_event_id": None, "event_type": "user_message",
+             "payload": {}, "created_at": "2026-05-02T12:15:00+00:00"},
+        ]
+        db = self._make_db(page_rows, ancestor_rows)
+
+        messages, cursor = await db.read_messages(
+            "s1", before="2026-05-02T12:25:00+00:00", limit=50,
+        )
+
+        ids = [m["id"] for m in messages]
+        assert 15 in ids, "prepend 페이지에도 ancestor가 동봉되어야 한다"
+        assert 20 in ids
 
 
 # === DB 통합 테스트 (TEST_DATABASE_URL 필요) ===

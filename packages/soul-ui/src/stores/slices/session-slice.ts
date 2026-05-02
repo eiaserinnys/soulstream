@@ -29,6 +29,7 @@ import {
   type SubtreeHeightUpdate,
 } from "../event-processor";
 import { flattenTree } from "../../lib/flatten-tree";
+import { diag } from "../../lib/diag";
 
 /**
  * subtree_update 결과를 nodeMap에 증분 적용한다.
@@ -322,6 +323,14 @@ export const createSessionSlice: StateCreator<
       // 라이브 SSE 동작 보존을 위해 항상 복원
       state.processingCtx.historyMode = false;
       state.processingCtx.activeTextTarget = savedActiveTextTarget;
+
+      // 미해소 orphan 진단 — 데이터 손상 또는 ancestor 누락 시 감지
+      if (state.processingCtx.orphans.size > 0) {
+        const orphanSummary = Array.from(state.processingCtx.orphans.entries()).map(
+          ([parentKey, children]) => ({ parentKey, count: children.length }),
+        );
+        diag("history", "unresolved orphans after history batch", { orphans: orphanSummary });
+      }
     }
 
     const afterCount = flattenTree(get().tree).length;
