@@ -224,8 +224,10 @@ export function processEventsBatch(
   const aggregatedAffectedIds: number[] = [];
 
   for (const { event, eventId } of events) {
-    // Dedup
-    if (eventId > 0 && eventId <= lastEventId) continue;
+    // Dedup — 라이브 SSE 배치 간 중복만 차단.
+    // historyMode prepend는 의도적으로 과거 eventId(< lastEventId)를 처리하므로 우회.
+    // 같은 배치 내 ancestor 중복은 placeInTree의 nodeMap.has() 가드(tree-placer.ts)가 차단.
+    if (!ctx.historyMode && eventId > 0 && eventId <= lastEventId) continue;
     if (eventId > maxEventId) maxEventId = eventId;
 
     // subtree_update — 트리 변경 없이 deltas만 집계한다.
