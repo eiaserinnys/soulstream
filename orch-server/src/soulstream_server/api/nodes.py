@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 from sse_starlette.sse import EventSourceResponse
 
+from soulstream_server.api._proxy_utils import forward_auth_headers
 from soulstream_server.nodes.node_manager import NodeManager
 from soulstream_server.service.session_broadcaster import SessionBroadcaster
 
@@ -82,7 +83,7 @@ def create_nodes_router(
         return {"agents": agents}
 
     @router.get("/{node_id}/agents/{agent_id}/portrait")
-    async def proxy_agent_portrait(node_id: str, agent_id: str):
+    async def proxy_agent_portrait(node_id: str, agent_id: str, request: Request):
         """에이전트 portrait 이미지 프록시.
 
         등록 메시지에서 캐시된 데이터가 있으면 우선 반환.
@@ -110,7 +111,7 @@ def create_nodes_router(
         url = f"http://{node.host}:{node.port}/api/agents/{agent_id}/portrait"
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(url)
+                resp = await client.get(url, headers=forward_auth_headers(request))
         except (httpx.RequestError, httpx.TimeoutException):
             return Response(status_code=204)
 
@@ -126,10 +127,12 @@ def create_nodes_router(
         )
 
     @router.get("/{node_id}/oauth-profiles")
-    async def list_node_oauth_profiles(node_id: str) -> dict:
+    async def list_node_oauth_profiles(node_id: str, request: Request) -> dict:
         """노드의 OAuth 토큰 프로필 목록.
 
-        soul-server의 GET /api/oauth-profiles를 HTTP 프록시하여 반환한다.
+        soul-server의 GET /auth/claude/profiles를 HTTP 프록시하여 반환한다.
+        soul-server verify_token이 401을 반환하지 않도록
+        들어온 요청의 Authorization 헤더를 forward한다.
         """
         node = node_manager.get_node(node_id)
         if not node:
@@ -138,7 +141,7 @@ def create_nodes_router(
         url = f"http://{node.host}:{node.port}/auth/claude/profiles"
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(url)
+                resp = await client.get(url, headers=forward_auth_headers(request))
         except httpx.RequestError:
             return Response(status_code=502)
 
@@ -148,7 +151,7 @@ def create_nodes_router(
         return resp.json()
 
     @router.get("/{node_id}/user/portrait")
-    async def proxy_user_portrait(node_id: str):
+    async def proxy_user_portrait(node_id: str, request: Request):
         """사용자 portrait 이미지 프록시.
 
         캐시된 portrait_b64가 있으면 우선 서빙 (원격 노드 HTTP 불필요).
@@ -179,7 +182,7 @@ def create_nodes_router(
         url = f"http://{node.host}:{node.port}/api/dashboard/portrait/user"
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(url)
+                resp = await client.get(url, headers=forward_auth_headers(request))
         except (httpx.RequestError, httpx.TimeoutException):
             return Response(status_code=204)
 
