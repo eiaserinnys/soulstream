@@ -648,15 +648,26 @@ class PostgresSessionDB(SessionDBBase):
             - next_cursor: 다음 페이지의 커서 (없으면 None)
         """
         if before is not None:
+            # asyncpg는 binary protocol에서 timestamptz 컬럼에 datetime 객체를 요구한다.
+            # ISO 8601 string을 그대로 전달하면 클라이언트 측 인코더(timestamptz_encode)가
+            # `TypeError: expected a datetime.date or datetime.datetime instance, got 'str'`
+            # 으로 실패하고 ASGI에서 500을 던진다. SQL 캐스팅(`$2::timestamptz`)은
+            # 서버 측 캐스팅이라 클라이언트 인코딩 단계에서 적용되지 않는다.
+            # 같은 파일 라인 138, 141, 231, 462에서 이미 동일 패턴을 사용한다.
+            before_dt = (
+                before
+                if isinstance(before, datetime)
+                else datetime.fromisoformat(before)
+            )
             rows = await self._pool.fetch(
                 """
                 SELECT id, parent_event_id, event_type, payload, created_at
                 FROM events
-                WHERE session_id = $1 AND created_at < $2::timestamptz
+                WHERE session_id = $1 AND created_at < $2
                 ORDER BY created_at DESC, id DESC
                 LIMIT $3
                 """,
-                session_id, before, limit + 1,
+                session_id, before_dt, limit + 1,
             )
         else:
             rows = await self._pool.fetch(
