@@ -547,11 +547,15 @@ DECLARE
     v_payload  JSONB := p_payload::jsonb;
     v_parent   INTEGER;
 BEGIN
-    -- payload에서 parent_event_id 추출 (정수 문자열만, 그 외는 NULL)
-    -- 일부 레거시 이벤트는 payload.parent_event_id에 tool_use_id/UUID를 넣었음.
-    -- 의미적으로 다른 키이므로 INSERT 자체가 실패하지 않도록 정수 형식만 캐스트.
+    -- payload에서 parent_event_id 추출. 다음 케이스는 모두 NULL로 떨어진다:
+    --   1) 키 자체가 없는 경우
+    --   2) 비정수 문자열 (tool_use_id 'toolu_...', UUID 등 — 의미가 다른 레거시 키)
+    --   3) INTEGER 범위(1..2147483647) 밖의 값 (timestamp 등 잘못 들어간 값)
+    -- 길이 가드 ^\d{1,10}$로 BIGINT 캐스트 자체의 overflow 차단, BIGINT 범위 비교로 INT 한계 검증.
+    -- events.id가 INTEGER SERIAL이므로 진짜 ancestor의 ID는 항상 1..INT_MAX 범위에 있음.
     v_parent := CASE
-        WHEN v_payload->>'parent_event_id' ~ '^\d+$'
+        WHEN v_payload->>'parent_event_id' ~ '^\d{1,10}$'
+             AND (v_payload->>'parent_event_id')::BIGINT BETWEEN 1 AND 2147483647
         THEN (v_payload->>'parent_event_id')::INTEGER
         ELSE NULL
     END;
@@ -996,9 +1000,11 @@ $$;
 -- 백필: parent_event_id 컬럼이 NULL이지만 payload에 정수 형식 값이 있는 기존 이벤트 채우기
 -- 멱등: parent_event_id가 이미 채워진 행은 WHERE 조건으로 건너뜀
 -- event_append가 parent_event_id 컬럼을 INSERT에 포함하지 않던 결함(2026-05-02 발견) 보정
--- 정수 형식 필터: payload.parent_event_id에 tool_use_id/UUID 등 비정수 값이 섞여 있어
--- 그 행들은 의미가 다른 키이므로 백필 대상 아님
+-- 길이 + INT 범위 가드: payload.parent_event_id에 tool_use_id/UUID/timestamp 같은
+-- 비정상 값이 섞여 있어 (1) 비정수 문자열, (2) INT 범위 초과 정수 모두 백필 대상 아님.
+-- ^\d{1,10}$로 BIGINT 캐스트 overflow 차단, BIGINT 범위 비교로 INT 한계 검증.
 UPDATE events
 SET parent_event_id = (payload->>'parent_event_id')::INTEGER
 WHERE parent_event_id IS NULL
-  AND payload->>'parent_event_id' ~ '^\d+$';
+  AND payload->>'parent_event_id' ~ '^\d{1,10}$'
+  AND (payload->>'parent_event_id')::BIGINT BETWEEN 1 AND 2147483647;

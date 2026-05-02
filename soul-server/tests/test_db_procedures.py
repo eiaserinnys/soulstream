@@ -410,6 +410,54 @@ async def test_event_append_parent_event_id_absent(test_db):
     assert row["parent_event_id"] is None
 
 
+async def test_event_append_parent_event_id_int_overflow(test_db):
+    """payload.parent_event_id가 INT 범위 초과 정수여도 NULL로 떨어진다.
+
+    프로덕션에서 발견된 input_request_responded 이벤트의 12자리 값(407885725189) 케이스.
+    timestamp 같은 잘못된 값이 들어왔을 때 NumericValueOutOfRangeError로 INSERT가 실패하면
+    안 된다.
+    """
+    await _create_session(test_db, "ev-pe-overflow")
+    now = _utc_now()
+
+    eid = await test_db.fetchval(
+        "SELECT event_append($1, $2, $3, $4, $5)",
+        "ev-pe-overflow", "input_request_responded",
+        json.dumps({"parent_event_id": "407885725189"}),
+        "x", now,
+    )
+    row = await test_db.fetchrow("SELECT * FROM event_read_one($1, $2)", "ev-pe-overflow", eid)
+    assert row["parent_event_id"] is None
+
+
+async def test_event_append_parent_event_id_int_max_boundary(test_db):
+    """INT MAX(2147483647)는 캐스트 가능, MAX+1(2147483648)은 NULL."""
+    await _create_session(test_db, "ev-pe-boundary")
+    now = _utc_now()
+
+    eid_max = await test_db.fetchval(
+        "SELECT event_append($1, $2, $3, $4, $5)",
+        "ev-pe-boundary", "test",
+        json.dumps({"parent_event_id": "2147483647"}),
+        "x", now,
+    )
+    row = await test_db.fetchrow(
+        "SELECT * FROM event_read_one($1, $2)", "ev-pe-boundary", eid_max
+    )
+    assert row["parent_event_id"] == 2147483647
+
+    eid_over = await test_db.fetchval(
+        "SELECT event_append($1, $2, $3, $4, $5)",
+        "ev-pe-boundary", "test",
+        json.dumps({"parent_event_id": "2147483648"}),
+        "x", now,
+    )
+    row = await test_db.fetchrow(
+        "SELECT * FROM event_read_one($1, $2)", "ev-pe-boundary", eid_over
+    )
+    assert row["parent_event_id"] is None
+
+
 async def test_event_append_parent_event_id_empty_string(test_db):
     """payload.parent_event_id가 빈 문자열이어도 NULL로 떨어진다.
 
@@ -450,18 +498,23 @@ async def test_parent_event_id_backfill_mixed_legacy(test_db):
             (12, 'ev-bf-mix', 'legacy_tool',
                 '{"parent_event_id":"toolu_01Y3"}'::jsonb, '', $1, NULL),
             (13, 'ev-bf-mix', 'legacy_empty', '{"parent_event_id":""}'::jsonb, '', $1, NULL),
-            (14, 'ev-bf-mix', 'already_filled', '{"parent_event_id":"99"}'::jsonb, '', $1, 7)
+            (14, 'ev-bf-mix', 'already_filled', '{"parent_event_id":"99"}'::jsonb, '', $1, 7),
+            (15, 'ev-bf-mix', 'legacy_overflow',
+                '{"parent_event_id":"407885725189"}'::jsonb, '', $1, NULL),
+            (16, 'ev-bf-mix', 'legacy_int_max',
+                '{"parent_event_id":"2147483647"}'::jsonb, '', $1, NULL)
         """,
         now,
     )
 
-    # schema.sql 끝의 백필 UPDATE를 재실행 (멱등 검증 포함)
+    # schema.sql 끝의 백필 UPDATE를 재실행 (멱등 + INT 범위 가드 검증)
     await test_db.execute(
         r"""
         UPDATE events
         SET parent_event_id = (payload->>'parent_event_id')::INTEGER
         WHERE parent_event_id IS NULL
-          AND payload->>'parent_event_id' ~ '^\d+$'
+          AND payload->>'parent_event_id' ~ '^\d{1,10}$'
+          AND (payload->>'parent_event_id')::BIGINT BETWEEN 1 AND 2147483647
         """
     )
 
@@ -476,6 +529,8 @@ async def test_parent_event_id_backfill_mixed_legacy(test_db):
     assert rows[12] is None, "tool_use_id는 컬럼 NULL 유지"
     assert rows[13] is None, "빈 문자열은 컬럼 NULL 유지"
     assert rows[14] == 7, "이미 채워진 컬럼은 덮어쓰지 않음"
+    assert rows[15] is None, "INT 범위 초과는 컬럼 NULL 유지 (overflow 차단)"
+    assert rows[16] == 2147483647, "INT MAX 경계값은 백필되어야 함"
 
 
 async def test_event_append_concurrency(test_db):
