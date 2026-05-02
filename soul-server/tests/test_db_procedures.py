@@ -487,34 +487,44 @@ async def test_parent_event_id_backfill_mixed_legacy(test_db):
     now = _utc_now()
 
     # 직접 INSERT로 레거시 상태 재현 (event_append를 우회 — 컬럼 NULL인 행을 만들기 위해)
+    # id=42, 43은 parent로 참조될 행. id=10이 42를 가리키도록 미리 만든다.
     await test_db.execute(
         """
         INSERT INTO events (id, session_id, event_type, payload, searchable_text,
                             created_at, parent_event_id)
         VALUES
+            (42, 'ev-bf-mix', 'parent42', '{}'::jsonb, '', $1, NULL),
+            (43, 'ev-bf-mix', 'parent43', '{}'::jsonb, '', $1, NULL),
             (10, 'ev-bf-mix', 'legacy_int', '{"parent_event_id":"42"}'::jsonb, '', $1, NULL),
             (11, 'ev-bf-mix', 'legacy_uuid',
                 '{"parent_event_id":"f5848770-5933-4f4c-8f08-107d790bfe4b"}'::jsonb, '', $1, NULL),
             (12, 'ev-bf-mix', 'legacy_tool',
                 '{"parent_event_id":"toolu_01Y3"}'::jsonb, '', $1, NULL),
             (13, 'ev-bf-mix', 'legacy_empty', '{"parent_event_id":""}'::jsonb, '', $1, NULL),
-            (14, 'ev-bf-mix', 'already_filled', '{"parent_event_id":"99"}'::jsonb, '', $1, 7),
+            (14, 'ev-bf-mix', 'already_filled', '{"parent_event_id":"43"}'::jsonb, '', $1, 43),
             (15, 'ev-bf-mix', 'legacy_overflow',
                 '{"parent_event_id":"407885725189"}'::jsonb, '', $1, NULL),
             (16, 'ev-bf-mix', 'legacy_int_max',
-                '{"parent_event_id":"2147483647"}'::jsonb, '', $1, NULL)
+                '{"parent_event_id":"2147483647"}'::jsonb, '', $1, NULL),
+            (17, 'ev-bf-mix', 'legacy_dangling_int',
+                '{"parent_event_id":"99999"}'::jsonb, '', $1, NULL)
         """,
         now,
     )
 
-    # schema.sql 끝의 백필 UPDATE를 재실행 (멱등 + INT 범위 가드 검증)
+    # schema.sql 끝의 백필 UPDATE를 재실행 (멱등 + INT 범위 + FK 가드 검증)
     await test_db.execute(
         r"""
-        UPDATE events
-        SET parent_event_id = (payload->>'parent_event_id')::INTEGER
-        WHERE parent_event_id IS NULL
-          AND payload->>'parent_event_id' ~ '^\d{1,10}$'
-          AND (payload->>'parent_event_id')::BIGINT BETWEEN 1 AND 2147483647
+        UPDATE events e
+        SET parent_event_id = (e.payload->>'parent_event_id')::INTEGER
+        WHERE e.parent_event_id IS NULL
+          AND e.payload->>'parent_event_id' ~ '^\d{1,10}$'
+          AND (e.payload->>'parent_event_id')::BIGINT BETWEEN 1 AND 2147483647
+          AND EXISTS (
+            SELECT 1 FROM events p
+            WHERE p.session_id = e.session_id
+              AND p.id = (e.payload->>'parent_event_id')::INTEGER
+          )
         """
     )
 
@@ -524,13 +534,14 @@ async def test_parent_event_id_backfill_mixed_legacy(test_db):
             "SELECT id, parent_event_id FROM events WHERE session_id = 'ev-bf-mix'"
         )
     }
-    assert rows[10] == 42, "정수 문자열은 백필되어야 함"
+    assert rows[10] == 42, "정수 문자열 + 부모 존재 → 백필되어야 함"
     assert rows[11] is None, "UUID는 컬럼 NULL 유지"
     assert rows[12] is None, "tool_use_id는 컬럼 NULL 유지"
     assert rows[13] is None, "빈 문자열은 컬럼 NULL 유지"
-    assert rows[14] == 7, "이미 채워진 컬럼은 덮어쓰지 않음"
+    assert rows[14] == 43, "이미 채워진 컬럼은 덮어쓰지 않음"
     assert rows[15] is None, "INT 범위 초과는 컬럼 NULL 유지 (overflow 차단)"
-    assert rows[16] == 2147483647, "INT MAX 경계값은 백필되어야 함"
+    assert rows[16] is None, "INT MAX 정수지만 부모 행 없음 → FK 가드로 NULL 유지"
+    assert rows[17] is None, "정수지만 같은 세션에 부모 행 없음 (dangling) → FK 가드로 NULL 유지"
 
 
 async def test_event_append_concurrency(test_db):

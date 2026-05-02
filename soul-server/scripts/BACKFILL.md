@@ -35,19 +35,25 @@
    SQL 동등물:
 
    ```sql
-   UPDATE events
-   SET parent_event_id = (payload->>'parent_event_id')::integer
-   WHERE parent_event_id IS NULL
-     AND payload->>'parent_event_id' ~ '^\d{1,10}$'
-     AND (payload->>'parent_event_id')::BIGINT BETWEEN 1 AND 2147483647;
+   UPDATE events e
+   SET parent_event_id = (e.payload->>'parent_event_id')::integer
+   WHERE e.parent_event_id IS NULL
+     AND e.payload->>'parent_event_id' ~ '^\d{1,10}$'
+     AND (e.payload->>'parent_event_id')::BIGINT BETWEEN 1 AND 2147483647
+     AND EXISTS (
+       SELECT 1 FROM events p
+       WHERE p.session_id = e.session_id
+         AND p.id = (e.payload->>'parent_event_id')::INTEGER
+     );
    ```
 
    **필터 사유**: 일부 레거시 이벤트(tool_start/tool_result/subagent_*/input_request_responded)가
-   같은 키에 의미가 다른 값을 저장하고 있다. 다음 두 종류가 백필 대상에서 제외된다:
+   같은 키에 의미가 다른 값을 저장하고 있다. 다음 세 종류가 백필 대상에서 제외된다:
    1. 비정수 문자열 — tool_use_id (`toolu_...`), UUID 등
    2. INT 범위 초과 — `407885725189` 같은 timestamp 형 12자리 값 (events.id는 INTEGER이므로 INT MAX 안)
-   필터 없이 캐스트하면 `InvalidTextRepresentationError` 또는 `NumericValueOutOfRangeError`로
-   백필이 실패한다 (2026-05-02 사고 2건).
+   3. FK 위반 — payload.parent_event_id가 정수이지만 같은 세션에 부모 이벤트 행 자체가 사라진 케이스
+   필터 없이 캐스트하면 `InvalidTextRepresentationError` 또는 `NumericValueOutOfRangeError`,
+   `events_parent_fk` 위반으로 백필이 실패한다 (2026-05-02 사고 3건).
 
 3. **단계 3 — Python DFS로 `subtree_height` 재계산**
    - `backfill_subtree_height.py`의 `backfill_session()`이 세션별로 수행.
@@ -82,15 +88,30 @@ FROM information_schema.columns
 WHERE table_name = 'events'
   AND column_name IN ('parent_event_id', 'subtree_height');
 
--- 2) 이관된 행 수 (unmigrated_int=0이면 이관 완료, non_integer는 의미가 다른 키라 컬럼 NULL이 정상)
+-- 2) 이관된 행 수
+--    - unmigrated_int=0이면 정수+FK 만족 백필 완료
+--    - non_integer는 의미가 다른 키(tool_use_id/UUID 등)라 컬럼 NULL이 정상
+--    - dangling_int는 부모 행이 사라진 레거시 — NULL이 정상
 SELECT
-    COUNT(*) FILTER (WHERE parent_event_id IS NULL
-                       AND payload->>'parent_event_id' ~ '^\d+$') AS unmigrated_int,
-    COUNT(*) FILTER (WHERE parent_event_id IS NULL
-                       AND payload->>'parent_event_id' IS NOT NULL
-                       AND payload->>'parent_event_id' !~ '^\d+$') AS non_integer_legacy,
-    COUNT(*) FILTER (WHERE parent_event_id IS NOT NULL) AS migrated_rows
-FROM events;
+    COUNT(*) FILTER (WHERE e.parent_event_id IS NULL
+                       AND e.payload->>'parent_event_id' ~ '^\d{1,10}$'
+                       AND (e.payload->>'parent_event_id')::BIGINT BETWEEN 1 AND 2147483647
+                       AND EXISTS (SELECT 1 FROM events p
+                                   WHERE p.session_id = e.session_id
+                                     AND p.id = (e.payload->>'parent_event_id')::INTEGER)
+                    ) AS unmigrated_int,
+    COUNT(*) FILTER (WHERE e.parent_event_id IS NULL
+                       AND e.payload->>'parent_event_id' IS NOT NULL
+                       AND e.payload->>'parent_event_id' !~ '^\d+$') AS non_integer_legacy,
+    COUNT(*) FILTER (WHERE e.parent_event_id IS NULL
+                       AND e.payload->>'parent_event_id' ~ '^\d{1,10}$'
+                       AND (e.payload->>'parent_event_id')::BIGINT BETWEEN 1 AND 2147483647
+                       AND NOT EXISTS (SELECT 1 FROM events p
+                                       WHERE p.session_id = e.session_id
+                                         AND p.id = (e.payload->>'parent_event_id')::INTEGER)
+                    ) AS dangling_int,
+    COUNT(*) FILTER (WHERE e.parent_event_id IS NOT NULL) AS migrated_rows
+FROM events e;
 
 -- 3) subtree_height가 자식을 가진 루트에서 > 1인지 확인 (핵심 검증)
 SELECT COUNT(*) FROM events WHERE subtree_height > 1;
