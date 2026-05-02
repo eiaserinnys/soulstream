@@ -106,6 +106,18 @@ export interface DashboardState {
   /** 트리 변경 감지용 카운터 (mutable tree이므로 참조 비교 불가) */
   treeVersion: number;
 
+  /**
+   * 채팅창 좌표 정본 — Virtuoso firstItemIndex = START_INDEX - chatPrependedCount.
+   *
+   * processHistoryEvents가 grouped 차분(messages 차분이 아니라)을 누적한다.
+   * grouped 단위로 갱신해야 firstItemIndex 변화량과 Virtuoso data(grouped) 추가량이
+   * 정합되어 화면 위치 보존이 정확해진다 (좌표 단위 통일).
+   *
+   * tree 갱신과 같은 set() 안에서 atomic 갱신 → Zustand subscribe 1회 → 1렌더 사이클 정합.
+   * 세션 전환 시 0으로 리셋된다 (getSessionResetState).
+   */
+  chatPrependedCount: number;
+
   /** 마지막 트리 변경의 유형 — NodeGraph가 증분 업데이트 vs 전체 재빌드를 분기하는 기준 */
   treeChangeInfo: TreeChangeInfo | null;
 
@@ -217,8 +229,9 @@ export interface DashboardActions {
    * orphan 큐로 분기시킨다(tree-placer.ts:resolveParent). 라이브 SSE의
    * root fallback 동작은 보존된다.
    *
-   * 처리 전후 flattenTree(tree).length 차분(addedCount)을 반환하여
-   * virtuoso prependedCount 갱신에 사용한다 (ChatView.tsx의 firstItemIndex 산출용).
+   * 반환 addedCount는 grouped(MessageOrGroup) 차분이며, 같은 set() 안에서
+   * store.chatPrependedCount += addedCount 로 atomic 갱신된다.
+   * (Virtuoso firstItemIndex 변화량 = data 추가량 정합 보장 — 좌표 단위 통일)
    */
   processHistoryEvents: (
     events: Array<{ event: SoulSSEEvent; eventId: number }>,

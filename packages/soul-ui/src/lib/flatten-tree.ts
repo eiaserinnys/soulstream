@@ -81,11 +81,79 @@ export interface ChatMessage {
 }
 
 /**
+ * Identity 보존 캐시 — treeNodeId → 직전 호출에서 만든 ChatMessage.
+ *
+ * tree-placer는 children push만 하고 노드 reference 필드 mutation은 하지 않으므로
+ * (toolInput, contextItems, agentInfo 등 object reference 필드는 같은 노드에 대해 동일),
+ * 같은 treeNodeId의 이전 ChatMessage와 새로 만든 ChatMessage가 shallowEqual이면
+ * 이전 reference를 그대로 재사용한다.
+ *
+ * 이 identity 보존 덕분에 VirtualizedItem(React.memo)이 props 변경 없음으로
+ * 인식하여 재렌더를 건너뛴다 → flashing 해소.
+ *
+ * 세션 전환 시에는 session-slice가 clearFlattenTreeCache()를 호출하여
+ * 이전 세션 항목이 새 세션에 누설되지 않도록 한다.
+ */
+const messageCache = new Map<string, ChatMessage>();
+
+/** 캐시를 비운다. 세션 전환 시 호출. */
+export function clearFlattenTreeCache(): void {
+  messageCache.clear();
+}
+
+/**
+ * ChatMessage 모든 필드를 얕게 비교한다.
+ *
+ * - primitive (string, number, boolean): === (값 비교)
+ * - object reference (toolInput, contextItems, agentInfo, questions, usage): === (reference)
+ *
+ * Reference 비교 안전성: tree-placer는 children push만 하고 노드의 toolInput 등
+ * object reference 필드를 재할당하지 않는다. 같은 treeNodeId를 두 번 traverse하면
+ * 해당 필드의 reference는 동일하므로 === 충분.
+ *
+ * content/isStreaming은 text_delta로 갱신될 수 있으나 string/boolean이라 자동 값 비교.
+ */
+function shallowEqualChatMessage(a: ChatMessage, b: ChatMessage): boolean {
+  return (
+    a.id === b.id &&
+    a.role === b.role &&
+    a.content === b.content &&
+    a.timestamp === b.timestamp &&
+    a.thinkingContent === b.thinkingContent &&
+    a.toolName === b.toolName &&
+    a.toolDurationMs === b.toolDurationMs &&
+    a.isError === b.isError &&
+    a.toolInput === b.toolInput &&
+    a.toolResult === b.toolResult &&
+    a.isStreaming === b.isStreaming &&
+    a.usage === b.usage &&
+    a.totalCostUsd === b.totalCostUsd &&
+    a.durationMs === b.durationMs &&
+    a.treeNodeId === b.treeNodeId &&
+    a.treeNodeType === b.treeNodeType &&
+    a.model === b.model &&
+    a.provider === b.provider &&
+    a.isTruncated === b.isTruncated &&
+    a.fullContentEventId === b.fullContentEventId &&
+    a.questions === b.questions &&
+    a.requestId === b.requestId &&
+    a.responded === b.responded &&
+    a.expired === b.expired &&
+    a.receivedAt === b.receivedAt &&
+    a.timeoutSec === b.timeoutSec &&
+    a.contextItems === b.contextItems &&
+    a.agentInfo === b.agentInfo &&
+    a.eventId === b.eventId
+  );
+}
+
+/**
  * 이벤트 트리를 flat한 ChatMessage 리스트로 변환합니다.
  *
  * - session 루트 노드는 skip (children만 순회)
  * - 각 노드 타입별 ChatMessage 변환
  * - children 재귀 (서브에이전트 포함, 구분 없이 flat)
+ * - identity 보존: 같은 treeNodeId의 이전 ChatMessage가 shallowEqual이면 재사용
  */
 export function flattenTree(root: EventTreeNode | null): ChatMessage[] {
   if (!root) return [];
@@ -93,6 +161,16 @@ export function flattenTree(root: EventTreeNode | null): ChatMessage[] {
   const messages: ChatMessage[] = [];
   collectMessages(root, messages);
   return messages;
+}
+
+/** 캐시 조회·갱신 후 reference를 반환한다. */
+function intern(treeNodeId: string, fresh: ChatMessage): ChatMessage {
+  const cached = messageCache.get(treeNodeId);
+  if (cached && shallowEqualChatMessage(cached, fresh)) {
+    return cached;
+  }
+  messageCache.set(treeNodeId, fresh);
+  return fresh;
 }
 
 function collectMessages(
@@ -103,17 +181,19 @@ function collectMessages(
   if (node.type === "session") {
     const sessionNode = node as SessionNode;
     if (sessionNode.pid != null) {
-      out.push({
-        id: `${node.id}-pid`,
+      const sessionPidId = `${node.id}-pid`;
+      const fresh: ChatMessage = {
+        id: sessionPidId,
         role: "system",
         content: `Process ID: ${sessionNode.pid}`,
         treeNodeId: node.id,
         treeNodeType: "session",
-      });
+      };
+      out.push(intern(sessionPidId, fresh));
     }
   } else {
     const msg = nodeToMessage(node);
-    if (msg) out.push(msg);
+    if (msg) out.push(intern(msg.treeNodeId, msg));
   }
 
   // result 노드가 complete 보다 먼저 오는 경우를 보정:

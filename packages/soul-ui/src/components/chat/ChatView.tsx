@@ -23,7 +23,7 @@ import { flattenTree } from "../../lib/flatten-tree";
 import { ChatInput } from "../ChatInput";
 import { cn } from "../../lib/cn";
 import { useLlmContext } from "./hooks";
-import { groupMessages } from "./grouping";
+import { groupMessages } from "../../lib/grouping";
 import { VirtualizedItem } from "./VirtualizedItem";
 import { useMessageHistoryBuffer } from "./useMessageHistoryBuffer";
 import { computeFirstItemIndex, findFocusIndex } from "./ChatView.reverse-helpers";
@@ -40,6 +40,13 @@ export function ChatView({ chatInputDisabled = false, isOtherNodeSession = false
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const focusEventId = useDashboardStore((s) => s.focusEventId);
   const setFocusEventId = useDashboardStore((s) => s.setFocusEventId);
+  /**
+   * 채팅창 좌표 정본 — store에서 직접 select.
+   *
+   * processHistoryEvents가 grouped 차분만큼 atomic 갱신한다.
+   * 같은 set() 안에서 tree와 함께 갱신되므로 1렌더 사이클 정합이 보장된다.
+   */
+  const chatPrependedCount = useDashboardStore((s) => s.chatPrependedCount);
   const llmContext = useLlmContext();
 
   // 옵션 D: 히스토리는 useMessageHistoryBuffer가 store.tree에 직접 통합한다.
@@ -52,10 +59,10 @@ export function ChatView({ chatInputDisabled = false, isOtherNodeSession = false
   const messages = useMemo(() => flattenTree(tree), [tree, treeVersion]);
   const grouped = useMemo(() => groupMessages(messages), [messages]);
 
-  // virtuoso prepend 패턴: START_INDEX - 누적 prepend 개수
+  // virtuoso prepend 패턴: START_INDEX - 누적 prepend 개수 (grouped 단위)
   const firstItemIndex = useMemo(
-    () => computeFirstItemIndex(history.prependedCount),
-    [history.prependedCount],
+    () => computeFirstItemIndex(chatPrependedCount),
+    [chatPrependedCount],
   );
 
   // === Follow mode ===
@@ -216,6 +223,16 @@ export function ChatView({ chatInputDisabled = false, isOtherNodeSession = false
           startReached={() => {
             history.requestOlder();
           }}
+          /**
+           * tool-group은 messages[length-1].treeNodeId — prepend 시 가장 최신 멤버는
+           * 변하지 않으므로 키가 안정적. messages[0]은 prepend로 변경되어 키 불안정.
+           * grouping.ts L18-22로 tool-group은 messages.length >= 2 보장 (안전).
+           */
+          computeItemKey={(_index, item) =>
+            item.type === "tool-group"
+              ? `tg-${item.messages[item.messages.length - 1].treeNodeId}`
+              : item.msg.treeNodeId
+          }
           itemContent={(_, item) => (
             <VirtualizedItem
               item={item}

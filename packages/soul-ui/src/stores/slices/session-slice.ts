@@ -28,7 +28,8 @@ import {
   processEventsBatch,
   type SubtreeHeightUpdate,
 } from "../event-processor";
-import { flattenTree } from "../../lib/flatten-tree";
+import { flattenTree, clearFlattenTreeCache } from "../../lib/flatten-tree";
+import { groupMessages } from "../../lib/grouping";
 import { diag } from "../../lib/diag";
 
 /**
@@ -59,6 +60,7 @@ export type SessionSlice = Pick<
   | "selectedEventNodeData"
   | "tree"
   | "treeVersion"
+  | "chatPrependedCount"
   | "treeChangeInfo"
   | "lastEventId"
   | "totalSubtreeHeight"
@@ -96,6 +98,7 @@ function getSessionResetState() {
     selectedEventNodeData: null as DashboardState["selectedEventNodeData"],
     tree: null as EventTreeNode | null,
     treeVersion: 0,
+    chatPrependedCount: 0,
     treeChangeInfo: null as TreeChangeInfo | null,
     lastEventId: 0,
     totalSubtreeHeight: 0,
@@ -120,6 +123,7 @@ export const createSessionSlice: StateCreator<
   selectedEventNodeData: null,
   tree: null,
   treeVersion: 0,
+  chatPrependedCount: 0,
   treeChangeInfo: null,
   lastEventId: 0,
   totalSubtreeHeight: 0,
@@ -141,6 +145,8 @@ export const createSessionSlice: StateCreator<
       folderId = entry?.folderId ?? null; // 미등록 세션이면 null(미분류)
     }
 
+    // 세션 전환 시 ChatMessage identity 캐시를 비워 이전 세션 항목이 누설되지 않도록 한다.
+    clearFlattenTreeCache();
     set({
       ...getSessionResetState(),
       activeSessionKey: key,
@@ -282,13 +288,17 @@ export const createSessionSlice: StateCreator<
   // 거쳐 store.tree에 통합한다. processingCtx.historyMode를 try/finally로 토글하여
   // 부모 부재 자식을 orphan 큐로 분기시킨다 (tree-placer.ts:resolveParent).
   //
-  // 반환: addedCount (flattenTree 차분) — virtuoso prependedCount 갱신용.
+  // 반환: addedCount (grouped 차분 — store.chatPrependedCount도 같은 set()에서 갱신).
+  // grouped 차분으로 통일하는 이유: virtuoso `data={grouped}`이고 firstItemIndex
+  // 변화량은 data 추가량과 정확히 일치해야 위치 보존이 정확하다. messages 차분(flattenTree)을
+  // 쓰면 연속 tool 그룹 병합 시 grouped는 0개 늘었는데 firstItemIndex는 N만큼 줄어
+  // 좌표가 어긋난다 (flashing + 끝 도달 실패의 원인).
   // (eventId dedup은 processEventsBatch 내부에서 처리되므로 차분이 페이지 크기와 다를 수 있음)
   processHistoryEvents: (events) => {
     if (events.length === 0) return { addedCount: 0 };
 
     const state = get();
-    const beforeCount = flattenTree(state.tree).length;
+    const beforeGrouped = groupMessages(flattenTree(state.tree)).length;
 
     // historyMode + activeTextTarget을 try/finally로 격리한다.
     //
@@ -299,6 +309,8 @@ export const createSessionSlice: StateCreator<
     state.processingCtx.historyMode = true;
     const savedActiveTextTarget = state.processingCtx.activeTextTarget;
     state.processingCtx.activeTextTarget = null;
+
+    let addedGrouped = 0;
     try {
       const result = processEventsBatch(
         events,
@@ -313,9 +325,21 @@ export const createSessionSlice: StateCreator<
         applySubtreeHeightUpdate(state.processingCtx, result.subtreeHeightUpdate);
       }
 
+      const afterGrouped = result.updated
+        ? groupMessages(flattenTree(result.root)).length
+        : beforeGrouped;
+      addedGrouped = afterGrouped - beforeGrouped;
+
       set({
         ...(result.updated
-          ? { tree: result.root, treeVersion: state.treeVersion + 1, treeChangeInfo: null }
+          ? {
+              tree: result.root,
+              treeVersion: state.treeVersion + 1,
+              treeChangeInfo: null,
+              // tree와 같은 set() 안에서 atomic 갱신 — Zustand subscribe 1회로
+              // ChatView 1렌더 사이클 정합 보장 (async batching 무의존).
+              chatPrependedCount: state.chatPrependedCount + addedGrouped,
+            }
           : {}),
         lastEventId: result.maxEventId,
       });
@@ -333,8 +357,7 @@ export const createSessionSlice: StateCreator<
       }
     }
 
-    const afterCount = flattenTree(get().tree).length;
-    return { addedCount: afterCount - beforeCount };
+    return { addedCount: addedGrouped };
   },
 
   // --- 뷰포트 API: totalSubtreeHeight 덮어쓰기 ---
@@ -409,6 +432,8 @@ export const createSessionSlice: StateCreator<
       };
     }
 
+    // 새 세션 진입이므로 ChatMessage identity 캐시를 비운다.
+    clearFlattenTreeCache();
     set({
       ...getSessionResetState(),
       catalog,
@@ -428,9 +453,11 @@ export const createSessionSlice: StateCreator<
   // --- 초기화 ---
 
   clearTree: () => {
+    clearFlattenTreeCache();
     set({
       tree: null,
       treeVersion: 0,
+      chatPrependedCount: 0,
       treeChangeInfo: null,
       lastEventId: 0,
       totalSubtreeHeight: 0,
@@ -502,6 +529,8 @@ export const createSessionSlice: StateCreator<
   clearActiveSession: () => {
     // selectedFolderId를 유지하면서 세션 관련 상태만 초기화
     const { selectedFolderId } = get();
+    // 세션 해제 시 ChatMessage identity 캐시도 비운다.
+    clearFlattenTreeCache();
     set({
       ...getSessionResetState(),
       activeSessionKey: null,

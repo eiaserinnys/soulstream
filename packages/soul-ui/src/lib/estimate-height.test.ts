@@ -40,7 +40,7 @@ import {
   LINE_HEIGHT,
   PAD,
 } from "./estimate-height";
-import type { MessageOrGroup } from "../components/chat/grouping";
+import type { MessageOrGroup } from "./grouping";
 import type { ChatMessage } from "./flatten-tree";
 
 // ─── 헬퍼 ────────────────────────────────────────────────

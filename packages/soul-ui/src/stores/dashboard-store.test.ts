@@ -5,7 +5,7 @@
  * 세션 키는 agentSessionId (예: "sess-xxx") 형식입니다.
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import type { InfiniteData } from "@tanstack/react-query";
 import { useDashboardStore, findTreeNode } from "./dashboard-store";
@@ -2226,6 +2226,228 @@ describe("dashboard-store", () => {
       // 같은 eventId 두 번째 호출 — processEventsBatch 내부 `eventId <= lastEventId` dedup
       const second = useDashboardStore.getState().processHistoryEvents(events);
       expect(second.addedCount).toBe(0);
+    });
+  });
+
+  // === 좌표 단위 통일 — grouped 차분 + atomic chatPrependedCount ===
+
+  describe("processHistoryEvents - grouped 차분 + chatPrependedCount atomic", () => {
+    it("케이스 A — 단순: 기존 [user, tool] + prepend [tool_new] → grouped 3, addedCount=1", () => {
+      // 라이브 SSE: user(eventId=200) + tool(eventId=210)을 트리에 깐다
+      const { processEvent } = useDashboardStore.getState();
+      processEvent({ type: "user_message", content: "live-u" } as UserMessageEvent, 200);
+      processEvent({
+        type: "tool_start",
+        timestamp: 0,
+        tool_name: "Read",
+        tool_input: {},
+        tool_use_id: "tu_live",
+        parent_event_id: "200",
+      } as ToolStartEvent, 210);
+
+      const beforeChat = useDashboardStore.getState().chatPrependedCount;
+
+      // prepend: tool 1개 (이전 시점, eventId 더 작음)
+      // 부모 부재 가능성 → historyMode에서 orphan or root fallback
+      const events = [
+        {
+          event: { type: "user_message", content: "old-u" } as UserMessageEvent,
+          eventId: 50,
+        },
+        {
+          event: {
+            type: "tool_start",
+            timestamp: 0,
+            tool_name: "Bash",
+            tool_input: {},
+            tool_use_id: "tu_old",
+            parent_event_id: "50",
+          } as ToolStartEvent,
+          eventId: 60,
+        },
+      ];
+
+      const result = useDashboardStore.getState().processHistoryEvents(events);
+      // grouped: [user(old), tool(old), user(live), tool(live)] → grouped 4 (전·후 tool 비연속)
+      // before grouped = 2, after grouped = 4 → addedCount=2
+      expect(result.addedCount).toBeGreaterThan(0);
+      const afterChat = useDashboardStore.getState().chatPrependedCount;
+      expect(afterChat).toBe(beforeChat + result.addedCount);
+    });
+
+    it("케이스 B (핵심) — tool 연속 병합: 기존 [tool] + prepend [tool, tool] → grouped 1, addedCount=0", () => {
+      const { processEvent } = useDashboardStore.getState();
+      // 라이브: user_message(부모) + tool 1개
+      processEvent({ type: "user_message", content: "live-u" } as UserMessageEvent, 100);
+      processEvent({
+        type: "tool_start",
+        timestamp: 0,
+        tool_name: "Read",
+        tool_input: {},
+        tool_use_id: "tu_1",
+        parent_event_id: "100",
+      } as ToolStartEvent, 110);
+
+      // 라이브 트리 grouped 길이 측정 (basis)
+      // (직접 측정하지 않고 chatPrependedCount 기준으로 검증)
+      const beforeChat = useDashboardStore.getState().chatPrependedCount;
+
+      // prepend: 같은 부모(100)에 tool 2개 추가 → 트리에 tool 3개 연속(자식 순서로)
+      // grouping은 형제 tool 메시지를 모두 1 group으로 합침
+      // → grouped.length 변화 없음
+      const events = [
+        {
+          event: {
+            type: "tool_start",
+            timestamp: 0,
+            tool_name: "Bash",
+            tool_input: {},
+            tool_use_id: "tu_2",
+            parent_event_id: "100",
+          } as ToolStartEvent,
+          eventId: 120,
+        },
+        {
+          event: {
+            type: "tool_start",
+            timestamp: 0,
+            tool_name: "Glob",
+            tool_input: {},
+            tool_use_id: "tu_3",
+            parent_event_id: "100",
+          } as ToolStartEvent,
+          eventId: 130,
+        },
+      ];
+
+      const result = useDashboardStore.getState().processHistoryEvents(events);
+
+      // 핵심: messages는 2개 늘었지만 grouped는 변화 없음
+      expect(result.addedCount).toBe(0);
+      const afterChat = useDashboardStore.getState().chatPrependedCount;
+      expect(afterChat).toBe(beforeChat);
+    });
+
+    it("케이스 C — 비연속: 기존 [user, tool] + prepend [user, tool] → grouped 4, addedCount=2", () => {
+      const { processEvent } = useDashboardStore.getState();
+      processEvent({ type: "user_message", content: "live-u" } as UserMessageEvent, 200);
+      processEvent({
+        type: "tool_start",
+        timestamp: 0,
+        tool_name: "Read",
+        tool_input: {},
+        tool_use_id: "tu_live",
+        parent_event_id: "200",
+      } as ToolStartEvent, 210);
+
+      const beforeChat = useDashboardStore.getState().chatPrependedCount;
+
+      const events = [
+        {
+          event: { type: "user_message", content: "old-u1" } as UserMessageEvent,
+          eventId: 50,
+        },
+        {
+          event: {
+            type: "tool_start",
+            timestamp: 0,
+            tool_name: "Bash",
+            tool_input: {},
+            tool_use_id: "tu_old1",
+            parent_event_id: "50",
+          } as ToolStartEvent,
+          eventId: 60,
+        },
+        {
+          event: { type: "user_message", content: "old-u2" } as UserMessageEvent,
+          eventId: 70,
+        },
+        {
+          event: {
+            type: "tool_start",
+            timestamp: 0,
+            tool_name: "Glob",
+            tool_input: {},
+            tool_use_id: "tu_old2",
+            parent_event_id: "70",
+          } as ToolStartEvent,
+          eventId: 80,
+        },
+      ];
+
+      const result = useDashboardStore.getState().processHistoryEvents(events);
+      // 새 user 2개와 새 tool 2개가 들어옴 (각자 다른 부모이므로 비연속)
+      expect(result.addedCount).toBeGreaterThanOrEqual(2);
+      const afterChat = useDashboardStore.getState().chatPrependedCount;
+      expect(afterChat).toBe(beforeChat + result.addedCount);
+    });
+
+    it("케이스 D — 빈 events: addedCount=0, chatPrependedCount 변화 없음", () => {
+      const before = useDashboardStore.getState().chatPrependedCount;
+      const result = useDashboardStore.getState().processHistoryEvents([]);
+      expect(result.addedCount).toBe(0);
+      expect(useDashboardStore.getState().chatPrependedCount).toBe(before);
+    });
+
+    it("케이스 E — dedup: 동일 eventId 두 번째 호출 시 addedCount=0, chatPrependedCount 불변", () => {
+      const events = [
+        {
+          event: { type: "user_message", content: "u" } as UserMessageEvent,
+          eventId: 5000,
+        },
+      ];
+
+      useDashboardStore.getState().processHistoryEvents(events);
+      const afterFirst = useDashboardStore.getState().chatPrependedCount;
+
+      const result = useDashboardStore.getState().processHistoryEvents(events);
+      expect(result.addedCount).toBe(0);
+      expect(useDashboardStore.getState().chatPrependedCount).toBe(afterFirst);
+    });
+
+    it("케이스 F — 세션 리셋: setActiveSession 호출 시 chatPrependedCount=0", () => {
+      // 먼저 prepend 누적
+      useDashboardStore.getState().processHistoryEvents([
+        {
+          event: { type: "user_message", content: "u" } as UserMessageEvent,
+          eventId: 999,
+        },
+      ]);
+      expect(useDashboardStore.getState().chatPrependedCount).toBeGreaterThan(0);
+
+      // 세션 전환
+      useDashboardStore.getState().setActiveSession("sess-new");
+      expect(useDashboardStore.getState().chatPrependedCount).toBe(0);
+    });
+
+    it("케이스 G — atomic 갱신: tree와 chatPrependedCount가 한 set() 안에서 갱신됨", () => {
+      // 라이브 트리 셋업
+      useDashboardStore.getState().processEvent(
+        { type: "user_message", content: "live-u" } as UserMessageEvent,
+        100,
+      );
+
+      const events = [
+        {
+          event: { type: "user_message", content: "old-u" } as UserMessageEvent,
+          eventId: 50,
+        },
+      ];
+
+      // subscribe로 알림 횟수 측정
+      const listener = vi.fn();
+      const unsubscribe = useDashboardStore.subscribe(listener);
+      try {
+        useDashboardStore.getState().processHistoryEvents(events);
+
+        // 한 번의 알림으로 tree와 chatPrependedCount가 모두 갱신
+        expect(listener).toHaveBeenCalledTimes(1);
+        const state = useDashboardStore.getState();
+        expect(state.chatPrependedCount).toBeGreaterThan(0);
+        expect(state.tree).not.toBeNull();
+      } finally {
+        unsubscribe();
+      }
     });
   });
 

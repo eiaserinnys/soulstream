@@ -12,7 +12,7 @@
  * 순수 함수로 분리하여 단위 테스트를 먼저 고정한 뒤 ChatView 본체를 재작성한다.
  */
 
-import type { MessageOrGroup } from "./grouping";
+import type { MessageOrGroup } from "../../lib/grouping";
 
 /** virtuoso 권장 패턴: 큰 시작 인덱스에서 prepend 때마다 차감 */
 export const START_INDEX = 10_000;

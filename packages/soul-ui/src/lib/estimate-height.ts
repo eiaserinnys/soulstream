@@ -10,7 +10,7 @@
 
 import { prepare, layout } from "@chenglou/pretext";
 import type { PreparedText } from "@chenglou/pretext";
-import type { MessageOrGroup } from "../components/chat/grouping";
+import type { MessageOrGroup } from "./grouping";
 import type { ChatMessage } from "./flatten-tree";
 
 // ─── CSS 레이아웃 상수 ─────────────────────────────────────
