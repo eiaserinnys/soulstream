@@ -9,9 +9,8 @@ import json
 import logging
 from typing import Any, Optional  # Optional: _session_to_response, node_manager 파라미터에 사용
 
-import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse
 from starlette.websockets import WebSocketDisconnect
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from sse_starlette.sse import EventSourceResponse
@@ -215,72 +214,36 @@ def create_sessions_router(
             await catalog_service.broadcast_catalog()
         return {"agentSessionId": session_id, "nodeId": node_id}
 
-    # === HTTP 프록시 라우트 ===
-    # `/{session_id}/events/viewport`는 더 구체적인 경로이므로 `/{session_id}/events`보다
-    # **먼저** 등록한다. FastAPI는 정의 순서로 매칭하며, viewport가 뒤에 오면 events가
-    # prefix-match로 가로챈다 (soul-server dashboard/routes/sessions.py:181-182의 코멘트와 동일 근거).
+    # === DB 직접 조회 라우트 ===
+    # orch-server와 soul-server가 같은 PostgreSQL을 공유하므로
+    # messages/viewport는 노드 통신 없이 DB 직접 SELECT.
+    # `/{session_id}/events/viewport`는 `/{session_id}/events`보다 먼저 등록하여
+    # FastAPI 경로 매칭 순서를 보장한다.
 
     @router.get("/{session_id}/events/viewport")
-    async def proxy_session_events_viewport(
+    async def get_session_viewport(
         session_id: str,
-        request: Request,
         y_min: int = Query(..., ge=1),
         y_max: int = Query(..., ge=1),
     ):
-        """soul-server `/api/sessions/{id}/events/viewport`로 GET 프록시.
-
-        unified-dashboard(orch-server origin)에서 호출되는 viewport 가상화 API를
-        세션의 노드로 forward한다. find_session_node가 raise하는 HTTPException(404)은
-        FastAPI가 자동 처리하므로 핸들러에서 catch하지 않는다.
-
-        soul-server require_dashboard_auth가 401을 반환하지 않도록
-        들어온 요청의 Cookie/Authorization 헤더를 forward한다.
-        """
-        node = await find_session_node(session_id, db, node_manager)
-        url = f"http://{node.host}:{node.port}/api/sessions/{session_id}/events/viewport"
-        params = {"y_min": y_min, "y_max": y_max}
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(url, params=params, headers=forward_auth_headers(request))
-        except (httpx.RequestError, httpx.TimeoutException) as e:
-            logger.warning("viewport 프록시 실패 (session=%s): %s", session_id, e)
-            raise HTTPException(status_code=502, detail=str(e))
-        return Response(
-            content=resp.content,
-            status_code=resp.status_code,
-            media_type=resp.headers.get("content-type", "application/json"),
-        )
+        """세션 이벤트 뷰포트 조회. DB에서 직접 SELECT."""
+        result = await db.read_viewport(session_id, y_min, y_max)
+        return result
 
     @router.get("/{session_id}/messages")
-    async def proxy_session_messages(
+    async def get_session_messages(
         session_id: str,
-        request: Request,
         before: Optional[str] = Query(None),
         limit: int = Query(50, ge=1, le=200),
     ):
-        """soul-server `/api/sessions/{id}/messages`로 GET 프록시.
+        """메시지 페이지네이션 조회. DB에서 직접 SELECT.
 
-        커서 기반 메시지 페이지네이션. before/limit 쿼리 파라미터를 그대로 전달.
-
-        soul-server require_dashboard_auth가 401을 반환하지 않도록
-        들어온 요청의 Cookie/Authorization 헤더를 forward한다.
+        soul-server get_session_messages와 동일 반환 형식.
         """
-        node = await find_session_node(session_id, db, node_manager)
-        url = f"http://{node.host}:{node.port}/api/sessions/{session_id}/messages"
-        params: dict[str, object] = {"limit": limit}
-        if before is not None:
-            params["before"] = before
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(url, params=params, headers=forward_auth_headers(request))
-        except (httpx.RequestError, httpx.TimeoutException) as e:
-            logger.warning("messages 프록시 실패 (session=%s): %s", session_id, e)
-            raise HTTPException(status_code=502, detail=str(e))
-        return Response(
-            content=resp.content,
-            status_code=resp.status_code,
-            media_type=resp.headers.get("content-type", "application/json"),
+        messages, next_cursor = await db.read_messages(
+            session_id, before=before, limit=limit,
         )
+        return {"messages": messages, "next_cursor": next_cursor}
 
     @router.get("/{session_id}/events")
     async def session_events(
