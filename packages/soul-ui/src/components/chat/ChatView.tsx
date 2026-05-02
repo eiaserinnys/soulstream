@@ -217,7 +217,11 @@ export function ChatView({ chatInputDisabled = false, isOtherNodeSession = false
             grouped.length > 0 ? { index: grouped.length - 1, align: "end" } : 0
           }
           alignToBottom
-          followOutput="auto"
+          // isFollowing=false (사용자가 위로 스크롤한 상태)일 때는 auto-follow 비활성화.
+          // 그렇지 않으면 prepend로 데이터가 늘어날 때마다 Virtuoso가 맨 아래로 끌어내려
+          // 사용자 스크롤 위치가 흔들리고(플리커) follow 버튼 후 최신 메시지 미표시 등의
+          // 부작용이 발생한다. follow 버튼 클릭 시 setIsFollowing(true)으로 다시 활성화.
+          followOutput={isFollowing ? "auto" : false}
           atBottomStateChange={(atBottom) => {
             // 세션 전환 직후 Virtuoso measure 깜빡임으로 atBottom=false가 일시적으로
             // 보고될 수 있다. 안정화 임계값까지 false 보고를 무시 (헬퍼 default 사용).
