@@ -1,21 +1,27 @@
 /**
- * useMessageHistoryBuffer — ChatView용 과거 메시지 로컬 버퍼 (Phase 3)
+ * useMessageHistoryBuffer — ChatView용 과거 메시지 페치 + 트리 통합 (옵션 D)
  *
  * 목적:
- * - `GET /api/sessions/{id}/messages` 응답을 로컬 버퍼로 유지
- * - 위로 스크롤 시 `before` 커서로 과거 메시지를 prepend
- * - `next_cursor === null` 도달 시 "맨 위" 인디케이터 표시
+ * - `GET /api/sessions/{id}/messages` 응답을 라이브 SSE와 동일한 event-processor
+ *   파이프라인을 통해 store.tree에 통합한다 (단일 정본).
+ * - 위로 스크롤 시 `before` 커서로 과거 메시지를 prepend하고 prependedCount를 누적한다.
+ * - `next_cursor === null` 도달 시 "맨 위" 인디케이터를 표시한다.
  *
- * 설계:
- * - **store.tree와 공존**: flattenTree(tree)가 라이브 SSE로 쌓은 메시지를 반환하고,
- *   이 버퍼는 DB에서 가져온 과거 메시지를 보관한다. 렌더러가 `event_id`(여기서는 `id`)
- *   기준으로 dedup하여 시간순 병합한다.
- * - **세션 전환 시 초기화**: activeSessionKey가 바뀌면 버퍼, 커서, 상태를 모두 리셋.
+ * 설계 (옵션 D):
+ * - **단일 트리 정본**: 라이브 SSE와 히스토리가 같은 store.tree를 공유한다.
+ *   `historicalMessages`/`liveMessages` 병합 dedup이 폐기된다.
+ * - **eventId dedup 자동**: processEventsBatch가 `eventId <= lastEventId`로 자체 dedup한다
+ *   (event-processor.ts:228). 외부 dedup 불필요.
+ * - **orphan queue**: prepend 페이지 경계에서 부모가 아직 미수신인 자식 노드는
+ *   ProcessingContext.orphans에 보관 → 부모 도착 시 자동 attach (tree-placer.ts).
+ * - **세션 전환 시 초기화**: activeSessionKey가 바뀌면 prependedCount, 커서, 상태 모두 리셋.
  * - **중복 요청 방지**: loading 중에는 추가 prepend 요청을 무시한다.
- * - **fetch 실패 격리**: 예외를 삼키고 기존 SSE 파이프라인을 소스 오브 트루스로 유지한다.
+ * - **fetch 실패 격리**: 예외를 삼키고 라이브 SSE 파이프라인을 단독 소스로 유지한다.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { SoulSSEEvent } from "@shared/types";
+import { useDashboardStore } from "../../stores/dashboard-store";
 
 /** 초기 로드 / prepend 페이지 크기 */
 export const HISTORY_PAGE_SIZE = 50;
@@ -38,8 +44,6 @@ interface MessagesResponse {
 }
 
 export interface UseMessageHistoryBufferResult {
-  /** 지금까지 로드된 과거 메시지들 (시간 오름차순) */
-  messages: HistoricalMessage[];
   /** 추가 페이지 로드 중 여부 */
   loading: boolean;
   /** true일 때 "맨 위 도달" 인디케이터를 렌더링 */
@@ -47,16 +51,34 @@ export interface UseMessageHistoryBufferResult {
   /** 위로 스크롤 시 호출하여 과거 페이지 prepend. 중복 호출은 자동 무시된다. */
   requestOlder: () => void;
   /**
-   * 누적 prepend 개수. virtuoso `firstItemIndex = START_INDEX - prependedCount`
-   * 패턴에서 사용한다. 세션 전환 시 0으로 리셋된다.
+   * 누적 prepend 메시지 수 (flattenTree 차분 기반).
+   * virtuoso `firstItemIndex = START_INDEX - prependedCount` 패턴에서 사용한다.
+   * 세션 전환 시 0으로 리셋된다.
    */
   prependedCount: number;
+}
+
+/**
+ * messages payload를 SoulSSEEvent로 정규화한다.
+ *
+ * DB는 `event_type`을 별도 컬럼으로 저장하지만 SSE 라이브는 `payload.type`을 쓴다.
+ * payload 자체에 `type`이 있으면 그것을 우선, 없으면 `event_type`을 type으로 주입한다.
+ *
+ * ⚠️ spread 순서 주의: `...m.payload`를 먼저 펼치고 `type`을 마지막에 두어야
+ * `payload.type`이 있어도 우리가 정한 type 값이 보존된다.
+ */
+export function toSSEEvent(m: HistoricalMessage): { event: SoulSSEEvent; eventId: number } {
+  const payloadType = (m.payload as { type?: string }).type;
+  const event = {
+    ...m.payload,
+    type: payloadType ?? m.event_type,
+  } as SoulSSEEvent;
+  return { event, eventId: m.id };
 }
 
 export function useMessageHistoryBuffer(
   sessionId: string | null,
 ): UseMessageHistoryBufferResult {
-  const [messages, setMessages] = useState<HistoricalMessage[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [reachedTop, setReachedTop] = useState(false);
@@ -67,16 +89,6 @@ export function useMessageHistoryBuffer(
   const loadingRef = useRef(false);
   const nextCursorRef = useRef<string | null>(null);
   const reachedTopRef = useRef(false);
-  /**
-   * strict mode에서 이펙트가 2회 실행될 때 stale closure 상태를 피하기 위해
-   * messages의 현재 값을 ref에 미러링한다. requestOlder의 중복 가드가
-   * setMessages 콜백의 `prev` 대신 이 ref를 사용하여 setPrependedCount와
-   * 일관된 unique 개수를 계산한다.
-   */
-  const messagesRef = useRef<HistoricalMessage[]>([]);
-  useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
 
   useEffect(() => {
     nextCursorRef.current = nextCursor;
@@ -88,14 +100,11 @@ export function useMessageHistoryBuffer(
     reachedTopRef.current = reachedTop;
   }, [reachedTop]);
 
-  // 세션 전환: 버퍼 리셋 + 초기 페이지 로드
+  // 세션 전환: 상태 리셋 + 초기 페이지 로드
   useEffect(() => {
-    // 이전 fetch를 무효화하기 위한 새 토큰
     const token = Symbol("session");
     sessionTokenRef.current = token;
 
-    // 상태 리셋
-    setMessages([]);
     setNextCursor(null);
     setReachedTop(false);
     setLoading(false);
@@ -103,7 +112,6 @@ export function useMessageHistoryBuffer(
 
     if (!sessionId) return;
 
-    // 초기 페이지 로드 (before 없음 = 가장 최근부터)
     setLoading(true);
     loadingRef.current = true;
     (async () => {
@@ -116,13 +124,18 @@ export function useMessageHistoryBuffer(
         if (!res.ok) return;
         const data = (await res.json()) as MessagesResponse;
         if (sessionTokenRef.current !== token) return;
-        // 서버는 created_at DESC로 반환 → 렌더 편의를 위해 오름차순으로 뒤집는다
-        const asc = [...(data.messages ?? [])].reverse();
-        setMessages(asc);
+
+        // 시간 ASC로 뒤집어서 store에 흘림 (부모가 자식 이전에 처리되도록)
+        const events = [...(data.messages ?? [])].reverse().map(toSSEEvent);
+        useDashboardStore.getState().processHistoryEvents(events);
+
+        // 초기 로드는 prepend가 아니므로 prependedCount에 더하지 않는다.
+        // (virtuoso는 START_INDEX 기준으로 자연스럽게 표시)
+
         setNextCursor(data.next_cursor ?? null);
         if (data.next_cursor === null) setReachedTop(true);
       } catch {
-        // 네트워크 오류는 무시 — 라이브 SSE가 소스 오브 트루스
+        // 네트워크 오류는 무시 — 라이브 SSE가 단독 소스
       } finally {
         if (sessionTokenRef.current === token) {
           setLoading(false);
@@ -157,13 +170,12 @@ export function useMessageHistoryBuffer(
         if (!res.ok) return;
         const data = (await res.json()) as MessagesResponse;
         if (sessionTokenRef.current !== token) return;
-        const asc = [...(data.messages ?? [])].reverse();
-        // 중복 가드: 이미 버퍼에 있는 id는 제외 (동일 커서 연속 호출 시 안전 장치)
-        const existingIds = new Set(messagesRef.current.map((m) => m.id));
-        const unique = asc.filter((m) => !existingIds.has(m.id));
-        if (unique.length > 0) {
-          setMessages((prev) => [...unique, ...prev]);
-          setPrependedCount((c) => c + unique.length);
+
+        const events = [...(data.messages ?? [])].reverse().map(toSSEEvent);
+        const { addedCount } = useDashboardStore.getState().processHistoryEvents(events);
+
+        if (addedCount > 0) {
+          setPrependedCount((c) => c + addedCount);
         }
         setNextCursor(data.next_cursor ?? null);
         if (data.next_cursor === null) setReachedTop(true);
@@ -178,5 +190,5 @@ export function useMessageHistoryBuffer(
     })();
   }, [sessionId]);
 
-  return { messages, loading, reachedTop, requestOlder, prependedCount };
+  return { loading, reachedTop, requestOlder, prependedCount };
 }

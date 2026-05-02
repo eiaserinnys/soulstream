@@ -210,6 +210,20 @@ export interface DashboardActions {
     events: Array<{ event: SoulSSEEvent; eventId: number }>,
   ) => ProcessEventsResult;
 
+  /**
+   * 히스토리 prepend 처리 — messages API에서 받은 raw 이벤트들을 store.tree에 통합한다.
+   *
+   * processingCtx.historyMode를 잠시 true로 toggle하여 부모 부재 자식을
+   * orphan 큐로 분기시킨다(tree-placer.ts:resolveParent). 라이브 SSE의
+   * root fallback 동작은 보존된다.
+   *
+   * 처리 전후 flattenTree(tree).length 차분(addedCount)을 반환하여
+   * virtuoso prependedCount 갱신에 사용한다 (ChatView.tsx의 firstItemIndex 산출용).
+   */
+  processHistoryEvents: (
+    events: Array<{ event: SoulSSEEvent; eventId: number }>,
+  ) => { addedCount: number };
+
   // 낙관적 세션 추가 + 활성 세션 설정 (세션 생성 직후 즉시 목록 반영)
   addOptimisticSession: (
     queryClient: QueryClient,

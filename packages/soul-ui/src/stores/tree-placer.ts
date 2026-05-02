@@ -18,9 +18,28 @@ import type { ProcessingContext, TextTargetNode } from "./processing-context";
 import { makeNode, registerNode } from "./processing-context";
 
 /**
+ * Sentinel — `resolveParent`가 historyMode 환경에서 부모를 찾지 못했을 때 반환한다.
+ *
+ * 호출자(`placeInTree`, `handleTextStart`)는 이 sentinel과 reference 비교(`=== ORPHAN_PARENT`)로
+ * 부모 부재를 감지하여 자식 노드를 `ctx.orphans`에 보관해야 한다.
+ *
+ * 라이브 SSE에서는 부모가 항상 자식 이전에 도착하므로 이 sentinel을 반환하지 않는다 —
+ * 기존 root fallback 동작이 유지된다.
+ */
+export const ORPHAN_PARENT: EventTreeNode = {
+  id: "__orphan__",
+  type: "session",
+  children: [],
+  content: "",
+  completed: false,
+} as EventTreeNode;
+
+/**
  * parent_event_id로 부모 노드를 결정합니다.
  * - null/undefined → session root
  * - 값 있음 → nodeMap에서 직접 조회
+ * - 부모 부재 + historyMode=true → ORPHAN_PARENT sentinel (호출자가 orphans 큐로 분기)
+ * - 부모 부재 + historyMode=false → 기존 동작 (root fallback + console.warn)
  */
 export function resolveParent(
   parentEventId: string | null | undefined,
@@ -31,10 +50,52 @@ export function resolveParent(
 
   const parent = ctx.nodeMap.get(parentEventId);
   if (!parent) {
+    if (ctx.historyMode) {
+      // history mode: 호출자가 sentinel 감지 후 orphan 큐에 보관한다
+      return ORPHAN_PARENT;
+    }
     console.warn(`[tree] parent "${parentEventId}" not in nodeMap`);
     return root;
   }
   return parent;
+}
+
+/**
+ * 노드를 부모에 attach하고 자신의 adoptees를 함께 처리한다.
+ *
+ * - parent === ORPHAN_PARENT (history mode + 부모 부재) → ctx.orphans 큐에 보관
+ * - 그 외 → parent.children.push(node) (정상 attach)
+ * - 두 경우 모두 본 노드가 다른 orphan들의 부모일 수 있으므로 adoptees 조회·attach.
+ *
+ * 다층 체인 자동 처리: A→B→C에서 B가 orphan map에 들어가도 nodeMap에는 등록되어 있어
+ * 후속 자식 A가 resolveParent로 B를 정상 lookup → B.children.push(A). C 도착 시
+ * C.children.push(B)로 B(A 포함)가 통째로 이동.
+ */
+function attachToParent(
+  node: EventTreeNode,
+  parent: EventTreeNode,
+  parentEventId: string | null,
+  eventId: number,
+  ctx: ProcessingContext,
+): void {
+  if (parent === ORPHAN_PARENT) {
+    // history mode + 부모 부재 → orphan 큐에 보관
+    // (parentEventId는 sentinel 진입 조건에서 truthy 보장)
+    const list = ctx.orphans.get(parentEventId!) ?? [];
+    list.push(node);
+    ctx.orphans.set(parentEventId!, list);
+  } else {
+    parent.children.push(node);
+  }
+
+  // 새 노드가 다른 orphan들의 부모일 수 있음 — 자식 후보 attach
+  const adoptees = ctx.orphans.get(String(eventId));
+  if (adoptees && adoptees.length > 0) {
+    for (const child of adoptees) {
+      node.children.push(child);
+    }
+    ctx.orphans.delete(String(eventId));
+  }
 }
 
 /**
@@ -69,12 +130,12 @@ export function placeInTree(
     ctx.nodeMap.set((event as InputRequestEvent).request_id, node);
   }
 
-  // 모든 타입 동일: resolveParent로 부모 결정
+  // 모든 타입 동일: resolveParent로 부모 결정 후 attach
   const parentEventId = "parent_event_id" in event
     ? (event as { parent_event_id?: string }).parent_event_id ?? null
     : null;
   const parent = resolveParent(parentEventId, ctx, root);
-  parent.children.push(node);
+  attachToParent(node, parent, parentEventId, eventId, ctx);
 }
 
 /**
@@ -93,7 +154,8 @@ export function handleTextStart(
   const textNode = makeNode(`text-${eventId}`, "text", "");
   registerNode(ctx, textNode);
   ctx.nodeMap.set(String(eventId), textNode);
-  textParent.children.push(textNode);
+  attachToParent(textNode, textParent, event.parent_event_id ?? null, eventId, ctx);
+
   ctx.activeTextTarget = textNode as TextTargetNode;
   return true;
 }
