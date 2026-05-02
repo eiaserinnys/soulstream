@@ -19,6 +19,7 @@ from sse_starlette.sse import EventSourceResponse
 from soul_common.catalog.catalog_service import CatalogService
 from soul_common.db.session_db import PostgresSessionDB
 
+from soulstream_server.api._proxy_utils import forward_auth_headers
 from soulstream_server.api.node_utils import find_session_node
 from soulstream_server.models import BatchMoveRequest
 from soulstream_server.nodes.node_connection import NodeConnection
@@ -222,6 +223,7 @@ def create_sessions_router(
     @router.get("/{session_id}/events/viewport")
     async def proxy_session_events_viewport(
         session_id: str,
+        request: Request,
         y_min: int = Query(..., ge=1),
         y_max: int = Query(..., ge=1),
     ):
@@ -230,13 +232,16 @@ def create_sessions_router(
         unified-dashboard(orch-server origin)에서 호출되는 viewport 가상화 API를
         세션의 노드로 forward한다. find_session_node가 raise하는 HTTPException(404)은
         FastAPI가 자동 처리하므로 핸들러에서 catch하지 않는다.
+
+        soul-server require_dashboard_auth가 401을 반환하지 않도록
+        들어온 요청의 Cookie/Authorization 헤더를 forward한다.
         """
         node = await find_session_node(session_id, db, node_manager)
         url = f"http://{node.host}:{node.port}/api/sessions/{session_id}/events/viewport"
         params = {"y_min": y_min, "y_max": y_max}
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(url, params=params)
+                resp = await client.get(url, params=params, headers=forward_auth_headers(request))
         except (httpx.RequestError, httpx.TimeoutException) as e:
             logger.warning("viewport 프록시 실패 (session=%s): %s", session_id, e)
             raise HTTPException(status_code=502, detail=str(e))
@@ -249,12 +254,16 @@ def create_sessions_router(
     @router.get("/{session_id}/messages")
     async def proxy_session_messages(
         session_id: str,
+        request: Request,
         before: Optional[str] = Query(None),
         limit: int = Query(50, ge=1, le=200),
     ):
         """soul-server `/api/sessions/{id}/messages`로 GET 프록시.
 
         커서 기반 메시지 페이지네이션. before/limit 쿼리 파라미터를 그대로 전달.
+
+        soul-server require_dashboard_auth가 401을 반환하지 않도록
+        들어온 요청의 Cookie/Authorization 헤더를 forward한다.
         """
         node = await find_session_node(session_id, db, node_manager)
         url = f"http://{node.host}:{node.port}/api/sessions/{session_id}/messages"
@@ -263,7 +272,7 @@ def create_sessions_router(
             params["before"] = before
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(url, params=params)
+                resp = await client.get(url, params=params, headers=forward_auth_headers(request))
         except (httpx.RequestError, httpx.TimeoutException) as e:
             logger.warning("messages 프록시 실패 (session=%s): %s", session_id, e)
             raise HTTPException(status_code=502, detail=str(e))

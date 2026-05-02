@@ -11,6 +11,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 
+from soulstream_server.api._proxy_utils import forward_auth_headers
 from soulstream_server.nodes.node_manager import NodeManager
 
 logger = logging.getLogger(__name__)
@@ -39,14 +40,18 @@ def create_config_router(
         return f"http://{node.host}:{node.port}{path}"
 
     @router.get("/config/settings")
-    async def proxy_config_settings_get():
-        """soul-server의 GET /api/config/settings 프록시."""
+    async def proxy_config_settings_get(request: Request):
+        """soul-server의 GET /api/config/settings 프록시.
+
+        soul-server require_dashboard_auth가 401을 반환하지 않도록
+        들어온 요청의 Cookie/Authorization 헤더를 forward한다.
+        """
         url = _first_node_url("/api/config/settings")
         if not url:
             return JSONResponse({"categories": []})
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(url)
+                resp = await client.get(url, headers=forward_auth_headers(request))
         except httpx.RequestError as e:
             logger.warning("config/settings 프록시 실패: %s", e)
             return JSONResponse({"categories": []})
@@ -67,7 +72,7 @@ def create_config_router(
         body = await request.json()
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.put(url, json=body)
+                resp = await client.put(url, json=body, headers=forward_auth_headers(request))
         except httpx.RequestError as e:
             logger.error("config/settings PUT 프록시 실패: %s", e)
             raise HTTPException(status_code=502, detail=str(e))
@@ -78,8 +83,13 @@ def create_config_router(
         )
 
     @router.get("/dashboard/config")
-    async def proxy_dashboard_config():
-        """soul-server의 GET /api/dashboard/config 프록시."""
+    async def proxy_dashboard_config(request: Request):
+        """soul-server의 GET /api/dashboard/config 프록시.
+
+        현재 soul-server 측 엔드포인트가 unguarded이지만, 향후 인증이
+        추가되어도 호환되도록 다른 프록시와 동일하게 헤더를 forward한다
+        (design-principles.md §9 일관성·대칭성).
+        """
         nodes = node_manager.get_connected_nodes()
         if not nodes:
             return JSONResponse(_DEFAULT_DASHBOARD_CONFIG)
@@ -87,7 +97,7 @@ def create_config_router(
         url = f"http://{node.host}:{node.port}/api/dashboard/config"
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(url)
+                resp = await client.get(url, headers=forward_auth_headers(request))
         except httpx.RequestError as e:
             logger.warning("dashboard/config 프록시 실패: %s", e)
             return JSONResponse(_DEFAULT_DASHBOARD_CONFIG)

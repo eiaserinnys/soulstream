@@ -8,9 +8,10 @@ soulstream-server는 cogito 인덱스를 직접 보유하지 않는다.
 import logging
 
 import httpx
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 
+from soulstream_server.api._proxy_utils import forward_auth_headers
 from soulstream_server.nodes.node_manager import NodeManager
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,7 @@ def create_cogito_router(
 
     @router.get("/search")
     async def search(
+        request: Request,
         q: str = Query(..., description="검색 쿼리"),
         top_k: int = Query(default=10, ge=1, le=100, description="최대 결과 수"),
         event_types: str | None = Query(default=None, description="콤마 구분 이벤트 타입 필터"),
@@ -37,6 +39,9 @@ def create_cogito_router(
 
         각 노드의 응답 포맷: {"results": [{session_id, event_id, score, preview, event_type}]}
         병합 후 score 내림차순 정렬, top_k 개만 반환한다.
+
+        soul-server 측 cogito 엔드포인트가 현재 unguarded이지만, 향후 인증이
+        추가되어도 호환되도록 다른 프록시와 동일하게 헤더를 forward한다.
         """
         nodes = node_manager.get_connected_nodes()
         if not nodes:
@@ -48,11 +53,12 @@ def create_cogito_router(
         if event_types is not None:
             params["event_types"] = event_types
 
+        forward_headers = forward_auth_headers(request)
         async with httpx.AsyncClient(timeout=10.0) as client:
             for node in nodes:
                 url = f"http://{node.host}:{node.port}/cogito/search"
                 try:
-                    resp = await client.get(url, params=params)
+                    resp = await client.get(url, params=params, headers=forward_headers)
                     if resp.status_code == 200:
                         data = resp.json()
                         all_results.extend(data.get("results", []))
