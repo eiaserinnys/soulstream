@@ -16,6 +16,7 @@ import type {
 } from "@shared/types";
 import type { ProcessingContext, TextTargetNode } from "./processing-context";
 import { makeNode, registerNode } from "./processing-context";
+import { diag } from "../lib/diag";
 
 /**
  * Sentinel — `resolveParent`가 historyMode 환경에서 부모를 찾지 못했을 때 반환한다.
@@ -84,8 +85,21 @@ function attachToParent(
     const list = ctx.orphans.get(parentEventId!) ?? [];
     list.push(node);
     ctx.orphans.set(parentEventId!, list);
+    diag("tree-placer", "→ orphan", {
+      eventId,
+      nodeType: node.type,
+      nodeId: node.id,
+      waitingFor: parentEventId,
+    });
   } else {
     parent.children.push(node);
+    diag("tree-placer", "→ attach", {
+      eventId,
+      nodeType: node.type,
+      nodeId: node.id,
+      parentId: parent.id,
+      parentType: parent.type,
+    });
   }
 
   // 새 노드가 다른 orphan들의 부모일 수 있음 — 자식 후보 attach
@@ -94,6 +108,10 @@ function attachToParent(
     for (const child of adoptees) {
       node.children.push(child);
     }
+    diag("tree-placer", "→ adopt", {
+      newParentEventId: eventId,
+      adopteeIds: adoptees.map((c) => c.id),
+    });
     ctx.orphans.delete(String(eventId));
   }
 }
