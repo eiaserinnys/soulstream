@@ -68,10 +68,19 @@ export interface UseMessageHistoryBufferResult {
  * `payload.type`이 있어도 우리가 정한 type 값이 보존된다.
  */
 export function toSSEEvent(m: HistoricalMessage): { event: SoulSSEEvent; eventId: number } {
-  const payloadType = (m.payload as { type?: string }).type;
+  const payload = m.payload as Record<string, unknown>;
+  const payloadType = (payload.type as string | undefined);
+
+  // DB JSONB는 ID 필드를 number로 저장하지만, 라이브 SSE는 string으로 직렬화된다.
+  // nodeMap 키가 String(eventId)이므로 lookup 실패(Map.get(2410) ≠ Map.get("2410"))를 방지하려면
+  // ID 필드를 string으로 명시 정규화해야 한다.
+  // 진단 결과: parent_event_id number → orphan 큐 영구 보관 → 채팅 미렌더링.
   const event = {
-    ...m.payload,
+    ...payload,
     type: payloadType ?? m.event_type,
+    ...(payload.parent_event_id != null ? { parent_event_id: String(payload.parent_event_id) } : {}),
+    ...(payload.tool_use_id != null ? { tool_use_id: String(payload.tool_use_id) } : {}),
+    ...(payload.request_id != null ? { request_id: String(payload.request_id) } : {}),
   } as SoulSSEEvent;
   return { event, eventId: m.id };
 }
