@@ -50,16 +50,24 @@ class ExpoPushProvider(PushNotificationProvider):
 def _parse_response(payload: Any) -> SendResult:
     """Expo 응답 파싱.
 
-    실측 응답 형식 (단일 토큰도 배열):
-        {"data": [{"status": "ok", "id": "..."}]}
-        {"data": [{"status": "error", "details": {"error": "DeviceNotRegistered"}, "message": "..."}]}
+    실측 응답 형식 (Expo Push API):
+    - 단일 to (dict 본문 1건): {"data": {"status": "ok", "id": "..."}}
+    - 배열 messages (배열 본문):  {"data": [{"status": "ok", ...}, ...]}
+    - 에러:                      {"data": {"status": "error", "details": {"error": "DeviceNotRegistered"}}}
+                                 또는 {"data": [{"status": "error", ...}]}
 
-    빌드 19까지 클라이언트가 single object로 받아 AttributeError가 났음 (spec-reviewer 지적).
+    빌드 20 초기 명세는 "항상 배열"로 단정했으나 실측 결과 단일 to 발송 시 dict가 옴.
+    두 형태를 모두 안전하게 처리한다.
     """
-    items = (payload or {}).get("data", [])
-    if not isinstance(items, list) or not items:
+    raw = (payload or {}).get("data")
+    if isinstance(raw, list):
+        if not raw:
+            return SendResult(ok=False, invalid_token=False, error="empty data list")
+        first = raw[0] or {}
+    elif isinstance(raw, dict):
+        first = raw
+    else:
         return SendResult(ok=False, invalid_token=False, error="unexpected response shape")
-    first = items[0] or {}
     if first.get("status") == "error":
         details = first.get("details") or {}
         err = details.get("error") or first.get("message") or "unknown"
