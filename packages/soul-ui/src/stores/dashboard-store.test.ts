@@ -2451,4 +2451,107 @@ describe("dashboard-store", () => {
     });
   });
 
+  // === chatLastPrependAtMs — atBottom=true settle 가드용 시각 추적 ===
+
+  describe("chatLastPrependAtMs — prepend 시각 추적 + atomic 갱신", () => {
+    it("초기값은 null", () => {
+      expect(useDashboardStore.getState().chatLastPrependAtMs).toBeNull();
+    });
+
+    it("processHistoryEvents 호출 후 chatLastPrependAtMs ≈ performance.now()", () => {
+      const before = performance.now();
+      const result = useDashboardStore.getState().processHistoryEvents([
+        {
+          event: { type: "user_message", content: "u" } as UserMessageEvent,
+          eventId: 100,
+        },
+      ]);
+      const after = performance.now();
+
+      expect(result.addedCount).toBeGreaterThan(0);
+      const ts = useDashboardStore.getState().chatLastPrependAtMs;
+      expect(ts).not.toBeNull();
+      expect(ts).toBeGreaterThanOrEqual(before);
+      expect(ts).toBeLessThanOrEqual(after);
+    });
+
+    it("setActiveSession 호출 시 chatLastPrependAtMs는 null로 리셋", () => {
+      // 먼저 prepend로 timestamp 설정
+      useDashboardStore.getState().processHistoryEvents([
+        {
+          event: { type: "user_message", content: "u" } as UserMessageEvent,
+          eventId: 200,
+        },
+      ]);
+      expect(useDashboardStore.getState().chatLastPrependAtMs).not.toBeNull();
+
+      // 세션 전환
+      useDashboardStore.getState().setActiveSession("sess-reset");
+      expect(useDashboardStore.getState().chatLastPrependAtMs).toBeNull();
+    });
+
+    it("atomic 갱신: tree와 chatPrependedCount와 chatLastPrependAtMs가 한 set() 안에서 함께 갱신됨", () => {
+      // 라이브 트리 셋업
+      useDashboardStore.getState().processEvent(
+        { type: "user_message", content: "live-u" } as UserMessageEvent,
+        300,
+      );
+
+      const events = [
+        {
+          event: { type: "user_message", content: "old-u" } as UserMessageEvent,
+          eventId: 250,
+        },
+      ];
+
+      const listener = vi.fn();
+      const unsubscribe = useDashboardStore.subscribe(listener);
+      try {
+        useDashboardStore.getState().processHistoryEvents(events);
+
+        // 한 번의 알림으로 tree, chatPrependedCount, chatLastPrependAtMs 모두 갱신
+        expect(listener).toHaveBeenCalledTimes(1);
+        const state = useDashboardStore.getState();
+        expect(state.chatPrependedCount).toBeGreaterThan(0);
+        expect(state.chatLastPrependAtMs).not.toBeNull();
+        expect(state.tree).not.toBeNull();
+      } finally {
+        unsubscribe();
+      }
+    });
+
+    it("dedup 케이스: addedCount=0이어도 chatLastPrependAtMs는 사용자 prepend 시도 시각을 추적 (settle 가드는 사용자 행위 시각 기준)", () => {
+      const events = [
+        {
+          event: { type: "user_message", content: "u" } as UserMessageEvent,
+          eventId: 400,
+        },
+      ];
+      useDashboardStore.getState().processHistoryEvents(events);
+      const tsAfterFirst = useDashboardStore.getState().chatLastPrependAtMs;
+      expect(tsAfterFirst).not.toBeNull();
+
+      // 동일 eventId 재호출 — addedCount=0이지만 result.updated 분기에 따라
+      // chatLastPrependAtMs가 같이 갱신될 수 있음 (사용자 의도적 startReached 행위 시각).
+      // 어느 쪽이든 null로 돌아가지 않고 단조 증가만 보장하면 settle 가드가 의도대로 동작.
+      useDashboardStore.getState().processHistoryEvents(events);
+      const tsAfterSecond = useDashboardStore.getState().chatLastPrependAtMs;
+      expect(tsAfterSecond).not.toBeNull();
+      expect(tsAfterSecond! >= tsAfterFirst!).toBe(true);
+    });
+
+    it("clearTree 호출 시 chatLastPrependAtMs는 null로 리셋", () => {
+      useDashboardStore.getState().processHistoryEvents([
+        {
+          event: { type: "user_message", content: "u" } as UserMessageEvent,
+          eventId: 500,
+        },
+      ]);
+      expect(useDashboardStore.getState().chatLastPrependAtMs).not.toBeNull();
+
+      useDashboardStore.getState().clearTree();
+      expect(useDashboardStore.getState().chatLastPrependAtMs).toBeNull();
+    });
+  });
+
 });
