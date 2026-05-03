@@ -3,6 +3,9 @@
 기존 HTTP API와 동일한 TaskManager 메서드를 호출하며,
 연결 방향만 반대(소울 서버 → 소울스트림)이다.
 소울스트림에 연결하지 않아도 기존 독립 실행 모드에는 영향이 없다.
+
+본 모듈은 lifecycle + connection을 담당하고, 명령 처리와 이벤트 relay는
+``CommandDispatcher`` / ``EventRelay``에 composition으로 위임한다.
 """
 
 from __future__ import annotations
@@ -15,36 +18,10 @@ from typing import TYPE_CHECKING
 
 import aiohttp
 
-from .protocol import (
-    CMD_CREATE_SESSION,
-    CMD_HEALTH_CHECK,
-    CMD_INTERVENE,
-    CMD_LIST_SESSIONS,
-    CMD_RESPOND,
-    CMD_SUBSCRIBE_EVENTS,
-    CMD_CLAUDE_AUTH_STATUS,
-    CMD_CLAUDE_AUTH_SET_TOKEN,
-    CMD_CLAUDE_AUTH_DELETE_TOKEN,
-    CMD_CLAUDE_AUTH_GET_USAGE,
-    CMD_CLAUDE_AUTH_GET_PROFILE,
-    EVT_ERROR,
-    EVT_EVENT,
-    EVT_HEALTH_STATUS,
-    EVT_NODE_REGISTER,
-    EVT_SESSION_CREATED,
-    EVT_SESSION_DELETED,
-    EVT_SESSION_UPDATED,
-    EVT_SESSIONS_UPDATE,
-)
-from soul_server.upstream.claude_auth_handlers import (
-    ANTHROPIC_PROFILE_URL,
-    ANTHROPIC_USAGE_URL,
-    handle_auth_api_request,
-    handle_auth_delete_token,
-    handle_auth_set_token,
-    handle_auth_status,
-)
+from .protocol import EVT_ERROR, EVT_NODE_REGISTER, EVT_SESSIONS_UPDATE
 from .reconnect import ReconnectPolicy
+from .command_handler import CommandDispatcher
+from .event_relay import EventRelay
 
 if TYPE_CHECKING:
     from soul_server.service.agent_registry import AgentRegistry
@@ -64,17 +41,20 @@ class UpstreamAdapter:
 
     기존 HTTP API와 동일한 TaskManager 메서드를 호출하며,
     연결 방향만 반대(소울 서버 → 소울스트림).
+
+    명령 처리는 ``self._dispatcher`` (CommandDispatcher),
+    이벤트 relay는 ``self._relay`` (EventRelay)에 composition으로 위임.
     """
 
     def __init__(
         self,
-        task_manager: TaskManager,
-        soul_engine: SoulEngineAdapter,
-        resource_manager: ResourceManager,
-        session_broadcaster: SessionBroadcaster,
+        task_manager: "TaskManager",
+        soul_engine: "SoulEngineAdapter",
+        resource_manager: "ResourceManager",
+        session_broadcaster: "SessionBroadcaster",
         upstream_url: str,
         node_id: str,
-        session_db: PostgresSessionDB,
+        session_db: "PostgresSessionDB",
         host: str = "",
         port: int = 0,
         agent_registry: "AgentRegistry | None" = None,
@@ -104,8 +84,26 @@ class UpstreamAdapter:
         self._reconnect = ReconnectPolicy()
         self._running = False
         self._stream_tasks: dict[str, asyncio.Task] = {}
-        self._broadcast_task: asyncio.Task | None = None
-        self._broadcast_queue: asyncio.Queue | None = None
+
+        # ─── Composition: EventRelay와 CommandDispatcher ──────────
+        # _stream_tasks는 두 컴포넌트가 reference로 공유한다 (mutation 양쪽 가능).
+        self._relay = EventRelay(
+            task_manager=self._tm,
+            broadcaster=self._broadcaster,
+            send_fn=self._send,
+            stream_tasks=self._stream_tasks,
+            is_running=lambda: self._running,
+        )
+        self._dispatcher = CommandDispatcher(
+            task_manager=self._tm,
+            soul_engine=self._engine,
+            resource_manager=self._rm,
+            node_id=self._node_id,
+            send_fn=self._send,
+            send_error_fn=self._send_error,
+            stream_tasks=self._stream_tasks,
+            event_relay=self._relay,
+        )
 
     # ─── Lifecycle ──────────────────────────────────
 
@@ -137,7 +135,7 @@ class UpstreamAdapter:
                     logger.exception("Unexpected error in upstream connection")
 
                 # 연결 종료 시 broadcast 리스너 정리
-                await self._stop_broadcast()
+                await self._relay.stop_broadcast()
 
                 if self._running:
                     await self._reconnect.wait()
@@ -149,7 +147,7 @@ class UpstreamAdapter:
         self._running = False
 
         # broadcast 태스크 정리
-        await self._stop_broadcast()
+        await self._relay.stop_broadcast()
 
         # 스트리밍 태스크 취소
         for task in self._stream_tasks.values():
@@ -258,7 +256,7 @@ class UpstreamAdapter:
         await self._send(self._build_registration_msg())
 
         # 세션 동기화: 구독 먼저 → 초기 전송 (이벤트 유실 방지)
-        await self._start_broadcast()
+        await self._relay.start_broadcast()
         await self._send_initial_sessions()
 
         # 명령 수신 루프
@@ -266,7 +264,7 @@ class UpstreamAdapter:
             if msg.type == aiohttp.WSMsgType.TEXT:
                 try:
                     cmd = json.loads(msg.data)
-                    await self._handle_command(cmd)
+                    await self._dispatcher.dispatch(cmd)
                 except json.JSONDecodeError:
                     logger.warning("Invalid JSON from upstream: %s", msg.data[:200])
                 except Exception:
@@ -278,8 +276,6 @@ class UpstreamAdapter:
                 break
 
         logger.info("Upstream connection closed")
-
-    # ─── Session Sync ─────────────────────────────
 
     async def _send_initial_sessions(self) -> None:
         """현재 활성 세션 목록을 오케스트레이터에 전송.
@@ -294,346 +290,6 @@ class UpstreamAdapter:
             "total": total,
         })
         logger.info("Sent initial sessions to upstream (count=%d)", total)
-
-    async def _start_broadcast(self) -> None:
-        """SessionBroadcaster에 리스너 등록 + 소비 태스크 시작."""
-        # 이전 연결의 잔여 리스너가 있으면 정리
-        await self._stop_broadcast()
-
-        self._broadcast_queue = self._broadcaster.add_client()
-        self._broadcast_task = asyncio.create_task(
-            self._broadcast_session_changes(),
-            name="upstream-broadcast-sessions",
-        )
-
-    async def _stop_broadcast(self) -> None:
-        """broadcast 태스크 취소 + 리스너 해제."""
-        if self._broadcast_task and not self._broadcast_task.done():
-            self._broadcast_task.cancel()
-            try:
-                await self._broadcast_task
-            except asyncio.CancelledError:
-                pass
-        self._broadcast_task = None
-
-        if self._broadcast_queue is not None:
-            self._broadcaster.remove_client(self._broadcast_queue)
-            self._broadcast_queue = None
-
-    async def _broadcast_session_changes(self) -> None:
-        """SessionBroadcaster 이벤트를 오케스트레이터 프로토콜로 변환하여 전송."""
-        try:
-            while self._running:
-                try:
-                    event = await asyncio.wait_for(
-                        self._broadcast_queue.get(), timeout=30.0,
-                    )
-                except asyncio.TimeoutError:
-                    continue
-
-                try:
-                    await self._dispatch_broadcast_event(event)
-                except Exception:
-                    logger.exception(
-                        "Error dispatching broadcast event: %s",
-                        event.get("type"),
-                    )
-        except asyncio.CancelledError:
-            pass
-
-    async def _dispatch_broadcast_event(self, event: dict) -> None:
-        """개별 broadcaster 이벤트를 오케스트레이터 프로토콜로 변환하여 전송."""
-        event_type = event.get("type", "")
-
-        if event_type == "session_created":
-            # broadcaster: {"type": "session_created", "session": to_session_info()}
-            # _handle_create_session이 requestId 포함 응답을 이미 보내므로,
-            # broadcast 경로에서는 세션 정보를 포함한 보강 메시지를 전송
-            session_info = event.get("session", {})
-            folder_id = event.get("folder_id")
-            msg: dict = {
-                "type": EVT_SESSION_CREATED,
-                "agentSessionId": session_info.get("agent_session_id", ""),
-                "session": session_info,
-            }
-            if folder_id is not None:
-                msg["folderId"] = folder_id
-            await self._send(msg)
-        elif event_type == "session_updated":
-            await self._send({
-                "type": EVT_SESSION_UPDATED,
-                **{k: v for k, v in event.items() if k != "type"},
-            })
-        elif event_type == "session_deleted":
-            await self._send({
-                "type": EVT_SESSION_DELETED,
-                **{k: v for k, v in event.items() if k != "type"},
-            })
-        elif event_type == "input_request":
-            # 빌드 20: input_request는 session-events 스트림에 broadcast됨.
-            # orch-server PushNotifier가 받아 디바이스 알림을 발사할 수 있도록
-            # 별도 메시지 타입으로 forwarding한다 (없으면 worker→orch 경로 누락).
-            await self._send({
-                "type": "input_request",
-                **{k: v for k, v in event.items() if k != "type"},
-            })
-
-    # ─── Command Dispatch ───────────────────────────
-
-    async def _handle_command(self, cmd: dict) -> None:
-        """소울스트림에서 받은 명령을 TaskManager 메서드로 라우팅."""
-        cmd_type = cmd.get("type", "")
-        request_id = cmd.get("requestId", "")
-
-        try:
-            match cmd_type:
-                case "create_session":
-                    await self._handle_create_session(cmd)
-                case "intervene":
-                    await self._handle_intervene(cmd)
-                case "respond":
-                    await self._handle_respond(cmd)
-                case "list_sessions":
-                    await self._handle_list_sessions(cmd)
-                case "health_check":
-                    await self._handle_health_check(cmd)
-                case "subscribe_events":
-                    session_id_for_sub = cmd.get("agentSessionId", "")
-                    old_task = self._stream_tasks.get(session_id_for_sub)
-                    if old_task and not old_task.done():
-                        old_task.cancel()
-                    task = asyncio.create_task(
-                        self._handle_subscribe_events(cmd),
-                        name=f"upstream-subscribe-{session_id_for_sub}",
-                    )
-                    self._stream_tasks[session_id_for_sub] = task
-                case "claude_auth_status":
-                    await self._send(handle_auth_status(request_id, CMD_CLAUDE_AUTH_STATUS))
-                case "claude_auth_set_token":
-                    resp, err = handle_auth_set_token(cmd, request_id, CMD_CLAUDE_AUTH_SET_TOKEN)
-                    if err:
-                        await self._send_error(err, request_id=request_id, command_type=cmd_type)
-                    else:
-                        await self._send(resp)
-                case "claude_auth_delete_token":
-                    await self._send(handle_auth_delete_token(request_id, CMD_CLAUDE_AUTH_DELETE_TOKEN))
-                case "claude_auth_get_usage":
-                    await self._send(await handle_auth_api_request(
-                        request_id, CMD_CLAUDE_AUTH_GET_USAGE, ANTHROPIC_USAGE_URL,
-                    ))
-                case "claude_auth_get_profile":
-                    await self._send(await handle_auth_api_request(
-                        request_id, CMD_CLAUDE_AUTH_GET_PROFILE, ANTHROPIC_PROFILE_URL,
-                    ))
-                case _:
-                    await self._send_error(
-                        f"Unknown command type: {cmd_type}",
-                        request_id=request_id,
-                        command_type=cmd_type,
-                    )
-        except Exception as e:
-            logger.exception("Error handling command %s", cmd_type)
-            await self._send_error(
-                str(e),
-                request_id=request_id,
-                command_type=cmd_type,
-            )
-
-    async def _handle_create_session(self, cmd: dict) -> None:
-        """세션 생성 명령 처리."""
-        try:
-            task = await self._tm.create_task(
-                prompt=cmd["prompt"],
-                agent_session_id=cmd.get("agentSessionId"),
-                allowed_tools=cmd.get("allowedTools"),
-                disallowed_tools=cmd.get("disallowedTools"),
-                use_mcp=cmd.get("use_mcp") if cmd.get("use_mcp") is not None else cmd.get("useMcp", True),
-                context=cmd.get("context"),
-                context_items=cmd.get("context_items"),
-                extra_context_items=cmd.get("extra_context_items"),
-                profile_id=cmd.get("profile"),
-                folder_id=cmd.get("folderId"),
-                system_prompt=cmd.get("systemPrompt"),
-                oauth_token=cmd.get("oauth_token"),
-                caller_session_id=cmd.get("caller_session_id"),
-                caller_info=cmd.get("caller_info"),
-                model=cmd.get("model"),
-            )
-        except ValueError as e:
-            await self._send_error(str(e), request_id=cmd.get("requestId", ""))
-            return
-        session_id = task.agent_session_id
-
-        # 실행 시작
-        await self._tm.start_execution(
-            agent_session_id=session_id,
-            claude_runner=self._engine,
-            resource_manager=self._rm,
-        )
-
-        # 이벤트 스트리밍 시작
-        stream_task = asyncio.create_task(
-            self._stream_events(session_id),
-            name=f"upstream-stream-{session_id}",
-        )
-        self._stream_tasks[session_id] = stream_task
-
-        # 응답 전송. 세션 정보는 SessionBroadcaster 경로로도 전달됨.
-        request_id = cmd.get("requestId", "")
-        if request_id:
-            await self._send({
-                "type": EVT_SESSION_CREATED,
-                "agentSessionId": session_id,
-                "requestId": request_id,
-            })
-
-    async def _handle_intervene(self, cmd: dict) -> None:
-        """개입 명령 처리."""
-        session_id = cmd.get("agentSessionId") or cmd.get("session_id", "")
-        result = await self._tm.add_intervention(
-            agent_session_id=session_id,
-            text=cmd["text"],
-            user=cmd.get("user", "upstream"),
-            attachment_paths=cmd.get("attachment_paths") or None,  # soulstream-server에서 전달한 파일 경로
-        )
-
-        # 오케스트레이터에 ACK 전송 — requestId가 있어야 Future.set_result()가 실행된다.
-        # 없으면 오케스트레이터가 30초 타임아웃 후 TimeoutError를 낸다.
-        request_id = cmd.get("requestId", "")
-        if request_id:
-            await self._send({
-                "type": "intervene_ack",
-                "requestId": request_id,
-                "status": "ok",
-            })
-
-        # auto-resume 시 실행 재시작
-        if result.get("auto_resumed"):
-            await self._tm.start_execution(
-                agent_session_id=session_id,
-                claude_runner=self._engine,
-                resource_manager=self._rm,
-            )
-            # 이벤트 스트리밍이 없으면 시작
-            if session_id not in self._stream_tasks or self._stream_tasks[session_id].done():
-                stream_task = asyncio.create_task(
-                    self._stream_events(session_id),
-                    name=f"upstream-stream-{session_id}",
-                )
-                self._stream_tasks[session_id] = stream_task
-
-    async def _handle_respond(self, cmd: dict) -> None:
-        """AskUserQuestion 응답 처리.
-
-        cmd['requestId']는 WS 명령 ID(orch-server _send_command가 Future 매칭에 사용).
-        cmd['inputRequestId']는 input_request의 request_id (deliver_input_response 인자).
-        구버전 호환을 위해 'request_id' snake_case도 fallback으로 받는다.
-
-        ACK 누락 시 orch-server _send_command가 30초 타임아웃에 걸린다.
-        동일 ACK 패턴: _handle_intervene (line 482).
-        """
-        self._tm.deliver_input_response(
-            agent_session_id=cmd.get("agentSessionId") or cmd.get("session_id", ""),
-            request_id=(
-                cmd.get("inputRequestId")
-                or cmd.get("request_id", "")
-            ),
-            answers=cmd["answers"],
-        )
-
-        # 오케스트레이터에 ACK — requestId가 있어야 Future.set_result()가 실행된다.
-        request_id = cmd.get("requestId", "")
-        if request_id:
-            await self._send({
-                "type": "respond_ack",
-                "requestId": request_id,
-                "status": "ok",
-            })
-
-    async def _handle_list_sessions(self, cmd: dict) -> None:
-        """세션 목록 반환."""
-        sessions, total = await self._tm.get_all_sessions()
-        await self._send({
-            "type": EVT_SESSIONS_UPDATE,
-            "sessions": sessions,
-            "total": total,
-            "requestId": cmd.get("requestId", ""),
-        })
-
-    async def _handle_health_check(self, cmd: dict) -> None:
-        """헬스체크 응답."""
-        stats = self._rm.get_stats()
-        await self._send({
-            "type": EVT_HEALTH_STATUS,
-            "runners": stats,
-            "node_id": self._node_id,
-            "requestId": cmd.get("requestId", ""),
-        })
-
-    # ─── Event Streaming ────────────────────────────
-
-    async def _relay_events(self, session_id: str) -> None:
-        """TaskManager 이벤트를 WebSocket으로 relay하는 공통 루프.
-
-        complete/error에서 종료하지 않는다.
-        세션이 완료된 후 새 turn이 시작되면 동일 스트림으로 이벤트가 계속 전달돼야 한다.
-        세션 종료는 None 센티넬 또는 WebSocket 연결 해제로 처리한다.
-        """
-        queue: asyncio.Queue = asyncio.Queue()
-        await self._tm.add_listener(session_id, queue)
-
-        try:
-            while self._running:
-                try:
-                    event = await asyncio.wait_for(queue.get(), timeout=30.0)
-                except asyncio.TimeoutError:
-                    continue
-
-                if event is None:
-                    break  # 세션 종료 시그널
-
-                await self._send({
-                    "type": EVT_EVENT,
-                    "agentSessionId": session_id,
-                    "event": event,
-                })
-        except asyncio.CancelledError:
-            pass
-        except Exception:
-            logger.exception("Error relaying events for session %s", session_id)
-        finally:
-            await self._tm.remove_listener(session_id, queue)
-            if self._stream_tasks.get(session_id) is asyncio.current_task():
-                self._stream_tasks.pop(session_id, None)
-
-    async def _stream_events(self, session_id: str) -> None:
-        """create_session에서 시작되는 이벤트 스트리밍."""
-        await self._relay_events(session_id)
-
-    async def _handle_subscribe_events(self, cmd: dict) -> None:
-        """subscribe_events 명령 처리: 기존 스트림 교체 후 라이브 이벤트 relay.
-
-        DB 재생은 sessions.py(soulstream-server)가 이미 수행하므로 생략하고
-        라이브 이벤트만 relay한다.
-        """
-        session_id = cmd.get("agentSessionId") or cmd.get("session_id", "")
-        if not session_id:
-            return
-
-        # 기존 스트림이 실행 중이면 중단 — 이중 브로드캐스트 방지
-        existing_task = self._stream_tasks.pop(session_id, None)
-        if existing_task and not existing_task.done():
-            existing_task.cancel()
-            try:
-                await existing_task
-            except asyncio.CancelledError:
-                pass
-
-        # _handle_subscribe_events 자신도 _stream_tasks에 등록해야
-        # _handle_intervene이 중복으로 _stream_events를 생성하지 않는다.
-        self._stream_tasks[session_id] = asyncio.current_task()  # type: ignore[assignment]
-
-        await self._relay_events(session_id)
 
     # ─── Helpers ────────────────────────────────────
 
@@ -658,7 +314,7 @@ class UpstreamAdapter:
 
     async def _cleanup(self) -> None:
         """연결 정리."""
-        await self._stop_broadcast()
+        await self._relay.stop_broadcast()
 
         for task in self._stream_tasks.values():
             task.cancel()
@@ -667,4 +323,5 @@ class UpstreamAdapter:
         if self._session and not self._session.closed:
             await self._session.close()
             self._session = None
+        # shutdown 후 stale ws 참조를 막기 위해 명시적으로 정리.
         self._ws = None

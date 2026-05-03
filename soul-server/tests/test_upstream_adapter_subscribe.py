@@ -76,7 +76,7 @@ class TestHandleSubscribeEvents:
             "agentSessionId": "session-1",
         }
 
-        await adapter._handle_subscribe_events(cmd)
+        await adapter._dispatcher._handle_subscribe_events(cmd)
 
         sent = [call.args[0] for call in adapter._ws.send_json.call_args_list]
         # None 센티넬 이전의 이벤트 2개만 전송
@@ -116,7 +116,7 @@ class TestHandleSubscribeEvents:
         adapter._running = True
 
         cmd = {"type": CMD_SUBSCRIBE_EVENTS, "agentSessionId": "s1"}
-        await adapter._handle_subscribe_events(cmd)
+        await adapter._dispatcher._handle_subscribe_events(cmd)
 
         sent = [call.args[0] for call in adapter._ws.send_json.call_args_list]
         # complete 이후 user_message까지 2개 전송
@@ -144,7 +144,7 @@ class TestHandleSubscribeEvents:
         adapter._running = True
 
         cmd = {"type": CMD_SUBSCRIBE_EVENTS, "agentSessionId": "s1"}
-        await adapter._handle_subscribe_events(cmd)
+        await adapter._dispatcher._handle_subscribe_events(cmd)
 
         sent = [call.args[0] for call in adapter._ws.send_json.call_args_list]
         assert len(sent) == 1
@@ -181,7 +181,7 @@ class TestSubscribeEventsRouting:
             "agentSessionId": "s-route-1",
         }
 
-        await adapter._handle_command(cmd)
+        await adapter._dispatcher.dispatch(cmd)
         # 에러 메시지가 전송되지 않았는지 확인
         if adapter._ws.send_json.called:
             for call in adapter._ws.send_json.call_args_list:
@@ -217,7 +217,7 @@ class TestSubscribeEventsRouting:
             "agentSessionId": "s-cancel-test",
         }
 
-        await adapter._handle_command(cmd)
+        await adapter._dispatcher.dispatch(cmd)
 
         # _handle_subscribe_events 태스크가 실행될 때까지 이벤트 루프를 돌린다
         for _ in range(5):

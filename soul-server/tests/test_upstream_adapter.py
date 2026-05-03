@@ -100,7 +100,7 @@ class TestHandleCreateSession:
             "requestId": "req-1",
         }
 
-        await adapter._handle_command(cmd)
+        await adapter._dispatcher.dispatch(cmd)
 
         # TaskManager.create_task 호출 확인
         tm.create_task.assert_awaited_once()
@@ -146,7 +146,7 @@ class TestHandleCreateSession:
             "request_id": "req-2",
         }
 
-        await adapter._handle_command(cmd)
+        await adapter._dispatcher.dispatch(cmd)
 
         call_kwargs = tm.create_task.call_args.kwargs
         assert call_kwargs["allowed_tools"] == ["Read", "Grep"]
@@ -180,7 +180,7 @@ class TestHandleCreateSession:
             "caller_info": caller_info,
         }
 
-        await adapter._handle_command(cmd)
+        await adapter._dispatcher.dispatch(cmd)
 
         call_kwargs = tm.create_task.call_args.kwargs
         assert call_kwargs["caller_info"] == caller_info
@@ -205,7 +205,7 @@ class TestHandleCreateSession:
             "prompt": "Test",
         }
 
-        await adapter._handle_command(cmd)
+        await adapter._dispatcher.dispatch(cmd)
 
         call_kwargs = tm.create_task.call_args.kwargs
         assert call_kwargs["caller_info"] is None
@@ -231,7 +231,7 @@ class TestHandleIntervene:
             "user": "admin",
         }
 
-        await adapter._handle_command(cmd)
+        await adapter._dispatcher.dispatch(cmd)
 
         tm.add_intervention.assert_awaited_once_with(
             agent_session_id="session-1",
@@ -261,7 +261,7 @@ class TestHandleIntervene:
             "user": "system",
         }
 
-        await adapter._handle_command(cmd)
+        await adapter._dispatcher.dispatch(cmd)
 
         tm.start_execution.assert_awaited_once()
 
@@ -286,7 +286,7 @@ class TestHandleRespond:
             "answers": {"q1": "yes"},
         }
 
-        await adapter._handle_command(cmd)
+        await adapter._dispatcher.dispatch(cmd)
 
         tm.deliver_input_response.assert_called_once_with(
             agent_session_id="session-1",
@@ -323,7 +323,7 @@ class TestHandleRespond:
             "answers": {"q": "a"},
         }
 
-        await adapter._handle_command(cmd)
+        await adapter._dispatcher.dispatch(cmd)
 
         # deliver_input_response에는 inputRequestId가 전달되어야 한다
         tm.deliver_input_response.assert_called_once_with(
@@ -361,7 +361,7 @@ class TestHandleRespond:
             "answers": {"q": "a"},
         }
 
-        await adapter._handle_command(cmd)
+        await adapter._dispatcher.dispatch(cmd)
 
         tm.deliver_input_response.assert_called_once_with(
             agent_session_id="sess-2",
@@ -391,7 +391,7 @@ class TestHandleListSessions:
             "requestId": "req-list-1",
         }
 
-        await adapter._handle_command(cmd)
+        await adapter._dispatcher.dispatch(cmd)
 
         adapter._ws.send_json.assert_awaited_once()
         sent = adapter._ws.send_json.call_args.args[0]
@@ -420,7 +420,7 @@ class TestHandleHealthCheck:
             "requestId": "req-health-1",
         }
 
-        await adapter._handle_command(cmd)
+        await adapter._dispatcher.dispatch(cmd)
 
         sent = adapter._ws.send_json.call_args.args[0]
         assert sent["type"] == EVT_HEALTH_STATUS
@@ -444,7 +444,7 @@ class TestUnknownCommand:
             "request_id": "req-x",
         }
 
-        await adapter._handle_command(cmd)
+        await adapter._dispatcher.dispatch(cmd)
 
         sent = adapter._ws.send_json.call_args.args[0]
         assert sent["type"] == EVT_ERROR
@@ -485,7 +485,7 @@ class TestStreamEvents:
         adapter._ws.send_json = AsyncMock()
         adapter._running = True
 
-        await adapter._stream_events("session-1")
+        await adapter._relay.stream_events("session-1")
 
         # None 센티넬 이전의 모든 이벤트(5개)가 전달돼야 한다
         sent_messages = [
@@ -619,7 +619,7 @@ class TestBroadcastSessionChanges:
         adapter._ws.closed = False
         adapter._ws.send_json = AsyncMock()
 
-        await adapter._dispatch_broadcast_event({
+        await adapter._relay._dispatch_broadcast_event({
             "type": "session_created",
             "session": {
                 "agent_session_id": "new-session-1",
@@ -641,7 +641,7 @@ class TestBroadcastSessionChanges:
         adapter._ws.closed = False
         adapter._ws.send_json = AsyncMock()
 
-        await adapter._dispatch_broadcast_event({
+        await adapter._relay._dispatch_broadcast_event({
             "type": "session_updated",
             "agent_session_id": "session-1",
             "status": "completed",
@@ -661,7 +661,7 @@ class TestBroadcastSessionChanges:
         adapter._ws.closed = False
         adapter._ws.send_json = AsyncMock()
 
-        await adapter._dispatch_broadcast_event({
+        await adapter._relay._dispatch_broadcast_event({
             "type": "session_updated",
             "agent_session_id": "session-1",
             "status": "running",
@@ -685,7 +685,7 @@ class TestBroadcastSessionChanges:
         adapter._ws.closed = False
         adapter._ws.send_json = AsyncMock()
 
-        await adapter._dispatch_broadcast_event({
+        await adapter._relay._dispatch_broadcast_event({
             "type": "session_deleted",
             "agent_session_id": "session-to-delete",
         })
@@ -705,15 +705,15 @@ class TestStartStopBroadcast:
         adapter = _make_adapter(session_broadcaster=bc)
         adapter._running = True
 
-        await adapter._start_broadcast()
+        await adapter._relay.start_broadcast()
 
         bc.add_client.assert_called_once()
-        assert adapter._broadcast_queue is not None
-        assert adapter._broadcast_task is not None
+        assert adapter._relay._broadcast_queue is not None
+        assert adapter._relay._broadcast_task is not None
 
         # 정리
         adapter._running = False
-        await adapter._stop_broadcast()
+        await adapter._relay.stop_broadcast()
 
     @pytest.mark.asyncio
     async def test_stop_broadcast_removes_listener(self):
@@ -722,21 +722,21 @@ class TestStartStopBroadcast:
         adapter = _make_adapter(session_broadcaster=bc)
         adapter._running = True
 
-        await adapter._start_broadcast()
-        queue_ref = adapter._broadcast_queue
+        await adapter._relay.start_broadcast()
+        queue_ref = adapter._relay._broadcast_queue
 
         adapter._running = False
-        await adapter._stop_broadcast()
+        await adapter._relay.stop_broadcast()
 
         bc.remove_client.assert_called_once_with(queue_ref)
-        assert adapter._broadcast_queue is None
-        assert adapter._broadcast_task is None
+        assert adapter._relay._broadcast_queue is None
+        assert adapter._relay._broadcast_task is None
 
     @pytest.mark.asyncio
     async def test_stop_broadcast_idempotent(self):
         """broadcast가 없는 상태에서 _stop_broadcast 호출해도 에러 없음."""
         adapter = _make_adapter()
-        await adapter._stop_broadcast()  # 에러 없이 통과
+        await adapter._relay.stop_broadcast()  # 에러 없이 통과
 
 
 class TestCommandErrorHandling:
@@ -758,7 +758,7 @@ class TestCommandErrorHandling:
             "requestId": "req-err",
         }
 
-        await adapter._handle_command(cmd)
+        await adapter._dispatcher.dispatch(cmd)
 
         sent = adapter._ws.send_json.call_args.args[0]
         assert sent["type"] == EVT_ERROR
@@ -803,7 +803,7 @@ class TestRegistration:
         ):
             # _connect_and_serve 전체 대신 등록 메시지 조립 부분만 추출하여 _send 호출
             # adapter._ws.send_json으로 보내는 첫 메시지가 등록 메시지
-            with patch.object(adapter, "_start_broadcast", AsyncMock()), \
+            with patch.object(adapter._relay, "start_broadcast", AsyncMock()), \
                  patch.object(adapter, "_send_initial_sessions", AsyncMock()), \
                  patch.object(adapter, "_session", create=True) as mock_session:
                 mock_ws = MagicMock()
@@ -846,7 +846,7 @@ class TestRegistration:
         adapter._ws.closed = False
         adapter._ws.send_json = AsyncMock()
 
-        with patch.object(adapter, "_start_broadcast", AsyncMock()), \
+        with patch.object(adapter._relay, "start_broadcast", AsyncMock()), \
              patch.object(adapter, "_send_initial_sessions", AsyncMock()), \
              patch.object(adapter, "_session", create=True) as mock_session:
             mock_ws = MagicMock()
@@ -877,7 +877,7 @@ class TestRegistration:
         adapter._user_name = "서소영"
         adapter._user_portrait_path = str(portrait_file)
 
-        with patch.object(adapter, "_start_broadcast", AsyncMock()), \
+        with patch.object(adapter._relay, "start_broadcast", AsyncMock()), \
              patch.object(adapter, "_send_initial_sessions", AsyncMock()), \
              patch.object(adapter, "_session", create=True) as mock_session:
             mock_ws = MagicMock()
@@ -906,7 +906,7 @@ class TestRegistration:
         adapter._user_name = ""
         adapter._user_portrait_path = ""
 
-        with patch.object(adapter, "_start_broadcast", AsyncMock()), \
+        with patch.object(adapter._relay, "start_broadcast", AsyncMock()), \
              patch.object(adapter, "_send_initial_sessions", AsyncMock()), \
              patch.object(adapter, "_session", create=True) as mock_session:
             mock_ws = MagicMock()
@@ -931,7 +931,7 @@ class TestRegistration:
         adapter._user_name = "서소영"
         adapter._user_portrait_path = ""
 
-        with patch.object(adapter, "_start_broadcast", AsyncMock()), \
+        with patch.object(adapter._relay, "start_broadcast", AsyncMock()), \
              patch.object(adapter, "_send_initial_sessions", AsyncMock()), \
              patch.object(adapter, "_session", create=True) as mock_session:
             mock_ws = MagicMock()
@@ -1068,9 +1068,338 @@ class TestUpstreamAuthHeader:
 
         fake_settings = SimpleNamespace(is_production=False)
         with patch.object(config_module, "get_settings", lambda: fake_settings), \
-             patch.object(adapter, "_start_broadcast", AsyncMock()), \
+             patch.object(adapter._relay, "start_broadcast", AsyncMock()), \
              patch.object(adapter, "_send_initial_sessions", AsyncMock()):
             await adapter._connect_and_serve()
 
         # 연결 성공 시 플래그가 리셋되어야 한다
         assert adapter._auth_warned is False
+
+
+# ─── Hotspot Coverage Tests (P0-2) ─────────────────
+
+
+class TestClaudeAuthCommands:
+    """_handle_command의 claude_auth_* 분기 커버리지 보충."""
+
+    @pytest.mark.asyncio
+    async def test_claude_auth_status(self):
+        adapter = _make_adapter()
+        adapter._ws = MagicMock()
+        adapter._ws.closed = False
+        adapter._ws.send_json = AsyncMock()
+
+        with patch("soul_server.upstream.command_handler.handle_auth_status", return_value={"type": "claude_auth_status", "requestId": "r1"}) as mock_fn:
+            await adapter._dispatcher.dispatch({"type": "claude_auth_status", "requestId": "r1"})
+            mock_fn.assert_called_once()
+        adapter._ws.send_json.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_claude_auth_set_token_success(self):
+        adapter = _make_adapter()
+        adapter._ws = MagicMock()
+        adapter._ws.closed = False
+        adapter._ws.send_json = AsyncMock()
+
+        resp = {"type": "claude_auth_set_token", "requestId": "r2", "status": "ok"}
+        with patch("soul_server.upstream.command_handler.handle_auth_set_token", return_value=(resp, None)):
+            await adapter._dispatcher.dispatch({"type": "claude_auth_set_token", "requestId": "r2", "token": "abc"})
+        # 성공이면 resp 전송, _send_error 아님
+        call_data = adapter._ws.send_json.call_args[0][0]
+        assert call_data["status"] == "ok"
+
+    @pytest.mark.asyncio
+    async def test_claude_auth_set_token_error(self):
+        adapter = _make_adapter()
+        adapter._ws = MagicMock()
+        adapter._ws.closed = False
+        adapter._ws.send_json = AsyncMock()
+
+        with patch("soul_server.upstream.command_handler.handle_auth_set_token", return_value=(None, "invalid token")):
+            await adapter._dispatcher.dispatch({"type": "claude_auth_set_token", "requestId": "r3"})
+        # 에러면 _send_error 호출 → EVT_ERROR 메시지
+        call_data = adapter._ws.send_json.call_args[0][0]
+        assert call_data["type"] == EVT_ERROR
+        assert "invalid token" in call_data["message"]
+
+    @pytest.mark.asyncio
+    async def test_claude_auth_delete_token(self):
+        adapter = _make_adapter()
+        adapter._ws = MagicMock()
+        adapter._ws.closed = False
+        adapter._ws.send_json = AsyncMock()
+
+        with patch("soul_server.upstream.command_handler.handle_auth_delete_token", return_value={"type": "claude_auth_delete_token", "requestId": "r4"}) as mock_fn:
+            await adapter._dispatcher.dispatch({"type": "claude_auth_delete_token", "requestId": "r4"})
+            mock_fn.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_claude_auth_get_usage(self):
+        adapter = _make_adapter()
+        adapter._ws = MagicMock()
+        adapter._ws.closed = False
+        adapter._ws.send_json = AsyncMock()
+
+        with patch("soul_server.upstream.command_handler.handle_auth_api_request", AsyncMock(return_value={"type": "usage", "requestId": "r5"})):
+            await adapter._dispatcher.dispatch({"type": "claude_auth_get_usage", "requestId": "r5"})
+        adapter._ws.send_json.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_claude_auth_get_profile(self):
+        adapter = _make_adapter()
+        adapter._ws = MagicMock()
+        adapter._ws.closed = False
+        adapter._ws.send_json = AsyncMock()
+
+        with patch("soul_server.upstream.command_handler.handle_auth_api_request", AsyncMock(return_value={"type": "profile", "requestId": "r6"})):
+            await adapter._dispatcher.dispatch({"type": "claude_auth_get_profile", "requestId": "r6"})
+        adapter._ws.send_json.assert_called_once()
+
+
+class TestRelayEventsEdgeCases:
+    """_relay_events의 timeout/error 경로 커버리지 보충."""
+
+    @pytest.mark.asyncio
+    async def test_relay_events_timeout_continues(self):
+        """큐가 비어 timeout 발생 시 continue → 다음 iteration."""
+        tm = MagicMock()
+        tm.add_listener = AsyncMock()
+        tm.remove_listener = AsyncMock()
+        adapter = _make_adapter(task_manager=tm)
+        adapter._running = True
+        adapter._ws = MagicMock()
+        adapter._ws.closed = False
+        adapter._ws.send_json = AsyncMock()
+
+        # _relay_events를 짧은 시간 실행하고 취소
+        task = asyncio.create_task(adapter._relay.relay_events("sess-timeout"))
+        await asyncio.sleep(0.1)  # timeout (30s) 전에 취소하지만 루프 진입은 됨
+        adapter._running = False
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+        tm.remove_listener.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_relay_events_exception_logged_and_cleanup(self):
+        """큐에서 예외 발생 시 로깅 후 finally에서 remove_listener 호출."""
+        tm = MagicMock()
+        tm.add_listener = AsyncMock()
+        tm.remove_listener = AsyncMock()
+        adapter = _make_adapter(task_manager=tm)
+        adapter._running = True
+        adapter._ws = MagicMock()
+        adapter._ws.closed = False
+
+        # send_json에서 예외 발생하도록 mock
+        adapter._ws.send_json = AsyncMock(side_effect=RuntimeError("WS broken"))
+
+        # 큐에 이벤트를 넣어 send 시도 → 예외 → 로깅 → finally
+        queue_holder = {}
+        original_add = tm.add_listener
+
+        async def capture_add(sid, q):
+            queue_holder["q"] = q
+
+        tm.add_listener = AsyncMock(side_effect=capture_add)
+
+        task = asyncio.create_task(adapter._relay.relay_events("sess-err"))
+        await asyncio.sleep(0.05)
+
+        if "q" in queue_holder:
+            await queue_holder["q"].put({"type": "text_delta", "_event_id": 1})
+            await asyncio.sleep(0.1)
+
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+        # remove_listener 호출 확인
+        assert tm.remove_listener.called
+
+
+class TestSubscribeEventsEdge:
+    """_handle_subscribe_events 빈 session_id early return."""
+
+    @pytest.mark.asyncio
+    async def test_empty_session_id_returns_early(self):
+        adapter = _make_adapter()
+        adapter._ws = MagicMock()
+        adapter._ws.closed = False
+        adapter._ws.send_json = AsyncMock()
+
+        # session_id 없는 명령 → early return, 크래시 없음
+        await adapter._dispatcher._handle_subscribe_events({"type": "subscribe_events"})
+        # send_json 호출 없음 (에러 응답도 안 보냄)
+        adapter._ws.send_json.assert_not_called()
+
+
+class TestCreateSessionValueError:
+    """_handle_create_session ValueError → _send_error."""
+
+    @pytest.mark.asyncio
+    async def test_value_error_sends_error_response(self):
+        tm = MagicMock()
+        tm.create_task = AsyncMock(side_effect=ValueError("bad profile"))
+        adapter = _make_adapter(task_manager=tm)
+        adapter._ws = MagicMock()
+        adapter._ws.closed = False
+        adapter._ws.send_json = AsyncMock()
+
+        await adapter._dispatcher._handle_create_session({
+            "type": "create_session",
+            "prompt": "hello",
+            "requestId": "req-val",
+        })
+
+        call_data = adapter._ws.send_json.call_args[0][0]
+        assert call_data["type"] == EVT_ERROR
+        assert "bad profile" in call_data["message"]
+
+
+class TestDispatchBroadcastEvent:
+    """_dispatch_broadcast_event 미커버 분기."""
+
+    @pytest.mark.asyncio
+    async def test_session_created_with_folder_id(self):
+        """session_created + folder_id 분기 (L359-360)."""
+        adapter = _make_adapter()
+        adapter._ws = MagicMock()
+        adapter._ws.closed = False
+        adapter._ws.send_json = AsyncMock()
+
+        await adapter._relay._dispatch_broadcast_event({
+            "type": "session_created",
+            "session": {"agent_session_id": "sess-1"},
+            "folder_id": "folder-abc",
+        })
+
+        call_data = adapter._ws.send_json.call_args[0][0]
+        assert call_data["type"] == EVT_SESSION_CREATED
+        assert call_data["folderId"] == "folder-abc"
+
+    @pytest.mark.asyncio
+    async def test_session_deleted(self):
+        """session_deleted 분기 (L367-371)."""
+        adapter = _make_adapter()
+        adapter._ws = MagicMock()
+        adapter._ws.closed = False
+        adapter._ws.send_json = AsyncMock()
+
+        await adapter._relay._dispatch_broadcast_event({
+            "type": "session_deleted",
+            "agent_session_id": "sess-del",
+        })
+
+        call_data = adapter._ws.send_json.call_args[0][0]
+        assert call_data["type"] == EVT_SESSION_DELETED
+        assert call_data["agent_session_id"] == "sess-del"
+
+    @pytest.mark.asyncio
+    async def test_input_request_forwarded(self):
+        """input_request 분기 (L372-379)."""
+        adapter = _make_adapter()
+        adapter._ws = MagicMock()
+        adapter._ws.closed = False
+        adapter._ws.send_json = AsyncMock()
+
+        await adapter._relay._dispatch_broadcast_event({
+            "type": "input_request",
+            "agent_session_id": "sess-ir",
+            "request_id": "ir-1",
+        })
+
+        call_data = adapter._ws.send_json.call_args[0][0]
+        assert call_data["type"] == "input_request"
+        assert call_data["agent_session_id"] == "sess-ir"
+
+
+class TestSubscribeBackgroundDispatch:
+    """[P0-2 회귀 방지] subscribe_events가 dispatch loop를 블록하지 않는지 검증.
+
+    code-reviewer 2라운드에서 발견한 [치명적] 결함의 회귀 방지.
+    main에서는 _handle_command가 subscribe_events만 asyncio.create_task로 분리했지만,
+    Phase 2 분리 초안에서는 dispatch가 모든 핸들러를 직접 await하여 블록되었다.
+    background_handlers 분기로 해소 + 본 테스트로 보호.
+    """
+
+    @pytest.mark.asyncio
+    async def test_subscribe_events_does_not_block_dispatch(self):
+        """subscribe_events가 처리 중일 때 다른 명령(health_check)이 즉시 처리된다."""
+        tm = MagicMock()
+        # add_listener는 큐를 받아서 영원히 대기(None 센티넬을 안 넣음)
+        tm.add_listener = AsyncMock()
+        tm.remove_listener = AsyncMock()
+        tm.get_all_sessions = AsyncMock(return_value=([], 0))
+
+        adapter = _make_adapter(task_manager=tm)
+        adapter._running = True
+        adapter._ws = MagicMock()
+        adapter._ws.closed = False
+        adapter._ws.send_json = AsyncMock()
+
+        # subscribe_events 발사 (백그라운드 task로 분리)
+        await adapter._dispatcher.dispatch({
+            "type": "subscribe_events",
+            "agentSessionId": "sess-bg",
+            "requestId": "r-sub",
+        })
+
+        # subscribe task가 stream_tasks에 등록되었는지 확인
+        assert "sess-bg" in adapter._stream_tasks
+        sub_task = adapter._stream_tasks["sess-bg"]
+        assert not sub_task.done()  # 백그라운드에서 진행 중
+
+        # 즉시 다른 명령(health_check) — 블로킹 없이 처리되어야 함
+        await asyncio.wait_for(
+            adapter._dispatcher.dispatch({
+                "type": "health_check",
+                "requestId": "r-health",
+            }),
+            timeout=0.5,  # subscribe가 블록했다면 timeout
+        )
+
+        # health_status 응답이 송신됨
+        sent_types = [c.args[0]["type"] for c in adapter._ws.send_json.call_args_list]
+        assert EVT_HEALTH_STATUS in sent_types
+
+        # cleanup
+        sub_task.cancel()
+        try:
+            await sub_task
+        except asyncio.CancelledError:
+            pass
+
+
+class TestCleanup:
+    """_cleanup 커버리지 (L659-669)."""
+
+    @pytest.mark.asyncio
+    async def test_cleanup_stops_broadcast_and_closes_session(self):
+        adapter = _make_adapter()
+        # broadcast task mock
+        adapter._relay._broadcast_task = MagicMock()
+        adapter._relay._broadcast_task.done.return_value = True
+        adapter._relay._broadcast_queue = asyncio.Queue()
+
+        # stream tasks mock
+        mock_task = MagicMock()
+        mock_task.cancel = MagicMock()
+        adapter._stream_tasks = {"sess-1": mock_task}
+
+        # session mock — _cleanup이 close 후 None으로 설정하므로 참조 보존
+        mock_session = MagicMock()
+        mock_session.closed = False
+        mock_session.close = AsyncMock()
+        adapter._session = mock_session
+
+        await adapter._cleanup()
+
+        assert adapter._stream_tasks == {}
+        mock_session.close.assert_called_once()
+        assert adapter._session is None
