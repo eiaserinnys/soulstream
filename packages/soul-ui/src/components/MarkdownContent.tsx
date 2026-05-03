@@ -128,18 +128,20 @@ const components: Components = {
   ),
 
   // 테이블
+  // 다크모드 가독성: 컨테이너 bg-card(거의 검정) + 보더, 헤더 bg-input(8% white)로 강조,
+  // td/th에 text-foreground 명시하여 부모 컨텍스트 무관하게 다크/라이트 모두 또렷.
   table: ({ children }) => (
-    <div className="overflow-auto my-2">
+    <div className="overflow-auto my-2 rounded border border-border bg-card">
       <table className="text-xs border-collapse w-full">{children}</table>
     </div>
   ),
   th: ({ children }) => (
-    <th className="border border-border px-2 py-1 text-left font-semibold bg-input">
+    <th className="border border-border px-2 py-1 text-left font-semibold bg-input text-foreground">
       {children}
     </th>
   ),
   td: ({ children }) => (
-    <td className="border border-border px-2 py-1">{children}</td>
+    <td className="border border-border px-2 py-1 text-foreground">{children}</td>
   ),
 };
 
@@ -180,6 +182,21 @@ const compactComponents: Components = {
     <blockquote className="border-l-2 border-muted-foreground/30 pl-2 my-1 text-muted-foreground italic">
       {children}
     </blockquote>
+  ),
+  // 테이블 (compact): 다크모드 토큰을 fullsize와 동일하게 적용 + 패딩만 컴팩트.
+  // 누락 시 ReactMarkdown 기본 HTML 렌더 → 다크모드에서 흰 배경 노출.
+  table: ({ children }) => (
+    <div className="overflow-auto my-1 rounded border border-border bg-card">
+      <table className="text-xs border-collapse w-full">{children}</table>
+    </div>
+  ),
+  th: ({ children }) => (
+    <th className="border border-border px-1.5 py-0.5 text-left font-semibold bg-input text-foreground">
+      {children}
+    </th>
+  ),
+  td: ({ children }) => (
+    <td className="border border-border px-1.5 py-0.5 text-foreground">{children}</td>
   ),
 };
 

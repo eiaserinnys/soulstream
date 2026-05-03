@@ -118,6 +118,20 @@ export interface DashboardState {
    */
   chatPrependedCount: number;
 
+  /**
+   * 마지막 prepend 시각 (performance.now() 기반). atBottom=true settle 가드용.
+   *
+   * react-virtuoso는 prepend로 firstItemIndex가 바뀐 직후 한 프레임 동안
+   * atBottom 판정이 흔들릴 수 있다 — 그 시점의 잘못된 atBottom=true 보고를
+   * 무시하기 위해 가장 최근 prepend 시각을 추적한다 (ChatView.follow-helpers
+   * decideFollowOnAtBottomChange의 prependAgeMs 인자).
+   *
+   * null = 직전 prepend 없음 (또는 세션 진입 후 첫 prepend 전).
+   * processHistoryEvents의 set() 안에서 chatPrependedCount와 함께 atomic
+   * 갱신되며, 세션 리셋 시 null로 돌아간다.
+   */
+  chatLastPrependAtMs: number | null;
+
   /** 마지막 트리 변경의 유형 — NodeGraph가 증분 업데이트 vs 전체 재빌드를 분기하는 기준 */
   treeChangeInfo: TreeChangeInfo | null;
 

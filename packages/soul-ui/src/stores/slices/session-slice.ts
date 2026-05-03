@@ -61,6 +61,7 @@ export type SessionSlice = Pick<
   | "tree"
   | "treeVersion"
   | "chatPrependedCount"
+  | "chatLastPrependAtMs"
   | "treeChangeInfo"
   | "lastEventId"
   | "totalSubtreeHeight"
@@ -99,6 +100,7 @@ function getSessionResetState() {
     tree: null as EventTreeNode | null,
     treeVersion: 0,
     chatPrependedCount: 0,
+    chatLastPrependAtMs: null as number | null,
     treeChangeInfo: null as TreeChangeInfo | null,
     lastEventId: 0,
     totalSubtreeHeight: 0,
@@ -124,6 +126,7 @@ export const createSessionSlice: StateCreator<
   tree: null,
   treeVersion: 0,
   chatPrependedCount: 0,
+  chatLastPrependAtMs: null,
   treeChangeInfo: null,
   lastEventId: 0,
   totalSubtreeHeight: 0,
@@ -341,6 +344,9 @@ export const createSessionSlice: StateCreator<
               // tree와 같은 set() 안에서 atomic 갱신 — Zustand subscribe 1회로
               // ChatView 1렌더 사이클 정합 보장 (async batching 무의존).
               chatPrependedCount: state.chatPrependedCount + addedGrouped,
+              // chatLastPrependAtMs는 chatPrependedCount의 정본 짝꿍 (atBottom=true
+              // settle 가드용). 항상 같은 set() 안에서 함께 갱신.
+              chatLastPrependAtMs: performance.now(),
             }
           : {}),
         lastEventId: result.maxEventId,
@@ -460,6 +466,7 @@ export const createSessionSlice: StateCreator<
       tree: null,
       treeVersion: 0,
       chatPrependedCount: 0,
+      chatLastPrependAtMs: null,
       treeChangeInfo: null,
       lastEventId: 0,
       totalSubtreeHeight: 0,

@@ -47,6 +47,12 @@ export function ChatView({ chatInputDisabled = false, isOtherNodeSession = false
    * 같은 set() 안에서 tree와 함께 갱신되므로 1렌더 사이클 정합이 보장된다.
    */
   const chatPrependedCount = useDashboardStore((s) => s.chatPrependedCount);
+  /**
+   * 마지막 prepend 시각 — atBottom=true settle 가드용 (decideFollowOnAtBottomChange).
+   * processHistoryEvents의 set() 안에서 chatPrependedCount와 함께 atomic 갱신되므로
+   * 이 selector도 chatPrependedCount와 같은 렌더 사이클에 갱신된다.
+   */
+  const chatLastPrependAtMs = useDashboardStore((s) => s.chatLastPrependAtMs);
   const llmContext = useLlmContext();
 
   // 옵션 D: 히스토리는 useMessageHistoryBuffer가 store.tree에 직접 통합한다.
@@ -209,15 +215,21 @@ export function ChatView({ chatInputDisabled = false, isOtherNodeSession = false
           // 부작용이 발생한다. follow 버튼 클릭 시 setIsFollowing(true)으로 다시 활성화.
           followOutput={isFollowing ? "auto" : false}
           atBottomStateChange={(atBottom) => {
-            // 세션 전환 직후 Virtuoso measure 깜빡임으로 atBottom=false가 일시적으로
-            // 보고될 수 있다. 안정화 임계값까지 false 보고를 무시 (헬퍼 default 사용).
+            // 두 가지 measure 깜빡임을 모두 가드한다:
+            //   - 세션 전환 직후 atBottom=false 깜빡임 (sessionMs 기반)
+            //   - prepend 직후 atBottom=true 깜빡임 (prependAgeMs 기반)
+            // 헬퍼가 null을 반환하면 isFollowing 변경하지 않음.
             const sessionMs = performance.now() - sessionStartedAtRef.current;
-            const next = decideFollowOnAtBottomChange(atBottom, sessionMs);
+            const prependAgeMs =
+              chatLastPrependAtMs === null
+                ? null
+                : performance.now() - chatLastPrependAtMs;
+            const next = decideFollowOnAtBottomChange(atBottom, sessionMs, prependAgeMs);
             if (next !== null) {
               setIsFollowing(next);
             }
-            // helper가 null 반환하는 경우는 atBottom=false일 때뿐이므로
-            // setShowNewMessage(false) 호출은 atBottom=true일 때만 발생 — 부작용 없음.
+            // showNewMessage는 atBottom=true 보고가 신뢰 가능한지와 무관하게
+            // 사용자가 끝에 닿았다는 raw 신호로만 끄면 충분.
             if (atBottom) setShowNewMessage(false);
           }}
           startReached={() => {
