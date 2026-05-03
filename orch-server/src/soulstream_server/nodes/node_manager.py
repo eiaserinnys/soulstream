@@ -20,9 +20,15 @@ ChangeListener = Callable[[str, str, dict | None], Coroutine[Any, Any, None]]
 class NodeManager:
     """연결된 모든 soul-server 노드를 추적."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, default_user_email: str = "") -> None:
         self._nodes: dict[str, NodeConnection] = {}
         self._change_listeners: list[ChangeListener] = []
+        # 빌드 20: soul-server `/api/dashboard/config` 응답에 email 필드가 없어
+        # PushNotifier가 user_email로 push_tokens를 조회 못 하는 케이스 fallback.
+        # single-user 시스템(allowed_email로 한 명만 OAuth 통과)에서는 이 fallback이
+        # 정확하다. 멀티유저 환경 도입 시 soul-server에 dash_user_email 필드 추가
+        # (atom: project > soulstream > TODO 등록).
+        self._default_user_email = default_user_email
 
     def add_change_listener(self, listener: ChangeListener) -> None:
         self._change_listeners.append(listener)
@@ -101,7 +107,7 @@ class NodeManager:
         # 사용자 정보: 등록 메시지에 포함된 경우 우선 사용 (에이전트 프로필과 동일 패턴)
         user_info = registration.get("user", {})
         if user_info:
-            node.set_user_info(user_info)
+            node.set_user_info(self._with_email_fallback(user_info))
             logger.info(
                 "사용자 정보 등록 메시지에서 로드: node=%s, name=%s",
                 node_id, user_info.get("name"),
@@ -125,7 +131,23 @@ class NodeManager:
         except Exception:
             logger.warning("사용자 정보 조회 실패 (node=%s), 빈 정보로 진행", node.node_id)
             user_info = {}
-        node.set_user_info(user_info)
+        node.set_user_info(self._with_email_fallback(user_info))
+
+    def _with_email_fallback(self, user_info: dict) -> dict:
+        """user_info에 email이 없으면 default_user_email(allowed_email)로 보충.
+
+        single-user 시스템(allowed_email로 한 명만 OAuth 통과)에서 PushNotifier가
+        push_tokens 조회 키로 email을 쓰는데, soul-server `/api/dashboard/config`
+        응답이 email을 포함하지 않아 매칭 실패하는 문제(빌드 20 보고)를 우회.
+
+        멀티유저 환경 전환 시 soul-server에 dash_user_email 필드 추가가 정공법.
+        """
+        if not self._default_user_email:
+            return user_info
+        if user_info.get("email"):
+            return user_info
+        # 원본 dict 미변형 — 새 dict 반환 (호출자가 원본을 다른 곳에서 참조할 수 있음)
+        return {**user_info, "email": self._default_user_email}
 
     async def _fetch_agent_profiles(self, node: "NodeConnection", host: str, port: int) -> None:
         """soul-server /api/agents에서 에이전트 프로필 조회.

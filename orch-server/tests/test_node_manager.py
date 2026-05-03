@@ -296,8 +296,40 @@ class TestUserInfo:
     async def test_get_user_info_returns_empty_for_unknown_node(self, manager):
         """알 수 없는 node_id에 대해 빈 dict를 반환한다."""
         result = manager.get_user_info("non-existent-node")
-
         assert result == {}
+
+    # 빌드 20: default_user_email fallback 검증
+
+    async def test_email_fallback_applied_when_missing(self, mock_ws):
+        """user_info에 email이 없으면 default_user_email로 보충."""
+        manager = NodeManager(default_user_email="user@example.com")
+        reg = make_registration("n1")
+        reg["user"] = {"name": "K", "hasPortrait": False}  # email 없음
+
+        node = await manager.register_node(mock_ws, reg)
+
+        assert node.user_info.get("email") == "user@example.com"
+        assert node.user_info.get("name") == "K"
+
+    async def test_email_fallback_does_not_overwrite_existing(self, mock_ws):
+        """user_info에 email이 이미 있으면 fallback이 덮어쓰지 않음."""
+        manager = NodeManager(default_user_email="fallback@example.com")
+        reg = make_registration("n1")
+        reg["user"] = {"name": "K", "email": "real@example.com"}
+
+        node = await manager.register_node(mock_ws, reg)
+
+        assert node.user_info.get("email") == "real@example.com"
+
+    async def test_email_fallback_skipped_when_default_empty(self, mock_ws):
+        """default_user_email이 빈 문자열이면 fallback 적용 안 함 (기존 동작 유지)."""
+        manager = NodeManager(default_user_email="")
+        reg = make_registration("n1")
+        reg["user"] = {"name": "K"}
+
+        node = await manager.register_node(mock_ws, reg)
+
+        assert "email" not in node.user_info
 
     async def test_fetch_user_info_sets_data_from_http(self, manager, mock_ws):
         """_fetch_user_info가 HTTP 응답에서 user_info를 설정한다."""

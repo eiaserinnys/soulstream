@@ -209,7 +209,10 @@ async def lifespan(app: FastAPI):
     await db.ensure_default_folders()
 
     # 서비스 초기화
-    node_manager = NodeManager()
+    # 빌드 20: NodeManager에 allowed_email을 fallback user_email로 전달.
+    # soul-server `/api/dashboard/config` 응답이 email을 포함하지 않는 케이스에서
+    # PushNotifier가 push_tokens 조회 키로 매칭할 수 있도록 함.
+    node_manager = NodeManager(default_user_email=settings.allowed_email)
     broadcaster = SessionBroadcaster()
     session_router = SessionRouter(node_manager)
     catalog_service = CatalogService(session_db=db, broadcaster=broadcaster)
