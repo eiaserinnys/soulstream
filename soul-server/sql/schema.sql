@@ -1016,3 +1016,19 @@ WHERE e.parent_event_id IS NULL
     WHERE p.session_id = e.session_id
       AND p.id = (e.payload->>'parent_event_id')::INTEGER
   );
+
+
+-- ─── 010_push_tokens.sql ─────────────────────────────────────────────────────
+-- Expo Push 토큰 저장 (orch-server가 사용).
+-- 자세한 설명은 migrations/010_push_tokens.sql 참조.
+
+CREATE TABLE IF NOT EXISTS push_tokens (
+    user_email TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    expo_token TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_email, device_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_push_tokens_email ON push_tokens(user_email);

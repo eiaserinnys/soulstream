@@ -29,6 +29,7 @@ from soulstream_server.constants import (
     EVT_ERROR,
     EVT_EVENT,
     EVT_HEALTH_STATUS,
+    EVT_INPUT_REQUEST,
     EVT_SESSION_CREATED,
     EVT_SESSION_DELETED,
     EVT_SESSION_UPDATED,
@@ -326,6 +327,12 @@ class NodeConnection:
             await self._on_session_deleted(data)
         elif msg_type == EVT_HEALTH_STATUS:
             await self._on_health_status(data)
+        elif msg_type == EVT_INPUT_REQUEST:
+            # 빌드 20: input_request는 PushNotifier가 알림 발사하는 hook 지점.
+            # node_manager._on_session_change가 "node_session_input_request"로
+            # 정규화하여 listener에 fan-out한다.
+            if self.on_session_change:
+                await self.on_session_change(self.node_id, "input_request", data)
         elif msg_type == EVT_ERROR:
             logger.warning(
                 "Error from node %s: %s", self.node_id, data.get("message")

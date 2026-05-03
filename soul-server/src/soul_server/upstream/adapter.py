@@ -369,6 +369,14 @@ class UpstreamAdapter:
                 "type": EVT_SESSION_DELETED,
                 **{k: v for k, v in event.items() if k != "type"},
             })
+        elif event_type == "input_request":
+            # 빌드 20: input_request는 session-events 스트림에 broadcast됨.
+            # orch-server PushNotifier가 받아 디바이스 알림을 발사할 수 있도록
+            # 별도 메시지 타입으로 forwarding한다 (없으면 worker→orch 경로 누락).
+            await self._send({
+                "type": "input_request",
+                **{k: v for k, v in event.items() if k != "type"},
+            })
 
     # ─── Command Dispatch ───────────────────────────
 

@@ -27,7 +27,9 @@ from soulstream_server.api.cogito import create_cogito_router
 from soulstream_server.api.config import create_config_router
 from soulstream_server.api.folders import create_folders_router
 from soulstream_server.api.nodes import create_nodes_router
+from soulstream_server.api.push import create_push_router
 from soulstream_server.api.sessions import create_sessions_router
+from soulstream_server.push import ExpoPushProvider, PushNotifier, PushRepository
 from soulstream_server.config import Settings, get_settings
 from soulstream_server.dashboard.auth import create_auth_router
 from soulstream_server.dashboard.serving import mount_dashboard
@@ -128,6 +130,7 @@ def _mount_api_routers(
     broadcaster: SessionBroadcaster,
     catalog_service: CatalogService,
     settings: Settings,
+    push_repo: PushRepository | None = None,
 ) -> None:
     """API 라우터들을 `dependencies=[Depends(verify_auth)]`와 함께 앱에 마운트한다.
 
@@ -158,6 +161,11 @@ def _mount_api_routers(
             dependencies=api_deps,
         )
     )
+
+    # 빌드 20: Push 토큰 등록/해제. push_repo가 None이면 라우터를 마운트하지 않음
+    # (테스트에서 명시 주입 안 한 경우 — 기존 테스트는 push 기능을 사용하지 않음).
+    if push_repo is not None:
+        app.include_router(create_push_router(push_repo, dependencies=api_deps))
 
     # /api/auth/token — 네이티브 JWT handoff.
     # 라우터 내부에서 이미 verify_auth로 보호하므로 여기서 추가 dep을 주입하지 않는다
@@ -214,12 +222,23 @@ async def lifespan(app: FastAPI):
 
     node_manager.add_change_listener(on_node_change)
 
+    # 빌드 20: Push 알림 인프라 초기화 + listener 등록.
+    # PostgresSessionDB의 pool을 공유하여 새 connection pool을 만들지 않는다.
+    push_provider = ExpoPushProvider()
+    push_repo = PushRepository(db.pool)
+    push_notifier = PushNotifier(
+        provider=push_provider, repo=push_repo, node_manager=node_manager
+    )
+    push_notifier.start()  # node_manager listener 등록
+
     # 앱 상태에 서비스 저장
     app.state.db = db
     app.state.node_manager = node_manager
     app.state.broadcaster = broadcaster
     app.state.session_router = session_router
     app.state.catalog_service = catalog_service
+    app.state.push_repo = push_repo
+    app.state.push_notifier = push_notifier
 
     # 라우터 마운트 (인증 가드 포함)
     _mount_api_routers(
@@ -230,6 +249,7 @@ async def lifespan(app: FastAPI):
         broadcaster=broadcaster,
         catalog_service=catalog_service,
         settings=settings,
+        push_repo=push_repo,
     )
 
     logger.info(
@@ -251,6 +271,7 @@ def create_app(
     session_router: SessionRouter | None = None,
     broadcaster: SessionBroadcaster | None = None,
     catalog_service: CatalogService | None = None,
+    push_repo: PushRepository | None = None,
 ) -> FastAPI:
     """FastAPI 앱 생성.
 
@@ -349,6 +370,7 @@ def create_app(
             broadcaster=broadcaster,
             catalog_service=catalog_service,
             settings=settings,
+            push_repo=push_repo,
         )
 
     return app

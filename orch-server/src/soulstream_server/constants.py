@@ -26,6 +26,11 @@ EVT_SESSION_UPDATED = "session_updated"
 EVT_SESSION_DELETED = "session_deleted"
 EVT_HEALTH_STATUS = "health_status"
 EVT_ERROR = "error"
+# 빌드 20: input_request도 worker→orch ws에서 별도 메시지 타입으로 forwarding하여
+# PushNotifier가 수신할 수 있게 한다. soul-server adapter._dispatch_broadcast_event에서
+# 'input_request' broadcast를 이 타입으로 변환하여 보내고, orch node_connection이 받아
+# on_session_change(node_id, "input_request", data)로 정규화한다.
+EVT_INPUT_REQUEST = "input_request"
 
 # WebSocket Close Codes
 WS_CLOSE_REGISTRATION_TIMEOUT = 4001
