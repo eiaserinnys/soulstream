@@ -33,6 +33,8 @@ from soul_server.service.task_manager import (
 )
 from soul_server.service import resource_manager, get_soul_engine
 from soul_server.service.sse_streaming import stream_live_events
+from soul_server.service import intervention_service
+from soul_server.service.intervention_service import InputRequestNotPendingError
 from soul_server.api.auth import verify_token
 from soul_server.cogito.reflector_setup import reflect
 from soul_server.config import get_settings
@@ -354,33 +356,16 @@ async def intervene_session(
     Running 세션이면 intervention queue에 추가합니다.
     완료된 세션이면 자동으로 resume하여 대화를 이어갑니다.
     """
-    task_manager = get_task_manager()
-
     try:
-        result = await task_manager.add_intervention(
+        return await intervention_service.intervene(
             agent_session_id=agent_session_id,
             text=request.text,
             user=request.user,
             attachment_paths=request.attachment_paths,
+            task_manager=get_task_manager(),
+            soul_engine=get_soul_engine(),
+            resource_manager=resource_manager,
         )
-
-        if result.get("auto_resumed"):
-            # 자동 resume → 실행 시작
-            await task_manager.start_execution(
-                agent_session_id=agent_session_id,
-                claude_runner=get_soul_engine(),
-                resource_manager=resource_manager,
-            )
-            return {
-                "auto_resumed": True,
-                "agent_session_id": agent_session_id,
-            }
-        else:
-            return {
-                "queued": True,
-                "queue_position": result["queue_position"],
-            }
-
     except NodeMismatchError as e:
         raise HTTPException(
             status_code=403,
@@ -423,36 +408,22 @@ async def respond_to_input_request(
     input_request SSE 이벤트를 수신한 클라이언트가
     사용자의 선택을 이 엔드포인트로 전달합니다.
     """
-    task_manager = get_task_manager()
-
     try:
-        success = task_manager.deliver_input_response(
+        return await intervention_service.respond_to_input(
             agent_session_id=agent_session_id,
             request_id=request.request_id,
             answers=request.answers,
+            task_manager=get_task_manager(),
         )
-
-        if success:
-            return {"delivered": True, "request_id": request.request_id}
-        else:
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "error": {
-                        "code": "REQUEST_NOT_PENDING",
-                        "message": f"대기 중인 input_request가 없습니다: {request.request_id}",
-                        "details": {},
-                    }
-                },
-            )
-
-    except NodeMismatchError as e:
+    except InputRequestNotPendingError as e:
         raise HTTPException(
-            status_code=403,
+            status_code=422,
             detail={
-                "error": "node_mismatch",
-                "session_node_id": e.session_node_id,
-                "current_node_id": e.current_node_id,
+                "error": {
+                    "code": "REQUEST_NOT_PENDING",
+                    "message": f"대기 중인 input_request가 없습니다: {e.request_id}",
+                    "details": {},
+                }
             },
         )
     except TaskNotFoundError:
