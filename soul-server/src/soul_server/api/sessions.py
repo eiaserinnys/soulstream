@@ -19,9 +19,10 @@ from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from soul_server.models import SessionsListResponse
-from soul_server.service.task_models import Task, TaskStatus as TaskModelStatus
+from soul_server.service.task_models import TaskStatus as TaskModelStatus
 from soul_server.service.task_manager import get_task_manager
 from soul_server.service.session_broadcaster import get_session_broadcaster
+from soul_server.service.sse_streaming import format_sse_event, stream_live_events
 
 logger = logging.getLogger(__name__)
 
@@ -34,44 +35,51 @@ async def stream_session_events(
 ) -> AsyncGenerator[dict, None]:
     """Parts 2+3: history_sync 발행 + 라이브 이벤트 스트리밍.
 
-    event_queue는 호출자가 히스토리 읽기 전에 add_listener로 등록한 큐.
-    last_stored_id 이하의 이벤트는 히스토리에서 이미 전송했으므로 건너뛴다.
+    event_queue는 호출자가 히스토리 읽기 전에 add_listener로 등록한 큐
+    (히스토리 읽는 동안 도착하는 라이브 이벤트의 유실 회피).
+    last_stored_id 이하의 이벤트는 히스토리에서 이미 전송됐으므로 stream_live_events에서 건너뛴다.
 
-    반환: raw event dict. 호출자가 SSE id/event/data 필드를 래핑.
+    반환: format_sse_event 적용된 SSE dict.
+    호출자(session_events_sse_generator)는 받은 dict를 그대로 yield한다.
+
+    listener 정리는 모든 분기에서 보장된다 (외부 finally + remove_listener 자체가 idempotent).
     """
-    # Part 2: history_sync 발행
-    current_task = await task_manager.get_task(agent_session_id)
-    is_live = current_task and current_task.status == TaskModelStatus.RUNNING
-
-    sync_payload: dict = {
-        "type": "history_sync",
-        "last_event_id": last_stored_id,
-        "is_live": is_live,
-    }
-    if current_task:
-        sync_payload["status"] = current_task.status.value
-    yield sync_payload
-
-    # 세션이 실행 중이 아니면 히스토리 + history_sync 이후 연결을 종료한다.
-    # 완료된 세션에 keepalive를 무한 전송하는 것을 방지한다.
-    # Part 3 try...finally에 진입하지 않으므로 리스너를 명시적으로 정리한다.
-    if not is_live:
-        await task_manager.remove_listener(agent_session_id, event_queue)
-        return
-
-    # Part 3: 라이브 스트리밍 (dedup)
     try:
-        while True:
-            try:
-                event = await asyncio.wait_for(event_queue.get(), timeout=30.0)
-                # 히스토리에서 이미 전송된 이벤트는 건너뛴다
-                event_id = event.get("_event_id")
-                if event_id is not None and event_id <= last_stored_id:
-                    continue
-                yield event
-            except asyncio.TimeoutError:
-                yield {"type": "keepalive"}
+        # Part 2: history_sync 발행 (SSE id 필드 없이 — baseline 메시지)
+        current_task = await task_manager.get_task(agent_session_id)
+        is_live = current_task and current_task.status == TaskModelStatus.RUNNING
+
+        sync_payload: dict = {
+            "type": "history_sync",
+            "last_event_id": last_stored_id,
+            "is_live": is_live,
+        }
+        if current_task:
+            sync_payload["status"] = current_task.status.value
+        yield format_sse_event(sync_payload, has_id_field=False)
+
+        # 세션이 실행 중이 아니면 히스토리 + history_sync 이후 연결을 종료한다.
+        # 완료된 세션에 keepalive를 무한 전송하는 것을 방지한다.
+        # 외부 finally가 listener를 정리한다.
+        if not is_live:
+            return
+
+        # Part 3: stream_live_events에 위임 — dedup + finally remove_listener는 코어가 담당.
+        # /events 스트림은 complete/error 후에도 연결 유지 (자동 resume) → break_on_terminal=False.
+        # 외부 generator가 aclose될 때 inner도 명시적으로 닫아야 finally가 실행됨 (PEP 525).
+        inner = stream_live_events(
+            agent_session_id, task_manager, event_queue,
+            dedup_after_id=last_stored_id,
+            break_on_terminal=False,
+        )
+        try:
+            async for sse_event in inner:
+                yield sse_event
+        finally:
+            await inner.aclose()
     finally:
+        # is_live=False 경로 + history_sync yield 직후 disconnect 모두 안전하게 정리.
+        # 라이브 경로는 inner.aclose()의 finally에서 이미 호출됐으나 idempotent라 무해.
         await task_manager.remove_listener(agent_session_id, event_queue)
 
 
@@ -152,24 +160,13 @@ async def session_events_sse_generator(
             }
             return
 
-        # Parts 2+3: stream_session_events에 위임
-        # stream_session_events의 finally에서 remove_listener를 호출한다.
+        # Parts 2+3: stream_session_events에 위임 (이미 SSE dict로 wrap된 형태 yield).
+        # stream_live_events의 finally에서 remove_listener를 호출한다.
         entered_stream = True
-        async for event_dict in stream_session_events(
+        async for sse_event in stream_session_events(
             agent_session_id, last_stored_id, task_manager, event_queue,
         ):
-            event_type = event_dict.get("type", "unknown")
-            if event_type == "keepalive":
-                yield {"comment": "keepalive"}
-            else:
-                event_id = event_dict.pop("_event_id", None)
-                sse_event: dict = {
-                    "event": event_type,
-                    "data": json.dumps(event_dict, ensure_ascii=False, default=str),
-                }
-                if event_id is not None:
-                    sse_event["id"] = str(event_id)
-                yield sse_event
+            yield sse_event
     finally:
         if not entered_stream:
             # stream_session_events에 진입하지 못했으면 직접 정리

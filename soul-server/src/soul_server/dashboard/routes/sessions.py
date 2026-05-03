@@ -25,6 +25,8 @@ from soul_server.service.task_manager import (
     NodeMismatchError,
 )
 from soul_server.service import resource_manager, get_soul_engine
+from soul_server.service import intervention_service
+from soul_server.service.intervention_service import InputRequestNotPendingError
 from soul_server.service.session_broadcaster import get_session_broadcaster
 
 logger = logging.getLogger(__name__)
@@ -371,26 +373,18 @@ async def api_create_session(body: CreateSessionBody, request: Request):
 )
 async def api_intervene(session_id: str, body: InterveneBody):
     """실행 중/완료된 세션에 메시지 전송 (자동 resume)"""
-    task_manager = get_task_manager()
-
     try:
-        result = await task_manager.add_intervention(
+        # body.attachmentPaths(camelCase) → attachment_paths(snake_case): 라우트 책임.
+        # None → [] 정규화는 service의 정본(`or []`)에 일임 (대칭성).
+        return await intervention_service.intervene(
             agent_session_id=session_id,
             text=body.text,
             user=body.user,
-            attachment_paths=body.attachmentPaths or [],
+            attachment_paths=body.attachmentPaths,
+            task_manager=get_task_manager(),
+            soul_engine=get_soul_engine(),
+            resource_manager=resource_manager,
         )
-
-        if result.get("auto_resumed"):
-            await task_manager.start_execution(
-                agent_session_id=session_id,
-                claude_runner=get_soul_engine(),
-                resource_manager=resource_manager,
-            )
-            return {"auto_resumed": True, "agent_session_id": session_id}
-        else:
-            return {"queued": True, "queue_position": result.get("queue_position", 0)}
-
     except NodeMismatchError as e:
         raise HTTPException(
             status_code=403,
@@ -432,28 +426,23 @@ async def api_message(session_id: str, body: InterveneBody):
 )
 async def api_respond(session_id: str, body: RespondBody):
     """AskUserQuestion에 대한 사용자 응답 전달"""
-    task_manager = get_task_manager()
-
     try:
-        success = task_manager.deliver_input_response(
+        return await intervention_service.respond_to_input(
             agent_session_id=session_id,
             request_id=body.request_id,
             answers=body.answers,
+            task_manager=get_task_manager(),
         )
-
-        if success:
-            return {"delivered": True, "request_id": body.request_id}
-        else:
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "error": {
-                        "code": "REQUEST_NOT_PENDING",
-                        "message": f"대기 중인 input_request가 없습니다: {body.request_id}",
-                    }
-                },
-            )
-
+    except InputRequestNotPendingError as e:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": {
+                    "code": "REQUEST_NOT_PENDING",
+                    "message": f"대기 중인 input_request가 없습니다: {e.request_id}",
+                }
+            },
+        )
     except TaskNotFoundError:
         raise HTTPException(
             status_code=404,
