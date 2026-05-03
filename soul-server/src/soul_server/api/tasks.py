@@ -32,6 +32,7 @@ from soul_server.service.task_manager import (
     TaskStatus,
 )
 from soul_server.service import resource_manager, get_soul_engine
+from soul_server.service.sse_streaming import stream_live_events
 from soul_server.api.auth import verify_token
 from soul_server.cogito.reflector_setup import reflect
 from soul_server.config import get_settings
@@ -183,39 +184,27 @@ async def execute_task(
     async def event_generator():
         """SSE 이벤트 생성기
 
-        첫 이벤트: init (agent_session_id 전달)
-        이후: 실행 이벤트들
-        마지막: complete 또는 error
+        첫 이벤트: init (agent_session_id 전달).
+        이후 라이브 이벤트는 stream_live_events에 위임 (finally remove_listener는 코어가 담당).
         """
-        # 첫 이벤트: agent_session_id + node_id 전달
+        # 첫 이벤트: agent_session_id + node_id 전달 (라우트 책임 보존)
         yield _build_init_event(agent_session_id)
 
         event_queue = asyncio.Queue()
         await task_manager.add_listener(agent_session_id, event_queue)
 
+        # 라이브 루프 + finally remove_listener는 코어에 위임.
+        # /execute 응답은 complete/error 시 종료 → break_on_terminal=True.
+        # 외부 generator가 aclose될 때 inner도 명시적으로 닫아야 finally가 실행됨 (PEP 525).
+        inner = stream_live_events(
+            agent_session_id, task_manager, event_queue,
+            break_on_terminal=True,
+        )
         try:
-            while True:
-                try:
-                    event = await asyncio.wait_for(event_queue.get(), timeout=30.0)
-                    event_id = event.get("_event_id")
-                    data = {k: v for k, v in event.items() if k != "_event_id"}
-                    sse_event = {
-                        "event": event.get("type", "unknown"),
-                        "data": json.dumps(data, ensure_ascii=False, default=str),
-                    }
-                    if event_id is not None:
-                        sse_event["id"] = str(event_id)
-                    yield sse_event
-
-                    # 완료 또는 에러면 종료
-                    if event.get("type") in ["complete", "error"]:
-                        break
-
-                except asyncio.TimeoutError:
-                    yield {"comment": "keepalive"}
-
+            async for sse_event in inner:
+                yield sse_event
         finally:
-            await task_manager.remove_listener(agent_session_id, event_queue)
+            await inner.aclose()
 
     return EventSourceResponse(event_generator())
 
@@ -297,35 +286,24 @@ async def session_stream(
         event_queue = asyncio.Queue()
         await task_manager.add_listener(agent_session_id, event_queue)
 
+        # 재연결 상태 전송 + 미수신 이벤트 재전송 (라우트 책임 보존)
+        await task_manager.send_reconnect_status(
+            agent_session_id, event_queue,
+            last_event_id=parsed_last_event_id,
+        )
+
+        # 라이브 루프 + finally remove_listener는 코어에 위임.
+        # /events/{id}/stream 재연결 응답은 complete/error 시 종료 → break_on_terminal=True.
+        # 외부 generator가 aclose될 때 inner도 명시적으로 닫아야 finally가 실행됨 (PEP 525).
+        inner = stream_live_events(
+            agent_session_id, task_manager, event_queue,
+            break_on_terminal=True,
+        )
         try:
-            # 재연결 상태 전송 + 미수신 이벤트 재전송
-            await task_manager.send_reconnect_status(
-                agent_session_id, event_queue,
-                last_event_id=parsed_last_event_id,
-            )
-
-            while True:
-                try:
-                    event = await asyncio.wait_for(event_queue.get(), timeout=30.0)
-
-                    event_id = event.get("_event_id") if isinstance(event, dict) else None
-                    data = {k: v for k, v in event.items() if k != "_event_id"} if isinstance(event, dict) else event
-                    sse_event = {
-                        "event": event.get("type", "unknown"),
-                        "data": json.dumps(data, ensure_ascii=False, default=str),
-                    }
-                    if event_id is not None:
-                        sse_event["id"] = str(event_id)
-                    yield sse_event
-
-                    if event.get("type") in ["complete", "error"]:
-                        break
-
-                except asyncio.TimeoutError:
-                    yield {"comment": "keepalive"}
-
+            async for sse_event in inner:
+                yield sse_event
         finally:
-            await task_manager.remove_listener(agent_session_id, event_queue)
+            await inner.aclose()
 
     return EventSourceResponse(event_generator())
 

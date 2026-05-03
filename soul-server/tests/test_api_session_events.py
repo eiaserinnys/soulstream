@@ -360,19 +360,21 @@ class TestMidStreamDisconnectCleanup:
         gen = stream_session_events("sess-001", 0, mock_task_manager, event_queue)
         aiter = gen.__aiter__()
 
-        # history_sync 수신 (Part 2)
+        # history_sync 수신 (Part 2) — 이제 SSE dict 형식 yield
         event = await aiter.__anext__()
-        assert event.get("type") == "history_sync"
+        assert event.get("event") == "history_sync"
 
-        # 라이브 이벤트 수신 (Part 3)
+        # 라이브 이벤트 수신 (Part 3) — stream_live_events가 wrap한 SSE dict
         event = await aiter.__anext__()
-        assert event.get("type") == "text_delta"
+        assert event.get("event") == "text_delta"
 
         # 브라우저 disconnect 시뮬레이션: generator를 close
         await gen.aclose()
 
-        # finally에서 remove_listener가 호출되었는지 확인
-        mock_task_manager.remove_listener.assert_called_once()
+        # finally에서 remove_listener가 호출되었는지 확인.
+        # stream_live_events.aclose() finally + stream_session_events 외부 finally
+        # 양쪽이 호출 가능 — remove_listener는 idempotent라 무해.
+        assert mock_task_manager.remove_listener.called
         call_args = mock_task_manager.remove_listener.call_args
         assert call_args[0][0] == "sess-001"
         assert call_args[0][1] is event_queue
@@ -403,6 +405,36 @@ class TestMidStreamDisconnectCleanup:
             await gen.aclose()
 
             # entered_stream=False이므로 외부 finally에서 remove_listener 호출
-            mock_task_manager.remove_listener.assert_called_once()
+            # (stream_session_events 외부 finally가 추가되면서 호출 횟수가 2회가 될 수 있음 — idempotent)
+            assert mock_task_manager.remove_listener.called
             call_args = mock_task_manager.remove_listener.call_args
             assert call_args[0][0] == "sess-001"
+
+    @pytest.mark.asyncio
+    async def test_remove_listener_called_on_history_sync_disconnect(self, mock_task_manager, mock_db):
+        """is_live=False 세션에서 history_sync 받자마자 disconnect 시에도 remove_listener 호출.
+
+        2026-05-03 code-reviewer가 발견한 listener 누수 회귀 방지.
+        stream_session_events의 is_live=False 분기 yield 직후 aclose되면 외부 finally에서 cleanup.
+        """
+        from soul_server.api.sessions import stream_session_events
+        from soul_server.service.task_models import TaskStatus as TaskModelStatus
+
+        # 완료된 세션 mock — is_live=False가 되도록
+        completed_task = MagicMock()
+        completed_task.status = TaskModelStatus.COMPLETED
+        mock_task_manager.get_task = AsyncMock(return_value=completed_task)
+
+        event_queue = asyncio.Queue()
+        gen = stream_session_events("sess-001", 0, mock_task_manager, event_queue)
+
+        # history_sync 받자마자 disconnect (라이브 진입 전)
+        event = await gen.__anext__()
+        assert event.get("event") == "history_sync"
+        await gen.aclose()
+
+        # 외부 finally가 호출되어야 함 (회귀 방지 핵심)
+        assert mock_task_manager.remove_listener.called
+        call_args = mock_task_manager.remove_listener.call_args
+        assert call_args[0][0] == "sess-001"
+        assert call_args[0][1] is event_queue
