@@ -77,6 +77,28 @@ class SessionBroadcaster(BaseSessionBroadcaster):
         }
         return await self.broadcast(event)
 
+    async def emit_session_phase(self, task: Task, phase: str) -> int:
+        """멀티턴 Claude Code 세션의 턴 사이 phase 전환을 통보한다 (running ↔ idle).
+
+        task.status는 항상 RUNNING으로 유지되어 컨트롤 플로우에 영향이 없다 (멀티턴 세션은
+        다음 사용자 입력을 기다리며 task가 alive 상태로 남기 때문). 그러나 클라이언트
+        UI(타이핑 인디케이터, 도트 색상)는 한 턴이 끝났는지(idle)와 응답 생성 중인지(running)를
+        구분해야 자연스럽다. 본 메서드는 task.status를 건드리지 않고 SSE wire-level status만
+        실어 클라이언트에 phase 전환을 알린다.
+
+        ⚠️ wire-level 임시 상태이므로 DB의 sessions.status에는 저장되지 않는다 — finalize_task만
+        그것을 책임진다 (task가 진짜로 종료될 때).
+        """
+        event = {
+            "type": "session_updated",
+            "agent_session_id": task.agent_session_id,
+            "status": phase,
+            "updated_at": utc_now().isoformat(),
+            "last_event_id": task.last_event_id,
+            "last_read_event_id": task.last_read_event_id,
+        }
+        return await self.broadcast(event)
+
     async def emit_session_message_updated(
         self,
         agent_session_id: str,

@@ -316,6 +316,13 @@ class TaskExecutor:
         last_result: Optional[str] = None
         last_error: Optional[str] = None
 
+        # 턴 phase 추적 — 멀티턴 Claude Code 세션은 'complete' 이벤트 후 다음 turn까지 task가
+        # alive 상태로 남기 때문에 task.status는 RUNNING이 유지된다.
+        # 클라이언트 UX(타이핑 인디케이터, 헤더 도트)는 "응답 생성 중"과 "다음 입력 대기 중"을
+        # 구분해야 자연스러우므로 wire-level status를 phase 단위로 emit한다.
+        # (task.status에는 영향 없음 — 영구 저장은 finalize_task만 책임진다.)
+        turn_phase: str = "running"
+
         async for event in event_iter:
             event_dict = event.model_dump()
 
@@ -419,8 +426,29 @@ class TaskExecutor:
             # 완료/오류 추적 (finalize는 루프 밖에서)
             if event.type == "complete":
                 last_result = event.result
+                # 한 턴 종료 — 클라이언트에 idle phase 통보. task.status는 RUNNING 유지.
+                if turn_phase != "idle":
+                    try:
+                        await get_session_broadcaster().emit_session_phase(task, "idle")
+                    except Exception:
+                        logger.debug(
+                            "idle phase broadcast skipped (broadcaster not ready)"
+                        )
+                    turn_phase = "idle"
             elif event.type == "error":
                 last_error = event.message
+                # error는 finalize에서 ERROR 상태로 정리하므로 phase 전환 불필요.
+            elif event.type not in ("subtree_update", "session", "progress"):
+                # 일반 활성 이벤트(text_*/thinking_*/tool_*/...) — 응답 생성 중.
+                # subtree_update/session/progress는 메타 이벤트이므로 phase 전환에서 제외.
+                if turn_phase != "running":
+                    try:
+                        await get_session_broadcaster().emit_session_phase(task, "running")
+                    except Exception:
+                        logger.debug(
+                            "running phase broadcast skipped (broadcaster not ready)"
+                        )
+                    turn_phase = "running"
 
         return last_result, last_error
 
