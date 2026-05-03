@@ -356,25 +356,33 @@ class TestCreateSessionWithAttachments:
         assert not extra
 
 
-# ── adapter._handle_intervene attachment_paths 전달 테스트 ─────────────────
+# ── CommandDispatcher._handle_intervene attachment_paths 전달 테스트 ─────
 
 class TestAdapterHandleInterveneAttachmentPaths:
-    """upstream/adapter.py _handle_intervene이 attachment_paths를 전달하는지 테스트"""
+    """upstream/command_handler.py _handle_intervene이 attachment_paths를 전달하는지 테스트.
+
+    P0-2 분리 후 CommandDispatcher를 직접 단위 테스트한다.
+    """
+
+    def _make_dispatcher(self, mock_tm):
+        from soul_server.upstream.command_handler import CommandDispatcher
+        return CommandDispatcher(
+            task_manager=mock_tm,
+            soul_engine=MagicMock(),
+            resource_manager=MagicMock(),
+            node_id="test-node",
+            send_fn=AsyncMock(),
+            send_error_fn=AsyncMock(),
+            stream_tasks={},
+            event_relay=MagicMock(),
+        )
 
     @pytest.mark.asyncio
     async def test_handle_intervene_passes_attachment_paths(self):
         """cmd에 attachment_paths가 있으면 add_intervention에 전달된다"""
-        from soul_server.upstream.adapter import UpstreamAdapter
-
         mock_tm = MagicMock()
         mock_tm.add_intervention = AsyncMock(return_value={})
-
-        adapter = UpstreamAdapter.__new__(UpstreamAdapter)
-        adapter._tm = mock_tm
-        adapter._engine = MagicMock()
-        adapter._rm = MagicMock()
-        adapter._stream_tasks = {}
-        adapter._send = AsyncMock()
+        dispatcher = self._make_dispatcher(mock_tm)
 
         cmd = {
             "agentSessionId": "sess-intervene",
@@ -383,7 +391,7 @@ class TestAdapterHandleInterveneAttachmentPaths:
             "attachment_paths": ["/path/file.txt"],
         }
 
-        await adapter._handle_intervene(cmd)
+        await dispatcher._handle_intervene(cmd)
 
         mock_tm.add_intervention.assert_called_once()
         call_kwargs = mock_tm.add_intervention.call_args.kwargs
@@ -392,17 +400,9 @@ class TestAdapterHandleInterveneAttachmentPaths:
     @pytest.mark.asyncio
     async def test_handle_intervene_no_attachment_paths(self):
         """cmd에 attachment_paths가 없으면 None 전달"""
-        from soul_server.upstream.adapter import UpstreamAdapter
-
         mock_tm = MagicMock()
         mock_tm.add_intervention = AsyncMock(return_value={})
-
-        adapter = UpstreamAdapter.__new__(UpstreamAdapter)
-        adapter._tm = mock_tm
-        adapter._engine = MagicMock()
-        adapter._rm = MagicMock()
-        adapter._stream_tasks = {}
-        adapter._send = AsyncMock()
+        dispatcher = self._make_dispatcher(mock_tm)
 
         cmd = {
             "agentSessionId": "sess-no-attach",
@@ -410,7 +410,7 @@ class TestAdapterHandleInterveneAttachmentPaths:
             "user": "test-user",
         }
 
-        await adapter._handle_intervene(cmd)
+        await dispatcher._handle_intervene(cmd)
 
         call_kwargs = mock_tm.add_intervention.call_args.kwargs
         assert call_kwargs.get("attachment_paths") is None
