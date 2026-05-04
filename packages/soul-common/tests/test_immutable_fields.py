@@ -106,6 +106,30 @@ class TestImmutableFields:
         row = await db.get_session("sess-3")
         assert row["agent_id"] == "profile-x"
 
+    # --- caller_session_id ---
+
+    async def test_set_caller_session_id_on_new_session(self, db: SqliteSessionDB):
+        """신규 세션에 caller_session_id 최초 설정 → 성공"""
+        await db.upsert_session("sess-caller", caller_session_id="sess-parent")
+        row = await db.get_session("sess-caller")
+        assert row["caller_session_id"] == "sess-parent"
+
+    async def test_overwrite_caller_session_id_raises(self, db: SqliteSessionDB):
+        """이미 설정된 caller_session_id에 다른 값 쓰기 → ValueError (5번째 불변)
+
+        부모-자식 인과 관계는 사후에 뒤집을 수 없다 — IMMUTABLE_FIELDS 가드.
+        """
+        await db.upsert_session("sess-caller", caller_session_id="sess-parent-original")
+        with pytest.raises(ValueError, match="Immutable field 'caller_session_id'"):
+            await db.upsert_session("sess-caller", caller_session_id="sess-parent-other")
+
+    async def test_same_caller_session_id_is_idempotent(self, db: SqliteSessionDB):
+        """기존과 동일한 caller_session_id 쓰기 → 성공 (멱등)"""
+        await db.upsert_session("sess-caller", caller_session_id="sess-parent")
+        await db.upsert_session("sess-caller", caller_session_id="sess-parent")
+        row = await db.get_session("sess-caller")
+        assert row["caller_session_id"] == "sess-parent"
+
     # --- set_claude_session_id 직접 테스트 ---
 
     async def test_set_claude_session_id_initial(self, db: SqliteSessionDB):
@@ -245,6 +269,23 @@ class TestUpdateSession:
         )
         with pytest.raises(ValueError, match="Immutable fields"):
             await db.update_session("sess-upd-5", session_type="llm")
+
+    async def test_update_caller_session_id_raises(self, db: SqliteSessionDB):
+        """caller_session_id 전달 시 ValueError (5번째 불변)
+
+        caller_session_id는 sessions 테이블 컬럼으로 영속화되어 있고
+        세션 생성 시 register_session_initial로 한 번만 박힌다. update_session으로
+        변경 시도하면 ValueError를 raise해야 한다 — 부모-자식 인과 관계를 사후에
+        뒤집을 수 없다.
+        """
+        await db.register_session_initial(
+            "sess-upd-caller",
+            node_id="node-A",
+            agent_id="agent-X",
+            caller_session_id="sess-parent-original",
+        )
+        with pytest.raises(ValueError, match="Immutable fields"):
+            await db.update_session("sess-upd-caller", caller_session_id="sess-parent-other")
 
     async def test_update_preserves_immutable_fields(self, db: SqliteSessionDB):
         """가변 필드 업데이트 후 불변 필드가 유지된다"""

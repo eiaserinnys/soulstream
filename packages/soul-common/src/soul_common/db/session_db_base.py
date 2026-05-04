@@ -20,6 +20,7 @@ SESSION_COLUMNS = frozenset({
     "metadata", "was_running_at_shutdown",
     "last_event_id", "last_read_event_id",
     "created_at", "updated_at", "node_id", "agent_id",
+    "caller_session_id",
 })
 
 FOLDER_COLUMNS = frozenset({"name", "sort_order", "settings"})
@@ -32,10 +33,15 @@ TIMESTAMP_COLUMNS = frozenset({"created_at", "updated_at"})
 
 IMMUTABLE_FIELDS: frozenset[str] = frozenset({
     "claude_session_id", "node_id", "agent_id",
+    "caller_session_id",
 })
 
+# update_session으로 갱신을 차단하는 불변 필드.
+# caller_session_id는 세션 생성 시 register_session_initial로 한 번만 박히고 이후
+# 변경 불가하다 — 부모-자식 인과 관계는 사후에 뒤집을 수 없다.
 UPDATE_SESSION_IMMUTABLE = frozenset({
     "node_id", "agent_id", "claude_session_id", "session_type", "created_at",
+    "caller_session_id",
 })
 
 DEFAULT_FOLDERS: dict[str, str] = {

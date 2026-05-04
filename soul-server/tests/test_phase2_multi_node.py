@@ -313,7 +313,10 @@ class TestInitMultiNodeTools:
         assert "caller_info" in body, f"body={body}"
         ci = body["caller_info"]
         assert ci["source"] == "agent"
+        # NOTE(잔존 정합성 부채): caller_info.parent_session_id는 caller_session_id와 중복이지만
+        # frontend 호환을 위해 일시 유지. 후속 카드에서 제거 예정.
         assert ci["parent_session_id"] == "sess-parent-1"
+        assert body["caller_session_id"] == "sess-parent-1"
         assert ci["agent_node"] == "node-src"
         assert ci["agent_id"] == "agent-parent"
         assert ci["agent_name"] == "Parent Agent"

@@ -52,6 +52,9 @@ def _session_to_response(
         "folderId": s.get("folder_id"),
         "lastEventId": s.get("last_event_id", 0),
         "lastReadEventId": s.get("last_read_event_id", 0),
+        # 위임 세션의 부모 식별자. 직접 진입(브라우저/슬랙/외부 API)은 None.
+        # 정본은 sessions.caller_session_id 컬럼 (snake_case → camelCase 변환).
+        "callerSessionId": s.get("caller_session_id"),
         "agentId": s.get("agent_id"),
         "agentName": None,
         "agentPortraitUrl": None,
