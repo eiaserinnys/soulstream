@@ -273,3 +273,134 @@ class TestHandleSideEffects:
         event = {"type": "away_summary", "content": "summary"}
         # Should not raise
         await persistence.handle_side_effects("sess-1", "away_summary", event, task)
+
+
+class TestUpdateLastMessage:
+    """update_last_message() 단독 단위 테스트
+
+    이벤트 타입별 preview 추출 + DB 저장 + 브로드캐스트 흐름을 검증한다.
+    """
+
+    def _make_persistence(self, db=None, broadcaster=None):
+        """EventPersistence를 생성하되, broadcaster를 주입 가능하게 한다."""
+        if db is None:
+            db = _make_mock_db()
+        mock_broadcaster = broadcaster or MagicMock()
+        if not hasattr(mock_broadcaster, "emit_session_message_updated"):
+            mock_broadcaster.emit_session_message_updated = AsyncMock()
+        return EventPersistence(
+            session_db=db,
+            get_broadcaster=lambda: mock_broadcaster,
+        ), db, mock_broadcaster
+
+    async def test_text_delta_saves_and_broadcasts(self):
+        """text_delta 이벤트: text 필드에서 preview를 추출하여 DB 저장 + 브로드캐스트"""
+        persistence, db, broadcaster = self._make_persistence()
+        task = _make_task()
+
+        event = {"type": "text_delta", "text": "hello world", "timestamp": "2024-01-01T00:00:00Z"}
+        await persistence.update_last_message("sess-1", event, task)
+
+        db.update_last_message.assert_called_once_with(
+            "sess-1", {
+                "type": "text_delta",
+                "preview": "hello world",
+                "timestamp": "2024-01-01T00:00:00Z",
+            }
+        )
+        broadcaster.emit_session_message_updated.assert_called_once()
+        call_kwargs = broadcaster.emit_session_message_updated.call_args.kwargs
+        assert call_kwargs["agent_session_id"] == "sess-1"
+        assert call_kwargs["last_message"]["type"] == "text_delta"
+        assert call_kwargs["last_message"]["preview"] == "hello world"
+
+    async def test_tool_use_is_ignored(self):
+        """tool_use: PREVIEW_FIELD_MAP에 없는 타입이므로 DB 호출 없이 즉시 반환"""
+        persistence, db, broadcaster = self._make_persistence()
+        task = _make_task()
+
+        event = {"type": "tool_use", "name": "Read", "input": {}}
+        await persistence.update_last_message("sess-1", event, task)
+
+        db.update_last_message.assert_not_called()
+        broadcaster.emit_session_message_updated.assert_not_called()
+
+    async def test_session_type_is_ignored(self):
+        """session: PREVIEW_FIELD_MAP에 없는 타입이므로 DB 호출 없이 즉시 반환"""
+        persistence, db, broadcaster = self._make_persistence()
+        task = _make_task()
+
+        event = {"type": "session", "session_id": "xxx"}
+        await persistence.update_last_message("sess-1", event, task)
+
+        db.update_last_message.assert_not_called()
+        broadcaster.emit_session_message_updated.assert_not_called()
+
+    async def test_user_message_extracts_text(self):
+        """user_message: text 필드에서 preview를 추출한다"""
+        persistence, db, broadcaster = self._make_persistence()
+        task = _make_task()
+
+        event = {"type": "user_message", "text": "my prompt"}
+        await persistence.update_last_message("sess-1", event, task)
+
+        db.update_last_message.assert_called_once()
+        call_args = db.update_last_message.call_args[0]
+        assert call_args[1]["type"] == "user_message"
+        assert call_args[1]["preview"] == "my prompt"
+
+    async def test_user_message_falls_back_to_messages_array(self):
+        """user_message: text가 비어 있으면 messages 배열에서 추출한다"""
+        persistence, db, broadcaster = self._make_persistence()
+        task = _make_task()
+
+        event = {
+            "type": "user_message",
+            "text": "",
+            "messages": [
+                {"role": "user", "content": "fallback text"},
+            ],
+        }
+        await persistence.update_last_message("sess-1", event, task)
+
+        db.update_last_message.assert_called_once()
+        call_args = db.update_last_message.call_args[0]
+        assert call_args[1]["preview"] == "fallback text"
+
+    async def test_db_none_returns_immediately(self):
+        """session_db=None이면 에러 없이 즉시 반환한다"""
+        persistence = EventPersistence(session_db=None)
+        task = _make_task()
+
+        event = {"type": "text_delta", "text": "hello"}
+        # Should not raise
+        await persistence.update_last_message("sess-1", event, task)
+
+    async def test_broadcaster_exception_does_not_crash(self):
+        """broadcaster가 예외를 던져도 DB는 정상 업데이트된다"""
+        db = _make_mock_db()
+        broken_broadcaster = MagicMock()
+        broken_broadcaster.emit_session_message_updated = AsyncMock(
+            side_effect=Exception("broadcaster not ready")
+        )
+        persistence, _, _ = self._make_persistence(db=db, broadcaster=broken_broadcaster)
+        task = _make_task()
+
+        event = {"type": "text_delta", "text": "hello", "timestamp": "2024-01-01T00:00:00Z"}
+        await persistence.update_last_message("sess-1", event, task)
+
+        db.update_last_message.assert_called_once()
+
+    async def test_preview_truncated_to_200_chars(self):
+        """200자 초과 텍스트는 200자로 절삭된다"""
+        persistence, db, broadcaster = self._make_persistence()
+        task = _make_task()
+
+        long_text = "a" * 300
+        event = {"type": "text_delta", "text": long_text, "timestamp": "2024-01-01T00:00:00Z"}
+        await persistence.update_last_message("sess-1", event, task)
+
+        db.update_last_message.assert_called_once()
+        call_args = db.update_last_message.call_args[0]
+        assert len(call_args[1]["preview"]) == 200
+        assert call_args[1]["preview"] == "a" * 200
