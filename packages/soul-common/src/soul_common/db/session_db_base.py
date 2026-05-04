@@ -10,7 +10,7 @@ SessionDB 공용 인터페이스 및 유틸리티
 import json
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
-from typing import Optional, Union
+from typing import Optional, Protocol, Union, runtime_checkable
 
 # ── 공유 상수 ──
 
@@ -96,6 +96,196 @@ def validate_immutable_fields(
                 f"Immutable field '{field}' already set to {old_val!r}, "
                 f"cannot overwrite with {new_val!r}"
             )
+
+
+# ── 도메인 Protocol ──
+#
+# SessionDBBase 40개 메서드를 5개 도메인으로 분리한 Protocol.
+# Protocol은 구조적 타이핑(PEP 544)을 사용하므로 SessionDBBase와
+# 상속 관계 없이도 호환된다.
+# connect/close는 인프라 관심사로 Protocol에 포함하지 않는다 —
+# SessionDBBase ABC에만 유지한다.
+
+
+@runtime_checkable
+class SessionCRUDProtocol(Protocol):
+    """세션 CRUD + 읽음 상태 + 셧다운 관리"""
+
+    @property
+    def node_id(self) -> Optional[str]: ...
+
+    async def upsert_session(self, session_id: str, **fields) -> None: ...
+
+    async def register_session_initial(
+        self,
+        session_id: str,
+        node_id: str,
+        agent_id: Optional[str] = None,
+        claude_session_id: Optional[str] = None,
+        session_type: str = "claude",
+        prompt: Optional[str] = None,
+        client_id: Optional[str] = None,
+        status: str = "running",
+        created_at=None,
+        updated_at=None,
+        caller_session_id: Optional[str] = None,
+    ) -> None: ...
+
+    async def set_claude_session_id(
+        self, session_id: str, claude_session_id: str,
+    ) -> None: ...
+
+    async def update_session(self, session_id: str, **fields) -> None: ...
+
+    async def get_session(self, session_id: str) -> Optional[dict]: ...
+
+    async def get_all_sessions(
+        self,
+        offset: int = 0,
+        limit: int = 0,
+        session_type: Optional[str] = None,
+        folder_id: Optional[str] = None,
+        node_id: Optional[str] = None,
+        status: Optional[Union[str, list[str]]] = None,
+    ) -> tuple[list[dict], int]: ...
+
+    async def delete_session(self, session_id: str) -> None: ...
+
+    async def update_session_status(self, session_id: str, status: str) -> None: ...
+
+    async def append_metadata(self, session_id: str, entry: dict) -> None: ...
+
+    async def update_last_message(self, session_id: str, last_message: dict) -> None: ...
+
+    async def update_away_summary(self, session_id: str, summary: str) -> None: ...
+
+    async def update_last_read_event_id(self, session_id: str, event_id: int) -> bool: ...
+
+    async def get_read_position(self, session_id: str) -> tuple[int, int]: ...
+
+    async def mark_running_at_shutdown(self, session_ids: list[str] | None = None) -> None: ...
+
+    async def get_shutdown_sessions(self) -> list[dict]: ...
+
+    async def repair_broken_read_positions(self) -> int: ...
+
+    async def clear_shutdown_flags(self) -> None: ...
+
+
+@runtime_checkable
+class EventProtocol(Protocol):
+    """이벤트 CRUD"""
+
+    async def append_event(
+        self,
+        session_id: str,
+        event_type: str,
+        payload: str,
+        searchable_text: str,
+        created_at: str,
+    ) -> int: ...
+
+    async def read_events(
+        self, session_id: str, after_id: int = 0,
+        limit: int | None = None, event_types: list[str] | None = None,
+    ) -> list[dict]: ...
+
+    async def stream_events_raw(
+        self, session_id: str, after_id: int = 0,
+    ) -> AsyncGenerator[tuple[int, str, str], None]: ...
+
+    async def read_one_event(self, session_id: str, event_id: int) -> Optional[dict]: ...
+
+    async def count_events(self, session_id: str) -> int: ...
+
+    async def read_last_event_id(self, session_id: str) -> int: ...
+
+
+@runtime_checkable
+class FolderProtocol(Protocol):
+    """폴더 CRUD + 카탈로그"""
+
+    async def create_folder(self, folder_id: str, name: str, sort_order: int = 0) -> None: ...
+
+    async def update_folder(self, folder_id: str, **fields) -> None: ...
+
+    async def get_folder(self, folder_id: str) -> Optional[dict]: ...
+
+    async def delete_folder(self, folder_id: str) -> None: ...
+
+    async def get_all_folders(self) -> list[dict]: ...
+
+    async def get_default_folder(self, name: str) -> Optional[dict]: ...
+
+    async def ensure_default_folders(self) -> None: ...
+
+    async def ensure_indexes(self) -> None: ...
+
+    async def assign_session_to_folder(
+        self, session_id: str, folder_id: Optional[str],
+    ) -> None: ...
+
+    async def rename_session(self, session_id: str, display_name: Optional[str]) -> None: ...
+
+    async def get_catalog(self) -> dict: ...
+
+
+@runtime_checkable
+class SearchProtocol(Protocol):
+    """전문검색 + 세션 요약 목록"""
+
+    async def list_sessions_summary(
+        self,
+        search: str | None = None,
+        session_type: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+        folder_id: str | None = None,
+        node_id: str | None = None,
+    ) -> tuple[list[dict], int]: ...
+
+    async def search_events(
+        self,
+        query: str,
+        session_ids: Optional[list[str]] = None,
+        limit: int = 50,
+        event_types: Optional[list[str]] = None,
+    ) -> list[dict]: ...
+
+    async def search_events_by_session_id(
+        self,
+        session_id_query: str,
+        event_types: Optional[list[str]] = None,
+        limit: int = 50,
+    ) -> list[dict]: ...
+
+
+@runtime_checkable
+class ViewportProtocol(Protocol):
+    """뷰포트 API (PostgreSQL 전용, SQLite는 NotImplementedError)"""
+
+    async def update_subtree_heights(
+        self,
+        session_id: str,
+        trigger_event_id: int,
+        increment: int = 1,
+    ) -> tuple[dict[int, int], int]: ...
+
+    async def read_viewport(
+        self,
+        session_id: str,
+        y_min: int,
+        y_max: int,
+    ) -> list[dict]: ...
+
+    async def read_total_subtree_height(self, session_id: str) -> int: ...
+
+    async def read_messages(
+        self,
+        session_id: str,
+        before: Optional[str] = None,
+        limit: int = 50,
+    ) -> tuple[list[dict], Optional[str]]: ...
 
 
 # ── 추상 기반 클래스 ──
