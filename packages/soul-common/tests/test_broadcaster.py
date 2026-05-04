@@ -167,3 +167,47 @@ class TestBaseSessionBroadcaster:
         sentinel2 = await q2.get()
         assert sentinel1 is None
         assert sentinel2 is None
+
+
+class TestBaseSessionBroadcasterWireContract:
+    """BaseSessionBroadcaster 상속 메서드의 wire payload 키 화이트리스트 계약 테스트.
+
+    SessionBroadcaster(soul-server)에서 추가한 TestBroadcasterWireContract와 같은 의도 —
+    docstring/dict 비대칭(commit message ≠ 실제 diff) 안티패턴 사전 차단.
+
+    의도: 키 추가·삭제·오타 시 즉시 RED. 값 의미 검증은 기존 test_emit_session_deleted /
+    test_emit_read_position_updated가 담당하므로 본 클래스는 키 셋 == 비교만 수행.
+    """
+
+    EXPECTED_DELETED_KEYS = {"type", "agent_session_id"}
+
+    # type='session_updated'를 발행하지만 다른 메서드(soul-server emit_session_updated 등)와
+    # 키 셋이 다름 — 읽음 위치 갱신 전용이라 status/updated_at도 없다.
+    EXPECTED_READ_POSITION_KEYS = {
+        "type",
+        "agent_session_id",
+        "last_event_id",
+        "last_read_event_id",
+    }
+
+    @pytest.mark.asyncio
+    async def test_session_deleted_payload_keys_exact(self):
+        """emit_session_deleted wire 키 셋이 화이트리스트와 정확히 일치한다."""
+        broadcaster = BaseSessionBroadcaster()
+        queue = broadcaster.add_client()
+        await broadcaster.emit_session_deleted("sess-del-1")
+        event = queue.get_nowait()
+        assert set(event.keys()) == self.EXPECTED_DELETED_KEYS
+
+    @pytest.mark.asyncio
+    async def test_read_position_updated_payload_keys_exact(self):
+        """emit_read_position_updated wire 키 셋이 화이트리스트와 정확히 일치한다."""
+        broadcaster = BaseSessionBroadcaster()
+        queue = broadcaster.add_client()
+        await broadcaster.emit_read_position_updated(
+            session_id="sess-rp-1",
+            last_event_id=42,
+            last_read_event_id=40,
+        )
+        event = queue.get_nowait()
+        assert set(event.keys()) == self.EXPECTED_READ_POSITION_KEYS

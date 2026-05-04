@@ -307,6 +307,21 @@ class TestBroadcasterWireContract:
         "last_assistant_text",
     }
 
+    # session_created wire — task.to_session_info() 결과가 'session' 키에 들어간다.
+    EXPECTED_CREATED_KEYS = {"type", "session", "folder_id"}
+
+    # session_message_updated wire — type='session_updated'이지만 emit_session_updated와
+    # 키 셋이 다름. last_message를 포함하고 last_progress_text/last_assistant_text 미포함.
+    EXPECTED_MESSAGE_UPDATED_KEYS = {
+        "type",
+        "agent_session_id",
+        "status",
+        "updated_at",
+        "last_message",
+        "last_event_id",
+        "last_read_event_id",
+    }
+
     @pytest.fixture
     def broadcaster(self, mock_registry):
         return SessionBroadcaster(agent_registry=mock_registry)
@@ -337,3 +352,42 @@ class TestBroadcasterWireContract:
         await broadcaster.emit_session_phase(self._make_task(), phase="idle")
         event = queue.get_nowait()
         assert set(event.keys()) == self.EXPECTED_PHASE_KEYS
+
+    async def test_session_created_payload_keys_exact(self, broadcaster):
+        """emit_session_created wire 키 셋이 화이트리스트와 정확히 일치한다."""
+        queue = broadcaster.add_client()
+        await broadcaster.emit_session_created(self._make_task(), folder_id="folder-1")
+        event = queue.get_nowait()
+        assert set(event.keys()) == self.EXPECTED_CREATED_KEYS
+
+    async def test_session_created_payload_keys_when_folder_id_none(self, broadcaster):
+        """folder_id=None일 때도 키 셋은 동일 (값만 None) — 미분류 세션 케이스."""
+        queue = broadcaster.add_client()
+        await broadcaster.emit_session_created(self._make_task(), folder_id=None)
+        event = queue.get_nowait()
+        assert set(event.keys()) == self.EXPECTED_CREATED_KEYS
+        assert event["folder_id"] is None
+
+    async def test_session_message_updated_payload_keys_exact(self, broadcaster):
+        """emit_session_message_updated wire 키 셋이 화이트리스트와 정확히 일치한다.
+
+        type='session_updated'이지만 emit_session_updated와 다른 모양 — last_message를
+        포함하고 last_progress_text/last_assistant_text는 없다. 같은 type을 발행하는
+        4개 메서드(updated/phase/message_updated/read_position_updated)가 각각 다른
+        키 셋을 가지므로 emit 메서드 기준으로 화이트리스트를 분리한다.
+        """
+        queue = broadcaster.add_client()
+        await broadcaster.emit_session_message_updated(
+            agent_session_id="sess-msg-1",
+            status="running",
+            updated_at="2026-05-04T09:50:00+00:00",
+            last_message={
+                "type": "text_delta",
+                "preview": "안녕",
+                "timestamp": "2026-05-04T09:50:00+00:00",
+            },
+            last_event_id=42,
+            last_read_event_id=40,
+        )
+        event = queue.get_nowait()
+        assert set(event.keys()) == self.EXPECTED_MESSAGE_UPDATED_KEYS
