@@ -84,9 +84,9 @@ class TestHandleCreateSession:
     async def test_creates_task_and_starts_execution(self):
         tm = MagicMock()
         tm.create_task = AsyncMock(return_value=_make_mock_task("session-abc"))
-        tm.start_execution = AsyncMock(return_value=True)
-        tm.add_listener = AsyncMock(return_value=True)
-        tm.remove_listener = AsyncMock()
+        tm.executor.start_execution = AsyncMock(return_value=True)
+        tm.listener_manager.add_listener = AsyncMock(return_value=True)
+        tm.listener_manager.remove_listener = AsyncMock()
 
         adapter = _make_adapter(task_manager=tm)
         adapter._ws = MagicMock()
@@ -108,7 +108,7 @@ class TestHandleCreateSession:
         assert call_kwargs["prompt"] == "Hello, world!"
 
         # 실행 시작 확인
-        tm.start_execution.assert_awaited_once_with(
+        tm.executor.start_execution.assert_awaited_once_with(
             agent_session_id="session-abc",
             claude_runner=adapter._engine,
             resource_manager=adapter._rm,
@@ -127,9 +127,9 @@ class TestHandleCreateSession:
     async def test_passes_optional_parameters(self):
         tm = MagicMock()
         tm.create_task = AsyncMock(return_value=_make_mock_task())
-        tm.start_execution = AsyncMock(return_value=True)
-        tm.add_listener = AsyncMock(return_value=True)
-        tm.remove_listener = AsyncMock()
+        tm.executor.start_execution = AsyncMock(return_value=True)
+        tm.listener_manager.add_listener = AsyncMock(return_value=True)
+        tm.listener_manager.remove_listener = AsyncMock()
 
         adapter = _make_adapter(task_manager=tm)
         adapter._ws = MagicMock()
@@ -158,9 +158,9 @@ class TestHandleCreateSession:
         """WS payload의 caller_info가 create_task 인자로 그대로 전달된다."""
         tm = MagicMock()
         tm.create_task = AsyncMock(return_value=_make_mock_task())
-        tm.start_execution = AsyncMock(return_value=True)
-        tm.add_listener = AsyncMock(return_value=True)
-        tm.remove_listener = AsyncMock()
+        tm.executor.start_execution = AsyncMock(return_value=True)
+        tm.listener_manager.add_listener = AsyncMock(return_value=True)
+        tm.listener_manager.remove_listener = AsyncMock()
 
         adapter = _make_adapter(task_manager=tm)
         adapter._ws = MagicMock()
@@ -190,9 +190,9 @@ class TestHandleCreateSession:
         """WS payload에 caller_info가 없으면 create_task에 None이 전달된다 (소비부에서 .get())."""
         tm = MagicMock()
         tm.create_task = AsyncMock(return_value=_make_mock_task())
-        tm.start_execution = AsyncMock(return_value=True)
-        tm.add_listener = AsyncMock(return_value=True)
-        tm.remove_listener = AsyncMock()
+        tm.executor.start_execution = AsyncMock(return_value=True)
+        tm.listener_manager.add_listener = AsyncMock(return_value=True)
+        tm.listener_manager.remove_listener = AsyncMock()
 
         adapter = _make_adapter(task_manager=tm)
         adapter._ws = MagicMock()
@@ -244,9 +244,9 @@ class TestHandleIntervene:
     async def test_auto_resume_starts_execution(self):
         tm = MagicMock()
         tm.add_intervention = AsyncMock(return_value={"auto_resumed": True})
-        tm.start_execution = AsyncMock(return_value=True)
-        tm.add_listener = AsyncMock(return_value=True)
-        tm.remove_listener = AsyncMock()
+        tm.executor.start_execution = AsyncMock(return_value=True)
+        tm.listener_manager.add_listener = AsyncMock(return_value=True)
+        tm.listener_manager.remove_listener = AsyncMock()
 
         adapter = _make_adapter(task_manager=tm)
         adapter._ws = MagicMock()
@@ -263,7 +263,7 @@ class TestHandleIntervene:
 
         await adapter._dispatcher.dispatch(cmd)
 
-        tm.start_execution.assert_awaited_once()
+        tm.executor.start_execution.assert_awaited_once()
 
 
 class TestHandleRespond:
@@ -376,7 +376,8 @@ class TestHandleListSessions:
     @pytest.mark.asyncio
     async def test_returns_session_list(self):
         tm = MagicMock()
-        tm.get_all_sessions = AsyncMock(return_value=(
+        mock_query_svc = MagicMock()
+        mock_query_svc.get_all_sessions = AsyncMock(return_value=(
             [{"session_id": "s1"}, {"session_id": "s2"}],
             2,
         ))
@@ -391,7 +392,8 @@ class TestHandleListSessions:
             "requestId": "req-list-1",
         }
 
-        await adapter._dispatcher.dispatch(cmd)
+        with patch("soul_server.upstream.command_handler.get_session_query_service", return_value=mock_query_svc):
+            await adapter._dispatcher.dispatch(cmd)
 
         adapter._ws.send_json.assert_awaited_once()
         sent = adapter._ws.send_json.call_args.args[0]
@@ -476,8 +478,8 @@ class TestStreamEvents:
                     await queue.put(e)
             asyncio.create_task(_feed())
 
-        tm.add_listener = AsyncMock(side_effect=mock_add_listener)
-        tm.remove_listener = AsyncMock()
+        tm.listener_manager.add_listener = AsyncMock(side_effect=mock_add_listener)
+        tm.listener_manager.remove_listener = AsyncMock()
 
         adapter = _make_adapter(task_manager=tm)
         adapter._ws = MagicMock()
@@ -500,7 +502,7 @@ class TestStreamEvents:
         assert sent_messages[4]["event"]["type"] == "complete"
 
         # 리스너 제거 확인
-        tm.remove_listener.assert_awaited_once()
+        tm.listener_manager.remove_listener.assert_awaited_once()
 
 
 class TestReconnectPolicy:
@@ -566,7 +568,8 @@ class TestInitialSessionSync:
     async def test_send_initial_sessions(self):
         """_send_initial_sessions가 현재 세션 목록을 sessions_update로 전송."""
         tm = MagicMock()
-        tm.get_all_sessions = AsyncMock(return_value=(
+        mock_query_svc = MagicMock()
+        mock_query_svc.get_all_sessions = AsyncMock(return_value=(
             [
                 {"agent_session_id": "s1", "status": "running"},
                 {"agent_session_id": "s2", "status": "completed"},
@@ -579,7 +582,8 @@ class TestInitialSessionSync:
         adapter._ws.closed = False
         adapter._ws.send_json = AsyncMock()
 
-        await adapter._send_initial_sessions()
+        with patch("soul_server.upstream.adapter.get_session_query_service", return_value=mock_query_svc):
+            await adapter._send_initial_sessions()
 
         sent = adapter._ws.send_json.call_args.args[0]
         assert sent["type"] == EVT_SESSIONS_UPDATE
@@ -590,14 +594,16 @@ class TestInitialSessionSync:
     async def test_send_initial_sessions_empty(self):
         """세션이 없을 때도 빈 목록을 정상 전송."""
         tm = MagicMock()
-        tm.get_all_sessions = AsyncMock(return_value=([], 0))
+        mock_query_svc = MagicMock()
+        mock_query_svc.get_all_sessions = AsyncMock(return_value=([], 0))
 
         adapter = _make_adapter(task_manager=tm)
         adapter._ws = MagicMock()
         adapter._ws.closed = False
         adapter._ws.send_json = AsyncMock()
 
-        await adapter._send_initial_sessions()
+        with patch("soul_server.upstream.adapter.get_session_query_service", return_value=mock_query_svc):
+            await adapter._send_initial_sessions()
 
         sent = adapter._ws.send_json.call_args.args[0]
         assert sent["type"] == EVT_SESSIONS_UPDATE
@@ -1163,8 +1169,8 @@ class TestRelayEventsEdgeCases:
     async def test_relay_events_timeout_continues(self):
         """큐가 비어 timeout 발생 시 continue → 다음 iteration."""
         tm = MagicMock()
-        tm.add_listener = AsyncMock()
-        tm.remove_listener = AsyncMock()
+        tm.listener_manager.add_listener = AsyncMock()
+        tm.listener_manager.remove_listener = AsyncMock()
         adapter = _make_adapter(task_manager=tm)
         adapter._running = True
         adapter._ws = MagicMock()
@@ -1181,14 +1187,14 @@ class TestRelayEventsEdgeCases:
         except asyncio.CancelledError:
             pass
 
-        tm.remove_listener.assert_called_once()
+        tm.listener_manager.remove_listener.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_relay_events_exception_logged_and_cleanup(self):
         """큐에서 예외 발생 시 로깅 후 finally에서 remove_listener 호출."""
         tm = MagicMock()
-        tm.add_listener = AsyncMock()
-        tm.remove_listener = AsyncMock()
+        tm.listener_manager.add_listener = AsyncMock()
+        tm.listener_manager.remove_listener = AsyncMock()
         adapter = _make_adapter(task_manager=tm)
         adapter._running = True
         adapter._ws = MagicMock()
@@ -1199,12 +1205,12 @@ class TestRelayEventsEdgeCases:
 
         # 큐에 이벤트를 넣어 send 시도 → 예외 → 로깅 → finally
         queue_holder = {}
-        original_add = tm.add_listener
+        original_add = tm.listener_manager.add_listener
 
         async def capture_add(sid, q):
             queue_holder["q"] = q
 
-        tm.add_listener = AsyncMock(side_effect=capture_add)
+        tm.listener_manager.add_listener = AsyncMock(side_effect=capture_add)
 
         task = asyncio.create_task(adapter._relay.relay_events("sess-err"))
         await asyncio.sleep(0.05)
@@ -1220,7 +1226,7 @@ class TestRelayEventsEdgeCases:
             pass
 
         # remove_listener 호출 확인
-        assert tm.remove_listener.called
+        assert tm.listener_manager.remove_listener.called
 
 
 class TestSubscribeEventsEdge:
@@ -1333,8 +1339,8 @@ class TestSubscribeBackgroundDispatch:
         """subscribe_events가 처리 중일 때 다른 명령(health_check)이 즉시 처리된다."""
         tm = MagicMock()
         # add_listener는 큐를 받아서 영원히 대기(None 센티넬을 안 넣음)
-        tm.add_listener = AsyncMock()
-        tm.remove_listener = AsyncMock()
+        tm.listener_manager.add_listener = AsyncMock()
+        tm.listener_manager.remove_listener = AsyncMock()
         tm.get_all_sessions = AsyncMock(return_value=([], 0))
 
         adapter = _make_adapter(task_manager=tm)

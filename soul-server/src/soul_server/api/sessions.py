@@ -21,6 +21,7 @@ from sse_starlette.sse import EventSourceResponse
 from soul_server.models import SessionsListResponse
 from soul_server.service.task_models import TaskStatus as TaskModelStatus
 from soul_server.service.task_manager import get_task_manager
+from soul_server.service.session_query_service import get_session_query_service
 from soul_server.service.session_broadcaster import get_session_broadcaster
 from soul_server.service.sse_streaming import format_sse_event, stream_live_events
 
@@ -80,7 +81,7 @@ async def stream_session_events(
     finally:
         # is_live=False 경로 + history_sync yield 직후 disconnect 모두 안전하게 정리.
         # 라이브 경로는 inner.aclose()의 finally에서 이미 호출됐으나 idempotent라 무해.
-        await task_manager.remove_listener(agent_session_id, event_queue)
+        await task_manager.listener_manager.remove_listener(agent_session_id, event_queue)
 
 
 async def session_events_sse_generator(
@@ -114,7 +115,7 @@ async def session_events_sse_generator(
         {"comment": "keepalive"} — keepalive
     """
     event_queue = asyncio.Queue()
-    await task_manager.add_listener(agent_session_id, event_queue)
+    await task_manager.listener_manager.add_listener(agent_session_id, event_queue)
     entered_stream = False
 
     try:
@@ -171,7 +172,7 @@ async def session_events_sse_generator(
         if not entered_stream:
             # stream_session_events에 진입하지 못했으면 직접 정리
             # (LLM 조기 return, 히스토리 읽기 중 연결 해제 등)
-            await task_manager.remove_listener(agent_session_id, event_queue)
+            await task_manager.listener_manager.remove_listener(agent_session_id, event_queue)
 
 
 def create_sessions_router() -> APIRouter:
@@ -201,7 +202,7 @@ def create_sessions_router() -> APIRouter:
         # folder_name → folder_id 해소
         resolved_folder_id = folder_id
         if folder_name and not folder_id:
-            all_folders = await task_manager.get_all_folders()
+            all_folders = await get_session_query_service().get_all_folders()
             matched = next((f for f in all_folders if f.get("name") == folder_name), None)
             resolved_folder_id = matched["id"] if matched else None
 
@@ -214,7 +215,7 @@ def create_sessions_router() -> APIRouter:
             parts = [s.strip() for s in status.split(",") if s.strip()]
             status_filter = parts if len(parts) > 1 else (parts[0] if parts else None)
 
-        sessions, total = await task_manager.get_all_sessions(
+        sessions, total = await get_session_query_service().get_all_sessions(
             offset=offset, limit=limit, session_type=session_type,
             folder_id=resolved_folder_id, node_id=resolved_node_id,
             status=status_filter,
@@ -234,7 +235,7 @@ def create_sessions_router() -> APIRouter:
             task_manager = get_task_manager()
             session_broadcaster = get_session_broadcaster()
 
-            sessions, total = await task_manager.get_all_sessions()
+            sessions, total = await get_session_query_service().get_all_sessions()
 
             yield {
                 "event": "session_list",

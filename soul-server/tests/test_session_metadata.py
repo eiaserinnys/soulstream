@@ -380,7 +380,8 @@ class TestMCPMetadata:
             created_at=utc_now().isoformat(),
         )
 
-        sessions, total = await tm.get_all_sessions()
+        from soul_server.service.session_query_service import get_session_query_service
+        sessions, total = await get_session_query_service().get_all_sessions()
         assert total == 1
         assert "metadata" in sessions[0]
         assert sessions[0]["metadata"] == [{"type": "git_commit", "value": "abc"}]

@@ -49,9 +49,9 @@ def _make_task_manager_with_call_order():
         call_order.append("remove_listener")
 
     manager.create_task = AsyncMock(side_effect=mock_create_task)
-    manager.add_listener = AsyncMock(side_effect=mock_add_listener)
-    manager.start_execution = AsyncMock(side_effect=mock_start_execution)
-    manager.remove_listener = AsyncMock(side_effect=mock_remove_listener)
+    manager.listener_manager.add_listener = AsyncMock(side_effect=mock_add_listener)
+    manager.executor.start_execution = AsyncMock(side_effect=mock_start_execution)
+    manager.listener_manager.remove_listener = AsyncMock(side_effect=mock_remove_listener)
 
     return manager, call_order
 
@@ -132,7 +132,7 @@ class TestListenerCleanupOnStartExecutionFailure:
             call_order.append("start_execution")
             raise RuntimeError("Claude runner failed to start")
 
-        manager.start_execution = AsyncMock(side_effect=mock_start_execution_failure)
+        manager.executor.start_execution = AsyncMock(side_effect=mock_start_execution_failure)
 
         body, request = _make_body_and_request()
 

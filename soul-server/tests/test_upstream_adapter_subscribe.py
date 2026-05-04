@@ -64,8 +64,8 @@ class TestHandleSubscribeEvents:
             asyncio.create_task(_feed())
 
         adapter = _make_adapter_with_session_db(session_db)
-        adapter._tm.add_listener = AsyncMock(side_effect=mock_add_listener)
-        adapter._tm.remove_listener = AsyncMock()
+        adapter._tm.listener_manager.add_listener = AsyncMock(side_effect=mock_add_listener)
+        adapter._tm.listener_manager.remove_listener = AsyncMock()
         adapter._ws = MagicMock()
         adapter._ws.closed = False
         adapter._ws.send_json = AsyncMock()
@@ -108,8 +108,8 @@ class TestHandleSubscribeEvents:
             asyncio.create_task(_feed())
 
         adapter = _make_adapter_with_session_db(session_db)
-        adapter._tm.add_listener = AsyncMock(side_effect=mock_add_listener)
-        adapter._tm.remove_listener = AsyncMock()
+        adapter._tm.listener_manager.add_listener = AsyncMock(side_effect=mock_add_listener)
+        adapter._tm.listener_manager.remove_listener = AsyncMock()
         adapter._ws = MagicMock()
         adapter._ws.closed = False
         adapter._ws.send_json = AsyncMock()
@@ -136,8 +136,8 @@ class TestHandleSubscribeEvents:
             asyncio.create_task(_feed())
 
         adapter = _make_adapter_with_session_db(session_db)
-        adapter._tm.add_listener = AsyncMock(side_effect=mock_add_listener)
-        adapter._tm.remove_listener = AsyncMock()
+        adapter._tm.listener_manager.add_listener = AsyncMock(side_effect=mock_add_listener)
+        adapter._tm.listener_manager.remove_listener = AsyncMock()
         adapter._ws = MagicMock()
         adapter._ws.closed = False
         adapter._ws.send_json = AsyncMock()
@@ -151,7 +151,7 @@ class TestHandleSubscribeEvents:
         assert sent[0]["event"]["type"] == "text_delta"
 
         # 리스너 제거 확인
-        adapter._tm.remove_listener.assert_awaited_once()
+        adapter._tm.listener_manager.remove_listener.assert_awaited_once()
 
 
 class TestSubscribeEventsRouting:
@@ -169,8 +169,8 @@ class TestSubscribeEventsRouting:
             asyncio.create_task(_feed())
 
         adapter = _make_adapter_with_session_db(session_db)
-        adapter._tm.add_listener = AsyncMock(side_effect=mock_add_listener)
-        adapter._tm.remove_listener = AsyncMock()
+        adapter._tm.listener_manager.add_listener = AsyncMock(side_effect=mock_add_listener)
+        adapter._tm.listener_manager.remove_listener = AsyncMock()
         adapter._ws = MagicMock()
         adapter._ws.closed = False
         adapter._ws.send_json = AsyncMock()
@@ -205,8 +205,8 @@ class TestSubscribeEventsRouting:
                 await queue.put(None)
             asyncio.create_task(_feed())
 
-        adapter._tm.add_listener = AsyncMock(side_effect=mock_add_listener)
-        adapter._tm.remove_listener = AsyncMock()
+        adapter._tm.listener_manager.add_listener = AsyncMock(side_effect=mock_add_listener)
+        adapter._tm.listener_manager.remove_listener = AsyncMock()
         adapter._ws = MagicMock()
         adapter._ws.closed = False
         adapter._ws.send_json = AsyncMock()

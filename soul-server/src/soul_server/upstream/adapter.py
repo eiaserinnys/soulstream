@@ -22,6 +22,7 @@ from .protocol import EVT_ERROR, EVT_NODE_REGISTER, EVT_SESSIONS_UPDATE
 from .reconnect import ReconnectPolicy
 from .command_handler import CommandDispatcher
 from .event_relay import EventRelay
+from soul_server.service.session_query_service import get_session_query_service
 
 if TYPE_CHECKING:
     from soul_server.service.agent_registry import AgentRegistry
@@ -283,7 +284,7 @@ class UpstreamAdapter:
         running 상태 세션만 전송한다. 완료된 세션은 오케스트레이터 DB에 있으므로
         불필요한 동기화가 WebSocket 메시지 크기 제한(1MB)을 초과하는 것을 방지한다.
         """
-        sessions, total = await self._tm.get_all_sessions(status="running")
+        sessions, total = await get_session_query_service().get_all_sessions(status="running")
         await self._send({
             "type": EVT_SESSIONS_UPDATE,
             "sessions": sessions,

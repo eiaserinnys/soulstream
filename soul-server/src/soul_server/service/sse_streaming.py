@@ -59,7 +59,7 @@ async def stream_live_events(
       - break_on_terminal=True이면 ``complete``/``error`` 이벤트를 yield한 뒤 루프를 종료한다
         (execute, session_stream의 단발 응답 패턴).
       - keepalive_interval 초 내에 이벤트가 없으면 ``{"comment": "keepalive"}``를 yield한다.
-      - finally에서 ``task_manager.remove_listener(agent_session_id, event_queue)``를 호출한다.
+      - finally에서 ``task_manager.listener_manager.remove_listener(agent_session_id, event_queue)``를 호출한다.
 
     Yields:
         - 정상 이벤트: ``format_sse_event``가 적용된 SSE dict (``{"event": ..., "data": ..., "id": ...}``)
@@ -95,4 +95,4 @@ async def stream_live_events(
             if break_on_terminal and event.get("type") in ("complete", "error"):
                 break
     finally:
-        await task_manager.remove_listener(agent_session_id, event_queue)
+        await task_manager.listener_manager.remove_listener(agent_session_id, event_queue)

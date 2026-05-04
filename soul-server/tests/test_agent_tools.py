@@ -98,7 +98,7 @@ class TestCreateAgentSession:
         mock_task.caller_info = None
         mock_tm = MagicMock()
         mock_tm.create_task = AsyncMock(return_value=mock_task)
-        mock_tm.start_execution = AsyncMock(return_value=True)
+        mock_tm.executor.start_execution = AsyncMock(return_value=True)
 
         fn = _unwrap(mcp_tools.create_agent_session)
         p_engine, p_rm = self._patch_execution_deps()
@@ -115,7 +115,7 @@ class TestCreateAgentSession:
             caller_session_id=None,
             caller_info=None,
         )
-        mock_tm.start_execution.assert_called_once()
+        mock_tm.executor.start_execution.assert_called_once()
 
     async def test_creates_session_with_caller_session_id(self):
         """caller_session_id가 있으면 create_task에 caller_session_id로 전달되어야 한다."""
@@ -125,9 +125,9 @@ class TestCreateAgentSession:
         mock_tm = MagicMock()
         mock_tm.create_task = AsyncMock(return_value=mock_task)
         mock_tm.get_task = AsyncMock(return_value=None)
-        mock_tm.start_execution = AsyncMock()
+        mock_tm.executor.start_execution = AsyncMock()
         mock_tm._agent_registry = None
-        mock_tm.start_execution = AsyncMock(return_value=True)
+        mock_tm.executor.start_execution = AsyncMock(return_value=True)
 
         fn = _unwrap(mcp_tools.create_agent_session)
         p_engine, p_rm = self._patch_execution_deps()
@@ -150,7 +150,7 @@ class TestCreateAgentSession:
         mock_task = self._make_task()
         mock_tm = MagicMock()
         mock_tm.create_task = AsyncMock(return_value=mock_task)
-        mock_tm.start_execution = AsyncMock(return_value=True)
+        mock_tm.executor.start_execution = AsyncMock(return_value=True)
 
         fn = _unwrap(mcp_tools.create_agent_session)
         p_engine, p_rm = self._patch_execution_deps()
@@ -166,7 +166,7 @@ class TestCreateAgentSession:
         mock_task = self._make_task(agent_session_id="sess-new-001", status="running")
         mock_tm = MagicMock()
         mock_tm.create_task = AsyncMock(return_value=mock_task)
-        mock_tm.start_execution = AsyncMock(return_value=True)
+        mock_tm.executor.start_execution = AsyncMock(return_value=True)
 
         fn = _unwrap(mcp_tools.create_agent_session)
         p_engine, p_rm = self._patch_execution_deps()
@@ -195,7 +195,7 @@ class TestCreateAgentSession:
         mock_tm = MagicMock()
         mock_tm.create_task = AsyncMock(return_value=new_task)
         mock_tm.get_task = AsyncMock(return_value=caller_task)
-        mock_tm.start_execution = AsyncMock(return_value=True)
+        mock_tm.executor.start_execution = AsyncMock(return_value=True)
         mock_tm._agent_registry = mock_registry
         mock_tm._db = MagicMock()
         mock_tm._db.node_id = "node-alpha"
@@ -226,7 +226,7 @@ class TestCreateAgentSession:
 
         mock_tm = MagicMock()
         mock_tm.create_task = AsyncMock(return_value=new_task)
-        mock_tm.start_execution = AsyncMock(return_value=True)
+        mock_tm.executor.start_execution = AsyncMock(return_value=True)
 
         fn = _unwrap(mcp_tools.create_agent_session)
         p_engine, p_rm = self._patch_execution_deps()
@@ -241,7 +241,7 @@ class TestCreateAgentSession:
         mock_task = self._make_task(agent_session_id="sess-exec-test", status="running")
         mock_tm = MagicMock()
         mock_tm.create_task = AsyncMock(return_value=mock_task)
-        mock_tm.start_execution = AsyncMock(return_value=True)
+        mock_tm.executor.start_execution = AsyncMock(return_value=True)
 
         fn = _unwrap(mcp_tools.create_agent_session)
         mock_engine = MagicMock()
@@ -251,7 +251,7 @@ class TestCreateAgentSession:
              patch("soul_server.cogito.mcp_session_mgmt.resource_manager", mock_rm):
             await fn(agent_id=None, prompt="test")
 
-        mock_tm.start_execution.assert_called_once_with(
+        mock_tm.executor.start_execution.assert_called_once_with(
             agent_session_id="sess-exec-test",
             claude_runner=mock_engine,
             resource_manager=mock_rm,

@@ -17,6 +17,7 @@ from datetime import datetime, timezone, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
+from soul_server.service.session_query_service import get_session_query_service
 
 
 def _make_mock_session_db():
@@ -130,9 +131,15 @@ def test_app(mock_task_manager, mock_session_broadcaster):
     from fastapi import FastAPI
     from soul_server.api.sessions import create_sessions_router
 
+    # mock_task_manager의 get_all_sessions/get_all_folders를 query service로도 노출
+    mock_query_svc = MagicMock()
+    mock_query_svc.get_all_sessions = mock_task_manager.get_all_sessions
+    mock_query_svc.get_all_folders = AsyncMock(return_value=[])
+
     app = FastAPI()
     with (
         patch("soul_server.api.sessions.get_task_manager", return_value=mock_task_manager),
+        patch("soul_server.api.sessions.get_session_query_service", return_value=mock_query_svc),
         patch("soul_server.api.sessions.get_session_broadcaster", return_value=mock_session_broadcaster),
     ):
         router = create_sessions_router()
@@ -179,7 +186,7 @@ class TestGetSessions:
         from soul_server.api.sessions import create_sessions_router
         from soul_server.service.task_models import Task, TaskStatus
 
-        manager = MagicMock()
+        query_svc = MagicMock()
         # get_all_sessions은 (list[dict], int)를 반환 — Task 객체가 아닌 dict
         claude_session = {
             "agent_session_id": "sess-claude",
@@ -190,11 +197,14 @@ class TestGetSessions:
             "updated_at": "2026-03-03T02:00:00+00:00",
         }
         # get_all_sessions이 session_type 파라미터를 올바르게 전달받는지 확인
-        manager.get_all_sessions = AsyncMock(return_value=([claude_session], 1))
+        query_svc.get_all_sessions = AsyncMock(return_value=([claude_session], 1))
+        query_svc.get_all_folders = AsyncMock(return_value=[])
 
+        manager = MagicMock()
         app = FastAPI()
         with (
             patch("soul_server.api.sessions.get_task_manager", return_value=manager),
+            patch("soul_server.api.sessions.get_session_query_service", return_value=query_svc),
             patch("soul_server.api.sessions.get_session_broadcaster", return_value=mock_session_broadcaster),
         ):
             router = create_sessions_router()
@@ -205,7 +215,7 @@ class TestGetSessions:
 
         assert response.status_code == 200
         # get_all_sessions가 session_type="claude"로 호출되었는지 확인
-        call_kwargs = manager.get_all_sessions.call_args
+        call_kwargs = query_svc.get_all_sessions.call_args
         assert call_kwargs.kwargs.get("session_type") == "claude"
 
     def test_empty_session_list(self, mock_session_broadcaster):
@@ -213,13 +223,16 @@ class TestGetSessions:
         from fastapi import FastAPI
         from soul_server.api.sessions import create_sessions_router
 
-        # 빈 TaskManager
-        empty_manager = MagicMock()
-        empty_manager.get_all_sessions = AsyncMock(return_value=([], 0))
+        # 빈 QueryService
+        empty_query_svc = MagicMock()
+        empty_query_svc.get_all_sessions = AsyncMock(return_value=([], 0))
+        empty_query_svc.get_all_folders = AsyncMock(return_value=[])
 
+        empty_manager = MagicMock()
         app = FastAPI()
         with (
             patch("soul_server.api.sessions.get_task_manager", return_value=empty_manager),
+            patch("soul_server.api.sessions.get_session_query_service", return_value=empty_query_svc),
             patch("soul_server.api.sessions.get_session_broadcaster", return_value=mock_session_broadcaster),
         ):
             router = create_sessions_router()
@@ -299,8 +312,13 @@ class TestSessionsStreamEventGenerator:
         from soul_server.api.sessions import create_sessions_router
         from sse_starlette.sse import EventSourceResponse
 
+        mock_query_svc = MagicMock()
+        mock_query_svc.get_all_sessions = mock_task_manager.get_all_sessions
+        mock_query_svc.get_all_folders = AsyncMock(return_value=[])
+
         with (
             patch("soul_server.api.sessions.get_task_manager", return_value=mock_task_manager),
+            patch("soul_server.api.sessions.get_session_query_service", return_value=mock_query_svc),
             patch("soul_server.api.sessions.get_session_broadcaster", return_value=real_session_broadcaster),
         ):
             router = create_sessions_router()
@@ -582,7 +600,7 @@ class TestTaskManagerGetAllSessions:
         manager._tasks["sess-001"] = task1
         manager._tasks["sess-002"] = task2
 
-        sessions, total = await manager.get_all_sessions()
+        sessions, total = await get_session_query_service().get_all_sessions()
 
         assert len(sessions) == 2
         assert total == 2
@@ -597,7 +615,7 @@ class TestTaskManagerGetAllSessions:
         mock_db = _make_mock_session_db()
         mock_db.get_all_sessions = AsyncMock(return_value=([], 0))
         manager = TaskManager(session_db=mock_db)
-        sessions, total = await manager.get_all_sessions()
+        sessions, total = await get_session_query_service().get_all_sessions()
 
         assert sessions == []
         assert total == 0
@@ -620,7 +638,7 @@ class TestTaskManagerGetAllSessions:
         task2 = Task(agent_session_id="sess-new", prompt="New", status=TaskStatus.RUNNING, created_at=now)
         manager._tasks["sess-new"] = task2
 
-        sessions, total = await manager.get_all_sessions()
+        sessions, total = await get_session_query_service().get_all_sessions()
 
         # 최신이 먼저 (dict 반환)
         assert sessions[0]["agent_session_id"] == "sess-new"
@@ -654,21 +672,21 @@ class TestTaskManagerGetAllSessions:
         manager._tasks["sess-llm"] = llm_task
 
         # 전체
-        sessions, total = await manager.get_all_sessions()
+        sessions, total = await get_session_query_service().get_all_sessions()
         assert total == 2
 
         # claude만
-        sessions, total = await manager.get_all_sessions(session_type="claude")
+        sessions, total = await get_session_query_service().get_all_sessions(session_type="claude")
         assert total == 1
         assert sessions[0]["agent_session_id"] == "sess-claude"
 
         # llm만
-        sessions, total = await manager.get_all_sessions(session_type="llm")
+        sessions, total = await get_session_query_service().get_all_sessions(session_type="llm")
         assert total == 1
         assert sessions[0]["agent_session_id"] == "sess-llm"
 
         # 없는 타입
-        sessions, total = await manager.get_all_sessions(session_type="nonexistent")
+        sessions, total = await get_session_query_service().get_all_sessions(session_type="nonexistent")
         assert total == 0
         assert sessions == []
 
@@ -699,7 +717,7 @@ class TestTaskManagerGetAllSessions:
         manager = TaskManager(session_db=mock_db)
 
         # claude만 + 페이지네이션
-        sessions, total = await manager.get_all_sessions(
+        sessions, total = await get_session_query_service().get_all_sessions(
             session_type="claude", offset=1, limit=2,
         )
         assert total == 5  # 전체 claude 수
@@ -730,17 +748,17 @@ class TestTaskManagerGetAllSessions:
         manager = TaskManager(session_db=mock_db)
 
         # 전체
-        sessions, total = await manager.get_all_sessions()
+        sessions, total = await get_session_query_service().get_all_sessions()
         assert len(sessions) == 5
         assert total == 5
 
         # offset=2, limit=2
-        sessions, total = await manager.get_all_sessions(offset=2, limit=2)
+        sessions, total = await get_session_query_service().get_all_sessions(offset=2, limit=2)
         assert len(sessions) == 2
         assert total == 5
 
         # offset=0, limit=3
-        sessions, total = await manager.get_all_sessions(offset=0, limit=3)
+        sessions, total = await get_session_query_service().get_all_sessions(offset=0, limit=3)
         assert len(sessions) == 3
         assert total == 5
 
@@ -931,7 +949,7 @@ class TestConcurrentSessions:
         manager._tasks["sess-b"] = task_b
         manager._tasks["sess-c"] = task_c
 
-        sessions, total = await manager.get_all_sessions()
+        sessions, total = await get_session_query_service().get_all_sessions()
 
         # 모든 세션이 목록에 있어야 함 (dict 반환)
         assert len(sessions) == 3
@@ -982,25 +1000,11 @@ class TestMultipleClientsSSE:
 class TestStatusFilter:
     """GET /sessions?status= 필터 테스트"""
 
-    def _make_app(self, mock_session_broadcaster, manager):
-        from fastapi import FastAPI
-        from soul_server.api.sessions import create_sessions_router
-
-        app = FastAPI()
-        with (
-            patch("soul_server.api.sessions.get_task_manager", return_value=manager),
-            patch("soul_server.api.sessions.get_session_broadcaster", return_value=mock_session_broadcaster),
-        ):
-            router = create_sessions_router()
-            app.include_router(router)
-        return app, manager
-
     def test_status_single_filter(self, mock_session_broadcaster):
         """status=running → running 세션만 반환해야 한다"""
         from fastapi import FastAPI
         from soul_server.api.sessions import create_sessions_router
 
-        manager = MagicMock()
         running_session = {
             "agent_session_id": "sess-running",
             "prompt": "Running task",
@@ -1009,11 +1013,14 @@ class TestStatusFilter:
             "created_at": "2026-03-03T02:00:00+00:00",
             "updated_at": "2026-03-03T02:00:00+00:00",
         }
-        manager.get_all_sessions = AsyncMock(return_value=([running_session], 1))
+        query_svc = MagicMock()
+        query_svc.get_all_sessions = AsyncMock(return_value=([running_session], 1))
+        query_svc.get_all_folders = AsyncMock(return_value=[])
 
         app = FastAPI()
         with (
-            patch("soul_server.api.sessions.get_task_manager", return_value=manager),
+            patch("soul_server.api.sessions.get_task_manager", return_value=MagicMock()),
+            patch("soul_server.api.sessions.get_session_query_service", return_value=query_svc),
             patch("soul_server.api.sessions.get_session_broadcaster", return_value=mock_session_broadcaster),
         ):
             router = create_sessions_router()
@@ -1023,7 +1030,7 @@ class TestStatusFilter:
             response = client.get("/sessions?status=running")
 
         assert response.status_code == 200
-        call_kwargs = manager.get_all_sessions.call_args
+        call_kwargs = query_svc.get_all_sessions.call_args
         assert call_kwargs.kwargs.get("status") == "running"
 
     def test_status_multi_filter(self, mock_session_broadcaster):
@@ -1031,7 +1038,6 @@ class TestStatusFilter:
         from fastapi import FastAPI
         from soul_server.api.sessions import create_sessions_router
 
-        manager = MagicMock()
         sessions = [
             {
                 "agent_session_id": "sess-comp",
@@ -1050,11 +1056,14 @@ class TestStatusFilter:
                 "updated_at": "2026-03-03T00:00:00+00:00",
             },
         ]
-        manager.get_all_sessions = AsyncMock(return_value=(sessions, 2))
+        query_svc = MagicMock()
+        query_svc.get_all_sessions = AsyncMock(return_value=(sessions, 2))
+        query_svc.get_all_folders = AsyncMock(return_value=[])
 
         app = FastAPI()
         with (
-            patch("soul_server.api.sessions.get_task_manager", return_value=manager),
+            patch("soul_server.api.sessions.get_task_manager", return_value=MagicMock()),
+            patch("soul_server.api.sessions.get_session_query_service", return_value=query_svc),
             patch("soul_server.api.sessions.get_session_broadcaster", return_value=mock_session_broadcaster),
         ):
             router = create_sessions_router()
@@ -1064,7 +1073,7 @@ class TestStatusFilter:
             response = client.get("/sessions?status=completed,error")
 
         assert response.status_code == 200
-        call_kwargs = manager.get_all_sessions.call_args
+        call_kwargs = query_svc.get_all_sessions.call_args
         assert call_kwargs.kwargs.get("status") == ["completed", "error"]
 
     def test_status_multi_filter_with_limit(self, mock_session_broadcaster):
@@ -1072,12 +1081,14 @@ class TestStatusFilter:
         from fastapi import FastAPI
         from soul_server.api.sessions import create_sessions_router
 
-        manager = MagicMock()
-        manager.get_all_sessions = AsyncMock(return_value=([], 0))
+        query_svc = MagicMock()
+        query_svc.get_all_sessions = AsyncMock(return_value=([], 0))
+        query_svc.get_all_folders = AsyncMock(return_value=[])
 
         app = FastAPI()
         with (
-            patch("soul_server.api.sessions.get_task_manager", return_value=manager),
+            patch("soul_server.api.sessions.get_task_manager", return_value=MagicMock()),
+            patch("soul_server.api.sessions.get_session_query_service", return_value=query_svc),
             patch("soul_server.api.sessions.get_session_broadcaster", return_value=mock_session_broadcaster),
         ):
             router = create_sessions_router()
@@ -1087,7 +1098,7 @@ class TestStatusFilter:
             response = client.get("/sessions?status=completed,error&limit=5")
 
         assert response.status_code == 200
-        call_kwargs = manager.get_all_sessions.call_args
+        call_kwargs = query_svc.get_all_sessions.call_args
         assert call_kwargs.kwargs.get("status") == ["completed", "error"]
         assert call_kwargs.kwargs.get("limit") == 5
 
@@ -1096,12 +1107,14 @@ class TestStatusFilter:
         from fastapi import FastAPI
         from soul_server.api.sessions import create_sessions_router
 
-        manager = MagicMock()
-        manager.get_all_sessions = AsyncMock(return_value=([], 0))
+        query_svc = MagicMock()
+        query_svc.get_all_sessions = AsyncMock(return_value=([], 0))
+        query_svc.get_all_folders = AsyncMock(return_value=[])
 
         app = FastAPI()
         with (
-            patch("soul_server.api.sessions.get_task_manager", return_value=manager),
+            patch("soul_server.api.sessions.get_task_manager", return_value=MagicMock()),
+            patch("soul_server.api.sessions.get_session_query_service", return_value=query_svc),
             patch("soul_server.api.sessions.get_session_broadcaster", return_value=mock_session_broadcaster),
         ):
             router = create_sessions_router()
@@ -1111,5 +1124,5 @@ class TestStatusFilter:
             response = client.get("/sessions")
 
         assert response.status_code == 200
-        call_kwargs = manager.get_all_sessions.call_args
+        call_kwargs = query_svc.get_all_sessions.call_args
         assert call_kwargs.kwargs.get("status") is None

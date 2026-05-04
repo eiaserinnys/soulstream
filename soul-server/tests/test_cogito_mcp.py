@@ -441,7 +441,7 @@ def _make_mock_task_manager(summary_result=None):
 class TestListSessions:
     async def test_no_task_manager_returns_error(self):
         fn = _unwrap(mcp_tools.list_sessions)
-        with patch("soul_server.cogito.mcp_session_query.get_task_manager", side_effect=RuntimeError("no tm")):
+        with patch("soul_server.cogito.mcp_session_query.get_session_query_service", side_effect=RuntimeError("no tm")):
             result = await fn()
         assert "error" in result
 
@@ -453,7 +453,7 @@ class TestListSessions:
         ]
         tm = _make_mock_task_manager((sessions, 1))
         fn = _unwrap(mcp_tools.list_sessions)
-        with patch("soul_server.cogito.mcp_session_query.get_task_manager", return_value=tm):
+        with patch("soul_server.cogito.mcp_session_query.get_session_query_service", return_value=tm):
             result = await fn(cursor=0, limit=20)
         assert result["total"] == 1
         assert len(result["sessions"]) == 1
@@ -464,14 +464,14 @@ class TestListSessions:
         sessions = [{"session_id": f"s{i}"} for i in range(5)]
         tm = _make_mock_task_manager((sessions, 10))
         fn = _unwrap(mcp_tools.list_sessions)
-        with patch("soul_server.cogito.mcp_session_query.get_task_manager", return_value=tm):
+        with patch("soul_server.cogito.mcp_session_query.get_session_query_service", return_value=tm):
             result = await fn(cursor=0, limit=5)
         assert result["next_cursor"] == 5
 
     async def test_search_parameter_forwarded(self):
         tm = _make_mock_task_manager(([], 0))
         fn = _unwrap(mcp_tools.list_sessions)
-        with patch("soul_server.cogito.mcp_session_query.get_task_manager", return_value=tm):
+        with patch("soul_server.cogito.mcp_session_query.get_session_query_service", return_value=tm):
             await fn(search="테스트")
         tm.list_sessions_summary.assert_called_once_with(
             search="테스트", limit=20, offset=0, folder_id=None, node_id=None,
@@ -480,7 +480,7 @@ class TestListSessions:
     async def test_folder_id_filter_forwarded(self):
         tm = _make_mock_task_manager(([], 0))
         fn = _unwrap(mcp_tools.list_sessions)
-        with patch("soul_server.cogito.mcp_session_query.get_task_manager", return_value=tm):
+        with patch("soul_server.cogito.mcp_session_query.get_session_query_service", return_value=tm):
             await fn(folder_id="claude")
         tm.list_sessions_summary.assert_called_once_with(
             search=None, limit=20, offset=0, folder_id="claude", node_id=None,
@@ -493,7 +493,7 @@ class TestListSessions:
             {"id": "other", "name": "🪞 서소영"},
         ])
         fn = _unwrap(mcp_tools.list_sessions)
-        with patch("soul_server.cogito.mcp_session_query.get_task_manager", return_value=tm):
+        with patch("soul_server.cogito.mcp_session_query.get_session_query_service", return_value=tm):
             await fn(folder_name="⚙️ 클로드 코드 세션")
         tm.list_sessions_summary.assert_called_once_with(
             search=None, limit=20, offset=0, folder_id="claude", node_id=None,
@@ -505,7 +505,7 @@ class TestListSessions:
             {"id": "claude", "name": "⚙️ 클로드 코드 세션"},
         ])
         fn = _unwrap(mcp_tools.list_sessions)
-        with patch("soul_server.cogito.mcp_session_query.get_task_manager", return_value=tm):
+        with patch("soul_server.cogito.mcp_session_query.get_session_query_service", return_value=tm):
             await fn(folder_name="존재하지않는폴더")
         tm.list_sessions_summary.assert_called_once_with(
             search=None, limit=20, offset=0, folder_id=None, node_id=None,
@@ -514,7 +514,7 @@ class TestListSessions:
     async def test_node_id_filter_forwarded(self):
         tm = _make_mock_task_manager(([], 0))
         fn = _unwrap(mcp_tools.list_sessions)
-        with patch("soul_server.cogito.mcp_session_query.get_task_manager", return_value=tm):
+        with patch("soul_server.cogito.mcp_session_query.get_session_query_service", return_value=tm):
             await fn(node_id="haniel-01")
         tm.list_sessions_summary.assert_called_once_with(
             search=None, limit=20, offset=0, folder_id=None, node_id="haniel-01",
@@ -523,7 +523,7 @@ class TestListSessions:
     async def test_node_name_treated_as_node_id(self):
         tm = _make_mock_task_manager(([], 0))
         fn = _unwrap(mcp_tools.list_sessions)
-        with patch("soul_server.cogito.mcp_session_query.get_task_manager", return_value=tm):
+        with patch("soul_server.cogito.mcp_session_query.get_session_query_service", return_value=tm):
             await fn(node_name="haniel-01")
         tm.list_sessions_summary.assert_called_once_with(
             search=None, limit=20, offset=0, folder_id=None, node_id="haniel-01",
@@ -533,7 +533,7 @@ class TestListSessions:
         """folder_id와 folder_name 동시 제공 시 folder_id 우선."""
         tm = _make_mock_task_manager(([], 0))
         fn = _unwrap(mcp_tools.list_sessions)
-        with patch("soul_server.cogito.mcp_session_query.get_task_manager", return_value=tm):
+        with patch("soul_server.cogito.mcp_session_query.get_session_query_service", return_value=tm):
             await fn(folder_id="explicit-id", folder_name="⚙️ 클로드 코드 세션")
         # folder_name이 있어도 get_all_folders를 호출하지 않아야 함
         tm.get_all_folders.assert_not_called()
@@ -544,7 +544,7 @@ class TestListSessions:
     async def test_limit_capped_at_100(self):
         tm = _make_mock_task_manager(([], 0))
         fn = _unwrap(mcp_tools.list_sessions)
-        with patch("soul_server.cogito.mcp_session_query.get_task_manager", return_value=tm):
+        with patch("soul_server.cogito.mcp_session_query.get_session_query_service", return_value=tm):
             await fn(limit=200)
         call_kwargs = tm.list_sessions_summary.call_args
         assert call_kwargs[1]["limit"] == 100 or call_kwargs[0][1] == 100
@@ -783,7 +783,7 @@ class TestSendMessageToSession:
         """auto_resumed 없는 정상 케이스 → start_execution 호출 안 함, ok=True 반환."""
         mock_tm = AsyncMock()
         mock_tm.add_intervention.return_value = {"queue_position": 0}
-        mock_tm.start_execution = AsyncMock()
+        mock_tm.executor.start_execution = AsyncMock()
 
         fn = _unwrap(mcp_tools.send_message_to_session)
         with patch("soul_server.cogito.mcp_session_mgmt.get_task_manager", return_value=mock_tm):
@@ -795,13 +795,13 @@ class TestSendMessageToSession:
             text="hello",
             user="agent",
         )
-        mock_tm.start_execution.assert_not_called()
+        mock_tm.executor.start_execution.assert_not_called()
 
     async def test_auto_resumed_calls_start_execution(self):
         """auto_resumed=True → start_execution 호출, ok=True 반환."""
         mock_tm = AsyncMock()
         mock_tm.add_intervention.return_value = {"auto_resumed": True}
-        mock_tm.start_execution = AsyncMock()
+        mock_tm.executor.start_execution = AsyncMock()
         mock_engine = MagicMock()
         mock_rm = MagicMock()
 
@@ -814,7 +814,7 @@ class TestSendMessageToSession:
             result = await fn(target_session_id="sess-456", message="resume me")
 
         assert result["ok"] is True
-        mock_tm.start_execution.assert_called_once_with(
+        mock_tm.executor.start_execution.assert_called_once_with(
             agent_session_id="sess-456",
             claude_runner=mock_engine,
             resource_manager=mock_rm,
@@ -824,7 +824,7 @@ class TestSendMessageToSession:
         """로컬 add_intervention 예외 + _orch_base=None → ok=False 반환, start_execution 호출 안 함."""
         mock_tm = AsyncMock()
         mock_tm.add_intervention.side_effect = RuntimeError("session not found")
-        mock_tm.start_execution = AsyncMock()
+        mock_tm.executor.start_execution = AsyncMock()
 
         fn = _unwrap(mcp_tools.send_message_to_session)
         with patch("soul_server.cogito.mcp_session_mgmt.get_task_manager", return_value=mock_tm):
@@ -832,7 +832,7 @@ class TestSendMessageToSession:
 
         assert result["ok"] is False
         assert "session not found" in result["error"]
-        mock_tm.start_execution.assert_not_called()
+        mock_tm.executor.start_execution.assert_not_called()
 
     async def test_local_failure_with_orch_fallback(self):
         """로컬 실패 + _orch_base 설정 + orchestrator 성공 → ok=True 반환."""

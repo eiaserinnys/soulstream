@@ -10,7 +10,7 @@ import logging
 from pathlib import Path
 
 from soul_server.cogito.mcp_tools import cogito_mcp
-from soul_server.service.task_manager import get_task_manager
+from soul_server.service.session_query_service import get_session_query_service
 from soul_server.service.postgres_session_db import get_session_db
 
 logger = logging.getLogger(__name__)
@@ -143,20 +143,20 @@ async def list_sessions(
         next_cursor가 None이면 마지막 페이지.
     """
     try:
-        tm = get_task_manager()
+        svc = get_session_query_service()
     except RuntimeError as e:
         return {"error": str(e)}
     limit = min(limit, 100)
 
     resolved_folder_id = folder_id
     if folder_name and not folder_id:
-        all_folders = await tm.get_all_folders()
+        all_folders = await svc.get_all_folders()
         matched = next((f for f in all_folders if f.get("name") == folder_name), None)
         resolved_folder_id = matched["id"] if matched else None
 
     resolved_node_id = node_id or node_name
 
-    sessions, total = await tm.list_sessions_summary(
+    sessions, total = await svc.list_sessions_summary(
         search=search, limit=limit, offset=cursor,
         folder_id=resolved_folder_id, node_id=resolved_node_id,
     )

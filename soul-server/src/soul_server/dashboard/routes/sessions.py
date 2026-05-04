@@ -24,6 +24,7 @@ from soul_server.service.task_manager import (
     TaskNotRunningError,
     NodeMismatchError,
 )
+from soul_server.service.session_query_service import get_session_query_service
 from soul_server.service import resource_manager, get_soul_engine
 from soul_server.service import intervention_service
 from soul_server.service.intervention_service import InputRequestNotPendingError
@@ -85,7 +86,7 @@ class RenameSessionRequest(BaseModel):
 @router.get("/api/status", dependencies=[Depends(require_dashboard_auth)])
 async def api_status(request: Request):
     task_manager = get_task_manager()
-    running_tasks = task_manager.get_running_tasks()
+    running_tasks = get_session_query_service().get_running_tasks()
 
     response: dict = {
         "active_tasks": len(running_tasks),
@@ -121,7 +122,7 @@ async def api_get_sessions(
 ):
     from soul_server.config import get_settings
     task_manager = get_task_manager()
-    sessions, total = await task_manager.get_all_sessions(
+    sessions, total = await get_session_query_service().get_all_sessions(
         offset=offset, limit=limit, session_type=session_type,
         folder_id=folder_id,  # None이면 전체 조회 (기존 동작 유지)
         feed_only=feed_only,
@@ -158,7 +159,7 @@ async def api_sessions_stream(limit: int = Query(50, ge=0)):
         task_manager = get_task_manager()
         session_broadcaster = get_session_broadcaster()
 
-        sessions, total = await task_manager.get_all_sessions(offset=0, limit=limit)
+        sessions, total = await get_session_query_service().get_all_sessions(offset=0, limit=limit)
         yield {
             "event": "session_list",
             "data": json.dumps(
@@ -355,7 +356,7 @@ async def api_create_session(body: CreateSessionBody, request: Request):
             },
         )
 
-    await task_manager.start_execution(
+    await task_manager.executor.start_execution(
         agent_session_id=task.agent_session_id,
         claude_runner=get_soul_engine(),
         resource_manager=resource_manager,

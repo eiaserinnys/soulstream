@@ -98,7 +98,7 @@ async def create_agent_session(
         caller_info=caller_info,
     )
 
-    await task_manager.start_execution(
+    await task_manager.executor.start_execution(
         agent_session_id=task.agent_session_id,
         claude_runner=get_soul_engine(),
         resource_manager=resource_manager,
@@ -129,7 +129,7 @@ async def send_message_to_session(target_session_id: str, message: str) -> dict:
             user="agent",
         )
         if result.get("auto_resumed"):
-            await task_manager.start_execution(
+            await task_manager.executor.start_execution(
                 agent_session_id=target_session_id,
                 claude_runner=get_soul_engine(),
                 resource_manager=resource_manager,

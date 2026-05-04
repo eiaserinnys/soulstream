@@ -72,14 +72,25 @@ class TestFormatSseEvent:
 # ============================================================================
 
 
-class _FakeTaskManager:
-    """테스트용 task_manager — remove_listener만 검증."""
+class _FakeListenerManager:
+    """테스트용 listener_manager — remove_listener만 검증."""
 
     def __init__(self):
         self.removed: list[tuple[str, asyncio.Queue]] = []
 
     async def remove_listener(self, agent_session_id: str, event_queue: asyncio.Queue):
         self.removed.append((agent_session_id, event_queue))
+
+
+class _FakeTaskManager:
+    """테스트용 task_manager — listener_manager를 통해 remove_listener 검증."""
+
+    def __init__(self):
+        self.listener_manager = _FakeListenerManager()
+
+    @property
+    def removed(self):
+        return self.listener_manager.removed
 
 
 async def _drain(gen, max_items=10, timeout=1.0):

@@ -45,6 +45,8 @@ from .protocol import (
     EVT_SESSIONS_UPDATE,
 )
 
+from soul_server.service.session_query_service import get_session_query_service
+
 if TYPE_CHECKING:
     from soul_server.service.engine_adapter import SoulEngineAdapter
     from soul_server.service.resource_manager import ResourceManager
@@ -195,7 +197,7 @@ class CommandDispatcher:
         session_id = task.agent_session_id
 
         # 실행 시작
-        await self._tm.start_execution(
+        await self._tm.executor.start_execution(
             agent_session_id=session_id,
             claude_runner=self._engine,
             resource_manager=self._rm,
@@ -240,7 +242,7 @@ class CommandDispatcher:
 
         # auto-resume 시 실행 재시작
         if result.get("auto_resumed"):
-            await self._tm.start_execution(
+            await self._tm.executor.start_execution(
                 agent_session_id=session_id,
                 claude_runner=self._engine,
                 resource_manager=self._rm,
@@ -283,7 +285,7 @@ class CommandDispatcher:
 
     async def _handle_list_sessions(self, cmd: dict) -> None:
         """세션 목록 반환."""
-        sessions, total = await self._tm.get_all_sessions()
+        sessions, total = await get_session_query_service().get_all_sessions()
         await self._send({
             "type": EVT_SESSIONS_UPDATE,
             "sessions": sessions,

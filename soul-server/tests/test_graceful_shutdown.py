@@ -37,6 +37,19 @@ def mock_session_db():
         yield mock_db
 
 
+@pytest.fixture(autouse=True)
+def mock_query_service():
+    """get_session_query_service를 모킹한다.
+
+    각 테스트에서 tm.get_running_tasks를 설정하면 graceful_shutdown 내부에서
+    get_session_query_service().get_running_tasks()로 동일 mock이 반환된다.
+    """
+    mock_svc = MagicMock()
+    mock_svc.get_running_tasks.return_value = []
+    with patch("soul_server.main.get_session_query_service", return_value=mock_svc):
+        yield mock_svc
+
+
 def make_task(session_id: str, claude_session_id: str = None) -> MagicMock:
     """Task mock 생성 헬퍼."""
     task = MagicMock()
@@ -48,24 +61,24 @@ def make_task(session_id: str, claude_session_id: str = None) -> MagicMock:
 class TestGracefulShutdownNoSessions:
     """활성 세션 0개 시나리오."""
 
-    async def test_empty_sessions_marks_empty_in_db(self, mock_session_db):
+    async def test_empty_sessions_marks_empty_in_db(self, mock_session_db, mock_query_service):
         """활성 세션이 없으면 DB에 빈 목록으로 mark_running_at_shutdown을 호출한다."""
         app = make_mock_app()
         tm = MagicMock()
-        tm.get_running_tasks.return_value = []
         tm.add_intervention = AsyncMock()
         tm.cancel_running_tasks = AsyncMock()
+        mock_query_service.get_running_tasks.return_value = []
 
         await graceful_shutdown(app, tm)
 
         mock_session_db.mark_running_at_shutdown.assert_called_once_with([])
 
-    async def test_empty_sessions_no_intervention(self, mock_session_db):
+    async def test_empty_sessions_no_intervention(self, mock_session_db, mock_query_service):
         """활성 세션이 없으면 add_intervention을 호출하지 않는다."""
         app = make_mock_app()
         tm = MagicMock()
-        tm.get_running_tasks.return_value = []
         tm.add_intervention = AsyncMock()
+        mock_query_service.get_running_tasks.return_value = []
 
         await graceful_shutdown(app, tm)
 
@@ -75,7 +88,7 @@ class TestGracefulShutdownNoSessions:
 class TestGracefulShutdownActiveSessions:
     """활성 세션 N개 시나리오."""
 
-    async def test_active_sessions_marked_in_db(self, mock_session_db):
+    async def test_active_sessions_marked_in_db(self, mock_session_db, mock_query_service):
         """활성 세션 ID를 DB에 mark_running_at_shutdown으로 기록한다."""
         app = make_mock_app()
         task1 = make_task("sess-1", "claude-abc")
@@ -83,7 +96,7 @@ class TestGracefulShutdownActiveSessions:
 
         tm = MagicMock()
         # 1번째(세션 목록 수집) → 2번째(대기 루프) → 3번째(강제 취소 체크)
-        tm.get_running_tasks.side_effect = [[task1, task2], [], []]
+        mock_query_service.get_running_tasks.side_effect = [[task1, task2], [], []]
         tm.add_intervention = AsyncMock()
         tm.cancel_running_tasks = AsyncMock()
 
@@ -93,13 +106,13 @@ class TestGracefulShutdownActiveSessions:
             ["sess-1", "sess-2"]
         )
 
-    async def test_intervention_sent_with_skip_resume(self, mock_session_db):
+    async def test_intervention_sent_with_skip_resume(self, mock_session_db, mock_query_service):
         """단일 활성 세션에 skip_resume=True로 add_intervention을 호출한다."""
         app = make_mock_app()
         task1 = make_task("sess-1")
 
         tm = MagicMock()
-        tm.get_running_tasks.side_effect = [[task1], [], []]
+        mock_query_service.get_running_tasks.side_effect = [[task1], [], []]
         tm.add_intervention = AsyncMock()
         tm.cancel_running_tasks = AsyncMock()
 
@@ -112,13 +125,13 @@ class TestGracefulShutdownActiveSessions:
             skip_resume=True,
         )
 
-    async def test_multiple_sessions_all_receive_intervention(self, mock_session_db):
+    async def test_multiple_sessions_all_receive_intervention(self, mock_session_db, mock_query_service):
         """여러 활성 세션 모두에 intervention이 전송된다."""
         app = make_mock_app()
         tasks = [make_task(f"sess-{i}") for i in range(3)]
 
         tm = MagicMock()
-        tm.get_running_tasks.side_effect = [tasks, [], []]
+        mock_query_service.get_running_tasks.side_effect = [tasks, [], []]
         tm.add_intervention = AsyncMock()
         tm.cancel_running_tasks = AsyncMock()
 
@@ -132,14 +145,14 @@ class TestGracefulShutdownActiveSessions:
 class TestGracefulShutdownExceptionRecovery:
     """예외 발생 시 복원 시나리오."""
 
-    async def test_exception_clears_flags_and_restores_draining(self, mock_session_db):
+    async def test_exception_clears_flags_and_restores_draining(self, mock_session_db, mock_query_service):
         """예외 발생 시 DB 플래그를 정리하고 is_draining을 False로 복원한다."""
         app = make_mock_app()
         task1 = make_task("sess-1")
 
         tm = MagicMock()
         # 처음에는 세션 반환 → DB 플래그 설정 → 대기 루프 진입 → asyncio.sleep에서 예외
-        tm.get_running_tasks.return_value = [task1]
+        mock_query_service.get_running_tasks.return_value = [task1]
         tm.add_intervention = AsyncMock()
 
         async def raise_error(*args, **kwargs):
@@ -159,11 +172,11 @@ class TestGracefulShutdownExceptionRecovery:
 class TestGracefulShutdownSessionDbError:
     """get_session_db() 실패 시나리오."""
 
-    async def test_session_db_unavailable_propagates_without_name_error(self):
+    async def test_session_db_unavailable_propagates_without_name_error(self, mock_query_service):
         """get_session_db()가 예외를 던지면 NameError 없이 원래 예외가 전파되어야 한다."""
         app = make_mock_app()
         tm = MagicMock()
-        tm.get_running_tasks.return_value = [make_task("sess-1")]
+        mock_query_service.get_running_tasks.return_value = [make_task("sess-1")]
         tm.add_intervention = AsyncMock()
 
         # autouse mock_session_db fixture의 patch를 RuntimeError로 override
@@ -192,11 +205,11 @@ class TestGracefulShutdownSessionDbError:
 class TestGracefulShutdownDoubleCallGuard:
     """이중 호출 가드 시나리오."""
 
-    async def test_second_call_returns_immediately(self, mock_session_db):
+    async def test_second_call_returns_immediately(self, mock_session_db, mock_query_service):
         """이미 draining 중이면 두 번째 호출은 즉시 반환하고 get_running_tasks를 추가 호출하지 않는다."""
         app = make_mock_app()
         tm = MagicMock()
-        tm.get_running_tasks.return_value = []
+        mock_query_service.get_running_tasks.return_value = []
         tm.add_intervention = AsyncMock()
 
         # 첫 번째 호출
@@ -204,10 +217,10 @@ class TestGracefulShutdownDoubleCallGuard:
         assert app.state.is_draining is True
 
         # 첫 번째 호출의 카운트를 초기화하고 두 번째 호출 시 추가 호출이 없는지 검증
-        tm.get_running_tasks.reset_mock()
+        mock_query_service.get_running_tasks.reset_mock()
 
         # 두 번째 호출 (즉시 반환)
         await graceful_shutdown(app, tm)
 
         # 두 번째 호출에서는 get_running_tasks가 호출되지 않아야 함
-        assert tm.get_running_tasks.call_count == 0
+        assert mock_query_service.get_running_tasks.call_count == 0

@@ -36,7 +36,9 @@ def client_no_auth():
         return None
 
     mock_task_manager = MagicMock()
-    mock_task_manager.get_running_tasks.return_value = []
+
+    mock_query_service = MagicMock()
+    mock_query_service.get_running_tasks.return_value = []
 
     mock_resource_manager = MagicMock()
     mock_resource_manager.max_concurrent = 3
@@ -44,6 +46,7 @@ def client_no_auth():
     main_module.app.dependency_overrides[require_dashboard_auth] = bypass_auth
     with (
         patch("soul_server.dashboard.routes.sessions.get_task_manager", return_value=mock_task_manager),
+        patch("soul_server.dashboard.routes.sessions.get_session_query_service", return_value=mock_query_service),
         patch("soul_server.dashboard.routes.sessions.resource_manager", mock_resource_manager),
     ):
         yield TestClient(main_module.app, raise_server_exceptions=False)

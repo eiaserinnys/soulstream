@@ -101,13 +101,15 @@ class TestStatusEndpoint:
         mock_task.status = "running"
         mock_task.created_at.isoformat.return_value = "2026-02-26T00:00:00"
 
+        mock_query_service = MagicMock()
+        mock_query_service.get_running_tasks.return_value = [mock_task]
+
         mock_task_manager = MagicMock()
-        mock_task_manager.get_running_tasks.return_value = [mock_task]
 
         app.state.runner_pool = None
-        with patch(
-            "soul_server.main.get_task_manager",
-            return_value=mock_task_manager,
+        with (
+            patch("soul_server.main.get_session_query_service", return_value=mock_query_service),
+            patch("soul_server.main.get_task_manager", return_value=mock_task_manager),
         ):
             client = TestClient(app)
             response = client.get("/status")
