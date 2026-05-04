@@ -274,7 +274,7 @@ class Task:
 # - result: ResultSSEEvent.output
 # - complete: CompleteEvent.result
 # - error: ErrorEvent.message
-# intervention_sent는 별도 처리 (_update_and_broadcast_last_message L291~292)
+# intervention_sent는 별도 처리 (EventPersistence.update_last_message)
 PREVIEW_FIELD_MAP: dict[str, str] = {
     "thinking":      "thinking",
     "text_delta":    "text",

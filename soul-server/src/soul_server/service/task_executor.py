@@ -87,10 +87,6 @@ class TaskExecutor:
         )
         self._registry = agent_registry
 
-    async def _persist_event(self, session_id: str, event_dict: dict) -> Optional[int]:
-        """이벤트를 SessionDB에 영속화하고 event_id를 반환한다."""
-        return await self._persistence.persist_event(session_id, event_dict)
-
     async def start_execution(
         self,
         agent_session_id: str,
@@ -250,7 +246,7 @@ class TaskExecutor:
                     "type": "system_message",
                     "text": ctx.effective_system_prompt,
                 }
-                event_id = await self._persist_event(session_id, sys_msg_event)
+                event_id = await self._persistence.persist_event(session_id, sys_msg_event)
                 sys_msg_event["_event_id"] = event_id
                 if event_id is not None:
                     task.last_event_id = event_id
@@ -271,7 +267,7 @@ class TaskExecutor:
                     user_msg_event["caller_info"] = task.caller_info
                 if task.attachment_paths:
                     user_msg_event["attachments"] = task.attachment_paths
-                event_id = await self._persist_event(session_id, user_msg_event)
+                event_id = await self._persistence.persist_event(session_id, user_msg_event)
                 user_msg_event["_event_id"] = event_id
                 current_user_request_id = event_id  # int 유지 (parent_event_id 컬럼이 INTEGER)
                 if event_id is not None:
@@ -382,12 +378,6 @@ class TaskExecutor:
             )
         return target_phase
 
-    async def _update_and_broadcast_last_message(
-        self, session_id: str, event_dict: dict, task: Task
-    ) -> None:
-        """Thin delegation to EventPersistence.update_last_message (backward compat)."""
-        await self._persistence.update_last_message(session_id, event_dict, task)
-
     @asynccontextmanager
     async def _handle_execution_errors(
         self,
@@ -467,7 +457,7 @@ class TaskExecutor:
                             }
                             if attachment_paths:
                                 intervention_msg["attachments"] = attachment_paths
-                            ev_id = await self._persist_event(session_id, intervention_msg)
+                            ev_id = await self._persistence.persist_event(session_id, intervention_msg)
                             request_id_ref[0] = ev_id  # int 유지 (parent_event_id 컬럼이 INTEGER)
                             event["_event_id"] = ev_id
                             if ev_id is not None:
