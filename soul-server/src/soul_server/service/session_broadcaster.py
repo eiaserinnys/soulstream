@@ -65,7 +65,15 @@ class SessionBroadcaster(BaseSessionBroadcaster):
         return await self.broadcast(event)
 
     async def emit_session_updated(self, task: Task) -> int:
-        """세션 업데이트 이벤트 발행"""
+        """세션 업데이트 이벤트 발행.
+
+        last_progress_text는 푸시 알림 body·세션 카드 preview에서 사용된다
+        (task_executor가 text_delta마다 task.last_progress_text를 갱신,
+        task_models.py:162). task가 COMPLETED/ERROR로 전환되는 시점이
+        push 발사 트리거이므로 이 시점의 텍스트가 가장 의미 있는 본문이다.
+        push body가 session_id[:8]로 떨어지던 결함 회피 — orch-server
+        PushNotifier._handle_session_updated 참조.
+        """
         updated_at = task.completed_at or utc_now()
         event = {
             "type": "session_updated",
@@ -74,6 +82,7 @@ class SessionBroadcaster(BaseSessionBroadcaster):
             "updated_at": updated_at.isoformat(),
             "last_event_id": task.last_event_id,
             "last_read_event_id": task.last_read_event_id,
+            "last_progress_text": task.last_progress_text,
         }
         return await self.broadcast(event)
 
