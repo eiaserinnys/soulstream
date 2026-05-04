@@ -39,6 +39,7 @@ from soul_server.service.postgres_session_db import PostgresSessionDB
 from soul_server.service.session_broadcaster import get_session_broadcaster
 from soul_server.service.session_eviction_manager import SessionEvictionManager
 from soul_server.service.session_query_service import init_session_query_service
+from soul_server.util.attachment_helpers import build_attachment_context_items
 
 # Re-export for backward compatibility
 __all__ = [
@@ -878,19 +879,7 @@ class TaskManager:
                 )
 
         # 완료/에러/중단 → 자동 resume (같은 세션 재활성화)
-        # attachment_paths → extra_context_items 변환 (대시보드 라우트와 동일 패턴)
-        extra_ctx = None
-        if attachment_paths:
-            extra_ctx = [
-                {
-                    "key": "attached_files",
-                    "label": "첨부 파일",
-                    "content": (
-                        "다음 파일들이 첨부되었습니다. Read 도구로 내용을 확인하세요:\n"
-                        + "\n".join(f"- {p}" for p in attachment_paths)
-                    ),
-                }
-            ]
+        extra_ctx = build_attachment_context_items(attachment_paths)
 
         await self.create_task(
             prompt=text,

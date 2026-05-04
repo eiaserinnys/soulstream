@@ -81,7 +81,6 @@ export type SessionSlice = Pick<
     | "setTotalSubtreeHeight"
     | "addOptimisticSession"
     | "clearTree"
-    | "clearCards"
     | "toggleNodeCollapse"
     | "setNodeCollapsed"
     | "clearCollapsedNodes"
@@ -477,11 +476,6 @@ export const createSessionSlice: StateCreator<
       collapsedNodeIds: new Set<string>(),
       processingCtx: createProcessingContext(),
     });
-  },
-
-  // 하위 호환 alias
-  clearCards() {
-    get().clearTree();
   },
 
   // --- 접기/펼치기 ---

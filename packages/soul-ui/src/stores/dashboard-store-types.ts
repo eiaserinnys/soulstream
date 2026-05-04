@@ -271,9 +271,6 @@ export interface DashboardActions {
   clearTree: () => void;
   reset: () => void;
 
-  // 하위 호환 alias
-  clearCards: () => void;
-
   // 접기/펼치기
   toggleNodeCollapse: (nodeId: string) => void;
   setNodeCollapsed: (nodeId: string, collapsed: boolean) => void;

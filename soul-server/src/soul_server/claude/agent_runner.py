@@ -6,7 +6,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import IO, Any, Optional, Callable, Awaitable
+from typing import IO, Optional, Callable, Awaitable
 
 try:
     from claude_agent_sdk import (
@@ -108,32 +108,6 @@ class ClaudeResult(EngineResult):
     update_requested: bool = False
     restart_requested: bool = False
     list_run: Optional[str] = None  # <!-- LIST_RUN: 리스트명 --> 마커로 추출된 리스트 이름
-
-    @classmethod
-    def from_engine_result(
-        cls,
-        result: EngineResult,
-        markers: Any = None,
-    ) -> "ClaudeResult":
-        """EngineResult + markers → ClaudeResult 변환
-
-        Args:
-            result: 엔진 순수 결과
-            markers: 파싱된 응용 마커 (duck-typed, None이면 기본값 사용)
-        """
-        return cls(
-            success=result.success,
-            output=result.output,
-            session_id=result.session_id,
-            error=result.error,
-            is_error=result.is_error,
-            interrupted=result.interrupted,
-            usage=result.usage,
-            collected_messages=result.collected_messages,
-            update_requested=getattr(markers, "update_requested", False),
-            restart_requested=getattr(markers, "restart_requested", False),
-            list_run=getattr(markers, "list_run", None),
-        )
 
 
 INTERVENTION_POLL_INTERVAL = 1.0  # 초: 인터벤션 폴링 주기
