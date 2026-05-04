@@ -78,17 +78,21 @@ async def _relay_cross_node_intervention(
         http_url = re.sub(r"^ws://", "http://", http_url)
         http_url = re.sub(r"/ws/.*$", "", http_url)
 
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            await client.post(
+        auth_token = getattr(settings, "auth_bearer_token", "")
+        headers = {"Authorization": f"Bearer {auth_token}"} if auth_token else {}
+
+        async with httpx.AsyncClient(timeout=10.0, headers=headers) as client:
+            resp = await client.post(
                 f"{http_url}/api/sessions/{caller_session_id}/intervene",
                 json={"text": text, "user": "agent"},
             )
+            resp.raise_for_status()
         logger.info(
             f"Cross-node notification sent to {caller_session_id} via upstream"
         )
     except Exception as remote_err:
-        logger.warning(
-            f"Cross-node notification also failed for {caller_session_id}: {remote_err}"
+        logger.error(
+            f"Cross-node notification failed for {caller_session_id}: {remote_err}"
         )
 
 
