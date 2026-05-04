@@ -363,14 +363,14 @@ class TestBroadcasterWireContract:
         """emit_session_created wire 키 셋이 화이트리스트와 정확히 일치한다."""
         queue = broadcaster.add_client()
         await broadcaster.emit_session_created(self._make_task(), folder_id="folder-1")
-        event = queue.get_nowait()
+        _eid, event = queue.get_nowait()
         assert set(event.keys()) == self.EXPECTED_CREATED_KEYS
 
     async def test_session_created_payload_keys_when_folder_id_none(self, broadcaster):
         """folder_id=None일 때도 키 셋은 동일 (값만 None) — 미분류 세션 케이스."""
         queue = broadcaster.add_client()
         await broadcaster.emit_session_created(self._make_task(), folder_id=None)
-        event = queue.get_nowait()
+        _eid, event = queue.get_nowait()
         assert set(event.keys()) == self.EXPECTED_CREATED_KEYS
         assert event["folder_id"] is None
 
@@ -395,5 +395,5 @@ class TestBroadcasterWireContract:
             last_event_id=42,
             last_read_event_id=40,
         )
-        event = queue.get_nowait()
+        _eid, event = queue.get_nowait()
         assert set(event.keys()) == self.EXPECTED_MESSAGE_UPDATED_KEYS

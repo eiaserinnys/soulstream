@@ -12,13 +12,18 @@
  * - SSE delta 이벤트 → 캐시/store 동기화는 useSessionStreamCacheSync 훅이 전담한다.
  */
 
-import { useCallback, useState, useMemo } from "react";
+import { useCallback, useRef, useState, useMemo } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useDashboardStore } from "../stores/dashboard-store";
 import type { SessionSummary } from "../shared/types";
 import type { SessionStorageProvider } from "../providers/types";
 import { useInitialCatalogLoad } from "./useInitialCatalogLoad";
 import { useSessionStreamCacheSync } from "./useSessionStreamCacheSync";
+import {
+  buildCatalogStreamUrl,
+  reconcileReplayGap,
+  reconcileStreamMeta,
+} from "./catalog-stream-resume";
 
 const DEFAULT_PAGE_SIZE = 50;
 
@@ -132,12 +137,39 @@ export function useSessionListProvider(
   // --- 초기 카탈로그 로드 ---
   useInitialCatalogLoad(enabled);
 
+  // --- Last-Event-ID resume 정본 (provider 레벨) ---
+  // 매 SSE id 부착 이벤트마다 lastEventIdRef를 갱신, instance_id 변경/replay_gap
+  // 수신 시 lastEventIdRef를 latest_id로 끌어올리고 queryRefetch.
+  // 두 ref는 useSessionStreamSSE 재연결 시 urlBuilder를 통해 자연스럽게 query에 부착된다.
+  const lastEventIdRef = useRef<string | undefined>(undefined);
+  const instanceIdRef = useRef<string | undefined>(undefined);
+
   // --- SSE 구독: 연결 + 캐시/store 동기화 ---
   useSessionStreamCacheSync({
     enabled: enabled && !externalProvider,
-    url: `/api/sessions/stream?limit=${DEFAULT_PAGE_SIZE}`,
+    urlBuilder: () =>
+      buildCatalogStreamUrl(lastEventIdRef.current, instanceIdRef.current),
     queryKey,
-    onReconnect: queryRefetch,
+    onEventIdAdvance: (eid) => {
+      // SSE id 부착 이벤트만 cache-sync 내부 가드를 통과해 도달 → e.lastEventId
+      // 빈 값 자동 skip. parseInt(NaN) 오염 회피.
+      lastEventIdRef.current = eid;
+    },
+    onStreamMeta: (e) => {
+      const update = reconcileStreamMeta(e, {
+        instanceId: instanceIdRef.current,
+        lastEventId: lastEventIdRef.current,
+      });
+      if (!update) return;
+      instanceIdRef.current = update.nextInstanceId;
+      lastEventIdRef.current = update.nextLastEventId;
+      if (update.shouldRefetch) queryRefetch();
+    },
+    onReplayGap: (e) => {
+      const update = reconcileReplayGap(e);
+      lastEventIdRef.current = update.nextLastEventId;
+      if (update.shouldRefetch) queryRefetch();
+    },
   });
 
   return {

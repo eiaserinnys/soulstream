@@ -32,6 +32,8 @@ export interface SessionListStreamEvent {
 export interface SessionCreatedStreamEvent {
   type: "session_created";
   session: SessionSummary;
+  /** broadcaster가 부여한 SSE event_id (replay 시 Last-Event-ID 추적용) */
+  lastEventId?: string;
 }
 
 /** 세션 상태 업데이트 */
@@ -43,18 +45,24 @@ export interface SessionUpdatedStreamEvent {
   last_message?: LastMessage;
   last_event_id?: number;
   last_read_event_id?: number;
+  /** broadcaster가 부여한 SSE event_id */
+  lastEventId?: string;
 }
 
 /** 세션 삭제 */
 export interface SessionDeletedStreamEvent {
   type: "session_deleted";
   agent_session_id: string;
+  /** broadcaster가 부여한 SSE event_id */
+  lastEventId?: string;
 }
 
 /** 카탈로그 업데이트 이벤트 */
 export interface CatalogUpdatedStreamEvent {
   type: "catalog_updated";
   catalog: CatalogState;
+  /** broadcaster가 부여한 SSE event_id */
+  lastEventId?: string;
 }
 
 /** 메타데이터 업데이트 이벤트 (세션 스트림) */
@@ -63,6 +71,34 @@ export interface MetadataUpdatedStreamEvent {
   session_id: string;
   entry: MetadataEntry;
   metadata: MetadataEntry[];
+  /** broadcaster가 부여한 SSE event_id */
+  lastEventId?: string;
+}
+
+/**
+ * 스트림 메타 이벤트 (구독 시 최초 1회, SSE id 미부착)
+ *
+ * orch 인스턴스 식별자(`instance_id`)와 현재 ring buffer의 최신 event_id(`latest_id`)를
+ * 클라이언트에 알린다. 클라이언트는 instance_id 변경 시 풀 refetch 후
+ * lastEventId를 latest_id로 동기화한다.
+ */
+export interface StreamMetaStreamEvent {
+  type: "stream_meta";
+  instance_id: string;
+  latest_id: number;
+}
+
+/**
+ * Replay gap 신호 (SSE id 미부착)
+ *
+ * 클라이언트가 보낸 Last-Event-ID가 ring buffer 보관 범위를 벗어나
+ * 서버가 결손분을 재전송할 수 없을 때 emit. 클라이언트는 풀 refetch 후
+ * lastEventId를 latest_id로 끌어올려 다음 사이클부터 정상 resume 한다.
+ */
+export interface ReplayGapStreamEvent {
+  type: "replay_gap";
+  latest_id: number;
+  instance_id: string;
 }
 
 /** 세션 스트림 이벤트 유니온 */
@@ -72,4 +108,6 @@ export type SessionStreamEvent =
   | SessionUpdatedStreamEvent
   | SessionDeletedStreamEvent
   | CatalogUpdatedStreamEvent
-  | MetadataUpdatedStreamEvent;
+  | MetadataUpdatedStreamEvent
+  | StreamMetaStreamEvent
+  | ReplayGapStreamEvent;

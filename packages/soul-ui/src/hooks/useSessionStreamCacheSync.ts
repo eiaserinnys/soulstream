@@ -23,9 +23,11 @@ import type {
 import type {
   CatalogUpdatedStreamEvent,
   MetadataUpdatedStreamEvent,
+  ReplayGapStreamEvent,
   SessionCreatedStreamEvent,
   SessionDeletedStreamEvent,
   SessionUpdatedStreamEvent,
+  StreamMetaStreamEvent,
 } from "../shared/stream-events";
 import {
   applyMetadataUpdated,
@@ -46,18 +48,35 @@ interface SessionPage {
 export interface UseSessionStreamCacheSyncOptions {
   /** 구독 활성화 여부. false면 연결하지 않는다. */
   enabled: boolean;
-  /** EventSource URL. */
-  url: string;
+  /**
+   * 매 connect 시 호출되어 SSE URL을 반환한다 (Last-Event-ID/instance_id 동적 부착용).
+   * 이 옵션은 useSessionStreamSSE에 그대로 패스스루된다.
+   */
+  urlBuilder: () => string;
   /** session_created 이벤트 수신 시 현재 뷰의 queryKey (setQueryData 대상). */
   queryKey: QueryKey;
-  /** 에러 후 재연결 성공 시 호출할 refetch 함수. */
-  onReconnect: () => void;
+  /**
+   * SSE id 부착 이벤트(session_created/updated/deleted/catalog_updated/metadata_updated) 수신 시
+   * 호출되어 호출자가 lastEventId 정본을 갱신하도록 한다. e.lastEventId가 빈 값이면 호출되지 않는다.
+   */
+  onEventIdAdvance?: (lastEventId: string) => void;
+  /** stream_meta 수신 시 호출 (instance_id 변경 감지용). */
+  onStreamMeta?: (event: StreamMetaStreamEvent) => void;
+  /** replay_gap 수신 시 호출 (풀 refetch 트리거용). */
+  onReplayGap?: (event: ReplayGapStreamEvent) => void;
 }
 
 export function useSessionStreamCacheSync(
   options: UseSessionStreamCacheSyncOptions,
 ): void {
-  const { enabled, url, queryKey, onReconnect } = options;
+  const {
+    enabled,
+    urlBuilder,
+    queryKey,
+    onEventIdAdvance,
+    onStreamMeta,
+    onReplayGap,
+  } = options;
   const queryClient = useQueryClient();
   const setActiveSessionSummary = useDashboardStore(
     (s) => s.setActiveSessionSummary,
@@ -65,6 +84,7 @@ export function useSessionStreamCacheSync(
 
   const onSessionCreated = useCallback(
     (event: SessionCreatedStreamEvent) => {
+      if (event.lastEventId) onEventIdAdvance?.(event.lastEventId);
       console.log(`[⚡ SSE] type=session_created`);
       const newSession = toSessionSummary(
         event.session as unknown as Record<string, unknown>,
@@ -102,11 +122,12 @@ export function useSessionStreamCacheSync(
         },
       );
     },
-    [queryClient, queryKey],
+    [queryClient, queryKey, onEventIdAdvance],
   );
 
   const onSessionUpdated = useCallback(
     (event: SessionUpdatedStreamEvent) => {
+      if (event.lastEventId) onEventIdAdvance?.(event.lastEventId);
       console.log(`[⚡ SSE] type=session_updated`);
       const updates = buildSessionUpdates(event);
 
@@ -136,11 +157,12 @@ export function useSessionStreamCacheSync(
       const found = findSessionInPages(allQueries, event.agent_session_id);
       if (found) setActiveSessionSummary({ ...found, ...updates });
     },
-    [queryClient, setActiveSessionSummary],
+    [queryClient, setActiveSessionSummary, onEventIdAdvance],
   );
 
   const onSessionDeleted = useCallback(
     (event: SessionDeletedStreamEvent) => {
+      if (event.lastEventId) onEventIdAdvance?.(event.lastEventId);
       console.log(`[⚡ SSE] session_deleted → ${event.agent_session_id}`);
       queryClient.setQueriesData<InfiniteData<SessionPage>>(
         { queryKey: ["sessions"], exact: false },
@@ -150,21 +172,23 @@ export function useSessionStreamCacheSync(
         },
       );
     },
-    [queryClient],
+    [queryClient, onEventIdAdvance],
   );
 
   const onCatalogUpdated = useCallback(
     (event: CatalogUpdatedStreamEvent) => {
+      if (event.lastEventId) onEventIdAdvance?.(event.lastEventId);
       console.log(
         `[⚡ SSE] catalog_updated → folders=${event.catalog?.folders?.length}, sessions=${Object.keys(event.catalog?.sessions ?? {}).length}`,
       );
       useDashboardStore.getState().setCatalog(event.catalog as CatalogState);
     },
-    [],
+    [onEventIdAdvance],
   );
 
   const onMetadataUpdated = useCallback(
     (event: MetadataUpdatedStreamEvent) => {
+      if (event.lastEventId) onEventIdAdvance?.(event.lastEventId);
       queryClient.setQueriesData<InfiniteData<SessionPage>>(
         { queryKey: ["sessions"], exact: false },
         (old) => {
@@ -173,7 +197,7 @@ export function useSessionStreamCacheSync(
         },
       );
     },
-    [queryClient],
+    [queryClient, onEventIdAdvance],
   );
 
   const onSessionList = useCallback(() => {
@@ -183,13 +207,14 @@ export function useSessionStreamCacheSync(
 
   useSessionStreamSSE({
     enabled,
-    url,
+    urlBuilder,
     onSessionList,
     onSessionCreated,
     onSessionUpdated,
     onSessionDeleted,
     onCatalogUpdated,
     onMetadataUpdated,
-    onReconnect,
+    onStreamMeta,
+    onReplayGap,
   });
 }
