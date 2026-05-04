@@ -239,3 +239,45 @@ async def test_multiple_devices_fan_out():
 
     # 3개 디바이스 모두에 발송 (사용자 단위 fan-out)
     assert provider.send.await_count == 3
+
+
+@pytest.mark.asyncio
+async def test_session_updated_with_snake_case_agent_session_id():
+    """🔴 회귀 방지: soul-server emit_session_updated/emit_session_phase는
+    `agent_session_id` (snake_case) 키를 사용한다 (session_broadcaster.py:72,94).
+    PushNotifier가 camelCase만 찾으면 session_id가 None이 되어 silent skip된다."""
+    notifier, provider, repo = _make_notifier(user_info={"email": "a@b.com"})
+    repo.list_tokens.return_value = [("dev-1", "tok-1")]
+    provider.send.return_value = SendResult(ok=True, invalid_token=False)
+
+    # snake_case 키만 사용 (실제 wire format)
+    await notifier._on_change(
+        "node_session_session_updated",
+        "node-A",
+        {"agent_session_id": "S1", "status": "running"},
+    )
+    await notifier._on_change(
+        "node_session_session_updated",
+        "node-A",
+        {"agent_session_id": "S1", "status": "completed"},
+    )
+
+    assert provider.send.await_count == 1
+    assert provider.send.await_args.args[1] == "세션 완료"
+
+
+@pytest.mark.asyncio
+async def test_input_request_with_snake_case_agent_session_id():
+    """🔴 회귀 방지: input_request도 동일하게 snake_case를 받아야 한다."""
+    notifier, provider, repo = _make_notifier(user_info={"email": "a@b.com"})
+    repo.list_tokens.return_value = [("dev-1", "tok-1")]
+    provider.send.return_value = SendResult(ok=True, invalid_token=False)
+
+    await notifier._on_change(
+        "node_session_input_request",
+        "node-A",
+        {"agent_session_id": "S1", "prompt": "어떻게 진행할까요?"},
+    )
+
+    assert provider.send.await_count == 1
+    assert provider.send.await_args.args[1] == "입력 요청"

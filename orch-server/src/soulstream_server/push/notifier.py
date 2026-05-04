@@ -71,7 +71,14 @@ class PushNotifier:
             return
 
     async def _handle_session_updated(self, node_id: str, data: dict) -> None:
-        session_id = data.get("agentSessionId") or data.get("session_id")
+        # wire format: soul-server `emit_session_updated` / `emit_session_phase`는
+        # snake_case `agent_session_id`를 사용한다 (session_broadcaster.py:72,94).
+        # 옛 wire(camelCase agentSessionId)도 호환성 유지를 위해 fallback에 둔다.
+        session_id = (
+            data.get("agent_session_id")
+            or data.get("agentSessionId")
+            or data.get("session_id")
+        )
         new_status = (data.get("status") or "").lower()
         if not session_id or not new_status:
             return
@@ -90,7 +97,12 @@ class PushNotifier:
             )
 
     async def _handle_input_request(self, node_id: str, data: dict) -> None:
-        session_id = data.get("agentSessionId") or data.get("session_id")
+        # wire format은 _handle_session_updated와 동일하게 snake_case 정본 + camel/legacy fallback.
+        session_id = (
+            data.get("agent_session_id")
+            or data.get("agentSessionId")
+            or data.get("session_id")
+        )
         if not session_id:
             return
         prompt = (data.get("prompt") or "").strip()
