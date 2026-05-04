@@ -284,6 +284,8 @@ class TaskExecutor:
                 }
                 if task.caller_info:
                     user_msg_event["caller_info"] = task.caller_info
+                if task.attachment_paths:
+                    user_msg_event["attachments"] = task.attachment_paths
                 event_id = await self._persist_event(session_id, user_msg_event)
                 user_msg_event["_event_id"] = event_id
                 current_user_request_id = event_id  # int 유지 (parent_event_id 컬럼이 INTEGER)
@@ -527,8 +529,10 @@ class TaskExecutor:
                     return await self._get_intervention(session_id)
 
                 # 개입 메시지 전송 콜백
-                async def on_intervention_sent(user: str, text: str):
+                async def on_intervention_sent(user: str, text: str, attachment_paths: list | None = None):
                     event = {"type": "intervention_sent", "user": user, "text": text}
+                    if attachment_paths:
+                        event["attachments"] = attachment_paths
                     if self._db is not None:
                         try:
                             intervention_soulstream = build_soulstream_context_item(
@@ -544,6 +548,8 @@ class TaskExecutor:
                                 "text": text,
                                 "context": [intervention_soulstream],
                             }
+                            if attachment_paths:
+                                intervention_msg["attachments"] = attachment_paths
                             ev_id = await self._persist_event(session_id, intervention_msg)
                             request_id_ref[0] = ev_id  # int 유지 (parent_event_id 컬럼이 INTEGER)
                             event["_event_id"] = ev_id

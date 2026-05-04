@@ -620,6 +620,7 @@ class TaskManager:
         system_prompt: Optional[str],
         profile_id: Optional[str],
         oauth_token: Optional[str],
+        attachment_paths: Optional[List[str]] = None,
     ) -> None:
         """완료/에러 상태의 기존 세션을 RUNNING으로 재활성화한다.
 
@@ -650,6 +651,7 @@ class TaskManager:
         task.use_mcp = use_mcp
         task.context = context
         task.context_items = context_items
+        task.attachment_paths = attachment_paths
         task.model = model
         task.system_prompt = system_prompt
         if profile_id is not None:
@@ -680,6 +682,7 @@ class TaskManager:
         oauth_token: Optional[str] = None,
         caller_session_id: Optional[str] = None,
         caller_info: Optional[dict] = None,
+        attachment_paths: Optional[List[str]] = None,
     ) -> Task:
         """
         새 세션 태스크 생성 또는 기존 세션 resume
@@ -755,6 +758,7 @@ class TaskManager:
                     system_prompt=system_prompt,
                     profile_id=profile_id,
                     oauth_token=oauth_token,
+                    attachment_paths=attachment_paths,
                 )
                 task = existing
                 is_new = False
@@ -774,6 +778,7 @@ class TaskManager:
                     oauth_token=oauth_token,
                     caller_session_id=caller_session_id,
                     caller_info=caller_info,
+                    attachment_paths=attachment_paths,
                 )
                 is_new = True
 
@@ -801,6 +806,7 @@ class TaskManager:
         oauth_token: Optional[str],
         caller_session_id: Optional[str],
         caller_info: Optional[dict] = None,
+        attachment_paths: Optional[List[str]] = None,
     ) -> Task:
         """신규 Task 생성 + _tasks 등록. create_task의 락 보유 상태에서 호출된다."""
         task = Task(
@@ -819,6 +825,7 @@ class TaskManager:
             caller_session_id=caller_session_id,
             caller_info=caller_info,
         )
+        task.attachment_paths = attachment_paths
         self._tasks[agent_session_id] = task
         logger.info(f"Created new session: {agent_session_id}")
         return task
@@ -993,10 +1000,26 @@ class TaskManager:
                 )
 
         # 완료/에러/중단 → 자동 resume (같은 세션 재활성화)
+        # attachment_paths → extra_context_items 변환 (대시보드 라우트와 동일 패턴)
+        extra_ctx = None
+        if attachment_paths:
+            extra_ctx = [
+                {
+                    "key": "attached_files",
+                    "label": "첨부 파일",
+                    "content": (
+                        "다음 파일들이 첨부되었습니다. Read 도구로 내용을 확인하세요:\n"
+                        + "\n".join(f"- {p}" for p in attachment_paths)
+                    ),
+                }
+            ]
+
         await self.create_task(
             prompt=text,
             agent_session_id=agent_session_id,
             client_id=user,
+            extra_context_items=extra_ctx,
+            attachment_paths=attachment_paths,
         )
 
         return {

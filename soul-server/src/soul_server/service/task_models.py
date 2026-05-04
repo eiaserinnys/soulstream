@@ -125,6 +125,9 @@ class Task:
     # 시스템 프롬프트 (런타임 전용, 영속화 안 됨)
     system_prompt: Optional[str] = field(default=None, repr=False)
 
+    # 첨부 파일 경로 (런타임 전용, 영속화 안 됨 — DB events payload에 별도 기록)
+    attachment_paths: Optional[List[str]] = field(default=None, repr=False)
+
     # LLM 프록시 메타데이터
     session_type: str = "claude"        # "claude" | "llm"
     llm_provider: Optional[str] = None  # "openai" | "anthropic"

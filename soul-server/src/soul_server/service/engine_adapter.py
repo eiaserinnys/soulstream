@@ -282,7 +282,7 @@ class SoulEngineAdapter:
             intervention_event = InterventionSentEvent(user=msg.user, text=msg.text)
             await queue.put(intervention_event)
             if on_intervention_sent:
-                await on_intervention_sent(msg.user, msg.text)
+                await on_intervention_sent(msg.user, msg.text, msg.attachment_paths)
 
             return _build_intervention_prompt(msg)
 

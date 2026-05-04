@@ -334,6 +334,7 @@ async def api_create_session(body: CreateSessionBody, request: Request):
             extra_context_items=extra_context_items,
             caller_session_id=body.caller_session_id,
             caller_info=caller_info,
+            attachment_paths=body.attachmentPaths,
         )
     except TaskConflictError:
         raise HTTPException(

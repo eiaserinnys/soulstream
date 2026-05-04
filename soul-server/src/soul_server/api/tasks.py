@@ -124,6 +124,19 @@ async def execute_task(
         "forwarded_for": http_request.headers.get("x-forwarded-for"),
     }
 
+    # attachment_paths → extra_context_items 변환 (대시보드 라우트와 동일 패턴)
+    extra_context_items = body.context_items
+    if body.attachment_paths:
+        attachment_item = {
+            "key": "attached_files",
+            "label": "첨부 파일",
+            "content": (
+                "다음 파일들이 첨부되었습니다. Read 도구로 내용을 확인하세요:\n"
+                + "\n".join(f"- {p}" for p in body.attachment_paths)
+            ),
+        }
+        extra_context_items = (extra_context_items or []) + [attachment_item]
+
     # 세션 생성 또는 resume
     try:
         task = await task_manager.create_task(
@@ -135,12 +148,13 @@ async def execute_task(
             use_mcp=body.use_mcp,
             context=body.context.model_dump() if body.context else None,
             context_items=[item.model_dump() for item in body.context.items] if body.context else None,
-            extra_context_items=body.context_items,
+            extra_context_items=extra_context_items,
             model=body.model,
             folder_id=body.folder_id,
             system_prompt=body.system_prompt,
             profile_id=body.profile,
             caller_info=caller_info,
+            attachment_paths=body.attachment_paths,
         )
     except ValueError as e:
         raise HTTPException(
