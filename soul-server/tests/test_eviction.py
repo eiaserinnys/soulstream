@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, call
 import pytest
 
 from soul_server.service.task_manager import TaskManager, set_task_manager
+from soul_server.service.session_query_service import get_session_query_service
 from soul_server.service.task_models import TaskStatus, utc_now
 
 
@@ -147,7 +148,8 @@ class TestCatalogIntegration:
             },
         ], 2)
 
-        sessions, total = await manager.get_all_sessions()
+        svc = get_session_query_service()
+        sessions, total = await svc.get_all_sessions()
         assert total == 2
         assert len(sessions) == 2
         # dict로 반환

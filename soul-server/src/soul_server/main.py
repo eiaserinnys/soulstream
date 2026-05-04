@@ -26,6 +26,7 @@ from soul_server.service import resource_manager, file_manager
 from soul_server.service.rate_limit_tracker import RateLimitTracker
 from soul_server.service.engine_adapter import init_soul_engine
 from soul_server.service.task_manager import get_task_manager
+from soul_server.service.session_query_service import get_session_query_service
 from soul_server.service.session_broadcaster import init_session_broadcaster
 from soul_server.service.postgres_session_db import get_session_db
 from soul_server.models import HealthResponse
@@ -92,7 +93,7 @@ async def graceful_shutdown(app: FastAPI, task_manager, timeout: float = 50.0):
         session_db = get_session_db()
 
         # 활성 세션을 DB에 플래그로 기록 (SIGKILL이 와도 DB에 남음)
-        running_tasks = task_manager.get_running_tasks()
+        running_tasks = get_session_query_service().get_running_tasks()
         active_sessions = [
             {"agent_session_id": t.agent_session_id, "claude_session_id": t.claude_session_id}
             for t in running_tasks
@@ -117,14 +118,14 @@ async def graceful_shutdown(app: FastAPI, task_manager, timeout: float = 50.0):
         # 세션 완료 대기 (최대 timeout 초)
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
-        while task_manager.get_running_tasks():
+        while get_session_query_service().get_running_tasks():
             if loop.time() > deadline:
                 logger.warning("Graceful shutdown: timeout 초과, 잔여 세션 강제 취소")
                 break
             await asyncio.sleep(1.0)
 
         # timeout 초과 후 잔여 RUNNING 세션 강제 취소
-        if task_manager.get_running_tasks():
+        if get_session_query_service().get_running_tasks():
             await task_manager.cancel_running_tasks(timeout=5.0)
 
     except Exception:
@@ -355,7 +356,7 @@ async def health_check():
 async def get_status(request: Request):
     """서비스 상태 조회"""
     task_manager = get_task_manager()
-    running_tasks = task_manager.get_running_tasks()
+    running_tasks = get_session_query_service().get_running_tasks()
 
     response: dict = {
         "active_tasks": len(running_tasks),

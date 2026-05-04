@@ -193,11 +193,11 @@ async def execute_task(
     # 리스너를 먼저 등록하여 start_execution 직후 broadcast 이벤트 유실 방지
     # (session_events_sse_generator L116-117과 동일한 'queue 사전 등록' 패턴)
     event_queue = asyncio.Queue()
-    await task_manager.add_listener(agent_session_id, event_queue)
+    await task_manager.listener_manager.add_listener(agent_session_id, event_queue)
 
     try:
         # 백그라운드에서 Claude 실행 시작
-        await task_manager.start_execution(
+        await task_manager.executor.start_execution(
             agent_session_id=agent_session_id,
             claude_runner=get_soul_engine(),
             resource_manager=resource_manager,
@@ -206,7 +206,7 @@ async def execute_task(
         # start_execution 실패 시 listener cleanup.
         # 성공 경로에서는 stream_live_events finally가 remove_listener를 담당하므로
         # 여기서의 cleanup과 상호 배타적이다.
-        await task_manager.remove_listener(agent_session_id, event_queue)
+        await task_manager.listener_manager.remove_listener(agent_session_id, event_queue)
         raise
 
     async def event_generator():
@@ -309,10 +309,10 @@ async def session_stream(
 
         # Running 세션 → 리스너 등록하고 이벤트 대기
         event_queue = asyncio.Queue()
-        await task_manager.add_listener(agent_session_id, event_queue)
+        await task_manager.listener_manager.add_listener(agent_session_id, event_queue)
 
         # 재연결 상태 전송 + 미수신 이벤트 재전송 (라우트 책임 보존)
-        await task_manager.send_reconnect_status(
+        await task_manager.executor.send_reconnect_status(
             agent_session_id, event_queue,
             last_event_id=parsed_last_event_id,
         )

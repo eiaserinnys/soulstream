@@ -13,6 +13,7 @@ import pytest
 from unittest.mock import AsyncMock
 
 from soul_server.service.postgres_session_db import PostgresSessionDB
+from soul_server.service.session_query_service import get_session_query_service
 from soul_server.service.task_manager import TaskManager, set_task_manager
 from soul_server.service.task_models import (
     Task,
@@ -322,7 +323,7 @@ class TestGetTask:
         await manager.create_task(prompt="world", agent_session_id="sess-2")
         await manager.finalize_task("sess-1", result="done")
 
-        running = manager.get_running_tasks()
+        running = get_session_query_service().get_running_tasks()
         assert len(running) == 1
         assert running[0].agent_session_id == "sess-2"
 
@@ -334,7 +335,7 @@ class TestGetTask:
         await manager.register_session("claude-2", "sess-2")
         await manager.finalize_task("sess-1", result="done")
 
-        sessions, total = await manager.get_all_sessions()
+        sessions, total = await get_session_query_service().get_all_sessions()
         assert len(sessions) == 2
         assert total == 2
 
@@ -546,7 +547,7 @@ class TestFinalizeTask:
             start_exec_calls.append(agent_session_id)
             return True
 
-        with patch.object(manager, "start_execution", mock_start_execution):
+        with patch.object(manager._executor, "start_execution", mock_start_execution):
             await manager.finalize_task("sess-child", result="child done")
 
         # completed였던 caller 세션에 start_execution이 호출되어야 한다
@@ -689,7 +690,7 @@ class TestClaudeSessionIndex:
         await manager.create_task(prompt="hello", agent_session_id="sess-1")
         await manager.register_session("claude-abc", "sess-1")
 
-        running = manager.get_running_tasks()
+        running = get_session_query_service().get_running_tasks()
         assert len(running) == 1
         assert running[0].claude_session_id == "claude-abc"
 

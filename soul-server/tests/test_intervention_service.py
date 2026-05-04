@@ -30,7 +30,7 @@ class TestIntervene:
     async def test_auto_resumed_calls_start_execution(self):
         tm = MagicMock()
         tm.add_intervention = AsyncMock(return_value={"auto_resumed": True})
-        tm.start_execution = AsyncMock()
+        tm.executor.start_execution = AsyncMock()
         engine = MagicMock()
         rm = MagicMock()
 
@@ -40,7 +40,7 @@ class TestIntervene:
         )
 
         assert result == {"auto_resumed": True, "agent_session_id": "sess-1"}
-        tm.start_execution.assert_awaited_once_with(
+        tm.executor.start_execution.assert_awaited_once_with(
             agent_session_id="sess-1",
             claude_runner=engine,
             resource_manager=rm,
@@ -49,7 +49,7 @@ class TestIntervene:
     async def test_queued_returns_queue_position(self):
         tm = MagicMock()
         tm.add_intervention = AsyncMock(return_value={"queue_position": 3})
-        tm.start_execution = AsyncMock()
+        tm.executor.start_execution = AsyncMock()
         engine = MagicMock()
         rm = MagicMock()
 
@@ -59,7 +59,7 @@ class TestIntervene:
         )
 
         assert result == {"queued": True, "queue_position": 3}
-        tm.start_execution.assert_not_called()
+        tm.executor.start_execution.assert_not_called()
 
     async def test_node_mismatch_propagates(self):
         tm = MagicMock()

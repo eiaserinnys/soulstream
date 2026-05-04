@@ -55,14 +55,14 @@ async def app_client():
     task_manager = MagicMock()
     created_task = _make_task()
     task_manager.create_task = AsyncMock(return_value=created_task)
-    task_manager.start_execution = AsyncMock()
+    task_manager.executor.start_execution = AsyncMock()
 
     async def _fake_add_listener(session_id, queue):
         # complete 이벤트 주입 → SSE 스트림 종료
         await queue.put({"type": "complete", "_event_id": 1})
 
-    task_manager.add_listener = AsyncMock(side_effect=_fake_add_listener)
-    task_manager.remove_listener = AsyncMock()
+    task_manager.listener_manager.add_listener = AsyncMock(side_effect=_fake_add_listener)
+    task_manager.listener_manager.remove_listener = AsyncMock()
 
     # can_acquire=True 로 rate limit 통과
     with patch("soul_server.api.tasks.get_task_manager", return_value=task_manager), \

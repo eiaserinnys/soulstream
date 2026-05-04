@@ -274,7 +274,7 @@ async def resume_shutdown_sessions(session_db, task_manager: TaskManager):
                     user="system",
                 )
                 if result.get("auto_resumed"):
-                    await task_manager.start_execution(
+                    await task_manager.executor.start_execution(
                         agent_session_id=s["session_id"],
                         claude_runner=get_soul_engine(),
                         resource_manager=resource_manager,

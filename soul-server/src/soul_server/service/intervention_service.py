@@ -64,7 +64,7 @@ async def intervene(
         attachment_paths=attachment_paths or [],
     )
     if result.get("auto_resumed"):
-        await task_manager.start_execution(
+        await task_manager.executor.start_execution(
             agent_session_id=agent_session_id,
             claude_runner=soul_engine,
             resource_manager=resource_manager,

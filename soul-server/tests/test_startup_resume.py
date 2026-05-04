@@ -31,7 +31,7 @@ class TestStartupResume:
 
         task_manager = MagicMock()
         task_manager.add_intervention = AsyncMock(return_value={"auto_resumed": True})
-        task_manager.start_execution = AsyncMock()
+        task_manager.executor.start_execution = AsyncMock()
 
         mock_engine = MagicMock()
         mock_resource_manager = MagicMock()
@@ -44,13 +44,13 @@ class TestStartupResume:
                 user="system",
             )
             if result.get("auto_resumed"):
-                await task_manager.start_execution(
+                await task_manager.executor.start_execution(
                     agent_session_id=s["agent_session_id"],
                     claude_runner=mock_engine,
                     resource_manager=mock_resource_manager,
                 )
 
-        task_manager.start_execution.assert_called_once()
+        task_manager.executor.start_execution.assert_called_once()
 
     async def test_not_auto_resumed_does_not_call_start_execution(self, tmp_path):
         """auto_resumed=False (RUNNING 세션, queue_position 반환) 시 start_execution()이 호출되지 않는다."""
@@ -60,7 +60,7 @@ class TestStartupResume:
 
         task_manager = MagicMock()
         task_manager.add_intervention = AsyncMock(return_value={"queue_position": 0})
-        task_manager.start_execution = AsyncMock()
+        task_manager.executor.start_execution = AsyncMock()
 
         sessions_to_resume = json.loads(pre_shutdown_file.read_text())
         for s in sessions_to_resume:
@@ -70,13 +70,13 @@ class TestStartupResume:
                 user="system",
             )
             if result.get("auto_resumed"):
-                await task_manager.start_execution(
+                await task_manager.executor.start_execution(
                     agent_session_id=s["agent_session_id"],
                     claude_runner=MagicMock(),
                     resource_manager=MagicMock(),
                 )
 
-        task_manager.start_execution.assert_not_called()
+        task_manager.executor.start_execution.assert_not_called()
 
     async def test_start_execution_receives_correct_arguments(self, tmp_path):
         """start_execution() 호출 시 get_soul_engine() 반환값과 resource_manager가 전달된다."""
@@ -86,7 +86,7 @@ class TestStartupResume:
 
         task_manager = MagicMock()
         task_manager.add_intervention = AsyncMock(return_value={"auto_resumed": True})
-        task_manager.start_execution = AsyncMock()
+        task_manager.executor.start_execution = AsyncMock()
 
         mock_engine = MagicMock(name="soul_engine")
         mock_resource_manager = MagicMock(name="resource_manager")
@@ -99,13 +99,13 @@ class TestStartupResume:
                 user="system",
             )
             if result.get("auto_resumed"):
-                await task_manager.start_execution(
+                await task_manager.executor.start_execution(
                     agent_session_id=s["agent_session_id"],
                     claude_runner=mock_engine,
                     resource_manager=mock_resource_manager,
                 )
 
-        task_manager.start_execution.assert_called_once_with(
+        task_manager.executor.start_execution.assert_called_once_with(
             agent_session_id="sess-check",
             claude_runner=mock_engine,
             resource_manager=mock_resource_manager,
@@ -130,7 +130,7 @@ class TestStartupResume:
 
         task_manager = MagicMock()
         task_manager.add_intervention = AsyncMock(side_effect=add_intervention_results)
-        task_manager.start_execution = AsyncMock()
+        task_manager.executor.start_execution = AsyncMock()
 
         mock_engine = MagicMock()
         mock_resource_manager = MagicMock()
@@ -143,17 +143,17 @@ class TestStartupResume:
                 user="system",
             )
             if result.get("auto_resumed"):
-                await task_manager.start_execution(
+                await task_manager.executor.start_execution(
                     agent_session_id=s["agent_session_id"],
                     claude_runner=mock_engine,
                     resource_manager=mock_resource_manager,
                 )
 
         # sess-1, sess-3 → 2번 호출
-        assert task_manager.start_execution.call_count == 2
+        assert task_manager.executor.start_execution.call_count == 2
         call_session_ids = [
             c.kwargs["agent_session_id"]
-            for c in task_manager.start_execution.call_args_list
+            for c in task_manager.executor.start_execution.call_args_list
         ]
         assert "sess-1" in call_session_ids
         assert "sess-3" in call_session_ids

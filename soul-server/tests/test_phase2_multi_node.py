@@ -71,9 +71,9 @@ class TestHandleCreateSessionSystemPrompt:
         """systemPrompt 키가 create_task의 system_prompt 파라미터로 전달된다."""
         tm = MagicMock()
         tm.create_task = AsyncMock(return_value=_make_mock_task("sess-sp"))
-        tm.start_execution = AsyncMock(return_value=True)
-        tm.add_listener = AsyncMock(return_value=True)
-        tm.remove_listener = AsyncMock()
+        tm.executor.start_execution = AsyncMock(return_value=True)
+        tm.listener_manager.add_listener = AsyncMock(return_value=True)
+        tm.listener_manager.remove_listener = AsyncMock()
 
         adapter = _make_adapter(task_manager=tm)
         adapter._ws = MagicMock()
@@ -95,9 +95,9 @@ class TestHandleCreateSessionSystemPrompt:
         """systemPrompt가 없으면 create_task의 system_prompt는 None이다."""
         tm = MagicMock()
         tm.create_task = AsyncMock(return_value=_make_mock_task("sess-no-sp"))
-        tm.start_execution = AsyncMock(return_value=True)
-        tm.add_listener = AsyncMock(return_value=True)
-        tm.remove_listener = AsyncMock()
+        tm.executor.start_execution = AsyncMock(return_value=True)
+        tm.listener_manager.add_listener = AsyncMock(return_value=True)
+        tm.listener_manager.remove_listener = AsyncMock()
 
         adapter = _make_adapter(task_manager=tm)
         adapter._ws = MagicMock()

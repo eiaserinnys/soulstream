@@ -86,8 +86,8 @@ def mock_task_manager():
         return manager._tasks.get(agent_session_id)
 
     manager.get_task = AsyncMock(side_effect=mock_get_task)
-    manager.add_listener = AsyncMock()
-    manager.remove_listener = AsyncMock()
+    manager.listener_manager.add_listener = AsyncMock()
+    manager.listener_manager.remove_listener = AsyncMock()
 
     return manager
 
@@ -183,8 +183,8 @@ class TestLLMSessionEarlyExit:
                 pass
 
             # finally 블록에서 remove_listener가 호출되었는지 확인
-            mock_task_manager.remove_listener.assert_called_once()
-            call_args = mock_task_manager.remove_listener.call_args
+            mock_task_manager.listener_manager.remove_listener.assert_called_once()
+            call_args = mock_task_manager.listener_manager.remove_listener.call_args
             assert call_args[0][0] == "llm-001"
 
 
@@ -374,8 +374,8 @@ class TestMidStreamDisconnectCleanup:
         # finally에서 remove_listener가 호출되었는지 확인.
         # stream_live_events.aclose() finally + stream_session_events 외부 finally
         # 양쪽이 호출 가능 — remove_listener는 idempotent라 무해.
-        assert mock_task_manager.remove_listener.called
-        call_args = mock_task_manager.remove_listener.call_args
+        assert mock_task_manager.listener_manager.remove_listener.called
+        call_args = mock_task_manager.listener_manager.remove_listener.call_args
         assert call_args[0][0] == "sess-001"
         assert call_args[0][1] is event_queue
 
@@ -406,8 +406,8 @@ class TestMidStreamDisconnectCleanup:
 
             # entered_stream=False이므로 외부 finally에서 remove_listener 호출
             # (stream_session_events 외부 finally가 추가되면서 호출 횟수가 2회가 될 수 있음 — idempotent)
-            assert mock_task_manager.remove_listener.called
-            call_args = mock_task_manager.remove_listener.call_args
+            assert mock_task_manager.listener_manager.remove_listener.called
+            call_args = mock_task_manager.listener_manager.remove_listener.call_args
             assert call_args[0][0] == "sess-001"
 
     @pytest.mark.asyncio
@@ -434,7 +434,7 @@ class TestMidStreamDisconnectCleanup:
         await gen.aclose()
 
         # 외부 finally가 호출되어야 함 (회귀 방지 핵심)
-        assert mock_task_manager.remove_listener.called
-        call_args = mock_task_manager.remove_listener.call_args
+        assert mock_task_manager.listener_manager.remove_listener.called
+        call_args = mock_task_manager.listener_manager.remove_listener.call_args
         assert call_args[0][0] == "sess-001"
         assert call_args[0][1] is event_queue

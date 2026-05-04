@@ -280,7 +280,7 @@ class TestCreateSessionWithAttachments:
         task = MagicMock()
         task.agent_session_id = "sess-created"
         tm.create_task = AsyncMock(return_value=task)
-        tm.start_execution = AsyncMock()
+        tm.executor.start_execution = AsyncMock()
         return tm
 
     @pytest.mark.asyncio

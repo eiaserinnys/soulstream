@@ -147,7 +147,7 @@ class EventRelay:
         세션 종료는 None 센티넬 또는 WebSocket 연결 해제로 처리한다.
         """
         queue: asyncio.Queue = asyncio.Queue()
-        await self._tm.add_listener(session_id, queue)
+        await self._tm.listener_manager.add_listener(session_id, queue)
 
         try:
             while self._is_running():
@@ -169,7 +169,7 @@ class EventRelay:
         except Exception:
             logger.exception("Error relaying events for session %s", session_id)
         finally:
-            await self._tm.remove_listener(session_id, queue)
+            await self._tm.listener_manager.remove_listener(session_id, queue)
             if self._stream_tasks.get(session_id) is asyncio.current_task():
                 self._stream_tasks.pop(session_id, None)
 

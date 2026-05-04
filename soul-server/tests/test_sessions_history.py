@@ -85,8 +85,8 @@ def mock_task_manager():
     async def mock_get_task(agent_session_id: str):
         return manager._tasks.get(agent_session_id)
     manager.get_task = AsyncMock(side_effect=mock_get_task)
-    manager.add_listener = AsyncMock()
-    manager.remove_listener = AsyncMock()
+    manager.listener_manager.add_listener = AsyncMock()
+    manager.listener_manager.remove_listener = AsyncMock()
 
     return manager
 
@@ -324,7 +324,7 @@ class TestHistoryLiveStreaming:
             nonlocal live_queue
             live_queue = queue
 
-        mock_task_manager.add_listener = AsyncMock(side_effect=capture_queue)
+        mock_task_manager.listener_manager.add_listener = AsyncMock(side_effect=capture_queue)
 
         with (
             patch("soul_server.api.sessions.get_task_manager", return_value=mock_task_manager),
@@ -410,7 +410,7 @@ class TestHistoryConnectionPersistence:
             nonlocal live_queue
             live_queue = queue
 
-        mock_task_manager.add_listener = AsyncMock(side_effect=capture_queue)
+        mock_task_manager.listener_manager.add_listener = AsyncMock(side_effect=capture_queue)
 
         with (
             patch("soul_server.api.sessions.get_task_manager", return_value=mock_task_manager),
