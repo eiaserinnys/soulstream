@@ -204,6 +204,10 @@ class Task:
             info["llm_model"] = self.llm_model
             info["llm_usage"] = self.llm_usage
             info["client_id"] = self.client_id
+        # caller_session_id는 immutable이며 항상 노출 (None 가능).
+        # 부모 세션 식별의 정본이 caller_info.parent_session_id가 아닌 이 컬럼임을
+        # wire에서도 1급으로 표현한다 (design-principles §3 "정본 하나").
+        info["caller_session_id"] = self.caller_session_id
         info["metadata"] = self.metadata
         info["last_event_id"] = self.last_event_id
         info["last_read_event_id"] = self.last_read_event_id

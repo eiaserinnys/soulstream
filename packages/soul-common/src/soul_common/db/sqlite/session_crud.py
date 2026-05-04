@@ -40,11 +40,12 @@ class SqliteSessionCRUDMixin:
         if invalid:
             raise ValueError(f"Invalid session columns: {invalid}")
 
-        # 불변 필드 보호
+        # 불변 필드 보호 (IMMUTABLE_FIELDS와 SELECT 컬럼이 일치해야 가드가 동작한다)
         immutable_updates = {k: v for k, v in fields.items() if k in IMMUTABLE_FIELDS}
         if immutable_updates:
             cursor = await self._conn.execute(
-                "SELECT claude_session_id, node_id, agent_id FROM sessions WHERE session_id = ?",
+                "SELECT claude_session_id, node_id, agent_id, caller_session_id "
+                "FROM sessions WHERE session_id = ?",
                 (session_id,),
             )
             row = await cursor.fetchone()
@@ -99,8 +100,10 @@ class SqliteSessionCRUDMixin:
     ) -> None:
         """세션 최초 등록 (순수 INSERT).
 
-        4개 불변 ID(session_id, node_id, agent_id, claude_session_id)를 원자적으로 기록한다.
+        불변 필드(session_id, node_id, agent_id, claude_session_id, caller_session_id)를
+        원자적으로 기록한다 — 본 메서드가 caller_session_id의 정본 진입로다.
         중복 호출 시 UNIQUE 제약 위반 예외 발생 (INSERT OR IGNORE 없음).
+        이후 update_session으로는 이 필드들을 변경할 수 없다 (UPDATE_SESSION_IMMUTABLE 가드).
         """
         now = _utc_now()
         await self._conn.execute(
@@ -160,8 +163,8 @@ class SqliteSessionCRUDMixin:
     async def update_session(self, session_id: str, **fields) -> None:
         """세션 속성 갱신 (순수 UPDATE).
 
-        불변 필드(node_id, agent_id, claude_session_id, session_type, created_at)는
-        허용하지 않는다 — ValueError를 발생시킨다.
+        불변 필드(node_id, agent_id, claude_session_id, session_type, created_at,
+        caller_session_id)는 허용하지 않는다 — ValueError를 발생시킨다.
         """
         invalid = set(fields) & UPDATE_SESSION_IMMUTABLE
         if invalid:

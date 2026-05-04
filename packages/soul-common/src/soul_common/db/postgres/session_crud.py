@@ -57,11 +57,12 @@ class PostgresSessionCRUDMixin:
         if invalid:
             raise ValueError(f"Invalid session columns: {invalid}")
 
-        # 불변 필드 보호
+        # 불변 필드 보호 (IMMUTABLE_FIELDS와 SELECT 컬럼이 일치해야 가드가 동작한다)
         immutable_updates = {k: v for k, v in fields.items() if k in IMMUTABLE_FIELDS}
         if immutable_updates:
             row = await self._pool.fetchrow(
-                "SELECT claude_session_id, node_id, agent_id FROM sessions WHERE session_id = $1",
+                "SELECT claude_session_id, node_id, agent_id, caller_session_id "
+                "FROM sessions WHERE session_id = $1",
                 session_id,
             )
             if row:
@@ -128,8 +129,10 @@ class PostgresSessionCRUDMixin:
     ) -> None:
         """세션 최초 등록 (순수 INSERT).
 
-        4개 불변 ID(session_id, node_id, agent_id, claude_session_id)를 원자적으로 기록한다.
+        불변 필드(session_id, node_id, agent_id, claude_session_id, caller_session_id)를
+        원자적으로 기록한다 — 본 메서드가 caller_session_id의 정본 진입로다.
         중복 호출 시 DB 고유 제약 위반 예외 발생 (ON CONFLICT 없음).
+        이후 update_session으로는 이 필드들을 변경할 수 없다 (UPDATE_SESSION_IMMUTABLE 가드).
         """
         now = _utc_now()
         await self._pool.execute(
@@ -167,9 +170,12 @@ class PostgresSessionCRUDMixin:
     async def update_session(self, session_id: str, **fields) -> None:
         """세션 속성 갱신 (순수 UPDATE).
 
-        불변 필드(node_id, agent_id, claude_session_id, session_type, created_at)는
-        허용하지 않는다 — ValueError를 발생시킨다.
-        DB 프로시저(session_update)도 해당 필드를 거부한다.
+        불변 필드(node_id, agent_id, claude_session_id, session_type, created_at,
+        caller_session_id)는 허용하지 않는다 — ValueError를 발생시킨다.
+        DB 프로시저(session_update)도 화이트리스트(schema.sql L257-262) 밖이라
+        동일하게 RAISE EXCEPTION 'Invalid or immutable session column'을 던진다.
+        Python 레벨 + DB SP의 이중 가드로 보호된다.
+        caller_session_id의 정본 진입로는 register_session_initial이다.
         """
         invalid = set(fields) & UPDATE_SESSION_IMMUTABLE
         if invalid:

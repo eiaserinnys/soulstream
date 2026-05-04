@@ -369,6 +369,8 @@ async def get_session_summary(
         "display_name": session.get("display_name"),
         "status": session.get("status"),
         "created_at": _serialize_datetime(session.get("created_at")),
+        # 위임 세션의 부모 식별자. 직접 진입은 None.
+        "caller_session_id": session.get("caller_session_id"),
         "total_events": total_events,
         "turns": turns,
     }
