@@ -176,12 +176,24 @@ async def execute_task(
 
     agent_session_id = task.agent_session_id
 
-    # 백그라운드에서 Claude 실행 시작
-    await task_manager.start_execution(
-        agent_session_id=agent_session_id,
-        claude_runner=get_soul_engine(),
-        resource_manager=resource_manager,
-    )
+    # 리스너를 먼저 등록하여 start_execution 직후 broadcast 이벤트 유실 방지
+    # (session_events_sse_generator L116-117과 동일한 'queue 사전 등록' 패턴)
+    event_queue = asyncio.Queue()
+    await task_manager.add_listener(agent_session_id, event_queue)
+
+    try:
+        # 백그라운드에서 Claude 실행 시작
+        await task_manager.start_execution(
+            agent_session_id=agent_session_id,
+            claude_runner=get_soul_engine(),
+            resource_manager=resource_manager,
+        )
+    except Exception:
+        # start_execution 실패 시 listener cleanup.
+        # 성공 경로에서는 stream_live_events finally가 remove_listener를 담당하므로
+        # 여기서의 cleanup과 상호 배타적이다.
+        await task_manager.remove_listener(agent_session_id, event_queue)
+        raise
 
     async def event_generator():
         """SSE 이벤트 생성기
@@ -191,9 +203,6 @@ async def execute_task(
         """
         # 첫 이벤트: agent_session_id + node_id 전달 (라우트 책임 보존)
         yield _build_init_event(agent_session_id)
-
-        event_queue = asyncio.Queue()
-        await task_manager.add_listener(agent_session_id, event_queue)
 
         # 라이브 루프 + finally remove_listener는 코어에 위임.
         # /execute 응답은 complete/error 시 종료 → break_on_terminal=True.
