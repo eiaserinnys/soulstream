@@ -363,3 +363,62 @@ async def test_completed_body_falls_back_to_title():
 
     body = provider.send.await_args.args[2]
     assert body == "세션 완료"
+
+
+@pytest.mark.asyncio
+async def test_completed_body_prefers_last_assistant_text_over_progress():
+    """🔴 회귀 방지: last_assistant_text가 있으면 그것을 1순위로 사용한다.
+    last_progress_text('도구 실행 중...' 같은 진행 안내)가 본문에 들어가던 결함 회피.
+    사용자 보고: '메시지가 어시스턴트 응답으로 시작해야 하는데 [PHASE]…' 같은 단편이 와버림."""
+    notifier, provider, repo = _make_notifier(user_info={"email": "a@b.com"})
+    repo.list_tokens.return_value = [("dev-1", "tok-1")]
+    provider.send.return_value = SendResult(ok=True, invalid_token=False)
+
+    assistant_text = "네, 트렐로 카드를 새로 만들고 체크리스트를 정리했사옵니다."
+    progress_text = "도구 실행 중…"
+    await notifier._on_change(
+        "node_session_session_updated",
+        "node-A",
+        {"agent_session_id": "S1", "status": "running"},
+    )
+    await notifier._on_change(
+        "node_session_session_updated",
+        "node-A",
+        {
+            "agent_session_id": "S1",
+            "status": "completed",
+            "last_assistant_text": assistant_text,
+            "last_progress_text": progress_text,
+        },
+    )
+
+    body = provider.send.await_args.args[2]
+    assert body == assistant_text
+    assert progress_text not in body
+
+
+@pytest.mark.asyncio
+async def test_completed_body_progress_text_only_when_assistant_missing():
+    """last_assistant_text가 없을 때만 last_progress_text를 fallback으로 사용."""
+    notifier, provider, repo = _make_notifier(user_info={"email": "a@b.com"})
+    repo.list_tokens.return_value = [("dev-1", "tok-1")]
+    provider.send.return_value = SendResult(ok=True, invalid_token=False)
+
+    progress_text = "응답 생성 중..."
+    await notifier._on_change(
+        "node_session_session_updated",
+        "node-A",
+        {"agent_session_id": "S1", "status": "running"},
+    )
+    await notifier._on_change(
+        "node_session_session_updated",
+        "node-A",
+        {
+            "agent_session_id": "S1",
+            "status": "completed",
+            "last_progress_text": progress_text,
+        },
+    )
+
+    body = provider.send.await_args.args[2]
+    assert body == progress_text

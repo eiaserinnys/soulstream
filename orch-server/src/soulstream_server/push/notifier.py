@@ -36,14 +36,17 @@ def _push_body_preview(
     """푸시 body 본문을 결정한다.
 
     우선순위:
-    1. last_progress_text (task_executor가 text_delta마다 갱신하는 마지막 어시스턴트 응답)
+    1. last_assistant_text (text_delta 누적, 어시스턴트 응답 정본 — task_models.py 주석:
+       'TextDeltaSSEEvent.text는 block.text 전체, 청크 아님' 이라 마지막 delta가 응답 전체)
     2. last_message.preview (emit_session_message_updated 경로)
     3. display_name (session_info에 있을 경우)
-    4. fallback_title 또는 session_id 일부 — 본문에 ID 노출 방지를 위해 빈 문자열 권장
+    4. last_progress_text — '도구 실행 중...' 같은 진행 안내. 어시스턴트 본문은 아니지만
+       빈 본문보다는 낫다.
+    5. fallback_title 또는 session_id 일부 — title이 '세션 완료' 등 충분한 신호.
 
     값을 _PUSH_BODY_MAX로 truncate한다.
     """
-    text = data.get("last_progress_text")
+    text = data.get("last_assistant_text")
     if not text:
         last_message = data.get("last_message") or {}
         if isinstance(last_message, dict):
@@ -51,8 +54,9 @@ def _push_body_preview(
     if not text:
         text = data.get("display_name")
     if not text:
+        text = data.get("last_progress_text")
+    if not text:
         # session_id 일부는 사용자에게 의미 없으므로 마지막 fallback에서만 사용.
-        # title이 이미 "세션 완료" 등 충분한 신호를 주므로 빈 본문보다는 짧은 식별자.
         text = fallback_title or session_id[:8]
     text = str(text).strip()
     if len(text) > _PUSH_BODY_MAX:
