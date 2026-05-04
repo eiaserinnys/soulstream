@@ -314,6 +314,7 @@ class TaskManager:
                     created_at=str_to_datetime(s["created_at"]),
                     node_id=s.get("node_id"),
                     caller_session_id=s.get("caller_session_id"),
+                    profile_id=s.get("agent_id"),
                 )
                 self._tasks[s["session_id"]] = task
                 loaded += 1

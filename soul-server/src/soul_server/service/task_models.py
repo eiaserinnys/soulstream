@@ -103,7 +103,7 @@ class Task:
     # 각 항목은 {"key": str, "label": str, "content": Any} 형태
     context_items: Optional[List[dict]] = field(default=None, repr=False)
 
-    # 에이전트 프로필 ID (런타임 전용, 영속화 안 됨)
+    # 에이전트 프로필 ID (DB에 agent_id로 영속화)
     profile_id: Optional[str] = field(default=None, repr=False)
 
     # 발신 세션 ID (DB 저장 — 완료 시 자동 보고 대상)

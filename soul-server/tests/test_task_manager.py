@@ -905,6 +905,57 @@ class TestLoad:
         assert manager._tasks["sess-zombie"].status == TaskStatus.INTERRUPTED
         assert loaded == 1
 
+    async def test_load_restores_profile_id_from_agent_id(self, manager):
+        """load()는 DB의 agent_id를 Task.profile_id로 복원한다."""
+        import datetime
+
+        async def _get_all_with_agent_id(offset=0, limit=0, session_type=None, node_id=None, status=None, feed_only=False):
+            return [
+                {
+                    "session_id": "sess-agent",
+                    "status": "running",
+                    "prompt": "test prompt",
+                    "client_id": None,
+                    "claude_session_id": None,
+                    "session_type": "claude",
+                    "last_event_id": 0,
+                    "last_read_event_id": 0,
+                    "created_at": datetime.datetime.now(datetime.timezone.utc),
+                    "node_id": "test-node",
+                    "agent_id": "seosoyoung",
+                }
+            ], 1
+
+        manager._db.get_all_sessions.side_effect = _get_all_with_agent_id
+        await manager.load()
+
+        assert manager._tasks["sess-agent"].profile_id == "seosoyoung"
+
+    async def test_load_handles_missing_agent_id(self, manager):
+        """load()는 agent_id가 없는 세션에서 profile_id를 None으로 유지한다."""
+        import datetime
+
+        async def _get_all_no_agent_id(offset=0, limit=0, session_type=None, node_id=None, status=None, feed_only=False):
+            return [
+                {
+                    "session_id": "sess-no-agent",
+                    "status": "running",
+                    "prompt": "test prompt",
+                    "client_id": None,
+                    "claude_session_id": None,
+                    "session_type": "claude",
+                    "last_event_id": 0,
+                    "last_read_event_id": 0,
+                    "created_at": datetime.datetime.now(datetime.timezone.utc),
+                    "node_id": "test-node",
+                }
+            ], 1
+
+        manager._db.get_all_sessions.side_effect = _get_all_no_agent_id
+        await manager.load()
+
+        assert manager._tasks["sess-no-agent"].profile_id is None
+
 
 
 
