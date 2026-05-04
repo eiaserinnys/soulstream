@@ -7,21 +7,17 @@ Task Executor - 백그라운드 태스크 실행 관리
 import asyncio
 import json
 import logging
-import os
-import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Callable, Awaitable, Optional, TYPE_CHECKING
 
-from soul_common.db.session_db_base import extract_searchable_text
 from soul_server.service.atom_context import fetch_atom_context
-from soul_server.service.task_models import Task, TaskStatus, PREVIEW_FIELD_MAP, datetime_to_str, utc_now
+from soul_server.service.task_models import Task, TaskStatus
 from soul_server.service.prompt_assembler import assemble_prompt
 from soul_server.service.session_broadcaster import get_session_broadcaster
 from soul_server.service.context_builder import build_soulstream_context_item
-from soul_server.config import get_settings
+from soul_server.service.event_persistence import EventPersistence
 
 
 @dataclass
@@ -85,26 +81,15 @@ class TaskExecutor:
         self._finalize_task = finalize_task_func
         self._register_session = register_session_func
         self._db = session_db
-        self._metadata_extractor = metadata_extractor
-        self._append_metadata = append_metadata_func
+        self._persistence = EventPersistence(
+            session_db, metadata_extractor, append_metadata_func,
+            get_broadcaster=lambda: get_session_broadcaster(),
+        )
         self._registry = agent_registry
 
     async def _persist_event(self, session_id: str, event_dict: dict) -> Optional[int]:
         """이벤트를 SessionDB에 영속화하고 event_id를 반환한다."""
-        if self._db is None:
-            return None
-        event_type = event_dict.get("type", "")
-        payload = json.dumps(event_dict, ensure_ascii=False)
-        searchable = extract_searchable_text(event_dict)
-        ts = event_dict.get("timestamp")
-        if isinstance(ts, (int, float)):
-            created_at = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
-        elif isinstance(ts, str):
-            created_at = ts
-        else:
-            created_at = utc_now().isoformat()
-        event_id = await self._db.append_event(session_id, event_type, payload, searchable, created_at)
-        return event_id
+        return await self._persistence.persist_event(session_id, event_dict)
 
     async def start_execution(
         self,
@@ -293,7 +278,7 @@ class TaskExecutor:
                     task.last_event_id = event_id
                 await self._listener_manager.broadcast(session_id, user_msg_event)
                 try:
-                    await self._update_and_broadcast_last_message(
+                    await self._persistence.update_last_message(
                         session_id, user_msg_event, task
                     )
                 except Exception:
@@ -347,129 +332,61 @@ class TaskExecutor:
             if event.type == "progress":
                 task.last_progress_text = event_dict.get("text", "")
             # 어시스턴트 응답 텍스트 캐시 — push body·세션 카드 preview용.
-            # TextDeltaSSEEvent.text는 block.text 전체(청크 아님, task_models 주석 참조)이므로
-            # 매 text_delta마다 덮어쓰면 자연스럽게 stream 끝에 응답 전체가 남는다.
             elif event.type in ("text_delta", "text_end"):
                 text = event_dict.get("text") or ""
                 if text:
                     task.last_assistant_text = text
 
-            # 이벤트 영속화 + subtree_update 계산
-            subtree_update_dict: Optional[dict] = None
-            if self._db is not None:
-                try:
-                    event_id = await self._persist_event(session_id, event_dict)
-                    event_dict["_event_id"] = event_id
-                    if event_id is not None:
-                        task.last_event_id = event_id
-
-                    # 조상 이벤트들의 subtree_height 전파 + subtree_update SSE 이벤트 생성
-                    # parent_event_id가 있을 때만 (루트 이벤트는 조상 없음)
-                    if event_id is not None and event_dict.get("parent_event_id") is not None:
-                        try:
-                            deltas, new_total = await self._db.update_subtree_heights(
-                                session_id, event_id, increment=1
-                            )
-                            subtree_update_dict = {
-                                "type": "subtree_update",
-                                "timestamp": time.time(),
-                                "affected_event_ids": list(deltas.keys()),
-                                "deltas": deltas,
-                                "new_total_subtree_height": new_total,
-                                "trigger_event_id": event_id,
-                            }
-                            # subtree_update도 영속화 (재연결 복구용)
-                            subtree_event_id = await self._persist_event(
-                                session_id, subtree_update_dict
-                            )
-                            subtree_update_dict["_event_id"] = subtree_event_id
-                        except Exception as e:
-                            logger.warning(
-                                f"Failed to compute subtree_update for {session_id}: {e}"
-                            )
-                            subtree_update_dict = None
-                except Exception as e:
-                    logger.warning(f"Failed to persist event for {session_id}: {e}")
-                    subtree_update_dict = None
+            # 이벤트 영속화 + subtree 전파
+            subtree_update_dict = await self._persistence.persist_with_subtree(
+                session_id, event_dict, task
+            )
 
             # 브로드캐스트 (원본 이벤트 → subtree_update 순)
             await self._listener_manager.broadcast(session_id, event_dict)
             if subtree_update_dict is not None:
                 await self._listener_manager.broadcast(session_id, subtree_update_dict)
-            try:
-                await self._update_and_broadcast_last_message(
-                    session_id, event_dict, task
-                )
-            except Exception:
-                logger.debug("last_message update failed")
 
-            # tool_result 메타데이터 자동 추출
-            if (
-                event.type == "tool_result"
-                and self._metadata_extractor
-                and self._append_metadata
-            ):
-                try:
-                    entry = self._metadata_extractor.extract(
-                        tool_name=event_dict.get("tool_name", ""),
-                        result=event_dict.get("result", ""),
-                        is_error=event_dict.get("is_error", False),
-                    )
-                    if entry:
-                        await self._append_metadata(session_id, entry)
-                except Exception:
-                    logger.warning(
-                        f"Metadata extraction failed for {session_id}",
-                        exc_info=True,
-                    )
+            # DB 부수효과 (last_message, metadata, away_summary)
+            await self._persistence.handle_side_effects(
+                session_id, event.type, event_dict, task
+            )
 
-            # away_summary → sessions.away_summary에 저장
-            if event.type == "away_summary" and self._db is not None:
-                try:
-                    await self._db.update_away_summary(
-                        session_id, event_dict.get("content", "")
-                    )
-                except Exception:
-                    logger.debug("away_summary DB update failed")
-
-            # 완료/오류 추적 (finalize는 루프 밖에서)
+            # 완료/오류 추적 + phase 전환
             if event.type == "complete":
                 last_result = event.result
-                # 한 턴 종료 — 클라이언트에 idle phase 통보. task.status는 RUNNING 유지.
-                if turn_phase != "idle":
-                    try:
-                        count = await get_session_broadcaster().emit_session_phase(task, "idle")
-                        logger.info(
-                            "[PHASE] %s -> %d listener(s), phase=idle",
-                            task.agent_session_id, count,
-                        )
-                    except Exception:
-                        logger.warning(
-                            "[PHASE] idle broadcast skipped (broadcaster not ready) sid=%s",
-                            task.agent_session_id,
-                        )
-                    turn_phase = "idle"
+                turn_phase = await self._emit_phase_transition(task, "idle", turn_phase)
             elif event.type == "error":
                 last_error = event.message
-                # error는 finalize에서 ERROR 상태로 정리하므로 phase 전환 불필요.
             elif event.type not in ("subtree_update", "session", "progress"):
-                # 일반 활성 이벤트(text_*/thinking_*/tool_*/...) — 응답 생성 중.
-                # subtree_update/session/progress는 메타 이벤트이므로 phase 전환에서 제외.
-                if turn_phase != "running":
-                    try:
-                        count = await get_session_broadcaster().emit_session_phase(task, "running")
-                        logger.info(
-                            "[PHASE] %s -> %d listener(s), phase=running",
-                            task.agent_session_id, count,
-                        )
-                    except Exception:
-                        logger.warning(
-                            "[PHASE] running broadcast skipped (broadcaster not ready) sid=%s",
-                            task.agent_session_id,
-                        )
-                    turn_phase = "running"
+                turn_phase = await self._emit_phase_transition(task, "running", turn_phase)
 
         return last_result, last_error
+
+    async def _emit_phase_transition(
+        self, task: Task, target_phase: str, current_phase: str
+    ) -> str:
+        """턴 phase 전환이 필요하면 브로드캐스트하고 새 phase를 반환한다."""
+        if current_phase == target_phase:
+            return current_phase
+        try:
+            count = await get_session_broadcaster().emit_session_phase(task, target_phase)
+            logger.info(
+                "[PHASE] %s -> %d listener(s), phase=%s",
+                task.agent_session_id, count, target_phase,
+            )
+        except Exception:
+            logger.warning(
+                "[PHASE] %s broadcast skipped (broadcaster not ready) sid=%s",
+                target_phase, task.agent_session_id,
+            )
+        return target_phase
+
+    async def _update_and_broadcast_last_message(
+        self, session_id: str, event_dict: dict, task: Task
+    ) -> None:
+        """Thin delegation to EventPersistence.update_last_message (backward compat)."""
+        await self._persistence.update_last_message(session_id, event_dict, task)
 
     @asynccontextmanager
     async def _handle_execution_errors(
@@ -559,7 +476,7 @@ class TaskExecutor:
                             logger.warning(f"Failed to persist intervention user_message for {session_id}: {e}")
                     await self._listener_manager.broadcast(session_id, event)
                     try:
-                        await self._update_and_broadcast_last_message(
+                        await self._persistence.update_last_message(
                             session_id, event, task
                         )
                     except Exception:
@@ -605,72 +522,6 @@ class TaskExecutor:
         """세션 실행이 진행 중인지 확인"""
         task = self._tasks.get(agent_session_id)
         return task is not None and task.execution_task is not None
-
-    async def _update_and_broadcast_last_message(
-        self, session_id: str, event_dict: dict, task: Task
-    ) -> None:
-        """readable event의 last_message를 카탈로그에 저장하고 세션 리스트 SSE로 브로드캐스트."""
-        if self._db is None:
-            return
-
-        event_type = event_dict.get("type", "")
-
-        # user_message 전용: text 또는 messages에서 preview 추출
-        if event_type == "user_message":
-            text = event_dict.get("text", "")
-            if not text and "messages" in event_dict:
-                for m in reversed(event_dict.get("messages", [])):
-                    if m.get("role") == "user":
-                        c = m.get("content", "")
-                        if isinstance(c, str):
-                            text = c
-                        elif isinstance(c, list):
-                            text = " ".join(
-                                p.get("text", "") for p in c
-                                if isinstance(p, dict) and p.get("type") == "text"
-                            )
-                        break
-        elif event_type == "intervention_sent":
-            text = event_dict.get("text", "")
-        else:
-            text_field = PREVIEW_FIELD_MAP.get(event_type)
-            if not text_field:
-                return
-            text = event_dict.get(text_field, "")
-
-        if not isinstance(text, str) or not text:
-            return
-
-        ts = event_dict.get("timestamp")
-        if isinstance(ts, (int, float)):
-            ts_str = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
-        elif isinstance(ts, str):
-            ts_str = ts
-        else:
-            ts_str = datetime_to_str(utc_now())
-
-        await self._db.update_last_message(session_id, {
-            "type": event_type,
-            "preview": text[:200],
-            "timestamp": ts_str,
-        })
-
-        try:
-            broadcaster = get_session_broadcaster()
-            await broadcaster.emit_session_message_updated(
-                agent_session_id=session_id,
-                status=task.status.value,
-                updated_at=ts_str,
-                last_message={
-                    "type": event_type,
-                    "preview": text[:200],
-                    "timestamp": ts_str,
-                },
-                last_event_id=task.last_event_id,
-                last_read_event_id=task.last_read_event_id,
-            )
-        except Exception:
-            logger.debug("session list broadcast skipped (broadcaster not ready)")
 
     async def send_reconnect_status(
         self,
