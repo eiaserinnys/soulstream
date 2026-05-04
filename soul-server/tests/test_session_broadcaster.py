@@ -271,3 +271,69 @@ class TestEmitSessionUpdatedWirePayload:
         assert event["status"] == "idle"
         assert "last_assistant_text" in event
         assert event["last_assistant_text"] == "네, 처리 완료했사옵니다."
+
+
+class TestBroadcasterWireContract:
+    """broadcaster wire payload 키 화이트리스트 계약 테스트.
+
+    docstring과 event dict 비대칭(커밋 aa8ff313 안티패턴 — commit message로는
+    wire 키 추가를 약속했으나 docstring만 변경) 사전 차단.
+
+    의도: 키 추가·삭제·오타가 발생하면 즉시 RED. 값 의미 검증은
+    TestEmitSessionUpdatedWirePayload 등 별도 테스트가 담당한다.
+    """
+
+    # session_updated 타입 wire 이벤트의 정본 키 셋. push notifier가 읽는 표면.
+    EXPECTED_UPDATED_KEYS = {
+        "type",
+        "agent_session_id",
+        "status",
+        "updated_at",
+        "last_event_id",
+        "last_read_event_id",
+        "last_progress_text",
+        "last_assistant_text",
+    }
+
+    # phase wire 이벤트는 last_progress_text를 싣지 않는다.
+    # (push 트리거 아닌 idle 통보 의미라 진행 안내 텍스트 부적합)
+    EXPECTED_PHASE_KEYS = {
+        "type",
+        "agent_session_id",
+        "status",
+        "updated_at",
+        "last_event_id",
+        "last_read_event_id",
+        "last_assistant_text",
+    }
+
+    @pytest.fixture
+    def broadcaster(self, mock_registry):
+        return SessionBroadcaster(agent_registry=mock_registry)
+
+    def _make_task(self) -> Task:
+        return Task(
+            agent_session_id="sess-contract-1",
+            prompt="테스트",
+            status=TaskStatus.COMPLETED,
+            last_progress_text="...",
+            last_assistant_text="...",
+            completed_at=datetime(2026, 5, 4, 8, 50, tzinfo=timezone.utc),
+        )
+
+    async def test_session_updated_payload_keys_exact(self, broadcaster):
+        """emit_session_updated wire 키 셋이 화이트리스트와 정확히 일치한다.
+
+        키 누락·오타·추가 시 RED — docstring과 dict 비대칭을 즉시 차단.
+        """
+        queue = broadcaster.add_client()
+        await broadcaster.emit_session_updated(self._make_task())
+        event = queue.get_nowait()
+        assert set(event.keys()) == self.EXPECTED_UPDATED_KEYS
+
+    async def test_session_phase_payload_keys_exact(self, broadcaster):
+        """emit_session_phase wire 키 셋이 화이트리스트와 정확히 일치한다."""
+        queue = broadcaster.add_client()
+        await broadcaster.emit_session_phase(self._make_task(), phase="idle")
+        event = queue.get_nowait()
+        assert set(event.keys()) == self.EXPECTED_PHASE_KEYS
