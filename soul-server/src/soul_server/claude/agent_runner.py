@@ -269,6 +269,21 @@ class ClaudeRunner:
         """이 러너의 ClaudeSDKClient를 정리 — ClientLifecycle에 위임."""
         await self._lifecycle.remove()
 
+    async def shutdown_client(self) -> bool:
+        """외부에서 호출하는 클라이언트 종료 메서드.
+
+        registry 등 외부 모듈이 runner 내부 구현을 모르고도
+        클라이언트를 종료할 수 있도록 하는 공개 인터페이스.
+
+        Returns:
+            True: 활성 클라이언트가 있어서 종료를 시도함
+            False: 활성 클라이언트가 없었음
+        """
+        if self._lifecycle.client is None:
+            return False
+        await self._lifecycle.remove()
+        return True
+
     def detach_client(self) -> Optional[ClaudeSDKClient]:
         """풀이 runner를 회수할 때 client/pid를 안전하게 분리 — ClientLifecycle에 위임."""
         return self._lifecycle.detach()

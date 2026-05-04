@@ -80,59 +80,13 @@ async def shutdown_all() -> int:
         logger.info("종료할 활성 클라이언트 없음")
         return 0
 
-    # TODO: shutdown 로직이 runner._lifecycle 내부 속성에 직접 접근한다.
-    # ClaudeRunner에 shutdown_client() 메서드를 추출하여 이 함수의
-    # 지식 경계를 줄여야 한다.
     count = 0
     for runner in runners:
         try:
-            if runner._lifecycle.client:
-                if (
-                    runner._lifecycle._lifecycle_task is not None
-                    and runner._lifecycle._shutdown_event is not None
-                ):
-                    # Lifecycle task 경유 종료 (anyio cross-task 버그 방지)
-                    shutdown_ev = runner._lifecycle._shutdown_event
-                    lifecycle = runner._lifecycle._lifecycle_task
-                    saved_pid = runner._lifecycle.pid  # 타임아웃 시 force_kill 경로용
-                    runner._lifecycle.client = None
-                    runner._lifecycle.pid = None
-                    runner._lifecycle._lifecycle_task = None
-                    runner._lifecycle._shutdown_event = None
-                    runner._lifecycle._session_id = None
-                    runner._lifecycle._options_fp = None
-
-                    shutdown_ev.set()
-                    done, _ = await asyncio.wait({lifecycle}, timeout=30.0)
-                    if done:
-                        try:
-                            await lifecycle  # 예외가 있으면 꺼냄; traceback 보존
-                            count += 1
-                            logger.info(f"클라이언트 종료 성공: runner={runner.runner_id}")
-                        except Exception as e:
-                            logger.warning(f"클라이언트 종료 실패: runner={runner.runner_id}, {e}")
-                            if saved_pid:
-                                runner._lifecycle._force_kill_fn(saved_pid, runner.runner_id)
-                                count += 1
-                    else:
-                        logger.warning(f"클라이언트 종료 타임아웃: runner={runner.runner_id}")
-                        lifecycle.cancel()
-                        try:
-                            await lifecycle
-                        except (asyncio.CancelledError, Exception):
-                            pass
-                        if saved_pid:
-                            runner._lifecycle._force_kill_fn(saved_pid, runner.runner_id)
-                else:
-                    # 직접 disconnect (lifecycle task 없음, 하위 호환)
-                    await runner._lifecycle.client.disconnect()
-                    count += 1
-                    logger.info(f"클라이언트 종료 성공: runner={runner.runner_id}")
+            if await runner.shutdown_client():
+                count += 1
         except Exception as e:
             logger.warning(f"클라이언트 종료 실패: runner={runner.runner_id}, {e}")
-            if runner._lifecycle.pid:
-                runner._lifecycle._force_kill_fn(runner._lifecycle.pid, runner.runner_id)
-                count += 1
 
     logger.info(f"총 {count}개 클라이언트 종료 완료")
     return count

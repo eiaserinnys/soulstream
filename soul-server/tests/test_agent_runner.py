@@ -863,6 +863,25 @@ def _clear_all_client_state():
 
 
 @pytest.mark.asyncio
+class TestShutdownClient:
+    """ClaudeRunner.shutdown_client() 단위 테스트"""
+
+    async def test_shutdown_client_with_active_client(self):
+        """활성 클라이언트가 있으면 True 반환하고 remove() 호출"""
+        runner = ClaudeRunner()
+        runner._lifecycle.client = AsyncMock()
+        result = await runner.shutdown_client()
+        assert result is True
+        assert runner._lifecycle.client is None
+
+    async def test_shutdown_client_without_client(self):
+        """클라이언트가 없으면 False 반환"""
+        runner = ClaudeRunner()
+        result = await runner.shutdown_client()
+        assert result is False
+
+
+@pytest.mark.asyncio
 class TestShutdownAllClients:
     """shutdown_all (모듈 레벨 레지스트리) 테스트"""
 
@@ -934,7 +953,12 @@ class TestShutdownAllClients:
         assert len(_registry) == 0
 
     async def test_shutdown_partial_failure_no_pid(self):
-        """disconnect 실패 시 PID가 없으면 강제 종료 시도 안 함"""
+        """disconnect 실패 시 PID가 없으면 강제 종료 시도 안 함.
+
+        shutdown_client()는 client가 있었으므로 True 반환 → count 1.
+        remove() 내부에서 disconnect 예외를 흡수하고, pid=None이면
+        force_kill을 호출하지 않는다.
+        """
         _clear_all_client_state()
 
         mock_client = AsyncMock()
@@ -947,7 +971,7 @@ class TestShutdownAllClients:
         with patch("soul_server.claude.agent_runner.force_kill_process") as mock_force_kill:
             count = await shutdown_all()
 
-        assert count == 0
+        assert count == 1  # client가 있었으므로 shutdown_client() → True
         mock_force_kill.assert_not_called()
 
     async def test_registry_shared_across_runners(self):
