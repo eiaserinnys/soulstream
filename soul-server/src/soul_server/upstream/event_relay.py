@@ -84,11 +84,17 @@ class EventRelay:
         try:
             while self._is_running():
                 try:
-                    event = await asyncio.wait_for(
+                    item = await asyncio.wait_for(
                         self._broadcast_queue.get(), timeout=30.0,
                     )
                 except asyncio.TimeoutError:
                     continue
+
+                # disconnect_all sentinel — None 수신 시 종료
+                if item is None:
+                    break
+                # Phase 1: SSE id는 upstream 페이로드에서 미사용. _eid는 Phase 2 결정.
+                _eid, event = item
 
                 try:
                     await self._dispatch_broadcast_event(event)

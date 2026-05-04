@@ -290,10 +290,11 @@ class TestTaskManagerAppendMetadata:
         }
         await task_manager.append_session_metadata(sid, entry)
 
-        # metadata_updated 이벤트 확인
+        # metadata_updated 이벤트 확인 (Phase 1: 큐 항목은 (eid, event) 튜플)
         events = []
         while not queue.empty():
-            events.append(queue.get_nowait())
+            _eid, ev = queue.get_nowait()
+            events.append(ev)
 
         metadata_events = [e for e in events if e.get("type") == "metadata_updated"]
         assert len(metadata_events) == 1

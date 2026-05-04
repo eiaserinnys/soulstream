@@ -252,10 +252,15 @@ def create_sessions_router() -> APIRouter:
             try:
                 while True:
                     try:
-                        event = await asyncio.wait_for(
+                        item = await asyncio.wait_for(
                             event_queue.get(),
                             timeout=30.0,
                         )
+                        # disconnect_all sentinel — None 수신 시 종료
+                        if item is None:
+                            break
+                        # Phase 1: SSE id 필드는 미사용. _eid는 Phase 2에서 사용.
+                        _eid, event = item
                         yield {
                             "event": event.get("type", "unknown"),
                             "data": json.dumps(event, ensure_ascii=False, default=str),

@@ -168,13 +168,17 @@ def create_sessions_router(
                     if await request.is_disconnected():
                         break
                     try:
-                        event = await asyncio.wait_for(queue.get(), timeout=30)
+                        item = await asyncio.wait_for(queue.get(), timeout=30)
                     except asyncio.TimeoutError:
                         yield {"comment": "keepalive"}
                         continue
 
-                    if event is None:
+                    # disconnect_all sentinel — None 수신 시 종료
+                    if item is None:
                         break
+
+                    # Phase 1: SSE id 필드는 미사용. _eid는 Phase 2에서 사용.
+                    _eid, event = item
 
                     event_type = event.get("type", "message")
                     # 브로드캐스터는 raw DB 딕셔너리를 그대로 전송한다.

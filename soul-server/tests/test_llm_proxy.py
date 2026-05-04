@@ -347,9 +347,11 @@ class TestLlmExecutor:
         await executor.execute(request)
 
         # catalog_updated + session_created + session_updated 이벤트
+        # (Phase 1: 큐 항목은 (eid, event) 튜플)
         events = []
         while not queue.empty():
-            events.append(queue.get_nowait())
+            _eid, ev = queue.get_nowait()
+            events.append(ev)
 
         event_types = [e["type"] for e in events]
         assert "session_created" in event_types

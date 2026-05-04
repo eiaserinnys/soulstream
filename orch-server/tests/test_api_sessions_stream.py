@@ -75,7 +75,7 @@ class TestSessionStreamBroadcasterIntegration:
         queue = broadcaster.add_client()
 
         await broadcaster.broadcast({"type": "session_created", "session": {}})
-        event = queue.get_nowait()
+        _eid, event = queue.get_nowait()
         assert event["type"] == "session_created"
 
         broadcaster.remove_client(queue)
@@ -87,7 +87,7 @@ class TestSessionStreamBroadcasterIntegration:
 
         await broadcaster.emit_session_deleted("sess-42")
 
-        event = queue.get_nowait()
+        _eid, event = queue.get_nowait()
         assert event["type"] == "session_deleted"
         assert event["agent_session_id"] == "sess-42"
 
@@ -104,7 +104,7 @@ class TestSessionStreamBroadcasterIntegration:
             "status": "completed",
         })
 
-        event = queue.get_nowait()
+        _eid, event = queue.get_nowait()
         assert event["type"] == "session_updated"
         assert event["agent_session_id"] == "s1"
 
@@ -113,6 +113,6 @@ class TestSessionStreamBroadcasterIntegration:
     async def test_remove_client_is_safe_for_unknown_queue(self):
         """remove_client() doesn't raise for an unregistered queue."""
         broadcaster = SessionBroadcaster()
-        unknown_queue: asyncio.Queue[dict | None] = asyncio.Queue()
+        unknown_queue: asyncio.Queue[tuple[int, dict] | None] = asyncio.Queue()
         # Should not raise
         broadcaster.remove_client(unknown_queue)

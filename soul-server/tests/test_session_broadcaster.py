@@ -108,7 +108,8 @@ class TestSessionBroadcasterBroadcast:
         count = await broadcaster.broadcast(event)
 
         assert count == 1
-        assert queue.get_nowait() == event
+        _eid, received = queue.get_nowait()
+        assert received == event
 
     async def test_broadcast_to_multiple_listeners(self, broadcaster):
         """여러 클라이언트에게 이벤트 브로드캐스트"""
@@ -119,8 +120,10 @@ class TestSessionBroadcasterBroadcast:
         count = await broadcaster.broadcast(event)
 
         assert count == 2
-        assert queue1.get_nowait() == event
-        assert queue2.get_nowait() == event
+        _eid1, received1 = queue1.get_nowait()
+        _eid2, received2 = queue2.get_nowait()
+        assert received1 == event
+        assert received2 == event
 
     async def test_broadcast_removes_full_queue_listener(self, broadcaster):
         """큐가 가득 찬 클라이언트는 자동으로 제거된다"""
@@ -128,8 +131,8 @@ class TestSessionBroadcasterBroadcast:
         full_queue = broadcaster.add_client(maxsize=1)
         normal_queue = broadcaster.add_client()
 
-        # 첫 번째 이벤트로 full_queue를 채움
-        full_queue.put_nowait({"type": "fill"})
+        # 첫 번째 이벤트로 full_queue를 채움 (Phase 1: 큐 형식 (eid, event) 튜플)
+        full_queue.put_nowait((0, {"type": "fill"}))
 
         assert broadcaster.client_count == 2
 
@@ -140,7 +143,8 @@ class TestSessionBroadcasterBroadcast:
         # normal_queue만 성공, full_queue는 제거됨
         assert count == 1
         assert broadcaster.client_count == 1
-        assert normal_queue.get_nowait() == event
+        _eid, received = normal_queue.get_nowait()
+        assert received == event
 
     async def test_broadcast_removes_multiple_full_queues(self, broadcaster):
         """여러 개의 가득 찬 큐가 동시에 제거된다"""
@@ -148,9 +152,9 @@ class TestSessionBroadcasterBroadcast:
         full_queue2 = broadcaster.add_client(maxsize=1)
         normal_queue = broadcaster.add_client()
 
-        # 두 큐를 채움
-        full_queue1.put_nowait({"type": "fill"})
-        full_queue2.put_nowait({"type": "fill"})
+        # 두 큐를 채움 (Phase 1: 큐 형식 (eid, event) 튜플)
+        full_queue1.put_nowait((0, {"type": "fill"}))
+        full_queue2.put_nowait((0, {"type": "fill"}))
 
         assert broadcaster.client_count == 3
 
@@ -186,7 +190,7 @@ class TestEmitSessionMessageUpdated:
         )
 
         assert count == 1
-        event = queue.get_nowait()
+        _eid, event = queue.get_nowait()
         assert event["type"] == "session_updated"
         assert event["agent_session_id"] == "sess-123"
         assert event["status"] == "running"
@@ -207,8 +211,10 @@ class TestEmitSessionMessageUpdated:
         )
 
         assert count == 2
-        assert q1.get_nowait()["last_message"] == last_message
-        assert q2.get_nowait()["last_message"] == last_message
+        _eid1, ev1 = q1.get_nowait()
+        _eid2, ev2 = q2.get_nowait()
+        assert ev1["last_message"] == last_message
+        assert ev2["last_message"] == last_message
 
 
 class TestEmitSessionUpdatedWirePayload:
@@ -243,7 +249,7 @@ class TestEmitSessionUpdatedWirePayload:
         count = await broadcaster.emit_session_updated(task)
 
         assert count == 1
-        event = queue.get_nowait()
+        _eid, event = queue.get_nowait()
         assert event["type"] == "session_updated"
         assert "last_assistant_text" in event
         assert event["last_assistant_text"] == "네, 처리 완료했사옵니다."
@@ -255,7 +261,7 @@ class TestEmitSessionUpdatedWirePayload:
 
         await broadcaster.emit_session_updated(task)
 
-        event = queue.get_nowait()
+        _eid, event = queue.get_nowait()
         assert "last_assistant_text" in event
         assert event["last_assistant_text"] is None
 
@@ -266,7 +272,7 @@ class TestEmitSessionUpdatedWirePayload:
 
         await broadcaster.emit_session_phase(task, phase="idle")
 
-        event = queue.get_nowait()
+        _eid, event = queue.get_nowait()
         assert event["type"] == "session_updated"
         assert event["status"] == "idle"
         assert "last_assistant_text" in event
@@ -343,14 +349,14 @@ class TestBroadcasterWireContract:
         """
         queue = broadcaster.add_client()
         await broadcaster.emit_session_updated(self._make_task())
-        event = queue.get_nowait()
+        _eid, event = queue.get_nowait()
         assert set(event.keys()) == self.EXPECTED_UPDATED_KEYS
 
     async def test_session_phase_payload_keys_exact(self, broadcaster):
         """emit_session_phase wire 키 셋이 화이트리스트와 정확히 일치한다."""
         queue = broadcaster.add_client()
         await broadcaster.emit_session_phase(self._make_task(), phase="idle")
-        event = queue.get_nowait()
+        _eid, event = queue.get_nowait()
         assert set(event.keys()) == self.EXPECTED_PHASE_KEYS
 
     async def test_session_created_payload_keys_exact(self, broadcaster):

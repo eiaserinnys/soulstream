@@ -34,15 +34,18 @@ class SessionBroadcaster(BaseSessionBroadcaster):
         """노드 상태 변경 이벤트를 브로드캐스트한다."""
         await self.broadcast(change)
 
-    async def subscribe(self) -> AsyncIterator[dict]:
-        """SSE 클라이언트 구독. 연결 해제 시 자동 정리."""
+    async def subscribe(self) -> AsyncIterator[tuple[int, dict]]:
+        """SSE 클라이언트 구독. 연결 해제 시 자동 정리.
+
+        yield: (event_id, event_dict) 튜플. None sentinel(disconnect_all) 시 break.
+        """
         queue = self.add_client()
         try:
             while True:
-                event = await queue.get()
-                if event is None:
+                item = await queue.get()
+                if item is None:
                     break
-                yield event
+                yield item  # (event_id, event_dict)
         finally:
             self.remove_client(queue)
 

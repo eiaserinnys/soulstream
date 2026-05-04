@@ -15,7 +15,8 @@ class TestBroadcast:
         events = []
 
         async def consume():
-            async for event in broadcaster.subscribe():
+            async for item in broadcaster.subscribe():
+                _eid, event = item
                 events.append(event)
                 break  # consume one event then exit
 
@@ -35,7 +36,8 @@ class TestBroadcast:
         results = [[], []]
 
         async def consume(idx):
-            async for event in broadcaster.subscribe():
+            async for item in broadcaster.subscribe():
+                _eid, event = item
                 results[idx].append(event)
                 break
 
@@ -53,7 +55,7 @@ class TestBroadcast:
     async def test_broadcast_drops_full_queue_client(self, broadcaster):
         """A client whose queue is full gets disconnected."""
         # Subscribe but never consume — queue will fill up
-        queue: asyncio.Queue[dict | None] = asyncio.Queue(maxsize=1)
+        queue: asyncio.Queue[tuple[int, dict] | None] = asyncio.Queue(maxsize=1)
         broadcaster._clients.append(queue)
 
         # Fill the queue
@@ -72,7 +74,8 @@ class TestEmitSessionDeleted:
         events = []
 
         async def consume():
-            async for event in broadcaster.subscribe():
+            async for item in broadcaster.subscribe():
+                _eid, event = item
                 events.append(event)
                 break
 

@@ -2,7 +2,7 @@
 
 import asyncio
 import pytest
-from soul_common.broadcaster import BaseSessionBroadcaster
+from soul_common.broadcaster import BaseSessionBroadcaster, ReplayResult
 
 
 class TestBaseSessionBroadcaster:
@@ -56,8 +56,11 @@ class TestBaseSessionBroadcaster:
         count = await broadcaster.broadcast(event)
 
         assert count == 2
-        assert await q1.get() == event
-        assert await q2.get() == event
+        eid1, ev1 = await q1.get()
+        eid2, ev2 = await q2.get()
+        assert ev1 == event
+        assert ev2 == event
+        assert eid1 == 1 and eid2 == 1
 
     @pytest.mark.asyncio
     async def test_broadcast_returns_sent_count(self):
@@ -95,8 +98,10 @@ class TestBaseSessionBroadcaster:
         count = await broadcaster.broadcast(event)
 
         assert count == 2
-        assert await q1.get() == event
-        assert await q2.get() == event
+        _eid1, ev1 = await q1.get()
+        _eid2, ev2 = await q2.get()
+        assert ev1 == event
+        assert ev2 == event
 
     @pytest.mark.asyncio
     async def test_emit_session_deleted(self):
@@ -106,7 +111,7 @@ class TestBaseSessionBroadcaster:
         count = await broadcaster.emit_session_deleted("sess-abc")
 
         assert count == 1
-        event = await queue.get()
+        _eid, event = await queue.get()
         assert event["type"] == "session_deleted"
         assert event["agent_session_id"] == "sess-abc"
 
@@ -122,7 +127,7 @@ class TestBaseSessionBroadcaster:
         )
 
         assert count == 1
-        event = await queue.get()
+        _eid, event = await queue.get()
         assert event["type"] == "session_updated"
         assert event["agent_session_id"] == "sess-xyz"
         assert event["last_event_id"] == 100
@@ -140,7 +145,7 @@ class TestBaseSessionBroadcaster:
             last_read_event_id=1,
         )
 
-        event = await queue.get()
+        _eid, event = await queue.get()
         assert "agent_session_id" in event
         assert "session_id" not in event
 
@@ -177,6 +182,9 @@ class TestBaseSessionBroadcasterWireContract:
 
     의도: 키 추가·삭제·오타 시 즉시 RED. 값 의미 검증은 기존 test_emit_session_deleted /
     test_emit_read_position_updated가 담당하므로 본 클래스는 키 셋 == 비교만 수행.
+
+    Phase 1 큐 형식 변경 후: 큐는 (event_id, event_dict) 튜플을 yield. 본 테스트는
+    event_dict의 키만 검증하므로 _eid는 무시.
     """
 
     EXPECTED_DELETED_KEYS = {"type", "agent_session_id"}
@@ -196,7 +204,7 @@ class TestBaseSessionBroadcasterWireContract:
         broadcaster = BaseSessionBroadcaster()
         queue = broadcaster.add_client()
         await broadcaster.emit_session_deleted("sess-del-1")
-        event = queue.get_nowait()
+        _eid, event = queue.get_nowait()
         assert set(event.keys()) == self.EXPECTED_DELETED_KEYS
 
     @pytest.mark.asyncio
@@ -209,5 +217,128 @@ class TestBaseSessionBroadcasterWireContract:
             last_event_id=42,
             last_read_event_id=40,
         )
-        event = queue.get_nowait()
+        _eid, event = queue.get_nowait()
         assert set(event.keys()) == self.EXPECTED_READ_POSITION_KEYS
+
+
+class TestReplay:
+    """Phase 1: Last-Event-ID replay 인프라 테스트."""
+
+    @pytest.mark.asyncio
+    async def test_broadcast_assigns_monotonic_id(self):
+        b = BaseSessionBroadcaster()
+        q = b.add_client()
+        await b.broadcast({"type": "a"})
+        await b.broadcast({"type": "b"})
+        eid1, ev1 = await q.get()
+        eid2, ev2 = await q.get()
+        assert (eid1, eid2) == (1, 2)
+        assert (ev1["type"], ev2["type"]) == ("a", "b")
+
+    @pytest.mark.asyncio
+    async def test_replay_since_returns_after_id(self):
+        b = BaseSessionBroadcaster()
+        for t in ("a", "b", "c"):
+            await b.broadcast({"type": t})
+        result = b.replay_since(last_event_id=1, client_instance_id=b.instance_id)
+        assert isinstance(result, ReplayResult)
+        assert not result.gap
+        assert [eid for eid, _ in result.events] == [2, 3]
+        assert result.latest_id == 3
+        assert result.instance_id == b.instance_id
+
+    @pytest.mark.asyncio
+    async def test_replay_since_gap_when_below_oldest(self):
+        b = BaseSessionBroadcaster(recent_events_maxlen=2)
+        for t in ("a", "b", "c"):  # ring keeps [2, 3]
+            await b.broadcast({"type": t})
+        result = b.replay_since(last_event_id=0, client_instance_id=b.instance_id)
+        assert result.gap is True
+        assert result.events == []
+        assert result.latest_id == 3
+
+    @pytest.mark.asyncio
+    async def test_replay_since_gap_on_instance_mismatch(self):
+        b = BaseSessionBroadcaster()
+        await b.broadcast({"type": "a"})
+        result = b.replay_since(last_event_id=1, client_instance_id="different")
+        assert result.gap is True
+
+    def test_replay_since_first_connect_no_gap(self):
+        b = BaseSessionBroadcaster()
+        result = b.replay_since(last_event_id=None, client_instance_id=None)
+        assert result.gap is False
+        assert result.events == []
+        assert result.latest_id == 0
+
+    @pytest.mark.asyncio
+    async def test_broadcast_evicts_expired_via_ttl(self, monkeypatch):
+        """broadcast 경로에서 _evict_expired가 호출되어 oldest가 빠지는지 검증."""
+        import soul_common.broadcaster as mod
+        fake_now = [1000.0]
+        monkeypatch.setattr(mod.time, "monotonic", lambda: fake_now[0])
+        b = BaseSessionBroadcaster(recent_events_ttl_sec=10.0)
+        await b.broadcast({"type": "old"})  # ts=1000, id=1
+        fake_now[0] = 1015.0
+        await b.broadcast({"type": "new"})  # ts=1015, id=2 — 직후 evict로 'old' 제거
+        # ring 내부: [(2, 1015, 'new')]
+        result = b.replay_since(last_event_id=0, client_instance_id=b.instance_id)
+        # last=0 < oldest=2-1=1 → gap
+        assert result.gap is True
+        assert result.latest_id == 2
+
+    @pytest.mark.asyncio
+    async def test_disconnect_all_terminates_subscribers_after_format_change(self):
+        """큐 형식이 (eid, event) 튜플로 바뀐 후에도 None sentinel로 안전 종료된다."""
+        b = BaseSessionBroadcaster()
+        q = b.add_client()
+
+        consumed: list = []
+
+        async def consume():
+            while True:
+                item = await q.get()
+                if item is None:
+                    break
+                consumed.append(item)
+
+        task = asyncio.create_task(consume())
+        await asyncio.sleep(0.01)
+
+        await b.broadcast({"type": "before_disconnect"})
+        await asyncio.sleep(0.01)
+        b.disconnect_all()
+        await asyncio.wait_for(task, timeout=1.0)
+
+        assert len(consumed) == 1
+        eid, ev = consumed[0]
+        assert eid == 1
+        assert ev["type"] == "before_disconnect"
+
+    @pytest.mark.asyncio
+    async def test_instance_id_property_is_stable(self):
+        b = BaseSessionBroadcaster()
+        iid = b.instance_id
+        assert isinstance(iid, str) and len(iid) > 0
+        # 같은 인스턴스에서는 변경되지 않는다
+        await b.broadcast({"type": "x"})
+        assert b.instance_id == iid
+
+    @pytest.mark.asyncio
+    async def test_latest_event_id_tracks_broadcasts(self):
+        b = BaseSessionBroadcaster()
+        assert b.latest_event_id == 0
+        await b.broadcast({"type": "a"})
+        assert b.latest_event_id == 1
+        await b.broadcast({"type": "b"})
+        assert b.latest_event_id == 2
+
+    @pytest.mark.asyncio
+    async def test_replay_since_empty_ring_with_last_id_le_latest(self):
+        """ring이 비었지만 last_event_id ≤ latest_id면 gap 없음 (이미 모두 봤음)."""
+        b = BaseSessionBroadcaster(recent_events_maxlen=2)
+        # broadcast 없음 — latest_id=0, ring 비어있음
+        result = b.replay_since(last_event_id=0, client_instance_id=b.instance_id)
+        assert result.gap is False
+        assert result.events == []
+        assert result.latest_id == 0

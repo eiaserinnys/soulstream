@@ -497,8 +497,8 @@ class TestSessionBroadcaster:
         assert queue2.qsize() == 1
 
         # 이벤트 내용 확인
-        received1 = await queue1.get()
-        received2 = await queue2.get()
+        _eid1, received1 = await queue1.get()
+        _eid2, received2 = await queue2.get()
         assert received1["type"] == "session_created"
         assert received2["type"] == "session_created"
 
@@ -518,7 +518,7 @@ class TestSessionBroadcaster:
         )
         await broadcaster.emit_session_created(task)
 
-        event = await queue.get()
+        _eid, event = await queue.get()
         assert event["type"] == "session_created"
         assert event["session"]["agent_session_id"] == "new-sess"
 
@@ -539,7 +539,7 @@ class TestSessionBroadcaster:
         )
         await broadcaster.emit_session_updated(task)
 
-        event = await queue.get()
+        _eid, event = await queue.get()
         assert event["type"] == "session_updated"
         assert event["agent_session_id"] == "sess-001"
         assert event["status"] == "completed"
@@ -554,7 +554,7 @@ class TestSessionBroadcaster:
 
         await broadcaster.emit_session_deleted("sess-001")
 
-        event = await queue.get()
+        _eid, event = await queue.get()
         assert event["type"] == "session_deleted"
         assert event["agent_session_id"] == "sess-001"
 
@@ -986,8 +986,8 @@ class TestMultipleClientsSSE:
         await broadcaster.emit_session_created(task)
 
         # 두 클라이언트 모두 동일한 이벤트 수신
-        event_a = await client_a_queue.get()
-        event_b = await client_b_queue.get()
+        _eid_a, event_a = await client_a_queue.get()
+        _eid_b, event_b = await client_b_queue.get()
 
         assert event_a["type"] == "session_created"
         assert event_b["type"] == "session_created"
