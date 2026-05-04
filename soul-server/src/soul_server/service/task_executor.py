@@ -429,10 +429,15 @@ class TaskExecutor:
                 # 한 턴 종료 — 클라이언트에 idle phase 통보. task.status는 RUNNING 유지.
                 if turn_phase != "idle":
                     try:
-                        await get_session_broadcaster().emit_session_phase(task, "idle")
+                        count = await get_session_broadcaster().emit_session_phase(task, "idle")
+                        logger.info(
+                            "[PHASE] %s -> %d listener(s), phase=idle",
+                            task.agent_session_id, count,
+                        )
                     except Exception:
-                        logger.debug(
-                            "idle phase broadcast skipped (broadcaster not ready)"
+                        logger.warning(
+                            "[PHASE] idle broadcast skipped (broadcaster not ready) sid=%s",
+                            task.agent_session_id,
                         )
                     turn_phase = "idle"
             elif event.type == "error":
@@ -443,10 +448,15 @@ class TaskExecutor:
                 # subtree_update/session/progress는 메타 이벤트이므로 phase 전환에서 제외.
                 if turn_phase != "running":
                     try:
-                        await get_session_broadcaster().emit_session_phase(task, "running")
+                        count = await get_session_broadcaster().emit_session_phase(task, "running")
+                        logger.info(
+                            "[PHASE] %s -> %d listener(s), phase=running",
+                            task.agent_session_id, count,
+                        )
                     except Exception:
-                        logger.debug(
-                            "running phase broadcast skipped (broadcaster not ready)"
+                        logger.warning(
+                            "[PHASE] running broadcast skipped (broadcaster not ready) sid=%s",
+                            task.agent_session_id,
                         )
                     turn_phase = "running"
 
