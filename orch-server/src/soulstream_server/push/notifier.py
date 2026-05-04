@@ -124,17 +124,29 @@ class PushNotifier:
         )
         new_status = (data.get("status") or "").lower()
         if not session_id or not new_status:
+            logger.info(
+                "[push] session_updated skipped — missing key (sid=%s status=%r data_keys=%s)",
+                session_id, new_status, sorted((data or {}).keys()),
+            )
             return
         key = (node_id, session_id)
         prev = self._last_status.get(key)
         self._last_status[key] = new_status
         # running/idle → completed/error 전환만 발사. 같은 status 재호출은 무시.
-        if new_status in ("completed", "error") and prev != new_status:
+        will_fire = new_status in ("completed", "error") and prev != new_status
+        logger.info(
+            "[push] session_updated sid=%s prev=%s new=%s fire=%s",
+            session_id[:8], prev, new_status, will_fire,
+        )
+        if will_fire:
             title = "세션 완료" if new_status == "completed" else "세션 오류"
-            # 본문은 마지막 어시스턴트 응답 텍스트 → display_name → session 일부 순.
-            # last_progress_text는 task_executor가 text_delta마다 갱신하는 정본
-            # (soul-server task_models.py:162). session_broadcaster가 wire에 함께 실어 보낸다.
+            # 본문 우선순위: last_assistant_text → last_message.preview → display_name
+            #              → last_progress_text → title fallback. (_push_body_preview 참조)
             body = _push_body_preview(data, session_id, fallback_title=title)
+            logger.info(
+                "[push] session_updated fire title=%r body=%r src=%s",
+                title, body[:60], _body_source(data),
+            )
             await self._send_to_user(
                 node_id,
                 title=title,
@@ -150,12 +162,17 @@ class PushNotifier:
             or data.get("session_id")
         )
         if not session_id:
+            logger.info("[push] input_request skipped — no session_id (data_keys=%s)", sorted((data or {}).keys()))
             return
         prompt = (data.get("prompt") or "").strip()
         if prompt:
             body = prompt if len(prompt) <= _PUSH_BODY_MAX else prompt[:_PUSH_BODY_MAX].rstrip() + "…"
         else:
             body = "에이전트가 입력을 기다리고 있습니다"
+        logger.info(
+            "[push] input_request fire sid=%s body=%r",
+            session_id[:8], body[:60],
+        )
         await self._send_to_user(
             node_id,
             title="입력 요청",
@@ -171,6 +188,7 @@ class PushNotifier:
         email = (user_info or {}).get("email")
         if not email:
             # 사용자 정보 없는 노드(예: 익명 노드) — silent skip
+            logger.info("[push] send skipped — no email for node=%s", node_id)
             return
         try:
             tokens = await self._repo.list_tokens(email)
@@ -178,11 +196,19 @@ class PushNotifier:
             logger.exception("[push] list_tokens failed for %s", email)
             return
         if not tokens:
+            logger.info("[push] send skipped — no tokens for %s", email)
             return
+        logger.info(
+            "[push] send → email=%s devices=%d title=%r",
+            email, len(tokens), title,
+        )
 
         async def _one(device_id: str, expo_token: str) -> None:
             res = await self._provider.send(expo_token, title, body, data)
             if res.invalid_token:
+                logger.info(
+                    "[push] invalid_token cleanup email=%s device=%s", email, device_id,
+                )
                 try:
                     await self._repo.delete_token(email, device_id)
                 except Exception:
@@ -191,7 +217,25 @@ class PushNotifier:
                     )
             elif not res.ok:
                 logger.warning("[push] send failed: %s", res.error)
+            else:
+                logger.info(
+                    "[push] sent ok email=%s device=%s", email, device_id,
+                )
 
         await asyncio.gather(
             *(_one(d, t) for d, t in tokens), return_exceptions=True
         )
+
+
+def _body_source(data: dict) -> str:
+    """body가 어떤 키에서 왔는지 디버그용 라벨."""
+    if data.get("last_assistant_text"):
+        return "last_assistant_text"
+    last_message = data.get("last_message") or {}
+    if isinstance(last_message, dict) and last_message.get("preview"):
+        return "last_message.preview"
+    if data.get("display_name"):
+        return "display_name"
+    if data.get("last_progress_text"):
+        return "last_progress_text"
+    return "fallback_title_or_session_id"
