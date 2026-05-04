@@ -283,6 +283,19 @@ def create_app(
       이렇게 하면 conftest.py의 test_app fixture가 프로덕션과 동일한 _mount_api_routers를
       재사용하여 "정본은 하나" 원칙을 지킨다.
     """
+    # logging 정본 — uvicorn이 main:app을 직접 import하는 운영 경로에서도 application
+    # logger가 INFO로 동작하도록 여기서 root logger를 설정한다. main()의 basicConfig는
+    # uvicorn.run을 거치는 CLI 경로에서만 호출되어 운영 경로(start.sh의 python -m uvicorn)
+    # 에서는 적용되지 않는다 — 그래서 [push] 등 INFO 로그가 pm2 stderr에 캡처되지 않던 결함을
+    # 본 위치에서 종결한다. force=True는 uvicorn이 자체 root handler를 미리 설정한 경우에도
+    # 덮어쓰기 위함. uvicorn의 named logger(uvicorn.access/uvicorn.error)는 별도 handler라
+    # 영향 받지 않는다. 테스트 경로에서도 동일 설정이 적용되며 멱등.
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        force=True,
+    )
+
     test_mode = all(
         obj is not None
         for obj in (db, node_manager, session_router, broadcaster, catalog_service)
@@ -383,12 +396,13 @@ app = create_app()
 
 
 def main() -> None:
-    """CLI 엔트리포인트."""
+    """CLI 엔트리포인트.
+
+    logging 설정은 create_app()에서 처리한다 (정본은 하나). uvicorn.run이
+    soulstream_server.main:app을 import할 때 모듈 레벨에서 create_app()이
+    실행되어 root logger가 설정된다.
+    """
     settings = get_settings()
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
     uvicorn.run(
         "soulstream_server.main:app",
         host=settings.host,
