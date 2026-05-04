@@ -29,6 +29,7 @@ from soul_server.service import resource_manager, get_soul_engine
 from soul_server.service import intervention_service
 from soul_server.service.intervention_service import InputRequestNotPendingError
 from soul_server.service.session_broadcaster import get_session_broadcaster
+from soul_server.util.attachment_helpers import build_attachment_context_items
 
 logger = logging.getLogger(__name__)
 
@@ -308,18 +309,7 @@ async def api_create_session(body: CreateSessionBody, request: Request):
             },
         )
 
-    extra_context_items = None
-    if body.attachmentPaths:
-        extra_context_items = [
-            {
-                "key": "attached_files",
-                "label": "첨부 파일",
-                "content": (
-                    "다음 파일들이 첨부되었습니다. Read 도구로 내용을 확인하세요:\n"
-                    + "\n".join(f"- {p}" for p in body.attachmentPaths)
-                ),
-            }
-        ]
+    extra_context_items = build_attachment_context_items(body.attachmentPaths)
 
     # caller_info 조립: body에 있으면 그대로, 없으면 HTTP Request에서 수집 (source="browser")
     caller_info = body.caller_info or {
