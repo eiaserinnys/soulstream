@@ -7,6 +7,9 @@ TDD 방식으로 작성:
 3. set_session_broadcaster: 테스트용 인스턴스 설정
 """
 
+import asyncio
+from datetime import datetime, timezone
+
 import pytest
 from unittest.mock import MagicMock
 from soul_server.service.agent_registry import AgentRegistry
@@ -16,6 +19,7 @@ from soul_server.service.session_broadcaster import (
     init_session_broadcaster,
     set_session_broadcaster,
 )
+from soul_server.service.task_models import Task, TaskStatus
 
 
 @pytest.fixture
@@ -87,9 +91,6 @@ class TestSetSessionBroadcaster:
         set_session_broadcaster(None)
         with pytest.raises(RuntimeError):
             get_session_broadcaster()
-
-
-import asyncio
 
 
 class TestSessionBroadcasterBroadcast:
@@ -208,3 +209,65 @@ class TestEmitSessionMessageUpdated:
         assert count == 2
         assert q1.get_nowait()["last_message"] == last_message
         assert q2.get_nowait()["last_message"] == last_message
+
+
+class TestEmitSessionUpdatedWirePayload:
+    """emit_session_updated wire payload 검증.
+
+    회귀 방지: 푸시 본문 정본 last_assistant_text가 wire에 실리지 않아
+    orch-server PushNotifier가 fallback으로 last_progress_text를 본문에 쓰는 결함
+    (커밋 aa8ff313이 commit message로는 추가를 약속했으나 docstring만 변경).
+    """
+
+    @pytest.fixture
+    def broadcaster(self, mock_registry):
+        return SessionBroadcaster(agent_registry=mock_registry)
+
+    def _make_task(self, **overrides) -> Task:
+        defaults = dict(
+            agent_session_id="sess-wire-1",
+            prompt="테스트 프롬프트",
+            status=TaskStatus.COMPLETED,
+            last_progress_text="도구 실행 중...",
+            last_assistant_text="네, 처리 완료했사옵니다.",
+            completed_at=datetime(2026, 5, 4, 8, 30, tzinfo=timezone.utc),
+        )
+        defaults.update(overrides)
+        return Task(**defaults)
+
+    async def test_payload_includes_last_assistant_text(self, broadcaster):
+        """emit_session_updated wire payload에 last_assistant_text 키가 포함된다."""
+        queue = broadcaster.add_client()
+        task = self._make_task()
+
+        count = await broadcaster.emit_session_updated(task)
+
+        assert count == 1
+        event = queue.get_nowait()
+        assert event["type"] == "session_updated"
+        assert "last_assistant_text" in event
+        assert event["last_assistant_text"] == "네, 처리 완료했사옵니다."
+
+    async def test_payload_assistant_text_none_when_unset(self, broadcaster):
+        """task.last_assistant_text가 None이면 wire에 None으로 실린다 (fallback 체인 정상 동작)."""
+        queue = broadcaster.add_client()
+        task = self._make_task(last_assistant_text=None)
+
+        await broadcaster.emit_session_updated(task)
+
+        event = queue.get_nowait()
+        assert "last_assistant_text" in event
+        assert event["last_assistant_text"] is None
+
+    async def test_phase_payload_includes_last_assistant_text(self, broadcaster):
+        """emit_session_phase wire 대칭 — last_assistant_text 포함 (push 트리거 아니지만 일관성)."""
+        queue = broadcaster.add_client()
+        task = self._make_task(status=TaskStatus.RUNNING)
+
+        await broadcaster.emit_session_phase(task, phase="idle")
+
+        event = queue.get_nowait()
+        assert event["type"] == "session_updated"
+        assert event["status"] == "idle"
+        assert "last_assistant_text" in event
+        assert event["last_assistant_text"] == "네, 처리 완료했사옵니다."

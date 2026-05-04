@@ -82,6 +82,7 @@ class SessionBroadcaster(BaseSessionBroadcaster):
             "last_event_id": task.last_event_id,
             "last_read_event_id": task.last_read_event_id,
             "last_progress_text": task.last_progress_text,
+            "last_assistant_text": task.last_assistant_text,
         }
         return await self.broadcast(event)
 
@@ -104,6 +105,7 @@ class SessionBroadcaster(BaseSessionBroadcaster):
             "updated_at": utc_now().isoformat(),
             "last_event_id": task.last_event_id,
             "last_read_event_id": task.last_read_event_id,
+            "last_assistant_text": task.last_assistant_text,
         }
         return await self.broadcast(event)
 
