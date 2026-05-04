@@ -109,32 +109,6 @@ class ClaudeResult(EngineResult):
     restart_requested: bool = False
     list_run: Optional[str] = None  # <!-- LIST_RUN: 리스트명 --> 마커로 추출된 리스트 이름
 
-    @classmethod
-    def from_engine_result(
-        cls,
-        result: EngineResult,
-        markers: Any = None,
-    ) -> "ClaudeResult":
-        """EngineResult + markers → ClaudeResult 변환
-
-        Args:
-            result: 엔진 순수 결과
-            markers: 파싱된 응용 마커 (duck-typed, None이면 기본값 사용)
-        """
-        return cls(
-            success=result.success,
-            output=result.output,
-            session_id=result.session_id,
-            error=result.error,
-            is_error=result.is_error,
-            interrupted=result.interrupted,
-            usage=result.usage,
-            collected_messages=result.collected_messages,
-            update_requested=getattr(markers, "update_requested", False),
-            restart_requested=getattr(markers, "restart_requested", False),
-            list_run=getattr(markers, "list_run", None),
-        )
-
 
 INTERVENTION_POLL_INTERVAL = 1.0  # 초: 인터벤션 폴링 주기
 MAX_INTERVENTION_DRAIN = 100  # _drain_interventions 안전 상한
@@ -234,9 +208,6 @@ class ClaudeRunner:
         self._input_handler.bind_pending_events(self._pending_events.append)
 
         # SDK 클라이언트 라이프사이클 (컴포지션)
-        # force_kill_fn은 ClaudeRunner._force_kill_process에 위임한다.
-        # 테스트가 patch.object(ClaudeRunner, "_force_kill_process")로 교체하면
-        # 런타임 호출이 그 patch를 통과하도록 동적 dispatch한다.
         self._lifecycle = ClientLifecycle(
             runner_id=self.runner_id,
             working_dir=self.working_dir,
@@ -252,57 +223,8 @@ class ClaudeRunner:
             can_use_tool_factory=self._make_can_use_tool,
             rate_limit_observer=self._observe_rate_limit,
             unknown_event_observer=self._observe_unknown_event,
-            force_kill_fn=lambda pid, runner_id: type(self)._force_kill_process(
-                pid, runner_id
-            ),
+            force_kill_fn=lambda pid, runner_id: force_kill_process(pid, runner_id),
         )
-
-    # Lifecycle 위임 property — 외부 호출자/테스트가 기존 속성 접근을 유지
-    @property
-    def client(self) -> Optional[ClaudeSDKClient]:
-        return self._lifecycle.client
-    @client.setter
-    def client(self, value: Optional[ClaudeSDKClient]) -> None:
-        self._lifecycle.client = value
-
-    @property
-    def pid(self) -> Optional[int]:
-        return self._lifecycle.pid
-    @pid.setter
-    def pid(self, value: Optional[int]) -> None:
-        self._lifecycle.pid = value
-
-    @property
-    def _client_session_id(self) -> Optional[str]:
-        return self._lifecycle._session_id
-    @_client_session_id.setter
-    def _client_session_id(self, value: Optional[str]) -> None:
-        self._lifecycle._session_id = value
-
-    @property
-    def _client_options_fp(self) -> Optional[str]:
-        return self._lifecycle._options_fp
-    @_client_options_fp.setter
-    def _client_options_fp(self, value: Optional[str]) -> None:
-        self._lifecycle._options_fp = value
-
-    @property
-    def _lifecycle_task(self) -> Optional[asyncio.Task]:
-        return self._lifecycle._lifecycle_task
-    @_lifecycle_task.setter
-    def _lifecycle_task(self, value: Optional[asyncio.Task]) -> None:
-        self._lifecycle._lifecycle_task = value
-
-    @property
-    def _lifecycle_shutdown_event(self) -> Optional[asyncio.Event]:
-        return self._lifecycle._shutdown_event
-    @_lifecycle_shutdown_event.setter
-    def _lifecycle_shutdown_event(self, value: Optional[asyncio.Event]) -> None:
-        self._lifecycle._shutdown_event = value
-
-    # Static re-exports: 테스트가 ClaudeRunner._force_kill_process를 patch할 수 있게 함
-    _compute_options_fingerprint = staticmethod(compute_options_fingerprint)
-    _force_kill_process = staticmethod(force_kill_process)
 
     @classmethod
     async def shutdown_all_clients(cls) -> int:
@@ -379,7 +301,7 @@ class ClaudeRunner:
     # Runner 고유 메서드
     def interrupt(self) -> bool:
         """이 러너에 인터럽트 전송 (동기)"""
-        client = self.client
+        client = self._lifecycle.client
         loop = self.execution_loop
         if client is None or loop is None or not loop.is_running():
             return False
@@ -525,7 +447,7 @@ class ClaudeRunner:
 
     def _update_client_session_id(self, session_id: str) -> None:
         """MessageProcessor 콜백: 클라이언트 세션 ID 갱신"""
-        self._client_session_id = session_id
+        self._lifecycle._session_id = session_id
 
     async def _receive_messages(
         self,
@@ -603,7 +525,7 @@ class ClaudeRunner:
                     logger.warning(
                         f"Compact retry 읽기 타임아웃 ({COMPACT_RETRY_READ_TIMEOUT}s): "
                         f"runner={runner_id}, retry={compact_handler.retry_count}, "
-                        f"pid={self.pid}, cli_alive={self._is_cli_alive()}"
+                        f"pid={self._lifecycle.pid}, cli_alive={self._is_cli_alive()}"
                     )
                     return
                 except StopAsyncIteration:
@@ -700,7 +622,7 @@ class ClaudeRunner:
         return _handle_process_error_fn(
             e,
             ctx,
-            pid=self.pid,
+            pid=self._lifecycle.pid,
             debug_fn=self.debug_send_fn,
             active_clients_count=get_registry_size(),
         )
@@ -842,7 +764,7 @@ class ClaudeRunner:
                 if compact_handler.evaluate(
                     msg_state, before,
                     cli_alive=self._is_cli_alive(),
-                    pid=self.pid,
+                    pid=self._lifecycle.pid,
                     runner_id=self.runner_id,
                 ):
                     msg_state.reset_for_retry()

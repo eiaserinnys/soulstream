@@ -235,7 +235,7 @@ class SoulEngineAdapter:
 
         모든 콜백은 queue/loop/runner_ref를 클로저로 공유한다.
         runner_ref는 _run_claude_task가 runner 생성 후 [0]에 채워 넣는 list이며,
-        on_session_callback이 runner.pid에 접근하기 위해 사용한다.
+        on_session_callback이 runner._lifecycle.pid에 접근하기 위해 사용한다.
         """
 
         # debug_send_fn: 동기 콜백 → 큐 어댑터
@@ -287,8 +287,8 @@ class SoulEngineAdapter:
             return _build_intervention_prompt(msg)
 
         async def on_session_callback(session_id: str) -> None:
-            """SystemMessage의 session_id 수신 시 SSE 이벤트 발행. runner.pid 접근 안전."""
-            runner_pid = runner_ref[0].pid if runner_ref[0] else None
+            """SystemMessage의 session_id 수신 시 SSE 이벤트 발행. runner._lifecycle.pid 접근 안전."""
+            runner_pid = runner_ref[0]._lifecycle.pid if runner_ref[0] else None
             await queue.put(SessionEvent(session_id=session_id, pid=runner_pid))
 
         async def on_engine_event(event: EngineEvent) -> None:
@@ -458,7 +458,7 @@ class SoulEngineAdapter:
         effective_prompt = context_block + "\n\n" + prompt
 
         # runner 참조: _run_claude_task가 runner 생성 후 [0]에 채워 넣는 list.
-        # on_session_callback이 runner.pid에 접근하기 위해 사용한다.
+        # on_session_callback이 runner._lifecycle.pid에 접근하기 위해 사용한다.
         runner_ref: List[Optional[ClaudeRunner]] = [None]
 
         # 콜백 묶음 생성

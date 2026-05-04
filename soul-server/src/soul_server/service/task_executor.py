@@ -568,7 +568,7 @@ class TaskExecutor:
                 # AskUserQuestion 응답 전달 경로 구축 + pid 기록
                 def on_runner_ready(runner):
                     task._deliver_input_response = runner.deliver_input_response
-                    task.pid = runner.pid
+                    task.pid = runner._lifecycle.pid
 
                 event_iter = claude_runner.execute(
                     prompt=ctx.assembled_prompt,

@@ -16,6 +16,7 @@ from soul_server.claude.agent_runner import (
     MessageState,
     _client_lifecycle_task,
 )
+from soul_server.claude.client_lifecycle import force_kill_process
 from soul_server.claude.compact_retry import (
     CompactRetryState,
     COMPACT_RETRY_READ_TIMEOUT,
@@ -881,11 +882,11 @@ class TestShutdownAllClients:
         mock_client_3 = AsyncMock()
 
         runner1 = ClaudeRunner()
-        runner1.client = mock_client_1
+        runner1._lifecycle.client = mock_client_1
         runner2 = ClaudeRunner()
-        runner2.client = mock_client_2
+        runner2._lifecycle.client = mock_client_2
         runner3 = ClaudeRunner()
-        runner3.client = mock_client_3
+        runner3._lifecycle.client = mock_client_3
 
         register_runner(runner1)
         register_runner(runner2)
@@ -910,18 +911,18 @@ class TestShutdownAllClients:
         mock_client_3 = AsyncMock()
 
         runner1 = ClaudeRunner()
-        runner1.client = mock_client_1
+        runner1._lifecycle.client = mock_client_1
         runner2 = ClaudeRunner()
-        runner2.client = mock_client_2
-        runner2.pid = 12345
+        runner2._lifecycle.client = mock_client_2
+        runner2._lifecycle.pid = 12345
         runner3 = ClaudeRunner()
-        runner3.client = mock_client_3
+        runner3._lifecycle.client = mock_client_3
 
         register_runner(runner1)
         register_runner(runner2)
         register_runner(runner3)
 
-        with patch.object(ClaudeRunner, "_force_kill_process") as mock_force_kill:
+        with patch("soul_server.claude.agent_runner.force_kill_process") as mock_force_kill:
             count = await shutdown_all()
 
         assert count == 3
@@ -940,10 +941,10 @@ class TestShutdownAllClients:
         mock_client.disconnect.side_effect = RuntimeError("연결 끊기 실패")
 
         runner = ClaudeRunner()
-        runner.client = mock_client
+        runner._lifecycle.client = mock_client
         register_runner(runner)
 
-        with patch.object(ClaudeRunner, "_force_kill_process") as mock_force_kill:
+        with patch("soul_server.claude.agent_runner.force_kill_process") as mock_force_kill:
             count = await shutdown_all()
 
         assert count == 0
@@ -955,7 +956,7 @@ class TestShutdownAllClients:
 
         mock_client = AsyncMock()
         runner = ClaudeRunner()
-        runner.client = mock_client
+        runner._lifecycle.client = mock_client
         register_runner(runner)
 
         assert get_runner(runner.runner_id) is runner
@@ -975,7 +976,7 @@ class TestShutdownAllClients:
         # 기존 러너 등록
         mock_client_1 = AsyncMock()
         runner1 = ClaudeRunner()
-        runner1.client = mock_client_1
+        runner1._lifecycle.client = mock_client_1
         result1 = register_runner(runner1)
         assert result1 is True
         assert get_runner(runner1.runner_id) is runner1
@@ -992,7 +993,7 @@ class TestShutdownAllClients:
 
         # 셧다운 후 새 러너 등록 시도 - 거부되어야 함
         runner2 = ClaudeRunner()
-        runner2.client = AsyncMock()
+        runner2._lifecycle.client = AsyncMock()
         result2 = register_runner(runner2)
         assert result2 is False
         assert get_runner(runner2.runner_id) is None
@@ -1039,8 +1040,8 @@ class TestPidTrackingAndForceKill:
         with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             client, _ = await runner._get_or_create_client()
 
-        assert runner.pid == 54321
-        assert runner.client is client
+        assert runner._lifecycle.pid == 54321
+        assert runner._lifecycle.client is client
 
     async def test_pid_not_extracted_when_transport_missing(self):
         """transport가 없을 때 PID 추출 실패해도 오류 없음"""
@@ -1052,8 +1053,8 @@ class TestPidTrackingAndForceKill:
         with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             client, _ = await runner._get_or_create_client()
 
-        assert runner.pid is None
-        assert runner.client is client
+        assert runner._lifecycle.pid is None
+        assert runner._lifecycle.client is client
 
     async def test_remove_client_force_kills_on_disconnect_failure(self):
         """disconnect 실패 시 PID로 강제 종료"""
@@ -1062,30 +1063,30 @@ class TestPidTrackingAndForceKill:
         mock_client = AsyncMock()
         mock_client.disconnect.side_effect = RuntimeError("연결 끊기 실패")
 
-        runner.client = mock_client
-        runner.pid = 99999
+        runner._lifecycle.client = mock_client
+        runner._lifecycle.pid = 99999
 
-        with patch.object(ClaudeRunner, "_force_kill_process") as mock_force_kill:
+        with patch("soul_server.claude.agent_runner.force_kill_process") as mock_force_kill:
             await runner._remove_client()
 
         mock_force_kill.assert_called_once_with(99999, runner.runner_id)
-        assert runner.client is None
-        assert runner.pid is None
+        assert runner._lifecycle.client is None
+        assert runner._lifecycle.pid is None
 
     async def test_remove_client_force_kill_on_success(self):
         """disconnect 성공 시에도 orphan subprocess 방지를 위해 강제 종료 호출"""
         runner = ClaudeRunner()
 
         mock_client = AsyncMock()
-        runner.client = mock_client
-        runner.pid = 11111
+        runner._lifecycle.client = mock_client
+        runner._lifecycle.pid = 11111
 
-        with patch.object(ClaudeRunner, "_force_kill_process") as mock_force_kill:
+        with patch("soul_server.claude.agent_runner.force_kill_process") as mock_force_kill:
             await runner._remove_client()
 
         mock_force_kill.assert_called_once_with(11111, runner.runner_id)
-        assert runner.client is None
-        assert runner.pid is None
+        assert runner._lifecycle.client is None
+        assert runner._lifecycle.pid is None
 
 
 
@@ -1098,7 +1099,7 @@ class TestShutdownAllSync:
 
         mock_client = AsyncMock()
         runner = ClaudeRunner()
-        runner.client = mock_client
+        runner._lifecycle.client = mock_client
         register_runner(runner)
 
         count = shutdown_all_sync()
@@ -1108,22 +1109,22 @@ class TestShutdownAllSync:
 
 
 class TestForceKillProcess:
-    """_force_kill_process 정적 메서드 테스트 (동기)"""
+    """force_kill_process 모듈 함수 테스트 (동기)"""
 
     def test_force_kill_process_terminate_success(self):
-        """_force_kill_process: terminate 성공"""
+        """force_kill_process: terminate 성공"""
         mock_proc = MagicMock()
 
-        # agent_runner 모듈 내부에서 psutil을 import하므로 해당 경로로 패치
+        # client_lifecycle 모듈 내부에서 psutil을 import하므로 해당 경로로 패치
         with patch("soul_server.claude.client_lifecycle.psutil") as mock_psutil:
             mock_psutil.Process.return_value = mock_proc
-            ClaudeRunner._force_kill_process(12345, "test_thread")
+            force_kill_process(12345, "test_thread")
 
         mock_proc.terminate.assert_called_once()
         mock_proc.wait.assert_called_once_with(timeout=3)
 
     def test_force_kill_process_terminate_timeout_then_kill(self):
-        """_force_kill_process: terminate 타임아웃 시 kill 사용"""
+        """force_kill_process: terminate 타임아웃 시 kill 사용"""
         mock_proc = MagicMock()
 
         with patch("soul_server.claude.client_lifecycle.psutil") as mock_psutil:
@@ -1131,23 +1132,23 @@ class TestForceKillProcess:
             mock_psutil.TimeoutExpired = type("TimeoutExpired", (Exception,), {})
             mock_proc.wait.side_effect = [mock_psutil.TimeoutExpired(3), None]
             mock_psutil.Process.return_value = mock_proc
-            ClaudeRunner._force_kill_process(12345, "test_thread")
+            force_kill_process(12345, "test_thread")
 
         mock_proc.terminate.assert_called_once()
         mock_proc.kill.assert_called_once()
         assert mock_proc.wait.call_count == 2
 
     def test_force_kill_process_no_such_process(self):
-        """_force_kill_process: 프로세스가 이미 종료된 경우"""
+        """force_kill_process: 프로세스가 이미 종료된 경우"""
         with patch("soul_server.claude.client_lifecycle.psutil") as mock_psutil:
             # NoSuchProcess 예외 시뮬레이션
             mock_psutil.NoSuchProcess = type("NoSuchProcess", (Exception,), {})
             mock_psutil.Process.side_effect = mock_psutil.NoSuchProcess(12345)
             # 예외 발생하지 않음
-            ClaudeRunner._force_kill_process(12345, "test_thread")
+            force_kill_process(12345, "test_thread")
 
     def test_force_kill_process_general_error(self):
-        """_force_kill_process: 일반 오류 발생 시 로깅만"""
+        """force_kill_process: 일반 오류 발생 시 로깅만"""
         import psutil as real_psutil
         with patch("soul_server.claude.client_lifecycle.psutil") as mock_psutil:
             # 실제 예외 클래스들을 유지
@@ -1155,7 +1156,7 @@ class TestForceKillProcess:
             mock_psutil.TimeoutExpired = real_psutil.TimeoutExpired
             mock_psutil.Process.side_effect = RuntimeError("알 수 없는 오류")
             # 예외 발생하지 않음 (로깅만)
-            ClaudeRunner._force_kill_process(12345, "test_thread")
+            force_kill_process(12345, "test_thread")
 
 
 
@@ -1306,13 +1307,13 @@ class TestIsCliAlive:
     def test_returns_false_when_pid_is_none(self):
         """PID가 None이면 False"""
         runner = ClaudeRunner()
-        runner.pid = None
+        runner._lifecycle.pid = None
         assert runner._is_cli_alive() is False
 
     def test_returns_true_for_running_process(self):
         """실행 중인 프로세스면 True"""
         runner = ClaudeRunner()
-        runner.pid = 12345
+        runner._lifecycle.pid = 12345
 
         mock_proc = MagicMock()
         mock_proc.is_running.return_value = True
@@ -1326,7 +1327,7 @@ class TestIsCliAlive:
     def test_returns_false_for_dead_process(self):
         """종료된 프로세스면 False"""
         runner = ClaudeRunner()
-        runner.pid = 99999
+        runner._lifecycle.pid = 99999
 
         with patch("soul_server.claude.client_lifecycle.psutil") as mock_psutil:
             mock_psutil.NoSuchProcess = type("NoSuchProcess", (Exception,), {})
@@ -1384,7 +1385,7 @@ class TestCompactRetryHangFix:
     async def test_retry_skipped_when_cli_dead(self):
         """[B] CLI 프로세스 종료 시 retry 생략 + [C] fallback 텍스트 복원"""
         runner = ClaudeRunner()
-        runner.pid = 12345
+        runner._lifecycle.pid = 12345
 
         mock_client = AsyncMock()
         mock_client.connect = AsyncMock()
@@ -1429,7 +1430,7 @@ class TestCompactRetryHangFix:
     async def test_retry_skipped_cli_dead_with_fallback(self):
         """[B+C] CLI 종료 시 collected_messages에서 fallback 텍스트 복원"""
         runner = ClaudeRunner()
-        runner.pid = 12345
+        runner._lifecycle.pid = 12345
 
         mock_client = AsyncMock()
         mock_client.connect = AsyncMock()
@@ -1810,7 +1811,7 @@ class TestClaudeRunnerPooled:
 
         assert result.success is True
         # pooled=False이면 실행 후 client가 None이어야 함
-        assert runner.client is None
+        assert runner._lifecycle.client is None
         assert runner.execution_loop is None
         # disconnect 호출 확인
         mock_client.disconnect.assert_called()
@@ -1829,7 +1830,7 @@ class TestClaudeRunnerPooled:
 
         assert result.success is True
         # pooled=True이면 실행 후 client가 유지되어야 함
-        assert runner.client is mock_client
+        assert runner._lifecycle.client is mock_client
         # execution_loop는 항상 정리됨
         assert runner.execution_loop is None
         # disconnect 미호출 확인
@@ -1843,14 +1844,14 @@ class TestClaudeRunnerPooled:
     def test_is_idle_with_client_not_running(self):
         """client 있고 실행 중 아니면 is_idle() = True"""
         runner = ClaudeRunner()
-        runner.client = MagicMock()
+        runner._lifecycle.client = MagicMock()
         runner.execution_loop = None
         assert runner.is_idle() is True
 
     def test_is_idle_while_running(self):
         """실행 중이면 is_idle() = False"""
         runner = ClaudeRunner()
-        runner.client = MagicMock()
+        runner._lifecycle.client = MagicMock()
         mock_loop = MagicMock()
         mock_loop.is_running.return_value = True
         runner.execution_loop = mock_loop
@@ -1860,14 +1861,14 @@ class TestClaudeRunnerPooled:
         """detach_client()는 client/pid를 분리하고 disconnect 하지 않음"""
         runner = ClaudeRunner()
         mock_client = MagicMock()
-        runner.client = mock_client
-        runner.pid = 12345
+        runner._lifecycle.client = mock_client
+        runner._lifecycle.pid = 12345
 
         returned_client = runner.detach_client()
 
         # client와 pid가 None으로 초기화됨
-        assert runner.client is None
-        assert runner.pid is None
+        assert runner._lifecycle.client is None
+        assert runner._lifecycle.pid is None
         # 반환값은 원래 client
         assert returned_client is mock_client
         # disconnect는 호출하지 않음
@@ -2429,30 +2430,30 @@ class TestClientLifecycleTask:
         await asyncio.wait_for(ready_event.wait(), timeout=5.0)
 
         # lifecycle task 경로로 설정
-        runner.client = mock_client
-        runner._lifecycle_task = lifecycle_task
-        runner._lifecycle_shutdown_event = shutdown_event
+        runner._lifecycle.client = mock_client
+        runner._lifecycle._lifecycle_task = lifecycle_task
+        runner._lifecycle._shutdown_event = shutdown_event
 
         await runner._remove_client()
 
         # shutdown_event가 set됐으므로 lifecycle task가 disconnect() 호출
         assert lifecycle_task.done()
         mock_client.disconnect.assert_called_once()
-        assert runner.client is None
-        assert runner._lifecycle_task is None
-        assert runner._lifecycle_shutdown_event is None
+        assert runner._lifecycle.client is None
+        assert runner._lifecycle._lifecycle_task is None
+        assert runner._lifecycle._shutdown_event is None
 
     async def test_remove_client_fallback_without_lifecycle_task(self):
         """lifecycle task 없이 client만 있으면 직접 disconnect (하위 호환)"""
         runner = ClaudeRunner()
         mock_client = AsyncMock()
-        runner.client = mock_client
+        runner._lifecycle.client = mock_client
         # _lifecycle_task는 None (직접 설정 시나리오)
 
         await runner._remove_client()
 
         mock_client.disconnect.assert_called_once()
-        assert runner.client is None
+        assert runner._lifecycle.client is None
 
     async def test_remove_client_lifecycle_timeout_cancels_task(self):
         """lifecycle task disconnect 타임아웃 시 태스크를 취소"""
@@ -2471,9 +2472,9 @@ class TestClientLifecycleTask:
         )
         await asyncio.wait_for(ready_event.wait(), timeout=5.0)
 
-        runner.client = mock_client
-        runner._lifecycle_task = lifecycle_task
-        runner._lifecycle_shutdown_event = shutdown_event
+        runner._lifecycle.client = mock_client
+        runner._lifecycle._lifecycle_task = lifecycle_task
+        runner._lifecycle._shutdown_event = shutdown_event
 
         # asyncio.wait_for timeout을 mock하여 즉시 타임아웃
         original_wait_for = asyncio.wait_for
@@ -2487,7 +2488,7 @@ class TestClientLifecycleTask:
             await runner._remove_client()
 
         assert lifecycle_task.done()
-        assert runner._lifecycle_task is None
+        assert runner._lifecycle._lifecycle_task is None
 
     async def test_get_or_create_client_lifecycle_fields_set(self):
         """_get_or_create_client() 후 lifecycle 필드가 올바르게 설정됨"""
@@ -2507,14 +2508,14 @@ class TestClientLifecycleTask:
 
                 client, _ = await runner._get_or_create_client()
 
-        assert runner._lifecycle_task is not None
-        assert runner._lifecycle_shutdown_event is not None
-        assert not runner._lifecycle_task.done()  # 아직 실행 중
+        assert runner._lifecycle._lifecycle_task is not None
+        assert runner._lifecycle._shutdown_event is not None
+        assert not runner._lifecycle._lifecycle_task.done()  # 아직 실행 중
         mock_client.connect.assert_called_once()
 
         # 정리
-        runner._lifecycle_shutdown_event.set()
-        await asyncio.wait_for(runner._lifecycle_task, timeout=5.0)
+        runner._lifecycle._shutdown_event.set()
+        await asyncio.wait_for(runner._lifecycle._lifecycle_task, timeout=5.0)
 
     async def test_shutdown_all_with_lifecycle_task(self):
         """lifecycle task가 있는 runner의 shutdown_all() 동작"""
@@ -2529,9 +2530,9 @@ class TestClientLifecycleTask:
         await asyncio.wait_for(ready_event.wait(), timeout=5.0)
 
         runner = ClaudeRunner()
-        runner.client = mock_client
-        runner._lifecycle_task = lifecycle_task
-        runner._lifecycle_shutdown_event = shutdown_event
+        runner._lifecycle.client = mock_client
+        runner._lifecycle._lifecycle_task = lifecycle_task
+        runner._lifecycle._shutdown_event = shutdown_event
         register_runner(runner)
 
         count = await shutdown_all()
