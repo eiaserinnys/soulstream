@@ -160,6 +160,10 @@ class Task:
     intervention_queue: asyncio.Queue = field(default_factory=asyncio.Queue, repr=False)
     execution_task: Optional[asyncio.Task] = field(default=None, repr=False)
     last_progress_text: Optional[str] = field(default=None, repr=False)
+    # 마지막 어시스턴트 응답 텍스트 — text_delta(누적 block.text) 매번 덮어쓴다.
+    # 푸시 알림 body·세션 카드 preview에 사용 (push notifier _push_body_preview).
+    # last_progress_text("진행 안내 메시지")와 의미가 다르므로 분리한다.
+    last_assistant_text: Optional[str] = field(default=None, repr=False)
     # AskUserQuestion 응답 전달 콜백 (실행 중에만 유효)
     # Callable[[str, dict], bool]: (request_id, answers) -> success
     _deliver_input_response: object = field(default=None, repr=False)

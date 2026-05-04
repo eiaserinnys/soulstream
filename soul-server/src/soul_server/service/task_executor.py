@@ -344,6 +344,13 @@ class TaskExecutor:
             # 진행 상황 저장 (재연결용)
             if event.type == "progress":
                 task.last_progress_text = event_dict.get("text", "")
+            # 어시스턴트 응답 텍스트 캐시 — push body·세션 카드 preview용.
+            # TextDeltaSSEEvent.text는 block.text 전체(청크 아님, task_models 주석 참조)이므로
+            # 매 text_delta마다 덮어쓰면 자연스럽게 stream 끝에 응답 전체가 남는다.
+            elif event.type in ("text_delta", "text_end"):
+                text = event_dict.get("text") or ""
+                if text:
+                    task.last_assistant_text = text
 
             # 이벤트 영속화 + subtree_update 계산
             subtree_update_dict: Optional[dict] = None
