@@ -25,19 +25,23 @@ export interface CallerInfoLine {
  * 서버 측 source 종류:
  *  - `slack` — channel_id, user_id 등
  *  - `browser` — ip, referer 등
- *  - `agent` — parent_session_id, agent_node, agent_id, agent_name
+ *  - `agent` — callerSessionId(1급), agent_node, agent_id, agent_name
  *  - `api` — ip, user_agent
  *
  * 알려진 필드만 라벨화하고, 빈 객체에서는 source: "unknown" 한 줄만 반환.
  */
-export function buildCallerInfoLines(value: Record<string, unknown>): CallerInfoLine[] {
+export function buildCallerInfoLines(
+  value: Record<string, unknown>,
+  callerSessionId?: string | null,
+): CallerInfoLine[] {
   const lines: CallerInfoLine[] = [
     { label: "source", text: String(value.source ?? "unknown") },
   ];
-  if (value.parent_session_id) {
+  const parentId = callerSessionId ?? value.parent_session_id;
+  if (parentId) {
     lines.push({
       label: "parent",
-      text: String(value.parent_session_id).slice(0, 8),
+      text: String(parentId).slice(0, 8),
     });
   }
   if (value.agent_node) {

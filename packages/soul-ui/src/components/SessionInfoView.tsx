@@ -12,6 +12,7 @@ import { ScrollArea } from "./ui/scroll-area";
 export function SessionInfoView() {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const metadata = useDashboardStore((s) => s.activeSessionSummary?.metadata);
+  const callerSessionId = useDashboardStore((s) => s.activeSessionSummary?.callerSessionId);
 
   if (!activeSessionKey) {
     return (
@@ -23,7 +24,7 @@ export function SessionInfoView() {
 
   return (
     <ScrollArea className="h-full">
-      <SessionMetadata metadata={metadata ?? []} />
+      <SessionMetadata metadata={metadata ?? []} callerSessionId={callerSessionId} />
     </ScrollArea>
   );
 }

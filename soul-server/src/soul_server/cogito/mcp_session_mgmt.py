@@ -75,10 +75,6 @@ async def create_agent_session(
 
     # caller_info 조립: MCP 진입점이므로 source="agent"로 고정하며,
     # caller_session_id가 지정된 경우 발신 세션의 프로필 정보를 포함한다.
-    # NOTE(잔존 정합성 부채): parent_session_id는 caller_session_id 컬럼이 정본이지만
-    # 현재 frontend(soul-ui session-metadata-helpers.ts)가 caller_info.parent_session_id를
-    # 읽어 부모 라인을 표시하므로 호환을 위해 일시 유지한다. 후속 카드에서
-    # frontend가 callerSessionId 1급 필드를 읽도록 전환한 뒤 이 키를 제거한다.
     caller_info: Optional[dict] = None
     if caller_session_id:
         caller_task = await task_manager.get_task(caller_session_id)
@@ -88,7 +84,6 @@ async def create_agent_session(
 
         caller_info = {
             "source": "agent",
-            "parent_session_id": caller_session_id,  # 잔존: frontend 호환용
             "agent_node": task_manager._db.node_id,
             "agent_id": caller_task.profile_id if caller_task else None,
             "agent_name": caller_profile.name if caller_profile else None,

@@ -268,7 +268,7 @@ class TestCreateTaskCallerInfo:
 
     async def test_caller_info_persisted_to_db_metadata(self, manager):
         """caller_info truthy면 db.append_metadata가 {type:"caller_info", value:...}로 호출된다."""
-        info = {"source": "agent", "parent_session_id": "sess-parent", "agent_node": "node-A"}
+        info = {"source": "agent", "agent_node": "node-A"}
         await manager.create_task(
             prompt="hello",
             agent_session_id="sess-1",

@@ -213,10 +213,7 @@ class TestCreateAgentSession:
         caller_info = call_kwargs["caller_info"]
         assert caller_info is not None
         assert caller_info["source"] == "agent"
-        # NOTE(잔존 정합성 부채): caller_info.parent_session_id는 caller_session_id 컬럼과
-        # 의미상 중복이지만 frontend(soul-ui)가 이 키를 읽어 표시하므로 호환을 위해 유지.
-        # 후속 카드에서 frontend가 callerSessionId 1급 필드로 전환되면 본 단언도 부재 검증으로 교체.
-        assert caller_info["parent_session_id"] == "sess-parent-1"
+        assert "parent_session_id" not in caller_info
         assert call_kwargs["caller_session_id"] == "sess-parent-1"
         assert caller_info["agent_node"] == "node-alpha"
         assert caller_info["agent_id"] == "agent-parent"
