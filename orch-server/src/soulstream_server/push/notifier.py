@@ -25,6 +25,45 @@ from .repository import PushRepository
 
 logger = logging.getLogger(__name__)
 
+# 푸시 알림 body 길이 — iOS는 약 178자에서 잘리므로 100자 안팎이 안전.
+# 잘릴 때 멀티바이트 깨짐 방지를 위해 단어 경계 우선 절단.
+_PUSH_BODY_MAX = 100
+
+
+def _push_body_preview(
+    data: dict, session_id: str, *, fallback_title: str = ""
+) -> str:
+    """푸시 body 본문을 결정한다.
+
+    우선순위:
+    1. last_progress_text (task_executor가 text_delta마다 갱신하는 마지막 어시스턴트 응답)
+    2. last_message.preview (emit_session_message_updated 경로)
+    3. display_name (session_info에 있을 경우)
+    4. fallback_title 또는 session_id 일부 — 본문에 ID 노출 방지를 위해 빈 문자열 권장
+
+    값을 _PUSH_BODY_MAX로 truncate한다.
+    """
+    text = data.get("last_progress_text")
+    if not text:
+        last_message = data.get("last_message") or {}
+        if isinstance(last_message, dict):
+            text = last_message.get("preview")
+    if not text:
+        text = data.get("display_name")
+    if not text:
+        # session_id 일부는 사용자에게 의미 없으므로 마지막 fallback에서만 사용.
+        # title이 이미 "세션 완료" 등 충분한 신호를 주므로 빈 본문보다는 짧은 식별자.
+        text = fallback_title or session_id[:8]
+    text = str(text).strip()
+    if len(text) > _PUSH_BODY_MAX:
+        truncated = text[:_PUSH_BODY_MAX].rstrip()
+        # 마지막 공백에서 자르면 단어 깨짐 완화.
+        last_space = truncated.rfind(" ")
+        if last_space > _PUSH_BODY_MAX * 0.6:
+            truncated = truncated[:last_space]
+        text = truncated + "…"
+    return text
+
 
 class PushNotifier:
     def __init__(
@@ -88,7 +127,10 @@ class PushNotifier:
         # running/idle → completed/error 전환만 발사. 같은 status 재호출은 무시.
         if new_status in ("completed", "error") and prev != new_status:
             title = "세션 완료" if new_status == "completed" else "세션 오류"
-            body = data.get("display_name") or session_id[:8]
+            # 본문은 마지막 어시스턴트 응답 텍스트 → display_name → session 일부 순.
+            # last_progress_text는 task_executor가 text_delta마다 갱신하는 정본
+            # (soul-server task_models.py:162). session_broadcaster가 wire에 함께 실어 보낸다.
+            body = _push_body_preview(data, session_id, fallback_title=title)
             await self._send_to_user(
                 node_id,
                 title=title,
@@ -106,7 +148,10 @@ class PushNotifier:
         if not session_id:
             return
         prompt = (data.get("prompt") or "").strip()
-        body = prompt[:80] if prompt else "에이전트가 입력을 기다리고 있습니다"
+        if prompt:
+            body = prompt if len(prompt) <= _PUSH_BODY_MAX else prompt[:_PUSH_BODY_MAX].rstrip() + "…"
+        else:
+            body = "에이전트가 입력을 기다리고 있습니다"
         await self._send_to_user(
             node_id,
             title="입력 요청",

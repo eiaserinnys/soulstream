@@ -281,3 +281,85 @@ async def test_input_request_with_snake_case_agent_session_id():
 
     assert provider.send.await_count == 1
     assert provider.send.await_args.args[1] == "입력 요청"
+
+
+@pytest.mark.asyncio
+async def test_completed_body_uses_last_progress_text():
+    """🔴 회귀 방지: push body는 session_id가 아니라 마지막 어시스턴트 응답
+    텍스트(last_progress_text)를 사용한다. 사용자 보고 — body에 session_id[:8]이
+    노출되던 결함."""
+    notifier, provider, repo = _make_notifier(user_info={"email": "a@b.com"})
+    repo.list_tokens.return_value = [("dev-1", "tok-1")]
+    provider.send.return_value = SendResult(ok=True, invalid_token=False)
+
+    last_text = "네, 트렐로 카드를 새로 만들고 체크리스트를 정리했사옵니다."
+    await notifier._on_change(
+        "node_session_session_updated",
+        "node-A",
+        {"agent_session_id": "S1", "status": "running"},
+    )
+    await notifier._on_change(
+        "node_session_session_updated",
+        "node-A",
+        {
+            "agent_session_id": "S1",
+            "status": "completed",
+            "last_progress_text": last_text,
+        },
+    )
+
+    assert provider.send.await_count == 1
+    args = provider.send.await_args.args
+    assert args[1] == "세션 완료"
+    assert args[2] == last_text
+    assert "S1" not in args[2]
+
+
+@pytest.mark.asyncio
+async def test_completed_body_truncates_long_text():
+    """본문이 100자 초과면 절단되고 '…'가 붙는다."""
+    notifier, provider, repo = _make_notifier(user_info={"email": "a@b.com"})
+    repo.list_tokens.return_value = [("dev-1", "tok-1")]
+    provider.send.return_value = SendResult(ok=True, invalid_token=False)
+
+    long_text = "가" * 200
+    await notifier._on_change(
+        "node_session_session_updated",
+        "node-A",
+        {"agent_session_id": "S1", "status": "running"},
+    )
+    await notifier._on_change(
+        "node_session_session_updated",
+        "node-A",
+        {
+            "agent_session_id": "S1",
+            "status": "completed",
+            "last_progress_text": long_text,
+        },
+    )
+
+    body = provider.send.await_args.args[2]
+    assert body.endswith("…")
+    assert len(body) <= 102
+
+
+@pytest.mark.asyncio
+async def test_completed_body_falls_back_to_title():
+    """last_progress_text·last_message·display_name 모두 없으면 title을 본문으로."""
+    notifier, provider, repo = _make_notifier(user_info={"email": "a@b.com"})
+    repo.list_tokens.return_value = [("dev-1", "tok-1")]
+    provider.send.return_value = SendResult(ok=True, invalid_token=False)
+
+    await notifier._on_change(
+        "node_session_session_updated",
+        "node-A",
+        {"agent_session_id": "S1", "status": "running"},
+    )
+    await notifier._on_change(
+        "node_session_session_updated",
+        "node-A",
+        {"agent_session_id": "S1", "status": "completed"},
+    )
+
+    body = provider.send.await_args.args[2]
+    assert body == "세션 완료"
