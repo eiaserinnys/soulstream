@@ -2,78 +2,37 @@
 Sessions API 라우터 — /api/sessions
 
 세션 CRUD, SSE 이벤트 스트림, 개입/응답 프록시.
+SSE 핸들러는 session_stream.py, session_events.py에 분리되어 있다.
 """
 
-import asyncio
 import json
 import logging
-from typing import Any, Optional  # Optional: _session_to_response, node_manager 파라미터에 사용
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import JSONResponse
 from starlette.websockets import WebSocketDisconnect
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from sse_starlette.sse import EventSourceResponse
 
 from soul_common.catalog.catalog_service import CatalogService
 from soul_common.db.session_db import PostgresSessionDB
 
-from soulstream_server.api._proxy_utils import forward_auth_headers
 from soulstream_server.api.node_utils import find_session_node
+from soulstream_server.api.session_events import create_session_events_response
+from soulstream_server.api.session_models import (
+    CreateSessionRequest,
+    InterveneRequest,
+    ReadPositionRequest,
+    RenameSessionRequest,
+    RespondRequest,
+)
+from soulstream_server.api.session_serializer import _session_to_response
+from soulstream_server.api.session_stream import create_session_stream_response
 from soulstream_server.models import BatchMoveRequest
-from soulstream_server.nodes.node_connection import NodeConnection
 from soulstream_server.nodes.node_manager import NodeManager
 from soulstream_server.service.session_broadcaster import SessionBroadcaster
 from soulstream_server.service.session_router import SessionRouter
 
 logger = logging.getLogger(__name__)
-
-
-# --- Request/Response Models ---
-
-class CreateSessionRequest(BaseModel):
-    # 'profile'과 'agentId' 양쪽을 모두 수용한다.
-    # - orch-server 고유 용어: profile (노드 위임 WS 페이로드 키)
-    # - soul-server 공용 용어: agentId (동일 값의 다른 이름)
-    # 두 서버 API를 대칭으로 유지하여 호출자가 용어를 바꾸지 않아도 동작하게 한다.
-    model_config = ConfigDict(populate_by_name=True)
-
-    prompt: str = ""
-    nodeId: Optional[str] = None
-    folderId: Optional[str] = None
-    profile: Optional[str] = Field(
-        default=None,
-        validation_alias=AliasChoices("profile", "agentId"),
-    )
-    allowed_tools: Optional[list[str]] = None
-    disallowed_tools: Optional[list[str]] = None
-    use_mcp: Optional[bool] = None
-    system_prompt: Optional[str] = None
-    oauth_profile_name: Optional[str] = None
-    caller_session_id: Optional[str] = None
-    attachmentPaths: Optional[list[str]] = None
-    caller_info: Optional[dict] = None  # 발신자 정보. 비어있으면 서버가 HTTP Request에서 조립한다.
-    model: Optional[str] = None
-
-
-class InterveneRequest(BaseModel):
-    text: str
-    user: str = ""
-    attachmentPaths: Optional[list[str]] = None
-
-
-class RespondRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-    request_id: str = Field(alias="requestId")
-    answers: dict
-
-
-class RenameSessionRequest(BaseModel):
-    displayName: Optional[str] = None
-
-
-class ReadPositionRequest(BaseModel):
-    last_read_event_id: int
 
 
 # --- Router Factory ---
@@ -127,157 +86,10 @@ def create_sessions_router(
 
     @router.get("/stream")
     async def session_stream(request: Request) -> EventSourceResponse:
-        """세션 목록 변경 SSE 스트림 (Last-Event-ID resume 지원).
-
-        재연결 클라는 `Last-Event-ID` 헤더 또는 `?lastEventId=N` 쿼리(헤더 우선)로
-        마지막 받은 event_id를, `?instanceId={hex}`로 이전 broadcaster instance_id를 알린다.
-
-        응답 흐름:
-        1. broadcaster=None: stream_meta 송출 생략 + keepalive (테스트/독립 실행 — 클라가 lastEventIdRef 추적 시작 안 함)
-        2. broadcaster 있음:
-           - 큐 등록 (replay 호출 전에 등록하여 race 시 dedup으로 차단)
-           - stream_meta 첫 yield (instance_id + latest_id, SSE id 미부착)
-           - lastEventId 미지정 → initial session_list (REST 풀 스냅샷, SSE id 미부착)
-           - lastEventId 지정 + gap=False → replay events (각각 SSE id 필드 포함)
-           - lastEventId 지정 + gap=True → replay_gap 이벤트 (latest_id 포함, SSE id 미부착)
-           - 큐 구독으로 전환 → broadcast 이벤트 (eid, event) 튜플 unpack 후 SSE id 부착하여 yield
-           - replay 중 큐에 쌓인 이벤트는 replay_seen_ids로 dedup
-
-        SSE 이벤트:
-        - stream_meta: { type, instance_id, latest_id }  (broadcaster 있을 때만)
-        - session_list: { type, sessions, total }  (lastEventId 미지정 시 첫 연결)
-        - replay_gap: { type, latest_id, instance_id }  (gap 발생 시 — 클라는 풀 재페치)
-        - session_created: { type, session }
-        - session_updated: { type, agent_session_id, ... }
-        - session_deleted: { type, agent_session_id }
-        - catalog_updated: { type, catalog }
-
-        설계 결정:
-        - stream_meta·session_list·replay_gap에는 SSE id 미부착. 클라이언트
-          lastEventIdRef는 broadcaster가 부여한 id가 있는 이벤트만으로 갱신한다
-          (NaN 오염 회피).
-        - broadcaster=None은 stream_meta 송출 자체 생략 (sentinel "" 사용 시 진짜 인스턴스와
-          구분 안 됨 — design-principles §4 위반).
-        - lastEventId is None 분기에서 initial session_list 스냅샷과 큐 사이 race 시
-          (스냅샷 직전 broadcast → 큐와 스냅샷 양쪽에 동일 세션) 클라이언트가
-          session_created/session_updated를 idempotent(upsert/update 시맨틱)하게
-          처리한다는 전제. 중복 도달은 무해.
-        """
-        last_event_id_str = (
-            request.headers.get("last-event-id")
-            or request.query_params.get("lastEventId")
+        """세션 목록 변경 SSE 스트림. 구현은 session_stream.py 참조."""
+        return await create_session_stream_response(
+            request, db, node_manager, broadcaster,
         )
-        client_instance_id = request.query_params.get("instanceId")
-        last_event_id: int | None = None
-        if last_event_id_str:
-            try:
-                last_event_id = int(last_event_id_str)
-            except ValueError:
-                last_event_id = None
-
-        async def event_generator():
-            # broadcaster=None: stream_meta 송출 생략. 빈 instance_id 송출은
-            # "정상 instance와 구분 안 됨"으로 명시적 실패 원칙(design-principles §4) 위반.
-            if broadcaster is None:
-                while True:
-                    if await request.is_disconnected():
-                        return
-                    yield {"comment": "keepalive"}
-                    await asyncio.sleep(30)
-                return
-
-            # try 진입 전 None — finally에서 안전 체크 (GeneratorExit 시 누수 차단)
-            queue: asyncio.Queue[tuple[int, dict] | None] | None = None
-            replay_seen_ids: set[int] = set()
-            try:
-                # add_client()를 try 안 첫 줄로 — generator close 시 finally로 정리 보장
-                queue = broadcaster.add_client()
-
-                # 1. stream_meta (SSE id 미부착)
-                yield {
-                    "event": "stream_meta",
-                    "data": json.dumps({
-                        "type": "stream_meta",
-                        "instance_id": broadcaster.instance_id,
-                        "latest_id": broadcaster.latest_event_id,
-                    }),
-                }
-
-                if last_event_id is None:
-                    # 첫 연결: initial session_list (REST 풀 스냅샷, SSE id 미부착)
-                    sessions, total = await db.get_all_sessions(offset=0, limit=200)
-                    result = [
-                        _session_to_response(s, node_manager=node_manager)
-                        for s in sessions
-                    ]
-                    yield {
-                        "event": "session_list",
-                        "data": json.dumps({
-                            "type": "session_list",
-                            "sessions": result,
-                            "total": total,
-                        }),
-                    }
-                else:
-                    # 재연결: replay_since로 ring buffer 스캔
-                    replay = broadcaster.replay_since(last_event_id, client_instance_id)
-                    if replay.gap:
-                        # gap → 클라는 풀 재페치 (SSE id 미부착)
-                        yield {
-                            "event": "replay_gap",
-                            "data": json.dumps({
-                                "type": "replay_gap",
-                                "latest_id": replay.latest_id,
-                                "instance_id": replay.instance_id,
-                            }),
-                        }
-                    else:
-                        # 누락 이벤트들을 SSE id 부착하여 yield
-                        for eid, ev in replay.events:
-                            ev_type = ev.get("type", "message")
-                            yield {
-                                "event": ev_type,
-                                "id": str(eid),
-                                "data": json.dumps(ev),
-                            }
-                        # replay 중 큐에도 적재된 이벤트는 live 단계에서 skip
-                        replay_seen_ids = {eid for eid, _ in replay.events}
-
-                # 2. 큐 구독 루프
-                while True:
-                    if await request.is_disconnected():
-                        break
-                    try:
-                        item = await asyncio.wait_for(queue.get(), timeout=30)
-                    except asyncio.TimeoutError:
-                        yield {"comment": "keepalive"}
-                        continue
-
-                    # disconnect_all sentinel — None 수신 시 종료
-                    if item is None:
-                        break
-
-                    eid, event = item
-                    if eid in replay_seen_ids:
-                        # replay에서 이미 yield한 이벤트의 큐 사본 — skip
-                        continue
-
-                    event_type = event.get("type", "message")
-                    # 브로드캐스터는 raw DB 딕셔너리를 그대로 전송한다.
-                    # session_created/session_updated 이벤트에는 agentId(DB 컬럼)가 포함되나,
-                    # agentName/agentPortraitUrl은 DB에 없으므로 포함되지 않는다.
-                    # 클라이언트는 초기 session_list(REST)에서 agentName/agentPortraitUrl을 캐시하고,
-                    # 실시간 이벤트에서 agentId로 lookup하는 방식을 사용한다. (의도된 설계)
-                    yield {
-                        "event": event_type,
-                        "id": str(eid),
-                        "data": json.dumps(event),
-                    }
-            finally:
-                if queue is not None:
-                    broadcaster.remove_client(queue)
-
-        return EventSourceResponse(event_generator())
 
     @router.post("", status_code=201)
     async def create_session(body: CreateSessionRequest, request: Request) -> dict:
@@ -306,7 +118,7 @@ def create_sessions_router(
     # orch-server와 soul-server가 같은 PostgreSQL을 공유하므로
     # messages/viewport는 노드 통신 없이 DB 직접 SELECT.
     # `/{session_id}/events/viewport`는 `/{session_id}/events`보다 먼저 등록하여
-    # FastAPI 경로 매칭 순서를 보장한다.
+    # FastAPI 경로 매칭 순서를 보장한��.
 
     @router.get("/{session_id}/events/viewport")
     async def get_session_viewport(
@@ -338,165 +150,10 @@ def create_sessions_router(
         session_id: str,
         request: Request,
     ) -> EventSourceResponse:
-        """SSE 이벤트 스트림.
-
-        1. init 이벤트 전송
-        2. Last-Event-ID 의미:
-           - after_id == 0 (또는 미전송): 히스토리 skip — baseline은 history_sync로 전달
-           - after_id > 0: 그 이후 이벤트만 스트리밍 (재연결 catch-up)
-        3. history_sync 이벤트로 baseline 전달
-        4. 노드에서 라이브 이벤트 릴레이
-
-        모든 대시보드(브라우저/soul-app/데스크톱)는 messages API로 과거 데이터를 별도 로드하므로
-        SSE는 신규 구독 시 히스토리 리플레이 없이 라이브만 흘린다.
-        """
-
-        async def event_generator():
-            # init 이벤트
-            yield {
-                "event": "init",
-                "data": json.dumps({"agentSessionId": session_id}),
-            }
-
-            # Last-Event-ID 또는 ?lastEventId 쿼리 파라미터로 시작점 결정.
-            # sse-subscribe.ts는 reconnect 시 query param으로 전달하므로 양쪽 모두 인식한다.
-            last_event_id_str = (
-                request.headers.get("Last-Event-ID")
-                or request.query_params.get("lastEventId")
-                or "0"
-            )
-            try:
-                after_id = int(last_event_id_str)
-            except ValueError:
-                after_id = 0
-
-            # 히스토리 phase에서 yield된 event_id를 라이브 dedup에 사용하기 위해
-            # seen_event_ids는 history phase 진입 전에 미리 초기화한다.
-            seen_event_ids: set[int] = set()
-            last_stored_id = 0
-
-            if after_id == 0:
-                # 신규 구독: 히스토리 skip. baseline만 보냄.
-                last_stored_id = await db.read_last_event_id(session_id)
-            else:
-                # 재연결: after_id 이후 이벤트만 stream_events_raw 비동기 cursor로 스트리밍.
-                # mid-stream disconnect 감지를 위해 yield 사이에 is_disconnected 체크.
-                try:
-                    async for event_id, event_type, payload_text in db.stream_events_raw(
-                        session_id, after_id=after_id,
-                    ):
-                        if await request.is_disconnected():
-                            return
-                        last_stored_id = max(last_stored_id, event_id)
-                        # 라이브 phase에서 history와 race로 같은 id가 들어올 때
-                        # 중복 방지를 위해 history phase에서 yield한 id를 등록.
-                        seen_event_ids.add(event_id)
-                        yield {
-                            "event": event_type,
-                            "data": payload_text,
-                            "id": str(event_id),
-                        }
-                except Exception as e:
-                    # 명시적 실패 (design-principles §4): 부분 catch-up을 정상 종료로
-                    # 위장하면 클라이언트는 누락 구간을 영영 못 읽는다. 스트림을 끊어
-                    # 클라이언트가 같은 lastEventId로 재연결하게 한다.
-                    logger.error(
-                        "Failed to stream events for %s after_id=%d: %s — closing stream",
-                        session_id, after_id, e,
-                    )
-                    return
-
-            # 라이브 이벤트 릴레이 노드 탐색.
-            # 완료된 세션은 노드에 없을 수 있으며, 히스토리 리플레이만으로 충분하다.
-            # _find_node()로 인메모리 → DB → 활성 노드 순으로 폴백하여 찾는다.
-            # is_live 판정에 노드 유무가 필요하므로 history_sync보다 먼저 시도한다.
-            node = None
-            try:
-                node = await find_session_node(session_id, db, node_manager)
-            except HTTPException:
-                # 노드를 못 찾는 완료 세션은 라이브 phase 진입 불가.
-                pass
-
-            # history_sync 발행 (항상). 노드 유무에 따라 is_live를 정확히 보고하여,
-            # 클라이언트 UI가 라이브 대기 상태를 잘못 표시하는 것을 방지한다.
-            # soul-server LLM 분기(is_live=False, status="completed")와 대칭.
-            sync_payload = {
-                "type": "history_sync",
-                "last_event_id": last_stored_id,
-                "is_live": node is not None,
-            }
-            yield {
-                "event": "history_sync",
-                "data": json.dumps(sync_payload, ensure_ascii=False),
-            }
-
-            if node is None:
-                # 라이브 진입 불가. 클라이언트는 history_sync(is_live=False)로 종료를 인지.
-                return
-
-            queue: asyncio.Queue[dict | None] = asyncio.Queue(maxsize=512)
-
-            async def on_event(data: dict) -> None:
-                # _stream_events + _handle_subscribe_events 이중 경로로 인한 중복 방지
-                payload = data.get("event") or data.get("payload", {})
-                raw_id = (
-                    data.get("eventId")
-                    or data.get("id")
-                    or (payload.get("_event_id") if isinstance(payload, dict) else None)
-                )
-                if raw_id is not None:
-                    try:
-                        int_id = int(raw_id)
-                        if int_id in seen_event_ids:
-                            return
-                        seen_event_ids.add(int_id)
-                    except (ValueError, TypeError):
-                        pass
-                try:
-                    queue.put_nowait(data)
-                except asyncio.QueueFull:
-                    logger.warning("SSE queue full for session %s, dropping event", session_id)
-
-            subscribe_id = await node.send_subscribe_events(session_id, on_event)
-            try:
-                while True:
-                    if await request.is_disconnected():
-                        break
-                    try:
-                        data = await asyncio.wait_for(queue.get(), timeout=30)
-                    except asyncio.TimeoutError:
-                        # keepalive
-                        yield {"comment": "keepalive"}
-                        continue
-
-                    if data is None:
-                        break
-
-                    event_payload = data.get("event") or data.get("payload", {})
-                    if isinstance(event_payload, dict):
-                        event_type = event_payload.get("type", "message")
-                        event_data = json.dumps(event_payload, ensure_ascii=False)
-                    else:
-                        event_type = "message"
-                        event_data = json.dumps(data, ensure_ascii=False)
-
-                    event_id = (
-                        data.get("eventId")
-                        or data.get("id")
-                        or (event_payload.get("_event_id") if isinstance(event_payload, dict) else None)
-                    )
-                    sse_event: dict[str, Any] = {
-                        "event": event_type,
-                        "data": event_data,
-                    }
-                    if event_id is not None:
-                        sse_event["id"] = str(event_id)
-
-                    yield sse_event
-            finally:
-                node.unsubscribe_events(session_id, subscribe_id)
-
-        return EventSourceResponse(event_generator())
+        """SSE 이벤트 스트림. 구현은 session_events.py 참조."""
+        return await create_session_events_response(
+            session_id, request, db, node_manager,
+        )
 
     @router.post("/{session_id}/intervene")
     async def intervene(session_id: str, body: InterveneRequest) -> dict:
@@ -588,74 +245,3 @@ def create_sessions_router(
         return {"ok": True}
 
     return router
-
-
-def _build_portrait_proxy_url(source_node_id: str, agent_id: str) -> str:
-    """에이전트 portrait 프록시 URL을 조립한다. (API 계층 전용)"""
-    return f"/api/nodes/{source_node_id}/agents/{agent_id}/portrait"
-
-
-def _build_user_portrait_proxy_url(node_id: str) -> str:
-    """사용자 portrait 프록시 URL을 조립한다. (API 계층 전용)"""
-    return f"/api/nodes/{node_id}/user/portrait"
-
-
-def _session_to_response(
-    s: dict,
-    node_manager: Optional[NodeManager] = None,
-) -> dict:
-    """DB 세션 레코드를 API 응답 형식으로 변환.
-
-    node_manager가 제공되면 크로스-노드 에이전트 프로필 fallback을 사용한다.
-    원격 노드(eias-linegames 등)의 agent_profiles가 비어있을 때
-    다른 연결된 노드에서 같은 에이전트 프로필을 찾는다.
-    """
-    created_at = s.get("created_at")
-    if hasattr(created_at, "isoformat"):
-        created_at = created_at.isoformat()
-    updated_at = s.get("updated_at")
-    if hasattr(updated_at, "isoformat"):
-        updated_at = updated_at.isoformat()
-
-    result = {
-        "agentSessionId": s.get("session_id"),
-        "status": s.get("status"),
-        "prompt": s.get("prompt"),
-        "createdAt": created_at,
-        "updatedAt": updated_at,
-        "sessionType": s.get("session_type", "claude"),
-        "lastMessage": s.get("last_message"),
-        "clientId": s.get("client_id"),
-        "metadata": s.get("metadata"),
-        "displayName": s.get("display_name"),
-        "nodeId": s.get("node_id"),
-        "folderId": s.get("folder_id"),
-        "lastEventId": s.get("last_event_id", 0),
-        "lastReadEventId": s.get("last_read_event_id", 0),
-        "agentId": s.get("agent_id"),
-        "agentName": None,
-        "agentPortraitUrl": None,
-        "userName": None,
-        "userPortraitUrl": None,
-    }
-
-    agent_id = s.get("agent_id")
-    node_id = s.get("node_id")
-    if agent_id and node_manager is not None:
-        found = node_manager.find_agent_profile(agent_id, node_id)
-        if found:
-            profile, source_node_id = found
-            result["agentName"] = profile.get("name")
-            if profile.get("portrait_url") and source_node_id:
-                result["agentPortraitUrl"] = _build_portrait_proxy_url(
-                    source_node_id, agent_id
-                )
-
-    if node_id and node_manager is not None:
-        user_info = node_manager.get_user_info(node_id)
-        if user_info:
-            result["userName"] = user_info.get("name")
-            if user_info.get("hasPortrait"):
-                result["userPortraitUrl"] = _build_user_portrait_proxy_url(node_id)
-
-    return result

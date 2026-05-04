@@ -12,7 +12,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from soulstream_server.api.sessions import _session_to_response, create_sessions_router
+from soulstream_server.api.session_serializer import _session_to_response
+from soulstream_server.api.sessions import create_sessions_router
 from soulstream_server.service.session_broadcaster import SessionBroadcaster
 
 

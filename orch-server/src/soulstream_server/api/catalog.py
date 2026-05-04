@@ -23,7 +23,7 @@ from pydantic import BaseModel
 
 from soul_common.catalog.catalog_service import CatalogService
 from soul_common.db.session_db import PostgresSessionDB
-from soulstream_server.api.sessions import _build_portrait_proxy_url, _build_user_portrait_proxy_url
+from soulstream_server.api.session_serializer import _build_portrait_proxy_url, _build_user_portrait_proxy_url
 from soulstream_server.models import BatchMoveRequest
 from soulstream_server.nodes.node_manager import NodeManager
 

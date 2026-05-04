@@ -273,7 +273,7 @@ class TestSessionToResponseUserInfo:
     def test_user_info_included_when_node_has_user_info(self):
         """node_manager에 user_info가 있으면 userName/userPortraitUrl이 설정된다."""
         from unittest.mock import MagicMock
-        from soulstream_server.api.sessions import _session_to_response
+        from soulstream_server.api.session_serializer import _session_to_response
 
         node_manager = MagicMock()
         node_manager.find_agent_profile.return_value = None
@@ -297,7 +297,7 @@ class TestSessionToResponseUserInfo:
     def test_user_portrait_url_none_when_no_portrait(self):
         """hasPortrait=False이면 userPortraitUrl이 None이다."""
         from unittest.mock import MagicMock
-        from soulstream_server.api.sessions import _session_to_response
+        from soulstream_server.api.session_serializer import _session_to_response
 
         node_manager = MagicMock()
         node_manager.find_agent_profile.return_value = None
@@ -320,7 +320,7 @@ class TestSessionToResponseUserInfo:
 
     def test_user_info_none_when_no_node_manager(self):
         """node_manager가 없으면 userName/userPortraitUrl이 None이다."""
-        from soulstream_server.api.sessions import _session_to_response
+        from soulstream_server.api.session_serializer import _session_to_response
 
         session = {
             "session_id": "s1",
