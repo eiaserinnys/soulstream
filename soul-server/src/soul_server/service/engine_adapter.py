@@ -229,7 +229,7 @@ class SoulEngineAdapter:
         loop: asyncio.AbstractEventLoop,
         runner_ref: List[Optional[ClaudeRunner]],
         get_intervention: Optional[Callable[[], Awaitable[Optional[dict]]]],
-        on_intervention_sent: Optional[Callable[[str, str], Awaitable[None]]],
+        on_intervention_sent: Optional[Callable[[str, str, List[str]], Awaitable[None]]],
     ) -> _ExecutionHandlers:
         """ClaudeRunner와 SSE 큐 사이의 콜백 어댑터들을 생성한다.
 
@@ -396,7 +396,7 @@ class SoulEngineAdapter:
         prompt: str,
         resume_session_id: Optional[str] = None,
         get_intervention: Optional[Callable[[], Awaitable[Optional[dict]]]] = None,
-        on_intervention_sent: Optional[Callable[[str, str], Awaitable[None]]] = None,
+        on_intervention_sent: Optional[Callable[[str, str, List[str]], Awaitable[None]]] = None,
         *,
         allowed_tools: Optional[List[str]] = None,
         disallowed_tools: Optional[List[str]] = None,
