@@ -79,7 +79,6 @@ class TestCreateSessionCallerInfo:
             "source": "agent",
             "agent_node": "seosoyoung",
             "agent_id": "agent-1",
-            "parent_session_id": "sess-parent",
         }
         resp = await client.post(
             "/api/sessions",
@@ -93,6 +92,7 @@ class TestCreateSessionCallerInfo:
         # HTTP Request 수집이 덮어쓰지 않았는지 확인
         assert payload["caller_info"].get("source") == "agent"
         assert "user_agent" not in payload["caller_info"]
+        assert "parent_session_id" not in payload["caller_info"]
 
     async def test_caller_info_always_present_in_ws_payload(
         self, client, node_manager

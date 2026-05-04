@@ -113,7 +113,6 @@ class TestExecuteCallerInfo:
 
         supplied = {
             "source": "agent",
-            "parent_session_id": "sess-parent",
             "agent_node": "seosoyoung",
             "agent_id": "agent-1",
         }
@@ -127,6 +126,7 @@ class TestExecuteCallerInfo:
         tm.create_task.assert_awaited_once()
         call_kwargs = tm.create_task.call_args.kwargs
         assert call_kwargs["caller_info"] == supplied
+        assert "parent_session_id" not in call_kwargs["caller_info"]
 
     async def test_caller_info_passed_to_create_task_kwarg(self, app_client):
         """caller_info는 task_manager.create_task의 keyword 인자로 전달된다."""

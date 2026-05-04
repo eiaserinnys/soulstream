@@ -449,7 +449,7 @@ class TestListSessions:
         sessions = [
             {"session_id": "s1", "display_name": "세션1", "status": "idle",
              "session_type": "claude", "created_at": "2026-01-01", "updated_at": "2026-01-02",
-             "event_count": 42},
+             "event_count": 42, "caller_session_id": "sess-parent-abc"},
         ]
         tm = _make_mock_task_manager((sessions, 1))
         fn = _unwrap(mcp_tools.list_sessions)
@@ -458,6 +458,7 @@ class TestListSessions:
         assert result["total"] == 1
         assert len(result["sessions"]) == 1
         assert result["sessions"][0]["session_id"] == "s1"
+        assert result["sessions"][0]["caller_session_id"] == "sess-parent-abc"
         assert result["next_cursor"] is None
 
     async def test_next_cursor_when_has_more(self):

@@ -125,7 +125,7 @@ async def list_sessions(
     """세션 목록을 페이지네이션하여 조회한다.
 
     경량 필드(session_id, display_name, status, session_type, created_at,
-    updated_at, event_count)만 반환하여 토큰을 절약한다.
+    updated_at, event_count, caller_session_id)만 반환하여 토큰을 절약한다.
 
     Args:
         cursor: 시작 오프셋 (행 인덱스 기반 정수). 첫 호출 시 0.

@@ -729,6 +729,7 @@ END;
 $$;
 
 -- 35. session_list_summary
+DROP FUNCTION IF EXISTS session_list_summary(TEXT, TEXT, INTEGER, INTEGER, TEXT, TEXT);
 CREATE OR REPLACE FUNCTION session_list_summary(
     p_search       TEXT DEFAULT NULL,
     p_session_type TEXT DEFAULT NULL,
@@ -745,13 +746,14 @@ CREATE OR REPLACE FUNCTION session_list_summary(
     updated_at    TIMESTAMPTZ,
     event_count   BIGINT,
     away_summary  TEXT,
+    caller_session_id TEXT,
     total_count   BIGINT
 ) LANGUAGE sql STABLE AS $$
     WITH filtered AS (
         SELECT s.session_id, s.display_name, s.status, s.session_type,
                s.created_at, s.updated_at,
                (SELECT COUNT(*) FROM events e WHERE e.session_id = s.session_id) AS event_count,
-               s.away_summary
+               s.away_summary, s.caller_session_id
         FROM sessions s
         WHERE (p_session_type IS NULL OR s.session_type = p_session_type)
           AND (p_search IS NULL OR s.display_name ILIKE '%' || p_search || '%')

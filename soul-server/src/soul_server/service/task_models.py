@@ -112,7 +112,7 @@ class Task:
     # 발신자 정보 (runtime + DB metadata 양쪽에 저장)
     # {"source": "slack"|"browser"|"agent"|"api",
     #  "ip": str?, "user_agent": str?, "referer": str?, "forwarded_for": str?,
-    #  "parent_session_id": str?, "agent_node": str?, "agent_id": str?, "agent_name": str?,
+    #  "agent_node": str?, "agent_id": str?, "agent_name": str?,
     #  "slack": dict?, "bot_name": str?}
     caller_info: Optional[dict] = field(default=None, repr=False)
 

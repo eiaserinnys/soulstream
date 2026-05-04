@@ -8,14 +8,16 @@ import { describe, it, expect } from "vitest";
 import { buildCallerInfoLines, getDedupKey } from "./session-metadata-helpers";
 
 describe("buildCallerInfoLines", () => {
-  it("source=agent + parent_session_id + agent_node + agent_name 순서로 라인을 생성", () => {
-    const lines = buildCallerInfoLines({
-      source: "agent",
-      parent_session_id: "sess-abcdef1234567890",
-      agent_node: "eiaserinnys",
-      agent_id: "agent-x",
-      agent_name: "서소영",
-    });
+  it("callerSessionId 1급 필드로 parent 라인을 생성", () => {
+    const lines = buildCallerInfoLines(
+      {
+        source: "agent",
+        agent_node: "eiaserinnys",
+        agent_id: "agent-x",
+        agent_name: "서소영",
+      },
+      "sess-abcdef1234567890",
+    );
     expect(lines.map((l) => l.label)).toEqual([
       "source",
       "parent",
@@ -28,6 +30,25 @@ describe("buildCallerInfoLines", () => {
     expect(lines[2].text).toBe("eiaserinnys");
     // agent_name이 있으면 agent_id보다 우선
     expect(lines[3].text).toBe("서소영");
+  });
+
+  it("callerSessionId 없으면 caller_info.parent_session_id fallback (레거시 호환)", () => {
+    const lines = buildCallerInfoLines({
+      source: "agent",
+      parent_session_id: "sess-legacy1234567890",
+      agent_node: "eiaserinnys",
+    });
+    const parentLine = lines.find((l) => l.label === "parent");
+    expect(parentLine?.text).toBe("sess-leg");
+  });
+
+  it("callerSessionId가 caller_info.parent_session_id보다 우선", () => {
+    const lines = buildCallerInfoLines(
+      { source: "agent", parent_session_id: "sess-old0000" },
+      "sess-new1111",
+    );
+    const parentLine = lines.find((l) => l.label === "parent");
+    expect(parentLine?.text).toBe("sess-new");
   });
 
   it("source=browser + ip 케이스에서 ip 라벨이 포함됨", () => {

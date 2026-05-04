@@ -72,8 +72,8 @@ function deduplicateFileEntries(entries: MetadataEntry[]): Array<{ entry: Metada
 const FILE_TYPES = new Set(["file_write", "file_edit"]);
 
 /** caller_info 전용 렌더러 — source/parent/node/agent 등 라벨화하여 표시 */
-function CallerInfoItem({ value }: { value: Record<string, unknown> }) {
-  const lines = buildCallerInfoLines(value);
+function CallerInfoItem({ value, callerSessionId }: { value: Record<string, unknown>; callerSessionId?: string | null }) {
+  const lines = buildCallerInfoLines(value, callerSessionId);
   return (
     <div className="flex flex-col gap-0.5 py-1">
       {lines.map((l) => (
@@ -105,10 +105,10 @@ function ObjectMetadataItem({ entry }: { entry: MetadataEntry }) {
 }
 
 /** 개별 메타데이터 엔트리 — value 타입에 따라 분기 */
-function MetadataItem({ entry }: { entry: MetadataEntry }) {
+function MetadataItem({ entry, callerSessionId }: { entry: MetadataEntry; callerSessionId?: string | null }) {
   // caller_info 전용 렌더러 (value가 객체)
   if (entry.type === "caller_info" && typeof entry.value === "object" && entry.value !== null) {
-    return <CallerInfoItem value={entry.value as Record<string, unknown>} />;
+    return <CallerInfoItem value={entry.value as Record<string, unknown>} callerSessionId={callerSessionId} />;
   }
   // 기타 객체 value → 일반 key-value fallback
   if (typeof entry.value === "object" && entry.value !== null) {
@@ -147,7 +147,7 @@ function MetadataItem({ entry }: { entry: MetadataEntry }) {
 }
 
 /** 세션 메타데이터 표시 (빈 상태 포함) */
-export function SessionMetadata({ metadata }: { metadata: MetadataEntry[] }) {
+export function SessionMetadata({ metadata, callerSessionId }: { metadata: MetadataEntry[]; callerSessionId?: string | null }) {
   if (!metadata || metadata.length === 0) {
     return (
       <div className="p-4 text-center text-muted-foreground text-sm">
@@ -192,7 +192,7 @@ export function SessionMetadata({ metadata }: { metadata: MetadataEntry[] }) {
                     </div>
                   ))
                 : entries.map((entry, i) => (
-                    <MetadataItem key={`${getDedupKey(entry.value)}-${i}`} entry={entry} />
+                    <MetadataItem key={`${getDedupKey(entry.value)}-${i}`} entry={entry} callerSessionId={callerSessionId} />
                   ))}
             </div>
           </div>

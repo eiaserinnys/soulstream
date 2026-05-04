@@ -61,7 +61,7 @@ class SqliteSearchMixin:
 
         summary_cols = (
             "session_id, display_name, session_type, status, folder_id,"
-            " node_id, last_message, last_event_id, last_read_event_id,"
+            " node_id, caller_session_id, last_message, last_event_id, last_read_event_id,"
             " away_summary, created_at, updated_at"
         )
         data_sql = (
@@ -128,7 +128,7 @@ class SqliteSearchMixin:
 
         summary_cols = (
             "session_id, display_name, session_type, status, folder_id,"
-            " node_id, last_message, last_event_id, last_read_event_id,"
+            " node_id, caller_session_id, last_message, last_event_id, last_read_event_id,"
             " away_summary, created_at, updated_at"
         )
         data_sql = (
