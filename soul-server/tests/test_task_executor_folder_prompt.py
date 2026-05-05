@@ -101,9 +101,9 @@ class TestFolderPromptInjection:
     """폴더 프롬프트 context item 주입 검증"""
 
     @pytest.mark.asyncio
-    @patch("soul_server.service.task_executor.build_soulstream_context_item",
+    @patch("soul_server.service.execution_context_builder.build_soulstream_context_item",
            return_value={"key": "soulstream_session", "content": {}})
-    @patch("soul_server.service.task_executor.assemble_prompt",
+    @patch("soul_server.service.execution_context_builder.assemble_prompt",
            return_value="assembled prompt")
     @patch("soul_server.service.task_executor.get_session_broadcaster")
     async def test_folder_prompt_injected_for_new_session(
@@ -132,9 +132,9 @@ class TestFolderPromptInjection:
         assert "항상 한국어로 답하세요." in system_prompt
 
     @pytest.mark.asyncio
-    @patch("soul_server.service.task_executor.build_soulstream_context_item",
+    @patch("soul_server.service.execution_context_builder.build_soulstream_context_item",
            return_value={"key": "soulstream_session", "content": {}})
-    @patch("soul_server.service.task_executor.assemble_prompt",
+    @patch("soul_server.service.execution_context_builder.assemble_prompt",
            return_value="assembled prompt")
     @patch("soul_server.service.task_executor.get_session_broadcaster")
     async def test_folder_prompt_not_injected_for_resume(
@@ -163,9 +163,9 @@ class TestFolderPromptInjection:
             assert "항상 한국어로 답하세요." not in system_prompt
 
     @pytest.mark.asyncio
-    @patch("soul_server.service.task_executor.build_soulstream_context_item",
+    @patch("soul_server.service.execution_context_builder.build_soulstream_context_item",
            return_value={"key": "soulstream_session", "content": {}})
-    @patch("soul_server.service.task_executor.assemble_prompt",
+    @patch("soul_server.service.execution_context_builder.assemble_prompt",
            return_value="assembled prompt")
     @patch("soul_server.service.task_executor.get_session_broadcaster")
     async def test_folder_prompt_not_injected_when_empty(
@@ -194,9 +194,9 @@ class TestFolderPromptInjection:
         assert system_prompt is None or system_prompt == ""
 
     @pytest.mark.asyncio
-    @patch("soul_server.service.task_executor.build_soulstream_context_item",
+    @patch("soul_server.service.execution_context_builder.build_soulstream_context_item",
            return_value={"key": "soulstream_session", "content": {}})
-    @patch("soul_server.service.task_executor.assemble_prompt",
+    @patch("soul_server.service.execution_context_builder.assemble_prompt",
            return_value="assembled prompt")
     @patch("soul_server.service.task_executor.get_session_broadcaster")
     async def test_folder_prompt_not_injected_when_settings_missing(

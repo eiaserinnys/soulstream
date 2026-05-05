@@ -113,9 +113,9 @@ class TestMultiturnFinalize:
     """멀티턴 세션에서 finalize_task 호출 타이밍 검증"""
 
     @pytest.mark.asyncio
-    @patch("soul_server.service.task_executor.build_soulstream_context_item",
+    @patch("soul_server.service.execution_context_builder.build_soulstream_context_item",
            return_value={"type": "soulstream", "mock": True})
-    @patch("soul_server.service.task_executor.assemble_prompt",
+    @patch("soul_server.service.execution_context_builder.assemble_prompt",
            return_value="assembled test prompt")
     @patch("soul_server.service.task_executor.get_session_broadcaster")
     async def test_status_stays_running_during_multiturn(
@@ -158,9 +158,9 @@ class TestMultiturnFinalize:
         assert call_kwargs[1]["result"] == "turn2 done"
 
     @pytest.mark.asyncio
-    @patch("soul_server.service.task_executor.build_soulstream_context_item",
+    @patch("soul_server.service.execution_context_builder.build_soulstream_context_item",
            return_value={"type": "soulstream", "mock": True})
-    @patch("soul_server.service.task_executor.assemble_prompt",
+    @patch("soul_server.service.execution_context_builder.assemble_prompt",
            return_value="assembled test prompt")
     @patch("soul_server.service.task_executor.get_session_broadcaster")
     async def test_finalize_called_on_stream_end(
@@ -191,9 +191,9 @@ class TestMultiturnFinalize:
         assert finalize.call_args[1]["result"] == "final result"
 
     @pytest.mark.asyncio
-    @patch("soul_server.service.task_executor.build_soulstream_context_item",
+    @patch("soul_server.service.execution_context_builder.build_soulstream_context_item",
            return_value={"type": "soulstream", "mock": True})
-    @patch("soul_server.service.task_executor.assemble_prompt",
+    @patch("soul_server.service.execution_context_builder.assemble_prompt",
            return_value="assembled test prompt")
     @patch("soul_server.service.task_executor.get_session_broadcaster")
     async def test_single_turn_behavior_unchanged(
@@ -229,9 +229,9 @@ class TestMultiturnFinalize:
         assert task.execution_task is None
 
     @pytest.mark.asyncio
-    @patch("soul_server.service.task_executor.build_soulstream_context_item",
+    @patch("soul_server.service.execution_context_builder.build_soulstream_context_item",
            return_value={"type": "soulstream", "mock": True})
-    @patch("soul_server.service.task_executor.assemble_prompt",
+    @patch("soul_server.service.execution_context_builder.assemble_prompt",
            return_value="assembled test prompt")
     @patch("soul_server.service.task_executor.get_session_broadcaster")
     async def test_error_during_multiturn(
@@ -266,9 +266,9 @@ class TestMultiturnFinalize:
         assert finalize.call_args[1]["error"] == "something went wrong"
 
     @pytest.mark.asyncio
-    @patch("soul_server.service.task_executor.build_soulstream_context_item",
+    @patch("soul_server.service.execution_context_builder.build_soulstream_context_item",
            return_value={"type": "soulstream", "mock": True})
-    @patch("soul_server.service.task_executor.assemble_prompt",
+    @patch("soul_server.service.execution_context_builder.assemble_prompt",
            return_value="assembled test prompt")
     @patch("soul_server.service.task_executor.get_session_broadcaster")
     async def test_stream_ends_without_complete_or_error(
