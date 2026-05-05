@@ -6,8 +6,6 @@
   그렇지 않으면 고정 경로가 {session_id} path parameter로 매칭됨.
 """
 
-import asyncio
-import json
 import logging
 from typing import Optional
 
@@ -25,7 +23,10 @@ from soul_server.service.task_manager import (
     NodeMismatchError,
 )
 from soul_server.service.task_factory import CreateTaskParams
-from soul_server.service.session_query_service import get_session_query_service
+from soul_server.service.session_query_service import (
+    InvalidViewportRangeError,
+    get_session_query_service,
+)
 from soul_server.service import resource_manager, get_soul_engine
 from soul_server.service import intervention_service
 from soul_server.service.intervention_service import InputRequestNotPendingError
@@ -155,42 +156,14 @@ async def api_session_folder_counts():
 
 @router.get("/api/sessions/stream", dependencies=[Depends(require_dashboard_auth)])
 async def api_sessions_stream(limit: int = Query(50, ge=0)):
-    """세션 목록 변경 SSE 스트림 (GET /api/sessions/stream)"""
+    """세션 목록 변경 SSE 스트림 (GET /api/sessions/stream).
 
-    async def event_generator():
-        task_manager = get_task_manager()
-        session_broadcaster = get_session_broadcaster()
-
-        sessions, total = await get_session_query_service().get_all_sessions(offset=0, limit=limit)
-        yield {
-            "event": "session_list",
-            "data": json.dumps(
-                {"type": "session_list", "sessions": sessions, "total": total},
-                ensure_ascii=False,
-                default=str,
-            ),
-        }
-
-        event_queue = session_broadcaster.add_client()
-        try:
-            while True:
-                try:
-                    item = await asyncio.wait_for(event_queue.get(), timeout=30.0)
-                    # disconnect_all sentinel — None 수신 시 종료
-                    if item is None:
-                        break
-                    # Phase 1: SSE id 필드는 미사용. _eid는 Phase 2에서 사용.
-                    _eid, event = item
-                    yield {
-                        "event": event.get("type", "unknown"),
-                        "data": json.dumps(event, ensure_ascii=False, default=str),
-                    }
-                except asyncio.TimeoutError:
-                    yield {"comment": "keepalive"}
-        finally:
-            session_broadcaster.remove_client(event_queue)
-
-    return EventSourceResponse(event_generator())
+    `api/sessions.py`의 sessions_stream과 같은 service 메서드를 호출한다 (정본 하나).
+    260505.15 dedupe 이전에는 동일한 generator 본체를 두 라우터에 미러링했다.
+    """
+    return EventSourceResponse(
+        get_session_query_service().stream_session_list_events(limit=limit)
+    )
 
 
 # === /api/sessions/{session_id}/events/viewport (GET) — Phase 3 뷰포트 API ===
@@ -207,26 +180,24 @@ async def api_session_events_viewport(
 ):
     """뷰포트 영역과 겹치는 이벤트 조회 (가상화 API, Phase 3).
 
-    브라우저(soul-ui)는 Vite proxy를 통해 `/api/*`만 접근 가능하므로,
-    `api/sessions.py`의 `/sessions/{id}/events/viewport`를 같은 DB 호출로 미러링한다.
+    `api/sessions.py`의 동명 핸들러와 같은 service 메서드를 호출한다 (정본 하나,
+    260505.15 dedupe).
     """
-    if y_min > y_max:
+    try:
+        return await get_session_query_service().read_viewport(
+            agent_session_id, y_min, y_max,
+        )
+    except InvalidViewportRangeError as e:
         raise HTTPException(
             status_code=400,
             detail={
                 "error": {
                     "code": "INVALID_RANGE",
-                    "message": f"y_min ({y_min}) must be <= y_max ({y_max})",
+                    "message": str(e),
                     "details": {},
                 }
             },
         )
-
-    from soul_server.service.postgres_session_db import get_session_db
-    db = get_session_db()
-    events = await db.read_viewport(agent_session_id, y_min, y_max)
-    total = await db.read_total_subtree_height(agent_session_id)
-    return {"events": events, "total_subtree_height": total}
 
 
 # === /api/sessions/{session_id}/messages (GET) — Phase 3 커서 페이지네이션 ===
@@ -242,15 +213,12 @@ async def api_session_messages(
 ):
     """메시지 페이지네이션 조회 (Phase 3).
 
-    created_at 역순으로 메시지성 이벤트를 페이지 단위로 반환한다.
-    `api/sessions.py`의 `/sessions/{id}/messages`와 같은 DB 호출을 사용한다.
+    `api/sessions.py`의 동명 핸들러와 같은 service 메서드를 호출한다 (정본 하나,
+    260505.15 dedupe).
     """
-    from soul_server.service.postgres_session_db import get_session_db
-    db = get_session_db()
-    messages, next_cursor = await db.read_messages(
+    return await get_session_query_service().read_messages(
         agent_session_id, before=before, limit=limit,
     )
-    return {"messages": messages, "next_cursor": next_cursor}
 
 
 # === /api/sessions/{session_id}/events (GET) — 파라미터화 경로, 나중에 등록 ===
