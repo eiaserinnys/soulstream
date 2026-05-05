@@ -1,15 +1,15 @@
-"""
-cross_node_relay — soul-server 간 cross-node 인터벤션 릴레이.
+"""cross_node_relay — soul-server 간 cross-node 인터벤션 릴레이.
 
 caller 세션이 다른 노드에 있어 로컬 add_intervention이 실패한 경우,
 upstream(orchestrator)을 통해 cross-node로 인터벤션을 전달한다.
-
-task_manager에서 추출됨. settings·httpx만 사용하는 함수형 책임이라
-클래스 없이 자유 함수로 둔다.
 """
 
 import logging
 import re
+
+import httpx
+
+from soul_server.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -23,12 +23,6 @@ async def relay_cross_node_intervention(
     settings.auth_bearer_token이 비어 있으면 headers={}로 호출 (개발 모드 호환).
     """
     try:
-        # lazy import — 모듈 로드 시점에 settings·httpx 의존성을 끌어들이지 않기 위함.
-        # 본 함수는 실패 가능 부가 기능이므로 import 실패도 try/except로 흡수.
-        # NOTE: re는 lazy 대상이 아니다 (표준 라이브러리, patch 의존성 없음) — top-level import.
-        from soul_server.config import get_settings
-        import httpx
-
         settings = get_settings()
         upstream_url = getattr(settings, "soulstream_upstream_url", None)
         if not upstream_url:

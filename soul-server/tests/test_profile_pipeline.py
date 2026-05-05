@@ -2,7 +2,8 @@
 import pytest
 from unittest.mock import AsyncMock
 from soul_server.service.agent_registry import AgentProfile, AgentRegistry
-from soul_server.service.task_manager import TaskManager, CreateTaskParams
+from soul_server.service.task_manager import TaskManager
+from soul_server.service.task_factory import CreateTaskParams
 
 
 def _make_registry():

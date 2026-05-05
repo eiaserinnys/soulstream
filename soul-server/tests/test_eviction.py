@@ -9,7 +9,8 @@ from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
 
-from soul_server.service.task_manager import TaskManager, set_task_manager, CreateTaskParams
+from soul_server.service.task_manager import TaskManager, set_task_manager
+from soul_server.service.task_factory import CreateTaskParams
 from soul_server.service.session_query_service import get_session_query_service
 from soul_server.service.task_models import TaskStatus, utc_now
 

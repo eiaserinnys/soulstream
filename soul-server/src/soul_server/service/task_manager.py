@@ -38,6 +38,7 @@ from soul_server.service.postgres_session_db import PostgresSessionDB
 from soul_server.service.session_broadcaster import get_session_broadcaster
 from soul_server.service.session_eviction_manager import SessionEvictionManager
 from soul_server.service.session_query_service import init_session_query_service
+# task_factory가 정본 — 내부 시그니처/호출용 import만 유지 (re-export 안 함)
 from soul_server.service.task_factory import CreateTaskParams, TaskFactory
 from soul_server.service.task_maintenance import TaskMaintenance
 from soul_server.service.cross_node_relay import relay_cross_node_intervention
@@ -52,7 +53,6 @@ __all__ = [
     "TaskNotRunningError",
     "NodeMismatchError",
     "TaskManager",
-    "CreateTaskParams",
     "task_manager",
     "get_task_manager",
     "set_task_manager",
@@ -329,6 +329,9 @@ class TaskManager:
         LLM 프록시 등 TaskManager의 create_task 흐름을 거치지 않는
         외부 모듈이 직접 생성한 Task를 등록할 때 사용합니다.
 
+        caller_info 처리는 TaskFactory._register_new_session_async와 동일하게
+        신규 세션에만 metadata 영속화 (대칭성 — design-principles §9).
+
         Args:
             task: 등록할 Task 인스턴스
         """
@@ -346,7 +349,16 @@ class TaskManager:
             client_id=task.client_id,
             status=task.status.value,
             created_at=task.created_at,
+            caller_session_id=task.caller_session_id,
         )
+
+        # caller_info를 Task.metadata와 DB에 동시 저장 (TaskFactory와 동일 패턴)
+        # session_created 이벤트 전 타이밍 — append_session_metadata 사용 시
+        # metadata_updated/session_updated가 session_created보다 먼저 발행되어 클라이언트 혼동.
+        if task.caller_info:
+            entry = {"type": "caller_info", "value": task.caller_info}
+            task.metadata.append(entry)
+            await self._db.append_metadata(task.agent_session_id, entry)
 
         # 기본 폴더 자동 배정 + 카탈로그 브로드캐스트
         await self._assign_default_folder_and_broadcast(

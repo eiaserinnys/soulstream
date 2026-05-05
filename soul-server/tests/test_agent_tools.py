@@ -12,7 +12,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from soul_server.cogito import mcp_tools, mcp_multi_node
-from soul_server.service.task_manager import CreateTaskParams
+from soul_server.service.task_factory import CreateTaskParams
 
 
 def _unwrap(tool_or_func):
