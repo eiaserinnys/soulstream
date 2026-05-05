@@ -67,13 +67,14 @@ from soul_server.engine.types import (
     EngineEvent,
     EventCallback,
 )
-from soul_server.claude.compact_retry import (
-    CompactRetryHandler,
-    COMPACT_RETRY_READ_TIMEOUT,
-)
+from soul_server.claude.compact_retry import CompactRetryHandler
 from soul_server.claude.hook_builder import build_hooks as _build_hooks_fn
 from soul_server.claude.input_request import InputRequestHandler
-from soul_server.claude.message_processor import MessageProcessor
+from soul_server.claude.receive_loop import (
+    ReceiveLoop,
+    INTERVENTION_POLL_INTERVAL,
+    MAX_INTERVENTION_DRAIN,
+)
 from soul_server.claude.runner_registry import (
     get_runner,  # noqa: F401 — re-export
     register_runner,
@@ -83,7 +84,6 @@ from soul_server.claude.runner_registry import (
     shutdown_all_sync,
     reset_shutdown_state,  # noqa: F401 — re-export
 )
-from soul_server.claude.sdk_compat import ParseAction, classify_parse_error
 from soul_server.claude.session_validator import validate_session
 from soul_server.utils.async_bridge import run_in_new_loop
 
@@ -110,8 +110,9 @@ class ClaudeResult(EngineResult):
     list_run: Optional[str] = None  # <!-- LIST_RUN: 리스트명 --> 마커로 추출된 리스트 이름
 
 
-INTERVENTION_POLL_INTERVAL = 1.0  # 초: 인터벤션 폴링 주기
-MAX_INTERVENTION_DRAIN = 100  # _drain_interventions 안전 상한
+
+# INTERVENTION_POLL_INTERVAL, MAX_INTERVENTION_DRAIN은
+# receive_loop.py에서 정의, 여기서 re-export (기존 import 호환)
 
 
 @dataclass
@@ -206,6 +207,13 @@ class ClaudeRunner:
         # AskUserQuestion 핸들러 (컴포지션)
         self._input_handler = InputRequestHandler(timeout=300.0)
         self._input_handler.bind_pending_events(self._pending_events.append)
+
+        # 메시지 수신 루프 (컴포지션)
+        self._receive_loop = ReceiveLoop(
+            runner_id=self.runner_id,
+            pending_events=self._pending_events,
+            on_client_session_update=self._update_client_session_id,
+        )
 
         # SDK 클라이언트 라이프사이클 (컴포지션)
         self._lifecycle = ClientLifecycle(
@@ -387,197 +395,11 @@ class ClaudeRunner:
         data_summary = str(data)[:200] if data else ""
         logger.warning(f"Unknown event observed: {msg_type} — {data_summary}")
 
-    async def _poll_intervention(
-        self,
-        client: "ClaudeSDKClient",
-        on_intervention: InterventionCallback,
-    ) -> bool:
-        """인터벤션 큐를 한 번 폴링하고, 메시지가 있으면 주입.
-
-        Returns:
-            True if an intervention was injected, False otherwise.
-        """
-        try:
-            intervention_text = await on_intervention()
-            if intervention_text:
-                logger.info(
-                    f"인터벤션 주입: runner={self.runner_id}, "
-                    f"text={intervention_text[:100]}..."
-                )
-                await client.query(intervention_text)
-                return True
-        except Exception as e:
-            logger.warning(f"인터벤션 콜백 오류 (무시): {e}")
-        return False
-
-    async def _drain_interventions(
-        self,
-        client: "ClaudeSDKClient",
-        on_intervention: InterventionCallback,
-    ) -> int:
-        """큐에 남은 인터벤션을 모두 소비.
-
-        ResultMessage 수신 후 호출하여 아직 주입되지 못한 메시지를 처리합니다.
-        세션이 이미 완료된 상태이므로 best-effort 전달입니다.
-        SDK가 세션 종료로 인해 query를 거부하면 오류를 무시하고 중단합니다.
-
-        Returns:
-            Number of interventions drained.
-        """
-        count = 0
-        while count < MAX_INTERVENTION_DRAIN:
-            try:
-                intervention_text = await on_intervention()
-                if not intervention_text:
-                    break
-                logger.info(
-                    f"인터벤션 드레인 주입: runner={self.runner_id}, "
-                    f"text={intervention_text[:100]}..."
-                )
-                await client.query(intervention_text)
-                count += 1
-            except Exception as e:
-                logger.warning(f"인터벤션 드레인 오류 (무시): {e}")
-                break
-        if count >= MAX_INTERVENTION_DRAIN:
-            logger.warning(f"인터벤션 드레인 상한 도달: {MAX_INTERVENTION_DRAIN}건")
-        elif count > 0:
-            logger.info(f"인터벤션 드레인 완료: {count}건 주입")
-        return count
-
-    async def _notify_pending_subagent_events(
-        self,
-        on_event: Optional[EventCallback],
-    ) -> None:
-        """pending 큐에 있는 서브에이전트 이벤트를 on_event 콜백으로 전달"""
-        if not on_event:
-            return
-
-        events = self._drain_events()
-        for event in events:
-            try:
-                await on_event(event)
-            except Exception as e:
-                logger.warning(f"서브에이전트 이벤트 콜백 오류: {e}")
 
     def _update_client_session_id(self, session_id: str) -> None:
         """MessageProcessor 콜백: 클라이언트 세션 ID 갱신"""
         self._lifecycle._session_id = session_id
 
-    async def _receive_messages(
-        self,
-        client: "ClaudeSDKClient",
-        compact_handler: CompactRetryHandler,
-        msg_state: MessageState,
-        on_progress: Optional[Callable[[str], Awaitable[None]]],
-        on_compact: Optional[Callable[[str, str], Awaitable[None]]],
-        on_intervention: Optional[InterventionCallback] = None,
-        on_session: Optional[Callable[[str], Awaitable[None]]] = None,
-        on_event: Optional[EventCallback] = None,
-    ) -> None:
-        """내부 메시지 수신 루프: receive_response()에서 메시지를 읽어 상태 갱신
-
-        인터벤션 폴링은 메시지 수신과 병렬로 실행됩니다.
-        Claude API 응답 대기 중에도 INTERVENTION_POLL_INTERVAL 간격으로
-        on_intervention 콜백을 폴링하여 사용자 메시지를 즉시 주입합니다.
-        """
-        runner_id = self.runner_id
-        processor = MessageProcessor(
-            msg_state=msg_state,
-            on_event=on_event,
-            on_progress=on_progress,
-            on_session=on_session,
-            on_client_session_update=self._update_client_session_id,
-        )
-        aiter = client.receive_response().__aiter__()
-
-        # 메시지 수신 태스크를 재사용하기 위한 변수.
-        # 폴링 타이머 완료 시 msg_task는 pending 상태로 재사용되며,
-        # 메시지 도착 시 finally에서 None으로 리셋하여 다음 반복에서 새로 생성한다.
-        msg_task: Optional[asyncio.Task] = None
-
-        try:
-            while True:
-                # 메시지 수신 태스크가 없으면 새로 생성
-                if msg_task is None:
-                    if compact_handler.retry_count > 0:
-                        msg_task = asyncio.create_task(
-                            asyncio.wait_for(
-                                aiter.__anext__(), timeout=COMPACT_RETRY_READ_TIMEOUT
-                            )
-                        )
-                    else:
-                        msg_task = asyncio.create_task(aiter.__anext__())
-
-                # 인터벤션 콜백이 있고, 메시지가 아직 대기 중이면 폴링 타이머와 병렬 대기
-                if on_intervention and not msg_task.done():
-                    poll_timer = asyncio.create_task(
-                        asyncio.sleep(INTERVENTION_POLL_INTERVAL)
-                    )
-                    done, _ = await asyncio.wait(
-                        [msg_task, poll_timer],
-                        return_when=asyncio.FIRST_COMPLETED,
-                    )
-
-                    if msg_task not in done:
-                        # 타이머만 완료, 메시지 아직 대기 중 → 인터벤션 폴링
-                        await self._poll_intervention(client, on_intervention)
-                        continue  # msg_task는 재사용
-                    # msg_task 완료. 타이머도 완료되었으면 폴링 후 메시지 처리
-                    if poll_timer in done:
-                        await self._poll_intervention(client, on_intervention)
-                    else:
-                        poll_timer.cancel()
-                        try:
-                            await poll_timer
-                        except asyncio.CancelledError:
-                            pass
-
-                # 메시지 수신 결과 처리
-                try:
-                    message = await msg_task
-                except asyncio.TimeoutError:
-                    logger.warning(
-                        f"Compact retry 읽기 타임아웃 ({COMPACT_RETRY_READ_TIMEOUT}s): "
-                        f"runner={runner_id}, retry={compact_handler.retry_count}, "
-                        f"pid={self._lifecycle.pid}, cli_alive={self._is_cli_alive()}"
-                    )
-                    return
-                except StopAsyncIteration:
-                    return
-                except MessageParseError as e:
-                    action, msg_type = classify_parse_error(e.data, log_fn=logger)
-                    if action is ParseAction.CONTINUE:
-                        continue
-                    raise
-                finally:
-                    # 완료된 태스크 참조 해제. 다음 반복에서 새 태스크를 생성한다.
-                    msg_task = None
-
-                # 메시지 처리를 MessageProcessor에 위임
-                await processor.process(message)
-
-                # ResultMessage 수신 후 큐에 남은 인터벤션을 best-effort로 소비
-                if isinstance(message, ResultMessage) and on_intervention:
-                    await self._drain_interventions(client, on_intervention)
-
-                # 컴팩션 이벤트 알림
-                await compact_handler.notify_events(on_compact)
-
-                # 서브에이전트 이벤트 알림 (훅에서 큐에 추가된 이벤트)
-                await self._notify_pending_subagent_events(on_event)
-
-                # 메시지 수신 후에도 인터벤션 폴링 (기존 동작 유지)
-                if on_intervention:
-                    await self._poll_intervention(client, on_intervention)
-        finally:
-            # 비정상 종료(CancelledError 등) 시 대기 중인 msg_task 정리
-            if msg_task is not None and not msg_task.done():
-                msg_task.cancel()
-                try:
-                    await msg_task
-                except (asyncio.CancelledError, Exception):
-                    pass
 
     # ---------------------------------------------------------------------------
     # _execute() 헬퍼 메서드들
@@ -624,39 +446,6 @@ class ClaudeRunner:
         """정상 완료 시 결과 생성 — error_handlers.finalize_result 위임"""
         return _finalize_result_fn(msg_state)
 
-    def _handle_file_not_found(self, e: FileNotFoundError) -> EngineResult:
-        """FileNotFoundError 처리 — error_handlers.handle_file_not_found 위임"""
-        return _handle_file_not_found_fn(e)
-
-    def _handle_process_error(
-        self,
-        e: "ProcessError",
-        ctx: ExecutionContext,
-    ) -> EngineResult:
-        """ProcessError 처리 — error_handlers.handle_process_error 위임"""
-        return _handle_process_error_fn(
-            e,
-            ctx,
-            pid=self._lifecycle.pid,
-            debug_fn=self.debug_send_fn,
-            active_clients_count=get_registry_size(),
-        )
-
-    def _handle_parse_error(
-        self,
-        e: "MessageParseError",
-        msg_state: MessageState,
-    ) -> EngineResult:
-        """MessageParseError 처리 — error_handlers.handle_parse_error 위임"""
-        return _handle_parse_error_fn(e, msg_state)
-
-    def _handle_unknown_error(
-        self,
-        e: Exception,
-        msg_state: MessageState,
-    ) -> EngineResult:
-        """알 수 없는 예외 처리 — error_handlers.handle_unknown_error 위임"""
-        return _handle_unknown_error_fn(e, msg_state)
 
     async def _cleanup_execution(self, ctx: ExecutionContext) -> None:
         """실행 후 정리 로직
@@ -764,9 +553,11 @@ class ClaudeRunner:
             while True:
                 before = compact_handler.snapshot()
 
-                await self._receive_messages(
-                    client, compact_handler, msg_state, on_progress, on_compact,
-                    on_intervention, on_session, on_event,
+                await self._receive_loop.run(
+                    client, compact_handler, msg_state,
+                    on_progress=on_progress, on_compact=on_compact,
+                    on_intervention=on_intervention, on_session=on_session,
+                    on_event=on_event,
                 )
 
                 # PreCompact 훅 콜백 실행을 위한 이벤트 루프 양보
@@ -797,13 +588,18 @@ class ClaudeRunner:
             return self._finalize_result(msg_state)
 
         except FileNotFoundError as e:
-            return self._handle_file_not_found(e)
+            return _handle_file_not_found_fn(e)
         except ProcessError as e:
-            return self._handle_process_error(e, ctx)
+            return _handle_process_error_fn(
+                e, ctx,
+                pid=self._lifecycle.pid,
+                debug_fn=self.debug_send_fn,
+                active_clients_count=get_registry_size(),
+            )
         except MessageParseError as e:
-            return self._handle_parse_error(e, msg_state)
+            return _handle_parse_error_fn(e, msg_state)
         except Exception as e:
-            return self._handle_unknown_error(e, msg_state)
+            return _handle_unknown_error_fn(e, msg_state)
         finally:
             await self._cleanup_execution(ctx)
 
