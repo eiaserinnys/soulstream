@@ -24,7 +24,6 @@ from soul_server.models import (
 )
 from soul_server.service.task_manager import (
     get_task_manager,
-    CreateTaskParams,
     Task,
     TaskConflictError,
     TaskNotFoundError,
@@ -32,6 +31,7 @@ from soul_server.service.task_manager import (
     NodeMismatchError,
     TaskStatus,
 )
+from soul_server.service.task_factory import CreateTaskParams
 from soul_server.service import resource_manager, get_soul_engine
 from soul_server.service.sse_streaming import stream_live_events
 from soul_server.service import intervention_service

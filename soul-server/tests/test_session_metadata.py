@@ -21,7 +21,7 @@ import pytest
 
 from soul_server.service.task_models import Task, TaskStatus, utc_now, datetime_to_str
 from soul_server.service.postgres_session_db import PostgresSessionDB
-from soul_server.service.task_manager import CreateTaskParams
+from soul_server.service.task_factory import CreateTaskParams
 
 
 def _make_mock_session_db():
@@ -228,7 +228,8 @@ class TestSessionDBAppendMetadata:
 class TestTaskManagerAppendMetadata:
     @pytest.fixture
     def task_manager(self, db):
-        from soul_server.service.task_manager import TaskManager, CreateTaskParams
+        from soul_server.service.task_manager import TaskManager
+        from soul_server.service.task_factory import CreateTaskParams
         from soul_server.service.session_broadcaster import (
             SessionBroadcaster,
             set_session_broadcaster,
@@ -318,7 +319,8 @@ class TestTaskManagerAppendMetadata:
 class TestResumeMetadataContinuity:
     @pytest.fixture
     def task_manager(self, db):
-        from soul_server.service.task_manager import TaskManager, CreateTaskParams
+        from soul_server.service.task_manager import TaskManager
+        from soul_server.service.task_factory import CreateTaskParams
         from soul_server.service.session_broadcaster import (
             SessionBroadcaster,
             set_session_broadcaster,
@@ -362,7 +364,8 @@ class TestMCPMetadata:
     @pytest.mark.asyncio
     async def test_get_all_sessions_includes_metadata(self, db):
         """get_all_sessions 반환에 metadata 포함"""
-        from soul_server.service.task_manager import TaskManager, CreateTaskParams
+        from soul_server.service.task_manager import TaskManager
+        from soul_server.service.task_factory import CreateTaskParams
         from soul_server.service.session_broadcaster import (
             SessionBroadcaster,
             set_session_broadcaster,

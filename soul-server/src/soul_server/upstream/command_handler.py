@@ -46,7 +46,7 @@ from .protocol import (
 )
 
 from soul_server.service.session_query_service import get_session_query_service
-from soul_server.service.task_manager import CreateTaskParams
+from soul_server.service.task_factory import CreateTaskParams
 
 if TYPE_CHECKING:
     from soul_server.service.engine_adapter import SoulEngineAdapter

@@ -15,7 +15,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from soul_server.models.schemas import SessionEvent, SSEEventType
-from soul_server.service.task_manager import TaskManager, set_task_manager, CreateTaskParams
+from soul_server.service.task_manager import TaskManager, set_task_manager
+from soul_server.service.task_factory import CreateTaskParams
 from soul_server.service.task_models import (
     TaskNotFoundError,
     TaskNotRunningError,

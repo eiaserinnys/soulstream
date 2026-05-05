@@ -19,12 +19,12 @@ from soul_server.api.sessions import session_events_sse_generator
 from soul_server.dashboard.auth import require_dashboard_auth
 from soul_server.service.task_manager import (
     get_task_manager,
-    CreateTaskParams,
     TaskConflictError,
     TaskNotFoundError,
     TaskNotRunningError,
     NodeMismatchError,
 )
+from soul_server.service.task_factory import CreateTaskParams
 from soul_server.service.session_query_service import get_session_query_service
 from soul_server.service import resource_manager, get_soul_engine
 from soul_server.service import intervention_service

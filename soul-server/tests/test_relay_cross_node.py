@@ -3,14 +3,9 @@
 cross-node 위임 완료 보고 시 orch-server protected route에
 Bearer 헤더가 정상 전달되고, 실패 시 적절히 로깅하는지 검증한다.
 
-NOTE: relay_cross_node_intervention은 내부에서 lazy import한다:
-  from soul_server.config import get_settings
-  import httpx
-따라서 patch 대상은 소스 모듈 레벨이다:
-  - soul_server.config.get_settings  (함수 body의 lazy import가 캡처)
-  - httpx.AsyncClient  (함수 body의 import httpx가 sys.modules에서 가져옴)
-함수 import는 모듈 레벨에서 수행하여 import 시점의 get_settings 호출과 격리.
-(2026-05-05 task_manager → cross_node_relay 모듈 분리됨)
+patch 대상:
+  - soul_server.service.cross_node_relay.get_settings  (모듈 레벨 binding)
+  - httpx.AsyncClient  (attribute lookup — 글로벌 patch로 충분)
 """
 
 import pytest
@@ -46,7 +41,7 @@ class TestRelayCrossNodeIntervention:
         mock_client_cls = MagicMock(return_value=mock_client)
 
         with (
-            patch("soul_server.config.get_settings", return_value=settings),
+            patch("soul_server.service.cross_node_relay.get_settings", return_value=settings),
             patch("httpx.AsyncClient", mock_client_cls),
         ):
             await relay_cross_node_intervention("sess-caller-123", "완료 보고 텍스트")
@@ -82,7 +77,7 @@ class TestRelayCrossNodeIntervention:
         mock_client_cls = MagicMock(return_value=mock_client)
 
         with (
-            patch("soul_server.config.get_settings", return_value=settings),
+            patch("soul_server.service.cross_node_relay.get_settings", return_value=settings),
             patch("httpx.AsyncClient", mock_client_cls),
             patch("soul_server.service.cross_node_relay.logger") as mock_logger,
         ):
@@ -107,7 +102,7 @@ class TestRelayCrossNodeIntervention:
         mock_client_cls = MagicMock(return_value=mock_client)
 
         with (
-            patch("soul_server.config.get_settings", return_value=settings),
+            patch("soul_server.service.cross_node_relay.get_settings", return_value=settings),
             patch("httpx.AsyncClient", mock_client_cls),
             patch("soul_server.service.cross_node_relay.logger") as mock_logger,
         ):
@@ -132,7 +127,7 @@ class TestRelayCrossNodeIntervention:
         mock_client_cls = MagicMock(return_value=mock_client)
 
         with (
-            patch("soul_server.config.get_settings", return_value=settings),
+            patch("soul_server.service.cross_node_relay.get_settings", return_value=settings),
             patch("httpx.AsyncClient", mock_client_cls),
         ):
             await relay_cross_node_intervention("sess-dev", "dev 테스트")
@@ -147,7 +142,7 @@ class TestRelayCrossNodeIntervention:
         settings = _make_settings(upstream_url=None, auth_token="token")
 
         with (
-            patch("soul_server.config.get_settings", return_value=settings),
+            patch("soul_server.service.cross_node_relay.get_settings", return_value=settings),
             patch("httpx.AsyncClient") as mock_client_cls,
         ):
             await relay_cross_node_intervention("sess-no-url", "no upstream")

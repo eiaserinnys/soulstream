@@ -14,7 +14,8 @@ from unittest.mock import AsyncMock
 
 from soul_server.service.postgres_session_db import PostgresSessionDB
 from soul_server.service.session_query_service import get_session_query_service
-from soul_server.service.task_manager import TaskManager, set_task_manager, CreateTaskParams
+from soul_server.service.task_manager import TaskManager, set_task_manager
+from soul_server.service.task_factory import CreateTaskParams
 from soul_server.service.task_models import (
     Task,
     TaskStatus,
@@ -825,6 +826,66 @@ class TestFolderId:
         folder_map = {f["id"]: f["name"] for f in folders}
         assigned_name = folder_map.get(session["folder_id"])
         assert assigned_name == "⚙️ LLM 세션"
+
+    async def test_register_external_task_persists_caller_info(self, manager):
+        """caller_info를 가진 외부 task 등록 시 metadata에 caller_info entry가 추가되고
+        db.append_metadata가 호출된다 (TaskFactory와 동일 동작 — 대칭성)."""
+        info = {"source": "agent", "agent_node": "node-A", "agent_id": "alpha"}
+        task = Task(
+            agent_session_id="ext-caller-1",
+            prompt="external with caller",
+            session_type="llm",
+            caller_info=info,
+        )
+        await manager.register_external_task(task)
+
+        # Task 메모리에 entry 추가됨
+        entries = [m for m in task.metadata if m.get("type") == "caller_info"]
+        assert len(entries) == 1
+        assert entries[0]["value"] == info
+
+        # DB append_metadata가 호출됨
+        append_calls = manager._db.append_metadata.call_args_list
+        caller_entries = [
+            c for c in append_calls
+            if c.args[0] == "ext-caller-1" and c.args[1].get("type") == "caller_info"
+        ]
+        assert len(caller_entries) == 1
+        assert caller_entries[0].args[1]["value"] == info
+
+    async def test_register_external_task_without_caller_info_no_op(self, manager):
+        """caller_info=None인 외부 task는 metadata에 caller_info entry가 추가되지 않는다."""
+        task = Task(
+            agent_session_id="ext-no-caller",
+            prompt="external without caller",
+            session_type="llm",
+            caller_info=None,
+        )
+        await manager.register_external_task(task)
+
+        entries = [m for m in task.metadata if m.get("type") == "caller_info"]
+        assert len(entries) == 0
+
+        append_calls = manager._db.append_metadata.call_args_list
+        caller_entries = [
+            c for c in append_calls
+            if c.args[0] == "ext-no-caller" and c.args[1].get("type") == "caller_info"
+        ]
+        assert len(caller_entries) == 0
+
+    async def test_register_external_task_passes_caller_session_id(self, manager):
+        """caller_session_id가 register_session_initial에 전달된다 (TaskFactory와 대칭)."""
+        task = Task(
+            agent_session_id="ext-caller-sess",
+            prompt="external",
+            session_type="llm",
+            caller_session_id="sess-caller-abc",
+        )
+        await manager.register_external_task(task)
+
+        manager._db.register_session_initial.assert_called_once()
+        call = manager._db.register_session_initial.call_args
+        assert call.kwargs.get("caller_session_id") == "sess-caller-abc"
 
 
 class TestLoad:
