@@ -13,7 +13,9 @@
  *
  * 구조:
  * - 타입 정의는 ./dashboard-store-types.ts
- * - 5개 slice로 액션 분리 (slices/)
+ * - 8개 slice로 액션 분리 (slices/)
+ *   - ui / catalog / selection / draft / session
+ *   - event-processing / tree-collapse / optimistic-session
  * - 본 파일은 슬라이스 합성 + reset + persist 설정만 담당
  */
 
@@ -27,6 +29,9 @@ import { createCatalogSlice } from "./slices/catalog-slice";
 import { createSelectionSlice } from "./slices/selection-slice";
 import { createDraftSlice } from "./slices/draft-slice";
 import { createSessionSlice } from "./slices/session-slice";
+import { createEventProcessingSlice } from "./slices/event-processing-slice";
+import { createTreeCollapseSlice } from "./slices/tree-collapse-slice";
+import { createOptimisticSessionSlice } from "./slices/optimistic-session-slice";
 
 // === Re-exports for backward compatibility ===
 
@@ -60,6 +65,9 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         ...createSelectionSlice(set, get, store),
         ...createDraftSlice(set, get, store),
         ...createSessionSlice(set, get, store),
+        ...createEventProcessingSlice(set, get, store),
+        ...createTreeCollapseSlice(set, get, store),
+        ...createOptimisticSessionSlice(set, get, store),
       };
 
       // 초기 state 스냅샷 (모든 slice의 초기 필드 값) — reset의 정본.
