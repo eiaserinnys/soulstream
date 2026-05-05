@@ -2490,7 +2490,7 @@ describe("dashboard-store", () => {
       expect(useDashboardStore.getState().chatLastPrependAtMs).toBeNull();
     });
 
-    it("atomic 갱신: tree와 chatPrependedCount와 chatLastPrependAtMs가 한 set() 안에서 함께 갱신됨", () => {
+    it("한 번의 set() 호출: subscribe 1회 보장 (chatLastPrependAtMs는 updated 분기와 무관, chatPrependedCount는 updated=true일 때만)", () => {
       // 라이브 트리 셋업
       useDashboardStore.getState().processEvent(
         { type: "user_message", content: "live-u" } as UserMessageEvent,
@@ -2520,7 +2520,7 @@ describe("dashboard-store", () => {
       }
     });
 
-    it("dedup 케이스: addedCount=0이어도 chatLastPrependAtMs는 사용자 prepend 시도 시각을 추적 (settle 가드는 사용자 행위 시각 기준)", () => {
+    it("dedup 케이스: addedCount=0이어도 chatLastPrependAtMs는 사용자 prepend 시도 시각을 추적하여 strict 단조 증가", async () => {
       const events = [
         {
           event: { type: "user_message", content: "u" } as UserMessageEvent,
@@ -2531,13 +2531,94 @@ describe("dashboard-store", () => {
       const tsAfterFirst = useDashboardStore.getState().chatLastPrependAtMs;
       expect(tsAfterFirst).not.toBeNull();
 
-      // 동일 eventId 재호출 — addedCount=0이지만 result.updated 분기에 따라
-      // chatLastPrependAtMs가 같이 갱신될 수 있음 (사용자 의도적 startReached 행위 시각).
-      // 어느 쪽이든 null로 돌아가지 않고 단조 증가만 보장하면 settle 가드가 의도대로 동작.
+      // 시간 진행을 보장 (performance.now 단조 증가는 마이크로초 단위)
+      await new Promise((r) => setTimeout(r, 5));
+
+      // 동일 eventId 재호출 — addedCount=0이지만 사용자 prepend 시도 시각이므로
+      // chatLastPrependAtMs는 항상 갱신되어야 한다. settle 가드는 사용자 행위 시각 기준.
       useDashboardStore.getState().processHistoryEvents(events);
       const tsAfterSecond = useDashboardStore.getState().chatLastPrependAtMs;
       expect(tsAfterSecond).not.toBeNull();
-      expect(tsAfterSecond! >= tsAfterFirst!).toBe(true);
+      // strict greater-than — dedup-only 응답에서도 시각이 갱신되어야 settle 가드 stale 방지
+      expect(tsAfterSecond! > tsAfterFirst!).toBe(true);
+    });
+
+    it("빈 events: processHistoryEvents([])는 chatLastPrependAtMs를 갱신하지 않음 (early-return)", async () => {
+      // 먼저 prepend로 timestamp 설정
+      useDashboardStore.getState().processHistoryEvents([
+        {
+          event: { type: "user_message", content: "u" } as UserMessageEvent,
+          eventId: 410,
+        },
+      ]);
+      const tsBefore = useDashboardStore.getState().chatLastPrependAtMs;
+      expect(tsBefore).not.toBeNull();
+
+      await new Promise((r) => setTimeout(r, 5));
+
+      // 빈 events — early-return으로 set 자체 호출 안 함
+      const result = useDashboardStore.getState().processHistoryEvents([]);
+      expect(result.addedCount).toBe(0);
+      const tsAfter = useDashboardStore.getState().chatLastPrependAtMs;
+      // 갱신되지 않아야 함 — 호출자가 prepend를 "시도"한 것이 아니므로
+      expect(tsAfter).toBe(tsBefore);
+    });
+
+    it("다발 dedup: 연속 dedup-only 호출에도 시각이 단조 증가", async () => {
+      const events = [
+        {
+          event: { type: "user_message", content: "u" } as UserMessageEvent,
+          eventId: 420,
+        },
+      ];
+      useDashboardStore.getState().processHistoryEvents(events);
+      const t1 = useDashboardStore.getState().chatLastPrependAtMs!;
+
+      await new Promise((r) => setTimeout(r, 5));
+      useDashboardStore.getState().processHistoryEvents(events);
+      const t2 = useDashboardStore.getState().chatLastPrependAtMs!;
+
+      await new Promise((r) => setTimeout(r, 5));
+      useDashboardStore.getState().processHistoryEvents(events);
+      const t3 = useDashboardStore.getState().chatLastPrependAtMs!;
+
+      expect(t2 > t1).toBe(true);
+      expect(t3 > t2).toBe(true);
+    });
+
+    it("updated=false 경로 (subtree_update만 포함된 events)에서도 chatLastPrependAtMs 갱신 — settle 가드 stale 방지", async () => {
+      // 먼저 일반 prepend로 timestamp 설정
+      useDashboardStore.getState().processHistoryEvents([
+        {
+          event: { type: "user_message", content: "u" } as UserMessageEvent,
+          eventId: 430,
+        },
+      ]);
+      const tsBefore = useDashboardStore.getState().chatLastPrependAtMs!;
+      expect(tsBefore).not.toBeNull();
+
+      await new Promise((r) => setTimeout(r, 5));
+
+      // subtree_update만 포함된 events — processEventsBatch에서 updated=false로 빠진다.
+      // 사용자가 위로 스크롤하여 fetch한 응답 페이지가 모두 트리 변경을 일으키지 않는 코너 케이스.
+      // 옵션 A에 따르면 chatLastPrependAtMs는 "사용자 prepend 시도 시각"이므로 갱신되어야 한다.
+      const result = useDashboardStore.getState().processHistoryEvents([
+        {
+          event: {
+            type: "subtree_update",
+            timestamp: 1,
+            affected_event_ids: [],
+            deltas: {},
+            new_total_subtree_height: 0,
+          } as any,
+          eventId: 431,
+        },
+      ]);
+      expect(result.addedCount).toBe(0);
+      const tsAfter = useDashboardStore.getState().chatLastPrependAtMs!;
+      expect(tsAfter).not.toBeNull();
+      // strict greater-than — updated=false 분기에서도 시각 갱신
+      expect(tsAfter > tsBefore).toBe(true);
     });
 
     it("clearTree 호출 시 chatLastPrependAtMs는 null로 리셋", () => {

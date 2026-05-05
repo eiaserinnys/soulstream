@@ -343,11 +343,14 @@ export const createSessionSlice: StateCreator<
               // tree와 같은 set() 안에서 atomic 갱신 — Zustand subscribe 1회로
               // ChatView 1렌더 사이클 정합 보장 (async batching 무의존).
               chatPrependedCount: state.chatPrependedCount + addedGrouped,
-              // chatLastPrependAtMs는 chatPrependedCount의 정본 짝꿍 (atBottom=true
-              // settle 가드용). 항상 같은 set() 안에서 함께 갱신.
-              chatLastPrependAtMs: performance.now(),
             }
           : {}),
+        // chatLastPrependAtMs는 "마지막 prepend 시도 시각" — settle 가드용.
+        // result.updated와 무관하게 항상 갱신한다 (events.length===0 early-return으로
+        // 빈 호출은 L302에서 이미 차단됨). 사용자가 startReached로 fetch를 일으킨
+        // 모든 응답이 settle 가드의 시각 기준이 되어야 dedup-only/subtree-only 같은
+        // updated=false 코너 케이스에서도 stale 가드 무력화가 발생하지 않는다.
+        chatLastPrependAtMs: performance.now(),
         lastEventId: result.maxEventId,
       });
     } finally {
