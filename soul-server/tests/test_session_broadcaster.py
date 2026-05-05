@@ -237,6 +237,8 @@ class TestEmitSessionUpdatedWirePayload:
             last_progress_text="도구 실행 중...",
             last_assistant_text="네, 처리 완료했사옵니다.",
             completed_at=datetime(2026, 5, 4, 8, 30, tzinfo=timezone.utc),
+            session_type="claude",
+            caller_info={"source": "slack"},
         )
         defaults.update(overrides)
         return Task(**defaults)
@@ -299,6 +301,8 @@ class TestBroadcasterWireContract:
         "last_read_event_id",
         "last_progress_text",
         "last_assistant_text",
+        "session_type",
+        "caller_source",
     }
 
     # phase wire 이벤트는 last_progress_text를 싣지 않는다.
@@ -311,6 +315,8 @@ class TestBroadcasterWireContract:
         "last_event_id",
         "last_read_event_id",
         "last_assistant_text",
+        "session_type",
+        "caller_source",
     }
 
     # session_created wire — task.to_session_info() 결과가 'session' 키에 들어간다.
@@ -340,6 +346,8 @@ class TestBroadcasterWireContract:
             last_progress_text="...",
             last_assistant_text="...",
             completed_at=datetime(2026, 5, 4, 8, 50, tzinfo=timezone.utc),
+            session_type="claude",
+            caller_info={"source": "slack"},
         )
 
     async def test_session_updated_payload_keys_exact(self, broadcaster):
@@ -397,3 +405,87 @@ class TestBroadcasterWireContract:
         )
         _eid, event = queue.get_nowait()
         assert set(event.keys()) == self.EXPECTED_MESSAGE_UPDATED_KEYS
+
+
+class TestSessionUpdatedSessionTypeAndCallerSource:
+    """emit_session_updated / emit_session_phase가 session_type·caller_source를 wire에 싣는다.
+
+    push notifier가 LLM 세션 / 비-사용자 시작 세션을 차단하기 위해 필요한 메타데이터.
+    소스 정본은 task.session_type, task.caller_info["source"].
+    """
+
+    @pytest.fixture
+    def broadcaster(self, mock_registry):
+        return SessionBroadcaster(agent_registry=mock_registry)
+
+    def _make_task(self, **overrides) -> Task:
+        defaults = dict(
+            agent_session_id="sess-meta-1",
+            prompt="테스트",
+            status=TaskStatus.COMPLETED,
+            last_progress_text="...",
+            last_assistant_text="...",
+            completed_at=datetime(2026, 5, 6, 8, 0, tzinfo=timezone.utc),
+            session_type="claude",
+            caller_info={"source": "slack"},
+        )
+        defaults.update(overrides)
+        return Task(**defaults)
+
+    async def test_updated_includes_caller_source_slack(self, broadcaster):
+        queue = broadcaster.add_client()
+        await broadcaster.emit_session_updated(
+            self._make_task(caller_info={"source": "slack"})
+        )
+        _eid, event = queue.get_nowait()
+        assert event["caller_source"] == "slack"
+        assert event["session_type"] == "claude"
+
+    async def test_updated_includes_caller_source_channel_observer(self, broadcaster):
+        queue = broadcaster.add_client()
+        await broadcaster.emit_session_updated(
+            self._make_task(caller_info={"source": "channel_observer"})
+        )
+        _eid, event = queue.get_nowait()
+        assert event["caller_source"] == "channel_observer"
+
+    async def test_updated_caller_source_none_when_caller_info_none(self, broadcaster):
+        """task.caller_info=None이면 wire의 caller_source는 None (None-safe)."""
+        queue = broadcaster.add_client()
+        await broadcaster.emit_session_updated(
+            self._make_task(caller_info=None)
+        )
+        _eid, event = queue.get_nowait()
+        assert event["caller_source"] is None
+
+    async def test_updated_session_type_llm(self, broadcaster):
+        queue = broadcaster.add_client()
+        await broadcaster.emit_session_updated(
+            self._make_task(session_type="llm")
+        )
+        _eid, event = queue.get_nowait()
+        assert event["session_type"] == "llm"
+
+    async def test_phase_includes_session_type_and_caller_source(self, broadcaster):
+        queue = broadcaster.add_client()
+        await broadcaster.emit_session_phase(
+            self._make_task(
+                status=TaskStatus.RUNNING,
+                session_type="claude",
+                caller_info={"source": "browser"},
+            ),
+            phase="idle",
+        )
+        _eid, event = queue.get_nowait()
+        assert event["session_type"] == "claude"
+        assert event["caller_source"] == "browser"
+
+    async def test_phase_caller_source_none_when_caller_info_none(self, broadcaster):
+        queue = broadcaster.add_client()
+        await broadcaster.emit_session_phase(
+            self._make_task(status=TaskStatus.RUNNING, caller_info=None),
+            phase="idle",
+        )
+        _eid, event = queue.get_nowait()
+        assert event["caller_source"] is None
+

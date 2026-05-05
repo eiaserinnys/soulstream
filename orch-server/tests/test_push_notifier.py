@@ -35,6 +35,18 @@ def _make_notifier(
     return PushNotifier(provider=p, repo=r, node_manager=nm), p, r
 
 
+def _data(**overrides) -> dict:
+    """기본 wire payload — push 화이트리스트 게이트 통과 (claude + slack).
+
+    LLM·비-사용자 게이트는 별도 _FILTER_MATRIX 테스트에서 검증한다.
+    여기서는 게이트 외 동작(status cache, body fallback, fan-out 등)을
+    검증하기 위한 baseline.
+    """
+    base = {"session_type": "claude", "caller_source": "slack"}
+    base.update(overrides)
+    return base
+
+
 @pytest.mark.asyncio
 async def test_running_to_completed_emits_one_push():
     notifier, provider, repo = _make_notifier(user_info={"email": "a@b.com"})
@@ -45,13 +57,13 @@ async def test_running_to_completed_emits_one_push():
     await notifier._on_change(
         "node_session_session_updated",
         "node-A",
-        {"agentSessionId": "S1", "status": "running"},
+        _data(agentSessionId="S1", status="running"),
     )
     # → completed 전환
     await notifier._on_change(
         "node_session_session_updated",
         "node-A",
-        {"agentSessionId": "S1", "status": "completed"},
+        _data(agentSessionId="S1", status="completed"),
     )
 
     # provider.send가 정확히 1회 호출되어야 한다 (running 상태에선 발사 안 함).
@@ -71,12 +83,12 @@ async def test_running_to_error_emits_one_push():
     await notifier._on_change(
         "node_session_session_updated",
         "node-A",
-        {"agentSessionId": "S1", "status": "running"},
+        _data(agentSessionId="S1", status="running"),
     )
     await notifier._on_change(
         "node_session_session_updated",
         "node-A",
-        {"agentSessionId": "S1", "status": "error"},
+        _data(agentSessionId="S1", status="error"),
     )
 
     assert provider.send.await_count == 1
@@ -93,18 +105,18 @@ async def test_completed_repeated_does_not_double_fire():
     await notifier._on_change(
         "node_session_session_updated",
         "node-A",
-        {"agentSessionId": "S1", "status": "running"},
+        _data(agentSessionId="S1", status="running"),
     )
     await notifier._on_change(
         "node_session_session_updated",
         "node-A",
-        {"agentSessionId": "S1", "status": "completed"},
+        _data(agentSessionId="S1", status="completed"),
     )
     # 같은 status 재전달
     await notifier._on_change(
         "node_session_session_updated",
         "node-A",
-        {"agentSessionId": "S1", "status": "completed"},
+        _data(agentSessionId="S1", status="completed"),
     )
 
     assert provider.send.await_count == 1
@@ -119,7 +131,7 @@ async def test_input_request_emits_push():
     await notifier._on_change(
         "node_session_input_request",
         "node-A",
-        {"agentSessionId": "S1", "prompt": "Continue?"},
+        _data(agentSessionId="S1", prompt="Continue?"),
     )
 
     assert provider.send.await_count == 1
@@ -136,12 +148,12 @@ async def test_invalid_token_triggers_cleanup():
     await notifier._on_change(
         "node_session_session_updated",
         "node-A",
-        {"agentSessionId": "S1", "status": "running"},
+        _data(agentSessionId="S1", status="running"),
     )
     await notifier._on_change(
         "node_session_session_updated",
         "node-A",
-        {"agentSessionId": "S1", "status": "completed"},
+        _data(agentSessionId="S1", status="completed"),
     )
 
     repo.delete_token.assert_awaited_once_with("a@b.com", "dev-1")
@@ -157,12 +169,12 @@ async def test_node_unregistered_clears_cache():
     await notifier._on_change(
         "node_session_session_updated",
         "node-A",
-        {"agentSessionId": "S1", "status": "running"},
+        _data(agentSessionId="S1", status="running"),
     )
     await notifier._on_change(
         "node_session_session_updated",
         "node-B",
-        {"agentSessionId": "S2", "status": "running"},
+        _data(agentSessionId="S2", status="running"),
     )
     assert ("node-A", "S1") in notifier._last_status
     assert ("node-B", "S2") in notifier._last_status
@@ -184,12 +196,12 @@ async def test_skip_when_email_missing():
     await notifier._on_change(
         "node_session_session_updated",
         "node-A",
-        {"agentSessionId": "S1", "status": "running"},
+        _data(agentSessionId="S1", status="running"),
     )
     await notifier._on_change(
         "node_session_session_updated",
         "node-A",
-        {"agentSessionId": "S1", "status": "completed"},
+        _data(agentSessionId="S1", status="completed"),
     )
 
     provider.send.assert_not_awaited()
@@ -205,12 +217,12 @@ async def test_no_tokens_skips_send():
     await notifier._on_change(
         "node_session_session_updated",
         "node-A",
-        {"agentSessionId": "S1", "status": "running"},
+        _data(agentSessionId="S1", status="running"),
     )
     await notifier._on_change(
         "node_session_session_updated",
         "node-A",
-        {"agentSessionId": "S1", "status": "completed"},
+        _data(agentSessionId="S1", status="completed"),
     )
 
     provider.send.assert_not_awaited()
@@ -229,12 +241,12 @@ async def test_multiple_devices_fan_out():
     await notifier._on_change(
         "node_session_session_updated",
         "node-A",
-        {"agentSessionId": "S1", "status": "running"},
+        _data(agentSessionId="S1", status="running"),
     )
     await notifier._on_change(
         "node_session_session_updated",
         "node-A",
-        {"agentSessionId": "S1", "status": "completed"},
+        _data(agentSessionId="S1", status="completed"),
     )
 
     # 3개 디바이스 모두에 발송 (사용자 단위 fan-out)
@@ -254,12 +266,12 @@ async def test_session_updated_with_snake_case_agent_session_id():
     await notifier._on_change(
         "node_session_session_updated",
         "node-A",
-        {"agent_session_id": "S1", "status": "running"},
+        _data(agent_session_id="S1", status="running"),
     )
     await notifier._on_change(
         "node_session_session_updated",
         "node-A",
-        {"agent_session_id": "S1", "status": "completed"},
+        _data(agent_session_id="S1", status="completed"),
     )
 
     assert provider.send.await_count == 1
@@ -276,7 +288,7 @@ async def test_input_request_with_snake_case_agent_session_id():
     await notifier._on_change(
         "node_session_input_request",
         "node-A",
-        {"agent_session_id": "S1", "prompt": "어떻게 진행할까요?"},
+        _data(agent_session_id="S1", prompt="어떻게 진행할까요?"),
     )
 
     assert provider.send.await_count == 1
@@ -296,16 +308,16 @@ async def test_completed_body_uses_last_progress_text():
     await notifier._on_change(
         "node_session_session_updated",
         "node-A",
-        {"agent_session_id": "S1", "status": "running"},
+        _data(agent_session_id="S1", status="running"),
     )
     await notifier._on_change(
         "node_session_session_updated",
         "node-A",
-        {
-            "agent_session_id": "S1",
-            "status": "completed",
-            "last_progress_text": last_text,
-        },
+        _data(
+            agent_session_id="S1",
+            status="completed",
+            last_progress_text=last_text,
+        ),
     )
 
     assert provider.send.await_count == 1
@@ -326,16 +338,16 @@ async def test_completed_body_truncates_long_text():
     await notifier._on_change(
         "node_session_session_updated",
         "node-A",
-        {"agent_session_id": "S1", "status": "running"},
+        _data(agent_session_id="S1", status="running"),
     )
     await notifier._on_change(
         "node_session_session_updated",
         "node-A",
-        {
-            "agent_session_id": "S1",
-            "status": "completed",
-            "last_progress_text": long_text,
-        },
+        _data(
+            agent_session_id="S1",
+            status="completed",
+            last_progress_text=long_text,
+        ),
     )
 
     body = provider.send.await_args.args[2]
@@ -353,12 +365,12 @@ async def test_completed_body_falls_back_to_title():
     await notifier._on_change(
         "node_session_session_updated",
         "node-A",
-        {"agent_session_id": "S1", "status": "running"},
+        _data(agent_session_id="S1", status="running"),
     )
     await notifier._on_change(
         "node_session_session_updated",
         "node-A",
-        {"agent_session_id": "S1", "status": "completed"},
+        _data(agent_session_id="S1", status="completed"),
     )
 
     body = provider.send.await_args.args[2]
@@ -379,17 +391,17 @@ async def test_completed_body_prefers_last_assistant_text_over_progress():
     await notifier._on_change(
         "node_session_session_updated",
         "node-A",
-        {"agent_session_id": "S1", "status": "running"},
+        _data(agent_session_id="S1", status="running"),
     )
     await notifier._on_change(
         "node_session_session_updated",
         "node-A",
-        {
-            "agent_session_id": "S1",
-            "status": "completed",
-            "last_assistant_text": assistant_text,
-            "last_progress_text": progress_text,
-        },
+        _data(
+            agent_session_id="S1",
+            status="completed",
+            last_assistant_text=assistant_text,
+            last_progress_text=progress_text,
+        ),
     )
 
     body = provider.send.await_args.args[2]
@@ -408,17 +420,124 @@ async def test_completed_body_progress_text_only_when_assistant_missing():
     await notifier._on_change(
         "node_session_session_updated",
         "node-A",
-        {"agent_session_id": "S1", "status": "running"},
+        _data(agent_session_id="S1", status="running"),
     )
     await notifier._on_change(
         "node_session_session_updated",
         "node-A",
-        {
-            "agent_session_id": "S1",
-            "status": "completed",
-            "last_progress_text": progress_text,
-        },
+        _data(
+            agent_session_id="S1",
+            status="completed",
+            last_progress_text=progress_text,
+        ),
     )
 
     body = provider.send.await_args.args[2]
     assert body == progress_text
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# session_type / caller_source 화이트리스트 게이트 (LLM·비-사용자 시작 세션 차단)
+#
+# session_broadcaster.emit_session_updated / emit_session_phase 가 wire에 싣는
+# `session_type`, `caller_source` 메타를 PushNotifier가 게이트로 사용한다.
+# - session_type == "llm" → 차단
+# - caller_source ∉ {slack, browser, soul-app} → 차단
+# 통과 케이스는 push data dict에도 sessionType / callerSource를 전파한다.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+# (case_id, session_type, caller_source, expect_send_count)
+# expect_send_count == 1 → push 송출 (통과 화이트리스트)
+# expect_send_count == 0 → 차단
+_FILTER_MATRIX = [
+    ("llm_browser_blocked",           "llm",    "browser",            0),
+    ("claude_channel_observer",       "claude", "channel_observer",   0),
+    ("claude_trello_watcher",         "claude", "trello_watcher",     0),
+    ("claude_agent",                  "claude", "agent",              0),
+    ("claude_caller_source_none",     "claude", None,                 0),
+    ("claude_slack_passes",           "claude", "slack",              1),
+    ("claude_browser_passes",         "claude", "browser",            1),
+    ("claude_soul_app_passes",        "claude", "soul-app",           1),
+]
+
+
+@pytest.mark.parametrize(
+    "case_id,session_type,caller_source,expect_count",
+    _FILTER_MATRIX,
+    ids=[c[0] for c in _FILTER_MATRIX],
+)
+@pytest.mark.asyncio
+async def test_session_updated_filter_matrix(
+    case_id, session_type, caller_source, expect_count
+):
+    """_handle_session_updated 게이트 — 8케이스."""
+    notifier, provider, repo = _make_notifier(user_info={"email": "a@b.com"})
+    repo.list_tokens.return_value = [("dev-1", "tok-1")]
+    provider.send.return_value = SendResult(ok=True, invalid_token=False)
+
+    base = {
+        "agent_session_id": "S1",
+        "session_type": session_type,
+        "caller_source": caller_source,
+    }
+    await notifier._on_change(
+        "node_session_session_updated",
+        "node-A",
+        {**base, "status": "running"},
+    )
+    await notifier._on_change(
+        "node_session_session_updated",
+        "node-A",
+        {**base, "status": "completed"},
+    )
+
+    assert provider.send.await_count == expect_count, (
+        f"{case_id}: expected {expect_count} push send(s), got {provider.send.await_count}"
+    )
+
+    if expect_count == 1:
+        # 통과 케이스 — push data dict에 sessionType / callerSource가 포함되어야 한다
+        # (provider.send 시그니처: token, title, body, data)
+        data_arg = provider.send.await_args.args[3]
+        assert data_arg["sessionId"] == "S1"
+        assert data_arg["status"] == "completed"
+        assert data_arg["sessionType"] == session_type
+        assert data_arg["callerSource"] == caller_source
+
+
+@pytest.mark.parametrize(
+    "case_id,session_type,caller_source,expect_count",
+    _FILTER_MATRIX,
+    ids=[c[0] for c in _FILTER_MATRIX],
+)
+@pytest.mark.asyncio
+async def test_input_request_filter_matrix(
+    case_id, session_type, caller_source, expect_count
+):
+    """_handle_input_request 게이트 — 8케이스 (대칭)."""
+    notifier, provider, repo = _make_notifier(user_info={"email": "a@b.com"})
+    repo.list_tokens.return_value = [("dev-1", "tok-1")]
+    provider.send.return_value = SendResult(ok=True, invalid_token=False)
+
+    await notifier._on_change(
+        "node_session_input_request",
+        "node-A",
+        {
+            "agent_session_id": "S1",
+            "prompt": "Continue?",
+            "session_type": session_type,
+            "caller_source": caller_source,
+        },
+    )
+
+    assert provider.send.await_count == expect_count, (
+        f"{case_id}: expected {expect_count} push send(s), got {provider.send.await_count}"
+    )
+
+    if expect_count == 1:
+        data_arg = provider.send.await_args.args[3]
+        assert data_arg["sessionId"] == "S1"
+        assert data_arg["kind"] == "input_request"
+        assert data_arg["sessionType"] == session_type
+        assert data_arg["callerSource"] == caller_source

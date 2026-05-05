@@ -114,6 +114,14 @@ class PushNotifier:
             return
 
     async def _handle_session_updated(self, node_id: str, data: dict) -> None:
+        # 화이트리스트 게이트: LLM 세션과 비-사용자 시작 세션 차단.
+        # 메타 소스: session_broadcaster가 wire에 싣는 session_type / caller_source.
+        # session_type == "llm" 또는 caller_source ∉ {slack, browser, soul-app} 이면 silent skip.
+        if data.get("session_type") == "llm":
+            return
+        src = (data.get("caller_source") or "").lower()
+        if src not in ("slack", "browser", "soul-app"):
+            return
         # wire format: soul-server `emit_session_updated` / `emit_session_phase`는
         # snake_case `agent_session_id`를 사용한다 (session_broadcaster.py:72,94).
         # 옛 wire(camelCase agentSessionId)도 호환성 유지를 위해 fallback에 둔다.
@@ -151,10 +159,21 @@ class PushNotifier:
                 node_id,
                 title=title,
                 body=body,
-                data={"sessionId": session_id, "status": new_status},
+                data={
+                    "sessionId": session_id,
+                    "status": new_status,
+                    "sessionType": data.get("session_type"),
+                    "callerSource": data.get("caller_source"),
+                },
             )
 
     async def _handle_input_request(self, node_id: str, data: dict) -> None:
+        # 화이트리스트 게이트 (대칭): _handle_session_updated와 동일.
+        if data.get("session_type") == "llm":
+            return
+        src = (data.get("caller_source") or "").lower()
+        if src not in ("slack", "browser", "soul-app"):
+            return
         # wire format은 _handle_session_updated와 동일하게 snake_case 정본 + camel/legacy fallback.
         session_id = (
             data.get("agent_session_id")
@@ -177,7 +196,12 @@ class PushNotifier:
             node_id,
             title="입력 요청",
             body=body,
-            data={"sessionId": session_id, "kind": "input_request"},
+            data={
+                "sessionId": session_id,
+                "kind": "input_request",
+                "sessionType": data.get("session_type"),
+                "callerSource": data.get("caller_source"),
+            },
         )
 
     async def _send_to_user(

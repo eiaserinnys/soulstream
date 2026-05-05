@@ -83,6 +83,10 @@ class SessionBroadcaster(BaseSessionBroadcaster):
             "last_read_event_id": task.last_read_event_id,
             "last_progress_text": task.last_progress_text,
             "last_assistant_text": task.last_assistant_text,
+            # push 알림 필터링용 메타 — orch PushNotifier가 LLM 세션과 비-사용자 시작 세션을
+            # 차단하기 위해 사용. 정본은 task.session_type, task.caller_info["source"].
+            "session_type": task.session_type,
+            "caller_source": (task.caller_info or {}).get("source"),
         }
         return await self.broadcast(event)
 
@@ -106,6 +110,9 @@ class SessionBroadcaster(BaseSessionBroadcaster):
             "last_event_id": task.last_event_id,
             "last_read_event_id": task.last_read_event_id,
             "last_assistant_text": task.last_assistant_text,
+            # push 알림 필터링용 메타 (emit_session_updated와 대칭).
+            "session_type": task.session_type,
+            "caller_source": (task.caller_info or {}).get("source"),
         }
         return await self.broadcast(event)
 
