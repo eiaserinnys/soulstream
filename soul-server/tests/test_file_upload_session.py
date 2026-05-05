@@ -315,8 +315,8 @@ class TestCreateSessionWithAttachments:
         assert resp.status_code == 201
 
         # create_task가 extra_context_items를 받았는지 확인
-        call_kwargs = mock_task_manager.create_task.call_args.kwargs
-        extra = call_kwargs.get("extra_context_items")
+        params = mock_task_manager.create_task.call_args.args[0]
+        extra = params.extra_context_items
         assert extra is not None
         assert len(extra) == 1
         assert extra[0]["key"] == "attached_files"
@@ -350,8 +350,8 @@ class TestCreateSessionWithAttachments:
 
         assert resp.status_code == 201
 
-        call_kwargs = mock_task_manager.create_task.call_args.kwargs
-        extra = call_kwargs.get("extra_context_items")
+        params = mock_task_manager.create_task.call_args.args[0]
+        extra = params.extra_context_items
         # None이거나 빈 리스트여야 한다
         assert not extra
 

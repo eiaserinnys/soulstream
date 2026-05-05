@@ -36,7 +36,7 @@ def _make_task_manager_with_call_order():
     call_order: list[str] = []
     task = _make_task()
 
-    async def mock_create_task(**kwargs):
+    async def mock_create_task(params):
         return task
 
     async def mock_add_listener(agent_session_id, queue):

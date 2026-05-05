@@ -19,6 +19,7 @@ from soul_server.api.sessions import session_events_sse_generator
 from soul_server.dashboard.auth import require_dashboard_auth
 from soul_server.service.task_manager import (
     get_task_manager,
+    CreateTaskParams,
     TaskConflictError,
     TaskNotFoundError,
     TaskNotRunningError,
@@ -321,7 +322,7 @@ async def api_create_session(body: CreateSessionBody, request: Request):
     }
 
     try:
-        task = await task_manager.create_task(
+        task = await task_manager.create_task(CreateTaskParams(
             prompt=body.prompt,
             agent_session_id=body.agentSessionId,
             use_mcp=body.use_mcp,
@@ -331,7 +332,7 @@ async def api_create_session(body: CreateSessionBody, request: Request):
             caller_session_id=body.caller_session_id,
             caller_info=caller_info,
             attachment_paths=body.attachmentPaths,
-        )
+        ))
     except TaskConflictError:
         raise HTTPException(
             status_code=409,

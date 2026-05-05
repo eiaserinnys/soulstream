@@ -104,8 +104,8 @@ class TestHandleCreateSession:
 
         # TaskManager.create_task 호출 확인
         tm.create_task.assert_awaited_once()
-        call_kwargs = tm.create_task.call_args.kwargs
-        assert call_kwargs["prompt"] == "Hello, world!"
+        call_kwargs = tm.create_task.call_args.args[0]
+        assert call_kwargs.prompt == "Hello, world!"
 
         # 실행 시작 확인
         tm.executor.start_execution.assert_awaited_once_with(
@@ -148,10 +148,10 @@ class TestHandleCreateSession:
 
         await adapter._dispatcher.dispatch(cmd)
 
-        call_kwargs = tm.create_task.call_args.kwargs
-        assert call_kwargs["allowed_tools"] == ["Read", "Grep"]
-        assert call_kwargs["disallowed_tools"] == ["Bash"]
-        assert call_kwargs["use_mcp"] is False
+        call_kwargs = tm.create_task.call_args.args[0]
+        assert call_kwargs.allowed_tools == ["Read", "Grep"]
+        assert call_kwargs.disallowed_tools == ["Bash"]
+        assert call_kwargs.use_mcp is False
 
     @pytest.mark.asyncio
     async def test_passes_caller_info_to_task_manager(self):
@@ -182,8 +182,8 @@ class TestHandleCreateSession:
 
         await adapter._dispatcher.dispatch(cmd)
 
-        call_kwargs = tm.create_task.call_args.kwargs
-        assert call_kwargs["caller_info"] == caller_info
+        call_kwargs = tm.create_task.call_args.args[0]
+        assert call_kwargs.caller_info == caller_info
 
     @pytest.mark.asyncio
     async def test_caller_info_absent_passes_none(self):
@@ -207,8 +207,8 @@ class TestHandleCreateSession:
 
         await adapter._dispatcher.dispatch(cmd)
 
-        call_kwargs = tm.create_task.call_args.kwargs
-        assert call_kwargs["caller_info"] is None
+        call_kwargs = tm.create_task.call_args.args[0]
+        assert call_kwargs.caller_info is None
 
 
 class TestHandleIntervene:

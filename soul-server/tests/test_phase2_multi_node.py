@@ -88,8 +88,8 @@ class TestHandleCreateSessionSystemPrompt:
         }
         await adapter._dispatcher._handle_create_session(cmd)
 
-        call_kwargs = tm.create_task.call_args.kwargs
-        assert call_kwargs.get("system_prompt") == "You are a sub-agent."
+        call_kwargs = tm.create_task.call_args.args[0]
+        assert call_kwargs.system_prompt == "You are a sub-agent."
 
     async def test_system_prompt_none_when_absent(self):
         """systemPrompt가 없으면 create_task의 system_prompt는 None이다."""
@@ -111,8 +111,8 @@ class TestHandleCreateSessionSystemPrompt:
         }
         await adapter._dispatcher._handle_create_session(cmd)
 
-        call_kwargs = tm.create_task.call_args.kwargs
-        assert call_kwargs.get("system_prompt") is None
+        call_kwargs = tm.create_task.call_args.args[0]
+        assert call_kwargs.system_prompt is None
 
 
 # ---------------------------------------------------------------------------

@@ -17,7 +17,7 @@ from soul_server.service.session_broadcaster import (
     set_session_broadcaster,
 )
 from soul_server.service.postgres_session_db import PostgresSessionDB
-from soul_server.service.task_manager import TaskManager, set_task_manager
+from soul_server.service.task_manager import TaskManager, set_task_manager, CreateTaskParams
 from soul_server.service.task_models import Task, TaskStatus
 
 
@@ -135,10 +135,10 @@ class TestCreateTaskCatalogBroadcast:
         self, manager, broadcaster
     ):
         """신규 세션은 create_task() 에서 catalog_updated → session_created 순으로 발행된다."""
-        await manager.create_task(
+        await manager.create_task(CreateTaskParams(
             prompt="hello",
             agent_session_id="sess-broadcast-1",
-        )
+        ))
 
         # create_task()에서 broadcast (catalog_updated)와 emit_session_created 모두 호출됨
         assert broadcaster.broadcast.call_count == 1
@@ -168,10 +168,10 @@ class TestCreateTaskCatalogBroadcast:
         self, manager, broadcaster
     ):
         """resume된 세션은 catalog_updated를 발행하지 않는다"""
-        await manager.create_task(
+        await manager.create_task(CreateTaskParams(
             prompt="hello",
             agent_session_id="sess-resume-1",
-        )
+        ))
         await manager.finalize_task("sess-resume-1", result="done")
 
         # 카운터 리셋
@@ -180,10 +180,10 @@ class TestCreateTaskCatalogBroadcast:
         broadcaster.emit_session_updated.reset_mock()
 
         # resume
-        await manager.create_task(
+        await manager.create_task(CreateTaskParams(
             prompt="resume prompt",
             agent_session_id="sess-resume-1",
-        )
+        ))
 
         # resume은 session_updated를 발행하고, catalog_updated는 발행하지 않음
         assert broadcaster.broadcast.call_count == 0
@@ -191,10 +191,10 @@ class TestCreateTaskCatalogBroadcast:
 
     async def test_new_session_assigned_to_claude_folder(self, manager):
         """새 claude 세션이 '클로드 코드 세션' 폴더에 배정된다"""
-        await manager.create_task(
+        await manager.create_task(CreateTaskParams(
             prompt="hello",
             agent_session_id="sess-folder-1",
-        )
+        ))
 
         await manager.register_session("claude-1", "sess-folder-1")
 

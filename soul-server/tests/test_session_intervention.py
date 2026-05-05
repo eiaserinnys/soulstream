@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from soul_server.models.schemas import SessionEvent, SSEEventType
-from soul_server.service.task_manager import TaskManager, set_task_manager
+from soul_server.service.task_manager import TaskManager, set_task_manager, CreateTaskParams
 from soul_server.service.task_models import (
     TaskNotFoundError,
     TaskNotRunningError,
@@ -89,7 +89,7 @@ class TestClaudeSessionIndex:
 
     async def test_register_and_lookup(self, manager):
         """claude_session_id 등록 후 조회"""
-        task = await manager.create_task(prompt="hello", agent_session_id="agent-sess-1")
+        task = await manager.create_task(CreateTaskParams(prompt="hello", agent_session_id="agent-sess-1"))
         await manager.register_session("claude-sess-abc", "agent-sess-1")
 
         found = manager.get_task_by_claude_session("claude-sess-abc")
@@ -104,8 +104,8 @@ class TestClaudeSessionIndex:
 
     async def test_multiple_sessions(self, manager):
         """여러 태스크에 각각 다른 claude_session_id"""
-        await manager.create_task(prompt="hello", agent_session_id="agent-sess-1")
-        await manager.create_task(prompt="world", agent_session_id="agent-sess-2")
+        await manager.create_task(CreateTaskParams(prompt="hello", agent_session_id="agent-sess-1"))
+        await manager.create_task(CreateTaskParams(prompt="world", agent_session_id="agent-sess-2"))
 
         await manager.register_session("claude-1", "agent-sess-1")
         await manager.register_session("claude-2", "agent-sess-2")
@@ -120,8 +120,8 @@ class TestClaudeSessionIndex:
 
     async def test_session_overwrite(self, manager):
         """동일한 claude_session_id로 다른 agent_session_id 매핑 시 덮어쓰기"""
-        await manager.create_task(prompt="hello", agent_session_id="agent-sess-1")
-        await manager.create_task(prompt="world", agent_session_id="agent-sess-2")
+        await manager.create_task(CreateTaskParams(prompt="hello", agent_session_id="agent-sess-1"))
+        await manager.create_task(CreateTaskParams(prompt="world", agent_session_id="agent-sess-2"))
 
         await manager.register_session("claude-shared", "agent-sess-1")
         await manager.register_session("claude-shared", "agent-sess-2")  # 덮어쓰기
@@ -136,9 +136,9 @@ class TestInterventionByAgentSession:
 
     async def test_add_intervention_running(self, manager):
         """running 상태 태스크에 개입 메시지 추가"""
-        task = await manager.create_task(
+        task = await manager.create_task(CreateTaskParams(
             prompt="hello", agent_session_id="agent-sess-1"
-        )
+        ))
 
         result = await manager.add_intervention(
             "agent-sess-1", text="새 질문", user="user1"
@@ -159,9 +159,9 @@ class TestInterventionByAgentSession:
 
     async def test_add_intervention_auto_resume(self, manager):
         """완료된 태스크에 개입 시 자동 resume"""
-        task = await manager.create_task(
+        task = await manager.create_task(CreateTaskParams(
             prompt="hello", agent_session_id="agent-sess-1"
-        )
+        ))
         await manager.finalize_task("agent-sess-1", result="done")
 
         # 완료된 태스크에 개입 → 자동 resume
@@ -179,7 +179,7 @@ class TestInterventionByAgentSession:
 
     async def test_multiple_interventions(self, manager):
         """여러 개입 메시지 추가"""
-        await manager.create_task(prompt="hello", agent_session_id="agent-sess-1")
+        await manager.create_task(CreateTaskParams(prompt="hello", agent_session_id="agent-sess-1"))
 
         result1 = await manager.add_intervention("agent-sess-1", "msg1", "user1")
         result2 = await manager.add_intervention("agent-sess-1", "msg2", "user1")
@@ -194,7 +194,7 @@ class TestInterventionByAgentSession:
 
     async def test_intervention_with_attachments(self, manager):
         """첨부 파일 포함 개입"""
-        await manager.create_task(prompt="hello", agent_session_id="agent-sess-1")
+        await manager.create_task(CreateTaskParams(prompt="hello", agent_session_id="agent-sess-1"))
 
         result = await manager.add_intervention(
             "agent-sess-1",
@@ -210,7 +210,7 @@ class TestInterventionByAgentSession:
 
     async def test_get_intervention_empty(self, manager):
         """개입 메시지가 없을 때"""
-        await manager.create_task(prompt="hello", agent_session_id="agent-sess-1")
+        await manager.create_task(CreateTaskParams(prompt="hello", agent_session_id="agent-sess-1"))
 
         msg = await manager.get_intervention("agent-sess-1")
         assert msg is None
@@ -226,7 +226,7 @@ class TestTaskCompletion:
 
     async def test_complete_task_saves_claude_session_id(self, manager):
         """완료 시 claude_session_id 저장 (resume용)"""
-        await manager.create_task(prompt="hello", agent_session_id="agent-sess-1")
+        await manager.create_task(CreateTaskParams(prompt="hello", agent_session_id="agent-sess-1"))
 
         await manager.finalize_task(
             "agent-sess-1", result="done", claude_session_id="claude-sess-xyz"
@@ -240,7 +240,7 @@ class TestTaskCompletion:
 
     async def test_error_task(self, manager):
         """에러 처리"""
-        await manager.create_task(prompt="hello", agent_session_id="agent-sess-1")
+        await manager.create_task(CreateTaskParams(prompt="hello", agent_session_id="agent-sess-1"))
 
         await manager.finalize_task("agent-sess-1", error="Something went wrong")
 
@@ -265,17 +265,17 @@ class TestResumeSession:
 
     async def test_resume_completed_session(self, manager):
         """완료된 세션 resume"""
-        task = await manager.create_task(
+        task = await manager.create_task(CreateTaskParams(
             prompt="first", agent_session_id="agent-sess-1"
-        )
+        ))
         await manager.finalize_task(
             "agent-sess-1", result="done", claude_session_id="claude-sess-xyz"
         )
 
         # 같은 agent_session_id로 resume
-        task = await manager.create_task(
+        task = await manager.create_task(CreateTaskParams(
             prompt="second", agent_session_id="agent-sess-1"
-        )
+        ))
 
         assert task.status == TaskStatus.RUNNING
         assert task.prompt == "second"
@@ -283,13 +283,13 @@ class TestResumeSession:
 
     async def test_resume_errored_session(self, manager):
         """에러난 세션 resume"""
-        await manager.create_task(prompt="first", agent_session_id="agent-sess-1")
+        await manager.create_task(CreateTaskParams(prompt="first", agent_session_id="agent-sess-1"))
         await manager.finalize_task("agent-sess-1", error="crashed")
 
         # resume
-        task = await manager.create_task(
+        task = await manager.create_task(CreateTaskParams(
             prompt="retry", agent_session_id="agent-sess-1"
-        )
+        ))
 
         assert task.status == TaskStatus.RUNNING
         assert task.prompt == "retry"

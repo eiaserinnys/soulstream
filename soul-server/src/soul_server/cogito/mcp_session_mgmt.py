@@ -11,7 +11,7 @@ from typing import Optional
 import httpx
 
 from soul_server.cogito.mcp_tools import cogito_mcp
-from soul_server.service.task_manager import get_task_manager
+from soul_server.service.task_manager import get_task_manager, CreateTaskParams
 from soul_server.service.postgres_session_db import get_session_db
 from soul_server.service.catalog_service import get_catalog_service
 from soul_server.service import get_soul_engine, resource_manager
@@ -89,13 +89,13 @@ async def create_agent_session(
             "agent_name": caller_profile.name if caller_profile else None,
         }
 
-    task = await task_manager.create_task(
+    task = await task_manager.create_task(CreateTaskParams(
         prompt=prompt,
         profile_id=agent_id,
         folder_id=folder_id,
         caller_session_id=caller_session_id,
         caller_info=caller_info,
-    )
+    ))
 
     await task_manager.executor.start_execution(
         agent_session_id=task.agent_session_id,

@@ -12,6 +12,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from soul_server.cogito import mcp_tools, mcp_multi_node
+from soul_server.service.task_manager import CreateTaskParams
 
 
 def _unwrap(tool_or_func):
@@ -108,13 +109,13 @@ class TestCreateAgentSession:
         assert result["agent_session_id"] == "sess-abc123"
         assert result["status"] == "pending"
 
-        mock_tm.create_task.assert_called_once_with(
+        mock_tm.create_task.assert_called_once_with(CreateTaskParams(
             prompt="작업 수행해줘",
             profile_id="agent-alpha",
             folder_id=None,
             caller_session_id=None,
             caller_info=None,
-        )
+        ))
         mock_tm.executor.start_execution.assert_called_once()
 
     async def test_creates_session_with_caller_session_id(self):
@@ -140,10 +141,10 @@ class TestCreateAgentSession:
 
         assert result["agent_session_id"] == "sess-abc123"
 
-        call_kwargs = mock_tm.create_task.call_args.kwargs
-        assert call_kwargs["caller_session_id"] == "sess-caller-999"
+        call_kwargs = mock_tm.create_task.call_args.args[0]
+        assert call_kwargs.caller_session_id == "sess-caller-999"
         # system_prompt는 전달하지 않음 (자동 완료 보고 방식으로 변경됨)
-        assert "system_prompt" not in call_kwargs
+        assert call_kwargs.system_prompt is None
 
     async def test_creates_session_with_folder_id(self):
         """folder_id가 전달되면 create_task에 그대로 전달되어야 한다."""
@@ -157,9 +158,9 @@ class TestCreateAgentSession:
         with patch("soul_server.cogito.mcp_session_mgmt.get_task_manager", return_value=mock_tm), p_engine, p_rm:
             await fn(agent_id=None, prompt="테스트", folder_id="folder-xyz")
 
-        call_kwargs = mock_tm.create_task.call_args.kwargs
-        assert call_kwargs["folder_id"] == "folder-xyz"
-        assert call_kwargs["profile_id"] is None
+        call_kwargs = mock_tm.create_task.call_args.args[0]
+        assert call_kwargs.folder_id == "folder-xyz"
+        assert call_kwargs.profile_id is None
 
     async def test_returns_task_status(self):
         """반환값에 agent_session_id와 status가 포함되어야 한다."""
@@ -209,12 +210,12 @@ class TestCreateAgentSession:
                 caller_session_id="sess-parent-1",
             )
 
-        call_kwargs = mock_tm.create_task.call_args.kwargs
-        caller_info = call_kwargs["caller_info"]
+        call_kwargs = mock_tm.create_task.call_args.args[0]
+        caller_info = call_kwargs.caller_info
         assert caller_info is not None
         assert caller_info["source"] == "agent"
         assert "parent_session_id" not in caller_info
-        assert call_kwargs["caller_session_id"] == "sess-parent-1"
+        assert call_kwargs.caller_session_id == "sess-parent-1"
         assert caller_info["agent_node"] == "node-alpha"
         assert caller_info["agent_id"] == "agent-parent"
         assert caller_info["agent_name"] == "Parent Agent"
@@ -234,8 +235,8 @@ class TestCreateAgentSession:
         with patch("soul_server.cogito.mcp_session_mgmt.get_task_manager", return_value=mock_tm), p_engine, p_rm:
             await fn(agent_id=None, prompt="작업")
 
-        call_kwargs = mock_tm.create_task.call_args.kwargs
-        assert call_kwargs["caller_info"] is None
+        call_kwargs = mock_tm.create_task.call_args.args[0]
+        assert call_kwargs.caller_info is None
 
     async def test_start_execution_called_with_correct_session_id(self):
         """start_execution이 생성된 세션 ID로 호출되어야 한다."""
