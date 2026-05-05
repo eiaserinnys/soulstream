@@ -14,7 +14,6 @@ TaskManager - 세션 라이프사이클 관리
 
 import asyncio
 import logging
-from datetime import timedelta
 from pathlib import Path
 from typing import Optional, Dict, List, Union, TYPE_CHECKING
 
@@ -40,6 +39,8 @@ from soul_server.service.session_broadcaster import get_session_broadcaster
 from soul_server.service.session_eviction_manager import SessionEvictionManager
 from soul_server.service.session_query_service import init_session_query_service
 from soul_server.service.task_factory import CreateTaskParams, TaskFactory
+from soul_server.service.task_maintenance import TaskMaintenance
+from soul_server.service.cross_node_relay import relay_cross_node_intervention
 from soul_server.util.attachment_helpers import build_attachment_context_items
 
 # Re-export for backward compatibility
@@ -60,42 +61,6 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
-
-
-async def _relay_cross_node_intervention(
-    caller_session_id: str, text: str
-) -> None:
-    """로컬 알림 실패 시 upstream을 통해 cross-node 인터벤션을 시도한다."""
-    try:
-        from soul_server.config import get_settings
-        import re
-        import httpx
-
-        settings = get_settings()
-        upstream_url = getattr(settings, "soulstream_upstream_url", None)
-        if not upstream_url:
-            return
-
-        http_url = re.sub(r"^wss://", "https://", upstream_url)
-        http_url = re.sub(r"^ws://", "http://", http_url)
-        http_url = re.sub(r"/ws/.*$", "", http_url)
-
-        auth_token = getattr(settings, "auth_bearer_token", "")
-        headers = {"Authorization": f"Bearer {auth_token}"} if auth_token else {}
-
-        async with httpx.AsyncClient(timeout=10.0, headers=headers) as client:
-            resp = await client.post(
-                f"{http_url}/api/sessions/{caller_session_id}/intervene",
-                json={"text": text, "user": "agent"},
-            )
-            resp.raise_for_status()
-        logger.info(
-            f"Cross-node notification sent to {caller_session_id} via upstream"
-        )
-    except Exception as remote_err:
-        logger.error(
-            f"Cross-node notification failed for {caller_session_id}: {remote_err}"
-        )
 
 
 class TaskManager:
@@ -169,6 +134,15 @@ class TaskManager:
             eviction_manager=self._eviction_manager,
             agent_registry=self._agent_registry,
             assign_default_folder=self._assign_default_folder_and_broadcast,
+        )
+
+        # 유지보수 작업 (취소/고아 보정/통계)
+        self._task_maintenance = TaskMaintenance(
+            tasks=self._tasks,
+            lock=self._lock,
+            eviction_manager=self._eviction_manager,
+            executor=self._executor,
+            session_db=session_db,
         )
 
     # === Sub-service property 접근자 ===
@@ -508,7 +482,7 @@ class TaskManager:
                 f"Local notification to caller {caller_session_id} failed: {local_err}",
                 exc_info=True,
             )
-            await _relay_cross_node_intervention(caller_session_id, notify_text)
+            await relay_cross_node_intervention(caller_session_id, notify_text)
 
     # === 세션 조회 → get_session_query_service() 직접 사용 ===
     # (분리됨: get_running_tasks, get_all_sessions, list_sessions_summary, get_all_folders)
@@ -735,80 +709,16 @@ class TaskManager:
     # === 정리 ===
 
     async def cancel_running_tasks(self, timeout: float = 5.0) -> int:
-        """실행 중인 모든 태스크 취소"""
-        # 퇴거 루프 중지
-        self._eviction_manager.stop()
-
-        async with self._lock:
-            return await self._executor.cancel_running_tasks(timeout)
+        """실행 중인 모든 태스크 취소 (TaskMaintenance에 위임)."""
+        return await self._task_maintenance.cancel_running_tasks(timeout)
 
     async def cleanup_orphaned_running(self, max_age_hours: int = 24) -> int:
-        """
-        고아 running 태스크 보정
-
-        실행 태스크(execution_task)가 없는데 running 상태인 오래된 세션을
-        interrupted로 마킹합니다. 완료/에러/중단된 세션은 삭제하지 않고
-        메모리에 유지합니다 (대시보드 히스토리 조회용).
-
-        Args:
-            max_age_hours: orphaned 판정 기준 시간
-
-        Returns:
-            보정된 태스크 수
-        """
-        cutoff = utc_now() - timedelta(hours=max_age_hours)
-        fixed = 0
-        fixed_tasks = []
-
-        async with self._lock:
-            for key, task in self._tasks.items():
-                if task.status != TaskStatus.RUNNING:
-                    continue
-                if task.execution_task is None or task.execution_task.done():
-                    if task.created_at < cutoff:
-                        task.status = TaskStatus.INTERRUPTED
-                        task.error = "실행 태스크 없이 오래된 running 상태 (orphaned)"
-                        task.completed_at = utc_now()
-                        logger.warning(f"Marked orphaned running session as interrupted: {key}")
-                        fixed_tasks.append(task)
-                        fixed += 1
-
-        if fixed > 0:
-            logger.info(f"Fixed {fixed} orphaned running sessions")
-            # DB 업데이트 + 퇴거 후보 등록
-            for task in fixed_tasks:
-                await self._db.update_session(
-                    task.agent_session_id,
-                    status=TaskStatus.INTERRUPTED.value,
-                    updated_at=datetime_to_str(task.completed_at),
-                )
-                self._eviction_manager.register(task.agent_session_id)
-            try:
-                broadcaster = get_session_broadcaster()
-                for task in fixed_tasks:
-                    await broadcaster.emit_session_updated(task)
-            except Exception:
-                logger.warning("Failed to broadcast orphaned session fixes", exc_info=True)
-
-        return fixed
+        """고아 running 태스크 보정 (TaskMaintenance에 위임)."""
+        return await self._task_maintenance.cleanup_orphaned_running(max_age_hours)
 
     async def get_stats(self) -> dict:
-        """통계 반환"""
-        running = sum(1 for t in self._tasks.values() if t.status == TaskStatus.RUNNING)
-        completed = sum(1 for t in self._tasks.values() if t.status == TaskStatus.COMPLETED)
-        error = sum(1 for t in self._tasks.values() if t.status == TaskStatus.ERROR)
-        interrupted = sum(1 for t in self._tasks.values() if t.status == TaskStatus.INTERRUPTED)
-
-        _, total_in_db = await self._db.get_all_sessions()
-        return {
-            "total_in_memory": len(self._tasks),
-            "total_in_db": total_in_db,
-            "running": running,
-            "completed": completed,
-            "error": error,
-            "interrupted": interrupted,
-            "eviction_candidates": self._eviction_manager.candidate_count,
-        }
+        """통계 반환 (TaskMaintenance에 위임)."""
+        return await self._task_maintenance.get_stats()
 
 
 # 싱글톤 인스턴스는 main.py에서 초기화
