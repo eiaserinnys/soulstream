@@ -8,30 +8,16 @@ import asyncio
 import json
 import logging
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Dict, Callable, Awaitable, Optional, TYPE_CHECKING
 
-from soul_server.service.atom_context import fetch_atom_context
 from soul_server.service.task_models import Task, TaskStatus
-from soul_server.service.prompt_assembler import assemble_prompt
 from soul_server.service.session_broadcaster import get_session_broadcaster
 from soul_server.service.context_builder import build_soulstream_context_item
 from soul_server.service.event_persistence import EventPersistence
-
-
-@dataclass
-class _PreparedContext:
-    """_run_execution의 컨텍스트 준비 단계 결과물"""
-    effective_system_prompt: Optional[str] = None
-    combined_context_items: list = field(default_factory=list)
-    folder_name: Optional[str] = None
-    working_dir: Optional[Path] = None
-    max_turns: Optional[int] = None
-    effective_allowed_tools: Optional[list] = None
-    effective_disallowed_tools: Optional[list] = None
-    extra_env: Optional[dict] = None
-    assembled_prompt: str = ""
+from soul_server.service.execution_context_builder import (
+    ExecutionContextBuilder,
+    _PreparedContext,
+)
 
 if TYPE_CHECKING:
     from soul_server.service.postgres_session_db import PostgresSessionDB
@@ -86,6 +72,10 @@ class TaskExecutor:
             get_broadcaster=lambda: get_session_broadcaster(),
         )
         self._registry = agent_registry
+        self._context_builder = ExecutionContextBuilder(
+            session_db=session_db,
+            agent_registry=agent_registry,
+        )
 
     async def start_execution(
         self,
@@ -126,105 +116,6 @@ class TaskExecutor:
         logger.info(f"Started background execution for session: {agent_session_id}")
 
         return True
-
-    async def _prepare_context(
-        self,
-        task: Task,
-        claude_runner,
-    ) -> _PreparedContext:
-        """_run_execution의 컨텍스트 준비 단계를 담당한다.
-
-        폴더 설정 조회, atom 트리 fetch, 프로필 해석, 프롬프트 조립을 수행한다.
-        """
-        session_id = task.agent_session_id
-        folder_name: Optional[str] = None
-        folder_prompt: Optional[str] = None
-        atom_context_markdown: str | None = None
-
-        if self._db is not None:
-            session_row = await self._db.get_session(session_id)
-            if session_row and session_row.get("folder_id"):
-                folder_row = await self._db.get_folder(session_row["folder_id"])
-                if folder_row:
-                    folder_name = folder_row["name"]
-                    # 새 세션에서만 폴더 프롬프트 + atom 트리 주입 (resume/intervention 제외)
-                    if task.resume_session_id is None:
-                        folder_settings = folder_row.get("settings")
-                        if isinstance(folder_settings, dict):
-                            folder_prompt = folder_settings.get("folderPrompt") or None
-                            atom_node_cfg = folder_settings.get("atomContextNode")
-                            if isinstance(atom_node_cfg, dict) and atom_node_cfg.get("nodeId"):
-                                atom_context_markdown = await fetch_atom_context(
-                                    node_id=atom_node_cfg["nodeId"],
-                                    depth=int(atom_node_cfg.get("depth", 3)),
-                                    titles_only=bool(atom_node_cfg.get("titlesOnly", False)),
-                                )
-
-        # 폴더 프롬프트를 system_prompt에 합산 (새 세션에서만)
-        effective_system_prompt = task.system_prompt
-        if folder_prompt:
-            if effective_system_prompt:
-                effective_system_prompt = folder_prompt + "\n\n" + effective_system_prompt
-            else:
-                effective_system_prompt = folder_prompt
-
-        # profile_id로 프로필 조회 및 실행 옵션 추출
-        if task.profile_id and self._registry:
-            profile = self._registry.get(task.profile_id)
-            working_dir = profile.workspace_dir if profile else None
-            max_turns = profile.max_turns if profile else None
-            override_tools = profile.allowed_tools if profile else None
-            override_disallowed = profile.disallowed_tools if profile else None
-        else:
-            working_dir = None
-            max_turns = None
-            override_tools = None
-            override_disallowed = None
-
-        effective_workspace_dir = working_dir or claude_runner.workspace_dir
-
-        # 서버 컨텍스트 빌드 + 클라이언트 컨텍스트 머지
-        soulstream_item = build_soulstream_context_item(
-            agent_session_id=task.agent_session_id,
-            claude_session_id=task.resume_session_id,
-            workspace_dir=effective_workspace_dir,
-            folder_name=folder_name,
-            agent_id=task.profile_id,
-            caller_info=task.caller_info,
-        )
-        atom_context_items = (
-            [{"key": "atom_context", "label": "atom 트리", "content": atom_context_markdown}]
-            if atom_context_markdown
-            else []
-        )
-        combined_context_items = (
-            [soulstream_item]
-            + atom_context_items
-            + (task.context_items or [])
-        )
-
-        # allowed_tools / disallowed_tools 병합: task 설정 우선, None이면 profile 설정 사용
-        effective_allowed_tools = task.allowed_tools if task.allowed_tools is not None else override_tools
-        effective_disallowed_tools = task.disallowed_tools if task.disallowed_tools is not None else override_disallowed
-
-        # CLAUDE_CODE_OAUTH_TOKEN 주입
-        extra_env: Optional[dict] = None
-        if task.oauth_token:
-            extra_env = {"CLAUDE_CODE_OAUTH_TOKEN": task.oauth_token}
-
-        assembled_prompt = assemble_prompt(task.prompt, task.context)
-
-        return _PreparedContext(
-            effective_system_prompt=effective_system_prompt,
-            combined_context_items=combined_context_items,
-            folder_name=folder_name,
-            working_dir=working_dir,
-            max_turns=max_turns,
-            effective_allowed_tools=effective_allowed_tools,
-            effective_disallowed_tools=effective_disallowed_tools,
-            extra_env=extra_env,
-            assembled_prompt=assembled_prompt,
-        )
 
     async def _persist_initial_messages(
         self,
@@ -426,7 +317,7 @@ class TaskExecutor:
 
         async with self._handle_execution_errors(task, session_id, request_id_ref):
             async with resource_manager.acquire(timeout=5.0):
-                ctx = await self._prepare_context(task, claude_runner)
+                ctx = await self._context_builder.build(task, claude_runner)
                 request_id_ref[0] = await self._persist_initial_messages(task, ctx)
 
                 effective_workspace_dir = ctx.working_dir or claude_runner.workspace_dir

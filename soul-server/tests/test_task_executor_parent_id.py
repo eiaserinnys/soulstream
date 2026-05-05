@@ -122,7 +122,7 @@ class TestPersistInitialMessagesReturnType:
     @pytest.mark.asyncio
     async def test_returns_int_when_db_present(self):
         """session_db가 있으면 user_message의 event_id(int)를 반환."""
-        from soul_server.service.task_executor import _PreparedContext
+        from soul_server.service.execution_context_builder import _PreparedContext
 
         session_db = _make_mock_session_db()
         task = _make_task()
@@ -146,7 +146,7 @@ class TestPersistInitialMessagesReturnType:
     @pytest.mark.asyncio
     async def test_returns_none_when_db_absent(self):
         """session_db가 없으면 None을 반환 (Optional[int])."""
-        from soul_server.service.task_executor import _PreparedContext
+        from soul_server.service.execution_context_builder import _PreparedContext
 
         task = _make_task()
         tasks = {task.agent_session_id: task}
