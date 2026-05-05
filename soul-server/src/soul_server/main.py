@@ -3,48 +3,35 @@ Soulstream - FastAPI Application
 
 Claude Code 원격 실행 서비스.
 멀티 클라이언트 지원 구조.
+
+라이프사이클은 ``soul_server.bootstrap`` 모듈의 ``startup_lifespan`` /
+``shutdown_lifespan``이 정본이며, 본 모듈의 ``lifespan``은 위임 형태이다.
 """
 
 import asyncio
 import os
 import time
-import logging
 from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
 
 from soul_server.api import attachments_router, dashboard_router, create_sessions_router
-from soul_server.dashboard.session_cache import SessionCache
 from soul_server.dashboard.api_router import router as dash_api_router
 from soul_server.dashboard.auth_routes import create_soul_server_auth_router
 from soul_server.api.tasks import router as tasks_router
 from soul_server.api.claude_auth import create_claude_auth_router
-from soul_server.service import resource_manager, file_manager
-from soul_server.service.rate_limit_tracker import RateLimitTracker
-from soul_server.service.engine_adapter import init_soul_engine
+from soul_server.service import resource_manager
 from soul_server.service.task_manager import get_task_manager
 from soul_server.service.session_query_service import get_session_query_service
-from soul_server.service.session_broadcaster import init_session_broadcaster
 from soul_server.service.postgres_session_db import get_session_db
 from soul_server.models import HealthResponse
 from cogito.endpoint import mount_cogito as _mount_cogito
 from soul_server.cogito.mcp_tools import cogito_mcp, cogito_api_router
 from soul_server.cogito.reflector_setup import reflect as _soulstream_reflector
 from soul_server.config import get_settings, setup_logging
-from soul_server.bootstrap import (
-    bootstrap_runner_pool,
-    bootstrap_cogito,
-    bootstrap_session_db,
-    bootstrap_metadata_extractor,
-    bootstrap_agent_registry,
-    bootstrap_task_manager,
-    bootstrap_llm,
-    bootstrap_upstream,
-    resume_shutdown_sessions,
-)
+from soul_server.bootstrap_lifespan import startup_lifespan, shutdown_lifespan
 
 # 설정 로드
 settings = get_settings()
@@ -54,21 +41,6 @@ logger = setup_logging(settings)
 
 # 서비스 시작 시간 (uptime 계산용)
 _start_time = time.time()
-
-
-async def periodic_cleanup():
-    """주기적 고아 running 세션 보정 (24시간 이상 된 orphaned running 태스크)"""
-    while True:
-        try:
-            await asyncio.sleep(3600)  # 1시간마다 실행
-            task_manager = get_task_manager()
-            fixed = await task_manager.cleanup_orphaned_running(max_age_hours=24)
-            if fixed > 0:
-                logger.info(f"Periodic cleanup: fixed {fixed} orphaned running sessions")
-        except asyncio.CancelledError:
-            break
-        except Exception as e:
-            logger.exception(f"Periodic cleanup error: {e}")
 
 
 async def graceful_shutdown(app: FastAPI, task_manager, timeout: float = 50.0):
@@ -137,138 +109,12 @@ async def graceful_shutdown(app: FastAPI, task_manager, timeout: float = 50.0):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """애플리케이션 라이프사이클 관리"""
-
-    # Startup
-    logger.info("Soulstream starting...")
-    logger.info(f"  Version: {settings.version}")
-    logger.info(f"  Environment: {settings.environment}")
-    logger.info(f"  Max concurrent sessions: {resource_manager.max_concurrent}")
-    logger.info(f"  Workspace: {settings.workspace_dir}")
-
-    # 1. RunnerPool
-    pool = bootstrap_runner_pool(settings)
-
-    # 2. Cogito
-    brief_composer = bootstrap_cogito(settings)
-
-    # 3. SoulEngine (RunnerPool + RateLimitTracker + Cogito 조합)
-    rate_limit_tracker = RateLimitTracker()
-    init_soul_engine(pool=pool, rate_limit_tracker=rate_limit_tracker, brief_composer=brief_composer)
-
-    # 4. Pre-warm + Maintenance
-    if settings.runner_pool_pre_warm > 0:
-        warmed = await pool.pre_warm(settings.runner_pool_pre_warm)
-        logger.info(f"  Runner pool pre-warmed: {warmed}/{settings.runner_pool_pre_warm}개")
-    await pool.start_maintenance()
-    logger.info(f"  Runner pool maintenance loop started (interval={settings.runner_pool_maintenance_interval}s)")
-
-    # 5. SessionDB
-    session_db = await bootstrap_session_db(settings)
-
-    # 6. MetadataExtractor
-    data_dir = Path(settings.data_dir)
-    metadata_extractor = bootstrap_metadata_extractor(data_dir)
-
-    # 7. AgentRegistry
-    agent_registry = bootstrap_agent_registry(settings)
-
-    # 8. TaskManager
-    task_manager = await bootstrap_task_manager(session_db, settings, metadata_extractor, agent_registry)
-
-    # 9. SessionBroadcaster
-    broadcaster = init_session_broadcaster(agent_registry=agent_registry)
-    logger.info("  SessionBroadcaster initialized")
-
-    # 10. CatalogService + 라우터 등록
-    from soul_server.service.catalog_service import init_catalog_service
-    catalog_service = init_catalog_service(session_db, broadcaster)
-    logger.info("  CatalogService initialized")
-
-    from soul_server.api.catalog import create_catalog_router
-    catalog_router = create_catalog_router(catalog_service)
-    app.include_router(catalog_router, prefix="/catalog", tags=["catalog"])
-    app.include_router(catalog_router, prefix="/api/catalog", tags=["catalog"])
-    logger.info("  Catalog API registered")
-
-    # 11. 이전 종료 세션 재개
-    await resume_shutdown_sessions(session_db, task_manager)
-
-    # 12. LLM Proxy
-    llm_executor = await bootstrap_llm(settings, task_manager, session_db, broadcaster, app)
-
-    # 13. SPA 정적 파일 서빙 — LLM 라우터 등록 이후에 마운트
-    _dashboard_dir = Path(settings.dashboard_dir)
-    if not _dashboard_dir.is_absolute():
-        _dashboard_dir = Path.cwd() / _dashboard_dir
-    if _dashboard_dir.exists():
-        app.mount("/", StaticFiles(directory=str(_dashboard_dir), html=True), name="spa")
-        logger.info(f"  Dashboard SPA mounted: {_dashboard_dir}")
-
-    # 14. app.state 초기화
-    app.state.runner_pool = pool
-    app.state.llm_executor = llm_executor
-    app.state.is_draining = False
-
-    # 15. SessionCache
-    app.state.session_cache = SessionCache(settings.dashboard_cache_dir)
-    logger.info(f"  SessionCache initialized: {settings.dashboard_cache_dir}")
-
-    # 16. 주기적 정리 태스크
-    cleanup_task = asyncio.create_task(periodic_cleanup())
-    logger.info("  Started periodic cleanup task")
-
-    # 17. UpstreamAdapter
-    upstream_adapter, upstream_task = await bootstrap_upstream(
-        settings, task_manager, broadcaster, session_db, agent_registry,
-    )
-
-    yield
-
-    # ── Shutdown ──────────────────────────────────────────────
-    logger.info("Soulstream shutting down...")
-
-    # UpstreamAdapter 종료
-    if upstream_adapter:
-        await upstream_adapter.shutdown()
-        if upstream_task:
-            upstream_task.cancel()
-            try:
-                await upstream_task
-            except asyncio.CancelledError:
-                pass
-        logger.info("  UpstreamAdapter stopped")
-
-    # 주기적 정리 태스크 중지
-    cleanup_task.cancel()
+    """애플리케이션 라이프사이클 — 실제 startup/shutdown은 bootstrap 모듈이 정본."""
+    state = await startup_lifespan(app, settings, logger)
     try:
-        await cleanup_task
-    except asyncio.CancelledError:
-        pass
-
-    # Graceful shutdown
-    try:
-        await graceful_shutdown(app, get_task_manager(), timeout=50.0)
-        logger.info("  Graceful shutdown complete")
-    except RuntimeError:
-        pass  # TaskManager가 초기화되지 않은 경우
-
-    # Runner pool 종료
-    shutdown_count = await pool.shutdown()
-    if shutdown_count > 0:
-        logger.info(f"  Shut down {shutdown_count} pooled runners")
-
-    # DB 연결 종료
-    try:
-        await session_db.close()
-        logger.info("  DB connection closed")
-    except Exception:
-        logger.warning("  Failed to close DB connection", exc_info=True)
-
-    # 오래된 첨부 파일 정리
-    cleaned = file_manager.cleanup_old_files(max_age_hours=1)
-    if cleaned > 0:
-        logger.info(f"  Cleaned up {cleaned} attachment directories")
+        yield
+    finally:
+        await shutdown_lifespan(app, settings, state, logger)
 
 
 app = FastAPI(

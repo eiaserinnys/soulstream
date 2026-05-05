@@ -17,8 +17,6 @@ import pytest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch, call
 
-import soul_server.main as main_module
-
 
 class TestStartupResume:
     """pre_shutdown_sessions.json 처리 + start_execution 호출 검증."""

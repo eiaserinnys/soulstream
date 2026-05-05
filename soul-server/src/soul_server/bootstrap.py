@@ -3,6 +3,9 @@ Soulstream 서버 초기화 단계별 bootstrap 함수.
 
 main.py lifespan()에서 호출하는 단계별 초기화 함수를 모아 둔다.
 각 함수는 하나의 서브시스템을 초기화하고 결과 객체를 반환한다.
+
+startup/shutdown 합성(``startup_lifespan`` / ``shutdown_lifespan``)은 별도 모듈
+``soul_server.bootstrap_lifespan``이 정본 (design-principles §2; module-size-limit).
 """
 
 import asyncio
@@ -287,3 +290,4 @@ async def resume_shutdown_sessions(session_db, task_manager: TaskManager):
         logger.warning(f"  shutdown session resume 실패: {e}")
     finally:
         await session_db.clear_shutdown_flags()
+
