@@ -308,18 +308,30 @@ class TestSessionsStreamEventGenerator:
 
     @pytest.mark.asyncio
     async def test_initial_session_list_sent(self, mock_task_manager, real_session_broadcaster):
-        """연결 시 초기 세션 목록이 전송되어야 한다"""
+        """연결 시 초기 세션 목록이 전송되어야 한다.
+
+        본 테스트는 router가 SessionQueryService.stream_session_list_events에
+        위임한 generator를 EventSourceResponse로 감싸 반환하는 정합성을 검증한다
+        (260505.15 dedupe 이후 아키텍처 — generator 본체는 service에 정본).
+        broadcaster는 real instance라 lazy import도 정확히 해석된다.
+        """
         from soul_server.api.sessions import create_sessions_router
+        from soul_server.service.session_query_service import SessionQueryService
         from sse_starlette.sse import EventSourceResponse
 
-        mock_query_svc = MagicMock()
-        mock_query_svc.get_all_sessions = mock_task_manager.get_all_sessions
-        mock_query_svc.get_all_folders = AsyncMock(return_value=[])
+        # 실제 SessionQueryService 인스턴스 — mock DB는 mock_task_manager의 sessions를 반환
+        # 실제 SessionQueryService 인스턴스 — get_all_sessions은 mock fixture가 반환하는
+        # API shape dict 리스트를 그대로 돌려주도록 override (mock fixture는 raw DB row가
+        # 아니라 이미 변환된 dict를 반환하므로 _build_session_dict를 우회한다).
+        real_query_svc = SessionQueryService.__new__(SessionQueryService)
+        real_query_svc._db = MagicMock()
+        real_query_svc._tasks = mock_task_manager._tasks
+        real_query_svc.get_all_sessions = mock_task_manager.get_all_sessions
 
         with (
             patch("soul_server.api.sessions.get_task_manager", return_value=mock_task_manager),
-            patch("soul_server.api.sessions.get_session_query_service", return_value=mock_query_svc),
-            patch("soul_server.api.sessions.get_session_broadcaster", return_value=real_session_broadcaster),
+            patch("soul_server.api.sessions.get_session_query_service", return_value=real_query_svc),
+            patch("soul_server.service.session_broadcaster.get_session_broadcaster", return_value=real_session_broadcaster),
         ):
             router = create_sessions_router()
 
@@ -331,11 +343,10 @@ class TestSessionsStreamEventGenerator:
             response = await endpoint()
             assert isinstance(response, EventSourceResponse)
 
-            # EventSourceResponse의 body_iterator가 event_generator
+            # EventSourceResponse의 body_iterator가 service의 generator
             gen = response.body_iterator
 
             # 첫 번째 이벤트 (초기 세션 목록) 수신
-            # body_iterator는 dict 형태의 이벤트를 yield
             first_event = await gen.__anext__()
 
             # 이벤트 검증 - dict 형태: {"event": "...", "data": "..."}
@@ -350,19 +361,32 @@ class TestSessionsStreamEventGenerator:
             assert len(data["sessions"]) == 2
             assert data["sessions"][0]["agent_session_id"] in ["sess-001", "sess-002"]
 
+            # 라우터→서비스 위임 시 limit 인자 전달 경로 검증 (code-reviewer P2 보강)
+            # api/sessions.py의 sessions_stream은 무인자 호출 → service 기본값 limit=0 적용
+            mock_task_manager.get_all_sessions.assert_awaited_with(offset=0, limit=0)
+
             # 제너레이터 명시적 종료 (finally 블록 실행)
             await gen.aclose()
 
     @pytest.mark.asyncio
     async def test_broadcast_event_received(self, mock_task_manager, real_session_broadcaster):
-        """브로드캐스트된 이벤트가 스트림으로 전송되어야 한다"""
+        """브로드캐스트된 이벤트가 스트림으로 전송되어야 한다 (260505.15 service 위임 후)"""
         from soul_server.api.sessions import create_sessions_router
-        from sse_starlette.sse import EventSourceResponse
+        from soul_server.service.session_query_service import SessionQueryService
         from soul_server.service.task_models import Task, TaskStatus
+
+        # 실제 SessionQueryService 인스턴스 — get_all_sessions은 mock fixture가 반환하는
+        # API shape dict 리스트를 그대로 돌려주도록 override (mock fixture는 raw DB row가
+        # 아니라 이미 변환된 dict를 반환하므로 _build_session_dict를 우회한다).
+        real_query_svc = SessionQueryService.__new__(SessionQueryService)
+        real_query_svc._db = MagicMock()
+        real_query_svc._tasks = mock_task_manager._tasks
+        real_query_svc.get_all_sessions = mock_task_manager.get_all_sessions
 
         with (
             patch("soul_server.api.sessions.get_task_manager", return_value=mock_task_manager),
-            patch("soul_server.api.sessions.get_session_broadcaster", return_value=real_session_broadcaster),
+            patch("soul_server.api.sessions.get_session_query_service", return_value=real_query_svc),
+            patch("soul_server.service.session_broadcaster.get_session_broadcaster", return_value=real_session_broadcaster),
         ):
             router = create_sessions_router()
 
@@ -403,13 +427,23 @@ class TestSessionsStreamEventGenerator:
 
     @pytest.mark.asyncio
     async def test_listener_cleanup_on_close(self, mock_task_manager, real_session_broadcaster):
-        """제너레이터 종료 시 리스너가 정리되어야 한다"""
+        """제너레이터 종료 시 리스너가 정리되어야 한다 (260505.15 service 위임 후)"""
         from soul_server.api.sessions import create_sessions_router
+        from soul_server.service.session_query_service import SessionQueryService
         from soul_server.service.task_models import Task, TaskStatus
+
+        # 실제 SessionQueryService 인스턴스 — get_all_sessions은 mock fixture가 반환하는
+        # API shape dict 리스트를 그대로 돌려주도록 override (mock fixture는 raw DB row가
+        # 아니라 이미 변환된 dict를 반환하므로 _build_session_dict를 우회한다).
+        real_query_svc = SessionQueryService.__new__(SessionQueryService)
+        real_query_svc._db = MagicMock()
+        real_query_svc._tasks = mock_task_manager._tasks
+        real_query_svc.get_all_sessions = mock_task_manager.get_all_sessions
 
         with (
             patch("soul_server.api.sessions.get_task_manager", return_value=mock_task_manager),
-            patch("soul_server.api.sessions.get_session_broadcaster", return_value=real_session_broadcaster),
+            patch("soul_server.api.sessions.get_session_query_service", return_value=real_query_svc),
+            patch("soul_server.service.session_broadcaster.get_session_broadcaster", return_value=real_session_broadcaster),
         ):
             router = create_sessions_router()
 

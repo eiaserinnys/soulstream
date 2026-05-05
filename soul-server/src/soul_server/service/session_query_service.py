@@ -10,8 +10,10 @@ _tasks dict 참조 공유 설계 근거:
 - 정본은 TaskManager._tasks이고 SessionQueryService는 읽기 전용 소비자
 """
 
+import asyncio
+import json
 import logging
-from typing import Dict, List, Optional, Union, TYPE_CHECKING
+from typing import AsyncGenerator, Dict, List, Optional, Union, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from soul_server.service.agent_registry import AgentRegistry
@@ -20,6 +22,20 @@ from soul_server.service.task_models import Task, TaskStatus
 from soul_server.service.postgres_session_db import PostgresSessionDB
 
 logger = logging.getLogger(__name__)
+
+
+class InvalidViewportRangeError(ValueError):
+    """y_min > y_max 검증 실패. 라우터가 HTTP 400으로 변환한다.
+
+    검증 책임을 service에 응집하여 두 라우터(api/sessions.py,
+    dashboard/routes/sessions.py)의 viewport 핸들러가 동일한 도메인 예외만
+    HTTPException으로 변환하면 되도록 한다.
+    """
+
+    def __init__(self, y_min: int, y_max: int):
+        self.y_min = y_min
+        self.y_max = y_max
+        super().__init__(f"y_min ({y_min}) must be <= y_max ({y_max})")
 
 
 def _build_session_dict(
@@ -159,6 +175,100 @@ class SessionQueryService:
     async def get_all_folders(self) -> list[dict]:
         """모든 폴더 목록을 반환한다."""
         return await self._db.get_all_folders()
+
+    # === viewport / messages / stream — 미러링 핸들러 dedupe (260505.15) ===
+
+    async def read_viewport(self, session_id: str, y_min: int, y_max: int) -> dict:
+        """뷰포트 영역과 겹치는 이벤트 + 세션 전체 높이.
+
+        api/sessions.py의 GET /sessions/{id}/events/viewport와
+        dashboard/routes/sessions.py의 동명 핸들러가 호출하는 정본.
+
+        Returns:
+            {"events": [...], "total_subtree_height": int}
+
+        Raises:
+            InvalidViewportRangeError: y_min > y_max.
+        """
+        if y_min > y_max:
+            raise InvalidViewportRangeError(y_min, y_max)
+        events = await self._db.read_viewport(session_id, y_min, y_max)
+        total = await self._db.read_total_subtree_height(session_id)
+        return {"events": events, "total_subtree_height": total}
+
+    async def read_messages(
+        self,
+        session_id: str,
+        before: Optional[str] = None,
+        limit: int = 50,
+    ) -> dict:
+        """메시지 페이지네이션 조회.
+
+        api/sessions.py의 GET /sessions/{id}/messages와
+        dashboard/routes/sessions.py의 동명 핸들러가 호출하는 정본.
+
+        Returns:
+            {"messages": [...], "next_cursor": str | None}
+        """
+        messages, next_cursor = await self._db.read_messages(
+            session_id, before=before, limit=limit,
+        )
+        return {"messages": messages, "next_cursor": next_cursor}
+
+    async def stream_session_list_events(
+        self,
+        *,
+        limit: int = 0,
+    ) -> AsyncGenerator[dict, None]:
+        """세션 목록 변경 SSE generator.
+
+        api/sessions.py의 GET /sessions/stream과 dashboard/routes/sessions.py의
+        GET /api/sessions/stream가 공유하는 정본.
+
+        Args:
+            limit: 초기 session_list 페이지 크기. 0이면 전체 (get_all_sessions
+                기본값과 동일). api/sessions.py 라우터는 무인자 호출(전체),
+                dashboard 라우터는 limit=Query(50, ge=0)로 50건 페이지.
+
+        Yields:
+            EventSourceResponse가 받는 dict — `{"event", "data"}` 또는
+            `{"comment": "keepalive"}`.
+
+        broadcaster는 lazy 호출 — 기존 두 핸들러(api/sessions.py sessions_stream과
+        dashboard/routes/sessions.py api_sessions_stream)가 모두 event_generator
+        클로저 안에서 get_session_broadcaster()를 호출하던 패턴을 그대로 이관한다.
+        모듈 레벨 import는 import 사이클 위험이 있어 함수 body에 둔다.
+        """
+        from soul_server.service.session_broadcaster import get_session_broadcaster
+
+        sessions, total = await self.get_all_sessions(offset=0, limit=limit)
+        yield {
+            "event": "session_list",
+            "data": json.dumps(
+                {"type": "session_list", "sessions": sessions, "total": total},
+                ensure_ascii=False, default=str,
+            ),
+        }
+
+        session_broadcaster = get_session_broadcaster()
+        event_queue = session_broadcaster.add_client()
+        try:
+            while True:
+                try:
+                    item = await asyncio.wait_for(event_queue.get(), timeout=30.0)
+                    # disconnect_all sentinel — None 수신 시 종료
+                    if item is None:
+                        break
+                    # Phase 1: SSE id 필드는 미사용. _eid는 Phase 2에서 사용.
+                    _eid, event = item
+                    yield {
+                        "event": event.get("type", "unknown"),
+                        "data": json.dumps(event, ensure_ascii=False, default=str),
+                    }
+                except asyncio.TimeoutError:
+                    yield {"comment": "keepalive"}
+        finally:
+            session_broadcaster.remove_client(event_queue)
 
 
 # === 싱글턴 접근자 ===
