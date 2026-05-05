@@ -44,7 +44,7 @@ def build_hooks(
     Args:
         compact_events: 컴팩션 이벤트 추적 리스트. None이면 PreCompact 훅 생략.
         event_queue: 서브에이전트 이벤트를 저장할 큐.
-            ClaudeRunner._drain_events()가 소비한다.
+            ReceiveLoop._drain_pending_events() 또는 ClaudeRunner._drain_events()가 소비한다.
 
     Returns:
         hooks dict 또는 None (등록할 훅이 없을 때)

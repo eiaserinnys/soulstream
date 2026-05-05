@@ -1558,7 +1558,7 @@ class TestCompactRetryHangFix:
             return options, stderr_f
 
         # timeout을 짧게 설정하여 테스트 빠르게 완료
-        with patch("soul_server.claude.agent_runner.COMPACT_RETRY_READ_TIMEOUT", 0.1):
+        with patch("soul_server.claude.receive_loop.COMPACT_RETRY_READ_TIMEOUT", 0.1):
             with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
                 with patch.object(runner, "_build_options", patched_build):
                     with patch.object(runner, "_is_cli_alive", return_value=True):
@@ -2262,7 +2262,7 @@ class TestInterventionPollingParallel:
         with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             with patch("soul_server.claude.message_processor.SystemMessage", MockSystemMessage):
                 with patch("soul_server.claude.message_processor.ResultMessage", MockResultMessage):
-                    with patch("soul_server.claude.agent_runner.INTERVENTION_POLL_INTERVAL", 0.3):
+                    with patch("soul_server.claude.receive_loop.INTERVENTION_POLL_INTERVAL", 0.3):
                         result = await runner.run(
                             "테스트", on_intervention=on_intervention
                         )
