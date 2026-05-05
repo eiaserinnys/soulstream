@@ -320,10 +320,10 @@ class TestAutoResumeAttachments:
             assert result["auto_resumed"] is True
             # create_task 호출 시 attachment_paths 전달 검증
             mock_create.assert_called_once()
-            call_kwargs = mock_create.call_args.kwargs
-            assert call_kwargs["attachment_paths"] == att_paths
+            params = mock_create.call_args.args[0]
+            assert params.attachment_paths == att_paths
             # extra_context_items에 attached_files 항목 포함 검증
-            extra_ctx = call_kwargs.get("extra_context_items")
+            extra_ctx = params.extra_context_items
             assert extra_ctx is not None
             assert len(extra_ctx) == 1
             assert extra_ctx[0]["key"] == "attached_files"

@@ -46,6 +46,7 @@ from .protocol import (
 )
 
 from soul_server.service.session_query_service import get_session_query_service
+from soul_server.service.task_manager import CreateTaskParams
 
 if TYPE_CHECKING:
     from soul_server.service.engine_adapter import SoulEngineAdapter
@@ -174,7 +175,7 @@ class CommandDispatcher:
     async def _handle_create_session(self, cmd: dict) -> None:
         """세션 생성 명령 처리."""
         try:
-            task = await self._tm.create_task(
+            task = await self._tm.create_task(CreateTaskParams(
                 prompt=cmd["prompt"],
                 agent_session_id=cmd.get("agentSessionId"),
                 allowed_tools=cmd.get("allowedTools"),
@@ -190,7 +191,7 @@ class CommandDispatcher:
                 caller_session_id=cmd.get("caller_session_id"),
                 caller_info=cmd.get("caller_info"),
                 model=cmd.get("model"),
-            )
+            ))
         except ValueError as e:
             await self._send_error(str(e), request_id=cmd.get("requestId", ""))
             return

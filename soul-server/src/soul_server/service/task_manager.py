@@ -39,6 +39,7 @@ from soul_server.service.postgres_session_db import PostgresSessionDB
 from soul_server.service.session_broadcaster import get_session_broadcaster
 from soul_server.service.session_eviction_manager import SessionEvictionManager
 from soul_server.service.session_query_service import init_session_query_service
+from soul_server.service.task_factory import CreateTaskParams, TaskFactory
 from soul_server.util.attachment_helpers import build_attachment_context_items
 
 # Re-export for backward compatibility
@@ -50,6 +51,7 @@ __all__ = [
     "TaskNotRunningError",
     "NodeMismatchError",
     "TaskManager",
+    "CreateTaskParams",
     "task_manager",
     "get_task_manager",
     "set_task_manager",
@@ -158,6 +160,16 @@ class TaskManager:
 
         # 세션 조회 서비스 싱글턴 초기화
         init_session_query_service(self._db, self._tasks)
+
+        # 세션 생성/재개 팩토리 (executor와 같은 DI 패턴)
+        self._task_factory = TaskFactory(
+            session_db=session_db,
+            tasks=self._tasks,
+            lock=self._lock,
+            eviction_manager=self._eviction_manager,
+            agent_registry=self._agent_registry,
+            assign_default_folder=self._assign_default_folder_and_broadcast,
+        )
 
     # === Sub-service property 접근자 ===
 
@@ -501,301 +513,22 @@ class TaskManager:
     # === 세션 조회 → get_session_query_service() 직접 사용 ===
     # (분리됨: get_running_tasks, get_all_sessions, list_sessions_summary, get_all_folders)
 
-    async def _resume_existing_task(
-        self,
-        task: Task,
-        *,
-        prompt: str,
-        client_id: Optional[str],
-        allowed_tools: Optional[List[str]],
-        disallowed_tools: Optional[List[str]],
-        use_mcp: bool,
-        context: Optional[dict],
-        context_items: Optional[List[dict]],
-        model: Optional[str],
-        system_prompt: Optional[str],
-        profile_id: Optional[str],
-        oauth_token: Optional[str],
-        attachment_paths: Optional[List[str]] = None,
-    ) -> None:
-        """완료/에러 상태의 기존 세션을 RUNNING으로 재활성화한다.
-
-        Task 객체의 필드를 in-place로 갱신한다. _lock 안에서 호출되어야 한다.
-        """
-        resume_session_id = task.claude_session_id
-        logger.info(
-            f"Resuming session: {task.agent_session_id} "
-            f"(claude_session={resume_session_id})"
-        )
-
-        # DB에서 기존 metadata 로드 (메모리 퇴거 후 resume 시에도 유지)
-        db_session = await self._db.get_session(task.agent_session_id)
-        if db_session and db_session.get("metadata"):
-            task.metadata = db_session["metadata"]
-
-        # 기존 태스크를 RUNNING으로 재활성화
-        task.prompt = prompt
-        task.status = TaskStatus.RUNNING
-        task.resume_session_id = resume_session_id
-        task.result = None
-        task.error = None
-        task.completed_at = None
-        task.last_progress_text = None
-        task.intervention_queue = asyncio.Queue()
-        task.allowed_tools = allowed_tools
-        task.disallowed_tools = disallowed_tools
-        task.use_mcp = use_mcp
-        task.context = context
-        task.context_items = context_items
-        task.attachment_paths = attachment_paths
-        task.model = model
-        task.system_prompt = system_prompt
-        if profile_id is not None:
-            task.profile_id = profile_id
-        if oauth_token is not None:
-            task.oauth_token = oauth_token
-        if client_id:
-            task.client_id = client_id
-
-        # 퇴거 후보에서 제거
-        self._eviction_manager.unregister(task.agent_session_id)
-
-    async def create_task(
-        self,
-        prompt: str,
-        agent_session_id: Optional[str] = None,
-        client_id: Optional[str] = None,
-        allowed_tools: Optional[List[str]] = None,
-        disallowed_tools: Optional[List[str]] = None,
-        use_mcp: bool = True,
-        context: Optional[dict] = None,
-        context_items: Optional[List[dict]] = None,
-        extra_context_items: Optional[List[dict]] = None,
-        model: Optional[str] = None,
-        folder_id: Optional[str] = None,
-        system_prompt: Optional[str] = None,
-        profile_id: Optional[str] = None,
-        oauth_token: Optional[str] = None,
-        caller_session_id: Optional[str] = None,
-        caller_info: Optional[dict] = None,
-        attachment_paths: Optional[List[str]] = None,
-    ) -> Task:
-        """
-        새 세션 태스크 생성 또는 기존 세션 resume
+    async def create_task(self, params: CreateTaskParams) -> Task:
+        """새 세션 생성 또는 기존 세션 재개. 실 동작은 TaskFactory에 위임.
 
         Args:
-            prompt: 실행할 프롬프트
-            agent_session_id: 세션 식별자 (None이면 서버가 생성, 제공하면 resume)
-            client_id: 클라이언트 식별자 (메타데이터)
-            allowed_tools: 허용 도구 목록
-            disallowed_tools: 금지 도구 목록
-            use_mcp: MCP 서버 연결 여부
-            context: 구조화된 맥락 (dict, StructuredContext.model_dump() 결과)
-            context_items: StructuredContext.items에서 추출한 맥락 항목 (Pydantic 검증 완료)
-            extra_context_items: 클라이언트가 직접 전달한 추가 맥락 항목 (raw dict)
-            folder_id: 세션을 배치할 폴더 ID (None이면 session_type 기반 자동 배정)
-            system_prompt: Claude API system 파라미터로 전달할 시스템 프롬프트
-            profile_id: 에이전트 프로필 ID (AgentRegistry에서 유효성 검사)
-            oauth_token: 세션별 OAuth 토큰 직접 지정 (없으면 .env / OS env에서 폴백)
-            caller_session_id: 발신 세션 ID (완료 시 자동 보고 대상)
-            caller_info: 발신자 정보 dict. 신규 세션에만 적용되며 Task.caller_info에 설정됨과
-                동시에 DB metadata에 {"type":"caller_info","value":caller_info} 엔트리로 영속화된다.
-                재개(resume) 경로는 이미 caller_info를 보유하므로 수용하지 않는다.
+            params: CreateTaskParams 인스턴스 (필드 의미는 dataclass 정의 참조).
 
         Returns:
-            Task: 생성되거나 재활성화된 태스크
+            Task: 생성되거나 재활성화된 태스크.
 
         Raises:
-            TaskConflictError: 해당 세션에 이미 running 태스크가 존재
-            ValueError: 존재하지 않는 profile_id가 지정된 경우
+            TaskConflictError: 해당 세션에 이미 running 태스크가 존재.
+            NodeMismatchError: 다른 노드 소속 세션의 resume 시도.
+            ValueError: 존재하지 않는 profile_id가 지정된 경우.
         """
-        # profile_id 유효성 검사 (registry가 있을 때만)
-        if profile_id is not None and self._agent_registry is not None:
-            if not self._agent_registry.has(profile_id):
-                raise ValueError(f"존재하지 않는 에이전트 프로필: {profile_id}")
-
-        # 두 소스 병합: StructuredContext.items + 클라이언트 직접 전달분
-        merged = (context_items or []) + (extra_context_items or [])
-        effective_context_items = merged or None
-
-        is_resume = agent_session_id is not None
-
-        if not is_resume:
-            agent_session_id = generate_agent_session_id()
-
-        async with self._lock:
-            existing = self._tasks.get(agent_session_id)
-
-            # 퇴거된 세션의 resume 지원: _tasks에 없으면 카탈로그/저장소에서 복원
-            if not existing and is_resume:
-                existing = await self._eviction_manager.load_evicted_task(self._db, agent_session_id)
-                if existing:
-                    # 다른 노드 소속 세션은 이 노드에서 resume 불가
-                    session_node_id = existing.node_id
-                    if session_node_id is not None and session_node_id != self._db.node_id:
-                        raise NodeMismatchError(session_node_id, self._db.node_id)
-                    self._tasks[agent_session_id] = existing
-                    logger.info(f"Restored evicted session for resume: {agent_session_id}")
-
-            if existing:
-                if existing.status == TaskStatus.RUNNING:
-                    raise TaskConflictError(f"Session already running: {agent_session_id}")
-
-                await self._resume_existing_task(
-                    existing,
-                    prompt=prompt,
-                    client_id=client_id,
-                    allowed_tools=allowed_tools,
-                    disallowed_tools=disallowed_tools,
-                    use_mcp=use_mcp,
-                    context=context,
-                    context_items=effective_context_items,
-                    model=model,
-                    system_prompt=system_prompt,
-                    profile_id=profile_id,
-                    oauth_token=oauth_token,
-                    attachment_paths=attachment_paths,
-                )
-                task = existing
-                is_new = False
-            else:
-                task = self._create_new_task_locked(
-                    agent_session_id=agent_session_id,
-                    prompt=prompt,
-                    client_id=client_id,
-                    allowed_tools=allowed_tools,
-                    disallowed_tools=disallowed_tools,
-                    use_mcp=use_mcp,
-                    context=context,
-                    context_items=effective_context_items,
-                    model=model,
-                    system_prompt=system_prompt,
-                    profile_id=profile_id,
-                    oauth_token=oauth_token,
-                    caller_session_id=caller_session_id,
-                    caller_info=caller_info,
-                    attachment_paths=attachment_paths,
-                )
-                is_new = True
-
-        if is_new:
-            await self._register_new_session_async(task, folder_id)
-        else:
-            await self._resume_task(task, prompt=prompt, client_id=task.client_id)
-
+        task, _ = await self._task_factory.create_or_resume(params)
         return task
-
-    def _create_new_task_locked(
-        self,
-        *,
-        agent_session_id: str,
-        prompt: str,
-        client_id: Optional[str],
-        allowed_tools: Optional[List[str]],
-        disallowed_tools: Optional[List[str]],
-        use_mcp: bool,
-        context: Optional[dict],
-        context_items: Optional[List[dict]],
-        model: Optional[str],
-        system_prompt: Optional[str],
-        profile_id: Optional[str],
-        oauth_token: Optional[str],
-        caller_session_id: Optional[str],
-        caller_info: Optional[dict] = None,
-        attachment_paths: Optional[List[str]] = None,
-    ) -> Task:
-        """신규 Task 생성 + _tasks 등록. create_task의 락 보유 상태에서 호출된다."""
-        task = Task(
-            agent_session_id=agent_session_id,
-            prompt=prompt,
-            client_id=client_id,
-            allowed_tools=allowed_tools,
-            disallowed_tools=disallowed_tools,
-            use_mcp=use_mcp,
-            context=context,
-            context_items=context_items,
-            model=model,
-            system_prompt=system_prompt,
-            profile_id=profile_id,
-            oauth_token=oauth_token,
-            caller_session_id=caller_session_id,
-            caller_info=caller_info,
-        )
-        task.attachment_paths = attachment_paths
-        self._tasks[agent_session_id] = task
-        logger.info(f"Created new session: {agent_session_id}")
-        return task
-
-    async def _register_new_session_async(
-        self,
-        task: Task,
-        folder_id: Optional[str],
-    ) -> None:
-        """신규 세션의 락 외부 후속 처리.
-
-        node_id 설정 → DB pending 행 INSERT → 폴더 배정/catalog_updated 브로드캐스트
-        → session_created 이벤트 발행 순서로 진행한다.
-        """
-        agent_session_id = task.agent_session_id
-        task.node_id = self._db.node_id
-        # 신규 세션: 즉시 pending 행 INSERT (claude_session_id=NULL)
-        # events 테이블 FK 위반 방지 — register_session() 이전에도 events 기록 가능.
-        await self._db.register_session_initial(
-            session_id=agent_session_id,
-            node_id=self._db.node_id,
-            agent_id=task.profile_id,
-            claude_session_id=None,  # pending; register_session()에서 set_claude_session_id()로 설정
-            session_type=task.session_type,
-            prompt=task.prompt,
-            client_id=task.client_id,
-            status=TaskStatus.RUNNING.value,
-            created_at=task.created_at,
-            caller_session_id=task.caller_session_id,
-        )
-        # caller_info를 Task.metadata와 DB에 동시 저장
-        # (session_created 이벤트 전 타이밍 — SSE 브로드캐스트 금지. 고수준 append_session_metadata 사용 시
-        #  metadata_updated/session_updated가 session_created보다 먼저 발행되어 클라이언트가 혼동한다.)
-        if task.caller_info:
-            entry = {"type": "caller_info", "value": task.caller_info}
-            task.metadata.append(entry)
-            await self._db.append_metadata(agent_session_id, entry)
-        # 폴더 배정 + catalog_updated 브로드캐스트
-        # _assign_default_folder_and_broadcast 내부에서 catalog_updated가 발행된다.
-        # 반환된 folder_id를 session_created payload에 포함하여 이벤트 순서 의존성을 제거한다.
-        assigned_folder_id = await self._assign_default_folder_and_broadcast(
-            agent_session_id,
-            task.session_type,
-            folder_id=folder_id,
-        )
-        # catalog_updated 이후 session_created 발행 (순서 보장 — 부가 기능)
-        try:
-            await get_session_broadcaster().emit_session_created(task, folder_id=assigned_folder_id)
-        except Exception:
-            logger.warning(f"Failed to emit session_created for {agent_session_id}", exc_info=True)
-
-    async def _resume_task(
-        self,
-        task: Task,
-        prompt: str,
-        client_id: Optional[str],
-    ) -> None:
-        """재개 세션의 락 외부 후속 처리.
-
-        DB 상태 업데이트 후 session_updated 브로드캐스트(부가 기능 — 실패 시 경고만).
-        """
-        agent_session_id = task.agent_session_id
-        # 재개 세션: 불변 필드를 제외한 상태만 업데이트한다.
-        await self._db.update_session(
-            agent_session_id,
-            status=TaskStatus.RUNNING.value,
-            prompt=prompt,
-            client_id=client_id,
-        )
-        # 재개 세션: 변경 사실을 즉시 브로드캐스트 (부가 기능 — 실패해도 영향 없음)
-        try:
-            await get_session_broadcaster().emit_session_updated(task)
-        except Exception:
-            logger.warning(f"Failed to broadcast session update for {agent_session_id}", exc_info=True)
 
     async def get_task(self, agent_session_id: str) -> Optional[Task]:
         """세션 태스크 조회
@@ -885,13 +618,13 @@ class TaskManager:
         # 완료/에러/중단 → 자동 resume (같은 세션 재활성화)
         extra_ctx = build_attachment_context_items(attachment_paths)
 
-        await self.create_task(
+        await self.create_task(CreateTaskParams(
             prompt=text,
             agent_session_id=agent_session_id,
             client_id=user,
             extra_context_items=extra_ctx,
             attachment_paths=attachment_paths,
-        )
+        ))
 
         return {
             "auto_resumed": True,

@@ -24,6 +24,7 @@ from soul_server.models import (
 )
 from soul_server.service.task_manager import (
     get_task_manager,
+    CreateTaskParams,
     Task,
     TaskConflictError,
     TaskNotFoundError,
@@ -139,7 +140,7 @@ async def execute_task(
 
     # 세션 생성 또는 resume
     try:
-        task = await task_manager.create_task(
+        task = await task_manager.create_task(CreateTaskParams(
             prompt=body.prompt,
             agent_session_id=body.agent_session_id,
             client_id=body.client_id,
@@ -155,7 +156,7 @@ async def execute_task(
             profile_id=body.profile,
             caller_info=caller_info,
             attachment_paths=body.attachment_paths,
-        )
+        ))
     except ValueError as e:
         raise HTTPException(
             status_code=400,

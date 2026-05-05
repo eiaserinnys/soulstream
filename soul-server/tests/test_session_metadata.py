@@ -21,6 +21,7 @@ import pytest
 
 from soul_server.service.task_models import Task, TaskStatus, utc_now, datetime_to_str
 from soul_server.service.postgres_session_db import PostgresSessionDB
+from soul_server.service.task_manager import CreateTaskParams
 
 
 def _make_mock_session_db():
@@ -227,7 +228,7 @@ class TestSessionDBAppendMetadata:
 class TestTaskManagerAppendMetadata:
     @pytest.fixture
     def task_manager(self, db):
-        from soul_server.service.task_manager import TaskManager
+        from soul_server.service.task_manager import TaskManager, CreateTaskParams
         from soul_server.service.session_broadcaster import (
             SessionBroadcaster,
             set_session_broadcaster,
@@ -242,7 +243,7 @@ class TestTaskManagerAppendMetadata:
     @pytest.mark.asyncio
     async def test_append_session_metadata_stores_in_task_and_db(self, task_manager, db):
         """Task.metadata와 DB에 모두 기록"""
-        task = await task_manager.create_task(prompt="test")
+        task = await task_manager.create_task(CreateTaskParams(prompt="test"))
         sid = task.agent_session_id
         # DB 행은 create_task() 시점에 pending INSERT로 생성됨
         await task_manager.register_session("claude-meta-1", sid)
@@ -269,7 +270,7 @@ class TestTaskManagerAppendMetadata:
         """metadata_updated SSE 이벤트 브로드캐스트"""
         from soul_server.service.session_broadcaster import get_session_broadcaster
 
-        task = await task_manager.create_task(prompt="test")
+        task = await task_manager.create_task(CreateTaskParams(prompt="test"))
         sid = task.agent_session_id
         # DB 행은 create_task() 시점에 pending INSERT로 생성됨
         await task_manager.register_session("claude-meta-2", sid)
@@ -317,7 +318,7 @@ class TestTaskManagerAppendMetadata:
 class TestResumeMetadataContinuity:
     @pytest.fixture
     def task_manager(self, db):
-        from soul_server.service.task_manager import TaskManager
+        from soul_server.service.task_manager import TaskManager, CreateTaskParams
         from soul_server.service.session_broadcaster import (
             SessionBroadcaster,
             set_session_broadcaster,
@@ -333,7 +334,7 @@ class TestResumeMetadataContinuity:
     async def test_resume_loads_existing_metadata(self, task_manager, db):
         """resume 시 기존 metadata가 Task에 로드"""
         # 새 세션 생성 + metadata 추가
-        task = await task_manager.create_task(prompt="first")
+        task = await task_manager.create_task(CreateTaskParams(prompt="first"))
         sid = task.agent_session_id
         # DB 행은 create_task() 시점에 pending INSERT로 생성됨
         await task_manager.register_session("claude-resume-1", sid)
@@ -345,7 +346,7 @@ class TestResumeMetadataContinuity:
         await task_manager.finalize_task(sid, result="done")
 
         # resume
-        resumed = await task_manager.create_task(prompt="second", agent_session_id=sid)
+        resumed = await task_manager.create_task(CreateTaskParams(prompt="second", agent_session_id=sid))
 
         # metadata가 유지되어야 함
         assert len(resumed.metadata) == 1
@@ -361,7 +362,7 @@ class TestMCPMetadata:
     @pytest.mark.asyncio
     async def test_get_all_sessions_includes_metadata(self, db):
         """get_all_sessions 반환에 metadata 포함"""
-        from soul_server.service.task_manager import TaskManager
+        from soul_server.service.task_manager import TaskManager, CreateTaskParams
         from soul_server.service.session_broadcaster import (
             SessionBroadcaster,
             set_session_broadcaster,

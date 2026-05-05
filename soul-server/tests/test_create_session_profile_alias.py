@@ -54,8 +54,8 @@ class TestCreateSessionAgentIdAlias:
         """기존 동작: {'agentId': 'seosoyoung'} → profile_id='seosoyoung'."""
         resp = _post_create_session(mock_task_manager, {"prompt": "x", "agentId": "seosoyoung"})
         assert resp.status_code == 201
-        call_kwargs = mock_task_manager.create_task.call_args.kwargs
-        assert call_kwargs["profile_id"] == "seosoyoung"
+        call_kwargs = mock_task_manager.create_task.call_args.args[0]
+        assert call_kwargs.profile_id == "seosoyoung"
 
     def test_profile_alias_accepted(self, mock_task_manager):
         """회귀 방지: {'profile': 'seosoyoung'} → profile_id='seosoyoung'.
@@ -64,8 +64,8 @@ class TestCreateSessionAgentIdAlias:
         """
         resp = _post_create_session(mock_task_manager, {"prompt": "x", "profile": "seosoyoung"})
         assert resp.status_code == 201
-        call_kwargs = mock_task_manager.create_task.call_args.kwargs
-        assert call_kwargs["profile_id"] == "seosoyoung"
+        call_kwargs = mock_task_manager.create_task.call_args.args[0]
+        assert call_kwargs.profile_id == "seosoyoung"
 
     def test_both_keys_agentId_wins(self, mock_task_manager):
         """두 키 동시 전달 시 AliasChoices 순서대로 agentId가 우선 사용된다. 에러 없이 201."""
@@ -73,12 +73,12 @@ class TestCreateSessionAgentIdAlias:
             mock_task_manager, {"prompt": "x", "agentId": "from-agentId", "profile": "from-profile"}
         )
         assert resp.status_code == 201
-        call_kwargs = mock_task_manager.create_task.call_args.kwargs
-        assert call_kwargs["profile_id"] == "from-agentId"
+        call_kwargs = mock_task_manager.create_task.call_args.args[0]
+        assert call_kwargs.profile_id == "from-agentId"
 
     def test_no_agent_id_passes_none(self, mock_task_manager):
         """둘 다 없으면 profile_id=None으로 전달된다 (기존 동작 유지)."""
         resp = _post_create_session(mock_task_manager, {"prompt": "x"})
         assert resp.status_code == 201
-        call_kwargs = mock_task_manager.create_task.call_args.kwargs
-        assert call_kwargs["profile_id"] is None
+        call_kwargs = mock_task_manager.create_task.call_args.args[0]
+        assert call_kwargs.profile_id is None

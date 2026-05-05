@@ -99,8 +99,8 @@ class TestExecuteCallerInfo:
         assert resp.status_code == 200
 
         tm.create_task.assert_awaited_once()
-        call_kwargs = tm.create_task.call_args.kwargs
-        ci = call_kwargs["caller_info"]
+        call_kwargs = tm.create_task.call_args.args[0]
+        ci = call_kwargs.caller_info
         assert ci["source"] == "api"
         assert ci["user_agent"] == "test-client/1.0"
         assert ci["referer"] == "https://orch.example/"
@@ -124,9 +124,9 @@ class TestExecuteCallerInfo:
         assert resp.status_code == 200
 
         tm.create_task.assert_awaited_once()
-        call_kwargs = tm.create_task.call_args.kwargs
-        assert call_kwargs["caller_info"] == supplied
-        assert "parent_session_id" not in call_kwargs["caller_info"]
+        call_kwargs = tm.create_task.call_args.args[0]
+        assert call_kwargs.caller_info == supplied
+        assert "parent_session_id" not in call_kwargs.caller_info
 
     async def test_caller_info_passed_to_create_task_kwarg(self, app_client):
         """caller_info는 task_manager.create_task의 keyword 인자로 전달된다."""
@@ -136,5 +136,5 @@ class TestExecuteCallerInfo:
         assert resp.status_code == 200
 
         tm.create_task.assert_awaited_once()
-        assert "caller_info" in tm.create_task.call_args.kwargs
-        assert tm.create_task.call_args.kwargs["caller_info"] is not None
+        # CreateTaskParams는 17 필드를 항상 가지므로 None 여부로 검사
+        assert tm.create_task.call_args.args[0].caller_info is not None
