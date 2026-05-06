@@ -250,18 +250,27 @@ class TestAwaySummary:
 
 
 class TestPromptSuggestion:
-    """prompt_suggestion (next-prompt hint) 처리 테스트"""
+    """prompt_suggestion (next-prompt hint) 처리 테스트.
+
+    prompt_suggestion은 SystemMessage의 subtype이 아니라 user/assistant/system/result
+    같은 top-level 메시지 타입이다. SDK 본체에 정식 타입이 없어 sdk_patches의
+    parse_message wrapper가 PromptSuggestionMessage 인스턴스로 만든다.
+    여기서는 message_processor가 그 메시지를 PromptSuggestionEngineEvent로 변환하는
+    경로만 검증한다 (parse_message wrapper 자체 테스트는 test_sdk_patches.py 담당).
+    """
 
     @pytest.mark.asyncio
-    async def test_prompt_suggestion_text_key_emits_event(self):
-        """data['text']로 도착하면 PromptSuggestionEngineEvent를 발행한다"""
+    async def test_prompt_suggestion_message_emits_engine_event(self):
+        """PromptSuggestionMessage 인스턴스가 PromptSuggestionEngineEvent를 발행한다"""
+        from soul_server.claude.sdk_patches import PromptSuggestionMessage
         events = []
         on_event = AsyncMock(side_effect=lambda e: events.append(e))
         proc, _ = _make_processor(on_event=on_event)
 
-        msg = MockSystemMessage(
-            subtype="prompt_suggestion",
-            data={"text": "다음으로 무엇을 시도할까요?"},
+        msg = PromptSuggestionMessage(
+            suggestion="다음으로 무엇을 시도할까요?",
+            uuid="abc-123",
+            session_id="sess-1",
         )
         await proc.process(msg)
 
@@ -271,30 +280,19 @@ class TestPromptSuggestion:
         assert event.text == "다음으로 무엇을 시도할까요?"
 
     @pytest.mark.asyncio
-    async def test_prompt_suggestion_suggestion_key_fallback(self):
-        """data['suggestion'] fallback도 동작한다 (SDK 페이로드 키 변형 대비)"""
-        events = []
-        on_event = AsyncMock(side_effect=lambda e: events.append(e))
-        proc, _ = _make_processor(on_event=on_event)
-
-        msg = MockSystemMessage(
-            subtype="prompt_suggestion",
-            data={"suggestion": "테스트를 추가해보세요"},
-        )
-        await proc.process(msg)
-
-        assert len(events) == 1
-        assert events[0].text == "테스트를 추가해보세요"
-
-    @pytest.mark.asyncio
     async def test_prompt_suggestion_does_not_update_session_id(self):
-        """prompt_suggestion은 session_id를 추출하지 않는다 (early return)"""
+        """PromptSuggestionMessage는 session_id를 가지고 있어도 on_session을 발화하지 않는다.
+
+        세션 시작 신호는 SystemMessage(subtype='init') 전용 — prompt_suggestion은
+        turn 직후 메타 신호이므로 session_id 갱신 경로에서 제외.
+        """
+        from soul_server.claude.sdk_patches import PromptSuggestionMessage
         on_session = AsyncMock()
         proc, state = _make_processor(on_session=on_session)
 
-        msg = MockSystemMessage(
-            subtype="prompt_suggestion",
-            data={"text": "tip"},
+        msg = PromptSuggestionMessage(
+            suggestion="tip",
+            session_id="sess-should-not-trigger",
         )
         await proc.process(msg)
 
@@ -302,31 +300,43 @@ class TestPromptSuggestion:
         on_session.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_prompt_suggestion_empty_text_no_event(self):
-        """text/suggestion이 모두 비어있으면 이벤트 미발행"""
+    async def test_prompt_suggestion_empty_no_event(self):
+        """suggestion이 빈 문자열 또는 None이면 이벤트 미발행"""
+        from soul_server.claude.sdk_patches import PromptSuggestionMessage
         on_event = AsyncMock()
         proc, _ = _make_processor(on_event=on_event)
 
-        msg = MockSystemMessage(
-            subtype="prompt_suggestion",
-            data={"text": ""},
-        )
-        await proc.process(msg)
+        await proc.process(PromptSuggestionMessage(suggestion=""))
+        await proc.process(PromptSuggestionMessage(suggestion="   "))  # whitespace-only
 
         on_event.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_prompt_suggestion_callback_error_handled(self):
         """on_event 콜백 예외가 프로세서를 중단시키지 않는다"""
+        from soul_server.claude.sdk_patches import PromptSuggestionMessage
         on_event = AsyncMock(side_effect=RuntimeError("callback failed"))
         proc, state = _make_processor(on_event=on_event)
 
+        await proc.process(PromptSuggestionMessage(suggestion="tip"))
+        # 예외 없이 처리 완료 + msg_count 증가
+        assert state.msg_count == 1
+
+    @pytest.mark.asyncio
+    async def test_system_message_with_prompt_suggestion_subtype_is_noop(self):
+        """과거 잘못된 가정 보호 — SystemMessage(subtype='prompt_suggestion')이 와도
+        PromptSuggestionEngineEvent를 발행하지 않는다. (subtype 분기 제거 회귀 방지)
+        """
+        on_event = AsyncMock()
+        proc, _ = _make_processor(on_event=on_event)
+
         msg = MockSystemMessage(
             subtype="prompt_suggestion",
-            data={"text": "tip"},
+            data={"text": "should be ignored"},
         )
         await proc.process(msg)
-        assert state.msg_count == 1
+
+        on_event.assert_not_awaited()
 
 
 class TestThinkingBlock:

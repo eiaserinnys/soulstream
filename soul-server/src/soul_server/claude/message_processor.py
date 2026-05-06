@@ -76,6 +76,14 @@ class MessageProcessor:
         """단일 메시지를 처리한다."""
         self.msg_state.msg_count += 1
 
+        # PromptSuggestionMessage는 SDK 0.1.74까지 정식 타입이 없어 sdk_patches가
+        # parse_message wrapper에서 만들어 주입한다. upstream PR 머지 후에는 SDK 정식
+        # 타입(claude_agent_sdk.types.PromptSuggestionMessage)으로 교체될 예정.
+        from soul_server.claude.sdk_patches import PromptSuggestionMessage
+        if isinstance(message, PromptSuggestionMessage):
+            await self._handle_prompt_suggestion(message)
+            return
+
         if isinstance(message, SystemMessage):
             await self._handle_system_message(message)
         elif isinstance(message, AssistantMessage):
@@ -111,21 +119,6 @@ class MessageProcessor:
                     logger.warning(f"이벤트 콜백 오류 (AWAY_SUMMARY): {e}")
             return
 
-        # prompt_suggestion 처리: CLI가 turn 직후 emit하는 다음 prompt 후보 (1개)
-        # SDK가 emit하는 데이터 구조: {"text": "..."} 또는 {"suggestion": "..."} — 양쪽 fallback
-        if subtype == "prompt_suggestion":
-            text = (
-                (data.get("text") if isinstance(data, dict) else None)
-                or (data.get("suggestion") if isinstance(data, dict) else None)
-                or ""
-            )
-            if text and self.on_event:
-                try:
-                    await self.on_event(PromptSuggestionEngineEvent(text=text))
-                except Exception as e:
-                    logger.warning(f"이벤트 콜백 오류 (PROMPT_SUGGESTION): {e}")
-            return
-
         # 메인 세션: data['session_id'], 서브에이전트 태스크: 직접 속성 session_id
         session_id = getattr(message, "session_id", None) or (
             data.get("session_id") if data else None
@@ -151,6 +144,21 @@ class MessageProcessor:
                 await self.on_session(self.msg_state.session_id)
             except Exception as e:
                 logger.warning(f"세션 ID 콜백 오류: {e}")
+
+    async def _handle_prompt_suggestion(self, message: Any) -> None:
+        """PromptSuggestionMessage 처리 — turn 직후 다음 prompt 후보를 EngineEvent로 발행.
+
+        CLI가 turn 직후 자동으로 1회 emit하는 top-level 메시지. SDK 본체에 정식 타입이
+        없어 sdk_patches.parse_message wrapper가 PromptSuggestionMessage 인스턴스로
+        만든다. 본 핸들러는 빈 suggestion을 무시하고, on_event 콜백 예외를 격리한다.
+        """
+        suggestion = getattr(message, "suggestion", "") or ""
+        text = suggestion.strip()
+        if text and self.on_event:
+            try:
+                await self.on_event(PromptSuggestionEngineEvent(text=text))
+            except Exception as e:
+                logger.warning(f"이벤트 콜백 오류 (PROMPT_SUGGESTION): {e}")
 
     async def _handle_assistant_message(self, message: Any) -> None:
         """AssistantMessage 처리 — error 필드 감지 및 블록 순회

@@ -102,6 +102,79 @@ async def test_initialize_request_otherwise_intact():
     assert init["promptSuggestions"] is True
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# parse_message wrapper 테스트 — top-level prompt_suggestion 인식
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_parse_message_recognizes_prompt_suggestion_top_level():
+    """type='prompt_suggestion' top-level 메시지를 PromptSuggestionMessage로 변환."""
+    import claude_agent_sdk._internal.message_parser as _msg_parser
+    from soul_server.claude.sdk_patches import PromptSuggestionMessage
+
+    data = {
+        "type": "prompt_suggestion",
+        "suggestion": "다음으로 무엇을 시도해볼까요?",
+        "uuid": "uuid-xyz",
+        "session_id": "sess-42",
+    }
+    result = _msg_parser.parse_message(data)
+    assert isinstance(result, PromptSuggestionMessage)
+    assert result.suggestion == "다음으로 무엇을 시도해볼까요?"
+    assert result.uuid == "uuid-xyz"
+    assert result.session_id == "sess-42"
+
+
+def test_parse_message_handles_missing_suggestion_field():
+    """suggestion 키가 없거나 None이어도 빈 문자열로 fallback (안전성)."""
+    import claude_agent_sdk._internal.message_parser as _msg_parser
+    from soul_server.claude.sdk_patches import PromptSuggestionMessage
+
+    result = _msg_parser.parse_message({"type": "prompt_suggestion"})
+    assert isinstance(result, PromptSuggestionMessage)
+    assert result.suggestion == ""
+
+    result_none = _msg_parser.parse_message(
+        {"type": "prompt_suggestion", "suggestion": None}
+    )
+    assert result_none.suggestion == ""
+
+
+def test_parse_message_passes_through_known_types():
+    """user 같은 기존 type은 원본 parse_message로 흐른다 (회귀 보호)."""
+    import claude_agent_sdk._internal.message_parser as _msg_parser
+    from claude_agent_sdk.types import UserMessage
+
+    result = _msg_parser.parse_message(
+        {
+            "type": "user",
+            "message": {"content": [{"type": "text", "text": "hello"}]},
+            "uuid": "u-1",
+        }
+    )
+    assert isinstance(result, UserMessage)
+
+
+def test_parse_message_unknown_type_still_silent_drop():
+    """prompt_suggestion 외의 unknown type은 여전히 SDK 원본 동작(silent drop)."""
+    import claude_agent_sdk._internal.message_parser as _msg_parser
+
+    result = _msg_parser.parse_message({"type": "completely_unknown_xyz"})
+    assert result is None
+
+
+def test_parse_message_patched_in_internal_client_module():
+    """_internal/client.py가 from .message_parser import parse_message로 캡처한 참조도 갱신.
+
+    sdk_patches.py가 _sdk_client.parse_message에도 직접 set하므로 client 모듈에서
+    호출되는 parse_message가 패치된 함수와 동일해야 한다.
+    """
+    import claude_agent_sdk._internal.client as _sdk_client
+    import claude_agent_sdk._internal.message_parser as _msg_parser
+
+    assert _sdk_client.parse_message is _msg_parser.parse_message
+
+
 @pytest.mark.asyncio
 async def test_send_control_request_restored_after_initialize_exception():
     """initialize 도중 _send_control_request가 예외를 던져도 finally가 원본을 원복한다.
