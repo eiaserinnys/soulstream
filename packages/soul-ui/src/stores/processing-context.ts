@@ -9,7 +9,7 @@ import type { EventTreeNode, EventTreeNodeType, TextNode } from "@shared/types";
 
 // === Tree Change Info ===
 
-/** 트리 변경 유형 — NodeGraph가 전체 재빌드 vs 증분 업데이트를 분기하는 기준 */
+/** 트리 변경 유형 (Phase 2 정리 예정 dead state — 소비자가 모두 제거됨) */
 export type TreeChangeType = 'node-added' | 'node-updated' | 'collapse-toggle' | 'full-rebuild';
 
 export interface TreeChangeInfo {

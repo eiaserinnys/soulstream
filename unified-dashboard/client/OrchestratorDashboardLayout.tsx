@@ -28,10 +28,9 @@ import { useNodes } from "./hooks/useNodes";
 import { useOrchestratorStore } from "./store/orchestrator-store";
 import { orchestratorSessionProvider } from "./providers";
 import {
-  NodeGraph,
+  AskQuestionBanner,
   SessionsTopBar,
   MobileChatHeader,
-  VerticalSplitPane,
   ThemeToggle,
   useSessionProvider,
   useReadPositionSync,
@@ -158,15 +157,7 @@ export function OrchestratorDashboardLayout() {
         ) : (
           <>
             <SessionsTopBar />
-            <VerticalSplitPane
-              className="flex-1 overflow-hidden"
-              top={<FolderContents sessions={sessions} onLoadMore={loadMore} hasMore={hasMore} />}
-              bottom={
-                <div className="flex-1 overflow-hidden h-full bg-muted/50 dark:bg-muted/30">
-                  <NodeGraph />
-                </div>
-              }
-            />
+            <FolderContents sessions={sessions} onLoadMore={loadMore} hasMore={hasMore} />
           </>
         )
       }
@@ -232,6 +223,7 @@ export function OrchestratorDashboardLayout() {
           <ConfigModal open={configOpen} onOpenChange={setConfigOpen} />
           <SearchModal open={searchOpen} onOpenChange={setSearchOpen} />
           <OrchestratorNewSessionModal />
+          <AskQuestionBanner />
         </>
       }
     />

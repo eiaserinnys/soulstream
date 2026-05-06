@@ -2,12 +2,11 @@
  * Session Slice
  *
  * 활성 세션 / 카드·이벤트노드 선택 코어.
- * 세션 전환·해제 시 cross-slice 상태(트리, 콜랩스, UI 탭 등)를 함께 리셋하는 책임은
+ * 세션 전환·해제 시 cross-slice 상태(트리, UI 탭 등)를 함께 리셋하는 책임은
  * `_session-reset.ts`의 `getSessionResetState()` 헬퍼를 통해 한 set() 호출로 묶어 처리한다.
  *
  * 본 슬라이스가 담당하지 않는 영역:
  *   - SSE 이벤트 처리 / 트리 갱신 → event-processing-slice
- *   - 노드 접기·펼치기                → tree-collapse-slice
  *   - 낙관적 세션 prepend            → optimistic-session-slice
  */
 
@@ -17,7 +16,6 @@ import type { InputRequestNodeDef, SessionDetail } from "@shared/types";
 import { clearFlattenTreeCache } from "../../lib/flatten-tree";
 import { getSessionResetState } from "./_session-reset";
 import { getEventProcessingInitialState } from "./event-processing-slice";
-import { getTreeCollapseInitialState } from "./tree-collapse-slice";
 
 export type SessionSlice = Pick<
   DashboardState,
@@ -130,14 +128,13 @@ export const createSessionSlice: StateCreator<
   },
 
   // --- 트리 초기화 ---
-  // event-processing-slice + tree-collapse-slice 소유 필드 + 본 슬라이스의 선택 상태를
-  // 함께 리셋한다. 각 슬라이스의 initial-state factory를 spread하여 정본 일원화 (§3).
+  // event-processing-slice 소유 필드 + 본 슬라이스의 선택 상태를 함께 리셋한다.
+  // 각 슬라이스의 initial-state factory를 spread하여 정본 일원화 (§3).
   // 합성 후 full store에서 cross-slice set 가능 (Zustand 합성 패턴 표준).
   clearTree: () => {
     clearFlattenTreeCache();
     set({
       ...getEventProcessingInitialState(),
-      ...getTreeCollapseInitialState(),
       selectedCardId: null,
       selectedNodeId: null,
       selectedEventNodeData: null,

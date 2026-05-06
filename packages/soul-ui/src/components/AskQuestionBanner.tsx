@@ -1,8 +1,8 @@
 /**
- * AskQuestionBanner - 화면 하단 중앙의 AskUserQuestion 배너
+ * AskQuestionBanner - 화면 상단 중앙의 AskUserQuestion 배너
  *
  * 현재 세션의 트리에서 미응답·미만료 input_request 노드를 찾아
- * NodeGraph 캔버스 위에 absolute로 오버레이 표시합니다.
+ * 화면 상단 중앙에 fixed 오버레이로 표시합니다.
  * 응답 또는 타임아웃 시 배너를 숨기고 트리 상태를 갱신합니다.
  */
 
@@ -75,7 +75,7 @@ function AskQuestionBannerInner({ node, sessionId }: AskQuestionBannerInnerProps
   };
 
   return (
-    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000] bg-background border border-border rounded-xl p-4 min-w-80 max-w-[500px] shadow-lg">
+    <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[1000] bg-background border border-border rounded-xl p-4 min-w-80 max-w-[500px] shadow-lg">
       {isEffectivelyExpired ? (
         <div className="text-center text-muted-foreground">⏱️ 시간 초과</div>
       ) : (

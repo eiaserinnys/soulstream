@@ -2,7 +2,7 @@
  * ThemeToggle - 다크/라이트 모드 전환 버튼
  *
  * useTheme 훅을 통해 테마 상태를 공유합니다.
- * 같은 훅을 사용하는 다른 컴포넌트(NodeGraph 등)도 즉시 반응합니다.
+ * 같은 훅을 사용하는 다른 컴포넌트도 즉시 반응합니다.
  */
 
 import { useCallback } from "react";

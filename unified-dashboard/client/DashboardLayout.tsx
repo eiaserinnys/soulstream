@@ -26,10 +26,9 @@ import { ConfigModal } from "./components/ConfigModal";
 import { SearchModal } from "./components/SearchModal";
 import { useAppConfig } from "./config/AppConfigContext";
 import {
-  NodeGraph,
+  AskQuestionBanner,
   SessionsTopBar,
   MobileChatHeader,
-  VerticalSplitPane,
   ThemeToggle,
   useSessionProvider,
   useReadPositionSync,
@@ -153,15 +152,7 @@ export function DashboardLayout() {
         ) : (
           <>
             <SessionsTopBar />
-            <VerticalSplitPane
-              className="flex-1 overflow-hidden"
-              top={<FolderContents sessions={sessions} onLoadMore={loadMore} hasMore={hasMore} />}
-              bottom={
-                <div className="flex-1 overflow-hidden h-full bg-muted/50 dark:bg-muted/30">
-                  <NodeGraph />
-                </div>
-              }
-            />
+            <FolderContents sessions={sessions} onLoadMore={loadMore} hasMore={hasMore} />
           </>
         )
       }
@@ -221,6 +212,7 @@ export function DashboardLayout() {
           <ConfigModal open={configOpen} onOpenChange={setConfigOpen} />
           <SearchModal open={searchOpen} onOpenChange={setSearchOpen} />
           <NewSessionModal />
+          <AskQuestionBanner />
         </>
       }
     />

@@ -45,8 +45,6 @@ export default defineConfig({
       // soul-ui 소스를 직접 alias로 참조할 때 soul-ui의 peer/deps를 찾을 수 있도록 명시적 alias 추가.
       // pnpm의 node_modules 구조상 Rollup이 packages/soul-ui/node_modules를 자동으로 탐색하지 않음.
       "@base-ui/react": resolve(__dirname, "../packages/soul-ui/node_modules/@base-ui/react"),
-      // @xyflow/react: soul-ui 내 NodeGraph 컴포넌트 빌드 시 필요
-      "@xyflow/react": resolve(__dirname, "../packages/soul-ui/node_modules/@xyflow/react"),
       // @dnd-kit: soul-ui DashboardDndProvider/FolderTree에서 사용
       "@dnd-kit/core": resolve(__dirname, "../packages/soul-ui/node_modules/@dnd-kit/core"),
       "@dnd-kit/sortable": resolve(__dirname, "../packages/soul-ui/node_modules/@dnd-kit/sortable"),

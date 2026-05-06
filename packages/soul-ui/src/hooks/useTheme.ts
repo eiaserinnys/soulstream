@@ -4,8 +4,7 @@
  * <html> 요소의 .dark 클래스를 정본으로 사용하며,
  * useSyncExternalStore로 React 컴포넌트에 반응성을 제공합니다.
  *
- * 이 훅을 통해 ThemeToggle과 NodeGraph(colorMode) 등
- * 테마에 의존하는 모든 컴포넌트가 동기화됩니다.
+ * 이 훅을 통해 테마에 의존하는 모든 컴포넌트가 동기화됩니다.
  */
 
 import { useSyncExternalStore } from "react";

@@ -33,9 +33,6 @@ export { AskQuestionBanner } from "./AskQuestionBanner";
 export { ProfileAvatar } from "./ProfileAvatar";
 export { ContextContentRenderer } from "./ContextContentRenderer";
 
-// === NodeGraph (Execution Flow) ===
-export { NodeGraph } from "./NodeGraph";
-
 // === Dashboard Components (extracted from soul-dashboard) ===
 export { SessionsTopBar } from "./SessionsTopBar";
 export { VerticalSplitPane } from "./VerticalSplitPane";
