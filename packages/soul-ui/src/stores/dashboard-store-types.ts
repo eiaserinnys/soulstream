@@ -132,7 +132,7 @@ export interface DashboardState {
    */
   chatLastPrependAtMs: number | null;
 
-  /** 마지막 트리 변경의 유형 — NodeGraph가 증분 업데이트 vs 전체 재빌드를 분기하는 기준 */
+  /** 마지막 트리 변경의 유형 (Phase 2 정리 예정 dead state) */
   treeChangeInfo: TreeChangeInfo | null;
 
   /** 마지막으로 수신한 이벤트 ID (SSE 재연결용) */
@@ -153,9 +153,6 @@ export interface DashboardState {
 
   /** New Session 모달을 연 진입 경로 ('folder': 폴더 뷰, 'feed': 피드 뷰) */
   newSessionSource: "folder" | "feed";
-
-  /** 접힌 노드 ID 집합 (접기/펼치기 기능) */
-  collapsedNodeIds: Set<string>;
 
   /** 오른쪽 패널 활성 탭 */
   activeRightTab: "detail" | "chat" | "info";
@@ -275,11 +272,6 @@ export interface DashboardActions {
   // 상태 초기화
   clearTree: () => void;
   reset: () => void;
-
-  // 접기/펼치기
-  toggleNodeCollapse: (nodeId: string) => void;
-  setNodeCollapsed: (nodeId: string, collapsed: boolean) => void;
-  clearCollapsedNodes: () => void;
 
   // 오른쪽 패널 탭
   setActiveRightTab: (tab: "detail" | "chat" | "info") => void;

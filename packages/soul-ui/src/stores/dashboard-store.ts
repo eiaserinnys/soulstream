@@ -30,7 +30,6 @@ import { createSelectionSlice } from "./slices/selection-slice";
 import { createDraftSlice } from "./slices/draft-slice";
 import { createSessionSlice } from "./slices/session-slice";
 import { createEventProcessingSlice } from "./slices/event-processing-slice";
-import { createTreeCollapseSlice } from "./slices/tree-collapse-slice";
 import { createOptimisticSessionSlice } from "./slices/optimistic-session-slice";
 import { createPromptSuggestionSlice } from "./slices/prompt-suggestion-slice";
 
@@ -67,7 +66,6 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         ...createDraftSlice(set, get, store),
         ...createSessionSlice(set, get, store),
         ...createEventProcessingSlice(set, get, store),
-        ...createTreeCollapseSlice(set, get, store),
         ...createOptimisticSessionSlice(set, get, store),
         ...createPromptSuggestionSlice(set, get, store),
       };
@@ -81,10 +79,9 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
       return {
         ...slices,
         reset: () => {
-          // collapsedNodeIds, processingCtx는 매번 새 인스턴스로 생성하여 Set/객체 공유 방지
+          // processingCtx는 매번 새 인스턴스로 생성하여 객체 공유 방지
           set({
             ...initialStateSnapshot,
-            collapsedNodeIds: new Set<string>(),
             processingCtx: createProcessingContext(),
           });
         },

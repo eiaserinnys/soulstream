@@ -19,7 +19,6 @@
  */
 
 import { getEventProcessingInitialState } from "./event-processing-slice";
-import { getTreeCollapseInitialState } from "./tree-collapse-slice";
 import { getSessionSliceInitialState } from "./session-slice";
 
 export function getSessionResetState() {
@@ -28,7 +27,6 @@ export function getSessionResetState() {
   return {
     ...sessionPartial,
     ...getEventProcessingInitialState(),
-    ...getTreeCollapseInitialState(),
     activeRightTab: "chat" as const, // ui-slice 소유 — 세션 전환 시 항상 "chat" 리셋이 의도된 동작
   };
 }

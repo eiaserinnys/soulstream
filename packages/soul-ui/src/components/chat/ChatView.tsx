@@ -12,7 +12,7 @@
  * - focusEventId 하이라이트는 `itemsRendered` 콜백에서 `scrollerRef` 범위로 한정한 querySelector로 처리.
  * - 세션 전환은 Virtuoso `key={activeSessionKey}` 재마운트로 처리.
  *
- * Follow mode: NodeGraph 패턴과 동일한 follow/unfollow 토글.
+ * Follow mode: 새 메시지 도착 시 자동 스크롤 follow/unfollow 토글.
  * Tool grouping: 연속된 tool 메시지를 접기/펼치기 그룹으로 묶어 표시.
  */
 

@@ -2,7 +2,7 @@
  * VerticalSplitPane - 상하 분할 패널
  *
  * 두 영역을 상하로 분할하고 드래그 가능한 수평 스플릿 바를 제공한다.
- * 가운데 영역(FolderContents/NodeGraph)과 좌측 사이드바(FolderTree/NodePanel)에서 사용.
+ * 좌측 사이드바(FolderTree/NodePanel)에서 사용.
  *
  * storageKey가 지정되면 localStorage에 분할 비율을 영속화한다.
  * 영속화는 onMouseUp 시점에 1회만 수행 — onMouseMove마다 setItem을 호출하면
