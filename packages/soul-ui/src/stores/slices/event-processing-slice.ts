@@ -127,6 +127,17 @@ export const createEventProcessingSlice: StateCreator<
       state.lastEventId,
     );
 
+    // prompt_suggestion: clear → set 순서. 같은 호출에 둘 다 있을 일은 없지만 일관성 유지.
+    if (result.clearPromptSuggestionFor) {
+      get().clearPromptSuggestion(result.clearPromptSuggestionFor);
+    }
+    if (result.promptSuggestion) {
+      get().setPromptSuggestion(
+        result.promptSuggestion.sessionId,
+        result.promptSuggestion.text,
+      );
+    }
+
     if (result.isHistorySync) {
       set({
         ...(result.newLastEventId > state.lastEventId
@@ -187,6 +198,17 @@ export const createEventProcessingSlice: StateCreator<
     // subtree_update 배치 집계가 있으면 nodeMap에 증분 적용
     if (result.subtreeHeightUpdate) {
       applySubtreeHeightUpdate(state.processingCtx, result.subtreeHeightUpdate);
+    }
+
+    // prompt_suggestion: clear → set 순서. 같은 배치에 둘 다 있을 때 새 값이 정본이 됨.
+    if (result.clearPromptSuggestionFor) {
+      get().clearPromptSuggestion(result.clearPromptSuggestionFor);
+    }
+    if (result.promptSuggestion) {
+      get().setPromptSuggestion(
+        result.promptSuggestion.sessionId,
+        result.promptSuggestion.text,
+      );
     }
 
     set({
@@ -251,6 +273,17 @@ export const createEventProcessingSlice: StateCreator<
 
       if (result.subtreeHeightUpdate) {
         applySubtreeHeightUpdate(state.processingCtx, result.subtreeHeightUpdate);
+      }
+
+      // prompt_suggestion: clear → set 순서. 히스토리 prepend 경로에서도 동일하게 처리.
+      if (result.clearPromptSuggestionFor) {
+        get().clearPromptSuggestion(result.clearPromptSuggestionFor);
+      }
+      if (result.promptSuggestion) {
+        get().setPromptSuggestion(
+          result.promptSuggestion.sessionId,
+          result.promptSuggestion.text,
+        );
       }
 
       const afterGrouped = result.updated

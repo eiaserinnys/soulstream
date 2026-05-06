@@ -14,6 +14,7 @@ import type {
   TextStartEvent,
   HistorySyncEvent,
   SubtreeUpdateSSEEvent,
+  PromptSuggestionEvent,
 } from "@shared/types";
 import {
   type ProcessingContext,
@@ -78,6 +79,10 @@ export interface SingleEventResult {
   isHistorySync: boolean;
   /** subtree_update 이벤트 발생 시 설정됨 — store reducer가 nodeMap·totalSubtreeHeight 증분 적용 */
   subtreeHeightUpdate?: SubtreeHeightUpdate | null;
+  /** prompt_suggestion 이벤트 발생 시 설정됨 — store reducer가 lastPromptSuggestions[sessionId]에 적용 */
+  promptSuggestion?: { sessionId: string; text: string } | null;
+  /** text_start 등 응답 시작 이벤트 발생 시 설정됨 — store reducer가 해당 세션의 suggestion clear */
+  clearPromptSuggestionFor?: string | null;
 }
 
 /**
@@ -115,6 +120,23 @@ export function processEventSingle(
         newTotal: ev.new_total_subtree_height,
         affectedIds: ev.affected_event_ids,
       },
+    };
+  }
+
+  // prompt_suggestion — chip 표시용. 트리에는 들어가지 않음.
+  if (event.type === "prompt_suggestion") {
+    const ev = event as PromptSuggestionEvent;
+    return {
+      root,
+      updated: false,
+      treeChangeInfo: null,
+      statusUpdate: null,
+      notify: false,
+      newLastEventId: eventId > 0 ? eventId : lastEventId,
+      isHistorySync: false,
+      promptSuggestion: activeSessionKey
+        ? { sessionId: activeSessionKey, text: ev.text }
+        : null,
     };
   }
 
@@ -183,6 +205,8 @@ export function processEventSingle(
     notify,
     newLastEventId: eventId,
     isHistorySync: false,
+    clearPromptSuggestionFor:
+      event.type === "text_start" && activeSessionKey ? activeSessionKey : null,
   };
 }
 
@@ -198,6 +222,16 @@ export interface BatchEventResult {
    * subtree_update가 없으면 null.
    */
   subtreeHeightUpdate: SubtreeHeightUpdate | null;
+  /**
+   * 배치 내 마지막 prompt_suggestion (later wins).
+   * 없으면 null.
+   */
+  promptSuggestion: { sessionId: string; text: string } | null;
+  /**
+   * 배치에 text_start가 포함되어 있으면 해당 세션의 chip을 clear할 sessionId.
+   * 없으면 null.
+   */
+  clearPromptSuggestionFor: string | null;
 }
 
 /**
@@ -223,6 +257,10 @@ export function processEventsBatch(
   let latestNewTotal: number | null = null;
   const aggregatedAffectedIds: number[] = [];
 
+  // prompt_suggestion / text_start 추적 — later wins.
+  let promptSuggestion: { sessionId: string; text: string } | null = null;
+  let clearPromptSuggestionFor: string | null = null;
+
   for (const { event, eventId } of events) {
     // Dedup — 라이브 SSE 배치 간 중복만 차단.
     // historyMode prepend는 의도적으로 과거 eventId(< lastEventId)를 처리하므로 우회.
@@ -240,6 +278,21 @@ export function processEventsBatch(
       latestNewTotal = ev.new_total_subtree_height;
       for (const id of ev.affected_event_ids) aggregatedAffectedIds.push(id);
       continue;
+    }
+
+    // prompt_suggestion — chip 표시용. 트리 변경 없음. later wins.
+    if (event.type === "prompt_suggestion") {
+      const ev = event as PromptSuggestionEvent;
+      if (activeSessionKey) {
+        promptSuggestion = { sessionId: activeSessionKey, text: ev.text };
+      }
+      continue;
+    }
+
+    // text_start — 응답 시작 시 chip clear 신호.
+    if (event.type === "text_start" && activeSessionKey) {
+      clearPromptSuggestionFor = activeSessionKey;
+      // text_start는 트리 처리도 필요하므로 continue하지 않는다.
     }
 
     // history_sync
@@ -292,5 +345,14 @@ export function processEventsBatch(
       ? { deltas: aggregatedDeltas, newTotal: latestNewTotal, affectedIds: aggregatedAffectedIds }
       : null;
 
-  return { root, updated, maxEventId, statusUpdates, notifications, subtreeHeightUpdate };
+  return {
+    root,
+    updated,
+    maxEventId,
+    statusUpdates,
+    notifications,
+    subtreeHeightUpdate,
+    promptSuggestion,
+    clearPromptSuggestionFor,
+  };
 }

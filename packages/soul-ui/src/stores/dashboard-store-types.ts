@@ -170,6 +170,11 @@ export interface DashboardState {
    * ⚠️ getSessionResetState()에 포함하지 않는 것이 이 기능의 핵심 — drafts는 세션 전환 시 초기화하지 않는다 */
   drafts: Record<string, string>;
 
+  /** 세션별 마지막 prompt_suggestion 텍스트. SDK가 turn당 1개 emit.
+   * 정본은 서버 EventStore — partialize에 포함하지 않으며, 새로고침 시 history_sync baseline으로 복원된다.
+   * drafts와 같은 정책: getSessionResetState()에 포함하지 않아 세션 전환 시 보존된다. */
+  lastPromptSuggestions: Record<string, string | null>;
+
   /** 검색 결과 클릭 시 스크롤할 이벤트 ID (ChatView가 감지하여 해당 메시지로 스크롤) */
   focusEventId: number | null;
 
@@ -288,6 +293,10 @@ export interface DashboardActions {
   // draft 저장/삭제
   setDraft: (key: string, text: string) => void;
   clearDraft: (key: string) => void;
+
+  // prompt_suggestion (chip) 저장/삭제
+  setPromptSuggestion: (sessionId: string, text: string | null) => void;
+  clearPromptSuggestion: (sessionId: string) => void;
 
   // 검색 포커스 이벤트 ID
   setFocusEventId: (eventId: number | null) => void;

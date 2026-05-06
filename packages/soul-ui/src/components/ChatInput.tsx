@@ -19,6 +19,7 @@ import { PaperclipButton } from "./chat/PaperclipButton";
 import { ChatInputEditor } from "./chat/ChatInputEditor";
 import { useChatInputSend } from "./chat/useChatInputSend";
 import { useTextareaAutoHeight } from "./chat/useTextareaAutoHeight";
+import { SuggestionChip } from "./SuggestionChip";
 
 interface ChatInputProps {
   /** 외부에서 주입하는 추가 비활성화 조건 (예: 오케스트레이터에서 노드 dead 상태) */
@@ -43,6 +44,11 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
   const setActiveSession = useDashboardStore((s) => s.setActiveSession);
   const setDraft = useDashboardStore((s) => s.setDraft);
   const clearDraft = useDashboardStore((s) => s.clearDraft);
+  // store-only selector — closure 외부 의존 0 (정본 하나).
+  // primitive 반환이라 reference equality 안전.
+  const lastSuggestion = useDashboardStore((s) =>
+    s.activeSessionKey ? (s.lastPromptSuggestions[s.activeSessionKey] ?? null) : null,
+  );
 
   // 세션 상태 파생값
   const status = activeSessionSummary?.status ?? null;
@@ -151,6 +157,24 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
             />
           ))}
         </div>
+      )}
+
+      {/* prompt_suggestion chip — turn 직후 SDK가 제안한 다음 prompt 후보.
+          가드: !isOtherNodeSession(다른 노드 세션은 입력 자체 불가) + !sending(전송 중 새 turn 시작 불가).
+          isDisabled는 의도적으로 사용하지 않는다 — chip의 본질은 "비어있는 입력창에 채우기"이므로
+          !text.trim() 가드가 들어가면 chip이 사라진다.
+          짧은 탭 → setText, 1초 롱프레스 → 즉시 send. clear는 응답 시작(text_start) 시 자동. */}
+      {lastSuggestion && !isOtherNodeSession && !sending && (
+        <SuggestionChip
+          text={lastSuggestion}
+          onShortTap={(t) => {
+            setText(t);
+            if (activeSessionKey) setDraft(activeSessionKey, t);
+          }}
+          onSendImmediate={async (t) => {
+            await send(t);
+          }}
+        />
       )}
 
       <div className="flex gap-2">

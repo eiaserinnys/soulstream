@@ -35,6 +35,7 @@ export type SSEEventType =
   | "tool_result"
   | "result"
   | "away_summary"
+  | "prompt_suggestion"
   // 서브에이전트 이벤트
   | "subagent_start"
   | "subagent_stop"
@@ -268,6 +269,14 @@ export interface AwaySummaryEvent {
   parent_event_id?: string;
 }
 
+/** prompt_suggestion 이벤트 — 다음 prompt 후보 (turn 직후, 1개) */
+export interface PromptSuggestionEvent {
+  type: "prompt_suggestion";
+  timestamp: number;
+  text: string;
+  parent_event_id?: string;
+}
+
 /** 서브에이전트 시작 이벤트 */
 export interface SubagentStartEvent {
   type: "subagent_start";
@@ -402,6 +411,7 @@ export type SoulSSEEvent =
   | HistorySyncEvent
   | AssistantMessageEvent
   | AwaySummaryEvent
+  | PromptSuggestionEvent
   | SubtreeUpdateSSEEvent;
 
 // === Dashboard SSE Event (서버 → 클라이언트) ===
