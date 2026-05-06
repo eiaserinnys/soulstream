@@ -128,7 +128,7 @@ def _make_mock_client(*messages):
         for msg in messages:
             yield msg
 
-    mock_client.receive_response = mock_receive
+    mock_client.receive_messages = mock_receive
     return mock_client
 
 

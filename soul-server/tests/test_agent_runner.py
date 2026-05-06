@@ -79,7 +79,7 @@ def _make_mock_client(*messages):
         for msg in messages:
             yield msg
 
-    mock_client.receive_response = mock_receive
+    mock_client.receive_messages = mock_receive
     return mock_client
 
 
@@ -610,7 +610,7 @@ class TestRateLimitEventHandling:
                 # CLI가 자체 대기 후 정상 종료
                 raise StopAsyncIteration
 
-        mock_client.receive_response = MagicMock(return_value=RateLimitThenStop())
+        mock_client.receive_messages = MagicMock(return_value=RateLimitThenStop())
 
         with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             result = await runner.run("테스트")
@@ -713,7 +713,7 @@ class TestRateLimitEventHandling:
                     )
                 raise StopAsyncIteration
 
-        mock_client.receive_response = MagicMock(return_value=WarningThenText())
+        mock_client.receive_messages = MagicMock(return_value=WarningThenText())
 
         with patch("soul_server.claude.client_lifecycle.InstrumentedClaudeClient", return_value=mock_client):
             result = await runner.run("테스트")
@@ -1374,10 +1374,10 @@ class TestCompactRetryHangFix:
         mock_client.disconnect = AsyncMock()
 
         # compact 이벤트가 발생하지만 ResultMessage도 같이 수신되는 시나리오
-        mock_client.receive_response = MagicMock(return_value=_make_mock_client(
+        mock_client.receive_messages = MagicMock(return_value=_make_mock_client(
             MockAssistantMessage(content=[MockTextBlock(text="응답 텍스트")]),
             MockResultMessage(result="최종 결과", session_id="test"),
-        ).receive_response())
+        ).receive_messages())
 
         original_build = runner._build_options
 
@@ -1403,8 +1403,8 @@ class TestCompactRetryHangFix:
         # compact 발생했지만 결과가 있으므로 retry 없이 성공
         assert result.success is True
         assert result.output == "최종 결과"
-        # receive_response가 1번만 호출됨 (retry 없음)
-        mock_client.receive_response.assert_called_once()
+        # receive_messages가 1번만 호출됨 (retry 없음)
+        mock_client.receive_messages.assert_called_once()
 
     async def test_retry_skipped_when_cli_dead(self):
         """[B] CLI 프로세스 종료 시 retry 생략 + [C] fallback 텍스트 복원"""
@@ -1416,7 +1416,7 @@ class TestCompactRetryHangFix:
         mock_client.query = AsyncMock()
         mock_client.disconnect = AsyncMock()
 
-        # 1차 receive_response: 텍스트 없이 StopAsyncIteration
+        # 1차 receive_messages: 텍스트 없이 StopAsyncIteration
         # (compact 직후, TextBlock 수신 전 CLI 종료 시나리오)
         call_count = 0
 
@@ -1426,7 +1426,7 @@ class TestCompactRetryHangFix:
             async def __anext__(self):
                 raise StopAsyncIteration
 
-        mock_client.receive_response = MagicMock(return_value=EmptyResponse())
+        mock_client.receive_messages = MagicMock(return_value=EmptyResponse())
 
         original_build = runner._build_options
 
@@ -1448,8 +1448,8 @@ class TestCompactRetryHangFix:
 
         # CLI 종료 → retry 생략 → 무한 대기 없이 종료
         assert result.success is True
-        # receive_response가 1번만 호출됨 (retry 안 함)
-        mock_client.receive_response.assert_called_once()
+        # receive_messages가 1번만 호출됨 (retry 안 함)
+        mock_client.receive_messages.assert_called_once()
 
     async def test_retry_skipped_cli_dead_with_fallback(self):
         """[B+C] CLI 종료 시 collected_messages에서 fallback 텍스트 복원"""
@@ -1479,7 +1479,7 @@ class TestCompactRetryHangFix:
                     return MockAssistantMessage(content=[MockTextBlock(text="작업 중간 텍스트")])
                 raise StopAsyncIteration
 
-        mock_client.receive_response = MagicMock(return_value=TextThenStop())
+        mock_client.receive_messages = MagicMock(return_value=TextThenStop())
 
         original_build = runner._build_options
 
@@ -1545,7 +1545,7 @@ class TestCompactRetryHangFix:
             # 2차(retry): 영원히 대기 → timeout이 구해줌
             return HangForever()
 
-        mock_client.receive_response = mock_receive
+        mock_client.receive_messages = mock_receive
 
         original_build = runner._build_options
 
@@ -2241,7 +2241,7 @@ class TestInterventionPollingParallel:
         mock_client = AsyncMock()
         mock_client.connect = AsyncMock()
         mock_client.disconnect = AsyncMock()
-        mock_client.receive_response = SlowMessageStream
+        mock_client.receive_messages = SlowMessageStream
 
         async def mock_query(text):
             query_calls.append(text)

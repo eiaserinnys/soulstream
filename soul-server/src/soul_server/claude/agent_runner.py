@@ -545,11 +545,11 @@ class ClaudeRunner:
             await client.query(prompt)
 
             # Compact retry 외부 루프:
-            # receive_response()는 ResultMessage에서 즉시 return하므로,
-            # autocompact가 현재 턴의 ResultMessage를 발생시키면
-            # compact 후의 응답을 수신하지 못함.
-            # compact 이벤트가 감지되면 receive_response()를 재호출하여
-            # post-compact 응답을 계속 수신.
+            # _receive_loop.run()은 ResultMessage 후 짧은 prompt_suggestion drain phase를
+            # 거쳐 명시적 return한다 (receive_loop.py PROMPT_SUGGESTION_DRAIN_TIMEOUT).
+            # autocompact가 현재 턴의 ResultMessage를 발생시키면 compact 후의 응답을
+            # 수신하지 못하므로, compact 이벤트가 감지되면 _receive_loop.run()을 재호출하여
+            # post-compact 응답을 계속 수신한다.
             while True:
                 before = compact_handler.snapshot()
 
