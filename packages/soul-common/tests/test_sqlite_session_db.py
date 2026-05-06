@@ -180,6 +180,45 @@ class TestReadEvents:
         assert events[0]["event_type"] == "text_delta"
 
 
+class TestReadLastEventOfType:
+    """read_last_event_of_type: 특정 type의 마지막 이벤트 조회 (prompt_suggestion baseline 복원용)"""
+
+    async def test_returns_none_when_empty(self, db: SqliteSessionDB):
+        await db.upsert_session("sess-empty", status="running")
+        result = await db.read_last_event_of_type("sess-empty", "prompt_suggestion")
+        assert result is None
+
+    async def test_returns_none_when_type_absent(self, db: SqliteSessionDB):
+        await db.upsert_session("sess-no-match", status="running")
+        await db.append_event("sess-no-match", "text_delta", "{}", "", "2024-01-01T00:00:00+00:00")
+        result = await db.read_last_event_of_type("sess-no-match", "prompt_suggestion")
+        assert result is None
+
+    async def test_returns_last_match_among_multiple(self, db: SqliteSessionDB):
+        await db.upsert_session("sess-multi", status="running")
+        await db.append_event("sess-multi", "prompt_suggestion", '{"text":"first"}', "first", "2024-01-01T00:00:00+00:00")
+        await db.append_event("sess-multi", "text_delta", "{}", "", "2024-01-01T00:00:01+00:00")
+        await db.append_event("sess-multi", "prompt_suggestion", '{"text":"latest"}', "latest", "2024-01-01T00:00:02+00:00")
+
+        result = await db.read_last_event_of_type("sess-multi", "prompt_suggestion")
+        assert result is not None
+        assert result["event_type"] == "prompt_suggestion"
+        # payload는 JSON 문자열로 저장됨 (mock_db 패턴과 동일)
+        import json
+        payload = json.loads(result["payload"]) if isinstance(result["payload"], str) else result["payload"]
+        assert payload["text"] == "latest"
+
+    async def test_isolates_by_session_id(self, db: SqliteSessionDB):
+        await db.upsert_session("sess-A", status="running")
+        await db.upsert_session("sess-B", status="running")
+        await db.append_event("sess-A", "prompt_suggestion", '{"text":"A-only"}', "A-only", "2024-01-01T00:00:00+00:00")
+
+        result_A = await db.read_last_event_of_type("sess-A", "prompt_suggestion")
+        result_B = await db.read_last_event_of_type("sess-B", "prompt_suggestion")
+        assert result_A is not None
+        assert result_B is None
+
+
 class TestStreamEventsRaw:
     async def test_stream_yields_tuples(self, db: SqliteSessionDB):
         await db.upsert_session("sess-str", status="running")

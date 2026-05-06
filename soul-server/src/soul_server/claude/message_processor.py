@@ -18,6 +18,7 @@ from soul_server.engine.types import (
     AssistantErrorEngineEvent,
     AwaySummaryEngineEvent,
     EventCallback,
+    PromptSuggestionEngineEvent,
     RateLimitEngineEvent,
     ResultEngineEvent,
     TextDeltaEngineEvent,
@@ -108,6 +109,21 @@ class MessageProcessor:
                     await self.on_event(AwaySummaryEngineEvent(content=content))
                 except Exception as e:
                     logger.warning(f"이벤트 콜백 오류 (AWAY_SUMMARY): {e}")
+            return
+
+        # prompt_suggestion 처리: CLI가 turn 직후 emit하는 다음 prompt 후보 (1개)
+        # SDK가 emit하는 데이터 구조: {"text": "..."} 또는 {"suggestion": "..."} — 양쪽 fallback
+        if subtype == "prompt_suggestion":
+            text = (
+                (data.get("text") if isinstance(data, dict) else None)
+                or (data.get("suggestion") if isinstance(data, dict) else None)
+                or ""
+            )
+            if text and self.on_event:
+                try:
+                    await self.on_event(PromptSuggestionEngineEvent(text=text))
+                except Exception as e:
+                    logger.warning(f"이벤트 콜백 오류 (PROMPT_SUGGESTION): {e}")
             return
 
         # 메인 세션: data['session_id'], 서브에이전트 태스크: 직접 속성 session_id

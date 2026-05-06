@@ -246,7 +246,10 @@ class ClientLifecycle:
             model=self.model,
             system_prompt=self.system_prompt,
             max_turns=self.max_turns,
-            env=extra_env or {},
+            # CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=1: CLI가 turn 직후 emit하는
+            # prompt_suggestion 메시지를 활성화 (Phase 2 — 프로젝트 기본값).
+            # extra_env가 같은 키를 명시적으로 넘기면 그쪽이 우선.
+            env={"CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION": "1", **(extra_env or {})},
         )
 
         if session_id:

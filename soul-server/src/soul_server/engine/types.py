@@ -205,6 +205,25 @@ class AwaySummaryEngineEvent(EngineEvent):
 
 
 @dataclass
+class PromptSuggestionEngineEvent(EngineEvent):
+    """prompt_suggestion 이벤트
+
+    Claude Code CLI/SDK가 turn 직후 자동으로 emit하는 다음 prompt 후보.
+    SDK의 SystemMessage(subtype="prompt_suggestion")에서 변환된다.
+    """
+
+    text: str = ""
+
+    def to_sse(self) -> list[BaseModel]:
+        from soul_server.models.schemas import PromptSuggestionSSEEvent
+        return [PromptSuggestionSSEEvent(
+            text=self.text,
+            parent_event_id=self.parent_event_id,
+            timestamp=self.timestamp,
+        )]
+
+
+@dataclass
 class SubagentStartEngineEvent(EngineEvent):
     """서브에이전트 시작 이벤트"""
 

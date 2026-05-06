@@ -123,6 +123,25 @@ class SqliteEventMixin:
         row = await cursor.fetchone()
         return _event_to_dict(row) if row else None
 
+    async def read_last_event_of_type(
+        self, session_id: str, event_type: str,
+    ) -> Optional[dict]:
+        """세션의 특정 type 마지막 이벤트 1건을 반환. 없으면 None.
+
+        prompt_suggestion 같은 turn-meta 이벤트의 새로고침 baseline 복원에 사용.
+        """
+        cursor = await self._conn.execute(
+            """
+            SELECT * FROM events
+            WHERE session_id = ? AND event_type = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (session_id, event_type),
+        )
+        row = await cursor.fetchone()
+        return _event_to_dict(row) if row else None
+
     async def count_events(self, session_id: str) -> int:
         cursor = await self._conn.execute(
             "SELECT COUNT(*) FROM events WHERE session_id = ?", (session_id,)

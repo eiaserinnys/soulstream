@@ -90,6 +90,24 @@ class PostgresEventMixin:
         )
         return _event_to_dict(row) if row else None
 
+    async def read_last_event_of_type(
+        self, session_id: str, event_type: str,
+    ) -> Optional[dict]:
+        """세션의 특정 type 마지막 이벤트 1건을 반환. 없으면 None.
+
+        prompt_suggestion 같은 turn-meta 이벤트의 새로고침 baseline 복원에 사용.
+        """
+        row = await self._pool.fetchrow(
+            """
+            SELECT * FROM events
+            WHERE session_id = $1 AND event_type = $2
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            session_id, event_type,
+        )
+        return _event_to_dict(row) if row else None
+
     async def count_events(self, session_id: str) -> int:
         return await self._pool.fetchval(
             "SELECT event_count($1)", session_id

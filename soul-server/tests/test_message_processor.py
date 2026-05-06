@@ -9,6 +9,7 @@ from soul_server.claude.agent_runner import MessageState
 from soul_server.claude.message_processor import MessageProcessor
 from soul_server.engine.types import (
     AwaySummaryEngineEvent,
+    PromptSuggestionEngineEvent,
     ResultEngineEvent,
     TextDeltaEngineEvent,
     ThinkingEngineEvent,
@@ -244,6 +245,86 @@ class TestAwaySummary:
             data={"content": "recap"},
         )
         # 예외 없이 처리 완료
+        await proc.process(msg)
+        assert state.msg_count == 1
+
+
+class TestPromptSuggestion:
+    """prompt_suggestion (next-prompt hint) 처리 테스트"""
+
+    @pytest.mark.asyncio
+    async def test_prompt_suggestion_text_key_emits_event(self):
+        """data['text']로 도착하면 PromptSuggestionEngineEvent를 발행한다"""
+        events = []
+        on_event = AsyncMock(side_effect=lambda e: events.append(e))
+        proc, _ = _make_processor(on_event=on_event)
+
+        msg = MockSystemMessage(
+            subtype="prompt_suggestion",
+            data={"text": "다음으로 무엇을 시도할까요?"},
+        )
+        await proc.process(msg)
+
+        assert len(events) == 1
+        event = events[0]
+        assert isinstance(event, PromptSuggestionEngineEvent)
+        assert event.text == "다음으로 무엇을 시도할까요?"
+
+    @pytest.mark.asyncio
+    async def test_prompt_suggestion_suggestion_key_fallback(self):
+        """data['suggestion'] fallback도 동작한다 (SDK 페이로드 키 변형 대비)"""
+        events = []
+        on_event = AsyncMock(side_effect=lambda e: events.append(e))
+        proc, _ = _make_processor(on_event=on_event)
+
+        msg = MockSystemMessage(
+            subtype="prompt_suggestion",
+            data={"suggestion": "테스트를 추가해보세요"},
+        )
+        await proc.process(msg)
+
+        assert len(events) == 1
+        assert events[0].text == "테스트를 추가해보세요"
+
+    @pytest.mark.asyncio
+    async def test_prompt_suggestion_does_not_update_session_id(self):
+        """prompt_suggestion은 session_id를 추출하지 않는다 (early return)"""
+        on_session = AsyncMock()
+        proc, state = _make_processor(on_session=on_session)
+
+        msg = MockSystemMessage(
+            subtype="prompt_suggestion",
+            data={"text": "tip"},
+        )
+        await proc.process(msg)
+
+        assert state.session_id is None
+        on_session.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_prompt_suggestion_empty_text_no_event(self):
+        """text/suggestion이 모두 비어있으면 이벤트 미발행"""
+        on_event = AsyncMock()
+        proc, _ = _make_processor(on_event=on_event)
+
+        msg = MockSystemMessage(
+            subtype="prompt_suggestion",
+            data={"text": ""},
+        )
+        await proc.process(msg)
+
+        on_event.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_prompt_suggestion_callback_error_handled(self):
+        """on_event 콜백 예외가 프로세서를 중단시키지 않는다"""
+        on_event = AsyncMock(side_effect=RuntimeError("callback failed"))
+        proc, state = _make_processor(on_event=on_event)
+
+        msg = MockSystemMessage(
+            subtype="prompt_suggestion",
+            data={"text": "tip"},
+        )
         await proc.process(msg)
         assert state.msg_count == 1
 

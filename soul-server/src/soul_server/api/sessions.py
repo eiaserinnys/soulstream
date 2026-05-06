@@ -36,6 +36,9 @@ async def stream_session_events(
     last_stored_id: int,
     task_manager,
     event_queue: asyncio.Queue,
+    *,
+    is_llm: bool = False,
+    emit_suggestion_baseline: bool = True,
 ) -> AsyncGenerator[dict, None]:
     """Parts 2+3: history_sync 발행 + 라이브 이벤트 스트리밍.
 
@@ -49,6 +52,33 @@ async def stream_session_events(
     listener 정리는 모든 분기에서 보장된다 (외부 finally + remove_listener 자체가 idempotent).
     """
     try:
+        # Part 1.5: prompt_suggestion baseline 동봉 (있으면)
+        # is_llm 세션은 SDK 경로가 아니므로 lookup skip.
+        # emit_suggestion_baseline=False (legacy /history 경로 등): history 리플레이에 이미
+        #   포함되므로 baseline 동봉 시 중복 발생 → skip하여 정본 단일성 유지 (design-principles §3).
+        # is_live=False 세션(이미 종료된 세션 재방문)에서도 yield하여 새로고침 복원 보장 (요구사항 #5).
+        # SessionDB 미초기화(테스트 환경 등)에서는 baseline 복원 skip — 핵심 기능이 아니므로 실패 격리.
+        if emit_suggestion_baseline and not is_llm:
+            try:
+                from soul_server.service.postgres_session_db import get_session_db
+                session_db = get_session_db()
+            except RuntimeError:
+                session_db = None
+            if session_db is not None:
+                try:
+                    last_suggestion = await session_db.read_last_event_of_type(
+                        agent_session_id, "prompt_suggestion",
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"prompt_suggestion baseline 조회 실패 (session={agent_session_id}): {e}"
+                    )
+                    last_suggestion = None
+                if last_suggestion:
+                    # _event_to_dict가 항상 payload를 JSON 문자열로 정규화 (postgres/sqlite 양쪽).
+                    payload_dict = json.loads(last_suggestion["payload"])
+                    yield format_sse_event(payload_dict, has_id_field=False)
+
         # Part 2: history_sync 발행 (SSE id 필드 없이 — baseline 메시지)
         current_task = await task_manager.get_task(agent_session_id)
         is_live = current_task and current_task.status == TaskModelStatus.RUNNING
@@ -166,9 +196,13 @@ async def session_events_sse_generator(
 
         # Parts 2+3: stream_session_events에 위임 (이미 SSE dict로 wrap된 형태 yield).
         # stream_live_events의 finally에서 remove_listener를 호출한다.
+        # replay_history_from_start=True (legacy /history): history 리플레이에 마지막
+        #   prompt_suggestion이 이미 포함되므로 baseline 동봉을 skip하여 중복 회피.
         entered_stream = True
         async for sse_event in stream_session_events(
             agent_session_id, last_stored_id, task_manager, event_queue,
+            is_llm=is_llm,
+            emit_suggestion_baseline=not replay_history_from_start,
         ):
             yield sse_event
     finally:

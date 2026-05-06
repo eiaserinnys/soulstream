@@ -35,6 +35,13 @@ def _make_mock_db():
         return max((e["id"] for e in events), default=0)
 
     db.read_last_event_id = mock_read_last_event_id
+
+    async def mock_read_last_event_of_type(session_id, event_type):
+        events = db._events.get(session_id, [])
+        matches = [e for e in events if e["event_type"] == event_type]
+        return matches[-1] if matches else None
+
+    db.read_last_event_of_type = mock_read_last_event_of_type
     return db
 
 
@@ -438,3 +445,88 @@ class TestMidStreamDisconnectCleanup:
         call_args = mock_task_manager.listener_manager.remove_listener.call_args
         assert call_args[0][0] == "sess-001"
         assert call_args[0][1] is event_queue
+
+
+# === prompt_suggestion baseline 동봉 (Phase 2) ===
+
+class TestPromptSuggestionBaseline:
+    """stream_session_events: history_sync 직전에 마지막 prompt_suggestion 이벤트를 baseline으로 yield"""
+
+    @pytest.mark.asyncio
+    async def test_baseline_yielded_when_present(self, mock_task_manager, mock_db):
+        """저장된 prompt_suggestion이 있으면 history_sync 직전에 baseline 이벤트가 yield된다"""
+        # 완료된 세션 mock (is_live=False)
+        from soul_server.service.task_models import TaskStatus as TaskModelStatus
+        completed_task = MagicMock()
+        completed_task.status = TaskModelStatus.COMPLETED
+        mock_task_manager.get_task = AsyncMock(return_value=completed_task)
+
+        # 저장된 prompt_suggestion 이벤트
+        _append_event(
+            mock_db, "sess-001",
+            {"type": "prompt_suggestion", "text": "다음 단계 시도해보세요", "timestamp": 1234567890.0},
+        )
+
+        with patch("soul_server.service.postgres_session_db.get_session_db", return_value=mock_db):
+            from soul_server.api.sessions import stream_session_events
+            event_queue = asyncio.Queue()
+            events = []
+            async for sse_event in stream_session_events(
+                "sess-001", 0, mock_task_manager, event_queue,
+            ):
+                events.append(sse_event)
+
+        # 첫 번째 이벤트가 baseline prompt_suggestion, 두 번째가 history_sync
+        assert len(events) >= 2
+        assert events[0].get("event") == "prompt_suggestion"
+        baseline_payload = json.loads(events[0]["data"])
+        assert baseline_payload["text"] == "다음 단계 시도해보세요"
+        assert events[1].get("event") == "history_sync"
+
+    @pytest.mark.asyncio
+    async def test_no_baseline_when_absent(self, mock_task_manager, mock_db):
+        """저장된 prompt_suggestion이 없으면 history_sync만 발행되고 baseline은 없다"""
+        from soul_server.service.task_models import TaskStatus as TaskModelStatus
+        completed_task = MagicMock()
+        completed_task.status = TaskModelStatus.COMPLETED
+        mock_task_manager.get_task = AsyncMock(return_value=completed_task)
+
+        with patch("soul_server.service.postgres_session_db.get_session_db", return_value=mock_db):
+            from soul_server.api.sessions import stream_session_events
+            event_queue = asyncio.Queue()
+            events = []
+            async for sse_event in stream_session_events(
+                "sess-001", 0, mock_task_manager, event_queue,
+            ):
+                events.append(sse_event)
+
+        # history_sync만 있고 prompt_suggestion baseline은 없다
+        types = [e.get("event") for e in events]
+        assert "history_sync" in types
+        assert "prompt_suggestion" not in types
+
+    @pytest.mark.asyncio
+    async def test_is_llm_skips_baseline_lookup(self, mock_task_manager, mock_db):
+        """is_llm=True면 prompt_suggestion baseline 조회를 skip한다 (SDK 경로 아님)"""
+        from soul_server.service.task_models import TaskStatus as TaskModelStatus
+        completed_task = MagicMock()
+        completed_task.status = TaskModelStatus.COMPLETED
+        mock_task_manager.get_task = AsyncMock(return_value=completed_task)
+
+        # llm-001에 prompt_suggestion이 저장되어 있어도 yield되면 안 됨
+        _append_event(
+            mock_db, "llm-001",
+            {"type": "prompt_suggestion", "text": "should not appear", "timestamp": 1.0},
+        )
+
+        with patch("soul_server.service.postgres_session_db.get_session_db", return_value=mock_db):
+            from soul_server.api.sessions import stream_session_events
+            event_queue = asyncio.Queue()
+            events = []
+            async for sse_event in stream_session_events(
+                "llm-001", 0, mock_task_manager, event_queue, is_llm=True,
+            ):
+                events.append(sse_event)
+
+        types = [e.get("event") for e in events]
+        assert "prompt_suggestion" not in types

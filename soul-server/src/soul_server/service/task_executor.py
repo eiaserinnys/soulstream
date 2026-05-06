@@ -245,7 +245,7 @@ class TaskExecutor:
                 turn_phase = await self._emit_phase_transition(task, "idle", turn_phase)
             elif event.type == "error":
                 last_error = event.message
-            elif event.type not in ("subtree_update", "session", "progress"):
+            elif event.type not in ("subtree_update", "session", "progress", "prompt_suggestion"):
                 turn_phase = await self._emit_phase_transition(task, "running", turn_phase)
 
         return last_result, last_error

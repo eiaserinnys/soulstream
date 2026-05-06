@@ -33,6 +33,13 @@ def _make_mock_db():
                 yield ev["id"], ev["event_type"], ev["payload"]
 
     db.stream_events_raw = mock_stream_events_raw
+
+    async def mock_read_last_event_of_type(session_id, event_type):
+        events = db._events.get(session_id, [])
+        matches = [e for e in events if e["event_type"] == event_type]
+        return matches[-1] if matches else None
+
+    db.read_last_event_of_type = mock_read_last_event_of_type
     return db
 
 

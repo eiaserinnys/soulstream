@@ -219,6 +219,14 @@ class AwaySummarySSEEvent(BaseModel):
     parent_event_id: Optional[str] = None
 
 
+class PromptSuggestionSSEEvent(BaseModel):
+    """prompt_suggestion 이벤트 — 다음 prompt 후보 (turn 직후, 1개)"""
+    type: str = "prompt_suggestion"
+    timestamp: float
+    text: str
+    parent_event_id: Optional[str] = None
+
+
 class SubagentStartSSEEvent(BaseModel):
     """서브에이전트 시작 이벤트"""
     type: str = "subagent_start"
