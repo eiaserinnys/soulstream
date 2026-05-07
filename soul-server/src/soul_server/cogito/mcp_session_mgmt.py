@@ -10,6 +10,8 @@ from typing import Optional
 
 import httpx
 
+from soul_common.auth.caller_info import build_agent_caller_info
+
 from soul_server.cogito.mcp_tools import cogito_mcp
 from soul_server.service.task_manager import get_task_manager
 from soul_server.service.task_factory import CreateTaskParams
@@ -76,6 +78,9 @@ async def create_agent_session(
 
     # caller_info 조립: MCP 진입점이므로 source="agent"로 고정하며,
     # caller_session_id가 지정된 경우 발신 세션의 프로필 정보를 포함한다.
+    # 통합 v1 스키마(source/agent_node/agent_id/agent_name + display_name/user_id/avatar_url)는
+    # soul_common.auth.caller_info.build_agent_caller_info가 정본으로 조립한다 (1-A·1-B 공유,
+    # design-principles §3 정본 하나 + §9 대칭성).
     caller_info: Optional[dict] = None
     if caller_session_id:
         caller_task = await task_manager.get_task(caller_session_id)
@@ -83,27 +88,12 @@ async def create_agent_session(
         if caller_task and caller_task.profile_id and task_manager._agent_registry:
             caller_profile = task_manager._agent_registry.get(caller_task.profile_id)
 
-        caller_info = {
-            "source": "agent",
-            "agent_node": task_manager._db.node_id,
-            "agent_id": caller_task.profile_id if caller_task else None,
-            "agent_name": caller_profile.name if caller_profile else None,
-            # 통합 스키마 v1 top-level promote (2026-05-07 caller_info 멀티-소스 통합 Phase 3).
-            # caller_task/caller_profile 모두 None 가능 — 기존 ternary 가드 패턴 그대로 적용.
-            # avatar_url은 portrait_path가 빈 값이면 None (Phase 4에서 이니셜 fallback 발동).
-            "display_name": caller_profile.name if caller_profile else None,
-            "user_id": caller_task.profile_id if caller_task else None,
-            # avatar_url은 orch-server의 노드 프록시 경로를 사용한다.
-            # 정본: orch-server/api/session_serializer.py:13-15 _build_portrait_proxy_url.
-            # `/api/agents/{id}/portrait`은 soul-server 로컬 라우트일 뿐 orch에는 없음 → 404.
-            # caller_info를 표시하는 unified-dashboard는 orch-server에 요청하므로
-            # 노드 프록시 경로(/api/nodes/{node_id}/agents/{agent_id}/portrait)가 필요.
-            "avatar_url": (
-                f"/api/nodes/{task_manager._db.node_id}/agents/{caller_task.profile_id}/portrait"
-                if (caller_task and caller_profile and caller_profile.portrait_path)
-                else None
-            ),
-        }
+        caller_info = build_agent_caller_info(
+            agent_node=task_manager._db.node_id,
+            agent_id=caller_task.profile_id if caller_task else None,
+            agent_name=caller_profile.name if caller_profile else None,
+            portrait_path=caller_profile.portrait_path if caller_profile else None,
+        )
 
     task = await task_manager.create_task(CreateTaskParams(
         prompt=prompt,

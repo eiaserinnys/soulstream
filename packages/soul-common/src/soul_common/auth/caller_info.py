@@ -91,3 +91,49 @@ def build_browser_caller_info(
         }
         info.update({k: v for k, v in promoted.items() if v})
     return info
+
+
+def build_agent_caller_info(
+    *,
+    agent_node: str,
+    agent_id: Optional[str],
+    agent_name: Optional[str],
+    portrait_path: Optional[str] = None,
+) -> dict[str, Any]:
+    """위임 진입점에서 source='agent' caller_info 조립 (통합 v1 스키마).
+
+    cogito MCP 위임 진입점(create_agent_session·create_remote_agent_session)이
+    공유하는 정본 helper. 1-A·1-B 비대칭(원격 위임의 v1 promote 키 누락)을 차단한다.
+
+    NOTE: build_browser_caller_info는 Request 객체를 직접 받아 source 결정까지 하지만,
+    build_agent_caller_info는 이미 추출된 필드값을 받는다. 이는 각 진입점에서 발신자
+    정보를 추출하는 *방식의 차이*에서 비롯된 의도적 비대칭이다 — browser는 HTTP Request에서
+    JWT 디코드로 추출, agent는 cogito MCP 호출자가 TaskManager·AgentRegistry에서 사전 조회.
+    helper는 추출된 값을 v1 dict로 *조립*하는 단일 책임만 진다 (design-principles §1 깊이).
+
+    avatar_url은 orch-server의 노드 프록시 경로(/api/nodes/{node}/agents/{id}/portrait)를
+    사용한다. 정본: orch-server/api/session_serializer.py:13-15 _build_portrait_proxy_url.
+    soul-server 로컬 라우트(/api/agents/{id}/portrait)는 unified-dashboard에서 404.
+
+    Args:
+        agent_node: 발신 agent의 노드 ID (영속화 정본, avatar_url 경로에도 사용).
+        agent_id: 발신 agent의 profile id. None 가능 (caller_task가 DB에 없는 경우).
+        agent_name: 발신 agent의 표시명. None 가능 (caller_profile이 registry에 없는 경우).
+        portrait_path: AgentProfile.portrait_path. truthy + agent_id truthy일 때만 avatar_url 부여.
+
+    Returns:
+        v1 caller_info dict. source/agent_node는 항상 채움, 신원 필드는 None 허용 (graceful).
+    """
+    avatar_url: Optional[str] = None
+    if portrait_path and agent_id:
+        avatar_url = f"/api/nodes/{agent_node}/agents/{agent_id}/portrait"
+    return {
+        "source": "agent",
+        "agent_node": agent_node,
+        "agent_id": agent_id,
+        "agent_name": agent_name,
+        # v1 promote (top-level 신원 필드)
+        "display_name": agent_name,
+        "user_id": agent_id,
+        "avatar_url": avatar_url,
+    }
