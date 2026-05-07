@@ -188,3 +188,38 @@ class TestCatalogSessionListUserInfo:
         item = body["sessionList"][0]
         assert item["userName"] == "익명"
         assert item["userPortraitUrl"] is None
+
+    async def test_caller_info_agent_node_proxy_path_overrides(
+        self, client, mock_db, mock_catalog_service, node_with_user
+    ):
+        """위임 신규 케이스 (260507.10 fix 후): build_agent_caller_info가 생성한
+        노드 프록시 형식 avatar_url(/api/nodes/{node}/agents/{id}/portrait)이
+        catalog 응답까지 정확히 통과되는지 단언.
+
+        본 fix(260507.10)의 송신 측 invariant — 1-A·1-B가 build_agent_caller_info를
+        통해 node proxy path를 채움 — 이 catalog 정본(session_serializer.caller_info →
+        userPortraitUrl override)에서 그대로 통과되어야 한다.
+        """
+        agent_node_id = node_with_user.node_id
+        avatar_url = f"/api/nodes/{agent_node_id}/agents/seosoyoung/portrait"
+        session = _session_with_caller_info("s1", agent_node_id, {
+            "source": "agent",
+            "agent_node": agent_node_id,
+            "agent_id": "seosoyoung",
+            "agent_name": "서소영",
+            "display_name": "서소영",
+            "user_id": "seosoyoung",
+            "avatar_url": avatar_url,
+        })
+        mock_db.get_all_sessions.return_value = ([session], 1)
+        mock_catalog_service.get_catalog.return_value = {
+            "folders": [],
+            "sessions": {"s1": {"folderId": None, "displayName": None}},
+        }
+
+        resp = await client.get("/api/catalog")
+
+        body = resp.json()
+        item = body["sessionList"][0]
+        assert item["userName"] == "서소영"
+        assert item["userPortraitUrl"] == avatar_url
