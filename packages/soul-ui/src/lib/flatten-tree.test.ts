@@ -296,6 +296,66 @@ describe("flattenTree", () => {
     const msgs = flattenTree(tree);
     expect(msgs[0].agentInfo).toBeUndefined();
   });
+
+  // === callerInfo propagation (atom ed3a216d 후속 fix) ===
+
+  it("user_message callerInfo 전파 (browser source)", () => {
+    const callerInfo = {
+      source: "browser" as const,
+      display_name: "Jubok Kim",
+      avatar_url: "https://lh3.googleusercontent.com/a/X",
+      email: "eias@example.com",
+    };
+    const node: UserMessageNode = {
+      type: "user_message",
+      id: "u1",
+      content: "hello from browser",
+      completed: true,
+      user: "dashboard",
+      children: [],
+      callerInfo,
+    };
+    const tree = makeSession([node]);
+
+    const msgs = flattenTree(tree);
+    expect(msgs[0].callerInfo).toBe(callerInfo);
+    expect(msgs[0].callerInfo?.avatar_url).toBe("https://lh3.googleusercontent.com/a/X");
+  });
+
+  it("user_message callerInfo + agentInfo 둘 다 propagate (agent source)", () => {
+    const callerInfo = {
+      source: "agent" as const,
+      display_name: "shay",
+      avatar_url: "/api/agents/shay/portrait",
+      agent_node: "eias",
+      agent_id: "shay",
+      agent_name: "Shay",
+    };
+    const node: UserMessageNode = {
+      type: "user_message",
+      id: "u1",
+      content: "delegated",
+      completed: true,
+      user: "agent",
+      children: [],
+      agentInfo: { source: "agent", agent_node: "eias", agent_id: "shay", agent_name: "Shay" },
+      callerInfo,
+    };
+    const tree = makeSession([node]);
+
+    const msgs = flattenTree(tree);
+    expect(msgs[0].agentInfo?.agent_id).toBe("shay");
+    expect(msgs[0].callerInfo).toBe(callerInfo);
+  });
+
+  it("user_message callerInfo 없을 때 undefined (회귀 보호)", () => {
+    const tree = makeSession([
+      makeUserMessage("u1", "plain"),
+    ]);
+
+    const msgs = flattenTree(tree);
+    expect(msgs[0].callerInfo).toBeUndefined();
+  });
 });
 
 // === Identity 보존 캐시 ===
@@ -379,5 +439,52 @@ describe("flattenTree identity 보존", () => {
       expect(after[i].id).toBe(before[i].id);
       expect(after[i].content).toBe(before[i].content);
     }
+  });
+
+  // === callerInfo reference 보존 (atom b0c41f5c shallowEqual 안전) ===
+
+  it("같은 callerInfo reference 유지 시 ChatMessage reference 보존", () => {
+    const callerInfo = {
+      source: "browser" as const,
+      avatar_url: "/x.png",
+    };
+    const userNode: UserMessageNode = {
+      type: "user_message",
+      id: "u1",
+      content: "hello",
+      completed: true,
+      user: "dashboard",
+      children: [],
+      callerInfo,
+    };
+    const tree = makeSession([userNode]);
+
+    const before = flattenTree(tree);
+    const after = flattenTree(tree);
+
+    expect(after[0]).toBe(before[0]);
+    expect(after[0].callerInfo).toBe(callerInfo);
+  });
+
+  it("callerInfo가 다른 reference로 바뀌면 ChatMessage 새 reference (shallowEqual miss)", () => {
+    const ci1 = { source: "browser" as const, avatar_url: "/old.png" };
+    const userNode: UserMessageNode = {
+      type: "user_message",
+      id: "u1",
+      content: "hello",
+      completed: true,
+      user: "dashboard",
+      children: [],
+      callerInfo: ci1,
+    };
+    const tree = makeSession([userNode]);
+
+    const before = flattenTree(tree);
+    // caller_info를 새 reference로 교체 (서버에서 새 update 도착 시뮬)
+    userNode.callerInfo = { source: "browser", avatar_url: "/new.png" };
+    const after = flattenTree(tree);
+
+    expect(after[0]).not.toBe(before[0]); // shallowEqual이 callerInfo reference 비교 → miss
+    expect(after[0].callerInfo?.avatar_url).toBe("/new.png");
   });
 });

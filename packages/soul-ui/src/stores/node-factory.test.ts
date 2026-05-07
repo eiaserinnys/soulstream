@@ -109,6 +109,112 @@ describe("createNodeFromEvent", () => {
       expect(node!.content).toBe("");
     });
 
+    // === caller_info nested → agentInfo + callerInfo (atom ed3a216d) ===
+
+    it("user_message with nested caller_info source=agent → agentInfo + callerInfo set", () => {
+      const event = {
+        type: "user_message",
+        text: "delegated prompt",
+        caller_info: {
+          source: "agent",
+          display_name: "shay",
+          user_id: "shay",
+          avatar_url: "/api/agents/shay/portrait",
+          agent_node: "eiaserinnys",
+          agent_id: "shay",
+          agent_name: "Shay",
+        },
+      } as unknown as UserMessageEvent;
+
+      const node = createNodeFromEvent(event, 100);
+
+      expect(node).not.toBeNull();
+      const u = node as UserMessageNode;
+      expect(u.agentInfo).toEqual({
+        source: "agent",
+        agent_node: "eiaserinnys",
+        agent_id: "shay",
+        agent_name: "Shay",
+      });
+      expect(u.callerInfo).toBeDefined();
+      expect(u.callerInfo?.source).toBe("agent");
+      expect(u.callerInfo?.avatar_url).toBe("/api/agents/shay/portrait");
+    });
+
+    it("user_message with nested caller_info source=browser → callerInfo only, agentInfo undefined", () => {
+      const event = {
+        type: "user_message",
+        text: "google user prompt",
+        caller_info: {
+          source: "browser",
+          display_name: "Jubok",
+          avatar_url: "https://lh3.googleusercontent.com/a/X",
+        },
+      } as unknown as UserMessageEvent;
+
+      const node = createNodeFromEvent(event, 101);
+
+      const u = node as UserMessageNode;
+      expect(u.agentInfo).toBeUndefined();
+      expect(u.callerInfo?.source).toBe("browser");
+      expect(u.callerInfo?.avatar_url).toBe("https://lh3.googleusercontent.com/a/X");
+    });
+
+    it("user_message with nested caller_info source=slack → callerInfo only", () => {
+      const event = {
+        type: "user_message",
+        text: "slack channel observer",
+        caller_info: {
+          source: "slack",
+          display_name: "@channel-user",
+          avatar_url: "https://avatars.slack-edge.com/2024/img_192.png",
+          slack: { channel_id: "C08", user_id: "U08" },
+        },
+      } as unknown as UserMessageEvent;
+
+      const node = createNodeFromEvent(event, 102);
+
+      const u = node as UserMessageNode;
+      expect(u.agentInfo).toBeUndefined();
+      expect(u.callerInfo?.source).toBe("slack");
+    });
+
+    it("user_message with legacy top-level source=agent (no caller_info) → agentInfo set, callerInfo undefined", () => {
+      // Phase 3 이전 데이터 호환 (atom ed3a216d 도입 전 형식).
+      const event = {
+        type: "user_message",
+        text: "legacy agent message",
+        source: "agent",
+        agent_node: "node-x",
+        agent_id: "alpha",
+        agent_name: "Alpha",
+      } as unknown as UserMessageEvent;
+
+      const node = createNodeFromEvent(event, 103);
+
+      const u = node as UserMessageNode;
+      expect(u.agentInfo).toEqual({
+        source: "agent",
+        agent_node: "node-x",
+        agent_id: "alpha",
+        agent_name: "Alpha",
+      });
+      expect(u.callerInfo).toBeUndefined();
+    });
+
+    it("user_message with no caller_info and no top-level source → both undefined", () => {
+      const event: UserMessageEvent = {
+        type: "user_message",
+        text: "plain user prompt",
+      };
+
+      const node = createNodeFromEvent(event, 104);
+
+      const u = node as UserMessageNode;
+      expect(u.agentInfo).toBeUndefined();
+      expect(u.callerInfo).toBeUndefined();
+    });
+
     it("should create node for intervention_sent", () => {
       const event: InterventionSentEvent = {
         type: "intervention_sent",

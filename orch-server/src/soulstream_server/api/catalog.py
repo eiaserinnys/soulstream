@@ -23,7 +23,11 @@ from pydantic import BaseModel
 
 from soul_common.catalog.catalog_service import CatalogService
 from soul_common.db.session_db import PostgresSessionDB
-from soulstream_server.api.session_serializer import _build_portrait_proxy_url, _build_user_portrait_proxy_url
+from soulstream_server.api.session_serializer import (
+    _build_portrait_proxy_url,
+    _build_user_portrait_proxy_url,
+    _extract_caller_info,
+)
 from soulstream_server.models import BatchMoveRequest
 from soulstream_server.nodes.node_manager import NodeManager
 
@@ -100,10 +104,20 @@ def create_catalog_router(
                             source_node_id, agent_id
                         )
 
-            # 사용자 정보 조회
+            # 사용자 정보: caller_info(atom ed3a216d) 우선, 부재 시 노드 user_info fallback.
+            # caller_info 분기에 들어간 이상 노드 portrait로 mix-fallback하지 않는다 —
+            # 하나의 발신자 정체성을 일관되게 표현 (design-principles §3 정본 하나).
             userName = None
             userPortraitUrl = None
-            if node_id:
+            caller_info = _extract_caller_info(s.get("metadata"))
+            if caller_info:
+                display_name = caller_info.get("display_name")
+                avatar_url = caller_info.get("avatar_url")
+                if isinstance(display_name, str) and display_name:
+                    userName = display_name
+                if isinstance(avatar_url, str) and avatar_url:
+                    userPortraitUrl = avatar_url
+            elif node_id:
                 user_info = node_manager.get_user_info(node_id)
                 if user_info:
                     userName = user_info.get("name")

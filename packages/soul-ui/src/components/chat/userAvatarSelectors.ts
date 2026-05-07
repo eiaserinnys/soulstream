@@ -6,9 +6,14 @@
  *
  * UserMessage 컴포넌트는 단위 테스트 표면이 부재(grep 결과)이므로 selector를
  * 순수 함수로 분리해 vitest로 직접 검증 가능한 형태로 둔다 (design-principles §10).
+ *
+ * 우선순위:
+ *   1) 메시지 단위 caller_info (msg.callerInfo) — 멀티-소스 세션에서 메시지마다 발신자가 다를 때
+ *   2) 세션 단위 caller_info (activeSessionSummary.metadata) — 세션 발신자 fallback
+ *   3) 노드 단일 사용자 (dashboardConfig.user.portraitUrl) — caller_info 부재 세션 호환
  */
 
-import type { MetadataEntry } from "../../shared/session-types";
+import type { CallerInfo, MetadataEntry } from "../../shared/types";
 
 /**
  * SessionSummary.metadata 배열에서 caller_info entry의 avatar_url을 추출한다.
@@ -38,12 +43,18 @@ export function extractCallerAvatarUrl(
  * user 발신 메시지의 portraitUrl을 결정한다 (agent 발신은 호출자가 별도 분기).
  *
  * 우선순위:
- *   1) caller_info.avatar_url (세션 발신자 신원 — google picture / slack image_192 / agent portrait / soul-app picture)
- *   2) dashboardConfig.user.portraitUrl (노드 단일 사용자 portrait fallback — caller_info 부재 세션 호환)
+ *   1) msgCallerInfo.avatar_url — 메시지 단위 발신자 신원 (멀티-소스 세션에서 메시지마다 다른 경우 정본)
+ *   2) sessionAvatarUrl — 세션-수준 caller_info fallback (extractCallerAvatarUrl이 추출한 값)
+ *   3) userPortraitUrl — 노드 단일 사용자 dashboardConfig fallback (caller_info 부재 세션 호환)
+ *
+ * 비문자열·빈 문자열인 msgCallerInfo.avatar_url은 무시하고 다음 우선순위로 진행 (defensive).
  */
-export function pickUserPortraitUrl(
-  callerAvatarUrl: string | null,
+export function pickMessageAvatarUrl(
+  msgCallerInfo: CallerInfo | undefined,
+  sessionAvatarUrl: string | null,
   userPortraitUrl: string | null | undefined,
 ): string | null {
-  return callerAvatarUrl ?? userPortraitUrl ?? null;
+  const mu = msgCallerInfo?.avatar_url;
+  if (typeof mu === "string" && mu.length > 0) return mu;
+  return sessionAvatarUrl ?? userPortraitUrl ?? null;
 }

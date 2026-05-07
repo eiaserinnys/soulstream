@@ -16,6 +16,7 @@ export type {
   SessionEvent,
   InterventionSentEvent,
   ContextItem,
+  CallerInfo,
   UserMessageEvent,
   DebugEvent,
   CompleteEvent,

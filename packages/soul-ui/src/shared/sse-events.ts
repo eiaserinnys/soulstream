@@ -90,6 +90,29 @@ export interface ContextItem {
   content: unknown;
 }
 
+/**
+ * caller_info 통합 v1 (atom ed3a216d) — 발신자 신원 wire 정본.
+ *
+ * soul-server `task_factory.py`와 `task_executor.py`가 user_message 이벤트와 세션
+ * metadata에 같은 dict를 첨부한다. 클라이언트는 메시지 단위(user_message.caller_info)와
+ * 세션 단위(SessionSummary.metadata의 caller_info entry) 양쪽에서 동일 형상을 본다.
+ *
+ * 우선순위: 메시지 단위 > 세션 단위 > 노드 사용자 fallback (UserMessage 기준).
+ */
+export interface CallerInfo {
+  source: "browser" | "slack" | "agent" | "soul-app" | "api";
+  display_name?: string;
+  user_id?: string;
+  avatar_url?: string;
+  email?: string;
+  agent_node?: string;
+  agent_id?: string | null;
+  agent_name?: string | null;
+  slack?: { channel_id?: string; thread_ts?: string; user_id?: string };
+  /** source-고유 컨텍스트 graceful (Phase 3 이전 데이터 호환). */
+  [key: string]: unknown;
+}
+
 /** 사용자가 보낸 초기 프롬프트 (세션 시작 시 대시보드가 생성) */
 export interface UserMessageEvent {
   type: "user_message";
@@ -105,13 +128,15 @@ export interface UserMessageEvent {
   client_id?: string;
   /** 부모 이벤트 ID (Phase 2: 타입 통일용, 서버에서 설정하지 않음) */
   parent_event_id?: string;
-  /** 에이전트가 발신한 경우 "agent" */
+  /** 발신자 신원 — 통합 v1 정본 (atom ed3a216d). 신규 코드는 이쪽으로. */
+  caller_info?: CallerInfo;
+  /** @deprecated 레거시 top-level source — Phase 3 이전 데이터 호환 전용. 신규 데이터는 caller_info.source 사용. */
   source?: "agent";
-  /** 에이전트가 실행 중인 노드 ID */
+  /** @deprecated 레거시 — caller_info.agent_node 사용. */
   agent_node?: string;
-  /** 에이전트 ID (에이전트 발신 시) */
+  /** @deprecated 레거시 — caller_info.agent_id 사용. */
   agent_id?: string | null;
-  /** 에이전트 이름 (에이전트 발신 시) */
+  /** @deprecated 레거시 — caller_info.agent_name 사용. */
   agent_name?: string | null;
 }
 

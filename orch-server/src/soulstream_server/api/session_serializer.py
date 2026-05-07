@@ -20,6 +20,22 @@ def _build_user_portrait_proxy_url(node_id: str) -> str:
     return f"/api/nodes/{node_id}/user/portrait"
 
 
+def _extract_caller_info(metadata) -> Optional[dict]:
+    """첫 caller_info entry의 value(dict)를 반환. 부재 또는 비-dict면 None.
+
+    metadata는 PostgresSessionDB가 반환하는 list[{"type": str, "value": ...}] 형식.
+    caller_info 통합 v1(atom ed3a216d) 정본 진입점.
+    """
+    if not metadata:
+        return None
+    for m in metadata:
+        if isinstance(m, dict) and m.get("type") == "caller_info":
+            v = m.get("value")
+            if isinstance(v, dict):
+                return v
+    return None
+
+
 def _session_to_response(
     s: dict,
     node_manager: Optional[NodeManager] = None,
@@ -74,7 +90,18 @@ def _session_to_response(
                     source_node_id, agent_id
                 )
 
-    if node_id and node_manager is not None:
+    # 사용자 정보: caller_info(atom ed3a216d) 우선, 부재 시 노드 user_info fallback.
+    # caller_info 분기에 들어간 이상 노드 portrait로 mix-fallback하지 않는다 —
+    # 하나의 발신자 정체성을 일관되게 표현 (design-principles §3 정본 하나).
+    caller_info = _extract_caller_info(s.get("metadata"))
+    if caller_info:
+        display_name = caller_info.get("display_name")
+        avatar_url = caller_info.get("avatar_url")
+        if isinstance(display_name, str) and display_name:
+            result["userName"] = display_name
+        if isinstance(avatar_url, str) and avatar_url:
+            result["userPortraitUrl"] = avatar_url
+    elif node_id and node_manager is not None:
         user_info = node_manager.get_user_info(node_id)
         if user_info:
             result["userName"] = user_info.get("name")
