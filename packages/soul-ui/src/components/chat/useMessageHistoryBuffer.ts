@@ -29,8 +29,8 @@ import type { SoulSSEEvent } from "@shared/types";
 import { useDashboardStore } from "../../stores/dashboard-store";
 import { diag } from "../../lib/diag";
 
-/** 초기 로드 / prepend 페이지 크기 */
-export const HISTORY_PAGE_SIZE = 50;
+/** 초기 로드 / prepend 페이지 크기 (soul-app ChatBody.tsx:43과 동기화 — atom 88d8c640) */
+export const HISTORY_PAGE_SIZE = 100;
 
 /** 서버 응답의 단일 메시지 (soul_common.db.session_db.read_messages) */
 export interface HistoricalMessage {
