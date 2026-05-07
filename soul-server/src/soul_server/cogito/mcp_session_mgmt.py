@@ -88,6 +88,16 @@ async def create_agent_session(
             "agent_node": task_manager._db.node_id,
             "agent_id": caller_task.profile_id if caller_task else None,
             "agent_name": caller_profile.name if caller_profile else None,
+            # 통합 스키마 v1 top-level promote (2026-05-07 caller_info 멀티-소스 통합 Phase 3).
+            # caller_task/caller_profile 모두 None 가능 — 기존 ternary 가드 패턴 그대로 적용.
+            # avatar_url은 portrait_path가 빈 값이면 None (Phase 4에서 이니셜 fallback 발동).
+            "display_name": caller_profile.name if caller_profile else None,
+            "user_id": caller_task.profile_id if caller_task else None,
+            "avatar_url": (
+                f"/api/agents/{caller_task.profile_id}/portrait"
+                if (caller_task and caller_profile and caller_profile.portrait_path)
+                else None
+            ),
         }
 
     task = await task_manager.create_task(CreateTaskParams(
