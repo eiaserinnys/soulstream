@@ -152,8 +152,11 @@ function shallowEqualChatMessage(a: ChatMessage, b: ChatMessage): boolean {
  *
  * - session 루트 노드는 skip (children만 순회)
  * - 각 노드 타입별 ChatMessage 변환
- * - children 재귀 (서브에이전트 포함, 구분 없이 flat)
+ * - children 재귀: Phase 2-A 평탄화 후엔 root.children 1depth 평면이라 결과적으로 1회 순회.
+ *   재귀 코드는 안전망으로 유지 — 향후 옵션 A 전환(events 배열 직역)이나 다른 트리 구조
+ *   재도입 시 호환성을 잃지 않도록.
  * - identity 보존: 같은 treeNodeId의 이전 ChatMessage가 shallowEqual이면 재사용
+ *   (atom b0c41f5c — VirtualizedItem React.memo 동작에 필수, 평탄화 후에도 보존)
  */
 export function flattenTree(root: EventTreeNode | null): ChatMessage[] {
   if (!root) return [];
@@ -198,6 +201,14 @@ function collectMessages(
 
   // result 노드가 complete 보다 먼저 오는 경우를 보정:
   // complete → result 순서가 되도록 children을 정렬 (해당 노드가 있을 때만)
+  //
+  // Phase 2-A 평탄화 (atom 작업 이력 260507.01.fe-tree-flattening §11.2 유지 결정):
+  //   백엔드 검증 결과 result/complete는 같은 user_message의 자식(형제)으로 emit되며,
+  //   task_executor가 parent_event_id를 채운다. 송출 순서는 SDK 비동기 타이밍에 따라
+  //   역전 가능 (코드상 result→complete이지만 eventId ASC 보장 없음).
+  //   본 정렬 보정은 *백엔드 결함 우회*가 아니라 **UX 정책** —
+  //   "Session Complete (요약·비용·duration) → result 텍스트" 순서를 강제한다.
+  //   평탄화 후 root.children 1depth에서도 동일 동작 (needsSort 가드는 트리 단계 무관).
   const children = node.children;
   const needsSort = children.some((c) => c.type === "result") &&
     children.some((c) => c.type === "complete");
