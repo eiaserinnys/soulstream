@@ -8,7 +8,7 @@ Google OAuth Authorization Code Flow + JWT 쿠키 세션.
 import logging
 import secrets
 from typing import Any, Callable, Coroutine
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
@@ -20,6 +20,18 @@ from soul_common.auth.jwt import COOKIE_NAME, generate_token, verify_token
 OAUTH_STATE_COOKIE = "soul_oauth_state"
 # 로그인 후 복귀 경로 쿠키
 RETURN_TO_COOKIE = "soul_return_to"
+
+# dev-login default avatar URL 템플릿 — picture를 명시 공급하지 않은 dev 세션에서도
+# caller_info.avatar_url 분기가 시험되도록 deterministic identicon URL을 박는다.
+# DiceBear v7 identicon: 외부 백엔드 의존 없는 URL 문자열 — 실제 fetch는 클라이언트 브라우저에서.
+# real OAuth/native auth 흐름은 Google userinfo의 picture를 그대로 사용하므로 영향 없음.
+_DEV_DEFAULT_AVATAR_URL_TEMPLATE = "https://api.dicebear.com/7.x/identicon/svg?seed={seed}"
+
+
+def _dev_default_avatar_url(email: str) -> str:
+    """dev-login용 deterministic identicon URL. email을 시드로 사용 (URL 인코딩)."""
+    return _DEV_DEFAULT_AVATAR_URL_TEMPLATE.format(seed=quote(email, safe=""))
+
 
 logger = logging.getLogger(__name__)
 
@@ -193,6 +205,14 @@ def create_oauth_router(
 
     @router.post("/api/auth/dev-login")
     async def dev_login(request: Request):
+        """dev 환경 전용 로그인.
+
+        body: {email, name?, picture?}
+            picture 미공급 시 deterministic identicon URL을 default로 사용한다 —
+            caller_info.avatar_url 분기가 dev 환경에서도 시험되도록 보장한다 (B-5 fix).
+            real OAuth/native auth 흐름은 Google userinfo의 picture를 그대로 박으므로
+            본 default는 dev-login 한정이다.
+        """
         if not is_development:
             raise HTTPException(status_code=403, detail="Dev login not available")
         if not jwt_secret:
@@ -201,11 +221,20 @@ def create_oauth_router(
         body = await request.json()
         email = body.get("email", "")
         name = body.get("name", "Developer")
+        picture = body.get("picture") or ""
 
         if not email:
             raise HTTPException(status_code=400, detail="Email is required")
 
-        jwt_token = generate_token({"email": email, "name": name}, jwt_secret)
+        # picture가 비면 deterministic default — JWT picture 빈 문자열로 영속되면
+        # build_browser_caller_info의 truthy filter가 avatar_url을 drop한다 (B-5 결함).
+        if not picture:
+            picture = _dev_default_avatar_url(email)
+
+        jwt_token = generate_token(
+            {"email": email, "name": name, "picture": picture},
+            jwt_secret,
+        )
         response = JSONResponse({"success": True})
         response.set_cookie(
             cookie_name,
