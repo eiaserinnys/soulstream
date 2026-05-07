@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from sse_starlette.sse import EventSourceResponse
 
+from soul_common.auth.caller_info import build_browser_caller_info
 from soul_server.api.sessions import session_events_sse_generator
 from soul_server.dashboard.auth import require_dashboard_auth
 from soul_server.service.task_manager import (
@@ -280,14 +281,14 @@ async def api_create_session(body: CreateSessionBody, request: Request):
 
     extra_context_items = build_attachment_context_items(body.attachmentPaths)
 
-    # caller_info 조립: body에 있으면 그대로, 없으면 HTTP Request에서 수집 (source="browser")
-    caller_info = body.caller_info or {
-        "source": "browser",
-        "ip": request.client.host if request.client else None,
-        "user_agent": request.headers.get("user-agent"),
-        "referer": request.headers.get("referer"),
-        "forwarded_for": request.headers.get("x-forwarded-for"),
-    }
+    # caller_info 조립: body에 있으면 그대로 (슬랙·RN·위임 케이스).
+    # 없으면 build_browser_caller_info가 HTTP 메타 + cookie JWT(있으면)를
+    # 조립하여 source='browser' caller_info 반환 (방안 B, 2026-05-07).
+    from soul_server.config import get_settings
+    settings = get_settings()
+    caller_info = body.caller_info or build_browser_caller_info(
+        request, settings.jwt_secret or ""
+    )
 
     try:
         task = await task_manager.create_task(CreateTaskParams(

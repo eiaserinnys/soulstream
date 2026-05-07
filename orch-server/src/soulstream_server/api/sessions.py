@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from starlette.websockets import WebSocketDisconnect
 from sse_starlette.sse import EventSourceResponse
 
+from soul_common.auth.caller_info import build_browser_caller_info
 from soul_common.catalog.catalog_service import CatalogService
 from soul_common.db.session_db import PostgresSessionDB
 
@@ -93,15 +94,18 @@ def create_sessions_router(
 
     @router.post("", status_code=201)
     async def create_session(body: CreateSessionRequest, request: Request) -> dict:
-        """세션 생성. 노드에 라우팅."""
-        # caller_info 조립: body에 있으면 그대로, 없으면 HTTP Request에서 수집 (source="browser")
-        caller_info = body.caller_info or {
-            "source": "browser",
-            "ip": request.client.host if request.client else None,
-            "user_agent": request.headers.get("user-agent"),
-            "referer": request.headers.get("referer"),
-            "forwarded_for": request.headers.get("x-forwarded-for"),
-        }
+        """세션 생성. 노드에 라우팅.
+
+        body.caller_info가 있으면 그대로 사용 (슬랙·RN·위임 케이스).
+        없으면 build_browser_caller_info가 HTTP 메타 + cookie JWT(있으면)를
+        조립하여 source='browser' caller_info를 반환 (방안 B, 2026-05-07).
+        """
+        # 정본은 lru_cache된 get_settings — caller_info 조립 시점에 호출 (성능 영향 없음)
+        from soulstream_server.config import get_settings
+        settings = get_settings()
+        caller_info = body.caller_info or build_browser_caller_info(
+            request, settings.jwt_secret or ""
+        )
         payload = body.model_dump(exclude_none=True)
         payload["caller_info"] = caller_info
         session_id, node_id = await session_router.route_create_session(payload)

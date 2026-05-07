@@ -34,6 +34,13 @@ def pytest_configure(config):
     if str(local_src) not in sys.path:
         sys.path.insert(0, str(local_src))
 
+    # soul-common도 동일하게 worktree 경로를 우선시한다.
+    # (orch-server conftest와 대칭 — 신규 모듈 caller_info.py 등 워크트리 변경이
+    # .test-venv install된 stale main 리포 soul_common에 가려지는 것 방지)
+    local_common = Path(__file__).parent.parent.parent / "packages" / "soul-common" / "src"
+    if str(local_common) not in sys.path:
+        sys.path.insert(0, str(local_common))
+
     # cogito 및 fastmcp 모듈 모킹 (패키지가 설치되지 않은 환경에서 테스트 가능하게)
     # soul_server.cogito 모듈이 cogito와 fastmcp를 임포트하므로, 임포트 전에 모킹 필요
     if importlib.util.find_spec("cogito") is None:
