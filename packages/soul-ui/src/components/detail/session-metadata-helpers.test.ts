@@ -83,6 +83,109 @@ describe("buildCallerInfoLines", () => {
     const lines = buildCallerInfoLines({});
     expect(lines).toEqual([{ label: "source", text: "unknown" }]);
   });
+
+  // === 통합 스키마 v1 (2026-05-07 Plan A·B·C 합의) 케이스 ===
+
+  it("browser source v1 full 스키마: source/name/id/email/ip 5 라인", () => {
+    const lines = buildCallerInfoLines({
+      source: "browser",
+      display_name: "서소영",
+      user_id: "user@example.com",
+      avatar_url: "https://lh3.googleusercontent.com/avatar.png",
+      email: "user@example.com",
+      ip: "1.2.3.4",
+    });
+    expect(lines.map((l) => l.label)).toEqual([
+      "source",
+      "name",
+      "id",
+      "email",
+      "ip",
+    ]);
+    expect(lines[1].text).toBe("서소영");
+    // browser source는 user_id의 @ 이전만 'id' 라벨에 표시 (formatUserId 적용)
+    expect(lines[2].text).toBe("user");
+    // email 라벨은 전체 email 표시 (의도적 중복)
+    expect(lines[3].text).toBe("user@example.com");
+  });
+
+  it("slack source channel_id sub-dict (통합 스키마 v1) → channel 라벨 표시", () => {
+    const lines = buildCallerInfoLines({
+      source: "slack",
+      user_id: "U08ABCDE",
+      display_name: "Alice",
+      slack: { channel_id: "C09SUBDICT", user_id: "U08ABCDE", thread_ts: "1234" },
+    });
+    const channelLine = lines.find((l) => l.label === "channel");
+    expect(channelLine?.text).toBe("C09SUBDICT");
+    // slack source는 user_id 앞 8글자
+    const idLine = lines.find((l) => l.label === "id");
+    expect(idLine?.text).toBe("U08ABCDE");
+  });
+
+  it("slack channel_id sub-dict 우선, top-level은 fallback (legacy 호환)", () => {
+    // sub-dict와 top-level 둘 다 있을 때 sub-dict 우선
+    const lines = buildCallerInfoLines({
+      source: "slack",
+      channel_id: "C-LEGACY",
+      slack: { channel_id: "C-NEW" },
+    });
+    const channelLine = lines.find((l) => l.label === "channel");
+    expect(channelLine?.text).toBe("C-NEW");
+  });
+
+  it("agent source + display_name 있으면 agent 라벨 생략 (중복 방지)", () => {
+    const lines = buildCallerInfoLines({
+      source: "agent",
+      agent_node: "node-x",
+      agent_id: "a1",
+      agent_name: "서소영",
+      display_name: "서소영",
+      user_id: "a1",
+    });
+    expect(lines.map((l) => l.label)).toEqual([
+      "source",
+      "name",
+      "id",
+      "node",
+    ]);
+    // agent 라벨이 없어야 함 (display_name이 같은 값을 'name'으로 이미 표시)
+    expect(lines.find((l) => l.label === "agent")).toBeUndefined();
+  });
+
+  it("legacy data graceful — 신규 필드 없는 agent caller_info (Phase 3 이전 데이터)", () => {
+    const lines = buildCallerInfoLines({
+      source: "agent",
+      agent_node: "node-x",
+      agent_id: "a1",
+      agent_name: "Old Agent",
+    });
+    // display_name 없음 → 'name' 라벨 없음, 'agent' 라벨이 fallback으로 표시
+    expect(lines.map((l) => l.label)).toEqual([
+      "source",
+      "node",
+      "agent",
+    ]);
+    expect(lines[2].text).toBe("Old Agent");
+  });
+
+  it("legacy data graceful — browser caller_info에 ip만 (Phase 2a 이전 데이터)", () => {
+    const lines = buildCallerInfoLines({
+      source: "browser",
+      ip: "1.2.3.4",
+    });
+    expect(lines.map((l) => l.label)).toEqual(["source", "ip"]);
+  });
+
+  it("email == user_id (browser)일 때 두 라벨 모두 표시 (의도적 중복)", () => {
+    const lines = buildCallerInfoLines({
+      source: "browser",
+      user_id: "u@e.com",
+      email: "u@e.com",
+    });
+    expect(lines.find((l) => l.label === "id")?.text).toBe("u");
+    expect(lines.find((l) => l.label === "email")?.text).toBe("u@e.com");
+  });
 });
 
 describe("getDedupKey", () => {

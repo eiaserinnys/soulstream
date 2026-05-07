@@ -13,6 +13,8 @@
 
 import type { MetadataEntry } from "@shared/types";
 import { SectionLabel } from "./shared";
+import { CallerAvatar } from "./CallerAvatar";
+import { getCallerSourceConfig } from "./caller-avatar-helpers";
 import { buildCallerInfoLines, getDedupKey } from "./session-metadata-helpers";
 
 /** 메타데이터 타입별 아이콘 및 라벨 */
@@ -71,17 +73,23 @@ function deduplicateFileEntries(entries: MetadataEntry[]): Array<{ entry: Metada
 /** 파일 타입 판별용 상수 */
 const FILE_TYPES = new Set(["file_write", "file_edit"]);
 
-/** caller_info 전용 렌더러 — source/parent/node/agent 등 라벨화하여 표시 */
+/** caller_info 전용 렌더러 — 좌측 CallerAvatar + 우측 라벨 라인들 + source 뱃지 */
 function CallerInfoItem({ value, callerSessionId }: { value: Record<string, unknown>; callerSessionId?: string | null }) {
   const lines = buildCallerInfoLines(value, callerSessionId);
+  const config = getCallerSourceConfig(value.source);
   return (
-    <div className="flex flex-col gap-0.5 py-1">
-      {lines.map((l) => (
-        <div key={l.label} className="flex items-baseline gap-2 text-xs">
-          <span className="text-muted-foreground uppercase tracking-wide w-16 shrink-0">{l.label}</span>
-          <span className="text-foreground break-words">{l.text}</span>
-        </div>
-      ))}
+    <div className="flex items-start gap-3 py-1">
+      <CallerAvatar value={value} size={28} />
+      <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+        {lines.map((l, i) => (
+          <div key={`${l.label}-${i}`} className="flex items-baseline gap-2 text-xs">
+            <span className="text-muted-foreground uppercase tracking-wide w-16 shrink-0">
+              {l.label === "source" ? `${config.badge} ${l.label}` : l.label}
+            </span>
+            <span className="text-foreground break-words min-w-0">{l.text}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
