@@ -99,8 +99,15 @@ def load_and_resize_portrait(path_str: str) -> Optional[bytes]:
             img.save(buf, format="PNG", optimize=True)
             return buf.getvalue()
     except ImportError:
-        # Pillow 미설치 시 원본 파일을 그대로 반환
-        return path.read_bytes()
+        # Pillow 미설치 — silent corruption 회피: raw bytes 반환은 함수 의도(64x64 리사이즈)와
+        # 정반대이고 _MAX_PORTRAIT_SIZE 가드(adapter)·Content-Type=image/png(dashboard)와도
+        # 충돌한다. 운영자가 즉시 인지할 수 있도록 명시적 실패 + 에러 로그.
+        # 운영 조치: `services/soulstream/venv/bin/pip install Pillow>=10.0.0`.
+        logger.error(
+            "Pillow 미설치로 portrait 리사이즈 불가 — pip install Pillow 필요 (path=%s)",
+            path,
+        )
+        return None
     except Exception:
         return None
 

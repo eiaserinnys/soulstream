@@ -17,6 +17,11 @@ from pathlib import Path
 
 import pytest
 
+# 본 테스트는 portrait_utils.load_and_resize_portrait이 PIL을 사용하여 64x64 PNG로
+# 리사이즈하는 정상 흐름을 검증한다. PIL 미설치 환경에선 함수가 명시적으로 None 반환
+# (silent corruption 회피)이므로 캐시 hit/miss 검증이 무의미 — skip.
+pytest.importorskip("PIL", reason="portrait_utils requires Pillow — pip install Pillow")
+
 
 @pytest.fixture(autouse=True)
 def isolated_cache(monkeypatch, tmp_path: Path):
