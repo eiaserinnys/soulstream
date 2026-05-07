@@ -138,3 +138,56 @@ class TestExecuteCallerInfo:
         tm.create_task.assert_awaited_once()
         # CreateTaskParams는 17 필드를 항상 가지므로 None 여부로 검사
         assert tm.create_task.call_args.args[0].caller_info is not None
+
+    # === 통합 caller_info 스키마 v1 graceful 케이스 (2026-05-07 Phase 5) ===
+
+    async def test_legacy_agent_caller_info_passthrough(self, app_client):
+        """[케이스 A] Phase 3 이전 데이터 — 신규 필드 없는 agent caller_info도 passthrough."""
+        client, tm = app_client
+        legacy = {"source": "agent", "agent_node": "node-x", "agent_id": "a1", "agent_name": "Old"}
+        resp = await client.post("/execute", json={"prompt": "x", "caller_info": legacy})
+        assert resp.status_code == 200
+        assert tm.create_task.call_args.args[0].caller_info == legacy
+
+    async def test_legacy_browser_caller_info_passthrough(self, app_client):
+        """[케이스 B] Phase 2a 이전 데이터 — 신규 필드 없는 browser caller_info도 passthrough."""
+        client, tm = app_client
+        legacy = {"source": "browser", "ip": "1.2.3.4"}
+        resp = await client.post("/execute", json={"prompt": "x", "caller_info": legacy})
+        assert resp.status_code == 200
+        assert tm.create_task.call_args.args[0].caller_info == legacy
+
+    async def test_v1_browser_full_schema_passthrough(self, app_client):
+        """[케이스 C] v1 full browser caller_info — display_name/user_id/avatar_url/email 모두 전달."""
+        client, tm = app_client
+        v1 = {
+            "source": "browser",
+            "display_name": "서소영",
+            "user_id": "user@example.com",
+            "avatar_url": "https://lh3.googleusercontent.com/avatar.png",
+            "email": "user@example.com",
+            "ip": "1.2.3.4",
+        }
+        resp = await client.post("/execute", json={"prompt": "x", "caller_info": v1})
+        assert resp.status_code == 200
+        ci = tm.create_task.call_args.args[0].caller_info
+        assert ci == v1
+        assert ci["user_id"] == ci["email"]  # browser는 의도적 중복
+
+    async def test_v1_slack_with_sub_dict_passthrough(self, app_client):
+        """[케이스 D] v1 full slack caller_info — top-level + slack sub-dict 모두 보존."""
+        client, tm = app_client
+        v1 = {
+            "source": "slack",
+            "user_id": "U08ABCDE",
+            "display_name": "Alice",
+            "avatar_url": "https://avatars.slack-edge.com/x.png",
+            "slack": {"channel_id": "C09SUBDICT", "user_id": "U08ABCDE", "thread_ts": "1234.5"},
+            "bot_name": "seosoyoung",
+        }
+        resp = await client.post("/execute", json={"prompt": "x", "caller_info": v1})
+        assert resp.status_code == 200
+        ci = tm.create_task.call_args.args[0].caller_info
+        assert ci == v1
+        # slack sub-dict 보존 — Phase 4 buildCallerInfoLines가 sub-dict로 channel_id 추출
+        assert ci["slack"]["channel_id"] == "C09SUBDICT"

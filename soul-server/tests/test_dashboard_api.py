@@ -100,7 +100,12 @@ class TestGetDashboardConfig:
 
 
 class TestGetPortrait:
-    """GET /api/dashboard/portrait/{role} 테스트"""
+    """GET /api/dashboard/portrait/{role} 테스트.
+
+    portrait 서빙은 portrait_utils가 PIL로 64x64 PNG로 리사이즈하므로,
+    PIL 미설치 환경에선 portrait_utils가 명시 실패(None) → 404 반환.
+    리사이즈 정상 흐름을 검증하는 케이스만 PIL 필요. 가드 케이스(404)는 PIL 무관.
+    """
 
     def test_invalid_role_returns_404(self, mock_settings):
         """user 외의 role은 404 반환"""
@@ -132,7 +137,13 @@ class TestGetPortrait:
         assert resp.status_code == 404
 
     def test_portrait_served_with_cache(self, mock_settings, tmp_path):
-        """초상화 이미지가 있으면 PNG로 서빙하고 캐시"""
+        """초상화 이미지가 있으면 PNG로 서빙하고 캐시.
+
+        portrait_utils가 PIL로 리사이즈하므로 PIL 필요. 미설치 시 skip.
+        """
+        import pytest as _pytest
+        _pytest.importorskip("PIL", reason="portrait_utils requires Pillow")
+
         from fastapi import FastAPI
 
         # 테스트용 이미지 파일 생성 (1x1 PNG)

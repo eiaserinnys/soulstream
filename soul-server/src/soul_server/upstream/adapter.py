@@ -164,18 +164,35 @@ class UpstreamAdapter:
     # ─── Connection ─────────────────────────────────
 
     @staticmethod
-    def _encode_portrait(path: str) -> str | None:
-        """portrait 파일을 base64 문자열로 인코딩. 실패/초과 시 None."""
-        try:
-            with open(path, "rb") as f:
-                data = f.read()
-            if len(data) > _MAX_PORTRAIT_SIZE:
-                logger.warning("portrait 파일이 너무 큼, base64 스킵: %s (%d bytes)", path, len(data))
-                return None
-            return base64.b64encode(data).decode("ascii")
-        except Exception:
-            logger.warning("portrait 파일 읽기 실패: %s", path)
+    def _encode_portrait(path: str, cache_key_prefix: str = "upstream") -> str | None:
+        """portrait를 64x64 PNG로 리사이즈한 뒤 base64 인코딩. 실패 시 None.
+
+        portrait_utils.get_cached_portrait를 통해 메모리 + 디스크 캐시를 활용한다.
+        리사이즈된 PNG는 일반적으로 ~5KB이므로 _MAX_PORTRAIT_SIZE(512KB) 가드는
+        defense-in-depth 차원으로 유지하되 거의 발동하지 않는다.
+
+        Args:
+            path: 원본 portrait 파일 경로.
+            cache_key_prefix: 캐시 키 prefix (agent/user 등 종류 분리용).
+                같은 path를 다른 용도로 사용해도 캐시 충돌 없이 분리.
+        """
+        if not path:
             return None
+        # lazy import to avoid bootstrap cycle
+        from soul_server.api.portrait_utils import get_cached_portrait
+
+        cache_key = f"{cache_key_prefix}:{path}"
+        data = get_cached_portrait(cache_key, path)
+        if data is None:
+            logger.warning("portrait 로드/리사이즈 실패: %s", path)
+            return None
+        if len(data) > _MAX_PORTRAIT_SIZE:
+            # 리사이즈 후에도 초과하는 경우는 거의 없으나 defense-in-depth
+            logger.warning(
+                "리사이즈된 portrait도 초과: %s (%d bytes)", path, len(data)
+            )
+            return None
+        return base64.b64encode(data).decode("ascii")
 
     def _build_registration_msg(self) -> dict:
         """노드 등록 메시지를 조립한다."""
@@ -203,7 +220,10 @@ class UpstreamAdapter:
                     ),
                 }
                 if profile.portrait_path:
-                    b64 = self._encode_portrait(profile.portrait_path)
+                    b64 = self._encode_portrait(
+                        profile.portrait_path,
+                        cache_key_prefix=f"upstream:agent:{profile.id}",
+                    )
                     if b64:
                         agent_info["portrait_b64"] = b64
                 agents.append(agent_info)
@@ -216,7 +236,10 @@ class UpstreamAdapter:
                 "hasPortrait": bool(self._user_portrait_path),
             }
             if self._user_portrait_path:
-                b64 = self._encode_portrait(self._user_portrait_path)
+                b64 = self._encode_portrait(
+                    self._user_portrait_path,
+                    cache_key_prefix="upstream:user",
+                )
                 if b64:
                     user_info["portrait_b64"] = b64
             msg["user"] = user_info

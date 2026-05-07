@@ -778,11 +778,16 @@ class TestRegistration:
 
     @pytest.mark.asyncio
     async def test_registration_includes_agents_when_registry_provided(self):
-        """agent_registry가 있으면 등록 메시지에 agents 배열 포함."""
+        """agent_registry가 있으면 등록 메시지에 agents 배열 포함.
+
+        2026-05-07 portrait 인프라 통합 후: adapter._encode_portrait이 PIL로
+        리사이즈하므로 invalid raw bytes로는 검증 불가. get_cached_portrait을 mock하여
+        portrait_bytes를 그대로 반환하게 하면 PIL 환경 무관하게 등록 메시지의
+        portrait_b64 송출을 정확히 검증할 수 있다.
+        """
         import base64
 
         portrait_bytes = b"\x89PNGfakeportrait"
-        portrait_b64 = base64.b64encode(portrait_bytes).decode("ascii")
 
         profile = MagicMock()
         profile.id = "seosoyoung"
@@ -794,44 +799,46 @@ class TestRegistration:
 
         adapter = _make_adapter()
         adapter._agent_registry = registry
-        adapter._ws = MagicMock()
-        adapter._ws.closed = False
-        adapter._ws.send_json = AsyncMock()
 
-        # open()을 mock하여 portrait bytes 반환
+        # adapter._encode_portrait이 lazy-import하는 get_cached_portrait을 mock
+        # → PIL 유무·원본 파일 유무 무관하게 raw bytes 반환 흐름 검증
         with patch(
-            "builtins.open",
-            MagicMock(return_value=MagicMock(
-                __enter__=lambda s: s,
-                __exit__=MagicMock(return_value=False),
-                read=MagicMock(return_value=portrait_bytes),
-            )),
-        ):
-            # _connect_and_serve 전체 대신 등록 메시지 조립 부분만 추출하여 _send 호출
-            # adapter._ws.send_json으로 보내는 첫 메시지가 등록 메시지
-            with patch.object(adapter._relay, "start_broadcast", AsyncMock()), \
-                 patch.object(adapter, "_send_initial_sessions", AsyncMock()), \
-                 patch.object(adapter, "_session", create=True) as mock_session:
-                mock_ws = MagicMock()
-                mock_ws.__aiter__ = MagicMock(return_value=iter([]))
-                mock_session.ws_connect = AsyncMock(return_value=mock_ws)
-                adapter._session = mock_session
-                try:
-                    await adapter._connect_and_serve()
-                except Exception:
-                    pass
+            "soul_server.api.portrait_utils.get_cached_portrait",
+            return_value=portrait_bytes,
+        ), \
+             patch.object(adapter._relay, "start_broadcast", AsyncMock()), \
+             patch.object(adapter, "_send_initial_sessions", AsyncMock()), \
+             patch.object(adapter, "_session", create=True) as mock_session:
+            mock_ws = MagicMock()
+            mock_ws.__aiter__ = MagicMock(return_value=iter([]))
+            mock_ws.closed = False
+            mock_ws.send_json = AsyncMock()
+            mock_session.ws_connect = AsyncMock(return_value=mock_ws)
+            adapter._session = mock_session
+            try:
+                await adapter._connect_and_serve()
+            except Exception:
+                pass
 
-        # 보내진 첫 메시지 = 등록 메시지
-        if adapter._ws.send_json.call_count > 0:
-            reg_msg = adapter._ws.send_json.call_args_list[0].args[0]
-            assert "agents" in reg_msg
-            assert len(reg_msg["agents"]) == 1
-            assert reg_msg["agents"][0]["id"] == "seosoyoung"
-            assert "portrait_b64" in reg_msg["agents"][0]
+        # _connect_and_serve가 ws_connect로 받은 mock_ws에 등록 메시지를 송출
+        assert mock_ws.send_json.call_count > 0, (
+            "등록 메시지가 ws.send_json으로 송출되어야 함"
+        )
+        reg_msg = mock_ws.send_json.call_args_list[0].args[0]
+        assert "agents" in reg_msg
+        assert len(reg_msg["agents"]) == 1
+        assert reg_msg["agents"][0]["id"] == "seosoyoung"
+        assert "portrait_b64" in reg_msg["agents"][0]
+        assert base64.b64decode(reg_msg["agents"][0]["portrait_b64"]) == portrait_bytes
 
     @pytest.mark.asyncio
     async def test_registration_skips_large_portrait(self, tmp_path):
-        """512KB 초과 portrait는 portrait_b64 없이 등록."""
+        """리사이즈 후에도 _MAX_PORTRAIT_SIZE 초과면 portrait_b64 제외 (defense-in-depth).
+
+        2026-05-07 portrait 인프라 통합 후: 일반적으로 PIL이 64x64 PNG로 ~5KB까지
+        줄여 가드는 거의 발동 안 한다. 그러나 PIL 미설치 환경 등에서 raw bytes가
+        그대로 반환되면 가드가 작동해야 한다 — 그것을 검증.
+        """
         from soul_server.upstream.adapter import _MAX_PORTRAIT_SIZE
 
         large_data = b"\x89PNG" + b"x" * (_MAX_PORTRAIT_SIZE + 1)
@@ -848,15 +855,20 @@ class TestRegistration:
 
         adapter = _make_adapter()
         adapter._agent_registry = registry
-        adapter._ws = MagicMock()
-        adapter._ws.closed = False
-        adapter._ws.send_json = AsyncMock()
 
-        with patch.object(adapter._relay, "start_broadcast", AsyncMock()), \
+        # get_cached_portrait이 큰 raw bytes를 그대로 반환하도록 mock —
+        # adapter._encode_portrait의 _MAX_PORTRAIT_SIZE 가드 분기를 직접 exercise
+        with patch(
+            "soul_server.api.portrait_utils.get_cached_portrait",
+            return_value=large_data,
+        ), \
+             patch.object(adapter._relay, "start_broadcast", AsyncMock()), \
              patch.object(adapter, "_send_initial_sessions", AsyncMock()), \
              patch.object(adapter, "_session", create=True) as mock_session:
             mock_ws = MagicMock()
             mock_ws.__aiter__ = MagicMock(return_value=iter([]))
+            mock_ws.closed = False
+            mock_ws.send_json = AsyncMock()
             mock_session.ws_connect = AsyncMock(return_value=mock_ws)
             adapter._session = mock_session
             try:
@@ -864,15 +876,19 @@ class TestRegistration:
             except Exception:
                 pass
 
-        if adapter._ws.send_json.call_count > 0:
-            reg_msg = adapter._ws.send_json.call_args_list[0].args[0]
-            assert "agents" in reg_msg
-            # portrait_b64 없어야 함
-            assert "portrait_b64" not in reg_msg["agents"][0]
+        assert mock_ws.send_json.call_count > 0
+        reg_msg = mock_ws.send_json.call_args_list[0].args[0]
+        assert "agents" in reg_msg
+        # portrait_b64 없어야 함 (가드 발동)
+        assert "portrait_b64" not in reg_msg["agents"][0]
 
     @pytest.mark.asyncio
     async def test_registration_includes_user_when_user_name_provided(self, tmp_path):
-        """user_name이 있으면 등록 메시지에 user 필드 포함."""
+        """user_name이 있으면 등록 메시지에 user 필드 포함.
+
+        2026-05-07 portrait 인프라 통합 후: get_cached_portrait을 mock하여
+        raw bytes 흐름을 PIL 환경 무관하게 검증.
+        """
         import base64
 
         portrait_bytes = b"\x89PNGfakeuserportrait"
@@ -883,7 +899,11 @@ class TestRegistration:
         adapter._user_name = "서소영"
         adapter._user_portrait_path = str(portrait_file)
 
-        with patch.object(adapter._relay, "start_broadcast", AsyncMock()), \
+        with patch(
+            "soul_server.api.portrait_utils.get_cached_portrait",
+            return_value=portrait_bytes,
+        ), \
+             patch.object(adapter._relay, "start_broadcast", AsyncMock()), \
              patch.object(adapter, "_send_initial_sessions", AsyncMock()), \
              patch.object(adapter, "_session", create=True) as mock_session:
             mock_ws = MagicMock()
