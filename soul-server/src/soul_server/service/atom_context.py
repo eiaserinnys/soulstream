@@ -13,8 +13,14 @@ from soul_server.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-_ATOM_ID_PATTERN = re.compile(
-    r"<!-- node:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}) .*?chars:(\d+).*?-->"
+_UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+
+# atom HTML metadata 주석을 매칭한다 (PR #10 / 67323e8 형식 정합).
+#   group(1) node_id  — 필수
+#   group(2) card_id  — 옵션 (구 단일 ID 입력 폴백)
+#   group(3) chars    — 옵션 (heading 모드는 chars 없음)
+_ATOM_HTML_PATTERN = re.compile(
+    rf"<!--\s*node:({_UUID})(?:\s+card:({_UUID}))?(?:\s+[^>]*?chars:(\d+))?[^>]*?-->"
 )
 _ATOM_CONTEXT_HEADER = (
     "# atom 트리 | 드릴다운: "
@@ -23,23 +29,41 @@ _ATOM_CONTEXT_HEADER = (
 )
 
 
-def format_atom_context(markdown: str) -> str:
-    """include_ids 출력의 HTML 주석을 [node_id] (N chars) 포맷으로 변환한다.
+def _format_id_comment(m: re.Match) -> str:
+    """매칭된 HTML 주석을 짧은 ID 라벨로 치환한다."""
+    node_id = m.group(1)
+    card_id = m.group(2)
+    chars = m.group(3)
+    label = f"[node:{node_id} card:{card_id}]" if card_id else f"[{node_id}]"
+    if chars is not None:
+        return f"{label} ({chars} chars)"
+    return label
 
-    입력 예시 (일반 노드):
-        soulstream <!-- node:d71af4b5-c53a-49a4-9e07-9b6ee531fb56 card:... chars:123 -->
-    입력 예시 (symlink 노드, chars 뒤에 symlink:true 필드 있음):
-        ~ 심링크 <!-- node:a1b2c3d4-0000-0000-0000-000000000000 card:... chars:0 symlink:true -->
+
+def format_atom_context(markdown: str) -> str:
+    """atom HTML metadata 주석을 짧은 ID 라벨로 변환한다.
+
+    출력 라벨 형식 (atom PR #10 정합):
+      - 두 ID 보존:  ``[node:X card:Y] [(N chars)]``
+      - 구 단일 ID:  ``[X] [(N chars)]``
+
+    HTML 주석 없는 라인(짧은 라벨, ``*(cycle)*``, plain text)은
+    정규식 미매칭으로 자동 통과한다 — 후처리 idempotent.
+
+    입력 예시 (titles_only, 두 ID + chars):
+        ``├── 시스템 <!-- node:UUIDX card:UUIDY depth:1 chars:42 -->``
+    입력 예시 (heading 모드, chars 없음):
+        ``## 시스템 <!-- node:UUIDX card:UUIDY depth:1 created:2026-04-01 -->``
+    입력 예시 (symlink, chars 뒤 symlink:true):
+        ``~ 심링크 <!-- node:UUIDX card:UUIDY depth:2 chars:0 symlink:true -->``
     출력 예시:
-        soulstream [d71af4b5-c53a-49a4-9e07-9b6ee531fb56] (123 chars)
+        ``├── 시스템 [node:UUIDX card:UUIDY] (42 chars)``
+        ``## 시스템 [node:UUIDX card:UUIDY]``
+        ``~ 심링크 [node:UUIDX card:UUIDY] (0 chars)``
     """
     lines = []
     for line in markdown.splitlines():
-        m = _ATOM_ID_PATTERN.search(line)
-        if m:
-            node_id = m.group(1)
-            chars = m.group(2)
-            line = _ATOM_ID_PATTERN.sub(f"[{node_id}] ({chars} chars)", line)
+        line = _ATOM_HTML_PATTERN.sub(_format_id_comment, line)
         lines.append(line)
     return _ATOM_CONTEXT_HEADER + "\n".join(lines)
 
