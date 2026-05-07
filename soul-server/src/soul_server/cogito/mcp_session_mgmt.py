@@ -93,8 +93,13 @@ async def create_agent_session(
             # avatar_url은 portrait_path가 빈 값이면 None (Phase 4에서 이니셜 fallback 발동).
             "display_name": caller_profile.name if caller_profile else None,
             "user_id": caller_task.profile_id if caller_task else None,
+            # avatar_url은 orch-server의 노드 프록시 경로를 사용한다.
+            # 정본: orch-server/api/session_serializer.py:13-15 _build_portrait_proxy_url.
+            # `/api/agents/{id}/portrait`은 soul-server 로컬 라우트일 뿐 orch에는 없음 → 404.
+            # caller_info를 표시하는 unified-dashboard는 orch-server에 요청하므로
+            # 노드 프록시 경로(/api/nodes/{node_id}/agents/{agent_id}/portrait)가 필요.
             "avatar_url": (
-                f"/api/agents/{caller_task.profile_id}/portrait"
+                f"/api/nodes/{task_manager._db.node_id}/agents/{caller_task.profile_id}/portrait"
                 if (caller_task and caller_profile and caller_profile.portrait_path)
                 else None
             ),

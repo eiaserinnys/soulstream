@@ -116,8 +116,13 @@ async def test_caller_profile_missing_yields_user_id_only():
 
 @pytest.mark.asyncio
 async def test_caller_profile_with_portrait_includes_avatar_url():
-    """caller_profile.portrait_path 있으면 avatar_url=/api/agents/{id}/portrait."""
+    """caller_profile.portrait_path 있으면 avatar_url은 orch 노드 프록시 경로.
 
+    정본: orch-server/api/session_serializer.py:13-15 _build_portrait_proxy_url.
+    형식: /api/nodes/{node_id}/agents/{agent_id}/portrait
+    근거: caller_info를 표시하는 unified-dashboard는 orch-server에 요청하므로
+    soul-server 로컬 라우트(/api/agents/{id}/portrait)는 404.
+    """
     caller_task = _make_task("seosoyoung")
     caller_profile = AgentProfile(
         id="seosoyoung", name="서소영", workspace_dir="/ws", portrait_path="/img/seosoyoung.png"
@@ -126,7 +131,7 @@ async def test_caller_profile_with_portrait_includes_avatar_url():
     registry.get = MagicMock(return_value=caller_profile)
 
     ctx, tm = _patch_create_agent_session(
-        caller_task=caller_task, caller_profile=caller_profile, registry=registry
+        caller_task=caller_task, caller_profile=caller_profile, registry=registry, db_node_id="node-x"
     )
     with ctx:
         await create_agent_session(agent_id="a1", prompt="hi", caller_session_id="sess-1")
@@ -135,7 +140,38 @@ async def test_caller_profile_with_portrait_includes_avatar_url():
     assert ci["agent_name"] == "서소영"
     assert ci["display_name"] == "서소영"
     assert ci["user_id"] == "seosoyoung"
-    assert ci["avatar_url"] == "/api/agents/seosoyoung/portrait"
+    # 노드 프록시 경로 (orch-server 정본)
+    assert ci["avatar_url"] == "/api/nodes/node-x/agents/seosoyoung/portrait"
+    # agent_node와 동일 node_id를 사용 (caller_info dict 내부 일관성)
+    assert ci["agent_node"] == "node-x"
+
+
+@pytest.mark.asyncio
+async def test_caller_info_avatar_url_uses_node_proxy_path():
+    """avatar_url URL 형식이 /api/nodes/{node_id}/agents/{agent_id}/portrait 표준을 따른다.
+
+    정본 인용: orch-server/api/session_serializer.py:13-15.
+    """
+    caller_task = _make_task("agent-z")
+    caller_profile = AgentProfile(
+        id="agent-z", name="Z Agent", workspace_dir="/ws", portrait_path="/img/z.png"
+    )
+    registry = MagicMock()
+    registry.get = MagicMock(return_value=caller_profile)
+
+    ctx, tm = _patch_create_agent_session(
+        caller_task=caller_task,
+        caller_profile=caller_profile,
+        registry=registry,
+        db_node_id="eias-shopping",
+    )
+    with ctx:
+        await create_agent_session(agent_id="a1", prompt="hi", caller_session_id="sess-1")
+
+    ci = _captured_caller_info(tm)
+    assert ci["avatar_url"] == "/api/nodes/eias-shopping/agents/agent-z/portrait"
+    # agent_node와 avatar_url의 node_id 부분이 동일 (정합성)
+    assert f"/api/nodes/{ci['agent_node']}/" in ci["avatar_url"]
 
 
 @pytest.mark.asyncio
