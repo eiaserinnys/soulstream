@@ -3,20 +3,13 @@
  *
  * Phase 6: toolUseMap 삭제 완료. tool_use_id → 노드 매핑은 nodeMap에 통합.
  * Phase 7: thinking/text 분리. lastThinkingByParent 삭제, TextTargetNode → TextNode.
+ * Phase 2-A: 트리 평탄화로 historyMode/orphans 필드 폐기 (atom 260507.01.fe-tree-flattening).
+ *   parent_event_id를 무시하므로 부모 부재로 인한 큐(orphan) / 라이브-히스토리 분기(historyMode)가
+ *   필요 없다. activeTextTarget·historySynced는 별개 목적으로 보존된다 (text 스트림 누적, 세션 상태 게이트).
+ *   TreeChangeType / TreeChangeInfo도 NodeGraph 제거(Phase 1) 후 dead state라 폐기.
  */
 
 import type { EventTreeNode, EventTreeNodeType, TextNode } from "@shared/types";
-
-// === Tree Change Info ===
-
-/** 트리 변경 유형 (Phase 2 정리 예정 dead state — 소비자가 모두 제거됨) */
-export type TreeChangeType = 'node-added' | 'node-updated' | 'collapse-toggle' | 'full-rebuild';
-
-export interface TreeChangeInfo {
-  type: TreeChangeType;
-  /** node-added, node-updated 시 대상 노드 ID */
-  nodeId?: string;
-}
 
 // === ProcessingContext ===
 
@@ -24,26 +17,12 @@ export interface TreeChangeInfo {
 export type TextTargetNode = TextNode;
 
 export interface ProcessingContext {
-  /** ID → 노드 (O(1) 탐색). node.id, _event_id(String), tool_use_id로 등록. */
+  /** ID → 노드 (O(1) 탐색). node.id, _event_id(String), tool_use_id, request_id로 등록. */
   nodeMap: Map<string, EventTreeNode>;
   /** 현재 text_start → text_delta → text_end 시퀀스의 대상 노드 */
   activeTextTarget: TextTargetNode | null;
   /** history_sync 수신 여부. false인 동안은 히스토리 리플레이 중이므로 세션 상태 갱신을 억제. */
   historySynced: boolean;
-  /**
-   * 히스토리 prepend 모드. true이면 부모 부재 자식 이벤트를 orphans 큐에 보관하고,
-   * 부모가 도착할 때 자동으로 attach한다. 라이브 SSE는 false로 유지하여
-   * 기존 root fallback(tree-placer.ts:resolveParent) 동작을 보존한다.
-   *
-   * processHistoryEvents 액션이 try/finally로 토글한다 (slices/session-slice.ts).
-   */
-  historyMode: boolean;
-  /**
-   * 부모 부재 자식 노드 큐. 키는 parent_event_id (String).
-   * placeInTree/handleTextStart에서 새 노드 등록 시 자식 후보들을 조회·attach 후 키 삭제.
-   * historyMode=true일 때만 이 큐에 보관된다.
-   */
-  orphans: Map<string, EventTreeNode[]>;
 }
 
 export function createProcessingContext(): ProcessingContext {
@@ -51,8 +30,6 @@ export function createProcessingContext(): ProcessingContext {
     nodeMap: new Map(),
     activeTextTarget: null,
     historySynced: false,
-    historyMode: false,
-    orphans: new Map(),
   };
 }
 

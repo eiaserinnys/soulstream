@@ -11,7 +11,7 @@
  */
 
 import type { EventTreeNode, ToolNode } from "@shared/types";
-import { useDashboardStore, findTreeNode, type SelectedEventNodeData } from "../stores/dashboard-store";
+import { useDashboardStore, type SelectedEventNodeData } from "../stores/dashboard-store";
 import { ThinkingDetail } from "./detail/ThinkingDetail";
 import { ToolDetail } from "./detail/ToolDetail";
 import { SubAgentDetail } from "./detail/SubAgentDetail";
@@ -231,10 +231,15 @@ export function DetailView() {
   const selectedEventNodeData = useDashboardStore(
     (s) => s.selectedEventNodeData,
   );
+  // tree subscription은 selectedCard 노드 lookup의 의존성 — 트리 변경 시 selectedCard 객체도 갱신.
   const tree = useDashboardStore((s) => s.tree);
+  const processingCtx = useDashboardStore((s) => s.processingCtx);
 
+  // Phase 2-A 평탄화 후: nodeMap.get으로 직접 lookup (트리 DFS 폐기, O(1)).
+  // void tree는 selector 구독 활성화 표식 (lint suppression).
+  void tree;
   const selectedCard: EventTreeNode | null = selectedCardId
-    ? findTreeNode(tree, selectedCardId)
+    ? processingCtx.nodeMap.get(selectedCardId) ?? null
     : null;
 
   const hasSelection = selectedCard || selectedEventNodeData;

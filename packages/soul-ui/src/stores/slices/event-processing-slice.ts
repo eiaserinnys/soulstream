@@ -2,15 +2,23 @@
  * Event Processing Slice
  *
  * SSE 이벤트 트리에 대한 처리 책임을 모은 슬라이스.
- * - 트리 상태(tree, treeVersion, totalSubtreeHeight 등)와 이벤트 처리 컨텍스트(processingCtx) 소유.
+ * - 트리 상태(tree, treeVersion 등)와 이벤트 처리 컨텍스트(processingCtx) 소유.
  * - processEvent / processEvents / processHistoryEvents / setTotalSubtreeHeight 액션을 제공.
+ *
+ * Phase 2-A 평탄화 (atom 작업 이력 260507.01.fe-tree-flattening):
+ *   - tree-placer가 root.children 평면 push로 단순화되면서 historyMode 토글·orphan 큐가
+ *     필요 없어짐. processHistoryEvents의 try/finally는 activeTextTarget 격리만 남긴다.
+ *   - subtree_update SSE는 event-processor에서 dedup만 갱신하고 no-op 반환. slice 측의
+ *     applySubtreeHeightUpdate / subtreeHeightUpdate 적용 분기는 모두 폐기.
+ *   - treeChangeInfo는 NodeGraph 제거(Phase 1) 후 소비자 0건이라 폐기.
+ *   - totalSubtreeHeight·setTotalSubtreeHeight는 §11.3 결정대로 Phase D에서 grep 후 폐기.
+ *     본 페이즈에서는 dead 정본으로 유지(0 초기값, setter만 동작).
  *
  * 핵심 invariants:
  * - tree, treeVersion, chatPrependedCount, chatLastPrependAtMs는 한 set({}) 호출 안에 묶여야
  *   Zustand subscribe가 1회만 발화하여 React 한 렌더 사이클에서 정합 (atom 816060d2).
  * - processHistoryEvents의 chatLastPrependAtMs 갱신은 result.updated 분기 *밖*에 둔다 —
- *   dedup-only / subtree-only 같은 updated=false 코너 케이스에서도 settle 가드가
- *   stale로 남지 않도록 한다 (atom c3047ee9).
+ *   dedup-only 같은 updated=false 코너 케이스에서도 settle 가드가 stale로 남지 않도록 한다 (atom c3047ee9).
  * - chatPrependedCount는 grouped 차분(messages 차분 아님)으로 갱신해야 Virtuoso
  *   firstItemIndex 변화량과 data 추가량이 정합 (atom 3eb91fad).
  */
@@ -19,18 +27,15 @@ import type { StateCreator } from "zustand";
 import type { SoulSSEEvent, EventTreeNode } from "@shared/types";
 import type { DashboardState, DashboardActions } from "../dashboard-store-types";
 import {
-  type TreeChangeInfo,
   type ProcessingContext,
   createProcessingContext,
 } from "../processing-context";
 import {
   processEventSingle,
   processEventsBatch,
-  type SubtreeHeightUpdate,
 } from "../event-processor";
 import { flattenTree } from "../../lib/flatten-tree";
 import { groupMessages } from "../../lib/grouping";
-import { diag } from "../../lib/diag";
 
 /**
  * event-processing-slice가 소유하는 필드들의 초기값을 매번 새 인스턴스로 생성한다.
@@ -46,7 +51,6 @@ export function getEventProcessingInitialState(): Pick<
   | "treeVersion"
   | "chatPrependedCount"
   | "chatLastPrependAtMs"
-  | "treeChangeInfo"
   | "lastEventId"
   | "totalSubtreeHeight"
   | "pendingNotifications"
@@ -57,30 +61,11 @@ export function getEventProcessingInitialState(): Pick<
     treeVersion: 0,
     chatPrependedCount: 0,
     chatLastPrependAtMs: null as number | null,
-    treeChangeInfo: null as TreeChangeInfo | null,
     lastEventId: 0,
     totalSubtreeHeight: 0,
     pendingNotifications: [] as SoulSSEEvent[],
     processingCtx: createProcessingContext(),
   };
-}
-
-/**
- * subtree_update 결과를 nodeMap에 증분 적용한다.
- *
- * nodeMap은 `_event_id`(String(eventId))로 노드를 등록해두므로,
- * 서버 deltas key(JSON 직렬화로 string)를 그대로 조회에 사용한다.
- * 매칭되지 않는 id는 아직 클라이언트에 배치되지 않은 원격 조상이므로 무시한다.
- */
-function applySubtreeHeightUpdate(
-  ctx: ProcessingContext,
-  update: SubtreeHeightUpdate,
-): void {
-  for (const [idStr, delta] of Object.entries(update.deltas)) {
-    const node = ctx.nodeMap.get(idStr);
-    if (!node) continue;
-    node.subtreeHeight = (node.subtreeHeight ?? 1) + delta;
-  }
 }
 
 export type EventProcessingSlice = Pick<
@@ -89,7 +74,6 @@ export type EventProcessingSlice = Pick<
   | "treeVersion"
   | "chatPrependedCount"
   | "chatLastPrependAtMs"
-  | "treeChangeInfo"
   | "lastEventId"
   | "totalSubtreeHeight"
   | "pendingNotifications"
@@ -147,22 +131,10 @@ export const createEventProcessingSlice: StateCreator<
       return result.statusUpdate;
     }
 
-    // subtree_update 증분 적용 — nodeMap 변경 후 totalSubtreeHeight 갱신
-    if (result.subtreeHeightUpdate) {
-      applySubtreeHeightUpdate(state.processingCtx, result.subtreeHeightUpdate);
-      set({
-        totalSubtreeHeight: result.subtreeHeightUpdate.newTotal,
-        lastEventId: result.newLastEventId,
-        treeVersion: state.treeVersion + 1,
-      });
-      return result.statusUpdate;
-    }
-
     if (result.updated) {
       set({
         tree: result.root,
         treeVersion: state.treeVersion + 1,
-        treeChangeInfo: result.treeChangeInfo,
         lastEventId: result.newLastEventId,
         ...(result.notify
           ? { pendingNotifications: [...state.pendingNotifications, event] }
@@ -195,11 +167,6 @@ export const createEventProcessingSlice: StateCreator<
       state.lastEventId,
     );
 
-    // subtree_update 배치 집계가 있으면 nodeMap에 증분 적용
-    if (result.subtreeHeightUpdate) {
-      applySubtreeHeightUpdate(state.processingCtx, result.subtreeHeightUpdate);
-    }
-
     // prompt_suggestion: clear → set 순서. 같은 배치에 둘 다 있을 때 새 값이 정본이 됨.
     if (result.clearPromptSuggestionFor) {
       get().clearPromptSuggestion(result.clearPromptSuggestionFor);
@@ -213,15 +180,7 @@ export const createEventProcessingSlice: StateCreator<
 
     set({
       ...(result.updated
-        ? { tree: result.root, treeVersion: state.treeVersion + 1, treeChangeInfo: null }
-        : {}),
-      ...(result.subtreeHeightUpdate
-        ? {
-            totalSubtreeHeight: result.subtreeHeightUpdate.newTotal,
-            ...(result.updated
-              ? {}
-              : { treeVersion: state.treeVersion + 1 }),
-          }
+        ? { tree: result.root, treeVersion: state.treeVersion + 1 }
         : {}),
       lastEventId: result.maxEventId,
       ...(result.notifications.length > 0
@@ -235,33 +194,34 @@ export const createEventProcessingSlice: StateCreator<
   // --- 히스토리 prepend 처리 ---
   //
   // messages API에서 받은 raw 이벤트들을 라이브 SSE와 동일한 event-processor 파이프라인을
-  // 거쳐 store.tree에 통합한다. processingCtx.historyMode를 try/finally로 토글하여
-  // 부모 부재 자식을 orphan 큐로 분기시킨다 (tree-placer.ts:resolveParent).
+  // 거쳐 store.tree에 통합한다.
+  //
+  // Phase 2-A 평탄화 후: orphan 큐와 historyMode 분기가 사라졌으므로 try/finally의
+  // 유일한 책임은 activeTextTarget 격리다. 라이브 SSE의 진행 중 text 스트림 노드를 prepend
+  // 페이지의 handleTextStart가 덮어쓰지 않도록 try 진입 시 null로 초기화하고 finally에서
+  // 원본을 복원한다. 격리 없으면 prepend 처리 후 라이브 text_delta가 과거 text 노드에
+  // 잘못 누적되어 메시지가 오염된다.
   //
   // 반환: addedCount (grouped 차분 — store.chatPrependedCount도 같은 set()에서 갱신).
   // grouped 차분으로 통일하는 이유: virtuoso `data={grouped}`이고 firstItemIndex
   // 변화량은 data 추가량과 정확히 일치해야 위치 보존이 정확하다. messages 차분(flattenTree)을
   // 쓰면 연속 tool 그룹 병합 시 grouped는 0개 늘었는데 firstItemIndex는 N만큼 줄어
   // 좌표가 어긋난다 (flashing + 끝 도달 실패의 원인).
-  // (eventId dedup은 processEventsBatch 내부에서 처리되므로 차분이 페이지 크기와 다를 수 있음)
+  // (eventId dedup은 processEventsBatch 내부에서 처리됨)
   processHistoryEvents: (events) => {
     if (events.length === 0) return { addedCount: 0 };
 
     const state = get();
     const beforeGrouped = groupMessages(flattenTree(state.tree)).length;
 
-    // historyMode + activeTextTarget을 try/finally로 격리한다.
-    //
-    // historyMode: 부모 부재 자식을 orphan으로 분기 (tree-placer.ts:resolveParent).
-    // activeTextTarget: 라이브 SSE의 진행 중 text 스트림 노드를 prepend 페이지의
-    //   handleTextStart가 덮어쓰지 않도록 격리. 격리 없으면 prepend 처리 후 라이브
-    //   text_delta가 과거 text 노드에 잘못 누적되어 메시지가 오염된다.
-    state.processingCtx.historyMode = true;
+    // activeTextTarget 격리 — 라이브 text 스트림이 prepend 페이지의 text 노드로 오염되지 않도록.
     const savedActiveTextTarget = state.processingCtx.activeTextTarget;
     state.processingCtx.activeTextTarget = null;
 
     let addedGrouped = 0;
     try {
+      // skipDedup=true: history prepend 이벤트는 lastEventId 이하의 과거 ID를 의도적으로 처리한다.
+      // 같은 배치 내 중복은 placeInTree의 nodeMap.has 가드가 silent skip한다.
       const result = processEventsBatch(
         events,
         state.processingCtx,
@@ -269,11 +229,8 @@ export const createEventProcessingSlice: StateCreator<
         state.activeSessionKey,
         state.activeSessionSummary,
         state.lastEventId,
+        true,
       );
-
-      if (result.subtreeHeightUpdate) {
-        applySubtreeHeightUpdate(state.processingCtx, result.subtreeHeightUpdate);
-      }
 
       // prompt_suggestion: clear → set 순서. 히스토리 prepend 경로에서도 동일하게 처리.
       if (result.clearPromptSuggestionFor) {
@@ -296,7 +253,6 @@ export const createEventProcessingSlice: StateCreator<
           ? {
               tree: result.root,
               treeVersion: state.treeVersion + 1,
-              treeChangeInfo: null,
               // tree와 같은 set() 안에서 atomic 갱신 — Zustand subscribe 1회로
               // ChatView 1렌더 사이클 정합 보장 (async batching 무의존).
               chatPrependedCount: state.chatPrependedCount + addedGrouped,
@@ -305,23 +261,16 @@ export const createEventProcessingSlice: StateCreator<
         // chatLastPrependAtMs는 "마지막 prepend 시도 시각" — settle 가드용.
         // result.updated와 무관하게 항상 갱신한다 (events.length===0 early-return으로
         // 빈 호출은 위에서 이미 차단됨). 사용자가 startReached로 fetch를 일으킨
-        // 모든 응답이 settle 가드의 시각 기준이 되어야 dedup-only/subtree-only 같은
-        // updated=false 코너 케이스에서도 stale 가드 무력화가 발생하지 않는다.
+        // 모든 응답이 settle 가드의 시각 기준이 되어야 dedup-only 같은 updated=false
+        // 코너 케이스에서도 stale 가드 무력화가 발생하지 않는다 (atom c3047ee9).
         chatLastPrependAtMs: performance.now(),
-        lastEventId: result.maxEventId,
+        // history prepend의 result.maxEventId는 과거 ID라 작을 수 있다. 라이브 SSE의
+        // 큰 lastEventId가 prepend로 줄어들면 이후 라이브 dedup이 무력화되므로 max로 보호.
+        lastEventId: Math.max(state.lastEventId, result.maxEventId),
       });
     } finally {
-      // 라이브 SSE 동작 보존을 위해 항상 복원
-      state.processingCtx.historyMode = false;
+      // 라이브 SSE 텍스트 스트림 보존을 위해 항상 복원.
       state.processingCtx.activeTextTarget = savedActiveTextTarget;
-
-      // 미해소 orphan 진단 — 데이터 손상 또는 ancestor 누락 시 감지
-      if (state.processingCtx.orphans.size > 0) {
-        const orphanSummary = Array.from(state.processingCtx.orphans.entries()).map(
-          ([parentKey, children]) => ({ parentKey, count: children.length }),
-        );
-        diag("history", "unresolved orphans after history batch", { orphans: orphanSummary });
-      }
     }
 
     return { addedCount: addedGrouped };
@@ -329,8 +278,8 @@ export const createEventProcessingSlice: StateCreator<
 
   // --- 뷰포트 API: totalSubtreeHeight 덮어쓰기 ---
   //
-  // 뷰포트 응답의 total_subtree_height를 정본으로 반영한다.
-  // 같은 값이면 set을 건너뛰어 불필요한 리렌더를 방지한다.
+  // §11.3 Phase D 결정 대상. 본 페이즈에서는 setter를 dead-but-functional 상태로 유지.
+  // Phase D에서 컴포넌트·훅 소비자 grep 후 0건이면 totalSubtreeHeight 필드와 함께 폐기.
   setTotalSubtreeHeight: (total) => {
     if (get().totalSubtreeHeight === total) return;
     set({ totalSubtreeHeight: total });

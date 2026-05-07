@@ -16,7 +16,7 @@ import type {
   CatalogState,
   CatalogFolder,
 } from "@shared/types";
-import type { ProcessingContext, TreeChangeInfo } from "./processing-context";
+import type { ProcessingContext } from "./processing-context";
 
 // === Dashboard Config ===
 
@@ -132,9 +132,6 @@ export interface DashboardState {
    */
   chatLastPrependAtMs: number | null;
 
-  /** 마지막 트리 변경의 유형 (Phase 2 정리 예정 dead state) */
-  treeChangeInfo: TreeChangeInfo | null;
-
   /** 마지막으로 수신한 이벤트 ID (SSE 재연결용) */
   lastEventId: number;
 
@@ -241,9 +238,10 @@ export interface DashboardActions {
   /**
    * 히스토리 prepend 처리 — messages API에서 받은 raw 이벤트들을 store.tree에 통합한다.
    *
-   * processingCtx.historyMode를 잠시 true로 toggle하여 부모 부재 자식을
-   * orphan 큐로 분기시킨다(tree-placer.ts:resolveParent). 라이브 SSE의
-   * root fallback 동작은 보존된다.
+   * Phase 2-A 평탄화 후: tree-placer가 root.children 평면 push만 하므로 historyMode 분기
+   * 없이 라이브 SSE와 동일 파이프라인을 사용한다. processingCtx.activeTextTarget만 잠시
+   * 격리(try/finally)하여 prepend 페이지의 handleTextStart가 라이브 text 스트림 노드를
+   * 덮어쓰지 않도록 한다.
    *
    * 반환 addedCount는 grouped(MessageOrGroup) 차분이며, 같은 set() 안에서
    * store.chatPrependedCount += addedCount 로 atomic 갱신된다.

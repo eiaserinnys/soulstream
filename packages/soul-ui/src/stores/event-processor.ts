@@ -3,6 +3,14 @@
  *
  * dashboard-store의 processEvent/processEvents에서 사용하는 핵심 처리 함수.
  * 순수 함수로 분리하여 store set() 호출과 이벤트 처리 로직을 분리한다.
+ *
+ * Phase 2-A 평탄화 (atom 작업 이력 260507.01.fe-tree-flattening, §11.1 옵션 C):
+ *   - subtree_update SSE 처리는 dedup 갱신만 하고 트리 변경 없음 (no-op return).
+ *     백엔드는 계속 송출하지만 FE는 무시한다 (Phase 2-B 후속 카드에서 백엔드 발신 정리).
+ *   - treeChangeInfo 분류·SubtreeHeightUpdate 인터페이스는 NodeGraph 제거(Phase 1) 후
+ *     소비자 0건이라 폐기. P1 의존성으로 event-processing-slice도 함께 정리한다.
+ *   - tree-placer가 root.children에 평면 push하므로 historyMode 분기 / orphan 큐는 사라졌다.
+ *   - placeInTree 호출 의미는 그대로 유지(시그니처 무변경).
  */
 
 import type {
@@ -13,12 +21,10 @@ import type {
   SessionNode,
   TextStartEvent,
   HistorySyncEvent,
-  SubtreeUpdateSSEEvent,
   PromptSuggestionEvent,
 } from "@shared/types";
 import {
   type ProcessingContext,
-  type TreeChangeInfo,
   ensureRoot,
 } from "./processing-context";
 import { createNodeFromEvent, applyUpdate } from "./node-factory";
@@ -52,33 +58,14 @@ function applyLlmMetadata(
   }
 }
 
-/**
- * subtree_update 결과 — nodeMap 증분 적용용.
- *
- * 서버가 Python `dict[int, int]`로 보내지만 JSON 직렬화로 key는 string.
- * 소비자(store reducer)가 `nodeMap.get(String(idStr))`로 조회한다
- * (nodeMap key는 _event_id가 `String(eventId)`로 등록되어 있음).
- */
-export interface SubtreeHeightUpdate {
-  /** ancestor_id(string) → +delta 매핑 */
-  deltas: Record<string, number>;
-  /** 갱신 후 totalSubtreeHeight 정본 */
-  newTotal: number;
-  /** 이 배치에서 영향받은 이벤트 ID 목록 (디버깅용) */
-  affectedIds: number[];
-}
-
 /** processEventSingle의 반환값 */
 export interface SingleEventResult {
   root: EventTreeNode | null;
   updated: boolean;
-  treeChangeInfo: TreeChangeInfo | null;
   statusUpdate: { agentSessionId: string; status: SessionStatus } | null;
   notify: boolean;
   newLastEventId: number;
   isHistorySync: boolean;
-  /** subtree_update 이벤트 발생 시 설정됨 — store reducer가 nodeMap·totalSubtreeHeight 증분 적용 */
-  subtreeHeightUpdate?: SubtreeHeightUpdate | null;
   /** prompt_suggestion 이벤트 발생 시 설정됨 — store reducer가 lastPromptSuggestions[sessionId]에 적용 */
   promptSuggestion?: { sessionId: string; text: string } | null;
   /** text_start 등 응답 시작 이벤트 발생 시 설정됨 — store reducer가 해당 세션의 suggestion clear */
@@ -100,26 +87,19 @@ export function processEventSingle(
 ): SingleEventResult {
   // Dedup
   if (eventId > 0 && eventId <= lastEventId) {
-    return { root, updated: false, treeChangeInfo: null, statusUpdate: null, notify: false, newLastEventId: lastEventId, isHistorySync: false };
+    return { root, updated: false, statusUpdate: null, notify: false, newLastEventId: lastEventId, isHistorySync: false };
   }
 
-  // subtree_update — 노드 생성·트리 변경 없이 nodeMap 증분만 갱신한다.
-  // store reducer가 subtreeHeightUpdate를 받아 nodeMap과 totalSubtreeHeight에 적용한다.
+  // subtree_update — Phase 2-A 평탄화: 트리 변경 없음, dedup만 갱신.
+  // 백엔드는 계속 송출하지만 FE는 무시한다 (Phase 2-B 후속 카드).
   if (event.type === "subtree_update") {
-    const ev = event as SubtreeUpdateSSEEvent;
     return {
       root,
       updated: false,
-      treeChangeInfo: null,
       statusUpdate: null,
       notify: false,
       newLastEventId: eventId > 0 ? eventId : lastEventId,
       isHistorySync: false,
-      subtreeHeightUpdate: {
-        deltas: ev.deltas,
-        newTotal: ev.new_total_subtree_height,
-        affectedIds: ev.affected_event_ids,
-      },
     };
   }
 
@@ -129,7 +109,6 @@ export function processEventSingle(
     return {
       root,
       updated: false,
-      treeChangeInfo: null,
       statusUpdate: null,
       notify: false,
       newLastEventId: eventId > 0 ? eventId : lastEventId,
@@ -150,7 +129,6 @@ export function processEventSingle(
     return {
       root,
       updated: false,
-      treeChangeInfo: null,
       statusUpdate,
       notify: false,
       newLastEventId: eventId > 0 ? eventId : lastEventId,
@@ -188,19 +166,11 @@ export function processEventSingle(
     }
   }
 
-  // treeChangeInfo 분류
-  const treeChangeInfo: TreeChangeInfo | null = updated
-    ? (node
-        ? { type: 'node-added', nodeId: node.id }
-        : { type: 'node-updated', nodeId: ctx.activeTextTarget?.id })
-    : null;
-
   const notify = ctx.historySynced && shouldNotify(event);
 
   return {
     root,
     updated,
-    treeChangeInfo,
     statusUpdate,
     notify,
     newLastEventId: eventId,
@@ -217,20 +187,9 @@ export interface BatchEventResult {
   maxEventId: number;
   statusUpdates: Array<{ agentSessionId: string; status: SessionStatus }>;
   notifications: SoulSSEEvent[];
-  /**
-   * 배치 내 subtree_update 집계 결과 — deltas는 합산, newTotal은 마지막 값.
-   * subtree_update가 없으면 null.
-   */
-  subtreeHeightUpdate: SubtreeHeightUpdate | null;
-  /**
-   * 배치 내 마지막 prompt_suggestion (later wins).
-   * 없으면 null.
-   */
+  /** 배치 내 마지막 prompt_suggestion (later wins). 없으면 null. */
   promptSuggestion: { sessionId: string; text: string } | null;
-  /**
-   * 배치에 text_start가 포함되어 있으면 해당 세션의 chip을 clear할 sessionId.
-   * 없으면 null.
-   */
+  /** 배치에 text_start가 포함되어 있으면 해당 세션의 chip을 clear할 sessionId. 없으면 null. */
   clearPromptSuggestionFor: string | null;
 }
 
@@ -238,6 +197,11 @@ export interface BatchEventResult {
  * SSE 이벤트 배치를 트리에 적용하고 결과를 반환한다.
  * 히스토리 리플레이 최적화: N개 이벤트의 트리 변경을 수행 후 결과만 반환.
  * store의 set()은 호출하지 않는다.
+ *
+ * @param skipDedup history prepend 경로(processHistoryEvents) 전용. true면 lastEventId 이하 과거
+ *   이벤트도 의도적으로 처리한다. 같은 배치 내 같은 eventId 중복은 placeInTree의 nodeMap.has 가드가
+ *   silent skip하므로 안전. 라이브 SSE 경로는 false(기본)로 호출하여 배치 간 중복을 차단한다.
+ *   design-principles §6(전달은 파라미터로) — caller가 의도를 명시 전달.
  */
 export function processEventsBatch(
   events: Array<{ event: SoulSSEEvent; eventId: number }>,
@@ -246,37 +210,25 @@ export function processEventsBatch(
   activeSessionKey: string | null,
   activeSessionSummary: SessionSummary | null,
   lastEventId: number,
+  skipDedup = false,
 ): BatchEventResult {
   let updated = false;
   let maxEventId = lastEventId;
   const statusUpdates: Array<{ agentSessionId: string; status: SessionStatus }> = [];
   const notifications: SoulSSEEvent[] = [];
 
-  // subtree_update 집계 상태 — 배치 내 여러 subtree_update가 올 수 있으므로 합산한다.
-  let aggregatedDeltas: Record<string, number> | null = null;
-  let latestNewTotal: number | null = null;
-  const aggregatedAffectedIds: number[] = [];
-
   // prompt_suggestion / text_start 추적 — later wins.
   let promptSuggestion: { sessionId: string; text: string } | null = null;
   let clearPromptSuggestionFor: string | null = null;
 
   for (const { event, eventId } of events) {
-    // Dedup — 라이브 SSE 배치 간 중복만 차단.
-    // historyMode prepend는 의도적으로 과거 eventId(< lastEventId)를 처리하므로 우회.
-    // 같은 배치 내 ancestor 중복은 placeInTree의 nodeMap.has() 가드(tree-placer.ts)가 차단.
-    if (!ctx.historyMode && eventId > 0 && eventId <= lastEventId) continue;
+    // Dedup — 라이브 SSE 배치 간 중복만 차단. skipDedup=true(history prepend)면 우회.
+    // 같은 배치 내 ancestor 동봉 중복은 placeInTree의 nodeMap.has 가드가 silent skip.
+    if (!skipDedup && eventId > 0 && eventId <= lastEventId) continue;
     if (eventId > maxEventId) maxEventId = eventId;
 
-    // subtree_update — 트리 변경 없이 deltas만 집계한다.
+    // subtree_update — Phase 2-A 평탄화: 트리 변경 없음, dedup만 갱신.
     if (event.type === "subtree_update") {
-      const ev = event as SubtreeUpdateSSEEvent;
-      if (aggregatedDeltas === null) aggregatedDeltas = {};
-      for (const [idStr, delta] of Object.entries(ev.deltas)) {
-        aggregatedDeltas[idStr] = (aggregatedDeltas[idStr] ?? 0) + delta;
-      }
-      latestNewTotal = ev.new_total_subtree_height;
-      for (const id of ev.affected_event_ids) aggregatedAffectedIds.push(id);
       continue;
     }
 
@@ -340,18 +292,12 @@ export function processEventsBatch(
     }
   }
 
-  const subtreeHeightUpdate: SubtreeHeightUpdate | null =
-    aggregatedDeltas !== null && latestNewTotal !== null
-      ? { deltas: aggregatedDeltas, newTotal: latestNewTotal, affectedIds: aggregatedAffectedIds }
-      : null;
-
   return {
     root,
     updated,
     maxEventId,
     statusUpdates,
     notifications,
-    subtreeHeightUpdate,
     promptSuggestion,
     clearPromptSuggestionFor,
   };

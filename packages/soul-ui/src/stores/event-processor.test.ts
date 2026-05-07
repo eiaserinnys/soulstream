@@ -1,8 +1,9 @@
 /**
  * event-processor — dedup 동작 테스트.
  *
- * 라이브 SSE는 lastEventId 이하 이벤트를 차단(중복 방지),
- * historyMode prepend는 의도적으로 과거 eventId를 처리(차단 우회).
+ * Phase 2-A 평탄화 후 (atom 260507.01.fe-tree-flattening):
+ *   historyMode 분기 폐기로 모든 배치에서 lastEventId 이하 이벤트는 일관 dedup 차단된다.
+ *   배치 내 중복 eventId는 placeInTree의 nodeMap.has 가드가 silent skip한다.
  */
 
 import { describe, it, expect } from "vitest";
@@ -47,9 +48,8 @@ function makeTextStartEvent(eventId: number): { event: SoulSSEEvent; eventId: nu
 }
 
 describe("processEventsBatch — dedup", () => {
-  it("라이브 모드(historyMode=false): lastEventId 이하 이벤트를 차단", () => {
+  it("lastEventId 이하 이벤트를 차단 (모든 배치 일관 적용)", () => {
     const ctx = createProcessingContext();
-    ctx.historyMode = false;
 
     const events = [
       makeUserMessageEvent(5),  // <= lastEventId(10) → 차단
@@ -61,33 +61,12 @@ describe("processEventsBatch — dedup", () => {
     // 11만 트리에 추가됨, 5는 dedup으로 차단
     expect(result.updated).toBe(true);
     expect(result.maxEventId).toBe(11);
-    // ctx.nodeMap에 user-msg-11만 등록 (root + user-msg-11)
     expect(ctx.nodeMap.has("11")).toBe(true);
     expect(ctx.nodeMap.has("5")).toBe(false);
   });
 
-  it("historyMode=true: lastEventId 이하 과거 이벤트도 처리 (prepend)", () => {
+  it("같은 배치 내 중복 eventId는 placeInTree silent skip 가드가 차단", () => {
     const ctx = createProcessingContext();
-    ctx.historyMode = true; // prepend 컨텍스트
-
-    const events = [
-      makeUserMessageEvent(3),  // <= lastEventId(10), 그러나 historyMode이므로 처리
-      makeUserMessageEvent(7),  // <= lastEventId(10), 처리
-    ];
-
-    const result = processEventsBatch(events, ctx, null, "sess-1", null, 10);
-
-    expect(result.updated).toBe(true);
-    // historyMode에서는 maxEventId가 lastEventId보다 작아도 갱신 안 됨 (`>`만 비교)
-    expect(result.maxEventId).toBe(10);
-    // 두 이벤트 모두 nodeMap에 등록됨 (dedup 우회)
-    expect(ctx.nodeMap.has("3")).toBe(true);
-    expect(ctx.nodeMap.has("7")).toBe(true);
-  });
-
-  it("historyMode=true: 같은 배치 내 중복 eventId는 placeInTree skip 가드가 차단", () => {
-    const ctx = createProcessingContext();
-    ctx.historyMode = true;
 
     const events = [
       makeUserMessageEvent(5),
@@ -99,7 +78,7 @@ describe("processEventsBatch — dedup", () => {
     expect(result.updated).toBe(true);
     // 첫 번째만 등록, 두 번째는 placeInTree에서 skip
     expect(ctx.nodeMap.has("5")).toBe(true);
-    // root.children에 user_message가 1개만 있어야 함
+    // root.children에 user_message가 1개만 있어야 함 (평면 push)
     const root = result.root;
     expect(root).not.toBeNull();
     const userMsgChildren = (root?.children ?? []).filter(
@@ -259,5 +238,61 @@ describe("processEventsBatch — prompt_suggestion", () => {
 
     expect(result.promptSuggestion).toBeNull();
     expect(result.clearPromptSuggestionFor).toBeNull();
+  });
+});
+
+describe("processEventsBatch — skipDedup (history prepend 경로)", () => {
+  it("skipDedup=true: lastEventId 이하 과거 이벤트도 처리 (history prepend 의도)", () => {
+    const ctx = createProcessingContext();
+
+    const events = [
+      makeUserMessageEvent(3),  // <= lastEventId(10), 차단되어선 안 됨
+      makeUserMessageEvent(7),  // <= lastEventId(10), 차단되어선 안 됨
+    ];
+
+    const result = processEventsBatch(events, ctx, null, "sess-1", null, 10, true);
+
+    expect(result.updated).toBe(true);
+    // 두 이벤트 모두 nodeMap에 등록됨 (dedup 우회)
+    expect(ctx.nodeMap.has("3")).toBe(true);
+    expect(ctx.nodeMap.has("7")).toBe(true);
+    // skipDedup이라도 maxEventId는 비교 ASC 갱신만 — caller(processHistoryEvents)가 Math.max로 보호
+    expect(result.maxEventId).toBe(10);
+  });
+
+  it("skipDedup=true에서도 같은 배치 내 중복 eventId는 placeInTree 가드가 차단", () => {
+    const ctx = createProcessingContext();
+
+    const events = [
+      makeUserMessageEvent(5),
+      makeUserMessageEvent(5),
+    ];
+
+    const result = processEventsBatch(events, ctx, null, "sess-1", null, 0, true);
+
+    expect(result.updated).toBe(true);
+    expect(ctx.nodeMap.has("5")).toBe(true);
+    const root = result.root;
+    expect(root).not.toBeNull();
+    const userMsgChildren = (root?.children ?? []).filter(
+      (c) => c.type === "user_message",
+    );
+    expect(userMsgChildren.length).toBe(1);
+  });
+
+  it("skipDedup 기본값 false (라이브 SSE 경로)", () => {
+    const ctx = createProcessingContext();
+
+    const events = [
+      makeUserMessageEvent(3),  // <= lastEventId(10) → 차단 (기본 동작)
+      makeUserMessageEvent(11), // > lastEventId(10) → 처리
+    ];
+
+    // skipDedup 인자 미전달 — 기본값 false
+    const result = processEventsBatch(events, ctx, null, "sess-1", null, 10);
+
+    expect(result.updated).toBe(true);
+    expect(ctx.nodeMap.has("11")).toBe(true);
+    expect(ctx.nodeMap.has("3")).toBe(false); // dedup 차단
   });
 });

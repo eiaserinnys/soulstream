@@ -9,13 +9,15 @@
  *   tree와 같은 set() 안에서 atomic 갱신하므로 본 훅은 별도 카운터를 들지 않는다.
  * - `next_cursor === null` 도달 시 "맨 위" 인디케이터를 표시한다.
  *
- * 설계 (옵션 D):
+ * 설계 (옵션 D + Phase 2-A 평탄화):
  * - **단일 트리 정본**: 라이브 SSE와 히스토리가 같은 store.tree를 공유한다.
  *   `historicalMessages`/`liveMessages` 병합 dedup이 폐기된다.
- * - **eventId dedup 자동**: processEventsBatch가 `eventId <= lastEventId`로 자체 dedup한다
- *   (event-processor.ts:228). 외부 dedup 불필요.
- * - **orphan queue**: prepend 페이지 경계에서 부모가 아직 미수신인 자식 노드는
- *   ProcessingContext.orphans에 보관 → 부모 도착 시 자동 attach (tree-placer.ts).
+ * - **eventId dedup 자동**: processEventsBatch가 `eventId <= lastEventId`로 자체 dedup한다.
+ *   외부 dedup 불필요.
+ * - **평면 push**: Phase 2-A 평탄화 후 tree-placer는 parent_event_id를 무시하고
+ *   root.children에 시간순 push만 한다. orphan queue / sorted insert / historyMode 분기는 폐기.
+ *   페이지 경계에서 자식이 부모보다 먼저 도착해도 모두 root.children에 평면 배치되며,
+ *   이후 도착한 부모도 root.children에 추가될 뿐 부모-자식 트리는 형성되지 않는다 (옵션 C).
  * - **세션 전환 시 초기화**: activeSessionKey가 바뀌면 커서/상태 리셋.
  *   chatPrependedCount는 store가 setActiveSession에서 자동 리셋(getSessionResetState).
  * - **중복 요청 방지**: loading 중에는 추가 prepend 요청을 무시한다.
