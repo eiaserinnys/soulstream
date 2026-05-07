@@ -25,13 +25,7 @@ describe("createProcessingContext", () => {
 
     // historySynced — 라이브 SSE 초기 history phase 동안 false
     expect(ctx.historySynced).toBe(false);
-
-    // historyMode — 라이브 SSE 기본 모드. processHistoryEvents가 try/finally로 toggle.
-    expect(ctx.historyMode).toBe(false);
-
-    // orphans — 빈 Map. 부모 부재 자식 큐 (historyMode일 때만 사용).
-    expect(ctx.orphans).toBeInstanceOf(Map);
-    expect(ctx.orphans.size).toBe(0);
+    // Phase 2-A 평탄화 후 historyMode/orphans 필드는 폐기됨 (atom 260507.01.fe-tree-flattening §11.1).
   });
 
   it("should return independent contexts on multiple calls", () => {

@@ -16,7 +16,7 @@ import type {
   CatalogState,
   CatalogFolder,
 } from "@shared/types";
-import type { ProcessingContext, TreeChangeInfo } from "./processing-context";
+import type { ProcessingContext } from "./processing-context";
 
 // === Dashboard Config ===
 
@@ -132,18 +132,8 @@ export interface DashboardState {
    */
   chatLastPrependAtMs: number | null;
 
-  /** 마지막 트리 변경의 유형 (Phase 2 정리 예정 dead state) */
-  treeChangeInfo: TreeChangeInfo | null;
-
   /** 마지막으로 수신한 이벤트 ID (SSE 재연결용) */
   lastEventId: number;
-
-  /**
-   * 현재 활성 세션 트리의 총 서브트리 높이 (Phase 3 viewport API).
-   * subtree_update SSE 이벤트로 증분 갱신되며, 뷰포트 가상화 컨테이너 크기 계산에 사용된다.
-   * 세션 전환 시 0으로 초기화되고, 이후 events_viewport 응답의 new_total_subtree_height로 재동기화된다.
-   */
-  totalSubtreeHeight: number;
 
   /** 알림 대상 이벤트 큐 (complete, error, intervention_sent) */
   pendingNotifications: SoulSSEEvent[];
@@ -226,13 +216,6 @@ export interface DashboardActions {
     eventId: number,
   ) => { agentSessionId: string; status: SessionStatus } | null;
 
-  /**
-   * 뷰포트 API 응답의 total_subtree_height로 totalSubtreeHeight 상태를 덮어쓴다.
-   * subtree_update SSE delta는 증분 갱신이지만 이 setter는 서버가 알려준 정본을 반영한다.
-   * 초기 로드 / 세션 전환 / 드리프트 교정에 사용한다.
-   */
-  setTotalSubtreeHeight: (total: number) => void;
-
   // SSE 이벤트 배치 처리 (히스토리 리플레이 최적화: N개 이벤트를 트리에 적용 후 set() 1회)
   processEvents: (
     events: Array<{ event: SoulSSEEvent; eventId: number }>,
@@ -241,9 +224,10 @@ export interface DashboardActions {
   /**
    * 히스토리 prepend 처리 — messages API에서 받은 raw 이벤트들을 store.tree에 통합한다.
    *
-   * processingCtx.historyMode를 잠시 true로 toggle하여 부모 부재 자식을
-   * orphan 큐로 분기시킨다(tree-placer.ts:resolveParent). 라이브 SSE의
-   * root fallback 동작은 보존된다.
+   * Phase 2-A 평탄화 후: tree-placer가 root.children 평면 push만 하므로 historyMode 분기
+   * 없이 라이브 SSE와 동일 파이프라인을 사용한다. processingCtx.activeTextTarget만 잠시
+   * 격리(try/finally)하여 prepend 페이지의 handleTextStart가 라이브 text 스트림 노드를
+   * 덮어쓰지 않도록 한다.
    *
    * 반환 addedCount는 grouped(MessageOrGroup) 차분이며, 같은 set() 안에서
    * store.chatPrependedCount += addedCount 로 atomic 갱신된다.

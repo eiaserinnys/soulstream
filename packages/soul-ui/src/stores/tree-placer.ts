@@ -1,10 +1,15 @@
 /**
- * Tree Placer — 노드를 트리에 배치하고 Map에 등록
+ * Tree Placer — 노드를 root.children에 시간순 평면 push하고 필요한 키를 nodeMap에 등록
  *
- * placeInTree: 생성된 노드를 parent_event_id 기반으로 트리에 삽입
- * resolveParent: parent_event_id로 부모 노드를 결정
+ * Phase 2-A 평탄화 (atom 작업 이력 260507.01.fe-tree-flattening, §11.1 옵션 C):
+ *   parent_event_id를 무시하고 모든 노드를 root.children에 push한다. orphan 큐, sorted insert,
+ *   adoptees, historyMode 분기, ORPHAN_PARENT sentinel은 모두 폐기되었다.
  *
- * Phase 8: 순수 parent_event_id 기반. 타입별 분기와 currentTurnNodeId 폴백 제거.
+ *   ChatView가 root.children을 그대로 시간순 표시하며, result/complete 정렬 보정은
+ *   flatten-tree.ts:199-210의 UX 정책으로 root.children에서만 동작한다 (§11.2 유지 결정).
+ *
+ *   tool_use_id·request_id 보조 등록은 유지된다 — tool_result / input_request_expired
+ *   이벤트가 같은 ID로 부모 노드를 lookup하기 때문이다 (applyUpdate 호출 경로).
  */
 
 import type {
@@ -19,168 +24,17 @@ import { makeNode, registerNode } from "./processing-context";
 import { diag } from "../lib/diag";
 
 /**
- * Sentinel — `resolveParent`가 historyMode 환경에서 부모를 찾지 못했을 때 반환한다.
+ * 생성된 노드를 root.children에 평면 push하고 nodeMap·tool_use_id·request_id 보조 키를 등록한다.
  *
- * 호출자(`placeInTree`, `handleTextStart`)는 이 sentinel과 reference 비교(`=== ORPHAN_PARENT`)로
- * 부모 부재를 감지하여 자식 노드를 `ctx.orphans`에 보관해야 한다.
+ * 동작 순서:
+ *   1. 같은 배치 내 ancestor 동봉으로 인한 재진입 → nodeMap.has 가드로 skip (silent return)
+ *   2. registerNode(ctx, node) — node.id로 nodeMap 등록
+ *   3. String(eventId)로 nodeMap 추가 등록 — applyUpdate가 _event_id로 노드 lookup 시 사용
+ *   4. tool_start: tool_use_id로도 등록 — tool_result 매칭 (applyUpdate가 사용)
+ *   5. input_request: request_id로도 등록 — input_request_expired 매칭
+ *   6. root.children.push(node) — parent_event_id 무시, 시간순 평면
  *
- * 라이브 SSE에서는 부모가 항상 자식 이전에 도착하므로 이 sentinel을 반환하지 않는다 —
- * 기존 root fallback 동작이 유지된다.
- */
-export const ORPHAN_PARENT: EventTreeNode = {
-  id: "__orphan__",
-  type: "session",
-  children: [],
-  content: "",
-  completed: false,
-} as EventTreeNode;
-
-/**
- * parent_event_id로 부모 노드를 결정합니다.
- * - null/undefined → session root
- * - 값 있음 → nodeMap에서 직접 조회
- * - 부모 부재 + historyMode=true → ORPHAN_PARENT sentinel (호출자가 orphans 큐로 분기)
- * - 부모 부재 + historyMode=false → 기존 동작 (root fallback + console.warn)
- */
-export function resolveParent(
-  parentEventId: string | null | undefined,
-  ctx: ProcessingContext,
-  root: EventTreeNode,
-): EventTreeNode {
-  if (!parentEventId) return root;
-
-  const parent = ctx.nodeMap.get(parentEventId);
-  if (!parent) {
-    if (ctx.historyMode) {
-      // history mode: 호출자가 sentinel 감지 후 orphan 큐에 보관한다
-      return ORPHAN_PARENT;
-    }
-    console.warn(`[tree] parent "${parentEventId}" not in nodeMap`);
-    return root;
-  }
-  return parent;
-}
-
-/**
- * 노드 ID(`...-{eventId}`)에서 정렬 키를 추출한다.
- *
- * placeInTree/handleTextStart가 만든 모든 노드는 끝에 eventId가 붙은 형식이며 (예:
- * `user-msg-100`, `tool-242`, `thinking-70`, `text-169`), `extractEventId`(flatten-tree)와
- * 동일한 정규식 시맨틱을 사용한다.
- *
- * 매칭 실패 시 Number.POSITIVE_INFINITY로 fallback. 이 fallback이 발동하는 노드(`root-session`,
- * ORPHAN_PARENT sentinel `__orphan__` 등)는 children 배열에 들어가지 않으므로 실제 정렬 결과에
- * 영향을 주지 않는다. 만에 하나 들어가더라도 INFINITY는 항상 끝으로 정렬되어 push 동작과 동일.
- */
-function nodeEventId(node: EventTreeNode): number {
-  const m = node.id.match(/-(\d+)$/);
-  return m ? Number(m[1]) : Number.POSITIVE_INFINITY;
-}
-
-/**
- * eventId ASC 위치를 binary search로 찾는다 (lower_bound 시맨틱).
- *
- * 같은 eventId가 이미 있어도 그 앞 위치를 반환 — placeInTree가 nodeMap.has 가드로 중복을
- * 미리 거르므로 같은 eventId가 children에 두 번 들어가는 일은 없다.
- */
-function lowerBoundByEventId(children: EventTreeNode[], eventId: number): number {
-  let lo = 0;
-  let hi = children.length;
-  while (lo < hi) {
-    const mid = (lo + hi) >>> 1;
-    if (nodeEventId(children[mid]) < eventId) lo = mid + 1;
-    else hi = mid;
-  }
-  return lo;
-}
-
-/** historyMode 정렬 삽입 — children 배열에 eventId ASC 위치로 splice. */
-function insertSortedByEventId(
-  children: EventTreeNode[],
-  node: EventTreeNode,
-  eventId: number,
-): void {
-  const idx = lowerBoundByEventId(children, eventId);
-  children.splice(idx, 0, node);
-}
-
-/**
- * 노드를 부모에 attach하고 자신의 adoptees를 함께 처리한다.
- *
- * - parent === ORPHAN_PARENT (history mode + 부모 부재) → ctx.orphans 큐에 보관
- * - 그 외 정상 attach:
- *   - historyMode=true → parent.children에 eventId ASC sorted insert (prepend 시 시간순 보존)
- *   - historyMode=false → parent.children.push (라이브 SSE 경로, 시간 ASC 도착 보장이 있어 push 정합)
- * - 두 경우 모두 본 노드가 다른 orphan들의 부모일 수 있으므로 adoptees 조회·attach.
- *   adoptees 합류도 historyMode일 때 sorted insert로 처리 (페이지 경계 부모 도착 케이스).
- *
- * 다층 체인 자동 처리: A→B→C에서 B가 orphan map에 들어가도 nodeMap에는 등록되어 있어
- * 후속 자식 A가 resolveParent로 B를 정상 lookup → B.children에 attach (history면 sorted, live면
- * push). C 도착 시 C.children에 B(A 포함)가 통째로 이동.
- */
-function attachToParent(
-  node: EventTreeNode,
-  parent: EventTreeNode,
-  parentEventId: string | null,
-  eventId: number,
-  ctx: ProcessingContext,
-): void {
-  if (parent === ORPHAN_PARENT) {
-    // history mode + 부모 부재 → orphan 큐에 보관
-    // (parentEventId는 sentinel 진입 조건에서 truthy 보장)
-    const list = ctx.orphans.get(parentEventId!) ?? [];
-    list.push(node);
-    ctx.orphans.set(parentEventId!, list);
-    diag("tree-placer", "→ orphan", {
-      eventId,
-      nodeType: node.type,
-      nodeId: node.id,
-      waitingFor: parentEventId,
-    });
-  } else {
-    if (ctx.historyMode) {
-      insertSortedByEventId(parent.children, node, eventId);
-    } else {
-      parent.children.push(node);
-    }
-    diag("tree-placer", "→ attach", {
-      eventId,
-      nodeType: node.type,
-      nodeId: node.id,
-      parentId: parent.id,
-      parentType: parent.type,
-      sorted: ctx.historyMode,
-    });
-  }
-
-  // 새 노드가 다른 orphan들의 부모일 수 있음 — 자식 후보 attach.
-  // historyMode면 도착 순서가 아닌 eventId ASC로 합류시켜 prepend 페이지 경계에서도 시간순 보존.
-  const adoptees = ctx.orphans.get(String(eventId));
-  if (adoptees && adoptees.length > 0) {
-    for (const child of adoptees) {
-      if (ctx.historyMode) {
-        insertSortedByEventId(node.children, child, nodeEventId(child));
-      } else {
-        node.children.push(child);
-      }
-    }
-    diag("tree-placer", "→ adopt", {
-      newParentEventId: eventId,
-      adopteeIds: adoptees.map((c) => c.id),
-      sorted: ctx.historyMode,
-    });
-    ctx.orphans.delete(String(eventId));
-  }
-}
-
-/**
- * 생성된 노드를 트리에 배치하고 필요한 Map에 등록합니다.
- *
- * 모든 이벤트 타입에 동일한 로직을 적용합니다:
- * 1. registerNode(ctx, node) — node.id로 내부 등록
- * 2. String(eventId)로 nodeMap 추가 등록 — parent_event_id 조회용
- * 3. tool_start의 경우 tool_use_id로도 추가 등록 — 서브에이전트 parent 조회용
- * 4. resolveParent로 부모 결정 후 parent.children에 추가
+ * 시그니처는 평탄화 전과 동일하게 유지하여 호출자(event-processor)는 무변경.
  */
 export function placeInTree(
   node: EventTreeNode,
@@ -189,43 +43,39 @@ export function placeInTree(
   ctx: ProcessingContext,
   root: EventTreeNode,
 ): void {
-  // ancestor 동봉으로 이미 처리된 노드가 같은 배치 내에서 재진입할 수 있다.
-  // 기존 노드를 새 객체로 덮어쓰면 기존 자식 링크가 끊어지므로 skip.
-  // (event-processor dedup은 배치 간 중복만 차단 — 같은 배치 내 중복은 여기서 처리)
+  // ancestor 동봉으로 같은 배치 내 중복 진입 차단 (event-processor dedup은 배치 간 중복만 차단).
   if (ctx.nodeMap.has(String(eventId))) {
     diag("tree-placer", "→ skip (already in nodeMap)", { eventId, nodeId: node.id });
     return;
   }
 
-  // nodeMap 등록 (모든 노드 공통)
   registerNode(ctx, node);
-
-  // _event_id로 추가 등록 (parent_event_id 조회용)
   ctx.nodeMap.set(String(eventId), node);
 
-  // tool_start: tool_use_id로도 등록 (서브에이전트 parent 조회용)
+  // tool_start: tool_use_id로도 등록 (tool_result 매칭에 필수)
   if (event.type === "tool_start" && (event as ToolStartEvent).tool_use_id) {
     ctx.nodeMap.set((event as ToolStartEvent).tool_use_id!, node);
   }
 
-  // input_request: request_id로도 등록 (input_request_expired 조회용)
+  // input_request: request_id로도 등록 (input_request_expired 매칭에 필수)
   if (event.type === "input_request" && (event as InputRequestEvent).request_id) {
     ctx.nodeMap.set((event as InputRequestEvent).request_id, node);
   }
 
-  // 모든 타입 동일: resolveParent로 부모 결정 후 attach
-  const parentEventId = "parent_event_id" in event
-    ? (event as { parent_event_id?: string }).parent_event_id ?? null
-    : null;
-  const parent = resolveParent(parentEventId, ctx, root);
-  attachToParent(node, parent, parentEventId, eventId, ctx);
+  // 평탄화: parent_event_id 무시, root.children에 시간순 push.
+  // 라이브 SSE는 시간순 도착이 보장되고, history mode prepend는 messages API가 ASC 페이지를
+  // 반환하므로 push 순서가 자연 시간순이 된다.
+  root.children.push(node);
+  diag("tree-placer", "→ push", {
+    eventId,
+    nodeType: node.type,
+    nodeId: node.id,
+  });
 }
 
 /**
- * text_start 이벤트를 처리합니다.
- *
- * 항상 독립 TextNode를 생성하여 트리에 배치합니다.
- * thinking과 text는 독립적인 형제 노드입니다.
+ * text_start 이벤트 — 독립 TextNode를 root.children에 push하고 activeTextTarget을 설정한다.
+ * 후속 text_delta·text_end는 activeTextTarget을 통해 같은 TextNode에 누적된다.
  */
 export function handleTextStart(
   event: TextStartEvent,
@@ -233,16 +83,16 @@ export function handleTextStart(
   ctx: ProcessingContext,
   root: EventTreeNode,
 ): boolean {
-  // ancestor 동봉으로 이미 처리된 text 노드의 재진입 방지
+  // ancestor 동봉으로 이미 처리된 text 노드의 재진입 방지 — silent skip.
+  // 호출자(event-processor)에 false를 반환하여 activeTextTarget 변경을 막는다.
   if (ctx.nodeMap.has(String(eventId))) {
     diag("tree-placer", "→ skip text (already in nodeMap)", { eventId });
-    return false; // activeTextTarget 변경하지 않음
+    return false;
   }
-  const textParent = resolveParent(event.parent_event_id, ctx, root);
   const textNode = makeNode(`text-${eventId}`, "text", "");
   registerNode(ctx, textNode);
   ctx.nodeMap.set(String(eventId), textNode);
-  attachToParent(textNode, textParent, event.parent_event_id ?? null, eventId, ctx);
+  root.children.push(textNode);
 
   ctx.activeTextTarget = textNode as TextTargetNode;
   return true;

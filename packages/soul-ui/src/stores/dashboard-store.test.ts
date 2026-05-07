@@ -8,7 +8,24 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import type { InfiniteData } from "@tanstack/react-query";
-import { useDashboardStore, findTreeNode } from "./dashboard-store";
+import { useDashboardStore } from "./dashboard-store";
+import type { EventTreeNode } from "@shared/types";
+
+/**
+ * 평탄화 후(Phase 2-A §11.1 옵션 C) tree-utils.ts가 폐기되어 본 테스트는
+ * 로컬 헬퍼로 노드를 lookup한다. 평탄화 후엔 root.children이 1depth 평면이라
+ * 재귀가 1회만 도는 단순 순회이지만, 기존 테스트의 부모-자식 검증 표현을
+ * 보존하기 위해 재귀 함수 형태를 유지한다.
+ */
+function findTreeNode(root: EventTreeNode | null, id: string): EventTreeNode | null {
+  if (!root) return null;
+  if (root.id === id) return root;
+  for (const child of root.children) {
+    const found = findTreeNode(child, id);
+    if (found) return found;
+  }
+  return null;
+}
 import { filterSessionsInFolder, type SessionPage } from "../hooks/session-stream-helpers";
 import type {
   TextStartEvent,
@@ -274,10 +291,10 @@ describe("dashboard-store", () => {
       const toolNode = findTreeNode(tree, "tool-42");
       expect(toolNode).not.toBeNull();
 
-      // parent_event_id: "0" → user_message에 배치
+      // Phase 2-A 평탄화: 모든 노드는 root.children에 시간순 push
       const userMsg = tree.children[0];
       expect(userMsg.type).toBe("user_message");
-      expect(userMsg.children.some(c => c.id === "tool-42")).toBe(true);
+      expect(tree.children.some(c => c.id === "tool-42")).toBe(true);
 
       // 에러 노드 없음
       const errorNodes = collectNodes(tree, "error");
@@ -402,9 +419,10 @@ describe("dashboard-store", () => {
       expect(toolNodes[0].completed).toBe(true);
       expect((toolNodes[0] as ToolNode).toolUseId).toBe("toolu_bash1");
 
-      // tool은 user_message의 자식이어야 함 (parent_event_id: "0")
+      // Phase 2-A 평탄화: tool-4는 root.children에 user_message와 형제로 push (parent_event_id 무시)
       const userMsg = tree.children[0];
-      expect(userMsg.children.some((c) => c.id === "tool-4")).toBe(true);
+      expect(userMsg.type).toBe("user_message");
+      expect(tree.children.some((c) => c.id === "tool-4")).toBe(true);
     });
   });
 
@@ -422,18 +440,18 @@ describe("dashboard-store", () => {
       expect(tree.children[0].content).toBe("hello");
     });
 
-    it("text is user_message's child", () => {
+    it("Phase 2-A 평탄화: text는 root.children에 user_message와 형제로 push", () => {
       const { processEvent } = useDashboardStore.getState();
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
       processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 1);
 
       const tree = useDashboardStore.getState().tree!;
-      const userMsg = tree.children[0];
-      expect(userMsg.children).toHaveLength(1);
-      expect(userMsg.children[0].type).toBe("text");
+      expect(tree.children).toHaveLength(2);
+      expect(tree.children[0].type).toBe("user_message");
+      expect(tree.children[1].type).toBe("text");
     });
 
-    it("tool is user_message's child (parent_event_id)", () => {
+    it("Phase 2-A 평탄화: tool은 root.children에 push (parent_event_id 무시)", () => {
       const { processEvent } = useDashboardStore.getState();
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
       processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 1);
@@ -446,18 +464,16 @@ describe("dashboard-store", () => {
       } as ToolStartEvent, 2);
 
       const tree = useDashboardStore.getState().tree!;
-      const userMsg = tree.children[0];
-      expect(userMsg.children.some(c => c.type === "tool")).toBe(true);
+      expect(tree.children.some(c => c.type === "tool")).toBe(true);
     });
 
-    it("complete is user_message's child", () => {
+    it("Phase 2-A 평탄화: complete은 root.children에 push", () => {
       const { processEvent } = useDashboardStore.getState();
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
       processEvent({ type: "complete", result: "done", attachments: [], parent_event_id: "0" } as CompleteEvent, 1);
 
       const tree = useDashboardStore.getState().tree!;
-      const userMsg = tree.children[0];
-      expect(userMsg.children.some((c) => c.type === "complete")).toBe(true);
+      expect(tree.children.some((c) => c.type === "complete")).toBe(true);
     });
 
     it("intervention is root's child (sibling of user_message)", () => {
@@ -488,9 +504,8 @@ describe("dashboard-store", () => {
       expect(userMsgs[0].content).toBe("first");
       expect(userMsgs[1].content).toBe("resume");
 
-      // text-5 should be under the second user_message
-      const secondTurn = userMsgs[1];
-      expect(secondTurn.children.some((c) => c.id === "text-5")).toBe(true);
+      // Phase 2-A 평탄화: text-5는 root.children에 push (두 번째 user_message와 형제)
+      expect(tree.children.some((c) => c.id === "text-5")).toBe(true);
     });
 
     it("session event sets root sessionId", () => {
@@ -1004,7 +1019,8 @@ describe("dashboard-store", () => {
         parent_event_id: "toolu_task_1",
       } as SubagentStartEvent, 3);
 
-      // Inner tool — resolveParent finds toolu_task_1 in nodeMap, no subagent child → tool node itself
+      // Phase 2-A 평탄화: parent_event_id="toolu_task_1"은 무시. tool_use_id 보조 등록은
+      // applyUpdate 매칭 용도로 유지되지만 트리 배치는 root.children 평면 push.
       processEvent({
         type: "tool_start",
         timestamp: 0,
@@ -1016,10 +1032,13 @@ describe("dashboard-store", () => {
 
       const tree = useDashboardStore.getState().tree!;
       expect(collectNodes(tree, "error")).toHaveLength(0);
-      // Read tool is placed as child of Task tool directly (no subagent intermediary)
-      const taskNode = findTreeNode(tree, "tool-2");
-      expect(taskNode?.children).toHaveLength(1);
-      expect((taskNode?.children[0] as ToolNode).toolName).toBe("Read");
+      // Phase 2-A 평탄화: Task tool과 inner Read tool 둘 다 root.children에 형제로 push.
+      // (parent_event_id="toolu_task_1"은 무시되지만 tool_use_id 보조 등록은 유지되어
+      //  applyUpdate가 tool_result를 매칭할 수 있다.)
+      const tools = collectNodes(tree, "tool");
+      expect(tools).toHaveLength(2);
+      expect((tools[0] as ToolNode).toolName).toBe("Task");
+      expect((tools[1] as ToolNode).toolName).toBe("Read");
     });
   });
 
@@ -1036,11 +1055,12 @@ describe("dashboard-store", () => {
       } as ThinkingEvent, 1);
 
       const tree = useDashboardStore.getState().tree!;
-      const userMsg = tree.children[0];
-      expect(userMsg.children).toHaveLength(1);
-      expect(userMsg.children[0].type).toBe("thinking");
-      expect(userMsg.children[0].content).toBe("Let me think...");
-      expect(userMsg.children[0].id).toBe("thinking-1");
+      // Phase 2-A 평탄화: thinking은 root.children에 user_message와 형제로 push
+      expect(tree.children).toHaveLength(2);
+      expect(tree.children[0].type).toBe("user_message");
+      expect(tree.children[1].type).toBe("thinking");
+      expect(tree.children[1].content).toBe("Let me think...");
+      expect(tree.children[1].id).toBe("thinking-1");
     });
 
     it("text_start가 독립 TextNode를 생성 (thinking과 형제)", () => {
@@ -1054,11 +1074,11 @@ describe("dashboard-store", () => {
       processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 2);
 
       const tree = useDashboardStore.getState().tree!;
-      const userMsg = tree.children[0];
-      // thinking + text 두 개가 형제로 존재
-      expect(userMsg.children).toHaveLength(2);
-      expect(userMsg.children[0].type).toBe("thinking");
-      expect(userMsg.children[1].type).toBe("text");
+      // Phase 2-A 평탄화: user_message + thinking + text 모두 root.children에 형제
+      expect(tree.children).toHaveLength(3);
+      expect(tree.children[0].type).toBe("user_message");
+      expect(tree.children[1].type).toBe("thinking");
+      expect(tree.children[2].type).toBe("text");
     });
 
     it("text_delta가 독립 TextNode의 content를 갱신", () => {
@@ -1118,10 +1138,9 @@ describe("dashboard-store", () => {
       } as ToolStartEvent, 2);
 
       const tree = useDashboardStore.getState().tree!;
-      const userMsg = tree.children[0];
-      // tool은 user_message의 자식으로 배치 (thinking과 형제)
-      expect(userMsg.children.some(c => c.type === "tool")).toBe(true);
-      expect(userMsg.children.some(c => c.type === "thinking")).toBe(true);
+      // Phase 2-A 평탄화: tool과 thinking 모두 root.children에 user_message와 형제
+      expect(tree.children.some(c => c.type === "tool")).toBe(true);
+      expect(tree.children.some(c => c.type === "thinking")).toBe(true);
     });
 
     it("thinking 없이 text_start → 독립 text 노드 생성", () => {
@@ -1132,8 +1151,8 @@ describe("dashboard-store", () => {
       processEvent({ type: "text_end" } as TextEndEvent, 3);
 
       const tree = useDashboardStore.getState().tree!;
-      const userMsg = tree.children[0];
-      const textNodes = collectNodes(userMsg, "text");
+      // Phase 2-A 평탄화: text 노드는 root.children에 push (collectNodes는 root에서 시작)
+      const textNodes = collectNodes(tree, "text");
       expect(textNodes).toHaveLength(1);
       expect(textNodes[0].content).toBe("Direct text");
       expect(textNodes[0].completed).toBe(true);
@@ -1145,9 +1164,8 @@ describe("dashboard-store", () => {
       processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 1);
 
       const tree = useDashboardStore.getState().tree!;
-      const userMsg = tree.children[0];
-      const textNodes = collectNodes(userMsg, "text");
-      // text 노드는 생성됨 (id: "text-1")
+      // Phase 2-A 평탄화: text 노드는 root.children에 push
+      const textNodes = collectNodes(tree, "text");
       expect(textNodes).toHaveLength(1);
       expect(textNodes[0].id).toBe("text-1");
 
@@ -1199,23 +1217,21 @@ describe("dashboard-store", () => {
       processEvent({ type: "text_end" } as TextEndEvent, 10);
 
       const tree = useDashboardStore.getState().tree!;
-      const userMsg = tree.children[0];
-      const thinkingNodes = collectNodes(userMsg, "thinking");
+      // Phase 2-A 평탄화: 모든 노드는 root.children에 평면 push
+      const thinkingNodes = collectNodes(tree, "thinking");
       expect(thinkingNodes).toHaveLength(2);
       expect(thinkingNodes[0].content).toBe("First thought");
       expect(thinkingNodes[1].content).toBe("Second thought");
 
-      // text는 독립 TextNode로 생성됨
-      const textNodes = collectNodes(userMsg, "text");
+      const textNodes = collectNodes(tree, "text");
       expect(textNodes).toHaveLength(2);
       expect(textNodes[0].content).toBe("Response 1");
       expect(textNodes[1].content).toBe("Response 2");
 
-      // 도구는 user_message의 자식 (thinking과 형제)
-      const toolNodes = collectNodes(userMsg, "tool");
+      const toolNodes = collectNodes(tree, "tool");
       expect(toolNodes).toHaveLength(1);
       expect((toolNodes[0] as ToolNode).toolName).toBe("Read");
-      expect(userMsg.children.some(c => c.type === "tool")).toBe(true);
+      expect(tree.children.some(c => c.type === "tool")).toBe(true);
     });
   });
 
@@ -1411,22 +1427,21 @@ describe("dashboard-store", () => {
       // No error nodes
       expect(collectNodes(tree, "error")).toHaveLength(0);
 
-      // Turn 1: user_message with tool(Skill) and text
-      const turn1 = tree.children[0];
-      expect(turn1.type).toBe("user_message");
-      expect(turn1.content).toBe("Load skill");
-      const turn1Tools = collectNodes(turn1, "tool");
-      expect(turn1Tools).toHaveLength(1);
-      expect((turn1Tools[0] as ToolNode).toolName).toBe("Skill");
+      // Phase 2-A 평탄화: 두 턴의 user_message + 모든 tool/text가 root.children에 평면 push.
+      // 두 user_message는 시간순으로 [0]·[N] 위치 (사이에 다른 노드들이 있음).
+      const userMsgs = tree.children.filter(c => c.type === "user_message");
+      expect(userMsgs).toHaveLength(2);
+      expect(userMsgs[0].content).toBe("Load skill");
+      expect(userMsgs[1].content).toBe("Analyze");
 
-      // Turn 2: user_message with text, tool(Task with Grep child)
-      const turn2 = tree.children[1];
-      expect(turn2.type).toBe("user_message");
-      expect(turn2.content).toBe("Analyze");
-      // Grep is child of Task tool (no subagent intermediary)
-      const taskNode = collectNodes(turn2, "tool").find(t => (t as ToolNode).toolName === "Task");
-      expect(taskNode).toBeDefined();
-      expect(taskNode!.children.some(c => (c as ToolNode).toolName === "Grep")).toBe(true);
+      // 모든 tool은 root.children에 평면 — turn 분리 없음. tool_use_id로 매칭만 검증.
+      const allTools = collectNodes(tree, "tool");
+      const skillTool = allTools.find(t => (t as ToolNode).toolName === "Skill");
+      const taskTool = allTools.find(t => (t as ToolNode).toolName === "Task");
+      const grepTool = allTools.find(t => (t as ToolNode).toolName === "Grep");
+      expect(skillTool).toBeDefined();
+      expect(taskTool).toBeDefined();
+      expect(grepTool).toBeDefined();
     });
 
     it("tool은 Task tool의 자식으로 배치 (subagent 없이)", () => {
@@ -1443,7 +1458,7 @@ describe("dashboard-store", () => {
       processEvent({ type: "text_start", parent_event_id: "4" } as TextStartEvent, 5);
       processEvent({ type: "text_end" } as TextEndEvent, 6);
       processEvent({ type: "tool_start", timestamp: 0, tool_name: "Task", tool_input: {}, tool_use_id: "tu-task", parent_event_id: "4" } as ToolStartEvent, 7);
-      // Inner tool with parent_event_id → resolveParent → nodeMap["tu-task"] → tool itself
+      // Phase 2-A 평탄화: Inner tool도 parent_event_id 무시되고 root.children에 평면 push.
       processEvent({ type: "tool_start", timestamp: 0, tool_name: "Grep", tool_input: {}, tool_use_id: "tu-grep", parent_event_id: "tu-task" } as ToolStartEvent, 8);
       processEvent({ type: "tool_result", tool_name: "Grep", result: "ok", is_error: false, tool_use_id: "tu-grep", parent_event_id: "tu-task" } as ToolResultEvent, 9);
       processEvent({ type: "tool_result", tool_name: "Task", result: "done", is_error: false, tool_use_id: "tu-task" } as ToolResultEvent, 10);
@@ -1455,15 +1470,12 @@ describe("dashboard-store", () => {
       const userMsgs = tree.children.filter(c => c.type === "user_message");
       expect(userMsgs).toHaveLength(2);
 
-      // Turn 2 should have the Task tool (parent_event_id → user_message)
-      const turn2Tools = collectNodes(userMsgs[1], "tool");
-      expect(turn2Tools.some(t => (t as ToolNode).toolName === "Task")).toBe(true);
+      // Phase 2-A 평탄화: 모든 tool은 root.children에 평면 push, parent-child 트리 없음.
+      const allTools = collectNodes(tree, "tool");
+      expect(allTools.some(t => (t as ToolNode).toolName === "Task")).toBe(true);
+      expect(allTools.some(t => (t as ToolNode).toolName === "Grep")).toBe(true);
 
-      // Grep은 Task tool의 자식으로 배치 (resolveParent가 toolNode 반환)
-      const taskNode = turn2Tools.find(t => (t as ToolNode).toolName === "Task");
-      expect(taskNode?.children.some(c => (c as ToolNode).toolName === "Grep")).toBe(true);
-
-      // 에러 노드 없음 (parent_event_id가 nodeMap에서 매칭 성공)
+      // 에러 노드 없음 (parent_event_id 매칭 실패도 silent — 평탄화 후 root.children push)
       const errorNodes = collectNodes(tree, "error");
       expect(errorNodes).toHaveLength(0);
     });
@@ -1542,17 +1554,12 @@ describe("dashboard-store", () => {
       } as ToolStartEvent, id++);
 
       const tree = useDashboardStore.getState().tree!;
-      const turn = tree.children[0]; // user_message
 
-      // Task-1 and Task-2 are both user_message children
-      const turnTools = turn.children.filter(c => c.type === "tool");
-      expect(turnTools).toHaveLength(2);
-      expect((turnTools[0] as ToolNode).toolName).toBe("Task");
-      expect((turnTools[1] as ToolNode).toolName).toBe("Task");
-
-      // Grep is child of Task-1 (directly, no subagent)
-      const task1 = turnTools[0];
-      expect(task1.children.some(c => (c as ToolNode).toolName === "Grep")).toBe(true);
+      // Phase 2-A 평탄화: 모든 tool은 root.children에 평면 push (Task-1, Grep, Task-2 셋 다)
+      const tools = collectNodes(tree, "tool");
+      const taskTools = tools.filter(t => (t as ToolNode).toolName === "Task");
+      expect(taskTools).toHaveLength(2);
+      expect(tools.some(t => (t as ToolNode).toolName === "Grep")).toBe(true);
 
       // No error nodes
       expect(collectNodes(tree, "error")).toHaveLength(0);
@@ -1575,10 +1582,9 @@ describe("dashboard-store", () => {
       } as ToolStartEvent, 2);
 
       const tree = useDashboardStore.getState().tree!;
-      const userMsg = tree.children[0];
-      // tool은 user_message에 배치
-      expect(userMsg.children.some(c => c.type === "tool")).toBe(true);
-      const toolNode = userMsg.children.find(c => c.type === "tool");
+      // Phase 2-A 평탄화: tool은 root.children에 push
+      expect(tree.children.some(c => c.type === "tool")).toBe(true);
+      const toolNode = tree.children.find(c => c.type === "tool");
       expect((toolNode as ToolNode).toolName).toBe("Read");
 
       // 에러 노드 없음
@@ -1586,7 +1592,7 @@ describe("dashboard-store", () => {
       expect(errorNodes).toHaveLength(0);
     });
 
-    it("복수 tool이 parent_event_id로 모두 user_message에 배치", () => {
+    it("복수 tool이 모두 root.children에 push (Phase 2-A 평면)", () => {
       const { processEvent } = useDashboardStore.getState();
       processEvent({ type: "user_message", user: "u", text: "hi" } as UserMessageEvent, 0);
       processEvent({ type: "text_start", parent_event_id: "0" } as TextStartEvent, 1);
@@ -1600,10 +1606,9 @@ describe("dashboard-store", () => {
       } as ToolStartEvent, 3);
 
       const tree = useDashboardStore.getState().tree!;
-      const userMsg = tree.children[0];
 
-      // tool은 user_message에 배치
-      const toolNodes = userMsg.children.filter(c => c.type === "tool");
+      // Phase 2-A 평탄화: tool은 root.children에 push (text 2개 + tool 1개 + user_message)
+      const toolNodes = tree.children.filter(c => c.type === "tool");
       expect(toolNodes).toHaveLength(1);
       expect((toolNodes[0] as ToolNode).toolName).toBe("Read");
     });
@@ -2047,11 +2052,15 @@ describe("dashboard-store", () => {
     });
   });
 
-  // === Phase 3: subtree_update SSE 이벤트 처리 ===
+  // === Phase 2-A 평탄화: subtree_update는 no-op ===
 
-  describe("subtree_update SSE 이벤트 처리 (Phase 3 viewport API)", () => {
+  describe("subtree_update SSE 이벤트 (Phase 2-A 평탄화 — no-op)", () => {
+    // Phase 2-A (atom 260507.01.fe-tree-flattening §11.3 Phase D 폐기 완료):
+    //   subtree_update 처리는 폐기되었다. event-processor는 dedup만 갱신하고 트리 변경 없이 return한다.
+    //   백엔드는 계속 송출하지만 FE는 무시한다 (Phase 2-B 후속 카드).
+    //   nodeMap.subtreeHeight 증분, applySubtreeHeightUpdate, totalSubtreeHeight·setTotalSubtreeHeight
+    //   모두 Phase D §11.3 grep으로 컴포넌트·훅 소비자 0건 확인 후 폐기 완료.
     beforeEach(() => {
-      // 활성 세션 설정 + history_sync 이후로 전환
       useDashboardStore.getState().setActiveSession("sess-st");
       useDashboardStore.getState().processEvent(
         { type: "history_sync", last_event_id: 0, is_live: true, status: "running" } as any,
@@ -2059,110 +2068,36 @@ describe("dashboard-store", () => {
       );
     });
 
-    it("processEvent(subtree_update)는 nodeMap의 subtreeHeight를 증분 갱신하고 totalSubtreeHeight를 갱신한다", () => {
+    it("subtree_update 수신 시 트리·nodeMap 변경 없음 — dedup만 갱신", () => {
       const { processEvent } = useDashboardStore.getState();
 
-      // 조상 노드로 사용할 user_message를 생성
+      // 조상 노드 생성
       processEvent(
         { type: "user_message", user: "u", text: "hello" } as UserMessageEvent,
         10,
       );
-      const ctxBefore = useDashboardStore.getState().processingCtx;
-      const ancestor = ctxBefore.nodeMap.get("10");
-      expect(ancestor).toBeDefined();
-
-      // subtree_update 이벤트: ancestor(event_id=10)에 +3 delta
-      const subtreeEvent = {
-        type: "subtree_update",
-        timestamp: Date.now() / 1000,
-        affected_event_ids: [42],
-        deltas: { "10": 3 },
-        new_total_subtree_height: 7,
-        trigger_event_id: 42,
-      } as any;
-      processEvent(subtreeEvent, 42);
-
-      const stateAfter = useDashboardStore.getState();
-      const ancestorAfter = stateAfter.processingCtx.nodeMap.get("10");
-      expect(ancestorAfter?.subtreeHeight).toBe(4); // 초기값 1 + 3
-      expect(stateAfter.totalSubtreeHeight).toBe(7);
-      // subtree_update는 트리 자체를 바꾸지 않으므로 lastEventId는 갱신되지만 tree는 그대로
-      expect(stateAfter.lastEventId).toBe(42);
-    });
-
-    it("알 수 없는 ancestor id는 조용히 무시한다 (아직 배치되지 않은 원격 조상)", () => {
-      const { processEvent } = useDashboardStore.getState();
-
-      const subtreeEvent = {
-        type: "subtree_update",
-        timestamp: Date.now() / 1000,
-        affected_event_ids: [999],
-        deltas: { "9999": 5 }, // nodeMap에 없는 id
-        new_total_subtree_height: 12,
-      } as any;
-      // 에러 없이 처리
-      expect(() => processEvent(subtreeEvent, 999)).not.toThrow();
-      // totalSubtreeHeight는 서버 정본값으로 갱신됨
-      expect(useDashboardStore.getState().totalSubtreeHeight).toBe(12);
-    });
-
-    it("processEvents 배치: 여러 subtree_update의 deltas를 합산하고 마지막 newTotal을 사용한다", () => {
-      const { processEvent, processEvents } = useDashboardStore.getState();
-
-      // 조상 노드 생성
-      processEvent(
-        { type: "user_message", user: "u", text: "hi" } as UserMessageEvent,
-        10,
-      );
-
-      // 배치에 subtree_update 두 개 포함
-      processEvents([
-        {
-          event: {
-            type: "subtree_update",
-            timestamp: 1,
-            affected_event_ids: [50],
-            deltas: { "10": 2 },
-            new_total_subtree_height: 3,
-          } as any,
-          eventId: 50,
-        },
-        {
-          event: {
-            type: "subtree_update",
-            timestamp: 2,
-            affected_event_ids: [51],
-            deltas: { "10": 1 },
-            new_total_subtree_height: 4,
-          } as any,
-          eventId: 51,
-        },
-      ]);
-
-      const state = useDashboardStore.getState();
-      // 초기 1 + 2 + 1 = 4
-      expect(state.processingCtx.nodeMap.get("10")?.subtreeHeight).toBe(4);
-      // newTotal은 배치 내 마지막 이벤트의 값
-      expect(state.totalSubtreeHeight).toBe(4);
-    });
-
-    it("세션 전환 시 totalSubtreeHeight가 0으로 초기화된다", () => {
-      const { processEvent, setActiveSession } = useDashboardStore.getState();
+      const beforeAncestorHeight = useDashboardStore
+        .getState()
+        .processingCtx.nodeMap.get("10")?.subtreeHeight;
 
       processEvent(
         {
           type: "subtree_update",
-          timestamp: 1,
-          affected_event_ids: [1],
-          deltas: {},
-          new_total_subtree_height: 999,
+          timestamp: Date.now() / 1000,
+          affected_event_ids: [42],
+          deltas: { "10": 3 },
+          new_total_subtree_height: 7,
         } as any,
-        1,
+        42,
       );
-      expect(useDashboardStore.getState().totalSubtreeHeight).toBe(999);
 
-      setActiveSession("sess-other");
-      expect(useDashboardStore.getState().totalSubtreeHeight).toBe(0);
+      const stateAfter = useDashboardStore.getState();
+      // applySubtreeHeightUpdate 폐기 — nodeMap.subtreeHeight 변경 없음
+      expect(stateAfter.processingCtx.nodeMap.get("10")?.subtreeHeight).toBe(
+        beforeAncestorHeight,
+      );
+      // dedup만 갱신 — lastEventId 진척
+      expect(stateAfter.lastEventId).toBe(42);
     });
   });
 
@@ -2180,7 +2115,8 @@ describe("dashboard-store", () => {
       expect(after.lastEventId).toBe(beforeLastEventId);
     });
 
-    it("historyMode와 activeTextTarget이 호출 후 복원됨", () => {
+    it("activeTextTarget이 호출 후 복원됨 (라이브 text 스트림 격리)", () => {
+      // Phase 2-A 평탄화 후: historyMode 토글은 폐기. activeTextTarget 격리만 try/finally로 보존.
       // 라이브 SSE로 진행 중인 text 시퀀스 시뮬레이션
       useDashboardStore.getState().processEvent(
         { type: "user_message", content: "u" } as UserMessageEvent,
@@ -2193,7 +2129,6 @@ describe("dashboard-store", () => {
       const ctx = useDashboardStore.getState().processingCtx;
       const liveTextTarget = ctx.activeTextTarget;
       expect(liveTextTarget).not.toBeNull();
-      expect(ctx.historyMode).toBe(false);
 
       // history 페이지 처리 (페이지에 다른 text_start 포함)
       useDashboardStore.getState().processHistoryEvents([
@@ -2207,8 +2142,7 @@ describe("dashboard-store", () => {
         },
       ]);
 
-      // 둘 다 복원되어야 함 — 라이브 text 노드가 보호됨
-      expect(ctx.historyMode).toBe(false);
+      // 라이브 text 노드가 보호되어야 함 (try/finally로 복원)
       expect(ctx.activeTextTarget).toBe(liveTextTarget);
     });
 
@@ -2248,7 +2182,7 @@ describe("dashboard-store", () => {
       const beforeChat = useDashboardStore.getState().chatPrependedCount;
 
       // prepend: tool 1개 (이전 시점, eventId 더 작음)
-      // 부모 부재 가능성 → historyMode에서 orphan or root fallback
+      // Phase 2-A 평탄화 후: parent_event_id 무시, 모든 노드는 root.children에 평면 push
       const events = [
         {
           event: { type: "user_message", content: "old-u" } as UserMessageEvent,

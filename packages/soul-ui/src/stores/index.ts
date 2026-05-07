@@ -6,9 +6,6 @@
 export {
   useDashboardStore,
   isSessionUnread,
-  countTreeNodes,
-  countStreamingNodes,
-  findTreeNode,
 } from "./dashboard-store";
 export type {
   ProfileConfig,
@@ -28,7 +25,7 @@ export { createProcessingContext, makeNode, registerNode, ensureRoot } from "./p
 export { createNodeFromEvent, applyUpdate } from "./node-factory";
 
 // === Tree Placer ===
-export { resolveParent, placeInTree, handleTextStart } from "./tree-placer";
+export { placeInTree, handleTextStart } from "./tree-placer";
 
 // === Session Updater ===
 export { shouldNotify, deriveSessionStatus } from "./session-updater";
