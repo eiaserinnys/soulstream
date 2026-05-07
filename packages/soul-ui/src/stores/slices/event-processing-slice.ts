@@ -3,7 +3,7 @@
  *
  * SSE 이벤트 트리에 대한 처리 책임을 모은 슬라이스.
  * - 트리 상태(tree, treeVersion 등)와 이벤트 처리 컨텍스트(processingCtx) 소유.
- * - processEvent / processEvents / processHistoryEvents / setTotalSubtreeHeight 액션을 제공.
+ * - processEvent / processEvents / processHistoryEvents 액션을 제공.
  *
  * Phase 2-A 평탄화 (atom 작업 이력 260507.01.fe-tree-flattening):
  *   - tree-placer가 root.children 평면 push로 단순화되면서 historyMode 토글·orphan 큐가
@@ -11,8 +11,8 @@
  *   - subtree_update SSE는 event-processor에서 dedup만 갱신하고 no-op 반환. slice 측의
  *     applySubtreeHeightUpdate / subtreeHeightUpdate 적용 분기는 모두 폐기.
  *   - treeChangeInfo는 NodeGraph 제거(Phase 1) 후 소비자 0건이라 폐기.
- *   - totalSubtreeHeight·setTotalSubtreeHeight는 §11.3 결정대로 Phase D에서 grep 후 폐기.
- *     본 페이즈에서는 dead 정본으로 유지(0 초기값, setter만 동작).
+ *   - totalSubtreeHeight·setTotalSubtreeHeight는 Phase D §11.3 grep으로 컴포넌트·훅
+ *     소비자 0건 재확인 후 폐기 완료. 더 이상 슬라이스에 존재하지 않는다.
  *
  * 핵심 invariants:
  * - tree, treeVersion, chatPrependedCount, chatLastPrependAtMs는 한 set({}) 호출 안에 묶여야
@@ -52,7 +52,6 @@ export function getEventProcessingInitialState(): Pick<
   | "chatPrependedCount"
   | "chatLastPrependAtMs"
   | "lastEventId"
-  | "totalSubtreeHeight"
   | "pendingNotifications"
   | "processingCtx"
 > {
@@ -62,7 +61,6 @@ export function getEventProcessingInitialState(): Pick<
     chatPrependedCount: 0,
     chatLastPrependAtMs: null as number | null,
     lastEventId: 0,
-    totalSubtreeHeight: 0,
     pendingNotifications: [] as SoulSSEEvent[],
     processingCtx: createProcessingContext(),
   };
@@ -75,7 +73,6 @@ export type EventProcessingSlice = Pick<
   | "chatPrependedCount"
   | "chatLastPrependAtMs"
   | "lastEventId"
-  | "totalSubtreeHeight"
   | "pendingNotifications"
   | "processingCtx"
 > &
@@ -84,7 +81,6 @@ export type EventProcessingSlice = Pick<
     | "processEvent"
     | "processEvents"
     | "processHistoryEvents"
-    | "setTotalSubtreeHeight"
   >;
 
 export const createEventProcessingSlice: StateCreator<
@@ -274,14 +270,5 @@ export const createEventProcessingSlice: StateCreator<
     }
 
     return { addedCount: addedGrouped };
-  },
-
-  // --- 뷰포트 API: totalSubtreeHeight 덮어쓰기 ---
-  //
-  // §11.3 Phase D 결정 대상. 본 페이즈에서는 setter를 dead-but-functional 상태로 유지.
-  // Phase D에서 컴포넌트·훅 소비자 grep 후 0건이면 totalSubtreeHeight 필드와 함께 폐기.
-  setTotalSubtreeHeight: (total) => {
-    if (get().totalSubtreeHeight === total) return;
-    set({ totalSubtreeHeight: total });
   },
 });
