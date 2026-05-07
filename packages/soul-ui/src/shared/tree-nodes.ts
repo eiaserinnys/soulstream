@@ -5,7 +5,7 @@
  * dashboard-store가 SSE 이벤트를 흡수하여 만드는 트리 표현의 source of truth입니다.
  */
 
-import type { ContextItem, InputRequestQuestion } from "./sse-events";
+import type { CallerInfo, ContextItem, InputRequestQuestion } from "./sse-events";
 
 /** 트리 노드 타입 (SSE 이벤트 lifecycle → 단일 노드) */
 export type EventTreeNodeType = EventTreeNode["type"];
@@ -48,13 +48,19 @@ export interface UserMessageNode extends BaseNode {
   type: "user_message";
   user: string;
   context?: ContextItem[];
-  /** 에이전트가 발신한 경우 채워지는 메타데이터 */
+  /** 에이전트가 발신한 경우 채워지는 메타데이터 (caller_info.source==="agent"에서 도출) */
   agentInfo?: {
     source: "agent";
     agent_node: string;
     agent_id: string | null;
     agent_name: string | null;
   };
+  /**
+   * wire의 caller_info(통합 v1, atom ed3a216d) 그대로 보존.
+   * 메시지 단위 발신자 신원 — 멀티-소스 세션에서 메시지마다 발신자가 다를 수 있다.
+   * agentInfo는 caller_info에서 도출되는 view (호환 유지용 별도 필드).
+   */
+  callerInfo?: CallerInfo;
 }
 
 /** 시스템 메시지 노드 (system_message 이벤트 → 노드) */

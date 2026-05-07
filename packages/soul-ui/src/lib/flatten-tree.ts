@@ -6,6 +6,7 @@
  */
 
 import type {
+  CallerInfo,
   EventTreeNode,
   SessionNode,
   ThinkingNode,
@@ -69,13 +70,19 @@ export interface ChatMessage {
   timeoutSec?: number;
   /** user_message 전용: 구조화된 맥락 항목 배열 */
   contextItems?: ContextItem[];
-  /** user_message 전용: 에이전트 발신자 메타데이터 */
+  /** user_message 전용: 에이전트 발신자 메타데이터 (caller_info.source==="agent"에서 도출) */
   agentInfo?: {
     source: "agent";
     agent_node: string;
     agent_id: string | null;
     agent_name: string | null;
   };
+  /**
+   * user_message 전용: 메시지 단위 발신자 신원 (atom ed3a216d).
+   * UserMessage가 메시지 단위 caller_info.avatar_url/display_name을 우선 사용하여
+   * 멀티-소스 세션에서 메시지마다 발신자 표시. 세션-수준 metadata propagation에 의존하지 않는다.
+   */
+  callerInfo?: CallerInfo;
   /** DB 이벤트 ID. 히스토리-라이브 병합 시 dedup 기준. */
   eventId?: number;
 }
@@ -143,6 +150,7 @@ function shallowEqualChatMessage(a: ChatMessage, b: ChatMessage): boolean {
     a.timeoutSec === b.timeoutSec &&
     a.contextItems === b.contextItems &&
     a.agentInfo === b.agentInfo &&
+    a.callerInfo === b.callerInfo &&
     a.eventId === b.eventId
   );
 }
@@ -246,6 +254,7 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
         eventId,
         contextItems: n.context,
         agentInfo: n.agentInfo,
+        callerInfo: n.callerInfo,
       };
     }
 

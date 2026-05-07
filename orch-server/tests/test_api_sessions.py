@@ -333,3 +333,180 @@ class TestSessionToResponseUserInfo:
 
         assert result["userName"] is None
         assert result["userPortraitUrl"] is None
+
+    # === caller_info override (atom ed3a216d) ===
+    # caller_info가 metadata에 있으면 노드 user_info보다 우선한다.
+
+    def _make_session_with_caller_info(self, caller_info_value):
+        return {
+            "session_id": "s1",
+            "status": "running",
+            "node_id": "n1",
+            "agent_id": None,
+            "metadata": [
+                {"type": "caller_info", "value": caller_info_value},
+            ],
+        }
+
+    def _make_node_manager_with_user(self):
+        from unittest.mock import MagicMock
+        nm = MagicMock()
+        nm.find_agent_profile.return_value = None
+        nm.get_user_info.return_value = {"name": "노드 사용자", "hasPortrait": True}
+        return nm
+
+    def test_caller_info_browser_overrides_user_info(self):
+        """caller_info source=browser → display_name/avatar_url(google picture) override."""
+        from soulstream_server.api.session_serializer import _session_to_response
+
+        session = self._make_session_with_caller_info({
+            "source": "browser",
+            "display_name": "Jubok Kim",
+            "user_id": "eiaserinnys@gmail.com",
+            "avatar_url": "https://lh3.googleusercontent.com/a/ABC",
+            "email": "eiaserinnys@gmail.com",
+        })
+
+        result = _session_to_response(session, self._make_node_manager_with_user())
+
+        assert result["userName"] == "Jubok Kim"
+        assert result["userPortraitUrl"] == "https://lh3.googleusercontent.com/a/ABC"
+
+    def test_caller_info_slack_overrides_user_info(self):
+        """caller_info source=slack → image_192 url override."""
+        from soulstream_server.api.session_serializer import _session_to_response
+
+        session = self._make_session_with_caller_info({
+            "source": "slack",
+            "display_name": "@channel-user",
+            "user_id": "U08ABC",
+            "avatar_url": "https://avatars.slack-edge.com/2024/img_192.png",
+            "slack": {"channel_id": "C08", "user_id": "U08ABC"},
+        })
+
+        result = _session_to_response(session, self._make_node_manager_with_user())
+
+        assert result["userName"] == "@channel-user"
+        assert result["userPortraitUrl"] == "https://avatars.slack-edge.com/2024/img_192.png"
+
+    def test_caller_info_agent_overrides_user_info(self):
+        """caller_info source=agent → /api/agents/.../portrait override."""
+        from soulstream_server.api.session_serializer import _session_to_response
+
+        session = self._make_session_with_caller_info({
+            "source": "agent",
+            "display_name": "shay",
+            "user_id": "shay",
+            "avatar_url": "/api/agents/shay/portrait",
+            "agent_node": "eiaserinnys",
+            "agent_id": "shay",
+            "agent_name": "Shay",
+        })
+
+        result = _session_to_response(session, self._make_node_manager_with_user())
+
+        assert result["userName"] == "shay"
+        assert result["userPortraitUrl"] == "/api/agents/shay/portrait"
+
+    def test_caller_info_soul_app_overrides_user_info(self):
+        """caller_info source=soul-app (RN) → google picture override."""
+        from soulstream_server.api.session_serializer import _session_to_response
+
+        session = self._make_session_with_caller_info({
+            "source": "soul-app",
+            "display_name": "Jubok Kim",
+            "user_id": "eiaserinnys@gmail.com",
+            "avatar_url": "https://lh3.googleusercontent.com/a/RN-PIC",
+            "email": "eiaserinnys@gmail.com",
+        })
+
+        result = _session_to_response(session, self._make_node_manager_with_user())
+
+        assert result["userName"] == "Jubok Kim"
+        assert result["userPortraitUrl"] == "https://lh3.googleusercontent.com/a/RN-PIC"
+
+    def test_caller_info_avatar_url_empty_string_falls_back_to_node_portrait(self):
+        """avatar_url='' → 노드 portrait fallback. display_name은 caller_info 유지."""
+        from soulstream_server.api.session_serializer import _session_to_response
+
+        session = self._make_session_with_caller_info({
+            "source": "browser",
+            "display_name": "익명",
+            "avatar_url": "",
+        })
+
+        result = _session_to_response(session, self._make_node_manager_with_user())
+
+        # display_name은 caller_info 유지
+        assert result["userName"] == "익명"
+        # avatar_url이 비문자열·빈 문자열이면 caller_info의 avatar_url override 미적용 →
+        # 노드 user_info가 hasPortrait=True이지만 caller_info 분기를 탔으므로
+        # noupr override가 일어나지 않아 None.
+        # (정책: caller_info 분기에 들어간 이상 노드 portrait로 mix-fallback하지 않는다.
+        #  하나의 발신자 정체성을 일관되게 표현 — design-principles §3.)
+        assert result["userPortraitUrl"] is None
+
+    def test_caller_info_avatar_url_non_string_ignored(self):
+        """avatar_url이 비문자열(int)이면 무시되어 None."""
+        from soulstream_server.api.session_serializer import _session_to_response
+
+        session = self._make_session_with_caller_info({
+            "source": "browser",
+            "display_name": "Jubok",
+            "avatar_url": 12345,  # 비정상 타입 (defensive)
+        })
+
+        result = _session_to_response(session, self._make_node_manager_with_user())
+
+        assert result["userName"] == "Jubok"
+        assert result["userPortraitUrl"] is None
+
+    def test_caller_info_display_name_empty_uses_none(self):
+        """display_name='' → userName None (avatar는 있을 수 있음)."""
+        from soulstream_server.api.session_serializer import _session_to_response
+
+        session = self._make_session_with_caller_info({
+            "source": "browser",
+            "display_name": "",
+            "avatar_url": "https://example.com/a.png",
+        })
+
+        result = _session_to_response(session, self._make_node_manager_with_user())
+
+        assert result["userName"] is None
+        assert result["userPortraitUrl"] == "https://example.com/a.png"
+
+    def test_caller_info_absent_uses_node_user_info(self):
+        """metadata에 caller_info 없으면 기존 동작 보존 (회귀 보호)."""
+        from soulstream_server.api.session_serializer import _session_to_response
+
+        session = {
+            "session_id": "s1",
+            "status": "running",
+            "node_id": "n1",
+            "agent_id": None,
+            "metadata": [{"type": "summary", "value": "old"}],  # caller_info 없음
+        }
+
+        result = _session_to_response(session, self._make_node_manager_with_user())
+
+        # 노드 user_info가 사용된다.
+        assert result["userName"] == "노드 사용자"
+        assert result["userPortraitUrl"] == "/api/nodes/n1/user/portrait"
+
+    def test_caller_info_value_string_ignored(self):
+        """caller_info entry의 value가 string(레거시)이면 dict 아니므로 무시 → 노드 fallback."""
+        from soulstream_server.api.session_serializer import _session_to_response
+
+        session = {
+            "session_id": "s1",
+            "status": "running",
+            "node_id": "n1",
+            "agent_id": None,
+            "metadata": [{"type": "caller_info", "value": "legacy-string"}],
+        }
+
+        result = _session_to_response(session, self._make_node_manager_with_user())
+
+        assert result["userName"] == "노드 사용자"
+        assert result["userPortraitUrl"] == "/api/nodes/n1/user/portrait"
