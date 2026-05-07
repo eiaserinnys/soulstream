@@ -541,3 +541,70 @@ async def test_input_request_filter_matrix(
         assert data_arg["kind"] == "input_request"
         assert data_arg["sessionType"] == session_type
         assert data_arg["callerSource"] == caller_source
+
+
+# === 통합 caller_info 스키마 v1 회귀 보호 (2026-05-07 Phase 5) ===
+#
+# Phase 2a/3에서 caller_info에 추가된 v1 top-level 필드(display_name, user_id,
+# avatar_url, email)는 wire payload(emit_session_updated/phase의 9키 정본 — atom
+# 901f8109 참조)에 노출되지 않는다. 따라서 push notifier 화이트리스트는 본 변경의
+# 영향을 받지 않아야 한다. 본 테스트는 회귀 방지를 위해 wire data에 v1 키가 우연히
+# 끼어들어도 화이트리스트가 caller_source만 보고 정상 동작함을 명시 검증.
+
+
+@pytest.mark.asyncio
+async def test_push_unaffected_by_v1_caller_info_extra_keys():
+    """v1 caller_info 필드가 wire data에 끼어들어도 push 동작 무영향.
+
+    event_type은 input_request로 검증 — input_request는 status 전환 없이 단발 알림이라
+    화이트리스트 통과 여부만 격리하여 측정 가능.
+    """
+    notifier, provider, repo = _make_notifier(user_info={"email": "a@b.com"})
+    repo.list_tokens.return_value = [("dev-1", "tok-1")]
+    provider.send.return_value = SendResult(ok=True, invalid_token=False)
+
+    await notifier._on_change(
+        "node_session_input_request",
+        "node-A",
+        {
+            "agent_session_id": "S1",
+            "prompt": "Continue?",
+            "session_type": "claude",
+            "caller_source": "browser",
+            # v1 추가 필드 — 실제 wire에는 없지만 방어적 회귀 검증
+            "display_name": "서소영",
+            "user_id": "user@example.com",
+            "avatar_url": "https://example.com/avatar.png",
+            "email": "user@example.com",
+        },
+    )
+    assert provider.send.await_count == 1
+    data_arg = provider.send.await_args.args[3]
+    assert data_arg["sessionId"] == "S1"
+    assert data_arg["callerSource"] == "browser"
+
+
+@pytest.mark.asyncio
+async def test_whitelist_unchanged_after_v1_introduction():
+    """v1 도입 후에도 화이트리스트는 ('slack', 'browser', 'soul-app') 그대로.
+    'agent'/'api'는 silent skip 유지 (atom a3d3c812 정본 보존)."""
+    notifier, provider, repo = _make_notifier(user_info={"email": "a@b.com"})
+    repo.list_tokens.return_value = [("dev-1", "tok-1")]
+    provider.send.return_value = SendResult(ok=True, invalid_token=False)
+
+    for excluded_source in ("agent", "api"):
+        provider.send.reset_mock()
+        await notifier._on_change(
+            "node_session_input_request",
+            "node-A",
+            {
+                "agent_session_id": "S2",
+                "prompt": "Continue?",
+                "session_type": "claude",
+                "caller_source": excluded_source,
+                "display_name": "Test",  # v1 필드 무관
+            },
+        )
+        assert provider.send.await_count == 0, (
+            f"caller_source={excluded_source!r}는 silent skip이어야 함"
+        )
