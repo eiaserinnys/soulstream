@@ -215,12 +215,18 @@ class NodeConnection:
         text: str,
         user: str = "",
         attachment_paths: list[str] | None = None,
+        caller_info: dict | None = None,
     ) -> dict:
         payload: dict[str, Any] = {"agentSessionId": session_id, "text": text, "user": user}
         if attachment_paths:
             # soul-server adapter.py _handle_intervene이 cmd.get("attachment_paths")로 처리한다.
             # (Phase 1에서 _handle_intervene에 attachment_paths 지원이 추가됨)
             payload["attachment_paths"] = attachment_paths
+        if caller_info:
+            # F-9 fix(2026-05-08): 2차+ 메시지의 발신자 신원을 wire 끝까지 운반.
+            # soul-server _handle_intervene이 cmd.get("caller_info")로 추출하여
+            # add_intervention → 큐 → InterventionSentEvent.caller_info로 전파한다.
+            payload["caller_info"] = caller_info
         return await self._send_command(CMD_INTERVENE, payload)
 
     async def send_claude_auth_status(self) -> dict:

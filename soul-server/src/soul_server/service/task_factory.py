@@ -190,6 +190,14 @@ class TaskFactory:
             task.oauth_token = params.oauth_token
         if params.client_id:
             task.client_id = params.client_id
+        # F-9 fix(2026-05-08): resume 시 새 caller_info를 task.caller_info에 갱신.
+        # task_executor._persist_initial_messages가 task.caller_info를 user_message
+        # wire에 첨부하므로, 갱신하지 않으면 2차+ 메시지가 첫 메시지의 caller_info를
+        # (in-memory 보존 시) 또는 None을 (eviction-reload 시) 사용해 결함 발생.
+        # params.caller_info가 None이면 기존 task.caller_info 보존 (graceful — 외부
+        # 호출자가 명시적으로 의도 표명한 경우만 덮어씀).
+        if params.caller_info is not None:
+            task.caller_info = params.caller_info
 
         self._eviction_manager.unregister(task.agent_session_id)
 

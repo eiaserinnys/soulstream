@@ -34,6 +34,7 @@ async def intervene(
     task_manager,
     soul_engine,
     resource_manager,
+    caller_info: Optional[dict] = None,
 ) -> dict:
     """세션 개입 메시지 전송 (자동 resume 포함).
 
@@ -48,6 +49,10 @@ async def intervene(
         task_manager: TaskManager 인스턴스.
         soul_engine: ClaudeRunner (start_execution용).
         resource_manager: 동시 실행 제한 매니저.
+        caller_info: 발신자 신원(통합 v1, atom ed3a216d). F-9 fix(2026-05-08)로
+            추가됐다. 큐를 거쳐 InterventionSentEvent.caller_info로 전파되어 2차+
+            메시지의 메시지-단위 발신자 표시를 가능하게 한다. 비어있으면 클라이언트는
+            세션-단위 metadata로 fallback (graceful).
 
     Returns:
         - auto_resumed=True 경로: ``{"auto_resumed": True, "agent_session_id": str}``
@@ -62,6 +67,7 @@ async def intervene(
         text=text,
         user=user,
         attachment_paths=attachment_paths or [],
+        caller_info=caller_info,
     )
     if result.get("auto_resumed"):
         await task_manager.executor.start_execution(

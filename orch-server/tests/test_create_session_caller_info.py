@@ -30,11 +30,17 @@ _TEST_JWT_SECRET = "test-jwt-secret-for-caller-info-32b!"
 def jwt_secret(monkeypatch):
     """build_browser_caller_info의 JWT 분기를 활성화하기 위해 settings.jwt_secret을 주입.
 
+    F-9 fix(2026-05-08, side-fix): verify_auth가 `is_auth_enabled=True`인 환경에서만
+    JWT 단계를 실행하도록 수정됐으므로(이전엔 무조건 실행 + auth_enabled=False bypass),
+    JWT 검증 분기를 시험하려면 `google_client_id`도 함께 채워 `is_auth_enabled`를 True로
+    만들어야 한다. 이전엔 jwt_secret만 채우고 verify_auth의 dev-mode bypass에 의존했다.
+
     function-scoped이라 다른 테스트 격리 보장. 테스트가 끝나면 settings는 자동 복원.
     """
     from soulstream_server.config import get_settings
     settings = get_settings()
     monkeypatch.setattr(settings, "jwt_secret", _TEST_JWT_SECRET)
+    monkeypatch.setattr(settings, "google_client_id", "fake-client-id-for-test")
     return _TEST_JWT_SECRET
 
 

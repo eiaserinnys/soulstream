@@ -64,10 +64,16 @@ _DONE = object()
 
 @dataclass
 class InterventionMessage:
-    """개입 메시지 데이터"""
+    """개입 메시지 데이터.
+
+    caller_info는 통합 v1 스키마(atom ed3a216d)의 발신자 신원 dict이며,
+    F-9 fix(2026-05-08)로 추가됐다. on_intervention_callback이 InterventionSentEvent에
+    그대로 첨부하여 wire에 운반한다 (메시지-단위 발신자 표시용).
+    """
     text: str
     user: str
     attachment_paths: List[str]
+    caller_info: Optional[dict] = None
 
 
 @dataclass
@@ -266,7 +272,12 @@ class SoulEngineAdapter:
             await queue.put(CompactEvent(trigger=trigger, message=message))
 
         async def on_intervention_callback() -> Optional[str]:
-            """인터벤션 폴링: dict → prompt 문자열 변환"""
+            """인터벤션 폴링: dict → prompt 문자열 변환.
+
+            F-9 fix(2026-05-08): caller_info가 있으면 InterventionSentEvent에
+            첨부하여 wire에 운반한다. 클라이언트(soul-ui InterventionMessage,
+            soul-app UserMessage)는 이 caller_info로 메시지-단위 발신자 표시를 한다.
+            """
             if not get_intervention:
                 return None
 
@@ -278,10 +289,13 @@ class SoulEngineAdapter:
                 text=intervention.get("text", ""),
                 user=intervention.get("user", ""),
                 attachment_paths=intervention.get("attachment_paths", []),
+                caller_info=intervention.get("caller_info"),
             )
 
             # 이벤트 발행 + 콜백 호출
-            intervention_event = InterventionSentEvent(user=msg.user, text=msg.text)
+            intervention_event = InterventionSentEvent(
+                user=msg.user, text=msg.text, caller_info=msg.caller_info,
+            )
             await queue.put(intervention_event)
             if on_intervention_sent:
                 await on_intervention_sent(msg.user, msg.text, msg.attachment_paths)

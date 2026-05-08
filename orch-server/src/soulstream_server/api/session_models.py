@@ -38,6 +38,7 @@ class InterveneRequest(BaseModel):
     text: str
     user: str = ""
     attachmentPaths: Optional[list[str]] = None
+    caller_info: Optional[dict] = None  # 발신자 정보. 비어있으면 라우트가 HTTP Request에서 조립.
 
 
 class RespondRequest(BaseModel):

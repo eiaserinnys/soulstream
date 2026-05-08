@@ -372,6 +372,7 @@ async def get_session(
 async def intervene_session(
     agent_session_id: str,
     request: InterveneRequest,
+    http_request: Request,
     _: str = Depends(verify_token),
 ):
     """
@@ -379,8 +380,21 @@ async def intervene_session(
 
     Running 세션이면 intervention queue에 추가합니다.
     완료된 세션이면 자동으로 resume하여 대화를 이어갑니다.
+
+    F-9 fix(2026-05-08): caller_info를 wire에 운반한다. body.caller_info가
+    있으면 그대로(슬랙봇 등 외부 클라이언트), 없으면 HTTP 메타로 source='api'
+    fallback 조립 (인증 없는 직접 호출 케이스).
     """
     try:
+        # body.caller_info가 있으면 그대로, 없으면 HTTP Request에서 수집 (source='api').
+        # /execute 라우트와 동일 패턴 — 인증 없는 직접 API 호출자도 graceful fallback.
+        caller_info = request.caller_info or {
+            "source": "api",
+            "ip": http_request.client.host if http_request.client else None,
+            "user_agent": http_request.headers.get("user-agent"),
+            "referer": http_request.headers.get("referer"),
+            "forwarded_for": http_request.headers.get("x-forwarded-for"),
+        }
         return await intervention_service.intervene(
             agent_session_id=agent_session_id,
             text=request.text,
@@ -389,6 +403,7 @@ async def intervene_session(
             task_manager=get_task_manager(),
             soul_engine=get_soul_engine(),
             resource_manager=resource_manager,
+            caller_info=caller_info,
         )
     except NodeMismatchError as e:
         raise HTTPException(

@@ -112,9 +112,20 @@ export function createNodeFromEvent(
 
     case "intervention_sent": {
       const e = event as InterventionSentEvent;
+      // F-9 fix(2026-05-08): caller_info를 노드에 박아 InterventionMessage가 발신자
+      // 단위 아바타·이름을 표시하게 한다. user_message 분기와 동일 패턴(agentInfo 도출).
+      const ci = e.caller_info;
+      const agentInfo = ci && ci.source === "agent" ? {
+        source: "agent" as const,
+        agent_node: ci.agent_node ?? "",
+        agent_id: ci.agent_id ?? null,
+        agent_name: ci.agent_name ?? null,
+      } : undefined;
       return makeNode(`intervention-${eventId}`, "intervention", e.text, {
         completed: true,
         user: e.user,
+        agentInfo,
+        callerInfo: ci,
       });
     }
 

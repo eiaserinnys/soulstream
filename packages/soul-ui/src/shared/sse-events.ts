@@ -82,6 +82,12 @@ export interface InterventionSentEvent {
   text: string;
   /** 부모 이벤트 ID (Phase 2: 타입 통일용, 서버에서 설정하지 않음) */
   parent_event_id?: string;
+  /**
+   * F-9 fix(2026-05-08): 발신자 신원(통합 v1, atom ed3a216d). user_message와 동일
+   * 형상으로 메시지-단위 발신자 표시를 가능하게 한다. 부재 시 클라이언트는 세션-단위
+   * metadata로 fallback, 그것도 없으면 dashboard 사용자 portrait로 fallback.
+   */
+  caller_info?: CallerInfo;
 }
 
 export interface ContextItem {

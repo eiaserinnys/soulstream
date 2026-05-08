@@ -72,6 +72,24 @@ export interface SystemMessageNode extends BaseNode {
 export interface InterventionNode extends BaseNode {
   type: "intervention";
   user?: string;
+  /**
+   * F-9 fix(2026-05-08): 발신자가 agent인 경우 채워지는 메타데이터.
+   * UserMessageNode와 동일 형상으로 InterventionMessage 컴포넌트가
+   * caller_info에서 도출된 agent 정체성을 표시할 때 사용한다.
+   */
+  agentInfo?: {
+    source: "agent";
+    agent_node: string;
+    agent_id: string | null;
+    agent_name: string | null;
+  };
+  /**
+   * F-9 fix(2026-05-08): wire의 caller_info(통합 v1, atom ed3a216d).
+   * 메시지 단위 발신자 신원 — 2차+ 메시지에서 발신자가 다를 수 있는 케이스 보존.
+   * 부재 시 InterventionMessage가 세션-단위 metadata fallback 후 dashboard 사용자
+   * portrait로 다단 fallback 한다.
+   */
+  callerInfo?: CallerInfo;
 }
 
 /** Thinking (확장 사고) 노드 */

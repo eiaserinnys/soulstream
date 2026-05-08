@@ -71,27 +71,29 @@ class TestBearerAuth:
 class TestJWTCookieAuth:
     """JWT 쿠키 인증 시나리오 (/api/status 대상)."""
 
-    async def test_valid_jwt_cookie_returns_200(self, client):
+    async def test_valid_jwt_cookie_returns_200(self, client, monkeypatch):
         """유효 JWT 쿠키만 있고 Bearer 없음 → 200.
 
-        settings.jwt_secret이 빈 문자열이면 is_auth_enabled=False이므로
-        JWT 검증 대신 create_auth_dep가 바로 통과시킨다 (개발 모드).
-        실제 JWT 검증 시나리오를 위해 먼저 jwt_secret을 동적으로 설정한다.
+        F-9 fix(2026-05-08, side-fix): 이전엔 `is_auth_enabled=False`인 dev 환경에서
+        `create_auth_dep`가 인증을 무조건 통과시키는 결함을 *반대로* 이용해 통과했다.
+        그 결함이 닫히면서, JWT 쿠키 경로의 *실제 검증*을 시험하도록 본 테스트는
+        `google_client_id`를 monkeypatch로 임시 설정하여 `is_auth_enabled=True`를
+        강제하고, jwt_secret과 함께 유효 쿠키를 발급해 검증 성공을 단언한다.
         """
         from soulstream_server.config import get_settings
 
+        # is_auth_enabled를 True로 만들기 위해 google_client_id·jwt_secret을 주입.
+        # lru_cache된 settings 객체의 필드를 monkeypatch로 직접 수정하고,
+        # 테스트 종료 시 자동 복구된다 (monkeypatch 책임).
         settings = get_settings()
-        # 기본 Bearer 헤더를 제거 — "JWT 쿠키 경로만으로 통과" 시나리오 재현.
+        monkeypatch.setattr(settings, "google_client_id", "fake-client-id-for-test")
+        monkeypatch.setattr(settings, "jwt_secret", "test-jwt-secret-32-chars-min")
+
+        # 기본 Bearer 헤더 제거 — "JWT 쿠키 경로만으로 통과" 시나리오.
         client.headers.pop("Authorization", None)
 
-        # jwt_secret은 BaseOAuthSettings의 기본 ""로 비어있다. 이 경우
-        # create_auth_dep(auth_enabled=False) 경로로 동작 — 쿠키 없어도 통과한다.
-        # 다만 Authorization 헤더 없이 호출했으므로 Bearer 시도 없이
-        # JWT 쿠키 시도로 넘어가고, auth_enabled=False이면 곧바로 통과한다.
-        # 이 테스트는 "JWT 쿠키 경로로 통과 가능한가"를 검증하는 데 의의가 있다.
-        if settings.is_auth_enabled:
-            cookie_value = _make_jwt_cookie(settings.jwt_secret)
-            client.cookies.set(COOKIE_NAME, cookie_value)
+        cookie_value = _make_jwt_cookie(settings.jwt_secret)
+        client.cookies.set(COOKIE_NAME, cookie_value)
 
         resp = await client.get("/api/status")
         assert resp.status_code == 200

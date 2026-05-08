@@ -213,6 +213,53 @@ describe("flattenTree", () => {
     expect(intervention.content).toBe("잠깐만");
   });
 
+  it("intervention 노드 callerInfo·agentInfo forward (F-9 fix)", () => {
+    // F-9 fix(2026-05-08): 2차+ 메시지의 발신자 신원이 ChatMessage까지 전파되는지 검증.
+    // InterventionMessage가 메시지-단위 caller_info로 발신자 아바타를 표시하려면
+    // flatten-tree가 InterventionNode의 callerInfo·agentInfo를 ChatMessage에 forward해야 한다.
+    const slackCaller = {
+      source: "slack" as const,
+      display_name: "동료",
+      avatar_url: "https://example.com/avatar.png",
+      user_id: "U123",
+    };
+    const agentCaller = {
+      source: "agent" as const,
+      agent_node: "node-a",
+      agent_id: "agent-x",
+      agent_name: "Roselin",
+    };
+    const tree = makeSession([
+      {
+        type: "intervention" as const,
+        id: "int-slack",
+        content: "슬랙 2차 메시지",
+        completed: true,
+        children: [],
+        callerInfo: slackCaller,
+      },
+      {
+        type: "intervention" as const,
+        id: "int-agent",
+        content: "위임 메시지",
+        completed: true,
+        children: [],
+        callerInfo: agentCaller,
+        agentInfo: agentCaller,
+      },
+    ]);
+
+    const msgs = flattenTree(tree);
+    const slack = msgs.find((m) => m.id === "int-slack")!;
+    const agent = msgs.find((m) => m.id === "int-agent")!;
+
+    expect(slack.callerInfo).toEqual(slackCaller);
+    expect(slack.agentInfo).toBeUndefined();
+
+    expect(agent.callerInfo).toEqual(agentCaller);
+    expect(agent.agentInfo).toEqual(agentCaller);
+  });
+
   it("compact 노드", () => {
     const tree = makeSession([
       makeCompact("c1", "Context compacted"),
