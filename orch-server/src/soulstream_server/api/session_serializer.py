@@ -7,6 +7,7 @@ sessions.py, session_stream.py, catalog.py 등에서 공유하는
 
 from typing import Optional
 
+from soul_common.auth import extract_caller_info_from_metadata
 from soulstream_server.nodes.node_manager import NodeManager
 
 
@@ -18,12 +19,6 @@ def _build_portrait_proxy_url(source_node_id: str, agent_id: str) -> str:
 def _build_user_portrait_proxy_url(node_id: str) -> str:
     """사용자 portrait 프록시 URL을 ��립한다. (API 계층 전용)"""
     return f"/api/nodes/{node_id}/user/portrait"
-
-
-# caller_info 추출 helper의 정본 위치는 `soul_common.auth.caller_info`로 이전됐다
-# (F-9 fix 2026-05-08, design-principles §3 정본 하나). 본 모듈은 import re-export로
-# 기존 호출자(catalog.py 등)와의 호환성을 보존한다.
-from soul_common.auth import extract_caller_info_from_metadata as _extract_caller_info  # noqa: F401
 
 
 def apply_user_profile_enrichment(
@@ -124,7 +119,7 @@ def _session_to_response(
     # 사용자 정보: caller_info(atom ed3a216d) 우선, 부재 시 노드 user_info fallback.
     # caller_info 분기에 들어간 이상 노드 portrait로 mix-fallback하지 않는다 —
     # 하나의 발신자 정체성을 일관되게 표현 (design-principles §3 정본 하나).
-    caller_info = _extract_caller_info(s.get("metadata"))
+    caller_info = extract_caller_info_from_metadata(s.get("metadata"))
     if caller_info:
         display_name = caller_info.get("display_name")
         avatar_url = caller_info.get("avatar_url")
