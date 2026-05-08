@@ -26,6 +26,47 @@ def _build_user_portrait_proxy_url(node_id: str) -> str:
 from soul_common.auth import extract_caller_info_from_metadata as _extract_caller_info  # noqa: F401
 
 
+def apply_user_profile_enrichment(
+    payload: dict,
+    *,
+    node_id: Optional[str],
+    node_manager: Optional[NodeManager],
+    name_key: str = "userName",
+    portrait_key: str = "userPortraitUrl",
+) -> None:
+    """payload[name_key]가 비어있으면 NodeManager 노드 user_info로 fallback (in-place).
+
+    R-1 fix(2026-05-08): catalog REST와 SSE wire 3변형이 user 프로필 채움 정책을
+    공유하도록 추출된 정본 헬퍼. 정본 둘 안티패턴(atom d7a1ad86) 회피.
+
+    정책 — caller_info 정체성 우선, mix-fallback 금지(atom ed3a216d v1):
+    - payload[name_key] *또는* payload[portrait_key] truthy → NOOP
+      (정체성 부분이라도 있으면 보존 — name만 채워졌거나 portrait만 채워졌어도 노드 정보로 덮지 않음)
+    - node_id 없음 또는 node_manager None → NOOP (graceful)
+    - get_user_info 빈 dict → NOOP (노드 등록 직후·연결 끊긴 노드)
+
+    호출 지점:
+    - _session_to_response (REST /api/sessions, /api/sessions/stream session_list)
+    - catalog.py:get_catalog (REST /api/catalog sessionList)
+    - main.py:_on_node_change (SSE session_created · session_updated wire)
+    """
+    if (
+        payload.get(name_key)
+        or payload.get(portrait_key)
+        or not node_id
+        or node_manager is None
+    ):
+        return
+    user_info = node_manager.get_user_info(node_id)
+    if not user_info:
+        return
+    name = user_info.get("name")
+    if name:
+        payload[name_key] = name
+    if user_info.get("hasPortrait"):
+        payload[portrait_key] = _build_user_portrait_proxy_url(node_id)
+
+
 def _session_to_response(
     s: dict,
     node_manager: Optional[NodeManager] = None,
@@ -91,11 +132,10 @@ def _session_to_response(
             result["userName"] = display_name
         if isinstance(avatar_url, str) and avatar_url:
             result["userPortraitUrl"] = avatar_url
-    elif node_id and node_manager is not None:
-        user_info = node_manager.get_user_info(node_id)
-        if user_info:
-            result["userName"] = user_info.get("name")
-            if user_info.get("hasPortrait"):
-                result["userPortraitUrl"] = _build_user_portrait_proxy_url(node_id)
+    # caller_info 부재 또는 부분 정보 시 노드 fallback (헬퍼가 mix-fallback 금지 정책 적용 —
+    # userName이 truthy면 헬퍼 NOOP하여 caller_info 정체성 보존).
+    apply_user_profile_enrichment(
+        result, node_id=node_id, node_manager=node_manager
+    )
 
     return result

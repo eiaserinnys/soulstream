@@ -18,6 +18,7 @@ from soul_common.db.session_db import PostgresSessionDB
 from soulstream_server.api.attachments import create_attachments_router
 from soulstream_server.api.atom import create_atom_router
 from soulstream_server.api.auth import verify_auth
+from soulstream_server.api.session_serializer import apply_user_profile_enrichment
 from soulstream_server.api.auth_bearer import router as auth_bearer_router
 from soulstream_server.api.auth_native import create_native_auth_router
 from soulstream_server.api.execute_proxy import create_execute_proxy_router
@@ -57,28 +58,42 @@ def _check_production_cors(settings: Settings) -> None:
 
 
 async def _on_node_change(
-    broadcaster: SessionBroadcaster, event_type: str, node_id: str, data: dict | None
+    broadcaster: SessionBroadcaster,
+    node_manager: NodeManager,
+    event_type: str,
+    node_id: str,
+    data: dict | None,
 ) -> None:
     """노드 변경 이벤트를 클라이언트 SSE 형식으로 변환하여 브로드캐스트.
 
     node_manager._on_session_change가 이벤트 타입을 'node_session_{change_type}'으로
     포장하므로, 클라이언트(useSessionListProvider.ts)가 인식하는 session_* 타입으로 언포장한다.
     모든 이벤트에 대해 broadcast_node_change도 함께 호출(node graph 등에서 사용).
+
+    R-1 fix(2026-05-08): session_created/session_updated wire에 user 프로필
+    enrichment를 적용한다. caller_info가 부실한 세션이 라이브로 도착할 때
+    노드 owner 정보로 채워 catalog REST와 정합 — 클라이언트 폴백 표시 차단.
     """
     if event_type == "node_session_session_created":
         # soul-server adapter._dispatch_broadcast_event는 session_created 이벤트를
         # {"type": "session_created", "agentSessionId": ..., "session": {full_info}} 형태로 전송.
         # "session" 키가 있으면 그것을 추출하고, 없으면 data 자체를 사용.
         session_info = (data or {}).get("session") or data
-        # soul-server가 보내는 agentPortraitUrl은 soul-server 로컬 URL(/api/agents/{id}/portrait).
-        # 브라우저는 soul-server에 직접 접근할 수 없으므로 프록시 URL로 교체한다.
-        # {**session_info, key: value} 패턴은 기존 키도 덮어쓴다.
-        agent_id = session_info.get("agentId") if isinstance(session_info, dict) else None
-        if agent_id:
-            session_info = {
-                **session_info,
-                "agentPortraitUrl": f"/api/nodes/{node_id}/agents/{agent_id}/portrait",
-            }
+        if isinstance(session_info, dict):
+            # soul-server가 보내는 agentPortraitUrl은 soul-server 로컬 URL(/api/agents/{id}/portrait).
+            # 브라우저는 soul-server에 직접 접근할 수 없으므로 프록시 URL로 교체한다.
+            # {**session_info, key: value} 패턴은 기존 키도 덮어쓴다.
+            agent_id = session_info.get("agentId")
+            if agent_id:
+                session_info = {
+                    **session_info,
+                    "agentPortraitUrl": f"/api/nodes/{node_id}/agents/{agent_id}/portrait",
+                }
+            # R-1 fix: user 프로필 enrichment (catalog REST와 정합).
+            # session_info[userName]이 truthy면 헬퍼 NOOP — caller_info 정체성 보존.
+            apply_user_profile_enrichment(
+                session_info, node_id=node_id, node_manager=node_manager
+            )
         broadcast_data = {
             "type": "session_created",
             "session": session_info,
@@ -103,6 +118,13 @@ async def _on_node_change(
         agent_id = (data or {}).get("agentId")
         if agent_id:
             broadcast_data["agentPortraitUrl"] = f"/api/nodes/{node_id}/agents/{agent_id}/portrait"
+        # R-1 fix: emit_session_updated/emit_session_phase 둘 다 type=session_updated wire라
+        # NodeConnection._on_session_updated → 같은 분기. 한 곳 fix로 P4·P5 모두 닫힘.
+        # spread **(data or {}) 후 호출 — data.userName(soul-server task가 caller_info에서 추출)이
+        # truthy면 헬퍼 NOOP (mix-fallback 금지 보존).
+        apply_user_profile_enrichment(
+            broadcast_data, node_id=node_id, node_manager=node_manager
+        )
         await broadcaster.broadcast(broadcast_data)
     elif event_type == "node_session_session_deleted":
         # data에 agentSessionId 또는 agent_session_id 두 가지 키가 올 수 있으므로 모두 시도.
@@ -221,7 +243,7 @@ async def lifespan(app: FastAPI):
     async def on_node_change(
         event_type: str, node_id: str, data: dict | None
     ) -> None:
-        await _on_node_change(broadcaster, event_type, node_id, data)
+        await _on_node_change(broadcaster, node_manager, event_type, node_id, data)
 
     node_manager.add_change_listener(on_node_change)
 
