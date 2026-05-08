@@ -269,6 +269,79 @@ class TestDevLoginEndpoint:
 
         assert resp.status_code == 400
 
+    def test_dev_login_default_picture_when_omitted(self):
+        """picture 미공급 시 deterministic identicon URL이 JWT에 박힘.
+
+        B-5 결함 fix: dev-login이 picture를 받지도 채우지도 않아 JWT picture=""로
+        영속되었고, build_browser_caller_info의 truthy filter가 avatar_url을 drop
+        했다. dev 환경에서도 caller_info의 avatar_url 분기가 시험되도록 deterministic
+        default URL(이메일 시드 identicon)을 generate_token 전에 채운다.
+        """
+        app = _create_test_app(is_development=True)
+        client = TestClient(app)
+        resp = client.post(
+            "/api/auth/dev-login",
+            json={"email": "alice@example.com", "name": "Alice"},
+        )
+
+        assert resp.status_code == 200
+        # set-cookie에서 jwt 추출 → 디코드
+        cookies = resp.cookies
+        token = cookies.get(COOKIE_NAME)
+        assert token, "dev-login set-cookie에 jwt가 없음"
+        payload = verify_token(token, _TEST_SECRET)
+        assert payload is not None
+        # picture는 비어있지 않은 deterministic URL이어야 한다.
+        assert isinstance(payload["picture"], str)
+        assert len(payload["picture"]) > 0
+        # email이 시드로 들어가서 결과가 달라지는지 확인 (deterministic 확인)
+        assert "alice@example.com" in payload["picture"] or \
+            payload["picture"].endswith("alice%40example.com") or \
+            payload["picture"].endswith("alice@example.com")
+
+    def test_dev_login_explicit_picture_preserved(self):
+        """body.picture가 있으면 그 값이 그대로 JWT에 박힘 (default 덮어쓰기 금지)."""
+        app = _create_test_app(is_development=True)
+        client = TestClient(app)
+        custom_url = "https://lh3.googleusercontent.com/a/custom-avatar.png"
+        resp = client.post(
+            "/api/auth/dev-login",
+            json={
+                "email": "bob@example.com",
+                "name": "Bob",
+                "picture": custom_url,
+            },
+        )
+
+        assert resp.status_code == 200
+        cookies = resp.cookies
+        token = cookies.get(COOKIE_NAME)
+        assert token
+        payload = verify_token(token, _TEST_SECRET)
+        assert payload is not None
+        assert payload["picture"] == custom_url
+
+    def test_dev_login_default_picture_deterministic(self):
+        """같은 이메일이면 같은 default URL — backfill·캐시 안전성."""
+        app = _create_test_app(is_development=True)
+        client = TestClient(app)
+
+        resp1 = client.post(
+            "/api/auth/dev-login",
+            json={"email": "carol@example.com"},
+        )
+        resp2 = client.post(
+            "/api/auth/dev-login",
+            json={"email": "carol@example.com"},
+        )
+
+        token1 = resp1.cookies.get(COOKIE_NAME)
+        token2 = resp2.cookies.get(COOKIE_NAME)
+        p1 = verify_token(token1, _TEST_SECRET)
+        p2 = verify_token(token2, _TEST_SECRET)
+        # picture는 deterministic — 시간/sub 무관
+        assert p1["picture"] == p2["picture"]
+
 
 # === require_dashboard_auth 의존성 테스트 ===
 
