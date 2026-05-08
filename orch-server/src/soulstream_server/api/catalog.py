@@ -21,11 +21,11 @@ from typing import Optional
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
+from soul_common.auth import extract_caller_info_from_metadata
 from soul_common.catalog.catalog_service import CatalogService
 from soul_common.db.session_db import PostgresSessionDB
 from soulstream_server.api.session_serializer import (
     _build_portrait_proxy_url,
-    _extract_caller_info,
     apply_user_profile_enrichment,
 )
 from soulstream_server.models import BatchMoveRequest
@@ -104,25 +104,14 @@ def create_catalog_router(
                             source_node_id, agent_id
                         )
 
-            # 사용자 정보: caller_info(atom ed3a216d) 우선, 부재 시 노드 user_info fallback.
+            # 사용자 정보: caller_info(atom ed3a216d) 우선 추출, 부재 시 노드 user_info fallback.
             # 정본 헬퍼(apply_user_profile_enrichment)가 mix-fallback 금지 정책을 적용 —
             # caller_info 정체성이 부분이라도 있으면 보존, 부재 시에만 노드 fallback.
-            user_profile = {"userName": None, "userPortraitUrl": None}
-            caller_info = _extract_caller_info(s.get("metadata"))
-            if caller_info:
-                display_name = caller_info.get("display_name")
-                avatar_url = caller_info.get("avatar_url")
-                if isinstance(display_name, str) and display_name:
-                    user_profile["userName"] = display_name
-                if isinstance(avatar_url, str) and avatar_url:
-                    user_profile["userPortraitUrl"] = avatar_url
-            apply_user_profile_enrichment(
-                user_profile, node_id=node_id, node_manager=node_manager
-            )
-            userName = user_profile["userName"]
-            userPortraitUrl = user_profile["userPortraitUrl"]
+            caller_info = extract_caller_info_from_metadata(s.get("metadata")) or {}
+            display_name = caller_info.get("display_name")
+            avatar_url = caller_info.get("avatar_url")
 
-            session_list.append({
+            entry = {
                 "session_id": sid,
                 "node_id": node_id,
                 "folder_id": assignment.get("folderId"),
@@ -139,9 +128,13 @@ def create_catalog_router(
                 "agent_id": agent_id,
                 "agentName": agentName,
                 "agentPortraitUrl": agentPortraitUrl,
-                "userName": userName,
-                "userPortraitUrl": userPortraitUrl,
-            })
+                "userName": display_name if isinstance(display_name, str) and display_name else None,
+                "userPortraitUrl": avatar_url if isinstance(avatar_url, str) and avatar_url else None,
+            }
+            apply_user_profile_enrichment(
+                entry, node_id=node_id, node_manager=node_manager
+            )
+            session_list.append(entry)
 
         return {
             "folders": catalog.get("folders", []),
