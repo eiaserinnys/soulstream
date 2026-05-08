@@ -3,10 +3,11 @@
 검증 항목:
 1. persist_event: DB가 있을 때 이벤트 영속화 + event_id 반환
 2. persist_event: DB가 없을 때 None 반환
-3. persist_with_subtree: subtree_update dict 반환
-4. persist_with_subtree: DB 없을 때 None 반환
-5. handle_side_effects: metadata extraction 호출
-6. handle_side_effects: away_summary DB 업데이트
+3. handle_side_effects: metadata extraction 호출
+4. handle_side_effects: away_summary DB 업데이트
+
+Phase 2-B-1(2026-05-08): persist_with_subtree 메서드 폐기 — 관련 5개 테스트
+(TestPersistWithSubtree)도 함께 폐기.
 """
 
 import pytest
@@ -83,75 +84,6 @@ class TestPersistEvent:
         call_args = db.append_event.call_args[0]
         # created_at should be an ISO formatted string
         assert "T" in call_args[4]
-
-
-class TestPersistWithSubtree:
-    """persist_with_subtree() 단위 테스트"""
-
-    async def test_returns_subtree_update_dict(self):
-        """parent_event_id가 있는 이벤트에 대해 subtree_update dict를 반환한다"""
-        db = _make_mock_db()
-        db.update_subtree_heights = AsyncMock(return_value=({1: 2, 2: 1}, 3))
-        persistence = EventPersistence(session_db=db)
-        task = _make_task()
-
-        event = {"type": "text_delta", "text": "hi", "parent_event_id": 5}
-        result = await persistence.persist_with_subtree("sess-1", event, task)
-
-        assert result is not None
-        assert result["type"] == "subtree_update"
-        assert result["affected_event_ids"] == [1, 2]
-        assert result["new_total_subtree_height"] == 3
-        assert result["trigger_event_id"] == 42
-        # 영속화 2회: 원본 + subtree_update
-        assert db.append_event.call_count == 2
-
-    async def test_returns_none_when_no_parent_event_id(self):
-        """parent_event_id가 없으면 subtree 계산을 건너뛴다"""
-        db = _make_mock_db()
-        persistence = EventPersistence(session_db=db)
-        task = _make_task()
-
-        event = {"type": "text_delta", "text": "hi"}
-        result = await persistence.persist_with_subtree("sess-1", event, task)
-
-        assert result is None
-        db.update_subtree_heights.assert_not_called()
-
-    async def test_returns_none_when_db_absent(self):
-        """DB가 없으면 None을 반환한다"""
-        persistence = EventPersistence(session_db=None)
-        task = _make_task()
-
-        event = {"type": "text_delta", "text": "hi", "parent_event_id": 5}
-        result = await persistence.persist_with_subtree("sess-1", event, task)
-
-        assert result is None
-
-    async def test_updates_task_last_event_id(self):
-        """영속화 후 task.last_event_id를 갱신한다"""
-        db = _make_mock_db()
-        persistence = EventPersistence(session_db=db)
-        task = _make_task()
-
-        event = {"type": "text_delta", "text": "hi"}
-        await persistence.persist_with_subtree("sess-1", event, task)
-
-        assert task.last_event_id == 42
-
-    async def test_subtree_update_failure_returns_none(self):
-        """subtree 계산 실패 시 None을 반환하지만 이벤트 영속화는 성공"""
-        db = _make_mock_db()
-        db.update_subtree_heights = AsyncMock(side_effect=Exception("DB error"))
-        persistence = EventPersistence(session_db=db)
-        task = _make_task()
-
-        event = {"type": "text_delta", "text": "hi", "parent_event_id": 5}
-        result = await persistence.persist_with_subtree("sess-1", event, task)
-
-        assert result is None
-        # 원본 이벤트 영속화는 성공
-        assert task.last_event_id == 42
 
 
 class TestHandleSideEffects:

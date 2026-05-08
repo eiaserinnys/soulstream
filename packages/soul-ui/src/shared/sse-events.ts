@@ -54,6 +54,7 @@ export type SSEEventType =
   // 메타데이터 이벤트
   | "metadata_updated"
   // 뷰포트 가상화 이벤트 (Phase 3 viewport API)
+  /** @deprecated Phase 2-B-1: 발신 폐기. 인터페이스는 wire 호환성을 위해 보존. */
   | "subtree_update";
 
 // === Soul SSE Event Payloads ===
@@ -81,6 +82,7 @@ export interface InterventionSentEvent {
   user: string;
   text: string;
   /** 부모 이벤트 ID (Phase 2: 타입 통일용, 서버에서 설정하지 않음) */
+  /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
   parent_event_id?: string;
   /**
    * F-9 fix(2026-05-08): 발신자 신원(통합 v1, atom ed3a216d). user_message와 동일
@@ -133,6 +135,7 @@ export interface UserMessageEvent {
   /** LLM 세션: 클라이언트 ID */
   client_id?: string;
   /** 부모 이벤트 ID (Phase 2: 타입 통일용, 서버에서 설정하지 않음) */
+  /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
   parent_event_id?: string;
   /** 발신자 신원 — 통합 v1 정본 (atom ed3a216d). 신규 코드는 이쪽으로. */
   caller_info?: CallerInfo;
@@ -156,6 +159,7 @@ export interface DebugEvent {
   type: "debug";
   message: string;
   timestamp?: number;
+  /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
   parent_event_id?: string;
 }
 
@@ -167,6 +171,7 @@ export interface AssistantErrorEvent {
   error_type: string;
   model?: string;
   message_id?: string;
+  /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
   parent_event_id?: string;
 }
 
@@ -178,6 +183,7 @@ export interface CredentialAlertEvent {
   status?: string;
   resets_at?: string;
   timestamp?: number;
+  /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
   parent_event_id?: string;
 }
 
@@ -187,6 +193,7 @@ export interface CompleteEvent {
   attachments: string[];
   claude_session_id?: string;
   /** 부모 이벤트 ID (Phase 2: 순수 parent 기반 배치용) */
+  /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
   parent_event_id?: string;
 }
 
@@ -195,6 +202,7 @@ export interface ErrorEvent {
   message: string;
   error_code?: string;
   /** 부모 이벤트 ID (Phase 2: 순수 parent 기반 배치용) */
+  /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
   parent_event_id?: string;
 }
 
@@ -210,6 +218,7 @@ export interface CompactEvent {
   trigger: string;
   message: string;
   /** 부모 이벤트 ID (Phase 2: 순수 parent 기반 배치용) */
+  /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
   parent_event_id?: string;
 }
 
@@ -222,6 +231,7 @@ export interface ThinkingEvent {
   thinking: string;
   signature?: string;
   /** 부모 이벤트 ID (서브에이전트 내부 노드 배치용) */
+  /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
   parent_event_id?: string;
 }
 
@@ -229,6 +239,7 @@ export interface TextStartEvent {
   type: "text_start";
   timestamp: number;
   /** 부모 이벤트 ID (서브에이전트 내부 노드 배치용) */
+  /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
   parent_event_id?: string;
 }
 
@@ -237,6 +248,7 @@ export interface TextDeltaEvent {
   timestamp: number;
   text: string;
   /** 부모 이벤트 ID (서브에이전트 내부 노드 배치용) */
+  /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
   parent_event_id?: string;
 }
 
@@ -244,6 +256,7 @@ export interface TextEndEvent {
   type: "text_end";
   timestamp: number;
   /** 부모 이벤트 ID (서브에이전트 내부 노드 배치용) */
+  /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
   parent_event_id?: string;
 }
 
@@ -255,6 +268,7 @@ export interface ToolStartEvent {
   /** SDK ToolUseBlock ID (tool_result 매칭용) */
   tool_use_id?: string;
   /** 부모 이벤트 ID (서브에이전트 내부 노드 배치용) */
+  /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
   parent_event_id?: string;
 }
 
@@ -267,6 +281,7 @@ export interface ToolResultEvent {
   /** SDK ToolUseBlock ID (tool_start 매칭용) */
   tool_use_id?: string;
   /** 부모 이벤트 ID (서브에이전트 내부 노드 배치용) */
+  /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
   parent_event_id?: string;
 }
 
@@ -289,6 +304,7 @@ export interface ResultEvent {
   /** 권한 거부 목록 */
   permission_denials?: string[];
   /** 부모 이벤트 ID (서브에이전트 내부 노드 배치용) */
+  /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
   parent_event_id?: string;
 }
 
@@ -297,6 +313,7 @@ export interface AwaySummaryEvent {
   type: "away_summary";
   timestamp: number;
   content: string;
+  /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
   parent_event_id?: string;
 }
 
@@ -305,6 +322,7 @@ export interface PromptSuggestionEvent {
   type: "prompt_suggestion";
   timestamp: number;
   text: string;
+  /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
   parent_event_id?: string;
 }
 
@@ -314,6 +332,7 @@ export interface SubagentStartEvent {
   timestamp: number;
   agent_id: string;
   agent_type: string;
+  /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
   parent_event_id: string;
 }
 
@@ -322,6 +341,7 @@ export interface SubagentStopEvent {
   type: "subagent_stop";
   timestamp: number;
   agent_id: string;
+  /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
   parent_event_id?: string;
 }
 
@@ -354,6 +374,7 @@ export interface InputRequestEvent {
   request_id: string;
   tool_use_id?: string;
   questions: InputRequestQuestion[];
+  /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
   parent_event_id?: string;
   /** 서버가 타이머를 시작한 시각 (Unix epoch) */
   started_at: number;
@@ -365,6 +386,7 @@ export interface InputRequestEvent {
 export interface InputRequestExpiredEvent {
   type: "input_request_expired";
   request_id: string;
+  /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
   parent_event_id?: string;
   timestamp: number;
 }
@@ -373,6 +395,7 @@ export interface InputRequestExpiredEvent {
 export interface InputRequestRespondedEvent {
   type: "input_request_responded";
   request_id: string;
+  /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
   parent_event_id?: string;
   timestamp: number;
 }
@@ -386,10 +409,13 @@ export interface AssistantMessageEvent {
   provider?: string;
   timestamp?: number;
   /** 부모 이벤트 ID (Phase 2: 순수 parent 기반 배치용) */
+  /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
   parent_event_id?: string;
 }
 
 /**
+ * @deprecated Phase 2-B-1: 백엔드 발신 폐기. 인터페이스는 wire 호환성을 위해 보존.
+ *
  * 뷰포트 subtree_height 증분 갱신 이벤트 (Phase 3 viewport API).
  *
  * 새 이벤트가 추가될 때 조상 노드의 subtree_height가 증가한 사실을
