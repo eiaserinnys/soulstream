@@ -44,14 +44,14 @@ def _patch_query_service(sessions, total=None):
         return_value=(sessions, total if total is not None else len(sessions))
     )
     return patch(
-        "soul_server.dashboard.routes.sessions.get_session_query_service",
+        "soul_server.dashboard.routes.sessions._query.get_session_query_service",
         return_value=query_svc,
     )
 
 
 def _patch_task_manager():
     return patch(
-        "soul_server.dashboard.routes.sessions.get_task_manager",
+        "soul_server.dashboard.routes.sessions._query.get_task_manager",
         return_value=MagicMock(),
     )
 

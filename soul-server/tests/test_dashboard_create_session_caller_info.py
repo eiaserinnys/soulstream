@@ -61,9 +61,9 @@ def _post(mock_task_manager, body: dict, cookies: dict | None = None, headers: d
     """공통 POST helper — task_manager·resource_manager·soul_engine을 mock 처리."""
     app = _build_app()
     with (
-        patch("soul_server.dashboard.routes.sessions.get_task_manager", return_value=mock_task_manager),
-        patch("soul_server.dashboard.routes.sessions.resource_manager") as mock_rm,
-        patch("soul_server.dashboard.routes.sessions.get_soul_engine", return_value=MagicMock()),
+        patch("soul_server.dashboard.routes.sessions._lifecycle.get_task_manager", return_value=mock_task_manager),
+        patch("soul_server.dashboard.routes.sessions._lifecycle.resource_manager") as mock_rm,
+        patch("soul_server.dashboard.routes.sessions._lifecycle.get_soul_engine", return_value=MagicMock()),
     ):
         mock_rm.can_acquire.return_value = True
         client = TestClient(app, raise_server_exceptions=True)
