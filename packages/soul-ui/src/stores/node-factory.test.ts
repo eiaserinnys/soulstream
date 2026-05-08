@@ -230,6 +230,56 @@ describe("createNodeFromEvent", () => {
       expect(node!.content).toBe("Please stop");
       expect(node!.completed).toBe(true);
       expect((node as InterventionNode).user).toBe("bob");
+      // F-9 fix: caller_info 부재 시 callerInfo/agentInfo 모두 undefined
+      expect((node as InterventionNode).callerInfo).toBeUndefined();
+      expect((node as InterventionNode).agentInfo).toBeUndefined();
+    });
+
+    it("should attach callerInfo from intervention_sent.caller_info (F-9 fix)", () => {
+      // 슬랙 발신자 케이스 — 2차+ 메시지가 InterventionSentEvent로 운반됨
+      const event: InterventionSentEvent = {
+        type: "intervention_sent",
+        user: "U_SLACK",
+        text: "추가 질문",
+        caller_info: {
+          source: "slack",
+          display_name: "동료 사용자",
+          avatar_url: "https://example.com/slack.png",
+          user_id: "U_SLACK",
+          slack: { channel_id: "C123", thread_ts: "1234.5", user_id: "U_SLACK" },
+        },
+      };
+
+      const node = createNodeFromEvent(event, 6);
+      const n = node as InterventionNode;
+      expect(n.callerInfo).toEqual(event.caller_info);
+      expect(n.agentInfo).toBeUndefined();  // source=slack은 agent 분기 미해당
+    });
+
+    it("should derive agentInfo from intervention_sent.caller_info (F-9 fix, agent source)", () => {
+      const event: InterventionSentEvent = {
+        type: "intervention_sent",
+        user: "agent",
+        text: "위임 후속",
+        caller_info: {
+          source: "agent",
+          agent_node: "node-a",
+          agent_id: "agent-x",
+          agent_name: "Roselin",
+          display_name: "Roselin",
+          avatar_url: "/api/nodes/node-a/agents/agent-x/portrait",
+        },
+      };
+
+      const node = createNodeFromEvent(event, 7);
+      const n = node as InterventionNode;
+      expect(n.callerInfo).toEqual(event.caller_info);
+      expect(n.agentInfo).toEqual({
+        source: "agent",
+        agent_node: "node-a",
+        agent_id: "agent-x",
+        agent_name: "Roselin",
+      });
     });
 
     it("should create node for thinking", () => {

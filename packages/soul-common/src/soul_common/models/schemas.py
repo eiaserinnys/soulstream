@@ -57,10 +57,23 @@ class TaskStatus(str, Enum):
 # === Request Models ===
 
 class InterveneRequest(BaseModel):
-    """개입 메시지 요청 (Task API 호환)"""
+    """개입 메시지 요청 (Task API 호환).
+
+    caller_info는 통합 v1 스키마(atom ed3a216d)의 발신자 신원 dict이며,
+    F-9 fix(2026-05-08)로 추가됐다. 클라이언트(슬랙봇·soul-app)가 발신자 정보를
+    가지고 있는 경우 body에 박아 보내고, 비어있으면 서버 라우트가
+    `build_browser_caller_info`로 HTTP 메타+JWT를 자동 조립한다.
+    intervention_sent wire 이벤트와 InterventionMessage 표시까지 운반된다.
+    """
     text: str = Field(..., description="메시지 텍스트")
     user: str = Field(..., description="요청한 사용자")
     attachment_paths: Optional[List[str]] = Field(None, description="첨부 파일 경로 목록")
+    caller_info: Optional[dict] = Field(
+        None,
+        description=(
+            "발신자 정보(통합 v1). 비어있으면 서버 라우트가 HTTP Request에서 자동 조립."
+        ),
+    )
 
 
 class InputResponseRequest(BaseModel):
@@ -129,10 +142,21 @@ class MemoryEvent(BaseModel):
 
 
 class InterventionSentEvent(BaseModel):
-    """개입 메시지 전송 확인 이벤트"""
+    """개입 메시지 전송 확인 이벤트.
+
+    caller_info는 통합 v1 스키마(atom ed3a216d)의 발신자 신원 dict이며,
+    F-9 fix(2026-05-08)로 추가됐다. user_message 이벤트와 동일한 형상으로
+    intervene 진입점에서 채워져 메시지-단위 발신자 표시를 가능하게 한다.
+    빈/누락된 경우 클라이언트는 세션-단위 metadata caller_info로 fallback,
+    그것도 없으면 dashboard 사용자 portrait로 fallback한다.
+    """
     type: str = "intervention_sent"
     user: str
     text: str
+    caller_info: Optional[dict] = Field(
+        None,
+        description="발신자 정보(통합 v1). 부재 시 클라이언트는 세션-수준 fallback.",
+    )
 
 
 class CompleteEvent(BaseModel):

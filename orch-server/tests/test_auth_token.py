@@ -27,28 +27,28 @@ class TestAuthTokenEndpoint:
         assert "token" in body
         assert body["token"] == TEST_AUTH_TOKEN
 
-    async def test_jwt_cookie_returns_cookie_value(self, client):
+    async def test_jwt_cookie_returns_cookie_value(self, client, monkeypatch):
         """JWT 쿠키만 설정된 경우 → {"token": "<jwt>"} 반환.
 
-        settings.is_auth_enabled가 False이면 create_auth_dep는 쿠키 없어도 통과하지만,
-        이 엔드포인트는 verify_auth 통과 후 request.cookies에서 쿠키 값을 직접 읽는다.
-        쿠키가 설정되어 있으면 그 값이 그대로 반환되어야 한다.
+        F-9 fix(2026-05-08, side-fix): 이전엔 `is_auth_enabled=False` 환경에서
+        verify_auth가 무조건 통과하는 결함을 우회하여 임의 쿠키로 통과시켰다.
+        결함이 닫히면서 본 테스트는 `google_client_id`·`jwt_secret`을 monkeypatch로
+        설정하여 `is_auth_enabled=True`를 강제하고 실제 유효 JWT 쿠키 검증을 시험한다.
         """
         from soulstream_server.config import get_settings
 
         settings = get_settings()
+        # is_auth_enabled를 True로 만들기 위해 settings 필드 직접 패치 (테스트 종료 시 복구).
+        monkeypatch.setattr(settings, "google_client_id", "fake-client-id-for-test")
+        monkeypatch.setattr(settings, "jwt_secret", "test-jwt-secret-32-chars-min")
+
         # 기본 Bearer 헤더 제거 — 쿠키 경로만으로 통과 + 응답 확인
         client.headers.pop("Authorization", None)
 
-        # is_auth_enabled=True인 경우에만 유효 JWT를 생성, 그 외엔 임의 쿠키로 충분.
-        if settings.is_auth_enabled:
-            cookie_value = generate_token(
-                {"email": "dev@example.com", "name": "Dev", "picture": ""},
-                settings.jwt_secret,
-            )
-        else:
-            cookie_value = "any-cookie-value-in-dev-mode"
-
+        cookie_value = generate_token(
+            {"email": "dev@example.com", "name": "Dev", "picture": ""},
+            settings.jwt_secret,
+        )
         client.cookies.set(COOKIE_NAME, cookie_value)
         resp = await client.get("/api/auth/token")
         assert resp.status_code == 200

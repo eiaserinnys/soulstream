@@ -238,6 +238,7 @@ class TestHandleIntervene:
             text="Please stop",
             user="admin",
             attachment_paths=None,
+            caller_info=None,
         )
 
     @pytest.mark.asyncio

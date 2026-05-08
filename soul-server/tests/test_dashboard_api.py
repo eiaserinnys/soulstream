@@ -145,18 +145,15 @@ class TestGetPortrait:
         _pytest.importorskip("PIL", reason="portrait_utils requires Pillow")
 
         from fastapi import FastAPI
+        from PIL import Image
+        import io
 
-        # 테스트용 이미지 파일 생성 (1x1 PNG)
+        # 테스트용 이미지 파일 생성 — PIL로 valid PNG 만들기.
+        # (이전 코드의 하드코딩 바이트는 broken data stream 에러를 냈다.)
         img_path = tmp_path / "user.png"
-        png_bytes = (
-            b'\x89PNG\r\n\x1a\n'
-            b'\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01'
-            b'\x08\x02\x00\x00\x00\x90wS\xde'
-            b'\x00\x00\x00\x0cIDATx'
-            b'\x9cc\xf8\x0f\x00\x00\x01\x01\x00\x05\x18\xd8N'
-            b'\x00\x00\x00\x00IEND\xaeB`\x82'
-        )
-        img_path.write_bytes(png_bytes)
+        buf = io.BytesIO()
+        Image.new("RGB", (1, 1), color="white").save(buf, format="PNG")
+        img_path.write_bytes(buf.getvalue())
 
         mock_settings.dash_user_portrait = str(img_path)
 

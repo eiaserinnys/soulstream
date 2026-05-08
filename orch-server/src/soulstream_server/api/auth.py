@@ -105,9 +105,19 @@ async def verify_auth(
     """
     Bearer OR JWT 쿠키 이중 인증 결합.
 
-    1) Authorization 헤더가 있으면 Bearer 시도 (실패해도 JWT로 fallback)
-    2) JWT 쿠키 시도
-    3) 둘 다 실패하면 Bearer 쪽 에러를 먼저 내고, 없으면 JWT 쪽 에러
+    1) Bearer 시도 (verify_token이 dev mode 바이패스 처리)
+    2) Bearer 실패 시 JWT 쿠키 시도 — `auth_enabled=True`일 때만
+    3) 둘 다 실패하면 Bearer 쪽 에러를 우선 raise
+
+    F-9 fix(2026-05-08, side-fix): 이전엔 JWT 쿠키 시도를 항상 실행했고,
+    `is_auth_enabled=False`이면 `create_auth_dependency`가 `auth_enabled=False`로
+    인증을 *무조건 통과*시켜 Bearer 토큰이 설정된 환경에서도 인증이 무력화되는
+    회로 결함이 있었다 (Authorization 헤더 없거나 잘못된 토큰이어도 200 응답 →
+    test_auth.py의 `test_missing_authorization_header_returns_401` 등 6 케이스 회귀
+    fail 잔존). 본 fix는 JWT 경로를 `is_auth_enabled=True`인 환경에서만 실행하고,
+    그렇지 않으면 Bearer 경로의 검증 결과를 그대로 따른다 — verify_token 자체에
+    이미 dev mode 바이패스(빈 auth_bearer_token + non-production)가 있어 dev 환경
+    공통 미설정 케이스도 안전하다.
 
     create_auth_dep는 매 요청마다 호출하는 클로저 팩토리다
     (soul_common.auth.oauth_routes.create_auth_dependency 참조).
@@ -120,23 +130,25 @@ async def verify_auth(
     bearer_err: Optional[HTTPException] = None
     cookie_err: Optional[HTTPException] = None
 
-    # 1. Bearer 먼저 시도 (Authorization 헤더가 있을 때)
-    if authorization:
-        try:
-            await verify_token(authorization)
-            return
-        except HTTPException as e:
-            bearer_err = e
-
-    # 2. JWT 쿠키 시도 (create_auth_dep 재사용)
+    # 1. Bearer 시도 — verify_token이 빈 토큰 + non-production이면 dev mode 바이패스 처리
     try:
-        auth_dep = create_auth_dep(settings.jwt_secret, settings.is_auth_enabled)
-        await auth_dep(request)
+        await verify_token(authorization)
         return
     except HTTPException as e:
-        cookie_err = e
+        bearer_err = e
 
-    # 3. 둘 다 실패 → 401
+    # 2. JWT 쿠키 시도 — `is_auth_enabled=True`인 환경에서만.
+    #    `auth_enabled=False`로 호출하면 create_auth_dependency가 무조건 통과시켜
+    #    Bearer 검증 결과가 무력화되므로, JWT 미활성 환경에선 본 단계 자체를 건너뛴다.
+    if settings.is_auth_enabled:
+        try:
+            auth_dep = create_auth_dep(settings.jwt_secret, True)
+            await auth_dep(request)
+            return
+        except HTTPException as e:
+            cookie_err = e
+
+    # 3. 둘 다 실패 → 401 (Bearer err 우선)
     raise bearer_err or cookie_err or HTTPException(
         status_code=401,
         detail={

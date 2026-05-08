@@ -222,13 +222,19 @@ class CommandDispatcher:
             })
 
     async def _handle_intervene(self, cmd: dict) -> None:
-        """개입 명령 처리."""
+        """개입 명령 처리.
+
+        F-9 fix(2026-05-08): cmd["caller_info"]를 add_intervention에 전달하여
+        2차+ 메시지의 발신자 신원이 InterventionSentEvent까지 운반되도록 한다.
+        cmd["caller_info"]가 없으면 None으로 전달 (graceful — 기존 동작 보존).
+        """
         session_id = cmd.get("agentSessionId") or cmd.get("session_id", "")
         result = await self._tm.add_intervention(
             agent_session_id=session_id,
             text=cmd["text"],
             user=cmd.get("user", "upstream"),
             attachment_paths=cmd.get("attachment_paths") or None,
+            caller_info=cmd.get("caller_info") or None,
         )
 
         # 오케스트레이터에 ACK 전송 — requestId가 있어야 Future.set_result()가 실행된다.

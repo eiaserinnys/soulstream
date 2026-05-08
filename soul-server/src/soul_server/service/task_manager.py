@@ -545,6 +545,7 @@ class TaskManager:
         user: str,
         attachment_paths: Optional[List[str]] = None,
         skip_resume: bool = False,
+        caller_info: Optional[dict] = None,
     ) -> dict:
         """
         세션에 개입 메시지 추가 (자동 resume 포함)
@@ -559,6 +560,10 @@ class TaskManager:
             user: 사용자
             attachment_paths: 첨부 파일 경로
             skip_resume: True이면 완료/퇴거 세션에 대한 auto-resume을 건너뜀 (graceful_shutdown용)
+            caller_info: 발신자 신원(통합 v1). F-9 fix(2026-05-08)로 추가. running
+                세션엔 intervention queue에 첨부되어 InterventionSentEvent.caller_info로
+                전파되고, auto-resume 세션엔 CreateTaskParams.caller_info로 전달되어
+                user_message 이벤트에 첨부된다.
 
         Returns:
             결과 딕셔너리:
@@ -577,6 +582,7 @@ class TaskManager:
                 "text": text,
                 "user": user,
                 "attachment_paths": attachment_paths or [],
+                "caller_info": caller_info,
             }
             await task.intervention_queue.put(message)
             return {"queue_position": task.intervention_queue.qsize()}
@@ -610,6 +616,7 @@ class TaskManager:
             client_id=user,
             extra_context_items=extra_ctx,
             attachment_paths=attachment_paths,
+            caller_info=caller_info,
         ))
 
         return {

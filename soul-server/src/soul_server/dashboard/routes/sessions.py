@@ -65,6 +65,7 @@ class InterveneBody(BaseModel):
     text: str
     user: str
     attachmentPaths: Optional[list] = None
+    caller_info: Optional[dict] = None  # 발신자 정보(통합 v1). 비어있으면 라우트가 build_browser_caller_info로 자동 조립.
 
 
 class RespondBody(BaseModel):
@@ -338,11 +339,21 @@ async def api_create_session(body: CreateSessionBody, request: Request):
     status_code=202,
     dependencies=[Depends(require_dashboard_auth)],
 )
-async def api_intervene(session_id: str, body: InterveneBody):
-    """실행 중/완료된 세션에 메시지 전송 (자동 resume)"""
+async def api_intervene(session_id: str, body: InterveneBody, request: Request):
+    """실행 중/완료된 세션에 메시지 전송 (자동 resume).
+
+    F-9 fix(2026-05-08): caller_info를 wire에 운반한다. body.caller_info가
+    있으면 그대로(슬랙봇 등 외부 클라이언트), 없으면 cookie JWT + HTTP 메타로
+    자동 조립(브라우저 dashboard 흐름). create_session 라우트와 동일 패턴.
+    """
     try:
         # body.attachmentPaths(camelCase) → attachment_paths(snake_case): 라우트 책임.
         # None → [] 정규화는 service의 정본(`or []`)에 일임 (대칭성).
+        from soul_server.config import get_settings
+        settings = get_settings()
+        caller_info = body.caller_info or build_browser_caller_info(
+            request, settings.jwt_secret or "",
+        )
         return await intervention_service.intervene(
             agent_session_id=session_id,
             text=body.text,
@@ -351,6 +362,7 @@ async def api_intervene(session_id: str, body: InterveneBody):
             task_manager=get_task_manager(),
             soul_engine=get_soul_engine(),
             resource_manager=resource_manager,
+            caller_info=caller_info,
         )
     except NodeMismatchError as e:
         raise HTTPException(
@@ -380,9 +392,9 @@ async def api_intervene(session_id: str, body: InterveneBody):
     status_code=202,
     dependencies=[Depends(require_dashboard_auth)],
 )
-async def api_message(session_id: str, body: InterveneBody):
+async def api_message(session_id: str, body: InterveneBody, request: Request):
     """intervene의 레거시 호환 경로"""
-    return await api_intervene(session_id, body)
+    return await api_intervene(session_id, body, request)
 
 
 # === /api/sessions/{id}/respond (POST) ===

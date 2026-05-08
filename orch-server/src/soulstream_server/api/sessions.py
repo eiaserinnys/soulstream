@@ -160,13 +160,27 @@ def create_sessions_router(
         )
 
     @router.post("/{session_id}/intervene")
-    async def intervene(session_id: str, body: InterveneRequest) -> dict:
-        """개입 메시지 전송."""
+    async def intervene(
+        session_id: str, body: InterveneRequest, request: Request,
+    ) -> dict:
+        """개입 메시지 전송 (caller_info 운반).
+
+        F-9 fix(2026-05-08): 2차+ 메시지가 첫 메시지와 동일한 발신자 표시를
+        받도록 caller_info를 wire 끝까지 운반한다. body.caller_info가 있으면
+        그대로 사용(슬랙·soul-app), 없으면 브라우저 dashboard 흐름으로 간주해
+        cookie JWT + HTTP 메타로 자동 조립한다 (create_session과 동일 패턴).
+        """
+        from soulstream_server.config import get_settings
+        settings = get_settings()
+        caller_info = body.caller_info or build_browser_caller_info(
+            request, settings.jwt_secret or "",
+        )
         node = await find_session_node(session_id, db, node_manager)
         try:
             result = await node.send_intervene(
                 session_id, body.text, body.user,
                 attachment_paths=body.attachmentPaths,
+                caller_info=caller_info,
             )
             return result
         except (WebSocketDisconnect, ConnectionError) as e:

@@ -93,6 +93,32 @@ def build_browser_caller_info(
     return info
 
 
+def extract_caller_info_from_metadata(metadata) -> Optional[dict]:
+    """세션 metadata JSONB array에서 첫 caller_info entry의 value(dict)를 반환.
+
+    metadata는 PostgresSessionDB가 반환하는 list[{"type": str, "value": ...}] 형식.
+    caller_info 통합 v1(atom ed3a216d) 정본 진입점.
+
+    F-9 fix(2026-05-08)로 본 모듈에 통합. 이전엔 orch-server session_serializer에
+    `_extract_caller_info`로 사본이 있었으나 soul-server eviction_manager의 caller_info
+    복원에도 같은 로직이 필요해 정본 하나(design-principles §3)로 합쳤다.
+
+    Args:
+        metadata: 세션 DB row의 metadata 컬럼(list[dict] 또는 None).
+
+    Returns:
+        첫 caller_info entry의 value dict, 또는 None.
+    """
+    if not metadata:
+        return None
+    for m in metadata:
+        if isinstance(m, dict) and m.get("type") == "caller_info":
+            v = m.get("value")
+            if isinstance(v, dict):
+                return v
+    return None
+
+
 def build_agent_caller_info(
     *,
     agent_node: str,

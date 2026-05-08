@@ -145,7 +145,16 @@ class SessionEvictionManager:
                 if updated_at_str:
                     completed_at = str_to_datetime(updated_at_str)
 
-            return Task(
+            # F-9 fix(2026-05-08): metadata JSONB array의 첫 caller_info entry를
+            # 복원하여 Task.caller_info에 박는다. 이를 누락하면 evict-reload 후
+            # /execute(resume) 흐름에서 task.caller_info=None이 되고 user_message
+            # wire의 if 가드가 caller_info를 누락시켜 2차+ 메시지가 dashboard 사용자
+            # portrait로 fallback 표시되는 결함이 발생한다 (사용자 보고 R-2).
+            from soul_common.auth import extract_caller_info_from_metadata
+            metadata = entry.get("metadata")
+            caller_info = extract_caller_info_from_metadata(metadata)
+
+            task = Task(
                 agent_session_id=agent_session_id,
                 prompt=entry.get("prompt", ""),
                 status=TaskStatus(status_str),
@@ -159,7 +168,14 @@ class SessionEvictionManager:
                 node_id=entry.get("node_id"),
                 caller_session_id=entry.get("caller_session_id"),
                 profile_id=entry.get("agent_id"),  # 서버 재시작 후 resume 시 working_dir 복원용
+                caller_info=caller_info,
             )
+            # metadata도 복원 — task_executor가 caller_info wire 첨부 시 task.metadata
+            # 자체는 사용하지 않지만, 다른 코드 경로(예: append_session_metadata)가
+            # 일관성 있게 동작하도록 보존.
+            if isinstance(metadata, list):
+                task.metadata = metadata
+            return task
         except (ValueError, KeyError) as e:
             logger.error(f"Failed to restore task from DB: {agent_session_id}: {e}")
             return None
