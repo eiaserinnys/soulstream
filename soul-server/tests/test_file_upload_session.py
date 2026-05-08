@@ -297,9 +297,9 @@ class TestCreateSessionWithAttachments:
         app.dependency_overrides[require_dashboard_auth] = lambda: None
 
         with (
-            patch("soul_server.dashboard.routes.sessions.get_task_manager", return_value=mock_task_manager),
-            patch("soul_server.dashboard.routes.sessions.resource_manager") as mock_rm,
-            patch("soul_server.dashboard.routes.sessions.get_soul_engine", return_value=MagicMock()),
+            patch("soul_server.dashboard.routes.sessions._lifecycle.get_task_manager", return_value=mock_task_manager),
+            patch("soul_server.dashboard.routes.sessions._lifecycle.resource_manager") as mock_rm,
+            patch("soul_server.dashboard.routes.sessions._lifecycle.get_soul_engine", return_value=MagicMock()),
         ):
             mock_rm.can_acquire.return_value = True
 
@@ -336,9 +336,9 @@ class TestCreateSessionWithAttachments:
         app.dependency_overrides[require_dashboard_auth] = lambda: None
 
         with (
-            patch("soul_server.dashboard.routes.sessions.get_task_manager", return_value=mock_task_manager),
-            patch("soul_server.dashboard.routes.sessions.resource_manager") as mock_rm,
-            patch("soul_server.dashboard.routes.sessions.get_soul_engine", return_value=MagicMock()),
+            patch("soul_server.dashboard.routes.sessions._lifecycle.get_task_manager", return_value=mock_task_manager),
+            patch("soul_server.dashboard.routes.sessions._lifecycle.resource_manager") as mock_rm,
+            patch("soul_server.dashboard.routes.sessions._lifecycle.get_soul_engine", return_value=MagicMock()),
         ):
             mock_rm.can_acquire.return_value = True
 
