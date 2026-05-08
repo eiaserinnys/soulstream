@@ -140,6 +140,28 @@ class SessionBroadcaster(BaseSessionBroadcaster):
         readable event가 발생할 때마다 호출되어 세션 리스트의
         마지막 메시지를 실시간으로 갱신한다.
 
+        ## P6 결정(2026-05-08): user 프로필을 wire에 *비워 보낸다*
+
+        본 wire는 emit_session_updated/emit_session_phase와 달리
+        userName/userPortraitUrl·caller_source 키를 *포함하지 않는다*. 의도적이며
+        결함이 아니다.
+
+        근거:
+        - 본 이벤트는 readable event마다 발행되는 *메시지 갱신* wire — 세션 단위
+          메타데이터(user 프로필·발신자 source)는 P3 session_created에서 클라이언트
+          캐시에 들어왔고 이후 변하지 않는다. 메시지마다 재전송할 필요 없음.
+        - 클라이언트 buildSessionUpdates는 키 부재/None을 skip하므로 표시 영향 0.
+        - 키를 넣으려면 caller_info source와 enrichment 정책을 또 한 번 끌어와야
+          하므로 정본 둘 안티패턴(atom d7a1ad86) 재발 위험.
+
+        메시지 단위 user 프로필 갱신이 필요한 표시 위치가 새로 추가되면 본 결정을
+        재검토. 그 시점에 본 wire에 키 추가 + orch 측 enrichment 헬퍼 호출 추가.
+
+        관련 atom:
+        - emit_session_updated wire payload 키 목록: b558ca3b
+        - 정본 둘 안티패턴: d7a1ad86
+        - N.4 enrichment 변경 시 동시 갱신: 9d47010b
+
         Args:
             agent_session_id: 세션 식별자
             status: 현재 세션 상태 (TaskStatus.value)

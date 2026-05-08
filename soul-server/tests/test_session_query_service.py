@@ -305,3 +305,110 @@ class TestStreamSessionListEvents:
 
         assert fake_broadcaster.added is True
         assert fake_broadcaster.queue in fake_broadcaster.removed_with
+
+
+# === _build_session_dict caller_info 추출 (R-3 fix) ===
+
+class TestBuildSessionDictCallerInfo:
+    """_build_session_dict가 row.metadata의 caller_info를 userName/userPortraitUrl로
+    추출하는지 검증한다.
+
+    R-3 fix(2026-05-08): dashboard /api/sessions 응답이 caller_info 정체성을 무시하고
+    settings.dash_user_name 일괄 덮어쓰기로 표시되던 결함을 닫는 첫 단계.
+    DB row → API dict 변환 시점에 caller_info를 추출하여, dashboard 라우트의 헬퍼가
+    mix-fallback 금지 정책을 적용할 수 있게 한다.
+
+    orch `_session_to_response`(session_serializer.py)와 동일 추출 패턴.
+    """
+
+    def test_caller_info_with_display_name_fills_userName(self):
+        """metadata에 caller_info display_name 있음 → info["userName"] 채움."""
+        from soul_server.service.session_query_service import _build_session_dict
+
+        row = {
+            "session_id": "s1",
+            "status": "running",
+            "prompt": "hi",
+            "created_at": None,
+            "metadata": [
+                {"type": "caller_info", "value": {"display_name": "Alice", "source": "browser"}}
+            ],
+        }
+        info = _build_session_dict(row, task=None, registry=None)
+        assert info["userName"] == "Alice"
+
+    def test_caller_info_with_avatar_url_fills_userPortraitUrl(self):
+        """metadata에 caller_info avatar_url 있음 → info["userPortraitUrl"] 채움."""
+        from soul_server.service.session_query_service import _build_session_dict
+
+        row = {
+            "session_id": "s1",
+            "status": "running",
+            "prompt": "hi",
+            "created_at": None,
+            "metadata": [
+                {
+                    "type": "caller_info",
+                    "value": {
+                        "display_name": "Alice",
+                        "avatar_url": "https://avatars.slack.com/u123",
+                        "source": "slack",
+                    },
+                }
+            ],
+        }
+        info = _build_session_dict(row, task=None, registry=None)
+        assert info["userName"] == "Alice"
+        assert info["userPortraitUrl"] == "https://avatars.slack.com/u123"
+
+    def test_caller_info_absent_no_user_keys(self):
+        """metadata에 caller_info 없음 → info에 userName/userPortraitUrl 키 없음 (또는 None).
+
+        dashboard 라우트의 헬퍼가 graceful하게 fallback하도록, 키 부재 또는 None 둘 다 허용.
+        """
+        from soul_server.service.session_query_service import _build_session_dict
+
+        row = {
+            "session_id": "s1",
+            "status": "running",
+            "prompt": "hi",
+            "created_at": None,
+            "metadata": [],
+        }
+        info = _build_session_dict(row, task=None, registry=None)
+        assert not info.get("userName")
+        assert not info.get("userPortraitUrl")
+
+    def test_caller_info_with_only_display_name_no_portrait(self):
+        """display_name만 있고 avatar_url 없음 → userName만 채움."""
+        from soul_server.service.session_query_service import _build_session_dict
+
+        row = {
+            "session_id": "s1",
+            "status": "running",
+            "prompt": "hi",
+            "created_at": None,
+            "metadata": [
+                {"type": "caller_info", "value": {"display_name": "Alice"}}
+            ],
+        }
+        info = _build_session_dict(row, task=None, registry=None)
+        assert info["userName"] == "Alice"
+        assert not info.get("userPortraitUrl")
+
+    def test_caller_info_empty_strings_treated_as_absent(self):
+        """display_name 빈 문자열 → 채움 안 함 (isinstance + truthy 가드)."""
+        from soul_server.service.session_query_service import _build_session_dict
+
+        row = {
+            "session_id": "s1",
+            "status": "running",
+            "prompt": "hi",
+            "created_at": None,
+            "metadata": [
+                {"type": "caller_info", "value": {"display_name": "", "avatar_url": ""}}
+            ],
+        }
+        info = _build_session_dict(row, task=None, registry=None)
+        assert not info.get("userName")
+        assert not info.get("userPortraitUrl")
