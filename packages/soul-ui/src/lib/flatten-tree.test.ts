@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
-import { flattenTree, clearFlattenTreeCache, type ChatMessage } from "./flatten-tree";
+import { flattenTree, clearFlattenTreeCache, extractEventId, type ChatMessage } from "./flatten-tree";
 import type { EventTreeNode, SessionNode, UserMessageNode, SystemMessageNode, ThinkingNode, TextNode, ToolNode, ResultNode, ErrorNode, CompactNode, CompleteNode } from "@shared/types";
 
 function makeSession(children: EventTreeNode[] = []): SessionNode {
@@ -533,5 +533,32 @@ describe("flattenTree identity 보존", () => {
 
     expect(after[0]).not.toBe(before[0]); // shallowEqual이 callerInfo reference 비교 → miss
     expect(after[0].callerInfo?.avatar_url).toBe("/new.png");
+  });
+});
+
+// === extractEventId — node ID 끝자리 숫자 추출 (H-1 정본) ===
+//
+// 260508.05.tree-placer-hygiene: extractEventId 가 정규식 정본의 단일 export.
+// tree-placer.ts 의 extractNodeEventId 가 caller-local adapter 로 본 함수를 호출한다.
+
+describe("extractEventId — node ID 끝자리 숫자 추출 (H-1 정본)", () => {
+  it("createNodeFromEvent 패턴 — 끝자리 숫자 추출", () => {
+    expect(extractEventId("user-msg-100")).toBe(100);
+    expect(extractEventId("tool-7")).toBe(7);
+    expect(extractEventId("text-42")).toBe(42);
+    expect(extractEventId("input-request-20")).toBe(20);
+    expect(extractEventId("away-summary-999")).toBe(999);
+  });
+
+  it("매칭 실패 시 undefined 반환", () => {
+    expect(extractEventId("session-root")).toBeUndefined();
+    expect(extractEventId("")).toBeUndefined();
+    expect(extractEventId("plain-id")).toBeUndefined();
+    expect(extractEventId("trailing-number-but-no-dash100")).toBeUndefined();
+  });
+
+  it("eventId === 0 도 매칭 (fall-through 와 구분)", () => {
+    // 0 은 dedup 가드(eventId > 0)에서 차단되지만 추출 자체는 0 반환.
+    expect(extractEventId("user-msg-0")).toBe(0);
   });
 });

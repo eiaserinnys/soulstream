@@ -234,8 +234,17 @@ function collectMessages(
   }
 }
 
-/** 트리 노드 ID (node-{type}-{eventId}) 에서 DB 이벤트 ID를 추출한다 */
-function extractEventId(nodeId: string): number | undefined {
+/**
+ * 트리 노드 ID (`{type-prefix}-{eventId}` 패턴) 에서 DB 이벤트 ID 를 추출한다.
+ *
+ * createNodeFromEvent 가 만드는 모든 노드 ID 와 handleTextStart 의 `text-{eventId}` 가
+ * 본 패턴을 따른다. 매칭 실패 시 undefined — caller 가 자기 정책으로 fall-back 처리.
+ *
+ * 정규식 정본은 본 함수 1곳. 호출자:
+ *   - flatten-tree.nodeToMessage : ChatMessage.eventId 옵셔널 필드에 그대로 할당
+ *   - tree-placer.extractNodeEventId : `?? Number.NEGATIVE_INFINITY` 로 변환 (sorted insert fast-path)
+ */
+export function extractEventId(nodeId: string): number | undefined {
   const match = nodeId.match(/-(\d+)$/);
   return match ? Number(match[1]) : undefined;
 }
