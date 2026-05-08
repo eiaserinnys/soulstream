@@ -45,6 +45,13 @@ export interface SessionUpdatedStreamEvent {
   last_message?: LastMessage;
   last_event_id?: number;
   last_read_event_id?: number;
+  /**
+   * F-10C fix(2026-05-08): SSE session_updated wire가 운반하는 user 프로필.
+   * catalog API의 userName/userPortraitUrl과 정합 — buildSessionUpdates가
+   * 추출하여 store에 머지. null이면 머지 안 함 (기존 값 보존).
+   */
+  userName?: string | null;
+  userPortraitUrl?: string | null;
   /** broadcaster가 부여한 SSE event_id */
   lastEventId?: string;
 }

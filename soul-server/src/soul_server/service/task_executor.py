@@ -326,11 +326,22 @@ class TaskExecutor:
                 async def get_intervention():
                     return await self._get_intervention(session_id)
 
-                # 개입 메시지 전송 콜백
-                async def on_intervention_sent(user: str, text: str, attachment_paths: list | None = None):
+                # 개입 메시지 전송 콜백 (execute 메서드 내부 nested closure — self/task/ctx outer scope 참조).
+                # F-10A fix(2026-05-08): caller_info를 broadcast dict + DB 영속 dict 양쪽에 박는다.
+                # F-9 fix는 InterventionSentEvent에만 caller_info를 박았으나 본 콜백이 caller_info를
+                # 받지 못해 영속·broadcast dict에는 누락되었다 — F-10B fix가 engine_adapter에서
+                # caller_info forward를 추가했고 본 fix가 콜백 시그니처/dict에 박음.
+                async def on_intervention_sent(
+                    user: str,
+                    text: str,
+                    attachment_paths: list | None = None,
+                    caller_info: dict | None = None,
+                ):
                     event = {"type": "intervention_sent", "user": user, "text": text}
                     if attachment_paths:
                         event["attachments"] = attachment_paths
+                    if caller_info:
+                        event["caller_info"] = caller_info
                     if self._db is not None:
                         try:
                             intervention_soulstream = build_soulstream_context_item(
@@ -346,6 +357,8 @@ class TaskExecutor:
                                 "text": text,
                                 "context": [intervention_soulstream],
                             }
+                            if caller_info:
+                                intervention_msg["caller_info"] = caller_info
                             if attachment_paths:
                                 intervention_msg["attachments"] = attachment_paths
                             ev_id = await self._persistence.persist_event(session_id, intervention_msg)

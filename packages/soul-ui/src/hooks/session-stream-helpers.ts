@@ -193,7 +193,16 @@ export function upsertSessionAssignmentInCatalog(
 export type SessionUpdatesPatch = Partial<
   Pick<
     SessionSummary,
-    "status" | "updatedAt" | "lastMessage" | "lastEventId" | "lastReadEventId"
+    | "status"
+    | "updatedAt"
+    | "lastMessage"
+    | "lastEventId"
+    | "lastReadEventId"
+    // F-10C fix(2026-05-08): SSE session_updated wire가 운반하는 user 프로필.
+    // catalog API와 정합 — userName/userPortraitUrl이 SessionSummary(UserProfile extend)
+    // 멤버이므로 Pick 범위 확장만으로 타입 정합.
+    | "userName"
+    | "userPortraitUrl"
   >
 >;
 
@@ -223,6 +232,15 @@ export function buildSessionUpdates(
   }
   if (event.last_read_event_id != null) {
     updates.lastReadEventId = event.last_read_event_id;
+  }
+  // F-10C fix(2026-05-08): SSE session_updated wire의 user 프로필을 store에 머지.
+  // catalog API가 박는 키와 동일 (userName/userPortraitUrl). null이면 머지 안 함
+  // (기존 값 보존 — graceful, partial update 의미 유지).
+  if (event.userName !== undefined && event.userName !== null) {
+    updates.userName = event.userName;
+  }
+  if (event.userPortraitUrl !== undefined && event.userPortraitUrl !== null) {
+    updates.userPortraitUrl = event.userPortraitUrl;
   }
   return updates;
 }
