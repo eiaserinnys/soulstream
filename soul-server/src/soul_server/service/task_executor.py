@@ -204,9 +204,11 @@ class TaskExecutor:
             if event.type == "intervention_sent":
                 continue
 
-            # parent_event_id 채움
-            if "parent_event_id" in event_dict and event_dict["parent_event_id"] is None:
-                event_dict["parent_event_id"] = request_id_ref[0]
+            # Phase 2-B-1: parent_event_id fallback 채움 라인 폐기 (2026-05-08).
+            # 신규 row의 parent_event_id는 NULL로 broadcast되며, FE는 평탄화로 무시한다
+            # (Phase 2-A: event-processor.ts:93-104 no-op + tree-placer가 모든 노드를
+            # root.children에 push). 슬랙봇은 PR #11(db7f31b6)에서 단일 활성 슬롯 모델로
+            # 전환하여 무의존이 되었다.
 
             # claude_session_id 등록 (인터벤션 역인덱스)
             if event.type == "session" and self._register_session:
@@ -224,15 +226,16 @@ class TaskExecutor:
                 if text:
                     task.last_assistant_text = text
 
-            # 이벤트 영속화 + subtree 전파
-            subtree_update_dict = await self._persistence.persist_with_subtree(
-                session_id, event_dict, task
-            )
+            # 이벤트 영속화 — Phase 2-B-1(2026-05-08): persist_with_subtree 폐기.
+            # subtree_update 발신을 함께 폐기했으므로 _event_id 주입과 last_event_id
+            # 갱신을 호출자가 inline으로 책임진다 (단일 호출자, design-principles §1·§9).
+            event_id = await self._persistence.persist_event(session_id, event_dict)
+            if event_id is not None:
+                event_dict["_event_id"] = event_id
+                task.last_event_id = event_id
 
-            # 브로드캐스트 (원본 이벤트 → subtree_update 순)
+            # 브로드캐스트
             await self._listener_manager.broadcast(session_id, event_dict)
-            if subtree_update_dict is not None:
-                await self._listener_manager.broadcast(session_id, subtree_update_dict)
 
             # DB 부수효과 (last_message, metadata, away_summary)
             await self._persistence.handle_side_effects(
@@ -245,7 +248,7 @@ class TaskExecutor:
                 turn_phase = await self._emit_phase_transition(task, "idle", turn_phase)
             elif event.type == "error":
                 last_error = event.message
-            elif event.type not in ("subtree_update", "session", "progress", "prompt_suggestion"):
+            elif event.type not in ("session", "progress", "prompt_suggestion"):
                 turn_phase = await self._emit_phase_transition(task, "running", turn_phase)
 
         return last_result, last_error

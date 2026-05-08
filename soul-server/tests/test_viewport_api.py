@@ -157,17 +157,26 @@ class TestSubtreeUpdateSSEEventModel:
             )
 
 
-class TestTaskExecutorSubtreeUpdateBroadcast:
-    """task_executor에서 subtree_update가 올바르게 브로드캐스트되는지 검증."""
+# Phase 2-B-1(2026-05-08): TestTaskExecutorSubtreeUpdateBroadcast 4개 테스트 폐기.
+# subtree_update SSE 발신 자체가 폐기되어 회귀 의미가 사라졌다. 대체 회귀 보호는
+# 아래 TestNoSubtreeUpdateAfterFlattening 3개 테스트가 담당한다 (broadcast 0회 보장 등).
+
+
+class TestNoSubtreeUpdateAfterFlattening:
+    """Phase 2-B-1 회귀 보호 — subtree_update 발신 + parent_event_id fallback 모두 제거됨.
+
+    🔴 #1 (task_executor.py:207-209 fallback 채움 라인 제거)
+    🔴 #2 (event_persistence.persist_with_subtree 메서드 폐기 + broadcast 분기 제거)
+    """
 
     @pytest.mark.asyncio
-    async def test_subtree_update_broadcast_after_event_with_parent(self):
-        """parent_event_id가 있는 이벤트 → subtree_update 브로드캐스트 발생."""
+    async def test_no_subtree_update_broadcast(self):
+        """🔴 #2: 어떤 이벤트 입력에서도 broadcast에 subtree_update 0회."""
         session_db = _make_mock_session_db()
         task = _make_task()
         tasks = {task.agent_session_id: task}
 
-        # parent_event_id를 명시한 tool_start (루트 아님)
+        # parent_event_id를 명시한 tool_start (변경 전이라면 subtree_update가 broadcast됨)
         runner = FakeClaudeRunner(events=[
             ToolStartSSEEvent(tool_name="Read", timestamp=1.0, parent_event_id=1),
             CompleteEvent(result="done", parent_event_id=1),
@@ -175,101 +184,98 @@ class TestTaskExecutorSubtreeUpdateBroadcast:
         executor, broadcasts = _make_executor(tasks, session_db=session_db)
         await executor._run_execution(task, runner, FakeResourceManager())
 
-        # subtree_update 이벤트 발생 검증
-        subtree_broadcasts = [
-            (sid, ev) for sid, ev in broadcasts
+        subtree = [
+            ev for _, ev in broadcasts
             if isinstance(ev, dict) and ev.get("type") == "subtree_update"
         ]
-        # tool_start + complete 모두 parent_event_id 있으므로 2회
-        assert len(subtree_broadcasts) >= 1, (
-            f"subtree_update가 브로드캐스트되어야 함. 실제 broadcasts: "
-            f"{[ev.get('type') for _, ev in broadcasts]}"
+        assert len(subtree) == 0, (
+            f"subtree_update broadcast 0회여야 함. 실제 type 시퀀스: "
+            f"{[ev.get('type') for _, ev in broadcasts if isinstance(ev, dict)]}"
         )
 
-        _, subtree_dict = subtree_broadcasts[0]
-        assert "affected_event_ids" in subtree_dict
-        assert "deltas" in subtree_dict
-        assert "new_total_subtree_height" in subtree_dict
-        assert "trigger_event_id" in subtree_dict
-        # deltas의 key는 int로 유지됨 (서버 측 dict)
-        assert all(isinstance(k, int) for k in subtree_dict["deltas"].keys())
-
     @pytest.mark.asyncio
-    async def test_root_event_no_subtree_update(self):
-        """parent_event_id가 None인 root 이벤트 → subtree_update 없음."""
+    async def test_parent_event_id_passes_through_unmodified(self):
+        """🔴 #1: parent_event_id=None 입력 시 broadcast event_dict의 parent_event_id가 None 그대로.
+
+        변경 전에는 fallback이 user_request_id로 채워서 None이 아닌 값이 됨.
+        변경 후에는 None 그대로 passthrough.
+        """
         session_db = _make_mock_session_db()
-        # 루트는 조상이 없음 — update_subtree_heights를 호출하지 않아야 함
         task = _make_task()
         tasks = {task.agent_session_id: task}
 
-        # parent_event_id=None (루트) — fallback이 request_id로 채워주긴 하지만
-        # 이 테스트는 fallback 동작 이후의 동작 검증이므로 별도로 체크
         runner = FakeClaudeRunner(events=[
             CompleteEvent(result="ok", parent_event_id=None),
         ])
         executor, broadcasts = _make_executor(tasks, session_db=session_db)
         await executor._run_execution(task, runner, FakeResourceManager())
 
-        # fallback으로 parent_event_id가 채워지므로 subtree_update가 발생할 수 있음
-        # 여기서는 "DB의 update_subtree_heights가 호출은 되었지만, 조상이 없는 경우"
-        # 는 별도 테스트(아래)로 검증
-
-    @pytest.mark.asyncio
-    async def test_persist_fail_no_subtree_update(self):
-        """persist_event 실패 → subtree_update 생성 안 됨."""
-        session_db = _make_mock_session_db()
-        # append_event를 실패시킴
-        session_db.append_event = AsyncMock(side_effect=Exception("DB persist failure"))
-
-        task = _make_task()
-        tasks = {task.agent_session_id: task}
-
-        runner = FakeClaudeRunner(events=[
-            ToolStartSSEEvent(tool_name="Read", timestamp=1.0, parent_event_id=1),
-        ])
-        executor, broadcasts = _make_executor(tasks, session_db=session_db)
-        await executor._run_execution(task, runner, FakeResourceManager())
-
-        # subtree_update 이벤트가 브로드캐스트되지 않음
-        subtree_broadcasts = [
-            (sid, ev) for sid, ev in broadcasts
-            if isinstance(ev, dict) and ev.get("type") == "subtree_update"
+        complete_evs = [
+            ev for _, ev in broadcasts
+            if isinstance(ev, dict) and ev.get("type") == "complete"
         ]
-        assert len(subtree_broadcasts) == 0
-
-        # update_subtree_heights는 호출되지 않음 (persist 실패로 early exit)
-        session_db.update_subtree_heights.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_update_subtree_heights_fail_broadcast_original_only(self):
-        """update_subtree_heights 실패 → 원본 이벤트만 브로드캐스트 (fail-safe)."""
-        session_db = _make_mock_session_db()
-        session_db.update_subtree_heights = AsyncMock(
-            side_effect=Exception("Recursive CTE failure")
+        assert len(complete_evs) >= 1
+        assert complete_evs[0].get("parent_event_id") is None, (
+            f"parent_event_id가 None으로 송출되어야 함 (fallback 채움 폐기). "
+            f"실제: {complete_evs[0].get('parent_event_id')!r}"
         )
 
+    @pytest.mark.asyncio
+    async def test_persist_event_id_injected(self):
+        """🔴 #2 단순화 후: persist_event 결과로 event_dict[_event_id]·task.last_event_id 갱신.
+
+        persist_with_subtree 폐기 후 _event_id 주입 + last_event_id 갱신 책임이
+        task_executor inline으로 이동했음을 검증한다.
+        """
+        session_db = _make_mock_session_db()
         task = _make_task()
         tasks = {task.agent_session_id: task}
 
         runner = FakeClaudeRunner(events=[
-            ToolStartSSEEvent(tool_name="Read", timestamp=1.0, parent_event_id=1),
+            CompleteEvent(result="done", parent_event_id=None),
         ])
         executor, broadcasts = _make_executor(tasks, session_db=session_db)
         await executor._run_execution(task, runner, FakeResourceManager())
 
-        # 원본 이벤트는 브로드캐스트됨
-        tool_broadcasts = [
-            (sid, ev) for sid, ev in broadcasts
+        complete_evs = [
+            ev for _, ev in broadcasts
+            if isinstance(ev, dict) and ev.get("type") == "complete"
+        ]
+        assert complete_evs and "_event_id" in complete_evs[0], (
+            f"complete 이벤트에 _event_id가 주입되어야 함. 실제 keys: "
+            f"{list(complete_evs[0].keys()) if complete_evs else 'no complete events'}"
+        )
+        assert task.last_event_id is not None, (
+            f"task.last_event_id가 갱신되어야 함. 실제: {task.last_event_id!r}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_existing_parent_event_id_preserved_unchanged(self):
+        """🔴 #1 보강: runner가 명시한 parent_event_id 값은 fallback에 의해 덮어쓰이지 않는다.
+
+        Phase 2-B-1 이전 fallback은 None만 채웠지만, 폐기된 fallback이 *기존 값을 덮어쓰지
+        않는다*는 invariant는 그대로 유지되어야 한다. 서브에이전트 블록(parent_event_id=명시값)이
+        wire에 그대로 전달되어 향후 다른 wire 컨슈머가 활용할 수 있다.
+        """
+        session_db = _make_mock_session_db()
+        task = _make_task()
+        tasks = {task.agent_session_id: task}
+
+        runner = FakeClaudeRunner(events=[
+            ToolStartSSEEvent(tool_name="Read", timestamp=1.0, parent_event_id=42),
+        ])
+        executor, broadcasts = _make_executor(tasks, session_db=session_db)
+        await executor._run_execution(task, runner, FakeResourceManager())
+
+        tool_evs = [
+            ev for _, ev in broadcasts
             if isinstance(ev, dict) and ev.get("type") == "tool_start"
         ]
-        assert len(tool_broadcasts) == 1
-
-        # subtree_update는 실패로 인해 없음
-        subtree_broadcasts = [
-            (sid, ev) for sid, ev in broadcasts
-            if isinstance(ev, dict) and ev.get("type") == "subtree_update"
-        ]
-        assert len(subtree_broadcasts) == 0
+        assert len(tool_evs) == 1
+        assert tool_evs[0].get("parent_event_id") == 42, (
+            f"명시된 parent_event_id=42가 그대로 broadcast되어야 함. "
+            f"실제: {tool_evs[0].get('parent_event_id')!r}"
+        )
 
 
 class TestReadMessagesPagination:

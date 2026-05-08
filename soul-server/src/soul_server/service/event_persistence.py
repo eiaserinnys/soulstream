@@ -7,7 +7,6 @@ TaskExecutor에서 DB 관련 관심사(이벤트 저장, subtree 전파, last_me
 
 import json
 import logging
-import time
 from datetime import datetime, timezone
 from typing import Callable, Optional, TYPE_CHECKING
 
@@ -57,53 +56,15 @@ class EventPersistence:
         event_id = await self._db.append_event(session_id, event_type, payload, searchable, created_at)
         return event_id
 
-    async def persist_with_subtree(
-        self, session_id: str, event_dict: dict, task: Task
-    ) -> Optional[dict]:
-        """이벤트 영속화 + subtree_update 계산.
-
-        Returns:
-            subtree_update dict (브로드캐스트용) 또는 None.
-        """
-        if self._db is None:
-            return None
-
-        subtree_update_dict: Optional[dict] = None
-        try:
-            event_id = await self.persist_event(session_id, event_dict)
-            event_dict["_event_id"] = event_id
-            if event_id is not None:
-                task.last_event_id = event_id
-
-            # 조상 이벤트들의 subtree_height 전파 + subtree_update SSE 이벤트 생성
-            if event_id is not None and event_dict.get("parent_event_id") is not None:
-                try:
-                    deltas, new_total = await self._db.update_subtree_heights(
-                        session_id, event_id, increment=1
-                    )
-                    subtree_update_dict = {
-                        "type": "subtree_update",
-                        "timestamp": time.time(),
-                        "affected_event_ids": list(deltas.keys()),
-                        "deltas": deltas,
-                        "new_total_subtree_height": new_total,
-                        "trigger_event_id": event_id,
-                    }
-                    # subtree_update도 영속화 (재연결 복구용)
-                    subtree_event_id = await self.persist_event(
-                        session_id, subtree_update_dict
-                    )
-                    subtree_update_dict["_event_id"] = subtree_event_id
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to compute subtree_update for {session_id}: {e}"
-                    )
-                    subtree_update_dict = None
-        except Exception as e:
-            logger.warning(f"Failed to persist event for {session_id}: {e}")
-            subtree_update_dict = None
-
-        return subtree_update_dict
+    # Phase 2-B-1(2026-05-08): persist_with_subtree 메서드 폐기.
+    # subtree_update SSE 발신 자체를 폐기하면서 dead method가 되었다. _event_id 주입과
+    # task.last_event_id 갱신 책임은 호출자(task_executor._consume_event_stream)가
+    # inline으로 가져갔다 — 단일 호출자였고, design-principles §1·§9에 부합한다.
+    # persist_event 메서드는 그대로 유지된다 (다른 경로에서 활용).
+    #
+    # 후속(Phase 2-B-3): update_subtree_heights DB 함수와 events_viewport SQL 함수도
+    # 호출자 0건으로 dead. 별도 카드에서 DROP 예정. 본 사이클은 Python 측 발신만 폐기하고
+    # DB 스키마·함수는 보존한다 (위임 §"🔴 #4: DB 무변경").
 
     async def update_last_message(
         self, session_id: str, event_dict: dict, task: Task

@@ -18,11 +18,18 @@ interface BaseNode {
   children: EventTreeNode[];
   content: string;
   completed: boolean;
-  /** 부모 이벤트 ID (서브에이전트 내부 노드 배치용) */
+  /**
+   * @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 wire에서 NULL.
+   * FE는 트리 배치에 사용하지 않는다 (tree-placer가 모든 노드를 root.children에 push).
+   *
+   * 부모 이벤트 ID (서브에이전트 내부 노드 배치용)
+   */
   parentEventId?: string;
   /** 이벤트 발행 시각 (Unix epoch, 초) */
   timestamp?: number;
   /**
+   * @deprecated Phase 2-B-1: subtree_update SSE 발신 폐기. 본 필드는 갱신되지 않는다.
+   *
    * 이 노드를 루트로 하는 서브트리의 총 높이 (Phase 3 viewport API).
    * 서버 events_viewport 함수가 계산하며, subtree_update SSE 이벤트로 증분 갱신된다.
    * 뷰포트 가상화에서 스크롤 영역 크기 계산에 사용된다.
