@@ -18,6 +18,7 @@ from typing import AsyncGenerator, Dict, List, Optional, Union, TYPE_CHECKING
 if TYPE_CHECKING:
     from soul_server.service.agent_registry import AgentRegistry
 
+from soul_common.auth import extract_caller_info_from_metadata
 from soul_server.service.task_models import Task, TaskStatus
 from soul_server.service.postgres_session_db import PostgresSessionDB
 
@@ -74,6 +75,10 @@ def _build_session_dict(
         "last_read_event_id": last_read_event_id,
         "display_name": row.get("display_name"),
         "node_id": row.get("node_id"),
+        # 사용자 프로필 키는 항상 존재(None 가능) — wire 일관성. orch _session_to_response와 대칭.
+        # caller_info 추출(아래) 또는 dashboard 라우트의 헬퍼가 채운다.
+        "userName": None,
+        "userPortraitUrl": None,
     }
 
     if row.get("session_type", "claude") != "claude":
@@ -93,6 +98,19 @@ def _build_session_dict(
                 info["agentPortraitUrl"] = (
                     f"/api/agents/{agent.id}/portrait" if agent.portrait_path else None
                 )
+
+    # 사용자 정보: caller_info(atom ed3a216d) 우선 추출. 부재 시 dashboard 라우트가
+    # settings.dash_user_name으로 fallback (apply_dash_user_profile_enrichment).
+    # R-3 fix(2026-05-08): orch _session_to_response와 동일 추출 패턴 — 정본 둘
+    # 안티패턴 회피를 위해 caller_info → userName/userPortraitUrl 매핑은 어디서든 동일.
+    caller_info = extract_caller_info_from_metadata(row.get("metadata"))
+    if caller_info:
+        display_name = caller_info.get("display_name")
+        avatar_url = caller_info.get("avatar_url")
+        if isinstance(display_name, str) and display_name:
+            info["userName"] = display_name
+        if isinstance(avatar_url, str) and avatar_url:
+            info["userPortraitUrl"] = avatar_url
 
     return info
 

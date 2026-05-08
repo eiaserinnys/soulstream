@@ -16,6 +16,7 @@ from sse_starlette.sse import EventSourceResponse
 from soul_common.auth.caller_info import build_browser_caller_info
 from soul_server.api.sessions import session_events_sse_generator
 from soul_server.dashboard.auth import require_dashboard_auth
+from soul_server.dashboard.user_profile import apply_dash_user_profile_enrichment
 from soul_server.service.task_manager import (
     get_task_manager,
     TaskConflictError,
@@ -132,13 +133,20 @@ async def api_get_sessions(
         folder_id=folder_id,  # None이면 전체 조회 (기존 동작 유지)
         feed_only=feed_only,
     )
+    # R-3 fix(2026-05-08): caller_info 정체성 우선, settings dash_user로 fallback.
+    # 기존 코드는 모든 행에 settings.dash_user_name을 일괄 덮어써 caller_info(슬랙·위임 등)
+    # 정체성을 무시했다. 헬퍼가 mix-fallback 금지 정책을 적용하여 정체성 보존.
+    # orch `apply_user_profile_enrichment`와 동일 의미 (정본 둘 안티패턴 atom d7a1ad86 회피).
     settings = get_settings()
     user_name = settings.dash_user_name
     user_portrait_url = "/api/dashboard/portrait/user" if settings.dash_user_portrait else None
-    sessions_with_user = [
-        {**s, "userName": user_name, "userPortraitUrl": user_portrait_url}
-        for s in sessions
-    ]
+    sessions_with_user = [dict(s) for s in sessions]
+    for entry in sessions_with_user:
+        apply_dash_user_profile_enrichment(
+            entry,
+            user_name=user_name,
+            user_portrait_url=user_portrait_url,
+        )
     return {"sessions": sessions_with_user, "total": total}
 
 
