@@ -2207,6 +2207,19 @@ describe("dashboard-store", () => {
       expect(result.addedCount).toBeGreaterThan(0);
       const afterChat = useDashboardStore.getState().chatPrependedCount;
       expect(afterChat).toBe(beforeChat + result.addedCount);
+
+      // cross-page 시간순 보존 (260508.03 fix invariant): root.children 의 eventId ASC 순서.
+      // sorted insert 부재 시 push 순서대로 [user-msg-200, tool-210, user-msg-50, tool-60] 가
+      // 되어 시간순이 깨진다. sorted insert 가 cross-page 시간순을 보장한다.
+      const tree = useDashboardStore.getState().tree;
+      expect(tree).not.toBeNull();
+      const childrenIds = tree!.children.map((n) => n.id);
+      expect(childrenIds).toEqual([
+        "user-msg-50",
+        "tool-60",
+        "user-msg-200",
+        "tool-210",
+      ]);
     });
 
     it("케이스 B (핵심) — tool 연속 병합: 기존 [tool] + prepend [tool, tool] → grouped 1, addedCount=0", () => {
@@ -2314,6 +2327,19 @@ describe("dashboard-store", () => {
       expect(result.addedCount).toBeGreaterThanOrEqual(2);
       const afterChat = useDashboardStore.getState().chatPrependedCount;
       expect(afterChat).toBe(beforeChat + result.addedCount);
+
+      // cross-page 시간순 보존 (260508.03 fix invariant): root.children 의 eventId ASC 순서.
+      const tree = useDashboardStore.getState().tree;
+      expect(tree).not.toBeNull();
+      const childrenIds = tree!.children.map((n) => n.id);
+      expect(childrenIds).toEqual([
+        "user-msg-50",
+        "tool-60",
+        "user-msg-70",
+        "tool-80",
+        "user-msg-200",
+        "tool-210",
+      ]);
     });
 
     it("케이스 D — 빈 events: addedCount=0, chatPrependedCount 변화 없음", () => {
@@ -2382,6 +2408,92 @@ describe("dashboard-store", () => {
       } finally {
         unsubscribe();
       }
+    });
+
+    it("케이스 H — 다중 페이지 prepend: 페이지 경계마다 시간순 보존", () => {
+      // 라이브 SSE: u300, t310 (가장 최근)
+      const { processEvent } = useDashboardStore.getState();
+      processEvent({ type: "user_message", content: "live-u" } as UserMessageEvent, 300);
+      processEvent({
+        type: "tool_start",
+        timestamp: 0,
+        tool_name: "Read",
+        tool_input: {},
+        tool_use_id: "tu_live",
+        parent_event_id: "300",
+      } as ToolStartEvent, 310);
+
+      // 1차 prepend (중간 페이지): u100, t110 — 라이브와 가장 오래된 페이지 사이
+      useDashboardStore.getState().processHistoryEvents([
+        {
+          event: { type: "user_message", content: "mid-u" } as UserMessageEvent,
+          eventId: 100,
+        },
+        {
+          event: {
+            type: "tool_start",
+            timestamp: 0,
+            tool_name: "Bash",
+            tool_input: {},
+            tool_use_id: "tu_m",
+            parent_event_id: "100",
+          } as ToolStartEvent,
+          eventId: 110,
+        },
+      ]);
+
+      // 2차 prepend (가장 오래된 페이지): u10, t20
+      useDashboardStore.getState().processHistoryEvents([
+        {
+          event: { type: "user_message", content: "old-u" } as UserMessageEvent,
+          eventId: 10,
+        },
+        {
+          event: {
+            type: "tool_start",
+            timestamp: 0,
+            tool_name: "Glob",
+            tool_input: {},
+            tool_use_id: "tu_o",
+            parent_event_id: "10",
+          } as ToolStartEvent,
+          eventId: 20,
+        },
+      ]);
+
+      const tree = useDashboardStore.getState().tree;
+      expect(tree).not.toBeNull();
+      const childrenIds = tree!.children.map((n) => n.id);
+      // 두 페이지 경계를 거쳐도 root.children 은 항상 eventId ASC 순서.
+      expect(childrenIds).toEqual([
+        "user-msg-10",
+        "tool-20",
+        "user-msg-100",
+        "tool-110",
+        "user-msg-300",
+        "tool-310",
+      ]);
+    });
+
+    it("케이스 I — text_start prepend 시간순: handleTextStart 도 sorted insert", () => {
+      // 라이브 text_start (eventId=400)
+      const { processEvent } = useDashboardStore.getState();
+      processEvent({ type: "text_start", timestamp: 0 } as TextStartEvent, 400);
+
+      // 과거 text_start (eventId=50) prepend
+      const result = useDashboardStore.getState().processHistoryEvents([
+        {
+          event: { type: "text_start", timestamp: 0 } as TextStartEvent,
+          eventId: 50,
+        },
+      ]);
+      expect(result.addedCount).toBeGreaterThan(0);
+
+      const tree = useDashboardStore.getState().tree;
+      expect(tree).not.toBeNull();
+      const childrenIds = tree!.children.map((n) => n.id);
+      // handleTextStart 도 placeInTree 와 동일한 sorted insert 패턴을 사용해야 시간순 정합.
+      expect(childrenIds).toEqual(["text-50", "text-400"]);
     });
   });
 

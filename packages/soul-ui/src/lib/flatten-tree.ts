@@ -90,7 +90,8 @@ export interface ChatMessage {
 /**
  * Identity 보존 캐시 — treeNodeId → 직전 호출에서 만든 ChatMessage.
  *
- * tree-placer는 children push만 하고 노드 reference 필드 mutation은 하지 않으므로
+ * tree-placer는 children 의 *위치 삽입* (fast-path push 또는 sorted splice) 만 하고
+ * 노드 reference 필드 mutation은 하지 않으므로
  * (toolInput, contextItems, agentInfo 등 object reference 필드는 같은 노드에 대해 동일),
  * 같은 treeNodeId의 이전 ChatMessage와 새로 만든 ChatMessage가 shallowEqual이면
  * 이전 reference를 그대로 재사용한다.
@@ -114,9 +115,9 @@ export function clearFlattenTreeCache(): void {
  * - primitive (string, number, boolean): === (값 비교)
  * - object reference (toolInput, contextItems, agentInfo, questions, usage): === (reference)
  *
- * Reference 비교 안전성: tree-placer는 children push만 하고 노드의 toolInput 등
- * object reference 필드를 재할당하지 않는다. 같은 treeNodeId를 두 번 traverse하면
- * 해당 필드의 reference는 동일하므로 === 충분.
+ * Reference 비교 안전성: tree-placer는 children 위치 삽입 (push 또는 splice) 만 하고
+ * 노드의 toolInput 등 object reference 필드를 재할당하지 않는다.
+ * 같은 treeNodeId를 두 번 traverse하면 해당 필드의 reference는 동일하므로 === 충분.
  *
  * content/isStreaming은 text_delta로 갱신될 수 있으나 string/boolean이라 자동 값 비교.
  */
