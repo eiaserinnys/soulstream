@@ -250,6 +250,50 @@ class TestNoSubtreeUpdateAfterFlattening:
         )
 
     @pytest.mark.asyncio
+    async def test_persist_failure_silent_skip_continues_stream(self):
+        """🔴 #2 silent skip 동작 보존: append_event 예외 시 broadcast·다음 이벤트 처리 계속.
+
+        기존 persist_with_subtree는 try/except로 감싸 DB 실패를 silent log + None 반환했다.
+        본 사이클이 inline 처리로 옮기면서 이 가드가 누락될 위험이 있어 회귀 보호한다.
+        design-principles §8 (실패 격리: 부가 기능 오류가 핵심 기능을 죽이지 않음).
+        """
+        session_db = _make_mock_session_db()
+        # 두 번째 append_event부터 실패 (첫 번째는 user_message persist_initial이 사용)
+        original = session_db.append_event.side_effect
+        call_count = [0]
+
+        async def _fail_after_first(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return await original(*args, **kwargs)
+            raise Exception("DB failure simulation")
+
+        session_db.append_event = AsyncMock(side_effect=_fail_after_first)
+
+        task = _make_task()
+        tasks = {task.agent_session_id: task}
+
+        runner = FakeClaudeRunner(events=[
+            ToolStartSSEEvent(tool_name="Read", timestamp=1.0, parent_event_id=None),
+            CompleteEvent(result="done", parent_event_id=None),
+        ])
+        executor, broadcasts = _make_executor(tasks, session_db=session_db)
+        # 예외가 _consume_event_stream을 abort시키지 않아야 한다
+        await executor._run_execution(task, runner, FakeResourceManager())
+
+        # broadcast된 이벤트 type 시퀀스에 user_message + tool_start + complete 모두 있어야 함
+        broadcast_types = [
+            ev.get("type") for _, ev in broadcasts
+            if isinstance(ev, dict)
+        ]
+        assert "tool_start" in broadcast_types, (
+            f"persist 실패가 broadcast를 죽이지 않아야 함. 실제: {broadcast_types}"
+        )
+        assert "complete" in broadcast_types, (
+            f"persist 실패 후 다음 이벤트도 처리되어야 함. 실제: {broadcast_types}"
+        )
+
+    @pytest.mark.asyncio
     async def test_existing_parent_event_id_preserved_unchanged(self):
         """🔴 #1 보강: runner가 명시한 parent_event_id 값은 fallback에 의해 덮어쓰이지 않는다.
 

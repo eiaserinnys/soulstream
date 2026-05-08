@@ -229,9 +229,18 @@ class TaskExecutor:
             # 이벤트 영속화 — Phase 2-B-1(2026-05-08): persist_with_subtree 폐기.
             # subtree_update 발신을 함께 폐기했으므로 _event_id 주입과 last_event_id
             # 갱신을 호출자가 inline으로 책임진다 (단일 호출자, design-principles §1·§9).
-            event_id = await self._persistence.persist_event(session_id, event_dict)
+            #
+            # try/except 가드(design-principles §8 실패 격리): DB 영속화 실패가
+            # broadcast·다음 이벤트를 죽이지 않는다. 기존 persist_with_subtree의
+            # silent skip 동작을 보존한다. _event_id는 무조건 주입(다른 호출 사이트
+            # L141, L162, L369와 패턴 일치).
+            event_id: Optional[int] = None
+            try:
+                event_id = await self._persistence.persist_event(session_id, event_dict)
+            except Exception as e:
+                logger.warning(f"Failed to persist event for {session_id}: {e}")
+            event_dict["_event_id"] = event_id
             if event_id is not None:
-                event_dict["_event_id"] = event_id
                 task.last_event_id = event_id
 
             # 브로드캐스트
