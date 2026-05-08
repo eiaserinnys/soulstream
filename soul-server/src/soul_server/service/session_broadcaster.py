@@ -74,6 +74,10 @@ class SessionBroadcaster(BaseSessionBroadcaster):
         이 시점의 last_assistant_text가 가장 의미 있는 본문이다.
         """
         updated_at = task.completed_at or utc_now()
+        # F-10C fix(2026-05-08): caller_info에서 user 프로필 추출하여 wire에 운반.
+        # catalog API는 박지만 SSE session_updated에는 누락되었던 결함 차단 (결함 A 본질).
+        # 클라이언트(soul-ui buildSessionUpdates)가 동일 키로 수신하여 store에 머지.
+        caller_info_dict = task.caller_info or {}
         event = {
             "type": "session_updated",
             "agent_session_id": task.agent_session_id,
@@ -86,7 +90,9 @@ class SessionBroadcaster(BaseSessionBroadcaster):
             # push 알림 필터링용 메타 — orch PushNotifier가 LLM 세션과 비-사용자 시작 세션을
             # 차단하기 위해 사용. 정본은 task.session_type, task.caller_info["source"].
             "session_type": task.session_type,
-            "caller_source": (task.caller_info or {}).get("source"),
+            "caller_source": caller_info_dict.get("source"),
+            "userName": caller_info_dict.get("display_name"),
+            "userPortraitUrl": caller_info_dict.get("avatar_url"),
         }
         return await self.broadcast(event)
 
@@ -102,6 +108,8 @@ class SessionBroadcaster(BaseSessionBroadcaster):
         ⚠️ wire-level 임시 상태이므로 DB의 sessions.status에는 저장되지 않는다 — finalize_task만
         그것을 책임진다 (task가 진짜로 종료될 때).
         """
+        # F-10C fix(2026-05-08): emit_session_updated와 대칭으로 user 프로필 운반.
+        caller_info_dict = task.caller_info or {}
         event = {
             "type": "session_updated",
             "agent_session_id": task.agent_session_id,
@@ -112,7 +120,9 @@ class SessionBroadcaster(BaseSessionBroadcaster):
             "last_assistant_text": task.last_assistant_text,
             # push 알림 필터링용 메타 (emit_session_updated와 대칭).
             "session_type": task.session_type,
-            "caller_source": (task.caller_info or {}).get("source"),
+            "caller_source": caller_info_dict.get("source"),
+            "userName": caller_info_dict.get("display_name"),
+            "userPortraitUrl": caller_info_dict.get("avatar_url"),
         }
         return await self.broadcast(event)
 

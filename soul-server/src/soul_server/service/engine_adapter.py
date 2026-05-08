@@ -237,7 +237,7 @@ class SoulEngineAdapter:
         loop: asyncio.AbstractEventLoop,
         runner_ref: List[Optional[ClaudeRunner]],
         get_intervention: Optional[Callable[[], Awaitable[Optional[dict]]]],
-        on_intervention_sent: Optional[Callable[[str, str, List[str]], Awaitable[None]]],
+        on_intervention_sent: Optional[Callable[[str, str, List[str], Optional[dict]], Awaitable[None]]],
     ) -> _ExecutionHandlers:
         """ClaudeRunner와 SSE 큐 사이의 콜백 어댑터들을 생성한다.
 
@@ -298,7 +298,14 @@ class SoulEngineAdapter:
             )
             await queue.put(intervention_event)
             if on_intervention_sent:
-                await on_intervention_sent(msg.user, msg.text, msg.attachment_paths)
+                # F-10B fix(2026-05-08): caller_info를 task_executor 콜백에 forward.
+                # 콜백이 DB events 영속·listener broadcast 양쪽에 caller_info를 박는다.
+                # F-9 fix는 InterventionSentEvent에만 caller_info를 박았으나, 콜백 미전달로
+                # 영속·broadcast dict에는 누락되어 unified-dashboard InterventionMessage가
+                # 세션 첫 발신자(F-10E fallback)로 떨어지는 결함이 잔존했었다.
+                await on_intervention_sent(
+                    msg.user, msg.text, msg.attachment_paths, msg.caller_info,
+                )
 
             return _build_intervention_prompt(msg)
 
@@ -412,7 +419,7 @@ class SoulEngineAdapter:
         prompt: str,
         resume_session_id: Optional[str] = None,
         get_intervention: Optional[Callable[[], Awaitable[Optional[dict]]]] = None,
-        on_intervention_sent: Optional[Callable[[str, str, List[str]], Awaitable[None]]] = None,
+        on_intervention_sent: Optional[Callable[[str, str, List[str], Optional[dict]], Awaitable[None]]] = None,
         *,
         allowed_tools: Optional[List[str]] = None,
         disallowed_tools: Optional[List[str]] = None,

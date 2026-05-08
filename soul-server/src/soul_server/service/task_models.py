@@ -218,6 +218,17 @@ class Task:
             info["agentId"] = self.profile_id
             info["agentName"] = agent_name
             info["agentPortraitUrl"] = agent_portrait_url
+        # F-10C fix(2026-05-08): 사용자 프로필 정보 (catalog API와 정합 — caller_info 직접 사용).
+        # session_created/list 이벤트가 wire에 user 프로필을 운반하지 못해 클라이언트가
+        # 폴백 표시되던 결함을 차단한다. self.caller_info가 None이면 누락 (graceful —
+        # orch session_serializer의 node_id fallback과 동일 graceful 정책).
+        caller_info_dict = self.caller_info or {}
+        display_name = caller_info_dict.get("display_name")
+        avatar_url = caller_info_dict.get("avatar_url")
+        if isinstance(display_name, str) and display_name:
+            info["userName"] = display_name
+        if isinstance(avatar_url, str) and avatar_url:
+            info["userPortraitUrl"] = avatar_url
         return info
 
     def to_dict(self) -> dict:

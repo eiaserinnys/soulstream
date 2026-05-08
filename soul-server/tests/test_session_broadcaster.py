@@ -292,6 +292,8 @@ class TestBroadcasterWireContract:
     """
 
     # session_updated 타입 wire 이벤트의 정본 키 셋. push notifier가 읽는 표면.
+    # F-10C fix(2026-05-08): userName/userPortraitUrl 추가 — catalog API와 정합한
+    # user 프로필을 SSE에도 운반. 클라이언트 buildSessionUpdates가 store에 머지.
     EXPECTED_UPDATED_KEYS = {
         "type",
         "agent_session_id",
@@ -303,10 +305,13 @@ class TestBroadcasterWireContract:
         "last_assistant_text",
         "session_type",
         "caller_source",
+        "userName",
+        "userPortraitUrl",
     }
 
     # phase wire 이벤트는 last_progress_text를 싣지 않는다.
     # (push 트리거 아닌 idle 통보 의미라 진행 안내 텍스트 부적합)
+    # F-10C fix: userName/userPortraitUrl 추가 (emit_session_updated와 대칭).
     EXPECTED_PHASE_KEYS = {
         "type",
         "agent_session_id",
@@ -317,6 +322,8 @@ class TestBroadcasterWireContract:
         "last_assistant_text",
         "session_type",
         "caller_source",
+        "userName",
+        "userPortraitUrl",
     }
 
     # session_created wire — task.to_session_info() 결과가 'session' 키에 들어간다.
@@ -488,4 +495,78 @@ class TestSessionUpdatedSessionTypeAndCallerSource:
         )
         _eid, event = queue.get_nowait()
         assert event["caller_source"] is None
+
+
+# F-10C fix(2026-05-08): emit_session_updated/_phase wire에 userName/userPortraitUrl 운반.
+# session_created가 task.to_session_info를 거치므로 to_session_info도 검증.
+class TestF10CUserProfileWire:
+    """F-10C 회귀 — wire의 user 프로필 운반 (catalog API와 정합)."""
+
+    @pytest.fixture
+    def broadcaster(self, mock_registry):
+        return SessionBroadcaster(agent_registry=mock_registry)
+
+    def _make_task(self, **overrides) -> Task:
+        defaults = dict(
+            agent_session_id="sess-up-1",
+            prompt="테스트",
+            status=TaskStatus.COMPLETED,
+            last_progress_text="...",
+            last_assistant_text="...",
+            completed_at=datetime(2026, 5, 8, 8, 0, tzinfo=timezone.utc),
+            session_type="claude",
+            caller_info={
+                "source": "slack",
+                "display_name": "동료A",
+                "avatar_url": "https://slack/img.png",
+            },
+        )
+        defaults.update(overrides)
+        return Task(**defaults)
+
+    async def test_emit_session_updated_runs_with_user_profile(self, broadcaster):
+        queue = broadcaster.add_client()
+        await broadcaster.emit_session_updated(self._make_task())
+        _eid, event = queue.get_nowait()
+        assert event["userName"] == "동료A"
+        assert event["userPortraitUrl"] == "https://slack/img.png"
+
+    async def test_emit_session_updated_user_profile_none_when_caller_info_none(self, broadcaster):
+        queue = broadcaster.add_client()
+        await broadcaster.emit_session_updated(self._make_task(caller_info=None))
+        _eid, event = queue.get_nowait()
+        assert event["userName"] is None
+        assert event["userPortraitUrl"] is None
+
+    async def test_emit_session_phase_runs_with_user_profile(self, broadcaster):
+        queue = broadcaster.add_client()
+        await broadcaster.emit_session_phase(
+            self._make_task(status=TaskStatus.RUNNING),
+            phase="idle",
+        )
+        _eid, event = queue.get_nowait()
+        assert event["userName"] == "동료A"
+        assert event["userPortraitUrl"] == "https://slack/img.png"
+
+    async def test_emit_session_created_session_dict_has_user_profile(self, broadcaster):
+        """emit_session_created → to_session_info 결과의 session dict에 user 프로필 박힘."""
+        queue = broadcaster.add_client()
+        await broadcaster.emit_session_created(self._make_task(), folder_id="f1")
+        _eid, event = queue.get_nowait()
+        session_dict = event["session"]
+        assert session_dict["userName"] == "동료A"
+        assert session_dict["userPortraitUrl"] == "https://slack/img.png"
+
+    async def test_emit_session_created_user_profile_omitted_when_caller_info_none(self, broadcaster):
+        """task.caller_info=None → session dict에 userName/userPortraitUrl 키 누락 (graceful)."""
+        queue = broadcaster.add_client()
+        await broadcaster.emit_session_created(
+            self._make_task(caller_info=None),
+            folder_id=None,
+        )
+        _eid, event = queue.get_nowait()
+        session_dict = event["session"]
+        # graceful — 키 자체 누락 (None과 다름; orch session_serializer node_id fallback 패턴)
+        assert "userName" not in session_dict
+        assert "userPortraitUrl" not in session_dict
 

@@ -327,8 +327,10 @@ class TestSoulEngineAdapterCallbacks:
         assert intervention_events[0].user == "alice"
         assert intervention_events[0].text == "추가 지시"
 
-        # on_intervention_sent 콜백 호출 확인 (attachment_paths 파라미터 포함, 260504.04에서 추가됨)
-        on_sent.assert_awaited_once_with("alice", "추가 지시", [])
+        # on_intervention_sent 콜백 호출 확인 (attachment_paths + caller_info 파라미터 포함).
+        # 260504.04에서 attachment_paths 추가, F-10B fix(2026-05-08)에서 caller_info 4번째 인자 추가.
+        # 본 케이스의 intervention dict에 caller_info 키 없음 → None forward (graceful).
+        on_sent.assert_awaited_once_with("alice", "추가 지시", [], None)
 
         # 반환된 프롬프트에 개입 메시지가 포함
         assert len(intervention_prompts) == 1

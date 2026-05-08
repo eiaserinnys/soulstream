@@ -1,6 +1,6 @@
-"""F-9 fix(2026-05-08) — intervene/resume wire에 caller_info 운반 회귀 테스트.
+"""F-9 + F-10A/B fix — intervene/resume wire에 caller_info 운반 회귀 테스트.
 
-직전 결함 (atom F-9 카드 beed44e0):
+F-9 (atom F-9 카드 beed44e0):
 - 슬랙 2차+ 메시지가 InterventionSentEvent에 caller_info 없이 wire되어
   unified-dashboard InterventionMessage가 발신자(슬랙)이 아닌 dashboard owner(Google)
   portrait를 표시.
@@ -9,13 +9,24 @@
   사용자 보고 ("resume에서도 2회차 이후에는 기본 프로필이 나와") 발생.
 - evicted task reload 시 caller_info를 복원하지 않아 위와 동일 결함이 추가 발생.
 
-본 모듈은 다음 4 결함의 회귀 차단:
-- Q-1: add_intervention 큐 message dict에 caller_info 첨부
-- Q-4: InterventionSentEvent 스키마에 caller_info 필드 존재
-- R-1: task_factory._resume_existing_task_locked가 params.caller_info로 task.caller_info 갱신
-- R-2: session_eviction_manager.load_evicted_task가 metadata에서 caller_info 복원
+F-10A/B (2026-05-08, 본 라운드):
+- F-9 fix가 InterventionSentEvent에 caller_info를 박았으나 task_executor 콜백이
+  caller_info를 받지 못해 DB events 영속·listener_manager.broadcast 모두 누락.
+- 결과: running 세션 intervene 시 클라이언트가 받는 dict에 caller_info 없음 →
+  InterventionMessage fallback이 *세션 첫 발신자*로 떨어짐 (사용자 보고 결함 B).
+- F-10B: engine_adapter on_intervention_callback이 콜백에 caller_info forward.
+- F-10A: task_executor on_intervention_sent 콜백 시그니처 + dict에 caller_info 박음.
+
+본 모듈은 다음 6 결함의 회귀 차단:
+- Q-1: add_intervention 큐 message dict에 caller_info 첨부 (F-9)
+- Q-4: InterventionSentEvent 스키마에 caller_info 필드 존재 (F-9)
+- R-1: task_factory._resume_existing_task_locked가 params.caller_info로 task.caller_info 갱신 (F-9)
+- R-2: session_eviction_manager.load_evicted_task가 metadata에서 caller_info 복원 (F-9)
+- F-10B: engine_adapter handler가 콜백에 caller_info forward (본 라운드)
+- F-10A: task_executor on_intervention_sent가 caller_info를 dict에 박음 (본 라운드)
 """
 
+import asyncio
 from datetime import datetime, timezone
 from typing import Optional
 from unittest.mock import AsyncMock, MagicMock
@@ -23,6 +34,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from soul_common.models.schemas import InterventionSentEvent
+from soul_server.service.engine_adapter import SoulEngineAdapter
 from soul_server.service.task_factory import CreateTaskParams, TaskFactory
 from soul_server.service.session_eviction_manager import SessionEvictionManager
 from soul_server.service.task_manager import TaskManager
@@ -266,3 +278,79 @@ class TestLoadEvictedTaskRestoresCallerInfo:
         task = await manager.load_evicted_task(session_db, "sess-nometa")
         assert task is not None
         assert task.caller_info is None
+
+
+# === 5. F-10B engine_adapter handler caller_info forward ===
+
+
+class TestF10BEngineAdapterCallbackForward:
+    """F-10B 회귀 — engine_adapter on_intervention_callback이 task_executor 콜백에 caller_info forward.
+
+    F-9 fix는 InterventionSentEvent에만 caller_info를 박았고 콜백 호출 시 인자로 전달
+    안 했음. 본 라운드 fix가 콜백에 caller_info를 forward하여 task_executor가 DB 영속·
+    listener broadcast 양쪽에 caller_info를 박을 수 있게 함.
+    """
+
+    @pytest.mark.asyncio
+    async def test_callback_receives_caller_info_when_intervention_has_it(self):
+        adapter = SoulEngineAdapter()
+        ci = {"source": "slack", "display_name": "동료A", "user_id": "U_A"}
+        intervention_dict = {
+            "text": "추가 메시지",
+            "user": "동료A",
+            "attachment_paths": [],
+            "caller_info": ci,
+        }
+        get_intervention = AsyncMock(return_value=intervention_dict)
+        on_intervention_sent = AsyncMock()
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue = asyncio.Queue()
+        runner_ref = [None]
+
+        handlers = adapter._make_handlers(
+            queue=queue,
+            loop=loop,
+            runner_ref=runner_ref,
+            get_intervention=get_intervention,
+            on_intervention_sent=on_intervention_sent,
+        )
+        result = await handlers.on_intervention_callback()
+        assert result is not None  # _build_intervention_prompt 결과 (string)
+
+        # InterventionSentEvent가 큐에 박힘 + caller_info 포함 (F-9 fix 회귀)
+        ev = await queue.get()
+        assert isinstance(ev, InterventionSentEvent)
+        assert ev.caller_info == ci
+
+        # F-10B 단언: 콜백이 caller_info와 함께 호출됨
+        on_intervention_sent.assert_awaited_once_with(
+            "동료A", "추가 메시지", [], ci,
+        )
+
+    @pytest.mark.asyncio
+    async def test_callback_receives_none_caller_info_gracefully(self):
+        """intervention dict에 caller_info=None → 콜백에 None forward (graceful)."""
+        adapter = SoulEngineAdapter()
+        intervention_dict = {
+            "text": "메시지",
+            "user": "user",
+            "attachment_paths": [],
+            "caller_info": None,
+        }
+        get_intervention = AsyncMock(return_value=intervention_dict)
+        on_intervention_sent = AsyncMock()
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue = asyncio.Queue()
+        runner_ref = [None]
+
+        handlers = adapter._make_handlers(
+            queue=queue,
+            loop=loop,
+            runner_ref=runner_ref,
+            get_intervention=get_intervention,
+            on_intervention_sent=on_intervention_sent,
+        )
+        await handlers.on_intervention_callback()
+        on_intervention_sent.assert_awaited_once_with(
+            "user", "메시지", [], None,
+        )

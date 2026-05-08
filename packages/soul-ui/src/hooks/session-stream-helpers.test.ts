@@ -12,8 +12,10 @@ import {
   applySessionCreated,
   applySessionUpdated,
   applySessionDeleted,
+  buildSessionUpdates,
 } from "./session-stream-helpers";
 import type { SessionPage } from "./session-stream-helpers";
+import type { SessionUpdatedStreamEvent } from "../shared/stream-events";
 
 function makeSession(
   id: string,
@@ -157,5 +159,63 @@ describe("applySessionDeleted", () => {
     const result = applySessionDeleted(data, "non-existent");
 
     expect(result.pages[0].sessions).toHaveLength(1);
+  });
+});
+
+// ============================================================
+// F-10C 회귀 — buildSessionUpdates의 user 프로필 추출
+//
+// catalog API와 정합한 user 프로필을 SSE session_updated wire에서도 운반.
+// 클라이언트가 추출하지 못하면 store의 userName/userPortraitUrl이 갱신되지 않아
+// 새 세션 생성 직후 SSE만 받은 상태에서 폴백 표시되는 결함 잔존.
+
+describe("buildSessionUpdates — F-10C user profile extraction", () => {
+  function makeEvent(overrides: Partial<SessionUpdatedStreamEvent> = {}): SessionUpdatedStreamEvent {
+    return {
+      type: "session_updated",
+      agent_session_id: "sess-1",
+      status: "running",
+      updated_at: new Date().toISOString(),
+      ...overrides,
+    } as SessionUpdatedStreamEvent;
+  }
+
+  it("event.userName/userPortraitUrl가 truthy면 updates에 추출한다", () => {
+    const event = makeEvent({
+      userName: "동료A",
+      userPortraitUrl: "https://slack/img.png",
+    });
+    const updates = buildSessionUpdates(event);
+    expect(updates.userName).toBe("동료A");
+    expect(updates.userPortraitUrl).toBe("https://slack/img.png");
+  });
+
+  it("event.userName/userPortraitUrl가 null이면 머지하지 않는다 (기존 값 보존)", () => {
+    const event = makeEvent({
+      userName: null,
+      userPortraitUrl: null,
+    });
+    const updates = buildSessionUpdates(event);
+    // null이면 partial update 의미 보존 — 키 자체 추가 안 함
+    expect(updates.userName).toBeUndefined();
+    expect(updates.userPortraitUrl).toBeUndefined();
+  });
+
+  it("event.userName/userPortraitUrl가 undefined면 머지하지 않는다 (legacy wire 호환)", () => {
+    // wire에 키가 없는 경우 (구버전 서버 호환)
+    const event = makeEvent();
+    const updates = buildSessionUpdates(event);
+    expect(updates.userName).toBeUndefined();
+    expect(updates.userPortraitUrl).toBeUndefined();
+  });
+
+  it("일부만 truthy → 그것만 추출한다", () => {
+    const event = makeEvent({
+      userName: "이름만",
+      userPortraitUrl: null,
+    });
+    const updates = buildSessionUpdates(event);
+    expect(updates.userName).toBe("이름만");
+    expect(updates.userPortraitUrl).toBeUndefined();
   });
 });
