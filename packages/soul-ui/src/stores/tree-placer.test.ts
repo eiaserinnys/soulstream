@@ -1,13 +1,20 @@
 /**
- * tree-placer 테스트 — Phase 2-A 평탄화 후
+ * tree-placer 테스트 — Phase 2-A 평탄화 + 260508.03 cross-page 정렬 보존 후
  *
  * Phase 2-A (atom 작업 이력 260507.01.fe-tree-flattening, §11.1 옵션 C):
  *   placeInTree와 handleTextStart는 parent_event_id를 무시하고 모든 노드를 root.children에
- *   시간순 push한다. orphan 큐, sorted insert, adoptees, historyMode, ORPHAN_PARENT, resolveParent는
+ *   시간순 삽입한다. orphan 큐, adoptees, historyMode, ORPHAN_PARENT, resolveParent는
  *   모두 폐기되었다.
  *
+ * Cross-page 정렬 보존 (atom 작업 이력 260508.03.soul-ui-prepend-cross-page-order):
+ *   placeInTree / handleTextStart 는 root.children 을 eventId ASC 로 유지한다.
+ *   라이브 SSE 의 일반 시간순 도착은 fast-path push (마지막 자식 비교 1회) 로 처리되며,
+ *   본 파일의 모든 케이스가 fast-path 경로 (root 가 비었거나 새 eventId 가 마지막
+ *   자식보다 큼) 라 array 결과는 push 와 동일. cross-page slow-path (binary search →
+ *   splice) 는 dashboard-store.test.ts 의 케이스 A·C·H·I 가 검증한다.
+ *
  *   본 테스트는 Phase 2-A 후의 의도를 검증한다:
- *   1. 모든 노드 타입이 root.children에 push되는가
+ *   1. 모든 노드 타입이 root.children에 (시간순) 삽입되는가
  *   2. nodeMap에 node.id, String(eventId)가 등록되는가
  *   3. tool_start의 tool_use_id 보조 등록 (tool_result 매칭용)
  *   4. input_request의 request_id 보조 등록 (input_request_expired 매칭용)
