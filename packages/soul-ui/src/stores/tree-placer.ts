@@ -34,21 +34,20 @@ import type {
 import type { ProcessingContext, TextTargetNode } from "./processing-context";
 import { makeNode, registerNode } from "./processing-context";
 import { diag } from "../lib/diag";
+import { extractEventId } from "../lib/flatten-tree";
 
 /**
- * node.id 끝자리 숫자(=DB eventId)를 추출한다.
+ * insertNodeInOrder 의 caller-local adapter.
  *
- * createNodeFromEvent 가 만드는 모든 노드 ID 는 `{type-prefix}-{eventId}` 패턴이며
- * (user-msg-{n}, tool-{n}, text-{n}, ...) handleTextStart 도 `text-{eventId}` 패턴.
- * 매칭 실패 시 -Infinity 를 반환하여 빈 children 또는 비정형 노드와의 비교에서
- * 새 노드가 항상 더 큰 것으로 취급되도록 한다 (즉 push fast-path 로 fall-through).
+ * 비정형 nodeId 를 -Infinity 로 변환하여 어떤 양수 eventId 보다도 작게 취급한다.
+ * 즉 fast-path push 로 흘려보낸다 — children 에 비정형 노드가 invariant 상 없으므로
+ * dead branch 지만 안전한 폴백 의미를 코드로 표현한다.
  *
- * NOTE: lib/flatten-tree.ts 에 동명의 헬퍼(`extractEventId`)가 존재한다 — 동일
- * 정규식·동일 책임. 후속 hygiene 카드에서 단일 정본으로 통합 권고.
+ * 정규식·추출 로직의 정본은 lib/flatten-tree.ts 의 extractEventId
+ * (260508.05.tree-placer-hygiene H-1: design-principles §3 정본 하나).
  */
 function extractNodeEventId(node: EventTreeNode): number {
-  const match = node.id.match(/-(\d+)$/);
-  return match ? Number(match[1]) : Number.NEGATIVE_INFINITY;
+  return extractEventId(node.id) ?? Number.NEGATIVE_INFINITY;
 }
 
 /**
@@ -171,6 +170,11 @@ export function handleTextStart(
   registerNode(ctx, textNode);
   ctx.nodeMap.set(String(eventId), textNode);
   insertNodeInOrder(root, textNode, eventId);
+  diag("tree-placer", "→ insert", {
+    eventId,
+    nodeType: "text",
+    nodeId: textNode.id,
+  });
 
   ctx.activeTextTarget = textNode as TextTargetNode;
   return true;

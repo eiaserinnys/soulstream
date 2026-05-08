@@ -22,8 +22,9 @@
  *   6. handleTextStart가 활성 text 노드 설정 + 중복 시 false 반환
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { placeInTree, handleTextStart } from "./tree-placer";
+import { diag } from "../lib/diag";
 import { createProcessingContext, makeNode, registerNode } from "./processing-context";
 import type { ProcessingContext } from "./processing-context";
 import type {
@@ -39,6 +40,19 @@ import type {
   InputRequestEvent,
   SoulSSEEvent,
 } from "../../shared/types";
+
+// 260508.05.tree-placer-hygiene H-2: handleTextStart diag 대칭화 검증을 위해
+// diag 모듈 전체를 mock. vitest environment="node" 환경에서 lib/diag.ts 의
+// `typeof window === "undefined"` 가드가 게이트를 차단하므로, 본 사이클의
+// 검증 의도(handleTextStart 가 어떤 인자로 diag 를 호출하는가) 만 검증.
+//
+// vi.mock 영향 범위는 *해당 test 파일 내* 로 한정 — placeInTree 의 기존 케이스
+// (skip 가드, ancestor 동봉 등) 도 diag 가 호출되지만 mock 함수가 silent 하게
+// 받아 처리하므로 행동 변경 없음 (기존 케이스 GREEN 유지).
+vi.mock("../lib/diag", () => ({
+  diag: vi.fn(),
+  _resetDiagCache: vi.fn(),
+}));
 
 // === Helpers ===
 
@@ -311,5 +325,44 @@ describe("handleTextStart (Phase 2-A 평탄화)", () => {
     expect(second).toBe(false);
     expect(ctx.activeTextTarget).toBe(firstTarget); // 변경 없음
     expect(root.children).toHaveLength(1); // 두 번째 push 없음
+  });
+});
+
+// === handleTextStart diag 대칭화 (260508.05 H-2) ===
+//
+// placeInTree 정상 경로(:145)에는 `→ insert` diag 가 있으나 handleTextStart
+// 정상 경로엔 없던 비대칭을 해소. placeInTree 와 동일 키 셋
+// ({ eventId, nodeType, nodeId }) 으로 grep 친화적 일관성을 유지한다.
+
+describe("handleTextStart diag 대칭화 (H-2)", () => {
+  beforeEach(() => {
+    vi.mocked(diag).mockClear();
+  });
+
+  it("정상 경로에서 → insert diag 발행 (placeInTree 와 동일 키 셋)", () => {
+    const { ctx, root } = makeCtxWithRoot();
+    const event: TextStartEvent = { type: "text_start", timestamp: 0 };
+
+    handleTextStart(event, 12, ctx, root);
+
+    expect(diag).toHaveBeenCalledWith(
+      "tree-placer",
+      "→ insert",
+      { eventId: 12, nodeType: "text", nodeId: "text-12" },
+    );
+  });
+
+  it("skip 경로에서는 → insert diag 미발행", () => {
+    const { ctx, root } = makeCtxWithRoot();
+    const event: TextStartEvent = { type: "text_start", timestamp: 0 };
+
+    handleTextStart(event, 30, ctx, root); // 1차 — insert
+    vi.mocked(diag).mockClear();
+    handleTextStart(event, 30, ctx, root); // 2차 — skip 가드
+
+    const insertCalls = vi.mocked(diag).mock.calls.filter(
+      (c) => c[1] === "→ insert",
+    );
+    expect(insertCalls).toHaveLength(0);
   });
 });
