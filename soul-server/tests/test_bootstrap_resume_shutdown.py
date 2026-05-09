@@ -24,7 +24,11 @@ class TestResumeShutdownSessionsCallerInfo:
     """F-11D 핵심: resume_shutdown_sessions이 add_intervention 호출 시 system caller_info 박는다."""
 
     async def test_no_shutdown_sessions_skip(self):
-        """저장된 종료 세션이 없으면 add_intervention 호출 없이 즉시 반환."""
+        """저장된 종료 세션이 없으면 add_intervention/clear_shutdown_flags 모두 미호출.
+
+        get_shutdown_sessions 빈 목록 시 early return → finally(clear_shutdown_flags)
+        미도달. 본 단언이 빠지면 향후 early return 제거 회귀가 침묵 통과한다.
+        """
         session_db = MagicMock()
         session_db.get_shutdown_sessions = AsyncMock(return_value=[])
         session_db.clear_shutdown_flags = AsyncMock()
@@ -35,8 +39,7 @@ class TestResumeShutdownSessionsCallerInfo:
         await resume_shutdown_sessions(session_db, tm, _make_settings())
 
         tm.add_intervention.assert_not_called()
-        # finally 블록의 clear_shutdown_flags는 빈 목록이라도 호출 안 됨 (early return)
-        # — 실제 코드 경로 확인: get_shutdown_sessions 빈 목록 시 return → finally도 안 도달.
+        session_db.clear_shutdown_flags.assert_not_called()
 
     async def test_single_session_resume_includes_system_caller_info(self):
         """단일 종료 세션 resume 시 add_intervention의 caller_info가 system v1 dict."""
