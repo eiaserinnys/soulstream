@@ -163,3 +163,31 @@ def build_agent_caller_info(
         "user_id": agent_id,
         "avatar_url": avatar_url,
     }
+
+
+def build_system_caller_info(*, node_id: str) -> dict[str, Any]:
+    """소울스트림 서버 자신이 발신자인 시스템 메시지의 caller_info 조립 (통합 v1).
+
+    graceful_shutdown 종료 예고, resume_shutdown_sessions 재개 안내 등 서버 lifecycle
+    이벤트가 세션에 자동으로 인터벤션을 발송할 때 사용한다 (atom F-11D 정본).
+
+    avatar_url은 None — 시각 자산 결정 책임은 클라이언트가 진다 (design-principles §1
+    지식 경계). 클라이언트는 caller_info.source == "system"이면 자기 정적 자산을 사용:
+    - soul-app: assets/icon-symbol.png (자체 require)
+    - unified-dashboard: public/system-portrait.png (정적 serve)
+
+    user_id도 None — 시스템은 사용자/에이전트와 달리 식별자가 무의미.
+
+    Args:
+        node_id: 발신 서버의 노드 ID (settings.soulstream_node_id).
+
+    Returns:
+        v1 caller_info dict — source/agent_node/display_name 채움, user_id/avatar_url None.
+    """
+    return {
+        "source": "system",
+        "agent_node": node_id,
+        "display_name": "Soulstream",
+        "user_id": None,
+        "avatar_url": None,
+    }

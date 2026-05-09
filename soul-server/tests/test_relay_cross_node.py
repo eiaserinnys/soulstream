@@ -148,3 +148,64 @@ class TestRelayCrossNodeIntervention:
             await relay_cross_node_intervention("sess-no-url", "no upstream")
 
         mock_client_cls.assert_not_called()
+
+    # ---------------------------------------------------------------------------
+    # F-11C: caller_info 옵션 인자
+    # ---------------------------------------------------------------------------
+
+    async def test_relay_forwards_caller_info_in_body(self):
+        """caller_info 명시 시 POST body에 caller_info 키가 포함된다 (F-11C 핵심)."""
+        settings = _make_settings(auth_token="token")
+
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_resp)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls = MagicMock(return_value=mock_client)
+
+        caller_info = {
+            "source": "agent",
+            "agent_node": "eias-shopping",
+            "agent_id": "shay",
+            "agent_name": "Shay",
+            "display_name": "Shay",
+            "user_id": "shay",
+            "avatar_url": "/api/nodes/eias-shopping/agents/shay/portrait",
+        }
+
+        with (
+            patch("soul_server.service.cross_node_relay.get_settings", return_value=settings),
+            patch("httpx.AsyncClient", mock_client_cls),
+        ):
+            await relay_cross_node_intervention(
+                "sess-caller", "완료 보고", caller_info=caller_info
+            )
+
+        mock_client.post.assert_called_once_with(
+            "http://orch:5200/api/sessions/sess-caller/intervene",
+            json={"text": "완료 보고", "user": "agent", "caller_info": caller_info},
+        )
+
+    async def test_relay_default_caller_info_none_omits_key(self):
+        """caller_info=None(기본값) 시 POST body에 caller_info 키 없음 (F-11C 호환)."""
+        settings = _make_settings(auth_token="token")
+
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_resp)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls = MagicMock(return_value=mock_client)
+
+        with (
+            patch("soul_server.service.cross_node_relay.get_settings", return_value=settings),
+            patch("httpx.AsyncClient", mock_client_cls),
+        ):
+            await relay_cross_node_intervention("sess-caller", "보고")
+
+        post_body = mock_client.post.call_args.kwargs["json"]
+        assert "caller_info" not in post_body
+        assert post_body == {"text": "보고", "user": "agent"}

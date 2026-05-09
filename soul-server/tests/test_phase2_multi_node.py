@@ -410,3 +410,60 @@ class TestReplyToSessionFallback:
 
         assert result["ok"] is True
         mock_httpx.AsyncClient.assert_not_called()
+
+    # ---------------------------------------------------------------------------
+    # F-11A: 원격 폴백 시에도 caller_info forward
+    # ---------------------------------------------------------------------------
+
+    @patch("soul_server.cogito.mcp_session_mgmt.get_task_manager")
+    @patch("soul_server.cogito.mcp_session_mgmt.httpx")
+    async def test_remote_fallback_includes_caller_info(self, mock_httpx, mock_get_tm):
+        """로컬 실패 + caller_session_id 명시 → orch /intervene body에 caller_info 박힘
+        (F-11A 원격 폴백 핵심)."""
+        mcp_multi_node._orch_base = "http://orch:5200"
+
+        caller_task = MagicMock()
+        caller_task.profile_id = "shay"
+        caller_profile = MagicMock()
+        caller_profile.name = "Shay"
+        caller_profile.portrait_path = "/portraits/shay.png"
+        registry = MagicMock()
+        registry.get.return_value = caller_profile
+
+        db = MagicMock()
+        db.node_id = "eias-shopping"
+
+        tm = MagicMock()
+        tm._agent_registry = registry
+        tm._db = db
+        tm.get_task = AsyncMock(return_value=caller_task)
+        tm.add_intervention = AsyncMock(side_effect=RuntimeError("local fail"))
+        mock_get_tm.return_value = tm
+
+        mock_client = AsyncMock()
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json = MagicMock(return_value={"ok": True})
+        mock_client.post = AsyncMock(return_value=mock_resp)
+        mock_httpx.AsyncClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_httpx.AsyncClient.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        fn = _unwrap(mcp_tools.send_message_to_session)
+        result = await fn(
+            target_session_id="sess-remote",
+            message="cross-node 메시지",
+            caller_session_id="sess-shay-001",
+        )
+
+        assert result["ok"] is True
+        # body에 caller_info 박혔는지 검증
+        post_kwargs = mock_client.post.call_args
+        body = post_kwargs.kwargs["json"]
+        assert body["text"] == "cross-node 메시지"
+        assert body["user"] == "agent"
+        assert "caller_info" in body
+        ci = body["caller_info"]
+        assert ci["source"] == "agent"
+        assert ci["agent_id"] == "shay"
+        assert ci["agent_name"] == "Shay"
+        assert ci["avatar_url"] == "/api/nodes/eias-shopping/agents/shay/portrait"

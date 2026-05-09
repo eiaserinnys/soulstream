@@ -277,10 +277,12 @@ class TestSendMessageToSession:
         assert result["ok"] is True
         assert result["detail"] == {"queue_position": 1}
 
+        # F-11A: caller_session_id 미명시 시 caller_info=None 명시 호출 (기존 동작 보존).
         mock_tm.add_intervention.assert_called_once_with(
             agent_session_id="sess-target-123",
             text="작업 완료됐습니다",
             user="agent",
+            caller_info=None,
         )
 
     async def test_error_on_exception(self):
@@ -306,6 +308,84 @@ class TestSendMessageToSession:
 
         call_kwargs = mock_tm.add_intervention.call_args.kwargs
         assert call_kwargs["user"] == "agent"
+
+    # ---------------------------------------------------------------------------
+    # F-11A: caller_session_id 명시 시 build_agent_caller_info forward
+    # ---------------------------------------------------------------------------
+
+    async def test_caller_session_id_builds_agent_caller_info(self):
+        """caller_session_id 명시 + caller_task가 registry에 있으면 v1 agent caller_info를
+        조립하여 add_intervention에 전달한다 (F-11A 핵심)."""
+        # caller task — profile_id 보유
+        caller_task = MagicMock()
+        caller_task.profile_id = "shay"
+
+        # caller profile — registry에 있음
+        caller_profile = MagicMock()
+        caller_profile.name = "Shay"
+        caller_profile.portrait_path = "/portraits/shay.png"
+
+        mock_registry = MagicMock()
+        mock_registry.get.return_value = caller_profile
+
+        mock_db = MagicMock()
+        mock_db.node_id = "eias-shopping"
+
+        mock_tm = MagicMock()
+        mock_tm._agent_registry = mock_registry
+        mock_tm._db = mock_db
+        mock_tm.get_task = AsyncMock(return_value=caller_task)
+        mock_tm.add_intervention = AsyncMock(return_value={"queue_position": 1})
+
+        fn = _unwrap(mcp_tools.send_message_to_session)
+        with patch("soul_server.cogito.mcp_session_mgmt.get_task_manager", return_value=mock_tm):
+            result = await fn(
+                target_session_id="sess-target",
+                message="이어서 진행해 주세요",
+                caller_session_id="sess-shay-001",
+            )
+
+        assert result["ok"] is True
+        call_kwargs = mock_tm.add_intervention.call_args.kwargs
+        ci = call_kwargs["caller_info"]
+        assert ci is not None
+        assert ci["source"] == "agent"
+        assert ci["agent_node"] == "eias-shopping"
+        assert ci["agent_id"] == "shay"
+        assert ci["agent_name"] == "Shay"
+        assert ci["display_name"] == "Shay"
+        assert ci["user_id"] == "shay"
+        assert ci["avatar_url"] == "/api/nodes/eias-shopping/agents/shay/portrait"
+
+    async def test_caller_session_id_with_missing_task_graceful(self):
+        """caller_session_id 명시되었으나 caller_task가 None이면 caller_info에 agent_node만
+        채우고 agent_id/agent_name은 None (F-11A graceful)."""
+        mock_db = MagicMock()
+        mock_db.node_id = "eias-shopping"
+
+        mock_tm = MagicMock()
+        mock_tm._agent_registry = MagicMock()
+        mock_tm._db = mock_db
+        mock_tm.get_task = AsyncMock(return_value=None)  # 세션 없음
+        mock_tm.add_intervention = AsyncMock(return_value={"queue_position": 1})
+
+        fn = _unwrap(mcp_tools.send_message_to_session)
+        with patch("soul_server.cogito.mcp_session_mgmt.get_task_manager", return_value=mock_tm):
+            await fn(
+                target_session_id="sess-target",
+                message="hi",
+                caller_session_id="sess-missing-caller",
+            )
+
+        ci = mock_tm.add_intervention.call_args.kwargs["caller_info"]
+        assert ci is not None
+        assert ci["source"] == "agent"
+        assert ci["agent_node"] == "eias-shopping"
+        assert ci["agent_id"] is None
+        assert ci["agent_name"] is None
+        assert ci["display_name"] is None
+        assert ci["user_id"] is None
+        assert ci["avatar_url"] is None
 
 
 # ---------------------------------------------------------------------------

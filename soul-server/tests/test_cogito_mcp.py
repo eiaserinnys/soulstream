@@ -791,10 +791,12 @@ class TestSendMessageToSession:
             result = await fn(target_session_id="sess-123", message="hello")
 
         assert result["ok"] is True
+        # F-11A: caller_session_id 미명시 시 caller_info=None 명시 호출 (시그니처 옵션 인자 default).
         mock_tm.add_intervention.assert_called_once_with(
             agent_session_id="sess-123",
             text="hello",
             user="agent",
+            caller_info=None,
         )
         mock_tm.executor.start_execution.assert_not_called()
 

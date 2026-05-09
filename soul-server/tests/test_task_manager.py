@@ -502,6 +502,60 @@ class TestFinalizeTask:
         assert solo_task is not None
         assert solo_task.intervention_queue.empty()
 
+    # ---------------------------------------------------------------------------
+    # F-11B: _notify_caller_completion이 caller_info를 박는다
+    # ---------------------------------------------------------------------------
+
+    async def test_finalize_caller_notification_includes_agent_caller_info(self, manager):
+        """완료 시 caller에게 들어가는 intervention의 caller_info가 자식 task의 agent로
+        조립된다 (F-11B 핵심). _agent_registry가 None이라도 agent_node·source는 채워진다."""
+        await manager.create_task(CreateTaskParams(
+            prompt="parent work", agent_session_id="sess-caller",
+        ))
+        await manager.create_task(CreateTaskParams(
+            prompt="sub work",
+            agent_session_id="sess-child",
+            caller_session_id="sess-caller",
+            profile_id="shay",
+        ))
+
+        await manager.finalize_task("sess-child", result="sub task done")
+
+        caller_task = manager._tasks.get("sess-caller")
+        assert caller_task is not None
+        iv = caller_task.intervention_queue.get_nowait()
+        assert iv["user"] == "agent"
+        ci = iv["caller_info"]
+        assert ci is not None
+        assert ci["source"] == "agent"
+        assert ci["agent_node"] == "test-node"
+        assert ci["agent_id"] == "shay"
+        # registry 없으면 agent_name·avatar_url None (graceful)
+        assert ci["agent_name"] is None
+        assert ci["avatar_url"] is None
+
+    async def test_finalize_caller_notification_graceful_no_profile_id(self, manager):
+        """자식 task의 profile_id가 None이면 caller_info의 agent_id/agent_name도 None
+        (F-11B graceful)."""
+        await manager.create_task(CreateTaskParams(
+            prompt="parent work", agent_session_id="sess-caller",
+        ))
+        await manager.create_task(CreateTaskParams(
+            prompt="sub work",
+            agent_session_id="sess-child",
+            caller_session_id="sess-caller",
+            # profile_id 미명시
+        ))
+
+        await manager.finalize_task("sess-child", result="done")
+
+        caller_task = manager._tasks.get("sess-caller")
+        iv = caller_task.intervention_queue.get_nowait()
+        ci = iv["caller_info"]
+        assert ci["source"] == "agent"
+        assert ci["agent_id"] is None
+        assert ci["agent_name"] is None
+
     async def test_finalize_caller_notification_does_not_deadlock(self, manager):
         """caller 세션 알림이 락 데드락을 일으키지 않는다 (타임아웃 내에 완료되어야 한다)."""
         import asyncio

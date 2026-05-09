@@ -69,12 +69,16 @@ describe("formatUserId", () => {
 });
 
 describe("getCallerSourceConfig", () => {
-  it("알려진 source 5종 매핑", () => {
+  it("알려진 source 6종 매핑", () => {
     expect(getCallerSourceConfig("slack")).toEqual(CALLER_SOURCE_CONFIG.slack);
     expect(getCallerSourceConfig("browser")).toEqual(CALLER_SOURCE_CONFIG.browser);
     expect(getCallerSourceConfig("soul-app")).toEqual(CALLER_SOURCE_CONFIG["soul-app"]);
     expect(getCallerSourceConfig("agent")).toEqual(CALLER_SOURCE_CONFIG.agent);
     expect(getCallerSourceConfig("api")).toEqual(CALLER_SOURCE_CONFIG.api);
+    // F-11F: system source 추가 — soulstream 서버 lifecycle 인터벤션
+    expect(getCallerSourceConfig("system")).toEqual(CALLER_SOURCE_CONFIG.system);
+    expect(CALLER_SOURCE_CONFIG.system.badge).toBe("⚙️");
+    expect(CALLER_SOURCE_CONFIG.system.fallbackIcon).toBe("⚙️");
   });
 
   it("알 수 없는 source는 fallback config", () => {
