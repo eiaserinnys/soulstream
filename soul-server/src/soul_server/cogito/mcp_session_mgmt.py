@@ -113,7 +113,11 @@ async def create_agent_session(
 
 
 @cogito_mcp.tool()
-async def send_message_to_session(target_session_id: str, message: str) -> dict:
+async def send_message_to_session(
+    target_session_id: str,
+    message: str,
+    caller_session_id: Optional[str] = None,
+) -> dict:
     """대상 세션에 메시지를 전달한다.
 
     내부적으로 task_manager.add_intervention()을 사용하며,
@@ -123,15 +127,38 @@ async def send_message_to_session(target_session_id: str, message: str) -> dict:
 
     로컬 세션 실패 시 _orch_base가 설정되어 있으면 오케스트레이터 경유 폴백을 시도한다.
 
+    caller_session_id가 지정되면 발신 세션의 agent 정보로 caller_info(통합 v1)를
+    조립하여 add_intervention/원격 폴백 양쪽에 전달한다 — create_agent_session과
+    정합 패턴 (design-principles §3 정본 하나, build_agent_caller_info 공유 + §9 대칭성).
+    F-11A fix(2026-05-09, atom F-11): 본 함수가 caller_info를 forward하지 않아 위임자
+    agent의 신원이 wire에서 사라지고 dashboard owner Google portrait로 fallback되던
+    결함을 닫는다.
+
     Returns:
         {"ok": True, "detail": ...} 또는 {"ok": False, "error": "..."}
     """
     task_manager = get_task_manager()
+
+    # caller_info 조립 — caller_session_id 미지정 시 None (기존 동작 보존)
+    caller_info: Optional[dict] = None
+    if caller_session_id:
+        caller_task = await task_manager.get_task(caller_session_id)
+        caller_profile = None
+        if caller_task and caller_task.profile_id and task_manager._agent_registry:
+            caller_profile = task_manager._agent_registry.get(caller_task.profile_id)
+        caller_info = build_agent_caller_info(
+            agent_node=task_manager._db.node_id,
+            agent_id=caller_task.profile_id if caller_task else None,
+            agent_name=caller_profile.name if caller_profile else None,
+            portrait_path=caller_profile.portrait_path if caller_profile else None,
+        )
+
     try:
         result = await task_manager.add_intervention(
             agent_session_id=target_session_id,
             text=message,
             user="agent",
+            caller_info=caller_info,
         )
         if result.get("auto_resumed"):
             await task_manager.executor.start_execution(
@@ -149,10 +176,13 @@ async def send_message_to_session(target_session_id: str, message: str) -> dict:
         if orch_base is None:
             return {"ok": False, "error": str(local_err)}
         try:
+            body: dict = {"text": message, "user": "agent"}
+            if caller_info:
+                body["caller_info"] = caller_info
             async with httpx.AsyncClient(timeout=10.0, headers=_get_orch_headers()) as client:
                 resp = await client.post(
                     f"{orch_base}/api/sessions/{target_session_id}/intervene",
-                    json={"text": message, "user": "agent"},
+                    json=body,
                 )
                 resp.raise_for_status()
                 return {"ok": True, "detail": resp.json()}

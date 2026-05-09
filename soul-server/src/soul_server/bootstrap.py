@@ -15,6 +15,8 @@ from typing import Optional
 
 from fastapi import FastAPI
 
+from soul_common.auth.caller_info import build_system_caller_info
+
 from soul_server.claude.agent_runner import ClaudeRunner
 from soul_server.config import Settings
 from soul_server.service import resource_manager
@@ -262,12 +264,21 @@ async def bootstrap_upstream(
     return upstream_adapter, upstream_task
 
 
-async def resume_shutdown_sessions(session_db, task_manager: TaskManager):
-    """이전 종료 시 저장된 세션을 재개한다."""
+async def resume_shutdown_sessions(
+    session_db, task_manager: TaskManager, settings: Settings
+):
+    """이전 종료 시 저장된 세션을 재개한다.
+
+    F-11D fix(2026-05-09, atom F-11): 서버 재시작 안내 인터벤션에 source="system"
+    caller_info를 박아 클라이언트가 시스템 발신을 정확히 식별하게 한다 (이전엔
+    caller_info=None → dashboard owner portrait fallback). settings.soulstream_node_id를
+    위해 시그니처에 settings 인자 추가 (호출자 bootstrap_lifespan.py:168 동시 갱신).
+    """
     shutdown_sessions = await session_db.get_shutdown_sessions()
     if not shutdown_sessions:
         return
 
+    system_caller_info = build_system_caller_info(node_id=settings.soulstream_node_id)
     try:
         for s in shutdown_sessions:
             try:
@@ -275,6 +286,7 @@ async def resume_shutdown_sessions(session_db, task_manager: TaskManager):
                     s["session_id"],
                     "소울스트림 서버 재시작이 완료되었습니다. 이전에 진행하던 작업을 재개해주세요.",
                     user="system",
+                    caller_info=system_caller_info,
                 )
                 if result.get("auto_resumed"):
                     await task_manager.executor.start_execution(

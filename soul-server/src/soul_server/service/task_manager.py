@@ -43,6 +43,7 @@ from soul_server.service.task_factory import CreateTaskParams, TaskFactory
 from soul_server.service.task_maintenance import TaskMaintenance
 from soul_server.service.cross_node_relay import relay_cross_node_intervention
 from soul_server.util.attachment_helpers import build_attachment_context_items
+from soul_common.auth.caller_info import build_agent_caller_info
 
 # Re-export for backward compatibility
 __all__ = [
@@ -437,14 +438,14 @@ class TaskManager:
         # 완료 보고 — add_intervention이 동일 락을 획득하므로 반드시 락 블록 바깥에서 실행
         if caller_session_id_to_notify:
             await self._notify_caller_completion(
-                agent_session_id, caller_session_id_to_notify, task_result, task_error
+                task, caller_session_id_to_notify, task_result, task_error
             )
 
         return task
 
     async def _notify_caller_completion(
         self,
-        agent_session_id: str,
+        completed_task: Task,
         caller_session_id: str,
         result_text: Optional[str],
         error_text: Optional[str],
@@ -456,7 +457,25 @@ class TaskManager:
 
         finalize_task()의 락 블록 바깥에서 호출되어야 한다
         (add_intervention이 동일 락을 획득하므로).
+
+        F-11B fix(2026-05-09, atom F-11): 발신자는 완료된 자식 task의 agent —
+        build_agent_caller_info(통합 v1) 정본 패턴으로 caller_info를 조립하여
+        자식 agent의 신원이 caller 세션 표시에 정확히 반영되게 한다 (이전엔 미박음 →
+        dashboard owner Google portrait fallback 결함).
         """
+        agent_session_id = completed_task.agent_session_id
+
+        # caller_info 조립 — 자식 task의 profile_id 기반 (create_agent_session·#15 helper 정합)
+        caller_profile = None
+        if completed_task.profile_id and self._agent_registry:
+            caller_profile = self._agent_registry.get(completed_task.profile_id)
+        caller_info = build_agent_caller_info(
+            agent_node=self._db.node_id,
+            agent_id=completed_task.profile_id,
+            agent_name=caller_profile.name if caller_profile else None,
+            portrait_path=caller_profile.portrait_path if caller_profile else None,
+        )
+
         if result_text:
             notify_text = f"✅ 에이전트 세션 완료 (ID: `{agent_session_id}`)\n\n{result_text}"
         else:
@@ -467,6 +486,7 @@ class TaskManager:
                 agent_session_id=caller_session_id,
                 text=notify_text,
                 user="agent",
+                caller_info=caller_info,
             )
             logger.info(
                 f"Completion notification sent to caller {caller_session_id} "
@@ -494,7 +514,9 @@ class TaskManager:
                 f"Local notification to caller {caller_session_id} failed: {local_err}",
                 exc_info=True,
             )
-            await relay_cross_node_intervention(caller_session_id, notify_text)
+            await relay_cross_node_intervention(
+                caller_session_id, notify_text, caller_info=caller_info
+            )
 
     # === 세션 조회 → get_session_query_service() 직접 사용 ===
     # (분리됨: get_running_tasks, get_all_sessions, list_sessions_summary, get_all_folders)

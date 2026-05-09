@@ -107,7 +107,13 @@ class TestGracefulShutdownActiveSessions:
         )
 
     async def test_intervention_sent_with_skip_resume(self, mock_session_db, mock_query_service):
-        """단일 활성 세션에 skip_resume=True로 add_intervention을 호출한다."""
+        """단일 활성 세션에 skip_resume=True + system caller_info로 add_intervention을 호출한다.
+
+        F-11D fix(2026-05-09, atom F-11): caller_info에 source="system" 박아 시스템 발신
+        식별자를 wire에 담는다.
+        """
+        from soul_server.main import settings as _main_settings
+
         app = make_mock_app()
         task1 = make_task("sess-1")
 
@@ -118,12 +124,21 @@ class TestGracefulShutdownActiveSessions:
 
         await graceful_shutdown(app, tm)
 
-        tm.add_intervention.assert_called_with(
+        tm.add_intervention.assert_called_once()
+        call = tm.add_intervention.call_args
+        assert call.args == (
             "sess-1",
             "소울스트림 서버가 재시작될 예정입니다. 현재 작업을 중단하고 대기해주세요.",
-            user="system",
-            skip_resume=True,
         )
+        assert call.kwargs["user"] == "system"
+        assert call.kwargs["skip_resume"] is True
+        ci = call.kwargs["caller_info"]
+        assert ci is not None
+        assert ci["source"] == "system"
+        assert ci["display_name"] == "Soulstream"
+        assert ci["agent_node"] == _main_settings.soulstream_node_id
+        assert ci["user_id"] is None
+        assert ci["avatar_url"] is None
 
     async def test_multiple_sessions_all_receive_intervention(self, mock_session_db, mock_query_service):
         """여러 활성 세션 모두에 intervention이 전송된다."""

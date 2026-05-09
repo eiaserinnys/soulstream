@@ -14,13 +14,21 @@ export interface CallerSourceConfig {
   fallbackIcon: string;
 }
 
-/** source 값별 표시 설정. 통합 스키마 v1의 5종 source(slack/browser/soul-app/agent/api). */
+/**
+ * source 값별 표시 설정. 통합 스키마 v1의 6종 source.
+ *
+ * F-11 (2026-05-09): 'system' 추가 — soulstream 서버 lifecycle 인터벤션 (재시작 예고/완료
+ * 안내). avatar_url=null로 보내지므로 ⚙️ fallback이 곧 시각적 식별자 역할을 한다 (web은
+ * /system-portrait.png 정적 자원으로 InterventionMessage가 별도 분기, 본 config는 detail
+ * 패널·뱃지용 fallback).
+ */
 export const CALLER_SOURCE_CONFIG: Record<string, CallerSourceConfig> = {
   slack: { badge: "💬", fallbackIcon: "💬" },
   browser: { badge: "🌐", fallbackIcon: "👤" },
   "soul-app": { badge: "📱", fallbackIcon: "👤" },
   agent: { badge: "🤖", fallbackIcon: "🤖" },
   api: { badge: "⚙️", fallbackIcon: "⚙️" },
+  system: { badge: "⚙️", fallbackIcon: "⚙️" },
 };
 
 /** 알 수 없는 source는 중립 fallback config 반환. */

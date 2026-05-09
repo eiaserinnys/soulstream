@@ -32,6 +32,7 @@ from soul_server.cogito.mcp_tools import cogito_mcp, cogito_api_router
 from soul_server.cogito.reflector_setup import reflect as _soulstream_reflector
 from soul_server.config import get_settings, setup_logging
 from soul_server.bootstrap_lifespan import startup_lifespan, shutdown_lifespan
+from soul_common.auth.caller_info import build_system_caller_info
 
 # 설정 로드
 settings = get_settings()
@@ -75,7 +76,11 @@ async def graceful_shutdown(app: FastAPI, task_manager, timeout: float = 50.0):
         logger.info(f"Graceful shutdown: {len(active_ids)}개 활성 세션 플래그 설정")
 
         # 각 세션에 종료 예고 intervention 전송
+        # F-11D fix(2026-05-09, atom F-11): caller_info에 source="system" 박아 클라이언트가
+        # 시스템 발신을 정확히 식별·표시하게 한다 (이전엔 caller_info=None → dashboard owner
+        # portrait fallback 결함). avatar_url=None — 클라이언트가 자기 정적 자산으로 표시.
         message = "소울스트림 서버가 재시작될 예정입니다. 현재 작업을 중단하고 대기해주세요."
+        system_caller_info = build_system_caller_info(node_id=settings.soulstream_node_id)
         for s in active_sessions:
             try:
                 await task_manager.add_intervention(
@@ -83,6 +88,7 @@ async def graceful_shutdown(app: FastAPI, task_manager, timeout: float = 50.0):
                     message,
                     user="system",
                     skip_resume=True,
+                    caller_info=system_caller_info,
                 )
             except Exception as e:
                 logger.warning(f"개입 전송 실패 ({s['agent_session_id']}): {e}")

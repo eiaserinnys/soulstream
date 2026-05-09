@@ -108,7 +108,11 @@ export interface ContextItem {
  * 우선순위: 메시지 단위 > 세션 단위 > 노드 사용자 fallback (UserMessage 기준).
  */
 export interface CallerInfo {
-  source: "browser" | "slack" | "agent" | "soul-app" | "api";
+  /**
+   * F-11 (2026-05-09): 'system' 추가 — soulstream 서버 자신이 발신한 lifecycle
+   * 인터벤션(graceful_shutdown 종료 예고, resume_shutdown_sessions 재개 안내)을 표시한다.
+   */
+  source: "browser" | "slack" | "agent" | "soul-app" | "api" | "system";
   display_name?: string;
   user_id?: string;
   avatar_url?: string;

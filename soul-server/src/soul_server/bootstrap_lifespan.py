@@ -165,7 +165,8 @@ async def startup_lifespan(
     logger.info("  Catalog API registered")
 
     # 11. 이전 종료 세션 재개
-    await resume_shutdown_sessions(session_db, task_manager)
+    # F-11D fix: settings 인자 추가 (system caller_info 조립용 — soulstream_node_id 필요)
+    await resume_shutdown_sessions(session_db, task_manager, settings)
 
     # 12. LLM Proxy
     llm_executor = await bootstrap_llm(
