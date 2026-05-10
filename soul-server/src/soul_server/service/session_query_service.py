@@ -107,10 +107,17 @@ def _build_session_dict(
     if caller_info:
         display_name = caller_info.get("display_name")
         avatar_url = caller_info.get("avatar_url")
+        # R-2 fix(2026-05-10): caller_info.source를 entry에 promote — _query.py가
+        # apply_dash_user_profile_enrichment(caller_source=...)로 전달하여 정체성
+        # 명시 source(agent/system 등)가 settings.dash_user_*로 덮이지 않게 한다.
+        # 키 이름은 orch SSE wire의 top-level caller_source와 동일 (atom b558ca3b §3 정본 하나).
+        source = caller_info.get("source")
         if isinstance(display_name, str) and display_name:
             info["userName"] = display_name
         if isinstance(avatar_url, str) and avatar_url:
             info["userPortraitUrl"] = avatar_url
+        if isinstance(source, str) and source:
+            info["caller_source"] = source
 
     return info
 

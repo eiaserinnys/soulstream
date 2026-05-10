@@ -21,11 +21,19 @@ def _build_user_portrait_proxy_url(node_id: str) -> str:
     return f"/api/nodes/{node_id}/user/portrait"
 
 
+#: caller_info.source 중 *발신자 정체성을 자기 자신으로 명시한* source 집합.
+#: 이 source의 caller_info는 신원 필드(display_name/avatar_url)가 None이어도
+#: 노드 owner 프로필로 덮어쓰지 않는다 — fallback은 browser/api/None 한정.
+#: atom ed3a216d (caller_info 통합 스키마 v1) 정합.
+_IDENTITY_BEARING_SOURCES = frozenset({"agent", "system", "slack", "soul-app"})
+
+
 def apply_user_profile_enrichment(
     payload: dict,
     *,
     node_id: Optional[str],
     node_manager: Optional[NodeManager],
+    caller_source: Optional[str] = None,
     name_key: str = "userName",
     portrait_key: str = "userPortraitUrl",
 ) -> None:
@@ -34,7 +42,13 @@ def apply_user_profile_enrichment(
     R-1 fix(2026-05-08): catalog REST와 SSE wire 3변형이 user 프로필 채움 정책을
     공유하도록 추출된 정본 헬퍼. 정본 둘 안티패턴(atom d7a1ad86) 회피.
 
+    R-2 fix(2026-05-10): caller_source가 정체성 명시 source(agent/system/slack/soul-app)면
+    신원 필드 값에 무관하게 즉시 NOOP. 빈 신원 caller_info가 dashboard owner Google
+    portrait로 덮이던 G-2·G-3 회로(atom 0499ee7b·0d366900)를 닫는다. browser/api/None만
+    owner fallback 발동.
+
     정책 — caller_info 정체성 우선, mix-fallback 금지(atom ed3a216d v1):
+    - caller_source ∈ {agent, system, slack, soul-app} → NOOP (R-2)
     - payload[name_key] *또는* payload[portrait_key] truthy → NOOP
       (정체성 부분이라도 있으면 보존 — name만 채워졌거나 portrait만 채워졌어도 노드 정보로 덮지 않음)
     - node_id 없음 또는 node_manager None → NOOP (graceful)
@@ -45,6 +59,9 @@ def apply_user_profile_enrichment(
     - catalog.py:get_catalog (REST /api/catalog sessionList)
     - main.py:_on_node_change (SSE session_created · session_updated wire)
     """
+    # R-2: 정체성 명시 source는 owner로 덮지 않음.
+    if caller_source in _IDENTITY_BEARING_SOURCES:
+        return
     if (
         payload.get(name_key)
         or payload.get(portrait_key)
@@ -129,8 +146,13 @@ def _session_to_response(
             result["userPortraitUrl"] = avatar_url
     # caller_info 부재 또는 부분 정보 시 노드 fallback (헬퍼가 mix-fallback 금지 정책 적용 —
     # userName이 truthy면 헬퍼 NOOP하여 caller_info 정체성 보존).
+    # R-2 fix: caller_info.source를 헬퍼에 전달 — 정체성 명시 source(agent/system 등)는
+    # 신원 필드 None이라도 owner로 덮지 않는다 (atom 0499ee7b·0d366900).
     apply_user_profile_enrichment(
-        result, node_id=node_id, node_manager=node_manager
+        result,
+        node_id=node_id,
+        node_manager=node_manager,
+        caller_source=caller_info.get("source") if caller_info else None,
     )
 
     return result

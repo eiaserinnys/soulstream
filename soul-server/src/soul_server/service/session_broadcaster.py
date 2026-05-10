@@ -54,6 +54,11 @@ class SessionBroadcaster(BaseSessionBroadcaster):
             folder_id: 배정된 폴더 ID. None이면 미분류 세션.
         """
         agent_name, agent_portrait_url = self._resolve_agent_info(task)
+        # R-2 fix(2026-05-10): emit_session_updated/phase와 §9 대칭 — top-level
+        # caller_source를 wire에 박는다. orch `_on_node_change`가 이 키를 읽어
+        # `apply_user_profile_enrichment`에 forward하여 agent/system 등 정체성
+        # 명시 source 세션이 dashboard owner로 덮이지 않게 한다 (atom 0499ee7b).
+        # wire 키 정본: atom b558ca3b.
         event = {
             "type": "session_created",
             "session": task.to_session_info(
@@ -61,6 +66,7 @@ class SessionBroadcaster(BaseSessionBroadcaster):
                 agent_portrait_url=agent_portrait_url,
             ),
             "folder_id": folder_id,
+            "caller_source": (task.caller_info or {}).get("source"),
         }
         return await self.broadcast(event)
 

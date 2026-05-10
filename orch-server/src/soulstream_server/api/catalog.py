@@ -131,8 +131,13 @@ def create_catalog_router(
                 "userName": display_name if isinstance(display_name, str) and display_name else None,
                 "userPortraitUrl": avatar_url if isinstance(avatar_url, str) and avatar_url else None,
             }
+            # R-2 fix: caller_info.source를 헬퍼에 전달 — 정체성 명시 source
+            # (agent/system 등)는 신원 필드 None이라도 노드 owner로 덮지 않는다.
             apply_user_profile_enrichment(
-                entry, node_id=node_id, node_manager=node_manager
+                entry,
+                node_id=node_id,
+                node_manager=node_manager,
+                caller_source=caller_info.get("source"),
             )
             session_list.append(entry)
 

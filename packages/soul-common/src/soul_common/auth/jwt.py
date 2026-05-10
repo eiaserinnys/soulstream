@@ -28,13 +28,19 @@ def generate_token(user: dict, secret: str, expires_days: int = JWT_EXPIRES_DAYS
     Returns:
         JWT 문자열
     """
+    # R-2 fix(2026-05-10): picture는 truthy일 때만 payload에 박는다 — 빈 문자열을
+    # 키로 영속하면 build_browser_caller_info의 truthy 필터(caller_info.py:92)가
+    # 키 자체를 떨궈 wire에 avatar_url 키 부재로 흘러간다. 키 부재 vs 빈 문자열을
+    # 의미 분리하여 G-1 회로(atom bfdf8f2f)를 닫는다.
     payload = {
         "sub": user["email"],
         "email": user["email"],
         "name": user.get("name", ""),
-        "picture": user.get("picture", ""),
         "exp": datetime.now(timezone.utc) + timedelta(days=expires_days),
     }
+    picture = user.get("picture")
+    if picture:
+        payload["picture"] = picture
     return pyjwt.encode(payload, secret, algorithm=JWT_ALGORITHM)
 
 

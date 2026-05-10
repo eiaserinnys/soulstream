@@ -91,8 +91,13 @@ async def _on_node_change(
                 }
             # R-1 fix: user 프로필 enrichment (catalog REST와 정합).
             # session_info[userName]이 truthy면 헬퍼 NOOP — caller_info 정체성 보존.
+            # R-2 fix: emit_session_created가 R-2부터 top-level caller_source를 wire에 박는다
+            # (atom b558ca3b). 헬퍼에 forward — 정체성 명시 source는 owner 덮어쓰기 차단.
             apply_user_profile_enrichment(
-                session_info, node_id=node_id, node_manager=node_manager
+                session_info,
+                node_id=node_id,
+                node_manager=node_manager,
+                caller_source=(data or {}).get("caller_source"),
             )
         broadcast_data = {
             "type": "session_created",
@@ -122,8 +127,13 @@ async def _on_node_change(
         # NodeConnection._on_session_updated → 같은 분기. 한 곳 fix로 P4·P5 모두 닫힘.
         # spread **(data or {}) 후 호출 — data.userName(soul-server task가 caller_info에서 추출)이
         # truthy면 헬퍼 NOOP (mix-fallback 금지 보존).
+        # R-2 fix: spread된 broadcast_data.caller_source(emit_session_updated/phase가 박음)를
+        # 헬퍼에 forward — 정체성 명시 source는 owner 덮어쓰기 차단.
         apply_user_profile_enrichment(
-            broadcast_data, node_id=node_id, node_manager=node_manager
+            broadcast_data,
+            node_id=node_id,
+            node_manager=node_manager,
+            caller_source=broadcast_data.get("caller_source"),
         )
         await broadcaster.broadcast(broadcast_data)
     elif event_type == "node_session_session_deleted":

@@ -37,11 +37,16 @@ export async function submitIntervention(
 ): Promise<SubmitInterventionResult> {
   const { sessionKey, text, attachmentPaths, queryClient, signal } = ctx;
 
+  // R-2 fix(2026-05-10): `credentials: "include"`를 명시한다. 동 리포의 다른
+  // dashboard fetch(예: useMessageHistoryBuffer.ts:129,187)는 모두 명시하고 있으며,
+  // cross-subdomain 배포 시 cookie(JWT) 미전송으로 caller_info 신원이 사라지는
+  // G-1 회로(atom bfdf8f2f)를 §9 대칭성으로 닫는다.
   const response = await fetch(
     `/api/sessions/${encodeURIComponent(sessionKey)}/intervene`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({
         text,
         user: "dashboard",
