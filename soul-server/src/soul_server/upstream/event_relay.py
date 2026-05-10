@@ -123,6 +123,13 @@ class EventRelay:
             }
             if folder_id is not None:
                 msg["folderId"] = folder_id
+            # R-2 fix(2026-05-10): top-level caller_source를 forward한다 — session_updated/
+            # session_deleted 분기와 §9 대칭. emit_session_created(session_broadcaster.py:69)가
+            # 박은 키를 orch `_on_node_change`(main.py:100)가 `apply_user_profile_enrichment`에
+            # forward하여 G-2 SSE 경로(atom 0499ee7b)를 닫는다. 누락 시 agent caller_info를
+            # 가진 새 세션이 dashboard owner Google 프로필로 덮어쓰임 (라이브 회로 잔존).
+            if "caller_source" in event:
+                msg["caller_source"] = event["caller_source"]
             await self._send(msg)
         elif event_type == "session_updated":
             await self._send({

@@ -641,6 +641,69 @@ class TestBroadcastSessionChanges:
         assert sent["session"]["agent_session_id"] == "new-session-1"
 
     @pytest.mark.asyncio
+    async def test_forwards_session_created_with_caller_source(self):
+        """R-2 fix(2026-05-10) — session_created top-level caller_source 전달.
+
+        broadcaster `emit_session_created`가 박은 `caller_source` 키(atom b558ca3b)가
+        relay msg에 포함되어 orch `_on_node_change`에 도달해야 한다. 누락 시 R-2
+        enrichment 헬퍼 NOOP 게이트가 우회되어 agent 위임 세션이 dashboard owner
+        Google 프로필로 덮어쓰임 (G-2 SSE 회로, atom 0499ee7b).
+        """
+        adapter = _make_adapter()
+        adapter._ws = MagicMock()
+        adapter._ws.closed = False
+        adapter._ws.send_json = AsyncMock()
+
+        await adapter._relay._dispatch_broadcast_event({
+            "type": "session_created",
+            "session": {
+                "agent_session_id": "new-session-r2",
+                "status": "running",
+            },
+            "folder_id": "folder-1",
+            "caller_source": "agent",
+        })
+
+        sent = adapter._ws.send_json.call_args.args[0]
+        assert sent["type"] == EVT_SESSION_CREATED
+        assert sent["caller_source"] == "agent"
+        assert sent["folderId"] == "folder-1"
+
+    @pytest.mark.asyncio
+    async def test_forwards_session_created_caller_source_none_preserved(self):
+        """caller_source=None인 broadcaster event도 키로 forward (wire 일관성)."""
+        adapter = _make_adapter()
+        adapter._ws = MagicMock()
+        adapter._ws.closed = False
+        adapter._ws.send_json = AsyncMock()
+
+        await adapter._relay._dispatch_broadcast_event({
+            "type": "session_created",
+            "session": {"agent_session_id": "s-none"},
+            "caller_source": None,
+        })
+
+        sent = adapter._ws.send_json.call_args.args[0]
+        assert "caller_source" in sent
+        assert sent["caller_source"] is None
+
+    @pytest.mark.asyncio
+    async def test_forwards_session_created_without_caller_source_key(self):
+        """legacy broadcaster event(caller_source 키 부재)는 msg에도 키 부재 — 회귀 보존."""
+        adapter = _make_adapter()
+        adapter._ws = MagicMock()
+        adapter._ws.closed = False
+        adapter._ws.send_json = AsyncMock()
+
+        await adapter._relay._dispatch_broadcast_event({
+            "type": "session_created",
+            "session": {"agent_session_id": "s-legacy"},
+        })
+
+        sent = adapter._ws.send_json.call_args.args[0]
+        assert "caller_source" not in sent
+
+    @pytest.mark.asyncio
     async def test_forwards_session_updated(self):
         """session_updated 이벤트를 그대로 전달."""
         adapter = _make_adapter()
