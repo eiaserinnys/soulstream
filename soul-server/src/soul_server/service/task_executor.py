@@ -154,6 +154,12 @@ class TaskExecutor:
                     "text": task.prompt,
                     "context": ctx.combined_context_items,
                 }
+                # R-2 invariant(2026-05-10): task.caller_info는 None 또는 *정체성을 가진*
+                # dict 둘 중 하나만이어야 한다. Fix A·D 후 빈 dict({})는 발생하지 않아야 한다:
+                #   - 정상 진입 시 build_*_caller_info 헬퍼가 최소 source는 박는다.
+                #   - resume 시 task_factory._has_identity 가드(R-2)가 빈 신원 덮어쓰기 차단.
+                # 빈 dict인 경우 본 가드(truthy 검사)가 wire에서 누락시키므로 G-4의 안전망 —
+                # 정상 흐름에서는 *발생하면 안 됨* (atom 7583fabd).
                 if task.caller_info:
                     user_msg_event["caller_info"] = task.caller_info
                 if task.attachment_paths:

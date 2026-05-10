@@ -55,7 +55,13 @@ class TestJwtUtils:
         assert result is None
 
     def test_generate_token_minimal_user(self):
-        """최소 필드(email만)로 토큰 생성."""
+        """최소 필드(email만)로 토큰 생성.
+
+        R-2 fix(2026-05-10): picture가 user dict에 없거나 빈 문자열이면 JWT payload에
+        키 자체가 박히지 않는다 (G-1 fix, atom bfdf8f2f). 키 부재 vs 빈 문자열을
+        의미 분리하여 build_browser_caller_info의 truthy 필터에서 키 누락으로 흘러가던
+        결함을 닫는다.
+        """
         user = {"email": "min@example.com"}
         secret = "test-secret"
 
@@ -64,7 +70,8 @@ class TestJwtUtils:
 
         assert payload["email"] == "min@example.com"
         assert payload["name"] == ""
-        assert payload["picture"] == ""
+        # R-2: picture는 truthy일 때만 박히므로 키 자체가 없어야 한다.
+        assert "picture" not in payload
 
 
 # === Auth Routes 테스트 ===

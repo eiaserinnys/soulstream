@@ -49,10 +49,14 @@ async def api_get_sessions(
     user_portrait_url = "/api/dashboard/portrait/user" if settings.dash_user_portrait else None
     sessions_with_user = [dict(s) for s in sessions]
     for entry in sessions_with_user:
+        # R-2 fix: entry["caller_source"]는 _build_session_dict이 caller_info에서 promote.
+        # 정체성 명시 source(agent/system/slack/soul-app)면 헬퍼가 즉시 NOOP하여
+        # settings.dash_user_*로 덮지 않는다 (atom 0499ee7b §9 대칭).
         apply_dash_user_profile_enrichment(
             entry,
             user_name=user_name,
             user_portrait_url=user_portrait_url,
+            caller_source=entry.get("caller_source"),
         )
     return {"sessions": sessions_with_user, "total": total}
 

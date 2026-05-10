@@ -119,3 +119,72 @@ class TestApplyDashUserProfileEnrichment:
         )
         assert result is None
         assert payload["userName"] == "Alice"
+
+
+class TestCallerSourceIdentityNoop:
+    """R-2 fix(2026-05-10): caller_source 분기 매트릭스.
+
+    정체성 명시 source(agent/system/slack/soul-app)는 신원 필드 None이어도
+    settings.dash_user_*로 덮지 않는다 (atom 0499ee7b §9 대칭, orch
+    `_IDENTITY_BEARING_SOURCES`와 동일 집합).
+    """
+
+    @pytest.mark.parametrize(
+        "source",
+        ["agent", "system", "slack", "soul-app"],
+    )
+    def test_identity_bearing_source_noop(self, source):
+        """정체성 명시 source — 신원 None이어도 settings로 덮지 않음."""
+        payload = {"userName": None, "userPortraitUrl": None}
+        apply_dash_user_profile_enrichment(
+            payload,
+            user_name="dash-default-name",
+            user_portrait_url="/api/dashboard/portrait/user",
+            caller_source=source,
+        )
+        assert payload["userName"] is None
+        assert payload["userPortraitUrl"] is None
+
+    def test_browser_source_empty_identity_falls_back(self):
+        """browser source + 신원 None → settings fallback 발동 (의도된 owner 채움)."""
+        payload = {"userName": None, "userPortraitUrl": None}
+        apply_dash_user_profile_enrichment(
+            payload,
+            user_name="dash-default",
+            user_portrait_url="/portrait",
+            caller_source="browser",
+        )
+        assert payload["userName"] == "dash-default"
+        assert payload["userPortraitUrl"] == "/portrait"
+
+    def test_browser_source_truthy_identity_preserved(self):
+        """browser source + 신원 truthy → 기존 truthy 가드로 NOOP (정체성 보존)."""
+        payload = {"userName": "RealUser", "userPortraitUrl": "/x"}
+        apply_dash_user_profile_enrichment(
+            payload,
+            user_name="dash-default",
+            user_portrait_url="/portrait",
+            caller_source="browser",
+        )
+        assert payload["userName"] == "RealUser"
+
+    def test_api_source_falls_back(self):
+        """api source + 신원 None → settings fallback (browser와 같은 분류)."""
+        payload = {"userName": None, "userPortraitUrl": None}
+        apply_dash_user_profile_enrichment(
+            payload,
+            user_name="dash-default",
+            user_portrait_url="/portrait",
+            caller_source="api",
+        )
+        assert payload["userName"] == "dash-default"
+
+    def test_none_caller_source_falls_back(self):
+        """caller_source 인자 미지정(None) → 기존 R-3 동작 (settings fallback)."""
+        payload = {"userName": None, "userPortraitUrl": None}
+        apply_dash_user_profile_enrichment(
+            payload,
+            user_name="dash-default",
+            user_portrait_url="/portrait",
+        )
+        assert payload["userName"] == "dash-default"

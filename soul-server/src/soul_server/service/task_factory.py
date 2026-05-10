@@ -28,6 +28,30 @@ from soul_server.service.session_eviction_manager import SessionEvictionManager
 logger = logging.getLogger(__name__)
 
 
+#: caller_info.source 중 *발신자 정체성을 자기 자신으로 명시한* source 집합.
+#: 이 source의 caller_info는 신원 필드(display_name/avatar_url)가 비어 있어도
+#: `_has_identity`가 True를 반환하여 정체성을 보존한다. orch/soul-server
+#: enrichment 헬퍼의 `_IDENTITY_BEARING_SOURCES`와 §9 대칭.
+_IDENTITY_BEARING_SOURCES = frozenset({"agent", "system", "slack", "soul-app"})
+
+
+def _has_identity(caller_info: dict) -> bool:
+    """caller_info에 *덮어쓸 가치 있는 정체성*이 있는지.
+
+    R-2 fix(2026-05-10): resume 시 빈 신원 caller_info(예: 인증 안 된 browser
+    `{source: 'browser', ip: ...}`)가 이전의 정상 caller_info를 덮어쓰던 G-3
+    회로(atom 0d366900)를 닫는다. design-principles §3 정본 보존.
+
+    정체성 명시 source(agent/system/slack/soul-app)는 신원 필드가 비어도 True —
+    enrichment 헬퍼의 NOOP 정책과 §9 대칭. browser/api/None은 신원 필드(display_name
+    또는 avatar_url) truthy일 때만 True.
+    """
+    source = caller_info.get("source")
+    if source in _IDENTITY_BEARING_SOURCES:
+        return True
+    return bool(caller_info.get("display_name") or caller_info.get("avatar_url"))
+
+
 @dataclass(frozen=True)
 class CreateTaskParams:
     """create_task의 전 인자를 응집하는 불변 파라미터.
@@ -196,7 +220,10 @@ class TaskFactory:
         # (in-memory 보존 시) 또는 None을 (eviction-reload 시) 사용해 결함 발생.
         # params.caller_info가 None이면 기존 task.caller_info 보존 (graceful — 외부
         # 호출자가 명시적으로 의도 표명한 경우만 덮어씀).
-        if params.caller_info is not None:
+        # R-2 fix(2026-05-10): 빈 신원 dict(예: 인증 안 된 browser `{source: 'browser', ip: ...}`)가
+        # 이전의 정상 caller_info를 덮어쓰지 않는다. _has_identity가 정체성 명시 source 또는
+        # display_name/avatar_url truthy일 때만 갱신 (atom 0d366900, §3).
+        if params.caller_info is not None and _has_identity(params.caller_info):
             task.caller_info = params.caller_info
 
         self._eviction_manager.unregister(task.agent_session_id)

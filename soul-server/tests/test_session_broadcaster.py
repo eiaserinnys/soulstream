@@ -327,7 +327,10 @@ class TestBroadcasterWireContract:
     }
 
     # session_created wire — task.to_session_info() 결과가 'session' 키에 들어간다.
-    EXPECTED_CREATED_KEYS = {"type", "session", "folder_id"}
+    # R-2 fix(2026-05-10): top-level caller_source 추가 — emit_session_updated/phase와
+    # §9 대칭 (atom b558ca3b). orch _on_node_change가 헬퍼에 forward하여 정체성 명시
+    # source의 owner 덮어쓰기 차단 (atom 0499ee7b).
+    EXPECTED_CREATED_KEYS = {"type", "session", "folder_id", "caller_source"}
 
     # session_message_updated wire — type='session_updated'이지만 emit_session_updated와
     # 키 셋이 다름. last_message를 포함하고 last_progress_text/last_assistant_text 미포함.
