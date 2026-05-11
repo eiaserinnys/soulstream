@@ -21,7 +21,7 @@ from soul_server.service.task_models import (
     NodeMismatchError,
     generate_agent_session_id,
 )
-from soul_common.auth.caller_info import IDENTITY_BEARING_SOURCES
+from soul_common.auth.caller_info import IDENTITY_BEARING_SOURCES, has_caller_identity
 from soul_server.service.postgres_session_db import PostgresSessionDB
 from soul_server.service.session_broadcaster import get_session_broadcaster
 from soul_server.service.session_eviction_manager import SessionEvictionManager
@@ -29,26 +29,22 @@ from soul_server.service.session_eviction_manager import SessionEvictionManager
 logger = logging.getLogger(__name__)
 
 
-def _has_identity(caller_info: dict) -> bool:
-    """caller_info에 *덮어쓸 가치 있는 정체성*이 있는지.
-
-    R-2 fix(2026-05-10): resume 시 빈 신원 caller_info(예: 인증 안 된 browser
-    `{source: 'browser', ip: ...}`)가 이전의 정상 caller_info를 덮어쓰던 G-3
-    회로(atom 0d366900)를 닫는다. design-principles §3 정본 보존.
-
-    R-4 fix(2026-05-11, atom G-13): IDENTITY_BEARING_SOURCES를 soul_common 정본으로
-    추출. 3 위치(task_factory + dashboard/user_profile + orch session_serializer)가
-    단일 import — 사본 분산 제거. 봇/llm source도 명시 포함 (우연 정합 의존 제거,
-    §4 명시적 실패).
-
-    정체성 명시 source(IDENTITY_BEARING_SOURCES 7 원소)는 신원 필드가 비어도 True —
-    enrichment 헬퍼의 NOOP 정책과 §9 대칭. 그 외 source는 신원 필드(display_name
-    또는 avatar_url) truthy일 때만 True.
-    """
-    source = caller_info.get("source")
-    if source in IDENTITY_BEARING_SOURCES:
-        return True
-    return bool(caller_info.get("display_name") or caller_info.get("avatar_url"))
+# R-2 fix(2026-05-10): resume 시 빈 신원 caller_info(예: 인증 안 된 browser
+# `{source: 'browser', ip: ...}`)가 이전의 정상 caller_info를 덮어쓰던 G-3 회로(atom 0d366900)를
+# 닫는 정체성 가드. design-principles §3 정본 보존.
+#
+# R-4 fix(2026-05-11, atom G-13): IDENTITY_BEARING_SOURCES를 soul_common 정본으로 추출.
+# 3 위치(task_factory + dashboard/user_profile + orch session_serializer)가 단일 import.
+#
+# R-6 fix(2026-05-11, atom G-20): 본 함수 자체를 `soul_common.auth.caller_info.has_caller_identity`로
+# 추출 — `extract_caller_info_from_metadata`가 *마지막 신원 박힌 entry* 추출에 동일 로직을 사용해야
+# §3 정본 하나로 합쳤다. 본 alias는 backward-compat을 위해 유지 — 같은 function reference라
+# function identity check 통과 (R-5 plugin_sdk re-export 옵션 A 패턴 §9 대칭).
+#
+# 정체성 명시 source(IDENTITY_BEARING_SOURCES 7 원소)는 신원 필드가 비어도 True —
+# enrichment 헬퍼의 NOOP 정책과 §9 대칭. 그 외 source는 신원 필드(display_name 또는 avatar_url)
+# truthy일 때만 True.
+_has_identity = has_caller_identity
 
 
 @dataclass(frozen=True)
@@ -222,8 +218,17 @@ class TaskFactory:
         # R-2 fix(2026-05-10): 빈 신원 dict(예: 인증 안 된 browser `{source: 'browser', ip: ...}`)가
         # 이전의 정상 caller_info를 덮어쓰지 않는다. _has_identity가 정체성 명시 source 또는
         # display_name/avatar_url truthy일 때만 갱신 (atom 0d366900, §3).
+        # R-6 fix(2026-05-11, atom G-20): task.caller_info 갱신과 *함께* DB metadata에도 entry
+        # append — append-only history ledger 패턴. `_register_new_session_async`(L289-291)와
+        # §9 대칭. 인메모리만 갱신하던 이전 동작은 REST 응답(DB-derived)과 SSE wire(in-memory-derived)
+        # 시간 축 비대칭 회로(sess-20260419114049-8cf09982 라이브 재현)의 근본 원인.
+        # `extract_caller_info_from_metadata`(soul_common.auth.caller_info)가 *마지막 신원 박힌
+        # entry* 우선 반환으로 갱신되어 본 append가 현재 caller로 즉시 인식된다.
         if params.caller_info is not None and _has_identity(params.caller_info):
             task.caller_info = params.caller_info
+            entry = {"type": "caller_info", "value": params.caller_info}
+            task.metadata.append(entry)
+            await self._db.append_metadata(task.agent_session_id, entry)
 
         self._eviction_manager.unregister(task.agent_session_id)
 
