@@ -295,6 +295,6 @@ PREVIEW_FIELD_MAP: dict[str, str] = {
     "text_delta":    "text",
     "result":        "output",
     "complete":      "result",
-    "error":         "error",
+    "error":         "message",
     "away_summary":  "content",
 }

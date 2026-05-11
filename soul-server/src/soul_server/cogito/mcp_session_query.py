@@ -12,8 +12,15 @@ from pathlib import Path
 from soul_server.cogito.mcp_tools import cogito_mcp
 from soul_server.service.session_query_service import get_session_query_service
 from soul_server.service.postgres_session_db import get_session_db
+from soul_server.service.task_models import PREVIEW_FIELD_MAP
 
 logger = logging.getLogger(__name__)
+
+# Turn-final 의미를 가진 이벤트 타입. 같은 turn에 result(먼저) + complete/error(나중) 순서로
+# 도착하며, 나중 이벤트가 preview를 덮어쓴다. 본문 키는 PREVIEW_FIELD_MAP 정본에서 lookup.
+# - 성공 turn: result + complete
+# - 에러 turn: result + error (complete 미발신)
+TURN_FINAL_TYPES: tuple[str, ...] = ("result", "complete", "error")
 
 
 # ---------------------------------------------------------------------------
@@ -78,8 +85,13 @@ def _assemble_turns(events: list[dict], max_response_chars: int) -> list[dict]:
                 "tools_used": {},
             }
 
-        elif event_type == "result" and current_turn is not None:
-            text = ev.get("result", "")
+        elif event_type in TURN_FINAL_TYPES and current_turn is not None:
+            # 본문 키는 PREVIEW_FIELD_MAP 정본에서 lookup — design-principles §3 (정본 하나).
+            # 같은 turn에 result + complete/error 순서로 도착하며 나중 이벤트가 덮어쓴다.
+            field = PREVIEW_FIELD_MAP.get(event_type)
+            if not field:
+                continue
+            text = ev.get(field, "")
             if isinstance(text, list):
                 text = " ".join(
                     c.get("text", "") for c in text if isinstance(c, dict)
@@ -357,7 +369,10 @@ async def get_session_summary(
 
     total_events = await db.count_events(session_id)
 
-    relevant_types = ["user_message", "result", "context_usage", "tool_start"]
+    relevant_types = [
+        "user_message", "context_usage", "tool_start",
+        *TURN_FINAL_TYPES,
+    ]
     events = await db.read_events(
         session_id, after_id=0, event_types=relevant_types,
     )
