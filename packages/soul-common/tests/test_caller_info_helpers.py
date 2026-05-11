@@ -9,6 +9,8 @@ R-3 (2026-05-11, atom G-5): B-1 + system 통합 — 빌더가 wire에 server-rel
 build_bot_caller_info 신설 — channel_observer / trello_watcher 봇 source 정체성 조립.
 """
 
+from starlette.requests import Request
+
 from soul_common.auth.caller_info import (
     IDENTITY_BEARING_SOURCES,
     SYSTEM_PORTRAIT_BASE,
@@ -16,7 +18,39 @@ from soul_common.auth.caller_info import (
     build_bot_caller_info,
     build_system_caller_info,
     extract_caller_info_from_metadata,
+    resolve_caller_info_or_system,
 )
+from soul_common.auth.jwt import COOKIE_NAME, generate_token
+
+
+_TEST_JWT_SECRET = "test-jwt-secret-for-resolver-32b!!!"
+
+
+def _make_request(
+    *,
+    headers: dict | None = None,
+    cookies: dict | None = None,
+    client_host: str = "127.0.0.1",
+) -> Request:
+    """starlette Request mock — scope dict로 minimal HTTP 진입 시뮬레이션.
+
+    headers는 lowercase 키 자동 변환. cookies는 표준 Cookie 헤더로 직렬화하여
+    Request._cookies가 lazy 파싱하도록.
+    """
+    header_list: list[tuple[bytes, bytes]] = []
+    for k, v in (headers or {}).items():
+        header_list.append((k.lower().encode("ascii"), v.encode("utf-8")))
+    if cookies:
+        cookie_header = "; ".join(f"{k}={v}" for k, v in cookies.items())
+        header_list.append((b"cookie", cookie_header.encode("utf-8")))
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/api/sessions",
+        "headers": header_list,
+        "client": (client_host, 0) if client_host else None,
+    }
+    return Request(scope)
 
 
 class TestIdentityBearingSourcesConstant:
@@ -363,3 +397,142 @@ class TestExtractCallerInfoFromMetadata:
         result = extract_caller_info_from_metadata(metadata)
         # source=agent가 신원 박힌 것으로 취급되어 우선
         assert result == {"source": "agent"}
+
+
+class TestResolveCallerInfoOrSystem:
+    """R-6 (2026-05-11, G-22): resolve_caller_info_or_system 진입 분류 dispatcher.
+
+    B-7+B-4 결합: body.caller_info 미명시 + JWT name 부재 → system 분류.
+    cron-jobs/run_session.sh 같은 minimal payload(email-only JWT) 발급자를 자동 인식.
+    dev-login은 name='Developer' default, OAuth는 Google userinfo.name 박음 →
+    false-positive 자연 회피.
+
+    호출자: orch-server api/sessions.py:create_session/intervene + soul-server
+    dashboard/routes/sessions/_lifecycle.py:api_create_session/api_intervene §9 대칭.
+    """
+
+    # T-R6-H1 — body.caller_info truthy 우선 (분기 무관)
+    def test_body_caller_info_truthy_returned_as_is(self):
+        """body_caller_info 박힌 경우 JWT 디코드 무관, 그대로 반환 (N.1 패턴 보존)."""
+        body_ci = {"source": "agent", "agent_node": "eias-shopping", "agent_id": "shay"}
+        token = generate_token({"email": "x@y.z"}, _TEST_JWT_SECRET)  # minimal payload — 분기 미발동 검증
+        req = _make_request(headers={"Authorization": f"Bearer {token}"})
+
+        result = resolve_caller_info_or_system(
+            body_caller_info=body_ci,
+            request=req,
+            jwt_secret=_TEST_JWT_SECRET,
+            system_node_id="should-be-ignored",
+        )
+        assert result == body_ci
+
+    # T-R6-H2 — Bearer + minimal JWT (email only) → system
+    def test_bearer_minimal_jwt_returns_system(self):
+        """Bearer 진입 + JWT name 부재 → build_system_caller_info — cron-jobs 같은 외부 자동 호출자."""
+        token = generate_token({"email": "cron@example.com"}, _TEST_JWT_SECRET)
+        req = _make_request(
+            headers={"Authorization": f"Bearer {token}", "user-agent": "curl/8.5.0"},
+        )
+
+        result = resolve_caller_info_or_system(
+            body_caller_info=None,
+            request=req,
+            jwt_secret=_TEST_JWT_SECRET,
+            system_node_id="eias-shopping",
+        )
+        assert result == {
+            "source": "system",
+            "agent_node": "eias-shopping",
+            "display_name": "Soulstream",
+            "user_id": None,
+            "avatar_url": "/api/system/portraits/system",
+        }
+
+    # T-R6-H3 — Bearer + full JWT (name + picture) → browser (false-positive 회피)
+    def test_bearer_full_jwt_returns_browser(self):
+        """Bearer + JWT name 박힘 → build_browser_caller_info — 사람 PAT 사용자 회귀 보존."""
+        token = generate_token(
+            {"email": "user@example.com", "name": "Alice", "picture": "https://x/p"},
+            _TEST_JWT_SECRET,
+        )
+        req = _make_request(
+            headers={"Authorization": f"Bearer {token}", "user-agent": "MyClient/1.0"},
+        )
+
+        result = resolve_caller_info_or_system(
+            body_caller_info=None,
+            request=req,
+            jwt_secret=_TEST_JWT_SECRET,
+            system_node_id="ignored-when-browser",
+        )
+        assert result["source"] == "browser"
+        assert result["display_name"] == "Alice"
+        assert result["user_id"] == "user@example.com"
+        assert result["avatar_url"] == "https://x/p"
+
+    # T-R6-H4 — Cookie + minimal JWT → system (cookie/Bearer 무관, name 부재 단독 트리거)
+    def test_cookie_minimal_jwt_returns_system(self):
+        """Cookie 경유 + JWT name 부재 → system 분류. cookie/Bearer 무관, name 부재가 단독 트리거.
+
+        의미: minimal JWT payload는 *사용자 신원 표시 의도 없음*. 발급자가 cookie/Bearer 어느
+        방식으로 토큰을 전달하든 동일 분류 — §9 대칭. dev-login은 name='Developer' default라
+        실제 사람 발신은 cookie+minimal-payload 경로로 들어오지 않는다 (false-positive 자연 회피).
+        """
+        token = generate_token({"email": "minimal@example.com"}, _TEST_JWT_SECRET)
+        req = _make_request(cookies={COOKIE_NAME: token})
+
+        result = resolve_caller_info_or_system(
+            body_caller_info=None,
+            request=req,
+            jwt_secret=_TEST_JWT_SECRET,
+            system_node_id="eias-shopping",
+        )
+        assert result["source"] == "system"
+        assert result["display_name"] == "Soulstream"
+        assert result["agent_node"] == "eias-shopping"
+
+    # T-R6-H5 — JWT decode 실패 → browser (verify_token=None → graceful fallback)
+    def test_jwt_decode_failure_returns_browser(self):
+        """위조/만료 JWT — verify_token None → build_browser_caller_info (신원 키 부재 graceful)."""
+        bad_token = generate_token({"email": "x@y.z", "name": "X"}, "wrong-secret")
+        req = _make_request(
+            headers={"Authorization": f"Bearer {bad_token}", "user-agent": "BadClient/1.0"},
+        )
+
+        result = resolve_caller_info_or_system(
+            body_caller_info=None,
+            request=req,
+            jwt_secret=_TEST_JWT_SECRET,
+            system_node_id="should-be-ignored",
+        )
+        assert result["source"] == "browser"
+        assert result["user_agent"] == "BadClient/1.0"
+        # JWT 디코드 실패 → 신원 필드 없음 (graceful, build_browser_caller_info와 §9 대칭)
+        assert "display_name" not in result
+        assert "user_id" not in result
+
+    # T-R6-H6 (보너스) — jwt_secret 빈 문자열 → browser (auth 비활성)
+    def test_jwt_secret_empty_returns_browser(self):
+        """jwt_secret 빈 문자열 (auth 비활성) → decode_dashboard_jwt_user 즉시 None →
+        build_browser_caller_info fallback."""
+        req = _make_request(
+            headers={"Authorization": "Bearer any-token", "user-agent": "Test"},
+        )
+
+        result = resolve_caller_info_or_system(
+            body_caller_info=None,
+            request=req,
+            jwt_secret="",
+            system_node_id="ignored",
+        )
+        assert result["source"] == "browser"
+
+    # T-R6-H7 — keyword-only 인자 강제
+    def test_keyword_only_args(self):
+        """모든 인자 keyword-only — positional 호출 시 TypeError."""
+        req = _make_request()
+        try:
+            resolve_caller_info_or_system(None, req, "", "")  # type: ignore[misc]
+        except TypeError:
+            return
+        raise AssertionError("positional 호출이 TypeError를 일으켜야 한다")

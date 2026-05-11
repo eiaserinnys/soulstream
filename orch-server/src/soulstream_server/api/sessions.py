@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from starlette.websockets import WebSocketDisconnect
 from sse_starlette.sse import EventSourceResponse
 
-from soul_common.auth.caller_info import build_browser_caller_info
+from soul_common.auth.caller_info import resolve_caller_info_or_system
 from soul_common.catalog.catalog_service import CatalogService
 from soul_common.db.session_db import PostgresSessionDB
 
@@ -96,15 +96,19 @@ def create_sessions_router(
     async def create_session(body: CreateSessionRequest, request: Request) -> dict:
         """세션 생성. 노드에 라우팅.
 
-        body.caller_info가 있으면 그대로 사용 (슬랙·RN·위임 케이스).
-        없으면 build_browser_caller_info가 HTTP 메타 + cookie JWT(있으면)를
-        조립하여 source='browser' caller_info를 반환 (방안 B, 2026-05-07).
+        caller_info 조립은 `resolve_caller_info_or_system` dispatcher 정본에 위임:
+        - body.caller_info 있으면 그대로 (슬랙·RN·위임 케이스).
+        - JWT minimal payload(name 부재)면 system 분류 — cron-jobs 등 외부 자동 호출자 (R-6).
+        - 그 외 build_browser_caller_info 흐름 (방안 B, 2026-05-07).
         """
         # 정본은 lru_cache된 get_settings — caller_info 조립 시점에 호출 (성능 영향 없음)
         from soulstream_server.config import get_settings
         settings = get_settings()
-        caller_info = body.caller_info or build_browser_caller_info(
-            request, settings.jwt_secret or ""
+        caller_info = resolve_caller_info_or_system(
+            body_caller_info=body.caller_info,
+            request=request,
+            jwt_secret=settings.jwt_secret or "",
+            system_node_id=body.nodeId or "",
         )
         payload = body.model_dump(exclude_none=True)
         payload["caller_info"] = caller_info
@@ -166,16 +170,22 @@ def create_sessions_router(
         """개입 메시지 전송 (caller_info 운반).
 
         F-9 fix(2026-05-08): 2차+ 메시지가 첫 메시지와 동일한 발신자 표시를
-        받도록 caller_info를 wire 끝까지 운반한다. body.caller_info가 있으면
-        그대로 사용(슬랙·soul-app), 없으면 브라우저 dashboard 흐름으로 간주해
-        cookie JWT + HTTP 메타로 자동 조립한다 (create_session과 동일 패턴).
+        받도록 caller_info를 wire 끝까지 운반한다.
+
+        R-6 fix(2026-05-11): caller_info 조립을 `find_session_node` *뒤*로 이동.
+        `resolve_caller_info_or_system` dispatcher가 system 분류 시 노드 ID를 요구하는데
+        `InterveneRequest`에 `nodeId` 필드가 없어 `find_session_node` 결과 `node.node_id` 사용.
+        예외 발생 시 caller_info 조립 미발동 — 기존 동작 정합 (fastapi 자동 처리).
         """
         from soulstream_server.config import get_settings
         settings = get_settings()
-        caller_info = body.caller_info or build_browser_caller_info(
-            request, settings.jwt_secret or "",
-        )
         node = await find_session_node(session_id, db, node_manager)
+        caller_info = resolve_caller_info_or_system(
+            body_caller_info=body.caller_info,
+            request=request,
+            jwt_secret=settings.jwt_secret or "",
+            system_node_id=node.node_id,
+        )
         try:
             result = await node.send_intervene(
                 session_id, body.text, body.user,

@@ -157,8 +157,16 @@ class TestDashboardCreateSessionCallerInfoJwtAutoFill:
         assert "user_id" not in ci
         assert "email" not in ci
 
-    def test_jwt_partial_fields_graceful(self, mock_task_manager, jwt_secret):
-        """JWT에 name/picture 없어도 email/user_id만 채워지고 누락 필드는 dict에서 제외."""
+    def test_jwt_partial_fields_routed_to_system(self, mock_task_manager, jwt_secret):
+        """R-6 (G-22) 정정: JWT name 부재 → system 분류 (orch와 §9 대칭).
+
+        soul-server 자체 대시보드 진입(`/api/sessions`)에 cron-jobs 같은 minimal JWT가
+        들어오는 케이스는 실제 cron-jobs가 *orch에* 두드리므로 발생 가능성 낮으나, §9 대칭으로
+        soul-server 측도 같은 분류 정본(resolve_caller_info_or_system) 호출.
+
+        이전 R-5까지 expectation: cookie+email-only → browser, display_name 누락 graceful.
+        R-6부터: JWT name 부재 단독 트리거 → system caller_info.
+        """
         token = generate_token({"email": "minimal@example.com"}, jwt_secret)
         resp = _post(
             mock_task_manager,
@@ -168,10 +176,13 @@ class TestDashboardCreateSessionCallerInfoJwtAutoFill:
         assert resp.status_code == 201
 
         ci = _captured_caller_info(mock_task_manager)
-        assert ci["user_id"] == "minimal@example.com"
-        assert ci["email"] == "minimal@example.com"
-        assert "display_name" not in ci
-        assert "avatar_url" not in ci
+        # R-6 분류 결과: system source
+        assert ci["source"] == "system"
+        assert ci["display_name"] == "Soulstream"
+        assert ci["avatar_url"] == "/api/system/portraits/system"
+        # soul-server는 settings.soulstream_node_id 사용 — 테스트 환경에서 빈 문자열 default
+        assert "agent_node" in ci
+        assert ci["user_id"] is None
 
     def test_no_jwt_no_body_falls_back_to_http_meta(self, mock_task_manager):
         """JWT 없고 body.caller_info도 없으면 source='browser' + IP/UA만 채워진다 (기존 회귀)."""
@@ -190,3 +201,45 @@ class TestDashboardCreateSessionCallerInfoJwtAutoFill:
         assert ci["user_agent"] == "Mozilla/5.0 TestBrowser"
         assert ci["referer"] == "https://dashboard.example/"
         assert "display_name" not in ci
+
+
+class TestDashboardCallerInfoSystemRoutingSoul:
+    """R-6 (2026-05-11, G-22): soul-server 측 외부 자동 호출자 분류 — orch와 §9 대칭.
+
+    분류 정본은 동일하게 soul_common.auth.caller_info.resolve_caller_info_or_system.
+    soul-server는 system_node_id=settings.soulstream_node_id 전달.
+    """
+
+    def test_bearer_minimal_jwt_routes_to_system(self, mock_task_manager, jwt_secret):
+        """T-R6-S1: Bearer JWT email-only + body.caller_info 미박음 → system 분류 (soul-server 진입)."""
+        token = generate_token({"email": "cron@example.com"}, jwt_secret)
+        resp = _post(
+            mock_task_manager,
+            {"prompt": "test"},
+            headers={"Authorization": f"Bearer {token}", "user-agent": "curl/8.5.0"},
+        )
+        assert resp.status_code == 201
+
+        ci = _captured_caller_info(mock_task_manager)
+        assert ci["source"] == "system"
+        assert ci["display_name"] == "Soulstream"
+        assert ci["avatar_url"] == "/api/system/portraits/system"
+        assert ci["user_id"] is None
+
+    def test_bearer_full_jwt_preserves_browser(self, mock_task_manager, jwt_secret):
+        """T-R6-S2: Bearer JWT name+picture → browser 분류 유지 (false-positive 회피)."""
+        token = generate_token(
+            {"email": "alice@example.com", "name": "Alice", "picture": "https://x/p"},
+            jwt_secret,
+        )
+        resp = _post(
+            mock_task_manager,
+            {"prompt": "test"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 201
+
+        ci = _captured_caller_info(mock_task_manager)
+        assert ci["source"] == "browser"
+        assert ci["display_name"] == "Alice"
+        assert ci["avatar_url"] == "https://x/p"
