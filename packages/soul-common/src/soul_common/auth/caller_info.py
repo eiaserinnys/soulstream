@@ -294,6 +294,56 @@ def build_bot_caller_info(
     return info
 
 
+def resolve_caller_info_or_system(
+    *,
+    body_caller_info: Optional[dict],
+    request: Request,
+    jwt_secret: str,
+    system_node_id: str,
+    cookie_name: str = COOKIE_NAME,
+) -> dict[str, Any]:
+    """진입 분류 dispatcher (R-6, B-7+B-4 결합).
+
+    body.caller_info를 명시 박지 않은 외부 자동 호출자(예: `/home/eias/cron-jobs/run_session.sh`
+    같은 cron 셸 스크립트, curl/스크립트류 자동 발사자)를 서버가 진입 시점에 system caller_info로
+    분류한다. 호출자가 자기 정체성을 표현할 능력이 없을 때(셸/스크립트 환경) 검증자(서버)가
+    JWT 내용으로 발급자 의도를 추론한다 — design-principles §1 (지식 경계, 정보를 자연스럽게
+    가진 쪽이 채운다).
+
+    분류 규칙:
+        1. body_caller_info truthy → 그대로 반환. 슬랙·RN·위임 등 명시 caller_info 우선
+           (기존 N.1 패턴 보존).
+        2. decode_dashboard_jwt_user 성공 + payload['name'] falsy → build_system_caller_info.
+           cron-jobs/run_session.sh 같은 minimal payload(email-only JWT) 발급자를 자동 인식.
+           dev-login은 `name='Developer'` default(oauth_routes.py L223), OAuth는 Google
+           userinfo.name 박음 → false-positive 자연 회피.
+        3. 그 외 → build_browser_caller_info (기존 browser 흐름 — JWT 충실/decode 실패 모두).
+
+    호출자 (4 진입점 §9 대칭):
+        - orch-server/api/sessions.py:create_session, intervene
+        - soul-server/dashboard/routes/sessions/_lifecycle.py:api_create_session, api_intervene
+
+    Args:
+        body_caller_info: request body의 caller_info 필드 (Optional). truthy면 그대로 forward.
+        request: FastAPI Request 객체. HTTP 메타·cookie·Bearer 헤더 모두 본 객체에서.
+        jwt_secret: JWT 서명 키. 빈 문자열이면 decode_dashboard_jwt_user가 즉시 None 반환.
+        system_node_id: system 분류 시 build_system_caller_info에 전달할 노드 ID.
+            orch: body.nodeId(create) or node.node_id(intervene). soul-server:
+            settings.soulstream_node_id. 빈 문자열도 graceful (system source는
+            user_id/node_id 식별과 무관 — build_system_caller_info docstring 정합).
+        cookie_name: JWT 쿠키 이름 (기본 COOKIE_NAME).
+
+    Returns:
+        v1 caller_info dict.
+    """
+    if body_caller_info:
+        return body_caller_info
+    user = decode_dashboard_jwt_user(request, jwt_secret, cookie_name)
+    if user is not None and not user.get("name"):
+        return build_system_caller_info(node_id=system_node_id)
+    return build_browser_caller_info(request, jwt_secret, cookie_name)
+
+
 #: caller_info.source 중 *발신자 정체성을 자기 자신으로 명시한* source 집합.
 #:
 #: 이 source의 caller_info는 신원 필드(display_name/avatar_url)가 비어 있어도 정체성을 보존

@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from soul_common.auth.caller_info import build_browser_caller_info
+from soul_common.auth.caller_info import resolve_caller_info_or_system
 from soul_server.dashboard.auth import require_dashboard_auth
 from soul_server.service import get_soul_engine, intervention_service, resource_manager
 from soul_server.service.intervention_service import InputRequestNotPendingError
@@ -41,13 +41,17 @@ async def api_create_session(body: CreateSessionBody, request: Request):
 
     extra_context_items = build_attachment_context_items(body.attachmentPaths)
 
-    # caller_info 조립: body에 있으면 그대로 (슬랙·RN·위임 케이스).
-    # 없으면 build_browser_caller_info가 HTTP 메타 + cookie JWT(있으면)를
-    # 조립하여 source='browser' caller_info 반환 (방안 B, 2026-05-07).
+    # caller_info 조립은 `resolve_caller_info_or_system` dispatcher 정본에 위임:
+    # - body.caller_info 있으면 그대로 (슬랙·RN·위임 케이스).
+    # - JWT minimal payload(name 부재)면 system 분류 — cron-jobs 등 외부 자동 호출자 (R-6).
+    # - 그 외 build_browser_caller_info 흐름 (방안 B, 2026-05-07).
     from soul_server.config import get_settings
     settings = get_settings()
-    caller_info = body.caller_info or build_browser_caller_info(
-        request, settings.jwt_secret or ""
+    caller_info = resolve_caller_info_or_system(
+        body_caller_info=body.caller_info,
+        request=request,
+        jwt_secret=settings.jwt_secret or "",
+        system_node_id=settings.soulstream_node_id,
     )
 
     try:
@@ -101,17 +105,20 @@ async def api_create_session(body: CreateSessionBody, request: Request):
 async def api_intervene(session_id: str, body: InterveneBody, request: Request):
     """실행 중/완료된 세션에 메시지 전송 (자동 resume).
 
-    F-9 fix(2026-05-08): caller_info를 wire에 운반한다. body.caller_info가
-    있으면 그대로(슬랙봇 등 외부 클라이언트), 없으면 cookie JWT + HTTP 메타로
-    자동 조립(브라우저 dashboard 흐름). create_session 라우트와 동일 패턴.
+    F-9 fix(2026-05-08): caller_info를 wire에 운반한다.
+    R-6 fix(2026-05-11): `resolve_caller_info_or_system` dispatcher 정본에 위임 — body.caller_info
+    있으면 그대로, JWT minimal payload면 system 분류, 그 외 browser. create_session 라우트와 §9 대칭.
     """
     try:
         # body.attachmentPaths(camelCase) → attachment_paths(snake_case): 라우트 책임.
         # None → [] 정규화는 service의 정본(`or []`)에 일임 (대칭성).
         from soul_server.config import get_settings
         settings = get_settings()
-        caller_info = body.caller_info or build_browser_caller_info(
-            request, settings.jwt_secret or "",
+        caller_info = resolve_caller_info_or_system(
+            body_caller_info=body.caller_info,
+            request=request,
+            jwt_secret=settings.jwt_secret or "",
+            system_node_id=settings.soulstream_node_id,
         )
         return await intervention_service.intervene(
             agent_session_id=session_id,
