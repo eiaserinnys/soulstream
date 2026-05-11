@@ -77,3 +77,35 @@ class TestSystemPortraitsAuth:
         client.headers["Authorization"] = "Bearer invalid-token"
         resp = await client.get("/api/system/portraits/system")
         assert resp.status_code == 401
+
+
+class TestSystemPortraitsR4SingleAssetMapping:
+    """R-4 (atom G-11, 2026-05-11): 3 source 모두 동일 자산 매핑 정합 검증.
+
+    `_PORTRAIT_FILE_MAP`이 source → 단일 파일(system.png) 매핑. 디자이너 봇별 자산 결정 시
+    매핑만 갱신 — 라우트 코드 변경 없이 §10 확장. soul-app `assets/icon.png` md5 정합
+    (1.5MB, cd4da98f...).
+    """
+
+    async def test_system_and_channel_observer_same_body(self, client):
+        """system과 channel_observer가 동일 본문 (단일 정본)."""
+        system_resp = await client.get("/api/system/portraits/system")
+        bot_resp = await client.get("/api/system/portraits/channel_observer")
+        assert system_resp.status_code == 200
+        assert bot_resp.status_code == 200
+        assert system_resp.content == bot_resp.content
+
+    async def test_system_and_trello_watcher_same_body(self, client):
+        """system과 trello_watcher가 동일 본문."""
+        system_resp = await client.get("/api/system/portraits/system")
+        bot_resp = await client.get("/api/system/portraits/trello_watcher")
+        assert system_resp.status_code == 200
+        assert bot_resp.status_code == 200
+        assert system_resp.content == bot_resp.content
+
+    async def test_body_size_matches_soul_app_icon(self, client):
+        """단일 자산이 soul-app icon.png (1,593,049 bytes)와 정합."""
+        resp = await client.get("/api/system/portraits/system")
+        assert resp.status_code == 200
+        # soul-app/assets/icon.png 크기 (1.5MB) — R-4 G-11 자산 정본 통합
+        assert len(resp.content) == 1593049

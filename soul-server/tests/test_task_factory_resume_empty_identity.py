@@ -67,10 +67,22 @@ class TestHasIdentityGuard:
             "user_agent": "Mozilla/5.0",
         }) is False
 
-    def test_unknown_source_with_identity_returns_true(self):
-        """알 수 없는 source라도 신원 필드 truthy → True."""
-        assert _has_identity({"source": "channel_observer", "display_name": "Observer"}) is True
+    def test_truly_unknown_source_with_identity_returns_true(self):
+        """알 수 없는 source(IDENTITY_BEARING_SOURCES 외)라도 신원 필드 truthy → True.
 
-    def test_unknown_source_without_identity_returns_false(self):
-        """알 수 없는 source + 신원 부재 → False."""
-        assert _has_identity({"source": "channel_observer"}) is False
+        R-4 (atom G-13, 2026-05-11): channel_observer는 IDENTITY_BEARING_SOURCES에 명시 포함
+        — 이 테스트는 *진짜 알 수 없는 source*(execute-proxy 등)로 갱신.
+        """
+        assert _has_identity({"source": "execute-proxy", "display_name": "Proxy"}) is True
+
+    def test_truly_unknown_source_without_identity_returns_false(self):
+        """알 수 없는 source(IDENTITY_BEARING_SOURCES 외) + 신원 부재 → False."""
+        assert _has_identity({"source": "execute-proxy"}) is False
+
+    def test_bot_source_without_identity_returns_true(self):
+        """R-4 (atom G-13): channel_observer/trello_watcher/llm은 IDENTITY_BEARING_SOURCES에
+        명시 포함 — 신원 부재여도 True (우연 정합 의존 제거, §4 명시적 실패).
+        """
+        assert _has_identity({"source": "channel_observer"}) is True
+        assert _has_identity({"source": "trello_watcher"}) is True
+        assert _has_identity({"source": "llm"}) is True

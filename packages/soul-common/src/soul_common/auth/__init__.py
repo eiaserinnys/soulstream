@@ -9,7 +9,9 @@ from soul_common.auth.jwt import (
 )
 from soul_common.auth.oauth_routes import create_oauth_router, create_auth_dependency
 from soul_common.auth.caller_info import (
+    IDENTITY_BEARING_SOURCES,
     build_agent_caller_info,
+    build_bot_caller_info,
     build_browser_caller_info,
     build_system_caller_info,
     decode_dashboard_jwt_user,
@@ -24,7 +26,9 @@ __all__ = [
     "verify_token",
     "create_oauth_router",
     "create_auth_dependency",
+    "IDENTITY_BEARING_SOURCES",
     "build_agent_caller_info",
+    "build_bot_caller_info",
     "build_browser_caller_info",
     "build_system_caller_info",
     "decode_dashboard_jwt_user",

@@ -8,6 +8,7 @@ sessions.py, session_stream.py, catalog.py 등에서 공유하는
 from typing import Optional
 
 from soul_common.auth import extract_caller_info_from_metadata
+from soul_common.auth.caller_info import IDENTITY_BEARING_SOURCES
 from soulstream_server.nodes.node_manager import NodeManager
 
 
@@ -19,13 +20,6 @@ def _build_portrait_proxy_url(source_node_id: str, agent_id: str) -> str:
 def _build_user_portrait_proxy_url(node_id: str) -> str:
     """사용자 portrait 프록시 URL을 ��립한다. (API 계층 전용)"""
     return f"/api/nodes/{node_id}/user/portrait"
-
-
-#: caller_info.source 중 *발신자 정체성을 자기 자신으로 명시한* source 집합.
-#: 이 source의 caller_info는 신원 필드(display_name/avatar_url)가 None이어도
-#: 노드 owner 프로필로 덮어쓰지 않는다 — fallback은 browser/api/None 한정.
-#: atom ed3a216d (caller_info 통합 스키마 v1) 정합.
-_IDENTITY_BEARING_SOURCES = frozenset({"agent", "system", "slack", "soul-app"})
 
 
 def apply_user_profile_enrichment(
@@ -47,8 +41,11 @@ def apply_user_profile_enrichment(
     portrait로 덮이던 G-2·G-3 회로(atom 0499ee7b·0d366900)를 닫는다. browser/api/None만
     owner fallback 발동.
 
+    R-4 fix(2026-05-11, atom G-13): IDENTITY_BEARING_SOURCES를 soul_common 정본으로 추출.
+    봇/llm source 명시 포함 (7 원소) — 우연 정합 의존 제거, §4 명시적 실패 정합.
+
     정책 — caller_info 정체성 우선, mix-fallback 금지(atom ed3a216d v1):
-    - caller_source ∈ {agent, system, slack, soul-app} → NOOP (R-2)
+    - caller_source ∈ IDENTITY_BEARING_SOURCES(7 원소) → NOOP (R-2 + R-4)
     - payload[name_key] *또는* payload[portrait_key] truthy → NOOP
       (정체성 부분이라도 있으면 보존 — name만 채워졌거나 portrait만 채워졌어도 노드 정보로 덮지 않음)
     - node_id 없음 또는 node_manager None → NOOP (graceful)
@@ -59,8 +56,8 @@ def apply_user_profile_enrichment(
     - catalog.py:get_catalog (REST /api/catalog sessionList)
     - main.py:_on_node_change (SSE session_created · session_updated wire)
     """
-    # R-2: 정체성 명시 source는 owner로 덮지 않음.
-    if caller_source in _IDENTITY_BEARING_SOURCES:
+    # R-2 + R-4: 정체성 명시 source는 owner로 덮지 않음.
+    if caller_source in IDENTITY_BEARING_SOURCES:
         return
     if (
         payload.get(name_key)

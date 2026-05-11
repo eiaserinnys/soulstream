@@ -21,18 +21,12 @@ from soul_server.service.task_models import (
     NodeMismatchError,
     generate_agent_session_id,
 )
+from soul_common.auth.caller_info import IDENTITY_BEARING_SOURCES
 from soul_server.service.postgres_session_db import PostgresSessionDB
 from soul_server.service.session_broadcaster import get_session_broadcaster
 from soul_server.service.session_eviction_manager import SessionEvictionManager
 
 logger = logging.getLogger(__name__)
-
-
-#: caller_info.source 중 *발신자 정체성을 자기 자신으로 명시한* source 집합.
-#: 이 source의 caller_info는 신원 필드(display_name/avatar_url)가 비어 있어도
-#: `_has_identity`가 True를 반환하여 정체성을 보존한다. orch/soul-server
-#: enrichment 헬퍼의 `_IDENTITY_BEARING_SOURCES`와 §9 대칭.
-_IDENTITY_BEARING_SOURCES = frozenset({"agent", "system", "slack", "soul-app"})
 
 
 def _has_identity(caller_info: dict) -> bool:
@@ -42,12 +36,17 @@ def _has_identity(caller_info: dict) -> bool:
     `{source: 'browser', ip: ...}`)가 이전의 정상 caller_info를 덮어쓰던 G-3
     회로(atom 0d366900)를 닫는다. design-principles §3 정본 보존.
 
-    정체성 명시 source(agent/system/slack/soul-app)는 신원 필드가 비어도 True —
-    enrichment 헬퍼의 NOOP 정책과 §9 대칭. browser/api/None은 신원 필드(display_name
+    R-4 fix(2026-05-11, atom G-13): IDENTITY_BEARING_SOURCES를 soul_common 정본으로
+    추출. 3 위치(task_factory + dashboard/user_profile + orch session_serializer)가
+    단일 import — 사본 분산 제거. 봇/llm source도 명시 포함 (우연 정합 의존 제거,
+    §4 명시적 실패).
+
+    정체성 명시 source(IDENTITY_BEARING_SOURCES 7 원소)는 신원 필드가 비어도 True —
+    enrichment 헬퍼의 NOOP 정책과 §9 대칭. 그 외 source는 신원 필드(display_name
     또는 avatar_url) truthy일 때만 True.
     """
     source = caller_info.get("source")
-    if source in _IDENTITY_BEARING_SOURCES:
+    if source in IDENTITY_BEARING_SOURCES:
         return True
     return bool(caller_info.get("display_name") or caller_info.get("avatar_url"))
 
