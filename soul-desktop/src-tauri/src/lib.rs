@@ -44,7 +44,6 @@ fn snapshot_allowed(state: &OriginState) -> Vec<Url> {
 pub fn run() {
     let origin_state: OriginState = Arc::new(Mutex::new(None));
     let origin_state_nav = Arc::clone(&origin_state);
-    let origin_state_win = Arc::clone(&origin_state);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::default().build())
@@ -82,16 +81,13 @@ pub fn run() {
                     // 같은 origin — 허용.
                     true
                 })
-                .on_new_window(move |url, _features| {
+                .on_new_window(|url, _features| {
                     // 사용자가 `target="_blank"` anchor를 클릭하거나 `window.open(url)`을 호출한 경우.
                     // HTTP(S)이면 origin 무관하게 OS 브라우저로 위임(현재 동작 보존 + 외부 일관성).
                     // 비-HTTP(S)(`about:blank` 사전작업 등)는 `open::that` 호출 없이 `Deny` only —
                     // useClaudeAuthFlow.ts:126의 popup-blocker 우회 사전작업이 OS 브라우저에
                     // 빈 about:blank 창을 띄우던 결함을 차단한다.
                     if matches!(url.scheme(), "http" | "https") {
-                        // origin_state_win 캡쳐는 향후 같은 origin _blank를 다르게 처리하고 싶을 때
-                        // 사용. 본 카드에서는 단순성 위해 모든 HTTP(S) _blank를 OS 위임 — 캡쳐만 유지.
-                        let _allowed = snapshot_allowed(&origin_state_win);
                         let _ = open::that(url.as_str());
                     }
                     NewWindowResponse::Deny
