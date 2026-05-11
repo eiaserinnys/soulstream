@@ -399,6 +399,14 @@ class TestBroadcasterWireContract:
         포함하고 last_progress_text/last_assistant_text는 없다. 같은 type을 발행하는
         4개 메서드(updated/phase/message_updated/read_position_updated)가 각각 다른
         키 셋을 가지므로 emit 메서드 기준으로 화이트리스트를 분리한다.
+
+        ## G-19 fix 전제 (2026-05-11, T15) — atom diagnosis 20260511-1700
+        본 wire의 키 셋이 보존되어야 orch `_on_node_change` session_updated 분기의
+        wire-kind 가드 전제(`last_message` 존재 = caller 키 부재)가 성립한다.
+        `caller_source`/`userName`/`userPortraitUrl`/`session_type` 키가 본 wire에 추가되면
+        orch 가드의 *식별 마커는 그대로*지만 *enrichment skip의 정당성*이 무너진다 —
+        P6 결정 재검토 + N.4 D-2 게이트(atom 9d47010b) 동시 갱신 필요.
+        본 화이트리스트는 그 식별 마커의 *전제*를 영속화하는 정본 안전망이다.
         """
         queue = broadcaster.add_client()
         await broadcaster.emit_session_message_updated(
@@ -415,6 +423,15 @@ class TestBroadcasterWireContract:
         )
         _eid, event = queue.get_nowait()
         assert set(event.keys()) == self.EXPECTED_MESSAGE_UPDATED_KEYS
+        # G-19 명시 안전망 — 화이트리스트가 misedit으로 깨져도 캐치하는 다중 안전망.
+        # 의미: orch wire-kind 가드가 `last_message` 키로 본 wire를 식별하여 enrichment skip하는데,
+        # 본 wire에 caller 키가 추가되면 가드는 유지되지만 P6 contract가 깨진다.
+        assert "caller_source" not in event
+        assert "userName" not in event
+        assert "userPortraitUrl" not in event
+        assert "session_type" not in event
+        # 식별 마커는 반드시 박힘 — orch 가드의 positive 식별 정본
+        assert "last_message" in event
 
 
 class TestSessionUpdatedSessionTypeAndCallerSource:
