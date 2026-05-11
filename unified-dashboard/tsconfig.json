@@ -7,6 +7,7 @@
     "strict": true,
     "jsx": "react-jsx",
     "noEmit": true,
+    "skipLibCheck": true,
     "paths": {
       "@seosoyoung/soul-ui": ["../packages/soul-ui/src/index.ts"],
       "@shared/*": ["../packages/soul-ui/src/shared/*"],
