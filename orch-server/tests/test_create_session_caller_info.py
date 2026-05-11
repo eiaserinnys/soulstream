@@ -380,3 +380,61 @@ class TestCallerInfoSystemRouting:
         ci = _extract_ws_payload(ws)["caller_info"]
         assert ci["source"] == "system"
         assert ci["agent_node"] == ""  # graceful empty
+
+
+class TestInterveneCallerInfoSystemRouting:
+    """R-7 (G-22): orch intervene 라우트에 caller_info system 분류 §9 대칭.
+
+    intervene 라우트는 `find_session_node` *뒤*에서 caller_info 조립 — `system_node_id`로
+    `node.node_id`(NodeConnection)가 들어간다. create_session 라우트와 §9 대칭이지만 순서
+    변경이 있으므로 통합 회귀로 보장.
+    """
+
+    async def test_intervene_bearer_minimal_jwt_routes_to_system(
+        self, client, node_manager, mock_db, jwt_secret
+    ):
+        """T-R6-O5 (P2-2 회귀): Bearer minimal JWT + intervene → system 분류, agent_node=node.node_id."""
+        node, ws = await _register_node(node_manager)()
+        # find_session_node 라우팅 — get_session이 node_id 반환 → node_manager.get_node(node_id)
+        mock_db.get_session = AsyncMock(return_value={"node_id": node.node_id})
+
+        # intervene 진입 (cron-jobs 시나리오)
+        token = generate_token({"email": "cron@example.com"}, jwt_secret)
+        resp = await client.post(
+            f"/api/sessions/sess-routed/intervene",
+            json={"text": "follow-up message"},
+            headers={"Authorization": f"Bearer {token}", "user-agent": "curl/8.5.0"},
+        )
+        assert resp.status_code == 200, resp.text
+
+        payload = _extract_ws_payload(ws)
+        # send_intervene WS payload에 caller_info 박힘
+        ci = payload["caller_info"]
+        assert ci["source"] == "system"
+        assert ci["display_name"] == "Soulstream"
+        assert ci["avatar_url"] == "/api/system/portraits/system"
+        # system_node_id=node.node_id ("test-node") 박힘
+        assert ci["agent_node"] == node.node_id
+
+    async def test_intervene_session_not_found_no_caller_info_assembly(
+        self, client, node_manager, mock_db, jwt_secret
+    ):
+        """T-R6-O6: find_session_node 실패(노드 미등록 + 세션 미발견) → 404, caller_info 조립 미발동.
+
+        순서 변경(R-7) 정합: find_session_node 예외 → caller_info dispatcher 미호출.
+        기존 fastapi 자동 처리 정합 보존.
+
+        node_manager에 노드 *미등록* + DB에 세션 *미발견* 둘 다 만족시켜야 find_session_node가
+        활성 노드 fallback도 못 쓰고 404 던진다 (node_utils.py:30-38).
+        """
+        # _register_node 호출 안 함 — 활성 노드 0
+        mock_db.get_session = AsyncMock(return_value=None)
+
+        token = generate_token({"email": "cron@example.com"}, jwt_secret)
+        resp = await client.post(
+            "/api/sessions/sess-nonexistent/intervene",
+            json={"text": "test"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        # find_session_node가 HTTPException(404) 던짐 — caller_info 조립 진입 못 함
+        assert resp.status_code == 404
