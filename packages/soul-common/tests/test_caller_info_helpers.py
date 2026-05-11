@@ -10,11 +10,49 @@ build_bot_caller_info 신설 — channel_observer / trello_watcher 봇 source �
 """
 
 from soul_common.auth.caller_info import (
+    IDENTITY_BEARING_SOURCES,
     SYSTEM_PORTRAIT_BASE,
     build_agent_caller_info,
     build_bot_caller_info,
     build_system_caller_info,
 )
+
+
+class TestIdentityBearingSourcesConstant:
+    """R-4 (atom G-13, 2026-05-11): IDENTITY_BEARING_SOURCES 공유 정본 단위.
+
+    이전 R-2까지: orch session_serializer + soul-server task_factory + soul-server
+    dashboard/user_profile 3 위치에 각자 `_IDENTITY_BEARING_SOURCES` 사본 (4 원소).
+    R-4: soul_common.auth.caller_info 단일 정본으로 추출 + 봇/llm source 명시 포함 (7 원소).
+    """
+
+    def test_seven_elements(self):
+        """R-4: agent/system/slack/soul-app + channel_observer/trello_watcher/llm — 7 원소."""
+        assert IDENTITY_BEARING_SOURCES == frozenset({
+            "agent",
+            "system",
+            "slack",
+            "soul-app",
+            "channel_observer",
+            "trello_watcher",
+            "llm",
+        })
+
+    def test_is_frozenset(self):
+        """immutable frozenset — 모듈 정본을 호출자가 변경 못 함 (§3 정본 보호)."""
+        assert isinstance(IDENTITY_BEARING_SOURCES, frozenset)
+
+    def test_bot_sources_included_explicitly(self):
+        """R-4 atom G-13: 봇/llm source 명시 포함 (우연 정합 제거)."""
+        assert "channel_observer" in IDENTITY_BEARING_SOURCES
+        assert "trello_watcher" in IDENTITY_BEARING_SOURCES
+        assert "llm" in IDENTITY_BEARING_SOURCES
+
+    def test_non_identity_sources_excluded(self):
+        """browser/api는 IDENTITY_BEARING_SOURCES에 미포함 — owner fallback 발동 대상."""
+        assert "browser" not in IDENTITY_BEARING_SOURCES
+        assert "api" not in IDENTITY_BEARING_SOURCES
+        assert "execute-proxy" not in IDENTITY_BEARING_SOURCES
 
 
 class TestBuildSystemCallerInfo:

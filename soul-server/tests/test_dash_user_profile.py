@@ -122,16 +122,26 @@ class TestApplyDashUserProfileEnrichment:
 
 
 class TestCallerSourceIdentityNoop:
-    """R-2 fix(2026-05-10): caller_source 분기 매트릭스.
+    """R-2 fix(2026-05-10) + R-4 fix(2026-05-11, atom G-13): caller_source 분기 매트릭스.
 
-    정체성 명시 source(agent/system/slack/soul-app)는 신원 필드 None이어도
-    settings.dash_user_*로 덮지 않는다 (atom 0499ee7b §9 대칭, orch
-    `_IDENTITY_BEARING_SOURCES`와 동일 집합).
+    정체성 명시 source(IDENTITY_BEARING_SOURCES — agent/system/slack/soul-app +
+    R-4 channel_observer/trello_watcher/llm)는 신원 필드 None이어도 settings.dash_user_*로
+    덮지 않는다 (atom 0499ee7b §9 대칭, soul_common.auth.caller_info.IDENTITY_BEARING_SOURCES
+    공유 정본).
     """
 
     @pytest.mark.parametrize(
         "source",
-        ["agent", "system", "slack", "soul-app"],
+        [
+            "agent",
+            "system",
+            "slack",
+            "soul-app",
+            # R-4 (atom G-13): 봇/llm source 명시 포함 (우연 정합 의존 제거)
+            "channel_observer",
+            "trello_watcher",
+            "llm",
+        ],
     )
     def test_identity_bearing_source_noop(self, source):
         """정체성 명시 source — 신원 None이어도 settings로 덮지 않음."""

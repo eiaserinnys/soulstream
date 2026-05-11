@@ -215,20 +215,25 @@ def build_bot_caller_info(
     plugin이 자동 실행하는 세션의 정체성을 박는다. system 패턴과 §9 대칭으로 server-relative
     avatar_url을 wire에 직접 박는다.
 
-    정본 자산: `packages/soul-common/src/soul_common/portraits/{source}.png`
-    호스팅: orch-server `GET /api/system/portraits/{source}` (verify_auth 포함).
-    클라이언트는 caller_info.avatar_url 그대로 사용 — 매핑 분기 없음 (design-principles
-    §3 정본 하나, §9 일관성).
+    R-4 fix(2026-05-11, G-11): 봇별 사본 패턴 → 단일 정본 파일. 라우트가 source → 파일 매핑.
+    R-4 fix(2026-05-11, G-14): agent_node 인자가 host config 정합 사용 — plugin __init__에
+    `Config.orchestrator.preferred_node or None` 전달 (다중 노드 환경 audit 가시성).
+
+    정본 자산: `packages/soul-common/src/soul_common/portraits/system.png` (R-4 단일 파일)
+    호스팅: orch-server `GET /api/system/portraits/{source}` (verify_auth 포함). `_PORTRAIT_FILE_MAP`
+    이 source → `system.png` 매핑 (현재 3 source 모두 동일 자산, 디자이너 봇별 자산 결정 시
+    매핑만 갱신). 클라이언트는 caller_info.avatar_url 그대로 사용 — 매핑 분기 없음
+    (design-principles §3 정본 하나, §9 일관성).
 
     호출 정본:
     - seosoyoung-plugins/.../channel_observer/pipeline.py — source='channel_observer', display_name='채널 관찰자'
     - seosoyoung-plugins/.../trello/watcher.py — source='trello_watcher', display_name='트렐로 워처'
 
     Args:
-        source: 봇 source 토큰. 정본 자산이 portraits/{source}.png에 존재해야 함.
+        source: 봇 source 토큰. ALLOWED_SOURCES + _PORTRAIT_FILE_MAP에 등록되어야 함.
         display_name: 사용자 표시명 (예: '채널 관찰자', '트렐로 워처').
-        agent_node: (옵션) 봇이 실행되는 노드 ID. plugin이 server context를 알 필요 없으므로
-            보통 None — orch가 라우팅한 노드 정보는 wire의 다른 경로에서 결정.
+        agent_node: (옵션, R-4) 봇이 실행되는 노드 ID. plugin host config의 preferred_node
+            (truthy) 또는 None (자동 라우팅). truthy일 때만 caller_info에 키 포함 — graceful.
 
     Returns:
         v1 caller_info dict — source/display_name/avatar_url 채움, user_id None.
@@ -243,3 +248,29 @@ def build_bot_caller_info(
     if agent_node:
         info["agent_node"] = agent_node
     return info
+
+
+#: caller_info.source 중 *발신자 정체성을 자기 자신으로 명시한* source 집합.
+#:
+#: 이 source의 caller_info는 신원 필드(display_name/avatar_url)가 비어 있어도 정체성을 보존
+#: — orch/soul-server enrichment 헬퍼는 owner/dash_user_*로 덮지 않으며, task_factory의
+#: `_has_identity`는 True를 반환한다.
+#:
+#: R-2 (2026-05-10): agent/system/slack/soul-app 4 원소 — atom 0499ee7b 정본.
+#: R-4 (atom G-13, 2026-05-11): channel_observer/trello_watcher/llm 명시 포함 (7 원소).
+#: R-3 빌더 측 avatar_url truthy NOOP은 *우연 정합 의존* — §4 명시적 실패에 정합하지 않는다.
+#: 본 상수가 *정체성 명시 source 의도*를 직접 표현한다.
+#:
+#: 사용 위치 (3 곳, §9 대칭):
+#: - orch-server/.../api/session_serializer.py:apply_user_profile_enrichment
+#: - soul-server/.../dashboard/user_profile.py:apply_dash_user_profile_enrichment
+#: - soul-server/.../service/task_factory.py:_has_identity
+IDENTITY_BEARING_SOURCES: frozenset[str] = frozenset({
+    "agent",
+    "system",
+    "slack",
+    "soul-app",
+    "channel_observer",
+    "trello_watcher",
+    "llm",
+})

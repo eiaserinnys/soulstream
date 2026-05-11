@@ -3,11 +3,16 @@
  *
  * 세션 상태(running/completed/error, Claude/LLM)에 따라 submit 전략을 호출하고
  * 공통 제어(abort, sending, error)를 관리한다. UI 상태(text/height/focus)는 호출자 소유.
+ *
+ * R-4 fix(2026-05-11, atom G-10): useAuth() hook으로 dashboard auth context user를 추출하여
+ * submitLlmContinuation에 caller로 forward. LLM continuation 시 wire/DB에 dashboard 사용자
+ * 본인 정체성이 박혀 D1/D5에 시스템(Soulstream) 대신 본인 표시된다.
  */
 
 import { useCallback, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { EventTreeNode } from "@shared/types";
+import { useAuth } from "../../providers/AuthProvider";
 import { submitIntervention } from "./submitIntervention";
 import { submitResume } from "./submitResume";
 import { submitLlmContinuation } from "./submitLlmContinuation";
@@ -44,6 +49,7 @@ export interface UseChatInputSendResult {
 
 export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendResult {
   const queryClient = useQueryClient();
+  const { isAuthenticated, user } = useAuth();
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -70,12 +76,19 @@ export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendRe
       try {
         let nextSessionId: string | undefined;
         if (args.isLlmFinished) {
+          // R-4 (atom G-10): dashboard auth context user → submitLlmContinuation caller로 forward.
+          // 인증 비활성/미로그인이면 caller undefined (서버 측 LlmExecutor system fallback 자연 흡수).
+          const caller =
+            isAuthenticated && user
+              ? { email: user.email, name: user.name, picture: user.picture }
+              : undefined;
           const result = await submitLlmContinuation({
             tree: args.tree,
             text: trimmed,
             provider: args.llmProvider,
             model: args.llmModel,
             clientId: args.clientId,
+            caller,
             signal: controller.signal,
           });
           nextSessionId = result.sessionId;
@@ -104,7 +117,7 @@ export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendRe
         setSending(false);
       }
     },
-    [sending, args, queryClient],
+    [sending, args, queryClient, isAuthenticated, user],
   );
 
   const reset = useCallback(() => {

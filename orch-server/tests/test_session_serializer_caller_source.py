@@ -101,14 +101,19 @@ class TestApplyUserProfileEnrichmentCallerSource:
         assert payload["userName"] == "OwnerName"
 
     def test_unknown_source_falls_back(self):
-        """알 수 없는 source → fallback (browser와 같은 분류)."""
+        """알 수 없는 source(IDENTITY_BEARING_SOURCES 외) → fallback (browser와 같은 분류).
+
+        R-4 (atom G-13, 2026-05-11): channel_observer는 IDENTITY_BEARING_SOURCES에 포함되어
+        *known bot source*로 분류 — 이 테스트는 *진짜 알 수 없는 source*(execute-proxy 등)로
+        갱신. R-2 시점에는 channel_observer를 *unknown*으로 분류했지만 R-4가 명시 포함.
+        """
         payload = {"userName": None, "userPortraitUrl": None}
         nm = _make_node_manager(self._node_info())
         apply_user_profile_enrichment(
             payload,
             node_id="node-1",
             node_manager=nm,
-            caller_source="channel_observer",
+            caller_source="execute-proxy",  # IDENTITY_BEARING_SOURCES에 미포함
         )
         assert payload["userName"] == "OwnerName"
 
@@ -159,11 +164,15 @@ class TestApplyUserProfileEnrichmentCallerSource:
         assert payload["userName"] == "트렐로 워처"
         assert payload["userPortraitUrl"] == "/api/system/portraits/trello_watcher"
 
-    def test_bot_source_empty_identity_still_falls_back(self):
-        """R-3 회귀 보존: 봇 source인데 신원 빈 wire(구 데이터·결함) → R-2 회귀로 owner fallback.
+    def test_bot_source_empty_identity_now_noop(self):
+        """R-4 (atom G-13, 2026-05-11): 봇 source(channel_observer / trello_watcher)는 신원 부재여도 NOOP.
 
-        본 케이스는 *발생하면 결함*이지만, R-2 회귀를 보존하여 backfill 정책의 *기존 메시지 보호*
-        SLA를 명확히 한다 (분석 캐시 §"R-3 게이트 보강 — Backfill 정책" 참조).
+        R-3 시점에는 *우연 정합 의존* — builder 측 avatar_url truthy로 두 번째 가드 NOOP 자연
+        충족. *명시적이지 않음* → R-4가 IDENTITY_BEARING_SOURCES에 봇 source 명시 포함하여
+        우연 정합 제거. 신원 부재여도 owner로 덮지 않음 (§4 명시적 실패 정합).
+
+        이 테스트는 *R-2 baseline 변경 명시*. 이전 단언(OwnerName fallback)은 R-3 우연 정합
+        잔존 의도 — R-4 fix가 *바로 그 결함*을 닫는다.
         """
         payload = {"userName": None, "userPortraitUrl": None}
         nm = _make_node_manager(self._node_info())
@@ -173,8 +182,35 @@ class TestApplyUserProfileEnrichmentCallerSource:
             node_manager=nm,
             caller_source="channel_observer",
         )
-        # 봇 source가 _IDENTITY_BEARING_SOURCES에 미포함 + 신원 부재 → owner fallback (R-2 회귀)
-        assert payload["userName"] == "OwnerName"
+        # R-4: 봇 source가 IDENTITY_BEARING_SOURCES에 명시 포함 → 신원 부재여도 NOOP
+        assert payload["userName"] is None
+        assert payload["userPortraitUrl"] is None
+
+    def test_llm_source_empty_identity_noop(self):
+        """R-4 (atom G-13): llm source도 IDENTITY_BEARING_SOURCES 명시 포함 — NOOP."""
+        payload = {"userName": None, "userPortraitUrl": None}
+        nm = _make_node_manager(self._node_info())
+        apply_user_profile_enrichment(
+            payload,
+            node_id="node-1",
+            node_manager=nm,
+            caller_source="llm",
+        )
+        assert payload["userName"] is None
+        assert payload["userPortraitUrl"] is None
+
+    def test_trello_watcher_source_empty_identity_noop(self):
+        """R-4 (atom G-13): trello_watcher source도 IDENTITY_BEARING_SOURCES 명시 포함 — NOOP."""
+        payload = {"userName": None, "userPortraitUrl": None}
+        nm = _make_node_manager(self._node_info())
+        apply_user_profile_enrichment(
+            payload,
+            node_id="node-1",
+            node_manager=nm,
+            caller_source="trello_watcher",
+        )
+        assert payload["userName"] is None
+        assert payload["userPortraitUrl"] is None
 
 
 class TestSessionToResponseAgentSourceIntegration:
