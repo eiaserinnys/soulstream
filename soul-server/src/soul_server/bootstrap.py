@@ -216,6 +216,9 @@ async def bootstrap_llm(
         task_manager=task_manager,
         session_db=session_db,
         session_broadcaster=broadcaster,
+        # R-3 (atom G-6, 2026-05-11): build_system_caller_info fallback에 사용.
+        # design-principles §6 정합 (전달은 파라미터로). bootstrap이 settings에서 주입.
+        node_id=settings.soulstream_node_id,
     )
     llm_router = create_llm_router(executor=llm_executor)
     app.include_router(llm_router, tags=["llm"])

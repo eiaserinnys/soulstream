@@ -138,7 +138,8 @@ class TestGracefulShutdownActiveSessions:
         assert ci["display_name"] == "Soulstream"
         assert ci["agent_node"] == _main_settings.soulstream_node_id
         assert ci["user_id"] is None
-        assert ci["avatar_url"] is None
+        # R-3 (atom G-5, 2026-05-11): build_system_caller_info가 server-relative avatar_url 박음.
+        assert ci["avatar_url"] == "/api/system/portraits/system"
 
     async def test_multiple_sessions_all_receive_intervention(self, mock_session_db, mock_query_service):
         """여러 활성 세션 모두에 intervention이 전송된다."""

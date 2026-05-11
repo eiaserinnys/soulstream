@@ -9,16 +9,17 @@ import logging
 import secrets
 import time
 
+from soul_common.auth.caller_info import build_system_caller_info
+from soul_common.db.session_db_base import SessionDBBase, extract_searchable_text
+from soul_server.llm.adapters import LlmAdapter
 from soul_server.models.llm import LlmCompletionRequest, LlmCompletionResponse
+from soul_server.service.session_broadcaster import SessionBroadcaster
+from soul_server.service.task_manager import TaskManager
 from soul_server.service.task_models import (
     Task,
     TaskStatus,
     utc_now,
 )
-from soul_server.service.task_manager import TaskManager
-from soul_common.db.session_db_base import SessionDBBase, extract_searchable_text
-from soul_server.service.session_broadcaster import SessionBroadcaster
-from soul_server.llm.adapters import LlmAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -49,11 +50,20 @@ class LlmExecutor:
         task_manager: TaskManager,
         session_db: SessionDBBase,
         session_broadcaster: SessionBroadcaster,
+        *,
+        node_id: str,
     ) -> None:
+        """R-3 (atom G-6, 2026-05-11): keyword-only `node_id` 명시 인자 추가.
+
+        `build_system_caller_info(node_id=...)` fallback에 사용. design-principles §6 정합 —
+        bootstrap.py가 `settings.soulstream_node_id`를 명시 주입. `task_manager._db.node_id` 같은
+        사적 속성 접근 회피.
+        """
         self._adapters = adapters
         self._task_manager = task_manager
         self._db = session_db
         self._session_broadcaster = session_broadcaster
+        self._node_id = node_id
 
     async def _persist_event(self, session_id: str, event_dict: dict) -> int:
         """이벤트를 SessionDB에 영속화하고 event_id를 반환한다."""
@@ -92,6 +102,11 @@ class LlmExecutor:
 
         agent_session_id = _generate_llm_session_id()
 
+        # R-3 (atom G-6, 2026-05-11): caller_info forward + system fallback.
+        # 외부 호출자(channel_observer LLM 호출 등)가 자기 source 박으면 보존 — wire/DB에 영속.
+        # 안 박으면 build_system_caller_info로 system 정체성 자동 부여 (감사 가시성).
+        caller_info = request.caller_info or build_system_caller_info(node_id=self._node_id)
+
         # Task 생성 및 등록 (TaskManager 공개 API 사용)
         task = Task(
             agent_session_id=agent_session_id,
@@ -101,6 +116,7 @@ class LlmExecutor:
             session_type="llm",
             llm_provider=request.provider,
             llm_model=request.model,
+            caller_info=caller_info,
         )
         await self._task_manager.register_external_task(task)
 

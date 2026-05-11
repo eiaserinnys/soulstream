@@ -73,6 +73,27 @@ class TestLlmSchemas:
         assert req.client_id == "translate"
         assert len(req.messages) == 2
 
+    # T-G6-A (R-3, atom G-6, 2026-05-11): LlmCompletionRequest.caller_info 필드 검증.
+    def test_completion_request_caller_info_default_none(self):
+        """caller_info 미전달 시 default None — 외부 호출자가 옵션. 안 박으면 LlmExecutor가 system fallback."""
+        req = LlmCompletionRequest(
+            provider="openai",
+            model="gpt-4o-mini",
+            messages=[LlmMessage(role="user", content="Hello")],
+        )
+        assert req.caller_info is None
+
+    def test_completion_request_caller_info_forward(self):
+        """caller_info 박혔으면 보존 (LlmExecutor가 그대로 Task에 forward)."""
+        ci = {"source": "agent", "agent_node": "n1", "agent_id": "a1", "display_name": "Ag1"}
+        req = LlmCompletionRequest(
+            provider="openai",
+            model="gpt-4o-mini",
+            messages=[LlmMessage(role="user", content="Hi")],
+            caller_info=ci,
+        )
+        assert req.caller_info == ci
+
     def test_completion_request_invalid_provider(self):
         with pytest.raises(Exception):
             LlmCompletionRequest(
@@ -186,6 +207,7 @@ def executor(mock_adapter, task_manager, session_db, broadcaster):
         task_manager=task_manager,
         session_db=session_db,
         session_broadcaster=broadcaster,
+        node_id="test-node",
     )
 
 
@@ -199,6 +221,7 @@ def executor_with_both(mock_adapter, task_manager, session_db, broadcaster):
         task_manager=task_manager,
         session_db=session_db,
         session_broadcaster=broadcaster,
+        node_id="test-node",
     )
 
 
@@ -209,6 +232,7 @@ def executor_with_failing(failing_adapter, task_manager, session_db, broadcaster
         task_manager=task_manager,
         session_db=session_db,
         session_broadcaster=broadcaster,
+        node_id="test-node",
     )
 
 
@@ -361,6 +385,70 @@ class TestLlmExecutor:
 # === Task Model Serialization Tests ===
 
 
+class TestLlmExecutorCallerInfo:
+    """T-G6 — R-3 caller_info forward + system fallback (atom G-6, 2026-05-11).
+
+    외부 호출자가 LlmCompletionRequest.caller_info를 박으면 그대로 task에 forward (정체성 보존).
+    안 박으면 build_system_caller_info로 system 정체성 자동 부여 (감사 가시성).
+    """
+
+    async def test_execute_caller_info_forwarded_to_task(self, executor, mock_adapter, task_manager):
+        """T-G6-B: request.caller_info가 박혀 있으면 task.caller_info에 동일 dict 보존."""
+        ci = {
+            "source": "channel_observer",
+            "display_name": "채널 관찰자",
+            "user_id": None,
+            "avatar_url": "/api/system/portraits/channel_observer",
+        }
+        request = LlmCompletionRequest(
+            provider="openai",
+            model="gpt-4o-mini",
+            messages=[LlmMessage(role="user", content="Hi")],
+            caller_info=ci,
+        )
+        response = await executor.execute(request)
+        task = await task_manager.get_task(response.session_id)
+        assert task is not None
+        assert task.caller_info == ci
+
+    async def test_execute_caller_info_none_falls_back_to_system(self, executor, mock_adapter, task_manager):
+        """T-G6-C: request.caller_info=None → build_system_caller_info fallback (source=system, agent_node=node_id)."""
+        request = LlmCompletionRequest(
+            provider="openai",
+            model="gpt-4o-mini",
+            messages=[LlmMessage(role="user", content="Hi")],
+        )
+        response = await executor.execute(request)
+        task = await task_manager.get_task(response.session_id)
+        assert task is not None
+        assert task.caller_info == {
+            "source": "system",
+            "agent_node": "test-node",
+            "display_name": "Soulstream",
+            "user_id": None,
+            "avatar_url": "/api/system/portraits/system",
+        }
+
+    async def test_execute_caller_info_persisted_to_metadata(self, executor, task_manager, session_db):
+        """T-G6-D: register_external_task가 system fallback caller_info를 metadata JSONB에 영속.
+
+        task_manager.register_external_task의 `if task.caller_info:` 가드 — system fallback이
+        truthy dict이므로 metadata append 발동. caller_info 부재(silent skip) 결함 차단.
+        """
+        request = LlmCompletionRequest(
+            provider="openai",
+            model="gpt-4o-mini",
+            messages=[LlmMessage(role="user", content="Hi")],
+        )
+        response = await executor.execute(request)
+        task = await task_manager.get_task(response.session_id)
+        assert task is not None
+        # task.metadata에 caller_info entry가 있어야 한다 (TaskFactory와 동일 패턴, task_manager.py:359-362).
+        caller_entries = [m for m in task.metadata if m.get("type") == "caller_info"]
+        assert len(caller_entries) == 1
+        assert caller_entries[0]["value"]["source"] == "system"
+
+
 class TestTaskModelSerialization:
     """Task 데이터 모델의 LLM 필드 직렬화/역직렬화 테스트"""
 
@@ -460,6 +548,7 @@ class TestLlmAPI:
             task_manager=task_manager,
             session_db=mock_db,
             session_broadcaster=broadcaster,
+            node_id="test-node",
         )
 
         app = FastAPI()

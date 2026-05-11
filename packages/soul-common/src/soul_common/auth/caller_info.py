@@ -165,16 +165,26 @@ def build_agent_caller_info(
     }
 
 
+SYSTEM_PORTRAIT_BASE = "/api/system/portraits"
+"""orch-server 시스템 portrait 라우트 base path. agent portrait `/api/nodes/.../portrait`와
+§9 대칭. 클라이언트(unified-dashboard / soul-app)는 server-relative URL을 그대로 사용 —
+source별 자산 매핑 책임을 클라이언트에서 빌더로 끌어올린다 (R-3 fix, 2026-05-11)."""
+
+
 def build_system_caller_info(*, node_id: str) -> dict[str, Any]:
     """소울스트림 서버 자신이 발신자인 시스템 메시지의 caller_info 조립 (통합 v1).
 
     graceful_shutdown 종료 예고, resume_shutdown_sessions 재개 안내 등 서버 lifecycle
     이벤트가 세션에 자동으로 인터벤션을 발송할 때 사용한다 (atom F-11D 정본).
 
-    avatar_url은 None — 시각 자산 결정 책임은 클라이언트가 진다 (design-principles §1
-    지식 경계). 클라이언트는 caller_info.source == "system"이면 자기 정적 자산을 사용:
-    - soul-app: assets/icon-symbol.png (자체 require)
-    - unified-dashboard: public/system-portrait.png (정적 serve)
+    R-3 fix(2026-05-11): avatar_url을 server-relative URL `/api/system/portraits/system`으로
+    박는다 (B-1 + system 통합, 위임자 게이트 결정). 이전 docstring "시각 자산 결정 책임은
+    클라이언트가 진다 — soul-app: assets/icon-symbol.png, unified-dashboard:
+    public/system-portrait.png"은 superseded — wire avatar_url 단일 정본.
+
+    정본 자산: `packages/soul-common/src/soul_common/portraits/system.png`
+    호스팅: `orch-server` `GET /api/system/portraits/{source}` (verify_auth 포함, agent
+    portrait §9 대칭). 클라이언트는 caller_info.avatar_url을 그대로 사용 — source별 분기 없음.
 
     user_id도 None — 시스템은 사용자/에이전트와 달리 식별자가 무의미.
 
@@ -182,12 +192,54 @@ def build_system_caller_info(*, node_id: str) -> dict[str, Any]:
         node_id: 발신 서버의 노드 ID (settings.soulstream_node_id).
 
     Returns:
-        v1 caller_info dict — source/agent_node/display_name 채움, user_id/avatar_url None.
+        v1 caller_info dict — source/agent_node/display_name/avatar_url 채움, user_id None.
     """
     return {
         "source": "system",
         "agent_node": node_id,
         "display_name": "Soulstream",
         "user_id": None,
-        "avatar_url": None,
+        "avatar_url": f"{SYSTEM_PORTRAIT_BASE}/system",
     }
+
+
+def build_bot_caller_info(
+    *,
+    source: str,
+    display_name: str,
+    agent_node: Optional[str] = None,
+) -> dict[str, Any]:
+    """자동 봇(channel_observer / trello_watcher) source의 caller_info 조립 (통합 v1).
+
+    R-3 fix(2026-05-11, G-5): build_system_caller_info의 봇 변형 — 사용자 식별 정보 없이
+    plugin이 자동 실행하는 세션의 정체성을 박는다. system 패턴과 §9 대칭으로 server-relative
+    avatar_url을 wire에 직접 박는다.
+
+    정본 자산: `packages/soul-common/src/soul_common/portraits/{source}.png`
+    호스팅: orch-server `GET /api/system/portraits/{source}` (verify_auth 포함).
+    클라이언트는 caller_info.avatar_url 그대로 사용 — 매핑 분기 없음 (design-principles
+    §3 정본 하나, §9 일관성).
+
+    호출 정본:
+    - seosoyoung-plugins/.../channel_observer/pipeline.py — source='channel_observer', display_name='채널 관찰자'
+    - seosoyoung-plugins/.../trello/watcher.py — source='trello_watcher', display_name='트렐로 워처'
+
+    Args:
+        source: 봇 source 토큰. 정본 자산이 portraits/{source}.png에 존재해야 함.
+        display_name: 사용자 표시명 (예: '채널 관찰자', '트렐로 워처').
+        agent_node: (옵션) 봇이 실행되는 노드 ID. plugin이 server context를 알 필요 없으므로
+            보통 None — orch가 라우팅한 노드 정보는 wire의 다른 경로에서 결정.
+
+    Returns:
+        v1 caller_info dict — source/display_name/avatar_url 채움, user_id None.
+        agent_node는 옵션 인자 truthy일 때만 포함.
+    """
+    info: dict[str, Any] = {
+        "source": source,
+        "display_name": display_name,
+        "user_id": None,
+        "avatar_url": f"{SYSTEM_PORTRAIT_BASE}/{source}",
+    }
+    if agent_node:
+        info["agent_node"] = agent_node
+    return info

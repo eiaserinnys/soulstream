@@ -48,12 +48,21 @@ export function computeInterventionDisplay(
       typeof callerName === "string" && callerName.length > 0
         ? callerName
         : SYSTEM_DEFAULT_NAME;
+    // R-3 (atom G-5, 2026-05-11): wire avatar_url 우선 + 정적 자산 fallback (graceful).
+    // 새 system 메시지는 build_system_caller_info가 /api/system/portraits/system 박음.
+    // F-11D~E 머지 이후 영속화된 기존 system 메시지(avatar_url=None)는 정적 자산 fallback —
+    // backfill 별 hygiene 카드로 분리 후 SYSTEM_PORTRAIT_URL 정적 상수 정리.
+    const callerAvatar = msg.callerInfo?.avatar_url;
+    const portraitUrl =
+      typeof callerAvatar === "string" && callerAvatar.length > 0
+        ? callerAvatar
+        : SYSTEM_PORTRAIT_URL;
     return {
       isSystem: true,
       isAgent: false,
       displayName,
       displayId: null,
-      portraitUrl: SYSTEM_PORTRAIT_URL,
+      portraitUrl,
       hasPortrait: true,
       fallbackEmoji: FALLBACK_SYSTEM,
     };
