@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { Update } from "@tauri-apps/plugin-updater";
 import { getServerUrl, setServerUrl } from "./utils/config";
 import { checkReachability } from "./utils/url";
+import { registerDashboardOrigin } from "./utils/origin";
 import { checkForUpdate } from "./utils/updater";
 import Setup from "./pages/Setup";
 import Settings from "./pages/Settings";
@@ -40,6 +41,11 @@ function App() {
     setState("connecting");
     try {
       await checkReachability(url, 10000);
+      // Tauri 측 외부 navigation 가드(`set_dashboard_origin` command)가 dashboard origin을
+      // 알도록 등록한다. 등록 실패 시 catch로 떨어져 error 페이지로 전환 — 가드 미등록 상태로
+      // dashboard에 진입하면 SPA 라우팅까지 외부로 분류되어 OS 브라우저로 빠져나간다
+      // (design-principles §4 명시적 실패).
+      await registerDashboardOrigin(url);
       // Navigate the entire WebView to the server URL.
       // This unloads the React app — there's no programmatic way back.
       // TODO(phase-1): Add native menu item (Cmd+, / Settings) to return to bundled UI.
