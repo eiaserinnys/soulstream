@@ -130,12 +130,26 @@ async def _on_node_change(
         # truthy면 헬퍼 NOOP (mix-fallback 금지 보존).
         # R-2 fix: spread된 broadcast_data.caller_source(emit_session_updated/phase가 박음)를
         # 헬퍼에 forward — 정체성 명시 source는 owner 덮어쓰기 차단.
-        apply_user_profile_enrichment(
-            broadcast_data,
-            node_id=node_id,
-            node_manager=node_manager,
-            caller_source=broadcast_data.get("caller_source"),
-        )
+        # G-19 fix(2026-05-11): emit_session_message_updated wire는 `last_message` 키를 보유한다
+        # (wire payload 키 정본: atom b558ca3b). 본 wire는 메시지 단위 갱신이라 세션 메타
+        # (userName/userPortraitUrl)를 의도적으로 비워 보낸다 (P6 결정, session_broadcaster.py
+        # `emit_session_message_updated` docstring). 그러나 R-1/R-2 시점에 추가된 본 enrichment
+        # 호출은 wire 종류를 구분하지 않아 caller_source=None + userName falsy 조합이 노드 owner
+        # fallback을 발동, SessionSummary.userName이 dashboard owner로 매 메시지마다 덮어쓰이던
+        # 회로(라이브 재현 sess-20260511075138-3696750a · 327567ed-...).
+        # 식별 마커는 `last_message` 키 존재 — emit_session_message_updated wire의 *유일 고유 키*
+        # (emit_session_updated/phase는 last_assistant_text/last_progress_text는 박지만 last_message는
+        # 절대 박지 않음). 본 가드는 wire payload의 자연적 의미 구조에 기반 — broadcaster는 자기
+        # payload 의미만 책임, orch가 해석 (design-principles §1 지식 경계).
+        # 회귀 테스트: test_main_on_node_change.py::test_t13/test_t14, N.4 D-2 가이드(atom 9d47010b).
+        # data=None 에지: `(data or {}) → {}` → 가드 통과 → enrichment 발동 (baseline T1~T6과 동일).
+        if "last_message" not in (data or {}):
+            apply_user_profile_enrichment(
+                broadcast_data,
+                node_id=node_id,
+                node_manager=node_manager,
+                caller_source=broadcast_data.get("caller_source"),
+            )
         await broadcaster.broadcast(broadcast_data)
     elif event_type == "node_session_session_deleted":
         # data에 agentSessionId 또는 agent_session_id 두 가지 키가 올 수 있으므로 모두 시도.

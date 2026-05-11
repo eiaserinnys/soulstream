@@ -285,3 +285,120 @@ async def test_t9b_session_updated_skips_enrichment_when_caller_info_present(moc
     assert call_args["userName"] == "alice"
     assert call_args["userPortraitUrl"] == "https://example.com/alice.png"
     nm.get_user_info.assert_not_called()
+
+
+# === G-19 fix (2026-05-11) — wire-kind 식별 가드 회귀 매트릭스 T13/T14 ===
+#
+# 진단: emit_session_message_updated wire(P6 결정으로 caller 키 부재)가
+# orch _on_node_change session_updated 분기에서 emit_session_updated/phase와
+# 무차별로 apply_user_profile_enrichment를 통과하여, caller_source=None +
+# userName falsy → 노드 owner fallback → SessionSummary.userName이 dashboard
+# owner로 덮어쓰이던 회로(atom diagnosis 20260511-1700).
+#
+# fix: session_updated 분기에 `if "last_message" not in (data or {}):` 가드
+# 추가하여 enrichment 호출을 가드 안으로 이동. `last_message` 키는
+# emit_session_message_updated wire의 *유일 고유 키* (broadcaster L184) —
+# wire 종류 식별 정본. broadcaster docstring(emit_session_message_updated)에
+# 식별 마커 명시로 정본 둘 위험 차단.
+
+
+@pytest.mark.asyncio
+async def test_t13_session_message_updated_wire_skips_enrichment(mock_broadcaster):
+    """T13(G-19): emit_session_message_updated wire (last_message 키 보유, caller 키 부재) →
+    apply_user_profile_enrichment skip → broadcast_data에 userName/userPortraitUrl 키 추가 없음.
+
+    data=None 에지는 `(data or {}) → {}` → 가드 통과 → enrichment 발동.
+    baseline T1~T6과 동일 거동 (mock 빈 dict로 NOOP 보존). 본 케이스는 *G-19 회로*만 cover.
+    """
+    nm = MagicMock(spec=NodeManager)
+    # 만약 가드가 없으면 노드 owner를 fallback으로 박을 것 — assert로 차단.
+    nm.get_user_info = MagicMock(return_value={"name": "노드 사용자", "hasPortrait": True})
+
+    data = {
+        "agentSessionId": "sess-msg",
+        "status": "running",
+        "updated_at": "2026-05-11T08:00:00+00:00",
+        "last_message": {
+            "type": "user_message",
+            "preview": "안녕",
+            "timestamp": "2026-05-11T08:00:00+00:00",
+        },
+        "last_event_id": 12,
+        "last_read_event_id": 10,
+    }
+    await _on_node_change(
+        mock_broadcaster, nm,
+        "node_session_session_updated", "node-1", data,
+    )
+
+    call_args = mock_broadcaster.broadcast.await_args[0][0]
+    # 가드로 enrichment skip — userName/userPortraitUrl 키 추가 없음
+    assert "userName" not in call_args, (
+        "G-19 회로: emit_session_message_updated wire에 enrichment가 발동하여 "
+        "노드 owner로 덮어쓰임. _on_node_change session_updated 분기에 "
+        "`if \"last_message\" not in (data or {}):` 가드 필요."
+    )
+    assert "userPortraitUrl" not in call_args
+    # 호출 자체 0건 — guard가 enrichment 진입 전에 차단
+    nm.get_user_info.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_t14_sequential_updated_then_message_preserves_agent_identity(mock_broadcaster):
+    """T14(G-19): emit_session_updated wire (caller_source=agent, userName=작가) →
+    이어 emit_session_message_updated wire (last_message 보유) sequential 투입.
+    두 번째 wire에서 userName이 노드 owner로 덮이지 않아 *agent 정체성 유지*.
+
+    클라이언트(soul-ui buildSessionUpdates / soul-app useSessionsStream)는
+    두 번째 wire의 key 부재를 skip하므로 SessionSummary.userName="작가 서소영"이 보존된다.
+    """
+    nm = MagicMock(spec=NodeManager)
+    # 노드 owner는 Jubok Kim — agent 정체성(작가 서소영)이 살아남아야 함
+    nm.get_user_info = MagicMock(return_value={"name": "Jubok Kim", "hasPortrait": True})
+
+    # wire #1: emit_session_updated (agent 정체성 보유 — IDENTITY_BEARING NOOP)
+    wire1 = {
+        "agentSessionId": "sess-a",
+        "status": "running",
+        "caller_source": "agent",
+        "userName": "작가 서소영",
+        "userPortraitUrl": "/api/nodes/eias-linegames/agents/writer/portrait",
+        "session_type": "claude",
+        "last_event_id": 1,
+        "last_read_event_id": 0,
+    }
+    await _on_node_change(
+        mock_broadcaster, nm,
+        "node_session_session_updated", "eias-linegames", wire1,
+    )
+    bc1 = mock_broadcaster.broadcast.await_args[0][0]
+    assert bc1["userName"] == "작가 서소영"  # caller_source=agent → IDENTITY_BEARING NOOP
+    assert bc1["userPortraitUrl"].endswith("/agents/writer/portrait")
+
+    # wire #2: emit_session_message_updated (메시지 단위 갱신 — wire-kind guard로 enrichment skip)
+    wire2 = {
+        "agentSessionId": "sess-a",
+        "status": "running",
+        "updated_at": "2026-05-11T08:00:01+00:00",
+        "last_message": {
+            "type": "user_message",
+            "preview": "다음 턴",
+            "timestamp": "2026-05-11T08:00:01+00:00",
+        },
+        "last_event_id": 2,
+        "last_read_event_id": 1,
+    }
+    await _on_node_change(
+        mock_broadcaster, nm,
+        "node_session_session_updated", "eias-linegames", wire2,
+    )
+    bc2 = mock_broadcaster.broadcast.await_args[0][0]
+    # 가드로 enrichment skip → broadcast_data에 userName/userPortraitUrl 키 추가 없음
+    # 클라이언트는 키 부재를 skip하므로 SessionSummary에 박힌 "작가 서소영" 보존
+    assert "userName" not in bc2, (
+        "G-19 회로: 둘째 wire(emit_session_message_updated)에서 enrichment가 발동하여 "
+        "기존 agent 정체성이 노드 owner로 덮어쓰임."
+    )
+    assert "userPortraitUrl" not in bc2
+    # wire #1(IDENTITY_BEARING NOOP) + wire #2(wire-kind skip) — 두 wire 모두 get_user_info 0회
+    nm.get_user_info.assert_not_called()

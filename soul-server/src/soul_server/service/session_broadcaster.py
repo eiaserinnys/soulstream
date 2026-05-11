@@ -163,16 +163,43 @@ class SessionBroadcaster(BaseSessionBroadcaster):
         메시지 단위 user 프로필 갱신이 필요한 표시 위치가 새로 추가되면 본 결정을
         재검토. 그 시점에 본 wire에 키 추가 + orch 측 enrichment 헬퍼 호출 추가.
 
+        ## G-19 fix(2026-05-11): `last_message` 키는 본 wire의 식별 마커
+
+        orch `_on_node_change` session_updated 분기는 본 wire와 emit_session_updated/
+        emit_session_phase를 *구분*하여 처리해야 한다 — 본 wire는 caller 키 부재로
+        오는 게 의도이지만 orch enrichment 헬퍼가 wire 종류를 모르고 호출되면
+        caller_source=None + userName falsy 조합이 노드 owner fallback을 발동시켜
+        SessionSummary가 dashboard owner로 매 메시지마다 덮어쓰이는 회로가 발생한다
+        (라이브 재현 sess-20260511075138-3696750a, atom diagnosis 20260511-1700).
+
+        orch는 본 wire의 *유일 고유 키*인 `last_message` 존재로 식별한다
+        (emit_session_updated/phase는 last_assistant_text/last_progress_text는 박지만
+        last_message는 *절대* 박지 않음).
+
+        ⚠️ **변경 금지 사항** — 다음을 바꿀 때는 N.4 D-2 게이트(atom 9d47010b)를
+        반드시 함께 점검할 것:
+        1. 본 wire 페이로드에서 `last_message` 키 *제거*
+           → orch 식별 마커 소실 → wire 종류 식별 실패 → G-19 회로 재발
+        2. emit_session_updated/emit_session_phase wire에 `last_message` 키 *추가*
+           → 식별 마커 충돌 → enrichment 회피 회로 → user 프로필 missing 회귀
+        3. 본 wire에 caller_source/userName/userPortraitUrl 키 *추가* (P6 결정 철회)
+           → orch 가드의 *enrichment skip 정당성* 무너짐 → 정본 둘 안티패턴 재발
+
+        본 contract는 회귀 안전망으로 `test_session_broadcaster.py`의
+        `test_session_message_updated_payload_keys_exact` (T15)와 orch
+        `test_main_on_node_change.py`의 T13/T14가 함께 보호한다.
+
         관련 atom:
         - emit_session_updated wire payload 키 목록: b558ca3b
         - 정본 둘 안티패턴: d7a1ad86
         - N.4 enrichment 변경 시 동시 갱신: 9d47010b
+        - G-19 진단: roselin/.local/artifacts/analysis/20260511-1700-caller-info-feed-card-leak-diagnosis.md
 
         Args:
             agent_session_id: 세션 식별자
             status: 현재 세션 상태 (TaskStatus.value)
             updated_at: ISO 8601 타임스탬프 (항상 UTC)
-            last_message: {"type": str, "preview": str, "timestamp": str}
+            last_message: {"type": str, "preview": str, "timestamp": str} — 본 wire의 식별 마커
             last_event_id: 세션의 최신 이벤트 ID
             last_read_event_id: 세션의 마지막 읽은 이벤트 ID
         """
