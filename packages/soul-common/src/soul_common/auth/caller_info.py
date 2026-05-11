@@ -93,30 +93,74 @@ def build_browser_caller_info(
     return info
 
 
-def extract_caller_info_from_metadata(metadata) -> Optional[dict]:
-    """세션 metadata JSONB array에서 첫 caller_info entry의 value(dict)를 반환.
+def has_caller_identity(caller_info: dict) -> bool:
+    """caller_info가 *덮어쓸 가치 있는 정체성*을 가졌는지.
 
-    metadata는 PostgresSessionDB가 반환하는 list[{"type": str, "value": ...}] 형식.
+    R-6 fix(2026-05-11, atom G-20): `task_factory._has_identity`를 본 모듈로 추출 + 정본화.
+    `extract_caller_info_from_metadata`가 *마지막 신원 박힌 entry* 추출에 동일 로직을 사용하므로
+    §3 정본 하나로 합쳤다. `task_factory._has_identity`는 본 함수의 backward-compat alias.
+
+    정체성 명시 source(IDENTITY_BEARING_SOURCES 7 원소)는 신원 필드가 비어도 True —
+    orch/soul-server enrichment 헬퍼의 NOOP 정책과 §9 대칭. 그 외 source는 신원 필드
+    (display_name 또는 avatar_url) truthy일 때만 True.
+
+    Args:
+        caller_info: caller_info 통합 v1 dict (atom ed3a216d).
+
+    Returns:
+        정체성 명시 source 또는 신원 필드 truthy면 True.
+    """
+    source = caller_info.get("source")
+    if source in IDENTITY_BEARING_SOURCES:
+        return True
+    return bool(caller_info.get("display_name") or caller_info.get("avatar_url"))
+
+
+def extract_caller_info_from_metadata(metadata) -> Optional[dict]:
+    """세션 metadata JSONB array에서 *현재 caller*의 caller_info를 반환.
+
+    metadata는 PostgresSessionDB가 반환하는 list[{"type": str, "value": ...}] 형식 —
+    append-only history ledger.
     caller_info 통합 v1(atom ed3a216d) 정본 진입점.
 
-    F-9 fix(2026-05-08)로 본 모듈에 통합. 이전엔 orch-server session_serializer에
-    `_extract_caller_info`로 사본이 있었으나 soul-server eviction_manager의 caller_info
-    복원에도 같은 로직이 필요해 정본 하나(design-principles §3)로 합쳤다.
+    R-6 fix(2026-05-11, atom G-20): *마지막 신원 박힌* caller_info entry 우선 반환.
+    이전(F-9~R-5): 첫 caller_info entry 반환 — `task_factory._resume_existing_task_locked`가
+    intervene 시 `task.caller_info`만 인메모리 갱신, `append_metadata` 미호출이라 *옛 entry가
+    정본으로 남는* 회로(sess-20260419114049-8cf09982 라이브 재현: D1 카드 첫 동기화에
+    dashboard owner Jubok Kim 표시, 후속 SSE wire로 スバル 대체).
+
+    정책:
+    1. 마지막 *신원 박힌* caller_info entry 우선 (`has_caller_identity` True)
+    2. 부재 시 마지막 *어떤* caller_info entry라도 (graceful — 옛 데이터 보존)
+    3. metadata 전체에 caller_info entry 0건 → None
+
+    호출 위치 (4 곳, §9 대칭):
+    - orch-server/api/session_serializer.py: REST /api/sessions 응답 직렬화
+    - orch-server/api/catalog.py: REST /api/catalog sessionList
+    - soul-server/service/session_query_service.py: soul-server 자체 대시보드 REST
+    - soul-server/service/session_eviction_manager.py: evicted task on-demand 복원
 
     Args:
         metadata: 세션 DB row의 metadata 컬럼(list[dict] 또는 None).
 
     Returns:
-        첫 caller_info entry의 value dict, 또는 None.
+        마지막 신원 박힌 caller_info entry value > 마지막 caller_info entry value > None.
     """
     if not metadata:
         return None
+
+    last_any: Optional[dict] = None
+    last_with_identity: Optional[dict] = None
     for m in metadata:
-        if isinstance(m, dict) and m.get("type") == "caller_info":
-            v = m.get("value")
-            if isinstance(v, dict):
-                return v
-    return None
+        if not isinstance(m, dict) or m.get("type") != "caller_info":
+            continue
+        v = m.get("value")
+        if not isinstance(v, dict):
+            continue
+        last_any = v
+        if has_caller_identity(v):
+            last_with_identity = v
+    return last_with_identity if last_with_identity is not None else last_any
 
 
 def build_agent_caller_info(

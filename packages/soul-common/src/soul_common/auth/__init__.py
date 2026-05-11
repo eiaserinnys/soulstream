@@ -16,6 +16,7 @@ from soul_common.auth.caller_info import (
     build_system_caller_info,
     decode_dashboard_jwt_user,
     extract_caller_info_from_metadata,
+    has_caller_identity,
 )
 
 __all__ = [
@@ -33,4 +34,5 @@ __all__ = [
     "build_system_caller_info",
     "decode_dashboard_jwt_user",
     "extract_caller_info_from_metadata",
+    "has_caller_identity",
 ]

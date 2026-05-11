@@ -15,6 +15,7 @@ from soul_common.auth.caller_info import (
     build_agent_caller_info,
     build_bot_caller_info,
     build_system_caller_info,
+    extract_caller_info_from_metadata,
 )
 
 
@@ -188,3 +189,177 @@ class TestBuildAgentCallerInfoExisting:
             portrait_path=None,
         )
         assert result["avatar_url"] is None
+
+
+class TestExtractCallerInfoFromMetadata:
+    """`extract_caller_info_from_metadata` 정책 단언.
+
+    R-6 fix(2026-05-11, G-20): metadata array를 *append-only history ledger*로 취급하고,
+    호출자가 *현재 caller*를 알 수 있도록 *마지막 신원 박힌 caller_info entry*를 반환한다.
+    이전 (F-9~R-5): 첫 caller_info entry 반환 — `task_factory._resume_existing_task_locked`가
+    intervene 시 `task.caller_info`만 인메모리 갱신하고 `append_metadata`를 호출하지 않아
+    REST 응답(DB-derived)과 SSE wire(in-memory-derived) 시간 축 비대칭 회로(sess-20260419114049).
+
+    정책:
+    1. 마지막 *신원 박힌* caller_info entry 우선 (display_name truthy 또는 avatar_url truthy
+       또는 source ∈ IDENTITY_BEARING_SOURCES — `task_factory._has_identity`와 §9 대칭)
+    2. 부재 시 마지막 *어떤* caller_info entry라도 (graceful — 옛 데이터 보존)
+    3. metadata 전체에 caller_info entry 0건 → None
+    """
+
+    def test_empty_metadata_returns_none(self):
+        """metadata 빈 배열 → None (graceful)."""
+        assert extract_caller_info_from_metadata([]) is None
+
+    def test_metadata_none_returns_none(self):
+        """metadata None → None (graceful)."""
+        assert extract_caller_info_from_metadata(None) is None
+
+    def test_no_caller_info_entries_returns_none(self):
+        """caller_info type 부재 (다른 type만) → None."""
+        metadata = [
+            {"type": "other", "value": {"foo": "bar"}},
+            {"type": "another", "value": "x"},
+        ]
+        assert extract_caller_info_from_metadata(metadata) is None
+
+    def test_single_identity_entry_returns_it(self):
+        """신원 박힌 caller_info 1개 → 그 entry value 반환."""
+        metadata = [
+            {"type": "caller_info", "value": {
+                "source": "slack",
+                "display_name": "スバル",
+                "avatar_url": "https://slack-edge.com/.../192.png",
+            }},
+        ]
+        result = extract_caller_info_from_metadata(metadata)
+        assert result == {
+            "source": "slack",
+            "display_name": "スバル",
+            "avatar_url": "https://slack-edge.com/.../192.png",
+        }
+
+    def test_single_no_identity_entry_returns_it_graceful(self):
+        """신원 부재 caller_info 1개 → 그 entry 반환 (graceful, 옛 데이터 보존).
+
+        이전 R-2 G-9 fix 이전 영속화된 browser 등 caller_info 케이스. 신원 부재여도 None 대신
+        존재하는 entry를 반환하여 enrichment 헬퍼가 source 분기로 처리.
+        """
+        metadata = [
+            {"type": "caller_info", "value": {
+                "source": "browser",
+                "ip": "127.0.0.1",
+            }},
+        ]
+        result = extract_caller_info_from_metadata(metadata)
+        assert result == {"source": "browser", "ip": "127.0.0.1"}
+
+    def test_old_no_identity_then_new_identity_returns_last_identity(self):
+        """G-20 핵심 케이스: 옛 신원 부재 entry + 새 신원 박힌 entry → 새 entry 반환.
+
+        sess-20260419114049-8cf09982 시뮬레이션 — R-2 fix 이전 entry는 신원 부재,
+        R-2 fix 이후 intervene으로 새 신원 박힌 entry append. 호출자는 *현재 caller*를 봐야
+        한다 (이전 첫 entry 정책은 옛 신원 부재 entry를 반환 → owner fallback 발동 회로).
+        """
+        metadata = [
+            {"type": "caller_info", "value": {"source": "slack"}},
+            {"type": "caller_info", "value": {
+                "source": "slack",
+                "display_name": "スバル",
+                "avatar_url": "https://slack-edge.com/.../192.png",
+                "user_id": "U0A9ELR53R8",
+            }},
+        ]
+        result = extract_caller_info_from_metadata(metadata)
+        assert result["display_name"] == "スバル"
+        assert result["avatar_url"] == "https://slack-edge.com/.../192.png"
+
+    def test_two_identity_entries_returns_last_one(self):
+        """신원 박힌 entry 2개 → 마지막 entry 반환 (caller 변경 이력 추적).
+
+        사용자 신원 변경(슬랙 닉네임 변경, agent reassign 등) 시 가장 최근 신원이 표시되어야
+        한다 — append-only ledger 정합.
+        """
+        metadata = [
+            {"type": "caller_info", "value": {
+                "source": "slack",
+                "display_name": "OldName",
+                "user_id": "U_OLD",
+            }},
+            {"type": "caller_info", "value": {
+                "source": "slack",
+                "display_name": "NewName",
+                "user_id": "U_NEW",
+            }},
+        ]
+        result = extract_caller_info_from_metadata(metadata)
+        assert result["display_name"] == "NewName"
+        assert result["user_id"] == "U_NEW"
+
+    def test_two_no_identity_entries_returns_last_one_graceful(self):
+        """둘 다 신원 부재 → 마지막 entry 반환 (graceful — 신원 박힌 후보 부재 시).
+
+        모두 신원 부재면 fallback으로 마지막 entry. 적어도 source는 보존 → enrichment 헬퍼가
+        source로 분기 가능.
+        """
+        metadata = [
+            {"type": "caller_info", "value": {"source": "browser", "ip": "1.1.1.1"}},
+            {"type": "caller_info", "value": {"source": "browser", "ip": "2.2.2.2"}},
+        ]
+        result = extract_caller_info_from_metadata(metadata)
+        assert result == {"source": "browser", "ip": "2.2.2.2"}
+
+    def test_identity_then_no_identity_returns_last_identity(self):
+        """신원 박힌 entry 후 신원 부재 entry → *신원 박힌* entry 반환 (마지막 신원 우선).
+
+        실용적으로 발생 가능성 낮지만 (downgrade 패턴), append-only ledger의 *current caller*
+        의미를 유지하려면 신원 박힌 entry가 우선. 후속 신원 부재 entry는 부분 정보로 간주.
+        """
+        metadata = [
+            {"type": "caller_info", "value": {
+                "source": "agent",
+                "display_name": "Shay",
+                "agent_id": "shay",
+            }},
+            {"type": "caller_info", "value": {"source": "browser"}},
+        ]
+        result = extract_caller_info_from_metadata(metadata)
+        assert result["display_name"] == "Shay"
+        assert result["source"] == "agent"
+
+    def test_three_entries_skip_non_caller_info_types(self):
+        """다른 type entries(예: away_summary) 무시하고 caller_info만 검사."""
+        metadata = [
+            {"type": "caller_info", "value": {"source": "slack"}},
+            {"type": "away_summary", "value": "..."},
+            {"type": "caller_info", "value": {
+                "source": "slack",
+                "display_name": "スバル",
+            }},
+        ]
+        result = extract_caller_info_from_metadata(metadata)
+        assert result["display_name"] == "スバル"
+
+    def test_invalid_entry_value_skipped(self):
+        """value가 dict 아닌 caller_info entry는 무시 (graceful)."""
+        metadata = [
+            {"type": "caller_info", "value": {"source": "slack", "display_name": "Real"}},
+            {"type": "caller_info", "value": "not-a-dict"},
+            {"type": "caller_info", "value": None},
+        ]
+        result = extract_caller_info_from_metadata(metadata)
+        assert result["display_name"] == "Real"
+
+    def test_identity_bearing_source_only_returned(self):
+        """source ∈ IDENTITY_BEARING_SOURCES이면 신원 필드 부재여도 *신원 박힌* 것으로 취급
+        (`_has_identity`와 §9 대칭, R-4 atom G-13).
+
+        agent/system/slack/soul-app/channel_observer/trello_watcher/llm 7 원소가 정체성 명시 source.
+        """
+        metadata = [
+            {"type": "caller_info", "value": {"source": "browser", "ip": "1.1.1.1"}},
+            {"type": "caller_info", "value": {"source": "agent"}},
+        ]
+        result = extract_caller_info_from_metadata(metadata)
+        # source=agent가 신원 박힌 것으로 취급되어 우선
+        assert result == {"source": "agent"}
