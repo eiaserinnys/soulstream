@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { isTauri } from "../utils/isTauri";
 
 const errorMessages: Record<string, string> = {
   missing_code: "코드를 입력해주세요.",
@@ -120,8 +121,35 @@ export function useClaudeAuthFlow<U = unknown>(
 
   const handleLogin = useCallback(async () => {
     setError(null);
-    // 팝업 차단 우회: 버튼 클릭 직후 동기 컨텍스트에서 빈 탭을 먼저 열고,
-    // fetch 완료 후 authUrl로 navigate한다.
+
+    if (isTauri()) {
+      // Tauri webview: popup blocker 없음. about:blank 사전작업은 soul-desktop의
+      // on_new_window 비-HTTP(S) Deny only(src-tauri/src/lib.rs:84-95)에 막혀
+      // popup이 안 뜨고 popupRef = null로 떨어진다. fetch 후 곧장
+      // window.open(authUrl)을 호출하면 on_new_window가 HTTP(S)을 open::that로
+      // OS 기본 브라우저에 위임한다 (1-click).
+      try {
+        const res = await fetch(`${basePath}/headless/start`);
+        if (!res.ok) {
+          const data = await res.json().catch(() => null);
+          throw new Error(
+            data?.detail
+              ? parseErrorDetail(data.detail)
+              : "인증 URL을 가져오는 중 오류가 발생했습니다.",
+          );
+        }
+        const data = await res.json();
+        if (!data.authUrl) throw new Error("authUrl 없음");
+        window.open(data.authUrl, "_blank");
+        setShowCodeInput(true);
+      } catch (e) {
+        setError(String(e instanceof Error ? e.message : e));
+      }
+      return;
+    }
+
+    // Web 환경: popup blocker 우회 동기 흐름 (회귀 금지).
+    // 버튼 클릭 직후 동기 컨텍스트에서 빈 탭을 먼저 열고, fetch 완료 후 authUrl로 navigate한다.
     // iOS Safari는 async 호출 후 window.open()을 차단하지만 동기 호출은 허용한다.
     popupRef.current = window.open("about:blank", "_blank");
     try {
