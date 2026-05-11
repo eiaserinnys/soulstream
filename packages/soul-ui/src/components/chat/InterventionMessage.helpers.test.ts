@@ -63,6 +63,38 @@ describe("computeInterventionDisplay — system 분기", () => {
     expect(d.isAgent).toBe(false);
     expect(d.displayName).toBe("Soulstream"); // agent 이름 아님
   });
+
+  // R-3 (atom G-5, 2026-05-11): graceful fallback chain — wire avatar_url 우선 + 정적 자산 fallback
+  it("R-3: caller_info.avatar_url 박혀 있으면 wire URL 우선 (server-served 패턴)", () => {
+    const msg = makeMsg({
+      callerInfo: {
+        source: "system",
+        agent_node: "eias-shopping",
+        display_name: "Soulstream",
+        avatar_url: "/api/system/portraits/system",
+      },
+    });
+    const d = computeInterventionDisplay(msg, null, userConfig);
+    expect(d.portraitUrl).toBe("/api/system/portraits/system");
+    expect(d.hasPortrait).toBe(true);
+  });
+
+  it("R-3: caller_info.avatar_url 부재(빈 문자열·null·undefined) 시 SYSTEM_PORTRAIT_URL fallback (구 데이터 보호)", () => {
+    // 빈 문자열 — typeof '' === 'string'이지만 length 0이라 fallback 발동
+    const msgEmpty = makeMsg({
+      callerInfo: { source: "system", display_name: "Soulstream", avatar_url: "" },
+    });
+    expect(computeInterventionDisplay(msgEmpty, null, userConfig).portraitUrl).toBe(
+      "/system-portrait.png",
+    );
+    // undefined
+    const msgUndef = makeMsg({
+      callerInfo: { source: "system", display_name: "Soulstream" },
+    });
+    expect(computeInterventionDisplay(msgUndef, null, userConfig).portraitUrl).toBe(
+      "/system-portrait.png",
+    );
+  });
 });
 
 describe("computeInterventionDisplay — agent 분기 (회귀 보존)", () => {

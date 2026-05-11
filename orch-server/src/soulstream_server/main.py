@@ -30,6 +30,7 @@ from soulstream_server.api.folders import create_folders_router
 from soulstream_server.api.nodes import create_nodes_router
 from soulstream_server.api.push import create_push_router
 from soulstream_server.api.sessions import create_sessions_router
+from soulstream_server.api.system_portraits import create_system_portraits_router
 from soulstream_server.push import ExpoPushProvider, PushNotifier, PushRepository
 from soulstream_server.config import Settings, get_settings
 from soulstream_server.dashboard.auth import create_auth_router
@@ -180,6 +181,9 @@ def _mount_api_routers(
         )
     )
     app.include_router(create_nodes_router(node_manager, broadcaster, dependencies=api_deps))
+    # R-3 (atom G-5, 2026-05-11): 시스템·봇 source 정체성 아이콘 정적 호스팅 — caller_info.avatar_url
+    # 정본 라우트. agent portrait와 §9 대칭으로 verify_auth 의존성 포함.
+    app.include_router(create_system_portraits_router(dependencies=api_deps))
     app.include_router(create_config_router(node_manager, dependencies=api_deps))
     app.include_router(create_claude_auth_router(node_manager, dependencies=api_deps))
     app.include_router(create_folders_router(catalog_service, dependencies=api_deps))

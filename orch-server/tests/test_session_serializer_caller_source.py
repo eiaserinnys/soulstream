@@ -123,6 +123,59 @@ class TestApplyUserProfileEnrichmentCallerSource:
         )
         assert payload["userName"] is None
 
+    # T-G5-E (R-3, atom G-5, 2026-05-11): 봇 source는 빌더가 display_name·avatar_url을 박으므로
+    # `_IDENTITY_BEARING_SOURCES`에 미포함이어도 *기존 truthy 검사 NOOP*가 자연 충족된다.
+    # 봇 정체성 보존이 R-3 fix의 핵심 — 빌더에서 신원 들고 들어와 enrichment 분기는 변경 없이 동작.
+    def test_bot_source_with_display_name_noop(self):
+        """R-3: channel_observer source + 빌더가 박은 display_name·avatar_url → NOOP (봇 정체성 보존)."""
+        payload = {
+            "userName": "채널 관찰자",
+            "userPortraitUrl": "/api/system/portraits/channel_observer",
+        }
+        nm = _make_node_manager(self._node_info())
+        apply_user_profile_enrichment(
+            payload,
+            node_id="node-1",
+            node_manager=nm,
+            caller_source="channel_observer",
+        )
+        # build_bot_caller_info가 신원을 박으면 enrichment 분기는 owner fallback 발동 안 함
+        assert payload["userName"] == "채널 관찰자"
+        assert payload["userPortraitUrl"] == "/api/system/portraits/channel_observer"
+
+    def test_trello_watcher_with_display_name_noop(self):
+        """R-3: trello_watcher source 동일 패턴."""
+        payload = {
+            "userName": "트렐로 워처",
+            "userPortraitUrl": "/api/system/portraits/trello_watcher",
+        }
+        nm = _make_node_manager(self._node_info())
+        apply_user_profile_enrichment(
+            payload,
+            node_id="node-1",
+            node_manager=nm,
+            caller_source="trello_watcher",
+        )
+        assert payload["userName"] == "트렐로 워처"
+        assert payload["userPortraitUrl"] == "/api/system/portraits/trello_watcher"
+
+    def test_bot_source_empty_identity_still_falls_back(self):
+        """R-3 회귀 보존: 봇 source인데 신원 빈 wire(구 데이터·결함) → R-2 회귀로 owner fallback.
+
+        본 케이스는 *발생하면 결함*이지만, R-2 회귀를 보존하여 backfill 정책의 *기존 메시지 보호*
+        SLA를 명확히 한다 (분석 캐시 §"R-3 게이트 보강 — Backfill 정책" 참조).
+        """
+        payload = {"userName": None, "userPortraitUrl": None}
+        nm = _make_node_manager(self._node_info())
+        apply_user_profile_enrichment(
+            payload,
+            node_id="node-1",
+            node_manager=nm,
+            caller_source="channel_observer",
+        )
+        # 봇 source가 _IDENTITY_BEARING_SOURCES에 미포함 + 신원 부재 → owner fallback (R-2 회귀)
+        assert payload["userName"] == "OwnerName"
+
 
 class TestSessionToResponseAgentSourceIntegration:
     """T-G2-A' 통합 — agent source DB 레코드가 `_session_to_response`에서 owner로 덮이지 않는다.

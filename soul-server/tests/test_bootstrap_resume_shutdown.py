@@ -64,12 +64,14 @@ class TestResumeShutdownSessionsCallerInfo:
         )
         assert call.kwargs["user"] == "system"
         ci = call.kwargs["caller_info"]
+        # R-3 (atom G-5, 2026-05-11): build_system_caller_info가 server-relative avatar_url 박음.
+        # (F-11D 시절 avatar_url=None은 supersededed — B-1 + system 통합 게이트 결정).
         assert ci == {
             "source": "system",
             "agent_node": "node-X",
             "display_name": "Soulstream",
             "user_id": None,
-            "avatar_url": None,
+            "avatar_url": "/api/system/portraits/system",
         }
         session_db.clear_shutdown_flags.assert_called_once()
 
