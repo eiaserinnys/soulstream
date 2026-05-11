@@ -268,6 +268,31 @@ class TestUpdateLastMessage:
         db.update_last_message.assert_not_called()
         broadcaster.emit_session_message_updated.assert_not_called()
 
+    async def test_error_event_saves_message_field(self):
+        """T11 회귀: error 이벤트는 ErrorEvent.message 필드를 preview로 추출 + 브로드캐스트.
+
+        Before fix (F-4): PREVIEW_FIELD_MAP["error"] = "error" 였으므로
+        event_dict.get("error", "") = "" → L101 silent return.
+        After fix: PREVIEW_FIELD_MAP["error"] = "message" 정합.
+        """
+        persistence, db, broadcaster = self._make_persistence()
+        task = _make_task()
+
+        event = {"type": "error", "message": "런타임 실패", "timestamp": "2024-01-01T00:00:00Z"}
+        await persistence.update_last_message("sess-1", event, task)
+
+        db.update_last_message.assert_called_once_with(
+            "sess-1", {
+                "type": "error",
+                "preview": "런타임 실패",
+                "timestamp": "2024-01-01T00:00:00Z",
+            }
+        )
+        broadcaster.emit_session_message_updated.assert_called_once()
+        call_kwargs = broadcaster.emit_session_message_updated.call_args.kwargs
+        assert call_kwargs["last_message"]["type"] == "error"
+        assert call_kwargs["last_message"]["preview"] == "런타임 실패"
+
     async def test_user_message_extracts_text(self):
         """user_message: text 필드에서 preview를 추출한다"""
         persistence, db, broadcaster = self._make_persistence()

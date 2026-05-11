@@ -659,13 +659,15 @@ class TestGetSessionSummary:
         assert result["turns"] == []
 
     async def test_single_turn(self, session_db):
+        # 페이로드 정정: type "result" → "complete". CompleteEvent.result 본문 키는 그대로
+        # 유지 (PREVIEW_FIELD_MAP["complete"] = "result").
         events = [
             _make_event_entry(1, "user_message", {"type": "user_message", "text": "안녕하세요"}),
             _make_event_entry(5, "tool_start", {"type": "tool_start", "tool": "Bash"}),
             _make_event_entry(6, "tool_start", {"type": "tool_start", "tool": "Bash"}),
             _make_event_entry(7, "tool_start", {"type": "tool_start", "tool": "Read"}),
             _make_event_entry(10, "context_usage", {"type": "context_usage", "percent": 16.7, "used_tokens": 33359, "max_tokens": 200000}),
-            _make_event_entry(15, "result", {"type": "result", "result": "작업을 완료했습니다."}),
+            _make_event_entry(15, "complete", {"type": "complete", "result": "작업을 완료했습니다."}),
         ]
         fn = _unwrap(mcp_tools.get_session_summary)
         session_db.count_events = AsyncMock(return_value=100)
@@ -685,9 +687,9 @@ class TestGetSessionSummary:
     async def test_multiple_turns(self, session_db):
         events = [
             _make_event_entry(1, "user_message", {"type": "user_message", "text": "첫 번째 질문"}),
-            _make_event_entry(5, "result", {"type": "result", "result": "첫 번째 답변"}),
+            _make_event_entry(5, "complete", {"type": "complete", "result": "첫 번째 답변"}),
             _make_event_entry(10, "user_message", {"type": "user_message", "text": "두 번째 질문"}),
-            _make_event_entry(15, "result", {"type": "result", "result": "두 번째 답변"}),
+            _make_event_entry(15, "complete", {"type": "complete", "result": "두 번째 답변"}),
         ]
         fn = _unwrap(mcp_tools.get_session_summary)
         session_db.count_events = AsyncMock(return_value=200)
@@ -696,13 +698,15 @@ class TestGetSessionSummary:
             result = await fn("test-sess-001")
         assert len(result["turns"]) == 2
         assert result["turns"][0]["user_message"] == "첫 번째 질문"
+        assert result["turns"][0]["response_preview"] == "첫 번째 답변"
         assert result["turns"][1]["user_message"] == "두 번째 질문"
+        assert result["turns"][1]["response_preview"] == "두 번째 답변"
 
     async def test_response_truncated(self, session_db):
         long_response = "x" * 1000
         events = [
             _make_event_entry(1, "user_message", {"type": "user_message", "text": "질문"}),
-            _make_event_entry(5, "result", {"type": "result", "result": long_response}),
+            _make_event_entry(5, "complete", {"type": "complete", "result": long_response}),
         ]
         fn = _unwrap(mcp_tools.get_session_summary)
         session_db.count_events = AsyncMock(return_value=10)
@@ -714,14 +718,183 @@ class TestGetSessionSummary:
         assert preview.endswith("...")
 
     async def test_event_types_filter_used(self, session_db):
-        """read_events에 event_types 필터가 전달되는지 확인한다."""
+        """read_events에 event_types 필터가 전달되는지 확인한다.
+
+        v3 fix 후 turn-final 3종(result, complete, error)이 모두 포함되어야 한다.
+        """
         fn = _unwrap(mcp_tools.get_session_summary)
         session_db.count_events = AsyncMock(return_value=0)
         session_db.read_events = AsyncMock(return_value=[])
         with patch("soul_server.cogito.mcp_session_query.get_session_db", return_value=session_db):
             await fn("test-sess-001")
         call_args = session_db.read_events.call_args
-        assert set(call_args[1]["event_types"]) == {"user_message", "result", "context_usage", "tool_start"}
+        assert set(call_args[1]["event_types"]) == {
+            "user_message", "context_usage", "tool_start",
+            "result", "complete", "error",
+        }
+
+    # ------------------------------------------------------------------
+    # T1~T10 회귀 케이스 — v3 fix ratchet
+    # ------------------------------------------------------------------
+
+    async def test_t1_short_complete(self, session_db):
+        """T1: 짧은 complete 본문은 전문 그대로 preview."""
+        body = "짧은 응답"
+        events = [
+            _make_event_entry(1, "user_message", {"type": "user_message", "text": "q"}),
+            _make_event_entry(2, "complete", {"type": "complete", "result": body}),
+        ]
+        fn = _unwrap(mcp_tools.get_session_summary)
+        session_db.count_events = AsyncMock(return_value=2)
+        session_db.read_events = AsyncMock(return_value=events)
+        with patch("soul_server.cogito.mcp_session_query.get_session_db", return_value=session_db):
+            result = await fn("test-sess-001", max_response_chars=500)
+        assert result["turns"][0]["response_preview"] == body
+
+    async def test_t2_medium_truncate(self, session_db):
+        """T2: 중간 길이 + max=100 → 100자 + '...'."""
+        body = "x" * 1000
+        events = [
+            _make_event_entry(1, "user_message", {"type": "user_message", "text": "q"}),
+            _make_event_entry(2, "complete", {"type": "complete", "result": body}),
+        ]
+        fn = _unwrap(mcp_tools.get_session_summary)
+        session_db.count_events = AsyncMock(return_value=2)
+        session_db.read_events = AsyncMock(return_value=events)
+        with patch("soul_server.cogito.mcp_session_query.get_session_db", return_value=session_db):
+            result = await fn("test-sess-001", max_response_chars=100)
+        preview = result["turns"][0]["response_preview"]
+        assert len(preview) == 103
+        assert preview.endswith("...")
+        assert preview[:100] == "x" * 100
+
+    async def test_t3_long_truncate(self, session_db):
+        """T3: 긴 본문(10K자) + max=200."""
+        body = "y" * 10_000
+        events = [
+            _make_event_entry(1, "user_message", {"type": "user_message", "text": "q"}),
+            _make_event_entry(2, "complete", {"type": "complete", "result": body}),
+        ]
+        fn = _unwrap(mcp_tools.get_session_summary)
+        session_db.count_events = AsyncMock(return_value=2)
+        session_db.read_events = AsyncMock(return_value=events)
+        with patch("soul_server.cogito.mcp_session_query.get_session_db", return_value=session_db):
+            result = await fn("test-sess-001", max_response_chars=200)
+        preview = result["turns"][0]["response_preview"]
+        assert len(preview) == 203
+        assert preview.endswith("...")
+
+    async def test_t4_very_long_truncate(self, session_db):
+        """T4: 매우 긴 본문(20K자) + max=8000 — 위임 명세의 핵심 케이스."""
+        body = "z" * 20_000
+        events = [
+            _make_event_entry(1, "user_message", {"type": "user_message", "text": "q"}),
+            _make_event_entry(2, "complete", {"type": "complete", "result": body}),
+        ]
+        fn = _unwrap(mcp_tools.get_session_summary)
+        session_db.count_events = AsyncMock(return_value=2)
+        session_db.read_events = AsyncMock(return_value=events)
+        with patch("soul_server.cogito.mcp_session_query.get_session_db", return_value=session_db):
+            result = await fn("test-sess-001", max_response_chars=8000)
+        preview = result["turns"][0]["response_preview"]
+        assert len(preview) == 8003
+        assert preview.endswith("...")
+
+    async def test_t5_tool_only_turn_preview_none(self, session_db):
+        """T5: turn-final 이벤트가 없으면 response_preview는 None을 유지."""
+        events = [
+            _make_event_entry(1, "user_message", {"type": "user_message", "text": "q"}),
+            _make_event_entry(2, "tool_start", {"type": "tool_start", "tool": "Bash"}),
+        ]
+        fn = _unwrap(mcp_tools.get_session_summary)
+        session_db.count_events = AsyncMock(return_value=2)
+        session_db.read_events = AsyncMock(return_value=events)
+        with patch("soul_server.cogito.mcp_session_query.get_session_db", return_value=session_db):
+            result = await fn("test-sess-001")
+        assert len(result["turns"]) == 1
+        assert result["turns"][0]["response_preview"] is None
+        assert result["turns"][0]["tools_used"] == {"Bash": 1}
+
+    async def test_t6_multi_turn_assertions(self, session_db):
+        """T6: 멀티턴 — 각 turn이 자기 complete 본문을 가짐."""
+        events = [
+            _make_event_entry(1, "user_message", {"type": "user_message", "text": "Q1"}),
+            _make_event_entry(2, "complete", {"type": "complete", "result": "A1"}),
+            _make_event_entry(3, "user_message", {"type": "user_message", "text": "Q2"}),
+            _make_event_entry(4, "complete", {"type": "complete", "result": "A2"}),
+        ]
+        fn = _unwrap(mcp_tools.get_session_summary)
+        session_db.count_events = AsyncMock(return_value=4)
+        session_db.read_events = AsyncMock(return_value=events)
+        with patch("soul_server.cogito.mcp_session_query.get_session_db", return_value=session_db):
+            result = await fn("test-sess-001")
+        assert [t["response_preview"] for t in result["turns"]] == ["A1", "A2"]
+
+    async def test_t7_list_content_payload(self, session_db):
+        """T7: complete.result가 list of {type:text, text:...} 형식이면 join 후 사용."""
+        events = [
+            _make_event_entry(1, "user_message", {"type": "user_message", "text": "q"}),
+            _make_event_entry(2, "complete", {"type": "complete", "result": [
+                {"type": "text", "text": "first"},
+                {"type": "text", "text": "second"},
+            ]}),
+        ]
+        fn = _unwrap(mcp_tools.get_session_summary)
+        session_db.count_events = AsyncMock(return_value=2)
+        session_db.read_events = AsyncMock(return_value=events)
+        with patch("soul_server.cogito.mcp_session_query.get_session_db", return_value=session_db):
+            result = await fn("test-sess-001")
+        assert result["turns"][0]["response_preview"] == "first second"
+
+    async def test_t8_error_turn_preview(self, session_db):
+        """T8: 에러 turn — result(부분 출력) + error(런타임 오류) 순서.
+
+        나중에 도착한 error 이벤트가 preview를 덮어쓴다.
+        ErrorEvent.message 필드를 PREVIEW_FIELD_MAP['error']='message'로 lookup.
+        """
+        events = [
+            _make_event_entry(1, "user_message", {"type": "user_message", "text": "q"}),
+            _make_event_entry(2, "result", {"type": "result", "output": "부분 출력", "success": False}),
+            _make_event_entry(3, "error", {"type": "error", "message": "런타임 오류"}),
+        ]
+        fn = _unwrap(mcp_tools.get_session_summary)
+        session_db.count_events = AsyncMock(return_value=3)
+        session_db.read_events = AsyncMock(return_value=events)
+        with patch("soul_server.cogito.mcp_session_query.get_session_db", return_value=session_db):
+            result = await fn("test-sess-001")
+        assert result["turns"][0]["response_preview"] == "런타임 오류"
+
+    async def test_t9_success_result_then_complete(self, session_db):
+        """T9: 성공 turn — result(먼저) + complete(나중) 모두 같은 본문."""
+        body = "최종 답변"
+        events = [
+            _make_event_entry(1, "user_message", {"type": "user_message", "text": "q"}),
+            _make_event_entry(2, "result", {"type": "result", "output": body, "success": True}),
+            _make_event_entry(3, "complete", {"type": "complete", "result": body}),
+        ]
+        fn = _unwrap(mcp_tools.get_session_summary)
+        session_db.count_events = AsyncMock(return_value=3)
+        session_db.read_events = AsyncMock(return_value=events)
+        with patch("soul_server.cogito.mcp_session_query.get_session_db", return_value=session_db):
+            result = await fn("test-sess-001")
+        assert result["turns"][0]["response_preview"] == body
+
+    def test_t10_preview_field_map_keys_canonical(self):
+        """T10: PREVIEW_FIELD_MAP 키 정합 단언 — 정본 정정 ratchet (F-4).
+
+        실제 SSE 이벤트 스키마와 매핑이 정합함을 보장한다:
+        - ResultSSEEvent.output (`packages/soul-common/.../schemas.py: ResultSSEEvent`)
+        - CompleteEvent.result
+        - ErrorEvent.message
+        """
+        from soul_server.service.task_models import PREVIEW_FIELD_MAP
+
+        assert PREVIEW_FIELD_MAP["result"] == "output"
+        assert PREVIEW_FIELD_MAP["complete"] == "result"
+        assert PREVIEW_FIELD_MAP["error"] == "message"
+        assert PREVIEW_FIELD_MAP["thinking"] == "thinking"
+        assert PREVIEW_FIELD_MAP["text_delta"] == "text"
+        assert PREVIEW_FIELD_MAP["away_summary"] == "content"
 
 
 # ---------------------------------------------------------------------------
