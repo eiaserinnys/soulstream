@@ -217,6 +217,23 @@ class TestProxyUpload:
 
         assert resp.status_code == 504
 
+    async def test_returns_503_on_node_disconnect(
+        self, attachments_client, populated_node_manager
+    ):
+        """노드 disconnect 중 outstanding 요청 → ConnectionError → 503."""
+        node = populated_node_manager.get_node("node-1")
+        node.send_upload_attachment = AsyncMock(
+            side_effect=ConnectionError("Node disconnected during command")
+        )
+
+        resp = await attachments_client.post(
+            "/api/attachments/sessions?nodeId=node-1",
+            data={"session_id": "sess-1"},
+            files={"file": ("a.txt", b"x", "text/plain")},
+        )
+
+        assert resp.status_code == 503
+
     async def test_cross_node_routing_selects_correct_node_instance(
         self, two_node_client
     ):
@@ -315,3 +332,15 @@ class TestProxyDelete:
             "/api/attachments/sessions/x?nodeId=node-1"
         )
         assert resp.status_code == 504
+
+    async def test_returns_503_on_disconnect(
+        self, attachments_client, populated_node_manager
+    ):
+        node = populated_node_manager.get_node("node-1")
+        node.send_delete_session_attachments = AsyncMock(
+            side_effect=ConnectionError("Node disconnected during command")
+        )
+        resp = await attachments_client.delete(
+            "/api/attachments/sessions/x?nodeId=node-1"
+        )
+        assert resp.status_code == 503

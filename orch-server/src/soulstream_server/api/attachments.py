@@ -62,6 +62,10 @@ def create_attachments_router(
                 content_type=file.content_type or "application/octet-stream",
                 content_b64=content_b64,
             )
+        except ConnectionError as e:
+            # 노드 disconnect/close 중에 outstanding 요청이 cancel된 케이스.
+            # 503으로 분류하여 클라이언트가 retry할 수 있게 한다.
+            raise HTTPException(503, f"Node temporarily unavailable: {e}")
         except TimeoutError as e:
             raise HTTPException(504, f"Node attachment upload timed out: {e}")
         except RuntimeError as e:
@@ -95,6 +99,8 @@ def create_attachments_router(
 
         try:
             result = await node.send_delete_session_attachments(session_id)
+        except ConnectionError as e:
+            raise HTTPException(503, f"Node temporarily unavailable: {e}")
         except TimeoutError as e:
             raise HTTPException(504, f"Node attachment delete timed out: {e}")
         except RuntimeError as e:

@@ -271,7 +271,16 @@ class UpstreamAdapter:
         if self._auth_bearer_token:
             headers["Authorization"] = f"Bearer {self._auth_bearer_token}"
 
-        self._ws = await self._session.ws_connect(self._url, headers=headers)
+        # max_msg_size — aiohttp 클라이언트 기본값 4MB는 cross-node attachment
+        # 업로드(base64 인코딩된 8MB → ~10.7MB)를 거부한다. soul_server.constants
+        # WS_INCOMING_MAX_MSG_SIZE(16MB)로 명시 — MAX_ATTACHMENT_SIZE 변경 시 함께
+        # 갱신해야 한다 (정본은 constants 모듈).
+        from soul_server.constants import WS_INCOMING_MAX_MSG_SIZE
+        self._ws = await self._session.ws_connect(
+            self._url,
+            headers=headers,
+            max_msg_size=WS_INCOMING_MAX_MSG_SIZE,
+        )
         self._reconnect.reset()
         # 연결 성공 — auth 경고 플래그 리셋하여 다음 새 문제는 다시 error로 기록되게 한다.
         self._auth_warned = False

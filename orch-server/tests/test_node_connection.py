@@ -472,6 +472,56 @@ class TestSendUploadAttachment:
             )
 
 
+class TestSendCommandDisconnect:
+    """노드 disconnect 중 outstanding _send_command 결과 정규화 (code-review P1)."""
+
+    async def test_close_during_command_raises_connection_error(self, node, ws):
+        """close()가 outstanding 요청 중 호출되면 _closed flag set + future cancel →
+        _send_command가 ConnectionError로 정규화 (호출자가 503으로 분류 가능)."""
+        ws.send_json = AsyncMock()
+
+        async def simulate_close_after_delay():
+            await asyncio.sleep(0.05)
+            await node.close()
+
+        close_task = asyncio.create_task(simulate_close_after_delay())
+
+        with pytest.raises(ConnectionError, match="disconnected during command"):
+            await node.send_upload_attachment(
+                session_id="s", filename="x",
+                content_type="text/plain", content_b64="eA==",
+            )
+
+        await close_task
+
+    async def test_external_task_cancel_propagates_cancelled_error(self, node, ws):
+        """close() 호출이 아닌 *외부 task cancellation*(예: HTTP request abort)은
+        CancelledError 그대로 전파한다. _closed flag가 set되지 않았기 때문이다.
+
+        실제 시나리오: 클라이언트가 HTTP 요청을 끊으면 FastAPI/starlette가 task를
+        cancel한다. inner _send_command의 wait_for는 CancelledError를 받지만
+        node 자체는 살아 있으므로 ConnectionError로 변환하면 안 된다.
+        """
+        ws.send_json = AsyncMock()
+
+        # 외부에서 task 전체를 cancel
+        async def run_send():
+            await node.send_upload_attachment(
+                session_id="s", filename="x",
+                content_type="text/plain", content_b64="eA==",
+            )
+
+        task = asyncio.create_task(run_send())
+        await asyncio.sleep(0.05)
+        task.cancel()
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        # node는 여전히 살아있어야 함 (close() 호출 X)
+        assert node._closed is False
+
+
 class TestSendDeleteSessionAttachments:
     async def test_sends_delete_command(self, node, ws):
         async def resolve_future(*args, **kwargs):
