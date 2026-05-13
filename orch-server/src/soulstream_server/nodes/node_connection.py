@@ -17,9 +17,11 @@ from starlette.websockets import WebSocketDisconnect
 
 from soulstream_server.constants import (
     CMD_CREATE_SESSION,
+    CMD_DELETE_SESSION_ATTACHMENTS,
     CMD_INTERVENE,
     CMD_RESPOND,
     CMD_SUBSCRIBE_EVENTS,
+    CMD_UPLOAD_ATTACHMENT,
     CMD_CLAUDE_AUTH_STATUS,
     CMD_CLAUDE_AUTH_SET_TOKEN,
     CMD_CLAUDE_AUTH_DELETE_TOKEN,
@@ -72,6 +74,10 @@ class NodeConnection:
         self._request_counter = 0
         self._pending: dict[str, asyncio.Future] = {}
         self._subscribe_listeners: dict[str, dict[str, Callable]] = {}
+        # close() 호출 여부 플래그 — `_send_command`가 외부 task cancel(HTTP request
+        # abort 등)과 close()로 인한 pending future cancel을 구분하여, 후자만
+        # ConnectionError로 정규화한다. atom 작업 이력 260513.01 code-review P1.
+        self._closed: bool = False
 
         self.on_close = on_close
         self.on_session_change = on_session_change
@@ -141,7 +147,15 @@ class NodeConnection:
         self._pending[request_id] = future
 
         message = {"type": command, "requestId": request_id, **payload}
-        await self._send(message)
+        try:
+            await self._send(message)
+        except WebSocketDisconnect as e:
+            self._pending.pop(request_id, None)
+            # 노드가 connection 끊긴 상태에서 send 시도 — 호출자가 503으로 분류 가능하도록
+            # ConnectionError로 정규화 (RuntimeError에 흡수되지 않게).
+            raise ConnectionError(
+                f"Node disconnected before send: command={command} ({e})"
+            ) from e
 
         try:
             return await asyncio.wait_for(future, timeout=timeout)
@@ -149,6 +163,16 @@ class NodeConnection:
             raise TimeoutError(
                 f"Command {command} timed out after {timeout}s (request_id={request_id})"
             )
+        except asyncio.CancelledError:
+            # close()가 _pending future를 cancel() 호출한 경우 (노드 disconnect during await).
+            # `self._closed` flag가 set이면 close()로 인한 cancel이며 호출자(라우트)가
+            # 503으로 분류할 수 있도록 ConnectionError로 정규화한다. 그렇지 않으면
+            # 외부 task cancellation(HTTP request abort 등)이므로 CancelledError 그대로 전파.
+            if self._closed:
+                raise ConnectionError(
+                    f"Node disconnected during command: {command} (request_id={request_id})"
+                )
+            raise
         finally:
             self._pending.pop(request_id, None)
 
@@ -228,6 +252,45 @@ class NodeConnection:
             # add_intervention → 큐 → InterventionSentEvent.caller_info로 전파한다.
             payload["caller_info"] = caller_info
         return await self._send_command(CMD_INTERVENE, payload)
+
+    # ─── Attachment WS reverse-proxy ────────────────────
+    # 노드 self-reported host:port HTTP 가정 폐기 (운영 로그: eias-shopping host=127.0.0.1)
+    # — 모든 cross-node attachment 통신은 본 WS wire로 통합. atom 작업 이력 260513.01.
+
+    async def send_upload_attachment(
+        self,
+        session_id: str,
+        filename: str,
+        content_type: str,
+        content_b64: str,
+    ) -> dict:
+        """노드에 attachment 업로드를 WS로 위임.
+
+        binary는 base64로 인코딩하여 텍스트 WS 프레임으로 전송한다(기존 `send_json`
+        wire 재사용). 노드 측 수신 한도는 *aiohttp 클라이언트의 `max_msg_size`*
+        (soul-server adapter.py에서 `WS_INCOMING_MAX_MSG_SIZE=16MB` 명시 설정)에
+        의해 정해지며, MAX_ATTACHMENT_SIZE=8MB → base64 ~10.7MB로 안전. orch
+        서버 측 수신 한도는 uvicorn의 `ws_max_size` 기본 16MB이나 본 wire는
+        orch → 노드 방향만 큰 페이로드를 가지므로 노드 측 한도가 정본.
+
+        응답: {path, filename, size, content_type} — 노드 디스크의 절대경로.
+        """
+        payload = {
+            "session_id": session_id,
+            "filename": filename,
+            "content_type": content_type,
+            "content_b64": content_b64,
+        }
+        return await self._send_command(CMD_UPLOAD_ATTACHMENT, payload)
+
+    async def send_delete_session_attachments(self, session_id: str) -> dict:
+        """세션 첨부 정리를 WS로 위임.
+
+        응답: {cleaned: bool, files_removed: int}.
+        """
+        return await self._send_command(
+            CMD_DELETE_SESSION_ATTACHMENTS, {"session_id": session_id}
+        )
 
     async def send_claude_auth_status(self) -> dict:
         """Claude Code OAuth 토큰 존재 여부 조회."""
@@ -410,6 +473,9 @@ class NodeConnection:
     # --- 연결 종료 ---
 
     async def close(self) -> None:
+        # _send_command가 close()로 인한 cancel을 외부 task cancel과 구분할 수 있도록
+        # flag를 먼저 set한 뒤 future를 cancel.
+        self._closed = True
         # cancel all pending futures
         for future in self._pending.values():
             if not future.done():

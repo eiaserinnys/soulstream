@@ -1063,9 +1063,14 @@ class TestUpstreamAuthHeader:
         with pytest.raises(asyncio.CancelledError):
             await adapter._connect_and_serve()
 
+        # attachment WS reverse-proxy 도입으로 max_msg_size 명시 (P0 수정).
+        # WS_INCOMING_MAX_MSG_SIZE=16MB. aiohttp 기본 4MB는 cross-node attachment
+        # base64 payload(~10.7MB)를 거부하므로 명시 설정 필수.
+        from soul_server.constants import WS_INCOMING_MAX_MSG_SIZE
         mock_session.ws_connect.assert_called_once_with(
             adapter._url,
             headers={"Authorization": "Bearer test-token"},
+            max_msg_size=WS_INCOMING_MAX_MSG_SIZE,
         )
 
     @pytest.mark.asyncio
@@ -1086,9 +1091,11 @@ class TestUpstreamAuthHeader:
             with pytest.raises(asyncio.CancelledError):
                 await adapter._connect_and_serve()
 
+        from soul_server.constants import WS_INCOMING_MAX_MSG_SIZE
         mock_session.ws_connect.assert_called_once_with(
             adapter._url,
             headers={},
+            max_msg_size=WS_INCOMING_MAX_MSG_SIZE,
         )
 
     @pytest.mark.asyncio

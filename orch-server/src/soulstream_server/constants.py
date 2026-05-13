@@ -10,6 +10,12 @@ CMD_LIST_SESSIONS = "list_sessions"
 CMD_HEALTH_CHECK = "health_check"
 CMD_SUBSCRIBE_EVENTS = "subscribe_events"
 
+# Attachment WS reverse-proxy commands — soul-server protocol.py와 mirror.
+# 노드 self-reported host:port HTTP 가정 폐기 — 신뢰 가능한 WS wire로 통합.
+# atom 작업 이력 260513.01.
+CMD_UPLOAD_ATTACHMENT = "upload_attachment"
+CMD_DELETE_SESSION_ATTACHMENTS = "delete_session_attachments"
+
 # Claude Code OAuth 명령 — soul-server protocol.py와 mirror
 CMD_CLAUDE_AUTH_STATUS = "claude_auth_status"
 CMD_CLAUDE_AUTH_SET_TOKEN = "claude_auth_set_token"
