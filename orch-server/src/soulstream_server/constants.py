@@ -15,6 +15,8 @@ CMD_SUBSCRIBE_EVENTS = "subscribe_events"
 # atom 작업 이력 260513.01.
 CMD_UPLOAD_ATTACHMENT = "upload_attachment"
 CMD_DELETE_SESSION_ATTACHMENTS = "delete_session_attachments"
+# atom 작업 이력 260513.02 (chat-inline-attachment) — 채팅 인라인 표시.
+CMD_DOWNLOAD_ATTACHMENT = "download_attachment"
 
 # Claude Code OAuth 명령 — soul-server protocol.py와 mirror
 CMD_CLAUDE_AUTH_STATUS = "claude_auth_status"

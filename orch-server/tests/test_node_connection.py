@@ -8,6 +8,7 @@ import pytest
 from soulstream_server.constants import (
     CMD_CREATE_SESSION,
     CMD_DELETE_SESSION_ATTACHMENTS,
+    CMD_DOWNLOAD_ATTACHMENT,
     CMD_INTERVENE,
     CMD_SUBSCRIBE_EVENTS,
     CMD_UPLOAD_ATTACHMENT,
@@ -558,3 +559,65 @@ class TestSendDeleteSessionAttachments:
 
         with pytest.raises(RuntimeError, match="INVALID_REQUEST"):
             await node.send_delete_session_attachments("")
+
+
+class TestSendDownloadAttachment:
+    """Phase 2 — chat-inline-attachment 다운로드 wire 단위 테스트."""
+
+    async def test_sends_download_command_with_path(self, node, ws):
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            req_id = data["requestId"]
+            if req_id in node._pending:
+                node._pending[req_id].set_result({
+                    "type": "download_attachment_result",
+                    "content_b64": "aGVsbG8=",
+                    "content_type": "image/png",
+                    "filename": "x.png",
+                    "size": 5,
+                })
+
+        ws.send_json.side_effect = resolve_future
+
+        result = await node.send_download_attachment(path="/incoming/s/x.png")
+
+        sent = ws.send_json.call_args[0][0]
+        assert sent["type"] == CMD_DOWNLOAD_ATTACHMENT
+        assert sent["path"] == "/incoming/s/x.png"
+        assert "requestId" in sent
+        assert result["content_b64"] == "aGVsbG8="
+        assert result["content_type"] == "image/png"
+        assert result["filename"] == "x.png"
+
+    async def test_raises_runtime_error_on_evt_error_not_found(self, node, ws):
+        """NOT_FOUND: prefix → RuntimeError (orch가 404로 분류)."""
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            req_id = data["requestId"]
+            if req_id in node._pending:
+                await node.handle_message({
+                    "type": EVT_ERROR,
+                    "requestId": req_id,
+                    "message": "NOT_FOUND: 파일이 존재하지 않습니다",
+                })
+
+        ws.send_json.side_effect = resolve_future
+
+        with pytest.raises(RuntimeError, match="NOT_FOUND"):
+            await node.send_download_attachment(path="/incoming/missing.png")
+
+    async def test_raises_runtime_error_on_evt_error_traversal(self, node, ws):
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            req_id = data["requestId"]
+            if req_id in node._pending:
+                await node.handle_message({
+                    "type": EVT_ERROR,
+                    "requestId": req_id,
+                    "message": "INVALID_REQUEST: path가 첨부 디렉토리 하위가 아닙니다",
+                })
+
+        ws.send_json.side_effect = resolve_future
+
+        with pytest.raises(RuntimeError, match="INVALID_REQUEST"):
+            await node.send_download_attachment(path="/etc/passwd")

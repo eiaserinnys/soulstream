@@ -36,6 +36,7 @@ from .protocol import (
     CMD_CLAUDE_AUTH_STATUS,
     CMD_CREATE_SESSION,
     CMD_DELETE_SESSION_ATTACHMENTS,
+    CMD_DOWNLOAD_ATTACHMENT,
     CMD_HEALTH_CHECK,
     CMD_INTERVENE,
     CMD_LIST_SESSIONS,
@@ -109,6 +110,7 @@ class CommandDispatcher:
             CMD_CLAUDE_AUTH_GET_PROFILE: self._handle_claude_auth_get_profile,
             CMD_UPLOAD_ATTACHMENT: self._handle_upload_attachment,
             CMD_DELETE_SESSION_ATTACHMENTS: self._handle_delete_session_attachments,
+            CMD_DOWNLOAD_ATTACHMENT: self._handle_download_attachment,
         }
 
         # 백그라운드 핸들러 — dispatch 루프를 블록하지 않도록 asyncio.create_task로 분리.
@@ -460,4 +462,81 @@ class CommandDispatcher:
                 "requestId": request_id,
                 "cleaned": True,
                 "files_removed": files_removed,
+            })
+
+    async def _handle_download_attachment(self, cmd: dict) -> None:
+        """WS 경유 cross-node 첨부 다운로드 (Phase 2 — 채팅 인라인 표시).
+
+        payload: {path: str (노드 절대경로)}
+        응답: {type:"download_attachment_result", requestId, content_b64,
+               content_type, filename, size}
+        실패:
+          - 경로 누락/형식 오류: INVALID_REQUEST: prefix → orch 400
+          - file_manager 하위 아님(directory traversal): INVALID_REQUEST: → 400
+          - 파일 미존재: NOT_FOUND: prefix → orch 404
+          - 읽기 실패 etc: dispatch loop 일반 catch → 502
+
+        보안: file_manager.is_under_base()로 base_dir 하위 path만 허용.
+        symlink는 resolve된 목적지가 base_dir 하위인지로 판정.
+        """
+        import base64
+        import mimetypes
+        from pathlib import Path
+
+        from soul_server.service import file_manager
+
+        request_id = cmd.get("requestId", "")
+        raw_path = cmd.get("path")
+        if not isinstance(raw_path, str) or not raw_path:
+            await self._send_error(
+                "INVALID_REQUEST: path 누락 또는 빈 문자열",
+                request_id=request_id,
+                command_type=CMD_DOWNLOAD_ATTACHMENT,
+            )
+            return
+
+        try:
+            target = Path(raw_path)
+        except (TypeError, ValueError) as e:
+            await self._send_error(
+                f"INVALID_REQUEST: 잘못된 경로 형식: {e}",
+                request_id=request_id,
+                command_type=CMD_DOWNLOAD_ATTACHMENT,
+            )
+            return
+
+        # directory traversal 가드 — file_manager의 공개 메서드 사용 (private
+        # `_base_dir` 직접 접근 금지, design-principles §1·§10).
+        if not file_manager.is_under_base(target):
+            await self._send_error(
+                "INVALID_REQUEST: path가 첨부 디렉토리 하위가 아닙니다",
+                request_id=request_id,
+                command_type=CMD_DOWNLOAD_ATTACHMENT,
+            )
+            return
+
+        # is_under_base는 resolve된 경로가 base 하위임을 확인했지만, 실제
+        # 파일 존재 여부는 별도 검증.
+        resolved = target.resolve()
+        if not resolved.is_file():
+            await self._send_error(
+                "NOT_FOUND: 파일이 존재하지 않습니다",
+                request_id=request_id,
+                command_type=CMD_DOWNLOAD_ATTACHMENT,
+            )
+            return
+
+        content = resolved.read_bytes()
+        content_type = (
+            mimetypes.guess_type(resolved.name)[0] or "application/octet-stream"
+        )
+
+        if request_id:
+            await self._send({
+                "type": "download_attachment_result",
+                "requestId": request_id,
+                "content_b64": base64.b64encode(content).decode("ascii"),
+                "content_type": content_type,
+                "filename": resolved.name,
+                "size": len(content),
             })

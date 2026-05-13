@@ -54,6 +54,33 @@ class FileManager:
         thread_dir.mkdir(parents=True, exist_ok=True)
         return thread_dir
 
+    def is_under_base(self, path: Path) -> bool:
+        """path가 base_dir 하위에 위치하는지 검사 (directory traversal 방지).
+
+        호출자는 외부 입력(WS 명령의 path 인자 등)을 본 메서드로 검증한 뒤
+        파일 IO를 수행한다. private `_base_dir` 직접 접근을 막아 호출자의
+        지식 경계를 좁힌다 (design-principles §1·§10).
+
+        Args:
+            path: 검사 대상 경로 (resolve 전후 무관 — 본 메서드 내부에서 resolve).
+
+        Returns:
+            True if path is strictly inside base_dir (after symlink resolve).
+
+        Note:
+            symlink는 resolve된 *목적지*가 base_dir 하위인지로 판정한다 —
+            base_dir 안에 base_dir 바깥을 가리키는 symlink가 있어도 거부된다.
+        """
+        try:
+            resolved = path.resolve()
+            base = self._base_dir.resolve()
+            resolved.relative_to(base)
+            return True
+        except (ValueError, OSError):
+            # ValueError: relative_to 실패(다른 경로 트리). OSError: resolve 실패
+            # (broken symlink, permission 등). 둘 다 보수적으로 거부.
+            return False
+
     def validate_file(self, filename: str, size: int) -> None:
         """
         파일 검증

@@ -13,8 +13,10 @@ host=127.0.0.1) 회로 차단. 노드 등록 시 신뢰 가능하게 outbound로
 """
 
 import base64
+import io
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.responses import StreamingResponse
 
 from soulstream_server.nodes.node_manager import NodeManager
 
@@ -76,6 +78,14 @@ def create_attachments_router(
                 raise HTTPException(400, msg.removeprefix("INVALID_REQUEST:").strip())
             raise HTTPException(502, f"Node attachment upload failed: {msg}")
 
+        # 노드 응답 키 검증 — code-review P1-1 (Phase 2). KeyError 누수 차단.
+        if not isinstance(result, dict) or not all(
+            isinstance(result.get(k), expected_type)
+            for k, expected_type in [
+                ("path", str), ("filename", str), ("size", int), ("content_type", str),
+            ]
+        ):
+            raise HTTPException(502, "Node returned malformed upload response")
         return {
             "path": result["path"],
             "filename": result["filename"],
@@ -109,9 +119,72 @@ def create_attachments_router(
                 raise HTTPException(400, msg.removeprefix("INVALID_REQUEST:").strip())
             raise HTTPException(502, f"Node attachment delete failed: {msg}")
 
+        # 노드 응답 검증 — code-review P1-1 (Phase 2). 비-dict 응답 차단.
+        if not isinstance(result, dict):
+            raise HTTPException(502, "Node returned malformed delete response")
         return {
-            "cleaned": result.get("cleaned", True),
-            "files_removed": result.get("files_removed", 0),
+            "cleaned": bool(result.get("cleaned", True)),
+            "files_removed": int(result.get("files_removed", 0)),
         }
+
+    @router.get("/files")
+    async def proxy_download(
+        request: Request,
+        node_id: str = Query(..., alias="nodeId"),
+        path: str = Query(...),
+    ):
+        """노드 디스크의 첨부 binary를 cross-node로 받아 streaming response로 forward.
+
+        Phase 2 (atom 260513.02 — chat-inline-attachment): 채팅 영역 사용자
+        발화 말풍선에 첨부 이미지를 인라인 표시하기 위한 다운로드 라우트.
+        soul-app `UserMessage.tsx`가 `<Image source={{uri}} />`로 호출한다.
+
+        Access control 결정: 기존 라우트와 동일하게 `dependencies=api_deps`
+        (JWT 검증)만 적용. 세션 owner 검증은 *현 라우트 전체에 동시 적용*되어야
+        정합이므로 본 카드 범위 외 후속 카드. INVALID_REQUEST/NOT_FOUND prefix
+        wire 약속은 Phase 1과 동일.
+        """
+        node = node_manager.get_node(node_id)
+        if node is None:
+            raise HTTPException(404, f"Node '{node_id}' not found")
+
+        try:
+            result = await node.send_download_attachment(path=path)
+        except ConnectionError as e:
+            raise HTTPException(503, f"Node temporarily unavailable: {e}")
+        except TimeoutError as e:
+            raise HTTPException(504, f"Node download timed out: {e}")
+        except RuntimeError as e:
+            msg = str(e)
+            if msg.startswith("NOT_FOUND:"):
+                raise HTTPException(404, msg.removeprefix("NOT_FOUND:").strip())
+            if msg.startswith("INVALID_REQUEST:"):
+                raise HTTPException(400, msg.removeprefix("INVALID_REQUEST:").strip())
+            raise HTTPException(502, f"Node download failed: {msg}")
+
+        # 노드 응답 키 검증 — 예상 외 malformed 응답을 KeyError로 누수시키지 않는다
+        # (FastAPI 기본 500 대신 명시적 502 분류). code-review P1-1.
+        content_b64 = result.get("content_b64") if isinstance(result, dict) else None
+        filename = result.get("filename") if isinstance(result, dict) else None
+        if not isinstance(content_b64, str) or not isinstance(filename, str):
+            raise HTTPException(502, "Node returned malformed download response")
+        try:
+            content = base64.b64decode(content_b64, validate=True)
+        except (ValueError, TypeError) as e:
+            raise HTTPException(502, f"Node returned invalid base64: {e}")
+
+        headers = {
+            # `save_file_for_session`의 `{ms}_{filename}` ts-prefix 규약 덕분에 path가
+            # 사실상 unique → immutable 가정 안전. file_manager의 save naming 규약을
+            # 바꾸면 본 캐시 정책도 함께 재평가 필요 (정본 cross-link). 캐시 무효화가
+            # 필요한 케이스는 후속 카드.
+            "Content-Disposition": f'inline; filename="{filename}"',
+            "Cache-Control": "private, max-age=3600",
+        }
+        return StreamingResponse(
+            io.BytesIO(content),
+            media_type=result.get("content_type") or "application/octet-stream",
+            headers=headers,
+        )
 
     return router

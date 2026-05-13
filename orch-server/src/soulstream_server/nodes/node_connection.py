@@ -18,6 +18,7 @@ from starlette.websockets import WebSocketDisconnect
 from soulstream_server.constants import (
     CMD_CREATE_SESSION,
     CMD_DELETE_SESSION_ATTACHMENTS,
+    CMD_DOWNLOAD_ATTACHMENT,
     CMD_INTERVENE,
     CMD_RESPOND,
     CMD_SUBSCRIBE_EVENTS,
@@ -290,6 +291,19 @@ class NodeConnection:
         """
         return await self._send_command(
             CMD_DELETE_SESSION_ATTACHMENTS, {"session_id": session_id}
+        )
+
+    async def send_download_attachment(self, path: str) -> dict:
+        """노드 디스크의 첨부 binary를 base64로 다운로드 (Phase 2 — 채팅 인라인 표시).
+
+        노드 측 file_manager.is_under_base() 검증을 통해 directory traversal
+        방지. base 하위가 아니면 INVALID_REQUEST: prefix EVT_ERROR. 파일 없으면
+        NOT_FOUND: prefix EVT_ERROR.
+
+        응답: {content_b64, content_type, filename, size}.
+        """
+        return await self._send_command(
+            CMD_DOWNLOAD_ATTACHMENT, {"path": path}
         )
 
     async def send_claude_auth_status(self) -> dict:
