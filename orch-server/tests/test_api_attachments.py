@@ -1,7 +1,17 @@
-"""Tests for Attachments proxy API (/api/attachments)."""
+"""Tests for Attachments proxy API (/api/attachments).
+
+WS reverse-proxy 전환 (2026-05-13, atom 260513.01) — orch는 노드 self-reported
+host:port HTTP 호출을 *하지 않는다*. 대신 노드와 이미 신뢰 가능하게 연결된
+WebSocket을 통해 attachment binary를 base64-in-JSON으로 forward한다.
+
+본 테스트는 `NodeConnection.send_upload_attachment` / `send_delete_session_attachments`
+호출 결과를 mock하여 라우트 분기(404 미등록 / 400 INVALID_REQUEST / 502 일반 에러 /
+504 timeout)를 검증한다. 직접 노드 vs cross-node는 *노드 객체 자체*가 다를 뿐
+같은 코드 경로이므로 두 케이스를 별도로 검증한다.
+"""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
@@ -27,9 +37,22 @@ def mock_ws_for_attachments():
     return ws
 
 
+def _make_node(node_id: str, host: str = "10.0.0.1", port: int = 4100) -> NodeConnection:
+    """직접 NodeConnection 생성 (NodeManager fixture 의존성 분리)."""
+    ws = AsyncMock()
+    ws.send_json = AsyncMock()
+    ws.close = AsyncMock()
+    return NodeConnection(
+        ws=ws,
+        node_id=node_id,
+        host=host,
+        port=port,
+    )
+
+
 @pytest.fixture
 def populated_node_manager(mock_ws_for_attachments):
-    """'node-1' 노드가 등록된 NodeManager."""
+    """단일 노드 'node-1' 등록 (host=localhost, port=4100)."""
     nm = NodeManager()
     conn = NodeConnection(
         ws=mock_ws_for_attachments,
@@ -38,6 +61,19 @@ def populated_node_manager(mock_ws_for_attachments):
         port=4100,
     )
     nm._nodes["node-1"] = conn
+    return nm
+
+
+@pytest.fixture
+def two_node_manager():
+    """cross-node 시나리오 — 'node-direct'(같은 머신 가정)와 'node-remote'(다른 머신 가정).
+
+    WS wire 전환 후엔 host:port 가정 자체가 무의미하므로 직접/cross-node 분기는
+    *코드 경로*가 아닌 *노드 인스턴스 선택* 수준만 검증한다.
+    """
+    nm = NodeManager()
+    nm._nodes["node-direct"] = _make_node("node-direct", host="0.0.0.0", port=3105)
+    nm._nodes["node-remote"] = _make_node("node-remote", host="127.0.0.1", port=4105)
     return nm
 
 
@@ -62,32 +98,55 @@ async def empty_attachments_client(empty_node_manager):
         yield c
 
 
+@pytest.fixture
+async def two_node_client(two_node_manager):
+    app = make_test_app(two_node_manager)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c, two_node_manager
+
+
+# ─── proxy_upload ────────────────────────────────────
+
+
 class TestProxyUpload:
     """POST /api/attachments/sessions 테스트."""
 
-    async def test_proxies_to_soul_server(self, attachments_client, populated_node_manager):
-        """등록된 노드가 있을 때 soul-server로 파일을 프록시한다."""
-        import respx
-        import httpx
+    async def test_routes_upload_via_ws_and_returns_node_path(
+        self, attachments_client, populated_node_manager
+    ):
+        """노드의 send_upload_attachment 응답을 그대로 forward한다."""
+        node = populated_node_manager.get_node("node-1")
+        node.send_upload_attachment = AsyncMock(return_value={
+            "path": "/incoming/session-abc/123_test.txt",
+            "filename": "test.txt",
+            "size": 11,
+            "content_type": "text/plain",
+        })
 
-        soul_response = {"path": "/incoming/session-abc/test.txt"}
-
-        with respx.mock:
-            respx.post("http://localhost:4100/attachments/sessions").mock(
-                return_value=httpx.Response(201, json=soul_response)
-            )
-
-            resp = await attachments_client.post(
-                "/api/attachments/sessions?nodeId=node-1",
-                data={"session_id": "session-abc"},
-                files={"file": ("test.txt", b"hello world", "text/plain")},
-            )
+        resp = await attachments_client.post(
+            "/api/attachments/sessions?nodeId=node-1",
+            data={"session_id": "session-abc"},
+            files={"file": ("test.txt", b"hello world", "text/plain")},
+        )
 
         assert resp.status_code == 201
-        assert resp.json() == soul_response
+        body = resp.json()
+        assert body["path"] == "/incoming/session-abc/123_test.txt"
+        assert body["filename"] == "test.txt"
+        assert body["size"] == 11
+        assert body["content_type"] == "text/plain"
+
+        # WS 호출 검증 — content_b64 인코딩, session_id/filename forward
+        node.send_upload_attachment.assert_awaited_once()
+        kwargs = node.send_upload_attachment.await_args.kwargs
+        assert kwargs["session_id"] == "session-abc"
+        assert kwargs["filename"] == "test.txt"
+        assert kwargs["content_type"] == "text/plain"
+        import base64
+        assert base64.b64decode(kwargs["content_b64"]) == b"hello world"
 
     async def test_returns_404_for_unknown_node(self, attachments_client):
-        """미등록 노드 ID 요청 시 404를 반환한다."""
         resp = await attachments_client.post(
             "/api/attachments/sessions?nodeId=unknown-node",
             data={"session_id": "session-abc"},
@@ -95,42 +154,164 @@ class TestProxyUpload:
         )
         assert resp.status_code == 404
 
-    async def test_returns_404_when_no_nodeid(self, attachments_client):
-        """nodeId 파라미터가 없으면 422(validation error)를 반환한다."""
+    async def test_returns_422_when_no_nodeid(self, attachments_client):
         resp = await attachments_client.post(
             "/api/attachments/sessions",
             data={"session_id": "session-abc"},
             files={"file": ("test.txt", b"hello", "text/plain")},
         )
-        # nodeId는 required Query param이므로 FastAPI가 422 반환
         assert resp.status_code == 422
+
+    async def test_returns_400_on_node_invalid_request(
+        self, attachments_client, populated_node_manager
+    ):
+        """노드가 INVALID_REQUEST: prefix EVT_ERROR로 응답 → 400 + 메시지 forward."""
+        node = populated_node_manager.get_node("node-1")
+        node.send_upload_attachment = AsyncMock(
+            side_effect=RuntimeError("INVALID_REQUEST: 보안상 허용되지 않는 파일 형식입니다: .exe")
+        )
+
+        resp = await attachments_client.post(
+            "/api/attachments/sessions?nodeId=node-1",
+            data={"session_id": "sess-1"},
+            files={"file": ("evil.exe", b"payload", "application/octet-stream")},
+        )
+
+        assert resp.status_code == 400
+        body = resp.json()
+        detail = body.get("detail", "")
+        assert ".exe" in detail
+        assert "INVALID_REQUEST" not in detail  # prefix 제거 확인
+
+    async def test_returns_502_on_other_node_error(
+        self, attachments_client, populated_node_manager
+    ):
+        """노드가 일반 EVT_ERROR로 응답 → 502."""
+        node = populated_node_manager.get_node("node-1")
+        node.send_upload_attachment = AsyncMock(
+            side_effect=RuntimeError("Internal disk write failed")
+        )
+
+        resp = await attachments_client.post(
+            "/api/attachments/sessions?nodeId=node-1",
+            data={"session_id": "sess-1"},
+            files={"file": ("a.txt", b"x", "text/plain")},
+        )
+
+        assert resp.status_code == 502
+
+    async def test_returns_504_on_node_timeout(
+        self, attachments_client, populated_node_manager
+    ):
+        """노드 응답 timeout → 504."""
+        node = populated_node_manager.get_node("node-1")
+        node.send_upload_attachment = AsyncMock(
+            side_effect=TimeoutError("Command upload_attachment timed out after 30s")
+        )
+
+        resp = await attachments_client.post(
+            "/api/attachments/sessions?nodeId=node-1",
+            data={"session_id": "sess-1"},
+            files={"file": ("a.txt", b"x", "text/plain")},
+        )
+
+        assert resp.status_code == 504
+
+    async def test_cross_node_routing_selects_correct_node_instance(
+        self, two_node_client
+    ):
+        """직접/cross-node 분기는 *코드 경로 차이 없음* — 같은 라우트가 nodeId로 노드 인스턴스만 선택."""
+        client, manager = two_node_client
+
+        direct = manager.get_node("node-direct")
+        remote = manager.get_node("node-remote")
+        direct.send_upload_attachment = AsyncMock(return_value={
+            "path": "/d/sess/x", "filename": "x", "size": 1, "content_type": "text/plain",
+        })
+        remote.send_upload_attachment = AsyncMock(return_value={
+            "path": "/r/sess/x", "filename": "x", "size": 1, "content_type": "text/plain",
+        })
+
+        resp1 = await client.post(
+            "/api/attachments/sessions?nodeId=node-direct",
+            data={"session_id": "s"},
+            files={"file": ("x", b"y", "text/plain")},
+        )
+        resp2 = await client.post(
+            "/api/attachments/sessions?nodeId=node-remote",
+            data={"session_id": "s"},
+            files={"file": ("x", b"y", "text/plain")},
+        )
+
+        assert resp1.status_code == 201 and resp1.json()["path"] == "/d/sess/x"
+        assert resp2.status_code == 201 and resp2.json()["path"] == "/r/sess/x"
+        direct.send_upload_attachment.assert_awaited_once()
+        remote.send_upload_attachment.assert_awaited_once()
+
+
+# ─── proxy_delete ────────────────────────────────────
 
 
 class TestProxyDelete:
     """DELETE /api/attachments/sessions/{session_id} 테스트."""
 
-    async def test_proxies_delete_to_soul_server(self, attachments_client):
-        """등록된 노드가 있을 때 soul-server로 DELETE를 프록시한다."""
-        import respx
-        import httpx
+    async def test_routes_delete_via_ws(
+        self, attachments_client, populated_node_manager
+    ):
+        node = populated_node_manager.get_node("node-1")
+        node.send_delete_session_attachments = AsyncMock(
+            return_value={"cleaned": True, "files_removed": 2}
+        )
 
-        soul_response = {"deleted": 2}
-
-        with respx.mock:
-            respx.delete("http://localhost:4100/attachments/sessions/session-abc").mock(
-                return_value=httpx.Response(200, json=soul_response)
-            )
-
-            resp = await attachments_client.delete(
-                "/api/attachments/sessions/session-abc?nodeId=node-1"
-            )
+        resp = await attachments_client.delete(
+            "/api/attachments/sessions/session-abc?nodeId=node-1"
+        )
 
         assert resp.status_code == 200
-        assert resp.json() == soul_response
+        body = resp.json()
+        assert body["cleaned"] is True
+        assert body["files_removed"] == 2
 
-    async def test_delete_returns_404_for_unknown_node(self, attachments_client):
-        """미등록 노드 ID로 DELETE 요청 시 404를 반환한다."""
+        node.send_delete_session_attachments.assert_awaited_once_with("session-abc")
+
+    async def test_returns_404_for_unknown_node(self, attachments_client):
         resp = await attachments_client.delete(
             "/api/attachments/sessions/session-abc?nodeId=no-such-node"
         )
         assert resp.status_code == 404
+
+    async def test_returns_400_on_node_invalid_request(
+        self, attachments_client, populated_node_manager
+    ):
+        node = populated_node_manager.get_node("node-1")
+        node.send_delete_session_attachments = AsyncMock(
+            side_effect=RuntimeError("INVALID_REQUEST: session_id 누락")
+        )
+        resp = await attachments_client.delete(
+            "/api/attachments/sessions/x?nodeId=node-1"
+        )
+        assert resp.status_code == 400
+
+    async def test_returns_502_on_other_node_error(
+        self, attachments_client, populated_node_manager
+    ):
+        node = populated_node_manager.get_node("node-1")
+        node.send_delete_session_attachments = AsyncMock(
+            side_effect=RuntimeError("disk error")
+        )
+        resp = await attachments_client.delete(
+            "/api/attachments/sessions/x?nodeId=node-1"
+        )
+        assert resp.status_code == 502
+
+    async def test_returns_504_on_timeout(
+        self, attachments_client, populated_node_manager
+    ):
+        node = populated_node_manager.get_node("node-1")
+        node.send_delete_session_attachments = AsyncMock(
+            side_effect=TimeoutError("timeout")
+        )
+        resp = await attachments_client.delete(
+            "/api/attachments/sessions/x?nodeId=node-1"
+        )
+        assert resp.status_code == 504

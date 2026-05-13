@@ -35,11 +35,13 @@ from .protocol import (
     CMD_CLAUDE_AUTH_SET_TOKEN,
     CMD_CLAUDE_AUTH_STATUS,
     CMD_CREATE_SESSION,
+    CMD_DELETE_SESSION_ATTACHMENTS,
     CMD_HEALTH_CHECK,
     CMD_INTERVENE,
     CMD_LIST_SESSIONS,
     CMD_RESPOND,
     CMD_SUBSCRIBE_EVENTS,
+    CMD_UPLOAD_ATTACHMENT,
     EVT_HEALTH_STATUS,
     EVT_SESSION_CREATED,
     EVT_SESSIONS_UPDATE,
@@ -105,6 +107,8 @@ class CommandDispatcher:
             CMD_CLAUDE_AUTH_DELETE_TOKEN: self._handle_claude_auth_delete_token,
             CMD_CLAUDE_AUTH_GET_USAGE: self._handle_claude_auth_get_usage,
             CMD_CLAUDE_AUTH_GET_PROFILE: self._handle_claude_auth_get_profile,
+            CMD_UPLOAD_ATTACHMENT: self._handle_upload_attachment,
+            CMD_DELETE_SESSION_ATTACHMENTS: self._handle_delete_session_attachments,
         }
 
         # 백그라운드 핸들러 — dispatch 루프를 블록하지 않도록 asyncio.create_task로 분리.
@@ -357,3 +361,103 @@ class CommandDispatcher:
         await self._send(await handle_auth_api_request(
             request_id, CMD_CLAUDE_AUTH_GET_PROFILE, ANTHROPIC_PROFILE_URL,
         ))
+
+    # ─── Attachment WS reverse-proxy handlers ────────────
+    # 노드 self-reported host:port HTTP 가정 폐기 — orch가 WS로 attachment binary를
+    # base64-in-JSON으로 전달한다. 운영 로그(eias-shopping host=127.0.0.1)에서 cross-node
+    # HTTP가 도달 불가했던 결함 회로 차단. orch 측 4xx 분류용 wire 약속:
+    #   - INVALID_REQUEST: prefix → 400 (file_manager 검증 실패 / base64 디코딩 실패)
+    #   - 그 외 RuntimeError → 502 (노드 내부 에러)
+    #   - TimeoutError (orch 측) → 504
+
+    async def _handle_upload_attachment(self, cmd: dict) -> None:
+        """WS 경유 cross-node 첨부 업로드.
+
+        payload: {session_id, filename, content_type, content_b64}
+        응답: {type:"upload_attachment_result", requestId, path, filename, size, content_type}
+        """
+        import base64
+        from soul_server.service import file_manager, AttachmentError
+
+        request_id = cmd.get("requestId", "")
+        try:
+            # validate=True — invalid base64 문자는 명시적으로 실패한다.
+            # 기본값 False는 garbage 입력을 silently 무시하여 silent corruption 위험.
+            content = base64.b64decode(cmd["content_b64"], validate=True)
+        except KeyError:
+            await self._send_error(
+                "INVALID_REQUEST: content_b64 누락",
+                request_id=request_id,
+                command_type=CMD_UPLOAD_ATTACHMENT,
+            )
+            return
+        except Exception as e:
+            await self._send_error(
+                f"INVALID_REQUEST: base64 디코딩 실패: {e}",
+                request_id=request_id,
+                command_type=CMD_UPLOAD_ATTACHMENT,
+            )
+            return
+
+        try:
+            result = await file_manager.save_file_for_session(
+                filename=cmd.get("filename") or "unnamed",
+                content=content,
+                session_id=cmd["session_id"],
+            )
+        except KeyError:
+            await self._send_error(
+                "INVALID_REQUEST: session_id 누락",
+                request_id=request_id,
+                command_type=CMD_UPLOAD_ATTACHMENT,
+            )
+            return
+        except AttachmentError as e:
+            # file_manager의 사이즈/확장자 검증 실패 — orch가 400으로 분류
+            await self._send_error(
+                f"INVALID_REQUEST: {e}",
+                request_id=request_id,
+                command_type=CMD_UPLOAD_ATTACHMENT,
+            )
+            return
+
+        if request_id:
+            await self._send({
+                "type": "upload_attachment_result",
+                "requestId": request_id,
+                "path": result["path"],
+                "filename": result["filename"],
+                "size": result["size"],
+                "content_type": result["content_type"],
+            })
+
+    async def _handle_delete_session_attachments(self, cmd: dict) -> None:
+        """WS 경유 세션 첨부 정리.
+
+        payload: {session_id}
+        응답: {type:"delete_session_attachments_result", requestId, cleaned, files_removed}
+
+        cleanup_session은 동기 함수지만 기존 HTTP 라우트(api/attachments.py:149)도
+        `async def` 안에서 동일하게 동기 호출하므로 일관성 우선 — 동기 호출 그대로
+        (design-principles §9). 대용량 cleanup이 문제되면 후속 카드에서 run_in_executor.
+        """
+        from soul_server.service import file_manager
+
+        request_id = cmd.get("requestId", "")
+        try:
+            files_removed = file_manager.cleanup_session(cmd["session_id"])
+        except KeyError:
+            await self._send_error(
+                "INVALID_REQUEST: session_id 누락",
+                request_id=request_id,
+                command_type=CMD_DELETE_SESSION_ATTACHMENTS,
+            )
+            return
+
+        if request_id:
+            await self._send({
+                "type": "delete_session_attachments_result",
+                "requestId": request_id,
+                "cleaned": True,
+                "files_removed": files_removed,
+            })

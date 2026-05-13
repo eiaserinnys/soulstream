@@ -17,9 +17,11 @@ from starlette.websockets import WebSocketDisconnect
 
 from soulstream_server.constants import (
     CMD_CREATE_SESSION,
+    CMD_DELETE_SESSION_ATTACHMENTS,
     CMD_INTERVENE,
     CMD_RESPOND,
     CMD_SUBSCRIBE_EVENTS,
+    CMD_UPLOAD_ATTACHMENT,
     CMD_CLAUDE_AUTH_STATUS,
     CMD_CLAUDE_AUTH_SET_TOKEN,
     CMD_CLAUDE_AUTH_DELETE_TOKEN,
@@ -228,6 +230,42 @@ class NodeConnection:
             # add_intervention → 큐 → InterventionSentEvent.caller_info로 전파한다.
             payload["caller_info"] = caller_info
         return await self._send_command(CMD_INTERVENE, payload)
+
+    # ─── Attachment WS reverse-proxy ────────────────────
+    # 노드 self-reported host:port HTTP 가정 폐기 (운영 로그: eias-shopping host=127.0.0.1)
+    # — 모든 cross-node attachment 통신은 본 WS wire로 통합. atom 작업 이력 260513.01.
+
+    async def send_upload_attachment(
+        self,
+        session_id: str,
+        filename: str,
+        content_type: str,
+        content_b64: str,
+    ) -> dict:
+        """노드에 attachment 업로드를 WS로 위임.
+
+        binary는 base64로 인코딩하여 텍스트 WS 프레임으로 전송한다(기존 `send_json`
+        wire 재사용). uvicorn 기본 `ws_max_size=16MB` 안에서 MAX_ATTACHMENT_SIZE
+        =8MB → base64 ~10.7MB로 안전.
+
+        응답: {path, filename, size, content_type} — 노드 디스크의 절대경로.
+        """
+        payload = {
+            "session_id": session_id,
+            "filename": filename,
+            "content_type": content_type,
+            "content_b64": content_b64,
+        }
+        return await self._send_command(CMD_UPLOAD_ATTACHMENT, payload)
+
+    async def send_delete_session_attachments(self, session_id: str) -> dict:
+        """세션 첨부 정리를 WS로 위임.
+
+        응답: {cleaned: bool, files_removed: int}.
+        """
+        return await self._send_command(
+            CMD_DELETE_SESSION_ATTACHMENTS, {"session_id": session_id}
+        )
 
     async def send_claude_auth_status(self) -> dict:
         """Claude Code OAuth 토큰 존재 여부 조회."""

@@ -7,8 +7,10 @@ import pytest
 
 from soulstream_server.constants import (
     CMD_CREATE_SESSION,
+    CMD_DELETE_SESSION_ATTACHMENTS,
     CMD_INTERVENE,
     CMD_SUBSCRIBE_EVENTS,
+    CMD_UPLOAD_ATTACHMENT,
     EVT_ERROR,
     EVT_EVENT,
     EVT_SESSION_CREATED,
@@ -393,3 +395,116 @@ class TestAttachmentPaths:
 
         sent = ws.send_json.call_args[0][0]
         assert "attachment_paths" not in sent
+
+
+class TestSendUploadAttachment:
+    """attachment WS reverse-proxy — send_upload_attachment 단위 테스트.
+
+    노드 self-reported host:port HTTP 가정 폐기 후 신규 정공법 wire (atom 260513.01).
+    """
+
+    async def test_sends_upload_command_with_b64_payload(self, node, ws):
+        """payload type/필드 검증 + request_id 매칭."""
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            req_id = data["requestId"]
+            if req_id in node._pending:
+                node._pending[req_id].set_result({
+                    "type": "upload_attachment_result",
+                    "path": "/incoming/s/x.png",
+                    "filename": "x.png",
+                    "size": 4,
+                    "content_type": "image/png",
+                })
+
+        ws.send_json.side_effect = resolve_future
+
+        result = await node.send_upload_attachment(
+            session_id="sess-1",
+            filename="x.png",
+            content_type="image/png",
+            content_b64="YWJjZA==",
+        )
+
+        sent = ws.send_json.call_args[0][0]
+        assert sent["type"] == CMD_UPLOAD_ATTACHMENT
+        assert sent["session_id"] == "sess-1"
+        assert sent["filename"] == "x.png"
+        assert sent["content_type"] == "image/png"
+        assert sent["content_b64"] == "YWJjZA=="
+        assert "requestId" in sent
+        assert result["path"] == "/incoming/s/x.png"
+
+    async def test_raises_runtime_error_on_evt_error(self, node, ws):
+        """노드가 EVT_ERROR로 응답 → RuntimeError raise (orch 측이 분류한다)."""
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            req_id = data["requestId"]
+            if req_id in node._pending:
+                # NodeConnection.handle_message는 EVT_ERROR를 RuntimeError로 변환한다
+                await node.handle_message({
+                    "type": EVT_ERROR,
+                    "requestId": req_id,
+                    "message": "INVALID_REQUEST: 보안상 허용되지 않는 파일 형식입니다: .exe",
+                })
+
+        ws.send_json.side_effect = resolve_future
+
+        with pytest.raises(RuntimeError, match="INVALID_REQUEST"):
+            await node.send_upload_attachment(
+                session_id="s", filename="evil.exe",
+                content_type="application/octet-stream", content_b64="eA==",
+            )
+
+    async def test_raises_timeout_when_no_response(self, node, ws):
+        """노드 미응답 → asyncio.wait_for timeout → TimeoutError raise."""
+        # ws.send_json은 그냥 noop — future가 끝까지 resolve되지 않음
+        # COMMAND_TIMEOUT 기본 30초이지만 본 테스트는 timeout 강제를 위해
+        # _send_command를 직접 호출하지 않고 짧은 timeout으로 wait_for.
+        # send_upload_attachment 내부의 _send_command(..., timeout=COMMAND_TIMEOUT)는
+        # 그대로 두고 외부 wait_for로 단축한다.
+        with pytest.raises((TimeoutError, asyncio.TimeoutError)):
+            await asyncio.wait_for(
+                node.send_upload_attachment(
+                    session_id="s", filename="x", content_type="text/plain", content_b64="eA==",
+                ),
+                timeout=0.2,
+            )
+
+
+class TestSendDeleteSessionAttachments:
+    async def test_sends_delete_command(self, node, ws):
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            req_id = data["requestId"]
+            if req_id in node._pending:
+                node._pending[req_id].set_result({
+                    "type": "delete_session_attachments_result",
+                    "cleaned": True,
+                    "files_removed": 5,
+                })
+
+        ws.send_json.side_effect = resolve_future
+
+        result = await node.send_delete_session_attachments("sess-xyz")
+
+        sent = ws.send_json.call_args[0][0]
+        assert sent["type"] == CMD_DELETE_SESSION_ATTACHMENTS
+        assert sent["session_id"] == "sess-xyz"
+        assert result["files_removed"] == 5
+
+    async def test_raises_runtime_error_on_evt_error(self, node, ws):
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            req_id = data["requestId"]
+            if req_id in node._pending:
+                await node.handle_message({
+                    "type": EVT_ERROR,
+                    "requestId": req_id,
+                    "message": "INVALID_REQUEST: session_id 누락",
+                })
+
+        ws.send_json.side_effect = resolve_future
+
+        with pytest.raises(RuntimeError, match="INVALID_REQUEST"):
+            await node.send_delete_session_attachments("")

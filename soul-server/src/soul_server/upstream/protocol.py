@@ -119,6 +119,13 @@ CMD_LIST_SESSIONS = "list_sessions"
 CMD_HEALTH_CHECK = "health_check"
 CMD_SUBSCRIBE_EVENTS = "subscribe_events"
 
+# Attachment WS reverse-proxy commands (orch ↔ node).
+# 노드 self-reported host:port HTTP 가정 폐기 — 신뢰 가능한 WS wire로 통합한다.
+# 운영 로그: eias-shopping/eias-linegames가 host=127.0.0.1로 보고하여 orch에서 도달 불가
+# 였던 결함 회로(2026-05-13) 차단. atom 작업 이력 260513.01 (orch-relay-attachment).
+CMD_UPLOAD_ATTACHMENT = "upload_attachment"
+CMD_DELETE_SESSION_ATTACHMENTS = "delete_session_attachments"
+
 # Claude Code OAuth 명령 (orchestrator → soul-server)
 CMD_CLAUDE_AUTH_STATUS = "claude_auth_status"           # 토큰 존재 여부 조회
 CMD_CLAUDE_AUTH_SET_TOKEN = "claude_auth_set_token"     # 토큰 설정
