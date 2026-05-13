@@ -13,8 +13,10 @@ host=127.0.0.1) 회로 차단. 노드 등록 시 신뢰 가능하게 outbound로
 """
 
 import base64
+import io
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.responses import StreamingResponse
 
 from soulstream_server.nodes.node_manager import NodeManager
 
@@ -113,5 +115,53 @@ def create_attachments_router(
             "cleaned": result.get("cleaned", True),
             "files_removed": result.get("files_removed", 0),
         }
+
+    @router.get("/files")
+    async def proxy_download(
+        request: Request,
+        node_id: str = Query(..., alias="nodeId"),
+        path: str = Query(...),
+    ):
+        """노드 디스크의 첨부 binary를 cross-node로 받아 streaming response로 forward.
+
+        Phase 2 (atom 260513.02 — chat-inline-attachment): 채팅 영역 사용자
+        발화 말풍선에 첨부 이미지를 인라인 표시하기 위한 다운로드 라우트.
+        soul-app `UserMessage.tsx`가 `<Image source={{uri}} />`로 호출한다.
+
+        Access control 결정: 기존 라우트와 동일하게 `dependencies=api_deps`
+        (JWT 검증)만 적용. 세션 owner 검증은 *현 라우트 전체에 동시 적용*되어야
+        정합이므로 본 카드 범위 외 후속 카드. INVALID_REQUEST/NOT_FOUND prefix
+        wire 약속은 Phase 1과 동일.
+        """
+        node = node_manager.get_node(node_id)
+        if node is None:
+            raise HTTPException(404, f"Node '{node_id}' not found")
+
+        try:
+            result = await node.send_download_attachment(path=path)
+        except ConnectionError as e:
+            raise HTTPException(503, f"Node temporarily unavailable: {e}")
+        except TimeoutError as e:
+            raise HTTPException(504, f"Node download timed out: {e}")
+        except RuntimeError as e:
+            msg = str(e)
+            if msg.startswith("NOT_FOUND:"):
+                raise HTTPException(404, msg.removeprefix("NOT_FOUND:").strip())
+            if msg.startswith("INVALID_REQUEST:"):
+                raise HTTPException(400, msg.removeprefix("INVALID_REQUEST:").strip())
+            raise HTTPException(502, f"Node download failed: {msg}")
+
+        content = base64.b64decode(result["content_b64"])
+        headers = {
+            "Content-Disposition": f'inline; filename="{result["filename"]}"',
+            # 클라이언트 캐시(1h) — path는 노드 디스크 절대경로이므로 immutable
+            # 가정이 안전. 캐시 무효화가 필요한 케이스는 후속 카드.
+            "Cache-Control": "private, max-age=3600",
+        }
+        return StreamingResponse(
+            io.BytesIO(content),
+            media_type=result.get("content_type") or "application/octet-stream",
+            headers=headers,
+        )
 
     return router

@@ -344,3 +344,121 @@ class TestProxyDelete:
             "/api/attachments/sessions/x?nodeId=node-1"
         )
         assert resp.status_code == 503
+
+
+# ─── GET /files (Phase 2 — chat-inline-attachment) ────
+
+
+class TestProxyDownload:
+    """GET /api/attachments/files 테스트.
+
+    soul-app UserMessage가 채팅 영역 인라인 표시를 위해 호출하는 라우트.
+    cross-node 다운로드는 WS reverse-proxy로 위임된다.
+    """
+
+    async def test_returns_streaming_response_on_success(
+        self, attachments_client, populated_node_manager
+    ):
+        node = populated_node_manager.get_node("node-1")
+        import base64
+        node.send_download_attachment = AsyncMock(return_value={
+            "content_b64": base64.b64encode(b"\x89PNG\r\nbinarydata").decode("ascii"),
+            "content_type": "image/png",
+            "filename": "photo.png",
+            "size": 16,
+        })
+
+        resp = await attachments_client.get(
+            "/api/attachments/files?nodeId=node-1&path=%2Fincoming%2Fs%2Fphoto.png"
+        )
+
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("image/png")
+        assert "photo.png" in resp.headers.get("content-disposition", "")
+        assert "max-age=3600" in resp.headers.get("cache-control", "")
+        assert resp.content == b"\x89PNG\r\nbinarydata"
+
+        node.send_download_attachment.assert_awaited_once_with(path="/incoming/s/photo.png")
+
+    async def test_returns_404_for_unknown_node(self, attachments_client):
+        resp = await attachments_client.get(
+            "/api/attachments/files?nodeId=unknown&path=/x"
+        )
+        assert resp.status_code == 404
+
+    async def test_returns_404_on_node_not_found(
+        self, attachments_client, populated_node_manager
+    ):
+        node = populated_node_manager.get_node("node-1")
+        node.send_download_attachment = AsyncMock(
+            side_effect=RuntimeError("NOT_FOUND: 파일이 존재하지 않습니다")
+        )
+        resp = await attachments_client.get(
+            "/api/attachments/files?nodeId=node-1&path=%2Fincoming%2Fmissing"
+        )
+        assert resp.status_code == 404
+
+    async def test_returns_400_on_traversal(
+        self, attachments_client, populated_node_manager
+    ):
+        node = populated_node_manager.get_node("node-1")
+        node.send_download_attachment = AsyncMock(
+            side_effect=RuntimeError("INVALID_REQUEST: path가 첨부 디렉토리 하위가 아닙니다")
+        )
+        resp = await attachments_client.get(
+            "/api/attachments/files?nodeId=node-1&path=%2Fetc%2Fpasswd"
+        )
+        assert resp.status_code == 400
+
+    async def test_returns_502_on_other_node_error(
+        self, attachments_client, populated_node_manager
+    ):
+        node = populated_node_manager.get_node("node-1")
+        node.send_download_attachment = AsyncMock(
+            side_effect=RuntimeError("disk read failed")
+        )
+        resp = await attachments_client.get(
+            "/api/attachments/files?nodeId=node-1&path=%2Fincoming%2Fa"
+        )
+        assert resp.status_code == 502
+
+    async def test_returns_504_on_timeout(
+        self, attachments_client, populated_node_manager
+    ):
+        node = populated_node_manager.get_node("node-1")
+        node.send_download_attachment = AsyncMock(
+            side_effect=TimeoutError("Command download_attachment timed out")
+        )
+        resp = await attachments_client.get(
+            "/api/attachments/files?nodeId=node-1&path=%2Fincoming%2Fa"
+        )
+        assert resp.status_code == 504
+
+    async def test_returns_503_on_disconnect(
+        self, attachments_client, populated_node_manager
+    ):
+        node = populated_node_manager.get_node("node-1")
+        node.send_download_attachment = AsyncMock(
+            side_effect=ConnectionError("Node disconnected during command")
+        )
+        resp = await attachments_client.get(
+            "/api/attachments/files?nodeId=node-1&path=%2Fincoming%2Fa"
+        )
+        assert resp.status_code == 503
+
+    async def test_falls_back_to_octet_stream_when_content_type_missing(
+        self, attachments_client, populated_node_manager
+    ):
+        node = populated_node_manager.get_node("node-1")
+        import base64
+        node.send_download_attachment = AsyncMock(return_value={
+            "content_b64": base64.b64encode(b"raw").decode("ascii"),
+            "content_type": None,
+            "filename": "unknown.bin",
+            "size": 3,
+        })
+        resp = await attachments_client.get(
+            "/api/attachments/files?nodeId=node-1&path=%2Fincoming%2Fa"
+        )
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("application/octet-stream")

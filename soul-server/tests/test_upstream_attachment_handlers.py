@@ -20,6 +20,7 @@ from soul_server.service import AttachmentError
 from soul_server.upstream.adapter import UpstreamAdapter
 from soul_server.upstream.protocol import (
     CMD_DELETE_SESSION_ATTACHMENTS,
+    CMD_DOWNLOAD_ATTACHMENT,
     CMD_UPLOAD_ATTACHMENT,
     EVT_ERROR,
 )
@@ -246,6 +247,126 @@ class TestHandleDeleteSessionAttachments:
             # session_id 누락
         }
 
+        await adapter._dispatcher.dispatch(cmd)
+
+        errors = [m for m in _sent_messages(send_json) if m.get("type") == EVT_ERROR]
+        assert len(errors) == 1
+        assert errors[0]["message"].startswith("INVALID_REQUEST:")
+
+
+# ─── download_attachment (Phase 2 — atom 260513.02) ──
+
+
+class TestHandleDownloadAttachment:
+    """채팅 영역 인라인 표시용 다운로드 핸들러."""
+
+    @pytest.mark.asyncio
+    async def test_success_reads_file_and_returns_b64(self, tmp_path):
+        """정상 흐름 — file_manager.is_under_base 통과 + read_bytes → base64 응답."""
+        adapter = _make_adapter()
+        send_json = _attach_ws(adapter)
+
+        # 임시 디렉토리를 base_dir로 사용하는 FileManager singleton 교체
+        from soul_server.service import file_manager as fm_module
+        from soul_server.service.file_manager import FileManager
+        photo = tmp_path / "session-1" / "001_photo.png"
+        photo.parent.mkdir(parents=True)
+        photo.write_bytes(b"\x89PNG\r\nbinarycontent")
+
+        from unittest.mock import patch
+        original_base = fm_module._base_dir
+        fm_module._base_dir = tmp_path
+        try:
+            cmd = {
+                "type": CMD_DOWNLOAD_ATTACHMENT,
+                "requestId": "req-dl-1",
+                "path": str(photo),
+            }
+            await adapter._dispatcher.dispatch(cmd)
+        finally:
+            fm_module._base_dir = original_base
+
+        results = [m for m in _sent_messages(send_json) if m.get("type") == "download_attachment_result"]
+        assert len(results) == 1
+        assert results[0]["requestId"] == "req-dl-1"
+        decoded = base64.b64decode(results[0]["content_b64"])
+        assert decoded == b"\x89PNG\r\nbinarycontent"
+        assert results[0]["filename"] == "001_photo.png"
+        assert results[0]["content_type"] == "image/png"
+        assert results[0]["size"] == len(b"\x89PNG\r\nbinarycontent")
+
+    @pytest.mark.asyncio
+    async def test_traversal_path_outside_base_returns_invalid_request(self, tmp_path):
+        """base_dir 바깥 경로(예: `/etc/passwd`) → INVALID_REQUEST."""
+        adapter = _make_adapter()
+        send_json = _attach_ws(adapter)
+
+        from soul_server.service import file_manager as fm_module
+        original_base = fm_module._base_dir
+        fm_module._base_dir = tmp_path
+        try:
+            cmd = {
+                "type": CMD_DOWNLOAD_ATTACHMENT,
+                "requestId": "req-dl-traversal",
+                "path": "/etc/passwd",
+            }
+            await adapter._dispatcher.dispatch(cmd)
+        finally:
+            fm_module._base_dir = original_base
+
+        errors = [m for m in _sent_messages(send_json) if m.get("type") == EVT_ERROR]
+        assert len(errors) == 1
+        assert errors[0]["message"].startswith("INVALID_REQUEST:")
+
+    @pytest.mark.asyncio
+    async def test_missing_file_returns_not_found(self, tmp_path):
+        """base_dir 하위지만 파일 없음 → NOT_FOUND."""
+        adapter = _make_adapter()
+        send_json = _attach_ws(adapter)
+
+        from soul_server.service import file_manager as fm_module
+        original_base = fm_module._base_dir
+        fm_module._base_dir = tmp_path
+        try:
+            cmd = {
+                "type": CMD_DOWNLOAD_ATTACHMENT,
+                "requestId": "req-dl-missing",
+                "path": str(tmp_path / "does-not-exist.png"),
+            }
+            await adapter._dispatcher.dispatch(cmd)
+        finally:
+            fm_module._base_dir = original_base
+
+        errors = [m for m in _sent_messages(send_json) if m.get("type") == EVT_ERROR]
+        assert len(errors) == 1
+        assert errors[0]["message"].startswith("NOT_FOUND:")
+
+    @pytest.mark.asyncio
+    async def test_missing_path_returns_invalid_request(self):
+        adapter = _make_adapter()
+        send_json = _attach_ws(adapter)
+
+        cmd = {
+            "type": CMD_DOWNLOAD_ATTACHMENT,
+            "requestId": "req-dl-no-path",
+            # path 누락
+        }
+        await adapter._dispatcher.dispatch(cmd)
+
+        errors = [m for m in _sent_messages(send_json) if m.get("type") == EVT_ERROR]
+        assert len(errors) == 1
+        assert errors[0]["message"].startswith("INVALID_REQUEST:")
+
+    @pytest.mark.asyncio
+    async def test_empty_path_returns_invalid_request(self):
+        adapter = _make_adapter()
+        send_json = _attach_ws(adapter)
+
+        cmd = {
+            "type": CMD_DOWNLOAD_ATTACHMENT,
+            "requestId": "req-dl-empty",
+            "path": "",
+        }
         await adapter._dispatcher.dispatch(cmd)
 
         errors = [m for m in _sent_messages(send_json) if m.get("type") == EVT_ERROR]

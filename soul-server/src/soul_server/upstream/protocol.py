@@ -125,6 +125,11 @@ CMD_SUBSCRIBE_EVENTS = "subscribe_events"
 # 였던 결함 회로(2026-05-13) 차단. atom 작업 이력 260513.01 (orch-relay-attachment).
 CMD_UPLOAD_ATTACHMENT = "upload_attachment"
 CMD_DELETE_SESSION_ATTACHMENTS = "delete_session_attachments"
+# Phase 2 (atom 260513.02 — chat-inline-attachment): 채팅 영역 사용자 발화
+# 말풍선에 첨부 이미지 인라인 표시. orch가 GET /api/attachments/files에서
+# cross-node 다운로드를 WS로 위임. directory traversal 가드는 노드 측
+# file_manager.is_under_base()로 검증.
+CMD_DOWNLOAD_ATTACHMENT = "download_attachment"
 
 # Claude Code OAuth 명령 (orchestrator → soul-server)
 CMD_CLAUDE_AUTH_STATUS = "claude_auth_status"           # 토큰 존재 여부 조회
