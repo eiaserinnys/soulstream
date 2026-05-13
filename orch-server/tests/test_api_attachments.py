@@ -234,6 +234,22 @@ class TestProxyUpload:
 
         assert resp.status_code == 503
 
+    async def test_returns_502_on_malformed_upload_response(
+        self, attachments_client, populated_node_manager
+    ):
+        """노드 upload 응답이 malformed → 502 (P1-1)."""
+        node = populated_node_manager.get_node("node-1")
+        node.send_upload_attachment = AsyncMock(return_value={
+            "path": "/x",
+            # filename/size/content_type 누락
+        })
+        resp = await attachments_client.post(
+            "/api/attachments/sessions?nodeId=node-1",
+            data={"session_id": "sess-1"},
+            files={"file": ("a.txt", b"x", "text/plain")},
+        )
+        assert resp.status_code == 502
+
     async def test_cross_node_routing_selects_correct_node_instance(
         self, two_node_client
     ):
@@ -462,3 +478,33 @@ class TestProxyDownload:
         )
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("application/octet-stream")
+
+    async def test_returns_502_on_malformed_node_response(
+        self, attachments_client, populated_node_manager
+    ):
+        """노드가 정상 응답 type으로 응답하지만 필수 키 누락 → 502 (KeyError 누수 차단)."""
+        node = populated_node_manager.get_node("node-1")
+        node.send_download_attachment = AsyncMock(return_value={
+            # content_b64 누락
+            "filename": "x.png",
+        })
+        resp = await attachments_client.get(
+            "/api/attachments/files?nodeId=node-1&path=%2Fincoming%2Fa"
+        )
+        assert resp.status_code == 502
+
+    async def test_returns_502_on_invalid_base64(
+        self, attachments_client, populated_node_manager
+    ):
+        """노드가 base64로 디코딩 불가능한 string을 보내면 → 502."""
+        node = populated_node_manager.get_node("node-1")
+        node.send_download_attachment = AsyncMock(return_value={
+            "content_b64": "this-is-not-valid-base64!!!@@@",
+            "content_type": "image/png",
+            "filename": "x.png",
+            "size": 0,
+        })
+        resp = await attachments_client.get(
+            "/api/attachments/files?nodeId=node-1&path=%2Fincoming%2Fa"
+        )
+        assert resp.status_code == 502

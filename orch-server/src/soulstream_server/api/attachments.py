@@ -78,6 +78,14 @@ def create_attachments_router(
                 raise HTTPException(400, msg.removeprefix("INVALID_REQUEST:").strip())
             raise HTTPException(502, f"Node attachment upload failed: {msg}")
 
+        # 노드 응답 키 검증 — code-review P1-1 (Phase 2). KeyError 누수 차단.
+        if not isinstance(result, dict) or not all(
+            isinstance(result.get(k), expected_type)
+            for k, expected_type in [
+                ("path", str), ("filename", str), ("size", int), ("content_type", str),
+            ]
+        ):
+            raise HTTPException(502, "Node returned malformed upload response")
         return {
             "path": result["path"],
             "filename": result["filename"],
@@ -111,9 +119,12 @@ def create_attachments_router(
                 raise HTTPException(400, msg.removeprefix("INVALID_REQUEST:").strip())
             raise HTTPException(502, f"Node attachment delete failed: {msg}")
 
+        # 노드 응답 검증 — code-review P1-1 (Phase 2). 비-dict 응답 차단.
+        if not isinstance(result, dict):
+            raise HTTPException(502, "Node returned malformed delete response")
         return {
-            "cleaned": result.get("cleaned", True),
-            "files_removed": result.get("files_removed", 0),
+            "cleaned": bool(result.get("cleaned", True)),
+            "files_removed": int(result.get("files_removed", 0)),
         }
 
     @router.get("/files")
@@ -151,11 +162,23 @@ def create_attachments_router(
                 raise HTTPException(400, msg.removeprefix("INVALID_REQUEST:").strip())
             raise HTTPException(502, f"Node download failed: {msg}")
 
-        content = base64.b64decode(result["content_b64"])
+        # 노드 응답 키 검증 — 예상 외 malformed 응답을 KeyError로 누수시키지 않는다
+        # (FastAPI 기본 500 대신 명시적 502 분류). code-review P1-1.
+        content_b64 = result.get("content_b64") if isinstance(result, dict) else None
+        filename = result.get("filename") if isinstance(result, dict) else None
+        if not isinstance(content_b64, str) or not isinstance(filename, str):
+            raise HTTPException(502, "Node returned malformed download response")
+        try:
+            content = base64.b64decode(content_b64, validate=True)
+        except (ValueError, TypeError) as e:
+            raise HTTPException(502, f"Node returned invalid base64: {e}")
+
         headers = {
-            "Content-Disposition": f'inline; filename="{result["filename"]}"',
-            # 클라이언트 캐시(1h) — path는 노드 디스크 절대경로이므로 immutable
-            # 가정이 안전. 캐시 무효화가 필요한 케이스는 후속 카드.
+            # `save_file_for_session`의 `{ms}_{filename}` ts-prefix 규약 덕분에 path가
+            # 사실상 unique → immutable 가정 안전. file_manager의 save naming 규약을
+            # 바꾸면 본 캐시 정책도 함께 재평가 필요 (정본 cross-link). 캐시 무효화가
+            # 필요한 케이스는 후속 카드.
+            "Content-Disposition": f'inline; filename="{filename}"',
             "Cache-Control": "private, max-age=3600",
         }
         return StreamingResponse(
