@@ -264,10 +264,15 @@ describe("CodexEngineAdapter — 오류 경로", () => {
     for await (const e of engine.execute({ prompt: "x" })) {
       events.push(e);
     }
-    expect(events).toEqual([
-      { type: "session", session_id: "t1" },
-      { type: "error", message: "unrecoverable", fatal: true },
-    ]);
+    // B-3: 매퍼가 모든 error/complete payload에 timestamp 박음. session은 timestamp 없음.
+    expect(events).toHaveLength(2);
+    expect(events[0]).toEqual({ type: "session", session_id: "t1" });
+    expect(events[1]).toMatchObject({
+      type: "error",
+      message: "unrecoverable",
+      fatal: true,
+    });
+    expect(typeof (events[1] as { timestamp: number }).timestamp).toBe("number");
   });
 });
 

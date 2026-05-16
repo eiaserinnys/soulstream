@@ -3,7 +3,39 @@ import { WebSocketServer, type WebSocket as WSServerWebSocket } from "ws";
 import pino from "pino";
 import type { AddressInfo } from "node:net";
 
+import { AgentRegistry, type AgentProfile } from "../src/agent_registry.js";
 import { UpstreamAdapter, isConnectionError } from "../src/upstream/adapter.js";
+import type { TaskExecutor } from "../src/task/task_executor.js";
+import type { TaskManager } from "../src/task/task_manager.js";
+
+const codexAgent: AgentProfile = {
+  id: "codex-default",
+  name: "Codex Default",
+  backend: "codex",
+  workspace_dir: "/tmp/codex-default",
+};
+
+function makeDeps(opts: { agents?: AgentProfile[]; runningCount?: number } = {}) {
+  const agentRegistry = new AgentRegistry(opts.agents ?? [codexAgent]);
+  const taskManager = {
+    listTasks: () =>
+      Array(opts.runningCount ?? 0)
+        .fill(null)
+        .map(() => ({ status: "running" as const })),
+    createTask: async () => {
+      throw new Error("createTask not stubbed in this test");
+    },
+    cancelTask: async () => false,
+    deleteTask: async () => undefined,
+    shutdown: async () => undefined,
+    getTask: () => undefined,
+    setTaskStatus: () => undefined,
+  } as unknown as TaskManager;
+  const taskExecutor = {
+    startExecution: () => undefined,
+  } as unknown as TaskExecutor;
+  return { agentRegistry, taskManager, taskExecutor };
+}
 
 interface MockOrch {
   port: number;
@@ -85,6 +117,7 @@ describe("UpstreamAdapter", () => {
         isProduction: false,
       },
       silentLogger,
+      makeDeps(),
     );
 
     void adapter.run();
@@ -94,8 +127,8 @@ describe("UpstreamAdapter", () => {
     expect(first.type).toBe("node_register");
     expect(first.node_id).toBe("eias-shopping-ts");
     expect(first.supported_backends).toEqual(["codex"]);
-    expect(first.capabilities).toEqual({ max_concurrent: 0 });
-    // Phase B-2 R6: 임시 codex-default agent 광고 (B-3에서 agent_registry yaml 정본 교체).
+    // Phase B-3: agentRegistry yaml 결과로 max_concurrent = agents.length
+    expect(first.capabilities).toEqual({ max_concurrent: 1 });
     expect(first.agents).toEqual([
       { id: "codex-default", name: "Codex Default", backend: "codex" },
     ]);
@@ -115,6 +148,7 @@ describe("UpstreamAdapter", () => {
         isProduction: false,
       },
       silentLogger,
+      makeDeps(),
     );
 
     void adapter.run();
@@ -129,12 +163,13 @@ describe("UpstreamAdapter", () => {
     expect(reply.type).toBe("health_status");
     expect(reply.node_id).toBe("eias-shopping-ts");
     expect(reply.requestId).toBe("hc-1");
-    expect(reply.runners).toEqual({ max_concurrent: 0, active: 0 });
+    // Phase B-3: max_concurrent=agents.length=1, active=runningTasks=0
+    expect(reply.runners).toEqual({ max_concurrent: 1, active: 0 });
 
     await adapter.shutdown();
   });
 
-  it("미구현 명령에 error fallback 응답", async () => {
+  it("미구현 명령(respond)에 error fallback 응답", async () => {
     const adapter = new UpstreamAdapter(
       {
         url: orch.url,
@@ -146,18 +181,20 @@ describe("UpstreamAdapter", () => {
         isProduction: false,
       },
       silentLogger,
+      makeDeps(),
     );
     void adapter.run();
     await waitFor(() => orch.sockets.length >= 1 && orch.receivedMessages.length >= 1);
 
-    orch.sockets[0]!.send(JSON.stringify({ type: "create_session", requestId: "cs-1" }));
+    // B-3에서 create_session은 *implemented* — 미구현은 respond·list_sessions 등
+    orch.sockets[0]!.send(JSON.stringify({ type: "respond", requestId: "r-1" }));
     await waitFor(() => orch.receivedMessages.length >= 2);
 
     const reply = orch.receivedMessages[1] as Record<string, unknown>;
     expect(reply.type).toBe("error");
-    expect(reply.command_type).toBe("create_session");
-    expect(reply.requestId).toBe("cs-1");
-    expect(reply.message).toContain("Not implemented in soul-server-ts B-1");
+    expect(reply.command_type).toBe("respond");
+    expect(reply.requestId).toBe("r-1");
+    expect(reply.message).toContain("Not implemented in soul-server-ts");
 
     await adapter.shutdown();
   });
@@ -177,6 +214,7 @@ describe("UpstreamAdapter", () => {
         isProduction: false,
       },
       silentLogger,
+      makeDeps(),
     );
     void adapter.run();
     await waitFor(() => orch.receivedMessages.length >= 1);
@@ -200,6 +238,7 @@ describe("UpstreamAdapter", () => {
         isProduction: false,
       },
       silentLogger,
+      makeDeps(),
     );
     void adapter.run();
 

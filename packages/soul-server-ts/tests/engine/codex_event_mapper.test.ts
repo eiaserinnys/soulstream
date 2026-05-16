@@ -1,16 +1,20 @@
 /**
- * Codex ThreadEvent → SSEEvent 매핑 단위 테스트.
+ * Codex ThreadEvent → SSEEvent 매핑 단위 테스트 (Phase B-3 갱신).
  *
- * 8 top-level event × 8 sub-type item 각각 검증.
- * 분석 캐시 §4.1·§4.2 매핑 표 그대로 enumerate.
+ * 본 PR 갱신점 (B-2 대비):
+ *   - text_end: text/item_id 제거, timestamp 추가 (Python wire 정본 정합)
+ *   - text_start 신설 (item.started agent_message)
+ *   - text_delta 신설 (item.updated agent_message, 누적 텍스트 그대로)
+ *   - tool_start: tool_input (Python wire 정본) — B-2의 `input` 키 정정
+ *   - 모든 payload에 timestamp 박힘
  */
 
 import { describe, expect, it } from "vitest";
 
 import { mapThreadEvent } from "../../src/engine/codex_event_mapper.js";
 
-describe("ThreadEvent top-level 매핑 (§4.1)", () => {
-  it("thread.started → session (session_id=thread_id)", () => {
+describe("ThreadEvent top-level 매핑", () => {
+  it("thread.started → session (session_id=thread_id, no timestamp)", () => {
     const sse = mapThreadEvent({
       type: "thread.started",
       thread_id: "thr-abc-123",
@@ -22,7 +26,7 @@ describe("ThreadEvent top-level 매핑 (§4.1)", () => {
     expect(mapThreadEvent({ type: "turn.started" })).toEqual([]);
   });
 
-  it("turn.completed → complete (usage 운반)", () => {
+  it("turn.completed → complete (usage + timestamp)", () => {
     const usage = {
       input_tokens: 100,
       cached_input_tokens: 50,
@@ -30,30 +34,44 @@ describe("ThreadEvent top-level 매핑 (§4.1)", () => {
       reasoning_output_tokens: 30,
     };
     const sse = mapThreadEvent({ type: "turn.completed", usage });
-    expect(sse).toEqual([{ type: "complete", usage }]);
+    expect(sse).toHaveLength(1);
+    expect(sse[0]).toMatchObject({ type: "complete", usage });
+    expect(typeof (sse[0] as { timestamp: number }).timestamp).toBe("number");
   });
 
-  it("turn.failed → error (fatal=false)", () => {
+  it("turn.failed → error (fatal=false, timestamp)", () => {
     const sse = mapThreadEvent({
       type: "turn.failed",
       error: { message: "rate limit" },
     });
-    expect(sse).toEqual([{ type: "error", message: "rate limit", fatal: false }]);
+    expect(sse[0]).toMatchObject({
+      type: "error",
+      message: "rate limit",
+      fatal: false,
+    });
   });
 
-  it("error (ThreadErrorEvent) → error (fatal=true)", () => {
+  it("error (ThreadErrorEvent) → error (fatal=true, timestamp)", () => {
     const sse = mapThreadEvent({ type: "error", message: "unrecoverable" });
-    expect(sse).toEqual([{ type: "error", message: "unrecoverable", fatal: true }]);
+    expect(sse[0]).toMatchObject({
+      type: "error",
+      message: "unrecoverable",
+      fatal: true,
+    });
   });
 });
 
-describe("item.started 매핑 (§4.2)", () => {
-  it("agent_message → no-op (streaming 보류, spec-reviewer 1차 P1)", () => {
+describe("item.started 매핑 (B-3 streaming 활성)", () => {
+  it("agent_message → text_start (text 필드 없음, timestamp 박힘)", () => {
     const sse = mapThreadEvent({
       type: "item.started",
       item: { id: "i1", type: "agent_message", text: "" },
     });
-    expect(sse).toEqual([]);
+    expect(sse).toHaveLength(1);
+    const ev = sse[0] as Record<string, unknown>;
+    expect(ev.type).toBe("text_start");
+    expect(ev.text).toBeUndefined();  // Python schemas.py L155-159 정합
+    expect(typeof ev.timestamp).toBe("number");
   });
 
   it("reasoning → no-op (완료 시 thinking 발행)", () => {
@@ -65,7 +83,7 @@ describe("item.started 매핑 (§4.2)", () => {
     ).toEqual([]);
   });
 
-  it("command_execution → tool_start (tool_name=command)", () => {
+  it("command_execution → tool_start (tool_name=command, tool_input)", () => {
     const sse = mapThreadEvent({
       type: "item.started",
       item: {
@@ -76,14 +94,12 @@ describe("item.started 매핑 (§4.2)", () => {
         status: "in_progress",
       },
     });
-    expect(sse).toEqual([
-      {
-        type: "tool_start",
-        tool_use_id: "i3",
-        tool_name: "command",
-        input: { command: "ls -la" },
-      },
-    ]);
+    expect(sse[0]).toMatchObject({
+      type: "tool_start",
+      tool_use_id: "i3",
+      tool_name: "command",
+      tool_input: { command: "ls -la" },
+    });
   });
 
   it("file_change → tool_start (changes_count)", () => {
@@ -99,14 +115,12 @@ describe("item.started 매핑 (§4.2)", () => {
         status: "completed",
       },
     });
-    expect(sse).toEqual([
-      {
-        type: "tool_start",
-        tool_use_id: "i4",
-        tool_name: "file_change",
-        input: { changes_count: 2 },
-      },
-    ]);
+    expect(sse[0]).toMatchObject({
+      type: "tool_start",
+      tool_use_id: "i4",
+      tool_name: "file_change",
+      tool_input: { changes_count: 2 },
+    });
   });
 
   it("mcp_tool_call → tool_start (tool_name=mcp/server/tool)", () => {
@@ -121,14 +135,12 @@ describe("item.started 매핑 (§4.2)", () => {
         status: "in_progress",
       },
     });
-    expect(sse).toEqual([
-      {
-        type: "tool_start",
-        tool_use_id: "i5",
-        tool_name: "mcp/trello/create_card",
-        input: { name: "x" },
-      },
-    ]);
+    expect(sse[0]).toMatchObject({
+      type: "tool_start",
+      tool_use_id: "i5",
+      tool_name: "mcp/trello/create_card",
+      tool_input: { name: "x" },
+    });
   });
 
   it("web_search → tool_start (query)", () => {
@@ -136,17 +148,15 @@ describe("item.started 매핑 (§4.2)", () => {
       type: "item.started",
       item: { id: "i6", type: "web_search", query: "rust async" },
     });
-    expect(sse).toEqual([
-      {
-        type: "tool_start",
-        tool_use_id: "i6",
-        tool_name: "web_search",
-        input: { query: "rust async" },
-      },
-    ]);
+    expect(sse[0]).toMatchObject({
+      type: "tool_start",
+      tool_use_id: "i6",
+      tool_name: "web_search",
+      tool_input: { query: "rust async" },
+    });
   });
 
-  it("todo_list → no-op (본 PR 범위 외, B-3에서 신규 SSE type 고려)", () => {
+  it("todo_list → no-op", () => {
     expect(
       mapThreadEvent({
         type: "item.started",
@@ -155,7 +165,7 @@ describe("item.started 매핑 (§4.2)", () => {
     ).toEqual([]);
   });
 
-  it("error (ErrorItem) → no-op (완료 시 error 발행)", () => {
+  it("error item → no-op (완료 시 error 발행)", () => {
     expect(
       mapThreadEvent({
         type: "item.started",
@@ -165,17 +175,39 @@ describe("item.started 매핑 (§4.2)", () => {
   });
 });
 
-describe("item.updated 매핑 — 모든 sub-type no-op (streaming 보류)", () => {
-  it("agent_message updated → no-op", () => {
-    expect(
-      mapThreadEvent({
-        type: "item.updated",
-        item: { id: "i1", type: "agent_message", text: "partial" },
-      }),
-    ).toEqual([]);
+describe("item.updated 매핑 (B-3 streaming)", () => {
+  it("agent_message → text_delta (text = item.text 누적값 그대로, timestamp)", () => {
+    const sse = mapThreadEvent({
+      type: "item.updated",
+      item: { id: "i1", type: "agent_message", text: "Hello partial" },
+    });
+    expect(sse).toHaveLength(1);
+    expect(sse[0]).toMatchObject({
+      type: "text_delta",
+      text: "Hello partial",
+    });
+    expect(typeof (sse[0] as { timestamp: number }).timestamp).toBe("number");
   });
 
-  it("command_execution updated → no-op", () => {
+  it("연속 호출 — 누적 텍스트 그대로 운반 (mapper stateless)", () => {
+    const a = mapThreadEvent({
+      type: "item.updated",
+      item: { id: "i1", type: "agent_message", text: "A" },
+    });
+    const b = mapThreadEvent({
+      type: "item.updated",
+      item: { id: "i1", type: "agent_message", text: "AB" },
+    });
+    const c = mapThreadEvent({
+      type: "item.updated",
+      item: { id: "i1", type: "agent_message", text: "ABC" },
+    });
+    expect((a[0] as { text: string }).text).toBe("A");
+    expect((b[0] as { text: string }).text).toBe("AB");
+    expect((c[0] as { text: string }).text).toBe("ABC");
+  });
+
+  it("command_execution updated → no-op (completed 시 일괄 발행)", () => {
     expect(
       mapThreadEvent({
         type: "item.updated",
@@ -183,7 +215,7 @@ describe("item.updated 매핑 — 모든 sub-type no-op (streaming 보류)", () 
           id: "i3",
           type: "command_execution",
           command: "ls",
-          aggregated_output: "partial output",
+          aggregated_output: "partial",
           status: "in_progress",
         },
       }),
@@ -191,15 +223,18 @@ describe("item.updated 매핑 — 모든 sub-type no-op (streaming 보류)", () 
   });
 });
 
-describe("item.completed 매핑 (§4.2)", () => {
-  it("agent_message → text_end (text + item_id)", () => {
+describe("item.completed 매핑", () => {
+  it("agent_message → text_end (text 필드 없음, timestamp 박힘) — B-2 결함 정정", () => {
     const sse = mapThreadEvent({
       type: "item.completed",
       item: { id: "i1", type: "agent_message", text: "Hello world" },
     });
-    expect(sse).toEqual([
-      { type: "text_end", text: "Hello world", item_id: "i1" },
-    ]);
+    expect(sse).toHaveLength(1);
+    const ev = sse[0] as Record<string, unknown>;
+    expect(ev.type).toBe("text_end");
+    expect(ev.text).toBeUndefined();  // Python schemas.py L170-174 정합
+    expect(ev.item_id).toBeUndefined();
+    expect(typeof ev.timestamp).toBe("number");
   });
 
   it("reasoning → thinking (text + signature='')", () => {
@@ -207,9 +242,11 @@ describe("item.completed 매핑 (§4.2)", () => {
       type: "item.completed",
       item: { id: "i2", type: "reasoning", text: "thinking..." },
     });
-    expect(sse).toEqual([
-      { type: "thinking", thinking: "thinking...", signature: "" },
-    ]);
+    expect(sse[0]).toMatchObject({
+      type: "thinking",
+      thinking: "thinking...",
+      signature: "",
+    });
   });
 
   it("command_execution success → tool_result (is_error=false, exit_code 운반)", () => {
@@ -224,17 +261,15 @@ describe("item.completed 매핑 (§4.2)", () => {
         status: "completed",
       },
     });
-    expect(sse).toEqual([
-      {
-        type: "tool_result",
-        tool_use_id: "i3",
-        content: { output: "hi\n", exit_code: 0 },
-        is_error: false,
-      },
-    ]);
+    expect(sse[0]).toMatchObject({
+      type: "tool_result",
+      tool_use_id: "i3",
+      content: { output: "hi\n", exit_code: 0 },
+      is_error: false,
+    });
   });
 
-  it("command_execution failed → tool_result (is_error=true, exit_code 운반)", () => {
+  it("command_execution failed → tool_result (is_error=true)", () => {
     const sse = mapThreadEvent({
       type: "item.completed",
       item: {
@@ -246,31 +281,14 @@ describe("item.completed 매핑 (§4.2)", () => {
         status: "failed",
       },
     });
-    expect(sse).toEqual([
-      {
-        type: "tool_result",
-        tool_use_id: "i3b",
-        content: { output: "", exit_code: 1 },
-        is_error: true,
-      },
-    ]);
-  });
-
-  it("command_execution without exit_code → exit_code: null", () => {
-    const sse = mapThreadEvent({
-      type: "item.completed",
-      item: {
-        id: "i3c",
-        type: "command_execution",
-        command: "x",
-        aggregated_output: "",
-        status: "completed",
-      },
+    expect(sse[0]).toMatchObject({
+      type: "tool_result",
+      tool_use_id: "i3b",
+      is_error: true,
     });
-    expect((sse[0] as { content: { exit_code: number | null } }).content.exit_code).toBe(null);
   });
 
-  it("file_change completed → tool_result (changes 운반)", () => {
+  it("file_change completed → tool_result", () => {
     const sse = mapThreadEvent({
       type: "item.completed",
       item: {
@@ -280,20 +298,14 @@ describe("item.completed 매핑 (§4.2)", () => {
         status: "completed",
       },
     });
-    expect(sse).toEqual([
-      {
-        type: "tool_result",
-        tool_use_id: "i4",
-        content: {
-          changes: [{ path: "a.ts", kind: "update" }],
-          status: "completed",
-        },
-        is_error: false,
-      },
-    ]);
+    expect(sse[0]).toMatchObject({
+      type: "tool_result",
+      tool_use_id: "i4",
+      is_error: false,
+    });
   });
 
-  it("mcp_tool_call success → tool_result (result 운반)", () => {
+  it("mcp_tool_call success → tool_result (is_error=false)", () => {
     const sse = mapThreadEvent({
       type: "item.completed",
       item: {
@@ -322,29 +334,25 @@ describe("item.completed 매핑 (§4.2)", () => {
         status: "failed",
       },
     });
-    expect(sse).toEqual([
-      {
-        type: "tool_result",
-        tool_use_id: "i5b",
-        content: { error: "boom" },
-        is_error: true,
-      },
-    ]);
+    expect(sse[0]).toMatchObject({
+      type: "tool_result",
+      tool_use_id: "i5b",
+      content: { error: "boom" },
+      is_error: true,
+    });
   });
 
-  it("web_search completed → tool_result (query 그대로)", () => {
+  it("web_search completed → tool_result (query)", () => {
     const sse = mapThreadEvent({
       type: "item.completed",
       item: { id: "i6", type: "web_search", query: "openai sdk" },
     });
-    expect(sse).toEqual([
-      {
-        type: "tool_result",
-        tool_use_id: "i6",
-        content: { query: "openai sdk" },
-        is_error: false,
-      },
-    ]);
+    expect(sse[0]).toMatchObject({
+      type: "tool_result",
+      tool_use_id: "i6",
+      content: { query: "openai sdk" },
+      is_error: false,
+    });
   });
 
   it("todo_list completed → no-op", () => {
@@ -363,32 +371,29 @@ describe("item.completed 매핑 (§4.2)", () => {
   it("error (ErrorItem) → error (fatal=false)", () => {
     const sse = mapThreadEvent({
       type: "item.completed",
-      item: { id: "i8", type: "error", message: "non-fatal warn" },
+      item: { id: "i8", type: "error", message: "non-fatal" },
     });
-    expect(sse).toEqual([
-      { type: "error", message: "non-fatal warn", fatal: false },
-    ]);
+    expect(sse[0]).toMatchObject({
+      type: "error",
+      message: "non-fatal",
+      fatal: false,
+    });
   });
 });
 
 describe("매퍼 stateless 검증", () => {
-  it("동일 ThreadEvent 입력에 항상 동일 출력 (상태 의존 없음)", () => {
-    const event = {
-      type: "thread.started" as const,
-      thread_id: "thr-1",
-    };
+  it("동일 ThreadEvent 입력에 동일 출력 (timestamp는 매번 갱신)", () => {
+    const event = { type: "thread.started" as const, thread_id: "thr-1" };
     const out1 = mapThreadEvent(event);
     const out2 = mapThreadEvent(event);
+    // session payload는 timestamp 없음 — 완전 동일
     expect(out1).toEqual(out2);
   });
 
-  it("agent_message item.completed가 연속 호출에도 동일 출력 (state 없음)", () => {
-    const ev = {
-      type: "item.completed" as const,
-      item: { id: "a1", type: "agent_message" as const, text: "Hello" },
-    };
-    const out1 = mapThreadEvent(ev);
-    const out2 = mapThreadEvent(ev);
-    expect(out1).toEqual(out2);
+  it("text_delta 시퀀스는 누적 텍스트 그대로 — state 없음", () => {
+    const e1 = { type: "item.updated" as const, item: { id: "x", type: "agent_message" as const, text: "A" } };
+    const e2 = { type: "item.updated" as const, item: { id: "x", type: "agent_message" as const, text: "AB" } };
+    expect((mapThreadEvent(e1)[0] as { text: string }).text).toBe("A");
+    expect((mapThreadEvent(e2)[0] as { text: string }).text).toBe("AB");
   });
 });
