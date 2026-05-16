@@ -50,4 +50,6 @@ jobs:
         run: bash packages/wire-schema/scripts/verify.sh
 
       - name: Run schema validity tests
-        run: pytest packages/wire-schema/tests/ -v --timeout=60
+        # --timeout 미사용: schema validity는 정적 검사라 무한루프 가능성 0,
+        # pytest-timeout 플러그인 의존성 추가 불필요. job 레벨 timeout-minutes로 충분.
+        run: pytest packages/wire-schema/tests/ -v
