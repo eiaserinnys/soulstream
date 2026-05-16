@@ -1,0 +1,57 @@
+# Haniel 통합 — soul-server-ts (옵션 D Phase B-1)
+#
+# 이 파일은 *참조용 yaml 조각*이다. 운영자(작가님)의 실제 `haniel.yaml`(예:
+# `/home/eias/haniel-root/haniel.yaml`)에 아래 조각을 복사·붙여넣기하여 적용한다.
+#
+# - 본 PR 머지 + Haniel pull 후, 본 파일의 services/configs 항목을 운영 `haniel.yaml`에 추가하면
+#   `soul-server-ts` 서비스가 자동 시작·재시작된다.
+# - 본 파일은 soulstream 리포 내부의 *정본*으로서 향후 변경(예: 환경 변수 추가, 빌드 명령 수정)
+#   시 본 파일을 갱신하여 추적한다.
+#
+# 가정:
+# - `repos.soulstream-server-src` 이미 운영 `haniel.yaml`에 정의됨 (Python soul-server와 공유)
+# - cwd 경로는 `./services/soulstream` (Python soul-server와 동일)
+# - 모노레포 루트는 `cwd` 기준 `src/soulstream/`
+#
+# 본 노드 ID 패턴: `{기존 노드 ID}-ts` — 예: 노드가 `eias-shopping`이면 `eias-shopping-ts`.
+
+services:
+  # 운영 `haniel.yaml`의 `services:` 섹션에 추가
+  soul-server-ts:
+    run: node src/soulstream/packages/soul-server-ts/dist/main.js
+    cwd: ./services/soulstream
+    repo: soulstream-server-src
+    restart_delay: 3
+    after: []  # Python soul-server 의존 없음 — 독립 노드로 orch에 직접 등록
+    ready: port:4205
+    enabled: true
+    hooks:
+      post_pull: pnpm --dir src/soulstream install --frozen-lockfile && pnpm --dir src/soulstream/packages/soul-server-ts run build
+    reflect: false  # B-1은 cogito reflection 미구현. B-2 또는 후속에서 활성화 검토.
+
+install:
+  configs:
+    # 운영 `haniel.yaml`의 `install.configs:` 섹션에 추가
+    soul-server-ts-env:
+      path: ./services/soulstream/.env.soul-server-ts
+      keys:
+        # 노드 ID — Python soul-server의 SOULSTREAM_NODE_ID와 다른 값
+        # (TS 노드는 *별도 노드*로 orch에 등록되어야 하므로 `-ts` 접미사)
+        - key: SOULSTREAM_NODE_ID
+          prompt: "TS 노드 ID (예: eias-shopping-ts)"
+          default: eias-shopping-ts
+        - key: SOULSTREAM_UPSTREAM_URL
+          default: ws://eiaserinnys.me:5200/ws/node
+        - key: AUTH_BEARER_TOKEN
+          prompt: "orch API 인증 토큰 (운영 .env에서 확인 — public repo에 default 박지 않음)"
+          # default 키 *제거* — Haniel install 시 운영자가 직접 입력
+        - key: HOST
+          default: 127.0.0.1
+        - key: PORT
+          default: '4205'
+        - key: ENVIRONMENT
+          default: production
+        - key: LOG_LEVEL
+          default: info
+        - key: DASH_USER_NAME
+          default: 김주복
