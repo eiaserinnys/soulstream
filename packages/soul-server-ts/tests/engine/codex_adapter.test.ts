@@ -271,6 +271,96 @@ describe("CodexEngineAdapter — 오류 경로", () => {
   });
 });
 
+describe("CodexEngineAdapter — P2 자가 보강 검증", () => {
+  it("동시 execute 호출 금지 — 진행 중 turn이 있으면 throw (P2-3)", async () => {
+    const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
+    mockStartThread.mockReturnValue({
+      runStreamed: async (_input: unknown, _opts: unknown) => {
+        return {
+          events: (async function* () {
+            // 영원히 대기 — 첫 turn이 idle 상태
+            await new Promise(() => {});
+          })(),
+        };
+      },
+    });
+
+    const engine = new CodexEngineAdapter(
+      { workspaceDir: "/tmp/work" },
+      silentLogger(),
+    );
+
+    // 첫 turn 시작 (drain 하지 않음 — 진행 중 상태 유지)
+    const firstTurn = engine.execute({ prompt: "first" });
+    const firstIter = firstTurn[Symbol.asyncIterator]();
+    // 첫 yield 시도 — Promise pending 상태로 둠
+    const firstYieldPromise = firstIter.next();
+    await new Promise((r) => setImmediate(r)); // event loop 한 번 돌려서 currentTurn 설정 보장
+
+    // 두 번째 execute 호출 시 throw
+    await expect(async () => {
+      for await (const _ of engine.execute({ prompt: "second" })) {
+        // drain
+      }
+    }).rejects.toThrow(/concurrent turn not supported/);
+
+    // 첫 turn cleanup
+    await engine.close();
+    // pending promise 정리
+    void firstYieldPromise.catch(() => {});
+  });
+
+  it("systemPrompt 옵션이 들어오면 warn 로깅 (silent ignore 방지, P2-2)", async () => {
+    const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
+    mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });
+    mockRunStreamed.mockResolvedValue({ events: eventStream([]) });
+
+    const warnSpy: { msg: string; obj?: object }[] = [];
+    const logger = pino({
+      level: "warn",
+    });
+    // pino 내부 write hook
+    const originalWarn = logger.warn.bind(logger);
+    logger.warn = ((obj: unknown, msg?: string) => {
+      if (typeof obj === "string") {
+        warnSpy.push({ msg: obj });
+      } else {
+        warnSpy.push({ msg: msg ?? "", obj: obj as object });
+      }
+      return originalWarn(obj as object, msg);
+    }) as typeof logger.warn;
+
+    const engine = new CodexEngineAdapter({ workspaceDir: "/tmp/work" }, logger);
+    for await (const _ of engine.execute({
+      prompt: "x",
+      systemPrompt: "be brief",
+    })) {
+      // drain
+    }
+    expect(warnSpy.some((w) => w.msg.includes("systemPrompt"))).toBe(true);
+  });
+
+  it("systemPrompt 미설정 시 warn 발생 안 함", async () => {
+    const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
+    mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });
+    mockRunStreamed.mockResolvedValue({ events: eventStream([]) });
+
+    const warnSpy: string[] = [];
+    const logger = pino({ level: "warn" });
+    const originalWarn = logger.warn.bind(logger);
+    logger.warn = ((obj: unknown, msg?: string) => {
+      warnSpy.push(typeof obj === "string" ? obj : msg ?? "");
+      return originalWarn(obj as object, msg);
+    }) as typeof logger.warn;
+
+    const engine = new CodexEngineAdapter({ workspaceDir: "/tmp/work" }, logger);
+    for await (const _ of engine.execute({ prompt: "x" })) {
+      // drain
+    }
+    expect(warnSpy.filter((w) => w.includes("systemPrompt"))).toEqual([]);
+  });
+});
+
 describe("CodexEngineAdapter — interrupt + close", () => {
   it("진행 중 turn 없으면 interrupt() → false", async () => {
     const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");

@@ -19,7 +19,7 @@ export type {
   SupportsThreadFork,
 } from "./protocol.js";
 
-export { CodexEngineAdapter, isCodexEngineRunning } from "./codex_adapter.js";
+export { CodexEngineAdapter } from "./codex_adapter.js";
 export type { CodexAdapterConfig } from "./codex_adapter.js";
 
 export { mapThreadEvent } from "./codex_event_mapper.js";

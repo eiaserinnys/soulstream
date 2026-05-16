@@ -65,6 +65,14 @@ export interface EngineExecuteParams {
   prompt: string;
   resumeSessionId?: string;
   model?: string;
+  /**
+   * 시스템 프롬프트. 백엔드별 지원 여부:
+   * - Claude SDK: `ClaudeAgentOptions.system_prompt`로 직접 매핑.
+   * - **Codex SDK 0.130.0**: ThreadOptions에 표면 없음 — `CodexOptions.config.base_instructions`
+   *   인스턴스 단위로만 주입 가능. *turn-level systemPrompt 미지원*. Codex 어댑터는
+   *   본 옵션을 받으면 warn 로깅 후 *무시*. 호출자(B-3)가 prompt에 prepend하거나
+   *   어댑터 재생성 필요.
+   */
   systemPrompt?: string;
   extraEnv?: Record<string, string>;
   onEvent?: EventCallback;
@@ -89,6 +97,10 @@ export interface EnginePort {
 
   /**
    * 한 turn 실행. AsyncIterable로 SSE payload 발행.
+   *
+   * **동시 호출 금지** — 한 어댑터 인스턴스당 한 번에 *하나의 turn*만. 진행 중 turn이 있을 때
+   * `execute()` 재호출 시 구현체는 throw해야 한다 (Codex 어댑터는 명시 가드). 후속 turn을
+   * 시작하려면 `interrupt()` 호출 후 직전 turn의 generator를 drain.
    *
    * - resumeSessionId 있으면 해당 세션 이어 실행. 없으면 새 thread/session 생성.
    * - 새 세션 시작 시 onSession 콜백으로 sessionId 통지 (호출자가 task에 영속).

@@ -74,6 +74,25 @@ export class CodexEngineAdapter implements EnginePort {
     if (this.closed) {
       throw new Error("CodexEngineAdapter.execute called after close()");
     }
+    // 동시 execute 가드 — 첫 turn 진행 중 두 번째 호출 차단 (P2-3, design-principles §4 명시 실패).
+    // 첫 turn의 controller가 currentTurn 덮어쓰기로 *고립*되면 interrupt() 불가능.
+    // 호출자(B-3 task_executor)는 한 어댑터 인스턴스당 한 번에 하나의 turn만 실행해야 한다.
+    if (this.currentTurn) {
+      throw new Error(
+        "CodexEngineAdapter.execute: concurrent turn not supported — call interrupt()+drain previous turn first",
+      );
+    }
+
+    if (params.systemPrompt) {
+      // Codex SDK 0.130.0 ThreadOptions에 systemPrompt 표면 없음 — CodexOptions.config.base_instructions로
+      // 주입해야 하나 본 어댑터 인스턴스 단위 config는 constructor에서 받음. turn-level systemPrompt 주입은
+      // B-3에서 task_executor가 호출자 책임으로 prompt에 prepend하거나, 본 어댑터를 재생성하는 패턴.
+      // design-principles §4 (명시적 실패) — debug 대신 warn으로 격상하여 호출자 가시화 (P2-2).
+      this.logger.warn(
+        { hasSystemPrompt: true },
+        "CodexEngineAdapter: systemPrompt is ignored — Codex SDK turn-level systemPrompt 미지원. 호출자가 prompt에 prepend 필요 (B-3에서 정밀화)",
+      );
+    }
 
     const controller = new AbortController();
     this.currentTurn = controller;
@@ -97,15 +116,6 @@ export class CodexEngineAdapter implements EnginePort {
     } else {
       thread = this.codex.startThread(threadOptions);
       this.logger.debug({ workspaceDir: this.workspaceDir }, "Started new Codex thread");
-    }
-
-    // systemPrompt는 Codex SDK ThreadOptions에 직접 표면 없음 — base_instructions config로 주입.
-    // 0.130.0 d.ts: CodexOptions.config로 `--config base_instructions=...`. ThreadOptions에는 없음.
-    // 본 PR 범위: systemPrompt 미지원 (B-3에서 config 주입 시 명시 처리). 호출자가 prompt에 prepend 가능.
-    if (params.systemPrompt && this.logger) {
-      this.logger.debug(
-        "systemPrompt 옵션은 Phase B-2 어댑터에서 미반영 — B-3에서 Codex({config: {base_instructions}}) 도입",
-      );
     }
 
     // 새 thread면 첫 yield는 thread.started → session SSE.
@@ -181,13 +191,4 @@ export class CodexEngineAdapter implements EnginePort {
     }
     // Codex SDK 0.130.0은 명시 close 없음 — flag로만 lifecycle 표시.
   }
-}
-
-/** 진단·테스트용 헬퍼 — turn 진행 중인가. */
-export function isCodexEngineRunning(engine: CodexEngineAdapter): boolean {
-  return (
-    !engine["closed"] &&
-    (engine as unknown as { currentTurn: AbortController | null }).currentTurn !==
-      null
-  );
 }
