@@ -13,6 +13,7 @@ import type { DashboardConfig } from "../stores/dashboard-store";
 import { isSessionUnread } from "../stores/dashboard-store";
 import { STATUS_CONFIG } from "./FolderContents";
 import { NodeBadge } from "./NodeBadge";
+import { BackendBadge } from "./BackendBadge";
 import { MarkdownContent } from "./MarkdownContent";
 import { ProfileAvatar } from "./ProfileAvatar";
 import { cn } from "../lib/cn";
@@ -150,6 +151,12 @@ export const FeedCard = memo(function FeedCard({
           </>
         )}
         {timeStr && <span>{timeStr}</span>}
+        {session.backend && (
+          <>
+            <span>·</span>
+            <BackendBadge backend={session.backend} />
+          </>
+        )}
         {session.nodeId && (
           <>
             <span>·</span>
