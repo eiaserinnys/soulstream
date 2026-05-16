@@ -1,16 +1,27 @@
 /**
- * Codex ThreadEvent → SSEEvent 매핑.
+ * Codex ThreadEvent → SSEEvent 매핑 (Phase B-3 streaming 활성).
  *
- * stateless 매퍼 (spec-reviewer 1차 P1 — `AgentMessageItem.text` 누적 여부 d.ts 미명시로
- * 보수적 매핑 채택). agent_message는 `item.completed`만 `text_end` 발행 — streaming은 B-3에서
- * SDK 실제 동작 검증 후 정밀화.
+ * stateless 매퍼. Phase B-3 SDK 0.130.0 source 검증 결과 (분析 캐시 §4.4.0):
+ *   - `AgentMessageItem.text`는 *누적 텍스트* (SDK 디자인 일관성 + d.ts 코멘트)
+ *   - `item.updated`는 *상태 갱신* (delta append 아님) — text 그대로 운반
  *
- * 매핑 표: 분석 캐시 `20260517-1700-phase-b2-engine-port-codex.md` §4.1·§4.2
+ * agent_message 매핑 (B-3 streaming 활성):
+ *   - item.started → text_start (text 필드 없음)
+ *   - item.updated → text_delta (text=item.text 누적값)
+ *   - item.completed → text_end (text 필드 없음 — B-2 결함 정정)
+ *
+ * Python wire 정본: `soul-server/src/soul_server/models/schemas.py` L155-174.
+ * 모든 payload에 `timestamp: Date.now()/1000` (Unix epoch sec, Python 정합).
  */
 
 import type { ThreadEvent, ThreadItem } from "@openai/codex-sdk";
 
 import type { SSEEventPayload } from "./protocol.js";
+
+/** 매퍼 호출 시점의 Unix epoch sec. Python wire 정본은 number (float). */
+function nowEpochSec(): number {
+  return Date.now() / 1000;
+}
 
 /**
  * 단일 ThreadEvent를 SSEEventPayload 배열로 매핑.
@@ -24,7 +35,7 @@ export function mapThreadEvent(event: ThreadEvent): SSEEventPayload[] {
       return [{ type: "session", session_id: event.thread_id } as SSEEventPayload];
 
     case "turn.started":
-      // 정보량 0 — no-op (§4.4 D-M2).
+      // 정보량 0 — no-op.
       return [];
 
     case "turn.completed":
@@ -33,6 +44,7 @@ export function mapThreadEvent(event: ThreadEvent): SSEEventPayload[] {
         {
           type: "complete",
           usage: event.usage,
+          timestamp: nowEpochSec(),
         } as SSEEventPayload,
       ];
 
@@ -43,6 +55,7 @@ export function mapThreadEvent(event: ThreadEvent): SSEEventPayload[] {
           type: "error",
           message: event.error.message,
           fatal: false,
+          timestamp: nowEpochSec(),
         } as SSEEventPayload,
       ];
 
@@ -53,6 +66,7 @@ export function mapThreadEvent(event: ThreadEvent): SSEEventPayload[] {
           type: "error",
           message: event.message,
           fatal: true,
+          timestamp: nowEpochSec(),
         } as SSEEventPayload,
       ];
 
@@ -60,8 +74,7 @@ export function mapThreadEvent(event: ThreadEvent): SSEEventPayload[] {
       return mapItemStarted(event.item);
 
     case "item.updated":
-      // 본 PR 범위에서는 모든 item.updated가 no-op (streaming 보류).
-      return [];
+      return mapItemUpdated(event.item);
 
     case "item.completed":
       return mapItemCompleted(event.item);
@@ -74,15 +87,20 @@ export function mapThreadEvent(event: ThreadEvent): SSEEventPayload[] {
   }
 }
 
-/** item.started 매핑. agent_message·reasoning·todo_list·error는 no-op (§4.2). */
+/** item.started 매핑. */
 function mapItemStarted(item: ThreadItem): SSEEventPayload[] {
   switch (item.type) {
     case "agent_message":
-      // 본 PR: streaming 보류 — no-op. (spec-reviewer 1차 P1)
-      return [];
+      // text_start — Python 정본은 text 필드 없음 (schemas.py L155-159).
+      return [
+        {
+          type: "text_start",
+          timestamp: nowEpochSec(),
+        } as SSEEventPayload,
+      ];
 
     case "reasoning":
-      // 사고 시작은 표시 안 함. 완료 시 thinking 발행.
+      // 사고 시작 시점은 표시 안 함. 완료 시 thinking 발행.
       return [];
 
     case "command_execution":
@@ -91,7 +109,8 @@ function mapItemStarted(item: ThreadItem): SSEEventPayload[] {
           type: "tool_start",
           tool_use_id: item.id,
           tool_name: "command",
-          input: { command: item.command },
+          tool_input: { command: item.command },
+          timestamp: nowEpochSec(),
         } as SSEEventPayload,
       ];
 
@@ -101,7 +120,8 @@ function mapItemStarted(item: ThreadItem): SSEEventPayload[] {
           type: "tool_start",
           tool_use_id: item.id,
           tool_name: "file_change",
-          input: { changes_count: item.changes.length },
+          tool_input: { changes_count: item.changes.length },
+          timestamp: nowEpochSec(),
         } as SSEEventPayload,
       ];
 
@@ -111,7 +131,8 @@ function mapItemStarted(item: ThreadItem): SSEEventPayload[] {
           type: "tool_start",
           tool_use_id: item.id,
           tool_name: `mcp/${item.server}/${item.tool}`,
-          input: item.arguments,
+          tool_input: item.arguments,
+          timestamp: nowEpochSec(),
         } as SSEEventPayload,
       ];
 
@@ -121,12 +142,13 @@ function mapItemStarted(item: ThreadItem): SSEEventPayload[] {
           type: "tool_start",
           tool_use_id: item.id,
           tool_name: "web_search",
-          input: { query: item.query },
+          tool_input: { query: item.query },
+          timestamp: nowEpochSec(),
         } as SSEEventPayload,
       ];
 
     case "todo_list":
-      // Codex 고유 — 본 PR 범위 외 (§4.4 D-M1). B-3에서 새 SSE type 신설 고려.
+      // Codex 고유 — wire 등가 없음. 후속 카드에서 새 SSE type 검토.
       return [];
 
     case "error":
@@ -140,26 +162,45 @@ function mapItemStarted(item: ThreadItem): SSEEventPayload[] {
   }
 }
 
-/** item.completed 매핑 (§4.2 8 sub-type). */
+/**
+ * item.updated 매핑 (B-3 streaming).
+ *
+ * agent_message → text_delta (text=item.text 누적값 그대로). 다른 item type은 no-op
+ * (in-progress 상태 update는 클라이언트 가시화 불필요 — completed 시 일괄 발행).
+ */
+function mapItemUpdated(item: ThreadItem): SSEEventPayload[] {
+  if (item.type === "agent_message") {
+    return [
+      {
+        type: "text_delta",
+        text: item.text,
+        timestamp: nowEpochSec(),
+      } as SSEEventPayload,
+    ];
+  }
+  return [];
+}
+
+/** item.completed 매핑. */
 function mapItemCompleted(item: ThreadItem): SSEEventPayload[] {
   switch (item.type) {
     case "agent_message":
-      // text_end만 발행 — text_start/text_delta는 streaming 보류 (P1).
+      // text_end — Python 정본은 text 필드 없음 (schemas.py L170-174).
+      // B-2 매퍼 결함 정정: text 필드 제거.
       return [
         {
           type: "text_end",
-          text: item.text,
-          item_id: item.id,
+          timestamp: nowEpochSec(),
         } as SSEEventPayload,
       ];
 
     case "reasoning":
-      // Claude `ThinkingEngineEvent`와 등가. signature는 Codex에 없으므로 빈 문자열.
       return [
         {
           type: "thinking",
           thinking: item.text,
           signature: "",
+          timestamp: nowEpochSec(),
         } as SSEEventPayload,
       ];
 
@@ -173,6 +214,7 @@ function mapItemCompleted(item: ThreadItem): SSEEventPayload[] {
             exit_code: item.exit_code ?? null,
           },
           is_error: item.status === "failed",
+          timestamp: nowEpochSec(),
         } as SSEEventPayload,
       ];
 
@@ -186,6 +228,7 @@ function mapItemCompleted(item: ThreadItem): SSEEventPayload[] {
             status: item.status,
           },
           is_error: item.status === "failed",
+          timestamp: nowEpochSec(),
         } as SSEEventPayload,
       ];
 
@@ -196,6 +239,7 @@ function mapItemCompleted(item: ThreadItem): SSEEventPayload[] {
           tool_use_id: item.id,
           content: item.error ? { error: item.error.message } : item.result ?? {},
           is_error: item.status === "failed",
+          timestamp: nowEpochSec(),
         } as SSEEventPayload,
       ];
 
@@ -206,6 +250,7 @@ function mapItemCompleted(item: ThreadItem): SSEEventPayload[] {
           tool_use_id: item.id,
           content: { query: item.query },
           is_error: false,
+          timestamp: nowEpochSec(),
         } as SSEEventPayload,
       ];
 
@@ -218,6 +263,7 @@ function mapItemCompleted(item: ThreadItem): SSEEventPayload[] {
           type: "error",
           message: item.message,
           fatal: false,
+          timestamp: nowEpochSec(),
         } as SSEEventPayload,
       ];
 

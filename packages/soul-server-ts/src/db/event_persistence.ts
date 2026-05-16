@@ -1,0 +1,135 @@
+/**
+ * EventPersistence — SSE event → DB + 부수효과 처리 (Phase B-3).
+ *
+ * Python `service/event_persistence.py`의 *구조* 참조 (정본 둘 안티패턴 회피).
+ * TS 측은 Codex 흐름에 한정 — metadata_extractor·away_summary는 본 PR 범위 외.
+ *
+ * 책임:
+ *   1. persistEvent: event_append stored proc 호출 → 새 event_id 반환
+ *   2. handleSideEffects: last_message 갱신 + task.lastAssistantText 누적
+ *      (Python emit_session_message_updated wire는 B-3 범위 외 — 후속 카드)
+ */
+
+import type { Logger } from "pino";
+
+import type { SSEEventPayload } from "../engine/protocol.js";
+import type { Task } from "../task/task_models.js";
+
+import type { SessionDB } from "./session_db.js";
+
+/**
+ * 이벤트 타입별 preview 텍스트 추출 필드.
+ * Python `task_models.py` L298-305 `PREVIEW_FIELD_MAP` 정본.
+ */
+const PREVIEW_FIELD_MAP: Record<string, string> = {
+  thinking: "thinking",
+  text_delta: "text",
+  result: "output",
+  complete: "result",
+  error: "message",
+  away_summary: "content",
+};
+
+export class EventPersistence {
+  constructor(
+    private readonly db: SessionDB,
+    private readonly logger: Logger,
+  ) {}
+
+  /**
+   * 이벤트를 DB에 영속화. 반환 event_id를 호출자가 task.lastEventId에 박는다.
+   *
+   * @returns 새 events.id (1-based).
+   */
+  async persistEvent(
+    sessionId: string,
+    event: SSEEventPayload,
+  ): Promise<number> {
+    const eventType = (event as { type: string }).type;
+    const payload = JSON.stringify(event);
+    const searchable = extractSearchableText(event);
+    const createdAt = extractTimestamp(event) ?? new Date();
+    return await this.db.appendEvent({
+      sessionId,
+      eventType,
+      payload,
+      searchableText: searchable,
+      createdAt,
+    });
+  }
+
+  /**
+   * 이벤트 후처리: last_message 갱신 + task.lastAssistantText 누적.
+   *
+   * 실패해도 throw하지 않음 (design-principles §8 실패 격리) — 본 task 진행 중단 회피.
+   * Python emit_session_message_updated wire 발행은 B-3 범위 외 (후속 카드).
+   */
+  async handleSideEffects(
+    sessionId: string,
+    event: SSEEventPayload,
+    task: Task,
+  ): Promise<void> {
+    const eventType = (event as { type: string }).type;
+
+    // last_message 갱신
+    try {
+      const previewText = extractPreviewText(event);
+      if (previewText) {
+        const ts = extractTimestamp(event)?.toISOString() ?? new Date().toISOString();
+        await this.db.updateLastMessage(sessionId, {
+          type: eventType,
+          preview: previewText.slice(0, 200),
+          timestamp: ts,
+        });
+      }
+    } catch (err) {
+      this.logger.debug({ err, sessionId }, "last_message update failed");
+    }
+
+    // task.lastAssistantText 누적 — text_delta는 누적 block.text 전체이므로 매번 덮어쓴다.
+    // Python `service/task_executor.py` L166-167 코멘트 정합.
+    if (eventType === "text_delta") {
+      const text = (event as { text?: unknown }).text;
+      if (typeof text === "string") {
+        task.lastAssistantText = text;
+      }
+    }
+  }
+}
+
+/**
+ * 이벤트에서 preview 텍스트 추출. PREVIEW_FIELD_MAP 기준.
+ *
+ * 외부 export — task_executor 등 다른 모듈도 호출 가능 (Python `task_models.py` 정본 인용).
+ */
+export function extractPreviewText(event: SSEEventPayload): string {
+  const eventType = (event as { type: string }).type;
+  const field = PREVIEW_FIELD_MAP[eventType];
+  if (!field) return "";
+  const val = (event as Record<string, unknown>)[field];
+  return typeof val === "string" ? val : "";
+}
+
+/**
+ * full-text 검색용 텍스트 추출. Python `soul_common.db.session_db_base.extract_searchable_text`
+ * 최소 등가 — 본 PR은 preview 텍스트 그대로 사용 (확장은 후속 카드).
+ */
+export function extractSearchableText(event: SSEEventPayload): string {
+  return extractPreviewText(event);
+}
+
+/**
+ * 이벤트의 timestamp 필드를 Date로 변환. 없으면 undefined.
+ * 모든 SSE event payload는 `timestamp: number` (Unix epoch sec) — Python `models/schemas.py` 정본.
+ */
+function extractTimestamp(event: SSEEventPayload): Date | undefined {
+  const ts = (event as { timestamp?: unknown }).timestamp;
+  if (typeof ts === "number" && Number.isFinite(ts)) {
+    return new Date(ts * 1000);
+  }
+  if (typeof ts === "string") {
+    const d = new Date(ts);
+    return Number.isNaN(d.getTime()) ? undefined : d;
+  }
+  return undefined;
+}

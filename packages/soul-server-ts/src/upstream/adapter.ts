@@ -1,6 +1,10 @@
 import { WebSocket } from "ws";
 import type { Logger } from "pino";
 
+import type { AgentRegistry } from "../agent_registry.js";
+import type { TaskExecutor } from "../task/task_executor.js";
+import type { TaskManager } from "../task/task_manager.js";
+
 import { CommandDispatcher } from "./dispatcher.js";
 import { ReconnectPolicy } from "./reconnect.js";
 import { buildRegistrationMsg } from "./registration.js";
@@ -13,6 +17,12 @@ export interface UpstreamConfig {
   authBearerToken: string;
   userName: string;
   isProduction: boolean;
+}
+
+export interface UpstreamDependencies {
+  agentRegistry: AgentRegistry;
+  taskManager: TaskManager;
+  taskExecutor: TaskExecutor;
 }
 
 /**
@@ -36,11 +46,15 @@ export class UpstreamAdapter {
   constructor(
     private readonly config: UpstreamConfig,
     private readonly logger: Logger,
+    private readonly deps: UpstreamDependencies,
   ) {
     this.dispatcher = new CommandDispatcher(
       (data) => this.send(data),
       logger,
       config.nodeId,
+      deps.agentRegistry,
+      deps.taskManager,
+      deps.taskExecutor,
     );
   }
 
@@ -75,6 +89,14 @@ export class UpstreamAdapter {
       this.ws.close();
     }
     this.ws = null;
+  }
+
+  /**
+   * 외부(SessionBroadcaster 등)에서 broadcast 메시지를 보낼 때 진입점.
+   * WS 연결이 끊겨 있으면 무음 drop — 호출자가 재시도 책임 없음 (orch 재연결 시 catch up).
+   */
+  async sendBroadcast(data: unknown): Promise<void> {
+    await this.send(data);
   }
 
   private async connectAndServe(): Promise<void> {
@@ -125,6 +147,7 @@ export class UpstreamAdapter {
         host: this.config.host,
         port: this.config.port,
         userName: this.config.userName,
+        agentRegistry: this.deps.agentRegistry,
       }),
     );
 

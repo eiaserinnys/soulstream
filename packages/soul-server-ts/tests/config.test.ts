@@ -7,6 +7,7 @@ describe("parseEnv", () => {
   const minimal = {
     SOULSTREAM_NODE_ID: "eias-shopping-ts",
     SOULSTREAM_UPSTREAM_URL: "ws://localhost:5200/ws/node",
+    DATABASE_URL: "postgres://test:test@localhost:5432/soulstream_test",
   };
 
   it("필수 키만 있으면 default들이 채워진다", () => {
@@ -68,5 +69,39 @@ describe("parseEnv", () => {
 
   it("LOG_LEVEL이 enum 범위 외면 거부", () => {
     expect(() => parseEnv({ ...minimal, LOG_LEVEL: "verbose" })).toThrow(ZodError);
+  });
+
+  // Phase B-3 — DATABASE_URL + AGENTS_CONFIG_PATH
+  it("DATABASE_URL 부재 시 ZodError", () => {
+    const { DATABASE_URL: _, ...rest } = minimal;
+    void _;
+    expect(() => parseEnv(rest)).toThrow(ZodError);
+  });
+
+  it("DATABASE_URL이 postgres:// 또는 postgresql://가 아니면 거부", () => {
+    expect(() =>
+      parseEnv({ ...minimal, DATABASE_URL: "mysql://localhost/x" }),
+    ).toThrow(ZodError);
+  });
+
+  it("postgresql:// 스킴 허용", () => {
+    const env = parseEnv({
+      ...minimal,
+      DATABASE_URL: "postgresql://test:test@localhost/x",
+    });
+    expect(env.DATABASE_URL).toBe("postgresql://test:test@localhost/x");
+  });
+
+  it("AGENTS_CONFIG_PATH 미지정 시 default 'config/agents.yaml'", () => {
+    const env = parseEnv(minimal);
+    expect(env.AGENTS_CONFIG_PATH).toBe("config/agents.yaml");
+  });
+
+  it("AGENTS_CONFIG_PATH 절대 경로 override 허용", () => {
+    const env = parseEnv({
+      ...minimal,
+      AGENTS_CONFIG_PATH: "/etc/soulstream/agents.yaml",
+    });
+    expect(env.AGENTS_CONFIG_PATH).toBe("/etc/soulstream/agents.yaml");
   });
 });

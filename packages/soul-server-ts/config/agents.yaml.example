@@ -1,0 +1,22 @@
+# soul-server-ts agent_registry 정본 — Phase B-3 예시.
+#
+# 운영 파일은 Haniel install.configs로 별도 배포:
+#   ./services/soulstream/config/agents.yaml
+# (운영 cwd 기준 상대 경로. AGENTS_CONFIG_PATH env로 override 가능.)
+#
+# Python `soul-server/data/agents.yaml`과 키 호환 — 운영자가 두 서비스를
+# 같은 양식으로 관리 가능.
+#
+# 필수 필드: id, name, backend (claude|codex), workspace_dir
+# 선택 필드: max_turns, allowed_tools, disallowed_tools, portrait_path
+
+agents:
+  - id: codex-default
+    name: Codex Default
+    backend: codex
+    workspace_dir: /tmp/codex-default
+    # max_turns: 50
+    # allowed_tools:
+    #   - bash
+    #   - read
+    # portrait_path: /var/lib/soulstream/portraits/codex-default.png

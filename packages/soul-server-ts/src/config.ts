@@ -28,6 +28,23 @@ export const EnvSchema = z
      * 박지 않음 (B-1 leak 사고 회로 차단). 실제 turn 실행 시 인증 부재면 Codex SDK가 오류 반환.
      */
     CODEX_API_KEY: z.string().optional(),
+    /**
+     * PostgreSQL 연결 URL (Phase B-3). Python soul-server와 같은 키 정합.
+     * design-principles §4 명시 실패 — default 없음. production·development 모두 필수.
+     */
+    DATABASE_URL: z
+      .string()
+      .url("DATABASE_URL must be a valid URL")
+      .refine(
+        (u) => u.startsWith("postgres://") || u.startsWith("postgresql://"),
+        "DATABASE_URL must be postgres:// or postgresql://",
+      ),
+    /**
+     * agent_registry yaml 경로 (Phase B-3).
+     * Haniel cwd `services/soulstream/` 기준 상대 경로 default — `.env.soul-server-ts`
+     * dotenv 로딩과 같은 cwd 협약. 운영에서 변경 시 절대 경로 설정.
+     */
+    AGENTS_CONFIG_PATH: z.string().default("config/agents.yaml"),
   })
   .superRefine((env, ctx) => {
     // production에서는 AUTH_BEARER_TOKEN 강제. design-principles §4.

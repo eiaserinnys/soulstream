@@ -1,5 +1,10 @@
 import type { Logger } from "pino";
 
+import type { AgentRegistry } from "../agent_registry.js";
+import type { TaskExecutor } from "../task/task_executor.js";
+import type { TaskManager } from "../task/task_manager.js";
+import type { CallerInfo } from "../task/task_models.js";
+
 export type SendFn = (data: unknown) => Promise<void>;
 
 interface CommandLike {
@@ -8,14 +13,27 @@ interface CommandLike {
   request_id?: string;
 }
 
+interface CreateSessionCmd extends CommandLike {
+  type: "create_session";
+  agentSessionId: string;
+  prompt: string;
+  profile?: string;
+  caller_session_id?: string | null;
+  caller_info?: CallerInfo;
+  model?: string;
+  folderId?: string | null;
+}
+
 /**
  * orch → 노드 명령 디스패처.
  *
- * B-1 핸들러 inventory:
- * - `health_check` → `health_status` 응답
- * - 그 외 → `error: "Not implemented in soul-server-ts B-1"` fallback (위임 §R5)
+ * Phase B-3 핸들러 inventory:
+ * - `health_check` → `health_status` 응답 (B-1 유지, runners 통계는 task_manager 기반)
+ * - `create_session` → task lifecycle 시동 + `session_created` 응답 (B-3 신설)
+ * - `intervene` → "Not implemented" fallback (B-4)
+ * - 그 외 → "Not implemented" fallback
  *
- * 응답 키는 *camelCase*가 정본 (Python `command_handler.py` L309-317 실측, wire-schema HealthStatus L340-348).
+ * 응답 키는 *camelCase*가 정본 (Python `command_handler.py` L309-317 실측).
  */
 export class CommandDispatcher {
   private readonly handlers: Record<string, (cmd: CommandLike) => Promise<void>>;
@@ -24,9 +42,14 @@ export class CommandDispatcher {
     private readonly send: SendFn,
     private readonly logger: Logger,
     private readonly nodeId: string,
+    private readonly agentRegistry: AgentRegistry,
+    private readonly taskManager: TaskManager,
+    private readonly taskExecutor: TaskExecutor,
   ) {
     this.handlers = {
       health_check: (cmd) => this.handleHealthCheck(cmd),
+      create_session: (cmd) => this.handleCreateSession(cmd as CreateSessionCmd),
+      intervene: (cmd) => this.handleIntervene(cmd),
     };
   }
 
@@ -47,18 +70,87 @@ export class CommandDispatcher {
     } else {
       await this.sendError(
         cmd,
-        `Not implemented in soul-server-ts B-1: ${cmd.type}`,
+        `Not implemented in soul-server-ts: ${cmd.type}`,
       );
     }
   }
 
   private async handleHealthCheck(cmd: CommandLike): Promise<void> {
+    const agents = this.agentRegistry.list();
     await this.send({
       type: "health_status",
-      runners: { max_concurrent: 0, active: 0 },
+      runners: {
+        max_concurrent: agents.length,
+        active: this.taskManager.listTasks().filter((t) => t.status === "running").length,
+      },
       node_id: this.nodeId,
       requestId: cmd.requestId ?? cmd.request_id ?? "",
     });
+  }
+
+  /**
+   * `create_session` 명령 — Phase B-3 신설.
+   *
+   * 흐름:
+   *   1. agent_registry.get(profile) → AgentProfile (없으면 error 응답)
+   *   2. task_manager.createTask(...) → DB session_register + broadcast session_created
+   *   3. task_executor.startExecution(task, profile) → engine.execute() fire-and-forget
+   *   4. requestId가 있으면 `session_created` ACK 응답 (atom c13f7826: 빈 string ACK 금지)
+   */
+  private async handleCreateSession(cmd: CreateSessionCmd): Promise<void> {
+    if (!cmd.agentSessionId || !cmd.prompt) {
+      await this.sendError(cmd, "create_session requires agentSessionId and prompt");
+      return;
+    }
+    const profileId = cmd.profile;
+    if (!profileId) {
+      await this.sendError(cmd, "create_session requires profile (agent id)");
+      return;
+    }
+    const agent = this.agentRegistry.get(profileId);
+    if (!agent) {
+      await this.sendError(cmd, `Unknown agent profile: ${profileId}`);
+      return;
+    }
+
+    const task = await this.taskManager.createTask({
+      agentSessionId: cmd.agentSessionId,
+      prompt: cmd.prompt,
+      profileId,
+      callerSessionId: cmd.caller_session_id ?? null,
+      callerInfo: cmd.caller_info,
+      model: cmd.model,
+      folderId: cmd.folderId ?? null,
+    });
+
+    this.taskExecutor.startExecution(task, agent);
+
+    // session_created wire는 *두 경로*가 같은 type을 사용 — orch는 payload 키로 구분:
+    //   1. dispatcher ACK (여기): {type, agentSessionId, requestId}  — *requestId 있을 때만*
+    //   2. SessionBroadcaster.emitSessionCreated: {type, session, folder_id, caller_source}
+    // Python `command_handler.py` L222-227 / `session_broadcaster.py` L67-77 정본 패턴.
+    // requestId 없으면 ACK 발행 안 함 (atom c13f7826 빈 string ACK 금지).
+    const requestId = cmd.requestId ?? cmd.request_id ?? "";
+    if (requestId) {
+      await this.send({
+        type: "session_created",
+        agentSessionId: task.agentSessionId,
+        requestId,
+      });
+    }
+  }
+
+  /**
+   * `intervene` 명령 — B-3 fallback "Not implemented".
+   *
+   * Codex SDK 0.130.0은 turn-level steer API 표면 없음 (TurnOptions에 input 주입 미지원).
+   * B-4 multi-turn 지원 시 SDK 표면 변화 또는 다음 turn 우회 패턴 검토.
+   */
+  private async handleIntervene(cmd: CommandLike): Promise<void> {
+    await this.sendError(
+      cmd,
+      "intervene not implemented in soul-server-ts B-3 (Codex SDK turn-level steer is B-4 work)",
+    );
   }
 
   private async sendError(cmd: CommandLike, message: string): Promise<void> {
