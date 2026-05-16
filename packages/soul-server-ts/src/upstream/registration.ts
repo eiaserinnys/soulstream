@@ -10,8 +10,10 @@ export interface RegistrationParams {
 /**
  * node_register payload 조립. wire-schema NodeRegister 타입 정본 사용.
  *
- * B-1 노드는 세션 실행 능력 0이므로 max_concurrent=0, agents=[] 광고.
- * supported_backends=["codex"]로 옵션 D 비대칭 모델 단계 1 식별 (위임 §R3).
+ * Phase B-1: max_concurrent=0 (세션 실행 능력 0). supported_backends=["codex"] (옵션 D 비대칭 단계 1).
+ *
+ * Phase B-2 (R6): 임시 *codex-default* agent 1개 광고 — orch가 backend=codex 라우팅 대상으로
+ * 본 노드를 선택 가능 (Phase A 라우팅과 정합). 실제 agent_registry yaml 정본은 B-3에서.
  */
 export function buildRegistrationMsg(params: RegistrationParams): NodeRegister {
   const msg: NodeRegister = {
@@ -21,7 +23,13 @@ export function buildRegistrationMsg(params: RegistrationParams): NodeRegister {
     port: params.port,
     capabilities: { max_concurrent: 0 },
     supported_backends: ["codex"],
-    agents: [],
+    agents: [
+      {
+        id: "codex-default",
+        name: "Codex Default",
+        backend: "codex",
+      },
+    ],
   };
   if (params.userName) {
     msg.user = {

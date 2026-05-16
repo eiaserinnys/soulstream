@@ -95,7 +95,10 @@ describe("UpstreamAdapter", () => {
     expect(first.node_id).toBe("eias-shopping-ts");
     expect(first.supported_backends).toEqual(["codex"]);
     expect(first.capabilities).toEqual({ max_concurrent: 0 });
-    expect(first.agents).toEqual([]);
+    // Phase B-2 R6: 임시 codex-default agent 광고 (B-3에서 agent_registry yaml 정본 교체).
+    expect(first.agents).toEqual([
+      { id: "codex-default", name: "Codex Default", backend: "codex" },
+    ]);
 
     await adapter.shutdown();
   });

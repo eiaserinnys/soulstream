@@ -22,8 +22,26 @@ describe("buildRegistrationMsg", () => {
     expect(msg.port).toBe(4205);
     expect(msg.capabilities).toEqual({ max_concurrent: 0 });
     expect(msg.supported_backends).toEqual(["codex"]);
-    expect(msg.agents).toEqual([]);
+    // Phase B-2: 임시 codex-default agent 광고. B-3에서 agent_registry yaml 정본으로 교체.
+    expect(msg.agents).toEqual([
+      { id: "codex-default", name: "Codex Default", backend: "codex" },
+    ]);
     expect(msg.user).toBeUndefined();
+  });
+
+  it("agents 배열에 codex-default가 광고됨 (Phase B-2 R6)", () => {
+    const msg = buildRegistrationMsg({
+      nodeId: "any",
+      host: "any",
+      port: 0,
+      userName: "",
+    });
+    expect(msg.agents).toHaveLength(1);
+    expect(msg.agents?.[0]).toEqual({
+      id: "codex-default",
+      name: "Codex Default",
+      backend: "codex",
+    });
   });
 
   it("userName이 있으면 user 광고", () => {
