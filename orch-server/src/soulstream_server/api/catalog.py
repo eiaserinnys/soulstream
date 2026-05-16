@@ -6,8 +6,15 @@ Catalog API 라우터 — /api/catalog
 응답 형식:
 - folders: [{id, name, sortOrder}]
 - sessions: Record<string, {folderId, displayName}>  — soul-ui CatalogState 호환
-- sessionList: [{session_id, node_id, folder_id, display_name, last_message, status,
-                 created_at, updated_at, prompt, agent_id, agentName, agentPortraitUrl}]
+- sessionList: _session_to_response 정본 helper와 동일한 camelCase 응답
+  (agentSessionId, nodeId, folderId, displayName, lastMessage, status, sessionType,
+   createdAt, updatedAt, lastEventId, lastReadEventId, prompt, agentId, agentName,
+   agentPortraitUrl, backend, userName, userPortraitUrl, callerSessionId, clientId,
+   metadata).
+
+Phase A-bis(2026-05-16): sessionList build를 _session_to_response helper 호출로
+통일. 정본 둘 안티패턴(atom d7a1ad86) 차단 — agent/caller/user profile/backend
+처리가 한 자리에서 동기된다. 응답 키 케이스도 camelCase로 통일.
 
 soul-common의 CatalogService.get_catalog()은 sessions를 dict(세션ID → 폴더배정)으로
 반환하므로, 오케스트레이터에서는 DB 세션 목록과 폴더 배정을 병합하여 두 가지 형식으로 제공한다.
@@ -21,13 +28,9 @@ from typing import Optional
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
-from soul_common.auth import extract_caller_info_from_metadata
 from soul_common.catalog.catalog_service import CatalogService
 from soul_common.db.session_db import PostgresSessionDB
-from soulstream_server.api.session_serializer import (
-    _build_portrait_proxy_url,
-    apply_user_profile_enrichment,
-)
+from soulstream_server.api.session_serializer import _session_to_response
 from soulstream_server.models import BatchMoveRequest
 from soulstream_server.nodes.node_manager import NodeManager
 
@@ -81,65 +84,20 @@ def create_catalog_router(
             for sid, assignment in folder_assignments.items()
         }
 
-        # sessionList 배열: OrchestratorSessionProvider가 세션 목록 구성에 사용
+        # sessionList 배열: 정본 helper(_session_to_response)로 단일화.
+        # folder_id·display_name은 catalog folder_assignments가 *정본*이므로
+        # row에 spread copy로 덮어쓴 후 helper에 전달한다 (원본 row 비변형).
+        # 응답은 camelCase 통일 — OrchestratorSessionProvider가 동일 키로 수신.
         session_list = []
         for s in sessions_raw:
             sid = s.get("session_id", "")
             assignment = folder_assignments.get(sid, {})
-
-            # agent 정보 조회 (크로스-노드 fallback 포함)
-            agent_id = s.get("agent_id")
-            node_id = s.get("node_id", "")
-            agentName = None
-            agentPortraitUrl = None
-            if agent_id:
-                found = node_manager.find_agent_profile(
-                    agent_id, preferred_node_id=node_id
-                )
-                if found:
-                    profile, source_node_id = found
-                    agentName = profile.get("name")
-                    if profile.get("portrait_url") and source_node_id:
-                        agentPortraitUrl = _build_portrait_proxy_url(
-                            source_node_id, agent_id
-                        )
-
-            # 사용자 정보: caller_info(atom ed3a216d) 우선 추출, 부재 시 노드 user_info fallback.
-            # 정본 헬퍼(apply_user_profile_enrichment)가 mix-fallback 금지 정책을 적용 —
-            # caller_info 정체성이 부분이라도 있으면 보존, 부재 시에만 노드 fallback.
-            caller_info = extract_caller_info_from_metadata(s.get("metadata")) or {}
-            display_name = caller_info.get("display_name")
-            avatar_url = caller_info.get("avatar_url")
-
-            entry = {
-                "session_id": sid,
-                "node_id": node_id,
+            s_enriched = {
+                **s,
                 "folder_id": assignment.get("folderId"),
                 "display_name": assignment.get("displayName"),
-                "last_message": s.get("last_message"),  # JSONB dict or None
-                "status": s.get("status", "unknown"),
-                "session_type": s.get("session_type", "claude"),
-                "created_at": s.get("created_at", ""),
-                "updated_at": s.get("updated_at"),
-                "last_event_id": s.get("last_event_id", 0),
-                "last_read_event_id": s.get("last_read_event_id", 0),
-                # 에이전트 및 사용자 메시지 정보
-                "prompt": s.get("prompt"),
-                "agent_id": agent_id,
-                "agentName": agentName,
-                "agentPortraitUrl": agentPortraitUrl,
-                "userName": display_name if isinstance(display_name, str) and display_name else None,
-                "userPortraitUrl": avatar_url if isinstance(avatar_url, str) and avatar_url else None,
             }
-            # R-2 fix: caller_info.source를 헬퍼에 전달 — 정체성 명시 source
-            # (agent/system 등)는 신원 필드 None이라도 노드 owner로 덮지 않는다.
-            apply_user_profile_enrichment(
-                entry,
-                node_id=node_id,
-                node_manager=node_manager,
-                caller_source=caller_info.get("source"),
-            )
-            session_list.append(entry)
+            session_list.append(_session_to_response(s_enriched, node_manager))
 
         return {
             "folders": catalog.get("folders", []),

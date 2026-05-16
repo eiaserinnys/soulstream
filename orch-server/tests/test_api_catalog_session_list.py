@@ -2,6 +2,11 @@
 
 caller_info(통합 스키마 v1, atom ed3a216d) 발신자 신원이 노드 user_info를
 override하는지 확인한다. caller_info 부재 세션은 노드 user_info fallback이 보존된다.
+
+Phase A-bis(2026-05-16): sessionList build를 _session_to_response 정본 helper로
+통일. 응답 키는 camelCase로 통일되고 backend 키가 박힘 — 정본 둘 안티패턴
+(atom d7a1ad86) 차단. 기존 userName/userPortraitUrl 케이스 7개는 camelCase 키만
+검증하므로 회귀 0. 신규 케이스로 backend 박힘 + camelCase 통일을 검증한다.
 """
 
 from unittest.mock import MagicMock
@@ -22,6 +27,25 @@ def node_with_user(node_manager, mock_node_connection):
         "name": "노드 사용자",
         "email": "node@example.com",
         "hasPortrait": True,
+    }
+    node_manager._nodes[mock_node_connection.node_id] = mock_node_connection
+    return mock_node_connection
+
+
+@pytest.fixture
+def node_with_agent_profile(node_manager, mock_node_connection):
+    """agent_profiles가 등록된 노드를 node_manager에 등록.
+
+    Phase A-bis: catalog sessionList의 backend 키가 _session_to_response 정본
+    helper를 통해 profile.backend("claude")로 채워지는지 검증하는 fixture.
+    """
+    mock_node_connection._agent_profiles = {
+        "agent-claude-1": {
+            "id": "agent-claude-1",
+            "name": "Claude Agent",
+            "backend": "claude",
+            "portrait_url": "/api/agents/agent-claude-1/portrait",
+        },
     }
     node_manager._nodes[mock_node_connection.node_id] = mock_node_connection
     return mock_node_connection
@@ -223,3 +247,135 @@ class TestCatalogSessionListUserInfo:
         item = body["sessionList"][0]
         assert item["userName"] == "서소영"
         assert item["userPortraitUrl"] == avatar_url
+
+
+def _session_with_agent(session_id: str, node_id: str, agent_id: str | None) -> dict:
+    """Phase A-bis: backend/agent profile lookup 검증용 session row fixture."""
+    return {
+        "session_id": session_id,
+        "node_id": node_id,
+        "agent_id": agent_id,
+        "status": "running",
+        "session_type": "claude",
+        "created_at": "2026-05-16T00:00:00",
+        "updated_at": "2026-05-16T00:00:00",
+        "last_event_id": 0,
+        "last_read_event_id": 0,
+        "prompt": "hello",
+        "last_message": None,
+        "metadata": [],
+    }
+
+
+class TestCatalogSessionListBackend:
+    """Phase A-bis: catalog sessionList의 backend 키 박힘 + camelCase 응답 키 통일.
+
+    자리 1·2(정본 helper _session_to_response) 통일 후, catalog 응답이 helper와
+    동일한 키 셋을 가지는지 검증한다. 정본 둘 안티패턴(atom d7a1ad86) 회귀 차단.
+    """
+
+    async def test_agent_session_includes_backend_from_profile(
+        self, client, mock_db, mock_catalog_service, node_with_agent_profile
+    ):
+        """agent 세션에 profile.backend="claude" 박힘 (R1 — 본 PR 직접 목적)."""
+        session = _session_with_agent("s1", node_with_agent_profile.node_id, "agent-claude-1")
+        mock_db.get_all_sessions.return_value = ([session], 1)
+        mock_catalog_service.get_catalog.return_value = {
+            "folders": [],
+            "sessions": {"s1": {"folderId": None, "displayName": None}},
+        }
+
+        resp = await client.get("/api/catalog")
+
+        assert resp.status_code == 200
+        item = resp.json()["sessionList"][0]
+        assert item["backend"] == "claude"
+        assert item["agentId"] == "agent-claude-1"
+        assert item["agentName"] == "Claude Agent"
+
+    async def test_non_agent_session_backend_is_none(
+        self, client, mock_db, mock_catalog_service
+    ):
+        """agent_id=None 세션은 backend=None (LLM/browser 직접 세션)."""
+        session = _session_with_agent("s1", "test-node-1", None)
+        mock_db.get_all_sessions.return_value = ([session], 1)
+        mock_catalog_service.get_catalog.return_value = {
+            "folders": [],
+            "sessions": {"s1": {"folderId": None, "displayName": None}},
+        }
+
+        resp = await client.get("/api/catalog")
+
+        item = resp.json()["sessionList"][0]
+        assert "backend" in item, "backend 키는 항상 응답에 포함되어야 함 (None일지언정)"
+        assert item["backend"] is None
+        assert item["agentId"] is None
+
+    async def test_agent_profile_miss_backend_is_none(
+        self, client, mock_db, mock_catalog_service
+    ):
+        """agent_id 있으나 NodeManager에 profile 미등록 → backend=None.
+
+        find_agent_profile 미스 — 노드 재시작 직후 reconnect 진행 중인 케이스
+        (결함 진단 캐시 §7.2 시나리오). entry["backend"]가 None으로 명시 박힘.
+        """
+        session = _session_with_agent("s1", "test-node-1", "unknown-agent")
+        mock_db.get_all_sessions.return_value = ([session], 1)
+        mock_catalog_service.get_catalog.return_value = {
+            "folders": [],
+            "sessions": {"s1": {"folderId": None, "displayName": None}},
+        }
+
+        resp = await client.get("/api/catalog")
+
+        item = resp.json()["sessionList"][0]
+        assert item["backend"] is None
+        assert item["agentId"] == "unknown-agent"
+        # profile miss이므로 agentName/agentPortraitUrl도 None
+        assert item["agentName"] is None
+        assert item["agentPortraitUrl"] is None
+
+    async def test_response_keys_are_camelcase(
+        self, client, mock_db, mock_catalog_service, node_with_agent_profile
+    ):
+        """응답 키가 camelCase로 통일 — 자리 1 helper와 동일 키 셋.
+
+        snake_case 키(session_id, node_id, created_at, ...)가 더 이상 응답에 없고
+        camelCase 키(agentSessionId, nodeId, createdAt, ...)만 박힘. 자리 1·2
+        정본 단일화 회귀 차단.
+        """
+        session = _session_with_agent("s-camel", node_with_agent_profile.node_id, "agent-claude-1")
+        mock_db.get_all_sessions.return_value = ([session], 1)
+        mock_catalog_service.get_catalog.return_value = {
+            "folders": [],
+            "sessions": {"s-camel": {"folderId": "f-1", "displayName": "Renamed"}},
+        }
+
+        resp = await client.get("/api/catalog")
+
+        item = resp.json()["sessionList"][0]
+        # camelCase 키 박힘 (자리 1 _session_to_response와 동일 셋)
+        expected_keys = {
+            "agentSessionId", "status", "prompt", "createdAt", "updatedAt",
+            "sessionType", "lastMessage", "clientId", "metadata", "displayName",
+            "nodeId", "folderId", "lastEventId", "lastReadEventId",
+            "callerSessionId", "agentId", "agentName", "agentPortraitUrl",
+            "backend", "userName", "userPortraitUrl",
+        }
+        assert expected_keys.issubset(set(item.keys())), (
+            f"helper 응답 키 누락: {expected_keys - set(item.keys())}"
+        )
+        # snake_case 키 부재 (자리 2 inline build 폐기 회귀)
+        forbidden_keys = {
+            "session_id", "node_id", "folder_id", "display_name", "last_message",
+            "session_type", "created_at", "updated_at", "last_event_id",
+            "last_read_event_id", "agent_id", "caller_session_id", "client_id",
+        }
+        assert not (set(item.keys()) & forbidden_keys), (
+            f"snake_case 잔존: {set(item.keys()) & forbidden_keys}"
+        )
+        # folder_id/display_name이 folder_assignments에서 정확히 보충됐는지 (catalog 도메인)
+        assert item["folderId"] == "f-1"
+        assert item["displayName"] == "Renamed"
+        # agentSessionId가 session_id에서 변환됐는지
+        assert item["agentSessionId"] == "s-camel"
