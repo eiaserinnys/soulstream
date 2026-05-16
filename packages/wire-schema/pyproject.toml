@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "wire_schema"
+version = "0.0.1"
+description = "Soulstream wire schema — JSON Schema definitive + generated Python TypedDict"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "datamodel-code-generator>=0.25.0",
+    "jsonschema>=4.20.0",
+    "pytest>=8.0.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["generated/python"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
