@@ -22,6 +22,12 @@ export const EnvSchema = z
       .enum(["fatal", "error", "warn", "info", "debug", "trace"])
       .default("info"),
     DASH_USER_NAME: z.string().default(""),
+    /**
+     * Codex API 키 (Phase B-2). optional — 미설정 시 Codex SDK가 ~/.codex/auth.json
+     * (ChatGPT 구독 OAuth) fallback. production strict 미요구 — credential default
+     * 박지 않음 (B-1 leak 사고 회로 차단). 실제 turn 실행 시 인증 부재면 Codex SDK가 오류 반환.
+     */
+    CODEX_API_KEY: z.string().optional(),
   })
   .superRefine((env, ctx) => {
     // production에서는 AUTH_BEARER_TOKEN 강제. design-principles §4.
