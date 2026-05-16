@@ -1,0 +1,207 @@
+import { WebSocket } from "ws";
+import type { Logger } from "pino";
+
+import { CommandDispatcher } from "./dispatcher.js";
+import { ReconnectPolicy } from "./reconnect.js";
+import { buildRegistrationMsg } from "./registration.js";
+
+export interface UpstreamConfig {
+  url: string;
+  nodeId: string;
+  host: string;
+  port: number;
+  authBearerToken: string;
+  userName: string;
+  isProduction: boolean;
+}
+
+/**
+ * orch에 역방향 WebSocket 연결. Python `upstream/adapter.py`의 *최소* 등가.
+ *
+ * 책임:
+ * 1. 연결 (Bearer auth)
+ * 2. node_register 발행
+ * 3. 명령 수신 → dispatcher 전달
+ * 4. 자동 재연결 (ReconnectPolicy)
+ *
+ * B-1에서 *미구현*: EventRelay, _send_initial_sessions, intervene/respond/list_sessions 핸들러.
+ */
+export class UpstreamAdapter {
+  private ws: WebSocket | null = null;
+  private running = false;
+  private readonly reconnect = new ReconnectPolicy();
+  private readonly dispatcher: CommandDispatcher;
+  private authWarned = false;
+
+  constructor(
+    private readonly config: UpstreamConfig,
+    private readonly logger: Logger,
+  ) {
+    this.dispatcher = new CommandDispatcher(
+      (data) => this.send(data),
+      logger,
+      config.nodeId,
+    );
+  }
+
+  async run(): Promise<void> {
+    this.running = true;
+    while (this.running) {
+      try {
+        await this.connectAndServe();
+      } catch (err) {
+        if (!this.running) break;
+        if (isConnectionError(err)) {
+          // 예상 연결 오류 — Python adapter.py L122-132 등가
+          this.logger.warn({ err }, "Upstream connection failed");
+        } else {
+          // 예상치 못한 오류 — Python adapter.py L133-136 (logger.exception) 등가
+          this.logger.error({ err }, "Unexpected error in upstream connection");
+        }
+      }
+      if (this.running) {
+        this.logger.info(
+          { attempt: this.reconnect.attempt + 1, delay: this.reconnect.currentDelaySeconds },
+          "Reconnecting after delay",
+        );
+        await this.reconnect.wait();
+      }
+    }
+  }
+
+  async shutdown(): Promise<void> {
+    this.running = false;
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.close();
+    }
+    this.ws = null;
+  }
+
+  private async connectAndServe(): Promise<void> {
+    this.logger.info({ url: this.config.url }, "Connecting to upstream");
+
+    // production 미설정 경고 (1회만)
+    if (!this.config.authBearerToken && this.config.isProduction) {
+      if (!this.authWarned) {
+        this.logger.error(
+          "AUTH_BEARER_TOKEN empty in production — orch-server will likely reject this connection",
+        );
+        this.authWarned = true;
+      } else {
+        this.logger.debug("AUTH_BEARER_TOKEN still empty (reconnect)");
+      }
+    }
+
+    const headers: Record<string, string> = {};
+    if (this.config.authBearerToken) {
+      headers.Authorization = `Bearer ${this.config.authBearerToken}`;
+    }
+
+    const ws = new WebSocket(this.config.url, { headers });
+    this.ws = ws;
+
+    // 연결 대기
+    await new Promise<void>((resolve, reject) => {
+      const onOpen = () => {
+        ws.off("error", onError);
+        resolve();
+      };
+      const onError = (err: Error) => {
+        ws.off("open", onOpen);
+        reject(err);
+      };
+      ws.once("open", onOpen);
+      ws.once("error", onError);
+    });
+
+    this.reconnect.reset();
+    this.authWarned = false;
+    this.logger.info({ nodeId: this.config.nodeId }, "Connected to upstream");
+
+    // node_register 발행
+    await this.send(
+      buildRegistrationMsg({
+        nodeId: this.config.nodeId,
+        host: this.config.host,
+        port: this.config.port,
+        userName: this.config.userName,
+      }),
+    );
+
+    // 명령 수신 루프 — close 또는 error로 종료
+    await new Promise<void>((resolve) => {
+      const onMessage = async (raw: Buffer | ArrayBuffer | Buffer[]) => {
+        let cmd: unknown;
+        try {
+          const text = Buffer.isBuffer(raw) ? raw.toString("utf-8") : String(raw);
+          cmd = JSON.parse(text);
+        } catch (err) {
+          this.logger.warn({ err }, "Invalid JSON from upstream");
+          return;
+        }
+        try {
+          await this.dispatcher.dispatch(cmd);
+        } catch (err) {
+          this.logger.error({ err }, "Dispatcher threw");
+        }
+      };
+      const onClose = (code: number, reason: Buffer) => {
+        ws.off("message", onMessage);
+        ws.off("error", onError);
+        this.logger.info({ code, reason: reason.toString("utf-8") }, "Upstream connection closed");
+        resolve();
+      };
+      const onError = (err: Error) => {
+        ws.off("message", onMessage);
+        ws.off("close", onClose);
+        this.logger.warn({ err }, "WebSocket error during serve");
+        resolve();
+      };
+      ws.on("message", onMessage);
+      ws.once("close", onClose);
+      ws.once("error", onError);
+    });
+
+    this.ws = null;
+  }
+
+  private async send(data: unknown): Promise<void> {
+    const ws = this.ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      this.logger.warn({ data }, "Cannot send — WebSocket not open");
+      return;
+    }
+    await new Promise<void>((resolve, reject) => {
+      ws.send(JSON.stringify(data), (err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+  }
+}
+
+/**
+ * Node.js 연결 오류 + WS handshake 오류 판별. Python `adapter.py` L122-132의
+ * `(WSServerHandshakeError, ClientConnectorError, ClientError, ConnectionError, OSError)` 등가.
+ */
+export function isConnectionError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const code = (err as NodeJS.ErrnoException).code;
+  if (
+    code === "ECONNREFUSED" ||
+    code === "ETIMEDOUT" ||
+    code === "ENOTFOUND" ||
+    code === "ECONNRESET" ||
+    code === "EHOSTUNREACH" ||
+    code === "ENETUNREACH"
+  ) {
+    return true;
+  }
+  // ws 라이브러리의 handshake 실패는 message에 status 또는 "Unexpected server response" 포함
+  const msg = err.message;
+  return (
+    msg.includes("Unexpected server response") ||
+    msg.includes("WebSocket") ||
+    msg.includes("handshake")
+  );
+}
