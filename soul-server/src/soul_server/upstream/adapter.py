@@ -204,6 +204,9 @@ class UpstreamAdapter:
             "capabilities": {
                 "max_concurrent": self._rm.max_concurrent,
             },
+            # 옵션 D Phase A: 본 노드(soul-server)는 현재 Claude Code 백엔드만 실행.
+            # orch SessionRouter가 agent.backend ↔ node.supported_backends 매칭 필터로 라우팅.
+            "supported_backends": ["claude"],
         }
 
         # 에이전트 정보 — portrait는 base64로 인코딩하여 원격 HTTP 조회 불필요
@@ -213,6 +216,7 @@ class UpstreamAdapter:
                 agent_info: dict = {
                     "id": profile.id,
                     "name": profile.name,
+                    "backend": profile.backend,
                     "portrait_url": (
                         f"/api/agents/{profile.id}/portrait"
                         if profile.portrait_path

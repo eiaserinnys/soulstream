@@ -1,0 +1,20 @@
+{
+  "name": "@soulstream/wire-schema",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Soulstream upstream WS protocol — JSON Schema definitive + generated TS/Python clients. See src/README.md.",
+  "type": "module",
+  "main": "generated/typescript/index.ts",
+  "types": "generated/typescript/index.ts",
+  "exports": {
+    ".": "./generated/typescript/index.ts",
+    "./schema": "./src/upstream.schema.json"
+  },
+  "scripts": {
+    "generate": "bash scripts/generate.sh",
+    "verify": "bash scripts/verify.sh"
+  },
+  "devDependencies": {
+    "json-schema-to-typescript": "^15.0.4"
+  }
+}

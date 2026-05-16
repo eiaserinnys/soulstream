@@ -54,7 +54,10 @@ class NodeManager:
         node_id = registration["node_id"]
         host = registration.get("host", "")
         port = registration.get("port", 0)
-        capabilities = registration.get("capabilities", [])
+        # 옵션 D Phase A: capabilities default를 dict {}로 변경 (NodeConnection 시그니처 타입 정정과 정합).
+        capabilities = registration.get("capabilities") or {}
+        # 옵션 D Phase A: 노드가 광고한 supported_backends 추출. 미명시 시 ["claude"] (후방호환).
+        supported_backends = registration.get("supported_backends") or ["claude"]
 
         # 기존 연결이 있으면 닫기
         existing = self._nodes.get(node_id)
@@ -68,14 +71,15 @@ class NodeManager:
             host=host,
             port=port,
             capabilities=capabilities,
+            supported_backends=supported_backends,
             on_close=self._on_node_close,
             on_session_change=self._on_session_change,
         )
         self._nodes[node_id] = node
 
         logger.info(
-            "Node registered: %s (host=%s, port=%d, capabilities=%s)",
-            node_id, host, port, capabilities,
+            "Node registered: %s (host=%s, port=%d, capabilities=%s, backends=%s)",
+            node_id, host, port, capabilities, supported_backends,
         )
 
         # 에이전트 정보: 등록 메시지에 포함된 경우 우선 사용, 없으면 HTTP 조회
@@ -90,6 +94,8 @@ class NodeManager:
                     "name": a.get("name", ""),
                     "portrait_url": a.get("portrait_url", ""),
                     "max_turns": a.get("max_turns"),
+                    # 옵션 D Phase A: agent의 백엔드 ("claude" | "codex" 등). SessionRouter._resolve_backend가 조회.
+                    "backend": a.get("backend", "claude"),
                 }
                 if a.get("portrait_b64"):
                     try:

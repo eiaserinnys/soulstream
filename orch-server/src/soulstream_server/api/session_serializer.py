@@ -114,6 +114,8 @@ def _session_to_response(
         "agentId": s.get("agent_id"),
         "agentName": None,
         "agentPortraitUrl": None,
+        # 옵션 D Phase A: agent backend를 wire에 운반. profile lookup 성공 시 채움.
+        "backend": None,
         "userName": None,
         "userPortraitUrl": None,
     }
@@ -125,6 +127,8 @@ def _session_to_response(
         if found:
             profile, source_node_id = found
             result["agentName"] = profile.get("name")
+            # 옵션 D Phase A: profile.backend를 wire에 운반. 기본 "claude" (NodeManager 등록 시 default).
+            result["backend"] = profile.get("backend", "claude")
             if profile.get("portrait_url") and source_node_id:
                 result["agentPortraitUrl"] = _build_portrait_proxy_url(
                     source_node_id, agent_id

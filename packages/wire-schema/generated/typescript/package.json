@@ -1,0 +1,9 @@
+{
+  "name": "@soulstream/wire-schema-ts",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Auto-generated TypeScript interfaces. Re-export of @soulstream/wire-schema/generated/typescript/index.ts.",
+  "type": "module",
+  "main": "index.ts",
+  "types": "index.ts"
+}

@@ -57,7 +57,8 @@ class NodeConnection:
         node_id: str,
         host: str = "",
         port: int = 0,
-        capabilities: list[str] | None = None,
+        capabilities: dict | None = None,
+        supported_backends: list[str] | None = None,
         on_close: OnCloseCallback | None = None,
         on_session_change: OnSessionChangeCallback | None = None,
     ):
@@ -65,7 +66,12 @@ class NodeConnection:
         self.node_id = node_id
         self.host = host
         self.port = port
-        self.capabilities = capabilities or []
+        # 옵션 D Phase A: capabilities 타입을 dict로 정정 (실제 wire는 dict — adapter._build_registration_msg
+        # `{"max_concurrent": ...}` 형태). 기존 호출자가 list를 넘기면 그대로 저장 (런타임 강제 없음).
+        self.capabilities = capabilities or {}
+        # 옵션 D Phase A: 노드가 지원하는 백엔드 목록. 미명시 시 ["claude"] (후방호환).
+        # SessionRouter가 agent.backend ↔ node.supported_backends 매칭 필터로 라우팅.
+        self.supported_backends = supported_backends or ["claude"]
         self.connected_at = datetime.now(timezone.utc)
 
         self._sessions: dict[str, dict] = {}
@@ -120,6 +126,8 @@ class NodeConnection:
             "host": self.host,
             "port": self.port,
             "capabilities": self.capabilities,
+            # 옵션 D Phase A: 노드 supported_backends를 API/SSE wire에 운반.
+            "supportedBackends": self.supported_backends,
             "connectedAt": self.connected_at.isoformat(),
             "sessionCount": self.session_count,
             "status": "connected",

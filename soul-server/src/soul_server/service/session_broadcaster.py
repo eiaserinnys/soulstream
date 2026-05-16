@@ -30,21 +30,24 @@ class SessionBroadcaster(BaseSessionBroadcaster):
         super().__init__(use_lock=True)
         self._agent_registry = agent_registry
 
-    def _resolve_agent_info(self, task: Task) -> tuple[Optional[str], Optional[str]]:
-        """Task의 profile_id로 AgentRegistry를 조회하여 이름과 portrait URL을 반환.
+    def _resolve_agent_info(
+        self, task: Task
+    ) -> tuple[Optional[str], Optional[str], Optional[str]]:
+        """Task의 profile_id로 AgentRegistry를 조회하여 (이름, portrait URL, backend) 반환.
 
         모델(Task)이 레지스트리를 직접 참조하지 않도록, 이 헬퍼가 중개한다.
+        옵션 D Phase A: backend(3번째 원소) 추가 — emit_session_created가 wire에 운반.
         """
         if not task.profile_id:
-            return None, None
+            return None, None, None
         try:
             agent = self._agent_registry.get(task.profile_id)
             if agent:
                 portrait_url = f"/api/agents/{agent.id}/portrait" if agent.portrait_path else None
-                return agent.name, portrait_url
+                return agent.name, portrait_url, agent.backend
         except Exception:
             pass  # 방어 로직 유지 — registry 조회 실패 시 None 반환
-        return None, None
+        return None, None, None
 
     async def emit_session_created(self, task: Task, folder_id: str | None = None) -> int:
         """세션 생성 이벤트 발행
@@ -53,17 +56,20 @@ class SessionBroadcaster(BaseSessionBroadcaster):
             task: 생성된 세션 태스크
             folder_id: 배정된 폴더 ID. None이면 미분류 세션.
         """
-        agent_name, agent_portrait_url = self._resolve_agent_info(task)
+        agent_name, agent_portrait_url, agent_backend = self._resolve_agent_info(task)
         # R-2 fix(2026-05-10): emit_session_updated/phase와 §9 대칭 — top-level
         # caller_source를 wire에 박는다. orch `_on_node_change`가 이 키를 읽어
         # `apply_user_profile_enrichment`에 forward하여 agent/system 등 정체성
         # 명시 source 세션이 dashboard owner로 덮이지 않게 한다 (atom 0499ee7b).
         # wire 키 정본: atom b558ca3b.
+        # 옵션 D Phase A: agent_backend를 to_session_info로 운반 (session 객체 안에 backend 키).
+        # emit_session_updated/phase/message_updated는 G-19 contract 보존 — 변경 없음.
         event = {
             "type": "session_created",
             "session": task.to_session_info(
                 agent_name=agent_name,
                 agent_portrait_url=agent_portrait_url,
+                agent_backend=agent_backend,
             ),
             "folder_id": folder_id,
             "caller_source": (task.caller_info or {}).get("source"),
