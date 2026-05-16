@@ -107,14 +107,21 @@ export class TaskManager {
   /**
    * 진행 중 turn abort. 성공 시 status=interrupted로 전환. 없으면 false.
    *
-   * 실제 status 갱신·broadcast는 *engine.execute() drain*이 finalize에서 수행.
-   * 본 메서드는 abort 신호만 보낸다.
+   * code-reviewer P1 정정: status="interrupted" 박힘은 *여기서* 책임진다.
+   * adapter abort catch는 yield 없이 generator를 정상 종료 — task_executor의
+   * 정상 종료 분기 `if (task.status === "running") task.status = "completed"`가
+   * interrupt 경로에도 발동되어 wire가 "completed"로 박히는 결함을 차단.
+   *
+   * 본 메서드가 status를 *engine.interrupt 호출 전*에 박으므로, 그 후 generator가
+   * 정상 종료해도 _consumeEventStream의 가드가 status를 덮지 않는다.
+   * finalize의 DB session_update + emit_session_updated는 interrupted 그대로 발행.
    */
   async cancelTask(sessionId: string): Promise<boolean> {
     const task = this.tasks.get(sessionId);
     if (!task) return false;
     if (task.status !== "running") return false;
     if (!task.engine) return false;
+    task.status = "interrupted";
     return await task.engine.interrupt();
   }
 
@@ -126,8 +133,14 @@ export class TaskManager {
     const task = this.tasks.get(sessionId);
     if (!task) return;
 
-    if (task.status === "running" && task.engine) {
-      await task.engine.interrupt();
+    // engine 살아있으면 status 무관하게 interrupt + drain
+    // (cancelTask 후 deleteTask 호출 시 status="interrupted"라도 engine drain 대기 의무)
+    if (task.engine) {
+      try {
+        await task.engine.interrupt();
+      } catch {
+        // interrupt가 이미 idempotent — 무시
+      }
       if (task.executionPromise) {
         try {
           await task.executionPromise;
@@ -159,8 +172,14 @@ export class TaskManager {
   async shutdown(): Promise<void> {
     const drains: Promise<void>[] = [];
     for (const task of this.tasks.values()) {
-      if (task.status === "running" && task.engine) {
-        await task.engine.interrupt();
+      // engine 살아있으면 status 무관하게 interrupt + drain — interrupted 직후 shutdown
+      // 같은 race도 안전하게 처리.
+      if (task.engine) {
+        try {
+          await task.engine.interrupt();
+        } catch {
+          // idempotent — 무시
+        }
         if (task.executionPromise) {
           drains.push(task.executionPromise.catch(() => undefined));
         }

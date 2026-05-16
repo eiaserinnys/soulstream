@@ -125,6 +125,11 @@ export class CommandDispatcher {
 
     this.taskExecutor.startExecution(task, agent);
 
+    // session_created wire는 *두 경로*가 같은 type을 사용 — orch는 payload 키로 구분:
+    //   1. dispatcher ACK (여기): {type, agentSessionId, requestId}  — *requestId 있을 때만*
+    //   2. SessionBroadcaster.emitSessionCreated: {type, session, folder_id, caller_source}
+    // Python `command_handler.py` L222-227 / `session_broadcaster.py` L67-77 정본 패턴.
+    // requestId 없으면 ACK 발행 안 함 (atom c13f7826 빈 string ACK 금지).
     const requestId = cmd.requestId ?? cmd.request_id ?? "";
     if (requestId) {
       await this.send({

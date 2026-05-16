@@ -191,6 +191,35 @@ describe("TaskExecutor.startExecution", () => {
     expect(() => executor.startExecution(task, agent)).toThrow(/already has an engine/);
   });
 
+  it("interrupt 경로: cancelTask가 status='interrupted' 박은 뒤 정상 drain → completed로 안 덮임 (code-reviewer P1)", async () => {
+    const mocks = makeMocks();
+    // engine.execute가 *정상* 종료하는 fake (interrupt가 발생해 adapter가 yield 없이 return하는 시나리오 등가)
+    const events: SSEEventPayload[] = [
+      { type: "session", session_id: "thr-1" } as SSEEventPayload,
+      { type: "text_delta", text: "partial", timestamp: 1 } as SSEEventPayload,
+    ];
+    const executor = new TaskExecutor(
+      () => makeFakeEngine(events),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+    executor.startExecution(task, agent);
+    // task_executor가 yield 처리 *전* 외부에서 status="interrupted" 박힘 (cancelTask 시뮬)
+    // 단, executionPromise가 이미 진행 중이라 micro-task 대기 후 status 설정
+    await Promise.resolve();
+    task.status = "interrupted";
+    await task.executionPromise;
+    // 정상 종료 분기의 `if (status === "running") status = "completed"`가 발동 안 함
+    expect(task.status).toBe("interrupted");
+    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", {
+      status: "interrupted",
+      last_event_id: expect.any(Number),
+    });
+  });
+
   it("engineFactory throw → status=error, finalize 호출", async () => {
     const mocks = makeMocks();
     const factory = vi.fn(() => {

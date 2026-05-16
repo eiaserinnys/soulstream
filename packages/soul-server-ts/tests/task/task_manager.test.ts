@@ -124,15 +124,17 @@ describe("TaskManager.getTask / listTasks", () => {
 });
 
 describe("TaskManager.cancelTask", () => {
-  it("진행 중 engine이 있으면 interrupt 호출 + true 반환", async () => {
+  it("진행 중 engine이 있으면 interrupt 호출 + status='interrupted' 박힘 + true 반환", async () => {
     const { db, broadcaster } = makeMocks();
     const tm = new TaskManager("n", db, broadcaster, silentLogger);
     const task = await tm.createTask({ agentSessionId: "s1", prompt: "x", profileId: "p" });
     const interrupt = vi.fn().mockResolvedValue(true);
     task.engine = { interrupt } as unknown as EnginePort;
 
+    expect(task.status).toBe("running");
     const result = await tm.cancelTask("s1");
     expect(result).toBe(true);
+    expect(task.status).toBe("interrupted");  // code-reviewer P1 정정
     expect(interrupt).toHaveBeenCalledTimes(1);
   });
 
