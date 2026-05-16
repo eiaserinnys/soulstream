@@ -98,6 +98,8 @@ def _build_session_dict(
                 info["agentPortraitUrl"] = (
                     f"/api/agents/{agent.id}/portrait" if agent.portrait_path else None
                 )
+                # 옵션 D Phase A: agent backend를 wire에 운반 (catalog API).
+                info["backend"] = agent.backend
 
     # 사용자 정보: caller_info(atom ed3a216d) 우선 추출. 부재 시 dashboard 라우트가
     # settings.dash_user_name으로 fallback (apply_dash_user_profile_enrichment).

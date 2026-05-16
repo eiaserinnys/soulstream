@@ -17,6 +17,7 @@ class AgentProfile:
     max_turns: Optional[int] = None
     allowed_tools: Optional[list[str]] = None
     disallowed_tools: Optional[list[str]] = None
+    backend: str = "claude"
 
 
 class AgentRegistry:

@@ -180,6 +180,7 @@ class Task:
         self,
         agent_name: Optional[str] = None,
         agent_portrait_url: Optional[str] = None,
+        agent_backend: Optional[str] = None,
     ) -> dict:
         """대시보드용 세션 요약 정보 dict 변환
 
@@ -188,6 +189,8 @@ class Task:
         Args:
             agent_name: 에이전트 이름 (AgentRegistry에서 호출자가 조회하여 전달).
             agent_portrait_url: 에이전트 portrait 서빙 URL (호출자가 조회하여 전달).
+            agent_backend: 에이전트 실행 백엔드 ("claude" | "codex" 등). 옵션 D Phase A.
+                None이면 wire에 `backend: None`이 박힘 — graceful (orch enrichment는 source 키 부재로 동작 일관).
         """
         updated_at = self.completed_at or self.created_at
         info = {
@@ -218,6 +221,8 @@ class Task:
             info["agentId"] = self.profile_id
             info["agentName"] = agent_name
             info["agentPortraitUrl"] = agent_portrait_url
+            # 옵션 D Phase A: agent backend wire 운반. None이면 None 값으로 박힘 (graceful).
+            info["backend"] = agent_backend
         # F-10C fix(2026-05-08): 사용자 프로필 정보 (catalog API와 정합 — caller_info 직접 사용).
         # session_created/list 이벤트가 wire에 user 프로필을 운반하지 못해 클라이언트가
         # 폴백 표시되던 결함을 차단한다. self.caller_info가 None이면 누락 (graceful —

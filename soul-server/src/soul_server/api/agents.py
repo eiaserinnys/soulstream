@@ -21,6 +21,7 @@ class AgentInfo(BaseModel):
     name: str
     portrait_url: str  # 서빙 URL (/api/agents/{id}/portrait) 또는 빈 문자열
     max_turns: Optional[int]
+    backend: str = "claude"  # 옵션 D Phase A: 에이전트 실행 백엔드 ("claude" | "codex" 등)
 
 
 class AgentsResponse(BaseModel):
@@ -42,6 +43,7 @@ async def list_agents():
             name=p.name,
             portrait_url=f"/api/agents/{p.id}/portrait" if p.portrait_path else "",
             max_turns=p.max_turns,
+            backend=p.backend,
         )
         for p in registry.list()
     ]
