@@ -32,27 +32,33 @@ export class OrchestratorSessionProvider implements SessionStorageProvider {
     const res = await fetch(`/api/catalog${qs ? `?${qs}` : ""}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
+    // Phase A-bis(2026-05-16): catalog sessionList가 _session_to_response 정본
+    // helper로 통일됨 — 응답 키는 camelCase. backend 키 신규 박힘(R1, 본 fix 목적).
     const data: {
       sessionList: Array<{
-        session_id: string;
-        node_id: string;
-        folder_id: string | null;
-        display_name: string | null;
-        last_message: {
+        agentSessionId: string;
+        status: string;
+        prompt?: string | null;
+        createdAt: string;
+        updatedAt: string | null;
+        sessionType: string | null;
+        lastMessage: {
           preview: string;
           timestamp: string;
           type: string;
         } | null;
-        status: string;
-        session_type: string | null;
-        created_at: string;
-        updated_at: string | null;
-        last_event_id: number | null;
-        last_read_event_id: number | null;
-        prompt?: string | null;
-        agent_id?: string | null;
+        clientId?: string | null;
+        metadata?: unknown;
+        displayName: string | null;
+        nodeId: string;
+        folderId: string | null;
+        lastEventId: number | null;
+        lastReadEventId: number | null;
+        callerSessionId?: string | null;
+        agentId?: string | null;
         agentName?: string | null;
         agentPortraitUrl?: string | null;
+        backend?: string | null;
         userName?: string | null;
         userPortraitUrl?: string | null;
       }>;
@@ -60,21 +66,22 @@ export class OrchestratorSessionProvider implements SessionStorageProvider {
     } = await res.json();
 
     const sessions = data.sessionList.map((s) => ({
-      agentSessionId: s.session_id,
+      agentSessionId: s.agentSessionId,
       status: mapStatus(s.status),
-      sessionType: (s.session_type ?? "claude") as "claude" | "llm",
+      sessionType: (s.sessionType ?? "claude") as "claude" | "llm",
       eventCount: 0,
-      createdAt: s.created_at,
-      updatedAt: s.updated_at ?? undefined,
-      nodeId: s.node_id,
-      displayName: s.display_name ?? undefined,
-      lastMessage: s.last_message ?? undefined,
-      lastEventId: s.last_event_id ?? 0,
-      lastReadEventId: s.last_read_event_id ?? 0,
+      createdAt: s.createdAt,
+      updatedAt: s.updatedAt ?? undefined,
+      nodeId: s.nodeId,
+      displayName: s.displayName ?? undefined,
+      lastMessage: s.lastMessage ?? undefined,
+      lastEventId: s.lastEventId ?? 0,
+      lastReadEventId: s.lastReadEventId ?? 0,
       prompt: s.prompt ?? undefined,
-      agentId: s.agent_id ?? undefined,
+      agentId: s.agentId ?? undefined,
       agentName: s.agentName ?? undefined,
       agentPortraitUrl: s.agentPortraitUrl ?? undefined,
+      backend: s.backend ?? undefined,
       userName: s.userName ?? undefined,
       userPortraitUrl: s.userPortraitUrl ?? undefined,
     }));
