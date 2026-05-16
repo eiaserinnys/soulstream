@@ -95,6 +95,8 @@ export interface SessionSummary extends AgentProfile, UserProfile {
   awaySummary?: string | null;
   /** 세션을 생성한 노드 ID */
   nodeId?: string;
+  /** 세션을 처리하는 백엔드 (claude / codex 등). agent_profiles에서 derived. */
+  backend?: string;
   /** 이 세션을 띄운 발신 세션 ID (위임 세션이면 존재, 직접이면 undefined) */
   callerSessionId?: string;
 }

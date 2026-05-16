@@ -126,6 +126,27 @@ describe("applySessionUpdated", () => {
 
     expect(result.pages[0].sessions[0].status).toBe("running");
   });
+
+  // A3: session_updated 머지 시 backend 보존 검증.
+  // SessionUpdatesPatch가 backend 키를 포함하지 않으므로 buildSessionUpdates는
+  // wire에 backend가 와도 추출하지 않고, applySessionUpdated는 기존 backend를 보존.
+  // G-19 contract: backend는 세션 생성 시점에 한 번 결정되며 lifecycle 동안 불변.
+  it("session_updated 머지 시 기존 backend를 보존한다 (G-19 contract)", () => {
+    const s1 = makeSession("s1", {
+      status: "running",
+      backend: "claude",
+    });
+    const data = makeData([[s1]]);
+
+    const result = applySessionUpdated(data, "s1", {
+      status: "completed",
+      updatedAt: "2026-05-16T08:00:00Z",
+    } as Partial<SessionSummary>);
+
+    const merged = result.pages[0].sessions[0];
+    expect(merged.backend).toBe("claude"); // 보존
+    expect(merged.status).toBe("completed"); // 갱신
+  });
 });
 
 // ============================================================

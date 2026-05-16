@@ -11,6 +11,7 @@ import { isSessionUnread } from "../stores/dashboard-store";
 import { cn } from "../lib/cn";
 import { Badge } from "./ui/badge";
 import { NodeBadge } from "./NodeBadge";
+import { BackendBadge } from "./BackendBadge";
 import type { SessionSummary, SessionStatus } from "../shared/types";
 
 // === Status Config ===
@@ -151,6 +152,9 @@ export const SessionItem = memo(function SessionItem({
         </div>
       </div>
       <div className="flex items-center gap-1 shrink-0">
+        {session.backend && (
+          <BackendBadge backend={session.backend} className="shrink-0" />
+        )}
         {session.nodeId && <NodeBadge nodeId={session.nodeId} className="shrink-0" />}
         {session.eventCount > 0 && (
           <Badge variant="outline" size="sm" className="shrink-0">

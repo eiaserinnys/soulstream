@@ -56,6 +56,7 @@ export function toSessionSummary(raw: Record<string, unknown>): SessionSummary {
     agentId: (raw.agent_id ?? raw.agentId) as string | undefined,
     agentName: (raw.agent_name ?? raw.agentName) as string | undefined,
     agentPortraitUrl: (raw.agent_portrait_url ?? raw.agentPortraitUrl) as string | undefined,
+    backend: raw.backend as string | undefined,
     userName: (raw.user_name ?? raw.userName) as string | undefined,
     userPortraitUrl: (raw.user_portrait_url ?? raw.userPortraitUrl) as string | undefined,
     callerSessionId: (raw.caller_session_id ?? raw.callerSessionId) as string | undefined,
