@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { EnginePort } from "../../src/engine/protocol.js";
 import { TaskManager } from "../../src/task/task_manager.js";
+import type { Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 
 const silentLogger = pino({ level: "silent" });
@@ -15,12 +16,14 @@ function makeMocks() {
 
   const emitSessionCreated = vi.fn().mockResolvedValue(undefined);
   const emitSessionDeleted = vi.fn().mockResolvedValue(undefined);
+  const emitInterventionSent = vi.fn().mockResolvedValue(undefined);
   const broadcaster = {
     emitSessionCreated,
     emitSessionDeleted,
+    emitInterventionSent,
   } as unknown as SessionBroadcaster;
 
-  return { db, broadcaster, registerSession, deleteSession, emitSessionCreated, emitSessionDeleted };
+  return { db, broadcaster, registerSession, deleteSession, emitSessionCreated, emitSessionDeleted, emitInterventionSent };
 }
 
 describe("TaskManager.createTask", () => {
@@ -205,5 +208,142 @@ describe("TaskManager.shutdown", () => {
     await tm.shutdown();
     expect(int1).toHaveBeenCalledTimes(1);
     expect(int2).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("TaskManager.addIntervention (B-4)", () => {
+  it("running task → queue push + intervention_sent broadcast + queued result", async () => {
+    const { db, broadcaster, emitInterventionSent } = makeMocks();
+    const tm = new TaskManager("n", db, broadcaster, silentLogger);
+    const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
+    expect(task.status).toBe("running");
+    expect(task.interventionQueue).toEqual([]);
+
+    const onResume = vi.fn();
+    const result = await tm.addIntervention(
+      { agentSessionId: "s1", text: "hello", user: "alice" },
+      onResume,
+    );
+
+    expect(result).toEqual({ queued: true, queuePosition: 1 });
+    expect(task.interventionQueue).toHaveLength(1);
+    expect(task.interventionQueue[0]).toMatchObject({ text: "hello", user: "alice" });
+    expect(emitInterventionSent).toHaveBeenCalledTimes(1);
+    expect(emitInterventionSent).toHaveBeenCalledWith(
+      "s1",
+      expect.objectContaining({ text: "hello", user: "alice" }),
+    );
+    expect(onResume).not.toHaveBeenCalled();
+  });
+
+  it("연속 큐잉 시 queuePosition이 1, 2로 증가", async () => {
+    const { db, broadcaster } = makeMocks();
+    const tm = new TaskManager("n", db, broadcaster, silentLogger);
+    await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
+    const onResume = vi.fn();
+    const r1 = await tm.addIntervention({ agentSessionId: "s1", text: "a", user: "u" }, onResume);
+    const r2 = await tm.addIntervention({ agentSessionId: "s1", text: "b", user: "u" }, onResume);
+    expect(r1).toEqual({ queued: true, queuePosition: 1 });
+    expect(r2).toEqual({ queued: true, queuePosition: 2 });
+  });
+
+  it("completed task → status=running 전환 + queue push + onResume 호출 + autoResumed result", async () => {
+    const { db, broadcaster, emitInterventionSent } = makeMocks();
+    const tm = new TaskManager("n", db, broadcaster, silentLogger);
+    const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
+    task.status = "completed";
+    task.completedAt = new Date();
+    task.codexThreadId = "thr-1";  // 완료된 turn이 thread id를 남겼다고 가정 (resumeThread 가능)
+
+    const onResume = vi.fn();
+    const result = await tm.addIntervention(
+      { agentSessionId: "s1", text: "resume", user: "u", callerInfo: { source: "agent" } },
+      onResume,
+    );
+
+    expect(result).toEqual({ autoResumed: true });
+    expect(task.status).toBe("running");
+    expect(task.completedAt).toBeUndefined();
+    expect(task.interventionQueue).toHaveLength(1);
+    expect(task.interventionQueue[0]).toMatchObject({ text: "resume", user: "u" });
+    expect(task.codexThreadId).toBe("thr-1");  // resumeThread를 위해 보존
+    expect(onResume).toHaveBeenCalledWith(task);
+    expect(emitInterventionSent).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["error", "interrupted"] as const)("%s task → 같은 auto-resume 경로", async (status) => {
+    const { db, broadcaster } = makeMocks();
+    const tm = new TaskManager("n", db, broadcaster, silentLogger);
+    const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
+    task.status = status;
+    task.error = status === "error" ? "prior error" : undefined;
+    const onResume = vi.fn();
+    const result = await tm.addIntervention(
+      { agentSessionId: "s1", text: "x", user: "u" },
+      onResume,
+    );
+    expect(result).toEqual({ autoResumed: true });
+    expect(task.status).toBe("running");
+    expect(task.error).toBeUndefined();
+    expect(onResume).toHaveBeenCalledWith(task);
+  });
+
+  it("미존재 task → throw 'Task not found'", async () => {
+    const { db, broadcaster } = makeMocks();
+    const tm = new TaskManager("n", db, broadcaster, silentLogger);
+    const onResume = vi.fn();
+    await expect(
+      tm.addIntervention({ agentSessionId: "missing", text: "x", user: "u" }, onResume),
+    ).rejects.toThrow("Task not found: missing");
+    expect(onResume).not.toHaveBeenCalled();
+  });
+
+  it("P1-1 race 보호: completed task의 executionPromise가 살아있으면 await 후 진행 (startExecution throw 차단)", async () => {
+    const { db, broadcaster } = makeMocks();
+    const tm = new TaskManager("n", db, broadcaster, silentLogger);
+    const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
+    task.status = "completed";
+
+    // _finalize 미완료 상태를 시뮬레이션 — executionPromise는 살아있고 engine도 살아있음.
+    let resolveFinalize: () => void = () => undefined;
+    const finalizePromise = new Promise<void>((r) => { resolveFinalize = r; });
+    task.executionPromise = finalizePromise;
+    const engineCloseSpy = vi.fn().mockResolvedValue(undefined);
+    task.engine = { interrupt: async () => true, close: engineCloseSpy } as unknown as EnginePort;
+
+    const onResumeCalled: Task[] = [];
+    const onResume = (t: Task) => onResumeCalled.push(t);
+
+    // addIntervention을 트리거하지만 await — finalize가 아직 끝나지 않아 await 멈춤.
+    const addPromise = tm.addIntervention(
+      { agentSessionId: "s1", text: "x", user: "u" },
+      onResume,
+    );
+
+    // 잠시 후 finalize가 끝났다고 신호 + task.engine 정리(시뮬레이션)
+    setTimeout(() => {
+      task.engine = undefined;
+      resolveFinalize();
+    }, 5);
+
+    const result = await addPromise;
+    expect(result).toEqual({ autoResumed: true });
+    expect(onResumeCalled).toHaveLength(1);
+    // onResume이 호출된 시점에는 task.engine이 undefined여야 startExecution이 throw하지 않음.
+    expect(task.engine).toBeUndefined();
+  });
+
+  it("intervention_sent broadcast 실패 시 격리 (task 진행 유지) — running 경로", async () => {
+    const { db, broadcaster, emitInterventionSent } = makeMocks();
+    emitInterventionSent.mockRejectedValueOnce(new Error("ws down"));
+    const tm = new TaskManager("n", db, broadcaster, silentLogger);
+    const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
+    const onResume = vi.fn();
+    const result = await tm.addIntervention(
+      { agentSessionId: "s1", text: "x", user: "u" },
+      onResume,
+    );
+    expect(result).toEqual({ queued: true, queuePosition: 1 });
+    expect(task.interventionQueue).toHaveLength(1);  // broadcast 실패에도 queue는 살아있음
   });
 });

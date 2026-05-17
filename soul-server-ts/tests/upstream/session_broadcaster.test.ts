@@ -223,3 +223,46 @@ describe("emitEventEnvelope", () => {
     });
   });
 });
+
+describe("SessionBroadcaster.emitInterventionSent (B-4)", () => {
+  it("intervention_sent wire envelope 정합 — Python InterventionSentEvent 정본", async () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    const b = new SessionBroadcaster(send, makeRegistry(), "node-A");
+    await b.emitInterventionSent("sess-1", {
+      text: "hi",
+      user: "alice",
+      callerInfo: { source: "slack", display_name: "Alice" },
+    });
+    expect(send).toHaveBeenCalledTimes(1);
+    const payload = send.mock.calls[0][0] as Record<string, unknown>;
+    expect(payload.type).toBe("event");
+    expect(payload.agentSessionId).toBe("sess-1");
+    const event = payload.event as Record<string, unknown>;
+    expect(event.type).toBe("intervention_sent");
+    expect(event.user).toBe("alice");
+    expect(event.text).toBe("hi");
+    expect(event.caller_info).toEqual({ source: "slack", display_name: "Alice" });
+    expect(typeof event.timestamp).toBe("number");
+  });
+
+  it("callerInfo·attachmentPaths 미전달 시 envelope에서 키 자체 생략", async () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    const b = new SessionBroadcaster(send, makeRegistry(), "node-A");
+    await b.emitInterventionSent("sess-1", { text: "hi", user: "u" });
+    const event = (send.mock.calls[0][0] as { event: Record<string, unknown> }).event;
+    expect(event.caller_info).toBeUndefined();
+    expect(event.attachments).toBeUndefined();
+  });
+
+  it("attachmentPaths 비어있지 않으면 attachments 키로 발행", async () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    const b = new SessionBroadcaster(send, makeRegistry(), "node-A");
+    await b.emitInterventionSent("sess-1", {
+      text: "see image",
+      user: "u",
+      attachmentPaths: ["/tmp/a.png", "/tmp/b.png"],
+    });
+    const event = (send.mock.calls[0][0] as { event: Record<string, unknown> }).event;
+    expect(event.attachments).toEqual(["/tmp/a.png", "/tmp/b.png"]);
+  });
+});

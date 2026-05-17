@@ -1,14 +1,16 @@
 /**
- * TaskManager — 세션 task 컬렉션 관리 (Phase B-3).
+ * TaskManager — 세션 task 컬렉션 관리 (Phase B-3 기본 + B-4 intervention).
  *
- * Python `service/task_manager.py`의 *최소* 등가. Codex 단일턴 모델 — Python의
- * intervention_queue, multi-turn, session_eviction은 본 PR 범위 외.
+ * Python `service/task_manager.py`의 *codex 적응판*. session_eviction은 본 PR 범위 외
+ * (codex MVP).
  *
  * 책임:
  *   - createTask: Task 생성 + DB `session_register` + broadcast `session_created`
  *   - getTask / listTasks
  *   - cancelTask: 진행 중 turn abort
  *   - deleteTask: 메모리 + DB + broadcast `session_deleted`
+ *   - addIntervention (B-4): turn 사이 큐잉 또는 auto-resume — 분석 캐시
+ *     `20260517-1410-codex-ts-folder-resume-intervene.md` §D
  *
  * 본 PR은 *task lifecycle 메타 관리*만. 실제 *engine 실행*은 TaskExecutor 책임.
  */
@@ -17,7 +19,7 @@ import type { Logger } from "pino";
 
 import type { SessionDB } from "../db/session_db.js";
 
-import type { CallerInfo, Task, TaskStatus } from "./task_models.js";
+import type { CallerInfo, InterventionMessage, Task, TaskStatus } from "./task_models.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
 export interface CreateTaskParams {
@@ -29,6 +31,36 @@ export interface CreateTaskParams {
   model?: string;
   folderId?: string | null;
 }
+
+/**
+ * `addIntervention` 결과. Python `task_manager.add_intervention` L590-595 정본 형상.
+ *
+ * - running 세션 → `{queued: true, queuePosition}` — 현 turn 종료 후 task_executor가 dequeue.
+ * - completed/error/interrupted → `{autoResumed: true}` — task_executor.startExecution이
+ *   resumeSessionId(task.codexThreadId)로 다음 turn 자동 시작.
+ */
+export type AddInterventionResult =
+  | { queued: true; queuePosition: number }
+  | { autoResumed: true };
+
+/** addIntervention이 받는 메시지. dispatcher가 wire payload에서 조립. */
+export interface AddInterventionParams {
+  agentSessionId: string;
+  text: string;
+  user: string;
+  callerInfo?: CallerInfo;
+  attachmentPaths?: string[];
+}
+
+/**
+ * `addIntervention`의 auto-resume 경로 콜백.
+ *
+ * Task가 completed/error/interrupted일 때 task_manager는 status를 "running"으로
+ * 돌리고 queue에 메시지를 push한 뒤 본 콜백을 호출한다. 콜백은 *task_executor.startExecution*을
+ * 호출하여 다음 turn을 시작할 책임. design-principles §1(지식 경계) — task_manager는
+ * executor를 알지 않는다.
+ */
+export type StartExecutionCallback = (task: Task) => void;
 
 export class TaskManager {
   private readonly tasks = new Map<string, Task>();
@@ -63,6 +95,7 @@ export class TaskManager {
       createdAt: now,
       lastEventId: 0,
       lastReadEventId: 0,
+      interventionQueue: [],
     };
 
     // DB 등록 — schema.sql session_register는 *INSERT only*, ON CONFLICT 없음.
@@ -192,5 +225,86 @@ export class TaskManager {
   setTaskStatus(sessionId: string, status: TaskStatus): void {
     const task = this.tasks.get(sessionId);
     if (task) task.status = status;
+  }
+
+  /**
+   * Turn 사이 개입 메시지 추가 (B-4, 분석 캐시
+   * `20260517-1410-codex-ts-folder-resume-intervene.md` §D-3).
+   *
+   * Python `service/task_manager.py:563-642 add_intervention` 정본의 codex 적응판.
+   *
+   * 분기:
+   *   - Running: interventionQueue에 push → intervention_sent broadcast → `{queued, queuePosition}`.
+   *     현 turn 종료 후 task_executor가 dequeue하여 다음 turn으로 자동 진입.
+   *   - Completed/Error/Interrupted: status를 "running"으로 돌리고 queue에 push +
+   *     intervention_sent broadcast + onResume 콜백 호출 → `{autoResumed}`. 콜백은 호출자가
+   *     task_executor.startExecution을 호출하도록 제공. design-principles §1(지식 경계) —
+   *     task_manager는 executor를 import하지 않는다.
+   *   - 미존재 task: `Error` throw — 호출자(dispatcher)가 sendError로 변환.
+   *
+   * 단일 process·단일 task Map이라 mutex 불요. broadcast 실패는 격리 (task 진행은 유지).
+   */
+  async addIntervention(
+    params: AddInterventionParams,
+    onResume: StartExecutionCallback,
+  ): Promise<AddInterventionResult> {
+    const task = this.tasks.get(params.agentSessionId);
+    if (!task) {
+      throw new Error(`Task not found: ${params.agentSessionId}`);
+    }
+
+    const message: InterventionMessage = {
+      text: params.text,
+      user: params.user,
+      callerInfo: params.callerInfo,
+      attachmentPaths: params.attachmentPaths,
+    };
+
+    // intervention_sent broadcast — Python 정본 패턴
+    // (`task_executor.py:352-389 on_intervention_sent`). 큐잉·resume 양쪽에서 발행.
+    try {
+      await this.broadcaster.emitInterventionSent(task.agentSessionId, message);
+    } catch (err) {
+      this.logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "intervention_sent broadcast failed",
+      );
+    }
+
+    if (task.status === "running") {
+      task.interventionQueue.push(message);
+      return { queued: true, queuePosition: task.interventionQueue.length };
+    }
+
+    // Completed/Error/Interrupted → 자동 resume.
+    //
+    // P1-1 race 보호 (code-reviewer): turn 종료 후 _finalize의 await 사이에 intervene이
+    // 도착할 수 있다. task.status는 "completed"로 박혀 있지만 `task.engine`은 _finalize
+    // 마지막 줄(`task.engine = undefined`)에 도달하기 전까지 살아있어, onResume → startExecution이
+    // L45 `if (task.engine) throw` 가드에 걸린다. executionPromise를 drain하여 finalize가
+    // 끝났음을 보장한 뒤 진행.
+    //
+    // Python `task_manager.py:438` "락 블록 바깥에서 실행" 주석이 같은 race를 락으로
+    // 차단하는 정본. TS는 task별 executionPromise drain으로 의미 등가 처리.
+    if (task.executionPromise) {
+      try {
+        await task.executionPromise;
+      } catch {
+        // executionPromise는 _consumeEventStream 정상 종료 시 resolve, throw 시 외부 catch에서
+        // 잡힌 후 resolve — 어느 경우든 finalize는 완료됨. ignore.
+      }
+    }
+
+    // 같은 task 인스턴스를 재활용하여 codexThreadId가 보존되도록 한다.
+    // status 전환 + queue push 후 onResume 콜백 — 콜백이 startExecution을 호출.
+    task.status = "running";
+    task.completedAt = undefined;
+    task.error = undefined;
+    task.result = undefined;
+    task.interventionQueue.push(message);
+
+    // engine 인스턴스는 finalize에서 close된 상태 (drain 완료 보장) — task_executor.startExecution이 새 engine 생성.
+    onResume(task);
+    return { autoResumed: true };
   }
 }

@@ -67,28 +67,84 @@ export class TaskExecutor {
     task.executionPromise = promise;
   }
 
+  /**
+   * Turn 시퀀스 drain (B-4 multi-turn). 분석 캐시
+   * `20260517-1410-codex-ts-folder-resume-intervene.md` §D-3 상태도.
+   *
+   * codex SDK는 turn-level steer를 지원하지 않으므로 *각 turn = 새 thread.runStreamed()*.
+   * 첫 turn은 task.prompt + startThread, 후속 turn은 dequeue된 intervention.text +
+   * resumeThread(task.codexThreadId).
+   *
+   * 게이트:
+   *   - generator 정상 종료 + status="running" + queue empty → status="completed" → loop 종료.
+   *   - generator 정상 종료 + status="running" + queue 비어있지 않음 → dequeue → 다음 turn.
+   *   - generator throw → status="error" → loop 종료.
+   *   - 외부에서 status="interrupted" 박힘 (cancelTask) → loop 종료.
+   *
+   * codex_adapter는 같은 인스턴스에서 연속 turn 호출 안전 (concurrent 가드는 turn 종료 시
+   * currentTurn=null로 reset, codex_adapter.ts:167-168).
+   */
   private async _consumeEventStream(
     task: Task,
     engine: EnginePort,
   ): Promise<void> {
+    let turnPrompt = task.prompt;
     try {
-      for await (const event of engine.execute({ prompt: task.prompt, model: task.model })) {
-        await this._processEvent(task, event);
-      }
-      // generator가 정상 종료 — 별도 error/interrupted 신호 없으면 completed
-      if (task.status === "running") {
-        task.status = "completed";
-      }
-    } catch (err) {
-      // engine.execute()가 throw — interrupted 가능 (AbortController)
-      const message = err instanceof Error ? err.message : String(err);
-      this.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        "engine.execute drain threw",
-      );
-      if (task.status === "running") {
-        task.status = "error";
-        task.error = message;
+      while (true) {
+        const resumeSessionId = task.codexThreadId;
+        try {
+          for await (const event of engine.execute({
+            prompt: turnPrompt,
+            model: task.model,
+            resumeSessionId,
+          })) {
+            await this._processEvent(task, event);
+          }
+        } catch (err) {
+          // engine.execute()가 throw — interrupted 가능 (AbortController)
+          const message = err instanceof Error ? err.message : String(err);
+          this.logger.warn(
+            { err, sessionId: task.agentSessionId },
+            "engine.execute drain threw",
+          );
+          if (task.status === "running") {
+            task.status = "error";
+            task.error = message;
+          }
+          // P1-3 (code-reviewer): turn이 throw로 끝났을 때 interventionQueue에 미처리
+          // 메시지가 있으면 *침묵 손실*. 사용자는 addIntervention 시 intervention_sent
+          // broadcast를 받아 "보냈다"고 인지했으나 실제로는 처리되지 않음. 명시 error
+          // 이벤트를 wire에 발행하여 클라이언트가 재전송 의도 결정할 수 있게 한다.
+          if (task.interventionQueue.length > 0) {
+            const skipped = task.interventionQueue.length;
+            task.interventionQueue = [];  // 재처리 방지
+            try {
+              await this.broadcaster.emitEventEnvelope(task.agentSessionId, {
+                type: "error",
+                message: `Turn failed; ${skipped} queued intervention(s) skipped`,
+                fatal: false,
+              } as SSEEventPayload);
+            } catch (e) {
+              this.logger.warn(
+                { err: e, sessionId: task.agentSessionId },
+                "queue-skipped error broadcast failed",
+              );
+            }
+          }
+          break;
+        }
+        // turn 정상 종료 — 외부에서 status가 interrupted 등으로 박혔으면 loop 종료
+        if (task.status !== "running") {
+          break;
+        }
+        // intervention queue 검사 — 비어있으면 completed, 있으면 다음 turn으로
+        const next = task.interventionQueue.shift();
+        if (!next) {
+          task.status = "completed";
+          break;
+        }
+        turnPrompt = next.text;
+        // (intervention_sent는 addIntervention에서 이미 broadcast됨 — 여기서 재발행 안 함.)
       }
     } finally {
       task.completedAt = new Date();

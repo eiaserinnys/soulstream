@@ -47,6 +47,7 @@ function makeTask(): Task {
     createdAt: new Date(),
     lastEventId: 0,
     lastReadEventId: 0,
+    interventionQueue: [],
   };
 }
 
@@ -331,5 +332,113 @@ describe("isTerminalStatus", () => {
   });
   it("running은 non-terminal", () => {
     expect(isTerminalStatus("running")).toBe(false);
+  });
+});
+
+describe("TaskExecutor multi-turn (B-4)", () => {
+  it("turn 종료 시 interventionQueue 비어있지 않으면 다음 turn 자동 시작 (resume)", async () => {
+    // turn 1: session(thr-1) + text_delta("a") + text_end + complete
+    // turn 종료 후 task.interventionQueue.push({text:"continue"}) — 외부 큐잉 시뮬레이션
+    // turn 2: text_delta("b") + text_end + complete
+    // 결과 status="completed", 두 turn 모두 drain
+    const mocks = makeMocks();
+    const turn1: SSEEventPayload[] = [
+      { type: "session", session_id: "thr-1" } as SSEEventPayload,
+      { type: "text_delta", text: "a", timestamp: 1 } as SSEEventPayload,
+      { type: "text_end", timestamp: 1 } as SSEEventPayload,
+      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
+    ];
+    const turn2: SSEEventPayload[] = [
+      { type: "text_delta", text: "b", timestamp: 2 } as SSEEventPayload,
+      { type: "text_end", timestamp: 2 } as SSEEventPayload,
+      { type: "complete", usage: {}, timestamp: 2 } as SSEEventPayload,
+    ];
+    let turnCount = 0;
+    const captured: { turn: number; resumeSessionId: string | undefined }[] = [];
+
+    const task = makeTask();
+    const engine: EnginePort = {
+      backendId: "codex",
+      workspaceDir: "/tmp/codex-default",
+      // eslint-disable-next-line require-yield
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        captured.push({
+          turn: turnCount,
+          resumeSessionId: params?.resumeSessionId,
+        });
+        const events = turnCount === 0 ? turn1 : turn2;
+        turnCount += 1;
+        // turn 1 첫 이벤트(session) 처리 후 외부에서 큐 push를 시뮬레이션:
+        // turn 1 drain이 끝나기 전에 마지막 이벤트 직후 push (concurrent 시뮬레이션 어렵지만,
+        // 본 테스트는 *turn 종료 시 queue 확인* 흐름이 정합인지 보는 것이라 yield 이전 push로 등가).
+        if (turnCount === 1) {
+          // turn 1 끝나기 전에 queue에 push (외부 intervene이 들어왔다고 가정)
+          task.interventionQueue.push({ text: "continue", user: "u" });
+        }
+        for (const ev of events) {
+          yield ev;
+        }
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const factory = vi.fn(() => engine);
+    const executor = new TaskExecutor(factory, mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
+
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    expect(turnCount).toBe(2);
+    expect(captured[0].resumeSessionId).toBeUndefined();
+    // 두 번째 turn은 첫 turn에서 박힌 codexThreadId로 resume
+    expect(captured[1].resumeSessionId).toBe("thr-1");
+    expect(task.status).toBe("completed");
+    expect(task.interventionQueue).toHaveLength(0);
+  });
+
+  it("P1-3: turn throw 시 interventionQueue 미처리 메시지가 있으면 wire error 이벤트 발행 + queue 정리", async () => {
+    // 사용자가 인터벤션을 보냈는데(intervention_sent broadcast 수신) 그 직후 turn이 throw하면
+    // 메시지가 silent로 사라진다. 사용자에게 명시 error 이벤트로 통지하여 재전송 결정 가능하게 한다.
+    const mocks = makeMocks();
+    const task = makeTask();
+    task.interventionQueue.push({ text: "pending", user: "u" });
+
+    const engine: EnginePort = {
+      backendId: "codex",
+      workspaceDir: "/tmp/codex-default",
+      // eslint-disable-next-line require-yield
+      async *execute(): AsyncIterable<SSEEventPayload> {
+        throw new Error("engine boom");
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(() => engine, mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    expect(task.status).toBe("error");
+    expect(task.interventionQueue).toHaveLength(0);  // 재처리 방지로 비움
+    // 사용자 통지를 위한 wire error 이벤트가 broadcast됨
+    const errorBroadcast = mocks.emitEventEnvelope.mock.calls.find(
+      (c) => (c[1] as { type: string }).type === "error" && /skipped/.test((c[1] as { message: string }).message),
+    );
+    expect(errorBroadcast).toBeDefined();
+  });
+
+  it("turn 종료 시 interventionQueue 비어있으면 status=completed로 종료 (단일 turn 회귀)", async () => {
+    const mocks = makeMocks();
+    const events: SSEEventPayload[] = [
+      { type: "session", session_id: "thr-x" } as SSEEventPayload,
+      { type: "text_end", timestamp: 1 } as SSEEventPayload,
+      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
+    ];
+    const factory = vi.fn(() => makeFakeEngine(events));
+    const executor = new TaskExecutor(factory, mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
+    const task = makeTask();
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+    expect(task.status).toBe("completed");
+    expect(factory).toHaveBeenCalledTimes(1);
   });
 });

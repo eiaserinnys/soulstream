@@ -1,5 +1,5 @@
 /**
- * Task 모델 — Codex 전담 흐름 최소 필드 (Phase B-3).
+ * Task 모델 — Codex 전담 흐름 (Phase B-3 기본 + B-4 resume/intervention).
  *
  * Python `service/task_models.py::Task` 정본을 *참조*하되 *코드 복사 아님*
  * (4차 캐시 §7.3 시그니처 동등 의무 없음, atom d7a1ad86 정본 둘 안티패턴 회피).
@@ -7,16 +7,30 @@
  * 본 PR에서 *사용*하지 않는 Python 필드는 의도적 미포함:
  *   - claude 전용 (allowed_tools/disallowed_tools 런타임 사본, use_mcp, oauth_token, system_prompt)
  *   - LLM proxy (llm_provider, llm_model, llm_usage)
- *   - intervention_queue / _deliver_input_response (intervene 미구현)
- *   - pending_folder_id (folder 배정은 B-3 범위 외)
+ *   - _deliver_input_response (AskUserQuestion 미구현)
+ *   - pending_folder_id (folder 배정은 B-4 후속 PR-B 범위)
  *
- * 후속 카드에서 필드 추가 시 본 interface에 *명시* 추가 (snake_case Python 키는 TS에서 camelCase).
+ * B-4 추가 필드 (분석 캐시 `20260517-1410-codex-ts-folder-resume-intervene.md` §D):
+ *   - interventionQueue: turn 사이 큐잉되는 사용자 메시지. claude
+ *     `task_models.py` intervention_queue(asyncio.Queue) 정본과 의미 동등.
+ *     codex SDK는 turn-level steer 미지원이라 turn 종료 후 dequeue → 다음 turn으로 처리.
  */
 
 import type { EnginePort } from "../engine/protocol.js";
 
 /** task lifecycle 상태. Python `TaskStatus` enum과 값 일치 (DB sessions.status 컬럼 정본). */
 export type TaskStatus = "running" | "completed" | "error" | "interrupted";
+
+/**
+ * 사용자가 turn 사이에 보내는 개입 메시지. claude `task_manager.py:603-608`의 message dict와
+ * *키 동등* (wire payload에 그대로 운반 가능).
+ */
+export interface InterventionMessage {
+  text: string;
+  user: string;
+  callerInfo?: CallerInfo;
+  attachmentPaths?: string[];
+}
 
 /**
  * 발신자 정보. atom card `ed3a216d-2811-4792-bfbe-f15043c7faba` (caller_info 통합 스키마 v1) 정본.
@@ -93,4 +107,14 @@ export interface Task {
 
   /** task_executor.startExecution 반환 promise. shutdown 시 await. */
   executionPromise?: Promise<void>;
+
+  /**
+   * Turn 사이 큐잉되는 개입 메시지 (B-4, claude `task_manager.py:603-609`의 asyncio.Queue
+   * 정본과 의미 동등). codex SDK는 turn-level steer 미지원이라 turn 종료 후 dequeue → 다음
+   * turn으로 자동 진입. Running 중 push되면 즉시 intervention_sent 발행(다른 클라이언트
+   * 진행 인지) + 현재 turn 자연 종료 후 다음 turn에 prompt로 주입.
+   *
+   * 단일 process·단일 task_manager Map이라 별도 mutex 불요 — async await 경계만 정합.
+   */
+  interventionQueue: InterventionMessage[];
 }
