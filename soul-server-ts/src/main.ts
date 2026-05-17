@@ -10,6 +10,7 @@ import { createLogger } from "./logger.js";
 import { buildServer, startServer } from "./server.js";
 import { TaskExecutor, type EngineFactory } from "./task/task_executor.js";
 import { TaskManager } from "./task/task_manager.js";
+import { ExecutionContextBuilder } from "./context/context_builder.js";
 import { UpstreamAdapter } from "./upstream/adapter.js";
 import { SessionBroadcaster } from "./upstream/session_broadcaster.js";
 
@@ -136,12 +137,28 @@ async function main(): Promise<void> {
       `Unsupported backend "${agent.backend}" in soul-server-ts (Codex 전담 노드, agent=${agent.id})`,
     );
   };
+  // B-6 context_builder: 신규 task 첫 turn 진입 시 folder_prompt + atom_context + soulstream_item을
+  // 합성한 prompt를 codex에 전달. atom env 미설정이면 atom 호출 skip (graceful).
+  const contextBuilder = new ExecutionContextBuilder(
+    db,
+    agentRegistry,
+    {
+      nodeId: env.SOULSTREAM_NODE_ID,
+      atom: {
+        enabled: Boolean(env.ATOM_ENABLED),
+        serverUrl: env.ATOM_SERVER_URL ?? "",
+        apiKey: env.ATOM_API_KEY ?? "",
+      },
+    },
+    logger,
+  );
   const taskExecutor = new TaskExecutor(
     engineFactory,
     db,
     persistence,
     broadcaster,
     logger,
+    contextBuilder,
   );
 
   // WS reverse adapter — orch에 등록

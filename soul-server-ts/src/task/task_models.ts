@@ -85,6 +85,15 @@ export interface Task {
   /** 모델 override (Codex SDK ThreadOptions.model). */
   model?: string;
 
+  /**
+   * B-6 context_builder: 사용자/위임자가 지정한 system_prompt. Python `task_models.Task.system_prompt`
+   * 정합. context_builder가 folder_prompt와 조합하여 codex 첫 turn prompt에 prepend.
+   *
+   * codex SDK 0.130.0은 turn-level systemPrompt 미지원이라 prompt 문자열 prepend로 처리
+   * (분석 캐시 `20260517-2338-codex-ts-context-builder-B-6.md` §B).
+   */
+  systemPrompt?: string;
+
   createdAt: Date;
   completedAt?: Date;
 

@@ -45,6 +45,16 @@ export const EnvSchema = z
      * dotenv 로딩과 같은 cwd 협약. 운영에서 변경 시 절대 경로 설정.
      */
     AGENTS_CONFIG_PATH: z.string().default("config/agents.yaml"),
+    /**
+     * B-6 context_builder: atom MCP HTTP API 설정. Python `soul_server.config.atom_*` 정합.
+     * 모두 optional — 미설정 시 atom 호출 skip (graceful, turn 진행에 영향 없음).
+     */
+    ATOM_ENABLED: z
+      .union([z.literal("true"), z.literal("false")])
+      .transform((v) => v === "true")
+      .optional(),
+    ATOM_SERVER_URL: z.string().optional(),
+    ATOM_API_KEY: z.string().optional(),
   })
   .superRefine((env, ctx) => {
     // production에서는 AUTH_BEARER_TOKEN 강제. design-principles §4.

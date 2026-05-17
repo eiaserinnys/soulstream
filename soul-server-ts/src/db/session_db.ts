@@ -291,6 +291,35 @@ export class SessionDB {
   }
 
   /**
+   * folder_id로 단일 폴더 조회 (B-6 context_builder가 folder.settings.folderPrompt /
+   * atomContextNode 추출에 사용).
+   *
+   * Python `PostgresSessionDB.get_folder` 정본
+   * (`packages/soul-common/.../db/postgres/folders.py` get_folder). 본 PR은 schema에
+   * `folder_get_by_id` stored proc이 없어 folders 테이블 직접 SELECT로 처리.
+   *
+   * 부재 시 null. settings 컬럼은 jsonb라 postgres.js가 자동 parse — Record로 반환.
+   */
+  async getFolderById(
+    folderId: string,
+  ): Promise<{ id: string; name: string; sort_order: number; settings: Record<string, unknown> } | null> {
+    const rows = await this.sql<
+      { id: string; name: string; sort_order: number; settings: unknown }[]
+    >`SELECT id, name, sort_order, settings FROM folders WHERE id = ${folderId}`;
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      id: row.id,
+      name: row.name,
+      sort_order: row.sort_order,
+      settings:
+        row.settings && typeof row.settings === "object"
+          ? (row.settings as Record<string, unknown>)
+          : {},
+    };
+  }
+
+  /**
    * 전체 카탈로그(폴더 + 세션) 조회 (Python `db.get_catalog` 정본,
    * `packages/soul-common/.../db/postgres/folders.py:128-150`).
    *

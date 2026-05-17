@@ -20,6 +20,10 @@ import type { EnginePort, SSEEventPayload } from "../engine/protocol.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
+import {
+  composeFirstTurnPrompt,
+  type ExecutionContextBuilder,
+} from "../context/context_builder.js";
 
 import type { Task, TaskStatus } from "./task_models.js";
 
@@ -33,6 +37,11 @@ export class TaskExecutor {
     private readonly persistence: EventPersistence,
     private readonly broadcaster: SessionBroadcaster,
     private readonly logger: Logger,
+    /**
+     * B-6 context_builder DI. undefined일 때 본 PR 이전 동작(task.prompt 직접 사용) 유지 —
+     * legacy 호출자·테스트 환경 호환. 운영 흐름(main.ts)에서는 항상 주입.
+     */
+    private readonly contextBuilder?: ExecutionContextBuilder,
   ) {}
 
   /**
@@ -50,7 +59,7 @@ export class TaskExecutor {
     const engine = this.engineFactory(agent);
     task.engine = engine;
 
-    const promise = this._consumeEventStream(task, engine).catch(
+    const promise = this._consumeEventStream(task, engine, agent).catch(
       async (err: unknown) => {
         // _consumeEventStream 내부 try/catch가 못 잡는 외부 throw용 안전망.
         const message = err instanceof Error ? err.message : String(err);
@@ -87,6 +96,7 @@ export class TaskExecutor {
   private async _consumeEventStream(
     task: Task,
     engine: EnginePort,
+    agent: AgentProfile,
   ): Promise<void> {
     // B-5 진입 분기: auto-resume 흐름과 신규 task 흐름 구분.
     //
@@ -107,7 +117,30 @@ export class TaskExecutor {
       // 신규 task — Python `_persist_initial_messages`(L120-182) 의 user_message 분기 정합.
       // 영속화 실패는 격리 — 본 task 진행에 영향 0 (Python L179-180 try/except 정합).
       await this._persistInitialUserMessage(task);
-      turnPrompt = task.prompt;
+
+      // B-6 context_builder: folder_prompt + atom_context + soulstream_item을 첫 turn prompt에
+      // 합성. codex SDK 0.130.0이 turn-level systemPrompt 미지원이라 단일 문자열로 prepend.
+      // contextBuilder 미주입(legacy 호출자·테스트)이면 task.prompt 그대로 사용 (분석 캐시
+      // `20260517-2338-codex-ts-context-builder-B-6.md` §C-5).
+      // Auto-resume·intervention turn은 본 분기에 진입하지 않으므로 system_prompt·atom_context
+      // 재주입 안 함 (Python `_resolve_folder` L100 `task.resume_session_id is None` 정합).
+      if (this.contextBuilder) {
+        try {
+          const ctx = await this.contextBuilder.build(task, agent);
+          turnPrompt = composeFirstTurnPrompt({
+            ...ctx,
+            assembledPrompt: task.prompt,
+          });
+        } catch (err) {
+          this.logger.warn(
+            { err, sessionId: task.agentSessionId },
+            "context_builder failed — falling back to task.prompt without context",
+          );
+          turnPrompt = task.prompt;
+        }
+      } else {
+        turnPrompt = task.prompt;
+      }
     } else {
       // Auto-resume — user_message는 addIntervention 분기가 이미 영속화. 첫 turn은 dequeue.
       turnPrompt = task.interventionQueue.shift()!.text;

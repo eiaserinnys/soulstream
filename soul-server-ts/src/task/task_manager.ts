@@ -32,6 +32,8 @@ export interface CreateTaskParams {
   callerInfo?: CallerInfo;
   model?: string;
   folderId?: string | null;
+  /** B-6 context_builder: 사용자/위임자 system_prompt. folder_prompt와 합성됨. */
+  systemPrompt?: string;
 }
 
 /**
@@ -100,6 +102,7 @@ export class TaskManager {
       callerSessionId: params.callerSessionId ?? undefined,
       callerInfo: params.callerInfo,
       model: params.model,
+      systemPrompt: params.systemPrompt,  // B-6 context_builder
       createdAt: now,
       lastEventId: 0,
       lastReadEventId: 0,

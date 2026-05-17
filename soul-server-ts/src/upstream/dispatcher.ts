@@ -22,6 +22,11 @@ interface CreateSessionCmd extends CommandLike {
   caller_info?: CallerInfo;
   model?: string;
   folderId?: string | null;
+  /**
+   * B-6 context_builder: 사용자/위임자가 지정한 system_prompt (Python `command_handler.py`
+   * `_handle_create_session`이 `cmd.get("systemPrompt")` 그대로 forward 정합).
+   */
+  systemPrompt?: string;
 }
 
 interface IntervenCmd extends CommandLike {
@@ -131,6 +136,7 @@ export class CommandDispatcher {
       callerInfo: cmd.caller_info,
       model: cmd.model,
       folderId: cmd.folderId ?? null,
+      systemPrompt: cmd.systemPrompt,  // B-6 context_builder가 folder_prompt와 합성
     });
 
     this.taskExecutor.startExecution(task, agent);
