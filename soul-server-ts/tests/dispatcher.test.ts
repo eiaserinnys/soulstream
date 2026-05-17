@@ -224,7 +224,8 @@ describe("CommandDispatcher.intervene (B-4)", () => {
     expect(sent[0]).toMatchObject({
       type: "intervene_ack",
       requestId: "i1",
-      status: "queued",
+      status: "ok",
+      outcome: "queued",
       queuePosition: 2,
     });
   });
@@ -267,7 +268,8 @@ describe("CommandDispatcher.intervene (B-4)", () => {
     expect(sent[0]).toMatchObject({
       type: "intervene_ack",
       requestId: "i2",
-      status: "auto_resumed",
+      status: "ok",
+      outcome: "auto_resumed",
       agentSessionId: "sess-2",
     });
   });

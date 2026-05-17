@@ -111,6 +111,26 @@ export class TaskExecutor {
             task.status = "error";
             task.error = message;
           }
+          // P1-3 (code-reviewer): turn이 throw로 끝났을 때 interventionQueue에 미처리
+          // 메시지가 있으면 *침묵 손실*. 사용자는 addIntervention 시 intervention_sent
+          // broadcast를 받아 "보냈다"고 인지했으나 실제로는 처리되지 않음. 명시 error
+          // 이벤트를 wire에 발행하여 클라이언트가 재전송 의도 결정할 수 있게 한다.
+          if (task.interventionQueue.length > 0) {
+            const skipped = task.interventionQueue.length;
+            task.interventionQueue = [];  // 재처리 방지
+            try {
+              await this.broadcaster.emitEventEnvelope(task.agentSessionId, {
+                type: "error",
+                message: `Turn failed; ${skipped} queued intervention(s) skipped`,
+                fatal: false,
+              } as SSEEventPayload);
+            } catch (e) {
+              this.logger.warn(
+                { err: e, sessionId: task.agentSessionId },
+                "queue-skipped error broadcast failed",
+              );
+            }
+          }
           break;
         }
         // turn 정상 종료 — 외부에서 status가 interrupted 등으로 박혔으면 loop 종료

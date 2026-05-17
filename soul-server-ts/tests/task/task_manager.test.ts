@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { EnginePort } from "../../src/engine/protocol.js";
 import { TaskManager } from "../../src/task/task_manager.js";
+import type { Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 
 const silentLogger = pino({ level: "silent" });
@@ -295,6 +296,41 @@ describe("TaskManager.addIntervention (B-4)", () => {
       tm.addIntervention({ agentSessionId: "missing", text: "x", user: "u" }, onResume),
     ).rejects.toThrow("Task not found: missing");
     expect(onResume).not.toHaveBeenCalled();
+  });
+
+  it("P1-1 race 보호: completed task의 executionPromise가 살아있으면 await 후 진행 (startExecution throw 차단)", async () => {
+    const { db, broadcaster } = makeMocks();
+    const tm = new TaskManager("n", db, broadcaster, silentLogger);
+    const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
+    task.status = "completed";
+
+    // _finalize 미완료 상태를 시뮬레이션 — executionPromise는 살아있고 engine도 살아있음.
+    let resolveFinalize: () => void = () => undefined;
+    const finalizePromise = new Promise<void>((r) => { resolveFinalize = r; });
+    task.executionPromise = finalizePromise;
+    const engineCloseSpy = vi.fn().mockResolvedValue(undefined);
+    task.engine = { interrupt: async () => true, close: engineCloseSpy } as unknown as EnginePort;
+
+    const onResumeCalled: Task[] = [];
+    const onResume = (t: Task) => onResumeCalled.push(t);
+
+    // addIntervention을 트리거하지만 await — finalize가 아직 끝나지 않아 await 멈춤.
+    const addPromise = tm.addIntervention(
+      { agentSessionId: "s1", text: "x", user: "u" },
+      onResume,
+    );
+
+    // 잠시 후 finalize가 끝났다고 신호 + task.engine 정리(시뮬레이션)
+    setTimeout(() => {
+      task.engine = undefined;
+      resolveFinalize();
+    }, 5);
+
+    const result = await addPromise;
+    expect(result).toEqual({ autoResumed: true });
+    expect(onResumeCalled).toHaveLength(1);
+    // onResume이 호출된 시점에는 task.engine이 undefined여야 startExecution이 throw하지 않음.
+    expect(task.engine).toBeUndefined();
   });
 
   it("intervention_sent broadcast 실패 시 격리 (task 진행 유지) — running 경로", async () => {

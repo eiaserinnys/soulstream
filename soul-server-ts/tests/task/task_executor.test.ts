@@ -396,6 +396,36 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     expect(task.interventionQueue).toHaveLength(0);
   });
 
+  it("P1-3: turn throw 시 interventionQueue 미처리 메시지가 있으면 wire error 이벤트 발행 + queue 정리", async () => {
+    // 사용자가 인터벤션을 보냈는데(intervention_sent broadcast 수신) 그 직후 turn이 throw하면
+    // 메시지가 silent로 사라진다. 사용자에게 명시 error 이벤트로 통지하여 재전송 결정 가능하게 한다.
+    const mocks = makeMocks();
+    const task = makeTask();
+    task.interventionQueue.push({ text: "pending", user: "u" });
+
+    const engine: EnginePort = {
+      backendId: "codex",
+      workspaceDir: "/tmp/codex-default",
+      // eslint-disable-next-line require-yield
+      async *execute(): AsyncIterable<SSEEventPayload> {
+        throw new Error("engine boom");
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(() => engine, mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    expect(task.status).toBe("error");
+    expect(task.interventionQueue).toHaveLength(0);  // 재처리 방지로 비움
+    // 사용자 통지를 위한 wire error 이벤트가 broadcast됨
+    const errorBroadcast = mocks.emitEventEnvelope.mock.calls.find(
+      (c) => (c[1] as { type: string }).type === "error" && /skipped/.test((c[1] as { message: string }).message),
+    );
+    expect(errorBroadcast).toBeDefined();
+  });
+
   it("turn 종료 시 interventionQueue 비어있으면 status=completed로 종료 (단일 turn 회귀)", async () => {
     const mocks = makeMocks();
     const events: SSEEventPayload[] = [

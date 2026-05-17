@@ -3,7 +3,7 @@ import type { Logger } from "pino";
 import type { AgentRegistry } from "../agent_registry.js";
 import type { TaskExecutor } from "../task/task_executor.js";
 import type { TaskManager } from "../task/task_manager.js";
-import type { CallerInfo } from "../task/task_models.js";
+import type { CallerInfo, Task } from "../task/task_models.js";
 
 export type SendFn = (data: unknown) => Promise<void>;
 
@@ -171,7 +171,7 @@ export class CommandDispatcher {
       return;
     }
 
-    const onResume = (task: import("../task/task_models.js").Task) => {
+    const onResume = (task: Task) => {
       if (!task.profileId) {
         this.logger.error(
           { sessionId: task.agentSessionId },
@@ -212,18 +212,25 @@ export class CommandDispatcher {
       // ACK 발행 안 함 (atom c13f7826 빈 string ACK 금지) — orch _send_command 미사용 경로.
       return;
     }
+    // wire 정본은 Python `command_handler.py:244-248` — `status:"ok"`로 통일. orch는
+    // requestId만으로 future를 resolve(`node_connection.py:397-405`)하여 status 값 분기 없음 —
+    // 따라서 status 값을 통일해도 동작 영향 0이지만 design-principles §9 일관성·대칭성 정합.
+    // 부가 정보(queuePosition · agentSessionId)는 그대로 운반 — 향후 orch가 ACK 본문을
+    // 활용하면 즉시 사용 가능.
     if ("queued" in result) {
       await this.send({
         type: "intervene_ack",
         requestId,
-        status: "queued",
+        status: "ok",
+        outcome: "queued",
         queuePosition: result.queuePosition,
       });
     } else {
       await this.send({
         type: "intervene_ack",
         requestId,
-        status: "auto_resumed",
+        status: "ok",
+        outcome: "auto_resumed",
         agentSessionId: sessionId,
       });
     }

@@ -1,14 +1,16 @@
 /**
- * TaskManager — 세션 task 컬렉션 관리 (Phase B-3).
+ * TaskManager — 세션 task 컬렉션 관리 (Phase B-3 기본 + B-4 intervention).
  *
- * Python `service/task_manager.py`의 *최소* 등가. Codex 단일턴 모델 — Python의
- * intervention_queue, multi-turn, session_eviction은 본 PR 범위 외.
+ * Python `service/task_manager.py`의 *codex 적응판*. session_eviction은 본 PR 범위 외
+ * (codex MVP).
  *
  * 책임:
  *   - createTask: Task 생성 + DB `session_register` + broadcast `session_created`
  *   - getTask / listTasks
  *   - cancelTask: 진행 중 turn abort
  *   - deleteTask: 메모리 + DB + broadcast `session_deleted`
+ *   - addIntervention (B-4): turn 사이 큐잉 또는 auto-resume — 분석 캐시
+ *     `20260517-1410-codex-ts-folder-resume-intervene.md` §D
  *
  * 본 PR은 *task lifecycle 메타 관리*만. 실제 *engine 실행*은 TaskExecutor 책임.
  */
@@ -275,6 +277,24 @@ export class TaskManager {
     }
 
     // Completed/Error/Interrupted → 자동 resume.
+    //
+    // P1-1 race 보호 (code-reviewer): turn 종료 후 _finalize의 await 사이에 intervene이
+    // 도착할 수 있다. task.status는 "completed"로 박혀 있지만 `task.engine`은 _finalize
+    // 마지막 줄(`task.engine = undefined`)에 도달하기 전까지 살아있어, onResume → startExecution이
+    // L45 `if (task.engine) throw` 가드에 걸린다. executionPromise를 drain하여 finalize가
+    // 끝났음을 보장한 뒤 진행.
+    //
+    // Python `task_manager.py:438` "락 블록 바깥에서 실행" 주석이 같은 race를 락으로
+    // 차단하는 정본. TS는 task별 executionPromise drain으로 의미 등가 처리.
+    if (task.executionPromise) {
+      try {
+        await task.executionPromise;
+      } catch {
+        // executionPromise는 _consumeEventStream 정상 종료 시 resolve, throw 시 외부 catch에서
+        // 잡힌 후 resolve — 어느 경우든 finalize는 완료됨. ignore.
+      }
+    }
+
     // 같은 task 인스턴스를 재활용하여 codexThreadId가 보존되도록 한다.
     // status 전환 + queue push 후 onResume 콜백 — 콜백이 startExecution을 호출.
     task.status = "running";
@@ -283,7 +303,7 @@ export class TaskManager {
     task.result = undefined;
     task.interventionQueue.push(message);
 
-    // engine 인스턴스는 finalize에서 close된 상태 — task_executor.startExecution이 새 engine 생성.
+    // engine 인스턴스는 finalize에서 close된 상태 (drain 완료 보장) — task_executor.startExecution이 새 engine 생성.
     onResume(task);
     return { autoResumed: true };
   }
