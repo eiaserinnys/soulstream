@@ -12,18 +12,46 @@ const silentLogger = pino({ level: "silent" });
 function makeMocks() {
   const registerSession = vi.fn().mockResolvedValue(undefined);
   const deleteSession = vi.fn().mockResolvedValue(undefined);
-  const db = { registerSession, deleteSession } as unknown as SessionDB;
+  // B-5: 폴더 배정 정본 흐름 mocks (Python `_assign_default_folder_and_broadcast` 정합).
+  const assignSessionToFolder = vi.fn().mockResolvedValue(undefined);
+  const getDefaultFolder = vi
+    .fn()
+    .mockResolvedValue({ id: "default-claude", name: "⚙️ 클로드 코드 세션" });
+  const getCatalog = vi
+    .fn()
+    .mockResolvedValue({ folders: [], sessions: {} });
+  const db = {
+    registerSession,
+    deleteSession,
+    assignSessionToFolder,
+    getDefaultFolder,
+    getCatalog,
+  } as unknown as SessionDB;
 
   const emitSessionCreated = vi.fn().mockResolvedValue(undefined);
   const emitSessionDeleted = vi.fn().mockResolvedValue(undefined);
   const emitInterventionSent = vi.fn().mockResolvedValue(undefined);
+  const emitCatalogUpdated = vi.fn().mockResolvedValue(undefined);
   const broadcaster = {
     emitSessionCreated,
     emitSessionDeleted,
     emitInterventionSent,
+    emitCatalogUpdated,
   } as unknown as SessionBroadcaster;
 
-  return { db, broadcaster, registerSession, deleteSession, emitSessionCreated, emitSessionDeleted, emitInterventionSent };
+  return {
+    db,
+    broadcaster,
+    registerSession,
+    deleteSession,
+    assignSessionToFolder,
+    getDefaultFolder,
+    getCatalog,
+    emitSessionCreated,
+    emitSessionDeleted,
+    emitInterventionSent,
+    emitCatalogUpdated,
+  };
 }
 
 describe("TaskManager.createTask", () => {
@@ -52,7 +80,8 @@ describe("TaskManager.createTask", () => {
     expect(regArg.status).toBe("running");
 
     expect(emitSessionCreated).toHaveBeenCalledTimes(1);
-    expect(emitSessionCreated.mock.calls[0][1]).toBeNull();  // folderId
+    // 폴더 명시 없으면 default-claude로 자동 배정 (Python _assign_default_folder_and_broadcast 정합)
+    expect(emitSessionCreated.mock.calls[0][1]).toBe("default-claude");
   });
 
   it("중복 agentSessionId → throw, DB·broadcast 호출 안 함", async () => {
@@ -347,3 +376,97 @@ describe("TaskManager.addIntervention (B-4)", () => {
     expect(task.interventionQueue).toHaveLength(1);  // broadcast 실패에도 queue는 살아있음
   });
 });
+
+// B-5: 세션-폴더 배정 정본 (Python `_assign_default_folder_and_broadcast` 정합)
+describe("TaskManager.createTask — 폴더 배정 + catalog broadcast", () => {
+  it("folderId 명시 → assignSessionToFolder(folderId) + emitSessionCreated(task, folderId)", async () => {
+    const { db, broadcaster, assignSessionToFolder, getDefaultFolder, emitSessionCreated, emitCatalogUpdated } = makeMocks();
+    const tm = new TaskManager("n", db, broadcaster, silentLogger);
+    await tm.createTask({
+      agentSessionId: "s1",
+      prompt: "x",
+      profileId: "codex-default",
+      folderId: "folder-explicit",
+    });
+    expect(assignSessionToFolder).toHaveBeenCalledWith("s1", "folder-explicit");
+    expect(getDefaultFolder).not.toHaveBeenCalled();  // 명시 folder가 있으면 default lookup 안 함
+    expect(emitSessionCreated.mock.calls[0][1]).toBe("folder-explicit");
+    expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
+  });
+
+  it("folderId 미지정 → DEFAULT_FOLDERS['claude'] lookup + assign + emit", async () => {
+    const { db, broadcaster, assignSessionToFolder, getDefaultFolder, emitSessionCreated, emitCatalogUpdated } = makeMocks();
+    const tm = new TaskManager("n", db, broadcaster, silentLogger);
+    await tm.createTask({
+      agentSessionId: "s2",
+      prompt: "x",
+      profileId: "codex-default",
+    });
+    expect(getDefaultFolder).toHaveBeenCalledWith("⚙️ 클로드 코드 세션");
+    expect(assignSessionToFolder).toHaveBeenCalledWith("s2", "default-claude");
+    expect(emitSessionCreated.mock.calls[0][1]).toBe("default-claude");
+    expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
+  });
+
+  it("folderId 미지정 + 기본 폴더 없음 → 폴더 배정·broadcast 안 함 (graceful, Python L306-307)", async () => {
+    const { db, broadcaster, assignSessionToFolder, emitSessionCreated, emitCatalogUpdated, getDefaultFolder } = makeMocks();
+    getDefaultFolder.mockResolvedValueOnce(null);
+    const tm = new TaskManager("n", db, broadcaster, silentLogger);
+    await tm.createTask({
+      agentSessionId: "s3",
+      prompt: "x",
+      profileId: "codex-default",
+    });
+    expect(assignSessionToFolder).not.toHaveBeenCalled();
+    expect(emitSessionCreated.mock.calls[0][1]).toBeNull();
+    expect(emitCatalogUpdated).not.toHaveBeenCalled();  // 폴더 배정 안 됐으면 broadcast 안 함 (Python L311 gate)
+  });
+
+  it("assignSessionToFolder throw → 격리, task 생성은 성공 (부가 기능 실패 분리)", async () => {
+    const { db, broadcaster, assignSessionToFolder, emitSessionCreated, emitCatalogUpdated } = makeMocks();
+    assignSessionToFolder.mockRejectedValueOnce(new Error("db down"));
+    const tm = new TaskManager("n", db, broadcaster, silentLogger);
+    const task = await tm.createTask({
+      agentSessionId: "s4",
+      prompt: "x",
+      profileId: "codex-default",
+      folderId: "f-x",
+    });
+    expect(task.agentSessionId).toBe("s4");  // task 생성 성공
+    // 폴더 배정 실패 → emit에 null 전달, catalog broadcast 안 함
+    expect(emitSessionCreated.mock.calls[0][1]).toBeNull();
+    expect(emitCatalogUpdated).not.toHaveBeenCalled();
+  });
+
+  it("getCatalog throw → 격리 (Python L317-321 정합), task·session_created 정상 진행", async () => {
+    const { db, broadcaster, getCatalog, emitSessionCreated, emitCatalogUpdated } = makeMocks();
+    getCatalog.mockRejectedValueOnce(new Error("catalog query down"));
+    const tm = new TaskManager("n", db, broadcaster, silentLogger);
+    const task = await tm.createTask({
+      agentSessionId: "s5",
+      prompt: "x",
+      profileId: "codex-default",
+      folderId: "f-y",
+    });
+    expect(task.agentSessionId).toBe("s5");
+    expect(emitSessionCreated.mock.calls[0][1]).toBe("f-y");  // 폴더 배정은 성공 (assign은 throw 안 함)
+    expect(emitCatalogUpdated).not.toHaveBeenCalled();  // catalog 실패는 broadcast 차단
+  });
+
+  it("emitCatalogUpdated가 emitSessionCreated *이전*에 호출됨 (Python L304 순서 보장)", async () => {
+    const { db, broadcaster, emitSessionCreated, emitCatalogUpdated } = makeMocks();
+    const tm = new TaskManager("n", db, broadcaster, silentLogger);
+    await tm.createTask({
+      agentSessionId: "s6",
+      prompt: "x",
+      profileId: "codex-default",
+      folderId: "f",
+    });
+    // mock 호출 순서 검증
+    const catalogOrder = emitCatalogUpdated.mock.invocationCallOrder[0];
+    const createdOrder = emitSessionCreated.mock.invocationCallOrder[0];
+    expect(catalogOrder).toBeLessThan(createdOrder);
+  });
+});
+
+// B-5: session_broadcaster.emitCatalogUpdated wire 형상 회귀는 session_broadcaster.test.ts에서 보호.

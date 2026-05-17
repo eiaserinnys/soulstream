@@ -114,6 +114,20 @@ export class SessionBroadcaster {
   }
 
   /**
+   * Catalog 갱신 wire (Python `task_manager.py:312-316` 정본):
+   *   {type: "catalog_updated", catalog: {folders, sessions}}
+   *
+   * 새 세션이 폴더에 배정된 직후 호출하여 dashboard 폴더 트리·세션 목록이 즉시 갱신되게 한다.
+   * orch가 catalog_updated wire를 받아 dashboard SSE에 forward.
+   */
+  async emitCatalogUpdated(catalog: unknown): Promise<void> {
+    await this.send({
+      type: "catalog_updated",
+      catalog,
+    });
+  }
+
+  /**
    * SSE 이벤트 envelope wire. Python `event_relay.py` L175-179 정본:
    *   {type: "event", agentSessionId, event: SSEEventPayload}
    *
