@@ -266,3 +266,19 @@ describe("SessionBroadcaster.emitInterventionSent (B-4)", () => {
     expect(event.attachments).toEqual(["/tmp/a.png", "/tmp/b.png"]);
   });
 });
+
+describe("SessionBroadcaster.emitCatalogUpdated (B-5)", () => {
+  it("catalog_updated wire envelope 정합 (Python `task_manager.py:312-316` 정본)", async () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    const b = new SessionBroadcaster(send, makeRegistry(), "node-A");
+    const catalog = {
+      folders: [{ id: "f1", name: "F1", sortOrder: 0, settings: {} }],
+      sessions: { "s1": { folderId: "f1", displayName: null } },
+    };
+    await b.emitCatalogUpdated(catalog);
+    expect(send).toHaveBeenCalledWith({
+      type: "catalog_updated",
+      catalog,
+    });
+  });
+});

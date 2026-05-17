@@ -23,6 +23,16 @@ import type { TaskStatus } from "../task/task_models.js";
 export type SessionType = "claude" | "llm";
 
 /**
+ * Python `soul_common.db.session_db_base.DEFAULT_FOLDERS` 정본 (line 47-50). session_type별
+ * 자동 배정 기본 폴더 이름. codex 백엔드의 task.session_type은 "claude"이므로 (task_models 코멘트
+ * "컬럼 의미는 LLM proxy 분리용"), codex 세션도 같은 폴더로 폴백.
+ */
+export const DEFAULT_FOLDERS: Readonly<Record<string, string>> = Object.freeze({
+  claude: "⚙️ 클로드 코드 세션",
+  llm: "⚙️ LLM 세션",
+});
+
+/**
  * `session_update` stored procedure 화이트리스트 (schema.sql L257-262).
  *
  * 위반 키 포함 시 stored proc이 RAISE EXCEPTION — TS는 *진입 가드*로 같은 검증
@@ -244,6 +254,77 @@ export class SessionDB {
   /** Python `session_delete` (schema.sql L389-394). */
   async deleteSession(sessionId: string): Promise<void> {
     await this.sql`SELECT session_delete(${sessionId})`;
+  }
+
+  /**
+   * 세션을 폴더에 배정 (Python `db.assign_session_to_folder` 정본,
+   * `packages/soul-common/.../db/postgres/folders.py:114-120`).
+   *
+   * Python stored proc `session_assign_folder` (schema.sql L477-483) 호출:
+   * `UPDATE sessions SET folder_id = p_folder_id WHERE session_id = p_session_id`.
+   *
+   * folderId=null → folder_id 컬럼을 NULL로 설정 (폴더 해제).
+   *
+   * Codex 세션 폴더 배정 누락 사고 회로 차단 — task_manager.createTask 직후 호출.
+   */
+  async assignSessionToFolder(
+    sessionId: string,
+    folderId: string | null,
+  ): Promise<void> {
+    await this.sql`
+      SELECT session_assign_folder(${sessionId}, ${folderId})
+    `;
+  }
+
+  /**
+   * 이름으로 폴더 조회 (Python `db.get_default_folder` 정본,
+   * `packages/soul-common/.../db/postgres/folders.py:93-97`).
+   *
+   * Python stored proc `folder_get_default(p_name TEXT) → SETOF folders` (schema.sql L833-838).
+   * 0 또는 1 행 반환. 부재 시 null.
+   */
+  async getDefaultFolder(name: string): Promise<{ id: string; name: string } | null> {
+    const rows = await this.sql<{ id: string; name: string }[]>`
+      SELECT * FROM folder_get_default(${name})
+    `;
+    return rows[0] ?? null;
+  }
+
+  /**
+   * 전체 카탈로그(폴더 + 세션) 조회 (Python `db.get_catalog` 정본,
+   * `packages/soul-common/.../db/postgres/folders.py:128-150`).
+   *
+   * folders + sessions 두 stored proc 결과를 합쳐 `catalog_updated` wire envelope의
+   * `catalog` 필드 형상으로 반환.
+   */
+  async getCatalog(): Promise<{
+    folders: Array<{ id: string; name: string; sortOrder: number; settings: Record<string, unknown> }>;
+    sessions: Record<string, { folderId: string | null; displayName: string | null }>;
+  }> {
+    const folderRows = await this.sql<
+      { id: string; name: string; sort_order: number; settings: unknown }[]
+    >`SELECT * FROM folder_get_all()`;
+    const folders = folderRows.map((f) => ({
+      id: f.id,
+      name: f.name,
+      sortOrder: f.sort_order,
+      settings: (typeof f.settings === "object" && f.settings !== null
+        ? (f.settings as Record<string, unknown>)
+        : {}),
+    }));
+
+    const sessionRows = await this.sql<
+      { session_id: string; folder_id: string | null; display_name: string | null }[]
+    >`SELECT * FROM catalog_get_sessions()`;
+    const sessions: Record<string, { folderId: string | null; displayName: string | null }> = {};
+    for (const r of sessionRows) {
+      sessions[r.session_id] = {
+        folderId: r.folder_id,
+        displayName: r.display_name,
+      };
+    }
+
+    return { folders, sessions };
   }
 
   /**

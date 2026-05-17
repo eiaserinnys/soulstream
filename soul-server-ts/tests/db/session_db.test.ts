@@ -228,6 +228,60 @@ describe("SessionDB.getSession", () => {
   });
 });
 
+describe("SessionDB folder ops (B-5)", () => {
+  it("assignSessionToFolder → session_assign_folder(sessionId, folderId)", async () => {
+    const { sql, calls } = createMockSql();
+    await new SessionDB(sql).assignSessionToFolder("sess-1", "folder-42");
+    expect(calls).toHaveLength(1);
+    expect(calls[0].values).toEqual(["sess-1", "folder-42"]);
+    expect(calls[0].fragments.join("|")).toContain("session_assign_folder");
+  });
+
+  it("assignSessionToFolder(folderId=null) → stored proc에 NULL 전달 (폴더 해제)", async () => {
+    const { sql, calls } = createMockSql();
+    await new SessionDB(sql).assignSessionToFolder("sess-1", null);
+    expect(calls[0].values).toEqual(["sess-1", null]);
+  });
+
+  it("getDefaultFolder(name) → folder_get_default 호출, 첫 행 반환 또는 null", async () => {
+    const folderRow = { id: "default-claude", name: "⚙️ 클로드 코드 세션" };
+    const { sql: foundSql } = createMockSql(() => [folderRow]);
+    expect(await new SessionDB(foundSql).getDefaultFolder("⚙️ 클로드 코드 세션")).toEqual(folderRow);
+
+    const { sql: emptySql } = createMockSql(() => []);
+    expect(await new SessionDB(emptySql).getDefaultFolder("missing")).toBeNull();
+  });
+
+  it("getCatalog → folder_get_all + catalog_get_sessions 합성하여 {folders, sessions} 반환", async () => {
+    let callIndex = 0;
+    const folderRows = [
+      { id: "f1", name: "F1", sort_order: 1, settings: { excludeFromFeed: true } },
+      { id: "f2", name: "F2", sort_order: 2, settings: null },
+    ];
+    const sessionRows = [
+      { session_id: "s1", folder_id: "f1", display_name: "Hello" },
+      { session_id: "s2", folder_id: null, display_name: null },
+    ];
+    const { sql } = createMockSql((call) => {
+      const text = call.fragments.join("|");
+      callIndex += 1;
+      if (text.includes("folder_get_all")) return folderRows;
+      if (text.includes("catalog_get_sessions")) return sessionRows;
+      return [];
+    });
+    const catalog = await new SessionDB(sql).getCatalog();
+    expect(catalog.folders).toEqual([
+      { id: "f1", name: "F1", sortOrder: 1, settings: { excludeFromFeed: true } },
+      { id: "f2", name: "F2", sortOrder: 2, settings: {} },  // null settings → 빈 객체로 정규화
+    ]);
+    expect(catalog.sessions).toEqual({
+      s1: { folderId: "f1", displayName: "Hello" },
+      s2: { folderId: null, displayName: null },
+    });
+    expect(callIndex).toBe(2);
+  });
+});
+
 describe("SessionDB lifecycle", () => {
   let sql: SqlClient;
   let endSpy: ReturnType<typeof vi.fn>;

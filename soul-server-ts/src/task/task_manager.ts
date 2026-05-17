@@ -17,7 +17,7 @@
 
 import type { Logger } from "pino";
 
-import type { SessionDB } from "../db/session_db.js";
+import { DEFAULT_FOLDERS, type SessionDB } from "../db/session_db.js";
 
 import type { CallerInfo, InterventionMessage, Task, TaskStatus } from "./task_models.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
@@ -116,9 +116,22 @@ export class TaskManager {
 
     this.tasks.set(task.agentSessionId, task);
 
-    // broadcast — 실패해도 task는 메모리에 살아있음 (orch 재연결 시 동기 가능)
+    // 폴더 배정 + catalog_updated broadcast (Python `task_manager.py:284-323`
+    // `_assign_default_folder_and_broadcast` 정본). codex 세션이 dashboard 폴더 트리에서
+    // 보이지 않던 결함의 정본 fix — session_register는 folder_id를 받지 않으므로 *별도*
+    // session_assign_folder로 박는다. folder_id 미지정 시 session_type 기반 기본 폴더 폴백.
+    //
+    // 부가 기능 — 실패는 격리 (Python L292-293 코멘트 정합).
+    const assignedFolderId = await this._assignFolderAndBroadcastCatalog(
+      task.agentSessionId,
+      "claude",  // session_type — codex 세션도 "claude" 그룹으로 분류 (task_models 코멘트 정합)
+      params.folderId ?? null,
+    );
+
+    // broadcast session_created — 실패해도 task는 메모리에 살아있음 (orch 재연결 시 동기 가능).
+    // Python L304-313 정합: catalog_updated 이후 session_created 발행 (순서 보장).
     try {
-      await this.broadcaster.emitSessionCreated(task, params.folderId ?? null);
+      await this.broadcaster.emitSessionCreated(task, assignedFolderId);
     } catch (err) {
       this.logger.warn(
         { err, sessionId: task.agentSessionId },
@@ -127,6 +140,62 @@ export class TaskManager {
     }
 
     return task;
+  }
+
+  /**
+   * 신규 세션을 폴더에 배정 + catalog_updated wire broadcast.
+   *
+   * Python `service/task_manager.py:284-323 _assign_default_folder_and_broadcast` 정본 이식.
+   *   - folder_id 명시 → 그 폴더에 배정
+   *   - 미지정 → `DEFAULT_FOLDERS[sessionType]` 기본 폴더 lookup → 배정
+   *   - 기본 폴더 미존재 → 폴더 배정 없음(graceful) + broadcast 없음
+   *   - 폴더 배정 후 `getCatalog` + `emitCatalogUpdated` (dashboard 폴더 트리 즉시 갱신)
+   *
+   * 부가 기능 — 각 단계 실패를 격리 (Python L292-293 "폴더 배정이나 브로드캐스트에 실패해도
+   * 호출자의 핵심 동작(세션 생성/등록)에 영향을 주지 않는다").
+   *
+   * 반환: 최종 배정된 folder_id. 배정 안 됐으면 null.
+   */
+  private async _assignFolderAndBroadcastCatalog(
+    sessionId: string,
+    sessionType: string,
+    folderId: string | null,
+  ): Promise<string | null> {
+    let assigned: string | null = null;
+    try {
+      if (folderId !== null) {
+        await this.db.assignSessionToFolder(sessionId, folderId);
+        assigned = folderId;
+      } else {
+        // Python L302-303 `DEFAULT_FOLDERS.get(session_type, DEFAULT_FOLDERS["claude"])` 정합.
+        // DEFAULT_FOLDERS.claude는 정본 상수에 항상 정의되어 있으므로 두 번째 폴백은 안전.
+        const defaultName = DEFAULT_FOLDERS[sessionType] ?? DEFAULT_FOLDERS["claude"] ?? "";
+        const folder = await this.db.getDefaultFolder(defaultName);
+        if (folder) {
+          await this.db.assignSessionToFolder(sessionId, folder.id);
+          assigned = folder.id;
+        }
+      }
+    } catch (err) {
+      this.logger.warn(
+        { err, sessionId },
+        "assignSessionToFolder failed — proceeding without folder",
+      );
+    }
+
+    if (assigned !== null) {
+      try {
+        const catalog = await this.db.getCatalog();
+        await this.broadcaster.emitCatalogUpdated(catalog);
+      } catch (err) {
+        this.logger.warn(
+          { err, sessionId },
+          "catalog_updated broadcast failed",
+        );
+      }
+    }
+
+    return assigned;
   }
 
   getTask(sessionId: string): Task | undefined {
