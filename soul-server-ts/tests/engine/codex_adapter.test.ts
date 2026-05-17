@@ -55,13 +55,17 @@ beforeEach(() => {
 });
 
 describe("CodexEngineAdapter — 기본 lifecycle", () => {
-  it("constructor가 Codex SDK에 apiKey·codexPathOverride를 전달한다", async () => {
+  it("constructor가 Codex SDK에 apiKey·codexPathOverride·sanitize된 env를 전달한다", async () => {
     const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
     new CodexEngineAdapter(
       {
         workspaceDir: "/tmp/work",
         apiKey: "test-api-key",
         codexPathOverride: "/usr/local/bin/codex",
+        processEnv: {
+          HOME: "/home/test",
+          PATH: "/usr/bin",
+        },
       },
       silentLogger(),
     );
@@ -69,6 +73,10 @@ describe("CodexEngineAdapter — 기본 lifecycle", () => {
       apiKey: "test-api-key",
       codexPathOverride: "/usr/local/bin/codex",
       baseUrl: undefined,
+      env: {
+        HOME: "/home/test",
+        PATH: "/usr/bin",
+      },
     });
   });
 
@@ -80,6 +88,99 @@ describe("CodexEngineAdapter — 기본 lifecycle", () => {
     );
     expect(engine.backendId).toBe("codex");
     expect(engine.workspaceDir).toBe("/tmp/work");
+  });
+});
+
+describe("CodexEngineAdapter — env sanitize (OAuth fallback 보호)", () => {
+  it("빈 문자열 OPENAI_API_KEY는 SDK env에 포함되지 않는다", async () => {
+    const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
+    new CodexEngineAdapter(
+      {
+        workspaceDir: "/tmp/work",
+        processEnv: {
+          HOME: "/home/test",
+          OPENAI_API_KEY: "",
+          PATH: "/usr/bin",
+        },
+      },
+      silentLogger(),
+    );
+    const passedEnv = mockCodexCtor.mock.calls[0][0].env as Record<string, string>;
+    expect(passedEnv).not.toHaveProperty("OPENAI_API_KEY");
+    expect(passedEnv.HOME).toBe("/home/test");
+    expect(passedEnv.PATH).toBe("/usr/bin");
+  });
+
+  it("빈 문자열 CODEX_API_KEY는 SDK env에 포함되지 않는다", async () => {
+    const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
+    new CodexEngineAdapter(
+      {
+        workspaceDir: "/tmp/work",
+        processEnv: {
+          HOME: "/home/test",
+          CODEX_API_KEY: "",
+        },
+      },
+      silentLogger(),
+    );
+    const passedEnv = mockCodexCtor.mock.calls[0][0].env as Record<string, string>;
+    expect(passedEnv).not.toHaveProperty("CODEX_API_KEY");
+    expect(passedEnv.HOME).toBe("/home/test");
+  });
+
+  it("비어있지 않은 OPENAI_API_KEY는 보존된다 (운영자 의도 존중)", async () => {
+    const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
+    new CodexEngineAdapter(
+      {
+        workspaceDir: "/tmp/work",
+        processEnv: {
+          HOME: "/home/test",
+          OPENAI_API_KEY: "sk-real-key",
+        },
+      },
+      silentLogger(),
+    );
+    const passedEnv = mockCodexCtor.mock.calls[0][0].env as Record<string, string>;
+    expect(passedEnv.OPENAI_API_KEY).toBe("sk-real-key");
+  });
+
+  it("undefined 값은 SDK env에 포함되지 않는다 (Record<string,string> 타입 정합)", async () => {
+    const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
+    new CodexEngineAdapter(
+      {
+        workspaceDir: "/tmp/work",
+        processEnv: {
+          HOME: "/home/test",
+          MISSING: undefined,
+        },
+      },
+      silentLogger(),
+    );
+    const passedEnv = mockCodexCtor.mock.calls[0][0].env as Record<string, string>;
+    expect(passedEnv).not.toHaveProperty("MISSING");
+    expect(passedEnv.HOME).toBe("/home/test");
+  });
+
+  it("processEnv 미지정 시 process.env를 base로 사용한다", async () => {
+    const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
+    const originalHome = process.env.HOME;
+    const originalEmpty = process.env.OPENAI_API_KEY;
+    process.env.HOME = "/process/env/home";
+    process.env.OPENAI_API_KEY = "";
+    try {
+      new CodexEngineAdapter(
+        { workspaceDir: "/tmp/work" },
+        silentLogger(),
+      );
+      const passedEnv = mockCodexCtor.mock.calls[0][0].env as Record<string, string>;
+      expect(passedEnv.HOME).toBe("/process/env/home");
+      expect(passedEnv).not.toHaveProperty("OPENAI_API_KEY");
+    } finally {
+      if (originalHome === undefined) delete process.env.HOME;
+      else process.env.HOME = originalHome;
+      if (originalEmpty === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = originalEmpty;
+    }
   });
 });
 

@@ -117,6 +117,10 @@ async function main(): Promise<void> {
         {
           workspaceDir: agent.workspace_dir,
           apiKey: env.CODEX_API_KEY,
+          // process.env 명시 전달 — 어댑터가 빈 OPENAI_API_KEY/CODEX_API_KEY를 sanitize한 뒤
+          // SDK의 envOverride로 넘겨 codex CLI 자식의 ~/.codex/auth.json OAuth fallback을 보호한다
+          // (분석 캐시 `20260517-1157-codex-ts-oauth-401.md`).
+          processEnv: process.env,
         },
         logger,
       );
