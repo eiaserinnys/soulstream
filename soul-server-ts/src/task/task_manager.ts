@@ -565,7 +565,12 @@ export class TaskManager {
       profileId: row.agent_id ?? undefined,
       codexThreadId: row.claude_session_id ?? undefined,
       callerSessionId: row.caller_session_id ?? undefined,
-      callerInfo: undefined,  // Python metadata 파싱은 별건 카드
+      // P0 (code-reviewer): metadata JSONB array에서 *마지막 신원 박힌* caller_info entry 복원.
+      // 누락 시 R-2 회로(dashboard owner Google portrait fallback) codex 경로에 재현 —
+      // Python `session_eviction_manager.py:148-156` 주석이 명시. Python
+      // `extract_caller_info_from_metadata` (`packages/soul-common/.../auth/caller_info.py:119-163`)
+      // 정본 인라인 이식.
+      callerInfo: extractCallerInfoFromMetadata(row.metadata),
       createdAt: row.created_at,
       completedAt,
       lastEventId: row.last_event_id ?? 0,
@@ -574,4 +579,62 @@ export class TaskManager {
     };
     return task;
   }
+}
+
+/**
+ * Python `IDENTITY_BEARING_SOURCES` 정본(`packages/soul-common/.../auth/caller_info.py:362-370`).
+ * 정체성 명시 source는 신원 필드가 비어도 *신원 박힘*으로 간주.
+ */
+const IDENTITY_BEARING_SOURCES: ReadonlySet<string> = new Set([
+  "agent",
+  "system",
+  "slack",
+  "soul-app",
+  "channel_observer",
+  "trello_watcher",
+  "llm",
+]);
+
+/** Python `has_caller_identity` 정본 (`auth/caller_info.py:96-116`). */
+function hasCallerIdentity(callerInfo: CallerInfo): boolean {
+  const source = typeof callerInfo.source === "string" ? callerInfo.source : undefined;
+  if (source && IDENTITY_BEARING_SOURCES.has(source)) {
+    return true;
+  }
+  return Boolean(callerInfo.display_name || callerInfo.avatar_url);
+}
+
+/**
+ * Python `extract_caller_info_from_metadata` 정본 인라인 이식 (R-6 fix, atom G-20).
+ *
+ * sessions.metadata JSONB array를 순회하여 *마지막 신원 박힌* caller_info entry value 반환.
+ * 부재 시 마지막 *어떤* caller_info entry value라도 반환 (graceful — 옛 데이터 보존).
+ * caller_info entry 0건이면 undefined.
+ *
+ * 정책 (Python L132-135 그대로):
+ *   1. 마지막 신원 박힌 caller_info entry 우선 (has_caller_identity True)
+ *   2. 부재 시 마지막 어떤 caller_info entry
+ *   3. metadata에 caller_info entry 0건 → undefined
+ */
+function extractCallerInfoFromMetadata(metadata: unknown): CallerInfo | undefined {
+  if (!Array.isArray(metadata)) return undefined;
+  let lastAny: CallerInfo | undefined;
+  let lastWithIdentity: CallerInfo | undefined;
+  for (const entry of metadata) {
+    if (
+      !entry ||
+      typeof entry !== "object" ||
+      (entry as Record<string, unknown>).type !== "caller_info"
+    ) {
+      continue;
+    }
+    const value = (entry as Record<string, unknown>).value;
+    if (!value || typeof value !== "object") continue;
+    const ci = value as CallerInfo;
+    lastAny = ci;
+    if (hasCallerIdentity(ci)) {
+      lastWithIdentity = ci;
+    }
+  }
+  return lastWithIdentity ?? lastAny;
 }
