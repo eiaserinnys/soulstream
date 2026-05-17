@@ -107,7 +107,7 @@ async function main(): Promise<void> {
   };
 
   const broadcaster = new SessionBroadcaster(send, agentRegistry, env.SOULSTREAM_NODE_ID);
-  const persistence = new EventPersistence(db, logger);
+  const persistence = new EventPersistence(db, broadcaster, logger);
   const taskManager = new TaskManager(env.SOULSTREAM_NODE_ID, db, broadcaster, logger);
 
   // EngineFactory — backend별 분기. 본 PR은 codex 전용.

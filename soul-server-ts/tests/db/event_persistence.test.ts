@@ -9,6 +9,7 @@ import {
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { SSEEventPayload } from "../../src/engine/protocol.js";
 import type { Task } from "../../src/task/task_models.js";
+import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 
 function makeTask(overrides: Partial<Task> = {}): Task {
   return {
@@ -29,6 +30,14 @@ function makeMockDB() {
     db: { appendEvent, updateLastMessage } as unknown as SessionDB,
     appendEvent,
     updateLastMessage,
+  };
+}
+
+function makeMockBroadcaster() {
+  const emitSessionMessageUpdated = vi.fn().mockResolvedValue(undefined);
+  return {
+    broadcaster: { emitSessionMessageUpdated } as unknown as SessionBroadcaster,
+    emitSessionMessageUpdated,
   };
 }
 
@@ -76,7 +85,8 @@ describe("extractSearchableText", () => {
 describe("EventPersistence.persistEvent", () => {
   it("appendEvent에 type/payload/searchable/timestamp 전달, event_id 반환", async () => {
     const { db, appendEvent } = makeMockDB();
-    const ep = new EventPersistence(db, silentLogger);
+    const { broadcaster } = makeMockBroadcaster();
+    const ep = new EventPersistence(db, broadcaster, silentLogger);
     const event = { type: "text_delta", text: "hi", timestamp: 1731700000 } as SSEEventPayload;
     const id = await ep.persistEvent("sess-1", event);
     expect(id).toBe(42);
@@ -92,7 +102,8 @@ describe("EventPersistence.persistEvent", () => {
 
   it("timestamp 부재 시 호출 시점 now", async () => {
     const { db, appendEvent } = makeMockDB();
-    const ep = new EventPersistence(db, silentLogger);
+    const { broadcaster } = makeMockBroadcaster();
+    const ep = new EventPersistence(db, broadcaster, silentLogger);
     await ep.persistEvent("sess-1", { type: "tool_start" } as SSEEventPayload);
     const arg = appendEvent.mock.calls[0][0];
     expect(arg.createdAt).toBeInstanceOf(Date);
@@ -102,7 +113,8 @@ describe("EventPersistence.persistEvent", () => {
 describe("EventPersistence.handleSideEffects", () => {
   it("text_delta는 last_message 갱신 + task.lastAssistantText 누적", async () => {
     const { db, updateLastMessage } = makeMockDB();
-    const ep = new EventPersistence(db, silentLogger);
+    const { broadcaster } = makeMockBroadcaster();
+    const ep = new EventPersistence(db, broadcaster, silentLogger);
     const task = makeTask();
     await ep.handleSideEffects(
       "sess-1",
@@ -119,7 +131,8 @@ describe("EventPersistence.handleSideEffects", () => {
 
   it("text_end (text 없음) — last_message 갱신 안 함 + lastAssistantText 변경 안 함", async () => {
     const { db, updateLastMessage } = makeMockDB();
-    const ep = new EventPersistence(db, silentLogger);
+    const { broadcaster } = makeMockBroadcaster();
+    const ep = new EventPersistence(db, broadcaster, silentLogger);
     const task = makeTask({ lastAssistantText: "previous" });
     await ep.handleSideEffects(
       "sess-1",
@@ -132,7 +145,8 @@ describe("EventPersistence.handleSideEffects", () => {
 
   it("text_delta 누적 — 매번 덮어쓰기 (Codex SDK 누적 텍스트 정합)", async () => {
     const { db } = makeMockDB();
-    const ep = new EventPersistence(db, silentLogger);
+    const { broadcaster } = makeMockBroadcaster();
+    const ep = new EventPersistence(db, broadcaster, silentLogger);
     const task = makeTask();
     await ep.handleSideEffects(
       "sess-1",
@@ -156,7 +170,8 @@ describe("EventPersistence.handleSideEffects", () => {
 
   it("preview 200자 cap", async () => {
     const { db, updateLastMessage } = makeMockDB();
-    const ep = new EventPersistence(db, silentLogger);
+    const { broadcaster } = makeMockBroadcaster();
+    const ep = new EventPersistence(db, broadcaster, silentLogger);
     const long = "a".repeat(250);
     await ep.handleSideEffects(
       "sess-1",
@@ -167,17 +182,96 @@ describe("EventPersistence.handleSideEffects", () => {
     expect(arg.preview).toHaveLength(200);
   });
 
-  it("updateLastMessage 실패해도 throw 안 함 (실패 격리)", async () => {
+  it("updateLastMessage throw → 호출자 전파 + wire 미발행 (Python 정합: DB·wire 일관성)", async () => {
     const appendEvent = vi.fn();
     const updateLastMessage = vi.fn().mockRejectedValue(new Error("db down"));
     const db = { appendEvent, updateLastMessage } as unknown as SessionDB;
-    const ep = new EventPersistence(db, silentLogger);
+    const { broadcaster, emitSessionMessageUpdated } = makeMockBroadcaster();
+    const ep = new EventPersistence(db, broadcaster, silentLogger);
     await expect(
       ep.handleSideEffects(
         "sess-1",
         { type: "text_delta", text: "x", timestamp: 1 } as SSEEventPayload,
         makeTask(),
       ),
+    ).rejects.toThrow(/db down/);
+
+    // 호출자(task_executor._processEvent)가 try로 감싸 격리. 여기서는 throw 전파만 검증.
+    // wire는 *미발행* — DB 미갱신 상태로 wire를 보내면 클라이언트가 last_message 보고 새로
+    // 그렸다가 다음 list refresh에서 이전 값으로 회귀하는 transient 불일치 방지.
+    expect(emitSessionMessageUpdated).not.toHaveBeenCalled();
+  });
+
+  // === F-3A: emit_session_message_updated wire 발행 ===
+
+  it("F-3A T2: preview 있을 때 emitSessionMessageUpdated 호출 (Python L141-221 정합)", async () => {
+    const { db } = makeMockDB();
+    const { broadcaster, emitSessionMessageUpdated } = makeMockBroadcaster();
+    const ep = new EventPersistence(db, broadcaster, silentLogger);
+    const task = makeTask({
+      status: "running",
+      lastEventId: 5,
+      lastReadEventId: 3,
+    });
+    await ep.handleSideEffects(
+      "sess-1",
+      { type: "text_delta", text: "hello world", timestamp: 1731700000 } as SSEEventPayload,
+      task,
+    );
+
+    expect(emitSessionMessageUpdated).toHaveBeenCalledTimes(1);
+    const args = emitSessionMessageUpdated.mock.calls[0];
+    expect(args[0]).toBe("sess-1");                    // agentSessionId
+    expect(args[1]).toBe("running");                   // status
+    expect(typeof args[2]).toBe("string");             // updatedAt (ISO)
+    expect(args[3]).toEqual({                          // lastMessage
+      type: "text_delta",
+      preview: "hello world",
+      timestamp: args[2],                              // DB 갱신과 같은 ts
+    });
+    expect(args[4]).toBe(5);                           // lastEventId
+    expect(args[5]).toBe(3);                           // lastReadEventId
+  });
+
+  it("F-3A T3: preview 없는 이벤트 (text_start/text_end/session 등) — broadcaster 호출 안 함", async () => {
+    const { db, updateLastMessage } = makeMockDB();
+    const { broadcaster, emitSessionMessageUpdated } = makeMockBroadcaster();
+    const ep = new EventPersistence(db, broadcaster, silentLogger);
+
+    for (const ev of [
+      { type: "text_start", timestamp: 1 },
+      { type: "text_end", timestamp: 2 },
+      { type: "session", session_id: "thr-1", timestamp: 3 },
+      { type: "tool_start", timestamp: 4 },
+    ] as SSEEventPayload[]) {
+      await ep.handleSideEffects("sess-1", ev, makeTask());
+    }
+
+    expect(updateLastMessage).not.toHaveBeenCalled();
+    expect(emitSessionMessageUpdated).not.toHaveBeenCalled();
+  });
+
+  it("F-3A T4: broadcaster throw → 격리 (DB 갱신은 성공 + lastAssistantText 누적 정상)", async () => {
+    const { db, updateLastMessage } = makeMockDB();
+    const broadcaster = {
+      emitSessionMessageUpdated: vi
+        .fn()
+        .mockRejectedValue(new Error("wire down")),
+    } as unknown as SessionBroadcaster;
+    const ep = new EventPersistence(db, broadcaster, silentLogger);
+    const task = makeTask();
+
+    await expect(
+      ep.handleSideEffects(
+        "sess-1",
+        { type: "text_delta", text: "hello", timestamp: 1 } as SSEEventPayload,
+        task,
+      ),
     ).resolves.toBeUndefined();
+
+    // DB 갱신은 성공
+    expect(updateLastMessage).toHaveBeenCalledTimes(1);
+    // lastAssistantText 누적은 정상 동작
+    expect(task.lastAssistantText).toBe("hello");
   });
 });

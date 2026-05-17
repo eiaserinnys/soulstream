@@ -145,6 +145,57 @@ describe("emitSessionUpdated", () => {
   });
 });
 
+describe("emitSessionMessageUpdated (F-3A)", () => {
+  it("Python wire 키 7종 정확 (last_message 식별 마커 + caller_source/userName/userPortraitUrl 부재)", async () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    const b = new SessionBroadcaster(send, makeRegistry(), "eias-shopping-ts");
+    const lastMessage = {
+      type: "text_delta",
+      preview: "hello world",
+      timestamp: "2026-05-17T01:02:03.000Z",
+    };
+    await b.emitSessionMessageUpdated(
+      "sess-1",
+      "running",
+      "2026-05-17T01:02:03.000Z",
+      lastMessage,
+      7,
+      3,
+    );
+
+    expect(send).toHaveBeenCalledTimes(1);
+    const msg = send.mock.calls[0][0] as Record<string, unknown>;
+
+    // 정확히 7개 키
+    expect(Object.keys(msg).sort()).toEqual(
+      [
+        "agent_session_id",
+        "last_event_id",
+        "last_message",
+        "last_read_event_id",
+        "status",
+        "type",
+        "updated_at",
+      ].sort(),
+    );
+
+    expect(msg).toEqual({
+      type: "session_updated",
+      agent_session_id: "sess-1",
+      status: "running",
+      updated_at: "2026-05-17T01:02:03.000Z",
+      last_message: lastMessage,
+      last_event_id: 7,
+      last_read_event_id: 3,
+    });
+
+    // P6 결정: emit_session_updated/phase와 달리 user 프로필·caller_source는 *비움*
+    expect(msg.caller_source).toBeUndefined();
+    expect(msg.userName).toBeUndefined();
+    expect(msg.userPortraitUrl).toBeUndefined();
+  });
+});
+
 describe("emitSessionDeleted", () => {
   it("agent_session_id 박힘", async () => {
     const send = vi.fn().mockResolvedValue(undefined);
