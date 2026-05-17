@@ -57,7 +57,8 @@ function makeMocks() {
   const persistence = { persistEvent, handleSideEffects } as unknown as EventPersistence;
 
   const updateSession = vi.fn().mockResolvedValue(undefined);
-  const db = { updateSession } as unknown as SessionDB;
+  const setClaudeSessionId = vi.fn().mockResolvedValue(undefined);
+  const db = { updateSession, setClaudeSessionId } as unknown as SessionDB;
 
   const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
   const emitSessionUpdated = vi.fn().mockResolvedValue(undefined);
@@ -70,6 +71,7 @@ function makeMocks() {
     persistEvent,
     handleSideEffects,
     updateSession,
+    setClaudeSessionId,
     emitEventEnvelope,
     emitSessionUpdated,
   };
@@ -180,6 +182,65 @@ describe("TaskExecutor.startExecution", () => {
     executor.startExecution(task, agent);
     await task.executionPromise;
     expect(task.codexThreadId).toBe("thr-first");
+  });
+
+  // === F-3B: Codex thread id DB 영속화 ===
+
+  it("F-3B T6: 첫 session 이벤트 시 db.setClaudeSessionId 호출 + 두 번째 session 이벤트는 호출 안 함", async () => {
+    const mocks = makeMocks();
+    const events: SSEEventPayload[] = [
+      { type: "session", session_id: "thr-codex-1" } as SSEEventPayload,
+      { type: "text_delta", text: "hi", timestamp: 1 } as SSEEventPayload,
+      { type: "session", session_id: "thr-codex-2" } as SSEEventPayload,  // 두 번째 session은 무시 (가드)
+    ];
+    const executor = new TaskExecutor(
+      () => makeFakeEngine(events),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    // 메모리: 첫 thread id만 박힘 (기존 동작 유지)
+    expect(task.codexThreadId).toBe("thr-codex-1");
+
+    // DB: setClaudeSessionId 정확히 1회 호출 + 첫 thread id로
+    expect(mocks.setClaudeSessionId).toHaveBeenCalledTimes(1);
+    expect(mocks.setClaudeSessionId).toHaveBeenCalledWith(
+      "sess-1",
+      "thr-codex-1",
+    );
+  });
+
+  it("F-3B T7: db.setClaudeSessionId throw → 격리 (task 진행 계속, status=completed)", async () => {
+    const mocks = makeMocks();
+    mocks.setClaudeSessionId.mockRejectedValueOnce(
+      new Error("connection refused"),
+    );
+
+    const events: SSEEventPayload[] = [
+      { type: "session", session_id: "thr-codex-1" } as SSEEventPayload,
+      { type: "text_delta", text: "after error", timestamp: 1 } as SSEEventPayload,
+    ];
+    const executor = new TaskExecutor(
+      () => makeFakeEngine(events),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    // setClaudeSessionId throw에도 task 진행 계속
+    expect(task.status).toBe("completed");
+    expect(task.codexThreadId).toBe("thr-codex-1");  // 메모리 박기는 throw 전에 완료
+    expect(mocks.persistEvent).toHaveBeenCalledTimes(2);  // 두 이벤트 모두 처리
+    expect(mocks.emitSessionUpdated).toHaveBeenCalled();
   });
 
   it("같은 task에 startExecution 두 번 호출 → throw", () => {

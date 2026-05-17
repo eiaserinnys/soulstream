@@ -99,9 +99,9 @@ export class TaskExecutor {
   /**
    * 단일 이벤트 처리: DB 영속 + broadcast + side effect.
    *
-   * - session 이벤트는 task.codexThreadId 박기 (sessions.claude_session_id 컬럼 갱신은
-   *   B-3 범위 외 — 후속 카드. 현재는 메모리에만 박힘)
-   * - persistEvent 실패는 격리 (logger.warn) — 본 task 진행 중단 회피
+   * - 첫 session 이벤트: task.codexThreadId 박기 + DB sessions.claude_session_id 영속화 (F-3B).
+   *   stored proc session_set_claude_id가 idempotent하므로 race에도 안전.
+   * - persistEvent / setClaudeSessionId 실패는 격리 (logger.warn) — 본 task 진행 중단 회피.
    */
   private async _processEvent(
     task: Task,
@@ -109,11 +109,20 @@ export class TaskExecutor {
   ): Promise<void> {
     const eventType = (event as { type: string }).type;
 
-    // 첫 session 이벤트에서 thread id 박기
+    // 첫 session 이벤트에서 thread id 박기 + DB 영속화
     if (eventType === "session") {
       const sid = (event as { session_id?: unknown }).session_id;
       if (typeof sid === "string" && !task.codexThreadId) {
         task.codexThreadId = sid;
+        // F-3B: sessions.claude_session_id 컬럼 영속화 — 노드 재시작 시 thread 이어붙임 전제.
+        try {
+          await this.db.setClaudeSessionId(task.agentSessionId, sid);
+        } catch (err) {
+          this.logger.warn(
+            { err, sessionId: task.agentSessionId, threadId: sid },
+            "setClaudeSessionId failed — thread id not persisted",
+          );
+        }
       }
     }
 

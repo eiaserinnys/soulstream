@@ -1,19 +1,20 @@
 /**
- * EventPersistence — SSE event → DB + 부수효과 처리 (Phase B-3).
+ * EventPersistence — SSE event → DB + 부수효과 처리 (Phase B-3 + F-3A 후속 사이클).
  *
  * Python `service/event_persistence.py`의 *구조* 참조 (정본 둘 안티패턴 회피).
  * TS 측은 Codex 흐름에 한정 — metadata_extractor·away_summary는 본 PR 범위 외.
  *
  * 책임:
  *   1. persistEvent: event_append stored proc 호출 → 새 event_id 반환
- *   2. handleSideEffects: last_message 갱신 + task.lastAssistantText 누적
- *      (Python emit_session_message_updated wire는 B-3 범위 외 — 후속 카드)
+ *   2. handleSideEffects: last_message DB 갱신 + emit_session_message_updated wire 발행
+ *      (F-3A) + task.lastAssistantText 누적
  */
 
 import type { Logger } from "pino";
 
 import type { SSEEventPayload } from "../engine/protocol.js";
 import type { Task } from "../task/task_models.js";
+import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
 import type { SessionDB } from "./session_db.js";
 
@@ -33,6 +34,7 @@ const PREVIEW_FIELD_MAP: Record<string, string> = {
 export class EventPersistence {
   constructor(
     private readonly db: SessionDB,
+    private readonly broadcaster: SessionBroadcaster,
     private readonly logger: Logger,
   ) {}
 
@@ -59,10 +61,14 @@ export class EventPersistence {
   }
 
   /**
-   * 이벤트 후처리: last_message 갱신 + task.lastAssistantText 누적.
+   * 이벤트 후처리: last_message DB 갱신 + emit_session_message_updated wire 발행 +
+   * task.lastAssistantText 누적.
    *
    * 실패해도 throw하지 않음 (design-principles §8 실패 격리) — 본 task 진행 중단 회피.
-   * Python emit_session_message_updated wire 발행은 B-3 범위 외 (후속 카드).
+   *
+   * F-3A: PREVIEW_FIELD_MAP 매칭 이벤트(text_delta/thinking/result/complete/error/away_summary)에
+   * 한해 DB 갱신 직후 broadcaster에 last_message wire를 발행. text_start/text_end/session 등은
+   * PREVIEW_FIELD_MAP에 없어 자동 필터됨 — Python `event_persistence.py` L96-133 정본과 정합.
    */
   async handleSideEffects(
     sessionId: string,
@@ -70,20 +76,40 @@ export class EventPersistence {
     task: Task,
   ): Promise<void> {
     const eventType = (event as { type: string }).type;
+    const previewText = extractPreviewText(event);
 
-    // last_message 갱신
-    try {
-      const previewText = extractPreviewText(event);
-      if (previewText) {
-        const ts = extractTimestamp(event)?.toISOString() ?? new Date().toISOString();
-        await this.db.updateLastMessage(sessionId, {
-          type: eventType,
-          preview: previewText.slice(0, 200),
-          timestamp: ts,
-        });
+    if (previewText) {
+      const ts = extractTimestamp(event)?.toISOString() ?? new Date().toISOString();
+      const lastMessage = {
+        type: eventType,
+        preview: previewText.slice(0, 200),
+        timestamp: ts,
+      };
+
+      // last_message DB 갱신
+      try {
+        await this.db.updateLastMessage(sessionId, lastMessage);
+      } catch (err) {
+        this.logger.debug({ err, sessionId }, "last_message update failed");
       }
-    } catch (err) {
-      this.logger.debug({ err, sessionId }, "last_message update failed");
+
+      // F-3A: emit_session_message_updated wire 발행 — DB 갱신과 *독립* 격리.
+      // DB 갱신은 실패해도 wire는 시도, wire 실패는 task 진행 막지 않음.
+      try {
+        await this.broadcaster.emitSessionMessageUpdated(
+          sessionId,
+          task.status,
+          ts,
+          lastMessage,
+          task.lastEventId,
+          task.lastReadEventId,
+        );
+      } catch (err) {
+        this.logger.debug(
+          { err, sessionId },
+          "emitSessionMessageUpdated failed",
+        );
+      }
     }
 
     // task.lastAssistantText 누적 — text_delta는 누적 block.text 전체이므로 매번 덮어쓴다.

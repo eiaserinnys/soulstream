@@ -199,6 +199,26 @@ export class SessionDB {
     `;
   }
 
+  /**
+   * Codex thread id를 sessions.claude_session_id 컬럼에 영속화 (F-3B).
+   *
+   * Python `session_set_claude_id` stored procedure 호출 (schema.sql L220-247):
+   *   - NULL → SET (최초 설정)
+   *   - 같은 값 → no-op (idempotent, 재시작·재진입 안전)
+   *   - 다른 값 → RAISE EXCEPTION (claude_session_id immutability violation)
+   *
+   * 호출자(task_executor)는 `!task.codexThreadId` 메모리 가드로 통상 1회만 호출하지만,
+   * stored proc 자체가 idempotent하므로 race에도 안전.
+   */
+  async setClaudeSessionId(
+    sessionId: string,
+    claudeSessionId: string,
+  ): Promise<void> {
+    await this.sql`
+      SELECT session_set_claude_id(${sessionId}, ${claudeSessionId})
+    `;
+  }
+
   /** Python `session_update_last_message` stored procedure 호출 (schema.sql L435-443). */
   async updateLastMessage(
     sessionId: string,

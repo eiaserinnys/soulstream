@@ -141,6 +141,38 @@ describe("SessionDB.updateSession", () => {
   });
 });
 
+describe("SessionDB.setClaudeSessionId (F-3B)", () => {
+  it("T5: session_set_claude_id stored proc에 (sessionId, threadId) 전달", async () => {
+    const { sql, calls } = createMockSql();
+    const db = new SessionDB(sql);
+
+    await db.setClaudeSessionId("sess-1", "thr-codex-abc123");
+
+    expect(calls).toHaveLength(1);
+    const [call] = calls;
+    expect(call.values).toEqual(["sess-1", "thr-codex-abc123"]);
+    expect(call.fragments.join("?")).toContain("session_set_claude_id");
+  });
+
+  it("stored proc throw (예: immutability violation) → 호출자에게 그대로 전파", async () => {
+    const sqlFn = ((_strings: TemplateStringsArray) => {
+      return Promise.reject(
+        new Error("claude_session_id immutability violation"),
+      );
+    }) as unknown as SqlClient & {
+      array: (a: unknown[]) => unknown[];
+      end: () => Promise<void>;
+    };
+    sqlFn.array = (a) => a;
+    sqlFn.end = vi.fn().mockResolvedValue(undefined);
+
+    const db = new SessionDB(sqlFn as unknown as SqlClient);
+    await expect(
+      db.setClaudeSessionId("sess-1", "thr-different"),
+    ).rejects.toThrow(/immutability violation/);
+  });
+});
+
 describe("SessionDB.updateLastMessage", () => {
   it("last_message JSON + updatedAt 전달", async () => {
     const { sql, calls } = createMockSql();

@@ -1,19 +1,17 @@
 /**
- * SessionBroadcaster — orch에 wire 발행 (Phase B-3).
+ * SessionBroadcaster — orch에 wire 발행 (Phase B-3 + F-3A 후속 사이클).
  *
- * Python `service/session_broadcaster.py` L67-108 정본과 *wire payload 키 일치*.
+ * Python `service/session_broadcaster.py` L52-221 정본과 *wire payload 키 일치*.
  * spec-quality-gate §10 "세션 직렬화 wire 키 동시 갱신"의 TS 자리.
  *
  * Codex 단일턴 모델 — Python `emit_session_phase` (멀티턴 idle 전환)는 *불필요*.
  * B-4 multi-turn 지원 시 추가 검토.
- *
- * 본 PR 범위 외:
- *   - emit_session_message_updated (text_delta마다 last_message wire 발행) → 후속 카드
  */
 
 import type { AgentRegistry } from "../agent_registry.js";
+import type { LastMessageRow } from "../db/session_db.js";
 import type { SSEEventPayload } from "../engine/protocol.js";
-import type { Task } from "../task/task_models.js";
+import type { Task, TaskStatus } from "../task/task_models.js";
 
 import type { SendFn } from "./dispatcher.js";
 
@@ -66,6 +64,41 @@ export class SessionBroadcaster {
         typeof callerInfo.display_name === "string" ? callerInfo.display_name : null,
       userPortraitUrl:
         typeof callerInfo.avatar_url === "string" ? callerInfo.avatar_url : null,
+    });
+  }
+
+  /**
+   * 세션 last_message 갱신 wire (F-3A). Python `emit_session_message_updated` L141-221 정본:
+   *   {type: "session_updated", agent_session_id, status, updated_at, last_message,
+   *    last_event_id, last_read_event_id}
+   *
+   * **payload 키 7종** — emit_session_updated/phase와 *type* 키는 공유하지만 다음으로 구분:
+   *   - G-19 식별 마커: 본 wire는 `last_message` 키를 *반드시* 포함 (orch가 wire 종류 식별에 사용)
+   *   - P6 결정: caller_source/userName/userPortraitUrl 키 *비움* (atom `d7a1ad86` 정본 둘 안티패턴 회피)
+   *
+   * emit_session_updated/phase에 last_message 키를 *추가하지 말 것* — 식별 마커 충돌로 G-19 회로 재발.
+   *
+   * 참조:
+   *   - Python L172-201 G-19 fix 주석 ("변경 금지 사항" 3건)
+   *   - atom `b558ca3b` wire payload 키 정본
+   *   - atom `d7a1ad86` 정본 둘 안티패턴
+   */
+  async emitSessionMessageUpdated(
+    agentSessionId: string,
+    status: TaskStatus,
+    updatedAt: string,
+    lastMessage: LastMessageRow,
+    lastEventId: number,
+    lastReadEventId: number,
+  ): Promise<void> {
+    await this.send({
+      type: "session_updated",
+      agent_session_id: agentSessionId,
+      status,
+      updated_at: updatedAt,
+      last_message: lastMessage,
+      last_event_id: lastEventId,
+      last_read_event_id: lastReadEventId,
     });
   }
 

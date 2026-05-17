@@ -111,7 +111,7 @@ describe("Phase B-3 E2E: create_session → engine drain → broadcast", () => {
     ];
 
     const broadcaster = new SessionBroadcaster(send, registry, "eias-shopping-ts");
-    const persistence = new EventPersistence(db, silentLogger);
+    const persistence = new EventPersistence(db, broadcaster, silentLogger);
     const taskManager = new TaskManager("eias-shopping-ts", db, broadcaster, silentLogger);
 
     const factory = vi.fn(() => makeFakeEngine(codexEvents));
@@ -187,6 +187,24 @@ describe("Phase B-3 E2E: create_session → engine drain → broadcast", () => {
     expect(procNames.filter((p) => p.includes("event_append")).length).toBe(codexEvents.length);
     expect(procNames.some((p) => p.includes("session_update"))).toBe(true);
 
+    // F-3B: session_set_claude_id 1회 호출 (thread id 영속화)
+    expect(
+      procNames.filter((p) => p.includes("session_set_claude_id")).length,
+    ).toBe(1);
+
+    // F-3A: emit_session_message_updated wire — PREVIEW_FIELD_MAP 매칭 + 필드 값 있을 때만.
+    // codexEvents 중: text_delta(×2 — "Hello", "Hello world")만 wire 발행.
+    // complete은 PREVIEW_FIELD_MAP에서 result 필드를 보지만 본 fixture는 result 미포함 → skip.
+    // text_start/text_end/session은 매핑 없음 → skip.
+    // 이 wire는 `last_message` 키 보유로 식별 (G-19 마커).
+    const messageUpdates = orchReceived.filter(
+      (m) => m.type === "session_updated" && m.last_message !== undefined,
+    );
+    expect(messageUpdates.length).toBe(2);
+    expect(
+      (messageUpdates[1].last_message as Record<string, unknown>).preview,
+    ).toBe("Hello world");
+
     // task 상태
     expect(task!.status).toBe("completed");
     expect(task!.codexThreadId).toBe("thr-codex-1");
@@ -203,7 +221,7 @@ describe("Phase B-3 E2E: create_session → engine drain → broadcast", () => {
     const db = new SessionDBClass(sql);
     const registry = new AgentRegistry([codexAgent]);
     const broadcaster = new SessionBroadcaster(send, registry, "n");
-    const persistence = new EventPersistence(db, silentLogger);
+    const persistence = new EventPersistence(db, broadcaster, silentLogger);
     const taskManager = new TaskManager("n", db, broadcaster, silentLogger);
     const factory = vi.fn();
     const taskExecutor = new TaskExecutor(factory, db, persistence, broadcaster, silentLogger);
