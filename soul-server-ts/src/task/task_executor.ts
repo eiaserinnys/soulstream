@@ -88,19 +88,20 @@ export class TaskExecutor {
     task: Task,
     engine: EnginePort,
   ): Promise<void> {
-    // B-5 진입 분기 (code-reviewer P0): auto-resume 흐름과 신규 task 흐름 구분.
+    // B-5 진입 분기: auto-resume 흐름과 신규 task 흐름 구분.
     //
     // - 신규 task (queue 비어있음): task.prompt가 사용자의 첫 발화 → user_message 영속화 후
     //   첫 turn engine.execute(prompt=task.prompt).
-    // - Auto-resume (queue 비어있지 않음): addIntervention이 이미 intervention_sent를
-    //   *영속화·broadcast했고*, task.prompt는 *prior turn에서 이미 처리된* 원래 발화이므로
-    //   재실행하면 안 된다. 첫 turn은 queue dequeue → 새 메시지로 직진. 추가 user_message
-    //   영속화는 의미적 중복(intervention_sent와 동일) — skip.
+    // - Auto-resume (queue 비어있지 않음, PR #55 결함 A 정정 반영):
+    //   `addIntervention.completed/error/interrupted` 분기(`_addInterventionAutoResume`)가
+    //   *user_message를 이미 영속화·broadcast*했고 task.status="running"으로 전환 + queue.push +
+    //   session_updated wire까지 발행한 상태. 첫 turn은 queue dequeue로 *새 메시지를 prompt*로
+    //   사용. 추가 user_message 영속화는 *완전한 의미 중복* — skip.
     //
     // Python 정본은 auto-resume 시 *새 task를 생성*(`task_manager.add_intervention` L635
-    // `create_task(prompt=text, ...)`)하므로 같은 결과: 새 prompt = intervention text, 새
-    // _persist_initial_messages가 그 text를 user_message로 박는다. TS는 같은 task 인스턴스를
-    // 재활용하지만 이 분기로 의미 등가 달성.
+    // `create_task(prompt=text, ...)`)하여 새 _persist_initial_messages가 user_message를
+    // 박는 모델. TS는 같은 task 인스턴스를 재활용하지만 본 분기 + addIntervention auto-resume
+    // 분기 조합으로 wire 의미 등가 달성.
     let turnPrompt: string;
     if (task.interventionQueue.length === 0) {
       // 신규 task — Python `_persist_initial_messages`(L120-182) 의 user_message 분기 정합.
@@ -108,8 +109,7 @@ export class TaskExecutor {
       await this._persistInitialUserMessage(task);
       turnPrompt = task.prompt;
     } else {
-      // Auto-resume — intervention_sent는 addIntervention이 이미 영속화. 첫 turn은
-      // dequeue한 메시지로 직진. (Python create_task 재생성 모델과 의미 등가.)
+      // Auto-resume — user_message는 addIntervention 분기가 이미 영속화. 첫 turn은 dequeue.
       turnPrompt = task.interventionQueue.shift()!.text;
     }
     try {
