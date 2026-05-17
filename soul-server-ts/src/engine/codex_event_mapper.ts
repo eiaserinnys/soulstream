@@ -16,7 +16,7 @@
  * 짧건 길건 agent_message의 텍스트는 *오로지* `item.completed.item.text` 하나에 담겨 온다.
  * 따라서 item.completed 시 text가 비어있지 않으면 text_delta를 *합성*하여 발행한다.
  * 그렇지 않으면 클라이언트는 빈 메시지를 본다. 합성된 text_delta가 그 자체로 *누적값*을
- * 담으므로 text_delta 누적 모델(`event_persistence.ts:91-96` lastAssistantText)과 정합.
+ * 담으므로 text_delta 누적 모델(`event_persistence.ts:117-124` lastAssistantText)과 정합.
  *
  * 미래에 codex SDK가 progressive streaming을 emit하기 시작하면 item.updated의 text_delta가
  * 이미 발행된 상태에서 item.completed의 합성 text_delta가 *동일 누적값*을 한 번 더 발행한다.
