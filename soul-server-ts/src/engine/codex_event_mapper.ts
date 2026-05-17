@@ -9,7 +9,8 @@
  *   - item.started   → text_start (text 필드 없음)
  *   - item.updated   → text_delta (text=item.text 누적값)
  *   - item.completed → text_start + text_delta(text=item.text) + text_end
- *                       (text 비어 있으면 text_end만 — 클라이언트 no-op·history 종결 신호)
+ *                       (text 비어 있으면 text="" 그대로 발행 — claude `message_processor.py`
+ *                        _handle_text 정합으로 빈 텍스트도 3-시퀀스 유지)
  *
  * codex-rs CLI `--experimental-json` 실측(2026-05-17, 분석 캐시
  * `20260517-1220-codex-ts-subscribe-events.md` §A): item.started·item.updated가 *발생하지 않는다*.
@@ -218,19 +219,16 @@ function mapItemCompleted(item: ThreadItem): SSEEventPayload[] {
       //
       // 따라서 claude 백엔드 정본 시퀀스(`soul-server/src/soul_server/engine/types.py:90`
       // "text_start → text_delta → text_end")와 정합되도록 item.completed에서 *세 이벤트
-      // 모두를 합성*한다. 세 페이로드는 동일 timestamp로 묶여 atomic 의미를 보존한다
-      // (DB 라이브 샘플 `sess-20260322110817-20ec409b`이 같은 패턴: 동일 ts 1774177745.579).
+      // 모두를 합성*한다. claude는 `message_processor.py:239-271 _handle_text`에서 빈 텍스트
+      // 분기 없이 3-시퀀스를 무조건 emit하므로(`text=""`도 포함), codex도 동일하게 emit하여
+      // 백엔드 간 비대칭을 남기지 않는다 (design-principles §9 일관성·대칭성 완전 정합).
       //
-      // text가 빈 문자열이면 text_end만 발행 — text_start 없는 text_end는 클라이언트에서
-      // no-op이고 history 백필도 종결 신호로 정합. (codex가 실제로 빈 agent_message를
-      // 발행하는 사례는 관찰되지 않음 — 방어적 분기.)
+      // 세 페이로드는 동일 timestamp로 묶여 atomic 의미를 보존한다 (DB 라이브 claude 샘플
+      // `sess-20260322110817-20ec409b`: 동일 ts 1774177745.579).
       const ts = nowEpochSec();
-      if (!item.text) {
-        return [{ type: "text_end", timestamp: ts } as SSEEventPayload];
-      }
       return [
         { type: "text_start", timestamp: ts } as SSEEventPayload,
-        { type: "text_delta", text: item.text, timestamp: ts } as SSEEventPayload,
+        { type: "text_delta", text: item.text ?? "", timestamp: ts } as SSEEventPayload,
         { type: "text_end", timestamp: ts } as SSEEventPayload,
       ];
     }

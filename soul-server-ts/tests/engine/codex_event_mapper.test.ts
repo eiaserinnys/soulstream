@@ -251,16 +251,18 @@ describe("item.completed 매핑", () => {
     expect(typeof endEv.timestamp).toBe("number");
   });
 
-  it("agent_message (text 빈 문자열) → text_end만 (sequence 합성 안 함)", () => {
-    // text가 없으면 text_start·text_delta 합성은 클라이언트 누적 모델에 noise.
-    // text_end만 발행 — text_start 없는 text_end는 클라이언트 no-op이고 history 종결 신호로 정합.
+  it("agent_message (text 빈 문자열) → text_start+text_delta(text='')+text_end — claude 정본 정합 (빈 텍스트도 3-시퀀스)", () => {
+    // claude `message_processor.py:239-271 _handle_text`는 빈 텍스트 분기 없이 무조건
+    // TextDeltaEngineEvent(text=block.text)를 emit → to_sse가 항상 [text_start, text_delta(text=""), text_end] 3건.
+    // codex도 동일하게 발행하여 백엔드 비대칭을 남기지 않는다 (code-reviewer 권고 옵션 A).
     const sse = mapThreadEvent({
       type: "item.completed",
       item: { id: "i1", type: "agent_message", text: "" },
     });
-    expect(sse).toHaveLength(1);
-    expect((sse[0] as { type: string }).type).toBe("text_end");
-    expect((sse[0] as { text?: unknown }).text).toBeUndefined();
+    expect(sse).toHaveLength(3);
+    expect((sse[0] as { type: string }).type).toBe("text_start");
+    expect(sse[1]).toMatchObject({ type: "text_delta", text: "" });
+    expect((sse[2] as { type: string }).type).toBe("text_end");
   });
 
   it("agent_message — 한글·이모지·multiline verbatim 보존 (인코딩 변조 금지)", () => {
