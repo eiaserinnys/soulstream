@@ -88,12 +88,30 @@ export class TaskExecutor {
     task: Task,
     engine: EnginePort,
   ): Promise<void> {
-    let turnPrompt = task.prompt;
-    // B-5: 첫 turn 진입 *전*에 user_message를 events에 영속화 + broadcast.
-    // Python `task_executor.py:120-182 _persist_initial_messages` 정본 정합. codex 세션의
-    // 사용자 발화가 채팅 UI·session history에 표시되도록 한다. 영속화 실패는 격리 — 본 task
-    // 진행에 영향 0 (Python L179-180 try/except 정합).
-    await this._persistInitialUserMessage(task);
+    // B-5 진입 분기 (code-reviewer P0): auto-resume 흐름과 신규 task 흐름 구분.
+    //
+    // - 신규 task (queue 비어있음): task.prompt가 사용자의 첫 발화 → user_message 영속화 후
+    //   첫 turn engine.execute(prompt=task.prompt).
+    // - Auto-resume (queue 비어있지 않음): addIntervention이 이미 intervention_sent를
+    //   *영속화·broadcast했고*, task.prompt는 *prior turn에서 이미 처리된* 원래 발화이므로
+    //   재실행하면 안 된다. 첫 turn은 queue dequeue → 새 메시지로 직진. 추가 user_message
+    //   영속화는 의미적 중복(intervention_sent와 동일) — skip.
+    //
+    // Python 정본은 auto-resume 시 *새 task를 생성*(`task_manager.add_intervention` L635
+    // `create_task(prompt=text, ...)`)하므로 같은 결과: 새 prompt = intervention text, 새
+    // _persist_initial_messages가 그 text를 user_message로 박는다. TS는 같은 task 인스턴스를
+    // 재활용하지만 이 분기로 의미 등가 달성.
+    let turnPrompt: string;
+    if (task.interventionQueue.length === 0) {
+      // 신규 task — Python `_persist_initial_messages`(L120-182) 의 user_message 분기 정합.
+      // 영속화 실패는 격리 — 본 task 진행에 영향 0 (Python L179-180 try/except 정합).
+      await this._persistInitialUserMessage(task);
+      turnPrompt = task.prompt;
+    } else {
+      // Auto-resume — intervention_sent는 addIntervention이 이미 영속화. 첫 turn은
+      // dequeue한 메시지로 직진. (Python create_task 재생성 모델과 의미 등가.)
+      turnPrompt = task.interventionQueue.shift()!.text;
+    }
     try {
       while (true) {
         const resumeSessionId = task.codexThreadId;
@@ -223,9 +241,6 @@ export class TaskExecutor {
   }
 
   /**
-   * 종료 처리: DB sessions 업데이트 + session_updated broadcast + engine.close.
-   */
-  /**
    * 첫 turn 진입 *전*에 user_message 이벤트를 events 테이블에 영속화하고 wire로 broadcast.
    *
    * Python `task_executor.py:120-182 _persist_initial_messages` 정본의 codex 적응판.
@@ -281,6 +296,9 @@ export class TaskExecutor {
     }
   }
 
+  /**
+   * 종료 처리: DB sessions 업데이트 + session_updated broadcast + engine.close.
+   */
   private async _finalize(task: Task): Promise<void> {
     const finalStatus = task.status;
 

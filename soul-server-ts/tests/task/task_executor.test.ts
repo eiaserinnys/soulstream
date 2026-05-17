@@ -406,18 +406,21 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     expect(task.interventionQueue).toHaveLength(0);
   });
 
-  it("P1-3: turn throw 시 interventionQueue 미처리 메시지가 있으면 wire error 이벤트 발행 + queue 정리", async () => {
+  it("P1-3: turn 진행 중 intervention 도착 후 turn throw → interventionQueue 미처리 메시지 wire error 이벤트 발행 + queue 정리", async () => {
     // 사용자가 인터벤션을 보냈는데(intervention_sent broadcast 수신) 그 직후 turn이 throw하면
     // 메시지가 silent로 사라진다. 사용자에게 명시 error 이벤트로 통지하여 재전송 결정 가능하게 한다.
+    // B-5 P0 fix 반영: queue가 비어있는 신규 task로 시작 → engine generator 진행 중 push →
+    // generator throw → catch 분기에서 queue 비어있지 않으면 error 발행 (PR #52 의도 유지).
     const mocks = makeMocks();
     const task = makeTask();
-    task.interventionQueue.push({ text: "pending", user: "u" });
 
     const engine: EnginePort = {
       backendId: "codex",
       workspaceDir: "/tmp/codex-default",
-      // eslint-disable-next-line require-yield
       async *execute(): AsyncIterable<SSEEventPayload> {
+        // 첫 yield 후 외부 intervention 도착 시뮬레이션
+        yield { type: "session", session_id: "thr-1" } as SSEEventPayload;
+        task.interventionQueue.push({ text: "pending", user: "u" });
         throw new Error("engine boom");
       },
       async interrupt() { return true; },
@@ -516,7 +519,10 @@ describe("TaskExecutor _persistInitialUserMessage (B-5)", () => {
     expect(task.status).toBe("completed");  // user_message 실패에도 task 정상 진행
   });
 
-  it("turn-loop intervention dequeue 시점에는 user_message 추가 영속화 안 함 (multi-turn 1회만)", async () => {
+  it("auto-resume task (queue에 메시지 push된 상태로 startExecution) → user_message 영속화 *건너뜀* (B-5 P0 fix)", async () => {
+    // queue 있는 task는 *auto-resume 흐름* — intervention_sent는 addIntervention에서 이미
+    // 영속화됐고 task.prompt는 prior turn에서 처리된 원래 발화. user_message 추가 영속화 시
+    // events 타임라인 어그러짐 (intervention_sent → 원래 prompt user_message 중복).
     const mocks = makeMocks();
     const events: SSEEventPayload[] = [
       { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
@@ -527,10 +533,36 @@ describe("TaskExecutor _persistInitialUserMessage (B-5)", () => {
     executor.startExecution(task, agent);
     await task.executionPromise;
 
-    // user_message는 *최초 1회*만. intervention_sent는 task_manager가 영속화 (task_manager.test.ts에서 보호).
+    // user_message는 *0회* (auto-resume 흐름이므로 intervention_sent로만 처리)
     const userMessages = mocks.persistEvent.mock.calls.filter(
       (c) => (c[1] as { type: string }).type === "user_message",
     );
-    expect(userMessages.length).toBe(1);
+    expect(userMessages.length).toBe(0);
+  });
+
+  it("auto-resume task: 첫 turn prompt = queue dequeue.text (task.prompt 재실행 안 함)", async () => {
+    // P0 fix 핵심 회귀: queue 있는 task는 첫 turn engine.execute에 *queue 메시지*를 prompt로 전달.
+    // task.prompt는 prior turn에서 이미 codex thread에 처리된 원래 발화 — 재실행하면 중복 응답.
+    const mocks = makeMocks();
+    const events: SSEEventPayload[] = [
+      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
+    ];
+    let capturedPrompt: string | undefined;
+    const engine: EnginePort = {
+      backendId: "codex",
+      workspaceDir: "/tmp/codex-default",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        capturedPrompt = params.prompt;
+        for (const e of events) yield e;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(() => engine, mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
+    const task = makeTask();  // task.prompt = "hi" (원래 prompt)
+    task.interventionQueue.push({ text: "new message", user: "u" });
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+    expect(capturedPrompt).toBe("new message");  // task.prompt="hi"가 아니라 queue dequeue
   });
 });
