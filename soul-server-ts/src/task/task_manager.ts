@@ -340,10 +340,32 @@ export class TaskManager {
       attachmentPaths: params.attachmentPaths,
     };
 
-    // B-5: intervention_sent를 events 테이블에 *영속화*한 뒤 broadcast.
-    // Python `task_executor.py:352-389 on_intervention_sent` 정본 정합 — DB persistEvent +
-    // wire broadcast 양쪽 수행하여 사용자 발화가 채팅 UI·session history에 모두 표시.
-    // persistEvent 실패는 격리 (Python L382-388 try/except 정합).
+    // B-5 결함 A 정정: wire 분기를 task.status에 따라 분리.
+    //
+    //  - 진행 중 (task.status === "running") → intervention_sent (UI 주황색)
+    //    Python `task_executor.py:352-389 on_intervention_sent` 정본
+    //  - 완료 후 (completed/error/interrupted) → user_message (UI 흰색) + auto-resume
+    //    Python `task_manager.py:635 create_task(prompt=text, ...)` 정본 — 새 task에서
+    //    _persist_initial_messages가 user_message를 박는 모델과 의미 등가.
+    //
+    // PR #54까지는 두 경로 모두 intervention_sent로 박혀 사용자 보고 "2턴 이후 전부 주황색"
+    // 결함. 본 정정으로 wire 분류 정합.
+    if (task.status === "running") {
+      return await this._addInterventionRunning(task, message);
+    }
+    return await this._addInterventionAutoResume(task, message, onResume);
+  }
+
+  /**
+   * 진행 중 task에 intervention 도착 → intervention_sent 영속화 + broadcast + queue.push.
+   *
+   * Python `task_executor.py:352-389 on_intervention_sent` 정본. 현 turn 종료 후 task_executor가
+   * dequeue하여 다음 turn으로 진입.
+   */
+  private async _addInterventionRunning(
+    task: Task,
+    message: InterventionMessage,
+  ): Promise<AddInterventionResult> {
     const interventionEvent: Record<string, unknown> = {
       type: "intervention_sent",
       user: message.user,
@@ -363,7 +385,6 @@ export class TaskManager {
           interventionEvent as SSEEventPayload,
         );
         task.lastEventId = eventId;
-        // handleSideEffects가 last_message 갱신 — PREVIEW_FIELD_MAP.intervention_sent="text" 매핑으로 정합.
         await this.persistence.handleSideEffects(
           task.agentSessionId,
           interventionEvent as SSEEventPayload,
@@ -376,8 +397,6 @@ export class TaskManager {
         );
       }
     }
-
-    // intervention_sent broadcast — Python 정본 패턴 (큐잉·resume 양쪽에서 발행).
     try {
       await this.broadcaster.emitInterventionSent(task.agentSessionId, message);
     } catch (err) {
@@ -386,40 +405,101 @@ export class TaskManager {
         "intervention_sent broadcast failed",
       );
     }
+    task.interventionQueue.push(message);
+    return { queued: true, queuePosition: task.interventionQueue.length };
+  }
 
-    if (task.status === "running") {
-      task.interventionQueue.push(message);
-      return { queued: true, queuePosition: task.interventionQueue.length };
-    }
-
-    // Completed/Error/Interrupted → 자동 resume.
-    //
-    // P1-1 race 보호 (code-reviewer): turn 종료 후 _finalize의 await 사이에 intervene이
-    // 도착할 수 있다. task.status는 "completed"로 박혀 있지만 `task.engine`은 _finalize
-    // 마지막 줄(`task.engine = undefined`)에 도달하기 전까지 살아있어, onResume → startExecution이
-    // L45 `if (task.engine) throw` 가드에 걸린다. executionPromise를 drain하여 finalize가
-    // 끝났음을 보장한 뒤 진행.
-    //
-    // Python `task_manager.py:438` "락 블록 바깥에서 실행" 주석이 같은 race를 락으로
-    // 차단하는 정본. TS는 task별 executionPromise drain으로 의미 등가 처리.
+  /**
+   * Completed/Error/Interrupted task에 intervention 도착 → user_message 영속화·broadcast +
+   * status="running" 전환 + session_updated wire + onResume.
+   *
+   * Python `task_manager.py:635 create_task(prompt=text)` 모델의 codex 적응판. 같은 task
+   * 인스턴스를 재활용하지만 *새 turn 진입 시* user_message가 자기 wire로 영속화·broadcast되어
+   * 클라이언트 채팅 UI에 흰색으로 표시. 또한 `emitSessionUpdated(task)`로 task.status="running"을
+   * wire에 즉시 반영 — soul-app TypingIndicator(`session.status === "running"`)가 즉시 표시.
+   *
+   * race 보호: P1-1 (code-reviewer PR #52). task.executionPromise drain으로 _finalize 완료
+   * 보장 후 진입.
+   */
+  private async _addInterventionAutoResume(
+    task: Task,
+    message: InterventionMessage,
+    onResume: StartExecutionCallback,
+  ): Promise<AddInterventionResult> {
+    // race 보호 — _finalize 미완료 시 await
     if (task.executionPromise) {
       try {
         await task.executionPromise;
       } catch {
-        // executionPromise는 _consumeEventStream 정상 종료 시 resolve, throw 시 외부 catch에서
-        // 잡힌 후 resolve — 어느 경우든 finalize는 완료됨. ignore.
+        // ignore — finalize는 끝났음
       }
     }
 
-    // 같은 task 인스턴스를 재활용하여 codexThreadId가 보존되도록 한다.
-    // status 전환 + queue push 후 onResume 콜백 — 콜백이 startExecution을 호출.
+    // user_message 이벤트 wire (Python `_persist_initial_messages` user_message 정합).
+    const userMessageEvent: Record<string, unknown> = {
+      type: "user_message",
+      user: message.user,
+      text: message.text,
+      timestamp: Date.now() / 1000,
+    };
+    if (message.callerInfo) {
+      userMessageEvent.caller_info = message.callerInfo;
+    }
+    if (message.attachmentPaths && message.attachmentPaths.length > 0) {
+      userMessageEvent.attachments = message.attachmentPaths;
+    }
+    if (this.persistence) {
+      try {
+        const eventId = await this.persistence.persistEvent(
+          task.agentSessionId,
+          userMessageEvent as SSEEventPayload,
+        );
+        task.lastEventId = eventId;
+        await this.persistence.handleSideEffects(
+          task.agentSessionId,
+          userMessageEvent as SSEEventPayload,
+          task,
+        );
+      } catch (err) {
+        this.logger.warn(
+          { err, sessionId: task.agentSessionId },
+          "user_message (auto-resume) persistence failed",
+        );
+      }
+    }
+    try {
+      await this.broadcaster.emitEventEnvelope(
+        task.agentSessionId,
+        userMessageEvent as SSEEventPayload,
+      );
+    } catch (err) {
+      this.logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "user_message (auto-resume) broadcast failed",
+      );
+    }
+
+    // 같은 task 인스턴스를 재활용하여 codexThreadId 보존.
     task.status = "running";
     task.completedAt = undefined;
     task.error = undefined;
     task.result = undefined;
     task.interventionQueue.push(message);
 
-    // engine 인스턴스는 finalize에서 close된 상태 (drain 완료 보장) — task_executor.startExecution이 새 engine 생성.
+    // 결함 B 정정: session_updated wire를 *상태 전환 직후* broadcast하여 클라이언트의
+    // session.status를 "running"으로 즉시 갱신. soul-app TypingIndicator
+    // (`session.status === "running"`)가 표시되도록 한다. PR #54까지는 이 wire가 누락되어
+    // codex 세션 auto-resume 시 typing indicator가 안 나오던 결함.
+    try {
+      await this.broadcaster.emitSessionUpdated(task);
+    } catch (err) {
+      this.logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "session_updated (auto-resume) broadcast failed",
+      );
+    }
+
+    // engine 인스턴스는 finalize에서 close된 상태 — onResume → startExecution이 새 engine 생성.
     onResume(task);
     return { autoResumed: true };
   }

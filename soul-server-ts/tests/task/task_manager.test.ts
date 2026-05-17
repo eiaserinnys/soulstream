@@ -32,11 +32,15 @@ function makeMocks() {
   const emitSessionDeleted = vi.fn().mockResolvedValue(undefined);
   const emitInterventionSent = vi.fn().mockResolvedValue(undefined);
   const emitCatalogUpdated = vi.fn().mockResolvedValue(undefined);
+  const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
+  const emitSessionUpdated = vi.fn().mockResolvedValue(undefined);
   const broadcaster = {
     emitSessionCreated,
     emitSessionDeleted,
     emitInterventionSent,
     emitCatalogUpdated,
+    emitEventEnvelope,
+    emitSessionUpdated,
   } as unknown as SessionBroadcaster;
 
   return {
@@ -51,6 +55,8 @@ function makeMocks() {
     emitSessionDeleted,
     emitInterventionSent,
     emitCatalogUpdated,
+    emitEventEnvelope,
+    emitSessionUpdated,
   };
 }
 
@@ -276,13 +282,17 @@ describe("TaskManager.addIntervention (B-4)", () => {
     expect(r2).toEqual({ queued: true, queuePosition: 2 });
   });
 
-  it("completed task → status=running 전환 + queue push + onResume 호출 + autoResumed result", async () => {
-    const { db, broadcaster, emitInterventionSent } = makeMocks();
-    const tm = new TaskManager("n", db, broadcaster, silentLogger);
+  it("completed task → user_message wire (UI 흰색) + status=running + session_updated + onResume + autoResumed", async () => {
+    // 결함 A 정정 (PR #55): completed/error/interrupted → intervention_sent가 아닌
+    // user_message로 wire 박힘 (Python `create_task(prompt=text)` 모델 정합).
+    // 결함 B 정정: session_updated wire를 *상태 전환 직후* broadcast하여 soul-app TypingIndicator
+    // (session.status === "running")가 즉시 표시.
+    const broadcasterMocks = makeMocks();
+    const tm = new TaskManager("n", broadcasterMocks.db, broadcasterMocks.broadcaster, silentLogger);
     const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
     task.status = "completed";
     task.completedAt = new Date();
-    task.codexThreadId = "thr-1";  // 완료된 turn이 thread id를 남겼다고 가정 (resumeThread 가능)
+    task.codexThreadId = "thr-1";
 
     const onResume = vi.fn();
     const result = await tm.addIntervention(
@@ -295,9 +305,13 @@ describe("TaskManager.addIntervention (B-4)", () => {
     expect(task.completedAt).toBeUndefined();
     expect(task.interventionQueue).toHaveLength(1);
     expect(task.interventionQueue[0]).toMatchObject({ text: "resume", user: "u" });
-    expect(task.codexThreadId).toBe("thr-1");  // resumeThread를 위해 보존
+    expect(task.codexThreadId).toBe("thr-1");
     expect(onResume).toHaveBeenCalledWith(task);
-    expect(emitInterventionSent).toHaveBeenCalledTimes(1);
+    // intervention_sent는 *발행 안 함* (auto-resume은 user_message 경로)
+    expect(broadcasterMocks.emitInterventionSent).not.toHaveBeenCalled();
+    // session_updated가 status=running 박힌 task로 broadcast
+    expect(broadcasterMocks.emitSessionUpdated).toHaveBeenCalledTimes(1);
+    expect(broadcasterMocks.emitSessionUpdated.mock.calls[0][0]).toBe(task);
   });
 
   it.each(["error", "interrupted"] as const)("%s task → 같은 auto-resume 경로", async (status) => {
@@ -530,5 +544,97 @@ describe("TaskManager.addIntervention — intervention_sent 영속화 (B-5)", ()
     );
     expect(result).toEqual({ queued: true, queuePosition: 1 });
     expect(mocks.emitInterventionSent).toHaveBeenCalledTimes(1);
+  });
+});
+
+// PR #55: 결함 A·B 정합 (resume vs intervention 분기 + typing indicator)
+describe("TaskManager.addIntervention — running vs completed wire 분기 (결함 A·B)", () => {
+  it("running task → intervention_sent wire 발행, user_message·session_updated 발행 안 함", async () => {
+    const mocks = makeMocks();
+    const persistEvent = vi.fn().mockResolvedValue(1);
+    const handleSideEffects = vi.fn().mockResolvedValue(undefined);
+    const persistence = { persistEvent, handleSideEffects } as unknown as import("../../src/db/event_persistence.js").EventPersistence;
+    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, persistence);
+    const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
+    expect(task.status).toBe("running");
+
+    await tm.addIntervention(
+      { agentSessionId: "s1", text: "추가", user: "u" },
+      vi.fn(),
+    );
+
+    // intervention_sent만 발행, user_message envelope·session_updated 발행 안 함
+    expect(mocks.emitInterventionSent).toHaveBeenCalledTimes(1);
+    expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
+    expect(mocks.emitSessionUpdated).not.toHaveBeenCalled();
+    // persistEvent에 박힌 type은 intervention_sent
+    expect((persistEvent.mock.calls[0][1] as { type: string }).type).toBe("intervention_sent");
+  });
+
+  it("completed task → user_message envelope + session_updated + onResume, intervention_sent 발행 안 함", async () => {
+    const mocks = makeMocks();
+    const persistEvent = vi.fn().mockResolvedValue(2);
+    const handleSideEffects = vi.fn().mockResolvedValue(undefined);
+    const persistence = { persistEvent, handleSideEffects } as unknown as import("../../src/db/event_persistence.js").EventPersistence;
+    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, persistence);
+    const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
+    task.status = "completed";
+    task.completedAt = new Date();
+
+    await tm.addIntervention(
+      { agentSessionId: "s1", text: "이어서", user: "alice", callerInfo: { source: "slack", display_name: "Alice" } },
+      vi.fn(),
+    );
+
+    // user_message envelope 발행
+    const envelopeCalls = mocks.emitEventEnvelope.mock.calls.filter(
+      (c) => (c[1] as { type: string }).type === "user_message",
+    );
+    expect(envelopeCalls.length).toBe(1);
+    expect((envelopeCalls[0][1] as Record<string, unknown>).text).toBe("이어서");
+    expect((envelopeCalls[0][1] as Record<string, unknown>).caller_info).toEqual({ source: "slack", display_name: "Alice" });
+
+    // persistEvent에 박힌 type은 user_message
+    expect((persistEvent.mock.calls[0][1] as { type: string }).type).toBe("user_message");
+
+    // session_updated가 status="running" 박힌 task로 broadcast (결함 B fix)
+    expect(mocks.emitSessionUpdated).toHaveBeenCalledTimes(1);
+    expect((mocks.emitSessionUpdated.mock.calls[0][0] as { status: string }).status).toBe("running");
+
+    // intervention_sent는 발행 안 함
+    expect(mocks.emitInterventionSent).not.toHaveBeenCalled();
+  });
+
+  it.each(["error", "interrupted"] as const)("%s task → user_message 분기 (completed와 동일)", async (status) => {
+    const mocks = makeMocks();
+    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);
+    const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
+    task.status = status;
+    await tm.addIntervention(
+      { agentSessionId: "s1", text: "재개", user: "u" },
+      vi.fn(),
+    );
+    const envelopeCalls = mocks.emitEventEnvelope.mock.calls.filter(
+      (c) => (c[1] as { type: string }).type === "user_message",
+    );
+    expect(envelopeCalls.length).toBe(1);
+    expect(mocks.emitInterventionSent).not.toHaveBeenCalled();
+    expect(mocks.emitSessionUpdated).toHaveBeenCalledTimes(1);
+  });
+
+  it("session_updated가 user_message broadcast *이후*에 발행됨 (클라이언트 store 정합)", async () => {
+    // status="running" wire가 클라이언트에 도달하기 *전에* user_message가 박혀야
+    // typing indicator가 새 메시지 *뒤*에 표시 (UX 자연스러움).
+    const mocks = makeMocks();
+    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);
+    const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
+    task.status = "completed";
+    await tm.addIntervention(
+      { agentSessionId: "s1", text: "x", user: "u" },
+      vi.fn(),
+    );
+    const userMsgOrder = mocks.emitEventEnvelope.mock.invocationCallOrder[0];
+    const sessionUpdatedOrder = mocks.emitSessionUpdated.mock.invocationCallOrder[0];
+    expect(userMsgOrder).toBeLessThan(sessionUpdatedOrder);
   });
 });
