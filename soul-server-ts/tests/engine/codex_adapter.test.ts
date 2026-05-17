@@ -227,6 +227,51 @@ describe("CodexEngineAdapter.execute — 새 thread", () => {
     expect(sseEvents[1]).toMatchObject({ type: "complete" });
   });
 
+  it("codex가 item.completed (agent_message)만 emit해도 text_delta+text_end+complete 시퀀스를 yield한다 — codex-rs non-streaming 보호", async () => {
+    // 분석 캐시 `20260517-1220-codex-ts-subscribe-events.md` §A 실측:
+    // codex-rs --experimental-json은 item.started·item.updated를 emit하지 않으며
+    // agent_message 텍스트는 item.completed.item.text에만 담겨 온다.
+    // 어댑터→mapper 통합 시퀀스가 text_delta 합성 발행을 보존해야 클라이언트가 빈 메시지를
+    // 보지 않는다.
+    const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
+    mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });
+    mockRunStreamed.mockResolvedValue({
+      events: eventStream([
+        { type: "thread.started", thread_id: "thr-codex" },
+        { type: "turn.started" },
+        {
+          type: "item.completed",
+          item: { id: "msg-0", type: "agent_message", text: "hello world" },
+        },
+        {
+          type: "turn.completed",
+          usage: {
+            input_tokens: 100,
+            cached_input_tokens: 50,
+            output_tokens: 3,
+            reasoning_output_tokens: 0,
+          },
+        },
+      ]),
+    });
+
+    const engine = new CodexEngineAdapter(
+      { workspaceDir: "/tmp/work" },
+      silentLogger(),
+    );
+    const sseEvents: Array<Record<string, unknown>> = [];
+    for await (const event of engine.execute({ prompt: "say hello" })) {
+      sseEvents.push(event as Record<string, unknown>);
+    }
+
+    expect(sseEvents).toHaveLength(4);
+    expect(sseEvents[0]).toEqual({ type: "session", session_id: "thr-codex" });
+    expect(sseEvents[1]).toMatchObject({ type: "text_delta", text: "hello world" });
+    expect(sseEvents[2]).toMatchObject({ type: "text_end" });
+    expect(sseEvents[2].text).toBeUndefined();
+    expect(sseEvents[3]).toMatchObject({ type: "complete" });
+  });
+
   it("model 옵션을 startThread에 그대로 전달", async () => {
     const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
     mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });

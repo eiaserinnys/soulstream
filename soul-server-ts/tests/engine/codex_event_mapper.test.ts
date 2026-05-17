@@ -224,17 +224,57 @@ describe("item.updated 매핑 (B-3 streaming)", () => {
 });
 
 describe("item.completed 매핑", () => {
-  it("agent_message → text_end (text 필드 없음, timestamp 박힘) — B-2 결함 정정", () => {
+  it("agent_message (text 있음) → text_delta(text) + text_end — codex-rs streaming 미발생 보완", () => {
+    // 분석 캐시 `20260517-1220-codex-ts-subscribe-events.md` §A 실측:
+    // codex-rs --experimental-json은 item.started·item.updated를 emit하지 않으며,
+    // agent_message 텍스트는 *오로지* item.completed.item.text 한 곳에만 담겨 온다.
+    // mapper가 합성 text_delta를 발행하지 않으면 클라이언트는 빈 메시지를 본다.
     const sse = mapThreadEvent({
       type: "item.completed",
       item: { id: "i1", type: "agent_message", text: "Hello world" },
     });
+    expect(sse).toHaveLength(2);
+    expect(sse[0]).toMatchObject({
+      type: "text_delta",
+      text: "Hello world",
+    });
+    expect(typeof (sse[0] as { timestamp: number }).timestamp).toBe("number");
+    const endEv = sse[1] as Record<string, unknown>;
+    expect(endEv.type).toBe("text_end");
+    expect(endEv.text).toBeUndefined();  // Python schemas.py L170-174 정합
+    expect(endEv.item_id).toBeUndefined();
+    expect(typeof endEv.timestamp).toBe("number");
+  });
+
+  it("agent_message (text 빈 문자열) → text_end만 (text_delta 미합성)", () => {
+    // 빈 문자열 text_delta는 클라이언트 누적 모델에 noise — 발행하지 않는다.
+    const sse = mapThreadEvent({
+      type: "item.completed",
+      item: { id: "i1", type: "agent_message", text: "" },
+    });
     expect(sse).toHaveLength(1);
-    const ev = sse[0] as Record<string, unknown>;
-    expect(ev.type).toBe("text_end");
-    expect(ev.text).toBeUndefined();  // Python schemas.py L170-174 정합
-    expect(ev.item_id).toBeUndefined();
-    expect(typeof ev.timestamp).toBe("number");
+    expect((sse[0] as { type: string }).type).toBe("text_end");
+    expect((sse[0] as { text?: unknown }).text).toBeUndefined();
+  });
+
+  it("agent_message — 한글·이모지·multiline verbatim 보존 (인코딩 변조 금지)", () => {
+    const text = "안녕하세요 🌸\n두 번째 줄\n세 번째 줄";
+    const sse = mapThreadEvent({
+      type: "item.completed",
+      item: { id: "i1", type: "agent_message", text },
+    });
+    expect(sse).toHaveLength(2);
+    expect((sse[0] as { text: string }).text).toBe(text);
+  });
+
+  it("agent_message — text_delta와 text_end의 timestamp는 동일 (분리 발행이지만 의미적 atomic)", () => {
+    const sse = mapThreadEvent({
+      type: "item.completed",
+      item: { id: "i1", type: "agent_message", text: "x" },
+    });
+    const t1 = (sse[0] as { timestamp: number }).timestamp;
+    const t2 = (sse[1] as { timestamp: number }).timestamp;
+    expect(t1).toBe(t2);
   });
 
   it("reasoning → thinking (text + signature='')", () => {
