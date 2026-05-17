@@ -29,6 +29,11 @@ const PREVIEW_FIELD_MAP: Record<string, string> = {
   complete: "result",
   error: "message",
   away_summary: "content",
+  // B-5: 사용자 발화 영속 (Python `event_persistence.py:78-79` 정본 정합).
+  // codex 노드는 systemPrompt를 SDK가 미지원이라 system_message 이벤트를 발행하지 않음 —
+  // PREVIEW_FIELD_MAP에 키를 두지 않는다 (Python 정본 PREVIEW_FIELD_MAP도 system_message 없음).
+  user_message: "text",
+  intervention_sent: "text",
 };
 
 export class EventPersistence {

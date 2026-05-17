@@ -18,9 +18,11 @@
 import type { Logger } from "pino";
 
 import { DEFAULT_FOLDERS, type SessionDB } from "../db/session_db.js";
+import type { EventPersistence } from "../db/event_persistence.js";
 
 import type { CallerInfo, InterventionMessage, Task, TaskStatus } from "./task_models.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
+import type { SSEEventPayload } from "../engine/protocol.js";
 
 export interface CreateTaskParams {
   agentSessionId: string;
@@ -70,6 +72,12 @@ export class TaskManager {
     private readonly db: SessionDB,
     private readonly broadcaster: SessionBroadcaster,
     private readonly logger: Logger,
+    /**
+     * B-5: intervention_sent 영속화에 사용 (Python `task_executor.py:352-389
+     * on_intervention_sent` 정본 정합). undefined일 때 영속화는 skip (legacy
+     * 호출자·테스트 환경 호환 — broadcast만 발행).
+     */
+    private readonly persistence?: EventPersistence,
   ) {}
 
   /**
@@ -332,8 +340,44 @@ export class TaskManager {
       attachmentPaths: params.attachmentPaths,
     };
 
-    // intervention_sent broadcast — Python 정본 패턴
-    // (`task_executor.py:352-389 on_intervention_sent`). 큐잉·resume 양쪽에서 발행.
+    // B-5: intervention_sent를 events 테이블에 *영속화*한 뒤 broadcast.
+    // Python `task_executor.py:352-389 on_intervention_sent` 정본 정합 — DB persistEvent +
+    // wire broadcast 양쪽 수행하여 사용자 발화가 채팅 UI·session history에 모두 표시.
+    // persistEvent 실패는 격리 (Python L382-388 try/except 정합).
+    const interventionEvent: Record<string, unknown> = {
+      type: "intervention_sent",
+      user: message.user,
+      text: message.text,
+      timestamp: Date.now() / 1000,
+    };
+    if (message.callerInfo) {
+      interventionEvent.caller_info = message.callerInfo;
+    }
+    if (message.attachmentPaths && message.attachmentPaths.length > 0) {
+      interventionEvent.attachments = message.attachmentPaths;
+    }
+    if (this.persistence) {
+      try {
+        const eventId = await this.persistence.persistEvent(
+          task.agentSessionId,
+          interventionEvent as SSEEventPayload,
+        );
+        task.lastEventId = eventId;
+        // handleSideEffects가 last_message 갱신 — PREVIEW_FIELD_MAP.intervention_sent="text" 매핑으로 정합.
+        await this.persistence.handleSideEffects(
+          task.agentSessionId,
+          interventionEvent as SSEEventPayload,
+          task,
+        );
+      } catch (err) {
+        this.logger.warn(
+          { err, sessionId: task.agentSessionId },
+          "intervention_sent persistence failed",
+        );
+      }
+    }
+
+    // intervention_sent broadcast — Python 정본 패턴 (큐잉·resume 양쪽에서 발행).
     try {
       await this.broadcaster.emitInterventionSent(task.agentSessionId, message);
     } catch (err) {
