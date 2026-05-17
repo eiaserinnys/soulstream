@@ -1,11 +1,15 @@
-import Fastify, { type FastifyInstance } from "fastify";
-import type { Logger } from "pino";
+import Fastify, { type FastifyBaseLogger, type FastifyInstance } from "fastify";
 
 export interface ServerParams {
   host: string;
   port: number;
   nodeId: string;
-  logger: Logger;
+  /**
+   * fastify 5 호환 — pino `Logger`는 `FastifyBaseLogger`의 superset이므로 자동 narrowing.
+   * 본 시그니처가 fastify의 default generic(`FastifyBaseLogger`) 추론을 허용하여
+   * `FastifyInstance` 반환 타입과의 contravariance 충돌을 회피한다.
+   */
+  logger: FastifyBaseLogger;
 }
 
 /**
@@ -15,8 +19,11 @@ export interface ServerParams {
  * 외부 API(create_session 등)는 *없음* — 모든 통신은 orch WS reverse 채널을 통해 이루어진다.
  */
 export async function buildServer(params: ServerParams): Promise<FastifyInstance> {
+  // fastify 5 breaking change: pino 인스턴스는 `loggerInstance` 별 키로 받는다.
+  // `logger` 키는 boolean 또는 config object만 허용 (fastify.d.ts L128-129 정본).
+  // fastify 4 패턴 `logger: pinoInstance`는 `FST_ERR_LOG_INVALID_LOGGER_CONFIG` throw.
   const fastify = Fastify({
-    logger: params.logger,
+    loggerInstance: params.logger,
     disableRequestLogging: false,
   });
 
