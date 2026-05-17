@@ -182,11 +182,11 @@ describe("EventPersistence.handleSideEffects", () => {
     expect(arg.preview).toHaveLength(200);
   });
 
-  it("updateLastMessage 실패해도 throw 안 함 (실패 격리)", async () => {
+  it("updateLastMessage throw → 호출자 전파 + wire 미발행 (Python 정합: DB·wire 일관성)", async () => {
     const appendEvent = vi.fn();
     const updateLastMessage = vi.fn().mockRejectedValue(new Error("db down"));
     const db = { appendEvent, updateLastMessage } as unknown as SessionDB;
-    const { broadcaster } = makeMockBroadcaster();
+    const { broadcaster, emitSessionMessageUpdated } = makeMockBroadcaster();
     const ep = new EventPersistence(db, broadcaster, silentLogger);
     await expect(
       ep.handleSideEffects(
@@ -194,7 +194,12 @@ describe("EventPersistence.handleSideEffects", () => {
         { type: "text_delta", text: "x", timestamp: 1 } as SSEEventPayload,
         makeTask(),
       ),
-    ).resolves.toBeUndefined();
+    ).rejects.toThrow(/db down/);
+
+    // 호출자(task_executor._processEvent)가 try로 감싸 격리. 여기서는 throw 전파만 검증.
+    // wire는 *미발행* — DB 미갱신 상태로 wire를 보내면 클라이언트가 last_message 보고 새로
+    // 그렸다가 다음 list refresh에서 이전 값으로 회귀하는 transient 불일치 방지.
+    expect(emitSessionMessageUpdated).not.toHaveBeenCalled();
   });
 
   // === F-3A: emit_session_message_updated wire 발행 ===

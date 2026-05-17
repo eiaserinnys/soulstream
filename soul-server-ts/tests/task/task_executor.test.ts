@@ -215,6 +215,34 @@ describe("TaskExecutor.startExecution", () => {
     );
   });
 
+  it("F-3A 회귀: handleSideEffects throw (DB 실패 등) → 격리, task 진행 계속", async () => {
+    // handleSideEffects는 EventPersistence가 DB throw를 호출자에 전파한다 (Python 정합).
+    // _processEvent의 try-catch가 이를 받아 task 진행을 막지 않아야 한다.
+    const mocks = makeMocks();
+    mocks.handleSideEffects.mockRejectedValueOnce(
+      new Error("last_message db down"),
+    );
+    const events: SSEEventPayload[] = [
+      { type: "text_delta", text: "a", timestamp: 1 } as SSEEventPayload,
+      { type: "text_delta", text: "ab", timestamp: 2 } as SSEEventPayload,
+    ];
+    const executor = new TaskExecutor(
+      () => makeFakeEngine(events),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    expect(task.status).toBe("completed");
+    // 두 이벤트 모두 처리됨 (첫 handleSideEffects throw에도 다음 이벤트 진행)
+    expect(mocks.persistEvent).toHaveBeenCalledTimes(2);
+    expect(mocks.handleSideEffects).toHaveBeenCalledTimes(2);
+  });
+
   it("F-3B T7: db.setClaudeSessionId throw → 격리 (task 진행 계속, status=completed)", async () => {
     const mocks = makeMocks();
     mocks.setClaudeSessionId.mockRejectedValueOnce(

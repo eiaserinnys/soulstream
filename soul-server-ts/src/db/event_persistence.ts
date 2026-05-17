@@ -64,11 +64,17 @@ export class EventPersistence {
    * 이벤트 후처리: last_message DB 갱신 + emit_session_message_updated wire 발행 +
    * task.lastAssistantText 누적.
    *
-   * 실패해도 throw하지 않음 (design-principles §8 실패 격리) — 본 task 진행 중단 회피.
-   *
    * F-3A: PREVIEW_FIELD_MAP 매칭 이벤트(text_delta/thinking/result/complete/error/away_summary)에
    * 한해 DB 갱신 직후 broadcaster에 last_message wire를 발행. text_start/text_end/session 등은
    * PREVIEW_FIELD_MAP에 없어 자동 필터됨 — Python `event_persistence.py` L96-133 정본과 정합.
+   *
+   * 실패 격리 정책 (Python 정본 정합):
+   *   - DB updateLastMessage throw → 호출자(task_executor._processEvent)까지 전파.
+   *     wire는 발행하지 *않음* — DB·wire 불일치(클라이언트가 last_message 보고 새로 그렸는데
+   *     DB는 미갱신이라 다음 list refresh에서 이전 값으로 회귀) 방지.
+   *   - broadcaster.emitSessionMessageUpdated throw → 격리 (logger.debug, task 진행 계속).
+   *     wire는 다음 readable event가 self-correct.
+   *   - lastAssistantText 누적은 *항상* 수행 (DB·wire 무관).
    */
   async handleSideEffects(
     sessionId: string,
@@ -86,15 +92,11 @@ export class EventPersistence {
         timestamp: ts,
       };
 
-      // last_message DB 갱신
-      try {
-        await this.db.updateLastMessage(sessionId, lastMessage);
-      } catch (err) {
-        this.logger.debug({ err, sessionId }, "last_message update failed");
-      }
+      // last_message DB 갱신 — throw 시 호출자로 전파 (wire 미발행).
+      await this.db.updateLastMessage(sessionId, lastMessage);
 
-      // F-3A: emit_session_message_updated wire 발행 — DB 갱신과 *독립* 격리.
-      // DB 갱신은 실패해도 wire는 시도, wire 실패는 task 진행 막지 않음.
+      // F-3A: emit_session_message_updated wire — DB 성공 후에만 발행.
+      // wire 실패는 격리 (다음 readable event가 self-correct).
       try {
         await this.broadcaster.emitSessionMessageUpdated(
           sessionId,
