@@ -8,15 +8,26 @@
  * agent_message 매핑:
  *   - item.started   → text_start (text 필드 없음)
  *   - item.updated   → text_delta (text=item.text 누적값)
- *   - item.completed → text_delta(text=item.text) + text_end
- *                       (text 비어 있으면 text_end만 발행)
+ *   - item.completed → text_start + text_delta(text=item.text) + text_end
+ *                       (text 비어 있으면 text_end만 — 클라이언트 no-op·history 종결 신호)
  *
  * codex-rs CLI `--experimental-json` 실측(2026-05-17, 분석 캐시
  * `20260517-1220-codex-ts-subscribe-events.md` §A): item.started·item.updated가 *발생하지 않는다*.
  * 짧건 길건 agent_message의 텍스트는 *오로지* `item.completed.item.text` 하나에 담겨 온다.
- * 따라서 item.completed 시 text가 비어있지 않으면 text_delta를 *합성*하여 발행한다.
- * 그렇지 않으면 클라이언트는 빈 메시지를 본다. 합성된 text_delta가 그 자체로 *누적값*을
- * 담으므로 text_delta 누적 모델(`event_persistence.ts:117-124` lastAssistantText)과 정합.
+ *
+ * 따라서 item.completed에서 *세 이벤트 모두를 합성*한다 (분석 캐시
+ * `20260517-1325-codex-ts-sse-ui-routing.md`):
+ *
+ *   - soul-ui `tree-placer.handleTextStart`(`packages/soul-ui/src/stores/tree-placer.ts:157-179`)는
+ *     text_start 수신 시 텍스트 노드를 생성하고 ctx.activeTextTarget을 *설정*한다.
+ *   - 후속 text_delta·text_end는 activeTextTarget이 *없으면* silent drop된다
+ *     (`packages/soul-ui/src/stores/node-factory.ts:296-312`).
+ *   - claude 백엔드 정본 시퀀스(`soul-server/src/soul_server/engine/types.py:90`
+ *     "text_start → text_delta → text_end")와 정합 — 백엔드 간 wire 대칭성 회복.
+ *
+ * 세 페이로드는 동일 timestamp로 묶여 atomic 의미를 보존한다 (DB 라이브 claude 샘플
+ * `sess-20260322110817-20ec409b`이 같은 패턴: 동일 ts). `text_delta`는 *누적값*을 운반하므로
+ * `event_persistence.ts:117-124` lastAssistantText 누적 모델과 정합.
  *
  * 미래에 codex SDK가 progressive streaming을 emit하기 시작하면 item.updated의 text_delta가
  * 이미 발행된 상태에서 item.completed의 합성 text_delta가 *동일 누적값*을 한 번 더 발행한다.
@@ -198,23 +209,30 @@ function mapItemUpdated(item: ThreadItem): SSEEventPayload[] {
 function mapItemCompleted(item: ThreadItem): SSEEventPayload[] {
   switch (item.type) {
     case "agent_message": {
-      // codex-rs는 progressive streaming(item.updated)을 emit하지 않는다 (분석 캐시 §A 실측).
-      // text가 비어있지 않으면 text_delta를 합성하여 text_end 직전에 발행 — 그렇지 않으면
-      // 클라이언트는 빈 메시지를 본다. Python wire 정본: TextDelta has text, TextEnd no text.
+      // codex-rs는 progressive streaming(item.started/item.updated)을 emit하지 않는다
+      // (분석 캐시 `20260517-1220-codex-ts-subscribe-events.md` §A 실측). 그러나 soul-ui
+      // 클라이언트의 tree-placer.handleTextStart(`packages/soul-ui/src/stores/tree-placer.ts:157-179`)는
+      // text_start 수신 시 텍스트 노드를 생성하고 ctx.activeTextTarget을 *설정*한다.
+      // 후속 text_delta·text_end는 activeTextTarget이 *없으면* silent drop된다
+      // (`packages/soul-ui/src/stores/node-factory.ts:296-312`).
+      //
+      // 따라서 claude 백엔드 정본 시퀀스(`soul-server/src/soul_server/engine/types.py:90`
+      // "text_start → text_delta → text_end")와 정합되도록 item.completed에서 *세 이벤트
+      // 모두를 합성*한다. 세 페이로드는 동일 timestamp로 묶여 atomic 의미를 보존한다
+      // (DB 라이브 샘플 `sess-20260322110817-20ec409b`이 같은 패턴: 동일 ts 1774177745.579).
+      //
+      // text가 빈 문자열이면 text_end만 발행 — text_start 없는 text_end는 클라이언트에서
+      // no-op이고 history 백필도 종결 신호로 정합. (codex가 실제로 빈 agent_message를
+      // 발행하는 사례는 관찰되지 않음 — 방어적 분기.)
       const ts = nowEpochSec();
-      const payloads: SSEEventPayload[] = [];
-      if (item.text) {
-        payloads.push({
-          type: "text_delta",
-          text: item.text,
-          timestamp: ts,
-        } as SSEEventPayload);
+      if (!item.text) {
+        return [{ type: "text_end", timestamp: ts } as SSEEventPayload];
       }
-      payloads.push({
-        type: "text_end",
-        timestamp: ts,
-      } as SSEEventPayload);
-      return payloads;
+      return [
+        { type: "text_start", timestamp: ts } as SSEEventPayload,
+        { type: "text_delta", text: item.text, timestamp: ts } as SSEEventPayload,
+        { type: "text_end", timestamp: ts } as SSEEventPayload,
+      ];
     }
 
     case "reasoning":

@@ -227,12 +227,12 @@ describe("CodexEngineAdapter.execute — 새 thread", () => {
     expect(sseEvents[1]).toMatchObject({ type: "complete" });
   });
 
-  it("codex가 item.completed (agent_message)만 emit해도 text_delta+text_end+complete 시퀀스를 yield한다 — codex-rs non-streaming 보호", async () => {
-    // 분석 캐시 `20260517-1220-codex-ts-subscribe-events.md` §A 실측:
-    // codex-rs --experimental-json은 item.started·item.updated를 emit하지 않으며
-    // agent_message 텍스트는 item.completed.item.text에만 담겨 온다.
-    // 어댑터→mapper 통합 시퀀스가 text_delta 합성 발행을 보존해야 클라이언트가 빈 메시지를
-    // 보지 않는다.
+  it("codex가 item.completed (agent_message)만 emit해도 text_start+text_delta+text_end+complete 시퀀스를 yield한다 — claude 정본 정합", async () => {
+    // 분석 캐시 `20260517-1220-codex-ts-subscribe-events.md` §A: codex-rs는 item.started·item.updated를
+    // emit하지 않음. 분석 캐시 `20260517-1325-codex-ts-sse-ui-routing.md`: claude 정본 시퀀스는
+    // text_start → text_delta → text_end. 클라이언트(soul-ui tree-placer/node-factory)는 text_start
+    // 없이는 text_delta·text_end를 silent drop. 어댑터→mapper 통합 시퀀스가 *세 이벤트 모두*를
+    // 발행해야 채팅 UI에 본문이 표시된다.
     const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
     mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });
     mockRunStreamed.mockResolvedValue({
@@ -264,12 +264,14 @@ describe("CodexEngineAdapter.execute — 새 thread", () => {
       sseEvents.push(event as Record<string, unknown>);
     }
 
-    expect(sseEvents).toHaveLength(4);
+    expect(sseEvents).toHaveLength(5);
     expect(sseEvents[0]).toEqual({ type: "session", session_id: "thr-codex" });
-    expect(sseEvents[1]).toMatchObject({ type: "text_delta", text: "hello world" });
-    expect(sseEvents[2]).toMatchObject({ type: "text_end" });
-    expect(sseEvents[2].text).toBeUndefined();
-    expect(sseEvents[3]).toMatchObject({ type: "complete" });
+    expect(sseEvents[1]).toMatchObject({ type: "text_start" });
+    expect(sseEvents[1].text).toBeUndefined();
+    expect(sseEvents[2]).toMatchObject({ type: "text_delta", text: "hello world" });
+    expect(sseEvents[3]).toMatchObject({ type: "text_end" });
+    expect(sseEvents[3].text).toBeUndefined();
+    expect(sseEvents[4]).toMatchObject({ type: "complete" });
   });
 
   it("model 옵션을 startThread에 그대로 전달", async () => {
