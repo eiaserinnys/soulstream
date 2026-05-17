@@ -21,7 +21,11 @@ from soulstream_server.nodes.node_manager import NodeManager
 @pytest.fixture
 def mock_broadcaster():
     broadcaster = MagicMock()
-    broadcaster.broadcast = AsyncMock()
+    # F-B(2026-05-17): _on_node_change가 broadcast 반환값(int recipient count)을
+    # logger.info "%d" 포맷에 사용한다. AsyncMock 기본 반환은 MagicMock 인스턴스라
+    # %d 포맷이 __int__ 호출 시 TypeError. return_value=1로 픽스처 갱신 — 기존
+    # 케이스 13개의 assert는 broadcast *인자*만 검증하므로 return_value 변경에 영향 0.
+    broadcaster.broadcast = AsyncMock(return_value=1)
     broadcaster.broadcast_node_change = AsyncMock()
     return broadcaster
 
@@ -126,6 +130,96 @@ async def test_session_deleted_with_none_session_id_skips_broadcast(mock_broadca
 
     mock_broadcaster.broadcast.assert_not_awaited()
     mock_broadcaster.broadcast_node_change.assert_awaited_once()
+
+
+# ===== F-B(2026-05-17): broadcast INFO/WARN 로그 검증 =====
+# 회귀 진단 시 "broadcast 발사 자체"가 로그에 결정적으로 남는지 확인.
+# 분석 캐시 §7.1 "broadcaster.broadcast 발사 자체 확정 불가" 한계 회피용.
+
+
+@pytest.mark.asyncio
+async def test_session_created_emits_broadcast_info_log(mock_broadcaster, mock_node_manager, caplog):
+    """F-B: session_created 분기에서 INFO 로그 [broadcast] session_created sid=... recipients=N 출력."""
+    import logging
+    caplog.set_level(logging.INFO, logger="soulstream_server.main")
+    mock_broadcaster.broadcast.return_value = 3  # 가상 수신자 3명
+    data = {"agentSessionId": "sess-fb-created", "status": "idle"}
+    await _on_node_change(
+        mock_broadcaster, mock_node_manager,
+        "node_session_session_created", "node-fb", data,
+    )
+
+    info_records = [r for r in caplog.records if r.levelno == logging.INFO and "[broadcast]" in r.message]
+    assert any(
+        "session_created" in r.message
+        and "sid=sess-fb-created" in r.message
+        and "node=node-fb" in r.message
+        and "recipients=3" in r.message
+        for r in info_records
+    ), f"INFO 로그 누락 또는 포맷 불일치 — records: {[r.message for r in info_records]}"
+
+
+@pytest.mark.asyncio
+async def test_session_updated_emits_broadcast_info_log(mock_broadcaster, mock_node_manager, caplog):
+    """F-B: session_updated 분기에서 INFO 로그 출력."""
+    import logging
+    caplog.set_level(logging.INFO, logger="soulstream_server.main")
+    mock_broadcaster.broadcast.return_value = 2
+    data = {"agentSessionId": "sess-fb-updated", "status": "running"}
+    await _on_node_change(
+        mock_broadcaster, mock_node_manager,
+        "node_session_session_updated", "node-fb", data,
+    )
+
+    info_records = [r for r in caplog.records if r.levelno == logging.INFO and "[broadcast]" in r.message]
+    assert any(
+        "session_updated" in r.message
+        and "sid=sess-fb-updated" in r.message
+        and "recipients=2" in r.message
+        for r in info_records
+    ), f"INFO 로그 누락 — records: {[r.message for r in info_records]}"
+
+
+@pytest.mark.asyncio
+async def test_session_deleted_with_id_emits_broadcast_info_log(mock_broadcaster, mock_node_manager, caplog):
+    """F-B: session_deleted with session_id 분기에서 INFO 로그 출력."""
+    import logging
+    caplog.set_level(logging.INFO, logger="soulstream_server.main")
+    mock_broadcaster.broadcast.return_value = 1
+    data = {"agentSessionId": "sess-fb-deleted"}
+    await _on_node_change(
+        mock_broadcaster, mock_node_manager,
+        "node_session_session_deleted", "node-fb", data,
+    )
+
+    info_records = [r for r in caplog.records if r.levelno == logging.INFO and "[broadcast]" in r.message]
+    assert any(
+        "session_deleted" in r.message
+        and "sid=sess-fb-deleted" in r.message
+        and "recipients=1" in r.message
+        for r in info_records
+    ), f"INFO 로그 누락 — records: {[r.message for r in info_records]}"
+
+
+@pytest.mark.asyncio
+async def test_session_deleted_without_id_emits_warn_log(mock_broadcaster, mock_node_manager, caplog):
+    """F-B: session_deleted without session_id 시 WARN 로그(SKIPPED) 출력."""
+    import logging
+    caplog.set_level(logging.WARNING, logger="soulstream_server.main")
+    data = {"unrelated_key": "x"}
+    await _on_node_change(
+        mock_broadcaster, mock_node_manager,
+        "node_session_session_deleted", "node-fb", data,
+    )
+
+    warn_records = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert any(
+        "[broadcast] session_deleted SKIPPED" in r.message
+        and "node=node-fb" in r.message
+        and "unrelated_key" in r.message
+        for r in warn_records
+    ), f"WARN 로그 누락 — records: {[r.message for r in warn_records]}"
+    mock_broadcaster.broadcast.assert_not_awaited()
 
 
 @pytest.mark.asyncio

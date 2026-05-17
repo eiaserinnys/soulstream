@@ -109,7 +109,17 @@ async def _on_node_change(
         folder_id = (data or {}).get("folderId")
         if folder_id is not None:
             broadcast_data["folder_id"] = folder_id
-        await broadcaster.broadcast(broadcast_data)
+        recipient_count = await broadcaster.broadcast(broadcast_data)
+        # F-B(2026-05-17): broadcast 발사·수신자 수 INFO 로그. 회귀 진단 시 broadcast가
+        # 실제로 발사되었는지 결정적으로 확인 가능 (분석 캐시 §7.1 "broadcaster.broadcast
+        # 발사 자체 확정 불가" 한계 회피).
+        sid_for_log = (
+            session_info.get("agentSessionId") if isinstance(session_info, dict) else None
+        )
+        logger.info(
+            "[broadcast] session_created sid=%s node=%s recipients=%d",
+            sid_for_log, node_id, recipient_count,
+        )
     elif event_type == "node_session_session_updated":
         # data에 agentSessionId(camelCase)가 오지만 클라이언트는 agent_session_id(snake_case)도 읽으므로
         # 두 키 모두 포함하여 안전하게 전달.
@@ -150,15 +160,32 @@ async def _on_node_change(
                 node_manager=node_manager,
                 caller_source=broadcast_data.get("caller_source"),
             )
-        await broadcaster.broadcast(broadcast_data)
+        recipient_count = await broadcaster.broadcast(broadcast_data)
+        # F-B(2026-05-17): broadcast INFO 로그.
+        logger.info(
+            "[broadcast] session_updated sid=%s node=%s recipients=%d",
+            session_id, node_id, recipient_count,
+        )
     elif event_type == "node_session_session_deleted":
         # data에 agentSessionId 또는 agent_session_id 두 가지 키가 올 수 있으므로 모두 시도.
         session_id = (data or {}).get("agentSessionId") or (data or {}).get("agent_session_id")
         if session_id:
-            await broadcaster.broadcast({
+            recipient_count = await broadcaster.broadcast({
                 "type": "session_deleted",
                 "agent_session_id": session_id,
             })
+            # F-B(2026-05-17): broadcast INFO 로그.
+            logger.info(
+                "[broadcast] session_deleted sid=%s node=%s recipients=%d",
+                session_id, node_id, recipient_count,
+            )
+        else:
+            # F-B(2026-05-17): session_id 누락 시 broadcast skip을 WARN 로그로 노출 — silent
+            # skip이 회귀 진단을 막던 회로 차단.
+            logger.warning(
+                "[broadcast] session_deleted SKIPPED: no session_id from node=%s data_keys=%s",
+                node_id, list((data or {}).keys()),
+            )
 
     # 노드 상태 변경은 기존대로 broadcast_node_change로 전달 (node graph 등에서 사용).
     await broadcaster.broadcast_node_change({
