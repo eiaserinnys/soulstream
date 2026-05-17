@@ -16,12 +16,14 @@ import { SessionBroadcaster } from "./upstream/session_broadcaster.js";
 // Haniel cwd는 ./services/soulstream — install.configs.soul-server-ts-env path와 정합.
 // `.env`(Python soul-server용)와 *분리* 유지 — SOULSTREAM_NODE_ID 충돌 회피
 // (분석 캐시 20260517-0500-phase-b1-hotfix-fastify5-env.md §1.2 D2).
-const dotenvResult = dotenv.config({ path: ".env.soul-server-ts" });
+const DOTENV_PATH = ".env.soul-server-ts";
+const dotenvResult = dotenv.config({ path: DOTENV_PATH });
 if (dotenvResult.error) {
   // logger 생성 *전*이라 console.warn 사용. fail-silent를 깨고 디버깅 가시성 확보.
+  // path·cwd 둘 다 노출하여 운영자가 파일명 의심·경로 의심을 한 번에 가를 수 있게 함.
   // 파일 부재 시 후속 zod parseEnv가 필수 키 미정으로 ZodError throw → process.exit(1).
   console.warn(
-    `[soul-server-ts] dotenv: .env.soul-server-ts not loaded from cwd=${process.cwd()}: ${dotenvResult.error.message}`,
+    `[soul-server-ts] dotenv: "${DOTENV_PATH}" not loaded from cwd=${process.cwd()}: ${dotenvResult.error.message}`,
   );
 }
 
