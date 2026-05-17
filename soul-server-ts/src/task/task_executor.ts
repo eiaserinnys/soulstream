@@ -89,6 +89,11 @@ export class TaskExecutor {
     engine: EnginePort,
   ): Promise<void> {
     let turnPrompt = task.prompt;
+    // B-5: 첫 turn 진입 *전*에 user_message를 events에 영속화 + broadcast.
+    // Python `task_executor.py:120-182 _persist_initial_messages` 정본 정합. codex 세션의
+    // 사용자 발화가 채팅 UI·session history에 표시되도록 한다. 영속화 실패는 격리 — 본 task
+    // 진행에 영향 0 (Python L179-180 try/except 정합).
+    await this._persistInitialUserMessage(task);
     try {
       while (true) {
         const resumeSessionId = task.codexThreadId;
@@ -220,6 +225,62 @@ export class TaskExecutor {
   /**
    * 종료 처리: DB sessions 업데이트 + session_updated broadcast + engine.close.
    */
+  /**
+   * 첫 turn 진입 *전*에 user_message 이벤트를 events 테이블에 영속화하고 wire로 broadcast.
+   *
+   * Python `task_executor.py:120-182 _persist_initial_messages` 정본의 codex 적응판.
+   * 본 codex 노드는 system_prompt를 codex SDK가 받지 않으므로 user_message만 영속화한다
+   * (Python의 system_message 분기는 systemPrompt 미지원으로 skip).
+   *
+   * wire 형상 (Python L151-156 정합):
+   *   {type: "user_message", user, text, caller_info?, timestamp}
+   *
+   * 부가 기능 — 실패는 격리 (Python L179-180): 본 task 진행에 영향 0.
+   */
+  private async _persistInitialUserMessage(task: Task): Promise<void> {
+    const event: Record<string, unknown> = {
+      type: "user_message",
+      user: task.callerInfo?.display_name ?? task.callerInfo?.user_id ?? "unknown",
+      text: task.prompt,
+      timestamp: Date.now() / 1000,
+    };
+    if (task.callerInfo) {
+      event.caller_info = task.callerInfo;
+    }
+    try {
+      const eventId = await this.persistence.persistEvent(
+        task.agentSessionId,
+        event as SSEEventPayload,
+      );
+      task.lastEventId = eventId;
+    } catch (err) {
+      this.logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "user_message persistEvent failed",
+      );
+    }
+    try {
+      await this.broadcaster.emitEventEnvelope(task.agentSessionId, event as SSEEventPayload);
+    } catch (err) {
+      this.logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "user_message broadcast failed",
+      );
+    }
+    try {
+      await this.persistence.handleSideEffects(
+        task.agentSessionId,
+        event as SSEEventPayload,
+        task,
+      );
+    } catch (err) {
+      this.logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "user_message handleSideEffects failed",
+      );
+    }
+  }
+
   private async _finalize(task: Task): Promise<void> {
     const finalStatus = task.status;
 

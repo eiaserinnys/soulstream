@@ -470,3 +470,65 @@ describe("TaskManager.createTask — 폴더 배정 + catalog broadcast", () => {
 });
 
 // B-5: session_broadcaster.emitCatalogUpdated wire 형상 회귀는 session_broadcaster.test.ts에서 보호.
+
+// B-5: intervention_sent 영속화 (Python `task_executor.py:352-389` 정합)
+describe("TaskManager.addIntervention — intervention_sent 영속화 (B-5)", () => {
+  it("persistence 주입 시 intervention_sent를 persistEvent + broadcast 모두 호출", async () => {
+    const mocks = makeMocks();
+    const persistEvent = vi.fn().mockResolvedValue(123);
+    const handleSideEffects = vi.fn().mockResolvedValue(undefined);
+    const persistence = { persistEvent, handleSideEffects } as unknown as import("../../src/db/event_persistence.js").EventPersistence;
+
+    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, persistence);
+    const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
+    expect(task.status).toBe("running");
+
+    await tm.addIntervention(
+      { agentSessionId: "s1", text: "추가 메시지", user: "alice", callerInfo: { source: "slack" } },
+      vi.fn(),
+    );
+
+    expect(persistEvent).toHaveBeenCalledTimes(1);
+    const persisted = persistEvent.mock.calls[0][1] as Record<string, unknown>;
+    expect(persisted.type).toBe("intervention_sent");
+    expect(persisted.text).toBe("추가 메시지");
+    expect(persisted.user).toBe("alice");
+    expect(persisted.caller_info).toEqual({ source: "slack" });
+    expect(typeof persisted.timestamp).toBe("number");
+
+    expect(handleSideEffects).toHaveBeenCalledTimes(1);
+    expect(mocks.emitInterventionSent).toHaveBeenCalledTimes(1);
+    // 호출 순서: persistEvent → handleSideEffects → emitInterventionSent (last_message 갱신 후 broadcast)
+    expect(persistEvent.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.emitInterventionSent.mock.invocationCallOrder[0],
+    );
+    expect(task.lastEventId).toBe(123);
+  });
+
+  it("persistence 미주입(legacy) → persistEvent skip, broadcast만 발행", async () => {
+    const mocks = makeMocks();
+    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);  // persistence 생략
+    await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
+    await tm.addIntervention(
+      { agentSessionId: "s1", text: "x", user: "u" },
+      vi.fn(),
+    );
+    // broadcast는 호출됨
+    expect(mocks.emitInterventionSent).toHaveBeenCalledTimes(1);
+  });
+
+  it("persistEvent throw → 격리, broadcast는 정상 진행", async () => {
+    const mocks = makeMocks();
+    const persistEvent = vi.fn().mockRejectedValueOnce(new Error("events db down"));
+    const handleSideEffects = vi.fn().mockResolvedValue(undefined);
+    const persistence = { persistEvent, handleSideEffects } as unknown as import("../../src/db/event_persistence.js").EventPersistence;
+    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, persistence);
+    await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
+    const result = await tm.addIntervention(
+      { agentSessionId: "s1", text: "x", user: "u" },
+      vi.fn(),
+    );
+    expect(result).toEqual({ queued: true, queuePosition: 1 });
+    expect(mocks.emitInterventionSent).toHaveBeenCalledTimes(1);
+  });
+});

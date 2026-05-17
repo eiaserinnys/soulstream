@@ -29,6 +29,10 @@ const PREVIEW_FIELD_MAP: Record<string, string> = {
   complete: "result",
   error: "message",
   away_summary: "content",
+  // B-5: 사용자 발화 영속 (Python `event_persistence.py:78-79` 정본 정합).
+  user_message: "text",
+  intervention_sent: "text",
+  system_message: "text",
 };
 
 export class EventPersistence {

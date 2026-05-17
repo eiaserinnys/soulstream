@@ -164,15 +164,16 @@ describe("Phase B-3 E2E: create_session → engine drain → broadcast", () => {
     const ack = orchReceived.find((m) => m.type === "session_created" && m.requestId === "req-1");
     expect(ack?.agentSessionId).toBe("sess-e2e-1");
 
-    // event envelopes — codexEvents 모두 발행
+    // event envelopes — B-5: 첫 envelope는 user_message(초기 영속화), 그 다음 codexEvents
     const envelopes = orchReceived.filter((m) => m.type === "event");
-    expect(envelopes.length).toBe(codexEvents.length);
-    expect((envelopes[0].event as Record<string, unknown>).type).toBe("session");
-    expect((envelopes[1].event as Record<string, unknown>).type).toBe("text_start");
-    expect((envelopes[2].event as Record<string, unknown>).type).toBe("text_delta");
+    expect(envelopes.length).toBe(codexEvents.length + 1);  // +user_message
+    expect((envelopes[0].event as Record<string, unknown>).type).toBe("user_message");
+    expect((envelopes[1].event as Record<string, unknown>).type).toBe("session");
+    expect((envelopes[2].event as Record<string, unknown>).type).toBe("text_start");
     expect((envelopes[3].event as Record<string, unknown>).type).toBe("text_delta");
-    expect((envelopes[4].event as Record<string, unknown>).type).toBe("text_end");
-    expect((envelopes[5].event as Record<string, unknown>).type).toBe("complete");
+    expect((envelopes[4].event as Record<string, unknown>).type).toBe("text_delta");
+    expect((envelopes[5].event as Record<string, unknown>).type).toBe("text_end");
+    expect((envelopes[6].event as Record<string, unknown>).type).toBe("complete");
 
     // session_updated 완료 시 1회 (status=completed)
     const updated = orchReceived.filter((m) => m.type === "session_updated");
@@ -184,7 +185,8 @@ describe("Phase B-3 E2E: create_session → engine drain → broadcast", () => {
     // === ASSERT — DB stored proc 호출 ===
     const procNames = dbCalls.map((c) => c.fragments.join("?"));
     expect(procNames.some((p) => p.includes("session_register"))).toBe(true);
-    expect(procNames.filter((p) => p.includes("event_append")).length).toBe(codexEvents.length);
+    // B-5: user_message 영속(1) + codexEvents
+    expect(procNames.filter((p) => p.includes("event_append")).length).toBe(codexEvents.length + 1);
     expect(procNames.some((p) => p.includes("session_update"))).toBe(true);
 
     // F-3B: session_set_claude_id 1회 호출 (thread id 영속화)
@@ -194,21 +196,22 @@ describe("Phase B-3 E2E: create_session → engine drain → broadcast", () => {
 
     // F-3A: emit_session_message_updated wire — PREVIEW_FIELD_MAP 매칭 + 필드 값 있을 때만.
     // codexEvents 중: text_delta(×2 — "Hello", "Hello world")만 wire 발행.
+    // B-5: user_message(1)도 PREVIEW_FIELD_MAP.user_message="text" 매칭으로 last_message 갱신.
     // complete은 PREVIEW_FIELD_MAP에서 result 필드를 보지만 본 fixture는 result 미포함 → skip.
     // text_start/text_end/session은 매핑 없음 → skip.
     // 이 wire는 `last_message` 키 보유로 식별 (G-19 마커).
     const messageUpdates = orchReceived.filter(
       (m) => m.type === "session_updated" && m.last_message !== undefined,
     );
-    expect(messageUpdates.length).toBe(2);
+    expect(messageUpdates.length).toBe(3);  // user_message + text_delta x 2
     expect(
-      (messageUpdates[1].last_message as Record<string, unknown>).preview,
+      (messageUpdates[2].last_message as Record<string, unknown>).preview,
     ).toBe("Hello world");
 
     // task 상태
     expect(task!.status).toBe("completed");
     expect(task!.codexThreadId).toBe("thr-codex-1");
-    expect(task!.lastEventId).toBe(codexEvents.length);
+    expect(task!.lastEventId).toBe(codexEvents.length + 1);  // +user_message
     expect(task!.lastAssistantText).toBe("Hello world");
   });
 

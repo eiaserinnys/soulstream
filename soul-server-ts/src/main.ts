@@ -108,7 +108,14 @@ async function main(): Promise<void> {
 
   const broadcaster = new SessionBroadcaster(send, agentRegistry, env.SOULSTREAM_NODE_ID);
   const persistence = new EventPersistence(db, broadcaster, logger);
-  const taskManager = new TaskManager(env.SOULSTREAM_NODE_ID, db, broadcaster, logger);
+  const taskManager = new TaskManager(
+    env.SOULSTREAM_NODE_ID,
+    db,
+    broadcaster,
+    logger,
+    // B-5: intervention_sent 영속화 정본 (Python `task_executor.py:352-389` 정합).
+    persistence,
+  );
 
   // EngineFactory — backend별 분기. 본 PR은 codex 전용.
   const engineFactory: EngineFactory = (agent) => {

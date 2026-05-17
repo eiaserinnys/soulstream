@@ -100,19 +100,26 @@ describe("TaskExecutor.startExecution", () => {
     executor.startExecution(task, agent);
     await task.executionPromise;
 
-    expect(mocks.persistEvent).toHaveBeenCalledTimes(3);
-    expect(mocks.emitEventEnvelope).toHaveBeenCalledTimes(3);
-    expect(mocks.handleSideEffects).toHaveBeenCalledTimes(3);
+    // B-5: turn 진입 *전* user_message 영속화(1건) + 엔진 이벤트(3건) = 총 4건.
+    expect(mocks.persistEvent).toHaveBeenCalledTimes(4);
+    expect(mocks.emitEventEnvelope).toHaveBeenCalledTimes(4);
+    expect(mocks.handleSideEffects).toHaveBeenCalledTimes(4);
+
+    // 첫 persistEvent는 user_message 영속화
+    expect(mocks.persistEvent.mock.calls[0][1]).toMatchObject({
+      type: "user_message",
+      text: "hi",
+    });
 
     expect(task.status).toBe("completed");
-    expect(task.lastEventId).toBe(3);  // persistEvent가 1, 2, 3 반환
-    expect(task.codexThreadId).toBe("thr-1");  // session 이벤트에서 박힘
+    expect(task.lastEventId).toBe(4);  // user_message(1) + 엔진 3건 = 4
+    expect(task.codexThreadId).toBe("thr-1");
     expect(task.completedAt).toBeInstanceOf(Date);
-    expect(task.engine).toBeUndefined();  // _finalize에서 cleanup
+    expect(task.engine).toBeUndefined();
 
     expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", {
       status: "completed",
-      last_event_id: 3,
+      last_event_id: 4,
     });
     expect(mocks.emitSessionUpdated).toHaveBeenCalledWith(task);
   });
@@ -134,7 +141,7 @@ describe("TaskExecutor.startExecution", () => {
     expect(mocks.emitSessionUpdated).toHaveBeenCalled();
     expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", {
       status: "error",
-      last_event_id: 1,
+      last_event_id: 2,  // B-5: user_message(1) + session(2)
     });
   });
 
@@ -160,10 +167,12 @@ describe("TaskExecutor.startExecution", () => {
     executor.startExecution(task, agent);
     await task.executionPromise;
 
-    // 첫 persistEvent throw에도 status=completed (격리)
+    // 첫 persistEvent throw(user_message 영속화)에도 status=completed (격리)
+    // user_message(1, throw) + text_delta(2) + text_end(3) = 3건 호출
     expect(task.status).toBe("completed");
-    expect(mocks.persistEvent).toHaveBeenCalledTimes(2);
-    expect(mocks.emitEventEnvelope).toHaveBeenCalledTimes(2);
+    expect(mocks.persistEvent).toHaveBeenCalledTimes(3);
+    // emitEventEnvelope는 user_message + 2건 = 3건 (persistEvent throw에도 broadcast는 호출됨)
+    expect(mocks.emitEventEnvelope).toHaveBeenCalledTimes(3);
   });
 
   it("session 이벤트의 session_id가 task.codexThreadId에 박힘 (1회만)", async () => {
@@ -239,9 +248,9 @@ describe("TaskExecutor.startExecution", () => {
     await task.executionPromise;
 
     expect(task.status).toBe("completed");
-    // 두 이벤트 모두 처리됨 (첫 handleSideEffects throw에도 다음 이벤트 진행)
-    expect(mocks.persistEvent).toHaveBeenCalledTimes(2);
-    expect(mocks.handleSideEffects).toHaveBeenCalledTimes(2);
+    // user_message(1) + text_delta x 2 = 3건 (첫 handleSideEffects throw에도 다음 이벤트 진행)
+    expect(mocks.persistEvent).toHaveBeenCalledTimes(3);
+    expect(mocks.handleSideEffects).toHaveBeenCalledTimes(3);
   });
 
   it("F-3B T7: db.setClaudeSessionId throw → 격리 (task 진행 계속, status=completed)", async () => {
@@ -268,7 +277,8 @@ describe("TaskExecutor.startExecution", () => {
     // setClaudeSessionId throw에도 task 진행 계속
     expect(task.status).toBe("completed");
     expect(task.codexThreadId).toBe("thr-codex-1");  // 메모리 박기는 throw 전에 완료
-    expect(mocks.persistEvent).toHaveBeenCalledTimes(2);  // 두 이벤트 모두 처리
+    // user_message(1) + session(2) + text_delta(3) = 3건 모두 처리
+    expect(mocks.persistEvent).toHaveBeenCalledTimes(3);
     expect(mocks.emitSessionUpdated).toHaveBeenCalled();
   });
 
@@ -440,5 +450,87 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     await task.executionPromise;
     expect(task.status).toBe("completed");
     expect(factory).toHaveBeenCalledTimes(1);
+  });
+});
+
+// B-5: 초기 user_message 영속화 (Python `_persist_initial_messages` 정합)
+describe("TaskExecutor _persistInitialUserMessage (B-5)", () => {
+  it("첫 turn 진입 전 user_message가 persistEvent + broadcast + handleSideEffects 모두 수행", async () => {
+    const mocks = makeMocks();
+    const events: SSEEventPayload[] = [
+      { type: "session", session_id: "thr-x" } as SSEEventPayload,
+      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
+    ];
+    const executor = new TaskExecutor(() => makeFakeEngine(events), mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
+    const task = makeTask();
+    task.callerInfo = { source: "slack", display_name: "Alice" };
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    const firstCall = mocks.persistEvent.mock.calls[0];
+    expect(firstCall[0]).toBe("sess-1");  // sessionId
+    expect(firstCall[1]).toMatchObject({
+      type: "user_message",
+      text: "hi",  // task.prompt
+      user: "Alice",  // caller_info.display_name 우선
+    });
+    expect((firstCall[1] as Record<string, unknown>).caller_info).toEqual({
+      source: "slack",
+      display_name: "Alice",
+    });
+
+    // broadcast도 첫 envelope로
+    const firstEnvelope = mocks.emitEventEnvelope.mock.calls[0];
+    expect(firstEnvelope[0]).toBe("sess-1");
+    expect((firstEnvelope[1] as Record<string, unknown>).type).toBe("user_message");
+  });
+
+  it("caller_info 미설정 → user 필드는 'unknown', caller_info 키 미박음", async () => {
+    const mocks = makeMocks();
+    const events: SSEEventPayload[] = [
+      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
+    ];
+    const executor = new TaskExecutor(() => makeFakeEngine(events), mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
+    const task = makeTask();  // callerInfo 미설정
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    const first = mocks.persistEvent.mock.calls[0][1] as Record<string, unknown>;
+    expect(first.user).toBe("unknown");
+    expect(first.caller_info).toBeUndefined();
+  });
+
+  it("persistEvent throw 시 격리 — engine.execute는 정상 진행", async () => {
+    const mocks = makeMocks();
+    mocks.persistEvent.mockImplementationOnce(async () => {
+      throw new Error("user_message db down");
+    });
+    mocks.persistEvent.mockImplementation(async () => 42);
+    const events: SSEEventPayload[] = [
+      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
+    ];
+    const executor = new TaskExecutor(() => makeFakeEngine(events), mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
+    const task = makeTask();
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+    expect(task.status).toBe("completed");  // user_message 실패에도 task 정상 진행
+  });
+
+  it("turn-loop intervention dequeue 시점에는 user_message 추가 영속화 안 함 (multi-turn 1회만)", async () => {
+    const mocks = makeMocks();
+    const events: SSEEventPayload[] = [
+      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
+    ];
+    const executor = new TaskExecutor(() => makeFakeEngine(events), mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
+    const task = makeTask();
+    task.interventionQueue.push({ text: "second turn", user: "u" });
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    // user_message는 *최초 1회*만. intervention_sent는 task_manager가 영속화 (task_manager.test.ts에서 보호).
+    const userMessages = mocks.persistEvent.mock.calls.filter(
+      (c) => (c[1] as { type: string }).type === "user_message",
+    );
+    expect(userMessages.length).toBe(1);
   });
 });
