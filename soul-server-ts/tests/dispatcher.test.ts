@@ -39,6 +39,7 @@ function createDispatcher(opts: {
       createdAt: new Date(),
       lastEventId: 0,
       lastReadEventId: 0,
+      interventionQueue: [],
     }));
 
   const defaultTaskManager: Partial<TaskManager> = {
@@ -54,11 +55,13 @@ function createDispatcher(opts: {
         createdAt: new Date(),
         lastEventId: 0,
         lastReadEventId: 0,
+        interventionQueue: [],
       };
       createdTasks.push(task);
       return task;
     }),
     listTasks: vi.fn(() => runningTasks),
+    addIntervention: vi.fn(),
   };
 
   const defaultExecutor: Partial<TaskExecutor> = {
@@ -196,13 +199,123 @@ describe("CommandDispatcher.create_session", () => {
   });
 });
 
-describe("CommandDispatcher.intervene (B-3 fallback)", () => {
-  it("intervene → Not implemented error (B-4 작업)", async () => {
-    const { dispatcher, sent } = createDispatcher();
-    await dispatcher.dispatch({ type: "intervene", agentSessionId: "sess-1", text: "x", requestId: "i1" });
+describe("CommandDispatcher.intervene (B-4)", () => {
+  it("running task에 intervene → addIntervention queued → intervene_ack(queued, queuePosition)", async () => {
+    const addIntervention = vi.fn(async () => ({ queued: true, queuePosition: 2 }));
+    const { dispatcher, sent } = createDispatcher({
+      taskManager: { addIntervention } as Partial<TaskManager>,
+    });
+    await dispatcher.dispatch({
+      type: "intervene",
+      agentSessionId: "sess-1",
+      text: "hello",
+      user: "alice",
+      requestId: "i1",
+    });
+    expect(addIntervention).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentSessionId: "sess-1",
+        text: "hello",
+        user: "alice",
+      }),
+      expect.any(Function),
+    );
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({
+      type: "intervene_ack",
+      requestId: "i1",
+      status: "queued",
+      queuePosition: 2,
+    });
+  });
+
+  it("completed task에 intervene → auto-resume → intervene_ack(auto_resumed) + startExecution 호출", async () => {
+    // addIntervention이 onResume 콜백 호출을 흉내내어 dispatcher의 startExecution 분기 검증.
+    const startExecution = vi.fn();
+    const fakeAgent: AgentProfile = {
+      id: "codex-default",
+      name: "Codex Default",
+      backend: "codex",
+      workspace_dir: "/tmp/codex-default",
+    };
+    const fakeTask: Task = {
+      agentSessionId: "sess-2",
+      prompt: "prior",
+      status: "running",
+      profileId: fakeAgent.id,
+      createdAt: new Date(),
+      lastEventId: 0,
+      lastReadEventId: 0,
+      interventionQueue: [],
+    };
+    const addIntervention = vi.fn(async (_params, onResume) => {
+      onResume(fakeTask);
+      return { autoResumed: true };
+    });
+    const { dispatcher, sent } = createDispatcher({
+      agents: [fakeAgent],
+      taskManager: { addIntervention } as Partial<TaskManager>,
+      taskExecutor: { startExecution } as Partial<TaskExecutor>,
+    });
+    await dispatcher.dispatch({
+      type: "intervene",
+      agentSessionId: "sess-2",
+      text: "resume me",
+      requestId: "i2",
+    });
+    expect(startExecution).toHaveBeenCalledWith(fakeTask, fakeAgent);
+    expect(sent[0]).toMatchObject({
+      type: "intervene_ack",
+      requestId: "i2",
+      status: "auto_resumed",
+      agentSessionId: "sess-2",
+    });
+  });
+
+  it("미존재 task에 intervene → addIntervention throw → error wire", async () => {
+    const addIntervention = vi.fn(async () => {
+      throw new Error("Task not found: sess-missing");
+    });
+    const { dispatcher, sent } = createDispatcher({
+      taskManager: { addIntervention } as Partial<TaskManager>,
+    });
+    await dispatcher.dispatch({
+      type: "intervene",
+      agentSessionId: "sess-missing",
+      text: "x",
+      requestId: "i3",
+    });
     expect((sent[0] as { type: string }).type).toBe("error");
-    expect((sent[0] as { message: string }).message).toContain("intervene not implemented");
-    expect((sent[0] as { message: string }).message).toContain("B-4");
+    expect((sent[0] as { message: string }).message).toContain("Task not found");
+  });
+
+  it("text 누락 시 sendError (addIntervention 호출 안 함)", async () => {
+    const addIntervention = vi.fn();
+    const { dispatcher, sent } = createDispatcher({
+      taskManager: { addIntervention } as Partial<TaskManager>,
+    });
+    await dispatcher.dispatch({
+      type: "intervene",
+      agentSessionId: "sess-1",
+      requestId: "i4",
+    });
+    expect(addIntervention).not.toHaveBeenCalled();
+    expect((sent[0] as { type: string }).type).toBe("error");
+    expect((sent[0] as { message: string }).message).toContain("agentSessionId and text");
+  });
+
+  it("requestId 부재 시 ACK 발행 안 함 (atom c13f7826 빈 ACK 금지)", async () => {
+    const addIntervention = vi.fn(async () => ({ queued: true, queuePosition: 1 }));
+    const { dispatcher, sent } = createDispatcher({
+      taskManager: { addIntervention } as Partial<TaskManager>,
+    });
+    await dispatcher.dispatch({
+      type: "intervene",
+      agentSessionId: "sess-1",
+      text: "x",
+    });
+    expect(addIntervention).toHaveBeenCalled();
+    expect(sent).toHaveLength(0);
   });
 });
 

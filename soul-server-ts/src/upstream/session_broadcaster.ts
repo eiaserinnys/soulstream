@@ -11,7 +11,7 @@
 import type { AgentRegistry } from "../agent_registry.js";
 import type { LastMessageRow } from "../db/session_db.js";
 import type { SSEEventPayload } from "../engine/protocol.js";
-import type { Task, TaskStatus } from "../task/task_models.js";
+import type { InterventionMessage, Task, TaskStatus } from "../task/task_models.js";
 
 import type { SendFn } from "./dispatcher.js";
 
@@ -123,6 +123,38 @@ export class SessionBroadcaster {
     agentSessionId: string,
     event: SSEEventPayload,
   ): Promise<void> {
+    await this.send({
+      type: "event",
+      agentSessionId,
+      event,
+    });
+  }
+
+  /**
+   * Intervention 메시지가 turn 사이 큐잉 또는 auto-resume 트리거 시 발행.
+   *
+   * Python `task_executor.py:352-389 on_intervention_sent` 정본 패턴. wire envelope는
+   * `emitEventEnvelope`와 동일하게 `{type:"event", agentSessionId, event:{...}}` 형식 —
+   * orch `_on_event`가 subscribe_listeners에 broadcast하여 dashboard·다른 클라이언트가
+   * 실시간 표시 가능. event 본문은 `{type:"intervention_sent", user, text, caller_info?,
+   * attachments?, timestamp}` (Python `models/schemas.py InterventionSentEvent` 정본).
+   */
+  async emitInterventionSent(
+    agentSessionId: string,
+    message: InterventionMessage,
+  ): Promise<void> {
+    const event: Record<string, unknown> = {
+      type: "intervention_sent",
+      user: message.user,
+      text: message.text,
+      timestamp: Date.now() / 1000,
+    };
+    if (message.callerInfo) {
+      event.caller_info = message.callerInfo;
+    }
+    if (message.attachmentPaths && message.attachmentPaths.length > 0) {
+      event.attachments = message.attachmentPaths;
+    }
     await this.send({
       type: "event",
       agentSessionId,
