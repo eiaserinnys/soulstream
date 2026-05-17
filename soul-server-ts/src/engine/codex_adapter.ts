@@ -20,6 +20,7 @@
 import { Codex, type Thread, type ThreadEvent } from "@openai/codex-sdk";
 import type { Logger } from "pino";
 
+import { sanitizeCodexEnv } from "./codex_env.js";
 import { mapThreadEvent } from "./codex_event_mapper.js";
 import type {
   BackendId,
@@ -36,6 +37,16 @@ export interface CodexAdapterConfig {
   codexPathOverride?: string;
   /** Codex CLI base URL override (custom endpoint). */
   baseUrl?: string;
+  /**
+   * Codex CLI 자식 프로세스에 전달할 env의 base. 미지정 시 `process.env`.
+   *
+   * SDK는 `env` 옵션이 제공되면 process.env를 상속하지 *않고* 이 값만 사용한다
+   * (`@openai/codex-sdk` dist/index.js:222-231). 본 어댑터는 빈 문자열 OPENAI_API_KEY /
+   * CODEX_API_KEY를 sanitize한 결과를 SDK에 항상 명시 전달하여, pm2 god 등 외부 셸이
+   * inject한 빈 키가 codex-rs를 API key 모드로 강제 분기시키는 사고를 차단한다
+   * (분석 캐시 `20260517-1157-codex-ts-oauth-401.md`).
+   */
+  processEnv?: NodeJS.ProcessEnv;
 }
 
 /**
@@ -66,6 +77,9 @@ export class CodexEngineAdapter implements EnginePort {
       apiKey: config.apiKey,
       codexPathOverride: config.codexPathOverride,
       baseUrl: config.baseUrl,
+      // env를 명시 전달하면 SDK가 process.env를 상속하지 않는다 — pm2 god 셸의 빈
+      // OPENAI_API_KEY/CODEX_API_KEY 누수를 어댑터 경계에서 차단 (design-principles §1·§6).
+      env: sanitizeCodexEnv(config.processEnv ?? process.env),
     });
     this.logger = logger;
   }
