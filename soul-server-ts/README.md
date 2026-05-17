@@ -16,7 +16,7 @@
 ## 운영
 
 Haniel `haniel.yaml`의 `services.soul-server-ts` 항목으로 자동 시작·재시작.
-cwd는 `./services/soulstream` (모노레포 루트 기준 `src/soulstream/packages/soul-server-ts/`).
+cwd는 `./services/soulstream` (모노레포 루트 기준 `src/soulstream/soul-server-ts/`).
 
 ### Haniel 통합 적용
 

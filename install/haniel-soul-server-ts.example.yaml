@@ -18,7 +18,7 @@
 services:
   # 운영 `haniel.yaml`의 `services:` 섹션에 추가
   soul-server-ts:
-    run: node src/soulstream/packages/soul-server-ts/dist/main.js
+    run: node src/soulstream/soul-server-ts/dist/main.js
     cwd: ./services/soulstream
     repo: soulstream-server-src
     restart_delay: 3
@@ -26,7 +26,7 @@ services:
     ready: port:4205
     enabled: true
     hooks:
-      post_pull: pnpm --dir src/soulstream install --frozen-lockfile && pnpm --dir src/soulstream/packages/soul-server-ts run build
+      post_pull: pnpm --dir src/soulstream install --frozen-lockfile && pnpm --dir src/soulstream/soul-server-ts run build
     reflect: false  # B-1은 cogito reflection 미구현. B-2 또는 후속에서 활성화 검토.
 
 install:
