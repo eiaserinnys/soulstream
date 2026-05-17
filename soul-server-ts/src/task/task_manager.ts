@@ -168,8 +168,11 @@ export class TaskManager {
         assigned = folderId;
       } else {
         // Python L302-303 `DEFAULT_FOLDERS.get(session_type, DEFAULT_FOLDERS["claude"])` 정합.
-        // DEFAULT_FOLDERS.claude는 정본 상수에 항상 정의되어 있으므로 두 번째 폴백은 안전.
-        const defaultName = DEFAULT_FOLDERS[sessionType] ?? DEFAULT_FOLDERS["claude"] ?? "";
+        // `DEFAULT_FOLDERS.claude`는 정본 상수(session_db.ts:35)에 *항상* 정의되어 있으므로
+        // non-null assertion으로 명시. 추가 폴백(`?? ""`)은 *불가능 분기*라 design-principles §3
+        // 정본 하나 측면에서 제거 (code-reviewer P2-3).
+        const claudeDefault = DEFAULT_FOLDERS["claude"] as string;
+        const defaultName = DEFAULT_FOLDERS[sessionType] ?? claudeDefault;
         const folder = await this.db.getDefaultFolder(defaultName);
         if (folder) {
           await this.db.assignSessionToFolder(sessionId, folder.id);
