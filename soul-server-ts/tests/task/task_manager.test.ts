@@ -20,12 +20,15 @@ function makeMocks() {
   const getCatalog = vi
     .fn()
     .mockResolvedValue({ folders: [], sessions: {} });
+  // PR #56: hydration mock (Python load_evicted_task 정합)
+  const getSession = vi.fn().mockResolvedValue(null);
   const db = {
     registerSession,
     deleteSession,
     assignSessionToFolder,
     getDefaultFolder,
     getCatalog,
+    getSession,
   } as unknown as SessionDB;
 
   const emitSessionCreated = vi.fn().mockResolvedValue(undefined);
@@ -51,6 +54,7 @@ function makeMocks() {
     assignSessionToFolder,
     getDefaultFolder,
     getCatalog,
+    getSession,
     emitSessionCreated,
     emitSessionDeleted,
     emitInterventionSent,
@@ -636,5 +640,292 @@ describe("TaskManager.addIntervention — running vs completed wire 분기 (결�
     const userMsgOrder = mocks.emitEventEnvelope.mock.invocationCallOrder[0];
     const sessionUpdatedOrder = mocks.emitSessionUpdated.mock.invocationCallOrder[0];
     expect(userMsgOrder).toBeLessThan(sessionUpdatedOrder);
+  });
+});
+
+// PR #56: 결함 D — 서버 재기동 후 task hydration (Python load_evicted_task 정합)
+describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydration (결함 D)", () => {
+  it("메모리에 task가 없고 DB에도 없으면 throw (현 동작 보존)", async () => {
+    const mocks = makeMocks();
+    mocks.getSession.mockResolvedValueOnce(null);
+    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);
+    await expect(
+      tm.addIntervention({ agentSessionId: "missing", text: "x", user: "u" }, vi.fn()),
+    ).rejects.toThrow("Task not found: missing");
+    expect(mocks.getSession).toHaveBeenCalledWith("missing");
+  });
+
+  it("메모리에 task가 없고 DB에 completed 세션이 있으면 hydrate + auto-resume 흐름 진입", async () => {
+    const mocks = makeMocks();
+    // DB row 반환 — codex 세션 (claude_session_id가 codex thread id)
+    mocks.getSession.mockResolvedValueOnce({
+      session_id: "sess-evicted",
+      folder_id: "f-1",
+      display_name: null,
+      node_id: "n",
+      session_type: "claude",
+      status: "completed",
+      prompt: "원래 prompt",
+      client_id: null,
+      claude_session_id: "thr-codex-abc",  // codex thread id (PR #48 F-3B)
+      last_message: null,
+      metadata: null,
+      was_running_at_shutdown: false,
+      last_event_id: 42,
+      last_read_event_id: 10,
+      created_at: new Date("2026-05-17T10:00:00Z"),
+      updated_at: new Date("2026-05-17T10:05:00Z"),
+      agent_id: "codex-default",
+      caller_session_id: null,
+      away_summary: null,
+    });
+    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);
+
+    const onResume = vi.fn();
+    const result = await tm.addIntervention(
+      { agentSessionId: "sess-evicted", text: "이어서", user: "u" },
+      onResume,
+    );
+
+    // auto-resume 흐름 진입
+    expect(result).toEqual({ autoResumed: true });
+    // hydrate된 task가 메모리에 추가됨
+    const memTask = tm.getTask("sess-evicted");
+    expect(memTask).toBeDefined();
+    expect(memTask!.status).toBe("running");  // auto-resume에서 전환
+    expect(memTask!.codexThreadId).toBe("thr-codex-abc");  // resumeThread를 위해 복원
+    expect(memTask!.profileId).toBe("codex-default");
+    expect(memTask!.prompt).toBe("원래 prompt");
+    expect(memTask!.lastEventId).toBeGreaterThanOrEqual(42);  // hydrate 후 user_message 영속 가능
+    // user_message 영속·broadcast + session_updated (PR #55 분기)
+    const userMsgCalls = mocks.emitEventEnvelope.mock.calls.filter(
+      (c) => (c[1] as { type: string }).type === "user_message",
+    );
+    expect(userMsgCalls.length).toBe(1);
+    expect(mocks.emitSessionUpdated).toHaveBeenCalledTimes(1);
+    expect(onResume).toHaveBeenCalledWith(memTask);
+  });
+
+  it.each(["error", "interrupted"] as const)("DB에 %s 세션도 hydrate 가능 (terminal 모두)", async (status) => {
+    const mocks = makeMocks();
+    mocks.getSession.mockResolvedValueOnce({
+      session_id: "sess-t",
+      session_type: "claude",
+      status,
+      prompt: "p",
+      claude_session_id: "thr-x",
+      last_event_id: 5,
+      last_read_event_id: 0,
+      created_at: new Date(),
+      updated_at: new Date(),
+      agent_id: "codex-default",
+      caller_session_id: null,
+      folder_id: null,
+      display_name: null,
+      node_id: "n",
+      client_id: null,
+      last_message: null,
+      metadata: null,
+      was_running_at_shutdown: false,
+      away_summary: null,
+    });
+    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);
+    const result = await tm.addIntervention(
+      { agentSessionId: "sess-t", text: "재개", user: "u" },
+      vi.fn(),
+    );
+    expect(result).toEqual({ autoResumed: true });
+    expect(tm.getTask("sess-t")!.status).toBe("running");
+  });
+
+  it("DB row.status가 비정상 값이면 null 반환 → throw (graceful)", async () => {
+    const mocks = makeMocks();
+    mocks.getSession.mockResolvedValueOnce({
+      session_id: "sess-bad",
+      session_type: "claude",
+      status: "invalid_status",  // 비정상
+      prompt: "p",
+      claude_session_id: null,
+      last_event_id: 0,
+      last_read_event_id: 0,
+      created_at: new Date(),
+      updated_at: new Date(),
+      agent_id: null,
+      caller_session_id: null,
+      folder_id: null,
+      display_name: null,
+      node_id: null,
+      client_id: null,
+      last_message: null,
+      metadata: null,
+      was_running_at_shutdown: false,
+      away_summary: null,
+    });
+    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);
+    await expect(
+      tm.addIntervention({ agentSessionId: "sess-bad", text: "x", user: "u" }, vi.fn()),
+    ).rejects.toThrow("Task not found: sess-bad");
+  });
+
+  it("db.getSession throw → graceful null (Task not found으로 정규화)", async () => {
+    const mocks = makeMocks();
+    mocks.getSession.mockRejectedValueOnce(new Error("db connection lost"));
+    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);
+    await expect(
+      tm.addIntervention({ agentSessionId: "sess-x", text: "x", user: "u" }, vi.fn()),
+    ).rejects.toThrow("Task not found: sess-x");
+  });
+
+  it("메모리에 task가 있으면 hydration skip (기존 동작 보존)", async () => {
+    const mocks = makeMocks();
+    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);
+    await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
+    expect(tm.getTask("s1")).toBeDefined();
+    await tm.addIntervention(
+      { agentSessionId: "s1", text: "x", user: "u" },
+      vi.fn(),
+    );
+    // 메모리 hit이라 getSession 호출 안 됨
+    expect(mocks.getSession).not.toHaveBeenCalled();
+  });
+
+  it("hydrate가 metadata JSONB array에서 마지막 신원 박힌 caller_info를 복원 (R-2 회로 차단)", async () => {
+    const mocks = makeMocks();
+    mocks.getSession.mockResolvedValueOnce({
+      session_id: "sess-r2",
+      session_type: "claude",
+      status: "completed",
+      prompt: "p",
+      claude_session_id: "thr-r2",
+      last_event_id: 0,
+      last_read_event_id: 0,
+      created_at: new Date(),
+      updated_at: new Date(),
+      agent_id: "codex-default",
+      caller_session_id: null,
+      folder_id: null,
+      display_name: null,
+      node_id: "n",
+      client_id: null,
+      last_message: null,
+      // 신원 박힌 entry (소우/source=slack)와 빈 신원 entry 혼합 → 마지막 신원 박힌 것 선택
+      metadata: [
+        { type: "caller_info", value: { source: "browser", display_name: "옛 신원" } },
+        { type: "caller_info", value: { source: "slack", display_name: "Alice" } },
+        { type: "caller_info", value: {} },  // 빈 dict — 마지막이지만 신원 없음
+      ],
+      was_running_at_shutdown: false,
+      away_summary: null,
+    });
+    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);
+    await tm.addIntervention(
+      { agentSessionId: "sess-r2", text: "x", user: "u" },
+      vi.fn(),
+    );
+    const task = tm.getTask("sess-r2")!;
+    expect(task.callerInfo).toEqual({ source: "slack", display_name: "Alice" });
+  });
+
+  it("hydrate가 metadata에 caller_info entry 0건이면 callerInfo undefined", async () => {
+    const mocks = makeMocks();
+    mocks.getSession.mockResolvedValueOnce({
+      session_id: "sess-empty",
+      session_type: "claude",
+      status: "completed",
+      prompt: "p",
+      claude_session_id: null,
+      last_event_id: 0,
+      last_read_event_id: 0,
+      created_at: new Date(),
+      updated_at: new Date(),
+      agent_id: null,
+      caller_session_id: null,
+      folder_id: null,
+      display_name: null,
+      node_id: null,
+      client_id: null,
+      last_message: null,
+      metadata: [{ type: "other", value: { something: "else" } }],
+      was_running_at_shutdown: false,
+      away_summary: null,
+    });
+    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);
+    await tm.addIntervention(
+      { agentSessionId: "sess-empty", text: "x", user: "u" },
+      vi.fn(),
+    );
+    const task = tm.getTask("sess-empty")!;
+    expect(task.callerInfo).toBeUndefined();
+  });
+
+  it("hydrate가 IDENTITY_BEARING_SOURCES(agent/system/...) 신원 필드 비어도 신원 박힘으로 인정 (Python has_caller_identity 정본)", async () => {
+    const mocks = makeMocks();
+    mocks.getSession.mockResolvedValueOnce({
+      session_id: "sess-agent",
+      session_type: "claude",
+      status: "completed",
+      prompt: "p",
+      claude_session_id: null,
+      last_event_id: 0,
+      last_read_event_id: 0,
+      created_at: new Date(),
+      updated_at: new Date(),
+      agent_id: "codex-default",
+      caller_session_id: null,
+      folder_id: null,
+      display_name: null,
+      node_id: "n",
+      client_id: null,
+      last_message: null,
+      metadata: [
+        { type: "caller_info", value: { source: "agent", agent_id: "roselin" } },  // 신원 박힘 (source가 IDENTITY_BEARING)
+        { type: "caller_info", value: { source: "browser" } },  // browser는 IDENTITY_BEARING 아님 + 필드 비어 신원 없음
+      ],
+      was_running_at_shutdown: false,
+      away_summary: null,
+    });
+    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);
+    await tm.addIntervention(
+      { agentSessionId: "sess-agent", text: "x", user: "u" },
+      vi.fn(),
+    );
+    const task = tm.getTask("sess-agent")!;
+    // 정책 1 (마지막 신원 박힌 entry) → agent entry. browser는 신원 없음으로 제외.
+    expect(task.callerInfo).toEqual({ source: "agent", agent_id: "roselin" });
+  });
+
+  it("hydrate된 task의 첫 turn이 queue dequeue로 진입 (PR #54 P0 fix와 정합)", async () => {
+    const mocks = makeMocks();
+    mocks.getSession.mockResolvedValueOnce({
+      session_id: "sess-h",
+      session_type: "claude",
+      status: "completed",
+      prompt: "원래",
+      claude_session_id: "thr-h",
+      last_event_id: 3,
+      last_read_event_id: 0,
+      created_at: new Date(),
+      updated_at: new Date(),
+      agent_id: "codex-default",
+      caller_session_id: null,
+      folder_id: null,
+      display_name: null,
+      node_id: "n",
+      client_id: null,
+      last_message: null,
+      metadata: null,
+      was_running_at_shutdown: false,
+      away_summary: null,
+    });
+    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);
+    await tm.addIntervention(
+      { agentSessionId: "sess-h", text: "새 메시지", user: "u" },
+      vi.fn(),
+    );
+    const task = tm.getTask("sess-h")!;
+    // PR #55 auto-resume: queue에 메시지 push됨, task.prompt는 원래 그대로
+    expect(task.interventionQueue).toHaveLength(1);
+    expect(task.interventionQueue[0].text).toBe("새 메시지");
+    expect(task.prompt).toBe("원래");  // 원래 prompt 보존
   });
 });
