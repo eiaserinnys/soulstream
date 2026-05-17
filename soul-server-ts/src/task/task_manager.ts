@@ -328,9 +328,18 @@ export class TaskManager {
     params: AddInterventionParams,
     onResume: StartExecutionCallback,
   ): Promise<AddInterventionResult> {
-    const task = this.tasks.get(params.agentSessionId);
+    // B-5 결함 D 정정 (PR #56): 메모리에 task가 없으면 DB에서 lazy hydration.
+    // 서버 재기동 후 기존 세션에 메시지 도착 시 무조건 throw하던 결함 봉인. Python
+    // `task_manager.py:615-619`의 evicted task on-demand 로드 정합 — 분석 캐시
+    // `20260517-2300-codex-ts-hydration-and-typing-redo.md` §A.
+    let task: Task | undefined = this.tasks.get(params.agentSessionId);
     if (!task) {
-      throw new Error(`Task not found: ${params.agentSessionId}`);
+      const loaded = await this.loadEvictedTask(params.agentSessionId);
+      if (!loaded) {
+        throw new Error(`Task not found: ${params.agentSessionId}`);
+      }
+      task = loaded;
+      this.tasks.set(task.agentSessionId, task);
     }
 
     const message: InterventionMessage = {
@@ -502,5 +511,67 @@ export class TaskManager {
     // engine 인스턴스는 finalize에서 close된 상태 — onResume → startExecution이 새 engine 생성.
     onResume(task);
     return { autoResumed: true };
+  }
+
+  /**
+   * DB에서 퇴거된(또는 서버 재기동으로 메모리 손실된) task를 lazy hydration.
+   *
+   * Python `service/session_eviction_manager.py:106-178 load_evicted_task` 정본의 codex 적응판.
+   * sessions 테이블의 SessionRow를 Task 인스턴스로 재구성. codex thread id는 PR #48 F-3B로
+   * `sessions.claude_session_id` 컬럼에 영속화되어 있어, hydrate 시 task.codexThreadId로
+   * 복원되고 codex SDK `resumeThread(threadId)`가 thread 자체를 복원한다.
+   *
+   * DB에 세션이 없으면 null 반환 — 호출자(addIntervention)가 throw하여 graceful.
+   *
+   * 본 메서드는 *메모리에 task를 추가하지 않는다* — 호출자가 결정. addIntervention의
+   * auto-resume 분기가 task를 직접 mutate하므로 메모리 추가가 필요.
+   *
+   * 미복원 필드 (별건 카드 권고):
+   *   - callerInfo: Python은 metadata JSONB array의 첫 caller_info entry 복원 (F-9 fix).
+   *     본 PR은 단순화 — callerInfo=undefined. 후속 카드에서 metadata 파싱 추가.
+   *   - lastAssistantText·lastProgressText: events 테이블에서 재계산 필요 — 본 PR 범위 외.
+   */
+  private async loadEvictedTask(sessionId: string): Promise<Task | null> {
+    let row;
+    try {
+      row = await this.db.getSession(sessionId);
+    } catch (err) {
+      this.logger.warn({ err, sessionId }, "loadEvictedTask: getSession failed");
+      return null;
+    }
+    if (!row) return null;
+
+    // status 검증 — DB에 비정상 값이 있으면 null 반환 (Python L129-134 정합).
+    const status = row.status;
+    const validStatuses: readonly TaskStatus[] = ["running", "completed", "error", "interrupted"];
+    if (!status || !validStatuses.includes(status as TaskStatus)) {
+      this.logger.warn(
+        { sessionId, status, createdAt: row.created_at },
+        "loadEvictedTask: incomplete or invalid SessionRow",
+      );
+      return null;
+    }
+
+    // completed_at: status가 terminal이면 updated_at 사용 (Python L137-146 정합).
+    let completedAt: Date | undefined;
+    if (status === "completed" || status === "error" || status === "interrupted") {
+      completedAt = row.updated_at ?? undefined;
+    }
+
+    const task: Task = {
+      agentSessionId: row.session_id,
+      prompt: row.prompt ?? "",
+      status: status as TaskStatus,
+      profileId: row.agent_id ?? undefined,
+      codexThreadId: row.claude_session_id ?? undefined,
+      callerSessionId: row.caller_session_id ?? undefined,
+      callerInfo: undefined,  // Python metadata 파싱은 별건 카드
+      createdAt: row.created_at,
+      completedAt,
+      lastEventId: row.last_event_id ?? 0,
+      lastReadEventId: row.last_read_event_id ?? 0,
+      interventionQueue: [],
+    };
+    return task;
   }
 }
