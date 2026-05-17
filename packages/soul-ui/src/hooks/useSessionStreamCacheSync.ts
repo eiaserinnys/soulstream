@@ -36,6 +36,7 @@ import {
   applySessionUpdated,
   buildSessionUpdates,
   findSessionInPages,
+  shouldApplySessionCreatedToCache,
   upsertSessionAssignmentInCatalog,
 } from "./session-stream-helpers";
 import { useSessionStreamSSE } from "./useSessionStreamSSE";
@@ -105,24 +106,33 @@ export function useSessionStreamCacheSync(
         );
       }
 
-      // 폴더 뷰에서는 현재 폴더에 속한 세션만 캐시에 추가
-      if (
-        state.viewMode === "folder" &&
-        state.selectedFolderId !== null &&
-        folderId !== state.selectedFolderId
-      ) {
-        return;
-      }
-
-      queryClient.setQueryData(
-        queryKey,
-        (old: InfiniteData<SessionPage> | undefined) => {
+      // F-A(2026-05-17): onSessionUpdated/onSessionDeleted와 대칭으로 모든
+      // ["sessions", ...] 캐시에 적용. queryKey 차원(typeFilter, viewMode, folderId)별
+      // 적합성을 predicate가 결정적으로 검사 — 변경 전 store-state 폴더 분기는
+      // 같은 invariant를 중복 검사하던 이중 가드(design-principles §5)라 제거.
+      // queryKey 구조: ["sessions", sessionTypeFilter, viewMode, effectiveFolderId]
+      // (useSessionListProvider.ts L70-73).
+      // 회귀 진단 정본: analysis/20260516-1707-dashboard-feed-realtime-regression §5.2 F-A.
+      queryClient.setQueriesData<InfiniteData<SessionPage>>(
+        {
+          queryKey: ["sessions"],
+          exact: false,
+          predicate: (query) =>
+            shouldApplySessionCreatedToCache(
+              query.queryKey,
+              newSession.sessionType,
+              folderId,
+            ),
+        },
+        (old) => {
           if (!old) return old;
-          return applySessionCreated(old, newSession, state.sessionTypeFilter);
+          // predicate가 cache 차원 적합성을 결정적으로 검사 — applySessionCreated는
+          // prepend·dedup만 책임 (design-principles §3 정본 하나, §5 제어의 단일 경로).
+          return applySessionCreated(old, newSession);
         },
       );
     },
-    [queryClient, queryKey, onEventIdAdvance],
+    [queryClient, onEventIdAdvance],
   );
 
   const onSessionUpdated = useCallback(
