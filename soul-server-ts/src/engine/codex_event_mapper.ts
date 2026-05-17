@@ -1,14 +1,27 @@
 /**
- * Codex ThreadEvent → SSEEvent 매핑 (Phase B-3 streaming 활성).
+ * Codex ThreadEvent → SSEEvent 매핑.
  *
- * stateless 매퍼. Phase B-3 SDK 0.130.0 source 검증 결과 (분析 캐시 §4.4.0):
+ * stateless 매퍼. SDK 0.130.0 source 검증:
  *   - `AgentMessageItem.text`는 *누적 텍스트* (SDK 디자인 일관성 + d.ts 코멘트)
  *   - `item.updated`는 *상태 갱신* (delta append 아님) — text 그대로 운반
  *
- * agent_message 매핑 (B-3 streaming 활성):
- *   - item.started → text_start (text 필드 없음)
- *   - item.updated → text_delta (text=item.text 누적값)
- *   - item.completed → text_end (text 필드 없음 — B-2 결함 정정)
+ * agent_message 매핑:
+ *   - item.started   → text_start (text 필드 없음)
+ *   - item.updated   → text_delta (text=item.text 누적값)
+ *   - item.completed → text_delta(text=item.text) + text_end
+ *                       (text 비어 있으면 text_end만 발행)
+ *
+ * codex-rs CLI `--experimental-json` 실측(2026-05-17, 분석 캐시
+ * `20260517-1220-codex-ts-subscribe-events.md` §A): item.started·item.updated가 *발생하지 않는다*.
+ * 짧건 길건 agent_message의 텍스트는 *오로지* `item.completed.item.text` 하나에 담겨 온다.
+ * 따라서 item.completed 시 text가 비어있지 않으면 text_delta를 *합성*하여 발행한다.
+ * 그렇지 않으면 클라이언트는 빈 메시지를 본다. 합성된 text_delta가 그 자체로 *누적값*을
+ * 담으므로 text_delta 누적 모델(`event_persistence.ts:91-96` lastAssistantText)과 정합.
+ *
+ * 미래에 codex SDK가 progressive streaming을 emit하기 시작하면 item.updated의 text_delta가
+ * 이미 발행된 상태에서 item.completed의 합성 text_delta가 *동일 누적값*을 한 번 더 발행한다.
+ * text_delta는 누적값을 전체로 덮어쓰는 모델이므로 클라이언트 표시는 변하지 않고, DB에
+ * 한 행이 추가될 뿐이다 (수용 가능한 운영 비용). 정밀 dedup은 후속 카드.
  *
  * Python wire 정본: `soul-server/src/soul_server/models/schemas.py` L155-174.
  * 모든 payload에 `timestamp: Date.now()/1000` (Unix epoch sec, Python 정합).
@@ -184,15 +197,25 @@ function mapItemUpdated(item: ThreadItem): SSEEventPayload[] {
 /** item.completed 매핑. */
 function mapItemCompleted(item: ThreadItem): SSEEventPayload[] {
   switch (item.type) {
-    case "agent_message":
-      // text_end — Python 정본은 text 필드 없음 (schemas.py L170-174).
-      // B-2 매퍼 결함 정정: text 필드 제거.
-      return [
-        {
-          type: "text_end",
-          timestamp: nowEpochSec(),
-        } as SSEEventPayload,
-      ];
+    case "agent_message": {
+      // codex-rs는 progressive streaming(item.updated)을 emit하지 않는다 (분석 캐시 §A 실측).
+      // text가 비어있지 않으면 text_delta를 합성하여 text_end 직전에 발행 — 그렇지 않으면
+      // 클라이언트는 빈 메시지를 본다. Python wire 정본: TextDelta has text, TextEnd no text.
+      const ts = nowEpochSec();
+      const payloads: SSEEventPayload[] = [];
+      if (item.text) {
+        payloads.push({
+          type: "text_delta",
+          text: item.text,
+          timestamp: ts,
+        } as SSEEventPayload);
+      }
+      payloads.push({
+        type: "text_end",
+        timestamp: ts,
+      } as SSEEventPayload);
+      return payloads;
+    }
 
     case "reasoning":
       return [
