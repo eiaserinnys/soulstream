@@ -31,7 +31,13 @@ import type {
 
 export interface CodexAdapterConfig {
   workspaceDir: string;
-  /** Codex API 키. undefined면 SDK가 process.env.CODEX_API_KEY 또는 ~/.codex/auth.json fallback. */
+  /**
+   * Codex API 키. undefined·빈 문자열이면 SDK가 sanitize된 env의 CODEX_API_KEY 또는
+   * `~/.codex/auth.json`(ChatGPT OAuth) fallback.
+   *
+   * 주의: 본 어댑터가 SDK에 env를 명시 전달한 이후로 SDK 내부 `process.env` 상속 경로는
+   * 사용되지 않는다 — `codex_env.ts`의 sanitize 결과만 자식 codex CLI에 도달한다.
+   */
   apiKey?: string;
   /** Codex CLI 바이너리 경로 override. 운영 노드별 PATH 일관성 필요 시 사용. */
   codexPathOverride?: string;
