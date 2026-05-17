@@ -16,8 +16,14 @@ import { SessionBroadcaster } from "./upstream/session_broadcaster.js";
 // Haniel cwd는 ./services/soulstream — install.configs.soul-server-ts-env path와 정합.
 // `.env`(Python soul-server용)와 *분리* 유지 — SOULSTREAM_NODE_ID 충돌 회피
 // (분석 캐시 20260517-0500-phase-b1-hotfix-fastify5-env.md §1.2 D2).
+//
+// `override: true` — `.env.soul-server-ts`를 단일 정본으로 강제. pm2 god이 부팅 시점
+// 셸 env(Python soul-server의 PORT/SOULSTREAM_NODE_ID/LOG_LEVEL 등)를 자식 프로세스에
+// 상속시켜도 .env 파일이 마지막에 덮어쓰도록 한다 (design-principles §3 정본 하나).
+// 부재 키는 부모 env 그대로 받음 — override는 *.env에 존재하는 키만* 덮어쓴다.
+// 회로: 260517 운영 사고(pm2 restart 209회 + EADDRINUSE + nodeId 충돌)를 영구 차단.
 const DOTENV_PATH = ".env.soul-server-ts";
-const dotenvResult = dotenv.config({ path: DOTENV_PATH });
+const dotenvResult = dotenv.config({ path: DOTENV_PATH, override: true });
 if (dotenvResult.error) {
   // logger 생성 *전*이라 console.warn 사용. fail-silent를 깨고 디버깅 가시성 확보.
   // path·cwd 둘 다 노출하여 운영자가 파일명 의심·경로 의심을 한 번에 가를 수 있게 함.
