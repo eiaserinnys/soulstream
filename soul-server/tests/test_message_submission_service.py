@@ -234,8 +234,11 @@ class TestTerminalResumePreservesOptions:
         assert result.task.use_mcp is False
         assert result.task.system_prompt == "한국어로 답해"
 
-    async def test_terminal_resume_preserves_context_and_folder(self, manager):
-        """terminal 재개 시 context가 forward되어 task에 박힌다."""
+    async def test_terminal_resume_preserves_context_and_items(self, manager):
+        """terminal 재개 시 context와 context_items가 forward되어 task에 박힌다.
+
+        P1 (code-reviewer 2차 지적): context_items도 forward 대상. extra_ctx 분기와 별개.
+        """
         await manager.create_task(CreateTaskParams(prompt="first", agent_session_id="sess-P"))
         await manager.register_session("claude-P", "sess-P")
         task = await manager.get_task("sess-P")
@@ -246,11 +249,40 @@ class TestTerminalResumePreservesOptions:
                 prompt="후속",
                 agent_session_id="sess-P",
                 context={"key": "value"},
+                context_items=[{"key": "additional_ctx", "label": "ctx", "content": "x"}],
             ),
             task_manager=manager,
         )
         assert result.kind == "auto_resumed"
         assert result.task.context == {"key": "value"}
+        # ★ P1 fix — context_items가 task.context_items로 forward됨
+        assert result.task.context_items is not None
+        assert any(item.get("key") == "additional_ctx" for item in result.task.context_items)
+
+    async def test_terminal_resume_preserves_profile_and_folder(self, manager):
+        """terminal 재개 시 profile_id가 forward되어 task.profile_id에 박힌다.
+
+        folder_id는 _register_new_session_async에서만 처리되고 resume에서는 영향 없음 —
+        본 케이스는 profile_id만 검증.
+        """
+        # registry 없이 profile_id 검증 시도하면 ValueError이므로, registry None 상태에서는
+        # profile_id가 그대로 통과한다 (task_factory.create_or_resume L113-117).
+        await manager.create_task(CreateTaskParams(prompt="first", agent_session_id="sess-PR"))
+        await manager.register_session("claude-PR", "sess-PR")
+        task = await manager.get_task("sess-PR")
+        task.status = TaskStatus.INTERRUPTED
+
+        result = await submit_message(
+            SubmitMessageParams(
+                prompt="후속",
+                agent_session_id="sess-PR",
+                profile_id="agent-X",
+            ),
+            task_manager=manager,
+        )
+        assert result.kind == "auto_resumed"
+        # ★ profile_id가 task에 박힘 (resume_existing_task_locked L213-214 적용)
+        assert result.task.profile_id == "agent-X"
 
 
 class TestNotifyCallerCompletionRecursion:

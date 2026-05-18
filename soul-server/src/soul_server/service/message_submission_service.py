@@ -195,6 +195,7 @@ async def submit_message(
             disallowed_tools=params.disallowed_tools,
             use_mcp=params.use_mcp,
             context=params.context,
+            context_items=params.context_items,
             extra_context_items=extra_ctx,
             model=params.model,
             folder_id=params.folder_id,

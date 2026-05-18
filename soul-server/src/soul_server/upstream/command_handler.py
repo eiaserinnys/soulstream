@@ -55,22 +55,26 @@ from soul_server.service.session_query_service import get_session_query_service
 # cross-node CMD_CREATE_SESSION 진입점의 task.client_id 정책.
 # 카드 FHhqVhlv (PR #69 후속): caller_info.source가 있으면 그것을 사용 ("slack", "agent" 등)
 # — 디버깅·로그·이력 추적 시 출처 식별을 위해. 없으면 본 상수로 fallback ("upstream" —
-# 식별 가능한 상수). PR #69 P1-1 보강 이전엔 None이었으나 명시적으로 채우는 것이
-# 디버깅 친화적이고 client_id 추적의 누락 위험을 차단한다.
+# 식별 가능한 상수). PR #69 P1-1이 inline expression으로 도입한 정책을 본 카드에서
+# helper와 상수로 *추출*했다 (동작 변경 없음 — 가독성 + 정책이 한 곳에서만 정의되도록
+# design-principles §3).
 UPSTREAM_DEFAULT_USER = "upstream"
 
 
 def _resolve_upstream_user(cmd: dict) -> str:
-    """cross-node 명령(cmd)에서 task.client_id에 사용할 user 값을 결정한다.
+    """cross-node CMD_CREATE_SESSION 명령의 task.client_id에 사용할 user 값을 결정.
+
+    **본 helper는 _handle_create_session 전용**이다 (`task.client_id` = 영구 식별).
+    `_handle_intervene`은 `cmd["user"]`를 직접 사용 (sender label) — 정책이 다르므로
+    helper 미적용. design-principles §9 (대칭성) 검토 시 의식적 비대칭으로 분류.
 
     정책 (카드 FHhqVhlv):
     1. cmd["caller_info"]가 dict이고 "source"가 truthy이면 그 값을 사용 (예: "slack", "agent").
        — 발신자 식별·디버깅·세션 이력 추적용.
     2. 그 외 (caller_info 없거나 source 누락) → UPSTREAM_DEFAULT_USER ("upstream") fallback.
 
-    이전 _handle_create_session 구현은 None을 통과시켜 task.client_id가 None이었다.
-    PR #69 P1-1 보강이 submit_message 정본을 거치게 하면서 client_id가 매번 채워지도록
-    바뀌었고, 본 helper로 정책을 명시화한다.
+    PR #69 P1-1이 inline expression으로 같은 정책을 도입한 것을 본 카드에서 *추출*했다 —
+    동작 변경 0, 가독성·정책 단일 정의를 위함.
     """
     caller_info = cmd.get("caller_info")
     if isinstance(caller_info, dict):
