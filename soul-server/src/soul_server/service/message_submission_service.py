@@ -68,6 +68,7 @@ class SubmitMessageParams:
     folder_id: Optional[str] = None
     system_prompt: Optional[str] = None
     profile_id: Optional[str] = None
+    oauth_token: Optional[str] = None
     caller_session_id: Optional[str] = None
 
 
@@ -126,6 +127,7 @@ async def submit_message(
                 folder_id=params.folder_id,
                 system_prompt=params.system_prompt,
                 profile_id=params.profile_id,
+                oauth_token=params.oauth_token,
                 caller_session_id=params.caller_session_id,
                 caller_info=params.caller_info,
                 attachment_paths=params.attachment_paths,
@@ -187,6 +189,7 @@ async def submit_message(
             extra_context_items=extra_ctx,
             attachment_paths=params.attachment_paths,
             caller_info=params.caller_info,
+            oauth_token=params.oauth_token,
             skip_claude_resume=True,  # ★ 핵심 — Claude SDK fresh 시작
         )
     )
