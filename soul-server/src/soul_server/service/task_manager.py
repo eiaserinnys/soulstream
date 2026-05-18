@@ -596,8 +596,8 @@ class TaskManager:
         ``skip_resume=True`` 특수 처리와 (2) 기존 호출자(``_notify_caller_completion``,
         cross-node relay 등)와의 시그니처·반환 형식 호환만 담당한다.
 
-        terminal 분기에서 ``skip_claude_resume=True``가 자동으로 적용되어 ``task.resume_session_id``가
-        None이 된다 — Claude 계정 limit 이후 ``previous_message_id`` 400 회로(atom 0fa49771) 차단.
+        terminal 분기에서도 일반 resume은 기존 ``claude_session_id``를 ``task.resume_session_id``로
+        전달한다.
 
         Args:
             agent_session_id: 세션 식별자

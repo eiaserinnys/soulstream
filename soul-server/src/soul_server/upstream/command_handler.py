@@ -215,10 +215,9 @@ class CommandDispatcher:
         """세션 생성 명령 처리.
 
         submit_message 정본(design-principles §3)을 거쳐 신규/running/terminal 3분기를 처리한다.
-        cross-node CMD_CREATE_SESSION이 *terminal 세션*에 대해 들어오는 경우(resume 시나리오),
-        skip_claude_resume=True가 적용되어 Claude SDK가 fresh 세션으로 시작 — Claude 계정
-        limit 후 previous_message_id 400 회로(atom 0fa49771) 차단. /execute·/intervene·
-        /api/sessions 세 라우트와 *같은 정본*을 거치는 네 번째 진입점.
+        cross-node CMD_CREATE_SESSION이 *terminal 세션*에 대해 들어오는 경우(resume 시나리오)도
+        /execute·/intervene·/api/sessions 세 라우트와 같은 정본을 거친다. 일반 resume은
+        기존 Claude 세션을 이어야 하므로 submit_message의 terminal 분기는 resume_session_id를 보존한다.
         """
         # 함수 내부 import — 순환 import 회피 (다른 라우트 어댑터와 동일 패턴)
         from soul_server.service.message_submission_service import (

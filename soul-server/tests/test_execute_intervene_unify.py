@@ -96,11 +96,8 @@ class TestExecuteInterveneUnify:
         assert msgs[0]["text"] == "from-execute"
         assert msgs[1]["text"] == "from-intervene"
 
-    async def test_terminal_session_both_routes_auto_resume_fresh(self, manager):
-        """terminal task에 두 라우트 모두 auto-resume + task.resume_session_id is None.
-
-        본 fix의 핵심 — Claude 계정 limit 후 두 경로 모두 동일 정책으로 fresh 시작.
-        """
+    async def test_terminal_session_both_routes_auto_resume_existing_claude_session(self, manager):
+        """terminal task에 두 라우트 모두 auto-resume + 기존 Claude 세션 resume."""
         await manager.create_task(CreateTaskParams(prompt="first", agent_session_id="sess-Y"))
         await manager.register_session("claude-Y", "sess-Y")
 
@@ -113,7 +110,7 @@ class TestExecuteInterveneUnify:
             task_manager=manager,
         )
         assert res_a.kind == "auto_resumed"
-        assert res_a.task.resume_session_id is None  # ★ Claude SDK fresh
+        assert res_a.task.resume_session_id == "claude-Y"
 
         # 시나리오 2: /intervene 경로 — 다시 terminal로 전환 후 add_intervention
         task = await manager.get_task("sess-Y")
@@ -124,7 +121,7 @@ class TestExecuteInterveneUnify:
         )
         assert res_b["auto_resumed"] is True
         task = await manager.get_task("sess-Y")
-        assert task.resume_session_id is None  # ★ 동일 정책
+        assert task.resume_session_id == "claude-Y"
 
 
 class TestInterveneAckFormatRegression:

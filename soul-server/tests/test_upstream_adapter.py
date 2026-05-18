@@ -211,12 +211,9 @@ class TestHandleCreateSession:
         assert call_kwargs.caller_info is None
 
     @pytest.mark.asyncio
-    async def test_terminal_session_uses_submit_message_skip_claude_resume(self):
+    async def test_terminal_session_uses_submit_message_resume(self):
         """cross-node CMD_CREATE_SESSION(agentSessionId=terminal_X)이 submit_message 정본을 거쳐
-        skip_claude_resume=True를 적용한다 — design-principles §3 정본 하나 게이트 보호.
-
-        본 fix(atom 0fa49771)의 핵심 — orch upstream도 /execute·/intervene·/api/sessions와
-        같은 정본을 거쳐야 Claude 계정 limit 후 previous_message_id 400 회로가 닫힌다.
+        기존 Claude 세션을 resume한다 — design-principles §3 정본 하나 게이트 보호.
         본 회귀 테스트가 없으면 향후 _handle_create_session이 다시 task_manager.create_task를
         직접 호출하는 변경을 방지하지 못한다.
         """
@@ -233,7 +230,7 @@ class TestHandleCreateSession:
         # submit_message는 task_manager.create_task를 호출(terminal 분기) → mock 응답
         resumed_task = MagicMock()
         resumed_task.agent_session_id = "terminal-X"
-        resumed_task.resume_session_id = None  # ★ skip_claude_resume=True 결과
+        resumed_task.resume_session_id = "claude-prev"
         tm.create_task = AsyncMock(return_value=resumed_task)
         tm.executor.start_execution = AsyncMock(return_value=True)
         tm.listener_manager.add_listener = AsyncMock(return_value=True)
@@ -253,12 +250,11 @@ class TestHandleCreateSession:
         }
         await adapter._dispatcher.dispatch(cmd)
 
-        # ★ 핵심: submit_message가 호출한 task_manager.create_task의 CreateTaskParams에
-        # skip_claude_resume=True가 박힘 — 정본 하나 게이트 통과 증명.
+        # submit_message가 호출한 task_manager.create_task의 CreateTaskParams가 기존 resume을 보존.
         tm.create_task.assert_awaited()
         call_params = tm.create_task.call_args.args[0]
         assert call_params.agent_session_id == "terminal-X"
-        assert call_params.skip_claude_resume is True
+        assert call_params.skip_claude_resume is False
         # start_execution도 auto_resumed 케이스에서 호출됨
         tm.executor.start_execution.assert_awaited_once()
 

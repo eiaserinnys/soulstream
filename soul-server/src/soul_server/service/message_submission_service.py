@@ -11,9 +11,8 @@
 - ``agent_session_id is None`` → 신규 세션 (kind='new_session')
 - ``agent_session_id`` 제공 + 기존 task가 RUNNING → intervention queue 큐잉 (kind='intervened')
 - ``agent_session_id`` 제공 + 기존 task가 terminal(completed/error/interrupted) → 새 task로
-  재활성화하되 *skip_claude_resume=True를 적용*하여 ``ClaudeAgentOptions.resume``을 사용하지
-  않는다 (kind='auto_resumed'). Claude 계정 limit 이후 같은 세션에 후속 메시지를 보낼 때
-  ``previous_message_id`` 400 회로(코덱스 진단 atom 0fa49771)를 차단한다.
+  재활성화한다 (kind='auto_resumed'). 일반 resume은 기존 Claude 세션을 이어야 하므로
+  ``ClaudeAgentOptions.resume``에 기존 ``claude_session_id``를 전달한다.
 
 라우트 책임
 -----------
@@ -206,7 +205,7 @@ async def submit_message(
                 agent_session_id, TaskStatus.INTERRUPTED.value
             )
 
-    # terminal → auto-resume (skip_claude_resume=True로 limit 회로 차단)
+    # terminal → auto-resume. 일반 resume은 기존 Claude 세션을 이어야 한다.
     extra_ctx = (
         build_attachment_context_items(params.attachment_paths)
         if params.attachment_paths
@@ -235,7 +234,7 @@ async def submit_message(
             attachment_paths=params.attachment_paths,
             caller_info=params.caller_info,
             oauth_token=params.oauth_token,
-            skip_claude_resume=True,  # ★ 핵심 — Claude SDK fresh 시작
+            skip_claude_resume=False,
         )
     )
     return SubmitMessageResult(

@@ -64,8 +64,8 @@ async def intervene(
     """
     # 본 함수는 라우트용 진입점이다. 동작 정본은 ``submit_message``(message_submission_service);
     # 본 함수는 ``task_manager.add_intervention``(submit_message의 backward-compat wrapper)을
-    # 호출하여 자연스럽게 같은 정본을 거친다. terminal 분기에서 ``skip_claude_resume=True``가
-    # 적용되어 Claude SDK가 fresh 세션으로 시작 — atom 0fa49771 정본.
+    # 호출하여 자연스럽게 같은 정본을 거친다. terminal 분기에서도 일반 resume은 기존
+    # Claude 세션을 이어간다.
     result = await task_manager.add_intervention(
         agent_session_id=agent_session_id,
         text=text,

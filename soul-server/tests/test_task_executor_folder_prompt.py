@@ -230,19 +230,10 @@ class TestFolderPromptInjection:
     @patch("soul_server.service.execution_context_builder.assemble_prompt",
            return_value="assembled prompt")
     @patch("soul_server.service.task_executor.get_session_broadcaster")
-    async def test_folder_prompt_reinjected_after_terminal_resume(
+    async def test_folder_prompt_not_reinjected_after_terminal_resume(
         self, mock_broadcaster, mock_assemble, mock_build_ctx
     ):
-        """terminal-resume(skip_claude_resume=True) 직후 같은 agent_session_id가 다시 실행될 때
-        folder_prompt가 *재주입*된다.
-
-        본 fix(submit_message 통합)의 정책: terminal 분기에서 task.resume_session_id=None으로 박혀
-        Claude SDK가 fresh 세션으로 시작한다. execution_context_builder._resolve_folder L100
-        분기(`if task.resume_session_id is None`)에 의해 folder_prompt가 신규 세션과 동일하게
-        주입된다 — 의도된 동작이며 회귀 아님.
-
-        과거 동작(resume_session_id에 이전 claude_session_id가 박힘 → folder_prompt 미주입)과
-        대비되는 핵심 동작 변화이므로 별도 케이스로 회귀 보호.
+        """terminal-resume은 기존 Claude 세션을 이어가므로 folder_prompt를 재주입하지 않는다.
         """
         mock_broadcaster.return_value = MagicMock(
             emit_session_updated=AsyncMock(),
@@ -250,10 +241,8 @@ class TestFolderPromptInjection:
         )
 
         db = _make_db(folder_settings={"folderPrompt": "항상 한국어로 답하세요."})
-        # ★ 핵심: terminal-resume 후의 task 상태 — claude_session_id는 보존되지만
-        #         resume_session_id는 None (skip_claude_resume=True 적용 결과)
-        task = _make_task(resume_session_id=None)
-        task.claude_session_id = "claude-prev-session"  # 이전 SDK 세션 ID는 인덱스에 남음
+        task = _make_task(resume_session_id="claude-prev-session")
+        task.claude_session_id = "claude-prev-session"
 
         captured_context: list = []
         captured_kwargs: dict = {}
@@ -263,9 +252,7 @@ class TestFolderPromptInjection:
 
         await executor._run_execution(task=task, claude_runner=runner, resource_manager=rm)
 
-        # folder_prompt가 system_prompt에 재주입되어야 함 (신규 세션과 동일 동작)
+        # resume 세션에서는 folder_prompt를 재주입하지 않는다.
         system_prompt = captured_kwargs.get("system_prompt")
-        assert system_prompt is not None
-        assert "항상 한국어로 답하세요." in system_prompt
-        # ClaudeAgentOptions.resume에 해당하는 resume_session_id는 None (Claude SDK fresh 시작)
-        assert task.resume_session_id is None
+        assert system_prompt is None
+        assert task.resume_session_id == "claude-prev-session"

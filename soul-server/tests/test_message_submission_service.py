@@ -3,10 +3,10 @@
 분기 의미:
 - agent_session_id is None → kind='new_session' (신규 task 생성)
 - agent_session_id + RUNNING → kind='intervened' (intervention queue 큐잉)
-- agent_session_id + terminal → kind='auto_resumed' (skip_claude_resume=True 적용)
+- agent_session_id + terminal → kind='auto_resumed' (기존 Claude 세션 resume)
 
 핵심 검증:
-- terminal 분기에서 task.resume_session_id is None (ClaudeAgentOptions.resume 미사용)
+- terminal 분기에서 task.resume_session_id가 기존 claude_session_id로 설정됨
 - caller_info 운반 (running 큐잉 / 신규 task 모두)
 - _notify_caller_completion 재귀 경로(add_intervention → submit_message)에서도 동일 정책 적용
 """
@@ -97,11 +97,9 @@ class TestSubmitMessageBranches:
         assert msg["text"] == "개입 메시지"
         assert msg["user"] == "user1"
 
-    async def test_auto_resumed_terminal_drops_claude_resume(self, manager):
+    async def test_auto_resumed_terminal_keeps_claude_resume(self, manager):
         """terminal(INTERRUPTED) 세션 + agent_session_id → kind='auto_resumed',
-        task.resume_session_id is None (skip_claude_resume=True 적용 결과).
-
-        Claude 계정 limit 후 previous_message_id 400 회로 차단의 핵심 검증.
+        task.resume_session_id에 기존 claude_session_id를 박는다.
         """
         await manager.create_task(CreateTaskParams(prompt="first", agent_session_id="sess-1"))
         await manager.register_session("claude-orig", "sess-1")
@@ -116,13 +114,11 @@ class TestSubmitMessageBranches:
         )
         assert result.kind == "auto_resumed"
         assert result.agent_session_id == "sess-1"
-        # ★ 핵심 — Claude SDK fresh 시작을 위해 resume_session_id is None
-        assert result.task.resume_session_id is None
-        # claude_session_id 자체는 인덱스에 보존 (역방향 lookup 정합성)
+        assert result.task.resume_session_id == "claude-orig"
         assert result.task.claude_session_id == "claude-orig"
 
     async def test_auto_resumed_from_completed_status(self, manager):
-        """COMPLETED 세션도 동일 정책 — skip_claude_resume=True."""
+        """COMPLETED 세션도 기존 Claude 세션을 resume한다."""
         await manager.create_task(CreateTaskParams(prompt="first", agent_session_id="sess-2"))
         await manager.register_session("claude-c", "sess-2")
         await manager.finalize_task("sess-2", result="done")
@@ -132,10 +128,10 @@ class TestSubmitMessageBranches:
             task_manager=manager,
         )
         assert result.kind == "auto_resumed"
-        assert result.task.resume_session_id is None
+        assert result.task.resume_session_id == "claude-c"
 
     async def test_auto_resumed_from_error_status(self, manager):
-        """ERROR 세션도 동일 정책 — skip_claude_resume=True."""
+        """ERROR 세션도 기존 Claude 세션을 resume한다."""
         await manager.create_task(CreateTaskParams(prompt="first", agent_session_id="sess-3"))
         await manager.register_session("claude-e", "sess-3")
         await manager.finalize_task("sess-3", error="crashed")
@@ -145,7 +141,7 @@ class TestSubmitMessageBranches:
             task_manager=manager,
         )
         assert result.kind == "auto_resumed"
-        assert result.task.resume_session_id is None
+        assert result.task.resume_session_id == "claude-e"
 
     async def test_task_not_found_raises(self, manager):
         """존재하지 않는 agent_session_id에 submit_message → TaskNotFoundError."""
@@ -307,12 +303,12 @@ class TestNotifyCallerCompletionRecursion:
 
     자식 task의 finalize 시 caller_session_id로 add_intervention 재귀 호출 →
     add_intervention 내부에서 submit_message로 위임 → terminal caller 케이스에서도
-    skip_claude_resume=True가 적용되어 task.resume_session_id is None.
+    기존 Claude 세션을 resume한다.
     """
 
-    async def test_caller_terminal_resumed_with_skip_claude_resume(self, manager):
+    async def test_caller_terminal_resumed_with_existing_claude_session(self, manager):
         """caller_session_id가 terminal 상태일 때 _notify_caller_completion 시
-        caller task가 resumed되면서 resume_session_id is None.
+        caller task가 기존 Claude 세션으로 resumed된다.
         """
         # caller 세션 생성 → claude_session_id 등록 → terminal 상태로 전환
         await manager.create_task(
@@ -333,12 +329,11 @@ class TestNotifyCallerCompletionRecursion:
 
         # finalize → _notify_caller_completion 자동 호출
         # _notify_caller_completion 내부에서 add_intervention("caller-1") 호출
-        # add_intervention → submit_message(skip_claude_resume=True) → caller task resume
+        # add_intervention → submit_message → caller task resume
         await manager.finalize_task("child-1", result="자식 완료")
 
-        # caller가 resumed되었고, resume_session_id is None인지 검증
+        # caller가 resumed되었고, 기존 claude_session_id로 resume되는지 검증
         resumed_caller = await manager.get_task("caller-1")
         assert resumed_caller.status == TaskStatus.RUNNING
-        assert resumed_caller.resume_session_id is None
-        # claude_session_id 인덱스는 보존
+        assert resumed_caller.resume_session_id == "claude-caller"
         assert resumed_caller.claude_session_id == "claude-caller"
