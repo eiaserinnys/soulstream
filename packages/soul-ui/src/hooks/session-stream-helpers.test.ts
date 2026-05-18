@@ -13,6 +13,7 @@ import {
   applySessionUpdated,
   applySessionDeleted,
   buildSessionUpdates,
+  mergeSessionCreatedSummary,
   shouldApplySessionCreatedToCache,
 } from "./session-stream-helpers";
 import type { SessionPage } from "./session-stream-helpers";
@@ -24,7 +25,9 @@ function makeSession(
 ): SessionSummary {
   return {
     agentSessionId: id,
-    sessionType: "task",
+    // sessionType 정의는 `"claude" | "llm"` (session-types.ts). 직전 fixture의 "task"는 type
+   // 불일치 — 사이클 A에서 정정.
+    sessionType: "claude",
     status: "running",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -58,13 +61,20 @@ describe("applySessionCreated", () => {
     expect(result.pages[0].total).toBe(2);
   });
 
-  it("이미 존재하는 세션은 중복 prepend하지 않는다 (낙관적 업데이트 dedup)", () => {
+  it("이미 존재하는 세션은 prepend하지 않고 *merge*만 한다 (낙관적 업데이트 dedup + 사이클 A merge)", () => {
+    // 사이클 A 정정 (분석 캐시 `20260518-1405-cycle-a-optimistic-session-merge.md`):
+    // 직전 동작은 `if (exists) return data` 동일 reference 반환 — 서버 정본을 silent skip.
+    // 본 fix는 *exists 분기에서도 mergeSessionCreatedSummary*를 적용하여 정의된 incoming
+    // 필드를 덮어쓴다. 동일 reference는 더 이상 보장되지 않지만 prepend는 안 함 + total 유지.
     const s1 = makeSession("s1");
     const data = makeData([[s1]]);
 
     const result = applySessionCreated(data, s1);
 
-    expect(result).toBe(data); // 동일 참조 반환
+    // prepend 안 함 — sessions length·total 유지
+    expect(result.pages[0].sessions).toHaveLength(1);
+    expect(result.pages[0].sessions[0].agentSessionId).toBe("s1");
+    expect(result.pages[0].total).toBe(1);
   });
 
   it("여러 페이지 → pages[0]에만 prepend하고 다른 페이지는 보존", () => {
@@ -78,6 +88,99 @@ describe("applySessionCreated", () => {
     expect(result.pages[0].sessions[0].agentSessionId).toBe("s3");
     expect(result.pages[1].sessions).toHaveLength(1);
     expect(result.pages[1].sessions[0].agentSessionId).toBe("s2");
+  });
+
+  // 사이클 A — 낙관적 세션 ↔ 서버 정본 race (외부 codex 진단 ②)
+  // 분석 캐시 `20260518-1405-cycle-a-optimistic-session-merge.md`.
+  it("낙관적 세션이 이미 있으면 session_created 서버 필드를 병합하고 total은 유지", () => {
+    const optimistic = makeSession("s1", {
+      prompt: "hello",
+      userName: undefined,
+      userPortraitUrl: undefined,
+    } as Partial<SessionSummary>);
+    const created = makeSession("s1", {
+      status: "running",
+      userName: "Jubok Kim",
+      userPortraitUrl: "https://example.com/avatar.png",
+      lastEventId: 7,
+    } as Partial<SessionSummary>);
+    const data = makeData([[optimistic]]);
+
+    const result = applySessionCreated(data, created);
+
+    expect(result.pages[0].sessions).toHaveLength(1);
+    expect(result.pages[0].total).toBe(1);
+    const merged = result.pages[0].sessions[0] as Record<string, unknown>;
+    expect(merged.prompt).toBe("hello");
+    expect(merged.userName).toBe("Jubok Kim");
+    expect(merged.userPortraitUrl).toBe("https://example.com/avatar.png");
+    expect(merged.lastEventId).toBe(7);
+  });
+
+  it("낙관적 세션 병합 — incoming undefined는 기존 값 보존, null은 덮어쓴다", () => {
+    const optimistic = makeSession("s1", {
+      userName: "기존 이름",
+      userPortraitUrl: "/old.png",
+      agentPortraitUrl: "/agent.png",
+    } as Partial<SessionSummary>);
+    const created = makeSession("s1", {
+      userName: undefined,        // skip (기존 보존)
+      userPortraitUrl: null,      // null은 살림 (덮어씀)
+      agentPortraitUrl: "/new.png",
+    } as unknown as Partial<SessionSummary>);
+    const data = makeData([[optimistic]]);
+
+    const result = applySessionCreated(data, created);
+
+    const merged = result.pages[0].sessions[0] as Record<string, unknown>;
+    expect(merged.userName).toBe("기존 이름");  // undefined → skip
+    expect(merged.userPortraitUrl).toBeNull();   // null → 덮어씀
+    expect(merged.agentPortraitUrl).toBe("/new.png");
+  });
+});
+
+// ============================================================
+describe("mergeSessionCreatedSummary", () => {
+  it("undefined incoming 필드는 기존 값 보존", () => {
+    const current = makeSession("s1", {
+      prompt: "hello",
+      userName: "alice",
+    } as Partial<SessionSummary>);
+    const incoming = makeSession("s1", {
+      prompt: undefined,
+      userName: undefined,
+    } as Partial<SessionSummary>);
+    const result = mergeSessionCreatedSummary(current, incoming);
+    expect(result.prompt).toBe("hello");
+    expect(result.userName).toBe("alice");
+  });
+
+  it("null incoming은 살아남아 덮어쓴다 (null = 유효 unset)", () => {
+    const current = makeSession("s1", {
+      userPortraitUrl: "/old.png",
+    } as Partial<SessionSummary>);
+    const incoming = makeSession("s1", {
+      userPortraitUrl: null,
+    } as unknown as Partial<SessionSummary>);
+    const result = mergeSessionCreatedSummary(current, incoming);
+    expect(result.userPortraitUrl).toBeNull();
+  });
+
+  it("정의된 incoming 필드만 덮어쓴다 (혼합 케이스)", () => {
+    const current = makeSession("s1", {
+      prompt: "hello",
+      userName: undefined,
+      agentPortraitUrl: "/agent.png",
+    } as Partial<SessionSummary>);
+    const incoming = makeSession("s1", {
+      prompt: undefined,
+      userName: "Jubok Kim",
+      agentPortraitUrl: undefined,
+    } as Partial<SessionSummary>);
+    const result = mergeSessionCreatedSummary(current, incoming);
+    expect(result.prompt).toBe("hello");
+    expect(result.userName).toBe("Jubok Kim");
+    expect(result.agentPortraitUrl).toBe("/agent.png");
   });
 });
 

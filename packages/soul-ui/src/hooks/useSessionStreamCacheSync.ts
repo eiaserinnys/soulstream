@@ -32,6 +32,7 @@ import type {
 import {
   applyMetadataUpdated,
   applySessionCreated,
+  mergeSessionCreatedSummary,
   applySessionDeleted,
   applySessionUpdated,
   buildSessionUpdates,
@@ -131,8 +132,29 @@ export function useSessionStreamCacheSync(
           return applySessionCreated(old, newSession);
         },
       );
+
+      // activeSessionSummary 동기화 (사이클 A — 낙관적 세션 ↔ 서버 정본 race fix):
+      // URL 직접 진입 또는 새 세션 생성 직후 active가 임시 세션인 상태에서 server
+      // `session_created`가 도착하면 *정의된 server 필드로 덮어쓴다*. session_updated와
+      // 대칭으로 onSessionCreated에도 active 동기화. 분석 캐시
+      // `20260518-1405-cycle-a-optimistic-session-merge.md`.
+      //
+      // onSessionUpdated와의 의미 수준 대칭 (spec-reviewer P2-4): session_created는
+      // newSession 자체가 *정본 전체*이므로 활성 summary 부재 시 `newSession`을 그대로 박는다.
+      // session_updated는 *diff(updates)*만 운반하므로 캐시 폴백(findSessionInPages)으로 baseline을
+      // 합쳐야 한다 — 두 분기 구조가 다른 것은 wire 의미 차이의 정합.
+      const storeState = useDashboardStore.getState();
+      if (storeState.activeSessionKey === newSession.agentSessionId) {
+        if (storeState.activeSessionSummary) {
+          setActiveSessionSummary(
+            mergeSessionCreatedSummary(storeState.activeSessionSummary, newSession),
+          );
+        } else {
+          setActiveSessionSummary(newSession);
+        }
+      }
     },
-    [queryClient, onEventIdAdvance],
+    [queryClient, setActiveSessionSummary, onEventIdAdvance],
   );
 
   const onSessionUpdated = useCallback(

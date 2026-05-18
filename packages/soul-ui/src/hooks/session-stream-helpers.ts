@@ -133,22 +133,64 @@ export function shouldApplySessionCreatedToCache(
 }
 
 /**
+ * 낙관적 세션이 캐시에 박힌 상태에서 서버 정본 `session_created`가 도착할 때, *정의된 incoming
+ * 필드만* 덮어쓰는 helper. 분석 캐시 `20260518-1405-cycle-a-optimistic-session-merge.md`.
+ *
+ * - `undefined`만 filter — 서버가 *명시적으로 박지 않은 필드*는 기존 값 보존
+ * - `null`은 *유효 unset*이므로 살림 (session-types: `agentPortraitUrl?: string | null` 등)
+ * - 순수 함수 — InfiniteData·캐시 상태 불변
+ *
+ * 필드별 null 안전성 (spec-reviewer P2-3):
+ * - portrait 계열(`agentPortraitUrl`·`userPortraitUrl`·`awaySummary`): 타입 `string | null` —
+ *   서버가 null로 명시적 unset 가능. 본 helper가 살림 동작 정합.
+ * - `lastEventId`: 타입 `number | undefined` — null 도달 불가. wire가 null을 보내도 type-safe
+ *   하지 않은 entry. 본 helper의 일관성 정합 (`null`을 살리는 일반 규칙으로 처리).
+ */
+export function mergeSessionCreatedSummary(
+  current: SessionSummary,
+  incoming: SessionSummary,
+): SessionSummary {
+  const definedIncoming = Object.fromEntries(
+    Object.entries(incoming).filter(([, value]) => value !== undefined),
+  ) as Partial<SessionSummary>;
+  return { ...current, ...definedIncoming };
+}
+
+/**
  * session_created 이벤트:
- * pages[0] 앞에 newSession을 prepend하고 total을 +1. 낙관적 업데이트와의 중복 삽입은 방지.
+ * pages[0] 앞에 newSession을 prepend하고 total을 +1. 낙관적 업데이트(addOptimisticSession)가
+ * 임시 세션을 박은 상태면 *정의된 server 필드로 덮어쓴다* — `mergeSessionCreatedSummary` 적용.
+ *
+ * 직전 동작(`if (exists) return data`)이 server 정본을 silent skip 하던 결함 정정.
+ * 임시 세션의 빈 필드(userName·portraitUrl·agentName·agentPortraitUrl·lastEventId 등)가
+ * server `session_created` wire 도착 시점에 즉시 채워진다 — 분석 캐시
+ * `20260518-1405-cycle-a-optimistic-session-merge.md`.
  *
  * F-A(2026-05-17) 이후: 본 함수는 cache 차원 적합성(typeFilter, viewMode, folderId)을
  * 검사하지 않는다 — 호출자가 setQueriesData predicate(shouldApplySessionCreatedToCache)로
- * 결정한다 (design-principles §3 정본 하나, §5 제어의 단일 경로).
+ * 결정한다 (design-principles §3 정본 하나, §5 제어의 단일 경로). 본 fix는 2-arg signature를
+ * 유지하여 분리 정본을 보존.
  */
 export function applySessionCreated(
   data: InfiniteData<SessionPage>,
   newSession: SessionSummary,
 ): InfiniteData<SessionPage> {
-  // 낙관적 업데이트(addOptimisticSession)와의 중복 삽입 방지
   const exists = data.pages.some((page) =>
     page.sessions.some((s) => s.agentSessionId === newSession.agentSessionId),
   );
-  if (exists) return data;
+  if (exists) {
+    return {
+      ...data,
+      pages: data.pages.map((page) => ({
+        ...page,
+        sessions: page.sessions.map((s) =>
+          s.agentSessionId === newSession.agentSessionId
+            ? mergeSessionCreatedSummary(s, newSession)
+            : s,
+        ),
+      })),
+    };
+  }
   return {
     ...data,
     pages: data.pages.map((page, i) =>
