@@ -139,6 +139,12 @@ export function shouldApplySessionCreatedToCache(
  * - `undefined`만 filter — 서버가 *명시적으로 박지 않은 필드*는 기존 값 보존
  * - `null`은 *유효 unset*이므로 살림 (session-types: `agentPortraitUrl?: string | null` 등)
  * - 순수 함수 — InfiniteData·캐시 상태 불변
+ *
+ * 필드별 null 안전성 (spec-reviewer P2-3):
+ * - portrait 계열(`agentPortraitUrl`·`userPortraitUrl`·`awaySummary`): 타입 `string | null` —
+ *   서버가 null로 명시적 unset 가능. 본 helper가 살림 동작 정합.
+ * - `lastEventId`: 타입 `number | undefined` — null 도달 불가. wire가 null을 보내도 type-safe
+ *   하지 않은 entry. 본 helper의 일관성 정합 (`null`을 살리는 일반 규칙으로 처리).
  */
 export function mergeSessionCreatedSummary(
   current: SessionSummary,
