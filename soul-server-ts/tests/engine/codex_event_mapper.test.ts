@@ -299,7 +299,11 @@ describe("item.completed 매핑", () => {
     });
   });
 
-  it("command_execution success → tool_result (is_error=false, exit_code 운반)", () => {
+  // F2 (PR fix/soul-server-ts-chat-sse-python-parity): tool_result payload는 Python
+  // `ToolResultEngineEvent.to_sse()` 정합으로 `tool_name` + 문자열 `result` + `is_error` +
+  // `tool_use_id` + `timestamp` 형태. soul-ui `node-factory.ts:323`이 `e.result`를 string으로
+  // 가정(`.length`, `.slice`)하므로 boundary에서 stringify 보장. 기존 `content` 필드는 제거.
+  it("F2: command_execution success → tool_result (tool_name=command, result=aggregated_output string)", () => {
     const sse = mapThreadEvent({
       type: "item.completed",
       item: {
@@ -313,13 +317,17 @@ describe("item.completed 매핑", () => {
     });
     expect(sse[0]).toMatchObject({
       type: "tool_result",
+      tool_name: "command",
       tool_use_id: "i3",
-      content: { output: "hi\n", exit_code: 0 },
+      result: "hi\n",
       is_error: false,
     });
+    // `content` 키는 *제거됨* (design-principles §3 정본 둘 안티패턴 회피)
+    expect(sse[0] as Record<string, unknown>).not.toHaveProperty("content");
+    expect(typeof (sse[0] as { result: unknown }).result).toBe("string");
   });
 
-  it("command_execution failed → tool_result (is_error=true)", () => {
+  it("F2: command_execution failed + 빈 출력 → result에 exit_code 단서 prefix (is_error=true)", () => {
     const sse = mapThreadEvent({
       type: "item.completed",
       item: {
@@ -333,12 +341,14 @@ describe("item.completed 매핑", () => {
     });
     expect(sse[0]).toMatchObject({
       type: "tool_result",
+      tool_name: "command",
       tool_use_id: "i3b",
+      result: "[exit 1]",  // 빈 출력 + 실패 시 사용자 단서
       is_error: true,
     });
   });
 
-  it("file_change completed → tool_result", () => {
+  it("F2: file_change completed → tool_result (tool_name=file_change, result=JSON.stringify(changes))", () => {
     const sse = mapThreadEvent({
       type: "item.completed",
       item: {
@@ -350,12 +360,16 @@ describe("item.completed 매핑", () => {
     });
     expect(sse[0]).toMatchObject({
       type: "tool_result",
+      tool_name: "file_change",
       tool_use_id: "i4",
+      result: JSON.stringify([{ path: "a.ts", kind: "update" }]),
       is_error: false,
     });
+    expect(sse[0] as Record<string, unknown>).not.toHaveProperty("content");
   });
 
-  it("mcp_tool_call success → tool_result (is_error=false)", () => {
+  it("F2: mcp_tool_call success → tool_result (tool_name=mcp/server/tool, result=JSON.stringify(result))", () => {
+    const mcpResult = { content: [], structured_content: { ok: true } };
     const sse = mapThreadEvent({
       type: "item.completed",
       item: {
@@ -364,14 +378,21 @@ describe("item.completed 매핑", () => {
         server: "trello",
         tool: "create_card",
         arguments: {},
-        result: { content: [], structured_content: { ok: true } },
+        result: mcpResult,
         status: "completed",
       },
     });
-    expect((sse[0] as { is_error: boolean }).is_error).toBe(false);
+    expect(sse[0]).toMatchObject({
+      type: "tool_result",
+      tool_name: "mcp/trello/create_card",
+      tool_use_id: "i5",
+      result: JSON.stringify(mcpResult),
+      is_error: false,
+    });
+    expect(sse[0] as Record<string, unknown>).not.toHaveProperty("content");
   });
 
-  it("mcp_tool_call failed → tool_result (error 운반)", () => {
+  it("F2: mcp_tool_call failed → tool_result (result = error.message)", () => {
     const sse = mapThreadEvent({
       type: "item.completed",
       item: {
@@ -386,23 +407,27 @@ describe("item.completed 매핑", () => {
     });
     expect(sse[0]).toMatchObject({
       type: "tool_result",
+      tool_name: "mcp/x/y",
       tool_use_id: "i5b",
-      content: { error: "boom" },
+      result: "boom",
       is_error: true,
     });
+    expect(sse[0] as Record<string, unknown>).not.toHaveProperty("content");
   });
 
-  it("web_search completed → tool_result (query)", () => {
+  it("F2: web_search completed → tool_result (tool_name=web_search, result='Search: {query}')", () => {
     const sse = mapThreadEvent({
       type: "item.completed",
       item: { id: "i6", type: "web_search", query: "openai sdk" },
     });
     expect(sse[0]).toMatchObject({
       type: "tool_result",
+      tool_name: "web_search",
       tool_use_id: "i6",
-      content: { query: "openai sdk" },
+      result: "Search: openai sdk",
       is_error: false,
     });
+    expect(sse[0] as Record<string, unknown>).not.toHaveProperty("content");
   });
 
   it("todo_list completed → no-op", () => {

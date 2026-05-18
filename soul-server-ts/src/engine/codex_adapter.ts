@@ -177,6 +177,15 @@ export class CodexEngineAdapter implements EnginePort {
       return;
     }
 
+    // F3 (PR fix/soul-server-ts-chat-sse-python-parity): turn 단위 lastAgentText 추적.
+    // codex SDK 0.130.0 `Turn.finalResponse: string` 필드(`dist/index.d.ts:176`)와 의미 등가 —
+    // streamed 모드에서는 events generator만 제공되므로 adapter가 직접 추적.
+    // turn.completed 이벤트의 SDK docstring: "Emitted when a turn is completed. Typically right
+    // after the assistant's response." (`dist/index.d.ts:129-133`) → agent_message item.completed
+    // 이후 turn.completed 순서가 보장된다. 따라서 turn.completed payload에 lastAgentText를
+    // `result`로 enrichment해도 race 없음. graceful: 없으면 result 키 omit (soul-ui node-factory.ts:167
+    // `e.result ?? "Session completed"` 폴백이 그대로 동작 → PR 이전 behavior).
+    let lastAgentText: string | undefined;
     try {
       for await (const threadEvent of streamedTurn.events) {
         // thread.started 발견 시 onSession 콜백 (호출자가 task에 영속).
@@ -184,8 +193,29 @@ export class CodexEngineAdapter implements EnginePort {
           await params.onSession(threadEvent.thread_id);
         }
 
+        // last agent_message text 추적 — turn.completed 시점에 complete.result로 주입.
+        // codex_event_mapper.ts:213-233에 따르면 item.completed(agent_message)는 텍스트 누적값을
+        // 운반한다 (codex-rs는 progressive streaming을 안 emit). 한 turn에 agent_message가
+        // 여러 번 오면 *마지막 값*이 turn의 최종 답.
+        if (
+          threadEvent.type === "item.completed" &&
+          threadEvent.item.type === "agent_message"
+        ) {
+          lastAgentText = threadEvent.item.text;
+        }
+
         const ssePayloads = mapThreadEvent(threadEvent);
         for (const payload of ssePayloads) {
+          // F3 enrichment: complete payload에 lastAgentText를 `result`로 주입.
+          // Python `complete` 이벤트의 `result` 키와 정합 (mcp_session_query PREVIEW_FIELD_MAP
+          // `["complete"]="result"` + soul-ui node-factory.ts:167 `e.result ?? "Session completed"`).
+          // mapper는 stateless 유지 (모듈 docstring 정본) — turn-level 상태는 adapter 책임.
+          if (
+            (payload as { type: string }).type === "complete" &&
+            lastAgentText !== undefined
+          ) {
+            (payload as Record<string, unknown>).result = lastAgentText;
+          }
           // onEvent 부가 콜백 — yield와 *별도로* 같은 페이로드 발행.
           if (params.onEvent) {
             await params.onEvent(payload);
