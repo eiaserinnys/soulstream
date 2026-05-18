@@ -26,6 +26,7 @@ import {
   type PreparedContext,
 } from "../context/context_builder.js";
 
+import type { CompletionNotifier } from "./completion_notifier.js";
 import type { Task, TaskStatus } from "./task_models.js";
 
 /** AgentProfile → EnginePort 생성. backend별 분기는 factory 구현체 담당. */
@@ -43,6 +44,15 @@ export class TaskExecutor {
      * legacy 호출자·테스트 환경 호환. 운영 흐름(main.ts)에서는 항상 주입.
      */
     private readonly contextBuilder?: ExecutionContextBuilder,
+    /**
+     * B-7 피위임 완료 회송. undefined일 때 통지 skip — legacy 호출자·테스트 환경 호환.
+     * 운영 흐름(main.ts)에서는 항상 주입하여 child finalize 후 parent에게 결과 텍스트 송신.
+     *
+     * Python `soul-server/src/soul_server/service/task_manager.py:439-442
+     * _notify_caller_completion` 정본의 codex 적응판 (분석 캐시
+     * `roselin/.local/artifacts/analysis/20260518-2125-ts-delegation-return.md` §3-2).
+     */
+    private readonly completionNotifier?: CompletionNotifier,
   ) {}
 
   /**
@@ -464,6 +474,22 @@ export class TaskExecutor {
       );
     }
     task.engine = undefined;
+
+    // B-7 피위임 완료 회송 — callerSessionId가 있고 notifier가 주입된 경우만.
+    // notifier 내부가 자체 격리(local 실패→orch 폴백→양쪽 실패해도 resolve)하지만 안전망 추가.
+    // Python `task_manager.py:439-442` 정본 정합 — finalize의 락 블록 *바깥*에서 호출 (TS는
+    // 단일 task 인스턴스에 락이 없어 _finalize 안에서 호출해도 동치).
+    if (task.callerSessionId && this.completionNotifier) {
+      try {
+        await this.completionNotifier.notify(task);
+      } catch (err) {
+        // notifier는 자체 격리하지만 안전망 — finalize는 절대 실패 전파 안 함.
+        this.logger.warn(
+          { err, sessionId: task.agentSessionId },
+          "completionNotifier.notify threw (should not happen — notifier is supposed to isolate)",
+        );
+      }
+    }
   }
 }
 
