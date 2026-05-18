@@ -104,4 +104,96 @@ describe("parseEnv", () => {
     });
     expect(env.AGENTS_CONFIG_PATH).toBe("/etc/soulstream/agents.yaml");
   });
+
+  // MCP Streamable HTTP env (본 카드 신규)
+  describe("MCP env", () => {
+    it("MCP_ENABLED default false (string -> bool)", () => {
+      const env = parseEnv(minimal);
+      expect(env.MCP_ENABLED).toBe(false);
+    });
+
+    it('MCP_ENABLED "true" 문자열 → true', () => {
+      const env = parseEnv({ ...minimal, MCP_ENABLED: "true" });
+      expect(env.MCP_ENABLED).toBe(true);
+    });
+
+    it("MCP_PATH default '/mcp'", () => {
+      const env = parseEnv(minimal);
+      expect(env.MCP_PATH).toBe("/mcp");
+    });
+
+    it("MCP_REQUIRE_AUTH default false", () => {
+      const env = parseEnv(minimal);
+      expect(env.MCP_REQUIRE_AUTH).toBe(false);
+    });
+
+    it("MCP_ALLOWED_HOSTS default csv → string[] 변환", () => {
+      const env = parseEnv(minimal);
+      expect(env.MCP_ALLOWED_HOSTS).toEqual(["localhost", "127.0.0.1"]);
+    });
+
+    it("MCP_ALLOWED_HOSTS override csv → trim + filter empty", () => {
+      const env = parseEnv({
+        ...minimal,
+        MCP_ALLOWED_HOSTS: "a.example.com, b.example.com, ,c.example.com",
+      });
+      expect(env.MCP_ALLOWED_HOSTS).toEqual([
+        "a.example.com",
+        "b.example.com",
+        "c.example.com",
+      ]);
+    });
+
+    it("production + MCP_ENABLED + MCP_REQUIRE_AUTH 누락 → ZodError (P1-2 분기 2)", () => {
+      expect(() =>
+        parseEnv({
+          ...minimal,
+          ENVIRONMENT: "production",
+          AUTH_BEARER_TOKEN: "secret",
+          MCP_ENABLED: "true",
+          MCP_REQUIRE_AUTH: "false",
+        }),
+      ).toThrow(ZodError);
+    });
+
+    it("production + MCP_ENABLED + MCP_REQUIRE_AUTH true → 통과", () => {
+      const env = parseEnv({
+        ...minimal,
+        ENVIRONMENT: "production",
+        AUTH_BEARER_TOKEN: "secret",
+        MCP_ENABLED: "true",
+        MCP_REQUIRE_AUTH: "true",
+      });
+      expect(env.MCP_ENABLED).toBe(true);
+      expect(env.MCP_REQUIRE_AUTH).toBe(true);
+    });
+
+    it("비-loopback HOST + MCP_ENABLED + REQUIRE_AUTH 없음 + ALLOWED_HOSTS 비어있음 → ZodError (P1-2 분기 3)", () => {
+      expect(() =>
+        parseEnv({
+          ...minimal,
+          HOST: "0.0.0.0",
+          MCP_ENABLED: "true",
+          MCP_REQUIRE_AUTH: "false",
+          MCP_ALLOWED_HOSTS: "",
+        }),
+      ).toThrow(ZodError);
+    });
+
+    it("비-loopback HOST + MCP_ENABLED + ALLOWED_HOSTS 명시 → 통과", () => {
+      const env = parseEnv({
+        ...minimal,
+        HOST: "0.0.0.0",
+        MCP_ENABLED: "true",
+        MCP_ALLOWED_HOSTS: "example.com",
+      });
+      expect(env.MCP_ALLOWED_HOSTS).toEqual(["example.com"]);
+    });
+
+    it("loopback HOST 기본 + MCP_ENABLED → 통과 (REQUIRE_AUTH 미강제, development)", () => {
+      const env = parseEnv({ ...minimal, MCP_ENABLED: "true" });
+      expect(env.MCP_ENABLED).toBe(true);
+      expect(env.HOST).toBe("127.0.0.1");
+    });
+  });
 });

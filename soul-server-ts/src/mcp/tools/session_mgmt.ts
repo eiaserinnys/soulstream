@@ -1,0 +1,195 @@
+/**
+ * session_mgmt 도구 — Python `mcp_session_mgmt.py` 정합 (키 호환).
+ */
+import { randomUUID } from "node:crypto";
+
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
+
+import { buildAgentCallerInfo } from "../../caller_info.js";
+import { errorResult, jsonResult } from "../result.js";
+import type { McpRuntime } from "../runtime.js";
+
+export function registerSessionMgmtTools(
+  server: McpServer,
+  runtime: McpRuntime,
+): void {
+  server.registerTool(
+    "list_local_agents",
+    {
+      description: "현재 노드에서 사용 가능한 에이전트 목록.",
+      inputSchema: {},
+    },
+    async () => {
+      return jsonResult({
+        agents: runtime.agentRegistry.list().map((p) => ({
+          id: p.id,
+          name: p.name,
+          max_turns: p.max_turns ?? null,
+        })),
+      });
+    },
+  );
+
+  server.registerTool(
+    "create_agent_session",
+    {
+      description:
+        "현재 노드에 새 에이전트 세션을 생성한다. 비동기 — 세션 ID만 반환. caller_session_id가 있으면 caller_info(v1)를 자동 조립.",
+      inputSchema: {
+        agent_id: z.string().optional(),
+        prompt: z.string(),
+        caller_session_id: z.string().optional(),
+        folder_id: z.string().optional(),
+      },
+    },
+    async ({ agent_id, prompt, caller_session_id, folder_id }) => {
+      // agent_id가 미지정이면 첫 번째 등록 agent를 default로.
+      const agents = runtime.agentRegistry.list();
+      if (agents.length === 0) {
+        return errorResult("등록된 agent가 없습니다");
+      }
+      const firstAgent = agents[0];
+      // 위 length 가드 후이지만 TS strict의 array index undefined 추론을 닫기 위해 명시 확인.
+      if (!firstAgent) {
+        return errorResult("등록된 agent가 없습니다");
+      }
+      const resolvedAgentId = agent_id ?? firstAgent.id;
+      const agent = runtime.agentRegistry.get(resolvedAgentId);
+      if (!agent) {
+        return errorResult(`agent_id를 찾을 수 없습니다: ${resolvedAgentId}`);
+      }
+
+      // caller_info 조립 — caller_session_id 미지정 시 미전달 (graceful).
+      const callerInfo = caller_session_id
+        ? buildCallerInfoFromTask(runtime, caller_session_id)
+        : undefined;
+
+      const sessionId = randomUUID();
+      try {
+        const task = await runtime.taskManager.createTask({
+          agentSessionId: sessionId,
+          prompt,
+          profileId: resolvedAgentId,
+          callerSessionId: caller_session_id ?? null,
+          callerInfo,
+          folderId: folder_id ?? null,
+        });
+        // fire-and-forget — 도구는 await 하지 않는다.
+        runtime.taskExecutor.startExecution(task, agent);
+        return jsonResult({
+          agent_session_id: task.agentSessionId,
+          status: task.status,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return errorResult(msg);
+      }
+    },
+  );
+
+  server.registerTool(
+    "send_message_to_session",
+    {
+      description:
+        "대상 세션에 메시지 전달. running 시 queue, 종료된 세션은 auto-resume. caller_info 조립은 create_agent_session과 정합.",
+      inputSchema: {
+        target_session_id: z.string(),
+        message: z.string(),
+        caller_session_id: z.string().optional(),
+      },
+    },
+    async ({ target_session_id, message, caller_session_id }) => {
+      const callerInfo = caller_session_id
+        ? buildCallerInfoFromTask(runtime, caller_session_id)
+        : undefined;
+
+      try {
+        // TaskManager.addIntervention의 두 번째 인자 onResume이 auto-resume 분기에서 호출됨.
+        // 콜백 안에서 TaskExecutor.startExecution을 trigger — Python `mcp_session_mgmt.py`
+        // L153-161 (auto_resumed 분기 후 start_execution 호출) 정합.
+        const result = await runtime.taskManager.addIntervention(
+          {
+            agentSessionId: target_session_id,
+            text: message,
+            user: "agent",
+            callerInfo,
+          },
+          (task) => {
+            if (!task.profileId) return;
+            const agent = runtime.agentRegistry.get(task.profileId);
+            if (!agent) return;
+            runtime.taskExecutor.startExecution(task, agent);
+          },
+        );
+        return jsonResult({ ok: true, detail: result });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return jsonResult({ ok: false, error: msg });
+      }
+    },
+  );
+
+  server.registerTool(
+    "get_session_name",
+    {
+      description: "세션 표시 이름 조회.",
+      inputSchema: { session_id: z.string() },
+    },
+    async ({ session_id }) => {
+      const session = await runtime.db.getSession(session_id);
+      if (!session) {
+        return errorResult(`세션을 찾을 수 없습니다: ${session_id}`);
+      }
+      return jsonResult({
+        session_id,
+        display_name: session.display_name,
+      });
+    },
+  );
+
+  server.registerTool(
+    "set_session_name",
+    {
+      description:
+        "세션 표시 이름 설정. 빈 문자열 → 제거. CatalogService 경유로 broadcastCatalog 자동.",
+      inputSchema: {
+        session_id: z.string(),
+        name: z.string().default(""),
+      },
+    },
+    async ({ session_id, name }) => {
+      const trimmed = (name ?? "").trim();
+      const displayName = trimmed.length > 0 ? trimmed : null;
+      const session = await runtime.db.getSession(session_id);
+      if (!session) {
+        return errorResult(`세션을 찾을 수 없습니다: ${session_id}`);
+      }
+      await runtime.catalogService.renameSession(session_id, displayName);
+      return jsonResult({
+        session_id,
+        display_name: displayName,
+      });
+    },
+  );
+}
+
+/**
+ * caller_session_id로부터 v1 caller_info dict 조립. atom card ed3a216d 정본 +
+ * Python `build_agent_caller_info` (caller_info.py L166-209) 키 호환.
+ */
+function buildCallerInfoFromTask(
+  runtime: McpRuntime,
+  callerSessionId: string,
+) {
+  const callerTask = runtime.taskManager.getTask(callerSessionId);
+  const callerProfile = callerTask?.profileId
+    ? runtime.agentRegistry.get(callerTask.profileId)
+    : undefined;
+  return buildAgentCallerInfo({
+    agentNode: runtime.nodeId,
+    agentId: callerTask?.profileId ?? null,
+    agentName: callerProfile?.name ?? null,
+    portraitPath: callerProfile?.portrait_path ?? null,
+  });
+}

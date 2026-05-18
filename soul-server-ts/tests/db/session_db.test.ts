@@ -282,6 +282,169 @@ describe("SessionDB folder ops (B-5)", () => {
   });
 });
 
+describe("SessionDB MCP cogito 메서드 (본 카드 신규)", () => {
+  it("renameSession → session_rename(sessionId, displayName | null)", async () => {
+    const { sql, calls } = createMockSql();
+    const db = new SessionDB(sql);
+    await db.renameSession("sess-1", "새 이름");
+    expect(calls).toHaveLength(1);
+    expect(calls[0].values).toEqual(["sess-1", "새 이름"]);
+    expect(calls[0].fragments.join("?")).toContain("session_rename");
+  });
+
+  it("renameSession(null) → 이름 제거", async () => {
+    const { sql, calls } = createMockSql();
+    const db = new SessionDB(sql);
+    await db.renameSession("sess-1", null);
+    expect(calls[0].values).toEqual(["sess-1", null]);
+  });
+
+  it("listSessionsSummary → 빈 결과 시 total=0", async () => {
+    const { sql } = createMockSql(() => []);
+    const result = await new SessionDB(sql).listSessionsSummary({
+      limit: 10,
+      offset: 0,
+    });
+    expect(result).toEqual({ sessions: [], total: 0 });
+  });
+
+  it("listSessionsSummary → 첫 행의 total_count를 total로 사용", async () => {
+    const now = new Date("2026-05-18T00:00:00Z");
+    const { sql, calls } = createMockSql(() => [
+      {
+        session_id: "s1",
+        display_name: "Hi",
+        status: "running",
+        session_type: "claude",
+        created_at: now,
+        updated_at: now,
+        event_count: "5",
+        away_summary: null,
+        caller_session_id: null,
+        total_count: "42",
+      },
+    ]);
+    const result = await new SessionDB(sql).listSessionsSummary({
+      search: "Hi",
+      limit: 20,
+      offset: 0,
+      folderId: "claude",
+      nodeId: "node-1",
+    });
+    expect(result.total).toBe(42);
+    expect(result.sessions).toHaveLength(1);
+    expect(result.sessions[0].event_count).toBe(5);
+    expect(result.sessions[0].session_id).toBe("s1");
+    // 인자 순서: search, session_type(null), limit, offset, folderId, nodeId
+    expect(calls[0].values).toEqual(["Hi", null, 20, 0, "claude", "node-1"]);
+  });
+
+  it("getAllFolders → folder_get_all 행 그대로 + settings null 정규화", async () => {
+    const { sql } = createMockSql(() => [
+      { id: "f1", name: "F1", sort_order: 0, settings: { x: 1 } },
+      { id: "f2", name: "F2", sort_order: 1, settings: null },
+    ]);
+    const folders = await new SessionDB(sql).getAllFolders();
+    expect(folders).toEqual([
+      { id: "f1", name: "F1", sort_order: 0, settings: { x: 1 } },
+      { id: "f2", name: "F2", sort_order: 1, settings: {} },
+    ]);
+  });
+
+  it("countEvents → event_count(sessionId) 반환 Number 변환", async () => {
+    const { sql, calls } = createMockSql(() => [{ event_count: "123" }]);
+    const n = await new SessionDB(sql).countEvents("sess-1");
+    expect(n).toBe(123);
+    expect(calls[0].values).toEqual(["sess-1"]);
+  });
+
+  it("countEvents → 빈 결과 시 0", async () => {
+    const { sql } = createMockSql(() => []);
+    expect(await new SessionDB(sql).countEvents("missing")).toBe(0);
+  });
+
+  it("readEvents → event_read(sessionId, afterId, limit, types)", async () => {
+    const { sql, calls } = createMockSql(() => [
+      {
+        id: 1,
+        session_id: "s1",
+        event_type: "user_message",
+        payload: { text: "hi" },
+        searchable_text: "hi",
+        created_at: new Date("2026-05-18T00:00:00Z"),
+      },
+    ]);
+    const events = await new SessionDB(sql).readEvents("s1", 0, 50, [
+      "user_message",
+    ]);
+    expect(calls[0].values).toEqual(["s1", 0, 50, ["user_message"]]);
+    expect(events).toHaveLength(1);
+    expect(events[0].payload).toEqual({ text: "hi" });
+  });
+
+  it("readEvents 빈 eventTypes → null로 변환", async () => {
+    const { sql, calls } = createMockSql(() => []);
+    await new SessionDB(sql).readEvents("s1", 0, 50, []);
+    expect(calls[0].values).toEqual(["s1", 0, 50, null]);
+  });
+
+  it("readOneEvent → 부재 시 null", async () => {
+    const { sql } = createMockSql(() => []);
+    expect(await new SessionDB(sql).readOneEvent("s1", 99)).toBeNull();
+  });
+
+  it("readOneEvent → 존재 시 payload 정규화", async () => {
+    const { sql, calls } = createMockSql(() => [
+      {
+        id: 5,
+        session_id: "s1",
+        event_type: "user_message",
+        payload: { text: "x" },
+        searchable_text: "x",
+        created_at: new Date("2026-05-18T00:00:00Z"),
+      },
+    ]);
+    const ev = await new SessionDB(sql).readOneEvent("s1", 5);
+    expect(ev?.id).toBe(5);
+    expect(ev?.payload).toEqual({ text: "x" });
+    expect(calls[0].values).toEqual(["s1", 5]);
+  });
+
+  it("streamEventsRaw → 인자 (sessionId, afterId=0 default)", async () => {
+    const { sql, calls } = createMockSql(() => [
+      { id: 1, event_type: "user_message", payload_text: "{\"x\":1}" },
+    ]);
+    const rows = await new SessionDB(sql).streamEventsRaw("s1");
+    expect(calls[0].values).toEqual(["s1", 0]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].payload_text).toBe('{"x":1}');
+  });
+
+  it("searchEvents → event_search(query, sessionIds, limit) + score Number 변환", async () => {
+    const { sql, calls } = createMockSql(() => [
+      {
+        id: 1,
+        session_id: "s1",
+        event_type: "user_message",
+        payload: { text: "hi" },
+        searchable_text: "hi",
+        created_at: new Date("2026-05-18T00:00:00Z"),
+        score: "0.123",
+      },
+    ]);
+    const results = await new SessionDB(sql).searchEvents("hi", ["s1"], 10);
+    expect(calls[0].values).toEqual(["hi", ["s1"], 10]);
+    expect(results).toHaveLength(1);
+    expect(results[0].score).toBeCloseTo(0.123);
+  });
+
+  it("searchEvents — 빈 sessionIds → null로 변환", async () => {
+    const { sql, calls } = createMockSql(() => []);
+    await new SessionDB(sql).searchEvents("hi", [], 10);
+    expect(calls[0].values).toEqual(["hi", null, 10]);
+  });
+});
+
 describe("SessionDB lifecycle", () => {
   let sql: SqlClient;
   let endSpy: ReturnType<typeof vi.fn>;

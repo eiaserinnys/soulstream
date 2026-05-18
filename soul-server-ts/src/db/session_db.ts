@@ -356,6 +356,342 @@ export class SessionDB {
     return { folders, sessions };
   }
 
+  // ---------------------------------------------------------------------
+  // MCP cogito 도구용 신규 메서드 (본 카드 — Streamable HTTP MCP 패리티)
+  // ---------------------------------------------------------------------
+
+  /**
+   * `session_rename` stored procedure (schema.sql L469-475) — 세션 표시 이름 갱신.
+   *
+   * Python `set_session_name` 도구 + `CatalogService.rename_session` 정본 경로 정합:
+   *   CatalogService.renameSession → db.renameSession + broadcastCatalog().
+   *
+   * displayName이 null이면 이름 제거. trim·empty→null 정규화 책임은 *호출자*
+   * (도구 핸들러 또는 CatalogService).
+   */
+  async renameSession(
+    sessionId: string,
+    displayName: string | null,
+  ): Promise<void> {
+    await this.sql`SELECT session_rename(${sessionId}, ${displayName})`;
+  }
+
+  /**
+   * `session_list_summary` stored procedure (schema.sql L731-768) — 세션 경량 요약 페이지네이션.
+   *
+   * Python `session_query_service.list_sessions_summary` 정본 정합. session_type
+   * 필터는 본 카드 도구에서 노출하지 않으므로 항상 null 전달 (모든 백엔드 통합).
+   *
+   * 반환: total은 결과 전체 행수(필터 적용 후), sessions는 limit/offset 적용 행.
+   * total_count는 LATERAL subquery로 모든 행에 같은 값으로 박혀 나옴 — 첫 행에서 추출.
+   */
+  async listSessionsSummary(params: {
+    search?: string | null;
+    limit: number;
+    offset: number;
+    folderId?: string | null;
+    nodeId?: string | null;
+  }): Promise<{
+    sessions: Array<{
+      session_id: string;
+      display_name: string | null;
+      status: string | null;
+      session_type: string | null;
+      created_at: Date;
+      updated_at: Date;
+      event_count: number;
+      away_summary: string | null;
+      caller_session_id: string | null;
+    }>;
+    total: number;
+  }> {
+    const rows = await this.sql<
+      Array<{
+        session_id: string;
+        display_name: string | null;
+        status: string | null;
+        session_type: string | null;
+        created_at: Date;
+        updated_at: Date;
+        event_count: string | number;
+        away_summary: string | null;
+        caller_session_id: string | null;
+        total_count: string | number;
+      }>
+    >`
+      SELECT * FROM session_list_summary(
+        ${params.search ?? null},
+        ${null},
+        ${params.limit},
+        ${params.offset},
+        ${params.folderId ?? null},
+        ${params.nodeId ?? null}
+      )
+    `;
+    const total = rows.length > 0 && rows[0] ? Number(rows[0].total_count) : 0;
+    const sessions = rows.map((r) => ({
+      session_id: r.session_id,
+      display_name: r.display_name,
+      status: r.status,
+      session_type: r.session_type,
+      created_at: r.created_at,
+      updated_at: r.updated_at,
+      event_count: Number(r.event_count),
+      away_summary: r.away_summary,
+      caller_session_id: r.caller_session_id,
+    }));
+    return { sessions, total };
+  }
+
+  /**
+   * `folder_get_all` stored procedure (schema.sql L827-830) — 모든 폴더 행 그대로.
+   *
+   * Python `session_query_service.get_all_folders` 정본 정합. settings는 jsonb 자동 parse.
+   * 본 메서드는 raw row를 그대로 반환하여 도구 핸들러가 wire 모양 결정.
+   */
+  async getAllFolders(): Promise<
+    Array<{
+      id: string;
+      name: string;
+      sort_order: number;
+      settings: Record<string, unknown>;
+    }>
+  > {
+    const rows = await this.sql<
+      Array<{ id: string; name: string; sort_order: number; settings: unknown }>
+    >`SELECT * FROM folder_get_all()`;
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      sort_order: r.sort_order,
+      settings:
+        r.settings && typeof r.settings === "object"
+          ? (r.settings as Record<string, unknown>)
+          : {},
+    }));
+  }
+
+  /**
+   * `event_count` stored procedure (schema.sql L635-640) — 세션 이벤트 총 개수.
+   */
+  async countEvents(sessionId: string): Promise<number> {
+    const rows = await this.sql<Array<{ event_count: string | number }>>`
+      SELECT event_count(${sessionId}) AS event_count
+    `;
+    return Number(rows[0]?.event_count ?? 0);
+  }
+
+  /**
+   * `event_read` stored procedure (schema.sql L580-601) — 페이지네이션 이벤트 조회.
+   *
+   * Python `db.read_events` 정본 정합. afterId 이후 events.id를 기준으로 limit개 반환.
+   * eventTypes는 화이트리스트 필터 (null이면 전체).
+   *
+   * payload는 jsonb 자동 parse — Record로 반환.
+   */
+  async readEvents(
+    sessionId: string,
+    afterId: number,
+    limit: number,
+    eventTypes?: string[],
+  ): Promise<
+    Array<{
+      id: number;
+      session_id: string;
+      event_type: string;
+      payload: Record<string, unknown>;
+      searchable_text: string;
+      created_at: Date;
+    }>
+  > {
+    const types = eventTypes && eventTypes.length > 0 ? eventTypes : null;
+    const rows = await this.sql<
+      Array<{
+        id: number;
+        session_id: string;
+        event_type: string;
+        payload: unknown;
+        searchable_text: string;
+        created_at: Date;
+      }>
+    >`
+      SELECT * FROM event_read(
+        ${sessionId},
+        ${afterId},
+        ${limit},
+        ${types as unknown as string[] | null}
+      )
+    `;
+    return rows.map((r) => ({
+      id: r.id,
+      session_id: r.session_id,
+      event_type: r.event_type,
+      payload:
+        r.payload && typeof r.payload === "object"
+          ? (r.payload as Record<string, unknown>)
+          : {},
+      searchable_text: r.searchable_text,
+      created_at: r.created_at,
+    }));
+  }
+
+  /**
+   * `event_read_one` stored procedure (schema.sql L603-618) — 단일 이벤트 전문.
+   *
+   * Python `db.read_one_event` 정본 정합. 부재 시 null.
+   */
+  async readOneEvent(
+    sessionId: string,
+    eventId: number,
+  ): Promise<{
+    id: number;
+    session_id: string;
+    event_type: string;
+    payload: Record<string, unknown>;
+    searchable_text: string;
+    created_at: Date;
+  } | null> {
+    const rows = await this.sql<
+      Array<{
+        id: number;
+        session_id: string;
+        event_type: string;
+        payload: unknown;
+        searchable_text: string;
+        created_at: Date;
+      }>
+    >`
+      SELECT * FROM event_read_one(${sessionId}, ${eventId})
+    `;
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      id: row.id,
+      session_id: row.session_id,
+      event_type: row.event_type,
+      payload:
+        row.payload && typeof row.payload === "object"
+          ? (row.payload as Record<string, unknown>)
+          : {},
+      searchable_text: row.searchable_text,
+      created_at: row.created_at,
+    };
+  }
+
+  /**
+   * `event_stream_raw` stored procedure (schema.sql L620-633) — JSONL 다운로드용 raw 스트림.
+   *
+   * Python `db.stream_events_raw` 정본 정합. payload는 *문자열*로 반환 (jsonb::text).
+   * 본 메서드는 download_session_history 도구가 파일에 line-by-line 직렬화하는 용도.
+   *
+   * 본 카드는 단일 fetch 후 array를 반환 (true streaming은 후속 — postgres.js cursor API
+   * 사용 시 호출 패턴 복잡화. 본 카드 세션 크기는 메모리 적재 안전).
+   */
+  async streamEventsRaw(
+    sessionId: string,
+    afterId = 0,
+  ): Promise<
+    Array<{ id: number; event_type: string; payload_text: string }>
+  > {
+    const rows = await this.sql<
+      Array<{ id: number; event_type: string; payload_text: string }>
+    >`
+      SELECT * FROM event_stream_raw(${sessionId}, ${afterId})
+    `;
+    return rows;
+  }
+
+  /**
+   * `folder_create` stored procedure (schema.sql L771-777). id는 호출자가 발급.
+   *
+   * Python `catalog_service.create_folder`에서 uuid 발급 후 호출하는 패턴 정합.
+   */
+  async createFolder(id: string, name: string, sortOrder: number): Promise<void> {
+    await this.sql`SELECT folder_create(${id}, ${name}, ${sortOrder})`;
+  }
+
+  /**
+   * `folder_update` stored procedure (schema.sql L780-810). 화이트리스트:
+   * `name`, `sort_order`, `settings`. settings는 JSON 문자열로 직렬화 (stored proc이 jsonb cast).
+   */
+  async updateFolder(
+    folderId: string,
+    columns: ReadonlyArray<"name" | "sort_order" | "settings">,
+    values: ReadonlyArray<string>,
+  ): Promise<void> {
+    await this.sql`
+      SELECT folder_update(
+        ${folderId},
+        ${this.sql.array(columns as unknown as string[])},
+        ${this.sql.array(values as unknown as string[])}
+      )
+    `;
+  }
+
+  /**
+   * `folder_delete` stored procedure (schema.sql L820-824).
+   */
+  async deleteFolderById(folderId: string): Promise<void> {
+    await this.sql`SELECT folder_delete(${folderId})`;
+  }
+
+  /**
+   * `event_search` stored procedure (schema.sql L693-729) — postgres full-text search.
+   *
+   * 본 카드는 search_session_history 도구의 *minimal viable* 구현으로 postgres `ts_rank` 기반
+   * full-text search를 사용한다 (한글은 search_vector에서 'simple' config로 tokenize됨,
+   * BM25 정밀 알고리즘은 후속 카드). Python `SessionSearchEngine`(BM25)와는 별개 경로.
+   *
+   * 응답 모양은 Python 도구의 results dict와 키 호환 — 도구 핸들러가 preview/event_type/score
+   * 키로 재포장.
+   */
+  async searchEvents(
+    query: string,
+    sessionIds: string[] | null,
+    limit: number,
+  ): Promise<
+    Array<{
+      id: number;
+      session_id: string;
+      event_type: string;
+      payload: Record<string, unknown>;
+      searchable_text: string;
+      created_at: Date;
+      score: number;
+    }>
+  > {
+    const ids = sessionIds && sessionIds.length > 0 ? sessionIds : null;
+    const rows = await this.sql<
+      Array<{
+        id: number;
+        session_id: string;
+        event_type: string;
+        payload: unknown;
+        searchable_text: string;
+        created_at: Date;
+        score: number;
+      }>
+    >`
+      SELECT * FROM event_search(
+        ${query},
+        ${ids as unknown as string[] | null},
+        ${limit}
+      )
+    `;
+    return rows.map((r) => ({
+      id: r.id,
+      session_id: r.session_id,
+      event_type: r.event_type,
+      payload:
+        r.payload && typeof r.payload === "object"
+          ? (r.payload as Record<string, unknown>)
+          : {},
+      searchable_text: r.searchable_text,
+      created_at: r.created_at,
+      score: Number(r.score),
+    }));
+  }
+
   /**
    * Python `event_append` (schema.sql L537-578) — 이벤트 INSERT + last_event_id 갱신.
    *
