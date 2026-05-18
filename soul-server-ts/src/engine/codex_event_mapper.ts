@@ -243,51 +243,67 @@ function mapItemCompleted(item: ThreadItem): SSEEventPayload[] {
         } as SSEEventPayload,
       ];
 
-    case "command_execution":
+    case "command_execution": {
+      // F2 (PR fix/soul-server-ts-chat-sse-python-parity): Python `ToolResultEngineEvent.to_sse()`
+      // 정합 — `tool_name` + 문자열 `result`. soul-ui `node-factory.ts:323`이 `e.result`를 string으로
+      // 가정(`.length`, `.slice`)하므로 boundary에서 stringify. `content` 키는 제거 (정본 둘 안티패턴 회피).
+      // command_execution은 aggregated_output이 이미 string. 빈 출력 + 실패 시 exit_code 단서를
+      // result에 prefix하여 사용자에게 신호 (claude 정합 메타 표현).
+      const output = item.aggregated_output ?? "";
+      const exitCode = item.exit_code ?? null;
+      const result = output || (exitCode !== null ? `[exit ${exitCode}]` : "");
       return [
         {
           type: "tool_result",
+          tool_name: "command",
           tool_use_id: item.id,
-          content: {
-            output: item.aggregated_output,
-            exit_code: item.exit_code ?? null,
-          },
+          result,
           is_error: item.status === "failed",
           timestamp: nowEpochSec(),
         } as SSEEventPayload,
       ];
+    }
 
     case "file_change":
+      // changes는 객체 배열 — JSON 직렬화하여 string으로 박는다. 사용자 친화적 표현은 후속 카드 (P2).
       return [
         {
           type: "tool_result",
+          tool_name: "file_change",
           tool_use_id: item.id,
-          content: {
-            changes: item.changes,
-            status: item.status,
-          },
+          result: JSON.stringify(item.changes ?? []),
           is_error: item.status === "failed",
           timestamp: nowEpochSec(),
         } as SSEEventPayload,
       ];
 
-    case "mcp_tool_call":
+    case "mcp_tool_call": {
+      // error message는 그대로 string. success result는 객체이므로 JSON.stringify.
+      // mcp_tool_call은 tool_start에서 `mcp/${server}/${tool}` 형태로 tool_name이 박혀 있으므로
+      // 동일한 명명을 사용 — UI nodeMap에서 tool_use_id 매칭이라 본문 영향 0이지만 design-principles §9
+      // (일관성·대칭성) 정합.
+      const result = item.error
+        ? item.error.message
+        : JSON.stringify(item.result ?? {});
       return [
         {
           type: "tool_result",
+          tool_name: `mcp/${item.server}/${item.tool}`,
           tool_use_id: item.id,
-          content: item.error ? { error: item.error.message } : item.result ?? {},
+          result,
           is_error: item.status === "failed",
           timestamp: nowEpochSec(),
         } as SSEEventPayload,
       ];
+    }
 
     case "web_search":
       return [
         {
           type: "tool_result",
+          tool_name: "web_search",
           tool_use_id: item.id,
-          content: { query: item.query },
+          result: `Search: ${item.query}`,
           is_error: false,
           timestamp: nowEpochSec(),
         } as SSEEventPayload,

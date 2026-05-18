@@ -66,6 +66,63 @@ export class ExecutionContextBuilder {
   ) {}
 
   /**
+   * Auto-resume 시 `user_message.context`로 박을 최소 context_items.
+   *
+   * F1 (PR fix/soul-server-ts-chat-sse-python-parity): Python
+   * `execution_context_builder.py` `_assemble_context` L175-179의 *resume 분기*에서 발생하는
+   * `combined_context_items = [soulstream_item]` (folder/atom 빈) 효과를 단일 helper로 추출.
+   *
+   *   - folder lookup만 수행 (folder_name → soulstream_item.content.folder)
+   *   - folder_prompt/atom: *빌드 안 함* (Python `_resolve_folder` L100 + `_fetch_atom_context` L111
+   *     resume_session_id is not None 가드와 동일 의미)
+   *   - profile.workspace_dir: registry에서 lookup (없으면 graceful "")
+   *
+   * TaskManager가 `ResumeContextProvider` interface로 호출하여 wire payload(user_message.context)
+   * 에 forward한다. graceful: 모든 lookup 실패 → 빈 배열 반환 → 호출자가 context 키 생략.
+   *
+   * design-principles §3 (정본 하나): `buildSoulstreamContextItem`을 first-turn(`_assembleContext`)
+   * 과 resume(본 메서드) 둘 다 사용 → soulstream_item 빌드 로직 정본 1개.
+   */
+  async buildResumeContextItems(task: Task): Promise<ContextItem[]> {
+    // folder_name lookup — Python `_resolve_folder` L73-105 (resume 분기 제외 흐름):
+    //   - sessions.folder_id 있음 → folders row → folder_name
+    //   - 미존재 또는 lookup throw → undefined (graceful)
+    // folder_prompt/atom은 빌드 *안 함* (resume 시 의도된 누락).
+    let folderName: string | undefined;
+    try {
+      const sessionRow = await this.db.getSession(task.agentSessionId);
+      if (sessionRow?.folder_id) {
+        const folderRow = await this.db.getFolderById(sessionRow.folder_id);
+        if (folderRow) folderName = folderRow.name;
+      }
+    } catch (err) {
+      this.logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "buildResumeContextItems: folder lookup failed — proceeding with folderName=undefined",
+      );
+    }
+
+    // workspace_dir — Python L159 `working_dir or claude_runner.workspace_dir`의 resume 등가.
+    // codex 노드는 task에 agent를 안 들고 있어 registry 조회. 미발견 → "" (graceful).
+    let workspaceDir = "";
+    if (task.profileId) {
+      const profile = this.registry.get(task.profileId);
+      if (profile) workspaceDir = profile.workspace_dir;
+    }
+
+    const soulstreamItem = buildSoulstreamContextItem({
+      agentSessionId: task.agentSessionId,
+      claudeSessionId: task.codexThreadId ?? null,
+      workspaceDir,
+      folderName,
+      nodeId: this.cfg.nodeId,
+      agentId: task.profileId,
+      callerInfo: task.callerInfo,
+    });
+    return [soulstreamItem];
+  }
+
+  /**
    * Python `build(task, claude_runner)` 정본.
    *
    * 호출 시점은 task_executor의 *신규 첫 turn 진입 전* (interventionQueue 비어있을 때).
