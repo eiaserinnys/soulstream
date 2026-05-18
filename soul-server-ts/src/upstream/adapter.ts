@@ -148,6 +148,7 @@ export class UpstreamAdapter {
         port: this.config.port,
         userName: this.config.userName,
         agentRegistry: this.deps.agentRegistry,
+        logger: this.logger,
       }),
     );
 

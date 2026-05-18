@@ -170,6 +170,50 @@ describe("buildRegistrationMsg — portrait wire (Python adapter.py:212-233 정�
     expect(entry.portrait_b64).toBeUndefined();
   });
 
+  it("portrait read 실패 시 logger.warn 통지 (silent fallback 방지, design-principles §4·§8)", async () => {
+    const { default: pino } = await import("pino");
+    const calls: Array<{ obj: object; msg?: string }> = [];
+    const logger = pino({ level: "warn" });
+    const orig = logger.warn.bind(logger);
+    logger.warn = ((obj: unknown, msg?: string) => {
+      if (typeof obj === "object" && obj !== null) {
+        calls.push({ obj: obj as object, msg });
+      }
+      return orig(obj as object, msg);
+    }) as typeof logger.warn;
+
+    buildRegistrationMsg({
+      nodeId: "x",
+      host: "h",
+      port: 1,
+      userName: "",
+      agentRegistry: new AgentRegistry([
+        { ...codexAgent, portrait_path: "/nonexistent/missing.png" },
+      ]),
+      logger,
+    });
+
+    expect(calls.length).toBeGreaterThanOrEqual(1);
+    const warned = calls.find((c) => c.msg?.includes("portrait read failed"));
+    expect(warned).toBeDefined();
+    expect((warned!.obj as { path: string }).path).toBe("/nonexistent/missing.png");
+  });
+
+  it("logger 미주입 시에도 silent fallback (legacy 호출자 호환)", () => {
+    // logger 옵션 없이 호출 — throw 없이 graceful null 처리
+    const msg = buildRegistrationMsg({
+      nodeId: "x",
+      host: "h",
+      port: 1,
+      userName: "",
+      agentRegistry: new AgentRegistry([
+        { ...codexAgent, portrait_path: "/nonexistent/missing.png" },
+      ]),
+    });
+    const entry = msg.agents?.[0] as Record<string, unknown>;
+    expect(entry.portrait_b64).toBeUndefined();
+  });
+
   it("encodePortrait 캐시 — 같은 경로 두 번 호출 시 readFileSync 1회만 (성능)", () => {
     // 캐시 격리 (beforeEach)
     const first = encodePortrait(portraitPath);
