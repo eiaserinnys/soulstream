@@ -16,6 +16,7 @@
  *     codex SDK는 turn-level steer 미지원이라 turn 종료 후 dequeue → 다음 turn으로 처리.
  */
 
+import type { ContextItem } from "../context/prompt_assembler.js";
 import type { EnginePort } from "../engine/protocol.js";
 
 /** task lifecycle 상태. Python `TaskStatus` enum과 값 일치 (DB sessions.status 컬럼 정본). */
@@ -30,6 +31,12 @@ export interface InterventionMessage {
   user: string;
   callerInfo?: CallerInfo;
   attachmentPaths?: string[];
+  /**
+   * Phase A context 정본 (Y-10, atom d7a1ad86 정본 둘 안티패턴 차단):
+   * Python `task_executor.py on_intervention_sent` 통합 후 wire에 박는 context_items 정본과 정합.
+   * 본 PR은 *필드만* 추가 — running intervention path에서 use 시점은 후속 카드.
+   */
+  context?: ContextItem[];
 }
 
 /**

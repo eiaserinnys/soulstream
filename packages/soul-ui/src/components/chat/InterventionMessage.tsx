@@ -2,6 +2,7 @@ import { memo } from "react";
 import type { ChatMessage } from "../../lib/flatten-tree";
 import { useDashboardStore } from "../../stores/dashboard-store";
 import { ProfileAvatar } from "../ProfileAvatar";
+import { ContextBlock } from "./ContextBlock";
 import { extractCallerAvatarUrl } from "./userAvatarSelectors";
 import { computeInterventionDisplay } from "./InterventionMessage.helpers";
 
@@ -51,6 +52,12 @@ export const InterventionMessage = memo(function InterventionMessage({ msg }: { 
           )}
         </div>
         <div className="text-base leading-snug text-foreground whitespace-pre-wrap break-words">{msg.content}</div>
+        {/* Phase A context 정본 (Y-9, atom d7a1ad86 차단): UserMessage.tsx:82-84와 대칭으로
+            wire의 context_items를 ContextBlock으로 표시 — 첫 턴/auto-resume/running intervention
+            세 경로 모두 동일 UX 표면. */}
+        {msg.contextItems && msg.contextItems.length > 0 && (
+          <ContextBlock items={msg.contextItems} />
+        )}
       </div>
     </div>
   );

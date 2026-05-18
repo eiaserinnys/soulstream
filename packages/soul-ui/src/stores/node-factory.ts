@@ -124,6 +124,10 @@ export function createNodeFromEvent(
       return makeNode(`intervention-${eventId}`, "intervention", e.text, {
         completed: true,
         user: e.user,
+        // Phase A context 정본 (Y-7, atom d7a1ad86 차단): user_message 분기(L100)와 대칭.
+        // wire의 e.context를 노드에 박아 flatten-tree → ChatMessage.contextItems → InterventionMessage
+        // ContextBlock으로 forward.
+        context: e.context,
         agentInfo,
         callerInfo: ci,
       });

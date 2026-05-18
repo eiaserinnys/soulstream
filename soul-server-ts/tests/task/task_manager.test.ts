@@ -326,6 +326,134 @@ describe("TaskManager.addIntervention (B-4)", () => {
     expect(broadcasterMocks.emitSessionUpdated.mock.calls[0][0]).toBe(task);
   });
 
+  it("T-1 (Phase A context 정본): completed task auto-resume이 buildResumeContextItems 호출하여 user_message.context 박음", async () => {
+    // Phase A context 정본 진입점 (atom d7a1ad86 차단): contextBuilder + agentRegistry
+    // 주입 시 _addInterventionAutoResume이 buildResumeContextItems를 호출하여 wire의
+    // user_message에 context_items 박는다. 첫 턴(`_persistInitialMessages`)과 같은
+    // `buildSoulstreamContextItem` helper 의존 → design-principles §3 정본 하나.
+    const broadcasterMocks = makeMocks();
+    const soulstreamItem = {
+      key: "soulstream_session",
+      label: "Soulstream 세션 정보",
+      content: { agent_session_id: "s1", folder: "(unassigned)" },
+    };
+    const buildResumeContextItems = vi.fn().mockResolvedValue([soulstreamItem]);
+    const contextBuilder = { buildResumeContextItems } as unknown as import(
+      "../../src/context/context_builder.js"
+    ).ExecutionContextBuilder;
+    const agentRegistry = {
+      get: vi.fn().mockReturnValue({
+        id: "codex-default",
+        name: "Codex Default",
+        backend: "codex",
+        workspace_dir: "/tmp/codex",
+      }),
+    } as unknown as import("../../src/agent_registry.js").AgentRegistry;
+    const tm = new TaskManager(
+      "n",
+      broadcasterMocks.db,
+      broadcasterMocks.broadcaster,
+      silentLogger,
+      undefined,
+      contextBuilder,
+      agentRegistry,
+    );
+    const task = await tm.createTask({
+      agentSessionId: "s1",
+      prompt: "p",
+      profileId: "codex-default",
+    });
+    task.status = "completed";
+    task.completedAt = new Date();
+    task.codexThreadId = "thr-1";
+
+    const onResume = vi.fn();
+    const result = await tm.addIntervention(
+      { agentSessionId: "s1", text: "resume", user: "u" },
+      onResume,
+    );
+
+    expect(result).toEqual({ autoResumed: true });
+    expect(buildResumeContextItems).toHaveBeenCalledTimes(1);
+    expect(buildResumeContextItems.mock.calls[0][0]).toBe(task);
+    // emitEventEnvelope의 두 번째 인자가 user_message 이벤트
+    const envelope = broadcasterMocks.emitEventEnvelope.mock.calls[0];
+    expect(envelope[0]).toBe("s1");
+    const evt = envelope[1] as Record<string, unknown>;
+    expect(evt.type).toBe("user_message");
+    expect(evt.context).toEqual([soulstreamItem]);
+  });
+
+  it("T-1b (Phase A 실패 격리): buildResumeContextItems throw 시 user_message는 context 없이 박힘 (§8)", async () => {
+    // design-principles §8 실패 격리: context 빌더 실패가 핵심 user_message persist/broadcast 막지 않음.
+    const broadcasterMocks = makeMocks();
+    const buildResumeContextItems = vi.fn().mockRejectedValue(new Error("DB down"));
+    const contextBuilder = { buildResumeContextItems } as unknown as import(
+      "../../src/context/context_builder.js"
+    ).ExecutionContextBuilder;
+    const agentRegistry = {
+      get: vi.fn().mockReturnValue({
+        id: "codex-default",
+        backend: "codex",
+        workspace_dir: "/tmp/codex",
+      }),
+    } as unknown as import("../../src/agent_registry.js").AgentRegistry;
+    const tm = new TaskManager(
+      "n",
+      broadcasterMocks.db,
+      broadcasterMocks.broadcaster,
+      silentLogger,
+      undefined,
+      contextBuilder,
+      agentRegistry,
+    );
+    const task = await tm.createTask({
+      agentSessionId: "s1",
+      prompt: "p",
+      profileId: "codex-default",
+    });
+    task.status = "completed";
+
+    const result = await tm.addIntervention(
+      { agentSessionId: "s1", text: "resume", user: "u" },
+      vi.fn(),
+    );
+
+    expect(result).toEqual({ autoResumed: true });
+    // builder 실패에도 user_message는 정상 broadcast — context 키 부재만
+    const evt = broadcasterMocks.emitEventEnvelope.mock.calls[0][1] as Record<string, unknown>;
+    expect(evt.type).toBe("user_message");
+    expect(evt.context).toBeUndefined();
+  });
+
+  it("T-1c (legacy 호환): contextBuilder 미주입 시 user_message에 context 키 부재 (호환 보존)", async () => {
+    // contextBuilder/agentRegistry가 undefined인 legacy 호출자/단위 테스트 환경 호환.
+    // 기존 동작과 동일 — context 키 자체 박지 않음.
+    const broadcasterMocks = makeMocks();
+    const tm = new TaskManager(
+      "n",
+      broadcasterMocks.db,
+      broadcasterMocks.broadcaster,
+      silentLogger,
+      // persistence/contextBuilder/agentRegistry 모두 undefined
+    );
+    const task = await tm.createTask({
+      agentSessionId: "s1",
+      prompt: "p",
+      profileId: "codex-default",
+    });
+    task.status = "completed";
+
+    await tm.addIntervention(
+      { agentSessionId: "s1", text: "resume", user: "u" },
+      vi.fn(),
+    );
+
+    const evt = broadcasterMocks.emitEventEnvelope.mock.calls[0][1] as Record<string, unknown>;
+    expect(evt.type).toBe("user_message");
+    expect(evt.context).toBeUndefined();
+  });
+
   it.each(["error", "interrupted"] as const)("%s task → 같은 auto-resume 경로", async (status) => {
     const { db, broadcaster } = makeMocks();
     const tm = new TaskManager("n", db, broadcaster, silentLogger);

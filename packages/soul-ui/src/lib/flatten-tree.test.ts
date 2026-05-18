@@ -260,6 +260,39 @@ describe("flattenTree", () => {
     expect(agent.agentInfo).toEqual(agentCaller);
   });
 
+  it("T-4 (Phase A): intervention 노드 context를 ChatMessage.contextItems로 forward (atom d7a1ad86 차단)", () => {
+    // Phase A context 정본 (Y-8): UserMessage와 대칭으로 InterventionMessage가
+    // ContextBlock 렌더링하도록 contextItems를 forward. 본 사이클 이전엔 intervention case에서
+    // contextItems forward가 없어 Python `on_intervention_sent`가 박은 context가 UI에 도달하지 않음.
+    const ctxItems = [
+      { key: "soulstream_session", label: "Soulstream", content: { folder: "X" } },
+    ];
+    const tree = makeSession([
+      {
+        type: "intervention" as const,
+        id: "int-with-ctx",
+        content: "context 운반 케이스",
+        completed: true,
+        children: [],
+        context: ctxItems,
+      },
+      {
+        type: "intervention" as const,
+        id: "int-without-ctx",
+        content: "context 없는 케이스",
+        completed: true,
+        children: [],
+      },
+    ]);
+
+    const msgs = flattenTree(tree);
+    const withCtx = msgs.find((m) => m.id === "int-with-ctx")!;
+    const withoutCtx = msgs.find((m) => m.id === "int-without-ctx")!;
+
+    expect(withCtx.contextItems).toEqual(ctxItems);
+    expect(withoutCtx.contextItems).toBeUndefined();
+  });
+
   it("compact 노드", () => {
     const tree = makeSession([
       makeCompact("c1", "Context compacted"),

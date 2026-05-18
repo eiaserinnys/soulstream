@@ -76,6 +76,42 @@ def apply_user_profile_enrichment(
         payload[portrait_key] = _build_user_portrait_proxy_url(node_id)
 
 
+def apply_agent_enrichment(
+    payload: dict,
+    *,
+    agent_id: Optional[str],
+    node_id: Optional[str],
+    node_manager: Optional[NodeManager],
+) -> None:
+    """payload에 agentName / agentPortraitUrl / backend를 채운다 (in-place).
+
+    Phase A backend 정본 단일화(atom d7a1ad86 정본 둘 안티패턴 차단):
+    - `_session_to_response`(REST catalog)와 `main._on_node_change`(session_created
+      live wire) 양쪽이 *같은 helper*를 호출하여 backend default 정책 공유.
+    - default `"claude"`는 TS `SessionBroadcaster.toSessionInfo` (session_broadcaster.ts:207
+      X-1 변경)와 정합 — 어느 wire 경로를 거치든 backend가 항상 truthy로 wire 도달.
+
+    정책:
+    - agent_id 부재 또는 node_manager None → NOOP (호출자가 박은 default 보존)
+    - find_agent_profile None → NOOP (호출자가 박은 default 보존)
+    - profile lookup 성공 → backend = profile.get("backend", "claude"),
+      agentName = profile.name (있을 때만), agentPortraitUrl = 프록시 URL (있을 때만)
+
+    참조: spec-quality-gate.md §11 (세션 직렬화 wire 키 동시 갱신 4자리)
+    """
+    if not agent_id or node_manager is None:
+        return
+    found = node_manager.find_agent_profile(agent_id, node_id)
+    if not found:
+        return
+    profile, source_node_id = found
+    if profile.get("name"):
+        payload["agentName"] = profile.get("name")
+    payload["backend"] = profile.get("backend", "claude")
+    if profile.get("portrait_url") and source_node_id:
+        payload["agentPortraitUrl"] = _build_portrait_proxy_url(source_node_id, agent_id)
+
+
 def _session_to_response(
     s: dict,
     node_manager: Optional[NodeManager] = None,
@@ -122,17 +158,15 @@ def _session_to_response(
 
     agent_id = s.get("agent_id")
     node_id = s.get("node_id")
-    if agent_id and node_manager is not None:
-        found = node_manager.find_agent_profile(agent_id, node_id)
-        if found:
-            profile, source_node_id = found
-            result["agentName"] = profile.get("name")
-            # 옵션 D Phase A: profile.backend를 wire에 운반. 기본 "claude" (NodeManager 등록 시 default).
-            result["backend"] = profile.get("backend", "claude")
-            if profile.get("portrait_url") and source_node_id:
-                result["agentPortraitUrl"] = _build_portrait_proxy_url(
-                    source_node_id, agent_id
-                )
+    # Phase A backend 정본 단일화: agent_id 채움 로직을 apply_agent_enrichment helper로 추출.
+    # `main._on_node_change` session_created live wire도 같은 helper를 호출하여
+    # default 정책 공유 (atom d7a1ad86 정본 둘 안티패턴 차단).
+    apply_agent_enrichment(
+        result,
+        agent_id=agent_id,
+        node_id=node_id,
+        node_manager=node_manager,
+    )
 
     # 사용자 정보: caller_info(atom ed3a216d) 우선, 부재 시 노드 user_info fallback.
     # caller_info 분기에 들어간 이상 노드 portrait로 mix-fallback하지 않는다 —

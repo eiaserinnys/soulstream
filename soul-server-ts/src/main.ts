@@ -102,6 +102,26 @@ async function main(): Promise<void> {
 
   const broadcaster = new SessionBroadcaster(send, agentRegistry, env.SOULSTREAM_NODE_ID);
   const persistence = new EventPersistence(db, broadcaster, logger);
+
+  // B-6 context_builder: 신규 task 첫 turn 진입 시 folder_prompt + atom_context + soulstream_item을
+  // 합성한 prompt를 codex에 전달. atom env 미설정이면 atom 호출 skip (graceful).
+  //
+  // Phase A context 정본 진입점 (atom d7a1ad86 차단): TaskManager가 _addInterventionAutoResume에서
+  // buildResumeContextItems 호출에 사용. TaskManager 생성 *전*에 wiring하여 의존성 주입.
+  const contextBuilder = new ExecutionContextBuilder(
+    db,
+    agentRegistry,
+    {
+      nodeId: env.SOULSTREAM_NODE_ID,
+      atom: {
+        enabled: Boolean(env.ATOM_ENABLED),
+        serverUrl: env.ATOM_SERVER_URL ?? "",
+        apiKey: env.ATOM_API_KEY ?? "",
+      },
+    },
+    logger,
+  );
+
   const taskManager = new TaskManager(
     env.SOULSTREAM_NODE_ID,
     db,
@@ -109,6 +129,9 @@ async function main(): Promise<void> {
     logger,
     // B-5: intervention_sent 영속화 정본 (Python `task_executor.py:352-389` 정합).
     persistence,
+    // Phase A context 정본 진입점: _addInterventionAutoResume이 user_message wire에 context 박음.
+    contextBuilder,
+    agentRegistry,
   );
 
   // EngineFactory — backend별 분기. 본 PR은 codex 전용.
@@ -130,21 +153,6 @@ async function main(): Promise<void> {
       `Unsupported backend "${agent.backend}" in soul-server-ts (Codex 전담 노드, agent=${agent.id})`,
     );
   };
-  // B-6 context_builder: 신규 task 첫 turn 진입 시 folder_prompt + atom_context + soulstream_item을
-  // 합성한 prompt를 codex에 전달. atom env 미설정이면 atom 호출 skip (graceful).
-  const contextBuilder = new ExecutionContextBuilder(
-    db,
-    agentRegistry,
-    {
-      nodeId: env.SOULSTREAM_NODE_ID,
-      atom: {
-        enabled: Boolean(env.ATOM_ENABLED),
-        serverUrl: env.ATOM_SERVER_URL ?? "",
-        apiKey: env.ATOM_API_KEY ?? "",
-      },
-    },
-    logger,
-  );
   const taskExecutor = new TaskExecutor(
     engineFactory,
     db,

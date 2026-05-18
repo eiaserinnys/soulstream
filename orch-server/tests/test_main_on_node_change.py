@@ -496,3 +496,73 @@ async def test_t14_sequential_updated_then_message_preserves_agent_identity(mock
     assert "userPortraitUrl" not in bc2
     # wire #1(IDENTITY_BEARING NOOP) + wire #2(wire-kind skip) — 두 wire 모두 get_user_info 0회
     nm.get_user_info.assert_not_called()
+
+
+# === Phase A backend 정본 단일화 (T-15·T-16, atom d7a1ad86 정본 둘 안티패턴 차단) ===
+
+
+@pytest.mark.asyncio
+async def test_t15_session_created_enriches_backend_when_agentid_present(mock_broadcaster):
+    """T-15: session_created wire에 agentId 있음 + NodeManager에 agent profile 있음 →
+    broadcast 페이로드 session.backend가 profile의 backend로 채워진다.
+
+    이전엔 apply_user_profile_enrichment만 호출되어 backend 보강 누락 — TS broadcaster가
+    박지 않은 wire 경로(profile race)에서 backend가 wire에 도달하지 않던 회로 차단.
+    """
+    nm = MagicMock(spec=NodeManager)
+    nm.get_user_info = MagicMock(return_value={})  # user 측은 NOOP
+    nm.find_agent_profile = MagicMock(
+        return_value=(
+            {"name": "Codex Default", "backend": "codex", "portrait_url": "/codex.png"},
+            "node-A",
+        )
+    )
+
+    session_info = {
+        "agent_session_id": "sess-123",
+        "status": "running",
+        "agentId": "codex-default",
+        # backend 키 없음 (profile race로 wire에 누락된 케이스 가정)
+    }
+    data = {"agentSessionId": "sess-123", "session": session_info}
+
+    await _on_node_change(
+        mock_broadcaster, nm,
+        "node_session_session_created", "node-A", data,
+    )
+
+    call_args = mock_broadcaster.broadcast.await_args[0][0]
+    assert call_args["type"] == "session_created"
+    assert call_args["session"]["backend"] == "codex"
+    assert call_args["session"]["agentName"] == "Codex Default"
+    nm.find_agent_profile.assert_called_once_with("codex-default", "node-A")
+
+
+@pytest.mark.asyncio
+async def test_t16_session_created_preserves_ts_default_when_profile_lookup_fails(mock_broadcaster):
+    """T-16: session_created wire에 backend='claude' (TS broadcaster X-1·X-2 default 박힘) +
+    profile lookup 실패 → caller가 박은 default 보존 (overwrite 안 함).
+
+    apply_agent_enrichment 정책: find_agent_profile None → NOOP. TS broadcaster가 박은
+    backend='claude' default가 wire를 거치는 동안 보존되어 FE 배지 조건 진입.
+    """
+    nm = MagicMock(spec=NodeManager)
+    nm.get_user_info = MagicMock(return_value={})
+    nm.find_agent_profile = MagicMock(return_value=None)
+
+    session_info = {
+        "agent_session_id": "sess-123",
+        "status": "running",
+        "agentId": "ghost-profile",
+        "backend": "claude",  # TS broadcaster default
+    }
+    data = {"agentSessionId": "sess-123", "session": session_info}
+
+    await _on_node_change(
+        mock_broadcaster, nm,
+        "node_session_session_created", "node-A", data,
+    )
+
+    call_args = mock_broadcaster.broadcast.await_args[0][0]
+    # caller(TS broadcaster)가 박은 default가 보존됨
+    assert call_args["session"]["backend"] == "claude"

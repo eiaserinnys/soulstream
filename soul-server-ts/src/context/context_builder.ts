@@ -66,6 +66,38 @@ export class ExecutionContextBuilder {
   ) {}
 
   /**
+   * Auto-resume·intervention 흐름이 user_message wire에 박을 context_items를 조립한다.
+   *
+   * Phase A context 정본 진입점 (atom d7a1ad86 정본 둘 안티패턴 차단):
+   * - 첫 턴(`build()` → `_assembleContext` 내부 `buildSoulstreamContextItem`)과 본 method가
+   *   *같은 helper `buildSoulstreamContextItem`을 호출*하여 soulstream_session context_item을
+   *   조립 — design-principles §3 정본 하나.
+   * - 본 method는 system_prompt 합성 / atom_context fetch / 첫 턴 prompt 합성을 *제외*하고
+   *   soulstream_item만 만든다. auto-resume은 SDK가 system_prompt를 보유 + atom_context는
+   *   신규 task 전용 (Python `task.resume_session_id is None` 정합).
+   *
+   * 호출자: `TaskManager._addInterventionAutoResume` (terminal-resume 시 user_message context).
+   * 실패 격리: 본 method가 throw하면 호출자는 context 없이 user_message만 박는다
+   *           (design-principles §8 — context 빌더 실패가 핵심 user_message persist를 막지 않음).
+   */
+  async buildResumeContextItems(task: Task, agent: AgentProfile): Promise<ContextItem[]> {
+    const { folderName } = await this._resolveFolder(task);
+    const { workingDir } = this._resolveProfile(task);
+    const effectiveWorkspaceDir = workingDir ?? agent.workspace_dir;
+
+    const soulstreamItem = buildSoulstreamContextItem({
+      agentSessionId: task.agentSessionId,
+      claudeSessionId: task.codexThreadId ?? null,
+      workspaceDir: effectiveWorkspaceDir,
+      folderName,
+      nodeId: this.cfg.nodeId,
+      agentId: task.profileId,
+      callerInfo: task.callerInfo,
+    });
+    return [soulstreamItem];
+  }
+
+  /**
    * Python `build(task, claude_runner)` 정본.
    *
    * 호출 시점은 task_executor의 *신규 첫 turn 진입 전* (interventionQueue 비어있을 때).

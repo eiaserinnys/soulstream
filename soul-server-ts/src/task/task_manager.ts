@@ -17,6 +17,8 @@
 
 import type { Logger } from "pino";
 
+import type { AgentRegistry } from "../agent_registry.js";
+import type { ExecutionContextBuilder } from "../context/context_builder.js";
 import { DEFAULT_FOLDERS, type SessionDB } from "../db/session_db.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 
@@ -80,6 +82,13 @@ export class TaskManager {
      * 호출자·테스트 환경 호환 — broadcast만 발행).
      */
     private readonly persistence?: EventPersistence,
+    /**
+     * Phase A context 정본 진입점 (atom d7a1ad86 차단):
+     * `_addInterventionAutoResume`이 user_message wire에 박을 ContextItem[]을 조립할 때 사용.
+     * undefined일 때 context 박지 않음 (legacy 호출자·단위 테스트 호환 — design-principles §8 실패 격리).
+     */
+    private readonly contextBuilder?: ExecutionContextBuilder,
+    private readonly agentRegistry?: AgentRegistry,
   ) {}
 
   /**
@@ -456,6 +465,29 @@ export class TaskManager {
       }
     }
 
+    // Phase A context 정본 진입점 (Y-1, atom d7a1ad86 차단):
+    // contextBuilder + agentRegistry가 주입되어 있고 task.profileId가 있을 때 buildResumeContextItems
+    // 호출. 첫 턴(`task_executor._persistInitialMessages`)과 같은 `buildSoulstreamContextItem` helper에
+    // 의존하므로 정본 하나(design-principles §3).
+    // 실패 격리(§8): builder 실패가 user_message persist/broadcast 자체를 막지 않음.
+    let resumeContextItems: import("../context/prompt_assembler.js").ContextItem[] = [];
+    if (this.contextBuilder && this.agentRegistry && task.profileId) {
+      const agent = this.agentRegistry.get(task.profileId);
+      if (agent) {
+        try {
+          resumeContextItems = await this.contextBuilder.buildResumeContextItems(
+            task,
+            agent,
+          );
+        } catch (err) {
+          this.logger.warn(
+            { err, sessionId: task.agentSessionId },
+            "buildResumeContextItems failed — context 미주입",
+          );
+        }
+      }
+    }
+
     // user_message 이벤트 wire (Python `_persist_initial_messages` user_message 정합).
     const userMessageEvent: Record<string, unknown> = {
       type: "user_message",
@@ -463,6 +495,9 @@ export class TaskManager {
       text: message.text,
       timestamp: Date.now() / 1000,
     };
+    if (resumeContextItems.length > 0) {
+      userMessageEvent.context = resumeContextItems;
+    }
     if (message.callerInfo) {
       userMessageEvent.caller_info = message.callerInfo;
     }

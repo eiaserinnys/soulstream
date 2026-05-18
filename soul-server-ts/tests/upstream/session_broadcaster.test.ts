@@ -65,7 +65,9 @@ describe("emitSessionCreated", () => {
     expect(session.last_event_id).toBe(0);
   });
 
-  it("profileId 없으면 agentId/Name/PortraitUrl/backend 미포함", async () => {
+  it("profileId 없으면 agentId/Name/PortraitUrl은 null, backend는 'claude' default (X-2)", async () => {
+    // Phase A backend 정본 단일화: profileId 부재 task도 wire backend default "claude"
+    // (Python `_session_to_response`와 정합, atom d7a1ad86 정본 둘 안티패턴 차단)
     const send = vi.fn().mockResolvedValue(undefined);
     const b = new SessionBroadcaster(send, makeRegistry(), "eias-shopping-ts");
     await b.emitSessionCreated(
@@ -73,8 +75,25 @@ describe("emitSessionCreated", () => {
       null,
     );
     const session = (send.mock.calls[0][0] as Record<string, unknown>).session as Record<string, unknown>;
-    expect(session.agentId).toBeUndefined();
-    expect(session.backend).toBeUndefined();
+    expect(session.agentId).toBeNull();
+    expect(session.agentName).toBeNull();
+    expect(session.agentPortraitUrl).toBeNull();
+    expect(session.backend).toBe("claude");
+  });
+
+  it("profileId 있고 registry에 없을 때 backend 'claude' default (X-1)", async () => {
+    // profile registry miss 시 agent?.backend ?? "claude" → "claude" (TS broadcaster
+    // default 정책이 Python과 정합)
+    const send = vi.fn().mockResolvedValue(undefined);
+    const b = new SessionBroadcaster(send, makeRegistry(), "eias-shopping-ts");
+    await b.emitSessionCreated(
+      makeTask({ profileId: "unknown-profile" }),
+      null,
+    );
+    const session = (send.mock.calls[0][0] as Record<string, unknown>).session as Record<string, unknown>;
+    expect(session.agentId).toBe("unknown-profile");
+    expect(session.agentName).toBeNull();
+    expect(session.backend).toBe("claude");
   });
 
   it("caller_source 부재 시 null", async () => {
