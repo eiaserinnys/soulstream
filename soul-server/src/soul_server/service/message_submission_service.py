@@ -70,6 +70,9 @@ class SubmitMessageParams:
     profile_id: Optional[str] = None
     oauth_token: Optional[str] = None
     caller_session_id: Optional[str] = None
+    # orch-server는 새 세션 ID를 먼저 발급해 노드에 전달한다. 일반 intervene/resume의
+    # "없는 세션이면 에러" 정책과 구분하기 위해 upstream create_session에서만 True로 둔다.
+    allow_new_session_with_id: bool = False
 
 
 @dataclass
@@ -167,7 +170,35 @@ async def submit_message(
             task_manager._db, agent_session_id
         )
         if not existing:
-            raise TaskNotFoundError(f"Session not found: {agent_session_id}")
+            if not params.allow_new_session_with_id:
+                raise TaskNotFoundError(f"Session not found: {agent_session_id}")
+            task = await task_manager.create_task(
+                CreateTaskParams(
+                    prompt=params.prompt,
+                    agent_session_id=agent_session_id,
+                    client_id=params.client_id or params.user,
+                    allowed_tools=params.allowed_tools,
+                    disallowed_tools=params.disallowed_tools,
+                    use_mcp=params.use_mcp,
+                    context=params.context,
+                    context_items=params.context_items,
+                    extra_context_items=params.extra_context_items,
+                    model=params.model,
+                    folder_id=params.folder_id,
+                    system_prompt=params.system_prompt,
+                    profile_id=params.profile_id,
+                    oauth_token=params.oauth_token,
+                    caller_session_id=params.caller_session_id,
+                    caller_info=params.caller_info,
+                    attachment_paths=params.attachment_paths,
+                    skip_claude_resume=False,
+                )
+            )
+            return SubmitMessageResult(
+                kind="new_session",
+                agent_session_id=task.agent_session_id,
+                task=task,
+            )
         # 방어 코드: startup 처리 누락이나 race로 RUNNING이 남았을 경우 INTERRUPTED 강제
         if existing.status == TaskStatus.RUNNING:
             existing.status = TaskStatus.INTERRUPTED

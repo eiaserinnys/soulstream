@@ -184,6 +184,24 @@ class TaskManager:
         )
 
         self._session_index[claude_session_id] = agent_session_id
+        preserve_existing = (
+            task is not None
+            and task.preserve_claude_session_id_on_register
+            and task.claude_session_id is not None
+            and task.claude_session_id != claude_session_id
+        )
+        if preserve_existing:
+            logger.info(
+                f"register_session: fresh Claude session observed for "
+                f"agent_session_id={agent_session_id}; preserving canonical "
+                f"claude_session_id={task.claude_session_id}, runtime_index_added={claude_session_id}"
+            )
+            try:
+                await get_session_broadcaster().emit_session_updated(task)
+            except Exception:
+                logger.warning(f"Failed to emit session_updated for {agent_session_id}", exc_info=True)
+            return
+
         # 인메모리 Task에 즉시 반영: complete_task()보다 먼저 재시작이 와도 resume 가능
         if task:
             task.claude_session_id = claude_session_id

@@ -262,6 +262,43 @@ class TestHandleCreateSession:
         # start_execution도 auto_resumed 케이스에서 호출됨
         tm.executor.start_execution.assert_awaited_once()
 
+    @pytest.mark.asyncio
+    async def test_preallocated_agent_session_id_creates_new_task(self):
+        """orch-server가 새 세션 ID를 선발급해 보내도 신규 세션으로 생성한다."""
+        tm = MagicMock()
+        tm._tasks = {}
+        tm._eviction_manager.load_evicted_task = AsyncMock(return_value=None)
+        task = _make_mock_task("prealloc-1")
+        tm.create_task = AsyncMock(return_value=task)
+        tm.executor.start_execution = AsyncMock(return_value=True)
+        tm.listener_manager.add_listener = AsyncMock(return_value=True)
+        tm.listener_manager.remove_listener = AsyncMock()
+
+        adapter = _make_adapter(task_manager=tm)
+        adapter._ws = MagicMock()
+        adapter._ws.closed = False
+        adapter._ws.send_json = AsyncMock()
+        adapter._running = True
+
+        await adapter._dispatcher.dispatch({
+            "type": CMD_CREATE_SESSION,
+            "prompt": "new from orch",
+            "agentSessionId": "prealloc-1",
+            "profile": "seosoyoung",
+            "requestId": "req-prealloc",
+        })
+
+        tm.create_task.assert_awaited_once()
+        call_params = tm.create_task.call_args.args[0]
+        assert call_params.agent_session_id == "prealloc-1"
+        assert call_params.profile_id == "seosoyoung"
+        assert call_params.skip_claude_resume is False
+        tm.executor.start_execution.assert_awaited_once_with(
+            agent_session_id="prealloc-1",
+            claude_runner=adapter._engine,
+            resource_manager=adapter._rm,
+        )
+
 
 class TestResolveUpstreamUser:
     """카드 FHhqVhlv: cross-node CMD_CREATE_SESSION의 task.client_id 정책 helper.

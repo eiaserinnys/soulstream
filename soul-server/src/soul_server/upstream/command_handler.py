@@ -245,6 +245,7 @@ class CommandDispatcher:
                     caller_session_id=cmd.get("caller_session_id"),
                     caller_info=cmd.get("caller_info"),
                     model=cmd.get("model"),
+                    allow_new_session_with_id=True,
                 ),
                 task_manager=self._tm,
             )

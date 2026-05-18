@@ -160,6 +160,7 @@ class Task:
     pending_folder_id: Optional[str] = field(default=None, repr=False)
 
     # 런타임 전용 (영속화 안 됨)
+    preserve_claude_session_id_on_register: bool = field(default=False, repr=False)
     intervention_queue: asyncio.Queue = field(default_factory=asyncio.Queue, repr=False)
     execution_task: Optional[asyncio.Task] = field(default=None, repr=False)
     last_progress_text: Optional[str] = field(default=None, repr=False)

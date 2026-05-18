@@ -203,6 +203,7 @@ class TaskFactory:
         task.prompt = params.prompt
         task.status = TaskStatus.RUNNING
         task.resume_session_id = effective_resume_session_id
+        task.preserve_claude_session_id_on_register = params.skip_claude_resume
         task.result = None
         task.error = None
         task.completed_at = None

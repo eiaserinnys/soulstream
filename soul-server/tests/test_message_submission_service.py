@@ -159,6 +159,23 @@ class TestSubmitMessageBranches:
                 task_manager=manager,
             )
 
+    async def test_preallocated_id_can_create_new_session_when_allowed(self, manager):
+        """orch create_session은 미리 발급한 agent_session_id로 신규 세션을 생성한다."""
+        result = await submit_message(
+            SubmitMessageParams(
+                prompt="새 upstream 세션",
+                agent_session_id="orch-preallocated-id",
+                profile_id="agent-X",
+                allow_new_session_with_id=True,
+            ),
+            task_manager=manager,
+        )
+
+        assert result.kind == "new_session"
+        assert result.agent_session_id == "orch-preallocated-id"
+        assert result.task.agent_session_id == "orch-preallocated-id"
+        assert result.task.profile_id == "agent-X"
+
 
 class TestSubmitMessageCallerInfo:
     """caller_info 운반 검증 — 모든 분기에서 wire에 박힘."""

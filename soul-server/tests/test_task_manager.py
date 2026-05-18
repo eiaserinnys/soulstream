@@ -732,6 +732,26 @@ class TestClaudeSessionIndex:
         # register_session 후 즉시 설정되어 있어야 한다
         assert task.claude_session_id == "claude-abc"
 
+    async def test_fresh_terminal_resume_preserves_canonical_claude_session_id(self, manager):
+        """skip_claude_resume 재개는 새 SDK session id를 런타임 인덱스에만 추가한다."""
+        await manager.create_task(CreateTaskParams(prompt="hello", agent_session_id="sess-1"))
+        await manager.register_session("claude-old", "sess-1")
+
+        task = await manager.get_task("sess-1")
+        task.status = TaskStatus.INTERRUPTED
+        await manager.create_task(
+            CreateTaskParams(
+                prompt="fresh resume",
+                agent_session_id="sess-1",
+                skip_claude_resume=True,
+            )
+        )
+
+        await manager.register_session("claude-new", "sess-1")
+
+        assert task.claude_session_id == "claude-old"
+        assert manager.get_task_by_claude_session("claude-new") is task
+
     async def test_register_session_for_nonexistent_task_does_not_fail(self, manager):
         """존재하지 않는 agent_session_id에 register_session 해도 에러가 없다"""
         # 에러 없이 완료되어야 함
