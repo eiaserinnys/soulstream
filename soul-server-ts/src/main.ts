@@ -11,8 +11,12 @@ import { createLogger } from "./logger.js";
 import { wsToHttpBase } from "./mcp/orch_proxy.js";
 import type { McpRuntime, OrchProxyConfig } from "./mcp/runtime.js";
 import { buildServer, startServer } from "./server.js";
+import { TaskCompletionNotifier } from "./task/completion_notifier.js";
 import { TaskExecutor, type EngineFactory } from "./task/task_executor.js";
-import { TaskManager } from "./task/task_manager.js";
+import {
+  TaskManager,
+  type StartExecutionCallback,
+} from "./task/task_manager.js";
 import { ExecutionContextBuilder } from "./context/context_builder.js";
 import { UpstreamAdapter } from "./upstream/adapter.js";
 import { SessionBroadcaster } from "./upstream/session_broadcaster.js";
@@ -153,13 +157,56 @@ async function main(): Promise<void> {
       `Unsupported backend "${agent.backend}" in soul-server-ts (Codex 전담 노드, agent=${agent.id})`,
     );
   };
-  const taskExecutor = new TaskExecutor(
+  // B-7 피위임 완료 회송 wiring (분석 캐시
+  // `roselin/.local/artifacts/analysis/20260518-2125-ts-delegation-return.md` §3-3).
+  //
+  // 순환 해결 — TaskExecutor → CompletionNotifier → onResume 클로저 → TaskExecutor:
+  //   - notifier 모듈은 TaskExecutor를 import하지 않음 (컴파일 시점 비순환)
+  //   - onResume이 `let taskExecutor`를 lazy capture (런타임 시점 wiring)
+  //   - notifier 생성을 taskExecutor 생성보다 먼저 — 생성자 마지막 인자로 주입
+  //   - onResume 자체는 *parent가 terminal일 때*(addIntervention auto-resume 분기)만 호출됨.
+  //     호출 시점에는 taskExecutor가 이미 초기화되어 있음 (worker 사이클 시작 후)
+  //
+  // contextBuilder는 PR #70(89b13d9) 머지로 *taskManager 생성 전* L115-127로 이동됨 —
+  // 본 wiring은 그 결과를 그대로 사용하고 중복 정의하지 않는다 (design-principles §3 정본 하나).
+  let taskExecutor: TaskExecutor;
+  const onResume: StartExecutionCallback = (task) => {
+    if (!task.profileId) {
+      logger.warn(
+        { sessionId: task.agentSessionId },
+        "onResume: task.profileId 없음 — auto-resume skip",
+      );
+      return;
+    }
+    const agent = agentRegistry.get(task.profileId);
+    if (!agent) {
+      logger.warn(
+        { sessionId: task.agentSessionId, profileId: task.profileId },
+        "onResume: agentRegistry에서 profile 찾지 못함 — auto-resume skip",
+      );
+      return;
+    }
+    taskExecutor.startExecution(task, agent);
+  };
+
+  const orchProxyConfig = env.MCP_ENABLED ? buildOrchProxyConfig(env) : undefined;
+  const completionNotifier = new TaskCompletionNotifier(
+    env.SOULSTREAM_NODE_ID,
+    taskManager,
+    agentRegistry,
+    onResume,
+    logger,
+    orchProxyConfig,
+  );
+
+  taskExecutor = new TaskExecutor(
     engineFactory,
     db,
     persistence,
     broadcaster,
     logger,
     contextBuilder,
+    completionNotifier,
   );
 
   // CatalogService — MCP catalog 도구·set_session_name이 경유.
@@ -176,7 +223,8 @@ async function main(): Promise<void> {
     agentRegistry,
     catalogService,
     logger,
-    orch: env.MCP_ENABLED ? buildOrchProxyConfig(env) : undefined,
+    // B-7: completionNotifier가 이미 같은 orchProxyConfig를 보유 — 정본 하나 (design-principles §3)
+    orch: orchProxyConfig,
   };
 
   // HTTP 서버 시작 (health + 선택적 MCP)

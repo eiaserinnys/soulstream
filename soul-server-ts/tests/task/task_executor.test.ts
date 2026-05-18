@@ -332,6 +332,110 @@ describe("TaskExecutor.startExecution", () => {
     // task.engine은 설정 안 됨
     expect(task.engine).toBeUndefined();
   });
+
+  // === B-7: 피위임 완료 회송 (CompletionNotifier 주입 회귀) ===
+
+  it("B-7: callerSessionId 있고 notifier 주입 시 finalize 후 notify 1회 호출", async () => {
+    const mocks = makeMocks();
+    const events: SSEEventPayload[] = [
+      { type: "session", session_id: "thr-1" } as SSEEventPayload,
+      { type: "text_delta", text: "child result", timestamp: 1 } as SSEEventPayload,
+      { type: "text_end", timestamp: 2 } as SSEEventPayload,
+    ];
+    const notify = vi.fn().mockResolvedValue(undefined);
+    const notifier = { notify };
+    const executor = new TaskExecutor(
+      () => makeFakeEngine(events),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      notifier,
+    );
+    const task = makeTask();
+    task.callerSessionId = "parent-sess-1";
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    expect(task.status).toBe("completed");
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledWith(task);
+  });
+
+  it("B-7: callerSessionId 없으면 notifier 주입되어도 notify 호출 안 됨", async () => {
+    const mocks = makeMocks();
+    const events: SSEEventPayload[] = [
+      { type: "session", session_id: "thr-1" } as SSEEventPayload,
+      { type: "text_end", timestamp: 1 } as SSEEventPayload,
+    ];
+    const notify = vi.fn().mockResolvedValue(undefined);
+    const executor = new TaskExecutor(
+      () => makeFakeEngine(events),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      { notify },
+    );
+    const task = makeTask();
+    // callerSessionId 미설정
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it("B-7: notifier 미주입(legacy) — finalize 정상 + notify 의존성 없음", async () => {
+    const mocks = makeMocks();
+    const events: SSEEventPayload[] = [
+      { type: "session", session_id: "thr-1" } as SSEEventPayload,
+      { type: "text_end", timestamp: 1 } as SSEEventPayload,
+    ];
+    const executor = new TaskExecutor(
+      () => makeFakeEngine(events),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      // contextBuilder, completionNotifier 모두 미주입 (기존 테스트 회귀)
+    );
+    const task = makeTask();
+    task.callerSessionId = "parent-sess-1";  // 있어도 notifier 없으면 호출 안 됨
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    expect(task.status).toBe("completed");
+    expect(mocks.emitSessionUpdated).toHaveBeenCalled();
+  });
+
+  it("B-7: notifier.notify가 throw해도 finalize는 격리 (task.status 그대로)", async () => {
+    const mocks = makeMocks();
+    const events: SSEEventPayload[] = [
+      { type: "session", session_id: "thr-1" } as SSEEventPayload,
+      { type: "text_end", timestamp: 1 } as SSEEventPayload,
+    ];
+    // notifier가 throw — 운영 시 발생하면 안 되지만 안전망 검증
+    const notify = vi.fn().mockRejectedValue(new Error("notifier boom"));
+    const executor = new TaskExecutor(
+      () => makeFakeEngine(events),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      { notify },
+    );
+    const task = makeTask();
+    task.callerSessionId = "parent-sess-1";
+    executor.startExecution(task, agent);
+
+    // executionPromise는 정상 resolve (finalize에서 throw 격리됨)
+    await expect(task.executionPromise).resolves.toBeUndefined();
+    expect(task.status).toBe("completed");
+    expect(notify).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("isTerminalStatus", () => {
