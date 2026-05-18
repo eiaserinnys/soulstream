@@ -254,10 +254,15 @@ export class TaskExecutor {
       }
     }
 
-    // DB 영속 — 실패 격리. event dict에 `_event_id` 박기 (Python `task_executor.py:248` 정본 정합).
+    // DB 영속 — 실패 격리. event dict에 `_event_id` 박기 (Python `task_executor.py:248` 의미 등가).
     // ride-along 5자리(분석 캐시 `20260518-1338-codex-live-event-id-race.md`): orch session_events.py가
     // wire envelope의 `event._event_id`로 SSE id를 추출 → 대시보드 tree-placer가 dedup·순서 보장.
     // 누락 시 모든 live 이벤트가 `eventId=0`으로 같은 키 취급되어 text_start skip → text_delta/end 미박힘.
+    //
+    // throw 경로 의도적 차이 (spec-reviewer P2-1): Python L243-248은 try/except *밖*에서
+    // `_event_id = None`을 박지만, TS는 try 안에서만 박는다 (throw 시 키 자체 부재).
+    // orch session_events.py:L172-176가 None 또는 키 부재 둘 다 `event_id is None` 분기로
+    // 처리하므로 wire 동작은 동등. test에서 throw 격리 단언으로 검증.
     try {
       const eventId = await this.persistence.persistEvent(
         task.agentSessionId,
