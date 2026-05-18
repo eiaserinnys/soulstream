@@ -263,6 +263,44 @@ class TestHandleCreateSession:
         tm.executor.start_execution.assert_awaited_once()
 
 
+class TestResolveUpstreamUser:
+    """카드 FHhqVhlv: cross-node CMD_CREATE_SESSION의 task.client_id 정책 helper.
+
+    1. caller_info.source가 있으면 그것을 사용 (예: "slack", "agent")
+    2. 없으면 UPSTREAM_DEFAULT_USER ("upstream")로 fallback
+    """
+
+    def test_caller_info_source_used_when_present(self):
+        from soul_server.upstream.command_handler import _resolve_upstream_user
+        cmd = {"caller_info": {"source": "slack", "user_id": "U123"}}
+        assert _resolve_upstream_user(cmd) == "slack"
+
+    def test_default_when_caller_info_missing(self):
+        from soul_server.upstream.command_handler import (
+            UPSTREAM_DEFAULT_USER,
+            _resolve_upstream_user,
+        )
+        cmd = {}
+        assert _resolve_upstream_user(cmd) == UPSTREAM_DEFAULT_USER == "upstream"
+
+    def test_default_when_caller_info_not_dict(self):
+        from soul_server.upstream.command_handler import (
+            UPSTREAM_DEFAULT_USER,
+            _resolve_upstream_user,
+        )
+        cmd = {"caller_info": "invalid_string_form"}
+        assert _resolve_upstream_user(cmd) == UPSTREAM_DEFAULT_USER
+
+    def test_default_when_source_missing_or_empty(self):
+        from soul_server.upstream.command_handler import (
+            UPSTREAM_DEFAULT_USER,
+            _resolve_upstream_user,
+        )
+        assert _resolve_upstream_user({"caller_info": {}}) == UPSTREAM_DEFAULT_USER
+        assert _resolve_upstream_user({"caller_info": {"source": ""}}) == UPSTREAM_DEFAULT_USER
+        assert _resolve_upstream_user({"caller_info": {"source": None}}) == UPSTREAM_DEFAULT_USER
+
+
 class TestHandleIntervene:
     """intervene 명령 처리 테스트."""
 

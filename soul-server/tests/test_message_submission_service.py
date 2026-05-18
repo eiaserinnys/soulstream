@@ -199,6 +199,60 @@ class TestSubmitMessageCallerInfo:
         assert result.task.caller_info == caller_info
 
 
+class TestTerminalResumePreservesOptions:
+    """카드 5RcnygV5: terminal 분기에서 model/allowed_tools 등 옵션이 forward되어야 한다.
+
+    PR #69 이전 동작: terminal 재개 시 SubmitMessageParams의 model 등이 forward 안 됨 →
+    task_factory._resume_existing_task_locked가 task 필드를 None으로 reset.
+    본 카드 fix: 명시된 옵션이 CreateTaskParams로 forward되어 task에 박힘.
+    """
+
+    async def test_terminal_resume_preserves_model_and_tools(self, manager):
+        """terminal 재개 시 model/allowed_tools/disallowed_tools/use_mcp/system_prompt가 보존된다."""
+        await manager.create_task(CreateTaskParams(prompt="first", agent_session_id="sess-O"))
+        await manager.register_session("claude-O", "sess-O")
+        task = await manager.get_task("sess-O")
+        task.status = TaskStatus.INTERRUPTED
+
+        result = await submit_message(
+            SubmitMessageParams(
+                prompt="후속",
+                agent_session_id="sess-O",
+                model="claude-opus-4-5",
+                allowed_tools=["Read", "Grep"],
+                disallowed_tools=["Bash"],
+                use_mcp=False,
+                system_prompt="한국어로 답해",
+            ),
+            task_manager=manager,
+        )
+        assert result.kind == "auto_resumed"
+        # ★ 핵심 — 옵션이 task에 박혔는지 (task_factory._resume_existing_task_locked가 덮어쓴 결과)
+        assert result.task.model == "claude-opus-4-5"
+        assert result.task.allowed_tools == ["Read", "Grep"]
+        assert result.task.disallowed_tools == ["Bash"]
+        assert result.task.use_mcp is False
+        assert result.task.system_prompt == "한국어로 답해"
+
+    async def test_terminal_resume_preserves_context_and_folder(self, manager):
+        """terminal 재개 시 context가 forward되어 task에 박힌다."""
+        await manager.create_task(CreateTaskParams(prompt="first", agent_session_id="sess-P"))
+        await manager.register_session("claude-P", "sess-P")
+        task = await manager.get_task("sess-P")
+        task.status = TaskStatus.INTERRUPTED
+
+        result = await submit_message(
+            SubmitMessageParams(
+                prompt="후속",
+                agent_session_id="sess-P",
+                context={"key": "value"},
+            ),
+            task_manager=manager,
+        )
+        assert result.kind == "auto_resumed"
+        assert result.task.context == {"key": "value"}
+
+
 class TestNotifyCallerCompletionRecursion:
     """_notify_caller_completion 재귀 경로 검증 (지적 4-2).
 

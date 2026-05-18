@@ -52,6 +52,34 @@ from soul_server.service.session_query_service import get_session_query_service
 # NOTE: CreateTaskParams 직접 import 제거 — _handle_create_session이 submit_message 정본을
 # 거치도록 변경되어 본 모듈은 CreateTaskParams를 직접 다루지 않는다 (design-principles §3).
 
+# cross-node CMD_CREATE_SESSION 진입점의 task.client_id 정책.
+# 카드 FHhqVhlv (PR #69 후속): caller_info.source가 있으면 그것을 사용 ("slack", "agent" 등)
+# — 디버깅·로그·이력 추적 시 출처 식별을 위해. 없으면 본 상수로 fallback ("upstream" —
+# 식별 가능한 상수). PR #69 P1-1 보강 이전엔 None이었으나 명시적으로 채우는 것이
+# 디버깅 친화적이고 client_id 추적의 누락 위험을 차단한다.
+UPSTREAM_DEFAULT_USER = "upstream"
+
+
+def _resolve_upstream_user(cmd: dict) -> str:
+    """cross-node 명령(cmd)에서 task.client_id에 사용할 user 값을 결정한다.
+
+    정책 (카드 FHhqVhlv):
+    1. cmd["caller_info"]가 dict이고 "source"가 truthy이면 그 값을 사용 (예: "slack", "agent").
+       — 발신자 식별·디버깅·세션 이력 추적용.
+    2. 그 외 (caller_info 없거나 source 누락) → UPSTREAM_DEFAULT_USER ("upstream") fallback.
+
+    이전 _handle_create_session 구현은 None을 통과시켜 task.client_id가 None이었다.
+    PR #69 P1-1 보강이 submit_message 정본을 거치게 하면서 client_id가 매번 채워지도록
+    바뀌었고, 본 helper로 정책을 명시화한다.
+    """
+    caller_info = cmd.get("caller_info")
+    if isinstance(caller_info, dict):
+        source = caller_info.get("source")
+        if source:
+            return source
+    return UPSTREAM_DEFAULT_USER
+
+
 if TYPE_CHECKING:
     from soul_server.service.engine_adapter import SoulEngineAdapter
     from soul_server.service.resource_manager import ResourceManager
@@ -199,7 +227,7 @@ class CommandDispatcher:
                 SubmitMessageParams(
                     prompt=cmd["prompt"],
                     agent_session_id=cmd.get("agentSessionId"),
-                    user=cmd.get("caller_info", {}).get("source", "upstream") if isinstance(cmd.get("caller_info"), dict) else "upstream",
+                    user=_resolve_upstream_user(cmd),
                     allowed_tools=cmd.get("allowedTools"),
                     disallowed_tools=cmd.get("disallowedTools"),
                     use_mcp=cmd.get("use_mcp") if cmd.get("use_mcp") is not None else cmd.get("useMcp", True),

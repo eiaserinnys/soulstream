@@ -181,12 +181,25 @@ async def submit_message(
         if params.attachment_paths
         else params.extra_context_items
     )
+    # 카드 5RcnygV5: terminal 재개 시 사용자가 지정한 옵션(model/allowed_tools/use_mcp 등)을
+    # forward한다. _resume_existing_task_locked L211-218이 이 필드들을 *무조건* 덮어쓰므로,
+    # SubmitMessageParams에 명시된 값을 넘기지 않으면 task 옵션이 None으로 reset된다.
+    # 사용자가 model을 지정해 새 세션을 만들고 limit 후 후속 메시지를 보내면 default model로
+    # 폴백되는 결함 차단.
     task = await task_manager.create_task(
         CreateTaskParams(
             prompt=params.prompt,
             agent_session_id=agent_session_id,
             client_id=params.client_id or params.user,
+            allowed_tools=params.allowed_tools,
+            disallowed_tools=params.disallowed_tools,
+            use_mcp=params.use_mcp,
+            context=params.context,
             extra_context_items=extra_ctx,
+            model=params.model,
+            folder_id=params.folder_id,
+            system_prompt=params.system_prompt,
+            profile_id=params.profile_id,
             attachment_paths=params.attachment_paths,
             caller_info=params.caller_info,
             oauth_token=params.oauth_token,
