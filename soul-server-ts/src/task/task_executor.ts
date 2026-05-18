@@ -316,11 +316,14 @@ export class TaskExecutor {
     ctx?: PreparedContext,
   ): Promise<void> {
     // 1. system_message 분기 — Python L133-146 정합
+    //
+    // Python 정본은 `{type, text}` 2키만 박는다 (task_executor.py L136-139).
+    // soul-ui `shared/sse-events.ts SystemMessageEvent` type도 동일 2키.
+    // 추가 키(timestamp 등)는 wire-schema 비대칭을 유발하므로 명시 제외.
     if (ctx?.effectiveSystemPrompt) {
       const sysEvent: Record<string, unknown> = {
         type: "system_message",
         text: ctx.effectiveSystemPrompt,
-        timestamp: Date.now() / 1000,
       };
       try {
         const eventId = await this.persistence.persistEvent(

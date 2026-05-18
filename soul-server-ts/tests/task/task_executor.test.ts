@@ -610,19 +610,25 @@ describe("TaskExecutor _persistInitialMessages — contextBuilder 주입 (Python
     executor.startExecution(task, agent);
     await task.executionPromise;
 
-    // persistEvent 첫 호출은 system_message (Python 순서 — system_message 먼저, user_message 다음)
+    // persistEvent 첫 호출은 system_message (Python 순서 — system_message 먼저, user_message 다음).
+    // payload는 *strict equal* {type, text} 2키만 — Python L136-139·soul-ui SystemMessageEvent 정합.
+    // 추가 키(timestamp 등) 잔존 회귀를 차단한다.
     const calls = mocks.persistEvent.mock.calls;
     const sysCall = calls.find((c) => (c[1] as { type: string }).type === "system_message");
     expect(sysCall).toBeDefined();
-    expect(sysCall![1]).toMatchObject({
+    expect(sysCall![1]).toEqual({
       type: "system_message",
       text: "you are codex",
     });
-    // broadcast도 발화
+    // broadcast envelope도 strict equal — 영속과 wire 양쪽에서 형상 정합
     const sysEnvelope = mocks.emitEventEnvelope.mock.calls.find(
       (c) => (c[1] as { type: string }).type === "system_message",
     );
     expect(sysEnvelope).toBeDefined();
+    expect(sysEnvelope![1]).toEqual({
+      type: "system_message",
+      text: "you are codex",
+    });
   });
 
   it("effectiveSystemPrompt 없음 → system_message 영속화 skip (Python L134 가드 정합)", async () => {
