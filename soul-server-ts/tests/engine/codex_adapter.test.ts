@@ -220,8 +220,7 @@ describe("CodexEngineAdapter.execute — 새 thread", () => {
       workingDirectory: "/tmp/work",
       skipGitRepoCheck: true,
       approvalPolicy: "never",
-      sandboxMode: "workspace-write",
-      networkAccessEnabled: true,
+      sandboxMode: "danger-full-access",
     });
     expect(mockResumeThread).not.toHaveBeenCalled();
     expect(sseEvents[0]).toEqual({ type: "session", session_id: "thr-1" });
@@ -293,8 +292,7 @@ describe("CodexEngineAdapter.execute — 새 thread", () => {
       workingDirectory: "/tmp/work",
       skipGitRepoCheck: true,
       approvalPolicy: "never",
-      sandboxMode: "workspace-write",
-      networkAccessEnabled: true,
+      sandboxMode: "danger-full-access",
       model: "gpt-5",
     });
   });
@@ -417,17 +415,15 @@ describe("CodexEngineAdapter — approvalPolicy 정본 박힘 (Python permission
   });
 });
 
-describe("CodexEngineAdapter — sandboxMode + networkAccessEnabled (Python permission_mode 조합 정합)", () => {
-  // claude SDK `permission_mode="bypassPermissions"`는 *조합*: approvalPolicy="never" (PR #58)
-  // + sandboxMode="workspace-write" + networkAccessEnabled=true. localhost MCP outbound가
-  // 차단되어 atom·atom-nl 호출이 모두 cancel되던 결함 — 분석 캐시
-  // `20260518-1045-codex-network-sync-portrait.md` Part A.
-  //
-  // codex SDK runtime `dist/index.js:198-202`이 networkAccessEnabled를
-  // `--config sandbox_workspace_write.network_access=...`로 직렬화. 키 prefix가
-  // workspace_write라 sandboxMode가 같은 모드일 때만 유효 → 두 옵션 *함께* 명시.
+describe("CodexEngineAdapter — sandboxMode=danger-full-access (Python permission_mode=bypassPermissions 정합)", () => {
+  // PR #60 fix-forward — 분석 캐시 `20260518-1115-codex-network-retry-sync.md` §A-r2 매트릭스:
+  //   - workspace-write + network_access=true + approval=never → MCP cancel
+  //   - danger-full-access + approval=never → MCP 결과 반환
+  // codex CLI 0.130.0 exec 모드의 MCP tool call은 sandbox 모드와 결합된 별 게이트. networkAccessEnabled는
+  // *shell command outbound*에만 영향하고 MCP tool과 무관 — PR #60 오진단의 root cause.
+  // Python claude `permission_mode="bypassPermissions"` 의미 등가 = `sandboxMode: "danger-full-access"`.
 
-  it("startThread에 sandboxMode=workspace-write + networkAccessEnabled=true 명시", async () => {
+  it("startThread에 sandboxMode=danger-full-access 명시", async () => {
     const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
     mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });
     mockRunStreamed.mockResolvedValue({ events: eventStream([]) });
@@ -440,11 +436,13 @@ describe("CodexEngineAdapter — sandboxMode + networkAccessEnabled (Python perm
       // drain
     }
     const calledWith = mockStartThread.mock.calls[0][0] as Record<string, unknown>;
-    expect(calledWith.sandboxMode).toBe("workspace-write");
-    expect(calledWith.networkAccessEnabled).toBe(true);
+    expect(calledWith.sandboxMode).toBe("danger-full-access");
+    // networkAccessEnabled는 *미박힘* — danger-full-access에 자동 포함이고 키 prefix가
+    // workspace_write라 본 모드에서 무의미. PR #60 오진단 정정.
+    expect(calledWith.networkAccessEnabled).toBeUndefined();
   });
 
-  it("resumeThread에도 sandboxMode + networkAccessEnabled 명시 (auto-resume·intervention turn)", async () => {
+  it("resumeThread에도 sandboxMode=danger-full-access 명시 (auto-resume·intervention turn)", async () => {
     const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
     mockResumeThread.mockReturnValue({ runStreamed: mockRunStreamed });
     mockRunStreamed.mockResolvedValue({ events: eventStream([]) });
@@ -460,11 +458,11 @@ describe("CodexEngineAdapter — sandboxMode + networkAccessEnabled (Python perm
       // drain
     }
     const calledWith = mockResumeThread.mock.calls[0][1] as Record<string, unknown>;
-    expect(calledWith.sandboxMode).toBe("workspace-write");
-    expect(calledWith.networkAccessEnabled).toBe(true);
+    expect(calledWith.sandboxMode).toBe("danger-full-access");
+    expect(calledWith.networkAccessEnabled).toBeUndefined();
   });
 
-  it("model 옵션 동거 시에도 두 옵션 유지", async () => {
+  it("model 옵션 동거 시에도 sandboxMode 유지", async () => {
     const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
     mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });
     mockRunStreamed.mockResolvedValue({ events: eventStream([]) });
@@ -477,8 +475,7 @@ describe("CodexEngineAdapter — sandboxMode + networkAccessEnabled (Python perm
       // drain
     }
     const calledWith = mockStartThread.mock.calls[0][0] as Record<string, unknown>;
-    expect(calledWith.sandboxMode).toBe("workspace-write");
-    expect(calledWith.networkAccessEnabled).toBe(true);
+    expect(calledWith.sandboxMode).toBe("danger-full-access");
     expect(calledWith.model).toBe("gpt-5");
   });
 });
@@ -503,8 +500,7 @@ describe("CodexEngineAdapter.execute — 세션 resume", () => {
       workingDirectory: "/tmp/work",
       skipGitRepoCheck: true,
       approvalPolicy: "never",
-      sandboxMode: "workspace-write",
-      networkAccessEnabled: true,
+      sandboxMode: "danger-full-access",
     });
     expect(mockStartThread).not.toHaveBeenCalled();
   });
