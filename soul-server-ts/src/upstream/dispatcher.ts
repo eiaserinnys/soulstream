@@ -39,6 +39,13 @@ interface IntervenCmd extends CommandLike {
   attachment_paths?: string[];
 }
 
+interface SubscribeEventsCmd extends CommandLike {
+  type: "subscribe_events";
+  agentSessionId?: string;
+  session_id?: string;
+  subscribeId?: string;
+}
+
 /**
  * orch → 노드 명령 디스패처.
  *
@@ -46,6 +53,12 @@ interface IntervenCmd extends CommandLike {
  * - `health_check` → `health_status` 응답 (B-1)
  * - `create_session` → task lifecycle 시동 + `session_created` 응답 (B-3)
  * - `intervene` → addIntervention + `intervene_ack` 응답 (B-4)
+ * - `subscribe_events` → NOOP 수락 — broadcaster.emitEventEnvelope이 이미 모든 task event를
+ *   wire로 emit하므로 별 relay loop 불필요. Python `command_handler.py:319 _handle_subscribe_events`는
+ *   `await relay.relay_events(session_id)`로 *별 relay 루프*를 가지지만, 그것은 Python의 *task-내
+ *   broadcaster 단일 채널 없는 구조*를 보완하기 위함. TS는 task_executor._processEvent가 매
+ *   event를 broadcaster.emitEventEnvelope으로 emit하므로 별 relay 불필요 (이론).
+ *   분석 캐시 `20260518-1218-codex-sse-realtime-sync.md` §본 사이클 fix 결정.
  * - 그 외 → "Not implemented" fallback
  *
  * 응답 키는 *camelCase*가 정본 (Python `command_handler.py` L309-317 실측).
@@ -65,6 +78,7 @@ export class CommandDispatcher {
       health_check: (cmd) => this.handleHealthCheck(cmd),
       create_session: (cmd) => this.handleCreateSession(cmd as CreateSessionCmd),
       intervene: (cmd) => this.handleIntervene(cmd as IntervenCmd),
+      subscribe_events: (cmd) => this.handleSubscribeEvents(cmd as SubscribeEventsCmd),
     };
   }
 
@@ -240,6 +254,38 @@ export class CommandDispatcher {
         agentSessionId: sessionId,
       });
     }
+  }
+
+  /**
+   * `subscribe_events` 명령 — broadcaster.emitEventEnvelope이 이미 task event 전체를 emit하므로
+   * 별 relay 작업 없이 NOOP 수락.
+   *
+   * Python 정본 `command_handler.py:319 _handle_subscribe_events`는 `await relay.relay_events(...)`로
+   * 별 relay 루프를 가진다 — 그 루프가 *Python의 task-내 단일 broadcaster 채널 없는 구조*를
+   * 보완한다. TS는 task_executor._processEvent가 매 codex CLI yield event마다
+   * broadcaster.emitEventEnvelope을 호출하므로 별 relay 루프 *불필요* (이론).
+   *
+   * 본 핸들러 신설 이전(PR #62 시점) 동작:
+   *   - dispatcher가 "Not implemented" error 응답을 wire에 발행
+   *   - orch는 EVT_ERROR를 warn log만 박고 listener 유지 (직접 차단 안 함)
+   *   - 그러나 *간접 차단 가능성*: 사용자 보고로 SSE realtime stream 누락 확정 — 가설 X
+   *
+   * 본 핸들러는 *명시 ACK 없이 silent 수락*. ACK 발행 안 함이 Python 정본 정합 — Python
+   * _handle_subscribe_events도 별도 ACK type을 emit하지 않고 relay loop만 시작.
+   * orch send_subscribe_events는 ACK 대기 없이 listener 등록 + cmd send (fire-and-forget).
+   * 따라서 ACK 없음으로 orch 동작 영향 0.
+   *
+   * 진단용 logger.info — 라이브에서 본 cmd가 분명히 도달함을 trace. *node LOG_LEVEL=info*에서
+   * 가시.
+   */
+  private async handleSubscribeEvents(cmd: SubscribeEventsCmd): Promise<void> {
+    const sessionId = cmd.agentSessionId ?? cmd.session_id ?? "";
+    this.logger.info(
+      { sessionId, subscribeId: cmd.subscribeId },
+      "subscribe_events received — NOOP 수락 (broadcaster가 EVT_EVENT 직접 emit)",
+    );
+    // NOOP — ACK 없이 silent 수락. Python `_handle_subscribe_events`는 relay loop를 시작하지만
+    // TS는 broadcaster.emitEventEnvelope이 이미 task event 전체를 wire로 emit하므로 별 relay 불필요.
   }
 
   private async sendError(cmd: CommandLike, message: string): Promise<void> {
