@@ -397,6 +397,9 @@ export class TaskManager {
           interventionEvent as SSEEventPayload,
         );
         task.lastEventId = eventId;
+        // ride-along 5자리 — Python `task_executor.py` `_event_id` 정합. orch session_events.py가
+        // SSE id로 추출하여 대시보드 tree-placer dedup·순서 보장.
+        interventionEvent._event_id = eventId;
         await this.persistence.handleSideEffects(
           task.agentSessionId,
           interventionEvent as SSEEventPayload,
@@ -410,7 +413,13 @@ export class TaskManager {
       }
     }
     try {
-      await this.broadcaster.emitInterventionSent(task.agentSessionId, message);
+      // emitInterventionSent이 message에서 event를 재구성하므로 _event_id가 누락된다.
+      // 대신 _event_id가 박힌 interventionEvent dict을 emitEventEnvelope으로 직접 전달.
+      // emitInterventionSent의 책임 통합은 별 카드 후보 (design-principles §3 정본 둘 회피).
+      await this.broadcaster.emitEventEnvelope(
+        task.agentSessionId,
+        interventionEvent as SSEEventPayload,
+      );
     } catch (err) {
       this.logger.warn(
         { err, sessionId: task.agentSessionId },
@@ -467,6 +476,8 @@ export class TaskManager {
           userMessageEvent as SSEEventPayload,
         );
         task.lastEventId = eventId;
+        // ride-along 5자리 — Python `task_executor.py:168` 정합
+        userMessageEvent._event_id = eventId;
         await this.persistence.handleSideEffects(
           task.agentSessionId,
           userMessageEvent as SSEEventPayload,
