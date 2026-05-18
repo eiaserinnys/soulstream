@@ -55,14 +55,74 @@ export const EnvSchema = z
       .optional(),
     ATOM_SERVER_URL: z.string().optional(),
     ATOM_API_KEY: z.string().optional(),
+    /**
+     * MCP Streamable HTTP 서버 활성화 플래그. Codex CLI 등 MCP 클라이언트용 진입점.
+     * default false — 명시 활성화 필수. Python `/cogito-mcp/sse`와 *별개*(공존).
+     */
+    MCP_ENABLED: z
+      .union([z.literal("true"), z.literal("false")])
+      .default("false")
+      .transform((v) => v === "true"),
+    /**
+     * MCP HTTP 라우트 path. POST/GET/DELETE 모두 같은 경로 (Streamable HTTP 스펙).
+     */
+    MCP_PATH: z.string().default("/mcp"),
+    /**
+     * MCP 호출에 bearer auth 강제. superRefine으로 production + MCP_ENABLED일 때 강제.
+     */
+    MCP_REQUIRE_AUTH: z
+      .union([z.literal("true"), z.literal("false")])
+      .default("false")
+      .transform((v) => v === "true"),
+    /**
+     * Host 헤더 검증 허용 리스트. DNS rebinding 방지. csv string을 zod transform 단에서
+     * string[]로 변환하여 정본 단일 (design-principles §3) — `mcp/auth.ts`는 string[]만 받음.
+     */
+    MCP_ALLOWED_HOSTS: z
+      .string()
+      .default("localhost,127.0.0.1")
+      .transform((v) =>
+        v
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
+      ),
   })
   .superRefine((env, ctx) => {
-    // production에서는 AUTH_BEARER_TOKEN 강제. design-principles §4.
+    // 1) production에서는 AUTH_BEARER_TOKEN 강제 (기존, 유지). design-principles §4.
     if (env.ENVIRONMENT === "production" && !env.AUTH_BEARER_TOKEN) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["AUTH_BEARER_TOKEN"],
         message: "AUTH_BEARER_TOKEN is required when ENVIRONMENT=production",
+      });
+    }
+    // 2) production + MCP_ENABLED → MCP_REQUIRE_AUTH 강제. (1)과 path 다름 → 중복 발화 없음.
+    if (
+      env.ENVIRONMENT === "production" &&
+      env.MCP_ENABLED &&
+      !env.MCP_REQUIRE_AUTH
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["MCP_REQUIRE_AUTH"],
+        message:
+          "MCP_REQUIRE_AUTH must be true when ENVIRONMENT=production and MCP_ENABLED",
+      });
+    }
+    // 3) 비-loopback HOST + MCP_ENABLED → REQUIRE_AUTH 또는 ALLOWED_HOSTS 강제. path 다름.
+    const isLoopback = env.HOST === "127.0.0.1" || env.HOST === "localhost";
+    if (
+      env.MCP_ENABLED &&
+      !isLoopback &&
+      !env.MCP_REQUIRE_AUTH &&
+      env.MCP_ALLOWED_HOSTS.length === 0
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["MCP_ALLOWED_HOSTS"],
+        message:
+          "MCP_ALLOWED_HOSTS or MCP_REQUIRE_AUTH required when HOST is non-loopback and MCP_ENABLED",
       });
     }
   });

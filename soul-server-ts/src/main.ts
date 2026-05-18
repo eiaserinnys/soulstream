@@ -2,11 +2,14 @@ import dotenv from "dotenv";
 import { ZodError } from "zod";
 
 import { loadAgentRegistry } from "./agent_registry.js";
+import { CatalogService } from "./catalog/catalog_service.js";
 import { parseEnv } from "./config.js";
 import { SessionDB } from "./db/session_db.js";
 import { EventPersistence } from "./db/event_persistence.js";
 import { CodexEngineAdapter } from "./engine/codex_adapter.js";
 import { createLogger } from "./logger.js";
+import { wsToHttpBase } from "./mcp/orch_proxy.js";
+import type { McpRuntime, OrchProxyConfig } from "./mcp/runtime.js";
 import { buildServer, startServer } from "./server.js";
 import { TaskExecutor, type EngineFactory } from "./task/task_executor.js";
 import { TaskManager } from "./task/task_manager.js";
@@ -85,17 +88,7 @@ async function main(): Promise<void> {
   // DB 초기화 (postgres.js)
   const db = new SessionDB(env.DATABASE_URL);
 
-  // HTTP 서버 시작 (Haniel ready 점검용)
-  const server = await buildServer({
-    host: env.HOST,
-    port: env.PORT,
-    nodeId: env.SOULSTREAM_NODE_ID,
-    logger,
-  });
-  await startServer(server, env.HOST, env.PORT);
-  logger.info({ host: env.HOST, port: env.PORT }, "HTTP /health listening");
-
-  // === wiring ===
+  // === wiring (HTTP 서버 시작 *전*에 runtime 의존성 구축) ===
   // SessionBroadcaster는 send 함수가 필요한데 UpstreamAdapter가 그것을 제공.
   // 순환 의존 회피: 두 단계로 구성 — late-bound send를 SessionBroadcaster에 주입.
   let upstreamAdapter: UpstreamAdapter | null = null;
@@ -161,6 +154,52 @@ async function main(): Promise<void> {
     contextBuilder,
   );
 
+  // CatalogService — MCP catalog 도구·set_session_name이 경유.
+  // 본 카드(soul-server-ts Streamable HTTP MCP) 신설. dashboard 진입점이 같은 service를
+  // 경유하면 정책 정본 단일 (design-principles §3).
+  const catalogService = new CatalogService(db, broadcaster);
+
+  // MCP runtime — MCP_ENABLED=true일 때 server.ts가 라우트 등록에 사용.
+  const mcpRuntime: McpRuntime = {
+    nodeId: env.SOULSTREAM_NODE_ID,
+    db,
+    taskManager,
+    taskExecutor,
+    agentRegistry,
+    catalogService,
+    logger,
+    orch: env.MCP_ENABLED ? buildOrchProxyConfig(env) : undefined,
+  };
+
+  // HTTP 서버 시작 (health + 선택적 MCP)
+  const server = await buildServer({
+    host: env.HOST,
+    port: env.PORT,
+    nodeId: env.SOULSTREAM_NODE_ID,
+    logger,
+    mcp: env.MCP_ENABLED
+      ? {
+          runtime: mcpRuntime,
+          path: env.MCP_PATH,
+          auth: {
+            requireAuth: env.MCP_REQUIRE_AUTH,
+            bearerToken: env.AUTH_BEARER_TOKEN,
+            allowedHosts: env.MCP_ALLOWED_HOSTS,
+          },
+        }
+      : undefined,
+  });
+  await startServer(server, env.HOST, env.PORT);
+  logger.info(
+    {
+      host: env.HOST,
+      port: env.PORT,
+      mcpEnabled: env.MCP_ENABLED,
+      mcpPath: env.MCP_ENABLED ? env.MCP_PATH : undefined,
+    },
+    "HTTP listening",
+  );
+
   // WS reverse adapter — orch에 등록
   upstreamAdapter = new UpstreamAdapter(
     {
@@ -192,6 +231,13 @@ async function main(): Promise<void> {
     if (upstreamAdapter) {
       await upstreamAdapter.shutdown();
     }
+    if (server.closeMcp) {
+      try {
+        await server.closeMcp();
+      } catch (err) {
+        logger.warn({ err }, "MCP transports close failed");
+      }
+    }
     await server.close();
     try {
       await db.close();
@@ -202,6 +248,24 @@ async function main(): Promise<void> {
   };
   process.once("SIGTERM", () => void shutdown("SIGTERM"));
   process.once("SIGINT", () => void shutdown("SIGINT"));
+}
+
+/**
+ * MCP multi_node 도구가 사용할 orch HTTP base URL + 인증 헤더 조립.
+ *
+ * SOULSTREAM_UPSTREAM_URL은 reverse WS 경로(ws[s]://host/ws/...)이므로 scheme/path 변환.
+ * AUTH_BEARER_TOKEN이 있으면 Authorization 헤더에 박는다.
+ */
+function buildOrchProxyConfig(env: {
+  SOULSTREAM_UPSTREAM_URL: string;
+  AUTH_BEARER_TOKEN: string;
+}): OrchProxyConfig {
+  const baseUrl = wsToHttpBase(env.SOULSTREAM_UPSTREAM_URL);
+  const headers: Record<string, string> = {};
+  if (env.AUTH_BEARER_TOKEN) {
+    headers["authorization"] = `Bearer ${env.AUTH_BEARER_TOKEN}`;
+  }
+  return { baseUrl, headers };
 }
 
 main().catch((err) => {
