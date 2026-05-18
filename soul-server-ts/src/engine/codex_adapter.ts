@@ -118,27 +118,32 @@ export class CodexEngineAdapter implements EnginePort {
     this.currentTurn = controller;
 
     // Thread 시작 또는 재개.
-    // ThreadOptions — Python claude `permission_mode="bypassPermissions"` 의미 등가를 codex에서
-    // 조합으로 구성 (분석 캐시 `20260518-1045-codex-network-sync-portrait.md` Part A §A-3):
-    //   - workingDirectory + skipGitRepoCheck=true: soulstream의 workspaceDir이 git 리포 아닐 수 있어 명시 우회.
-    //   - approvalPolicy="never": codex CLI 0.130.0 `exec` 모드는 *non-interactive*. approval 요청 시
-    //     stdin user input 채널이 없어 MCP tool call·shell command 모두 *자동 cancel*된다
-    //     (`tool_result.error = "user cancelled MCP tool call"`). codex CLI 도움말이 직접 권고:
-    //     "Prefer `never` for non-interactive runs". claude SDK의 tool approval bypass와 의미 등가.
-    //   - sandboxMode="workspace-write": codex CLI default 추정값이지만 명시. fs sandbox는
-    //     workspaceDir만 write 허용 (격리 정책 보존). networkAccessEnabled 옵션의 키 prefix가
-    //     `sandbox_workspace_write.*`라 본 모드일 때만 유효 — SDK `dist/index.js:198-202` 참조.
-    //   - networkAccessEnabled=true: codex CLI default 추정값은 deny. localhost MCP outbound가
-    //     차단되어 atom·atom-nl·serendipity 등 호출이 모두 cancel되던 결함을 차단 — 분석 캐시
-    //     Part A §A-1 (세션 43d59f67 events #7-14, 6번 연속 cancel). 의도된 outbound: ~/.codex/
-    //     config.toml의 mcp_servers (사용자 제어 영역).
-    //     execution failure는 모델에 곧장 반환되므로 모델이 적절히 재시도·우회 결정.
+    // ThreadOptions — Python claude `permission_mode="bypassPermissions"` 의미 등가:
+    //   - workingDirectory + skipGitRepoCheck=true: workspaceDir이 git 리포 아닐 수 있어 명시 우회.
+    //   - sandboxMode="danger-full-access": codex CLI 0.130.0 `exec` 모드의 MCP tool call은
+    //     `workspace-write`·`read-only` 모드에서 자동 cancel된다 — approval gate가 stdin 채널 없는
+    //     exec 모드에서 자동 deny. `approval_policy="never"`는 *shell command*만 통제하고 *MCP
+    //     tool call*은 sandbox 모드와 결합된 별 게이트라 풀리지 않음. `danger-full-access`만
+    //     MCP를 허용. 분석 캐시 `20260518-1115-codex-network-retry-sync.md` §A-r2 매트릭스:
+    //       - workspace-write + network_access=true + approval=never → MCP cancel
+    //       - danger-full-access + approval=never → MCP 결과 반환
+    //       - --dangerously-bypass-approvals-and-sandbox → MCP 결과 반환
+    //     Python claude `client_lifecycle.py:238 permission_mode="bypassPermissions"`가 의미상
+    //     같은 자세 — codex 노드 user 권한 범위로 격리되며, workspaceDir 격리는 *논리적*이고
+    //     model이 destructive 시도를 자율로 안 하는 가정에 의존(claude 정합).
+    //   - approvalPolicy="never": shell command approval bypass. danger-full-access로 이미
+    //     우회되므로 본질적으로 *불필요*이나 안전망으로 유지. codex CLI 도움말 권고:
+    //     "Prefer `never` for non-interactive runs".
+    //
+    // PR #60 (`workspace-write` + `networkAccessEnabled=true`) 라이브 실효 결손 — 본 PR fix-forward.
+    // PR #60의 진단(`networkAccessEnabled`가 MCP cancel을 푼다는 가설)이 부분 오진단이었음 —
+    // `networkAccessEnabled`는 *shell command outbound*에만 영향하지 MCP tool과 무관.
+    // 진정한 root cause는 sandbox 모드의 MCP 게이트.
     const threadOptions = {
       workingDirectory: this.workspaceDir,
       skipGitRepoCheck: true,
       approvalPolicy: "never" as const,
-      sandboxMode: "workspace-write" as const,
-      networkAccessEnabled: true,
+      sandboxMode: "danger-full-access" as const,
       ...(params.model ? { model: params.model } : {}),
     };
 
