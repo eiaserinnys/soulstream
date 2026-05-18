@@ -189,6 +189,28 @@ describe("TaskCompletionNotifier.notify", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it("4b. interrupted 완료 — `⚠️ 에이전트 세션 중단` 메시지 형식 (code-reviewer P1)", async () => {
+    // TS는 cancelTask가 task.status='interrupted'만 박고 task.error는 채우지 않는다
+    // (task_manager.ts:240). Python lifecycle과 비대칭 — interrupted 분기 의무.
+    const tm = makeTaskManagerStub();
+    const notifier = new TaskCompletionNotifier(
+      NODE_ID, tm.taskManager, makeAgentRegistry(), vi.fn(), silentLogger,
+    );
+    await notifier.notify(makeChild({
+      status: "interrupted",
+      error: undefined,
+      lastAssistantText: "lingering partial response",  // 잔존해도 사용되지 않아야
+    }));
+    const params = tm.addIntervention.mock.calls[0]![0] as AddInterventionParams;
+    expect(params.text).toMatch(/^⚠️ 에이전트 세션 중단/);
+    expect(params.text).toContain("child-sess-1");
+    // interrupted는 lastAssistantText를 의도적으로 노출하지 않는다 (사용자가 cancel한 결과를
+    // "✅ 완료"로 잘못 인지하는 회로 차단)
+    expect(params.text).not.toContain("lingering partial response");
+    expect(params.text).not.toMatch(/^✅/);
+    expect(params.text).not.toMatch(/^❌/);
+  });
+
   it("4. 오류 완료 — `❌ 에이전트 세션 오류` 메시지 형식", async () => {
     const tm = makeTaskManagerStub();
     const registry = makeAgentRegistry();

@@ -123,7 +123,13 @@ export class TaskCompletionNotifier implements CompletionNotifier {
   }
 
   /**
-   * 성공/오류 분기 + 빈 응답 fallback. Python L479-482 정합.
+   * 완료(성공)/오류/중단 분기 + 빈 응답 fallback. Python L479-482를 TS lifecycle에 맞춰 확장.
+   *
+   * 분기 우선순위 (TS lifecycle 비대칭 차단 — code-reviewer P1):
+   *   1. `interrupted` (cancelTask 경로) — Python은 finalize_task가 interrupted를 만들지 않지만
+   *      TS는 `_finalize`가 모든 종료 status에 호출되므로 별도 분기 의무.
+   *   2. `error` 또는 task.error 박힘 — engine throw / executionPromise 안전망.
+   *   3. 그 외 (completed) — `lastAssistantText` 정본 + `(빈 응답)` fallback.
    *
    * `lastAssistantText`는 event_persistence.handleSideEffects(L122-129)가 매 text_delta마다
    * 누적 block.text 전체로 덮어쓰므로 finalize 시점에 마지막 turn 응답이 박혀 있음. 부재 시
@@ -131,6 +137,9 @@ export class TaskCompletionNotifier implements CompletionNotifier {
    */
   private _buildNotifyText(task: Task): string {
     const sid = task.agentSessionId;
+    if (task.status === "interrupted") {
+      return `⚠️ 에이전트 세션 중단 (ID: \`${sid}\`)`;
+    }
     if (task.status === "error" || task.error) {
       const errorText = task.error?.trim() ?? "";
       return `❌ 에이전트 세션 오류 (ID: \`${sid}\`)\n\n${errorText}`;
