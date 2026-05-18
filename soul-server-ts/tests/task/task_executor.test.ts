@@ -456,8 +456,10 @@ describe("TaskExecutor multi-turn (B-4)", () => {
   });
 });
 
-// B-5: 초기 user_message 영속화 (Python `_persist_initial_messages` 정합)
-describe("TaskExecutor _persistInitialUserMessage (B-5)", () => {
+// B-5: 초기 system_message + user_message 영속화 (Python `_persist_initial_messages` 정합)
+// 본 describe는 contextBuilder 미주입(legacy) 흐름. system_message·user_message.context는
+// 별 describe(`TaskExecutor _persistInitialMessages with contextBuilder`)에서 검증.
+describe("TaskExecutor _persistInitialMessages — contextBuilder 미주입 (legacy)", () => {
   it("첫 turn 진입 전 user_message가 persistEvent + broadcast + handleSideEffects 모두 수행", async () => {
     const mocks = makeMocks();
     const events: SSEEventPayload[] = [
@@ -564,5 +566,249 @@ describe("TaskExecutor _persistInitialUserMessage (B-5)", () => {
     executor.startExecution(task, agent);
     await task.executionPromise;
     expect(capturedPrompt).toBe("new message");  // task.prompt="hi"가 아니라 queue dequeue
+  });
+});
+
+// B-6 정정: contextBuilder 주입 흐름에서 system_message 영속화 + user_message.context 박힘
+// (Python `_persist_initial_messages` 복수형 정합). 분석 캐시
+// `20260518-0945-codex-context-mcp-cancel.md` Part A-3a wire emit 누락 root cause 해소.
+describe("TaskExecutor _persistInitialMessages — contextBuilder 주입 (Python 복수형 정합)", () => {
+  // contextBuilder mock 헬퍼 — build() 반환을 직접 제어
+  function makeFakeContextBuilder(
+    ctx: {
+      effectiveSystemPrompt?: string;
+      combinedContextItems: Array<{ key: string; label: string; content: unknown }>;
+      assembledPrompt: string;
+    },
+  ): {
+    build: ReturnType<typeof vi.fn>;
+  } {
+    return {
+      build: vi.fn(async () => ctx),
+    };
+  }
+
+  it("effectiveSystemPrompt 있음 → system_message 이벤트 영속화 + broadcast (Python L133-146)", async () => {
+    const mocks = makeMocks();
+    const events: SSEEventPayload[] = [
+      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
+    ];
+    const fakeBuilder = makeFakeContextBuilder({
+      effectiveSystemPrompt: "you are codex",
+      combinedContextItems: [],
+      assembledPrompt: "hi",
+    });
+    const executor = new TaskExecutor(
+      () => makeFakeEngine(events),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+    );
+    const task = makeTask();
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    // persistEvent 첫 호출은 system_message (Python 순서 — system_message 먼저, user_message 다음).
+    // payload는 *strict equal* {type, text} 2키만 — Python L136-139·soul-ui SystemMessageEvent 정합.
+    // 추가 키(timestamp 등) 잔존 회귀를 차단한다.
+    const calls = mocks.persistEvent.mock.calls;
+    const sysCall = calls.find((c) => (c[1] as { type: string }).type === "system_message");
+    expect(sysCall).toBeDefined();
+    expect(sysCall![1]).toEqual({
+      type: "system_message",
+      text: "you are codex",
+    });
+    // broadcast envelope도 strict equal — 영속과 wire 양쪽에서 형상 정합
+    const sysEnvelope = mocks.emitEventEnvelope.mock.calls.find(
+      (c) => (c[1] as { type: string }).type === "system_message",
+    );
+    expect(sysEnvelope).toBeDefined();
+    expect(sysEnvelope![1]).toEqual({
+      type: "system_message",
+      text: "you are codex",
+    });
+  });
+
+  it("effectiveSystemPrompt 없음 → system_message 영속화 skip (Python L134 가드 정합)", async () => {
+    const mocks = makeMocks();
+    const events: SSEEventPayload[] = [
+      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
+    ];
+    const fakeBuilder = makeFakeContextBuilder({
+      // effectiveSystemPrompt undefined
+      combinedContextItems: [],
+      assembledPrompt: "hi",
+    });
+    const executor = new TaskExecutor(
+      () => makeFakeEngine(events),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+    );
+    const task = makeTask();
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    const sysCalls = mocks.persistEvent.mock.calls.filter(
+      (c) => (c[1] as { type: string }).type === "system_message",
+    );
+    expect(sysCalls.length).toBe(0);
+  });
+
+  it("combinedContextItems 있음 → user_message 페이로드에 context 키 박힘 (Python L155)", async () => {
+    const mocks = makeMocks();
+    const events: SSEEventPayload[] = [
+      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
+    ];
+    const items = [
+      { key: "soulstream_session", label: "Soulstream 세션 정보", content: { foo: 1 } },
+      { key: "atom_context", label: "atom 트리", content: "# tree\n..." },
+    ];
+    const fakeBuilder = makeFakeContextBuilder({
+      combinedContextItems: items,
+      assembledPrompt: "hi",
+    });
+    const executor = new TaskExecutor(
+      () => makeFakeEngine(events),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+    );
+    const task = makeTask();
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    const userCall = mocks.persistEvent.mock.calls.find(
+      (c) => (c[1] as { type: string }).type === "user_message",
+    );
+    expect(userCall).toBeDefined();
+    expect((userCall![1] as Record<string, unknown>).context).toEqual(items);
+  });
+
+  it("combinedContextItems 빈 배열 → user_message에 context 키 미박힘", async () => {
+    const mocks = makeMocks();
+    const events: SSEEventPayload[] = [
+      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
+    ];
+    const fakeBuilder = makeFakeContextBuilder({
+      combinedContextItems: [],
+      assembledPrompt: "hi",
+    });
+    const executor = new TaskExecutor(
+      () => makeFakeEngine(events),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+    );
+    const task = makeTask();
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    const userCall = mocks.persistEvent.mock.calls.find(
+      (c) => (c[1] as { type: string }).type === "user_message",
+    );
+    expect((userCall![1] as Record<string, unknown>).context).toBeUndefined();
+  });
+
+  it("system_message + user_message 순서 — system_message가 먼저 (Python 정합)", async () => {
+    const mocks = makeMocks();
+    const events: SSEEventPayload[] = [
+      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
+    ];
+    const fakeBuilder = makeFakeContextBuilder({
+      effectiveSystemPrompt: "sys",
+      combinedContextItems: [{ key: "k", label: "L", content: "c" }],
+      assembledPrompt: "hi",
+    });
+    const executor = new TaskExecutor(
+      () => makeFakeEngine(events),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+    );
+    const task = makeTask();
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    const types = mocks.persistEvent.mock.calls.map((c) => (c[1] as { type: string }).type);
+    const sysIdx = types.indexOf("system_message");
+    const userIdx = types.indexOf("user_message");
+    expect(sysIdx).toBeGreaterThanOrEqual(0);
+    expect(userIdx).toBeGreaterThan(sysIdx);
+  });
+
+  it("contextBuilder.build throw → ctx 격리 후 task.prompt 그대로 첫 turn 실행", async () => {
+    const mocks = makeMocks();
+    const events: SSEEventPayload[] = [
+      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
+    ];
+    const fakeBuilder = {
+      build: vi.fn(async () => {
+        throw new Error("atom HTTP timeout");
+      }),
+    };
+    const executor = new TaskExecutor(
+      () => makeFakeEngine(events),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+    );
+    const task = makeTask();
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    // ctx 격리 → system_message 영속화 0회, user_message.context 키 미박힘 (legacy 동작)
+    const sysCalls = mocks.persistEvent.mock.calls.filter(
+      (c) => (c[1] as { type: string }).type === "system_message",
+    );
+    expect(sysCalls.length).toBe(0);
+    const userCall = mocks.persistEvent.mock.calls.find(
+      (c) => (c[1] as { type: string }).type === "user_message",
+    );
+    expect((userCall![1] as Record<string, unknown>).context).toBeUndefined();
+    expect(task.status).toBe("completed");  // 본 task 진행에 영향 0
+  });
+
+  it("auto-resume (queue 비어있지 않음) → contextBuilder.build 자체 호출 안 함", async () => {
+    const mocks = makeMocks();
+    const events: SSEEventPayload[] = [
+      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
+    ];
+    const fakeBuilder = makeFakeContextBuilder({
+      effectiveSystemPrompt: "sys",
+      combinedContextItems: [{ key: "k", label: "L", content: "c" }],
+      assembledPrompt: "queued",
+    });
+    const executor = new TaskExecutor(
+      () => makeFakeEngine(events),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+    );
+    const task = makeTask();
+    task.interventionQueue.push({ text: "queued", user: "u" });
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    expect(fakeBuilder.build).not.toHaveBeenCalled();
+    // system_message·user_message 영속화도 0회 (auto-resume 흐름)
+    const sysCalls = mocks.persistEvent.mock.calls.filter(
+      (c) => (c[1] as { type: string }).type === "system_message",
+    );
+    expect(sysCalls.length).toBe(0);
   });
 });

@@ -23,6 +23,7 @@ import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import {
   composeFirstTurnPrompt,
   type ExecutionContextBuilder,
+  type PreparedContext,
 } from "../context/context_builder.js";
 
 import type { Task, TaskStatus } from "./task_models.js";
@@ -114,30 +115,45 @@ export class TaskExecutor {
     // 분기 조합으로 wire 의미 등가 달성.
     let turnPrompt: string;
     if (task.interventionQueue.length === 0) {
-      // 신규 task — Python `_persist_initial_messages`(L120-182) 의 user_message 분기 정합.
-      // 영속화 실패는 격리 — 본 task 진행에 영향 0 (Python L179-180 try/except 정합).
-      await this._persistInitialUserMessage(task);
-
-      // B-6 context_builder: folder_prompt + atom_context + soulstream_item을 첫 turn prompt에
-      // 합성. codex SDK 0.130.0이 turn-level systemPrompt 미지원이라 단일 문자열로 prepend.
-      // contextBuilder 미주입(legacy 호출자·테스트)이면 task.prompt 그대로 사용 (분석 캐시
-      // `20260517-2338-codex-ts-context-builder-B-6.md` §C-5).
+      // 신규 task — Python `_persist_initial_messages`(L120-182) 정합.
+      //
+      // 순서 (Python L131-180):
+      //   1. ctx = contextBuilder.build (있으면)
+      //   2. system_message 영속화·broadcast (ctx.effectiveSystemPrompt 있을 때)
+      //   3. user_message 영속화·broadcast (payload.context = ctx.combinedContextItems)
+      //   4. turn prompt 합성 (codex SDK는 turn-level systemPrompt 미지원이라 단일 문자열로 prepend)
+      //
+      // ctx를 *먼저* build해야 (2)(3)(4) 모두에 같은 산출물을 forward할 수 있다 — Python 정본도
+      // _persist_initial_messages 호출 직전 ctx를 인자로 받는다. PR #57은 (4)만 이식했고
+      // (2)(3) wire emit이 누락되어 대시보드 ⚙️ 시스템 프롬프트 / 📋 Context 슬롯이 비어
+      // 보였다 — 분석 캐시 `20260518-0945-codex-context-mcp-cancel.md` Part A-3a.
+      //
+      // contextBuilder 미주입(legacy 호출자·테스트)이면 ctx=undefined → (2) skip, (3) context
+      // 키 생략, (4) task.prompt 그대로. Python `if ... and ctx.effective_system_prompt` 가드와
+      // 같은 의미 (L134).
+      //
       // Auto-resume·intervention turn은 본 분기에 진입하지 않으므로 system_prompt·atom_context
       // 재주입 안 함 (Python `_resolve_folder` L100 `task.resume_session_id is None` 정합).
+      let ctx: PreparedContext | undefined;
       if (this.contextBuilder) {
         try {
-          const ctx = await this.contextBuilder.build(task, agent);
-          turnPrompt = composeFirstTurnPrompt({
-            ...ctx,
-            assembledPrompt: task.prompt,
-          });
+          ctx = await this.contextBuilder.build(task, agent);
         } catch (err) {
           this.logger.warn(
             { err, sessionId: task.agentSessionId },
             "context_builder failed — falling back to task.prompt without context",
           );
-          turnPrompt = task.prompt;
         }
+      }
+
+      // 영속화 실패는 격리 — 본 task 진행에 영향 0 (Python L179-180 try/except 정합).
+      await this._persistInitialMessages(task, ctx);
+
+      if (ctx) {
+        turnPrompt = composeFirstTurnPrompt({
+          ...ctx,
+          assembledPrompt: task.prompt,
+        });
       } else {
         turnPrompt = task.prompt;
       }
@@ -274,18 +290,68 @@ export class TaskExecutor {
   }
 
   /**
-   * 첫 turn 진입 *전*에 user_message 이벤트를 events 테이블에 영속화하고 wire로 broadcast.
+   * 첫 turn 진입 *전*에 system_message + user_message 이벤트를 events 테이블에 영속화하고
+   * wire로 broadcast.
    *
-   * Python `task_executor.py:120-182 _persist_initial_messages` 정본의 codex 적응판.
-   * 본 codex 노드는 system_prompt를 codex SDK가 받지 않으므로 user_message만 영속화한다
-   * (Python의 system_message 분기는 systemPrompt 미지원으로 skip).
+   * Python `task_executor.py:120-182 _persist_initial_messages` 정본 그대로 이식 (복수형).
+   * 두 분기 모두 영속화·broadcast 됨으로써 대시보드의 ⚙️ 시스템 프롬프트 / 📋 Context (N)
+   * 슬롯에 표시되는 데이터가 채워진다 — 분석 캐시 `20260518-0945-codex-context-mcp-cancel.md`
+   * Part A-3a wire emit 누락 root cause 직접 해소.
    *
-   * wire 형상 (Python L151-156 정합):
-   *   {type: "user_message", user, text, caller_info?, timestamp}
+   * 1. system_message (ctx.effectiveSystemPrompt 있을 때, Python L133-146):
+   *      {type: "system_message", text: effectiveSystemPrompt}
    *
-   * 부가 기능 — 실패는 격리 (Python L179-180): 본 task 진행에 영향 0.
+   * 2. user_message (Python L148-180):
+   *      {type: "user_message", user, text, caller_info?, context?, timestamp}
+   *    - context 필드: ctx.combinedContextItems가 비어있지 않을 때만 추가 (Python은
+   *      `ctx.combined_context_items` 무조건 박지만 빈 list면 dashboard 표시 0 — TS는 명시).
+   *
+   * PREVIEW_FIELD_MAP에 system_message는 *의도적 제외* (Python L298-305 정합) — last_message
+   * wire에는 안 박힘. broadcast 자체는 정상 발화하므로 wire 구독자(orch dashboard)가 받아 표시.
+   *
+   * 부가 기능 — 실패는 격리 (Python L145-146·L179-180 try/except): 본 task 진행에 영향 0.
    */
-  private async _persistInitialUserMessage(task: Task): Promise<void> {
+  private async _persistInitialMessages(
+    task: Task,
+    ctx?: PreparedContext,
+  ): Promise<void> {
+    // 1. system_message 분기 — Python L133-146 정합
+    //
+    // Python 정본은 `{type, text}` 2키만 박는다 (task_executor.py L136-139).
+    // soul-ui `shared/sse-events.ts SystemMessageEvent` type도 동일 2키.
+    // 추가 키(timestamp 등)는 wire-schema 비대칭을 유발하므로 명시 제외.
+    if (ctx?.effectiveSystemPrompt) {
+      const sysEvent: Record<string, unknown> = {
+        type: "system_message",
+        text: ctx.effectiveSystemPrompt,
+      };
+      try {
+        const eventId = await this.persistence.persistEvent(
+          task.agentSessionId,
+          sysEvent as SSEEventPayload,
+        );
+        task.lastEventId = eventId;
+      } catch (err) {
+        this.logger.warn(
+          { err, sessionId: task.agentSessionId },
+          "system_message persistEvent failed",
+        );
+      }
+      try {
+        await this.broadcaster.emitEventEnvelope(
+          task.agentSessionId,
+          sysEvent as SSEEventPayload,
+        );
+      } catch (err) {
+        this.logger.warn(
+          { err, sessionId: task.agentSessionId },
+          "system_message broadcast failed",
+        );
+      }
+      // handleSideEffects 호출 안 함 — PREVIEW_FIELD_MAP에 system_message 없음 (Python 정합).
+    }
+
+    // 2. user_message 분기 — Python L148-180 정합
     const event: Record<string, unknown> = {
       type: "user_message",
       user: task.callerInfo?.display_name ?? task.callerInfo?.user_id ?? "unknown",
@@ -294,6 +360,9 @@ export class TaskExecutor {
     };
     if (task.callerInfo) {
       event.caller_info = task.callerInfo;
+    }
+    if (ctx && ctx.combinedContextItems.length > 0) {
+      event.context = ctx.combinedContextItems;
     }
     try {
       const eventId = await this.persistence.persistEvent(
