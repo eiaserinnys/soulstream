@@ -49,7 +49,8 @@ from .protocol import (
 )
 
 from soul_server.service.session_query_service import get_session_query_service
-from soul_server.service.task_factory import CreateTaskParams
+# NOTE: CreateTaskParams 직접 import 제거 — _handle_create_session이 submit_message 정본을
+# 거치도록 변경되어 본 모듈은 CreateTaskParams를 직접 다루지 않는다 (design-principles §3).
 
 if TYPE_CHECKING:
     from soul_server.service.engine_adapter import SoulEngineAdapter
@@ -179,36 +180,55 @@ class CommandDispatcher:
     # ─── Session lifecycle commands ───────────────────
 
     async def _handle_create_session(self, cmd: dict) -> None:
-        """세션 생성 명령 처리."""
+        """세션 생성 명령 처리.
+
+        submit_message 정본(design-principles §3)을 거쳐 신규/running/terminal 3분기를 처리한다.
+        cross-node CMD_CREATE_SESSION이 *terminal 세션*에 대해 들어오는 경우(resume 시나리오),
+        skip_claude_resume=True가 적용되어 Claude SDK가 fresh 세션으로 시작 — Claude 계정
+        limit 후 previous_message_id 400 회로(atom 0fa49771) 차단. /execute·/intervene·
+        /api/sessions 세 라우트와 *같은 정본*을 거치는 네 번째 진입점.
+        """
+        # 함수 내부 import — 순환 import 회피 (다른 라우트 어댑터와 동일 패턴)
+        from soul_server.service.message_submission_service import (
+            SubmitMessageParams,
+            submit_message,
+        )
+
         try:
-            task = await self._tm.create_task(CreateTaskParams(
-                prompt=cmd["prompt"],
-                agent_session_id=cmd.get("agentSessionId"),
-                allowed_tools=cmd.get("allowedTools"),
-                disallowed_tools=cmd.get("disallowedTools"),
-                use_mcp=cmd.get("use_mcp") if cmd.get("use_mcp") is not None else cmd.get("useMcp", True),
-                context=cmd.get("context"),
-                context_items=cmd.get("context_items"),
-                extra_context_items=cmd.get("extra_context_items"),
-                profile_id=cmd.get("profile"),
-                folder_id=cmd.get("folderId"),
-                system_prompt=cmd.get("systemPrompt"),
-                oauth_token=cmd.get("oauth_token"),
-                caller_session_id=cmd.get("caller_session_id"),
-                caller_info=cmd.get("caller_info"),
-                model=cmd.get("model"),
-            ))
+            submit_result = await submit_message(
+                SubmitMessageParams(
+                    prompt=cmd["prompt"],
+                    agent_session_id=cmd.get("agentSessionId"),
+                    user=cmd.get("caller_info", {}).get("source", "upstream") if isinstance(cmd.get("caller_info"), dict) else "upstream",
+                    allowed_tools=cmd.get("allowedTools"),
+                    disallowed_tools=cmd.get("disallowedTools"),
+                    use_mcp=cmd.get("use_mcp") if cmd.get("use_mcp") is not None else cmd.get("useMcp", True),
+                    context=cmd.get("context"),
+                    context_items=cmd.get("context_items"),
+                    extra_context_items=cmd.get("extra_context_items"),
+                    profile_id=cmd.get("profile"),
+                    folder_id=cmd.get("folderId"),
+                    system_prompt=cmd.get("systemPrompt"),
+                    oauth_token=cmd.get("oauth_token"),
+                    caller_session_id=cmd.get("caller_session_id"),
+                    caller_info=cmd.get("caller_info"),
+                    model=cmd.get("model"),
+                ),
+                task_manager=self._tm,
+            )
         except ValueError as e:
             await self._send_error(str(e), request_id=cmd.get("requestId", ""))
             return
-        session_id = task.agent_session_id
+        session_id = submit_result.agent_session_id
 
-        # 실행 시작
-        await self._tm.executor.start_execution(
-            agent_session_id=session_id,
-            claude_runner=self._engine,
-            resource_manager=self._rm,
-        )
+        # start_execution은 신규/auto_resumed 케이스에서만 호출.
+        # intervened(running 세션 큐잉)는 이미 실행 중이므로 새 실행을 시작하지 않는다 (race 차단).
+        if submit_result.kind in ("new_session", "auto_resumed"):
+            await self._tm.executor.start_execution(
+                agent_session_id=session_id,
+                claude_runner=self._engine,
+                resource_manager=self._rm,
+            )
 
         # 이벤트 스트리밍 시작
         stream_task = asyncio.create_task(

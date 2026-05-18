@@ -749,15 +749,22 @@ class TestClaudeSessionIndex:
         assert len(running) == 1
         assert running[0].claude_session_id == "claude-abc"
 
-    async def test_interrupted_resume_uses_claude_session_id_from_register(self, manager):
-        """INTERRUPTED 세션에 add_intervention 시 resume_session_id가 register_session에서 저장된 값을 사용한다.
+    async def test_interrupted_resume_drops_claude_resume_chain(self, manager):
+        """INTERRUPTED 세션에 add_intervention 시 task.resume_session_id가 None으로 박힌다.
+
+        본 fix(submit_message 통합 + skip_claude_resume=True) 이후:
+        - add_intervention의 terminal 분기는 submit_message를 거쳐 skip_claude_resume=True를 적용한다.
+        - claude_session_id 인덱스는 register_session에서 set된 채로 유지되지만, resume_session_id는
+          명시적으로 None이 되어 Claude SDK가 ClaudeAgentOptions.resume 없이 fresh 세션으로 시작한다.
+        - 이로써 Claude 계정 limit 이후 previous_message_id 400 에러 회로가 차단된다.
 
         시나리오:
         1. create_task로 태스크 생성
         2. register_session으로 claude_session_id 설정 (complete_task 전에 재시작 상황 시뮬레이션)
         3. 세션을 INTERRUPTED 상태로 전환
         4. add_intervention으로 resume
-        5. 새 태스크의 resume_session_id가 register_session에서 설정된 값임을 확인
+        5. 새 태스크의 resume_session_id가 None임을 확인 (skip_claude_resume=True 적용 결과)
+        6. claude_session_id는 register에서 set된 값이 *인덱스에는* 유지됨 (역방향 lookup 정합성 보존)
         """
         await manager.create_task(CreateTaskParams(prompt="hello", agent_session_id="sess-1"))
         await manager.register_session("claude-abc", "sess-1")
@@ -766,7 +773,7 @@ class TestClaudeSessionIndex:
         task = await manager.get_task("sess-1")
         task.status = TaskStatus.INTERRUPTED
 
-        # add_intervention → create_task(resume) 호출
+        # add_intervention → submit_message(skip_claude_resume=True) 경유 호출
         result = await manager.add_intervention(
             agent_session_id="sess-1",
             text="재개해줘",
@@ -774,10 +781,10 @@ class TestClaudeSessionIndex:
         )
         assert result["auto_resumed"] is True
 
-        # resume된 태스크의 resume_session_id가 register_session에서 설정된 값이어야 함
+        # resume된 태스크의 resume_session_id는 None (limit 후 previous_message_id 회로 차단)
         resumed_task = await manager.get_task("sess-1")
         assert resumed_task.status == TaskStatus.RUNNING
-        assert resumed_task.resume_session_id == "claude-abc"
+        assert resumed_task.resume_session_id is None
 
 
 class TestCleanup:

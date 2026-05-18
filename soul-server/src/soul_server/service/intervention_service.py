@@ -62,6 +62,10 @@ async def intervene(
         NodeMismatchError — 세션이 다른 노드 소속. 라우트가 403으로 변환.
         TaskNotFoundError — 세션 미존재. 라우트가 404로 변환.
     """
+    # 본 함수는 라우트용 진입점이다. 동작 정본은 ``submit_message``(message_submission_service);
+    # 본 함수는 ``task_manager.add_intervention``(submit_message의 backward-compat wrapper)을
+    # 호출하여 자연스럽게 같은 정본을 거친다. terminal 분기에서 ``skip_claude_resume=True``가
+    # 적용되어 Claude SDK가 fresh 세션으로 시작 — atom 0fa49771 정본.
     result = await task_manager.add_intervention(
         agent_session_id=agent_session_id,
         text=text,

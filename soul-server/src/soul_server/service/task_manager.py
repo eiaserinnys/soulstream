@@ -570,80 +570,68 @@ class TaskManager:
         caller_info: Optional[dict] = None,
     ) -> dict:
         """
-        세션에 개입 메시지 추가 (자동 resume 포함)
+        세션에 개입 메시지 추가 (자동 resume 포함) — submit_message 위임 wrapper.
 
-        Running 세션이면 intervention queue에 추가합니다.
-        완료/에러 세션이면 자동으로 resume하여 대화를 이어갑니다.
-        퇴거된 세션도 on-demand 로드하여 처리합니다.
+        본 메서드는 ``submit_message`` 정본(``message_submission_service``)의 backward-compat
+        wrapper다. running 큐잉/terminal auto-resume 분기 자체는 ``submit_message``가 단일
+        정본으로 보유하고(``design-principles §3``), 본 메서드는 (1) graceful_shutdown용
+        ``skip_resume=True`` 특수 처리와 (2) 기존 호출자(``_notify_caller_completion``,
+        cross-node relay 등)와의 시그니처·반환 형식 호환만 담당한다.
+
+        terminal 분기에서 ``skip_claude_resume=True``가 자동으로 적용되어 ``task.resume_session_id``가
+        None이 된다 — Claude 계정 limit 이후 ``previous_message_id`` 400 회로(atom 0fa49771) 차단.
 
         Args:
             agent_session_id: 세션 식별자
             text: 메시지 텍스트
             user: 사용자
             attachment_paths: 첨부 파일 경로
-            skip_resume: True이면 완료/퇴거 세션에 대한 auto-resume을 건너뜀 (graceful_shutdown용)
-            caller_info: 발신자 신원(통합 v1). F-9 fix(2026-05-08)로 추가. running
-                세션엔 intervention queue에 첨부되어 InterventionSentEvent.caller_info로
-                전파되고, auto-resume 세션엔 CreateTaskParams.caller_info로 전달되어
-                user_message 이벤트에 첨부된다.
+            skip_resume: True이면 완료/퇴거 세션에 대한 auto-resume을 건너뜀 (graceful_shutdown용).
+                running 세션이면 본 플래그와 무관하게 큐잉된다 (기존 동작 보존).
+            caller_info: 발신자 신원(통합 v1). F-9 fix(2026-05-08).
 
         Returns:
             결과 딕셔너리:
             - running: {"queue_position": int}
             - 자동 resume: {"auto_resumed": True, "agent_session_id": str}
-            - skip_resume: {"skipped": True}
+            - skip_resume + non-running: {"skipped": True}
 
         Raises:
             TaskNotFoundError: 세션이 존재하지 않음 (skip_resume=False인 경우)
         """
-        task = self._tasks.get(agent_session_id)
-
-        if task and task.status == TaskStatus.RUNNING:
-            # running 세션에 직접 개입
-            message = {
-                "text": text,
-                "user": user,
-                "attachment_paths": attachment_paths or [],
-                "caller_info": caller_info,
-            }
-            await task.intervention_queue.put(message)
-            return {"queue_position": task.intervention_queue.qsize()}
-
+        # graceful_shutdown 특수 케이스: skip_resume=True
+        # running 세션이면 본 플래그와 무관하게 큐잉(submit_message running 분기에 위임).
+        # non-running(terminal/evicted/없음)이면 즉시 skipped 반환 — auto-resume 미수행.
         if skip_resume:
-            return {"skipped": True}  # 완료/퇴거 세션 resume 건너뜀
+            task = self._tasks.get(agent_session_id)
+            if not (task and task.status == TaskStatus.RUNNING):
+                return {"skipped": True}
+            # running이면 아래 submit_message 호출로 자연스럽게 떨어짐 (큐잉만 발생)
 
-        if not task:
-            # 퇴거된 세션 on-demand 로드
-            task = await self._eviction_manager.load_evicted_task(self._db, agent_session_id)
-            if not task:
-                raise TaskNotFoundError(f"Session not found: {agent_session_id}")
-            # 방어 코드: startup에서 처리 누락되거나 레이스컨디션으로 RUNNING 상태가
-            # 남아있을 경우 INTERRUPTED로 강제 전환하여 재개 가능하게 함
-            if task.status == TaskStatus.RUNNING:
-                logger.warning(
-                    f"Evicted task has RUNNING status: {agent_session_id}. "
-                    "Forcing to INTERRUPTED for safe resume."
-                )
-                task.status = TaskStatus.INTERRUPTED
-                await self._db.update_session_status(
-                    agent_session_id, TaskStatus.INTERRUPTED.value
-                )
+        # 일반 케이스 — submit_message 정본 호출
+        # import는 함수 내부 — task_manager ↔ message_submission_service 순환 import 방지
+        from soul_server.service.message_submission_service import (
+            SubmitMessageParams,
+            submit_message,
+        )
 
-        # 완료/에러/중단 → 자동 resume (같은 세션 재활성화)
-        extra_ctx = build_attachment_context_items(attachment_paths)
+        result = await submit_message(
+            SubmitMessageParams(
+                prompt=text,
+                agent_session_id=agent_session_id,
+                user=user,
+                attachment_paths=attachment_paths,
+                caller_info=caller_info,
+            ),
+            task_manager=self,
+        )
 
-        await self.create_task(CreateTaskParams(
-            prompt=text,
-            agent_session_id=agent_session_id,
-            client_id=user,
-            extra_context_items=extra_ctx,
-            attachment_paths=attachment_paths,
-            caller_info=caller_info,
-        ))
-
+        if result.kind == "intervened":
+            return {"queue_position": result.queue_position}
+        # auto_resumed (kind='new_session'은 agent_session_id가 항상 제공되므로 발생 불가지만 방어)
         return {
             "auto_resumed": True,
-            "agent_session_id": agent_session_id,
+            "agent_session_id": result.agent_session_id,
         }
 
     async def append_session_metadata(

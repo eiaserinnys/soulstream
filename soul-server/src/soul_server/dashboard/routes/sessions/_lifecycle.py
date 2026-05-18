@@ -54,27 +54,28 @@ async def api_create_session(body: CreateSessionBody, request: Request):
         system_node_id=settings.soulstream_node_id,
     )
 
+    # 세션 생성/재개 — submit_message 정본(message_submission_service)에 위임.
+    # TaskConflictError 분기는 *제거됨* — submit_message가 running 세션을 kind='intervened'로
+    # 자동 처리한다 (의미상 그 케이스는 intervention이며 새 task 생성 충돌 아님).
+    from soul_server.service.message_submission_service import (
+        SubmitMessageParams,
+        submit_message,
+    )
+
     try:
-        task = await task_manager.create_task(CreateTaskParams(
-            prompt=body.prompt,
-            agent_session_id=body.agentSessionId,
-            use_mcp=body.use_mcp,
-            folder_id=body.folderId,
-            profile_id=body.agentId,
-            extra_context_items=extra_context_items,
-            caller_session_id=body.caller_session_id,
-            caller_info=caller_info,
-            attachment_paths=body.attachmentPaths,
-        ))
-    except TaskConflictError:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "error": {
-                    "code": "SESSION_CONFLICT",
-                    "message": f"이미 실행 중인 세션입니다: {body.agentSessionId}",
-                }
-            },
+        submit_result = await submit_message(
+            SubmitMessageParams(
+                prompt=body.prompt,
+                agent_session_id=body.agentSessionId,
+                use_mcp=body.use_mcp,
+                folder_id=body.folderId,
+                profile_id=body.agentId,
+                extra_context_items=extra_context_items,
+                caller_session_id=body.caller_session_id,
+                caller_info=caller_info,
+                attachment_paths=body.attachmentPaths,
+            ),
+            task_manager=task_manager,
         )
     except NodeMismatchError as e:
         raise HTTPException(
@@ -86,13 +87,16 @@ async def api_create_session(body: CreateSessionBody, request: Request):
             },
         )
 
-    await task_manager.executor.start_execution(
-        agent_session_id=task.agent_session_id,
-        claude_runner=get_soul_engine(),
-        resource_manager=resource_manager,
-    )
+    # start_execution은 신규/auto_resumed 케이스에서만 호출.
+    # intervened(running 세션 큐잉)는 이미 실행 중이므로 새 실행을 시작하지 않는다.
+    if submit_result.kind in ("new_session", "auto_resumed"):
+        await task_manager.executor.start_execution(
+            agent_session_id=submit_result.agent_session_id,
+            claude_runner=get_soul_engine(),
+            resource_manager=resource_manager,
+        )
 
-    return {"agentSessionId": task.agent_session_id, "status": "running"}
+    return {"agentSessionId": submit_result.agent_session_id, "status": "running"}
 
 
 # === /api/sessions/{id}/intervene (POST) ===
