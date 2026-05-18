@@ -23,6 +23,31 @@ import type { EventPersistence } from "../db/event_persistence.js";
 import type { CallerInfo, InterventionMessage, Task, TaskStatus } from "./task_models.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import type { SSEEventPayload } from "../engine/protocol.js";
+import type { ContextItem } from "../context/prompt_assembler.js";
+
+/**
+ * Auto-resume 시 `user_message.context`로 박을 *최소* context_items 빌더 interface.
+ *
+ * Python `service/execution_context_builder.py` `_assemble_context` L175-179의 resume 분기 정합 —
+ * `combined_context_items = [soulstream_item] + atom_context_items(빈) + task.context_items(빈)`로
+ * resume 시 `[soulstream_item]`만 박힌다 (folder prompt·atom context는 *재주입 안 함*,
+ * `_resolve_folder` L100 + `_fetch_atom_context` L111 가드 정합).
+ *
+ * Python은 *새 task를 생성*하여 `_persist_initial_messages`가 다시 호출되는 모델로 위 효과를
+ * 달성. TS는 같은 task 인스턴스를 재활용하므로 `_addInterventionAutoResume`가 본 interface로
+ * 동등한 wire payload(user_message.context = [soulstream_item])를 합성한다.
+ *
+ * design-principles §1 (지식 경계): TaskManager는 ExecutionContextBuilder를 *import하지 않는다* —
+ * 본 1-메서드 interface로만 의존. 구현체(ExecutionContextBuilder.buildResumeContextItems)는
+ * 같은 패키지지만 type-level seam이 유지된다.
+ */
+export interface ResumeContextProvider {
+  /**
+   * @returns 빈 배열이면 `_addInterventionAutoResume`이 user_message에서 `context` 키를 *생략*한다
+   * (대시보드 컨텍스트 블록 미표시 → 기존 PR #54 이전 동작).
+   */
+  buildResumeContextItems(task: Task): Promise<ContextItem[]>;
+}
 
 export interface CreateTaskParams {
   agentSessionId: string;
@@ -80,6 +105,14 @@ export class TaskManager {
      * 호출자·테스트 환경 호환 — broadcast만 발행).
      */
     private readonly persistence?: EventPersistence,
+    /**
+     * B-7 (PR fix/soul-server-ts-chat-sse-python-parity F1): auto-resume 시
+     * `user_message.context`로 박을 최소 context_items 빌더.
+     *
+     * 미주입 시 context 키 생략 (PR #57 이전 동작 유지 — legacy 호출자·테스트 호환).
+     * 운영(main.ts)에서는 ExecutionContextBuilder를 inject하여 Python 등가 wire 발화.
+     */
+    private readonly resumeContextProvider?: ResumeContextProvider,
   ) {}
 
   /**
@@ -469,6 +502,26 @@ export class TaskManager {
     if (message.attachmentPaths && message.attachmentPaths.length > 0) {
       userMessageEvent.attachments = message.attachmentPaths;
     }
+
+    // F1 (PR fix/soul-server-ts-chat-sse-python-parity): user_message.context 합성.
+    // Python `_persist_initial_messages` L155 `"context": ctx.combined_context_items` 정합.
+    // resume 시 combined_context_items는 [soulstream_item]만 (folder prompt·atom 미주입).
+    // resumeContextProvider 미주입(legacy) 또는 빌드 실패 → context 키 생략 (graceful,
+    // PR #54 이전 동작 보존). 빈 배열 반환도 동일하게 context 키 생략.
+    if (this.resumeContextProvider) {
+      try {
+        const items = await this.resumeContextProvider.buildResumeContextItems(task);
+        if (items.length > 0) {
+          userMessageEvent.context = items;
+        }
+      } catch (err) {
+        this.logger.warn(
+          { err, sessionId: task.agentSessionId },
+          "buildResumeContextItems failed — proceeding without context",
+        );
+      }
+    }
+
     if (this.persistence) {
       try {
         const eventId = await this.persistence.persistEvent(

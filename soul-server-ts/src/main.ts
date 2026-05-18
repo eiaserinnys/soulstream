@@ -109,6 +109,27 @@ async function main(): Promise<void> {
 
   const broadcaster = new SessionBroadcaster(send, agentRegistry, env.SOULSTREAM_NODE_ID);
   const persistence = new EventPersistence(db, broadcaster, logger);
+
+  // B-6 context_builder: 신규 task 첫 turn 진입 시 folder_prompt + atom_context + soulstream_item을
+  // 합성한 prompt를 codex에 전달. atom env 미설정이면 atom 호출 skip (graceful).
+  //
+  // F1 (PR fix/soul-server-ts-chat-sse-python-parity): 동일 인스턴스가 TaskManager의
+  // `resumeContextProvider`로도 inject되어 auto-resume user_message.context 합성에 사용된다.
+  // 따라서 contextBuilder 생성을 TaskManager 생성보다 *먼저* 둔다.
+  const contextBuilder = new ExecutionContextBuilder(
+    db,
+    agentRegistry,
+    {
+      nodeId: env.SOULSTREAM_NODE_ID,
+      atom: {
+        enabled: Boolean(env.ATOM_ENABLED),
+        serverUrl: env.ATOM_SERVER_URL ?? "",
+        apiKey: env.ATOM_API_KEY ?? "",
+      },
+    },
+    logger,
+  );
+
   const taskManager = new TaskManager(
     env.SOULSTREAM_NODE_ID,
     db,
@@ -116,6 +137,8 @@ async function main(): Promise<void> {
     logger,
     // B-5: intervention_sent 영속화 정본 (Python `task_executor.py:352-389` 정합).
     persistence,
+    // F1: auto-resume user_message.context 합성 (ExecutionContextBuilder를 ResumeContextProvider로 사용).
+    contextBuilder,
   );
 
   // EngineFactory — backend별 분기. 본 PR은 codex 전용.
@@ -137,21 +160,7 @@ async function main(): Promise<void> {
       `Unsupported backend "${agent.backend}" in soul-server-ts (Codex 전담 노드, agent=${agent.id})`,
     );
   };
-  // B-6 context_builder: 신규 task 첫 turn 진입 시 folder_prompt + atom_context + soulstream_item을
-  // 합성한 prompt를 codex에 전달. atom env 미설정이면 atom 호출 skip (graceful).
-  const contextBuilder = new ExecutionContextBuilder(
-    db,
-    agentRegistry,
-    {
-      nodeId: env.SOULSTREAM_NODE_ID,
-      atom: {
-        enabled: Boolean(env.ATOM_ENABLED),
-        serverUrl: env.ATOM_SERVER_URL ?? "",
-        apiKey: env.ATOM_API_KEY ?? "",
-      },
-    },
-    logger,
-  );
+
   const taskExecutor = new TaskExecutor(
     engineFactory,
     db,

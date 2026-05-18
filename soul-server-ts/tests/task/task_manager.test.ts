@@ -1,9 +1,10 @@
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
+import type { ContextItem } from "../../src/context/prompt_assembler.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { EnginePort } from "../../src/engine/protocol.js";
-import { TaskManager } from "../../src/task/task_manager.js";
+import { TaskManager, type ResumeContextProvider } from "../../src/task/task_manager.js";
 import type { Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 
@@ -951,5 +952,174 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
     expect(task.interventionQueue).toHaveLength(1);
     expect(task.interventionQueue[0].text).toBe("새 메시지");
     expect(task.prompt).toBe("원래");  // 원래 prompt 보존
+  });
+});
+
+// F1 (PR fix/soul-server-ts-chat-sse-python-parity): auto-resume 시 user_message.context 합성.
+// Python `_persist_initial_messages` L155 정합 — resume 시 `[soulstream_item]`만 박혀
+// 대시보드 컨텍스트 블록이 표시된다 (PR #54 이전 누락 결함 봉인).
+describe("TaskManager.addIntervention — auto-resume user_message.context 합성 (F1)", () => {
+  /**
+   * ResumeContextProvider mock 헬퍼. 호출 횟수·결과 카운트를 노출.
+   */
+  function makeResumeContextProvider(
+    items: ContextItem[] | (() => ContextItem[]) = [],
+  ): ResumeContextProvider & { calls: number } {
+    const provider = {
+      calls: 0,
+      async buildResumeContextItems(_task: Task): Promise<ContextItem[]> {
+        provider.calls += 1;
+        return typeof items === "function" ? items() : items;
+      },
+    };
+    return provider;
+  }
+
+  it("resumeContextProvider가 1개 ContextItem 반환 → user_message envelope.context에 그대로 박힘", async () => {
+    const mocks = makeMocks();
+    const soulstreamItem: ContextItem = {
+      key: "soulstream_session",
+      label: "Soulstream 세션 정보",
+      content: { agent_session_id: "s1", folder: "✨ 소울스트림" },
+    };
+    const provider = makeResumeContextProvider([soulstreamItem]);
+    const tm = new TaskManager(
+      "n",
+      mocks.db,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,  // persistence 미주입
+      provider,
+    );
+    const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
+    task.status = "completed";
+    task.codexThreadId = "thr-1";
+
+    await tm.addIntervention(
+      { agentSessionId: "s1", text: "재개", user: "u" },
+      vi.fn(),
+    );
+
+    // user_message envelope 발행 + context = [soulstreamItem]
+    const userMsg = mocks.emitEventEnvelope.mock.calls.find(
+      (c) => (c[1] as { type: string }).type === "user_message",
+    );
+    expect(userMsg).toBeDefined();
+    const payload = userMsg![1] as Record<string, unknown>;
+    expect(payload.context).toEqual([soulstreamItem]);
+    expect(provider.calls).toBe(1);
+  });
+
+  it("resumeContextProvider 미주입(legacy) → context 키 생략 (PR #54 이전 동작 보존)", async () => {
+    const mocks = makeMocks();
+    const tm = new TaskManager(
+      "n",
+      mocks.db,
+      mocks.broadcaster,
+      silentLogger,
+      // persistence와 resumeContextProvider 둘 다 미주입
+    );
+    const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
+    task.status = "completed";
+
+    await tm.addIntervention(
+      { agentSessionId: "s1", text: "재개", user: "u" },
+      vi.fn(),
+    );
+
+    const userMsg = mocks.emitEventEnvelope.mock.calls.find(
+      (c) => (c[1] as { type: string }).type === "user_message",
+    );
+    expect(userMsg).toBeDefined();
+    expect(userMsg![1] as Record<string, unknown>).not.toHaveProperty("context");
+  });
+
+  it("resumeContextProvider가 빈 배열 반환 → context 키 생략 (graceful)", async () => {
+    const mocks = makeMocks();
+    const provider = makeResumeContextProvider([]);
+    const tm = new TaskManager(
+      "n",
+      mocks.db,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      provider,
+    );
+    const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
+    task.status = "completed";
+
+    await tm.addIntervention(
+      { agentSessionId: "s1", text: "재개", user: "u" },
+      vi.fn(),
+    );
+
+    const userMsg = mocks.emitEventEnvelope.mock.calls.find(
+      (c) => (c[1] as { type: string }).type === "user_message",
+    );
+    expect(userMsg).toBeDefined();
+    expect(userMsg![1] as Record<string, unknown>).not.toHaveProperty("context");
+    expect(provider.calls).toBe(1);
+  });
+
+  it("resumeContextProvider throw → context 키 생략 + user_message는 정상 발행 (graceful)", async () => {
+    const mocks = makeMocks();
+    const provider: ResumeContextProvider = {
+      async buildResumeContextItems(): Promise<ContextItem[]> {
+        throw new Error("db lookup failed");
+      },
+    };
+    const tm = new TaskManager(
+      "n",
+      mocks.db,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      provider,
+    );
+    const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
+    task.status = "completed";
+
+    const result = await tm.addIntervention(
+      { agentSessionId: "s1", text: "재개", user: "u" },
+      vi.fn(),
+    );
+
+    expect(result).toEqual({ autoResumed: true });
+    const userMsg = mocks.emitEventEnvelope.mock.calls.find(
+      (c) => (c[1] as { type: string }).type === "user_message",
+    );
+    expect(userMsg).toBeDefined();
+    expect(userMsg![1] as Record<string, unknown>).not.toHaveProperty("context");
+  });
+
+  it("running task에서는 resumeContextProvider 호출 안 함 (intervention_sent 분기)", async () => {
+    const mocks = makeMocks();
+    const provider = makeResumeContextProvider([
+      { key: "soulstream_session", label: "x", content: {} },
+    ]);
+    const tm = new TaskManager(
+      "n",
+      mocks.db,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      provider,
+    );
+    await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
+    // 새로 만든 task는 status="running" — intervention_sent 경로
+
+    await tm.addIntervention(
+      { agentSessionId: "s1", text: "추가", user: "u" },
+      vi.fn(),
+    );
+
+    // intervention_sent envelope만 발행됨, user_message는 없음
+    const sentTypes = mocks.emitEventEnvelope.mock.calls.map(
+      (c) => (c[1] as { type: string }).type,
+    );
+    expect(sentTypes).toContain("intervention_sent");
+    expect(sentTypes).not.toContain("user_message");
+    // resumeContextProvider도 호출되지 않음 (auto-resume 분기에서만 호출)
+    expect(provider.calls).toBe(0);
   });
 });
