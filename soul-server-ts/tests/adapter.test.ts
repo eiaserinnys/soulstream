@@ -129,8 +129,10 @@ describe("UpstreamAdapter", () => {
     expect(first.supported_backends).toEqual(["codex"]);
     // Phase B-3: agentRegistry yaml 결과로 max_concurrent = agents.length
     expect(first.capabilities).toEqual({ max_concurrent: 1 });
+    // PR(portrait wire): agents 매핑에 portrait_url 추가 (Python adapter.py:212-233 정합).
+    // portrait_path 미설정 fixture → portrait_url=""·portrait_b64 키 미박힘.
     expect(first.agents).toEqual([
-      { id: "codex-default", name: "Codex Default", backend: "codex" },
+      { id: "codex-default", name: "Codex Default", backend: "codex", portrait_url: "" },
     ]);
 
     await adapter.shutdown();
