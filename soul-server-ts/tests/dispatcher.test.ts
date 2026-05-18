@@ -321,14 +321,54 @@ describe("CommandDispatcher.intervene (B-4)", () => {
   });
 });
 
-describe("CommandDispatcher unknown command", () => {
-  it("respond·list_sessions·subscribe_events 등 → Not implemented error", async () => {
+describe("CommandDispatcher.subscribe_events (SSE realtime sync fix)", () => {
+  // 사용자 보고: codex 세션의 진행 중 text_delta가 채팅 영역에 즉시 표시되지 않음. REST history는
+  // 정상. 분석 캐시 `20260518-1218-codex-sse-realtime-sync.md` 가설 X — subscribe_events 미구현이
+  // 간접 차단. dispatcher가 "Not implemented" error 응답을 wire에 보낸 흔적이 라이브 로그에서 6회 확인.
+  // Python `_handle_subscribe_events` 정합: relay loop 시작이지만 TS는 broadcaster.emitEventEnvelope이
+  // 이미 모든 task event를 emit하므로 NOOP 수락.
+
+  it("subscribe_events → ACK 없이 silent 수락 (error 응답 미발행)", async () => {
     const { dispatcher, sent } = createDispatcher();
-    const commands = ["respond", "list_sessions", "subscribe_events"];
+    await dispatcher.dispatch({
+      type: "subscribe_events",
+      agentSessionId: "sess-x",
+      subscribeId: "sub-1",
+    });
+    expect(sent).toHaveLength(0);
+  });
+
+  it("subscribe_events에 requestId 있어도 ACK 안 발행 (Python 정본 정합)", async () => {
+    const { dispatcher, sent } = createDispatcher();
+    await dispatcher.dispatch({
+      type: "subscribe_events",
+      agentSessionId: "sess-x",
+      subscribeId: "sub-1",
+      requestId: "req-1",
+    });
+    // Python `_handle_subscribe_events`도 ACK type emit 안 함 — relay loop만 시작.
+    // orch send_subscribe_events는 fire-and-forget이라 ACK 없어도 동작 영향 0.
+    expect(sent).toHaveLength(0);
+  });
+
+  it("subscribe_events 이후 다른 cmd 흐름에 영향 없음 (handler chain 독립)", async () => {
+    const { dispatcher, sent } = createDispatcher();
+    await dispatcher.dispatch({ type: "subscribe_events", agentSessionId: "sess-x" });
+    await dispatcher.dispatch({ type: "health_check", requestId: "h-1" });
+    expect(sent).toHaveLength(1);
+    const reply = sent[0] as { type: string };
+    expect(reply.type).toBe("health_status");
+  });
+});
+
+describe("CommandDispatcher unknown command", () => {
+  it("respond·list_sessions 등 → Not implemented error (subscribe_events는 별 핸들러)", async () => {
+    const { dispatcher, sent } = createDispatcher();
+    const commands = ["respond", "list_sessions"];
     for (const type of commands) {
       await dispatcher.dispatch({ type, requestId: `${type}-id` });
     }
-    expect(sent).toHaveLength(3);
+    expect(sent).toHaveLength(2);
     for (let i = 0; i < commands.length; i++) {
       const reply = sent[i] as { type: string; message: string; command_type: string };
       expect(reply.type).toBe("error");

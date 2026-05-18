@@ -269,8 +269,22 @@ export class TaskExecutor {
     }
 
     // orch broadcast — 실패 격리
+    //
+    // 라이브 진단 trace (분석 캐시 `20260518-1218-codex-sse-realtime-sync.md` P1-A): silent succeed
+    // 시점에 호출 자체가 일어났는지 확정하기 위해 dispatch 직전·직후 logger.info 박기. LOG_LEVEL=info
+    // 운영 환경에서 emit 흐름을 가시화. 가설 X(subscribe_events 미구현 간접 차단) fix-forward가
+    // 무실효일 경우, 가설 Y(emit 호출 안 됨) vs Z(silent fail) 결정적 격리를 *같은 라이브 배포*로
+    // 가능하게 한다 — fix-forward 사이클 1회 단축.
+    this.logger.info(
+      { sessionId: task.agentSessionId, eventType },
+      "emitEventEnvelope dispatch",
+    );
     try {
       await this.broadcaster.emitEventEnvelope(task.agentSessionId, event);
+      this.logger.info(
+        { sessionId: task.agentSessionId, eventType },
+        "emitEventEnvelope completed",
+      );
     } catch (err) {
       this.logger.warn(
         { err, sessionId: task.agentSessionId, eventType },
