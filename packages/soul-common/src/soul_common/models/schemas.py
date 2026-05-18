@@ -149,6 +149,12 @@ class InterventionSentEvent(BaseModel):
     intervene 진입점에서 채워져 메시지-단위 발신자 표시를 가능하게 한다.
     빈/누락된 경우 클라이언트는 세션-단위 metadata caller_info로 fallback,
     그것도 없으면 dashboard 사용자 portrait로 fallback한다.
+
+    context는 2턴 이후 ContextBlock 표시용 context_items 배열로,
+    P2-1 fix(260518.06)로 추가됐다. Python on_intervention_sent이 wire에
+    박는 [intervention_soulstream] 같은 ContextItem dict 리스트 정본.
+    TS sse-events.ts InterventionSentEvent.context?: ContextItem[]과 정합
+    (atom Z-3 intervention path schema 정본).
     """
     type: str = "intervention_sent"
     user: str
@@ -156,6 +162,13 @@ class InterventionSentEvent(BaseModel):
     caller_info: Optional[dict] = Field(
         None,
         description="발신자 정보(통합 v1). 부재 시 클라이언트는 세션-수준 fallback.",
+    )
+    context: Optional[List[dict]] = Field(
+        None,
+        description=(
+            "context_items 배열 (soulstream/folder/agent 메타). "
+            "FE ContextBlock 표시. 부재·빈 배열 시 표시 안 함."
+        ),
     )
 
 

@@ -355,29 +355,34 @@ class TaskExecutor:
                     attachment_paths: list | None = None,
                     caller_info: dict | None = None,
                 ):
-                    # Phase A context wire 정본 통합 (Y-4, atom d7a1ad86 정본 둘 안티패턴 차단):
-                    # 이전엔 `event` dict(broadcast — context 누락) vs `intervention_msg` dict(DB persist —
-                    # context 보존) 두 dict가 분리되어 같은 wire가 wire 경로에 따라 비대칭 payload를
-                    # 전달했다. 단일 `event` dict로 통합하여 DB·broadcast·last_message update 모두 공유.
+                    # P2-3 wire 마무리 (260518.06): context 키를 _db 가드 *밖*에서 박아
+                    # broadcast가 모든 path(정상 · _db None · persist 실패)에서 context 운반.
+                    # build_soulstream_context_item은 순수 dict 빌더라 raise 안 함
+                    # (context_builder.py:17-69 내부 try/except로 socket·get_settings fallback).
+                    # design-principles §3(persist·broadcast 동일 event dict 정본 하나)
+                    # + §8(빌더 실패 시에만 context skip) + §9(UserMessage·InterventionMessage
+                    # 양쪽 wire 모두 context 운반 대칭).
+                    #
+                    # 직전 사이클(Y-4, 89b13d9b)이 event/intervention_msg dict를 단일 event로 통합.
+                    # 본 사이클은 그 통합된 dict에 context를 *항상* 박아 wire 마무리.
                     # 키 박는 순서:
-                    #  ① context 키 — persist *전* 박아 DB persist payload에 포함
-                    #  ② _event_id 키 — persist *이후* 박아 broadcast에 carry (DB 컬럼에는 미저장)
+                    #  ① context 키 — _db 가드 *밖* + persist *전* → DB persist payload 포함 + broadcast 운반
+                    #  ② _event_id 키 — persist *이후* → broadcast carry (DB 컬럼에는 미저장, ride-along)
                     event = {"type": "intervention_sent", "user": user, "text": text}
                     if attachment_paths:
                         event["attachments"] = attachment_paths
                     if caller_info:
                         event["caller_info"] = caller_info
+                    intervention_soulstream = build_soulstream_context_item(
+                        agent_session_id=task.agent_session_id,
+                        claude_session_id=task.resume_session_id,
+                        workspace_dir=effective_workspace_dir,
+                        folder_name=ctx.folder_name,
+                        agent_id=task.profile_id,
+                    )
+                    event["context"] = [intervention_soulstream]
                     if self._db is not None:
                         try:
-                            intervention_soulstream = build_soulstream_context_item(
-                                agent_session_id=task.agent_session_id,
-                                claude_session_id=task.resume_session_id,
-                                workspace_dir=effective_workspace_dir,
-                                folder_name=ctx.folder_name,
-                                agent_id=task.profile_id,
-                            )
-                            # ① context 키를 persist *전*에 박아 DB persist payload에 포함
-                            event["context"] = [intervention_soulstream]
                             ev_id = await self._persistence.persist_event(session_id, event)
                             request_id_ref[0] = ev_id  # int 유지 (parent_event_id 컬럼이 INTEGER)
                             # ② _event_id 키를 persist *이후* 박아 broadcast에 carry
