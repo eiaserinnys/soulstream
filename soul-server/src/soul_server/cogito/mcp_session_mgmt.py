@@ -14,7 +14,12 @@ from soul_common.auth.caller_info import build_agent_caller_info
 
 from soul_server.cogito.mcp_tools import cogito_mcp
 from soul_server.service.task_manager import get_task_manager
-from soul_server.service.task_factory import CreateTaskParams
+# NOTE: CreateTaskParams 직접 import 제거 — create_agent_session이 submit_message 정본을
+# 거치도록 변경되어 본 모듈은 CreateTaskParams를 직접 다루지 않는다 (design-principles §3).
+from soul_server.service.message_submission_service import (
+    SubmitMessageParams,
+    submit_message,
+)
 from soul_server.service.postgres_session_db import get_session_db
 from soul_server.service.catalog_service import get_catalog_service
 from soul_server.service import get_soul_engine, resource_manager
@@ -95,21 +100,34 @@ async def create_agent_session(
             portrait_path=caller_profile.portrait_path if caller_profile else None,
         )
 
-    task = await task_manager.create_task(CreateTaskParams(
-        prompt=prompt,
-        profile_id=agent_id,
-        folder_id=folder_id,
-        caller_session_id=caller_session_id,
-        caller_info=caller_info,
-    ))
-
-    await task_manager.executor.start_execution(
-        agent_session_id=task.agent_session_id,
-        claude_runner=get_soul_engine(),
-        resource_manager=resource_manager,
+    # 카드 YpM1d1sI: submit_message 정본 경유 (design-principles §3 정본 하나).
+    # 신규 세션 생성만이지만 5번째 진입점이 정본을 우회하지 않도록 통합 — 향후 MCP 툴이
+    # resume 케이스를 다루게 될 때 terminal 회로 누락 방지.
+    # /execute·/intervene·/api/sessions·upstream CMD_CREATE_SESSION에 이어 5번째.
+    submit_result = await submit_message(
+        SubmitMessageParams(
+            prompt=prompt,
+            agent_session_id=None,  # 신규 세션 (MCP 툴은 신규 생성 전용)
+            user="agent",  # MCP 진입점
+            profile_id=agent_id,
+            folder_id=folder_id,
+            caller_session_id=caller_session_id,
+            caller_info=caller_info,
+        ),
+        task_manager=task_manager,
     )
+    # MCP는 신규 생성 전용이라 kind는 항상 'new_session' (방어적으로 auto_resumed도 포함)
+    if submit_result.kind in ("new_session", "auto_resumed"):
+        await task_manager.executor.start_execution(
+            agent_session_id=submit_result.agent_session_id,
+            claude_runner=get_soul_engine(),
+            resource_manager=resource_manager,
+        )
 
-    return {"agent_session_id": task.agent_session_id, "status": task.status.value}
+    return {
+        "agent_session_id": submit_result.agent_session_id,
+        "status": submit_result.task.status.value,
+    }
 
 
 @cogito_mcp.tool()

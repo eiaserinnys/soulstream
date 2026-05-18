@@ -93,13 +93,23 @@ class TestCreateAgentSession:
         )
 
     async def test_creates_session_without_caller(self):
-        """caller_session_id 없을 때 caller_session_id=None으로 create_task를 호출해야 한다."""
+        """caller_session_id 없을 때 caller_session_id=None으로 create_task를 호출해야 한다.
+
+        카드 YpM1d1sI(2026-05-18) 갱신: create_agent_session이 submit_message 정본을 거치므로
+        create_task에 도달하는 CreateTaskParams는 submit_message가 채우는 추가 필드를 포함한다.
+        - client_id='agent' — SubmitMessageParams.user='agent'의 fallback (params.client_id or params.user)
+        - skip_claude_resume=False — 신규 세션 (의미 동일)
+        - 기타 None 필드는 SubmitMessageParams 기본값 전달
+        """
         mock_task = self._make_task()
         mock_task.profile_id = None
         mock_task.caller_info = None
         mock_tm = MagicMock()
         mock_tm.create_task = AsyncMock(return_value=mock_task)
         mock_tm.executor.start_execution = AsyncMock(return_value=True)
+        # submit_message가 task_manager._tasks와 _eviction_manager를 사용 — agent_session_id=None
+        # 신규 케이스에서는 사용 안 함, 그러나 MagicMock 기본값으로 충분
+        mock_tm._tasks = {}
 
         fn = _unwrap(mcp_tools.create_agent_session)
         p_engine, p_rm = self._patch_execution_deps()
@@ -109,13 +119,16 @@ class TestCreateAgentSession:
         assert result["agent_session_id"] == "sess-abc123"
         assert result["status"] == "pending"
 
-        mock_tm.create_task.assert_called_once_with(CreateTaskParams(
-            prompt="작업 수행해줘",
-            profile_id="agent-alpha",
-            folder_id=None,
-            caller_session_id=None,
-            caller_info=None,
-        ))
+        # submit_message 경유 호출 검증 — 핵심 필드만 명시 (정본 통합 확인 + 회귀)
+        mock_tm.create_task.assert_called_once()
+        params = mock_tm.create_task.call_args.args[0]
+        assert params.prompt == "작업 수행해줘"
+        assert params.profile_id == "agent-alpha"
+        assert params.folder_id is None
+        assert params.caller_session_id is None
+        assert params.caller_info is None
+        assert params.client_id == "agent"  # submit_message user fallback (정책: MCP 진입점)
+        assert params.skip_claude_resume is False  # 신규 세션
         mock_tm.executor.start_execution.assert_called_once()
 
     async def test_creates_session_with_caller_session_id(self):

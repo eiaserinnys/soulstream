@@ -199,6 +199,92 @@ class TestSubmitMessageCallerInfo:
         assert result.task.caller_info == caller_info
 
 
+class TestTerminalResumePreservesOptions:
+    """카드 5RcnygV5: terminal 분기에서 model/allowed_tools 등 옵션이 forward되어야 한다.
+
+    PR #69 이전 동작: terminal 재개 시 SubmitMessageParams의 model 등이 forward 안 됨 →
+    task_factory._resume_existing_task_locked가 task 필드를 None으로 reset.
+    본 카드 fix: 명시된 옵션이 CreateTaskParams로 forward되어 task에 박힘.
+    """
+
+    async def test_terminal_resume_preserves_model_and_tools(self, manager):
+        """terminal 재개 시 model/allowed_tools/disallowed_tools/use_mcp/system_prompt가 보존된다."""
+        await manager.create_task(CreateTaskParams(prompt="first", agent_session_id="sess-O"))
+        await manager.register_session("claude-O", "sess-O")
+        task = await manager.get_task("sess-O")
+        task.status = TaskStatus.INTERRUPTED
+
+        result = await submit_message(
+            SubmitMessageParams(
+                prompt="후속",
+                agent_session_id="sess-O",
+                model="claude-opus-4-5",
+                allowed_tools=["Read", "Grep"],
+                disallowed_tools=["Bash"],
+                use_mcp=False,
+                system_prompt="한국어로 답해",
+            ),
+            task_manager=manager,
+        )
+        assert result.kind == "auto_resumed"
+        # ★ 핵심 — 옵션이 task에 박혔는지 (task_factory._resume_existing_task_locked가 덮어쓴 결과)
+        assert result.task.model == "claude-opus-4-5"
+        assert result.task.allowed_tools == ["Read", "Grep"]
+        assert result.task.disallowed_tools == ["Bash"]
+        assert result.task.use_mcp is False
+        assert result.task.system_prompt == "한국어로 답해"
+
+    async def test_terminal_resume_preserves_context_and_items(self, manager):
+        """terminal 재개 시 context와 context_items가 forward되어 task에 박힌다.
+
+        P1 (code-reviewer 2차 지적): context_items도 forward 대상. extra_ctx 분기와 별개.
+        """
+        await manager.create_task(CreateTaskParams(prompt="first", agent_session_id="sess-P"))
+        await manager.register_session("claude-P", "sess-P")
+        task = await manager.get_task("sess-P")
+        task.status = TaskStatus.INTERRUPTED
+
+        result = await submit_message(
+            SubmitMessageParams(
+                prompt="후속",
+                agent_session_id="sess-P",
+                context={"key": "value"},
+                context_items=[{"key": "additional_ctx", "label": "ctx", "content": "x"}],
+            ),
+            task_manager=manager,
+        )
+        assert result.kind == "auto_resumed"
+        assert result.task.context == {"key": "value"}
+        # ★ P1 fix — context_items가 task.context_items로 forward됨
+        assert result.task.context_items is not None
+        assert any(item.get("key") == "additional_ctx" for item in result.task.context_items)
+
+    async def test_terminal_resume_preserves_profile_and_folder(self, manager):
+        """terminal 재개 시 profile_id가 forward되어 task.profile_id에 박힌다.
+
+        folder_id는 _register_new_session_async에서만 처리되고 resume에서는 영향 없음 —
+        본 케이스는 profile_id만 검증.
+        """
+        # registry 없이 profile_id 검증 시도하면 ValueError이므로, registry None 상태에서는
+        # profile_id가 그대로 통과한다 (task_factory.create_or_resume L113-117).
+        await manager.create_task(CreateTaskParams(prompt="first", agent_session_id="sess-PR"))
+        await manager.register_session("claude-PR", "sess-PR")
+        task = await manager.get_task("sess-PR")
+        task.status = TaskStatus.INTERRUPTED
+
+        result = await submit_message(
+            SubmitMessageParams(
+                prompt="후속",
+                agent_session_id="sess-PR",
+                profile_id="agent-X",
+            ),
+            task_manager=manager,
+        )
+        assert result.kind == "auto_resumed"
+        # ★ profile_id가 task에 박힘 (resume_existing_task_locked L213-214 적용)
+        assert result.task.profile_id == "agent-X"
+
+
 class TestNotifyCallerCompletionRecursion:
     """_notify_caller_completion 재귀 경로 검증 (지적 4-2).
 
