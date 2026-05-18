@@ -70,6 +70,11 @@ class CreateTaskParams:
     caller_session_id: Optional[str] = None
     caller_info: Optional[dict] = None
     attachment_paths: Optional[List[str]] = None
+    # skip_claude_resume=True면 기존 세션 재활성화 시 task.resume_session_id를 None으로 박는다.
+    # ClaudeAgentOptions.resume이 설정되지 않아 Claude SDK가 fresh 세션으로 시작 — Claude 계정
+    # limit 후 previous_message_id 400 회로 차단. submit_message의 terminal 분기에서 True로 설정.
+    # 직접 create_task 호출(레거시)이나 신규 세션 경로는 영향 없음.
+    skip_claude_resume: bool = False
 
 
 # (agent_session_id, session_type, folder_id) -> assigned_folder_id
@@ -177,9 +182,17 @@ class TaskFactory:
         원본: task_manager.py L504-561과 동일 동작.
         """
         resume_session_id = task.claude_session_id
+        # skip_claude_resume=True (submit_message terminal 분기)이면 ClaudeAgentOptions.resume을
+        # 박지 않아 Claude SDK가 fresh 세션으로 시작한다. agent_session_id 묶음은 유지되지만
+        # Claude SDK 차원의 conversation 이력은 손실 — limit 후 previous_message_id 400 회로
+        # (코덱스 진단 atom 0fa49771) 차단을 위한 정책. 폴더 프롬프트/atom 트리는
+        # execution_context_builder._resolve_folder L100 분기로 재주입된다.
+        effective_resume_session_id = (
+            None if params.skip_claude_resume else resume_session_id
+        )
         logger.info(
             f"Resuming session: {task.agent_session_id} "
-            f"(claude_session={resume_session_id})"
+            f"(claude_session={resume_session_id}, skip_claude_resume={params.skip_claude_resume})"
         )
 
         # NOTE: 원본도 lock 내에서 await — 동일 의미 보존.
@@ -189,7 +202,7 @@ class TaskFactory:
 
         task.prompt = params.prompt
         task.status = TaskStatus.RUNNING
-        task.resume_session_id = resume_session_id
+        task.resume_session_id = effective_resume_session_id
         task.result = None
         task.error = None
         task.completed_at = None

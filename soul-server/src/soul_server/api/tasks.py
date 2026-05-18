@@ -138,25 +138,36 @@ async def execute_task(
         }
         extra_context_items = (extra_context_items or []) + [attachment_item]
 
-    # 세션 생성 또는 resume
+    # 세션 생성/재개/intervention — submit_message 정본(message_submission_service)에 위임.
+    # TaskConflictError 분기는 *제거됨* — submit_message가 running 세션을 kind='intervened'로
+    # 자동 처리하므로 conflict 자체가 발생하지 않는다 (의미상 그 케이스는 intervention).
+    from soul_server.service.message_submission_service import (
+        SubmitMessageParams,
+        submit_message,
+    )
+
     try:
-        task = await task_manager.create_task(CreateTaskParams(
-            prompt=body.prompt,
-            agent_session_id=body.agent_session_id,
-            client_id=body.client_id,
-            allowed_tools=body.allowed_tools,
-            disallowed_tools=body.disallowed_tools,
-            use_mcp=body.use_mcp,
-            context=body.context.model_dump() if body.context else None,
-            context_items=[item.model_dump() for item in body.context.items] if body.context else None,
-            extra_context_items=extra_context_items,
-            model=body.model,
-            folder_id=body.folder_id,
-            system_prompt=body.system_prompt,
-            profile_id=body.profile,
-            caller_info=caller_info,
-            attachment_paths=body.attachment_paths,
-        ))
+        submit_result = await submit_message(
+            SubmitMessageParams(
+                prompt=body.prompt,
+                agent_session_id=body.agent_session_id,
+                user=body.client_id or "api",
+                client_id=body.client_id,
+                allowed_tools=body.allowed_tools,
+                disallowed_tools=body.disallowed_tools,
+                use_mcp=body.use_mcp,
+                context=body.context.model_dump() if body.context else None,
+                context_items=[item.model_dump() for item in body.context.items] if body.context else None,
+                extra_context_items=extra_context_items,
+                model=body.model,
+                folder_id=body.folder_id,
+                system_prompt=body.system_prompt,
+                profile_id=body.profile,
+                caller_info=caller_info,
+                attachment_paths=body.attachment_paths,
+            ),
+            task_manager=task_manager,
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=400,
@@ -164,17 +175,6 @@ async def execute_task(
                 "error": {
                     "code": "INVALID_PROFILE",
                     "message": str(e),
-                    "details": {},
-                }
-            },
-        )
-    except TaskConflictError:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "error": {
-                    "code": "SESSION_CONFLICT",
-                    "message": f"이미 실행 중인 세션입니다: {body.agent_session_id}",
                     "details": {},
                 }
             },
@@ -189,26 +189,28 @@ async def execute_task(
             },
         )
 
-    agent_session_id = task.agent_session_id
+    agent_session_id = submit_result.agent_session_id
 
     # 리스너를 먼저 등록하여 start_execution 직후 broadcast 이벤트 유실 방지
     # (session_events_sse_generator L116-117과 동일한 'queue 사전 등록' 패턴)
     event_queue = asyncio.Queue()
     await task_manager.listener_manager.add_listener(agent_session_id, event_queue)
 
-    try:
-        # 백그라운드에서 Claude 실행 시작
-        await task_manager.executor.start_execution(
-            agent_session_id=agent_session_id,
-            claude_runner=get_soul_engine(),
-            resource_manager=resource_manager,
-        )
-    except Exception:
-        # start_execution 실패 시 listener cleanup.
-        # 성공 경로에서는 stream_live_events finally가 remove_listener를 담당하므로
-        # 여기서의 cleanup과 상호 배타적이다.
-        await task_manager.listener_manager.remove_listener(agent_session_id, event_queue)
-        raise
+    # start_execution은 신규/auto_resumed 케이스에서만 호출.
+    # intervened(running 세션 큐잉)는 이미 실행 중이므로 새 실행을 시작하지 않는다 (race 차단).
+    if submit_result.kind in ("new_session", "auto_resumed"):
+        try:
+            await task_manager.executor.start_execution(
+                agent_session_id=agent_session_id,
+                claude_runner=get_soul_engine(),
+                resource_manager=resource_manager,
+            )
+        except Exception:
+            # start_execution 실패 시 listener cleanup.
+            # 성공 경로에서는 stream_live_events finally가 remove_listener를 담당하므로
+            # 여기서의 cleanup과 상호 배타적이다.
+            await task_manager.listener_manager.remove_listener(agent_session_id, event_queue)
+            raise
 
     async def event_generator():
         """SSE 이벤트 생성기

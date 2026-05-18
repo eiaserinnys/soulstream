@@ -1,0 +1,241 @@
+"""submit_message 정본(message_submission_service) 단위 테스트.
+
+분기 의미:
+- agent_session_id is None → kind='new_session' (신규 task 생성)
+- agent_session_id + RUNNING → kind='intervened' (intervention queue 큐잉)
+- agent_session_id + terminal → kind='auto_resumed' (skip_claude_resume=True 적용)
+
+핵심 검증:
+- terminal 분기에서 task.resume_session_id is None (ClaudeAgentOptions.resume 미사용)
+- caller_info 운반 (running 큐잉 / 신규 task 모두)
+- _notify_caller_completion 재귀 경로(add_intervention → submit_message)에서도 동일 정책 적용
+"""
+
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from soul_server.service.message_submission_service import (
+    SubmitMessageParams,
+    submit_message,
+)
+from soul_server.service.task_manager import TaskManager, set_task_manager
+from soul_server.service.task_factory import CreateTaskParams
+from soul_server.service.task_models import (
+    TaskNotFoundError,
+    TaskStatus,
+)
+
+
+def _make_mock_db():
+    db = MagicMock()
+    db._pool = AsyncMock()
+    db.node_id = "test-node"
+    db.register_session_initial = AsyncMock()
+    db.set_claude_session_id = AsyncMock()
+    db.update_session = AsyncMock()
+    db.update_session_status = AsyncMock()
+    db.get_session = AsyncMock(return_value=None)
+    db.get_all_sessions = AsyncMock(return_value=([], 0))
+    db.append_event = AsyncMock(return_value=1)
+    db.read_events = AsyncMock(return_value=[])
+    db.update_last_read_event_id = AsyncMock(return_value=True)
+    db.get_read_position = AsyncMock(return_value=(0, 0))
+    db.get_all_folders = AsyncMock(return_value=[
+        {"id": "claude", "name": "⚙️ 클로드 코드 세션", "sort_order": 0},
+    ])
+    db.get_folder = AsyncMock(return_value={"id": "claude", "name": "⚙️ 클로드 코드 세션"})
+    db.get_catalog = AsyncMock(return_value={"folders": [], "sessions": {}})
+    db.get_default_folder = AsyncMock(return_value={"id": "claude", "name": "⚙️ 클로드 코드 세션"})
+    db.assign_session_to_folder = AsyncMock()
+    db.append_metadata = AsyncMock()
+    db.DEFAULT_FOLDERS = {"claude": "⚙️ 클로드 코드 세션", "llm": "⚙️ LLM 세션"}
+    return db
+
+
+@pytest.fixture
+def manager():
+    m = TaskManager(session_db=_make_mock_db())
+    yield m
+    set_task_manager(None)
+
+
+class TestSubmitMessageBranches:
+    """submit_message의 3분기 동작."""
+
+    async def test_new_session_when_agent_session_id_none(self, manager):
+        """agent_session_id 미제공 → kind='new_session', 신규 task 반환."""
+        result = await submit_message(
+            SubmitMessageParams(prompt="hello", agent_session_id=None),
+            task_manager=manager,
+        )
+        assert result.kind == "new_session"
+        assert result.agent_session_id is not None
+        assert result.task is not None
+        assert result.task.status == TaskStatus.RUNNING
+        # 신규 세션이라 resume_session_id 박지 않음 (skip_claude_resume 무관)
+        assert result.task.resume_session_id is None
+
+    async def test_intervened_when_running(self, manager):
+        """RUNNING 세션 + agent_session_id → kind='intervened', intervention_queue 큐잉."""
+        await manager.create_task(CreateTaskParams(prompt="first", agent_session_id="sess-1"))
+
+        result = await submit_message(
+            SubmitMessageParams(
+                prompt="개입 메시지",
+                agent_session_id="sess-1",
+                user="user1",
+            ),
+            task_manager=manager,
+        )
+        assert result.kind == "intervened"
+        assert result.agent_session_id == "sess-1"
+        assert result.queue_position == 1
+        # 큐에 메시지가 박혀 있는지 확인
+        task = await manager.get_task("sess-1")
+        msg = task.intervention_queue.get_nowait()
+        assert msg["text"] == "개입 메시지"
+        assert msg["user"] == "user1"
+
+    async def test_auto_resumed_terminal_drops_claude_resume(self, manager):
+        """terminal(INTERRUPTED) 세션 + agent_session_id → kind='auto_resumed',
+        task.resume_session_id is None (skip_claude_resume=True 적용 결과).
+
+        Claude 계정 limit 후 previous_message_id 400 회로 차단의 핵심 검증.
+        """
+        await manager.create_task(CreateTaskParams(prompt="first", agent_session_id="sess-1"))
+        await manager.register_session("claude-orig", "sess-1")
+
+        # terminal 시뮬레이션
+        task = await manager.get_task("sess-1")
+        task.status = TaskStatus.INTERRUPTED
+
+        result = await submit_message(
+            SubmitMessageParams(prompt="후속 메시지", agent_session_id="sess-1"),
+            task_manager=manager,
+        )
+        assert result.kind == "auto_resumed"
+        assert result.agent_session_id == "sess-1"
+        # ★ 핵심 — Claude SDK fresh 시작을 위해 resume_session_id is None
+        assert result.task.resume_session_id is None
+        # claude_session_id 자체는 인덱스에 보존 (역방향 lookup 정합성)
+        assert result.task.claude_session_id == "claude-orig"
+
+    async def test_auto_resumed_from_completed_status(self, manager):
+        """COMPLETED 세션도 동일 정책 — skip_claude_resume=True."""
+        await manager.create_task(CreateTaskParams(prompt="first", agent_session_id="sess-2"))
+        await manager.register_session("claude-c", "sess-2")
+        await manager.finalize_task("sess-2", result="done")
+
+        result = await submit_message(
+            SubmitMessageParams(prompt="다시 시작", agent_session_id="sess-2"),
+            task_manager=manager,
+        )
+        assert result.kind == "auto_resumed"
+        assert result.task.resume_session_id is None
+
+    async def test_auto_resumed_from_error_status(self, manager):
+        """ERROR 세션도 동일 정책 — skip_claude_resume=True."""
+        await manager.create_task(CreateTaskParams(prompt="first", agent_session_id="sess-3"))
+        await manager.register_session("claude-e", "sess-3")
+        await manager.finalize_task("sess-3", error="crashed")
+
+        result = await submit_message(
+            SubmitMessageParams(prompt="재시도", agent_session_id="sess-3"),
+            task_manager=manager,
+        )
+        assert result.kind == "auto_resumed"
+        assert result.task.resume_session_id is None
+
+    async def test_task_not_found_raises(self, manager):
+        """존재하지 않는 agent_session_id에 submit_message → TaskNotFoundError."""
+        # _eviction_manager.load_evicted_task가 None 반환하도록 — 기본 mock이 그렇게 동작
+        with pytest.raises(TaskNotFoundError):
+            await submit_message(
+                SubmitMessageParams(
+                    prompt="없는 세션",
+                    agent_session_id="sess-nonexistent",
+                ),
+                task_manager=manager,
+            )
+
+
+class TestSubmitMessageCallerInfo:
+    """caller_info 운반 검증 — 모든 분기에서 wire에 박힘."""
+
+    async def test_intervened_caller_info_in_queue(self, manager):
+        """running 큐잉 시 caller_info가 intervention_queue 메시지에 박힘."""
+        await manager.create_task(CreateTaskParams(prompt="first", agent_session_id="sess-c1"))
+        caller_info = {"source": "agent", "agent_id": "test", "display_name": "Test"}
+
+        await submit_message(
+            SubmitMessageParams(
+                prompt="개입",
+                agent_session_id="sess-c1",
+                caller_info=caller_info,
+            ),
+            task_manager=manager,
+        )
+        task = await manager.get_task("sess-c1")
+        msg = task.intervention_queue.get_nowait()
+        assert msg["caller_info"] == caller_info
+
+    async def test_auto_resumed_caller_info_on_task(self, manager):
+        """terminal auto-resume 시 caller_info가 task.caller_info에 박힘."""
+        await manager.create_task(CreateTaskParams(prompt="first", agent_session_id="sess-c2"))
+        await manager.register_session("claude-c", "sess-c2")
+        task = await manager.get_task("sess-c2")
+        task.status = TaskStatus.INTERRUPTED
+
+        caller_info = {"source": "slack", "display_name": "Slack User"}
+        result = await submit_message(
+            SubmitMessageParams(
+                prompt="후속",
+                agent_session_id="sess-c2",
+                caller_info=caller_info,
+            ),
+            task_manager=manager,
+        )
+        assert result.task.caller_info == caller_info
+
+
+class TestNotifyCallerCompletionRecursion:
+    """_notify_caller_completion 재귀 경로 검증 (지적 4-2).
+
+    자식 task의 finalize 시 caller_session_id로 add_intervention 재귀 호출 →
+    add_intervention 내부에서 submit_message로 위임 → terminal caller 케이스에서도
+    skip_claude_resume=True가 적용되어 task.resume_session_id is None.
+    """
+
+    async def test_caller_terminal_resumed_with_skip_claude_resume(self, manager):
+        """caller_session_id가 terminal 상태일 때 _notify_caller_completion 시
+        caller task가 resumed되면서 resume_session_id is None.
+        """
+        # caller 세션 생성 → claude_session_id 등록 → terminal 상태로 전환
+        await manager.create_task(
+            CreateTaskParams(prompt="caller prompt", agent_session_id="caller-1")
+        )
+        await manager.register_session("claude-caller", "caller-1")
+        caller_task = await manager.get_task("caller-1")
+        caller_task.status = TaskStatus.COMPLETED
+
+        # 자식 task 생성 → caller_session_id 박음 → finalize
+        child = await manager.create_task(
+            CreateTaskParams(
+                prompt="child prompt",
+                agent_session_id="child-1",
+                caller_session_id="caller-1",
+            )
+        )
+
+        # finalize → _notify_caller_completion 자동 호출
+        # _notify_caller_completion 내부에서 add_intervention("caller-1") 호출
+        # add_intervention → submit_message(skip_claude_resume=True) → caller task resume
+        await manager.finalize_task("child-1", result="자식 완료")
+
+        # caller가 resumed되었고, resume_session_id is None인지 검증
+        resumed_caller = await manager.get_task("caller-1")
+        assert resumed_caller.status == TaskStatus.RUNNING
+        assert resumed_caller.resume_session_id is None
+        # claude_session_id 인덱스는 보존
+        assert resumed_caller.claude_session_id == "claude-caller"
