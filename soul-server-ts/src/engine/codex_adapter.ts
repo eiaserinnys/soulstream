@@ -118,11 +118,19 @@ export class CodexEngineAdapter implements EnginePort {
     this.currentTurn = controller;
 
     // Thread 시작 또는 재개.
-    // ThreadOptions에 workingDirectory + skipGitRepoCheck=true 박음.
-    // Codex CLI는 기본적으로 git 리포 강제 — soulstream의 workspaceDir이 git 리포 아닐 수 있어 명시 우회.
+    // ThreadOptions:
+    //   - workingDirectory + skipGitRepoCheck=true: soulstream의 workspaceDir이 git 리포 아닐 수 있어 명시 우회.
+    //   - approvalPolicy="never": codex CLI 0.130.0 `exec` 모드는 *non-interactive*. approval 요청 시
+    //     stdin user input 채널이 없어 MCP tool call·shell command 모두 *자동 cancel*된다
+    //     (`tool_result.error = "user cancelled MCP tool call"`). codex CLI 도움말이 직접 권고:
+    //     "Prefer `never` for non-interactive runs". Python `client_lifecycle.py:238
+    //     permission_mode="bypassPermissions"` 정본 정합 (claude SDK의 동등 옵션). MCP 호출이 모두
+    //     자동 cancel되던 결함을 차단한다 — 분석 캐시 `20260518-0945-codex-context-mcp-cancel.md` Part B.
+    //     execution failure는 모델에 곧장 반환되므로 모델이 적절히 재시도·우회 결정.
     const threadOptions = {
       workingDirectory: this.workspaceDir,
       skipGitRepoCheck: true,
+      approvalPolicy: "never" as const,
       ...(params.model ? { model: params.model } : {}),
     };
 
