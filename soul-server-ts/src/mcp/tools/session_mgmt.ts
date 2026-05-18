@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { buildAgentCallerInfo } from "../../caller_info.js";
+import { buildCallerInfoFromCallerSession } from "../../caller_info.js";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 
@@ -62,7 +62,7 @@ export function registerSessionMgmtTools(
 
       // caller_info 조립 — caller_session_id 미지정 시 미전달 (graceful).
       const callerInfo = caller_session_id
-        ? buildCallerInfoFromTask(runtime, caller_session_id)
+        ? buildCallerInfoFromCallerSession(runtime, caller_session_id)
         : undefined;
 
       const sessionId = randomUUID();
@@ -92,7 +92,7 @@ export function registerSessionMgmtTools(
     "send_message_to_session",
     {
       description:
-        "대상 세션에 메시지 전달. running 시 queue, 종료된 세션은 auto-resume. caller_info 조립은 create_agent_session과 정합.",
+        "대상 세션에 메시지 전달. running 시 queue, 종료된 세션은 auto-resume. caller_info 조립은 create_agent_session과 정합. **현 노드의 세션만 지원** — 다른 노드 세션에 메시지를 보내려면 orch 폴백이 필요하나 본 카드 Non-goals (Python `mcp_session_mgmt.send_message_to_session`의 orch HTTP 폴백 동작은 후속 카드).",
       inputSchema: {
         target_session_id: z.string(),
         message: z.string(),
@@ -101,7 +101,7 @@ export function registerSessionMgmtTools(
     },
     async ({ target_session_id, message, caller_session_id }) => {
       const callerInfo = caller_session_id
-        ? buildCallerInfoFromTask(runtime, caller_session_id)
+        ? buildCallerInfoFromCallerSession(runtime, caller_session_id)
         : undefined;
 
       try {
@@ -174,22 +174,3 @@ export function registerSessionMgmtTools(
   );
 }
 
-/**
- * caller_session_id로부터 v1 caller_info dict 조립. atom card ed3a216d 정본 +
- * Python `build_agent_caller_info` (caller_info.py L166-209) 키 호환.
- */
-function buildCallerInfoFromTask(
-  runtime: McpRuntime,
-  callerSessionId: string,
-) {
-  const callerTask = runtime.taskManager.getTask(callerSessionId);
-  const callerProfile = callerTask?.profileId
-    ? runtime.agentRegistry.get(callerTask.profileId)
-    : undefined;
-  return buildAgentCallerInfo({
-    agentNode: runtime.nodeId,
-    agentId: callerTask?.profileId ?? null,
-    agentName: callerProfile?.name ?? null,
-    portraitPath: callerProfile?.portrait_path ?? null,
-  });
-}

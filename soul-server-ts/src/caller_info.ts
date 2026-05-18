@@ -77,3 +77,37 @@ export function buildAgentCallerInfo(
     avatar_url: avatarUrl,
   };
 }
+
+/**
+ * MCP 도구 진입점이 caller_session_id로부터 v1 caller_info를 조립할 때 사용하는 helper.
+ *
+ * `taskManager.getTask` → `agentRegistry.get` → builder 호출의 *동일한* 정책을 cogito 도구
+ * (session_mgmt, multi_node)가 *각자 인라인*으로 보유했던 결함을 닫는다 (code-reviewer P2-1,
+ * design-principles §3 정본 하나).
+ *
+ * 메모리에 없는 evict된 caller task에 대한 on-demand DB 로드는 본 카드 범위 외 (P2-2 후속 카드).
+ *
+ * @param deps `runtime`이 의존하는 두 객체만 — McpRuntime 전체를 받지 않아 테스트 표면 단순.
+ */
+export function buildCallerInfoFromCallerSession(deps: {
+  nodeId: string;
+  taskManager: {
+    getTask(sessionId: string): {
+      profileId?: string | null;
+    } | undefined;
+  };
+  agentRegistry: {
+    get(id: string): { name?: string | null; portrait_path?: string | null } | undefined;
+  };
+}, callerSessionId: string): AgentCallerInfo {
+  const callerTask = deps.taskManager.getTask(callerSessionId);
+  const callerProfile = callerTask?.profileId
+    ? deps.agentRegistry.get(callerTask.profileId)
+    : undefined;
+  return buildAgentCallerInfo({
+    agentNode: deps.nodeId,
+    agentId: callerTask?.profileId ?? null,
+    agentName: callerProfile?.name ?? null,
+    portraitPath: callerProfile?.portrait_path ?? null,
+  });
+}

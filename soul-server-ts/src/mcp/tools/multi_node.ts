@@ -7,7 +7,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { buildAgentCallerInfo } from "../../caller_info.js";
+import { buildCallerInfoFromCallerSession } from "../../caller_info.js";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 
@@ -74,19 +74,9 @@ export function registerMultiNodeTools(
       const orch = runtime.orch;
       if (!orch) return errorResult(NOT_CONFIGURED_MSG);
 
-      let callerInfo: ReturnType<typeof buildAgentCallerInfo> | undefined;
-      if (caller_session_id) {
-        const callerTask = runtime.taskManager.getTask(caller_session_id);
-        const callerProfile = callerTask?.profileId
-          ? runtime.agentRegistry.get(callerTask.profileId)
-          : undefined;
-        callerInfo = buildAgentCallerInfo({
-          agentNode: runtime.nodeId,
-          agentId: callerTask?.profileId ?? null,
-          agentName: callerProfile?.name ?? null,
-          portraitPath: callerProfile?.portrait_path ?? null,
-        });
-      }
+      const callerInfo = caller_session_id
+        ? buildCallerInfoFromCallerSession(runtime, caller_session_id)
+        : undefined;
 
       const body: Record<string, unknown> = {
         prompt,

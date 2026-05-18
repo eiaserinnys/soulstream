@@ -99,12 +99,20 @@ export function registerSessionQueryTools(
       if (!session) {
         return errorResult(`세션을 찾을 수 없습니다: ${session_id}`);
       }
-      const events = await runtime.db.readEvents(
+      const lim = limit ?? 20;
+      const cur = cursor ?? 0;
+      // Python `mcp_session_query.list_session_events` 정합 — `limit + 1` 페치로 has_more 판정.
+      // has_more=false면 next_cursor=null 반환 (마지막 페이지 명시). 이전 구현은 항상 마지막 id를
+      // 박아 Codex CLI가 무한 fetch 반복하는 회로를 열어 두었다 (code-reviewer P1-A 정정).
+      const fetched = await runtime.db.readEvents(
         session_id,
-        cursor ?? 0,
-        limit ?? 20,
+        cur,
+        lim + 1,
         event_types,
       );
+      const hasMore = fetched.length > lim;
+      const events = hasMore ? fetched.slice(0, lim) : fetched;
+      const totalEvents = await runtime.db.countEvents(session_id);
       const processed = events.map((ev) =>
         applyToolContentPolicy(
           ev,
@@ -115,8 +123,9 @@ export function registerSessionQueryTools(
       const last = events[events.length - 1];
       return jsonResult({
         session_id,
+        total: totalEvents,
         events: processed,
-        next_cursor: last ? last.id : (cursor ?? 0),
+        next_cursor: hasMore && last ? last.id : null,
       });
     },
   );
@@ -264,6 +273,9 @@ export function registerSessionQueryTools(
         display_name: session.display_name,
         status: session.status,
         created_at: serializeDate(session.created_at),
+        // code-reviewer P2-4: Python `mcp_session_query.get_session_summary` 응답에 포함되는
+        // caller_session_id 누락 보강. 위임 세션 부모 식별자 wire 보존.
+        caller_session_id: session.caller_session_id,
         total_events: totalEvents,
         turns,
       });
