@@ -12,6 +12,7 @@ R-1 fix(2026-05-08): catalog REST와 SSE wire 3변형이 user 프로필 채움 �
 from unittest.mock import MagicMock
 
 from soulstream_server.api.session_serializer import (
+    apply_agent_enrichment,
     apply_user_profile_enrichment,
 )
 from soulstream_server.nodes.node_manager import NodeManager
@@ -152,3 +153,97 @@ class TestApplyUserProfileEnrichment:
 
         assert payload["customName"] == "Bob"
         assert payload["customPortrait"] == "/api/nodes/node-2/user/portrait"
+
+
+def _make_agent_node_manager(profile: dict | None, source_node_id: str | None = "node-A") -> MagicMock:
+    """find_agent_profile이 (profile, source_node_id) 튜플 또는 None을 반환하는 NodeManager mock."""
+    nm = MagicMock(spec=NodeManager)
+    if profile is None:
+        nm.find_agent_profile = MagicMock(return_value=None)
+    else:
+        nm.find_agent_profile = MagicMock(return_value=(profile, source_node_id))
+    return nm
+
+
+class TestApplyAgentEnrichment:
+    """Phase A backend 정본 단일화 helper (T-6, atom d7a1ad86 차단).
+
+    `_session_to_response`(REST catalog)와 `main._on_node_change`(session_created live wire)
+    양쪽이 같은 helper를 호출하여 backend default 정책 공유.
+    """
+
+    def test_t6_1_fills_backend_name_portrait_on_profile_lookup_success(self):
+        payload = {"agentName": None, "agentPortraitUrl": None, "backend": None}
+        nm = _make_agent_node_manager(
+            {"name": "Codex Default", "backend": "codex", "portrait_url": "/codex.png"}
+        )
+
+        apply_agent_enrichment(
+            payload, agent_id="codex-default", node_id="node-A", node_manager=nm
+        )
+
+        assert payload["agentName"] == "Codex Default"
+        assert payload["backend"] == "codex"
+        assert payload["agentPortraitUrl"] == "/api/nodes/node-A/agents/codex-default/portrait"
+
+    def test_t6_2_backend_default_claude_when_profile_missing_backend_key(self):
+        """profile 있지만 backend 키 부재 → default 'claude'."""
+        payload = {"agentName": None, "agentPortraitUrl": None, "backend": None}
+        nm = _make_agent_node_manager(
+            {"name": "Claude Default", "portrait_url": "/claude.png"}
+        )
+
+        apply_agent_enrichment(
+            payload, agent_id="claude-default", node_id="node-A", node_manager=nm
+        )
+
+        assert payload["backend"] == "claude"
+
+    def test_t6_3_noop_when_agent_id_none(self):
+        """agent_id 부재 → NOOP, 호출자가 박은 default 보존."""
+        payload = {"agentName": None, "agentPortraitUrl": None, "backend": "claude"}
+        nm = _make_agent_node_manager(
+            {"name": "X", "backend": "codex", "portrait_url": "/x.png"}
+        )
+
+        apply_agent_enrichment(
+            payload, agent_id=None, node_id="node-A", node_manager=nm
+        )
+
+        assert payload == {"agentName": None, "agentPortraitUrl": None, "backend": "claude"}
+        nm.find_agent_profile.assert_not_called()
+
+    def test_t6_4_noop_when_node_manager_none(self):
+        payload = {"agentName": None, "agentPortraitUrl": None, "backend": "claude"}
+        apply_agent_enrichment(
+            payload, agent_id="codex-default", node_id="node-A", node_manager=None
+        )
+        assert payload == {"agentName": None, "agentPortraitUrl": None, "backend": "claude"}
+
+    def test_t6_5_noop_when_profile_not_found_preserves_caller_default(self):
+        """profile lookup 실패 → 호출자가 박은 default 보존 (TS broadcaster 'claude' 등)."""
+        payload = {"agentName": None, "agentPortraitUrl": None, "backend": "claude"}
+        nm = _make_agent_node_manager(None)
+
+        apply_agent_enrichment(
+            payload, agent_id="ghost", node_id="node-A", node_manager=nm
+        )
+
+        # backend는 caller가 박은 "claude" 그대로 보존 — overwrite 안 함.
+        assert payload["backend"] == "claude"
+        nm.find_agent_profile.assert_called_once_with("ghost", "node-A")
+
+    def test_t6_6_skips_portrait_when_url_missing(self):
+        """portrait_url 부재 → agentPortraitUrl 미터치 (caller가 박은 default 보존)."""
+        payload = {"agentName": None, "agentPortraitUrl": None, "backend": None}
+        nm = _make_agent_node_manager(
+            {"name": "No Portrait Agent", "backend": "codex"}
+        )
+
+        apply_agent_enrichment(
+            payload, agent_id="no-portrait", node_id="node-A", node_manager=nm
+        )
+
+        assert payload["agentName"] == "No Portrait Agent"
+        assert payload["backend"] == "codex"
+        assert payload["agentPortraitUrl"] is None

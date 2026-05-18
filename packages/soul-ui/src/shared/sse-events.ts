@@ -90,6 +90,12 @@ export interface InterventionSentEvent {
    * metadata로 fallback, 그것도 없으면 dashboard 사용자 portrait로 fallback.
    */
   caller_info?: CallerInfo;
+  /**
+   * Phase A context 정본 (atom d7a1ad86 정본 둘 안티패턴 차단):
+   * Python `on_intervention_sent`가 event/intervention_msg dict 통합 후 wire에 박는 context_items.
+   * UserMessageEvent.context와 동일 의미 — InterventionMessage가 ContextBlock 렌더링.
+   */
+  context?: ContextItem[];
 }
 
 export interface ContextItem {

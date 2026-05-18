@@ -355,6 +355,13 @@ class TaskExecutor:
                     attachment_paths: list | None = None,
                     caller_info: dict | None = None,
                 ):
+                    # Phase A context wire 정본 통합 (Y-4, atom d7a1ad86 정본 둘 안티패턴 차단):
+                    # 이전엔 `event` dict(broadcast — context 누락) vs `intervention_msg` dict(DB persist —
+                    # context 보존) 두 dict가 분리되어 같은 wire가 wire 경로에 따라 비대칭 payload를
+                    # 전달했다. 단일 `event` dict로 통합하여 DB·broadcast·last_message update 모두 공유.
+                    # 키 박는 순서:
+                    #  ① context 키 — persist *전* 박아 DB persist payload에 포함
+                    #  ② _event_id 키 — persist *이후* 박아 broadcast에 carry (DB 컬럼에는 미저장)
                     event = {"type": "intervention_sent", "user": user, "text": text}
                     if attachment_paths:
                         event["attachments"] = attachment_paths
@@ -369,18 +376,11 @@ class TaskExecutor:
                                 folder_name=ctx.folder_name,
                                 agent_id=task.profile_id,
                             )
-                            intervention_msg = {
-                                "type": "intervention_sent",
-                                "user": user,
-                                "text": text,
-                                "context": [intervention_soulstream],
-                            }
-                            if caller_info:
-                                intervention_msg["caller_info"] = caller_info
-                            if attachment_paths:
-                                intervention_msg["attachments"] = attachment_paths
-                            ev_id = await self._persistence.persist_event(session_id, intervention_msg)
+                            # ① context 키를 persist *전*에 박아 DB persist payload에 포함
+                            event["context"] = [intervention_soulstream]
+                            ev_id = await self._persistence.persist_event(session_id, event)
                             request_id_ref[0] = ev_id  # int 유지 (parent_event_id 컬럼이 INTEGER)
+                            # ② _event_id 키를 persist *이후* 박아 broadcast에 carry
                             event["_event_id"] = ev_id
                             if ev_id is not None:
                                 task.last_event_id = ev_id

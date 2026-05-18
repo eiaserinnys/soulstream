@@ -282,6 +282,35 @@ describe("createNodeFromEvent", () => {
       });
     });
 
+    it("T-5 (Phase A): intervention_sent.context를 노드에 박음 (atom d7a1ad86 차단)", () => {
+      // Phase A context 정본 (Y-7): user_message 분기와 대칭으로 e.context를 노드에 박는다.
+      // 본 사이클 이전엔 intervention_sent 분기에 context 박지 않아 Python 측이 보낸 context가
+      // 트리 노드에 도달하지 않음 — flatten-tree forward도 막힘.
+      const ctxItems = [
+        { key: "soulstream_session", label: "Soulstream", content: { folder: "X" } },
+      ];
+      const event: InterventionSentEvent = {
+        type: "intervention_sent",
+        user: "u",
+        text: "context 운반 intervention",
+        context: ctxItems,
+      };
+      const node = createNodeFromEvent(event, 8);
+      const n = node as InterventionNode;
+      expect(n.context).toEqual(ctxItems);
+    });
+
+    it("T-5b: intervention_sent.context 부재 시 노드 context 도 undefined (회귀 보호)", () => {
+      const event: InterventionSentEvent = {
+        type: "intervention_sent",
+        user: "u",
+        text: "context 없는 intervention",
+      };
+      const node = createNodeFromEvent(event, 9);
+      const n = node as InterventionNode;
+      expect(n.context).toBeUndefined();
+    });
+
     it("should create node for thinking", () => {
       const event: ThinkingEvent = {
         type: "thinking",

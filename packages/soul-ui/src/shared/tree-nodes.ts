@@ -97,6 +97,12 @@ export interface InterventionNode extends BaseNode {
    * portrait로 다단 fallback 한다.
    */
   callerInfo?: CallerInfo;
+  /**
+   * Phase A context 정본 (atom d7a1ad86 정본 둘 안티패턴 차단):
+   * UserMessageNode.context와 대칭 — Python `on_intervention_sent`가 wire에 박은 context_items.
+   * flatten-tree가 ChatMessage.contextItems로 forward → InterventionMessage가 ContextBlock 렌더링.
+   */
+  context?: ContextItem[];
 }
 
 /** Thinking (확장 사고) 노드 */

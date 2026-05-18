@@ -198,13 +198,22 @@ export class SessionBroadcaster {
       node_id: this.nodeId,
     };
 
+    // Phase A backend 정본 단일화 (atom d7a1ad86 정본 둘 안티패턴 차단):
+    // - profileId 부재 task도 wire에 backend default "claude"를 박아 FE 조건
+    //   `{session.backend && ...}` silent drop 차단. agentId/Name/PortraitUrl은 null로 박음.
+    // - default "claude"는 Python `_session_to_response` (session_serializer.py:131)와 같은 정책.
     if (task.profileId) {
       const agent = this.agentRegistry.get(task.profileId);
       info.agentId = task.profileId;
       info.agentName = agent?.name ?? null;
       info.agentPortraitUrl =
         agent?.portrait_path ? `/api/agents/${agent.id}/portrait` : null;
-      info.backend = agent?.backend ?? null;
+      info.backend = agent?.backend ?? "claude";
+    } else {
+      info.agentId = null;
+      info.agentName = null;
+      info.agentPortraitUrl = null;
+      info.backend = "claude";
     }
 
     const callerInfo = task.callerInfo ?? {};

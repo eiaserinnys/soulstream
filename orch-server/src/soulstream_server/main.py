@@ -18,7 +18,10 @@ from soul_common.db.session_db import PostgresSessionDB
 from soulstream_server.api.attachments import create_attachments_router
 from soulstream_server.api.atom import create_atom_router
 from soulstream_server.api.auth import verify_auth
-from soulstream_server.api.session_serializer import apply_user_profile_enrichment
+from soulstream_server.api.session_serializer import (
+    apply_agent_enrichment,
+    apply_user_profile_enrichment,
+)
 from soulstream_server.api.auth_bearer import router as auth_bearer_router
 from soulstream_server.api.auth_native import create_native_auth_router
 from soulstream_server.api.execute_proxy import create_execute_proxy_router
@@ -99,6 +102,17 @@ async def _on_node_change(
                 node_id=node_id,
                 node_manager=node_manager,
                 caller_source=(data or {}).get("caller_source"),
+            )
+            # Phase A backend 정본 단일화 (X-3, atom d7a1ad86 정본 둘 안티패턴 차단):
+            # session_created live wire가 _session_to_response와 같은 apply_agent_enrichment
+            # helper를 통과하도록 한다. agentId가 truthy일 때 node_manager에서 profile lookup
+            # → backend 보강. TS broadcaster(X-1·X-2)가 박은 "claude" default는 lookup 실패
+            # 시 보존.
+            apply_agent_enrichment(
+                session_info,
+                agent_id=session_info.get("agentId"),
+                node_id=node_id,
+                node_manager=node_manager,
             )
         broadcast_data = {
             "type": "session_created",

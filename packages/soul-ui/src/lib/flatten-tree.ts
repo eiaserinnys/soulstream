@@ -285,6 +285,8 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
       const n = node as InterventionNode;
       // F-9 fix(2026-05-08): callerInfo·agentInfo를 ChatMessage에 forward하여
       // InterventionMessage가 발신자-단위 아바타·이름을 표시하게 한다.
+      // Phase A context 정본 (Y-8, atom d7a1ad86 차단): user_message case(L265)와 대칭으로
+      // contextItems forward — InterventionMessage가 ContextBlock 렌더링.
       return {
         id: n.id,
         role: "intervention",
@@ -293,6 +295,7 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
         treeNodeId: n.id,
         treeNodeType: n.type,
         eventId,
+        contextItems: n.context,
         agentInfo: n.agentInfo,
         callerInfo: n.callerInfo,
       };
