@@ -456,6 +456,68 @@ describe("TaskExecutor multi-turn (B-4)", () => {
   });
 });
 
+// ride-along 5자리: `_event_id` envelope 운반 (Ft1NJquP — Python `task_executor.py:248` 정합)
+describe("TaskExecutor _processEvent — _event_id ride-along (Python L248 정합)", () => {
+  // 분석 캐시 `20260518-1338-codex-live-event-id-race.md`: persistEvent에서 받은 id를 event dict에
+  // `_event_id`로 박은 뒤 broadcast. orch session_events.py가 SSE id로 추출하여 대시보드
+  // tree-placer가 dedup·순서 보장. 누락 시 모든 live 이벤트가 eventId=0으로 같은 키 취급되어
+  // text_start skip → text_delta/end 미박힘 (라이브 결함 root cause).
+
+  it("매 event broadcast envelope에 _event_id가 박힌다 (persistEvent eventId 정합)", async () => {
+    const mocks = makeMocks();  // persistEvent가 nextEventId++ 반환
+    const events: SSEEventPayload[] = [
+      { type: "session", session_id: "thr-x" } as SSEEventPayload,
+      { type: "text_start", timestamp: 1 } as SSEEventPayload,
+      { type: "text_delta", text: "hi", timestamp: 1 } as SSEEventPayload,
+      { type: "complete", usage: {}, timestamp: 2 } as SSEEventPayload,
+    ];
+    const executor = new TaskExecutor(() => makeFakeEngine(events), mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
+    const task = makeTask();
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    // user_message + 4 turn events = 5 emit
+    const emitCalls = mocks.emitEventEnvelope.mock.calls;
+    // 모든 envelope event payload에 _event_id (number) 있음
+    for (const call of emitCalls) {
+      const payload = call[1] as Record<string, unknown>;
+      expect(payload._event_id).toEqual(expect.any(Number));
+    }
+  });
+
+  it("persistEvent throw → _event_id 미박힘 + broadcast는 계속 (격리)", async () => {
+    const mocks = makeMocks();
+    // user_message persist는 성공, 첫 turn event persist는 실패하도록 시뮬레이션
+    let callCount = 0;
+    mocks.persistEvent.mockImplementation(async () => {
+      callCount++;
+      if (callCount === 2) throw new Error("events db down");
+      return callCount;
+    });
+    const events: SSEEventPayload[] = [
+      { type: "text_delta", text: "hi", timestamp: 1 } as SSEEventPayload,
+      { type: "complete", usage: {}, timestamp: 2 } as SSEEventPayload,
+    ];
+    const executor = new TaskExecutor(() => makeFakeEngine(events), mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
+    const task = makeTask();
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    // text_delta는 persist throw — _event_id 없음. complete는 성공 — _event_id 있음.
+    const textDeltaCall = mocks.emitEventEnvelope.mock.calls.find(
+      (c) => (c[1] as { type: string }).type === "text_delta",
+    );
+    expect(textDeltaCall).toBeDefined();
+    expect((textDeltaCall![1] as Record<string, unknown>)._event_id).toBeUndefined();
+
+    const completeCall = mocks.emitEventEnvelope.mock.calls.find(
+      (c) => (c[1] as { type: string }).type === "complete",
+    );
+    expect(completeCall).toBeDefined();
+    expect((completeCall![1] as Record<string, unknown>)._event_id).toEqual(expect.any(Number));
+  });
+});
+
 // B-5: 초기 system_message + user_message 영속화 (Python `_persist_initial_messages` 정합)
 // 본 describe는 contextBuilder 미주입(legacy) 흐름. system_message·user_message.context는
 // 별 describe(`TaskExecutor _persistInitialMessages with contextBuilder`)에서 검증.
@@ -616,11 +678,14 @@ describe("TaskExecutor _persistInitialMessages — contextBuilder 주입 (Python
     const calls = mocks.persistEvent.mock.calls;
     const sysCall = calls.find((c) => (c[1] as { type: string }).type === "system_message");
     expect(sysCall).toBeDefined();
+    // ride-along 5자리 — persist 직후 _event_id가 박히고 mock은 reference 저장이므로
+    // strict equal에 _event_id가 포함됨. Python `task_executor.py:141` 정합.
     expect(sysCall![1]).toEqual({
       type: "system_message",
       text: "you are codex",
+      _event_id: expect.any(Number),
     });
-    // broadcast envelope도 strict equal — 영속과 wire 양쪽에서 형상 정합
+    // broadcast envelope도 strict equal — 영속과 wire 양쪽에서 형상 정합 (_event_id 포함)
     const sysEnvelope = mocks.emitEventEnvelope.mock.calls.find(
       (c) => (c[1] as { type: string }).type === "system_message",
     );
@@ -628,6 +693,7 @@ describe("TaskExecutor _persistInitialMessages — contextBuilder 주입 (Python
     expect(sysEnvelope![1]).toEqual({
       type: "system_message",
       text: "you are codex",
+      _event_id: expect.any(Number),
     });
   });
 

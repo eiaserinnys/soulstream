@@ -254,13 +254,17 @@ export class TaskExecutor {
       }
     }
 
-    // DB 영속 — 실패 격리
+    // DB 영속 — 실패 격리. event dict에 `_event_id` 박기 (Python `task_executor.py:248` 정본 정합).
+    // ride-along 5자리(분석 캐시 `20260518-1338-codex-live-event-id-race.md`): orch session_events.py가
+    // wire envelope의 `event._event_id`로 SSE id를 추출 → 대시보드 tree-placer가 dedup·순서 보장.
+    // 누락 시 모든 live 이벤트가 `eventId=0`으로 같은 키 취급되어 text_start skip → text_delta/end 미박힘.
     try {
       const eventId = await this.persistence.persistEvent(
         task.agentSessionId,
         event,
       );
       task.lastEventId = eventId;
+      (event as Record<string, unknown>)._event_id = eventId;
     } catch (err) {
       this.logger.warn(
         { err, sessionId: task.agentSessionId, eventType },
@@ -345,6 +349,8 @@ export class TaskExecutor {
           sysEvent as SSEEventPayload,
         );
         task.lastEventId = eventId;
+        // ride-along 5자리 — Python `task_executor.py:141` 정합
+        sysEvent._event_id = eventId;
       } catch (err) {
         this.logger.warn(
           { err, sessionId: task.agentSessionId },
@@ -384,6 +390,8 @@ export class TaskExecutor {
         event as SSEEventPayload,
       );
       task.lastEventId = eventId;
+      // ride-along 5자리 — Python `task_executor.py:168` 정합
+      event._event_id = eventId;
     } catch (err) {
       this.logger.warn(
         { err, sessionId: task.agentSessionId },
