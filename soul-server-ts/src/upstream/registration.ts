@@ -11,6 +11,7 @@ export interface RegistrationParams {
   host: string;
   port: number;
   userName: string;
+  userPortraitPath?: string;
   agentRegistry: AgentRegistry;
   /**
    * portrait 파일 read 실패(설정 오류·권한 등)를 운영자에게 노출하기 위한 logger. 미주입 시
@@ -77,6 +78,9 @@ export function _resetPortraitCacheForTest(): void {
  * - agents = registry.list() 매핑 (id, name, backend, portrait_url, portrait_b64?)
  *   · portrait_path 미설정 시 portrait_url = "" + portrait_b64 키 미박힘
  *   · portrait_path 설정 + 파일 read 실패 시 portrait_url은 유지(URL만 광고), portrait_b64 미박힘
+ * - user = userName이 있을 때 광고 (name, hasPortrait, portrait_b64?)
+ *   · userPortraitPath 설정 + 파일 read 성공 시 hasPortrait=true + portrait_b64
+ *   · read 실패 시 hasPortrait=false (orch 프록시가 깨진 URL을 만들지 않도록 명시)
  *
  * 빈 registry → agents=[], supported_backends=[], max_concurrent=0. orch는 본 노드로 라우팅 안 함.
  */
@@ -106,10 +110,16 @@ export function buildRegistrationMsg(params: RegistrationParams): NodeRegister {
     }),
   };
   if (params.userName) {
+    const portraitB64 = params.userPortraitPath
+      ? encodePortrait(params.userPortraitPath, params.logger)
+      : null;
     msg.user = {
       name: params.userName,
-      hasPortrait: false,
+      hasPortrait: Boolean(portraitB64),
     };
+    if (portraitB64) {
+      msg.user.portrait_b64 = portraitB64;
+    }
   }
   return msg;
 }

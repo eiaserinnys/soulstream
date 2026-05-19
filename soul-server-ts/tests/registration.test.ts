@@ -99,6 +99,44 @@ describe("buildRegistrationMsg (Phase B-3 yaml-driven)", () => {
     });
     expect(msg.user).toEqual({ name: "김주복", hasPortrait: false });
   });
+
+  it("userName과 userPortraitPath가 있으면 user portrait_b64까지 광고", () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "registration-user-portrait-"));
+    const userPortraitPath = join(tmpDir, "user.png");
+    const userPortraitBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x02]);
+    writeFileSync(userPortraitPath, userPortraitBytes);
+    try {
+      const msg = buildRegistrationMsg({
+        nodeId: "eias-shopping-ts",
+        host: "127.0.0.1",
+        port: 4205,
+        userName: "김주복",
+        userPortraitPath,
+        agentRegistry: new AgentRegistry([codexAgent]),
+      });
+
+      expect(msg.user).toEqual({
+        name: "김주복",
+        hasPortrait: true,
+        portrait_b64: userPortraitBytes.toString("base64"),
+      });
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("user portrait read 실패 시 hasPortrait=false로 광고", () => {
+    const msg = buildRegistrationMsg({
+      nodeId: "eias-shopping-ts",
+      host: "127.0.0.1",
+      port: 4205,
+      userName: "김주복",
+      userPortraitPath: "/nonexistent/user.png",
+      agentRegistry: new AgentRegistry([codexAgent]),
+    });
+
+    expect(msg.user).toEqual({ name: "김주복", hasPortrait: false });
+  });
 });
 
 describe("buildRegistrationMsg — portrait wire (Python adapter.py:212-233 정본 정합)", () => {

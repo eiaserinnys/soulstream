@@ -22,6 +22,7 @@ export const EnvSchema = z
       .enum(["fatal", "error", "warn", "info", "debug", "trace"])
       .default("info"),
     DASH_USER_NAME: z.string().default(""),
+    DASH_USER_PORTRAIT: z.string().default(""),
     /**
      * Codex API 키 (Phase B-2). optional — 미설정 시 Codex SDK가 ~/.codex/auth.json
      * (ChatGPT 구독 OAuth) fallback. production strict 미요구 — credential default

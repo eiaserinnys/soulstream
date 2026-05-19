@@ -19,6 +19,7 @@ describe("parseEnv", () => {
     expect(env.ENVIRONMENT).toBe("development");
     expect(env.LOG_LEVEL).toBe("info");
     expect(env.DASH_USER_NAME).toBe("");
+    expect(env.DASH_USER_PORTRAIT).toBe("");
   });
 
   it("SOULSTREAM_NODE_ID 부재 시 ZodError", () => {

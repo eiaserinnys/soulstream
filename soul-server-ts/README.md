@@ -39,6 +39,7 @@ cwd는 `./services/soulstream` (모노레포 루트 기준 `src/soulstream/soul-
 | `ENVIRONMENT` | ❌ (default development) | `production` 시 AUTH_BEARER_TOKEN 강제 |
 | `LOG_LEVEL` | ❌ (default info) | pino 레벨 |
 | `DASH_USER_NAME` | ❌ | 노드 광고용 user.name |
+| `DASH_USER_PORTRAIT` | ❌ | 노드 광고용 user portrait 이미지 경로 |
 
 ### 개발
 

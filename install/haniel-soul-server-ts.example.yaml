@@ -55,3 +55,5 @@ install:
           default: info
         - key: DASH_USER_NAME
           default: 김주복
+        - key: DASH_USER_PORTRAIT
+          prompt: "대시보드 사용자 초상화 이미지 경로 (비우면 portrait 없음)"

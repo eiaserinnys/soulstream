@@ -17,6 +17,7 @@ export interface UpstreamConfig {
   port: number;
   authBearerToken: string;
   userName: string;
+  userPortraitPath: string;
   isProduction: boolean;
 }
 
@@ -150,6 +151,7 @@ export class UpstreamAdapter {
         host: this.config.host,
         port: this.config.port,
         userName: this.config.userName,
+        userPortraitPath: this.config.userPortraitPath,
         agentRegistry: this.deps.agentRegistry,
         logger: this.logger,
       }),

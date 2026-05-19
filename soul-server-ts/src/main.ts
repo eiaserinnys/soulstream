@@ -268,6 +268,7 @@ async function main(): Promise<void> {
       port: env.PORT,
       authBearerToken: env.AUTH_BEARER_TOKEN,
       userName: env.DASH_USER_NAME,
+      userPortraitPath: env.DASH_USER_PORTRAIT,
       isProduction: env.ENVIRONMENT === "production",
     },
     logger,
