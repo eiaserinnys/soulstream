@@ -273,7 +273,8 @@ describe("CodexEngineAdapter.execute — 새 thread", () => {
     expect(sseEvents[2]).toMatchObject({ type: "text_delta", text: "hello world" });
     expect(sseEvents[3]).toMatchObject({ type: "text_end" });
     expect(sseEvents[3].text).toBeUndefined();
-    expect(sseEvents[4]).toMatchObject({ type: "complete" });
+    // F3: complete payload에 result = 마지막 agent_message text가 박힌다.
+    expect(sseEvents[4]).toMatchObject({ type: "complete", result: "hello world" });
   });
 
   it("model 옵션을 startThread에 그대로 전달", async () => {
@@ -725,5 +726,159 @@ describe("CodexEngineAdapter — interrupt + close", () => {
     await engine.close();
     await engine.close();
     // throw 없음.
+  });
+});
+
+// F3 (PR fix/soul-server-ts-chat-sse-python-parity): complete.result enrichment.
+// adapter가 turn 단위로 lastAgentText를 추적하여 complete payload에 주입.
+// Python `complete.result` 정합 (mcp_session_query PREVIEW_FIELD_MAP `["complete"]="result"`).
+describe("CodexEngineAdapter.execute — complete.result enrichment (F3)", () => {
+  it("agent_message 여러 번 → 마지막 text가 complete.result로 박힘", async () => {
+    const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
+    mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });
+    mockRunStreamed.mockResolvedValue({
+      events: eventStream([
+        { type: "thread.started", thread_id: "thr-x" },
+        {
+          type: "item.completed",
+          item: { id: "msg-0", type: "agent_message", text: "첫 번째" },
+        },
+        {
+          type: "item.completed",
+          item: { id: "msg-1", type: "agent_message", text: "두 번째 (최종)" },
+        },
+        {
+          type: "turn.completed",
+          usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0 },
+        },
+      ]),
+    });
+
+    const engine = new CodexEngineAdapter(
+      { workspaceDir: "/tmp/work" },
+      silentLogger(),
+    );
+    const sseEvents: Array<Record<string, unknown>> = [];
+    for await (const event of engine.execute({ prompt: "x" })) {
+      sseEvents.push(event as Record<string, unknown>);
+    }
+    const complete = sseEvents.find((e) => e.type === "complete");
+    expect(complete).toBeDefined();
+    // 마지막 agent_message text가 박힘 (덮어쓰기 동작)
+    expect(complete!.result).toBe("두 번째 (최종)");
+    // usage는 그대로 보존됨
+    expect(complete!.usage).toEqual({
+      input_tokens: 1,
+      cached_input_tokens: 0,
+      output_tokens: 1,
+      reasoning_output_tokens: 0,
+    });
+  });
+
+  it("agent_message 없는 turn → complete.result 키 부재 (graceful, soul-ui 폴백 동작)", async () => {
+    // tool-only turn(예: tool 실행 후 즉시 turn 종료) 또는 빈 turn.
+    // complete.result가 없으면 soul-ui node-factory.ts:167 `e.result ?? "Session completed"` 폴백 발동.
+    const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
+    mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });
+    mockRunStreamed.mockResolvedValue({
+      events: eventStream([
+        { type: "thread.started", thread_id: "thr-empty" },
+        {
+          type: "turn.completed",
+          usage: { input_tokens: 0, cached_input_tokens: 0, output_tokens: 0, reasoning_output_tokens: 0 },
+        },
+      ]),
+    });
+
+    const engine = new CodexEngineAdapter(
+      { workspaceDir: "/tmp/work" },
+      silentLogger(),
+    );
+    const sseEvents: Array<Record<string, unknown>> = [];
+    for await (const event of engine.execute({ prompt: "x" })) {
+      sseEvents.push(event as Record<string, unknown>);
+    }
+    const complete = sseEvents.find((e) => e.type === "complete");
+    expect(complete).toBeDefined();
+    // result 키 자체가 없음
+    expect(complete).not.toHaveProperty("result");
+    // usage는 그대로
+    expect(complete!.usage).toBeDefined();
+  });
+
+  it("agent_message 사이에 tool_result 끼어있어도 마지막 agent_message text가 사용됨", async () => {
+    const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
+    mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });
+    mockRunStreamed.mockResolvedValue({
+      events: eventStream([
+        { type: "thread.started", thread_id: "thr-mix" },
+        {
+          type: "item.completed",
+          item: { id: "msg-0", type: "agent_message", text: "사고 중..." },
+        },
+        {
+          type: "item.completed",
+          item: {
+            id: "cmd-0",
+            type: "command_execution",
+            command: "ls",
+            aggregated_output: "file.txt\n",
+            exit_code: 0,
+            status: "completed",
+          },
+        },
+        {
+          type: "item.completed",
+          item: { id: "msg-1", type: "agent_message", text: "최종 답" },
+        },
+        {
+          type: "turn.completed",
+          usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0 },
+        },
+      ]),
+    });
+
+    const engine = new CodexEngineAdapter(
+      { workspaceDir: "/tmp/work" },
+      silentLogger(),
+    );
+    const sseEvents: Array<Record<string, unknown>> = [];
+    for await (const event of engine.execute({ prompt: "x" })) {
+      sseEvents.push(event as Record<string, unknown>);
+    }
+    const complete = sseEvents.find((e) => e.type === "complete");
+    expect(complete!.result).toBe("최종 답");
+  });
+
+  it("빈 text agent_message → complete.result에 빈 문자열 (undefined와 구분)", async () => {
+    // claude 정합으로 빈 텍스트도 의미 있는 turn 종료. lastAgentText="" → result=""로 박힘.
+    const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
+    mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });
+    mockRunStreamed.mockResolvedValue({
+      events: eventStream([
+        { type: "thread.started", thread_id: "thr-empty-text" },
+        {
+          type: "item.completed",
+          item: { id: "msg-0", type: "agent_message", text: "" },
+        },
+        {
+          type: "turn.completed",
+          usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 0, reasoning_output_tokens: 0 },
+        },
+      ]),
+    });
+
+    const engine = new CodexEngineAdapter(
+      { workspaceDir: "/tmp/work" },
+      silentLogger(),
+    );
+    const sseEvents: Array<Record<string, unknown>> = [];
+    for await (const event of engine.execute({ prompt: "x" })) {
+      sseEvents.push(event as Record<string, unknown>);
+    }
+    const complete = sseEvents.find((e) => e.type === "complete");
+    expect(complete!.result).toBe("");
+    // result 키가 *있음* (undefined 아님)
+    expect(complete).toHaveProperty("result");
   });
 });
