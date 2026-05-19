@@ -321,10 +321,10 @@ async def search_session_history(
     session_ids: list[str] | None = None,
     top_k: int = 10,
 ) -> dict:
-    """BM25로 세션 이벤트 텍스트를 검색한다.
+    """PostgreSQL tsvector 기반으로 세션 이벤트 텍스트를 검색한다.
 
     Args:
-        query: 검색어 (공백 기반 토크나이즈, 한글 지원)
+        query: 검색어
         session_ids: 검색할 세션 ID 목록. None이면 전체 세션 검색.
         top_k: 반환할 최대 결과 수 (최대 100).
 

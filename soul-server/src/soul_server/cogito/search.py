@@ -94,6 +94,3 @@ class SessionSearchEngine:
             ))
         return search_results
 
-
-# Backward-compatible alias
-BM25SearchEngine = SessionSearchEngine

@@ -205,7 +205,7 @@ export function registerSessionQueryTools(
     "search_session_history",
     {
       description:
-        "이벤트 텍스트 검색 (Postgres ts_rank). BM25 정밀 알고리즘은 후속 카드.",
+        "이벤트 텍스트 검색 (PostgreSQL tsvector/ts_rank, Python SessionSearchEngine 정합).",
       inputSchema: {
         query: z.string().min(1),
         session_ids: z.array(z.string()).optional(),

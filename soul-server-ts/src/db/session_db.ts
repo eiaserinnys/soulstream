@@ -638,9 +638,8 @@ export class SessionDB {
   /**
    * `event_search` stored procedure (schema.sql L693-729) — postgres full-text search.
    *
-   * 본 카드는 search_session_history 도구의 *minimal viable* 구현으로 postgres `ts_rank` 기반
-   * full-text search를 사용한다 (한글은 search_vector에서 'simple' config로 tokenize됨,
-   * BM25 정밀 알고리즘은 후속 카드). Python `SessionSearchEngine`(BM25)와는 별개 경로.
+   * Python `SessionSearchEngine`과 같은 `event_search` stored procedure 경로. PostgreSQL
+   * `tsvector` + `ts_rank` 기반 full-text search를 사용한다.
    *
    * 응답 모양은 Python 도구의 results dict와 키 호환 — 도구 핸들러가 preview/event_type/score
    * 키로 재포장.

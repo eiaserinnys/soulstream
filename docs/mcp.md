@@ -52,7 +52,7 @@ Once connected, all tools below are available inside the Claude Code session.
 | `get_session_summary(session_id)` | Turn-by-turn summary: user prompts, response previews, tools used, context usage |
 | `list_session_events(session_id, event_types, ...)` | Raw event stream with pagination and truncation control |
 | `get_session_event(session_id, event_id)` | Full content of a single event (no truncation) |
-| `search_session_history(query, session_ids, top_k)` | BM25 full-text search across all session events |
+| `search_session_history(query, session_ids, top_k)` | PostgreSQL tsvector/ts_rank full-text search across all session events |
 
 ### Session management
 
@@ -77,6 +77,6 @@ Once connected, all tools below are available inside the Claude Code session.
 Two endpoints are also available outside of MCP:
 
 ```
-GET  /cogito/search?q=<query>&top_k=10   — BM25 session history search
+GET  /cogito/search?q=<query>&top_k=10   — tsvector session history search
 POST /cogito/refresh                     — Force-refresh the brief file
 ```
