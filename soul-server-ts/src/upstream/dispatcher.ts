@@ -31,6 +31,12 @@ interface CreateSessionCmd extends CommandLike {
    * `_handle_create_session`이 `cmd.get("systemPrompt")` 그대로 forward 정합).
    */
   systemPrompt?: string;
+  /**
+   * 첫 turn 첨부 파일 절대경로 목록 (Phase 2).
+   * Python `command_handler.py:428` `attachment_paths` wire 키 정합 (snake_case).
+   * orch send_create_session이 `attachment_paths` 키로 전달하면 여기서 수신.
+   */
+  attachment_paths?: string[];
 }
 
 interface IntervenCmd extends CommandLike {
@@ -177,6 +183,7 @@ export class CommandDispatcher {
       model: cmd.model,
       folderId: cmd.folderId ?? null,
       systemPrompt: cmd.systemPrompt,  // B-6 context_builder가 folder_prompt와 합성
+      attachmentPaths: cmd.attachment_paths,  // Phase 2 — create_session wire에서 forward
     });
 
     this.taskExecutor.startExecution(task, agent);

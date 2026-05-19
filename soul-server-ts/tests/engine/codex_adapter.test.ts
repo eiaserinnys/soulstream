@@ -727,3 +727,181 @@ describe("CodexEngineAdapter — interrupt + close", () => {
     // throw 없음.
   });
 });
+
+describe("CodexEngineAdapter — Phase 2 attachmentPaths (spec-reviewer 보강 1/3·2/3·§7)", () => {
+  it("rejected 입력 → assistant_error yield + return (runStreamed 호출 안 됨)", async () => {
+    const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
+    mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });
+    // runStreamed가 호출되면 안 됨 — 호출되면 테스트 실패
+
+    const engine = new CodexEngineAdapter(
+      { workspaceDir: "/tmp/work" },
+      silentLogger(),
+    );
+    const events: Array<Record<string, unknown>> = [];
+    for await (const e of engine.execute({
+      prompt: "test",
+      attachmentPaths: ["/tmp/sess-1/1234_doc.pdf"],
+    })) {
+      events.push(e as Record<string, unknown>);
+    }
+
+    // assistant_error 1건 emit 후 종료
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe("assistant_error");
+    expect(events[0].fatal).toBe(false);
+    expect(String(events[0].message)).toContain(".pdf");
+    // runStreamed 호출 안 됨
+    expect(mockRunStreamed).not.toHaveBeenCalled();
+  });
+
+  it("rejected 복수 → reason들이 , 구분으로 message에 포함", async () => {
+    const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
+    mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });
+
+    const engine = new CodexEngineAdapter(
+      { workspaceDir: "/tmp/work" },
+      silentLogger(),
+    );
+    const events: Array<Record<string, unknown>> = [];
+    for await (const e of engine.execute({
+      prompt: "test",
+      attachmentPaths: ["/tmp/a.pdf", "/tmp/b.docx"],
+    })) {
+      events.push(e as Record<string, unknown>);
+    }
+    expect(events[0].type).toBe("assistant_error");
+    const msg = String(events[0].message);
+    expect(msg).toContain(".pdf");
+    expect(msg).toContain(".docx");
+  });
+
+  it("text-reference 입력 → system_message yield 후 runStreamed 호출 (prompt에 인용 첨가)", async () => {
+    const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
+    mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });
+    mockRunStreamed.mockResolvedValue({ events: eventStream([]) });
+
+    const engine = new CodexEngineAdapter(
+      { workspaceDir: "/tmp/work" },
+      silentLogger(),
+    );
+    const events: Array<Record<string, unknown>> = [];
+    for await (const e of engine.execute({
+      prompt: "파일 봐줘",
+      attachmentPaths: ["/tmp/sess-1/1234_note.txt"],
+    })) {
+      events.push(e as Record<string, unknown>);
+    }
+
+    // 첫 이벤트: system_message (텍스트 변환 알림)
+    expect(events[0].type).toBe("system_message");
+    expect(String(events[0].text)).toContain("/tmp/sess-1/1234_note.txt");
+
+    // runStreamed는 호출됨 — 인자가 string (text-reference → string 경로)
+    expect(mockRunStreamed).toHaveBeenCalledTimes(1);
+    const [calledInput] = mockRunStreamed.mock.calls[0];
+    expect(typeof calledInput).toBe("string");
+    expect(calledInput as string).toContain("파일 봐줘");
+    expect(calledInput as string).toContain("다음 파일들이 첨부되었습니다");
+    expect(calledInput as string).toContain("/tmp/sess-1/1234_note.txt");
+  });
+
+  it("image 입력 → runStreamed 호출 시 첫 인자가 UserInput[] (string 아님)", async () => {
+    const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
+    mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });
+    mockRunStreamed.mockResolvedValue({ events: eventStream([]) });
+
+    const engine = new CodexEngineAdapter(
+      { workspaceDir: "/tmp/work" },
+      silentLogger(),
+    );
+    for await (const _ of engine.execute({
+      prompt: "이미지 봐줘",
+      attachmentPaths: ["/tmp/sess-1/1234_photo.png"],
+    })) {
+      // drain
+    }
+
+    expect(mockRunStreamed).toHaveBeenCalledTimes(1);
+    const [calledInput] = mockRunStreamed.mock.calls[0];
+    // image 있으면 UserInput[]
+    expect(Array.isArray(calledInput)).toBe(true);
+    const arr = calledInput as Array<{ type: string; text?: string; path?: string }>;
+    expect(arr[0].type).toBe("text");
+    expect(arr[0].text).toBe("이미지 봐줘");
+    expect(arr[1].type).toBe("local_image");
+    expect(arr[1].path).toBe("/tmp/sess-1/1234_photo.png");
+  });
+
+  it("빈 attachmentPaths → 기존 string prompt 그대로 (system_message 없음)", async () => {
+    const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
+    mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });
+    mockRunStreamed.mockResolvedValue({ events: eventStream([]) });
+
+    const engine = new CodexEngineAdapter(
+      { workspaceDir: "/tmp/work" },
+      silentLogger(),
+    );
+    const events: Array<Record<string, unknown>> = [];
+    for await (const e of engine.execute({
+      prompt: "hello",
+      attachmentPaths: [],
+    })) {
+      events.push(e as Record<string, unknown>);
+    }
+
+    // system_message 없음
+    expect(events.find((e) => e.type === "system_message")).toBeUndefined();
+    // runStreamed 인자는 string
+    const [calledInput] = mockRunStreamed.mock.calls[0];
+    expect(calledInput).toBe("hello");
+  });
+
+  it("attachmentPaths 미지정 → 기존 동작 유지 (system_message 없음)", async () => {
+    const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
+    mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });
+    mockRunStreamed.mockResolvedValue({ events: eventStream([]) });
+
+    const engine = new CodexEngineAdapter(
+      { workspaceDir: "/tmp/work" },
+      silentLogger(),
+    );
+    const events: Array<Record<string, unknown>> = [];
+    for await (const e of engine.execute({ prompt: "hello" })) {
+      events.push(e as Record<string, unknown>);
+    }
+
+    expect(events.find((e) => e.type === "system_message")).toBeUndefined();
+    const [calledInput] = mockRunStreamed.mock.calls[0];
+    expect(calledInput).toBe("hello");
+  });
+
+  it("image + text-reference mixed → UserInput[] + 첫 text에 인용 포함 + system_message yield", async () => {
+    const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
+    mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });
+    mockRunStreamed.mockResolvedValue({ events: eventStream([]) });
+
+    const engine = new CodexEngineAdapter(
+      { workspaceDir: "/tmp/work" },
+      silentLogger(),
+    );
+    const events: Array<Record<string, unknown>> = [];
+    for await (const e of engine.execute({
+      prompt: "이미지와 파일 분석해줘",
+      attachmentPaths: ["/tmp/a.png", "/tmp/b.py"],
+    })) {
+      events.push(e as Record<string, unknown>);
+    }
+
+    // system_message 발화 (text-reference)
+    expect(events[0].type).toBe("system_message");
+    // runStreamed 인자는 UserInput[] (image 있으므로)
+    const [calledInput] = mockRunStreamed.mock.calls[0];
+    expect(Array.isArray(calledInput)).toBe(true);
+    const arr = calledInput as Array<{ type: string; text?: string; path?: string }>;
+    expect(arr[0].type).toBe("text");
+    expect(arr[0].text).toContain("이미지와 파일 분석해줘");
+    expect(arr[0].text).toContain("- /tmp/b.py");
+    expect(arr[1].type).toBe("local_image");
+  });
+});

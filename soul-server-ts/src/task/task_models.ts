@@ -101,6 +101,16 @@ export interface Task {
    */
   systemPrompt?: string;
 
+  /**
+   * 첫 turn 첨부 파일 절대경로 목록. Python `task_models.py:129 attachment_paths` 정합.
+   *
+   * - create_session wire의 `attachment_paths` 필드에서 수신.
+   * - task_executor._consumeEventStream에서 첫 turn engine.execute 시 forward.
+   * - user_message wire payload의 `attachments` 키에도 기록 (대시보드 첨부 표시).
+   * - 인터벤션 turn은 InterventionMessage.attachmentPaths에서 별도 운반.
+   */
+  attachmentPaths?: string[];
+
   createdAt: Date;
   completedAt?: Date;
 

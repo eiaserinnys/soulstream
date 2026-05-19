@@ -124,6 +124,7 @@ export class TaskExecutor {
     // 박는 모델. TS는 같은 task 인스턴스를 재활용하지만 본 분기 + addIntervention auto-resume
     // 분기 조합으로 wire 의미 등가 달성.
     let turnPrompt: string;
+    let turnAttachmentPaths: string[] | undefined;
     if (task.interventionQueue.length === 0) {
       // 신규 task — Python `_persist_initial_messages`(L120-182) 정합.
       //
@@ -167,9 +168,14 @@ export class TaskExecutor {
       } else {
         turnPrompt = task.prompt;
       }
+      // ★ 첫 turn은 task.attachmentPaths (spec-reviewer 보강 3/3)
+      turnAttachmentPaths = task.attachmentPaths;
     } else {
       // Auto-resume — user_message는 addIntervention 분기가 이미 영속화. 첫 turn은 dequeue.
-      turnPrompt = task.interventionQueue.shift()!.text;
+      // ★ 인터벤션 turn은 intervention.attachmentPaths (spec-reviewer 보강 3/3)
+      const intervention = task.interventionQueue.shift()!;
+      turnPrompt = intervention.text;
+      turnAttachmentPaths = intervention.attachmentPaths;
     }
     try {
       while (true) {
@@ -179,6 +185,7 @@ export class TaskExecutor {
             prompt: turnPrompt,
             model: task.model,
             resumeSessionId,
+            attachmentPaths: turnAttachmentPaths,  // ★ Phase 2 — turn별 첨부 forward
           })) {
             await this._processEvent(task, event);
           }
@@ -226,6 +233,7 @@ export class TaskExecutor {
           break;
         }
         turnPrompt = next.text;
+        turnAttachmentPaths = next.attachmentPaths;  // ★ Phase 2 — 인터벤션 turn 첨부 forward (spec-reviewer 보강 3/3 L223)
         // (intervention_sent는 addIntervention에서 이미 broadcast됨 — 여기서 재발행 안 함.)
       }
     } finally {
@@ -398,6 +406,10 @@ export class TaskExecutor {
     }
     if (ctx && ctx.combinedContextItems.length > 0) {
       event.context = ctx.combinedContextItems;
+    }
+    // Phase 2 — Python `task_executor.py:165-166` 정합: user_message wire에 attachments 키 박기
+    if (task.attachmentPaths && task.attachmentPaths.length > 0) {
+      event.attachments = task.attachmentPaths;
     }
     try {
       const eventId = await this.persistence.persistEvent(

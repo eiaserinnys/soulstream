@@ -66,6 +66,12 @@ export interface EngineExecuteParams {
   resumeSessionId?: string;
   model?: string;
   /**
+   * 첨부 파일 절대경로 목록. 어댑터별 능력 분기에 사용.
+   * - Codex 어댑터: image(local_image UserInput) vs text-reference(prompt 인용) vs rejected(assistant_error) 분기.
+   * - 미래의 Claude 어댑터: 텍스트 인용 또는 native 첨부로 처리.
+   */
+  attachmentPaths?: string[];
+  /**
    * 시스템 프롬프트. 백엔드별 지원 여부:
    * - Claude SDK: `ClaudeAgentOptions.system_prompt`로 직접 매핑.
    * - **Codex SDK 0.130.0**: ThreadOptions에 표면 없음 — `CodexOptions.config.base_instructions`

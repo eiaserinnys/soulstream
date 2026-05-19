@@ -660,3 +660,54 @@ describe("CommandDispatcher.download_attachment", () => {
     expect(msg.message).toContain("파일이 존재하지 않습니다");
   });
 });
+
+// Phase 2: create_session attachment_paths → task.attachmentPaths forward
+describe("CommandDispatcher.create_session — Phase 2 attachment_paths forward", () => {
+  it("create_session cmd.attachment_paths → taskManager.createTask에 attachmentPaths로 forward", async () => {
+    const { dispatcher, tm } = createDispatcher();
+
+    await dispatcher.dispatch({
+      type: "create_session",
+      agentSessionId: "sess-with-attach",
+      prompt: "이미지 분석해줘",
+      profile: "codex-default",
+      attachment_paths: ["/tmp/sess-with-attach/1234_photo.png", "/tmp/sess-with-attach/1235_note.py"],
+    });
+
+    expect(tm.createTask).toHaveBeenCalledTimes(1);
+    const createTaskCall = (tm.createTask as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(createTaskCall.attachmentPaths).toEqual([
+      "/tmp/sess-with-attach/1234_photo.png",
+      "/tmp/sess-with-attach/1235_note.py",
+    ]);
+  });
+
+  it("attachment_paths 미지정 → createTask에 attachmentPaths=undefined", async () => {
+    const { dispatcher, tm } = createDispatcher();
+
+    await dispatcher.dispatch({
+      type: "create_session",
+      agentSessionId: "sess-no-attach",
+      prompt: "hello",
+      profile: "codex-default",
+    });
+
+    const createTaskCall = (tm.createTask as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(createTaskCall.attachmentPaths).toBeUndefined();
+  });
+
+  it("attachment_paths 빈 배열 → createTask에 attachmentPaths=[]", async () => {
+    const { dispatcher, tm } = createDispatcher();
+
+    await dispatcher.dispatch({
+      type: "create_session",
+      agentSessionId: "sess-empty-attach",
+      prompt: "hello",
+      profile: "codex-default",
+      attachment_paths: [],
+    });
+
+    const createTaskCall = (tm.createTask as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(createTaskCall.attachmentPaths).toEqual([]);
+  });
+});

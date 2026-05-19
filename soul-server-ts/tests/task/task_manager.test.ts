@@ -1081,3 +1081,47 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
     expect(task.prompt).toBe("원래");  // 원래 prompt 보존
   });
 });
+
+// Phase 2: createTask attachmentPaths 보존
+describe("TaskManager.createTask — Phase 2 attachmentPaths", () => {
+  it("attachmentPaths 있으면 task.attachmentPaths로 보존", async () => {
+    const { db, broadcaster } = makeMocks();
+    const tm = new TaskManager("eias-shopping-ts", db, broadcaster, silentLogger);
+
+    const task = await tm.createTask({
+      agentSessionId: "sess-attach",
+      prompt: "hi",
+      attachmentPaths: ["/tmp/sess-attach/1234_image.png", "/tmp/sess-attach/1235_note.txt"],
+    });
+
+    expect(task.attachmentPaths).toEqual([
+      "/tmp/sess-attach/1234_image.png",
+      "/tmp/sess-attach/1235_note.txt",
+    ]);
+  });
+
+  it("attachmentPaths 미지정 → task.attachmentPaths는 undefined", async () => {
+    const { db, broadcaster } = makeMocks();
+    const tm = new TaskManager("eias-shopping-ts", db, broadcaster, silentLogger);
+
+    const task = await tm.createTask({
+      agentSessionId: "sess-no-attach",
+      prompt: "hi",
+    });
+
+    expect(task.attachmentPaths).toBeUndefined();
+  });
+
+  it("attachmentPaths 빈 배열 → task.attachmentPaths는 빈 배열", async () => {
+    const { db, broadcaster } = makeMocks();
+    const tm = new TaskManager("eias-shopping-ts", db, broadcaster, silentLogger);
+
+    const task = await tm.createTask({
+      agentSessionId: "sess-empty-attach",
+      prompt: "hi",
+      attachmentPaths: [],
+    });
+
+    expect(task.attachmentPaths).toEqual([]);
+  });
+});

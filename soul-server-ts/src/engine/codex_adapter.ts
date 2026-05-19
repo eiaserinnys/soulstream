@@ -22,6 +22,10 @@ import type { Logger } from "pino";
 
 import { sanitizeCodexEnv } from "./codex_env.js";
 import { mapThreadEvent } from "./codex_event_mapper.js";
+import {
+  classifyAttachment,
+  composeCodexInput,
+} from "./attachment_converter.js";
 import type {
   BackendId,
   EngineExecuteParams,
@@ -159,11 +163,45 @@ export class CodexEngineAdapter implements EnginePort {
       this.logger.debug({ workspaceDir: this.workspaceDir }, "Started new Codex thread");
     }
 
+    // 첨부 처리 (Phase 2 — spec-reviewer 보강 1/3·2/3 반영):
+    //
+    // 정책: rejected 발생 시 *전체 turn abort*.
+    //   - 업로드 단계 fileManager.validateFile이 확장자 blacklist + 크기 검증을 이미 통과.
+    //   - 본 단계의 rejected는 "codex가 소비 불가한 형식"(.pdf, .docx 등 capability table 미포함).
+    //   - 사용자 명시 첨부 중 일부만 처리하면 의도 어긋남 → design-principles §4 명시 실패.
+    //   → assistant_error emit + turn 종료. 사용자가 거부된 파일 인지 후 재시도 결정.
+    //
+    // emit 방식: *yield 전용* (spec-reviewer 보강 2/3 — params.onEvent 사용 금지).
+    //   onEvent는 부가 콜백이며 yield 없이 onEvent만 호출하면 wire·DB에 기록되지 않음
+    //   (task_executor._processEvent가 persist + broadcaster + side-effect 3단계를 수행).
+    const conversions = (params.attachmentPaths ?? []).map(classifyAttachment);
+    const rejected = conversions.filter((c) => c.kind === "rejected");
+    if (rejected.length > 0) {
+      // 🔵 #9 — 거부 시 assistant_error emit + turn 종료
+      yield {
+        type: "assistant_error",
+        message: `첨부 거부: ${rejected.map((r) => (r as Extract<typeof r, { kind: "rejected" }>).reason).join(", ")}`,
+        fatal: false,
+      } as SSEEventPayload;
+      this.currentTurn = null;
+      return;
+    }
+    const textConvs = conversions.filter((c) => c.kind === "text-reference");
+    if (textConvs.length > 0) {
+      // 🟡 #7 — 텍스트 변환 알림 (yield → task_executor._processEvent가 persist + broadcast)
+      yield {
+        type: "system_message",
+        text: `다음 첨부를 텍스트 인용으로 전달했습니다:\n${textConvs.map((c) => "- " + (c as Extract<typeof c, { kind: "text-reference" }>).path).join("\n")}`,
+      } as SSEEventPayload;
+    }
+    // prompt + text-reference 인용 합성 → Input (image 있으면 UserInput[], 없으면 string)
+    const codexInput = composeCodexInput(params.prompt, conversions);
+
     // 새 thread면 첫 yield는 thread.started → session SSE.
     // 기존 thread resume이면 thread.id가 이미 있음 — onSession 콜백 호출.
     let streamedTurn;
     try {
-      streamedTurn = await thread.runStreamed(params.prompt, {
+      streamedTurn = await thread.runStreamed(codexInput, {
         signal: controller.signal,
       });
     } catch (err) {

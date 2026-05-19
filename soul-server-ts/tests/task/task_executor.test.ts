@@ -982,3 +982,145 @@ describe("TaskExecutor _persistInitialMessages — contextBuilder 주입 (Python
     expect(sysCalls.length).toBe(0);
   });
 });
+
+// Phase 2: attachmentPaths pipeline
+describe("TaskExecutor Phase 2 — attachmentPaths pipeline", () => {
+  it("첫 turn: task.attachmentPaths가 engine.execute로 forward된다", async () => {
+    const mocks = makeMocks();
+    const events: SSEEventPayload[] = [
+      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
+    ];
+    const capturedParams: Array<Record<string, unknown>> = [];
+    const engine: EnginePort = {
+      backendId: "codex",
+      workspaceDir: "/tmp/codex-default",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        capturedParams.push(params as Record<string, unknown>);
+        for (const e of events) yield e;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(() => engine, mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
+    const task = makeTask();
+    task.attachmentPaths = ["/tmp/sess-1/1234_image.png", "/tmp/sess-1/1235_note.txt"];
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    // 첫 turn engine.execute에 attachmentPaths가 전달됨
+    expect(capturedParams[0].attachmentPaths).toEqual([
+      "/tmp/sess-1/1234_image.png",
+      "/tmp/sess-1/1235_note.txt",
+    ]);
+  });
+
+  it("user_message wire payload에 attachments 키 박힘 (Python task_executor.py:165-166 정합)", async () => {
+    const mocks = makeMocks();
+    const events: SSEEventPayload[] = [
+      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
+    ];
+    const executor = new TaskExecutor(() => makeFakeEngine(events), mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
+    const task = makeTask();
+    task.attachmentPaths = ["/tmp/sess-1/1234_photo.png"];
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    // _persistInitialMessages의 user_message에 attachments 키 박힘
+    const userMessageCall = mocks.persistEvent.mock.calls.find(
+      (c) => (c[1] as { type: string }).type === "user_message",
+    );
+    expect(userMessageCall).toBeDefined();
+    expect((userMessageCall![1] as Record<string, unknown>).attachments).toEqual([
+      "/tmp/sess-1/1234_photo.png",
+    ]);
+  });
+
+  it("attachmentPaths 없으면 user_message에 attachments 키 없음 (기존 흐름 회귀)", async () => {
+    const mocks = makeMocks();
+    const events: SSEEventPayload[] = [
+      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
+    ];
+    const executor = new TaskExecutor(() => makeFakeEngine(events), mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
+    const task = makeTask();
+    // attachmentPaths 미설정
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    const userMessageCall = mocks.persistEvent.mock.calls.find(
+      (c) => (c[1] as { type: string }).type === "user_message",
+    );
+    expect(userMessageCall).toBeDefined();
+    expect((userMessageCall![1] as Record<string, unknown>).attachments).toBeUndefined();
+  });
+
+  it("인터벤션 turn: intervention.attachmentPaths가 engine.execute로 forward된다 (spec-reviewer 보강 3/3)", async () => {
+    const mocks = makeMocks();
+    const capturedParams: Array<Record<string, unknown>> = [];
+    const task = makeTask();
+
+    // turn 1: 빠르게 종료
+    // turn 2: intervention.attachmentPaths 운반 확인
+    let turnCount = 0;
+    const engine: EnginePort = {
+      backendId: "codex",
+      workspaceDir: "/tmp/codex-default",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        capturedParams.push(params as Record<string, unknown>);
+        if (turnCount === 0) {
+          // turn 1 — queue에 첨부 있는 인터벤션 push
+          task.interventionQueue.push({
+            text: "follow-up",
+            user: "u",
+            attachmentPaths: ["/tmp/sess-1/1236_followup.png"],
+          });
+        }
+        turnCount++;
+        yield { type: "complete", usage: {}, timestamp: turnCount } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(() => engine, mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    // 두 번의 turn이 실행됨
+    expect(turnCount).toBe(2);
+    // 첫 turn: task.attachmentPaths (없음 → undefined)
+    expect(capturedParams[0].attachmentPaths).toBeUndefined();
+    // 두 번째 turn: intervention.attachmentPaths
+    expect(capturedParams[1].attachmentPaths).toEqual(["/tmp/sess-1/1236_followup.png"]);
+  });
+
+  it("auto-resume turn: intervention.attachmentPaths가 engine.execute로 forward된다 (L172 경로)", async () => {
+    // auto-resume 흐름 — queue에 메시지가 있는 상태로 startExecution
+    const mocks = makeMocks();
+    const capturedParams: Array<Record<string, unknown>> = [];
+    const events: SSEEventPayload[] = [
+      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
+    ];
+    const engine: EnginePort = {
+      backendId: "codex",
+      workspaceDir: "/tmp/codex-default",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        capturedParams.push(params as Record<string, unknown>);
+        for (const e of events) yield e;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(() => engine, mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
+    const task = makeTask();
+    // auto-resume: queue에 메시지 있는 상태
+    task.interventionQueue.push({
+      text: "resume with attachment",
+      user: "u",
+      attachmentPaths: ["/tmp/sess-1/1237_resume.jpg"],
+    });
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    // engine.execute에 intervention.attachmentPaths forward됨
+    expect(capturedParams[0].attachmentPaths).toEqual(["/tmp/sess-1/1237_resume.jpg"]);
+  });
+});

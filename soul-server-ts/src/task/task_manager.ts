@@ -36,6 +36,11 @@ export interface CreateTaskParams {
   folderId?: string | null;
   /** B-6 context_builder: 사용자/위임자 system_prompt. folder_prompt와 합성됨. */
   systemPrompt?: string;
+  /**
+   * 첫 turn 첨부 파일 절대경로 목록. Python `task_models.py:129 attachment_paths` 정합.
+   * create_session wire의 `attachment_paths`에서 dispatcher가 forward.
+   */
+  attachmentPaths?: string[];
 }
 
 /**
@@ -112,6 +117,7 @@ export class TaskManager {
       callerInfo: params.callerInfo,
       model: params.model,
       systemPrompt: params.systemPrompt,  // B-6 context_builder
+      attachmentPaths: params.attachmentPaths,  // Phase 2 — 첫 turn 첨부 보존
       createdAt: now,
       lastEventId: 0,
       lastReadEventId: 0,
