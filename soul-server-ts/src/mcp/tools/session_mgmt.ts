@@ -92,7 +92,7 @@ export function registerSessionMgmtTools(
     "send_message_to_session",
     {
       description:
-        "대상 세션에 메시지 전달. running 시 queue, 종료된 세션은 auto-resume. caller_info 조립은 create_agent_session과 정합. **현 노드의 세션만 지원** — 다른 노드 세션에 메시지를 보내려면 orch 폴백이 필요하나 본 카드 Non-goals (Python `mcp_session_mgmt.send_message_to_session`의 orch HTTP 폴백 동작은 후속 카드).",
+        "대상 세션에 메시지 전달. running 시 queue, 종료된 세션은 auto-resume. local 실패 시 orch /intervene fallback.",
       inputSchema: {
         target_session_id: z.string(),
         message: z.string(),
@@ -104,6 +104,7 @@ export function registerSessionMgmtTools(
         ? buildCallerInfoFromCallerSession(runtime, caller_session_id)
         : undefined;
 
+      let localError: string | null = null;
       try {
         // TaskManager.addIntervention의 두 번째 인자 onResume이 auto-resume 분기에서 호출됨.
         // 콜백 안에서 TaskExecutor.startExecution을 trigger — Python `mcp_session_mgmt.py`
@@ -124,8 +125,39 @@ export function registerSessionMgmtTools(
         );
         return jsonResult({ ok: true, detail: result });
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return jsonResult({ ok: false, error: msg });
+        localError = err instanceof Error ? err.message : String(err);
+        runtime.logger.warn(
+          { err, targetSessionId: target_session_id },
+          "send_message_to_session local delivery failed — trying orch fallback",
+        );
+      }
+
+      const orch = runtime.orch;
+      if (!orch) {
+        return jsonResult({
+          ok: false,
+          error: localError,
+          fallback_error: "orch fallback unavailable",
+        });
+      }
+
+      try {
+        await relayMessageToOrch(orch, target_session_id, message, callerInfo);
+        return jsonResult({
+          ok: true,
+          detail: {
+            relayed: true,
+            target_session_id,
+            local_error: localError,
+          },
+        });
+      } catch (err) {
+        const fallbackError = err instanceof Error ? err.message : String(err);
+        return jsonResult({
+          ok: false,
+          error: localError,
+          fallback_error: fallbackError,
+        });
       }
     },
   );
@@ -174,3 +206,33 @@ export function registerSessionMgmtTools(
   );
 }
 
+async function relayMessageToOrch(
+  orch: { baseUrl: string; headers: Record<string, string> },
+  targetSessionId: string,
+  message: string,
+  callerInfo: unknown,
+): Promise<void> {
+  const url = `${orch.baseUrl}/api/sessions/${targetSessionId}/intervene`;
+  const body: Record<string, unknown> = {
+    text: message,
+    user: "agent",
+  };
+  if (callerInfo !== undefined) {
+    // orch InterveneRequest의 Pydantic 필드명은 snake_case. camelCase callerInfo 금지.
+    body.caller_info = callerInfo;
+  }
+
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: {
+      ...orch.headers,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    throw new Error(
+      `orch POST /api/sessions/${targetSessionId}/intervene failed: ${resp.status} ${resp.statusText}`,
+    );
+  }
+}
