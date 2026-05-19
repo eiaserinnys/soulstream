@@ -46,6 +46,11 @@ export const EnvSchema = z
      */
     AGENTS_CONFIG_PATH: z.string().default("config/agents.yaml"),
     /**
+     * 세션 첨부 파일 저장 디렉토리. orch가 WS reverse-proxy로 파일을 전달하면
+     * TS 노드는 이 경로 아래에 저장하고 Codex에게 절대경로를 넘긴다.
+     */
+    INCOMING_FILE_DIR: z.string().default(".local/incoming"),
+    /**
      * B-6 context_builder: atom MCP HTTP API 설정. Python `soul_server.config.atom_*` 정합.
      * 모두 optional — 미설정 시 atom 호출 skip (graceful, turn 진행에 영향 없음).
      */

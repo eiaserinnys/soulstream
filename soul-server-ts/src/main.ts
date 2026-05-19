@@ -2,6 +2,7 @@ import dotenv from "dotenv";
 import { ZodError } from "zod";
 
 import { loadAgentRegistry } from "./agent_registry.js";
+import { FileAttachmentStore } from "./attachments/file_manager.js";
 import { CatalogService } from "./catalog/catalog_service.js";
 import { parseEnv } from "./config.js";
 import { SessionDB } from "./db/session_db.js";
@@ -227,6 +228,8 @@ async function main(): Promise<void> {
     orch: orchProxyConfig,
   };
 
+  const attachmentStore = new FileAttachmentStore(env.INCOMING_FILE_DIR);
+
   // HTTP 서버 시작 (health + 선택적 MCP)
   const server = await buildServer({
     host: env.HOST,
@@ -268,7 +271,7 @@ async function main(): Promise<void> {
       isProduction: env.ENVIRONMENT === "production",
     },
     logger,
-    { agentRegistry, taskManager, taskExecutor },
+    { agentRegistry, taskManager, taskExecutor, attachmentStore },
   );
 
   // 백그라운드 실행 — top-level에서 await 안 함 (재연결 무한 루프이므로)

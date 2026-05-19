@@ -4,6 +4,7 @@ import type { Logger } from "pino";
 import type { AgentRegistry } from "../agent_registry.js";
 import type { TaskExecutor } from "../task/task_executor.js";
 import type { TaskManager } from "../task/task_manager.js";
+import type { AttachmentStore } from "../attachments/file_manager.js";
 
 import { CommandDispatcher } from "./dispatcher.js";
 import { ReconnectPolicy } from "./reconnect.js";
@@ -23,6 +24,7 @@ export interface UpstreamDependencies {
   agentRegistry: AgentRegistry;
   taskManager: TaskManager;
   taskExecutor: TaskExecutor;
+  attachmentStore?: AttachmentStore;
 }
 
 /**
@@ -55,6 +57,7 @@ export class UpstreamAdapter {
       deps.agentRegistry,
       deps.taskManager,
       deps.taskExecutor,
+      deps.attachmentStore,
     );
   }
 

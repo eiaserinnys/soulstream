@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import pino from "pino";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { AgentRegistry, type AgentProfile } from "../src/agent_registry.js";
+import { FileAttachmentStore, type AttachmentStore } from "../src/attachments/file_manager.js";
 import { CommandDispatcher } from "../src/upstream/dispatcher.js";
 import type { TaskExecutor } from "../src/task/task_executor.js";
 import type { TaskManager } from "../src/task/task_manager.js";
@@ -22,6 +26,7 @@ function createDispatcher(opts: {
   runningTasks?: number;
   taskManager?: Partial<TaskManager>;
   taskExecutor?: Partial<TaskExecutor>;
+  attachmentStore?: AttachmentStore;
 } = {}) {
   const sent: unknown[] = [];
   const send = vi.fn(async (data: unknown) => {
@@ -78,6 +83,7 @@ function createDispatcher(opts: {
     registry,
     tm,
     te,
+    opts.attachmentStore,
   );
   return { dispatcher, sent, send, registry, tm, te, createdTasks };
 }
@@ -361,8 +367,133 @@ describe("CommandDispatcher.subscribe_events (SSE realtime sync fix)", () => {
   });
 });
 
+describe("CommandDispatcher attachment reverse-proxy", () => {
+  it("upload_attachment → 파일 저장 + upload_attachment_result", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "soul-ts-attachments-"));
+    try {
+      const { dispatcher, sent } = createDispatcher({
+        attachmentStore: new FileAttachmentStore(dir),
+      });
+      await dispatcher.dispatch({
+        type: "upload_attachment",
+        requestId: "up-1",
+        session_id: "sess-1",
+        filename: "hello.txt",
+        content_type: "text/plain",
+        content_b64: Buffer.from("hello").toString("base64"),
+      });
+
+      expect(sent).toHaveLength(1);
+      expect(sent[0]).toMatchObject({
+        type: "upload_attachment_result",
+        requestId: "up-1",
+        filename: expect.stringMatching(/hello\.txt$/),
+        size: 5,
+        content_type: "text/plain",
+      });
+      expect((sent[0] as { path: string }).path).toContain(dir);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("upload_attachment invalid base64 → INVALID_REQUEST error", async () => {
+    const { dispatcher, sent } = createDispatcher();
+    await dispatcher.dispatch({
+      type: "upload_attachment",
+      requestId: "up-bad",
+      session_id: "sess-1",
+      filename: "hello.txt",
+      content_b64: "not-base64!!!",
+    });
+    expect(sent[0]).toMatchObject({
+      type: "error",
+      requestId: "up-bad",
+      command_type: "upload_attachment",
+    });
+    expect((sent[0] as { message: string }).message).toContain("INVALID_REQUEST");
+  });
+
+  it("delete_session_attachments → files_removed 반환", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "soul-ts-attachments-"));
+    try {
+      const store = new FileAttachmentStore(dir);
+      await store.saveFileForSession({
+        sessionId: "sess-del",
+        filename: "a.txt",
+        content: Buffer.from("a"),
+      });
+      const { dispatcher, sent } = createDispatcher({ attachmentStore: store });
+      await dispatcher.dispatch({
+        type: "delete_session_attachments",
+        requestId: "del-1",
+        session_id: "sess-del",
+      });
+
+      expect(sent[0]).toEqual({
+        type: "delete_session_attachments_result",
+        requestId: "del-1",
+        cleaned: true,
+        files_removed: 1,
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("download_attachment → base64 content 반환", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "soul-ts-attachments-"));
+    try {
+      const store = new FileAttachmentStore(dir);
+      const saved = await store.saveFileForSession({
+        sessionId: "sess-dl",
+        filename: "image.png",
+        content: Buffer.from("png-bytes"),
+      });
+      const { dispatcher, sent } = createDispatcher({ attachmentStore: store });
+      await dispatcher.dispatch({
+        type: "download_attachment",
+        requestId: "dl-1",
+        path: saved.path,
+      });
+
+      expect(sent[0]).toMatchObject({
+        type: "download_attachment_result",
+        requestId: "dl-1",
+        content_b64: Buffer.from("png-bytes").toString("base64"),
+        content_type: "image/png",
+        size: 9,
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("download_attachment가 base 밖 path면 INVALID_REQUEST error", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "soul-ts-attachments-"));
+    try {
+      const { dispatcher, sent } = createDispatcher({
+        attachmentStore: new FileAttachmentStore(dir),
+      });
+      await dispatcher.dispatch({
+        type: "download_attachment",
+        requestId: "dl-bad",
+        path: "/etc/passwd",
+      });
+      expect(sent[0]).toMatchObject({
+        type: "error",
+        requestId: "dl-bad",
+        command_type: "download_attachment",
+      });
+      expect((sent[0] as { message: string }).message).toContain("INVALID_REQUEST");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("CommandDispatcher unknown command", () => {
-  it("respond·list_sessions 등 → Not implemented error (subscribe_events는 별 핸들러)", async () => {
+  it("respond·list_sessions 등 → Not implemented error (subscribe_events/attachment는 별 핸들러)", async () => {
     const { dispatcher, sent } = createDispatcher();
     const commands = ["respond", "list_sessions"];
     for (const type of commands) {

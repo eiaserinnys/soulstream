@@ -1,6 +1,12 @@
 import type { Logger } from "pino";
 
 import type { AgentRegistry } from "../agent_registry.js";
+import {
+  AttachmentError,
+  FileAttachmentStore,
+  FileNotFoundError,
+  type AttachmentStore,
+} from "../attachments/file_manager.js";
 import type { TaskExecutor } from "../task/task_executor.js";
 import type { TaskManager } from "../task/task_manager.js";
 import type { CallerInfo, Task } from "../task/task_models.js";
@@ -46,6 +52,24 @@ interface SubscribeEventsCmd extends CommandLike {
   subscribeId?: string;
 }
 
+interface UploadAttachmentCmd extends CommandLike {
+  type: "upload_attachment";
+  session_id?: string;
+  filename?: string;
+  content_type?: string;
+  content_b64?: string;
+}
+
+interface DeleteSessionAttachmentsCmd extends CommandLike {
+  type: "delete_session_attachments";
+  session_id?: string;
+}
+
+interface DownloadAttachmentCmd extends CommandLike {
+  type: "download_attachment";
+  path?: string;
+}
+
 /**
  * orch → 노드 명령 디스패처.
  *
@@ -73,12 +97,18 @@ export class CommandDispatcher {
     private readonly agentRegistry: AgentRegistry,
     private readonly taskManager: TaskManager,
     private readonly taskExecutor: TaskExecutor,
+    private readonly attachmentStore: AttachmentStore = new FileAttachmentStore(".local/incoming"),
   ) {
     this.handlers = {
       health_check: (cmd) => this.handleHealthCheck(cmd),
       create_session: (cmd) => this.handleCreateSession(cmd as CreateSessionCmd),
       intervene: (cmd) => this.handleIntervene(cmd as IntervenCmd),
       subscribe_events: (cmd) => this.handleSubscribeEvents(cmd as SubscribeEventsCmd),
+      upload_attachment: (cmd) => this.handleUploadAttachment(cmd as UploadAttachmentCmd),
+      delete_session_attachments: (cmd) =>
+        this.handleDeleteSessionAttachments(cmd as DeleteSessionAttachmentsCmd),
+      download_attachment: (cmd) =>
+        this.handleDownloadAttachment(cmd as DownloadAttachmentCmd),
     };
   }
 
@@ -286,6 +316,104 @@ export class CommandDispatcher {
     );
     // NOOP — ACK 없이 silent 수락. Python `_handle_subscribe_events`는 relay loop를 시작하지만
     // TS는 broadcaster.emitEventEnvelope이 이미 task event 전체를 wire로 emit하므로 별 relay 불필요.
+  }
+
+  private async handleUploadAttachment(cmd: UploadAttachmentCmd): Promise<void> {
+    const requestId = cmd.requestId ?? cmd.request_id ?? "";
+    if (!cmd.content_b64) {
+      await this.sendError(cmd, "INVALID_REQUEST: content_b64 누락");
+      return;
+    }
+    if (!cmd.session_id) {
+      await this.sendError(cmd, "INVALID_REQUEST: session_id 누락");
+      return;
+    }
+
+    let content: Buffer;
+    try {
+      content = Buffer.from(cmd.content_b64, "base64");
+      if (content.toString("base64").replace(/=+$/, "") !== cmd.content_b64.replace(/=+$/, "")) {
+        throw new Error("invalid base64");
+      }
+    } catch (err) {
+      await this.sendError(cmd, `INVALID_REQUEST: base64 디코딩 실패: ${stringifyError(err)}`);
+      return;
+    }
+
+    try {
+      const result = await this.attachmentStore.saveFileForSession({
+        sessionId: cmd.session_id,
+        filename: cmd.filename || "unnamed",
+        content,
+        contentType: cmd.content_type || "application/octet-stream",
+      });
+      if (requestId) {
+        await this.send({
+          type: "upload_attachment_result",
+          requestId,
+          path: result.path,
+          filename: result.filename,
+          size: result.size,
+          content_type: result.content_type,
+        });
+      }
+    } catch (err) {
+      if (err instanceof AttachmentError) {
+        await this.sendError(cmd, `INVALID_REQUEST: ${err.message}`);
+        return;
+      }
+      throw err;
+    }
+  }
+
+  private async handleDeleteSessionAttachments(
+    cmd: DeleteSessionAttachmentsCmd,
+  ): Promise<void> {
+    const requestId = cmd.requestId ?? cmd.request_id ?? "";
+    if (!cmd.session_id) {
+      await this.sendError(cmd, "INVALID_REQUEST: session_id 누락");
+      return;
+    }
+    const filesRemoved = await this.attachmentStore.cleanupSession(cmd.session_id);
+    if (requestId) {
+      await this.send({
+        type: "delete_session_attachments_result",
+        requestId,
+        cleaned: true,
+        files_removed: filesRemoved,
+      });
+    }
+  }
+
+  private async handleDownloadAttachment(cmd: DownloadAttachmentCmd): Promise<void> {
+    const requestId = cmd.requestId ?? cmd.request_id ?? "";
+    if (!cmd.path) {
+      await this.sendError(cmd, "INVALID_REQUEST: path 누락 또는 빈 문자열");
+      return;
+    }
+    try {
+      const result = await this.attachmentStore.downloadAttachment(cmd.path);
+      if (requestId) {
+        await this.send({
+          type: "download_attachment_result",
+          requestId,
+          content_b64: result.content_b64,
+          content_type: result.content_type,
+          filename: result.filename,
+          size: result.size,
+        });
+      }
+    } catch (err) {
+      if (err instanceof FileNotFoundError) {
+        await this.sendError(cmd, `NOT_FOUND: ${err.message}`);
+        return;
+      }
+      if (err instanceof AttachmentError) {
+        await this.sendError(cmd, `INVALID_REQUEST: ${err.message}`);
+        return;
+      }
+      throw err;
+    }
   }
 
   private async sendError(cmd: CommandLike, message: string): Promise<void> {
