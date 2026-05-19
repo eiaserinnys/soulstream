@@ -254,7 +254,7 @@ export class ExecutionContextBuilder {
         content: args.atomMarkdown,
       });
     }
-    // task.contextItems wire는 별건 카드 — 현재 빈 배열만 처리
+    combinedContextItems.push(...(args.task.contextItems ?? []));
 
     const assembledPrompt = assemblePrompt(args.task.prompt, undefined);
 

@@ -21,6 +21,7 @@ import type { AgentRegistry } from "../agent_registry.js";
 import type { ExecutionContextBuilder } from "../context/context_builder.js";
 import { DEFAULT_FOLDERS, type SessionDB } from "../db/session_db.js";
 import type { EventPersistence } from "../db/event_persistence.js";
+import type { ContextItem } from "../context/prompt_assembler.js";
 
 import type { CallerInfo, InterventionMessage, Task, TaskStatus } from "./task_models.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
@@ -36,6 +37,8 @@ export interface CreateTaskParams {
   folderId?: string | null;
   /** B-6 context_builder: 사용자/위임자 system_prompt. folder_prompt와 합성됨. */
   systemPrompt?: string;
+  /** 첫 turn prompt와 user_message.context에 함께 박을 외부 context items. */
+  contextItems?: ContextItem[];
 }
 
 /**
@@ -112,6 +115,7 @@ export class TaskManager {
       callerInfo: params.callerInfo,
       model: params.model,
       systemPrompt: params.systemPrompt,  // B-6 context_builder
+      contextItems: params.contextItems,
       createdAt: now,
       lastEventId: 0,
       lastReadEventId: 0,

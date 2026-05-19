@@ -92,6 +92,9 @@ export interface Task {
   /** 모델 override (Codex SDK ThreadOptions.model). */
   model?: string;
 
+  /** 첫 turn prompt와 user_message.context에 함께 박을 외부 context items. */
+  contextItems?: ContextItem[];
+
   /**
    * B-6 context_builder: 사용자/위임자가 지정한 system_prompt. Python `task_models.Task.system_prompt`
    * 정합. context_builder가 folder_prompt와 조합하여 codex 첫 turn prompt에 prepend.

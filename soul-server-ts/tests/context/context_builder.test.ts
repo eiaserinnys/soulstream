@@ -226,6 +226,24 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(ctx.combinedContextItems).toHaveLength(1);
   });
+
+  it("task.contextItems를 soulstream/atom 뒤에 추가", async () => {
+    const cb = makeBuilder();
+    const attachmentContext = {
+      key: "attached_files",
+      label: "첨부 파일",
+      content: "- /tmp/a.png",
+    };
+    const ctx = await cb.build(
+      makeTask({ contextItems: [attachmentContext] }),
+      codexAgent,
+    );
+    expect(ctx.combinedContextItems.map((item) => item.key)).toEqual([
+      "soulstream_session",
+      "attached_files",
+    ]);
+    expect(ctx.combinedContextItems[1]).toEqual(attachmentContext);
+  });
 });
 
 describe("composeFirstTurnPrompt — 합성 알고리즘", () => {

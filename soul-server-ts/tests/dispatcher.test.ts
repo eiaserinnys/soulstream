@@ -57,6 +57,7 @@ function createDispatcher(opts: {
         callerSessionId: params.callerSessionId ?? undefined,
         callerInfo: params.callerInfo,
         model: params.model,
+        contextItems: params.contextItems,
         createdAt: new Date(),
         lastEventId: 0,
         lastReadEventId: 0,
@@ -148,6 +149,42 @@ describe("CommandDispatcher.create_session", () => {
       profile: "codex-default",
     });
     expect(sent).toHaveLength(0);
+  });
+
+  it("extra_context_items를 createTask.contextItems로 전달", async () => {
+    const { dispatcher, createdTasks } = createDispatcher();
+    const contextItems = [
+      { key: "attached_files", label: "첨부 파일", content: "- /tmp/a.png" },
+    ];
+    await dispatcher.dispatch({
+      type: "create_session",
+      agentSessionId: "sess-ctx",
+      prompt: "see file",
+      profile: "codex-default",
+      extra_context_items: contextItems,
+    });
+    expect(createdTasks[0].contextItems).toEqual(contextItems);
+  });
+
+  it("attachment_paths만 오면 attached_files contextItems로 변환", async () => {
+    const { dispatcher, createdTasks } = createDispatcher();
+    await dispatcher.dispatch({
+      type: "create_session",
+      agentSessionId: "sess-attach",
+      prompt: "see file",
+      profile: "codex-default",
+      attachment_paths: ["/tmp/a.png", "/tmp/b.txt"],
+    });
+    expect(createdTasks[0].contextItems).toEqual([
+      {
+        key: "attached_files",
+        label: "첨부 파일",
+        content:
+          "다음 파일들이 첨부되었습니다. Read 도구로 내용을 확인하세요:\n" +
+          "- /tmp/a.png\n" +
+          "- /tmp/b.txt",
+      },
+    ]);
   });
 
   it("agentSessionId 또는 prompt 부재 시 error", async () => {

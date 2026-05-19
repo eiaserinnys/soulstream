@@ -733,6 +733,38 @@ describe("TaskExecutor _persistInitialMessages — contextBuilder 미주입 (leg
     await task.executionPromise;
     expect(capturedPrompt).toBe("new message");  // task.prompt="hi"가 아니라 queue dequeue
   });
+
+  it("auto-resume attachmentPaths → 첫 turn prompt에 attached_files context prepend", async () => {
+    const mocks = makeMocks();
+    const events: SSEEventPayload[] = [
+      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
+    ];
+    let capturedPrompt = "";
+    const engine: EnginePort = {
+      backendId: "codex",
+      workspaceDir: "/tmp/codex-default",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        capturedPrompt = params.prompt;
+        for (const e of events) yield e;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(() => engine, mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
+    const task = makeTask();
+    task.interventionQueue.push({
+      text: "이 파일 보여?",
+      user: "u",
+      attachmentPaths: ["/tmp/incoming/sess/a.png"],
+    });
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    expect(capturedPrompt).toContain("<attached_files>");
+    expect(capturedPrompt).toContain("/tmp/incoming/sess/a.png");
+    expect(capturedPrompt).toContain("Read 도구로 내용을 확인하세요");
+    expect(capturedPrompt.endsWith("이 파일 보여?")).toBe(true);
+  });
 });
 
 // B-6 정정: contextBuilder 주입 흐름에서 system_message 영속화 + user_message.context 박힘

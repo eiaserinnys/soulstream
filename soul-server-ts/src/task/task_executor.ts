@@ -25,8 +25,10 @@ import {
   type ExecutionContextBuilder,
   type PreparedContext,
 } from "../context/context_builder.js";
+import { formatContextItems, type ContextItem } from "../context/prompt_assembler.js";
 
 import type { CompletionNotifier } from "./completion_notifier.js";
+import { buildAttachmentContextItems } from "./attachment_context.js";
 import type { Task, TaskStatus } from "./task_models.js";
 
 /** AgentProfile → EnginePort 생성. backend별 분기는 factory 구현체 담당. */
@@ -169,7 +171,7 @@ export class TaskExecutor {
       }
     } else {
       // Auto-resume — user_message는 addIntervention 분기가 이미 영속화. 첫 turn은 dequeue.
-      turnPrompt = task.interventionQueue.shift()!.text;
+      turnPrompt = composeInterventionTurnPrompt(task.interventionQueue.shift()!);
     }
     try {
       while (true) {
@@ -225,7 +227,7 @@ export class TaskExecutor {
           task.status = "completed";
           break;
         }
-        turnPrompt = next.text;
+        turnPrompt = composeInterventionTurnPrompt(next);
         // (intervention_sent는 addIntervention에서 이미 broadcast됨 — 여기서 재발행 안 함.)
       }
     } finally {
@@ -496,4 +498,13 @@ export class TaskExecutor {
 /** 외부 검증용 — task가 종료 상태인지. */
 export function isTerminalStatus(status: TaskStatus): boolean {
   return status === "completed" || status === "error" || status === "interrupted";
+}
+
+function composeInterventionTurnPrompt(message: { text: string; context?: ContextItem[]; attachmentPaths?: string[] }): string {
+  const contextItems = [
+    ...(message.context ?? []),
+    ...buildAttachmentContextItems(message.attachmentPaths),
+  ];
+  const contextBlock = formatContextItems(contextItems);
+  return contextBlock ? `${contextBlock}\n\n${message.text}` : message.text;
 }
