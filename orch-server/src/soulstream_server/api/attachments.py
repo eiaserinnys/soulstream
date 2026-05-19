@@ -18,16 +18,18 @@ import io
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
+from soulstream_server.api.node_utils import find_session_node
 from soulstream_server.nodes.node_manager import NodeManager
 
 
 def create_attachments_router(
     node_manager: NodeManager,
+    db,  # SessionDB 또는 동등 인터페이스 — find_session_node에 forward
     dependencies: list | None = None,
 ) -> APIRouter:
     """attachments 라우터 팩토리.
 
-    기존 api/sessions.py의 팩토리 클로저 패턴을 따른다. node_manager는
+    기존 api/sessions.py의 팩토리 클로저 패턴을 따른다. node_manager·db는
     FastAPI DI가 아니라 클로저로 주입받는다.
     """
     router = APIRouter(
@@ -41,18 +43,24 @@ def create_attachments_router(
         request: Request,
         file: UploadFile = File(...),
         session_id: str = Form(...),
-        node_id: str = Query(..., alias="nodeId"),
+        node_id: str | None = Query(None, alias="nodeId"),
     ):
         """WS reverse-proxy: 노드에 base64 binary로 attachment 업로드를 위임.
 
+        - nodeId 명시 시 그대로 사용 (기존 흐름 호환)
+        - nodeId 미명시 시 session_id 기반으로 find_session_node 폴백
         - 미등록 노드 → 404
         - 노드가 INVALID_REQUEST: prefix EVT_ERROR → 400 (file 검증 실패)
         - 노드가 그 외 EVT_ERROR → 502
         - 노드 응답 timeout → 504
         """
-        node = node_manager.get_node(node_id)
-        if node is None:
-            raise HTTPException(404, f"Node '{node_id}' not found")
+        if node_id:
+            node = node_manager.get_node(node_id)
+            if node is None:
+                raise HTTPException(404, f"Node '{node_id}' not found")
+        else:
+            # sessionId 기반 자동 해석 — find_session_node가 인메모리·DB·활성 노드 폴백 일체 처리
+            node = await find_session_node(session_id, db, node_manager)
 
         content = await file.read()
         content_b64 = base64.b64encode(content).decode("ascii")
@@ -97,15 +105,21 @@ def create_attachments_router(
     async def proxy_delete(
         session_id: str,
         request: Request,
-        node_id: str = Query(..., alias="nodeId"),
+        node_id: str | None = Query(None, alias="nodeId"),
     ):
         """WS reverse-proxy: 노드에 세션 첨부 정리를 위임.
 
-        분류는 upload와 동일.
+        - nodeId 명시 시 그대로 사용 (기존 흐름 호환)
+        - nodeId 미명시 시 session_id 기반으로 find_session_node 폴백
+        - 분류는 upload와 동일.
         """
-        node = node_manager.get_node(node_id)
-        if node is None:
-            raise HTTPException(404, f"Node '{node_id}' not found")
+        if node_id:
+            node = node_manager.get_node(node_id)
+            if node is None:
+                raise HTTPException(404, f"Node '{node_id}' not found")
+        else:
+            # sessionId 기반 자동 해석 — find_session_node가 인메모리·DB·활성 노드 폴백 일체 처리
+            node = await find_session_node(session_id, db, node_manager)
 
         try:
             result = await node.send_delete_session_attachments(session_id)
