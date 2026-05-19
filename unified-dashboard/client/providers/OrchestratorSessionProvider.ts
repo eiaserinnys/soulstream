@@ -134,6 +134,8 @@ function mapStatus(status: string): SessionStatus {
     case "running": return "running";
     case "completed": return "completed";
     case "error": return "error";
+    case "interrupted": return "interrupted";
+    case "idle": return "running";
     default: return "unknown";
   }
 }

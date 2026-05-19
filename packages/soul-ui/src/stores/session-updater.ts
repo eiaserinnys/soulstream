@@ -21,18 +21,14 @@ export function shouldNotify(event: SoulSSEEvent): boolean {
 /**
  * 이벤트 타입에 따라 세션 상태를 도출합니다.
  *
- * - complete/result → "completed"
- * - error → "error"
  * - user_message/intervention_sent → "running" (resume 등 새 턴 시작)
  * - 그 외 → null (상태 변경 없음)
+ *
+ * complete/result/error는 "턴" 종료 이벤트일 수 있다. 세션 전체 terminal 상태는
+ * session_updated/history_sync wire가 정본이므로 여기서 추론하지 않는다.
  */
 export function deriveSessionStatus(event: SoulSSEEvent): SessionStatus | null {
   switch (event.type) {
-    case "complete":
-    case "result":
-      return "completed";
-    case "error":
-      return "error";
     case "user_message":
     case "intervention_sent":
       return "running";

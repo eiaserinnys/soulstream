@@ -14,7 +14,11 @@ import { useIsMobile } from "../hooks/use-mobile";
 import type { SessionSummary } from "../shared/types";
 import { SessionContextMenu } from "./SessionContextMenu";
 import { useFlipAnimation } from "../hooks/useFlipAnimation";
-import { filterSessionsInFolder, type SessionPage } from "../hooks/session-stream-helpers";
+import {
+  applyCatalogDisplayNames,
+  filterSessionsInFolder,
+  type SessionPage,
+} from "../hooks/session-stream-helpers";
 import { SessionItem } from "./SessionItem";
 
 // Re-exports for backward compatibility (FeedCard, soul-ui index 등이 참조)
@@ -68,7 +72,7 @@ export function FolderContents({ sessions: sessionsProp, onMoveSessions, onRenam
 
   const displaySessions = useMemo(() => {
     if (sessionsProp) {
-      return filterSessionsInFolder(sessionsProp, catalog, selectedFolderId);
+      return applyCatalogDisplayNames(sessionsProp, catalog);
     }
     const allData = queryClient.getQueriesData<InfiniteData<SessionPage>>({ queryKey: ["sessions"], exact: false });
     const allSessions: SessionSummary[] = [];

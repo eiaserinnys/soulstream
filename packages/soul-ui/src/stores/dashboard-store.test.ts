@@ -742,6 +742,28 @@ describe("dashboard-store", () => {
       expect(useDashboardStore.getState().activeSessionSummary?.nodeId).toBe("silent-manari");
     });
 
+    it("should include dashboard user profile in optimistic summary", () => {
+      const qc = makeTestQueryClient();
+      seedQueryClient(qc, []);
+      useDashboardStore.setState({
+        dashboardConfig: {
+          user: {
+            id: "user-1",
+            name: "Jubok Kim",
+            hasPortrait: true,
+            portraitUrl: "https://example.com/avatar.png",
+          },
+          agents: [],
+        },
+      });
+
+      useDashboardStore.getState().addOptimisticSession(qc, "sess-profile", "hi");
+
+      expect(useDashboardStore.getState().activeSessionSummary?.userName).toBe("Jubok Kim");
+      expect(useDashboardStore.getState().activeSessionSummary?.userPortraitUrl).toBe("https://example.com/avatar.png");
+      expect(getQuerySessions(qc)[0].userPortraitUrl).toBe("https://example.com/avatar.png");
+    });
+
     it("should not include nodeId when not provided", () => {
       const qc = makeTestQueryClient();
       useDashboardStore.getState().addOptimisticSession(qc, "sess-no-node", "hi");
@@ -827,26 +849,23 @@ describe("dashboard-store", () => {
       );
     });
 
-    it("should set status to 'completed' on complete event", () => {
+    it("should not mark the session completed on a turn complete event", () => {
       const { processEvent } = useDashboardStore.getState();
       processEvent({ type: "user_message", user: "u", text: "Turn 1" } as UserMessageEvent, 0);
       processEvent({ type: "text_start" } as TextStartEvent, 1);
       processEvent({ type: "text_end" } as TextEndEvent, 2);
-      // processEvent는 이제 statusUpdate를 반환한다 (Zustand sessions 직접 변경 안 함)
       const result = processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 3);
-      expect(result?.agentSessionId).toBe("sess-mt");
-      expect(result?.status).toBe("completed");
+      expect(result).toBeNull();
     });
 
-    it("should set status to 'error' on error event", () => {
+    it("should not mark the session errored on a turn error event", () => {
       const { processEvent } = useDashboardStore.getState();
       processEvent({ type: "user_message", user: "u", text: "Turn 1" } as UserMessageEvent, 0);
       const result = processEvent({ type: "error", message: "failed" } as ErrorEvent, 1);
-      expect(result?.agentSessionId).toBe("sess-mt");
-      expect(result?.status).toBe("error");
+      expect(result).toBeNull();
     });
 
-    it("should reset status to 'running' on user_message after complete (multi-turn)", () => {
+    it("should keep user_message as the resume/running signal after complete", () => {
       const { processEvent } = useDashboardStore.getState();
 
       // Turn 1: user_message → text → complete
@@ -854,26 +873,26 @@ describe("dashboard-store", () => {
       processEvent({ type: "text_start" } as TextStartEvent, 1);
       processEvent({ type: "text_end" } as TextEndEvent, 2);
       const r1 = processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 3);
-      expect(r1?.status).toBe("completed");
+      expect(r1).toBeNull();
 
       // Turn 2: new user_message (resume) → status는 반환값으로 확인
       const r2 = processEvent({ type: "user_message", user: "u", text: "Turn 2" } as UserMessageEvent, 4);
       expect(r2?.status).toBe("running");
     });
 
-    it("should reset status to 'running' on intervention_sent after complete", () => {
+    it("should keep intervention_sent as the resume/running signal after complete", () => {
       const { processEvent } = useDashboardStore.getState();
 
       processEvent({ type: "user_message", user: "u", text: "Turn 1" } as UserMessageEvent, 0);
       const r1 = processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 1);
-      expect(r1?.status).toBe("completed");
+      expect(r1).toBeNull();
 
       // Intervention resumes the session → status는 반환값으로 확인
       const r2 = processEvent({ type: "intervention_sent", user: "admin", text: "continue" } as InterventionSentEvent, 2);
       expect(r2?.status).toBe("running");
     });
 
-    it("should handle full multi-turn cycle: running → completed → running → completed", () => {
+    it("should handle full multi-turn cycle without deriving terminal status from turn complete", () => {
       const { processEvent } = useDashboardStore.getState();
 
       // Turn 1: user_message → running
@@ -883,7 +902,7 @@ describe("dashboard-store", () => {
       processEvent({ type: "text_start" } as TextStartEvent, 1);
       processEvent({ type: "text_end" } as TextEndEvent, 2);
       const rComplete1 = processEvent({ type: "complete", result: "done", attachments: [] } as CompleteEvent, 3);
-      expect(rComplete1?.status).toBe("completed");
+      expect(rComplete1).toBeNull();
 
       // Turn 2: user_message → running
       const rUser2 = processEvent({ type: "user_message", user: "u", text: "Turn 2" } as UserMessageEvent, 4);
@@ -892,7 +911,7 @@ describe("dashboard-store", () => {
       processEvent({ type: "text_start" } as TextStartEvent, 5);
       processEvent({ type: "text_end" } as TextEndEvent, 6);
       const rComplete2 = processEvent({ type: "complete", result: "done again", attachments: [] } as CompleteEvent, 7);
-      expect(rComplete2?.status).toBe("completed");
+      expect(rComplete2).toBeNull();
     });
 
     it("should not update status for unrelated event types (text_start, text_delta, etc.)", () => {
@@ -1846,7 +1865,7 @@ describe("dashboard-store", () => {
       expect(result.statusUpdates[0]).toEqual({ agentSessionId: "sess-status", status: "completed" });
     });
 
-    it("processEvents returns statusUpdates from deriveSessionStatus after historySynced", () => {
+    it("processEvents does not derive terminal status from turn complete after historySynced", () => {
       const store = useDashboardStore.getState();
 
       store.setActiveSession("sess-derive");
@@ -1863,7 +1882,6 @@ describe("dashboard-store", () => {
         },
       ]);
 
-      // complete 이벤트 → "completed" 도출
       const result = store.processEvents([
         {
           event: {
@@ -1876,8 +1894,7 @@ describe("dashboard-store", () => {
         },
       ]);
 
-      // deriveSessionStatus("complete") → "completed"
-      expect(result.statusUpdates.some((u) => u.agentSessionId === "sess-derive" && u.status === "completed")).toBe(true);
+      expect(result.statusUpdates).toHaveLength(0);
     });
 
     it("processEvents returns empty statusUpdates for events that don't affect status", () => {

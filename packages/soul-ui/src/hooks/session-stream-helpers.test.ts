@@ -9,15 +9,19 @@ import { describe, it, expect } from "vitest";
 import type { InfiniteData } from "@tanstack/react-query";
 import type { SessionSummary } from "../shared/types";
 import {
+  applyCatalogDisplayNames,
   applySessionCreated,
   applySessionUpdated,
   applySessionDeleted,
   buildSessionUpdates,
   mergeSessionCreatedSummary,
+  normalizeSessionStatus,
   shouldApplySessionCreatedToCache,
 } from "./session-stream-helpers";
+import { normalizeSessionStatus as normalizeSharedSessionStatus } from "../shared/session-status";
 import type { SessionPage } from "./session-stream-helpers";
 import type { SessionUpdatedStreamEvent } from "../shared/stream-events";
+import { toSessionSummary } from "../shared/mappers";
 
 function makeSession(
   id: string,
@@ -332,6 +336,68 @@ describe("buildSessionUpdates — F-10C user profile extraction", () => {
     const updates = buildSessionUpdates(event);
     expect(updates.userName).toBe("이름만");
     expect(updates.userPortraitUrl).toBeUndefined();
+  });
+});
+
+describe("normalizeSessionStatus", () => {
+  it("known SessionStatus 값은 보존한다", () => {
+    expect(normalizeSessionStatus("running")).toBe("running");
+    expect(normalizeSessionStatus("completed")).toBe("completed");
+    expect(normalizeSessionStatus("error")).toBe("error");
+    expect(normalizeSessionStatus("interrupted")).toBe("interrupted");
+  });
+
+  it("turn phase idle은 카드 상태에서 running으로 접는다", () => {
+    expect(normalizeSessionStatus("idle")).toBe("running");
+    const event = {
+      type: "session_updated",
+      agent_session_id: "sess-1",
+      status: "idle",
+      updated_at: new Date().toISOString(),
+    } as unknown as SessionUpdatedStreamEvent;
+    expect(buildSessionUpdates(event).status).toBe("running");
+  });
+
+  it("알 수 없는 값은 unknown으로 정규화한다", () => {
+    expect(normalizeSessionStatus("paused")).toBe("unknown");
+    expect(normalizeSessionStatus(null)).toBe("unknown");
+  });
+});
+
+describe("applyCatalogDisplayNames", () => {
+  it("catalog assignment이 없어도 provider가 넘긴 세션을 탈락시키지 않는다", () => {
+    const sessions = [makeSession("s1", { prompt: "hello" })];
+    const result = applyCatalogDisplayNames(sessions, {
+      folders: [{ id: "folder-1", name: "Folder", sortOrder: 0 }],
+      sessions: {},
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0].agentSessionId).toBe("s1");
+  });
+
+  it("displayName override만 적용한다", () => {
+    const sessions = [makeSession("s1", { prompt: "hello" })];
+    const result = applyCatalogDisplayNames(sessions, {
+      folders: [{ id: "folder-1", name: "Folder", sortOrder: 0 }],
+      sessions: { s1: { folderId: "folder-1", displayName: "Pinned" } },
+    });
+
+    expect(result[0].displayName).toBe("Pinned");
+  });
+});
+
+describe("shared normalizeSessionStatus", () => {
+  it("공통 mapper와 stream helper가 같은 정규화 함수를 쓴다", () => {
+    expect(normalizeSharedSessionStatus("idle")).toBe("running");
+  });
+
+  it("초기 목록/created mapper도 idle을 running으로 정규화한다", () => {
+    expect(toSessionSummary({
+      agent_session_id: "s1",
+      status: "idle",
+      created_at: "2026-01-01T00:00:00Z",
+    }).status).toBe("running");
   });
 });
 

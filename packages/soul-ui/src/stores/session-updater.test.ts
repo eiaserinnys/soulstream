@@ -172,34 +172,32 @@ describe("shouldNotify", () => {
 // === deriveSessionStatus ===
 
 describe("deriveSessionStatus", () => {
-  describe("events that derive 'completed'", () => {
-    it("should return 'completed' for complete event", () => {
+  describe("turn-final events", () => {
+    it("should return null for complete event", () => {
       const event: CompleteEvent = {
         type: "complete",
         result: "done",
         attachments: [],
       };
-      expect(deriveSessionStatus(event)).toBe("completed");
+      expect(deriveSessionStatus(event)).toBeNull();
     });
 
-    it("should return 'completed' for result event", () => {
+    it("should return null for result event", () => {
       const event: ResultEvent = {
         type: "result",
         timestamp: 0,
         success: true,
         output: "finished",
       };
-      expect(deriveSessionStatus(event)).toBe("completed");
+      expect(deriveSessionStatus(event)).toBeNull();
     });
-  });
 
-  describe("events that derive 'error'", () => {
-    it("should return 'error' for error event", () => {
+    it("should return null for error event", () => {
       const event: ErrorEvent = {
         type: "error",
         message: "crash",
       };
-      expect(deriveSessionStatus(event)).toBe("error");
+      expect(deriveSessionStatus(event)).toBeNull();
     });
   });
 

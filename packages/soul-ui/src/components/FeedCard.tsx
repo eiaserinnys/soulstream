@@ -18,7 +18,7 @@ import { MarkdownContent } from "./MarkdownContent";
 import { ProfileAvatar } from "./ProfileAvatar";
 import { cn } from "../lib/cn";
 
-const DEFAULT_PROFILE = {
+const DEFAULT_PROFILE: DashboardConfig = {
   user: { name: "User", id: "", hasPortrait: false },
   agents: [] as { id: string; name: string; hasPortrait: boolean; portraitUrl: string | null }[],
 };
@@ -53,6 +53,8 @@ export const FeedCard = memo(function FeedCard({
   const isUnread = isSessionUnread(session);
   // dashboardConfig가 {}처럼 user 필드 없는 객체일 때도 DEFAULT_PROFILE로 fallback
   const profileConfig = (dashboardConfig?.user != null ? dashboardConfig : null) ?? DEFAULT_PROFILE;
+  const userPortraitUrl =
+    session.userPortraitUrl ?? profileConfig.user.portraitUrl ?? undefined;
 
   const handleClick = useCallback(
     () => onCardClick(session.agentSessionId),
@@ -182,8 +184,8 @@ export const FeedCard = memo(function FeedCard({
           <div className="flex items-start gap-1.5 overflow-hidden">
             <ProfileAvatar
               role="user"
-              hasPortrait={session.userPortraitUrl ? true : profileConfig.user.hasPortrait}
-              portraitUrl={session.userPortraitUrl ?? undefined}
+              hasPortrait={!!userPortraitUrl}
+              portraitUrl={userPortraitUrl}
               fallbackEmoji="👤"
             />
             <div className="flex-1 min-w-0 overflow-hidden">
@@ -201,9 +203,9 @@ export const FeedCard = memo(function FeedCard({
             <div className="flex items-start gap-1.5 overflow-hidden">
               <ProfileAvatar
                 role={isUser ? "user" : "assistant"}
-                hasPortrait={isUser ? (session.userPortraitUrl ? true : profileConfig.user.hasPortrait) : !!session.agentPortraitUrl}
+                hasPortrait={isUser ? !!userPortraitUrl : !!session.agentPortraitUrl}
                 fallbackEmoji={isUser ? "👤" : "🤖"}
-                portraitUrl={isUser ? (session.userPortraitUrl ?? undefined) : session.agentPortraitUrl}
+                portraitUrl={isUser ? userPortraitUrl : session.agentPortraitUrl}
               />
               <div className="flex-1 min-w-0 overflow-hidden">
                 <span className="text-xs font-medium shrink-0">

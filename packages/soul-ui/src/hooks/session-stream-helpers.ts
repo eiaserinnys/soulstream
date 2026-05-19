@@ -8,12 +8,13 @@
 
 import type { InfiniteData } from "@tanstack/react-query";
 import type {
-  SessionStatus,
   SessionSummary,
   CatalogState,
   MetadataEntry,
 } from "../shared/types";
 import type { SessionUpdatedStreamEvent } from "../shared/stream-events";
+import { normalizeSessionStatus } from "../shared/session-status";
+export { normalizeSessionStatus } from "../shared/session-status";
 
 export interface SessionPage {
   sessions: SessionSummary[];
@@ -94,6 +95,28 @@ export function filterSessionsInFolder(
       }
       return s;
     });
+}
+
+/**
+ * 카탈로그의 displayName override만 적용한다.
+ *
+ * useSessionListProvider가 이미 folder_id로 서버 필터링한 목록을 FolderContents에
+ * 넘기는 경로에서는 catalog.sessions 할당이 늦게 도착할 수 있다. 그 목록에 다시
+ * 폴더 필터를 걸면 방금 생성된 세션이 폴더 뷰에서 사라질 수 있으므로, prop 기반
+ * 경로에서는 provider 결과를 신뢰하고 표시명만 덧씌운다.
+ */
+export function applyCatalogDisplayNames(
+  sessions: SessionSummary[],
+  catalog: CatalogState | null,
+): SessionSummary[] {
+  if (!catalog?.sessions) return sessions;
+  return sessions.map((s) => {
+    const assignment = catalog.sessions[s.agentSessionId];
+    if (assignment?.displayName) {
+      return { ...s, displayName: assignment.displayName };
+    }
+    return s;
+  });
 }
 
 /**
@@ -291,7 +314,7 @@ export function buildSessionUpdates(
 ): SessionUpdatesPatch {
   const updates: SessionUpdatesPatch = {};
   if (event.status != null) {
-    updates.status = event.status as SessionStatus;
+    updates.status = normalizeSessionStatus(event.status);
   }
   if (event.updated_at != null) {
     updates.updatedAt = event.updated_at;

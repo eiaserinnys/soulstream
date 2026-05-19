@@ -6,6 +6,7 @@
  */
 
 import type { SessionSummary, SessionStatus, LlmUsage, MetadataEntry } from "./types";
+import { normalizeSessionStatus } from "./session-status";
 
 /** snake_case / camelCase 양쪽 응답을 LlmUsage로 변환 */
 function toLlmUsage(raw: unknown): LlmUsage | undefined {
@@ -29,7 +30,7 @@ export function toSessionSummary(raw: Record<string, unknown>): SessionSummary {
     | undefined;
   return {
     agentSessionId: (raw.agent_session_id ?? raw.agentSessionId) as string,
-    status: (raw.status as SessionStatus) ?? "unknown",
+    status: normalizeSessionStatus(raw.status as SessionStatus | undefined),
     eventCount: (raw.event_count ?? raw.eventCount ?? 0) as number,
     createdAt: (raw.created_at ?? raw.createdAt) as string | undefined,
     updatedAt: (raw.updated_at ?? raw.updatedAt) as string | undefined,

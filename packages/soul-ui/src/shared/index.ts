@@ -86,3 +86,4 @@ export type {
 
 // === Mappers ===
 export { toSessionSummary } from "./mappers";
+export { normalizeSessionStatus } from "./session-status";

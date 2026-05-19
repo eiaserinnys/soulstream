@@ -57,6 +57,42 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    chunkSizeWarningLimit: 700,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("/packages/soul-ui/src/")) {
+            return "soul-ui";
+          }
+          if (!id.includes("/node_modules/")) {
+            return undefined;
+          }
+          if (id.includes("/@tanstack/")) {
+            return "vendor-tanstack";
+          }
+          if (id.includes("/@dnd-kit/")) {
+            return "vendor-dnd";
+          }
+          if (
+            id.includes("/@base-ui/") ||
+            id.includes("/radix-ui/") ||
+            id.includes("/@floating-ui/")
+          ) {
+            return "vendor-ui";
+          }
+          if (id.includes("/lucide-react/") || id.includes("/lucide/")) {
+            return "vendor-icons";
+          }
+          if (id.includes("/react-dom/")) {
+            return "vendor-react-dom";
+          }
+          if (id.includes("/react/") || id.includes("/scheduler/")) {
+            return "vendor-react";
+          }
+          return "vendor";
+        },
+      },
+    },
   },
   server: {
     // 개발 시 soul-server(single-node) 또는 soulstream-server(orchestrator)로 API 프록시
