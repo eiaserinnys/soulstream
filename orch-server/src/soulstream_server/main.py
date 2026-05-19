@@ -120,7 +120,8 @@ async def _on_node_change(
             "nodeId": node_id,
         }
         # folder_id가 있으면 SSE 이벤트에 포함 (클라이언트가 즉시 올바른 폴더에 배치)
-        folder_id = (data or {}).get("folderId")
+        # Node wire 정본은 snake_case이고, camelCase는 기존 호출자 호환으로 수용한다.
+        folder_id = (data or {}).get("folder_id", (data or {}).get("folderId"))
         if folder_id is not None:
             broadcast_data["folder_id"] = folder_id
         recipient_count = await broadcaster.broadcast(broadcast_data)

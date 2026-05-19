@@ -65,6 +65,23 @@ async def test_session_created_broadcasts_session_event(mock_broadcaster, mock_n
 
 
 @pytest.mark.asyncio
+async def test_session_created_preserves_snake_case_folder_id(mock_broadcaster, mock_node_manager):
+    """TS/Python node wire의 folder_id를 session_created SSE에 보존한다."""
+    data = {"agentSessionId": "sess-123", "status": "idle", "folder_id": "folder-1"}
+    await _on_node_change(
+        mock_broadcaster, mock_node_manager,
+        "node_session_session_created", "node-1", data,
+    )
+
+    mock_broadcaster.broadcast.assert_awaited_once_with({
+        "type": "session_created",
+        "session": data,
+        "nodeId": "node-1",
+        "folder_id": "folder-1",
+    })
+
+
+@pytest.mark.asyncio
 async def test_session_updated_broadcasts_session_event(mock_broadcaster, mock_node_manager):
     """node_session_session_updated → broadcast(session_updated, agent_session_id 포함) + broadcast_node_change."""
     data = {"agentSessionId": "sess-456", "status": "running"}
