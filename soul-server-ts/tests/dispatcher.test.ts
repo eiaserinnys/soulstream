@@ -504,6 +504,39 @@ describe("CommandDispatcher.upload_attachment", () => {
     expect(msg.message).toContain("INVALID_REQUEST");
     expect(msg.message).toContain("파일이 너무 큽니다");
   });
+
+  it("invalid base64 문자 → INVALID_REQUEST (Python validate=True 정합)", async () => {
+    // Buffer.from("!!!invalid!!!", "base64")는 silently strip하여 디코딩하지만
+    // 정규식 사전 검증으로 차단해야 한다.
+    const { dispatcher, sent, fm } = createDispatcher();
+    await dispatcher.dispatch({
+      type: "upload_attachment",
+      session_id: "sess-1",
+      filename: "test.png",
+      content_b64: "!!!invalid!!!",
+      requestId: "ua-5",
+    });
+    expect(fm.saveFileForSession).not.toHaveBeenCalled();
+    const msg = sent[0] as { type: string; message: string };
+    expect(msg.type).toBe("error");
+    expect(msg.message).toMatch(/INVALID_REQUEST.*base64/);
+  });
+
+  it("padding 잘못 (length % 4 != 0) → INVALID_REQUEST", async () => {
+    // "abc"는 길이 3이라 base64 padding 규칙 위반
+    const { dispatcher, sent, fm } = createDispatcher();
+    await dispatcher.dispatch({
+      type: "upload_attachment",
+      session_id: "sess-1",
+      filename: "test.png",
+      content_b64: "abc",
+      requestId: "ua-6",
+    });
+    expect(fm.saveFileForSession).not.toHaveBeenCalled();
+    const msg = sent[0] as { type: string; message: string };
+    expect(msg.type).toBe("error");
+    expect(msg.message).toMatch(/INVALID_REQUEST.*base64/);
+  });
 });
 
 describe("CommandDispatcher.delete_session_attachments", () => {

@@ -4,7 +4,7 @@ import * as nodePath from "node:path";
 import type { Logger } from "pino";
 
 import type { AgentRegistry } from "../agent_registry.js";
-import { AttachmentError, FileManager } from "../service/file_manager.js";
+import { AttachmentError, FileManager, guessMimeType } from "../service/file_manager.js";
 import type { TaskExecutor } from "../task/task_executor.js";
 import type { TaskManager } from "../task/task_manager.js";
 import type { CallerInfo, Task } from "../task/task_models.js";
@@ -330,14 +330,18 @@ export class CommandDispatcher {
       return;
     }
 
+    // RFC 4648 base64 alphabet 사전 검증 — Python b64decode(validate=True) 정합.
+    // Buffer.from(str, "base64")는 invalid 문자를 silently strip하므로
+    // 정규식으로 alphabet·padding 먼저 검증 후 디코딩한다.
+    const B64_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/;
+    const stripped = cmd.content_b64.replace(/\s/g, "");
+    if (!stripped || !B64_PATTERN.test(stripped) || stripped.length % 4 !== 0) {
+      await this.sendError(cmd, "INVALID_REQUEST: base64 디코딩 실패: invalid characters");
+      return;
+    }
     let content: Buffer;
     try {
-      content = Buffer.from(cmd.content_b64, "base64");
-      // 재인코딩 비교로 invalid 문자 검출 (Python validate=True 정합)
-      if (content.toString("base64") !== cmd.content_b64.replace(/\s/g, "")) {
-        // re-encoding 불일치는 invalid base64의 강력한 증거지만 padding 차이도 있으므로
-        // 일단 디코딩 성공으로 처리 — Python도 validate=True이지만 실용적으로 Buffer.from 사용
-      }
+      content = Buffer.from(stripped, "base64");
     } catch (err) {
       await this.sendError(cmd, `INVALID_REQUEST: base64 디코딩 실패: ${stringifyError(err)}`);
       return;
@@ -446,26 +450,8 @@ export class CommandDispatcher {
     }
 
     const filename = nodePath.basename(rawPath);
-    // inline MIME map — file_manager.ts guessMimeType 동등
-    const ext = nodePath.extname(filename).toLowerCase();
-    const MIME_MAP: Record<string, string> = {
-      ".png": "image/png",
-      ".jpg": "image/jpeg",
-      ".jpeg": "image/jpeg",
-      ".gif": "image/gif",
-      ".webp": "image/webp",
-      ".svg": "image/svg+xml",
-      ".txt": "text/plain",
-      ".md": "text/markdown",
-      ".csv": "text/csv",
-      ".json": "application/json",
-      ".pdf": "application/pdf",
-      ".zip": "application/zip",
-      ".py": "text/x-python",
-      ".ts": "text/typescript",
-      ".js": "text/javascript",
-    };
-    const contentType = MIME_MAP[ext] ?? "application/octet-stream";
+    // design-principles §3 정본 하나 — file_manager.ts guessMimeType 사용 (인라인 map 제거)
+    const contentType = guessMimeType(filename);
 
     if (requestId) {
       await this.send({

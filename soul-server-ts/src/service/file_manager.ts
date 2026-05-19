@@ -71,7 +71,7 @@ const MIME_MAP: Record<string, string> = {
   ".xml": "application/xml",
 };
 
-function guessMimeType(filename: string): string {
+export function guessMimeType(filename: string): string {
   const ext = path.extname(filename).toLowerCase();
   return MIME_MAP[ext] ?? "application/octet-stream";
 }
