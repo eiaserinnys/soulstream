@@ -2,6 +2,7 @@ import { WebSocket } from "ws";
 import type { Logger } from "pino";
 
 import type { AgentRegistry } from "../agent_registry.js";
+import type { FileManager } from "../service/file_manager.js";
 import type { TaskExecutor } from "../task/task_executor.js";
 import type { TaskManager } from "../task/task_manager.js";
 
@@ -23,6 +24,7 @@ export interface UpstreamDependencies {
   agentRegistry: AgentRegistry;
   taskManager: TaskManager;
   taskExecutor: TaskExecutor;
+  fileManager: FileManager;
 }
 
 /**
@@ -55,6 +57,7 @@ export class UpstreamAdapter {
       deps.agentRegistry,
       deps.taskManager,
       deps.taskExecutor,
+      deps.fileManager,
     );
   }
 

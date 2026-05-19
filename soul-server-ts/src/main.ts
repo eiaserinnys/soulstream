@@ -18,6 +18,7 @@ import {
   type StartExecutionCallback,
 } from "./task/task_manager.js";
 import { ExecutionContextBuilder } from "./context/context_builder.js";
+import { FileManager } from "./service/file_manager.js";
 import { UpstreamAdapter } from "./upstream/adapter.js";
 import { SessionBroadcaster } from "./upstream/session_broadcaster.js";
 
@@ -256,6 +257,12 @@ async function main(): Promise<void> {
     "HTTP listening",
   );
 
+  // FileManager 인스턴스 생성 — env 우선, fallback: {cwd}/.local/incoming
+  // (Python config.py:252-254 정합: workspace_dir/.local/incoming)
+  // Phase 2에서 taskExecutor에도 같은 인스턴스를 공유할 수 있도록 모듈 스코프에서 생성.
+  const incomingFileDir = env.INCOMING_FILE_DIR ?? `${process.cwd()}/.local/incoming`;
+  const fileManager = new FileManager({ baseDir: incomingFileDir });
+
   // WS reverse adapter — orch에 등록
   upstreamAdapter = new UpstreamAdapter(
     {
@@ -268,7 +275,7 @@ async function main(): Promise<void> {
       isProduction: env.ENVIRONMENT === "production",
     },
     logger,
-    { agentRegistry, taskManager, taskExecutor },
+    { agentRegistry, taskManager, taskExecutor, fileManager },
   );
 
   // 백그라운드 실행 — top-level에서 await 안 함 (재연결 무한 루프이므로)

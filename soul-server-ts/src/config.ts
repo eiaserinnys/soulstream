@@ -64,6 +64,12 @@ export const EnvSchema = z
       .default("false")
       .transform((v) => v === "true"),
     /**
+     * 첨부 파일 저장 디렉토리. Python `config.py:92, 252-254` 정합.
+     * 미설정 시 FileManager 생성 시점에 `{process.cwd()}/.local/incoming` fallback.
+     * env-variables.md §1: 코드 default 금지 — config 객체 default는 허용 (zod 스키마 default).
+     */
+    INCOMING_FILE_DIR: z.string().optional(),
+    /**
      * MCP HTTP 라우트 path. POST/GET/DELETE 모두 같은 경로 (Streamable HTTP 스펙).
      */
     MCP_PATH: z.string().default("/mcp"),

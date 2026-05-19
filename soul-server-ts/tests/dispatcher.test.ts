@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import pino from "pino";
 
 import { AgentRegistry, type AgentProfile } from "../src/agent_registry.js";
+import { AttachmentError, type FileManager, type SaveResult } from "../src/service/file_manager.js";
 import { CommandDispatcher } from "../src/upstream/dispatcher.js";
 import type { TaskExecutor } from "../src/task/task_executor.js";
 import type { TaskManager } from "../src/task/task_manager.js";
@@ -16,12 +17,39 @@ const codexAgent: AgentProfile = {
   workspace_dir: "/tmp/codex-default",
 };
 
+/** 기본 FileManager mock — 정상 케이스에서 사용 */
+function makeDefaultFileManager(overrides: Partial<FileManager> = {}): FileManager {
+  const defaultSaveResult: SaveResult = {
+    path: "/tmp/incoming/sess-1/1000_test.png",
+    filename: "1000_test.png",
+    size: 100,
+    content_type: "image/png",
+  };
+  return {
+    getSessionDir: vi.fn(async (id) => `/tmp/incoming/${id}`),
+    isUnderBase: vi.fn(async () => true),
+    validateFile: vi.fn(),
+    saveFileForSession: vi.fn(async () => defaultSaveResult),
+    cleanupSession: vi.fn(async () => 3),
+    cleanupOldFiles: vi.fn(async () => 0),
+    getStats: vi.fn(async () => ({
+      base_dir: "/tmp/incoming",
+      session_count: 0,
+      total_files: 0,
+      total_size_mb: 0,
+      max_file_size_mb: 8,
+    })),
+    ...overrides,
+  } as unknown as FileManager;
+}
+
 function createDispatcher(opts: {
   nodeId?: string;
   agents?: AgentProfile[];
   runningTasks?: number;
   taskManager?: Partial<TaskManager>;
   taskExecutor?: Partial<TaskExecutor>;
+  fileManager?: Partial<FileManager>;
 } = {}) {
   const sent: unknown[] = [];
   const send = vi.fn(async (data: unknown) => {
@@ -70,6 +98,7 @@ function createDispatcher(opts: {
 
   const tm = { ...defaultTaskManager, ...opts.taskManager } as TaskManager;
   const te = { ...defaultExecutor, ...opts.taskExecutor } as TaskExecutor;
+  const fm = makeDefaultFileManager(opts.fileManager ?? {});
 
   const dispatcher = new CommandDispatcher(
     send,
@@ -78,8 +107,9 @@ function createDispatcher(opts: {
     registry,
     tm,
     te,
+    fm,
   );
-  return { dispatcher, sent, send, registry, tm, te, createdTasks };
+  return { dispatcher, sent, send, registry, tm, te, createdTasks, fm };
 }
 
 describe("CommandDispatcher.health_check", () => {
@@ -388,5 +418,212 @@ describe("CommandDispatcher unknown command", () => {
     await dispatcher.dispatch(undefined);
     await dispatcher.dispatch(null);
     expect(sent).toHaveLength(0);
+  });
+});
+
+// ─── Attachment 핸들러 테스트 ───────────────────────────────────────────────
+
+describe("CommandDispatcher.upload_attachment", () => {
+  const validB64 = Buffer.from("hello world").toString("base64"); // "aGVsbG8gd29ybGQ="
+
+  it("정상 흐름: saveFileForSession 호출 + upload_attachment_result ACK", async () => {
+    const { dispatcher, sent, fm } = createDispatcher();
+    await dispatcher.dispatch({
+      type: "upload_attachment",
+      session_id: "sess-1",
+      filename: "test.png",
+      content_type: "image/png",
+      content_b64: validB64,
+      requestId: "ua-1",
+    });
+    expect(fm.saveFileForSession).toHaveBeenCalledTimes(1);
+    expect(sent).toHaveLength(1);
+    const msg = sent[0] as Record<string, unknown>;
+    expect(msg.type).toBe("upload_attachment_result");
+    expect(msg.requestId).toBe("ua-1");
+    expect(typeof msg.path).toBe("string");
+    expect(typeof msg.size).toBe("number");
+  });
+
+  it("requestId 없으면 ACK 발행 안 함 (Python 정합)", async () => {
+    const { dispatcher, sent, fm } = createDispatcher();
+    await dispatcher.dispatch({
+      type: "upload_attachment",
+      session_id: "sess-1",
+      filename: "test.png",
+      content_b64: validB64,
+    });
+    expect(fm.saveFileForSession).toHaveBeenCalledTimes(1);
+    expect(sent).toHaveLength(0);
+  });
+
+  it("content_b64 누락 → INVALID_REQUEST error", async () => {
+    const { dispatcher, sent, fm } = createDispatcher();
+    await dispatcher.dispatch({
+      type: "upload_attachment",
+      session_id: "sess-1",
+      requestId: "ua-2",
+    });
+    expect(fm.saveFileForSession).not.toHaveBeenCalled();
+    const msg = sent[0] as { type: string; message: string };
+    expect(msg.type).toBe("error");
+    expect(msg.message).toContain("INVALID_REQUEST");
+    expect(msg.message).toContain("content_b64");
+  });
+
+  it("session_id 누락 → INVALID_REQUEST error", async () => {
+    const { dispatcher, sent, fm } = createDispatcher();
+    await dispatcher.dispatch({
+      type: "upload_attachment",
+      content_b64: validB64,
+      requestId: "ua-3",
+    });
+    expect(fm.saveFileForSession).not.toHaveBeenCalled();
+    const msg = sent[0] as { type: string; message: string };
+    expect(msg.type).toBe("error");
+    expect(msg.message).toContain("INVALID_REQUEST");
+    expect(msg.message).toContain("session_id");
+  });
+
+  it("AttachmentError(크기·확장자 검증 실패) → INVALID_REQUEST: {message}", async () => {
+    const fm = makeDefaultFileManager({
+      saveFileForSession: vi.fn(async () => {
+        throw new AttachmentError("파일이 너무 큽니다 (10MB > 8MB)");
+      }),
+    });
+    const { dispatcher, sent } = createDispatcher({ fileManager: fm });
+    await dispatcher.dispatch({
+      type: "upload_attachment",
+      session_id: "sess-1",
+      filename: "big.png",
+      content_b64: validB64,
+      requestId: "ua-4",
+    });
+    const msg = sent[0] as { type: string; message: string };
+    expect(msg.type).toBe("error");
+    expect(msg.message).toContain("INVALID_REQUEST");
+    expect(msg.message).toContain("파일이 너무 큽니다");
+  });
+});
+
+describe("CommandDispatcher.delete_session_attachments", () => {
+  it("정상 흐름: cleanupSession 호출 + delete_session_attachments_result ACK", async () => {
+    const { dispatcher, sent, fm } = createDispatcher();
+    await dispatcher.dispatch({
+      type: "delete_session_attachments",
+      session_id: "sess-1",
+      requestId: "da-1",
+    });
+    expect(fm.cleanupSession).toHaveBeenCalledWith("sess-1");
+    expect(sent).toHaveLength(1);
+    const msg = sent[0] as Record<string, unknown>;
+    expect(msg.type).toBe("delete_session_attachments_result");
+    expect(msg.requestId).toBe("da-1");
+    expect(msg.cleaned).toBe(true);
+    expect(typeof msg.files_removed).toBe("number");
+  });
+
+  it("session_id 누락 → INVALID_REQUEST error", async () => {
+    const { dispatcher, sent, fm } = createDispatcher();
+    await dispatcher.dispatch({
+      type: "delete_session_attachments",
+      requestId: "da-2",
+    });
+    expect(fm.cleanupSession).not.toHaveBeenCalled();
+    const msg = sent[0] as { type: string; message: string };
+    expect(msg.type).toBe("error");
+    expect(msg.message).toContain("INVALID_REQUEST");
+    expect(msg.message).toContain("session_id");
+  });
+
+  it("requestId 없으면 ACK 발행 안 함", async () => {
+    const { dispatcher, sent, fm } = createDispatcher();
+    await dispatcher.dispatch({
+      type: "delete_session_attachments",
+      session_id: "sess-1",
+    });
+    expect(fm.cleanupSession).toHaveBeenCalledTimes(1);
+    expect(sent).toHaveLength(0);
+  });
+});
+
+describe("CommandDispatcher.download_attachment", () => {
+  it("정상 흐름: download_attachment_result ACK (content_b64·filename·size)", async () => {
+    // isUnderBase=true로 mock, readFile은 실제 파일 대신 Buffer 반환 필요.
+    // dispatcher.ts의 readFile은 node:fs/promises를 직접 import하므로,
+    // 실제 파일 대신 테스트 임시 파일을 만들어 사용한다.
+    const { mkdtemp, writeFile: wf, rm: rm2 } = await import("node:fs/promises");
+    const os = await import("node:os");
+    const path = await import("node:path");
+
+    const tmpDir = await mkdtemp(path.join(os.tmpdir(), "dl-test-"));
+    const testFile = path.join(tmpDir, "hello.txt");
+    await wf(testFile, "hello content");
+
+    const fm = makeDefaultFileManager({
+      isUnderBase: vi.fn(async () => true),
+    });
+    const { dispatcher, sent } = createDispatcher({ fileManager: fm });
+    await dispatcher.dispatch({
+      type: "download_attachment",
+      path: testFile,
+      requestId: "dl-1",
+    });
+
+    await rm2(tmpDir, { recursive: true, force: true });
+
+    expect(sent).toHaveLength(1);
+    const msg = sent[0] as Record<string, unknown>;
+    expect(msg.type).toBe("download_attachment_result");
+    expect(msg.requestId).toBe("dl-1");
+    expect(typeof msg.content_b64).toBe("string");
+    expect(msg.filename).toBe("hello.txt");
+    expect(msg.content_type).toBe("text/plain");
+    expect(typeof msg.size).toBe("number");
+  });
+
+  it("path 누락 → INVALID_REQUEST error", async () => {
+    const { dispatcher, sent, fm } = createDispatcher();
+    await dispatcher.dispatch({
+      type: "download_attachment",
+      requestId: "dl-2",
+    });
+    expect(fm.isUnderBase).not.toHaveBeenCalled();
+    const msg = sent[0] as { type: string; message: string };
+    expect(msg.type).toBe("error");
+    expect(msg.message).toContain("INVALID_REQUEST");
+    expect(msg.message).toContain("path");
+  });
+
+  it("isUnderBase=false (traversal) → INVALID_REQUEST error", async () => {
+    const fm = makeDefaultFileManager({
+      isUnderBase: vi.fn(async () => false),
+    });
+    const { dispatcher, sent } = createDispatcher({ fileManager: fm });
+    await dispatcher.dispatch({
+      type: "download_attachment",
+      path: "/etc/passwd",
+      requestId: "dl-3",
+    });
+    const msg = sent[0] as { type: string; message: string };
+    expect(msg.type).toBe("error");
+    expect(msg.message).toContain("INVALID_REQUEST");
+    expect(msg.message).toContain("첨부 디렉토리 하위가 아닙니다");
+  });
+
+  it("파일 미존재 → NOT_FOUND error", async () => {
+    const fm = makeDefaultFileManager({
+      isUnderBase: vi.fn(async () => true),
+    });
+    const { dispatcher, sent } = createDispatcher({ fileManager: fm });
+    await dispatcher.dispatch({
+      type: "download_attachment",
+      path: "/tmp/nonexistent_file_xyz_12345.txt",
+      requestId: "dl-4",
+    });
+    const msg = sent[0] as { type: string; message: string };
+    expect(msg.type).toBe("error");
+    expect(msg.message).toContain("NOT_FOUND");
+    expect(msg.message).toContain("파일이 존재하지 않습니다");
   });
 });

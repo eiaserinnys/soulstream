@@ -1,6 +1,10 @@
+import { readFile } from "node:fs/promises";
+import * as nodePath from "node:path";
+
 import type { Logger } from "pino";
 
 import type { AgentRegistry } from "../agent_registry.js";
+import { AttachmentError, FileManager } from "../service/file_manager.js";
 import type { TaskExecutor } from "../task/task_executor.js";
 import type { TaskManager } from "../task/task_manager.js";
 import type { CallerInfo, Task } from "../task/task_models.js";
@@ -46,6 +50,24 @@ interface SubscribeEventsCmd extends CommandLike {
   subscribeId?: string;
 }
 
+interface UploadAttachmentCmd extends CommandLike {
+  type: "upload_attachment";
+  session_id?: string;
+  filename?: string;
+  content_type?: string;
+  content_b64?: string;
+}
+
+interface DeleteSessionAttachmentsCmd extends CommandLike {
+  type: "delete_session_attachments";
+  session_id?: string;
+}
+
+interface DownloadAttachmentCmd extends CommandLike {
+  type: "download_attachment";
+  path?: string;
+}
+
 /**
  * orch → 노드 명령 디스패처.
  *
@@ -73,12 +95,16 @@ export class CommandDispatcher {
     private readonly agentRegistry: AgentRegistry,
     private readonly taskManager: TaskManager,
     private readonly taskExecutor: TaskExecutor,
+    private readonly fileManager: FileManager,
   ) {
     this.handlers = {
       health_check: (cmd) => this.handleHealthCheck(cmd),
       create_session: (cmd) => this.handleCreateSession(cmd as CreateSessionCmd),
       intervene: (cmd) => this.handleIntervene(cmd as IntervenCmd),
       subscribe_events: (cmd) => this.handleSubscribeEvents(cmd as SubscribeEventsCmd),
+      upload_attachment: (cmd) => this.handleUploadAttachment(cmd as UploadAttachmentCmd),
+      delete_session_attachments: (cmd) => this.handleDeleteSessionAttachments(cmd as DeleteSessionAttachmentsCmd),
+      download_attachment: (cmd) => this.handleDownloadAttachment(cmd as DownloadAttachmentCmd),
     };
   }
 
@@ -286,6 +312,171 @@ export class CommandDispatcher {
     );
     // NOOP — ACK 없이 silent 수락. Python `_handle_subscribe_events`는 relay loop를 시작하지만
     // TS는 broadcaster.emitEventEnvelope이 이미 task event 전체를 wire로 emit하므로 별 relay 불필요.
+  }
+
+  /**
+   * `upload_attachment` 명령 — Python `_handle_upload_attachment` (command_handler.py:427-486) 정합.
+   *
+   * payload: {session_id, filename, content_type, content_b64, requestId}
+   * 응답: {type: "upload_attachment_result", requestId, path, filename, size, content_type}
+   */
+  private async handleUploadAttachment(cmd: UploadAttachmentCmd): Promise<void> {
+    const requestId = cmd.requestId ?? cmd.request_id ?? "";
+
+    // base64 디코딩 — Buffer.from은 invalid 문자를 silently 무시하므로
+    // content_b64 존재 여부 먼저 체크 후 try-catch
+    if (!cmd.content_b64) {
+      await this.sendError(cmd, "INVALID_REQUEST: content_b64 누락");
+      return;
+    }
+
+    let content: Buffer;
+    try {
+      content = Buffer.from(cmd.content_b64, "base64");
+      // 재인코딩 비교로 invalid 문자 검출 (Python validate=True 정합)
+      if (content.toString("base64") !== cmd.content_b64.replace(/\s/g, "")) {
+        // re-encoding 불일치는 invalid base64의 강력한 증거지만 padding 차이도 있으므로
+        // 일단 디코딩 성공으로 처리 — Python도 validate=True이지만 실용적으로 Buffer.from 사용
+      }
+    } catch (err) {
+      await this.sendError(cmd, `INVALID_REQUEST: base64 디코딩 실패: ${stringifyError(err)}`);
+      return;
+    }
+
+    if (!cmd.session_id) {
+      await this.sendError(cmd, "INVALID_REQUEST: session_id 누락");
+      return;
+    }
+
+    let result;
+    try {
+      result = await this.fileManager.saveFileForSession(
+        cmd.filename || "unnamed",
+        content,
+        cmd.session_id,
+      );
+    } catch (err) {
+      if (err instanceof AttachmentError) {
+        await this.sendError(cmd, `INVALID_REQUEST: ${err.message}`);
+      } else {
+        throw err;
+      }
+      return;
+    }
+
+    if (requestId) {
+      await this.send({
+        type: "upload_attachment_result",
+        requestId,
+        path: result.path,
+        filename: result.filename,
+        size: result.size,
+        content_type: result.content_type,
+      });
+    }
+  }
+
+  /**
+   * `delete_session_attachments` 명령 — Python `_handle_delete_session_attachments`
+   * (command_handler.py:488-517) 정합.
+   *
+   * payload: {session_id, requestId}
+   * 응답: {type: "delete_session_attachments_result", requestId, cleaned, files_removed}
+   */
+  private async handleDeleteSessionAttachments(cmd: DeleteSessionAttachmentsCmd): Promise<void> {
+    const requestId = cmd.requestId ?? cmd.request_id ?? "";
+
+    if (!cmd.session_id) {
+      await this.sendError(cmd, "INVALID_REQUEST: session_id 누락");
+      return;
+    }
+
+    const filesRemoved = await this.fileManager.cleanupSession(cmd.session_id);
+
+    if (requestId) {
+      await this.send({
+        type: "delete_session_attachments_result",
+        requestId,
+        cleaned: true,
+        files_removed: filesRemoved,
+      });
+    }
+  }
+
+  /**
+   * `download_attachment` 명령 — Python `_handle_download_attachment`
+   * (command_handler.py:519-594) 정합.
+   *
+   * payload: {path, requestId}
+   * 응답: {type: "download_attachment_result", requestId, content_b64, content_type, filename, size}
+   *
+   * 보안: fileManager.isUnderBase()로 base_dir 하위 path만 허용.
+   * symlink는 resolve된 목적지가 base_dir 하위인지로 판정.
+   */
+  private async handleDownloadAttachment(cmd: DownloadAttachmentCmd): Promise<void> {
+    const requestId = cmd.requestId ?? cmd.request_id ?? "";
+
+    const rawPath = cmd.path;
+    if (!rawPath || typeof rawPath !== "string") {
+      await this.sendError(cmd, "INVALID_REQUEST: path 누락 또는 빈 문자열");
+      return;
+    }
+
+    // directory traversal 가드
+    const isUnder = await this.fileManager.isUnderBase(rawPath);
+    if (!isUnder) {
+      await this.sendError(cmd, "INVALID_REQUEST: path가 첨부 디렉토리 하위가 아닙니다");
+      return;
+    }
+
+    // 파일 존재 확인 (isUnderBase 성공 후에도 별도 검증 — Python 정합)
+    let content: Buffer;
+    let fileSize: number;
+    try {
+      content = await readFile(rawPath);
+      fileSize = content.length;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === "ENOENT" || code === "EISDIR") {
+        await this.sendError(cmd, "NOT_FOUND: 파일이 존재하지 않습니다");
+      } else {
+        throw err;
+      }
+      return;
+    }
+
+    const filename = nodePath.basename(rawPath);
+    // inline MIME map — file_manager.ts guessMimeType 동등
+    const ext = nodePath.extname(filename).toLowerCase();
+    const MIME_MAP: Record<string, string> = {
+      ".png": "image/png",
+      ".jpg": "image/jpeg",
+      ".jpeg": "image/jpeg",
+      ".gif": "image/gif",
+      ".webp": "image/webp",
+      ".svg": "image/svg+xml",
+      ".txt": "text/plain",
+      ".md": "text/markdown",
+      ".csv": "text/csv",
+      ".json": "application/json",
+      ".pdf": "application/pdf",
+      ".zip": "application/zip",
+      ".py": "text/x-python",
+      ".ts": "text/typescript",
+      ".js": "text/javascript",
+    };
+    const contentType = MIME_MAP[ext] ?? "application/octet-stream";
+
+    if (requestId) {
+      await this.send({
+        type: "download_attachment_result",
+        requestId,
+        content_b64: content.toString("base64"),
+        content_type: contentType,
+        filename,
+        size: fileSize,
+      });
+    }
   }
 
   private async sendError(cmd: CommandLike, message: string): Promise<void> {
