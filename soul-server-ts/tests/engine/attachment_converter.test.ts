@@ -195,6 +195,47 @@ describe("composeCodexInput — image N개 + text-reference M개 mixed", () => {
   });
 });
 
+describe("composeCodexInput — P2-3 빈 prompt + text-reference (선행 개행 제거)", () => {
+  it("빈 prompt + text-reference → refBlock만 반환 (선행 \\n\\n 없음)", () => {
+    // P2-3: prompt가 빈 문자열이면 `\n\ndescription` 형식 대신 refBlock만 사용.
+    const result = composeCodexInput("", [
+      { kind: "text-reference", path: "/tmp/a.py", quotedText: "- /tmp/a.py" },
+    ]);
+    expect(typeof result).toBe("string");
+    const str = result as string;
+    // 선행 개행이 없어야 함
+    expect(str.startsWith("\n")).toBe(false);
+    // refBlock 내용 포함
+    expect(str).toContain("다음 파일들이 첨부되었습니다. Read 도구로 내용을 확인하세요:");
+    expect(str).toContain("- /tmp/a.py");
+  });
+
+  it("비어있지 않은 prompt + text-reference → prompt\\n\\nrefBlock 형식 유지", () => {
+    const result = composeCodexInput("봐줘", [
+      { kind: "text-reference", path: "/tmp/a.py", quotedText: "- /tmp/a.py" },
+    ]);
+    expect(typeof result).toBe("string");
+    const str = result as string;
+    expect(str).toContain("봐줘\n\n다음 파일들이 첨부되었습니다");
+  });
+
+  it("빈 prompt + image → UserInput[] 첫 항목 text가 빈 문자열 없이 refBlock 없으면 빈 prompt 그대로", () => {
+    // image만 있고 text-ref 없으면 combinedText=prompt="" — text 항목은 ""
+    const result = composeCodexInput("", [
+      {
+        kind: "image",
+        path: "/tmp/a.png",
+        userInput: { type: "local_image", path: "/tmp/a.png" },
+      },
+    ]);
+    expect(Array.isArray(result)).toBe(true);
+    const arr = result as Array<{ type: string; text?: string; path?: string }>;
+    expect(arr[0].type).toBe("text");
+    expect(arr[0].text).toBe("");
+    expect(arr[1].type).toBe("local_image");
+  });
+});
+
 describe("composeCodexInput — rejected 분기는 무시됨 (이미 codex_adapter에서 early-return)", () => {
   it("rejected만 들어와도 string prompt 반환 (codex_adapter에서 rejected 차단 전제)", () => {
     // codex_adapter는 rejected 있으면 early-return하므로 composeCodexInput에 rejected가

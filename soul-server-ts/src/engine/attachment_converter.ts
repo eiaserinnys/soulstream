@@ -100,12 +100,14 @@ export function composeCodexInput(
       c.kind === "image",
   );
 
-  // 텍스트 인용이 있으면 prompt에 append (Python attachment_helpers.py 형식 정합)
+  // 텍스트 인용이 있으면 prompt에 append (Python attachment_helpers.py 형식 정합).
+  // P2-3: prompt가 빈 문자열이면 선행 `\n\n` 없이 refBlock만 사용 — 불필요한 개행 차단.
   let combinedText = prompt;
   if (textConvs.length > 0) {
-    combinedText =
-      `${prompt}\n\n다음 파일들이 첨부되었습니다. Read 도구로 내용을 확인하세요:\n` +
+    const refBlock =
+      `다음 파일들이 첨부되었습니다. Read 도구로 내용을 확인하세요:\n` +
       textConvs.map((c) => c.quotedText).join("\n");
+    combinedText = prompt ? `${prompt}\n\n${refBlock}` : refBlock;
   }
 
   if (imageConvs.length === 0) {

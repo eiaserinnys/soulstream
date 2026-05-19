@@ -118,6 +118,44 @@ export class CodexEngineAdapter implements EnginePort {
       );
     }
 
+    // 첨부 처리 — thread 생성 *전* (P2-2: 자원 누수 방지).
+    //
+    // 정책: rejected 발생 시 *전체 turn abort*.
+    //   - 업로드 단계 fileManager.validateFile이 확장자 blacklist + 크기 검증을 이미 통과.
+    //   - 본 단계의 rejected는 "codex가 소비 불가한 형식"(.pdf, .docx 등 capability table 미포함).
+    //   - 사용자 명시 첨부 중 일부만 처리하면 의도 어긋남 → design-principles §4 명시 실패.
+    //   → assistant_error yield + throw → task_executor._consumeEventStream catch L186이
+    //     task.status="error"로 설정 (P1-1: return 대신 throw로 격상 — return은 정상 종료로
+    //     처리되어 task.status="completed"로 박힘).
+    //
+    // emit 방식: *yield 전용* (spec-reviewer 보강 2/3 — params.onEvent 사용 금지).
+    //   onEvent는 부가 콜백이며 yield 없이 onEvent만 호출하면 wire·DB에 기록되지 않음
+    //   (task_executor._processEvent가 persist + broadcaster + side-effect 3단계를 수행).
+    const conversions = (params.attachmentPaths ?? []).map(classifyAttachment);
+    const rejected = conversions.filter((c) => c.kind === "rejected");
+    if (rejected.length > 0) {
+      // 🔵 #9 — 거부 시 assistant_error emit + throw로 turn 종료.
+      //
+      // throw하면 task_executor._consumeEventStream의 catch가 작동하여
+      // task.status="error" 설정 + interventionQueue skip 알림 발화. 단순 return은
+      // 정상 종료로 분류되어 status="completed"로 설정되어 사용자 의도 어긋남 (code-review P1-1).
+      //
+      // 정책 근거 (spec-reviewer Phase 2 보강 1/3): 업로드 단계에서 fileManager.validateFile이
+      // 확장자 blacklist+크기 검증을 적용하므로 task_executor 단계의 rejected는 "codex가
+      // 소비 불가한 형식"만 (.pdf 등). 사용자 명시 첨부 일부만 처리하면 의도 어긋남 →
+      // 전체 turn 실패로 분류 (design-principles §4 명시 실패).
+      const rejectedReasons = rejected
+        .map((r) => (r as Extract<typeof r, { kind: "rejected" }>).reason)
+        .join(", ");
+      yield {
+        type: "assistant_error",
+        message: `첨부 거부: ${rejectedReasons}`,
+        fatal: false,
+      } as SSEEventPayload;
+      this.currentTurn = null;
+      throw new Error(`Attachment rejected: ${rejectedReasons}`);
+    }
+
     const controller = new AbortController();
     this.currentTurn = controller;
 
@@ -163,29 +201,6 @@ export class CodexEngineAdapter implements EnginePort {
       this.logger.debug({ workspaceDir: this.workspaceDir }, "Started new Codex thread");
     }
 
-    // 첨부 처리 (Phase 2 — spec-reviewer 보강 1/3·2/3 반영):
-    //
-    // 정책: rejected 발생 시 *전체 turn abort*.
-    //   - 업로드 단계 fileManager.validateFile이 확장자 blacklist + 크기 검증을 이미 통과.
-    //   - 본 단계의 rejected는 "codex가 소비 불가한 형식"(.pdf, .docx 등 capability table 미포함).
-    //   - 사용자 명시 첨부 중 일부만 처리하면 의도 어긋남 → design-principles §4 명시 실패.
-    //   → assistant_error emit + turn 종료. 사용자가 거부된 파일 인지 후 재시도 결정.
-    //
-    // emit 방식: *yield 전용* (spec-reviewer 보강 2/3 — params.onEvent 사용 금지).
-    //   onEvent는 부가 콜백이며 yield 없이 onEvent만 호출하면 wire·DB에 기록되지 않음
-    //   (task_executor._processEvent가 persist + broadcaster + side-effect 3단계를 수행).
-    const conversions = (params.attachmentPaths ?? []).map(classifyAttachment);
-    const rejected = conversions.filter((c) => c.kind === "rejected");
-    if (rejected.length > 0) {
-      // 🔵 #9 — 거부 시 assistant_error emit + turn 종료
-      yield {
-        type: "assistant_error",
-        message: `첨부 거부: ${rejected.map((r) => (r as Extract<typeof r, { kind: "rejected" }>).reason).join(", ")}`,
-        fatal: false,
-      } as SSEEventPayload;
-      this.currentTurn = null;
-      return;
-    }
     const textConvs = conversions.filter((c) => c.kind === "text-reference");
     if (textConvs.length > 0) {
       // 🟡 #7 — 텍스트 변환 알림 (yield → task_executor._processEvent가 persist + broadcast)

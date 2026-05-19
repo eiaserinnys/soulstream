@@ -729,33 +729,45 @@ describe("CodexEngineAdapter — interrupt + close", () => {
 });
 
 describe("CodexEngineAdapter — Phase 2 attachmentPaths (spec-reviewer 보강 1/3·2/3·§7)", () => {
-  it("rejected 입력 → assistant_error yield + return (runStreamed 호출 안 됨)", async () => {
+  it("rejected 입력 → assistant_error yield 후 throw (P1-1: return 대신 throw — task.status=error 보장)", async () => {
+    // P1-1 정정: 기존 return은 _consumeEventStream의 for-await 정상 종료로 처리되어
+    // task.status="completed"로 설정됨 (사용자 의도 어긋남). throw로 격상하여
+    // task_executor catch가 task.status="error"를 설정하도록 보장.
     const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
     mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });
-    // runStreamed가 호출되면 안 됨 — 호출되면 테스트 실패
+    // runStreamed가 호출되면 안 됨 — thread 생성 전에 rejected 검사 (P2-2)
 
     const engine = new CodexEngineAdapter(
       { workspaceDir: "/tmp/work" },
       silentLogger(),
     );
     const events: Array<Record<string, unknown>> = [];
-    for await (const e of engine.execute({
+
+    // execute는 iterator이므로 수동 drain하여 throw 이전 yield 이벤트를 수집한다.
+    const iter = engine.execute({
       prompt: "test",
       attachmentPaths: ["/tmp/sess-1/1234_doc.pdf"],
-    })) {
-      events.push(e as Record<string, unknown>);
-    }
+    })[Symbol.asyncIterator]();
 
-    // assistant_error 1건 emit 후 종료
+    // 첫 번째 next()는 assistant_error yield를 반환한다.
+    const first = await iter.next();
+    expect(first.done).toBe(false);
+    events.push(first.value as Record<string, unknown>);
+
+    // 두 번째 next()는 throw를 발생시킨다.
+    await expect(iter.next()).rejects.toThrow("Attachment rejected");
+
+    // assistant_error 1건 emit 확인
     expect(events).toHaveLength(1);
     expect(events[0].type).toBe("assistant_error");
     expect(events[0].fatal).toBe(false);
     expect(String(events[0].message)).toContain(".pdf");
-    // runStreamed 호출 안 됨
+    // thread 생성 전 검사이므로 startThread·runStreamed 호출 안 됨 (P2-2)
+    expect(mockStartThread).not.toHaveBeenCalled();
     expect(mockRunStreamed).not.toHaveBeenCalled();
   });
 
-  it("rejected 복수 → reason들이 , 구분으로 message에 포함", async () => {
+  it("rejected 복수 → reason들이 , 구분으로 message에 포함 + throw error에도 포함", async () => {
     const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
     mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });
 
@@ -763,17 +775,52 @@ describe("CodexEngineAdapter — Phase 2 attachmentPaths (spec-reviewer 보강 1
       { workspaceDir: "/tmp/work" },
       silentLogger(),
     );
-    const events: Array<Record<string, unknown>> = [];
-    for await (const e of engine.execute({
+
+    const iter = engine.execute({
       prompt: "test",
       attachmentPaths: ["/tmp/a.pdf", "/tmp/b.docx"],
-    })) {
-      events.push(e as Record<string, unknown>);
-    }
-    expect(events[0].type).toBe("assistant_error");
-    const msg = String(events[0].message);
+    })[Symbol.asyncIterator]();
+
+    // 첫 yield: assistant_error
+    const first = await iter.next();
+    expect(first.done).toBe(false);
+    const msg = String((first.value as Record<string, unknown>).message);
     expect(msg).toContain(".pdf");
     expect(msg).toContain(".docx");
+
+    // 두 번째 next(): throw
+    const throwErr = await iter.next().catch((e: Error) => e);
+    expect(throwErr).toBeInstanceOf(Error);
+    expect((throwErr as Error).message).toContain("Attachment rejected");
+  });
+
+  it("rejected throw 후 currentTurn=null — 동일 어댑터로 다음 turn 실행 가능", async () => {
+    // P1-1 부가 검증: throw 전 this.currentTurn = null 설정으로 내부 상태 정리.
+    // rejected 후 동일 어댑터 인스턴스로 정상 turn을 재실행할 수 있어야 한다.
+    const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
+    mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });
+    mockRunStreamed.mockResolvedValue({ events: eventStream([]) });
+
+    const engine = new CodexEngineAdapter(
+      { workspaceDir: "/tmp/work" },
+      silentLogger(),
+    );
+
+    // 첫 번째 execute: rejected → throw
+    const iter1 = engine.execute({
+      prompt: "first",
+      attachmentPaths: ["/tmp/a.pdf"],
+    })[Symbol.asyncIterator]();
+    await iter1.next(); // assistant_error yield 소비
+    await iter1.next().catch(() => {}); // throw 소비
+
+    // 두 번째 execute: 정상 (concurrent 가드 미발동 확인 — currentTurn=null이어야 함)
+    const events2: Array<Record<string, unknown>> = [];
+    for await (const e of engine.execute({ prompt: "second" })) {
+      events2.push(e as Record<string, unknown>);
+    }
+    // 정상 실행 — throw 없음, startThread 1회 호출
+    expect(mockStartThread).toHaveBeenCalledTimes(1);
   });
 
   it("text-reference 입력 → system_message yield 후 runStreamed 호출 (prompt에 인용 첨가)", async () => {
