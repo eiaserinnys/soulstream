@@ -6,7 +6,7 @@
  * Phase 4의 NewSessionModal(single-node 용)과 달리 노드 선택이 포함된다.
  */
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import {
   NewSessionDialog as BaseNewSessionDialog,
@@ -19,6 +19,7 @@ import {
 } from "@seosoyoung/soul-ui";
 import type { AgentInfo } from "@seosoyoung/soul-ui";
 import { useOrchestratorStore } from "../store/orchestrator-store";
+import { useAppConfig } from "../config/AppConfigContext";
 
 interface OAuthProfile {
   name: string;
@@ -29,6 +30,7 @@ export function OrchestratorNewSessionModal() {
   const queryClientRef = useRef<QueryClient | null>(null);
   const queryClient = useQueryClient();
   queryClientRef.current = queryClient;
+  const { nodeId: localNodeId } = useAppConfig();
 
   const isModalOpen = useDashboardStore((s) => s.isNewSessionModalOpen);
   const closeNewSessionModal = useDashboardStore((s) => s.closeNewSessionModal);
@@ -43,8 +45,9 @@ export function OrchestratorNewSessionModal() {
   const [oauthProfiles, setOauthProfiles] = useState<OAuthProfile[]>([]);
   const [selectedOAuthProfile, setSelectedOAuthProfile] = useState<string | null>(null);
 
-  const aliveNodes = Array.from(nodes.values()).filter(
-    (n) => n.status === "connected",
+  const aliveNodes = useMemo(
+    () => Array.from(nodes.values()).filter((n) => n.status === "connected"),
+    [nodes],
   );
 
   // '클로드 코드 세션' 폴더 ID
@@ -68,6 +71,19 @@ export function OrchestratorNewSessionModal() {
       setSelectedModalFolderId(selectedFolderId);
     }
   }, [isModalOpen, catalog]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 앱/WebView에서는 현재 노드가 명확한 경우가 많다. 노드가 자동 선택되면
+  // NewSessionDialog가 즉시 fileUploadUrl을 받아 세션 생성 전 첨부 UI를 표시한다.
+  useEffect(() => {
+    if (!isModalOpen || selectedNodeId) return;
+    if (localNodeId && aliveNodes.some((n) => n.nodeId === localNodeId)) {
+      setSelectedNodeId(localNodeId);
+      return;
+    }
+    if (aliveNodes.length === 1) {
+      setSelectedNodeId(aliveNodes[0].nodeId);
+    }
+  }, [isModalOpen, selectedNodeId, localNodeId, aliveNodes]);
 
   // nodeId 변경 시 에이전트 목록 및 OAuth 프로필 조회
   useEffect(() => {
@@ -184,7 +200,7 @@ export function OrchestratorNewSessionModal() {
   const nodeSelector = (
     <div className="flex flex-col gap-1.5">
       <label className="text-xs font-medium text-muted-foreground">Node</label>
-      <Select value={selectedNodeId} onValueChange={setSelectedNodeId}>
+      <Select value={selectedNodeId} onValueChange={(v) => setSelectedNodeId(v ?? "")}>
         <SelectTrigger>
           <span className={cn("flex-1 truncate", !selectedNodeId && "text-muted-foreground/72")}>
             {selectedNodeId
@@ -233,7 +249,7 @@ export function OrchestratorNewSessionModal() {
   const agentSelector = agents.length > 0 ? (
     <div className="flex flex-col gap-1.5">
       <label className="text-xs font-medium text-muted-foreground">Agent</label>
-      <Select value={selectedAgentId} onValueChange={setSelectedAgentId}>
+      <Select value={selectedAgentId} onValueChange={(v) => setSelectedAgentId(v ?? "")}>
         <SelectTrigger>
           {(() => {
             const agent = selectedAgentId ? agents.find(a => a.id === selectedAgentId) : null;
@@ -286,7 +302,7 @@ export function OrchestratorNewSessionModal() {
       submitDisabled={!selectedNodeId}
       fileUploadUrl={
         selectedNodeId
-          ? `/api/attachments/sessions?nodeId=${selectedNodeId}`
+          ? `/api/attachments/sessions?nodeId=${encodeURIComponent(selectedNodeId)}`
           : undefined
       }
     />

@@ -32,9 +32,14 @@ import { decideFollowOnAtBottomChange } from "./ChatView.follow-helpers";
 interface ChatViewProps {
   chatInputDisabled?: boolean;
   isOtherNodeSession?: boolean;
+  fileUploadUrl?: string;
 }
 
-export function ChatView({ chatInputDisabled = false, isOtherNodeSession = false }: ChatViewProps = {}) {
+export function ChatView({
+  chatInputDisabled = false,
+  isOtherNodeSession = false,
+  fileUploadUrl,
+}: ChatViewProps = {}) {
   const tree = useDashboardStore((s) => s.tree);
   const treeVersion = useDashboardStore((s) => s.treeVersion);
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
@@ -301,7 +306,11 @@ export function ChatView({ chatInputDisabled = false, isOtherNodeSession = false
       </div>
 
       {/* ChatInput */}
-      <ChatInput additionalDisabled={chatInputDisabled} isOtherNodeSession={isOtherNodeSession} />
+      <ChatInput
+        additionalDisabled={chatInputDisabled}
+        isOtherNodeSession={isOtherNodeSession}
+        fileUploadUrl={fileUploadUrl}
+      />
     </div>
   );
 }

@@ -55,6 +55,7 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
   const isLlm = activeSessionSummary?.sessionType === "llm";
   const isFinished = status === "completed" || status === "error";
   const isLlmFinished = isLlm && isFinished;
+  const effectiveFileUploadUrl = isLlmFinished ? undefined : fileUploadUrl;
 
   // LLM 대화 컨텍스트: 트리에서 user/assistant 메시지를 추출
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -69,7 +70,7 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
 
   // 파일 업로드 훅 — activeSessionKey를 sessionId로 사용 (fileUploadUrl 없으면 noop)
   const { files, isUploading, addFiles, removeFile, resetLocal, uploadedPaths } = useFileUpload({
-    uploadUrl: fileUploadUrl ?? "",
+    uploadUrl: effectiveFileUploadUrl ?? "",
     sessionId: activeSessionKey ?? "",
   });
 
@@ -82,7 +83,7 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
     llmProvider: activeSessionSummary?.llmProvider,
     llmModel: activeSessionSummary?.llmModel,
     clientId: activeSessionSummary?.clientId,
-    fileUploadUrl,
+    fileUploadUrl: effectiveFileUploadUrl,
     uploadedPaths,
     hasFiles: files.length > 0,
     resetLocal,
@@ -129,7 +130,7 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
 
   if (!activeSessionKey) return null;
 
-  const fileUploadDisabled = fileUploadUrl ? isUploading : false;
+  const fileUploadDisabled = effectiveFileUploadUrl ? isUploading : false;
   const isDisabled = sending || !text.trim() || additionalDisabled || fileUploadDisabled || isOtherNodeSession;
   const textareaDisabled = sending || additionalDisabled || isOtherNodeSession;
 
@@ -146,7 +147,7 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
       className="border-t border-border p-[var(--panel-inset)] shrink-0"
     >
       {/* 첨부 파일 목록 (fileUploadUrl이 있고 파일이 있을 때만) */}
-      {fileUploadUrl && files.length > 0 && (
+      {effectiveFileUploadUrl && files.length > 0 && (
         <div className="flex gap-2 overflow-x-auto pb-2">
           {files.map((f) => (
             <FileAttachmentPreview
@@ -178,7 +179,7 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
       )}
 
       <div className="flex gap-2">
-        {fileUploadUrl && <PaperclipButton onClick={() => fileInputRef.current?.click()} />}
+        {effectiveFileUploadUrl && <PaperclipButton onClick={() => fileInputRef.current?.click()} />}
         <ChatInputEditor
           ref={textareaRef}
           text={text}
@@ -207,7 +208,7 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
         </div>
       )}
 
-      {fileUploadUrl && (
+      {effectiveFileUploadUrl && (
         <input
           ref={fileInputRef}
           type="file"

@@ -94,21 +94,31 @@ export function OrchestratorDashboardLayout() {
     getSessionProvider: () => orchestratorSessionProvider,
   });
 
+  const activeSession = useMemo(
+    () => sessions.find((s) => s.agentSessionId === activeSessionKey),
+    [activeSessionKey, sessions],
+  );
+
   // 활성 세션의 노드가 없거나 disconnected이면 ChatInput 비활성화
   const isChatInputDisabled = useMemo(() => {
     if (!activeSessionKey) return false;
-    const session = sessions.find((s) => s.agentSessionId === activeSessionKey);
-    if (!session?.nodeId) return true;
-    const node = nodes.get(session.nodeId);
+    if (!activeSession?.nodeId) return true;
+    const node = nodes.get(activeSession.nodeId);
     return !node || node.status === "disconnected";
-  }, [activeSessionKey, sessions, nodes]);
+  }, [activeSessionKey, activeSession, nodes]);
 
   // 활성 세션이 다른 노드 소속이면 true (localNodeId가 없으면 판별 불가 → false)
   const isOtherNodeSession = useMemo(() => {
     if (!activeSessionKey || !localNodeId) return false;
-    const session = sessions.find((s) => s.agentSessionId === activeSessionKey);
-    return !!session?.nodeId && session.nodeId !== localNodeId;
-  }, [activeSessionKey, sessions, localNodeId]);
+    return !!activeSession?.nodeId && activeSession.nodeId !== localNodeId;
+  }, [activeSessionKey, activeSession, localNodeId]);
+
+  const chatFileUploadUrl = useMemo(() => {
+    if (!activeSession?.nodeId || isChatInputDisabled || isOtherNodeSession) {
+      return undefined;
+    }
+    return `/api/attachments/sessions?nodeId=${encodeURIComponent(activeSession.nodeId)}`;
+  }, [activeSession, isChatInputDisabled, isOtherNodeSession]);
 
   const isMobile = useIsMobile();
 
@@ -161,7 +171,13 @@ export function OrchestratorDashboardLayout() {
           </>
         )
       }
-      rightPanel={<RightPanel chatInputDisabled={isChatInputDisabled} isOtherNodeSession={isOtherNodeSession} />}
+      rightPanel={
+        <RightPanel
+          chatInputDisabled={isChatInputDisabled}
+          isOtherNodeSession={isOtherNodeSession}
+          fileUploadUrl={chatFileUploadUrl}
+        />
+      }
       connectionStatus={connectionStatus ?? sseStatus}
       onSearchClick={() => setSearchOpen(true)}
       banner={
@@ -199,7 +215,13 @@ export function OrchestratorDashboardLayout() {
       }
       onNewSession={() => openNewSessionModal("folder")}
       mobileChatHeader={(onBack) => <MobileChatHeader onBack={onBack} />}
-      mobileChatView={<ChatView chatInputDisabled={isChatInputDisabled} isOtherNodeSession={isOtherNodeSession} />}
+      mobileChatView={
+        <ChatView
+          chatInputDisabled={isChatInputDisabled}
+          isOtherNodeSession={isOtherNodeSession}
+          fileUploadUrl={chatFileUploadUrl}
+        />
+      }
       mobileSettingsContent={
         <div className="p-4 space-y-4">
           <h2 className="text-base font-semibold">설정</h2>

@@ -107,6 +107,7 @@ export function DashboardLayout() {
   const isOtherNode = features.nodeGuard
     ? computeIsOtherNode(currentNodeId, activeSession?.nodeId)
     : false;
+  const chatFileUploadUrl = isOtherNode ? undefined : "/attachments/sessions";
 
   // 세션 이동 후 빈 자리 보충 — 이동으로 폴더 표시 세션 수가 줄면 더 있으면 loadMore
   const handleMoveSessions = useCallback(
@@ -156,7 +157,12 @@ export function DashboardLayout() {
           </>
         )
       }
-      rightPanel={<RightPanel chatInputDisabled={isOtherNode} />}
+      rightPanel={
+        <RightPanel
+          chatInputDisabled={isOtherNode}
+          fileUploadUrl={chatFileUploadUrl}
+        />
+      }
       connectionStatus={sseStatus}
       onSearchClick={() => setSearchOpen(true)}
       banner={
@@ -193,7 +199,12 @@ export function DashboardLayout() {
       }
       onNewSession={() => openNewSessionModal("folder")}
       mobileChatHeader={(onBack) => <MobileChatHeader onBack={onBack} />}
-      mobileChatView={<ChatView chatInputDisabled={isOtherNode} />}
+      mobileChatView={
+        <ChatView
+          chatInputDisabled={isOtherNode}
+          fileUploadUrl={chatFileUploadUrl}
+        />
+      }
       mobileSettingsContent={
         <div className="p-4 space-y-4">
           <h2 className="text-base font-semibold">설정</h2>

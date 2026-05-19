@@ -21,8 +21,13 @@ const TAB_FROM_INDEX: Array<"chat" | "detail" | "info"> = ["chat", "detail", "in
 interface RightPanelProps {
   chatInputDisabled?: boolean;
   isOtherNodeSession?: boolean;
+  fileUploadUrl?: string;
 }
-export function RightPanel({ chatInputDisabled = false, isOtherNodeSession = false }: RightPanelProps = {}) {
+export function RightPanel({
+  chatInputDisabled = false,
+  isOtherNodeSession = false,
+  fileUploadUrl,
+}: RightPanelProps = {}) {
   const activeRightTab = useDashboardStore((s) => s.activeRightTab);
   const setActiveRightTab = useDashboardStore((s) => s.setActiveRightTab);
 
@@ -52,7 +57,11 @@ export function RightPanel({ chatInputDisabled = false, isOtherNodeSession = fal
         </TabsList>
 
         <TabsPanel value={0} className="flex-1 overflow-hidden" keepMounted>
-          <ChatView chatInputDisabled={chatInputDisabled} isOtherNodeSession={isOtherNodeSession} />
+          <ChatView
+            chatInputDisabled={chatInputDisabled}
+            isOtherNodeSession={isOtherNodeSession}
+            fileUploadUrl={fileUploadUrl}
+          />
         </TabsPanel>
 
         <TabsPanel value={1} className="flex-1 overflow-hidden" keepMounted>
