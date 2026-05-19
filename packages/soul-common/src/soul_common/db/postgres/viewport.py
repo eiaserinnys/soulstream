@@ -13,6 +13,29 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _decode_messages_cursor(before: str | datetime) -> tuple[datetime, int | None]:
+    """messages pagination cursor를 timestamp + optional event id로 분해한다.
+
+    정본 커서는 ``{ISO8601 timestamp},{event_id}``다. 기존 클라이언트/북마크가
+    timestamp-only cursor를 보낼 수 있으므로 event_id 없는 형식도 계속 허용한다.
+    """
+    if isinstance(before, datetime):
+        return before, None
+
+    raw = before
+    comma = raw.rfind(",")
+    if comma >= 0:
+        ts_raw = raw[:comma]
+        id_raw = raw[comma + 1:]
+        try:
+            event_id = int(id_raw)
+        except ValueError as exc:
+            raise ValueError(f"Invalid messages cursor event id: {id_raw!r}") from exc
+        return datetime.fromisoformat(ts_raw), event_id
+
+    return datetime.fromisoformat(raw), None
+
+
 class PostgresViewportMixin:
     """뷰포트 API (PostgreSQL 구현)
 
@@ -168,21 +191,33 @@ class PostgresViewportMixin:
 
         # --- Step 1: 페이지 이벤트 fetch ---
         if before is not None:
-            before_dt = (
-                before
-                if isinstance(before, datetime)
-                else datetime.fromisoformat(before)
-            )
-            rows = await self._pool.fetch(
-                """
-                SELECT id, parent_event_id, event_type, payload, created_at
-                FROM events
-                WHERE session_id = $1 AND created_at < $2
-                ORDER BY created_at DESC, id DESC
-                LIMIT $3
-                """,
-                session_id, before_dt, limit + 1,
-            )
+            before_dt, before_id = _decode_messages_cursor(before)
+            if before_id is None:
+                rows = await self._pool.fetch(
+                    """
+                    SELECT id, parent_event_id, event_type, payload, created_at
+                    FROM events
+                    WHERE session_id = $1 AND created_at < $2
+                    ORDER BY created_at DESC, id DESC
+                    LIMIT $3
+                    """,
+                    session_id, before_dt, limit + 1,
+                )
+            else:
+                rows = await self._pool.fetch(
+                    """
+                    SELECT id, parent_event_id, event_type, payload, created_at
+                    FROM events
+                    WHERE session_id = $1
+                      AND (
+                        created_at < $2
+                        OR (created_at = $2 AND id < $3)
+                      )
+                    ORDER BY created_at DESC, id DESC
+                    LIMIT $4
+                    """,
+                    session_id, before_dt, before_id, limit + 1,
+                )
         else:
             rows = await self._pool.fetch(
                 """
@@ -202,10 +237,12 @@ class PostgresViewportMixin:
         # next_cursor는 페이지 이벤트 기준만 사용 (ancestor 미포함)
         next_cursor: Optional[str] = None
         if has_more and page_rows:
-            last_ts = page_rows[-1]["created_at"]
-            next_cursor = (
+            last = page_rows[-1]
+            last_ts = last["created_at"]
+            last_ts_str = (
                 last_ts.isoformat() if isinstance(last_ts, datetime) else last_ts
             )
+            next_cursor = f"{last_ts_str},{int(last['id'])}"
 
         # --- Step 3: ancestor 보강 ---
         page_ids = {int(r["id"]) for r in page_rows}

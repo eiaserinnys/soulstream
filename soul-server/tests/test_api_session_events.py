@@ -120,6 +120,46 @@ class TestEventSourceResponseUsed:
             assert isinstance(response, EventSourceResponse)
 
 
+class TestInitialSubscribeGap:
+    @pytest.mark.asyncio
+    async def test_after_id_zero_flushes_listener_gap_before_history_sync(
+        self, mock_task_manager, mock_db,
+    ):
+        """listener 등록 후 baseline 계산 중 들어온 이벤트는 history_sync보다 먼저 송출."""
+        _append_event(
+            mock_db,
+            "sess-001",
+            {"type": "text_delta", "text": "gap", "_event_id": 1},
+            event_id=1,
+        )
+
+        async def add_listener(session_id, queue):
+            await queue.put({"type": "text_delta", "text": "gap", "_event_id": 1})
+
+        mock_task_manager.listener_manager.add_listener = AsyncMock(side_effect=add_listener)
+
+        with (
+            patch("soul_server.service.postgres_session_db.get_session_db", return_value=mock_db),
+        ):
+            from soul_server.api.sessions import session_events_sse_generator
+
+            events = []
+            gen = session_events_sse_generator("sess-001", 0, mock_task_manager)
+            try:
+                for _ in range(2):
+                    events.append(await gen.__anext__())
+            finally:
+                await gen.aclose()
+
+            assert [e["event"] for e in events] == [
+                "text_delta",
+                "history_sync",
+            ]
+            assert events[0]["id"] == "1"
+            sync_data = json.loads(events[1]["data"])
+            assert sync_data["last_event_id"] == 1
+
+
 # === LLM 세션 조기 종료 ===
 
 class TestLLMSessionEarlyExit:

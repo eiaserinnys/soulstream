@@ -145,6 +145,64 @@ class TestAfterIdZeroSkipsHistory:
         # 노드를 못 찾으면 is_live=False (UI가 라이브 대기 상태로 잘못 표시되는 것 방지)
         assert sync_data["is_live"] is False
 
+    async def test_after_id_zero_flushes_subscribe_gap_before_history_sync(
+        self, mock_db, node_manager, session_router, mock_catalog_service, broadcaster,
+    ):
+        """baseline 읽기 중 live 큐에 들어온 이벤트는 history_sync보다 먼저 송출한다."""
+        mock_db.stream_events_raw = AsyncMock()
+        mock_db.read_last_event_id = AsyncMock(return_value=43)
+
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+        await node_manager.register_node(
+            ws, {"node_id": "test-node", "host": "localhost", "port": 4100},
+        )
+        mock_db.get_session = AsyncMock(
+            return_value={"session_id": "sess-1", "node_id": "test-node"},
+        )
+
+        async def fake_subscribe_events(self, session_id, on_event):
+            await on_event({
+                "eventId": 43,
+                "event": {"type": "text_delta", "text": "gap", "_event_id": 43},
+            })
+            return "sub-1"
+
+        def fake_unsubscribe_events(self, session_id, subscribe_id):
+            return None
+
+        from soulstream_server.nodes.node_connection import NodeConnection
+
+        original_subscribe = NodeConnection.send_subscribe_events
+        original_unsubscribe = NodeConnection.unsubscribe_events
+        NodeConnection.send_subscribe_events = fake_subscribe_events
+        NodeConnection.unsubscribe_events = fake_unsubscribe_events
+
+        try:
+            router = create_sessions_router(
+                db=mock_db,
+                node_manager=node_manager,
+                session_router=session_router,
+                broadcaster=broadcaster,
+                catalog_service=mock_catalog_service,
+            )
+            route = _get_events_route(router)
+
+            request = _make_request_mock()
+            response = await route.endpoint(session_id="sess-1", request=request)
+            events = await _collect_until_history_sync(response.body_iterator)
+
+            event_names = [e.get("event") for e in events]
+            assert event_names[:3] == ["init", "text_delta", "history_sync"]
+            assert events[1]["id"] == "43"
+            sync_data = json.loads(events[2]["data"])
+            assert sync_data["last_event_id"] == 43
+            mock_db.stream_events_raw.assert_not_called()
+        finally:
+            NodeConnection.send_subscribe_events = original_subscribe
+            NodeConnection.unsubscribe_events = original_unsubscribe
+
 
 class TestAfterIdNStreamsAfterN:
     """after_id>0 시 그 이후 이벤트만 스트리밍 + history_sync."""

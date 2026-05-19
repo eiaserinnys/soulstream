@@ -348,8 +348,8 @@ class TestReadMessagesPagination:
 
         # limit개만 반환 (ancestor 추가 가능하나 parent_event_id=None → missing_parents 없음)
         assert len(messages) == 3
-        # 마지막(=가장 오래된) 항목의 created_at이 next_cursor
-        assert cursor == "2026-04-17T12:01:00+00:00"
+        # 마지막(=가장 오래된) 항목의 created_at + id가 next_cursor
+        assert cursor == "2026-04-17T12:01:00+00:00,8"
 
     @pytest.mark.asyncio
     async def test_no_next_cursor_when_end_reached(self):
@@ -415,6 +415,28 @@ class TestReadMessagesPagination:
         params = db._pool.fetch.call_args[0][1:]
         assert params[1] is before_dt
 
+    @pytest.mark.asyncio
+    async def test_composite_cursor_keeps_same_timestamp_remainder(self):
+        """timestamp가 같은 이벤트가 페이지 경계에 걸려도 id 조건으로 다음 페이지에 포함한다."""
+        db = PostgresSessionDB.__new__(PostgresSessionDB)
+        db._pool = MagicMock()
+        db._pool.fetch = AsyncMock(return_value=[])
+        db._pool.fetchval = AsyncMock(return_value=1)
+
+        await db.read_messages(
+            "s1",
+            before="2026-05-02T05:28:03.888060+00:00,42",
+            limit=50,
+        )
+
+        call_args = db._pool.fetch.call_args
+        sql_text = call_args[0][0]
+        params = call_args[0][1:]
+
+        assert "created_at = $2 AND id < $3" in sql_text
+        assert isinstance(params[1], datetime)
+        assert params[2] == 42
+
 
 class TestReadMessagesAncestor:
     """read_messages ancestor 보강 단위 테스트."""
@@ -478,8 +500,8 @@ class TestReadMessagesAncestor:
 
         messages, cursor = await db.read_messages("s1", before=None, limit=3)
 
-        # cursor는 페이지 마지막(id=8)의 created_at — ancestor(id=5)가 아님
-        assert cursor == "2026-05-02T12:08:00+00:00"
+        # cursor는 페이지 마지막(id=8)의 created_at,id — ancestor(id=5)가 아님
+        assert cursor == "2026-05-02T12:08:00+00:00,8"
 
     @pytest.mark.asyncio
     async def test_multi_root_warning(self, caplog):

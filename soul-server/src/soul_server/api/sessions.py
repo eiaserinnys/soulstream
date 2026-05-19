@@ -39,6 +39,7 @@ async def stream_session_events(
     *,
     is_llm: bool = False,
     emit_suggestion_baseline: bool = True,
+    drain_live_before_history_sync: bool = False,
 ) -> AsyncGenerator[dict, None]:
     """Parts 2+3: history_sync 발행 + 라이브 이벤트 스트리밍.
 
@@ -78,6 +79,21 @@ async def stream_session_events(
                     # _event_to_dict가 항상 payload를 JSON 문자열로 정규화 (postgres/sqlite 양쪽).
                     payload_dict = json.loads(last_suggestion["payload"])
                     yield format_sse_event(payload_dict, has_id_field=False)
+
+        # Part 1.7: 신규 구독에서 baseline 계산 중 들어온 live 이벤트를 먼저 방출.
+        #
+        # event_queue는 history/baseline 읽기 전에 등록된다. 그 사이 들어온 이벤트가
+        # last_stored_id 이하가 된 상태에서 history_sync를 먼저 보내면 클라이언트가
+        # last_event_id를 dedup 기준으로 올린 뒤 해당 live 이벤트를 버릴 수 있다.
+        if drain_live_before_history_sync:
+            await asyncio.sleep(0)
+            while True:
+                try:
+                    live_event = event_queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+                if isinstance(live_event, dict):
+                    yield format_sse_event(live_event)
 
         # Part 2: history_sync 발행 (SSE id 필드 없이 — baseline 메시지)
         current_task = await task_manager.get_task(agent_session_id)
@@ -203,6 +219,9 @@ async def session_events_sse_generator(
             agent_session_id, last_stored_id, task_manager, event_queue,
             is_llm=is_llm,
             emit_suggestion_baseline=not replay_history_from_start,
+            drain_live_before_history_sync=(
+                not replay_history_from_start and after_id == 0
+            ),
         ):
             yield sse_event
     finally:

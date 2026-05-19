@@ -62,92 +62,143 @@ async def create_session_events_response(
         # 히스토리 phase에서 yield된 event_id를 라이브 dedup에 사용하기 위해
         # seen_event_ids는 history phase 진입 전에 미리 초기화한다.
         seen_event_ids: set[int] = set()
+        queued_event_ids: set[int] = set()
         last_stored_id = 0
 
-        if after_id == 0:
-            # 신규 구독: 히스토리 skip. baseline만 보냄.
-            last_stored_id = await db.read_last_event_id(session_id)
-        else:
-            # 재연결: after_id 이후 이벤트만 stream_events_raw 비동기 cursor로 스트리밍.
-            # mid-stream disconnect 감지를 위해 yield 사이에 is_disconnected 체크.
-            try:
-                async for event_id, event_type, payload_text in db.stream_events_raw(
-                    session_id, after_id=after_id,
-                ):
-                    if await request.is_disconnected():
-                        return
-                    last_stored_id = max(last_stored_id, event_id)
-                    # 라이브 phase에서 history와 race로 같은 id가 들어올 때
-                    # 중복 방지를 위해 history phase에서 yield한 id를 등록.
-                    seen_event_ids.add(event_id)
-                    yield {
-                        "event": event_type,
-                        "data": payload_text,
-                        "id": str(event_id),
-                    }
-            except Exception as e:
-                # 명시적 실패 (design-principles §4): 부분 catch-up을 정상 종료로
-                # 위장하면 클라이언트는 누락 구간을 영영 못 읽는다. 스트림을 끊어
-                # 클라이언트가 같은 lastEventId로 재연결하게 한다.
-                logger.error(
-                    "Failed to stream events for %s after_id=%d: %s — closing stream",
-                    session_id, after_id, e,
-                )
-                return
-
-        # 라이브 이벤트 릴레이 노드 탐색.
-        # 완료된 세션은 노드에 없을 수 있으며, 히스토리 리플레이만으로 충분하다.
-        # _find_node()로 인메모리 → DB → 활성 노드 순으로 폴백하여 찾는다.
-        # is_live 판정에 노드 유무가 필요하므로 history_sync보다 먼저 시도한다.
+        # 라이브 이벤트 릴레이 노드 탐색 + 구독은 history/baseline 계산 전에 시도한다.
+        # baseline 읽기와 subscribe_events 사이의 이벤트 유실을 막기 위함이다.
         node = None
-        try:
-            node = await find_session_node(session_id, db, node_manager)
-        except HTTPException:
-            # 노드를 못 찾는 완료 세션은 라이브 phase 진입 불가.
-            pass
+        queue: asyncio.Queue[dict | None] | None = None
+        subscribe_id: str | None = None
 
-        # history_sync 발행 (항상). 노드 유무에 따라 is_live를 정확히 보고하여,
-        # 클라이언트 UI가 라이브 대기 상태를 잘못 표시하는 것을 방지한다.
-        # soul-server LLM 분기(is_live=False, status="completed")와 대칭.
-        sync_payload = {
-            "type": "history_sync",
-            "last_event_id": last_stored_id,
-            "is_live": node is not None,
-        }
-        yield {
-            "event": "history_sync",
-            "data": json.dumps(sync_payload, ensure_ascii=False),
-        }
-
-        if node is None:
-            # 라이브 진입 불가. 클라이언트는 history_sync(is_live=False)로 종료를 인지.
-            return
-
-        queue: asyncio.Queue[dict | None] = asyncio.Queue(maxsize=512)
-
-        async def on_event(data: dict) -> None:
-            # _stream_events + _handle_subscribe_events 이중 경로로 인한 중복 방지
-            payload = data.get("event") or data.get("payload", {})
+        def _extract_event_id(data: dict, payload: Any | None = None) -> int | None:
+            if payload is None:
+                payload = data.get("event") or data.get("payload", {})
             raw_id = (
                 data.get("eventId")
                 or data.get("id")
                 or (payload.get("_event_id") if isinstance(payload, dict) else None)
             )
-            if raw_id is not None:
-                try:
-                    int_id = int(raw_id)
-                    if int_id in seen_event_ids:
-                        return
-                    seen_event_ids.add(int_id)
-                except (ValueError, TypeError):
-                    pass
+            if raw_id is None:
+                return None
             try:
+                return int(raw_id)
+            except (ValueError, TypeError):
+                return None
+
+        async def on_event(data: dict) -> None:
+            # _stream_events + _handle_subscribe_events 이중 경로로 인한 중복 방지.
+            # history phase가 같은 id를 나중에 yield할 수 있으므로, 여기서는 live queue
+            # 내부 중복만 막고 seen_event_ids 판정은 실제 yield 직전에 수행한다.
+            int_id = _extract_event_id(data)
+            if int_id is not None:
+                if int_id in queued_event_ids:
+                    return
+                queued_event_ids.add(int_id)
+            try:
+                assert queue is not None
                 queue.put_nowait(data)
             except asyncio.QueueFull:
                 logger.warning("SSE queue full for session %s, dropping event", session_id)
 
-        subscribe_id = await node.send_subscribe_events(session_id, on_event)
         try:
+            node = await find_session_node(session_id, db, node_manager)
+        except HTTPException:
+            # 완료된 세션은 노드에 없을 수 있으며, 히스토리/baseline만으로 충분하다.
+            pass
+
+        if node is not None:
+            queue = asyncio.Queue(maxsize=512)
+            subscribe_id = await node.send_subscribe_events(session_id, on_event)
+
+        async def yield_live_event(data: dict) -> dict[str, Any] | None:
+            event_payload = data.get("event") or data.get("payload", {})
+            int_id = _extract_event_id(data, event_payload)
+            if int_id is not None:
+                queued_event_ids.discard(int_id)
+                if int_id in seen_event_ids:
+                    return None
+                seen_event_ids.add(int_id)
+
+            if isinstance(event_payload, dict):
+                event_type = event_payload.get("type", "message")
+                event_data = json.dumps(event_payload, ensure_ascii=False)
+            else:
+                event_type = "message"
+                event_data = json.dumps(data, ensure_ascii=False)
+
+            sse_event: dict[str, Any] = {
+                "event": event_type,
+                "data": event_data,
+            }
+            if int_id is not None:
+                sse_event["id"] = str(int_id)
+            return sse_event
+
+        try:
+            if after_id == 0:
+                # 신규 구독: 히스토리 skip. baseline만 보냄.
+                last_stored_id = await db.read_last_event_id(session_id)
+            else:
+                # 재연결: after_id 이후 이벤트만 stream_events_raw 비동기 cursor로 스트리밍.
+                # mid-stream disconnect 감지를 위해 yield 사이에 is_disconnected 체크.
+                try:
+                    async for event_id, event_type, payload_text in db.stream_events_raw(
+                        session_id, after_id=after_id,
+                    ):
+                        if await request.is_disconnected():
+                            return
+                        last_stored_id = max(last_stored_id, event_id)
+                        # 라이브 phase에서 history와 race로 같은 id가 들어올 때
+                        # 중복 방지를 위해 history phase에서 yield한 id를 등록.
+                        seen_event_ids.add(event_id)
+                        yield {
+                            "event": event_type,
+                            "data": payload_text,
+                            "id": str(event_id),
+                        }
+                except Exception as e:
+                    # 명시적 실패 (design-principles §4): 부분 catch-up을 정상 종료로
+                    # 위장하면 클라이언트는 누락 구간을 영영 못 읽는다. 스트림을 끊어
+                    # 클라이언트가 같은 lastEventId로 재연결하게 한다.
+                    logger.error(
+                        "Failed to stream events for %s after_id=%d: %s — closing stream",
+                        session_id, after_id, e,
+                    )
+                    return
+
+            # after_id=0 초기 연결에서 subscribe 직후 baseline을 읽는 동안 들어온 live 이벤트는
+            # history_sync보다 먼저 내보낸다. 그렇지 않으면 클라이언트가 history_sync.last_event_id를
+            # dedup 기준으로 올린 뒤 해당 live 이벤트를 "이미 받은 이벤트"로 버릴 수 있다.
+            if after_id == 0 and queue is not None:
+                while True:
+                    try:
+                        pending = queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        break
+                    if pending is None:
+                        break
+                    live_event = await yield_live_event(pending)
+                    if live_event is not None:
+                        yield live_event
+
+            # history_sync 발행 (항상). 노드 유무에 따라 is_live를 정확히 보고하여,
+            # 클라이언트 UI가 라이브 대기 상태를 잘못 표시하는 것을 방지한다.
+            # soul-server LLM 분기(is_live=False, status="completed")와 대칭.
+            sync_payload = {
+                "type": "history_sync",
+                "last_event_id": last_stored_id,
+                "is_live": node is not None,
+            }
+            yield {
+                "event": "history_sync",
+                "data": json.dumps(sync_payload, ensure_ascii=False),
+            }
+
+            if node is None or queue is None or subscribe_id is None:
+                # 라이브 진입 불가. 클라이언트는 history_sync(is_live=False)로 종료를 인지.
+                return
+
             while True:
                 if await request.is_disconnected():
                     break
@@ -161,28 +212,11 @@ async def create_session_events_response(
                 if data is None:
                     break
 
-                event_payload = data.get("event") or data.get("payload", {})
-                if isinstance(event_payload, dict):
-                    event_type = event_payload.get("type", "message")
-                    event_data = json.dumps(event_payload, ensure_ascii=False)
-                else:
-                    event_type = "message"
-                    event_data = json.dumps(data, ensure_ascii=False)
-
-                event_id = (
-                    data.get("eventId")
-                    or data.get("id")
-                    or (event_payload.get("_event_id") if isinstance(event_payload, dict) else None)
-                )
-                sse_event: dict[str, Any] = {
-                    "event": event_type,
-                    "data": event_data,
-                }
-                if event_id is not None:
-                    sse_event["id"] = str(event_id)
-
-                yield sse_event
+                live_event = await yield_live_event(data)
+                if live_event is not None:
+                    yield live_event
         finally:
-            node.unsubscribe_events(session_id, subscribe_id)
+            if node is not None and subscribe_id is not None:
+                node.unsubscribe_events(session_id, subscribe_id)
 
     return EventSourceResponse(event_generator())
