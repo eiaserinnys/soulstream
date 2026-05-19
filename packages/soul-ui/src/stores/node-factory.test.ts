@@ -35,7 +35,7 @@ import type {
   TextNode,
   InputRequestEvent,
   InputRequestNodeDef,
-} from "../../shared/types";
+} from "../shared/types";
 
 // === Helpers ===
 
@@ -454,6 +454,8 @@ describe("createNodeFromEvent", () => {
         timestamp: 1700000020,
         request_id: "req-001",
         tool_use_id: "toolu_ask",
+        started_at: 1700000020,
+        timeout_sec: 300,
         questions: [
           {
             question: "Which database should we use?",
@@ -487,6 +489,8 @@ describe("createNodeFromEvent", () => {
         type: "input_request",
         timestamp: 1700000021,
         request_id: "req-002",
+        started_at: 1700000021,
+        timeout_sec: 300,
         questions: [],
       };
 

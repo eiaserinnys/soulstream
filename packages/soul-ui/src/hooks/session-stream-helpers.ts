@@ -119,7 +119,7 @@ export function filterSessionsInFolder(
  */
 export function shouldApplySessionCreatedToCache(
   cacheQueryKey: readonly unknown[],
-  newSessionType: string,
+  newSessionType: string | undefined,
   newSessionFolderId: string | undefined,
 ): boolean {
   const typeFilter = cacheQueryKey[1] as string;

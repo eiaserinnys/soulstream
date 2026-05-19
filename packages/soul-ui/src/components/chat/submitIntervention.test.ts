@@ -22,8 +22,7 @@ describe("submitIntervention — credentials: 'include' (R-2 fix G-1)", () => {
       ok: true,
       json: async () => ({}),
     } as unknown as Response);
-    // @ts-expect-error — 테스트용 mock
-    globalThis.fetch = fetchMock;
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
     queryClient = new QueryClient();
   });
 

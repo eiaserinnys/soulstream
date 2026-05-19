@@ -140,7 +140,6 @@ export function DashboardLayout() {
           onUpdateFolderSettings={updateFolderSettingsOptimistic}
           onReorderFolders={reorderFoldersOptimistic}
           folderCounts={folderCounts}
-          sessions={sessions}
         />
       }
       centerPanel={

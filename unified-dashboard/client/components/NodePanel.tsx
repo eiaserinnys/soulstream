@@ -13,7 +13,7 @@ import { NodeClaudeAuthPanel } from "./NodeClaudeAuthPanel";
 
 export function NodePanel() {
   const nodes = useOrchestratorStore((s) => s.nodes);
-  const { theme } = useTheme();
+  const [theme] = useTheme();
   const [expandedNodeId, setExpandedNodeId] = useState<string | null>(null);
 
   const nodeList = useMemo(() => Array.from(nodes.values()), [nodes]);

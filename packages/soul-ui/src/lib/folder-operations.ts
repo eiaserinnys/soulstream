@@ -17,7 +17,7 @@ import { useDashboardStore } from "../stores/dashboard-store";
 import type { CatalogFolder, FolderSettings } from "../shared/types";
 import { SYSTEM_FOLDERS } from "../shared/constants";
 
-const SYSTEM_FOLDER_NAME_SET = new Set(Object.values(SYSTEM_FOLDERS));
+const SYSTEM_FOLDER_NAME_SET: Set<string> = new Set(Object.values(SYSTEM_FOLDERS));
 
 export interface FolderApiConfig {
   createUrl: string;

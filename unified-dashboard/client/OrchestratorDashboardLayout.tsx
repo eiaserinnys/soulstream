@@ -151,7 +151,6 @@ export function OrchestratorDashboardLayout() {
           onUpdateFolderSettings={updateFolderSettingsOptimistic}
           onReorderFolders={reorderFoldersOptimistic}
           folderCounts={folderCounts}
-          sessions={sessions}
         />
       }
       leftPanelBottom={features.nodePanel && !isMobile ? <NodePanel /> : undefined}

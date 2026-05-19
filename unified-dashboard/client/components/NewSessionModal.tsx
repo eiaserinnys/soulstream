@@ -176,7 +176,7 @@ export function NewSessionModal() {
   const agentSelector = agents.length > 0 ? (
     <div className="flex flex-col gap-1.5">
       <label className="text-xs font-medium text-muted-foreground">Agent</label>
-      <Select value={selectedAgentId} onValueChange={setSelectedAgentId}>
+      <Select value={selectedAgentId} onValueChange={(v) => setSelectedAgentId(v ?? "")}>
         <SelectTrigger>
           {(() => {
             const agent = selectedAgentId ? agents.find(a => a.id === selectedAgentId) : null;

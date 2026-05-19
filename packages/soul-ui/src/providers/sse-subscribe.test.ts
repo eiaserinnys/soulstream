@@ -82,7 +82,7 @@ class MockEventSource {
 
 beforeEach(() => {
   instances.length = 0;
-  (globalThis as { EventSource: typeof MockEventSource }).EventSource =
+  (globalThis as unknown as { EventSource: typeof MockEventSource }).EventSource =
     MockEventSource;
   vi.useFakeTimers();
 });

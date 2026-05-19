@@ -25,7 +25,7 @@ import type {
   ProgressEvent,
   MemoryEvent,
   DebugEvent,
-} from "../../shared/types";
+} from "../shared/types";
 
 // === shouldNotify ===
 

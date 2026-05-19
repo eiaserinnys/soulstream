@@ -21,8 +21,7 @@ describe("submitLlmContinuation — caller_info (R-4 atom G-10)", () => {
       ok: true,
       json: async () => ({ session_id: "sess-new" }),
     } as unknown as Response);
-    // @ts-expect-error — 테스트용 mock
-    globalThis.fetch = fetchMock;
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
   });
 
   afterEach(() => {

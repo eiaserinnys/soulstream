@@ -335,10 +335,8 @@ export function NewSessionDialog({
           <span className="text-xs text-muted-foreground/60 flex-1">
             Ctrl+Enter to submit
           </span>
-          <DialogClose asChild>
-            <Button variant="outline" disabled={sending}>
-              Cancel
-            </Button>
+          <DialogClose render={<Button variant="outline" disabled={sending} />}>
+            Cancel
           </DialogClose>
           <Button
             data-testid="new-session-submit"

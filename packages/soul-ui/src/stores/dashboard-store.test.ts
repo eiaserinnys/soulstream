@@ -9,7 +9,6 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import type { InfiniteData } from "@tanstack/react-query";
 import { useDashboardStore } from "./dashboard-store";
-import type { EventTreeNode } from "@shared/types";
 
 /**
  * 평탄화 후(Phase 2-A §11.1 옵션 C) tree-utils.ts가 폐기되어 본 테스트는
@@ -50,7 +49,7 @@ import type {
   ToolNode,
   SessionNode,
   ResultNode,
-} from "../../shared/types";
+} from "../shared/types";
 
 /** 트리에서 특정 타입의 모든 노드를 수집하는 헬퍼 */
 function collectNodes(
@@ -74,7 +73,7 @@ function makeTestQueryClient() {
 }
 
 /** QueryClient에 초기 세션 데이터를 시드 */
-function seedQueryClient(qc: QueryClient, sessions: import("../../shared/types").SessionSummary[]) {
+function seedQueryClient(qc: QueryClient, sessions: import("../shared/types").SessionSummary[]) {
   qc.setQueryData<InfiniteData<SessionPage>>(["sessions"], {
     pages: [{ sessions, total: sessions.length }],
     pageParams: [0],
@@ -82,7 +81,7 @@ function seedQueryClient(qc: QueryClient, sessions: import("../../shared/types")
 }
 
 /** QueryClient 캐시에서 세션 목록 조회 */
-function getQuerySessions(qc: QueryClient): import("../../shared/types").SessionSummary[] {
+function getQuerySessions(qc: QueryClient): import("../shared/types").SessionSummary[] {
   const data = qc.getQueryData<InfiniteData<SessionPage>>(["sessions"]);
   return data?.pages.flatMap((p) => p.sessions) ?? [];
 }
@@ -699,7 +698,7 @@ describe("dashboard-store", () => {
 
     it("should assign folderId in catalog.sessions when folderId is provided", () => {
       const catalog: CatalogState = {
-        folders: [{ id: "folder-1", name: "Test Folder" }],
+        folders: [{ id: "folder-1", name: "Test Folder", sortOrder: 0 }],
         sessions: {},
       };
       useDashboardStore.getState().setCatalog(catalog);
@@ -718,7 +717,7 @@ describe("dashboard-store", () => {
 
     it("should not modify catalog.sessions when folderId is null/undefined", () => {
       const catalog: CatalogState = {
-        folders: [{ id: "folder-1", name: "Test Folder" }],
+        folders: [{ id: "folder-1", name: "Test Folder", sortOrder: 0 }],
         sessions: { "sess-existing": { folderId: "folder-1", displayName: null } },
       };
       useDashboardStore.getState().setCatalog(catalog);
@@ -753,7 +752,7 @@ describe("dashboard-store", () => {
 
     it("should place session in correct folder via catalog assignment and filterSessionsInFolder", () => {
       const catalog: CatalogState = {
-        folders: [{ id: "folder-1", name: "Test Folder" }],
+        folders: [{ id: "folder-1", name: "Test Folder", sortOrder: 0 }],
         sessions: {},
       };
       useDashboardStore.getState().setCatalog(catalog);
@@ -1746,7 +1745,7 @@ describe("dashboard-store", () => {
       store.setActiveSession("sess-dedup");
 
       // 이벤트를 처리하여 lastEventId를 5로 설정
-      const userMsg: UserMessageEvent = { type: "user_message", user: "test", text: "hello", timestamp: 0 };
+      const userMsg: UserMessageEvent = { type: "user_message", user: "test", text: "hello" };
       store.processEvent(userMsg, 5);
       expect(useDashboardStore.getState().lastEventId).toBe(5);
 
@@ -1768,12 +1767,12 @@ describe("dashboard-store", () => {
       store.setActiveSession("sess-dedup2");
 
       // lastEventId를 10으로 설정
-      const userMsg: UserMessageEvent = { type: "user_message", user: "test", text: "hello", timestamp: 0 };
+      const userMsg: UserMessageEvent = { type: "user_message", user: "test", text: "hello" };
       store.processEvent(userMsg, 10);
       expect(useDashboardStore.getState().lastEventId).toBe(10);
 
       // history_sync (eventId=0) → 건너뛰지 않아야 함
-      const historySync = { type: "history_sync", last_event_id: 10, is_live: true } as unknown as import("../../shared/types").SoulSSEEvent;
+      const historySync = { type: "history_sync", last_event_id: 10, is_live: true } as unknown as import("../shared/types").SoulSSEEvent;
       store.processEvent(historySync, 0);
 
       // lastEventId는 그대로 (history_sync는 eventId=0)
@@ -1787,7 +1786,7 @@ describe("dashboard-store", () => {
       store.setActiveSession("sess-batch");
 
       // lastEventId를 5로 설정
-      const userMsg: UserMessageEvent = { type: "user_message", user: "test", text: "hello", timestamp: 0 };
+      const userMsg: UserMessageEvent = { type: "user_message", user: "test", text: "hello" };
       store.processEvent(userMsg, 5);
 
       const versionBefore = useDashboardStore.getState().treeVersion;
@@ -1819,7 +1818,7 @@ describe("dashboard-store", () => {
 
       // history_sync (eventId=0)를 배치로 처리 → 건너뛰지 않아야 함
       store.processEvents([
-        { event: { type: "history_sync", last_event_id: 5, is_live: true } as unknown as import("../../shared/types").SoulSSEEvent, eventId: 0 },
+        { event: { type: "history_sync", last_event_id: 5, is_live: true } as unknown as import("../shared/types").SoulSSEEvent, eventId: 0 },
       ]);
 
       // 에러 없이 처리되고, processingCtx.historySynced가 true가 되어야 함
@@ -1838,7 +1837,7 @@ describe("dashboard-store", () => {
             last_event_id: 5,
             is_live: true,
             status: "completed",
-          } as unknown as import("../../shared/types").SoulSSEEvent,
+          } as unknown as import("../shared/types").SoulSSEEvent,
           eventId: 0,
         },
       ]);
@@ -1859,7 +1858,7 @@ describe("dashboard-store", () => {
             type: "history_sync",
             last_event_id: 0,
             is_live: true,
-          } as unknown as import("../../shared/types").SoulSSEEvent,
+          } as unknown as import("../shared/types").SoulSSEEvent,
           eventId: 0,
         },
       ]);
@@ -1872,7 +1871,7 @@ describe("dashboard-store", () => {
             result: "done",
             attachments: [],
             timestamp: 0,
-          } as unknown as import("../../shared/types").SoulSSEEvent,
+          } as unknown as import("../shared/types").SoulSSEEvent,
           eventId: 10,
         },
       ]);
@@ -1893,7 +1892,7 @@ describe("dashboard-store", () => {
             type: "history_sync",
             last_event_id: 0,
             is_live: true,
-          } as unknown as import("../../shared/types").SoulSSEEvent,
+          } as unknown as import("../shared/types").SoulSSEEvent,
           eventId: 0,
         },
       ]);
@@ -1920,7 +1919,7 @@ describe("dashboard-store", () => {
       // system_message가 root 없는 상태에서 첫 번째로 도착
       const result = store.processEvents([
         {
-          event: { type: "system_message", text: "init", timestamp: 0 } as import("../../shared/types").SystemMessageEvent,
+          event: { type: "system_message", text: "init", timestamp: 0 } as import("../shared/types").SystemMessageEvent,
           eventId: 1,
         },
       ]);
@@ -1938,7 +1937,7 @@ describe("dashboard-store", () => {
 
       const result = store.processEvents([
         {
-          event: { type: "compact", message: "Context compacted", timestamp: 0 } as import("../../shared/types").CompactEvent,
+          event: { type: "compact", trigger: "manual", message: "Context compacted" } as import("../shared/types").CompactEvent,
           eventId: 1,
         },
       ]);

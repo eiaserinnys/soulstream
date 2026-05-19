@@ -110,7 +110,7 @@ describe("applySessionCreated", () => {
 
     expect(result.pages[0].sessions).toHaveLength(1);
     expect(result.pages[0].total).toBe(1);
-    const merged = result.pages[0].sessions[0] as Record<string, unknown>;
+    const merged = result.pages[0].sessions[0] as unknown as Record<string, unknown>;
     expect(merged.prompt).toBe("hello");
     expect(merged.userName).toBe("Jubok Kim");
     expect(merged.userPortraitUrl).toBe("https://example.com/avatar.png");
@@ -132,7 +132,7 @@ describe("applySessionCreated", () => {
 
     const result = applySessionCreated(data, created);
 
-    const merged = result.pages[0].sessions[0] as Record<string, unknown>;
+    const merged = result.pages[0].sessions[0] as unknown as Record<string, unknown>;
     expect(merged.userName).toBe("기존 이름");  // undefined → skip
     expect(merged.userPortraitUrl).toBeNull();   // null → 덮어씀
     expect(merged.agentPortraitUrl).toBe("/new.png");

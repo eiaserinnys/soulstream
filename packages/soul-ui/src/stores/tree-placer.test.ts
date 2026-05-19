@@ -39,7 +39,7 @@ import type {
   ResultEvent,
   InputRequestEvent,
   SoulSSEEvent,
-} from "../../shared/types";
+} from "../shared/types";
 
 // 260508.05.tree-placer-hygiene H-2: handleTextStart diag 대칭화 검증을 위해
 // diag 모듈 전체를 mock. vitest environment="node" 환경에서 lib/diag.ts 의
@@ -230,6 +230,8 @@ describe("placeInTree (Phase 2-A 평탄화)", () => {
         type: "input_request",
         timestamp: 1700000000,
         request_id: "req-001",
+        started_at: 1700000000,
+        timeout_sec: 300,
         questions: [{ question: "Select option", options: [{ label: "A" }] }],
       };
 

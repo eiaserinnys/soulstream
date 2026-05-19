@@ -92,7 +92,7 @@ export function useSessionStreamCacheSync(
         event.session as unknown as Record<string, unknown>,
       );
       // 서버가 folder_id를 함께 실어주는 경우가 있어 동적으로 읽는다.
-      const folderId = (event as Record<string, unknown>).folder_id as
+      const folderId = (event as unknown as Record<string, unknown>).folder_id as
         | string
         | undefined;
 
