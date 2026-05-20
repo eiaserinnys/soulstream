@@ -224,4 +224,95 @@ describe("ClaudeEngineAdapter fake client flow", () => {
       utilization: 0.91,
     });
   });
+
+  it("fake client input_request를 SSE로 yield하고 deliverInputResponse를 client에 전달한다", async () => {
+    const delivered: Array<{ requestId: string; answers: Record<string, unknown> }> = [];
+    const release = deferred<void>();
+    const client: ClaudeClient = {
+      async *run(): AsyncIterable<ClaudeClientEvent> {
+        yield {
+          type: "input_request",
+          requestId: "ask-1",
+          toolUseId: "toolu_ask",
+          questions: [{ question: "진행할까요?", header: "확인", options: [] }],
+          startedAt: 1779264000,
+          timeoutSec: 300,
+          timestamp: 10,
+        };
+        await release.promise;
+        yield { type: "complete", result: "done", timestamp: 11 };
+      },
+      async deliverInputResponse(requestId, answers) {
+        delivered.push({ requestId, answers });
+        return true;
+      },
+    };
+    const engine = new ClaudeEngineAdapter(
+      { workspaceDir: "/tmp/claude-work", client, processEnv: {} },
+      silentLogger,
+    );
+
+    const iter = engine.execute({ prompt: "hi" })[Symbol.asyncIterator]();
+    const first = await iter.next();
+    expect(first.value).toMatchObject({
+      type: "input_request",
+      request_id: "ask-1",
+      tool_use_id: "toolu_ask",
+    });
+
+    await expect(
+      engine.deliverInputResponse("ask-1", { "진행할까요?": "진행" }),
+    ).resolves.toEqual({ status: "delivered" });
+    expect(delivered).toEqual([
+      { requestId: "ask-1", answers: { "진행할까요?": "진행" } },
+    ]);
+
+    await expect(
+      engine.deliverInputResponse("ask-1", { "진행할까요?": "다시" }),
+    ).resolves.toEqual({ status: "already_responded" });
+
+    release.resolve();
+    const second = await iter.next();
+    expect(second.value).toMatchObject({ type: "complete", result: "done" });
+    await expect(iter.next()).resolves.toMatchObject({ done: true });
+  });
+
+  it("expired input_request 이후 late response는 delivered가 아니다", async () => {
+    const client: ClaudeClient = {
+      async *run(): AsyncIterable<ClaudeClientEvent> {
+        yield {
+          type: "input_request",
+          requestId: "ask-expired",
+          questions: [],
+          startedAt: 1779264000,
+          timeoutSec: 1,
+        };
+        yield { type: "input_request_expired", requestId: "ask-expired" };
+      },
+      async deliverInputResponse() {
+        throw new Error("should not be called after expired");
+      },
+    };
+    const engine = new ClaudeEngineAdapter(
+      { workspaceDir: "/tmp/claude-work", client, processEnv: {} },
+      silentLogger,
+    );
+    for await (const _ of engine.execute({ prompt: "hi" })) {
+      // drain input_request and expired
+    }
+
+    await expect(
+      engine.deliverInputResponse("ask-expired", { q: "late" }),
+    ).resolves.toEqual({ status: "expired" });
+  });
 });
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}

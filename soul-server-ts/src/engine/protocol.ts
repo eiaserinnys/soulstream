@@ -150,3 +150,28 @@ export interface SupportsCompact {
 export interface SupportsThreadFork {
   threadFork(sourceSessionId: string): Promise<string>;
 }
+
+/**
+ * 백엔드가 turn 중 AskUserQuestion 같은 input request 응답 주입을 지원하면 구현.
+ *
+ * Codex SDK 0.130.0은 해당 표면이 없으므로 구현하지 않는다. 호출자는 capability
+ * presence로만 판단하여 Codex 경로로 respond가 새지 않게 한다.
+ */
+export type InputResponseDeliveryStatus =
+  | "delivered"
+  | "expired"
+  | "already_responded"
+  | "request_not_pending"
+  | "not_supported";
+
+export interface InputResponseDeliveryResult {
+  status: InputResponseDeliveryStatus;
+  message?: string;
+}
+
+export interface SupportsInputResponse {
+  deliverInputResponse(
+    requestId: string,
+    answers: Record<string, unknown>,
+  ): Promise<InputResponseDeliveryResult> | InputResponseDeliveryResult;
+}

@@ -7,7 +7,7 @@
  * 본 PR에서 *사용*하지 않는 Python 필드는 의도적 미포함:
  *   - claude 전용 (allowed_tools/disallowed_tools 런타임 사본, use_mcp)
  *   - LLM proxy (llm_provider, llm_model, llm_usage)
- *   - _deliver_input_response (AskUserQuestion 미구현)
+ *   - _deliver_input_response (TS는 EnginePort 선택 capability로 처리)
  *   - pending_folder_id (folder 배정은 B-4 후속 PR-B 범위)
  *
  * B-4 추가 필드 (분석 캐시 `20260517-1410-codex-ts-folder-resume-intervene.md` §D):

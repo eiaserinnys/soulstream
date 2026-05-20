@@ -10,6 +10,7 @@ from soulstream_server.constants import (
     CMD_DELETE_SESSION_ATTACHMENTS,
     CMD_DOWNLOAD_ATTACHMENT,
     CMD_INTERVENE,
+    CMD_RESPOND,
     CMD_SUBSCRIBE_EVENTS,
     CMD_UPLOAD_ATTACHMENT,
     EVT_ERROR,
@@ -209,6 +210,34 @@ class TestCommandSending:
         assert sent["agentSessionId"] == "sess-1"
         assert sent["text"] == "stop"
         assert sent["user"] == "admin"
+
+    async def test_send_respond_sends_input_request_id_without_overwriting_command_request_id(
+        self, node, ws
+    ):
+        """respond는 input_request id를 inputRequestId로 보내고 ACK requestId로 resolve한다."""
+
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            req_id = data["requestId"]
+            if req_id in node._pending:
+                node._pending[req_id].set_result({
+                    "type": "respond_ack",
+                    "requestId": req_id,
+                    "status": "ok",
+                    "inputRequestId": data["inputRequestId"],
+                })
+
+        ws.send_json.side_effect = resolve_future
+
+        result = await node.send_respond("sess-1", "ask-hex-1", {"choice": "yes"})
+
+        sent = ws.send_json.call_args[0][0]
+        assert sent["type"] == CMD_RESPOND
+        assert sent["agentSessionId"] == "sess-1"
+        assert sent["inputRequestId"] == "ask-hex-1"
+        assert sent["requestId"] != "ask-hex-1"
+        assert result["status"] == "ok"
+        assert result["inputRequestId"] == "ask-hex-1"
 
     async def test_send_subscribe_events_sends_command_and_registers_listener(self, node, ws):
         """subscribe_events sends command and registers the callback."""

@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 50개 $defs (wire 20 + SSE event 30). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16).
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 51개 $defs (wire 21 + SSE event 30). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16).
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -13,6 +13,7 @@ export type SoulstreamUpstreamProtocol =
   | SessionDeleted
   | ErrorMessage
   | InterveneAck
+  | RespondAck
   | CreateSession
   | Intervene
   | Respond
@@ -401,6 +402,22 @@ export interface InterveneAck {
   type: "intervene_ack";
   requestId: string;
   status?: "ok";
+  [k: string]: unknown;
+}
+/**
+ * 노드→orch: respond 명령 ACK. TS Claude AskUserQuestion 응답 전달 결과. 실패도 ACK로 반환하여 orch command timeout을 막는다.
+ */
+export interface RespondAck {
+  type: "respond_ack";
+  requestId: string;
+  status: "ok" | "error";
+  inputRequestId?: string;
+  delivered?: boolean;
+  eventId?: number;
+  code?: string;
+  message?: string;
+  backend?: string;
+  taskStatus?: string;
   [k: string]: unknown;
 }
 /**

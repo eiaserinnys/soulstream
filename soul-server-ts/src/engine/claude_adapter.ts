@@ -4,7 +4,9 @@ import type {
   BackendId,
   EngineExecuteParams,
   EnginePort,
+  InputResponseDeliveryResult,
   SSEEventPayload,
+  SupportsInputResponse,
 } from "./protocol.js";
 import {
   mapClaudeClientEvent,
@@ -34,6 +36,10 @@ export interface ClaudeRunOptions {
 
 export interface ClaudeClient {
   run(options: ClaudeRunOptions, signal: AbortSignal): AsyncIterable<ClaudeClientEvent>;
+  deliverInputResponse?(
+    requestId: string,
+    answers: Record<string, unknown>,
+  ): Promise<boolean> | boolean;
   interrupt?(): Promise<boolean>;
   close?(): Promise<void>;
 }
@@ -44,7 +50,7 @@ export interface ClaudeAdapterConfig {
   processEnv?: NodeJS.ProcessEnv | Record<string, string | undefined>;
 }
 
-export class ClaudeEngineAdapter implements EnginePort {
+export class ClaudeEngineAdapter implements EnginePort, SupportsInputResponse {
   public readonly backendId: BackendId = "claude";
   public readonly workspaceDir: string;
 
@@ -53,6 +59,7 @@ export class ClaudeEngineAdapter implements EnginePort {
   private readonly processEnv?: NodeJS.ProcessEnv | Record<string, string | undefined>;
   private currentTurn: AbortController | null = null;
   private closed = false;
+  private readonly inputRequests = new Map<string, "pending" | "responded" | "expired">();
 
   constructor(config: ClaudeAdapterConfig, logger: Logger) {
     this.workspaceDir = config.workspaceDir;
@@ -78,6 +85,8 @@ export class ClaudeEngineAdapter implements EnginePort {
 
     try {
       for await (const clientEvent of this.client.run(options, controller.signal)) {
+        this.trackInputRequest(clientEvent);
+
         if (clientEvent.type === "session") {
           if (params.onSession) {
             await params.onSession(clientEvent.sessionId);
@@ -133,6 +142,35 @@ export class ClaudeEngineAdapter implements EnginePort {
     return true;
   }
 
+  async deliverInputResponse(
+    requestId: string,
+    answers: Record<string, unknown>,
+  ): Promise<InputResponseDeliveryResult> {
+    const current = this.inputRequests.get(requestId);
+    if (current === undefined) {
+      return { status: "request_not_pending" };
+    }
+    if (current === "expired") {
+      return { status: "expired" };
+    }
+    if (current === "responded") {
+      return { status: "already_responded" };
+    }
+    if (!this.client.deliverInputResponse) {
+      return {
+        status: "not_supported",
+        message: "Claude client does not support input responses",
+      };
+    }
+
+    const delivered = await this.client.deliverInputResponse(requestId, answers);
+    if (!delivered) {
+      return { status: "request_not_pending" };
+    }
+    this.inputRequests.set(requestId, "responded");
+    return { status: "delivered" };
+  }
+
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
@@ -140,6 +178,7 @@ export class ClaudeEngineAdapter implements EnginePort {
       this.currentTurn.abort();
       this.currentTurn = null;
     }
+    this.inputRequests.clear();
     await this.client.close?.();
   }
 
@@ -156,6 +195,24 @@ export class ClaudeEngineAdapter implements EnginePort {
         extraEnv: params.extraEnv,
       }),
     };
+  }
+
+  private trackInputRequest(event: ClaudeClientEvent): void {
+    if (event.type === "input_request") {
+      if (!this.inputRequests.has(event.requestId)) {
+        this.inputRequests.set(event.requestId, "pending");
+      }
+      return;
+    }
+    if (event.type === "input_request_responded") {
+      this.inputRequests.set(event.requestId, "responded");
+      return;
+    }
+    if (event.type === "input_request_expired") {
+      if (this.inputRequests.get(event.requestId) !== "responded") {
+        this.inputRequests.set(event.requestId, "expired");
+      }
+    }
   }
 }
 

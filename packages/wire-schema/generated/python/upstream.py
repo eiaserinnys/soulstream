@@ -107,6 +107,23 @@ class InterveneAck(TypedDict):
     status: NotRequired[Literal['ok']]
 
 
+class RespondAck(TypedDict):
+    """
+    노드→orch: respond 명령 ACK. TS Claude AskUserQuestion 응답 전달 결과. 실패도 ACK로 반환하여 orch command timeout을 막는다.
+    """
+
+    type: Literal['respond_ack']
+    requestId: str
+    status: Literal['ok', 'error']
+    inputRequestId: NotRequired[str]
+    delivered: NotRequired[bool]
+    eventId: NotRequired[int]
+    code: NotRequired[str]
+    message: NotRequired[str]
+    backend: NotRequired[str]
+    taskStatus: NotRequired[str]
+
+
 class CreateSession(TypedDict):
     """
     orch→노드: 세션 생성. protocol.py:CreateSessionCmd L15-27 + 실측 caller_info 키.
@@ -541,6 +558,7 @@ SoulstreamUpstreamProtocol: TypeAlias = (
     | SessionDeleted
     | ErrorMessage
     | InterveneAck
+    | RespondAck
     | CreateSession
     | Intervene
     | Respond

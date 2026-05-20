@@ -10,7 +10,11 @@ import {
 import type { ContextItem } from "../context/prompt_assembler.js";
 import type { TaskExecutor } from "../task/task_executor.js";
 import { buildAttachmentContextItems, splitAttachmentPaths } from "../task/attachment_context.js";
-import type { TaskManager } from "../task/task_manager.js";
+import type {
+  DeliverInputResponseResult,
+  DeliverInputResponseStatus,
+  TaskManager,
+} from "../task/task_manager.js";
 import type { CallerInfo, Task } from "../task/task_models.js";
 import type { ReasoningEffort } from "../engine/protocol.js";
 
@@ -50,6 +54,14 @@ interface IntervenCmd extends CommandLike {
   user?: string;
   caller_info?: CallerInfo;
   attachment_paths?: string[];
+}
+
+interface RespondCmd extends CommandLike {
+  type: "respond";
+  agentSessionId?: string;
+  session_id?: string;
+  inputRequestId?: string;
+  answers?: Record<string, unknown>;
 }
 
 interface SubscribeEventsCmd extends CommandLike {
@@ -110,6 +122,7 @@ export class CommandDispatcher {
       health_check: (cmd) => this.handleHealthCheck(cmd),
       create_session: (cmd) => this.handleCreateSession(cmd as CreateSessionCmd),
       intervene: (cmd) => this.handleIntervene(cmd as IntervenCmd),
+      respond: (cmd) => this.handleRespond(cmd as RespondCmd),
       subscribe_events: (cmd) => this.handleSubscribeEvents(cmd as SubscribeEventsCmd),
       upload_attachment: (cmd) => this.handleUploadAttachment(cmd as UploadAttachmentCmd),
       delete_session_attachments: (cmd) =>
@@ -139,6 +152,60 @@ export class CommandDispatcher {
         `Not implemented in soul-server-ts: ${cmd.type}`,
       );
     }
+  }
+
+  /**
+   * `respond` 명령 — Claude AskUserQuestion/input_request 응답.
+   *
+   * wire에는 두 ID가 공존한다:
+   * - requestId: orch command ACK 매칭용 ID
+   * - inputRequestId/request_id: Claude pending input request ID
+   *
+   * 모든 실패도 respond_ack(status="error")로 회신하여 orch _send_command timeout을 막는다.
+   */
+  private async handleRespond(cmd: RespondCmd): Promise<void> {
+    const sessionId = cmd.agentSessionId ?? cmd.session_id ?? "";
+    const inputRequestId = cmd.inputRequestId ?? cmd.request_id ?? "";
+    if (!sessionId || !inputRequestId || !isPlainObject(cmd.answers)) {
+      await this.sendError(
+        cmd,
+        "respond requires agentSessionId, inputRequestId, and answers",
+      );
+      return;
+    }
+
+    const result = await this.taskManager.deliverInputResponse({
+      agentSessionId: sessionId,
+      requestId: inputRequestId,
+      answers: cmd.answers,
+    });
+
+    const requestId = cmd.requestId ?? "";
+    if (!requestId) {
+      return;
+    }
+    if (result.status === "delivered") {
+      await this.send({
+        type: "respond_ack",
+        requestId,
+        inputRequestId,
+        status: "ok",
+        delivered: true,
+        ...(result.eventId !== undefined ? { eventId: result.eventId } : {}),
+      });
+      return;
+    }
+
+    await this.send({
+      type: "respond_ack",
+      requestId,
+      inputRequestId,
+      status: "error",
+      code: respondErrorCode(result.status),
+      message: result.message ?? defaultRespondErrorMessage(result),
+      ...(result.backend ? { backend: result.backend } : {}),
+      ...(result.taskStatus ? { taskStatus: result.taskStatus } : {}),
+    });
   }
 
   private async handleHealthCheck(cmd: CommandLike): Promise<void> {
@@ -448,4 +515,44 @@ function normalizeOptionalString(value: string | null | undefined): string | und
   if (value === null || value === undefined) return undefined;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function respondErrorCode(status: Exclude<DeliverInputResponseStatus, "delivered">): string {
+  switch (status) {
+    case "expired":
+      return "INPUT_REQUEST_EXPIRED";
+    case "already_responded":
+      return "INPUT_REQUEST_ALREADY_RESPONDED";
+    case "request_not_pending":
+      return "REQUEST_NOT_PENDING";
+    case "session_not_running":
+      return "SESSION_NOT_RUNNING";
+    case "session_not_found":
+      return "SESSION_NOT_FOUND";
+    case "not_supported":
+      return "INPUT_RESPONSE_NOT_SUPPORTED";
+  }
+}
+
+function defaultRespondErrorMessage(result: DeliverInputResponseResult): string {
+  switch (result.status) {
+    case "expired":
+      return `Input request expired: ${result.requestId}`;
+    case "already_responded":
+      return `Input request already responded: ${result.requestId}`;
+    case "request_not_pending":
+      return `Input request not pending: ${result.requestId}`;
+    case "session_not_running":
+      return `Session is not running: ${result.taskStatus ?? "unknown"}`;
+    case "session_not_found":
+      return `Session not found for input response`;
+    case "not_supported":
+      return `Input response is not supported by backend: ${result.backend ?? "unknown"}`;
+    case "delivered":
+      return "Input response delivered";
+  }
 }

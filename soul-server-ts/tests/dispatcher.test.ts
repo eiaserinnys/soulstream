@@ -78,6 +78,7 @@ function createDispatcher(opts: {
     }),
     listTasks: vi.fn(() => runningTasks),
     addIntervention: vi.fn(),
+    deliverInputResponse: vi.fn(),
   };
 
   const defaultExecutor: Partial<TaskExecutor> = {
@@ -435,6 +436,132 @@ describe("CommandDispatcher.intervene (B-4)", () => {
   });
 });
 
+describe("CommandDispatcher.respond (P4 AskUserQuestion)", () => {
+  it("respond → deliverInputResponse + respond_ack(status ok), command requestId와 inputRequestId를 분리", async () => {
+    const deliverInputResponse = vi.fn().mockResolvedValue({
+      status: "delivered",
+      requestId: "ask-hex-1",
+      eventId: 42,
+    });
+    const { dispatcher, sent } = createDispatcher({
+      taskManager: { deliverInputResponse } as Partial<TaskManager>,
+    });
+
+    await dispatcher.dispatch({
+      type: "respond",
+      agentSessionId: "sess-ask",
+      inputRequestId: "ask-hex-1",
+      requestId: "orch-cmd-1",
+      answers: { choice: "yes" },
+    });
+
+    expect(deliverInputResponse).toHaveBeenCalledWith({
+      agentSessionId: "sess-ask",
+      requestId: "ask-hex-1",
+      answers: { choice: "yes" },
+    });
+    expect(sent).toEqual([
+      {
+        type: "respond_ack",
+        requestId: "orch-cmd-1",
+        inputRequestId: "ask-hex-1",
+        status: "ok",
+        delivered: true,
+        eventId: 42,
+      },
+    ]);
+  });
+
+  it.each([
+    ["expired", "INPUT_REQUEST_EXPIRED"],
+    ["already_responded", "INPUT_REQUEST_ALREADY_RESPONDED"],
+    ["request_not_pending", "REQUEST_NOT_PENDING"],
+    ["session_not_running", "SESSION_NOT_RUNNING"],
+    ["session_not_found", "SESSION_NOT_FOUND"],
+    ["not_supported", "INPUT_RESPONSE_NOT_SUPPORTED"],
+  ] as const)("respond failure %s → respond_ack(status error)로 orch timeout을 막음", async (status, code) => {
+    const deliverInputResponse = vi.fn().mockResolvedValue({
+      status,
+      requestId: "ask-hex-1",
+      message: "blocked",
+      backend: status === "not_supported" ? "codex" : undefined,
+    });
+    const { dispatcher, sent } = createDispatcher({
+      taskManager: { deliverInputResponse } as Partial<TaskManager>,
+    });
+
+    await dispatcher.dispatch({
+      type: "respond",
+      agentSessionId: "sess-ask",
+      inputRequestId: "ask-hex-1",
+      requestId: "orch-cmd-1",
+      answers: { choice: "yes" },
+    });
+
+    expect(sent).toEqual([
+      expect.objectContaining({
+        type: "respond_ack",
+        requestId: "orch-cmd-1",
+        inputRequestId: "ask-hex-1",
+        status: "error",
+        code,
+        message: "blocked",
+      }),
+    ]);
+  });
+
+  it("snake_case request_id fallback은 input request id로만 사용하고 ACK는 WS requestId로 반환", async () => {
+    const deliverInputResponse = vi.fn().mockResolvedValue({
+      status: "delivered",
+      requestId: "snake-ask",
+    });
+    const { dispatcher, sent } = createDispatcher({
+      taskManager: { deliverInputResponse } as Partial<TaskManager>,
+    });
+
+    await dispatcher.dispatch({
+      type: "respond",
+      agentSessionId: "sess-ask",
+      request_id: "snake-ask",
+      requestId: "orch-cmd-2",
+      answers: {},
+    });
+
+    expect(deliverInputResponse).toHaveBeenCalledWith({
+      agentSessionId: "sess-ask",
+      requestId: "snake-ask",
+      answers: {},
+    });
+    expect(sent[0]).toMatchObject({
+      type: "respond_ack",
+      requestId: "orch-cmd-2",
+      inputRequestId: "snake-ask",
+      status: "ok",
+    });
+  });
+
+  it("inputRequestId 누락 시 deliverInputResponse 호출 없이 error", async () => {
+    const deliverInputResponse = vi.fn();
+    const { dispatcher, sent } = createDispatcher({
+      taskManager: { deliverInputResponse } as Partial<TaskManager>,
+    });
+
+    await dispatcher.dispatch({
+      type: "respond",
+      agentSessionId: "sess-ask",
+      requestId: "orch-cmd-3",
+      answers: {},
+    });
+
+    expect(deliverInputResponse).not.toHaveBeenCalled();
+    expect(sent[0]).toMatchObject({
+      type: "error",
+      requestId: "orch-cmd-3",
+      command_type: "respond",
+    });
+  });
+});
+
 describe("CommandDispatcher.subscribe_events (SSE realtime sync fix)", () => {
   // 사용자 보고: codex 세션의 진행 중 text_delta가 채팅 영역에 즉시 표시되지 않음. REST history는
   // 정상. 분석 캐시 `20260518-1218-codex-sse-realtime-sync.md` 가설 X — subscribe_events 미구현이
@@ -601,13 +728,13 @@ describe("CommandDispatcher attachment reverse-proxy", () => {
 });
 
 describe("CommandDispatcher unknown command", () => {
-  it("respond·list_sessions 등 → Not implemented error (subscribe_events/attachment는 별 핸들러)", async () => {
+  it("list_sessions 등 → Not implemented error (respond/subscribe_events/attachment는 별 핸들러)", async () => {
     const { dispatcher, sent } = createDispatcher();
-    const commands = ["respond", "list_sessions"];
+    const commands = ["list_sessions"];
     for (const type of commands) {
       await dispatcher.dispatch({ type, requestId: `${type}-id` });
     }
-    expect(sent).toHaveLength(2);
+    expect(sent).toHaveLength(commands.length);
     for (let i = 0; i < commands.length; i++) {
       const reply = sent[i] as { type: string; message: string; command_type: string };
       expect(reply.type).toBe("error");

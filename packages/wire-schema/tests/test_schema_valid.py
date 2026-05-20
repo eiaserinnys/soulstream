@@ -1,7 +1,7 @@
 """schema 자체 유효성 + 메시지 인벤토리 검증.
 
 본 테스트는 src/upstream.schema.json이 JSON Schema Draft 2020-12 유효이며,
-설계 명세에 합의된 50개 $defs (wire 20 + SSE event 30)를 모두 포함하는지 확인한다.
+설계 명세에 합의된 51개 $defs (wire 21 + SSE event 30)를 모두 포함하는지 확인한다.
 """
 
 import json
@@ -44,6 +44,7 @@ def test_schema_has_all_message_types() -> None:
         "SessionDeleted",
         "ErrorMessage",
         "InterveneAck",
+        "RespondAck",
         "CreateSession",
         "Intervene",
         "Respond",
@@ -56,7 +57,7 @@ def test_schema_has_all_message_types() -> None:
         "ClaudeAuthGetUsage",
         "ClaudeAuthGetProfile",
     }
-    assert len(wire_types) == 20
+    assert len(wire_types) == 21
 
     sse_types = {
         "SSEEventInit",
@@ -131,6 +132,7 @@ def test_oneof_covers_all_wire_messages() -> None:
         "SessionDeleted",
         "ErrorMessage",
         "InterveneAck",
+        "RespondAck",
         "CreateSession",
         "Intervene",
         "Respond",

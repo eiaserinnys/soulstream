@@ -7,7 +7,7 @@ SSE 핸들러는 session_stream.py, session_events.py에 분리되어 있다.
 
 import json
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from starlette.websockets import WebSocketDisconnect
@@ -34,6 +34,15 @@ from soulstream_server.service.session_broadcaster import SessionBroadcaster
 from soulstream_server.service.session_router import SessionRouter
 
 logger = logging.getLogger(__name__)
+
+RESPOND_ACK_ERROR_HTTP_STATUS = {
+    "SESSION_NOT_FOUND": 404,
+    "SESSION_NOT_RUNNING": 409,
+    "REQUEST_NOT_PENDING": 422,
+    "INPUT_REQUEST_EXPIRED": 422,
+    "INPUT_REQUEST_ALREADY_RESPONDED": 422,
+    "INPUT_RESPONSE_NOT_SUPPORTED": 422,
+}
 
 
 # --- Router Factory ---
@@ -214,6 +223,8 @@ def create_sessions_router(
         result = await node.send_respond(
             session_id, body.request_id, body.answers
         )
+        if result.get("status") == "error":
+            _raise_respond_ack_error(result)
         return result
 
     @router.patch("/{session_id}/display-name")
@@ -273,3 +284,19 @@ def create_sessions_router(
         return {"ok": True}
 
     return router
+
+
+def _raise_respond_ack_error(result: dict[str, Any]) -> None:
+    code = str(result.get("code") or "REQUEST_NOT_PENDING")
+    message = str(result.get("message") or code)
+    status_code = RESPOND_ACK_ERROR_HTTP_STATUS.get(code, 422)
+    raise HTTPException(
+        status_code=status_code,
+        detail={
+            "error": {
+                "code": code,
+                "message": message,
+                "inputRequestId": result.get("inputRequestId"),
+            },
+        },
+    )

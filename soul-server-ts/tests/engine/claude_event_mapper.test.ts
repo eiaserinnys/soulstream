@@ -159,6 +159,66 @@ describe("Claude event mapper parity with Python EngineEvent.to_sse", () => {
     });
   });
 
+  it("input_request family preserves Python AskUserQuestion wire keys", () => {
+    expect(
+      mapClaudeClientEvent({
+        type: "input_request",
+        requestId: "req-ask-1",
+        toolUseId: "toolu_ask",
+        questions: [
+          {
+            question: "배포할까요?",
+            header: "확인",
+            options: [{ label: "진행", description: "deploy" }],
+            multiSelect: false,
+          },
+        ],
+        startedAt: 1779264000,
+        timeoutSec: 300,
+        timestamp: 136,
+      })[0],
+    ).toEqual({
+      type: "input_request",
+      request_id: "req-ask-1",
+      tool_use_id: "toolu_ask",
+      questions: [
+        {
+          question: "배포할까요?",
+          header: "확인",
+          options: [{ label: "진행", description: "deploy" }],
+          multiSelect: false,
+        },
+      ],
+      started_at: 1779264000,
+      timeout_sec: 300,
+      timestamp: 136,
+    });
+
+    expect(
+      mapClaudeClientEvent({
+        type: "input_request_expired",
+        requestId: "req-ask-1",
+        timestamp: 137,
+      })[0],
+    ).toEqual({
+      type: "input_request_expired",
+      request_id: "req-ask-1",
+      timestamp: 137,
+    });
+
+    expect(
+      mapClaudeClientEvent({
+        type: "input_request_responded",
+        requestId: "req-ask-1",
+        timestamp: 138,
+      })[0],
+    ).toEqual({
+      type: "input_request_responded",
+      request_id: "req-ask-1",
+      timestamp: 138,
+    });
+  });
+
   it("rate_limit maps to existing credential_alert SSE wire", () => {
     expect(
       mapClaudeClientEvent({
@@ -236,6 +296,9 @@ describe("Claude event mapper parity with Python EngineEvent.to_sse", () => {
       { type: "tool_result", toolName: "Bash", result: "ok", timestamp: 3 },
       { type: "thinking", thinking: "hmm", timestamp: 4 },
       { type: "result", success: true, output: "A", timestamp: 5 },
+      { type: "input_request", requestId: "ask-1", questions: [], startedAt: 10, timeoutSec: 300, timestamp: 5.5 },
+      { type: "input_request_expired", requestId: "ask-1", timestamp: 5.6 },
+      { type: "input_request_responded", requestId: "ask-1", timestamp: 5.7 },
       { type: "prompt_suggestion", text: "next", timestamp: 6 },
       { type: "rate_limit", status: "allowed_warning", utilization: 0.9, timestamp: 7 },
       { type: "compact", trigger: "manual", message: "compacted", timestamp: 8 },
@@ -254,6 +317,9 @@ describe("Claude event mapper parity with Python EngineEvent.to_sse", () => {
       "tool_result",
       "thinking",
       "result",
+      "input_request",
+      "input_request_expired",
+      "input_request_responded",
       "prompt_suggestion",
       "credential_alert",
       "compact",

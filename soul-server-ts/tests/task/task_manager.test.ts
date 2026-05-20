@@ -210,6 +210,138 @@ describe("TaskManager.getTask / listTasks", () => {
   });
 });
 
+describe("TaskManager.deliverInputResponse", () => {
+  it("running Claude task + pending request → engine deliver + input_request_responded persist/broadcast", async () => {
+    const mocks = makeMocks();
+    const persistEvent = vi.fn().mockResolvedValue(77);
+    const handleSideEffects = vi.fn().mockResolvedValue(undefined);
+    const persistence = { persistEvent, handleSideEffects } as unknown as import("../../src/db/event_persistence.js").EventPersistence;
+    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, persistence);
+    const task = await tm.createTask({
+      agentSessionId: "sess-ask",
+      prompt: "p",
+      profileId: "claude-roselin",
+    });
+    const deliverInputResponse = vi.fn().mockResolvedValue({ status: "delivered" });
+    task.engine = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude",
+      deliverInputResponse,
+      async *execute() {},
+      async interrupt() { return true; },
+      async close() {},
+    } as unknown as EnginePort;
+
+    const result = await tm.deliverInputResponse({
+      agentSessionId: "sess-ask",
+      requestId: "ask-1",
+      answers: { choice: "yes" },
+    });
+
+    expect(result).toEqual({ status: "delivered", requestId: "ask-1", eventId: 77 });
+    expect(deliverInputResponse).toHaveBeenCalledWith("ask-1", { choice: "yes" });
+    expect(persistEvent).toHaveBeenCalledWith("sess-ask", expect.objectContaining({
+      type: "input_request_responded",
+      request_id: "ask-1",
+    }));
+    expect(mocks.emitEventEnvelope).toHaveBeenCalledWith("sess-ask", expect.objectContaining({
+      type: "input_request_responded",
+      request_id: "ask-1",
+      _event_id: 77,
+    }));
+    expect(handleSideEffects).toHaveBeenCalledWith(
+      "sess-ask",
+      expect.objectContaining({ type: "input_request_responded" }),
+      task,
+    );
+  });
+
+  it.each([
+    ["expired", "expired"],
+    ["already_responded", "already_responded"],
+    ["request_not_pending", "request_not_pending"],
+  ] as const)("engine %s result → failure status without persisted responded event", async (engineStatus, expectedStatus) => {
+    const mocks = makeMocks();
+    const persistEvent = vi.fn().mockResolvedValue(1);
+    const persistence = {
+      persistEvent,
+      handleSideEffects: vi.fn().mockResolvedValue(undefined),
+    } as unknown as import("../../src/db/event_persistence.js").EventPersistence;
+    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, persistence);
+    const task = await tm.createTask({ agentSessionId: "sess-ask", prompt: "p", profileId: "claude-roselin" });
+    task.engine = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude",
+      deliverInputResponse: vi.fn().mockResolvedValue({ status: engineStatus }),
+      async *execute() {},
+      async interrupt() { return true; },
+      async close() {},
+    } as unknown as EnginePort;
+    persistEvent.mockClear();
+
+    const result = await tm.deliverInputResponse({
+      agentSessionId: "sess-ask",
+      requestId: "ask-1",
+      answers: { choice: "yes" },
+    });
+
+    expect(result.status).toBe(expectedStatus);
+    expect(persistEvent).not.toHaveBeenCalled();
+  });
+
+  it("missing session → session_not_found", async () => {
+    const mocks = makeMocks();
+    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);
+
+    await expect(tm.deliverInputResponse({
+      agentSessionId: "missing",
+      requestId: "ask-1",
+      answers: {},
+    })).resolves.toMatchObject({
+      status: "session_not_found",
+      requestId: "ask-1",
+    });
+  });
+
+  it.each(["completed", "error", "interrupted"] as const)("%s task → session_not_running", async (status) => {
+    const mocks = makeMocks();
+    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);
+    const task = await tm.createTask({ agentSessionId: "sess-ask", prompt: "p", profileId: "claude-roselin" });
+    task.status = status;
+
+    await expect(tm.deliverInputResponse({
+      agentSessionId: "sess-ask",
+      requestId: "ask-1",
+      answers: {},
+    })).resolves.toMatchObject({
+      status: "session_not_running",
+      taskStatus: status,
+    });
+  });
+
+  it("Codex task는 input response capability가 없어 not_supported", async () => {
+    const mocks = makeMocks();
+    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);
+    const task = await tm.createTask({ agentSessionId: "sess-codex", prompt: "p", profileId: "codex-default" });
+    task.engine = {
+      backendId: "codex",
+      workspaceDir: "/tmp/codex",
+      async *execute() {},
+      async interrupt() { return true; },
+      async close() {},
+    } as unknown as EnginePort;
+
+    await expect(tm.deliverInputResponse({
+      agentSessionId: "sess-codex",
+      requestId: "ask-1",
+      answers: {},
+    })).resolves.toMatchObject({
+      status: "not_supported",
+      backend: "codex",
+    });
+  });
+});
+
 describe("TaskManager.cancelTask", () => {
   it("진행 중 engine이 있으면 interrupt 호출 + status='interrupted' 박힘 + true 반환", async () => {
     const { db, broadcaster } = makeMocks();

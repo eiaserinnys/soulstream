@@ -77,6 +77,16 @@ describe("extractPreviewText", () => {
       extractPreviewText({ type: "credential_alert", utilization: 0.95 } as SSEEventPayload),
     ).toBe("");
   });
+  it("input_request lifecycle events는 last_message preview에 쓰지 않는다", () => {
+    for (const event of [
+      { type: "input_request", request_id: "ask-1", questions: [{ question: "Q" }] },
+      { type: "input_request_responded", request_id: "ask-1" },
+      { type: "input_request_expired", request_id: "ask-1" },
+    ] as SSEEventPayload[]) {
+      expect(extractPreviewText(event)).toBe("");
+      expect(extractSearchableText(event)).toBe("");
+    }
+  });
   it("text_end는 text 필드가 없으므로 빈 문자열 (B-2 결함 정정 검증)", () => {
     expect(extractPreviewText({ type: "text_end" } as SSEEventPayload)).toBe("");
   });

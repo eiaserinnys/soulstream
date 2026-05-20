@@ -173,7 +173,7 @@ describe("UpstreamAdapter", () => {
     await adapter.shutdown();
   });
 
-  it("미구현 명령(respond)에 error fallback 응답", async () => {
+  it("respond 필수 필드 누락 시 명시 error 응답", async () => {
     const adapter = new UpstreamAdapter(
       {
         url: orch.url,
@@ -191,7 +191,7 @@ describe("UpstreamAdapter", () => {
     void adapter.run();
     await waitFor(() => orch.sockets.length >= 1 && orch.receivedMessages.length >= 1);
 
-    // B-3에서 create_session은 *implemented* — 미구현은 respond·list_sessions 등
+    // P4에서 respond는 implemented — 필수 필드 누락은 명시 validation error.
     orch.sockets[0]!.send(JSON.stringify({ type: "respond", requestId: "r-1" }));
     await waitFor(() => orch.receivedMessages.length >= 2);
 
@@ -199,7 +199,7 @@ describe("UpstreamAdapter", () => {
     expect(reply.type).toBe("error");
     expect(reply.command_type).toBe("respond");
     expect(reply.requestId).toBe("r-1");
-    expect(reply.message).toContain("Not implemented in soul-server-ts");
+    expect(reply.message).toContain("respond requires agentSessionId");
 
     await adapter.shutdown();
   });

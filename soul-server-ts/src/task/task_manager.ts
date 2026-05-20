@@ -25,7 +25,13 @@ import type { ContextItem } from "../context/prompt_assembler.js";
 
 import type { CallerInfo, InterventionMessage, Task, TaskStatus } from "./task_models.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
-import type { ReasoningEffort, SSEEventPayload } from "../engine/protocol.js";
+import type {
+  BackendId,
+  InputResponseDeliveryResult,
+  ReasoningEffort,
+  SSEEventPayload,
+  SupportsInputResponse,
+} from "../engine/protocol.js";
 
 export interface CreateTaskParams {
   agentSessionId: string;
@@ -63,6 +69,26 @@ export interface AddInterventionParams {
   user: string;
   callerInfo?: CallerInfo;
   attachmentPaths?: string[];
+}
+
+export type DeliverInputResponseStatus =
+  | InputResponseDeliveryResult["status"]
+  | "session_not_found"
+  | "session_not_running";
+
+export interface DeliverInputResponseParams {
+  agentSessionId: string;
+  requestId: string;
+  answers: Record<string, unknown>;
+}
+
+export interface DeliverInputResponseResult {
+  status: DeliverInputResponseStatus;
+  requestId: string;
+  eventId?: number;
+  message?: string;
+  taskStatus?: TaskStatus;
+  backend?: BackendId | string;
 }
 
 /**
@@ -246,6 +272,106 @@ export class TaskManager {
 
   listTasks(): Task[] {
     return Array.from(this.tasks.values());
+  }
+
+  /**
+   * AskUserQuestion/input_request 응답 전달.
+   *
+   * TaskManager는 세션 lifecycle과 persisted event만 책임진다. 실제 응답 주입은
+   * EnginePort 선택 capability(SupportsInputResponse)에 위임하여 Codex 경로 누수를 막는다.
+   */
+  async deliverInputResponse(
+    params: DeliverInputResponseParams,
+  ): Promise<DeliverInputResponseResult> {
+    const task = this.tasks.get(params.agentSessionId);
+    if (!task) {
+      return { status: "session_not_found", requestId: params.requestId };
+    }
+    if (task.status !== "running") {
+      return {
+        status: "session_not_running",
+        requestId: params.requestId,
+        taskStatus: task.status,
+      };
+    }
+
+    const engine = task.engine;
+    if (!supportsInputResponse(engine)) {
+      return {
+        status: "not_supported",
+        requestId: params.requestId,
+        backend: taskBackend(task, this.agentRegistry),
+      };
+    }
+
+    const delivered = await engine.deliverInputResponse(params.requestId, params.answers);
+    if (delivered.status !== "delivered") {
+      return {
+        status: delivered.status,
+        requestId: params.requestId,
+        ...(delivered.message ? { message: delivered.message } : {}),
+        ...(delivered.status === "not_supported"
+          ? { backend: taskBackend(task, this.agentRegistry) }
+          : {}),
+      };
+    }
+
+    const eventId = await this.persistAndBroadcastInputRequestResponded(
+      task,
+      params.requestId,
+    );
+    return {
+      status: "delivered",
+      requestId: params.requestId,
+      ...(eventId !== undefined ? { eventId } : {}),
+    };
+  }
+
+  private async persistAndBroadcastInputRequestResponded(
+    task: Task,
+    requestId: string,
+  ): Promise<number | undefined> {
+    const event: Record<string, unknown> = {
+      type: "input_request_responded",
+      request_id: requestId,
+      timestamp: Date.now() / 1000,
+    };
+    let eventId: number | undefined;
+
+    if (this.persistence) {
+      try {
+        eventId = await this.persistence.persistEvent(
+          task.agentSessionId,
+          event as SSEEventPayload,
+        );
+        task.lastEventId = eventId;
+        event._event_id = eventId;
+        await this.persistence.handleSideEffects(
+          task.agentSessionId,
+          event as SSEEventPayload,
+          task,
+        );
+      } catch (err) {
+        this.logger.warn(
+          { err, sessionId: task.agentSessionId, requestId },
+          "input_request_responded persistence failed",
+        );
+        eventId = undefined;
+      }
+    }
+
+    try {
+      await this.broadcaster.emitEventEnvelope(
+        task.agentSessionId,
+        event as SSEEventPayload,
+      );
+    } catch (err) {
+      this.logger.warn(
+        { err, sessionId: task.agentSessionId, requestId },
+        "input_request_responded broadcast failed",
+      );
+    }
+    return eventId;
   }
 
   /**
@@ -740,4 +866,22 @@ function callerInfoMetadataEntry(
 ): Record<string, unknown> | undefined {
   if (!callerInfo || Object.keys(callerInfo).length === 0) return undefined;
   return { type: "caller_info", value: callerInfo };
+}
+
+function supportsInputResponse(
+  engine: Task["engine"],
+): engine is NonNullable<Task["engine"]> & SupportsInputResponse {
+  return Boolean(
+    engine &&
+      typeof (engine as unknown as Partial<SupportsInputResponse>).deliverInputResponse ===
+        "function",
+  );
+}
+
+function taskBackend(task: Task, agentRegistry?: AgentRegistry): BackendId | string | undefined {
+  if (task.engine?.backendId) return task.engine.backendId;
+  if (task.profileId && agentRegistry) {
+    return agentRegistry.get(task.profileId)?.backend;
+  }
+  return undefined;
 }

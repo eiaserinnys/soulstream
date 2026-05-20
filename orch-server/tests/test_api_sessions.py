@@ -189,16 +189,18 @@ class TestRespond:
     """POST /api/sessions/{session_id}/respond tests."""
 
     @staticmethod
-    def _make_resolve_by_request_id(node):
+    def _make_resolve_by_request_id(node, result=None):
         """send_respond payload는 'inputRequestId' 별도 키로 input_request의 request_id를
         보내고, 'requestId'는 _send_command가 생성한 WS 명령 ID로 유지된다.
         _pending 키(WS 명령 ID)와 정확히 매칭되는 future를 resolve하는 side_effect를 반환한다.
         """
+        result = result or {"success": True}
+
         async def resolve_on_send(data):
             ws_command_id = data.get("requestId", "")
             future = node._pending.get(ws_command_id)
             if future is not None and not future.done():
-                future.set_result({"success": True})
+                future.set_result(result)
         return resolve_on_send
 
     async def test_camel_case_request_id(self, client, node_manager):
@@ -246,6 +248,44 @@ class TestRespond:
         respond_payloads = [p for p in sent_payloads if p.get("type") == "respond"]
         assert len(respond_payloads) == 1
         assert respond_payloads[0].get("inputRequestId") == "r456"
+
+    @pytest.mark.parametrize(
+        ("code", "expected_status"),
+        [
+            ("SESSION_NOT_FOUND", 404),
+            ("SESSION_NOT_RUNNING", 409),
+            ("REQUEST_NOT_PENDING", 422),
+            ("INPUT_REQUEST_EXPIRED", 422),
+            ("INPUT_REQUEST_ALREADY_RESPONDED", 422),
+            ("INPUT_RESPONSE_NOT_SUPPORTED", 422),
+        ],
+    )
+    async def test_respond_ack_error_status_maps_to_http_error(
+        self, client, node_manager, code, expected_status
+    ):
+        """TS node가 respond_ack(status=error)를 보내도 orch는 timeout 없이 HTTP 에러로 정규화한다."""
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+        node = await node_manager.register_node(ws, {"node_id": "resp-node-error"})
+        ws.send_json.side_effect = self._make_resolve_by_request_id(
+            node,
+            {
+                "type": "respond_ack",
+                "status": "error",
+                "code": code,
+                "message": f"{code} message",
+                "inputRequestId": "r789",
+            },
+        )
+
+        resp = await client.post(
+            "/api/sessions/test-session/respond",
+            json={"requestId": "r789", "answers": {"question": "answer"}},
+        )
+
+        assert resp.status_code == expected_status
+        assert resp.json()["detail"]["error"]["code"] == code
 
 
 class TestBatchMoveFolder:

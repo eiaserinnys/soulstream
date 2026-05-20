@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 50개 $defs (wire 20 + SSE event 30). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16).",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 51개 $defs (wire 21 + SSE event 30). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16).",
   "$defs": {
     "NodeRegister": {
       "type": "object",
@@ -192,6 +192,24 @@
         "type": { "const": "intervene_ack" },
         "requestId": { "type": "string" },
         "status": { "type": "string", "enum": ["ok"] }
+      }
+    },
+    "RespondAck": {
+      "type": "object",
+      "description": "노드→orch: respond 명령 ACK. TS Claude AskUserQuestion 응답 전달 결과. 실패도 ACK로 반환하여 orch command timeout을 막는다.",
+      "required": ["type", "requestId", "status"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "respond_ack" },
+        "requestId": { "type": "string" },
+        "inputRequestId": { "type": "string" },
+        "status": { "type": "string", "enum": ["ok", "error"] },
+        "delivered": { "type": "boolean" },
+        "eventId": { "type": "integer" },
+        "code": { "type": "string" },
+        "message": { "type": "string" },
+        "backend": { "type": "string" },
+        "taskStatus": { "type": "string" }
       }
     },
     "CreateSession": {
@@ -601,6 +619,7 @@
     { "$ref": "#/$defs/SessionDeleted" },
     { "$ref": "#/$defs/ErrorMessage" },
     { "$ref": "#/$defs/InterveneAck" },
+    { "$ref": "#/$defs/RespondAck" },
     { "$ref": "#/$defs/CreateSession" },
     { "$ref": "#/$defs/Intervene" },
     { "$ref": "#/$defs/Respond" },

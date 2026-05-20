@@ -84,6 +84,28 @@ export type ClaudeClientEvent =
       parentEventId?: ParentEventId;
     }
   | {
+      type: "input_request";
+      requestId: string;
+      toolUseId?: string | null;
+      questions: unknown[];
+      startedAt?: number;
+      timeoutSec?: number;
+      timestamp?: number;
+      parentEventId?: ParentEventId;
+    }
+  | {
+      type: "input_request_expired";
+      requestId: string;
+      timestamp?: number;
+      parentEventId?: ParentEventId;
+    }
+  | {
+      type: "input_request_responded";
+      requestId: string;
+      timestamp?: number;
+      parentEventId?: ParentEventId;
+    }
+  | {
       type: "compact";
       trigger: string;
       message: string;
@@ -239,6 +261,40 @@ export function mapClaudeClientEvent(
           ...(event.rateLimitType !== undefined ? { rate_limit_type: event.rateLimitType } : {}),
           ...(event.status !== undefined ? { status: event.status } : {}),
           ...(event.resetsAt !== undefined ? { resets_at: event.resetsAt } : {}),
+          timestamp: event.timestamp ?? nowEpochSec(),
+          ...parentField(event.parentEventId),
+        }),
+      ];
+
+    case "input_request":
+      return [
+        asSSE({
+          type: "input_request",
+          request_id: event.requestId,
+          ...(event.toolUseId ? { tool_use_id: event.toolUseId } : {}),
+          questions: event.questions,
+          ...(event.startedAt !== undefined ? { started_at: event.startedAt } : {}),
+          ...(event.timeoutSec !== undefined ? { timeout_sec: event.timeoutSec } : {}),
+          timestamp: event.timestamp ?? nowEpochSec(),
+          ...parentField(event.parentEventId),
+        }),
+      ];
+
+    case "input_request_expired":
+      return [
+        asSSE({
+          type: "input_request_expired",
+          request_id: event.requestId,
+          timestamp: event.timestamp ?? nowEpochSec(),
+          ...parentField(event.parentEventId),
+        }),
+      ];
+
+    case "input_request_responded":
+      return [
+        asSSE({
+          type: "input_request_responded",
+          request_id: event.requestId,
           timestamp: event.timestamp ?? nowEpochSec(),
           ...parentField(event.parentEventId),
         }),
