@@ -113,6 +113,20 @@ export type ClaudeClientEvent =
       parentEventId?: ParentEventId;
     }
   | {
+      type: "assistant_error";
+      errorType: string;
+      model?: string;
+      messageId?: string;
+      timestamp?: number;
+      parentEventId?: ParentEventId;
+    }
+  | {
+      type: "away_summary";
+      content: string;
+      timestamp?: number;
+      parentEventId?: ParentEventId;
+    }
+  | {
       type: "subagent_start";
       agentId: string;
       agentType: string;
@@ -306,6 +320,28 @@ export function mapClaudeClientEvent(
           type: "compact",
           trigger: event.trigger,
           message: event.message,
+          timestamp: event.timestamp ?? nowEpochSec(),
+          ...parentField(event.parentEventId),
+        }),
+      ];
+
+    case "assistant_error":
+      return [
+        asSSE({
+          type: "assistant_error",
+          error_type: event.errorType,
+          ...(event.model !== undefined ? { model: event.model } : {}),
+          ...(event.messageId !== undefined ? { message_id: event.messageId } : {}),
+          timestamp: event.timestamp ?? nowEpochSec(),
+          ...parentField(event.parentEventId),
+        }),
+      ];
+
+    case "away_summary":
+      return [
+        asSSE({
+          type: "away_summary",
+          content: event.content,
           timestamp: event.timestamp ?? nowEpochSec(),
           ...parentField(event.parentEventId),
         }),
