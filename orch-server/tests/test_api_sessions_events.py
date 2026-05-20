@@ -520,3 +520,83 @@ class TestHistoryEventsRegisteredInSeenIds:
         finally:
             NodeConnection.send_subscribe_events = original_subscribe
             NodeConnection.unsubscribe_events = original_unsubscribe
+
+    async def test_reconnect_cursor_equal_live_event_id_is_not_duplicated(
+        self, mock_db, node_manager, session_router, mock_catalog_service, broadcaster,
+    ):
+        """Last-Event-ID와 같은 live event는 이미 클라이언트가 받은 이벤트라 재송출하지 않는다."""
+        _patch_db_stream(
+            mock_db,
+            [
+                (10, "text_start", '{"type":"text_start"}'),
+            ],
+        )
+        mock_db.read_last_event_id = AsyncMock(return_value=10)
+
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+        await node_manager.register_node(
+            ws, {"node_id": "test-node", "host": "localhost", "port": 4100},
+        )
+        mock_db.get_session = AsyncMock(
+            return_value={"session_id": "sess-1", "node_id": "test-node"},
+        )
+
+        async def fake_subscribe_events(self, session_id, on_event):
+            await on_event({
+                "eventId": 10,
+                "event": {"type": "text_start", "_event_id": 10},
+            })
+            await on_event({
+                "eventId": 11,
+                "event": {"type": "text_delta", "text": "new", "_event_id": 11},
+            })
+            return "sub-1"
+
+        def fake_unsubscribe_events(self, session_id, subscribe_id):
+            return None
+
+        from soulstream_server.nodes.node_connection import NodeConnection
+
+        original_subscribe = NodeConnection.send_subscribe_events
+        original_unsubscribe = NodeConnection.unsubscribe_events
+        NodeConnection.send_subscribe_events = fake_subscribe_events
+        NodeConnection.unsubscribe_events = fake_unsubscribe_events
+
+        try:
+            router = create_sessions_router(
+                db=mock_db,
+                node_manager=node_manager,
+                session_router=session_router,
+                broadcaster=broadcaster,
+                catalog_service=mock_catalog_service,
+            )
+            route = _get_events_route(router)
+
+            request = _make_request_mock(headers={"Last-Event-ID": "10"})
+            response = await route.endpoint(session_id="sess-1", request=request)
+
+            events = []
+            try:
+                for _ in range(8):
+                    try:
+                        event = await asyncio.wait_for(
+                            response.body_iterator.__anext__(), timeout=1.0,
+                        )
+                    except (asyncio.TimeoutError, StopAsyncIteration):
+                        break
+                    events.append(event)
+                    if any(e.get("id") == "11" for e in events):
+                        break
+            finally:
+                await response.body_iterator.aclose()
+
+            ids_yielded = [e.get("id") for e in events if e.get("id")]
+            assert ids_yielded.count("10") == 0, (
+                f"Last-Event-ID와 같은 live id=10이 중복 yield됨: {ids_yielded}"
+            )
+            assert ids_yielded.count("11") == 1
+        finally:
+            NodeConnection.send_subscribe_events = original_subscribe
+            NodeConnection.unsubscribe_events = original_unsubscribe

@@ -6,6 +6,7 @@ import type {
   EnginePort,
   InputResponseDeliveryResult,
   SSEEventPayload,
+  SupportsCompact,
   SupportsInputResponse,
 } from "./protocol.js";
 import {
@@ -32,10 +33,12 @@ export interface ClaudeRunOptions {
   model?: string;
   systemPrompt?: string;
   env: Record<string, string>;
+  onIntervention?: () => Promise<string | null>;
 }
 
 export interface ClaudeClient {
   run(options: ClaudeRunOptions, signal: AbortSignal): AsyncIterable<ClaudeClientEvent>;
+  compact?(sessionId: string): Promise<void>;
   deliverInputResponse?(
     requestId: string,
     answers: Record<string, unknown>,
@@ -50,7 +53,7 @@ export interface ClaudeAdapterConfig {
   processEnv?: NodeJS.ProcessEnv | Record<string, string | undefined>;
 }
 
-export class ClaudeEngineAdapter implements EnginePort, SupportsInputResponse {
+export class ClaudeEngineAdapter implements EnginePort, SupportsInputResponse, SupportsCompact {
   public readonly backendId: BackendId = "claude";
   public readonly workspaceDir: string;
 
@@ -142,6 +145,16 @@ export class ClaudeEngineAdapter implements EnginePort, SupportsInputResponse {
     return true;
   }
 
+  async compact(sessionId: string): Promise<void> {
+    if (!sessionId) {
+      throw new Error("ClaudeEngineAdapter.compact requires sessionId");
+    }
+    if (!this.client.compact) {
+      throw new Error("Claude client does not support compact");
+    }
+    await this.client.compact(sessionId);
+  }
+
   async deliverInputResponse(
     requestId: string,
     answers: Record<string, unknown>,
@@ -194,6 +207,7 @@ export class ClaudeEngineAdapter implements EnginePort, SupportsInputResponse {
         processEnv: this.processEnv,
         extraEnv: params.extraEnv,
       }),
+      ...(params.onIntervention ? { onIntervention: params.onIntervention } : {}),
     };
   }
 

@@ -182,6 +182,13 @@ export class TaskExecutor {
       while (true) {
         const resumeSessionId = task.codexThreadId;
         try {
+          const onIntervention = agent.backend === "claude"
+            ? async () => {
+                const next = task.interventionQueue.shift();
+                if (!next) return null;
+                return composeClaudeInRunInterventionPrompt(next);
+              }
+            : undefined;
           for await (const event of engine.execute({
             prompt: turnPrompt,
             imageAttachmentPaths: turnImageAttachmentPaths,
@@ -189,6 +196,7 @@ export class TaskExecutor {
             reasoningEffort: task.reasoningEffort,
             resumeSessionId,
             extraEnv: buildTaskExtraEnv(task),
+            ...(onIntervention ? { onIntervention } : {}),
           })) {
             await this._processEvent(task, event);
           }
@@ -527,6 +535,23 @@ function composeInterventionTurnPrompt(message: { text: string; context?: Contex
     prompt: contextBlock ? `${contextBlock}\n\n${message.text}` : message.text,
     imageAttachmentPaths: imagePaths,
   };
+}
+
+function composeClaudeInRunInterventionPrompt(message: {
+  text: string;
+  user: string;
+  attachmentPaths?: string[];
+}): string {
+  if (message.attachmentPaths && message.attachmentPaths.length > 0) {
+    const attachmentInfo = message.attachmentPaths.map((path) => `- ${path}`).join("\n");
+    return (
+      `[사용자 개입 메시지 from ${message.user}]\n` +
+      `${message.text}\n\n` +
+      `첨부 파일 (Read 도구로 확인):\n` +
+      attachmentInfo
+    );
+  }
+  return `[사용자 개입 메시지 from ${message.user}]\n${message.text}`;
 }
 
 function buildTaskExtraEnv(task: Task): Record<string, string> | undefined {

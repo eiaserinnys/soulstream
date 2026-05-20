@@ -116,6 +116,8 @@ async def create_session_events_response(
             int_id = _extract_event_id(data, event_payload)
             if int_id is not None:
                 queued_event_ids.discard(int_id)
+                if after_id > 0 and int_id <= after_id:
+                    return None
                 if int_id in seen_event_ids:
                     return None
                 seen_event_ids.add(int_id)

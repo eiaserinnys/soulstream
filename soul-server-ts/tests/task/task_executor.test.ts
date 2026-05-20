@@ -603,6 +603,95 @@ describe("isTerminalStatus", () => {
 });
 
 describe("TaskExecutor multi-turn (B-4)", () => {
+  it("Claude running intervention은 onIntervention으로 현재 turn에 주입되고 Codex식 다음 turn 큐잉으로 넘어가지 않는다", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+
+    const started = deferred<void>();
+    const release = deferred<void>();
+    const injectedPrompts: Array<string | null> = [];
+    let executeCalls = 0;
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        executeCalls += 1;
+        yield { type: "session", session_id: "claude-sess-1" } as SSEEventPayload;
+        started.resolve();
+        await release.promise;
+        injectedPrompts.push(await params.onIntervention?.() ?? null);
+        yield { type: "text_delta", text: "after injection", timestamp: 2 } as SSEEventPayload;
+        yield { type: "complete", result: "done", timestamp: 3 } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+
+    executor.startExecution(task, claudeAgent);
+    await started.promise;
+    task.interventionQueue.push({
+      text: "지금 반영",
+      user: "alice",
+      attachmentPaths: ["/tmp/incoming/sess/readme.txt"],
+    });
+    release.resolve();
+    await task.executionPromise;
+
+    expect(executeCalls).toBe(1);
+    expect(injectedPrompts).toEqual([
+      "[사용자 개입 메시지 from alice]\n지금 반영\n\n첨부 파일 (Read 도구로 확인):\n- /tmp/incoming/sess/readme.txt",
+    ]);
+    expect(task.interventionQueue).toHaveLength(0);
+    expect(task.status).toBe("completed");
+  });
+
+  it("Codex execute params에는 onIntervention을 넘기지 않아 turn 사이 큐잉 semantics를 보존한다", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    let turnCount = 0;
+    const onInterventionFlags: boolean[] = [];
+    const engine: EnginePort = {
+      backendId: "codex",
+      workspaceDir: "/tmp/codex-default",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        onInterventionFlags.push(typeof params.onIntervention === "function");
+        if (turnCount === 0) {
+          turnCount += 1;
+          yield { type: "session", session_id: "thr-1" } as SSEEventPayload;
+          task.interventionQueue.push({ text: "queued for next turn", user: "u" });
+          yield { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload;
+          return;
+        }
+        turnCount += 1;
+        yield { type: "complete", usage: {}, timestamp: 2 } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    expect(turnCount).toBe(2);
+    expect(onInterventionFlags).toEqual([false, false]);
+    expect(task.interventionQueue).toHaveLength(0);
+  });
+
   it("turn 종료 시 interventionQueue 비어있지 않으면 다음 turn 자동 시작 (resume)", async () => {
     // turn 1: session(thr-1) + text_delta("a") + text_end + complete
     // turn 종료 후 task.interventionQueue.push({text:"continue"}) — 외부 큐잉 시뮬레이션
@@ -711,7 +800,103 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     expect(task.status).toBe("completed");
     expect(factory).toHaveBeenCalledTimes(1);
   });
+
+  it("terminal auto-resume은 기존 claude_session_id를 resumeSessionId로 쓰고 새 session 이벤트로 덮어쓰지 않는다", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+    task.codexThreadId = "claude-existing";
+    task.interventionQueue.push({ text: "resume", user: "u" });
+    const capturedResumeIds: Array<string | undefined> = [];
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        capturedResumeIds.push(params.resumeSessionId);
+        yield { type: "session", session_id: "claude-new-should-not-overwrite" } as SSEEventPayload;
+        yield { type: "complete", result: "done", timestamp: 1 } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+
+    executor.startExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(capturedResumeIds).toEqual(["claude-existing"]);
+    expect(task.codexThreadId).toBe("claude-existing");
+    expect(mocks.setClaudeSessionId).not.toHaveBeenCalledWith(
+      "sess-1",
+      "claude-new-should-not-overwrite",
+    );
+  });
+
+  it("Claude compact 이벤트는 P3 wire 그대로 persist/broadcast된다", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(): AsyncIterable<SSEEventPayload> {
+        yield {
+          type: "compact",
+          trigger: "auto",
+          message: "context compacted",
+          timestamp: 1,
+        } as SSEEventPayload;
+        yield { type: "complete", result: "done", timestamp: 2 } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+
+    executor.startExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    const compactPersist = mocks.persistEvent.mock.calls.find(
+      (call) => (call[1] as { type: string }).type === "compact",
+    );
+    expect(compactPersist?.[1]).toMatchObject({
+      type: "compact",
+      trigger: "auto",
+      message: "context compacted",
+    });
+    const compactBroadcast = mocks.emitEventEnvelope.mock.calls.find(
+      (call) => (call[1] as { type: string }).type === "compact",
+    );
+    expect(compactBroadcast?.[1]).toMatchObject({
+      type: "compact",
+      trigger: "auto",
+      message: "context compacted",
+      _event_id: expect.any(Number),
+    });
+  });
 });
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
 
 // ride-along 5자리: `_event_id` envelope 운반 (Ft1NJquP — Python `task_executor.py:248` 정합)
 describe("TaskExecutor _processEvent — _event_id ride-along (Python L248 정합)", () => {

@@ -305,6 +305,60 @@ describe("ClaudeEngineAdapter fake client flow", () => {
       engine.deliverInputResponse("ask-expired", { q: "late" }),
     ).resolves.toEqual({ status: "expired" });
   });
+
+  it("fake client가 run options의 onIntervention으로 running intervention prompt를 즉시 주입받는다", async () => {
+    const injected: Array<string | null> = [];
+    const client: ClaudeClient = {
+      async *run(options: ClaudeRunOptions): AsyncIterable<ClaudeClientEvent> {
+        yield { type: "session", sessionId: "claude-sess-1" };
+        injected.push(await options.onIntervention?.() ?? null);
+        yield { type: "text", text: injected[0] ?? "no intervention" };
+        yield { type: "complete" };
+      },
+    };
+    const engine = new ClaudeEngineAdapter(
+      { workspaceDir: "/tmp/claude-work", client, processEnv: {} },
+      silentLogger,
+    );
+    const onIntervention = vi.fn().mockResolvedValue("injected while waiting");
+    const seen: SSEEventPayload[] = [];
+
+    for await (const event of engine.execute({ prompt: "hi", onIntervention })) {
+      seen.push(event);
+    }
+
+    expect(onIntervention).toHaveBeenCalledTimes(1);
+    expect(injected).toEqual(["injected while waiting"]);
+    expect(seen.map((event) => event.type)).toEqual([
+      "session",
+      "text_start",
+      "text_delta",
+      "text_end",
+      "complete",
+    ]);
+    expect(seen[2]).toMatchObject({
+      type: "text_delta",
+      text: "injected while waiting",
+    });
+  });
+
+  it("ClaudeEngineAdapter.compact는 fake client compact boundary를 호출한다", async () => {
+    const compact = vi.fn().mockResolvedValue(undefined);
+    const client: ClaudeClient = {
+      async *run(): AsyncIterable<ClaudeClientEvent> {
+        yield { type: "complete" };
+      },
+      compact,
+    };
+    const engine = new ClaudeEngineAdapter(
+      { workspaceDir: "/tmp/claude-work", client, processEnv: {} },
+      silentLogger,
+    );
+
+    await engine.compact("claude-sess-1");
+
+    expect(compact).toHaveBeenCalledWith("claude-sess-1");
+  });
 });
 
 function deferred<T>() {
