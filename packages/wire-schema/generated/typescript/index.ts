@@ -412,6 +412,10 @@ export interface CreateSession {
   caller_info?: {
     [k: string]: unknown;
   };
+  /**
+   * Codex-only reasoning effort. Missing means codex adapter default xhigh.
+   */
+  reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
   [k: string]: unknown;
 }
 /**

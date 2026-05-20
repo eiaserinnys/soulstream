@@ -40,6 +40,8 @@ export interface NewSessionDialogProps {
   agentSelector?: ReactNode;
   /** OAuth 토큰 프로필 선택 슬롯 (orchestrator-dashboard에서만 사용) */
   oauthProfileSelector?: ReactNode;
+  /** 추가 옵션 슬롯. backend/model 지식은 부모가 판단해서 주입한다. */
+  optionsSlot?: ReactNode;
   /** 제출 버튼 비활성 조건 추가 (nodeSelector 미선택 등) */
   submitDisabled?: boolean;
   /** 다이얼로그 타이틀 */
@@ -68,6 +70,7 @@ export function NewSessionDialog({
   nodeSelector,
   agentSelector,
   oauthProfileSelector,
+  optionsSlot,
   submitDisabled = false,
   title = "New Session",
   subtitle,
@@ -248,6 +251,9 @@ export function NewSessionDialog({
 
           {/* OAuth profile selector slot */}
           {oauthProfileSelector && <div className="mb-3">{oauthProfileSelector}</div>}
+
+          {/* Backend-specific options slot */}
+          {optionsSlot && <div className="mb-3">{optionsSlot}</div>}
 
           {/* Prompt textarea */}
           <textarea

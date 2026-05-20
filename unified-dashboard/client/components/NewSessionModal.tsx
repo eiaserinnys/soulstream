@@ -20,9 +20,16 @@ import {
   SelectPopup,
   SelectItem,
   cn,
+  DEFAULT_REASONING_EFFORT,
+  REASONING_EFFORT_OPTIONS,
   type CreateSessionResponse,
   type DashboardAgentConfig,
+  type ReasoningEffort,
 } from "@seosoyoung/soul-ui";
+import {
+  reasoningEffortForSubmit,
+  selectedAgentBackend,
+} from "../utils/reasoningEffort";
 
 export function NewSessionModal() {
   const queryClient = useQueryClient();
@@ -38,6 +45,9 @@ export function NewSessionModal() {
 
   const [selectedModalFolderId, setSelectedModalFolderId] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState("");
+  const [selectedReasoningEffort, setSelectedReasoningEffort] = useState<ReasoningEffort>(
+    DEFAULT_REASONING_EFFORT,
+  );
 
   // 에이전트 목록 (dashboardConfig에서)
   const agents: DashboardAgentConfig[] = dashboardConfig?.agents ?? [];
@@ -75,6 +85,11 @@ export function NewSessionModal() {
   const selectedModalFolderName =
     catalog?.folders.find((f) => f.id === selectedModalFolderId)?.name ??
     "Claude Code";
+  const selectedBackend = selectedAgentBackend(agents, selectedAgentId);
+  const submitReasoningEffort = reasoningEffortForSubmit(
+    selectedBackend,
+    selectedReasoningEffort,
+  );
 
   // 현재 draft 복원
   const initialDraft = useMemo(() => {
@@ -98,6 +113,7 @@ export function NewSessionModal() {
           ...(attachmentPaths?.length ? { attachmentPaths } : {}),
           ...(selectedModalFolderId ? { folderId: selectedModalFolderId } : {}),
           ...(selectedAgentId ? { profile: selectedAgentId } : {}),
+          ...(submitReasoningEffort ? { reasoningEffort: submitReasoningEffort } : {}),
         }),
       });
 
@@ -135,8 +151,9 @@ export function NewSessionModal() {
       );
       closeModal();
       setSelectedAgentId("");
+      setSelectedReasoningEffort(DEFAULT_REASONING_EFFORT);
     },
-    [queryClient, selectedModalFolderId, selectedAgentId, agents, addOptimisticSession, clearDraft, draftKey, closeModal],
+    [queryClient, selectedModalFolderId, selectedAgentId, submitReasoningEffort, agents, addOptimisticSession, clearDraft, draftKey, closeModal],
   );
 
   const handleOpenChange = useCallback(
@@ -144,6 +161,7 @@ export function NewSessionModal() {
       if (!open) {
         closeModal();
         setSelectedAgentId("");
+        setSelectedReasoningEffort(DEFAULT_REASONING_EFFORT);
       }
     },
     [closeModal],
@@ -210,6 +228,29 @@ export function NewSessionModal() {
     </div>
   ) : undefined;
 
+  const optionsSlot = submitReasoningEffort ? (
+    <div className="flex flex-col gap-1.5">
+      <label className="text-xs font-medium text-muted-foreground">Reasoning Effort</label>
+      <Select
+        value={selectedReasoningEffort}
+        onValueChange={(v) => setSelectedReasoningEffort((v || DEFAULT_REASONING_EFFORT) as ReasoningEffort)}
+      >
+        <SelectTrigger>
+          <span className="flex-1 truncate">
+            {REASONING_EFFORT_OPTIONS.find((option) => option.value === selectedReasoningEffort)?.label}
+          </span>
+        </SelectTrigger>
+        <SelectPopup>
+          {REASONING_EFFORT_OPTIONS.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectPopup>
+      </Select>
+    </div>
+  ) : undefined;
+
   return (
     <NewSessionDialog
       open={isOpen}
@@ -217,6 +258,7 @@ export function NewSessionModal() {
       onSubmit={handleSubmit}
       folderSelector={folderSelector}
       agentSelector={agentSelector}
+      optionsSlot={optionsSlot}
       subtitle={`in ${selectedModalFolderName}`}
       initialDraft={initialDraft}
       onDraftChange={handleDraftChange}

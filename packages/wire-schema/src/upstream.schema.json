@@ -216,7 +216,12 @@
           "type": "array",
           "items": { "type": "object", "additionalProperties": true }
         },
-        "caller_info": { "type": "object", "additionalProperties": true }
+        "caller_info": { "type": "object", "additionalProperties": true },
+        "reasoningEffort": {
+          "type": "string",
+          "enum": ["minimal", "low", "medium", "high", "xhigh"],
+          "description": "Codex-only reasoning effort. Missing means codex adapter default xhigh."
+        }
       }
     },
     "Intervene": {

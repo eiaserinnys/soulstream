@@ -72,6 +72,7 @@ class SessionRouter:
                         f"(supports: {node.supported_backends})"
                     ),
                 )
+            effective_backend = backend or self._infer_backend_from_node(node)
         else:
             # backend 매칭 노드만 후보로 — backend가 None이면 모든 노드 후보 (graceful).
             eligible = [n for n in nodes if not backend or backend in n.supported_backends]
@@ -79,6 +80,7 @@ class SessionRouter:
                 raise NoMatchingBackendNode(backend)
             # least-sessions-first within eligible pool
             node = min(eligible, key=lambda n: n.session_count)
+            effective_backend = backend or self._infer_backend_from_node(node)
 
         session_id = str(uuid.uuid4())
         result = await node.send_create_session(
@@ -95,6 +97,9 @@ class SessionRouter:
             attachment_paths=request.get("attachmentPaths"),
             caller_info=request.get("caller_info"),
             model=request.get("model"),
+            reasoning_effort=(
+                request.get("reasoningEffort") if effective_backend == "codex" else None
+            ),
             extra_context_items=request.get("extra_context_items"),
         )
 
@@ -115,3 +120,11 @@ class SessionRouter:
             return None
         profile, _source_node_id = found
         return profile.get("backend", "claude")
+
+    @staticmethod
+    def _infer_backend_from_node(node) -> str | None:
+        """단일 backend 노드면 profile 없이도 backend를 추론한다."""
+        backends = list(getattr(node, "supported_backends", []) or [])
+        if len(backends) == 1:
+            return backends[0]
+        return None

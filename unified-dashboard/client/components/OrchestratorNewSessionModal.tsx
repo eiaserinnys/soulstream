@@ -16,10 +16,17 @@ import {
   SelectItem,
   useDashboardStore,
   cn,
+  DEFAULT_REASONING_EFFORT,
+  REASONING_EFFORT_OPTIONS,
+  type ReasoningEffort,
 } from "@seosoyoung/soul-ui";
 import type { AgentInfo } from "@seosoyoung/soul-ui";
 import { useOrchestratorStore } from "../store/orchestrator-store";
 import { useAppConfig } from "../config/AppConfigContext";
+import {
+  reasoningEffortForSubmit,
+  selectedAgentBackend,
+} from "../utils/reasoningEffort";
 
 interface OAuthProfile {
   name: string;
@@ -44,6 +51,9 @@ export function OrchestratorNewSessionModal() {
   const [selectedModalFolderId, setSelectedModalFolderId] = useState<string | null>(null);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState("");
+  const [selectedReasoningEffort, setSelectedReasoningEffort] = useState<ReasoningEffort>(
+    DEFAULT_REASONING_EFFORT,
+  );
   const [oauthProfiles, setOauthProfiles] = useState<OAuthProfile[]>([]);
   const [selectedOAuthProfile, setSelectedOAuthProfile] = useState<string | null>(null);
 
@@ -58,6 +68,11 @@ export function OrchestratorNewSessionModal() {
   const initialDraft = useMemo(() => {
     return useDashboardStore.getState().drafts[draftKey] ?? "";
   }, [draftKey, isModalOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  const selectedBackend = selectedAgentBackend(agents, selectedAgentId);
+  const submitReasoningEffort = reasoningEffortForSubmit(
+    selectedBackend,
+    selectedReasoningEffort,
+  );
 
   const handleDraftChange = useCallback(
     (value: string) => {
@@ -140,6 +155,7 @@ export function OrchestratorNewSessionModal() {
           ...(attachmentPaths?.length ? { attachmentPaths } : {}),
           ...(selectedModalFolderId ? { folderId: selectedModalFolderId } : {}),
           ...(selectedAgentId ? { profile: selectedAgentId } : {}),
+          ...(submitReasoningEffort ? { reasoningEffort: submitReasoningEffort } : {}),
           ...(selectedOAuthProfile ? { oauth_profile_name: selectedOAuthProfile } : {}),
         }),
       });
@@ -182,9 +198,10 @@ export function OrchestratorNewSessionModal() {
       setSelectedNodeId("");
       setSelectedModalFolderId(null);
       setSelectedAgentId("");
+      setSelectedReasoningEffort(DEFAULT_REASONING_EFFORT);
       setSelectedOAuthProfile(null);
     },
-    [selectedNodeId, selectedModalFolderId, selectedAgentId, selectedOAuthProfile, agents, clearDraft, draftKey, closeNewSessionModal],
+    [selectedNodeId, selectedModalFolderId, selectedAgentId, submitReasoningEffort, selectedOAuthProfile, agents, clearDraft, draftKey, closeNewSessionModal],
   );
 
   const folderSelector = (
@@ -297,6 +314,29 @@ export function OrchestratorNewSessionModal() {
     </div>
   ) : undefined;
 
+  const optionsSlot = submitReasoningEffort ? (
+    <div className="flex flex-col gap-1.5">
+      <label className="text-xs font-medium text-muted-foreground">Reasoning Effort</label>
+      <Select
+        value={selectedReasoningEffort}
+        onValueChange={(v) => setSelectedReasoningEffort((v || DEFAULT_REASONING_EFFORT) as ReasoningEffort)}
+      >
+        <SelectTrigger>
+          <span className="flex-1 truncate">
+            {REASONING_EFFORT_OPTIONS.find((option) => option.value === selectedReasoningEffort)?.label}
+          </span>
+        </SelectTrigger>
+        <SelectPopup>
+          {REASONING_EFFORT_OPTIONS.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectPopup>
+      </Select>
+    </div>
+  ) : undefined;
+
   return (
     <BaseNewSessionDialog
       open={isModalOpen}
@@ -306,6 +346,7 @@ export function OrchestratorNewSessionModal() {
           setSelectedNodeId("");
           setSelectedModalFolderId(null);
           setSelectedAgentId("");
+          setSelectedReasoningEffort(DEFAULT_REASONING_EFFORT);
           setSelectedOAuthProfile(null);
         }
       }}
@@ -314,6 +355,7 @@ export function OrchestratorNewSessionModal() {
       nodeSelector={nodeSelector}
       agentSelector={agentSelector}
       oauthProfileSelector={oauthProfileSelector}
+      optionsSlot={optionsSlot}
       submitDisabled={!selectedNodeId}
       initialDraft={initialDraft}
       onDraftChange={handleDraftChange}

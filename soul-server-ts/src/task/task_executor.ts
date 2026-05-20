@@ -185,6 +185,7 @@ export class TaskExecutor {
             prompt: turnPrompt,
             imageAttachmentPaths: turnImageAttachmentPaths,
             model: task.model,
+            reasoningEffort: task.reasoningEffort,
             resumeSessionId,
           })) {
             await this._processEvent(task, event);

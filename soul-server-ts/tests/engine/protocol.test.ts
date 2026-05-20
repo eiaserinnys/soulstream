@@ -65,6 +65,7 @@ describe("EnginePort interface compliance", () => {
       prompt: "p",
       resumeSessionId: "sess-1",
       model: "gpt-5",
+      reasoningEffort: "xhigh",
       systemPrompt: "be brief",
       extraEnv: { CODEX_API_KEY: "test-api-key" },
     };

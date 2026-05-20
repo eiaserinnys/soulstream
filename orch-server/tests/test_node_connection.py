@@ -362,6 +362,25 @@ class TestAttachmentPaths:
         sent = ws.send_json.call_args[0][0]
         assert "extra_context_items" not in sent
 
+    async def test_send_create_session_includes_reasoning_effort(self, node, ws):
+        """reasoning_effort가 있으면 camelCase wire 키로 전달한다."""
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            req_id = data["requestId"]
+            if req_id in node._pending:
+                node._pending[req_id].set_result({"agentSessionId": "sess-r"})
+
+        ws.send_json.side_effect = resolve_future
+
+        await node.send_create_session(
+            prompt="test",
+            session_id="sid-1",
+            reasoning_effort="medium",
+        )
+
+        sent = ws.send_json.call_args[0][0]
+        assert sent["reasoningEffort"] == "medium"
+
     async def test_send_intervene_includes_attachment_paths_when_provided(self, node, ws):
         """attachment_paths가 있으면 send_intervene payload에 포함한다."""
         async def resolve_future(*args, **kwargs):

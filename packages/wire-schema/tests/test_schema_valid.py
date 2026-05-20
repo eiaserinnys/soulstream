@@ -108,6 +108,14 @@ def test_node_register_has_supported_backends() -> None:
     assert props["supported_backends"]["default"] == ["claude"]
 
 
+def test_create_session_has_reasoning_effort() -> None:
+    schema = _load_schema()
+    create_session = schema["$defs"]["CreateSession"]
+    prop = create_session["properties"]["reasoningEffort"]
+    assert prop["type"] == "string"
+    assert prop["enum"] == ["minimal", "low", "medium", "high", "xhigh"]
+
+
 def test_oneof_covers_all_wire_messages() -> None:
     schema = _load_schema()
     oneof_refs = {entry["$ref"].rsplit("/", 1)[-1] for entry in schema["oneOf"]}

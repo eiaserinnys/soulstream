@@ -17,7 +17,7 @@
  */
 
 import type { ContextItem } from "../context/prompt_assembler.js";
-import type { EnginePort } from "../engine/protocol.js";
+import type { EnginePort, ReasoningEffort } from "../engine/protocol.js";
 
 /** task lifecycle 상태. Python `TaskStatus` enum과 값 일치 (DB sessions.status 컬럼 정본). */
 export type TaskStatus = "running" | "completed" | "error" | "interrupted";
@@ -93,6 +93,8 @@ export interface Task {
 
   /** 모델 override (Codex SDK ThreadOptions.model). */
   model?: string;
+  /** 추론 모델 effort override. Codex는 ThreadOptions.modelReasoningEffort로 전달. */
+  reasoningEffort?: ReasoningEffort;
 
   /** 첫 turn prompt와 user_message.context에 함께 박을 외부 context items. */
   contextItems?: ContextItem[];

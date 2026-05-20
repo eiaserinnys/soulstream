@@ -7,6 +7,21 @@
 
 import type { SessionSummary } from "./session-types";
 
+export type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh";
+
+export const DEFAULT_REASONING_EFFORT: ReasoningEffort = "xhigh";
+
+export const REASONING_EFFORT_OPTIONS: readonly {
+  value: ReasoningEffort;
+  label: string;
+}[] = [
+  { value: "minimal", label: "Minimal" },
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+  { value: "xhigh", label: "X High" },
+];
+
 // === JSONL Record ===
 
 /** EventStore JSONL 레코드 형식 (파일의 한 줄) */
@@ -26,6 +41,8 @@ export interface CreateSessionRequest {
   folderId?: string;
   /** 에이전트 프로필 ID. 지정 시 해당 에이전트로 세션 실행. */
   profile?: string;
+  /** 추론 backend(codex/claude)용 reasoning effort. 생략 시 서버 기본값 xhigh. */
+  reasoningEffort?: ReasoningEffort;
 }
 
 /** POST /api/sessions 응답 */

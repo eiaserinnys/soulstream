@@ -29,6 +29,8 @@ export type SSEEventPayload = SessionEventEnvelope["event"];
  */
 export type BackendId = "claude" | "codex";
 
+export type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh";
+
 // === 콜백 시그니처 ===
 
 /**
@@ -67,6 +69,8 @@ export interface EngineExecuteParams {
   imageAttachmentPaths?: string[];
   resumeSessionId?: string;
   model?: string;
+  /** Codex SDK ThreadOptions.modelReasoningEffort. Missing defaults to xhigh at adapter boundary. */
+  reasoningEffort?: ReasoningEffort;
   /**
    * 시스템 프롬프트. 백엔드별 지원 여부:
    * - Claude SDK: `ClaudeAgentOptions.system_prompt`로 직접 매핑.

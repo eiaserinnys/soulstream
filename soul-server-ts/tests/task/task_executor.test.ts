@@ -156,6 +156,34 @@ describe("TaskExecutor.startExecution", () => {
     });
   });
 
+  it("task.reasoningEffort를 engine.execute params로 전달한다", async () => {
+    const mocks = makeMocks();
+    let capturedReasoningEffort: string | undefined;
+    const engine: EnginePort = {
+      backendId: "codex",
+      workspaceDir: "/tmp/codex-default",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        capturedReasoningEffort = params.reasoningEffort;
+        yield { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+    task.reasoningEffort = "low";
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    expect(capturedReasoningEffort).toBe("low");
+  });
+
   it("engine.execute throw → status=error + finalize", async () => {
     const mocks = makeMocks();
     const engine = makeFakeEngine(

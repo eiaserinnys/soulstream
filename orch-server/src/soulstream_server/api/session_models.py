@@ -4,9 +4,11 @@ Sessions API Request/Response 모델.
 sessions.py 라우터가 사용하는 Pydantic 모델 정의.
 """
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+
+ReasoningEffort = Literal["minimal", "low", "medium", "high", "xhigh"]
 
 
 class CreateSessionRequest(BaseModel):
@@ -32,6 +34,8 @@ class CreateSessionRequest(BaseModel):
     attachmentPaths: Optional[list[str]] = None
     caller_info: Optional[dict] = None  # 발신자 정보. 비어있으면 서버가 HTTP Request에서 조립한다.
     model: Optional[str] = None
+    # Codex 전용. SessionRouter가 backend=codex인 경우에만 노드 wire로 전달한다.
+    reasoningEffort: Optional[ReasoningEffort] = None
 
 
 class InterveneRequest(BaseModel):

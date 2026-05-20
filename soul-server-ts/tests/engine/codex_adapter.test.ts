@@ -91,6 +91,96 @@ describe("CodexEngineAdapter — 기본 lifecycle", () => {
   });
 });
 
+describe("CodexEngineAdapter — reasoning effort", () => {
+  it("model 미지정이면 기본 xhigh를 startThread에 전달", async () => {
+    const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
+    mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });
+    mockRunStreamed.mockResolvedValue({ events: eventStream([]) });
+
+    const engine = new CodexEngineAdapter(
+      { workspaceDir: "/tmp/work" },
+      silentLogger(),
+    );
+    for await (const _ of engine.execute({ prompt: "x" })) {
+      // drain
+    }
+
+    expect(mockStartThread.mock.calls[0][0]).toMatchObject({
+      modelReasoningEffort: "xhigh",
+    });
+  });
+
+  it("요청 effort를 ThreadOptions.modelReasoningEffort로 전달", async () => {
+    const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
+    mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });
+    mockRunStreamed.mockResolvedValue({ events: eventStream([]) });
+
+    const engine = new CodexEngineAdapter(
+      { workspaceDir: "/tmp/work" },
+      silentLogger(),
+    );
+    for await (const _ of engine.execute({
+      prompt: "x",
+      model: "gpt-5.5",
+      reasoningEffort: "medium",
+    })) {
+      // drain
+    }
+
+    expect(mockStartThread.mock.calls[0][0]).toMatchObject({
+      model: "gpt-5.5",
+      modelReasoningEffort: "medium",
+    });
+  });
+
+  it("명백한 비추론 모델이면 reasoning effort를 drop하고 warn 로그를 남긴다", async () => {
+    const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
+    mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });
+    mockRunStreamed.mockResolvedValue({ events: eventStream([]) });
+    const warnSpy: string[] = [];
+    const logger = pino({ level: "warn" });
+    logger.warn = ((obj: unknown, msg?: string) => {
+      warnSpy.push(String(msg ?? obj));
+    }) as typeof logger.warn;
+
+    const engine = new CodexEngineAdapter({ workspaceDir: "/tmp/work" }, logger);
+    for await (const _ of engine.execute({
+      prompt: "x",
+      model: "gpt-4o",
+      reasoningEffort: "high",
+    })) {
+      // drain
+    }
+
+    const options = mockStartThread.mock.calls[0][0] as Record<string, unknown>;
+    expect(options.model).toBe("gpt-4o");
+    expect(options.modelReasoningEffort).toBeUndefined();
+    expect(warnSpy.join("\n")).toContain("dropping reasoning effort");
+  });
+
+  it("gpt-4-turbo도 비추론 모델로 보고 reasoning effort를 drop한다", async () => {
+    const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
+    mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });
+    mockRunStreamed.mockResolvedValue({ events: eventStream([]) });
+
+    const engine = new CodexEngineAdapter(
+      { workspaceDir: "/tmp/work" },
+      silentLogger(),
+    );
+    for await (const _ of engine.execute({
+      prompt: "x",
+      model: "gpt-4-turbo",
+      reasoningEffort: "high",
+    })) {
+      // drain
+    }
+
+    const options = mockStartThread.mock.calls[0][0] as Record<string, unknown>;
+    expect(options.model).toBe("gpt-4-turbo");
+    expect(options.modelReasoningEffort).toBeUndefined();
+  });
+});
+
 describe("CodexEngineAdapter — env sanitize (OAuth fallback 보호)", () => {
   it("빈 문자열 OPENAI_API_KEY는 SDK env에 포함되지 않는다", async () => {
     const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
@@ -221,6 +311,7 @@ describe("CodexEngineAdapter.execute — 새 thread", () => {
       skipGitRepoCheck: true,
       approvalPolicy: "never",
       sandboxMode: "danger-full-access",
+      modelReasoningEffort: "xhigh",
     });
     expect(mockResumeThread).not.toHaveBeenCalled();
     expect(sseEvents[0]).toEqual({ type: "session", session_id: "thr-1" });
@@ -372,6 +463,7 @@ describe("CodexEngineAdapter.execute — 새 thread", () => {
       approvalPolicy: "never",
       sandboxMode: "danger-full-access",
       model: "gpt-5",
+      modelReasoningEffort: "xhigh",
     });
   });
 
@@ -579,6 +671,7 @@ describe("CodexEngineAdapter.execute — 세션 resume", () => {
       skipGitRepoCheck: true,
       approvalPolicy: "never",
       sandboxMode: "danger-full-access",
+      modelReasoningEffort: "xhigh",
     });
     expect(mockStartThread).not.toHaveBeenCalled();
   });

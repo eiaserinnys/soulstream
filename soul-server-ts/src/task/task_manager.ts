@@ -25,7 +25,7 @@ import type { ContextItem } from "../context/prompt_assembler.js";
 
 import type { CallerInfo, InterventionMessage, Task, TaskStatus } from "./task_models.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
-import type { SSEEventPayload } from "../engine/protocol.js";
+import type { ReasoningEffort, SSEEventPayload } from "../engine/protocol.js";
 
 export interface CreateTaskParams {
   agentSessionId: string;
@@ -34,6 +34,7 @@ export interface CreateTaskParams {
   callerSessionId?: string | null;
   callerInfo?: CallerInfo;
   model?: string;
+  reasoningEffort?: ReasoningEffort;
   folderId?: string | null;
   /** B-6 context_builder: 사용자/위임자 system_prompt. folder_prompt와 합성됨. */
   systemPrompt?: string;
@@ -118,6 +119,7 @@ export class TaskManager {
       callerInfo: params.callerInfo,
       metadata: metadata ? [metadata] : [],
       model: params.model,
+      reasoningEffort: params.reasoningEffort,
       systemPrompt: params.systemPrompt,  // B-6 context_builder
       contextItems: params.contextItems,
       attachmentPaths: params.attachmentPaths,

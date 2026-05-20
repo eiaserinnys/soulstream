@@ -12,6 +12,7 @@ import type { TaskExecutor } from "../task/task_executor.js";
 import { buildAttachmentContextItems, splitAttachmentPaths } from "../task/attachment_context.js";
 import type { TaskManager } from "../task/task_manager.js";
 import type { CallerInfo, Task } from "../task/task_models.js";
+import type { ReasoningEffort } from "../engine/protocol.js";
 
 export type SendFn = (data: unknown) => Promise<void>;
 
@@ -31,6 +32,7 @@ interface CreateSessionCmd extends CommandLike {
   attachment_paths?: string[];
   extra_context_items?: ContextItem[];
   model?: string;
+  reasoningEffort?: ReasoningEffort;
   folderId?: string | null;
   /**
    * B-6 context_builder: 사용자/위임자가 지정한 system_prompt (Python `command_handler.py`
@@ -184,6 +186,7 @@ export class CommandDispatcher {
       callerSessionId: cmd.caller_session_id ?? null,
       callerInfo: cmd.caller_info,
       model: cmd.model,
+      reasoningEffort: cmd.reasoningEffort,
       folderId: cmd.folderId ?? null,
       systemPrompt: cmd.systemPrompt,  // B-6 context_builder가 folder_prompt와 합성
       contextItems: cmd.extra_context_items ?? buildAttachmentContextItems(nonImagePaths),

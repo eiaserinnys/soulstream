@@ -62,6 +62,39 @@ async def test_profile_matches_backend():
     assert nid == "n1"
 
 
+async def test_reasoning_effort_only_forwarded_for_codex_backend():
+    """reasoningEffort는 codex backend일 때만 노드 wire로 넘긴다."""
+    codex_node = _make_node("codex-node", ["codex"])
+    codex_router = SessionRouter(
+        _make_node_manager([codex_node], agent_profile={"backend": "codex"})
+    )
+    await codex_router.route_create_session(
+        {"prompt": "hi", "profile": "cody", "reasoningEffort": "medium"}
+    )
+    assert codex_node.send_create_session.call_args.kwargs["reasoning_effort"] == "medium"
+
+    claude_node = _make_node("claude-node", ["claude"])
+    claude_router = SessionRouter(
+        _make_node_manager([claude_node], agent_profile={"backend": "claude"})
+    )
+    await claude_router.route_create_session(
+        {"prompt": "hi", "profile": "roselin", "reasoningEffort": "medium"}
+    )
+    assert claude_node.send_create_session.call_args.kwargs["reasoning_effort"] is None
+
+
+async def test_reasoning_effort_forwarded_for_single_backend_codex_node_without_profile():
+    """profile이 없어도 codex 전용 노드면 reasoningEffort를 넘긴다."""
+    codex_node = _make_node("codex-node", ["codex"])
+    router = SessionRouter(_make_node_manager([codex_node]))
+
+    await router.route_create_session(
+        {"prompt": "hi", "nodeId": "codex-node", "reasoningEffort": "low"}
+    )
+
+    assert codex_node.send_create_session.call_args.kwargs["reasoning_effort"] == "low"
+
+
 async def test_no_matching_backend_503():
     """agent.backend를 지원하는 노드 없으면 503 NoMatchingBackendNode."""
     n1 = _make_node("n1", ["claude"])

@@ -8,7 +8,7 @@ soul-server의 POST /execute와 동일한 인터페이스를 제공한다.
 import asyncio
 import json
 import logging
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
@@ -18,6 +18,8 @@ from soulstream_server.api.node_utils import find_session_node
 from soulstream_server.service.session_router import SessionRouter
 
 logger = logging.getLogger(__name__)
+
+ReasoningEffort = Literal["minimal", "low", "medium", "high", "xhigh"]
 
 
 # --- Request Model ---
@@ -33,6 +35,7 @@ class ExecuteProxyRequest(BaseModel):
     disallowed_tools: Optional[list[str]] = None
     context_items: Optional[list[dict]] = None
     model: Optional[str] = None
+    reasoningEffort: Optional[ReasoningEffort] = None
     folder_id: Optional[str] = None
     system_prompt: Optional[str] = None
     profile: Optional[str] = Field(
@@ -98,6 +101,8 @@ def create_execute_proxy_router(
             request_dict["system_prompt"] = body.system_prompt
         if body.model is not None:
             request_dict["model"] = body.model
+        if body.reasoningEffort is not None:
+            request_dict["reasoningEffort"] = body.reasoningEffort
         if body.caller_info is not None:
             request_dict["caller_info"] = body.caller_info
         else:

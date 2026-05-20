@@ -178,6 +178,7 @@ class TestNewMode:
             "prompt": "hello",
             "profile": "test-agent",
             "model": "claude-sonnet",
+            "reasoningEffort": "high",
         })
 
         mock_session_router.route_create_session.assert_called_once()
@@ -185,6 +186,7 @@ class TestNewMode:
         assert call_args["prompt"] == "hello"
         assert call_args["profile"] == "test-agent"
         assert call_args["model"] == "claude-sonnet"
+        assert call_args["reasoningEffort"] == "high"
 
     async def test_new_session_broadcasts_catalog(
         self, exec_client, mock_session_router, mock_node_manager, mock_node, mock_catalog_service

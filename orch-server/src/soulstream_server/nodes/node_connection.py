@@ -200,6 +200,7 @@ class NodeConnection:
         attachment_paths: list[str] | None = None,
         caller_info: dict | None = None,
         model: str | None = None,
+        reasoning_effort: str | None = None,
         extra_context_items: list[dict] | None = None,
     ) -> dict:
         payload: dict[str, Any] = {"prompt": prompt}
@@ -240,6 +241,8 @@ class NodeConnection:
             }]
         if model is not None:
             payload["model"] = model
+        if reasoning_effort is not None:
+            payload["reasoningEffort"] = reasoning_effort
         return await self._send_command(CMD_CREATE_SESSION, payload)
 
     async def send_intervene(

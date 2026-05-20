@@ -125,6 +125,7 @@ class CreateSession(TypedDict):
     context_items: NotRequired[list[dict[str, Any]]]
     extra_context_items: NotRequired[list[dict[str, Any]]]
     caller_info: NotRequired[dict[str, Any]]
+    reasoningEffort: NotRequired[Literal['minimal', 'low', 'medium', 'high', 'xhigh']]
 
 
 class Intervene(TypedDict):

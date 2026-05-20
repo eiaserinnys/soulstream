@@ -57,6 +57,7 @@ function createDispatcher(opts: {
         callerSessionId: params.callerSessionId ?? undefined,
         callerInfo: params.callerInfo,
         model: params.model,
+        reasoningEffort: params.reasoningEffort,
         contextItems: params.contextItems,
         attachmentPaths: params.attachmentPaths,
         createdAt: new Date(),
@@ -165,6 +166,18 @@ describe("CommandDispatcher.create_session", () => {
       extra_context_items: contextItems,
     });
     expect(createdTasks[0].contextItems).toEqual(contextItems);
+  });
+
+  it("reasoningEffort를 createTask로 전달", async () => {
+    const { dispatcher, createdTasks } = createDispatcher();
+    await dispatcher.dispatch({
+      type: "create_session",
+      agentSessionId: "sess-reasoning",
+      prompt: "think",
+      profile: "codex-default",
+      reasoningEffort: "medium",
+    });
+    expect(createdTasks[0].reasoningEffort).toBe("medium");
   });
 
   it("attachment_paths만 오면 비이미지만 attached_files contextItems로 변환하고 전체 경로는 task에 보존", async () => {

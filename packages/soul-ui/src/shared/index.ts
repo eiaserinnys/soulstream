@@ -7,6 +7,7 @@
 
 // === Constants ===
 export { SYSTEM_FOLDERS, DEFAULT_FOLDER_KEY, SSE_EVENT_TYPES } from "./constants";
+export { DEFAULT_REASONING_EFFORT, REASONING_EFFORT_OPTIONS } from "./api-types";
 
 // === Types (types.ts is itself a barrel) ===
 export type {
@@ -62,6 +63,7 @@ export type {
   EventTreeNode,
   CreateSessionRequest,
   CreateSessionResponse,
+  ReasoningEffort,
   SendMessageRequest,
   InterveneResponse,
   SendRespondRequest,

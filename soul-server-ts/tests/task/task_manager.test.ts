@@ -125,6 +125,20 @@ describe("TaskManager.createTask", () => {
     expect(emptyCaller.metadata).toEqual([]);
   });
 
+  it("reasoningEffort를 task에 보존한다", async () => {
+    const { db, broadcaster } = makeMocks();
+    const tm = new TaskManager("n", db, broadcaster, silentLogger);
+
+    const task = await tm.createTask({
+      agentSessionId: "s-reasoning",
+      prompt: "x",
+      profileId: "a",
+      reasoningEffort: "high",
+    });
+
+    expect(task.reasoningEffort).toBe("high");
+  });
+
   it("중복 agentSessionId → throw, DB·broadcast 호출 안 함", async () => {
     const { db, broadcaster, registerSession, emitSessionCreated } = makeMocks();
     const tm = new TaskManager("n", db, broadcaster, silentLogger);
