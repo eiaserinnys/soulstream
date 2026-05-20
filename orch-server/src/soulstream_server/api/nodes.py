@@ -77,6 +77,7 @@ def create_nodes_router(
                     else ""
                 ),
                 "max_turns": p.get("max_turns"),
+                "backend": p.get("backend", "claude"),
             }
             for agent_id, p in node.agent_profiles.items()
         ]

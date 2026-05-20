@@ -34,6 +34,7 @@ export const createOptimisticSessionSlice: StateCreator<
     agentId,
     agentName,
     agentPortraitUrl,
+    backend,
   ) => {
     let catalog = get().catalog;
     const userConfig = get().dashboardConfig?.user;
@@ -49,6 +50,7 @@ export const createOptimisticSessionSlice: StateCreator<
       ...(agentId ? { agentId } : {}),
       ...(agentName ? { agentName } : {}),
       ...(agentPortraitUrl ? { agentPortraitUrl } : {}),
+      ...(backend ? { backend } : {}),
       ...(userConfig?.name && userConfig.name !== "USER" ? { userName: userConfig.name } : {}),
       ...(userConfig?.portraitUrl ? { userPortraitUrl: userConfig.portraitUrl } : {}),
     };

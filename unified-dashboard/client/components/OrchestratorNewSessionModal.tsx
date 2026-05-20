@@ -175,6 +175,7 @@ export function OrchestratorNewSessionModal() {
         selectedAgentId || null,
         selectedAgent?.name ?? null,
         selectedAgent?.portraitUrl ?? null,
+        selectedAgent?.backend ?? null,
       );
       clearDraft(draftKey);
       closeNewSessionModal();

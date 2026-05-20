@@ -742,6 +742,26 @@ describe("dashboard-store", () => {
       expect(useDashboardStore.getState().activeSessionSummary?.nodeId).toBe("silent-manari");
     });
 
+    it("should include agent backend when provided", () => {
+      const qc = makeTestQueryClient();
+      seedQueryClient(qc, []);
+
+      useDashboardStore.getState().addOptimisticSession(
+        qc,
+        "sess-backend",
+        "hi",
+        "folder-1",
+        "node-1",
+        "codex-default",
+        "Codex Default",
+        "/api/nodes/node-1/agents/codex-default/portrait",
+        "codex",
+      );
+
+      expect(useDashboardStore.getState().activeSessionSummary?.backend).toBe("codex");
+      expect(getQuerySessions(qc)[0].backend).toBe("codex");
+    });
+
     it("should include dashboard user profile in optimistic summary", () => {
       const qc = makeTestQueryClient();
       seedQueryClient(qc, []);

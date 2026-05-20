@@ -42,7 +42,13 @@ def mock_registry_empty():
 def mock_registry_with_agents():
     """에이전트가 있는 레지스트리"""
     return AgentRegistry([
-        AgentProfile(id="agent1", name="Agent One", workspace_dir="/ws1", portrait_path="/img/one.png"),
+        AgentProfile(
+            id="agent1",
+            name="Agent One",
+            workspace_dir="/ws1",
+            portrait_path="/img/one.png",
+            backend="codex",
+        ),
         AgentProfile(id="agent2", name="Agent Two", workspace_dir="/ws2"),
     ])
 
@@ -77,9 +83,11 @@ class TestGetDashboardConfig:
         assert data["agents"][0]["name"] == "Agent One"
         assert data["agents"][0]["hasPortrait"] is True
         assert data["agents"][0]["portraitUrl"] == "/api/agents/agent1/portrait"
+        assert data["agents"][0]["backend"] == "codex"
         assert data["agents"][1]["id"] == "agent2"
         assert data["agents"][1]["hasPortrait"] is False
         assert data["agents"][1]["portraitUrl"] is None
+        assert data["agents"][1]["backend"] == "claude"
 
     def test_empty_agents_when_no_registry(self, mock_settings, mock_registry_empty):
         """agents.yaml이 없으면 agents 빈 배열 반환"""

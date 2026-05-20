@@ -32,6 +32,7 @@ export interface DashboardAgentConfig {
   name: string;
   hasPortrait: boolean;
   portraitUrl: string | null;
+  backend?: string | null;
 }
 
 export interface DashboardConfig {
@@ -247,6 +248,7 @@ export interface DashboardActions {
     agentId?: string | null,
     agentName?: string | null,
     agentPortraitUrl?: string | null,
+    backend?: string | null,
   ) => void;
 
   // New Session 모달

@@ -131,6 +131,7 @@ export function NewSessionModal() {
         selectedAgentId || null,
         selectedAgent?.name ?? null,
         selectedAgent?.portraitUrl ?? null,
+        selectedAgent?.backend ?? null,
       );
       closeModal();
       setSelectedAgentId("");

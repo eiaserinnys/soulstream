@@ -44,6 +44,7 @@ export interface AgentInfo {
   name: string;
   portraitUrl?: string | null;
   max_turns?: number | null;
+  backend?: string | null;
 }
 
 /** 에이전트 프로필 (SessionSummary에 포함되는 필드) */

@@ -32,6 +32,7 @@ async def get_dashboard_config():
             "name": p.name,
             "hasPortrait": bool(p.portrait_path),
             "portraitUrl": f"/api/agents/{p.id}/portrait" if p.portrait_path else None,
+            "backend": p.backend,
         }
         for p in registry.list()
     ]

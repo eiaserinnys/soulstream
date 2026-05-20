@@ -91,6 +91,34 @@ class TestDetectPortraitMime:
         assert _detect_portrait_mime(b"\x00\x01\x02\x03") == "application/octet-stream"
 
 
+class TestListNodeAgents:
+    """GET /api/nodes/{node_id}/agents tests."""
+
+    async def test_returns_backend_for_agent_profiles(self, client, node_manager):
+        """노드 agent 목록은 optimistic session 배지에 필요한 backend를 포함한다."""
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+        node = await node_manager.register_node(ws, {
+            "node_id": "n1", "host": "10.0.0.1", "port": 4100,
+        })
+        node.set_agent_data({
+            "codex-default": {
+                "name": "Codex Default",
+                "portrait_url": "/api/agents/codex-default/portrait",
+                "max_turns": None,
+                "backend": "codex",
+            },
+        }, {})
+
+        resp = await client.get("/api/nodes/n1/agents")
+
+        assert resp.status_code == 200
+        agent = resp.json()["agents"][0]
+        assert agent["id"] == "codex-default"
+        assert agent["backend"] == "codex"
+
+
 class TestPortraitProxy:
     """portrait 캐시 서빙 테스트."""
 
