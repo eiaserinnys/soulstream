@@ -176,6 +176,11 @@
   animation: caret-blink 1s steps(2, end) infinite;
 }
 
+.chat-message-selectable {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 /* 모바일 탭 패널 fade 전환 — keepMounted + [hidden] 오버라이드.
    base-ui TabsPanel(ui/tabs.tsx L70-78)은 data-slot="tabs-content"를 부여한다.
    .mobile-tabs 스코프 내에서만 동작하여 다른 Tabs 사용처에는 영향을 주지 않는다. */

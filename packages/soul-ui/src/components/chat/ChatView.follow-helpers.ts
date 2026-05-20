@@ -39,6 +39,19 @@ export const SESSION_SETTLE_THRESHOLD_MS = 300;
 export const PREPEND_SETTLE_THRESHOLD_MS = 500;
 
 /**
+ * Virtuoso `followOutput` 값을 결정한다.
+ *
+ * scalar `"auto"`는 Virtuoso 내부 at-bottom 판정이 true일 때만 스크롤한다.
+ * 대시보드의 Follow 버튼은 사용자 의도 정본이므로, 켜져 있을 때는 내부 판정이
+ * 잠깐 false로 흔들려도 새 출력에 대해 끝 정렬을 요청한다.
+ */
+export function resolveFollowOutput(
+  userFollowing: boolean,
+): "auto" | false {
+  return userFollowing ? "auto" : false;
+}
+
+/**
  * Virtuoso atBottomStateChange 보고를 받아 다음 isFollowing 값을 결정한다.
  *
  * @param reportedAtBottom Virtuoso가 보고한 atBottom 값

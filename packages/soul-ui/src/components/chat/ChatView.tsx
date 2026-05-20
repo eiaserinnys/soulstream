@@ -27,7 +27,10 @@ import { groupMessages } from "../../lib/grouping";
 import { VirtualizedItem } from "./VirtualizedItem";
 import { useMessageHistoryBuffer } from "./useMessageHistoryBuffer";
 import { computeFirstItemIndex, findFocusIndex } from "./ChatView.reverse-helpers";
-import { decideFollowOnAtBottomChange } from "./ChatView.follow-helpers";
+import {
+  decideFollowOnAtBottomChange,
+  resolveFollowOutput,
+} from "./ChatView.follow-helpers";
 
 interface ChatViewProps {
   chatInputDisabled?: boolean;
@@ -89,6 +92,10 @@ export function ChatView({
   // ref로 effect 내부에서 최신 상태를 참조 (effect deps에서 제거하여 불필요한 재실행 방지)
   const isFollowingRef = useRef(true);
   useEffect(() => { isFollowingRef.current = isFollowing; }, [isFollowing]);
+  const resolveVirtuosoFollowOutput = useCallback(
+    () => resolveFollowOutput(isFollowingRef.current),
+    [],
+  );
   /**
    * 같은 focusEventId에 대해 `itemsRendered`가 반복 호출되어도 하이라이트 타이머가
    * 중첩되지 않도록 1회 처리 후 여기에 기록한다. 세션 전환 시 null로 초기화.
@@ -174,6 +181,28 @@ export function ChatView({
     });
   }, [grouped.length, firstItemIndex]);
 
+  const VirtuosoHeader = useCallback(
+    () => (
+      <>
+        {history.loading && (
+          <div className="p-2 text-center text-muted-foreground text-xs">
+            Loading earlier messages...
+          </div>
+        )}
+        {history.reachedTop && (
+          <div className="py-2 px-3 text-center text-muted-foreground text-xs opacity-60">
+            {"\u2014"} Beginning of conversation {"\u2014"}
+          </div>
+        )}
+      </>
+    ),
+    [history.loading, history.reachedTop],
+  );
+  const virtuosoComponents = useMemo(
+    () => ({ Header: VirtuosoHeader }),
+    [VirtuosoHeader],
+  );
+
   if (!activeSessionKey) {
     return (
       <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
@@ -183,21 +212,16 @@ export function ChatView({
   }
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="flex flex-col h-full min-h-0 overflow-hidden">
       {messages.length === 0 && !history.loading && (
         <div className="p-5 text-center text-muted-foreground text-sm">
           Waiting for events...
         </div>
       )}
-      {/* Phase 3: 과거 페이지 로딩 / 맨 위 도달 인디케이터 */}
-      {history.loading && (
+      {/* 빈 세션의 초기 로딩만 외부에 표시한다. 메시지가 있으면 header를 Virtuoso 안에 둔다. */}
+      {messages.length === 0 && history.loading && (
         <div className="p-2 text-center text-muted-foreground text-xs">
           Loading earlier messages...
-        </div>
-      )}
-      {history.reachedTop && messages.length > 0 && (
-        <div className="py-2 px-3 text-center text-muted-foreground text-xs opacity-60">
-          {"\u2014"} Beginning of conversation {"\u2014"}
         </div>
       )}
 
@@ -214,11 +238,13 @@ export function ChatView({
             grouped.length > 0 ? { index: grouped.length - 1, align: "end" } : 0
           }
           alignToBottom
-          // isFollowing=false (사용자가 위로 스크롤한 상태)일 때는 auto-follow 비활성화.
-          // 그렇지 않으면 prepend로 데이터가 늘어날 때마다 Virtuoso가 맨 아래로 끌어내려
-          // 사용자 스크롤 위치가 흔들리고(플리커) follow 버튼 후 최신 메시지 미표시 등의
-          // 부작용이 발생한다. follow 버튼 클릭 시 setIsFollowing(true)으로 다시 활성화.
-          followOutput={isFollowing ? "auto" : false}
+          atBottomThreshold={48}
+          increaseViewportBy={{ top: 800, bottom: 400 }}
+          components={virtuosoComponents}
+          // Follow 버튼 상태가 사용자 의도 정본이다. scalar "auto"는 Virtuoso 내부
+          // at-bottom 판정이 false로 흔들리면 버튼이 켜져 있어도 따라가지 않으므로,
+          // callback 형태로 명시적 follow 의도를 반환한다.
+          followOutput={resolveVirtuosoFollowOutput}
           atBottomStateChange={(atBottom) => {
             // 두 가지 measure 깜빡임을 모두 가드한다:
             //   - 세션 전환 직후 atBottom=false 깜빡임 (sessionMs 기반)
@@ -273,7 +299,7 @@ export function ChatView({
               setFocusEventId(null);
             }, 2000);
           }}
-          className="flex-1 overflow-x-hidden py-2 overscroll-none"
+          className="flex-1 min-h-0 overflow-x-hidden py-2 overscroll-none"
         />
       )}
 

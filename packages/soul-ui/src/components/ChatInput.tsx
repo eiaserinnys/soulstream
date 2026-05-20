@@ -89,7 +89,15 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
     resetLocal,
     clearDraft,
     setActiveSession,
+    onBeforeSend: () => {
+      setText("");
+      if (activeSessionKey) clearDraft(activeSessionKey);
+    },
     onAfterSend: () => setText(""),
+    onSendError: (failedText) => {
+      setText(failedText);
+      if (activeSessionKey) setDraft(activeSessionKey, failedText);
+    },
   });
 
   // 세션 변경 시 상태 초기화 & in-flight 요청 취소

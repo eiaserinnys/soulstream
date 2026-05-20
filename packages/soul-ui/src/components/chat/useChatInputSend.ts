@@ -34,8 +34,12 @@ export interface UseChatInputSendArgs {
   resetLocal: () => void;
   clearDraft: (key: string) => void;
   setActiveSession: (key: string) => void;
+  /** 전송 검증 통과 직후 호출: 네트워크 응답 전 입력창을 낙관적으로 비운다. */
+  onBeforeSend?: (text: string) => void;
   /** 전송 성공 시 호출: 입력 텍스트를 초기화할 수 있게 한다. */
   onAfterSend: () => void;
+  /** 전송 실패 시 호출: 낙관적으로 비운 입력값을 복원할 수 있게 한다. */
+  onSendError?: (text: string) => void;
 }
 
 export interface UseChatInputSendResult {
@@ -72,6 +76,7 @@ export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendRe
 
       setSending(true);
       setError(null);
+      args.onBeforeSend?.(trimmed);
 
       try {
         let nextSessionId: string | undefined;
@@ -112,6 +117,7 @@ export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendRe
       } catch (err) {
         // AbortError는 의도적 취소이므로 무시
         if (err instanceof DOMException && err.name === "AbortError") return;
+        args.onSendError?.(trimmed);
         setError(err instanceof Error ? err.message : "Failed to send");
       } finally {
         setSending(false);

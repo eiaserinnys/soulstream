@@ -37,6 +37,8 @@ export function OrchestratorNewSessionModal() {
   const newSessionSource = useDashboardStore((s) => s.newSessionSource);
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
   const catalog = useDashboardStore((s) => s.catalog);
+  const setDraft = useDashboardStore((s) => s.setDraft);
+  const clearDraft = useDashboardStore((s) => s.clearDraft);
   const nodes = useOrchestratorStore((s) => s.nodes);
   const [selectedNodeId, setSelectedNodeId] = useState("");
   const [selectedModalFolderId, setSelectedModalFolderId] = useState<string | null>(null);
@@ -52,6 +54,17 @@ export function OrchestratorNewSessionModal() {
 
   // '클로드 코드 세션' 폴더 ID
   const claudeFolder = catalog?.folders.find((f) => f.name === '클로드 코드 세션');
+  const draftKey = `__draft__orchestrator__${selectedNodeId || "null"}__${selectedModalFolderId ?? "null"}`;
+  const initialDraft = useMemo(() => {
+    return useDashboardStore.getState().drafts[draftKey] ?? "";
+  }, [draftKey, isModalOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleDraftChange = useCallback(
+    (value: string) => {
+      setDraft(draftKey, value);
+    },
+    [draftKey, setDraft],
+  );
 
   // 폴더 초기화 1회 제한 — catalog 갱신 시 사용자 선택을 덮어쓰지 않도록
   const folderInitialized = useRef(false);
@@ -163,13 +176,14 @@ export function OrchestratorNewSessionModal() {
         selectedAgent?.name ?? null,
         selectedAgent?.portraitUrl ?? null,
       );
+      clearDraft(draftKey);
       closeNewSessionModal();
       setSelectedNodeId("");
       setSelectedModalFolderId(null);
       setSelectedAgentId("");
       setSelectedOAuthProfile(null);
     },
-    [selectedNodeId, selectedModalFolderId, selectedAgentId, selectedOAuthProfile, agents, closeNewSessionModal],
+    [selectedNodeId, selectedModalFolderId, selectedAgentId, selectedOAuthProfile, agents, clearDraft, draftKey, closeNewSessionModal],
   );
 
   const folderSelector = (
@@ -300,6 +314,8 @@ export function OrchestratorNewSessionModal() {
       agentSelector={agentSelector}
       oauthProfileSelector={oauthProfileSelector}
       submitDisabled={!selectedNodeId}
+      initialDraft={initialDraft}
+      onDraftChange={handleDraftChange}
       fileUploadUrl={
         selectedNodeId
           ? `/api/attachments/sessions?nodeId=${encodeURIComponent(selectedNodeId)}`

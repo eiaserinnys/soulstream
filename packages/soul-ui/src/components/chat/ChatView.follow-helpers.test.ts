@@ -17,9 +17,20 @@
 import { describe, it, expect } from "vitest";
 import {
   decideFollowOnAtBottomChange,
+  resolveFollowOutput,
   SESSION_SETTLE_THRESHOLD_MS,
   PREPEND_SETTLE_THRESHOLD_MS,
 } from "./ChatView.follow-helpers";
+
+describe("resolveFollowOutput — Follow 버튼 의도 정본", () => {
+  it("Follow가 켜져 있으면 Virtuoso에 끝 정렬을 요청한다", () => {
+    expect(resolveFollowOutput(true)).toBe("auto");
+  });
+
+  it("Follow가 꺼져 있으면 Virtuoso 자동 끝 정렬을 비활성화한다", () => {
+    expect(resolveFollowOutput(false)).toBe(false);
+  });
+});
 
 describe("decideFollowOnAtBottomChange — session settle 가드 (false 보고)", () => {
   it("atBottom=false 이고 sessionMs < settle → null (measure 깜빡임 무시)", () => {

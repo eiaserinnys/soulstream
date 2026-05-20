@@ -76,7 +76,7 @@ export const UserMessage = memo(function UserMessage({ msg, llmContext }: { msg:
             </span>
           )}
         </div>
-        <div className="text-base leading-snug text-foreground break-words">
+        <div className="chat-message-selectable text-base leading-snug text-foreground break-words">
           <MarkdownContent content={msg.content} />
         </div>
         {msg.contextItems && msg.contextItems.length > 0 && (
