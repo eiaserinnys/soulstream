@@ -17,6 +17,7 @@ import {
   buildClaudeEnvironment,
   normalizeClaudeModel,
 } from "./claude_options.js";
+import { ClaudeSdkClient } from "./claude_sdk_client.js";
 
 export {
   CLAUDE_OAUTH_TOKEN_ENV,
@@ -24,6 +25,7 @@ export {
   buildClaudeEnvironment,
   normalizeClaudeModel,
 } from "./claude_options.js";
+export { ClaudeSdkClient } from "./claude_sdk_client.js";
 export type { ClaudeClientEvent } from "./claude_event_mapper.js";
 
 export interface ClaudeRunOptions {
@@ -66,7 +68,7 @@ export class ClaudeEngineAdapter implements EnginePort, SupportsInputResponse, S
 
   constructor(config: ClaudeAdapterConfig, logger: Logger) {
     this.workspaceDir = config.workspaceDir;
-    this.client = config.client ?? new NotConfiguredClaudeClient();
+    this.client = config.client ?? new ClaudeSdkClient({}, logger);
     this.processEnv = config.processEnv;
     this.logger = logger;
   }
@@ -227,14 +229,6 @@ export class ClaudeEngineAdapter implements EnginePort, SupportsInputResponse, S
         this.inputRequests.set(event.requestId, "expired");
       }
     }
-  }
-}
-
-class NotConfiguredClaudeClient implements ClaudeClient {
-  async *run(): AsyncIterable<ClaudeClientEvent> {
-    throw new Error(
-      "ClaudeEngineAdapter requires an injected Claude client; real Claude CLI/SDK integration is not wired in P2",
-    );
   }
 }
 

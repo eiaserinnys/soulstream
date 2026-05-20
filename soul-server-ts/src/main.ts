@@ -160,7 +160,7 @@ async function main(): Promise<void> {
     agentRegistry,
   );
 
-  // EngineFactory — backend별 분기. Claude는 P2 skeleton 단계라 주입 client 없이 명시 실패한다.
+  // EngineFactory — backend별 분기. Claude auth env는 ClaudeEngineAdapter가 SDK client로 전달한다.
   const engineFactory: EngineFactory = (agent) => {
     if (agent.backend === "codex") {
       return new CodexEngineAdapter(
