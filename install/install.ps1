@@ -31,6 +31,7 @@ $ErrorActionPreference = "Stop"
 
 $TEMPLATE_URL = "https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/haniel-standalone.yaml.template"
 $HANIEL_INSTALL_URL = "https://raw.githubusercontent.com/eiaserinnys/haniel/main/install-haniel.ps1"
+$PNPM_VERSION = "9.15.9"
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -58,6 +59,13 @@ function Write-Fail {
 function Test-CommandExists {
     param([string]$Command)
     $null -ne (Get-Command $Command -ErrorAction SilentlyContinue)
+}
+
+function Get-PnpmMajorVersion {
+    if (-not (Test-CommandExists "pnpm")) { return $null }
+    $version = (pnpm --version 2>$null).Trim()
+    if ($version -match "^(\d+)\.") { return [int]$Matches[1] }
+    return $null
 }
 
 function Read-HostWithDefault {
@@ -193,16 +201,25 @@ if (-not (Test-CommandExists "haniel")) {
 
 Write-Step "Checking pnpm..."
 
-if (-not (Test-CommandExists "pnpm")) {
-    Write-Warn "pnpm not found. Installing..."
-    npm install -g pnpm
+$pnpmMajor = Get-PnpmMajorVersion
+if ($null -eq $pnpmMajor) {
+    Write-Warn "pnpm not found. Installing pnpm@$PNPM_VERSION..."
+    npm install -g "pnpm@$PNPM_VERSION"
     if ($LASTEXITCODE -ne 0) {
         Write-Fail "pnpm installation failed."
         exit 1
     }
-    Write-Ok "pnpm installed."
+    Write-Ok "pnpm@$PNPM_VERSION installed."
+} elseif ($pnpmMajor -ne 9) {
+    Write-Warn "pnpm major version $pnpmMajor found. Installing supported pnpm@$PNPM_VERSION..."
+    npm install -g "pnpm@$PNPM_VERSION"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Fail "pnpm installation failed."
+        exit 1
+    }
+    Write-Ok "pnpm@$PNPM_VERSION installed."
 } else {
-    Write-Ok "pnpm found."
+    Write-Ok "pnpm found ($(pnpm --version))."
 }
 
 # ── step 4: user input ────────────────────────────────────────────────────────
@@ -371,7 +388,7 @@ if ($SkipDashboard) {
     Write-Warn "Dashboard directory not found at $dashboardDir — skipping build."
 } else {
     Write-Host "    Installing Node.js dependencies..." -ForegroundColor DarkGray
-    pnpm --dir $monoRepoDir install
+    pnpm --dir $monoRepoDir install --frozen-lockfile --config.strict-dep-builds=false
     if ($LASTEXITCODE -ne 0) {
         Write-Fail "pnpm install failed."
         exit 1
