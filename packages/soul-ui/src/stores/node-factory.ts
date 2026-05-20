@@ -169,7 +169,11 @@ export function createNodeFromEvent(
         `complete-${eventId}`,
         "complete",
         e.result ?? "Session completed",
-        { completed: true },
+        {
+          completed: true,
+          usage: e.usage,
+          totalCostUsd: e.total_cost_usd,
+        },
       );
     }
 

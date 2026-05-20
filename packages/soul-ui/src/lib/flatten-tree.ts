@@ -13,6 +13,7 @@ import type {
   TextNode,
   ToolNode,
   ResultNode,
+  CompleteNode,
   UserMessageNode,
   SystemMessageNode,
   InterventionNode,
@@ -20,6 +21,7 @@ import type {
   InputRequestNodeDef,
   InputRequestQuestion,
   ContextItem,
+  TokenUsage,
 } from "@shared/types";
 
 /** Chat 탭에 표시되는 메시지 단위 */
@@ -42,7 +44,7 @@ export interface ChatMessage {
   /** text/thinking 전용: 스트리밍 중 여부 */
   isStreaming?: boolean;
   /** result 전용 */
-  usage?: { input_tokens: number; output_tokens: number };
+  usage?: TokenUsage;
   totalCostUsd?: number;
   durationMs?: number;
   /** 원본 트리 노드 ID (클릭 시 Detail 연동용) */
@@ -367,6 +369,8 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
       const parts: string[] = ["Session Complete"];
       if (n.durationMs) parts.push(`${(n.durationMs / 1000).toFixed(1)}s`);
       if (n.totalCostUsd) parts.push(`$${n.totalCostUsd.toFixed(4)}`);
+      const usageStr = formatTokenUsage(n.usage);
+      if (usageStr) parts.push(usageStr);
 
       return {
         id: n.id,
@@ -406,11 +410,19 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
     }
 
     case "complete": {
+      const n = node as CompleteNode;
+      const parts: string[] = ["Turn Complete"];
+      if (n.totalCostUsd) parts.push(`$${n.totalCostUsd.toFixed(4)}`);
+      const usageStr = formatTokenUsage(n.usage);
+      if (usageStr) parts.push(usageStr);
+
       return {
         id: node.id,
         role: "system",
-        content: node.content || "Turn completed",
-        timestamp: node.timestamp,
+        content: parts.length > 1 ? parts.join("  ") : node.content || "Turn completed",
+        timestamp: n.timestamp,
+        usage: n.usage,
+        totalCostUsd: n.totalCostUsd,
         treeNodeId: node.id,
         treeNodeType: node.type,
       };
@@ -467,4 +479,22 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
     default:
       return null;
   }
+}
+
+function formatTokenUsage(usage?: TokenUsage): string | null {
+  if (!usage) return null;
+  const total = usage.input_tokens + usage.output_tokens;
+  const parts = [`${total.toLocaleString()} tokens`];
+  const details = [
+    `${usage.input_tokens.toLocaleString()} in`,
+    `${usage.output_tokens.toLocaleString()} out`,
+  ];
+  if (usage.cached_input_tokens) {
+    details.push(`${usage.cached_input_tokens.toLocaleString()} cached`);
+  }
+  if (usage.reasoning_output_tokens) {
+    details.push(`${usage.reasoning_output_tokens.toLocaleString()} reasoning`);
+  }
+  parts.push(`(${details.join(" / ")})`);
+  return parts.join(" ");
 }

@@ -51,8 +51,28 @@ function makeCompact(id: string, message: string): CompactNode {
   return { type: "compact", id, content: message, completed: true, children: [] };
 }
 
-function makeComplete(id: string, message: string): CompleteNode {
-  return { type: "complete", id, content: message, completed: true, children: [] };
+function makeComplete(
+  id: string,
+  message: string,
+  opts?: {
+    usage?: {
+      input_tokens: number;
+      output_tokens: number;
+      cached_input_tokens?: number;
+      reasoning_output_tokens?: number;
+    };
+    totalCostUsd?: number;
+  },
+): CompleteNode {
+  return {
+    type: "complete",
+    id,
+    content: message,
+    completed: true,
+    children: [],
+    usage: opts?.usage,
+    totalCostUsd: opts?.totalCostUsd,
+  };
 }
 
 function makeSystemMessage(id: string, text: string): SystemMessageNode {
@@ -311,6 +331,33 @@ describe("flattenTree", () => {
     const msgs = flattenTree(tree);
     expect(msgs[0].role).toBe("system");
     expect(msgs[0].content).toBe("Turn done");
+  });
+
+  it("complete 노드의 usage/cost를 완료 줄에 표시한다", () => {
+    const tree = makeSession([
+      makeComplete("cmp1", "Turn done", {
+        usage: {
+          input_tokens: 1000,
+          output_tokens: 500,
+          cached_input_tokens: 300,
+          reasoning_output_tokens: 50,
+        },
+        totalCostUsd: 0.0123,
+      }),
+    ]);
+
+    const msgs = flattenTree(tree);
+    expect(msgs[0].role).toBe("system");
+    expect(msgs[0].content).toBe(
+      "Turn Complete  $0.0123  1,500 tokens (1,000 in / 500 out / 300 cached / 50 reasoning)",
+    );
+    expect(msgs[0].usage).toEqual({
+      input_tokens: 1000,
+      output_tokens: 500,
+      cached_input_tokens: 300,
+      reasoning_output_tokens: 50,
+    });
+    expect(msgs[0].totalCostUsd).toBe(0.0123);
   });
 
   it("tool 에러 상태 표시", () => {

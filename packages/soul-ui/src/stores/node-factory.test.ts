@@ -31,6 +31,7 @@ import type {
   InterventionNode,
   ErrorNode,
   ResultNode,
+  CompleteNode,
   SessionNode,
   TextNode,
   InputRequestEvent,
@@ -371,6 +372,13 @@ describe("createNodeFromEvent", () => {
         type: "complete",
         result: "All done!",
         attachments: [],
+        usage: {
+          input_tokens: 100,
+          output_tokens: 50,
+          cached_input_tokens: 25,
+          reasoning_output_tokens: 10,
+        },
+        total_cost_usd: 0.0042,
       };
 
       const node = createNodeFromEvent(event, 40);
@@ -380,6 +388,13 @@ describe("createNodeFromEvent", () => {
       expect(node!.type).toBe("complete");
       expect(node!.content).toBe("All done!");
       expect(node!.completed).toBe(true);
+      expect((node as CompleteNode).usage).toEqual({
+        input_tokens: 100,
+        output_tokens: 50,
+        cached_input_tokens: 25,
+        reasoning_output_tokens: 10,
+      });
+      expect((node as CompleteNode).totalCostUsd).toBe(0.0042);
     });
 
     it("should keep empty string content for complete when result is empty", () => {

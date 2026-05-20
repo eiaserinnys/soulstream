@@ -5,11 +5,12 @@ import { CollapsibleContent } from "./CollapsibleContent";
 
 export const SystemMessage = memo(function SystemMessage({ msg }: { msg: ChatMessage }) {
   const isError = msg.isError;
-  const isResult = msg.treeNodeType === "result";
   const isComplete = msg.treeNodeType === "complete";
+  const hasCompleteStats = isComplete && (msg.usage || msg.totalCostUsd);
+  const isResult = msg.treeNodeType === "result" || !!hasCompleteStats;
 
   // complete 노드: thinking과 동일한 접기/펼치기 컴포넌트 사용
-  if (isComplete && msg.content && msg.content !== "Turn completed") {
+  if (isComplete && !hasCompleteStats && msg.content && msg.content !== "Turn completed") {
     return (
       <div className="flex gap-2 px-3 py-1" data-tree-node-id={msg.treeNodeId}>
         <span className="w-8 shrink-0" />

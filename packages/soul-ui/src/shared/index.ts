@@ -52,6 +52,7 @@ export type {
   ThinkingNode,
   TextNode,
   ToolNode,
+  TokenUsage,
   ResultNode,
   CompactNode,
   CompleteNode,

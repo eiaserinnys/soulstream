@@ -202,6 +202,15 @@ export interface CompleteEvent {
   result: string;
   attachments: string[];
   claude_session_id?: string;
+  /** 토큰 사용량 (Codex turn.completed 등) */
+  usage?: {
+    input_tokens: number;
+    output_tokens: number;
+    cached_input_tokens?: number;
+    reasoning_output_tokens?: number;
+  };
+  /** 총 비용 (USD). 제공되는 백엔드에서만 표시 */
+  total_cost_usd?: number;
   /** 부모 이벤트 ID (Phase 2: 순수 parent 기반 배치용) */
   /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
   parent_event_id?: string;

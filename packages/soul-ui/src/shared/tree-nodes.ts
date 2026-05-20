@@ -141,12 +141,19 @@ export interface ToolNode extends BaseNode {
 export interface ResultNode extends BaseNode {
   type: "result";
   durationMs?: number;
-  usage?: { input_tokens: number; output_tokens: number };
+  usage?: TokenUsage;
   totalCostUsd?: number;
   stopReason?: string;
   errors?: string[];
   modelUsage?: Record<string, unknown>;
   permissionDenials?: string[];
+}
+
+export interface TokenUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cached_input_tokens?: number;
+  reasoning_output_tokens?: number;
 }
 
 /** 컨텍스트 압축 노드 */
@@ -157,6 +164,8 @@ export interface CompactNode extends BaseNode {
 /** 세션 완료 노드 */
 export interface CompleteNode extends BaseNode {
   type: "complete";
+  usage?: TokenUsage;
+  totalCostUsd?: number;
 }
 
 /** 에러 노드 */

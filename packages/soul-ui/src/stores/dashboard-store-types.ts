@@ -15,6 +15,7 @@ import type {
   EventTreeNode,
   CatalogState,
   CatalogFolder,
+  TokenUsage,
 } from "@shared/types";
 import type { ProcessingContext } from "./processing-context";
 
@@ -48,7 +49,7 @@ export interface SelectedEventNodeData {
   label: string;
   content: string;
   durationMs?: number;
-  usage?: { input_tokens: number; output_tokens: number };
+  usage?: TokenUsage;
   totalCostUsd?: number;
   isError?: boolean;
 }
