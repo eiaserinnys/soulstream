@@ -61,6 +61,80 @@ describe("ThreadEvent top-level 매핑", () => {
   });
 });
 
+describe("Codex raw response_item 매핑 (SDK d.ts 밖 이벤트)", () => {
+  it("response_item.function_call → tool_start (spawn_agent 회귀)", () => {
+    const sse = mapThreadEvent({
+      type: "response_item",
+      payload: {
+        type: "function_call",
+        name: "spawn_agent",
+        call_id: "call-1",
+        arguments: "{\"agent_type\":\"worker\",\"reasoning_effort\":\"medium\"}",
+      },
+    } as never);
+
+    expect(Array.isArray(sse)).toBe(true);
+    expect(sse).toHaveLength(1);
+    expect(sse[0]).toMatchObject({
+      type: "tool_start",
+      tool_use_id: "call-1",
+      tool_name: "spawn_agent",
+      tool_input: {
+        agent_type: "worker",
+        reasoning_effort: "medium",
+      },
+    });
+  });
+
+  it("response_item.function_call_output → tool_result", () => {
+    const sse = mapThreadEvent({
+      type: "response_item",
+      payload: {
+        type: "function_call_output",
+        call_id: "call-1",
+        output: "spawned worker",
+      },
+    } as never);
+
+    expect(Array.isArray(sse)).toBe(true);
+    expect(sse[0]).toMatchObject({
+      type: "tool_result",
+      tool_use_id: "call-1",
+      tool_name: "function_call",
+      result: "spawned worker",
+      is_error: false,
+    });
+  });
+
+  it("response_item.message assistant output → text_start + text_delta + text_end", () => {
+    const sse = mapThreadEvent({
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "raw assistant text" }],
+      },
+    } as never);
+
+    expect(sse.map((p) => (p as { type: string }).type)).toEqual([
+      "text_start",
+      "text_delta",
+      "text_end",
+    ]);
+    expect(sse[1]).toMatchObject({ text: "raw assistant text" });
+  });
+
+  it("알 수 없는 top-level event/item은 no-op 배열로 격리한다", () => {
+    expect(mapThreadEvent({ type: "future.event", payload: {} } as never)).toEqual([]);
+    expect(
+      mapThreadEvent({
+        type: "item.completed",
+        item: { type: "future_item", id: "x", payload: {} },
+      } as never),
+    ).toEqual([]);
+  });
+});
+
 describe("item.started 매핑 (B-3 streaming 활성)", () => {
   it("agent_message → text_start (text 필드 없음, timestamp 박힘)", () => {
     const sse = mapThreadEvent({

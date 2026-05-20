@@ -724,6 +724,52 @@ describe("CodexEngineAdapter — 오류 경로", () => {
     });
     expect(typeof (events[1] as { timestamp: number }).timestamp).toBe("number");
   });
+
+  it("SDK d.ts 밖 response_item.function_call이 들어와도 mid-turn fatal error로 바뀌지 않는다", async () => {
+    const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
+    mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });
+    mockRunStreamed.mockResolvedValue({
+      events: eventStream([
+        { type: "thread.started", thread_id: "t1" },
+        {
+          type: "response_item",
+          payload: {
+            type: "function_call",
+            name: "spawn_agent",
+            call_id: "call-1",
+            arguments: "{\"agent_type\":\"worker\"}",
+          },
+        } as unknown as ThreadEvent,
+        {
+          type: "turn.completed",
+          usage: {
+            input_tokens: 1,
+            cached_input_tokens: 0,
+            output_tokens: 1,
+            reasoning_output_tokens: 0,
+          },
+        },
+      ]),
+    });
+
+    const engine = new CodexEngineAdapter(
+      { workspaceDir: "/tmp/work" },
+      silentLogger(),
+    );
+    const events = [];
+    for await (const e of engine.execute({ prompt: "x" })) {
+      events.push(e);
+    }
+
+    expect(events).toHaveLength(3);
+    expect(events[0]).toEqual({ type: "session", session_id: "t1" });
+    expect(events[1]).toMatchObject({
+      type: "tool_start",
+      tool_name: "spawn_agent",
+      tool_use_id: "call-1",
+    });
+    expect(events[2]).toMatchObject({ type: "complete" });
+  });
 });
 
 describe("CodexEngineAdapter — P2 자가 보강 검증", () => {
