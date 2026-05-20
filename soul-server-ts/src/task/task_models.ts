@@ -5,7 +5,6 @@
  * (4차 캐시 §7.3 시그니처 동등 의무 없음, atom d7a1ad86 정본 둘 안티패턴 회피).
  *
  * 본 PR에서 *사용*하지 않는 Python 필드는 의도적 미포함:
- *   - claude 전용 (allowed_tools/disallowed_tools 런타임 사본, use_mcp)
  *   - LLM proxy (llm_provider, llm_model, llm_usage)
  *   - _deliver_input_response (TS는 EnginePort 선택 capability로 처리)
  *   - pending_folder_id (folder 배정은 B-4 후속 PR-B 범위)
@@ -97,6 +96,12 @@ export interface Task {
   oauthToken?: string;
   /** 추론 모델 effort override. Codex는 ThreadOptions.modelReasoningEffort로 전달. */
   reasoningEffort?: ReasoningEffort;
+  /** 요청별 허용 도구 override. 없으면 AgentProfile.allowed_tools를 사용. */
+  allowedTools?: string[];
+  /** 요청별 금지 도구 override. 없으면 AgentProfile.disallowed_tools를 사용. */
+  disallowedTools?: string[];
+  /** 요청별 MCP 사용 여부. 기본값 true. Claude는 SDK mcpServers 로딩 게이트로 사용. */
+  useMcp?: boolean;
 
   /** 첫 turn prompt와 user_message.context에 함께 박을 외부 context items. */
   contextItems?: ContextItem[];

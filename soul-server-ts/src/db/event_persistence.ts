@@ -127,6 +127,12 @@ export class EventPersistence {
         task.lastAssistantText = text;
       }
     }
+    if (eventType === "progress") {
+      const text = (event as { text?: unknown }).text;
+      if (typeof text === "string") {
+        task.lastProgressText = text;
+      }
+    }
   }
 }
 

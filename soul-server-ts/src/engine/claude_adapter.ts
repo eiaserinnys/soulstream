@@ -40,6 +40,8 @@ export interface ClaudeRunOptions {
   disallowedTools?: string[];
   /** Python `agents.yaml.max_turns` → Claude SDK `maxTurns`. */
   maxTurns?: number;
+  /** Python `Task.use_mcp` → SDK mcpServers 로딩 게이트. undefined면 true. */
+  useMcp?: boolean;
   env: Record<string, string>;
   onIntervention?: () => Promise<string | null>;
 }
@@ -214,6 +216,7 @@ export class ClaudeEngineAdapter implements EnginePort, SupportsInputResponse, S
       ...(params.allowedTools !== undefined ? { allowedTools: params.allowedTools } : {}),
       ...(params.disallowedTools !== undefined ? { disallowedTools: params.disallowedTools } : {}),
       ...(params.maxTurns !== undefined ? { maxTurns: params.maxTurns } : {}),
+      ...(params.useMcp !== undefined ? { useMcp: params.useMcp } : {}),
       env: buildClaudeEnvironment({
         processEnv: this.processEnv,
         extraEnv: params.extraEnv,

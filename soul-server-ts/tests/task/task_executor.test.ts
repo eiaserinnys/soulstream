@@ -1564,4 +1564,42 @@ describe("TaskExecutor backend-specific first-turn composition (Phase B parity)"
     expect(capturedParams.disallowedTools).toEqual(["WebFetch"]);
     expect(capturedParams.maxTurns).toBe(25);
   });
+
+  it("claude backend: task-level 도구/MCP 옵션이 agents.yaml보다 우선한다", async () => {
+    const mocks = makeMocks();
+    let capturedParams: Record<string, unknown> = {};
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        capturedParams = { ...params };
+        yield { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const claudeAgentWithOpts: AgentProfile = {
+      ...claudeAgent,
+      allowed_tools: ["Read"],
+      disallowed_tools: ["WebFetch"],
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+    task.profileId = claudeAgentWithOpts.id;
+    task.allowedTools = ["Bash"];
+    task.disallowedTools = ["Edit"];
+    task.useMcp = false;
+    executor.startExecution(task, claudeAgentWithOpts);
+    await task.executionPromise;
+
+    expect(capturedParams.allowedTools).toEqual(["Bash"]);
+    expect(capturedParams.disallowedTools).toEqual(["Edit"]);
+    expect(capturedParams.useMcp).toBe(false);
+  });
 });

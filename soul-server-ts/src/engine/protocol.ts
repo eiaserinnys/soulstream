@@ -89,6 +89,8 @@ export interface EngineExecuteParams {
   disallowedTools?: string[];
   /** agents.yaml의 `max_turns` — Claude SDK `maxTurns`로 forward. Codex 무시. */
   maxTurns?: number;
+  /** 요청별 MCP 사용 여부. Claude 어댑터는 false면 명시 mcpServers 로딩을 생략. Codex 무시. */
+  useMcp?: boolean;
   extraEnv?: Record<string, string>;
   onEvent?: EventCallback;
   onProgress?: ProgressCallback;

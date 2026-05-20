@@ -204,6 +204,8 @@ export class TaskExecutor {
       while (true) {
         const resumeSessionId = task.codexThreadId;
         try {
+          const effectiveAllowedTools = task.allowedTools ?? agent.allowed_tools;
+          const effectiveDisallowedTools = task.disallowedTools ?? agent.disallowed_tools;
           const onIntervention = agent.backend === "claude"
             ? async () => {
                 const next = task.interventionQueue.shift();
@@ -221,10 +223,13 @@ export class TaskExecutor {
             // Phase B parity: 첫 turn에 한해 systemPrompt가 SDK 옵션으로 전달됨. intervention turn은
             // resumeSessionId로 이어붙기 때문에 SDK가 기존 system prompt를 유지 — turnSystemPrompt가 undefined로 흘러 미전달.
             ...(turnSystemPrompt !== undefined ? { systemPrompt: turnSystemPrompt } : {}),
-            // Phase B parity: agents.yaml의 도구 권한 옵션을 매 turn에 forward (Python `effective_allowed_tools` 정합).
-            // claude 어댑터만 SDK에 매핑하며, codex 어댑터는 무시 (SDK 표면 없음).
-            ...(agent.allowed_tools !== undefined ? { allowedTools: agent.allowed_tools } : {}),
-            ...(agent.disallowed_tools !== undefined ? { disallowedTools: agent.disallowed_tools } : {}),
+            // Phase B parity: 요청별 도구 권한이 있으면 우선하고, 없으면 agents.yaml 값을 forward
+            // (Python `effective_allowed_tools` 정합). claude 어댑터만 SDK에 매핑하며, codex는 무시.
+            ...(effectiveAllowedTools !== undefined ? { allowedTools: effectiveAllowedTools } : {}),
+            ...(effectiveDisallowedTools !== undefined
+              ? { disallowedTools: effectiveDisallowedTools }
+              : {}),
+            ...(task.useMcp !== undefined ? { useMcp: task.useMcp } : {}),
             ...(agent.max_turns !== undefined ? { maxTurns: agent.max_turns } : {}),
             ...(onIntervention ? { onIntervention } : {}),
           })) {

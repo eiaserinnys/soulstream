@@ -1,8 +1,11 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 
 import { query as defaultQuery } from "@anthropic-ai/claude-agent-sdk";
 import type {
   CanUseTool,
+  McpServerConfig,
   Options as ClaudeSdkOptions,
   Query as ClaudeSdkQuery,
   SDKMessage,
@@ -16,6 +19,8 @@ import type { ClaudeClientEvent } from "./claude_event_mapper.js";
 const CLAUDE_CODE_EXECPATH_ENV = "CLAUDE_CODE_EXECPATH";
 const DEFAULT_INPUT_REQUEST_TIMEOUT_MS = 300_000;
 const DEFAULT_INTERVENTION_POLL_INTERVAL_MS = 1_000;
+const DEFAULT_MAX_CONTEXT_TOKENS = 200_000;
+const MCP_CONFIG_FILE = "mcp_config.json";
 /**
  * Result 도착 후 SDK가 발행하는 `prompt_suggestion` 메시지를 받기 위한 short drain 시간.
  *
@@ -233,6 +238,7 @@ export class ClaudeSdkClient implements ClaudeClient {
       ...(options.allowedTools !== undefined ? { allowedTools: options.allowedTools } : {}),
       ...(options.disallowedTools !== undefined ? { disallowedTools: options.disallowedTools } : {}),
       ...(options.maxTurns !== undefined ? { maxTurns: options.maxTurns } : {}),
+      ...buildMcpOptions(options, this.logger),
     };
   }
 
@@ -497,6 +503,16 @@ export class ClaudeSdkClient implements ClaudeClient {
         },
       ];
     }
+    if (subtype === "task_progress") {
+      const summary = asString(message.summary);
+      const description = asString(message.description);
+      const text = summary ?? description;
+      return text ? [{ type: "progress", text }] : [];
+    }
+    if (subtype === "hook_progress") {
+      const text = asString(message.output) ?? asString(message.stdout) ?? asString(message.stderr);
+      return text ? [{ type: "progress", text }] : [];
+    }
     return [];
   }
 
@@ -598,10 +614,12 @@ export class ClaudeSdkClient implements ClaudeClient {
       modelUsage: asRecord(message.modelUsage),
       permissionDenials: permissionDenialsToStrings(message.permission_denials),
     };
+    const contextUsageEvent = makeContextUsageEvent(message.usage);
 
     if (!success) {
       return [
         resultEvent,
+        ...(contextUsageEvent ? [contextUsageEvent] : []),
         {
           type: "error",
           message: output || "Claude SDK result indicated failure",
@@ -620,7 +638,11 @@ export class ClaudeSdkClient implements ClaudeClient {
         ? { totalCostUsd: asNumber(message.total_cost_usd) }
         : {}),
     };
-    return [resultEvent, completeEvent];
+    return [
+      resultEvent,
+      ...(contextUsageEvent ? [contextUsageEvent] : []),
+      completeEvent,
+    ];
   }
 
   private mapPromptSuggestion(message: Record<string, unknown>): ClaudeClientEvent[] {
@@ -827,6 +849,63 @@ function permissionDenialsToStrings(value: unknown): string[] | null {
     const toolUseId = asString(record?.tool_use_id);
     return toolUseId ? `${toolName}:${toolUseId}` : toolName;
   });
+}
+
+function buildMcpOptions(
+  options: ClaudeRunOptions,
+  logger: Logger,
+): Partial<ClaudeSdkOptions> {
+  if (options.useMcp === false) return {};
+  const mcpServers = loadMcpServers(options.workspaceDir, logger);
+  return mcpServers === undefined ? {} : { mcpServers };
+}
+
+function loadMcpServers(
+  workspaceDir: string,
+  logger: Logger,
+): Record<string, McpServerConfig> | undefined {
+  const configPath = join(workspaceDir, MCP_CONFIG_FILE);
+  if (!existsSync(configPath)) return undefined;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(configPath, "utf8"));
+  } catch (err) {
+    throw new Error(
+      `Failed to read Claude MCP config at ${configPath}: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+  }
+
+  const root = asRecord(parsed);
+  if (!root) {
+    throw new Error(`Claude MCP config at ${configPath} must be a JSON object`);
+  }
+
+  const servers = asRecord(root.mcpServers) ?? root;
+  logger.debug(
+    { configPath, serverNames: Object.keys(servers) },
+    "Loaded Claude MCP config",
+  );
+  return servers as Record<string, McpServerConfig>;
+}
+
+function makeContextUsageEvent(usage: unknown): ClaudeClientEvent | undefined {
+  const record = asRecord(usage);
+  if (!record) return undefined;
+
+  const inputTokens = asNumber(record.input_tokens) ?? asNumber(record.inputTokens) ?? 0;
+  const outputTokens = asNumber(record.output_tokens) ?? asNumber(record.outputTokens) ?? 0;
+  const usedTokens = inputTokens + outputTokens;
+  if (usedTokens <= 0) return undefined;
+
+  return {
+    type: "context_usage",
+    usedTokens,
+    maxTokens: DEFAULT_MAX_CONTEXT_TOKENS,
+    percent: Math.round((usedTokens / DEFAULT_MAX_CONTEXT_TOKENS) * 1000) / 10,
+  };
 }
 
 function epochNumberToIso(value: number | undefined): string | undefined {

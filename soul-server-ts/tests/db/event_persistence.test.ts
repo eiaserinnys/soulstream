@@ -147,6 +147,20 @@ describe("EventPersistence.handleSideEffects", () => {
     expect(task.lastAssistantText).toBe("hello");
   });
 
+  it("progress는 last_message 없이 task.lastProgressText만 갱신", async () => {
+    const { db, updateLastMessage } = makeMockDB();
+    const { broadcaster } = makeMockBroadcaster();
+    const ep = new EventPersistence(db, broadcaster, silentLogger);
+    const task = makeTask();
+    await ep.handleSideEffects(
+      "sess-1",
+      { type: "progress", text: "Analyzing module", timestamp: 1731700000 } as SSEEventPayload,
+      task,
+    );
+    expect(updateLastMessage).not.toHaveBeenCalled();
+    expect(task.lastProgressText).toBe("Analyzing module");
+  });
+
   it("text_end (text 없음) — last_message 갱신 안 함 + lastAssistantText 변경 안 함", async () => {
     const { db, updateLastMessage } = makeMockDB();
     const { broadcaster } = makeMockBroadcaster();

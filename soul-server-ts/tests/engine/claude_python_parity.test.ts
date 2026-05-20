@@ -40,6 +40,8 @@ type ExpectedShape = {
 /**
  * Python schemas.py 정본 인용 (BaseModel 필드 — type 자체 포함):
  *
+ * - ProgressEvent: type, text
+ * - ContextUsageEvent: type, used_tokens, max_tokens, percent
  * - ThinkingSSEEvent (L146-152): type, timestamp, thinking, signature, parent_event_id?
  * - TextStartSSEEvent (L155-159): type, timestamp, parent_event_id?
  * - TextDeltaSSEEvent (L162-167): type, timestamp, text, parent_event_id?
@@ -60,6 +62,14 @@ type ExpectedShape = {
  * - CredentialAlertEvent (L293-301): type, utilization?, rate_limit_type?, status?, resets_at?, timestamp, parent_event_id?
  */
 const PYTHON_SHAPES: Record<string, ExpectedShape> = {
+  progress: {
+    required: ["type", "text"],
+    optional: [],
+  },
+  context_usage: {
+    required: ["type", "used_tokens", "max_tokens", "percent"],
+    optional: [],
+  },
   thinking: {
     required: ["type", "timestamp", "thinking"],
     optional: ["signature", "parent_event_id"],
@@ -154,6 +164,12 @@ function assertPythonShape(payload: Record<string, unknown>, shape: ExpectedShap
 }
 
 describe("Cross-language wire shape parity (TS mapper output ↔ Python *SSEEvent fields)", () => {
+  it("progress — Python ProgressEvent", () => {
+    const out = mapClaudeClientEvent({ type: "progress", text: "working", timestamp: 1 });
+    expect(out).toHaveLength(1);
+    assertPythonShape(out[0] as Record<string, unknown>, PYTHON_SHAPES.progress!);
+  });
+
   it("thinking — Python ThinkingSSEEvent (schemas.py:146-152)", () => {
     const out = mapClaudeClientEvent({
       type: "thinking",
@@ -213,6 +229,17 @@ describe("Cross-language wire shape parity (TS mapper output ↔ Python *SSEEven
       timestamp: 1,
     });
     assertPythonShape(out[0] as Record<string, unknown>, PYTHON_SHAPES.result!);
+  });
+
+  it("context_usage — Python ContextUsageEvent", () => {
+    const out = mapClaudeClientEvent({
+      type: "context_usage",
+      usedTokens: 1000,
+      maxTokens: 200000,
+      percent: 0.5,
+      timestamp: 1,
+    });
+    assertPythonShape(out[0] as Record<string, unknown>, PYTHON_SHAPES.context_usage!);
   });
 
   it("away_summary — Python AwaySummarySSEEvent (schemas.py:214-219) — Phase A 신규", () => {
@@ -316,11 +343,13 @@ describe("Cross-language wire shape parity (TS mapper output ↔ Python *SSEEven
     // 새 variant가 추가되었는데 PYTHON_SHAPES에 추가 안 되면 본 단언이 fail — 정본 갱신 강제.
     const samples: ClaudeClientEvent[] = [
       { type: "session", sessionId: "s" },
+      { type: "progress", text: "p", timestamp: 1 },
       { type: "text", text: "t", timestamp: 1 },
       { type: "thinking", thinking: "th", timestamp: 1 },
       { type: "tool_start", toolName: "T", toolInput: {}, timestamp: 1 },
       { type: "tool_result", toolName: "T", result: "ok", timestamp: 1 },
       { type: "result", success: true, output: "o", timestamp: 1 },
+      { type: "context_usage", usedTokens: 1, maxTokens: 200000, percent: 0, timestamp: 1 },
       { type: "complete", timestamp: 1 },
       { type: "error", message: "e", timestamp: 1 },
       { type: "prompt_suggestion", text: "p", timestamp: 1 },

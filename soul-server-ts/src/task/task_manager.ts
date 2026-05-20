@@ -42,6 +42,12 @@ export interface CreateTaskParams {
   model?: string | null;
   oauthToken?: string;
   reasoningEffort?: ReasoningEffort;
+  /** 요청별 허용 도구 override. 없으면 AgentProfile.allowed_tools 사용. */
+  allowedTools?: string[];
+  /** 요청별 금지 도구 override. 없으면 AgentProfile.disallowed_tools 사용. */
+  disallowedTools?: string[];
+  /** 요청별 MCP 사용 여부. undefined면 true. */
+  useMcp?: boolean;
   folderId?: string | null;
   /** B-6 context_builder: 사용자/위임자 system_prompt. folder_prompt와 합성됨. */
   systemPrompt?: string;
@@ -148,6 +154,9 @@ export class TaskManager {
       model: params.model,
       oauthToken: params.oauthToken,
       reasoningEffort: params.reasoningEffort,
+      allowedTools: params.allowedTools,
+      disallowedTools: params.disallowedTools,
+      useMcp: params.useMcp,
       systemPrompt: params.systemPrompt,  // B-6 context_builder
       contextItems: params.contextItems,
       attachmentPaths: params.attachmentPaths,

@@ -139,6 +139,24 @@ describe("TaskManager.createTask", () => {
     expect(task.reasoningEffort).toBe("high");
   });
 
+  it("요청별 도구/MCP 옵션을 task에 보존한다", async () => {
+    const { db, broadcaster } = makeMocks();
+    const tm = new TaskManager("n", db, broadcaster, silentLogger);
+
+    const task = await tm.createTask({
+      agentSessionId: "s-tools",
+      prompt: "x",
+      profileId: "a",
+      allowedTools: ["Read"],
+      disallowedTools: ["Bash"],
+      useMcp: false,
+    });
+
+    expect(task.allowedTools).toEqual(["Read"]);
+    expect(task.disallowedTools).toEqual(["Bash"]);
+    expect(task.useMcp).toBe(false);
+  });
+
   it("중복 agentSessionId → throw, DB·broadcast 호출 안 함", async () => {
     const { db, broadcaster, registerSession, emitSessionCreated } = makeMocks();
     const tm = new TaskManager("n", db, broadcaster, silentLogger);

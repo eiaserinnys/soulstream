@@ -11,6 +11,7 @@ import type { SSEEventPayload } from "./protocol.js";
 
 export type ClaudeClientEvent =
   | { type: "session"; sessionId: string; pid?: number }
+  | { type: "progress"; text: string; timestamp?: number; parentEventId?: ParentEventId }
   | { type: "text"; text: string; timestamp?: number; parentEventId?: ParentEventId }
   | {
       type: "thinking";
@@ -47,6 +48,14 @@ export type ClaudeClientEvent =
       errors?: string[] | null;
       modelUsage?: Record<string, unknown> | null;
       permissionDenials?: string[] | null;
+      timestamp?: number;
+      parentEventId?: ParentEventId;
+    }
+  | {
+      type: "context_usage";
+      usedTokens: number;
+      maxTokens: number;
+      percent: number;
       timestamp?: number;
       parentEventId?: ParentEventId;
     }
@@ -161,6 +170,14 @@ export function mapClaudeClientEvent(
         }),
       ];
 
+    case "progress":
+      return [
+        asSSE({
+          type: "progress",
+          text: event.text,
+        }),
+      ];
+
     case "text": {
       const timestamp = event.timestamp ?? nowEpochSec();
       const parent = parentField(event.parentEventId);
@@ -224,6 +241,16 @@ export function mapClaudeClientEvent(
             : {}),
           timestamp: event.timestamp ?? nowEpochSec(),
           ...parentField(event.parentEventId),
+        }),
+      ];
+
+    case "context_usage":
+      return [
+        asSSE({
+          type: "context_usage",
+          used_tokens: event.usedTokens,
+          max_tokens: event.maxTokens,
+          percent: event.percent,
         }),
       ];
 

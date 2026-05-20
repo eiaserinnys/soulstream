@@ -73,6 +73,9 @@ function createDispatcher(opts: {
         model: params.model,
         reasoningEffort: params.reasoningEffort,
         oauthToken: params.oauthToken,
+        allowedTools: params.allowedTools,
+        disallowedTools: params.disallowedTools,
+        useMcp: params.useMcp,
         contextItems: params.contextItems,
         attachmentPaths: params.attachmentPaths,
         createdAt: new Date(),
@@ -212,6 +215,22 @@ describe("CommandDispatcher.create_session", () => {
       reasoningEffort: "medium",
     });
     expect(createdTasks[0].reasoningEffort).toBe("medium");
+  });
+
+  it("create_session 도구/MCP 옵션을 createTask로 전달", async () => {
+    const { dispatcher, createdTasks } = createDispatcher();
+    await dispatcher.dispatch({
+      type: "create_session",
+      agentSessionId: "sess-tools",
+      prompt: "tool gated",
+      profile: "codex-default",
+      allowed_tools: ["Read"],
+      disallowed_tools: ["Bash"],
+      use_mcp: false,
+    });
+    expect(createdTasks[0].allowedTools).toEqual(["Read"]);
+    expect(createdTasks[0].disallowedTools).toEqual(["Bash"]);
+    expect(createdTasks[0].useMcp).toBe(false);
   });
 
   it("oauth_token을 createTask.oauthToken으로 전달한다", async () => {

@@ -42,6 +42,9 @@ interface CreateSessionCmd extends CommandLike {
   extra_context_items?: ContextItem[];
   model?: string | null;
   oauth_token?: string | null;
+  allowed_tools?: string[];
+  disallowed_tools?: string[];
+  use_mcp?: boolean;
   reasoningEffort?: ReasoningEffort;
   folderId?: string | null;
   /**
@@ -290,6 +293,9 @@ export class CommandDispatcher {
       model: cmd.model,
       oauthToken: agent.backend === "claude" ? normalizeOptionalString(cmd.oauth_token) : undefined,
       reasoningEffort: cmd.reasoningEffort,
+      allowedTools: cmd.allowed_tools,
+      disallowedTools: cmd.disallowed_tools,
+      useMcp: cmd.use_mcp,
       folderId: cmd.folderId ?? null,
       systemPrompt: cmd.systemPrompt,  // B-6 context_builder가 folder_prompt와 합성
       contextItems: cmd.extra_context_items ?? buildAttachmentContextItems(nonImagePaths),

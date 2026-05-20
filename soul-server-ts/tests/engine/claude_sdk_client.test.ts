@@ -4,6 +4,9 @@ import type {
   SDKMessage,
   SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
@@ -103,6 +106,7 @@ describe("ClaudeSdkClient", () => {
       "tool_result",
       "prompt_suggestion",
       "result",
+      "context_usage",
       "complete",
     ]);
     expect(events[0]).toEqual({ type: "session", sessionId: "claude-sess-1" });
@@ -123,6 +127,12 @@ describe("ClaudeSdkClient", () => {
       text: "next?",
     });
     expect(events[7]).toMatchObject({
+      type: "context_usage",
+      usedTokens: 2,
+      maxTokens: 200000,
+      percent: 0,
+    });
+    expect(events[8]).toMatchObject({
       type: "complete",
       result: "done",
       claudeSessionId: "claude-sess-1",
@@ -161,6 +171,92 @@ describe("ClaudeSdkClient", () => {
       disallowedTools: ["WebFetch"],
       maxTurns: 25,
     });
+  });
+
+  it("loads workspace mcp_config.json unless useMcp is false", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "claude-mcp-"));
+    try {
+      writeFileSync(
+        join(workspaceDir, "mcp_config.json"),
+        JSON.stringify({
+          mcpServers: {
+            soulstream: { type: "sse", url: "http://localhost:3105/cogito-mcp/sse" },
+          },
+        }),
+      );
+
+      const captured: ClaudeSdkQueryParams[] = [];
+      const client = new ClaudeSdkClient(
+        {
+          query: (params) => {
+            captured.push(params);
+            return makeQuery(sdkMessages([sdkSuccessResult("claude-sess-mcp", "done")]));
+          },
+          postResultDrainMs: 10,
+        },
+        silentLogger,
+      );
+
+      await collect(client.run({ prompt: "hi", workspaceDir, env: {} }, new AbortController().signal));
+      await collect(
+        client.run(
+          { prompt: "hi", workspaceDir, env: {}, useMcp: false },
+          new AbortController().signal,
+        ),
+      );
+
+      expect(captured[0]?.options?.mcpServers).toEqual({
+        soulstream: { type: "sse", url: "http://localhost:3105/cogito-mcp/sse" },
+      });
+      expect(captured[1]?.options).not.toHaveProperty("mcpServers");
+    } finally {
+      rmSync(workspaceDir, { recursive: true, force: true });
+    }
+  });
+
+  it("maps SDK task_progress and hook_progress system messages to progress events", async () => {
+    const client = new ClaudeSdkClient(
+      {
+        query: () =>
+          makeQuery(
+            sdkMessages([
+              {
+                type: "system",
+                subtype: "task_progress",
+                task_id: "task-1",
+                description: "Analyzing files",
+                usage: { total_tokens: 10, tool_uses: 1, duration_ms: 1000 },
+                session_id: "claude-sess-progress",
+              } as unknown as SDKMessage,
+              {
+                type: "system",
+                subtype: "hook_progress",
+                hook_id: "hook-1",
+                hook_name: "Stop",
+                hook_event: "Stop",
+                stdout: "hook stdout",
+                stderr: "",
+                output: "hook output",
+                uuid: "hook-progress-1",
+                session_id: "claude-sess-progress",
+              } as unknown as SDKMessage,
+            ]),
+          ),
+      },
+      silentLogger,
+    );
+
+    const events = await collect(
+      client.run(
+        { prompt: "hi", workspaceDir: "/tmp/claude-work", env: {} },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(events).toEqual([
+      { type: "progress", text: "Analyzing files" },
+      { type: "progress", text: "hook output" },
+    ]);
   });
 
   it("omits SDK model and executable options when caller does not provide them", async () => {
@@ -219,7 +315,7 @@ describe("ClaudeSdkClient", () => {
       ),
     );
 
-    expect(events.map((event) => event.type)).toEqual(["result", "complete"]);
+    expect(events.map((event) => event.type)).toEqual(["result", "context_usage", "complete"]);
     expect(query?.close).toHaveBeenCalledTimes(1);
   });
 
@@ -279,7 +375,7 @@ describe("ClaudeSdkClient", () => {
     ).toBe(true);
 
     const remaining = await collectIterator(iter);
-    expect(remaining.map((event) => event.type)).toEqual(["result", "complete"]);
+    expect(remaining.map((event) => event.type)).toEqual(["result", "context_usage", "complete"]);
     expect(permissionResults).toEqual([
       {
         behavior: "allow",
@@ -409,10 +505,11 @@ describe("ClaudeSdkClient", () => {
     expect(events.map((event) => event.type)).toEqual([
       "session",
       "result",
+      "context_usage",
       "complete",
       "prompt_suggestion",
     ]);
-    expect(events[3]).toEqual({
+    expect(events[4]).toEqual({
       type: "prompt_suggestion",
       text: "Try this next?",
     });
@@ -444,7 +541,7 @@ describe("ClaudeSdkClient", () => {
       ),
     );
 
-    expect(events.map((event) => event.type)).toEqual(["result", "complete"]);
+    expect(events.map((event) => event.type)).toEqual(["result", "context_usage", "complete"]);
     expect(queryRef?.close).toHaveBeenCalledTimes(1);
   });
 
@@ -478,7 +575,7 @@ describe("ClaudeSdkClient", () => {
     );
 
     // No text event from the stray assistant — drain phase only processes prompt_suggestion.
-    expect(events.map((event) => event.type)).toEqual(["result", "complete"]);
+    expect(events.map((event) => event.type)).toEqual(["result", "context_usage", "complete"]);
   });
 
   it("AssistantMessage.error field emits a distinct assistant_error (not generic error{fatal:false}) for dashboard classification", async () => {
