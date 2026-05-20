@@ -80,6 +80,15 @@ export interface EngineExecuteParams {
    *   어댑터 재생성 필요.
    */
   systemPrompt?: string;
+  /**
+   * agents.yaml의 `allowed_tools` — Claude SDK `ClaudeAgentOptions.allowedTools`로 forward.
+   * Codex 어댑터는 무시 (Codex CLI에 turn-level 권한 표면 없음).
+   */
+  allowedTools?: string[];
+  /** agents.yaml의 `disallowed_tools` — Claude SDK `disallowedTools`로 forward. Codex 무시. */
+  disallowedTools?: string[];
+  /** agents.yaml의 `max_turns` — Claude SDK `maxTurns`로 forward. Codex 무시. */
+  maxTurns?: number;
   extraEnv?: Record<string, string>;
   onEvent?: EventCallback;
   onProgress?: ProgressCallback;

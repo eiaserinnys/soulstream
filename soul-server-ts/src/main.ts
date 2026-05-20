@@ -302,7 +302,7 @@ async function main(): Promise<void> {
       isProduction: env.ENVIRONMENT === "production",
     },
     logger,
-    { agentRegistry, taskManager, taskExecutor, attachmentStore, claudeAuth },
+    { agentRegistry, taskManager, taskExecutor, attachmentStore, claudeAuth, sessionDb: db },
   );
 
   // 백그라운드 실행 — top-level에서 await 안 함 (재연결 무한 루프이므로)

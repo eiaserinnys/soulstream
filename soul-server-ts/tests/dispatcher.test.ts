@@ -11,6 +11,7 @@ import type {
   ClaudeAuthCommandHandler,
   ClaudeAuthSetTokenCmd,
 } from "../src/auth/claude_auth.js";
+import type { SessionDB } from "../src/db/session_db.js";
 import type { TaskExecutor } from "../src/task/task_executor.js";
 import type { TaskManager } from "../src/task/task_manager.js";
 import type { Task } from "../src/task/task_models.js";
@@ -39,6 +40,7 @@ function createDispatcher(opts: {
   taskExecutor?: Partial<TaskExecutor>;
   attachmentStore?: AttachmentStore;
   claudeAuth?: ClaudeAuthCommandHandler;
+  sessionDb?: Partial<SessionDB>;
 } = {}) {
   const sent: unknown[] = [];
   const send = vi.fn(async (data: unknown) => {
@@ -93,6 +95,9 @@ function createDispatcher(opts: {
   const tm = { ...defaultTaskManager, ...opts.taskManager } as TaskManager;
   const te = { ...defaultExecutor, ...opts.taskExecutor } as TaskExecutor;
 
+  // sessionDb 미주입(=undefined)이면 dispatcher에도 그대로 undefined 전달 (Phase B list_sessions 명시 error 분기 테스트용)
+  const sessionDb = opts.sessionDb === undefined ? undefined : (opts.sessionDb as SessionDB);
+
   const dispatcher = new CommandDispatcher(
     send,
     silentLogger,
@@ -102,8 +107,9 @@ function createDispatcher(opts: {
     te,
     opts.attachmentStore,
     opts.claudeAuth,
+    sessionDb,
   );
-  return { dispatcher, sent, send, registry, tm, te, createdTasks };
+  return { dispatcher, sent, send, registry, tm, te, createdTasks, sessionDb };
 }
 
 describe("CommandDispatcher.health_check", () => {
@@ -929,22 +935,78 @@ describe("CommandDispatcher attachment reverse-proxy", () => {
   });
 });
 
-describe("CommandDispatcher unknown command", () => {
-  it("list_sessions 등 → Not implemented error (respond/subscribe_events/attachment는 별 핸들러)", async () => {
-    const { dispatcher, sent } = createDispatcher();
-    const commands = ["list_sessions"];
-    for (const type of commands) {
-      await dispatcher.dispatch({ type, requestId: `${type}-id` });
-    }
-    expect(sent).toHaveLength(commands.length);
-    for (let i = 0; i < commands.length; i++) {
-      const reply = sent[i] as { type: string; message: string; command_type: string };
-      expect(reply.type).toBe("error");
-      expect(reply.command_type).toBe(commands[i]);
-      expect(reply.message).toContain("Not implemented in soul-server-ts");
-    }
+describe("CommandDispatcher.list_sessions (Python parity)", () => {
+  it("list_sessions → session_db.listSessionsSummary → sessions_update wire", async () => {
+    // Python `command_handler._handle_list_sessions` L351-359 정합 — `{type:"sessions_update", sessions, total, requestId}`.
+    const summaryRows = [
+      {
+        session_id: "sess-a",
+        display_name: "A",
+        status: "running",
+        session_type: "claude",
+        created_at: new Date("2026-05-19T00:00:00Z"),
+        updated_at: new Date("2026-05-20T00:00:00Z"),
+        event_count: 12,
+        away_summary: null,
+        caller_session_id: null,
+      },
+      {
+        session_id: "sess-b",
+        display_name: "B",
+        status: "completed",
+        session_type: "codex",
+        created_at: new Date("2026-05-18T00:00:00Z"),
+        updated_at: new Date("2026-05-19T00:00:00Z"),
+        event_count: 7,
+        away_summary: "지난 세션 요약",
+        caller_session_id: "parent-sess",
+      },
+    ];
+    const listSessionsSummary = vi.fn().mockResolvedValue({
+      sessions: summaryRows,
+      total: 2,
+    });
+    const { dispatcher, sent } = createDispatcher({
+      sessionDb: { listSessionsSummary } as unknown as Partial<SessionDB>,
+    });
+
+    await dispatcher.dispatch({ type: "list_sessions", requestId: "list-1" });
+
+    expect(listSessionsSummary).toHaveBeenCalledTimes(1);
+    expect(sent).toHaveLength(1);
+    const reply = sent[0] as { type: string; sessions: unknown[]; total: number; requestId: string };
+    expect(reply.type).toBe("sessions_update");
+    expect(reply.total).toBe(2);
+    expect(reply.requestId).toBe("list-1");
+    expect(reply.sessions).toHaveLength(2);
+    expect((reply.sessions[0] as { session_id: string }).session_id).toBe("sess-a");
   });
 
+  it("list_sessions → requestId 없으면 빈 문자열로 회신 (Python 정합)", async () => {
+    const listSessionsSummary = vi.fn().mockResolvedValue({ sessions: [], total: 0 });
+    const { dispatcher, sent } = createDispatcher({
+      sessionDb: { listSessionsSummary } as unknown as Partial<SessionDB>,
+    });
+
+    await dispatcher.dispatch({ type: "list_sessions" });
+
+    expect(sent).toHaveLength(1);
+    expect((sent[0] as { requestId: string }).requestId).toBe("");
+  });
+
+  it("list_sessions → sessionDb 미주입이면 명시 error", async () => {
+    // 정본 분기 — sessionDb dependency가 없으면 silent 응답 대신 명시 에러로 운영자가 누락을 인지.
+    const { dispatcher, sent } = createDispatcher();
+    await dispatcher.dispatch({ type: "list_sessions", requestId: "list-bad" });
+
+    expect(sent).toHaveLength(1);
+    const reply = sent[0] as { type: string; message: string };
+    expect(reply.type).toBe("error");
+    expect(reply.message).toContain("session_db");
+  });
+});
+
+describe("CommandDispatcher unknown command", () => {
   it("type이 없는 명령은 무시 (응답 없음)", async () => {
     const { dispatcher, sent } = createDispatcher();
     await dispatcher.dispatch({ requestId: "x" });

@@ -188,6 +188,8 @@ def test_known_sse_event_types_completeness() -> None:
         "reconnect",
         "history_sync",
         "metadata_updated",
+        "assistant_error",
+        "away_summary",
     }
     assert sse_consts == expected_known, (
         f"Missing: {expected_known - sse_consts}, Extra: {sse_consts - expected_known}"

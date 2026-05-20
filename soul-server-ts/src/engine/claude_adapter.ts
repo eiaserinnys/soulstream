@@ -34,6 +34,12 @@ export interface ClaudeRunOptions {
   resumeSessionId?: string;
   model?: string;
   systemPrompt?: string;
+  /** Python `agents.yaml.allowed_tools` → Claude SDK `ClaudeAgentOptions.allowedTools`. */
+  allowedTools?: string[];
+  /** Python `agents.yaml.disallowed_tools` → Claude SDK `disallowedTools`. */
+  disallowedTools?: string[];
+  /** Python `agents.yaml.max_turns` → Claude SDK `maxTurns`. */
+  maxTurns?: number;
   env: Record<string, string>;
   onIntervention?: () => Promise<string | null>;
 }
@@ -205,6 +211,9 @@ export class ClaudeEngineAdapter implements EnginePort, SupportsInputResponse, S
       ...(params.resumeSessionId ? { resumeSessionId: params.resumeSessionId } : {}),
       ...(model ? { model } : {}),
       ...(params.systemPrompt ? { systemPrompt: params.systemPrompt } : {}),
+      ...(params.allowedTools !== undefined ? { allowedTools: params.allowedTools } : {}),
+      ...(params.disallowedTools !== undefined ? { disallowedTools: params.disallowedTools } : {}),
+      ...(params.maxTurns !== undefined ? { maxTurns: params.maxTurns } : {}),
       env: buildClaudeEnvironment({
         processEnv: this.processEnv,
         extraEnv: params.extraEnv,

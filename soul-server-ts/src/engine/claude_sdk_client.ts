@@ -16,8 +16,21 @@ import type { ClaudeClientEvent } from "./claude_event_mapper.js";
 const CLAUDE_CODE_EXECPATH_ENV = "CLAUDE_CODE_EXECPATH";
 const DEFAULT_INPUT_REQUEST_TIMEOUT_MS = 300_000;
 const DEFAULT_INTERVENTION_POLL_INTERVAL_MS = 1_000;
+/**
+ * Result 도착 후 SDK가 발행하는 `prompt_suggestion` 메시지를 받기 위한 short drain 시간.
+ *
+ * Python `soul-server/src/soul_server/claude/receive_loop.py:33 PROMPT_SUGGESTION_DRAIN_TIMEOUT`
+ * 2초 정본 정합. SDK 0.2.x 타입 정의 (sdk.d.ts) 명시:
+ * "prompt_suggestion arrives after the result message. Consumers must keep iterating the
+ *  stream after result to receive it."
+ *
+ * drain phase는 *prompt_suggestion 전용* — 그 외 메시지는 logger.warn 후 무시 (Python
+ * receive_loop.py:180-188 narrowing 정책 정합).
+ */
+const DEFAULT_POST_RESULT_DRAIN_MS = 2_000;
 const INPUT_REQUEST_TIMEOUT = Symbol("input_request_timeout");
 const INPUT_REQUEST_ABORTED = Symbol("input_request_aborted");
+const DRAIN_TIMEOUT = Symbol("post_result_drain_timeout");
 
 export type ClaudeSdkQueryParams = {
   prompt: string | AsyncIterable<SDKUserMessage>;
@@ -30,6 +43,11 @@ export interface ClaudeSdkClientConfig {
   query?: ClaudeSdkQueryFn;
   inputRequestTimeoutMs?: number;
   interventionPollIntervalMs?: number;
+  /**
+   * Result 메시지 도착 후 prompt_suggestion 1메시지를 기다리는 best-effort drain timeout.
+   * 기본 2초 — Python `PROMPT_SUGGESTION_DRAIN_TIMEOUT` 정합. 테스트에서 가속용으로만 override.
+   */
+  postResultDrainMs?: number;
 }
 
 type PendingInputRequest = {
@@ -50,6 +68,7 @@ export class ClaudeSdkClient implements ClaudeClient {
   private readonly logger: Logger;
   private readonly inputRequestTimeoutMs: number;
   private readonly interventionPollIntervalMs: number;
+  private readonly postResultDrainMs: number;
   private readonly pendingInputRequests = new Map<string, PendingInputRequest>();
   private readonly toolNamesById = new Map<string, string>();
   private readonly emittedToolResultIds = new Set<string>();
@@ -66,6 +85,8 @@ export class ClaudeSdkClient implements ClaudeClient {
       config.inputRequestTimeoutMs ?? DEFAULT_INPUT_REQUEST_TIMEOUT_MS;
     this.interventionPollIntervalMs =
       config.interventionPollIntervalMs ?? DEFAULT_INTERVENTION_POLL_INTERVAL_MS;
+    this.postResultDrainMs =
+      config.postResultDrainMs ?? DEFAULT_POST_RESULT_DRAIN_MS;
   }
 
   async *run(options: ClaudeRunOptions, signal: AbortSignal): AsyncIterable<ClaudeClientEvent> {
@@ -209,6 +230,9 @@ export class ClaudeSdkClient implements ClaudeClient {
       ...(options.systemPrompt ? { systemPrompt: options.systemPrompt } : {}),
       ...(options.resumeSessionId ? { resume: options.resumeSessionId } : {}),
       ...(executablePath ? { pathToClaudeCodeExecutable: executablePath } : {}),
+      ...(options.allowedTools !== undefined ? { allowedTools: options.allowedTools } : {}),
+      ...(options.disallowedTools !== undefined ? { disallowedTools: options.disallowedTools } : {}),
+      ...(options.maxTurns !== undefined ? { maxTurns: options.maxTurns } : {}),
     };
   }
 
@@ -294,7 +318,12 @@ export class ClaudeSdkClient implements ClaudeClient {
     output: EventQueue<ClaudeClientEvent>,
   ): Promise<void> {
     try {
-      for await (const message of query) {
+      const queryIter = query[Symbol.asyncIterator]();
+      for (;;) {
+        const next = await queryIter.next();
+        if (next.done) break;
+        const message = next.value;
+
         let shouldStop = false;
         for (const event of this.mapSdkMessage(message)) {
           output.push(event);
@@ -303,6 +332,12 @@ export class ClaudeSdkClient implements ClaudeClient {
           }
         }
         if (shouldStop) {
+          // Result/complete (또는 fatal error) 도착 — post-result drain phase로 진입.
+          // Python `receive_loop._drain_after_result` (L126-188) 정합:
+          //   - prompt_suggestion 1메시지를 best-effort로 기다림 (default 2초)
+          //   - 그 외 메시지(StreamEvent · stray assistant 등)는 narrowing → logger.warn 후 무시
+          //   - timeout / EOS / 에러 모두 조용히 종료 (drain은 부가 기능, §8 실패 격리)
+          await this.drainAfterResult(queryIter, output);
           query.close();
           output.close();
           return;
@@ -312,6 +347,59 @@ export class ClaudeSdkClient implements ClaudeClient {
     } catch (err) {
       output.fail(err);
       throw err;
+    }
+  }
+
+  /**
+   * Result 이후 prompt_suggestion 1메시지를 받기 위한 short drain.
+   *
+   * Python `receive_loop._drain_after_result` 정본 정합:
+   *   - timeout 만료 / EOS / 비 prompt_suggestion 메시지 → 조용히 종료 (return)
+   *   - PromptSuggestionMessage이면 mapPromptSuggestion 결과를 output에 push
+   *
+   * `iter.next()`를 *호출만 하고 race*하는 패턴 — Python의 `extra_task = asyncio.create_task(aiter.__anext__())` 정합.
+   * timeout이 먼저 만료되어도 in-flight next()를 강제 cancel할 수 없으므로 fire-and-forget으로 두고
+   * 함수가 즉시 반환. 다음 호출자(`query.close()`)가 stream 종료 신호를 주면 in-flight next()도 함께 정리됨.
+   */
+  private async drainAfterResult(
+    queryIter: AsyncIterator<SDKMessage>,
+    output: EventQueue<ClaudeClientEvent>,
+  ): Promise<void> {
+    let timer: NodeJS.Timeout | undefined;
+    const timeoutPromise = new Promise<typeof DRAIN_TIMEOUT>((resolve) => {
+      timer = setTimeout(() => resolve(DRAIN_TIMEOUT), this.postResultDrainMs);
+    });
+
+    const nextPromise = queryIter.next().then(
+      (res) => res,
+      (err) => ({ done: true as const, value: undefined as unknown as SDKMessage, _error: err }),
+    );
+
+    try {
+      const settled = await Promise.race([nextPromise, timeoutPromise]);
+      if (settled === DRAIN_TIMEOUT) {
+        this.logger.debug?.({ ms: this.postResultDrainMs }, "post-result drain timed out");
+        return;
+      }
+      if (settled.done) {
+        return;
+      }
+      const msg = asRecord(settled.value);
+      if (msg && msg.type === "prompt_suggestion") {
+        for (const event of this.mapPromptSuggestion(msg)) {
+          output.push(event);
+        }
+        return;
+      }
+      // 비 prompt_suggestion 메시지는 무시 + warn (Python narrowing 정책 정합)
+      this.logger.warn?.(
+        { messageType: msg?.type ?? "unknown" },
+        "post-result drain received unexpected message type — ignoring",
+      );
+    } catch (err) {
+      this.logger.debug?.({ err }, "post-result drain errored — ignoring");
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
 
@@ -363,6 +451,13 @@ export class ClaudeSdkClient implements ClaudeClient {
       const sessionId = asString(message.session_id);
       return sessionId ? [{ type: "session", sessionId }] : [];
     }
+    if (subtype === "away_summary") {
+      // Python `message_processor._handle_system_message` L113-120 정합:
+      // SystemMessage(subtype="away_summary", data={content: ...}) → AwaySummaryEngineEvent
+      const data = asRecord(message.data);
+      const content = asString(data?.content);
+      return content ? [{ type: "away_summary", content }] : [];
+    }
     if (subtype === "compact_boundary") {
       const metadata = asRecord(message.compact_metadata);
       const trigger = asString(metadata?.trigger) ?? "unknown";
@@ -409,11 +504,19 @@ export class ClaudeSdkClient implements ClaudeClient {
     const events: ClaudeClientEvent[] = [];
     const error = asString(message.error);
     if (error) {
+      // Python `message_processor._handle_assistant_message` L172-187 정합:
+      // AssistantMessage.error는 별 `assistant_error` 이벤트로 발행하여 dashboard가
+      // authentication_failed / billing_error / rate_limit 등을 구분 표시 가능.
+      // 기존 generic `error{fatal:false}` 패스는 *완전 교체* — permission_denied 분기
+      // (mapSystemMessage L394-403)는 별 카테고리라 그대로 유지.
+      const nested = asRecord(message.message);
+      const model = asString(message.model) ?? asString(nested?.model);
+      const messageId = asString(message.message_id) ?? asString(nested?.id);
       events.push({
-        type: "error",
-        message: `Claude assistant error: ${error}`,
-        errorCode: error,
-        fatal: false,
+        type: "assistant_error",
+        errorType: error,
+        ...(model !== undefined ? { model } : {}),
+        ...(messageId !== undefined ? { messageId } : {}),
       });
     }
 
@@ -528,12 +631,16 @@ export class ClaudeSdkClient implements ClaudeClient {
   private mapRateLimit(message: Record<string, unknown>): ClaudeClientEvent[] {
     const info = asRecord(message.rate_limit_info);
     if (!info) return [];
+    // Defensive parser — SDK 0.2.x 타입은 camelCase(resetsAt/rateLimitType)이나
+    // Python wire 또는 fixture에서 snake_case가 들어올 수 있음. ISO string도 그대로 수용.
+    const resetsAtRaw = info.resetsAt ?? info.resets_at;
+    const rateLimitTypeRaw = asString(info.rateLimitType) ?? asString(info.rate_limit_type);
     return [
       {
         type: "rate_limit",
         status: asString(info.status),
-        resetsAt: epochNumberToIso(asNumber(info.resetsAt)),
-        rateLimitType: asString(info.rateLimitType),
+        resetsAt: coerceResetsAt(resetsAtRaw),
+        rateLimitType: rateLimitTypeRaw,
         utilization: asNumber(info.utilization),
       },
     ];
@@ -726,6 +833,25 @@ function epochNumberToIso(value: number | undefined): string | undefined {
   if (value === undefined) return undefined;
   const millis = value > 1_000_000_000_000 ? value : value * 1_000;
   return new Date(millis).toISOString();
+}
+
+/**
+ * rate_limit_info.resetsAt 값을 SSE wire용 ISO 문자열로 정규화.
+ *
+ * 수용 입력:
+ *   - epoch seconds (≤ 1e12): Date 객체로 변환 후 ISO
+ *   - epoch milliseconds (> 1e12): Date 객체로 변환 후 ISO
+ *   - ISO 문자열: 그대로 passthrough
+ *   - undefined / 그 외: undefined
+ */
+function coerceResetsAt(value: unknown): string | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return epochNumberToIso(value);
+  }
+  if (typeof value === "string" && value.length > 0) {
+    return value;
+  }
+  return undefined;
 }
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {

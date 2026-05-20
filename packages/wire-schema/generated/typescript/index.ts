@@ -126,7 +126,9 @@ export interface SessionEventEnvelope {
     | SSEEventCompact
     | SSEEventReconnect
     | SSEEventHistorySync
-    | SSEEventMetadataUpdated;
+    | SSEEventMetadataUpdated
+    | SSEEventAssistantError
+    | SSEEventAwaySummary;
   [k: string]: unknown;
 }
 /**
@@ -340,6 +342,24 @@ export interface SSEEventMetadataUpdated {
   [k: string]: unknown;
 }
 /**
+ * SSE: AssistantMessage.error 별 이벤트 — authentication_failed/billing_error/rate_limit 등 API 수준 에러를 dashboard가 분기 표시. Python `AssistantErrorEngineEvent` (soul-server/src/soul_server/engine/types.py:329-349) 정합.
+ */
+export interface SSEEventAssistantError {
+  type: "assistant_error";
+  error_type: string;
+  model?: string;
+  message_id?: string;
+  [k: string]: unknown;
+}
+/**
+ * SSE: Claude CLI가 세션 복귀 시 발행하는 요약. Python `AwaySummaryEngineEvent` (soul-server/src/soul_server/engine/types.py:188-204) 정합.
+ */
+export interface SSEEventAwaySummary {
+  type: "away_summary";
+  content: string;
+  [k: string]: unknown;
+}
+/**
  * 노드→orch: 전체 세션 목록 dump. adapter.py:_send_initial_sessions L313-325, command_handler.py:_handle_list_sessions L299-307.
  */
 export interface SessionsUpdate {
@@ -410,8 +430,8 @@ export interface InterveneAck {
 export interface RespondAck {
   type: "respond_ack";
   requestId: string;
-  status: "ok" | "error";
   inputRequestId?: string;
+  status: "ok" | "error";
   delivered?: boolean;
   eventId?: number;
   code?: string;

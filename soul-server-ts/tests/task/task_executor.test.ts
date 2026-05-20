@@ -1268,14 +1268,19 @@ describe("TaskExecutor _persistInitialMessages — contextBuilder 주입 (Python
     expect((userCall![1] as Record<string, unknown>).context).toEqual(items);
   });
 
-  it("Claude 첫 turn도 folder prompt와 context가 합성된 prompt로 실행됨", async () => {
+  it("Claude 첫 turn은 systemPrompt를 SDK 옵션으로 분리 + context items만 prompt에 prepend (Phase B parity)", async () => {
+    // Phase B 정정: claude backend는 SDK가 turn-level system_prompt를 직접 받음 →
+    // effectiveSystemPrompt는 SDK 옵션으로 분리하고 prompt 본문에는 context items만 prepend.
+    // codex backend는 별 케이스(`codex backend: effectiveSystemPrompt를 turnPrompt에 prepend ...`)에서 검증.
     const mocks = makeMocks();
     let capturedPrompt: string | undefined;
+    let capturedSystemPrompt: string | undefined;
     const engine: EnginePort = {
       backendId: "claude",
       workspaceDir: "/tmp/claude-roselin",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         capturedPrompt = params.prompt;
+        capturedSystemPrompt = params.systemPrompt;
         yield { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload;
       },
       async interrupt() { return true; },
@@ -1303,7 +1308,10 @@ describe("TaskExecutor _persistInitialMessages — contextBuilder 주입 (Python
     executor.startExecution(task, claudeAgent);
     await task.executionPromise;
 
-    expect(capturedPrompt).toContain("folder prompt\n\nagent prompt");
+    // systemPrompt는 SDK 옵션으로 분리.
+    expect(capturedSystemPrompt).toBe("folder prompt\n\nagent prompt");
+    // prompt 본문에는 system prepend가 *없고*, context items만 prepend.
+    expect(capturedPrompt).not.toContain("folder prompt\n\nagent prompt");
     expect(capturedPrompt).toContain("<context>");
     expect(capturedPrompt).toContain("<soulstream_session>");
     expect(capturedPrompt).toContain('"session_id": "sess-1"');
@@ -1430,5 +1438,130 @@ describe("TaskExecutor _persistInitialMessages — contextBuilder 주입 (Python
       (c) => (c[1] as { type: string }).type === "system_message",
     );
     expect(sysCalls.length).toBe(0);
+  });
+});
+
+// Phase B parity — system_prompt SDK 옵션 분기 + agents.yaml 도구 권한 옵션 forward
+describe("TaskExecutor backend-specific first-turn composition (Phase B parity)", () => {
+  function makeFakeContextBuilder(
+    ctx: {
+      effectiveSystemPrompt?: string;
+      combinedContextItems: Array<{ key: string; label: string; content: unknown }>;
+      assembledPrompt: string;
+    },
+  ): { build: ReturnType<typeof vi.fn> } {
+    return { build: vi.fn(async () => ctx) };
+  }
+
+  it("claude backend: effectiveSystemPrompt를 SDK systemPrompt 옵션으로 분리하고 turnPrompt에 prepend 안 함", async () => {
+    const mocks = makeMocks();
+    let capturedSystemPrompt: string | undefined;
+    let capturedPrompt: string | undefined;
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        capturedSystemPrompt = params.systemPrompt;
+        capturedPrompt = params.prompt;
+        yield { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const fakeBuilder = makeFakeContextBuilder({
+      effectiveSystemPrompt: "you are roselin",
+      combinedContextItems: [],
+      assembledPrompt: "hi",
+    });
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+    );
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+    executor.startExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(capturedSystemPrompt).toBe("you are roselin");
+    // turnPrompt에 system prepend가 없음 — context items도 비었으므로 task.prompt만.
+    expect(capturedPrompt).toBe("hi");
+  });
+
+  it("codex backend: effectiveSystemPrompt를 turnPrompt에 prepend (SDK 미지원이라 기존 동작 유지)", async () => {
+    const mocks = makeMocks();
+    let capturedSystemPrompt: string | undefined;
+    let capturedPrompt: string | undefined;
+    const engine: EnginePort = {
+      backendId: "codex",
+      workspaceDir: "/tmp/codex-default",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        capturedSystemPrompt = params.systemPrompt;
+        capturedPrompt = params.prompt;
+        yield { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const fakeBuilder = makeFakeContextBuilder({
+      effectiveSystemPrompt: "you are codex",
+      combinedContextItems: [],
+      assembledPrompt: "hi",
+    });
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+    );
+    const task = makeTask();
+    executor.startExecution(task, agent);  // codex agent
+    await task.executionPromise;
+
+    // codex SDK는 turn-level systemPrompt 미지원 — 호출자가 prompt에 prepend.
+    expect(capturedSystemPrompt).toBeUndefined();
+    expect(capturedPrompt).toContain("you are codex");
+    expect(capturedPrompt).toContain("hi");
+  });
+
+  it("claude backend: agents.yaml allowedTools/disallowedTools/maxTurns를 engine.execute params로 forward", async () => {
+    const mocks = makeMocks();
+    let capturedParams: Record<string, unknown> = {};
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        capturedParams = { ...params };
+        yield { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const claudeAgentWithOpts: AgentProfile = {
+      ...claudeAgent,
+      allowed_tools: ["Read", "Bash"],
+      disallowed_tools: ["WebFetch"],
+      max_turns: 25,
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+    task.profileId = claudeAgentWithOpts.id;
+    executor.startExecution(task, claudeAgentWithOpts);
+    await task.executionPromise;
+
+    expect(capturedParams.allowedTools).toEqual(["Read", "Bash"]);
+    expect(capturedParams.disallowedTools).toEqual(["WebFetch"]);
+    expect(capturedParams.maxTurns).toBe(25);
   });
 });

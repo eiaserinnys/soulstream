@@ -255,6 +255,54 @@ describe("Claude event mapper parity with Python EngineEvent.to_sse", () => {
     });
   });
 
+  it("assistant_error preserves Python wire keys for dashboard classification (auth/billing/rate_limit)", () => {
+    // Python `message_processor._handle_assistant_message` L172-187 + `AssistantErrorEngineEvent`
+    // emit `assistant_error` SSE with error_type / model / message_id keys.
+    expect(
+      mapClaudeClientEvent({
+        type: "assistant_error",
+        errorType: "authentication_failed",
+        model: "claude-sonnet-4-5",
+        messageId: "msg_01ABC",
+        timestamp: 140,
+      })[0],
+    ).toEqual({
+      type: "assistant_error",
+      error_type: "authentication_failed",
+      model: "claude-sonnet-4-5",
+      message_id: "msg_01ABC",
+      timestamp: 140,
+    });
+  });
+
+  it("assistant_error omits optional model/message_id when not provided", () => {
+    expect(
+      mapClaudeClientEvent({
+        type: "assistant_error",
+        errorType: "billing_error",
+        timestamp: 141,
+      })[0],
+    ).toEqual({
+      type: "assistant_error",
+      error_type: "billing_error",
+      timestamp: 141,
+    });
+  });
+
+  it("away_summary carries content for session-resume UX (Python AwaySummaryEngineEvent parity)", () => {
+    expect(
+      mapClaudeClientEvent({
+        type: "away_summary",
+        content: "이전 세션에서 X 작업을 진행했습니다.",
+        timestamp: 142,
+      })[0],
+    ).toEqual({
+      type: "away_summary",
+      content: "이전 세션에서 X 작업을 진행했습니다.",
+      timestamp: 142,
+    });
+  });
+
   it("subagent events carry agent_id, not session_id", () => {
     const events = [
       ...mapClaudeClientEvent({

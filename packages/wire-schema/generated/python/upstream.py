@@ -114,8 +114,8 @@ class RespondAck(TypedDict):
 
     type: Literal['respond_ack']
     requestId: str
-    status: Literal['ok', 'error']
     inputRequestId: NotRequired[str]
+    status: Literal['ok', 'error']
     delivered: NotRequired[bool]
     eventId: NotRequired[int]
     code: NotRequired[str]
@@ -506,6 +506,26 @@ class SSEEventMetadataUpdated(TypedDict):
     type: Literal['metadata_updated']
 
 
+class SSEEventAssistantError(TypedDict):
+    """
+    SSE: AssistantMessage.error 별 이벤트 — authentication_failed/billing_error/rate_limit 등 API 수준 에러를 dashboard가 분기 표시. Python `AssistantErrorEngineEvent` (soul-server/src/soul_server/engine/types.py:329-349) 정합.
+    """
+
+    type: Literal['assistant_error']
+    error_type: str
+    model: NotRequired[str]
+    message_id: NotRequired[str]
+
+
+class SSEEventAwaySummary(TypedDict):
+    """
+    SSE: Claude CLI가 세션 복귀 시 발행하는 요약. Python `AwaySummaryEngineEvent` (soul-server/src/soul_server/engine/types.py:188-204) 정합.
+    """
+
+    type: Literal['away_summary']
+    content: str
+
+
 class SessionEventEnvelope(TypedDict):
     """
     노드→orch: SSE 이벤트 wrapper. event_relay.py:relay_events L175-179. event.event 안에 SSEEvent* 중 하나가 packed.
@@ -545,6 +565,8 @@ class SessionEventEnvelope(TypedDict):
         | SSEEventReconnect
         | SSEEventHistorySync
         | SSEEventMetadataUpdated
+        | SSEEventAssistantError
+        | SSEEventAwaySummary
     )
 
 
