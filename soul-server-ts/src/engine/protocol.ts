@@ -63,6 +63,8 @@ export type CompactCallback = (sessionId: string, summary: string) => Promise<vo
 /** EnginePort.execute 파라미터. 위임자 §R1 시그니처 그대로. */
 export interface EngineExecuteParams {
   prompt: string;
+  /** Codex SDK `UserInput[]`로 전달할 로컬 이미지 첨부 경로. */
+  imageAttachmentPaths?: string[];
   resumeSessionId?: string;
   model?: string;
   /**

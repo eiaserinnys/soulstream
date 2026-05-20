@@ -17,7 +17,7 @@
  * - onCompact: Codex는 compact 이벤트 없음 — 호출 안 됨.
  */
 
-import { Codex, type Thread, type ThreadEvent } from "@openai/codex-sdk";
+import { Codex, type Thread, type ThreadEvent, type Input } from "@openai/codex-sdk";
 import type { Logger } from "pino";
 
 import { sanitizeCodexEnv } from "./codex_env.js";
@@ -163,7 +163,7 @@ export class CodexEngineAdapter implements EnginePort {
     // 기존 thread resume이면 thread.id가 이미 있음 — onSession 콜백 호출.
     let streamedTurn;
     try {
-      streamedTurn = await thread.runStreamed(params.prompt, {
+      streamedTurn = await thread.runStreamed(buildCodexInput(params), {
         signal: controller.signal,
       });
     } catch (err) {
@@ -262,4 +262,17 @@ export class CodexEngineAdapter implements EnginePort {
     }
     // Codex SDK 0.130.0은 명시 close 없음 — flag로만 lifecycle 표시.
   }
+}
+
+function buildCodexInput(params: EngineExecuteParams): Input {
+  if (!params.imageAttachmentPaths || params.imageAttachmentPaths.length === 0) {
+    return params.prompt;
+  }
+  return [
+    { type: "text", text: params.prompt },
+    ...params.imageAttachmentPaths.map((path) => ({
+      type: "local_image" as const,
+      path,
+    })),
+  ];
 }

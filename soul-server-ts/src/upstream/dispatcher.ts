@@ -9,7 +9,7 @@ import {
 } from "../attachments/file_manager.js";
 import type { ContextItem } from "../context/prompt_assembler.js";
 import type { TaskExecutor } from "../task/task_executor.js";
-import { buildAttachmentContextItems } from "../task/attachment_context.js";
+import { buildAttachmentContextItems, splitAttachmentPaths } from "../task/attachment_context.js";
 import type { TaskManager } from "../task/task_manager.js";
 import type { CallerInfo, Task } from "../task/task_models.js";
 
@@ -176,6 +176,7 @@ export class CommandDispatcher {
       return;
     }
 
+    const { nonImagePaths } = splitAttachmentPaths(cmd.attachment_paths);
     const task = await this.taskManager.createTask({
       agentSessionId: cmd.agentSessionId,
       prompt: cmd.prompt,
@@ -185,7 +186,8 @@ export class CommandDispatcher {
       model: cmd.model,
       folderId: cmd.folderId ?? null,
       systemPrompt: cmd.systemPrompt,  // B-6 context_builder가 folder_prompt와 합성
-      contextItems: cmd.extra_context_items ?? buildAttachmentContextItems(cmd.attachment_paths),
+      contextItems: cmd.extra_context_items ?? buildAttachmentContextItems(nonImagePaths),
+      attachmentPaths: cmd.attachment_paths,
     });
 
     this.taskExecutor.startExecution(task, agent);

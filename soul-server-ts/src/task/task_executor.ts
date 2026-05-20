@@ -28,7 +28,7 @@ import {
 import { formatContextItems, type ContextItem } from "../context/prompt_assembler.js";
 
 import type { CompletionNotifier } from "./completion_notifier.js";
-import { buildAttachmentContextItems } from "./attachment_context.js";
+import { buildAttachmentContextItems, splitAttachmentPaths } from "./attachment_context.js";
 import type { Task, TaskStatus } from "./task_models.js";
 
 /** AgentProfile → EnginePort 생성. backend별 분기는 factory 구현체 담당. */
@@ -126,6 +126,7 @@ export class TaskExecutor {
     // 박는 모델. TS는 같은 task 인스턴스를 재활용하지만 본 분기 + addIntervention auto-resume
     // 분기 조합으로 wire 의미 등가 달성.
     let turnPrompt: string;
+    let turnImageAttachmentPaths: string[] | undefined;
     if (task.interventionQueue.length === 0) {
       // 신규 task — Python `_persist_initial_messages`(L120-182) 정합.
       //
@@ -169,9 +170,12 @@ export class TaskExecutor {
       } else {
         turnPrompt = task.prompt;
       }
+      turnImageAttachmentPaths = splitAttachmentPaths(task.attachmentPaths).imagePaths;
     } else {
       // Auto-resume — user_message는 addIntervention 분기가 이미 영속화. 첫 turn은 dequeue.
-      turnPrompt = composeInterventionTurnPrompt(task.interventionQueue.shift()!);
+      const composed = composeInterventionTurnPrompt(task.interventionQueue.shift()!);
+      turnPrompt = composed.prompt;
+      turnImageAttachmentPaths = composed.imageAttachmentPaths;
     }
     try {
       while (true) {
@@ -179,6 +183,7 @@ export class TaskExecutor {
         try {
           for await (const event of engine.execute({
             prompt: turnPrompt,
+            imageAttachmentPaths: turnImageAttachmentPaths,
             model: task.model,
             resumeSessionId,
           })) {
@@ -227,7 +232,9 @@ export class TaskExecutor {
           task.status = "completed";
           break;
         }
-        turnPrompt = composeInterventionTurnPrompt(next);
+        const composed = composeInterventionTurnPrompt(next);
+        turnPrompt = composed.prompt;
+        turnImageAttachmentPaths = composed.imageAttachmentPaths;
         // (intervention_sent는 addIntervention에서 이미 broadcast됨 — 여기서 재발행 안 함.)
       }
     } finally {
@@ -398,6 +405,9 @@ export class TaskExecutor {
     if (task.callerInfo) {
       event.caller_info = task.callerInfo;
     }
+    if (task.attachmentPaths && task.attachmentPaths.length > 0) {
+      event.attachments = task.attachmentPaths;
+    }
     if (ctx && ctx.combinedContextItems.length > 0) {
       event.context = ctx.combinedContextItems;
     }
@@ -500,11 +510,18 @@ export function isTerminalStatus(status: TaskStatus): boolean {
   return status === "completed" || status === "error" || status === "interrupted";
 }
 
-function composeInterventionTurnPrompt(message: { text: string; context?: ContextItem[]; attachmentPaths?: string[] }): string {
+function composeInterventionTurnPrompt(message: { text: string; context?: ContextItem[]; attachmentPaths?: string[] }): {
+  prompt: string;
+  imageAttachmentPaths: string[];
+} {
+  const { imagePaths, nonImagePaths } = splitAttachmentPaths(message.attachmentPaths);
   const contextItems = [
     ...(message.context ?? []),
-    ...buildAttachmentContextItems(message.attachmentPaths),
+    ...buildAttachmentContextItems(nonImagePaths),
   ];
   const contextBlock = formatContextItems(contextItems);
-  return contextBlock ? `${contextBlock}\n\n${message.text}` : message.text;
+  return {
+    prompt: contextBlock ? `${contextBlock}\n\n${message.text}` : message.text,
+    imageAttachmentPaths: imagePaths,
+  };
 }

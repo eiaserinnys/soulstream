@@ -124,6 +124,38 @@ describe("TaskExecutor.startExecution", () => {
     expect(mocks.emitSessionUpdated).toHaveBeenCalledWith(task);
   });
 
+  it("신규 task attachmentPaths → user_message.attachments 보존 + 이미지 path는 engine params로 전달", async () => {
+    const mocks = makeMocks();
+    let capturedImageAttachmentPaths: string[] | undefined;
+    const engine: EnginePort = {
+      backendId: "codex",
+      workspaceDir: "/tmp/codex-default",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        capturedImageAttachmentPaths = params.imageAttachmentPaths;
+        yield { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+    task.attachmentPaths = ["/tmp/incoming/sess/a.jpeg", "/tmp/incoming/sess/readme.txt"];
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    expect(capturedImageAttachmentPaths).toEqual(["/tmp/incoming/sess/a.jpeg"]);
+    expect(mocks.persistEvent.mock.calls[0][1]).toMatchObject({
+      type: "user_message",
+      attachments: ["/tmp/incoming/sess/a.jpeg", "/tmp/incoming/sess/readme.txt"],
+    });
+  });
+
   it("engine.execute throw → status=error + finalize", async () => {
     const mocks = makeMocks();
     const engine = makeFakeEngine(
@@ -734,17 +766,19 @@ describe("TaskExecutor _persistInitialMessages — contextBuilder 미주입 (leg
     expect(capturedPrompt).toBe("new message");  // task.prompt="hi"가 아니라 queue dequeue
   });
 
-  it("auto-resume attachmentPaths → 첫 turn prompt에 attached_files context prepend", async () => {
+  it("auto-resume attachmentPaths → 이미지 attachment는 EngineExecuteParams.imageAttachmentPaths로 전달", async () => {
     const mocks = makeMocks();
     const events: SSEEventPayload[] = [
       { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
     ];
     let capturedPrompt = "";
+    let capturedImageAttachmentPaths: string[] | undefined;
     const engine: EnginePort = {
       backendId: "codex",
       workspaceDir: "/tmp/codex-default",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         capturedPrompt = params.prompt;
+        capturedImageAttachmentPaths = params.imageAttachmentPaths;
         for (const e of events) yield e;
       },
       async interrupt() { return true; },
@@ -760,10 +794,43 @@ describe("TaskExecutor _persistInitialMessages — contextBuilder 미주입 (leg
     executor.startExecution(task, agent);
     await task.executionPromise;
 
+    expect(capturedPrompt).toBe("이 파일 보여?");
+    expect(capturedImageAttachmentPaths).toEqual(["/tmp/incoming/sess/a.png"]);
+  });
+
+  it("auto-resume attachmentPaths → 비이미지는 attached_files context에 남고 이미지만 분리된다", async () => {
+    const mocks = makeMocks();
+    const events: SSEEventPayload[] = [
+      { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
+    ];
+    let capturedPrompt = "";
+    let capturedImageAttachmentPaths: string[] | undefined;
+    const engine: EnginePort = {
+      backendId: "codex",
+      workspaceDir: "/tmp/codex-default",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        capturedPrompt = params.prompt;
+        capturedImageAttachmentPaths = params.imageAttachmentPaths;
+        for (const e of events) yield e;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(() => engine, mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
+    const task = makeTask();
+    task.interventionQueue.push({
+      text: "첨부 확인",
+      user: "u",
+      attachmentPaths: ["/tmp/incoming/sess/a.png", "/tmp/incoming/sess/readme.txt"],
+    });
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    expect(capturedImageAttachmentPaths).toEqual(["/tmp/incoming/sess/a.png"]);
     expect(capturedPrompt).toContain("<attached_files>");
-    expect(capturedPrompt).toContain("/tmp/incoming/sess/a.png");
-    expect(capturedPrompt).toContain("Read 도구로 내용을 확인하세요");
-    expect(capturedPrompt.endsWith("이 파일 보여?")).toBe(true);
+    expect(capturedPrompt).not.toContain("/tmp/incoming/sess/a.png");
+    expect(capturedPrompt).toContain("/tmp/incoming/sess/readme.txt");
+    expect(capturedPrompt.endsWith("첨부 확인")).toBe(true);
   });
 });
 

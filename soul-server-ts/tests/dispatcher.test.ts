@@ -58,6 +58,7 @@ function createDispatcher(opts: {
         callerInfo: params.callerInfo,
         model: params.model,
         contextItems: params.contextItems,
+        attachmentPaths: params.attachmentPaths,
         createdAt: new Date(),
         lastEventId: 0,
         lastReadEventId: 0,
@@ -166,7 +167,7 @@ describe("CommandDispatcher.create_session", () => {
     expect(createdTasks[0].contextItems).toEqual(contextItems);
   });
 
-  it("attachment_paths만 오면 attached_files contextItems로 변환", async () => {
+  it("attachment_paths만 오면 비이미지만 attached_files contextItems로 변환하고 전체 경로는 task에 보존", async () => {
     const { dispatcher, createdTasks } = createDispatcher();
     await dispatcher.dispatch({
       type: "create_session",
@@ -181,10 +182,10 @@ describe("CommandDispatcher.create_session", () => {
         label: "첨부 파일",
         content:
           "다음 파일들이 첨부되었습니다. Read 도구로 내용을 확인하세요:\n" +
-          "- /tmp/a.png\n" +
           "- /tmp/b.txt",
       },
     ]);
+    expect(createdTasks[0].attachmentPaths).toEqual(["/tmp/a.png", "/tmp/b.txt"]);
   });
 
   it("agentSessionId 또는 prompt 부재 시 error", async () => {

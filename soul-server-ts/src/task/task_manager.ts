@@ -39,6 +39,8 @@ export interface CreateTaskParams {
   systemPrompt?: string;
   /** 첫 turn prompt와 user_message.context에 함께 박을 외부 context items. */
   contextItems?: ContextItem[];
+  /** 첫 turn user_message.attachments와 engine image 입력 분리에 사용할 원본 첨부 경로. */
+  attachmentPaths?: string[];
 }
 
 /**
@@ -118,6 +120,7 @@ export class TaskManager {
       model: params.model,
       systemPrompt: params.systemPrompt,  // B-6 context_builder
       contextItems: params.contextItems,
+      attachmentPaths: params.attachmentPaths,
       createdAt: now,
       lastEventId: 0,
       lastReadEventId: 0,

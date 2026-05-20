@@ -229,6 +229,83 @@ describe("CodexEngineAdapter.execute — 새 thread", () => {
     expect(sseEvents[1]).toMatchObject({ type: "complete" });
   });
 
+  it("imageAttachmentPaths가 있으면 runStreamed에 text + local_image UserInput[]를 전달한다", async () => {
+    const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
+
+    mockStartThread.mockReturnValue({
+      runStreamed: mockRunStreamed,
+    });
+    mockRunStreamed.mockResolvedValue({
+      events: eventStream([
+        { type: "thread.started", thread_id: "thr-image" },
+        {
+          type: "turn.completed",
+          usage: {
+            input_tokens: 1,
+            cached_input_tokens: 0,
+            output_tokens: 1,
+            reasoning_output_tokens: 0,
+          },
+        },
+      ]),
+    });
+
+    const engine = new CodexEngineAdapter(
+      { workspaceDir: "/tmp/work" },
+      silentLogger(),
+    );
+    for await (const _ of engine.execute({
+      prompt: "이 이미지 설명해줘",
+      imageAttachmentPaths: ["/tmp/a.png", "/tmp/b.webp"],
+    })) {
+      // drain
+    }
+
+    expect(mockRunStreamed).toHaveBeenCalledWith(
+      [
+        { type: "text", text: "이 이미지 설명해줘" },
+        { type: "local_image", path: "/tmp/a.png" },
+        { type: "local_image", path: "/tmp/b.webp" },
+      ],
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
+
+  it("imageAttachmentPaths가 비어있으면 기존 문자열 입력 경로를 유지한다", async () => {
+    const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
+
+    mockStartThread.mockReturnValue({
+      runStreamed: mockRunStreamed,
+    });
+    mockRunStreamed.mockResolvedValue({
+      events: eventStream([
+        { type: "thread.started", thread_id: "thr-text" },
+        {
+          type: "turn.completed",
+          usage: {
+            input_tokens: 1,
+            cached_input_tokens: 0,
+            output_tokens: 1,
+            reasoning_output_tokens: 0,
+          },
+        },
+      ]),
+    });
+
+    const engine = new CodexEngineAdapter(
+      { workspaceDir: "/tmp/work" },
+      silentLogger(),
+    );
+    for await (const _ of engine.execute({
+      prompt: "텍스트만",
+      imageAttachmentPaths: [],
+    })) {
+      // drain
+    }
+
+    expect(mockRunStreamed.mock.calls[0][0]).toBe("텍스트만");
+  });
+
   it("codex가 item.completed (agent_message)만 emit해도 text_start+text_delta+text_end+complete 시퀀스를 yield한다 — claude 정본 정합", async () => {
     // 분석 캐시 `20260517-1220-codex-ts-subscribe-events.md` §A: codex-rs는 item.started·item.updated를
     // emit하지 않음. 분석 캐시 `20260517-1325-codex-ts-sse-ui-routing.md`: claude 정본 시퀀스는
