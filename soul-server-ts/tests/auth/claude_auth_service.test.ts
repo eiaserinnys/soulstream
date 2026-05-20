@@ -134,6 +134,7 @@ describe("ClaudeAuthService token storage", () => {
       const inherited = {
         KEEP_ME: "1",
         [CLAUDE_OAUTH_TOKEN_ENV]: "sk-ant-oat01-python_env_token",
+        CLAUDE_CODE_EXECPATH: "/python-release/.venv/lib/python3.12/site-packages/claude_agent_sdk/_bundled/claude",
       };
 
       expect(svc.buildProcessEnv(inherited)).toEqual({ KEEP_ME: "1" });

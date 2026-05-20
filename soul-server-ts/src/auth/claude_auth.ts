@@ -16,6 +16,7 @@ export const ANTHROPIC_USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
 export const ANTHROPIC_PROFILE_URL = "https://api.anthropic.com/api/oauth/profile";
 
 const CLAUDE_OAUTH_BETA = "oauth-2025-04-20";
+const CLAUDE_CODE_EXECPATH_ENV = "CLAUDE_CODE_EXECPATH";
 const TOKEN_PATTERN = /^sk-ant-oat01-[A-Za-z0-9_-]+$/;
 const MISSING_STORAGE_MESSAGE = "CLAUDE_AUTH_TOKEN_PATH is not configured";
 
@@ -293,7 +294,7 @@ export class ClaudeAuthService implements ClaudeAuthCommandHandler {
   ): Record<string, string | undefined> {
     const out: Record<string, string | undefined> = {};
     for (const [key, value] of Object.entries(baseEnv)) {
-      if (key !== CLAUDE_OAUTH_TOKEN_ENV) {
+      if (key !== CLAUDE_OAUTH_TOKEN_ENV && key !== CLAUDE_CODE_EXECPATH_ENV) {
         out[key] = value;
       }
     }
