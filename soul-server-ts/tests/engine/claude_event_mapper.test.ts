@@ -16,6 +16,20 @@ describe("Claude event mapper parity with Python EngineEvent.to_sse", () => {
     ]);
   });
 
+  it("debug maps Python DebugEvent fields for SDK Notification hooks", () => {
+    expect(
+      mapClaudeClientEvent({
+        type: "debug",
+        message: "[info] notification",
+        timestamp: 122,
+      })[0],
+    ).toEqual({
+      type: "debug",
+      message: "[info] notification",
+      timestamp: 122,
+    });
+  });
+
   it("Python TextDeltaEngineEvent cardinality: one text client event emits text_start → text_delta → text_end", () => {
     const events = mapClaudeClientEvent({
       type: "text",
@@ -339,6 +353,7 @@ describe("Claude event mapper parity with Python EngineEvent.to_sse", () => {
   it("golden fixture covers all P3 parity event families", () => {
     const fixture: ClaudeClientEvent[] = [
       { type: "session", sessionId: "claude-sess-1" },
+      { type: "debug", message: "notification", timestamp: 0.5 },
       { type: "text", text: "A", timestamp: 1 },
       { type: "tool_start", toolName: "Bash", toolInput: {}, timestamp: 2 },
       { type: "tool_result", toolName: "Bash", result: "ok", timestamp: 3 },
@@ -358,6 +373,7 @@ describe("Claude event mapper parity with Python EngineEvent.to_sse", () => {
 
     expect(fixture.flatMap((event) => mapClaudeClientEvent(event)).map((event) => event.type)).toEqual([
       "session",
+      "debug",
       "text_start",
       "text_delta",
       "text_end",

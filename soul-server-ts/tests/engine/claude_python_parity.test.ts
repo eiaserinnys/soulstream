@@ -42,6 +42,7 @@ type ExpectedShape = {
  *
  * - ProgressEvent: type, text
  * - ContextUsageEvent: type, used_tokens, max_tokens, percent
+ * - DebugEvent (L73-78): type, message, timestamp, parent_event_id?
  * - ThinkingSSEEvent (L146-152): type, timestamp, thinking, signature, parent_event_id?
  * - TextStartSSEEvent (L155-159): type, timestamp, parent_event_id?
  * - TextDeltaSSEEvent (L162-167): type, timestamp, text, parent_event_id?
@@ -69,6 +70,10 @@ const PYTHON_SHAPES: Record<string, ExpectedShape> = {
   context_usage: {
     required: ["type", "used_tokens", "max_tokens", "percent"],
     optional: [],
+  },
+  debug: {
+    required: ["type", "message", "timestamp"],
+    optional: ["parent_event_id"],
   },
   thinking: {
     required: ["type", "timestamp", "thinking"],
@@ -242,6 +247,15 @@ describe("Cross-language wire shape parity (TS mapper output ↔ Python *SSEEven
     assertPythonShape(out[0] as Record<string, unknown>, PYTHON_SHAPES.context_usage!);
   });
 
+  it("debug — Python DebugEvent (schemas.py:73-78)", () => {
+    const out = mapClaudeClientEvent({
+      type: "debug",
+      message: "[info] hook notification",
+      timestamp: 1,
+    });
+    assertPythonShape(out[0] as Record<string, unknown>, PYTHON_SHAPES.debug!);
+  });
+
   it("away_summary — Python AwaySummarySSEEvent (schemas.py:214-219) — Phase A 신규", () => {
     const out = mapClaudeClientEvent({
       type: "away_summary",
@@ -343,6 +357,7 @@ describe("Cross-language wire shape parity (TS mapper output ↔ Python *SSEEven
     // 새 variant가 추가되었는데 PYTHON_SHAPES에 추가 안 되면 본 단언이 fail — 정본 갱신 강제.
     const samples: ClaudeClientEvent[] = [
       { type: "session", sessionId: "s" },
+      { type: "debug", message: "d", timestamp: 1 },
       { type: "progress", text: "p", timestamp: 1 },
       { type: "text", text: "t", timestamp: 1 },
       { type: "thinking", thinking: "th", timestamp: 1 },

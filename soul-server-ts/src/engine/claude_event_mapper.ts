@@ -11,6 +11,7 @@ import type { SSEEventPayload } from "./protocol.js";
 
 export type ClaudeClientEvent =
   | { type: "session"; sessionId: string; pid?: number }
+  | { type: "debug"; message: string; timestamp?: number; parentEventId?: ParentEventId }
   | { type: "progress"; text: string; timestamp?: number; parentEventId?: ParentEventId }
   | { type: "text"; text: string; timestamp?: number; parentEventId?: ParentEventId }
   | {
@@ -167,6 +168,16 @@ export function mapClaudeClientEvent(
           type: "session",
           session_id: event.sessionId,
           ...(event.pid !== undefined ? { pid: event.pid } : {}),
+        }),
+      ];
+
+    case "debug":
+      return [
+        asSSE({
+          type: "debug",
+          message: event.message,
+          timestamp: event.timestamp ?? nowEpochSec(),
+          ...parentField(event.parentEventId),
         }),
       ];
 

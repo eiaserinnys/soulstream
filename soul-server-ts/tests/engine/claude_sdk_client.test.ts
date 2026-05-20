@@ -98,6 +98,14 @@ describe("ClaudeSdkClient", () => {
       pathToClaudeCodeExecutable: "/opt/claude",
     });
     expect(captured[0]?.options?.canUseTool).toEqual(expect.any(Function));
+    expect(captured[0]?.options?.hooks).toMatchObject({
+      PreToolUse: [{ matcher: "Agent", hooks: [expect.any(Function)] }],
+      PreCompact: [{ hooks: [expect.any(Function)] }],
+      SubagentStart: [{ hooks: [expect.any(Function)] }],
+      SubagentStop: [{ hooks: [expect.any(Function)] }],
+      Notification: [{ hooks: [expect.any(Function)] }],
+      Stop: [{ hooks: [expect.any(Function)] }],
+    });
     expect(events.map((event) => event.type)).toEqual([
       "session",
       "text",
@@ -387,6 +395,129 @@ describe("ClaudeSdkClient", () => {
     ]);
   });
 
+  it("PreToolUse Agent hook removes run_in_background before Claude sees the tool input", async () => {
+    const captured: ClaudeSdkQueryParams[] = [];
+    const client = new ClaudeSdkClient(
+      {
+        query: (params) => {
+          captured.push(params);
+          return makeQuery(sdkMessages([sdkSuccessResult("claude-sess-hooks", "done")]));
+        },
+      },
+      silentLogger,
+    );
+
+    await collect(
+      client.run(
+        { prompt: "hi", workspaceDir: "/tmp/claude-work", env: {} },
+        new AbortController().signal,
+      ),
+    );
+
+    const hook = captured[0]?.options?.hooks?.PreToolUse?.[0]?.hooks[0];
+    expect(hook).toEqual(expect.any(Function));
+    const result = await hook!(
+      {
+        hook_event_name: "PreToolUse",
+        tool_name: "Agent",
+        tool_input: { prompt: "review", run_in_background: true },
+        tool_use_id: "toolu_agent",
+      } as any,
+      "toolu_agent",
+      { signal: new AbortController().signal },
+    );
+
+    expect(result).toEqual({
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        updatedInput: { prompt: "review" },
+      },
+    });
+  });
+
+  it("Notification hook emits Python DebugEvent-compatible client event", async () => {
+    const client = new ClaudeSdkClient(
+      {
+        query: (params) =>
+          makeQuery(
+            (async function* () {
+              const hook = params.options?.hooks?.Notification?.[0]?.hooks[0];
+              await hook?.(
+                {
+                  hook_event_name: "Notification",
+                  title: "Input needed",
+                  message: "Approve tool use",
+                  notification_type: "permission",
+                } as any,
+                undefined,
+                { signal: new AbortController().signal },
+              );
+              yield sdkSuccessResult("claude-sess-notify-hook", "done");
+            })(),
+          ),
+      },
+      silentLogger,
+    );
+
+    const events = await collect(
+      client.run(
+        { prompt: "hi", workspaceDir: "/tmp/claude-work", env: {} },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(events[0]).toEqual({
+      type: "debug",
+      message: "[permission] Input needed: Approve tool use",
+    });
+  });
+
+  it("PreCompact hook and SDK compact_boundary are deduped into one compact event", async () => {
+    const client = new ClaudeSdkClient(
+      {
+        query: (params) =>
+          makeQuery(
+            (async function* () {
+              const hook = params.options?.hooks?.PreCompact?.[0]?.hooks[0];
+              await hook?.(
+                {
+                  hook_event_name: "PreCompact",
+                  trigger: "auto",
+                  custom_instructions: null,
+                } as any,
+                undefined,
+                { signal: new AbortController().signal },
+              );
+              yield {
+                type: "system",
+                subtype: "compact_boundary",
+                compact_metadata: { trigger: "auto", pre_tokens: 199000 },
+                uuid: "compact-boundary-from-sdk",
+                session_id: "claude-sess-precompact",
+              } as unknown as SDKMessage;
+              yield sdkSuccessResult("claude-sess-precompact", "done");
+            })(),
+          ),
+      },
+      silentLogger,
+    );
+
+    const events = await collect(
+      client.run(
+        { prompt: "hi", workspaceDir: "/tmp/claude-work", env: {} },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(events.filter((event) => event.type === "compact")).toEqual([
+      {
+        type: "compact",
+        trigger: "auto",
+        message: "Claude session compacted (auto)",
+      },
+    ]);
+  });
+
   it("injects running interventions through the SDK streaming input", async () => {
     const prompts: string[] = [];
     const client = new ClaudeSdkClient(
@@ -576,6 +707,93 @@ describe("ClaudeSdkClient", () => {
 
     // No text event from the stray assistant — drain phase only processes prompt_suggestion.
     expect(events.map((event) => event.type)).toEqual(["result", "context_usage", "complete"]);
+  });
+
+  it("post-result drain treats compact_boundary after an empty result as compact retry", async () => {
+    const client = new ClaudeSdkClient(
+      {
+        query: () =>
+          makeQuery(
+            (async function* () {
+              yield sdkSuccessResult("claude-sess-compact-retry", "");
+              yield {
+                type: "system",
+                subtype: "compact_boundary",
+                compact_metadata: { trigger: "auto", pre_tokens: 199000 },
+                uuid: "compact-boundary-1",
+                session_id: "claude-sess-compact-retry",
+              } as unknown as SDKMessage;
+              yield {
+                type: "assistant",
+                message: { content: [{ type: "text", text: "after compact" }] },
+                parent_tool_use_id: null,
+                uuid: "assistant-after-compact",
+                session_id: "claude-sess-compact-retry",
+              } as unknown as SDKMessage;
+              yield sdkSuccessResult("claude-sess-compact-retry", "final");
+            })(),
+          ),
+        postResultDrainMs: 200,
+      },
+      silentLogger,
+    );
+
+    const events = await collect(
+      client.run(
+        { prompt: "hi", workspaceDir: "/tmp/claude-work", env: {} },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(events.map((event) => event.type)).toEqual([
+      "compact",
+      "text",
+      "result",
+      "context_usage",
+      "complete",
+    ]);
+    expect(events[0]).toMatchObject({
+      type: "compact",
+      trigger: "auto",
+      message: "Claude session compacted (auto)",
+    });
+    expect(events[1]).toMatchObject({ type: "text", text: "after compact" });
+    expect(events[2]).toMatchObject({ type: "result", output: "final" });
+  });
+
+  it("SystemMessage subtype=notification emits debug event even without hook callback execution", async () => {
+    const client = new ClaudeSdkClient(
+      {
+        query: () =>
+          makeQuery(
+            sdkMessages([
+              {
+                type: "system",
+                subtype: "notification",
+                key: "permission",
+                text: "Approval needed",
+                priority: "high",
+                uuid: "notification-1",
+                session_id: "claude-sess-notification",
+              },
+              sdkSuccessResult("claude-sess-notification", "done"),
+            ]),
+          ),
+      },
+      silentLogger,
+    );
+
+    const events = await collect(
+      client.run(
+        { prompt: "hi", workspaceDir: "/tmp/claude-work", env: {} },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(events[0]).toEqual({
+      type: "debug",
+      message: "[high:permission] Approval needed",
+    });
   });
 
   it("AssistantMessage.error field emits a distinct assistant_error (not generic error{fatal:false}) for dashboard classification", async () => {

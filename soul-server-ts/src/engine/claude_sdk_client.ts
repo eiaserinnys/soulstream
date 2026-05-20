@@ -21,6 +21,7 @@ const DEFAULT_INPUT_REQUEST_TIMEOUT_MS = 300_000;
 const DEFAULT_INTERVENTION_POLL_INTERVAL_MS = 1_000;
 const DEFAULT_MAX_CONTEXT_TOKENS = 200_000;
 const MCP_CONFIG_FILE = "mcp_config.json";
+const MAX_COMPACT_RETRIES = 3;
 /**
  * Result 도착 후 SDK가 발행하는 `prompt_suggestion` 메시지를 받기 위한 short drain 시간.
  *
@@ -36,6 +37,10 @@ const DEFAULT_POST_RESULT_DRAIN_MS = 2_000;
 const INPUT_REQUEST_TIMEOUT = Symbol("input_request_timeout");
 const INPUT_REQUEST_ABORTED = Symbol("input_request_aborted");
 const DRAIN_TIMEOUT = Symbol("post_result_drain_timeout");
+
+type DrainAfterResultOutcome =
+  | { action: "finish"; events: ClaudeClientEvent[] }
+  | { action: "continue"; events: ClaudeClientEvent[] };
 
 export type ClaudeSdkQueryParams = {
   prompt: string | AsyncIterable<SDKUserMessage>;
@@ -77,6 +82,9 @@ export class ClaudeSdkClient implements ClaudeClient {
   private readonly pendingInputRequests = new Map<string, PendingInputRequest>();
   private readonly toolNamesById = new Map<string, string>();
   private readonly emittedToolResultIds = new Set<string>();
+  private readonly emittedSubagentStartIds = new Set<string>();
+  private readonly emittedSubagentStopIds = new Set<string>();
+  private readonly pendingCompactHookTriggers: string[] = [];
 
   private activeQuery: ClaudeSdkQuery | null = null;
   private activeInput: PushAsyncIterable<SDKUserMessage> | null = null;
@@ -231,6 +239,7 @@ export class ClaudeSdkClient implements ClaudeClient {
       includePartialMessages: false,
       toolConfig: { askUserQuestion: { previewFormat: "markdown" } },
       canUseTool: this.makeCanUseTool(output),
+      hooks: this.buildHooks(output),
       ...(options.model ? { model: options.model } : {}),
       ...(options.systemPrompt ? { systemPrompt: options.systemPrompt } : {}),
       ...(options.resumeSessionId ? { resume: options.resumeSessionId } : {}),
@@ -286,6 +295,111 @@ export class ClaudeSdkClient implements ClaudeClient {
     };
   }
 
+  private buildHooks(output: EventQueue<ClaudeClientEvent>): NonNullable<ClaudeSdkOptions["hooks"]> {
+    const hooks: NonNullable<ClaudeSdkOptions["hooks"]> = {
+      PreToolUse: [
+        {
+          matcher: "Agent",
+          hooks: [
+            async (input) => {
+              const toolInput = asRecord(asRecord(input)?.tool_input);
+              if (toolInput?.run_in_background !== true) return {};
+
+              const updatedInput = { ...toolInput };
+              delete updatedInput.run_in_background;
+              return {
+                hookSpecificOutput: {
+                  hookEventName: "PreToolUse",
+                  updatedInput,
+                },
+              };
+            },
+          ],
+        },
+      ],
+      PreCompact: [
+        {
+          hooks: [
+            async (input) => {
+              const trigger = asString(asRecord(input)?.trigger) ?? "auto";
+              this.pendingCompactHookTriggers.push(trigger);
+              output.push({
+                type: "compact",
+                trigger,
+                message: compactMessage(trigger),
+              });
+              return {};
+            },
+          ],
+        },
+      ],
+      SubagentStart: [
+        {
+          hooks: [
+            async (input) => {
+              const record = asRecord(input);
+              for (const event of this.makeSubagentStartEvents(
+                asString(record?.agent_id),
+                asString(record?.agent_type),
+              )) {
+                output.push(event);
+              }
+              return {};
+            },
+          ],
+        },
+      ],
+      SubagentStop: [
+        {
+          hooks: [
+            async (input) => {
+              const record = asRecord(input);
+              for (const event of this.makeSubagentStopEvents(asString(record?.agent_id))) {
+                output.push(event);
+              }
+              return {};
+            },
+          ],
+        },
+      ],
+      Notification: [
+        {
+          hooks: [
+            async (input) => {
+              const record = asRecord(input);
+              const title = asString(record?.title) ?? "";
+              const message = asString(record?.message) ?? "";
+              const notificationType = asString(record?.notification_type) ?? "";
+              output.push({
+                type: "debug",
+                message: `[${notificationType}] ${title}: ${message}`,
+              });
+              return {};
+            },
+          ],
+        },
+      ],
+      Stop: [
+        {
+          hooks: [
+            async (input) => {
+              const record = asRecord(input);
+              this.logger.info(
+                {
+                  stopHookActive: record?.stop_hook_active,
+                  hasLastAssistantMessage: typeof record?.last_assistant_message === "string",
+                },
+                "Claude Stop hook fired",
+              );
+              return {};
+            },
+          ],
+        },
+      ],
+    };
+    return hooks;
+  }
+
   private waitForInputResponse(
     requestId: string,
     signal: AbortSignal,
@@ -325,10 +439,45 @@ export class ClaudeSdkClient implements ClaudeClient {
   ): Promise<void> {
     try {
       const queryIter = query[Symbol.asyncIterator]();
+      let compactRetryCount = 0;
       for (;;) {
         const next = await queryIter.next();
         if (next.done) break;
         const message = next.value;
+
+        const msg = asRecord(message);
+        if (msg?.type === "result") {
+          const terminalEvents = this.mapResultMessage(msg);
+          const resultEvent = terminalEvents.find((event) => event.type === "result");
+          const canCompactContinue =
+            resultEvent?.type === "result" &&
+            resultEvent.success &&
+            resultEvent.output.length === 0 &&
+            compactRetryCount < MAX_COMPACT_RETRIES;
+
+          if (!canCompactContinue) {
+            for (const event of terminalEvents) output.push(event);
+            const drain = await this.drainAfterResult(queryIter, false);
+            for (const event of drain.events) output.push(event);
+            query.close();
+            output.close();
+            return;
+          }
+
+          const drain = await this.drainAfterResult(queryIter, canCompactContinue);
+
+          if (drain.action === "continue") {
+            compactRetryCount += 1;
+            for (const event of drain.events) output.push(event);
+            continue;
+          }
+
+          for (const event of terminalEvents) output.push(event);
+          for (const event of drain.events) output.push(event);
+          query.close();
+          output.close();
+          return;
+        }
 
         let shouldStop = false;
         for (const event of this.mapSdkMessage(message)) {
@@ -343,7 +492,8 @@ export class ClaudeSdkClient implements ClaudeClient {
           //   - prompt_suggestion 1메시지를 best-effort로 기다림 (default 2초)
           //   - 그 외 메시지(StreamEvent · stray assistant 등)는 narrowing → logger.warn 후 무시
           //   - timeout / EOS / 에러 모두 조용히 종료 (drain은 부가 기능, §8 실패 격리)
-          await this.drainAfterResult(queryIter, output);
+          const drain = await this.drainAfterResult(queryIter, false);
+          for (const event of drain.events) output.push(event);
           query.close();
           output.close();
           return;
@@ -369,8 +519,8 @@ export class ClaudeSdkClient implements ClaudeClient {
    */
   private async drainAfterResult(
     queryIter: AsyncIterator<SDKMessage>,
-    output: EventQueue<ClaudeClientEvent>,
-  ): Promise<void> {
+    canContinueOnCompact: boolean,
+  ): Promise<DrainAfterResultOutcome> {
     let timer: NodeJS.Timeout | undefined;
     const timeoutPromise = new Promise<typeof DRAIN_TIMEOUT>((resolve) => {
       timer = setTimeout(() => resolve(DRAIN_TIMEOUT), this.postResultDrainMs);
@@ -385,25 +535,31 @@ export class ClaudeSdkClient implements ClaudeClient {
       const settled = await Promise.race([nextPromise, timeoutPromise]);
       if (settled === DRAIN_TIMEOUT) {
         this.logger.debug?.({ ms: this.postResultDrainMs }, "post-result drain timed out");
-        return;
+        return { action: "finish", events: [] };
       }
       if (settled.done) {
-        return;
+        return { action: "finish", events: [] };
       }
       const msg = asRecord(settled.value);
       if (msg && msg.type === "prompt_suggestion") {
-        for (const event of this.mapPromptSuggestion(msg)) {
-          output.push(event);
-        }
-        return;
+        return { action: "finish", events: this.mapPromptSuggestion(msg) };
+      }
+      if (msg?.type === "system" && msg.subtype === "compact_boundary") {
+        const events = this.mapSystemMessage(msg);
+        return {
+          action: canContinueOnCompact ? "continue" : "finish",
+          events,
+        };
       }
       // 비 prompt_suggestion 메시지는 무시 + warn (Python narrowing 정책 정합)
       this.logger.warn?.(
         { messageType: msg?.type ?? "unknown" },
         "post-result drain received unexpected message type — ignoring",
       );
+      return { action: "finish", events: [] };
     } catch (err) {
       this.logger.debug?.({ err }, "post-result drain errored — ignoring");
+      return { action: "finish", events: [] };
     } finally {
       if (timer) clearTimeout(timer);
     }
@@ -467,29 +623,31 @@ export class ClaudeSdkClient implements ClaudeClient {
     if (subtype === "compact_boundary") {
       const metadata = asRecord(message.compact_metadata);
       const trigger = asString(metadata?.trigger) ?? "unknown";
+      if (this.consumePendingCompactHookTrigger(trigger)) return [];
       return [
         {
           type: "compact",
           trigger,
-          message: `Claude session compacted (${trigger})`,
+          message: compactMessage(trigger),
         },
       ];
     }
     if (subtype === "task_started") {
       const agentId = asString(message.task_id);
-      if (!agentId) return [];
-      return [
-        {
-          type: "subagent_start",
-          agentId,
-          agentType: asString(message.task_type) ?? "task",
-        },
-      ];
+      return this.makeSubagentStartEvents(agentId, asString(message.task_type));
     }
     if (subtype === "task_notification") {
       const agentId = asString(message.task_id);
-      if (!agentId) return [];
-      return [{ type: "subagent_stop", agentId }];
+      return this.makeSubagentStopEvents(agentId);
+    }
+    if (subtype === "notification") {
+      const text = asString(message.text) ?? "";
+      const key = asString(message.key);
+      const priority = asString(message.priority);
+      const prefix = [priority, key].filter(Boolean).join(":");
+      return text
+        ? [{ type: "debug", message: prefix ? `[${prefix}] ${text}` : text }]
+        : [];
     }
     if (subtype === "permission_denied") {
       const toolName = asString(message.tool_name) ?? "tool";
@@ -668,6 +826,34 @@ export class ClaudeSdkClient implements ClaudeClient {
     ];
   }
 
+  private makeSubagentStartEvents(
+    agentId: string | undefined,
+    agentType: string | undefined,
+  ): ClaudeClientEvent[] {
+    if (!agentId || this.emittedSubagentStartIds.has(agentId)) return [];
+    this.emittedSubagentStartIds.add(agentId);
+    return [
+      {
+        type: "subagent_start",
+        agentId,
+        agentType: agentType ?? "task",
+      },
+    ];
+  }
+
+  private makeSubagentStopEvents(agentId: string | undefined): ClaudeClientEvent[] {
+    if (!agentId || this.emittedSubagentStopIds.has(agentId)) return [];
+    this.emittedSubagentStopIds.add(agentId);
+    return [{ type: "subagent_stop", agentId }];
+  }
+
+  private consumePendingCompactHookTrigger(trigger: string): boolean {
+    const index = this.pendingCompactHookTriggers.indexOf(trigger);
+    if (index === -1) return false;
+    this.pendingCompactHookTriggers.splice(index, 1);
+    return true;
+  }
+
   private normalizeExecutionError(err: unknown, executablePath?: string): Error {
     const rawMessage = err instanceof Error ? err.message : String(err);
     if (executablePath && /ENOENT|not found|no such file/i.test(rawMessage)) {
@@ -685,6 +871,9 @@ export class ClaudeSdkClient implements ClaudeClient {
     this.abortPendingInputRequests();
     this.toolNamesById.clear();
     this.emittedToolResultIds.clear();
+    this.emittedSubagentStartIds.clear();
+    this.emittedSubagentStopIds.clear();
+    this.pendingCompactHookTriggers.length = 0;
   }
 
   private abortPendingInputRequests(): void {
@@ -889,6 +1078,10 @@ function loadMcpServers(
     "Loaded Claude MCP config",
   );
   return servers as Record<string, McpServerConfig>;
+}
+
+function compactMessage(trigger: string): string {
+  return `Claude session compacted (${trigger})`;
 }
 
 function makeContextUsageEvent(usage: unknown): ClaudeClientEvent | undefined {
