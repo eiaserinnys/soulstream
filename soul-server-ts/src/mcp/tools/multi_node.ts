@@ -78,6 +78,11 @@ export function registerMultiNodeTools(
         ? buildCallerInfoFromCallerSession(runtime, caller_session_id)
         : undefined;
 
+      if (agent_id !== undefined) {
+        const validation = await validateRemoteAgentId(orch, node_id, agent_id);
+        if (!validation.ok) return errorResult(validation.message);
+      }
+
       const body: Record<string, unknown> = {
         prompt,
         nodeId: node_id,
@@ -96,6 +101,77 @@ export function registerMultiNodeTools(
       }
     },
   );
+}
+
+interface RemoteAgent {
+  id: string;
+  name?: string;
+  backend?: string;
+}
+
+type AgentIdValidation =
+  | { ok: true }
+  | { ok: false; message: string };
+
+async function validateRemoteAgentId(
+  orch: { baseUrl: string; headers: Record<string, string> },
+  nodeId: string,
+  agentId: string,
+): Promise<AgentIdValidation> {
+  let data: unknown;
+  try {
+    data = await fetchOrch(
+      orch,
+      "GET",
+      `/api/nodes/${encodeURIComponent(nodeId)}/agents`,
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      ok: false,
+      message: `agent_id 검증 실패: ${message}`,
+    };
+  }
+
+  const agents = parseRemoteAgents(data);
+  if (agents.length === 0 || agents.some((agent) => agent.id === agentId)) {
+    return { ok: true };
+  }
+
+  return {
+    ok: false,
+    message: [
+      `agent_id를 찾을 수 없습니다: ${agentId}`,
+      "정확한 id를 사용하세요.",
+      `available: ${formatRemoteAgents(agents)}`,
+    ].join(" "),
+  };
+}
+
+function parseRemoteAgents(data: unknown): RemoteAgent[] {
+  if (!isRecord(data) || !Array.isArray(data.agents)) return [];
+  const agents: RemoteAgent[] = [];
+  for (const raw of data.agents) {
+    if (!isRecord(raw) || typeof raw.id !== "string") continue;
+    agents.push({
+      id: raw.id,
+      ...(typeof raw.name === "string" ? { name: raw.name } : {}),
+      ...(typeof raw.backend === "string" ? { backend: raw.backend } : {}),
+    });
+  }
+  return agents;
+}
+
+function formatRemoteAgents(agents: RemoteAgent[]): string {
+  return agents
+    .map((agent) => {
+      const detail = [
+        agent.name ? `name=${agent.name}` : null,
+        agent.backend ? `backend=${agent.backend}` : null,
+      ].filter(Boolean).join(", ");
+      return detail ? `${agent.id} (${detail})` : agent.id;
+    })
+    .join(", ");
 }
 
 async function fetchOrch(
@@ -120,4 +196,8 @@ async function fetchOrch(
     throw new Error(`orch ${method} ${path} failed: ${res.status} ${res.statusText}`);
   }
   return await res.json();
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }

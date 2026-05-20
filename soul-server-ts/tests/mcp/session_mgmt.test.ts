@@ -119,7 +119,15 @@ interface CapturedRequest {
   body: string;
 }
 
-async function createOrchCapture(status = 200): Promise<{
+interface CapturedResponse {
+  status?: number;
+  body?: unknown;
+}
+
+async function createOrchCapture(
+  status = 200,
+  handler?: (request: CapturedRequest) => CapturedResponse,
+): Promise<{
   orch: OrchProxyConfig;
   requests: CapturedRequest[];
   close: () => Promise<void>;
@@ -138,10 +146,12 @@ async function createOrchCapture(status = 200): Promise<{
         headers: req.headers,
         body,
       });
-      res.writeHead(status, {
+      const captured = requests[requests.length - 1]!;
+      const response = handler?.(captured) ?? { status, body: {} };
+      res.writeHead(response.status ?? status, {
         "content-type": "application/json",
       });
-      res.end("{}");
+      res.end(JSON.stringify(response.body ?? {}));
     });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -270,6 +280,104 @@ describe("agent profile backend boundary", () => {
     expect(result.structuredContent).toMatchObject({
       agent_count: 2,
     });
+  });
+});
+
+describe("create_remote_agent_session", () => {
+  it("agent_id는 대상 노드의 정확한 id와 일치해야 하며 표시명/접두어 휴리스틱으로 해석하지 않는다", async () => {
+    const capture = await createOrchCapture(200, (req) => {
+      if (req.method === "GET" && req.url === "/api/nodes/node-remote/agents") {
+        return {
+          body: {
+            agents: [
+              {
+                id: "roselin_codex",
+                name: "로젤린 (codex)",
+                backend: "codex",
+              },
+            ],
+          },
+        };
+      }
+      return { body: { agentSessionId: "should-not-create" } };
+    });
+    try {
+      const runtime = makeRuntime({ queued: true, queuePosition: 1 }, capture.orch);
+      const client = await createClient(runtime);
+
+      const result = await client.callTool({
+        name: "create_remote_agent_session",
+        arguments: {
+          node_id: "node-remote",
+          agent_id: "roselin",
+          prompt: "delegate",
+        },
+      });
+
+      expect(result.isError).toBe(true);
+      const structured = result.structuredContent as { error?: string };
+      expect(structured.error).toContain("agent_id를 찾을 수 없습니다: roselin");
+      expect(structured.error).toContain("roselin_codex");
+      expect(capture.requests.map((r) => `${r.method} ${r.url}`)).toEqual([
+        "GET /api/nodes/node-remote/agents",
+      ]);
+    } finally {
+      await capture.close();
+    }
+  });
+
+  it("agent_id가 정확히 일치하면 검증 후 /api/sessions에 그대로 전달한다", async () => {
+    const capture = await createOrchCapture(200, (req) => {
+      if (req.method === "GET" && req.url === "/api/nodes/node-remote/agents") {
+        return {
+          body: {
+            agents: [
+              {
+                id: "roselin_codex",
+                name: "로젤린 (codex)",
+                backend: "codex",
+              },
+            ],
+          },
+        };
+      }
+      if (req.method === "POST" && req.url === "/api/sessions") {
+        return { body: { agentSessionId: "sess-child", nodeId: "node-remote" } };
+      }
+      return { status: 404, body: { error: "unexpected route" } };
+    });
+    try {
+      const runtime = makeRuntime({ queued: true, queuePosition: 1 }, capture.orch);
+      const client = await createClient(runtime);
+
+      const result = await client.callTool({
+        name: "create_remote_agent_session",
+        arguments: {
+          node_id: "node-remote",
+          agent_id: "roselin_codex",
+          prompt: "delegate",
+          caller_session_id: "caller-sess-1",
+          folder_id: "folder-1",
+        },
+      });
+
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toEqual({
+        agentSessionId: "sess-child",
+        nodeId: "node-remote",
+      });
+      expect(capture.requests.map((r) => `${r.method} ${r.url}`)).toEqual([
+        "GET /api/nodes/node-remote/agents",
+        "POST /api/sessions",
+      ]);
+      const body = JSON.parse(capture.requests[1]!.body);
+      expect(body.profile).toBe("roselin_codex");
+      expect(body.nodeId).toBe("node-remote");
+      expect(body.folderId).toBe("folder-1");
+      expect(body.caller_info.agent_id).toBe("codex-default");
+    } finally {
+      await capture.close();
+    }
   });
 });
 
