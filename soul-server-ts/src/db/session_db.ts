@@ -13,7 +13,7 @@
  *   - session_delete
  *   - event_append
  *
- * 사용 안 함 (B-3 범위 외): event_search, viewport, metadata_append 등.
+ * 사용 안 함 (B-3 범위 외): event_search, viewport 등.
  */
 
 import postgres from "postgres";
@@ -254,6 +254,39 @@ export class SessionDB {
   /** Python `session_delete` (schema.sql L389-394). */
   async deleteSession(sessionId: string): Promise<void> {
     await this.sql`SELECT session_delete(${sessionId})`;
+  }
+
+  /**
+   * Python `append_metadata` → `session_append_metadata` stored procedure 호출.
+   *
+   * caller_info 같은 세션 단위 metadata를 session_created 이전에 DB와 Task 양쪽에 맞춰
+   * 박는 데 사용한다. stored proc은 metadata 배열 append와 metadata 이벤트 삽입을 원자적으로
+   * 수행한다.
+   */
+  async appendMetadata(
+    sessionId: string,
+    entry: Record<string, unknown>,
+  ): Promise<number> {
+    const now = new Date();
+    const entryJson = JSON.stringify([entry]);
+    const searchable = `${String(entry.type ?? "")}: ${String(entry.value ?? "")} ${String(entry.label ?? "")}`;
+    const eventPayload = JSON.stringify({
+      type: "metadata",
+      metadata_type: entry.type,
+      value: entry.value,
+      label: entry.label,
+    });
+    const rows = await this.sql<{ session_append_metadata: number }[]>`
+      SELECT session_append_metadata(
+        ${sessionId},
+        ${entryJson},
+        ${"metadata"},
+        ${eventPayload},
+        ${searchable},
+        ${now}
+      )
+    `;
+    return rows[0]?.session_append_metadata ?? 0;
   }
 
   /**

@@ -192,7 +192,7 @@ export class SessionBroadcaster {
       pid: null,  // Codex SDK는 별도 process가 SDK 내부에 — TS에서 pid 노출 안 함
       session_type: "claude",
       caller_session_id: task.callerSessionId ?? null,
-      metadata: [],
+      metadata: task.metadata ?? [],
       last_event_id: task.lastEventId,
       last_read_event_id: task.lastReadEventId,
       node_id: this.nodeId,

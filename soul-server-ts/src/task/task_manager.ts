@@ -106,6 +106,7 @@ export class TaskManager {
     }
 
     const now = new Date();
+    const metadata = callerInfoMetadataEntry(params.callerInfo);
     const task: Task = {
       agentSessionId: params.agentSessionId,
       prompt: params.prompt,
@@ -113,6 +114,7 @@ export class TaskManager {
       profileId: params.profileId,
       callerSessionId: params.callerSessionId ?? undefined,
       callerInfo: params.callerInfo,
+      metadata: metadata ? [metadata] : [],
       model: params.model,
       systemPrompt: params.systemPrompt,  // B-6 context_builder
       contextItems: params.contextItems,
@@ -137,6 +139,12 @@ export class TaskManager {
       updatedAt: task.createdAt,
       callerSessionId: task.callerSessionId ?? null,
     });
+
+    // caller_info를 Task.metadata와 DB에 동시 저장. Python TaskFactory와 같은 타이밍:
+    // session_created 전에 박아 feed/folder 초기 카드가 metadata fallback을 즉시 사용할 수 있게 한다.
+    if (metadata) {
+      await this.db.appendMetadata(task.agentSessionId, metadata);
+    }
 
     this.tasks.set(task.agentSessionId, task);
 
@@ -475,6 +483,7 @@ export class TaskManager {
     // 의존하므로 정본 하나(design-principles §3).
     // 실패 격리(§8): builder 실패가 user_message persist/broadcast 자체를 막지 않음.
     let resumeContextItems: import("../context/prompt_assembler.js").ContextItem[] = [];
+    await this._promoteResumeCallerInfo(task, message.callerInfo);
     if (this.contextBuilder && this.agentRegistry && task.profileId) {
       const agent = this.agentRegistry.get(task.profileId);
       if (agent) {
@@ -567,6 +576,30 @@ export class TaskManager {
   }
 
   /**
+   * Terminal auto-resume 시 새 발신자 신원을 세션 현재 caller로 승격한다.
+   *
+   * Python resume 경로는 새 caller_info가 있으면 task.caller_info와 metadata를 함께 갱신한다.
+   * TS도 같은 순서로 맞춰야 auto-resume 직후 session_updated가 이전 사용자 프로필을 내보내지 않는다.
+   */
+  private async _promoteResumeCallerInfo(
+    task: Task,
+    callerInfo: CallerInfo | undefined,
+  ): Promise<void> {
+    const entry = callerInfoMetadataEntry(callerInfo);
+    if (!entry) return;
+    task.callerInfo = callerInfo;
+    task.metadata = [...(task.metadata ?? []), entry];
+    try {
+      await this.db.appendMetadata(task.agentSessionId, entry);
+    } catch (err) {
+      this.logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "caller_info metadata append failed — continuing auto-resume",
+      );
+    }
+  }
+
+  /**
    * DB에서 퇴거된(또는 서버 재기동으로 메모리 손실된) task를 lazy hydration.
    *
    * Python `service/session_eviction_manager.py:106-178 load_evicted_task` 정본의 codex 적응판.
@@ -624,6 +657,9 @@ export class TaskManager {
       // `extract_caller_info_from_metadata` (`packages/soul-common/.../auth/caller_info.py:119-163`)
       // 정본 인라인 이식.
       callerInfo: extractCallerInfoFromMetadata(row.metadata),
+      metadata: Array.isArray(row.metadata)
+        ? (row.metadata as Array<Record<string, unknown>>)
+        : [],
       createdAt: row.created_at,
       completedAt,
       lastEventId: row.last_event_id ?? 0,
@@ -690,4 +726,11 @@ function extractCallerInfoFromMetadata(metadata: unknown): CallerInfo | undefine
     }
   }
   return lastWithIdentity ?? lastAny;
+}
+
+function callerInfoMetadataEntry(
+  callerInfo: CallerInfo | undefined,
+): Record<string, unknown> | undefined {
+  if (!callerInfo || Object.keys(callerInfo).length === 0) return undefined;
+  return { type: "caller_info", value: callerInfo };
 }

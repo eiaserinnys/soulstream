@@ -11,6 +11,7 @@ const silentLogger = pino({ level: "silent" });
 
 function makeMocks() {
   const registerSession = vi.fn().mockResolvedValue(undefined);
+  const appendMetadata = vi.fn().mockResolvedValue(1);
   const deleteSession = vi.fn().mockResolvedValue(undefined);
   // B-5: 폴더 배정 정본 흐름 mocks (Python `_assign_default_folder_and_broadcast` 정합).
   const assignSessionToFolder = vi.fn().mockResolvedValue(undefined);
@@ -24,6 +25,7 @@ function makeMocks() {
   const getSession = vi.fn().mockResolvedValue(null);
   const db = {
     registerSession,
+    appendMetadata,
     deleteSession,
     assignSessionToFolder,
     getDefaultFolder,
@@ -50,6 +52,7 @@ function makeMocks() {
     db,
     broadcaster,
     registerSession,
+    appendMetadata,
     deleteSession,
     assignSessionToFolder,
     getDefaultFolder,
@@ -65,8 +68,8 @@ function makeMocks() {
 }
 
 describe("TaskManager.createTask", () => {
-  it("Task 생성 + DB registerSession + broadcast session_created", async () => {
-    const { db, broadcaster, registerSession, emitSessionCreated } = makeMocks();
+  it("Task 생성 + DB registerSession + caller_info metadata + broadcast session_created", async () => {
+    const { db, broadcaster, registerSession, appendMetadata, emitSessionCreated } = makeMocks();
     const tm = new TaskManager("eias-shopping-ts", db, broadcaster, silentLogger);
 
     const task = await tm.createTask({
@@ -88,10 +91,38 @@ describe("TaskManager.createTask", () => {
     expect(regArg.agentId).toBe("codex-default");
     expect(regArg.sessionType).toBe("claude");
     expect(regArg.status).toBe("running");
+    expect(appendMetadata).toHaveBeenCalledWith("sess-1", {
+      type: "caller_info",
+      value: { source: "slack" },
+    });
+    expect(task.metadata).toEqual([
+      { type: "caller_info", value: { source: "slack" } },
+    ]);
 
     expect(emitSessionCreated).toHaveBeenCalledTimes(1);
     // 폴더 명시 없으면 default-claude로 자동 배정 (Python _assign_default_folder_and_broadcast 정합)
     expect(emitSessionCreated.mock.calls[0][1]).toBe("default-claude");
+  });
+
+  it("callerInfo 부재/빈 객체면 metadata append 생략", async () => {
+    const { db, broadcaster, appendMetadata } = makeMocks();
+    const tm = new TaskManager("n", db, broadcaster, silentLogger);
+
+    const noCaller = await tm.createTask({
+      agentSessionId: "s-no",
+      prompt: "x",
+      profileId: "a",
+    });
+    const emptyCaller = await tm.createTask({
+      agentSessionId: "s-empty",
+      prompt: "x",
+      profileId: "a",
+      callerInfo: {},
+    });
+
+    expect(appendMetadata).not.toHaveBeenCalled();
+    expect(noCaller.metadata).toEqual([]);
+    expect(emptyCaller.metadata).toEqual([]);
   });
 
   it("중복 agentSessionId → throw, DB·broadcast 호출 안 함", async () => {
@@ -755,7 +786,17 @@ describe("TaskManager.addIntervention — running vs completed wire 분기 (결�
 
     // session_updated가 status="running" 박힌 task로 broadcast (결함 B fix)
     expect(mocks.emitSessionUpdated).toHaveBeenCalledTimes(1);
-    expect((mocks.emitSessionUpdated.mock.calls[0][0] as { status: string }).status).toBe("running");
+    const updatedTask = mocks.emitSessionUpdated.mock.calls[0][0] as Task;
+    expect(updatedTask.status).toBe("running");
+    expect(updatedTask.callerInfo).toEqual({ source: "slack", display_name: "Alice" });
+    expect(updatedTask.metadata).toContainEqual({
+      type: "caller_info",
+      value: { source: "slack", display_name: "Alice" },
+    });
+    expect(mocks.appendMetadata).toHaveBeenCalledWith("s1", {
+      type: "caller_info",
+      value: { source: "slack", display_name: "Alice" },
+    });
 
     // intervention_sent는 발행 안 함
     expect(mocks.emitInterventionSent).not.toHaveBeenCalled();

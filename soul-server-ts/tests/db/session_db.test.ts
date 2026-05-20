@@ -141,6 +141,34 @@ describe("SessionDB.updateSession", () => {
   });
 });
 
+describe("SessionDB.appendMetadata", () => {
+  it("caller_info entry를 session_append_metadata stored proc에 JSON 배열로 전달", async () => {
+    const { sql, calls } = createMockSql(() => [{ session_append_metadata: 7 }]);
+    const db = new SessionDB(sql);
+
+    const eventId = await db.appendMetadata("sess-1", {
+      type: "caller_info",
+      value: { source: "slack", display_name: "Alice" },
+    });
+
+    expect(eventId).toBe(7);
+    expect(calls).toHaveLength(1);
+    const [call] = calls;
+    expect(call.fragments.join("?")).toContain("session_append_metadata");
+    expect(call.values[0]).toBe("sess-1");
+    expect(JSON.parse(call.values[1] as string)).toEqual([
+      { type: "caller_info", value: { source: "slack", display_name: "Alice" } },
+    ]);
+    expect(call.values[2]).toBe("metadata");
+    expect(JSON.parse(call.values[3] as string)).toMatchObject({
+      type: "metadata",
+      metadata_type: "caller_info",
+      value: { source: "slack", display_name: "Alice" },
+    });
+    expect(call.values[5]).toBeInstanceOf(Date);
+  });
+});
+
 describe("SessionDB.setClaudeSessionId (F-3B)", () => {
   it("T5: session_set_claude_id stored proc에 (sessionId, threadId) 전달", async () => {
     const { sql, calls } = createMockSql();

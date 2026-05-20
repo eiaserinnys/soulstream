@@ -39,6 +39,9 @@ describe("emitSessionCreated", () => {
     const b = new SessionBroadcaster(send, makeRegistry(), "eias-shopping-ts");
     const task = makeTask({
       callerInfo: { source: "slack", display_name: "주복" },
+      metadata: [
+        { type: "caller_info", value: { source: "slack", display_name: "주복" } },
+      ],
     });
     await b.emitSessionCreated(task, "folder-1");
 
@@ -61,6 +64,9 @@ describe("emitSessionCreated", () => {
     );
     expect(session.backend).toBe("codex");
     expect(session.userName).toBe("주복");
+    expect(session.metadata).toEqual([
+      { type: "caller_info", value: { source: "slack", display_name: "주복" } },
+    ]);
     expect(session.caller_session_id).toBeNull();
     expect(session.last_event_id).toBe(0);
   });

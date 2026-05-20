@@ -88,6 +88,8 @@ export interface Task {
 
   callerSessionId?: string;
   callerInfo?: CallerInfo;
+  /** sessions.metadata JSONB array와 session_created.session.metadata에 싣는 세션 메타데이터. */
+  metadata?: Array<Record<string, unknown>>;
 
   /** 모델 override (Codex SDK ThreadOptions.model). */
   model?: string;
