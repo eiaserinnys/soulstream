@@ -5,7 +5,7 @@
  * (4차 캐시 §7.3 시그니처 동등 의무 없음, atom d7a1ad86 정본 둘 안티패턴 회피).
  *
  * 본 PR에서 *사용*하지 않는 Python 필드는 의도적 미포함:
- *   - claude 전용 (allowed_tools/disallowed_tools 런타임 사본, use_mcp, oauth_token, system_prompt)
+ *   - claude 전용 (allowed_tools/disallowed_tools 런타임 사본, use_mcp)
  *   - LLM proxy (llm_provider, llm_model, llm_usage)
  *   - _deliver_input_response (AskUserQuestion 미구현)
  *   - pending_folder_id (folder 배정은 B-4 후속 PR-B 범위)
@@ -92,7 +92,9 @@ export interface Task {
   metadata?: Array<Record<string, unknown>>;
 
   /** 모델 override (Codex SDK ThreadOptions.model). */
-  model?: string;
+  model?: string | null;
+  /** Claude Code per-task OAuth token. 있으면 CLAUDE_CODE_OAUTH_TOKEN extraEnv로 전달. */
+  oauthToken?: string;
   /** 추론 모델 effort override. Codex는 ThreadOptions.modelReasoningEffort로 전달. */
   reasoningEffort?: ReasoningEffort;
 

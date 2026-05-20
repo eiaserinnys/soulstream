@@ -31,7 +31,8 @@ interface CreateSessionCmd extends CommandLike {
   caller_info?: CallerInfo;
   attachment_paths?: string[];
   extra_context_items?: ContextItem[];
-  model?: string;
+  model?: string | null;
+  oauth_token?: string | null;
   reasoningEffort?: ReasoningEffort;
   folderId?: string | null;
   /**
@@ -186,6 +187,7 @@ export class CommandDispatcher {
       callerSessionId: cmd.caller_session_id ?? null,
       callerInfo: cmd.caller_info,
       model: cmd.model,
+      oauthToken: agent.backend === "claude" ? normalizeOptionalString(cmd.oauth_token) : undefined,
       reasoningEffort: cmd.reasoningEffort,
       folderId: cmd.folderId ?? null,
       systemPrompt: cmd.systemPrompt,  // B-6 context_builder가 folder_prompt와 합성
@@ -440,4 +442,10 @@ export class CommandDispatcher {
 function stringifyError(err: unknown): string {
   if (err instanceof Error) return err.message;
   return String(err);
+}
+
+function normalizeOptionalString(value: string | null | undefined): string | undefined {
+  if (value === null || value === undefined) return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }

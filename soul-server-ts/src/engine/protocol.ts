@@ -68,7 +68,7 @@ export interface EngineExecuteParams {
   /** Codex SDK `UserInput[]`로 전달할 로컬 이미지 첨부 경로. */
   imageAttachmentPaths?: string[];
   resumeSessionId?: string;
-  model?: string;
+  model?: string | null;
   /** Codex SDK ThreadOptions.modelReasoningEffort. Missing defaults to xhigh at adapter boundary. */
   reasoningEffort?: ReasoningEffort;
   /**

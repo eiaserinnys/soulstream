@@ -21,5 +21,12 @@ export type {
 
 export { CodexEngineAdapter } from "./codex_adapter.js";
 export type { CodexAdapterConfig } from "./codex_adapter.js";
+export { ClaudeEngineAdapter } from "./claude_adapter.js";
+export type {
+  ClaudeAdapterConfig,
+  ClaudeClient,
+  ClaudeClientEvent,
+  ClaudeRunOptions,
+} from "./claude_adapter.js";
 
 export { mapThreadEvent } from "./codex_event_mapper.js";

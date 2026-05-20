@@ -7,6 +7,7 @@ import { CatalogService } from "./catalog/catalog_service.js";
 import { parseEnv } from "./config.js";
 import { SessionDB } from "./db/session_db.js";
 import { EventPersistence } from "./db/event_persistence.js";
+import { ClaudeEngineAdapter } from "./engine/claude_adapter.js";
 import { CodexEngineAdapter } from "./engine/codex_adapter.js";
 import { createLogger } from "./logger.js";
 import { wsToHttpBase } from "./mcp/orch_proxy.js";
@@ -139,7 +140,7 @@ async function main(): Promise<void> {
     agentRegistry,
   );
 
-  // EngineFactory — backend별 분기. 본 PR은 codex 전용.
+  // EngineFactory — backend별 분기. Claude는 P2 skeleton 단계라 주입 client 없이 명시 실패한다.
   const engineFactory: EngineFactory = (agent) => {
     if (agent.backend === "codex") {
       return new CodexEngineAdapter(
@@ -154,8 +155,17 @@ async function main(): Promise<void> {
         logger,
       );
     }
+    if (agent.backend === "claude") {
+      return new ClaudeEngineAdapter(
+        {
+          workspaceDir: agent.workspace_dir,
+          processEnv: process.env,
+        },
+        logger,
+      );
+    }
     throw new Error(
-      `Unsupported backend "${agent.backend}" in soul-server-ts (Codex 전담 노드, agent=${agent.id})`,
+      `Unsupported backend "${agent.backend}" in soul-server-ts (agent=${agent.id})`,
     );
   };
   // B-7 피위임 완료 회송 wiring (분석 캐시

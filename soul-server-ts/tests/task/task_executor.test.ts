@@ -18,6 +18,13 @@ const agent: AgentProfile = {
   workspace_dir: "/tmp/codex-default",
 };
 
+const claudeAgent: AgentProfile = {
+  id: "claude-roselin",
+  name: "로젤린",
+  backend: "claude",
+  workspace_dir: "/tmp/claude-roselin",
+};
+
 /** AsyncIterable로 주어진 이벤트 시퀀스를 yield하는 fake EnginePort. */
 function makeFakeEngine(
   events: SSEEventPayload[],
@@ -54,7 +61,11 @@ function makeTask(): Task {
 function makeMocks() {
   let nextEventId = 0;
   const persistEvent = vi.fn(async () => ++nextEventId);
-  const handleSideEffects = vi.fn(async () => undefined);
+  const handleSideEffects = vi.fn(async (_sessionId: string, event: SSEEventPayload, task: Task) => {
+    if (event.type === "text_delta" && typeof event.text === "string") {
+      task.lastAssistantText = event.text;
+    }
+  });
   const persistence = { persistEvent, handleSideEffects } as unknown as EventPersistence;
 
   const updateSession = vi.fn().mockResolvedValue(undefined);
@@ -184,6 +195,50 @@ describe("TaskExecutor.startExecution", () => {
     expect(capturedReasoningEffort).toBe("low");
   });
 
+  it("Claude task oauthToken을 engine.execute extraEnv로 전달하고 session/text/complete를 기존 표면에 영속한다", async () => {
+    const mocks = makeMocks();
+    let capturedExtraEnv: Record<string, string> | undefined;
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        capturedExtraEnv = params.extraEnv;
+        yield { type: "session", session_id: "claude-sess-1" } as SSEEventPayload;
+        yield { type: "text_start", timestamp: 1 } as SSEEventPayload;
+        yield { type: "text_delta", text: "claude says hi", timestamp: 1 } as SSEEventPayload;
+        yield { type: "text_end", timestamp: 1 } as SSEEventPayload;
+        yield { type: "complete", result: "claude says hi", timestamp: 1 } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+    task.oauthToken = "task-oauth-token";
+
+    executor.startExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(capturedExtraEnv).toEqual({
+      CLAUDE_CODE_OAUTH_TOKEN: "task-oauth-token",
+    });
+    expect(task.status).toBe("completed");
+    expect(task.codexThreadId).toBe("claude-sess-1");
+    expect(task.lastAssistantText).toBe("claude says hi");
+    expect(mocks.setClaudeSessionId).toHaveBeenCalledWith("sess-1", "claude-sess-1");
+    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", {
+      status: "completed",
+      last_event_id: 6,
+    });
+  });
+
   it("engine.execute throw → status=error + finalize", async () => {
     const mocks = makeMocks();
     const engine = makeFakeEngine(
@@ -202,6 +257,44 @@ describe("TaskExecutor.startExecution", () => {
     expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", {
       status: "error",
       last_event_id: 2,  // B-5: user_message(1) + session(2)
+    });
+  });
+
+  it("Claude fatal error event 후 throw → error event를 남기고 task status=error로 finalize", async () => {
+    const mocks = makeMocks();
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(): AsyncIterable<SSEEventPayload> {
+        yield { type: "error", message: "claude boom", fatal: true, timestamp: 1 } as SSEEventPayload;
+        throw new Error("claude boom");
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+
+    executor.startExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(task.status).toBe("error");
+    expect(task.error).toContain("claude boom");
+    expect(mocks.persistEvent.mock.calls[1][1]).toMatchObject({
+      type: "error",
+      message: "claude boom",
+      fatal: true,
+    });
+    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", {
+      status: "error",
+      last_event_id: 2,
     });
   });
 

@@ -33,7 +33,8 @@ export interface CreateTaskParams {
   profileId?: string;
   callerSessionId?: string | null;
   callerInfo?: CallerInfo;
-  model?: string;
+  model?: string | null;
+  oauthToken?: string;
   reasoningEffort?: ReasoningEffort;
   folderId?: string | null;
   /** B-6 context_builder: 사용자/위임자 system_prompt. folder_prompt와 합성됨. */
@@ -119,6 +120,7 @@ export class TaskManager {
       callerInfo: params.callerInfo,
       metadata: metadata ? [metadata] : [],
       model: params.model,
+      oauthToken: params.oauthToken,
       reasoningEffort: params.reasoningEffort,
       systemPrompt: params.systemPrompt,  // B-6 context_builder
       contextItems: params.contextItems,

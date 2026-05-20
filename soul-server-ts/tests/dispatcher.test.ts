@@ -65,6 +65,7 @@ function createDispatcher(opts: {
         callerInfo: params.callerInfo,
         model: params.model,
         reasoningEffort: params.reasoningEffort,
+        oauthToken: params.oauthToken,
         contextItems: params.contextItems,
         attachmentPaths: params.attachmentPaths,
         createdAt: new Date(),
@@ -198,6 +199,20 @@ describe("CommandDispatcher.create_session", () => {
       reasoningEffort: "medium",
     });
     expect(createdTasks[0].reasoningEffort).toBe("medium");
+  });
+
+  it("oauth_token을 createTask.oauthToken으로 전달한다", async () => {
+    const { dispatcher, createdTasks } = createDispatcher({
+      agents: [codexAgent, claudeAgent],
+    });
+    await dispatcher.dispatch({
+      type: "create_session",
+      agentSessionId: "sess-oauth",
+      prompt: "use claude token",
+      profile: "claude-roselin",
+      oauth_token: "task-oauth-token",
+    });
+    expect(createdTasks[0].oauthToken).toBe("task-oauth-token");
   });
 
   it("attachment_paths만 오면 비이미지만 attached_files contextItems로 변환하고 전체 경로는 task에 보존", async () => {

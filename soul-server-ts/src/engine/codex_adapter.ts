@@ -40,7 +40,7 @@ const NON_REASONING_MODEL_PATTERNS = [
 ];
 
 export function resolveCodexModelReasoningEffort(
-  model: string | undefined,
+  model: string | null | undefined,
   requested: ReasoningEffort | undefined,
 ): ReasoningEffort | undefined {
   const effort = requested ?? DEFAULT_REASONING_EFFORT;
@@ -161,8 +161,11 @@ export class CodexEngineAdapter implements EnginePort {
     // PR #60의 진단(`networkAccessEnabled`가 MCP cancel을 푼다는 가설)이 부분 오진단이었음 —
     // `networkAccessEnabled`는 *shell command outbound*에만 영향하지 MCP tool과 무관.
     // 진정한 root cause는 sandbox 모드의 MCP 게이트.
+    const model = typeof params.model === "string" && params.model.trim()
+      ? params.model.trim()
+      : undefined;
     const modelReasoningEffort = resolveCodexModelReasoningEffort(
-      params.model,
+      model,
       params.reasoningEffort,
     );
     const threadOptions = {
@@ -170,12 +173,12 @@ export class CodexEngineAdapter implements EnginePort {
       skipGitRepoCheck: true,
       approvalPolicy: "never" as const,
       sandboxMode: "danger-full-access" as const,
-      ...(params.model ? { model: params.model } : {}),
+      ...(model ? { model } : {}),
       ...(modelReasoningEffort ? { modelReasoningEffort } : {}),
     };
-    if (params.model && !modelReasoningEffort) {
+    if (model && !modelReasoningEffort) {
       this.logger.warn(
-        { model: params.model, reasoningEffort: params.reasoningEffort ?? DEFAULT_REASONING_EFFORT },
+        { model, reasoningEffort: params.reasoningEffort ?? DEFAULT_REASONING_EFFORT },
         "CodexEngineAdapter: dropping reasoning effort for non-reasoning model",
       );
     }

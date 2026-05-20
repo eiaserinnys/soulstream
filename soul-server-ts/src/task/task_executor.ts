@@ -17,6 +17,7 @@ import type { Logger } from "pino";
 
 import type { AgentProfile } from "../agent_registry.js";
 import type { EnginePort, SSEEventPayload } from "../engine/protocol.js";
+import { CLAUDE_OAUTH_TOKEN_ENV } from "../engine/claude_options.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
@@ -187,6 +188,7 @@ export class TaskExecutor {
             model: task.model,
             reasoningEffort: task.reasoningEffort,
             resumeSessionId,
+            extraEnv: buildTaskExtraEnv(task),
           })) {
             await this._processEvent(task, event);
           }
@@ -525,4 +527,11 @@ function composeInterventionTurnPrompt(message: { text: string; context?: Contex
     prompt: contextBlock ? `${contextBlock}\n\n${message.text}` : message.text,
     imageAttachmentPaths: imagePaths,
   };
+}
+
+function buildTaskExtraEnv(task: Task): Record<string, string> | undefined {
+  if (!task.oauthToken) {
+    return undefined;
+  }
+  return { [CLAUDE_OAUTH_TOKEN_ENV]: task.oauthToken };
 }
