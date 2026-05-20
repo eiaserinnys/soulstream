@@ -52,6 +52,11 @@ export const EnvSchema = z
      */
     INCOMING_FILE_DIR: z.string().default(".local/incoming"),
     /**
+     * Claude auth/profile command storage 정본. Python `.env`나 `~/.claude`를 암묵 공유하지 않는다.
+     * Claude backend agent를 광고하는 운영 노드는 main.ts 시작 검증에서 이 값을 필수로 요구한다.
+     */
+    CLAUDE_AUTH_TOKEN_PATH: z.string().min(1).optional(),
+    /**
      * B-6 context_builder: atom MCP HTTP API 설정. Python `soul_server.config.atom_*` 정합.
      * 모두 optional — 미설정 시 atom 호출 skip (graceful, turn 진행에 영향 없음).
      */

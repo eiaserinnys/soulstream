@@ -2,6 +2,7 @@ import { WebSocket } from "ws";
 import type { Logger } from "pino";
 
 import type { AgentRegistry } from "../agent_registry.js";
+import type { ClaudeAuthCommandHandler } from "../auth/claude_auth.js";
 import type { TaskExecutor } from "../task/task_executor.js";
 import type { TaskManager } from "../task/task_manager.js";
 import type { AttachmentStore } from "../attachments/file_manager.js";
@@ -26,6 +27,7 @@ export interface UpstreamDependencies {
   taskManager: TaskManager;
   taskExecutor: TaskExecutor;
   attachmentStore?: AttachmentStore;
+  claudeAuth?: ClaudeAuthCommandHandler;
 }
 
 /**
@@ -59,6 +61,7 @@ export class UpstreamAdapter {
       deps.taskManager,
       deps.taskExecutor,
       deps.attachmentStore,
+      deps.claudeAuth,
     );
   }
 

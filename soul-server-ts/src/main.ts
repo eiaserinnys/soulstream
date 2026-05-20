@@ -2,6 +2,7 @@ import dotenv from "dotenv";
 import { ZodError } from "zod";
 
 import { loadAgentRegistry } from "./agent_registry.js";
+import { ClaudeAuthService, FileClaudeAuthTokenStore } from "./auth/claude_auth.js";
 import { FileAttachmentStore } from "./attachments/file_manager.js";
 import { CatalogService } from "./catalog/catalog_service.js";
 import { parseEnv } from "./config.js";
@@ -87,8 +88,27 @@ async function main(): Promise<void> {
       port: env.PORT,
       agentsConfigPath: env.AGENTS_CONFIG_PATH,
       agentCount: agentRegistry.list().length,
+      claudeAuthTokenPathConfigured: Boolean(env.CLAUDE_AUTH_TOKEN_PATH),
     },
     "soul-server-ts starting (B-3 task lifecycle + DB)",
+  );
+
+  const hasClaudeBackend = agentRegistry.supportedBackends().includes("claude");
+  if (hasClaudeBackend && !env.CLAUDE_AUTH_TOKEN_PATH) {
+    console.error(
+      "CLAUDE_AUTH_TOKEN_PATH is required when agents.yaml contains a Claude backend agent.",
+    );
+    console.error(
+      "TS Claude auth storage must be explicit; Python .env and ~/.claude are not shared.",
+    );
+    process.exit(1);
+  }
+
+  const claudeAuth = new ClaudeAuthService(
+    {
+      store: new FileClaudeAuthTokenStore(env.CLAUDE_AUTH_TOKEN_PATH),
+    },
+    logger,
   );
 
   // DB 초기화 (postgres.js)
@@ -159,7 +179,7 @@ async function main(): Promise<void> {
       return new ClaudeEngineAdapter(
         {
           workspaceDir: agent.workspace_dir,
-          processEnv: process.env,
+          processEnv: claudeAuth.buildProcessEnv(process.env),
         },
         logger,
       );
@@ -282,7 +302,7 @@ async function main(): Promise<void> {
       isProduction: env.ENVIRONMENT === "production",
     },
     logger,
-    { agentRegistry, taskManager, taskExecutor, attachmentStore },
+    { agentRegistry, taskManager, taskExecutor, attachmentStore, claudeAuth },
   );
 
   // 백그라운드 실행 — top-level에서 await 안 함 (재연결 무한 루프이므로)

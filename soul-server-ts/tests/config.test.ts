@@ -106,6 +106,15 @@ describe("parseEnv", () => {
     expect(env.AGENTS_CONFIG_PATH).toBe("/etc/soulstream/agents.yaml");
   });
 
+  it("CLAUDE_AUTH_TOKEN_PATH는 default 없이 명시된 값만 정본으로 사용", () => {
+    expect(parseEnv(minimal).CLAUDE_AUTH_TOKEN_PATH).toBeUndefined();
+    const env = parseEnv({
+      ...minimal,
+      CLAUDE_AUTH_TOKEN_PATH: "/var/lib/soulstream-ts/claude-auth.json",
+    });
+    expect(env.CLAUDE_AUTH_TOKEN_PATH).toBe("/var/lib/soulstream-ts/claude-auth.json");
+  });
+
   // MCP Streamable HTTP env (본 카드 신규)
   describe("MCP env", () => {
     it("MCP_ENABLED default false (string -> bool)", () => {

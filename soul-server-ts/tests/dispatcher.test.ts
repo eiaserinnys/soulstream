@@ -7,6 +7,10 @@ import { join } from "node:path";
 import { AgentRegistry, type AgentProfile } from "../src/agent_registry.js";
 import { FileAttachmentStore, type AttachmentStore } from "../src/attachments/file_manager.js";
 import { CommandDispatcher } from "../src/upstream/dispatcher.js";
+import type {
+  ClaudeAuthCommandHandler,
+  ClaudeAuthSetTokenCmd,
+} from "../src/auth/claude_auth.js";
 import type { TaskExecutor } from "../src/task/task_executor.js";
 import type { TaskManager } from "../src/task/task_manager.js";
 import type { Task } from "../src/task/task_models.js";
@@ -34,6 +38,7 @@ function createDispatcher(opts: {
   taskManager?: Partial<TaskManager>;
   taskExecutor?: Partial<TaskExecutor>;
   attachmentStore?: AttachmentStore;
+  claudeAuth?: ClaudeAuthCommandHandler;
 } = {}) {
   const sent: unknown[] = [];
   const send = vi.fn(async (data: unknown) => {
@@ -96,6 +101,7 @@ function createDispatcher(opts: {
     tm,
     te,
     opts.attachmentStore,
+    opts.claudeAuth,
   );
   return { dispatcher, sent, send, registry, tm, te, createdTasks };
 }
@@ -559,6 +565,202 @@ describe("CommandDispatcher.respond (P4 AskUserQuestion)", () => {
       requestId: "orch-cmd-3",
       command_type: "respond",
     });
+  });
+});
+
+describe("CommandDispatcher Claude auth/profile commands (P6)", () => {
+  function makeClaudeAuthMock(
+    overrides: Partial<ClaudeAuthCommandHandler> = {},
+  ): ClaudeAuthCommandHandler {
+    return {
+      status: vi.fn((_requestId, responseType) => ({
+        type: responseType,
+        requestId: _requestId,
+        has_token: true,
+      })),
+      setToken: vi.fn((_cmd: ClaudeAuthSetTokenCmd, requestId, responseType) => ({
+        response: {
+          type: responseType,
+          requestId,
+          success: true,
+        },
+      })),
+      deleteToken: vi.fn((requestId, responseType) => ({
+        type: responseType,
+        requestId,
+        success: true,
+      })),
+      fetchUsage: vi.fn(async (requestId, responseType) => ({
+        type: responseType,
+        requestId,
+        success: true,
+        data: { five_hour: null },
+      })),
+      fetchProfile: vi.fn(async (requestId, responseType) => ({
+        type: responseType,
+        requestId,
+        success: true,
+        data: { account: { email: "agent@example.com" } },
+      })),
+      ...overrides,
+    };
+  }
+
+  it("claude_auth_status → Python command type 그대로 has_token ACK", async () => {
+    const claudeAuth = makeClaudeAuthMock();
+    const { dispatcher, sent } = createDispatcher({
+      agents: [claudeAgent],
+      claudeAuth,
+    });
+
+    await dispatcher.dispatch({ type: "claude_auth_status", requestId: "auth-1" });
+
+    expect(claudeAuth.status).toHaveBeenCalledWith("auth-1", "claude_auth_status");
+    expect(sent).toEqual([
+      {
+        type: "claude_auth_status",
+        requestId: "auth-1",
+        has_token: true,
+      },
+    ]);
+  });
+
+  it("claude_auth_set_token 성공 → token secret 없이 success ACK", async () => {
+    const claudeAuth = makeClaudeAuthMock();
+    const { dispatcher, sent } = createDispatcher({
+      agents: [claudeAgent],
+      claudeAuth,
+    });
+
+    await dispatcher.dispatch({
+      type: "claude_auth_set_token",
+      requestId: "auth-2",
+      token: "sk-ant-oat01-valid_token",
+      refresh_token: "refresh-secret",
+      expires_in: 3600,
+      scope: "user:profile",
+    });
+
+    expect(claudeAuth.setToken).toHaveBeenCalledWith(
+      expect.objectContaining({
+        token: "sk-ant-oat01-valid_token",
+        refresh_token: "refresh-secret",
+      }),
+      "auth-2",
+      "claude_auth_set_token",
+    );
+    expect(sent[0]).toEqual({
+      type: "claude_auth_set_token",
+      requestId: "auth-2",
+      success: true,
+    });
+    expect(JSON.stringify(sent[0])).not.toContain("sk-ant-oat01");
+    expect(JSON.stringify(sent[0])).not.toContain("refresh-secret");
+  });
+
+  it("claude_auth_set_token validation 실패 → Python처럼 error wire", async () => {
+    const claudeAuth = makeClaudeAuthMock({
+      setToken: vi.fn(() => ({ error: "invalid token format" })),
+    });
+    const { dispatcher, sent } = createDispatcher({
+      agents: [claudeAgent],
+      claudeAuth,
+    });
+
+    await dispatcher.dispatch({
+      type: "claude_auth_set_token",
+      requestId: "auth-3",
+      token: "bad-token",
+    });
+
+    expect(sent[0]).toMatchObject({
+      type: "error",
+      requestId: "auth-3",
+      command_type: "claude_auth_set_token",
+      message: "invalid token format",
+    });
+  });
+
+  it("claude_auth_delete_token → idempotent ACK", async () => {
+    const claudeAuth = makeClaudeAuthMock();
+    const { dispatcher, sent } = createDispatcher({
+      agents: [claudeAgent],
+      claudeAuth,
+    });
+
+    await dispatcher.dispatch({ type: "claude_auth_delete_token", requestId: "auth-4" });
+
+    expect(claudeAuth.deleteToken).toHaveBeenCalledWith(
+      "auth-4",
+      "claude_auth_delete_token",
+    );
+    expect(sent[0]).toMatchObject({
+      type: "claude_auth_delete_token",
+      requestId: "auth-4",
+      success: true,
+    });
+  });
+
+  it("usage/profile → mock HTTP service 결과를 같은 command type으로 반환", async () => {
+    const claudeAuth = makeClaudeAuthMock();
+    const { dispatcher, sent } = createDispatcher({
+      agents: [claudeAgent],
+      claudeAuth,
+    });
+
+    await dispatcher.dispatch({ type: "claude_auth_get_usage", requestId: "auth-5" });
+    await dispatcher.dispatch({ type: "claude_auth_get_profile", requestId: "auth-6" });
+
+    expect(claudeAuth.fetchUsage).toHaveBeenCalledWith(
+      "auth-5",
+      "claude_auth_get_usage",
+    );
+    expect(claudeAuth.fetchProfile).toHaveBeenCalledWith(
+      "auth-6",
+      "claude_auth_get_profile",
+    );
+    expect(sent).toEqual([
+      {
+        type: "claude_auth_get_usage",
+        requestId: "auth-5",
+        success: true,
+        data: { five_hour: null },
+      },
+      {
+        type: "claude_auth_get_profile",
+        requestId: "auth-6",
+        success: true,
+        data: { account: { email: "agent@example.com" } },
+      },
+    ]);
+  });
+
+  it("Codex-only node로 들어온 Claude auth command는 명시 error", async () => {
+    const claudeAuth = makeClaudeAuthMock();
+    const { dispatcher, sent } = createDispatcher({ claudeAuth });
+
+    await dispatcher.dispatch({ type: "claude_auth_status", requestId: "auth-codex" });
+
+    expect(claudeAuth.status).not.toHaveBeenCalled();
+    expect(sent[0]).toMatchObject({
+      type: "error",
+      requestId: "auth-codex",
+      command_type: "claude_auth_status",
+    });
+    expect((sent[0] as { message: string }).message).toContain("Claude backend");
+  });
+
+  it("Claude backend node인데 auth service가 없으면 설정 오류를 반환", async () => {
+    const { dispatcher, sent } = createDispatcher({ agents: [claudeAgent] });
+
+    await dispatcher.dispatch({ type: "claude_auth_status", requestId: "auth-missing" });
+
+    expect(sent[0]).toMatchObject({
+      type: "error",
+      requestId: "auth-missing",
+      command_type: "claude_auth_status",
+    });
+    expect((sent[0] as { message: string }).message).toContain("not configured");
   });
 });
 
