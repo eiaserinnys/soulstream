@@ -47,13 +47,13 @@ describe("ClaudeSdkClient", () => {
             uuid: "user-1",
             session_id: "claude-sess-1",
           },
-          sdkSuccessResult("claude-sess-1", "done"),
           {
             type: "prompt_suggestion",
             suggestion: "next?",
             uuid: "suggestion-1",
             session_id: "claude-sess-1",
           },
+          sdkSuccessResult("claude-sess-1", "done"),
         ]),
       );
     };
@@ -101,8 +101,8 @@ describe("ClaudeSdkClient", () => {
       "thinking",
       "tool_start",
       "tool_result",
-      "result",
       "prompt_suggestion",
+      "result",
       "complete",
     ]);
     expect(events[0]).toEqual({ type: "session", sessionId: "claude-sess-1" });
@@ -118,7 +118,7 @@ describe("ClaudeSdkClient", () => {
       result: "file",
       toolUseId: "toolu_1",
     });
-    expect(events[6]).toMatchObject({
+    expect(events[5]).toMatchObject({
       type: "prompt_suggestion",
       text: "next?",
     });
@@ -154,6 +154,38 @@ describe("ClaudeSdkClient", () => {
 
     expect(captured[0]?.options).not.toHaveProperty("model");
     expect(captured[0]?.options).not.toHaveProperty("pathToClaudeCodeExecutable");
+  });
+
+  it("emits complete as soon as SDK result arrives and closes the streaming query", async () => {
+    let query: ClaudeSdkQuery | undefined;
+    const client = new ClaudeSdkClient(
+      {
+        query: () => {
+          query = makeQuery(
+            (async function* () {
+              yield sdkSuccessResult("claude-sess-done", "done");
+              await new Promise<never>(() => {});
+            })(),
+          );
+          return query;
+        },
+      },
+      silentLogger,
+    );
+
+    const events = await collect(
+      client.run(
+        {
+          prompt: "hi",
+          workspaceDir: "/tmp/claude-work",
+          env: {},
+        },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(events.map((event) => event.type)).toEqual(["result", "complete"]);
+    expect(query?.close).toHaveBeenCalledTimes(1);
   });
 
   it("bridges AskUserQuestion canUseTool to input_request and returns updatedInput after delivery", async () => {

@@ -58,7 +58,6 @@ export class ClaudeSdkClient implements ClaudeClient {
   private activeInput: PushAsyncIterable<SDKUserMessage> | null = null;
   private lastWorkspaceDir: string | null = null;
   private lastEnv: Record<string, string> | null = null;
-  private pendingCompleteEvent: ClaudeClientEvent | null = null;
 
   constructor(config: ClaudeSdkClientConfig = {}, logger: Logger) {
     this.queryFn = config.query ?? defaultQuery;
@@ -296,13 +295,18 @@ export class ClaudeSdkClient implements ClaudeClient {
   ): Promise<void> {
     try {
       for await (const message of query) {
+        let shouldStop = false;
         for (const event of this.mapSdkMessage(message)) {
           output.push(event);
+          if (event.type === "complete" || (event.type === "error" && event.fatal !== false)) {
+            shouldStop = true;
+          }
         }
-      }
-      if (this.pendingCompleteEvent) {
-        output.push(this.pendingCompleteEvent);
-        this.pendingCompleteEvent = null;
+        if (shouldStop) {
+          query.close();
+          output.close();
+          return;
+        }
       }
       output.close();
     } catch (err) {
@@ -493,7 +497,6 @@ export class ClaudeSdkClient implements ClaudeClient {
     };
 
     if (!success) {
-      this.pendingCompleteEvent = null;
       return [
         resultEvent,
         {
@@ -505,7 +508,7 @@ export class ClaudeSdkClient implements ClaudeClient {
       ];
     }
 
-    this.pendingCompleteEvent = {
+    const completeEvent: ClaudeClientEvent = {
       type: "complete",
       result: output,
       claudeSessionId: asString(message.session_id),
@@ -514,7 +517,7 @@ export class ClaudeSdkClient implements ClaudeClient {
         ? { totalCostUsd: asNumber(message.total_cost_usd) }
         : {}),
     };
-    return [resultEvent];
+    return [resultEvent, completeEvent];
   }
 
   private mapPromptSuggestion(message: Record<string, unknown>): ClaudeClientEvent[] {
@@ -553,7 +556,6 @@ export class ClaudeSdkClient implements ClaudeClient {
     this.abortPendingInputRequests();
     this.toolNamesById.clear();
     this.emittedToolResultIds.clear();
-    this.pendingCompleteEvent = null;
   }
 
   private abortPendingInputRequests(): void {

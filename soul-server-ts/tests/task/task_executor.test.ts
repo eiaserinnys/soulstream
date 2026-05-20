@@ -1268,6 +1268,49 @@ describe("TaskExecutor _persistInitialMessages — contextBuilder 주입 (Python
     expect((userCall![1] as Record<string, unknown>).context).toEqual(items);
   });
 
+  it("Claude 첫 turn도 folder prompt와 context가 합성된 prompt로 실행됨", async () => {
+    const mocks = makeMocks();
+    let capturedPrompt: string | undefined;
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        capturedPrompt = params.prompt;
+        yield { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const fakeBuilder = makeFakeContextBuilder({
+      effectiveSystemPrompt: "folder prompt\n\nagent prompt",
+      combinedContextItems: [
+        { key: "soulstream_session", label: "Soulstream 세션 정보", content: { session_id: "sess-1" } },
+        { key: "atom_context", label: "atom 트리", content: "# atom\n- item" },
+      ],
+      assembledPrompt: "사용자 요청",
+    });
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+    );
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+    task.prompt = "사용자 요청";
+    executor.startExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(capturedPrompt).toContain("folder prompt\n\nagent prompt");
+    expect(capturedPrompt).toContain("<context>");
+    expect(capturedPrompt).toContain("<soulstream_session>");
+    expect(capturedPrompt).toContain('"session_id": "sess-1"');
+    expect(capturedPrompt).toContain("<atom_context>\n# atom\n- item\n</atom_context>");
+    expect(capturedPrompt?.endsWith("사용자 요청")).toBe(true);
+  });
+
   it("combinedContextItems 빈 배열 → user_message에 context 키 미박힘", async () => {
     const mocks = makeMocks();
     const events: SSEEventPayload[] = [
