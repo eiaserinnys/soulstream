@@ -27,6 +27,7 @@ export const AgentProfileSchema = z.object({
 });
 
 export type AgentProfile = z.infer<typeof AgentProfileSchema>;
+export type AgentBackend = AgentProfile["backend"];
 
 /** yaml 파일 최상위 schema. */
 export const AgentsConfigSchema = z.object({
@@ -62,14 +63,20 @@ export class AgentRegistry {
     return Array.from(this.profiles.values());
   }
 
+  listForBackends(backends: readonly AgentBackend[]): AgentProfile[] {
+    const allowed = new Set(backends);
+    return this.list().filter((p) => allowed.has(p.backend));
+  }
+
   has(id: string): boolean {
     return this.profiles.has(id);
   }
 
   /** 등록된 backend 목록 (중복 제거, registration.supported_backends 산출용). */
-  supportedBackends(): string[] {
+  supportedBackends(backends?: readonly AgentBackend[]): string[] {
+    const profiles = backends ? this.listForBackends(backends) : this.list();
     const set = new Set<string>();
-    for (const p of this.profiles.values()) set.add(p.backend);
+    for (const p of profiles) set.add(p.backend);
     return Array.from(set);
   }
 }

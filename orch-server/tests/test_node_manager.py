@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from soulstream_server.nodes.node_manager import NodeManager
+from soulstream_server.nodes.node_manager import AmbiguousAgentProfile, NodeManager
 
 
 @pytest.fixture
@@ -61,6 +61,18 @@ class TestRegisterNode:
 
         assert node.host == "10.0.0.1"
         assert node.port == 5000
+
+    async def test_register_node_preserves_explicit_empty_supported_backends(
+        self, manager, mock_ws
+    ):
+        """supported_backends=[]는 legacy default가 아니라 라우팅 불가 명시다."""
+        reg = make_registration("n1")
+        reg["supported_backends"] = []
+        reg["agents"] = []
+
+        node = await manager.register_node(mock_ws, reg)
+
+        assert node.supported_backends == []
 
 
 class TestUnregisterNode:
@@ -199,6 +211,23 @@ class TestAgentProfileRegistration:
 
         assert node.portrait_cache.get("agent-1") == portrait_bytes
 
+    async def test_agent_backend_must_match_supported_backends(self, manager, mock_ws):
+        """agents[].backend와 supported_backends 모순은 등록 시 즉시 드러난다."""
+        reg = make_registration("n1")
+        reg["supported_backends"] = ["codex"]
+        reg["agents"] = [
+            {
+                "id": "claude-roselin",
+                "name": "로젤린",
+                "backend": "claude",
+            }
+        ]
+
+        with pytest.raises(ValueError, match="unsupported agent backend"):
+            await manager.register_node(mock_ws, reg)
+
+        assert manager.get_node("n1") is None
+
     async def test_agents_absent_falls_back_to_http(self, manager, mock_ws):
         """agents 없는 등록 메시지 → _fetch_agent_profiles HTTP 조회가 호출된다."""
         with patch.object(
@@ -248,6 +277,116 @@ class TestFindAgentProfile:
         await manager.register_node(mock_ws, make_registration("n1"))
 
         assert manager.find_agent_profile("unknown-agent") is None
+
+    async def test_same_display_name_distinct_id_backend_is_unambiguous(self, manager):
+        """같은 display name이어도 id/backend/node가 다르면 id로 정확히 구분된다."""
+        ws1 = AsyncMock()
+        ws1.send_json = AsyncMock()
+        ws1.close = AsyncMock()
+        ws2 = AsyncMock()
+        ws2.send_json = AsyncMock()
+        ws2.close = AsyncMock()
+
+        n1 = await manager.register_node(ws1, {
+            **make_registration("n1"),
+            "supported_backends": ["codex"],
+            "agents": [
+                {
+                    "id": "codex-roselin",
+                    "name": "로젤린",
+                    "backend": "codex",
+                }
+            ],
+        })
+        n2 = await manager.register_node(ws2, {
+            **make_registration("n2"),
+            "supported_backends": ["claude"],
+            "agents": [
+                {
+                    "id": "claude-roselin",
+                    "name": "로젤린",
+                    "backend": "claude",
+                }
+            ],
+        })
+
+        codex_profile, codex_node = manager.resolve_agent_profile_for_routing("codex-roselin")
+        claude_profile, claude_node = manager.resolve_agent_profile_for_routing("claude-roselin")
+
+        assert codex_node == n1.node_id
+        assert codex_profile["backend"] == "codex"
+        assert claude_node == n2.node_id
+        assert claude_profile["backend"] == "claude"
+
+    async def test_duplicate_agent_id_without_target_is_ambiguous(self, manager):
+        """같은 agent id가 여러 노드에 있으면 nodeId 없는 라우팅은 금지된다."""
+        ws1 = AsyncMock()
+        ws1.send_json = AsyncMock()
+        ws1.close = AsyncMock()
+        ws2 = AsyncMock()
+        ws2.send_json = AsyncMock()
+        ws2.close = AsyncMock()
+
+        await manager.register_node(ws1, {
+            **make_registration("n1"),
+            "supported_backends": ["codex"],
+            "agents": [
+                {
+                    "id": "roselin",
+                    "name": "로젤린 Codex",
+                    "backend": "codex",
+                }
+            ],
+        })
+        await manager.register_node(ws2, {
+            **make_registration("n2"),
+            "supported_backends": ["claude"],
+            "agents": [
+                {
+                    "id": "roselin",
+                    "name": "로젤린 Claude",
+                    "backend": "claude",
+                }
+            ],
+        })
+
+        with pytest.raises(AmbiguousAgentProfile) as exc:
+            manager.resolve_agent_profile_for_routing("roselin")
+
+        assert exc.value.agent_id == "roselin"
+        assert exc.value.node_ids == ["n1", "n2"]
+
+    async def test_duplicate_agent_id_can_be_disambiguated_by_target_node(self, manager):
+        """nodeId가 명시되면 같은 agent id도 대상 노드 profile로 해석된다."""
+        ws1 = AsyncMock()
+        ws1.send_json = AsyncMock()
+        ws1.close = AsyncMock()
+        ws2 = AsyncMock()
+        ws2.send_json = AsyncMock()
+        ws2.close = AsyncMock()
+
+        await manager.register_node(ws1, {
+            **make_registration("n1"),
+            "supported_backends": ["codex"],
+            "agents": [
+                {"id": "roselin", "name": "로젤린 Codex", "backend": "codex"}
+            ],
+        })
+        await manager.register_node(ws2, {
+            **make_registration("n2"),
+            "supported_backends": ["claude"],
+            "agents": [
+                {"id": "roselin", "name": "로젤린 Claude", "backend": "claude"}
+            ],
+        })
+
+        profile, source_node_id = manager.resolve_agent_profile_for_routing(
+            "roselin",
+            preferred_node_id="n2",
+        )
+
+        assert source_node_id == "n2"
+        assert profile["backend"] == "claude"
 
 
 class TestUserInfo:

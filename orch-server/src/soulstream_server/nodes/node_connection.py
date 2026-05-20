@@ -71,7 +71,9 @@ class NodeConnection:
         self.capabilities = capabilities or {}
         # 옵션 D Phase A: 노드가 지원하는 백엔드 목록. 미명시 시 ["claude"] (후방호환).
         # SessionRouter가 agent.backend ↔ node.supported_backends 매칭 필터로 라우팅.
-        self.supported_backends = supported_backends or ["claude"]
+        self.supported_backends = (
+            supported_backends if supported_backends is not None else ["claude"]
+        )
         self.connected_at = datetime.now(timezone.utc)
 
         self._sessions: dict[str, dict] = {}

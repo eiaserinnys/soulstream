@@ -17,6 +17,17 @@ ChangeListener = Callable[[str, str, dict | None], Coroutine[Any, Any, None]]
 # (event_type, node_id, data)
 
 
+class AmbiguousAgentProfile(Exception):
+    """agent_id가 여러 노드에 있어 nodeId 없는 라우팅이 모호한 경우."""
+
+    def __init__(self, agent_id: str, node_ids: list[str]) -> None:
+        super().__init__(
+            f"Ambiguous agent profile '{agent_id}' registered on nodes: {node_ids}"
+        )
+        self.agent_id = agent_id
+        self.node_ids = node_ids
+
+
 class NodeManager:
     """연결된 모든 soul-server 노드를 추적."""
 
@@ -57,7 +68,14 @@ class NodeManager:
         # 옵션 D Phase A: capabilities default를 dict {}로 변경 (NodeConnection 시그니처 타입 정정과 정합).
         capabilities = registration.get("capabilities") or {}
         # 옵션 D Phase A: 노드가 광고한 supported_backends 추출. 미명시 시 ["claude"] (후방호환).
-        supported_backends = registration.get("supported_backends") or ["claude"]
+        # []는 "실행 가능 backend 없음"의 명시적 광고이므로 legacy default로 덮지 않는다.
+        supported_backends = (
+            registration["supported_backends"]
+            if registration.get("supported_backends") is not None
+            else ["claude"]
+        )
+        agents_from_registration = registration.get("agents")
+        self._validate_agent_backends(node_id, supported_backends, agents_from_registration)
 
         # 기존 연결이 있으면 닫기
         existing = self._nodes.get(node_id)
@@ -83,7 +101,6 @@ class NodeManager:
         )
 
         # 에이전트 정보: 등록 메시지에 포함된 경우 우선 사용, 없으면 HTTP 조회
-        agents_from_registration = registration.get("agents")
         if agents_from_registration is not None:
             profiles = {}
             portrait_cache: dict[str, bytes] = {}
@@ -206,6 +223,53 @@ class NodeManager:
             if session_id in node.sessions:
                 return node
         return None
+
+    def resolve_agent_profile_for_routing(
+        self, agent_id: str, preferred_node_id: str | None = None
+    ) -> tuple[dict, str] | None:
+        """세션 라우팅용 agent profile 조회.
+
+        preferred_node_id가 있으면 해당 노드의 profile을 우선한다. nodeId 없이 같은
+        agent_id가 여러 노드에 있으면 임의 first-match를 금지하고 AmbiguousAgentProfile을
+        던져 호출자가 409로 노출하게 한다.
+        """
+        if preferred_node_id:
+            node = self._nodes.get(preferred_node_id)
+            if node and agent_id in node.agent_profiles:
+                return node.agent_profiles[agent_id], preferred_node_id
+
+        matches: list[tuple[str, dict]] = []
+        for node_id, node in self._nodes.items():
+            if agent_id in node.agent_profiles:
+                matches.append((node_id, node.agent_profiles[agent_id]))
+
+        if not matches:
+            return None
+        if len(matches) > 1:
+            raise AmbiguousAgentProfile(agent_id, [node_id for node_id, _ in matches])
+        node_id, profile = matches[0]
+        return profile, node_id
+
+    @staticmethod
+    def _validate_agent_backends(
+        node_id: str,
+        supported_backends: list[str],
+        agents_from_registration: list[dict] | None,
+    ) -> None:
+        """agents[].backend이 node.supported_backends와 모순되면 등록을 거부한다."""
+        if agents_from_registration is None:
+            return
+        unsupported: list[tuple[str, str]] = []
+        for agent in agents_from_registration:
+            backend = agent.get("backend", "claude")
+            if backend not in supported_backends:
+                unsupported.append((agent.get("id", "<missing-id>"), backend))
+        if unsupported:
+            raise ValueError(
+                "unsupported agent backend in node registration "
+                f"(node={node_id}, supported_backends={supported_backends}, "
+                f"agents={unsupported})"
+            )
 
     def get_user_info(self, node_id: str) -> dict:
         """node_id에 연결된 사용자 정보를 반환. 없으면 빈 dict."""

@@ -6,7 +6,7 @@
  */
 import type { Logger } from "pino";
 
-import type { AgentRegistry } from "../agent_registry.js";
+import type { AgentBackend, AgentRegistry } from "../agent_registry.js";
 import type { CatalogService } from "../catalog/catalog_service.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { TaskExecutor } from "../task/task_executor.js";
@@ -27,6 +27,8 @@ export interface McpRuntime {
   agentRegistry: AgentRegistry;
   catalogService: CatalogService;
   logger: Logger;
+  /** 현재 engineFactory가 실제 실행 가능한 backend. 미지정 시 Codex-only 기본값 사용. */
+  executableBackends?: readonly AgentBackend[];
   /** 미설정 시 multi-node 도구는 등록되되 호출 시 `{error: ...}` 반환. */
   orch?: OrchProxyConfig;
 }

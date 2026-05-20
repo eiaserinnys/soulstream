@@ -105,6 +105,27 @@ describe("AgentRegistry", () => {
     expect(r.list()).toEqual([]);
     expect(r.supportedBackends()).toEqual([]);
   });
+
+  it("같은 display name이어도 id/backend가 다르면 별도 profile로 보존", () => {
+    const r = new AgentRegistry([
+      { ...profile("codex-roselin", "codex"), name: "로젤린" },
+      { ...profile("claude-roselin", "claude"), name: "로젤린" },
+    ]);
+
+    expect(r.list()).toHaveLength(2);
+    expect(r.get("codex-roselin")?.backend).toBe("codex");
+    expect(r.get("claude-roselin")?.backend).toBe("claude");
+  });
+
+  it("backend filter를 적용하면 executable profile/backend만 반환", () => {
+    const r = new AgentRegistry([
+      profile("codex-agent", "codex"),
+      profile("claude-agent", "claude"),
+    ]);
+
+    expect(r.listForBackends(["codex"]).map((p) => p.id)).toEqual(["codex-agent"]);
+    expect(r.supportedBackends(["codex"])).toEqual(["codex"]);
+  });
 });
 
 describe("loadAgentRegistry", () => {

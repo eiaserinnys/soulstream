@@ -76,7 +76,7 @@ describe("buildRegistrationMsg (Phase B-3 yaml-driven)", () => {
     expect(msg.supported_backends).toEqual([]);
   });
 
-  it("복수 backend mix → supported_backends 중복 제거 + max_concurrent=count", () => {
+  it("복수 backend mix라도 현재 executable backend만 node_register에 광고", () => {
     const msg = buildRegistrationMsg({
       nodeId: "x",
       host: "h",
@@ -84,9 +84,33 @@ describe("buildRegistrationMsg (Phase B-3 yaml-driven)", () => {
       userName: "",
       agentRegistry: new AgentRegistry([codexAgent, claudeAgent]),
     });
+    expect(msg.capabilities).toEqual({ max_concurrent: 1 });
+    expect(msg.supported_backends).toEqual(["codex"]);
+    expect(msg.agents).toEqual([
+      {
+        id: "codex-default",
+        name: "Codex Default",
+        backend: "codex",
+        portrait_url: "",
+      },
+    ]);
+  });
+
+  it("engine이 claude를 지원하도록 명시한 경우에만 claude agent도 광고", () => {
+    const msg = buildRegistrationMsg({
+      nodeId: "x",
+      host: "h",
+      port: 1,
+      userName: "",
+      agentRegistry: new AgentRegistry([codexAgent, claudeAgent]),
+      executableBackends: ["codex", "claude"],
+    });
     expect(msg.capabilities).toEqual({ max_concurrent: 2 });
     expect((msg.supported_backends ?? []).slice().sort()).toEqual(["claude", "codex"]);
-    expect(msg.agents).toHaveLength(2);
+    expect(msg.agents?.map((a) => [a.id, a.name, a.backend])).toEqual([
+      ["codex-default", "Codex Default", "codex"],
+      ["roselin", "로젤린", "claude"],
+    ]);
   });
 
   it("userName이 있으면 user 광고", () => {
@@ -278,6 +302,7 @@ describe("buildRegistrationMsg — portrait wire (Python adapter.py:212-233 정�
           { ...codexAgent, portrait_path: portraitPath },
           { ...claudeAgent, portrait_path: altPath },
         ]),
+        executableBackends: ["codex", "claude"],
       });
       const codex = msg.agents?.find((a) => a.id === "codex-default") as Record<string, unknown>;
       const claude = msg.agents?.find((a) => a.id === "roselin") as Record<string, unknown>;

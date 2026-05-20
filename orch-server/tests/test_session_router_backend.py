@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi import HTTPException
 
+from soulstream_server.nodes.node_manager import AmbiguousAgentProfile
 from soulstream_server.service.session_router import (
     NoMatchingBackendNode,
     SessionRouter,
@@ -28,16 +29,19 @@ def _make_node(node_id: str, supported_backends: list[str], session_count: int =
 
 
 def _make_node_manager(nodes: list, agent_profile: dict | None = None):
-    """Mock NodeManager — get_connected_nodes / get_node / find_agent_profile."""
+    """Mock NodeManager — get_connected_nodes / get_node / resolve_agent_profile_for_routing."""
     nm = MagicMock()
     nm.get_connected_nodes.return_value = nodes
     nm.get_node.side_effect = lambda nid: next(
         (n for n in nodes if n.node_id == nid), None
     )
     if agent_profile is not None:
-        nm.find_agent_profile.return_value = (agent_profile, nodes[0].node_id if nodes else "n1")
+        nm.resolve_agent_profile_for_routing.return_value = (
+            agent_profile,
+            nodes[0].node_id if nodes else "n1",
+        )
     else:
-        nm.find_agent_profile.return_value = None
+        nm.resolve_agent_profile_for_routing.return_value = None
     return nm
 
 
@@ -120,6 +124,41 @@ async def test_target_node_lacks_backend_409():
             {"prompt": "hi", "profile": "cody", "nodeId": "n1"}
         )
     assert exc.value.status_code == 409
+
+
+async def test_ambiguous_duplicate_agent_id_returns_409():
+    """중복 agent id가 여러 노드에 있으면 임의 라우팅하지 않고 409로 실패한다."""
+    n1 = _make_node("n1", ["codex"])
+    n2 = _make_node("n2", ["claude"])
+    nm = _make_node_manager([n1, n2])
+    nm.resolve_agent_profile_for_routing.side_effect = AmbiguousAgentProfile(
+        "roselin",
+        ["n1", "n2"],
+    )
+    router = SessionRouter(nm)
+
+    with pytest.raises(HTTPException) as exc:
+        await router.route_create_session(
+            {"prompt": "hi", "profile": "roselin"}
+        )
+
+    assert exc.value.status_code == 409
+    assert "Ambiguous agent profile" in exc.value.detail
+
+
+async def test_target_node_disambiguates_duplicate_agent_id():
+    """nodeId 지정 시 profile backend는 대상 노드 기준으로 해석된다."""
+    n1 = _make_node("n1", ["codex"])
+    n2 = _make_node("n2", ["claude"])
+    nm = _make_node_manager([n1, n2], agent_profile={"backend": "claude"})
+    router = SessionRouter(nm)
+
+    _sid, nid = await router.route_create_session(
+        {"prompt": "hi", "profile": "roselin", "nodeId": "n2"}
+    )
+
+    assert nid == "n2"
+    nm.resolve_agent_profile_for_routing.assert_called_once_with("roselin", "n2")
 
 
 async def test_eligible_least_sessions():

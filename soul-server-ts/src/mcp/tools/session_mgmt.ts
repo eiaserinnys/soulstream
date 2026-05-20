@@ -6,6 +6,11 @@ import { randomUUID } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+import {
+  EXECUTABLE_BACKENDS,
+  isExecutableBackend,
+  unsupportedBackendMessage,
+} from "../../backend_support.js";
 import { buildCallerInfoFromCallerSession } from "../../caller_info.js";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
@@ -21,10 +26,12 @@ export function registerSessionMgmtTools(
       inputSchema: {},
     },
     async () => {
+      const executableBackends = runtime.executableBackends ?? EXECUTABLE_BACKENDS;
       return jsonResult({
-        agents: runtime.agentRegistry.list().map((p) => ({
+        agents: runtime.agentRegistry.listForBackends(executableBackends).map((p) => ({
           id: p.id,
           name: p.name,
+          backend: p.backend,
           max_turns: p.max_turns ?? null,
         })),
       });
@@ -44,8 +51,9 @@ export function registerSessionMgmtTools(
       },
     },
     async ({ agent_id, prompt, caller_session_id, folder_id }) => {
+      const executableBackends = runtime.executableBackends ?? EXECUTABLE_BACKENDS;
       // agent_id가 미지정이면 첫 번째 등록 agent를 default로.
-      const agents = runtime.agentRegistry.list();
+      const agents = runtime.agentRegistry.listForBackends(executableBackends);
       if (agents.length === 0) {
         return errorResult("등록된 agent가 없습니다");
       }
@@ -58,6 +66,9 @@ export function registerSessionMgmtTools(
       const agent = runtime.agentRegistry.get(resolvedAgentId);
       if (!agent) {
         return errorResult(`agent_id를 찾을 수 없습니다: ${resolvedAgentId}`);
+      }
+      if (!isExecutableBackend(agent.backend, executableBackends)) {
+        return errorResult(unsupportedBackendMessage(agent));
       }
 
       // caller_info 조립 — caller_session_id 미지정 시 미전달 (graceful).
@@ -120,6 +131,17 @@ export function registerSessionMgmtTools(
             if (!task.profileId) return;
             const agent = runtime.agentRegistry.get(task.profileId);
             if (!agent) return;
+            if (!isExecutableBackend(agent.backend, runtime.executableBackends ?? EXECUTABLE_BACKENDS)) {
+              runtime.logger.warn(
+                {
+                  sessionId: task.agentSessionId,
+                  profileId: task.profileId,
+                  backend: agent.backend,
+                },
+                "send_message_to_session auto-resume skipped — agent backend not executable",
+              );
+              return;
+            }
             runtime.taskExecutor.startExecution(task, agent);
           },
         );

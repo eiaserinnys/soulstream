@@ -10,7 +10,7 @@ import uuid
 
 from fastapi import HTTPException
 
-from soulstream_server.nodes.node_manager import NodeManager
+from soulstream_server.nodes.node_manager import AmbiguousAgentProfile, NodeManager
 
 logger = logging.getLogger(__name__)
 
@@ -54,9 +54,6 @@ class SessionRouter:
                 detail="No nodes available",
             )
 
-        # 옵션 D Phase A: profile_id로 agent backend 조회. profile 없으면 None — 필터 우회.
-        backend = self._resolve_backend(request.get("profile"))
-
         if target_node_id:
             node = self._node_manager.get_node(target_node_id)
             if not node:
@@ -64,6 +61,8 @@ class SessionRouter:
                     status_code=404,
                     detail=f"Node {target_node_id} not found",
                 )
+            # 옵션 D Phase A: nodeId 지정 시 해당 노드 profile로 backend를 해석한다.
+            backend = self._resolve_backend(request.get("profile"), target_node_id)
             if backend and backend not in node.supported_backends:
                 raise HTTPException(
                     status_code=409,
@@ -74,6 +73,8 @@ class SessionRouter:
                 )
             effective_backend = backend or self._infer_backend_from_node(node)
         else:
+            # 옵션 D Phase A: profile_id로 agent backend 조회. profile 없으면 None — 필터 우회.
+            backend = self._resolve_backend(request.get("profile"))
             # backend 매칭 노드만 후보로 — backend가 None이면 모든 노드 후보 (graceful).
             eligible = [n for n in nodes if not backend or backend in n.supported_backends]
             if not eligible:
@@ -107,7 +108,9 @@ class SessionRouter:
         actual_session_id = result.get("agentSessionId", session_id)
         return actual_session_id, node.node_id
 
-    def _resolve_backend(self, profile_id: str | None) -> str | None:
+    def _resolve_backend(
+        self, profile_id: str | None, preferred_node_id: str | None = None
+    ) -> str | None:
         """profile_id로 agent의 backend를 결정.
 
         profile_id가 없거나 NodeManager가 해당 profile을 찾지 못하면 None을 반환하여
@@ -115,7 +118,19 @@ class SessionRouter:
         """
         if not profile_id:
             return None
-        found = self._node_manager.find_agent_profile(profile_id)
+        try:
+            found = self._node_manager.resolve_agent_profile_for_routing(
+                profile_id,
+                preferred_node_id,
+            )
+        except AmbiguousAgentProfile as exc:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Ambiguous agent profile '{exc.agent_id}' registered on nodes "
+                    f"{exc.node_ids}; specify nodeId or use distinct agent ids"
+                ),
+            ) from exc
         if not found:
             return None
         profile, _source_node_id = found

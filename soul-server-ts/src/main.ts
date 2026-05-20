@@ -3,6 +3,7 @@ import { ZodError } from "zod";
 
 import { loadAgentRegistry } from "./agent_registry.js";
 import { FileAttachmentStore } from "./attachments/file_manager.js";
+import { EXECUTABLE_BACKENDS } from "./backend_support.js";
 import { CatalogService } from "./catalog/catalog_service.js";
 import { parseEnv } from "./config.js";
 import { SessionDB } from "./db/session_db.js";
@@ -86,6 +87,7 @@ async function main(): Promise<void> {
       port: env.PORT,
       agentsConfigPath: env.AGENTS_CONFIG_PATH,
       agentCount: agentRegistry.list().length,
+      executableBackends: EXECUTABLE_BACKENDS,
     },
     "soul-server-ts starting (B-3 task lifecycle + DB)",
   );
@@ -222,6 +224,7 @@ async function main(): Promise<void> {
     taskManager,
     taskExecutor,
     agentRegistry,
+    executableBackends: EXECUTABLE_BACKENDS,
     catalogService,
     logger,
     // B-7: completionNotifier가 이미 같은 orchProxyConfig를 보유 — 정본 하나 (design-principles §3)

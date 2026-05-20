@@ -16,6 +16,7 @@ import type {
   StartExecutionCallback,
   TaskManager,
 } from "../../src/task/task_manager.js";
+import type { AgentProfile } from "../../src/agent_registry.js";
 
 const openClients: Client[] = [];
 const openServers: Awaited<ReturnType<typeof buildServer>>[] = [];
@@ -38,8 +39,10 @@ function createSilentLogger() {
 function makeRuntime(
   addInterventionResult: AddInterventionResult | Error,
   orch?: OrchProxyConfig,
+  agents?: AgentProfile[],
 ): McpRuntime & {
   addIntervention: ReturnType<typeof vi.fn>;
+  createTask: ReturnType<typeof vi.fn>;
   startExecution: ReturnType<typeof vi.fn>;
 } {
   const addIntervention = vi.fn(
@@ -48,15 +51,20 @@ function makeRuntime(
       return addInterventionResult;
     },
   );
+  const createTask = vi.fn(async (params) => ({
+    agentSessionId: params.agentSessionId,
+    status: "running" as const,
+  }));
   const startExecution = vi.fn();
   const taskManager = {
+    createTask,
     addIntervention,
     getTask: vi.fn((sessionId: string) =>
       sessionId === "caller-sess-1" ? { profileId: "codex-default" } : undefined,
     ),
     listTasks: vi.fn(() => []),
   } as unknown as TaskManager;
-  const agentRegistry = new AgentRegistry([
+  const agentRegistry = new AgentRegistry(agents ?? [
     {
       id: "codex-default",
       name: "Codex Default",
@@ -75,6 +83,7 @@ function makeRuntime(
     logger: createSilentLogger(),
     orch,
     addIntervention,
+    createTask,
     startExecution,
   };
 }
@@ -169,6 +178,92 @@ afterEach(async () => {
       // ignore cleanup failures
     }
   }
+});
+
+describe("agent profile backend boundary", () => {
+  const codexAgent: AgentProfile = {
+    id: "codex-default",
+    name: "로젤린",
+    backend: "codex",
+    workspace_dir: "/tmp/codex",
+  };
+  const claudeAgent: AgentProfile = {
+    id: "claude-roselin",
+    name: "로젤린",
+    backend: "claude",
+    workspace_dir: "/tmp/claude",
+  };
+
+  it("list_local_agents는 executable backend agent만 backend와 함께 반환", async () => {
+    const runtime = makeRuntime(
+      { queued: true, queuePosition: 1 },
+      undefined,
+      [codexAgent, claudeAgent],
+    );
+    const client = await createClient(runtime);
+
+    const result = await client.callTool({
+      name: "list_local_agents",
+      arguments: {},
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toEqual({
+      agents: [
+        {
+          id: "codex-default",
+          name: "로젤린",
+          backend: "codex",
+          max_turns: null,
+        },
+      ],
+    });
+  });
+
+  it("create_agent_session은 engine 미지원 backend profile을 task 생성 전 차단", async () => {
+    const runtime = makeRuntime(
+      { queued: true, queuePosition: 1 },
+      undefined,
+      [codexAgent, claudeAgent],
+    );
+    const client = await createClient(runtime);
+
+    const result = await client.callTool({
+      name: "create_agent_session",
+      arguments: {
+        agent_id: "claude-roselin",
+        prompt: "hi",
+      },
+    });
+
+    expect(result.isError).toBe(true);
+    expect((result.structuredContent as { error?: string }).error).toContain(
+      "Unsupported backend",
+    );
+    expect(runtime.createTask).not.toHaveBeenCalled();
+    expect(runtime.startExecution).not.toHaveBeenCalled();
+  });
+
+  it("reflect_service level=3은 executable agent 수와 configured profile 수를 분리", async () => {
+    const runtime = makeRuntime(
+      { queued: true, queuePosition: 1 },
+      undefined,
+      [codexAgent, claudeAgent],
+    );
+    const client = await createClient(runtime);
+
+    const result = await client.callTool({
+      name: "reflect_service",
+      arguments: { service: "soul-server-ts", level: 3 },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      agent_count: 1,
+      configured_agent_count: 2,
+      executable_backends: ["codex"],
+    });
+  });
 });
 
 describe("send_message_to_session", () => {

@@ -4,7 +4,8 @@ import type { Logger } from "pino";
 
 import type { NodeRegister } from "@soulstream/wire-schema";
 
-import type { AgentRegistry } from "../agent_registry.js";
+import type { AgentBackend, AgentRegistry } from "../agent_registry.js";
+import { EXECUTABLE_BACKENDS } from "../backend_support.js";
 
 export interface RegistrationParams {
   nodeId: string;
@@ -13,6 +14,8 @@ export interface RegistrationParams {
   userName: string;
   userPortraitPath?: string;
   agentRegistry: AgentRegistry;
+  /** 현재 engineFactory가 실제 실행 가능한 backend. 기본값은 Codex-only. */
+  executableBackends?: readonly AgentBackend[];
   /**
    * portrait 파일 read 실패(설정 오류·권한 등)를 운영자에게 노출하기 위한 logger. 미주입 시
    * 실패는 silent (테스트·legacy 호환).
@@ -85,14 +88,27 @@ export function _resetPortraitCacheForTest(): void {
  * 빈 registry → agents=[], supported_backends=[], max_concurrent=0. orch는 본 노드로 라우팅 안 함.
  */
 export function buildRegistrationMsg(params: RegistrationParams): NodeRegister {
-  const agents = params.agentRegistry.list();
+  const executableBackends = params.executableBackends ?? EXECUTABLE_BACKENDS;
+  const agents = params.agentRegistry.listForBackends(executableBackends);
+  const hiddenAgents = params.agentRegistry
+    .list()
+    .filter((a) => !executableBackends.includes(a.backend));
+  if (hiddenAgents.length > 0 && params.logger) {
+    params.logger.warn(
+      {
+        hiddenAgents: hiddenAgents.map((a) => ({ id: a.id, backend: a.backend })),
+        executableBackends,
+      },
+      "agent backend not executable — omitting from node_register",
+    );
+  }
   const msg: NodeRegister = {
     type: "node_register",
     node_id: params.nodeId,
     host: params.host,
     port: params.port,
     capabilities: { max_concurrent: agents.length },
-    supported_backends: params.agentRegistry.supportedBackends(),
+    supported_backends: params.agentRegistry.supportedBackends(executableBackends),
     agents: agents.map((a) => {
       const entry: NonNullable<NodeRegister["agents"]>[number] = {
         id: a.id,

@@ -22,6 +22,13 @@ def test_supported_backends_explicit():
     assert node.supported_backends == ["codex"]
 
 
+def test_supported_backends_explicit_empty_is_preserved():
+    """supported_backends=[]는 미명시가 아니라 라우팅 불가 명시다."""
+    ws = MagicMock()
+    node = NodeConnection(ws=ws, node_id="n1", supported_backends=[])
+    assert node.supported_backends == []
+
+
 def test_to_info_includes_supported_backends():
     """to_info() 출력에 supportedBackends 키 포함."""
     ws = MagicMock()
