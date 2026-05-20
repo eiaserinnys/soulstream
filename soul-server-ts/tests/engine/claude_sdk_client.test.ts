@@ -761,6 +761,80 @@ describe("ClaudeSdkClient", () => {
     expect(events[2]).toMatchObject({ type: "result", output: "final" });
   });
 
+  it("continues after an empty tool_use result when the SDK emits another message", async () => {
+    const client = new ClaudeSdkClient(
+      {
+        query: () =>
+          makeQuery(
+            (async function* () {
+              yield sdkSuccessResult("claude-sess-tool-use", "", { stop_reason: "tool_use" });
+              yield sdkSystemInit("claude-sess-tool-use");
+              yield {
+                type: "assistant",
+                message: { content: [{ type: "text", text: "after ask" }] },
+                parent_tool_use_id: null,
+                uuid: "assistant-after-ask",
+                session_id: "claude-sess-tool-use",
+              } as unknown as SDKMessage;
+              yield sdkSuccessResult("claude-sess-tool-use", "final");
+            })(),
+          ),
+        postResultDrainMs: 200,
+      },
+      silentLogger,
+    );
+
+    const events = await collect(
+      client.run(
+        { prompt: "hi", workspaceDir: "/tmp/claude-work", env: {} },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(events.map((event) => event.type)).toEqual([
+      "session",
+      "text",
+      "result",
+      "context_usage",
+      "complete",
+    ]);
+    expect(events[2]).toMatchObject({ type: "result", output: "final" });
+    expect(events[4]).toMatchObject({ type: "complete", result: "final" });
+  });
+
+  it("does not treat an empty end_turn result as continuation without an explicit signal", async () => {
+    const client = new ClaudeSdkClient(
+      {
+        query: () =>
+          makeQuery(
+            (async function* () {
+              yield sdkSuccessResult("claude-sess-empty-end", "");
+              yield sdkSystemInit("claude-sess-empty-end");
+              yield {
+                type: "assistant",
+                message: { content: [{ type: "text", text: "should be ignored" }] },
+                parent_tool_use_id: null,
+                uuid: "assistant-after-empty-end",
+                session_id: "claude-sess-empty-end",
+              } as unknown as SDKMessage;
+            })(),
+          ),
+        postResultDrainMs: 200,
+      },
+      silentLogger,
+    );
+
+    const events = await collect(
+      client.run(
+        { prompt: "hi", workspaceDir: "/tmp/claude-work", env: {} },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(events.map((event) => event.type)).toEqual(["result", "context_usage", "complete"]);
+    expect(events[0]).toMatchObject({ type: "result", output: "", stopReason: "end_turn" });
+  });
+
   it("SystemMessage subtype=notification emits debug event even without hook callback execution", async () => {
     const client = new ClaudeSdkClient(
       {
@@ -1092,7 +1166,11 @@ function sdkSystemInit(sessionId: string): SDKMessage {
   } as unknown as SDKMessage;
 }
 
-function sdkSuccessResult(sessionId: string, result: string): SDKMessage {
+function sdkSuccessResult(
+  sessionId: string,
+  result: string,
+  overrides: Record<string, unknown> = {},
+): SDKMessage {
   return {
     type: "result",
     subtype: "success",
@@ -1104,6 +1182,7 @@ function sdkSuccessResult(sessionId: string, result: string): SDKMessage {
     stop_reason: "end_turn",
     modelUsage: {},
     permission_denials: [],
+    ...overrides,
   } as unknown as SDKMessage;
 }
 

@@ -30,8 +30,12 @@ const MAX_COMPACT_RETRIES = 3;
  * "prompt_suggestion arrives after the result message. Consumers must keep iterating the
  *  stream after result to receive it."
  *
- * drain phase는 *prompt_suggestion 전용* — 그 외 메시지는 logger.warn 후 무시 (Python
- * receive_loop.py:180-188 narrowing 정책 정합).
+ * 일반 terminal result의 drain phase는 *prompt_suggestion 전용* — 그 외 메시지는 logger.warn
+ * 후 무시 (Python receive_loop.py:180-188 narrowing 정책 정합).
+ *
+ * 단, 명시적인 continuation 신호가 있으면 stream을 계속 읽는다:
+ *   - compact retry: 빈 result 뒤 `system/compact_boundary`
+ *   - AskUserQuestion/tool_use 재개: 빈 result + `stop_reason="tool_use"` 뒤 다음 SDK 메시지
  */
 const DEFAULT_POST_RESULT_DRAIN_MS = 2_000;
 const INPUT_REQUEST_TIMEOUT = Symbol("input_request_timeout");
@@ -449,22 +453,33 @@ export class ClaudeSdkClient implements ClaudeClient {
         if (msg?.type === "result") {
           const terminalEvents = this.mapResultMessage(msg);
           const resultEvent = terminalEvents.find((event) => event.type === "result");
-          const canCompactContinue =
+          const canContinueAfterCompact =
             resultEvent?.type === "result" &&
             resultEvent.success &&
             resultEvent.output.length === 0 &&
             compactRetryCount < MAX_COMPACT_RETRIES;
+          const canContinueAfterToolUse =
+            resultEvent?.type === "result" &&
+            resultEvent.success &&
+            resultEvent.output.length === 0 &&
+            resultEvent.stopReason === "tool_use";
 
-          if (!canCompactContinue) {
+          if (!canContinueAfterCompact && !canContinueAfterToolUse) {
             for (const event of terminalEvents) output.push(event);
-            const drain = await this.drainAfterResult(queryIter, false);
+            const drain = await this.drainAfterResult(queryIter, {
+              canContinueAfterCompact: false,
+              canContinueAfterToolUse: false,
+            });
             for (const event of drain.events) output.push(event);
             query.close();
             output.close();
             return;
           }
 
-          const drain = await this.drainAfterResult(queryIter, canCompactContinue);
+          const drain = await this.drainAfterResult(queryIter, {
+            canContinueAfterCompact,
+            canContinueAfterToolUse,
+          });
 
           if (drain.action === "continue") {
             compactRetryCount += 1;
@@ -492,7 +507,10 @@ export class ClaudeSdkClient implements ClaudeClient {
           //   - prompt_suggestion 1메시지를 best-effort로 기다림 (default 2초)
           //   - 그 외 메시지(StreamEvent · stray assistant 등)는 narrowing → logger.warn 후 무시
           //   - timeout / EOS / 에러 모두 조용히 종료 (drain은 부가 기능, §8 실패 격리)
-          const drain = await this.drainAfterResult(queryIter, false);
+          const drain = await this.drainAfterResult(queryIter, {
+            canContinueAfterCompact: false,
+            canContinueAfterToolUse: false,
+          });
           for (const event of drain.events) output.push(event);
           query.close();
           output.close();
@@ -519,7 +537,10 @@ export class ClaudeSdkClient implements ClaudeClient {
    */
   private async drainAfterResult(
     queryIter: AsyncIterator<SDKMessage>,
-    canContinueOnCompact: boolean,
+    options: {
+      canContinueAfterCompact: boolean;
+      canContinueAfterToolUse: boolean;
+    },
   ): Promise<DrainAfterResultOutcome> {
     let timer: NodeJS.Timeout | undefined;
     const timeoutPromise = new Promise<typeof DRAIN_TIMEOUT>((resolve) => {
@@ -547,9 +568,16 @@ export class ClaudeSdkClient implements ClaudeClient {
       if (msg?.type === "system" && msg.subtype === "compact_boundary") {
         const events = this.mapSystemMessage(msg);
         return {
-          action: canContinueOnCompact ? "continue" : "finish",
+          action: options.canContinueAfterCompact ? "continue" : "finish",
           events,
         };
+      }
+      if (options.canContinueAfterToolUse) {
+        this.logger.debug?.(
+          { messageType: msg?.type ?? "unknown" },
+          "post-tool-use-result drain received continuation message",
+        );
+        return { action: "continue", events: this.mapSdkMessage(settled.value) };
       }
       // 비 prompt_suggestion 메시지는 무시 + warn (Python narrowing 정책 정합)
       this.logger.warn?.(
