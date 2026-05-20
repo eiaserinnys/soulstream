@@ -1,6 +1,6 @@
 [package]
 name = "soul-desktop"
-version = "0.2.0"
+version = "0.2.1"
 description = "Soulstream Desktop App"
 authors = ["eiaserinnys"]
 edition = "2021"
