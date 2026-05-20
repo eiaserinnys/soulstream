@@ -55,6 +55,7 @@ export function useUrlSync() {
 
   // URL에서 스토어 갱신 중일 때 스토어→URL 역방향 push를 억제
   const skipNextPush = useRef(false);
+  const pendingFolderSyncSessionId = useRef<string | null>(null);
 
   // 1. 마운트 시: 해시에서 뷰 모드 + 세션 ID를 읽어 스토어에 반영
   useEffect(() => {
@@ -62,27 +63,30 @@ export function useUrlSync() {
     skipNextPush.current = true;
     setViewMode(parsedMode);
     if (sessionId) {
+      pendingFolderSyncSessionId.current =
+        parsedMode === "folder" ? sessionId : null;
       setActiveSession(sessionId);
       if (isMobile) setActiveTab("chat");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 1-2. catalog 로드 후 폴더 재동기화 (1회성)
-  // 마운트 시 setActiveSession이 catalog 없이 실행됐으면 selectedFolderId가
-  // null(미분류)로 잘못 설정되었을 수 있다. catalog 최초 로드 시 실제 폴더를 재확인한다.
-  const folderSyncDone = useRef(false);
+  // 1-2. URL로 세션에 진입한 경우에만 catalog 로드 후 폴더를 재동기화한다.
+  // 일반 세션 클릭은 폴더 네비게이션 상태를 바꾸지 않는다.
   useEffect(() => {
-    if (folderSyncDone.current) return;
-    if (!activeSessionKey || !catalog?.sessions) return;
+    const pendingSessionId = pendingFolderSyncSessionId.current;
+    if (!pendingSessionId) return;
+    if (viewMode !== "folder") return;
+    if (activeSessionKey !== pendingSessionId) return;
+    if (!catalog?.sessions) return;
     const entry = catalog.sessions[activeSessionKey];
     const correctFolderId = entry?.folderId ?? null;
     const { selectedFolderId } = useDashboardStore.getState();
     if (selectedFolderId !== correctFolderId) {
       useDashboardStore.setState({ selectedFolderId: correctFolderId });
     }
-    folderSyncDone.current = true;
-  }, [activeSessionKey, catalog]);
+    pendingFolderSyncSessionId.current = null;
+  }, [activeSessionKey, catalog, viewMode]);
 
   // 2. 스토어 변경 → URL 해시 업데이트
   useEffect(() => {
@@ -111,8 +115,11 @@ export function useUrlSync() {
       skipNextPush.current = true;
       setViewMode(parsedMode);
       if (sessionId) {
+        pendingFolderSyncSessionId.current =
+          parsedMode === "folder" ? sessionId : null;
         setActiveSession(sessionId);
       } else {
+        pendingFolderSyncSessionId.current = null;
         clearActiveSession();
       }
     };

@@ -20,7 +20,7 @@
  */
 
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
 import type { SessionSummary } from "@shared/types";
 import { createProcessingContext } from "./processing-context";
 import type { DashboardState, DashboardActions } from "./dashboard-store-types";
@@ -56,6 +56,34 @@ export function isSessionUnread(session: SessionSummary): boolean {
 
 // === Store ===
 
+type PersistStorage = {
+  getItem: (name: string) => string | null;
+  setItem: (name: string, value: string) => void;
+  removeItem: (name: string) => void;
+};
+
+const dashboardMemoryStorage = (() => {
+  const store = new Map<string, string>();
+  return {
+    getItem: (name: string) => store.get(name) ?? null,
+    setItem: (name: string, value: string) => {
+      store.set(name, value);
+    },
+    removeItem: (name: string) => {
+      store.delete(name);
+    },
+  } satisfies PersistStorage;
+})();
+
+function getDashboardPersistStorage(): PersistStorage {
+  if (typeof window === "undefined") return dashboardMemoryStorage;
+  try {
+    return window.localStorage;
+  } catch {
+    return dashboardMemoryStorage;
+  }
+}
+
 export const useDashboardStore = create<DashboardState & DashboardActions>()(
   persist(
     (set, get, store) => {
@@ -89,6 +117,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
     },
     {
       name: "soul-dashboard-storage",
+      storage: createJSONStorage(getDashboardPersistStorage),
       // 입력창 draft + 폴더 정렬 영속화 (세션 데이터는 제외)
       partialize: (state) => ({
         drafts: state.drafts,

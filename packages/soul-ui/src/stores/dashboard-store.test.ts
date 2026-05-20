@@ -116,6 +116,26 @@ describe("dashboard-store", () => {
       useDashboardStore.getState().setActiveSession(null);
       expect(useDashboardStore.getState().activeSessionKey).toBeNull();
     });
+
+    it("should not rewrite selected folder when selecting a session", () => {
+      useDashboardStore.getState().setCatalog({
+        folders: [
+          { id: "folder-a", name: "Folder A", sortOrder: 0 },
+          { id: "folder-b", name: "Folder B", sortOrder: 1 },
+        ],
+        sessions: {
+          "sess-b": { folderId: "folder-b", displayName: null },
+        },
+      });
+      useDashboardStore.getState().selectFolder("folder-a");
+
+      useDashboardStore.getState().setActiveSession("sess-b");
+
+      const state = useDashboardStore.getState();
+      expect(state.activeSessionKey).toBe("sess-b");
+      expect(state.selectedFolderId).toBe("folder-a");
+      expect(state.viewMode).toBe("folder");
+    });
   });
 
   // === 카드 선택 ===

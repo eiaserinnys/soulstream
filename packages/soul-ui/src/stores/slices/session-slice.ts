@@ -76,18 +76,12 @@ export const createSessionSlice: StateCreator<
   // --- 활성 세션 ---
 
   setActiveSession: (key, detail) => {
+    // Folder navigation is owned by catalog/ui flows. Session selection must not
+    // rewrite selectedFolderId from a possibly stale catalog assignment.
     // 같은 세션이면 아무것도 하지 않음 (resume 등에서 불필요한 리셋 방지).
     // 이 경로에서는 clearFlattenTreeCache를 호출하지 않음 — 같은 세션의 ChatMessage
     // identity reference를 그대로 재사용하여 React.memo 효과 유지.
     if (key !== null && key === get().activeSessionKey) return;
-
-    // 세션이 속한 폴더를 찾아 selectedFolderId도 갱신
-    let folderId: string | null = null;
-    const { catalog } = get();
-    if (key && catalog?.sessions) {
-      const entry = catalog.sessions[key];
-      folderId = entry?.folderId ?? null; // 미등록 세션이면 null(미분류)
-    }
 
     // 세션 전환 시 ChatMessage identity 캐시를 비워 이전 세션 항목이 누설되지 않도록 한다.
     clearFlattenTreeCache();
@@ -95,7 +89,6 @@ export const createSessionSlice: StateCreator<
       ...getSessionResetState(),
       activeSessionKey: key,
       activeSession: detail ?? null,
-      selectedFolderId: folderId,
     });
   },
 

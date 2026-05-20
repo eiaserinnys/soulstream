@@ -24,6 +24,10 @@ import {
   reconcileReplayGap,
   reconcileStreamMeta,
 } from "./catalog-stream-resume";
+import {
+  buildFetchSessionsOptions,
+  type SessionListQueryKey,
+} from "./session-list-query";
 
 const DEFAULT_PAGE_SIZE = 50;
 
@@ -83,21 +87,17 @@ export function useSessionListProvider(
     refetch: queryRefetch,
   } = useInfiniteQuery({
     queryKey,
-    queryFn: async ({ pageParam = 0 }) => {
+    queryFn: async ({ pageParam = 0, queryKey: fetchQueryKey }) => {
       const provider = externalProvider ?? getSessionProvider();
-      const typeFilter = sessionTypeFilter === "all" ? undefined : sessionTypeFilter;
-      const { viewMode: currentViewMode, selectedFolderId: currentFolderId } =
-        useDashboardStore.getState();
-      const folderFilter =
-        currentViewMode === "folder" && currentFolderId !== null
-          ? { folderId: currentFolderId }
-          : {};
-      const result = await provider.fetchSessions({
-        sessionType: typeFilter,
-        offset: pageParam as number,
-        limit: DEFAULT_PAGE_SIZE,
-        ...folderFilter,
-      });
+      // The query key is the request snapshot. Reading the live store here can
+      // put feed data into a folder cache, or folder data into a feed cache.
+      const result = await provider.fetchSessions(
+        buildFetchSessionsOptions(
+          fetchQueryKey as SessionListQueryKey,
+          pageParam as number,
+          DEFAULT_PAGE_SIZE,
+        ),
+      );
 
       // 폴더별 세션 수 조회 (provider가 지원하는 경우)
       if (provider.fetchFolderCounts) {
