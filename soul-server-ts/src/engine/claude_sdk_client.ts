@@ -230,6 +230,9 @@ export class ClaudeSdkClient implements ClaudeClient {
       ...(options.systemPrompt ? { systemPrompt: options.systemPrompt } : {}),
       ...(options.resumeSessionId ? { resume: options.resumeSessionId } : {}),
       ...(executablePath ? { pathToClaudeCodeExecutable: executablePath } : {}),
+      ...(options.allowedTools !== undefined ? { allowedTools: options.allowedTools } : {}),
+      ...(options.disallowedTools !== undefined ? { disallowedTools: options.disallowedTools } : {}),
+      ...(options.maxTurns !== undefined ? { maxTurns: options.maxTurns } : {}),
     };
   }
 

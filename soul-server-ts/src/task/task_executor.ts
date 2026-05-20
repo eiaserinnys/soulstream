@@ -128,6 +128,15 @@ export class TaskExecutor {
     // 분기 조합으로 wire 의미 등가 달성.
     let turnPrompt: string;
     let turnImageAttachmentPaths: string[] | undefined;
+    /**
+     * 첫 turn에 backend별로 분리하여 SDK에 전달할 system prompt.
+     *
+     * Phase B parity 분기 (분석 캐시 §E-2):
+     * - claude backend: SDK `system_prompt` 옵션을 활용 → composeFirstTurnPrompt에는 system 제외하고
+     *   context items만 prepend, systemPrompt는 EngineExecuteParams로 별도 전달.
+     * - codex backend: SDK turn-level systemPrompt 미지원 → 기존 동작 그대로 prompt 본문에 prepend.
+     */
+    let turnSystemPrompt: string | undefined;
     if (task.interventionQueue.length === 0) {
       // 신규 task — Python `_persist_initial_messages`(L120-182) 정합.
       //
@@ -164,10 +173,23 @@ export class TaskExecutor {
       await this._persistInitialMessages(task, ctx);
 
       if (ctx) {
-        turnPrompt = composeFirstTurnPrompt({
-          ...ctx,
-          assembledPrompt: task.prompt,
-        });
+        if (agent.backend === "claude") {
+          // claude: SDK가 turn-level system_prompt를 직접 받음 → 분리.
+          // composeFirstTurnPrompt에는 effectiveSystemPrompt를 비워 전달하여 prompt 본문에 prepend되지 않도록.
+          // context items는 SDK가 모르는 정보이므로 그대로 prepend.
+          turnPrompt = composeFirstTurnPrompt({
+            effectiveSystemPrompt: undefined,
+            combinedContextItems: ctx.combinedContextItems,
+            assembledPrompt: task.prompt,
+          });
+          turnSystemPrompt = ctx.effectiveSystemPrompt;
+        } else {
+          // codex: SDK가 turn-level systemPrompt 미지원 → 기존 동작 (prompt 본문에 prepend).
+          turnPrompt = composeFirstTurnPrompt({
+            ...ctx,
+            assembledPrompt: task.prompt,
+          });
+        }
       } else {
         turnPrompt = task.prompt;
       }
@@ -196,6 +218,14 @@ export class TaskExecutor {
             reasoningEffort: task.reasoningEffort,
             resumeSessionId,
             extraEnv: buildTaskExtraEnv(task),
+            // Phase B parity: 첫 turn에 한해 systemPrompt가 SDK 옵션으로 전달됨. intervention turn은
+            // resumeSessionId로 이어붙기 때문에 SDK가 기존 system prompt를 유지 — turnSystemPrompt가 undefined로 흘러 미전달.
+            ...(turnSystemPrompt !== undefined ? { systemPrompt: turnSystemPrompt } : {}),
+            // Phase B parity: agents.yaml의 도구 권한 옵션을 매 turn에 forward (Python `effective_allowed_tools` 정합).
+            // claude 어댑터만 SDK에 매핑하며, codex 어댑터는 무시 (SDK 표면 없음).
+            ...(agent.allowed_tools !== undefined ? { allowedTools: agent.allowed_tools } : {}),
+            ...(agent.disallowed_tools !== undefined ? { disallowedTools: agent.disallowed_tools } : {}),
+            ...(agent.max_turns !== undefined ? { maxTurns: agent.max_turns } : {}),
             ...(onIntervention ? { onIntervention } : {}),
           })) {
             await this._processEvent(task, event);

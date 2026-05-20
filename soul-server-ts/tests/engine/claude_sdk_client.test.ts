@@ -129,6 +129,40 @@ describe("ClaudeSdkClient", () => {
     });
   });
 
+  it("forwards allowedTools / disallowedTools / maxTurns to SDK options (Python agents.yaml parity)", async () => {
+    const captured: ClaudeSdkQueryParams[] = [];
+    const client = new ClaudeSdkClient(
+      {
+        query: (params) => {
+          captured.push(params);
+          return makeQuery(sdkMessages([sdkSuccessResult("claude-sess-opts", "done")]));
+        },
+        postResultDrainMs: 10,
+      },
+      silentLogger,
+    );
+
+    await collect(
+      client.run(
+        {
+          prompt: "hi",
+          workspaceDir: "/tmp/claude-work",
+          env: {},
+          allowedTools: ["Read", "Bash"],
+          disallowedTools: ["WebFetch"],
+          maxTurns: 25,
+        },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(captured[0]?.options).toMatchObject({
+      allowedTools: ["Read", "Bash"],
+      disallowedTools: ["WebFetch"],
+      maxTurns: 25,
+    });
+  });
+
   it("omits SDK model and executable options when caller does not provide them", async () => {
     const captured: ClaudeSdkQueryParams[] = [];
     const client = new ClaudeSdkClient(

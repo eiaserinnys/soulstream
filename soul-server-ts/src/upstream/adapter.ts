@@ -3,6 +3,7 @@ import type { Logger } from "pino";
 
 import type { AgentRegistry } from "../agent_registry.js";
 import type { ClaudeAuthCommandHandler } from "../auth/claude_auth.js";
+import type { SessionDB } from "../db/session_db.js";
 import type { TaskExecutor } from "../task/task_executor.js";
 import type { TaskManager } from "../task/task_manager.js";
 import type { AttachmentStore } from "../attachments/file_manager.js";
@@ -28,6 +29,8 @@ export interface UpstreamDependencies {
   taskExecutor: TaskExecutor;
   attachmentStore?: AttachmentStore;
   claudeAuth?: ClaudeAuthCommandHandler;
+  /** Phase B: list_sessions 핸들러 의존성. main.ts에서 주입. */
+  sessionDb?: SessionDB;
 }
 
 /**
@@ -62,6 +65,7 @@ export class UpstreamAdapter {
       deps.taskExecutor,
       deps.attachmentStore,
       deps.claudeAuth,
+      deps.sessionDb,
     );
   }
 
