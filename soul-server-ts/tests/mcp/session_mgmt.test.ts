@@ -194,7 +194,7 @@ describe("agent profile backend boundary", () => {
     workspace_dir: "/tmp/claude",
   };
 
-  it("list_local_agents는 executable backend agent만 backend와 함께 반환", async () => {
+  it("list_local_agents는 registry agent를 backend와 함께 모두 반환", async () => {
     const runtime = makeRuntime(
       { queued: true, queuePosition: 1 },
       undefined,
@@ -216,11 +216,17 @@ describe("agent profile backend boundary", () => {
           backend: "codex",
           max_turns: null,
         },
+        {
+          id: "claude-roselin",
+          name: "로젤린",
+          backend: "claude",
+          max_turns: null,
+        },
       ],
     });
   });
 
-  it("create_agent_session은 engine 미지원 backend profile을 task 생성 전 차단", async () => {
+  it("create_agent_session은 선택한 backend profile을 executor에 그대로 전달", async () => {
     const runtime = makeRuntime(
       { queued: true, queuePosition: 1 },
       undefined,
@@ -236,15 +242,18 @@ describe("agent profile backend boundary", () => {
       },
     });
 
-    expect(result.isError).toBe(true);
-    expect((result.structuredContent as { error?: string }).error).toContain(
-      "Unsupported backend",
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      status: "running",
+    });
+    expect(runtime.createTask).toHaveBeenCalledTimes(1);
+    expect(runtime.startExecution).toHaveBeenCalledWith(
+      expect.objectContaining({ agentSessionId: expect.any(String) }),
+      claudeAgent,
     );
-    expect(runtime.createTask).not.toHaveBeenCalled();
-    expect(runtime.startExecution).not.toHaveBeenCalled();
   });
 
-  it("reflect_service level=3은 executable agent 수와 configured profile 수를 분리", async () => {
+  it("reflect_service level=3은 registry agent 수를 보고", async () => {
     const runtime = makeRuntime(
       { queued: true, queuePosition: 1 },
       undefined,
@@ -259,9 +268,7 @@ describe("agent profile backend boundary", () => {
 
     expect(result.isError).not.toBe(true);
     expect(result.structuredContent).toMatchObject({
-      agent_count: 1,
-      configured_agent_count: 2,
-      executable_backends: ["codex"],
+      agent_count: 2,
     });
   });
 });

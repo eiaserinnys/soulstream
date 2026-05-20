@@ -2,11 +2,6 @@ import type { Logger } from "pino";
 
 import type { AgentRegistry } from "../agent_registry.js";
 import {
-  EXECUTABLE_BACKENDS,
-  isExecutableBackend,
-  unsupportedBackendMessage,
-} from "../backend_support.js";
-import {
   AttachmentError,
   FileAttachmentStore,
   FileNotFoundError,
@@ -146,7 +141,7 @@ export class CommandDispatcher {
   }
 
   private async handleHealthCheck(cmd: CommandLike): Promise<void> {
-    const agents = this.agentRegistry.listForBackends(EXECUTABLE_BACKENDS);
+    const agents = this.agentRegistry.list();
     await this.send({
       type: "health_status",
       runners: {
@@ -180,10 +175,6 @@ export class CommandDispatcher {
     const agent = this.agentRegistry.get(profileId);
     if (!agent) {
       await this.sendError(cmd, `Unknown agent profile: ${profileId}`);
-      return;
-    }
-    if (!isExecutableBackend(agent.backend)) {
-      await this.sendError(cmd, unsupportedBackendMessage(agent));
       return;
     }
 
@@ -253,13 +244,6 @@ export class CommandDispatcher {
         this.logger.error(
           { sessionId: task.agentSessionId, profileId: task.profileId },
           "intervene auto-resume aborted — agent profile not found",
-        );
-        return;
-      }
-      if (!isExecutableBackend(agent.backend)) {
-        this.logger.warn(
-          { sessionId: task.agentSessionId, profileId: task.profileId, backend: agent.backend },
-          "intervene auto-resume skipped — agent backend not executable",
         );
         return;
       }

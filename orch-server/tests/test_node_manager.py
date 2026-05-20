@@ -388,6 +388,40 @@ class TestFindAgentProfile:
         assert source_node_id == "n2"
         assert profile["backend"] == "claude"
 
+    async def test_routing_resolver_does_not_fallback_when_target_lacks_profile(
+        self, manager
+    ):
+        """nodeId가 명시된 라우팅은 다른 노드 profile로 대체하지 않는다."""
+        ws1 = AsyncMock()
+        ws1.send_json = AsyncMock()
+        ws1.close = AsyncMock()
+        ws2 = AsyncMock()
+        ws2.send_json = AsyncMock()
+        ws2.close = AsyncMock()
+
+        await manager.register_node(ws1, {
+            **make_registration("n1"),
+            "supported_backends": ["codex"],
+            "agents": [
+                {"id": "codex-roselin", "name": "로젤린", "backend": "codex"}
+            ],
+        })
+        await manager.register_node(ws2, {
+            **make_registration("n2"),
+            "supported_backends": ["claude"],
+            "agents": [
+                {"id": "claude-roselin", "name": "로젤린", "backend": "claude"}
+            ],
+        })
+
+        assert (
+            manager.resolve_agent_profile_for_routing(
+                "claude-roselin",
+                preferred_node_id="n1",
+            )
+            is None
+        )
+
 
 class TestUserInfo:
     """사용자 정보 조회 테스트."""

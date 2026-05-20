@@ -117,15 +117,6 @@ describe("AgentRegistry", () => {
     expect(r.get("claude-roselin")?.backend).toBe("claude");
   });
 
-  it("backend filter를 적용하면 executable profile/backend만 반환", () => {
-    const r = new AgentRegistry([
-      profile("codex-agent", "codex"),
-      profile("claude-agent", "claude"),
-    ]);
-
-    expect(r.listForBackends(["codex"]).map((p) => p.id)).toEqual(["codex-agent"]);
-    expect(r.supportedBackends(["codex"])).toEqual(["codex"]);
-  });
 });
 
 describe("loadAgentRegistry", () => {

@@ -99,7 +99,7 @@ function createDispatcher(opts: {
 }
 
 describe("CommandDispatcher.health_check", () => {
-  it("executable agent count를 max_concurrent로, running task 개수를 active로 박음", async () => {
+  it("registered agent count를 max_concurrent로, running task 개수를 active로 박음", async () => {
     const { dispatcher, sent } = createDispatcher({ runningTasks: 1 });
     await dispatcher.dispatch({ type: "health_check", requestId: "req-1" });
 
@@ -112,7 +112,7 @@ describe("CommandDispatcher.health_check", () => {
     });
   });
 
-  it("Claude profile이 staging으로 등록되어도 executable max_concurrent에는 포함하지 않음", async () => {
+  it("Claude profile도 registry profile이면 health max_concurrent에 포함", async () => {
     const { dispatcher, sent } = createDispatcher({
       agents: [codexAgent, claudeAgent],
       runningTasks: 1,
@@ -121,7 +121,7 @@ describe("CommandDispatcher.health_check", () => {
     await dispatcher.dispatch({ type: "health_check", requestId: "req-1" });
 
     expect(sent[0]).toMatchObject({
-      runners: { max_concurrent: 1, active: 1 },
+      runners: { max_concurrent: 2, active: 1 },
     });
   });
 
@@ -258,8 +258,8 @@ describe("CommandDispatcher.create_session", () => {
     expect(tm.createTask).not.toHaveBeenCalled();
   });
 
-  it("engine 미지원 backend profile은 task 생성 전에 error로 차단", async () => {
-    const { dispatcher, sent, tm, te } = createDispatcher({
+  it("Claude backend profile도 agent boundary를 보존해 executor에 전달", async () => {
+    const { dispatcher, sent, tm, te, createdTasks } = createDispatcher({
       agents: [codexAgent, claudeAgent],
     });
 
@@ -271,12 +271,13 @@ describe("CommandDispatcher.create_session", () => {
       requestId: "r1",
     });
 
-    expect((sent[0] as { type: string }).type).toBe("error");
-    expect((sent[0] as { message: string }).message).toContain(
-      "Unsupported backend",
-    );
-    expect(tm.createTask).not.toHaveBeenCalled();
-    expect(te.startExecution).not.toHaveBeenCalled();
+    expect(tm.createTask).toHaveBeenCalledTimes(1);
+    expect(te.startExecution).toHaveBeenCalledWith(createdTasks[0], claudeAgent);
+    expect(sent[0]).toEqual({
+      type: "session_created",
+      agentSessionId: "sess-claude",
+      requestId: "r1",
+    });
   });
 
   it("createTask가 throw하면 error 응답 (Handler error wrap)", async () => {

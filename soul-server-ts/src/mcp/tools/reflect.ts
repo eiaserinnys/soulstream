@@ -8,7 +8,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { EXECUTABLE_BACKENDS } from "../../backend_support.js";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 
@@ -180,15 +179,12 @@ function reflectSelf(
     };
   }
   // level 3 — runtime
-  const executableBackends = runtime.executableBackends ?? EXECUTABLE_BACKENDS;
   return {
     status: "healthy",
     node_id: runtime.nodeId,
     pid: process.pid,
     uptime_seconds: Math.floor((Date.now() - PROCESS_START_MS) / 1000),
-    agent_count: runtime.agentRegistry.listForBackends(executableBackends).length,
-    configured_agent_count: runtime.agentRegistry.list().length,
-    executable_backends: executableBackends,
+    agent_count: runtime.agentRegistry.list().length,
     active_task_count: runtime.taskManager.listTasks().length,
   };
 }

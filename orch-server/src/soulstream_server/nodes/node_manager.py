@@ -229,14 +229,15 @@ class NodeManager:
     ) -> tuple[dict, str] | None:
         """세션 라우팅용 agent profile 조회.
 
-        preferred_node_id가 있으면 해당 노드의 profile을 우선한다. nodeId 없이 같은
-        agent_id가 여러 노드에 있으면 임의 first-match를 금지하고 AmbiguousAgentProfile을
-        던져 호출자가 409로 노출하게 한다.
+        preferred_node_id가 있으면 해당 노드의 profile만 본다. nodeId 없이 같은 agent_id가
+        여러 노드에 있으면 임의 first-match를 금지하고 AmbiguousAgentProfile을 던져
+        호출자가 409로 노출하게 한다.
         """
         if preferred_node_id:
             node = self._nodes.get(preferred_node_id)
             if node and agent_id in node.agent_profiles:
                 return node.agent_profiles[agent_id], preferred_node_id
+            return None
 
         matches: list[tuple[str, dict]] = []
         for node_id, node in self._nodes.items():
