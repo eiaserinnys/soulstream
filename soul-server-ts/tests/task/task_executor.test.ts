@@ -726,6 +726,8 @@ describe("TaskExecutor _processEvent — _event_id ride-along (Python L248 정�
       { type: "session", session_id: "thr-x" } as SSEEventPayload,
       { type: "text_start", timestamp: 1 } as SSEEventPayload,
       { type: "text_delta", text: "hi", timestamp: 1 } as SSEEventPayload,
+      { type: "prompt_suggestion", text: "follow-up", timestamp: 1.5 } as SSEEventPayload,
+      { type: "credential_alert", status: "allowed_warning", utilization: 0.91, timestamp: 1.6 } as SSEEventPayload,
       { type: "complete", usage: {}, timestamp: 2 } as SSEEventPayload,
     ];
     const executor = new TaskExecutor(() => makeFakeEngine(events), mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
@@ -733,7 +735,7 @@ describe("TaskExecutor _processEvent — _event_id ride-along (Python L248 정�
     executor.startExecution(task, agent);
     await task.executionPromise;
 
-    // user_message + 4 turn events = 5 emit
+    // user_message + 6 turn events = 7 emit
     const emitCalls = mocks.emitEventEnvelope.mock.calls;
     // 모든 envelope event payload에 _event_id (number) 있음
     for (const call of emitCalls) {

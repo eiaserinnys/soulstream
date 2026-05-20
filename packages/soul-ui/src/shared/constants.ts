@@ -33,6 +33,7 @@ export const SSE_EVENT_TYPES = [
   "tool_result",
   "result",
   "away_summary",
+  "prompt_suggestion",
   "subagent_start",
   "subagent_stop",
   "context_usage",

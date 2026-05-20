@@ -361,6 +361,14 @@ class SSEEventError(TypedDict):
     type: Literal['error']
 
 
+class SSEEventCredentialAlert(TypedDict):
+    """
+    SSE: Claude credential/rate-limit alert.
+    """
+
+    type: Literal['credential_alert']
+
+
 class SSEEventThinking(TypedDict):
     """
     SSE: thinking 블록.
@@ -415,6 +423,14 @@ class SSEEventResult(TypedDict):
     """
 
     type: Literal['result']
+
+
+class SSEEventPromptSuggestion(TypedDict):
+    """
+    SSE: Claude prompt suggestion.
+    """
+
+    type: Literal['prompt_suggestion']
 
 
 class SSEEventSubagentStart(TypedDict):
@@ -496,6 +512,7 @@ class SessionEventEnvelope(TypedDict):
         | SSEEventDebug
         | SSEEventComplete
         | SSEEventError
+        | SSEEventCredentialAlert
         | SSEEventThinking
         | SSEEventTextStart
         | SSEEventTextDelta
@@ -503,6 +520,7 @@ class SessionEventEnvelope(TypedDict):
         | SSEEventToolStart
         | SSEEventToolResult
         | SSEEventResult
+        | SSEEventPromptSuggestion
         | SSEEventSubagentStart
         | SSEEventSubagentStop
         | SSEEventContextUsage

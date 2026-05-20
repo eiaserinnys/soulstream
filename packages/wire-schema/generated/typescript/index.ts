@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 48개 $defs (wire 20 + SSE event 28). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16).
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 50개 $defs (wire 20 + SSE event 30). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16).
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -93,7 +93,7 @@ export interface SessionEventEnvelope {
    */
   session_id?: string;
   /**
-   * SSE event payload. KNOWN_SSE_EVENT_TYPES 27종 중 하나 (orch-server/constants.py L59-69).
+   * SSE event payload. KNOWN_SSE_EVENT_TYPES 중 하나 (orch-server/constants.py L59-69).
    */
   event:
     | SSEEventInit
@@ -110,6 +110,7 @@ export interface SessionEventEnvelope {
     | SSEEventDebug
     | SSEEventComplete
     | SSEEventError
+    | SSEEventCredentialAlert
     | SSEEventThinking
     | SSEEventTextStart
     | SSEEventTextDelta
@@ -117,6 +118,7 @@ export interface SessionEventEnvelope {
     | SSEEventToolStart
     | SSEEventToolResult
     | SSEEventResult
+    | SSEEventPromptSuggestion
     | SSEEventSubagentStart
     | SSEEventSubagentStop
     | SSEEventContextUsage
@@ -225,6 +227,13 @@ export interface SSEEventError {
   [k: string]: unknown;
 }
 /**
+ * SSE: Claude credential/rate-limit alert.
+ */
+export interface SSEEventCredentialAlert {
+  type: "credential_alert";
+  [k: string]: unknown;
+}
+/**
  * SSE: thinking 블록.
  */
 export interface SSEEventThinking {
@@ -271,6 +280,13 @@ export interface SSEEventToolResult {
  */
 export interface SSEEventResult {
   type: "result";
+  [k: string]: unknown;
+}
+/**
+ * SSE: Claude prompt suggestion.
+ */
+export interface SSEEventPromptSuggestion {
+  type: "prompt_suggestion";
   [k: string]: unknown;
 }
 /**

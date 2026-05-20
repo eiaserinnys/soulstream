@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 48개 $defs (wire 20 + SSE event 28). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16).",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 50개 $defs (wire 20 + SSE event 30). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16).",
   "$defs": {
     "NodeRegister": {
       "type": "object",
@@ -82,7 +82,7 @@
           "description": "구버전 호환 — 신규 코드는 agentSessionId 사용."
         },
         "event": {
-          "description": "SSE event payload. KNOWN_SSE_EVENT_TYPES 27종 중 하나 (orch-server/constants.py L59-69).",
+          "description": "SSE event payload. KNOWN_SSE_EVENT_TYPES 중 하나 (orch-server/constants.py L59-69).",
           "oneOf": [
             { "$ref": "#/$defs/SSEEventInit" },
             { "$ref": "#/$defs/SSEEventReconnected" },
@@ -98,6 +98,7 @@
             { "$ref": "#/$defs/SSEEventDebug" },
             { "$ref": "#/$defs/SSEEventComplete" },
             { "$ref": "#/$defs/SSEEventError" },
+            { "$ref": "#/$defs/SSEEventCredentialAlert" },
             { "$ref": "#/$defs/SSEEventThinking" },
             { "$ref": "#/$defs/SSEEventTextStart" },
             { "$ref": "#/$defs/SSEEventTextDelta" },
@@ -105,6 +106,7 @@
             { "$ref": "#/$defs/SSEEventToolStart" },
             { "$ref": "#/$defs/SSEEventToolResult" },
             { "$ref": "#/$defs/SSEEventResult" },
+            { "$ref": "#/$defs/SSEEventPromptSuggestion" },
             { "$ref": "#/$defs/SSEEventSubagentStart" },
             { "$ref": "#/$defs/SSEEventSubagentStop" },
             { "$ref": "#/$defs/SSEEventContextUsage" },
@@ -476,6 +478,13 @@
       "additionalProperties": true,
       "properties": { "type": { "const": "error" } }
     },
+    "SSEEventCredentialAlert": {
+      "type": "object",
+      "description": "SSE: Claude credential/rate-limit alert.",
+      "required": ["type"],
+      "additionalProperties": true,
+      "properties": { "type": { "const": "credential_alert" } }
+    },
     "SSEEventThinking": {
       "type": "object",
       "description": "SSE: thinking 블록.",
@@ -524,6 +533,13 @@
       "required": ["type"],
       "additionalProperties": true,
       "properties": { "type": { "const": "result" } }
+    },
+    "SSEEventPromptSuggestion": {
+      "type": "object",
+      "description": "SSE: Claude prompt suggestion.",
+      "required": ["type"],
+      "additionalProperties": true,
+      "properties": { "type": { "const": "prompt_suggestion" } }
     },
     "SSEEventSubagentStart": {
       "type": "object",

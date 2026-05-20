@@ -7,6 +7,10 @@ import type {
   SSEEventPayload,
 } from "./protocol.js";
 import {
+  mapClaudeClientEvent,
+  type ClaudeClientEvent,
+} from "./claude_event_mapper.js";
+import {
   buildClaudeEnvironment,
   normalizeClaudeModel,
 } from "./claude_options.js";
@@ -17,12 +21,7 @@ export {
   buildClaudeEnvironment,
   normalizeClaudeModel,
 } from "./claude_options.js";
-
-export type ClaudeClientEvent =
-  | { type: "session"; sessionId: string }
-  | { type: "text"; text: string; timestamp?: number }
-  | { type: "complete"; result?: string; usage?: unknown; timestamp?: number }
-  | { type: "error"; message: string; fatal?: boolean; timestamp?: number };
+export type { ClaudeClientEvent } from "./claude_event_mapper.js";
 
 export interface ClaudeRunOptions {
   prompt: string;
@@ -83,55 +82,21 @@ export class ClaudeEngineAdapter implements EnginePort {
           if (params.onSession) {
             await params.onSession(clientEvent.sessionId);
           }
-          const payload = {
-            type: "session",
-            session_id: clientEvent.sessionId,
-          } as SSEEventPayload;
-          if (params.onEvent) await params.onEvent(payload);
-          yield payload;
-          continue;
         }
 
         if (clientEvent.type === "text") {
           lastText = clientEvent.text;
-          const ts = clientEvent.timestamp ?? nowSeconds();
-          const payloads = [
-            { type: "text_start", timestamp: ts } as SSEEventPayload,
-            { type: "text_delta", text: clientEvent.text, timestamp: ts } as SSEEventPayload,
-            { type: "text_end", timestamp: ts } as SSEEventPayload,
-          ];
-          for (const payload of payloads) {
-            if (params.onEvent) await params.onEvent(payload);
-            yield payload;
-          }
-          continue;
         }
 
-        if (clientEvent.type === "complete") {
-          const payload = {
-            type: "complete",
-            timestamp: clientEvent.timestamp ?? nowSeconds(),
-            ...(clientEvent.usage !== undefined ? { usage: clientEvent.usage } : {}),
-            ...(clientEvent.result !== undefined
-              ? { result: clientEvent.result }
-              : lastText !== undefined
-                ? { result: lastText }
-                : {}),
-          } as SSEEventPayload;
+        const payloads = mapClaudeClientEvent(clientEvent, {
+          fallbackResult: lastText,
+        });
+        for (const payload of payloads) {
           if (params.onEvent) await params.onEvent(payload);
           yield payload;
-          continue;
         }
 
-        const payload = {
-          type: "error",
-          message: clientEvent.message,
-          fatal: clientEvent.fatal ?? true,
-          timestamp: clientEvent.timestamp ?? nowSeconds(),
-        } as SSEEventPayload;
-        if (params.onEvent) await params.onEvent(payload);
-        yield payload;
-        if (clientEvent.fatal !== false) {
+        if (clientEvent.type === "error" && clientEvent.fatal !== false) {
           throw new ClaudeClientFatalEventError(clientEvent.message);
         }
       }

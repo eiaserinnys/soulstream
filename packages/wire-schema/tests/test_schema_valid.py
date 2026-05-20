@@ -1,7 +1,7 @@
 """schema 자체 유효성 + 메시지 인벤토리 검증.
 
 본 테스트는 src/upstream.schema.json이 JSON Schema Draft 2020-12 유효이며,
-설계 명세에 합의된 47개 $defs (wire 20 + SSE event 27)를 모두 포함하는지 확인한다.
+설계 명세에 합의된 50개 $defs (wire 20 + SSE event 30)를 모두 포함하는지 확인한다.
 """
 
 import json
@@ -73,6 +73,7 @@ def test_schema_has_all_message_types() -> None:
         "SSEEventDebug",
         "SSEEventComplete",
         "SSEEventError",
+        "SSEEventCredentialAlert",
         "SSEEventThinking",
         "SSEEventTextStart",
         "SSEEventTextDelta",
@@ -80,6 +81,7 @@ def test_schema_has_all_message_types() -> None:
         "SSEEventToolStart",
         "SSEEventToolResult",
         "SSEEventResult",
+        "SSEEventPromptSuggestion",
         "SSEEventSubagentStart",
         "SSEEventSubagentStop",
         "SSEEventContextUsage",
@@ -88,8 +90,8 @@ def test_schema_has_all_message_types() -> None:
         "SSEEventHistorySync",
         "SSEEventMetadataUpdated",
     }
-    assert len(sse_types) == 28, (
-        "SSE event $defs 28종 (orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 그대로)."
+    assert len(sse_types) == 30, (
+        "SSE event $defs 30종 (orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 그대로)."
     )
 
     expected = wire_types | sse_types
@@ -145,7 +147,7 @@ def test_oneof_covers_all_wire_messages() -> None:
 
 
 def test_known_sse_event_types_completeness() -> None:
-    """orch-server/constants.py KNOWN_SSE_EVENT_TYPES 27개와 schema SSE $defs의 type const가 일치해야 한다."""
+    """orch-server/constants.py KNOWN_SSE_EVENT_TYPES 30개와 schema SSE $defs의 type const가 일치해야 한다."""
     schema = _load_schema()
     sse_consts = set()
     for name, body in schema["$defs"].items():
@@ -168,6 +170,7 @@ def test_known_sse_event_types_completeness() -> None:
         "debug",
         "complete",
         "error",
+        "credential_alert",
         "thinking",
         "text_start",
         "text_delta",
@@ -175,6 +178,7 @@ def test_known_sse_event_types_completeness() -> None:
         "tool_start",
         "tool_result",
         "result",
+        "prompt_suggestion",
         "subagent_start",
         "subagent_stop",
         "context_usage",

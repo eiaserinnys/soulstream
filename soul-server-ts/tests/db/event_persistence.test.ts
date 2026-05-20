@@ -69,6 +69,14 @@ describe("extractPreviewText", () => {
       extractPreviewText({ type: "tool_start" } as SSEEventPayload),
     ).toBe("");
   });
+  it("prompt_suggestion과 credential_alert는 turn-meta라 last_message preview에 쓰지 않는다", () => {
+    expect(
+      extractPreviewText({ type: "prompt_suggestion", text: "next" } as SSEEventPayload),
+    ).toBe("");
+    expect(
+      extractPreviewText({ type: "credential_alert", utilization: 0.95 } as SSEEventPayload),
+    ).toBe("");
+  });
   it("text_end는 text 필드가 없으므로 빈 문자열 (B-2 결함 정정 검증)", () => {
     expect(extractPreviewText({ type: "text_end" } as SSEEventPayload)).toBe("");
   });
@@ -141,6 +149,20 @@ describe("EventPersistence.handleSideEffects", () => {
     );
     expect(updateLastMessage).not.toHaveBeenCalled();
     expect(task.lastAssistantText).toBe("previous");  // 변경 없음
+  });
+
+  it("prompt_suggestion은 영속 대상이지만 last_message와 lastAssistantText는 건드리지 않는다", async () => {
+    const { db, updateLastMessage } = makeMockDB();
+    const { broadcaster } = makeMockBroadcaster();
+    const ep = new EventPersistence(db, broadcaster, silentLogger);
+    const task = makeTask({ lastAssistantText: "previous" });
+    await ep.handleSideEffects(
+      "sess-1",
+      { type: "prompt_suggestion", text: "next", timestamp: 1731700002 } as SSEEventPayload,
+      task,
+    );
+    expect(updateLastMessage).not.toHaveBeenCalled();
+    expect(task.lastAssistantText).toBe("previous");
   });
 
   it("text_delta 누적 — 매번 덮어쓰기 (Codex SDK 누적 텍스트 정합)", async () => {

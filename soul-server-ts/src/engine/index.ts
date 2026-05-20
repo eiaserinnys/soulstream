@@ -30,3 +30,4 @@ export type {
 } from "./claude_adapter.js";
 
 export { mapThreadEvent } from "./codex_event_mapper.js";
+export { mapClaudeClientEvent } from "./claude_event_mapper.js";

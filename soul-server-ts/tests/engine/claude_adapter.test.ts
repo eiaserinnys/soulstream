@@ -171,4 +171,57 @@ describe("ClaudeEngineAdapter fake client flow", () => {
     expect(seen).toHaveLength(1);
     expect(seen[0]).toMatchObject({ type: "error", message: "boom", fatal: true });
   });
+
+  it("fake client의 Claude parity 이벤트를 mapper 출력 그대로 yield한다", async () => {
+    const captured: ClaudeRunOptions[] = [];
+    const engine = new ClaudeEngineAdapter(
+      {
+        workspaceDir: "/tmp/claude-work",
+        client: makeClient(
+          [
+            { type: "tool_start", toolName: "Read", toolInput: { file_path: "a.ts" }, toolUseId: "toolu_1", timestamp: 1 },
+            { type: "tool_result", toolName: "Read", result: "content", toolUseId: "toolu_1", timestamp: 2 },
+            { type: "thinking", thinking: "checking", timestamp: 3 },
+            { type: "result", success: true, output: "content", timestamp: 4 },
+            { type: "prompt_suggestion", text: "next?", timestamp: 5 },
+            { type: "rate_limit", status: "allowed_warning", utilization: 0.91, timestamp: 6 },
+            { type: "compact", trigger: "auto", message: "compacted", timestamp: 7 },
+            { type: "subagent_start", agentId: "sub-1", agentType: "explorer", timestamp: 8 },
+            { type: "subagent_stop", agentId: "sub-1", timestamp: 9 },
+          ],
+          captured,
+        ),
+        processEnv: {},
+      },
+      silentLogger,
+    );
+    const seen: SSEEventPayload[] = [];
+
+    for await (const event of engine.execute({ prompt: "hi" })) {
+      seen.push(event);
+    }
+
+    expect(seen.map((event) => event.type)).toEqual([
+      "tool_start",
+      "tool_result",
+      "thinking",
+      "result",
+      "prompt_suggestion",
+      "credential_alert",
+      "compact",
+      "subagent_start",
+      "subagent_stop",
+    ]);
+    expect(seen[0]).toMatchObject({
+      type: "tool_start",
+      tool_name: "Read",
+      tool_input: { file_path: "a.ts" },
+      tool_use_id: "toolu_1",
+    });
+    expect(seen[5]).toMatchObject({
+      type: "credential_alert",
+      status: "allowed_warning",
+      utilization: 0.91,
+    });
+  });
 });
