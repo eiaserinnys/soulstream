@@ -128,7 +128,7 @@ describe("ClaudeAuthService token storage", () => {
     });
   });
 
-  it("buildProcessEnv는 상속된 Python env token을 제거하고 TS store token만 주입한다", async () => {
+  it("buildProcessEnv는 상속된 Python env token과 실행파일 경로를 제거하고 PKCE store token을 env에 주입하지 않는다", async () => {
     await withTempStore(async (tokenPath) => {
       const svc = makeService(tokenPath);
       const inherited = {
@@ -147,7 +147,6 @@ describe("ClaudeAuthService token storage", () => {
 
       expect(svc.buildProcessEnv(inherited)).toEqual({
         KEEP_ME: "1",
-        [CLAUDE_OAUTH_TOKEN_ENV]: VALID_TOKEN,
       });
     });
   });

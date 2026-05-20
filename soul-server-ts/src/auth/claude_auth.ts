@@ -298,10 +298,6 @@ export class ClaudeAuthService implements ClaudeAuthCommandHandler {
         out[key] = value;
       }
     }
-    const credentials = this.store.read();
-    if (credentials) {
-      out[CLAUDE_OAUTH_TOKEN_ENV] = credentials.accessToken;
-    }
     return out;
   }
 
