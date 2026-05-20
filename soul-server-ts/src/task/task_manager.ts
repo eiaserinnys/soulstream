@@ -699,6 +699,21 @@ export class TaskManager {
     task.result = undefined;
     task.interventionQueue.push(message);
 
+    // DB sessions.status도 같은 시점에 되살린다. 기존 구현은 wire session_updated만
+    // running으로 내보내고 DB row는 completed/error로 남겨 list_sessions·앱 재진입이
+    // "종료됨"으로 보이는 비대칭을 만들었다.
+    try {
+      await this.db.updateSession(task.agentSessionId, {
+        status: "running",
+        last_event_id: task.lastEventId,
+      });
+    } catch (err) {
+      this.logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "DB updateSession failed in auto-resume",
+      );
+    }
+
     // 결함 B 정정: session_updated wire를 *상태 전환 직후* broadcast하여 클라이언트의
     // session.status를 "running"으로 즉시 갱신. soul-app TypingIndicator
     // (`session.status === "running"`)가 표시되도록 한다. PR #54까지는 이 wire가 누락되어

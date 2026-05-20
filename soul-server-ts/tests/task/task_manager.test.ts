@@ -13,6 +13,7 @@ function makeMocks() {
   const registerSession = vi.fn().mockResolvedValue(undefined);
   const appendMetadata = vi.fn().mockResolvedValue(1);
   const deleteSession = vi.fn().mockResolvedValue(undefined);
+  const updateSession = vi.fn().mockResolvedValue(undefined);
   // B-5: 폴더 배정 정본 흐름 mocks (Python `_assign_default_folder_and_broadcast` 정합).
   const assignSessionToFolder = vi.fn().mockResolvedValue(undefined);
   const getDefaultFolder = vi
@@ -27,6 +28,7 @@ function makeMocks() {
     registerSession,
     appendMetadata,
     deleteSession,
+    updateSession,
     assignSessionToFolder,
     getDefaultFolder,
     getCatalog,
@@ -54,6 +56,7 @@ function makeMocks() {
     registerSession,
     appendMetadata,
     deleteSession,
+    updateSession,
     assignSessionToFolder,
     getDefaultFolder,
     getCatalog,
@@ -519,6 +522,10 @@ describe("TaskManager.addIntervention (B-4)", () => {
     // session_updated가 status=running 박힌 task로 broadcast
     expect(broadcasterMocks.emitSessionUpdated).toHaveBeenCalledTimes(1);
     expect(broadcasterMocks.emitSessionUpdated.mock.calls[0][0]).toBe(task);
+    expect(broadcasterMocks.updateSession).toHaveBeenCalledWith("s1", {
+      status: "running",
+      last_event_id: task.lastEventId,
+    });
   });
 
   it("T-1 (Phase A context 정본): completed task auto-resume이 buildResumeContextItems 호출하여 user_message.context 박음", async () => {
@@ -1060,6 +1067,10 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
     );
     expect(userMsgCalls.length).toBe(1);
     expect(mocks.emitSessionUpdated).toHaveBeenCalledTimes(1);
+    expect(mocks.updateSession).toHaveBeenCalledWith("sess-evicted", {
+      status: "running",
+      last_event_id: memTask!.lastEventId,
+    });
     expect(onResume).toHaveBeenCalledWith(memTask);
   });
 
