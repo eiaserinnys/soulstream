@@ -4,20 +4,33 @@
 //! HTTP(S) scheme이면서 등록된 dashboard origin과 다른 origin인 경우 `true`를 반환한다.
 //! 호출자가 `true`를 받으면 navigation을 취소하고 `open::that(url)`로 OS 기본 브라우저에
 //! 위임한다. 비-HTTP(S) scheme(about/javascript/mailto/tel/blob 등)은 `false`로 분류되며,
-//! 호출자는 별도 정책(`on_navigation`은 `tauri` scheme만 추가 허용, `on_new_window`는
-//! 모두 `Deny`)으로 처리한다.
+//! 호출자는 별도 정책으로 처리한다.
 
 use url::Url;
 
 /// 외부 HTTP(S) navigation인지 판단한다.
 ///
 /// - scheme이 `http` 또는 `https`가 아니면 `false`를 반환한다(외부 분류 대상 아님).
+/// - Tauri v2의 packaged app origin(`http://tauri.localhost`)은 내부 앱 URL로 취급한다.
 /// - HTTP(S)이면서 `allowed_origins`의 어느 항목과도 origin이 일치하지 않으면 `true`다.
 pub fn is_external_http(url: &Url, allowed_origins: &[Url]) -> bool {
     if !matches!(url.scheme(), "http" | "https") {
         return false;
     }
+    if is_tauri_app_url(url) {
+        return false;
+    }
     !allowed_origins.iter().any(|allowed| same_origin(url, allowed))
+}
+
+/// Tauri가 번들 React app을 로드할 때 쓰는 내부 URL인지 판단한다.
+///
+/// Tauri v1/v2와 플랫폼 차이를 모두 허용하기 위해 legacy `tauri:` scheme과
+/// v2 custom protocol host인 `tauri.localhost`를 함께 내부로 본다.
+pub fn is_tauri_app_url(url: &Url) -> bool {
+    url.scheme() == "tauri"
+        || (matches!(url.scheme(), "http" | "https")
+            && url.host_str() == Some("tauri.localhost"))
 }
 
 /// 두 URL의 origin이 동일한지 비교한다(scheme + host + port).
@@ -47,8 +60,25 @@ mod tests {
     }
 
     #[test]
+    fn tauri_app_urls_are_internal() {
+        assert!(is_tauri_app_url(&url("tauri://localhost/index.html")));
+        assert!(is_tauri_app_url(&url("http://tauri.localhost/")));
+        assert!(is_tauri_app_url(&url("https://tauri.localhost/assets/app.js")));
+        assert!(!is_tauri_app_url(&url("http://localhost:1420/")));
+    }
+
+    #[test]
+    fn tauri_localhost_is_not_external_without_dashboard_origin() {
+        assert!(!is_external_http(&url("http://tauri.localhost/"), &[]));
+        assert!(!is_external_http(
+            &url("http://tauri.localhost/assets/index.js"),
+            &[]
+        ));
+    }
+
+    #[test]
     fn empty_allowed_treats_all_http_as_external() {
-        // dashboard origin 등록 전(setup 화면)에서는 모든 HTTP(S)이 외부로 분류된다.
+        // dashboard origin 등록 전(setup 화면)에서는 앱 내부 origin을 제외한 HTTP(S)이 외부로 분류된다.
         assert!(is_external_http(&url("https://x.com/path"), &[]));
         assert!(is_external_http(&url("http://localhost:3000"), &[]));
     }

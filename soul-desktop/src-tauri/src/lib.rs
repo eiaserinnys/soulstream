@@ -6,7 +6,7 @@ use tauri::webview::NewWindowResponse;
 use tauri::{State, WebviewUrl, WebviewWindowBuilder};
 use url::Url;
 
-use external_nav::is_external_http;
+use external_nav::{is_external_http, is_tauri_app_url};
 
 /// dashboard origin 런타임 정본.
 ///
@@ -53,7 +53,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![set_dashboard_origin])
         .setup(move |app| {
             // Navigation 정책:
-            //  - 비-HTTP(S) scheme: `on_navigation`은 `tauri`만 허용(기존 보안 가드 유지),
+            //  - Tauri app URL(`tauri:` 또는 `http://tauri.localhost`)은 내부 앱으로 허용.
+            //  - 그 외 비-HTTP(S) scheme: `on_navigation`은 차단,
             //    `on_new_window`는 모두 `Deny` only(`open::that` 호출 없음) — about:blank/javascript:
             //    같은 사전작업 URL이 OS 브라우저에 빈 창을 띄우는 결함을 차단한다.
             //  - HTTP(S) external origin: 두 핸들러 모두 `open::that(url)`로 OS 기본 브라우저에
@@ -66,10 +67,12 @@ pub fn run() {
                 .min_inner_size(800.0, 600.0)
                 .resizable(true)
                 .on_navigation(move |url| {
+                    if is_tauri_app_url(url) {
+                        return true;
+                    }
                     if !matches!(url.scheme(), "http" | "https") {
-                        // 비-HTTP(S)은 기존 가드 — `tauri` scheme(번들 React app)만 허용,
-                        // 그 외 `file://`, `javascript:` 등은 차단(navigation 취소).
-                        return matches!(url.scheme(), "tauri");
+                        // `file://`, `javascript:` 등은 차단(navigation 취소).
+                        return false;
                     }
                     let allowed = snapshot_allowed(&origin_state_nav);
                     if is_external_http(url, &allowed) {
@@ -87,7 +90,7 @@ pub fn run() {
                     // 비-HTTP(S)(`about:blank` 사전작업 등)는 `open::that` 호출 없이 `Deny` only —
                     // useClaudeAuthFlow.ts:126의 popup-blocker 우회 사전작업이 OS 브라우저에
                     // 빈 about:blank 창을 띄우던 결함을 차단한다.
-                    if matches!(url.scheme(), "http" | "https") {
+                    if matches!(url.scheme(), "http" | "https") && !is_tauri_app_url(&url) {
                         let _ = open::that(url.as_str());
                     }
                     NewWindowResponse::Deny
