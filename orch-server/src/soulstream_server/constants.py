@@ -8,6 +8,9 @@ CMD_INTERVENE = "intervene"
 CMD_RESPOND = "respond"
 CMD_APPROVE_TOOL = "approve_tool"
 CMD_REJECT_TOOL = "reject_tool"
+CMD_REALTIME_CREATE_CALL = "realtime_create_call"
+CMD_REALTIME_EVENT = "realtime_event"
+CMD_REALTIME_RESOLVE_TOOL_APPROVAL = "realtime_resolve_tool_approval"
 CMD_LIST_SESSIONS = "list_sessions"
 CMD_HEALTH_CHECK = "health_check"
 CMD_SUBSCRIBE_EVENTS = "subscribe_events"
@@ -68,6 +71,7 @@ KNOWN_SSE_EVENT_TYPES = frozenset({
     "agent_updated", "handoff_requested", "handoff_occurred",
     "tool_approval_requested", "tool_approval_resolved",
     "guardrail_tripwire",
+    "realtime_status", "realtime_transcript",
     "subagent_start", "subagent_stop",
     "context_usage", "compact", "reconnect", "history_sync",
     "metadata_updated",

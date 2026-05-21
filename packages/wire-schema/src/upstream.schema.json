@@ -111,6 +111,8 @@
             { "$ref": "#/$defs/SSEEventToolApprovalRequested" },
             { "$ref": "#/$defs/SSEEventToolApprovalResolved" },
             { "$ref": "#/$defs/SSEEventGuardrailTripwire" },
+            { "$ref": "#/$defs/SSEEventRealtimeStatus" },
+            { "$ref": "#/$defs/SSEEventRealtimeTranscript" },
             { "$ref": "#/$defs/SSEEventResult" },
             { "$ref": "#/$defs/SSEEventPromptSuggestion" },
             { "$ref": "#/$defs/SSEEventSubagentStart" },
@@ -239,6 +241,57 @@
         "taskStatus": { "type": "string" }
       }
     },
+    "RealtimeCallCreated": {
+      "type": "object",
+      "description": "노드→orch: realtime_create_call ACK. soul-app WebRTC offer에 대한 OpenAI Realtime SDP answer.",
+      "required": ["type", "requestId", "status"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "realtime_call_created" },
+        "requestId": { "type": "string" },
+        "agentSessionId": { "type": "string" },
+        "status": { "type": "string", "enum": ["ok", "error"] },
+        "callId": { "type": "string" },
+        "answerSdp": { "type": "string" },
+        "eventId": { "type": "integer" },
+        "code": { "type": "string" },
+        "message": { "type": "string" }
+      }
+    },
+    "RealtimeEventAck": {
+      "type": "object",
+      "description": "노드→orch: realtime_event ACK. soul-app data-channel event persistence/relay result.",
+      "required": ["type", "requestId", "status"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "realtime_event_ack" },
+        "requestId": { "type": "string" },
+        "agentSessionId": { "type": "string" },
+        "status": { "type": "string", "enum": ["ok", "error"] },
+        "normalizedType": { "type": "string" },
+        "eventId": { "type": "integer" },
+        "code": { "type": "string" },
+        "message": { "type": "string" }
+      }
+    },
+    "RealtimeToolApprovalAck": {
+      "type": "object",
+      "description": "노드→orch: realtime_resolve_tool_approval ACK. Persisted resolution plus app data-channel decision event.",
+      "required": ["type", "requestId", "status"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "realtime_tool_approval_ack" },
+        "requestId": { "type": "string" },
+        "agentSessionId": { "type": "string" },
+        "approvalId": { "type": "string" },
+        "decision": { "type": "string", "enum": ["approved", "rejected"] },
+        "status": { "type": "string", "enum": ["ok", "error"] },
+        "dataChannelEvent": { "type": "object", "additionalProperties": true },
+        "eventId": { "type": "integer" },
+        "code": { "type": "string" },
+        "message": { "type": "string" }
+      }
+    },
     "CreateSession": {
       "type": "object",
       "description": "orch→노드: 세션 생성. protocol.py:CreateSessionCmd L15-27 + 실측 caller_info 키.",
@@ -339,6 +392,60 @@
         "request_id": { "type": "string" },
         "message": { "type": "string" },
         "alwaysReject": { "type": "boolean" }
+      }
+    },
+    "RealtimeCreateCall": {
+      "type": "object",
+      "description": "orch→노드: soul-app WebRTC offer를 OpenAI Realtime call로 broker.",
+      "required": ["type", "agentSessionId", "offerSdp"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "realtime_create_call" },
+        "agentSessionId": { "type": "string" },
+        "session_id": { "type": "string" },
+        "offerSdp": { "type": "string" },
+        "offer_sdp": { "type": "string" },
+        "model": { "type": ["string", "null"] },
+        "voice": { "type": ["string", "null"] },
+        "instructions": { "type": ["string", "null"] },
+        "requestId": { "type": "string" },
+        "request_id": { "type": "string" }
+      }
+    },
+    "RealtimeEvent": {
+      "type": "object",
+      "description": "orch→노드: soul-app Realtime data-channel event를 persistence/relay 경로로 전달.",
+      "required": ["type", "agentSessionId", "event"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "realtime_event" },
+        "agentSessionId": { "type": "string" },
+        "session_id": { "type": "string" },
+        "event": { "type": "object", "additionalProperties": true },
+        "callId": { "type": ["string", "null"] },
+        "call_id": { "type": ["string", "null"] },
+        "requestId": { "type": "string" },
+        "request_id": { "type": "string" }
+      }
+    },
+    "RealtimeResolveToolApproval": {
+      "type": "object",
+      "description": "orch→노드: realtime voice 중 발생한 tool approval decision을 영속화.",
+      "required": ["type", "agentSessionId", "approvalId", "decision"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "realtime_resolve_tool_approval" },
+        "agentSessionId": { "type": "string" },
+        "session_id": { "type": "string" },
+        "approvalId": { "type": "string" },
+        "approval_id": { "type": "string" },
+        "decision": { "type": "string", "enum": ["approved", "rejected"] },
+        "message": { "type": "string" },
+        "source": { "type": "string", "enum": ["tap", "voice"] },
+        "callId": { "type": ["string", "null"] },
+        "call_id": { "type": ["string", "null"] },
+        "requestId": { "type": "string" },
+        "request_id": { "type": "string" }
       }
     },
     "ListSessions": {
@@ -647,6 +754,36 @@
       "additionalProperties": true,
       "properties": { "type": { "const": "guardrail_tripwire" } }
     },
+    "SSEEventRealtimeStatus": {
+      "type": "object",
+      "description": "SSE: soul-app Realtime voice connection/listening/responding/idle status.",
+      "required": ["type", "status"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "realtime_status" },
+        "status": { "type": "string" },
+        "call_id": { "type": "string" },
+        "message": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "raw_event_type": { "type": "string" }
+      }
+    },
+    "SSEEventRealtimeTranscript": {
+      "type": "object",
+      "description": "SSE: soul-app Realtime voice final user/assistant transcript.",
+      "required": ["type", "role", "text"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "realtime_transcript" },
+        "role": { "type": "string", "enum": ["user", "assistant"] },
+        "text": { "type": "string" },
+        "final": { "type": "boolean" },
+        "call_id": { "type": "string" },
+        "item_id": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "raw_event_type": { "type": "string" }
+      }
+    },
     "SSEEventResult": {
       "type": "object",
       "description": "SSE: 최종 result.",
@@ -745,11 +882,17 @@
     { "$ref": "#/$defs/InterveneAck" },
     { "$ref": "#/$defs/RespondAck" },
     { "$ref": "#/$defs/ToolApprovalAck" },
+    { "$ref": "#/$defs/RealtimeCallCreated" },
+    { "$ref": "#/$defs/RealtimeEventAck" },
+    { "$ref": "#/$defs/RealtimeToolApprovalAck" },
     { "$ref": "#/$defs/CreateSession" },
     { "$ref": "#/$defs/Intervene" },
     { "$ref": "#/$defs/Respond" },
     { "$ref": "#/$defs/ApproveTool" },
     { "$ref": "#/$defs/RejectTool" },
+    { "$ref": "#/$defs/RealtimeCreateCall" },
+    { "$ref": "#/$defs/RealtimeEvent" },
+    { "$ref": "#/$defs/RealtimeResolveToolApproval" },
     { "$ref": "#/$defs/ListSessions" },
     { "$ref": "#/$defs/HealthCheck" },
     { "$ref": "#/$defs/SubscribeEvents" },

@@ -12,6 +12,7 @@ import type {
   ClaudeAuthSetTokenCmd,
 } from "../src/auth/claude_auth.js";
 import type { SessionDB } from "../src/db/session_db.js";
+import type { RealtimeBroker } from "../src/realtime/realtime_broker.js";
 import type { TaskExecutor } from "../src/task/task_executor.js";
 import type { TaskManager } from "../src/task/task_manager.js";
 import type { Task } from "../src/task/task_models.js";
@@ -41,6 +42,7 @@ function createDispatcher(opts: {
   attachmentStore?: AttachmentStore;
   claudeAuth?: ClaudeAuthCommandHandler;
   sessionDb?: Partial<SessionDB>;
+  realtimeBroker?: Partial<RealtimeBroker>;
 } = {}) {
   const sent: unknown[] = [];
   const send = vi.fn(async (data: unknown) => {
@@ -112,6 +114,7 @@ function createDispatcher(opts: {
     opts.attachmentStore,
     opts.claudeAuth,
     sessionDb,
+    opts.realtimeBroker as RealtimeBroker | undefined,
   );
   return { dispatcher, sent, send, registry, tm, te, createdTasks, sessionDb };
 }
@@ -225,6 +228,72 @@ describe("CommandDispatcher tool approvals", () => {
         status: "error",
         code: "TOOL_APPROVAL_NOT_PENDING",
         message: "not pending",
+      }),
+    ]);
+  });
+});
+
+describe("CommandDispatcher realtime commands", () => {
+  it("realtime_create_call → broker + realtime_call_created(status ok)", async () => {
+    const createCall = vi.fn().mockResolvedValue({
+      status: "ok",
+      agentSessionId: "sess-rt",
+      callId: "call_1",
+      answerSdp: "answer-sdp",
+      eventId: 55,
+    });
+    const { dispatcher, sent } = createDispatcher({
+      realtimeBroker: { createCall },
+    });
+
+    await dispatcher.dispatch({
+      type: "realtime_create_call",
+      agentSessionId: "sess-rt",
+      offerSdp: "offer-sdp",
+      requestId: "rt-1",
+      voice: "alloy",
+    });
+
+    expect(createCall).toHaveBeenCalledWith({
+      agentSessionId: "sess-rt",
+      offerSdp: "offer-sdp",
+      voice: "alloy",
+    });
+    expect(sent).toEqual([
+      {
+        type: "realtime_call_created",
+        requestId: "rt-1",
+        agentSessionId: "sess-rt",
+        status: "ok",
+        callId: "call_1",
+        answerSdp: "answer-sdp",
+        eventId: 55,
+      },
+    ]);
+  });
+
+  it("realtime_resolve_tool_approval failure도 ACK error로 반환", async () => {
+    const resolveToolApproval = vi.fn().mockRejectedValue(new Error("no call"));
+    const { dispatcher, sent } = createDispatcher({
+      realtimeBroker: { resolveToolApproval },
+    });
+
+    await dispatcher.dispatch({
+      type: "realtime_resolve_tool_approval",
+      agentSessionId: "sess-rt",
+      approvalId: "approval-1",
+      decision: "approved",
+      requestId: "rt-approve-1",
+    });
+
+    expect(sent).toEqual([
+      expect.objectContaining({
+        type: "realtime_tool_approval_ack",
+        requestId: "rt-approve-1",
+        agentSessionId: "sess-rt",
+        status: "error",
+        code: "REALTIME_ERROR",
+        message: "no call",
       }),
     ]);
   });

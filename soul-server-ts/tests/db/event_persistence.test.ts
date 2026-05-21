@@ -90,6 +90,11 @@ describe("extractPreviewText", () => {
   it("text_end는 text 필드가 없으므로 빈 문자열 (B-2 결함 정정 검증)", () => {
     expect(extractPreviewText({ type: "text_end" } as SSEEventPayload)).toBe("");
   });
+  it("realtime_transcript는 text 필드를 preview/search에 사용한다", () => {
+    const event = { type: "realtime_transcript", text: "음성 응답", role: "assistant" } as SSEEventPayload;
+    expect(extractPreviewText(event)).toBe("음성 응답");
+    expect(extractSearchableText(event)).toBe("음성 응답");
+  });
 });
 
 describe("extractSearchableText", () => {
