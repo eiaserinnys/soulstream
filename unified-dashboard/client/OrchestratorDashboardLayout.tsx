@@ -27,6 +27,7 @@ import { SearchModal } from "./components/SearchModal";
 import { useNodes } from "./hooks/useNodes";
 import { useOrchestratorStore } from "./store/orchestrator-store";
 import { orchestratorSessionProvider } from "./providers";
+import { resolveActiveSessionSummary } from "./lib/active-session-summary";
 import {
   AskQuestionBanner,
   SessionsTopBar,
@@ -54,6 +55,7 @@ import { useAppConfig } from "./config/AppConfigContext";
 
 export function OrchestratorDashboardLayout() {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
+  const activeSessionSummary = useDashboardStore((s) => s.activeSessionSummary);
   const viewMode = useDashboardStore((s) => s.viewMode);
   const openNewSessionModal = useDashboardStore((s) => s.openNewSessionModal);
   const nodes = useOrchestratorStore((s) => s.nodes);
@@ -95,8 +97,8 @@ export function OrchestratorDashboardLayout() {
   });
 
   const activeSession = useMemo(
-    () => sessions.find((s) => s.agentSessionId === activeSessionKey),
-    [activeSessionKey, sessions],
+    () => resolveActiveSessionSummary(activeSessionKey, activeSessionSummary, sessions),
+    [activeSessionKey, activeSessionSummary, sessions],
   );
 
   // 활성 세션의 노드가 없거나 disconnected이면 ChatInput 비활성화
