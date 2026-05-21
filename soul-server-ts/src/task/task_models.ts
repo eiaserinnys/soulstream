@@ -16,7 +16,11 @@
  */
 
 import type { ContextItem } from "../context/prompt_assembler.js";
-import type { EnginePort, ReasoningEffort } from "../engine/protocol.js";
+import type {
+  EnginePort,
+  QueuedToolApprovalDecision,
+  ReasoningEffort,
+} from "../engine/protocol.js";
 
 /** task lifecycle 상태. Python `TaskStatus` enum과 값 일치 (DB sessions.status 컬럼 정본). */
 export type TaskStatus = "running" | "completed" | "error" | "interrupted";
@@ -89,6 +93,17 @@ export interface Task {
   callerInfo?: CallerInfo;
   /** sessions.metadata JSONB array와 session_created.session.metadata에 싣는 세션 메타데이터. */
   metadata?: Array<Record<string, unknown>>;
+
+  /** OpenAI Agents SDK serialized RunState restored from sessions.metadata. */
+  agentsRunState?: string;
+  agentsRunStateSchemaVersion?: string;
+  agentsPendingApprovalId?: string;
+  agentsPreviousResponseId?: string;
+  agentsConversationId?: string;
+  /** OpenAI Agents SDK Session items restored from sessions.metadata. */
+  agentsSessionItems?: unknown[];
+  /** Approval decision delivered before a resumed Agents engine is back in memory. */
+  agentsQueuedToolApproval?: QueuedToolApprovalDecision;
 
   /** 모델 override (Codex SDK ThreadOptions.model). */
   model?: string | null;

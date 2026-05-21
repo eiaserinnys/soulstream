@@ -56,6 +56,95 @@ describe("AgentProfileSchema", () => {
     expect(parsed.allowed_tools).toBeUndefined();
   });
 
+  it("openai-agents profile은 provider, hosted_tools, mcp_servers를 agents_sdk 아래에서 파싱", () => {
+    const parsed = AgentProfileSchema.parse({
+      id: "agents-research",
+      name: "Agents Research",
+      backend: "openai-agents",
+      workspace_dir: "/tmp/agents",
+      agents_sdk: {
+        entry_agent: "triage",
+        provider: {
+          type: "openai",
+          api_key_env: "OPENAI_API_KEY",
+          use_responses: true,
+          strict_feature_validation: true,
+        },
+        agents: [
+          {
+            id: "triage",
+            name: "Triage",
+            instructions: "Route work.",
+            hosted_tools: [
+              {
+                type: "web_search",
+                name: "web_search",
+                search_context_size: "low",
+                external_web_access: true,
+              },
+              {
+                type: "file_search",
+                vector_store_ids: ["vs_123"],
+                include_search_results: true,
+              },
+              {
+                type: "hosted_mcp",
+                server_label: "docs",
+                server_url: "https://mcp.example.com",
+                allowed_tools: ["search_docs"],
+                require_approval: "always",
+              },
+            ],
+            mcp_servers: [
+              {
+                type: "stdio",
+                name: "local-docs",
+                command: "node",
+                args: ["server.js"],
+                cache_tools_list: true,
+              },
+              {
+                type: "streamable_http",
+                name: "remote-docs",
+                url: "https://mcp.example.com/mcp",
+                headers: { Authorization: "Bearer test" },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(parsed.agents_sdk?.provider?.type).toBe("openai");
+    expect(parsed.agents_sdk?.agents[0]?.hosted_tools).toHaveLength(3);
+    expect(parsed.agents_sdk?.agents[0]?.mcp_servers?.[1]).toMatchObject({
+      type: "streamable_http",
+      name: "remote-docs",
+    });
+  });
+
+  it("file_search hosted tool은 vector_store_ids가 없으면 거부", () => {
+    expect(() =>
+      AgentProfileSchema.parse({
+        id: "agents-research",
+        name: "Agents Research",
+        backend: "openai-agents",
+        workspace_dir: "/tmp/agents",
+        agents_sdk: {
+          entry_agent: "triage",
+          agents: [
+            {
+              id: "triage",
+              name: "Triage",
+              instructions: "Route work.",
+              hosted_tools: [{ type: "file_search" }],
+            },
+          ],
+        },
+      }),
+    ).toThrow(ZodError);
+  });
+
   it("id 빈 문자열 거부", () => {
     expect(() =>
       AgentProfileSchema.parse({

@@ -275,14 +275,35 @@ export class CommandDispatcher {
     }
 
     const decision = cmd.type === "approve_tool" ? "approved" : "rejected";
-    const result = await this.taskManager.deliverToolApproval({
-      agentSessionId: sessionId,
-      approvalId,
-      decision,
-      ...(cmd.message ? { message: cmd.message } : {}),
-      ...(cmd.alwaysApprove !== undefined ? { alwaysApprove: cmd.alwaysApprove } : {}),
-      ...(cmd.alwaysReject !== undefined ? { alwaysReject: cmd.alwaysReject } : {}),
-    });
+    const onResume = (task: Task) => {
+      if (!task.profileId) {
+        this.logger.error(
+          { sessionId: task.agentSessionId },
+          "tool approval resume aborted — task missing profileId",
+        );
+        return;
+      }
+      const agent = this.agentRegistry.get(task.profileId);
+      if (!agent) {
+        this.logger.error(
+          { sessionId: task.agentSessionId, profileId: task.profileId },
+          "tool approval resume aborted — agent profile not found",
+        );
+        return;
+      }
+      this.taskExecutor.startExecution(task, agent);
+    };
+    const result = await this.taskManager.deliverToolApproval(
+      {
+        agentSessionId: sessionId,
+        approvalId,
+        decision,
+        ...(cmd.message ? { message: cmd.message } : {}),
+        ...(cmd.alwaysApprove !== undefined ? { alwaysApprove: cmd.alwaysApprove } : {}),
+        ...(cmd.alwaysReject !== undefined ? { alwaysReject: cmd.alwaysReject } : {}),
+      },
+      onResume,
+    );
 
     const requestId = cmd.requestId ?? cmd.request_id ?? "";
     if (!requestId) {

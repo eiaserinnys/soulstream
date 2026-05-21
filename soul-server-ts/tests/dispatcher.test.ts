@@ -176,12 +176,15 @@ describe("CommandDispatcher tool approvals", () => {
       message: "User rejected dangerous DB write",
     });
 
-    expect(deliverToolApproval).toHaveBeenCalledWith({
-      agentSessionId: "sess-agents",
-      approvalId: "danger-call-1",
-      decision: "rejected",
-      message: "User rejected dangerous DB write",
-    });
+    expect(deliverToolApproval).toHaveBeenCalledWith(
+      {
+        agentSessionId: "sess-agents",
+        approvalId: "danger-call-1",
+        decision: "rejected",
+        message: "User rejected dangerous DB write",
+      },
+      expect.any(Function),
+    );
     expect(sent).toEqual([
       {
         type: "tool_approval_ack",

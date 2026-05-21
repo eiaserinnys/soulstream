@@ -16,7 +16,12 @@
 import type { Logger } from "pino";
 
 import type { AgentProfile } from "../agent_registry.js";
-import type { EnginePort, SSEEventPayload } from "../engine/protocol.js";
+import type {
+  EnginePort,
+  EngineRunStateSnapshot,
+  EngineSessionItemsSnapshot,
+  SSEEventPayload,
+} from "../engine/protocol.js";
 import { CLAUDE_OAUTH_TOKEN_ENV } from "../engine/claude_options.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { SessionDB } from "../db/session_db.js";
@@ -213,13 +218,24 @@ export class TaskExecutor {
                 return composeClaudeInRunInterventionPrompt(next);
               }
             : undefined;
+          const queuedToolApproval = task.agentsQueuedToolApproval;
+          task.agentsQueuedToolApproval = undefined;
           for await (const event of engine.execute({
             prompt: turnPrompt,
             imageAttachmentPaths: turnImageAttachmentPaths,
             model: task.model,
             reasoningEffort: task.reasoningEffort,
             resumeSessionId,
+            resumeRunState: task.agentsRunState,
+            previousResponseId: task.agentsPreviousResponseId,
+            conversationId: task.agentsConversationId,
+            sessionItems: task.agentsSessionItems,
+            ...(queuedToolApproval ? { queuedToolApproval } : {}),
             extraEnv: buildTaskExtraEnv(task),
+            onRunStateSnapshot: (snapshot) =>
+              this._persistAgentsRunStateSnapshot(task, snapshot),
+            onSessionItemsSnapshot: (snapshot) =>
+              this._persistAgentsSessionItemsSnapshot(task, snapshot),
             // Phase B parity: 첫 turn에 한해 systemPrompt가 SDK 옵션으로 전달됨. intervention turn은
             // resumeSessionId로 이어붙기 때문에 SDK가 기존 system prompt를 유지 — turnSystemPrompt가 undefined로 흘러 미전달.
             ...(turnSystemPrompt !== undefined ? { systemPrompt: turnSystemPrompt } : {}),
@@ -272,6 +288,13 @@ export class TaskExecutor {
         if (task.status !== "running") {
           break;
         }
+        if (
+          agent.backend === "openai-agents" &&
+          task.agentsRunState &&
+          task.agentsPendingApprovalId
+        ) {
+          break;
+        }
         // intervention queue 검사 — 비어있으면 completed, 있으면 다음 turn으로
         const next = task.interventionQueue.shift();
         if (!next) {
@@ -284,7 +307,9 @@ export class TaskExecutor {
         // (intervention_sent는 addIntervention에서 이미 broadcast됨 — 여기서 재발행 안 함.)
       }
     } finally {
-      task.completedAt = new Date();
+      if (!isOpenAiAgentsApprovalPending(task)) {
+        task.completedAt = new Date();
+      }
       await this._finalize(task);
     }
   }
@@ -493,6 +518,67 @@ export class TaskExecutor {
     }
   }
 
+  private async _persistAgentsRunStateSnapshot(
+    task: Task,
+    snapshot: EngineRunStateSnapshot,
+  ): Promise<void> {
+    if (snapshot.backendId !== "openai-agents") return;
+
+    task.agentsRunState = snapshot.serialized ?? undefined;
+    task.agentsPendingApprovalId = snapshot.pendingApprovalId ?? undefined;
+    task.agentsPreviousResponseId = snapshot.previousResponseId ?? undefined;
+    task.agentsConversationId = snapshot.conversationId ?? undefined;
+    task.agentsRunStateSchemaVersion = snapshot.schemaVersion ?? undefined;
+
+    const metadata = replaceMetadataEntry(task.metadata, {
+      type: "agents_run_state",
+      value: {
+        backend: "openai-agents",
+        serialized: snapshot.serialized,
+        pendingApprovalId: snapshot.pendingApprovalId ?? null,
+        previousResponseId: snapshot.previousResponseId ?? null,
+        conversationId: snapshot.conversationId ?? null,
+        schemaVersion: snapshot.schemaVersion ?? null,
+        updatedAt: new Date().toISOString(),
+      },
+    });
+    task.metadata = metadata;
+    try {
+      await this.db.updateSession(task.agentSessionId, { metadata });
+    } catch (err) {
+      this.logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "agents_run_state metadata update failed",
+      );
+    }
+  }
+
+  private async _persistAgentsSessionItemsSnapshot(
+    task: Task,
+    snapshot: EngineSessionItemsSnapshot,
+  ): Promise<void> {
+    if (snapshot.backendId !== "openai-agents") return;
+
+    task.agentsSessionItems = snapshot.items;
+    const metadata = replaceMetadataEntry(task.metadata, {
+      type: "agents_session_items",
+      value: {
+        backend: "openai-agents",
+        items: snapshot.items,
+        updatedAt: new Date().toISOString(),
+      },
+    });
+    task.metadata = metadata;
+    try {
+      await this.db.updateSession(task.agentSessionId, { metadata });
+    } catch (err) {
+      this.logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "agents_session_items metadata update failed",
+      );
+    }
+  }
+
   /**
    * 종료 처리: DB sessions 업데이트 + session_updated broadcast + engine.close.
    */
@@ -556,6 +642,14 @@ export function isTerminalStatus(status: TaskStatus): boolean {
   return status === "completed" || status === "error" || status === "interrupted";
 }
 
+function isOpenAiAgentsApprovalPending(task: Task): boolean {
+  return Boolean(
+    task.status === "running" &&
+      task.agentsRunState &&
+      task.agentsPendingApprovalId,
+  );
+}
+
 function composeInterventionTurnPrompt(message: { text: string; context?: ContextItem[]; attachmentPaths?: string[] }): {
   prompt: string;
   imageAttachmentPaths: string[];
@@ -594,4 +688,14 @@ function buildTaskExtraEnv(task: Task): Record<string, string> | undefined {
     return undefined;
   }
   return { [CLAUDE_OAUTH_TOKEN_ENV]: task.oauthToken };
+}
+
+function replaceMetadataEntry(
+  metadata: Array<Record<string, unknown>> | undefined,
+  entry: Record<string, unknown>,
+): Array<Record<string, unknown>> {
+  const type = entry.type;
+  const next = (metadata ?? []).filter((item) => item.type !== type);
+  next.push(entry);
+  return next;
 }

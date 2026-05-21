@@ -372,14 +372,19 @@ export class TaskManager {
    */
   async deliverToolApproval(
     params: DeliverToolApprovalParams,
+    onResume?: StartExecutionCallback,
   ): Promise<DeliverToolApprovalResult> {
-    const task = this.tasks.get(params.agentSessionId);
+    let task = this.tasks.get(params.agentSessionId);
     if (!task) {
-      return {
-        status: "session_not_found",
-        approvalId: params.approvalId,
-        decision: params.decision,
-      };
+      task = await this.loadEvictedTask(params.agentSessionId) ?? undefined;
+      if (!task) {
+        return {
+          status: "session_not_found",
+          approvalId: params.approvalId,
+          decision: params.decision,
+        };
+      }
+      this.tasks.set(task.agentSessionId, task);
     }
     if (task.status !== "running") {
       return {
@@ -392,6 +397,8 @@ export class TaskManager {
 
     const engine = task.engine;
     if (!supportsToolApproval(engine)) {
+      const queued = await this.queueAgentsToolApprovalResume(task, params, onResume);
+      if (queued) return queued;
       return {
         status: "not_supported",
         approvalId: params.approvalId,
@@ -426,6 +433,42 @@ export class TaskManager {
     }
 
     const eventId = await this.persistAndBroadcastToolApprovalResolved(task, params);
+    return {
+      status: "delivered",
+      approvalId: params.approvalId,
+      decision: params.decision,
+      ...(eventId !== undefined ? { eventId } : {}),
+    };
+  }
+
+  private async queueAgentsToolApprovalResume(
+    task: Task,
+    params: DeliverToolApprovalParams,
+    onResume: StartExecutionCallback | undefined,
+  ): Promise<DeliverToolApprovalResult | undefined> {
+    if (!onResume) return undefined;
+    if (!task.agentsRunState || task.agentsPendingApprovalId !== params.approvalId) {
+      return undefined;
+    }
+    task.agentsQueuedToolApproval = {
+      approvalId: params.approvalId,
+      decision: params.decision,
+      options: {
+        ...(params.message ? { message: params.message } : {}),
+        ...(params.alwaysApprove !== undefined ? { alwaysApprove: params.alwaysApprove } : {}),
+        ...(params.alwaysReject !== undefined ? { alwaysReject: params.alwaysReject } : {}),
+      },
+    };
+    const eventId = await this.persistAndBroadcastToolApprovalResolved(task, params);
+    try {
+      await this.broadcaster.emitSessionUpdated(task);
+    } catch (err) {
+      this.logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "session_updated (tool approval resume) broadcast failed",
+      );
+    }
+    onResume(task);
     return {
       status: "delivered",
       approvalId: params.approvalId,
@@ -952,6 +995,12 @@ export class TaskManager {
       completedAt = row.updated_at ?? undefined;
     }
 
+    const metadata = Array.isArray(row.metadata)
+      ? (row.metadata as Array<Record<string, unknown>>)
+      : [];
+    const agentsRunState = extractAgentsRunStateFromMetadata(metadata);
+    const agentsSessionItems = extractAgentsSessionItemsFromMetadata(metadata);
+
     const task: Task = {
       agentSessionId: row.session_id,
       prompt: row.prompt ?? "",
@@ -965,9 +1014,13 @@ export class TaskManager {
       // `extract_caller_info_from_metadata` (`packages/soul-common/.../auth/caller_info.py:119-163`)
       // 정본 인라인 이식.
       callerInfo: extractCallerInfoFromMetadata(row.metadata),
-      metadata: Array.isArray(row.metadata)
-        ? (row.metadata as Array<Record<string, unknown>>)
-        : [],
+      metadata,
+      agentsRunState: agentsRunState?.serialized,
+      agentsRunStateSchemaVersion: agentsRunState?.schemaVersion,
+      agentsPendingApprovalId: agentsRunState?.pendingApprovalId,
+      agentsPreviousResponseId: agentsRunState?.previousResponseId,
+      agentsConversationId: agentsRunState?.conversationId,
+      agentsSessionItems,
       createdAt: row.created_at,
       completedAt,
       lastEventId: row.last_event_id ?? 0,
@@ -1034,6 +1087,59 @@ function extractCallerInfoFromMetadata(metadata: unknown): CallerInfo | undefine
     }
   }
   return lastWithIdentity ?? lastAny;
+}
+
+interface AgentsRunStateMetadata {
+  serialized?: string;
+  pendingApprovalId?: string;
+  previousResponseId?: string;
+  conversationId?: string;
+  schemaVersion?: string;
+}
+
+function extractAgentsRunStateFromMetadata(
+  metadata: Array<Record<string, unknown>>,
+): AgentsRunStateMetadata | undefined {
+  for (let i = metadata.length - 1; i >= 0; i--) {
+    const entry = metadata[i];
+    if (entry?.type !== "agents_run_state") continue;
+    const value = entry.value;
+    if (!value || typeof value !== "object") continue;
+    const record = value as Record<string, unknown>;
+    if (record.backend !== "openai-agents") continue;
+    const serialized = typeof record.serialized === "string" && record.serialized.length > 0
+      ? record.serialized
+      : undefined;
+    return {
+      serialized,
+      pendingApprovalId: typeof record.pendingApprovalId === "string"
+        ? record.pendingApprovalId
+        : undefined,
+      previousResponseId: typeof record.previousResponseId === "string"
+        ? record.previousResponseId
+        : undefined,
+      conversationId: typeof record.conversationId === "string"
+        ? record.conversationId
+        : undefined,
+      schemaVersion: typeof record.schemaVersion === "string" ? record.schemaVersion : undefined,
+    };
+  }
+  return undefined;
+}
+
+function extractAgentsSessionItemsFromMetadata(
+  metadata: Array<Record<string, unknown>>,
+): unknown[] | undefined {
+  for (let i = metadata.length - 1; i >= 0; i--) {
+    const entry = metadata[i];
+    if (entry?.type !== "agents_session_items") continue;
+    const value = entry.value;
+    if (!value || typeof value !== "object") continue;
+    const record = value as Record<string, unknown>;
+    if (record.backend !== "openai-agents") continue;
+    return Array.isArray(record.items) ? record.items : undefined;
+  }
+  return undefined;
 }
 
 function callerInfoMetadataEntry(
