@@ -856,6 +856,72 @@ describe("ClaudeSdkClient", () => {
     expect(events[5]).toMatchObject({ type: "complete", result: "final" });
   });
 
+  it("does not count empty tool_use continuations against compact retry limit", async () => {
+    const client = new ClaudeSdkClient(
+      {
+        query: () =>
+          makeQuery(
+            (async function* () {
+              for (let i = 0; i < 3; i += 1) {
+                yield sdkSuccessResult("claude-sess-tool-use-then-compact", "", {
+                  stop_reason: "tool_use",
+                });
+                yield sdkSystemInit("claude-sess-tool-use-then-compact");
+                yield {
+                  type: "assistant",
+                  message: { content: [{ type: "text", text: `after ask ${i + 1}` }] },
+                  parent_tool_use_id: null,
+                  uuid: `assistant-after-ask-${i + 1}`,
+                  session_id: "claude-sess-tool-use-then-compact",
+                } as unknown as SDKMessage;
+              }
+              yield sdkSuccessResult("claude-sess-tool-use-then-compact", "");
+              yield {
+                type: "system",
+                subtype: "compact_boundary",
+                compact_metadata: { trigger: "auto", pre_tokens: 123 },
+                uuid: "compact-after-tool-use",
+                session_id: "claude-sess-tool-use-then-compact",
+              } as unknown as SDKMessage;
+              yield {
+                type: "assistant",
+                message: { content: [{ type: "text", text: "after compact" }] },
+                parent_tool_use_id: null,
+                uuid: "assistant-after-compact-after-tool-use",
+                session_id: "claude-sess-tool-use-then-compact",
+              } as unknown as SDKMessage;
+              yield sdkSuccessResult("claude-sess-tool-use-then-compact", "final");
+            })(),
+          ),
+        postResultDrainMs: 200,
+      },
+      silentLogger,
+    );
+
+    const events = await collect(
+      client.run(
+        { prompt: "hi", workspaceDir: "/tmp/claude-work", env: {} },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(events.map((event) => event.type)).toEqual([
+      "session",
+      "text",
+      "session",
+      "text",
+      "session",
+      "text",
+      "compact",
+      "text",
+      "result",
+      "context_usage",
+      "complete",
+    ]);
+    expect(events[6]).toMatchObject({ type: "compact", trigger: "auto" });
+    expect(events[8]).toMatchObject({ type: "result", output: "final" });
+  });
+
   it("does not treat an empty end_turn result as continuation without an explicit signal", async () => {
     const client = new ClaudeSdkClient(
       {
