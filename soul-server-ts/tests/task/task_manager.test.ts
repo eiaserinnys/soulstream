@@ -291,6 +291,105 @@ describe("TaskManager.deliverToolApproval", () => {
       backend: "codex",
     });
   });
+
+  it("evicted approval-pending Agents task를 metadata에서 hydrate하고 approval 결정 후 resume", async () => {
+    const mocks = makeMocks();
+    mocks.getSession.mockResolvedValueOnce({
+      session_id: "sess-evicted-approval",
+      folder_id: "f-1",
+      display_name: null,
+      node_id: "n",
+      session_type: "claude",
+      status: "running",
+      prompt: "dangerous flow",
+      client_id: null,
+      claude_session_id: "agents-thread-1",
+      last_message: null,
+      metadata: [
+        {
+          type: "agents_run_state",
+          value: {
+            backend: "openai-agents",
+            serialized: "state-v1",
+            pendingApprovalId: "danger-call-1",
+            previousResponseId: "resp-1",
+            conversationId: "conv-1",
+            schemaVersion: "1.11",
+            updatedAt: "2026-05-21T01:00:00.000Z",
+          },
+        },
+        {
+          type: "agents_session_items",
+          value: {
+            backend: "openai-agents",
+            items: [{ role: "user", content: "hi" }],
+            updatedAt: "2026-05-21T01:00:00.000Z",
+          },
+        },
+      ],
+      was_running_at_shutdown: false,
+      last_event_id: 42,
+      last_read_event_id: 10,
+      created_at: new Date("2026-05-21T01:00:00Z"),
+      updated_at: new Date("2026-05-21T01:05:00Z"),
+      agent_id: "agent-openai",
+      caller_session_id: null,
+      away_summary: null,
+    });
+    const persistEvent = vi.fn().mockResolvedValue(99);
+    const handleSideEffects = vi.fn().mockResolvedValue(undefined);
+    const persistence = {
+      persistEvent,
+      handleSideEffects,
+    } as unknown as import("../../src/db/event_persistence.js").EventPersistence;
+    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, persistence);
+    const onResume = vi.fn();
+
+    const result = await tm.deliverToolApproval(
+      {
+        agentSessionId: "sess-evicted-approval",
+        approvalId: "danger-call-1",
+        decision: "rejected",
+        message: "no prod write",
+      },
+      onResume,
+    );
+
+    expect(result).toMatchObject({
+      status: "delivered",
+      approvalId: "danger-call-1",
+      decision: "rejected",
+      eventId: 99,
+    });
+    expect(mocks.getSession).toHaveBeenCalledWith("sess-evicted-approval");
+    const resumed = onResume.mock.calls[0]?.[0] as Task | undefined;
+    expect(resumed).toBeDefined();
+    expect(resumed).toMatchObject({
+      agentSessionId: "sess-evicted-approval",
+      status: "running",
+      profileId: "agent-openai",
+      codexThreadId: "agents-thread-1",
+      agentsRunState: "state-v1",
+      agentsPendingApprovalId: "danger-call-1",
+      agentsPreviousResponseId: "resp-1",
+      agentsConversationId: "conv-1",
+      agentsSessionItems: [{ role: "user", content: "hi" }],
+      agentsQueuedToolApproval: {
+        approvalId: "danger-call-1",
+        decision: "rejected",
+        options: { message: "no prod write" },
+      },
+    });
+    expect(mocks.emitEventEnvelope).toHaveBeenCalledWith(
+      "sess-evicted-approval",
+      expect.objectContaining({
+        type: "tool_approval_resolved",
+        approval_id: "danger-call-1",
+        decision: "rejected",
+        message: "no prod write",
+      }),
+    );
+  });
 });
 
 describe("TaskManager.getTask / listTasks", () => {

@@ -92,11 +92,23 @@ export interface EngineExecuteParams {
   /** 요청별 MCP 사용 여부. Claude 어댑터는 false면 명시 mcpServers 로딩을 생략. Codex 무시. */
   useMcp?: boolean;
   extraEnv?: Record<string, string>;
+  /** OpenAI Agents SDK serialized RunState. Backend-specific; other adapters ignore. */
+  resumeRunState?: string;
+  /** OpenAI Responses previous response id, restored with RunState/Session metadata. */
+  previousResponseId?: string | null;
+  /** OpenAI Conversations/Responses conversation id, restored with RunState/Session metadata. */
+  conversationId?: string | null;
+  /** OpenAI Agents SDK Session item history restored from Soulstream metadata. */
+  sessionItems?: unknown[];
+  /** Approval decision queued before the resumed SDK engine is back in memory. */
+  queuedToolApproval?: QueuedToolApprovalDecision;
   onEvent?: EventCallback;
   onProgress?: ProgressCallback;
   onSession?: SessionCallback;
   onIntervention?: InterventionCallback;
   onCompact?: CompactCallback;
+  onRunStateSnapshot?: RunStateSnapshotCallback;
+  onSessionItemsSnapshot?: SessionItemsSnapshotCallback;
 }
 
 /**
@@ -205,6 +217,31 @@ export interface ToolApprovalDeliveryResult {
   status: ToolApprovalDeliveryStatus;
   message?: string;
 }
+
+export interface QueuedToolApprovalDecision {
+  approvalId: string;
+  decision: ToolApprovalDecision;
+  options?: ToolApprovalDeliveryOptions;
+}
+
+export interface EngineRunStateSnapshot {
+  backendId: BackendId;
+  serialized: string | null;
+  pendingApprovalId?: string | null;
+  previousResponseId?: string | null;
+  conversationId?: string | null;
+  schemaVersion?: string | null;
+}
+
+export interface EngineSessionItemsSnapshot {
+  backendId: BackendId;
+  items: unknown[];
+}
+
+export type RunStateSnapshotCallback = (snapshot: EngineRunStateSnapshot) => Promise<void>;
+export type SessionItemsSnapshotCallback = (
+  snapshot: EngineSessionItemsSnapshot,
+) => Promise<void>;
 
 export interface SupportsToolApproval {
   deliverToolApproval(

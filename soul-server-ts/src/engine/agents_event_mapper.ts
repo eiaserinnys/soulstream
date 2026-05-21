@@ -2,6 +2,16 @@ import type { SSEEventPayload } from "./protocol.js";
 
 type UnknownRecord = Record<string, unknown>;
 
+const OPENAI_HOSTED_RAW_ITEM_TYPES = new Set([
+  "web_search_call",
+  "file_search_call",
+  "code_interpreter_call",
+  "image_generation_call",
+  "tool_search_call",
+  "hosted_mcp_call",
+  "mcp_call",
+]);
+
 /**
  * OpenAI Agents SDK RunStreamEvent → Soulstream SSE payload mapper.
  *
@@ -118,10 +128,24 @@ function inferHandoffTarget(rawItem: UnknownRecord): string {
 }
 
 function readToolName(item: UnknownRecord, rawItem: UnknownRecord): string {
-  return readString(item, "toolName")
+  const toolName = readString(item, "toolName")
     ?? readString(rawItem, "name")
     ?? readString(item, "name")
     ?? "unknown";
+  if (isOpenAIHostedToolCall(rawItem)) {
+    return `openai_hosted/${toolName === "unknown" ? hostedNameFromRawType(rawItem) : toolName}`;
+  }
+  return toolName;
+}
+
+function isOpenAIHostedToolCall(rawItem: UnknownRecord): boolean {
+  const rawType = readString(rawItem, "type");
+  return Boolean(rawType && OPENAI_HOSTED_RAW_ITEM_TYPES.has(rawType));
+}
+
+function hostedNameFromRawType(rawItem: UnknownRecord): string {
+  const rawType = readString(rawItem, "type") ?? "unknown";
+  return rawType.endsWith("_call") ? rawType.slice(0, -"_call".length) : rawType;
 }
 
 function readToolUseId(rawItem: UnknownRecord): string {

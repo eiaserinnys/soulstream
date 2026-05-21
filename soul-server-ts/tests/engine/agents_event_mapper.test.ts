@@ -92,6 +92,30 @@ describe("agents_event_mapper", () => {
     ]);
   });
 
+  it("OpenAI hosted tool call은 Codex web_search/MCP와 충돌하지 않게 openai_hosted namespace로 매핑", () => {
+    const events = mapAgentsRunStreamEvent({
+      type: "run_item_stream_event",
+      name: "tool_called",
+      item: {
+        type: "tool_call_item",
+        rawItem: {
+          type: "web_search_call",
+          id: "ws-call-1",
+          name: "web_search",
+          arguments: "{\"query\":\"agents sdk\"}",
+        },
+      },
+    } as any);
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: "tool_start",
+        tool_name: "openai_hosted/web_search",
+        tool_use_id: "ws-call-1",
+      }),
+    ]);
+  });
+
   it("guardrail tripwire exception을 fatal error가 아닌 guardrail_tripwire SSE로 매핑", () => {
     const events = mapAgentsGuardrailError({
       name: "InputGuardrailTripwireTriggered",

@@ -4,7 +4,12 @@ import { describe, expect, it, vi } from "vitest";
 import type { AgentProfile } from "../../src/agent_registry.js";
 import type { EventPersistence } from "../../src/db/event_persistence.js";
 import type { SessionDB } from "../../src/db/session_db.js";
-import type { EnginePort, SSEEventPayload, SupportsToolApproval } from "../../src/engine/protocol.js";
+import type {
+  EngineExecuteParams,
+  EnginePort,
+  SSEEventPayload,
+  SupportsToolApproval,
+} from "../../src/engine/protocol.js";
 import { TaskExecutor, isTerminalStatus } from "../../src/task/task_executor.js";
 import type { Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
@@ -332,6 +337,96 @@ describe("TaskExecutor.startExecution", () => {
       "tool_approval_requested",
       "complete",
     ]));
+  });
+
+  it("Agents SDK RunState와 Session items를 metadata에 영속하고 resume params로 되돌림", async () => {
+    const mocks = makeMocks();
+    let captured: EngineExecuteParams | undefined;
+    const engine: EnginePort = {
+      backendId: "openai-agents",
+      workspaceDir: "/tmp/agents",
+      async *execute(params: EngineExecuteParams): AsyncIterable<SSEEventPayload> {
+        captured = params;
+        await params.onRunStateSnapshot?.({
+          backendId: "openai-agents",
+          serialized: "state-v2",
+          pendingApprovalId: "danger-call-1",
+          previousResponseId: "resp-2",
+          conversationId: "conv-2",
+          schemaVersion: "1.11",
+        });
+        await params.onSessionItemsSnapshot?.({
+          backendId: "openai-agents",
+          items: [{ role: "user", content: "hi" }],
+        });
+        yield {
+          type: "complete",
+          result: "resumed",
+          attachments: [],
+          timestamp: 4,
+        } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+    task.profileId = "agent-openai";
+    task.agentsRunState = "state-v1";
+    task.agentsPreviousResponseId = "resp-1";
+    task.agentsConversationId = "conv-1";
+    task.agentsSessionItems = [{ role: "system", content: "old" }];
+    task.agentsQueuedToolApproval = {
+      approvalId: "danger-call-1",
+      decision: "rejected",
+      options: { message: "no prod write" },
+    };
+
+    executor.startExecution(task, { ...agent, id: "agent-openai", backend: "openai-agents" });
+    await task.executionPromise;
+
+    expect(captured).toMatchObject({
+      resumeRunState: "state-v1",
+      previousResponseId: "resp-1",
+      conversationId: "conv-1",
+      sessionItems: [{ role: "system", content: "old" }],
+      queuedToolApproval: {
+        approvalId: "danger-call-1",
+        decision: "rejected",
+        options: { message: "no prod write" },
+      },
+    });
+    expect(task.agentsRunState).toBe("state-v2");
+    expect(task.agentsPendingApprovalId).toBe("danger-call-1");
+    expect(task.agentsSessionItems).toEqual([{ role: "user", content: "hi" }]);
+    expect(mocks.updateSession).toHaveBeenCalledWith(
+      "sess-1",
+      expect.objectContaining({
+        metadata: expect.arrayContaining([
+          expect.objectContaining({
+            type: "agents_run_state",
+            value: expect.objectContaining({
+              serialized: "state-v2",
+              pendingApprovalId: "danger-call-1",
+              previousResponseId: "resp-2",
+              conversationId: "conv-2",
+            }),
+          }),
+          expect.objectContaining({
+            type: "agents_session_items",
+            value: expect.objectContaining({
+              items: [{ role: "user", content: "hi" }],
+            }),
+          }),
+        ]),
+      }),
+    );
   });
 
   it("engine.execute throw → status=error + finalize", async () => {
