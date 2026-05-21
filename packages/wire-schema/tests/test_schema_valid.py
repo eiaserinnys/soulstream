@@ -1,7 +1,7 @@
 """schema 자체 유효성 + 메시지 인벤토리 검증.
 
 본 테스트는 src/upstream.schema.json이 JSON Schema Draft 2020-12 유효이며,
-설계 명세에 합의된 60개 $defs (wire 24 + SSE event 36)를 모두 포함하는지 확인한다.
+설계 명세에 합의된 68개 $defs (wire 30 + SSE event 38)를 모두 포함하는지 확인한다.
 """
 
 import json
@@ -46,11 +46,17 @@ def test_schema_has_all_message_types() -> None:
         "InterveneAck",
         "RespondAck",
         "ToolApprovalAck",
+        "RealtimeCallCreated",
+        "RealtimeEventAck",
+        "RealtimeToolApprovalAck",
         "CreateSession",
         "Intervene",
         "Respond",
         "ApproveTool",
         "RejectTool",
+        "RealtimeCreateCall",
+        "RealtimeEvent",
+        "RealtimeResolveToolApproval",
         "ListSessions",
         "HealthCheck",
         "SubscribeEvents",
@@ -60,7 +66,7 @@ def test_schema_has_all_message_types() -> None:
         "ClaudeAuthGetUsage",
         "ClaudeAuthGetProfile",
     }
-    assert len(wire_types) == 24
+    assert len(wire_types) == 30
 
     sse_types = {
         "SSEEventInit",
@@ -90,6 +96,8 @@ def test_schema_has_all_message_types() -> None:
         "SSEEventToolApprovalRequested",
         "SSEEventToolApprovalResolved",
         "SSEEventGuardrailTripwire",
+        "SSEEventRealtimeStatus",
+        "SSEEventRealtimeTranscript",
         "SSEEventResult",
         "SSEEventPromptSuggestion",
         "SSEEventSubagentStart",
@@ -100,8 +108,8 @@ def test_schema_has_all_message_types() -> None:
         "SSEEventHistorySync",
         "SSEEventMetadataUpdated",
     }
-    assert len(sse_types) == 36, (
-        "SSE event $defs 36종 (orch-server/constants.py KNOWN_SSE_EVENT_TYPES + Agents SDK events)."
+    assert len(sse_types) == 38, (
+        "SSE event $defs 38종 (orch-server/constants.py KNOWN_SSE_EVENT_TYPES + Agents SDK events)."
     )
 
     expected = wire_types | sse_types
@@ -143,11 +151,17 @@ def test_oneof_covers_all_wire_messages() -> None:
         "InterveneAck",
         "RespondAck",
         "ToolApprovalAck",
+        "RealtimeCallCreated",
+        "RealtimeEventAck",
+        "RealtimeToolApprovalAck",
         "CreateSession",
         "Intervene",
         "Respond",
         "ApproveTool",
         "RejectTool",
+        "RealtimeCreateCall",
+        "RealtimeEvent",
+        "RealtimeResolveToolApproval",
         "ListSessions",
         "HealthCheck",
         "SubscribeEvents",
@@ -161,7 +175,7 @@ def test_oneof_covers_all_wire_messages() -> None:
 
 
 def test_known_sse_event_types_completeness() -> None:
-    """orch-server/constants.py KNOWN_SSE_EVENT_TYPES 30개와 schema SSE $defs의 type const가 일치해야 한다."""
+    """orch-server/constants.py KNOWN_SSE_EVENT_TYPES와 schema SSE $defs의 type const가 일치해야 한다."""
     schema = _load_schema()
     sse_consts = set()
     for name, body in schema["$defs"].items():
@@ -197,6 +211,8 @@ def test_known_sse_event_types_completeness() -> None:
         "tool_approval_requested",
         "tool_approval_resolved",
         "guardrail_tripwire",
+        "realtime_status",
+        "realtime_transcript",
         "result",
         "prompt_suggestion",
         "subagent_start",
