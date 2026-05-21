@@ -13,9 +13,9 @@ import {
 const logger = pino({ level: "silent" });
 
 const profile: AgentProfile = {
-  id: "agents-realtime",
+  id: "codex-realtime",
   name: "Realtime Agent",
-  backend: "openai-agents",
+  backend: "codex",
   workspace_dir: "/tmp/agents",
   agents_sdk: {
     entry_agent: "triage",
@@ -57,7 +57,7 @@ function sessionRow(overrides: Partial<SessionRow> = {}): SessionRow {
     last_read_event_id: 0,
     created_at: new Date("2026-05-21T00:00:00Z"),
     updated_at: new Date("2026-05-21T00:00:00Z"),
-    agent_id: "agents-realtime",
+    agent_id: "codex-realtime",
     caller_session_id: null,
     away_summary: null,
     ...overrides,
@@ -139,6 +139,29 @@ describe("RealtimeBroker.createCall", () => {
     await expect(
       broker.createCall({ agentSessionId: "sess-rt", offerSdp: "offer" }),
     ).rejects.toThrow(/OPENAI_REALTIME_TEST_KEY/);
+  });
+
+  it("rejects non-codex sessions before calling Realtime", async () => {
+    const claudeProfile: AgentProfile = {
+      ...profile,
+      id: "claude-agent",
+      backend: "claude",
+    };
+    const fetch = vi.fn();
+    const broker = new RealtimeBroker({
+      agentRegistry: new AgentRegistry([claudeProfile]),
+      db: { getSession: vi.fn(async () => sessionRow({ agent_id: "claude-agent" })) } as unknown as SessionDB,
+      persistence: { persistEvent: vi.fn(), handleSideEffects: vi.fn() } as unknown as EventPersistence,
+      broadcaster: { emitEventEnvelope: vi.fn() } as unknown as SessionBroadcaster,
+      logger,
+      processEnv: { OPENAI_REALTIME_TEST_KEY: "sk-test" },
+      fetch,
+    });
+
+    await expect(
+      broker.createCall({ agentSessionId: "sess-rt", offerSdp: "offer" }),
+    ).rejects.toThrow(/Realtime requires codex backend/);
+    expect(fetch).not.toHaveBeenCalled();
   });
 });
 

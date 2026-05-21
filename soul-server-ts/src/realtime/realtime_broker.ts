@@ -219,9 +219,9 @@ export class RealtimeBroker {
     if (!profile) {
       throw new Error(`Realtime session ${agentSessionId} profile not registered: ${row.agent_id}`);
     }
-    if (profile.backend !== "openai-agents") {
+    if (profile.backend !== "codex") {
       throw new Error(
-        `Realtime requires openai-agents backend; session ${agentSessionId} uses ${profile.backend}`,
+        `Realtime requires codex backend; session ${agentSessionId} uses ${profile.backend}`,
       );
     }
     return { row, profile };
