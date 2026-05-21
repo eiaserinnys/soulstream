@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   fetchAtomContext,
+  fetchAtomContexts,
   formatAtomContext,
 } from "../../src/context/atom_context.js";
 
@@ -152,5 +153,40 @@ describe("fetchAtomContext (Python fetch_atom_context 정본)", () => {
       silentLogger,
     );
     expect(out).toBeNull();
+  });
+
+  it("여러 atom context를 한 시스템 프롬프트 블록으로 합성", async () => {
+    const fetchMock = vi.mocked(globalThis.fetch)
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ markdown: "# A" }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ markdown: "# B" }), { status: 200 }),
+      );
+    const out = await fetchAtomContexts(
+      { enabled: true, serverUrl: "https://atom.test", apiKey: "k" },
+      [
+        {
+          nodeId: "11111111-2222-3333-4444-555555555555",
+          depth: 1,
+          titlesOnly: true,
+        },
+        {
+          nodeId: "66666666-7777-8888-9999-aaaaaaaaaaaa",
+          depth: 4,
+          titlesOnly: false,
+        },
+      ],
+      silentLogger,
+    );
+    expect(out).not.toBeNull();
+    expect(out!.startsWith("# atom 트리 | 드릴다운:")).toBe(true);
+    expect(out).toContain("## atom node: 11111111-2222-3333-4444-555555555555");
+    expect(out).toContain("depth=1, titles_only=true");
+    expect(out).toContain("## atom node: 66666666-7777-8888-9999-aaaaaaaaaaaa");
+    expect(out).toContain("depth=4, titles_only=false");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0]?.[0]?.toString()).toContain("titles_only=true");
+    expect(fetchMock.mock.calls[1]?.[0]?.toString()).not.toContain("titles_only=true");
   });
 });

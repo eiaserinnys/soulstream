@@ -61,6 +61,15 @@ const SELF_IDENTITY = {
       ],
     },
     {
+      name: "agent_config",
+      description: "agents.yaml agent profile 조회·편집",
+      tools: [
+        "get_agents_config",
+        "update_agent_profile",
+        "set_agent_atom_contexts",
+      ],
+    },
+    {
       name: "multi_node",
       description: "오케스트레이터 경유 다른 노드 호출",
       tools: ["list_nodes", "list_node_agents", "create_remote_agent_session"],
@@ -163,6 +172,7 @@ function reflectSelf(
     return {
       configs: [
         { key: "node_id", value: runtime.nodeId },
+        { key: "agents_config_path", value: runtime.agentsConfigPath },
         { key: "mcp_capability_count", value: SELF_IDENTITY.capabilities.length },
       ],
     };
@@ -173,6 +183,7 @@ function reflectSelf(
         { module: "mcp/server.ts", role: "MCP server factory + 도구 등록" },
         { module: "mcp/transport.ts", role: "Streamable HTTP transport" },
         { module: "mcp/tools/*", role: "각 capability별 도구 핸들러" },
+        { module: "agent_registry.ts", role: "agents.yaml schema/load/write" },
         { module: "task/task_manager.ts", role: "세션 lifecycle" },
         { module: "engine/codex_adapter.ts", role: "Codex SDK 어댑터" },
       ],

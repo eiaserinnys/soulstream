@@ -25,6 +25,12 @@ const ATOM_CONTEXT_HEADER =
   "mcp__atom__list_children(parent_node_id) · " +
   "compile_subtree(node_id)\n";
 
+export interface AtomContextSpec {
+  nodeId: string;
+  depth: number;
+  titlesOnly: boolean;
+}
+
 /**
  * atom HTML metadata 주석을 짧은 ID 라벨로 변환 (Python `format_atom_context` 정본).
  *
@@ -36,13 +42,17 @@ const ATOM_CONTEXT_HEADER =
  * — 후처리 idempotent.
  */
 export function formatAtomContext(markdown: string): string {
+  return `${ATOM_CONTEXT_HEADER}${formatAtomMarkdown(markdown)}`;
+}
+
+function formatAtomMarkdown(markdown: string): string {
   const lines = markdown.split("\n").map((line) =>
     line.replace(ATOM_HTML_PATTERN, (_match, nodeId, cardId, chars) => {
       const label = cardId ? `[node:${nodeId} card:${cardId}]` : `[${nodeId}]`;
       return chars !== undefined ? `${label} (${chars} chars)` : label;
     }),
   );
-  return ATOM_CONTEXT_HEADER + lines.join("\n");
+  return lines.join("\n");
 }
 
 export interface AtomFetchConfig {
@@ -64,14 +74,50 @@ export async function fetchAtomContext(
   titlesOnly: boolean,
   logger: Logger,
 ): Promise<string | null> {
+  const markdown = await fetchAtomMarkdown(
+    config,
+    { nodeId, depth, titlesOnly },
+    logger,
+  );
+  return markdown === null ? null : formatAtomContext(markdown);
+}
+
+export async function fetchAtomContexts(
+  config: AtomFetchConfig,
+  specs: AtomContextSpec[],
+  logger: Logger,
+): Promise<string | null> {
+  if (specs.length === 0) return null;
+  const sections: string[] = [];
+  for (const spec of specs) {
+    const markdown = await fetchAtomMarkdown(config, spec, logger);
+    if (!markdown) continue;
+    sections.push(
+      [
+        `## atom node: ${spec.nodeId}`,
+        `depth=${spec.depth}, titles_only=${spec.titlesOnly}`,
+        "",
+        formatAtomMarkdown(markdown),
+      ].join("\n"),
+    );
+  }
+  if (sections.length === 0) return null;
+  return `${ATOM_CONTEXT_HEADER}\n${sections.join("\n\n")}`;
+}
+
+async function fetchAtomMarkdown(
+  config: AtomFetchConfig,
+  spec: AtomContextSpec,
+  logger: Logger,
+): Promise<string | null> {
   if (!config.enabled || !config.serverUrl) return null;
   const url = new URL(
-    `${config.serverUrl.replace(/\/$/, "")}/api/tree/${nodeId}/compile`,
+    `${config.serverUrl.replace(/\/$/, "")}/api/tree/${spec.nodeId}/compile`,
   );
-  url.searchParams.set("depth", String(depth));
+  url.searchParams.set("depth", String(spec.depth));
   url.searchParams.set("max_chars", "50000");
   url.searchParams.set("include_ids", "true");
-  if (titlesOnly) url.searchParams.set("titles_only", "true");
+  if (spec.titlesOnly) url.searchParams.set("titles_only", "true");
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 5000);
@@ -82,16 +128,16 @@ export async function fetchAtomContext(
     });
     if (resp.status !== 200) {
       logger.warn(
-        { status: resp.status, nodeId },
+        { status: resp.status, nodeId: spec.nodeId },
         "[atom] compile failed",
       );
       return null;
     }
     const data = (await resp.json()) as { markdown?: string };
     if (!data.markdown) return null;
-    return formatAtomContext(data.markdown);
+    return data.markdown;
   } catch (err) {
-    logger.warn({ err, nodeId }, "[atom] compile error");
+    logger.warn({ err, nodeId: spec.nodeId }, "[atom] compile error");
     return null;
   } finally {
     clearTimeout(timer);

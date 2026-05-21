@@ -7,6 +7,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { McpRuntime } from "./runtime.js";
+import { registerAgentConfigTools } from "./tools/agent_config.js";
 import { registerCatalogTools } from "./tools/catalog.js";
 import { registerMultiNodeTools } from "./tools/multi_node.js";
 import { registerReflectTools } from "./tools/reflect.js";
@@ -22,6 +23,7 @@ export function buildMcpServer(runtime: McpRuntime): McpServer {
   registerSessionQueryTools(server, runtime);
   registerSessionMgmtTools(server, runtime);
   registerCatalogTools(server, runtime);
+  registerAgentConfigTools(server, runtime);
   registerMultiNodeTools(server, runtime);
   return server;
 }

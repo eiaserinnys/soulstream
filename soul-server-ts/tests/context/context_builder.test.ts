@@ -160,6 +160,41 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
     globalThis.fetch = originalFetch;
   });
 
+  it("agent.atom_contexts 있으면 system prompt 맨 앞에 atom markdown 주입", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ markdown: "# agent atom\nbody" }), { status: 200 }),
+    );
+    const getSession = vi.fn().mockResolvedValue({ folder_id: "f-1" });
+    const getFolderById = vi.fn().mockResolvedValue({
+      id: "f-1",
+      name: "f",
+      sort_order: 0,
+      settings: { folderPrompt: "folder prompt" },
+    });
+    const agent: AgentProfile = {
+      ...codexAgent,
+      atom_contexts: [
+        {
+          node_id: "11111111-2222-3333-4444-555555555555",
+          depth: 2,
+          titles_only: true,
+        },
+      ],
+    };
+    const cb = makeBuilder(
+      { getSession, getFolderById } as Partial<SessionDB>,
+      new AgentRegistry([agent]),
+      true,
+    );
+    const ctx = await cb.build(makeTask({ systemPrompt: "task system" }), agent);
+    expect(ctx.effectiveSystemPrompt).toContain("# agent atom");
+    expect(ctx.effectiveSystemPrompt?.startsWith("# atom 트리 | 드릴다운:")).toBe(true);
+    expect(ctx.effectiveSystemPrompt).toContain("\n\nfolder prompt\n\ntask system");
+    expect(ctx.combinedContextItems.map((item) => item.key)).toEqual([
+      "soulstream_session",
+    ]);
+  });
+
   it("folder.settings.atomContextNode 있고 atom 활성 → atom_context item 추가", async () => {
     vi.mocked(globalThis.fetch).mockResolvedValueOnce(
       new Response(JSON.stringify({ markdown: "## atom node\nbody" }), { status: 200 }),

@@ -75,6 +75,7 @@ function makeRuntime(): McpRuntime {
   const taskExecutor = {} as unknown as TaskExecutor;
   return {
     nodeId: "test-node",
+    agentsConfigPath: "/tmp/agents.yaml",
     db,
     taskManager,
     taskExecutor,

@@ -2,10 +2,14 @@
  * SDK Client smoke 테스트 — `@modelcontextprotocol/sdk/client/streamableHttp.js`로 실제 접속.
  *
  * 검증:
- *   - listTools() → 22개 도구 Python 호환 이름 노출
+ *   - listTools() → MCP 도구 이름 노출
  *   - callTool("reflect_brief") → services 배열
  *   - callTool("list_local_agents") → AgentRegistry 응답
  */
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -47,6 +51,10 @@ const EXPECTED_TOOLS = [
   "get_folder_system_prompt",
   "set_folder_system_prompt",
   "delete_session",
+  // agent_config
+  "get_agents_config",
+  "update_agent_profile",
+  "set_agent_atom_contexts",
   // multi_node
   "list_nodes",
   "list_node_agents",
@@ -79,7 +87,7 @@ function createSilentLogger() {
   } as unknown as McpRuntime["logger"];
 }
 
-function makeRuntime(): McpRuntime {
+function makeRuntime(configPath: string, agentRegistry: AgentRegistry): McpRuntime {
   const sql = createMockSql();
   const db = new SessionDB(sql);
   const broadcaster = {
@@ -87,15 +95,6 @@ function makeRuntime(): McpRuntime {
     emitSessionDeleted: vi.fn().mockResolvedValue(undefined),
   } as unknown as SessionBroadcaster;
   const catalogService = new CatalogService(db, broadcaster);
-  const agentRegistry = new AgentRegistry([
-    {
-      id: "codex-default",
-      name: "Codex",
-      backend: "codex",
-      workspace_dir: "/tmp/codex-ws",
-      max_turns: 50,
-    },
-  ]);
   const taskManager = {
     listTasks: () => [],
     getTask: () => undefined,
@@ -103,6 +102,7 @@ function makeRuntime(): McpRuntime {
   const taskExecutor = {} as unknown as TaskExecutor;
   return {
     nodeId: "test-node",
+    agentsConfigPath: configPath,
     db,
     taskManager,
     taskExecutor,
@@ -116,15 +116,42 @@ describe("MCP SDK client smoke", () => {
   let server: Awaited<ReturnType<typeof buildServer>>;
   let client: Client;
   let url: URL;
+  let tempDir: string;
+  let configPath: string;
+  let agentRegistry: AgentRegistry;
 
   beforeAll(async () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "soul-mcp-smoke-"));
+    configPath = path.join(tempDir, "agents.yaml");
+    fs.writeFileSync(
+      configPath,
+      [
+        "agents:",
+        "  - id: codex-default",
+        "    name: Codex",
+        "    backend: codex",
+        "    workspace_dir: /tmp/codex-ws",
+        "    max_turns: 50",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    agentRegistry = new AgentRegistry([
+      {
+        id: "codex-default",
+        name: "Codex",
+        backend: "codex",
+        workspace_dir: "/tmp/codex-ws",
+        max_turns: 50,
+      },
+    ]);
     server = await buildServer({
       host: "127.0.0.1",
       port: 0,
       nodeId: "test-node",
       logger: createSilentLogger(),
       mcp: {
-        runtime: makeRuntime(),
+        runtime: makeRuntime(configPath, agentRegistry),
         path: "/mcp",
         auth: {
           requireAuth: false,
@@ -149,9 +176,10 @@ describe("MCP SDK client smoke", () => {
     }
     if (server.closeMcp) await server.closeMcp();
     await server.close();
+    fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it("listTools — Python 호환 이름 22개 모두 노출", async () => {
+  it("listTools — Python 호환 이름 + agent_config 도구 모두 노출", async () => {
     const result = await client.listTools();
     const names = result.tools.map((t) => t.name).sort();
     const expected = [...EXPECTED_TOOLS].sort();
@@ -199,9 +227,32 @@ describe("MCP SDK client smoke", () => {
         "session_query",
         "session_mgmt",
         "catalog",
+        "agent_config",
         "multi_node",
       ]),
     );
+  });
+
+  it("callTool('set_agent_atom_contexts') → agents.yaml 갱신 + runtime registry reload", async () => {
+    const nodeId = "11111111-2222-3333-4444-555555555555";
+    const result = await client.callTool({
+      name: "set_agent_atom_contexts",
+      arguments: {
+        agent_id: "codex-default",
+        atom_contexts: [{ node_id: nodeId, depth: 2, titles_only: true }],
+      },
+    });
+    expect(result.isError).not.toBe(true);
+    const structured = result.structuredContent as {
+      agent: { atom_contexts?: Array<{ node_id: string; depth: number; titles_only: boolean }> };
+    };
+    expect(structured.agent.atom_contexts).toEqual([
+      { node_id: nodeId, depth: 2, titles_only: true },
+    ]);
+    expect(agentRegistry.get("codex-default")?.atom_contexts).toEqual([
+      { node_id: nodeId, depth: 2, titles_only: true },
+    ]);
+    expect(fs.readFileSync(configPath, "utf-8")).toContain("atom_contexts:");
   });
 
   it("callTool('reflect_service', 'unknown') → isError 응답", async () => {

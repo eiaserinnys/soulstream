@@ -267,6 +267,7 @@ async function main(): Promise<void> {
   // MCP runtime — MCP_ENABLED=true일 때 server.ts가 라우트 등록에 사용.
   const mcpRuntime: McpRuntime = {
     nodeId: env.SOULSTREAM_NODE_ID,
+    agentsConfigPath: env.AGENTS_CONFIG_PATH,
     db,
     taskManager,
     taskExecutor,

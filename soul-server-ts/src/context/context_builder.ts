@@ -3,9 +3,10 @@
  *
  * codex task 첫 turn 진입 전에 다음을 조립:
  *   1. _resolveFolder    — sessions.folder_id → folder.settings (folderPrompt·atomContextNode)
- *   2. _fetchAtomContext — atomContextNode가 있고 신규 task면 atom HTTP API → 마크다운
- *   3. _resolveProfile   — agents.yaml profile에서 workspace_dir·max_turns·tools
- *   4. _assembleContext  — folder_prompt + system_prompt + soulstream_item + atom_context를
+ *   2. _fetchAgentAtomContext — agents.yaml atom_contexts → system prompt용 마크다운
+ *   3. _fetchAtomContext — folder atomContextNode → context item용 마크다운
+ *   4. _resolveProfile   — agents.yaml profile에서 workspace_dir·max_turns·tools
+ *   5. _assembleContext  — agent atom + folder_prompt + system_prompt + context items를
  *      합쳐 PreparedContext 반환
  *
  * 호출자(task_executor)는 codex SDK가 turn-level systemPrompt를 지원하지 않으므로 (분석 캐시
@@ -21,7 +22,7 @@ import type { AgentRegistry, AgentProfile } from "../agent_registry.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { Task } from "../task/task_models.js";
 
-import { fetchAtomContext } from "./atom_context.js";
+import { fetchAtomContext, fetchAtomContexts } from "./atom_context.js";
 import {
   assemblePrompt,
   formatContextItems,
@@ -31,7 +32,7 @@ import { buildSoulstreamContextItem } from "./soulstream_item.js";
 
 /** Python `_PreparedContext` (execution_context_builder.py:24-34) TS 등가. */
 export interface PreparedContext {
-  /** folder_prompt prepended (folder_prompt + "\n\n" + task.systemPrompt). */
+  /** agent atom context + folder_prompt + task.systemPrompt. */
   effectiveSystemPrompt?: string;
   /** soulstream_item + atom_context + task.contextItems (현재 빈 배열). */
   combinedContextItems: ContextItem[];
@@ -106,6 +107,7 @@ export class ExecutionContextBuilder {
    */
   async build(task: Task, agent: AgentProfile): Promise<PreparedContext> {
     const { folderName, folderPrompt, folderSettings } = await this._resolveFolder(task);
+    const agentAtomMarkdown = await this._fetchAgentAtomContext(agent);
     const atomMarkdown = await this._fetchAtomContext(folderSettings);
     const { workingDir, maxTurns } = this._resolveProfile(task);
     return this._assembleContext({
@@ -113,6 +115,7 @@ export class ExecutionContextBuilder {
       agent,
       folderName,
       folderPrompt,
+      agentAtomMarkdown,
       atomMarkdown,
       workingDir,
       maxTurns,
@@ -191,6 +194,22 @@ export class ExecutionContextBuilder {
   }
 
   /**
+   * agents.yaml `atom_contexts`는 agent profile 정본 지시문이다.
+   *
+   * CLAUDE.md / AGENTS.md / skills를 대체하는 장기 경로이므로 context_item이 아니라
+   * system prompt 맨 앞에 주입한다. 여러 노드를 순서대로 compile하며, 각 노드 실패는
+   * fetchAtomContexts 내부에서 skip되어 전체 turn 시작을 막지 않는다.
+   */
+  private async _fetchAgentAtomContext(agent: AgentProfile): Promise<string | null> {
+    const specs = (agent.atom_contexts ?? []).map((ctx) => ({
+      nodeId: ctx.node_id,
+      depth: ctx.depth,
+      titlesOnly: ctx.titles_only,
+    }));
+    return await fetchAtomContexts(this.cfg.atom, specs, this.logger);
+  }
+
+  /**
    * profile_id → agent registry 조회 (Python L122-135).
    *
    * codex 노드는 allowed/disallowed_tools를 SDK가 받지 않아 메타만 보존(별건 카드).
@@ -212,7 +231,8 @@ export class ExecutionContextBuilder {
   /**
    * 최종 PreparedContext 조립 (Python L137-202).
    *
-   *   effectiveSystemPrompt = folder_prompt + "\n\n" + task.systemPrompt (folder_prompt 있으면)
+   *   effectiveSystemPrompt = agent.atom_contexts + folder_prompt + task.systemPrompt
+   *                           (있는 값만 "\n\n"로 연결)
    *   effectiveWorkspaceDir = profile.workspace_dir ?? agent.workspace_dir
    *   combinedContextItems  = [soulstream_item] + [atom_context if present] + task.contextItems
    *   assembledPrompt       = assemblePrompt(task.prompt, task.context) — 현재 task.context 없음
@@ -222,17 +242,24 @@ export class ExecutionContextBuilder {
     agent: AgentProfile;
     folderName?: string;
     folderPrompt?: string;
+    agentAtomMarkdown: string | null;
     atomMarkdown: string | null;
     workingDir?: string;
     maxTurns?: number;
   }): PreparedContext {
     const taskSystemPrompt = args.task.systemPrompt;
-    let effectiveSystemPrompt: string | undefined = taskSystemPrompt;
-    if (args.folderPrompt) {
-      effectiveSystemPrompt = taskSystemPrompt
-        ? `${args.folderPrompt}\n\n${taskSystemPrompt}`
-        : args.folderPrompt;
+    const systemParts: string[] = [];
+    if (args.agentAtomMarkdown) {
+      systemParts.push(args.agentAtomMarkdown);
     }
+    if (args.folderPrompt) {
+      systemParts.push(args.folderPrompt);
+    }
+    if (taskSystemPrompt) {
+      systemParts.push(taskSystemPrompt);
+    }
+    const effectiveSystemPrompt =
+      systemParts.length > 0 ? systemParts.join("\n\n") : undefined;
 
     const effectiveWorkspaceDir = args.workingDir ?? args.agent.workspace_dir;
 

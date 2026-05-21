@@ -56,6 +56,60 @@ describe("AgentProfileSchema", () => {
     expect(parsed.allowed_tools).toBeUndefined();
   });
 
+  it("atom_contexts는 node_id/depth/titles_only를 파싱한다", () => {
+    const parsed = AgentProfileSchema.parse({
+      id: "a",
+      name: "A",
+      backend: "codex",
+      workspace_dir: "/tmp/a",
+      atom_contexts: [
+        {
+          node_id: "11111111-2222-3333-4444-555555555555",
+          depth: 2,
+          titles_only: true,
+        },
+      ],
+    });
+    expect(parsed.atom_contexts).toEqual([
+      {
+        node_id: "11111111-2222-3333-4444-555555555555",
+        depth: 2,
+        titles_only: true,
+      },
+    ]);
+  });
+
+  it("atom_contexts depth/titles_only 기본값", () => {
+    const parsed = AgentProfileSchema.parse({
+      id: "a",
+      name: "A",
+      backend: "codex",
+      workspace_dir: "/tmp/a",
+      atom_contexts: [
+        { node_id: "11111111-2222-3333-4444-555555555555" },
+      ],
+    });
+    expect(parsed.atom_contexts).toEqual([
+      {
+        node_id: "11111111-2222-3333-4444-555555555555",
+        depth: 3,
+        titles_only: false,
+      },
+    ]);
+  });
+
+  it("atom_contexts node_id가 UUID가 아니면 거부", () => {
+    expect(() =>
+      AgentProfileSchema.parse({
+        id: "a",
+        name: "A",
+        backend: "codex",
+        workspace_dir: "/tmp/a",
+        atom_contexts: [{ node_id: "not-a-uuid" }],
+      }),
+    ).toThrow(ZodError);
+  });
+
   it("openai-agents profile은 provider, hosted_tools, mcp_servers를 agents_sdk 아래에서 파싱", () => {
     const parsed = AgentProfileSchema.parse({
       id: "agents-research",
@@ -282,6 +336,30 @@ agents:
       const a = r.get("a");
       expect(a?.max_turns).toBe(50);
       expect(a?.allowed_tools).toEqual(["bash", "read"]);
+    });
+  });
+
+  it("atom_contexts 로딩", () => {
+    const yaml = `
+agents:
+  - id: a
+    name: A
+    backend: codex
+    workspace_dir: /tmp/a
+    atom_contexts:
+      - node_id: 11111111-2222-3333-4444-555555555555
+        depth: 2
+        titles_only: true
+`;
+    withTempYaml(yaml, (p) => {
+      const r = loadAgentRegistry(p);
+      expect(r.get("a")?.atom_contexts).toEqual([
+        {
+          node_id: "11111111-2222-3333-4444-555555555555",
+          depth: 2,
+          titles_only: true,
+        },
+      ]);
     });
   });
 });

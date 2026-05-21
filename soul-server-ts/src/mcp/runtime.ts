@@ -21,6 +21,7 @@ export interface OrchProxyConfig {
 
 export interface McpRuntime {
   nodeId: string;
+  agentsConfigPath: string;
   db: SessionDB;
   taskManager: TaskManager;
   taskExecutor: TaskExecutor;

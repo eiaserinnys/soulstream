@@ -75,6 +75,7 @@ function makeRuntime(
   ]);
   return {
     nodeId: "node-test",
+    agentsConfigPath: "/tmp/agents.yaml",
     db: {} as SessionDB,
     taskManager,
     taskExecutor: { startExecution } as unknown as TaskExecutor,

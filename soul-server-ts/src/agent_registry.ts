@@ -9,8 +9,12 @@
  */
 
 import fs from "node:fs";
+import path from "node:path";
 import { parse as parseYaml } from "yaml";
+import { stringify as stringifyYaml } from "yaml";
 import { z } from "zod";
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const AgentsSdkToolSchema = z.object({
   name: z.string().min(1, "agents_sdk.tool.name required"),
@@ -189,6 +193,14 @@ const AgentsSdkConfigSchema = z.object({
 
 export type AgentsSdkConfig = z.infer<typeof AgentsSdkConfigSchema>;
 
+export const AgentAtomContextSchema = z.object({
+  node_id: z.string().regex(UUID_RE, "atom_contexts.node_id must be a UUID"),
+  depth: z.number().int().min(0).default(3),
+  titles_only: z.boolean().default(false),
+});
+
+export type AgentAtomContext = z.infer<typeof AgentAtomContextSchema>;
+
 /**
  * yaml의 단일 agent 엔트리 schema. Python `AgentProfile` dataclass와 키 호환.
  */
@@ -201,6 +213,13 @@ export const AgentProfileSchema = z.object({
   allowed_tools: z.array(z.string()).optional(),
   disallowed_tools: z.array(z.string()).optional(),
   portrait_path: z.string().optional(),
+  /**
+   * agents.yaml 정본 atom 주입.
+   *
+   * 각 항목은 atom compile_subtree REST API의 node/depth/titles_only에 대응한다.
+   * ExecutionContextBuilder가 신규 세션 첫 turn의 system prompt 맨 앞에 주입한다.
+   */
+  atom_contexts: z.array(AgentAtomContextSchema).optional(),
   agents_sdk: AgentsSdkConfigSchema.optional(),
 }).superRefine((profile, ctx) => {
   if (profile.backend === "openai-agents" && !profile.agents_sdk) {
@@ -224,8 +243,8 @@ export type AgentsConfig = z.infer<typeof AgentsConfigSchema>;
 /**
  * agent 프로필 컬렉션. Python `AgentRegistry`와 동일 인터페이스(`get`/`list`/`has`).
  *
- * 본 PR(B-3)은 *불변* registry — 시작 시 1회 로딩 후 갱신 없음. 동적 reload는
- * 후속 카드 (Phase B-3에서 의도적 제외 — design-principles §1 깊이).
+ * 시작 시 agents.yaml을 1회 로딩하고, MCP agents.yaml 편집 도구는 같은 registry
+ * 인스턴스의 `replace()`로 프로필 컬렉션을 갱신한다.
  */
 export class AgentRegistry {
   private readonly profiles: Map<string, AgentProfile>;
@@ -252,6 +271,18 @@ export class AgentRegistry {
     return this.profiles.has(id);
   }
 
+  replace(profiles: AgentProfile[]): void {
+    const next = new Map<string, AgentProfile>();
+    for (const p of profiles) {
+      if (next.has(p.id)) {
+        throw new Error(`Duplicate agent id in registry: ${p.id}`);
+      }
+      next.set(p.id, p);
+    }
+    this.profiles.clear();
+    for (const [id, profile] of next) this.profiles.set(id, profile);
+  }
+
   /** 등록된 backend 목록 (중복 제거, registration.supported_backends 산출용). */
   supportedBackends(): string[] {
     const profiles = this.list();
@@ -259,6 +290,79 @@ export class AgentRegistry {
     for (const p of profiles) set.add(p.backend);
     return Array.from(set);
   }
+}
+
+export function readAgentsConfig(configPath: string): AgentsConfig {
+  const raw = fs.readFileSync(configPath, "utf-8");
+  const parsed: unknown = parseYaml(raw) ?? {};
+  return AgentsConfigSchema.parse(parsed);
+}
+
+export function readAgentsConfigRaw(configPath: string): {
+  raw: string;
+  parsed: AgentsConfig;
+} {
+  const raw = fs.readFileSync(configPath, "utf-8");
+  const data: unknown = parseYaml(raw) ?? {};
+  return {
+    raw,
+    parsed: AgentsConfigSchema.parse(data),
+  };
+}
+
+export function writeAgentsConfig(configPath: string, config: AgentsConfig): AgentsConfig {
+  const validated = AgentsConfigSchema.parse(config);
+  const dir = path.dirname(configPath);
+  const tmp = path.join(
+    dir,
+    `.${path.basename(configPath)}.${process.pid}.${Date.now()}.tmp`,
+  );
+  const body = stringifyYaml(validated);
+  fs.writeFileSync(tmp, body, "utf-8");
+  try {
+    const stat = fs.statSync(configPath);
+    fs.chmodSync(tmp, stat.mode & 0o777);
+  } catch {
+    // If the target file disappeared between read/write, keep the default mode.
+  }
+  fs.renameSync(tmp, configPath);
+  return validated;
+}
+
+export function replaceAgentProfileInConfig(
+  configPath: string,
+  profile: AgentProfile,
+  createIfMissing = false,
+): AgentsConfig {
+  const current = readAgentsConfig(configPath);
+  const nextAgents = [...current.agents];
+  const idx = nextAgents.findIndex((p) => p.id === profile.id);
+  if (idx === -1) {
+    if (!createIfMissing) {
+      throw new Error(`agent not found: ${profile.id}`);
+    }
+    nextAgents.push(profile);
+  } else {
+    nextAgents[idx] = profile;
+  }
+  return writeAgentsConfig(configPath, { ...current, agents: nextAgents });
+}
+
+export function setAgentAtomContextsInConfig(
+  configPath: string,
+  agentId: string,
+  atomContexts: AgentAtomContext[],
+): AgentsConfig {
+  const current = readAgentsConfig(configPath);
+  const nextAgents = current.agents.map((profile) =>
+    profile.id === agentId
+      ? { ...profile, atom_contexts: atomContexts }
+      : profile,
+  );
+  if (!current.agents.some((profile) => profile.id === agentId)) {
+    throw new Error(`agent not found: ${agentId}`);
+  }
+  return writeAgentsConfig(configPath, { ...current, agents: nextAgents });
 }
 
 /**
@@ -272,8 +376,6 @@ export class AgentRegistry {
  * 빈 파일·`agents: []`은 정상 — 빈 registry 반환. node_register agents 광고는 빈 배열.
  */
 export function loadAgentRegistry(configPath: string): AgentRegistry {
-  const raw = fs.readFileSync(configPath, "utf-8");
-  const parsed: unknown = parseYaml(raw) ?? {};
-  const validated = AgentsConfigSchema.parse(parsed);
+  const validated = readAgentsConfig(configPath);
   return new AgentRegistry(validated.agents);
 }
