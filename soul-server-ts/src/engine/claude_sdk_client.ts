@@ -461,7 +461,6 @@ export class ClaudeSdkClient implements ClaudeClient {
           const canContinueAfterToolUse =
             resultEvent?.type === "result" &&
             resultEvent.success &&
-            resultEvent.output.length === 0 &&
             resultEvent.stopReason === "tool_use";
 
           if (!canContinueAfterCompact && !canContinueAfterToolUse) {
@@ -482,7 +481,7 @@ export class ClaudeSdkClient implements ClaudeClient {
           });
 
           if (drain.action === "continue") {
-            compactRetryCount += 1;
+            if (canContinueAfterCompact) compactRetryCount += 1;
             for (const event of drain.events) output.push(event);
             continue;
           }

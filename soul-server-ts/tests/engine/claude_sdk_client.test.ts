@@ -802,6 +802,60 @@ describe("ClaudeSdkClient", () => {
     expect(events[4]).toMatchObject({ type: "complete", result: "final" });
   });
 
+  it("continues after a non-empty tool_use result instead of completing the turn", async () => {
+    const client = new ClaudeSdkClient(
+      {
+        query: () =>
+          makeQuery(
+            (async function* () {
+              yield {
+                type: "assistant",
+                message: { content: [{ type: "text", text: "500 에러가 나서 재시도합니다." }] },
+                parent_tool_use_id: null,
+                uuid: "assistant-before-ask",
+                session_id: "claude-sess-nonempty-tool-use",
+              } as unknown as SDKMessage;
+              yield sdkSuccessResult("claude-sess-nonempty-tool-use", "500 에러가 나서 재시도합니다.", {
+                stop_reason: "tool_use",
+                permission_denials: ["AskUserQuestion:toolu_ask"],
+              });
+              yield sdkSystemInit("claude-sess-nonempty-tool-use");
+              yield {
+                type: "assistant",
+                message: { content: [{ type: "text", text: "after ask" }] },
+                parent_tool_use_id: null,
+                uuid: "assistant-after-ask",
+                session_id: "claude-sess-nonempty-tool-use",
+              } as unknown as SDKMessage;
+              yield sdkSuccessResult("claude-sess-nonempty-tool-use", "final");
+            })(),
+          ),
+        postResultDrainMs: 200,
+      },
+      silentLogger,
+    );
+
+    const events = await collect(
+      client.run(
+        { prompt: "hi", workspaceDir: "/tmp/claude-work", env: {} },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(events.map((event) => event.type)).toEqual([
+      "text",
+      "session",
+      "text",
+      "result",
+      "context_usage",
+      "complete",
+    ]);
+    expect(events[0]).toMatchObject({ type: "text", text: "500 에러가 나서 재시도합니다." });
+    expect(events[2]).toMatchObject({ type: "text", text: "after ask" });
+    expect(events[3]).toMatchObject({ type: "result", output: "final" });
+    expect(events[5]).toMatchObject({ type: "complete", result: "final" });
+  });
+
   it("does not treat an empty end_turn result as continuation without an explicit signal", async () => {
     const client = new ClaudeSdkClient(
       {
