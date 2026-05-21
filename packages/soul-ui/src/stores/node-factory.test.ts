@@ -36,6 +36,8 @@ import type {
   TextNode,
   InputRequestEvent,
   InputRequestNodeDef,
+  ToolApprovalRequestedEvent,
+  ToolApprovalNodeDef,
 } from "../shared/types";
 
 // === Helpers ===
@@ -513,6 +515,29 @@ describe("createNodeFromEvent", () => {
 
       expect(node).not.toBeNull();
       expect(node!.content).toBe("Input requested");
+    });
+
+    it("should create node for tool_approval_requested", () => {
+      const event: ToolApprovalRequestedEvent = {
+        type: "tool_approval_requested",
+        timestamp: 1700000022,
+        approval_id: "danger-call-1",
+        tool_use_id: "danger-call-1",
+        tool_name: "drop_rows",
+        tool_input: { table: "events" },
+        agent_name: "Database specialist",
+      };
+
+      const node = createNodeFromEvent(event, 72);
+
+      expect(node).not.toBeNull();
+      expect(node!.id).toBe("tool-approval-72");
+      expect(node!.type).toBe("tool_approval");
+      const approval = node as ToolApprovalNodeDef;
+      expect(approval.approvalId).toBe("danger-call-1");
+      expect(approval.toolName).toBe("drop_rows");
+      expect(approval.toolInput).toEqual({ table: "events" });
+      expect(approval.resolved).toBe(false);
     });
   });
 

@@ -51,6 +51,12 @@ class RespondRequest(BaseModel):
     answers: dict
 
 
+class ToolApprovalRequest(BaseModel):
+    message: Optional[str] = None
+    alwaysApprove: Optional[bool] = None
+    alwaysReject: Optional[bool] = None
+
+
 class RenameSessionRequest(BaseModel):
     displayName: Optional[str] = None
 

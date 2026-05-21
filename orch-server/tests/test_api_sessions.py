@@ -288,6 +288,131 @@ class TestRespond:
         assert resp.json()["detail"]["error"]["code"] == code
 
 
+class TestToolApprovals:
+    """POST /api/sessions/{session_id}/tool-approvals/{approval_id} tests."""
+
+    @staticmethod
+    def _make_resolve_by_request_id(node, result=None):
+        result = result or {
+            "type": "tool_approval_ack",
+            "status": "ok",
+            "approvalId": "approval-1",
+            "decision": "approved",
+            "delivered": True,
+        }
+
+        async def resolve_on_send(data):
+            ws_command_id = data.get("requestId", "")
+            future = node._pending.get(ws_command_id)
+            if future is not None and not future.done():
+                future.set_result(result)
+        return resolve_on_send
+
+    async def test_approve_tool_sends_ws_command(self, client, node_manager):
+        """approve endpoint는 approve_tool 명령과 approvalId를 노드로 전달한다."""
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+        node = await node_manager.register_node(ws, {"node_id": "approval-node"})
+        ws.send_json.side_effect = self._make_resolve_by_request_id(
+            node,
+            {
+                "type": "tool_approval_ack",
+                "status": "ok",
+                "approvalId": "danger-call-1",
+                "decision": "approved",
+                "delivered": True,
+            },
+        )
+
+        resp = await client.post(
+            "/api/sessions/test-session/tool-approvals/danger-call-1/approve",
+            json={"message": "approved once", "alwaysApprove": True},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "ok"
+        sent_payloads = [call.args[0] for call in ws.send_json.await_args_list]
+        approval_payloads = [p for p in sent_payloads if p.get("type") == "approve_tool"]
+        assert len(approval_payloads) == 1
+        assert approval_payloads[0].get("agentSessionId") == "test-session"
+        assert approval_payloads[0].get("approvalId") == "danger-call-1"
+        assert approval_payloads[0].get("requestId") != "danger-call-1"
+        assert approval_payloads[0].get("message") == "approved once"
+        assert approval_payloads[0].get("alwaysApprove") is True
+
+    async def test_reject_tool_sends_ws_command(self, client, node_manager):
+        """reject endpoint는 reject_tool 명령과 거부 메시지를 노드로 전달한다."""
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+        node = await node_manager.register_node(ws, {"node_id": "approval-node-2"})
+        ws.send_json.side_effect = self._make_resolve_by_request_id(
+            node,
+            {
+                "type": "tool_approval_ack",
+                "status": "ok",
+                "approvalId": "danger-call-1",
+                "decision": "rejected",
+                "delivered": True,
+            },
+        )
+
+        resp = await client.post(
+            "/api/sessions/test-session/tool-approvals/danger-call-1/reject",
+            json={"message": "no prod write", "alwaysReject": True},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "ok"
+        sent_payloads = [call.args[0] for call in ws.send_json.await_args_list]
+        approval_payloads = [p for p in sent_payloads if p.get("type") == "reject_tool"]
+        assert len(approval_payloads) == 1
+        assert approval_payloads[0].get("agentSessionId") == "test-session"
+        assert approval_payloads[0].get("approvalId") == "danger-call-1"
+        assert approval_payloads[0].get("requestId") != "danger-call-1"
+        assert approval_payloads[0].get("message") == "no prod write"
+        assert approval_payloads[0].get("alwaysReject") is True
+
+    @pytest.mark.parametrize(
+        ("code", "expected_status"),
+        [
+            ("SESSION_NOT_FOUND", 404),
+            ("SESSION_NOT_RUNNING", 409),
+            ("TOOL_APPROVAL_NOT_PENDING", 422),
+            ("TOOL_APPROVAL_ALREADY_RESOLVED", 422),
+            ("TOOL_APPROVAL_NOT_SUPPORTED", 422),
+        ],
+    )
+    async def test_tool_approval_ack_error_status_maps_to_http_error(
+        self, client, node_manager, code, expected_status
+    ):
+        """tool_approval_ack(status=error)를 HTTP 에러로 정규화한다."""
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+        node = await node_manager.register_node(ws, {"node_id": "approval-node-error"})
+        ws.send_json.side_effect = self._make_resolve_by_request_id(
+            node,
+            {
+                "type": "tool_approval_ack",
+                "status": "error",
+                "code": code,
+                "message": f"{code} message",
+                "approvalId": "danger-call-1",
+                "decision": "rejected",
+            },
+        )
+
+        resp = await client.post(
+            "/api/sessions/test-session/tool-approvals/danger-call-1/reject",
+            json={"message": "no prod write"},
+        )
+
+        assert resp.status_code == expected_status
+        assert resp.json()["detail"]["error"]["code"] == code
+
+
 class TestBatchMoveFolder:
     """PATCH /api/sessions/folder tests."""
 

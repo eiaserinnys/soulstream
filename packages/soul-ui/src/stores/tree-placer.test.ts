@@ -38,6 +38,7 @@ import type {
   ErrorEvent,
   ResultEvent,
   InputRequestEvent,
+  ToolApprovalRequestedEvent,
   SoulSSEEvent,
 } from "../shared/types";
 
@@ -240,6 +241,30 @@ describe("placeInTree (Phase 2-A 평탄화)", () => {
       expect(ctx.nodeMap.get("input-request-20")).toBe(node);
       expect(ctx.nodeMap.get("20")).toBe(node);
       expect(ctx.nodeMap.get("req-001")).toBe(node);
+      expect(root.children).toContain(node);
+    });
+
+    it("tool_approval_requested의 approval_id 보조 등록 (tool_approval_resolved 매칭용)", () => {
+      const { ctx, root } = makeCtxWithRoot();
+      const node = makeNode("tool-approval-21", "tool_approval", "drop_rows", {
+        approvalId: "danger-call-1",
+        toolName: "drop_rows",
+        toolInput: { table: "events" },
+      });
+      const event: ToolApprovalRequestedEvent = {
+        type: "tool_approval_requested",
+        timestamp: 1700000000,
+        approval_id: "danger-call-1",
+        tool_use_id: "danger-call-1",
+        tool_name: "drop_rows",
+        tool_input: { table: "events" },
+      };
+
+      placeInTree(node, event, 21, ctx, root);
+
+      expect(ctx.nodeMap.get("tool-approval-21")).toBe(node);
+      expect(ctx.nodeMap.get("21")).toBe(node);
+      expect(ctx.nodeMap.get("danger-call-1")).toBe(node);
       expect(root.children).toContain(node);
     });
   });

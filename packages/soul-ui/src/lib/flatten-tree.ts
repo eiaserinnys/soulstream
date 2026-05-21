@@ -20,6 +20,7 @@ import type {
   AssistantMessageNode,
   InputRequestNodeDef,
   InputRequestQuestion,
+  ToolApprovalNodeDef,
   ContextItem,
   TokenUsage,
 } from "@shared/types";
@@ -27,7 +28,7 @@ import type {
 /** Chat 탭에 표시되는 메시지 단위 */
 export interface ChatMessage {
   id: string;
-  role: "user" | "assistant" | "tool" | "system" | "system_message" | "intervention" | "input_request" | "away_summary";
+  role: "user" | "assistant" | "tool" | "system" | "system_message" | "intervention" | "input_request" | "tool_approval" | "away_summary";
   /** 메인 표시 텍스트 */
   content: string;
   timestamp?: number;
@@ -70,6 +71,11 @@ export interface ChatMessage {
   receivedAt?: number;
   /** input_request 전용: 응답 대기 타임아웃 (초) */
   timeoutSec?: number;
+  /** tool_approval 전용 */
+  approvalId?: string;
+  approvalDecision?: "approved" | "rejected";
+  approvalResolved?: boolean;
+  approvalMessage?: string;
   /** user_message 전용: 구조화된 맥락 항목 배열 */
   contextItems?: ContextItem[];
   /** user_message 전용: 에이전트 발신자 메타데이터 (caller_info.source==="agent"에서 도출) */
@@ -151,6 +157,10 @@ function shallowEqualChatMessage(a: ChatMessage, b: ChatMessage): boolean {
     a.expired === b.expired &&
     a.receivedAt === b.receivedAt &&
     a.timeoutSec === b.timeoutSec &&
+    a.approvalId === b.approvalId &&
+    a.approvalDecision === b.approvalDecision &&
+    a.approvalResolved === b.approvalResolved &&
+    a.approvalMessage === b.approvalMessage &&
     a.contextItems === b.contextItems &&
     a.agentInfo === b.agentInfo &&
     a.callerInfo === b.callerInfo &&
@@ -470,6 +480,26 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
         expired: n.expired,
         receivedAt: n.receivedAt,
         timeoutSec: n.timeoutSec,
+        treeNodeId: n.id,
+        treeNodeType: n.type,
+        eventId,
+      };
+    }
+
+    case "tool_approval": {
+      const n = node as ToolApprovalNodeDef;
+      return {
+        id: n.id,
+        role: "tool_approval",
+        content: n.toolName,
+        timestamp: n.timestamp,
+        toolName: n.toolName,
+        toolInput: n.toolInput,
+        toolResult: n.agentName,
+        approvalId: n.approvalId,
+        approvalDecision: n.approved ? "approved" : n.rejected ? "rejected" : undefined,
+        approvalResolved: n.resolved,
+        approvalMessage: n.message,
         treeNodeId: n.id,
         treeNodeType: n.type,
         eventId,

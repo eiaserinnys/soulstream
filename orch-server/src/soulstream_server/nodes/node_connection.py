@@ -16,10 +16,12 @@ from fastapi import WebSocket
 from starlette.websockets import WebSocketDisconnect
 
 from soulstream_server.constants import (
+    CMD_APPROVE_TOOL,
     CMD_CREATE_SESSION,
     CMD_DELETE_SESSION_ATTACHMENTS,
     CMD_DOWNLOAD_ATTACHMENT,
     CMD_INTERVENE,
+    CMD_REJECT_TOOL,
     CMD_RESPOND,
     CMD_SUBSCRIBE_EVENTS,
     CMD_UPLOAD_ATTACHMENT,
@@ -368,6 +370,29 @@ class NodeConnection:
                 "answers": answers,
             },
         )
+
+    async def send_tool_approval(
+        self,
+        session_id: str,
+        approval_id: str,
+        decision: str,
+        message: str | None = None,
+        always_approve: bool | None = None,
+        always_reject: bool | None = None,
+    ) -> dict:
+        """OpenAI Agents SDK tool approval 승인/거부를 노드에 전달한다."""
+        command = CMD_APPROVE_TOOL if decision == "approved" else CMD_REJECT_TOOL
+        payload: dict[str, Any] = {
+            "agentSessionId": session_id,
+            "approvalId": approval_id,
+        }
+        if message is not None:
+            payload["message"] = message
+        if always_approve is not None:
+            payload["alwaysApprove"] = always_approve
+        if always_reject is not None:
+            payload["alwaysReject"] = always_reject
+        return await self._send_command(command, payload)
 
     async def send_subscribe_events(
         self, session_id: str, callback: Callable

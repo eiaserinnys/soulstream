@@ -30,6 +30,7 @@ import type {
   TextStartEvent,
   ToolStartEvent,
   InputRequestEvent,
+  ToolApprovalRequestedEvent,
 } from "@shared/types";
 import type { ProcessingContext, TextTargetNode } from "./processing-context";
 import { makeNode, registerNode } from "./processing-context";
@@ -134,6 +135,14 @@ export function placeInTree(
   // input_request: request_id로도 등록 (input_request_expired 매칭에 필수)
   if (event.type === "input_request" && (event as InputRequestEvent).request_id) {
     ctx.nodeMap.set((event as InputRequestEvent).request_id, node);
+  }
+
+  // tool_approval_requested: approval_id로도 등록 (tool_approval_resolved 매칭)
+  if (
+    event.type === "tool_approval_requested" &&
+    (event as ToolApprovalRequestedEvent).approval_id
+  ) {
+    ctx.nodeMap.set((event as ToolApprovalRequestedEvent).approval_id, node);
   }
 
   // 평탄화 + cross-page 시간순 보존: eventId 기준 sorted insert.

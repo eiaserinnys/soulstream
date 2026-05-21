@@ -1,7 +1,7 @@
 """schema 자체 유효성 + 메시지 인벤토리 검증.
 
 본 테스트는 src/upstream.schema.json이 JSON Schema Draft 2020-12 유효이며,
-설계 명세에 합의된 51개 $defs (wire 21 + SSE event 30)를 모두 포함하는지 확인한다.
+설계 명세에 합의된 60개 $defs (wire 24 + SSE event 36)를 모두 포함하는지 확인한다.
 """
 
 import json
@@ -45,9 +45,12 @@ def test_schema_has_all_message_types() -> None:
         "ErrorMessage",
         "InterveneAck",
         "RespondAck",
+        "ToolApprovalAck",
         "CreateSession",
         "Intervene",
         "Respond",
+        "ApproveTool",
+        "RejectTool",
         "ListSessions",
         "HealthCheck",
         "SubscribeEvents",
@@ -57,7 +60,7 @@ def test_schema_has_all_message_types() -> None:
         "ClaudeAuthGetUsage",
         "ClaudeAuthGetProfile",
     }
-    assert len(wire_types) == 21
+    assert len(wire_types) == 24
 
     sse_types = {
         "SSEEventInit",
@@ -81,6 +84,12 @@ def test_schema_has_all_message_types() -> None:
         "SSEEventTextEnd",
         "SSEEventToolStart",
         "SSEEventToolResult",
+        "SSEEventAgentUpdated",
+        "SSEEventHandoffRequested",
+        "SSEEventHandoffOccurred",
+        "SSEEventToolApprovalRequested",
+        "SSEEventToolApprovalResolved",
+        "SSEEventGuardrailTripwire",
         "SSEEventResult",
         "SSEEventPromptSuggestion",
         "SSEEventSubagentStart",
@@ -91,8 +100,8 @@ def test_schema_has_all_message_types() -> None:
         "SSEEventHistorySync",
         "SSEEventMetadataUpdated",
     }
-    assert len(sse_types) == 30, (
-        "SSE event $defs 30종 (orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 그대로)."
+    assert len(sse_types) == 36, (
+        "SSE event $defs 36종 (orch-server/constants.py KNOWN_SSE_EVENT_TYPES + Agents SDK events)."
     )
 
     expected = wire_types | sse_types
@@ -133,9 +142,12 @@ def test_oneof_covers_all_wire_messages() -> None:
         "ErrorMessage",
         "InterveneAck",
         "RespondAck",
+        "ToolApprovalAck",
         "CreateSession",
         "Intervene",
         "Respond",
+        "ApproveTool",
+        "RejectTool",
         "ListSessions",
         "HealthCheck",
         "SubscribeEvents",
@@ -179,6 +191,12 @@ def test_known_sse_event_types_completeness() -> None:
         "text_end",
         "tool_start",
         "tool_result",
+        "agent_updated",
+        "handoff_requested",
+        "handoff_occurred",
+        "tool_approval_requested",
+        "tool_approval_resolved",
+        "guardrail_tripwire",
         "result",
         "prompt_suggestion",
         "subagent_start",

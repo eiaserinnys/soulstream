@@ -8,14 +8,16 @@
 
 import { useEffect, useState } from 'react';
 import { useDashboardStore, type DashboardState, type DashboardActions } from '../stores/dashboard-store';
-import { submitInputResponse } from '../lib/input-request-actions';
+import { submitInputResponse, submitToolApproval } from '../lib/input-request-actions';
 import { useInputRequestTimer } from '../hooks/useInputRequestTimer';
 import { formatTime } from '../lib/input-request-utils';
 import { cn } from '../lib/cn';
-import type { EventTreeNode, InputRequestNodeDef, InputRequestQuestion } from '@shared/types';
+import type { EventTreeNode, InputRequestNodeDef, InputRequestQuestion, ToolApprovalNodeDef } from '@shared/types';
+
+type PendingPromptNode = InputRequestNodeDef | ToolApprovalNodeDef;
 
 /** 트리를 재귀 순회하여 미응답·미만료 input_request 노드를 반환 */
-function findPendingInputRequest(nodes: EventTreeNode[]): InputRequestNodeDef | null {
+function findPendingPrompt(nodes: EventTreeNode[]): PendingPromptNode | null {
   for (const node of nodes) {
     if (
       node.type === 'input_request' &&
@@ -24,8 +26,14 @@ function findPendingInputRequest(nodes: EventTreeNode[]): InputRequestNodeDef | 
     ) {
       return node as InputRequestNodeDef;
     }
+    if (
+      node.type === 'tool_approval' &&
+      !(node as ToolApprovalNodeDef).resolved
+    ) {
+      return node as ToolApprovalNodeDef;
+    }
     if (node.children && node.children.length > 0) {
-      const found = findPendingInputRequest(node.children);
+      const found = findPendingPrompt(node.children);
       if (found) return found;
     }
   }
@@ -33,11 +41,65 @@ function findPendingInputRequest(nodes: EventTreeNode[]): InputRequestNodeDef | 
 }
 
 interface AskQuestionBannerInnerProps {
-  node: InputRequestNodeDef;
+  node: PendingPromptNode;
   sessionId: string;
 }
 
 function AskQuestionBannerInner({ node, sessionId }: AskQuestionBannerInnerProps) {
+  if (node.type === 'tool_approval') {
+    return <ToolApprovalBanner node={node} sessionId={sessionId} />;
+  }
+  return <InputRequestBanner node={node} sessionId={sessionId} />;
+}
+
+function ToolApprovalBanner({ node, sessionId }: { node: ToolApprovalNodeDef; sessionId: string }) {
+  const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
+  const handleDecision = async (decision: "approved" | "rejected") => {
+    if (selectedAnswer) return;
+    setSelectedAnswer(decision);
+    const success = await submitToolApproval(
+      sessionId,
+      node.approvalId,
+      node.id,
+      decision,
+      decision === "rejected" ? "Rejected by user" : undefined,
+    );
+    if (!success) {
+      setSelectedAnswer(null);
+    }
+  };
+
+  return (
+    <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[1000] bg-background border border-border rounded-xl p-4 min-w-80 max-w-[520px] shadow-lg">
+      <div className="mb-2 text-xs text-muted-foreground">도구 승인이 필요합니다</div>
+      <div className="mb-1 font-medium text-foreground">{node.toolName}</div>
+      {node.agentName && (
+        <div className="mb-2 text-xs text-muted-foreground">{node.agentName}</div>
+      )}
+      <pre className="mb-3 max-h-32 overflow-auto rounded border border-border bg-muted/30 p-2 text-xs text-muted-foreground">
+        {JSON.stringify(node.toolInput, null, 2)}
+      </pre>
+      <div className="flex justify-end gap-2">
+        <button
+          onClick={() => handleDecision("rejected")}
+          disabled={!!selectedAnswer}
+          className="px-3.5 py-1.5 rounded border border-border bg-popover text-xs text-foreground hover:bg-muted/50 disabled:opacity-50 disabled:cursor-default"
+        >
+          거부
+        </button>
+        <button
+          onClick={() => handleDecision("approved")}
+          disabled={!!selectedAnswer}
+          className="px-3.5 py-1.5 rounded border border-success bg-success text-xs text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-default"
+        >
+          승인
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function InputRequestBanner({ node, sessionId }: { node: InputRequestNodeDef; sessionId: string }) {
   const expireInputRequest = useDashboardStore((s: DashboardState & DashboardActions) => s.expireInputRequest);
   const { remainingSec, isExpired } = useInputRequestTimer(node.receivedAt, node.timeoutSec ?? 300);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
@@ -128,7 +190,7 @@ export function AskQuestionBanner() {
   if (!tree || !activeSessionKey) return null;
 
   // 트리 루트부터 순회 (session 루트의 children 포함)
-  const pendingNode = findPendingInputRequest([tree]);
+  const pendingNode = findPendingPrompt([tree]);
   if (!pendingNode) return null;
 
   return <AskQuestionBannerInner node={pendingNode} sessionId={activeSessionKey} />;

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 51개 $defs (wire 21 + SSE event 30). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16).",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 60개 $defs (wire 24 + SSE event 36). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16) + OpenAI Agents SDK parity (2026-05-21).",
   "$defs": {
     "NodeRegister": {
       "type": "object",
@@ -105,6 +105,12 @@
             { "$ref": "#/$defs/SSEEventTextEnd" },
             { "$ref": "#/$defs/SSEEventToolStart" },
             { "$ref": "#/$defs/SSEEventToolResult" },
+            { "$ref": "#/$defs/SSEEventAgentUpdated" },
+            { "$ref": "#/$defs/SSEEventHandoffRequested" },
+            { "$ref": "#/$defs/SSEEventHandoffOccurred" },
+            { "$ref": "#/$defs/SSEEventToolApprovalRequested" },
+            { "$ref": "#/$defs/SSEEventToolApprovalResolved" },
+            { "$ref": "#/$defs/SSEEventGuardrailTripwire" },
             { "$ref": "#/$defs/SSEEventResult" },
             { "$ref": "#/$defs/SSEEventPromptSuggestion" },
             { "$ref": "#/$defs/SSEEventSubagentStart" },
@@ -214,6 +220,25 @@
         "taskStatus": { "type": "string" }
       }
     },
+    "ToolApprovalAck": {
+      "type": "object",
+      "description": "노드→orch: approve_tool/reject_tool ACK. OpenAI Agents SDK tool approval 결과. 실패도 ACK로 반환하여 orch command timeout을 막는다.",
+      "required": ["type", "requestId", "status"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "tool_approval_ack" },
+        "requestId": { "type": "string" },
+        "approvalId": { "type": "string" },
+        "decision": { "type": "string", "enum": ["approved", "rejected"] },
+        "status": { "type": "string", "enum": ["ok", "error"] },
+        "delivered": { "type": "boolean" },
+        "eventId": { "type": "integer" },
+        "code": { "type": "string" },
+        "message": { "type": "string" },
+        "backend": { "type": "string" },
+        "taskStatus": { "type": "string" }
+      }
+    },
     "CreateSession": {
       "type": "object",
       "description": "orch→노드: 세션 생성. protocol.py:CreateSessionCmd L15-27 + 실측 caller_info 키.",
@@ -281,6 +306,39 @@
         "request_id": { "type": "string", "description": "구버전 호환." },
         "answers": { "type": "object", "additionalProperties": true },
         "requestId": { "type": "string" }
+      }
+    },
+    "ApproveTool": {
+      "type": "object",
+      "description": "orch→노드: OpenAI Agents SDK tool approval 승인.",
+      "required": ["type", "agentSessionId", "approvalId"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "approve_tool" },
+        "agentSessionId": { "type": "string" },
+        "session_id": { "type": "string", "description": "구버전 호환." },
+        "approvalId": { "type": "string" },
+        "approval_id": { "type": "string", "description": "구버전 호환." },
+        "requestId": { "type": "string" },
+        "request_id": { "type": "string" },
+        "alwaysApprove": { "type": "boolean" }
+      }
+    },
+    "RejectTool": {
+      "type": "object",
+      "description": "orch→노드: OpenAI Agents SDK tool approval 거부.",
+      "required": ["type", "agentSessionId", "approvalId"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "reject_tool" },
+        "agentSessionId": { "type": "string" },
+        "session_id": { "type": "string", "description": "구버전 호환." },
+        "approvalId": { "type": "string" },
+        "approval_id": { "type": "string", "description": "구버전 호환." },
+        "requestId": { "type": "string" },
+        "request_id": { "type": "string" },
+        "message": { "type": "string" },
+        "alwaysReject": { "type": "boolean" }
       }
     },
     "ListSessions": {
@@ -547,6 +605,48 @@
       "additionalProperties": true,
       "properties": { "type": { "const": "tool_result" } }
     },
+    "SSEEventAgentUpdated": {
+      "type": "object",
+      "description": "SSE: OpenAI Agents SDK active agent 변경.",
+      "required": ["type"],
+      "additionalProperties": true,
+      "properties": { "type": { "const": "agent_updated" } }
+    },
+    "SSEEventHandoffRequested": {
+      "type": "object",
+      "description": "SSE: OpenAI Agents SDK handoff 요청.",
+      "required": ["type"],
+      "additionalProperties": true,
+      "properties": { "type": { "const": "handoff_requested" } }
+    },
+    "SSEEventHandoffOccurred": {
+      "type": "object",
+      "description": "SSE: OpenAI Agents SDK handoff 완료.",
+      "required": ["type"],
+      "additionalProperties": true,
+      "properties": { "type": { "const": "handoff_occurred" } }
+    },
+    "SSEEventToolApprovalRequested": {
+      "type": "object",
+      "description": "SSE: OpenAI Agents SDK tool approval 요청.",
+      "required": ["type"],
+      "additionalProperties": true,
+      "properties": { "type": { "const": "tool_approval_requested" } }
+    },
+    "SSEEventToolApprovalResolved": {
+      "type": "object",
+      "description": "SSE: OpenAI Agents SDK tool approval 승인/거부 완료.",
+      "required": ["type"],
+      "additionalProperties": true,
+      "properties": { "type": { "const": "tool_approval_resolved" } }
+    },
+    "SSEEventGuardrailTripwire": {
+      "type": "object",
+      "description": "SSE: OpenAI Agents SDK guardrail tripwire로 run 중단.",
+      "required": ["type"],
+      "additionalProperties": true,
+      "properties": { "type": { "const": "guardrail_tripwire" } }
+    },
     "SSEEventResult": {
       "type": "object",
       "description": "SSE: 최종 result.",
@@ -644,9 +744,12 @@
     { "$ref": "#/$defs/ErrorMessage" },
     { "$ref": "#/$defs/InterveneAck" },
     { "$ref": "#/$defs/RespondAck" },
+    { "$ref": "#/$defs/ToolApprovalAck" },
     { "$ref": "#/$defs/CreateSession" },
     { "$ref": "#/$defs/Intervene" },
     { "$ref": "#/$defs/Respond" },
+    { "$ref": "#/$defs/ApproveTool" },
+    { "$ref": "#/$defs/RejectTool" },
     { "$ref": "#/$defs/ListSessions" },
     { "$ref": "#/$defs/HealthCheck" },
     { "$ref": "#/$defs/SubscribeEvents" },

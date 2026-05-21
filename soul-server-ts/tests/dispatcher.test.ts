@@ -89,6 +89,7 @@ function createDispatcher(opts: {
     listTasks: vi.fn(() => runningTasks),
     addIntervention: vi.fn(),
     deliverInputResponse: vi.fn(),
+    deliverToolApproval: vi.fn(),
   };
 
   const defaultExecutor: Partial<TaskExecutor> = {
@@ -152,6 +153,77 @@ describe("CommandDispatcher.health_check", () => {
     const { dispatcher, sent } = createDispatcher();
     await dispatcher.dispatch({ type: "health_check", request_id: "snake-1" });
     expect((sent[0] as { requestId: string }).requestId).toBe("snake-1");
+  });
+});
+
+describe("CommandDispatcher tool approvals", () => {
+  it("reject_tool → deliverToolApproval + tool_approval_ack(status ok)", async () => {
+    const deliverToolApproval = vi.fn().mockResolvedValue({
+      status: "delivered",
+      approvalId: "danger-call-1",
+      decision: "rejected",
+      eventId: 42,
+    });
+    const { dispatcher, sent } = createDispatcher({
+      taskManager: { deliverToolApproval } as Partial<TaskManager>,
+    });
+
+    await dispatcher.dispatch({
+      type: "reject_tool",
+      agentSessionId: "sess-agents",
+      approvalId: "danger-call-1",
+      requestId: "orch-approval-1",
+      message: "User rejected dangerous DB write",
+    });
+
+    expect(deliverToolApproval).toHaveBeenCalledWith({
+      agentSessionId: "sess-agents",
+      approvalId: "danger-call-1",
+      decision: "rejected",
+      message: "User rejected dangerous DB write",
+    });
+    expect(sent).toEqual([
+      {
+        type: "tool_approval_ack",
+        requestId: "orch-approval-1",
+        approvalId: "danger-call-1",
+        decision: "rejected",
+        status: "ok",
+        delivered: true,
+        eventId: 42,
+      },
+    ]);
+  });
+
+  it("approve_tool failure도 ACK error로 반환해 orch timeout을 막음", async () => {
+    const deliverToolApproval = vi.fn().mockResolvedValue({
+      status: "approval_not_pending",
+      approvalId: "danger-call-1",
+      decision: "approved",
+      message: "not pending",
+    });
+    const { dispatcher, sent } = createDispatcher({
+      taskManager: { deliverToolApproval } as Partial<TaskManager>,
+    });
+
+    await dispatcher.dispatch({
+      type: "approve_tool",
+      agentSessionId: "sess-agents",
+      approvalId: "danger-call-1",
+      requestId: "orch-approval-2",
+    });
+
+    expect(sent).toEqual([
+      expect.objectContaining({
+        type: "tool_approval_ack",
+        requestId: "orch-approval-2",
+        approvalId: "danger-call-1",
+        decision: "approved",
+        status: "error",
+        code: "TOOL_APPROVAL_NOT_PENDING",
+        message: "not pending",
+      }),
+    ]);
   });
 });
 

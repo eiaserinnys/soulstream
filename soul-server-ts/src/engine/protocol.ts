@@ -27,7 +27,7 @@ export type SSEEventPayload = SessionEventEnvelope["event"];
  * 백엔드 식별자. 새 백엔드(예: gemini) 추가 시 본 type alias만 갱신.
  * spec-reviewer 1차 P2 — inline literal 대신 분리 (분산 수정 회피).
  */
-export type BackendId = "claude" | "codex";
+export type BackendId = "claude" | "codex" | "openai-agents";
 
 export type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh";
 
@@ -185,4 +185,31 @@ export interface SupportsInputResponse {
     requestId: string,
     answers: Record<string, unknown>,
   ): Promise<InputResponseDeliveryResult> | InputResponseDeliveryResult;
+}
+
+export type ToolApprovalDecision = "approved" | "rejected";
+
+export type ToolApprovalDeliveryStatus =
+  | "delivered"
+  | "approval_not_pending"
+  | "already_resolved"
+  | "not_supported";
+
+export interface ToolApprovalDeliveryOptions {
+  message?: string;
+  alwaysApprove?: boolean;
+  alwaysReject?: boolean;
+}
+
+export interface ToolApprovalDeliveryResult {
+  status: ToolApprovalDeliveryStatus;
+  message?: string;
+}
+
+export interface SupportsToolApproval {
+  deliverToolApproval(
+    approvalId: string,
+    decision: ToolApprovalDecision,
+    options?: ToolApprovalDeliveryOptions,
+  ): Promise<ToolApprovalDeliveryResult> | ToolApprovalDeliveryResult;
 }

@@ -36,7 +36,8 @@ const NEEDS_ROOT = new Set([
   "user_message", "session", "system_message", "intervention_sent", "thinking",
   "text_start", "subagent_start", "tool_start",
   "complete", "error", "result", "compact", "input_request",
-  "assistant_message", "assistant_error", "away_summary",
+  "tool_approval_requested", "agent_updated", "handoff_requested", "handoff_occurred",
+  "guardrail_tripwire", "assistant_message", "assistant_error", "away_summary",
 ]);
 
 /**

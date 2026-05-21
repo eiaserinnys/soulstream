@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AgentProfile } from "../../src/agent_registry.js";
 import type { EventPersistence } from "../../src/db/event_persistence.js";
 import type { SessionDB } from "../../src/db/session_db.js";
-import type { EnginePort, SSEEventPayload } from "../../src/engine/protocol.js";
+import type { EnginePort, SSEEventPayload, SupportsToolApproval } from "../../src/engine/protocol.js";
 import { TaskExecutor, isTerminalStatus } from "../../src/task/task_executor.js";
 import type { Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
@@ -87,6 +87,16 @@ function makeMocks() {
     emitEventEnvelope,
     emitSessionUpdated,
   };
+}
+
+async function waitFor(predicate: () => boolean, timeoutMs = 1000): Promise<void> {
+  const started = Date.now();
+  while (!predicate()) {
+    if (Date.now() - started > timeoutMs) {
+      throw new Error("waitFor timeout");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
 }
 
 describe("TaskExecutor.startExecution", () => {
@@ -237,6 +247,91 @@ describe("TaskExecutor.startExecution", () => {
       status: "completed",
       last_event_id: 6,
     });
+  });
+
+  it("Agents SDK 합성 시나리오: handoff 중 tool approval 거부 → graceful complete", async () => {
+    const mocks = makeMocks();
+    let resolveApproval!: () => void;
+    const approvalPromise = new Promise<void>((resolve) => {
+      resolveApproval = resolve;
+    });
+    const deliverToolApproval = vi.fn(() => {
+      resolveApproval();
+      return { status: "delivered" as const };
+    });
+    const engine: EnginePort & SupportsToolApproval = {
+      backendId: "openai-agents",
+      workspaceDir: "/tmp/agents",
+      async *execute(): AsyncIterable<SSEEventPayload> {
+        yield {
+          type: "handoff_requested",
+          source_agent: "Triage",
+          target_agent: "Database specialist",
+          tool_use_id: "handoff-call-1",
+          timestamp: 1,
+        } as SSEEventPayload;
+        yield {
+          type: "handoff_occurred",
+          source_agent: "Triage",
+          target_agent: "Database specialist",
+          tool_use_id: "handoff-call-1",
+          timestamp: 2,
+        } as SSEEventPayload;
+        yield {
+          type: "tool_approval_requested",
+          approval_id: "danger-call-1",
+          tool_use_id: "danger-call-1",
+          tool_name: "drop_rows",
+          tool_input: { table: "events" },
+          agent_name: "Database specialist",
+          timestamp: 3,
+        } as SSEEventPayload;
+        await approvalPromise;
+        yield {
+          type: "complete",
+          result: "Rejected dangerous tool and stopped safely",
+          attachments: [],
+          timestamp: 4,
+        } as SSEEventPayload;
+      },
+      deliverToolApproval,
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+    task.profileId = "agent-openai";
+    executor.startExecution(task, { ...agent, id: "agent-openai", backend: "openai-agents" });
+
+    await waitFor(() => mocks.emitEventEnvelope.mock.calls.some(
+      (c) => (c[1] as { type: string }).type === "tool_approval_requested",
+    ));
+    const approvalResult = await (task.engine as EnginePort & SupportsToolApproval)
+      .deliverToolApproval("danger-call-1", "rejected", { message: "no prod write" });
+    await task.executionPromise;
+
+    expect(approvalResult).toEqual({ status: "delivered" });
+    expect(deliverToolApproval).toHaveBeenCalledWith(
+      "danger-call-1",
+      "rejected",
+      { message: "no prod write" },
+    );
+    expect(task.status).toBe("completed");
+    const persistedTypes = mocks.persistEvent.mock.calls.map(
+      (c) => (c[1] as { type: string }).type,
+    );
+    expect(persistedTypes).toEqual(expect.arrayContaining([
+      "handoff_requested",
+      "handoff_occurred",
+      "tool_approval_requested",
+      "complete",
+    ]));
   });
 
   it("engine.execute throw → status=error + finalize", async () => {
