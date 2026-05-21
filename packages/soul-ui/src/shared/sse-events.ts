@@ -33,6 +33,12 @@ export type SSEEventType =
   | "text_end"
   | "tool_start"
   | "tool_result"
+  | "agent_updated"
+  | "handoff_requested"
+  | "handoff_occurred"
+  | "tool_approval_requested"
+  | "tool_approval_resolved"
+  | "guardrail_tripwire"
   | "result"
   | "away_summary"
   | "prompt_suggestion"
@@ -304,6 +310,58 @@ export interface ToolResultEvent {
   parent_event_id?: string;
 }
 
+export interface AgentUpdatedEvent {
+  type: "agent_updated";
+  agent_name: string;
+  timestamp: number;
+}
+
+export interface HandoffRequestedEvent {
+  type: "handoff_requested";
+  source_agent: string;
+  target_agent: string;
+  tool_use_id?: string;
+  handoff_input?: unknown;
+  timestamp: number;
+}
+
+export interface HandoffOccurredEvent {
+  type: "handoff_occurred";
+  source_agent: string;
+  target_agent: string;
+  tool_use_id?: string;
+  timestamp: number;
+}
+
+export interface ToolApprovalRequestedEvent {
+  type: "tool_approval_requested";
+  approval_id: string;
+  tool_use_id?: string;
+  tool_name: string;
+  tool_input: Record<string, unknown>;
+  agent_name?: string;
+  timestamp: number;
+}
+
+export interface ToolApprovalResolvedEvent {
+  type: "tool_approval_resolved";
+  approval_id: string;
+  decision: "approved" | "rejected";
+  approved: boolean;
+  rejected: boolean;
+  message?: string;
+  timestamp: number;
+}
+
+export interface GuardrailTripwireEvent {
+  type: "guardrail_tripwire";
+  guardrail_type: string;
+  guardrail_name: string;
+  message: string;
+  output_info?: unknown;
+  timestamp: number;
+}
+
 export interface ResultEvent {
   type: "result";
   timestamp: number;
@@ -477,6 +535,12 @@ export type SoulSSEEvent =
   | TextEndEvent
   | ToolStartEvent
   | ToolResultEvent
+  | AgentUpdatedEvent
+  | HandoffRequestedEvent
+  | HandoffOccurredEvent
+  | ToolApprovalRequestedEvent
+  | ToolApprovalResolvedEvent
+  | GuardrailTripwireEvent
   | ResultEvent
   | SubagentStartEvent
   | SubagentStopEvent

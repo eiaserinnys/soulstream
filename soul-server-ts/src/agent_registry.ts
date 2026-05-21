@@ -12,18 +12,63 @@ import fs from "node:fs";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 
+const AgentsSdkToolSchema = z.object({
+  name: z.string().min(1, "agents_sdk.tool.name required"),
+  description: z.string().default(""),
+  needs_approval: z.boolean().default(false),
+  parameters: z.record(z.unknown()).optional(),
+  output: z.string().optional(),
+});
+
+const AgentsSdkAgentSchema = z.object({
+  id: z.string().min(1, "agents_sdk.agent.id required"),
+  name: z.string().min(1, "agents_sdk.agent.name required"),
+  instructions: z.string().min(1, "agents_sdk.agent.instructions required"),
+  handoff_description: z.string().optional(),
+  model: z.string().optional(),
+  handoffs: z.array(z.string()).default([]),
+  tools: z.array(AgentsSdkToolSchema).default([]),
+});
+
+const AgentsSdkBlocklistGuardrailSchema = z.object({
+  name: z.string().min(1, "agents_sdk.guardrail.name required"),
+  pattern: z.string().min(1, "agents_sdk.guardrail.pattern required"),
+  message: z.string().optional(),
+});
+
+const AgentsSdkConfigSchema = z.object({
+  entry_agent: z.string().min(1, "agents_sdk.entry_agent required"),
+  agents: z.array(AgentsSdkAgentSchema).min(1, "agents_sdk.agents required"),
+  max_turns: z.number().int().positive().optional(),
+  guardrails: z.object({
+    input_blocklist: z.array(AgentsSdkBlocklistGuardrailSchema).default([]),
+    output_blocklist: z.array(AgentsSdkBlocklistGuardrailSchema).default([]),
+  }).default({}),
+});
+
+export type AgentsSdkConfig = z.infer<typeof AgentsSdkConfigSchema>;
+
 /**
  * yaml의 단일 agent 엔트리 schema. Python `AgentProfile` dataclass와 키 호환.
  */
 export const AgentProfileSchema = z.object({
   id: z.string().min(1, "agent.id required"),
   name: z.string().min(1, "agent.name required"),
-  backend: z.enum(["claude", "codex"]),
+  backend: z.enum(["claude", "codex", "openai-agents"]),
   workspace_dir: z.string().min(1, "agent.workspace_dir required"),
   max_turns: z.number().int().positive().optional(),
   allowed_tools: z.array(z.string()).optional(),
   disallowed_tools: z.array(z.string()).optional(),
   portrait_path: z.string().optional(),
+  agents_sdk: AgentsSdkConfigSchema.optional(),
+}).superRefine((profile, ctx) => {
+  if (profile.backend === "openai-agents" && !profile.agents_sdk) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["agents_sdk"],
+      message: "agents_sdk config required when backend is openai-agents",
+    });
+  }
 });
 
 export type AgentProfile = z.infer<typeof AgentProfileSchema>;

@@ -2,7 +2,7 @@ import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
 import type { SessionDB } from "../../src/db/session_db.js";
-import type { EnginePort } from "../../src/engine/protocol.js";
+import type { EnginePort, SupportsToolApproval } from "../../src/engine/protocol.js";
 import { TaskManager } from "../../src/task/task_manager.js";
 import type { Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
@@ -214,6 +214,82 @@ describe("TaskManager.createTask", () => {
       folderId: "folder-42",
     });
     expect(emitSessionCreated.mock.calls[0][1]).toBe("folder-42");
+  });
+});
+
+describe("TaskManager.deliverToolApproval", () => {
+  it("running task의 tool approval reject를 engine capability에 전달하고 resolved SSE를 남김", async () => {
+    const { db, broadcaster, emitEventEnvelope } = makeMocks();
+    const tm = new TaskManager("n", db, broadcaster, silentLogger);
+    const task = await tm.createTask({
+      agentSessionId: "sess-approval",
+      prompt: "dangerous tool",
+      profileId: "agent-openai",
+    });
+    const deliverToolApproval = vi.fn().mockResolvedValue({ status: "delivered" });
+    task.engine = {
+      backendId: "openai-agents",
+      workspaceDir: "/tmp/agents",
+      async *execute(): AsyncIterable<never> {},
+      async interrupt() { return true; },
+      async close() {},
+      deliverToolApproval,
+    } as EnginePort & SupportsToolApproval;
+
+    const result = await tm.deliverToolApproval({
+      agentSessionId: "sess-approval",
+      approvalId: "danger-call-1",
+      decision: "rejected",
+      message: "no prod write",
+    });
+
+    expect(result).toMatchObject({
+      status: "delivered",
+      approvalId: "danger-call-1",
+      decision: "rejected",
+    });
+    expect(deliverToolApproval).toHaveBeenCalledWith("danger-call-1", "rejected", {
+      message: "no prod write",
+    });
+    expect(emitEventEnvelope).toHaveBeenCalledWith(
+      "sess-approval",
+      expect.objectContaining({
+        type: "tool_approval_resolved",
+        approval_id: "danger-call-1",
+        decision: "rejected",
+        approved: false,
+        rejected: true,
+        message: "no prod write",
+      }),
+    );
+  });
+
+  it("tool approval capability가 없으면 input_request respond와 별도로 not_supported를 반환", async () => {
+    const { db, broadcaster } = makeMocks();
+    const tm = new TaskManager("n", db, broadcaster, silentLogger);
+    const task = await tm.createTask({
+      agentSessionId: "sess-no-approval",
+      prompt: "dangerous tool",
+      profileId: "codex-default",
+    });
+    task.engine = {
+      backendId: "codex",
+      workspaceDir: "/tmp/codex",
+      async *execute(): AsyncIterable<never> {},
+      async interrupt() { return true; },
+      async close() {},
+    } as EnginePort;
+
+    await expect(tm.deliverToolApproval({
+      agentSessionId: "sess-no-approval",
+      approvalId: "danger-call-1",
+      decision: "approved",
+    })).resolves.toMatchObject({
+      status: "not_supported",
+      approvalId: "danger-call-1",
+      decision: "approved",
+      backend: "codex",
+    });
   });
 });
 

@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 51개 $defs (wire 21 + SSE event 30). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16).
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 60개 $defs (wire 24 + SSE event 36). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16) + OpenAI Agents SDK parity (2026-05-21).
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -14,9 +14,12 @@ export type SoulstreamUpstreamProtocol =
   | ErrorMessage
   | InterveneAck
   | RespondAck
+  | ToolApprovalAck
   | CreateSession
   | Intervene
   | Respond
+  | ApproveTool
+  | RejectTool
   | ListSessions
   | HealthCheck
   | SubscribeEvents
@@ -118,6 +121,12 @@ export interface SessionEventEnvelope {
     | SSEEventTextEnd
     | SSEEventToolStart
     | SSEEventToolResult
+    | SSEEventAgentUpdated
+    | SSEEventHandoffRequested
+    | SSEEventHandoffOccurred
+    | SSEEventToolApprovalRequested
+    | SSEEventToolApprovalResolved
+    | SSEEventGuardrailTripwire
     | SSEEventResult
     | SSEEventPromptSuggestion
     | SSEEventSubagentStart
@@ -276,6 +285,48 @@ export interface SSEEventToolStart {
  */
 export interface SSEEventToolResult {
   type: "tool_result";
+  [k: string]: unknown;
+}
+/**
+ * SSE: OpenAI Agents SDK active agent 변경.
+ */
+export interface SSEEventAgentUpdated {
+  type: "agent_updated";
+  [k: string]: unknown;
+}
+/**
+ * SSE: OpenAI Agents SDK handoff 요청.
+ */
+export interface SSEEventHandoffRequested {
+  type: "handoff_requested";
+  [k: string]: unknown;
+}
+/**
+ * SSE: OpenAI Agents SDK handoff 완료.
+ */
+export interface SSEEventHandoffOccurred {
+  type: "handoff_occurred";
+  [k: string]: unknown;
+}
+/**
+ * SSE: OpenAI Agents SDK tool approval 요청.
+ */
+export interface SSEEventToolApprovalRequested {
+  type: "tool_approval_requested";
+  [k: string]: unknown;
+}
+/**
+ * SSE: OpenAI Agents SDK tool approval 승인/거부 완료.
+ */
+export interface SSEEventToolApprovalResolved {
+  type: "tool_approval_resolved";
+  [k: string]: unknown;
+}
+/**
+ * SSE: OpenAI Agents SDK guardrail tripwire로 run 중단.
+ */
+export interface SSEEventGuardrailTripwire {
+  type: "guardrail_tripwire";
   [k: string]: unknown;
 }
 /**
@@ -441,6 +492,23 @@ export interface RespondAck {
   [k: string]: unknown;
 }
 /**
+ * 노드→orch: approve_tool/reject_tool ACK. OpenAI Agents SDK tool approval 결과. 실패도 ACK로 반환하여 orch command timeout을 막는다.
+ */
+export interface ToolApprovalAck {
+  type: "tool_approval_ack";
+  requestId: string;
+  approvalId?: string;
+  decision?: "approved" | "rejected";
+  status: "ok" | "error";
+  delivered?: boolean;
+  eventId?: number;
+  code?: string;
+  message?: string;
+  backend?: string;
+  taskStatus?: string;
+  [k: string]: unknown;
+}
+/**
  * orch→노드: 세션 생성. protocol.py:CreateSessionCmd L15-27 + 실측 caller_info 키.
  */
 export interface CreateSession {
@@ -509,6 +577,47 @@ export interface Respond {
     [k: string]: unknown;
   };
   requestId?: string;
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: OpenAI Agents SDK tool approval 승인.
+ */
+export interface ApproveTool {
+  type: "approve_tool";
+  agentSessionId: string;
+  /**
+   * 구버전 호환.
+   */
+  session_id?: string;
+  approvalId: string;
+  /**
+   * 구버전 호환.
+   */
+  approval_id?: string;
+  requestId?: string;
+  request_id?: string;
+  alwaysApprove?: boolean;
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: OpenAI Agents SDK tool approval 거부.
+ */
+export interface RejectTool {
+  type: "reject_tool";
+  agentSessionId: string;
+  /**
+   * 구버전 호환.
+   */
+  session_id?: string;
+  approvalId: string;
+  /**
+   * 구버전 호환.
+   */
+  approval_id?: string;
+  requestId?: string;
+  request_id?: string;
+  message?: string;
+  alwaysReject?: boolean;
   [k: string]: unknown;
 }
 /**

@@ -28,9 +28,16 @@ import type {
   InputRequestEvent,
   InputRequestExpiredEvent,
   InputRequestRespondedEvent,
+  ToolApprovalRequestedEvent,
+  ToolApprovalResolvedEvent,
+  AgentUpdatedEvent,
+  HandoffRequestedEvent,
+  HandoffOccurredEvent,
+  GuardrailTripwireEvent,
   AssistantMessageEvent,
   AssistantErrorEvent,
   AwaySummaryEvent,
+  ToolApprovalNodeDef,
 } from "@shared/types";
 import type { ProcessingContext } from "./processing-context";
 import { makeNode } from "./processing-context";
@@ -229,6 +236,57 @@ export function createNodeFromEvent(
       });
     }
 
+    case "tool_approval_requested": {
+      const e = event as ToolApprovalRequestedEvent;
+      return makeNode(`tool-approval-${eventId}`, "tool_approval", e.tool_name, {
+        approvalId: e.approval_id,
+        toolUseId: e.tool_use_id,
+        toolName: e.tool_name,
+        toolInput: e.tool_input,
+        agentName: e.agent_name,
+        timestamp: e.timestamp,
+        resolved: false,
+      });
+    }
+
+    case "agent_updated": {
+      const e = event as AgentUpdatedEvent;
+      return makeNode(`agent-updated-${eventId}`, "system_message", `Active agent: ${e.agent_name}`, {
+        completed: true,
+        timestamp: e.timestamp,
+      });
+    }
+
+    case "handoff_requested": {
+      const e = event as HandoffRequestedEvent;
+      return makeNode(
+        `handoff-requested-${eventId}`,
+        "system_message",
+        `Handoff requested: ${e.source_agent} -> ${e.target_agent}`,
+        { completed: true, timestamp: e.timestamp },
+      );
+    }
+
+    case "handoff_occurred": {
+      const e = event as HandoffOccurredEvent;
+      return makeNode(
+        `handoff-occurred-${eventId}`,
+        "system_message",
+        `Handoff: ${e.source_agent} -> ${e.target_agent}`,
+        { completed: true, timestamp: e.timestamp },
+      );
+    }
+
+    case "guardrail_tripwire": {
+      const e = event as GuardrailTripwireEvent;
+      return makeNode(
+        `guardrail-${eventId}`,
+        "error",
+        `${e.guardrail_name}: ${e.message}`,
+        { completed: true, isError: true, timestamp: e.timestamp },
+      );
+    }
+
     case "assistant_message": {
       const e = event as AssistantMessageEvent;
       return makeNode(`asst-msg-${eventId}`, "assistant_message", e.content, {
@@ -368,6 +426,21 @@ export function applyUpdate(
         (node as InputRequestNodeDef).responded = true;
         (node as InputRequestNodeDef).completed = true;
         return true;  // treeVersion++ → 배너 리렌더 → findPendingInputRequest가 필터링
+      }
+      return false;
+    }
+
+    case "tool_approval_resolved": {
+      const e = event as ToolApprovalResolvedEvent;
+      const node = ctx.nodeMap.get(e.approval_id);
+      if (node && node.type === "tool_approval") {
+        const approvalNode = node as ToolApprovalNodeDef;
+        approvalNode.resolved = true;
+        approvalNode.completed = true;
+        approvalNode.approved = e.approved;
+        approvalNode.rejected = e.rejected;
+        approvalNode.message = e.message;
+        return true;
       }
       return false;
     }

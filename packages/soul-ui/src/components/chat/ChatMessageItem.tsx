@@ -10,6 +10,7 @@ import { SystemPromptMessage } from "./SystemPromptMessage";
 import { SystemMessage } from "./SystemMessage";
 import { ToolMessage } from "./ToolMessage";
 import { ChatInputRequest } from "./ChatInputRequest";
+import { ChatToolApproval } from "./ChatToolApproval";
 import { AwaySummaryMessage } from "./AwaySummaryMessage";
 
 /**
@@ -54,6 +55,9 @@ export const ChatMessageItem = memo(function ChatMessageItem({ msg, llmContext, 
       break;
     case "input_request":
       body = sessionId ? <ChatInputRequest msg={msg} sessionId={sessionId} /> : null;
+      break;
+    case "tool_approval":
+      body = sessionId ? <ChatToolApproval msg={msg} sessionId={sessionId} /> : null;
       break;
     case "away_summary":
       body = <AwaySummaryMessage msg={msg} />;

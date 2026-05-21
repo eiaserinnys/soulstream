@@ -36,3 +36,30 @@ export async function submitInputResponse(
     return false;
   }
 }
+
+export async function submitToolApproval(
+  sessionId: string,
+  approvalId: string,
+  nodeId: string,
+  decision: "approved" | "rejected",
+  message?: string,
+): Promise<boolean> {
+  try {
+    const node = useDashboardStore.getState().processingCtx?.nodeMap?.get(nodeId);
+    if (node?.type === "tool_approval" && (node as any).resolved) {
+      return false;
+    }
+    const action = decision === "approved" ? "approve" : "reject";
+    const response = await fetch(
+      `/api/sessions/${encodeURIComponent(sessionId)}/tool-approvals/${encodeURIComponent(approvalId)}/${action}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(message ? { message } : {}),
+      },
+    );
+    return response.ok;
+  } catch {
+    return false;
+  }
+}

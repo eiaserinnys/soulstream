@@ -124,6 +124,24 @@ class RespondAck(TypedDict):
     taskStatus: NotRequired[str]
 
 
+class ToolApprovalAck(TypedDict):
+    """
+    노드→orch: approve_tool/reject_tool ACK. OpenAI Agents SDK tool approval 결과. 실패도 ACK로 반환하여 orch command timeout을 막는다.
+    """
+
+    type: Literal['tool_approval_ack']
+    requestId: str
+    approvalId: NotRequired[str]
+    decision: NotRequired[Literal['approved', 'rejected']]
+    status: Literal['ok', 'error']
+    delivered: NotRequired[bool]
+    eventId: NotRequired[int]
+    code: NotRequired[str]
+    message: NotRequired[str]
+    backend: NotRequired[str]
+    taskStatus: NotRequired[str]
+
+
 class CreateSession(TypedDict):
     """
     orch→노드: 세션 생성. protocol.py:CreateSessionCmd L15-27 + 실측 caller_info 키.
@@ -172,6 +190,37 @@ class Respond(TypedDict):
     request_id: NotRequired[str]
     answers: dict[str, Any]
     requestId: NotRequired[str]
+
+
+class ApproveTool(TypedDict):
+    """
+    orch→노드: OpenAI Agents SDK tool approval 승인.
+    """
+
+    type: Literal['approve_tool']
+    agentSessionId: str
+    session_id: NotRequired[str]
+    approvalId: str
+    approval_id: NotRequired[str]
+    requestId: NotRequired[str]
+    request_id: NotRequired[str]
+    alwaysApprove: NotRequired[bool]
+
+
+class RejectTool(TypedDict):
+    """
+    orch→노드: OpenAI Agents SDK tool approval 거부.
+    """
+
+    type: Literal['reject_tool']
+    agentSessionId: str
+    session_id: NotRequired[str]
+    approvalId: str
+    approval_id: NotRequired[str]
+    requestId: NotRequired[str]
+    request_id: NotRequired[str]
+    message: NotRequired[str]
+    alwaysReject: NotRequired[bool]
 
 
 class ListSessions(TypedDict):
@@ -434,6 +483,54 @@ class SSEEventToolResult(TypedDict):
     type: Literal['tool_result']
 
 
+class SSEEventAgentUpdated(TypedDict):
+    """
+    SSE: OpenAI Agents SDK active agent 변경.
+    """
+
+    type: Literal['agent_updated']
+
+
+class SSEEventHandoffRequested(TypedDict):
+    """
+    SSE: OpenAI Agents SDK handoff 요청.
+    """
+
+    type: Literal['handoff_requested']
+
+
+class SSEEventHandoffOccurred(TypedDict):
+    """
+    SSE: OpenAI Agents SDK handoff 완료.
+    """
+
+    type: Literal['handoff_occurred']
+
+
+class SSEEventToolApprovalRequested(TypedDict):
+    """
+    SSE: OpenAI Agents SDK tool approval 요청.
+    """
+
+    type: Literal['tool_approval_requested']
+
+
+class SSEEventToolApprovalResolved(TypedDict):
+    """
+    SSE: OpenAI Agents SDK tool approval 승인/거부 완료.
+    """
+
+    type: Literal['tool_approval_resolved']
+
+
+class SSEEventGuardrailTripwire(TypedDict):
+    """
+    SSE: OpenAI Agents SDK guardrail tripwire로 run 중단.
+    """
+
+    type: Literal['guardrail_tripwire']
+
+
 class SSEEventResult(TypedDict):
     """
     SSE: 최종 result.
@@ -556,6 +653,12 @@ class SessionEventEnvelope(TypedDict):
         | SSEEventTextEnd
         | SSEEventToolStart
         | SSEEventToolResult
+        | SSEEventAgentUpdated
+        | SSEEventHandoffRequested
+        | SSEEventHandoffOccurred
+        | SSEEventToolApprovalRequested
+        | SSEEventToolApprovalResolved
+        | SSEEventGuardrailTripwire
         | SSEEventResult
         | SSEEventPromptSuggestion
         | SSEEventSubagentStart
@@ -581,9 +684,12 @@ SoulstreamUpstreamProtocol: TypeAlias = (
     | ErrorMessage
     | InterveneAck
     | RespondAck
+    | ToolApprovalAck
     | CreateSession
     | Intervene
     | Respond
+    | ApproveTool
+    | RejectTool
     | ListSessions
     | HealthCheck
     | SubscribeEvents

@@ -31,6 +31,9 @@ import type {
   ReasoningEffort,
   SSEEventPayload,
   SupportsInputResponse,
+  SupportsToolApproval,
+  ToolApprovalDecision,
+  ToolApprovalDeliveryResult,
 } from "../engine/protocol.js";
 
 export interface CreateTaskParams {
@@ -91,6 +94,30 @@ export interface DeliverInputResponseParams {
 export interface DeliverInputResponseResult {
   status: DeliverInputResponseStatus;
   requestId: string;
+  eventId?: number;
+  message?: string;
+  taskStatus?: TaskStatus;
+  backend?: BackendId | string;
+}
+
+export type DeliverToolApprovalStatus =
+  | ToolApprovalDeliveryResult["status"]
+  | "session_not_found"
+  | "session_not_running";
+
+export interface DeliverToolApprovalParams {
+  agentSessionId: string;
+  approvalId: string;
+  decision: ToolApprovalDecision;
+  message?: string;
+  alwaysApprove?: boolean;
+  alwaysReject?: boolean;
+}
+
+export interface DeliverToolApprovalResult {
+  status: DeliverToolApprovalStatus;
+  approvalId: string;
+  decision: ToolApprovalDecision;
   eventId?: number;
   message?: string;
   taskStatus?: TaskStatus;
@@ -336,6 +363,77 @@ export class TaskManager {
     };
   }
 
+  /**
+   * Agents SDK tool approval 전달.
+   *
+   * AskUserQuestion/respond와 별도 capability로 분리한다. `respond`는 Claude
+   * input_request에만 대응하고, `approve_tool`/`reject_tool`은 Agents SDK
+   * RunToolApprovalItem interruption에만 대응한다.
+   */
+  async deliverToolApproval(
+    params: DeliverToolApprovalParams,
+  ): Promise<DeliverToolApprovalResult> {
+    const task = this.tasks.get(params.agentSessionId);
+    if (!task) {
+      return {
+        status: "session_not_found",
+        approvalId: params.approvalId,
+        decision: params.decision,
+      };
+    }
+    if (task.status !== "running") {
+      return {
+        status: "session_not_running",
+        approvalId: params.approvalId,
+        decision: params.decision,
+        taskStatus: task.status,
+      };
+    }
+
+    const engine = task.engine;
+    if (!supportsToolApproval(engine)) {
+      return {
+        status: "not_supported",
+        approvalId: params.approvalId,
+        decision: params.decision,
+        backend: taskBackend(task, this.agentRegistry),
+      };
+    }
+
+    const delivered = await engine.deliverToolApproval(
+      params.approvalId,
+      params.decision,
+      {
+        ...(params.message ? { message: params.message } : {}),
+        ...(params.alwaysApprove !== undefined
+          ? { alwaysApprove: params.alwaysApprove }
+          : {}),
+        ...(params.alwaysReject !== undefined
+          ? { alwaysReject: params.alwaysReject }
+          : {}),
+      },
+    );
+    if (delivered.status !== "delivered") {
+      return {
+        status: delivered.status,
+        approvalId: params.approvalId,
+        decision: params.decision,
+        ...(delivered.message ? { message: delivered.message } : {}),
+        ...(delivered.status === "not_supported"
+          ? { backend: taskBackend(task, this.agentRegistry) }
+          : {}),
+      };
+    }
+
+    const eventId = await this.persistAndBroadcastToolApprovalResolved(task, params);
+    return {
+      status: "delivered",
+      approvalId: params.approvalId,
+      decision: params.decision,
+      ...(eventId !== undefined ? { eventId } : {}),
+    };
+  }
+
   private async persistAndBroadcastInputRequestResponded(
     task: Task,
     requestId: string,
@@ -378,6 +476,59 @@ export class TaskManager {
       this.logger.warn(
         { err, sessionId: task.agentSessionId, requestId },
         "input_request_responded broadcast failed",
+      );
+    }
+    return eventId;
+  }
+
+  private async persistAndBroadcastToolApprovalResolved(
+    task: Task,
+    params: DeliverToolApprovalParams,
+  ): Promise<number | undefined> {
+    const event: Record<string, unknown> = {
+      type: "tool_approval_resolved",
+      approval_id: params.approvalId,
+      decision: params.decision,
+      approved: params.decision === "approved",
+      rejected: params.decision === "rejected",
+      timestamp: Date.now() / 1000,
+    };
+    if (params.message) {
+      event.message = params.message;
+    }
+
+    let eventId: number | undefined;
+    if (this.persistence) {
+      try {
+        eventId = await this.persistence.persistEvent(
+          task.agentSessionId,
+          event as SSEEventPayload,
+        );
+        task.lastEventId = eventId;
+        event._event_id = eventId;
+        await this.persistence.handleSideEffects(
+          task.agentSessionId,
+          event as SSEEventPayload,
+          task,
+        );
+      } catch (err) {
+        this.logger.warn(
+          { err, sessionId: task.agentSessionId, approvalId: params.approvalId },
+          "tool_approval_resolved persistence failed",
+        );
+        eventId = undefined;
+      }
+    }
+
+    try {
+      await this.broadcaster.emitEventEnvelope(
+        task.agentSessionId,
+        event as SSEEventPayload,
+      );
+    } catch (err) {
+      this.logger.warn(
+        { err, sessionId: task.agentSessionId, approvalId: params.approvalId },
+        "tool_approval_resolved broadcast failed",
       );
     }
     return eventId;
@@ -898,6 +1049,16 @@ function supportsInputResponse(
   return Boolean(
     engine &&
       typeof (engine as unknown as Partial<SupportsInputResponse>).deliverInputResponse ===
+        "function",
+  );
+}
+
+function supportsToolApproval(
+  engine: Task["engine"],
+): engine is NonNullable<Task["engine"]> & SupportsToolApproval {
+  return Boolean(
+    engine &&
+      typeof (engine as unknown as Partial<SupportsToolApproval>).deliverToolApproval ===
         "function",
   );
 }

@@ -17,6 +17,8 @@ import { buildAttachmentContextItems, splitAttachmentPaths } from "../task/attac
 import type {
   DeliverInputResponseResult,
   DeliverInputResponseStatus,
+  DeliverToolApprovalResult,
+  DeliverToolApprovalStatus,
   TaskManager,
 } from "../task/task_manager.js";
 import type { CallerInfo, Task } from "../task/task_models.js";
@@ -70,6 +72,17 @@ interface RespondCmd extends CommandLike {
   session_id?: string;
   inputRequestId?: string;
   answers?: Record<string, unknown>;
+}
+
+interface ToolApprovalCmd extends CommandLike {
+  type: "approve_tool" | "reject_tool";
+  agentSessionId?: string;
+  session_id?: string;
+  approvalId?: string;
+  approval_id?: string;
+  message?: string;
+  alwaysApprove?: boolean;
+  alwaysReject?: boolean;
 }
 
 interface SubscribeEventsCmd extends CommandLike {
@@ -151,6 +164,8 @@ export class CommandDispatcher {
       create_session: (cmd) => this.handleCreateSession(cmd as CreateSessionCmd),
       intervene: (cmd) => this.handleIntervene(cmd as IntervenCmd),
       respond: (cmd) => this.handleRespond(cmd as RespondCmd),
+      approve_tool: (cmd) => this.handleToolApproval(cmd as ToolApprovalCmd),
+      reject_tool: (cmd) => this.handleToolApproval(cmd as ToolApprovalCmd),
       subscribe_events: (cmd) => this.handleSubscribeEvents(cmd as SubscribeEventsCmd),
       list_sessions: (cmd) => this.handleListSessions(cmd as ListSessionsCmd),
       upload_attachment: (cmd) => this.handleUploadAttachment(cmd as UploadAttachmentCmd),
@@ -240,6 +255,60 @@ export class CommandDispatcher {
       status: "error",
       code: respondErrorCode(result.status),
       message: result.message ?? defaultRespondErrorMessage(result),
+      ...(result.backend ? { backend: result.backend } : {}),
+      ...(result.taskStatus ? { taskStatus: result.taskStatus } : {}),
+    });
+  }
+
+  /**
+   * `approve_tool` / `reject_tool` 명령 — OpenAI Agents SDK RunToolApprovalItem 응답.
+   *
+   * `respond` 명령은 Claude AskUserQuestion 전용이므로 승인 wire를 별도 명령으로 둔다.
+   * 실패도 `tool_approval_ack(status="error")`로 반환해 orch `_send_command` timeout을 막는다.
+   */
+  private async handleToolApproval(cmd: ToolApprovalCmd): Promise<void> {
+    const sessionId = cmd.agentSessionId ?? cmd.session_id ?? "";
+    const approvalId = cmd.approvalId ?? cmd.approval_id ?? "";
+    if (!sessionId || !approvalId) {
+      await this.sendError(cmd, `${cmd.type} requires agentSessionId and approvalId`);
+      return;
+    }
+
+    const decision = cmd.type === "approve_tool" ? "approved" : "rejected";
+    const result = await this.taskManager.deliverToolApproval({
+      agentSessionId: sessionId,
+      approvalId,
+      decision,
+      ...(cmd.message ? { message: cmd.message } : {}),
+      ...(cmd.alwaysApprove !== undefined ? { alwaysApprove: cmd.alwaysApprove } : {}),
+      ...(cmd.alwaysReject !== undefined ? { alwaysReject: cmd.alwaysReject } : {}),
+    });
+
+    const requestId = cmd.requestId ?? cmd.request_id ?? "";
+    if (!requestId) {
+      return;
+    }
+    if (result.status === "delivered") {
+      await this.send({
+        type: "tool_approval_ack",
+        requestId,
+        approvalId,
+        decision,
+        status: "ok",
+        delivered: true,
+        ...(result.eventId !== undefined ? { eventId: result.eventId } : {}),
+      });
+      return;
+    }
+
+    await this.send({
+      type: "tool_approval_ack",
+      requestId,
+      approvalId,
+      decision,
+      status: "error",
+      code: toolApprovalErrorCode(result.status),
+      message: result.message ?? defaultToolApprovalErrorMessage(result),
       ...(result.backend ? { backend: result.backend } : {}),
       ...(result.taskStatus ? { taskStatus: result.taskStatus } : {}),
     });
@@ -684,5 +753,39 @@ function defaultRespondErrorMessage(result: DeliverInputResponseResult): string 
       return `Input response is not supported by backend: ${result.backend ?? "unknown"}`;
     case "delivered":
       return "Input response delivered";
+  }
+}
+
+function toolApprovalErrorCode(
+  status: Exclude<DeliverToolApprovalStatus, "delivered">,
+): string {
+  switch (status) {
+    case "approval_not_pending":
+      return "TOOL_APPROVAL_NOT_PENDING";
+    case "already_resolved":
+      return "TOOL_APPROVAL_ALREADY_RESOLVED";
+    case "session_not_running":
+      return "SESSION_NOT_RUNNING";
+    case "session_not_found":
+      return "SESSION_NOT_FOUND";
+    case "not_supported":
+      return "TOOL_APPROVAL_NOT_SUPPORTED";
+  }
+}
+
+function defaultToolApprovalErrorMessage(result: DeliverToolApprovalResult): string {
+  switch (result.status) {
+    case "approval_not_pending":
+      return `Tool approval not pending: ${result.approvalId}`;
+    case "already_resolved":
+      return `Tool approval already resolved: ${result.approvalId}`;
+    case "session_not_running":
+      return `Session is not running: ${result.taskStatus ?? "unknown"}`;
+    case "session_not_found":
+      return "Session not found for tool approval";
+    case "not_supported":
+      return `Tool approval is not supported by backend: ${result.backend ?? "unknown"}`;
+    case "delivered":
+      return "Tool approval delivered";
   }
 }

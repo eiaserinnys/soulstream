@@ -25,6 +25,7 @@ from soulstream_server.api.session_models import (
     ReadPositionRequest,
     RenameSessionRequest,
     RespondRequest,
+    ToolApprovalRequest,
 )
 from soulstream_server.api.session_serializer import _session_to_response
 from soulstream_server.api.session_stream import create_session_stream_response
@@ -42,6 +43,14 @@ RESPOND_ACK_ERROR_HTTP_STATUS = {
     "INPUT_REQUEST_EXPIRED": 422,
     "INPUT_REQUEST_ALREADY_RESPONDED": 422,
     "INPUT_RESPONSE_NOT_SUPPORTED": 422,
+}
+
+TOOL_APPROVAL_ACK_ERROR_HTTP_STATUS = {
+    "SESSION_NOT_FOUND": 404,
+    "SESSION_NOT_RUNNING": 409,
+    "TOOL_APPROVAL_NOT_PENDING": 422,
+    "TOOL_APPROVAL_ALREADY_RESOLVED": 422,
+    "TOOL_APPROVAL_NOT_SUPPORTED": 422,
 }
 
 
@@ -227,6 +236,46 @@ def create_sessions_router(
             _raise_respond_ack_error(result)
         return result
 
+    @router.post("/{session_id}/tool-approvals/{approval_id}/approve")
+    async def approve_tool(
+        session_id: str,
+        approval_id: str,
+        body: ToolApprovalRequest | None = None,
+    ) -> dict:
+        """OpenAI Agents SDK tool approval 승인."""
+        node = await find_session_node(session_id, db, node_manager)
+        req = body or ToolApprovalRequest()
+        result = await node.send_tool_approval(
+            session_id,
+            approval_id,
+            "approved",
+            message=req.message,
+            always_approve=req.alwaysApprove,
+        )
+        if result.get("status") == "error":
+            _raise_tool_approval_ack_error(result)
+        return result
+
+    @router.post("/{session_id}/tool-approvals/{approval_id}/reject")
+    async def reject_tool(
+        session_id: str,
+        approval_id: str,
+        body: ToolApprovalRequest | None = None,
+    ) -> dict:
+        """OpenAI Agents SDK tool approval 거부."""
+        node = await find_session_node(session_id, db, node_manager)
+        req = body or ToolApprovalRequest()
+        result = await node.send_tool_approval(
+            session_id,
+            approval_id,
+            "rejected",
+            message=req.message,
+            always_reject=req.alwaysReject,
+        )
+        if result.get("status") == "error":
+            _raise_tool_approval_ack_error(result)
+        return result
+
     @router.patch("/{session_id}/display-name")
     async def rename_session(session_id: str, body: RenameSessionRequest) -> dict:
         """세션 표시 이름 변경."""
@@ -297,6 +346,22 @@ def _raise_respond_ack_error(result: dict[str, Any]) -> None:
                 "code": code,
                 "message": message,
                 "inputRequestId": result.get("inputRequestId"),
+            },
+        },
+    )
+
+
+def _raise_tool_approval_ack_error(result: dict[str, Any]) -> None:
+    code = str(result.get("code") or "TOOL_APPROVAL_NOT_PENDING")
+    message = str(result.get("message") or code)
+    status_code = TOOL_APPROVAL_ACK_ERROR_HTTP_STATUS.get(code, 422)
+    raise HTTPException(
+        status_code=status_code,
+        detail={
+            "error": {
+                "code": code,
+                "message": message,
+                "approvalId": result.get("approvalId"),
             },
         },
     )

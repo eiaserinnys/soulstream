@@ -6,6 +6,8 @@
 CMD_CREATE_SESSION = "create_session"
 CMD_INTERVENE = "intervene"
 CMD_RESPOND = "respond"
+CMD_APPROVE_TOOL = "approve_tool"
+CMD_REJECT_TOOL = "reject_tool"
 CMD_LIST_SESSIONS = "list_sessions"
 CMD_HEALTH_CHECK = "health_check"
 CMD_SUBSCRIBE_EVENTS = "subscribe_events"
@@ -63,6 +65,9 @@ KNOWN_SSE_EVENT_TYPES = frozenset({
     "input_request_responded", "debug", "complete", "error",
     "credential_alert", "thinking", "text_start", "text_delta", "text_end",
     "tool_start", "tool_result", "result", "prompt_suggestion",
+    "agent_updated", "handoff_requested", "handoff_occurred",
+    "tool_approval_requested", "tool_approval_resolved",
+    "guardrail_tripwire",
     "subagent_start", "subagent_stop",
     "context_usage", "compact", "reconnect", "history_sync",
     "metadata_updated",

@@ -6,10 +6,12 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from soulstream_server.constants import (
+    CMD_APPROVE_TOOL,
     CMD_CREATE_SESSION,
     CMD_DELETE_SESSION_ATTACHMENTS,
     CMD_DOWNLOAD_ATTACHMENT,
     CMD_INTERVENE,
+    CMD_REJECT_TOOL,
     CMD_RESPOND,
     CMD_SUBSCRIBE_EVENTS,
     CMD_UPLOAD_ATTACHMENT,
@@ -238,6 +240,76 @@ class TestCommandSending:
         assert sent["requestId"] != "ask-hex-1"
         assert result["status"] == "ok"
         assert result["inputRequestId"] == "ask-hex-1"
+
+    async def test_send_tool_approval_sends_approval_command(self, node, ws):
+        """tool approval 명령은 approvalId와 별도 ACK requestId를 함께 보낸다."""
+
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            req_id = data["requestId"]
+            if req_id in node._pending:
+                node._pending[req_id].set_result({
+                    "type": "tool_approval_ack",
+                    "requestId": req_id,
+                    "status": "ok",
+                    "approvalId": data["approvalId"],
+                    "decision": "rejected",
+                    "delivered": True,
+                })
+
+        ws.send_json.side_effect = resolve_future
+
+        result = await node.send_tool_approval(
+            "sess-1",
+            "danger-call-1",
+            "rejected",
+            message="no prod write",
+            always_reject=True,
+        )
+
+        sent = ws.send_json.call_args[0][0]
+        assert sent["type"] == CMD_REJECT_TOOL
+        assert sent["agentSessionId"] == "sess-1"
+        assert sent["approvalId"] == "danger-call-1"
+        assert sent["requestId"] != "danger-call-1"
+        assert sent["message"] == "no prod write"
+        assert sent["alwaysReject"] is True
+        assert result["status"] == "ok"
+        assert result["approvalId"] == "danger-call-1"
+
+    async def test_send_tool_approval_sends_approve_command(self, node, ws):
+        """approved decision은 approve_tool 명령으로 전송한다."""
+
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            req_id = data["requestId"]
+            if req_id in node._pending:
+                node._pending[req_id].set_result({
+                    "type": "tool_approval_ack",
+                    "requestId": req_id,
+                    "status": "ok",
+                    "approvalId": data["approvalId"],
+                    "decision": "approved",
+                    "delivered": True,
+                })
+
+        ws.send_json.side_effect = resolve_future
+
+        result = await node.send_tool_approval(
+            "sess-1",
+            "safe-call-1",
+            "approved",
+            always_approve=True,
+        )
+
+        sent = ws.send_json.call_args[0][0]
+        assert sent["type"] == CMD_APPROVE_TOOL
+        assert sent["agentSessionId"] == "sess-1"
+        assert sent["approvalId"] == "safe-call-1"
+        assert sent["requestId"] != "safe-call-1"
+        assert sent["alwaysApprove"] is True
+        assert result["status"] == "ok"
+        assert result["approvalId"] == "safe-call-1"
 
     async def test_send_subscribe_events_sends_command_and_registers_listener(self, node, ws):
         """subscribe_events sends command and registers the callback."""

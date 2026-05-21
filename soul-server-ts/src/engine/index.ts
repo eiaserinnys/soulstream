@@ -29,6 +29,9 @@ export type {
   ClaudeRunOptions,
 } from "./claude_adapter.js";
 export type { ClaudeSdkClientConfig, ClaudeSdkQueryFn } from "./claude_sdk_client.js";
+export { AgentsEngineAdapter } from "./agents_adapter.js";
+export type { AgentsAdapterConfig } from "./agents_adapter.js";
 
 export { mapThreadEvent } from "./codex_event_mapper.js";
 export { mapClaudeClientEvent } from "./claude_event_mapper.js";
+export { mapAgentsGuardrailError, mapAgentsRunStreamEvent } from "./agents_event_mapper.js";

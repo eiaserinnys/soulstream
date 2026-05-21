@@ -10,6 +10,7 @@ import { SessionDB } from "./db/session_db.js";
 import { EventPersistence } from "./db/event_persistence.js";
 import { ClaudeEngineAdapter } from "./engine/claude_adapter.js";
 import { CodexEngineAdapter } from "./engine/codex_adapter.js";
+import { AgentsEngineAdapter } from "./engine/agents_adapter.js";
 import { createLogger } from "./logger.js";
 import { wsToHttpBase } from "./mcp/orch_proxy.js";
 import type { McpRuntime, OrchProxyConfig } from "./mcp/runtime.js";
@@ -180,6 +181,15 @@ async function main(): Promise<void> {
         {
           workspaceDir: agent.workspace_dir,
           processEnv: claudeAuth.buildProcessEnv(process.env),
+        },
+        logger,
+      );
+    }
+    if (agent.backend === "openai-agents") {
+      return new AgentsEngineAdapter(
+        {
+          workspaceDir: agent.workspace_dir,
+          profile: agent,
         },
         logger,
       );

@@ -187,6 +187,20 @@ export interface InputRequestNodeDef extends BaseNode {
   serverExpiredAt?: number;  // 서버 만료 이벤트 수신 시각 (ms) — expired=true 즉시 설정 방지용
 }
 
+/** OpenAI Agents SDK tool approval 요청 노드 */
+export interface ToolApprovalNodeDef extends BaseNode {
+  type: "tool_approval";
+  approvalId: string;
+  toolUseId?: string;
+  toolName: string;
+  toolInput: Record<string, unknown>;
+  agentName?: string;
+  resolved?: boolean;
+  approved?: boolean;
+  rejected?: boolean;
+  message?: string;
+}
+
 /** LLM 프록시 어시스턴트 응답 노드 */
 export interface AssistantMessageNode extends BaseNode {
   type: "assistant_message";
@@ -222,6 +236,7 @@ export type EventTreeNode =
   | CompleteNode
   | ErrorNode
   | InputRequestNodeDef
+  | ToolApprovalNodeDef
   | AssistantMessageNode
   | AssistantErrorNode
   | AwaySummaryNode;
