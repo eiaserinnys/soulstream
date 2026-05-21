@@ -4,7 +4,7 @@ Sessions API Request/Response 모델.
 sessions.py 라우터가 사용하는 Pydantic 모델 정의.
 """
 
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
@@ -55,6 +55,27 @@ class ToolApprovalRequest(BaseModel):
     message: Optional[str] = None
     alwaysApprove: Optional[bool] = None
     alwaysReject: Optional[bool] = None
+
+
+class RealtimeCreateCallRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    offerSdp: str = Field(validation_alias=AliasChoices("offerSdp", "offer_sdp"))
+    model: Optional[str] = None
+    voice: Optional[str] = None
+    instructions: Optional[str] = None
+
+
+class RealtimeEventRequest(BaseModel):
+    event: dict[str, Any]
+    callId: Optional[str] = None
+
+
+class RealtimeToolApprovalRequest(BaseModel):
+    decision: Literal["approved", "rejected"]
+    message: Optional[str] = None
+    source: Optional[Literal["tap", "voice"]] = None
+    callId: Optional[str] = None
 
 
 class RenameSessionRequest(BaseModel):

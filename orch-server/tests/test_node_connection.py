@@ -11,6 +11,9 @@ from soulstream_server.constants import (
     CMD_DELETE_SESSION_ATTACHMENTS,
     CMD_DOWNLOAD_ATTACHMENT,
     CMD_INTERVENE,
+    CMD_REALTIME_CREATE_CALL,
+    CMD_REALTIME_EVENT,
+    CMD_REALTIME_RESOLVE_TOOL_APPROVAL,
     CMD_REJECT_TOOL,
     CMD_RESPOND,
     CMD_SUBSCRIBE_EVENTS,
@@ -310,6 +313,102 @@ class TestCommandSending:
         assert sent["alwaysApprove"] is True
         assert result["status"] == "ok"
         assert result["approvalId"] == "safe-call-1"
+
+    async def test_send_realtime_create_call_sends_offer_without_api_key(self, node, ws):
+        """Realtime call broker command은 SDP offer만 전달하고 OpenAI key를 앱/오케스트레이터에 싣지 않는다."""
+
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            req_id = data["requestId"]
+            if req_id in node._pending:
+                node._pending[req_id].set_result({
+                    "type": "realtime_call_created",
+                    "requestId": req_id,
+                    "status": "ok",
+                    "callId": "call_1",
+                    "answerSdp": "answer",
+                })
+
+        ws.send_json.side_effect = resolve_future
+
+        result = await node.send_realtime_create_call(
+            "sess-rt",
+            "offer",
+            model="gpt-realtime",
+            voice="alloy",
+        )
+
+        sent = ws.send_json.call_args[0][0]
+        assert sent["type"] == CMD_REALTIME_CREATE_CALL
+        assert sent["agentSessionId"] == "sess-rt"
+        assert sent["offerSdp"] == "offer"
+        assert sent["model"] == "gpt-realtime"
+        assert sent["voice"] == "alloy"
+        assert "apiKey" not in sent
+        assert result["answerSdp"] == "answer"
+
+    async def test_send_realtime_event_sends_data_channel_event(self, node, ws):
+        """soul-app data-channel event를 realtime_event command로 전달한다."""
+
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            req_id = data["requestId"]
+            if req_id in node._pending:
+                node._pending[req_id].set_result({
+                    "type": "realtime_event_ack",
+                    "requestId": req_id,
+                    "status": "ok",
+                    "normalizedType": "realtime_transcript",
+                    "eventId": 5,
+                })
+
+        ws.send_json.side_effect = resolve_future
+
+        result = await node.send_realtime_event(
+            "sess-rt",
+            {"type": "response.audio_transcript.done", "transcript": "hi"},
+            call_id="call_1",
+        )
+
+        sent = ws.send_json.call_args[0][0]
+        assert sent["type"] == CMD_REALTIME_EVENT
+        assert sent["agentSessionId"] == "sess-rt"
+        assert sent["event"]["type"] == "response.audio_transcript.done"
+        assert sent["callId"] == "call_1"
+        assert result["normalizedType"] == "realtime_transcript"
+
+    async def test_send_realtime_tool_approval_sends_decision_command(self, node, ws):
+        """voice/tap realtime approval resolution은 별도 command로 전달한다."""
+
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            req_id = data["requestId"]
+            if req_id in node._pending:
+                node._pending[req_id].set_result({
+                    "type": "realtime_tool_approval_ack",
+                    "requestId": req_id,
+                    "status": "ok",
+                    "approvalId": data["approvalId"],
+                    "decision": data["decision"],
+                    "dataChannelEvent": {"type": "tool_approval.response"},
+                })
+
+        ws.send_json.side_effect = resolve_future
+
+        result = await node.send_realtime_tool_approval(
+            "sess-rt",
+            "approval-1",
+            "approved",
+            source="voice",
+        )
+
+        sent = ws.send_json.call_args[0][0]
+        assert sent["type"] == CMD_REALTIME_RESOLVE_TOOL_APPROVAL
+        assert sent["agentSessionId"] == "sess-rt"
+        assert sent["approvalId"] == "approval-1"
+        assert sent["decision"] == "approved"
+        assert sent["source"] == "voice"
+        assert result["status"] == "ok"
 
     async def test_send_subscribe_events_sends_command_and_registers_listener(self, node, ws):
         """subscribe_events sends command and registers the callback."""

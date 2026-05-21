@@ -15,6 +15,7 @@ import { createLogger } from "./logger.js";
 import { wsToHttpBase } from "./mcp/orch_proxy.js";
 import type { McpRuntime, OrchProxyConfig } from "./mcp/runtime.js";
 import { buildServer, startServer } from "./server.js";
+import { RealtimeBroker } from "./realtime/realtime_broker.js";
 import { TaskCompletionNotifier } from "./task/completion_notifier.js";
 import { TaskExecutor, type EngineFactory } from "./task/task_executor.js";
 import {
@@ -129,6 +130,14 @@ async function main(): Promise<void> {
 
   const broadcaster = new SessionBroadcaster(send, agentRegistry, env.SOULSTREAM_NODE_ID);
   const persistence = new EventPersistence(db, broadcaster, logger);
+  const realtimeBroker = new RealtimeBroker({
+    agentRegistry,
+    db,
+    persistence,
+    broadcaster,
+    logger,
+    processEnv: process.env,
+  });
 
   // B-6 context_builder: 신규 task 첫 turn 진입 시 folder_prompt + atom_context + soulstream_item을
   // 합성한 prompt를 codex에 전달. atom env 미설정이면 atom 호출 skip (graceful).
@@ -312,7 +321,15 @@ async function main(): Promise<void> {
       isProduction: env.ENVIRONMENT === "production",
     },
     logger,
-    { agentRegistry, taskManager, taskExecutor, attachmentStore, claudeAuth, sessionDb: db },
+    {
+      agentRegistry,
+      taskManager,
+      taskExecutor,
+      attachmentStore,
+      claudeAuth,
+      sessionDb: db,
+      realtimeBroker,
+    },
   );
 
   // 백그라운드 실행 — top-level에서 await 안 함 (재연결 무한 루프이므로)

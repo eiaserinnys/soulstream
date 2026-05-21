@@ -23,6 +23,9 @@ from soulstream_server.api.session_models import (
     CreateSessionRequest,
     InterveneRequest,
     ReadPositionRequest,
+    RealtimeCreateCallRequest,
+    RealtimeEventRequest,
+    RealtimeToolApprovalRequest,
     RenameSessionRequest,
     RespondRequest,
     ToolApprovalRequest,
@@ -274,6 +277,69 @@ def create_sessions_router(
         )
         if result.get("status") == "error":
             _raise_tool_approval_ack_error(result)
+        return result
+
+    @router.post("/{session_id}/realtime/call")
+    async def create_realtime_call(
+        session_id: str,
+        body: RealtimeCreateCallRequest,
+    ) -> dict:
+        """soul-app WebRTC SDP offer를 노드 OpenAI Realtime broker로 전달한다."""
+        node = await find_session_node(session_id, db, node_manager)
+        result = await node.send_realtime_create_call(
+            session_id,
+            body.offerSdp,
+            model=body.model,
+            voice=body.voice,
+            instructions=body.instructions,
+        )
+        if result.get("status") == "error":
+            raise HTTPException(
+                status_code=422,
+                detail={"error": {"code": result.get("code", "REALTIME_ERROR"), "message": result.get("message", "")}},
+            )
+        return result
+
+    @router.post("/{session_id}/realtime/events")
+    async def relay_realtime_event(
+        session_id: str,
+        body: RealtimeEventRequest,
+    ) -> dict:
+        """soul-app Realtime data-channel event를 세션 SSE/DB로 relay한다."""
+        node = await find_session_node(session_id, db, node_manager)
+        result = await node.send_realtime_event(
+            session_id,
+            body.event,
+            call_id=body.callId,
+        )
+        if result.get("status") == "error":
+            raise HTTPException(
+                status_code=422,
+                detail={"error": {"code": result.get("code", "REALTIME_ERROR"), "message": result.get("message", "")}},
+            )
+        return result
+
+    @router.post("/{session_id}/realtime/tool-approvals/{approval_id}/resolve")
+    async def resolve_realtime_tool_approval(
+        session_id: str,
+        approval_id: str,
+        body: RealtimeToolApprovalRequest,
+    ) -> dict:
+        """Realtime voice 중 발생한 tool approval을 tap/voice 결정으로 resolve한다."""
+        node = await find_session_node(session_id, db, node_manager)
+        result = await node.send_realtime_tool_approval(
+            session_id,
+            approval_id,
+            body.decision,
+            message=body.message,
+            source=body.source,
+            call_id=body.callId,
+        )
+        if result.get("status") == "error":
+            raise HTTPException(
+                status_code=422,
+                detail={"error": {"code": result.get("code", "REALTIME_ERROR"), "message": result.get("message", "")}},
+            )
         return result
 
     @router.patch("/{session_id}/display-name")

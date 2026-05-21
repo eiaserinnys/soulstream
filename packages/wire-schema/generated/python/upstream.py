@@ -142,6 +142,54 @@ class ToolApprovalAck(TypedDict):
     taskStatus: NotRequired[str]
 
 
+class RealtimeCallCreated(TypedDict):
+    """
+    노드→orch: realtime_create_call ACK. soul-app WebRTC offer에 대한 OpenAI Realtime SDP answer.
+    """
+
+    type: Literal['realtime_call_created']
+    requestId: str
+    agentSessionId: NotRequired[str]
+    status: Literal['ok', 'error']
+    callId: NotRequired[str]
+    answerSdp: NotRequired[str]
+    eventId: NotRequired[int]
+    code: NotRequired[str]
+    message: NotRequired[str]
+
+
+class RealtimeEventAck(TypedDict):
+    """
+    노드→orch: realtime_event ACK. soul-app data-channel event persistence/relay result.
+    """
+
+    type: Literal['realtime_event_ack']
+    requestId: str
+    agentSessionId: NotRequired[str]
+    status: Literal['ok', 'error']
+    normalizedType: NotRequired[str]
+    eventId: NotRequired[int]
+    code: NotRequired[str]
+    message: NotRequired[str]
+
+
+class RealtimeToolApprovalAck(TypedDict):
+    """
+    노드→orch: realtime_resolve_tool_approval ACK. Persisted resolution plus app data-channel decision event.
+    """
+
+    type: Literal['realtime_tool_approval_ack']
+    requestId: str
+    agentSessionId: NotRequired[str]
+    approvalId: NotRequired[str]
+    decision: NotRequired[Literal['approved', 'rejected']]
+    status: Literal['ok', 'error']
+    dataChannelEvent: NotRequired[dict[str, Any]]
+    eventId: NotRequired[int]
+    code: NotRequired[str]
+    message: NotRequired[str]
+
+
 class CreateSession(TypedDict):
     """
     orch→노드: 세션 생성. protocol.py:CreateSessionCmd L15-27 + 실측 caller_info 키.
@@ -221,6 +269,57 @@ class RejectTool(TypedDict):
     request_id: NotRequired[str]
     message: NotRequired[str]
     alwaysReject: NotRequired[bool]
+
+
+class RealtimeCreateCall(TypedDict):
+    """
+    orch→노드: soul-app WebRTC offer를 OpenAI Realtime call로 broker.
+    """
+
+    type: Literal['realtime_create_call']
+    agentSessionId: str
+    session_id: NotRequired[str]
+    offerSdp: str
+    offer_sdp: NotRequired[str]
+    model: NotRequired[str | None]
+    voice: NotRequired[str | None]
+    instructions: NotRequired[str | None]
+    requestId: NotRequired[str]
+    request_id: NotRequired[str]
+
+
+class RealtimeEvent(TypedDict):
+    """
+    orch→노드: soul-app Realtime data-channel event를 persistence/relay 경로로 전달.
+    """
+
+    type: Literal['realtime_event']
+    agentSessionId: str
+    session_id: NotRequired[str]
+    event: dict[str, Any]
+    callId: NotRequired[str | None]
+    call_id: NotRequired[str | None]
+    requestId: NotRequired[str]
+    request_id: NotRequired[str]
+
+
+class RealtimeResolveToolApproval(TypedDict):
+    """
+    orch→노드: realtime voice 중 발생한 tool approval decision을 영속화.
+    """
+
+    type: Literal['realtime_resolve_tool_approval']
+    agentSessionId: str
+    session_id: NotRequired[str]
+    approvalId: str
+    approval_id: NotRequired[str]
+    decision: Literal['approved', 'rejected']
+    message: NotRequired[str]
+    source: NotRequired[Literal['tap', 'voice']]
+    callId: NotRequired[str | None]
+    call_id: NotRequired[str | None]
+    requestId: NotRequired[str]
+    request_id: NotRequired[str]
 
 
 class ListSessions(TypedDict):
@@ -531,6 +630,34 @@ class SSEEventGuardrailTripwire(TypedDict):
     type: Literal['guardrail_tripwire']
 
 
+class SSEEventRealtimeStatus(TypedDict):
+    """
+    SSE: soul-app Realtime voice connection/listening/responding/idle status.
+    """
+
+    type: Literal['realtime_status']
+    status: str
+    call_id: NotRequired[str]
+    message: NotRequired[str]
+    timestamp: NotRequired[float]
+    raw_event_type: NotRequired[str]
+
+
+class SSEEventRealtimeTranscript(TypedDict):
+    """
+    SSE: soul-app Realtime voice final user/assistant transcript.
+    """
+
+    type: Literal['realtime_transcript']
+    role: Literal['user', 'assistant']
+    text: str
+    final: NotRequired[bool]
+    call_id: NotRequired[str]
+    item_id: NotRequired[str]
+    timestamp: NotRequired[float]
+    raw_event_type: NotRequired[str]
+
+
 class SSEEventResult(TypedDict):
     """
     SSE: 최종 result.
@@ -659,6 +786,8 @@ class SessionEventEnvelope(TypedDict):
         | SSEEventToolApprovalRequested
         | SSEEventToolApprovalResolved
         | SSEEventGuardrailTripwire
+        | SSEEventRealtimeStatus
+        | SSEEventRealtimeTranscript
         | SSEEventResult
         | SSEEventPromptSuggestion
         | SSEEventSubagentStart
@@ -685,11 +814,17 @@ SoulstreamUpstreamProtocol: TypeAlias = (
     | InterveneAck
     | RespondAck
     | ToolApprovalAck
+    | RealtimeCallCreated
+    | RealtimeEventAck
+    | RealtimeToolApprovalAck
     | CreateSession
     | Intervene
     | Respond
     | ApproveTool
     | RejectTool
+    | RealtimeCreateCall
+    | RealtimeEvent
+    | RealtimeResolveToolApproval
     | ListSessions
     | HealthCheck
     | SubscribeEvents

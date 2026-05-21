@@ -413,6 +413,111 @@ class TestToolApprovals:
         assert resp.json()["detail"]["error"]["code"] == code
 
 
+class TestRealtimeVoice:
+    """POST /api/sessions/{session_id}/realtime/* tests."""
+
+    @staticmethod
+    def _make_resolve_by_request_id(node, result):
+        async def resolve_on_send(data):
+            ws_command_id = data.get("requestId", "")
+            future = node._pending.get(ws_command_id)
+            if future is not None and not future.done():
+                future.set_result(result)
+        return resolve_on_send
+
+    async def test_realtime_call_sends_ws_command(self, client, node_manager):
+        """Realtime call endpoint forwards SDP offer without exposing provider key."""
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+        node = await node_manager.register_node(ws, {"node_id": "realtime-node"})
+        ws.send_json.side_effect = self._make_resolve_by_request_id(
+            node,
+            {
+                "type": "realtime_call_created",
+                "status": "ok",
+                "callId": "call_1",
+                "answerSdp": "answer",
+            },
+        )
+
+        resp = await client.post(
+            "/api/sessions/test-session/realtime/call",
+            json={"offerSdp": "offer", "voice": "alloy"},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["answerSdp"] == "answer"
+        sent_payloads = [call.args[0] for call in ws.send_json.await_args_list]
+        realtime_payloads = [p for p in sent_payloads if p.get("type") == "realtime_create_call"]
+        assert len(realtime_payloads) == 1
+        assert realtime_payloads[0]["agentSessionId"] == "test-session"
+        assert realtime_payloads[0]["offerSdp"] == "offer"
+        assert realtime_payloads[0]["voice"] == "alloy"
+        assert "apiKey" not in realtime_payloads[0]
+
+    async def test_realtime_event_sends_ws_command(self, client, node_manager):
+        """Realtime event endpoint forwards data-channel event to the node."""
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+        node = await node_manager.register_node(ws, {"node_id": "realtime-node-2"})
+        ws.send_json.side_effect = self._make_resolve_by_request_id(
+            node,
+            {
+                "type": "realtime_event_ack",
+                "status": "ok",
+                "normalizedType": "realtime_transcript",
+                "eventId": 9,
+            },
+        )
+
+        resp = await client.post(
+            "/api/sessions/test-session/realtime/events",
+            json={"callId": "call_1", "event": {"type": "response.audio_transcript.done", "transcript": "hi"}},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["normalizedType"] == "realtime_transcript"
+        sent_payloads = [call.args[0] for call in ws.send_json.await_args_list]
+        event_payloads = [p for p in sent_payloads if p.get("type") == "realtime_event"]
+        assert len(event_payloads) == 1
+        assert event_payloads[0]["callId"] == "call_1"
+
+    async def test_realtime_tool_approval_resolve_sends_ws_command(self, client, node_manager):
+        """voice/tap approval resolve endpoint forwards decision to the node."""
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+        node = await node_manager.register_node(ws, {"node_id": "realtime-node-3"})
+        ws.send_json.side_effect = self._make_resolve_by_request_id(
+            node,
+            {
+                "type": "realtime_tool_approval_ack",
+                "status": "ok",
+                "approvalId": "approval-1",
+                "decision": "approved",
+                "dataChannelEvent": {"type": "tool_approval.response"},
+            },
+        )
+
+        resp = await client.post(
+            "/api/sessions/test-session/realtime/tool-approvals/approval-1/resolve",
+            json={"decision": "approved", "source": "voice"},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["decision"] == "approved"
+        sent_payloads = [call.args[0] for call in ws.send_json.await_args_list]
+        approval_payloads = [
+            p for p in sent_payloads if p.get("type") == "realtime_resolve_tool_approval"
+        ]
+        assert len(approval_payloads) == 1
+        assert approval_payloads[0]["approvalId"] == "approval-1"
+        assert approval_payloads[0]["decision"] == "approved"
+        assert approval_payloads[0]["source"] == "voice"
+
+
 class TestBatchMoveFolder:
     """PATCH /api/sessions/folder tests."""
 

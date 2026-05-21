@@ -15,11 +15,17 @@ export type SoulstreamUpstreamProtocol =
   | InterveneAck
   | RespondAck
   | ToolApprovalAck
+  | RealtimeCallCreated
+  | RealtimeEventAck
+  | RealtimeToolApprovalAck
   | CreateSession
   | Intervene
   | Respond
   | ApproveTool
   | RejectTool
+  | RealtimeCreateCall
+  | RealtimeEvent
+  | RealtimeResolveToolApproval
   | ListSessions
   | HealthCheck
   | SubscribeEvents
@@ -127,6 +133,8 @@ export interface SessionEventEnvelope {
     | SSEEventToolApprovalRequested
     | SSEEventToolApprovalResolved
     | SSEEventGuardrailTripwire
+    | SSEEventRealtimeStatus
+    | SSEEventRealtimeTranscript
     | SSEEventResult
     | SSEEventPromptSuggestion
     | SSEEventSubagentStart
@@ -330,6 +338,32 @@ export interface SSEEventGuardrailTripwire {
   [k: string]: unknown;
 }
 /**
+ * SSE: soul-app Realtime voice connection/listening/responding/idle status.
+ */
+export interface SSEEventRealtimeStatus {
+  type: "realtime_status";
+  status: string;
+  call_id?: string;
+  message?: string;
+  timestamp?: number;
+  raw_event_type?: string;
+  [k: string]: unknown;
+}
+/**
+ * SSE: soul-app Realtime voice final user/assistant transcript.
+ */
+export interface SSEEventRealtimeTranscript {
+  type: "realtime_transcript";
+  role: "user" | "assistant";
+  text: string;
+  final?: boolean;
+  call_id?: string;
+  item_id?: string;
+  timestamp?: number;
+  raw_event_type?: string;
+  [k: string]: unknown;
+}
+/**
  * SSE: 최종 result.
  */
 export interface SSEEventResult {
@@ -509,6 +543,53 @@ export interface ToolApprovalAck {
   [k: string]: unknown;
 }
 /**
+ * 노드→orch: realtime_create_call ACK. soul-app WebRTC offer에 대한 OpenAI Realtime SDP answer.
+ */
+export interface RealtimeCallCreated {
+  type: "realtime_call_created";
+  requestId: string;
+  agentSessionId?: string;
+  status: "ok" | "error";
+  callId?: string;
+  answerSdp?: string;
+  eventId?: number;
+  code?: string;
+  message?: string;
+  [k: string]: unknown;
+}
+/**
+ * 노드→orch: realtime_event ACK. soul-app data-channel event persistence/relay result.
+ */
+export interface RealtimeEventAck {
+  type: "realtime_event_ack";
+  requestId: string;
+  agentSessionId?: string;
+  status: "ok" | "error";
+  normalizedType?: string;
+  eventId?: number;
+  code?: string;
+  message?: string;
+  [k: string]: unknown;
+}
+/**
+ * 노드→orch: realtime_resolve_tool_approval ACK. Persisted resolution plus app data-channel decision event.
+ */
+export interface RealtimeToolApprovalAck {
+  type: "realtime_tool_approval_ack";
+  requestId: string;
+  agentSessionId?: string;
+  approvalId?: string;
+  decision?: "approved" | "rejected";
+  status: "ok" | "error";
+  dataChannelEvent?: {
+    [k: string]: unknown;
+  };
+  eventId?: number;
+  code?: string;
+  message?: string;
+  [k: string]: unknown;
+}
+/**
  * orch→노드: 세션 생성. protocol.py:CreateSessionCmd L15-27 + 실측 caller_info 키.
  */
 export interface CreateSession {
@@ -618,6 +699,56 @@ export interface RejectTool {
   request_id?: string;
   message?: string;
   alwaysReject?: boolean;
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: soul-app WebRTC offer를 OpenAI Realtime call로 broker.
+ */
+export interface RealtimeCreateCall {
+  type: "realtime_create_call";
+  agentSessionId: string;
+  session_id?: string;
+  offerSdp: string;
+  offer_sdp?: string;
+  model?: string | null;
+  voice?: string | null;
+  instructions?: string | null;
+  requestId?: string;
+  request_id?: string;
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: soul-app Realtime data-channel event를 persistence/relay 경로로 전달.
+ */
+export interface RealtimeEvent {
+  type: "realtime_event";
+  agentSessionId: string;
+  session_id?: string;
+  event: {
+    [k: string]: unknown;
+  };
+  callId?: string | null;
+  call_id?: string | null;
+  requestId?: string;
+  request_id?: string;
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: realtime voice 중 발생한 tool approval decision을 영속화.
+ */
+export interface RealtimeResolveToolApproval {
+  type: "realtime_resolve_tool_approval";
+  agentSessionId: string;
+  session_id?: string;
+  approvalId: string;
+  approval_id?: string;
+  decision: "approved" | "rejected";
+  message?: string;
+  source?: "tap" | "voice";
+  callId?: string | null;
+  call_id?: string | null;
+  requestId?: string;
+  request_id?: string;
   [k: string]: unknown;
 }
 /**

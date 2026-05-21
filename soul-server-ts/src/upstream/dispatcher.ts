@@ -24,6 +24,7 @@ import type {
 import type { CallerInfo, Task } from "../task/task_models.js";
 import type { ReasoningEffort } from "../engine/protocol.js";
 import type { SessionDB } from "../db/session_db.js";
+import type { RealtimeBroker } from "../realtime/realtime_broker.js";
 
 export type SendFn = (data: unknown) => Promise<void>;
 
@@ -83,6 +84,39 @@ interface ToolApprovalCmd extends CommandLike {
   message?: string;
   alwaysApprove?: boolean;
   alwaysReject?: boolean;
+}
+
+interface RealtimeCreateCallCmd extends CommandLike {
+  type: "realtime_create_call";
+  agentSessionId?: string;
+  session_id?: string;
+  offerSdp?: string;
+  offer_sdp?: string;
+  model?: string | null;
+  voice?: string | null;
+  instructions?: string | null;
+}
+
+interface RealtimeEventCmd extends CommandLike {
+  type: "realtime_event";
+  agentSessionId?: string;
+  session_id?: string;
+  event?: unknown;
+  callId?: string | null;
+  call_id?: string | null;
+}
+
+interface RealtimeResolveToolApprovalCmd extends CommandLike {
+  type: "realtime_resolve_tool_approval";
+  agentSessionId?: string;
+  session_id?: string;
+  approvalId?: string;
+  approval_id?: string;
+  decision?: "approved" | "rejected";
+  message?: string;
+  source?: "tap" | "voice";
+  callId?: string | null;
+  call_id?: string | null;
 }
 
 interface SubscribeEventsCmd extends CommandLike {
@@ -158,6 +192,7 @@ export class CommandDispatcher {
      * `list_sessions` 명령은 명시 error 응답 (silent fallback 금지 — 운영자가 누락 인지 가능).
      */
     private readonly sessionDb?: SessionDB,
+    private readonly realtimeBroker?: RealtimeBroker,
   ) {
     this.handlers = {
       health_check: (cmd) => this.handleHealthCheck(cmd),
@@ -166,6 +201,12 @@ export class CommandDispatcher {
       respond: (cmd) => this.handleRespond(cmd as RespondCmd),
       approve_tool: (cmd) => this.handleToolApproval(cmd as ToolApprovalCmd),
       reject_tool: (cmd) => this.handleToolApproval(cmd as ToolApprovalCmd),
+      realtime_create_call: (cmd) =>
+        this.handleRealtimeCreateCall(cmd as RealtimeCreateCallCmd),
+      realtime_event: (cmd) =>
+        this.handleRealtimeEvent(cmd as RealtimeEventCmd),
+      realtime_resolve_tool_approval: (cmd) =>
+        this.handleRealtimeResolveToolApproval(cmd as RealtimeResolveToolApprovalCmd),
       subscribe_events: (cmd) => this.handleSubscribeEvents(cmd as SubscribeEventsCmd),
       list_sessions: (cmd) => this.handleListSessions(cmd as ListSessionsCmd),
       upload_attachment: (cmd) => this.handleUploadAttachment(cmd as UploadAttachmentCmd),
@@ -332,6 +373,174 @@ export class CommandDispatcher {
       message: result.message ?? defaultToolApprovalErrorMessage(result),
       ...(result.backend ? { backend: result.backend } : {}),
       ...(result.taskStatus ? { taskStatus: result.taskStatus } : {}),
+    });
+  }
+
+  private async handleRealtimeCreateCall(cmd: RealtimeCreateCallCmd): Promise<void> {
+    const requestId = cmd.requestId ?? cmd.request_id ?? "";
+    const sessionId = cmd.agentSessionId ?? cmd.session_id ?? "";
+    const offerSdp = cmd.offerSdp ?? cmd.offer_sdp ?? "";
+    if (!this.realtimeBroker) {
+      await this.sendRealtimeAckError(
+        "realtime_call_created",
+        requestId,
+        sessionId,
+        "Realtime broker is not configured in soul-server-ts",
+      );
+      return;
+    }
+    if (!sessionId || !offerSdp) {
+      await this.sendRealtimeAckError(
+        "realtime_call_created",
+        requestId,
+        sessionId,
+        "realtime_create_call requires agentSessionId and offerSdp",
+      );
+      return;
+    }
+    try {
+      const result = await this.realtimeBroker.createCall({
+        agentSessionId: sessionId,
+        offerSdp,
+        ...(cmd.model !== undefined ? { model: cmd.model } : {}),
+        ...(cmd.voice !== undefined ? { voice: cmd.voice } : {}),
+        ...(cmd.instructions !== undefined ? { instructions: cmd.instructions } : {}),
+      });
+      if (!requestId) return;
+      await this.send({
+        type: "realtime_call_created",
+        requestId,
+        agentSessionId: sessionId,
+        status: "ok",
+        callId: result.callId,
+        answerSdp: result.answerSdp,
+        ...(result.eventId !== undefined ? { eventId: result.eventId } : {}),
+      });
+    } catch (err) {
+      await this.sendRealtimeAckError(
+        "realtime_call_created",
+        requestId,
+        sessionId,
+        stringifyError(err),
+      );
+    }
+  }
+
+  private async handleRealtimeEvent(cmd: RealtimeEventCmd): Promise<void> {
+    const requestId = cmd.requestId ?? cmd.request_id ?? "";
+    const sessionId = cmd.agentSessionId ?? cmd.session_id ?? "";
+    if (!this.realtimeBroker) {
+      await this.sendRealtimeAckError(
+        "realtime_event_ack",
+        requestId,
+        sessionId,
+        "Realtime broker is not configured in soul-server-ts",
+      );
+      return;
+    }
+    if (!sessionId || cmd.event === undefined) {
+      await this.sendRealtimeAckError(
+        "realtime_event_ack",
+        requestId,
+        sessionId,
+        "realtime_event requires agentSessionId and event",
+      );
+      return;
+    }
+    try {
+      const result = await this.realtimeBroker.relayEvent({
+        agentSessionId: sessionId,
+        event: cmd.event,
+        callId: cmd.callId ?? cmd.call_id ?? undefined,
+      });
+      if (!requestId) return;
+      await this.send({
+        type: "realtime_event_ack",
+        requestId,
+        agentSessionId: sessionId,
+        status: "ok",
+        ...(result.normalizedType ? { normalizedType: result.normalizedType } : {}),
+        ...(result.eventId !== undefined ? { eventId: result.eventId } : {}),
+      });
+    } catch (err) {
+      await this.sendRealtimeAckError(
+        "realtime_event_ack",
+        requestId,
+        sessionId,
+        stringifyError(err),
+      );
+    }
+  }
+
+  private async handleRealtimeResolveToolApproval(
+    cmd: RealtimeResolveToolApprovalCmd,
+  ): Promise<void> {
+    const requestId = cmd.requestId ?? cmd.request_id ?? "";
+    const sessionId = cmd.agentSessionId ?? cmd.session_id ?? "";
+    const approvalId = cmd.approvalId ?? cmd.approval_id ?? "";
+    const decision = cmd.decision;
+    if (!this.realtimeBroker) {
+      await this.sendRealtimeAckError(
+        "realtime_tool_approval_ack",
+        requestId,
+        sessionId,
+        "Realtime broker is not configured in soul-server-ts",
+      );
+      return;
+    }
+    if (!sessionId || !approvalId || (decision !== "approved" && decision !== "rejected")) {
+      await this.sendRealtimeAckError(
+        "realtime_tool_approval_ack",
+        requestId,
+        sessionId,
+        "realtime_resolve_tool_approval requires agentSessionId, approvalId, and decision",
+      );
+      return;
+    }
+    try {
+      const result = await this.realtimeBroker.resolveToolApproval({
+        agentSessionId: sessionId,
+        approvalId,
+        decision,
+        ...(cmd.message ? { message: cmd.message } : {}),
+        ...(cmd.source ? { source: cmd.source } : {}),
+        callId: cmd.callId ?? cmd.call_id ?? undefined,
+      });
+      if (!requestId) return;
+      await this.send({
+        type: "realtime_tool_approval_ack",
+        requestId,
+        agentSessionId: sessionId,
+        approvalId,
+        decision,
+        status: "ok",
+        dataChannelEvent: result.dataChannelEvent,
+        ...(result.eventId !== undefined ? { eventId: result.eventId } : {}),
+      });
+    } catch (err) {
+      await this.sendRealtimeAckError(
+        "realtime_tool_approval_ack",
+        requestId,
+        sessionId,
+        stringifyError(err),
+      );
+    }
+  }
+
+  private async sendRealtimeAckError(
+    type: "realtime_call_created" | "realtime_event_ack" | "realtime_tool_approval_ack",
+    requestId: string,
+    agentSessionId: string,
+    message: string,
+  ): Promise<void> {
+    if (!requestId) return;
+    await this.send({
+      type,
+      requestId,
+      agentSessionId,
+      status: "error",
+      code: "REALTIME_ERROR",
+      message,
     });
   }
 

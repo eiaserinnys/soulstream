@@ -21,6 +21,9 @@ from soulstream_server.constants import (
     CMD_DELETE_SESSION_ATTACHMENTS,
     CMD_DOWNLOAD_ATTACHMENT,
     CMD_INTERVENE,
+    CMD_REALTIME_CREATE_CALL,
+    CMD_REALTIME_EVENT,
+    CMD_REALTIME_RESOLVE_TOOL_APPROVAL,
     CMD_REJECT_TOOL,
     CMD_RESPOND,
     CMD_SUBSCRIBE_EVENTS,
@@ -393,6 +396,65 @@ class NodeConnection:
         if always_reject is not None:
             payload["alwaysReject"] = always_reject
         return await self._send_command(command, payload)
+
+    async def send_realtime_create_call(
+        self,
+        session_id: str,
+        offer_sdp: str,
+        model: str | None = None,
+        voice: str | None = None,
+        instructions: str | None = None,
+    ) -> dict:
+        """soul-app WebRTC offer를 노드의 OpenAI Realtime broker로 전달한다."""
+        payload: dict[str, Any] = {
+            "agentSessionId": session_id,
+            "offerSdp": offer_sdp,
+        }
+        if model is not None:
+            payload["model"] = model
+        if voice is not None:
+            payload["voice"] = voice
+        if instructions is not None:
+            payload["instructions"] = instructions
+        return await self._send_command(CMD_REALTIME_CREATE_CALL, payload)
+
+    async def send_realtime_event(
+        self,
+        session_id: str,
+        event: dict,
+        call_id: str | None = None,
+    ) -> dict:
+        """soul-app data-channel event를 노드 persistence/relay 경로로 전달한다."""
+        payload: dict[str, Any] = {
+            "agentSessionId": session_id,
+            "event": event,
+        }
+        if call_id is not None:
+            payload["callId"] = call_id
+        return await self._send_command(CMD_REALTIME_EVENT, payload)
+
+    async def send_realtime_tool_approval(
+        self,
+        session_id: str,
+        approval_id: str,
+        decision: str,
+        message: str | None = None,
+        source: str | None = None,
+        call_id: str | None = None,
+    ) -> dict:
+        """Realtime tool approval 결정을 노드에 영속화하고 data-channel 이벤트를 받는다."""
+        payload: dict[str, Any] = {
+            "agentSessionId": session_id,
+            "approvalId": approval_id,
+            "decision": decision,
+        }
+        if message is not None:
+            payload["message"] = message
+        if source is not None:
+            payload["source"] = source
+        if call_id is not None:
+            payload["callId"] = call_id
+        return await self._send_command(CMD_REALTIME_RESOLVE_TOOL_APPROVAL, payload)
 
     async def send_subscribe_events(
         self, session_id: str, callback: Callable
