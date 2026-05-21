@@ -843,6 +843,57 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     expect(task.status).toBe("completed");
   });
 
+  it("Claude running intervention 이미지 첨부는 onIntervention 구조 입력으로 분리한다", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+
+    const started = deferred<void>();
+    const release = deferred<void>();
+    const injectedInputs: unknown[] = [];
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        yield { type: "session", session_id: "claude-sess-1" } as SSEEventPayload;
+        started.resolve();
+        await release.promise;
+        injectedInputs.push(await params.onIntervention?.() ?? null);
+        yield { type: "complete", result: "done", timestamp: 1 } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+
+    executor.startExecution(task, claudeAgent);
+    await started.promise;
+    task.interventionQueue.push({
+      text: "이 이미지 봐줘",
+      user: "alice",
+      attachmentPaths: ["/tmp/incoming/sess/a.png", "/tmp/incoming/sess/readme.txt"],
+    });
+    release.resolve();
+    await task.executionPromise;
+
+    expect(injectedInputs).toEqual([
+      {
+        prompt:
+          "[사용자 개입 메시지 from alice]\n" +
+          "이 이미지 봐줘\n\n" +
+          "첨부 파일 (Read 도구로 확인):\n" +
+          "- /tmp/incoming/sess/readme.txt",
+        imageAttachmentPaths: ["/tmp/incoming/sess/a.png"],
+      },
+    ]);
+  });
+
   it("Codex execute params에는 onIntervention을 넘기지 않아 turn 사이 큐잉 semantics를 보존한다", async () => {
     const mocks = makeMocks();
     const task = makeTask();

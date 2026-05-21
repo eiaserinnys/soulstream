@@ -48,13 +48,20 @@ export type ProgressCallback = (message: string) => Promise<void>;
 /** 새 세션이 시작될 때 backend session id 전달. 호출자가 task에 영속. */
 export type SessionCallback = (sessionId: string) => Promise<void>;
 
+export interface EngineUserInput {
+  prompt: string;
+  imageAttachmentPaths?: string[];
+}
+
+export type InterventionInput = string | EngineUserInput;
+
 /**
  * 사용자 개입 메시지 요청 콜백. 호출자가 즉시 보낼 메시지를 반환하거나 null.
  *
  * Codex SDK 0.130.0은 turn 도중 input 주입 표면 없음(d.ts 검증) — 본 PR 어댑터는
  * 조용히 무시하고 turn 끝에 새 prompt fallback. B-3에서 task lifecycle와 결합.
  */
-export type InterventionCallback = () => Promise<string | null>;
+export type InterventionCallback = () => Promise<InterventionInput | null>;
 
 /**
  * compact 이벤트 콜백 (Claude 고유 `/compact`). Codex는 발행 안 함 — Codex 어댑터에서

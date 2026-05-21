@@ -215,7 +215,7 @@ export class TaskExecutor {
             ? async () => {
                 const next = task.interventionQueue.shift();
                 if (!next) return null;
-                return composeClaudeInRunInterventionPrompt(next);
+                return composeClaudeInRunInterventionInput(next);
               }
             : undefined;
           const queuedToolApproval = task.agentsQueuedToolApproval;
@@ -666,21 +666,19 @@ function composeInterventionTurnPrompt(message: { text: string; context?: Contex
   };
 }
 
-function composeClaudeInRunInterventionPrompt(message: {
+function composeClaudeInRunInterventionInput(message: {
   text: string;
   user: string;
   attachmentPaths?: string[];
-}): string {
-  if (message.attachmentPaths && message.attachmentPaths.length > 0) {
-    const attachmentInfo = message.attachmentPaths.map((path) => `- ${path}`).join("\n");
-    return (
-      `[사용자 개입 메시지 from ${message.user}]\n` +
-      `${message.text}\n\n` +
-      `첨부 파일 (Read 도구로 확인):\n` +
-      attachmentInfo
-    );
+}): string | { prompt: string; imageAttachmentPaths: string[] } {
+  const { imagePaths, nonImagePaths } = splitAttachmentPaths(message.attachmentPaths);
+  let prompt = `[사용자 개입 메시지 from ${message.user}]\n${message.text}`;
+  if (nonImagePaths.length > 0) {
+    const attachmentInfo = nonImagePaths.map((path) => `- ${path}`).join("\n");
+    prompt += `\n\n첨부 파일 (Read 도구로 확인):\n${attachmentInfo}`;
   }
-  return `[사용자 개입 메시지 from ${message.user}]\n${message.text}`;
+  if (imagePaths.length === 0) return prompt;
+  return { prompt, imageAttachmentPaths: imagePaths };
 }
 
 function buildTaskExtraEnv(task: Task): Record<string, string> | undefined {

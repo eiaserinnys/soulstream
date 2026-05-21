@@ -4,6 +4,7 @@ import type {
   BackendId,
   EngineExecuteParams,
   EnginePort,
+  InterventionInput,
   InputResponseDeliveryResult,
   SSEEventPayload,
   SupportsCompact,
@@ -31,6 +32,7 @@ export type { ClaudeClientEvent } from "./claude_event_mapper.js";
 export interface ClaudeRunOptions {
   prompt: string;
   workspaceDir: string;
+  imageAttachmentPaths?: string[];
   resumeSessionId?: string;
   model?: string;
   systemPrompt?: string;
@@ -43,7 +45,7 @@ export interface ClaudeRunOptions {
   /** Python `Task.use_mcp` → SDK mcpServers 로딩 게이트. undefined면 true. */
   useMcp?: boolean;
   env: Record<string, string>;
-  onIntervention?: () => Promise<string | null>;
+  onIntervention?: () => Promise<InterventionInput | null>;
 }
 
 export interface ClaudeClient {
@@ -210,6 +212,9 @@ export class ClaudeEngineAdapter implements EnginePort, SupportsInputResponse, S
     return {
       prompt: params.prompt,
       workspaceDir: this.workspaceDir,
+      ...(params.imageAttachmentPaths !== undefined
+        ? { imageAttachmentPaths: params.imageAttachmentPaths }
+        : {}),
       ...(params.resumeSessionId ? { resumeSessionId: params.resumeSessionId } : {}),
       ...(model ? { model } : {}),
       ...(params.systemPrompt ? { systemPrompt: params.systemPrompt } : {}),

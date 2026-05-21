@@ -80,6 +80,30 @@ describe("ClaudeEngineAdapter options parity", () => {
     });
   });
 
+  it("imageAttachmentPaths를 Claude client run options로 전달한다", async () => {
+    const captured: ClaudeRunOptions[] = [];
+    const engine = new ClaudeEngineAdapter(
+      {
+        workspaceDir: "/tmp/claude-work",
+        client: makeClient([], captured),
+        processEnv: {},
+      },
+      silentLogger,
+    );
+
+    for await (const _ of engine.execute({
+      prompt: "이미지 확인",
+      imageAttachmentPaths: ["/tmp/a.png", "/tmp/b.webp"],
+    })) {
+      // drain
+    }
+
+    expect(captured[0]).toMatchObject({
+      prompt: "이미지 확인",
+      imageAttachmentPaths: ["/tmp/a.png", "/tmp/b.webp"],
+    });
+  });
+
   it("task-level OAuth extraEnv가 process env 토큰보다 우선한다", () => {
     const env = buildClaudeEnvironment({
       processEnv: {

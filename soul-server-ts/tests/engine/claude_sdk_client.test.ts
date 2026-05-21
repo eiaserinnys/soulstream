@@ -147,6 +147,53 @@ describe("ClaudeSdkClient", () => {
     });
   });
 
+  it("initial image attachments are embedded as Claude image content blocks", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "claude-image-"));
+    try {
+      const imagePath = join(dir, "sample.png");
+      const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+      writeFileSync(imagePath, bytes);
+      const captured: ClaudeSdkQueryParams[] = [];
+      const client = new ClaudeSdkClient(
+        {
+          query: (params) => {
+            captured.push(params);
+            return makeQuery(sdkMessages([sdkSuccessResult("claude-sess-img", "done")]));
+          },
+        },
+        silentLogger,
+      );
+
+      await collect(
+        client.run(
+          {
+            prompt: "이미지 설명해줘",
+            workspaceDir: "/tmp/claude-work",
+            env: {},
+            imageAttachmentPaths: [imagePath],
+          },
+          new AbortController().signal,
+        ),
+      );
+
+      const prompt = captured[0]?.prompt as AsyncIterable<SDKUserMessage>;
+      const first = await prompt[Symbol.asyncIterator]().next();
+      expect(first.value.message.content).toEqual([
+        { type: "text", text: "이미지 설명해줘" },
+        {
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: "image/png",
+            data: bytes.toString("base64"),
+          },
+        },
+      ]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("forwards allowedTools / disallowedTools / maxTurns to SDK options (Python agents.yaml parity)", async () => {
     const captured: ClaudeSdkQueryParams[] = [];
     const client = new ClaudeSdkClient(
@@ -563,6 +610,66 @@ describe("ClaudeSdkClient", () => {
       type: "text",
       text: "while running",
     });
+  });
+
+  it("injects running intervention image attachments as content blocks", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "claude-intervention-image-"));
+    try {
+      const imagePath = join(dir, "sample.webp");
+      const bytes = Buffer.from([0x52, 0x49, 0x46, 0x46]);
+      writeFileSync(imagePath, bytes);
+      const contents: Array<SDKUserMessage["message"]["content"]> = [];
+      const client = new ClaudeSdkClient(
+        {
+          query: (params) =>
+            makeQuery(
+              (async function* () {
+                const input = params.prompt as AsyncIterable<SDKUserMessage>;
+                const iterator = input[Symbol.asyncIterator]();
+                const initial = await iterator.next();
+                contents.push(initial.value.message.content);
+                const injected = await iterator.next();
+                contents.push(injected.value.message.content);
+                yield sdkSuccessResult("claude-sess-img-in", "done");
+              })(),
+            ),
+          interventionPollIntervalMs: 1,
+        },
+        silentLogger,
+      );
+
+      await collect(
+        client.run(
+          {
+            prompt: "first",
+            workspaceDir: "/tmp/claude-work",
+            env: {},
+            onIntervention: vi.fn()
+              .mockResolvedValueOnce({
+                prompt: "이미지 추가",
+                imageAttachmentPaths: [imagePath],
+              })
+              .mockResolvedValue(null),
+          },
+          new AbortController().signal,
+        ),
+      );
+
+      expect(contents[0]).toBe("first");
+      expect(contents[1]).toEqual([
+        { type: "text", text: "이미지 추가" },
+        {
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: "image/webp",
+            data: bytes.toString("base64"),
+          },
+        },
+      ]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("compact resumes the last run context and sends /compact through the SDK", async () => {

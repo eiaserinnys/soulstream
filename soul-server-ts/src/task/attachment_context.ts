@@ -1,13 +1,7 @@
 import type { ContextItem } from "../context/prompt_assembler.js";
+import { isImageAttachmentPath } from "../attachments/image_media.js";
 
-const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
-
-export function isImageAttachmentPath(path: string): boolean {
-  const pathname = path.split(/[?#]/, 1)[0] ?? path;
-  const dotIndex = pathname.lastIndexOf(".");
-  if (dotIndex < 0) return false;
-  return IMAGE_EXTENSIONS.has(pathname.slice(dotIndex).toLowerCase());
-}
+export { isImageAttachmentPath } from "../attachments/image_media.js";
 
 export function splitAttachmentPaths(paths?: string[]): {
   imagePaths: string[];

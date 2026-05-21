@@ -15,6 +15,8 @@ import type { Logger } from "pino";
 
 import type { ClaudeClient, ClaudeRunOptions } from "./claude_adapter.js";
 import type { ClaudeClientEvent } from "./claude_event_mapper.js";
+import type { InterventionInput } from "./protocol.js";
+import { getImageAttachmentMediaType } from "../attachments/image_media.js";
 
 const CLAUDE_CODE_EXECPATH_ENV = "CLAUDE_CODE_EXECPATH";
 const DEFAULT_INPUT_REQUEST_TIMEOUT_MS = 300_000;
@@ -120,7 +122,7 @@ export class ClaudeSdkClient implements ClaudeClient {
 
     const output = createEventQueue<ClaudeClientEvent>();
     const input = new PushAsyncIterable<SDKUserMessage>();
-    input.push(makeUserMessage(options.prompt));
+    input.push(makeUserMessage(options.prompt, options.imageAttachmentPaths));
     this.activeInput = input;
 
     const abortController = new AbortController();
@@ -609,7 +611,7 @@ export class ClaudeSdkClient implements ClaudeClient {
   }
 
   private startInterventionPolling(
-    onIntervention: () => Promise<string | null>,
+    onIntervention: () => Promise<InterventionInput | null>,
     input: PushAsyncIterable<SDKUserMessage>,
     signal: AbortSignal,
   ): void {
@@ -620,7 +622,7 @@ export class ClaudeSdkClient implements ClaudeClient {
 
         try {
           const text = await onIntervention();
-          if (text) input.push(makeUserMessage(text));
+          if (text) input.push(makeInterventionUserMessage(text));
         } catch (err) {
           this.logger.warn({ err }, "Claude intervention poll failed");
         }
@@ -1023,15 +1025,61 @@ function createEventQueue<T>(): EventQueue<T> {
   return iterator;
 }
 
-function makeUserMessage(content: string): SDKUserMessage {
+function makeUserMessage(content: string, imageAttachmentPaths?: string[]): SDKUserMessage {
   return {
     type: "user",
     message: {
       role: "user",
-      content,
+      content: buildUserMessageContent(content, imageAttachmentPaths),
     },
     parent_tool_use_id: null,
     priority: "now",
+  };
+}
+
+function makeInterventionUserMessage(input: InterventionInput): SDKUserMessage {
+  if (typeof input === "string") return makeUserMessage(input);
+  return makeUserMessage(input.prompt, input.imageAttachmentPaths);
+}
+
+type ClaudeUserContentBlock = Exclude<SDKUserMessage["message"]["content"], string>[number];
+
+function buildUserMessageContent(
+  prompt: string,
+  imageAttachmentPaths?: string[],
+): SDKUserMessage["message"]["content"] {
+  if (!imageAttachmentPaths || imageAttachmentPaths.length === 0) {
+    return prompt;
+  }
+
+  const content: ClaudeUserContentBlock[] = [{ type: "text", text: prompt }];
+  for (const path of imageAttachmentPaths) {
+    content.push(makeImageContentBlock(path));
+  }
+  return content;
+}
+
+function makeImageContentBlock(path: string): ClaudeUserContentBlock {
+  const mediaType = getImageAttachmentMediaType(path);
+  if (!mediaType) {
+    throw new Error(`Unsupported image attachment type: ${path}`);
+  }
+
+  let data: string;
+  try {
+    data = readFileSync(path).toString("base64");
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`Failed to read image attachment ${path}: ${message}`);
+  }
+
+  return {
+    type: "image",
+    source: {
+      type: "base64",
+      media_type: mediaType,
+      data,
+    },
   };
 }
 
