@@ -16,6 +16,7 @@ import {
   buildSessionUpdates,
   mergeSessionCreatedSummary,
   normalizeSessionStatus,
+  reconcileSessionPagesForCatalog,
   shouldApplySessionCreatedToCache,
 } from "./session-stream-helpers";
 import { normalizeSessionStatus as normalizeSharedSessionStatus } from "../shared/session-status";
@@ -384,6 +385,62 @@ describe("applyCatalogDisplayNames", () => {
     });
 
     expect(result[0].displayName).toBe("Pinned");
+  });
+});
+
+describe("reconcileSessionPagesForCatalog", () => {
+  it("folder cache에서 다른 폴더로 이동한 세션을 즉시 제거한다", () => {
+    const result = reconcileSessionPagesForCatalog(
+      makeData([[makeSession("s-a"), makeSession("s-b")]]),
+      ["sessions", "all", "folder", "folder-A"],
+      {
+        folders: [
+          { id: "folder-A", name: "A", sortOrder: 0 },
+          { id: "folder-B", name: "B", sortOrder: 1 },
+        ],
+        sessions: {
+          "s-a": { folderId: "folder-A", displayName: null },
+          "s-b": { folderId: "folder-B", displayName: null },
+        },
+      },
+    );
+
+    expect(result.pages[0].sessions.map((s) => s.agentSessionId)).toEqual([
+      "s-a",
+    ]);
+  });
+
+  it("feed cache에서 excludeFromFeed 폴더와 llm 세션을 즉시 제거한다", () => {
+    const result = reconcileSessionPagesForCatalog(
+      makeData([
+        [
+          makeSession("visible"),
+          makeSession("hidden"),
+          makeSession("llm", { sessionType: "llm" }),
+        ],
+      ]),
+      ["sessions", "all", "feed", null],
+      {
+        folders: [
+          { id: "visible-folder", name: "Visible", sortOrder: 0 },
+          {
+            id: "hidden-folder",
+            name: "Hidden",
+            sortOrder: 1,
+            settings: { excludeFromFeed: true },
+          },
+        ],
+        sessions: {
+          visible: { folderId: "visible-folder", displayName: null },
+          hidden: { folderId: "hidden-folder", displayName: null },
+          llm: { folderId: null, displayName: null },
+        },
+      },
+    );
+
+    expect(result.pages[0].sessions.map((s) => s.agentSessionId)).toEqual([
+      "visible",
+    ]);
   });
 });
 

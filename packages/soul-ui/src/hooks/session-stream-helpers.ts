@@ -119,6 +119,71 @@ export function applyCatalogDisplayNames(
   });
 }
 
+function applyCatalogDisplayName(
+  session: SessionSummary,
+  catalog: CatalogState,
+): SessionSummary {
+  const assignment = catalog.sessions[session.agentSessionId];
+  if (assignment?.displayName) {
+    return { ...session, displayName: assignment.displayName };
+  }
+  return session;
+}
+
+function sessionMatchesCatalogCache(
+  session: SessionSummary,
+  catalog: CatalogState,
+  cacheQueryKey: readonly unknown[],
+): boolean {
+  const typeFilter = (cacheQueryKey[1] as string | undefined) ?? "all";
+  const vMode = (cacheQueryKey[2] as string | undefined) ?? "feed";
+  const fId = (cacheQueryKey[3] as string | null | undefined) ?? null;
+
+  if (typeFilter !== "all" && session.sessionType !== typeFilter) return false;
+
+  const assignment = catalog.sessions[session.agentSessionId];
+  const assignedFolderId = assignment?.folderId ?? null;
+
+  if (vMode === "folder") {
+    if (fId === null) return !assignment || assignment.folderId === null;
+    return assignedFolderId === fId;
+  }
+
+  if (vMode === "feed") {
+    if (session.sessionType === "llm") return false;
+    if (assignedFolderId === null) return true;
+    const folder = catalog.folders.find((f) => f.id === assignedFolderId);
+    return folder?.settings?.excludeFromFeed !== true;
+  }
+
+  return true;
+}
+
+/**
+ * catalog_updated 이벤트 후 기존 세션 목록 캐시를 정본 폴더 배정에 맞춰 즉시 정리한다.
+ *
+ * invalidateQueries만으로는 기존 데이터가 refetch 완료 전까지 화면에 남는다. 따라서 여기서
+ * 각 queryKey(feed/folder/type)에 맞지 않는 세션을 먼저 제거하고, refetch는 누락된 target
+ * folder 항목을 채우는 보강 경로로 둔다.
+ */
+export function reconcileSessionPagesForCatalog(
+  data: InfiniteData<SessionPage>,
+  cacheQueryKey: readonly unknown[],
+  catalog: CatalogState,
+): InfiniteData<SessionPage> {
+  return {
+    ...data,
+    pages: data.pages.map((page) => ({
+      ...page,
+      sessions: page.sessions
+        .filter((session) =>
+          sessionMatchesCatalogCache(session, catalog, cacheQueryKey),
+        )
+        .map((session) => applyCatalogDisplayName(session, catalog)),
+    })),
+  };
+}
+
 /**
  * session_created 이벤트:
  * filter가 'all'이거나 newSession.sessionType이 filter와 일치할 때
@@ -143,11 +208,11 @@ export function applyCatalogDisplayNames(
 export function shouldApplySessionCreatedToCache(
   cacheQueryKey: readonly unknown[],
   newSessionType: string | undefined,
-  newSessionFolderId: string | undefined,
+  newSessionFolderId: string | null | undefined,
 ): boolean {
-  const typeFilter = cacheQueryKey[1] as string;
-  const vMode = cacheQueryKey[2] as string;
-  const fId = cacheQueryKey[3] as string | null;
+  const typeFilter = (cacheQueryKey[1] as string | undefined) ?? "all";
+  const vMode = (cacheQueryKey[2] as string | undefined) ?? "feed";
+  const fId = (cacheQueryKey[3] as string | null | undefined) ?? null;
   if (typeFilter !== "all" && newSessionType !== typeFilter) return false;
   // viewMode=folder 캐시 — newSessionFolderId가 undefined(assignment 불명)이면
   // fId(string|null) !== undefined → 항상 false → 어떤 folder 캐시에도 prepend 안 함
@@ -278,7 +343,7 @@ export function findSessionInPages(
 export function upsertSessionAssignmentInCatalog(
   catalog: CatalogState,
   agentSessionId: string,
-  folderId: string,
+  folderId: string | null,
 ): CatalogState {
   return {
     ...catalog,

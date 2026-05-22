@@ -8,7 +8,10 @@
 
 import type { StateCreator } from "zustand";
 import type { QueryClient, InfiniteData } from "@tanstack/react-query";
-import type { SessionPage } from "../../hooks/session-stream-helpers";
+import {
+  shouldApplySessionCreatedToCache,
+  type SessionPage,
+} from "../../hooks/session-stream-helpers";
 import type { SessionSummary } from "@shared/types";
 import type { DashboardState, DashboardActions } from "../dashboard-store-types";
 import { clearFlattenTreeCache } from "../../lib/flatten-tree";
@@ -43,6 +46,7 @@ export const createOptimisticSessionSlice: StateCreator<
       status: "running",
       eventCount: 0,
       createdAt: new Date().toISOString(),
+      sessionType: "claude",
       prompt,
       lastEventId: 0,
       lastReadEventId: 0,
@@ -57,7 +61,16 @@ export const createOptimisticSessionSlice: StateCreator<
 
     // TanStack Query 캐시에 낙관적 prepend
     queryClient.setQueriesData<InfiniteData<SessionPage>>(
-      { queryKey: ["sessions"], exact: false },
+      {
+        queryKey: ["sessions"],
+        exact: false,
+        predicate: (query) =>
+          shouldApplySessionCreatedToCache(
+            query.queryKey,
+            newSession.sessionType,
+            folderId,
+          ),
+      },
       (old) => {
         if (!old) return old;
         // 이미 존재하면 중복 삽입 방지

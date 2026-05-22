@@ -37,6 +37,7 @@ import {
   applySessionUpdated,
   buildSessionUpdates,
   findSessionInPages,
+  reconcileSessionPagesForCatalog,
   shouldApplySessionCreatedToCache,
   upsertSessionAssignmentInCatalog,
 } from "./session-stream-helpers";
@@ -92,12 +93,14 @@ export function useSessionStreamCacheSync(
         event.session as unknown as Record<string, unknown>,
       );
       // 서버가 folder_id를 함께 실어주는 경우가 있어 동적으로 읽는다.
-      const folderId = (event as unknown as Record<string, unknown>).folder_id as
+      const eventRecord = event as unknown as Record<string, unknown>;
+      const folderId = (eventRecord.folder_id ?? eventRecord.folderId) as
         | string
+        | null
         | undefined;
 
       const state = useDashboardStore.getState();
-      if (folderId && state.catalog) {
+      if (folderId !== undefined && state.catalog) {
         state.setCatalog(
           upsertSessionAssignmentInCatalog(
             state.catalog,
@@ -213,9 +216,20 @@ export function useSessionStreamCacheSync(
       console.log(
         `[⚡ SSE] catalog_updated → folders=${event.catalog?.folders?.length}, sessions=${Object.keys(event.catalog?.sessions ?? {}).length}`,
       );
-      useDashboardStore.getState().setCatalog(event.catalog as CatalogState);
+      const catalog = event.catalog as CatalogState;
+      useDashboardStore.getState().setCatalog(catalog);
+      for (const [cacheQueryKey, data] of queryClient.getQueriesData<
+        InfiniteData<SessionPage>
+      >({ queryKey: ["sessions"], exact: false })) {
+        if (!data) continue;
+        queryClient.setQueryData(
+          cacheQueryKey,
+          reconcileSessionPagesForCatalog(data, cacheQueryKey, catalog),
+        );
+      }
+      void queryClient.invalidateQueries({ queryKey: ["sessions"], exact: false });
     },
-    [onEventIdAdvance],
+    [queryClient, onEventIdAdvance],
   );
 
   const onMetadataUpdated = useCallback(

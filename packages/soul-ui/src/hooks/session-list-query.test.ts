@@ -9,7 +9,7 @@ describe("buildFetchSessionsOptions", () => {
       50,
     );
 
-    expect(result).toEqual({ offset: 0, limit: 50 });
+    expect(result).toEqual({ offset: 0, limit: 50, feedOnly: true });
   });
 
   it("folder query key uses the folder id captured in the key", () => {

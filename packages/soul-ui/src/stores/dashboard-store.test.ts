@@ -80,9 +80,30 @@ function seedQueryClient(qc: QueryClient, sessions: import("../shared/types").Se
   });
 }
 
+/** QueryClient에 특정 세션 목록 queryKey로 초기 데이터를 시드 */
+function seedQueryClientAt(
+  qc: QueryClient,
+  queryKey: readonly unknown[],
+  sessions: import("../shared/types").SessionSummary[],
+) {
+  qc.setQueryData<InfiniteData<SessionPage>>(queryKey, {
+    pages: [{ sessions, total: sessions.length }],
+    pageParams: [0],
+  });
+}
+
 /** QueryClient 캐시에서 세션 목록 조회 */
 function getQuerySessions(qc: QueryClient): import("../shared/types").SessionSummary[] {
   const data = qc.getQueryData<InfiniteData<SessionPage>>(["sessions"]);
+  return data?.pages.flatMap((p) => p.sessions) ?? [];
+}
+
+/** QueryClient 특정 queryKey 캐시에서 세션 목록 조회 */
+function getQuerySessionsAt(
+  qc: QueryClient,
+  queryKey: readonly unknown[],
+): import("../shared/types").SessionSummary[] {
+  const data = qc.getQueryData<InfiniteData<SessionPage>>(queryKey);
   return data?.pages.flatMap((p) => p.sessions) ?? [];
 }
 
@@ -780,6 +801,28 @@ describe("dashboard-store", () => {
 
       expect(useDashboardStore.getState().activeSessionSummary?.backend).toBe("codex");
       expect(getQuerySessions(qc)[0].backend).toBe("codex");
+    });
+
+    it("should only prepend a folder-scoped optimistic session to matching folder caches", () => {
+      const qc = makeTestQueryClient();
+      const feedKey = ["sessions", "all", "feed", null] as const;
+      const folderAKey = ["sessions", "all", "folder", "folder-A"] as const;
+      const folderBKey = ["sessions", "all", "folder", "folder-B"] as const;
+      seedQueryClientAt(qc, feedKey, []);
+      seedQueryClientAt(qc, folderAKey, []);
+      seedQueryClientAt(qc, folderBKey, []);
+
+      useDashboardStore
+        .getState()
+        .addOptimisticSession(qc, "sess-folder-a", "hi", "folder-A");
+
+      expect(getQuerySessionsAt(qc, feedKey).map((s) => s.agentSessionId)).toEqual([
+        "sess-folder-a",
+      ]);
+      expect(getQuerySessionsAt(qc, folderAKey).map((s) => s.agentSessionId)).toEqual([
+        "sess-folder-a",
+      ]);
+      expect(getQuerySessionsAt(qc, folderBKey)).toHaveLength(0);
     });
 
     it("should include dashboard user profile in optimistic summary", () => {

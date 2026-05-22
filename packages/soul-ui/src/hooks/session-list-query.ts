@@ -18,6 +18,7 @@ export function buildFetchSessionsOptions(
     ...(sessionTypeFilter === "all" ? {} : { sessionType: sessionTypeFilter }),
     offset: pageParam,
     limit: pageSize,
+    ...(viewMode === "feed" ? { feedOnly: true } : {}),
     ...(viewMode === "folder" && folderId !== null ? { folderId } : {}),
   };
 }
