@@ -64,3 +64,23 @@ class TestCogitoSearchProxy:
         resp = await client.get("/cogito/search?q=x")
         assert resp.status_code == 200
         assert resp.json() == {"results": []}
+
+    async def test_adds_node_identity_to_results(self, client, node_manager):
+        await _register_node(node_manager, "node-a", port=4100)
+        mock_resp = _make_response(200, {
+            "results": [
+                {"session_id": "s1", "event_id": 1, "score": 0.9, "preview": "hello"},
+            ],
+        })
+
+        with patch("soulstream_server.api.cogito.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(return_value=mock_resp)
+            mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+            resp = await client.get("/cogito/search?q=hello")
+
+        assert resp.status_code == 200
+        result = resp.json()["results"][0]
+        assert result["node_id"] == "node-a"
+        assert result["node_name"] == "node-a"
