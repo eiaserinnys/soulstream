@@ -8,8 +8,11 @@ export type {
   AppServerRequestId,
   AppServerServerRequest,
   AppServerThread,
+  AppServerThreadItem,
   AppServerTransportUrl,
   AppServerTurn,
+  AppServerTurnError,
+  AppServerTurnStatus,
   AppServerUserInput,
   CodexAppServerMethod,
   CodexAppServerMethodMap,
@@ -28,6 +31,12 @@ export type {
   TurnSteerResponse,
 } from "./protocol.js";
 export { AppServerRpcError, CodexAppServerClient } from "./client.js";
+export { CodexAppServerEngineAdapter } from "./adapter.js";
+export { mapAppServerNotification } from "./event_mapper.js";
+export type {
+  CodexAppServerAdapterConfig,
+  CodexAppServerClientPort,
+} from "./adapter.js";
 export {
   JsonRpcAppServerClient,
 } from "./transport.js";

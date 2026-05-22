@@ -22,6 +22,7 @@ describe("parseEnv", () => {
     expect(env.DASH_USER_PORTRAIT).toBe("");
     expect(env.LLM_OPENAI_API_KEY).toBeUndefined();
     expect(env.LLM_ANTHROPIC_API_KEY).toBeUndefined();
+    expect(env.CODEX_ADAPTER_MODE).toBe("sdk");
   });
 
   it("SOULSTREAM_NODE_ID 부재 시 ZodError", () => {
@@ -125,6 +126,16 @@ describe("parseEnv", () => {
       CLAUDE_AUTH_TOKEN_PATH: "/var/lib/soulstream-ts/claude-auth.json",
     });
     expect(env.CLAUDE_AUTH_TOKEN_PATH).toBe("/var/lib/soulstream-ts/claude-auth.json");
+  });
+
+  it("CODEX_ADAPTER_MODE는 sdk가 기본이고 app-server만 opt-in 허용", () => {
+    expect(parseEnv(minimal).CODEX_ADAPTER_MODE).toBe("sdk");
+    expect(parseEnv({ ...minimal, CODEX_ADAPTER_MODE: "app-server" }).CODEX_ADAPTER_MODE).toBe(
+      "app-server",
+    );
+    expect(() =>
+      parseEnv({ ...minimal, CODEX_ADAPTER_MODE: "appserver" }),
+    ).toThrow(ZodError);
   });
 
   // MCP Streamable HTTP env (본 카드 신규)
