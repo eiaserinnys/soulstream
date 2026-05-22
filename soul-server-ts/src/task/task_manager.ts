@@ -23,7 +23,13 @@ import { DEFAULT_FOLDERS, type SessionDB } from "../db/session_db.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { ContextItem } from "../context/prompt_assembler.js";
 
-import type { CallerInfo, InterventionMessage, Task, TaskStatus } from "./task_models.js";
+import type {
+  CallerInfo,
+  InterventionMessage,
+  SessionType,
+  Task,
+  TaskStatus,
+} from "./task_models.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import type {
   BackendId,
@@ -40,6 +46,11 @@ export interface CreateTaskParams {
   agentSessionId: string;
   prompt: string;
   profileId?: string;
+  clientId?: string | null;
+  sessionType?: SessionType;
+  llmProvider?: string | null;
+  llmModel?: string | null;
+  llmUsage?: Record<string, number> | null;
   callerSessionId?: string | null;
   callerInfo?: CallerInfo;
   model?: string | null;
@@ -124,6 +135,13 @@ export interface DeliverToolApprovalResult {
   backend?: BackendId | string;
 }
 
+export interface FinalizeTaskParams {
+  agentSessionId: string;
+  result?: string;
+  error?: string;
+  llmUsage?: Record<string, number> | null;
+}
+
 /**
  * `addIntervention`의 auto-resume 경로 콜백.
  *
@@ -170,11 +188,17 @@ export class TaskManager {
 
     const now = new Date();
     const metadata = callerInfoMetadataEntry(params.callerInfo);
+    const sessionType = params.sessionType ?? "claude";
     const task: Task = {
       agentSessionId: params.agentSessionId,
       prompt: params.prompt,
       status: "running",
       profileId: params.profileId,
+      clientId: params.clientId ?? null,
+      sessionType,
+      llmProvider: params.llmProvider ?? null,
+      llmModel: params.llmModel ?? null,
+      llmUsage: params.llmUsage ?? null,
       callerSessionId: params.callerSessionId ?? undefined,
       callerInfo: params.callerInfo,
       metadata: metadata ? [metadata] : [],
@@ -200,9 +224,9 @@ export class TaskManager {
       nodeId: this.nodeId,
       agentId: task.profileId ?? null,
       claudeSessionId: null,  // 처음에는 null — Codex thread_id 받으면 별도 update (B-3 범위 외, 후속)
-      sessionType: "claude",  // 컬럼 의미는 LLM proxy 분리용. codex backend는 sessions.agent_id의 AgentProfile.backend로 식별.
+      sessionType,
       prompt: task.prompt,
-      clientId: null,
+      clientId: task.clientId ?? null,
       status: task.status,
       createdAt: task.createdAt,
       updatedAt: task.createdAt,
@@ -225,7 +249,7 @@ export class TaskManager {
     // 부가 기능 — 실패는 격리 (Python L292-293 코멘트 정합).
     const assignedFolderId = await this._assignFolderAndBroadcastCatalog(
       task.agentSessionId,
-      "claude",  // session_type — codex 세션도 "claude" 그룹으로 분류 (task_models 코멘트 정합)
+      sessionType,
       params.folderId ?? null,
     );
 
@@ -693,6 +717,64 @@ export class TaskManager {
   }
 
   /**
+   * 외부 실행기(LLM proxy 등)가 만든 task를 완료/실패 상태로 마무리한다.
+   *
+   * TaskExecutor._finalize는 engine lifecycle까지 닫는 전용 경로라 LLM proxy에서 재사용할 수 없다.
+   * 이 메서드는 세션 상태·완료 시각·LLM usage만 갱신하고 session_updated wire를 발행한다.
+   */
+  async finalizeTask(params: FinalizeTaskParams): Promise<Task | undefined> {
+    if (params.result === undefined && params.error === undefined) {
+      throw new Error("finalizeTask requires either result or error");
+    }
+
+    const task = this.tasks.get(params.agentSessionId);
+    if (!task) {
+      this.logger.warn(
+        { sessionId: params.agentSessionId },
+        "Task not found for finalizeTask",
+      );
+      return undefined;
+    }
+
+    if (params.result !== undefined) {
+      task.status = "completed";
+      task.result = params.result;
+      task.error = undefined;
+    } else {
+      task.status = "error";
+      task.error = params.error;
+      task.result = undefined;
+    }
+    task.completedAt = new Date();
+    if (params.llmUsage !== undefined) {
+      task.llmUsage = params.llmUsage;
+    }
+
+    try {
+      await this.db.updateSession(task.agentSessionId, {
+        status: task.status,
+        last_event_id: task.lastEventId,
+      });
+    } catch (err) {
+      this.logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "DB updateSession failed in finalizeTask",
+      );
+    }
+
+    try {
+      await this.broadcaster.emitSessionUpdated(task);
+    } catch (err) {
+      this.logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "session_updated broadcast failed in finalizeTask",
+      );
+    }
+
+    return task;
+  }
+
+  /**
    * Turn 사이 개입 메시지 추가 (B-4, 분석 캐시
    * `20260517-1410-codex-ts-folder-resume-intervene.md` §D-3).
    *
@@ -1041,6 +1123,8 @@ export class TaskManager {
       status: status as TaskStatus,
       hydratedFromDb: true,
       profileId: row.agent_id ?? undefined,
+      clientId: row.client_id,
+      sessionType: row.session_type === "llm" ? "llm" : "claude",
       codexThreadId: row.claude_session_id ?? undefined,
       callerSessionId: row.caller_session_id ?? undefined,
       // P0 (code-reviewer): metadata JSONB array에서 *마지막 신원 박힌* caller_info entry 복원.

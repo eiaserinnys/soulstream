@@ -5,7 +5,6 @@
  * (4차 캐시 §7.3 시그니처 동등 의무 없음, atom d7a1ad86 정본 둘 안티패턴 회피).
  *
  * 본 PR에서 *사용*하지 않는 Python 필드는 의도적 미포함:
- *   - LLM proxy (llm_provider, llm_model, llm_usage)
  *   - _deliver_input_response (TS는 EnginePort 선택 capability로 처리)
  *   - pending_folder_id (folder 배정은 B-4 후속 PR-B 범위)
  *
@@ -48,13 +47,13 @@ export interface InterventionMessage {
  * snake_case keys = wire 전달 시 그대로 운반 (orch broadcast wire 정합).
  */
 export interface CallerInfo {
-  source?: string;
-  display_name?: string;
-  avatar_url?: string;
-  user_id?: string;
-  agent_node?: string;
-  agent_id?: string;
-  agent_name?: string;
+  source?: string | null;
+  display_name?: string | null;
+  avatar_url?: string | null;
+  user_id?: string | null;
+  agent_node?: string | null;
+  agent_id?: string | null;
+  agent_name?: string | null;
   [k: string]: unknown;
 }
 
@@ -64,6 +63,8 @@ export interface LastMessage {
   preview: string;
   timestamp: string;
 }
+
+export type SessionType = "claude" | "llm";
 
 /**
  * Task — Codex 세션 1개의 런타임 상태.
@@ -81,6 +82,17 @@ export interface Task {
 
   /** Agent registry 프로필 id (sessions.agent_id 컬럼). */
   profileId?: string;
+
+  /** 외부 호출자 식별자. LLM proxy에서 `translate`, `recall` 등으로 사용. */
+  clientId?: string | null;
+
+  /** sessions.session_type 컬럼. Codex/Claude agent 세션은 "claude", LLM proxy는 "llm". */
+  sessionType?: SessionType;
+
+  /** LLM proxy 메타데이터. session_created wire에 포함된다. */
+  llmProvider?: string | null;
+  llmModel?: string | null;
+  llmUsage?: Record<string, number> | null;
 
   /**
    * Codex SDK가 발급한 thread id. 첫 ThreadStartedEvent에서 어댑터가 채움.

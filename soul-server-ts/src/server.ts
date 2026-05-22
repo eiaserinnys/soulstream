@@ -3,6 +3,7 @@ import Fastify, { type FastifyBaseLogger, type FastifyInstance } from "fastify";
 import type { McpAuthConfig } from "./mcp/auth.js";
 import type { McpRuntime } from "./mcp/runtime.js";
 import { registerMcpRoutes } from "./mcp/transport.js";
+import { registerLlmRoutes, type LlmRouteConfig } from "./llm/router.js";
 
 export interface ServerParams {
   host: string;
@@ -23,6 +24,8 @@ export interface ServerParams {
     path: string;
     auth: McpAuthConfig;
   };
+  /** LLM proxy route 설정. 미지정 시 `/llm/completions` 미등록. */
+  llm?: LlmRouteConfig;
 }
 
 export type ServerInstance = FastifyInstance & {
@@ -60,6 +63,9 @@ export async function buildServer(params: ServerParams): Promise<ServerInstance>
       path: params.mcp.path,
       auth: params.mcp.auth,
     });
+  }
+  if (params.llm) {
+    registerLlmRoutes(fastify, params.llm);
   }
 
   return fastify;

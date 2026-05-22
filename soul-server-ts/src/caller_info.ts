@@ -111,3 +111,19 @@ export function buildCallerInfoFromCallerSession(deps: {
     portraitPath: callerProfile?.portrait_path ?? null,
   });
 }
+
+/**
+ * 시스템 origin caller_info v1 dict 조립.
+ *
+ * Python `build_system_caller_info(node_id=...)`와 키·값을 맞춘다. LLM proxy처럼 외부
+ * 시스템 호출자가 caller_info를 생략한 경로에서도 세션 metadata에 감사 가능한 발신자가 남는다.
+ */
+export function buildSystemCallerInfo(nodeId: string): CallerInfo {
+  return {
+    source: "system",
+    agent_node: nodeId,
+    display_name: "Soulstream",
+    user_id: null,
+    avatar_url: "/api/system/portraits/system",
+  };
+}

@@ -20,6 +20,8 @@ describe("parseEnv", () => {
     expect(env.LOG_LEVEL).toBe("info");
     expect(env.DASH_USER_NAME).toBe("");
     expect(env.DASH_USER_PORTRAIT).toBe("");
+    expect(env.LLM_OPENAI_API_KEY).toBeUndefined();
+    expect(env.LLM_ANTHROPIC_API_KEY).toBeUndefined();
   });
 
   it("SOULSTREAM_NODE_ID 부재 시 ZodError", () => {
@@ -70,6 +72,16 @@ describe("parseEnv", () => {
 
   it("LOG_LEVEL이 enum 범위 외면 거부", () => {
     expect(() => parseEnv({ ...minimal, LOG_LEVEL: "verbose" })).toThrow(ZodError);
+  });
+
+  it("LLM provider API key는 optional이며 명시 값만 보존한다", () => {
+    const env = parseEnv({
+      ...minimal,
+      LLM_OPENAI_API_KEY: "openai-key",
+      LLM_ANTHROPIC_API_KEY: "anthropic-key",
+    });
+    expect(env.LLM_OPENAI_API_KEY).toBe("openai-key");
+    expect(env.LLM_ANTHROPIC_API_KEY).toBe("anthropic-key");
   });
 
   // Phase B-3 — DATABASE_URL + AGENTS_CONFIG_PATH

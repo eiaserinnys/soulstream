@@ -44,11 +44,12 @@ export class SessionBroadcaster {
    *    last_progress_text, last_assistant_text, session_type,
    *    caller_source, userName, userPortraitUrl}
    *
-   * 본 PR (Codex 단일턴): session_type 항상 "claude" (sessions.session_type 컬럼 기본값 정합).
+   * agent 세션은 "claude", LLM proxy 세션은 "llm".
    */
   async emitSessionUpdated(task: Task): Promise<void> {
     const updatedAt = task.completedAt ?? new Date();
     const callerInfo = task.callerInfo ?? {};
+    const sessionType = task.sessionType ?? "claude";
     await this.send({
       type: "session_updated",
       agent_session_id: task.agentSessionId,
@@ -58,7 +59,7 @@ export class SessionBroadcaster {
       last_read_event_id: task.lastReadEventId,
       last_progress_text: task.lastProgressText ?? null,
       last_assistant_text: task.lastAssistantText ?? null,
-      session_type: "claude",
+      session_type: sessionType,
       caller_source: typeof callerInfo.source === "string" ? callerInfo.source : null,
       userName:
         typeof callerInfo.display_name === "string" ? callerInfo.display_name : null,
@@ -183,6 +184,7 @@ export class SessionBroadcaster {
    */
   private toSessionInfo(task: Task): Record<string, unknown> {
     const updatedAt = task.completedAt ?? task.createdAt;
+    const sessionType = task.sessionType ?? "claude";
     const info: Record<string, unknown> = {
       agent_session_id: task.agentSessionId,
       status: task.status,
@@ -190,13 +192,19 @@ export class SessionBroadcaster {
       created_at: task.createdAt.toISOString(),
       updated_at: updatedAt.toISOString(),
       pid: null,  // Codex SDK는 별도 process가 SDK 내부에 — TS에서 pid 노출 안 함
-      session_type: "claude",
+      session_type: sessionType,
       caller_session_id: task.callerSessionId ?? null,
       metadata: task.metadata ?? [],
       last_event_id: task.lastEventId,
       last_read_event_id: task.lastReadEventId,
       node_id: this.nodeId,
     };
+    if (sessionType !== "claude") {
+      info.llm_provider = task.llmProvider ?? null;
+      info.llm_model = task.llmModel ?? null;
+      info.llm_usage = task.llmUsage ?? null;
+      info.client_id = task.clientId ?? null;
+    }
 
     // Phase A backend 정본 단일화 (atom d7a1ad86 정본 둘 안티패턴 차단):
     // - profileId 부재 task도 wire에 backend default "claude"를 박아 FE 조건
@@ -209,7 +217,7 @@ export class SessionBroadcaster {
       info.agentPortraitUrl =
         agent?.portrait_path ? `/api/agents/${agent.id}/portrait` : null;
       info.backend = agent?.backend ?? "claude";
-    } else {
+    } else if (sessionType === "claude") {
       info.agentId = null;
       info.agentName = null;
       info.agentPortraitUrl = null;
