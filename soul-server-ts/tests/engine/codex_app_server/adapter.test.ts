@@ -158,6 +158,8 @@ describe("CodexAppServerEngineAdapter", () => {
         runtimeWorkspaceRoots: ["/work"],
         approvalPolicy: "never",
         sandbox: "danger-full-access",
+        sessionStartSource: "startup",
+        threadSource: "user",
         experimentalRawEvents: false,
         persistExtendedHistory: false,
       }),

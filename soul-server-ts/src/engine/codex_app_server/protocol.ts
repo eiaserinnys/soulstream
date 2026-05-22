@@ -70,6 +70,9 @@ export type SandboxMode =
   | string
   | JsonObject;
 
+export type ThreadSource = "user" | "subagent" | "memory_consolidation";
+export type ThreadStartSource = "startup" | "clear";
+
 export type AppServerUserInput =
   | { type: "text"; text: string; text_elements: unknown[] }
   | { type: "image"; detail?: string; url: string }
@@ -93,8 +96,8 @@ export interface ThreadStartParams {
   developerInstructions?: string | null;
   personality?: string | JsonObject | null;
   ephemeral?: boolean | null;
-  sessionStartSource?: string | JsonObject | null;
-  threadSource?: string | JsonObject | null;
+  sessionStartSource?: ThreadStartSource | null;
+  threadSource?: ThreadSource | null;
   environments?: JsonObject[] | null;
   dynamicTools?: JsonObject[] | null;
   mockExperimentalField?: string | null;
