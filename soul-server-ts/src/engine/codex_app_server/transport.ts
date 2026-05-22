@@ -51,6 +51,7 @@ export class JsonRpcAppServerClient {
   private readonly notificationHandlers = new Set<(message: AppServerJsonMessage) => void>();
   private readonly serverRequestHandlers = new Set<(request: AppServerServerRequest) => void>();
   private readonly errorHandlers = new Set<(error: Error) => void>();
+  private readonly closeHandlers = new Set<(error?: Error) => void>();
   private readonly requestTimeoutMs: number;
   private readonly idFactory: () => AppServerRequestId;
   private closed = false;
@@ -66,6 +67,9 @@ export class JsonRpcAppServerClient {
     this.transport.onError((error) => this.emitError(error));
     this.transport.onClose((error) => {
       this.closed = true;
+      for (const handler of this.closeHandlers) {
+        handler(error);
+      }
       this.rejectAllPending(error ?? new Error("Codex app-server transport closed"));
     });
   }
@@ -128,6 +132,11 @@ export class JsonRpcAppServerClient {
   onError(handler: (error: Error) => void): () => void {
     this.errorHandlers.add(handler);
     return () => this.errorHandlers.delete(handler);
+  }
+
+  onClose(handler: (error?: Error) => void): () => void {
+    this.closeHandlers.add(handler);
+    return () => this.closeHandlers.delete(handler);
   }
 
   async close(): Promise<void> {

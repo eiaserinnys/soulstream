@@ -10,6 +10,7 @@ import { SessionDB } from "./db/session_db.js";
 import { EventPersistence } from "./db/event_persistence.js";
 import { ClaudeEngineAdapter } from "./engine/claude_adapter.js";
 import { CodexEngineAdapter } from "./engine/codex_adapter.js";
+import { CodexAppServerEngineAdapter } from "./engine/codex_app_server/index.js";
 import { AgentsEngineAdapter } from "./engine/agents_adapter.js";
 import { AnthropicAdapter, OpenAIAdapter } from "./llm/adapters.js";
 import { LlmExecutor } from "./llm/executor.js";
@@ -184,6 +185,16 @@ async function main(): Promise<void> {
   // EngineFactory — backend별 분기. Claude auth env는 ClaudeEngineAdapter가 SDK client로 전달한다.
   const engineFactory: EngineFactory = (agent) => {
     if (agent.backend === "codex") {
+      if (env.CODEX_ADAPTER_MODE === "app-server") {
+        return new CodexAppServerEngineAdapter(
+          {
+            workspaceDir: agent.workspace_dir,
+            apiKey: env.CODEX_API_KEY,
+            processEnv: process.env,
+          },
+          logger,
+        );
+      }
       return new CodexEngineAdapter(
         {
           workspaceDir: agent.workspace_dir,

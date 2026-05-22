@@ -162,12 +162,105 @@ export interface AppServerThread {
   [key: string]: unknown;
 }
 
+export type AppServerTurnStatus =
+  | "completed"
+  | "interrupted"
+  | "failed"
+  | "inProgress"
+  | string;
+
+export interface AppServerTurnError {
+  message: string;
+  codexErrorInfo?: string | null;
+  additionalDetails?: unknown;
+}
+
+export type AppServerThreadItem =
+  | {
+      type: "userMessage";
+      id: string;
+      text?: string;
+      [key: string]: unknown;
+    }
+  | {
+      type: "agentMessage";
+      id: string;
+      text: string;
+      phase?: string | null;
+      memoryCitation?: unknown;
+      [key: string]: unknown;
+    }
+  | {
+      type: "reasoning";
+      id: string;
+      text?: string;
+      summary?: string[];
+      [key: string]: unknown;
+    }
+  | {
+      type: "commandExecution";
+      id: string;
+      command: string;
+      cwd?: string | null;
+      aggregatedOutput?: string | null;
+      exitCode?: number | null;
+      status?: string;
+      [key: string]: unknown;
+    }
+  | {
+      type: "fileChange";
+      id: string;
+      changes?: unknown[];
+      status?: string;
+      [key: string]: unknown;
+    }
+  | {
+      type: "mcpToolCall";
+      id: string;
+      server: string;
+      tool: string;
+      arguments?: unknown;
+      result?: unknown;
+      error?: AppServerTurnError | null;
+      status?: string;
+      [key: string]: unknown;
+    }
+  | {
+      type: "dynamicToolCall";
+      id: string;
+      toolName?: string;
+      arguments?: unknown;
+      result?: unknown;
+      error?: AppServerTurnError | null;
+      status?: string;
+      [key: string]: unknown;
+    }
+  | {
+      type: "webSearch";
+      id: string;
+      query?: string;
+      result?: unknown;
+      status?: string;
+      [key: string]: unknown;
+    }
+  | {
+      type: "plan";
+      id: string;
+      text?: string;
+      [key: string]: unknown;
+    }
+  | {
+      type: string;
+      id?: string;
+      [key: string]: unknown;
+    };
+
 export interface AppServerTurn {
   id: string;
-  items: unknown[];
+  items: AppServerThreadItem[];
   itemsView: JsonObject;
-  status: string;
-  error: unknown | null;
+  status: AppServerTurnStatus;
+  error: AppServerTurnError | null;
   startedAt: number | null;
   completedAt: number | null;
   durationMs: number | null;
@@ -235,12 +328,65 @@ export type CodexAppServerRequest<M extends CodexAppServerMethod> = {
 
 export type AppServerNotification =
   | {
+      method: "thread/started";
+      params: { thread: AppServerThread };
+    }
+  | {
       method: "turn/started";
       params: { threadId: string; turn: AppServerTurn };
     }
   | {
       method: "turn/completed";
       params: { threadId: string; turn: AppServerTurn };
+    }
+  | {
+      method: "item/started";
+      params: {
+        threadId: string;
+        turnId: string;
+        startedAtMs?: number;
+        item: AppServerThreadItem;
+      };
+    }
+  | {
+      method: "item/completed";
+      params: {
+        threadId: string;
+        turnId: string;
+        completedAtMs?: number;
+        item: AppServerThreadItem;
+      };
+    }
+  | {
+      method: "item/agentMessage/delta";
+      params: { threadId: string; turnId: string; itemId: string; delta: string };
+    }
+  | {
+      method:
+        | "command/exec/outputDelta"
+        | "item/commandExecution/outputDelta"
+        | "item/fileChange/outputDelta";
+      params: { threadId: string; turnId: string; itemId: string; delta: string };
+    }
+  | {
+      method:
+        | "item/mcpToolCall/progress"
+        | "item/reasoning/textDelta"
+        | "item/reasoning/summaryTextDelta";
+      params: { threadId: string; turnId: string; itemId: string; message?: string; delta?: string };
+    }
+  | {
+      method: "rawResponseItem/completed";
+      params: { threadId: string; turnId: string; item: JsonObject };
+    }
+  | {
+      method: "error";
+      params: {
+        threadId?: string;
+        turnId?: string;
+        willRetry?: boolean;
+        error: AppServerTurnError;
+      };
     }
   | {
       method: string;

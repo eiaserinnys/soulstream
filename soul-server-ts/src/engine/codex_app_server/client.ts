@@ -75,6 +75,10 @@ export class CodexAppServerClient {
     return this.rpc.onError(handler);
   }
 
+  onClose(handler: (error?: Error) => void): () => void {
+    return this.rpc.onClose(handler);
+  }
+
   close(): Promise<void> {
     return this.rpc.close();
   }

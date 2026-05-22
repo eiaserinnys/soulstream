@@ -33,6 +33,11 @@ export const EnvSchema = z
      */
     CODEX_API_KEY: z.string().optional(),
     /**
+     * Codex backend adapter 선택. default는 기존 SDK/exec 경로 유지.
+     * app-server adapter는 실험 경로라 명시 opt-in에서만 사용한다.
+     */
+    CODEX_ADAPTER_MODE: z.enum(["sdk", "app-server"]).default("sdk"),
+    /**
      * PostgreSQL 연결 URL (Phase B-3). Python soul-server와 같은 키 정합.
      * design-principles §4 명시 실패 — default 없음. production·development 모두 필수.
      */
