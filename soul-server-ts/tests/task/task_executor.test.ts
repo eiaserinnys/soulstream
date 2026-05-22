@@ -150,7 +150,7 @@ describe("TaskExecutor.startExecution", () => {
     expect(mocks.emitSessionUpdated).toHaveBeenCalledWith(task);
   });
 
-  it("app-server live-only text chunks are broadcast but not persisted; final assistant_message is persisted", async () => {
+  it("app-server live-only text chunks are persisted for SSE replay; final assistant_message is canonical", async () => {
     const mocks = makeMocks();
     const events: SSEEventPayload[] = [
       {
@@ -206,13 +206,24 @@ describe("TaskExecutor.startExecution", () => {
     const persistedTypes = mocks.persistEvent.mock.calls.map(
       (c) => (c[1] as { type: string }).type,
     );
-    expect(persistedTypes).toEqual(["user_message", "assistant_message"]);
+    expect(persistedTypes).toEqual([
+      "user_message",
+      "text_start",
+      "text_delta",
+      "text_delta",
+      "assistant_message",
+      "text_end",
+    ]);
     expect(mocks.emitEventEnvelope).toHaveBeenCalledTimes(6);
     expect(mocks.handleSideEffects).toHaveBeenCalledTimes(6);
-    expect(task.lastEventId).toBe(2);
+    const broadcastEventIds = mocks.emitEventEnvelope.mock.calls.map(
+      (c) => (c[1] as Record<string, unknown>)._event_id,
+    );
+    expect(broadcastEventIds).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(task.lastEventId).toBe(6);
     expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", {
       status: "completed",
-      last_event_id: 2,
+      last_event_id: 6,
     });
   });
 

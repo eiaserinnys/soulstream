@@ -103,6 +103,15 @@ describe("extractSearchableText", () => {
       extractSearchableText({ type: "text_delta", text: "x" } as SSEEventPayload),
     ).toBe("x");
   });
+  it("app-server live-only delta는 replay용으로 저장되어도 검색 대상에서 제외한다", () => {
+    expect(
+      extractSearchableText({
+        type: "text_delta",
+        text: "partial",
+        _live_only: true,
+      } as unknown as SSEEventPayload),
+    ).toBe("");
+  });
   it("assistant_message content를 검색 대상으로 사용한다", () => {
     expect(
       extractSearchableText({

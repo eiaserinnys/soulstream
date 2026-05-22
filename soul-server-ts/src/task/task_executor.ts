@@ -40,10 +40,6 @@ import type { Task, TaskStatus } from "./task_models.js";
 /** AgentProfile → EnginePort 생성. backend별 분기는 factory 구현체 담당. */
 export type EngineFactory = (agent: AgentProfile) => EnginePort;
 
-function isLiveOnlyEvent(event: SSEEventPayload): boolean {
-  return (event as Record<string, unknown>)._live_only === true;
-}
-
 export class TaskExecutor {
   constructor(
     private readonly engineFactory: EngineFactory,
@@ -356,20 +352,18 @@ export class TaskExecutor {
     // `_event_id = None`을 박지만, TS는 try 안에서만 박는다 (throw 시 키 자체 부재).
     // orch session_events.py:L172-176가 None 또는 키 부재 둘 다 `event_id is None` 분기로
     // 처리하므로 wire 동작은 동등. test에서 throw 격리 단언으로 검증.
-    if (!isLiveOnlyEvent(event)) {
-      try {
-        const eventId = await this.persistence.persistEvent(
-          task.agentSessionId,
-          event,
-        );
-        task.lastEventId = eventId;
-        (event as Record<string, unknown>)._event_id = eventId;
-      } catch (err) {
-        this.logger.warn(
-          { err, sessionId: task.agentSessionId, eventType },
-          "persistEvent failed",
-        );
-      }
+    try {
+      const eventId = await this.persistence.persistEvent(
+        task.agentSessionId,
+        event,
+      );
+      task.lastEventId = eventId;
+      (event as Record<string, unknown>)._event_id = eventId;
+    } catch (err) {
+      this.logger.warn(
+        { err, sessionId: task.agentSessionId, eventType },
+        "persistEvent failed",
+      );
     }
 
     // orch broadcast — 실패 격리

@@ -234,9 +234,15 @@ describe("CodexAppServerEngineAdapter", () => {
       "session",
       "text_start",
       "text_delta",
+      "assistant_message",
       "text_end",
       "complete",
     ]);
+    expect(events[3]).toMatchObject({
+      type: "assistant_message",
+      content: "answer",
+      _final_for_live_stream: true,
+    });
     await expect(adapter.steerActiveTurn({ prompt: "late" })).resolves.toEqual({
       status: "no_active_turn",
       message: "No active Codex app-server turn",

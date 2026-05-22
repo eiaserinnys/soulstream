@@ -165,9 +165,13 @@ export function extractPreviewText(event: SSEEventPayload): string {
 
 /**
  * full-text 검색용 텍스트 추출. Python `soul_common.db.session_db_base.extract_searchable_text`
- * 최소 등가 — 본 PR은 preview 텍스트 그대로 사용 (확장은 후속 카드).
+ * 최소 등가 — 기본은 preview 텍스트를 사용하되, live-only chunk는 final assistant_message가
+ * 검색 정본이므로 제외한다.
  */
 export function extractSearchableText(event: SSEEventPayload): string {
+  // app-server live chunks are persisted for SSE ids/replay, but the final
+  // assistant_message is the searchable canonical assistant response.
+  if ((event as Record<string, unknown>)._live_only === true) return "";
   const preview = extractPreviewText(event);
   if (preview) return preview;
   const messages = (event as Record<string, unknown>).messages;
