@@ -211,13 +211,12 @@ export class TaskExecutor {
         try {
           const effectiveAllowedTools = task.allowedTools ?? agent.allowed_tools;
           const effectiveDisallowedTools = task.disallowedTools ?? agent.disallowed_tools;
-          const onIntervention = agent.backend === "claude"
-            ? async () => {
-                const next = task.interventionQueue.shift();
-                if (!next) return null;
-                return composeClaudeInRunInterventionInput(next);
-              }
-            : undefined;
+          // Running interventions stay in task.interventionQueue until this turn
+          // completes. Pushing a second user message into an active Claude SDK
+          // turn can terminate resumed sessions with `[ede_diagnostic]
+          // result_type=user`, so Claude and Codex share the same turn-between
+          // queue semantics here.
+          const onIntervention = undefined;
           const queuedToolApproval = task.agentsQueuedToolApproval;
           task.agentsQueuedToolApproval = undefined;
           for await (const event of engine.execute({
@@ -664,21 +663,6 @@ function composeInterventionTurnPrompt(message: { text: string; context?: Contex
     prompt: contextBlock ? `${contextBlock}\n\n${message.text}` : message.text,
     imageAttachmentPaths: imagePaths,
   };
-}
-
-function composeClaudeInRunInterventionInput(message: {
-  text: string;
-  user: string;
-  attachmentPaths?: string[];
-}): string | { prompt: string; imageAttachmentPaths: string[] } {
-  const { imagePaths, nonImagePaths } = splitAttachmentPaths(message.attachmentPaths);
-  let prompt = `[사용자 개입 메시지 from ${message.user}]\n${message.text}`;
-  if (nonImagePaths.length > 0) {
-    const attachmentInfo = nonImagePaths.map((path) => `- ${path}`).join("\n");
-    prompt += `\n\n첨부 파일 (Read 도구로 확인):\n${attachmentInfo}`;
-  }
-  if (imagePaths.length === 0) return prompt;
-  return { prompt, imageAttachmentPaths: imagePaths };
 }
 
 function buildTaskExtraEnv(task: Task): Record<string, string> | undefined {

@@ -793,26 +793,39 @@ describe("isTerminalStatus", () => {
 });
 
 describe("TaskExecutor multi-turn (B-4)", () => {
-  it("Claude running intervention은 onIntervention으로 현재 turn에 주입되고 Codex식 다음 turn 큐잉으로 넘어가지 않는다", async () => {
+  it("Claude running intervention도 active SDK input에 주입하지 않고 다음 turn으로 처리한다", async () => {
     const mocks = makeMocks();
     const task = makeTask();
     task.profileId = claudeAgent.id;
 
     const started = deferred<void>();
     const release = deferred<void>();
-    const injectedPrompts: Array<string | null> = [];
+    const captured: Array<{
+      prompt: string;
+      resumeSessionId: string | undefined;
+      hasOnIntervention: boolean;
+    }> = [];
     let executeCalls = 0;
     const engine: EnginePort = {
       backendId: "claude",
       workspaceDir: "/tmp/claude-roselin",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         executeCalls += 1;
+        captured.push({
+          prompt: params.prompt,
+          resumeSessionId: params.resumeSessionId,
+          hasOnIntervention: typeof params.onIntervention === "function",
+        });
+        if (executeCalls === 1) {
+          yield { type: "session", session_id: "claude-sess-1" } as SSEEventPayload;
+          started.resolve();
+          await release.promise;
+          yield { type: "text_delta", text: "first turn", timestamp: 2 } as SSEEventPayload;
+          yield { type: "complete", result: "done", timestamp: 3 } as SSEEventPayload;
+          return;
+        }
         yield { type: "session", session_id: "claude-sess-1" } as SSEEventPayload;
-        started.resolve();
-        await release.promise;
-        injectedPrompts.push(await params.onIntervention?.() ?? null);
-        yield { type: "text_delta", text: "after injection", timestamp: 2 } as SSEEventPayload;
-        yield { type: "complete", result: "done", timestamp: 3 } as SSEEventPayload;
+        yield { type: "complete", result: "done", timestamp: 4 } as SSEEventPayload;
       },
       async interrupt() { return true; },
       async close() {},
@@ -835,31 +848,49 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     release.resolve();
     await task.executionPromise;
 
-    expect(executeCalls).toBe(1);
-    expect(injectedPrompts).toEqual([
-      "[사용자 개입 메시지 from alice]\n지금 반영\n\n첨부 파일 (Read 도구로 확인):\n- /tmp/incoming/sess/readme.txt",
-    ]);
+    expect(executeCalls).toBe(2);
+    expect(captured[0]).toEqual({ prompt: "hi", resumeSessionId: undefined, hasOnIntervention: false });
+    expect(captured[1]).toMatchObject({
+      resumeSessionId: "claude-sess-1",
+      hasOnIntervention: false,
+    });
+    expect(captured[1].prompt).toContain("<attached_files>");
+    expect(captured[1].prompt).toContain("/tmp/incoming/sess/readme.txt");
+    expect(captured[1].prompt.endsWith("지금 반영")).toBe(true);
     expect(task.interventionQueue).toHaveLength(0);
     expect(task.status).toBe("completed");
   });
 
-  it("Claude running intervention 이미지 첨부는 onIntervention 구조 입력으로 분리한다", async () => {
+  it("Claude running intervention 이미지 첨부도 다음 turn의 imageAttachmentPaths로 분리한다", async () => {
     const mocks = makeMocks();
     const task = makeTask();
     task.profileId = claudeAgent.id;
 
     const started = deferred<void>();
     const release = deferred<void>();
-    const injectedInputs: unknown[] = [];
+    const captured: Array<{
+      prompt: string;
+      imageAttachmentPaths: string[] | undefined;
+      hasOnIntervention: boolean;
+    }> = [];
     const engine: EnginePort = {
       backendId: "claude",
       workspaceDir: "/tmp/claude-roselin",
       async *execute(params): AsyncIterable<SSEEventPayload> {
+        captured.push({
+          prompt: params.prompt,
+          imageAttachmentPaths: params.imageAttachmentPaths,
+          hasOnIntervention: typeof params.onIntervention === "function",
+        });
+        if (captured.length === 1) {
+          yield { type: "session", session_id: "claude-sess-1" } as SSEEventPayload;
+          started.resolve();
+          await release.promise;
+          yield { type: "complete", result: "done", timestamp: 1 } as SSEEventPayload;
+          return;
+        }
         yield { type: "session", session_id: "claude-sess-1" } as SSEEventPayload;
-        started.resolve();
-        await release.promise;
-        injectedInputs.push(await params.onIntervention?.() ?? null);
-        yield { type: "complete", result: "done", timestamp: 1 } as SSEEventPayload;
+        yield { type: "complete", result: "done", timestamp: 2 } as SSEEventPayload;
       },
       async interrupt() { return true; },
       async close() {},
@@ -882,16 +913,20 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     release.resolve();
     await task.executionPromise;
 
-    expect(injectedInputs).toEqual([
-      {
-        prompt:
-          "[사용자 개입 메시지 from alice]\n" +
-          "이 이미지 봐줘\n\n" +
-          "첨부 파일 (Read 도구로 확인):\n" +
-          "- /tmp/incoming/sess/readme.txt",
-        imageAttachmentPaths: ["/tmp/incoming/sess/a.png"],
-      },
-    ]);
+    expect(captured).toHaveLength(2);
+    expect(captured[0]).toMatchObject({
+      prompt: "hi",
+      imageAttachmentPaths: [],
+      hasOnIntervention: false,
+    });
+    expect(captured[1]).toMatchObject({
+      imageAttachmentPaths: ["/tmp/incoming/sess/a.png"],
+      hasOnIntervention: false,
+    });
+    expect(captured[1].prompt).toContain("<attached_files>");
+    expect(captured[1].prompt).toContain("/tmp/incoming/sess/readme.txt");
+    expect(captured[1].prompt).not.toContain("/tmp/incoming/sess/a.png");
+    expect(captured[1].prompt.endsWith("이 이미지 봐줘")).toBe(true);
   });
 
   it("Codex execute params에는 onIntervention을 넘기지 않아 turn 사이 큐잉 semantics를 보존한다", async () => {
