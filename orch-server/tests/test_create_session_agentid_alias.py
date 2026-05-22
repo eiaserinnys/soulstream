@@ -20,7 +20,17 @@ def _register_node(node_manager):
     ws.close = AsyncMock()
 
     async def _register():
-        node = await node_manager.register_node(ws, {"node_id": "test-node"})
+        node = await node_manager.register_node(
+            ws,
+            {
+                "node_id": "test-node",
+                "agents": [
+                    {"id": "seosoyoung", "backend": "claude"},
+                    {"id": "from-profile", "backend": "claude"},
+                    {"id": "from-agentId", "backend": "claude"},
+                ],
+            },
+        )
 
         async def resolve_on_send(data):
             req_id = data.get("requestId")

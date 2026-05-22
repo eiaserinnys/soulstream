@@ -21,6 +21,73 @@ from soulstream_server.nodes.node_manager import NodeManager
 logger = logging.getLogger(__name__)
 
 
+def _parse_event_payload(payload_text: str) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(payload_text)
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _app_server_text_stream_key(payload: dict[str, Any]) -> str | None:
+    tool_use_id = payload.get("tool_use_id")
+    return tool_use_id if isinstance(tool_use_id, str) and tool_use_id else None
+
+
+def _is_app_server_live_text_fragment(payload: dict[str, Any]) -> bool:
+    return (
+        payload.get("_live_only") is True
+        and payload.get("type") in {"text_start", "text_delta", "text_end"}
+        and _app_server_text_stream_key(payload) is not None
+    )
+
+
+def _is_final_app_server_assistant_message(payload: dict[str, Any]) -> bool:
+    return (
+        payload.get("type") == "assistant_message"
+        and payload.get("_final_for_live_stream") is True
+        and _app_server_text_stream_key(payload) is not None
+    )
+
+
+def _filter_finalized_app_server_replay_events(
+    events: list[tuple[int, str, str]],
+) -> list[tuple[int, str, str]]:
+    """Hide raw live fragments when the same replay window has the final text.
+
+    Live app-server text still streams through the node queue. This filter only
+    applies to DB catch-up after reconnect, where replaying persisted deltas
+    makes an already completed historical bubble appear to type again.
+    """
+    payloads_by_id: dict[int, dict[str, Any]] = {}
+    finalized_streams: set[str] = set()
+
+    for event_id, _event_type, payload_text in events:
+        payload = _parse_event_payload(payload_text)
+        if payload is None:
+            continue
+        payloads_by_id[event_id] = payload
+        if _is_final_app_server_assistant_message(payload):
+            stream_key = _app_server_text_stream_key(payload)
+            if stream_key is not None:
+                finalized_streams.add(stream_key)
+
+    if not finalized_streams:
+        return events
+
+    filtered: list[tuple[int, str, str]] = []
+    for event_id, event_type, payload_text in events:
+        payload = payloads_by_id.get(event_id)
+        if (
+            payload is not None
+            and _is_app_server_live_text_fragment(payload)
+            and _app_server_text_stream_key(payload) in finalized_streams
+        ):
+            continue
+        filtered.append((event_id, event_type, payload_text))
+    return filtered
+
+
 async def create_session_events_response(
     session_id: str,
     request: Request,
@@ -142,18 +209,28 @@ async def create_session_events_response(
                 # 신규 구독: 히스토리 skip. baseline만 보냄.
                 last_stored_id = await db.read_last_event_id(session_id)
             else:
-                # 재연결: after_id 이후 이벤트만 stream_events_raw 비동기 cursor로 스트리밍.
-                # mid-stream disconnect 감지를 위해 yield 사이에 is_disconnected 체크.
+                # 재연결: after_id 이후 이벤트만 stream_events_raw 비동기 cursor로 수집한 뒤
+                # 완료된 app-server 텍스트의 raw live 조각은 재생하지 않는다.
+                # mid-stream disconnect 감지를 위해 cursor 순회 중에도 is_disconnected 체크.
                 try:
+                    replay_events: list[tuple[int, str, str]] = []
                     async for event_id, event_type, payload_text in db.stream_events_raw(
                         session_id, after_id=after_id,
                     ):
                         if await request.is_disconnected():
                             return
                         last_stored_id = max(last_stored_id, event_id)
-                        # 라이브 phase에서 history와 race로 같은 id가 들어올 때
-                        # 중복 방지를 위해 history phase에서 yield한 id를 등록.
+                        # 필터로 숨기는 raw delta도 클라이언트 커서 관점에서는 이미 처리된
+                        # 이벤트다. 라이브 queue에 같은 id가 들어와도 중복 송출하지 않는다.
                         seen_event_ids.add(event_id)
+                        replay_events.append((event_id, event_type, payload_text))
+
+                    replay_events = _filter_finalized_app_server_replay_events(
+                        replay_events,
+                    )
+                    for event_id, event_type, payload_text in replay_events:
+                        if await request.is_disconnected():
+                            return
                         yield {
                             "event": event_type,
                             "data": payload_text,

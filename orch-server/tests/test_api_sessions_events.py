@@ -246,6 +246,142 @@ class TestAfterIdNStreamsAfterN:
         assert sync_data["last_event_id"] == 7
 
 
+class TestAppServerReplayFiltering:
+    """app-server 완료 텍스트의 과거 SSE replay는 raw delta를 다시 타이핑하지 않는다."""
+
+    async def test_reconnect_replays_final_message_not_persisted_live_deltas(
+        self, mock_db, node_manager, session_router, mock_catalog_service, broadcaster,
+    ):
+        """완료된 app-server 스트림은 final assistant_message만 replay한다."""
+        _patch_db_stream(
+            mock_db,
+            [
+                (
+                    6,
+                    "text_start",
+                    json.dumps({
+                        "type": "text_start",
+                        "timestamp": 1,
+                        "tool_use_id": "item-1",
+                        "raw_event_type": "item/started",
+                        "_live_only": True,
+                    }),
+                ),
+                (
+                    7,
+                    "text_delta",
+                    json.dumps({
+                        "type": "text_delta",
+                        "timestamp": 1,
+                        "tool_use_id": "item-1",
+                        "raw_event_type": "item/agentMessage/delta",
+                        "text": "요약:",
+                        "_live_only": True,
+                    }),
+                ),
+                (
+                    8,
+                    "assistant_message",
+                    json.dumps({
+                        "type": "assistant_message",
+                        "timestamp": 2,
+                        "tool_use_id": "item-1",
+                        "raw_event_type": "item/completed",
+                        "content": "요약: 완료된 답변입니다.",
+                        "_final_for_live_stream": True,
+                    }),
+                ),
+                (
+                    9,
+                    "text_end",
+                    json.dumps({
+                        "type": "text_end",
+                        "timestamp": 2,
+                        "tool_use_id": "item-1",
+                        "raw_event_type": "item/completed",
+                        "_live_only": True,
+                    }),
+                ),
+            ],
+        )
+        mock_db.read_last_event_id = AsyncMock(return_value=9)
+        mock_db.get_session = AsyncMock(return_value=None)
+
+        router = create_sessions_router(
+            db=mock_db,
+            node_manager=node_manager,
+            session_router=session_router,
+            broadcaster=broadcaster,
+            catalog_service=mock_catalog_service,
+        )
+        route = _get_events_route(router)
+
+        request = _make_request_mock(headers={"Last-Event-ID": "5"})
+        response = await route.endpoint(session_id="sess-1", request=request)
+        events = await _collect_until_history_sync(response.body_iterator)
+
+        event_names = [e.get("event") for e in events]
+        assert event_names == ["init", "assistant_message", "history_sync"]
+        ids_yielded = [e.get("id") for e in events if e.get("id")]
+        assert ids_yielded == ["8"]
+        history_sync = events[-1]
+        sync_data = json.loads(history_sync["data"])
+        assert sync_data["last_event_id"] == 9
+
+    async def test_reconnect_keeps_unfinished_live_deltas_when_no_final_message(
+        self, mock_db, node_manager, session_router, mock_catalog_service, broadcaster,
+    ):
+        """완료 메시지가 없는 진행 중 스트림은 catch-up delta를 유지한다."""
+        _patch_db_stream(
+            mock_db,
+            [
+                (
+                    6,
+                    "text_start",
+                    json.dumps({
+                        "type": "text_start",
+                        "timestamp": 1,
+                        "tool_use_id": "item-1",
+                        "raw_event_type": "item/started",
+                        "_live_only": True,
+                    }),
+                ),
+                (
+                    7,
+                    "text_delta",
+                    json.dumps({
+                        "type": "text_delta",
+                        "timestamp": 1,
+                        "tool_use_id": "item-1",
+                        "raw_event_type": "item/agentMessage/delta",
+                        "text": "작성 중",
+                        "_live_only": True,
+                    }),
+                ),
+            ],
+        )
+        mock_db.read_last_event_id = AsyncMock(return_value=7)
+        mock_db.get_session = AsyncMock(return_value=None)
+
+        router = create_sessions_router(
+            db=mock_db,
+            node_manager=node_manager,
+            session_router=session_router,
+            broadcaster=broadcaster,
+            catalog_service=mock_catalog_service,
+        )
+        route = _get_events_route(router)
+
+        request = _make_request_mock(headers={"Last-Event-ID": "5"})
+        response = await route.endpoint(session_id="sess-1", request=request)
+        events = await _collect_until_history_sync(response.body_iterator)
+
+        event_names = [e.get("event") for e in events]
+        assert event_names == ["init", "text_start", "text_delta", "history_sync"]
+        ids_yielded = [e.get("id") for e in events if e.get("id")]
+        assert ids_yielded == ["6", "7"]
+
+
 class TestQueryParamLastEventId:
     """?lastEventId 쿼리 파라미터로도 after_id 인식."""
 
