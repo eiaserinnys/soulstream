@@ -61,7 +61,11 @@ def create_cogito_router(
                     resp = await client.get(url, params=params, headers=forward_headers)
                     if resp.status_code == 200:
                         data = resp.json()
-                        all_results.extend(data.get("results", []))
+                        for item in data.get("results", []):
+                            if isinstance(item, dict):
+                                item.setdefault("node_id", node.node_id)
+                                item.setdefault("node_name", node.node_id)
+                                all_results.append(item)
                     else:
                         logger.warning(
                             "cogito/search: node %s returned %d",

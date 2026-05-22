@@ -1,4 +1,4 @@
-"""PostgresSearchMixin — 경량 세션 목록 + 전문검색 (PostgreSQL)"""
+"""PostgresSearchMixin — 경량 세션 목록 + BM25 전문검색 (PostgreSQL)"""
 
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ class PostgresSearchMixin:
         ]
         return sessions, total
 
-    # --- 전문검색 (tsvector) ---
+    # --- 전문검색 (BM25) ---
 
     async def search_events(
         self,
@@ -64,7 +64,7 @@ class PostgresSearchMixin:
             )
             return [_event_to_dict(r) for r in rows]
         except Exception as e:
-            logger.warning(f"tsvector search failed: {e}")
+            logger.warning(f"BM25 search failed: {e}")
             return []
 
     async def search_events_by_session_id(

@@ -205,22 +205,49 @@ export function registerSessionQueryTools(
     "search_session_history",
     {
       description:
-        "이벤트 텍스트 검색 (PostgreSQL tsvector/ts_rank, Python SessionSearchEngine 정합).",
+        "이벤트 텍스트 검색 (BM25, Python SessionSearchEngine 정합).",
       inputSchema: {
         query: z.string().min(1),
         session_ids: z.array(z.string()).optional(),
+        event_types: z.array(z.string()).optional(),
+        search_session_id: z.boolean().default(false),
         top_k: z.number().int().min(1).max(100).default(10),
       },
     },
-    async ({ query, session_ids, top_k }) => {
+    async ({ query, session_ids, event_types, search_session_id, top_k }) => {
       try {
-        const matches = await runtime.db.searchEvents(
-          query,
-          session_ids ?? null,
-          top_k ?? 10,
-        );
+        const limit = top_k ?? 10;
+        const types = event_types && event_types.length > 0 ? event_types : null;
+        const matches: Awaited<ReturnType<typeof runtime.db.searchEvents>> = [];
+        const seen = new Set<string>();
+        if (types || !search_session_id) {
+          for (const match of await runtime.db.searchEvents(
+            query,
+            session_ids ?? null,
+            limit,
+            types,
+          )) {
+            const key = `${match.session_id}:${match.id}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            matches.push(match);
+          }
+        }
+        if (search_session_id) {
+          for (const match of await runtime.db.searchEventsBySessionId(
+            query,
+            types,
+            limit,
+          )) {
+            const key = `${match.session_id}:${match.id}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            matches.push(match);
+          }
+        }
+        matches.sort((a, b) => b.score - a.score);
         return jsonResult({
-          results: matches.map((m) => ({
+          results: matches.slice(0, limit).map((m) => ({
             session_id: m.session_id,
             event_id: m.id,
             score: m.score,

@@ -605,8 +605,8 @@ describe("TaskManager.deleteTask", () => {
 });
 
 describe("TaskManager.shutdown", () => {
-  it("모든 running task interrupt + drain", async () => {
-    const { db, broadcaster } = makeMocks();
+  it("모든 running task를 interrupted로 기록한 뒤 interrupt + drain", async () => {
+    const { db, broadcaster, updateSession, emitSessionUpdated } = makeMocks();
     const tm = new TaskManager("n", db, broadcaster, silentLogger);
     const t1 = await tm.createTask({ agentSessionId: "s1", prompt: "x", profileId: "p" });
     const t2 = await tm.createTask({ agentSessionId: "s2", prompt: "y", profileId: "p" });
@@ -618,8 +618,35 @@ describe("TaskManager.shutdown", () => {
     t2.executionPromise = Promise.resolve();
 
     await tm.shutdown();
+    expect(t1.status).toBe("interrupted");
+    expect(t2.status).toBe("interrupted");
+    expect(updateSession).toHaveBeenCalledWith("s1", {
+      status: "interrupted",
+      last_event_id: t1.lastEventId,
+    });
+    expect(updateSession).toHaveBeenCalledWith("s2", {
+      status: "interrupted",
+      last_event_id: t2.lastEventId,
+    });
+    expect(emitSessionUpdated).toHaveBeenCalledWith(t1);
+    expect(emitSessionUpdated).toHaveBeenCalledWith(t2);
     expect(int1).toHaveBeenCalledTimes(1);
     expect(int2).toHaveBeenCalledTimes(1);
+  });
+
+  it("shutdown 상태 기록 실패가 interrupt를 막지 않음", async () => {
+    const { db, broadcaster, updateSession } = makeMocks();
+    updateSession.mockRejectedValueOnce(new Error("db down"));
+    const tm = new TaskManager("n", db, broadcaster, silentLogger);
+    const task = await tm.createTask({ agentSessionId: "s1", prompt: "x", profileId: "p" });
+    const interrupt = vi.fn().mockResolvedValue(true);
+    task.engine = { interrupt } as unknown as EnginePort;
+    task.executionPromise = Promise.resolve();
+
+    await tm.shutdown();
+
+    expect(task.status).toBe("interrupted");
+    expect(interrupt).toHaveBeenCalledTimes(1);
   });
 });
 

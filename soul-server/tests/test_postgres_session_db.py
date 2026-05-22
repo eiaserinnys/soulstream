@@ -654,6 +654,25 @@ class TestExtractSearchableText:
             {"type": "user_message", "text": "help me"}
         ) == "help me"
 
+    def test_user_message_messages_array(self):
+        assert PostgresSessionDB.extract_searchable_text({
+            "type": "user_message",
+            "messages": [
+                {"role": "system", "content": "system prompt"},
+                {"role": "user", "content": [{"type": "text", "text": "actual question"}]},
+            ],
+        }) == "system prompt actual question"
+
+    def test_assistant_message(self):
+        assert PostgresSessionDB.extract_searchable_text(
+            {"type": "assistant_message", "content": "assistant answer"}
+        ) == "assistant answer"
+
+    def test_complete_event(self):
+        assert PostgresSessionDB.extract_searchable_text(
+            {"type": "complete", "result": "final answer"}
+        ) == "final answer"
+
     def test_unknown_type(self):
         assert PostgresSessionDB.extract_searchable_text(
             {"type": "progress", "text": "working"}
@@ -887,4 +906,3 @@ class TestListSessionsSummary:
         assert call_args[2] == "claude"    # session_type
         assert call_args[3] == 10          # limit
         assert call_args[4] == 5           # offset
-

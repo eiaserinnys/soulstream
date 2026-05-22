@@ -29,6 +29,7 @@ const PREVIEW_FIELD_MAP: Record<string, string> = {
   complete: "result",
   error: "message",
   away_summary: "content",
+  assistant_message: "content",
   // B-5: 사용자 발화 영속 (Python `event_persistence.py:78-79` 정본 정합).
   // codex 노드는 systemPrompt를 SDK가 미지원이라 system_message 이벤트를 발행하지 않음 —
   // PREVIEW_FIELD_MAP에 키를 두지 않는다 (Python 정본 PREVIEW_FIELD_MAP도 system_message 없음).
@@ -155,7 +156,30 @@ export function extractPreviewText(event: SSEEventPayload): string {
  * 최소 등가 — 본 PR은 preview 텍스트 그대로 사용 (확장은 후속 카드).
  */
 export function extractSearchableText(event: SSEEventPayload): string {
-  return extractPreviewText(event);
+  const preview = extractPreviewText(event);
+  if (preview) return preview;
+  const messages = (event as Record<string, unknown>).messages;
+  if (!Array.isArray(messages)) return "";
+  return messages
+    .map((message) => {
+      if (!message || typeof message !== "object") return "";
+      return contentToText((message as Record<string, unknown>).content);
+    })
+    .filter(Boolean)
+    .join(" ");
+}
+
+function contentToText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((item) => {
+      if (!item || typeof item !== "object") return "";
+      const record = item as Record<string, unknown>;
+      return typeof record.text === "string" ? record.text : "";
+    })
+    .filter(Boolean)
+    .join(" ");
 }
 
 /**

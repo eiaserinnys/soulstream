@@ -210,6 +210,27 @@ export class SessionDB {
   }
 
   /**
+   * Startup repair: this process cannot resume in-memory tasks from a previous
+   * process. Same-node DB rows left as running must become terminal before the
+   * server accepts new traffic.
+   */
+  async interruptRunningSessionsForNode(nodeId: string): Promise<number> {
+    const rows = await this.sql<Array<{ interrupted_count: string | number }>>`
+      WITH updated AS (
+        UPDATE sessions
+        SET status = 'interrupted',
+            was_running_at_shutdown = FALSE,
+            updated_at = NOW()
+        WHERE node_id = ${nodeId}
+          AND status = 'running'
+        RETURNING 1
+      )
+      SELECT COUNT(*) AS interrupted_count FROM updated
+    `;
+    return Number(rows[0]?.interrupted_count ?? 0);
+  }
+
+  /**
    * Codex thread id를 sessions.claude_session_id 컬럼에 영속화 (F-3B).
    *
    * Python `session_set_claude_id` stored procedure 호출 (schema.sql L220-247):
@@ -669,10 +690,10 @@ export class SessionDB {
   }
 
   /**
-   * `event_search` stored procedure (schema.sql L693-729) — postgres full-text search.
+   * `event_search` stored procedure — BM25 ranked event search.
    *
    * Python `SessionSearchEngine`과 같은 `event_search` stored procedure 경로. PostgreSQL
-   * `tsvector` + `ts_rank` 기반 full-text search를 사용한다.
+   * `event_search_terms`에 저장된 term frequency를 사용하여 BM25 점수를 계산한다.
    *
    * 응답 모양은 Python 도구의 results dict와 키 호환 — 도구 핸들러가 preview/event_type/score
    * 키로 재포장.
@@ -681,6 +702,7 @@ export class SessionDB {
     query: string,
     sessionIds: string[] | null,
     limit: number,
+    eventTypes?: string[] | null,
   ): Promise<
     Array<{
       id: number;
@@ -693,6 +715,7 @@ export class SessionDB {
     }>
   > {
     const ids = sessionIds && sessionIds.length > 0 ? sessionIds : null;
+    const types = eventTypes && eventTypes.length > 0 ? eventTypes : null;
     const rows = await this.sql<
       Array<{
         id: number;
@@ -707,6 +730,54 @@ export class SessionDB {
       SELECT * FROM event_search(
         ${query},
         ${ids as unknown as string[] | null},
+        ${limit},
+        ${types as unknown as string[] | null}
+      )
+    `;
+    return rows.map((r) => ({
+      id: r.id,
+      session_id: r.session_id,
+      event_type: r.event_type,
+      payload:
+        r.payload && typeof r.payload === "object"
+          ? (r.payload as Record<string, unknown>)
+          : {},
+      searchable_text: r.searchable_text,
+      created_at: r.created_at,
+      score: Number(r.score),
+    }));
+  }
+
+  async searchEventsBySessionId(
+    query: string,
+    eventTypes: string[] | null,
+    limit: number,
+  ): Promise<
+    Array<{
+      id: number;
+      session_id: string;
+      event_type: string;
+      payload: Record<string, unknown>;
+      searchable_text: string;
+      created_at: Date;
+      score: number;
+    }>
+  > {
+    const types = eventTypes && eventTypes.length > 0 ? eventTypes : null;
+    const rows = await this.sql<
+      Array<{
+        id: number;
+        session_id: string;
+        event_type: string;
+        payload: unknown;
+        searchable_text: string;
+        created_at: Date;
+        score: number;
+      }>
+    >`
+      SELECT * FROM session_id_search(
+        ${query},
+        ${types as unknown as string[] | null},
         ${limit}
       )
     `;

@@ -103,6 +103,25 @@ describe("extractSearchableText", () => {
       extractSearchableText({ type: "text_delta", text: "x" } as SSEEventPayload),
     ).toBe("x");
   });
+  it("assistant_message content를 검색 대상으로 사용한다", () => {
+    expect(
+      extractSearchableText({
+        type: "assistant_message",
+        content: "answer text",
+      } as unknown as SSEEventPayload),
+    ).toBe("answer text");
+  });
+  it("user_message messages 배열에서 텍스트를 추출한다", () => {
+    expect(
+      extractSearchableText({
+        type: "user_message",
+        messages: [
+          { role: "system", content: "system" },
+          { role: "user", content: [{ type: "text", text: "user text" }] },
+        ],
+      } as unknown as SSEEventPayload),
+    ).toBe("system user text");
+  });
 });
 
 describe("EventPersistence.persistEvent", () => {

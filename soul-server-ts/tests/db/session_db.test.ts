@@ -141,6 +141,31 @@ describe("SessionDB.updateSession", () => {
   });
 });
 
+describe("SessionDB.interruptRunningSessionsForNode", () => {
+  it("같은 노드의 running 세션을 interrupted로 전환하고 개수를 반환", async () => {
+    const { sql, calls } = createMockSql(() => [{ interrupted_count: "3" }]);
+    const db = new SessionDB(sql);
+
+    const count = await db.interruptRunningSessionsForNode("node-1");
+
+    expect(count).toBe(3);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].values).toEqual(["node-1"]);
+    const query = calls[0].fragments.join("?");
+    expect(query).toContain("UPDATE sessions");
+    expect(query).toContain("status = 'interrupted'");
+    expect(query).toContain("was_running_at_shutdown = FALSE");
+    expect(query).toContain("node_id =");
+    expect(query).toContain("status = 'running'");
+  });
+
+  it("반환 행이 비어 있으면 0", async () => {
+    const { sql } = createMockSql(() => []);
+    const count = await new SessionDB(sql).interruptRunningSessionsForNode("node-1");
+    expect(count).toBe(0);
+  });
+});
+
 describe("SessionDB.appendMetadata", () => {
   it("caller_info entry를 session_append_metadata stored proc에 JSON 배열로 전달", async () => {
     const { sql, calls } = createMockSql(() => [{ session_append_metadata: 7 }]);
@@ -448,7 +473,7 @@ describe("SessionDB MCP cogito 메서드 (본 카드 신규)", () => {
     expect(rows[0].payload_text).toBe('{"x":1}');
   });
 
-  it("searchEvents → event_search(query, sessionIds, limit) + score Number 변환", async () => {
+  it("searchEvents → event_search(query, sessionIds, limit, eventTypes) + score Number 변환", async () => {
     const { sql, calls } = createMockSql(() => [
       {
         id: 1,
@@ -460,8 +485,8 @@ describe("SessionDB MCP cogito 메서드 (본 카드 신규)", () => {
         score: "0.123",
       },
     ]);
-    const results = await new SessionDB(sql).searchEvents("hi", ["s1"], 10);
-    expect(calls[0].values).toEqual(["hi", ["s1"], 10]);
+    const results = await new SessionDB(sql).searchEvents("hi", ["s1"], 10, ["user_message"]);
+    expect(calls[0].values).toEqual(["hi", ["s1"], 10, ["user_message"]]);
     expect(results).toHaveLength(1);
     expect(results[0].score).toBeCloseTo(0.123);
   });
@@ -469,7 +494,28 @@ describe("SessionDB MCP cogito 메서드 (본 카드 신규)", () => {
   it("searchEvents — 빈 sessionIds → null로 변환", async () => {
     const { sql, calls } = createMockSql(() => []);
     await new SessionDB(sql).searchEvents("hi", [], 10);
-    expect(calls[0].values).toEqual(["hi", null, 10]);
+    expect(calls[0].values).toEqual(["hi", null, 10, null]);
+  });
+
+  it("searchEventsBySessionId → session_id_search(query, eventTypes, limit)", async () => {
+    const { sql, calls } = createMockSql(() => [
+      {
+        id: 2,
+        session_id: "sess-hi",
+        event_type: "user_message",
+        payload: { text: "hi" },
+        searchable_text: "hi",
+        created_at: new Date("2026-05-18T00:00:00Z"),
+        score: "0.5",
+      },
+    ]);
+    const results = await new SessionDB(sql).searchEventsBySessionId(
+      "sess",
+      ["user_message"],
+      5,
+    );
+    expect(calls[0].values).toEqual(["sess", ["user_message"], 5]);
+    expect(results[0].score).toBeCloseTo(0.5);
   });
 });
 

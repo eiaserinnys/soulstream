@@ -1,4 +1,4 @@
-"""tsvector 기반 세션 이벤트 전문 검색 엔진."""
+"""BM25 기반 세션 이벤트 전문 검색 엔진."""
 
 import json
 from dataclasses import asdict, dataclass
@@ -19,9 +19,9 @@ class SearchResult:
 
 
 class SessionSearchEngine:
-    """tsvector 전문 검색 엔진.
+    """BM25 전문 검색 엔진.
 
-    PostgreSQL tsvector 내장 검색을 사용하여 on-the-fly 인덱싱 없이 검색한다.
+    PostgreSQL event_search() 함수가 계산한 BM25 점수를 사용한다.
     """
 
     def __init__(self, session_db: PostgresSessionDB) -> None:
@@ -93,4 +93,3 @@ class SessionSearchEngine:
                 event_type=r.get("event_type", ""),
             ))
         return search_results
-

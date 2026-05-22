@@ -115,6 +115,15 @@ async function main(): Promise<void> {
 
   // DB 초기화 (postgres.js)
   const db = new SessionDB(env.DATABASE_URL);
+  const interruptedOnStartup = await db.interruptRunningSessionsForNode(
+    env.SOULSTREAM_NODE_ID,
+  );
+  if (interruptedOnStartup > 0) {
+    logger.warn(
+      { count: interruptedOnStartup, nodeId: env.SOULSTREAM_NODE_ID },
+      "Interrupted stale running sessions on startup",
+    );
+  }
 
   // === wiring (HTTP 서버 시작 *전*에 runtime 의존성 구축) ===
   // SessionBroadcaster는 send 함수가 필요한데 UpstreamAdapter가 그것을 제공.

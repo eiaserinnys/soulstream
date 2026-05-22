@@ -125,7 +125,7 @@ async def api_search_sessions(
     event_types: str | None = None,  # 콤마 구분 문자열
     search_session_id: bool = False,
 ) -> dict:
-    """세션 기록 FTS5 검색 REST 엔드포인트."""
+    """세션 기록 BM25 검색 REST 엔드포인트."""
     from soul_server.service.postgres_session_db import get_session_db
     try:
         db = get_session_db()

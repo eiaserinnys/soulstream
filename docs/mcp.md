@@ -52,7 +52,7 @@ Once connected, all tools below are available inside the Claude Code session.
 | `get_session_summary(session_id)` | Turn-by-turn summary: user prompts, response previews, tools used, context usage |
 | `list_session_events(session_id, event_types, ...)` | Raw event stream with pagination and truncation control |
 | `get_session_event(session_id, event_id)` | Full content of a single event (no truncation) |
-| `search_session_history(query, session_ids, top_k)` | PostgreSQL tsvector/ts_rank full-text search across all session events |
+| `search_session_history(query, session_ids, event_types, search_session_id, top_k)` | BM25 full-text search across session events, with optional event type and session ID matching |
 
 ### Session management
 

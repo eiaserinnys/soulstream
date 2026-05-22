@@ -52,6 +52,34 @@ DEFAULT_FOLDERS: dict[str, str] = {
 
 # ── 공용 유틸리티 함수 ──
 
+def _content_to_text(value) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        texts = []
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            text = item.get("text") or item.get("content")
+            if isinstance(text, str):
+                texts.append(text)
+        return " ".join(filter(None, texts))
+    return ""
+
+
+def _messages_to_text(messages) -> str:
+    if not isinstance(messages, list):
+        return ""
+    texts = []
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        text = _content_to_text(message.get("content"))
+        if text:
+            texts.append(text)
+    return " ".join(texts)
+
+
 def extract_searchable_text(event: dict) -> str:
     """이벤트에서 전문검색 인덱싱 대상 텍스트를 추출한다."""
     event_type = event.get("type")
@@ -67,18 +95,23 @@ def extract_searchable_text(event: dict) -> str:
             return json.dumps(inp, ensure_ascii=False)
     elif event_type == "tool_result":
         content = event.get("result") or event.get("content")
-        if isinstance(content, str):
-            return content
-        if isinstance(content, list):
-            texts = [c.get("text", "") for c in content if isinstance(c, dict)]
-            return " ".join(filter(None, texts))
+        return _content_to_text(content)
     elif event_type in ("user", "user_message"):
         text = event.get("text") or event.get("content")
-        if isinstance(text, str):
-            return text
-        if isinstance(text, list):
-            texts = [c.get("text", "") for c in text if isinstance(c, dict)]
-            return " ".join(filter(None, texts))
+        direct = _content_to_text(text)
+        if direct:
+            return direct
+        return _messages_to_text(event.get("messages"))
+    elif event_type == "assistant_message":
+        return _content_to_text(event.get("content"))
+    elif event_type == "complete":
+        return _content_to_text(event.get("result"))
+    elif event_type == "result":
+        return _content_to_text(event.get("output") or event.get("result"))
+    elif event_type == "error":
+        return _content_to_text(event.get("message"))
+    elif event_type in ("away_summary", "intervention_sent", "realtime_transcript"):
+        return _content_to_text(event.get("content") or event.get("text"))
     return ""
 
 

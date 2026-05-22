@@ -319,13 +319,17 @@ async def download_session_history(
 async def search_session_history(
     query: str,
     session_ids: list[str] | None = None,
+    event_types: list[str] | None = None,
+    search_session_id: bool = False,
     top_k: int = 10,
 ) -> dict:
-    """PostgreSQL tsvector 기반으로 세션 이벤트 텍스트를 검색한다.
+    """BM25 기반으로 세션 이벤트 텍스트를 검색한다.
 
     Args:
         query: 검색어
         session_ids: 검색할 세션 ID 목록. None이면 전체 세션 검색.
+        event_types: 검색할 이벤트 타입 목록. None이면 전체 타입.
+        search_session_id: True이면 session_id 부분 일치 검색을 추가한다.
         top_k: 반환할 최대 결과 수 (최대 100).
 
     Returns:
@@ -338,7 +342,13 @@ async def search_session_history(
     from soul_server.cogito.search import SessionSearchEngine
     try:
         engine = SessionSearchEngine(db)
-        results = await engine.search(query=query, session_ids=session_ids, top_k=top_k)
+        results = await engine.search(
+            query=query,
+            session_ids=session_ids,
+            top_k=top_k,
+            event_types=event_types,
+            search_session_id=search_session_id,
+        )
     except ValueError as e:
         return {"error": str(e)}
     return {"results": [r.to_dict() for r in results]}

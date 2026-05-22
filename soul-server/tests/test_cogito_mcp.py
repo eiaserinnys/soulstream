@@ -927,8 +927,6 @@ class TestOmitToolContent:
 class TestSearchSessionHistoryScore:
     async def test_score_from_db(self):
         """search_session_history가 DB에서 반환된 score를 사용하는지 확인한다."""
-        from soul_server.cogito.search import SessionSearchEngine, SearchResult
-
         mock_db = AsyncMock(spec=PostgresSessionDB)
         mock_db.search_events = AsyncMock(return_value=[
             {
@@ -944,6 +942,42 @@ class TestSearchSessionHistoryScore:
 
         assert len(result["results"]) == 1
         assert result["results"][0]["score"] == 0.75
+
+    async def test_filters_forwarded(self):
+        """event_types와 session_id 검색 옵션이 검색 엔진으로 전달된다."""
+        mock_db = AsyncMock(spec=PostgresSessionDB)
+        mock_db.search_events = AsyncMock(return_value=[
+            {
+                "id": 1, "session_id": "s1", "event_type": "user_message",
+                "searchable_text": "hello world",
+                "score": 0.8,
+            }
+        ])
+        mock_db.search_events_by_session_id = AsyncMock(return_value=[
+            {
+                "id": 2, "session_id": "sess-hello", "event_type": "user_message",
+                "searchable_text": "session match",
+                "score": 0.5,
+            }
+        ])
+
+        fn = _unwrap(mcp_tools.search_session_history)
+        with patch("soul_server.cogito.mcp_session_query.get_session_db", return_value=mock_db):
+            result = await fn(
+                query="hello",
+                session_ids=["s1"],
+                event_types=["user_message"],
+                search_session_id=True,
+                top_k=10,
+            )
+
+        assert [r["event_id"] for r in result["results"]] == [1, 2]
+        mock_db.search_events.assert_called_once_with(
+            "hello", session_ids=["s1"], limit=10, event_types=["user_message"],
+        )
+        mock_db.search_events_by_session_id.assert_called_once_with(
+            "hello", event_types=["user_message"], limit=10,
+        )
 
 
 # ---------------------------------------------------------------------------

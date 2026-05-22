@@ -640,11 +640,36 @@ export class TaskManager {
 
   /**
    * 모든 진행 중 task 정지 + drain. shutdown 시 호출.
-   * 메모리/DB는 그대로 둠 — graceful shutdown 후 재시작 시 catch up.
+   * 종료 신호 직후 DB 상태를 terminal로 먼저 기록한다. 프로세스 재시작이 drain보다
+   * 먼저 완료되어도 대시보드에 stale running 세션이 남지 않아야 한다.
    */
   async shutdown(): Promise<void> {
     const drains: Promise<void>[] = [];
+    const shutdownAt = new Date();
     for (const task of this.tasks.values()) {
+      if (task.status === "running") {
+        task.status = "interrupted";
+        task.completedAt = shutdownAt;
+        try {
+          await this.db.updateSession(task.agentSessionId, {
+            status: "interrupted",
+            last_event_id: task.lastEventId,
+          });
+        } catch (err) {
+          this.logger.warn(
+            { err, sessionId: task.agentSessionId },
+            "DB updateSession failed during shutdown interrupt",
+          );
+        }
+        try {
+          await this.broadcaster.emitSessionUpdated(task);
+        } catch (err) {
+          this.logger.warn(
+            { err, sessionId: task.agentSessionId },
+            "session_updated broadcast failed during shutdown interrupt",
+          );
+        }
+      }
       // engine 살아있으면 status 무관하게 interrupt + drain — interrupted 직후 shutdown
       // 같은 race도 안전하게 처리.
       if (task.engine) {

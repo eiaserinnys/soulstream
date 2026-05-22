@@ -610,6 +610,41 @@ async def test_event_search(test_db):
     assert len(rows) == 0
 
 
+async def test_event_search_uses_bm25_terms(test_db):
+    await _create_session(test_db, "ev-bm25")
+    now = _utc_now()
+
+    await test_db.fetchval(
+        "SELECT event_append($1, $2, $3, $4, $5)",
+        "ev-bm25", "user_message", '{"text":"alpha alpha alpha beta"}',
+        "alpha alpha alpha beta", now,
+    )
+    await test_db.fetchval(
+        "SELECT event_append($1, $2, $3, $4, $5)",
+        "ev-bm25", "user_message", '{"text":"alpha beta gamma delta epsilon"}',
+        "alpha beta gamma delta epsilon", now,
+    )
+
+    terms = await test_db.fetch(
+        """
+        SELECT event_id, term, term_freq, doc_len
+        FROM event_search_terms
+        WHERE session_id = $1 AND term = $2
+        ORDER BY event_id
+        """,
+        "ev-bm25", "alpha",
+    )
+    assert [r["term_freq"] for r in terms] == [3, 1]
+    assert [r["doc_len"] for r in terms] == [4, 5]
+
+    rows = await test_db.fetch(
+        "SELECT * FROM event_search($1, $2, $3, $4)",
+        "alpha", ["ev-bm25"], 10, ["user_message"],
+    )
+    assert [r["id"] for r in rows[:2]] == [1, 2]
+    assert rows[0]["score"] > rows[1]["score"]
+
+
 # === 폴더 CRUD ===
 
 async def test_folder_create_and_get(test_db):
