@@ -31,6 +31,46 @@ export type {
 export type { ClaudeSdkClientConfig, ClaudeSdkQueryFn } from "./claude_sdk_client.js";
 export { AgentsEngineAdapter } from "./agents_adapter.js";
 export type { AgentsAdapterConfig } from "./agents_adapter.js";
+export {
+  AppServerRpcError,
+  buildCodexAppServerArgs,
+  CODEX_APP_SERVER_METHODS,
+  CODEX_APP_SERVER_PROTOCOL_SOURCE,
+  CodexAppServerClient,
+  createStdioAppServerTransport,
+  JsonRpcAppServerClient,
+  toCodexUserInput,
+} from "./codex_app_server/index.js";
+export type {
+  AppServerJsonMessage,
+  AppServerNotification,
+  AppServerRequestId,
+  AppServerServerRequest,
+  AppServerThread,
+  AppServerTransport,
+  AppServerTransportLogger,
+  AppServerTransportUrl,
+  AppServerTurn,
+  AppServerUserInput,
+  CodexAppServerMethod,
+  CodexAppServerMethodMap,
+  CodexAppServerRequest,
+  InitializeParams,
+  InitializeResponse,
+  JsonRpcAppServerClientOptions,
+  StdioAppServerTransportOptions,
+  StdioSpawnProcess,
+  ThreadResumeParams,
+  ThreadResumeResponse,
+  ThreadStartParams,
+  ThreadStartResponse,
+  TurnInterruptParams,
+  TurnInterruptResponse,
+  TurnStartParams,
+  TurnStartResponse,
+  TurnSteerParams,
+  TurnSteerResponse,
+} from "./codex_app_server/index.js";
 
 export { mapThreadEvent } from "./codex_event_mapper.js";
 export { mapClaudeClientEvent } from "./claude_event_mapper.js";
