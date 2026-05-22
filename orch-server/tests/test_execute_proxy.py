@@ -149,7 +149,10 @@ class TestNewMode:
 
         mock_node.send_subscribe_events = AsyncMock(side_effect=fake_subscribe)
 
-        resp = await exec_client.post("/api/execute", json={"prompt": "hello"})
+        resp = await exec_client.post("/api/execute", json={
+            "prompt": "hello",
+            "profile": "test-agent",
+        })
         assert resp.status_code == 200
         assert "text/event-stream" in resp.headers.get("content-type", "")
 
@@ -201,7 +204,10 @@ class TestNewMode:
 
         mock_node.send_subscribe_events = AsyncMock(side_effect=fake_subscribe)
 
-        await exec_client.post("/api/execute", json={"prompt": "hello"})
+        await exec_client.post("/api/execute", json={
+            "prompt": "hello",
+            "profile": "test-agent",
+        })
 
         mock_catalog_service.broadcast_catalog.assert_called()
 
@@ -221,6 +227,7 @@ class TestNewMode:
         ctx = [{"key": "test", "label": "Test", "content": "test content"}]
         await exec_client.post("/api/execute", json={
             "prompt": "hello",
+            "profile": "test-agent",
             "context_items": ctx,
         })
 
@@ -343,7 +350,10 @@ class TestSSEFormat:
 
         mock_node.send_subscribe_events = AsyncMock(side_effect=fake_subscribe)
 
-        resp = await exec_client.post("/api/execute", json={"prompt": "hello"})
+        resp = await exec_client.post("/api/execute", json={
+            "prompt": "hello",
+            "profile": "test-agent",
+        })
         events = _parse_sse_events(resp.text)
 
         thinking_events = [e for e in events if e.get("event") == "thinking"]
@@ -366,7 +376,10 @@ class TestSSEFormat:
 
         mock_node.send_subscribe_events = AsyncMock(side_effect=fake_subscribe)
 
-        resp = await exec_client.post("/api/execute", json={"prompt": "hello"})
+        resp = await exec_client.post("/api/execute", json={
+            "prompt": "hello",
+            "profile": "test-agent",
+        })
         events = _parse_sse_events(resp.text)
 
         event_types = [e.get("event") for e in events]
@@ -389,8 +402,21 @@ class TestErrorHandling:
             side_effect=HTTPException(status_code=503, detail="No nodes available")
         )
 
-        resp = await exec_client.post("/api/execute", json={"prompt": "hello"})
+        resp = await exec_client.post("/api/execute", json={
+            "prompt": "hello",
+            "profile": "test-agent",
+        })
         assert resp.status_code == 503
+
+    async def test_new_session_without_profile_returns_422(
+        self, exec_client, mock_session_router
+    ):
+        """New mode에서 profile/agentId가 없으면 노드까지 보내지 않고 명확한 422를 반환한다."""
+        resp = await exec_client.post("/api/execute", json={"prompt": "hello"})
+
+        assert resp.status_code == 422
+        assert resp.json()["detail"]["error"]["code"] == "AGENT_PROFILE_REQUIRED"
+        mock_session_router.route_create_session.assert_not_called()
 
     async def test_resume_session_not_found_returns_404(
         self, exec_client, mock_node_manager, mock_db
@@ -419,7 +445,10 @@ class TestErrorHandling:
 
         mock_node.send_subscribe_events = AsyncMock(side_effect=fake_subscribe)
 
-        await exec_client.post("/api/execute", json={"prompt": "hello"})
+        await exec_client.post("/api/execute", json={
+            "prompt": "hello",
+            "profile": "test-agent",
+        })
 
         mock_node.unsubscribe_events.assert_called_once_with("sess-123", "sub-cleanup")
 

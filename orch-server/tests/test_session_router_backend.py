@@ -1,47 +1,42 @@
-"""SessionRouter backend 필터 회귀 (옵션 D Phase A — A2).
+"""SessionRouter backend 필터 회귀.
 
 agent.backend ↔ node.supported_backends 매칭 필터 검증.
-profile 부재 / unknown profile은 필터 우회 (graceful).
-target_node가 backend 미지원 시 409, 매칭 노드 없으면 503.
+profile 부재는 legacy caller 호환으로 필터 우회.
+unknown profile은 404, target_node backend 미지원은 409.
 """
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import HTTPException
 
-from soulstream_server.nodes.node_manager import AmbiguousAgentProfile
-from soulstream_server.service.session_router import (
-    NoMatchingBackendNode,
-    SessionRouter,
-)
+from soulstream_server.service.session_router import SessionRouter
 
 
-def _make_node(node_id: str, supported_backends: list[str], session_count: int = 0):
+def _make_node(
+    node_id: str,
+    supported_backends: list[str],
+    session_count: int = 0,
+    agent_profiles: dict | None = None,
+):
     """Mock NodeConnection — supported_backends·session_count·send_create_session만 사용."""
     node = MagicMock()
     node.node_id = node_id
     node.supported_backends = supported_backends
     node.session_count = session_count
+    node.agent_profiles = agent_profiles or {}
     node.send_create_session = AsyncMock(
         return_value={"agentSessionId": f"sess-{node_id}"}
     )
     return node
 
 
-def _make_node_manager(nodes: list, agent_profile: dict | None = None):
-    """Mock NodeManager — get_connected_nodes / get_node / resolve_agent_profile_for_routing."""
+def _make_node_manager(nodes: list):
+    """Mock NodeManager — get_connected_nodes / get_node."""
     nm = MagicMock()
     nm.get_connected_nodes.return_value = nodes
     nm.get_node.side_effect = lambda nid: next(
         (n for n in nodes if n.node_id == nid), None
     )
-    if agent_profile is not None:
-        nm.resolve_agent_profile_for_routing.return_value = (
-            agent_profile,
-            nodes[0].node_id if nodes else "n1",
-        )
-    else:
-        nm.resolve_agent_profile_for_routing.return_value = None
     return nm
 
 
@@ -56,10 +51,8 @@ async def test_no_profile_no_filter():
 
 async def test_profile_matches_backend():
     """agent.backend가 node.supported_backends에 포함되면 정상 라우팅."""
-    n1 = _make_node("n1", ["claude"])
-    router = SessionRouter(
-        _make_node_manager([n1], agent_profile={"backend": "claude"})
-    )
+    n1 = _make_node("n1", ["claude"], agent_profiles={"roselin": {"backend": "claude"}})
+    router = SessionRouter(_make_node_manager([n1]))
     _sid, nid = await router.route_create_session(
         {"prompt": "hi", "profile": "roselin"}
     )
@@ -68,19 +61,23 @@ async def test_profile_matches_backend():
 
 async def test_reasoning_effort_only_forwarded_for_codex_backend():
     """reasoningEffort는 codex backend일 때만 노드 wire로 넘긴다."""
-    codex_node = _make_node("codex-node", ["codex"])
-    codex_router = SessionRouter(
-        _make_node_manager([codex_node], agent_profile={"backend": "codex"})
+    codex_node = _make_node(
+        "codex-node",
+        ["codex"],
+        agent_profiles={"cody": {"backend": "codex"}},
     )
+    codex_router = SessionRouter(_make_node_manager([codex_node]))
     await codex_router.route_create_session(
         {"prompt": "hi", "profile": "cody", "reasoningEffort": "medium"}
     )
     assert codex_node.send_create_session.call_args.kwargs["reasoning_effort"] == "medium"
 
-    claude_node = _make_node("claude-node", ["claude"])
-    claude_router = SessionRouter(
-        _make_node_manager([claude_node], agent_profile={"backend": "claude"})
+    claude_node = _make_node(
+        "claude-node",
+        ["claude"],
+        agent_profiles={"roselin": {"backend": "claude"}},
     )
+    claude_router = SessionRouter(_make_node_manager([claude_node]))
     await claude_router.route_create_session(
         {"prompt": "hi", "profile": "roselin", "reasoningEffort": "medium"}
     )
@@ -99,26 +96,53 @@ async def test_reasoning_effort_forwarded_for_single_backend_codex_node_without_
     assert codex_node.send_create_session.call_args.kwargs["reasoning_effort"] == "low"
 
 
-async def test_no_matching_backend_503():
-    """agent.backend를 지원하는 노드 없으면 503 NoMatchingBackendNode."""
-    n1 = _make_node("n1", ["claude"])
-    router = SessionRouter(
-        _make_node_manager([n1], agent_profile={"backend": "codex"})
+async def test_profile_backend_inconsistent_with_node_returns_409():
+    """profile이 등록된 노드가 그 backend를 지원하지 않으면 설정 오류 409."""
+    n1 = _make_node(
+        "n1",
+        ["claude"],
+        agent_profiles={"cody": {"backend": "codex"}},
     )
+    router = SessionRouter(_make_node_manager([n1]))
     with pytest.raises(HTTPException) as exc:
         await router.route_create_session(
             {"prompt": "hi", "profile": "cody"}
         )
-    assert exc.value.status_code == 503
-    assert "codex" in exc.value.detail
+    assert exc.value.status_code == 409
+    assert "none supports its configured backend" in exc.value.detail
+
+
+async def test_incompatible_duplicate_profile_skips_to_compatible_node():
+    """중복 profile 중 일부 노드 설정이 깨져도 정상 가용 후보로 라우팅한다."""
+    broken = _make_node(
+        "broken",
+        ["claude"],
+        session_count=0,
+        agent_profiles={"cody": {"backend": "codex"}},
+    )
+    compatible = _make_node(
+        "compatible",
+        ["codex"],
+        session_count=5,
+        agent_profiles={"cody": {"backend": "codex"}},
+    )
+    router = SessionRouter(_make_node_manager([broken, compatible]))
+
+    _sid, nid = await router.route_create_session(
+        {"prompt": "hi", "profile": "cody"}
+    )
+
+    assert nid == "compatible"
 
 
 async def test_target_node_lacks_backend_409():
     """target nodeId 지정인데 그 노드가 backend 미지원 시 409."""
-    n1 = _make_node("n1", ["claude"])
-    router = SessionRouter(
-        _make_node_manager([n1], agent_profile={"backend": "codex"})
+    n1 = _make_node(
+        "n1",
+        ["claude"],
+        agent_profiles={"cody": {"backend": "codex"}},
     )
+    router = SessionRouter(_make_node_manager([n1]))
     with pytest.raises(HTTPException) as exc:
         await router.route_create_session(
             {"prompt": "hi", "profile": "cody", "nodeId": "n1"}
@@ -126,31 +150,42 @@ async def test_target_node_lacks_backend_409():
     assert exc.value.status_code == 409
 
 
-async def test_ambiguous_duplicate_agent_id_returns_409():
-    """중복 agent id가 여러 노드에 있으면 임의 라우팅하지 않고 409로 실패한다."""
-    n1 = _make_node("n1", ["codex"])
-    n2 = _make_node("n2", ["claude"])
-    nm = _make_node_manager([n1, n2])
-    nm.resolve_agent_profile_for_routing.side_effect = AmbiguousAgentProfile(
-        "roselin",
-        ["n1", "n2"],
+async def test_duplicate_agent_id_without_target_uses_least_sessions():
+    """중복 agent id가 여러 노드에 있으면 가용 후보 중 session_count 최소 노드로 라우팅한다."""
+    n1 = _make_node(
+        "n1",
+        ["claude"],
+        session_count=5,
+        agent_profiles={"roselin": {"backend": "claude"}},
     )
-    router = SessionRouter(nm)
+    n2 = _make_node(
+        "n2",
+        ["claude"],
+        session_count=1,
+        agent_profiles={"roselin": {"backend": "claude"}},
+    )
+    router = SessionRouter(_make_node_manager([n1, n2]))
 
-    with pytest.raises(HTTPException) as exc:
-        await router.route_create_session(
-            {"prompt": "hi", "profile": "roselin"}
-        )
+    _sid, nid = await router.route_create_session(
+        {"prompt": "hi", "profile": "roselin"}
+    )
 
-    assert exc.value.status_code == 409
-    assert "Ambiguous agent profile" in exc.value.detail
+    assert nid == "n2"
 
 
 async def test_target_node_disambiguates_duplicate_agent_id():
     """nodeId 지정 시 profile backend는 대상 노드 기준으로 해석된다."""
-    n1 = _make_node("n1", ["codex"])
-    n2 = _make_node("n2", ["claude"])
-    nm = _make_node_manager([n1, n2], agent_profile={"backend": "claude"})
+    n1 = _make_node(
+        "n1",
+        ["codex"],
+        agent_profiles={"roselin": {"backend": "codex"}},
+    )
+    n2 = _make_node(
+        "n2",
+        ["claude"],
+        agent_profiles={"roselin": {"backend": "claude"}},
+    )
+    nm = _make_node_manager([n1, n2])
     router = SessionRouter(nm)
 
     _sid, nid = await router.route_create_session(
@@ -158,17 +193,24 @@ async def test_target_node_disambiguates_duplicate_agent_id():
     )
 
     assert nid == "n2"
-    nm.resolve_agent_profile_for_routing.assert_called_once_with("roselin", "n2")
 
 
 async def test_eligible_least_sessions():
     """backend 매칭 노드 중 session_count 최소 노드 선택."""
-    n1 = _make_node("n1", ["claude"], session_count=10)
-    n2 = _make_node("n2", ["claude"], session_count=3)
-    n3 = _make_node("n3", ["codex"], session_count=1)
-    router = SessionRouter(
-        _make_node_manager([n1, n2, n3], agent_profile={"backend": "claude"})
+    n1 = _make_node(
+        "n1",
+        ["claude"],
+        session_count=10,
+        agent_profiles={"roselin": {"backend": "claude"}},
     )
+    n2 = _make_node(
+        "n2",
+        ["claude"],
+        session_count=3,
+        agent_profiles={"roselin": {"backend": "claude"}},
+    )
+    n3 = _make_node("n3", ["codex"], session_count=1)
+    router = SessionRouter(_make_node_manager([n1, n2, n3]))
     _sid, nid = await router.route_create_session(
         {"prompt": "hi", "profile": "roselin"}
     )
@@ -176,11 +218,13 @@ async def test_eligible_least_sessions():
     assert nid == "n2"
 
 
-async def test_unknown_profile_falls_through():
-    """find_agent_profile이 None 반환 시 filter 우회 — 모든 노드 후보."""
+async def test_unknown_profile_returns_404():
+    """profile이 명시됐지만 등록 노드가 없으면 정확한 404를 반환한다."""
     n1 = _make_node("n1", ["claude"])
-    router = SessionRouter(_make_node_manager([n1]))  # agent_profile=None
-    _sid, nid = await router.route_create_session(
-        {"prompt": "hi", "profile": "unknown"}
-    )
-    assert nid == "n1"
+    router = SessionRouter(_make_node_manager([n1]))
+    with pytest.raises(HTTPException) as exc:
+        await router.route_create_session(
+            {"prompt": "hi", "profile": "unknown"}
+        )
+    assert exc.value.status_code == 404
+    assert "unknown" in exc.value.detail

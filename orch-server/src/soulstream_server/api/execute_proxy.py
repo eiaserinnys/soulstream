@@ -81,6 +81,20 @@ def create_execute_proxy_router(
         body: ExecuteProxyRequest, request: Request
     ) -> EventSourceResponse:
         """New 모드: 세션 생성 후 SSE 이벤트 스트리밍."""
+        if not body.profile:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error": {
+                        "code": "AGENT_PROFILE_REQUIRED",
+                        "message": "New execute requests require profile or agentId",
+                        "details": {
+                            "hint": "Set SEOSOYOUNG_AGENT_ID or send profile/agentId in the request body",
+                        },
+                    }
+                },
+            )
+
         # body -> request_dict (route_create_session이 camelCase 키 사용)
         request_dict: dict[str, Any] = {
             "prompt": body.prompt,

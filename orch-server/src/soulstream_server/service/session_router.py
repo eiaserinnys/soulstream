@@ -2,7 +2,7 @@
 SessionRouter — 세션 생성 요청을 적절한 노드로 라우팅.
 
 옵션 D Phase A: agent.backend ↔ node.supported_backends 매칭 필터로 라우팅.
-profile 부재 / unknown profile은 backend 필터 우회 (graceful — 후방호환).
+profile 부재는 후방호환을 위해 backend 필터를 우회한다.
 """
 
 import logging
@@ -10,19 +10,9 @@ import uuid
 
 from fastapi import HTTPException
 
-from soulstream_server.nodes.node_manager import AmbiguousAgentProfile, NodeManager
+from soulstream_server.nodes.node_manager import NodeManager
 
 logger = logging.getLogger(__name__)
-
-
-class NoMatchingBackendNode(HTTPException):
-    """No connected node supports the requested backend."""
-
-    def __init__(self, backend: str):
-        super().__init__(
-            status_code=503,
-            detail=f"No connected node supports backend '{backend}'",
-        )
 
 
 class SessionRouter:
@@ -61,8 +51,12 @@ class SessionRouter:
                     status_code=404,
                     detail=f"Node {target_node_id} not found",
                 )
-            # 옵션 D Phase A: nodeId 지정 시 해당 노드 profile로 backend를 해석한다.
-            backend = self._resolve_backend(request.get("profile"), target_node_id)
+            # nodeId 지정 시 해당 노드 profile로 backend를 해석한다.
+            backend = self._resolve_backend_from_node(
+                node,
+                request.get("profile"),
+                missing_profile_status=404,
+            )
             if backend and backend not in node.supported_backends:
                 raise HTTPException(
                     status_code=409,
@@ -73,15 +67,43 @@ class SessionRouter:
                 )
             effective_backend = backend or self._infer_backend_from_node(node)
         else:
-            # 옵션 D Phase A: profile_id로 agent backend 조회. profile 없으면 None — 필터 우회.
-            backend = self._resolve_backend(request.get("profile"))
-            # backend 매칭 노드만 후보로 — backend가 None이면 모든 노드 후보 (graceful).
-            eligible = [n for n in nodes if not backend or backend in n.supported_backends]
-            if not eligible:
-                raise NoMatchingBackendNode(backend)
-            # least-sessions-first within eligible pool
-            node = min(eligible, key=lambda n: n.session_count)
-            effective_backend = backend or self._infer_backend_from_node(node)
+            profile_id = request.get("profile")
+            if profile_id:
+                eligible = self._profile_nodes(profile_id, nodes)
+                if not eligible:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"Agent profile '{profile_id}' is not registered on any connected node",
+                    )
+                compatible = [
+                    (candidate_node, profile)
+                    for candidate_node, profile in eligible
+                    if profile.get("backend", "claude") in candidate_node.supported_backends
+                ]
+                if not compatible:
+                    backends = [
+                        f"{candidate_node.node_id}:{profile.get('backend', 'claude')}"
+                        for candidate_node, profile in eligible
+                    ]
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            f"Agent profile '{profile_id}' is registered on connected nodes "
+                            f"but none supports its configured backend ({backends})"
+                        ),
+                    )
+
+                # profile이 여러 노드에 있으면 오류가 아니라 가용 후보 중 최소 세션 노드를 고른다.
+                node, profile = min(
+                    compatible,
+                    key=lambda pair: pair[0].session_count,
+                )
+                backend = profile.get("backend", "claude")
+                effective_backend = backend
+            else:
+                # profile 부재는 legacy caller 호환을 위해 모든 노드 후보.
+                node = min(nodes, key=lambda n: n.session_count)
+                effective_backend = self._infer_backend_from_node(node)
 
         session_id = str(uuid.uuid4())
         result = await node.send_create_session(
@@ -108,33 +130,33 @@ class SessionRouter:
         actual_session_id = result.get("agentSessionId", session_id)
         return actual_session_id, node.node_id
 
-    def _resolve_backend(
-        self, profile_id: str | None, preferred_node_id: str | None = None
+    def _resolve_backend_from_node(
+        self,
+        node,
+        profile_id: str | None,
+        *,
+        missing_profile_status: int,
     ) -> str | None:
-        """profile_id로 agent의 backend를 결정.
-
-        profile_id가 없거나 NodeManager가 해당 profile을 찾지 못하면 None을 반환하여
-        backend 필터를 우회한다 (graceful — 후방호환·degraded mode).
-        """
+        """대상 노드의 profile_id로 backend를 결정한다."""
         if not profile_id:
             return None
-        try:
-            found = self._node_manager.resolve_agent_profile_for_routing(
-                profile_id,
-                preferred_node_id,
-            )
-        except AmbiguousAgentProfile as exc:
+        profile = getattr(node, "agent_profiles", {}).get(profile_id)
+        if profile is None:
             raise HTTPException(
-                status_code=409,
-                detail=(
-                    f"Ambiguous agent profile '{exc.agent_id}' registered on nodes "
-                    f"{exc.node_ids}; specify nodeId or use distinct agent ids"
-                ),
-            ) from exc
-        if not found:
-            return None
-        profile, _source_node_id = found
+                status_code=missing_profile_status,
+                detail=f"Agent profile '{profile_id}' is not registered on node {node.node_id}",
+            )
         return profile.get("backend", "claude")
+
+    @staticmethod
+    def _profile_nodes(profile_id: str, nodes) -> list[tuple[object, dict]]:
+        """profile_id가 등록된 연결 노드 후보를 반환한다."""
+        matches: list[tuple[object, dict]] = []
+        for node in nodes:
+            profile = getattr(node, "agent_profiles", {}).get(profile_id)
+            if profile is not None:
+                matches.append((node, profile))
+        return matches
 
     @staticmethod
     def _infer_backend_from_node(node) -> str | None:
