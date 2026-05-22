@@ -35,31 +35,7 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
 
   const [status, setStatus] = useState<ConnectionStatus>("disconnected");
 
-  // Resume 감지: 활성 세션이 completed/error → running으로 바뀌면 구독을 재시작.
-  // subscriptionEpoch를 effect 의존성에 넣어, 값이 바뀔 때 구독 effect가 재실행됨.
-  const activeSessionSummary = useDashboardStore((s) => s.activeSessionSummary);
-  const activeStatus = activeSessionSummary?.status ?? null;
-  const prevStatusRef = useRef<string | null>(null);
-  const [subscriptionEpoch, setSubscriptionEpoch] = useState(0);
-
-  useEffect(() => {
-    const prev = prevStatusRef.current;
-    prevStatusRef.current = activeStatus;
-
-    if (
-      prev !== null &&
-      (prev === "completed" || prev === "error") &&
-      activeStatus === "running"
-    ) {
-      setSubscriptionEpoch((e) => e + 1);
-    }
-  }, [activeStatus]);
-
-  // resume 판별: sessionKey가 동일하고 subscriptionEpoch만 바뀌면 resume
-  const prevSessionKeyRef = useRef<string | null>(null);
-  const prevEpochRef = useRef(0);
-
-  // 마지막으로 수신한 eventId 추적 (resume 시 이후 이벤트만 요청)
+  // 마지막으로 수신한 eventId 추적 (EventSource 자체 재연결 시 이후 이벤트만 요청)
   const lastEventIdRef = useRef(0);
 
   // 이벤트 큐 + 타이머 refs
@@ -116,7 +92,7 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
   const enqueueEvent = useCallback(
     (event: SoulSSEEvent, eventId: number) => {
       // history_sync는 SSE id 없이 payload.last_event_id로 baseline 전달 (eventId=0).
-      // resume 경로(아래 L181)에서 정확한 lastEventId를 보내려면 history_sync도
+      // EventSource 자체 재연결에서 정확한 lastEventId를 보내려면 history_sync도
       // baseline 후보로 인식해야 한다. createSSESubscribe 내부의 currentLastEventId와는
       // 별도 변수이므로 useSessionProvider 측에서도 동일한 갱신 로직이 필요하다.
       let effectiveId = eventId;
@@ -159,41 +135,11 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
   // 세션 변경 시 카드 초기화 및 구독 시작
   useEffect(() => {
     if (!sessionKey) {
-      prevSessionKeyRef.current = null;
-      prevEpochRef.current = subscriptionEpoch;
       setStatus("disconnected");
       return;
     }
 
-    // Resume 판별: sessionKey가 동일하고 epoch만 바뀌면 resume
-    const isResume =
-      sessionKey === prevSessionKeyRef.current &&
-      subscriptionEpoch !== prevEpochRef.current;
-
-    prevSessionKeyRef.current = sessionKey;
-    prevEpochRef.current = subscriptionEpoch;
-
     const provider = getSessionProvider();
-
-    if (isResume) {
-      // Resume: 기존 대화를 유지하고, 마지막 eventId 이후부터만 구독
-      setStatus("connecting");
-
-      const unsubscribe = provider.subscribe(
-        sessionKey,
-        (event, eventId) => {
-          enqueueEvent(event, eventId);
-        },
-        setStatus,
-        { lastEventId: lastEventIdRef.current },
-      );
-
-      return () => {
-        clearTimersAndQueue();
-        unsubscribe();
-        setStatus("disconnected");
-      };
-    }
 
     // 새 세션: 카드 초기화 후 처음부터 구독
     clearTree();
@@ -278,9 +224,8 @@ export function useSessionProvider(options: UseSessionProviderOptions) {
       unsubscribe();
       setStatus("disconnected");
     };
-  // subscriptionEpoch: resume 감지 시 변경되어 구독을 재시작
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionKey, processEvents, clearTree, enqueueEvent, clearTimersAndQueue, subscriptionEpoch, queryClient]);
+  }, [sessionKey, processEvents, clearTree, enqueueEvent, clearTimersAndQueue, queryClient]);
 
   const reconnect = useCallback(() => {
     // 재연결은 sessionKey 변경으로 트리거됨

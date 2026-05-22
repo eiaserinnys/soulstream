@@ -3,7 +3,7 @@
  *
  * `POST /api/sessions/{sessionId}/intervene` 로 텍스트 + 첨부를 전송하고,
  * 성공 시 React Query 캐시에서 해당 세션 상태를 즉시 'running'으로 갱신해
- * SSE 재구독 에포크를 앞당긴다 (5초 폴링 대기 제거).
+ * 입력창/세션 목록 UI를 5초 폴링 전에 갱신한다.
  *
  * 순수에 가까운 함수 — 외부 상태는 파라미터로 주입된 콜백으로만 갱신한다.
  */
@@ -68,7 +68,7 @@ export async function submitIntervention(
   await response.json();
 
   // intervene 성공 즉시 세션 상태를 running으로 업데이트하여
-  // subscriptionEpoch를 즉시 증가시킨다 (5초 폴링 대기 없이 SSE 재구독).
+  // 입력창/세션 목록 UI가 5초 폴링을 기다리지 않게 한다.
   queryClient.setQueriesData<InfiniteData<SessionPage>>(
     { queryKey: ["sessions"], exact: false },
     (old) => {

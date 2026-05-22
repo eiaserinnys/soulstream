@@ -38,6 +38,19 @@ export interface SSESubscribeOptions {
   debugPrefix?: string;
 }
 
+function resolveEventId(data: SoulSSEEvent, sseLastEventId: string): number {
+  const record = data as unknown as Record<string, unknown>;
+  if (record._live_only === true) return 0;
+
+  const payloadEventId = record._event_id;
+  if (typeof payloadEventId === "number" && Number.isFinite(payloadEventId)) {
+    return payloadEventId;
+  }
+
+  const parsed = sseLastEventId ? parseInt(sseLastEventId, 10) : 0;
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 /**
  * SSE 스트림을 구독하고 구독 해제 함수를 반환한다.
  *
@@ -87,7 +100,7 @@ export function createSSESubscribe(options: SSESubscribeOptions): () => void {
       es.addEventListener(eventType, (e: MessageEvent) => {
         try {
           const data = JSON.parse(e.data) as SoulSSEEvent;
-          const eventId = e.lastEventId ? parseInt(e.lastEventId, 10) : 0;
+          const eventId = resolveEventId(data, e.lastEventId);
 
           // history_sync는 SSE id 없이 payload.last_event_id로 baseline 전달.
           // 재연결 시 정확한 lastEventId를 보내려면 이 baseline을 currentLastEventId에 반영해야 한다.

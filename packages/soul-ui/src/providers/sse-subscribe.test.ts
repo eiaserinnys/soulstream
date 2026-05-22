@@ -149,6 +149,60 @@ describe("createSSESubscribe — 재연결 및 lastEventId 전달", () => {
     unsubscribe();
   });
 
+  it("id 없는 _live_only 이벤트는 브라우저 lastEventId가 남아 있어도 eventId=0으로 전달한다", async () => {
+    const createSSESubscribe = await loadModule();
+    const baseUrl = "/api/sessions/abc/events";
+    const onEvent = vi.fn();
+    const unsubscribe = createSSESubscribe({ baseUrl, onEvent });
+
+    instances[0].emit(
+      "user_message",
+      { type: "user_message", text: "go", _event_id: 10 },
+      10,
+    );
+    instances[0].emit(
+      "text_start",
+      {
+        type: "text_start",
+        _live_only: true,
+        tool_use_id: "msg-live",
+      },
+      10,
+    );
+    instances[0].emit(
+      "text_delta",
+      {
+        type: "text_delta",
+        text: "streaming",
+        _live_only: true,
+        tool_use_id: "msg-live",
+      },
+      10,
+    );
+
+    expect(onEvent).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ type: "user_message" }),
+      10,
+    );
+    expect(onEvent).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ type: "text_start" }),
+      0,
+    );
+    expect(onEvent).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({ type: "text_delta" }),
+      0,
+    );
+
+    instances[0].emitError();
+    vi.advanceTimersByTime(3000);
+    expect(instances[1].url).toBe(`${baseUrl}?lastEventId=10`);
+
+    unsubscribe();
+  });
+
   it("연결 오류 후 재연결 URL에 lastEventId 쿼리가 포함된다", async () => {
     const createSSESubscribe = await loadModule();
     const baseUrl = "/api/sessions/abc/events";
