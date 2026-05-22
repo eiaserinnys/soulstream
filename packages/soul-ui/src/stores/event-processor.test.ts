@@ -87,6 +87,28 @@ describe("processEventsBatch — dedup", () => {
     );
     expect(userMsgChildren.length).toBe(1);
   });
+
+  it("eventId 없는 live-only 이벤트는 lastEventId 커서를 되돌리지 않는다", () => {
+    const ctx = createProcessingContext();
+
+    const result = processEventSingle(
+      {
+        type: "text_start",
+        timestamp: 0,
+        tool_use_id: "item-live",
+        _live_only: true,
+      } as unknown as SoulSSEEvent,
+      0,
+      ctx,
+      null,
+      "sess-1",
+      null,
+      42,
+    );
+
+    expect(result.updated).toBe(true);
+    expect(result.newLastEventId).toBe(42);
+  });
 });
 
 describe("processEventSingle — prompt_suggestion", () => {
@@ -312,6 +334,69 @@ describe("processEventsBatch — app-server final assistant message", () => {
       treeNodeType: "text",
     });
     expect((result.root?.children ?? [])).toHaveLength(1);
+  });
+
+  it("id 없는 live-only text_start는 과거 이벤트보다 뒤에 붙는다", () => {
+    const ctx = createProcessingContext();
+    const base = processEventsBatch(
+      [
+        makeUserMessageEvent(10),
+        {
+          event: {
+            type: "assistant_message",
+            timestamp: 1,
+            content: "Stored answer",
+          } as unknown as SoulSSEEvent,
+          eventId: 11,
+        },
+      ],
+      ctx,
+      null,
+      "sess-1",
+      null,
+      0,
+    );
+
+    const live = processEventsBatch(
+      [
+        {
+          event: {
+            type: "text_start",
+            timestamp: 2,
+            tool_use_id: "item-live",
+            _live_only: true,
+          } as unknown as SoulSSEEvent,
+          eventId: 0,
+        },
+        {
+          event: {
+            type: "text_delta",
+            timestamp: 3,
+            text: "Streaming",
+            tool_use_id: "item-live",
+            _live_only: true,
+          } as unknown as SoulSSEEvent,
+          eventId: 0,
+        },
+      ],
+      ctx,
+      base.root,
+      "sess-1",
+      null,
+      11,
+    );
+
+    const children = live.root?.children ?? [];
+    expect(children.map((child) => child.type)).toEqual([
+      "user_message",
+      "assistant_message",
+      "text",
+    ]);
+    expect(children.at(-1)).toMatchObject({
+      type: "text",
+      content: "Streaming",
+    });
+    expect(live.maxEventId).toBe(11);
   });
 
   it("history final assistant_message without a live stream creates one assistant message", () => {

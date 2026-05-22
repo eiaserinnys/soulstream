@@ -181,7 +181,7 @@ export function processEventSingle(
     updated,
     statusUpdate,
     notify,
-    newLastEventId: eventId,
+    newLastEventId: eventId > 0 ? eventId : lastEventId,
     isHistorySync: false,
     clearPromptSuggestionFor:
       event.type === "text_start" && activeSessionKey ? activeSessionKey : null,

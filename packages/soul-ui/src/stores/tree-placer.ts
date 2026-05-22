@@ -78,6 +78,13 @@ function insertNodeInOrder(
   eventId: number,
 ): void {
   const children = root.children;
+  if (eventId <= 0) {
+    // Transient live events are not persisted and therefore do not carry a
+    // server event id. They are still "now" for the active chat, so append
+    // them instead of sorting them before historical positive ids.
+    children.push(node);
+    return;
+  }
   const len = children.length;
   if (len === 0) {
     children.push(node);
