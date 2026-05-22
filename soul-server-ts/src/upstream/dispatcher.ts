@@ -621,9 +621,13 @@ export class CommandDispatcher {
   /**
    * `intervene` 명령 — B-4 구현 (분석 캐시 `20260517-1410-codex-ts-folder-resume-intervene.md` §D).
    *
-   * Codex SDK 0.130.0은 turn-level steer를 지원하지 않으므로 *turn 사이 큐잉*으로 정합:
-   *   - Running 세션 → interventionQueue에 push, 현 turn 종료 후 task_executor가 dequeue하여
-   *     다음 turn 자동 진입 (resumeThread). 응답 `intervene_ack(status="queued", queuePosition)`.
+   * Codex exec adapter는 turn-level steer를 지원하지 않으므로 *turn 사이 큐잉*으로 fallback.
+   * app-server adapter처럼 live steering capability가 있는 엔진은 active turn에 직접 전달 가능:
+   *   - Running 세션 + live steering → active turn 직접 전달. 응답
+   *     `intervene_ack(status="delivered", agentSessionId)`.
+   *   - Running 세션 fallback → interventionQueue에 push, 현 turn 종료 후 task_executor가
+   *     dequeue하여 다음 turn 자동 진입 (resumeThread). 응답
+   *     `intervene_ack(status="queued", queuePosition)`.
    *   - Completed/Error/Interrupted 세션 → status=running 전환 + queue push + startExecution
    *     재호출 → 다음 turn이 resumeThread(task.codexThreadId)로 자동 진입. 응답
    *     `intervene_ack(status="auto_resumed", agentSessionId)`.
@@ -685,13 +689,22 @@ export class CommandDispatcher {
     // 따라서 status 값을 통일해도 동작 영향 0이지만 design-principles §9 일관성·대칭성 정합.
     // 부가 정보(queuePosition · agentSessionId)는 그대로 운반 — 향후 orch가 ACK 본문을
     // 활용하면 즉시 사용 가능.
-    if ("queued" in result) {
+    if ("delivered" in result) {
+      await this.send({
+        type: "intervene_ack",
+        requestId,
+        status: "ok",
+        outcome: "delivered",
+        agentSessionId: sessionId,
+      });
+    } else if ("queued" in result) {
       await this.send({
         type: "intervene_ack",
         requestId,
         status: "ok",
         outcome: "queued",
         queuePosition: result.queuePosition,
+        ...(result.liveSteerStatus ? { liveSteerStatus: result.liveSteerStatus } : {}),
       });
     } else {
       await this.send({
