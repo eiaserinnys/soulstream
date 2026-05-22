@@ -22,6 +22,8 @@ describe("createProcessingContext", () => {
     expect(ctx.nodeMap.size).toBe(0);
 
     expect(ctx.activeTextTarget).toBeNull();
+    expect(ctx.finalizedTextStreams).toBeInstanceOf(Set);
+    expect(ctx.finalizedTextStreams.size).toBe(0);
 
     // historySynced — 라이브 SSE 초기 history phase 동안 false
     expect(ctx.historySynced).toBe(false);
@@ -33,7 +35,9 @@ describe("createProcessingContext", () => {
     const ctx2 = createProcessingContext();
 
     ctx1.nodeMap.set("a", makeNode("a", "text", "hello"));
+    ctx1.finalizedTextStreams.add("stream-1");
     expect(ctx2.nodeMap.size).toBe(0);
+    expect(ctx2.finalizedTextStreams.size).toBe(0);
   });
 });
 

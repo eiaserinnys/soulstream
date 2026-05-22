@@ -182,6 +182,10 @@ export function handleTextStart(
     diag("tree-placer", "→ skip text (already in nodeMap)", { eventId });
     return false;
   }
+  if (streamKey && ctx.finalizedTextStreams.has(streamKey)) {
+    diag("tree-placer", "→ skip text (stream already finalized)", { eventId, streamKey });
+    return false;
+  }
   const textNode = makeNode(eventId > 0 ? `text-${eventId}` : `text-${streamKey ?? eventId}`, "text", "");
   registerNode(ctx, textNode);
   ctx.nodeMap.set(nodeMapKey, textNode);

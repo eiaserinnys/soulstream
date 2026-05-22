@@ -21,6 +21,8 @@ export interface ProcessingContext {
   nodeMap: Map<string, EventTreeNode>;
   /** 현재 text_start → text_delta → text_end 시퀀스의 대상 노드 */
   activeTextTarget: TextTargetNode | null;
+  /** final assistant_message가 먼저 도착한 app-server 텍스트 스트림 키. */
+  finalizedTextStreams: Set<string>;
   /** history_sync 수신 여부. false인 동안은 히스토리 리플레이 중이므로 세션 상태 갱신을 억제. */
   historySynced: boolean;
 }
@@ -29,6 +31,7 @@ export function createProcessingContext(): ProcessingContext {
   return {
     nodeMap: new Map(),
     activeTextTarget: null,
+    finalizedTextStreams: new Set(),
     historySynced: false,
   };
 }

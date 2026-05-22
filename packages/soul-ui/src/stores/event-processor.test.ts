@@ -344,6 +344,77 @@ describe("processEventsBatch — app-server final assistant message", () => {
       treeNodeType: "assistant_message",
     });
   });
+
+  it("history stream fragments loaded after the final assistant_message do not create a duplicate bubble", () => {
+    const ctx = createProcessingContext();
+    const first = processEventsBatch(
+      [
+        {
+          event: {
+            type: "assistant_message",
+            timestamp: 4,
+            content: "Hello final",
+            tool_use_id: "item-1",
+            _final_for_live_stream: true,
+          } as unknown as SoulSSEEvent,
+          eventId: 10,
+        },
+      ],
+      ctx,
+      null,
+      "sess-1",
+      null,
+      0,
+      true,
+    );
+
+    const second = processEventsBatch(
+      [
+        {
+          event: {
+            type: "text_start",
+            timestamp: 1,
+            tool_use_id: "item-1",
+            _live_only: true,
+          } as unknown as SoulSSEEvent,
+          eventId: 1,
+        },
+        {
+          event: {
+            type: "text_delta",
+            timestamp: 2,
+            text: "Hello",
+            tool_use_id: "item-1",
+            _live_only: true,
+          } as unknown as SoulSSEEvent,
+          eventId: 2,
+        },
+        {
+          event: {
+            type: "text_end",
+            timestamp: 3,
+            tool_use_id: "item-1",
+            _live_only: true,
+          } as unknown as SoulSSEEvent,
+          eventId: 3,
+        },
+      ],
+      ctx,
+      first.root,
+      "sess-1",
+      null,
+      10,
+      true,
+    );
+
+    const messages = flattenTree(second.root);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      role: "assistant",
+      content: "Hello final",
+      treeNodeType: "assistant_message",
+    });
+  });
 });
 
 describe("processEventsBatch — skipDedup (history prepend 경로)", () => {

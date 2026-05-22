@@ -353,6 +353,7 @@ export function applyFinalAssistantMessageToLiveText(
   }
   const streamKey = appServerStreamKey(event);
   if (!streamKey) return false;
+  ctx.finalizedTextStreams.add(streamKey);
   const target = ctx.nodeMap.get(`app-server-agent-message:${streamKey}`);
   if (!target || target.type !== "text") return false;
   const e = event as AssistantMessageEvent;
