@@ -172,7 +172,7 @@ describe("CodexAppServerEngineAdapter", () => {
         cwd: "/work",
         runtimeWorkspaceRoots: ["/work"],
         approvalPolicy: "never",
-        sandboxPolicy: "danger-full-access",
+        sandboxPolicy: { type: "dangerFullAccess" },
       }),
     );
 

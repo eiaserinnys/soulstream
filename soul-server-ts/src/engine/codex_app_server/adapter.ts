@@ -363,7 +363,7 @@ function buildTurnStartParams(
     runtimeWorkspaceRoots: [workspaceDir],
     approvalPolicy: "never",
     approvalsReviewer: null,
-    sandboxPolicy: "danger-full-access",
+    sandboxPolicy: { type: "dangerFullAccess" },
     permissions: null,
     model,
     serviceTier: null,

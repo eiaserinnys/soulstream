@@ -76,6 +76,21 @@ export type SandboxMode =
   | string
   | JsonObject;
 
+export type SandboxPolicy =
+  | { type: "dangerFullAccess" }
+  | { type: "readOnly"; networkAccess?: boolean }
+  | {
+      type: "workspaceWrite";
+      networkAccess?: boolean;
+      writableRoots?: string[];
+      excludeSlashTmp?: boolean;
+      excludeTmpdirEnvVar?: boolean;
+    }
+  | {
+      type: "externalSandbox";
+      networkAccess?: "enabled" | "restricted" | "disabled" | string;
+    };
+
 export type ThreadSource = "user" | "subagent" | "memory_consolidation";
 export type ThreadStartSource = "startup" | "clear";
 
@@ -141,7 +156,7 @@ export interface TurnStartParams {
   runtimeWorkspaceRoots?: string[] | null;
   approvalPolicy?: AskForApproval | null;
   approvalsReviewer?: string | JsonObject | null;
-  sandboxPolicy?: SandboxMode | null;
+  sandboxPolicy?: SandboxPolicy | null;
   permissions?: string | null;
   model?: string | null;
   serviceTier?: string | null;
