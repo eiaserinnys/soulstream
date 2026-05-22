@@ -1276,6 +1276,57 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
     expect(onResume).toHaveBeenCalledWith(memTask);
   });
 
+  it("DB running row without active execution is auto-resumed instead of queued", async () => {
+    const mocks = makeMocks();
+    mocks.getSession.mockResolvedValueOnce({
+      session_id: "sess-stale-running",
+      session_type: "claude",
+      status: "running",
+      prompt: "p",
+      claude_session_id: "thr-stale",
+      last_event_id: 5,
+      last_read_event_id: 0,
+      created_at: new Date(),
+      updated_at: new Date(),
+      agent_id: "codex-default",
+      caller_session_id: null,
+      folder_id: null,
+      display_name: null,
+      node_id: "n",
+      client_id: null,
+      last_message: null,
+      metadata: null,
+      was_running_at_shutdown: false,
+      away_summary: null,
+    });
+    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);
+    const onResume = vi.fn();
+
+    const result = await tm.addIntervention(
+      { agentSessionId: "sess-stale-running", text: "resume", user: "u" },
+      onResume,
+    );
+
+    expect(result).toEqual({ autoResumed: true });
+    const memTask = tm.getTask("sess-stale-running");
+    expect(memTask).toBeDefined();
+    expect(memTask!.status).toBe("running");
+    expect(memTask!.codexThreadId).toBe("thr-stale");
+    expect(mocks.emitEventEnvelope).toHaveBeenCalledWith(
+      "sess-stale-running",
+      expect.objectContaining({ type: "user_message", text: "resume" }),
+    );
+    expect(mocks.emitEventEnvelope).not.toHaveBeenCalledWith(
+      "sess-stale-running",
+      expect.objectContaining({ type: "intervention_sent" }),
+    );
+    expect(mocks.updateSession).toHaveBeenCalledWith("sess-stale-running", {
+      status: "running",
+      last_event_id: memTask!.lastEventId,
+    });
+    expect(onResume).toHaveBeenCalledWith(memTask);
+  });
+
   it.each(["error", "interrupted"] as const)("DB에 %s 세션도 hydrate 가능 (terminal 모두)", async (status) => {
     const mocks = makeMocks();
     mocks.getSession.mockResolvedValueOnce({

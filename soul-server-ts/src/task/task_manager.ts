@@ -744,6 +744,15 @@ export class TaskManager {
     //
     // PR #54까지는 두 경로 모두 intervention_sent로 박혀 사용자 보고 "2턴 이후 전부 주황색"
     // 결함. 본 정정으로 wire 분류 정합.
+    if (isDetachedHydratedRunningTask(task)) {
+      this.logger.warn(
+        { sessionId: task.agentSessionId },
+        "hydrated running task has no active execution; auto-resuming instead of queueing",
+      );
+      task.status = "interrupted";
+      task.completedAt = new Date();
+    }
+
     if (task.status === "running") {
       return await this._addInterventionRunning(task, message);
     }
@@ -1030,6 +1039,7 @@ export class TaskManager {
       agentSessionId: row.session_id,
       prompt: row.prompt ?? "",
       status: status as TaskStatus,
+      hydratedFromDb: true,
       profileId: row.agent_id ?? undefined,
       codexThreadId: row.claude_session_id ?? undefined,
       callerSessionId: row.caller_session_id ?? undefined,
@@ -1191,6 +1201,15 @@ function supportsToolApproval(
     engine &&
       typeof (engine as unknown as Partial<SupportsToolApproval>).deliverToolApproval ===
         "function",
+  );
+}
+
+function isDetachedHydratedRunningTask(task: Task): boolean {
+  return (
+    task.status === "running" &&
+    task.hydratedFromDb === true &&
+    !task.engine &&
+    !task.executionPromise
   );
 }
 

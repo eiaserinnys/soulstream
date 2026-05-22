@@ -156,6 +156,9 @@ export interface Task {
   /** task_executor.startExecution 반환 promise. shutdown 시 await. */
   executionPromise?: Promise<void>;
 
+  /** DB에서 복원된 task인지 여부. 실행 중 메모리 task와 구분할 때 사용. */
+  hydratedFromDb?: boolean;
+
   /**
    * Turn 사이 큐잉되는 개입 메시지 (B-4, claude `task_manager.py:603-609`의 asyncio.Queue
    * 정본과 의미 동등). codex SDK는 turn-level steer 미지원이라 turn 종료 후 dequeue → 다음
