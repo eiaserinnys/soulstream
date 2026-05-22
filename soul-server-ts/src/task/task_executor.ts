@@ -5,7 +5,8 @@
  *   1. EnginePort 인스턴스를 engineFactory(agent)로 생성
  *   2. task.engine 설정 (cancelTask가 interrupt 신호 보낼 수 있도록)
  *   3. engine.execute() AsyncIterable drain
- *   4. 매 yield 이벤트: persistEvent → emitEventEnvelope → handleSideEffects → task.lastEventId 갱신
+ *   4. 매 yield 이벤트: 저장 대상은 persistEvent → emitEventEnvelope → handleSideEffects,
+ *      `_live_only`는 영속화 없이 emitEventEnvelope → handleSideEffects
  *   5. session event 첫 yield: task.codexThreadId 박기
  *   6. 종료 시: status 전환 + DB session_update + session_updated broadcast
  *
@@ -23,7 +24,10 @@ import type {
   SSEEventPayload,
 } from "../engine/protocol.js";
 import { CLAUDE_OAUTH_TOKEN_ENV } from "../engine/claude_options.js";
-import type { EventPersistence } from "../db/event_persistence.js";
+import {
+  shouldPersistEvent,
+  type EventPersistence,
+} from "../db/event_persistence.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import {
@@ -314,7 +318,7 @@ export class TaskExecutor {
   }
 
   /**
-   * 단일 이벤트 처리: DB 영속 + broadcast + side effect.
+   * 단일 이벤트 처리: 필요 시 DB 영속 + broadcast + side effect.
    *
    * - 첫 session 이벤트: task.codexThreadId 박기 + DB sessions.claude_session_id 영속화 (F-3B).
    *   stored proc session_set_claude_id가 idempotent하므로 race에도 안전.
@@ -347,23 +351,27 @@ export class TaskExecutor {
     // ride-along 5자리(분석 캐시 `20260518-1338-codex-live-event-id-race.md`): orch session_events.py가
     // wire envelope의 `event._event_id`로 SSE id를 추출 → 대시보드 tree-placer가 dedup·순서 보장.
     // 누락 시 모든 live 이벤트가 `eventId=0`으로 같은 키 취급되어 text_start skip → text_delta/end 미박힘.
+    // 단, app-server `_live_only` 텍스트 조각은 생성 중 wire 전용이다. DB에 저장하면 완성 답변이
+    // delta 조각으로 중복 보존되므로 영속화와 cursor id 부여를 건너뛴다.
     //
     // throw 경로 의도적 차이 (spec-reviewer P2-1): Python L243-248은 try/except *밖*에서
     // `_event_id = None`을 박지만, TS는 try 안에서만 박는다 (throw 시 키 자체 부재).
     // orch session_events.py:L172-176가 None 또는 키 부재 둘 다 `event_id is None` 분기로
     // 처리하므로 wire 동작은 동등. test에서 throw 격리 단언으로 검증.
-    try {
-      const eventId = await this.persistence.persistEvent(
-        task.agentSessionId,
-        event,
-      );
-      task.lastEventId = eventId;
-      (event as Record<string, unknown>)._event_id = eventId;
-    } catch (err) {
-      this.logger.warn(
-        { err, sessionId: task.agentSessionId, eventType },
-        "persistEvent failed",
-      );
+    if (shouldPersistEvent(event)) {
+      try {
+        const eventId = await this.persistence.persistEvent(
+          task.agentSessionId,
+          event,
+        );
+        task.lastEventId = eventId;
+        (event as Record<string, unknown>)._event_id = eventId;
+      } catch (err) {
+        this.logger.warn(
+          { err, sessionId: task.agentSessionId, eventType },
+          "persistEvent failed",
+        );
+      }
     }
 
     // orch broadcast — 실패 격리

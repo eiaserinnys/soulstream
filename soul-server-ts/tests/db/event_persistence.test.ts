@@ -5,6 +5,8 @@ import {
   EventPersistence,
   extractPreviewText,
   extractSearchableText,
+  isLiveOnlyEvent,
+  shouldPersistEvent,
 } from "../../src/db/event_persistence.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { SSEEventPayload } from "../../src/engine/protocol.js";
@@ -103,7 +105,7 @@ describe("extractSearchableText", () => {
       extractSearchableText({ type: "text_delta", text: "x" } as SSEEventPayload),
     ).toBe("x");
   });
-  it("app-server live-only delta는 replay용으로 저장되어도 검색 대상에서 제외한다", () => {
+  it("app-server live-only delta는 생성 중 wire 전용이라 검색 대상에서 제외한다", () => {
     expect(
       extractSearchableText({
         type: "text_delta",
@@ -134,6 +136,24 @@ describe("extractSearchableText", () => {
 });
 
 describe("EventPersistence.persistEvent", () => {
+  it("live-only event는 DB 저장 대상이 아니다", async () => {
+    const { db, appendEvent } = makeMockDB();
+    const { broadcaster } = makeMockBroadcaster();
+    const ep = new EventPersistence(db, broadcaster, silentLogger);
+    const event = {
+      type: "text_delta",
+      text: "partial",
+      _live_only: true,
+    } as unknown as SSEEventPayload;
+
+    expect(isLiveOnlyEvent(event)).toBe(true);
+    expect(shouldPersistEvent(event)).toBe(false);
+    await expect(ep.persistEvent("sess-1", event)).rejects.toThrow(
+      /live-only events must not be persisted/,
+    );
+    expect(appendEvent).not.toHaveBeenCalled();
+  });
+
   it("appendEvent에 type/payload/searchable/timestamp 전달, event_id 반환", async () => {
     const { db, appendEvent } = makeMockDB();
     const { broadcaster } = makeMockBroadcaster();

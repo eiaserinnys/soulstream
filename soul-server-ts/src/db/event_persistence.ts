@@ -5,7 +5,7 @@
  * TS 측은 Codex 흐름에 한정 — metadata_extractor·away_summary는 본 PR 범위 외.
  *
  * 책임:
- *   1. persistEvent: event_append stored proc 호출 → 새 event_id 반환
+ *   1. persistEvent: 저장 대상 이벤트만 event_append stored proc 호출 → 새 event_id 반환
  *   2. handleSideEffects: last_message DB 갱신 + emit_session_message_updated wire 발행
  *      (F-3A) + task.lastAssistantText 누적
  */
@@ -47,6 +47,7 @@ export class EventPersistence {
 
   /**
    * 이벤트를 DB에 영속화. 반환 event_id를 호출자가 task.lastEventId에 박는다.
+   * `_live_only` 이벤트는 생성 중 wire 전용이므로 호출자가 persist 전에 건너뛰어야 한다.
    *
    * @returns 새 events.id (1-based).
    */
@@ -54,6 +55,9 @@ export class EventPersistence {
     sessionId: string,
     event: SSEEventPayload,
   ): Promise<number> {
+    if (!shouldPersistEvent(event)) {
+      throw new Error("live-only events must not be persisted");
+    }
     const eventType = (event as { type: string }).type;
     const payload = JSON.stringify(event);
     const searchable = extractSearchableText(event);
@@ -163,15 +167,21 @@ export function extractPreviewText(event: SSEEventPayload): string {
   return typeof val === "string" ? val : "";
 }
 
+export function isLiveOnlyEvent(event: SSEEventPayload): boolean {
+  return (event as Record<string, unknown>)._live_only === true;
+}
+
+export function shouldPersistEvent(event: SSEEventPayload): boolean {
+  return !isLiveOnlyEvent(event);
+}
+
 /**
  * full-text 검색용 텍스트 추출. Python `soul_common.db.session_db_base.extract_searchable_text`
- * 최소 등가 — 기본은 preview 텍스트를 사용하되, live-only chunk는 final assistant_message가
- * 검색 정본이므로 제외한다.
+ * 최소 등가 — 기본은 preview 텍스트를 사용한다. live-only chunk는 DB 저장 대상이
+ * 아니므로 검색 텍스트도 비운다.
  */
 export function extractSearchableText(event: SSEEventPayload): string {
-  // app-server live chunks are persisted for SSE ids/replay, but the final
-  // assistant_message is the searchable canonical assistant response.
-  if ((event as Record<string, unknown>)._live_only === true) return "";
+  if (isLiveOnlyEvent(event)) return "";
   const preview = extractPreviewText(event);
   if (preview) return preview;
   const messages = (event as Record<string, unknown>).messages;
