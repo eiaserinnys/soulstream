@@ -272,6 +272,31 @@ describe("EventPersistence.handleSideEffects", () => {
     expect(task.lastAssistantText).toBe("Hello.");
   });
 
+  it("assistant_message is the persisted final assistant text for preview/search/push state", async () => {
+    const { db, updateLastMessage } = makeMockDB();
+    const { broadcaster } = makeMockBroadcaster();
+    const ep = new EventPersistence(db, broadcaster, silentLogger);
+    const task = makeTask({ lastAssistantText: "Hel" });
+    const event = {
+      type: "assistant_message",
+      content: "Hello final answer",
+      timestamp: 4,
+      raw_event_type: "item/completed",
+      tool_use_id: "item-1",
+      _final_for_live_stream: true,
+    } as unknown as SSEEventPayload;
+
+    await ep.handleSideEffects("sess-1", event, task);
+
+    expect(task.lastAssistantText).toBe("Hello final answer");
+    expect(updateLastMessage).toHaveBeenCalledWith("sess-1", {
+      type: "assistant_message",
+      preview: "Hello final answer",
+      timestamp: expect.any(String),
+    });
+    expect(extractSearchableText(event)).toBe("Hello final answer");
+  });
+
   it("preview 200자 cap", async () => {
     const { db, updateLastMessage } = makeMockDB();
     const { broadcaster } = makeMockBroadcaster();

@@ -79,7 +79,7 @@ describe("Codex app-server notification mapper", () => {
     });
   });
 
-  it("agent message lifecycle maps to text_start, text_delta, text_end", () => {
+  it("agent message lifecycle keeps live deltas live-only and emits final assistant_message", () => {
     expect(
       mapAppServerNotification({
         method: "item/started",
@@ -96,7 +96,17 @@ describe("Codex app-server notification mapper", () => {
           },
         },
       }),
-    ).toEqual([{ type: "text_start", timestamp: 1 }]);
+    ).toEqual([
+      {
+        type: "text_start",
+        timestamp: 1,
+        raw_event_type: "item/started",
+        thread_id: "thread-1",
+        turn_id: "turn-1",
+        tool_use_id: "item-1",
+        _live_only: true,
+      },
+    ]);
 
     expect(
       mapAppServerNotification({
@@ -108,7 +118,13 @@ describe("Codex app-server notification mapper", () => {
           delta: "hello",
         },
       })[0],
-    ).toMatchObject({ type: "text_delta", text: "hello" });
+    ).toMatchObject({
+      type: "text_delta",
+      text: "hello",
+      raw_event_type: "item/agentMessage/delta",
+      tool_use_id: "item-1",
+      _live_only: true,
+    });
 
     expect(
       mapAppServerNotification({
@@ -126,7 +142,27 @@ describe("Codex app-server notification mapper", () => {
           },
         },
       }),
-    ).toEqual([{ type: "text_end", timestamp: 2 }]);
+    ).toEqual([
+      {
+        type: "assistant_message",
+        content: "hello",
+        timestamp: 2,
+        raw_event_type: "item/completed",
+        thread_id: "thread-1",
+        turn_id: "turn-1",
+        tool_use_id: "item-1",
+        _final_for_live_stream: true,
+      },
+      {
+        type: "text_end",
+        timestamp: 2,
+        raw_event_type: "item/completed",
+        thread_id: "thread-1",
+        turn_id: "turn-1",
+        tool_use_id: "item-1",
+        _live_only: true,
+      },
+    ]);
   });
 
   it("empty reasoning notifications are skipped but non-empty thinking remains", () => {

@@ -52,6 +52,11 @@ function meaningfulDisplayText(value: string): string {
   return /[\p{L}\p{N}]/u.test(text) ? text : "";
 }
 
+function appServerStreamKey(event: SoulSSEEvent): string | null {
+  const toolUseId = (event as unknown as { tool_use_id?: unknown }).tool_use_id;
+  return typeof toolUseId === "string" && toolUseId ? toolUseId : null;
+}
+
 /** LLM 세션의 messages 배열에서 마지막 user 메시지 콘텐츠를 추출한다. */
 function extractLastUserContent(messages?: Array<{role: string; content: unknown}>): string {
   if (!messages) return "";
@@ -336,6 +341,26 @@ export function createNodeFromEvent(
     default:
       return null;
   }
+}
+
+export function applyFinalAssistantMessageToLiveText(
+  event: SoulSSEEvent,
+  ctx: ProcessingContext,
+): boolean {
+  if (event.type !== "assistant_message") return false;
+  if ((event as unknown as { _final_for_live_stream?: unknown })._final_for_live_stream !== true) {
+    return false;
+  }
+  const streamKey = appServerStreamKey(event);
+  if (!streamKey) return false;
+  const target = ctx.nodeMap.get(`app-server-agent-message:${streamKey}`);
+  if (!target || target.type !== "text") return false;
+  const e = event as AssistantMessageEvent;
+  target.content = e.content;
+  target.completed = true;
+  target.textCompleted = true;
+  if (ctx.activeTextTarget === target) ctx.activeTextTarget = null;
+  return true;
 }
 
 /**

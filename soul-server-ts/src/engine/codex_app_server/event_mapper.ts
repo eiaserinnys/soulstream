@@ -7,54 +7,15 @@ import type {
   AppServerTurnError,
   JsonObject,
 } from "./protocol.js";
+import {
+  errorMessage,
+  fieldString,
+  nowEpochSec,
+  rawContext,
+  timestampFromMs,
+} from "./event_mapper_helpers.js";
+import { mapItemCompleted, mapItemStarted } from "./item_mapper.js";
 import { firstMeaningfulText } from "./text_sanitizer.js";
-
-function nowEpochSec(): number {
-  return Date.now() / 1000;
-}
-
-function timestampFromMs(ms: number | undefined): number {
-  return typeof ms === "number" ? ms / 1000 : nowEpochSec();
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function fieldString(value: unknown, key: string): string | undefined {
-  if (!isRecord(value)) return undefined;
-  const raw = value[key];
-  return typeof raw === "string" ? raw : undefined;
-}
-
-function jsonStringify(value: unknown): string {
-  if (typeof value === "string") return value;
-  try {
-    return JSON.stringify(value ?? {});
-  } catch {
-    return String(value);
-  }
-}
-
-function errorMessage(error: AppServerTurnError | null | undefined): string {
-  return error?.message ?? "Codex app-server turn failed";
-}
-
-function isTurnError(value: unknown): value is AppServerTurnError {
-  return isRecord(value) && typeof value.message === "string";
-}
-
-function rawContext(
-  method: string,
-  params: { threadId?: string; turnId?: string; itemId?: string },
-): Record<string, unknown> {
-  return {
-    raw_event_type: method,
-    ...(params.threadId ? { thread_id: params.threadId } : {}),
-    ...(params.turnId ? { turn_id: params.turnId } : {}),
-    ...(params.itemId ? { tool_use_id: params.itemId } : {}),
-  };
-}
 
 export function mapAppServerNotification(
   notification: AppServerNotification,
@@ -141,6 +102,7 @@ export function mapAppServerNotification(
           type: "text_delta",
           text: params.delta,
           timestamp: nowEpochSec(),
+          _live_only: true,
           ...rawContext(notification.method, params),
         } as SSEEventPayload,
       ];
@@ -246,190 +208,6 @@ export function mapAppServerNotification(
           raw_event_type: notification.method,
         } as SSEEventPayload,
       ];
-  }
-}
-
-function mapItemStarted(
-  item: AppServerThreadItem,
-  context: { method: string; threadId: string; turnId: string; timestamp: number },
-): SSEEventPayload[] {
-  switch (item.type) {
-    case "agentMessage":
-      return [{ type: "text_start", timestamp: context.timestamp } as SSEEventPayload];
-
-    case "commandExecution":
-      return [
-        {
-          type: "tool_start",
-          tool_use_id: item.id,
-          tool_name: "command",
-          tool_input: { command: item.command, cwd: item.cwd ?? null },
-          timestamp: context.timestamp,
-          ...rawContext(context.method, context),
-        } as SSEEventPayload,
-      ];
-
-    case "fileChange":
-      return [
-        {
-          type: "tool_start",
-          tool_use_id: item.id,
-          tool_name: "file_change",
-          tool_input: { changes_count: Array.isArray(item.changes) ? item.changes.length : 0 },
-          timestamp: context.timestamp,
-          ...rawContext(context.method, context),
-        } as SSEEventPayload,
-      ];
-
-    case "mcpToolCall":
-      return [
-        {
-          type: "tool_start",
-          tool_use_id: item.id,
-          tool_name: `mcp/${item.server}/${item.tool}`,
-          tool_input: item.arguments ?? {},
-          timestamp: context.timestamp,
-          ...rawContext(context.method, context),
-        } as SSEEventPayload,
-      ];
-
-    case "dynamicToolCall":
-      return [
-        {
-          type: "tool_start",
-          tool_use_id: item.id,
-          tool_name: item.toolName ?? "dynamic_tool",
-          tool_input: item.arguments ?? {},
-          timestamp: context.timestamp,
-          ...rawContext(context.method, context),
-        } as SSEEventPayload,
-      ];
-
-    case "webSearch":
-      return [
-        {
-          type: "tool_start",
-          tool_use_id: item.id,
-          tool_name: "web_search",
-          tool_input: { query: item.query ?? "" },
-          timestamp: context.timestamp,
-          ...rawContext(context.method, context),
-        } as SSEEventPayload,
-      ];
-
-    default:
-      return [];
-  }
-}
-
-function mapItemCompleted(
-  item: AppServerThreadItem,
-  context: { method: string; threadId: string; turnId: string; timestamp: number },
-): SSEEventPayload[] {
-  switch (item.type) {
-    case "agentMessage":
-      return [
-        {
-          type: "text_end",
-          timestamp: context.timestamp,
-        } as SSEEventPayload,
-      ];
-
-    case "reasoning": {
-      const summary = Array.isArray(item.summary) ? item.summary.join("\n") : "";
-      const text = firstMeaningfulText(item.text, summary);
-      if (!text) return [];
-      return [
-        {
-          type: "thinking",
-          text,
-          timestamp: context.timestamp,
-          ...rawContext(context.method, context),
-        } as SSEEventPayload,
-      ];
-    }
-
-    case "commandExecution":
-      return [
-        {
-          type: "tool_result",
-          tool_use_id: item.id,
-          tool_name: "command",
-          result: item.aggregatedOutput ?? "",
-          is_error: item.status === "failed" || (item.exitCode ?? 0) !== 0,
-          timestamp: context.timestamp,
-          ...rawContext(context.method, context),
-        } as SSEEventPayload,
-      ];
-
-    case "fileChange":
-      return [
-        {
-          type: "tool_result",
-          tool_use_id: item.id,
-          tool_name: "file_change",
-          result: jsonStringify(item.changes ?? []),
-          is_error: item.status === "failed",
-          timestamp: context.timestamp,
-          ...rawContext(context.method, context),
-        } as SSEEventPayload,
-      ];
-
-    case "mcpToolCall": {
-      const error = isTurnError(item.error) ? item.error : null;
-      return [
-        {
-          type: "tool_result",
-          tool_use_id: item.id,
-          tool_name: `mcp/${item.server}/${item.tool}`,
-          result: error ? errorMessage(error) : jsonStringify(item.result),
-          is_error: Boolean(error) || item.status === "failed",
-          timestamp: context.timestamp,
-          ...rawContext(context.method, context),
-        } as SSEEventPayload,
-      ];
-    }
-
-    case "dynamicToolCall": {
-      const error = isTurnError(item.error) ? item.error : null;
-      return [
-        {
-          type: "tool_result",
-          tool_use_id: item.id,
-          tool_name: item.toolName ?? "dynamic_tool",
-          result: error ? errorMessage(error) : jsonStringify(item.result),
-          is_error: Boolean(error) || item.status === "failed",
-          timestamp: context.timestamp,
-          ...rawContext(context.method, context),
-        } as SSEEventPayload,
-      ];
-    }
-
-    case "webSearch":
-      return [
-        {
-          type: "tool_result",
-          tool_use_id: item.id,
-          tool_name: "web_search",
-          result: jsonStringify(item.result),
-          is_error: item.status === "failed",
-          timestamp: context.timestamp,
-          ...rawContext(context.method, context),
-        } as SSEEventPayload,
-      ];
-
-    case "plan":
-      return [
-        {
-          type: "progress",
-          text: item.text ?? "",
-          timestamp: context.timestamp,
-          ...rawContext(context.method, context),
-        } as SSEEventPayload,
-      ];
-
-    default:
-      return [];
   }
 }
 

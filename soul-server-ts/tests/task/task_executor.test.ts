@@ -150,6 +150,72 @@ describe("TaskExecutor.startExecution", () => {
     expect(mocks.emitSessionUpdated).toHaveBeenCalledWith(task);
   });
 
+  it("app-server live-only text chunks are broadcast but not persisted; final assistant_message is persisted", async () => {
+    const mocks = makeMocks();
+    const events: SSEEventPayload[] = [
+      {
+        type: "text_start",
+        timestamp: 1,
+        raw_event_type: "item/started",
+        tool_use_id: "item-1",
+        _live_only: true,
+      } as unknown as SSEEventPayload,
+      {
+        type: "text_delta",
+        text: "Hel",
+        timestamp: 2,
+        raw_event_type: "item/agentMessage/delta",
+        tool_use_id: "item-1",
+        _live_only: true,
+      } as unknown as SSEEventPayload,
+      {
+        type: "text_delta",
+        text: "lo",
+        timestamp: 3,
+        raw_event_type: "item/agentMessage/delta",
+        tool_use_id: "item-1",
+        _live_only: true,
+      } as unknown as SSEEventPayload,
+      {
+        type: "assistant_message",
+        content: "Hello",
+        timestamp: 4,
+        raw_event_type: "item/completed",
+        tool_use_id: "item-1",
+        _final_for_live_stream: true,
+      } as unknown as SSEEventPayload,
+      {
+        type: "text_end",
+        timestamp: 4,
+        raw_event_type: "item/completed",
+        tool_use_id: "item-1",
+        _live_only: true,
+      } as unknown as SSEEventPayload,
+    ];
+    const executor = new TaskExecutor(
+      () => makeFakeEngine(events),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    const persistedTypes = mocks.persistEvent.mock.calls.map(
+      (c) => (c[1] as { type: string }).type,
+    );
+    expect(persistedTypes).toEqual(["user_message", "assistant_message"]);
+    expect(mocks.emitEventEnvelope).toHaveBeenCalledTimes(6);
+    expect(mocks.handleSideEffects).toHaveBeenCalledTimes(6);
+    expect(task.lastEventId).toBe(2);
+    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", {
+      status: "completed",
+      last_event_id: 2,
+    });
+  });
+
   it("신규 task attachmentPaths → user_message.attachments 보존 + 이미지 path는 engine params로 전달", async () => {
     const mocks = makeMocks();
     let capturedImageAttachmentPaths: string[] | undefined;

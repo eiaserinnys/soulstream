@@ -27,7 +27,11 @@ import {
   type ProcessingContext,
   ensureRoot,
 } from "./processing-context";
-import { createNodeFromEvent, applyUpdate } from "./node-factory";
+import {
+  createNodeFromEvent,
+  applyFinalAssistantMessageToLiveText,
+  applyUpdate,
+} from "./node-factory";
 import { placeInTree, handleTextStart } from "./tree-placer";
 import { shouldNotify, deriveSessionStatus } from "./session-updater";
 
@@ -144,10 +148,13 @@ export function processEventSingle(
   }
 
   // 노드 생성/배치/업데이트
-  const node = createNodeFromEvent(event, eventId);
+  const replacedLiveText = applyFinalAssistantMessageToLiveText(event, ctx);
+  const node = replacedLiveText ? null : createNodeFromEvent(event, eventId);
   let updated: boolean;
 
-  if (node) {
+  if (replacedLiveText) {
+    updated = true;
+  } else if (node) {
     root = ensureRoot(root, ctx);
     placeInTree(node, event, eventId, ctx, root);
     updated = true;
@@ -265,8 +272,11 @@ export function processEventsBatch(
     }
 
     // 노드 생성/배치/업데이트
-    const node = createNodeFromEvent(event, eventId);
-    if (node) {
+    const replacedLiveText = applyFinalAssistantMessageToLiveText(event, ctx);
+    const node = replacedLiveText ? null : createNodeFromEvent(event, eventId);
+    if (replacedLiveText) {
+      updated = true;
+    } else if (node) {
       root = ensureRoot(root, ctx);
       placeInTree(node, event, eventId, ctx, root);
       updated = true;

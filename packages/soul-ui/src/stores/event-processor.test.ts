@@ -10,6 +10,7 @@ import { describe, it, expect } from "vitest";
 import { processEventsBatch, processEventSingle } from "./event-processor";
 import { createProcessingContext } from "./processing-context";
 import type { SoulSSEEvent } from "@shared/types";
+import { flattenTree } from "../lib/flatten-tree";
 
 function makeUserMessageEvent(eventId: number): { event: SoulSSEEvent; eventId: number } {
   return {
@@ -238,6 +239,110 @@ describe("processEventsBatch — prompt_suggestion", () => {
 
     expect(result.promptSuggestion).toBeNull();
     expect(result.clearPromptSuggestionFor).toBeNull();
+  });
+});
+
+describe("processEventsBatch — app-server final assistant message", () => {
+  it("live final assistant_message replaces the streaming text node instead of creating a duplicate bubble", () => {
+    const ctx = createProcessingContext();
+    const result = processEventsBatch(
+      [
+        {
+          event: {
+            type: "text_start",
+            timestamp: 1,
+            tool_use_id: "item-1",
+            _live_only: true,
+          } as unknown as SoulSSEEvent,
+          eventId: 0,
+        },
+        {
+          event: {
+            type: "text_delta",
+            timestamp: 2,
+            text: "Hel",
+            tool_use_id: "item-1",
+            _live_only: true,
+          } as unknown as SoulSSEEvent,
+          eventId: 0,
+        },
+        {
+          event: {
+            type: "text_delta",
+            timestamp: 3,
+            text: "lo",
+            tool_use_id: "item-1",
+            _live_only: true,
+          } as unknown as SoulSSEEvent,
+          eventId: 0,
+        },
+        {
+          event: {
+            type: "assistant_message",
+            timestamp: 4,
+            content: "Hello final",
+            tool_use_id: "item-1",
+            _final_for_live_stream: true,
+          } as unknown as SoulSSEEvent,
+          eventId: 10,
+        },
+        {
+          event: {
+            type: "text_end",
+            timestamp: 4,
+            tool_use_id: "item-1",
+            _live_only: true,
+          } as unknown as SoulSSEEvent,
+          eventId: 0,
+        },
+      ],
+      ctx,
+      null,
+      "sess-1",
+      null,
+      0,
+    );
+
+    const messages = flattenTree(result.root);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      role: "assistant",
+      content: "Hello final",
+      isStreaming: false,
+      treeNodeType: "text",
+    });
+    expect((result.root?.children ?? [])).toHaveLength(1);
+  });
+
+  it("history final assistant_message without a live stream creates one assistant message", () => {
+    const ctx = createProcessingContext();
+    const result = processEventsBatch(
+      [
+        {
+          event: {
+            type: "assistant_message",
+            timestamp: 4,
+            content: "Hello final",
+            tool_use_id: "item-1",
+            _final_for_live_stream: true,
+          } as unknown as SoulSSEEvent,
+          eventId: 10,
+        },
+      ],
+      ctx,
+      null,
+      "sess-1",
+      null,
+      0,
+    );
+
+    const messages = flattenTree(result.root);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      role: "assistant",
+      content: "Hello final",
+      treeNodeType: "assistant_message",
+    });
   });
 });
 

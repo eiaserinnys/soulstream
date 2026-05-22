@@ -51,6 +51,11 @@ function extractNodeEventId(node: EventTreeNode): number {
   return extractEventId(node.id) ?? Number.NEGATIVE_INFINITY;
 }
 
+function textStreamKey(event: TextStartEvent): string | null {
+  const toolUseId = (event as unknown as { tool_use_id?: unknown }).tool_use_id;
+  return typeof toolUseId === "string" && toolUseId ? toolUseId : null;
+}
+
 /**
  * 새 노드를 root.children 의 시간순(eventId ASC) 위치에 삽입한다.
  *
@@ -169,15 +174,18 @@ export function handleTextStart(
   ctx: ProcessingContext,
   root: EventTreeNode,
 ): boolean {
+  const streamKey = textStreamKey(event);
+  const nodeMapKey = eventId > 0 ? String(eventId) : streamKey ? `text:${streamKey}` : String(eventId);
   // ancestor 동봉으로 이미 처리된 text 노드의 재진입 방지 — silent skip.
   // 호출자(event-processor)에 false를 반환하여 activeTextTarget 변경을 막는다.
-  if (ctx.nodeMap.has(String(eventId))) {
+  if (ctx.nodeMap.has(nodeMapKey)) {
     diag("tree-placer", "→ skip text (already in nodeMap)", { eventId });
     return false;
   }
-  const textNode = makeNode(`text-${eventId}`, "text", "");
+  const textNode = makeNode(eventId > 0 ? `text-${eventId}` : `text-${streamKey ?? eventId}`, "text", "");
   registerNode(ctx, textNode);
-  ctx.nodeMap.set(String(eventId), textNode);
+  ctx.nodeMap.set(nodeMapKey, textNode);
+  if (streamKey) ctx.nodeMap.set(`app-server-agent-message:${streamKey}`, textNode);
   insertNodeInOrder(root, textNode, eventId);
   diag("tree-placer", "→ insert", {
     eventId,
