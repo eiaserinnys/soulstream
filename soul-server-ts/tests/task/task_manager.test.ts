@@ -2,7 +2,11 @@ import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
 import type { SessionDB } from "../../src/db/session_db.js";
-import type { EnginePort, SupportsToolApproval } from "../../src/engine/protocol.js";
+import type {
+  EnginePort,
+  SupportsLiveTurnSteering,
+  SupportsToolApproval,
+} from "../../src/engine/protocol.js";
 import { TaskManager } from "../../src/task/task_manager.js";
 import type { Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
@@ -651,6 +655,86 @@ describe("TaskManager.shutdown", () => {
 });
 
 describe("TaskManager.addIntervention (B-4)", () => {
+  it("running task + live steering capability delivered → intervention_sent broadcast + no queue", async () => {
+    const { db, broadcaster, emitEventEnvelope } = makeMocks();
+    const tm = new TaskManager("n", db, broadcaster, silentLogger);
+    const task = await tm.createTask({
+      agentSessionId: "s-live",
+      prompt: "p",
+      profileId: "codex-default",
+    });
+    const steerActiveTurn = vi.fn().mockResolvedValue({ status: "delivered" });
+    task.engine = {
+      backendId: "codex",
+      workspaceDir: "/tmp/codex",
+      async *execute(): AsyncIterable<never> {},
+      async interrupt() { return true; },
+      async close() {},
+      steerActiveTurn,
+    } as EnginePort & SupportsLiveTurnSteering;
+
+    const result = await tm.addIntervention(
+      {
+        agentSessionId: "s-live",
+        text: "focus on the failing test",
+        user: "alice",
+        attachmentPaths: ["/tmp/a.png"],
+      },
+      vi.fn(),
+    );
+
+    expect(result).toEqual({ delivered: true });
+    expect(task.interventionQueue).toEqual([]);
+    expect(steerActiveTurn).toHaveBeenCalledWith({
+      prompt: "focus on the failing test",
+      imageAttachmentPaths: ["/tmp/a.png"],
+    });
+    expect(emitEventEnvelope).toHaveBeenCalledWith(
+      "s-live",
+      expect.objectContaining({
+        type: "intervention_sent",
+        text: "focus on the failing test",
+        user: "alice",
+      }),
+    );
+  });
+
+  it("running task + live steering capability failure → existing queue fallback with status", async () => {
+    const { db, broadcaster } = makeMocks();
+    const tm = new TaskManager("n", db, broadcaster, silentLogger);
+    const task = await tm.createTask({
+      agentSessionId: "s-fallback",
+      prompt: "p",
+      profileId: "codex-default",
+    });
+    const steerActiveTurn = vi.fn().mockResolvedValue({
+      status: "no_active_turn",
+      message: "active turn missing",
+    });
+    task.engine = {
+      backendId: "codex",
+      workspaceDir: "/tmp/codex",
+      async *execute(): AsyncIterable<never> {},
+      async interrupt() { return true; },
+      async close() {},
+      steerActiveTurn,
+    } as EnginePort & SupportsLiveTurnSteering;
+
+    const result = await tm.addIntervention(
+      { agentSessionId: "s-fallback", text: "queue me", user: "alice" },
+      vi.fn(),
+    );
+
+    expect(result).toEqual({
+      queued: true,
+      queuePosition: 1,
+      liveSteerStatus: "no_active_turn",
+    });
+    expect(task.interventionQueue).toHaveLength(1);
+    expect(task.interventionQueue[0]).toMatchObject({ text: "queue me", user: "alice" });
+    expect(steerActiveTurn).toHaveBeenCalledTimes(1);
+  });
+
   it("running task → queue push + intervention_sent broadcast via emitEventEnvelope + queued result", async () => {
     // ride-along 5자리 fix (Ft1NJquP): intervention_sent는 _event_id 박힌 dict를
     // emitEventEnvelope으로 발행. emitInterventionSent은 미사용 (별 카드 통합 후보).

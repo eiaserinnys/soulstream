@@ -34,9 +34,11 @@ import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import type {
   BackendId,
   InputResponseDeliveryResult,
+  LiveTurnSteerStatus,
   ReasoningEffort,
   SSEEventPayload,
   SupportsInputResponse,
+  SupportsLiveTurnSteering,
   SupportsToolApproval,
   ToolApprovalDecision,
   ToolApprovalDeliveryResult,
@@ -74,12 +76,14 @@ export interface CreateTaskParams {
 /**
  * `addIntervention` 결과. Python `task_manager.add_intervention` L590-595 정본 형상.
  *
- * - running 세션 → `{queued: true, queuePosition}` — 현 turn 종료 후 task_executor가 dequeue.
+ * - running 세션 + live steering 지원 → `{delivered: true}` — 현 active turn에 직접 전달.
+ * - running 세션 fallback → `{queued: true, queuePosition}` — 현 turn 종료 후 task_executor가 dequeue.
  * - completed/error/interrupted → `{autoResumed: true}` — task_executor.startExecution이
  *   resumeSessionId(task.codexThreadId)로 다음 turn 자동 시작.
  */
 export type AddInterventionResult =
-  | { queued: true; queuePosition: number }
+  | { delivered: true }
+  | { queued: true; queuePosition: number; liveSteerStatus?: LiveTurnSteerStatus }
   | { autoResumed: true };
 
 /** addIntervention이 받는 메시지. dispatcher가 wire payload에서 조립. */
@@ -778,11 +782,12 @@ export class TaskManager {
    * Turn 사이 개입 메시지 추가 (B-4, 분석 캐시
    * `20260517-1410-codex-ts-folder-resume-intervene.md` §D-3).
    *
-   * Python `service/task_manager.py:563-642 add_intervention` 정본의 codex 적응판.
-   *
-   * 분기:
-   *   - Running: interventionQueue에 push → intervention_sent broadcast → `{queued, queuePosition}`.
-   *     현 turn 종료 후 task_executor가 dequeue하여 다음 turn으로 자동 진입.
+ * Python `service/task_manager.py:563-642 add_intervention` 정본의 codex 적응판.
+ *
+ * 분기:
+ *   - Running + live steering capability: active turn에 직접 전달 → `{delivered}`.
+ *   - Running fallback: interventionQueue에 push → intervention_sent broadcast → `{queued, queuePosition}`.
+ *     현 turn 종료 후 task_executor가 dequeue하여 다음 turn으로 자동 진입.
    *   - Completed/Error/Interrupted: status를 "running"으로 돌리고 queue에 push +
    *     intervention_sent broadcast + onResume 콜백 호출 → `{autoResumed}`. 콜백은 호출자가
    *     task_executor.startExecution을 호출하도록 제공. design-principles §1(지식 경계) —
@@ -842,10 +847,10 @@ export class TaskManager {
   }
 
   /**
-   * 진행 중 task에 intervention 도착 → intervention_sent 영속화 + broadcast + queue.push.
+   * 진행 중 task에 intervention 도착 → intervention_sent 영속화 + broadcast.
    *
-   * Python `task_executor.py:352-389 on_intervention_sent` 정본. 현 turn 종료 후 task_executor가
-   * dequeue하여 다음 turn으로 진입.
+   * live steering capability가 있으면 현 active turn에 직접 주입한다. 미지원/실패 시 기존처럼
+   * queue.push 후 task_executor가 현 turn 종료 뒤 dequeue하여 다음 turn으로 진입한다.
    */
   private async _addInterventionRunning(
     task: Task,
@@ -899,8 +904,43 @@ export class TaskManager {
         "intervention_sent broadcast failed",
       );
     }
+
+    let liveSteerStatus: LiveTurnSteerStatus | undefined;
+    if (supportsLiveTurnSteering(task.engine)) {
+      try {
+        const steerResult = await task.engine.steerActiveTurn({
+          prompt: message.text,
+          ...(message.attachmentPaths && message.attachmentPaths.length > 0
+            ? { imageAttachmentPaths: message.attachmentPaths }
+            : {}),
+        });
+        liveSteerStatus = steerResult.status;
+        if (steerResult.status === "delivered") {
+          return { delivered: true };
+        }
+        this.logger.warn(
+          {
+            sessionId: task.agentSessionId,
+            status: steerResult.status,
+            message: steerResult.message,
+          },
+          "live turn steer not delivered — queueing intervention fallback",
+        );
+      } catch (err) {
+        liveSteerStatus = "failed";
+        this.logger.warn(
+          { err, sessionId: task.agentSessionId },
+          "live turn steer failed — queueing intervention fallback",
+        );
+      }
+    }
+
     task.interventionQueue.push(message);
-    return { queued: true, queuePosition: task.interventionQueue.length };
+    return {
+      queued: true,
+      queuePosition: task.interventionQueue.length,
+      ...(liveSteerStatus ? { liveSteerStatus } : {}),
+    };
   }
 
   /**
@@ -1274,6 +1314,16 @@ function supportsInputResponse(
   return Boolean(
     engine &&
       typeof (engine as unknown as Partial<SupportsInputResponse>).deliverInputResponse ===
+        "function",
+  );
+}
+
+function supportsLiveTurnSteering(
+  engine: Task["engine"],
+): engine is NonNullable<Task["engine"]> & SupportsLiveTurnSteering {
+  return Boolean(
+    engine &&
+      typeof (engine as unknown as Partial<SupportsLiveTurnSteering>).steerActiveTurn ===
         "function",
   );
 }

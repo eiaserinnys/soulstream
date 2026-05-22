@@ -411,6 +411,26 @@ describe("send_message_to_session", () => {
     expect(params.callerInfo?.agent_id).toBe("codex-default");
   });
 
+  it("local live-steer delivery result passes through without orch fallback", async () => {
+    const runtime = makeRuntime({ delivered: true });
+    const client = await createClient(runtime);
+
+    const result = await client.callTool({
+      name: "send_message_to_session",
+      arguments: {
+        target_session_id: "target-sess-1",
+        message: "steer now",
+      },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toEqual({
+      ok: true,
+      detail: { delivered: true },
+    });
+    expect(runtime.addIntervention).toHaveBeenCalledTimes(1);
+  });
+
   it("local failure falls back to orch /intervene with snake_case caller_info", async () => {
     const capture = await createOrchCapture();
     try {

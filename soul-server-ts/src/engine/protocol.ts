@@ -182,6 +182,31 @@ export interface SupportsThreadFork {
 }
 
 /**
+ * 백엔드가 실행 중 turn에 live user input steering을 지원하면 구현.
+ *
+ * Codex app-server generated schema 기준 `turn/steer`는 threadId + expectedTurnId로
+ * 현재 active turn에 UserInput[]을 전달한다. 기존 exec adapter는 해당 표면이 없어
+ * 구현하지 않으며, 호출자는 capability presence로만 판단한다.
+ */
+export type LiveTurnSteerStatus =
+  | "delivered"
+  | "not_supported"
+  | "no_active_turn"
+  | "turn_mismatch"
+  | "failed";
+
+export interface LiveTurnSteerResult {
+  status: LiveTurnSteerStatus;
+  message?: string;
+}
+
+export interface SupportsLiveTurnSteering {
+  steerActiveTurn(
+    input: EngineUserInput,
+  ): Promise<LiveTurnSteerResult> | LiveTurnSteerResult;
+}
+
+/**
  * 백엔드가 turn 중 AskUserQuestion 같은 input request 응답 주입을 지원하면 구현.
  *
  * Codex SDK 0.130.0은 해당 표면이 없으므로 구현하지 않는다. 호출자는 capability

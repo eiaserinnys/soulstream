@@ -490,6 +490,29 @@ describe("CommandDispatcher.create_session", () => {
 });
 
 describe("CommandDispatcher.intervene (B-4)", () => {
+  it("running task에 intervene → addIntervention delivered → intervene_ack(delivered)", async () => {
+    const addIntervention = vi.fn(async () => ({ delivered: true }));
+    const { dispatcher, sent } = createDispatcher({
+      taskManager: { addIntervention } as Partial<TaskManager>,
+    });
+    await dispatcher.dispatch({
+      type: "intervene",
+      agentSessionId: "sess-live",
+      text: "steer now",
+      user: "alice",
+      requestId: "i-live",
+    });
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({
+      type: "intervene_ack",
+      requestId: "i-live",
+      status: "ok",
+      outcome: "delivered",
+      agentSessionId: "sess-live",
+    });
+  });
+
   it("running task에 intervene → addIntervention queued → intervene_ack(queued, queuePosition)", async () => {
     const addIntervention = vi.fn(async () => ({ queued: true, queuePosition: 2 }));
     const { dispatcher, sent } = createDispatcher({
