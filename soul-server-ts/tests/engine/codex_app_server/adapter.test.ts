@@ -150,7 +150,7 @@ describe("CodexAppServerEngineAdapter", () => {
     await vi.waitFor(() => expect(client.startTurn).toHaveBeenCalledTimes(1));
     expect(client.initialize).toHaveBeenCalledWith({
       clientInfo: { name: "soul-server-ts", version: "0.0.1" },
-      capabilities: null,
+      capabilities: { experimentalApi: true },
     });
     expect(client.startThread).toHaveBeenCalledWith(
       expect.objectContaining({

@@ -195,7 +195,7 @@ export class CodexAppServerEngineAdapter
     if (this.initialized) return;
     await this.client.initialize({
       clientInfo: CLIENT_INFO,
-      capabilities: null,
+      capabilities: { experimentalApi: true },
     });
     this.initialized = true;
   }

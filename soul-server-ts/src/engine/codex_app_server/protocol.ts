@@ -46,7 +46,7 @@ export interface InitializeParams {
     name: string;
     version: string;
   };
-  capabilities: JsonObject | null;
+  capabilities: InitializeCapabilities | null;
 }
 
 export interface InitializeResponse {
@@ -54,6 +54,12 @@ export interface InitializeResponse {
   codexHome: string;
   platformFamily: string;
   platformOs: string;
+}
+
+export interface InitializeCapabilities {
+  experimentalApi?: boolean;
+  optOutNotificationMethods?: string[] | null;
+  requestAttestation?: boolean;
 }
 
 export type AskForApproval =
