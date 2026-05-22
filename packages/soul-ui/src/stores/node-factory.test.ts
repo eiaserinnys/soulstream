@@ -331,6 +331,22 @@ describe("createNodeFromEvent", () => {
       expect(node!.completed).toBe(true);
     });
 
+    it("should create node for Codex thinking text payload", () => {
+      const event: ThinkingEvent = {
+        type: "thinking",
+        timestamp: 1700000000,
+        text: "",
+      };
+
+      const node = createNodeFromEvent(event, 11);
+
+      expect(node).not.toBeNull();
+      expect(node!.id).toBe("thinking-11");
+      expect(node!.type).toBe("thinking");
+      expect(node!.content).toBe("");
+      expect(node!.completed).toBe(true);
+    });
+
     it("should return null for subagent_start (R4: ignored)", () => {
       const event: SubagentStartEvent = {
         type: "subagent_start",

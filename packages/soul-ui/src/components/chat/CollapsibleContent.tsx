@@ -5,13 +5,14 @@ export const CollapsibleContent = memo(function CollapsibleContent({
   content,
   label,
 }: {
-  content: string;
+  content: string | null | undefined;
   label: string;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const lines = content.split("\n");
+  const safeContent = content ?? "";
+  const lines = safeContent.split("\n");
   const needsCollapse = lines.length > 3;
-  const preview = needsCollapse ? lines.slice(0, 3).join("\n") + "..." : content;
+  const preview = needsCollapse ? lines.slice(0, 3).join("\n") + "..." : safeContent;
 
   return (
     <div>
@@ -29,7 +30,7 @@ export const CollapsibleContent = memo(function CollapsibleContent({
         </span>
       )}
       <pre className="text-xs text-muted-foreground bg-input rounded px-2 py-1.5 whitespace-pre-wrap break-words overflow-auto max-h-60 font-mono">
-        {expanded || !needsCollapse ? content : preview}
+        {expanded || !needsCollapse ? safeContent : preview}
       </pre>
     </div>
   );

@@ -142,7 +142,7 @@ export function createNodeFromEvent(
 
     case "thinking": {
       const e = event as ThinkingEvent;
-      const thinking = e.thinking;
+      const thinking = e.thinking ?? e.text ?? "";
       const truncated = thinking && thinking.length > TRUNCATE_THRESHOLD;
       return makeNode(
         `thinking-${eventId}`,

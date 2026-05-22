@@ -253,7 +253,10 @@ export interface CompactEvent {
 export interface ThinkingEvent {
   type: "thinking";
   timestamp: number;
-  thinking: string;
+  /** Claude-style extended thinking payload. */
+  thinking?: string;
+  /** Codex app-server emits thinking item content as text. */
+  text?: string;
   signature?: string;
   /** 부모 이벤트 ID (서브에이전트 내부 노드 배치용) */
   /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
