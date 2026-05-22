@@ -30,6 +30,15 @@ logger = logging.getLogger(__name__)
 _PUSH_BODY_MAX = 100
 
 
+def _meaningful_preview(value: Any) -> str:
+    text = str(value).strip() if value is not None else ""
+    if not text or text in {"{}", "[]", "null", "undefined"}:
+        return ""
+    if not any(ch.isalnum() for ch in text):
+        return ""
+    return text
+
+
 def _push_body_preview(
     data: dict, session_id: str, *, fallback_title: str = ""
 ) -> str:
@@ -46,19 +55,15 @@ def _push_body_preview(
 
     값을 _PUSH_BODY_MAX로 truncate한다.
     """
-    text = data.get("last_assistant_text")
-    if not text:
-        last_message = data.get("last_message") or {}
-        if isinstance(last_message, dict):
-            text = last_message.get("preview")
-    if not text:
-        text = data.get("display_name")
-    if not text:
-        text = data.get("last_progress_text")
-    if not text:
-        # session_id 일부는 사용자에게 의미 없으므로 마지막 fallback에서만 사용.
-        text = fallback_title or session_id[:8]
-    text = str(text).strip()
+    last_message = data.get("last_message") or {}
+    candidates = [
+        data.get("last_assistant_text"),
+        last_message.get("preview") if isinstance(last_message, dict) else None,
+        data.get("display_name"),
+        data.get("last_progress_text"),
+        fallback_title or session_id[:8],
+    ]
+    text = next((preview for c in candidates if (preview := _meaningful_preview(c))), "")
     if len(text) > _PUSH_BODY_MAX:
         truncated = text[:_PUSH_BODY_MAX].rstrip()
         # 마지막 공백에서 자르면 단어 깨짐 완화.
@@ -253,13 +258,13 @@ class PushNotifier:
 
 def _body_source(data: dict) -> str:
     """body가 어떤 키에서 왔는지 디버그용 라벨."""
-    if data.get("last_assistant_text"):
+    if _meaningful_preview(data.get("last_assistant_text")):
         return "last_assistant_text"
     last_message = data.get("last_message") or {}
-    if isinstance(last_message, dict) and last_message.get("preview"):
+    if isinstance(last_message, dict) and _meaningful_preview(last_message.get("preview")):
         return "last_message.preview"
-    if data.get("display_name"):
+    if _meaningful_preview(data.get("display_name")):
         return "display_name"
-    if data.get("last_progress_text"):
+    if _meaningful_preview(data.get("last_progress_text")):
         return "last_progress_text"
     return "fallback_title_or_session_id"

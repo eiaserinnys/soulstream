@@ -213,7 +213,7 @@ describe("EventPersistence.handleSideEffects", () => {
     expect(task.lastAssistantText).toBe("previous");
   });
 
-  it("text_delta 누적 — 매번 덮어쓰기 (Codex SDK 누적 텍스트 정합)", async () => {
+  it("legacy cumulative text_delta는 매번 덮어쓴다", async () => {
     const { db } = makeMockDB();
     const { broadcaster } = makeMockBroadcaster();
     const ep = new EventPersistence(db, broadcaster, silentLogger);
@@ -236,6 +236,40 @@ describe("EventPersistence.handleSideEffects", () => {
       task,
     );
     expect(task.lastAssistantText).toBe("ABC");
+  });
+
+  it("app-server text_delta chunk는 text_start 이후 누적한다", async () => {
+    const { db } = makeMockDB();
+    const { broadcaster } = makeMockBroadcaster();
+    const ep = new EventPersistence(db, broadcaster, silentLogger);
+    const task = makeTask({ lastAssistantText: "previous turn" });
+    await ep.handleSideEffects(
+      "sess-1",
+      { type: "text_start", timestamp: 1 } as SSEEventPayload,
+      task,
+    );
+    expect(task.lastAssistantText).toBe("");
+    await ep.handleSideEffects(
+      "sess-1",
+      {
+        type: "text_delta",
+        text: "Hello",
+        raw_event_type: "item/agentMessage/delta",
+        timestamp: 2,
+      } as SSEEventPayload,
+      task,
+    );
+    await ep.handleSideEffects(
+      "sess-1",
+      {
+        type: "text_delta",
+        text: ".",
+        raw_event_type: "item/agentMessage/delta",
+        timestamp: 3,
+      } as SSEEventPayload,
+      task,
+    );
+    expect(task.lastAssistantText).toBe("Hello.");
   });
 
   it("preview 200자 cap", async () => {

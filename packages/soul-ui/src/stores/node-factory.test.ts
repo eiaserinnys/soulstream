@@ -335,7 +335,7 @@ describe("createNodeFromEvent", () => {
       const event: ThinkingEvent = {
         type: "thinking",
         timestamp: 1700000000,
-        text: "",
+        text: "Inspect the adapter.",
       };
 
       const node = createNodeFromEvent(event, 11);
@@ -343,8 +343,20 @@ describe("createNodeFromEvent", () => {
       expect(node).not.toBeNull();
       expect(node!.id).toBe("thinking-11");
       expect(node!.type).toBe("thinking");
-      expect(node!.content).toBe("");
+      expect(node!.content).toBe("Inspect the adapter.");
       expect(node!.completed).toBe(true);
+    });
+
+    it("should return null for empty placeholder thinking", () => {
+      for (const text of ["", "   ", "...", "{}", "[]"]) {
+        const event: ThinkingEvent = {
+          type: "thinking",
+          timestamp: 1700000000,
+          text,
+        };
+
+        expect(createNodeFromEvent(event, 12)).toBeNull();
+      }
     });
 
     it("should return null for subagent_start (R4: ignored)", () => {

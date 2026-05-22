@@ -51,6 +51,13 @@ export function resolveFollowOutput(
   return userFollowing ? "auto" : false;
 }
 
+export function shouldScrollToBottomOnTreeChange(
+  userFollowing: boolean,
+  itemCount: number,
+): boolean {
+  return userFollowing && itemCount > 0;
+}
+
 /**
  * Virtuoso atBottomStateChange 보고를 받아 다음 isFollowing 값을 결정한다.
  *

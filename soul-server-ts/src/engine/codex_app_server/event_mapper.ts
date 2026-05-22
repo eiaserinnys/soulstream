@@ -7,6 +7,7 @@ import type {
   AppServerTurnError,
   JsonObject,
 } from "./protocol.js";
+import { firstMeaningfulText } from "./text_sanitizer.js";
 
 function nowEpochSec(): number {
   return Date.now() / 1000;
@@ -174,12 +175,13 @@ export function mapAppServerNotification(
         message?: string;
         delta?: string;
       };
+      const isReasoning = notification.method.startsWith("item/reasoning/");
+      const text = isReasoning ? firstMeaningfulText(params.delta, params.message) : params.delta ?? params.message ?? "";
+      if (isReasoning && !text) return [];
       return [
         {
-          type: notification.method.startsWith("item/reasoning/")
-            ? "thinking"
-            : "progress",
-          text: params.delta ?? params.message ?? "",
+          type: isReasoning ? "thinking" : "progress",
+          text,
           timestamp: nowEpochSec(),
           ...rawContext(notification.method, params),
         } as SSEEventPayload,
@@ -335,10 +337,12 @@ function mapItemCompleted(
 
     case "reasoning": {
       const summary = Array.isArray(item.summary) ? item.summary.join("\n") : "";
+      const text = firstMeaningfulText(item.text, summary);
+      if (!text) return [];
       return [
         {
           type: "thinking",
-          text: item.text ?? summary,
+          text,
           timestamp: context.timestamp,
           ...rawContext(context.method, context),
         } as SSEEventPayload,
@@ -445,10 +449,12 @@ function mapRawResponseItem(
     ] as SSEEventPayload[];
   }
   if (type === "reasoning") {
+    const text = extractReasoningText(item);
+    if (!text) return [];
     return [
       {
         type: "thinking",
-        text: jsonStringify(item),
+        text,
         timestamp: nowEpochSec(),
         ...rawContext(context.method, context),
       } as SSEEventPayload,
@@ -486,4 +492,8 @@ function extractResponseText(item: JsonObject): string {
     if (text) chunks.push(text);
   }
   return chunks.join("");
+}
+
+function extractReasoningText(item: JsonObject): string {
+  return firstMeaningfulText(fieldString(item, "text"), Array.isArray(item.summary) ? item.summary.join("\n") : "", extractResponseText(item));
 }

@@ -89,7 +89,28 @@ export class EventPersistence {
     task: Task,
   ): Promise<void> {
     const eventType = (event as { type: string }).type;
-    const previewText = extractPreviewText(event);
+    let previewText = extractPreviewText(event);
+
+    if (eventType === "text_start") {
+      task.lastAssistantText = "";
+    }
+    if (eventType === "text_delta") {
+      const text = (event as { text?: unknown }).text;
+      if (typeof text === "string") {
+        if ((event as { raw_event_type?: unknown }).raw_event_type === "item/agentMessage/delta") {
+          task.lastAssistantText = `${task.lastAssistantText ?? ""}${text}`;
+          previewText = task.lastAssistantText;
+        } else {
+          task.lastAssistantText = text;
+        }
+      }
+    }
+    if (eventType === "progress") {
+      const text = (event as { text?: unknown }).text;
+      if (typeof text === "string") {
+        task.lastProgressText = text;
+      }
+    }
 
     if (previewText) {
       const ts = extractTimestamp(event)?.toISOString() ?? new Date().toISOString();
@@ -118,21 +139,6 @@ export class EventPersistence {
           { err, sessionId },
           "emitSessionMessageUpdated failed",
         );
-      }
-    }
-
-    // task.lastAssistantText 누적 — text_delta는 누적 block.text 전체이므로 매번 덮어쓴다.
-    // Python `service/task_executor.py` L166-167 코멘트 정합.
-    if (eventType === "text_delta") {
-      const text = (event as { text?: unknown }).text;
-      if (typeof text === "string") {
-        task.lastAssistantText = text;
-      }
-    }
-    if (eventType === "progress") {
-      const text = (event as { text?: unknown }).text;
-      if (typeof text === "string") {
-        task.lastProgressText = text;
       }
     }
   }

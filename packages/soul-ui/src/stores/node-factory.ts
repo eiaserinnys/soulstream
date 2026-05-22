@@ -44,6 +44,13 @@ import { makeNode } from "./processing-context";
 
 /** 이 길이를 초과하는 콘텐츠는 truncate하여 메모리를 절약한다 */
 const TRUNCATE_THRESHOLD = 2000;
+const PLACEHOLDER_TEXT = new Set(["{}", "[]", "null", "undefined"]);
+
+function meaningfulDisplayText(value: string): string {
+  const text = value.trim();
+  if (!text || PLACEHOLDER_TEXT.has(text)) return "";
+  return /[\p{L}\p{N}]/u.test(text) ? text : "";
+}
 
 /** LLM 세션의 messages 배열에서 마지막 user 메시지 콘텐츠를 추출한다. */
 function extractLastUserContent(messages?: Array<{role: string; content: unknown}>): string {
@@ -142,7 +149,8 @@ export function createNodeFromEvent(
 
     case "thinking": {
       const e = event as ThinkingEvent;
-      const thinking = e.thinking ?? e.text ?? "";
+      const thinking = meaningfulDisplayText(e.thinking ?? e.text ?? "");
+      if (!thinking) return null;
       const truncated = thinking && thinking.length > TRUNCATE_THRESHOLD;
       return makeNode(
         `thinking-${eventId}`,

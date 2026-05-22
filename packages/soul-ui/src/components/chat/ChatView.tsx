@@ -30,6 +30,7 @@ import { computeFirstItemIndex, findFocusIndex } from "./ChatView.reverse-helper
 import {
   decideFollowOnAtBottomChange,
   resolveFollowOutput,
+  shouldScrollToBottomOnTreeChange,
 } from "./ChatView.follow-helpers";
 
 interface ChatViewProps {
@@ -128,8 +129,28 @@ export function ChatView({
   useEffect(() => {
     if (treeVersion === prevTreeVersion.current) return;
     prevTreeVersion.current = treeVersion;
-    if (!isFollowingRef.current) setShowNewMessage(true);
-  }, [treeVersion]);
+    if (shouldScrollToBottomOnTreeChange(isFollowingRef.current, grouped.length)) {
+      const targetIndex = grouped.length - 1 + firstItemIndex;
+      requestAnimationFrame(() => {
+        virtuosoRef.current?.scrollToIndex({
+          index: targetIndex,
+          align: "end",
+          behavior: "auto",
+        });
+        requestAnimationFrame(() => {
+          virtuosoRef.current?.scrollToIndex({
+            index: targetIndex,
+            align: "end",
+            behavior: "auto",
+          });
+        });
+      });
+      return;
+    }
+    if (!isFollowingRef.current && grouped.length > 0) {
+      setShowNewMessage(true);
+    }
+  }, [treeVersion, grouped.length, firstItemIndex]);
 
   // 세션 변경 시: follow 리셋 + 이전 세션의 focusEventId 잔재 정리.
   // 다른 세션에 우연히 같은 eventId가 존재하면 엉뚱한 메시지를 하이라이트할 수 있으므로

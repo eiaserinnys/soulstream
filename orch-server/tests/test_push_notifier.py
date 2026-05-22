@@ -436,6 +436,62 @@ async def test_completed_body_progress_text_only_when_assistant_missing():
     assert body == progress_text
 
 
+@pytest.mark.asyncio
+async def test_completed_body_skips_punctuation_only_assistant_text():
+    """app-server chunk delta의 마지막 조각이 '.'여도 알림 본문으로 쓰지 않는다."""
+    notifier, provider, repo = _make_notifier(user_info={"email": "a@b.com"})
+    repo.list_tokens.return_value = [("dev-1", "tok-1")]
+    provider.send.return_value = SendResult(ok=True, invalid_token=False)
+
+    await notifier._on_change(
+        "node_session_session_updated",
+        "node-A",
+        _data(agent_session_id="S1", status="running"),
+    )
+    await notifier._on_change(
+        "node_session_session_updated",
+        "node-A",
+        _data(
+            agent_session_id="S1",
+            status="completed",
+            last_assistant_text=".",
+            last_message={"preview": "..."},
+            last_progress_text="응답이 완료되었습니다",
+        ),
+    )
+
+    body = provider.send.await_args.args[2]
+    assert body == "응답이 완료되었습니다"
+
+
+@pytest.mark.asyncio
+async def test_completed_body_punctuation_only_candidates_fall_back_to_title():
+    notifier, provider, repo = _make_notifier(user_info={"email": "a@b.com"})
+    repo.list_tokens.return_value = [("dev-1", "tok-1")]
+    provider.send.return_value = SendResult(ok=True, invalid_token=False)
+
+    await notifier._on_change(
+        "node_session_session_updated",
+        "node-A",
+        _data(agent_session_id="S1", status="running"),
+    )
+    await notifier._on_change(
+        "node_session_session_updated",
+        "node-A",
+        _data(
+            agent_session_id="S1",
+            status="completed",
+            last_assistant_text=".",
+            last_message={"preview": "..."},
+            display_name="[]",
+            last_progress_text="   ",
+        ),
+    )
+
+    body = provider.send.await_args.args[2]
+    assert body == "세션 완료"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # session_type / caller_source 화이트리스트 게이트 (LLM·비-사용자 시작 세션 차단)
 #

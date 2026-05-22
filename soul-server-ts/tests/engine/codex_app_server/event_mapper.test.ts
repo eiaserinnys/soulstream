@@ -129,6 +129,66 @@ describe("Codex app-server notification mapper", () => {
     ).toEqual([{ type: "text_end", timestamp: 2 }]);
   });
 
+  it("empty reasoning notifications are skipped but non-empty thinking remains", () => {
+    expect(
+      mapAppServerNotification({
+        method: "item/reasoning/textDelta",
+        params: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          itemId: "reasoning-1",
+          delta: "   ",
+        },
+      }),
+    ).toEqual([]);
+
+    expect(
+      mapAppServerNotification({
+        method: "item/reasoning/summaryTextDelta",
+        params: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          itemId: "reasoning-1",
+          delta: "I should inspect the stream path.",
+        },
+      })[0],
+    ).toMatchObject({
+      type: "thinking",
+      text: "I should inspect the stream path.",
+      raw_event_type: "item/reasoning/summaryTextDelta",
+    });
+  });
+
+  it("empty completed reasoning items do not create placeholder thinking", () => {
+    expect(
+      mapAppServerNotification({
+        method: "item/completed",
+        params: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          completedAtMs: 2000,
+          item: {
+            type: "reasoning",
+            id: "reasoning-1",
+            text: "   ",
+            summary: ["..."],
+          },
+        },
+      }),
+    ).toEqual([]);
+
+    expect(
+      mapAppServerNotification({
+        method: "rawResponseItem/completed",
+        params: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          item: { type: "reasoning", text: "Reviewed the stream." },
+        },
+      })[0],
+    ).toMatchObject({ type: "thinking", text: "Reviewed the stream." });
+  });
+
   it("command execution start/output/complete maps without marking output deltas complete", () => {
     const started = mapAppServerNotification({
       method: "item/started",
