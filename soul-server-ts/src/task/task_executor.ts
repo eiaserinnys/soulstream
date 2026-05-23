@@ -19,8 +19,6 @@ import type { Logger } from "pino";
 import type { AgentProfile } from "../agent_registry.js";
 import type {
   EnginePort,
-  EngineRunStateSnapshot,
-  EngineSessionItemsSnapshot,
   SSEEventPayload,
 } from "../engine/protocol.js";
 import { CLAUDE_OAUTH_TOKEN_ENV } from "../engine/claude_options.js";
@@ -35,6 +33,7 @@ import {
 
 import type { CompletionNotifier } from "./completion_notifier.js";
 import { splitAttachmentPaths } from "./attachment_context.js";
+import { TaskAgentsSnapshotPersistence } from "./task_agents_snapshot_persistence.js";
 import { TaskEngineEventPublisher } from "./task_engine_event_publisher.js";
 import { TaskInitialMessagePublisher } from "./task_initial_message_publisher.js";
 import { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
@@ -52,10 +51,11 @@ export class TaskExecutor {
   private readonly engineEventPublisher: TaskEngineEventPublisher;
   private readonly lifecycleTransition: TaskLifecycleTransition;
   private readonly initialMessagePublisher: TaskInitialMessagePublisher;
+  private readonly agentsSnapshotPersistence: TaskAgentsSnapshotPersistence;
 
   constructor(
     private readonly engineFactory: EngineFactory,
-    private readonly db: SessionDB,
+    db: SessionDB,
     persistence: EventPersistence,
     private readonly broadcaster: SessionBroadcaster,
     private readonly logger: Logger,
@@ -89,6 +89,10 @@ export class TaskExecutor {
       broadcaster,
       logger,
       persistence,
+    });
+    this.agentsSnapshotPersistence = new TaskAgentsSnapshotPersistence({
+      db,
+      logger,
     });
   }
 
@@ -261,9 +265,9 @@ export class TaskExecutor {
             ...(queuedToolApproval ? { queuedToolApproval } : {}),
             extraEnv: buildTaskExtraEnv(task),
             onRunStateSnapshot: (snapshot) =>
-              this._persistAgentsRunStateSnapshot(task, snapshot),
+              this.agentsSnapshotPersistence.persistRunStateSnapshot(task, snapshot),
             onSessionItemsSnapshot: (snapshot) =>
-              this._persistAgentsSessionItemsSnapshot(task, snapshot),
+              this.agentsSnapshotPersistence.persistSessionItemsSnapshot(task, snapshot),
             // Phase B parity: 첫 turn에 한해 systemPrompt가 SDK 옵션으로 전달됨. intervention turn은
             // resumeSessionId로 이어붙기 때문에 SDK가 기존 system prompt를 유지 — turnSystemPrompt가 undefined로 흘러 미전달.
             ...(turnSystemPrompt !== undefined ? { systemPrompt: turnSystemPrompt } : {}),
@@ -330,67 +334,6 @@ export class TaskExecutor {
     }
   }
 
-  private async _persistAgentsRunStateSnapshot(
-    task: Task,
-    snapshot: EngineRunStateSnapshot,
-  ): Promise<void> {
-    if (snapshot.backendId !== "openai-agents") return;
-
-    task.agentsRunState = snapshot.serialized ?? undefined;
-    task.agentsPendingApprovalId = snapshot.pendingApprovalId ?? undefined;
-    task.agentsPreviousResponseId = snapshot.previousResponseId ?? undefined;
-    task.agentsConversationId = snapshot.conversationId ?? undefined;
-    task.agentsRunStateSchemaVersion = snapshot.schemaVersion ?? undefined;
-
-    const metadata = replaceMetadataEntry(task.metadata, {
-      type: "agents_run_state",
-      value: {
-        backend: "openai-agents",
-        serialized: snapshot.serialized,
-        pendingApprovalId: snapshot.pendingApprovalId ?? null,
-        previousResponseId: snapshot.previousResponseId ?? null,
-        conversationId: snapshot.conversationId ?? null,
-        schemaVersion: snapshot.schemaVersion ?? null,
-        updatedAt: new Date().toISOString(),
-      },
-    });
-    task.metadata = metadata;
-    try {
-      await this.db.updateSession(task.agentSessionId, { metadata });
-    } catch (err) {
-      this.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        "agents_run_state metadata update failed",
-      );
-    }
-  }
-
-  private async _persistAgentsSessionItemsSnapshot(
-    task: Task,
-    snapshot: EngineSessionItemsSnapshot,
-  ): Promise<void> {
-    if (snapshot.backendId !== "openai-agents") return;
-
-    task.agentsSessionItems = snapshot.items;
-    const metadata = replaceMetadataEntry(task.metadata, {
-      type: "agents_session_items",
-      value: {
-        backend: "openai-agents",
-        items: snapshot.items,
-        updatedAt: new Date().toISOString(),
-      },
-    });
-    task.metadata = metadata;
-    try {
-      await this.db.updateSession(task.agentSessionId, { metadata });
-    } catch (err) {
-      this.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        "agents_session_items metadata update failed",
-      );
-    }
-  }
-
   /**
    * 종료 처리: DB sessions 업데이트 + session_updated broadcast + engine.close.
    */
@@ -436,14 +379,4 @@ function buildTaskExtraEnv(task: Task): Record<string, string> | undefined {
     return undefined;
   }
   return { [CLAUDE_OAUTH_TOKEN_ENV]: task.oauthToken };
-}
-
-function replaceMetadataEntry(
-  metadata: Array<Record<string, unknown>> | undefined,
-  entry: Record<string, unknown>,
-): Array<Record<string, unknown>> {
-  const type = entry.type;
-  const next = (metadata ?? []).filter((item) => item.type !== type);
-  next.push(entry);
-  return next;
 }
