@@ -30,6 +30,7 @@ import type {
   Task,
   TaskStatus,
 } from "./task_models.js";
+import { AutoResumeTransition } from "./task_auto_resume_transition.js";
 import {
   buildCallerInfoMetadataEntry,
   extractAgentsRunStateFromMetadata,
@@ -164,6 +165,7 @@ export type StartExecutionCallback = (task: Task) => void;
 
 export class TaskManager {
   private readonly tasks = new Map<string, Task>();
+  private readonly autoResumeTransition: AutoResumeTransition;
 
   constructor(
     private readonly nodeId: string,
@@ -178,12 +180,21 @@ export class TaskManager {
     private readonly persistence?: EventPersistence,
     /**
      * Phase A context 정본 진입점 (atom d7a1ad86 차단):
-     * `_addInterventionAutoResume`이 user_message wire에 박을 ContextItem[]을 조립할 때 사용.
+     * auto-resume transition이 user_message wire에 박을 ContextItem[]을 조립할 때 사용.
      * undefined일 때 context 박지 않음 (legacy 호출자·단위 테스트 호환 — design-principles §8 실패 격리).
      */
     private readonly contextBuilder?: ExecutionContextBuilder,
     private readonly agentRegistry?: AgentRegistry,
-  ) {}
+  ) {
+    this.autoResumeTransition = new AutoResumeTransition({
+      db,
+      broadcaster,
+      logger,
+      persistence,
+      contextBuilder,
+      agentRegistry,
+    });
+  }
 
   /**
    * 새 Task 생성 + DB 등록 + orch broadcast.
@@ -794,8 +805,8 @@ export class TaskManager {
  *   - Running + live steering capability: active turn에 직접 전달 → `{delivered}`.
  *   - Running fallback: interventionQueue에 push → intervention_sent broadcast → `{queued, queuePosition}`.
  *     현 turn 종료 후 task_executor가 dequeue하여 다음 turn으로 자동 진입.
-   *   - Completed/Error/Interrupted: status를 "running"으로 돌리고 queue에 push +
-   *     intervention_sent broadcast + onResume 콜백 호출 → `{autoResumed}`. 콜백은 호출자가
+   *   - Completed/Error/Interrupted: user_message를 박고 status를 "running"으로 돌린 뒤
+   *     queue push + session_updated + onResume 콜백 호출 → `{autoResumed}`. 콜백은 호출자가
    *     task_executor.startExecution을 호출하도록 제공. design-principles §1(지식 경계) —
    *     task_manager는 executor를 import하지 않는다.
    *   - 미존재 task: `Error` throw — 호출자(dispatcher)가 sendError로 변환.
@@ -966,150 +977,7 @@ export class TaskManager {
     message: InterventionMessage,
     onResume: StartExecutionCallback,
   ): Promise<AddInterventionResult> {
-    // race 보호 — _finalize 미완료 시 await
-    if (task.executionPromise) {
-      try {
-        await task.executionPromise;
-      } catch {
-        // ignore — finalize는 끝났음
-      }
-    }
-
-    // Phase A context 정본 진입점 (Y-1, atom d7a1ad86 차단):
-    // contextBuilder + agentRegistry가 주입되어 있고 task.profileId가 있을 때 buildResumeContextItems
-    // 호출. 첫 턴(`task_executor._persistInitialMessages`)과 같은 `buildSoulstreamContextItem` helper에
-    // 의존하므로 정본 하나(design-principles §3).
-    // 실패 격리(§8): builder 실패가 user_message persist/broadcast 자체를 막지 않음.
-    let resumeContextItems: import("../context/prompt_assembler.js").ContextItem[] = [];
-    await this._promoteResumeCallerInfo(task, message.callerInfo);
-    if (this.contextBuilder && this.agentRegistry && task.profileId) {
-      const agent = this.agentRegistry.get(task.profileId);
-      if (agent) {
-        try {
-          resumeContextItems = await this.contextBuilder.buildResumeContextItems(
-            task,
-            agent,
-          );
-        } catch (err) {
-          this.logger.warn(
-            { err, sessionId: task.agentSessionId },
-            "buildResumeContextItems failed — context 미주입",
-          );
-        }
-      }
-    }
-
-    // user_message 이벤트 wire (Python `_persist_initial_messages` user_message 정합).
-    const userMessageEvent: Record<string, unknown> = {
-      type: "user_message",
-      user: message.user,
-      text: message.text,
-      timestamp: Date.now() / 1000,
-    };
-    if (resumeContextItems.length > 0) {
-      userMessageEvent.context = resumeContextItems;
-    }
-    if (message.callerInfo) {
-      userMessageEvent.caller_info = message.callerInfo;
-    }
-    if (message.attachmentPaths && message.attachmentPaths.length > 0) {
-      userMessageEvent.attachments = message.attachmentPaths;
-    }
-    if (this.persistence) {
-      try {
-        const eventId = await this.persistence.persistEvent(
-          task.agentSessionId,
-          userMessageEvent as SSEEventPayload,
-        );
-        task.lastEventId = eventId;
-        // ride-along 5자리 — Python `task_executor.py:168` 정합
-        userMessageEvent._event_id = eventId;
-        await this.persistence.handleSideEffects(
-          task.agentSessionId,
-          userMessageEvent as SSEEventPayload,
-          task,
-        );
-      } catch (err) {
-        this.logger.warn(
-          { err, sessionId: task.agentSessionId },
-          "user_message (auto-resume) persistence failed",
-        );
-      }
-    }
-    try {
-      await this.broadcaster.emitEventEnvelope(
-        task.agentSessionId,
-        userMessageEvent as SSEEventPayload,
-      );
-    } catch (err) {
-      this.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        "user_message (auto-resume) broadcast failed",
-      );
-    }
-
-    // 같은 task 인스턴스를 재활용하여 codexThreadId 보존.
-    task.status = "running";
-    task.completedAt = undefined;
-    task.error = undefined;
-    task.result = undefined;
-    task.interventionQueue.push(message);
-
-    // DB sessions.status도 같은 시점에 되살린다. 기존 구현은 wire session_updated만
-    // running으로 내보내고 DB row는 completed/error로 남겨 list_sessions·앱 재진입이
-    // "종료됨"으로 보이는 비대칭을 만들었다.
-    try {
-      await this.db.updateSession(task.agentSessionId, {
-        status: "running",
-        last_event_id: task.lastEventId,
-      });
-    } catch (err) {
-      this.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        "DB updateSession failed in auto-resume",
-      );
-    }
-
-    // 결함 B 정정: session_updated wire를 *상태 전환 직후* broadcast하여 클라이언트의
-    // session.status를 "running"으로 즉시 갱신. soul-app TypingIndicator
-    // (`session.status === "running"`)가 표시되도록 한다. PR #54까지는 이 wire가 누락되어
-    // codex 세션 auto-resume 시 typing indicator가 안 나오던 결함.
-    try {
-      await this.broadcaster.emitSessionUpdated(task);
-    } catch (err) {
-      this.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        "session_updated (auto-resume) broadcast failed",
-      );
-    }
-
-    // engine 인스턴스는 finalize에서 close된 상태 — onResume → startExecution이 새 engine 생성.
-    onResume(task);
-    return { autoResumed: true };
-  }
-
-  /**
-   * Terminal auto-resume 시 새 발신자 신원을 세션 현재 caller로 승격한다.
-   *
-   * Python resume 경로는 새 caller_info가 있으면 task.caller_info와 metadata를 함께 갱신한다.
-   * TS도 같은 순서로 맞춰야 auto-resume 직후 session_updated가 이전 사용자 프로필을 내보내지 않는다.
-   */
-  private async _promoteResumeCallerInfo(
-    task: Task,
-    callerInfo: CallerInfo | undefined,
-  ): Promise<void> {
-    const entry = buildCallerInfoMetadataEntry(callerInfo);
-    if (!entry) return;
-    task.callerInfo = callerInfo;
-    task.metadata = [...(task.metadata ?? []), entry];
-    try {
-      await this.db.appendMetadata(task.agentSessionId, entry);
-    } catch (err) {
-      this.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        "caller_info metadata append failed — continuing auto-resume",
-      );
-    }
+    return await this.autoResumeTransition.resume(task, message, onResume);
   }
 
   /**
