@@ -120,18 +120,24 @@ export class CodexAppServerEngineAdapter
 
     try {
       await this.ensureInitialized();
-      const threadId = await this.openThread(params, queue);
-      const turnResponse = await this.client.startTurn(
-        buildTurnStartParams(threadId, params, this.workspaceDir),
-      );
-      const turnStart = recordTurnStartResponse(
-        this.notificationLifecycle,
-        threadId,
-        turnResponse.turn,
-      );
-      this.notificationLifecycle = turnStart.state;
-      if (turnStart.closeQueue) {
-        queue.close();
+      if (!this.closed) {
+        const threadId = await this.openThread(params, queue);
+        if (!this.closed && threadId) {
+          const turnResponse = await this.client.startTurn(
+            buildTurnStartParams(threadId, params, this.workspaceDir),
+          );
+          if (!this.closed) {
+            const turnStart = recordTurnStartResponse(
+              this.notificationLifecycle,
+              threadId,
+              turnResponse.turn,
+            );
+            this.notificationLifecycle = turnStart.state;
+            if (turnStart.closeQueue) {
+              queue.close();
+            }
+          }
+        }
       }
 
       for await (const payload of queue) {
@@ -141,6 +147,15 @@ export class CodexAppServerEngineAdapter
         yield payload;
       }
     } catch (error) {
+      if (this.closed) {
+        for await (const payload of queue) {
+          if (params.onEvent) {
+            await params.onEvent(payload);
+          }
+          yield payload;
+        }
+        return;
+      }
       yield fatalErrorPayload(error instanceof Error ? error : new Error(String(error)));
     } finally {
       for (const off of unsubscribe) off();
@@ -215,17 +230,19 @@ export class CodexAppServerEngineAdapter
   private async openThread(
     params: EngineExecuteParams,
     queue: AsyncPayloadQueue<SSEEventPayload>,
-  ): Promise<string> {
+  ): Promise<string | null> {
     if (params.resumeSessionId) {
       const response = await this.client.resumeThread(
         buildThreadResumeParams(params, this.workspaceDir),
       );
+      if (this.closed) return null;
       return response.thread.id;
     }
 
     const response = await this.client.startThread(
       buildThreadStartParams(params, this.workspaceDir),
     );
+    if (this.closed) return null;
     const threadId = response.thread.id;
     const opened = recordThreadOpened(this.notificationLifecycle, threadId);
     this.notificationLifecycle = opened.state;

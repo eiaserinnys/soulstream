@@ -26,12 +26,8 @@ import type { SSEEventPayload } from "../../../src/engine/protocol.js";
 
 class FakeClient implements CodexAppServerClientPort {
   public readonly initialize = vi.fn(
-    async (_params: InitializeParams): Promise<InitializeResponse> => ({
-      userAgent: "codex-cli/0.133.0",
-      codexHome: "/home/eias/.codex",
-      platformFamily: "unix",
-      platformOs: "linux",
-    }),
+    async (_params: InitializeParams): Promise<InitializeResponse> =>
+      initializeResponse(),
   );
   public readonly startThread = vi.fn(
     async (_params: ThreadStartParams): Promise<ThreadStartResponse> =>
@@ -121,6 +117,15 @@ function threadResponse(threadId: string): ThreadStartResponse {
   };
 }
 
+function initializeResponse(): InitializeResponse {
+  return {
+    userAgent: "codex-cli/0.133.0",
+    codexHome: "/home/eias/.codex",
+    platformFamily: "unix",
+    platformOs: "linux",
+  };
+}
+
 function makeAdapter(client = new FakeClient()) {
   const adapter = new CodexAppServerEngineAdapter(
     {
@@ -130,6 +135,16 @@ function makeAdapter(client = new FakeClient()) {
     pino({ level: "silent" }),
   );
   return { adapter, client };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
 }
 
 async function drain(
@@ -358,5 +373,58 @@ describe("CodexAppServerEngineAdapter", () => {
       status: "no_active_turn",
       message: "No active Codex app-server turn",
     });
+  });
+
+  it("close during initialize prevents follow-up thread and turn RPCs", async () => {
+    const client = new FakeClient();
+    const initialized = deferred<InitializeResponse>();
+    client.initialize.mockReturnValueOnce(initialized.promise);
+    const { adapter } = makeAdapter(client);
+
+    const eventsPromise = drain(adapter.execute({ prompt: "hello" }));
+    await vi.waitFor(() => expect(client.initialize).toHaveBeenCalledTimes(1));
+
+    await adapter.close();
+    initialized.resolve(initializeResponse());
+
+    const events = await eventsPromise;
+    expect(events).toEqual([]);
+    expect(client.startThread).not.toHaveBeenCalled();
+    expect(client.resumeThread).not.toHaveBeenCalled();
+    expect(client.startTurn).not.toHaveBeenCalled();
+  });
+
+  it("close during thread start prevents the turn RPC", async () => {
+    const client = new FakeClient();
+    const startedThread = deferred<ThreadStartResponse>();
+    client.startThread.mockReturnValueOnce(startedThread.promise);
+    const { adapter } = makeAdapter(client);
+
+    const eventsPromise = drain(adapter.execute({ prompt: "hello" }));
+    await vi.waitFor(() => expect(client.startThread).toHaveBeenCalledTimes(1));
+
+    await adapter.close();
+    startedThread.resolve(threadResponse("thread-1"));
+
+    const events = await eventsPromise;
+    expect(events).toEqual([]);
+    expect(client.startTurn).not.toHaveBeenCalled();
+  });
+
+  it("close during turn start suppresses close-induced RPC errors", async () => {
+    const client = new FakeClient();
+    const startedTurn = deferred<TurnStartResponse>();
+    client.startTurn.mockReturnValueOnce(startedTurn.promise);
+    const { adapter } = makeAdapter(client);
+
+    const eventsPromise = drain(adapter.execute({ prompt: "hello" }));
+    await vi.waitFor(() => expect(client.startTurn).toHaveBeenCalledTimes(1));
+
+    await adapter.close();
+    startedTurn.reject(new Error("transport closed"));
+
+    const events = await eventsPromise;
+    expect(events.map((event) => (event as { type: string }).type)).toEqual(["session"]);
+    expect(events.some((event) => (event as { type: string }).type === "error")).toBe(false);
   });
 });
