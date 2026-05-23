@@ -328,7 +328,7 @@ async def search_session_history(
     Args:
         query: 검색어
         session_ids: 검색할 세션 ID 목록. None이면 전체 세션 검색.
-        event_types: 검색할 이벤트 타입 목록. None이면 전체 타입.
+        event_types: 검색할 이벤트 타입 목록. None이면 사람이 읽는 기본 타입.
         search_session_id: True이면 session_id 부분 일치 검색을 추가한다.
         top_k: 반환할 최대 결과 수 (최대 100).
 

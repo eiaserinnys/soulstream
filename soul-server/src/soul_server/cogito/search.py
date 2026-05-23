@@ -6,6 +6,21 @@ from dataclasses import asdict, dataclass
 from soul_server.service.postgres_session_db import PostgresSessionDB
 
 
+DEFAULT_READABLE_SEARCH_EVENT_TYPES = [
+    "user_message",
+    "assistant_message",
+    "user_text",
+    "assistant_text",
+    "text_delta",
+    "result",
+    "complete",
+    "error",
+    "away_summary",
+    "intervention_sent",
+    "realtime_transcript",
+]
+
+
 @dataclass
 class SearchResult:
     session_id: str
@@ -46,33 +61,43 @@ class SessionSearchEngine:
             query: 검색어
             session_ids: 검색 범위를 특정 세션으로 한정 (text search 전용)
             top_k: 반환할 최대 결과 수 (최대 100)
-            event_types: 검색할 이벤트 타입 목록. None이면 전체 타입
+            event_types: 검색할 이벤트 타입 목록. None이면 사람이 읽는 기본 타입
             search_session_id: True이면 session_id ILIKE 검색을 추가로 수행
         """
         if not query.strip():
             raise ValueError("query must not be empty")
         top_k = min(top_k, 100)
+        resolved_event_types = (
+            event_types
+            if event_types
+            else list(DEFAULT_READABLE_SEARCH_EVENT_TYPES)
+        )
 
         raw: list[dict] = []
         seen: set[tuple] = set()
 
-        # 텍스트 검색: event_types 지정 시 또는 session_id 검색을 사용하지 않을 때
-        if event_types or not search_session_id:
-            text_rows = await self._db.search_events(
-                query, session_ids=session_ids, limit=top_k, event_types=event_types
-            )
-            for r in text_rows:
-                key = (r["session_id"], r["id"])
-                if key not in seen:
-                    seen.add(key)
-                    raw.append(r)
+        text_rows = await self._db.search_events(
+            query,
+            session_ids=session_ids,
+            limit=top_k,
+            event_types=resolved_event_types,
+        )
+        for r in text_rows:
+            if not _is_readable_search_row(r, resolved_event_types):
+                continue
+            key = (r["session_id"], r["id"])
+            if key not in seen:
+                seen.add(key)
+                raw.append(r)
 
         # 세션 아이디 검색: 추가적으로 실행 (OR 합산)
         if search_session_id:
             sid_rows = await self._db.search_events_by_session_id(
-                query, event_types=event_types, limit=top_k
+                query, event_types=resolved_event_types, limit=top_k
             )
             for r in sid_rows:
+                if not _is_readable_search_row(r, resolved_event_types):
+                    continue
                 key = (r["session_id"], r["id"])
                 if key not in seen:
                     seen.add(key)
@@ -93,3 +118,10 @@ class SessionSearchEngine:
                 event_type=r.get("event_type", ""),
             ))
         return search_results
+
+
+def _is_readable_search_row(row: dict, event_types: list[str]) -> bool:
+    if row.get("event_type") not in event_types:
+        return False
+    text = row.get("searchable_text", "")
+    return isinstance(text, str) and bool(text.strip())

@@ -16,6 +16,19 @@ import type { McpRuntime } from "../runtime.js";
 const DEFAULT_DOWNLOAD_DIR = "/tmp/soulstream_sessions";
 const TOOL_TRUNCATE_DEFAULT = 500;
 const SEARCH_PREVIEW_RADIUS = 100;
+const DEFAULT_READABLE_SEARCH_EVENT_TYPES = [
+  "user_message",
+  "assistant_message",
+  "user_text",
+  "assistant_text",
+  "text_delta",
+  "result",
+  "complete",
+  "error",
+  "away_summary",
+  "intervention_sent",
+  "realtime_transcript",
+];
 
 export function registerSessionQueryTools(
   server: McpServer,
@@ -217,21 +230,20 @@ export function registerSessionQueryTools(
     async ({ query, session_ids, event_types, search_session_id, top_k }) => {
       try {
         const limit = top_k ?? 10;
-        const types = event_types && event_types.length > 0 ? event_types : null;
+        const types = resolveSearchEventTypes(event_types);
         const matches: Awaited<ReturnType<typeof runtime.db.searchEvents>> = [];
         const seen = new Set<string>();
-        if (types || !search_session_id) {
-          for (const match of await runtime.db.searchEvents(
-            query,
-            session_ids ?? null,
-            limit,
-            types,
-          )) {
-            const key = `${match.session_id}:${match.id}`;
-            if (seen.has(key)) continue;
-            seen.add(key);
-            matches.push(match);
-          }
+        for (const match of await runtime.db.searchEvents(
+          query,
+          session_ids ?? null,
+          limit,
+          types,
+        )) {
+          if (!isReadableSearchMatch(match, types)) continue;
+          const key = `${match.session_id}:${match.id}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          matches.push(match);
         }
         if (search_session_id) {
           for (const match of await runtime.db.searchEventsBySessionId(
@@ -239,6 +251,7 @@ export function registerSessionQueryTools(
             types,
             limit,
           )) {
+            if (!isReadableSearchMatch(match, types)) continue;
             const key = `${match.session_id}:${match.id}`;
             if (seen.has(key)) continue;
             seen.add(key);
@@ -308,6 +321,19 @@ export function registerSessionQueryTools(
       });
     },
   );
+}
+
+function resolveSearchEventTypes(eventTypes?: string[] | null): string[] {
+  return eventTypes && eventTypes.length > 0
+    ? eventTypes
+    : [...DEFAULT_READABLE_SEARCH_EVENT_TYPES];
+}
+
+function isReadableSearchMatch(
+  match: { event_type: string; searchable_text: string },
+  eventTypes: string[],
+): boolean {
+  return eventTypes.includes(match.event_type) && match.searchable_text.trim().length > 0;
 }
 
 function serializeDate(d: Date | null | undefined): string | null {

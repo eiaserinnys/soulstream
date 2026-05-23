@@ -925,6 +925,20 @@ class TestOmitToolContent:
 
 
 class TestSearchSessionHistoryScore:
+    DEFAULT_READABLE_SEARCH_EVENT_TYPES = [
+        "user_message",
+        "assistant_message",
+        "user_text",
+        "assistant_text",
+        "text_delta",
+        "result",
+        "complete",
+        "error",
+        "away_summary",
+        "intervention_sent",
+        "realtime_transcript",
+    ]
+
     async def test_score_from_db(self):
         """search_session_history가 DB에서 반환된 score를 사용하는지 확인한다."""
         mock_db = AsyncMock(spec=PostgresSessionDB)
@@ -942,6 +956,46 @@ class TestSearchSessionHistoryScore:
 
         assert len(result["results"]) == 1
         assert result["results"][0]["score"] == 0.75
+        mock_db.search_events.assert_called_once_with(
+            "hello",
+            session_ids=None,
+            limit=10,
+            event_types=self.DEFAULT_READABLE_SEARCH_EVENT_TYPES,
+        )
+
+    async def test_default_filters_skip_empty_session_id_tool_events(self):
+        """기본 검색은 tool JSON 노이즈와 빈 preview session-id 결과를 제외한다."""
+        mock_db = AsyncMock(spec=PostgresSessionDB)
+        mock_db.search_events = AsyncMock(return_value=[])
+        mock_db.search_events_by_session_id = AsyncMock(return_value=[
+            {
+                "id": 2, "session_id": "sess-hello", "event_type": "tool_start",
+                "searchable_text": "",
+                "score": 0.5,
+            },
+            {
+                "id": 3, "session_id": "sess-hello", "event_type": "user_message",
+                "searchable_text": "readable session match",
+                "score": 0.5,
+            },
+        ])
+
+        fn = _unwrap(mcp_tools.search_session_history)
+        with patch("soul_server.cogito.mcp_session_query.get_session_db", return_value=mock_db):
+            result = await fn(query="hello", search_session_id=True)
+
+        assert [r["event_id"] for r in result["results"]] == [3]
+        mock_db.search_events.assert_called_once_with(
+            "hello",
+            session_ids=None,
+            limit=10,
+            event_types=self.DEFAULT_READABLE_SEARCH_EVENT_TYPES,
+        )
+        mock_db.search_events_by_session_id.assert_called_once_with(
+            "hello",
+            event_types=self.DEFAULT_READABLE_SEARCH_EVENT_TYPES,
+            limit=10,
+        )
 
     async def test_filters_forwarded(self):
         """event_types와 session_id 검색 옵션이 검색 엔진으로 전달된다."""
