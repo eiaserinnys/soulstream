@@ -118,13 +118,7 @@ export class TaskExecutor {
     const promise = this._consumeEventStream(task, engine, agent).catch(
       async (err: unknown) => {
         // _consumeEventStream 내부 try/catch가 못 잡는 외부 throw용 안전망.
-        const message = err instanceof Error ? err.message : String(err);
-        this.logger.error(
-          { err, sessionId: task.agentSessionId },
-          "Task execution threw outside event stream",
-        );
-        task.status = "error";
-        task.error = message;
+        await this.engineFailureRecovery.recoverFromOuterExecutionFailure(task, err);
         task.completedAt = new Date();
         await this._finalize(task);
       },

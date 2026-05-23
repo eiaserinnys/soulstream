@@ -11,7 +11,7 @@ export interface TaskEngineFailureRecoveryDeps {
 }
 
 /**
- * Owns recovery after EnginePort.execute throws while draining a turn.
+ * Owns recovery after engine execution fails before or while draining a turn.
  *
  * Final-state persistence stays in TaskLifecycleTransition. Engine-yielded event
  * persistence stays in TaskEngineEventPublisher. The queued-intervention skip
@@ -22,18 +22,42 @@ export class TaskEngineFailureRecovery {
   constructor(private readonly deps: TaskEngineFailureRecoveryDeps) {}
 
   async recoverFromExecuteFailure(task: Task, err: unknown): Promise<void> {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = this.errorMessage(err);
     this.deps.logger.warn(
       { err, sessionId: task.agentSessionId },
       "engine.execute drain threw",
     );
 
-    if (task.status === "running") {
-      task.status = "error";
-      task.error = message;
-    }
+    this.recordError(task, message, { overwriteNonRunning: false });
 
     await this.notifySkippedQueuedInterventions(task);
+  }
+
+  async recoverFromOuterExecutionFailure(task: Task, err: unknown): Promise<void> {
+    const message = this.errorMessage(err);
+    this.deps.logger.error(
+      { err, sessionId: task.agentSessionId },
+      "Task execution threw outside event stream",
+    );
+
+    this.recordError(task, message, { overwriteNonRunning: true });
+
+    await this.notifySkippedQueuedInterventions(task);
+  }
+
+  private errorMessage(err: unknown): string {
+    return err instanceof Error ? err.message : String(err);
+  }
+
+  private recordError(
+    task: Task,
+    message: string,
+    options: { overwriteNonRunning: boolean },
+  ): void {
+    if (!options.overwriteNonRunning && task.status !== "running") return;
+
+    task.status = "error";
+    task.error = message;
   }
 
   private async notifySkippedQueuedInterventions(task: Task): Promise<void> {

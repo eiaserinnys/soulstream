@@ -23,6 +23,7 @@ function makeRecovery() {
   const emitEventEnvelope = vi.fn(async () => undefined);
   const broadcaster = { emitEventEnvelope } as unknown as SessionBroadcaster;
   const logger = {
+    error: vi.fn(),
     warn: vi.fn(),
   } as unknown as Logger;
   const recovery = new TaskEngineFailureRecovery({
@@ -99,6 +100,33 @@ describe("TaskEngineFailureRecovery", () => {
         sessionId: "sess-1",
       },
       "queue-skipped error broadcast failed",
+    );
+  });
+
+  it("recovers outer execution failures with startExecution error policy and queue notification", async () => {
+    const { emitEventEnvelope, logger, recovery } = makeRecovery();
+    const task = makeTask({
+      status: "interrupted",
+      error: "already interrupted",
+      interventionQueue: [{ text: "pending", user: "u" }],
+    });
+
+    await recovery.recoverFromOuterExecutionFailure(task, new Error("prepare boom"));
+
+    expect(task.status).toBe("error");
+    expect(task.error).toBe("prepare boom");
+    expect(task.interventionQueue).toEqual([]);
+    expect(emitEventEnvelope).toHaveBeenCalledWith("sess-1", {
+      type: "error",
+      message: "Turn failed; 1 queued intervention(s) skipped",
+      fatal: false,
+    });
+    expect(logger.error).toHaveBeenCalledWith(
+      {
+        err: expect.any(Error),
+        sessionId: "sess-1",
+      },
+      "Task execution threw outside event stream",
     );
   });
 });

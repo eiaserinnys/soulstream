@@ -11,6 +11,7 @@ import type {
   SupportsToolApproval,
 } from "../../src/engine/protocol.js";
 import { TaskExecutor, isTerminalStatus } from "../../src/task/task_executor.js";
+import { TaskTurnInputBuilder } from "../../src/task/task_turn_input_builder.js";
 import type { Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 
@@ -754,6 +755,48 @@ describe("TaskExecutor.startExecution", () => {
     expect(() => executor.startExecution(task, agent)).toThrow(/factory boom/);
     // task.engine은 설정 안 됨
     expect(task.engine).toBeUndefined();
+  });
+
+  it("outer execution failure finalizes and notifies skipped queued interventions", async () => {
+    const mocks = makeMocks();
+    const engine = makeFakeEngine([]);
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+    task.interventionQueue.push(
+      { text: "pending 1", user: "u" },
+      { text: "pending 2", user: "u" },
+    );
+    const prepareSpy = vi
+      .spyOn(TaskTurnInputBuilder.prototype, "prepareInitialTurnInput")
+      .mockRejectedValueOnce(new Error("prepare boom"));
+
+    try {
+      executor.startExecution(task, agent);
+      await task.executionPromise;
+    } finally {
+      prepareSpy.mockRestore();
+    }
+
+    expect(task.status).toBe("error");
+    expect(task.error).toBe("prepare boom");
+    expect(task.completedAt).toBeInstanceOf(Date);
+    expect(task.interventionQueue).toEqual([]);
+    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", {
+      status: "error",
+      last_event_id: 0,
+    });
+    const errorBroadcast = mocks.emitEventEnvelope.mock.calls.find(
+      (c) =>
+        (c[1] as { type: string }).type === "error" &&
+        /2 queued intervention\(s\) skipped/.test((c[1] as { message: string }).message),
+    );
+    expect(errorBroadcast).toBeDefined();
   });
 
   // === B-7: 피위임 완료 회송 (CompletionNotifier 주입 회귀) ===
