@@ -53,4 +53,31 @@ describe("toSSEEvent", () => {
       },
     });
   });
+
+  it("uses the timeline row event_type over legacy SDK payload.type", () => {
+    const message: HistoricalMessage = {
+      id: 8,
+      parent_event_id: null,
+      event_type: "tool_start",
+      payload: {
+        type: "tool_use",
+        tool_use_id: "toolu_pending",
+        tool_name: "Bash",
+        tool_input: { command: "pnpm test" },
+        timeline_id: "tool:toolu_pending",
+      },
+      created_at: "2026-05-24T00:00:00+00:00",
+    };
+
+    expect(toSSEEvent(message)).toEqual({
+      eventId: 8,
+      event: {
+        type: "tool_start",
+        tool_use_id: "toolu_pending",
+        tool_name: "Bash",
+        tool_input: { command: "pnpm test" },
+        timeline_id: "tool:toolu_pending",
+      },
+    });
+  });
 });

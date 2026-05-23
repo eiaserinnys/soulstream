@@ -229,7 +229,7 @@ def compact_tool_result_payload(
 
 def base_tool_payload(payload: dict, row: dict, tool_id: str) -> dict:
     return {
-        "type": payload.get("type") or row["event_type"],
+        "type": row["event_type"],
         "tool_name": payload.get("tool_name") or payload.get("name") or "",
         "tool_use_id": tool_id,
         "timeline_id": tool_timeline_id(tool_id),

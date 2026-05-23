@@ -61,15 +61,14 @@ export interface UseMessageHistoryBufferResult {
 /**
  * messages payload를 SoulSSEEvent로 정규화한다.
  *
- * DB는 `event_type`을 별도 컬럼으로 저장하지만 SSE 라이브는 `payload.type`을 쓴다.
- * payload 자체에 `type`이 있으면 그것을 우선, 없으면 `event_type`을 type으로 주입한다.
+ * `/timeline`은 DB의 `event_type`이 renderer-compatible 정본이다. payload.type에는
+ * 과거 SDK 원본 타입(`tool_use`)이 남아 있을 수 있으므로 사용하지 않는다.
  *
  * ⚠️ spread 순서 주의: `...m.payload`를 먼저 펼치고 `type`을 마지막에 두어야
  * `payload.type`이 있어도 우리가 정한 type 값이 보존된다.
  */
 export function toSSEEvent(m: HistoricalMessage): { event: SoulSSEEvent; eventId: number } {
   const payload = m.payload as Record<string, unknown>;
-  const payloadType = (payload.type as string | undefined);
 
   // DB JSONB는 ID 필드를 number로 저장하지만, 라이브 SSE는 string으로 직렬화된다.
   // nodeMap 키가 String(eventId)이므로 lookup 실패(Map.get(2410) ≠ Map.get("2410"))를 방지하려면
@@ -77,7 +76,7 @@ export function toSSEEvent(m: HistoricalMessage): { event: SoulSSEEvent; eventId
   // 진단 결과: parent_event_id number → orphan 큐 영구 보관 → 채팅 미렌더링.
   const event = {
     ...payload,
-    type: payloadType ?? m.event_type,
+    type: m.event_type,
     ...(payload.parent_event_id != null ? { parent_event_id: String(payload.parent_event_id) } : {}),
     ...(payload.tool_use_id != null ? { tool_use_id: String(payload.tool_use_id) } : {}),
     ...(payload.request_id != null ? { request_id: String(payload.request_id) } : {}),
