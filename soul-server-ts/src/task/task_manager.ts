@@ -22,21 +22,13 @@ import type { ExecutionContextBuilder } from "../context/context_builder.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 
-import type {
-  CallerInfo,
-  InterventionMessage,
-  Task,
-  TaskStatus,
-} from "./task_models.js";
+import type { Task, TaskStatus } from "./task_models.js";
 import { ActiveTaskRecovery } from "./task_active_recovery.js";
 import { AutoResumeTransition } from "./task_auto_resume_transition.js";
 import { hydrateEvictedTaskFromSessionRow } from "./task_evicted_hydration.js";
 import { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
 import { ToolApprovalRecovery } from "./task_tool_approval_recovery.js";
-import {
-  RunningInterventionTransition,
-  type RunningInterventionResult,
-} from "./task_running_intervention_transition.js";
+import { RunningInterventionTransition } from "./task_running_intervention_transition.js";
 import {
   TaskCreation,
   type CreateTaskParams,
@@ -48,6 +40,12 @@ import {
   type DeliverToolApprovalParams,
   type DeliverToolApprovalResult,
 } from "./task_delivery_route.js";
+import {
+  TaskInterventionRoute,
+  type AddInterventionParams,
+  type AddInterventionResult,
+  type StartExecutionCallback,
+} from "./task_intervention_route.js";
 import { ResponseEventPublisher } from "./task_response_event_publisher.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
@@ -60,27 +58,11 @@ export type {
   DeliverToolApprovalResult,
   DeliverToolApprovalStatus,
 } from "./task_delivery_route.js";
-
-/**
- * `addIntervention` 결과. Python `task_manager.add_intervention` L590-595 정본 형상.
- *
- * - running 세션 + live steering 지원 → `{delivered: true}` — 현 active turn에 직접 전달.
- * - running 세션 fallback → `{queued: true, queuePosition}` — 현 turn 종료 후 task_executor가 dequeue.
- * - completed/error/interrupted → `{autoResumed: true}` — task_executor.startExecution이
- *   resumeSessionId(task.codexThreadId)로 다음 turn 자동 시작.
- */
-export type AddInterventionResult =
-  | RunningInterventionResult
-  | { autoResumed: true };
-
-/** addIntervention이 받는 메시지. dispatcher가 wire payload에서 조립. */
-export interface AddInterventionParams {
-  agentSessionId: string;
-  text: string;
-  user: string;
-  callerInfo?: CallerInfo;
-  attachmentPaths?: string[];
-}
+export type {
+  AddInterventionParams,
+  AddInterventionResult,
+  StartExecutionCallback,
+} from "./task_intervention_route.js";
 
 export interface FinalizeTaskParams {
   agentSessionId: string;
@@ -89,25 +71,13 @@ export interface FinalizeTaskParams {
   llmUsage?: Record<string, number> | null;
 }
 
-/**
- * `addIntervention`의 auto-resume 경로 콜백.
- *
- * Task가 completed/error/interrupted일 때 task_manager는 status를 "running"으로
- * 돌리고 queue에 메시지를 push한 뒤 본 콜백을 호출한다. 콜백은 *task_executor.startExecution*을
- * 호출하여 다음 turn을 시작할 책임. design-principles §1(지식 경계) — task_manager는
- * executor를 알지 않는다.
- */
-export type StartExecutionCallback = (task: Task) => void;
-
 export class TaskManager {
   private readonly tasks = new Map<string, Task>();
   private readonly taskCreation: TaskCreation;
-  private readonly activeTaskRecovery: ActiveTaskRecovery;
-  private readonly runningInterventionTransition: RunningInterventionTransition;
-  private readonly autoResumeTransition: AutoResumeTransition;
   private readonly toolApprovalRecovery: ToolApprovalRecovery;
   private readonly responseEventPublisher: ResponseEventPublisher;
   private readonly deliveryRoute: TaskDeliveryRoute;
+  private readonly interventionRoute: TaskInterventionRoute;
   private readonly lifecycleTransition: TaskLifecycleTransition;
 
   constructor(
@@ -144,13 +114,13 @@ export class TaskManager {
       broadcaster,
       logger,
     });
-    this.activeTaskRecovery = new ActiveTaskRecovery(logger);
-    this.runningInterventionTransition = new RunningInterventionTransition({
+    const activeTaskRecovery = new ActiveTaskRecovery(logger);
+    const runningInterventionTransition = new RunningInterventionTransition({
       broadcaster,
       logger,
       persistence,
     });
-    this.autoResumeTransition = new AutoResumeTransition({
+    const autoResumeTransition = new AutoResumeTransition({
       db,
       broadcaster,
       logger,
@@ -179,6 +149,16 @@ export class TaskManager {
       toolApprovalRecovery: this.toolApprovalRecovery,
       responseEventPublisher: this.responseEventPublisher,
       agentRegistry,
+    });
+    this.interventionRoute = new TaskInterventionRoute({
+      getTask: (sessionId) => this.tasks.get(sessionId),
+      loadEvictedTask: (sessionId) => this.loadEvictedTask(sessionId),
+      rememberTask: (task) => {
+        this.tasks.set(task.agentSessionId, task);
+      },
+      activeTaskRecovery,
+      runningInterventionTransition,
+      autoResumeTransition,
     });
   }
 
@@ -346,74 +326,7 @@ export class TaskManager {
     params: AddInterventionParams,
     onResume: StartExecutionCallback,
   ): Promise<AddInterventionResult> {
-    // B-5 결함 D 정정 (PR #56): 메모리에 task가 없으면 DB에서 lazy hydration.
-    // 서버 재기동 후 기존 세션에 메시지 도착 시 무조건 throw하던 결함 봉인. Python
-    // `task_manager.py:615-619`의 evicted task on-demand 로드 정합 — 분석 캐시
-    // `20260517-2300-codex-ts-hydration-and-typing-redo.md` §A.
-    let task: Task | undefined = this.tasks.get(params.agentSessionId);
-    if (!task) {
-      const loaded = await this.loadEvictedTask(params.agentSessionId);
-      if (!loaded) {
-        throw new Error(`Task not found: ${params.agentSessionId}`);
-      }
-      task = loaded;
-      this.tasks.set(task.agentSessionId, task);
-    }
-
-    const message: InterventionMessage = {
-      text: params.text,
-      user: params.user,
-      callerInfo: params.callerInfo,
-      attachmentPaths: params.attachmentPaths,
-    };
-
-    // B-5 결함 A 정정: wire 분기를 task.status에 따라 분리.
-    //
-    //  - 진행 중 (task.status === "running") → intervention_sent (UI 주황색)
-    //    Python `task_executor.py:352-389 on_intervention_sent` 정본
-    //  - 완료 후 (completed/error/interrupted) → user_message (UI 흰색) + auto-resume
-    //    Python `task_manager.py:635 create_task(prompt=text, ...)` 정본 — 새 task에서
-    //    _persist_initial_messages가 user_message를 박는 모델과 의미 등가.
-    //
-    // PR #54까지는 두 경로 모두 intervention_sent로 박혀 사용자 보고 "2턴 이후 전부 주황색"
-    // 결함. 본 정정으로 wire 분류 정합.
-    if (this.activeTaskRecovery.prepareForIntervention(task) === "running") {
-      return await this._addInterventionRunning(task, message);
-    }
-    return await this._addInterventionAutoResume(task, message, onResume);
-  }
-
-  /**
-   * 진행 중 task에 intervention 도착 → intervention_sent 영속화 + broadcast.
-   *
-   * live steering capability가 있으면 현 active turn에 직접 주입한다. 미지원/실패 시 기존처럼
-   * queue.push 후 task_executor가 현 turn 종료 뒤 dequeue하여 다음 turn으로 진입한다.
-   */
-  private async _addInterventionRunning(
-    task: Task,
-    message: InterventionMessage,
-  ): Promise<AddInterventionResult> {
-    return await this.runningInterventionTransition.deliver(task, message);
-  }
-
-  /**
-   * Completed/Error/Interrupted task에 intervention 도착 → user_message 영속화·broadcast +
-   * status="running" 전환 + session_updated wire + onResume.
-   *
-   * Python `task_manager.py:635 create_task(prompt=text)` 모델의 codex 적응판. 같은 task
-   * 인스턴스를 재활용하지만 *새 turn 진입 시* user_message가 자기 wire로 영속화·broadcast되어
-   * 클라이언트 채팅 UI에 흰색으로 표시. 또한 `emitSessionUpdated(task)`로 task.status="running"을
-   * wire에 즉시 반영 — soul-app TypingIndicator(`session.status === "running"`)가 즉시 표시.
-   *
-   * race 보호: P1-1 (code-reviewer PR #52). task.executionPromise drain으로 _finalize 완료
-   * 보장 후 진입.
-   */
-  private async _addInterventionAutoResume(
-    task: Task,
-    message: InterventionMessage,
-    onResume: StartExecutionCallback,
-  ): Promise<AddInterventionResult> {
-    return await this.autoResumeTransition.resume(task, message, onResume);
+    return await this.interventionRoute.addIntervention(params, onResume);
   }
 
   /**
