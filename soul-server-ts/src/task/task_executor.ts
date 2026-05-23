@@ -18,7 +18,6 @@ import type { Logger } from "pino";
 
 import type { AgentProfile } from "../agent_registry.js";
 import type { EnginePort } from "../engine/protocol.js";
-import { CLAUDE_OAUTH_TOKEN_ENV } from "../engine/claude_options.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
@@ -28,6 +27,7 @@ import type { CompletionNotifier } from "./completion_notifier.js";
 import { TaskEngineFailureRecovery } from "./task_engine_failure_recovery.js";
 import { TaskAgentsSnapshotPersistence } from "./task_agents_snapshot_persistence.js";
 import { TaskEngineEventPublisher } from "./task_engine_event_publisher.js";
+import { TaskEngineTurnRunner } from "./task_engine_turn_runner.js";
 import { TaskInitialMessagePublisher } from "./task_initial_message_publisher.js";
 import { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
 import type { Task, TaskStatus } from "./task_models.js";
@@ -46,6 +46,7 @@ export class TaskExecutor {
   private readonly lifecycleTransition: TaskLifecycleTransition;
   private readonly initialMessagePublisher: TaskInitialMessagePublisher;
   private readonly agentsSnapshotPersistence: TaskAgentsSnapshotPersistence;
+  private readonly engineTurnRunner: TaskEngineTurnRunner;
   private readonly turnInputBuilder: TaskTurnInputBuilder;
 
   constructor(
@@ -97,6 +98,9 @@ export class TaskExecutor {
     this.agentsSnapshotPersistence = new TaskAgentsSnapshotPersistence({
       db,
       logger,
+    });
+    this.engineTurnRunner = new TaskEngineTurnRunner({
+      snapshotPersistence: this.agentsSnapshotPersistence,
     });
   }
 
@@ -150,50 +154,20 @@ export class TaskExecutor {
   ): Promise<void> {
     const initialTurnInput = await this.turnInputBuilder.prepareInitialTurnInput(task, agent);
     let turnPrompt = initialTurnInput.prompt;
-    let turnImageAttachmentPaths: string[] | undefined = initialTurnInput.imageAttachmentPaths;
+    let turnImageAttachmentPaths = initialTurnInput.imageAttachmentPaths;
     let turnSystemPrompt = initialTurnInput.systemPrompt;
     try {
       while (true) {
-        const resumeSessionId = task.codexThreadId;
         try {
-          const effectiveAllowedTools = task.allowedTools ?? agent.allowed_tools;
-          const effectiveDisallowedTools = task.disallowedTools ?? agent.disallowed_tools;
-          // Running interventions stay in task.interventionQueue until this turn
-          // completes. Pushing a second user message into an active Claude SDK
-          // turn can terminate resumed sessions with `[ede_diagnostic]
-          // result_type=user`, so Claude and Codex share the same turn-between
-          // queue semantics here.
-          const onIntervention = undefined;
-          const queuedToolApproval = task.agentsQueuedToolApproval;
-          task.agentsQueuedToolApproval = undefined;
-          for await (const event of engine.execute({
-            prompt: turnPrompt,
-            imageAttachmentPaths: turnImageAttachmentPaths,
-            model: task.model,
-            reasoningEffort: task.reasoningEffort,
-            resumeSessionId,
-            resumeRunState: task.agentsRunState,
-            previousResponseId: task.agentsPreviousResponseId,
-            conversationId: task.agentsConversationId,
-            sessionItems: task.agentsSessionItems,
-            ...(queuedToolApproval ? { queuedToolApproval } : {}),
-            extraEnv: buildTaskExtraEnv(task),
-            onRunStateSnapshot: (snapshot) =>
-              this.agentsSnapshotPersistence.persistRunStateSnapshot(task, snapshot),
-            onSessionItemsSnapshot: (snapshot) =>
-              this.agentsSnapshotPersistence.persistSessionItemsSnapshot(task, snapshot),
-            // Phase B parity: 첫 turn에 한해 systemPrompt가 SDK 옵션으로 전달됨. intervention turn은
-            // resumeSessionId로 이어붙기 때문에 SDK가 기존 system prompt를 유지 — turnSystemPrompt가 undefined로 흘러 미전달.
-            ...(turnSystemPrompt !== undefined ? { systemPrompt: turnSystemPrompt } : {}),
-            // Phase B parity: 요청별 도구 권한이 있으면 우선하고, 없으면 agents.yaml 값을 forward
-            // (Python `effective_allowed_tools` 정합). claude 어댑터만 SDK에 매핑하며, codex는 무시.
-            ...(effectiveAllowedTools !== undefined ? { allowedTools: effectiveAllowedTools } : {}),
-            ...(effectiveDisallowedTools !== undefined
-              ? { disallowedTools: effectiveDisallowedTools }
-              : {}),
-            ...(task.useMcp !== undefined ? { useMcp: task.useMcp } : {}),
-            ...(agent.max_turns !== undefined ? { maxTurns: agent.max_turns } : {}),
-            ...(onIntervention ? { onIntervention } : {}),
+          for await (const event of this.engineTurnRunner.executeTurn({
+            task,
+            agent,
+            engine,
+            input: {
+              prompt: turnPrompt,
+              imageAttachmentPaths: turnImageAttachmentPaths,
+              ...(turnSystemPrompt !== undefined ? { systemPrompt: turnSystemPrompt } : {}),
+            },
           })) {
             await this.engineEventPublisher.publishEngineEvent(task, event);
           }
@@ -257,11 +231,4 @@ export class TaskExecutor {
 /** 외부 검증용 — task가 종료 상태인지. */
 export function isTerminalStatus(status: TaskStatus): boolean {
   return status === "completed" || status === "error" || status === "interrupted";
-}
-
-function buildTaskExtraEnv(task: Task): Record<string, string> | undefined {
-  if (!task.oauthToken) {
-    return undefined;
-  }
-  return { [CLAUDE_OAUTH_TOKEN_ENV]: task.oauthToken };
 }
