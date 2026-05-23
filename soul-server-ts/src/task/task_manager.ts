@@ -44,12 +44,12 @@ import {
   RunningInterventionTransition,
   type RunningInterventionResult,
 } from "./task_running_intervention_transition.js";
+import { ResponseEventPublisher } from "./task_response_event_publisher.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import type {
   BackendId,
   InputResponseDeliveryResult,
   ReasoningEffort,
-  SSEEventPayload,
   SupportsInputResponse,
   SupportsToolApproval,
   ToolApprovalDecision,
@@ -173,6 +173,7 @@ export class TaskManager {
   private readonly runningInterventionTransition: RunningInterventionTransition;
   private readonly autoResumeTransition: AutoResumeTransition;
   private readonly toolApprovalRecovery: ToolApprovalRecovery;
+  private readonly responseEventPublisher: ResponseEventPublisher;
 
   constructor(
     private readonly nodeId: string,
@@ -207,6 +208,11 @@ export class TaskManager {
       contextBuilder,
       agentRegistry,
     });
+    this.responseEventPublisher = new ResponseEventPublisher({
+      broadcaster,
+      logger,
+      persistence,
+    });
     this.toolApprovalRecovery = new ToolApprovalRecovery({
       getTask: (sessionId) => this.tasks.get(sessionId),
       loadEvictedTask: (sessionId) => this.loadEvictedTask(sessionId),
@@ -214,7 +220,7 @@ export class TaskManager {
         this.tasks.set(task.agentSessionId, task);
       },
       persistToolApprovalResolved: (task, params) =>
-        this.persistAndBroadcastToolApprovalResolved(task, params),
+        this.responseEventPublisher.publishToolApprovalResolved(task, params),
       emitSessionUpdated: (task) => this.broadcaster.emitSessionUpdated(task),
       logger,
     });
@@ -421,7 +427,7 @@ export class TaskManager {
       };
     }
 
-    const eventId = await this.persistAndBroadcastInputRequestResponded(
+    const eventId = await this.responseEventPublisher.publishInputRequestResponded(
       task,
       params.requestId,
     );
@@ -495,113 +501,16 @@ export class TaskManager {
       };
     }
 
-    const eventId = await this.persistAndBroadcastToolApprovalResolved(task, params);
+    const eventId = await this.responseEventPublisher.publishToolApprovalResolved(
+      task,
+      params,
+    );
     return {
       status: "delivered",
       approvalId: params.approvalId,
       decision: params.decision,
       ...(eventId !== undefined ? { eventId } : {}),
     };
-  }
-
-  private async persistAndBroadcastInputRequestResponded(
-    task: Task,
-    requestId: string,
-  ): Promise<number | undefined> {
-    const event: Record<string, unknown> = {
-      type: "input_request_responded",
-      request_id: requestId,
-      timestamp: Date.now() / 1000,
-    };
-    let eventId: number | undefined;
-
-    if (this.persistence) {
-      try {
-        eventId = await this.persistence.persistEvent(
-          task.agentSessionId,
-          event as SSEEventPayload,
-        );
-        task.lastEventId = eventId;
-        event._event_id = eventId;
-        await this.persistence.handleSideEffects(
-          task.agentSessionId,
-          event as SSEEventPayload,
-          task,
-        );
-      } catch (err) {
-        this.logger.warn(
-          { err, sessionId: task.agentSessionId, requestId },
-          "input_request_responded persistence failed",
-        );
-        eventId = undefined;
-      }
-    }
-
-    try {
-      await this.broadcaster.emitEventEnvelope(
-        task.agentSessionId,
-        event as SSEEventPayload,
-      );
-    } catch (err) {
-      this.logger.warn(
-        { err, sessionId: task.agentSessionId, requestId },
-        "input_request_responded broadcast failed",
-      );
-    }
-    return eventId;
-  }
-
-  private async persistAndBroadcastToolApprovalResolved(
-    task: Task,
-    params: DeliverToolApprovalParams,
-  ): Promise<number | undefined> {
-    const event: Record<string, unknown> = {
-      type: "tool_approval_resolved",
-      approval_id: params.approvalId,
-      decision: params.decision,
-      approved: params.decision === "approved",
-      rejected: params.decision === "rejected",
-      timestamp: Date.now() / 1000,
-    };
-    if (params.message) {
-      event.message = params.message;
-    }
-
-    let eventId: number | undefined;
-    if (this.persistence) {
-      try {
-        eventId = await this.persistence.persistEvent(
-          task.agentSessionId,
-          event as SSEEventPayload,
-        );
-        task.lastEventId = eventId;
-        event._event_id = eventId;
-        await this.persistence.handleSideEffects(
-          task.agentSessionId,
-          event as SSEEventPayload,
-          task,
-        );
-      } catch (err) {
-        this.logger.warn(
-          { err, sessionId: task.agentSessionId, approvalId: params.approvalId },
-          "tool_approval_resolved persistence failed",
-        );
-        eventId = undefined;
-      }
-    }
-
-    try {
-      await this.broadcaster.emitEventEnvelope(
-        task.agentSessionId,
-        event as SSEEventPayload,
-      );
-    } catch (err) {
-      this.logger.warn(
-        { err, sessionId: task.agentSessionId, approvalId: params.approvalId },
-        "tool_approval_resolved broadcast failed",
-      );
-    }
-    return eventId;
   }
 
   /**
