@@ -24,6 +24,7 @@ import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import type { ExecutionContextBuilder } from "../context/context_builder.js";
 
 import type { CompletionNotifier } from "./completion_notifier.js";
+import { TaskExecutorFinalizer } from "./task_executor_finalizer.js";
 import { TaskEngineFailureRecovery } from "./task_engine_failure_recovery.js";
 import { TaskAgentsSnapshotPersistence } from "./task_agents_snapshot_persistence.js";
 import { TaskEngineEventPublisher } from "./task_engine_event_publisher.js";
@@ -44,6 +45,7 @@ export class TaskExecutor {
   private readonly engineEventPublisher: TaskEngineEventPublisher;
   private readonly engineFailureRecovery: TaskEngineFailureRecovery;
   private readonly lifecycleTransition: TaskLifecycleTransition;
+  private readonly executorFinalizer: TaskExecutorFinalizer;
   private readonly initialMessagePublisher: TaskInitialMessagePublisher;
   private readonly agentsSnapshotPersistence: TaskAgentsSnapshotPersistence;
   private readonly engineTurnRunner: TaskEngineTurnRunner;
@@ -54,7 +56,7 @@ export class TaskExecutor {
     db: SessionDB,
     persistence: EventPersistence,
     broadcaster: SessionBroadcaster,
-    private readonly logger: Logger,
+    logger: Logger,
     /**
      * B-6 context_builder DI. undefined일 때 본 PR 이전 동작(task.prompt 직접 사용) 유지 —
      * legacy 호출자·테스트 환경 호환. 운영 흐름(main.ts)에서는 항상 주입.
@@ -68,12 +70,17 @@ export class TaskExecutor {
      * _notify_caller_completion` 정본의 codex 적응판 (분석 캐시
      * `roselin/.local/artifacts/analysis/20260518-2125-ts-delegation-return.md` §3-2).
      */
-    private readonly completionNotifier?: CompletionNotifier,
+    completionNotifier?: CompletionNotifier,
   ) {
     this.lifecycleTransition = new TaskLifecycleTransition({
       db,
       broadcaster,
       logger,
+    });
+    this.executorFinalizer = new TaskExecutorFinalizer({
+      lifecycleTransition: this.lifecycleTransition,
+      logger,
+      completionNotifier,
     });
     this.engineEventPublisher = new TaskEngineEventPublisher({
       broadcaster,
@@ -194,37 +201,10 @@ export class TaskExecutor {
   }
 
   /**
-   * 종료 처리: DB sessions 업데이트 + session_updated broadcast + engine.close.
+   * 종료 처리: final-state persistence + engine cleanup + delegated completion notification.
    */
   private async _finalize(task: Task): Promise<void> {
-    await this.lifecycleTransition.persistExecutorFinalState(task);
-
-    // engine 정리
-    try {
-      await task.engine?.close();
-    } catch (err) {
-      this.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        "engine.close failed",
-      );
-    }
-    task.engine = undefined;
-
-    // B-7 피위임 완료 회송 — callerSessionId가 있고 notifier가 주입된 경우만.
-    // notifier 내부가 자체 격리(local 실패→orch 폴백→양쪽 실패해도 resolve)하지만 안전망 추가.
-    // Python `task_manager.py:439-442` 정본 정합 — finalize의 락 블록 *바깥*에서 호출 (TS는
-    // 단일 task 인스턴스에 락이 없어 _finalize 안에서 호출해도 동치).
-    if (task.callerSessionId && this.completionNotifier) {
-      try {
-        await this.completionNotifier.notify(task);
-      } catch (err) {
-        // notifier는 자체 격리하지만 안전망 — finalize는 절대 실패 전파 안 함.
-        this.logger.warn(
-          { err, sessionId: task.agentSessionId },
-          "completionNotifier.notify threw (should not happen — notifier is supposed to isolate)",
-        );
-      }
-    }
+    await this.executorFinalizer.finalize(task);
   }
 }
 

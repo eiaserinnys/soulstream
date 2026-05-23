@@ -256,7 +256,7 @@ export class TaskManager {
   /**
    * 외부 실행기(LLM proxy 등)가 만든 task를 완료/실패 상태로 마무리한다.
    *
-   * TaskExecutor._finalize는 engine lifecycle까지 닫는 전용 경로라 LLM proxy에서 재사용할 수 없다.
+   * TaskExecutorFinalizer는 engine lifecycle까지 닫는 전용 경로라 LLM proxy에서 재사용할 수 없다.
    * 이 메서드는 세션 상태·완료 시각·LLM usage만 갱신하고 session_updated wire를 발행한다.
    */
   async finalizeTask(params: FinalizeTaskParams): Promise<Task | undefined> {
