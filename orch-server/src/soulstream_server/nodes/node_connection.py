@@ -21,6 +21,7 @@ from soulstream_server.constants import (
     CMD_DELETE_SESSION_ATTACHMENTS,
     CMD_DOWNLOAD_ATTACHMENT,
     CMD_INTERVENE,
+    CMD_INTERRUPT_SESSION,
     CMD_REALTIME_CREATE_CALL,
     CMD_REALTIME_EVENT,
     CMD_REALTIME_RESOLVE_TOOL_APPROVAL,
@@ -271,6 +272,13 @@ class NodeConnection:
             # add_intervention → 큐 → InterventionSentEvent.caller_info로 전파한다.
             payload["caller_info"] = caller_info
         return await self._send_command(CMD_INTERVENE, payload)
+
+    async def send_interrupt_session(self, session_id: str) -> dict:
+        """진행 중인 세션 turn을 즉시 중단한다."""
+        return await self._send_command(
+            CMD_INTERRUPT_SESSION,
+            {"agentSessionId": session_id},
+        )
 
     # ─── Attachment WS reverse-proxy ────────────────────
     # 노드 self-reported host:port HTTP 가정 폐기 (운영 로그: eias-shopping host=127.0.0.1)

@@ -11,6 +11,7 @@ from soulstream_server.constants import (
     CMD_DELETE_SESSION_ATTACHMENTS,
     CMD_DOWNLOAD_ATTACHMENT,
     CMD_INTERVENE,
+    CMD_INTERRUPT_SESSION,
     CMD_REALTIME_CREATE_CALL,
     CMD_REALTIME_EVENT,
     CMD_REALTIME_RESOLVE_TOOL_APPROVAL,
@@ -215,6 +216,29 @@ class TestCommandSending:
         assert sent["agentSessionId"] == "sess-1"
         assert sent["text"] == "stop"
         assert sent["user"] == "admin"
+
+    async def test_send_interrupt_session_sends_correct_payload(self, node, ws):
+        """send_interrupt_session sends interrupt command and waits for ACK."""
+
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            req_id = data["requestId"]
+            if req_id in node._pending:
+                node._pending[req_id].set_result({
+                    "type": "interrupt_session_ack",
+                    "requestId": req_id,
+                    "status": "ok",
+                    "interrupted": True,
+                })
+
+        ws.send_json.side_effect = resolve_future
+
+        result = await node.send_interrupt_session("sess-1")
+
+        sent = ws.send_json.call_args[0][0]
+        assert sent["type"] == CMD_INTERRUPT_SESSION
+        assert sent["agentSessionId"] == "sess-1"
+        assert result["interrupted"] is True
 
     async def test_send_respond_sends_input_request_id_without_overwriting_command_request_id(
         self, node, ws

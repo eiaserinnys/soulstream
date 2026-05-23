@@ -573,6 +573,56 @@ class TaskManager:
         # on-demand 로드 (퇴거된 세션)
         return await self._eviction_manager.load_evicted_task(self._db, agent_session_id)
 
+    async def interrupt_task(self, agent_session_id: str) -> bool:
+        """진행 중인 세션 turn을 즉시 중단한다.
+
+        상태 전환은 interrupt 신호보다 먼저 기록한다. Claude SDK가 interrupt 후
+        ResultMessage를 반환해도 TaskExecutor가 completed/error로 덮지 않게 하기 위해서다.
+        """
+        async with self._lock:
+            task = self._tasks.get(agent_session_id)
+            if not task:
+                raise TaskNotFoundError(f"Session not found: {agent_session_id}")
+            if task.status != TaskStatus.RUNNING:
+                raise TaskNotRunningError(f"Session not running: {agent_session_id}")
+
+            runner = getattr(task, "_runner", None)
+            execution_task = task.execution_task
+            task.status = TaskStatus.INTERRUPTED
+            task.completed_at = utc_now()
+
+        interrupted = False
+        if runner is not None and hasattr(runner, "interrupt"):
+            try:
+                interrupted = bool(runner.interrupt())
+            except Exception:
+                logger.warning(
+                    "Runner interrupt failed for %s",
+                    agent_session_id,
+                    exc_info=True,
+                )
+
+        if not interrupted and execution_task is not None and not execution_task.done():
+            execution_task.cancel()
+            interrupted = True
+
+        await self._db.update_session(
+            agent_session_id,
+            status=TaskStatus.INTERRUPTED.value,
+            updated_at=datetime_to_str(task.completed_at),
+        )
+        self._eviction_manager.register(agent_session_id)
+        self._unregister_claude_session(agent_session_id)
+        try:
+            await get_session_broadcaster().emit_session_updated(task)
+        except Exception:
+            logger.warning(
+                f"Failed to broadcast interrupt for {agent_session_id}",
+                exc_info=True,
+            )
+
+        return interrupted
+
     # === SSE 리스너 관리 → task_manager.listener_manager 직접 사용 ===
     # (pass-through 제거됨: add_listener, remove_listener, broadcast)
 

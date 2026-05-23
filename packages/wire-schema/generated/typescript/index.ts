@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 60개 $defs (wire 24 + SSE event 36). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16) + OpenAI Agents SDK parity (2026-05-21).
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 62개 $defs (wire 26 + SSE event 36). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16) + OpenAI Agents SDK parity (2026-05-21).
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -13,6 +13,7 @@ export type SoulstreamUpstreamProtocol =
   | SessionDeleted
   | ErrorMessage
   | InterveneAck
+  | InterruptSessionAck
   | RespondAck
   | ToolApprovalAck
   | RealtimeCallCreated
@@ -20,6 +21,7 @@ export type SoulstreamUpstreamProtocol =
   | RealtimeToolApprovalAck
   | CreateSession
   | Intervene
+  | InterruptSession
   | Respond
   | ApproveTool
   | RejectTool
@@ -510,6 +512,17 @@ export interface InterveneAck {
   [k: string]: unknown;
 }
 /**
+ * 노드→orch: interrupt_session 명령 ACK. command_handler.py:_handle_interrupt_session + TS dispatcher.handleInterruptSession.
+ */
+export interface InterruptSessionAck {
+  type: "interrupt_session_ack";
+  requestId: string;
+  status: "ok";
+  interrupted?: boolean;
+  agentSessionId?: string;
+  [k: string]: unknown;
+}
+/**
  * 노드→orch: respond 명령 ACK. TS Claude AskUserQuestion 응답 전달 결과. 실패도 ACK로 반환하여 orch command timeout을 막는다.
  */
 export interface RespondAck {
@@ -637,6 +650,20 @@ export interface Intervene {
   caller_info?: {
     [k: string]: unknown;
   };
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: 진행 중인 세션 turn 중단 명령.
+ */
+export interface InterruptSession {
+  type: "interrupt_session";
+  agentSessionId: string;
+  /**
+   * 구버전 호환 — 신규 코드는 agentSessionId 사용.
+   */
+  session_id?: string;
+  requestId?: string;
+  request_id?: string;
   [k: string]: unknown;
 }
 /**

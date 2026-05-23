@@ -10,6 +10,7 @@
  */
 
 import { useCallback, useRef, useEffect, useMemo, useState } from "react";
+import { Loader2, Square } from "lucide-react";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { FileAttachmentPreview } from "./FileAttachmentPreview";
 import { useFileUpload } from "../hooks/useFileUpload";
@@ -65,6 +66,8 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
   );
 
   const [text, setText] = useState("");
+  const [interrupting, setInterrupting] = useState(false);
+  const [interruptError, setInterruptError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -103,6 +106,8 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
   // 세션 변경 시 상태 초기화 & in-flight 요청 취소
   useEffect(() => {
     reset();
+    setInterruptError(null);
+    setInterrupting(false);
     // 세션 전환 시 저장된 draft 복원 (getState()로 직접 읽어 의존성에 drafts 불필요)
     const saved = activeSessionKey
       ? (useDashboardStore.getState().drafts[activeSessionKey] ?? "")
@@ -128,6 +133,28 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
     void send(text);
   }, [send, text]);
 
+  const interruptSession = useCallback(async () => {
+    if (!activeSessionKey || interrupting) return;
+    setInterruptError(null);
+    setInterrupting(true);
+    try {
+      const res = await fetch(
+        `/api/sessions/${encodeURIComponent(activeSessionKey)}/interrupt`,
+        { method: "POST", credentials: "include" },
+      );
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        throw new Error(
+          body ? `HTTP ${res.status}: ${body.slice(0, 200)}` : `HTTP ${res.status}`,
+        );
+      }
+    } catch (err) {
+      setInterruptError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setInterrupting(false);
+    }
+  }, [activeSessionKey, interrupting]);
+
   const handleChangeText = useCallback(
     (value: string) => {
       setText(value);
@@ -141,6 +168,8 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
   const fileUploadDisabled = effectiveFileUploadUrl ? isUploading : false;
   const isDisabled = sending || !text.trim() || additionalDisabled || fileUploadDisabled || isOtherNodeSession;
   const textareaDisabled = sending || additionalDisabled || isOtherNodeSession;
+  const showInterrupt = status === "running";
+  const interruptDisabled = interrupting || additionalDisabled || !activeSessionKey;
 
   const mode = resolveChatInputMode({
     isFinished,
@@ -187,6 +216,22 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
       )}
 
       <div className="flex gap-2">
+        {showInterrupt && (
+          <button
+            type="button"
+            onClick={() => void interruptSession()}
+            disabled={interruptDisabled}
+            title="Stop running conversation"
+            aria-label="Stop running conversation"
+            className="self-end h-9 sm:h-8 w-9 sm:w-8 flex items-center justify-center rounded border border-accent-red/60 text-accent-red hover:bg-accent-red/10 disabled:opacity-50 disabled:hover:bg-transparent transition-colors shrink-0"
+          >
+            {interrupting ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <Square className="h-4 w-4 fill-current" aria-hidden="true" />
+            )}
+          </button>
+        )}
         {effectiveFileUploadUrl && <PaperclipButton onClick={() => fileInputRef.current?.click()} />}
         <ChatInputEditor
           ref={textareaRef}
@@ -210,9 +255,9 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
         </div>
       )}
 
-      {error && (
+      {(error || interruptError) && (
         <div className="text-xs text-accent-red py-1 px-2 rounded bg-accent-red/8">
-          {error}
+          {error || interruptError}
         </div>
       )}
 

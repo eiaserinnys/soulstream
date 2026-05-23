@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 60개 $defs (wire 24 + SSE event 36). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16) + OpenAI Agents SDK parity (2026-05-21).",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 62개 $defs (wire 26 + SSE event 36). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16) + OpenAI Agents SDK parity (2026-05-21).",
   "$defs": {
     "NodeRegister": {
       "type": "object",
@@ -204,6 +204,19 @@
         "status": { "type": "string", "enum": ["ok"] }
       }
     },
+    "InterruptSessionAck": {
+      "type": "object",
+      "description": "노드→orch: interrupt_session 명령 ACK. command_handler.py:_handle_interrupt_session + TS dispatcher.handleInterruptSession.",
+      "required": ["type", "requestId", "status"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "interrupt_session_ack" },
+        "requestId": { "type": "string" },
+        "status": { "type": "string", "enum": ["ok"] },
+        "interrupted": { "type": "boolean" },
+        "agentSessionId": { "type": "string" }
+      }
+    },
     "RespondAck": {
       "type": "object",
       "description": "노드→orch: respond 명령 ACK. TS Claude AskUserQuestion 응답 전달 결과. 실패도 ACK로 반환하여 orch command timeout을 막는다.",
@@ -344,6 +357,22 @@
           "items": { "type": "string" }
         },
         "caller_info": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "InterruptSession": {
+      "type": "object",
+      "description": "orch→노드: 진행 중인 세션 turn 중단 명령.",
+      "required": ["type", "agentSessionId"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "interrupt_session" },
+        "agentSessionId": { "type": "string" },
+        "session_id": {
+          "type": "string",
+          "description": "구버전 호환 — 신규 코드는 agentSessionId 사용."
+        },
+        "requestId": { "type": "string" },
+        "request_id": { "type": "string" }
       }
     },
     "Respond": {
@@ -880,6 +909,7 @@
     { "$ref": "#/$defs/SessionDeleted" },
     { "$ref": "#/$defs/ErrorMessage" },
     { "$ref": "#/$defs/InterveneAck" },
+    { "$ref": "#/$defs/InterruptSessionAck" },
     { "$ref": "#/$defs/RespondAck" },
     { "$ref": "#/$defs/ToolApprovalAck" },
     { "$ref": "#/$defs/RealtimeCallCreated" },
@@ -887,6 +917,7 @@
     { "$ref": "#/$defs/RealtimeToolApprovalAck" },
     { "$ref": "#/$defs/CreateSession" },
     { "$ref": "#/$defs/Intervene" },
+    { "$ref": "#/$defs/InterruptSession" },
     { "$ref": "#/$defs/Respond" },
     { "$ref": "#/$defs/ApproveTool" },
     { "$ref": "#/$defs/RejectTool" },

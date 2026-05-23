@@ -5,6 +5,7 @@
 # Commands (soulstream-server -> node)
 CMD_CREATE_SESSION = "create_session"
 CMD_INTERVENE = "intervene"
+CMD_INTERRUPT_SESSION = "interrupt_session"
 CMD_RESPOND = "respond"
 CMD_APPROVE_TOOL = "approve_tool"
 CMD_REJECT_TOOL = "reject_tool"

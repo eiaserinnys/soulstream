@@ -90,6 +90,7 @@ function createDispatcher(opts: {
     }),
     listTasks: vi.fn(() => runningTasks),
     addIntervention: vi.fn(),
+    cancelTask: vi.fn(async () => true),
     deliverInputResponse: vi.fn(),
     deliverToolApproval: vi.fn(),
   };
@@ -631,6 +632,49 @@ describe("CommandDispatcher.intervene (B-4)", () => {
     });
     expect(addIntervention).toHaveBeenCalled();
     expect(sent).toHaveLength(0);
+  });
+});
+
+describe("CommandDispatcher.interrupt_session", () => {
+  it("interrupt_session → cancelTask + interrupt_session_ack", async () => {
+    const cancelTask = vi.fn(async () => true);
+    const { dispatcher, sent } = createDispatcher({
+      taskManager: { cancelTask } as Partial<TaskManager>,
+    });
+
+    await dispatcher.dispatch({
+      type: "interrupt_session",
+      agentSessionId: "sess-stop",
+      requestId: "stop-1",
+    });
+
+    expect(cancelTask).toHaveBeenCalledWith("sess-stop");
+    expect(sent[0]).toMatchObject({
+      type: "interrupt_session_ack",
+      requestId: "stop-1",
+      status: "ok",
+      interrupted: true,
+      agentSessionId: "sess-stop",
+    });
+  });
+
+  it("agentSessionId 누락 시 error wire", async () => {
+    const cancelTask = vi.fn();
+    const { dispatcher, sent } = createDispatcher({
+      taskManager: { cancelTask } as Partial<TaskManager>,
+    });
+
+    await dispatcher.dispatch({
+      type: "interrupt_session",
+      requestId: "stop-2",
+    });
+
+    expect(cancelTask).not.toHaveBeenCalled();
+    expect(sent[0]).toMatchObject({
+      type: "error",
+      requestId: "stop-2",
+    });
+    expect((sent[0] as { message: string }).message).toContain("agentSessionId");
   });
 });
 

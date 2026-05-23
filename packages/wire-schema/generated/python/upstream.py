@@ -107,6 +107,18 @@ class InterveneAck(TypedDict):
     status: NotRequired[Literal['ok']]
 
 
+class InterruptSessionAck(TypedDict):
+    """
+    노드→orch: interrupt_session 명령 ACK. command_handler.py:_handle_interrupt_session + TS dispatcher.handleInterruptSession.
+    """
+
+    type: Literal['interrupt_session_ack']
+    requestId: str
+    status: Literal['ok']
+    interrupted: NotRequired[bool]
+    agentSessionId: NotRequired[str]
+
+
 class RespondAck(TypedDict):
     """
     노드→orch: respond 명령 ACK. TS Claude AskUserQuestion 응답 전달 결과. 실패도 ACK로 반환하여 orch command timeout을 막는다.
@@ -224,6 +236,18 @@ class Intervene(TypedDict):
     requestId: NotRequired[str]
     attachment_paths: NotRequired[list[str]]
     caller_info: NotRequired[dict[str, Any]]
+
+
+class InterruptSession(TypedDict):
+    """
+    orch→노드: 진행 중인 세션 turn 중단 명령.
+    """
+
+    type: Literal['interrupt_session']
+    agentSessionId: str
+    session_id: NotRequired[str]
+    requestId: NotRequired[str]
+    request_id: NotRequired[str]
 
 
 class Respond(TypedDict):
@@ -812,6 +836,7 @@ SoulstreamUpstreamProtocol: TypeAlias = (
     | SessionDeleted
     | ErrorMessage
     | InterveneAck
+    | InterruptSessionAck
     | RespondAck
     | ToolApprovalAck
     | RealtimeCallCreated
@@ -819,6 +844,7 @@ SoulstreamUpstreamProtocol: TypeAlias = (
     | RealtimeToolApprovalAck
     | CreateSession
     | Intervene
+    | InterruptSession
     | Respond
     | ApproveTool
     | RejectTool

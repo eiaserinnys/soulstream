@@ -228,6 +228,26 @@ def create_sessions_router(
             # 그 외 처리 불가 → 422
             raise HTTPException(status_code=422, detail=msg)
 
+    @router.post("/{session_id}/interrupt")
+    async def interrupt_session(session_id: str) -> dict:
+        """진행 중인 에이전트 대화를 중단한다."""
+        node = await find_session_node(session_id, db, node_manager)
+        try:
+            result = await node.send_interrupt_session(session_id)
+        except (WebSocketDisconnect, ConnectionError) as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Node disconnected, please retry: {e}",
+            )
+        except RuntimeError as e:
+            msg = str(e)
+            if "not found" in msg.lower() or "찾을 수 없" in msg:
+                raise HTTPException(status_code=404, detail=msg)
+            if "not running" in msg.lower() or "실행 중" in msg:
+                raise HTTPException(status_code=409, detail=msg)
+            raise HTTPException(status_code=422, detail=msg)
+        return result
+
     @router.post("/{session_id}/respond")
     async def respond(session_id: str, body: RespondRequest) -> dict:
         """입력 요청 응답."""

@@ -34,6 +34,12 @@ class InterveneCmd(TypedDict):
     user: str
 
 
+class InterruptSessionCmd(TypedDict, total=False):
+    type: str            # "interrupt_session"
+    agentSessionId: str
+    session_id: str      # 구버전 호환 fallback
+
+
 class RespondCmd(TypedDict, total=False):
     """AskUserQuestion 응답 명령.
 
@@ -114,6 +120,7 @@ class ErrorResponse(TypedDict, total=False):
 
 CMD_CREATE_SESSION = "create_session"
 CMD_INTERVENE = "intervene"
+CMD_INTERRUPT_SESSION = "interrupt_session"
 CMD_RESPOND = "respond"
 CMD_LIST_SESSIONS = "list_sessions"
 CMD_HEALTH_CHECK = "health_check"

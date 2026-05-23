@@ -167,6 +167,43 @@ async def api_message(session_id: str, body: InterveneBody, request: Request):
     return await api_intervene(session_id, body, request)
 
 
+# === /api/sessions/{id}/interrupt (POST) ===
+
+@router.post(
+    "/api/sessions/{session_id}/interrupt",
+    dependencies=[Depends(require_dashboard_auth)],
+)
+async def api_interrupt_session(session_id: str):
+    """진행 중인 에이전트 대화를 중단한다."""
+    try:
+        interrupted = await get_task_manager().interrupt_task(session_id)
+        return {
+            "status": "ok",
+            "interrupted": interrupted,
+            "agentSessionId": session_id,
+        }
+    except TaskNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": {
+                    "code": "SESSION_NOT_FOUND",
+                    "message": f"세션을 찾을 수 없습니다: {session_id}",
+                }
+            },
+        )
+    except TaskNotRunningError:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": {
+                    "code": "SESSION_NOT_RUNNING",
+                    "message": f"세션이 실행 중이 아닙니다: {session_id}",
+                }
+            },
+        )
+
+
 # === /api/sessions/{id}/respond (POST) ===
 
 @router.post(

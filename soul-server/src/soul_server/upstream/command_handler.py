@@ -39,6 +39,7 @@ from .protocol import (
     CMD_DOWNLOAD_ATTACHMENT,
     CMD_HEALTH_CHECK,
     CMD_INTERVENE,
+    CMD_INTERRUPT_SESSION,
     CMD_LIST_SESSIONS,
     CMD_RESPOND,
     CMD_SUBSCRIBE_EVENTS,
@@ -132,6 +133,7 @@ class CommandDispatcher:
         self._handlers: dict[str, Callable[[dict], Awaitable[None]]] = {
             CMD_CREATE_SESSION: self._handle_create_session,
             CMD_INTERVENE: self._handle_intervene,
+            CMD_INTERRUPT_SESSION: self._handle_interrupt_session,
             CMD_RESPOND: self._handle_respond,
             CMD_LIST_SESSIONS: self._handle_list_sessions,
             CMD_HEALTH_CHECK: self._handle_health_check,
@@ -319,6 +321,28 @@ class CommandDispatcher:
                     name=f"upstream-stream-{session_id}",
                 )
                 self._stream_tasks[session_id] = stream_task
+
+    async def _handle_interrupt_session(self, cmd: dict) -> None:
+        """진행 중인 세션 turn 중단."""
+        session_id = cmd.get("agentSessionId") or cmd.get("session_id", "")
+        if not session_id:
+            await self._send_error(
+                "interrupt_session requires agentSessionId",
+                request_id=cmd.get("requestId", ""),
+                command_type=CMD_INTERRUPT_SESSION,
+            )
+            return
+
+        interrupted = await self._tm.interrupt_task(session_id)
+        request_id = cmd.get("requestId", "")
+        if request_id:
+            await self._send({
+                "type": "interrupt_session_ack",
+                "requestId": request_id,
+                "status": "ok",
+                "interrupted": interrupted,
+                "agentSessionId": session_id,
+            })
 
     async def _handle_respond(self, cmd: dict) -> None:
         """AskUserQuestion 응답 처리.

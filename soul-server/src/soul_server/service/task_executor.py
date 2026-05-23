@@ -320,6 +320,7 @@ class TaskExecutor:
         finally:
             task.execution_task = None
             task._deliver_input_response = None
+            task._runner = None
             task.pid = None  # 프로세스 종료 후 stale PID 방지
             logger.info(f"Background execution finished for session: {session_id}")
 
@@ -402,6 +403,7 @@ class TaskExecutor:
                 # AskUserQuestion 응답 전달 경로 구축 + pid 기록
                 def on_runner_ready(runner):
                     task._deliver_input_response = runner.deliver_input_response
+                    task._runner = runner
                     task.pid = runner._lifecycle.pid
 
                 event_iter = claude_runner.execute(
@@ -428,12 +430,30 @@ class TaskExecutor:
 
                 # 스트림 종료 후 finalize
                 if last_error is not None:
-                    await self._finalize_task(session_id, error=last_error)
+                    if task.status == TaskStatus.INTERRUPTED:
+                        logger.info(
+                            "Session interrupted; skipping error finalize: %s",
+                            session_id,
+                        )
+                    else:
+                        await self._finalize_task(session_id, error=last_error)
                 elif last_result is not None:
-                    await self._finalize_task(session_id, result=last_result)
+                    if task.status == TaskStatus.INTERRUPTED:
+                        logger.info(
+                            "Session interrupted; skipping completed finalize: %s",
+                            session_id,
+                        )
+                    else:
+                        await self._finalize_task(session_id, result=last_result)
                 else:
-                    logger.warning(f"Stream ended without complete/error for {session_id}")
-                    await self._finalize_task(session_id, error="Stream ended without completion event")
+                    if task.status == TaskStatus.INTERRUPTED:
+                        logger.info(
+                            "Interrupted stream ended without complete/error: %s",
+                            session_id,
+                        )
+                    else:
+                        logger.warning(f"Stream ended without complete/error for {session_id}")
+                        await self._finalize_task(session_id, error="Stream ended without completion event")
 
     def is_execution_running(self, agent_session_id: str) -> bool:
         """세션 실행이 진행 중인지 확인"""

@@ -171,6 +171,8 @@ class Task:
     # AskUserQuestion 응답 전달 콜백 (실행 중에만 유효)
     # Callable[[str, dict], bool]: (request_id, answers) -> success
     _deliver_input_response: object = field(default=None, repr=False)
+    # 현재 turn을 실행 중인 runner. interrupt_task()가 interrupt() 공개 인터페이스만 호출한다.
+    _runner: object = field(default=None, repr=False)
 
     @property
     def key(self) -> str:

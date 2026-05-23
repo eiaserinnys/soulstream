@@ -67,6 +67,12 @@ interface IntervenCmd extends CommandLike {
   attachment_paths?: string[];
 }
 
+interface InterruptSessionCmd extends CommandLike {
+  type: "interrupt_session";
+  agentSessionId?: string;
+  session_id?: string;
+}
+
 interface RespondCmd extends CommandLike {
   type: "respond";
   agentSessionId?: string;
@@ -198,6 +204,7 @@ export class CommandDispatcher {
       health_check: (cmd) => this.handleHealthCheck(cmd),
       create_session: (cmd) => this.handleCreateSession(cmd as CreateSessionCmd),
       intervene: (cmd) => this.handleIntervene(cmd as IntervenCmd),
+      interrupt_session: (cmd) => this.handleInterruptSession(cmd as InterruptSessionCmd),
       respond: (cmd) => this.handleRespond(cmd as RespondCmd),
       approve_tool: (cmd) => this.handleToolApproval(cmd as ToolApprovalCmd),
       reject_tool: (cmd) => this.handleToolApproval(cmd as ToolApprovalCmd),
@@ -715,6 +722,25 @@ export class CommandDispatcher {
         agentSessionId: sessionId,
       });
     }
+  }
+
+  private async handleInterruptSession(cmd: InterruptSessionCmd): Promise<void> {
+    const sessionId = cmd.agentSessionId ?? cmd.session_id ?? "";
+    if (!sessionId) {
+      await this.sendError(cmd, "interrupt_session requires agentSessionId");
+      return;
+    }
+
+    const interrupted = await this.taskManager.cancelTask(sessionId);
+    const requestId = cmd.requestId ?? cmd.request_id ?? "";
+    if (!requestId) return;
+    await this.send({
+      type: "interrupt_session_ack",
+      requestId,
+      status: "ok",
+      interrupted,
+      agentSessionId: sessionId,
+    });
   }
 
   /**
