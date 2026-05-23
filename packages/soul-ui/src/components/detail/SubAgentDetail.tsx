@@ -9,7 +9,9 @@ import type { ToolNode } from "@shared/types";
 import { SectionLabel, CodeBlock } from "./shared";
 
 export function SubAgentDetail({ card }: { card: ToolNode }) {
-  const input = card.toolInput;
+  const input = typeof card.toolInput === "object" && card.toolInput !== null
+    ? card.toolInput
+    : {};
   const description = (input.description as string) ?? "";
   const prompt = (input.prompt as string) ?? "";
   const subagentType = (input.subagent_type as string) ?? "unknown";

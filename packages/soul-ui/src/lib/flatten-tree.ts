@@ -39,9 +39,11 @@ export interface ChatMessage {
   toolDurationMs?: number;
   isError?: boolean;
   /** tool 전용: 도구 입력 파라미터 */
-  toolInput?: Record<string, unknown>;
+  toolInput?: Record<string, unknown> | string;
   /** tool 전용: 도구 실행 결과 */
   toolResult?: string;
+  /** tool 전용: 상세 trace lazy-load 식별자 */
+  toolTraceId?: string;
   /** text/thinking 전용: 스트리밍 중 여부 */
   isStreaming?: boolean;
   /** result 전용 */
@@ -141,6 +143,7 @@ function shallowEqualChatMessage(a: ChatMessage, b: ChatMessage): boolean {
     a.isError === b.isError &&
     a.toolInput === b.toolInput &&
     a.toolResult === b.toolResult &&
+    a.toolTraceId === b.toolTraceId &&
     a.isStreaming === b.isStreaming &&
     a.usage === b.usage &&
     a.totalCostUsd === b.totalCostUsd &&
@@ -366,6 +369,7 @@ function nodeToMessage(node: EventTreeNode): ChatMessage | null {
         isError: n.isError,
         toolInput: n.toolInput,
         toolResult: n.toolResult,
+        toolTraceId: n.toolTraceId,
         treeNodeId: n.id,
         treeNodeType: n.type,
         eventId,

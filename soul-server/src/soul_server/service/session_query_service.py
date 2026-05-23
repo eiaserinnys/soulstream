@@ -258,6 +258,14 @@ class SessionQueryService:
         )
         return {"messages": messages, "next_cursor": next_cursor}
 
+    async def read_timeline_trace(
+        self,
+        session_id: str,
+        timeline_id: str,
+    ) -> dict | None:
+        """tool timeline summary의 raw trace를 조회한다."""
+        return await self._db.read_timeline_trace(session_id, timeline_id)
+
     async def stream_session_list_events(
         self,
         *,

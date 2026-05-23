@@ -178,6 +178,7 @@ export function createNodeFromEvent(
         toolName: e.tool_name,
         toolInput: e.tool_input,
         toolUseId: e.tool_use_id,
+        toolTraceId: e.timeline_id,
         parentEventId: e.parent_event_id,
         timestamp: e.timestamp,
       });
@@ -429,6 +430,7 @@ export function applyUpdate(
           toolNode.toolResult = result;
         }
         toolNode.isError = e.is_error;
+        if (e.timeline_id) toolNode.toolTraceId = e.timeline_id;
         toolNode.completed = true;
         // timestamp 차이로 duration 계산
         if (toolNode.timestamp && e.timestamp) {

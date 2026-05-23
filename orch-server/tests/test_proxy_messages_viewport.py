@@ -117,3 +117,30 @@ class TestTimelineDirectDB:
         mock_db.read_timeline.assert_called_once_with(
             "sess-1", before="cursor-1", limit=25,
         )
+
+
+class TestTimelineTraceDirectDB:
+    """`GET /api/sessions/{id}/timeline/{timeline_id}/trace` — DB 직접 조회."""
+
+    async def test_returns_db_trace(self, client, mock_db):
+        trace = {
+            "type": "tool_trace",
+            "timeline_id": "tool:toolu_1",
+            "tool_use_id": "toolu_1",
+            "events": [],
+            "progress": [],
+        }
+        mock_db.read_timeline_trace = AsyncMock(return_value=trace)
+
+        resp = await client.get("/api/sessions/sess-1/timeline/tool%3Atoolu_1/trace")
+
+        assert resp.status_code == 200
+        assert resp.json() == trace
+        mock_db.read_timeline_trace.assert_called_once_with("sess-1", "tool:toolu_1")
+
+    async def test_returns_404_when_trace_missing(self, client, mock_db):
+        mock_db.read_timeline_trace = AsyncMock(return_value=None)
+
+        resp = await client.get("/api/sessions/sess-1/timeline/tool%3Amissing/trace")
+
+        assert resp.status_code == 404

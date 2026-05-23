@@ -9,7 +9,7 @@ import json
 import logging
 from typing import Any, Optional
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Path, Query, Request
 from starlette.websockets import WebSocketDisconnect
 from sse_starlette.sse import EventSourceResponse
 
@@ -188,6 +188,26 @@ def create_sessions_router(
             session_id, before=before, limit=limit,
         )
         return {"messages": messages, "next_cursor": next_cursor}
+
+    @router.get("/{session_id}/timeline/{timeline_id}/trace")
+    async def get_session_timeline_trace(
+        session_id: str,
+        timeline_id: str = Path(..., description="timeline_id (예: tool:{tool_use_id})"),
+    ):
+        """tool summary 상세 trace lazy-load. DB에서 직접 SELECT."""
+        trace = await db.read_timeline_trace(session_id, timeline_id)
+        if trace is None:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": {
+                        "code": "TRACE_NOT_FOUND",
+                        "message": f"trace를 찾을 수 없습니다: {timeline_id}",
+                        "details": {},
+                    }
+                },
+            )
+        return trace
 
     @router.get("/{session_id}/events")
     async def session_events(

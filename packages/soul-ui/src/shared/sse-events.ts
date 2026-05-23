@@ -292,7 +292,15 @@ export interface ToolStartEvent {
   type: "tool_start";
   timestamp: number;
   tool_name: string;
-  tool_input: Record<string, unknown>;
+  tool_input: Record<string, unknown> | string;
+  tool_input_preview?: string;
+  tool_input_truncated?: boolean;
+  timeline_id?: string;
+  has_trace?: boolean;
+  status?: "running" | "completed" | "error";
+  started_at?: number | null;
+  completed_at?: number | null;
+  duration_ms?: number | null;
   /** SDK ToolUseBlock ID (tool_result 매칭용) */
   tool_use_id?: string;
   /** 부모 이벤트 ID (서브에이전트 내부 노드 배치용) */
@@ -305,6 +313,14 @@ export interface ToolResultEvent {
   timestamp: number;
   tool_name: string;
   result: string;
+  result_preview?: string;
+  result_truncated?: boolean;
+  timeline_id?: string;
+  has_trace?: boolean;
+  status?: "completed" | "error";
+  started_at?: number | null;
+  completed_at?: number | null;
+  duration_ms?: number | null;
   is_error: boolean;
   /** SDK ToolUseBlock ID (tool_start 매칭용) */
   tool_use_id?: string;

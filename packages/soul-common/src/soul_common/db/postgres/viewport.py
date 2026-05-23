@@ -7,6 +7,16 @@ import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
+from soul_common.db.postgres.timeline_trace import (
+    build_tool_trace as _build_tool_trace,
+    payload_dict as _payload_dict,
+    serialize_message_rows as _serialize_message_rows,
+    serialize_timeline_rows as _serialize_timeline_rows,
+    timeline_tool_use_ids as _tool_use_ids,
+    tool_timeline_id as _tool_timeline_id,
+    trace_tool_use_id as _trace_tool_use_id,
+)
+
 if TYPE_CHECKING:
     import asyncpg
 
@@ -64,43 +74,6 @@ def _decode_messages_cursor(before: str | datetime) -> tuple[datetime, int | Non
         return datetime.fromisoformat(ts_raw), event_id
 
     return datetime.fromisoformat(raw), None
-
-
-def _payload_dict(payload) -> dict:
-    if isinstance(payload, str):
-        try:
-            parsed = json.loads(payload)
-        except (json.JSONDecodeError, ValueError):
-            return {}
-        return parsed if isinstance(parsed, dict) else {}
-    if isinstance(payload, dict):
-        return payload
-    return {}
-
-
-def _serialize_message_rows(rows) -> list[dict]:
-    messages = []
-    for r in rows:
-        d = dict(r)
-        if isinstance(d.get("created_at"), datetime):
-            d["created_at"] = d["created_at"].isoformat()
-        d["payload"] = _payload_dict(d.get("payload"))
-        messages.append(d)
-    return messages
-
-
-def _tool_use_ids(rows) -> list[str]:
-    ids: list[str] = []
-    seen: set[str] = set()
-    for row in rows:
-        if row["event_type"] != "tool_result":
-            continue
-        payload = _payload_dict(row["payload"])
-        tool_use_id = payload.get("tool_use_id")
-        if isinstance(tool_use_id, str) and tool_use_id and tool_use_id not in seen:
-            seen.add(tool_use_id)
-            ids.append(tool_use_id)
-    return ids
 
 
 class PostgresViewportMixin:
@@ -465,4 +438,35 @@ class PostgresViewportMixin:
                     seen_ids.add(row_id)
 
         all_rows.sort(key=lambda r: (r["created_at"], r["id"]), reverse=True)
-        return _serialize_message_rows(all_rows), next_cursor
+        return _serialize_timeline_rows(all_rows), next_cursor
+
+    async def read_timeline_trace(
+        self,
+        session_id: str,
+        timeline_id: str,
+    ) -> Optional[dict]:
+        """tool summary의 상세 trace를 raw event에서 lazy-load한다.
+
+        timeline 기본 응답은 compact payload만 담는다. 상세가 필요할 때만 같은
+        tool_use_id의 start/result/progress/debug row를 읽어 full input/result를
+        제공한다.
+        """
+        tool_use_id = _trace_tool_use_id(timeline_id)
+        if not tool_use_id:
+            return None
+
+        rows = await self._pool.fetch(
+            """
+            SELECT id, parent_event_id, event_type, payload, created_at
+            FROM events
+            WHERE session_id = $1
+              AND payload->>'tool_use_id' = $2
+              AND event_type = ANY($3::text[])
+            ORDER BY created_at ASC, id ASC
+            """,
+            session_id, tool_use_id,
+            ["tool_start", "tool_result", "progress", "debug", "system", "system_message"],
+        )
+        if not rows:
+            return None
+        return _build_tool_trace(_tool_timeline_id(tool_use_id), tool_use_id, list(rows))

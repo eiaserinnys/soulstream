@@ -353,6 +353,28 @@ def create_sessions_router() -> APIRouter:
             agent_session_id, before=before, limit=limit,
         )
 
+    @router.get("/sessions/{agent_session_id}/timeline/{timeline_id}/trace")
+    async def get_session_timeline_trace(
+        agent_session_id: str,
+        timeline_id: str = FastAPIPath(..., description="timeline_id (예: tool:{tool_use_id})"),
+    ):
+        """tool summary 상세 trace lazy-load endpoint."""
+        trace = await get_session_query_service().read_timeline_trace(
+            agent_session_id, timeline_id,
+        )
+        if trace is None:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": {
+                        "code": "TRACE_NOT_FOUND",
+                        "message": f"trace를 찾을 수 없습니다: {timeline_id}",
+                        "details": {},
+                    }
+                },
+            )
+        return trace
+
     @router.get("/sessions/{agent_session_id}/events/{event_id}")
     async def get_event(
         agent_session_id: str,

@@ -5,6 +5,7 @@ import {
   toSSEEvent,
   type HistoricalMessage,
 } from "./useMessageHistoryBuffer";
+import { buildToolTraceUrl as buildToolTraceUrlFromHooks } from "./hooks";
 
 describe("buildHistoryPageUrl", () => {
   it("uses the semantic timeline endpoint for the first history page", () => {
@@ -16,6 +17,14 @@ describe("buildHistoryPageUrl", () => {
   it("passes the before cursor to the timeline endpoint", () => {
     expect(buildHistoryPageUrl("sess-1", "cursor-1")).toBe(
       `/api/sessions/sess-1/timeline?limit=${HISTORY_PAGE_SIZE}&before=cursor-1`,
+    );
+  });
+});
+
+describe("buildToolTraceUrl", () => {
+  it("encodes stable tool timeline ids for lazy trace fetch", () => {
+    expect(buildToolTraceUrlFromHooks("sess/1", "tool:toolu_1")).toBe(
+      "/api/sessions/sess%2F1/timeline/tool%3Atoolu_1/trace",
     );
   });
 });

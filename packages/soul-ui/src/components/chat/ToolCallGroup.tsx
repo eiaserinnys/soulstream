@@ -1,20 +1,30 @@
 import { memo, useState } from "react";
 import type { ChatMessage } from "../../lib/flatten-tree";
 import { cn } from "../../lib/cn";
-import { useLazyLoadContent } from "./hooks";
+import { useLazyLoadContent, useLazyLoadToolTrace } from "./hooks";
 import { ShowFullContentButton } from "./ShowFullContentButton";
 
 /** 그룹 내 개별 tool call 항목 (truncation lazy load 포함) */
 const ToolCallItem = memo(function ToolCallItem({ msg }: { msg: ChatMessage }) {
   const [expanded, setExpanded] = useState(false);
-  const { displayContent, isTruncated, loading, error, loadFullContent } = useLazyLoadContent(msg);
+  const legacyContent = useLazyLoadContent(msg);
+  const traceContent = useLazyLoadToolTrace(msg);
   const isDone = msg.toolResult !== undefined || msg.toolDurationMs !== undefined;
   const statusIcon = msg.isError ? "\u274C" : isDone ? "\u2705" : "\u{1F528}";
+  const hasTrace = !!msg.toolTraceId;
+  const inputContent = traceContent.inputContent;
+  const resultContent = hasTrace ? traceContent.resultContent : legacyContent.displayContent;
+
+  const toggleExpanded = () => {
+    const next = !expanded;
+    setExpanded(next);
+    if (next) traceContent.loadTrace();
+  };
 
   return (
     <div>
       <button
-        onClick={() => setExpanded((v) => !v)}
+        onClick={toggleExpanded}
         className={cn(
           "text-xs font-mono flex items-center gap-1",
           msg.isError ? "text-accent-red" : "text-muted-foreground",
@@ -25,22 +35,40 @@ const ToolCallItem = memo(function ToolCallItem({ msg }: { msg: ChatMessage }) {
         <span>{statusIcon}</span>
         <span className="truncate">{msg.content}</span>
       </button>
-      {expanded && msg.toolInput && (
+      {expanded && inputContent && (
         <pre className="text-xs text-muted-foreground bg-input rounded px-2 py-1.5 ml-5 mt-0.5 whitespace-pre-wrap break-words overflow-auto max-h-40 font-mono">
-          {typeof msg.toolInput === "string" ? msg.toolInput : JSON.stringify(msg.toolInput, null, 2)}
+          {inputContent}
         </pre>
       )}
-      {expanded && displayContent && (
+      {expanded && resultContent && (
         <div className="ml-5 mt-0.5">
           <pre className={cn(
             "text-xs bg-input rounded px-2 py-1.5 whitespace-pre-wrap break-words overflow-auto max-h-40 font-mono",
             msg.isError ? "text-accent-red/80" : "text-muted-foreground",
           )}>
-            {displayContent}
+            {resultContent}
           </pre>
-          {isTruncated && (
-            <ShowFullContentButton loading={loading} error={error} onClick={loadFullContent} />
+          {!hasTrace && legacyContent.isTruncated && (
+            <ShowFullContentButton
+              loading={legacyContent.loading}
+              error={legacyContent.error}
+              onClick={legacyContent.loadFullContent}
+            />
           )}
+        </div>
+      )}
+      {expanded && traceContent.progressContent && (
+        <pre className="text-xs text-muted-foreground bg-input rounded px-2 py-1.5 ml-5 mt-0.5 whitespace-pre-wrap break-words overflow-auto max-h-40 font-mono">
+          {traceContent.progressContent}
+        </pre>
+      )}
+      {expanded && hasTrace && (traceContent.loading || traceContent.error) && (
+        <div className="ml-5">
+          <ShowFullContentButton
+            loading={traceContent.loading}
+            error={traceContent.error}
+            onClick={traceContent.loadTrace}
+          />
         </div>
       )}
     </div>

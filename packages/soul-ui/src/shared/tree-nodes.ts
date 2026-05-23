@@ -127,8 +127,10 @@ export interface ToolNode extends BaseNode {
   /** SDK ToolUseBlock.id (tool_result 매칭용) */
   toolUseId?: string;
   toolName: string;
-  toolInput: Record<string, unknown>;
+  toolInput: Record<string, unknown> | string;
   toolResult?: string;
+  /** compact timeline summary의 상세 trace 식별자 */
+  toolTraceId?: string;
   isError?: boolean;
   durationMs?: number;
   /** 콘텐츠가 truncate 되었는지 여부 */

@@ -8,7 +8,7 @@
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from sse_starlette.sse import EventSourceResponse
 
 from soul_server.api.sessions import session_events_sse_generator
@@ -160,6 +160,34 @@ async def api_session_timeline(
     return await get_session_query_service().read_timeline(
         agent_session_id, before=before, limit=limit,
     )
+
+
+# === /api/sessions/{session_id}/timeline/{timeline_id}/trace (GET) — tool 상세 lazy-load ===
+
+@router.get(
+    "/api/sessions/{agent_session_id}/timeline/{timeline_id}/trace",
+    dependencies=[Depends(require_dashboard_auth)],
+)
+async def api_session_timeline_trace(
+    agent_session_id: str,
+    timeline_id: str = Path(..., description="timeline_id (예: tool:{tool_use_id})"),
+):
+    """tool summary의 raw trace를 lazy-load한다."""
+    trace = await get_session_query_service().read_timeline_trace(
+        agent_session_id, timeline_id,
+    )
+    if trace is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": {
+                    "code": "TRACE_NOT_FOUND",
+                    "message": f"trace를 찾을 수 없습니다: {timeline_id}",
+                    "details": {},
+                }
+            },
+        )
+    return trace
 
 
 # === /api/sessions/{session_id}/events (GET) — 파라미터화 경로, 나중에 등록 ===

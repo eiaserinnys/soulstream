@@ -85,3 +85,99 @@ export function useLazyLoadContent(
     loadFullContent,
   };
 }
+
+export interface ToolTraceResponse {
+  timeline_id: string;
+  tool_use_id: string;
+  tool_name?: string;
+  status?: "running" | "completed" | "error";
+  is_error?: boolean;
+  input?: unknown;
+  result?: unknown;
+  progress?: Array<{ id: number; event_type: string; payload: Record<string, unknown>; created_at: string }>;
+}
+
+export function buildToolTraceUrl(sessionId: string, timelineId: string): string {
+  return `/api/sessions/${encodeURIComponent(sessionId)}/timeline/${encodeURIComponent(timelineId)}/trace`;
+}
+
+function stringifyTraceValue(value: unknown): string {
+  if (value == null) return "";
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (item && typeof item === "object") {
+          const record = item as Record<string, unknown>;
+          const text = record.text ?? record.content;
+          return typeof text === "string" ? text : "";
+        }
+        return "";
+      })
+      .filter(Boolean);
+    if (parts.length > 0) return parts.join("\n");
+  }
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function progressText(trace: ToolTraceResponse | null): string {
+  if (!trace?.progress?.length) return "";
+  return trace.progress
+    .map((event) => {
+      const payload = event.payload ?? {};
+      const text = payload.text ?? payload.message;
+      return typeof text === "string" ? text : "";
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+export function useLazyLoadToolTrace(
+  msg: ChatMessage,
+): {
+  inputContent: string | undefined;
+  resultContent: string | undefined;
+  progressContent: string | undefined;
+  loading: boolean;
+  error: string | null;
+  loadTrace: () => void;
+} {
+  const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
+  const [trace, setTrace] = useState<ToolTraceResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const loadingRef = useRef(false);
+
+  const loadTrace = useCallback(async () => {
+    if (!activeSessionKey || !msg.toolTraceId || trace || loadingRef.current) return;
+    loadingRef.current = true;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(buildToolTraceUrl(activeSessionKey, msg.toolTraceId), {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setTrace((await res.json()) as ToolTraceResponse);
+    } catch {
+      setError("상세 로드 실패. 다시 시도해주세요.");
+    } finally {
+      loadingRef.current = false;
+      setLoading(false);
+    }
+  }, [activeSessionKey, msg.toolTraceId, trace]);
+
+  return {
+    inputContent: stringifyTraceValue(trace?.input ?? msg.toolInput),
+    resultContent: stringifyTraceValue(trace?.result ?? msg.toolResult),
+    progressContent: progressText(trace),
+    loading,
+    error,
+    loadTrace,
+  };
+}

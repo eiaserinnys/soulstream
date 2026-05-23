@@ -337,6 +337,12 @@ class ViewportProtocol(Protocol):
         limit: int = 50,
     ) -> tuple[list[dict], Optional[str]]: ...
 
+    async def read_timeline_trace(
+        self,
+        session_id: str,
+        timeline_id: str,
+    ) -> Optional[dict]: ...
+
 
 # ── 추상 기반 클래스 ──
 
@@ -516,6 +522,13 @@ class SessionDBBase(ABC):
         before: Optional[str] = None,
         limit: int = 50,
     ) -> tuple[list[dict], Optional[str]]: ...
+
+    @abstractmethod
+    async def read_timeline_trace(
+        self,
+        session_id: str,
+        timeline_id: str,
+    ) -> Optional[dict]: ...
 
     # ── 폴더 CRUD ──
 

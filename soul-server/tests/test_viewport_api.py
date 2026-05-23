@@ -636,6 +636,105 @@ class TestReadTimeline:
         assert second_call[0][2] == ["toolu_1"]
 
     @pytest.mark.asyncio
+    async def test_tool_payloads_are_compact_summaries(self):
+        """timeline 기본 payload는 full tool input/result를 싣지 않고 trace id만 남긴다."""
+        db = PostgresSessionDB.__new__(PostgresSessionDB)
+        full_input = {
+            "command": "python - <<'PY'\n" + ("print('x')\n" * 50) + "PY",
+            "cwd": "/tmp",
+        }
+        full_result = "line\n" * 200
+        page_rows = [
+            {"id": 30, "parent_event_id": None, "event_type": "tool_result",
+             "payload": {
+                 "type": "tool_result",
+                 "tool_use_id": "toolu_1",
+                 "tool_name": "Bash",
+                 "result": full_result,
+                 "is_error": False,
+                 "timestamp": 10.5,
+             },
+             "created_at": "2026-05-23T12:03:00+00:00"},
+            {"id": 20, "parent_event_id": None, "event_type": "tool_start",
+             "payload": {
+                 "type": "tool_start",
+                 "tool_use_id": "toolu_1",
+                 "tool_name": "Bash",
+                 "tool_input": full_input,
+                 "timestamp": 10.0,
+             },
+             "created_at": "2026-05-23T12:02:00+00:00"},
+        ]
+        db._pool = MagicMock()
+        db._pool.fetch = AsyncMock(return_value=page_rows)
+
+        messages, _ = await db.read_timeline("s1", before=None, limit=50)
+
+        result_payload = messages[0]["payload"]
+        start_payload = messages[1]["payload"]
+        assert result_payload["timeline_id"] == "tool:toolu_1"
+        assert start_payload["timeline_id"] == "tool:toolu_1"
+        assert result_payload["has_trace"] is True
+        assert start_payload["has_trace"] is True
+        assert result_payload["result"] != full_result
+        assert len(result_payload["result"]) <= 301
+        assert start_payload["tool_input"] != full_input
+        assert len(start_payload["tool_input"]) <= 101
+        assert result_payload["duration_ms"] == 500
+
+    @pytest.mark.asyncio
+    async def test_read_timeline_trace_returns_full_raw_tool_events(self):
+        """trace endpoint source는 같은 tool_use_id의 full raw events를 반환한다."""
+        db = PostgresSessionDB.__new__(PostgresSessionDB)
+        full_input = {"command": "python long.py", "args": ["--full"]}
+        full_result = "full output\n" * 50
+        rows = [
+            {"id": 10, "parent_event_id": None, "event_type": "tool_start",
+             "payload": {
+                 "type": "tool_start",
+                 "tool_use_id": "toolu_1",
+                 "tool_name": "Bash",
+                 "tool_input": full_input,
+                 "timestamp": 10.0,
+             },
+             "created_at": "2026-05-23T12:01:00+00:00"},
+            {"id": 11, "parent_event_id": None, "event_type": "progress",
+             "payload": {
+                 "type": "progress",
+                 "tool_use_id": "toolu_1",
+                 "text": "chunk",
+                 "timestamp": 10.2,
+             },
+             "created_at": "2026-05-23T12:01:01+00:00"},
+            {"id": 12, "parent_event_id": None, "event_type": "tool_result",
+             "payload": {
+                 "type": "tool_result",
+                 "tool_use_id": "toolu_1",
+                 "tool_name": "Bash",
+                 "result": full_result,
+                 "is_error": False,
+                 "timestamp": 11.0,
+             },
+             "created_at": "2026-05-23T12:01:02+00:00"},
+        ]
+        db._pool = MagicMock()
+        db._pool.fetch = AsyncMock(return_value=rows)
+
+        trace = await db.read_timeline_trace("s1", "tool:toolu_1")
+
+        assert trace is not None
+        assert trace["timeline_id"] == "tool:toolu_1"
+        assert trace["input"] == full_input
+        assert trace["result"] == full_result
+        assert [event["id"] for event in trace["events"]] == [10, 11, 12]
+        assert [event["id"] for event in trace["progress"]] == [11]
+        assert trace["duration_ms"] == 1000
+        sql, *params = db._pool.fetch.call_args[0]
+        assert "payload->>'tool_use_id' = $2" in sql
+        assert params[0] == "s1"
+        assert params[1] == "toolu_1"
+
+    @pytest.mark.asyncio
     async def test_raw_messages_keep_progress_for_compatibility(self):
         """/messages raw endpoint 계약은 progress 이벤트를 그대로 포함한다."""
         db = PostgresSessionDB.__new__(PostgresSessionDB)

@@ -65,3 +65,14 @@ class SqliteViewportMixin:
             "read_timeline is not supported on SQLite. "
             "Timeline API requires PostgreSQL."
         )
+
+    async def read_timeline_trace(
+        self,
+        session_id: str,
+        timeline_id: str,
+    ) -> dict | None:
+        """SQLite는 timeline trace API를 지원하지 않는다. PostgreSQL 전용."""
+        raise NotImplementedError(
+            "read_timeline_trace is not supported on SQLite. "
+            "Timeline trace API requires PostgreSQL."
+        )

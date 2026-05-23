@@ -43,6 +43,7 @@ def _make_service(*, sessions=None, total=0):
     db.read_total_subtree_height = AsyncMock()
     db.read_messages = AsyncMock()
     db.read_timeline = AsyncMock()
+    db.read_timeline_trace = AsyncMock()
     db.get_all_sessions = AsyncMock(return_value=(sessions or [], total))
     db.get_all_folders = AsyncMock(return_value=[])
     tasks: dict = {}
@@ -182,6 +183,33 @@ class TestReadTimeline:
         db.read_timeline.assert_awaited_once_with(
             "sess-1", before="2026-05-05T09:00:00+00:00,7", limit=10,
         )
+
+
+class TestReadTimelineTrace:
+    @pytest.mark.asyncio
+    async def test_delegates_to_db(self):
+        service, db = _make_service()
+        trace = {
+            "type": "tool_trace",
+            "timeline_id": "tool:toolu_1",
+            "tool_use_id": "toolu_1",
+        }
+        db.read_timeline_trace.return_value = trace
+
+        result = await service.read_timeline_trace("sess-1", "tool:toolu_1")
+
+        assert result == trace
+        db.read_timeline_trace.assert_awaited_once_with("sess-1", "tool:toolu_1")
+
+    @pytest.mark.asyncio
+    async def test_returns_none_for_missing_trace(self):
+        service, db = _make_service()
+        db.read_timeline_trace.return_value = None
+
+        result = await service.read_timeline_trace("sess-1", "tool:missing")
+
+        assert result is None
+        db.read_timeline_trace.assert_awaited_once_with("sess-1", "tool:missing")
 
 
 # === stream_session_list_events ===
