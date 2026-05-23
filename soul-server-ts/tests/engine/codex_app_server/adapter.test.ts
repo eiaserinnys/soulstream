@@ -342,4 +342,21 @@ describe("CodexAppServerEngineAdapter", () => {
     await adapter.close();
     expect(client.close).toHaveBeenCalledTimes(1);
   });
+
+  it("adapter close during execute ends the active queue without adding a fatal error", async () => {
+    const { adapter, client } = makeAdapter();
+    const eventsPromise = drain(adapter.execute({ prompt: "hello" }));
+    await vi.waitFor(() => expect(client.startTurn).toHaveBeenCalledTimes(1));
+
+    await adapter.close();
+
+    const events = await eventsPromise;
+    expect(events.map((event) => (event as { type: string }).type)).toEqual(["session"]);
+    expect(events.some((event) => (event as { type: string }).type === "error")).toBe(false);
+    expect(client.close).toHaveBeenCalledTimes(1);
+    await expect(adapter.steerActiveTurn({ prompt: "late" })).resolves.toEqual({
+      status: "no_active_turn",
+      message: "No active Codex app-server turn",
+    });
+  });
 });

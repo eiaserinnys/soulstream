@@ -44,6 +44,7 @@ import {
   buildTurnStartParams,
 } from "./params.js";
 import { toCodexUserInput } from "./protocol.js";
+import { AsyncPayloadQueue } from "./async_payload_queue.js";
 
 const CLIENT_INFO: InitializeParams["clientInfo"] = {
   name: "soul-server-ts",
@@ -84,7 +85,7 @@ export class CodexAppServerEngineAdapter
   private closed = false;
   private notificationLifecycle: NotificationLifecycleState =
     createNotificationLifecycleState();
-  private activeQueue: AsyncPayloadQueue | null = null;
+  private activeQueue: AsyncPayloadQueue<SSEEventPayload> | null = null;
 
   constructor(config: CodexAppServerAdapterConfig, logger: Logger) {
     this.workspaceDir = config.workspaceDir;
@@ -101,7 +102,7 @@ export class CodexAppServerEngineAdapter
     }
 
     this.executing = true;
-    const queue = new AsyncPayloadQueue();
+    const queue = new AsyncPayloadQueue<SSEEventPayload>();
     this.activeQueue = queue;
     const unsubscribe = [
       this.client.onNotification((notification) => {
@@ -213,7 +214,7 @@ export class CodexAppServerEngineAdapter
 
   private async openThread(
     params: EngineExecuteParams,
-    queue: AsyncPayloadQueue,
+    queue: AsyncPayloadQueue<SSEEventPayload>,
   ): Promise<string> {
     if (params.resumeSessionId) {
       const response = await this.client.resumeThread(
@@ -240,7 +241,7 @@ export class CodexAppServerEngineAdapter
 
   private handleNotification(
     notification: AppServerNotification,
-    queue: AsyncPayloadQueue,
+    queue: AsyncPayloadQueue<SSEEventPayload>,
     suppressThreadStartedSession: boolean,
   ): void {
     const result = applyNotificationLifecycle(this.notificationLifecycle, notification, {
@@ -296,47 +297,4 @@ function mapSteerError(error: unknown): LiveTurnSteerResult {
     return { status: "turn_mismatch", message };
   }
   return { status: "failed", message };
-}
-
-class AsyncPayloadQueue implements AsyncIterable<SSEEventPayload> {
-  private readonly items: SSEEventPayload[] = [];
-  private readonly waiters: Array<(result: IteratorResult<SSEEventPayload>) => void> = [];
-  private closed = false;
-
-  push(item: SSEEventPayload): void {
-    if (this.closed) return;
-    const waiter = this.waiters.shift();
-    if (waiter) {
-      waiter({ value: item, done: false });
-      return;
-    }
-    this.items.push(item);
-  }
-
-  close(): void {
-    if (this.closed) return;
-    this.closed = true;
-    for (const waiter of this.waiters.splice(0)) {
-      waiter({ value: undefined, done: true });
-    }
-  }
-
-  [Symbol.asyncIterator](): AsyncIterator<SSEEventPayload> {
-    return {
-      next: () => this.next(),
-    };
-  }
-
-  private next(): Promise<IteratorResult<SSEEventPayload>> {
-    const item = this.items.shift();
-    if (item) {
-      return Promise.resolve({ value: item, done: false });
-    }
-    if (this.closed) {
-      return Promise.resolve({ value: undefined, done: true });
-    }
-    return new Promise((resolve) => {
-      this.waiters.push(resolve);
-    });
-  }
 }
