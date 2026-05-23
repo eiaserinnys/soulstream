@@ -12,6 +12,7 @@ import type {
 } from "./types";
 import type { EventTreeNode, SoulSSEEvent } from "@shared/types";
 import { toSessionSummary } from "@shared/mappers";
+import { buildFetchSessionsUrl } from "./fetch-sessions-url";
 import { createSSESubscribe } from "./sse-subscribe";
 
 // 주의: complete/error는 "턴" 종료이지 "세션" 종료가 아닙니다.
@@ -42,15 +43,7 @@ export class SSESessionProvider implements SessionStorageProvider {
    * offset/limit으로 페이지 범위를 지정합니다.
    */
   async fetchSessions(options?: FetchSessionsOptions): Promise<SessionListResult> {
-    const params = new URLSearchParams();
-    if (options?.sessionType) params.set("session_type", options.sessionType);
-    if (options?.offset != null && options.offset > 0) params.set("offset", String(options.offset));
-    if (options?.limit != null) params.set("limit", String(options.limit));
-    if (options?.folderId) params.set("folder_id", options.folderId);
-    if (options?.feedOnly) params.set("feed_only", "true");
-    const qs = params.toString();
-    const url = `/api/sessions${qs ? `?${qs}` : ""}`;
-
+    const url = buildFetchSessionsUrl("/api/sessions", options);
     const res = await fetch(url);
 
     if (!res.ok) {

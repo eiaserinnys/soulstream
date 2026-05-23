@@ -13,6 +13,9 @@ export { SSESessionProvider, sseSessionProvider } from "./SSESessionProvider";
 export { createSSESubscribe } from "./sse-subscribe";
 export type { SSESubscribeOptions } from "./sse-subscribe";
 
+// === Session List URL Utility ===
+export { buildFetchSessionsUrl } from "./fetch-sessions-url";
+
 // === Provider Types ===
 export type {
   FetchSessionsOptions,

@@ -18,18 +18,11 @@ import type {
   SoulSSEEvent,
   SessionStatus,
 } from "@seosoyoung/soul-ui";
-import { createSSESubscribe } from "@seosoyoung/soul-ui";
+import { buildFetchSessionsUrl, createSSESubscribe } from "@seosoyoung/soul-ui";
 
 export class OrchestratorSessionProvider implements SessionStorageProvider {
   async fetchSessions(options?: FetchSessionsOptions): Promise<SessionListResult> {
-    const params = new URLSearchParams();
-    if (options?.sessionType) params.set("session_type", options.sessionType);
-    if (options?.offset != null && options.offset > 0) params.set("offset", String(options.offset));
-    if (options?.limit != null) params.set("limit", String(options.limit));
-    if (options?.folderId) params.set("folder_id", options.folderId);
-    if (options?.feedOnly) params.set("feed_only", "true");
-    const qs = params.toString();
-    const res = await fetch(`/api/catalog${qs ? `?${qs}` : ""}`);
+    const res = await fetch(buildFetchSessionsUrl("/api/catalog", options));
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
     // Phase A-bis(2026-05-16): catalog sessionList가 _session_to_response 정본
