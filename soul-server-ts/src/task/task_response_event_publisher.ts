@@ -21,7 +21,7 @@ export interface ResponseEventPublisherDeps {
  * Owns persistence and broadcast for user response resolution events.
  *
  * These events are emitted after an external input or approval has already been
- * accepted by the engine. Public API result shapes stay in TaskManager; this
+ * accepted by the engine. Public API result shapes stay outside this publisher; this
  * publisher owns event construction, `_event_id` ride-along, and failure isolation.
  */
 export class ResponseEventPublisher {

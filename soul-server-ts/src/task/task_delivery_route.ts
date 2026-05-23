@@ -9,9 +9,11 @@ import type {
 import type { Task, TaskStatus } from "./task_models.js";
 import type { ResponseEventPublisher } from "./task_response_event_publisher.js";
 import {
-  buildToolApprovalOptions,
-  type ToolApprovalRecovery,
-} from "./task_tool_approval_recovery.js";
+  resolveTaskBackend,
+  TaskLiveDeliveryResult,
+  type AgentBackendLookup,
+} from "./task_live_delivery_result.js";
+import type { ToolApprovalRecovery } from "./task_tool_approval_recovery.js";
 
 export type DeliverInputResponseStatus =
   | InputResponseDeliveryResult["status"]
@@ -72,19 +74,24 @@ export interface TaskDeliveryRouteDeps {
   agentRegistry?: AgentBackendLookup;
 }
 
-export interface AgentBackendLookup {
-  get(id: string): { backend?: BackendId | string } | undefined;
-}
+export type { AgentBackendLookup } from "./task_live_delivery_result.js";
 
 /**
  * Owns public delivery route policy for external user responses.
  *
  * ResponseEventPublisher owns event construction/persistence/broadcast. ToolApprovalRecovery owns
- * evicted approval hydration and queued Agents resume. This route owns live delivery decisions and
- * the public API result shapes that callers observe.
+ * evicted approval hydration and queued Agents resume. TaskLiveDeliveryResult owns live engine
+ * outcome mapping after route guards select a supported engine.
  */
 export class TaskDeliveryRoute {
-  constructor(private readonly deps: TaskDeliveryRouteDeps) {}
+  private readonly liveDeliveryResult: TaskLiveDeliveryResult;
+
+  constructor(private readonly deps: TaskDeliveryRouteDeps) {
+    this.liveDeliveryResult = new TaskLiveDeliveryResult({
+      responseEventPublisher: deps.responseEventPublisher,
+      agentRegistry: deps.agentRegistry,
+    });
+  }
 
   async deliverInputResponse(
     params: DeliverInputResponseParams,
@@ -106,31 +113,16 @@ export class TaskDeliveryRoute {
       return {
         status: "not_supported",
         requestId: params.requestId,
-        backend: taskBackend(task, this.deps.agentRegistry),
+        backend: resolveTaskBackend(task, this.deps.agentRegistry),
       };
     }
 
-    const delivered = await engine.deliverInputResponse(params.requestId, params.answers);
-    if (delivered.status !== "delivered") {
-      return {
-        status: delivered.status,
-        requestId: params.requestId,
-        ...(delivered.message ? { message: delivered.message } : {}),
-        ...(delivered.status === "not_supported"
-          ? { backend: taskBackend(task, this.deps.agentRegistry) }
-          : {}),
-      };
-    }
-
-    const eventId = await this.deps.responseEventPublisher.publishInputRequestResponded(
+    return await this.liveDeliveryResult.deliverInputResponse({
       task,
-      params.requestId,
-    );
-    return {
-      status: "delivered",
       requestId: params.requestId,
-      ...(eventId !== undefined ? { eventId } : {}),
-    };
+      answers: params.answers,
+      engine,
+    });
   }
 
   async deliverToolApproval(
@@ -168,37 +160,15 @@ export class TaskDeliveryRoute {
         status: "not_supported",
         approvalId: params.approvalId,
         decision: params.decision,
-        backend: taskBackend(task, this.deps.agentRegistry),
+        backend: resolveTaskBackend(task, this.deps.agentRegistry),
       };
     }
 
-    const delivered = await engine.deliverToolApproval(
-      params.approvalId,
-      params.decision,
-      buildToolApprovalOptions(params),
-    );
-    if (delivered.status !== "delivered") {
-      return {
-        status: delivered.status,
-        approvalId: params.approvalId,
-        decision: params.decision,
-        ...(delivered.message ? { message: delivered.message } : {}),
-        ...(delivered.status === "not_supported"
-          ? { backend: taskBackend(task, this.deps.agentRegistry) }
-          : {}),
-      };
-    }
-
-    const eventId = await this.deps.responseEventPublisher.publishToolApprovalResolved(
+    return await this.liveDeliveryResult.deliverToolApproval({
       task,
       params,
-    );
-    return {
-      status: "delivered",
-      approvalId: params.approvalId,
-      decision: params.decision,
-      ...(eventId !== undefined ? { eventId } : {}),
-    };
+      engine,
+    });
   }
 }
 
@@ -220,15 +190,4 @@ function supportsToolApproval(
       typeof (engine as unknown as Partial<SupportsToolApproval>).deliverToolApproval ===
         "function",
   );
-}
-
-function taskBackend(
-  task: Task,
-  agentRegistry?: AgentBackendLookup,
-): BackendId | string | undefined {
-  if (task.engine?.backendId) return task.engine.backendId;
-  if (task.profileId && agentRegistry) {
-    return agentRegistry.get(task.profileId)?.backend;
-  }
-  return undefined;
 }
