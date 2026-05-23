@@ -30,11 +30,16 @@ import {
 } from "./delivery_commands.js";
 import {
   buildRealtimeAckError,
-  buildRealtimeCallCreatedAck,
-  buildRealtimeEventAck,
-  buildRealtimeToolApprovalAck,
   type RealtimeAckType,
 } from "./realtime_ack.js";
+import {
+  RealtimeCommandError,
+  RealtimeCommands,
+  type RealtimeCommandAck,
+  type RealtimeCreateCallCommand,
+  type RealtimeEventCommand,
+  type RealtimeResolveToolApprovalCommand,
+} from "./realtime_commands.js";
 import {
   SessionListCommandError,
   SessionListCommands,
@@ -93,39 +98,6 @@ interface InterruptSessionCmd extends CommandLike {
   session_id?: string;
 }
 
-interface RealtimeCreateCallCmd extends CommandLike {
-  type: "realtime_create_call";
-  agentSessionId?: string;
-  session_id?: string;
-  offerSdp?: string;
-  offer_sdp?: string;
-  model?: string | null;
-  voice?: string | null;
-  instructions?: string | null;
-}
-
-interface RealtimeEventCmd extends CommandLike {
-  type: "realtime_event";
-  agentSessionId?: string;
-  session_id?: string;
-  event?: unknown;
-  callId?: string | null;
-  call_id?: string | null;
-}
-
-interface RealtimeResolveToolApprovalCmd extends CommandLike {
-  type: "realtime_resolve_tool_approval";
-  agentSessionId?: string;
-  session_id?: string;
-  approvalId?: string;
-  approval_id?: string;
-  decision?: "approved" | "rejected";
-  message?: string;
-  source?: "tap" | "voice";
-  callId?: string | null;
-  call_id?: string | null;
-}
-
 interface SubscribeEventsCmd extends CommandLike {
   type: "subscribe_events";
   agentSessionId?: string;
@@ -177,6 +149,7 @@ export class CommandDispatcher {
   private readonly sessionListCommands: SessionListCommands;
   private readonly claudeAuthCommands: ClaudeAuthCommands;
   private readonly deliveryCommands: DeliveryCommands;
+  private readonly realtimeCommands: RealtimeCommands;
 
   constructor(
     private readonly send: SendFn,
@@ -192,7 +165,7 @@ export class CommandDispatcher {
      * `list_sessions` 명령은 명시 error 응답 (silent fallback 금지 — 운영자가 누락 인지 가능).
      */
     sessionDb?: SessionDB,
-    private readonly realtimeBroker?: RealtimeBroker,
+    realtimeBroker?: RealtimeBroker,
   ) {
     this.taskRuntimeCommands = new TaskRuntimeCommands({
       agentRegistry,
@@ -209,6 +182,7 @@ export class CommandDispatcher {
       taskExecutor,
       logger,
     });
+    this.realtimeCommands = new RealtimeCommands(realtimeBroker);
     this.handlers = {
       health_check: (cmd) => this.handleHealthCheck(cmd),
       create_session: (cmd) => this.handleCreateSession(cmd as CreateSessionCmd),
@@ -218,11 +192,11 @@ export class CommandDispatcher {
       approve_tool: (cmd) => this.handleToolApproval(cmd as ToolApprovalCommand),
       reject_tool: (cmd) => this.handleToolApproval(cmd as ToolApprovalCommand),
       realtime_create_call: (cmd) =>
-        this.handleRealtimeCreateCall(cmd as RealtimeCreateCallCmd),
+        this.handleRealtimeCreateCall(cmd as RealtimeCreateCallCommand),
       realtime_event: (cmd) =>
-        this.handleRealtimeEvent(cmd as RealtimeEventCmd),
+        this.handleRealtimeEvent(cmd as RealtimeEventCommand),
       realtime_resolve_tool_approval: (cmd) =>
-        this.handleRealtimeResolveToolApproval(cmd as RealtimeResolveToolApprovalCmd),
+        this.handleRealtimeResolveToolApproval(cmd as RealtimeResolveToolApprovalCommand),
       subscribe_events: (cmd) => this.handleSubscribeEvents(cmd as SubscribeEventsCmd),
       list_sessions: (cmd) => this.handleListSessions(cmd as ListSessionsCmd),
       upload_attachment: (cmd) => this.handleUploadAttachment(cmd as UploadAttachmentCmd),
@@ -305,150 +279,41 @@ export class CommandDispatcher {
     }
   }
 
-  private async handleRealtimeCreateCall(cmd: RealtimeCreateCallCmd): Promise<void> {
-    const requestId = cmd.requestId ?? cmd.request_id ?? "";
-    const sessionId = cmd.agentSessionId ?? cmd.session_id ?? "";
-    const offerSdp = cmd.offerSdp ?? cmd.offer_sdp ?? "";
-    if (!this.realtimeBroker) {
-      await this.sendRealtimeAckError(
-        "realtime_call_created",
-        requestId,
-        sessionId,
-        "Realtime broker is not configured in soul-server-ts",
-      );
-      return;
-    }
-    if (!sessionId || !offerSdp) {
-      await this.sendRealtimeAckError(
-        "realtime_call_created",
-        requestId,
-        sessionId,
-        "realtime_create_call requires agentSessionId and offerSdp",
-      );
-      return;
-    }
-    try {
-      const result = await this.realtimeBroker.createCall({
-        agentSessionId: sessionId,
-        offerSdp,
-        ...(cmd.model !== undefined ? { model: cmd.model } : {}),
-        ...(cmd.voice !== undefined ? { voice: cmd.voice } : {}),
-        ...(cmd.instructions !== undefined ? { instructions: cmd.instructions } : {}),
-      });
-      if (!requestId) return;
-      await this.send(
-        buildRealtimeCallCreatedAck({
-          requestId,
-          agentSessionId: sessionId,
-          result,
-        }),
-      );
-    } catch (err) {
-      await this.sendRealtimeAckError(
-        "realtime_call_created",
-        requestId,
-        sessionId,
-        stringifyError(err),
-      );
-    }
+  private async handleRealtimeCreateCall(cmd: RealtimeCreateCallCommand): Promise<void> {
+    await this.sendRealtimeCommand(() => this.realtimeCommands.createCall(cmd));
   }
 
-  private async handleRealtimeEvent(cmd: RealtimeEventCmd): Promise<void> {
-    const requestId = cmd.requestId ?? cmd.request_id ?? "";
-    const sessionId = cmd.agentSessionId ?? cmd.session_id ?? "";
-    if (!this.realtimeBroker) {
-      await this.sendRealtimeAckError(
-        "realtime_event_ack",
-        requestId,
-        sessionId,
-        "Realtime broker is not configured in soul-server-ts",
-      );
-      return;
-    }
-    if (!sessionId || cmd.event === undefined) {
-      await this.sendRealtimeAckError(
-        "realtime_event_ack",
-        requestId,
-        sessionId,
-        "realtime_event requires agentSessionId and event",
-      );
-      return;
-    }
-    try {
-      const result = await this.realtimeBroker.relayEvent({
-        agentSessionId: sessionId,
-        event: cmd.event,
-        callId: cmd.callId ?? cmd.call_id ?? undefined,
-      });
-      if (!requestId) return;
-      await this.send(
-        buildRealtimeEventAck({
-          requestId,
-          agentSessionId: sessionId,
-          result,
-        }),
-      );
-    } catch (err) {
-      await this.sendRealtimeAckError(
-        "realtime_event_ack",
-        requestId,
-        sessionId,
-        stringifyError(err),
-      );
-    }
+  private async handleRealtimeEvent(cmd: RealtimeEventCommand): Promise<void> {
+    await this.sendRealtimeCommand(() => this.realtimeCommands.relayEvent(cmd));
   }
 
   private async handleRealtimeResolveToolApproval(
-    cmd: RealtimeResolveToolApprovalCmd,
+    cmd: RealtimeResolveToolApprovalCommand,
   ): Promise<void> {
-    const requestId = cmd.requestId ?? cmd.request_id ?? "";
-    const sessionId = cmd.agentSessionId ?? cmd.session_id ?? "";
-    const approvalId = cmd.approvalId ?? cmd.approval_id ?? "";
-    const decision = cmd.decision;
-    if (!this.realtimeBroker) {
-      await this.sendRealtimeAckError(
-        "realtime_tool_approval_ack",
-        requestId,
-        sessionId,
-        "Realtime broker is not configured in soul-server-ts",
-      );
-      return;
-    }
-    if (!sessionId || !approvalId || (decision !== "approved" && decision !== "rejected")) {
-      await this.sendRealtimeAckError(
-        "realtime_tool_approval_ack",
-        requestId,
-        sessionId,
-        "realtime_resolve_tool_approval requires agentSessionId, approvalId, and decision",
-      );
-      return;
-    }
+    await this.sendRealtimeCommand(() =>
+      this.realtimeCommands.resolveToolApproval(cmd),
+    );
+  }
+
+  private async sendRealtimeCommand(
+    buildAck: () => Promise<RealtimeCommandAck | null>,
+  ): Promise<void> {
     try {
-      const result = await this.realtimeBroker.resolveToolApproval({
-        agentSessionId: sessionId,
-        approvalId,
-        decision,
-        ...(cmd.message ? { message: cmd.message } : {}),
-        ...(cmd.source ? { source: cmd.source } : {}),
-        callId: cmd.callId ?? cmd.call_id ?? undefined,
-      });
-      if (!requestId) return;
-      await this.send(
-        buildRealtimeToolApprovalAck({
-          requestId,
-          agentSessionId: sessionId,
-          approvalId,
-          decision,
-          result,
-        }),
-      );
+      const ack = await buildAck();
+      if (ack) {
+        await this.send(ack);
+      }
     } catch (err) {
-      await this.sendRealtimeAckError(
-        "realtime_tool_approval_ack",
-        requestId,
-        sessionId,
-        stringifyError(err),
-      );
+      if (err instanceof RealtimeCommandError) {
+        await this.sendRealtimeAckError(
+          err.ackType,
+          err.requestId,
+          err.agentSessionId,
+          err.message,
+        );
+        return;
+      }
+      throw err;
     }
   }
 
