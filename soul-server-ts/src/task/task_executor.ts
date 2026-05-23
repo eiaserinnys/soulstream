@@ -38,6 +38,7 @@ import {
 
 import type { CompletionNotifier } from "./completion_notifier.js";
 import { splitAttachmentPaths } from "./attachment_context.js";
+import { TaskInitialMessagePublisher } from "./task_initial_message_publisher.js";
 import { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
 import type { Task, TaskStatus } from "./task_models.js";
 import {
@@ -51,6 +52,7 @@ export type EngineFactory = (agent: AgentProfile) => EnginePort;
 
 export class TaskExecutor {
   private readonly lifecycleTransition: TaskLifecycleTransition;
+  private readonly initialMessagePublisher: TaskInitialMessagePublisher;
 
   constructor(
     private readonly engineFactory: EngineFactory,
@@ -77,6 +79,11 @@ export class TaskExecutor {
       db,
       broadcaster,
       logger,
+    });
+    this.initialMessagePublisher = new TaskInitialMessagePublisher({
+      broadcaster,
+      logger,
+      persistence,
     });
   }
 
@@ -192,7 +199,7 @@ export class TaskExecutor {
       }
 
       // 영속화 실패는 격리 — 본 task 진행에 영향 0 (Python L179-180 try/except 정합).
-      await this._persistInitialMessages(task, ctx);
+      await this.initialMessagePublisher.publishInitialMessages(task, ctx);
 
       if (ctx) {
         if (agent.backend === "claude") {
@@ -406,122 +413,6 @@ export class TaskExecutor {
       this.logger.warn(
         { err, sessionId: task.agentSessionId, eventType },
         "handleSideEffects threw",
-      );
-    }
-  }
-
-  /**
-   * 첫 turn 진입 *전*에 system_message + user_message 이벤트를 events 테이블에 영속화하고
-   * wire로 broadcast.
-   *
-   * Python `task_executor.py:120-182 _persist_initial_messages` 정본 그대로 이식 (복수형).
-   * 두 분기 모두 영속화·broadcast 됨으로써 대시보드의 ⚙️ 시스템 프롬프트 / 📋 Context (N)
-   * 슬롯에 표시되는 데이터가 채워진다 — 분석 캐시 `20260518-0945-codex-context-mcp-cancel.md`
-   * Part A-3a wire emit 누락 root cause 직접 해소.
-   *
-   * 1. system_message (ctx.effectiveSystemPrompt 있을 때, Python L133-146):
-   *      {type: "system_message", text: effectiveSystemPrompt}
-   *
-   * 2. user_message (Python L148-180):
-   *      {type: "user_message", user, text, caller_info?, context?, timestamp}
-   *    - context 필드: ctx.combinedContextItems가 비어있지 않을 때만 추가 (Python은
-   *      `ctx.combined_context_items` 무조건 박지만 빈 list면 dashboard 표시 0 — TS는 명시).
-   *
-   * PREVIEW_FIELD_MAP에 system_message는 *의도적 제외* (Python L298-305 정합) — last_message
-   * wire에는 안 박힘. broadcast 자체는 정상 발화하므로 wire 구독자(orch dashboard)가 받아 표시.
-   *
-   * 부가 기능 — 실패는 격리 (Python L145-146·L179-180 try/except): 본 task 진행에 영향 0.
-   */
-  private async _persistInitialMessages(
-    task: Task,
-    ctx?: PreparedContext,
-  ): Promise<void> {
-    // 1. system_message 분기 — Python L133-146 정합
-    //
-    // Python 정본은 `{type, text}` 2키만 박는다 (task_executor.py L136-139).
-    // soul-ui `shared/sse-events.ts SystemMessageEvent` type도 동일 2키.
-    // 추가 키(timestamp 등)는 wire-schema 비대칭을 유발하므로 명시 제외.
-    if (ctx?.effectiveSystemPrompt) {
-      const sysEvent: Record<string, unknown> = {
-        type: "system_message",
-        text: ctx.effectiveSystemPrompt,
-      };
-      try {
-        const eventId = await this.persistence.persistEvent(
-          task.agentSessionId,
-          sysEvent as SSEEventPayload,
-        );
-        task.lastEventId = eventId;
-        // ride-along 5자리 — Python `task_executor.py:141` 정합
-        sysEvent._event_id = eventId;
-      } catch (err) {
-        this.logger.warn(
-          { err, sessionId: task.agentSessionId },
-          "system_message persistEvent failed",
-        );
-      }
-      try {
-        await this.broadcaster.emitEventEnvelope(
-          task.agentSessionId,
-          sysEvent as SSEEventPayload,
-        );
-      } catch (err) {
-        this.logger.warn(
-          { err, sessionId: task.agentSessionId },
-          "system_message broadcast failed",
-        );
-      }
-      // handleSideEffects 호출 안 함 — PREVIEW_FIELD_MAP에 system_message 없음 (Python 정합).
-    }
-
-    // 2. user_message 분기 — Python L148-180 정합
-    const event: Record<string, unknown> = {
-      type: "user_message",
-      user: task.callerInfo?.display_name ?? task.callerInfo?.user_id ?? "unknown",
-      text: task.prompt,
-      timestamp: Date.now() / 1000,
-    };
-    if (task.callerInfo) {
-      event.caller_info = task.callerInfo;
-    }
-    if (task.attachmentPaths && task.attachmentPaths.length > 0) {
-      event.attachments = task.attachmentPaths;
-    }
-    if (ctx && ctx.combinedContextItems.length > 0) {
-      event.context = ctx.combinedContextItems;
-    }
-    try {
-      const eventId = await this.persistence.persistEvent(
-        task.agentSessionId,
-        event as SSEEventPayload,
-      );
-      task.lastEventId = eventId;
-      // ride-along 5자리 — Python `task_executor.py:168` 정합
-      event._event_id = eventId;
-    } catch (err) {
-      this.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        "user_message persistEvent failed",
-      );
-    }
-    try {
-      await this.broadcaster.emitEventEnvelope(task.agentSessionId, event as SSEEventPayload);
-    } catch (err) {
-      this.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        "user_message broadcast failed",
-      );
-    }
-    try {
-      await this.persistence.handleSideEffects(
-        task.agentSessionId,
-        event as SSEEventPayload,
-        task,
-      );
-    } catch (err) {
-      this.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        "user_message handleSideEffects failed",
       );
     }
   }

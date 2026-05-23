@@ -1366,8 +1366,8 @@ describe("TaskExecutor _processEvent — _event_id ride-along (Python L248 정�
 
 // B-5: 초기 system_message + user_message 영속화 (Python `_persist_initial_messages` 정합)
 // 본 describe는 contextBuilder 미주입(legacy) 흐름. system_message·user_message.context는
-// 별 describe(`TaskExecutor _persistInitialMessages with contextBuilder`)에서 검증.
-describe("TaskExecutor _persistInitialMessages — contextBuilder 미주입 (legacy)", () => {
+// 별 describe(`TaskExecutor initial message publishing with contextBuilder`)에서 검증.
+describe("TaskExecutor initial message publishing — contextBuilder 미주입 (legacy)", () => {
   it("첫 turn 진입 전 user_message가 persistEvent + broadcast + handleSideEffects 모두 수행", async () => {
     const mocks = makeMocks();
     const events: SSEEventPayload[] = [
@@ -1547,7 +1547,7 @@ describe("TaskExecutor _persistInitialMessages — contextBuilder 미주입 (leg
 // B-6 정정: contextBuilder 주입 흐름에서 system_message 영속화 + user_message.context 박힘
 // (Python `_persist_initial_messages` 복수형 정합). 분석 캐시
 // `20260518-0945-codex-context-mcp-cancel.md` Part A-3a wire emit 누락 root cause 해소.
-describe("TaskExecutor _persistInitialMessages — contextBuilder 주입 (Python 복수형 정합)", () => {
+describe("TaskExecutor initial message publishing — contextBuilder 주입 (Python 복수형 정합)", () => {
   // contextBuilder mock 헬퍼 — build() 반환을 직접 제어
   function makeFakeContextBuilder(
     ctx: {

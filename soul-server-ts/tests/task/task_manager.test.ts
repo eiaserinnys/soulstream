@@ -1002,7 +1002,7 @@ describe("TaskManager.addIntervention (B-4)", () => {
   it("T-1 (Phase A context 정본): completed task auto-resume이 buildResumeContextItems 호출하여 user_message.context 박음", async () => {
     // Phase A context 정본 진입점 (atom d7a1ad86 차단): contextBuilder + agentRegistry
     // 주입 시 _addInterventionAutoResume이 buildResumeContextItems를 호출하여 wire의
-    // user_message에 context_items 박는다. 첫 턴(`_persistInitialMessages`)과 같은
+    // user_message에 context_items 박는다. 첫 턴 initial-message publisher와 같은
     // `buildSoulstreamContextItem` helper 의존 → design-principles §3 정본 하나.
     const broadcasterMocks = makeMocks();
     const soulstreamItem = {
