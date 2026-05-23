@@ -17,10 +17,7 @@
 import type { Logger } from "pino";
 
 import type { AgentProfile } from "../agent_registry.js";
-import type {
-  EnginePort,
-  SSEEventPayload,
-} from "../engine/protocol.js";
+import type { EnginePort } from "../engine/protocol.js";
 import { CLAUDE_OAUTH_TOKEN_ENV } from "../engine/claude_options.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { SessionDB } from "../db/session_db.js";
@@ -28,6 +25,7 @@ import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import type { ExecutionContextBuilder } from "../context/context_builder.js";
 
 import type { CompletionNotifier } from "./completion_notifier.js";
+import { TaskEngineFailureRecovery } from "./task_engine_failure_recovery.js";
 import { TaskAgentsSnapshotPersistence } from "./task_agents_snapshot_persistence.js";
 import { TaskEngineEventPublisher } from "./task_engine_event_publisher.js";
 import { TaskInitialMessagePublisher } from "./task_initial_message_publisher.js";
@@ -44,6 +42,7 @@ export type EngineFactory = (agent: AgentProfile) => EnginePort;
 
 export class TaskExecutor {
   private readonly engineEventPublisher: TaskEngineEventPublisher;
+  private readonly engineFailureRecovery: TaskEngineFailureRecovery;
   private readonly lifecycleTransition: TaskLifecycleTransition;
   private readonly initialMessagePublisher: TaskInitialMessagePublisher;
   private readonly agentsSnapshotPersistence: TaskAgentsSnapshotPersistence;
@@ -53,7 +52,7 @@ export class TaskExecutor {
     private readonly engineFactory: EngineFactory,
     db: SessionDB,
     persistence: EventPersistence,
-    private readonly broadcaster: SessionBroadcaster,
+    broadcaster: SessionBroadcaster,
     private readonly logger: Logger,
     /**
      * B-6 context_builder DI. undefined일 때 본 PR 이전 동작(task.prompt 직접 사용) 유지 —
@@ -80,6 +79,10 @@ export class TaskExecutor {
       db,
       logger,
       persistence,
+    });
+    this.engineFailureRecovery = new TaskEngineFailureRecovery({
+      broadcaster,
+      logger,
     });
     this.initialMessagePublisher = new TaskInitialMessagePublisher({
       broadcaster,
@@ -201,36 +204,7 @@ export class TaskExecutor {
             await this.engineEventPublisher.publishEngineEvent(task, event);
           }
         } catch (err) {
-          // engine.execute()가 throw — interrupted 가능 (AbortController)
-          const message = err instanceof Error ? err.message : String(err);
-          this.logger.warn(
-            { err, sessionId: task.agentSessionId },
-            "engine.execute drain threw",
-          );
-          if (task.status === "running") {
-            task.status = "error";
-            task.error = message;
-          }
-          // P1-3 (code-reviewer): turn이 throw로 끝났을 때 interventionQueue에 미처리
-          // 메시지가 있으면 *침묵 손실*. 사용자는 addIntervention 시 intervention_sent
-          // broadcast를 받아 "보냈다"고 인지했으나 실제로는 처리되지 않음. 명시 error
-          // 이벤트를 wire에 발행하여 클라이언트가 재전송 의도 결정할 수 있게 한다.
-          if (task.interventionQueue.length > 0) {
-            const skipped = task.interventionQueue.length;
-            task.interventionQueue = [];  // 재처리 방지
-            try {
-              await this.broadcaster.emitEventEnvelope(task.agentSessionId, {
-                type: "error",
-                message: `Turn failed; ${skipped} queued intervention(s) skipped`,
-                fatal: false,
-              } as SSEEventPayload);
-            } catch (e) {
-              this.logger.warn(
-                { err: e, sessionId: task.agentSessionId },
-                "queue-skipped error broadcast failed",
-              );
-            }
-          }
+          await this.engineFailureRecovery.recoverFromExecuteFailure(task, err);
           break;
         }
         // turn 정상 종료 — 외부에서 status가 interrupted 등으로 박혔는지, queue가 남았는지 결정
