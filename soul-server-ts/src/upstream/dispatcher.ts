@@ -29,6 +29,10 @@ import {
   type RealtimeAckType,
 } from "./realtime_ack.js";
 import {
+  SessionListCommandError,
+  SessionListCommands,
+} from "./session_list_commands.js";
+import {
   TaskRuntimeCommands,
   UnknownAgentProfileError,
   buildInterveneAck,
@@ -167,13 +171,6 @@ type ClaudeAuthProfileCmd = CommandLike & { type: "claude_auth_get_profile" };
 type ListSessionsCmd = CommandLike & { type: "list_sessions" };
 
 /**
- * `handleListSessions`이 모든 행을 한 번에 dump하기 위한 상한 — Python `_handle_list_sessions`는
- * `get_all_sessions(offset=0, limit=0)` (전체)으로 호출하지만 TS는 페이징된 stored proc만 노출되어
- * 명시 상한이 필요하다. 운영 노드 한대당 동시 활성 세션이 이 값을 초과하면 별 페이징 커맨드를 추가해야 한다.
- */
-const LIST_SESSIONS_HARD_LIMIT = 10_000;
-
-/**
  * orch → 노드 명령 디스패처.
  *
  * 핸들러 inventory:
@@ -194,6 +191,7 @@ export class CommandDispatcher {
   private readonly handlers: Record<string, (cmd: CommandLike) => Promise<void>>;
   private readonly taskRuntimeCommands: TaskRuntimeCommands;
   private readonly attachmentCommands: AttachmentCommands;
+  private readonly sessionListCommands: SessionListCommands;
 
   constructor(
     private readonly send: SendFn,
@@ -208,7 +206,7 @@ export class CommandDispatcher {
      * Phase B: `list_sessions` 핸들러용 세션 DB. legacy 테스트 호환 위해 optional. 미주입 시
      * `list_sessions` 명령은 명시 error 응답 (silent fallback 금지 — 운영자가 누락 인지 가능).
      */
-    private readonly sessionDb?: SessionDB,
+    sessionDb?: SessionDB,
     private readonly realtimeBroker?: RealtimeBroker,
   ) {
     this.taskRuntimeCommands = new TaskRuntimeCommands({
@@ -218,6 +216,7 @@ export class CommandDispatcher {
       logger,
     });
     this.attachmentCommands = new AttachmentCommands(attachmentStore);
+    this.sessionListCommands = new SessionListCommands(sessionDb);
     this.handlers = {
       health_check: (cmd) => this.handleHealthCheck(cmd),
       create_session: (cmd) => this.handleCreateSession(cmd as CreateSessionCmd),
@@ -717,26 +716,22 @@ export class CommandDispatcher {
    * `_on_sessions_update`)는 dict를 그대로 저장하므로 키 일관성만 유지하면 동작. 후속 카드(F-X1)에서
    * 응답 dict richness 보강.
    *
-   * sessionDb 미주입 시 silent fallback 대신 명시 error로 운영자가 누락을 인지하게 한다 (§4 명시적 실패).
+   * SessionListCommands가 hard limit, default offset, sessionDb 의존성 검증, payload 조립을 소유한다.
    */
   private async handleListSessions(cmd: ListSessionsCmd): Promise<void> {
-    if (!this.sessionDb) {
-      await this.sendError(
-        cmd,
-        "list_sessions handler requires session_db dependency — wire main.ts CommandDispatcher with SessionDB",
+    try {
+      await this.send(
+        await this.sessionListCommands.listSessions({
+          requestId: commandRequestId(cmd),
+        }),
       );
-      return;
+    } catch (err) {
+      if (err instanceof SessionListCommandError) {
+        await this.sendError(cmd, err.message);
+        return;
+      }
+      throw err;
     }
-    const { sessions, total } = await this.sessionDb.listSessionsSummary({
-      limit: LIST_SESSIONS_HARD_LIMIT,
-      offset: 0,
-    });
-    await this.send({
-      type: "sessions_update",
-      sessions,
-      total,
-      requestId: cmd.requestId ?? cmd.request_id ?? "",
-    });
   }
 
   private async handleClaudeAuthStatus(cmd: ClaudeAuthStatusCmd): Promise<void> {
