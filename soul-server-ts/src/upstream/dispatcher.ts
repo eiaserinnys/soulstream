@@ -76,8 +76,8 @@ interface CreateSessionCmd extends CommandLike {
   reasoningEffort?: ReasoningEffort;
   folderId?: string | null;
   /**
-   * B-6 context_builder: 사용자/위임자가 지정한 system_prompt (Python `command_handler.py`
-   * `_handle_create_session`이 `cmd.get("systemPrompt")` 그대로 forward 정합).
+   * Python parity: upstream `systemPrompt` forwards into the session's
+   * system_prompt without renaming on the wire.
    */
   systemPrompt?: string;
 }
@@ -128,19 +128,16 @@ type ListSessionsCmd = CommandLike & { type: "list_sessions" };
 /**
  * orch → 노드 명령 디스패처.
  *
- * 핸들러 inventory:
- * - `health_check` → `health_status` 응답 (B-1)
- * - `create_session` → task lifecycle 시동 + `session_created` 응답 (B-3)
- * - `intervene` → addIntervention + `intervene_ack` 응답 (B-4)
- * - `subscribe_events` → NOOP 수락 — broadcaster.emitEventEnvelope이 이미 모든 task event를
- *   wire로 emit하므로 별 relay loop 불필요. Python `command_handler.py:319 _handle_subscribe_events`는
- *   `await relay.relay_events(session_id)`로 *별 relay 루프*를 가지지만, 그것은 Python의 *task-내
- *   broadcaster 단일 채널 없는 구조*를 보완하기 위함. TS는 task_executor._processEvent가 매
- *   event를 broadcaster.emitEventEnvelope으로 emit하므로 별 relay 불필요 (이론).
- *   분석 캐시 `20260518-1218-codex-sse-realtime-sync.md` §본 사이클 fix 결정.
- * - 그 외 → "Not implemented" fallback
+ * `handlers` is the command inventory. Keep route-specific policy in the
+ * boundary collaborators; this class owns raw command routing, send gating,
+ * and generic error envelopes.
  *
- * 응답 키는 *camelCase*가 정본 (Python `command_handler.py` L309-317 실측).
+ * Cross-runtime parity to preserve here:
+ * - command ACK correlation uses `requestId`, not `request_id`
+ * - commands without requestId may perform side effects but emit no ACK
+ * - `subscribe_events` is accepted without ACK; TS already broadcasts task
+ *   events through `broadcaster.emitEventEnvelope`, while Python starts a
+ *   relay loop for its different event-channel shape
  */
 export class CommandDispatcher {
   private readonly handlers: Record<string, (cmd: CommandLike) => Promise<void>>;
@@ -161,8 +158,9 @@ export class CommandDispatcher {
     private readonly attachmentStore: AttachmentStore = new FileAttachmentStore(".local/incoming"),
     claudeAuth?: ClaudeAuthCommandHandler,
     /**
-     * Phase B: `list_sessions` 핸들러용 세션 DB. legacy 테스트 호환 위해 optional. 미주입 시
-     * `list_sessions` 명령은 명시 error 응답 (silent fallback 금지 — 운영자가 누락 인지 가능).
+     * `list_sessions` needs SessionDB. Keep it optional at construction so
+     * missing wiring becomes an explicit command error instead of a silent
+     * fallback.
      */
     sessionDb?: SessionDB,
     realtimeBroker?: RealtimeBroker,
@@ -183,6 +181,8 @@ export class CommandDispatcher {
       logger,
     });
     this.realtimeCommands = new RealtimeCommands(realtimeBroker);
+    // This table is the route inventory. Add new command types here, then put
+    // command-specific adaptation behind a tested boundary when it has depth.
     this.handlers = {
       health_check: (cmd) => this.handleHealthCheck(cmd),
       create_session: (cmd) => this.handleCreateSession(cmd as CreateSessionCmd),
@@ -241,7 +241,8 @@ export class CommandDispatcher {
    * - requestId: orch command ACK 매칭용 ID
    * - inputRequestId/request_id: Claude pending input request ID
    *
-   * 모든 실패도 respond_ack(status="error")로 회신하여 orch _send_command timeout을 막는다.
+   * DeliveryCommands owns validation and ACK shape. Dispatcher only sends the
+   * returned ACK or maps boundary validation failures to the generic error wire.
    */
   private async handleRespond(cmd: RespondCommand): Promise<void> {
     try {
@@ -261,8 +262,8 @@ export class CommandDispatcher {
   /**
    * `approve_tool` / `reject_tool` 명령 — OpenAI Agents SDK RunToolApprovalItem 응답.
    *
-   * `respond` 명령은 Claude AskUserQuestion 전용이므로 승인 wire를 별도 명령으로 둔다.
-   * 실패도 `tool_approval_ack(status="error")`로 반환해 orch `_send_command` timeout을 막는다.
+   * Approval uses a separate command because `respond` is reserved for Claude
+   * AskUserQuestion. DeliveryCommands owns delivery semantics and ACK shape.
    */
   private async handleToolApproval(cmd: ToolApprovalCommand): Promise<void> {
     try {
@@ -348,13 +349,11 @@ export class CommandDispatcher {
   }
 
   /**
-   * `create_session` 명령 — Phase B-3 신설.
+   * `create_session` 명령.
    *
-   * 흐름:
-   *   1. agent_registry.get(profile) → AgentProfile (없으면 error 응답)
-   *   2. task_manager.createTask(...) → DB session_register + broadcast session_created
-   *   3. task_executor.startExecution(task, profile) → engine.execute() fire-and-forget
-   *   4. requestId가 있으면 `session_created` ACK 응답 (atom c13f7826: 빈 string ACK 금지)
+   * TaskRuntimeCommands owns profile lookup, task creation, attachment context,
+   * backend-specific OAuth forwarding, and startExecution. Dispatcher keeps the
+   * minimal wire guard and requestId-gated `session_created` ACK.
    */
   private async handleCreateSession(cmd: CreateSessionCmd): Promise<void> {
     if (!cmd.agentSessionId || !cmd.prompt) {
@@ -381,7 +380,7 @@ export class CommandDispatcher {
         disallowedTools: cmd.disallowed_tools,
         useMcp: cmd.use_mcp,
         folderId: cmd.folderId ?? null,
-        systemPrompt: cmd.systemPrompt,  // B-6 context_builder가 folder_prompt와 합성
+        systemPrompt: cmd.systemPrompt,
         extraContextItems: cmd.extra_context_items,
         attachmentPaths: cmd.attachment_paths,
       });
@@ -410,22 +409,11 @@ export class CommandDispatcher {
   }
 
   /**
-   * `intervene` 명령 — B-4 구현 (분석 캐시 `20260517-1410-codex-ts-folder-resume-intervene.md` §D).
+   * `intervene` 명령.
    *
-   * Codex exec adapter는 turn-level steer를 지원하지 않으므로 *turn 사이 큐잉*으로 fallback.
-   * app-server adapter처럼 live steering capability가 있는 엔진은 active turn에 직접 전달 가능:
-   *   - Running 세션 + live steering → active turn 직접 전달. 응답
-   *     `intervene_ack(status="ok", outcome="delivered", agentSessionId)`.
-   *   - Running 세션 fallback → interventionQueue에 push, 현 turn 종료 후 task_executor가
-   *     dequeue하여 다음 turn 자동 진입 (resumeThread). 응답
-   *     `intervene_ack(status="ok", outcome="queued", queuePosition)`.
-   *   - Completed/Error/Interrupted 세션 → status=running 전환 + queue push + startExecution
-   *     재호출 → 다음 turn이 resumeThread(task.codexThreadId)로 자동 진입. 응답
-   *     `intervene_ack(status="ok", outcome="auto_resumed", agentSessionId)`.
-   *   - 미존재 task → addIntervention throw → sendError.
-   *
-   * Python `intervention_service.intervene` L28-79 정본 패턴의 codex 적응판. 응답 형상은
-   * Python `_handle_intervene` L249-254와 키 정합 (`intervene_ack`, `requestId`, `status`).
+   * TaskRuntimeCommands owns delivery, queueing, and auto-resume. Dispatcher
+   * validates the wire minimum, maps runtime failures to the generic error wire,
+   * and emits the requestId-gated `intervene_ack`.
    */
   private async handleIntervene(cmd: IntervenCmd): Promise<void> {
     const sessionId = cmd.agentSessionId ?? cmd.session_id ?? "";
@@ -476,26 +464,12 @@ export class CommandDispatcher {
   }
 
   /**
-   * `subscribe_events` 명령 — broadcaster.emitEventEnvelope이 이미 task event 전체를 emit하므로
-   * 별 relay 작업 없이 NOOP 수락.
+   * `subscribe_events` 명령.
    *
-   * Python 정본 `command_handler.py:319 _handle_subscribe_events`는 `await relay.relay_events(...)`로
-   * 별 relay 루프를 가진다 — 그 루프가 *Python의 task-내 단일 broadcaster 채널 없는 구조*를
-   * 보완한다. TS는 task_executor._processEvent가 매 codex CLI yield event마다
-   * broadcaster.emitEventEnvelope을 호출하므로 별 relay 루프 *불필요* (이론).
-   *
-   * 본 핸들러 신설 이전(PR #62 시점) 동작:
-   *   - dispatcher가 "Not implemented" error 응답을 wire에 발행
-   *   - orch는 EVT_ERROR를 warn log만 박고 listener 유지 (직접 차단 안 함)
-   *   - 그러나 *간접 차단 가능성*: 사용자 보고로 SSE realtime stream 누락 확정 — 가설 X
-   *
-   * 본 핸들러는 *명시 ACK 없이 silent 수락*. ACK 발행 안 함이 Python 정본 정합 — Python
-   * _handle_subscribe_events도 별도 ACK type을 emit하지 않고 relay loop만 시작.
-   * orch send_subscribe_events는 ACK 대기 없이 listener 등록 + cmd send (fire-and-forget).
-   * 따라서 ACK 없음으로 orch 동작 영향 0.
-   *
-   * 진단용 logger.info — 라이브에서 본 cmd가 분명히 도달함을 trace. *node LOG_LEVEL=info*에서
-   * 가시.
+   * TS task execution already emits each task event through
+   * broadcaster.emitEventEnvelope, so there is no separate relay loop to start.
+   * The orch caller sends this command fire-and-forget, and Python also emits no
+   * ACK for this command.
    */
   private async handleSubscribeEvents(cmd: SubscribeEventsCmd): Promise<void> {
     const sessionId = cmd.agentSessionId ?? cmd.session_id ?? "";
@@ -503,19 +477,17 @@ export class CommandDispatcher {
       { sessionId, subscribeId: cmd.subscribeId },
       "subscribe_events received — NOOP 수락 (broadcaster가 EVT_EVENT 직접 emit)",
     );
-    // NOOP — ACK 없이 silent 수락. Python `_handle_subscribe_events`는 relay loop를 시작하지만
-    // TS는 broadcaster.emitEventEnvelope이 이미 task event 전체를 wire로 emit하므로 별 relay 불필요.
+    // NOOP — ACK 없이 silent 수락.
   }
 
   /**
-   * `list_sessions` 명령 — Python `_handle_list_sessions` (command_handler.py:351-359) 정합.
+   * `list_sessions` 명령 — Python `_handle_list_sessions` 정합.
    *
    * 응답 wire: `{type:"sessions_update", sessions, total, requestId}`.
    *
    * 응답 dict richness 한계: Python은 `get_all_sessions`로 `_build_session_dict` enrich된 dict를
    * 반환하지만 TS는 현재 `listSessionsSummary` (경량 summary)만 노출. wire 소비자(orch
-   * `_on_sessions_update`)는 dict를 그대로 저장하므로 키 일관성만 유지하면 동작. 후속 카드(F-X1)에서
-   * 응답 dict richness 보강.
+   * `_on_sessions_update`)는 dict를 그대로 저장하므로 키 일관성만 유지하면 동작.
    *
    * SessionListCommands가 hard limit, default offset, sessionDb 의존성 검증, payload 조립을 소유한다.
    */
