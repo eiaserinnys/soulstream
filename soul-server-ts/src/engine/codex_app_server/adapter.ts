@@ -11,7 +11,14 @@ import type {
   SupportsLiveTurnSteering,
 } from "../protocol.js";
 import { AppServerRpcError, CodexAppServerClient } from "./client.js";
-import { mapAppServerNotification } from "./event_mapper.js";
+import {
+  applyNotificationLifecycle,
+  clearActiveTurn,
+  createNotificationLifecycleState,
+  recordThreadOpened,
+  recordTurnStartResponse,
+  type NotificationLifecycleState,
+} from "./notification_lifecycle.js";
 import {
   createStdioAppServerTransport,
   type AppServerTransportLogger,
@@ -64,11 +71,6 @@ export interface CodexAppServerAdapterConfig {
   client?: CodexAppServerClientPort;
 }
 
-interface ActiveTurnState {
-  threadId: string;
-  turnId: string;
-}
-
 export class CodexAppServerEngineAdapter
   implements EnginePort, SupportsLiveTurnSteering
 {
@@ -80,10 +82,9 @@ export class CodexAppServerEngineAdapter
   private initialized = false;
   private executing = false;
   private closed = false;
-  private activeTurn: ActiveTurnState | null = null;
+  private notificationLifecycle: NotificationLifecycleState =
+    createNotificationLifecycleState();
   private activeQueue: AsyncPayloadQueue | null = null;
-  private readonly emittedSessionIds = new Set<string>();
-  private readonly reportedSessionIds = new Set<string>();
 
   constructor(config: CodexAppServerAdapterConfig, logger: Logger) {
     this.workspaceDir = config.workspaceDir;
@@ -122,9 +123,13 @@ export class CodexAppServerEngineAdapter
       const turnResponse = await this.client.startTurn(
         buildTurnStartParams(threadId, params, this.workspaceDir),
       );
-      this.activeTurn = { threadId, turnId: turnResponse.turn.id };
-      if (turnResponse.turn.status !== "inProgress") {
-        this.activeTurn = null;
+      const turnStart = recordTurnStartResponse(
+        this.notificationLifecycle,
+        threadId,
+        turnResponse.turn,
+      );
+      this.notificationLifecycle = turnStart.state;
+      if (turnStart.closeQueue) {
         queue.close();
       }
 
@@ -138,14 +143,15 @@ export class CodexAppServerEngineAdapter
       yield fatalErrorPayload(error instanceof Error ? error : new Error(String(error)));
     } finally {
       for (const off of unsubscribe) off();
-      this.activeTurn = null;
+      this.notificationLifecycle = clearActiveTurn(this.notificationLifecycle);
       this.activeQueue = null;
       this.executing = false;
     }
   }
 
   async steerActiveTurn(input: EngineUserInput): Promise<LiveTurnSteerResult> {
-    if (!this.activeTurn) {
+    const activeTurn = this.notificationLifecycle.activeTurn;
+    if (!activeTurn) {
       return {
         status: "no_active_turn",
         message: "No active Codex app-server turn",
@@ -154,14 +160,14 @@ export class CodexAppServerEngineAdapter
 
     try {
       const result = await this.client.steerTurn({
-        threadId: this.activeTurn.threadId,
-        expectedTurnId: this.activeTurn.turnId,
+        threadId: activeTurn.threadId,
+        expectedTurnId: activeTurn.turnId,
         input: toCodexUserInput(input),
       });
-      if (result.turnId !== this.activeTurn.turnId) {
+      if (result.turnId !== activeTurn.turnId) {
         return {
           status: "turn_mismatch",
-          message: `Codex app-server steered turn ${result.turnId}, expected ${this.activeTurn.turnId}`,
+          message: `Codex app-server steered turn ${result.turnId}, expected ${activeTurn.turnId}`,
         };
       }
       return { status: "delivered" };
@@ -171,14 +177,15 @@ export class CodexAppServerEngineAdapter
   }
 
   async interrupt(): Promise<boolean> {
-    if (!this.activeTurn) {
+    const activeTurn = this.notificationLifecycle.activeTurn;
+    if (!activeTurn) {
       this.logger.debug("Codex app-server interrupt called with no active turn");
       return false;
     }
     try {
       await this.client.interruptTurn({
-        threadId: this.activeTurn.threadId,
-        turnId: this.activeTurn.turnId,
+        threadId: activeTurn.threadId,
+        turnId: activeTurn.turnId,
       });
       return true;
     } catch (error) {
@@ -190,7 +197,7 @@ export class CodexAppServerEngineAdapter
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
-    this.activeTurn = null;
+    this.notificationLifecycle = clearActiveTurn(this.notificationLifecycle);
     this.activeQueue?.close();
     await this.client.close();
   }
@@ -219,13 +226,13 @@ export class CodexAppServerEngineAdapter
       buildThreadStartParams(params, this.workspaceDir),
     );
     const threadId = response.thread.id;
-    if (!this.emittedSessionIds.has(threadId)) {
-      this.emittedSessionIds.add(threadId);
+    const opened = recordThreadOpened(this.notificationLifecycle, threadId);
+    this.notificationLifecycle = opened.state;
+    if (opened.emitSession) {
       const payload = { type: "session", session_id: threadId } as SSEEventPayload;
       queue.push(payload);
     }
-    if (!this.reportedSessionIds.has(threadId)) {
-      this.reportedSessionIds.add(threadId);
+    if (opened.reportSession) {
       await params.onSession?.(threadId);
     }
     return threadId;
@@ -236,40 +243,15 @@ export class CodexAppServerEngineAdapter
     queue: AsyncPayloadQueue,
     suppressThreadStartedSession: boolean,
   ): void {
-    if (notification.method === "turn/started") {
-      const params = notification.params as { threadId: string; turn: { id: string } };
-      this.activeTurn = {
-        threadId: params.threadId,
-        turnId: params.turn.id,
-      };
-    }
+    const result = applyNotificationLifecycle(this.notificationLifecycle, notification, {
+      suppressThreadStartedSession,
+    });
+    this.notificationLifecycle = result.state;
 
-    if (notification.method === "thread/started") {
-      const params = notification.params as { thread: { id: string } };
-      const sessionId = params.thread.id;
-      if (suppressThreadStartedSession || this.emittedSessionIds.has(sessionId)) {
-        return;
-      }
-      this.emittedSessionIds.add(sessionId);
-    }
-
-    for (const payload of mapAppServerNotification(notification)) {
+    for (const payload of result.payloads) {
       queue.push(payload);
     }
-
-    if (notification.method === "turn/completed") {
-      const params = notification.params as { turn: { id: string } };
-      if (params.turn.id === this.activeTurn?.turnId) {
-        this.activeTurn = null;
-      }
-      queue.close();
-      return;
-    }
-    if (
-      notification.method === "error" &&
-      (notification.params as { willRetry?: boolean }).willRetry !== true
-    ) {
-      this.activeTurn = null;
+    if (result.closeQueue) {
       queue.close();
     }
   }
