@@ -1009,6 +1009,52 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     expect(captured[1].prompt.endsWith("이 이미지 봐줘")).toBe(true);
   });
 
+  it("Claude intervention turn은 첫 turn systemPrompt를 다시 전달하지 않는다", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+    const capturedSystemPrompts: Array<string | undefined> = [];
+    let turnCount = 0;
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        capturedSystemPrompts.push(params.systemPrompt);
+        if (turnCount === 0) {
+          turnCount += 1;
+          yield { type: "session", session_id: "claude-sess-1" } as SSEEventPayload;
+          task.interventionQueue.push({ text: "follow up", user: "u" });
+          yield { type: "complete", result: "first done", timestamp: 1 } as SSEEventPayload;
+          return;
+        }
+        turnCount += 1;
+        yield { type: "complete", result: "second done", timestamp: 2 } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const fakeBuilder = {
+      build: vi.fn(async () => ({
+        effectiveSystemPrompt: "folder prompt\n\nagent prompt",
+        combinedContextItems: [],
+        assembledPrompt: "hi",
+      })),
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+    );
+
+    executor.startExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(capturedSystemPrompts).toEqual(["folder prompt\n\nagent prompt", undefined]);
+  });
+
   it("Codex execute params에는 onIntervention을 넘기지 않아 turn 사이 큐잉 semantics를 보존한다", async () => {
     const mocks = makeMocks();
     const task = makeTask();

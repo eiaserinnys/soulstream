@@ -35,12 +35,16 @@ import {
   type ExecutionContextBuilder,
   type PreparedContext,
 } from "../context/context_builder.js";
-import { formatContextItems, type ContextItem } from "../context/prompt_assembler.js";
 
 import type { CompletionNotifier } from "./completion_notifier.js";
-import { buildAttachmentContextItems, splitAttachmentPaths } from "./attachment_context.js";
+import { splitAttachmentPaths } from "./attachment_context.js";
 import { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
 import type { Task, TaskStatus } from "./task_models.js";
+import {
+  composeInterventionTurnPrompt,
+  isOpenAiAgentsApprovalPending,
+  resolveTurnLoopTransition,
+} from "./task_turn_loop_transition.js";
 
 /** AgentProfile → EnginePort 생성. backend별 분기는 factory 구현체 담당. */
 export type EngineFactory = (agent: AgentProfile) => EnginePort;
@@ -296,26 +300,14 @@ export class TaskExecutor {
           }
           break;
         }
-        // turn 정상 종료 — 외부에서 status가 interrupted 등으로 박혔으면 loop 종료
-        if (task.status !== "running") {
+        // turn 정상 종료 — 외부에서 status가 interrupted 등으로 박혔는지, queue가 남았는지 결정
+        const transition = resolveTurnLoopTransition(task, agent);
+        if (transition.kind !== "continue") {
           break;
         }
-        if (
-          agent.backend === "openai-agents" &&
-          task.agentsRunState &&
-          task.agentsPendingApprovalId
-        ) {
-          break;
-        }
-        // intervention queue 검사 — 비어있으면 completed, 있으면 다음 turn으로
-        const next = task.interventionQueue.shift();
-        if (!next) {
-          task.status = "completed";
-          break;
-        }
-        const composed = composeInterventionTurnPrompt(next);
-        turnPrompt = composed.prompt;
-        turnImageAttachmentPaths = composed.imageAttachmentPaths;
+        turnPrompt = transition.prompt;
+        turnImageAttachmentPaths = transition.imageAttachmentPaths;
+        turnSystemPrompt = undefined;
         // (intervention_sent는 addIntervention에서 이미 broadcast됨 — 여기서 재발행 안 함.)
       }
     } finally {
@@ -633,30 +625,6 @@ export class TaskExecutor {
 /** 외부 검증용 — task가 종료 상태인지. */
 export function isTerminalStatus(status: TaskStatus): boolean {
   return status === "completed" || status === "error" || status === "interrupted";
-}
-
-function isOpenAiAgentsApprovalPending(task: Task): boolean {
-  return Boolean(
-    task.status === "running" &&
-      task.agentsRunState &&
-      task.agentsPendingApprovalId,
-  );
-}
-
-function composeInterventionTurnPrompt(message: { text: string; context?: ContextItem[]; attachmentPaths?: string[] }): {
-  prompt: string;
-  imageAttachmentPaths: string[];
-} {
-  const { imagePaths, nonImagePaths } = splitAttachmentPaths(message.attachmentPaths);
-  const contextItems = [
-    ...(message.context ?? []),
-    ...buildAttachmentContextItems(nonImagePaths),
-  ];
-  const contextBlock = formatContextItems(contextItems);
-  return {
-    prompt: contextBlock ? `${contextBlock}\n\n${message.text}` : message.text,
-    imageAttachmentPaths: imagePaths,
-  };
 }
 
 function buildTaskExtraEnv(task: Task): Record<string, string> | undefined {
