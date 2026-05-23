@@ -1,15 +1,9 @@
-"""
-NodeConnection — soul-server 노드의 WebSocket 연결을 래핑.
-
-노드 정보 추적, 명령 전송, 수신 메시지 디스패치, 응답 대기(Future) 관리.
-"""
+"""NodeConnection — soul-server node WebSocket connection wrapper."""
 
 import asyncio
-import json
-import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Callable, Coroutine, Optional
+from typing import Any, Callable, Coroutine
 
 from fastapi import WebSocket
 from starlette.websockets import WebSocketDisconnect
@@ -35,23 +29,14 @@ from soulstream_server.constants import (
     CMD_CLAUDE_AUTH_GET_PROFILE,
     COMMAND_TIMEOUT,
     EVT_ERROR,
-    EVT_EVENT,
-    EVT_HEALTH_STATUS,
-    EVT_INPUT_REQUEST,
-    EVT_SESSION_CREATED,
-    EVT_SESSION_DELETED,
-    EVT_SESSION_UPDATED,
-    EVT_SESSIONS_UPDATE,
+)
+from soulstream_server.nodes.inbound_events import (
+    NodeInboundEvents,
+    OnSessionChangeCallback,
 )
 from soulstream_server.nodes.pending_commands import PendingCommands
 
-logger = logging.getLogger(__name__)
-
-# Callback type aliases
 OnCloseCallback = Callable[["NodeConnection"], Coroutine[Any, Any, None]]
-OnSessionChangeCallback = Callable[
-    [str, str, dict | None], Coroutine[Any, Any, None]
-]  # (node_id, change_type, data)
 
 
 class NodeConnection:
@@ -82,16 +67,19 @@ class NodeConnection:
         )
         self.connected_at = datetime.now(timezone.utc)
 
-        self._sessions: dict[str, dict] = {}
         self._agent_profiles: dict = {}  # 연결 직후 _fetch_agent_profiles()로 populate됨
         self._portrait_cache: dict[str, bytes] = {}  # agent_id → portrait bytes (등록 메시지에서 수신)
         self._user_info: dict = {}  # 연결 직후 _fetch_user_info()로 populate됨
         self._pending_commands = PendingCommands()
         self._pending = self._pending_commands.pending
-        self._subscribe_listeners: dict[str, dict[str, Callable]] = {}
+        self._inbound_events = NodeInboundEvents(
+            node_id=node_id,
+            on_session_change=on_session_change,
+        )
+        self._sessions = self._inbound_events.sessions
+        self._subscribe_listeners = self._inbound_events.subscribe_listeners
 
         self.on_close = on_close
-        self.on_session_change = on_session_change
 
     @property
     def sessions(self) -> dict[str, dict]:
@@ -121,6 +109,16 @@ class NodeConnection:
         self._user_info = user_info
 
     @property
+    def on_session_change(self) -> OnSessionChangeCallback | None:
+        return self._inbound_events.on_session_change
+
+    @on_session_change.setter
+    def on_session_change(
+        self, callback: OnSessionChangeCallback | None
+    ) -> None:
+        self._inbound_events.on_session_change = callback
+
+    @property
     def session_count(self) -> int:
         return len(self._sessions)
 
@@ -140,8 +138,6 @@ class NodeConnection:
             "sessionCount": self.session_count,
             "status": "connected",
         }
-
-    # --- 명령 전송 ---
 
     def _next_request_id(self) -> str:
         return self._pending_commands.next_request_id()
@@ -454,10 +450,9 @@ class NodeConnection:
         self, session_id: str, callback: Callable
     ) -> str:
         subscribe_id = str(uuid.uuid4())
-
-        if session_id not in self._subscribe_listeners:
-            self._subscribe_listeners[session_id] = {}
-        self._subscribe_listeners[session_id][subscribe_id] = callback
+        self._inbound_events.register_subscribe_listener(
+            session_id, subscribe_id, callback
+        )
 
         await self._send({
             "type": CMD_SUBSCRIBE_EVENTS,
@@ -467,13 +462,7 @@ class NodeConnection:
         return subscribe_id
 
     def unsubscribe_events(self, session_id: str, subscribe_id: str) -> None:
-        listeners = self._subscribe_listeners.get(session_id)
-        if listeners:
-            listeners.pop(subscribe_id, None)
-            if not listeners:
-                del self._subscribe_listeners[session_id]
-
-    # --- 수신 메시지 처리 ---
+        self._inbound_events.unsubscribe_events(session_id, subscribe_id)
 
     async def handle_message(self, data: dict) -> None:
         msg_type = data.get("type")
@@ -490,98 +479,11 @@ class NodeConnection:
                 self._pending_commands.resolve(request_id, data)
             return
 
-        # 이벤트 디스패치
-        if msg_type == EVT_SESSION_CREATED:
-            await self._on_session_created(data)
-        elif msg_type == EVT_EVENT:
-            await self._on_event(data)
-        elif msg_type == EVT_SESSIONS_UPDATE:
-            await self._on_sessions_update(data)
-        elif msg_type == EVT_SESSION_UPDATED:
-            await self._on_session_updated(data)
-        elif msg_type == EVT_SESSION_DELETED:
-            await self._on_session_deleted(data)
-        elif msg_type == EVT_HEALTH_STATUS:
-            await self._on_health_status(data)
-        elif msg_type == EVT_INPUT_REQUEST:
-            # 빌드 20: input_request는 PushNotifier가 알림 발사하는 hook 지점.
-            # node_manager._on_session_change가 "node_session_input_request"로
-            # 정규화하여 listener에 fan-out한다.
-            if self.on_session_change:
-                await self.on_session_change(self.node_id, "input_request", data)
-        elif msg_type == EVT_ERROR:
-            logger.warning(
-                "Error from node %s: %s", self.node_id, data.get("message")
-            )
-        else:
-            logger.debug(
-                "Unknown message type from node %s: %s", self.node_id, msg_type
-            )
-
-    async def _on_session_created(self, data: dict) -> None:
-        session_id = data.get("agentSessionId")
-        if session_id:
-            self._sessions[session_id] = {
-                "agentSessionId": session_id,
-                "status": data.get("status", "running"),
-                "nodeId": self.node_id,
-            }
-            if self.on_session_change:
-                await self.on_session_change(
-                    self.node_id, "session_created", data
-                )
-
-    async def _on_event(self, data: dict) -> None:
-        session_id = data.get("agentSessionId") or data.get("sessionId")
-        subscribe_id = data.get("subscribeId")
-
-        if session_id and session_id in self._subscribe_listeners:
-            listeners = self._subscribe_listeners[session_id]
-            if subscribe_id and subscribe_id in listeners:
-                await listeners[subscribe_id](data)
-            else:
-                # broadcast to all listeners for this session
-                for cb in list(listeners.values()):
-                    await cb(data)
-
-    async def _on_sessions_update(self, data: dict) -> None:
-        sessions = data.get("sessions", [])
-        self._sessions.clear()
-        for s in sessions:
-            sid = s.get("agentSessionId") or s.get("session_id")
-            if sid:
-                self._sessions[sid] = s
-        if self.on_session_change:
-            await self.on_session_change(
-                self.node_id, "sessions_update", data
-            )
-
-    async def _on_session_updated(self, data: dict) -> None:
-        session_id = data.get("agentSessionId") or data.get("session_id")
-        if session_id and session_id in self._sessions:
-            self._sessions[session_id].update(data)
-        if self.on_session_change:
-            await self.on_session_change(
-                self.node_id, "session_updated", data
-            )
-
-    async def _on_session_deleted(self, data: dict) -> None:
-        session_id = data.get("agentSessionId") or data.get("session_id")
-        if session_id:
-            self._sessions.pop(session_id, None)
-        if self.on_session_change:
-            await self.on_session_change(
-                self.node_id, "session_deleted", data
-            )
-
-    async def _on_health_status(self, data: dict) -> None:
-        logger.debug("Health status from node %s: %s", self.node_id, data)
-
-    # --- 연결 종료 ---
+        await self._inbound_events.handle(data)
 
     async def close(self) -> None:
         self._pending_commands.cancel_all_for_close()
-        self._subscribe_listeners.clear()
+        self._inbound_events.clear_subscribe_listeners()
 
         try:
             await self._ws.close()
