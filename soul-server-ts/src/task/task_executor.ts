@@ -24,10 +24,7 @@ import type {
   SSEEventPayload,
 } from "../engine/protocol.js";
 import { CLAUDE_OAUTH_TOKEN_ENV } from "../engine/claude_options.js";
-import {
-  shouldPersistEvent,
-  type EventPersistence,
-} from "../db/event_persistence.js";
+import type { EventPersistence } from "../db/event_persistence.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import {
@@ -38,6 +35,7 @@ import {
 
 import type { CompletionNotifier } from "./completion_notifier.js";
 import { splitAttachmentPaths } from "./attachment_context.js";
+import { TaskEngineEventPublisher } from "./task_engine_event_publisher.js";
 import { TaskInitialMessagePublisher } from "./task_initial_message_publisher.js";
 import { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
 import type { Task, TaskStatus } from "./task_models.js";
@@ -51,13 +49,14 @@ import {
 export type EngineFactory = (agent: AgentProfile) => EnginePort;
 
 export class TaskExecutor {
+  private readonly engineEventPublisher: TaskEngineEventPublisher;
   private readonly lifecycleTransition: TaskLifecycleTransition;
   private readonly initialMessagePublisher: TaskInitialMessagePublisher;
 
   constructor(
     private readonly engineFactory: EngineFactory,
     private readonly db: SessionDB,
-    private readonly persistence: EventPersistence,
+    persistence: EventPersistence,
     private readonly broadcaster: SessionBroadcaster,
     private readonly logger: Logger,
     /**
@@ -79,6 +78,12 @@ export class TaskExecutor {
       db,
       broadcaster,
       logger,
+    });
+    this.engineEventPublisher = new TaskEngineEventPublisher({
+      broadcaster,
+      db,
+      logger,
+      persistence,
     });
     this.initialMessagePublisher = new TaskInitialMessagePublisher({
       broadcaster,
@@ -272,7 +277,7 @@ export class TaskExecutor {
             ...(agent.max_turns !== undefined ? { maxTurns: agent.max_turns } : {}),
             ...(onIntervention ? { onIntervention } : {}),
           })) {
-            await this._processEvent(task, event);
+            await this.engineEventPublisher.publishEngineEvent(task, event);
           }
         } catch (err) {
           // engine.execute()가 throw — interrupted 가능 (AbortController)
@@ -322,98 +327,6 @@ export class TaskExecutor {
         task.completedAt = new Date();
       }
       await this._finalize(task);
-    }
-  }
-
-  /**
-   * 단일 이벤트 처리: 필요 시 DB 영속 + broadcast + side effect.
-   *
-   * - 첫 session 이벤트: task.codexThreadId 박기 + DB sessions.claude_session_id 영속화 (F-3B).
-   *   stored proc session_set_claude_id가 idempotent하므로 race에도 안전.
-   * - persistEvent / setClaudeSessionId 실패는 격리 (logger.warn) — 본 task 진행 중단 회피.
-   */
-  private async _processEvent(
-    task: Task,
-    event: SSEEventPayload,
-  ): Promise<void> {
-    const eventType = (event as { type: string }).type;
-
-    // 첫 session 이벤트에서 thread id 박기 + DB 영속화
-    if (eventType === "session") {
-      const sid = (event as { session_id?: unknown }).session_id;
-      if (typeof sid === "string" && !task.codexThreadId) {
-        task.codexThreadId = sid;
-        // F-3B: sessions.claude_session_id 컬럼 영속화 — 노드 재시작 시 thread 이어붙임 전제.
-        try {
-          await this.db.setClaudeSessionId(task.agentSessionId, sid);
-        } catch (err) {
-          this.logger.warn(
-            { err, sessionId: task.agentSessionId, threadId: sid },
-            "setClaudeSessionId failed — thread id not persisted",
-          );
-        }
-      }
-    }
-
-    // DB 영속 — 실패 격리. event dict에 `_event_id` 박기 (Python `task_executor.py:248` 의미 등가).
-    // ride-along 5자리(분석 캐시 `20260518-1338-codex-live-event-id-race.md`): orch session_events.py가
-    // wire envelope의 `event._event_id`로 SSE id를 추출 → 대시보드 tree-placer가 dedup·순서 보장.
-    // 누락 시 모든 live 이벤트가 `eventId=0`으로 같은 키 취급되어 text_start skip → text_delta/end 미박힘.
-    // 단, app-server `_live_only` 텍스트 조각은 생성 중 wire 전용이다. DB에 저장하면 완성 답변이
-    // delta 조각으로 중복 보존되므로 영속화와 cursor id 부여를 건너뛴다.
-    //
-    // throw 경로 의도적 차이 (spec-reviewer P2-1): Python L243-248은 try/except *밖*에서
-    // `_event_id = None`을 박지만, TS는 try 안에서만 박는다 (throw 시 키 자체 부재).
-    // orch session_events.py:L172-176가 None 또는 키 부재 둘 다 `event_id is None` 분기로
-    // 처리하므로 wire 동작은 동등. test에서 throw 격리 단언으로 검증.
-    if (shouldPersistEvent(event)) {
-      try {
-        const eventId = await this.persistence.persistEvent(
-          task.agentSessionId,
-          event,
-        );
-        task.lastEventId = eventId;
-        (event as Record<string, unknown>)._event_id = eventId;
-      } catch (err) {
-        this.logger.warn(
-          { err, sessionId: task.agentSessionId, eventType },
-          "persistEvent failed",
-        );
-      }
-    }
-
-    // orch broadcast — 실패 격리
-    //
-    // 라이브 진단 trace (분석 캐시 `20260518-1218-codex-sse-realtime-sync.md` P1-A): silent succeed
-    // 시점에 호출 자체가 일어났는지 확정하기 위해 dispatch 직전·직후 logger.info 박기. LOG_LEVEL=info
-    // 운영 환경에서 emit 흐름을 가시화. 가설 X(subscribe_events 미구현 간접 차단) fix-forward가
-    // 무실효일 경우, 가설 Y(emit 호출 안 됨) vs Z(silent fail) 결정적 격리를 *같은 라이브 배포*로
-    // 가능하게 한다 — fix-forward 사이클 1회 단축.
-    this.logger.info(
-      { sessionId: task.agentSessionId, eventType },
-      "emitEventEnvelope dispatch",
-    );
-    try {
-      await this.broadcaster.emitEventEnvelope(task.agentSessionId, event);
-      this.logger.info(
-        { sessionId: task.agentSessionId, eventType },
-        "emitEventEnvelope completed",
-      );
-    } catch (err) {
-      this.logger.warn(
-        { err, sessionId: task.agentSessionId, eventType },
-        "emitEventEnvelope failed",
-      );
-    }
-
-    // side effect (last_message + task.lastAssistantText)
-    try {
-      await this.persistence.handleSideEffects(task.agentSessionId, event, task);
-    } catch (err) {
-      this.logger.warn(
-        { err, sessionId: task.agentSessionId, eventType },
-        "handleSideEffects threw",
-      );
     }
   }
 

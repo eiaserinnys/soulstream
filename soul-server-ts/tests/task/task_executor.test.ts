@@ -650,7 +650,7 @@ describe("TaskExecutor.startExecution", () => {
 
   it("F-3A 회귀: handleSideEffects throw (DB 실패 등) → 격리, task 진행 계속", async () => {
     // handleSideEffects는 EventPersistence가 DB throw를 호출자에 전파한다 (Python 정합).
-    // _processEvent의 try-catch가 이를 받아 task 진행을 막지 않아야 한다.
+    // TaskEngineEventPublisher의 try-catch가 이를 받아 task 진행을 막지 않아야 한다.
     const mocks = makeMocks();
     mocks.handleSideEffects.mockRejectedValueOnce(
       new Error("last_message db down"),
@@ -1301,7 +1301,7 @@ function deferred<T>() {
 }
 
 // ride-along 5자리: `_event_id` envelope 운반 (Ft1NJquP — Python `task_executor.py:248` 정합)
-describe("TaskExecutor _processEvent — _event_id ride-along (Python L248 정합)", () => {
+describe("TaskExecutor engine event publishing — _event_id ride-along (Python L248 정합)", () => {
   // 분석 캐시 `20260518-1338-codex-live-event-id-race.md`: persistEvent에서 받은 id를 event dict에
   // `_event_id`로 박은 뒤 broadcast. orch session_events.py가 SSE id로 추출하여 대시보드
   // tree-placer가 dedup·순서 보장. 누락 시 모든 live 이벤트가 eventId=0으로 같은 키 취급되어

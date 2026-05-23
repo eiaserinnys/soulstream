@@ -1,0 +1,238 @@
+import type { Logger } from "pino";
+import { describe, expect, it, vi } from "vitest";
+
+import type { EventPersistence } from "../../src/db/event_persistence.js";
+import type { SessionDB } from "../../src/db/session_db.js";
+import type { SSEEventPayload } from "../../src/engine/protocol.js";
+import { TaskEngineEventPublisher } from "../../src/task/task_engine_event_publisher.js";
+import type { Task } from "../../src/task/task_models.js";
+import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
+
+function makeTask(overrides: Partial<Task> = {}): Task {
+  return {
+    agentSessionId: "sess-1",
+    prompt: "hi",
+    status: "running",
+    profileId: "agent-1",
+    createdAt: new Date(),
+    lastEventId: 7,
+    lastReadEventId: 0,
+    interventionQueue: [],
+    ...overrides,
+  };
+}
+
+function makePublisherDeps() {
+  const persistEvent = vi.fn(async () => 42);
+  const handleSideEffects = vi.fn(async () => undefined);
+  const persistence = {
+    persistEvent,
+    handleSideEffects,
+  } as unknown as EventPersistence;
+
+  const setClaudeSessionId = vi.fn(async () => undefined);
+  const db = { setClaudeSessionId } as unknown as SessionDB;
+
+  const emitEventEnvelope = vi.fn(async () => undefined);
+  const broadcaster = {
+    emitEventEnvelope,
+  } as unknown as SessionBroadcaster;
+
+  const logger = {
+    info: vi.fn(),
+    warn: vi.fn(),
+  } as unknown as Logger;
+
+  return {
+    broadcaster,
+    db,
+    emitEventEnvelope,
+    handleSideEffects,
+    logger,
+    persistEvent,
+    persistence,
+    setClaudeSessionId,
+  };
+}
+
+describe("TaskEngineEventPublisher", () => {
+  it("persists event id before broadcast, then runs side effects", async () => {
+    const deps = makePublisherDeps();
+    const publisher = new TaskEngineEventPublisher(deps);
+    const task = makeTask();
+    const event = {
+      type: "text_delta",
+      text: "hello",
+      timestamp: 1,
+    } as SSEEventPayload;
+
+    await publisher.publishEngineEvent(task, event);
+
+    expect(deps.persistEvent).toHaveBeenCalledWith("sess-1", event);
+    expect(task.lastEventId).toBe(42);
+    expect((event as Record<string, unknown>)._event_id).toBe(42);
+    expect(deps.emitEventEnvelope).toHaveBeenCalledWith("sess-1", event);
+    expect(deps.handleSideEffects).toHaveBeenCalledWith("sess-1", event, task);
+    expect(deps.persistEvent.mock.invocationCallOrder[0]).toBeLessThan(
+      deps.emitEventEnvelope.mock.invocationCallOrder[0],
+    );
+    expect(deps.emitEventEnvelope.mock.invocationCallOrder[0]).toBeLessThan(
+      deps.handleSideEffects.mock.invocationCallOrder[0],
+    );
+    expect(deps.logger.info).toHaveBeenCalledWith(
+      { sessionId: "sess-1", eventType: "text_delta" },
+      "emitEventEnvelope dispatch",
+    );
+    expect(deps.logger.info).toHaveBeenCalledWith(
+      { sessionId: "sess-1", eventType: "text_delta" },
+      "emitEventEnvelope completed",
+    );
+  });
+
+  it("captures only the first session id and still publishes every session event", async () => {
+    const deps = makePublisherDeps();
+    deps.persistEvent
+      .mockResolvedValueOnce(8)
+      .mockResolvedValueOnce(9);
+    const publisher = new TaskEngineEventPublisher(deps);
+    const task = makeTask();
+
+    await publisher.publishEngineEvent(task, {
+      type: "session",
+      session_id: "thr-first",
+    } as SSEEventPayload);
+    await publisher.publishEngineEvent(task, {
+      type: "session",
+      session_id: "thr-second",
+    } as SSEEventPayload);
+
+    expect(task.codexThreadId).toBe("thr-first");
+    expect(deps.setClaudeSessionId).toHaveBeenCalledTimes(1);
+    expect(deps.setClaudeSessionId).toHaveBeenCalledWith("sess-1", "thr-first");
+    expect(deps.persistEvent).toHaveBeenCalledTimes(2);
+    expect(deps.emitEventEnvelope).toHaveBeenCalledTimes(2);
+    expect(deps.handleSideEffects).toHaveBeenCalledTimes(2);
+    expect(task.lastEventId).toBe(9);
+  });
+
+  it("isolates setClaudeSessionId failure before persistence and broadcast", async () => {
+    const deps = makePublisherDeps();
+    deps.setClaudeSessionId.mockRejectedValueOnce(new Error("db down"));
+    const publisher = new TaskEngineEventPublisher(deps);
+    const task = makeTask();
+    const event = {
+      type: "session",
+      session_id: "thr-first",
+    } as SSEEventPayload;
+
+    await publisher.publishEngineEvent(task, event);
+
+    expect(task.codexThreadId).toBe("thr-first");
+    expect(deps.persistEvent).toHaveBeenCalledWith("sess-1", event);
+    expect(deps.emitEventEnvelope).toHaveBeenCalledWith("sess-1", event);
+    expect(deps.handleSideEffects).toHaveBeenCalledWith("sess-1", event, task);
+    expect(deps.logger.warn).toHaveBeenCalledWith(
+      {
+        err: expect.any(Error),
+        sessionId: "sess-1",
+        threadId: "thr-first",
+      },
+      expect.stringContaining("setClaudeSessionId failed"),
+    );
+  });
+
+  it("broadcasts live-only events without persistence or lastEventId changes", async () => {
+    const deps = makePublisherDeps();
+    const publisher = new TaskEngineEventPublisher(deps);
+    const task = makeTask({ lastEventId: 99 });
+    const event = {
+      type: "text_delta",
+      text: "live",
+      timestamp: 1,
+      _live_only: true,
+    } as unknown as SSEEventPayload;
+
+    await publisher.publishEngineEvent(task, event);
+
+    expect(deps.persistEvent).not.toHaveBeenCalled();
+    expect(task.lastEventId).toBe(99);
+    expect((event as Record<string, unknown>)._event_id).toBeUndefined();
+    expect(deps.emitEventEnvelope).toHaveBeenCalledWith("sess-1", event);
+    expect(deps.handleSideEffects).toHaveBeenCalledWith("sess-1", event, task);
+  });
+
+  it("isolates persistence failure and broadcasts without _event_id", async () => {
+    const deps = makePublisherDeps();
+    deps.persistEvent.mockRejectedValueOnce(new Error("events db down"));
+    const publisher = new TaskEngineEventPublisher(deps);
+    const task = makeTask({ lastEventId: 10 });
+    const event = {
+      type: "complete",
+      usage: {},
+      timestamp: 2,
+    } as SSEEventPayload;
+
+    await publisher.publishEngineEvent(task, event);
+
+    expect(task.lastEventId).toBe(10);
+    expect((event as Record<string, unknown>)._event_id).toBeUndefined();
+    expect(deps.emitEventEnvelope).toHaveBeenCalledWith("sess-1", event);
+    expect(deps.handleSideEffects).toHaveBeenCalledWith("sess-1", event, task);
+    expect(deps.logger.warn).toHaveBeenCalledWith(
+      {
+        err: expect.any(Error),
+        sessionId: "sess-1",
+        eventType: "complete",
+      },
+      "persistEvent failed",
+    );
+  });
+
+  it("isolates broadcast failure and still runs side effects", async () => {
+    const deps = makePublisherDeps();
+    deps.emitEventEnvelope.mockRejectedValueOnce(new Error("upstream down"));
+    const publisher = new TaskEngineEventPublisher(deps);
+    const task = makeTask();
+    const event = {
+      type: "text_delta",
+      text: "hello",
+      timestamp: 1,
+    } as SSEEventPayload;
+
+    await publisher.publishEngineEvent(task, event);
+
+    expect(deps.handleSideEffects).toHaveBeenCalledWith("sess-1", event, task);
+    expect(deps.logger.warn).toHaveBeenCalledWith(
+      {
+        err: expect.any(Error),
+        sessionId: "sess-1",
+        eventType: "text_delta",
+      },
+      "emitEventEnvelope failed",
+    );
+  });
+
+  it("isolates side-effect failure", async () => {
+    const deps = makePublisherDeps();
+    deps.handleSideEffects.mockRejectedValueOnce(new Error("last_message down"));
+    const publisher = new TaskEngineEventPublisher(deps);
+    const task = makeTask();
+    const event = {
+      type: "text_delta",
+      text: "hello",
+      timestamp: 1,
+    } as SSEEventPayload;
+
+    await publisher.publishEngineEvent(task, event);
+
+    expect(deps.emitEventEnvelope).toHaveBeenCalledWith("sess-1", event);
+    expect(deps.logger.warn).toHaveBeenCalledWith(
+      {
+        err: expect.any(Error),
+        sessionId: "sess-1",
+        eventType: "text_delta",
+      },
+      "handleSideEffects threw",
+    );
+  });
+});
