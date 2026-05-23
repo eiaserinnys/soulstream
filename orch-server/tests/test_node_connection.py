@@ -719,6 +719,17 @@ class TestSendUploadAttachment:
 class TestSendCommandDisconnect:
     """노드 disconnect 중 outstanding _send_command 결과 정규화 (code-review P1)."""
 
+    async def test_send_failure_cleans_pending_and_raises_connection_error(
+        self, node, ws
+    ):
+        """send_json 실패는 pending을 남기지 않고 ConnectionError로 정규화한다."""
+        ws.send_json.side_effect = RuntimeError("Cannot send after close")
+
+        with pytest.raises(ConnectionError, match="Node disconnected before send"):
+            await node._send_command("test_command", {}, timeout=0.1)
+
+        assert node._pending == {}
+
     async def test_close_during_command_raises_connection_error(self, node, ws):
         """close()가 outstanding 요청 중 호출되면 _closed flag set + future cancel →
         _send_command가 ConnectionError로 정규화 (호출자가 503으로 분류 가능)."""

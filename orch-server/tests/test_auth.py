@@ -87,7 +87,11 @@ class TestJWTCookieAuth:
         # 테스트 종료 시 자동 복구된다 (monkeypatch 책임).
         settings = get_settings()
         monkeypatch.setattr(settings, "google_client_id", "fake-client-id-for-test")
-        monkeypatch.setattr(settings, "jwt_secret", "test-jwt-secret-32-chars-min")
+        monkeypatch.setattr(
+            settings,
+            "jwt_secret",
+            "test-jwt-secret-at-least-32-bytes-long",
+        )
 
         # 기본 Bearer 헤더 제거 — "JWT 쿠키 경로만으로 통과" 시나리오.
         client.headers.pop("Authorization", None)

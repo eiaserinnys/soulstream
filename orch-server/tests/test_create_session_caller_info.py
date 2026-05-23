@@ -157,10 +157,10 @@ class TestCreateSessionCallerInfoJwtAutoFill:
             },
             jwt_secret,
         )
+        client.cookies.set(COOKIE_NAME, token)
         resp = await client.post(
             "/api/sessions",
             json={"prompt": "test"},
-            cookies={COOKIE_NAME: token},
         )
         assert resp.status_code == 201
 
@@ -202,10 +202,10 @@ class TestCreateSessionCallerInfoJwtAutoFill:
             jwt_secret,
         )
         supplied = {"source": "agent", "agent_node": "n1", "agent_id": "a1"}
+        client.cookies.set(COOKIE_NAME, token)
         resp = await client.post(
             "/api/sessions",
             json={"prompt": "test", "caller_info": supplied},
-            cookies={COOKIE_NAME: token},
         )
         assert resp.status_code == 201
 
@@ -220,11 +220,14 @@ class TestCreateSessionCallerInfoJwtAutoFill:
         """위조/만료 JWT는 verify_token이 None을 반환하여 base caller_info(IP/UA)만 남는다."""
         _, ws = await _register_node(node_manager)()
         # 잘못된 secret으로 서명 → 본 서버에서 verify 실패
-        bad_token = generate_token({"email": "x@y.z", "name": "x"}, "wrong-secret")
+        bad_token = generate_token(
+            {"email": "x@y.z", "name": "x"},
+            "wrong-jwt-secret-for-test-at-least-32-bytes",
+        )
+        client.cookies.set(COOKIE_NAME, bad_token)
         resp = await client.post(
             "/api/sessions",
             json={"prompt": "test"},
-            cookies={COOKIE_NAME: bad_token},
             headers={"user-agent": "TestUA"},
         )
         assert resp.status_code == 201
@@ -252,10 +255,10 @@ class TestCreateSessionCallerInfoJwtAutoFill:
         _, ws = await _register_node(node_manager)()
         # name·picture 미주입 → JWT payload에 name 없음 → R-6 분류 트리거
         token = generate_token({"email": "minimal@example.com"}, jwt_secret)
+        client.cookies.set(COOKIE_NAME, token)
         resp = await client.post(
             "/api/sessions",
             json={"prompt": "test", "nodeId": "test-node"},
-            cookies={COOKIE_NAME: token},
         )
         assert resp.status_code == 201
 

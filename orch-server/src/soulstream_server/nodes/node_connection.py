@@ -7,7 +7,6 @@ NodeConnection — soul-server 노드의 WebSocket 연결을 래핑.
 import asyncio
 import json
 import logging
-import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Callable, Coroutine, Optional
@@ -44,6 +43,7 @@ from soulstream_server.constants import (
     EVT_SESSION_UPDATED,
     EVT_SESSIONS_UPDATE,
 )
+from soulstream_server.nodes.pending_commands import PendingCommands
 
 logger = logging.getLogger(__name__)
 
@@ -86,13 +86,9 @@ class NodeConnection:
         self._agent_profiles: dict = {}  # 연결 직후 _fetch_agent_profiles()로 populate됨
         self._portrait_cache: dict[str, bytes] = {}  # agent_id → portrait bytes (등록 메시지에서 수신)
         self._user_info: dict = {}  # 연결 직후 _fetch_user_info()로 populate됨
-        self._request_counter = 0
-        self._pending: dict[str, asyncio.Future] = {}
+        self._pending_commands = PendingCommands()
+        self._pending = self._pending_commands.pending
         self._subscribe_listeners: dict[str, dict[str, Callable]] = {}
-        # close() 호출 여부 플래그 — `_send_command`가 외부 task cancel(HTTP request
-        # abort 등)과 close()로 인한 pending future cancel을 구분하여, 후자만
-        # ConnectionError로 정규화한다. atom 작업 이력 260513.01 code-review P1.
-        self._closed: bool = False
 
         self.on_close = on_close
         self.on_session_change = on_session_change
@@ -128,6 +124,10 @@ class NodeConnection:
     def session_count(self) -> int:
         return len(self._sessions)
 
+    @property
+    def _closed(self) -> bool:
+        return self._pending_commands.closed
+
     def to_info(self) -> dict:
         return {
             "nodeId": self.node_id,
@@ -144,8 +144,7 @@ class NodeConnection:
     # --- 명령 전송 ---
 
     def _next_request_id(self) -> str:
-        self._request_counter += 1
-        return f"req-{self._request_counter}-{int(time.time() * 1000)}"
+        return self._pending_commands.next_request_id()
 
     async def _send(self, data: dict) -> None:
         try:
@@ -160,38 +159,25 @@ class NodeConnection:
         self, command: str, payload: dict, timeout: float = COMMAND_TIMEOUT
     ) -> dict:
         request_id = self._next_request_id()
-        future: asyncio.Future[dict] = asyncio.get_running_loop().create_future()
-        self._pending[request_id] = future
+        future = self._pending_commands.register(request_id)
 
         message = {"type": command, "requestId": request_id, **payload}
         try:
             await self._send(message)
         except WebSocketDisconnect as e:
-            self._pending.pop(request_id, None)
+            self._pending_commands.discard(request_id)
             # 노드가 connection 끊긴 상태에서 send 시도 — 호출자가 503으로 분류 가능하도록
             # ConnectionError로 정규화 (RuntimeError에 흡수되지 않게).
             raise ConnectionError(
                 f"Node disconnected before send: command={command} ({e})"
             ) from e
 
-        try:
-            return await asyncio.wait_for(future, timeout=timeout)
-        except asyncio.TimeoutError:
-            raise TimeoutError(
-                f"Command {command} timed out after {timeout}s (request_id={request_id})"
-            )
-        except asyncio.CancelledError:
-            # close()가 _pending future를 cancel() 호출한 경우 (노드 disconnect during await).
-            # `self._closed` flag가 set이면 close()로 인한 cancel이며 호출자(라우트)가
-            # 503으로 분류할 수 있도록 ConnectionError로 정규화한다. 그렇지 않으면
-            # 외부 task cancellation(HTTP request abort 등)이므로 CancelledError 그대로 전파.
-            if self._closed:
-                raise ConnectionError(
-                    f"Node disconnected during command: {command} (request_id={request_id})"
-                )
-            raise
-        finally:
-            self._pending.pop(request_id, None)
+        return await self._pending_commands.wait_for_result(
+            request_id,
+            command=command,
+            future=future,
+            timeout=timeout,
+        )
 
     async def send_create_session(
         self,
@@ -495,14 +481,13 @@ class NodeConnection:
 
         # pending request에 대한 응답
         if request_id and request_id in self._pending:
-            future = self._pending.pop(request_id)
-            if not future.done():
-                if msg_type == EVT_ERROR:
-                    future.set_exception(
-                        RuntimeError(data.get("message", "Unknown error"))
-                    )
-                else:
-                    future.set_result(data)
+            if msg_type == EVT_ERROR:
+                self._pending_commands.reject(
+                    request_id,
+                    data.get("message", "Unknown error"),
+                )
+            else:
+                self._pending_commands.resolve(request_id, data)
             return
 
         # 이벤트 디스패치
@@ -595,14 +580,7 @@ class NodeConnection:
     # --- 연결 종료 ---
 
     async def close(self) -> None:
-        # _send_command가 close()로 인한 cancel을 외부 task cancel과 구분할 수 있도록
-        # flag를 먼저 set한 뒤 future를 cancel.
-        self._closed = True
-        # cancel all pending futures
-        for future in self._pending.values():
-            if not future.done():
-                future.cancel()
-        self._pending.clear()
+        self._pending_commands.cancel_all_for_close()
         self._subscribe_listeners.clear()
 
         try:

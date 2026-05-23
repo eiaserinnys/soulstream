@@ -40,7 +40,11 @@ class TestAuthTokenEndpoint:
         settings = get_settings()
         # is_auth_enabled를 True로 만들기 위해 settings 필드 직접 패치 (테스트 종료 시 복구).
         monkeypatch.setattr(settings, "google_client_id", "fake-client-id-for-test")
-        monkeypatch.setattr(settings, "jwt_secret", "test-jwt-secret-32-chars-min")
+        monkeypatch.setattr(
+            settings,
+            "jwt_secret",
+            "test-jwt-secret-at-least-32-bytes-long",
+        )
 
         # 기본 Bearer 헤더 제거 — 쿠키 경로만으로 통과 + 응답 확인
         client.headers.pop("Authorization", None)

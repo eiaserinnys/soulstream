@@ -13,7 +13,7 @@ from soulstream_server.api.auth_native import create_native_auth_router
 
 
 IOS_CLIENT_ID = "test-ios-client-id.apps.googleusercontent.com"
-JWT_SECRET = "test-jwt-secret"
+JWT_SECRET = "test-jwt-secret-at-least-32-bytes-long"
 
 
 def _make_app() -> FastAPI:
