@@ -32,10 +32,7 @@ import { ActiveTaskRecovery } from "./task_active_recovery.js";
 import { AutoResumeTransition } from "./task_auto_resume_transition.js";
 import { hydrateEvictedTaskFromSessionRow } from "./task_evicted_hydration.js";
 import { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
-import {
-  buildToolApprovalOptions,
-  ToolApprovalRecovery,
-} from "./task_tool_approval_recovery.js";
+import { ToolApprovalRecovery } from "./task_tool_approval_recovery.js";
 import {
   RunningInterventionTransition,
   type RunningInterventionResult,
@@ -44,18 +41,25 @@ import {
   TaskCreation,
   type CreateTaskParams,
 } from "./task_creation.js";
+import {
+  TaskDeliveryRoute,
+  type DeliverInputResponseParams,
+  type DeliverInputResponseResult,
+  type DeliverToolApprovalParams,
+  type DeliverToolApprovalResult,
+} from "./task_delivery_route.js";
 import { ResponseEventPublisher } from "./task_response_event_publisher.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
-import type {
-  BackendId,
-  InputResponseDeliveryResult,
-  SupportsInputResponse,
-  SupportsToolApproval,
-  ToolApprovalDecision,
-  ToolApprovalDeliveryResult,
-} from "../engine/protocol.js";
 
 export type { CreateTaskParams } from "./task_creation.js";
+export type {
+  DeliverInputResponseParams,
+  DeliverInputResponseResult,
+  DeliverInputResponseStatus,
+  DeliverToolApprovalParams,
+  DeliverToolApprovalResult,
+  DeliverToolApprovalStatus,
+} from "./task_delivery_route.js";
 
 /**
  * `addIntervention` 결과. Python `task_manager.add_intervention` L590-595 정본 형상.
@@ -76,50 +80,6 @@ export interface AddInterventionParams {
   user: string;
   callerInfo?: CallerInfo;
   attachmentPaths?: string[];
-}
-
-export type DeliverInputResponseStatus =
-  | InputResponseDeliveryResult["status"]
-  | "session_not_found"
-  | "session_not_running";
-
-export interface DeliverInputResponseParams {
-  agentSessionId: string;
-  requestId: string;
-  answers: Record<string, unknown>;
-}
-
-export interface DeliverInputResponseResult {
-  status: DeliverInputResponseStatus;
-  requestId: string;
-  eventId?: number;
-  message?: string;
-  taskStatus?: TaskStatus;
-  backend?: BackendId | string;
-}
-
-export type DeliverToolApprovalStatus =
-  | ToolApprovalDeliveryResult["status"]
-  | "session_not_found"
-  | "session_not_running";
-
-export interface DeliverToolApprovalParams {
-  agentSessionId: string;
-  approvalId: string;
-  decision: ToolApprovalDecision;
-  message?: string;
-  alwaysApprove?: boolean;
-  alwaysReject?: boolean;
-}
-
-export interface DeliverToolApprovalResult {
-  status: DeliverToolApprovalStatus;
-  approvalId: string;
-  decision: ToolApprovalDecision;
-  eventId?: number;
-  message?: string;
-  taskStatus?: TaskStatus;
-  backend?: BackendId | string;
 }
 
 export interface FinalizeTaskParams {
@@ -147,6 +107,7 @@ export class TaskManager {
   private readonly autoResumeTransition: AutoResumeTransition;
   private readonly toolApprovalRecovery: ToolApprovalRecovery;
   private readonly responseEventPublisher: ResponseEventPublisher;
+  private readonly deliveryRoute: TaskDeliveryRoute;
   private readonly lifecycleTransition: TaskLifecycleTransition;
 
   constructor(
@@ -213,6 +174,12 @@ export class TaskManager {
       emitSessionUpdated: (task) => this.broadcaster.emitSessionUpdated(task),
       logger,
     });
+    this.deliveryRoute = new TaskDeliveryRoute({
+      getTask: (sessionId) => this.tasks.get(sessionId),
+      toolApprovalRecovery: this.toolApprovalRecovery,
+      responseEventPublisher: this.responseEventPublisher,
+      agentRegistry,
+    });
   }
 
   /**
@@ -234,54 +201,13 @@ export class TaskManager {
   /**
    * AskUserQuestion/input_request 응답 전달.
    *
-   * TaskManager는 세션 lifecycle과 persisted event만 책임진다. 실제 응답 주입은
-   * EnginePort 선택 capability(SupportsInputResponse)에 위임하여 Codex 경로 누수를 막는다.
+   * Delivery route policy는 TaskDeliveryRoute가 소유한다. TaskManager는 기존 public
+   * API 표면을 유지하는 wrapper다.
    */
   async deliverInputResponse(
     params: DeliverInputResponseParams,
   ): Promise<DeliverInputResponseResult> {
-    const task = this.tasks.get(params.agentSessionId);
-    if (!task) {
-      return { status: "session_not_found", requestId: params.requestId };
-    }
-    if (task.status !== "running") {
-      return {
-        status: "session_not_running",
-        requestId: params.requestId,
-        taskStatus: task.status,
-      };
-    }
-
-    const engine = task.engine;
-    if (!supportsInputResponse(engine)) {
-      return {
-        status: "not_supported",
-        requestId: params.requestId,
-        backend: taskBackend(task, this.agentRegistry),
-      };
-    }
-
-    const delivered = await engine.deliverInputResponse(params.requestId, params.answers);
-    if (delivered.status !== "delivered") {
-      return {
-        status: delivered.status,
-        requestId: params.requestId,
-        ...(delivered.message ? { message: delivered.message } : {}),
-        ...(delivered.status === "not_supported"
-          ? { backend: taskBackend(task, this.agentRegistry) }
-          : {}),
-      };
-    }
-
-    const eventId = await this.responseEventPublisher.publishInputRequestResponded(
-      task,
-      params.requestId,
-    );
-    return {
-      status: "delivered",
-      requestId: params.requestId,
-      ...(eventId !== undefined ? { eventId } : {}),
-    };
+    return await this.deliveryRoute.deliverInputResponse(params);
   }
 
   /**
@@ -289,74 +215,14 @@ export class TaskManager {
    *
    * AskUserQuestion/respond와 별도 capability로 분리한다. `respond`는 Claude
    * input_request에만 대응하고, `approve_tool`/`reject_tool`은 Agents SDK
-   * RunToolApprovalItem interruption에만 대응한다.
+   * RunToolApprovalItem interruption에만 대응한다. Delivery route policy는
+   * TaskDeliveryRoute가 소유한다.
    */
   async deliverToolApproval(
     params: DeliverToolApprovalParams,
     onResume?: StartExecutionCallback,
   ): Promise<DeliverToolApprovalResult> {
-    const task = await this.toolApprovalRecovery.resolveTaskForApproval(
-      params.agentSessionId,
-    );
-    if (!task) {
-      return {
-        status: "session_not_found",
-        approvalId: params.approvalId,
-        decision: params.decision,
-      };
-    }
-    if (task.status !== "running") {
-      return {
-        status: "session_not_running",
-        approvalId: params.approvalId,
-        decision: params.decision,
-        taskStatus: task.status,
-      };
-    }
-
-    const engine = task.engine;
-    if (!supportsToolApproval(engine)) {
-      const queued = await this.toolApprovalRecovery.tryQueueAgentsResume(
-        task,
-        params,
-        onResume,
-      );
-      if (queued) return queued;
-      return {
-        status: "not_supported",
-        approvalId: params.approvalId,
-        decision: params.decision,
-        backend: taskBackend(task, this.agentRegistry),
-      };
-    }
-
-    const delivered = await engine.deliverToolApproval(
-      params.approvalId,
-      params.decision,
-      buildToolApprovalOptions(params),
-    );
-    if (delivered.status !== "delivered") {
-      return {
-        status: delivered.status,
-        approvalId: params.approvalId,
-        decision: params.decision,
-        ...(delivered.message ? { message: delivered.message } : {}),
-        ...(delivered.status === "not_supported"
-          ? { backend: taskBackend(task, this.agentRegistry) }
-          : {}),
-      };
-    }
-
-    const eventId = await this.responseEventPublisher.publishToolApprovalResolved(
-      task,
-      params,
-    );
-    return {
-      status: "delivered",
-      approvalId: params.approvalId,
-      decision: params.decision,
-      ...(eventId !== undefined ? { eventId } : {}),
-    };
+    return await this.deliveryRoute.deliverToolApproval(params, onResume);
   }
 
   /**
@@ -578,32 +444,4 @@ export class TaskManager {
 
     return hydrateEvictedTaskFromSessionRow(row, this.logger);
   }
-}
-
-function supportsInputResponse(
-  engine: Task["engine"],
-): engine is NonNullable<Task["engine"]> & SupportsInputResponse {
-  return Boolean(
-    engine &&
-      typeof (engine as unknown as Partial<SupportsInputResponse>).deliverInputResponse ===
-        "function",
-  );
-}
-
-function supportsToolApproval(
-  engine: Task["engine"],
-): engine is NonNullable<Task["engine"]> & SupportsToolApproval {
-  return Boolean(
-    engine &&
-      typeof (engine as unknown as Partial<SupportsToolApproval>).deliverToolApproval ===
-        "function",
-  );
-}
-
-function taskBackend(task: Task, agentRegistry?: AgentRegistry): BackendId | string | undefined {
-  if (task.engine?.backendId) return task.engine.backendId;
-  if (task.profileId && agentRegistry) {
-    return agentRegistry.get(task.profileId)?.backend;
-  }
-  return undefined;
 }
