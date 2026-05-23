@@ -30,6 +30,12 @@ import type {
   Task,
   TaskStatus,
 } from "./task_models.js";
+import {
+  buildCallerInfoMetadataEntry,
+  extractAgentsRunStateFromMetadata,
+  extractAgentsSessionItemsFromMetadata,
+  extractCallerInfoFromMetadata,
+} from "./task_metadata.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import type {
   BackendId,
@@ -191,7 +197,7 @@ export class TaskManager {
     }
 
     const now = new Date();
-    const metadata = callerInfoMetadataEntry(params.callerInfo);
+    const metadata = buildCallerInfoMetadataEntry(params.callerInfo);
     const sessionType = params.sessionType ?? "claude";
     const task: Task = {
       agentSessionId: params.agentSessionId,
@@ -1092,7 +1098,7 @@ export class TaskManager {
     task: Task,
     callerInfo: CallerInfo | undefined,
   ): Promise<void> {
-    const entry = callerInfoMetadataEntry(callerInfo);
+    const entry = buildCallerInfoMetadataEntry(callerInfo);
     if (!entry) return;
     task.callerInfo = callerInfo;
     task.metadata = [...(task.metadata ?? []), entry];
@@ -1120,8 +1126,6 @@ export class TaskManager {
    * auto-resume 분기가 task를 직접 mutate하므로 메모리 추가가 필요.
    *
    * 미복원 필드 (별건 카드 권고):
-   *   - callerInfo: Python은 metadata JSONB array의 첫 caller_info entry 복원 (F-9 fix).
-   *     본 PR은 단순화 — callerInfo=undefined. 후속 카드에서 metadata 파싱 추가.
    *   - lastAssistantText·lastProgressText: events 테이블에서 재계산 필요 — 본 PR 범위 외.
    */
   private async loadEvictedTask(sessionId: string): Promise<Task | null> {
@@ -1188,124 +1192,6 @@ export class TaskManager {
     };
     return task;
   }
-}
-
-/**
- * Python `IDENTITY_BEARING_SOURCES` 정본(`packages/soul-common/.../auth/caller_info.py:362-370`).
- * 정체성 명시 source는 신원 필드가 비어도 *신원 박힘*으로 간주.
- */
-const IDENTITY_BEARING_SOURCES: ReadonlySet<string> = new Set([
-  "agent",
-  "system",
-  "slack",
-  "soul-app",
-  "channel_observer",
-  "trello_watcher",
-  "llm",
-]);
-
-/** Python `has_caller_identity` 정본 (`auth/caller_info.py:96-116`). */
-function hasCallerIdentity(callerInfo: CallerInfo): boolean {
-  const source = typeof callerInfo.source === "string" ? callerInfo.source : undefined;
-  if (source && IDENTITY_BEARING_SOURCES.has(source)) {
-    return true;
-  }
-  return Boolean(callerInfo.display_name || callerInfo.avatar_url);
-}
-
-/**
- * Python `extract_caller_info_from_metadata` 정본 인라인 이식 (R-6 fix, atom G-20).
- *
- * sessions.metadata JSONB array를 순회하여 *마지막 신원 박힌* caller_info entry value 반환.
- * 부재 시 마지막 *어떤* caller_info entry value라도 반환 (graceful — 옛 데이터 보존).
- * caller_info entry 0건이면 undefined.
- *
- * 정책 (Python L132-135 그대로):
- *   1. 마지막 신원 박힌 caller_info entry 우선 (has_caller_identity True)
- *   2. 부재 시 마지막 어떤 caller_info entry
- *   3. metadata에 caller_info entry 0건 → undefined
- */
-function extractCallerInfoFromMetadata(metadata: unknown): CallerInfo | undefined {
-  if (!Array.isArray(metadata)) return undefined;
-  let lastAny: CallerInfo | undefined;
-  let lastWithIdentity: CallerInfo | undefined;
-  for (const entry of metadata) {
-    if (
-      !entry ||
-      typeof entry !== "object" ||
-      (entry as Record<string, unknown>).type !== "caller_info"
-    ) {
-      continue;
-    }
-    const value = (entry as Record<string, unknown>).value;
-    if (!value || typeof value !== "object") continue;
-    const ci = value as CallerInfo;
-    lastAny = ci;
-    if (hasCallerIdentity(ci)) {
-      lastWithIdentity = ci;
-    }
-  }
-  return lastWithIdentity ?? lastAny;
-}
-
-interface AgentsRunStateMetadata {
-  serialized?: string;
-  pendingApprovalId?: string;
-  previousResponseId?: string;
-  conversationId?: string;
-  schemaVersion?: string;
-}
-
-function extractAgentsRunStateFromMetadata(
-  metadata: Array<Record<string, unknown>>,
-): AgentsRunStateMetadata | undefined {
-  for (let i = metadata.length - 1; i >= 0; i--) {
-    const entry = metadata[i];
-    if (entry?.type !== "agents_run_state") continue;
-    const value = entry.value;
-    if (!value || typeof value !== "object") continue;
-    const record = value as Record<string, unknown>;
-    if (record.backend !== "openai-agents") continue;
-    const serialized = typeof record.serialized === "string" && record.serialized.length > 0
-      ? record.serialized
-      : undefined;
-    return {
-      serialized,
-      pendingApprovalId: typeof record.pendingApprovalId === "string"
-        ? record.pendingApprovalId
-        : undefined,
-      previousResponseId: typeof record.previousResponseId === "string"
-        ? record.previousResponseId
-        : undefined,
-      conversationId: typeof record.conversationId === "string"
-        ? record.conversationId
-        : undefined,
-      schemaVersion: typeof record.schemaVersion === "string" ? record.schemaVersion : undefined,
-    };
-  }
-  return undefined;
-}
-
-function extractAgentsSessionItemsFromMetadata(
-  metadata: Array<Record<string, unknown>>,
-): unknown[] | undefined {
-  for (let i = metadata.length - 1; i >= 0; i--) {
-    const entry = metadata[i];
-    if (entry?.type !== "agents_session_items") continue;
-    const value = entry.value;
-    if (!value || typeof value !== "object") continue;
-    const record = value as Record<string, unknown>;
-    if (record.backend !== "openai-agents") continue;
-    return Array.isArray(record.items) ? record.items : undefined;
-  }
-  return undefined;
-}
-
-function callerInfoMetadataEntry(
-  callerInfo: CallerInfo | undefined,
-): Record<string, unknown> | undefined {
-  if (!callerInfo || Object.keys(callerInfo).length === 0) return undefined;
-  return { type: "caller_info", value: callerInfo };
 }
 
 function supportsInputResponse(
