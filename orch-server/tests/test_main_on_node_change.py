@@ -66,7 +66,7 @@ async def test_session_created_broadcasts_session_event(mock_broadcaster, mock_n
 
 @pytest.mark.asyncio
 async def test_session_created_preserves_snake_case_folder_id(mock_broadcaster, mock_node_manager):
-    """TS/Python node wire의 folder_id를 session_created SSE에 보존한다."""
+    """TS/Python node wire의 folder_id를 top-level과 session 내부에 보존한다."""
     data = {"agentSessionId": "sess-123", "status": "idle", "folder_id": "folder-1"}
     await _on_node_change(
         mock_broadcaster, mock_node_manager,
@@ -75,9 +75,43 @@ async def test_session_created_preserves_snake_case_folder_id(mock_broadcaster, 
 
     mock_broadcaster.broadcast.assert_awaited_once_with({
         "type": "session_created",
-        "session": data,
+        "session": {
+            "agentSessionId": "sess-123",
+            "status": "idle",
+            "folder_id": "folder-1",
+            "folderId": "folder-1",
+        },
         "nodeId": "node-1",
         "folder_id": "folder-1",
+        "folderId": "folder-1",
+    })
+
+
+@pytest.mark.asyncio
+async def test_session_created_normalizes_top_level_folder_id_into_nested_session(
+    mock_broadcaster, mock_node_manager,
+):
+    """old/mixed node payload도 soul-app이 읽는 session.folderId로 정규화한다."""
+    data = {
+        "session": {"agent_session_id": "sess-456", "status": "running"},
+        "folderId": "folder-2",
+    }
+    await _on_node_change(
+        mock_broadcaster, mock_node_manager,
+        "node_session_session_created", "node-1", data,
+    )
+
+    mock_broadcaster.broadcast.assert_awaited_once_with({
+        "type": "session_created",
+        "session": {
+            "agent_session_id": "sess-456",
+            "status": "running",
+            "folder_id": "folder-2",
+            "folderId": "folder-2",
+        },
+        "nodeId": "node-1",
+        "folder_id": "folder-2",
+        "folderId": "folder-2",
     })
 
 

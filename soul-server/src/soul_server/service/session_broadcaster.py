@@ -64,14 +64,18 @@ class SessionBroadcaster(BaseSessionBroadcaster):
         # wire 키 정본: atom b558ca3b.
         # 옵션 D Phase A: agent_backend를 to_session_info로 운반 (session 객체 안에 backend 키).
         # emit_session_updated/phase/message_updated는 G-19 contract 보존 — 변경 없음.
+        session_info = task.to_session_info(
+            agent_name=agent_name,
+            agent_portrait_url=agent_portrait_url,
+            agent_backend=agent_backend,
+        )
+        session_info["folder_id"] = folder_id
+        session_info["folderId"] = folder_id
         event = {
             "type": "session_created",
-            "session": task.to_session_info(
-                agent_name=agent_name,
-                agent_portrait_url=agent_portrait_url,
-                agent_backend=agent_backend,
-            ),
+            "session": session_info,
             "folder_id": folder_id,
+            "folderId": folder_id,
             "caller_source": (task.caller_info or {}).get("source"),
         }
         return await self.broadcast(event)

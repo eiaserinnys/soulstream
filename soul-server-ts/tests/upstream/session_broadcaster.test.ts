@@ -34,7 +34,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
 }
 
 describe("emitSessionCreated", () => {
-  it("Python wire 키 정합: type/session/folder_id/caller_source", async () => {
+  it("Python wire 키 정합: type/session/folder_id/folderId/caller_source", async () => {
     const send = vi.fn().mockResolvedValue(undefined);
     const b = new SessionBroadcaster(send, makeRegistry(), "eias-shopping-ts");
     const task = makeTask({
@@ -49,11 +49,14 @@ describe("emitSessionCreated", () => {
     const msg = send.mock.calls[0][0] as Record<string, unknown>;
     expect(msg.type).toBe("session_created");
     expect(msg.folder_id).toBe("folder-1");
+    expect(msg.folderId).toBe("folder-1");
     expect(msg.caller_source).toBe("slack");
     expect(typeof msg.session).toBe("object");
 
     const session = msg.session as Record<string, unknown>;
     expect(session.agent_session_id).toBe("sess-1");
+    expect(session.folder_id).toBe("folder-1");
+    expect(session.folderId).toBe("folder-1");
     expect(session.status).toBe("running");
     expect(session.node_id).toBe("eias-shopping-ts");
     expect(session.session_type).toBe("claude");
@@ -106,7 +109,12 @@ describe("emitSessionCreated", () => {
     const send = vi.fn().mockResolvedValue(undefined);
     const b = new SessionBroadcaster(send, makeRegistry(), "eias-shopping-ts");
     await b.emitSessionCreated(makeTask(), null);
-    expect((send.mock.calls[0][0] as Record<string, unknown>).caller_source).toBeNull();
+    const msg = send.mock.calls[0][0] as Record<string, unknown>;
+    expect(msg.caller_source).toBeNull();
+    expect(msg.folder_id).toBeNull();
+    expect(msg.folderId).toBeNull();
+    expect((msg.session as Record<string, unknown>).folder_id).toBeNull();
+    expect((msg.session as Record<string, unknown>).folderId).toBeNull();
   });
 });
 

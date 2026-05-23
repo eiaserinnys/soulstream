@@ -24,16 +24,20 @@ export class SessionBroadcaster {
 
   /**
    * 세션 생성 wire. Python `emit_session_created` L67-77 정본:
-   *   {type, session, folder_id, caller_source}
+   *   {type, session, folder_id, folderId, caller_source}
    */
   async emitSessionCreated(
     task: Task,
     folderId: string | null,
   ): Promise<void> {
+    const session = this.toSessionInfo(task);
+    session.folder_id = folderId;
+    session.folderId = folderId;
     await this.send({
       type: "session_created",
-      session: this.toSessionInfo(task),
+      session,
       folder_id: folderId,
+      folderId,
       caller_source: task.callerInfo?.source ?? null,
     });
   }

@@ -80,11 +80,22 @@ async def _on_node_change(
     노드 owner 정보로 채워 catalog REST와 정합 — 클라이언트 폴백 표시 차단.
     """
     if event_type == "node_session_session_created":
+        raw_data = data or {}
+        folder_key_present = "folder_id" in raw_data or "folderId" in raw_data
+        folder_id = (
+            raw_data.get("folder_id")
+            if "folder_id" in raw_data
+            else raw_data.get("folderId")
+        )
         # soul-server adapter._dispatch_broadcast_event는 session_created 이벤트를
         # {"type": "session_created", "agentSessionId": ..., "session": {full_info}} 형태로 전송.
         # "session" 키가 있으면 그것을 추출하고, 없으면 data 자체를 사용.
-        session_info = (data or {}).get("session") or data
+        session_info = raw_data.get("session") or data
         if isinstance(session_info, dict):
+            session_info = {**session_info}
+            if folder_key_present:
+                session_info["folder_id"] = folder_id
+                session_info["folderId"] = folder_id
             # soul-server가 보내는 agentPortraitUrl은 soul-server 로컬 URL(/api/agents/{id}/portrait).
             # 브라우저는 soul-server에 직접 접근할 수 없으므로 프록시 URL로 교체한다.
             # {**session_info, key: value} 패턴은 기존 키도 덮어쓴다.
@@ -122,9 +133,9 @@ async def _on_node_change(
         }
         # folder_id가 있으면 SSE 이벤트에 포함 (클라이언트가 즉시 올바른 폴더에 배치)
         # Node wire 정본은 snake_case이고, camelCase는 기존 호출자 호환으로 수용한다.
-        folder_id = (data or {}).get("folder_id", (data or {}).get("folderId"))
-        if folder_id is not None:
+        if folder_key_present:
             broadcast_data["folder_id"] = folder_id
+            broadcast_data["folderId"] = folder_id
         recipient_count = await broadcaster.broadcast(broadcast_data)
         # F-B(2026-05-17): broadcast 발사·수신자 수 INFO 로그. 회귀 진단 시 broadcast가
         # 실제로 발사되었는지 결정적으로 확인 가능 (분석 캐시 §7.1 "broadcaster.broadcast

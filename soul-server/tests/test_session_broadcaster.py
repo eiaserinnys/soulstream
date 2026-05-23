@@ -330,7 +330,7 @@ class TestBroadcasterWireContract:
     # R-2 fix(2026-05-10): top-level caller_source 추가 — emit_session_updated/phase와
     # §9 대칭 (atom b558ca3b). orch _on_node_change가 헬퍼에 forward하여 정체성 명시
     # source의 owner 덮어쓰기 차단 (atom 0499ee7b).
-    EXPECTED_CREATED_KEYS = {"type", "session", "folder_id", "caller_source"}
+    EXPECTED_CREATED_KEYS = {"type", "session", "folder_id", "folderId", "caller_source"}
 
     # session_message_updated wire — type='session_updated'이지만 emit_session_updated와
     # 키 셋이 다름. last_message를 포함하고 last_progress_text/last_assistant_text 미포함.
@@ -383,6 +383,10 @@ class TestBroadcasterWireContract:
         await broadcaster.emit_session_created(self._make_task(), folder_id="folder-1")
         _eid, event = queue.get_nowait()
         assert set(event.keys()) == self.EXPECTED_CREATED_KEYS
+        assert event["folder_id"] == "folder-1"
+        assert event["folderId"] == "folder-1"
+        assert event["session"]["folder_id"] == "folder-1"
+        assert event["session"]["folderId"] == "folder-1"
 
     async def test_session_created_payload_keys_when_folder_id_none(self, broadcaster):
         """folder_id=None일 때도 키 셋은 동일 (값만 None) — 미분류 세션 케이스."""
@@ -391,6 +395,9 @@ class TestBroadcasterWireContract:
         _eid, event = queue.get_nowait()
         assert set(event.keys()) == self.EXPECTED_CREATED_KEYS
         assert event["folder_id"] is None
+        assert event["folderId"] is None
+        assert event["session"]["folder_id"] is None
+        assert event["session"]["folderId"] is None
 
     async def test_session_message_updated_payload_keys_exact(self, broadcaster):
         """emit_session_message_updated wire 키 셋이 화이트리스트와 정확히 일치한다.
@@ -589,4 +596,3 @@ class TestF10CUserProfileWire:
         # graceful — 키 자체 누락 (None과 다름; orch session_serializer node_id fallback 패턴)
         assert "userName" not in session_dict
         assert "userPortraitUrl" not in session_dict
-
