@@ -79,9 +79,13 @@ describe("RunningInterventionTransition", () => {
       order.push("emitEventEnvelope");
       expect(event).toMatchObject({
         type: "intervention_sent",
+        user: "alice",
         text: "focus on the failing test",
+        caller_info: callerInfo,
+        attachments: ["/tmp/a.png"],
         _event_id: 222,
       });
+      expect(typeof (event as Record<string, unknown>).timestamp).toBe("number");
     });
 
     const transition = new RunningInterventionTransition({
@@ -146,8 +150,9 @@ describe("RunningInterventionTransition", () => {
     const task = makeRunningTask({
       interventionQueue: [{ text: "already queued", user: "bob" }],
     });
+    const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
     const transition = new RunningInterventionTransition({
-      broadcaster: makeBroadcaster(),
+      broadcaster: makeBroadcaster(emitEventEnvelope),
       logger: silentLogger,
     });
 
@@ -159,6 +164,16 @@ describe("RunningInterventionTransition", () => {
       { text: "already queued", user: "bob" },
       { text: "second", user: "alice" },
     ]);
+    expect(emitEventEnvelope).toHaveBeenCalledTimes(1);
+    const event = emitEventEnvelope.mock.calls[0][1] as Record<string, unknown>;
+    expect(event).toMatchObject({
+      type: "intervention_sent",
+      user: "alice",
+      text: "second",
+    });
+    expect(typeof event.timestamp).toBe("number");
+    expect(event.caller_info).toBeUndefined();
+    expect(event.attachments).toBeUndefined();
   });
 
   it("isolates persistence failure and still broadcasts, steers, and queues failed live steering", async () => {

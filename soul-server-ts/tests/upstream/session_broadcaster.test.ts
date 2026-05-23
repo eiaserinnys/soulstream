@@ -247,48 +247,27 @@ describe("emitEventEnvelope", () => {
       event,
     });
   });
-});
 
-describe("SessionBroadcaster.emitInterventionSent (B-4)", () => {
-  it("intervention_sent wire envelope 정합 — Python InterventionSentEvent 정본", async () => {
+  it("intervention_sent event dict의 _event_id와 wire key를 재구성 없이 보존", async () => {
     const send = vi.fn().mockResolvedValue(undefined);
-    const b = new SessionBroadcaster(send, makeRegistry(), "node-A");
-    await b.emitInterventionSent("sess-1", {
-      text: "hi",
+    const b = new SessionBroadcaster(send, makeRegistry(), "eias-shopping-ts");
+    const event = {
+      type: "intervention_sent",
       user: "alice",
-      callerInfo: { source: "slack", display_name: "Alice" },
-    });
-    expect(send).toHaveBeenCalledTimes(1);
-    const payload = send.mock.calls[0][0] as Record<string, unknown>;
-    expect(payload.type).toBe("event");
-    expect(payload.agentSessionId).toBe("sess-1");
-    const event = payload.event as Record<string, unknown>;
-    expect(event.type).toBe("intervention_sent");
-    expect(event.user).toBe("alice");
-    expect(event.text).toBe("hi");
-    expect(event.caller_info).toEqual({ source: "slack", display_name: "Alice" });
-    expect(typeof event.timestamp).toBe("number");
-  });
+      text: "focus on the failing test",
+      caller_info: { source: "slack", display_name: "Alice" },
+      attachments: ["/tmp/a.png"],
+      timestamp: 1731700000,
+      _event_id: 222,
+    };
 
-  it("callerInfo·attachmentPaths 미전달 시 envelope에서 키 자체 생략", async () => {
-    const send = vi.fn().mockResolvedValue(undefined);
-    const b = new SessionBroadcaster(send, makeRegistry(), "node-A");
-    await b.emitInterventionSent("sess-1", { text: "hi", user: "u" });
-    const event = (send.mock.calls[0][0] as { event: Record<string, unknown> }).event;
-    expect(event.caller_info).toBeUndefined();
-    expect(event.attachments).toBeUndefined();
-  });
+    await b.emitEventEnvelope("sess-1", event as never);
 
-  it("attachmentPaths 비어있지 않으면 attachments 키로 발행", async () => {
-    const send = vi.fn().mockResolvedValue(undefined);
-    const b = new SessionBroadcaster(send, makeRegistry(), "node-A");
-    await b.emitInterventionSent("sess-1", {
-      text: "see image",
-      user: "u",
-      attachmentPaths: ["/tmp/a.png", "/tmp/b.png"],
+    expect(send).toHaveBeenCalledWith({
+      type: "event",
+      agentSessionId: "sess-1",
+      event,
     });
-    const event = (send.mock.calls[0][0] as { event: Record<string, unknown> }).event;
-    expect(event.attachments).toEqual(["/tmp/a.png", "/tmp/b.png"]);
   });
 });
 

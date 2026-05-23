@@ -84,9 +84,8 @@ export class RunningInterventionTransition {
     interventionEvent: Record<string, unknown>,
   ): Promise<void> {
     try {
-      // emitInterventionSent이 message에서 event를 재구성하므로 _event_id가 누락된다.
-      // 대신 _event_id가 박힌 interventionEvent dict을 emitEventEnvelope으로 직접 전달.
-      // emitInterventionSent의 책임 통합은 별 카드 후보 (design-principles §3 정본 둘 회피).
+      // intervention_sent event dict의 정본은 이 transition이다. broadcaster는
+      // persistence 후 _event_id가 박힌 dict를 envelope으로만 운반한다.
       await this.deps.broadcaster.emitEventEnvelope(
         task.agentSessionId,
         interventionEvent as SSEEventPayload,
