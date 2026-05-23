@@ -21,6 +21,7 @@ import { filterFeedSessions, type SessionPage } from "./session-stream-helpers";
 export function useFeedSessions(): SessionSummary[] {
   const queryClient = useQueryClient();
   const catalog = useDashboardStore((s) => s.catalog);
+  const sessionTypeFilter = useDashboardStore((s) => s.sessionTypeFilter);
   const [cacheVersion, setCacheVersion] = useState(0);
 
   useEffect(() => {
@@ -31,22 +32,15 @@ export function useFeedSessions(): SessionSummary[] {
   }, [queryClient]);
 
   return useMemo(() => {
-    const allData = queryClient.getQueriesData<InfiniteData<SessionPage>>({
-      queryKey: ["sessions"],
-      exact: false,
-    });
-    const allSessions: SessionSummary[] = [];
-    for (const [, data] of allData) {
-      if (!data) continue;
-      for (const page of data.pages) allSessions.push(...page.sessions);
-    }
-    // agentSessionId 기준 중복 제거 — 피드/폴더/리스트 등 여러 뷰 캐시가 동시에 존재할 때
-    // exact: false로 수집된 같은 세션이 중복 포함되는 것을 방지
-    const uniqueSessions = Array.from(
-      new Map(allSessions.map((s) => [s.agentSessionId, s])).values(),
-    );
-    return filterFeedSessions(uniqueSessions, catalog);
-  }, [cacheVersion, catalog, queryClient]);
+    const data = queryClient.getQueryData<InfiniteData<SessionPage>>([
+      "sessions",
+      sessionTypeFilter,
+      "feed",
+      null,
+    ]);
+    const feedSessions = data?.pages.flatMap((page) => page.sessions) ?? [];
+    return filterFeedSessions(feedSessions, catalog);
+  }, [cacheVersion, catalog, queryClient, sessionTypeFilter]);
 }
 
 /**

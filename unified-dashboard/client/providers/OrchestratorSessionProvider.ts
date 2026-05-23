@@ -77,6 +77,7 @@ export class OrchestratorSessionProvider implements SessionStorageProvider {
       backend: s.backend ?? undefined,
       userName: s.userName ?? undefined,
       userPortraitUrl: s.userPortraitUrl ?? undefined,
+      callerSessionId: s.callerSessionId ?? undefined,
     }));
 
     const total = data.total ?? sessions.length;
