@@ -33,11 +33,25 @@ def _make_response(status_code: int, json_body: dict, content_type: str = "appli
     return resp
 
 
-async def _register_node(node_manager, host: str = "localhost", port: int = 4100):
+async def _register_node(
+    node_manager,
+    node_id: str = "test-node",
+    host: str = "localhost",
+    port: int = 4100,
+):
     ws = AsyncMock()
     ws.send_json = AsyncMock()
     ws.close = AsyncMock()
-    return await node_manager.register_node(ws, {"node_id": "test-node", "host": host, "port": port})
+    return await node_manager.register_node(
+        ws,
+        {
+            "node_id": node_id,
+            "host": host,
+            "port": port,
+            "agents": [],
+            "user": {"name": "Test User", "id": "test-user", "hasPortrait": False},
+        },
+    )
 
 
 class TestConfigSettingsGetProxy:
@@ -65,6 +79,46 @@ class TestConfigSettingsGetProxy:
         assert resp.status_code == 200
         assert resp.json() == {"categories": []}
 
+    async def test_skips_first_404_node_and_uses_second_200(self, client, node_manager):
+        node_a = await _register_node(node_manager, "node-a", port=4100)
+        node_b = await _register_node(node_manager, "node-b", port=4101)
+        first_resp = _make_response(404, {"detail": "not found"})
+        second_body = {"categories": [{"name": "runtime", "fields": []}]}
+        second_resp = _make_response(200, second_body)
+
+        with patch("soulstream_server.api.config.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(side_effect=[first_resp, second_resp])
+            mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+            resp = await client.get("/api/config/settings")
+
+        assert resp.status_code == 200
+        assert resp.json() == second_body
+        assert [call.args[0] for call in mock_client.get.call_args_list] == [
+            f"http://{node_a.host}:{node_a.port}/api/config/settings",
+            f"http://{node_b.host}:{node_b.port}/api/config/settings",
+        ]
+
+    async def test_returns_empty_categories_when_all_nodes_fail(self, client, node_manager):
+        await _register_node(node_manager, "node-a", port=4100)
+        await _register_node(node_manager, "node-b", port=4101)
+
+        with patch("soulstream_server.api.config.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(
+                side_effect=[
+                    _make_response(404, {"detail": "not found"}),
+                    httpx.ConnectError("connection failed"),
+                ]
+            )
+            mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+            resp = await client.get("/api/config/settings")
+
+        assert resp.status_code == 200
+        assert resp.json() == {"categories": []}
+
 
 class TestConfigSettingsPutProxy:
     """`PUT /api/config/settings` 프록시."""
@@ -85,6 +139,50 @@ class TestConfigSettingsPutProxy:
         assert called_url[0] == f"http://{node.host}:{node.port}/api/config/settings"
         assert called_kwargs["json"] == {"changes": {"KEY": "value"}}
         assert called_kwargs["headers"]["authorization"] == f"Bearer {TEST_AUTH_TOKEN}"
+
+    async def test_skips_first_404_node_and_uses_second_200(self, client, node_manager):
+        node_a = await _register_node(node_manager, "node-a", port=4100)
+        node_b = await _register_node(node_manager, "node-b", port=4101)
+        body = {"changes": {"KEY": "value"}}
+        mock_resp = _make_response(200, {"applied": ["KEY"]})
+
+        with patch("soulstream_server.api.config.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.put = AsyncMock(
+                side_effect=[
+                    _make_response(404, {"detail": "not found"}),
+                    mock_resp,
+                ]
+            )
+            mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+            resp = await client.put("/api/config/settings", json=body)
+
+        assert resp.status_code == 200
+        assert resp.json() == {"applied": ["KEY"]}
+        assert [call.args[0] for call in mock_client.put.call_args_list] == [
+            f"http://{node_a.host}:{node_a.port}/api/config/settings",
+            f"http://{node_b.host}:{node_b.port}/api/config/settings",
+        ]
+        assert all(call.kwargs["json"] == body for call in mock_client.put.call_args_list)
+
+    async def test_returns_503_when_all_nodes_fail(self, client, node_manager):
+        await _register_node(node_manager, "node-a", port=4100)
+        await _register_node(node_manager, "node-b", port=4101)
+
+        with patch("soulstream_server.api.config.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.put = AsyncMock(
+                side_effect=[
+                    _make_response(404, {"detail": "not found"}),
+                    httpx.ConnectError("connection failed"),
+                ]
+            )
+            mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+            resp = await client.put("/api/config/settings", json={"changes": {"KEY": "value"}})
+
+        assert resp.status_code == 503
 
 
 class TestDashboardConfigProxy:
@@ -114,3 +212,43 @@ class TestDashboardConfigProxy:
         data = resp.json()
         assert "user" in data
         assert "agents" in data
+
+    async def test_skips_first_404_node_and_uses_second_200(self, client, node_manager):
+        node_a = await _register_node(node_manager, "node-a", port=4100)
+        node_b = await _register_node(node_manager, "node-b", port=4101)
+        body = {"user": {"name": "U", "id": "u", "hasPortrait": True}, "agents": []}
+        first_resp = _make_response(404, {"detail": "not found"})
+        second_resp = _make_response(200, body)
+
+        with patch("soulstream_server.api.config.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(side_effect=[first_resp, second_resp])
+            mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+            resp = await client.get("/api/dashboard/config")
+
+        assert resp.status_code == 200
+        assert resp.json()["user"]["portraitUrl"] == f"/api/nodes/{node_b.node_id}/user/portrait"
+        assert [call.args[0] for call in mock_client.get.call_args_list] == [
+            f"http://{node_a.host}:{node_a.port}/api/dashboard/config",
+            f"http://{node_b.host}:{node_b.port}/api/dashboard/config",
+        ]
+
+    async def test_returns_default_when_all_nodes_fail(self, client, node_manager):
+        await _register_node(node_manager, "node-a", port=4100)
+        await _register_node(node_manager, "node-b", port=4101)
+
+        with patch("soulstream_server.api.config.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(
+                side_effect=[
+                    _make_response(405, {"detail": "method not allowed"}),
+                    httpx.ConnectError("connection failed"),
+                ]
+            )
+            mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+            resp = await client.get("/api/dashboard/config")
+
+        assert resp.status_code == 200
+        assert resp.json() == {"user": {"name": "User", "id": "", "hasPortrait": False}, "agents": []}

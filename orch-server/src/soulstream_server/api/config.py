@@ -2,10 +2,11 @@
 Config API 프록시 — /api/config/settings, /api/dashboard/config
 
 orchestrator 모드에서 설정창이 동작하도록
-첫 번째 연결된 soul-server 노드로 HTTP 프록시한다.
+local REST dashboard API를 지원하는 연결 노드로 HTTP 프록시한다.
 """
 
 import logging
+from typing import Any, Literal
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
@@ -19,6 +20,7 @@ logger = logging.getLogger(__name__)
 # 노드 미연결 또는 HTTP 실패 시 반환할 기본 구조
 # {} 대신 user 필드가 있는 구조를 반환하여 프론트엔드 TypeError 방지
 _DEFAULT_DASHBOARD_CONFIG = {"user": {"name": "User", "id": "", "hasPortrait": False}, "agents": []}
+_UNSUPPORTED_PATH_STATUS_CODES = {404, 405}
 
 
 def create_config_router(
@@ -31,13 +33,51 @@ def create_config_router(
         dependencies=dependencies or [],
     )
 
-    def _first_node_url(path: str) -> str | None:
-        """첫 번째 연결된 노드의 URL을 반환. 노드 없으면 None."""
+    async def _request_first_supported_node(
+        request: Request,
+        method: Literal["GET", "PUT"],
+        path: str,
+        *,
+        json_body: dict[str, Any] | None = None,
+    ) -> tuple[httpx.Response, Any] | None:
+        """path를 지원하는 첫 노드를 찾아 요청한다.
+
+        TS node처럼 local REST dashboard API가 없는 노드는 404/405를 반환한다.
+        이 상태와 연결 실패는 후보 탈락으로 보고 다음 노드를 시도한다.
+        """
         nodes = node_manager.get_connected_nodes()
         if not nodes:
             return None
-        node = nodes[0]
-        return f"http://{node.host}:{node.port}{path}"
+
+        headers = forward_auth_headers(request)
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            for node in nodes:
+                url = f"http://{node.host}:{node.port}{path}"
+                try:
+                    if method == "GET":
+                        resp = await client.get(url, headers=headers)
+                    else:
+                        resp = await client.put(url, json=json_body, headers=headers)
+                except httpx.RequestError as e:
+                    logger.warning(
+                        "%s 프록시 연결 실패, 다음 노드 시도: node=%s url=%s error=%s",
+                        path,
+                        node.node_id,
+                        url,
+                        e,
+                    )
+                    continue
+                if resp.status_code in _UNSUPPORTED_PATH_STATUS_CODES:
+                    logger.info(
+                        "%s 미지원 노드 건너뜀: node=%s status=%d",
+                        path,
+                        node.node_id,
+                        resp.status_code,
+                    )
+                    continue
+                return resp, node
+
+        return None
 
     @router.get("/config/settings")
     async def proxy_config_settings_get(request: Request):
@@ -46,15 +86,10 @@ def create_config_router(
         soul-server require_dashboard_auth가 401을 반환하지 않도록
         들어온 요청의 Cookie/Authorization 헤더를 forward한다.
         """
-        url = _first_node_url("/api/config/settings")
-        if not url:
+        result = await _request_first_supported_node(request, "GET", "/api/config/settings")
+        if not result:
             return JSONResponse({"categories": []})
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(url, headers=forward_auth_headers(request))
-        except httpx.RequestError as e:
-            logger.warning("config/settings 프록시 실패: %s", e)
-            return JSONResponse({"categories": []})
+        resp, _node = result
         if resp.status_code != 200:
             return Response(
                 status_code=resp.status_code,
@@ -66,16 +101,16 @@ def create_config_router(
     @router.put("/config/settings")
     async def proxy_config_settings_put(request: Request):
         """soul-server의 PUT /api/config/settings 프록시."""
-        url = _first_node_url("/api/config/settings")
-        if not url:
-            raise HTTPException(status_code=503, detail="연결된 노드가 없습니다")
         body = await request.json()
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.put(url, json=body, headers=forward_auth_headers(request))
-        except httpx.RequestError as e:
-            logger.error("config/settings PUT 프록시 실패: %s", e)
-            raise HTTPException(status_code=502, detail=str(e))
+        result = await _request_first_supported_node(
+            request,
+            "PUT",
+            "/api/config/settings",
+            json_body=body,
+        )
+        if not result:
+            raise HTTPException(status_code=503, detail="설정을 저장할 수 있는 노드가 없습니다")
+        resp, _node = result
         return Response(
             content=resp.content,
             status_code=resp.status_code,
@@ -90,17 +125,10 @@ def create_config_router(
         추가되어도 호환되도록 다른 프록시와 동일하게 헤더를 forward한다
         (design-principles.md §9 일관성·대칭성).
         """
-        nodes = node_manager.get_connected_nodes()
-        if not nodes:
+        result = await _request_first_supported_node(request, "GET", "/api/dashboard/config")
+        if not result:
             return JSONResponse(_DEFAULT_DASHBOARD_CONFIG)
-        node = nodes[0]
-        url = f"http://{node.host}:{node.port}/api/dashboard/config"
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(url, headers=forward_auth_headers(request))
-        except httpx.RequestError as e:
-            logger.warning("dashboard/config 프록시 실패: %s", e)
-            return JSONResponse(_DEFAULT_DASHBOARD_CONFIG)
+        resp, node = result
         if resp.status_code != 200:
             return Response(
                 status_code=resp.status_code,
