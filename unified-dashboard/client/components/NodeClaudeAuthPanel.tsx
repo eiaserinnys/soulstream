@@ -6,39 +6,45 @@ interface Props {
   nodeId: string;
 }
 
-type BucketUsage = {
-  utilization: number;
-  resets_at: string;
+type ProviderName = "claude" | "codex" | "gemini";
+
+type ProviderQuota = {
+  id: string;
+  label: string;
+  window: string | null;
+  unit: string | null;
+  used: number | null;
+  remaining: number | null;
+  limit: number | null;
+  usedPercent: number | null;
+  remainingPercent: number | null;
+  resetAt: number | null;
+  model: string | null;
+  source: string | null;
 };
 
-type UsageData = {
-  five_hour: BucketUsage | null;
-  seven_day: BucketUsage | null;
-  seven_day_sonnet: BucketUsage | null;
-  seven_day_opus: BucketUsage | null;
-  seven_day_oauth_apps: BucketUsage | null;
-  seven_day_cowork: BucketUsage | null;
-  iguana_necktie: BucketUsage | null;
-  extra_usage: {
-    is_enabled: boolean;
-    monthly_limit: number | null;
-    used_credits: number | null;
-    utilization: number | null;
-  } | null;
+type ProviderLimits = {
+  status: "auto" | "not_configured" | "error";
+  source: string;
+  planType: string | null;
+  quotas: ProviderQuota[];
+  error?: string;
 };
 
-const BUCKET_LABELS: Record<string, string> = {
-  five_hour: "5시간",
-  seven_day: "7일",
-  seven_day_sonnet: "7일 (Sonnet)",
-  seven_day_opus: "7일 (Opus)",
-  seven_day_oauth_apps: "7일 (OAuth Apps)",
-  seven_day_cowork: "7일 (협업)",
-  iguana_necktie: "기타",
+type ProviderUsageSnapshot = {
+  generatedAt: string;
+  providers: Record<ProviderName, ProviderLimits>;
 };
 
-function formatResetsAt(isoStr: string): string {
-  const d = new Date(isoStr);
+const PROVIDER_LABELS: Record<ProviderName, string> = {
+  claude: "Claude Code",
+  codex: "Codex",
+  gemini: "Gemini",
+};
+
+function formatResetsAt(epochSeconds: number | null): string | null {
+  if (!epochSeconds) return null;
+  const d = new Date(epochSeconds * 1000);
   const now = new Date();
   const sameDay = d.toDateString() === now.toDateString();
   const opts: Intl.DateTimeFormatOptions = sameDay
@@ -53,44 +59,80 @@ function getBarColor(utilization: number): string {
   return "bg-success";
 }
 
-function UsageBarChart({ usage }: { usage: UsageData }) {
-  const entries = (
-    Object.entries(usage) as [keyof UsageData, UsageData[keyof UsageData]][]
-  ).filter(
-    ([key, value]) =>
-      key !== "extra_usage" &&
-      value !== null &&
-      (value as BucketUsage).utilization !== null,
-  ) as [string, BucketUsage][];
+function formatQuotaAmount(quota: ProviderQuota): string | null {
+  if (quota.remaining !== null && quota.limit !== null) {
+    return `${quota.remaining.toLocaleString()} / ${quota.limit.toLocaleString()} 남음`;
+  }
+  if (quota.used !== null && quota.limit !== null) {
+    return `${quota.used.toLocaleString()} / ${quota.limit.toLocaleString()} 사용`;
+  }
+  return null;
+}
 
-  if (entries.length === 0) {
+function ProviderUsageChart({ usage }: { usage: ProviderUsageSnapshot }) {
+  const providers = Object.entries(usage.providers) as [ProviderName, ProviderLimits][];
+
+  if (providers.length === 0) {
     return (
       <div className="text-xs text-muted-foreground">사용량 데이터 없음</div>
     );
   }
 
   return (
-    <div className="space-y-2">
-      {entries.map(([key, bucket]) => (
-        <div key={key} className="space-y-0.5">
+    <div className="space-y-3">
+      {providers.map(([provider, limits]) => (
+        <div key={provider} className="space-y-1.5">
           <div className="flex items-center justify-between text-xs">
+            <span className="font-medium">{PROVIDER_LABELS[provider]}</span>
             <span className="text-muted-foreground">
-              {BUCKET_LABELS[key] ?? key}
+              {limits.status === "error"
+                ? "오류"
+                : limits.quotas.length > 0
+                  ? limits.planType ?? "OAuth"
+                  : "OAuth 없음"}
             </span>
-            <span className="tabular-nums">{bucket.utilization}%</span>
           </div>
-          <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-            <div
-              className={cn(
-                "h-full rounded-full",
-                getBarColor(bucket.utilization),
-              )}
-              style={{ width: `${bucket.utilization}%` }}
-            />
-          </div>
-          <div className="text-xs text-muted-foreground/70">
-            초기화: {formatResetsAt(bucket.resets_at)}
-          </div>
+          {limits.quotas.length === 0 ? (
+            <div className="text-xs text-muted-foreground/70">
+              {limits.error ?? "조회 가능한 사용량 없음"}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {limits.quotas.map((quota) => {
+                const used = quota.usedPercent ?? 0;
+                const reset = formatResetsAt(quota.resetAt);
+                const amount = formatQuotaAmount(quota);
+                return (
+                  <div key={quota.id} className="space-y-0.5">
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <span className="min-w-0 truncate text-muted-foreground">
+                        {quota.label}
+                      </span>
+                      <span className="tabular-nums">
+                        {quota.usedPercent !== null
+                          ? `${Math.round(quota.usedPercent)}%`
+                          : amount ?? "-"}
+                      </span>
+                    </div>
+                    {quota.usedPercent !== null && (
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                        <div
+                          className={cn("h-full rounded-full", getBarColor(used))}
+                          style={{ width: `${used}%` }}
+                        />
+                      </div>
+                    )}
+                    {(reset || amount) && (
+                      <div className="text-xs text-muted-foreground/70">
+                        {amount ? `${amount}${reset ? " · " : ""}` : ""}
+                        {reset ? `초기화: ${reset}` : ""}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       ))}
     </div>
@@ -106,6 +148,9 @@ type AccountProfile = {
 export function NodeClaudeAuthPanel({ nodeId }: Props) {
   const basePath = `/api/nodes/${nodeId}/claude-auth`;
   const [profile, setProfile] = useState<AccountProfile | null>(null);
+  const [providerUsage, setProviderUsage] = useState<ProviderUsageSnapshot | null>(null);
+  const [loadingProviderUsage, setLoadingProviderUsage] = useState(false);
+  const [providerUsageError, setProviderUsageError] = useState<string | null>(null);
 
   const fetchProfile = useCallback(async () => {
     try {
@@ -119,12 +164,31 @@ export function NodeClaudeAuthPanel({ nodeId }: Props) {
     }
   }, [basePath]);
 
-  const flow = useClaudeAuthFlow<UsageData>({
+  const flow = useClaudeAuthFlow<unknown>({
     basePath,
     statusPath: "/status",
     onAuthenticated: fetchProfile,
-    onTokenDeleted: () => setProfile(null),
+    onTokenDeleted: () => {
+      setProfile(null);
+      setProviderUsage(null);
+    },
   });
+
+  const fetchProviderUsage = useCallback(async () => {
+    setLoadingProviderUsage(true);
+    setProviderUsageError(null);
+    try {
+      const res = await fetch(`/api/nodes/${nodeId}/provider-usage`);
+      if (!res.ok) {
+        throw new Error((await res.text()) || `HTTP ${res.status}`);
+      }
+      setProviderUsage((await res.json()) as ProviderUsageSnapshot);
+    } catch (err) {
+      setProviderUsageError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoadingProviderUsage(false);
+    }
+  }, [nodeId]);
 
   const codeInput = flow.showCodeInput && (
     <div className="mt-2 space-y-1.5">
@@ -185,10 +249,10 @@ export function NodeClaudeAuthPanel({ nodeId }: Props) {
             <Button
               size="sm"
               variant="outline"
-              onClick={flow.fetchUsage}
-              disabled={flow.loadingUsage}
+              onClick={fetchProviderUsage}
+              disabled={loadingProviderUsage}
             >
-              {flow.loadingUsage ? "..." : "사용량"}
+              {loadingProviderUsage ? "..." : "사용량"}
             </Button>
             <Button size="sm" variant="outline" onClick={flow.handleLogin}>
               재로그인
@@ -202,7 +266,10 @@ export function NodeClaudeAuthPanel({ nodeId }: Props) {
             </Button>
           </div>
           {codeInput}
-          {flow.usage && <UsageBarChart usage={flow.usage} />}
+          {providerUsage && <ProviderUsageChart usage={providerUsage} />}
+          {providerUsageError && (
+            <div className="text-xs text-accent-red">{providerUsageError}</div>
+          )}
           {flow.error && (
             <div className="text-xs text-accent-red">{flow.error}</div>
           )}
@@ -215,8 +282,20 @@ export function NodeClaudeAuthPanel({ nodeId }: Props) {
             <Button size="sm" onClick={flow.handleLogin}>
               로그인
             </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={fetchProviderUsage}
+              disabled={loadingProviderUsage}
+            >
+              {loadingProviderUsage ? "..." : "사용량"}
+            </Button>
           </div>
           {codeInput}
+          {providerUsage && <ProviderUsageChart usage={providerUsage} />}
+          {providerUsageError && (
+            <div className="text-xs text-accent-red">{providerUsageError}</div>
+          )}
           {flow.error && (
             <div className="text-xs text-accent-red">{flow.error}</div>
           )}

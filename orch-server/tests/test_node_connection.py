@@ -12,6 +12,7 @@ from soulstream_server.constants import (
     CMD_DOWNLOAD_ATTACHMENT,
     CMD_INTERVENE,
     CMD_INTERRUPT_SESSION,
+    CMD_PROVIDER_USAGE_GET,
     CMD_REALTIME_CREATE_CALL,
     CMD_REALTIME_EVENT,
     CMD_REALTIME_RESOLVE_TOOL_APPROVAL,
@@ -239,6 +240,28 @@ class TestCommandSending:
         assert sent["type"] == CMD_INTERRUPT_SESSION
         assert sent["agentSessionId"] == "sess-1"
         assert result["interrupted"] is True
+
+    async def test_send_provider_usage_get_sends_optional_provider(self, node, ws):
+        """send_provider_usage_get proxies provider usage over node WS."""
+
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            req_id = data["requestId"]
+            if req_id in node._pending:
+                node._pending[req_id].set_result({
+                    "type": CMD_PROVIDER_USAGE_GET,
+                    "requestId": req_id,
+                    "success": True,
+                    "data": {"providers": {}},
+                })
+
+        ws.send_json.side_effect = resolve_future
+
+        await node.send_provider_usage_get("codex")
+
+        sent = ws.send_json.call_args[0][0]
+        assert sent["type"] == CMD_PROVIDER_USAGE_GET
+        assert sent["provider"] == "codex"
 
     async def test_send_respond_sends_input_request_id_without_overwriting_command_request_id(
         self, node, ws

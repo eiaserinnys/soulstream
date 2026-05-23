@@ -31,6 +31,7 @@ from soulstream_server.api.cogito import create_cogito_router
 from soulstream_server.api.config import create_config_router
 from soulstream_server.api.folders import create_folders_router
 from soulstream_server.api.nodes import create_nodes_router
+from soulstream_server.api.provider_usage import create_provider_usage_router
 from soulstream_server.api.push import create_push_router
 from soulstream_server.api.sessions import create_sessions_router
 from soulstream_server.api.system_portraits import create_system_portraits_router
@@ -242,6 +243,7 @@ def _mount_api_routers(
     app.include_router(create_system_portraits_router(dependencies=api_deps))
     app.include_router(create_config_router(node_manager, dependencies=api_deps))
     app.include_router(create_claude_auth_router(node_manager, dependencies=api_deps))
+    app.include_router(create_provider_usage_router(node_manager, dependencies=api_deps))
     app.include_router(create_folders_router(catalog_service, dependencies=api_deps))
     app.include_router(create_catalog_router(catalog_service, db, node_manager, dependencies=api_deps))
     app.include_router(create_attachments_router(node_manager, dependencies=api_deps))

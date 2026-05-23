@@ -3,6 +3,10 @@ import type { Logger } from "pino";
 import type { AgentRegistry } from "../agent_registry.js";
 import type { ClaudeAuthCommandHandler } from "../auth/claude_auth.js";
 import {
+  ProviderUsageService,
+  type ProviderUsageCommandHandler,
+} from "../auth/provider_usage.js";
+import {
   FileAttachmentStore,
   type AttachmentStore,
 } from "../attachments/file_manager.js";
@@ -32,6 +36,11 @@ import {
   buildRealtimeAckError,
   type RealtimeAckType,
 } from "./realtime_ack.js";
+import {
+  ProviderUsageCommandError,
+  ProviderUsageCommands,
+  type ProviderUsageCommand,
+} from "./provider_usage_commands.js";
 import {
   RealtimeCommandError,
   RealtimeCommands,
@@ -145,6 +154,7 @@ export class CommandDispatcher {
   private readonly attachmentCommands: AttachmentCommands;
   private readonly sessionListCommands: SessionListCommands;
   private readonly claudeAuthCommands: ClaudeAuthCommands;
+  private readonly providerUsageCommands: ProviderUsageCommands;
   private readonly deliveryCommands: DeliveryCommands;
   private readonly realtimeCommands: RealtimeCommands;
 
@@ -164,6 +174,7 @@ export class CommandDispatcher {
      */
     sessionDb?: SessionDB,
     realtimeBroker?: RealtimeBroker,
+    providerUsage?: ProviderUsageCommandHandler,
   ) {
     this.taskRuntimeCommands = new TaskRuntimeCommands({
       agentRegistry,
@@ -174,6 +185,9 @@ export class CommandDispatcher {
     this.attachmentCommands = new AttachmentCommands(attachmentStore);
     this.sessionListCommands = new SessionListCommands(sessionDb);
     this.claudeAuthCommands = new ClaudeAuthCommands({ agentRegistry, claudeAuth });
+    this.providerUsageCommands = new ProviderUsageCommands({
+      providerUsage: providerUsage ?? new ProviderUsageService({ claudeAuth }),
+    });
     this.deliveryCommands = new DeliveryCommands({
       agentRegistry,
       taskManager,
@@ -209,6 +223,8 @@ export class CommandDispatcher {
       claude_auth_delete_token: (cmd) => this.handleClaudeAuth(cmd as ClaudeAuthCommand),
       claude_auth_get_usage: (cmd) => this.handleClaudeAuth(cmd as ClaudeAuthCommand),
       claude_auth_get_profile: (cmd) => this.handleClaudeAuth(cmd as ClaudeAuthCommand),
+      provider_usage_get: (cmd) =>
+        this.handleProviderUsage(cmd as ProviderUsageCommand),
     };
   }
 
@@ -515,6 +531,18 @@ export class CommandDispatcher {
       }
     } catch (err) {
       if (err instanceof ClaudeAuthCommandError) {
+        await this.sendError(cmd, err.message);
+        return;
+      }
+      throw err;
+    }
+  }
+
+  private async handleProviderUsage(cmd: ProviderUsageCommand): Promise<void> {
+    try {
+      await this.send(await this.providerUsageCommands.handle(cmd));
+    } catch (err) {
+      if (err instanceof ProviderUsageCommandError) {
         await this.sendError(cmd, err.message);
         return;
       }
