@@ -20,6 +20,13 @@ import type { ReasoningEffort } from "../engine/protocol.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { RealtimeBroker } from "../realtime/realtime_broker.js";
 import { buildRespondAck, buildToolApprovalAck } from "./delivery_ack.js";
+import {
+  buildRealtimeAckError,
+  buildRealtimeCallCreatedAck,
+  buildRealtimeEventAck,
+  buildRealtimeToolApprovalAck,
+  type RealtimeAckType,
+} from "./realtime_ack.js";
 
 export type SendFn = (data: unknown) => Promise<void>;
 
@@ -378,15 +385,13 @@ export class CommandDispatcher {
         ...(cmd.instructions !== undefined ? { instructions: cmd.instructions } : {}),
       });
       if (!requestId) return;
-      await this.send({
-        type: "realtime_call_created",
-        requestId,
-        agentSessionId: sessionId,
-        status: "ok",
-        callId: result.callId,
-        answerSdp: result.answerSdp,
-        ...(result.eventId !== undefined ? { eventId: result.eventId } : {}),
-      });
+      await this.send(
+        buildRealtimeCallCreatedAck({
+          requestId,
+          agentSessionId: sessionId,
+          result,
+        }),
+      );
     } catch (err) {
       await this.sendRealtimeAckError(
         "realtime_call_created",
@@ -425,14 +430,13 @@ export class CommandDispatcher {
         callId: cmd.callId ?? cmd.call_id ?? undefined,
       });
       if (!requestId) return;
-      await this.send({
-        type: "realtime_event_ack",
-        requestId,
-        agentSessionId: sessionId,
-        status: "ok",
-        ...(result.normalizedType ? { normalizedType: result.normalizedType } : {}),
-        ...(result.eventId !== undefined ? { eventId: result.eventId } : {}),
-      });
+      await this.send(
+        buildRealtimeEventAck({
+          requestId,
+          agentSessionId: sessionId,
+          result,
+        }),
+      );
     } catch (err) {
       await this.sendRealtimeAckError(
         "realtime_event_ack",
@@ -478,16 +482,15 @@ export class CommandDispatcher {
         callId: cmd.callId ?? cmd.call_id ?? undefined,
       });
       if (!requestId) return;
-      await this.send({
-        type: "realtime_tool_approval_ack",
-        requestId,
-        agentSessionId: sessionId,
-        approvalId,
-        decision,
-        status: "ok",
-        dataChannelEvent: result.dataChannelEvent,
-        ...(result.eventId !== undefined ? { eventId: result.eventId } : {}),
-      });
+      await this.send(
+        buildRealtimeToolApprovalAck({
+          requestId,
+          agentSessionId: sessionId,
+          approvalId,
+          decision,
+          result,
+        }),
+      );
     } catch (err) {
       await this.sendRealtimeAckError(
         "realtime_tool_approval_ack",
@@ -499,20 +502,20 @@ export class CommandDispatcher {
   }
 
   private async sendRealtimeAckError(
-    type: "realtime_call_created" | "realtime_event_ack" | "realtime_tool_approval_ack",
+    type: RealtimeAckType,
     requestId: string,
     agentSessionId: string,
     message: string,
   ): Promise<void> {
     if (!requestId) return;
-    await this.send({
-      type,
-      requestId,
-      agentSessionId,
-      status: "error",
-      code: "REALTIME_ERROR",
-      message,
-    });
+    await this.send(
+      buildRealtimeAckError({
+        type,
+        requestId,
+        agentSessionId,
+        message,
+      }),
+    );
   }
 
   private async handleHealthCheck(cmd: CommandLike): Promise<void> {
