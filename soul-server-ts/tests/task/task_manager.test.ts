@@ -293,6 +293,58 @@ describe("TaskManager.deliverToolApproval", () => {
     });
   });
 
+  it("task가 없으면 session_not_found 결과 shape를 유지", async () => {
+    const { db, broadcaster } = makeMocks();
+    const tm = new TaskManager("n", db, broadcaster, silentLogger);
+
+    await expect(tm.deliverToolApproval({
+      agentSessionId: "missing-session",
+      approvalId: "danger-call-1",
+      decision: "approved",
+    })).resolves.toEqual({
+      status: "session_not_found",
+      approvalId: "danger-call-1",
+      decision: "approved",
+    });
+  });
+
+  it("evicted terminal task는 session_not_running과 taskStatus를 반환", async () => {
+    const mocks = makeMocks();
+    mocks.getSession.mockResolvedValueOnce({
+      session_id: "sess-terminal-approval",
+      folder_id: null,
+      display_name: null,
+      node_id: "n",
+      session_type: "claude",
+      status: "completed",
+      prompt: "done flow",
+      client_id: null,
+      claude_session_id: "agents-thread-1",
+      last_message: null,
+      metadata: [],
+      was_running_at_shutdown: false,
+      last_event_id: 42,
+      last_read_event_id: 10,
+      created_at: new Date("2026-05-21T01:00:00Z"),
+      updated_at: new Date("2026-05-21T01:05:00Z"),
+      agent_id: "agent-openai",
+      caller_session_id: null,
+      away_summary: null,
+    });
+    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);
+
+    await expect(tm.deliverToolApproval({
+      agentSessionId: "sess-terminal-approval",
+      approvalId: "danger-call-1",
+      decision: "approved",
+    })).resolves.toEqual({
+      status: "session_not_running",
+      approvalId: "danger-call-1",
+      decision: "approved",
+      taskStatus: "completed",
+    });
+  });
+
   it("evicted approval-pending Agents task를 metadata에서 hydrate하고 approval 결정 후 resume", async () => {
     const mocks = makeMocks();
     mocks.getSession.mockResolvedValueOnce({
@@ -390,6 +442,62 @@ describe("TaskManager.deliverToolApproval", () => {
         message: "no prod write",
       }),
     );
+  });
+
+  it("evicted Agents task의 approval id가 다르면 queued resume 없이 not_supported 반환", async () => {
+    const mocks = makeMocks();
+    mocks.getSession.mockResolvedValueOnce({
+      session_id: "sess-wrong-approval",
+      folder_id: "f-1",
+      display_name: null,
+      node_id: "n",
+      session_type: "claude",
+      status: "running",
+      prompt: "dangerous flow",
+      client_id: null,
+      claude_session_id: "agents-thread-1",
+      last_message: null,
+      metadata: [
+        {
+          type: "agents_run_state",
+          value: {
+            backend: "openai-agents",
+            serialized: "state-v1",
+            pendingApprovalId: "danger-call-1",
+            previousResponseId: "resp-1",
+            conversationId: "conv-1",
+            schemaVersion: "1.11",
+            updatedAt: "2026-05-21T01:00:00.000Z",
+          },
+        },
+      ],
+      was_running_at_shutdown: false,
+      last_event_id: 42,
+      last_read_event_id: 10,
+      created_at: new Date("2026-05-21T01:00:00Z"),
+      updated_at: new Date("2026-05-21T01:05:00Z"),
+      agent_id: "agent-openai",
+      caller_session_id: null,
+      away_summary: null,
+    });
+    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);
+    const onResume = vi.fn();
+
+    await expect(tm.deliverToolApproval(
+      {
+        agentSessionId: "sess-wrong-approval",
+        approvalId: "other-call",
+        decision: "rejected",
+      },
+      onResume,
+    )).resolves.toEqual({
+      status: "not_supported",
+      approvalId: "other-call",
+      decision: "rejected",
+    });
+    expect(onResume).not.toHaveBeenCalled();
+    expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
+    expect(mocks.emitSessionUpdated).not.toHaveBeenCalled();
   });
 });
 

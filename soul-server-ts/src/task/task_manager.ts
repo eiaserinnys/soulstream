@@ -37,6 +37,10 @@ import {
 } from "./task_metadata.js";
 import { hydrateEvictedTaskFromSessionRow } from "./task_evicted_hydration.js";
 import {
+  buildToolApprovalOptions,
+  ToolApprovalRecovery,
+} from "./task_tool_approval_recovery.js";
+import {
   RunningInterventionTransition,
   type RunningInterventionResult,
 } from "./task_running_intervention_transition.js";
@@ -168,6 +172,7 @@ export class TaskManager {
   private readonly activeTaskRecovery: ActiveTaskRecovery;
   private readonly runningInterventionTransition: RunningInterventionTransition;
   private readonly autoResumeTransition: AutoResumeTransition;
+  private readonly toolApprovalRecovery: ToolApprovalRecovery;
 
   constructor(
     private readonly nodeId: string,
@@ -201,6 +206,17 @@ export class TaskManager {
       persistence,
       contextBuilder,
       agentRegistry,
+    });
+    this.toolApprovalRecovery = new ToolApprovalRecovery({
+      getTask: (sessionId) => this.tasks.get(sessionId),
+      loadEvictedTask: (sessionId) => this.loadEvictedTask(sessionId),
+      rememberTask: (task) => {
+        this.tasks.set(task.agentSessionId, task);
+      },
+      persistToolApprovalResolved: (task, params) =>
+        this.persistAndBroadcastToolApprovalResolved(task, params),
+      emitSessionUpdated: (task) => this.broadcaster.emitSessionUpdated(task),
+      logger,
     });
   }
 
@@ -427,17 +443,15 @@ export class TaskManager {
     params: DeliverToolApprovalParams,
     onResume?: StartExecutionCallback,
   ): Promise<DeliverToolApprovalResult> {
-    let task = this.tasks.get(params.agentSessionId);
+    const task = await this.toolApprovalRecovery.resolveTaskForApproval(
+      params.agentSessionId,
+    );
     if (!task) {
-      task = await this.loadEvictedTask(params.agentSessionId) ?? undefined;
-      if (!task) {
-        return {
-          status: "session_not_found",
-          approvalId: params.approvalId,
-          decision: params.decision,
-        };
-      }
-      this.tasks.set(task.agentSessionId, task);
+      return {
+        status: "session_not_found",
+        approvalId: params.approvalId,
+        decision: params.decision,
+      };
     }
     if (task.status !== "running") {
       return {
@@ -450,7 +464,11 @@ export class TaskManager {
 
     const engine = task.engine;
     if (!supportsToolApproval(engine)) {
-      const queued = await this.queueAgentsToolApprovalResume(task, params, onResume);
+      const queued = await this.toolApprovalRecovery.tryQueueAgentsResume(
+        task,
+        params,
+        onResume,
+      );
       if (queued) return queued;
       return {
         status: "not_supported",
@@ -463,15 +481,7 @@ export class TaskManager {
     const delivered = await engine.deliverToolApproval(
       params.approvalId,
       params.decision,
-      {
-        ...(params.message ? { message: params.message } : {}),
-        ...(params.alwaysApprove !== undefined
-          ? { alwaysApprove: params.alwaysApprove }
-          : {}),
-        ...(params.alwaysReject !== undefined
-          ? { alwaysReject: params.alwaysReject }
-          : {}),
-      },
+      buildToolApprovalOptions(params),
     );
     if (delivered.status !== "delivered") {
       return {
@@ -486,42 +496,6 @@ export class TaskManager {
     }
 
     const eventId = await this.persistAndBroadcastToolApprovalResolved(task, params);
-    return {
-      status: "delivered",
-      approvalId: params.approvalId,
-      decision: params.decision,
-      ...(eventId !== undefined ? { eventId } : {}),
-    };
-  }
-
-  private async queueAgentsToolApprovalResume(
-    task: Task,
-    params: DeliverToolApprovalParams,
-    onResume: StartExecutionCallback | undefined,
-  ): Promise<DeliverToolApprovalResult | undefined> {
-    if (!onResume) return undefined;
-    if (!task.agentsRunState || task.agentsPendingApprovalId !== params.approvalId) {
-      return undefined;
-    }
-    task.agentsQueuedToolApproval = {
-      approvalId: params.approvalId,
-      decision: params.decision,
-      options: {
-        ...(params.message ? { message: params.message } : {}),
-        ...(params.alwaysApprove !== undefined ? { alwaysApprove: params.alwaysApprove } : {}),
-        ...(params.alwaysReject !== undefined ? { alwaysReject: params.alwaysReject } : {}),
-      },
-    };
-    const eventId = await this.persistAndBroadcastToolApprovalResolved(task, params);
-    try {
-      await this.broadcaster.emitSessionUpdated(task);
-    } catch (err) {
-      this.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        "session_updated (tool approval resume) broadcast failed",
-      );
-    }
-    onResume(task);
     return {
       status: "delivered",
       approvalId: params.approvalId,
