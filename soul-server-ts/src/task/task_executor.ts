@@ -39,12 +39,15 @@ import { formatContextItems, type ContextItem } from "../context/prompt_assemble
 
 import type { CompletionNotifier } from "./completion_notifier.js";
 import { buildAttachmentContextItems, splitAttachmentPaths } from "./attachment_context.js";
+import { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
 import type { Task, TaskStatus } from "./task_models.js";
 
 /** AgentProfile → EnginePort 생성. backend별 분기는 factory 구현체 담당. */
 export type EngineFactory = (agent: AgentProfile) => EnginePort;
 
 export class TaskExecutor {
+  private readonly lifecycleTransition: TaskLifecycleTransition;
+
   constructor(
     private readonly engineFactory: EngineFactory,
     private readonly db: SessionDB,
@@ -65,7 +68,13 @@ export class TaskExecutor {
      * `roselin/.local/artifacts/analysis/20260518-2125-ts-delegation-return.md` §3-2).
      */
     private readonly completionNotifier?: CompletionNotifier,
-  ) {}
+  ) {
+    this.lifecycleTransition = new TaskLifecycleTransition({
+      db,
+      broadcaster,
+      logger,
+    });
+  }
 
   /**
    * Task 실행 시작. fire-and-forget — 호출자가 *await하지 않는다*.
@@ -590,30 +599,7 @@ export class TaskExecutor {
    * 종료 처리: DB sessions 업데이트 + session_updated broadcast + engine.close.
    */
   private async _finalize(task: Task): Promise<void> {
-    const finalStatus = task.status;
-
-    // DB sessions 갱신
-    try {
-      await this.db.updateSession(task.agentSessionId, {
-        status: finalStatus,
-        last_event_id: task.lastEventId,
-      });
-    } catch (err) {
-      this.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        "DB updateSession failed in finalize",
-      );
-    }
-
-    // broadcast
-    try {
-      await this.broadcaster.emitSessionUpdated(task);
-    } catch (err) {
-      this.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        "session_updated broadcast failed",
-      );
-    }
+    await this.lifecycleTransition.persistExecutorFinalState(task);
 
     // engine 정리
     try {

@@ -647,6 +647,83 @@ describe("TaskManager.deliverInputResponse", () => {
   });
 });
 
+describe("TaskManager.finalizeTask", () => {
+  it("result finalize → completed 상태와 usage를 기록하고 session_updated를 발행", async () => {
+    const { db, broadcaster, updateSession, emitSessionUpdated } = makeMocks();
+    const tm = new TaskManager("n", db, broadcaster, silentLogger);
+    const task = await tm.createTask({ agentSessionId: "s1", prompt: "x", profileId: "p" });
+    task.lastEventId = 13;
+
+    const result = await tm.finalizeTask({
+      agentSessionId: "s1",
+      result: "done",
+      llmUsage: { input_tokens: 2, output_tokens: 3 },
+    });
+
+    expect(result).toBe(task);
+    expect(task.status).toBe("completed");
+    expect(task.result).toBe("done");
+    expect(task.error).toBeUndefined();
+    expect(task.llmUsage).toEqual({ input_tokens: 2, output_tokens: 3 });
+    expect(task.completedAt).toBeInstanceOf(Date);
+    expect(updateSession).toHaveBeenCalledWith("s1", {
+      status: "completed",
+      last_event_id: 13,
+    });
+    expect(emitSessionUpdated).toHaveBeenCalledWith(task);
+  });
+
+  it("error finalize → error 상태와 message를 기록하고 stale result를 지움", async () => {
+    const { db, broadcaster, updateSession } = makeMocks();
+    const tm = new TaskManager("n", db, broadcaster, silentLogger);
+    const task = await tm.createTask({ agentSessionId: "s1", prompt: "x", profileId: "p" });
+    task.result = "old";
+
+    await tm.finalizeTask({ agentSessionId: "s1", error: "boom" });
+
+    expect(task.status).toBe("error");
+    expect(task.error).toBe("boom");
+    expect(task.result).toBeUndefined();
+    expect(updateSession).toHaveBeenCalledWith("s1", {
+      status: "error",
+      last_event_id: task.lastEventId,
+    });
+  });
+
+  it("final state side effect 실패는 finalize 결과를 막지 않음", async () => {
+    const { db, broadcaster, updateSession, emitSessionUpdated } = makeMocks();
+    updateSession.mockRejectedValueOnce(new Error("db down"));
+    emitSessionUpdated.mockRejectedValueOnce(new Error("ws down"));
+    const tm = new TaskManager("n", db, broadcaster, silentLogger);
+    const task = await tm.createTask({ agentSessionId: "s1", prompt: "x", profileId: "p" });
+
+    await expect(tm.finalizeTask({
+      agentSessionId: "s1",
+      result: "done",
+    })).resolves.toBe(task);
+
+    expect(task.status).toBe("completed");
+    expect(updateSession).toHaveBeenCalledTimes(1);
+    expect(emitSessionUpdated).toHaveBeenCalledTimes(1);
+  });
+
+  it("result와 error가 모두 없으면 throw, task가 없으면 undefined", async () => {
+    const { db, broadcaster, updateSession, emitSessionUpdated } = makeMocks();
+    const tm = new TaskManager("n", db, broadcaster, silentLogger);
+
+    await expect(tm.finalizeTask({ agentSessionId: "s1" })).rejects.toThrow(
+      /requires either result or error/,
+    );
+    await expect(tm.finalizeTask({
+      agentSessionId: "missing",
+      result: "done",
+    })).resolves.toBeUndefined();
+
+    expect(updateSession).not.toHaveBeenCalled();
+    expect(emitSessionUpdated).not.toHaveBeenCalled();
+  });
+});
+
 describe("TaskManager.cancelTask", () => {
   it("진행 중 engine이 있으면 interrupt 호출 + status='interrupted' 박힘 + true 반환", async () => {
     const { db, broadcaster } = makeMocks();

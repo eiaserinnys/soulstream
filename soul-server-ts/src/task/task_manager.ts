@@ -36,6 +36,7 @@ import {
   buildCallerInfoMetadataEntry,
 } from "./task_metadata.js";
 import { hydrateEvictedTaskFromSessionRow } from "./task_evicted_hydration.js";
+import { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
 import {
   buildToolApprovalOptions,
   ToolApprovalRecovery,
@@ -174,6 +175,7 @@ export class TaskManager {
   private readonly autoResumeTransition: AutoResumeTransition;
   private readonly toolApprovalRecovery: ToolApprovalRecovery;
   private readonly responseEventPublisher: ResponseEventPublisher;
+  private readonly lifecycleTransition: TaskLifecycleTransition;
 
   constructor(
     private readonly nodeId: string,
@@ -194,6 +196,11 @@ export class TaskManager {
     private readonly contextBuilder?: ExecutionContextBuilder,
     private readonly agentRegistry?: AgentRegistry,
   ) {
+    this.lifecycleTransition = new TaskLifecycleTransition({
+      db,
+      broadcaster,
+      logger,
+    });
     this.activeTaskRecovery = new ActiveTaskRecovery(logger);
     this.runningInterventionTransition = new RunningInterventionTransition({
       broadcaster,
@@ -526,12 +533,9 @@ export class TaskManager {
    * finalize의 DB session_update + emit_session_updated는 interrupted 그대로 발행.
    */
   async cancelTask(sessionId: string): Promise<boolean> {
-    const task = this.tasks.get(sessionId);
-    if (!task) return false;
-    if (task.status !== "running") return false;
-    if (!task.engine) return false;
-    task.status = "interrupted";
-    return await task.engine.interrupt();
+    return await this.lifecycleTransition.cancelRunningTask(
+      this.tasks.get(sessionId),
+    );
   }
 
   /**
@@ -542,22 +546,7 @@ export class TaskManager {
     const task = this.tasks.get(sessionId);
     if (!task) return;
 
-    // engine 살아있으면 status 무관하게 interrupt + drain
-    // (cancelTask 후 deleteTask 호출 시 status="interrupted"라도 engine drain 대기 의무)
-    if (task.engine) {
-      try {
-        await task.engine.interrupt();
-      } catch {
-        // interrupt가 이미 idempotent — 무시
-      }
-      if (task.executionPromise) {
-        try {
-          await task.executionPromise;
-        } catch {
-          // ignore — interrupted promise rejection
-        }
-      }
-    }
+    await this.lifecycleTransition.interruptAndDrain(task);
 
     this.tasks.delete(sessionId);
 
@@ -584,39 +573,18 @@ export class TaskManager {
     const shutdownAt = new Date();
     for (const task of this.tasks.values()) {
       if (task.status === "running") {
-        task.status = "interrupted";
-        task.completedAt = shutdownAt;
-        try {
-          await this.db.updateSession(task.agentSessionId, {
-            status: "interrupted",
-            last_event_id: task.lastEventId,
-          });
-        } catch (err) {
-          this.logger.warn(
-            { err, sessionId: task.agentSessionId },
-            "DB updateSession failed during shutdown interrupt",
-          );
-        }
-        try {
-          await this.broadcaster.emitSessionUpdated(task);
-        } catch (err) {
-          this.logger.warn(
-            { err, sessionId: task.agentSessionId },
-            "session_updated broadcast failed during shutdown interrupt",
-          );
-        }
+        await this.lifecycleTransition.markRunningTaskInterruptedForShutdown(
+          task,
+          shutdownAt,
+        );
       }
-      // engine 살아있으면 status 무관하게 interrupt + drain — interrupted 직후 shutdown
-      // 같은 race도 안전하게 처리.
-      if (task.engine) {
-        try {
-          await task.engine.interrupt();
-        } catch {
-          // idempotent — 무시
-        }
-        if (task.executionPromise) {
-          drains.push(task.executionPromise.catch(() => undefined));
-        }
+      const hadEngine = Boolean(task.engine);
+      await this.lifecycleTransition.interruptForShutdown(task);
+      const drain = hadEngine
+        ? this.lifecycleTransition.getDrainPromise(task)
+        : undefined;
+      if (drain) {
+        drains.push(drain);
       }
     }
     await Promise.all(drains);
@@ -648,42 +616,7 @@ export class TaskManager {
       return undefined;
     }
 
-    if (params.result !== undefined) {
-      task.status = "completed";
-      task.result = params.result;
-      task.error = undefined;
-    } else {
-      task.status = "error";
-      task.error = params.error;
-      task.result = undefined;
-    }
-    task.completedAt = new Date();
-    if (params.llmUsage !== undefined) {
-      task.llmUsage = params.llmUsage;
-    }
-
-    try {
-      await this.db.updateSession(task.agentSessionId, {
-        status: task.status,
-        last_event_id: task.lastEventId,
-      });
-    } catch (err) {
-      this.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        "DB updateSession failed in finalizeTask",
-      );
-    }
-
-    try {
-      await this.broadcaster.emitSessionUpdated(task);
-    } catch (err) {
-      this.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        "session_updated broadcast failed in finalizeTask",
-      );
-    }
-
-    return task;
+    return await this.lifecycleTransition.finalizeExternalTask(task, params);
   }
 
   /**
