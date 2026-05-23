@@ -174,6 +174,21 @@ def create_sessions_router(
         )
         return {"messages": messages, "next_cursor": next_cursor}
 
+    @router.get("/{session_id}/timeline")
+    async def get_session_timeline(
+        session_id: str,
+        before: Optional[str] = Query(None),
+        limit: int = Query(50, ge=1, le=200),
+    ):
+        """기본 채팅 UI용 semantic timeline 조회. DB에서 직접 SELECT.
+
+        `/messages` raw endpoint는 호환용으로 유지한다.
+        """
+        messages, next_cursor = await db.read_timeline(
+            session_id, before=before, limit=limit,
+        )
+        return {"messages": messages, "next_cursor": next_cursor}
+
     @router.get("/{session_id}/events")
     async def session_events(
         session_id: str,

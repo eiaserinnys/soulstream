@@ -38,6 +38,7 @@ from ._query import (
     api_session_events_viewport,
     api_session_folder_counts,
     api_session_messages,
+    api_session_timeline,
     api_sessions_stream,
 )
 from ._state import api_rename_session, api_update_read_position
@@ -64,6 +65,7 @@ __all__ = [
     "api_sessions_stream",
     "api_session_events_viewport",
     "api_session_messages",
+    "api_session_timeline",
     "api_session_events",
     "api_create_session",
     "api_intervene",

@@ -53,3 +53,15 @@ class SqliteViewportMixin:
             "read_messages is not supported on SQLite. "
             "Viewport API requires PostgreSQL."
         )
+
+    async def read_timeline(
+        self,
+        session_id: str,
+        before: Optional[str] = None,
+        limit: int = 50,
+    ) -> tuple[list[dict], Optional[str]]:
+        """SQLite는 timeline API를 지원하지 않는다. PostgreSQL 전용."""
+        raise NotImplementedError(
+            "read_timeline is not supported on SQLite. "
+            "Timeline API requires PostgreSQL."
+        )

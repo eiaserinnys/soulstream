@@ -142,6 +142,26 @@ async def api_session_messages(
     )
 
 
+# === /api/sessions/{session_id}/timeline (GET) — 기본 UI용 semantic history ===
+
+@router.get(
+    "/api/sessions/{agent_session_id}/timeline",
+    dependencies=[Depends(require_dashboard_auth)],
+)
+async def api_session_timeline(
+    agent_session_id: str,
+    before: Optional[str] = Query(None, description="timeline 커서. 이보다 이전 항목만 조회"),
+    limit: int = Query(50, ge=1, le=200, description="페이지 크기"),
+):
+    """기본 채팅 UI용 semantic timeline 조회.
+
+    `/messages` raw endpoint는 호환용으로 유지한다.
+    """
+    return await get_session_query_service().read_timeline(
+        agent_session_id, before=before, limit=limit,
+    )
+
+
 # === /api/sessions/{session_id}/events (GET) — 파라미터화 경로, 나중에 등록 ===
 
 @router.get(

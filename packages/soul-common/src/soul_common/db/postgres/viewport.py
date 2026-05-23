@@ -12,6 +12,36 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+TIMELINE_EVENT_TYPES: tuple[str, ...] = (
+    "user_message",
+    "intervention_sent",
+    "assistant_message",
+    "thinking",
+    "tool_start",
+    "tool_result",
+    "complete",
+    "result",
+    "error",
+    "assistant_error",
+    "system",
+    "system_message",
+    "context_usage",
+    "compact",
+    "input_request",
+    "input_request_expired",
+    "input_request_responded",
+    "tool_approval_requested",
+    "tool_approval_resolved",
+    "agent_updated",
+    "handoff_requested",
+    "handoff_occurred",
+    "guardrail_tripwire",
+    "away_summary",
+    "credential_alert",
+    "realtime_status",
+    "realtime_transcript",
+)
+
 
 def _decode_messages_cursor(before: str | datetime) -> tuple[datetime, int | None]:
     """messages pagination cursor를 timestamp + optional event id로 분해한다.
@@ -34,6 +64,43 @@ def _decode_messages_cursor(before: str | datetime) -> tuple[datetime, int | Non
         return datetime.fromisoformat(ts_raw), event_id
 
     return datetime.fromisoformat(raw), None
+
+
+def _payload_dict(payload) -> dict:
+    if isinstance(payload, str):
+        try:
+            parsed = json.loads(payload)
+        except (json.JSONDecodeError, ValueError):
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    if isinstance(payload, dict):
+        return payload
+    return {}
+
+
+def _serialize_message_rows(rows) -> list[dict]:
+    messages = []
+    for r in rows:
+        d = dict(r)
+        if isinstance(d.get("created_at"), datetime):
+            d["created_at"] = d["created_at"].isoformat()
+        d["payload"] = _payload_dict(d.get("payload"))
+        messages.append(d)
+    return messages
+
+
+def _tool_use_ids(rows) -> list[str]:
+    ids: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        if row["event_type"] != "tool_result":
+            continue
+        payload = _payload_dict(row["payload"])
+        tool_use_id = payload.get("tool_use_id")
+        if isinstance(tool_use_id, str) and tool_use_id and tool_use_id not in seen:
+            seen.add(tool_use_id)
+            ids.append(tool_use_id)
+    return ids
 
 
 class PostgresViewportMixin:
@@ -305,19 +372,97 @@ class PostgresViewportMixin:
         # created_at DESC, id DESC — 어댑터 reverse() 후 부모→자식 ASC 보장
         all_rows.sort(key=lambda r: (r["created_at"], r["id"]), reverse=True)
 
-        # --- Step 5: 직렬화 ---
-        messages = []
-        for r in all_rows:
-            d = dict(r)
-            if isinstance(d.get("created_at"), datetime):
-                d["created_at"] = d["created_at"].isoformat()
-            if isinstance(d.get("payload"), str):
-                try:
-                    d["payload"] = json.loads(d["payload"])
-                except (json.JSONDecodeError, ValueError):
-                    d["payload"] = {}
-            elif d.get("payload") is None:
-                d["payload"] = {}
-            messages.append(d)
+        return _serialize_message_rows(all_rows), next_cursor
 
-        return messages, next_cursor
+    async def read_timeline(
+        self,
+        session_id: str,
+        before: Optional[str] = None,
+        limit: int = 50,
+    ) -> tuple[list[dict], Optional[str]]:
+        """기본 채팅 UI용 semantic timeline을 페이지네이션한다.
+
+        raw `/messages`와 달리 progress/debug/text lifecycle 같은 비가시 이벤트를
+        SQL 단계에서 제외한다. tool_result가 페이지 경계에 걸리면 같은
+        tool_use_id의 tool_start를 보강하여 기존 tool UI 매칭을 유지한다.
+        """
+        if before is not None:
+            before_dt, before_id = _decode_messages_cursor(before)
+            if before_id is None:
+                rows = await self._pool.fetch(
+                    """
+                    SELECT id, parent_event_id, event_type, payload, created_at
+                    FROM events
+                    WHERE session_id = $1
+                      AND event_type = ANY($2::text[])
+                      AND created_at < $3
+                    ORDER BY created_at DESC, id DESC
+                    LIMIT $4
+                    """,
+                    session_id, list(TIMELINE_EVENT_TYPES), before_dt, limit + 1,
+                )
+            else:
+                rows = await self._pool.fetch(
+                    """
+                    SELECT id, parent_event_id, event_type, payload, created_at
+                    FROM events
+                    WHERE session_id = $1
+                      AND event_type = ANY($2::text[])
+                      AND (
+                        created_at < $3
+                        OR (created_at = $3 AND id < $4)
+                      )
+                    ORDER BY created_at DESC, id DESC
+                    LIMIT $5
+                    """,
+                    session_id, list(TIMELINE_EVENT_TYPES), before_dt, before_id,
+                    limit + 1,
+                )
+        else:
+            rows = await self._pool.fetch(
+                """
+                SELECT id, parent_event_id, event_type, payload, created_at
+                FROM events
+                WHERE session_id = $1
+                  AND event_type = ANY($2::text[])
+                ORDER BY created_at DESC, id DESC
+                LIMIT $3
+                """,
+                session_id, list(TIMELINE_EVENT_TYPES), limit + 1,
+            )
+
+        has_more = len(rows) > limit
+        page_rows = list(rows[:limit])
+
+        next_cursor: Optional[str] = None
+        if has_more and page_rows:
+            last = page_rows[-1]
+            last_ts = last["created_at"]
+            last_ts_str = (
+                last_ts.isoformat() if isinstance(last_ts, datetime) else last_ts
+            )
+            next_cursor = f"{last_ts_str},{int(last['id'])}"
+
+        all_rows = list(page_rows)
+        seen_ids = {int(r["id"]) for r in all_rows}
+        tool_use_ids = _tool_use_ids(page_rows)
+        if tool_use_ids:
+            paired_starts = await self._pool.fetch(
+                """
+                SELECT id, parent_event_id, event_type, payload, created_at
+                FROM events
+                WHERE session_id = $1
+                  AND event_type = 'tool_start'
+                  AND payload->>'tool_use_id' = ANY($2::text[])
+                ORDER BY created_at DESC, id DESC
+                """,
+                session_id, tool_use_ids,
+            )
+            for row in paired_starts:
+                row_id = int(row["id"])
+                if row_id not in seen_ids:
+                    all_rows.append(row)
+                    seen_ids.add(row_id)
+
+        all_rows.sort(key=lambda r: (r["created_at"], r["id"]), reverse=True)
+        return _serialize_message_rows(all_rows), next_cursor

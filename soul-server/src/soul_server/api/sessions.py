@@ -338,6 +338,21 @@ def create_sessions_router() -> APIRouter:
             agent_session_id, before=before, limit=limit,
         )
 
+    @router.get("/sessions/{agent_session_id}/timeline")
+    async def get_session_timeline(
+        agent_session_id: str,
+        before: Optional[str] = Query(None, description="timeline 커서. 이보다 이전 항목만 조회"),
+        limit: int = Query(50, ge=1, le=200, description="페이지 크기"),
+    ):
+        """기본 채팅 UI용 semantic timeline 조회.
+
+        `/messages` raw endpoint는 호환용으로 유지한다. 기본 UI는 이 endpoint로
+        progress/debug/text lifecycle을 제외한 visible history를 받는다.
+        """
+        return await get_session_query_service().read_timeline(
+            agent_session_id, before=before, limit=limit,
+        )
+
     @router.get("/sessions/{agent_session_id}/events/{event_id}")
     async def get_event(
         agent_session_id: str,

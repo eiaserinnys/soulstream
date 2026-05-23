@@ -330,6 +330,13 @@ class ViewportProtocol(Protocol):
         limit: int = 50,
     ) -> tuple[list[dict], Optional[str]]: ...
 
+    async def read_timeline(
+        self,
+        session_id: str,
+        before: Optional[str] = None,
+        limit: int = 50,
+    ) -> tuple[list[dict], Optional[str]]: ...
+
 
 # ── 추상 기반 클래스 ──
 
@@ -496,6 +503,14 @@ class SessionDBBase(ABC):
 
     @abstractmethod
     async def read_messages(
+        self,
+        session_id: str,
+        before: Optional[str] = None,
+        limit: int = 50,
+    ) -> tuple[list[dict], Optional[str]]: ...
+
+    @abstractmethod
+    async def read_timeline(
         self,
         session_id: str,
         before: Optional[str] = None,

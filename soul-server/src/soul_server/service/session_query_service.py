@@ -242,6 +242,22 @@ class SessionQueryService:
         )
         return {"messages": messages, "next_cursor": next_cursor}
 
+    async def read_timeline(
+        self,
+        session_id: str,
+        before: Optional[str] = None,
+        limit: int = 50,
+    ) -> dict:
+        """기본 채팅 UI용 timeline 페이지네이션 조회.
+
+        `/messages` raw 호환 계약은 유지하고, 기본 UI는 progress/debug/text_delta
+        같은 비가시 이벤트가 제거된 semantic timeline을 사용한다.
+        """
+        messages, next_cursor = await self._db.read_timeline(
+            session_id, before=before, limit=limit,
+        )
+        return {"messages": messages, "next_cursor": next_cursor}
+
     async def stream_session_list_events(
         self,
         *,

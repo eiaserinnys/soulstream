@@ -1,7 +1,7 @@
-"""orch-server `/api/sessions/{id}/events/viewport`, `/{id}/messages` DB 직접 조회 테스트.
+"""orch-server `/api/sessions/{id}/events/viewport`, `/{id}/messages`, `/{id}/timeline` DB 직접 조회 테스트.
 
 orch-server와 soul-server가 같은 PostgreSQL을 공유하므로
-messages/viewport는 노드 통신 없이 DB 직접 SELECT.
+messages/timeline/viewport는 노드 통신 없이 DB 직접 SELECT.
 """
 
 from __future__ import annotations
@@ -85,3 +85,35 @@ class TestMessagesDirectDB:
         await client.get("/api/sessions/sess-1/messages")
 
         mock_db.read_messages.assert_called_once_with("sess-1", before=None, limit=50)
+
+
+class TestTimelineDirectDB:
+    """`GET /api/sessions/{id}/timeline` — semantic timeline DB 직접 조회."""
+
+    async def test_returns_db_result(self, client, mock_db):
+        """db.read_timeline 결과를 messages/next_cursor로 반환."""
+        messages = [
+            {"id": 10, "parent_event_id": None, "event_type": "assistant_message",
+             "payload": {}, "created_at": "2026-05-02T12:00:00+00:00"},
+        ]
+        mock_db.read_timeline = AsyncMock(
+            return_value=(messages, "2026-05-02T11:00:00+00:00,9"),
+        )
+
+        resp = await client.get("/api/sessions/sess-1/timeline?limit=50")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["messages"] == messages
+        assert data["next_cursor"] == "2026-05-02T11:00:00+00:00,9"
+        mock_db.read_timeline.assert_called_once_with("sess-1", before=None, limit=50)
+
+    async def test_passes_before_cursor(self, client, mock_db):
+        """before 파라미터가 db.read_timeline에 전달."""
+        mock_db.read_timeline = AsyncMock(return_value=([], None))
+
+        await client.get("/api/sessions/sess-1/timeline?limit=25&before=cursor-1")
+
+        mock_db.read_timeline.assert_called_once_with(
+            "sess-1", before="cursor-1", limit=25,
+        )

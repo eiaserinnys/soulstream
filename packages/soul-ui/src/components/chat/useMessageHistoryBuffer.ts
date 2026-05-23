@@ -2,7 +2,7 @@
  * useMessageHistoryBuffer — ChatView용 과거 메시지 페치 + 트리 통합 (옵션 D)
  *
  * 목적:
- * - `GET /api/sessions/{id}/messages` 응답을 라이브 SSE와 동일한 event-processor
+ * - `GET /api/sessions/{id}/timeline` 응답을 라이브 SSE와 동일한 event-processor
  *   파이프라인을 통해 store.tree에 통합한다 (단일 정본).
  * - 위로 스크롤 시 `before` 커서로 과거 메시지를 prepend한다.
  *   누적 prepend 개수(좌표)는 store.chatPrependedCount가 관리한다 — processHistoryEvents가
@@ -31,9 +31,8 @@ import { diag } from "../../lib/diag";
 
 /** 초기 로드 / prepend 페이지 크기 (soul-app ChatBody.tsx:43과 동기화 — atom 88d8c640) */
 export const HISTORY_PAGE_SIZE = 100;
-export const MAX_ZERO_ADDED_DRAIN_PAGES = 25;
 
-/** 서버 응답의 단일 메시지 (soul_common.db.session_db.read_messages) */
+/** 서버 응답의 단일 메시지 (soul_common.db.session_db.read_timeline) */
 export interface HistoricalMessage {
   id: number;
   parent_event_id: number | null;
@@ -44,24 +43,10 @@ export interface HistoricalMessage {
 }
 
 /** 서버 응답 페이로드 */
-interface MessagesResponse {
+interface TimelineResponse {
   messages: HistoricalMessage[];
   /** 다음 페이지 커서 (ISO timestamp). null이면 더 이상 과거 메시지 없음 */
   next_cursor: string | null;
-}
-
-export function shouldDrainZeroAddedHistoryPage(params: {
-  addedCount: number;
-  nextCursor: string | null;
-  previousCursor: string | null;
-  drainedPages: number;
-}): boolean {
-  return (
-    params.addedCount === 0 &&
-    params.nextCursor !== null &&
-    params.nextCursor !== params.previousCursor &&
-    params.drainedPages < MAX_ZERO_ADDED_DRAIN_PAGES
-  );
 }
 
 export interface UseMessageHistoryBufferResult {
@@ -100,18 +85,22 @@ export function toSSEEvent(m: HistoricalMessage): { event: SoulSSEEvent; eventId
   return { event, eventId: m.id };
 }
 
+export function buildHistoryPageUrl(sessionId: string, before: string | null): string {
+  const qs = new URLSearchParams({ limit: String(HISTORY_PAGE_SIZE) });
+  if (before !== null) qs.set("before", before);
+  return `/api/sessions/${encodeURIComponent(sessionId)}/timeline?${qs}`;
+}
+
 async function fetchHistoryPage(
   sessionId: string,
   before: string | null,
-): Promise<MessagesResponse | null> {
-  const qs = new URLSearchParams({ limit: String(HISTORY_PAGE_SIZE) });
-  if (before !== null) qs.set("before", before);
+): Promise<TimelineResponse | null> {
   const res = await fetch(
-    `/api/sessions/${encodeURIComponent(sessionId)}/messages?${qs}`,
+    buildHistoryPageUrl(sessionId, before),
     { credentials: "include" },
   );
   if (!res.ok) return null;
-  return (await res.json()) as MessagesResponse;
+  return (await res.json()) as TimelineResponse;
 }
 
 export function useMessageHistoryBuffer(
@@ -152,45 +141,29 @@ export function useMessageHistoryBuffer(
     setLoading(true);
     loadingRef.current = true;
     (async () => {
-      let cursor: string | null = null;
-      let drainedPages = 0;
-      let finalCursor: string | null = null;
       try {
-        while (true) {
-          const data = await fetchHistoryPage(sessionId, cursor);
-          if (sessionTokenRef.current !== token) return;
-          if (!data) return;
+        const data = await fetchHistoryPage(sessionId, null);
+        if (sessionTokenRef.current !== token) return;
+        if (!data) return;
 
-          // 시간 ASC로 뒤집어서 store에 흘림 (부모가 자식 이전에 처리되도록)
-          const events = [...(data.messages ?? [])].reverse().map(toSSEEvent);
-          diag("history", cursor === null ? "initial load" : "initial drain", {
-            sessionId,
-            before: cursor,
-            received: data.messages?.length ?? 0,
-            eventTypes: events.reduce<Record<string, number>>((acc, { event }) => {
-              acc[event.type] = (acc[event.type] ?? 0) + 1;
-              return acc;
-            }, {}),
-            firstEventId: events[0]?.eventId,
-            lastEventId: events[events.length - 1]?.eventId,
-            nextCursor: data.next_cursor,
-          });
-          const result = useDashboardStore.getState().processHistoryEvents(events);
-          diag("history", "initial page done", { addedCount: result.addedCount });
+        // 시간 ASC로 뒤집어서 store에 흘림 (부모가 자식 이전에 처리되도록)
+        const events = [...(data.messages ?? [])].reverse().map(toSSEEvent);
+        diag("history", "initial load", {
+          sessionId,
+          before: null,
+          received: data.messages?.length ?? 0,
+          eventTypes: events.reduce<Record<string, number>>((acc, { event }) => {
+            acc[event.type] = (acc[event.type] ?? 0) + 1;
+            return acc;
+          }, {}),
+          firstEventId: events[0]?.eventId,
+          lastEventId: events[events.length - 1]?.eventId,
+          nextCursor: data.next_cursor,
+        });
+        const result = useDashboardStore.getState().processHistoryEvents(events);
+        diag("history", "initial page done", { addedCount: result.addedCount });
 
-          finalCursor = data.next_cursor ?? null;
-          if (!shouldDrainZeroAddedHistoryPage({
-            addedCount: result.addedCount,
-            nextCursor: finalCursor,
-            previousCursor: cursor,
-            drainedPages,
-          })) {
-            break;
-          }
-          cursor = finalCursor;
-          drainedPages += 1;
-        }
-
+        const finalCursor = data.next_cursor ?? null;
         setNextCursor(finalCursor);
         if (finalCursor === null) setReachedTop(true);
       } catch {
@@ -216,39 +189,23 @@ export function useMessageHistoryBuffer(
     setLoading(true);
     loadingRef.current = true;
     (async () => {
-      let cursor: string | null = nextCursorRef.current;
-      let drainedPages = 0;
-      let finalCursor: string | null = cursor;
       try {
-        while (cursor !== null) {
-          const data = await fetchHistoryPage(sessionId, cursor);
-          if (sessionTokenRef.current !== token) return;
-          if (!data) return;
+        const data = await fetchHistoryPage(sessionId, cursor);
+        if (sessionTokenRef.current !== token) return;
+        if (!data) return;
 
-          const events = [...(data.messages ?? [])].reverse().map(toSSEEvent);
-          diag("history", "prepend page", {
-            sessionId,
-            before: cursor,
-            received: data.messages?.length ?? 0,
-            nextCursor: data.next_cursor,
-          });
-          const { addedCount } = useDashboardStore.getState().processHistoryEvents(events);
-          diag("history", "prepend done", { addedCount });
-
-          finalCursor = data.next_cursor ?? null;
-          if (!shouldDrainZeroAddedHistoryPage({
-            addedCount,
-            nextCursor: finalCursor,
-            previousCursor: cursor,
-            drainedPages,
-          })) {
-            break;
-          }
-          cursor = finalCursor;
-          drainedPages += 1;
-        }
+        const events = [...(data.messages ?? [])].reverse().map(toSSEEvent);
+        diag("history", "prepend page", {
+          sessionId,
+          before: cursor,
+          received: data.messages?.length ?? 0,
+          nextCursor: data.next_cursor,
+        });
+        const { addedCount } = useDashboardStore.getState().processHistoryEvents(events);
+        diag("history", "prepend done", { addedCount });
 
         // chatPrependedCount 누적은 processHistoryEvents가 store에 atomic 갱신한다.
+        const finalCursor = data.next_cursor ?? null;
         setNextCursor(finalCursor);
         if (finalCursor === null) setReachedTop(true);
       } catch {

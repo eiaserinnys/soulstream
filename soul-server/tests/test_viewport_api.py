@@ -34,6 +34,7 @@ from soul_server.models.schemas import (
 from soul_server.service.postgres_session_db import PostgresSessionDB
 from soul_server.service.task_executor import TaskExecutor
 from soul_server.service.task_models import Task, TaskStatus
+from soul_common.db.postgres.viewport import TIMELINE_EVENT_TYPES
 
 
 # === Helpers ===
@@ -553,6 +554,103 @@ class TestReadMessagesAncestor:
         ids = [m["id"] for m in messages]
         assert 15 in ids, "prepend 페이지에도 ancestor가 동봉되어야 한다"
         assert 20 in ids
+
+
+class TestReadTimeline:
+    """read_timeline semantic history 단위 테스트."""
+
+    @pytest.mark.asyncio
+    async def test_sql_filters_to_visible_event_types(self):
+        """timeline은 progress/debug/text delta를 SQL 필터에서 제외한다."""
+        db = PostgresSessionDB.__new__(PostgresSessionDB)
+        db._pool = MagicMock()
+        db._pool.fetch = AsyncMock(return_value=[])
+
+        await db.read_timeline("s1", before=None, limit=50)
+
+        call_args = db._pool.fetch.call_args
+        sql_text = call_args[0][0]
+        params = call_args[0][1:]
+        timeline_types = params[1]
+
+        assert "event_type = ANY($2::text[])" in sql_text
+        assert params[0] == "s1"
+        assert params[2] == 51
+        assert "user_message" in timeline_types
+        assert "assistant_message" in timeline_types
+        assert "tool_start" in timeline_types
+        assert "tool_result" in timeline_types
+        assert "progress" not in timeline_types
+        assert "debug" not in timeline_types
+        assert "text_delta" not in timeline_types
+        assert "text_end" not in timeline_types
+        assert set(timeline_types) == set(TIMELINE_EVENT_TYPES)
+
+    @pytest.mark.asyncio
+    async def test_visible_page_cursor_uses_visible_rows_only(self):
+        """limit+1 visible rows 기준으로 next_cursor를 계산한다."""
+        db = PostgresSessionDB.__new__(PostgresSessionDB)
+        rows = [
+            {"id": 30, "parent_event_id": None, "event_type": "assistant_message",
+             "payload": {}, "created_at": "2026-05-23T12:03:00+00:00"},
+            {"id": 20, "parent_event_id": None, "event_type": "tool_start",
+             "payload": {}, "created_at": "2026-05-23T12:02:00+00:00"},
+            {"id": 10, "parent_event_id": None, "event_type": "user_message",
+             "payload": {}, "created_at": "2026-05-23T12:01:00+00:00"},
+        ]
+        db._pool = MagicMock()
+        db._pool.fetch = AsyncMock(return_value=rows)
+
+        messages, cursor = await db.read_timeline("s1", before=None, limit=2)
+
+        assert [m["id"] for m in messages] == [30, 20]
+        assert cursor == "2026-05-23T12:02:00+00:00,20"
+
+    @pytest.mark.asyncio
+    async def test_tool_result_page_includes_matching_tool_start(self):
+        """tool_result만 페이지에 걸려도 같은 tool_use_id의 tool_start를 보강한다."""
+        db = PostgresSessionDB.__new__(PostgresSessionDB)
+        page_rows = [
+            {"id": 30, "parent_event_id": None, "event_type": "tool_result",
+             "payload": {"tool_use_id": "toolu_1", "content": "done"},
+             "created_at": "2026-05-23T12:03:00+00:00"},
+            {"id": 20, "parent_event_id": None, "event_type": "assistant_message",
+             "payload": {}, "created_at": "2026-05-23T12:02:00+00:00"},
+            {"id": 15, "parent_event_id": None, "event_type": "user_message",
+             "payload": {}, "created_at": "2026-05-23T12:01:30+00:00"},
+        ]
+        paired_starts = [
+            {"id": 10, "parent_event_id": None, "event_type": "tool_start",
+             "payload": {"tool_use_id": "toolu_1", "tool_name": "Bash"},
+             "created_at": "2026-05-23T12:01:00+00:00"},
+        ]
+        db._pool = MagicMock()
+        db._pool.fetch = AsyncMock(side_effect=[page_rows, paired_starts])
+
+        messages, cursor = await db.read_timeline("s1", before=None, limit=2)
+
+        assert [m["id"] for m in messages] == [30, 20, 10]
+        assert cursor == "2026-05-23T12:02:00+00:00,20"
+        second_call = db._pool.fetch.call_args_list[1]
+        assert "event_type = 'tool_start'" in second_call[0][0]
+        assert second_call[0][2] == ["toolu_1"]
+
+    @pytest.mark.asyncio
+    async def test_raw_messages_keep_progress_for_compatibility(self):
+        """/messages raw endpoint 계약은 progress 이벤트를 그대로 포함한다."""
+        db = PostgresSessionDB.__new__(PostgresSessionDB)
+        rows = [
+            {"id": 10, "parent_event_id": None, "event_type": "progress",
+             "payload": {"message": "step"}, "created_at": "2026-05-23T12:00:00+00:00"},
+        ]
+        db._pool = MagicMock()
+        db._pool.fetch = AsyncMock(return_value=rows)
+        db._pool.fetchval = AsyncMock(return_value=1)
+
+        messages, cursor = await db.read_messages("s1", before=None, limit=50)
+
+        assert messages == rows
+        assert cursor is None
 
 
 # === DB 통합 테스트 (TEST_DATABASE_URL 필요) ===
