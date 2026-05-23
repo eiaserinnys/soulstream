@@ -825,6 +825,34 @@ describe("dashboard-store", () => {
       expect(getQuerySessionsAt(qc, folderBKey)).toHaveLength(0);
     });
 
+    it("should not prepend an excluded-folder optimistic session to the feed cache", () => {
+      const qc = makeTestQueryClient();
+      const feedKey = ["sessions", "all", "feed", null] as const;
+      const hiddenFolderKey = ["sessions", "all", "folder", "hidden-folder"] as const;
+      seedQueryClientAt(qc, feedKey, []);
+      seedQueryClientAt(qc, hiddenFolderKey, []);
+      useDashboardStore.getState().setCatalog({
+        folders: [
+          {
+            id: "hidden-folder",
+            name: "Hidden",
+            sortOrder: 0,
+            settings: { excludeFromFeed: true },
+          },
+        ],
+        sessions: {},
+      });
+
+      useDashboardStore
+        .getState()
+        .addOptimisticSession(qc, "sess-hidden", "hi", "hidden-folder");
+
+      expect(getQuerySessionsAt(qc, feedKey)).toHaveLength(0);
+      expect(getQuerySessionsAt(qc, hiddenFolderKey).map((s) => s.agentSessionId)).toEqual([
+        "sess-hidden",
+      ]);
+    });
+
     it("should include dashboard user profile in optimistic summary", () => {
       const qc = makeTestQueryClient();
       seedQueryClient(qc, []);

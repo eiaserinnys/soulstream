@@ -28,6 +28,7 @@ import {
   buildFetchSessionsOptions,
   type SessionListQueryKey,
 } from "./session-list-query";
+import { countLoadedSessionsForQuery } from "./session-stream-helpers";
 
 const DEFAULT_PAGE_SIZE = 50;
 
@@ -108,7 +109,11 @@ export function useSessionListProvider(
     },
     initialPageParam: 0,
     getNextPageParam: (_lastPage, allPages) => {
-      const loaded = allPages.reduce((sum, p) => sum + p.sessions.length, 0);
+      const loaded = countLoadedSessionsForQuery(
+        allPages,
+        queryKey,
+        useDashboardStore.getState().catalog,
+      );
       const total = _lastPage.total;
       return loaded < total ? loaded : undefined;
     },

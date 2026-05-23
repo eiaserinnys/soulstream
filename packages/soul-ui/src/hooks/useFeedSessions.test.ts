@@ -144,4 +144,31 @@ describe("useFeedSessions", () => {
 
     expect(latest.map((s) => s.agentSessionId)).toEqual(["old-feed-session"]);
   });
+
+  it("does not change feed results when a folder query is populated after render", async () => {
+    queryClient.setQueryData(
+      ["sessions", "all", "feed", null],
+      page([makeSession("feed-session")]),
+    );
+
+    flushSync(() => {
+      root.render(
+        createElement(
+          QueryClientProvider,
+          { client: queryClient },
+          createElement(Probe, { onValue: (value) => { latest = value; } }),
+        ),
+      );
+    });
+    await Promise.resolve();
+    expect(latest.map((s) => s.agentSessionId)).toEqual(["feed-session"]);
+
+    queryClient.setQueryData(
+      ["sessions", "all", "folder", "folder-a"],
+      page([makeSession("folder-session")]),
+    );
+    await Promise.resolve();
+
+    expect(latest.map((s) => s.agentSessionId)).toEqual(["feed-session"]);
+  });
 });

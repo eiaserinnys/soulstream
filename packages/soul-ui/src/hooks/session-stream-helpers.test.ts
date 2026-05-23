@@ -14,6 +14,7 @@ import {
   applySessionUpdated,
   applySessionDeleted,
   buildSessionUpdates,
+  countLoadedSessionsForQuery,
   filterFeedSessions,
   mergeSessionCreatedSummary,
   normalizeSessionStatus,
@@ -478,7 +479,7 @@ describe("shared normalizeSessionStatus", () => {
 // queryKey 구조 ["sessions", typeFilter, viewMode, folderId]별로 다음 invariant 검증:
 //   - typeFilter "all"은 모든 sessionType 통과
 //   - typeFilter !== "all" + 불일치 → 제외
-//   - viewMode "feed" 캐시(folderId=null)는 어떤 폴더 세션이든 통과
+//   - viewMode "feed" 캐시(folderId=null)는 feed-eligible 폴더 세션만 통과
 //   - viewMode "folder" 캐시는 같은 folderId만 통과, 다른 폴더 / undefined → 제외
 describe("shouldApplySessionCreatedToCache", () => {
   it("feed 캐시(typeFilter=all, viewMode=feed, folderId=null)는 모든 세션 통과", () => {
@@ -487,6 +488,48 @@ describe("shouldApplySessionCreatedToCache", () => {
         ["sessions", "all", "feed", null],
         "claude",
         "folder-X",
+      ),
+    ).toBe(true);
+  });
+
+  it("feed 캐시는 catalog상 excludeFromFeed 폴더의 session_created를 제외한다", () => {
+    expect(
+      shouldApplySessionCreatedToCache(
+        ["sessions", "all", "feed", null],
+        "claude",
+        "hidden-folder",
+        {
+          folders: [
+            {
+              id: "hidden-folder",
+              name: "Hidden",
+              sortOrder: 0,
+              settings: { excludeFromFeed: true },
+            },
+          ],
+          sessions: {},
+        },
+      ),
+    ).toBe(false);
+  });
+
+  it("feed 캐시는 catalog상 일반 폴더의 session_created를 통과시킨다", () => {
+    expect(
+      shouldApplySessionCreatedToCache(
+        ["sessions", "all", "feed", null],
+        "claude",
+        "visible-folder",
+        {
+          folders: [
+            {
+              id: "visible-folder",
+              name: "Visible",
+              sortOrder: 0,
+              settings: { excludeFromFeed: false },
+            },
+          ],
+          sessions: {},
+        },
       ),
     ).toBe(true);
   });
@@ -573,5 +616,66 @@ describe("shouldApplySessionCreatedToCache", () => {
         "folder-B",
       ),
     ).toBe(false);
+  });
+});
+
+describe("countLoadedSessionsForQuery", () => {
+  it("feed pagination offset ignores sessions that do not belong to the feed query", () => {
+    const pages = [
+      {
+        sessions: [
+          makeSession("visible", { updatedAt: "2026-05-23T00:00:00Z" }),
+          makeSession("hidden", { updatedAt: "2026-05-23T00:01:00Z" }),
+          makeSession("llm", {
+            sessionType: "llm",
+            updatedAt: "2026-05-23T00:02:00Z",
+          }),
+        ],
+        total: 3,
+      },
+    ];
+
+    expect(
+      countLoadedSessionsForQuery(
+        pages,
+        ["sessions", "all", "feed", null],
+        {
+          folders: [
+            {
+              id: "visible-folder",
+              name: "Visible",
+              sortOrder: 0,
+            },
+            {
+              id: "hidden-folder",
+              name: "Hidden",
+              sortOrder: 1,
+              settings: { excludeFromFeed: true },
+            },
+          ],
+          sessions: {
+            visible: { folderId: "visible-folder", displayName: null },
+            hidden: { folderId: "hidden-folder", displayName: null },
+            llm: { folderId: null, displayName: null },
+          },
+        },
+      ),
+    ).toBe(1);
+  });
+
+  it("deduplicates sessions before computing the next pagination offset", () => {
+    const visible = makeSession("visible", { updatedAt: "2026-05-23T00:00:00Z" });
+    const pages = [
+      { sessions: [visible], total: 2 },
+      { sessions: [visible, makeSession("next")], total: 2 },
+    ];
+
+    expect(
+      countLoadedSessionsForQuery(
+        pages,
+        ["sessions", "all", "feed", null],
+        { folders: [], sessions: {} },
+      ),
+    ).toBe(2);
   });
 });

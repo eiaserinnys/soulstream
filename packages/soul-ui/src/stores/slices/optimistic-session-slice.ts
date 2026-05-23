@@ -69,6 +69,7 @@ export const createOptimisticSessionSlice: StateCreator<
             query.queryKey,
             newSession.sessionType,
             folderId,
+            catalog,
           ),
       },
       (old) => {

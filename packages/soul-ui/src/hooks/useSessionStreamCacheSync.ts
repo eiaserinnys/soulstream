@@ -100,14 +100,14 @@ export function useSessionStreamCacheSync(
         | undefined;
 
       const state = useDashboardStore.getState();
+      let catalogForCache = state.catalog;
       if (folderId !== undefined && state.catalog) {
-        state.setCatalog(
-          upsertSessionAssignmentInCatalog(
-            state.catalog,
-            newSession.agentSessionId,
-            folderId,
-          ),
+        catalogForCache = upsertSessionAssignmentInCatalog(
+          state.catalog,
+          newSession.agentSessionId,
+          folderId,
         );
+        state.setCatalog(catalogForCache);
       }
 
       // F-A(2026-05-17): onSessionUpdated/onSessionDeleted와 대칭으로 모든
@@ -126,6 +126,7 @@ export function useSessionStreamCacheSync(
               query.queryKey,
               newSession.sessionType,
               folderId,
+              catalogForCache,
             ),
         },
         (old) => {

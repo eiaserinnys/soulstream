@@ -182,6 +182,31 @@ export function reconcileSessionPagesForCatalog(
   };
 }
 
+export function countLoadedSessionsForQuery(
+  pages: SessionPage[],
+  cacheQueryKey: readonly unknown[],
+  catalog: CatalogState | null,
+): number {
+  const vMode = (cacheQueryKey[2] as string | undefined) ?? "feed";
+  const seen = new Set<string>();
+  let count = 0;
+  for (const page of pages) {
+    for (const session of page.sessions) {
+      if (seen.has(session.agentSessionId)) continue;
+      seen.add(session.agentSessionId);
+      if (
+        catalog &&
+        vMode === "feed" &&
+        !sessionMatchesCatalogCache(session, catalog, cacheQueryKey)
+      ) {
+        continue;
+      }
+      count += 1;
+    }
+  }
+  return count;
+}
+
 /**
  * session_created 이벤트:
  * filter가 'all'이거나 newSession.sessionType이 filter와 일치할 때
@@ -198,6 +223,7 @@ export function reconcileSessionPagesForCatalog(
  * 규칙:
  * - typeFilter !== "all" + newSession.sessionType !== typeFilter → 제외
  * - viewMode === "folder" + cache fId !== event folderId → 제외
+ * - viewMode === "feed" + catalog상 folder가 excludeFromFeed=true → 제외
  * - 그 외 → 적용
  *
  * design-principles §5 "제어의 단일 경로": setQueriesData에 inline predicate를 두지 않고
@@ -207,6 +233,7 @@ export function shouldApplySessionCreatedToCache(
   cacheQueryKey: readonly unknown[],
   newSessionType: string | undefined,
   newSessionFolderId: string | null | undefined,
+  catalog?: CatalogState | null,
 ): boolean {
   const typeFilter = (cacheQueryKey[1] as string | undefined) ?? "all";
   const vMode = (cacheQueryKey[2] as string | undefined) ?? "feed";
@@ -215,6 +242,13 @@ export function shouldApplySessionCreatedToCache(
   // viewMode=folder 캐시 — newSessionFolderId가 undefined(assignment 불명)이면
   // fId(string|null) !== undefined → 항상 false → 어떤 folder 캐시에도 prepend 안 함
   if (vMode === "folder" && fId !== newSessionFolderId) return false;
+  if (vMode === "feed") {
+    if (newSessionType === "llm") return false;
+    if (catalog && newSessionFolderId) {
+      const folder = catalog.folders.find((f) => f.id === newSessionFolderId);
+      if (folder?.settings?.excludeFromFeed) return false;
+    }
+  }
   return true;
 }
 
