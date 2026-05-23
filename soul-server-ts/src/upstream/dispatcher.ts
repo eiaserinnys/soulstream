@@ -13,7 +13,6 @@ import {
 } from "../attachments/file_manager.js";
 import type { ContextItem } from "../context/prompt_assembler.js";
 import type { TaskExecutor } from "../task/task_executor.js";
-import { buildAttachmentContextItems, splitAttachmentPaths } from "../task/attachment_context.js";
 import type { TaskManager } from "../task/task_manager.js";
 import type { CallerInfo, Task } from "../task/task_models.js";
 import type { ReasoningEffort } from "../engine/protocol.js";
@@ -27,6 +26,12 @@ import {
   buildRealtimeToolApprovalAck,
   type RealtimeAckType,
 } from "./realtime_ack.js";
+import {
+  TaskRuntimeCommands,
+  UnknownAgentProfileError,
+  buildInterveneAck,
+  buildSessionCreatedAck,
+} from "./task_runtime_commands.js";
 
 export type SendFn = (data: unknown) => Promise<void>;
 
@@ -185,6 +190,7 @@ const LIST_SESSIONS_HARD_LIMIT = 10_000;
  */
 export class CommandDispatcher {
   private readonly handlers: Record<string, (cmd: CommandLike) => Promise<void>>;
+  private readonly taskRuntimeCommands: TaskRuntimeCommands;
 
   constructor(
     private readonly send: SendFn,
@@ -202,6 +208,12 @@ export class CommandDispatcher {
     private readonly sessionDb?: SessionDB,
     private readonly realtimeBroker?: RealtimeBroker,
   ) {
+    this.taskRuntimeCommands = new TaskRuntimeCommands({
+      agentRegistry,
+      taskManager,
+      taskExecutor,
+      logger,
+    });
     this.handlers = {
       health_check: (cmd) => this.handleHealthCheck(cmd),
       create_session: (cmd) => this.handleCreateSession(cmd as CreateSessionCmd),
@@ -550,32 +562,32 @@ export class CommandDispatcher {
       await this.sendError(cmd, "create_session requires profile (agent id)");
       return;
     }
-    const agent = this.agentRegistry.get(profileId);
-    if (!agent) {
-      await this.sendError(cmd, `Unknown agent profile: ${profileId}`);
-      return;
+    let task: Task;
+    try {
+      task = await this.taskRuntimeCommands.createSession({
+        agentSessionId: cmd.agentSessionId,
+        prompt: cmd.prompt,
+        profileId,
+        callerSessionId: cmd.caller_session_id ?? null,
+        callerInfo: cmd.caller_info,
+        model: cmd.model,
+        oauthToken: cmd.oauth_token,
+        reasoningEffort: cmd.reasoningEffort,
+        allowedTools: cmd.allowed_tools,
+        disallowedTools: cmd.disallowed_tools,
+        useMcp: cmd.use_mcp,
+        folderId: cmd.folderId ?? null,
+        systemPrompt: cmd.systemPrompt,  // B-6 context_builder가 folder_prompt와 합성
+        extraContextItems: cmd.extra_context_items,
+        attachmentPaths: cmd.attachment_paths,
+      });
+    } catch (err) {
+      if (err instanceof UnknownAgentProfileError) {
+        await this.sendError(cmd, err.message);
+        return;
+      }
+      throw err;
     }
-
-    const { nonImagePaths } = splitAttachmentPaths(cmd.attachment_paths);
-    const task = await this.taskManager.createTask({
-      agentSessionId: cmd.agentSessionId,
-      prompt: cmd.prompt,
-      profileId,
-      callerSessionId: cmd.caller_session_id ?? null,
-      callerInfo: cmd.caller_info,
-      model: cmd.model,
-      oauthToken: agent.backend === "claude" ? normalizeOptionalString(cmd.oauth_token) : undefined,
-      reasoningEffort: cmd.reasoningEffort,
-      allowedTools: cmd.allowed_tools,
-      disallowedTools: cmd.disallowed_tools,
-      useMcp: cmd.use_mcp,
-      folderId: cmd.folderId ?? null,
-      systemPrompt: cmd.systemPrompt,  // B-6 context_builder가 folder_prompt와 합성
-      contextItems: cmd.extra_context_items ?? buildAttachmentContextItems(nonImagePaths),
-      attachmentPaths: cmd.attachment_paths,
-    });
-
-    this.taskExecutor.startExecution(task, agent);
 
     // session_created wire는 *두 경로*가 같은 type을 사용 — orch는 payload 키로 구분:
     //   1. dispatcher ACK (여기): {type, agentSessionId, requestId}  — *requestId 있을 때만*
@@ -584,11 +596,12 @@ export class CommandDispatcher {
     // requestId 없으면 ACK 발행 안 함 (atom c13f7826 빈 string ACK 금지).
     const requestId = cmd.requestId ?? cmd.request_id ?? "";
     if (requestId) {
-      await this.send({
-        type: "session_created",
-        agentSessionId: task.agentSessionId,
-        requestId,
-      });
+      await this.send(
+        buildSessionCreatedAck({
+          requestId,
+          agentSessionId: task.agentSessionId,
+        }),
+      );
     }
   }
 
@@ -598,13 +611,13 @@ export class CommandDispatcher {
    * Codex exec adapter는 turn-level steer를 지원하지 않으므로 *turn 사이 큐잉*으로 fallback.
    * app-server adapter처럼 live steering capability가 있는 엔진은 active turn에 직접 전달 가능:
    *   - Running 세션 + live steering → active turn 직접 전달. 응답
-   *     `intervene_ack(status="delivered", agentSessionId)`.
+   *     `intervene_ack(status="ok", outcome="delivered", agentSessionId)`.
    *   - Running 세션 fallback → interventionQueue에 push, 현 turn 종료 후 task_executor가
    *     dequeue하여 다음 turn 자동 진입 (resumeThread). 응답
-   *     `intervene_ack(status="queued", queuePosition)`.
+   *     `intervene_ack(status="ok", outcome="queued", queuePosition)`.
    *   - Completed/Error/Interrupted 세션 → status=running 전환 + queue push + startExecution
    *     재호출 → 다음 turn이 resumeThread(task.codexThreadId)로 자동 진입. 응답
-   *     `intervene_ack(status="auto_resumed", agentSessionId)`.
+   *     `intervene_ack(status="ok", outcome="auto_resumed", agentSessionId)`.
    *   - 미존재 task → addIntervention throw → sendError.
    *
    * Python `intervention_service.intervene` L28-79 정본 패턴의 codex 적응판. 응답 형상은
@@ -617,37 +630,15 @@ export class CommandDispatcher {
       return;
     }
 
-    const onResume = (task: Task) => {
-      if (!task.profileId) {
-        this.logger.error(
-          { sessionId: task.agentSessionId },
-          "intervene auto-resume aborted — task missing profileId",
-        );
-        return;
-      }
-      const agent = this.agentRegistry.get(task.profileId);
-      if (!agent) {
-        this.logger.error(
-          { sessionId: task.agentSessionId, profileId: task.profileId },
-          "intervene auto-resume aborted — agent profile not found",
-        );
-        return;
-      }
-      this.taskExecutor.startExecution(task, agent);
-    };
-
     let result;
     try {
-      result = await this.taskManager.addIntervention(
-        {
-          agentSessionId: sessionId,
-          text: cmd.text,
-          user: cmd.user ?? "upstream",
-          callerInfo: cmd.caller_info,
-          attachmentPaths: cmd.attachment_paths,
-        },
-        onResume,
-      );
+      result = await this.taskRuntimeCommands.intervene({
+        agentSessionId: sessionId,
+        text: cmd.text,
+        user: cmd.user,
+        callerInfo: cmd.caller_info,
+        attachmentPaths: cmd.attachment_paths,
+      });
     } catch (err) {
       await this.sendError(cmd, err instanceof Error ? err.message : String(err));
       return;
@@ -658,37 +649,7 @@ export class CommandDispatcher {
       // ACK 발행 안 함 (atom c13f7826 빈 string ACK 금지) — orch _send_command 미사용 경로.
       return;
     }
-    // wire 정본은 Python `command_handler.py:244-248` — `status:"ok"`로 통일. orch는
-    // requestId만으로 future를 resolve(`node_connection.py:397-405`)하여 status 값 분기 없음 —
-    // 따라서 status 값을 통일해도 동작 영향 0이지만 design-principles §9 일관성·대칭성 정합.
-    // 부가 정보(queuePosition · agentSessionId)는 그대로 운반 — 향후 orch가 ACK 본문을
-    // 활용하면 즉시 사용 가능.
-    if ("delivered" in result) {
-      await this.send({
-        type: "intervene_ack",
-        requestId,
-        status: "ok",
-        outcome: "delivered",
-        agentSessionId: sessionId,
-      });
-    } else if ("queued" in result) {
-      await this.send({
-        type: "intervene_ack",
-        requestId,
-        status: "ok",
-        outcome: "queued",
-        queuePosition: result.queuePosition,
-        ...(result.liveSteerStatus ? { liveSteerStatus: result.liveSteerStatus } : {}),
-      });
-    } else {
-      await this.send({
-        type: "intervene_ack",
-        requestId,
-        status: "ok",
-        outcome: "auto_resumed",
-        agentSessionId: sessionId,
-      });
-    }
+    await this.send(buildInterveneAck({ requestId, agentSessionId: sessionId, result }));
   }
 
   private async handleInterruptSession(cmd: InterruptSessionCmd): Promise<void> {
@@ -940,12 +901,6 @@ export class CommandDispatcher {
 function stringifyError(err: unknown): string {
   if (err instanceof Error) return err.message;
   return String(err);
-}
-
-function normalizeOptionalString(value: string | null | undefined): string | undefined {
-  if (value === null || value === undefined) return undefined;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 function commandRequestId(cmd: CommandLike): string {

@@ -1,0 +1,272 @@
+import { describe, expect, it, vi } from "vitest";
+import pino from "pino";
+
+import type { AgentProfile } from "../../src/agent_registry.js";
+import {
+  TaskRuntimeCommands,
+  UnknownAgentProfileError,
+  buildInterveneAck,
+  buildSessionCreatedAck,
+} from "../../src/upstream/task_runtime_commands.js";
+import type { TaskExecutor } from "../../src/task/task_executor.js";
+import type { TaskManager } from "../../src/task/task_manager.js";
+import type { Task } from "../../src/task/task_models.js";
+
+const logger = pino({ level: "silent" });
+
+const codexAgent: AgentProfile = {
+  id: "codex-default",
+  name: "Codex Default",
+  backend: "codex",
+  workspace_dir: "/tmp/codex-default",
+};
+
+const claudeAgent: AgentProfile = {
+  id: "claude-roselin",
+  name: "Claude Roselin",
+  backend: "claude",
+  workspace_dir: "/tmp/claude-roselin",
+};
+
+function makeTask(params: Partial<Task> = {}): Task {
+  return {
+    agentSessionId: "sess-1",
+    prompt: "hi",
+    status: "running",
+    profileId: codexAgent.id,
+    createdAt: new Date("2026-05-23T00:00:00.000Z"),
+    lastEventId: 0,
+    lastReadEventId: 0,
+    interventionQueue: [],
+    ...params,
+  };
+}
+
+function createRuntime(opts: {
+  agents?: AgentProfile[];
+  createTask?: TaskManager["createTask"];
+  addIntervention?: TaskManager["addIntervention"];
+  startExecution?: TaskExecutor["startExecution"];
+} = {}) {
+  const agents = new Map(
+    (opts.agents ?? [codexAgent]).map((agent) => [agent.id, agent]),
+  );
+  const taskManager = {
+    createTask: opts.createTask ?? vi.fn(async (params) => makeTask(params)),
+    addIntervention: opts.addIntervention ?? vi.fn(),
+  } as Pick<TaskManager, "createTask" | "addIntervention">;
+  const taskExecutor = {
+    startExecution: opts.startExecution ?? vi.fn(),
+  } as Pick<TaskExecutor, "startExecution">;
+
+  const runtime = new TaskRuntimeCommands({
+    agentRegistry: {
+      get: vi.fn((profileId: string) => agents.get(profileId)),
+    },
+    taskManager,
+    taskExecutor,
+    logger,
+  });
+
+  return { runtime, taskManager, taskExecutor };
+}
+
+describe("TaskRuntimeCommands.createSession", () => {
+  it("creates a task from upstream command params and starts execution with the resolved agent", async () => {
+    const contextItems = [
+      { key: "external", label: "External", content: "keep this" },
+    ];
+    const { runtime, taskManager, taskExecutor } = createRuntime();
+
+    const task = await runtime.createSession({
+      agentSessionId: "sess-create",
+      prompt: "inspect",
+      profileId: codexAgent.id,
+      callerSessionId: "caller-1",
+      callerInfo: { source: "agent", agent_id: "delegator" },
+      model: "gpt-5",
+      oauthToken: "should-not-pass-to-codex",
+      reasoningEffort: "medium",
+      allowedTools: ["Read"],
+      disallowedTools: ["Bash"],
+      useMcp: false,
+      folderId: "folder-1",
+      systemPrompt: "system override",
+      extraContextItems: contextItems,
+      attachmentPaths: ["/tmp/a.png", "/tmp/b.txt"],
+    });
+
+    expect(taskManager.createTask).toHaveBeenCalledWith({
+      agentSessionId: "sess-create",
+      prompt: "inspect",
+      profileId: codexAgent.id,
+      callerSessionId: "caller-1",
+      callerInfo: { source: "agent", agent_id: "delegator" },
+      model: "gpt-5",
+      oauthToken: undefined,
+      reasoningEffort: "medium",
+      allowedTools: ["Read"],
+      disallowedTools: ["Bash"],
+      useMcp: false,
+      folderId: "folder-1",
+      systemPrompt: "system override",
+      contextItems,
+      attachmentPaths: ["/tmp/a.png", "/tmp/b.txt"],
+    });
+    expect(taskExecutor.startExecution).toHaveBeenCalledWith(task, codexAgent);
+  });
+
+  it("builds attached-files context from non-image attachments when explicit context is absent", async () => {
+    const { runtime, taskManager } = createRuntime();
+
+    await runtime.createSession({
+      agentSessionId: "sess-attach",
+      prompt: "read files",
+      profileId: codexAgent.id,
+      attachmentPaths: ["/tmp/image.png", "/tmp/notes.md"],
+    });
+
+    expect(taskManager.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contextItems: [
+          {
+            key: "attached_files",
+            label: "첨부 파일",
+            content:
+              "다음 파일들이 첨부되었습니다. Read 도구로 내용을 확인하세요:\n" +
+              "- /tmp/notes.md",
+          },
+        ],
+        attachmentPaths: ["/tmp/image.png", "/tmp/notes.md"],
+      }),
+    );
+  });
+
+  it("passes trimmed oauth token only for Claude backend profiles", async () => {
+    const { runtime, taskManager } = createRuntime({
+      agents: [codexAgent, claudeAgent],
+    });
+
+    await runtime.createSession({
+      agentSessionId: "sess-claude",
+      prompt: "use claude",
+      profileId: claudeAgent.id,
+      oauthToken: "  claude-token  ",
+    });
+    await runtime.createSession({
+      agentSessionId: "sess-codex",
+      prompt: "use codex",
+      profileId: codexAgent.id,
+      oauthToken: "codex-ignored",
+    });
+
+    expect(taskManager.createTask).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ oauthToken: "claude-token" }),
+    );
+    expect(taskManager.createTask).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ oauthToken: undefined }),
+    );
+  });
+
+  it("fails before task creation when profile id is unknown", async () => {
+    const { runtime, taskManager, taskExecutor } = createRuntime();
+
+    await expect(
+      runtime.createSession({
+        agentSessionId: "sess-missing",
+        prompt: "hi",
+        profileId: "missing-profile",
+      }),
+    ).rejects.toBeInstanceOf(UnknownAgentProfileError);
+    expect(taskManager.createTask).not.toHaveBeenCalled();
+    expect(taskExecutor.startExecution).not.toHaveBeenCalled();
+  });
+});
+
+describe("TaskRuntimeCommands.intervene", () => {
+  it("forwards intervention params and auto-resume callback starts execution with the task profile", async () => {
+    const resumedTask = makeTask({ agentSessionId: "sess-resume", profileId: codexAgent.id });
+    const addIntervention = vi.fn(async (_params, onResume) => {
+      onResume(resumedTask);
+      return { autoResumed: true };
+    });
+    const { runtime, taskManager, taskExecutor } = createRuntime({ addIntervention });
+
+    const result = await runtime.intervene({
+      agentSessionId: "sess-resume",
+      text: "continue",
+      callerInfo: { source: "agent" },
+      attachmentPaths: ["/tmp/context.txt"],
+    });
+
+    expect(taskManager.addIntervention).toHaveBeenCalledWith(
+      {
+        agentSessionId: "sess-resume",
+        text: "continue",
+        user: "upstream",
+        callerInfo: { source: "agent" },
+        attachmentPaths: ["/tmp/context.txt"],
+      },
+      expect.any(Function),
+    );
+    expect(taskExecutor.startExecution).toHaveBeenCalledWith(resumedTask, codexAgent);
+    expect(result).toEqual({ autoResumed: true });
+  });
+});
+
+describe("TaskRuntimeCommands ACK builders", () => {
+  it("builds stable session_created ACK", () => {
+    expect(buildSessionCreatedAck({ requestId: "req-1", agentSessionId: "sess-1" })).toEqual({
+      type: "session_created",
+      requestId: "req-1",
+      agentSessionId: "sess-1",
+    });
+  });
+
+  it("maps intervention route results to stable intervene_ack outcomes", () => {
+    expect(
+      buildInterveneAck({
+        requestId: "req-delivered",
+        agentSessionId: "sess-1",
+        result: { delivered: true },
+      }),
+    ).toEqual({
+      type: "intervene_ack",
+      requestId: "req-delivered",
+      status: "ok",
+      outcome: "delivered",
+      agentSessionId: "sess-1",
+    });
+
+    expect(
+      buildInterveneAck({
+        requestId: "req-queued",
+        agentSessionId: "sess-1",
+        result: { queued: true, queuePosition: 3, liveSteerStatus: "not_supported" },
+      }),
+    ).toEqual({
+      type: "intervene_ack",
+      requestId: "req-queued",
+      status: "ok",
+      outcome: "queued",
+      queuePosition: 3,
+      liveSteerStatus: "not_supported",
+    });
+
+    expect(
+      buildInterveneAck({
+        requestId: "req-resumed",
+        agentSessionId: "sess-1",
+        result: { autoResumed: true },
+      }),
+    ).toEqual({
+      type: "intervene_ack",
+      requestId: "req-resumed",
+      status: "ok",
+      outcome: "auto_resumed",
+      agentSessionId: "sess-1",
+    });
+  });
+});
