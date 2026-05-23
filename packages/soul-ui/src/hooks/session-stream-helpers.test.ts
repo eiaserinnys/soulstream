@@ -14,6 +14,7 @@ import {
   applySessionUpdated,
   applySessionDeleted,
   buildSessionUpdates,
+  filterFeedSessions,
   mergeSessionCreatedSummary,
   normalizeSessionStatus,
   reconcileSessionPagesForCatalog,
@@ -441,6 +442,20 @@ describe("reconcileSessionPagesForCatalog", () => {
     expect(result.pages[0].sessions.map((s) => s.agentSessionId)).toEqual([
       "visible",
     ]);
+  });
+});
+
+describe("filterFeedSessions", () => {
+  it("24시간 윈도를 적용하지 않고 오래된 세션도 포함한다", () => {
+    const result = filterFeedSessions(
+      [
+        makeSession("new", { updatedAt: "2026-05-23T00:00:00Z" }),
+        makeSession("old", { updatedAt: "2026-05-01T00:00:00Z" }),
+      ],
+      { folders: [], sessions: {} },
+    );
+
+    expect(result.map((s) => s.agentSessionId)).toEqual(["new", "old"]);
   });
 });
 

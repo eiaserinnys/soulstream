@@ -4,7 +4,7 @@
  * 피드 뷰에서 사용하는 세션 목록과 미읽음 카운트 훅.
  *
  * Phase 5: queryCache.subscribe() 패턴으로 전환.
- * - TanStack Query 캐시에서 전체 세션을 읽어 filterFeedSessions로 필터링한다.
+ * - TanStack Query 캐시에서 feed query page만 읽어 filterFeedSessions로 필터링한다.
  * - queryCache 변경 시 cacheVersion을 증가시켜 useMemo를 재계산한다.
  */
 
@@ -16,7 +16,7 @@ import { filterFeedSessions, type SessionPage } from "./session-stream-helpers";
 
 /**
  * 피드 세션 목록 훅.
- * - llm 세션 제외, excludeFromFeed 폴더 제외, 24시간 이내 활동 세션만 반환.
+ * - llm 세션 제외, excludeFromFeed 폴더 제외, updatedAt DESC 정렬.
  */
 export function useFeedSessions(): SessionSummary[] {
   const queryClient = useQueryClient();

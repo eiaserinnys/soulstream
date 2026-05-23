@@ -27,14 +27,12 @@ export interface SessionPage {
  *
  * - llm 세션 제외
  * - excludeFromFeed 폴더 제외 (미분류 세션은 항상 포함)
- * - 24시간 이내 활동한 세션만 포함
  * - updatedAt/createdAt 내림차순 정렬
  */
 export function filterFeedSessions(
   sessions: SessionSummary[],
   catalog: CatalogState | null,
 ): SessionSummary[] {
-  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
   return sessions
     .filter((s) => {
       if (s.sessionType === "llm") return false;
@@ -46,8 +44,8 @@ export function filterFeedSessions(
           if (folder?.settings?.excludeFromFeed) return false;
         }
       }
-      const t = s.lastMessage?.timestamp ?? s.updatedAt ?? s.createdAt;
-      return t != null && new Date(t).getTime() > cutoff;
+      const t = s.updatedAt ?? s.createdAt;
+      return t != null && Number.isFinite(new Date(t).getTime());
     })
     .sort((a, b) => {
       const ta = new Date(a.updatedAt ?? a.createdAt ?? 0).getTime();

@@ -115,4 +115,33 @@ describe("useFeedSessions", () => {
 
     expect(latest.map((s) => s.agentSessionId)).toEqual(["feed-session"]);
   });
+
+  it("keeps old feed sessions while ignoring folder-only query cache data", async () => {
+    queryClient.setQueryData(
+      ["sessions", "all", "feed", null],
+      page([
+        makeSession("old-feed-session", {
+          createdAt: "2026-05-01T00:00:00Z",
+          updatedAt: "2026-05-01T00:00:00Z",
+        }),
+      ]),
+    );
+    queryClient.setQueryData(
+      ["sessions", "all", "folder", "folder-a"],
+      page([makeSession("folder-session")]),
+    );
+
+    flushSync(() => {
+      root.render(
+        createElement(
+          QueryClientProvider,
+          { client: queryClient },
+          createElement(Probe, { onValue: (value) => { latest = value; } }),
+        ),
+      );
+    });
+    await Promise.resolve();
+
+    expect(latest.map((s) => s.agentSessionId)).toEqual(["old-feed-session"]);
+  });
 });

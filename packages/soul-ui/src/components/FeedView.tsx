@@ -1,7 +1,7 @@
 /**
  * FeedView - 피드 뷰 메인 컴포넌트
  *
- * 최근 24시간 내 변경된 세션을 카드 리스트로 표시한다.
+ * 피드 대상 세션을 최신 업데이트 순 카드 리스트로 표시한다.
  * @tanstack/react-virtual로 가상 스크롤을 적용한다.
  */
 
@@ -44,13 +44,6 @@ export function FeedView({ onNewSession, onLoadMore, hasMore, onRenameSession, o
   const setFeedScrollOffset = useDashboardStore((s) => s.setFeedScrollOffset);
   const dashboardConfig = useDashboardStore((s) => s.dashboardConfig);
 
-  // 1분 주기 갱신 (24시간 윈도우 밖으로 밀린 세션 제거용)
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    const timer = setInterval(() => setTick((t) => t + 1), 60_000);
-    return () => clearInterval(timer);
-  }, []);
-
   // useFeedSessions: Zustand sessions + catalog 구독 → filterFeedSessions로 반응형 계산
   const feedSessions = useFeedSessions();
   const firstFeedId = feedSessions[0]?.agentSessionId ?? null;
@@ -77,7 +70,7 @@ export function FeedView({ onNewSession, onLoadMore, hasMore, onRenameSession, o
         (s) => s.agentSessionId === activeSessionKey,
       );
       if (!existsInFeed) {
-        // 세션이 피드에서 사라짐 (삭제되었거나 24시간 윈도우 밖으로 밀림) → 피드 첫 세션 선택
+        // 세션이 피드에서 사라짐 (삭제되었거나 피드 제외 폴더로 이동) → 피드 첫 세션 선택
         if (firstFeedId) {
           setActiveSession(firstFeedId);
         } else {
@@ -192,7 +185,7 @@ export function FeedView({ onNewSession, onLoadMore, hasMore, onRenameSession, o
       <FeedTopBar onNewSession={onNewSession} />
       {feedSessions.length === 0 ? (
         <div className="flex items-center justify-center flex-1 text-muted-foreground text-sm">
-          최근 24시간 이내 활동한 세션이 없습니다
+          표시할 세션이 없습니다
         </div>
       ) : (
         <div
