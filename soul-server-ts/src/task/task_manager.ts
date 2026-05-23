@@ -30,6 +30,7 @@ import type {
   Task,
   TaskStatus,
 } from "./task_models.js";
+import { ActiveTaskRecovery } from "./task_active_recovery.js";
 import { AutoResumeTransition } from "./task_auto_resume_transition.js";
 import {
   buildCallerInfoMetadataEntry,
@@ -166,6 +167,7 @@ export type StartExecutionCallback = (task: Task) => void;
 
 export class TaskManager {
   private readonly tasks = new Map<string, Task>();
+  private readonly activeTaskRecovery: ActiveTaskRecovery;
   private readonly runningInterventionTransition: RunningInterventionTransition;
   private readonly autoResumeTransition: AutoResumeTransition;
 
@@ -188,6 +190,7 @@ export class TaskManager {
     private readonly contextBuilder?: ExecutionContextBuilder,
     private readonly agentRegistry?: AgentRegistry,
   ) {
+    this.activeTaskRecovery = new ActiveTaskRecovery(logger);
     this.runningInterventionTransition = new RunningInterventionTransition({
       broadcaster,
       logger,
@@ -855,16 +858,7 @@ export class TaskManager {
     //
     // PR #54까지는 두 경로 모두 intervention_sent로 박혀 사용자 보고 "2턴 이후 전부 주황색"
     // 결함. 본 정정으로 wire 분류 정합.
-    if (isDetachedHydratedRunningTask(task)) {
-      this.logger.warn(
-        { sessionId: task.agentSessionId },
-        "hydrated running task has no active execution; auto-resuming instead of queueing",
-      );
-      task.status = "interrupted";
-      task.completedAt = new Date();
-    }
-
-    if (task.status === "running") {
+    if (this.activeTaskRecovery.prepareForIntervention(task) === "running") {
       return await this._addInterventionRunning(task, message);
     }
     return await this._addInterventionAutoResume(task, message, onResume);
@@ -1002,15 +996,6 @@ function supportsToolApproval(
     engine &&
       typeof (engine as unknown as Partial<SupportsToolApproval>).deliverToolApproval ===
         "function",
-  );
-}
-
-function isDetachedHydratedRunningTask(task: Task): boolean {
-  return (
-    task.status === "running" &&
-    task.hydratedFromDb === true &&
-    !task.engine &&
-    !task.executionPromise
   );
 }
 
