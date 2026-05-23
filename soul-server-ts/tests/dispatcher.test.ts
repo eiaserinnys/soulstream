@@ -1070,6 +1070,35 @@ describe("CommandDispatcher attachment reverse-proxy", () => {
     }
   });
 
+  it("upload_attachment requestId 없으면 파일 저장 후 ACK 미발행", async () => {
+    const store: AttachmentStore = {
+      saveFileForSession: vi.fn(async (params) => ({
+        path: `/tmp/${params.sessionId}/${params.filename}`,
+        filename: params.filename,
+        size: params.content.length,
+        content_type: params.contentType ?? "application/octet-stream",
+      })),
+      cleanupSession: vi.fn(async () => 0),
+      downloadAttachment: vi.fn(async () => ({
+        content_b64: "",
+        content_type: "application/octet-stream",
+        filename: "empty",
+        size: 0,
+      })),
+    };
+    const { dispatcher, sent } = createDispatcher({ attachmentStore: store });
+
+    await dispatcher.dispatch({
+      type: "upload_attachment",
+      session_id: "sess-no-ack",
+      filename: "hello.txt",
+      content_b64: Buffer.from("hello").toString("base64"),
+    });
+
+    expect(store.saveFileForSession).toHaveBeenCalledTimes(1);
+    expect(sent).toHaveLength(0);
+  });
+
   it("upload_attachment invalid base64 → INVALID_REQUEST error", async () => {
     const { dispatcher, sent } = createDispatcher();
     await dispatcher.dispatch({

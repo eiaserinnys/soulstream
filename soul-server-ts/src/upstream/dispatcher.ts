@@ -6,9 +6,7 @@ import type {
   ClaudeAuthSetTokenCmd,
 } from "../auth/claude_auth.js";
 import {
-  AttachmentError,
   FileAttachmentStore,
-  FileNotFoundError,
   type AttachmentStore,
 } from "../attachments/file_manager.js";
 import type { ContextItem } from "../context/prompt_assembler.js";
@@ -19,6 +17,10 @@ import type { ReasoningEffort } from "../engine/protocol.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { RealtimeBroker } from "../realtime/realtime_broker.js";
 import { buildRespondAck, buildToolApprovalAck } from "./delivery_ack.js";
+import {
+  AttachmentCommandError,
+  AttachmentCommands,
+} from "./attachment_commands.js";
 import {
   buildRealtimeAckError,
   buildRealtimeCallCreatedAck,
@@ -191,6 +193,7 @@ const LIST_SESSIONS_HARD_LIMIT = 10_000;
 export class CommandDispatcher {
   private readonly handlers: Record<string, (cmd: CommandLike) => Promise<void>>;
   private readonly taskRuntimeCommands: TaskRuntimeCommands;
+  private readonly attachmentCommands: AttachmentCommands;
 
   constructor(
     private readonly send: SendFn,
@@ -214,6 +217,7 @@ export class CommandDispatcher {
       taskExecutor,
       logger,
     });
+    this.attachmentCommands = new AttachmentCommands(attachmentStore);
     this.handlers = {
       health_check: (cmd) => this.handleHealthCheck(cmd),
       create_session: (cmd) => this.handleCreateSession(cmd as CreateSessionCmd),
@@ -790,47 +794,21 @@ export class CommandDispatcher {
   }
 
   private async handleUploadAttachment(cmd: UploadAttachmentCmd): Promise<void> {
-    const requestId = cmd.requestId ?? cmd.request_id ?? "";
-    if (!cmd.content_b64) {
-      await this.sendError(cmd, "INVALID_REQUEST: content_b64 누락");
-      return;
-    }
-    if (!cmd.session_id) {
-      await this.sendError(cmd, "INVALID_REQUEST: session_id 누락");
-      return;
-    }
-
-    let content: Buffer;
+    const requestId = commandRequestId(cmd);
     try {
-      content = Buffer.from(cmd.content_b64, "base64");
-      if (content.toString("base64").replace(/=+$/, "") !== cmd.content_b64.replace(/=+$/, "")) {
-        throw new Error("invalid base64");
-      }
-    } catch (err) {
-      await this.sendError(cmd, `INVALID_REQUEST: base64 디코딩 실패: ${stringifyError(err)}`);
-      return;
-    }
-
-    try {
-      const result = await this.attachmentStore.saveFileForSession({
+      const ack = await this.attachmentCommands.upload({
+        requestId,
         sessionId: cmd.session_id,
-        filename: cmd.filename || "unnamed",
-        content,
-        contentType: cmd.content_type || "application/octet-stream",
+        filename: cmd.filename,
+        contentType: cmd.content_type,
+        contentB64: cmd.content_b64,
       });
       if (requestId) {
-        await this.send({
-          type: "upload_attachment_result",
-          requestId,
-          path: result.path,
-          filename: result.filename,
-          size: result.size,
-          content_type: result.content_type,
-        });
+        await this.send(ack);
       }
     } catch (err) {
-      if (err instanceof AttachmentError) {
-        await this.sendError(cmd, `INVALID_REQUEST: ${err.message}`);
+      if (err instanceof AttachmentCommandError) {
+        await this.sendError(cmd, err.message);
         return;
       }
       throw err;
@@ -840,47 +818,37 @@ export class CommandDispatcher {
   private async handleDeleteSessionAttachments(
     cmd: DeleteSessionAttachmentsCmd,
   ): Promise<void> {
-    const requestId = cmd.requestId ?? cmd.request_id ?? "";
-    if (!cmd.session_id) {
-      await this.sendError(cmd, "INVALID_REQUEST: session_id 누락");
-      return;
-    }
-    const filesRemoved = await this.attachmentStore.cleanupSession(cmd.session_id);
-    if (requestId) {
-      await this.send({
-        type: "delete_session_attachments_result",
+    const requestId = commandRequestId(cmd);
+    try {
+      const ack = await this.attachmentCommands.deleteSessionAttachments({
         requestId,
-        cleaned: true,
-        files_removed: filesRemoved,
+        sessionId: cmd.session_id,
       });
+      if (requestId) {
+        await this.send(ack);
+      }
+    } catch (err) {
+      if (err instanceof AttachmentCommandError) {
+        await this.sendError(cmd, err.message);
+        return;
+      }
+      throw err;
     }
   }
 
   private async handleDownloadAttachment(cmd: DownloadAttachmentCmd): Promise<void> {
-    const requestId = cmd.requestId ?? cmd.request_id ?? "";
-    if (!cmd.path) {
-      await this.sendError(cmd, "INVALID_REQUEST: path 누락 또는 빈 문자열");
-      return;
-    }
+    const requestId = commandRequestId(cmd);
     try {
-      const result = await this.attachmentStore.downloadAttachment(cmd.path);
+      const ack = await this.attachmentCommands.download({
+        requestId,
+        path: cmd.path,
+      });
       if (requestId) {
-        await this.send({
-          type: "download_attachment_result",
-          requestId,
-          content_b64: result.content_b64,
-          content_type: result.content_type,
-          filename: result.filename,
-          size: result.size,
-        });
+        await this.send(ack);
       }
     } catch (err) {
-      if (err instanceof FileNotFoundError) {
-        await this.sendError(cmd, `NOT_FOUND: ${err.message}`);
-        return;
-      }
-      if (err instanceof AttachmentError) {
-        await this.sendError(cmd, `INVALID_REQUEST: ${err.message}`);
+      if (err instanceof AttachmentCommandError) {
+        await this.sendError(cmd, err.message);
         return;
       }
       throw err;
