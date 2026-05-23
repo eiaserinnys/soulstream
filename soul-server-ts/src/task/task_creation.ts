@@ -1,0 +1,213 @@
+import type { Logger } from "pino";
+
+import type { ContextItem } from "../context/prompt_assembler.js";
+import { DEFAULT_FOLDERS, type SessionDB } from "../db/session_db.js";
+import type { ReasoningEffort } from "../engine/protocol.js";
+import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
+
+import type {
+  CallerInfo,
+  SessionType,
+  Task,
+} from "./task_models.js";
+import { buildCallerInfoMetadataEntry } from "./task_metadata.js";
+
+export interface CreateTaskParams {
+  agentSessionId: string;
+  prompt: string;
+  profileId?: string;
+  clientId?: string | null;
+  sessionType?: SessionType;
+  llmProvider?: string | null;
+  llmModel?: string | null;
+  llmUsage?: Record<string, number> | null;
+  callerSessionId?: string | null;
+  callerInfo?: CallerInfo;
+  model?: string | null;
+  oauthToken?: string;
+  reasoningEffort?: ReasoningEffort;
+  /** 요청별 허용 도구 override. 없으면 AgentProfile.allowed_tools 사용. */
+  allowedTools?: string[];
+  /** 요청별 금지 도구 override. 없으면 AgentProfile.disallowed_tools 사용. */
+  disallowedTools?: string[];
+  /** 요청별 MCP 사용 여부. undefined면 true. */
+  useMcp?: boolean;
+  folderId?: string | null;
+  /** B-6 context_builder: 사용자/위임자 system_prompt. folder_prompt와 합성됨. */
+  systemPrompt?: string;
+  /** 첫 turn prompt와 user_message.context에 함께 박을 외부 context items. */
+  contextItems?: ContextItem[];
+  /** 첫 turn user_message.attachments와 engine image 입력 분리에 사용할 원본 첨부 경로. */
+  attachmentPaths?: string[];
+}
+
+export interface TaskCreationDeps {
+  nodeId: string;
+  db: SessionDB;
+  broadcaster: SessionBroadcaster;
+  logger: Logger;
+  hasTask(sessionId: string): boolean;
+  rememberTask(task: Task): void;
+}
+
+/**
+ * Owns new runtime task creation.
+ *
+ * This is the only place that assembles the initial Task shape, DB
+ * `session_register` payload, caller metadata timing, folder assignment, and
+ * `session_created` broadcast ordering for a brand-new session.
+ */
+export class TaskCreation {
+  constructor(private readonly deps: TaskCreationDeps) {}
+
+  /**
+   * 새 Task 생성 + DB 등록 + orch broadcast.
+   *
+   * 같은 agentSessionId가 이미 있으면 throw — 중복 차단.
+   * DB register 실패 시 in-memory map에 task를 *남기지 않음* (실패 격리).
+   */
+  async createTask(params: CreateTaskParams): Promise<Task> {
+    if (this.deps.hasTask(params.agentSessionId)) {
+      throw new Error(`Task already exists: ${params.agentSessionId}`);
+    }
+
+    const now = new Date();
+    const metadata = buildCallerInfoMetadataEntry(params.callerInfo);
+    const sessionType = params.sessionType ?? "claude";
+    const task: Task = {
+      agentSessionId: params.agentSessionId,
+      prompt: params.prompt,
+      status: "running",
+      profileId: params.profileId,
+      clientId: params.clientId ?? null,
+      sessionType,
+      llmProvider: params.llmProvider ?? null,
+      llmModel: params.llmModel ?? null,
+      llmUsage: params.llmUsage ?? null,
+      callerSessionId: params.callerSessionId ?? undefined,
+      callerInfo: params.callerInfo,
+      metadata: metadata ? [metadata] : [],
+      model: params.model,
+      oauthToken: params.oauthToken,
+      reasoningEffort: params.reasoningEffort,
+      allowedTools: params.allowedTools,
+      disallowedTools: params.disallowedTools,
+      useMcp: params.useMcp,
+      systemPrompt: params.systemPrompt,
+      contextItems: params.contextItems,
+      attachmentPaths: params.attachmentPaths,
+      createdAt: now,
+      lastEventId: 0,
+      lastReadEventId: 0,
+      interventionQueue: [],
+    };
+
+    // DB 등록 — schema.sql session_register는 *INSERT only*, ON CONFLICT 없음.
+    // 같은 session_id 중복 INSERT 시 PK violation throw → 호출자에게 신호.
+    await this.deps.db.registerSession({
+      sessionId: task.agentSessionId,
+      nodeId: this.deps.nodeId,
+      agentId: task.profileId ?? null,
+      claudeSessionId: null,
+      sessionType,
+      prompt: task.prompt,
+      clientId: task.clientId ?? null,
+      status: task.status,
+      createdAt: task.createdAt,
+      updatedAt: task.createdAt,
+      callerSessionId: task.callerSessionId ?? null,
+    });
+
+    // caller_info를 Task.metadata와 DB에 동시 저장. Python TaskFactory와 같은 타이밍:
+    // session_created 전에 박아 feed/folder 초기 카드가 metadata fallback을 즉시 사용할 수 있게 한다.
+    if (metadata) {
+      await this.deps.db.appendMetadata(task.agentSessionId, metadata);
+    }
+
+    this.deps.rememberTask(task);
+
+    // 폴더 배정 + catalog_updated broadcast (Python `task_manager.py:284-323`
+    // `_assign_default_folder_and_broadcast` 정본). codex 세션이 dashboard 폴더 트리에서
+    // 보이지 않던 결함의 정본 fix — session_register는 folder_id를 받지 않으므로 *별도*
+    // session_assign_folder로 박는다. folder_id 미지정 시 session_type 기반 기본 폴더 폴백.
+    //
+    // 부가 기능 — 실패는 격리 (Python L292-293 코멘트 정합).
+    const assignedFolderId = await this.assignFolderAndBroadcastCatalog(
+      task.agentSessionId,
+      sessionType,
+      params.folderId ?? null,
+    );
+
+    // broadcast session_created — 실패해도 task는 메모리에 살아있음 (orch 재연결 시 동기 가능).
+    // Python L304-313 정합: catalog_updated 이후 session_created 발행 (순서 보장).
+    try {
+      await this.deps.broadcaster.emitSessionCreated(task, assignedFolderId);
+    } catch (err) {
+      this.deps.logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "session_created broadcast failed",
+      );
+    }
+
+    return task;
+  }
+
+  /**
+   * 신규 세션을 폴더에 배정 + catalog_updated wire broadcast.
+   *
+   * Python `service/task_manager.py:284-323 _assign_default_folder_and_broadcast` 정본 이식.
+   *   - folder_id 명시 → 그 폴더에 배정
+   *   - 미지정 → `DEFAULT_FOLDERS[sessionType]` 기본 폴더 lookup → 배정
+   *   - 기본 폴더 미존재 → 폴더 배정 없음(graceful) + broadcast 없음
+   *   - 폴더 배정 후 `getCatalog` + `emitCatalogUpdated` (dashboard 폴더 트리 즉시 갱신)
+   *
+   * 부가 기능 — 각 단계 실패를 격리 (Python L292-293 "폴더 배정이나 브로드캐스트에 실패해도
+   * 호출자의 핵심 동작(세션 생성/등록)에 영향을 주지 않는다").
+   *
+   * 반환: 최종 배정된 folder_id. 배정 안 됐으면 null.
+   */
+  private async assignFolderAndBroadcastCatalog(
+    sessionId: string,
+    sessionType: string,
+    folderId: string | null,
+  ): Promise<string | null> {
+    let assigned: string | null = null;
+    try {
+      if (folderId !== null) {
+        await this.deps.db.assignSessionToFolder(sessionId, folderId);
+        assigned = folderId;
+      } else {
+        // Python L302-303 `DEFAULT_FOLDERS.get(session_type, DEFAULT_FOLDERS["claude"])` 정합.
+        // `DEFAULT_FOLDERS.claude`는 정본 상수(session_db.ts:35)에 *항상* 정의되어 있으므로
+        // non-null assertion으로 명시. 추가 폴백(`?? ""`)은 *불가능 분기*라 design-principles §3
+        // 정본 하나 측면에서 제거 (code-reviewer P2-3).
+        const claudeDefault = DEFAULT_FOLDERS["claude"] as string;
+        const defaultName = DEFAULT_FOLDERS[sessionType] ?? claudeDefault;
+        const folder = await this.deps.db.getDefaultFolder(defaultName);
+        if (folder) {
+          await this.deps.db.assignSessionToFolder(sessionId, folder.id);
+          assigned = folder.id;
+        }
+      }
+    } catch (err) {
+      this.deps.logger.warn(
+        { err, sessionId },
+        "assignSessionToFolder failed — proceeding without folder",
+      );
+    }
+
+    if (assigned !== null) {
+      try {
+        const catalog = await this.deps.db.getCatalog();
+        await this.deps.broadcaster.emitCatalogUpdated(catalog);
+      } catch (err) {
+        this.deps.logger.warn(
+          { err, sessionId },
+          "catalog_updated broadcast failed",
+        );
+      }
+    }
+
+    return assigned;
+  }
+}

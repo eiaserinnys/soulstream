@@ -1,0 +1,219 @@
+import pino from "pino";
+import { describe, expect, it, vi } from "vitest";
+
+import type { SessionDB } from "../../src/db/session_db.js";
+import { TaskCreation } from "../../src/task/task_creation.js";
+import type { Task } from "../../src/task/task_models.js";
+import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
+
+const silentLogger = pino({ level: "silent" });
+
+function makeHarness() {
+  const registerSession = vi.fn().mockResolvedValue(undefined);
+  const appendMetadata = vi.fn().mockResolvedValue(1);
+  const assignSessionToFolder = vi.fn().mockResolvedValue(undefined);
+  const getDefaultFolder = vi
+    .fn()
+    .mockResolvedValue({ id: "default-claude", name: "클로드" });
+  const getCatalog = vi.fn().mockResolvedValue({ folders: [], sessions: {} });
+  const db = {
+    registerSession,
+    appendMetadata,
+    assignSessionToFolder,
+    getDefaultFolder,
+    getCatalog,
+  } as unknown as SessionDB;
+
+  const emitCatalogUpdated = vi.fn().mockResolvedValue(undefined);
+  const emitSessionCreated = vi.fn().mockResolvedValue(undefined);
+  const broadcaster = {
+    emitCatalogUpdated,
+    emitSessionCreated,
+  } as unknown as SessionBroadcaster;
+
+  const tasks = new Map<string, Task>();
+  const creation = new TaskCreation({
+    nodeId: "node-1",
+    db,
+    broadcaster,
+    logger: silentLogger,
+    hasTask: (sessionId) => tasks.has(sessionId),
+    rememberTask: (task) => {
+      tasks.set(task.agentSessionId, task);
+    },
+  });
+
+  return {
+    creation,
+    tasks,
+    registerSession,
+    appendMetadata,
+    assignSessionToFolder,
+    getDefaultFolder,
+    getCatalog,
+    emitCatalogUpdated,
+    emitSessionCreated,
+  };
+}
+
+describe("TaskCreation", () => {
+  it("creates the runtime task, registers the session, persists caller metadata, and broadcasts after folder assignment", async () => {
+    const h = makeHarness();
+
+    const task = await h.creation.createTask({
+      agentSessionId: "sess-1",
+      prompt: "hello",
+      profileId: "codex-default",
+      sessionType: "llm",
+      callerInfo: { source: "slack", display_name: "Alice" },
+      folderId: "folder-42",
+      reasoningEffort: "high",
+      allowedTools: ["Read"],
+      disallowedTools: ["Bash"],
+      useMcp: false,
+    });
+
+    expect(task).toMatchObject({
+      agentSessionId: "sess-1",
+      prompt: "hello",
+      status: "running",
+      profileId: "codex-default",
+      sessionType: "llm",
+      reasoningEffort: "high",
+      allowedTools: ["Read"],
+      disallowedTools: ["Bash"],
+      useMcp: false,
+      metadata: [
+        {
+          type: "caller_info",
+          value: { source: "slack", display_name: "Alice" },
+        },
+      ],
+      lastEventId: 0,
+      lastReadEventId: 0,
+      interventionQueue: [],
+    });
+    expect(h.tasks.get("sess-1")).toBe(task);
+
+    expect(h.registerSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "sess-1",
+        nodeId: "node-1",
+        agentId: "codex-default",
+        claudeSessionId: null,
+        sessionType: "llm",
+        prompt: "hello",
+        status: "running",
+        callerSessionId: null,
+      }),
+    );
+    expect(h.appendMetadata).toHaveBeenCalledWith("sess-1", {
+      type: "caller_info",
+      value: { source: "slack", display_name: "Alice" },
+    });
+    expect(h.assignSessionToFolder).toHaveBeenCalledWith("sess-1", "folder-42");
+    expect(h.getDefaultFolder).not.toHaveBeenCalled();
+    expect(h.emitCatalogUpdated).toHaveBeenCalledWith({ folders: [], sessions: {} });
+    expect(h.emitSessionCreated).toHaveBeenCalledWith(task, "folder-42");
+
+    expect(h.appendMetadata.mock.invocationCallOrder[0]).toBeLessThan(
+      h.emitSessionCreated.mock.invocationCallOrder[0],
+    );
+    expect(h.emitCatalogUpdated.mock.invocationCallOrder[0]).toBeLessThan(
+      h.emitSessionCreated.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("uses the session type default folder when no folderId is provided", async () => {
+    const h = makeHarness();
+    h.getDefaultFolder.mockResolvedValueOnce({ id: "default-llm", name: "LLM" });
+
+    const task = await h.creation.createTask({
+      agentSessionId: "sess-default",
+      prompt: "p",
+      profileId: "codex-default",
+      sessionType: "llm",
+    });
+
+    expect(h.getDefaultFolder).toHaveBeenCalledWith("⚙️ LLM 세션");
+    expect(h.assignSessionToFolder).toHaveBeenCalledWith("sess-default", "default-llm");
+    expect(h.emitSessionCreated).toHaveBeenCalledWith(task, "default-llm");
+  });
+
+  it("continues without folder assignment when the default folder is missing", async () => {
+    const h = makeHarness();
+    h.getDefaultFolder.mockResolvedValueOnce(null);
+
+    const task = await h.creation.createTask({
+      agentSessionId: "sess-no-folder",
+      prompt: "p",
+      profileId: "codex-default",
+    });
+
+    expect(h.assignSessionToFolder).not.toHaveBeenCalled();
+    expect(h.emitCatalogUpdated).not.toHaveBeenCalled();
+    expect(h.emitSessionCreated).toHaveBeenCalledWith(task, null);
+    expect(h.tasks.get("sess-no-folder")).toBe(task);
+  });
+
+  it("isolates folder, catalog, and session_created broadcast failures after DB registration", async () => {
+    const h = makeHarness();
+    h.assignSessionToFolder.mockRejectedValueOnce(new Error("folder failed"));
+    h.emitCatalogUpdated.mockRejectedValueOnce(new Error("catalog failed"));
+    h.emitSessionCreated.mockRejectedValueOnce(new Error("ws closed"));
+
+    const first = await h.creation.createTask({
+      agentSessionId: "sess-folder-fail",
+      prompt: "p",
+      profileId: "codex-default",
+      folderId: "folder-1",
+    });
+    const second = await h.creation.createTask({
+      agentSessionId: "sess-catalog-fail",
+      prompt: "p",
+      profileId: "codex-default",
+      folderId: "folder-2",
+    });
+    const third = await h.creation.createTask({
+      agentSessionId: "sess-session-created-fail",
+      prompt: "p",
+      profileId: "codex-default",
+      folderId: "folder-3",
+    });
+
+    expect(first.agentSessionId).toBe("sess-folder-fail");
+    expect(second.agentSessionId).toBe("sess-catalog-fail");
+    expect(third.agentSessionId).toBe("sess-session-created-fail");
+    expect(h.tasks.has("sess-folder-fail")).toBe(true);
+    expect(h.tasks.has("sess-catalog-fail")).toBe(true);
+    expect(h.tasks.has("sess-session-created-fail")).toBe(true);
+  });
+
+  it("rejects duplicates before DB registration and does not remember register failures", async () => {
+    const h = makeHarness();
+    await h.creation.createTask({
+      agentSessionId: "sess-dup",
+      prompt: "p",
+      profileId: "codex-default",
+    });
+
+    await expect(
+      h.creation.createTask({
+        agentSessionId: "sess-dup",
+        prompt: "again",
+        profileId: "codex-default",
+      }),
+    ).rejects.toThrow("Task already exists: sess-dup");
+    expect(h.registerSession).toHaveBeenCalledTimes(1);
+
+    h.registerSession.mockRejectedValueOnce(new Error("PK violation"));
+    await expect(
+      h.creation.createTask({
+        agentSessionId: "sess-register-fail",
+        prompt: "p",
+        profileId: "codex-default",
+      }),
+    ).rejects.toThrow("PK violation");
+    expect(h.tasks.has("sess-register-fail")).toBe(false);
+  });
+});
