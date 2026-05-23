@@ -37,15 +37,17 @@ import {
   extractAgentsSessionItemsFromMetadata,
   extractCallerInfoFromMetadata,
 } from "./task_metadata.js";
+import {
+  RunningInterventionTransition,
+  type RunningInterventionResult,
+} from "./task_running_intervention_transition.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import type {
   BackendId,
   InputResponseDeliveryResult,
-  LiveTurnSteerStatus,
   ReasoningEffort,
   SSEEventPayload,
   SupportsInputResponse,
-  SupportsLiveTurnSteering,
   SupportsToolApproval,
   ToolApprovalDecision,
   ToolApprovalDeliveryResult,
@@ -89,8 +91,7 @@ export interface CreateTaskParams {
  *   resumeSessionId(task.codexThreadId)로 다음 turn 자동 시작.
  */
 export type AddInterventionResult =
-  | { delivered: true }
-  | { queued: true; queuePosition: number; liveSteerStatus?: LiveTurnSteerStatus }
+  | RunningInterventionResult
   | { autoResumed: true };
 
 /** addIntervention이 받는 메시지. dispatcher가 wire payload에서 조립. */
@@ -165,6 +166,7 @@ export type StartExecutionCallback = (task: Task) => void;
 
 export class TaskManager {
   private readonly tasks = new Map<string, Task>();
+  private readonly runningInterventionTransition: RunningInterventionTransition;
   private readonly autoResumeTransition: AutoResumeTransition;
 
   constructor(
@@ -186,6 +188,11 @@ export class TaskManager {
     private readonly contextBuilder?: ExecutionContextBuilder,
     private readonly agentRegistry?: AgentRegistry,
   ) {
+    this.runningInterventionTransition = new RunningInterventionTransition({
+      broadcaster,
+      logger,
+      persistence,
+    });
     this.autoResumeTransition = new AutoResumeTransition({
       db,
       broadcaster,
@@ -873,91 +880,7 @@ export class TaskManager {
     task: Task,
     message: InterventionMessage,
   ): Promise<AddInterventionResult> {
-    const interventionEvent: Record<string, unknown> = {
-      type: "intervention_sent",
-      user: message.user,
-      text: message.text,
-      timestamp: Date.now() / 1000,
-    };
-    if (message.callerInfo) {
-      interventionEvent.caller_info = message.callerInfo;
-    }
-    if (message.attachmentPaths && message.attachmentPaths.length > 0) {
-      interventionEvent.attachments = message.attachmentPaths;
-    }
-    if (this.persistence) {
-      try {
-        const eventId = await this.persistence.persistEvent(
-          task.agentSessionId,
-          interventionEvent as SSEEventPayload,
-        );
-        task.lastEventId = eventId;
-        // ride-along 5자리 — Python `task_executor.py` `_event_id` 정합. orch session_events.py가
-        // SSE id로 추출하여 대시보드 tree-placer dedup·순서 보장.
-        interventionEvent._event_id = eventId;
-        await this.persistence.handleSideEffects(
-          task.agentSessionId,
-          interventionEvent as SSEEventPayload,
-          task,
-        );
-      } catch (err) {
-        this.logger.warn(
-          { err, sessionId: task.agentSessionId },
-          "intervention_sent persistence failed",
-        );
-      }
-    }
-    try {
-      // emitInterventionSent이 message에서 event를 재구성하므로 _event_id가 누락된다.
-      // 대신 _event_id가 박힌 interventionEvent dict을 emitEventEnvelope으로 직접 전달.
-      // emitInterventionSent의 책임 통합은 별 카드 후보 (design-principles §3 정본 둘 회피).
-      await this.broadcaster.emitEventEnvelope(
-        task.agentSessionId,
-        interventionEvent as SSEEventPayload,
-      );
-    } catch (err) {
-      this.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        "intervention_sent broadcast failed",
-      );
-    }
-
-    let liveSteerStatus: LiveTurnSteerStatus | undefined;
-    if (supportsLiveTurnSteering(task.engine)) {
-      try {
-        const steerResult = await task.engine.steerActiveTurn({
-          prompt: message.text,
-          ...(message.attachmentPaths && message.attachmentPaths.length > 0
-            ? { imageAttachmentPaths: message.attachmentPaths }
-            : {}),
-        });
-        liveSteerStatus = steerResult.status;
-        if (steerResult.status === "delivered") {
-          return { delivered: true };
-        }
-        this.logger.warn(
-          {
-            sessionId: task.agentSessionId,
-            status: steerResult.status,
-            message: steerResult.message,
-          },
-          "live turn steer not delivered — queueing intervention fallback",
-        );
-      } catch (err) {
-        liveSteerStatus = "failed";
-        this.logger.warn(
-          { err, sessionId: task.agentSessionId },
-          "live turn steer failed — queueing intervention fallback",
-        );
-      }
-    }
-
-    task.interventionQueue.push(message);
-    return {
-      queued: true,
-      queuePosition: task.interventionQueue.length,
-      ...(liveSteerStatus ? { liveSteerStatus } : {}),
-    };
+    return await this.runningInterventionTransition.deliver(task, message);
   }
 
   /**
@@ -1068,16 +991,6 @@ function supportsInputResponse(
   return Boolean(
     engine &&
       typeof (engine as unknown as Partial<SupportsInputResponse>).deliverInputResponse ===
-        "function",
-  );
-}
-
-function supportsLiveTurnSteering(
-  engine: Task["engine"],
-): engine is NonNullable<Task["engine"]> & SupportsLiveTurnSteering {
-  return Boolean(
-    engine &&
-      typeof (engine as unknown as Partial<SupportsLiveTurnSteering>).steerActiveTurn ===
         "function",
   );
 }
