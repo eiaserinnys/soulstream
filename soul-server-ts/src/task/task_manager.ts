@@ -34,10 +34,8 @@ import { ActiveTaskRecovery } from "./task_active_recovery.js";
 import { AutoResumeTransition } from "./task_auto_resume_transition.js";
 import {
   buildCallerInfoMetadataEntry,
-  extractAgentsRunStateFromMetadata,
-  extractAgentsSessionItemsFromMetadata,
-  extractCallerInfoFromMetadata,
 } from "./task_metadata.js";
+import { hydrateEvictedTaskFromSessionRow } from "./task_evicted_hydration.js";
 import {
   RunningInterventionTransition,
   type RunningInterventionResult,
@@ -923,59 +921,7 @@ export class TaskManager {
     }
     if (!row) return null;
 
-    // status 검증 — DB에 비정상 값이 있으면 null 반환 (Python L129-134 정합).
-    const status = row.status;
-    const validStatuses: readonly TaskStatus[] = ["running", "completed", "error", "interrupted"];
-    if (!status || !validStatuses.includes(status as TaskStatus)) {
-      this.logger.warn(
-        { sessionId, status, createdAt: row.created_at },
-        "loadEvictedTask: incomplete or invalid SessionRow",
-      );
-      return null;
-    }
-
-    // completed_at: status가 terminal이면 updated_at 사용 (Python L137-146 정합).
-    let completedAt: Date | undefined;
-    if (status === "completed" || status === "error" || status === "interrupted") {
-      completedAt = row.updated_at ?? undefined;
-    }
-
-    const metadata = Array.isArray(row.metadata)
-      ? (row.metadata as Array<Record<string, unknown>>)
-      : [];
-    const agentsRunState = extractAgentsRunStateFromMetadata(metadata);
-    const agentsSessionItems = extractAgentsSessionItemsFromMetadata(metadata);
-
-    const task: Task = {
-      agentSessionId: row.session_id,
-      prompt: row.prompt ?? "",
-      status: status as TaskStatus,
-      hydratedFromDb: true,
-      profileId: row.agent_id ?? undefined,
-      clientId: row.client_id,
-      sessionType: row.session_type === "llm" ? "llm" : "claude",
-      codexThreadId: row.claude_session_id ?? undefined,
-      callerSessionId: row.caller_session_id ?? undefined,
-      // P0 (code-reviewer): metadata JSONB array에서 *마지막 신원 박힌* caller_info entry 복원.
-      // 누락 시 R-2 회로(dashboard owner Google portrait fallback) codex 경로에 재현 —
-      // Python `session_eviction_manager.py:148-156` 주석이 명시. Python
-      // `extract_caller_info_from_metadata` (`packages/soul-common/.../auth/caller_info.py:119-163`)
-      // 정본 인라인 이식.
-      callerInfo: extractCallerInfoFromMetadata(row.metadata),
-      metadata,
-      agentsRunState: agentsRunState?.serialized,
-      agentsRunStateSchemaVersion: agentsRunState?.schemaVersion,
-      agentsPendingApprovalId: agentsRunState?.pendingApprovalId,
-      agentsPreviousResponseId: agentsRunState?.previousResponseId,
-      agentsConversationId: agentsRunState?.conversationId,
-      agentsSessionItems,
-      createdAt: row.created_at,
-      completedAt,
-      lastEventId: row.last_event_id ?? 0,
-      lastReadEventId: row.last_read_event_id ?? 0,
-      interventionQueue: [],
-    };
-    return task;
+    return hydrateEvictedTaskFromSessionRow(row, this.logger);
   }
 }
 
