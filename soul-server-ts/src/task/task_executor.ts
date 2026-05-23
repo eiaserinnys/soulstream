@@ -25,24 +25,19 @@ import { CLAUDE_OAUTH_TOKEN_ENV } from "../engine/claude_options.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
-import {
-  composeFirstTurnPrompt,
-  type ExecutionContextBuilder,
-  type PreparedContext,
-} from "../context/context_builder.js";
+import type { ExecutionContextBuilder } from "../context/context_builder.js";
 
 import type { CompletionNotifier } from "./completion_notifier.js";
-import { splitAttachmentPaths } from "./attachment_context.js";
 import { TaskAgentsSnapshotPersistence } from "./task_agents_snapshot_persistence.js";
 import { TaskEngineEventPublisher } from "./task_engine_event_publisher.js";
 import { TaskInitialMessagePublisher } from "./task_initial_message_publisher.js";
 import { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
 import type { Task, TaskStatus } from "./task_models.js";
 import {
-  composeInterventionTurnPrompt,
   isOpenAiAgentsApprovalPending,
   resolveTurnLoopTransition,
 } from "./task_turn_loop_transition.js";
+import { TaskTurnInputBuilder } from "./task_turn_input_builder.js";
 
 /** AgentProfile → EnginePort 생성. backend별 분기는 factory 구현체 담당. */
 export type EngineFactory = (agent: AgentProfile) => EnginePort;
@@ -52,6 +47,7 @@ export class TaskExecutor {
   private readonly lifecycleTransition: TaskLifecycleTransition;
   private readonly initialMessagePublisher: TaskInitialMessagePublisher;
   private readonly agentsSnapshotPersistence: TaskAgentsSnapshotPersistence;
+  private readonly turnInputBuilder: TaskTurnInputBuilder;
 
   constructor(
     private readonly engineFactory: EngineFactory,
@@ -63,7 +59,7 @@ export class TaskExecutor {
      * B-6 context_builder DI. undefined일 때 본 PR 이전 동작(task.prompt 직접 사용) 유지 —
      * legacy 호출자·테스트 환경 호환. 운영 흐름(main.ts)에서는 항상 주입.
      */
-    private readonly contextBuilder?: ExecutionContextBuilder,
+    contextBuilder?: ExecutionContextBuilder,
     /**
      * B-7 피위임 완료 회송. undefined일 때 통지 skip — legacy 호출자·테스트 환경 호환.
      * 운영 흐름(main.ts)에서는 항상 주입하여 child finalize 후 parent에게 결과 텍스트 송신.
@@ -89,6 +85,11 @@ export class TaskExecutor {
       broadcaster,
       logger,
       persistence,
+    });
+    this.turnInputBuilder = new TaskTurnInputBuilder({
+      contextBuilder,
+      initialMessagePublisher: this.initialMessagePublisher,
+      logger,
     });
     this.agentsSnapshotPersistence = new TaskAgentsSnapshotPersistence({
       db,
@@ -150,94 +151,10 @@ export class TaskExecutor {
     engine: EnginePort,
     agent: AgentProfile,
   ): Promise<void> {
-    // B-5 진입 분기: auto-resume 흐름과 신규 task 흐름 구분.
-    //
-    // - 신규 task (queue 비어있음): task.prompt가 사용자의 첫 발화 → user_message 영속화 후
-    //   첫 turn engine.execute(prompt=task.prompt).
-    // - Auto-resume (queue 비어있지 않음, PR #55 결함 A 정정 반영):
-    //   `addIntervention.completed/error/interrupted` 분기(`_addInterventionAutoResume`)가
-    //   *user_message를 이미 영속화·broadcast*했고 task.status="running"으로 전환 + queue.push +
-    //   session_updated wire까지 발행한 상태. 첫 turn은 queue dequeue로 *새 메시지를 prompt*로
-    //   사용. 추가 user_message 영속화는 *완전한 의미 중복* — skip.
-    //
-    // Python 정본은 auto-resume 시 *새 task를 생성*(`task_manager.add_intervention` L635
-    // `create_task(prompt=text, ...)`)하여 새 _persist_initial_messages가 user_message를
-    // 박는 모델. TS는 같은 task 인스턴스를 재활용하지만 본 분기 + addIntervention auto-resume
-    // 분기 조합으로 wire 의미 등가 달성.
-    let turnPrompt: string;
-    let turnImageAttachmentPaths: string[] | undefined;
-    /**
-     * 첫 turn에 backend별로 분리하여 SDK에 전달할 system prompt.
-     *
-     * Phase B parity 분기 (분석 캐시 §E-2):
-     * - claude backend: SDK `system_prompt` 옵션을 활용 → composeFirstTurnPrompt에는 system 제외하고
-     *   context items만 prepend, systemPrompt는 EngineExecuteParams로 별도 전달.
-     * - codex backend: SDK turn-level systemPrompt 미지원 → 기존 동작 그대로 prompt 본문에 prepend.
-     */
-    let turnSystemPrompt: string | undefined;
-    if (task.interventionQueue.length === 0) {
-      // 신규 task — Python `_persist_initial_messages`(L120-182) 정합.
-      //
-      // 순서 (Python L131-180):
-      //   1. ctx = contextBuilder.build (있으면)
-      //   2. system_message 영속화·broadcast (ctx.effectiveSystemPrompt 있을 때)
-      //   3. user_message 영속화·broadcast (payload.context = ctx.combinedContextItems)
-      //   4. turn prompt 합성 (codex SDK는 turn-level systemPrompt 미지원이라 단일 문자열로 prepend)
-      //
-      // ctx를 *먼저* build해야 (2)(3)(4) 모두에 같은 산출물을 forward할 수 있다 — Python 정본도
-      // _persist_initial_messages 호출 직전 ctx를 인자로 받는다. PR #57은 (4)만 이식했고
-      // (2)(3) wire emit이 누락되어 대시보드 ⚙️ 시스템 프롬프트 / 📋 Context 슬롯이 비어
-      // 보였다 — 분석 캐시 `20260518-0945-codex-context-mcp-cancel.md` Part A-3a.
-      //
-      // contextBuilder 미주입(legacy 호출자·테스트)이면 ctx=undefined → (2) skip, (3) context
-      // 키 생략, (4) task.prompt 그대로. Python `if ... and ctx.effective_system_prompt` 가드와
-      // 같은 의미 (L134).
-      //
-      // Auto-resume·intervention turn은 본 분기에 진입하지 않으므로 system_prompt·atom_context
-      // 재주입 안 함 (Python `_resolve_folder` L100 `task.resume_session_id is None` 정합).
-      let ctx: PreparedContext | undefined;
-      if (this.contextBuilder) {
-        try {
-          ctx = await this.contextBuilder.build(task, agent);
-        } catch (err) {
-          this.logger.warn(
-            { err, sessionId: task.agentSessionId },
-            "context_builder failed — falling back to task.prompt without context",
-          );
-        }
-      }
-
-      // 영속화 실패는 격리 — 본 task 진행에 영향 0 (Python L179-180 try/except 정합).
-      await this.initialMessagePublisher.publishInitialMessages(task, ctx);
-
-      if (ctx) {
-        if (agent.backend === "claude") {
-          // claude: SDK가 turn-level system_prompt를 직접 받음 → 분리.
-          // composeFirstTurnPrompt에는 effectiveSystemPrompt를 비워 전달하여 prompt 본문에 prepend되지 않도록.
-          // context items는 SDK가 모르는 정보이므로 그대로 prepend.
-          turnPrompt = composeFirstTurnPrompt({
-            effectiveSystemPrompt: undefined,
-            combinedContextItems: ctx.combinedContextItems,
-            assembledPrompt: task.prompt,
-          });
-          turnSystemPrompt = ctx.effectiveSystemPrompt;
-        } else {
-          // codex: SDK가 turn-level systemPrompt 미지원 → 기존 동작 (prompt 본문에 prepend).
-          turnPrompt = composeFirstTurnPrompt({
-            ...ctx,
-            assembledPrompt: task.prompt,
-          });
-        }
-      } else {
-        turnPrompt = task.prompt;
-      }
-      turnImageAttachmentPaths = splitAttachmentPaths(task.attachmentPaths).imagePaths;
-    } else {
-      // Auto-resume — user_message는 addIntervention 분기가 이미 영속화. 첫 turn은 dequeue.
-      const composed = composeInterventionTurnPrompt(task.interventionQueue.shift()!);
-      turnPrompt = composed.prompt;
-      turnImageAttachmentPaths = composed.imageAttachmentPaths;
-    }
+    const initialTurnInput = await this.turnInputBuilder.prepareInitialTurnInput(task, agent);
+    let turnPrompt = initialTurnInput.prompt;
+    let turnImageAttachmentPaths: string[] | undefined = initialTurnInput.imageAttachmentPaths;
+    let turnSystemPrompt = initialTurnInput.systemPrompt;
     try {
       while (true) {
         const resumeSessionId = task.codexThreadId;
