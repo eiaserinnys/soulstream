@@ -13,7 +13,6 @@ import type { CallerInfo, Task } from "../task/task_models.js";
 import type { ReasoningEffort } from "../engine/protocol.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { RealtimeBroker } from "../realtime/realtime_broker.js";
-import { buildRespondAck, buildToolApprovalAck } from "./delivery_ack.js";
 import {
   AttachmentCommandError,
   AttachmentCommands,
@@ -23,6 +22,12 @@ import {
   ClaudeAuthCommands,
   type ClaudeAuthCommand,
 } from "./claude_auth_commands.js";
+import {
+  DeliveryCommandError,
+  DeliveryCommands,
+  type RespondCommand,
+  type ToolApprovalCommand,
+} from "./delivery_commands.js";
 import {
   buildRealtimeAckError,
   buildRealtimeCallCreatedAck,
@@ -86,25 +91,6 @@ interface InterruptSessionCmd extends CommandLike {
   type: "interrupt_session";
   agentSessionId?: string;
   session_id?: string;
-}
-
-interface RespondCmd extends CommandLike {
-  type: "respond";
-  agentSessionId?: string;
-  session_id?: string;
-  inputRequestId?: string;
-  answers?: Record<string, unknown>;
-}
-
-interface ToolApprovalCmd extends CommandLike {
-  type: "approve_tool" | "reject_tool";
-  agentSessionId?: string;
-  session_id?: string;
-  approvalId?: string;
-  approval_id?: string;
-  message?: string;
-  alwaysApprove?: boolean;
-  alwaysReject?: boolean;
 }
 
 interface RealtimeCreateCallCmd extends CommandLike {
@@ -190,6 +176,7 @@ export class CommandDispatcher {
   private readonly attachmentCommands: AttachmentCommands;
   private readonly sessionListCommands: SessionListCommands;
   private readonly claudeAuthCommands: ClaudeAuthCommands;
+  private readonly deliveryCommands: DeliveryCommands;
 
   constructor(
     private readonly send: SendFn,
@@ -216,14 +203,20 @@ export class CommandDispatcher {
     this.attachmentCommands = new AttachmentCommands(attachmentStore);
     this.sessionListCommands = new SessionListCommands(sessionDb);
     this.claudeAuthCommands = new ClaudeAuthCommands({ agentRegistry, claudeAuth });
+    this.deliveryCommands = new DeliveryCommands({
+      agentRegistry,
+      taskManager,
+      taskExecutor,
+      logger,
+    });
     this.handlers = {
       health_check: (cmd) => this.handleHealthCheck(cmd),
       create_session: (cmd) => this.handleCreateSession(cmd as CreateSessionCmd),
       intervene: (cmd) => this.handleIntervene(cmd as IntervenCmd),
       interrupt_session: (cmd) => this.handleInterruptSession(cmd as InterruptSessionCmd),
-      respond: (cmd) => this.handleRespond(cmd as RespondCmd),
-      approve_tool: (cmd) => this.handleToolApproval(cmd as ToolApprovalCmd),
-      reject_tool: (cmd) => this.handleToolApproval(cmd as ToolApprovalCmd),
+      respond: (cmd) => this.handleRespond(cmd as RespondCommand),
+      approve_tool: (cmd) => this.handleToolApproval(cmd as ToolApprovalCommand),
+      reject_tool: (cmd) => this.handleToolApproval(cmd as ToolApprovalCommand),
       realtime_create_call: (cmd) =>
         this.handleRealtimeCreateCall(cmd as RealtimeCreateCallCmd),
       realtime_event: (cmd) =>
@@ -276,34 +269,19 @@ export class CommandDispatcher {
    *
    * 모든 실패도 respond_ack(status="error")로 회신하여 orch _send_command timeout을 막는다.
    */
-  private async handleRespond(cmd: RespondCmd): Promise<void> {
-    const sessionId = cmd.agentSessionId ?? cmd.session_id ?? "";
-    const inputRequestId = cmd.inputRequestId ?? cmd.request_id ?? "";
-    if (!sessionId || !inputRequestId || !isPlainObject(cmd.answers)) {
-      await this.sendError(
-        cmd,
-        "respond requires agentSessionId, inputRequestId, and answers",
-      );
-      return;
+  private async handleRespond(cmd: RespondCommand): Promise<void> {
+    try {
+      const ack = await this.deliveryCommands.respond(cmd);
+      if (ack) {
+        await this.send(ack);
+      }
+    } catch (err) {
+      if (err instanceof DeliveryCommandError) {
+        await this.sendError(cmd, err.message);
+        return;
+      }
+      throw err;
     }
-
-    const result = await this.taskManager.deliverInputResponse({
-      agentSessionId: sessionId,
-      requestId: inputRequestId,
-      answers: cmd.answers,
-    });
-
-    const requestId = cmd.requestId ?? "";
-    if (!requestId) {
-      return;
-    }
-    await this.send(
-      buildRespondAck({
-        requestId,
-        inputRequestId,
-        result,
-      }),
-    );
   }
 
   /**
@@ -312,57 +290,19 @@ export class CommandDispatcher {
    * `respond` 명령은 Claude AskUserQuestion 전용이므로 승인 wire를 별도 명령으로 둔다.
    * 실패도 `tool_approval_ack(status="error")`로 반환해 orch `_send_command` timeout을 막는다.
    */
-  private async handleToolApproval(cmd: ToolApprovalCmd): Promise<void> {
-    const sessionId = cmd.agentSessionId ?? cmd.session_id ?? "";
-    const approvalId = cmd.approvalId ?? cmd.approval_id ?? "";
-    if (!sessionId || !approvalId) {
-      await this.sendError(cmd, `${cmd.type} requires agentSessionId and approvalId`);
-      return;
-    }
-
-    const decision = cmd.type === "approve_tool" ? "approved" : "rejected";
-    const onResume = (task: Task) => {
-      if (!task.profileId) {
-        this.logger.error(
-          { sessionId: task.agentSessionId },
-          "tool approval resume aborted — task missing profileId",
-        );
+  private async handleToolApproval(cmd: ToolApprovalCommand): Promise<void> {
+    try {
+      const ack = await this.deliveryCommands.toolApproval(cmd);
+      if (ack) {
+        await this.send(ack);
+      }
+    } catch (err) {
+      if (err instanceof DeliveryCommandError) {
+        await this.sendError(cmd, err.message);
         return;
       }
-      const agent = this.agentRegistry.get(task.profileId);
-      if (!agent) {
-        this.logger.error(
-          { sessionId: task.agentSessionId, profileId: task.profileId },
-          "tool approval resume aborted — agent profile not found",
-        );
-        return;
-      }
-      this.taskExecutor.startExecution(task, agent);
-    };
-    const result = await this.taskManager.deliverToolApproval(
-      {
-        agentSessionId: sessionId,
-        approvalId,
-        decision,
-        ...(cmd.message ? { message: cmd.message } : {}),
-        ...(cmd.alwaysApprove !== undefined ? { alwaysApprove: cmd.alwaysApprove } : {}),
-        ...(cmd.alwaysReject !== undefined ? { alwaysReject: cmd.alwaysReject } : {}),
-      },
-      onResume,
-    );
-
-    const requestId = cmd.requestId ?? cmd.request_id ?? "";
-    if (!requestId) {
-      return;
+      throw err;
     }
-    await this.send(
-      buildToolApprovalAck({
-        requestId,
-        approvalId,
-        decision,
-        result,
-      }),
-    );
   }
 
   private async handleRealtimeCreateCall(cmd: RealtimeCreateCallCmd): Promise<void> {
@@ -825,8 +765,4 @@ function stringifyError(err: unknown): string {
 
 function commandRequestId(cmd: CommandLike): string {
   return cmd.requestId ?? cmd.request_id ?? "";
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
