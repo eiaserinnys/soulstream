@@ -1,7 +1,6 @@
 import type { Logger } from "pino";
 
 import { sanitizeCodexEnv } from "../codex_env.js";
-import { resolveCodexModelReasoningEffort } from "../codex_adapter.js";
 import type {
   BackendId,
   EngineExecuteParams,
@@ -32,6 +31,11 @@ import type {
   TurnSteerParams,
   TurnSteerResponse,
 } from "./protocol.js";
+import {
+  buildThreadResumeParams,
+  buildThreadStartParams,
+  buildTurnStartParams,
+} from "./params.js";
 import { toCodexUserInput } from "./protocol.js";
 
 const CLIENT_INFO: InitializeParams["clientInfo"] = {
@@ -286,99 +290,6 @@ export class CodexAppServerEngineAdapter
     });
     return new CodexAppServerClient(transport);
   }
-}
-
-function buildThreadStartParams(
-  params: EngineExecuteParams,
-  workspaceDir: string,
-): ThreadStartParams {
-  const model = normalizedModel(params.model);
-  return {
-    model,
-    modelProvider: null,
-    serviceTier: null,
-    cwd: workspaceDir,
-    runtimeWorkspaceRoots: [workspaceDir],
-    approvalPolicy: "never",
-    approvalsReviewer: null,
-    sandbox: "danger-full-access",
-    permissions: null,
-    config: null,
-    serviceName: "soul-server-ts",
-    baseInstructions: params.systemPrompt ?? null,
-    developerInstructions: null,
-    personality: null,
-    ephemeral: false,
-    sessionStartSource: "startup",
-    threadSource: "user",
-    environments: null,
-    dynamicTools: null,
-    mockExperimentalField: null,
-    experimentalRawEvents: false,
-    persistExtendedHistory: false,
-  };
-}
-
-function buildThreadResumeParams(
-  params: EngineExecuteParams,
-  workspaceDir: string,
-): ThreadResumeParams {
-  return {
-    threadId: params.resumeSessionId ?? "",
-    history: null,
-    path: null,
-    model: normalizedModel(params.model),
-    modelProvider: null,
-    serviceTier: null,
-    cwd: workspaceDir,
-    runtimeWorkspaceRoots: [workspaceDir],
-    approvalPolicy: "never",
-    approvalsReviewer: null,
-    sandbox: "danger-full-access",
-    permissions: null,
-    config: null,
-    baseInstructions: params.systemPrompt ?? null,
-    developerInstructions: null,
-    personality: null,
-    excludeTurns: false,
-    persistExtendedHistory: false,
-  };
-}
-
-function buildTurnStartParams(
-  threadId: string,
-  params: EngineExecuteParams,
-  workspaceDir: string,
-): TurnStartParams {
-  const model = normalizedModel(params.model);
-  return {
-    threadId,
-    input: toCodexUserInput({
-      prompt: params.prompt,
-      imageAttachmentPaths: params.imageAttachmentPaths,
-    }),
-    responsesapiClientMetadata: null,
-    environments: null,
-    cwd: workspaceDir,
-    runtimeWorkspaceRoots: [workspaceDir],
-    approvalPolicy: "never",
-    approvalsReviewer: null,
-    sandboxPolicy: { type: "dangerFullAccess" },
-    permissions: null,
-    model,
-    serviceTier: null,
-    effort: resolveCodexModelReasoningEffort(model, params.reasoningEffort) ?? null,
-    summary: null,
-    personality: null,
-    outputSchema: null,
-    collaborationMode: null,
-  };
-}
-
-function normalizedModel(model: string | null | undefined): string | null {
-  if (!model) return null;
-  const trimmed = model.trim();
-  return trimmed ? trimmed : null;
 }
 
 function fatalErrorPayload(error: Error): SSEEventPayload {
