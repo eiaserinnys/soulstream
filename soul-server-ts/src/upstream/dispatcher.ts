@@ -1,10 +1,7 @@
 import type { Logger } from "pino";
 
 import type { AgentRegistry } from "../agent_registry.js";
-import type {
-  ClaudeAuthCommandHandler,
-  ClaudeAuthSetTokenCmd,
-} from "../auth/claude_auth.js";
+import type { ClaudeAuthCommandHandler } from "../auth/claude_auth.js";
 import {
   FileAttachmentStore,
   type AttachmentStore,
@@ -21,6 +18,11 @@ import {
   AttachmentCommandError,
   AttachmentCommands,
 } from "./attachment_commands.js";
+import {
+  ClaudeAuthCommandError,
+  ClaudeAuthCommands,
+  type ClaudeAuthCommand,
+} from "./claude_auth_commands.js";
 import {
   buildRealtimeAckError,
   buildRealtimeCallCreatedAck,
@@ -163,11 +165,6 @@ interface DownloadAttachmentCmd extends CommandLike {
   path?: string;
 }
 
-type ClaudeAuthStatusCmd = CommandLike & { type: "claude_auth_status" };
-type ClaudeAuthDeleteCmd = CommandLike & { type: "claude_auth_delete_token" };
-type ClaudeAuthUsageCmd = CommandLike & { type: "claude_auth_get_usage" };
-type ClaudeAuthProfileCmd = CommandLike & { type: "claude_auth_get_profile" };
-
 type ListSessionsCmd = CommandLike & { type: "list_sessions" };
 
 /**
@@ -192,6 +189,7 @@ export class CommandDispatcher {
   private readonly taskRuntimeCommands: TaskRuntimeCommands;
   private readonly attachmentCommands: AttachmentCommands;
   private readonly sessionListCommands: SessionListCommands;
+  private readonly claudeAuthCommands: ClaudeAuthCommands;
 
   constructor(
     private readonly send: SendFn,
@@ -201,7 +199,7 @@ export class CommandDispatcher {
     private readonly taskManager: TaskManager,
     private readonly taskExecutor: TaskExecutor,
     private readonly attachmentStore: AttachmentStore = new FileAttachmentStore(".local/incoming"),
-    private readonly claudeAuth?: ClaudeAuthCommandHandler,
+    claudeAuth?: ClaudeAuthCommandHandler,
     /**
      * Phase B: `list_sessions` 핸들러용 세션 DB. legacy 테스트 호환 위해 optional. 미주입 시
      * `list_sessions` 명령은 명시 error 응답 (silent fallback 금지 — 운영자가 누락 인지 가능).
@@ -217,6 +215,7 @@ export class CommandDispatcher {
     });
     this.attachmentCommands = new AttachmentCommands(attachmentStore);
     this.sessionListCommands = new SessionListCommands(sessionDb);
+    this.claudeAuthCommands = new ClaudeAuthCommands({ agentRegistry, claudeAuth });
     this.handlers = {
       health_check: (cmd) => this.handleHealthCheck(cmd),
       create_session: (cmd) => this.handleCreateSession(cmd as CreateSessionCmd),
@@ -238,14 +237,11 @@ export class CommandDispatcher {
         this.handleDeleteSessionAttachments(cmd as DeleteSessionAttachmentsCmd),
       download_attachment: (cmd) =>
         this.handleDownloadAttachment(cmd as DownloadAttachmentCmd),
-      claude_auth_status: (cmd) => this.handleClaudeAuthStatus(cmd as ClaudeAuthStatusCmd),
-      claude_auth_set_token: (cmd) =>
-        this.handleClaudeAuthSetToken(cmd as CommandLike & ClaudeAuthSetTokenCmd),
-      claude_auth_delete_token: (cmd) =>
-        this.handleClaudeAuthDeleteToken(cmd as ClaudeAuthDeleteCmd),
-      claude_auth_get_usage: (cmd) => this.handleClaudeAuthGetUsage(cmd as ClaudeAuthUsageCmd),
-      claude_auth_get_profile: (cmd) =>
-        this.handleClaudeAuthGetProfile(cmd as ClaudeAuthProfileCmd),
+      claude_auth_status: (cmd) => this.handleClaudeAuth(cmd as ClaudeAuthCommand),
+      claude_auth_set_token: (cmd) => this.handleClaudeAuth(cmd as ClaudeAuthCommand),
+      claude_auth_delete_token: (cmd) => this.handleClaudeAuth(cmd as ClaudeAuthCommand),
+      claude_auth_get_usage: (cmd) => this.handleClaudeAuth(cmd as ClaudeAuthCommand),
+      claude_auth_get_profile: (cmd) => this.handleClaudeAuth(cmd as ClaudeAuthCommand),
     };
   }
 
@@ -734,58 +730,19 @@ export class CommandDispatcher {
     }
   }
 
-  private async handleClaudeAuthStatus(cmd: ClaudeAuthStatusCmd): Promise<void> {
-    const auth = await this.requireClaudeAuth(cmd);
-    if (!auth) return;
-    await this.send(auth.status(commandRequestId(cmd), "claude_auth_status"));
-  }
-
-  private async handleClaudeAuthSetToken(
-    cmd: CommandLike & ClaudeAuthSetTokenCmd,
-  ): Promise<void> {
-    const auth = await this.requireClaudeAuth(cmd);
-    if (!auth) return;
-    const result = auth.setToken(cmd, commandRequestId(cmd), "claude_auth_set_token");
-    if (result.error) {
-      await this.sendError(cmd, result.error);
-      return;
+  private async handleClaudeAuth(cmd: ClaudeAuthCommand): Promise<void> {
+    try {
+      const response = await this.claudeAuthCommands.handle(cmd);
+      if (response) {
+        await this.send(response);
+      }
+    } catch (err) {
+      if (err instanceof ClaudeAuthCommandError) {
+        await this.sendError(cmd, err.message);
+        return;
+      }
+      throw err;
     }
-    if (result.response) {
-      await this.send(result.response);
-    }
-  }
-
-  private async handleClaudeAuthDeleteToken(cmd: ClaudeAuthDeleteCmd): Promise<void> {
-    const auth = await this.requireClaudeAuth(cmd);
-    if (!auth) return;
-    await this.send(auth.deleteToken(commandRequestId(cmd), "claude_auth_delete_token"));
-  }
-
-  private async handleClaudeAuthGetUsage(cmd: ClaudeAuthUsageCmd): Promise<void> {
-    const auth = await this.requireClaudeAuth(cmd);
-    if (!auth) return;
-    await this.send(await auth.fetchUsage(commandRequestId(cmd), "claude_auth_get_usage"));
-  }
-
-  private async handleClaudeAuthGetProfile(cmd: ClaudeAuthProfileCmd): Promise<void> {
-    const auth = await this.requireClaudeAuth(cmd);
-    if (!auth) return;
-    await this.send(await auth.fetchProfile(commandRequestId(cmd), "claude_auth_get_profile"));
-  }
-
-  private async requireClaudeAuth(cmd: CommandLike): Promise<ClaudeAuthCommandHandler | null> {
-    if (!this.agentRegistry.supportedBackends().includes("claude")) {
-      await this.sendError(
-        cmd,
-        "Claude backend is not registered on this node; Claude auth commands are unsupported",
-      );
-      return null;
-    }
-    if (!this.claudeAuth) {
-      await this.sendError(cmd, "Claude auth service is not configured in soul-server-ts");
-      return null;
-    }
-    return this.claudeAuth;
   }
 
   private async handleUploadAttachment(cmd: UploadAttachmentCmd): Promise<void> {
