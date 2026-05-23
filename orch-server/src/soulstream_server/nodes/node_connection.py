@@ -462,11 +462,15 @@ class NodeConnection:
             session_id, subscribe_id, callback
         )
 
-        await self._send({
-            "type": CMD_SUBSCRIBE_EVENTS,
-            "agentSessionId": session_id,
-            "subscribeId": subscribe_id,
-        })
+        try:
+            await self._send({
+                "type": CMD_SUBSCRIBE_EVENTS,
+                "agentSessionId": session_id,
+                "subscribeId": subscribe_id,
+            })
+        except (Exception, asyncio.CancelledError):
+            self._inbound_events.unsubscribe_events(session_id, subscribe_id)
+            raise
         return subscribe_id
 
     def unsubscribe_events(self, session_id: str, subscribe_id: str) -> None:
