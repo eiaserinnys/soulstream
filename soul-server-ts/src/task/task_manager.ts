@@ -27,6 +27,10 @@ import { ActiveTaskRecovery } from "./task_active_recovery.js";
 import { AutoResumeTransition } from "./task_auto_resume_transition.js";
 import { hydrateEvictedTaskFromSessionRow } from "./task_evicted_hydration.js";
 import { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
+import {
+  TaskLifecycleRoute,
+  type FinalizeTaskParams,
+} from "./task_lifecycle_route.js";
 import { ToolApprovalRecovery } from "./task_tool_approval_recovery.js";
 import { RunningInterventionTransition } from "./task_running_intervention_transition.js";
 import {
@@ -63,13 +67,7 @@ export type {
   AddInterventionResult,
   StartExecutionCallback,
 } from "./task_intervention_route.js";
-
-export interface FinalizeTaskParams {
-  agentSessionId: string;
-  result?: string;
-  error?: string;
-  llmUsage?: Record<string, number> | null;
-}
+export type { FinalizeTaskParams } from "./task_lifecycle_route.js";
 
 export class TaskManager {
   private readonly tasks = new Map<string, Task>();
@@ -78,7 +76,7 @@ export class TaskManager {
   private readonly responseEventPublisher: ResponseEventPublisher;
   private readonly deliveryRoute: TaskDeliveryRoute;
   private readonly interventionRoute: TaskInterventionRoute;
-  private readonly lifecycleTransition: TaskLifecycleTransition;
+  private readonly lifecycleRoute: TaskLifecycleRoute;
 
   constructor(
     nodeId: string,
@@ -109,7 +107,18 @@ export class TaskManager {
         this.tasks.set(task.agentSessionId, task);
       },
     });
-    this.lifecycleTransition = new TaskLifecycleTransition({
+    const lifecycleTransition = new TaskLifecycleTransition({
+      db,
+      broadcaster,
+      logger,
+    });
+    this.lifecycleRoute = new TaskLifecycleRoute({
+      getTask: (sessionId) => this.tasks.get(sessionId),
+      listTasks: () => Array.from(this.tasks.values()),
+      forgetTask: (sessionId) => {
+        this.tasks.delete(sessionId);
+      },
+      lifecycleTransition,
       db,
       broadcaster,
       logger,
@@ -218,9 +227,7 @@ export class TaskManager {
    * finalize의 DB session_update + emit_session_updated는 interrupted 그대로 발행.
    */
   async cancelTask(sessionId: string): Promise<boolean> {
-    return await this.lifecycleTransition.cancelRunningTask(
-      this.tasks.get(sessionId),
-    );
+    return await this.lifecycleRoute.cancelTask(sessionId);
   }
 
   /**
@@ -228,24 +235,7 @@ export class TaskManager {
    * 진행 중이면 cancel 후 promise drain 대기.
    */
   async deleteTask(sessionId: string): Promise<void> {
-    const task = this.tasks.get(sessionId);
-    if (!task) return;
-
-    await this.lifecycleTransition.interruptAndDrain(task);
-
-    this.tasks.delete(sessionId);
-
-    try {
-      await this.db.deleteSession(sessionId);
-    } catch (err) {
-      this.logger.warn({ err, sessionId }, "DB deleteSession failed");
-    }
-
-    try {
-      await this.broadcaster.emitSessionDeleted(sessionId);
-    } catch (err) {
-      this.logger.warn({ err, sessionId }, "session_deleted broadcast failed");
-    }
+    await this.lifecycleRoute.deleteTask(sessionId);
   }
 
   /**
@@ -254,25 +244,7 @@ export class TaskManager {
    * 먼저 완료되어도 대시보드에 stale running 세션이 남지 않아야 한다.
    */
   async shutdown(): Promise<void> {
-    const drains: Promise<void>[] = [];
-    const shutdownAt = new Date();
-    for (const task of this.tasks.values()) {
-      if (task.status === "running") {
-        await this.lifecycleTransition.markRunningTaskInterruptedForShutdown(
-          task,
-          shutdownAt,
-        );
-      }
-      const hadEngine = Boolean(task.engine);
-      await this.lifecycleTransition.interruptForShutdown(task);
-      const drain = hadEngine
-        ? this.lifecycleTransition.getDrainPromise(task)
-        : undefined;
-      if (drain) {
-        drains.push(drain);
-      }
-    }
-    await Promise.all(drains);
+    await this.lifecycleRoute.shutdown();
   }
 
   /** 내부 상태 변경 helper (task_executor용). */
@@ -288,20 +260,7 @@ export class TaskManager {
    * 이 메서드는 세션 상태·완료 시각·LLM usage만 갱신하고 session_updated wire를 발행한다.
    */
   async finalizeTask(params: FinalizeTaskParams): Promise<Task | undefined> {
-    if (params.result === undefined && params.error === undefined) {
-      throw new Error("finalizeTask requires either result or error");
-    }
-
-    const task = this.tasks.get(params.agentSessionId);
-    if (!task) {
-      this.logger.warn(
-        { sessionId: params.agentSessionId },
-        "Task not found for finalizeTask",
-      );
-      return undefined;
-    }
-
-    return await this.lifecycleTransition.finalizeExternalTask(task, params);
+    return await this.lifecycleRoute.finalizeTask(params);
   }
 
   /**
