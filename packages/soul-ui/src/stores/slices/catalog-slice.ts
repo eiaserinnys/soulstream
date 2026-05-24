@@ -48,18 +48,6 @@ export const createCatalogSlice: StateCreator<
   folderSortMode: "custom",
 
   setCatalog: (catalog) => {
-    const prev = get().catalog;
-    const excludeFolders = (catalog.folders ?? [])
-      .filter((f) => f.settings?.excludeFromFeed)
-      .map((f) => f.name);
-    console.log(
-      `[🟡 setCatalog] folders=${catalog.folders?.length ?? 0}, sessions=${
-        Object.keys(catalog.sessions ?? {}).length
-      } | excludeFromFeed: [${excludeFolders.join(", ")}]`,
-    );
-    if (!prev) {
-      console.log(`[🟡 setCatalog] 최초 catalog 설정`);
-    }
     set((state) => ({ catalog, catalogVersion: state.catalogVersion + 1 }));
   },
 

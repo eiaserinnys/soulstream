@@ -20,6 +20,7 @@ import {
   type SessionPage,
 } from "../hooks/session-stream-helpers";
 import { SessionItem } from "./SessionItem";
+import { resolveFolderActiveSessionDecision } from "./folder-active-session";
 
 // Re-exports for backward compatibility (FeedCard, soul-ui index 등이 참조)
 export { nodeIdToHue } from "../lib/nodeColors";
@@ -49,6 +50,7 @@ export function FolderContents({ sessions: sessionsProp, onMoveSessions, onRenam
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const setActiveSession = useDashboardStore((s) => s.setActiveSession);
+  const clearActiveSession = useDashboardStore((s) => s.clearActiveSession);
   const toggleSessionSelection = useDashboardStore((s) => s.toggleSessionSelection);
   const selectedSessionIds = useDashboardStore((s) => s.selectedSessionIds);
   const editingSessionId = useDashboardStore((s) => s.editingSessionId);
@@ -88,19 +90,36 @@ export function FolderContents({ sessions: sessionsProp, onMoveSessions, onRenam
   const prevFolderIdRef = useRef<string | null | undefined>(undefined);
   const parentRef = useRef<HTMLDivElement>(null);
 
-  // 폴더 전환 시 스크롤 초기화 + 자동 세션 선택 (모바일 제외 — 2단계 뷰 유지)
+  // 폴더 전환 시 스크롤 초기화
   useEffect(() => {
     if (prevFolderIdRef.current !== undefined && prevFolderIdRef.current !== selectedFolderId) {
       parentRef.current?.scrollTo({ top: 0, behavior: "instant" });
     }
     prevFolderIdRef.current = selectedFolderId;
-
-    if (!isMobile && displaySessions.length > 0 && !activeSessionKey) {
-      setActiveSession(displaySessions[0].agentSessionId);
-      setActiveSessionSummary(displaySessions[0]);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- 폴더 전환 시에만 실행
   }, [selectedFolderId]);
+
+  // 데스크톱 폴더 뷰는 오른쪽 패널이 항상 현재 폴더의 세션을 보여야 한다.
+  // 목록이 비동기로 늦게 들어오는 경우도 있어 displaySessions 변경을 같이 본다.
+  useEffect(() => {
+    const decision = resolveFolderActiveSessionDecision({
+      activeSessionKey,
+      isMobile,
+      sessions: displaySessions,
+    });
+    if (decision.action === "select") {
+      setActiveSession(decision.session.agentSessionId);
+      setActiveSessionSummary(decision.session);
+    } else if (decision.action === "clear") {
+      clearActiveSession();
+    }
+  }, [
+    activeSessionKey,
+    clearActiveSession,
+    displaySessions,
+    isMobile,
+    setActiveSession,
+    setActiveSessionSummary,
+  ]);
 
   const sentinelRef = useRef<HTMLDivElement>(null);
 

@@ -88,7 +88,6 @@ export function useSessionStreamCacheSync(
   const onSessionCreated = useCallback(
     (event: SessionCreatedStreamEvent) => {
       if (event.lastEventId) onEventIdAdvance?.(event.lastEventId);
-      console.log(`[⚡ SSE] type=session_created`);
       const newSession = toSessionSummary(
         event.session as unknown as Record<string, unknown>,
       );
@@ -164,7 +163,6 @@ export function useSessionStreamCacheSync(
   const onSessionUpdated = useCallback(
     (event: SessionUpdatedStreamEvent) => {
       if (event.lastEventId) onEventIdAdvance?.(event.lastEventId);
-      console.log(`[⚡ SSE] type=session_updated`);
       const updates = buildSessionUpdates(event);
 
       queryClient.setQueriesData<InfiniteData<SessionPage>>(
@@ -199,7 +197,6 @@ export function useSessionStreamCacheSync(
   const onSessionDeleted = useCallback(
     (event: SessionDeletedStreamEvent) => {
       if (event.lastEventId) onEventIdAdvance?.(event.lastEventId);
-      console.log(`[⚡ SSE] session_deleted → ${event.agent_session_id}`);
       queryClient.setQueriesData<InfiniteData<SessionPage>>(
         { queryKey: ["sessions"], exact: false },
         (old) => {
@@ -214,9 +211,6 @@ export function useSessionStreamCacheSync(
   const onCatalogUpdated = useCallback(
     (event: CatalogUpdatedStreamEvent) => {
       if (event.lastEventId) onEventIdAdvance?.(event.lastEventId);
-      console.log(
-        `[⚡ SSE] catalog_updated → folders=${event.catalog?.folders?.length}, sessions=${Object.keys(event.catalog?.sessions ?? {}).length}`,
-      );
       const catalog = event.catalog as CatalogState;
       useDashboardStore.getState().setCatalog(catalog);
       for (const [cacheQueryKey, data] of queryClient.getQueriesData<
@@ -249,7 +243,6 @@ export function useSessionStreamCacheSync(
 
   const onSessionList = useCallback(() => {
     // 무시: TanStack Query fetch로 대체
-    console.log(`[⚡ SSE] type=session_list (무시)`);
   }, []);
 
   useSessionStreamSSE({
