@@ -11,6 +11,7 @@ import logging
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from fastapi.responses import Response
 from sse_starlette.sse import EventSourceResponse
 
@@ -39,6 +40,16 @@ _EVENT_TYPE_MAP: dict[str, str] = {
     "node_registered": "node_connected",
     "node_unregistered": "node_disconnected",
 }
+
+
+class PlanAgentProfileUpdateRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    profile: dict
+    create_if_missing: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("create_if_missing", "createIfMissing"),
+    )
 
 
 def create_nodes_router(
@@ -126,6 +137,25 @@ def create_nodes_router(
             media_type=resp.headers.get("content-type", "image/png"),
             headers={"Cache-Control": "public, max-age=3600"},
         )
+
+    @router.post("/{node_id}/agents/config/plan-profile-update")
+    async def plan_agent_profile_update(
+        node_id: str,
+        body: PlanAgentProfileUpdateRequest,
+    ) -> dict:
+        """대상 노드의 agents.yaml profile 변경 계획을 read-only로 조회한다."""
+        node = node_manager.get_node(node_id)
+        if not node:
+            raise HTTPException(status_code=404, detail=f"Node {node_id} not connected")
+        try:
+            return await node.send_plan_agent_profile_update(
+                body.profile,
+                create_if_missing=body.create_if_missing,
+            )
+        except ConnectionError as err:
+            raise HTTPException(status_code=503, detail=str(err)) from err
+        except RuntimeError as err:
+            raise HTTPException(status_code=400, detail=str(err)) from err
 
     @router.get("/{node_id}/oauth-profiles")
     async def list_node_oauth_profiles(node_id: str, request: Request) -> dict:

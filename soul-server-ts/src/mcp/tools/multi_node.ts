@@ -7,6 +7,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+import { AgentProfileSchema } from "../../agent_registry.js";
 import { buildCallerInfoFromCallerSession } from "../../caller_info.js";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
@@ -49,6 +50,37 @@ export function registerMultiNodeTools(
           orch,
           "GET",
           `/api/nodes/${encodeURIComponent(node_id)}/agents`,
+        );
+        return jsonResult(data);
+      } catch (err) {
+        return errorResult(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  server.registerTool(
+    "plan_remote_agent_profile_update",
+    {
+      description:
+        "오케스트레이터를 통해 대상 노드에 agent profile 변경 계획(diff)만 요청한다. 파일 쓰기와 snapshot 생성은 하지 않는다.",
+      inputSchema: {
+        node_id: z.string().min(1),
+        profile: AgentProfileSchema,
+        create_if_missing: z.boolean().default(false),
+      },
+    },
+    async ({ node_id, profile, create_if_missing }) => {
+      const orch = runtime.orch;
+      if (!orch) return errorResult(NOT_CONFIGURED_MSG);
+      try {
+        const data = await fetchOrch(
+          orch,
+          "POST",
+          `/api/nodes/${encodeURIComponent(node_id)}/agents/config/plan-profile-update`,
+          {
+            profile,
+            create_if_missing: create_if_missing ?? false,
+          },
         );
         return jsonResult(data);
       } catch (err) {
@@ -193,7 +225,10 @@ async function fetchOrch(
   }
   const res = await fetch(url, init);
   if (!res.ok) {
-    throw new Error(`orch ${method} ${path} failed: ${res.status} ${res.statusText}`);
+    const detail = await res.text().catch(() => "");
+    throw new Error(
+      `orch ${method} ${path} failed: ${res.status} ${res.statusText}${detail ? ` ${detail}` : ""}`,
+    );
   }
   return await res.json();
 }

@@ -1,7 +1,7 @@
 """schema 자체 유효성 + 메시지 인벤토리 검증.
 
 본 테스트는 src/upstream.schema.json이 JSON Schema Draft 2020-12 유효이며,
-설계 명세에 합의된 68개 $defs (wire 30 + SSE event 38)를 모두 포함하는지 확인한다.
+설계 명세에 합의된 73개 $defs (wire 33 + SSE event 40)를 모두 포함하는지 확인한다.
 """
 
 import json
@@ -44,6 +44,7 @@ def test_schema_has_all_message_types() -> None:
         "SessionDeleted",
         "ErrorMessage",
         "InterveneAck",
+        "InterruptSessionAck",
         "RespondAck",
         "ToolApprovalAck",
         "RealtimeCallCreated",
@@ -51,6 +52,7 @@ def test_schema_has_all_message_types() -> None:
         "RealtimeToolApprovalAck",
         "CreateSession",
         "Intervene",
+        "InterruptSession",
         "Respond",
         "ApproveTool",
         "RejectTool",
@@ -58,6 +60,7 @@ def test_schema_has_all_message_types() -> None:
         "RealtimeEvent",
         "RealtimeResolveToolApproval",
         "ListSessions",
+        "PlanAgentProfileUpdate",
         "HealthCheck",
         "SubscribeEvents",
         "ClaudeAuthStatus",
@@ -66,7 +69,7 @@ def test_schema_has_all_message_types() -> None:
         "ClaudeAuthGetUsage",
         "ClaudeAuthGetProfile",
     }
-    assert len(wire_types) == 30
+    assert len(wire_types) == 33
 
     sse_types = {
         "SSEEventInit",
@@ -107,9 +110,11 @@ def test_schema_has_all_message_types() -> None:
         "SSEEventReconnect",
         "SSEEventHistorySync",
         "SSEEventMetadataUpdated",
+        "SSEEventAssistantError",
+        "SSEEventAwaySummary",
     }
-    assert len(sse_types) == 38, (
-        "SSE event $defs 38종 (orch-server/constants.py KNOWN_SSE_EVENT_TYPES + Agents SDK events)."
+    assert len(sse_types) == 40, (
+        "SSE event $defs 40종 (orch-server/constants.py KNOWN_SSE_EVENT_TYPES + Agents SDK events)."
     )
 
     expected = wire_types | sse_types
@@ -149,6 +154,7 @@ def test_oneof_covers_all_wire_messages() -> None:
         "SessionDeleted",
         "ErrorMessage",
         "InterveneAck",
+        "InterruptSessionAck",
         "RespondAck",
         "ToolApprovalAck",
         "RealtimeCallCreated",
@@ -156,6 +162,7 @@ def test_oneof_covers_all_wire_messages() -> None:
         "RealtimeToolApprovalAck",
         "CreateSession",
         "Intervene",
+        "InterruptSession",
         "Respond",
         "ApproveTool",
         "RejectTool",
@@ -163,6 +170,7 @@ def test_oneof_covers_all_wire_messages() -> None:
         "RealtimeEvent",
         "RealtimeResolveToolApproval",
         "ListSessions",
+        "PlanAgentProfileUpdate",
         "HealthCheck",
         "SubscribeEvents",
         "ClaudeAuthStatus",
@@ -172,6 +180,16 @@ def test_oneof_covers_all_wire_messages() -> None:
         "ClaudeAuthGetProfile",
     }
     assert oneof_refs == wire_types
+
+
+def test_plan_agent_profile_update_is_read_only_command() -> None:
+    schema = _load_schema()
+    command = schema["$defs"]["PlanAgentProfileUpdate"]
+    assert command["properties"]["type"]["const"] == "plan_agent_profile_update"
+    assert "profile" in command["required"]
+    props = command["properties"]
+    assert "snapshot_path" not in props
+    assert props["comment_preservation"]["enum"] == ["not_preserved"]
 
 
 def test_known_sse_event_types_completeness() -> None:

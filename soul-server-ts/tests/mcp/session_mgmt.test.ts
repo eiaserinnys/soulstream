@@ -382,6 +382,62 @@ describe("create_remote_agent_session", () => {
   });
 });
 
+describe("plan_remote_agent_profile_update", () => {
+  it("proxies read-only profile update planning to the orchestrator node endpoint", async () => {
+    const capture = await createOrchCapture(200, (req) => {
+      if (
+        req.method === "POST" &&
+        req.url === "/api/nodes/node-remote/agents/config/plan-profile-update"
+      ) {
+        return {
+          body: {
+            ok: true,
+            config_path: "/srv/agents.yaml",
+            changed: true,
+            diff: "--- agents.yaml\n+++ agents.yaml\n",
+            comment_preservation: "not_preserved",
+          },
+        };
+      }
+      return { status: 404, body: { error: "unexpected route" } };
+    });
+    try {
+      const runtime = makeRuntime({ queued: true, queuePosition: 1 }, capture.orch);
+      const client = await createClient(runtime);
+
+      const result = await client.callTool({
+        name: "plan_remote_agent_profile_update",
+        arguments: {
+          node_id: "node-remote",
+          create_if_missing: true,
+          profile: {
+            id: "codex-default",
+            name: "Codex Planned",
+            backend: "codex",
+            workspace_dir: "/tmp/codex",
+          },
+        },
+      });
+
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toMatchObject({
+        ok: true,
+        changed: true,
+        comment_preservation: "not_preserved",
+      });
+      expect(capture.requests.map((r) => `${r.method} ${r.url}`)).toEqual([
+        "POST /api/nodes/node-remote/agents/config/plan-profile-update",
+      ]);
+      const body = JSON.parse(capture.requests[0]!.body);
+      expect(body.nodeId).toBeUndefined();
+      expect(body.create_if_missing).toBe(true);
+      expect(body.profile.id).toBe("codex-default");
+    } finally {
+      await capture.close();
+    }
+  });
+});
+
 describe("send_message_to_session", () => {
   it("local delivery succeeds without orch fallback", async () => {
     const runtime = makeRuntime({ queued: true, queuePosition: 1 });

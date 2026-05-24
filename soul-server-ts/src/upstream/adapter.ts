@@ -1,6 +1,7 @@
 import { WebSocket } from "ws";
 import type { Logger } from "pino";
 
+import type { AgentConfigService } from "../agent_config_service.js";
 import type { AgentRegistry } from "../agent_registry.js";
 import type { ClaudeAuthCommandHandler } from "../auth/claude_auth.js";
 import type { SessionDB } from "../db/session_db.js";
@@ -33,6 +34,7 @@ export interface UpstreamDependencies {
   /** Phase B: list_sessions 핸들러 의존성. main.ts에서 주입. */
   sessionDb?: SessionDB;
   realtimeBroker?: RealtimeBroker;
+  agentConfigService?: AgentConfigService;
 }
 
 /**
@@ -69,6 +71,8 @@ export class UpstreamAdapter {
       deps.claudeAuth,
       deps.sessionDb,
       deps.realtimeBroker,
+      undefined,
+      deps.agentConfigService,
     );
   }
 

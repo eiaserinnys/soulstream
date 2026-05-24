@@ -6,6 +6,7 @@
  */
 import type { Logger } from "pino";
 
+import type { AgentConfigService } from "../agent_config_service.js";
 import type { AgentRegistry } from "../agent_registry.js";
 import type { CatalogService } from "../catalog/catalog_service.js";
 import type { SessionDB } from "../db/session_db.js";
@@ -26,6 +27,7 @@ export interface McpRuntime {
   taskManager: TaskManager;
   taskExecutor: TaskExecutor;
   agentRegistry: AgentRegistry;
+  agentConfigService?: AgentConfigService;
   catalogService: CatalogService;
   logger: Logger;
   /** 미설정 시 multi-node 도구는 등록되되 호출 시 `{error: ...}` 반환. */

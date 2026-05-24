@@ -112,6 +112,41 @@ describe("ConfigStore", () => {
     });
   });
 
+  it("lists managed snapshots newest first without following symlinks", async () => {
+    const store = makeStore(configPath, snapshotRoot);
+    const first = await store.apply((current) => ({
+      ...current,
+      agents: [{ id: "a", name: "A2" }],
+    }));
+    const second = await store.apply((current) => ({
+      ...current,
+      agents: [{ id: "a", name: "A3" }],
+    }));
+    const outside = path.join(tempDir, "outside.yaml");
+    fs.writeFileSync(outside, "agents: []\n", "utf-8");
+    const symlink = path.join(path.dirname(first.snapshotPath ?? ""), "outside-link.yaml");
+    try {
+      fs.symlinkSync(outside, symlink);
+    } catch {
+      // Some filesystems disallow symlinks; inventory behavior is still covered below.
+    }
+
+    const snapshots = store.listSnapshots();
+
+    expect(snapshots.map((s) => s.snapshotPath)).toEqual([
+      second.snapshotPath,
+      first.snapshotPath,
+    ]);
+    expect(snapshots[0]).toMatchObject({
+      configPath,
+      configName: "agents.yaml",
+      sizeBytes: expect.any(Number),
+      createdAt: expect.any(String),
+      mtime: expect.any(String),
+    });
+    expect(snapshots.some((s) => s.snapshotPath === symlink)).toBe(false);
+  });
+
   it("rejects rollback paths outside the managed snapshot directory", async () => {
     const store = makeStore(configPath, snapshotRoot);
     const outside = path.join(tempDir, "outside.yaml");

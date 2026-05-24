@@ -53,6 +53,7 @@ const EXPECTED_TOOLS = [
   "delete_session",
   // agent_config
   "get_agents_config",
+  "list_agents_config_snapshots",
   "plan_agent_profile_update",
   "update_agent_profile",
   "set_agent_atom_contexts",
@@ -61,6 +62,7 @@ const EXPECTED_TOOLS = [
   "list_nodes",
   "list_node_agents",
   "create_remote_agent_session",
+  "plan_remote_agent_profile_update",
 ];
 
 function createMockSql() {
@@ -257,6 +259,16 @@ describe("MCP SDK client smoke", () => {
       { node_id: nodeId, depth: 2, titles_only: true },
     ]);
     expect(fs.readFileSync(configPath, "utf-8")).toContain("atom_contexts:");
+
+    const snapshots = await client.callTool({
+      name: "list_agents_config_snapshots",
+      arguments: {},
+    });
+    expect(snapshots.isError).not.toBe(true);
+    const snapshotContent = snapshots.structuredContent as {
+      snapshots: Array<{ snapshot_path: string; size_bytes: number }>;
+    };
+    expect(snapshotContent.snapshots.some((s) => s.snapshot_path === structured.snapshot_path)).toBe(true);
 
     const rollback = await client.callTool({
       name: "rollback_agents_config",

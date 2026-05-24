@@ -31,6 +31,7 @@ CMD_CLAUDE_AUTH_DELETE_TOKEN = "claude_auth_delete_token"
 CMD_CLAUDE_AUTH_GET_USAGE = "claude_auth_get_usage"
 CMD_CLAUDE_AUTH_GET_PROFILE = "claude_auth_get_profile"  # 계정 프로필(email 등) 조회
 CMD_PROVIDER_USAGE_GET = "provider_usage_get"
+CMD_PLAN_AGENT_PROFILE_UPDATE = "plan_agent_profile_update"
 
 # Events (node -> soulstream-server)
 EVT_NODE_REGISTER = "node_register"

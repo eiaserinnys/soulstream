@@ -18,6 +18,11 @@ import type { ReasoningEffort } from "../engine/protocol.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { RealtimeBroker } from "../realtime/realtime_broker.js";
 import {
+  AgentConfigCommandError,
+  AgentConfigCommands,
+  type AgentConfigCommandHandler,
+} from "./agent_config_commands.js";
+import {
   AttachmentCommandError,
   AttachmentCommands,
 } from "./attachment_commands.js";
@@ -136,6 +141,12 @@ interface DownloadAttachmentCmd extends CommandLike {
 }
 
 type ListSessionsCmd = CommandLike & { type: "list_sessions" };
+type PlanAgentProfileUpdateCmd = CommandLike & {
+  type: "plan_agent_profile_update";
+  profile?: unknown;
+  create_if_missing?: boolean;
+  createIfMissing?: boolean;
+};
 
 /**
  * orch → 노드 명령 디스패처.
@@ -160,6 +171,7 @@ export class CommandDispatcher {
   private readonly providerUsageCommands: ProviderUsageCommands;
   private readonly deliveryCommands: DeliveryCommands;
   private readonly realtimeCommands: RealtimeCommands;
+  private readonly agentConfigCommands: AgentConfigCommands;
 
   constructor(
     private readonly send: SendFn,
@@ -178,6 +190,7 @@ export class CommandDispatcher {
     sessionDb?: SessionDB,
     realtimeBroker?: RealtimeBroker,
     providerUsage?: ProviderUsageCommandHandler,
+    agentConfigService?: AgentConfigCommandHandler,
   ) {
     this.taskRuntimeCommands = new TaskRuntimeCommands({
       agentRegistry,
@@ -198,6 +211,7 @@ export class CommandDispatcher {
       logger,
     });
     this.realtimeCommands = new RealtimeCommands(realtimeBroker);
+    this.agentConfigCommands = new AgentConfigCommands(agentConfigService);
     // This table is the route inventory. Add new command types here, then put
     // command-specific adaptation behind a tested boundary when it has depth.
     this.handlers = {
@@ -228,6 +242,8 @@ export class CommandDispatcher {
       claude_auth_get_profile: (cmd) => this.handleClaudeAuth(cmd as ClaudeAuthCommand),
       provider_usage_get: (cmd) =>
         this.handleProviderUsage(cmd as ProviderUsageCommand),
+      plan_agent_profile_update: (cmd) =>
+        this.handlePlanAgentProfileUpdate(cmd as PlanAgentProfileUpdateCmd),
     };
   }
 
@@ -546,6 +562,26 @@ export class CommandDispatcher {
       await this.send(await this.providerUsageCommands.handle(cmd));
     } catch (err) {
       if (err instanceof ProviderUsageCommandError) {
+        await this.sendError(cmd, err.message);
+        return;
+      }
+      throw err;
+    }
+  }
+
+  private async handlePlanAgentProfileUpdate(
+    cmd: PlanAgentProfileUpdateCmd,
+  ): Promise<void> {
+    try {
+      await this.send(
+        await this.agentConfigCommands.planProfileUpdate({
+          requestId: commandRequestId(cmd),
+          profile: cmd.profile,
+          createIfMissing: cmd.create_if_missing ?? cmd.createIfMissing,
+        }),
+      );
+    } catch (err) {
+      if (err instanceof AgentConfigCommandError) {
         await this.sendError(cmd, err.message);
         return;
       }

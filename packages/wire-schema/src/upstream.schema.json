@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 62개 $defs (wire 26 + SSE event 36). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16) + OpenAI Agents SDK parity (2026-05-21).",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 73개 $defs (wire 33 + SSE event 40). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16) + OpenAI Agents SDK parity (2026-05-21).",
   "$defs": {
     "NodeRegister": {
       "type": "object",
@@ -488,6 +488,48 @@
         "requestId": { "type": "string" }
       }
     },
+    "PlanAgentProfileUpdate": {
+      "type": "object",
+      "description": "orch→노드: agents.yaml 단일 agent profile 교체 계획(diff) read-only 조회. 응답도 동일 type에 ok/config_path/changed/diff/comment_preservation을 추가한다.",
+      "required": ["type", "profile"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "plan_agent_profile_update" },
+        "request_id": { "type": "string" },
+        "requestId": { "type": "string" },
+        "profile": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "create_if_missing": { "type": "boolean", "default": false },
+        "createIfMissing": { "type": "boolean", "default": false },
+        "ok": {
+          "type": "boolean",
+          "description": "응답에만 존재."
+        },
+        "config_path": {
+          "type": "string",
+          "description": "응답에만 존재."
+        },
+        "changed": {
+          "type": "boolean",
+          "description": "응답에만 존재."
+        },
+        "diff": {
+          "type": "string",
+          "description": "응답에만 존재."
+        },
+        "snapshot_root": {
+          "type": "string",
+          "description": "응답에만 존재. read-only plan은 snapshot 파일을 만들지 않는다."
+        },
+        "comment_preservation": {
+          "type": "string",
+          "enum": ["not_preserved"],
+          "description": "응답에만 존재."
+        }
+      }
+    },
     "HealthCheck": {
       "type": "object",
       "description": "orch→노드: 헬스체크. protocol.py:HealthCheckCmd L56-58.",
@@ -925,6 +967,7 @@
     { "$ref": "#/$defs/RealtimeEvent" },
     { "$ref": "#/$defs/RealtimeResolveToolApproval" },
     { "$ref": "#/$defs/ListSessions" },
+    { "$ref": "#/$defs/PlanAgentProfileUpdate" },
     { "$ref": "#/$defs/HealthCheck" },
     { "$ref": "#/$defs/SubscribeEvents" },
     { "$ref": "#/$defs/ClaudeAuthStatus" },

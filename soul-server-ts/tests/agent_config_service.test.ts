@@ -81,4 +81,23 @@ describe("AgentConfigService", () => {
     expect(registry.get("codex-default")?.atom_contexts).toBeUndefined();
     expect(fs.readFileSync(configPath, "utf-8")).not.toContain("atom_contexts:");
   });
+
+  it("exposes agents.yaml snapshot inventory", async () => {
+    const applied = await service.replaceProfile({
+      id: "codex-default",
+      name: "Codex Updated",
+      backend: "codex",
+      workspace_dir: "/tmp/codex",
+    });
+
+    const snapshots = service.listSnapshots();
+
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0]).toMatchObject({
+      snapshotPath: applied.snapshotPath,
+      configPath,
+      configName: "agents.yaml",
+      sizeBytes: expect.any(Number),
+    });
+  });
 });

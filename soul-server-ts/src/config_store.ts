@@ -33,6 +33,16 @@ export interface ConfigApplyResult<TConfig> extends ConfigChangePlan<TConfig> {
   appliedAt: string | null;
 }
 
+export interface ConfigSnapshotInfo {
+  snapshotPath: string;
+  createdAt: string;
+  mtime: string;
+  sizeBytes: number;
+  configPath: string;
+  configName: string;
+  configHash: string;
+}
+
 /**
  * Local config apply boundary.
  *
@@ -61,6 +71,44 @@ export class ConfigStore<TConfig> {
   read(): ConfigReadResult<TConfig> {
     const raw = fs.readFileSync(this.actualConfigPath, "utf-8");
     return { raw, config: this.parseRaw(raw) };
+  }
+
+  listSnapshots(): ConfigSnapshotInfo[] {
+    const dir = this.snapshotDir();
+    let dirStat: fs.Stats;
+    try {
+      dirStat = fs.lstatSync(dir);
+    } catch (err) {
+      if (isNodeError(err) && err.code === "ENOENT") return [];
+      throw err;
+    }
+    if (!dirStat.isDirectory() || dirStat.isSymbolicLink()) {
+      throw new Error(`snapshot directory is not a managed directory: ${dir}`);
+    }
+
+    const snapshots: ConfigSnapshotInfo[] = [];
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (!entry.isFile()) continue;
+      const snapshotPath = path.join(dir, entry.name);
+      this.assertManagedSnapshotPath(snapshotPath);
+      const stat = fs.lstatSync(snapshotPath);
+      if (!stat.isFile() || stat.isSymbolicLink()) continue;
+      snapshots.push({
+        snapshotPath,
+        createdAt: stat.birthtime.toISOString(),
+        mtime: stat.mtime.toISOString(),
+        sizeBytes: stat.size,
+        configPath: this.displayConfigPath,
+        configName: path.basename(this.actualConfigPath),
+        configHash: this.configHash(),
+      });
+    }
+
+    return snapshots.sort((a, b) => {
+      const mtimeDelta = Date.parse(b.mtime) - Date.parse(a.mtime);
+      if (mtimeDelta !== 0) return mtimeDelta;
+      return b.snapshotPath.localeCompare(a.snapshotPath);
+    });
   }
 
   async plan(
@@ -118,6 +166,10 @@ export class ConfigStore<TConfig> {
   async rollback(snapshotPath: string): Promise<ConfigApplyResult<TConfig>> {
     const resolvedSnapshotPath = path.resolve(snapshotPath);
     this.assertManagedSnapshotPath(resolvedSnapshotPath);
+    const snapshotStat = fs.lstatSync(resolvedSnapshotPath);
+    if (!snapshotStat.isFile() || snapshotStat.isSymbolicLink()) {
+      throw new Error(`rollback snapshot path is not a managed file: ${snapshotPath}`);
+    }
     const rollbackRaw = fs.readFileSync(resolvedSnapshotPath, "utf-8");
     const rollbackConfig = this.parseRaw(rollbackRaw);
     const current = this.read();
@@ -152,11 +204,14 @@ export class ConfigStore<TConfig> {
 
   private snapshotDir(): string {
     const name = path.basename(this.actualConfigPath);
-    const hash = createHash("sha256")
+    return path.join(this.snapshotRoot, `${name}-${this.configHash()}`);
+  }
+
+  private configHash(): string {
+    return createHash("sha256")
       .update(this.actualConfigPath)
       .digest("hex")
       .slice(0, 10);
-    return path.join(this.snapshotRoot, `${name}-${hash}`);
   }
 
   private writeSnapshot(raw: string): string {
@@ -242,4 +297,8 @@ function splitLines(raw: string): string[] {
   const lines = raw.split("\n");
   if (lines.at(-1) === "") lines.pop();
   return lines;
+}
+
+function isNodeError(err: unknown): err is NodeJS.ErrnoException {
+  return Boolean(err && typeof err === "object" && "code" in err);
 }

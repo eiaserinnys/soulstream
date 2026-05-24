@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { AgentRegistry, type AgentProfile } from "../src/agent_registry.js";
+import type { AgentConfigService } from "../src/agent_config_service.js";
 import { FileAttachmentStore, type AttachmentStore } from "../src/attachments/file_manager.js";
 import { CommandDispatcher } from "../src/upstream/dispatcher.js";
 import type {
@@ -43,6 +44,7 @@ function createDispatcher(opts: {
   claudeAuth?: ClaudeAuthCommandHandler;
   sessionDb?: Partial<SessionDB>;
   realtimeBroker?: Partial<RealtimeBroker>;
+  agentConfigService?: Pick<AgentConfigService, "planProfileUpdate">;
 } = {}) {
   const sent: unknown[] = [];
   const send = vi.fn(async (data: unknown) => {
@@ -116,6 +118,8 @@ function createDispatcher(opts: {
     opts.claudeAuth,
     sessionDb,
     opts.realtimeBroker as RealtimeBroker | undefined,
+    undefined,
+    opts.agentConfigService,
   );
   return { dispatcher, sent, send, registry, tm, te, createdTasks, sessionDb };
 }
@@ -1278,6 +1282,72 @@ describe("CommandDispatcher.list_sessions (Python parity)", () => {
     const reply = sent[0] as { type: string; message: string };
     expect(reply.type).toBe("error");
     expect(reply.message).toContain("session_db");
+  });
+});
+
+describe("CommandDispatcher.plan_agent_profile_update", () => {
+  it("delegates to AgentConfigService planProfileUpdate and returns read-only diff", async () => {
+    const planProfileUpdate = vi.fn().mockResolvedValue({
+      configPath: "/srv/agents.yaml",
+      snapshotRoot: "/srv/.local/config-snapshots",
+      changed: true,
+      diff: "--- agents.yaml\n+++ agents.yaml\n@@ -1,1 +1,1 @@\n",
+      config: { agents: [] },
+      commentPreservation: "not_preserved",
+    });
+    const { dispatcher, sent } = createDispatcher({
+      agentConfigService: { planProfileUpdate },
+    });
+    const profile = {
+      id: "codex-default",
+      name: "Codex Planned",
+      backend: "codex",
+      workspace_dir: "/tmp/codex",
+    } as const;
+
+    await dispatcher.dispatch({
+      type: "plan_agent_profile_update",
+      requestId: "plan-1",
+      profile,
+      create_if_missing: true,
+    });
+
+    expect(planProfileUpdate).toHaveBeenCalledWith(profile, true);
+    expect(sent).toEqual([
+      {
+        type: "plan_agent_profile_update",
+        requestId: "plan-1",
+        ok: true,
+        config_path: "/srv/agents.yaml",
+        changed: true,
+        diff: "--- agents.yaml\n+++ agents.yaml\n@@ -1,1 +1,1 @@\n",
+        snapshot_root: "/srv/.local/config-snapshots",
+        comment_preservation: "not_preserved",
+      },
+    ]);
+    expect(JSON.stringify(sent[0])).not.toContain("snapshotPath");
+  });
+
+  it("returns explicit error when AgentConfigService is not wired", async () => {
+    const { dispatcher, sent } = createDispatcher();
+
+    await dispatcher.dispatch({
+      type: "plan_agent_profile_update",
+      requestId: "plan-missing",
+      profile: {
+        id: "codex-default",
+        name: "Codex Planned",
+        backend: "codex",
+        workspace_dir: "/tmp/codex",
+      },
+    });
+
+    expect(sent[0]).toMatchObject({
+      type: "error",
+      requestId: "plan-missing",
+      command_type: "plan_agent_profile_update",
+    });
+    expect((sent[0] as { message: string }).message).toContain("agent_config_service");
   });
 });
 

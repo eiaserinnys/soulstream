@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 62개 $defs (wire 26 + SSE event 36). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16) + OpenAI Agents SDK parity (2026-05-21).
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 73개 $defs (wire 33 + SSE event 40). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16) + OpenAI Agents SDK parity (2026-05-21).
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -29,6 +29,7 @@ export type SoulstreamUpstreamProtocol =
   | RealtimeEvent
   | RealtimeResolveToolApproval
   | ListSessions
+  | PlanAgentProfileUpdate
   | HealthCheck
   | SubscribeEvents
   | ClaudeAuthStatus
@@ -785,6 +786,44 @@ export interface ListSessions {
   type: "list_sessions";
   request_id?: string;
   requestId?: string;
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: agents.yaml 단일 agent profile 교체 계획(diff) read-only 조회. 응답도 동일 type에 ok/config_path/changed/diff/comment_preservation을 추가한다.
+ */
+export interface PlanAgentProfileUpdate {
+  type: "plan_agent_profile_update";
+  request_id?: string;
+  requestId?: string;
+  profile: {
+    [k: string]: unknown;
+  };
+  create_if_missing?: boolean;
+  createIfMissing?: boolean;
+  /**
+   * 응답에만 존재.
+   */
+  ok?: boolean;
+  /**
+   * 응답에만 존재.
+   */
+  config_path?: string;
+  /**
+   * 응답에만 존재.
+   */
+  changed?: boolean;
+  /**
+   * 응답에만 존재.
+   */
+  diff?: string;
+  /**
+   * 응답에만 존재. read-only plan은 snapshot 파일을 만들지 않는다.
+   */
+  snapshot_root?: string;
+  /**
+   * 응답에만 존재.
+   */
+  comment_preservation?: "not_preserved";
   [k: string]: unknown;
 }
 /**

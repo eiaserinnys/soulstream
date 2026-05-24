@@ -12,6 +12,7 @@ from soulstream_server.constants import (
     CMD_DOWNLOAD_ATTACHMENT,
     CMD_INTERVENE,
     CMD_INTERRUPT_SESSION,
+    CMD_PLAN_AGENT_PROFILE_UPDATE,
     CMD_PROVIDER_USAGE_GET,
     CMD_REALTIME_CREATE_CALL,
     CMD_REALTIME_EVENT,
@@ -289,6 +290,42 @@ class TestCommandSending:
         sent = ws.send_json.call_args[0][0]
         assert sent["type"] == CMD_PROVIDER_USAGE_GET
         assert sent["provider"] == "codex"
+
+    async def test_send_plan_agent_profile_update_sends_read_only_command(self, node, ws):
+        """agent profile planning is proxied as a read-only node command."""
+
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            req_id = data["requestId"]
+            if req_id in node._pending:
+                node._pending[req_id].set_result({
+                    "type": CMD_PLAN_AGENT_PROFILE_UPDATE,
+                    "requestId": req_id,
+                    "ok": True,
+                    "config_path": "/srv/agents.yaml",
+                    "changed": False,
+                    "diff": "",
+                    "comment_preservation": "not_preserved",
+                })
+
+        ws.send_json.side_effect = resolve_future
+        profile = {
+            "id": "codex-default",
+            "name": "Codex",
+            "backend": "codex",
+            "workspace_dir": "/tmp/codex",
+        }
+
+        result = await node.send_plan_agent_profile_update(
+            profile,
+            create_if_missing=True,
+        )
+
+        sent = ws.send_json.call_args[0][0]
+        assert sent["type"] == CMD_PLAN_AGENT_PROFILE_UPDATE
+        assert sent["profile"] == profile
+        assert sent["create_if_missing"] is True
+        assert result["ok"] is True
 
     async def test_send_respond_sends_input_request_id_without_overwriting_command_request_id(
         self, node, ws

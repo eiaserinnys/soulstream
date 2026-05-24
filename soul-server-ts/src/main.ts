@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 import { ZodError } from "zod";
 
+import { AgentConfigService } from "./agent_config_service.js";
 import { loadAgentRegistry } from "./agent_registry.js";
 import { ClaudeAuthService, FileClaudeAuthTokenStore } from "./auth/claude_auth.js";
 import { FileAttachmentStore } from "./attachments/file_manager.js";
@@ -108,6 +109,11 @@ async function main(): Promise<void> {
     );
     process.exit(1);
   }
+
+  const agentConfigService = new AgentConfigService({
+    configPath: env.AGENTS_CONFIG_PATH,
+    agentRegistry,
+  });
 
   const claudeAuth = new ClaudeAuthService(
     {
@@ -321,6 +327,7 @@ async function main(): Promise<void> {
     taskManager,
     taskExecutor,
     agentRegistry,
+    agentConfigService,
     catalogService,
     logger,
     // B-7: completionNotifier가 이미 같은 orchProxyConfig를 보유 — 정본 하나 (design-principles §3)
@@ -387,6 +394,7 @@ async function main(): Promise<void> {
       claudeAuth,
       sessionDb: db,
       realtimeBroker,
+      agentConfigService,
     },
   );
 

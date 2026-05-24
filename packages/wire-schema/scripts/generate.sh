@@ -25,6 +25,7 @@ datamodel-codegen \
   --use-schema-description \
   --use-standard-collections \
   --use-union-operator \
+  --formatters black isort \
   --disable-timestamp
 
 echo "[wire-schema] TypeScript interface 생성: $TS_OUT"

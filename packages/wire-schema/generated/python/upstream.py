@@ -356,6 +356,25 @@ class ListSessions(TypedDict):
     requestId: NotRequired[str]
 
 
+class PlanAgentProfileUpdate(TypedDict):
+    """
+    orch→노드: agents.yaml 단일 agent profile 교체 계획(diff) read-only 조회. 응답도 동일 type에 ok/config_path/changed/diff/comment_preservation을 추가한다.
+    """
+
+    type: Literal['plan_agent_profile_update']
+    request_id: NotRequired[str]
+    requestId: NotRequired[str]
+    profile: dict[str, Any]
+    create_if_missing: NotRequired[bool]
+    createIfMissing: NotRequired[bool]
+    ok: NotRequired[bool]
+    config_path: NotRequired[str]
+    changed: NotRequired[bool]
+    diff: NotRequired[str]
+    snapshot_root: NotRequired[str]
+    comment_preservation: NotRequired[Literal['not_preserved']]
+
+
 class HealthCheck(TypedDict):
     """
     orch→노드: 헬스체크. protocol.py:HealthCheckCmd L56-58.
@@ -852,6 +871,7 @@ SoulstreamUpstreamProtocol: TypeAlias = (
     | RealtimeEvent
     | RealtimeResolveToolApproval
     | ListSessions
+    | PlanAgentProfileUpdate
     | HealthCheck
     | SubscribeEvents
     | ClaudeAuthStatus

@@ -119,6 +119,61 @@ class TestListNodeAgents:
         assert agent["backend"] == "codex"
 
 
+class TestPlanAgentProfileUpdate:
+    """POST /api/nodes/{node_id}/agents/config/plan-profile-update tests."""
+
+    async def test_proxies_read_only_plan_to_target_node(self, client, node_manager):
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+        node = await node_manager.register_node(ws, {
+            "node_id": "n1", "host": "10.0.0.1", "port": 4100,
+        })
+        node.send_plan_agent_profile_update = AsyncMock(return_value={
+            "ok": True,
+            "config_path": "/srv/agents.yaml",
+            "changed": True,
+            "diff": "--- agents.yaml\n+++ agents.yaml\n",
+            "comment_preservation": "not_preserved",
+        })
+        profile = {
+            "id": "codex-default",
+            "name": "Codex Planned",
+            "backend": "codex",
+            "workspace_dir": "/tmp/codex",
+        }
+
+        resp = await client.post(
+            "/api/nodes/n1/agents/config/plan-profile-update",
+            json={"profile": profile, "create_if_missing": True},
+        )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["ok"] is True
+        assert body["changed"] is True
+        node.send_plan_agent_profile_update.assert_called_once_with(
+            profile,
+            create_if_missing=True,
+        )
+
+    async def test_unknown_node_returns_clear_404(self, client):
+        resp = await client.post(
+            "/api/nodes/missing/agents/config/plan-profile-update",
+            json={
+                "profile": {
+                    "id": "codex-default",
+                    "name": "Codex Planned",
+                    "backend": "codex",
+                    "workspace_dir": "/tmp/codex",
+                },
+            },
+        )
+
+        assert resp.status_code == 404
+        assert "not connected" in resp.json()["detail"]
+
+
 class TestPortraitProxy:
     """portrait 캐시 서빙 테스트."""
 

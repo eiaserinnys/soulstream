@@ -65,6 +65,7 @@ const SELF_IDENTITY = {
       description: "agents.yaml agent profile 조회·편집",
       tools: [
         "get_agents_config",
+        "list_agents_config_snapshots",
         "plan_agent_profile_update",
         "update_agent_profile",
         "set_agent_atom_contexts",
@@ -74,7 +75,12 @@ const SELF_IDENTITY = {
     {
       name: "multi_node",
       description: "오케스트레이터 경유 다른 노드 호출",
-      tools: ["list_nodes", "list_node_agents", "create_remote_agent_session"],
+      tools: [
+        "list_nodes",
+        "list_node_agents",
+        "create_remote_agent_session",
+        "plan_remote_agent_profile_update",
+      ],
     },
   ],
 };

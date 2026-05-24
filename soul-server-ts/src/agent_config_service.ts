@@ -11,6 +11,7 @@ import {
   ConfigStore,
   type ConfigApplyResult,
   type ConfigChangePlan,
+  type ConfigSnapshotInfo,
 } from "./config_store.js";
 
 export interface AgentConfigServiceOptions {
@@ -21,6 +22,7 @@ export interface AgentConfigServiceOptions {
 
 export type AgentConfigPlan = ConfigChangePlan<AgentsConfig>;
 export type AgentConfigApplyResult = ConfigApplyResult<AgentsConfig>;
+export type AgentConfigSnapshotInfo = ConfigSnapshotInfo;
 
 export class AgentConfigService {
   private readonly store: ConfigStore<AgentsConfig>;
@@ -40,6 +42,10 @@ export class AgentConfigService {
   readRaw(): { raw: string; parsed: AgentsConfig } {
     const { raw, config } = this.store.read();
     return { raw, parsed: config };
+  }
+
+  listSnapshots(): AgentConfigSnapshotInfo[] {
+    return this.store.listSnapshots();
   }
 
   planProfileUpdate(

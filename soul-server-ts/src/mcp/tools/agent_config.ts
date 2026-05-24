@@ -19,7 +19,7 @@ export function registerAgentConfigTools(
   server: McpServer,
   runtime: McpRuntime,
 ): void {
-  const agentConfig = new AgentConfigService({
+  const agentConfig = runtime.agentConfigService ?? new AgentConfigService({
     configPath: runtime.agentsConfigPath,
     agentRegistry: runtime.agentRegistry,
   });
@@ -40,6 +40,35 @@ export function registerAgentConfigTools(
           config_path: runtime.agentsConfigPath,
           agents: parsed.agents,
           ...(include_raw ? { raw_yaml: raw } : {}),
+        });
+      } catch (err) {
+        return errorResult(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  server.registerTool(
+    "list_agents_config_snapshots",
+    {
+      description:
+        "ConfigStore가 만든 agents.yaml snapshot 목록을 최신순으로 조회한다.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        const snapshots = agentConfig.listSnapshots();
+        return jsonResult({
+          ok: true,
+          config_path: runtime.agentsConfigPath,
+          snapshots: snapshots.map((snapshot) => ({
+            snapshot_path: snapshot.snapshotPath,
+            created_at: snapshot.createdAt,
+            mtime: snapshot.mtime,
+            size_bytes: snapshot.sizeBytes,
+            config_path: snapshot.configPath,
+            config_name: snapshot.configName,
+            config_hash: snapshot.configHash,
+          })),
         });
       } catch (err) {
         return errorResult(err instanceof Error ? err.message : String(err));
