@@ -789,7 +789,7 @@ export interface ListSessions {
   [k: string]: unknown;
 }
 /**
- * orch→노드: agents.yaml 단일 agent profile 교체 계획(diff) read-only 조회. 응답도 동일 type에 ok/config_path/changed/diff/comment_preservation을 추가한다.
+ * orch→노드: agents.yaml 단일 agent profile 교체 계획(semantic object diff) read-only 조회. text diff는 include_text_diff=true일 때만 응답 diff에 포함한다.
  */
 export interface PlanAgentProfileUpdate {
   type: "plan_agent_profile_update";
@@ -800,6 +800,8 @@ export interface PlanAgentProfileUpdate {
   };
   create_if_missing?: boolean;
   createIfMissing?: boolean;
+  include_text_diff?: boolean;
+  includeTextDiff?: boolean;
   /**
    * 응답에만 존재.
    */
@@ -813,7 +815,21 @@ export interface PlanAgentProfileUpdate {
    */
   changed?: boolean;
   /**
-   * 응답에만 존재.
+   * 응답에만 존재. agent profile plan의 의미 변화 목록.
+   */
+  semantic_changes?: {
+    op: "add_agent" | "replace_agent" | "update_agent_atom_contexts" | "no_change";
+    agent_id: string;
+    before: unknown;
+    after: unknown;
+    [k: string]: unknown;
+  }[];
+  /**
+   * 응답에만 존재. diff가 실제 text diff를 포함하는지 여부.
+   */
+  text_diff_included?: boolean;
+  /**
+   * 응답에만 존재. include_text_diff=false이면 빈 문자열.
    */
   diff?: string;
   /**

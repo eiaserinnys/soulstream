@@ -66,6 +66,84 @@ describe("AgentConfigService", () => {
     expect(registry.get("codex-default")?.max_turns).toBe(25);
   });
 
+  it("plans an add profile as a semantic change without default text diff", async () => {
+    const before = fs.readFileSync(configPath, "utf-8");
+    const profile = {
+      id: "smoke-config-plan-do-not-create",
+      name: "Smoke Plan",
+      backend: "codex",
+      workspace_dir: "/tmp/smoke-plan",
+    } as const;
+
+    const plan = await service.planProfileUpdate(profile, true);
+
+    expect(plan.changed).toBe(true);
+    expect(plan.textDiffIncluded).toBe(false);
+    expect(plan.diff).toBe("");
+    expect(plan.semanticChanges).toEqual([
+      {
+        op: "add_agent",
+        agentId: "smoke-config-plan-do-not-create",
+        before: null,
+        after: profile,
+      },
+    ]);
+    expect(fs.readFileSync(configPath, "utf-8")).toBe(before);
+  });
+
+  it("plans a no-op profile update as changed=false with no_change semantics", async () => {
+    const plan = await service.planProfileUpdate({
+      workspace_dir: "/tmp/codex",
+      backend: "codex",
+      name: "Codex",
+      id: "codex-default",
+    });
+
+    expect(plan.changed).toBe(false);
+    expect(plan.textDiffIncluded).toBe(false);
+    expect(plan.diff).toBe("");
+    expect(plan.semanticChanges).toEqual([
+      {
+        op: "no_change",
+        agentId: "codex-default",
+        before: {
+          id: "codex-default",
+          name: "Codex",
+          backend: "codex",
+          workspace_dir: "/tmp/codex",
+        },
+        after: {
+          id: "codex-default",
+          name: "Codex",
+          backend: "codex",
+          workspace_dir: "/tmp/codex",
+        },
+      },
+    ]);
+  });
+
+  it("includes text diff only when explicitly requested", async () => {
+    const plan = await service.planProfileUpdate(
+      {
+        id: "codex-default",
+        name: "Codex Planned",
+        backend: "codex",
+        workspace_dir: "/tmp/codex-ws",
+      },
+      false,
+      { includeTextDiff: true },
+    );
+
+    expect(plan.changed).toBe(true);
+    expect(plan.textDiffIncluded).toBe(true);
+    expect(plan.diff).toContain("--- agents.yaml");
+    expect(plan.diff).toContain("Codex Planned");
+    expect(plan.semanticChanges[0]).toMatchObject({
+      op: "replace_agent",
+      agentId: "codex-default",
+    });
+  });
+
   it("sets atom_contexts and can roll back the applied config", async () => {
     const nodeId = "11111111-2222-3333-4444-555555555555";
     const applied = await service.setAgentAtomContexts("codex-default", [

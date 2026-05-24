@@ -304,6 +304,25 @@ class TestCommandSending:
                     "ok": True,
                     "config_path": "/srv/agents.yaml",
                     "changed": False,
+                    "semantic_changes": [
+                        {
+                            "op": "no_change",
+                            "agent_id": "codex-default",
+                            "before": {
+                                "id": "codex-default",
+                                "name": "Codex",
+                                "backend": "codex",
+                                "workspace_dir": "/tmp/codex",
+                            },
+                            "after": {
+                                "id": "codex-default",
+                                "name": "Codex",
+                                "backend": "codex",
+                                "workspace_dir": "/tmp/codex",
+                            },
+                        },
+                    ],
+                    "text_diff_included": True,
                     "diff": "",
                     "comment_preservation": "not_preserved",
                 })
@@ -319,12 +338,14 @@ class TestCommandSending:
         result = await node.send_plan_agent_profile_update(
             profile,
             create_if_missing=True,
+            include_text_diff=True,
         )
 
         sent = ws.send_json.call_args[0][0]
         assert sent["type"] == CMD_PLAN_AGENT_PROFILE_UPDATE
         assert sent["profile"] == profile
         assert sent["create_if_missing"] is True
+        assert sent["include_text_diff"] is True
         assert result["ok"] is True
 
     async def test_send_respond_sends_input_request_id_without_overwriting_command_request_id(

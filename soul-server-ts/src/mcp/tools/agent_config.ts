@@ -7,7 +7,10 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { AgentConfigService } from "../../agent_config_service.js";
+import {
+  AgentConfigService,
+  toAgentConfigSemanticChangeWire,
+} from "../../agent_config_service.js";
 import {
   AgentAtomContextSchema,
   AgentProfileSchema,
@@ -84,18 +87,24 @@ export function registerAgentConfigTools(
       inputSchema: {
         profile: AgentProfileSchema,
         create_if_missing: z.boolean().default(false),
+        include_text_diff: z.boolean().optional(),
+        includeTextDiff: z.boolean().optional(),
       },
     },
-    async ({ profile, create_if_missing }) => {
+    async ({ profile, create_if_missing, include_text_diff, includeTextDiff }) => {
       try {
+        const includeTextDiffValue = include_text_diff ?? includeTextDiff ?? false;
         const plan = await agentConfig.planProfileUpdate(
           profile,
           create_if_missing ?? false,
+          { includeTextDiff: includeTextDiffValue },
         );
         return jsonResult({
           ok: true,
           config_path: runtime.agentsConfigPath,
           changed: plan.changed,
+          semantic_changes: toAgentConfigSemanticChangeWire(plan.semanticChanges),
+          text_diff_included: plan.textDiffIncluded,
           diff: plan.diff,
           snapshot_root: plan.snapshotRoot,
           comment_preservation: plan.commentPreservation,
@@ -159,6 +168,9 @@ export function registerAgentConfigTools(
           config_path: runtime.agentsConfigPath,
           changed: updated.changed,
           diff: updated.diff,
+          semantic_changes: updated.semanticChanges
+            ? toAgentConfigSemanticChangeWire(updated.semanticChanges)
+            : [],
           snapshot_path: updated.snapshotPath,
           comment_preservation: updated.commentPreservation,
           agent: updated.config.agents.find((p) => p.id === agent_id),

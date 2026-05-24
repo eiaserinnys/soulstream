@@ -360,6 +360,7 @@ class NodeConnection:
         self,
         profile: dict,
         create_if_missing: bool = False,
+        include_text_diff: bool = False,
     ) -> dict:
         """agents.yaml profile 변경 계획을 노드에서 read-only로 계산한다."""
         return await self._send_command(
@@ -367,6 +368,7 @@ class NodeConnection:
             {
                 "profile": profile,
                 "create_if_missing": create_if_missing,
+                "include_text_diff": include_text_diff,
             },
         )
 

@@ -19,6 +19,10 @@ export interface ConfigReadResult<TConfig> {
   config: TConfig;
 }
 
+export interface ConfigPlanOptions {
+  includeTextDiff?: boolean;
+}
+
 export interface ConfigChangePlan<TConfig> {
   configPath: string;
   snapshotRoot: string;
@@ -113,17 +117,19 @@ export class ConfigStore<TConfig> {
 
   async plan(
     mutate: (current: TConfig) => MaybePromise<TConfig>,
+    options: ConfigPlanOptions = {},
   ): Promise<ConfigChangePlan<TConfig>> {
     const current = this.read();
     const nextConfig = this.normalize(await mutate(current.config));
     const currentCanonicalRaw = this.stringifyConfig(current.config);
     const nextRaw = this.stringifyConfig(nextConfig);
     const changed = currentCanonicalRaw !== nextRaw;
+    const includeTextDiff = options.includeTextDiff ?? true;
     return {
       configPath: this.displayConfigPath,
       snapshotRoot: this.snapshotRoot,
       changed,
-      diff: changed
+      diff: changed && includeTextDiff
         ? diffText(current.raw, nextRaw, path.basename(this.actualConfigPath))
         : "",
       config: nextConfig,

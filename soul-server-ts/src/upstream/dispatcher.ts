@@ -146,6 +146,8 @@ type PlanAgentProfileUpdateCmd = CommandLike & {
   profile?: unknown;
   create_if_missing?: boolean;
   createIfMissing?: boolean;
+  include_text_diff?: boolean;
+  includeTextDiff?: boolean;
 };
 
 /**
@@ -578,6 +580,7 @@ export class CommandDispatcher {
           requestId: commandRequestId(cmd),
           profile: cmd.profile,
           createIfMissing: cmd.create_if_missing ?? cmd.createIfMissing,
+          includeTextDiff: cmd.include_text_diff ?? cmd.includeTextDiff,
         }),
       );
     } catch (err) {

@@ -490,7 +490,7 @@
     },
     "PlanAgentProfileUpdate": {
       "type": "object",
-      "description": "orch→노드: agents.yaml 단일 agent profile 교체 계획(diff) read-only 조회. 응답도 동일 type에 ok/config_path/changed/diff/comment_preservation을 추가한다.",
+      "description": "orch→노드: agents.yaml 단일 agent profile 교체 계획(semantic object diff) read-only 조회. text diff는 include_text_diff=true일 때만 응답 diff에 포함한다.",
       "required": ["type", "profile"],
       "additionalProperties": true,
       "properties": {
@@ -503,6 +503,8 @@
         },
         "create_if_missing": { "type": "boolean", "default": false },
         "createIfMissing": { "type": "boolean", "default": false },
+        "include_text_diff": { "type": "boolean", "default": false },
+        "includeTextDiff": { "type": "boolean", "default": false },
         "ok": {
           "type": "boolean",
           "description": "응답에만 존재."
@@ -515,9 +517,36 @@
           "type": "boolean",
           "description": "응답에만 존재."
         },
+        "semantic_changes": {
+          "type": "array",
+          "description": "응답에만 존재. agent profile plan의 의미 변화 목록.",
+          "items": {
+            "type": "object",
+            "required": ["op", "agent_id", "before", "after"],
+            "additionalProperties": true,
+            "properties": {
+              "op": {
+                "type": "string",
+                "enum": [
+                  "add_agent",
+                  "replace_agent",
+                  "update_agent_atom_contexts",
+                  "no_change"
+                ]
+              },
+              "agent_id": { "type": "string" },
+              "before": {},
+              "after": {}
+            }
+          }
+        },
+        "text_diff_included": {
+          "type": "boolean",
+          "description": "응답에만 존재. diff가 실제 text diff를 포함하는지 여부."
+        },
         "diff": {
           "type": "string",
-          "description": "응답에만 존재."
+          "description": "응답에만 존재. include_text_diff=false이면 빈 문자열."
         },
         "snapshot_root": {
           "type": "string",

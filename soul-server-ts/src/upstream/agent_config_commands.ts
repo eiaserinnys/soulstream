@@ -3,6 +3,7 @@ import type {
   AgentConfigPlan,
   AgentConfigService,
 } from "../agent_config_service.js";
+import { toAgentConfigSemanticChangeWire } from "../agent_config_service.js";
 
 export type AgentConfigCommandHandler = Pick<
   AgentConfigService,
@@ -13,6 +14,7 @@ export interface PlanAgentProfileUpdateParams {
   requestId: string;
   profile: unknown;
   createIfMissing?: boolean;
+  includeTextDiff?: boolean;
 }
 
 export class AgentConfigCommandError extends Error {}
@@ -38,6 +40,7 @@ export class AgentConfigCommands {
     const plan: AgentConfigPlan = await this.service.planProfileUpdate(
       profile.data,
       params.createIfMissing ?? false,
+      { includeTextDiff: params.includeTextDiff ?? false },
     );
     return {
       type: "plan_agent_profile_update",
@@ -45,6 +48,8 @@ export class AgentConfigCommands {
       ok: true,
       config_path: plan.configPath,
       changed: plan.changed,
+      semantic_changes: toAgentConfigSemanticChangeWire(plan.semanticChanges),
+      text_diff_included: plan.textDiffIncluded,
       diff: plan.diff,
       snapshot_root: plan.snapshotRoot,
       comment_preservation: plan.commentPreservation,

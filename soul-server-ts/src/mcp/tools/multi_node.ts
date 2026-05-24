@@ -67,9 +67,11 @@ export function registerMultiNodeTools(
         node_id: z.string().min(1),
         profile: AgentProfileSchema,
         create_if_missing: z.boolean().default(false),
+        include_text_diff: z.boolean().optional(),
+        includeTextDiff: z.boolean().optional(),
       },
     },
-    async ({ node_id, profile, create_if_missing }) => {
+    async ({ node_id, profile, create_if_missing, include_text_diff, includeTextDiff }) => {
       const orch = runtime.orch;
       if (!orch) return errorResult(NOT_CONFIGURED_MSG);
       try {
@@ -80,6 +82,7 @@ export function registerMultiNodeTools(
           {
             profile,
             create_if_missing: create_if_missing ?? false,
+            include_text_diff: include_text_diff ?? includeTextDiff ?? false,
           },
         );
         return jsonResult(data);

@@ -133,6 +133,20 @@ class TestPlanAgentProfileUpdate:
             "ok": True,
             "config_path": "/srv/agents.yaml",
             "changed": True,
+            "semantic_changes": [
+                {
+                    "op": "add_agent",
+                    "agent_id": "codex-default",
+                    "before": None,
+                    "after": {
+                        "id": "codex-default",
+                        "name": "Codex Planned",
+                        "backend": "codex",
+                        "workspace_dir": "/tmp/codex",
+                    },
+                },
+            ],
+            "text_diff_included": True,
             "diff": "--- agents.yaml\n+++ agents.yaml\n",
             "comment_preservation": "not_preserved",
         })
@@ -145,16 +159,19 @@ class TestPlanAgentProfileUpdate:
 
         resp = await client.post(
             "/api/nodes/n1/agents/config/plan-profile-update",
-            json={"profile": profile, "create_if_missing": True},
+            json={"profile": profile, "create_if_missing": True, "includeTextDiff": True},
         )
 
         assert resp.status_code == 200
         body = resp.json()
         assert body["ok"] is True
         assert body["changed"] is True
+        assert body["semantic_changes"][0]["op"] == "add_agent"
+        assert body["text_diff_included"] is True
         node.send_plan_agent_profile_update.assert_called_once_with(
             profile,
             create_if_missing=True,
+            include_text_diff=True,
         )
 
     async def test_unknown_node_returns_clear_404(self, client):

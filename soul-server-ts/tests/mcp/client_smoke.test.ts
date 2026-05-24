@@ -249,9 +249,16 @@ describe("MCP SDK client smoke", () => {
     expect(result.isError).not.toBe(true);
     const structured = result.structuredContent as {
       snapshot_path?: string;
+      semantic_changes: Array<{ op: string; agent_id: string }>;
       agent: { atom_contexts?: Array<{ node_id: string; depth: number; titles_only: boolean }> };
     };
     expect(structured.snapshot_path).toBeTruthy();
+    expect(structured.semantic_changes).toEqual([
+      expect.objectContaining({
+        op: "update_agent_atom_contexts",
+        agent_id: "codex-default",
+      }),
+    ]);
     expect(structured.agent.atom_contexts).toEqual([
       { node_id: nodeId, depth: 2, titles_only: true },
     ]);
@@ -279,7 +286,7 @@ describe("MCP SDK client smoke", () => {
     expect(fs.readFileSync(configPath, "utf-8")).not.toContain("atom_contexts:");
   });
 
-  it("callTool('plan_agent_profile_update') → diff only, no file write", async () => {
+  it("callTool('plan_agent_profile_update') → semantic plan by default, no file write", async () => {
     const before = fs.readFileSync(configPath, "utf-8");
     const result = await client.callTool({
       name: "plan_agent_profile_update",
@@ -295,14 +302,45 @@ describe("MCP SDK client smoke", () => {
     expect(result.isError).not.toBe(true);
     const structured = result.structuredContent as {
       changed: boolean;
+      semantic_changes: Array<{ op: string; agent_id: string }>;
+      text_diff_included: boolean;
       diff: string;
       comment_preservation: string;
     };
     expect(structured.changed).toBe(true);
-    expect(structured.diff).toContain("Codex Planned");
+    expect(structured.semantic_changes).toEqual([
+      expect.objectContaining({
+        op: "replace_agent",
+        agent_id: "codex-default",
+      }),
+    ]);
+    expect(structured.text_diff_included).toBe(false);
+    expect(structured.diff).toBe("");
     expect(structured.comment_preservation).toBe("not_preserved");
     expect(fs.readFileSync(configPath, "utf-8")).toBe(before);
     expect(agentRegistry.get("codex-default")?.name).toBe("Codex");
+  });
+
+  it("callTool('plan_agent_profile_update') → include_text_diff returns legacy diff", async () => {
+    const result = await client.callTool({
+      name: "plan_agent_profile_update",
+      arguments: {
+        include_text_diff: true,
+        profile: {
+          id: "codex-default",
+          name: "Codex Planned",
+          backend: "codex",
+          workspace_dir: "/tmp/codex-ws",
+        },
+      },
+    });
+    expect(result.isError).not.toBe(true);
+    const structured = result.structuredContent as {
+      text_diff_included: boolean;
+      diff: string;
+    };
+    expect(structured.text_diff_included).toBe(true);
+    expect(structured.diff).toContain("Codex Planned");
   });
 
   it("callTool('reflect_service', 'unknown') → isError 응답", async () => {

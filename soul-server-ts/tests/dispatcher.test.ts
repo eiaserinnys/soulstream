@@ -1286,12 +1286,26 @@ describe("CommandDispatcher.list_sessions (Python parity)", () => {
 });
 
 describe("CommandDispatcher.plan_agent_profile_update", () => {
-  it("delegates to AgentConfigService planProfileUpdate and returns read-only diff", async () => {
+  it("delegates to AgentConfigService planProfileUpdate and returns semantic read-only plan", async () => {
     const planProfileUpdate = vi.fn().mockResolvedValue({
       configPath: "/srv/agents.yaml",
       snapshotRoot: "/srv/.local/config-snapshots",
       changed: true,
-      diff: "--- agents.yaml\n+++ agents.yaml\n@@ -1,1 +1,1 @@\n",
+      semanticChanges: [
+        {
+          op: "add_agent",
+          agentId: "codex-default",
+          before: null,
+          after: {
+            id: "codex-default",
+            name: "Codex Planned",
+            backend: "codex",
+            workspace_dir: "/tmp/codex",
+          },
+        },
+      ],
+      textDiffIncluded: false,
+      diff: "",
       config: { agents: [] },
       commentPreservation: "not_preserved",
     });
@@ -1310,9 +1324,12 @@ describe("CommandDispatcher.plan_agent_profile_update", () => {
       requestId: "plan-1",
       profile,
       create_if_missing: true,
+      include_text_diff: false,
     });
 
-    expect(planProfileUpdate).toHaveBeenCalledWith(profile, true);
+    expect(planProfileUpdate).toHaveBeenCalledWith(profile, true, {
+      includeTextDiff: false,
+    });
     expect(sent).toEqual([
       {
         type: "plan_agent_profile_update",
@@ -1320,7 +1337,21 @@ describe("CommandDispatcher.plan_agent_profile_update", () => {
         ok: true,
         config_path: "/srv/agents.yaml",
         changed: true,
-        diff: "--- agents.yaml\n+++ agents.yaml\n@@ -1,1 +1,1 @@\n",
+        semantic_changes: [
+          {
+            op: "add_agent",
+            agent_id: "codex-default",
+            before: null,
+            after: {
+              id: "codex-default",
+              name: "Codex Planned",
+              backend: "codex",
+              workspace_dir: "/tmp/codex",
+            },
+          },
+        ],
+        text_diff_included: false,
+        diff: "",
         snapshot_root: "/srv/.local/config-snapshots",
         comment_preservation: "not_preserved",
       },

@@ -50,6 +50,10 @@ class PlanAgentProfileUpdateRequest(BaseModel):
         default=False,
         validation_alias=AliasChoices("create_if_missing", "createIfMissing"),
     )
+    include_text_diff: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("include_text_diff", "includeTextDiff"),
+    )
 
 
 def create_nodes_router(
@@ -151,6 +155,7 @@ def create_nodes_router(
             return await node.send_plan_agent_profile_update(
                 body.profile,
                 create_if_missing=body.create_if_missing,
+                include_text_diff=body.include_text_diff,
             )
         except ConnectionError as err:
             raise HTTPException(status_code=503, detail=str(err)) from err

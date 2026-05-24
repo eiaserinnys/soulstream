@@ -356,9 +356,16 @@ class ListSessions(TypedDict):
     requestId: NotRequired[str]
 
 
+class SemanticChange(TypedDict):
+    op: Literal['add_agent', 'replace_agent', 'update_agent_atom_contexts', 'no_change']
+    agent_id: str
+    before: Any
+    after: Any
+
+
 class PlanAgentProfileUpdate(TypedDict):
     """
-    orch→노드: agents.yaml 단일 agent profile 교체 계획(diff) read-only 조회. 응답도 동일 type에 ok/config_path/changed/diff/comment_preservation을 추가한다.
+    orch→노드: agents.yaml 단일 agent profile 교체 계획(semantic object diff) read-only 조회. text diff는 include_text_diff=true일 때만 응답 diff에 포함한다.
     """
 
     type: Literal['plan_agent_profile_update']
@@ -367,9 +374,13 @@ class PlanAgentProfileUpdate(TypedDict):
     profile: dict[str, Any]
     create_if_missing: NotRequired[bool]
     createIfMissing: NotRequired[bool]
+    include_text_diff: NotRequired[bool]
+    includeTextDiff: NotRequired[bool]
     ok: NotRequired[bool]
     config_path: NotRequired[str]
     changed: NotRequired[bool]
+    semantic_changes: NotRequired[list[SemanticChange]]
+    text_diff_included: NotRequired[bool]
     diff: NotRequired[str]
     snapshot_root: NotRequired[str]
     comment_preservation: NotRequired[Literal['not_preserved']]

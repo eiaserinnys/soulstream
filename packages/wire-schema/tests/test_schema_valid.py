@@ -189,6 +189,16 @@ def test_plan_agent_profile_update_is_read_only_command() -> None:
     assert "profile" in command["required"]
     props = command["properties"]
     assert "snapshot_path" not in props
+    assert props["include_text_diff"]["default"] is False
+    assert props["includeTextDiff"]["default"] is False
+    assert "semantic_changes" in props
+    assert props["semantic_changes"]["items"]["properties"]["op"]["enum"] == [
+        "add_agent",
+        "replace_agent",
+        "update_agent_atom_contexts",
+        "no_change",
+    ]
+    assert props["text_diff_included"]["type"] == "boolean"
     assert props["comment_preservation"]["enum"] == ["not_preserved"]
 
 

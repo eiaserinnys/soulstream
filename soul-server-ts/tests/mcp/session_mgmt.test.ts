@@ -394,6 +394,20 @@ describe("plan_remote_agent_profile_update", () => {
             ok: true,
             config_path: "/srv/agents.yaml",
             changed: true,
+            semantic_changes: [
+              {
+                op: "add_agent",
+                agent_id: "codex-default",
+                before: null,
+                after: {
+                  id: "codex-default",
+                  name: "Codex Planned",
+                  backend: "codex",
+                  workspace_dir: "/tmp/codex",
+                },
+              },
+            ],
+            text_diff_included: true,
             diff: "--- agents.yaml\n+++ agents.yaml\n",
             comment_preservation: "not_preserved",
           },
@@ -410,6 +424,7 @@ describe("plan_remote_agent_profile_update", () => {
         arguments: {
           node_id: "node-remote",
           create_if_missing: true,
+          include_text_diff: true,
           profile: {
             id: "codex-default",
             name: "Codex Planned",
@@ -423,6 +438,13 @@ describe("plan_remote_agent_profile_update", () => {
       expect(result.structuredContent).toMatchObject({
         ok: true,
         changed: true,
+        semantic_changes: [
+          expect.objectContaining({
+            op: "add_agent",
+            agent_id: "codex-default",
+          }),
+        ],
+        text_diff_included: true,
         comment_preservation: "not_preserved",
       });
       expect(capture.requests.map((r) => `${r.method} ${r.url}`)).toEqual([
@@ -431,6 +453,7 @@ describe("plan_remote_agent_profile_update", () => {
       const body = JSON.parse(capture.requests[0]!.body);
       expect(body.nodeId).toBeUndefined();
       expect(body.create_if_missing).toBe(true);
+      expect(body.include_text_diff).toBe(true);
       expect(body.profile.id).toBe("codex-default");
     } finally {
       await capture.close();
