@@ -9,9 +9,7 @@
  */
 
 import fs from "node:fs";
-import path from "node:path";
 import { parse as parseYaml } from "yaml";
-import { stringify as stringifyYaml } from "yaml";
 import { z } from "zod";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -236,6 +234,18 @@ export type AgentProfile = z.infer<typeof AgentProfileSchema>;
 /** yaml 파일 최상위 schema. */
 export const AgentsConfigSchema = z.object({
   agents: z.array(AgentProfileSchema).default([]),
+}).superRefine((config, ctx) => {
+  const seen = new Set<string>();
+  for (const [index, agent] of config.agents.entries()) {
+    if (seen.has(agent.id)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["agents", index, "id"],
+        message: `Duplicate agent id in registry: ${agent.id}`,
+      });
+    }
+    seen.add(agent.id);
+  }
 });
 
 export type AgentsConfig = z.infer<typeof AgentsConfigSchema>;
@@ -308,61 +318,6 @@ export function readAgentsConfigRaw(configPath: string): {
     raw,
     parsed: AgentsConfigSchema.parse(data),
   };
-}
-
-export function writeAgentsConfig(configPath: string, config: AgentsConfig): AgentsConfig {
-  const validated = AgentsConfigSchema.parse(config);
-  const dir = path.dirname(configPath);
-  const tmp = path.join(
-    dir,
-    `.${path.basename(configPath)}.${process.pid}.${Date.now()}.tmp`,
-  );
-  const body = stringifyYaml(validated);
-  fs.writeFileSync(tmp, body, "utf-8");
-  try {
-    const stat = fs.statSync(configPath);
-    fs.chmodSync(tmp, stat.mode & 0o777);
-  } catch {
-    // If the target file disappeared between read/write, keep the default mode.
-  }
-  fs.renameSync(tmp, configPath);
-  return validated;
-}
-
-export function replaceAgentProfileInConfig(
-  configPath: string,
-  profile: AgentProfile,
-  createIfMissing = false,
-): AgentsConfig {
-  const current = readAgentsConfig(configPath);
-  const nextAgents = [...current.agents];
-  const idx = nextAgents.findIndex((p) => p.id === profile.id);
-  if (idx === -1) {
-    if (!createIfMissing) {
-      throw new Error(`agent not found: ${profile.id}`);
-    }
-    nextAgents.push(profile);
-  } else {
-    nextAgents[idx] = profile;
-  }
-  return writeAgentsConfig(configPath, { ...current, agents: nextAgents });
-}
-
-export function setAgentAtomContextsInConfig(
-  configPath: string,
-  agentId: string,
-  atomContexts: AgentAtomContext[],
-): AgentsConfig {
-  const current = readAgentsConfig(configPath);
-  const nextAgents = current.agents.map((profile) =>
-    profile.id === agentId
-      ? { ...profile, atom_contexts: atomContexts }
-      : profile,
-  );
-  if (!current.agents.some((profile) => profile.id === agentId)) {
-    throw new Error(`agent not found: ${agentId}`);
-  }
-  return writeAgentsConfig(configPath, { ...current, agents: nextAgents });
 }
 
 /**

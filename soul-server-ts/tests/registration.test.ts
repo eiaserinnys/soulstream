@@ -215,12 +215,10 @@ describe("buildRegistrationMsg — portrait wire (Python adapter.py:212-233 정�
     const { default: pino } = await import("pino");
     const calls: Array<{ obj: object; msg?: string }> = [];
     const logger = pino({ level: "warn" });
-    const orig = logger.warn.bind(logger);
     logger.warn = ((obj: unknown, msg?: string) => {
       if (typeof obj === "object" && obj !== null) {
         calls.push({ obj: obj as object, msg });
       }
-      return orig(obj as object, msg);
     }) as typeof logger.warn;
 
     buildRegistrationMsg({

@@ -7,12 +7,10 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+import { AgentConfigService } from "../../agent_config_service.js";
 import {
   AgentAtomContextSchema,
   AgentProfileSchema,
-  readAgentsConfigRaw,
-  replaceAgentProfileInConfig,
-  setAgentAtomContextsInConfig,
 } from "../../agent_registry.js";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
@@ -21,6 +19,11 @@ export function registerAgentConfigTools(
   server: McpServer,
   runtime: McpRuntime,
 ): void {
+  const agentConfig = new AgentConfigService({
+    configPath: runtime.agentsConfigPath,
+    agentRegistry: runtime.agentRegistry,
+  });
+
   server.registerTool(
     "get_agents_config",
     {
@@ -32,11 +35,41 @@ export function registerAgentConfigTools(
     },
     async ({ include_raw }) => {
       try {
-        const { raw, parsed } = readAgentsConfigRaw(runtime.agentsConfigPath);
+        const { raw, parsed } = agentConfig.readRaw();
         return jsonResult({
           config_path: runtime.agentsConfigPath,
           agents: parsed.agents,
           ...(include_raw ? { raw_yaml: raw } : {}),
+        });
+      } catch (err) {
+        return errorResult(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  server.registerTool(
+    "plan_agent_profile_update",
+    {
+      description:
+        "agents.yaml 단일 agent profile 교체 계획(diff)을 생성한다. 파일은 쓰지 않는다.",
+      inputSchema: {
+        profile: AgentProfileSchema,
+        create_if_missing: z.boolean().default(false),
+      },
+    },
+    async ({ profile, create_if_missing }) => {
+      try {
+        const plan = await agentConfig.planProfileUpdate(
+          profile,
+          create_if_missing ?? false,
+        );
+        return jsonResult({
+          ok: true,
+          config_path: runtime.agentsConfigPath,
+          changed: plan.changed,
+          diff: plan.diff,
+          snapshot_root: plan.snapshotRoot,
+          comment_preservation: plan.commentPreservation,
         });
       } catch (err) {
         return errorResult(err instanceof Error ? err.message : String(err));
@@ -56,17 +89,19 @@ export function registerAgentConfigTools(
     },
     async ({ profile, create_if_missing }) => {
       try {
-        const updated = replaceAgentProfileInConfig(
-          runtime.agentsConfigPath,
+        const updated = await agentConfig.replaceProfile(
           profile,
           create_if_missing ?? false,
         );
-        runtime.agentRegistry.replace(updated.agents);
         return jsonResult({
           ok: true,
           config_path: runtime.agentsConfigPath,
-          agent_count: updated.agents.length,
-          agent: updated.agents.find((p) => p.id === profile.id),
+          changed: updated.changed,
+          diff: updated.diff,
+          snapshot_path: updated.snapshotPath,
+          comment_preservation: updated.commentPreservation,
+          agent_count: updated.config.agents.length,
+          agent: updated.config.agents.find((p) => p.id === profile.id),
         });
       } catch (err) {
         return errorResult(err instanceof Error ? err.message : String(err));
@@ -86,16 +121,45 @@ export function registerAgentConfigTools(
     },
     async ({ agent_id, atom_contexts }) => {
       try {
-        const updated = setAgentAtomContextsInConfig(
-          runtime.agentsConfigPath,
+        const updated = await agentConfig.setAgentAtomContexts(
           agent_id,
           atom_contexts ?? [],
         );
-        runtime.agentRegistry.replace(updated.agents);
         return jsonResult({
           ok: true,
           config_path: runtime.agentsConfigPath,
-          agent: updated.agents.find((p) => p.id === agent_id),
+          changed: updated.changed,
+          diff: updated.diff,
+          snapshot_path: updated.snapshotPath,
+          comment_preservation: updated.commentPreservation,
+          agent: updated.config.agents.find((p) => p.id === agent_id),
+        });
+      } catch (err) {
+        return errorResult(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  server.registerTool(
+    "rollback_agents_config",
+    {
+      description:
+        "ConfigStore가 만든 snapshot으로 agents.yaml을 rollback하고 AgentRegistry를 reload한다.",
+      inputSchema: {
+        snapshot_path: z.string().min(1),
+      },
+    },
+    async ({ snapshot_path }) => {
+      try {
+        const updated = await agentConfig.rollback(snapshot_path);
+        return jsonResult({
+          ok: true,
+          config_path: runtime.agentsConfigPath,
+          changed: updated.changed,
+          diff: updated.diff,
+          rollback_snapshot_path: updated.snapshotPath,
+          comment_preservation: updated.commentPreservation,
+          agent_count: updated.config.agents.length,
         });
       } catch (err) {
         return errorResult(err instanceof Error ? err.message : String(err));

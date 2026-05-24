@@ -200,6 +200,33 @@ class TestCommandSending:
         assert sent["agentSessionId"] == "sid-1"
         assert sent["requestId"].startswith("req-")
 
+    async def test_send_create_session_uses_snake_case_tool_wire(self, node, ws):
+        """create_session tool overrides use the upstream schema's snake_case keys."""
+
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            req_id = data["requestId"]
+            if req_id in node._pending:
+                node._pending[req_id].set_result({"agentSessionId": "sess-result"})
+
+        ws.send_json.side_effect = resolve_future
+
+        await node.send_create_session(
+            prompt="hello",
+            session_id="sid-1",
+            allowed_tools=["Read"],
+            disallowed_tools=["Bash"],
+            use_mcp=False,
+        )
+
+        sent = ws.send_json.call_args[0][0]
+        assert sent["allowed_tools"] == ["Read"]
+        assert sent["disallowed_tools"] == ["Bash"]
+        assert sent["use_mcp"] is False
+        assert "allowedTools" not in sent
+        assert "disallowedTools" not in sent
+        assert "useMcp" not in sent
+
     async def test_send_intervene_sends_correct_payload(self, node, ws):
         """send_intervene sends fire-and-forget style command."""
         async def resolve_future(*args, **kwargs):

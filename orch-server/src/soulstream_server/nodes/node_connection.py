@@ -200,11 +200,11 @@ class NodeConnection:
         if profile:
             payload["profile"] = profile
         if allowed_tools is not None:
-            payload["allowedTools"] = allowed_tools
+            payload["allowed_tools"] = allowed_tools
         if disallowed_tools is not None:
-            payload["disallowedTools"] = disallowed_tools
+            payload["disallowed_tools"] = disallowed_tools
         if use_mcp is not None:
-            payload["useMcp"] = use_mcp
+            payload["use_mcp"] = use_mcp
         if folder_id is not None:
             payload["folderId"] = folder_id
         if system_prompt is not None:

@@ -820,15 +820,12 @@ describe("CodexEngineAdapter — P2 자가 보강 검증", () => {
     const logger = pino({
       level: "warn",
     });
-    // pino 내부 write hook
-    const originalWarn = logger.warn.bind(logger);
     logger.warn = ((obj: unknown, msg?: string) => {
       if (typeof obj === "string") {
         warnSpy.push({ msg: obj });
       } else {
         warnSpy.push({ msg: msg ?? "", obj: obj as object });
       }
-      return originalWarn(obj as object, msg);
     }) as typeof logger.warn;
 
     const engine = new CodexEngineAdapter({ workspaceDir: "/tmp/work" }, logger);
@@ -848,10 +845,8 @@ describe("CodexEngineAdapter — P2 자가 보강 검증", () => {
 
     const warnSpy: string[] = [];
     const logger = pino({ level: "warn" });
-    const originalWarn = logger.warn.bind(logger);
     logger.warn = ((obj: unknown, msg?: string) => {
       warnSpy.push(typeof obj === "string" ? obj : msg ?? "");
-      return originalWarn(obj as object, msg);
     }) as typeof logger.warn;
 
     const engine = new CodexEngineAdapter({ workspaceDir: "/tmp/work" }, logger);

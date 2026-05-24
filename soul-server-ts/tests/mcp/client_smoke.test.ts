@@ -53,8 +53,10 @@ const EXPECTED_TOOLS = [
   "delete_session",
   // agent_config
   "get_agents_config",
+  "plan_agent_profile_update",
   "update_agent_profile",
   "set_agent_atom_contexts",
+  "rollback_agents_config",
   // multi_node
   "list_nodes",
   "list_node_agents",
@@ -244,8 +246,10 @@ describe("MCP SDK client smoke", () => {
     });
     expect(result.isError).not.toBe(true);
     const structured = result.structuredContent as {
+      snapshot_path?: string;
       agent: { atom_contexts?: Array<{ node_id: string; depth: number; titles_only: boolean }> };
     };
+    expect(structured.snapshot_path).toBeTruthy();
     expect(structured.agent.atom_contexts).toEqual([
       { node_id: nodeId, depth: 2, titles_only: true },
     ]);
@@ -253,6 +257,40 @@ describe("MCP SDK client smoke", () => {
       { node_id: nodeId, depth: 2, titles_only: true },
     ]);
     expect(fs.readFileSync(configPath, "utf-8")).toContain("atom_contexts:");
+
+    const rollback = await client.callTool({
+      name: "rollback_agents_config",
+      arguments: { snapshot_path: structured.snapshot_path },
+    });
+    expect(rollback.isError).not.toBe(true);
+    expect(agentRegistry.get("codex-default")?.atom_contexts).toBeUndefined();
+    expect(fs.readFileSync(configPath, "utf-8")).not.toContain("atom_contexts:");
+  });
+
+  it("callTool('plan_agent_profile_update') → diff only, no file write", async () => {
+    const before = fs.readFileSync(configPath, "utf-8");
+    const result = await client.callTool({
+      name: "plan_agent_profile_update",
+      arguments: {
+        profile: {
+          id: "codex-default",
+          name: "Codex Planned",
+          backend: "codex",
+          workspace_dir: "/tmp/codex-ws",
+        },
+      },
+    });
+    expect(result.isError).not.toBe(true);
+    const structured = result.structuredContent as {
+      changed: boolean;
+      diff: string;
+      comment_preservation: string;
+    };
+    expect(structured.changed).toBe(true);
+    expect(structured.diff).toContain("Codex Planned");
+    expect(structured.comment_preservation).toBe("not_preserved");
+    expect(fs.readFileSync(configPath, "utf-8")).toBe(before);
+    expect(agentRegistry.get("codex-default")?.name).toBe("Codex");
   });
 
   it("callTool('reflect_service', 'unknown') → isError 응답", async () => {

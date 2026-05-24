@@ -65,8 +65,10 @@ const SELF_IDENTITY = {
       description: "agents.yaml agent profile 조회·편집",
       tools: [
         "get_agents_config",
+        "plan_agent_profile_update",
         "update_agent_profile",
         "set_agent_atom_contexts",
+        "rollback_agents_config",
       ],
     },
     {

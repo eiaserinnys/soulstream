@@ -82,6 +82,9 @@ interface CreateSessionCmd extends CommandLike {
   allowed_tools?: string[];
   disallowed_tools?: string[];
   use_mcp?: boolean;
+  allowedTools?: string[];
+  disallowedTools?: string[];
+  useMcp?: boolean;
   reasoningEffort?: ReasoningEffort;
   folderId?: string | null;
   /**
@@ -392,9 +395,9 @@ export class CommandDispatcher {
         model: cmd.model,
         oauthToken: cmd.oauth_token,
         reasoningEffort: cmd.reasoningEffort,
-        allowedTools: cmd.allowed_tools,
-        disallowedTools: cmd.disallowed_tools,
-        useMcp: cmd.use_mcp,
+        allowedTools: cmd.allowed_tools ?? cmd.allowedTools,
+        disallowedTools: cmd.disallowed_tools ?? cmd.disallowedTools,
+        useMcp: cmd.use_mcp ?? cmd.useMcp,
         folderId: cmd.folderId ?? null,
         systemPrompt: cmd.systemPrompt,
         extraContextItems: cmd.extra_context_items,

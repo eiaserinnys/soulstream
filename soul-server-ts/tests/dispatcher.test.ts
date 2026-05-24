@@ -378,6 +378,22 @@ describe("CommandDispatcher.create_session", () => {
     expect(createdTasks[0].useMcp).toBe(false);
   });
 
+  it("create_session 과도기 camelCase 도구/MCP 옵션도 createTask로 전달", async () => {
+    const { dispatcher, createdTasks } = createDispatcher();
+    await dispatcher.dispatch({
+      type: "create_session",
+      agentSessionId: "sess-tools-camel",
+      prompt: "tool gated",
+      profile: "codex-default",
+      allowedTools: ["Read"],
+      disallowedTools: ["Bash"],
+      useMcp: false,
+    });
+    expect(createdTasks[0].allowedTools).toEqual(["Read"]);
+    expect(createdTasks[0].disallowedTools).toEqual(["Bash"]);
+    expect(createdTasks[0].useMcp).toBe(false);
+  });
+
   it("oauth_token을 createTask.oauthToken으로 전달한다", async () => {
     const { dispatcher, createdTasks } = createDispatcher({
       agents: [codexAgent, claudeAgent],
