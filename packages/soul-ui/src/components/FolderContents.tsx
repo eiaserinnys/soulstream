@@ -8,32 +8,27 @@
 
 import { useMemo, useRef, useState, useEffect, useCallback } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { useIsMobile } from "../hooks/use-mobile";
 import type { SessionSummary } from "../shared/types";
 import { SessionContextMenu } from "./SessionContextMenu";
 import { useFlipAnimation } from "../hooks/useFlipAnimation";
-import {
-  applyCatalogDisplayNames,
-  filterSessionsInFolder,
-  type SessionPage,
-} from "../hooks/session-stream-helpers";
+import { applyCatalogDisplayNames } from "../hooks/session-stream-helpers";
 import { SessionItem } from "./SessionItem";
 import { resolveFolderActiveSessionDecision } from "./folder-active-session";
+import { runGuardedLoadMore, type LoadMoreCallback } from "./load-more-guard";
 
 // Re-exports for backward compatibility (FeedCard, soul-ui index 등이 참조)
 export { nodeIdToHue } from "../lib/nodeColors";
 export { STATUS_CONFIG } from "./SessionItem";
 export type { StatusConfig } from "./SessionItem";
 
+const EMPTY_SESSIONS: SessionSummary[] = [];
+
 export interface FolderContentsProps {
   /**
    * useSessionListProvider가 반환하는 세션 배열. 폴더 필터링 + displayName 오버라이드가 적용된다.
-   * 미지정 시 queryClient.getQueriesData로 전체 캐시에서 수집하는 레거시 경로를 사용한다.
-   *
-   * ⚠️ sessions prop 사용을 강하게 권장. 레거시 경로는 폴더 전환 시 새 queryKey의 데이터가
-   * 즉시 반영되지 않아 처음 열 때 세션이 비어 보이는 버그가 있다 (SSE keepalive 후 회복).
+   * 미지정 시 빈 목록으로 처리한다. 전체 query cache를 훑는 레거시 fallback은 제거되었다.
    */
   sessions?: SessionSummary[];
   /** @deprecated DashboardDndProvider 사용 시 불필요. 레거시 직접 이동 트리거용. */
@@ -41,12 +36,12 @@ export interface FolderContentsProps {
   /** 세션 이름 변경 콜백. 미지정 시 이름 변경 UI 비활성화 */
   onRenameSession?: (sessionId: string, displayName: string | null) => Promise<void>;
   /** 스크롤 하단 도달 시 다음 페이지 로드 콜백 */
-  onLoadMore?: () => void;
+  onLoadMore?: LoadMoreCallback;
   /** 추가 로드 가능 여부 */
   hasMore?: boolean;
 }
 
-export function FolderContents({ sessions: sessionsProp, onMoveSessions, onRenameSession, onLoadMore, hasMore }: FolderContentsProps) {
+export function FolderContents({ sessions: sessionsProp = EMPTY_SESSIONS, onMoveSessions, onRenameSession, onLoadMore, hasMore }: FolderContentsProps) {
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const setActiveSession = useDashboardStore((s) => s.setActiveSession);
@@ -59,33 +54,11 @@ export function FolderContents({ sessions: sessionsProp, onMoveSessions, onRenam
   const setActiveSessionSummary = useDashboardStore((s) => s.setActiveSessionSummary);
   const catalog = useDashboardStore((s) => s.catalog);
   const isMobile = useIsMobile();
-  const queryClient = useQueryClient();
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; sessionId: string } | null>(null);
 
-  // 레거시 캐시 수집 경로: queryCache.subscribe로 cacheVersion 증가 → useMemo 재계산
-  const [cacheVersion, setCacheVersion] = useState(0);
-  useEffect(() => {
-    if (sessionsProp) return;
-    const unsubscribe = queryClient.getQueryCache().subscribe(() => {
-      setCacheVersion((v) => v + 1);
-    });
-    return unsubscribe;
-  }, [queryClient, sessionsProp]);
-
   const displaySessions = useMemo(() => {
-    if (sessionsProp) {
-      return applyCatalogDisplayNames(sessionsProp, catalog);
-    }
-    const allData = queryClient.getQueriesData<InfiniteData<SessionPage>>({ queryKey: ["sessions"], exact: false });
-    const allSessions: SessionSummary[] = [];
-    for (const [, data] of allData) {
-      if (!data) continue;
-      for (const page of data.pages) allSessions.push(...page.sessions);
-    }
-    const uniqueSessions = Array.from(new Map(allSessions.map((s) => [s.agentSessionId, s])).values());
-    return filterSessionsInFolder(uniqueSessions, catalog, selectedFolderId);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionsProp, cacheVersion, catalog, selectedFolderId, queryClient]);
+    return applyCatalogDisplayNames(sessionsProp, catalog);
+  }, [sessionsProp, catalog]);
 
   const prevFolderIdRef = useRef<string | null | undefined>(undefined);
   const parentRef = useRef<HTMLDivElement>(null);
@@ -122,6 +95,7 @@ export function FolderContents({ sessions: sessionsProp, onMoveSessions, onRenam
   ]);
 
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const loadMoreGateRef = useRef(false);
 
   // IntersectionObserver: 스크롤 하단 도달 시 다음 페이지 로드
   useEffect(() => {
@@ -130,7 +104,7 @@ export function FolderContents({ sessions: sessionsProp, onMoveSessions, onRenam
     if (!sentinel) return;
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0]?.isIntersecting) onLoadMore();
+        if (entries[0]?.isIntersecting) runGuardedLoadMore(loadMoreGateRef, onLoadMore);
       },
       { threshold: 0.1 },
     );

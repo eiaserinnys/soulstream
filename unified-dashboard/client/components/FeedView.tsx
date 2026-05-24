@@ -10,7 +10,7 @@ import { renameSessionOptimistic } from "client/lib/rename-session";
 
 interface FeedViewWrapperProps {
   onNewSession?: () => void;
-  onLoadMore?: () => void;
+  onLoadMore?: () => Promise<unknown> | void;
   hasMore?: boolean;
 }
 

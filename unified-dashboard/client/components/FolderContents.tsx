@@ -11,7 +11,7 @@ import { renameSessionOptimistic } from "client/lib/rename-session";
 
 interface FolderContentsWrapperProps {
   sessions?: SessionSummary[];
-  onLoadMore?: () => void;
+  onLoadMore?: () => Promise<unknown> | void;
   hasMore?: boolean;
 }
 

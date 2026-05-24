@@ -14,6 +14,11 @@ import { FeedTopBar } from "./FeedTopBar";
 import { SessionContextMenu } from "./SessionContextMenu";
 import { useFlipAnimation } from "../hooks/useFlipAnimation";
 import { useFeedSessions } from "../hooks/useFeedSessions";
+import {
+  runGuardedLoadMore,
+  shouldLoadMoreFromVirtualItems,
+  type LoadMoreCallback,
+} from "./load-more-guard";
 
 const CARD_HEIGHT = 220;
 const CARD_GAP = 12;
@@ -22,7 +27,7 @@ const ESTIMATED_SIZE = CARD_HEIGHT + CARD_GAP;
 export interface FeedViewProps {
   onNewSession?: () => void;
   /** 인피니트 스크롤: 목록 끝 근처에 도달하면 호출 */
-  onLoadMore?: () => void;
+  onLoadMore?: LoadMoreCallback;
   /** 추가 로드 가능 여부 */
   hasMore?: boolean;
   /** 세션 이름 변경 콜백. 미지정 시 이름 변경 메뉴 비활성화 */
@@ -100,18 +105,19 @@ export function FeedView({ onNewSession, onLoadMore, hasMore, onRenameSession, o
   // 인피니트 스크롤: virtualizer가 목록 끝 근처에 도달하면 onLoadMore 호출
   const loadMoreRef = useRef(onLoadMore);
   loadMoreRef.current = onLoadMore;
-  const isLoadingMore = useRef(false);
+  const loadMoreGateRef = useRef(false);
 
   useEffect(() => {
     if (!hasMore || !onLoadMore) return;
     if (virtualItems.length === 0) return;
     const lastVirtual = virtualItems[virtualItems.length - 1];
-    // 마지막 virtualItem이 전체 아이템 수의 마지막 3개 이내에 들어오면 로드
-    if (lastVirtual.index >= feedSessions.length - 3 && !isLoadingMore.current) {
-      isLoadingMore.current = true;
-      Promise.resolve(loadMoreRef.current?.()).finally(() => {
-        isLoadingMore.current = false;
-      });
+    if (shouldLoadMoreFromVirtualItems({
+      hasMore,
+      isLoadingMore: loadMoreGateRef.current,
+      itemCount: feedSessions.length,
+      lastVirtualIndex: lastVirtual.index,
+    })) {
+      runGuardedLoadMore(loadMoreGateRef, loadMoreRef.current);
     }
   }, [virtualItems, feedSessions.length, hasMore, onLoadMore]);
 
@@ -135,6 +141,8 @@ export function FeedView({ onNewSession, onLoadMore, hasMore, onRenameSession, o
       }
     });
   }, [setFeedScrollOffset]);
+
+  useEffect(() => () => cancelAnimationFrame(rafId.current), []);
 
   // 카드 클릭
   const handleCardClick = useCallback(

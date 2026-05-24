@@ -136,7 +136,7 @@ export function useSessionListProvider(
   const hasMore = hasNextPage ?? false;
 
   const loadMore = useCallback(() => {
-    fetchNextPage();
+    return fetchNextPage();
   }, [fetchNextPage]);
 
   // --- 초기 카탈로그 로드 ---
