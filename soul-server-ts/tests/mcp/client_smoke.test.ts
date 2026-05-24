@@ -63,6 +63,9 @@ const EXPECTED_TOOLS = [
   "list_node_agents",
   "create_remote_agent_session",
   "plan_remote_agent_profile_update",
+  "apply_remote_agent_profile_update",
+  "list_remote_agents_config_snapshots",
+  "rollback_remote_agents_config",
 ];
 
 function createMockSql() {
@@ -273,9 +276,10 @@ describe("MCP SDK client smoke", () => {
     });
     expect(snapshots.isError).not.toBe(true);
     const snapshotContent = snapshots.structuredContent as {
-      snapshots: Array<{ snapshot_path: string; size_bytes: number }>;
+      snapshots: Array<{ snapshot_path: string; snapshot_id: string; size_bytes: number }>;
     };
     expect(snapshotContent.snapshots.some((s) => s.snapshot_path === structured.snapshot_path)).toBe(true);
+    expect(snapshotContent.snapshots[0]?.snapshot_id).toBeTruthy();
 
     const rollback = await client.callTool({
       name: "rollback_agents_config",

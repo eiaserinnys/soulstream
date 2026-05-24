@@ -461,6 +461,154 @@ describe("plan_remote_agent_profile_update", () => {
   });
 });
 
+describe("remote agent config mutation tools", () => {
+  it("apply_remote_agent_profile_update proxies write request with checksum guard", async () => {
+    const capture = await createOrchCapture(200, (req) => {
+      if (
+        req.method === "POST" &&
+        req.url === "/api/nodes/node-remote/agents/config/apply-profile-update"
+      ) {
+        return {
+          body: {
+            ok: true,
+            changed: true,
+            snapshot_path: "/srv/snap.yaml",
+            config_checksum: "next-checksum",
+            base_config_checksum: "base-checksum",
+            semantic_changes: [
+              { op: "replace_agent", agent_id: "codex-default" },
+            ],
+            text_diff_included: false,
+            diff: "",
+            reload_ok: true,
+          },
+        };
+      }
+      return { status: 404, body: { error: "unexpected route" } };
+    });
+    try {
+      const runtime = makeRuntime({ queued: true, queuePosition: 1 }, capture.orch);
+      const client = await createClient(runtime);
+
+      const result = await client.callTool({
+        name: "apply_remote_agent_profile_update",
+        arguments: {
+          node_id: "node-remote",
+          create_if_missing: true,
+          expected_config_checksum: "base-checksum",
+          profile: {
+            id: "codex-default",
+            name: "Codex Applied",
+            backend: "codex",
+            workspace_dir: "/tmp/codex",
+          },
+        },
+      });
+
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toMatchObject({
+        ok: true,
+        changed: true,
+        snapshot_path: "/srv/snap.yaml",
+        reload_ok: true,
+      });
+      expect(capture.requests.map((r) => `${r.method} ${r.url}`)).toEqual([
+        "POST /api/nodes/node-remote/agents/config/apply-profile-update",
+      ]);
+      const body = JSON.parse(capture.requests[0]!.body);
+      expect(body.expected_config_checksum).toBe("base-checksum");
+      expect(body.include_text_diff).toBe(false);
+      expect(body.create_if_missing).toBe(true);
+    } finally {
+      await capture.close();
+    }
+  });
+
+  it("list_remote_agents_config_snapshots proxies snapshot inventory request", async () => {
+    const capture = await createOrchCapture(200, (req) => {
+      if (
+        req.method === "GET" &&
+        req.url === "/api/nodes/node-remote/agents/config/snapshots"
+      ) {
+        return {
+          body: {
+            ok: true,
+            snapshots: [{ snapshot_id: "snap.yaml", snapshot_path: "/srv/snap.yaml" }],
+          },
+        };
+      }
+      return { status: 404, body: { error: "unexpected route" } };
+    });
+    try {
+      const runtime = makeRuntime({ queued: true, queuePosition: 1 }, capture.orch);
+      const client = await createClient(runtime);
+
+      const result = await client.callTool({
+        name: "list_remote_agents_config_snapshots",
+        arguments: { node_id: "node-remote" },
+      });
+
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toMatchObject({
+        ok: true,
+        snapshots: [expect.objectContaining({ snapshot_id: "snap.yaml" })],
+      });
+      expect(capture.requests.map((r) => `${r.method} ${r.url}`)).toEqual([
+        "GET /api/nodes/node-remote/agents/config/snapshots",
+      ]);
+    } finally {
+      await capture.close();
+    }
+  });
+
+  it("rollback_remote_agents_config proxies snapshot id rollback request", async () => {
+    const capture = await createOrchCapture(200, (req) => {
+      if (
+        req.method === "POST" &&
+        req.url === "/api/nodes/node-remote/agents/config/rollback"
+      ) {
+        return {
+          body: {
+            ok: true,
+            changed: true,
+            snapshot_path: "/srv/pre-rollback.yaml",
+            config_checksum: "restored-checksum",
+            reload_ok: true,
+          },
+        };
+      }
+      return { status: 404, body: { error: "unexpected route" } };
+    });
+    try {
+      const runtime = makeRuntime({ queued: true, queuePosition: 1 }, capture.orch);
+      const client = await createClient(runtime);
+
+      const result = await client.callTool({
+        name: "rollback_remote_agents_config",
+        arguments: {
+          node_id: "node-remote",
+          snapshot_id: "snap.yaml",
+          include_text_diff: true,
+        },
+      });
+
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toMatchObject({
+        ok: true,
+        reload_ok: true,
+      });
+      expect(capture.requests.map((r) => `${r.method} ${r.url}`)).toEqual([
+        "POST /api/nodes/node-remote/agents/config/rollback",
+      ]);
+      const body = JSON.parse(capture.requests[0]!.body);
+      expect(body.snapshot_id).toBe("snap.yaml");
+      expect(body.include_text_diff).toBe(true);
+    } finally {
+      await capture.close();
+    }
+  });
+});
+
 describe("send_message_to_session", () => {
   it("local delivery succeeds without orch fallback", async () => {
     const runtime = makeRuntime({ queued: true, queuePosition: 1 });

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 73개 $defs (wire 33 + SSE event 40). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16) + OpenAI Agents SDK parity (2026-05-21).",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 76개 $defs (wire 36 + SSE event 40). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16) + OpenAI Agents SDK parity (2026-05-21).",
   "$defs": {
     "NodeRegister": {
       "type": "object",
@@ -513,6 +513,14 @@
           "type": "string",
           "description": "응답에만 존재."
         },
+        "config_checksum": {
+          "type": "string",
+          "description": "응답에만 존재. plan 시점 현재 config raw bytes의 sha256."
+        },
+        "base_config_checksum": {
+          "type": "string",
+          "description": "응답에만 존재. expected_config_checksum에 넘길 수 있는 base checksum."
+        },
         "changed": {
           "type": "boolean",
           "description": "응답에만 존재."
@@ -557,6 +565,183 @@
           "enum": ["not_preserved"],
           "description": "응답에만 존재."
         }
+      }
+    },
+    "ApplyAgentProfileUpdate": {
+      "type": "object",
+      "description": "orch→노드: agents.yaml 단일 agent profile 교체를 대상 노드에서 실제 적용. expected_config_checksum이 있으면 현재 raw config sha256과 일치해야 한다.",
+      "required": ["type", "profile"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "apply_agent_profile_update" },
+        "request_id": { "type": "string" },
+        "requestId": { "type": "string" },
+        "profile": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "create_if_missing": { "type": "boolean", "default": false },
+        "createIfMissing": { "type": "boolean", "default": false },
+        "include_text_diff": { "type": "boolean", "default": false },
+        "includeTextDiff": { "type": "boolean", "default": false },
+        "expected_config_checksum": {
+          "type": ["string", "null"],
+          "description": "선택. plan 응답의 config_checksum/base_config_checksum과 비교하여 stale apply를 거부."
+        },
+        "expectedConfigChecksum": { "type": ["string", "null"] },
+        "ok": { "type": "boolean", "description": "응답에만 존재." },
+        "config_path": { "type": "string", "description": "응답에만 존재." },
+        "config_checksum": {
+          "type": "string",
+          "description": "응답에만 존재. 적용 후 config raw bytes의 sha256."
+        },
+        "base_config_checksum": {
+          "type": "string",
+          "description": "응답에만 존재. 적용 직전 config raw bytes의 sha256."
+        },
+        "changed": { "type": "boolean", "description": "응답에만 존재." },
+        "semantic_changes": {
+          "type": "array",
+          "description": "응답에만 존재. agent profile apply의 의미 변화 목록.",
+          "items": {
+            "type": "object",
+            "required": ["op", "agent_id"],
+            "additionalProperties": true,
+            "properties": {
+              "op": {
+                "type": "string",
+                "enum": [
+                  "add_agent",
+                  "replace_agent",
+                  "update_agent_atom_contexts",
+                  "no_change"
+                ]
+              },
+              "agent_id": { "type": "string" },
+              "before": {},
+              "after": {}
+            }
+          }
+        },
+        "text_diff_included": {
+          "type": "boolean",
+          "description": "응답에만 존재. diff가 실제 text diff를 포함하는지 여부."
+        },
+        "diff": {
+          "type": "string",
+          "description": "응답에만 존재. include_text_diff=false이면 빈 문자열."
+        },
+        "snapshot_path": {
+          "type": ["string", "null"],
+          "description": "응답에만 존재. 변경 전 raw config snapshot path."
+        },
+        "applied_at": { "type": ["string", "null"], "description": "응답에만 존재." },
+        "reload_ok": { "type": "boolean", "description": "응답에만 존재." },
+        "snapshot_root": { "type": "string", "description": "응답에만 존재." },
+        "comment_preservation": {
+          "type": "string",
+          "enum": ["not_preserved"],
+          "description": "응답에만 존재."
+        },
+        "agent_count": { "type": "integer", "description": "응답에만 존재." }
+      }
+    },
+    "ListAgentsConfigSnapshots": {
+      "type": "object",
+      "description": "orch→노드: 대상 노드의 managed agents.yaml snapshot inventory 조회.",
+      "required": ["type"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "list_agents_config_snapshots" },
+        "request_id": { "type": "string" },
+        "requestId": { "type": "string" },
+        "ok": { "type": "boolean", "description": "응답에만 존재." },
+        "snapshots": {
+          "type": "array",
+          "description": "응답에만 존재. 최신순 snapshot 목록.",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "snapshot_id": { "type": "string" },
+              "snapshot_path": { "type": "string" },
+              "created_at": { "type": "string" },
+              "mtime": { "type": "string" },
+              "size_bytes": { "type": "integer" },
+              "config_path": { "type": "string" },
+              "config_name": { "type": "string" },
+              "config_hash": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "RollbackAgentsConfig": {
+      "type": "object",
+      "description": "orch→노드: managed snapshot path 또는 snapshot id로 agents.yaml rollback.",
+      "required": ["type"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "rollback_agents_config" },
+        "request_id": { "type": "string" },
+        "requestId": { "type": "string" },
+        "snapshot_path": {
+          "type": ["string", "null"],
+          "description": "요청에서는 restore 대상 snapshot path. 응답에서는 rollback 직전 raw config snapshot path."
+        },
+        "snapshotPath": { "type": "string" },
+        "snapshot_id": { "type": "string" },
+        "snapshotId": { "type": "string" },
+        "include_text_diff": { "type": "boolean", "default": false },
+        "includeTextDiff": { "type": "boolean", "default": false },
+        "ok": { "type": "boolean", "description": "응답에만 존재." },
+        "config_path": { "type": "string", "description": "응답에만 존재." },
+        "config_checksum": {
+          "type": "string",
+          "description": "응답에만 존재. rollback 후 config raw bytes의 sha256."
+        },
+        "base_config_checksum": {
+          "type": "string",
+          "description": "응답에만 존재. rollback 직전 config raw bytes의 sha256."
+        },
+        "changed": { "type": "boolean", "description": "응답에만 존재." },
+        "semantic_changes": {
+          "type": "array",
+          "description": "응답에만 존재. rollback은 보통 빈 배열.",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "text_diff_included": {
+          "type": "boolean",
+          "description": "응답에만 존재. diff가 실제 text diff를 포함하는지 여부."
+        },
+        "diff": {
+          "type": "string",
+          "description": "응답에만 존재. include_text_diff=false이면 빈 문자열."
+        },
+        "rollback_snapshot_path": {
+          "type": ["string", "null"],
+          "description": "응답에만 존재. rollback 직전 raw config snapshot path alias."
+        },
+        "restored_snapshot_path": {
+          "type": ["string", "null"],
+          "description": "응답에만 존재. 요청에서 지정한 restore 대상 path."
+        },
+        "restored_snapshot_id": {
+          "type": ["string", "null"],
+          "description": "응답에만 존재. 요청에서 지정한 restore 대상 id."
+        },
+        "applied_at": { "type": ["string", "null"], "description": "응답에만 존재." },
+        "reload_ok": { "type": "boolean", "description": "응답에만 존재." },
+        "snapshot_root": { "type": "string", "description": "응답에만 존재." },
+        "comment_preservation": {
+          "type": "string",
+          "enum": ["not_preserved"],
+          "description": "응답에만 존재."
+        },
+        "agent_count": { "type": "integer", "description": "응답에만 존재." }
       }
     },
     "HealthCheck": {
@@ -997,6 +1182,9 @@
     { "$ref": "#/$defs/RealtimeResolveToolApproval" },
     { "$ref": "#/$defs/ListSessions" },
     { "$ref": "#/$defs/PlanAgentProfileUpdate" },
+    { "$ref": "#/$defs/ApplyAgentProfileUpdate" },
+    { "$ref": "#/$defs/ListAgentsConfigSnapshots" },
+    { "$ref": "#/$defs/RollbackAgentsConfig" },
     { "$ref": "#/$defs/HealthCheck" },
     { "$ref": "#/$defs/SubscribeEvents" },
     { "$ref": "#/$defs/ClaudeAuthStatus" },

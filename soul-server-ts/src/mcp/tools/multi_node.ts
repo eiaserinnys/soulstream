@@ -93,6 +93,118 @@ export function registerMultiNodeTools(
   );
 
   server.registerTool(
+    "apply_remote_agent_profile_update",
+    {
+      description:
+        "오케스트레이터를 통해 대상 노드에 agent profile 변경을 실제 적용한다. 파일 write/snapshot/reload는 대상 노드에서 수행한다.",
+      inputSchema: {
+        node_id: z.string().min(1),
+        profile: AgentProfileSchema,
+        create_if_missing: z.boolean().default(false),
+        include_text_diff: z.boolean().optional(),
+        includeTextDiff: z.boolean().optional(),
+        expected_config_checksum: z.string().optional(),
+        expectedConfigChecksum: z.string().optional(),
+      },
+    },
+    async ({
+      node_id,
+      profile,
+      create_if_missing,
+      include_text_diff,
+      includeTextDiff,
+      expected_config_checksum,
+      expectedConfigChecksum,
+    }) => {
+      const orch = runtime.orch;
+      if (!orch) return errorResult(NOT_CONFIGURED_MSG);
+      try {
+        const data = await fetchOrch(
+          orch,
+          "POST",
+          `/api/nodes/${encodeURIComponent(node_id)}/agents/config/apply-profile-update`,
+          {
+            profile,
+            create_if_missing: create_if_missing ?? false,
+            include_text_diff: include_text_diff ?? includeTextDiff ?? false,
+            expected_config_checksum:
+              expected_config_checksum ?? expectedConfigChecksum,
+          },
+        );
+        return jsonResult(data);
+      } catch (err) {
+        return errorResult(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  server.registerTool(
+    "list_remote_agents_config_snapshots",
+    {
+      description:
+        "오케스트레이터를 통해 대상 노드의 agents.yaml snapshot 목록을 조회한다.",
+      inputSchema: { node_id: z.string().min(1) },
+    },
+    async ({ node_id }) => {
+      const orch = runtime.orch;
+      if (!orch) return errorResult(NOT_CONFIGURED_MSG);
+      try {
+        const data = await fetchOrch(
+          orch,
+          "GET",
+          `/api/nodes/${encodeURIComponent(node_id)}/agents/config/snapshots`,
+        );
+        return jsonResult(data);
+      } catch (err) {
+        return errorResult(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  server.registerTool(
+    "rollback_remote_agents_config",
+    {
+      description:
+        "오케스트레이터를 통해 대상 노드의 agents.yaml을 snapshot path 또는 snapshot id로 rollback한다.",
+      inputSchema: {
+        node_id: z.string().min(1),
+        snapshot_path: z.string().optional(),
+        snapshot_id: z.string().optional(),
+        include_text_diff: z.boolean().optional(),
+        includeTextDiff: z.boolean().optional(),
+      },
+    },
+    async ({
+      node_id,
+      snapshot_path,
+      snapshot_id,
+      include_text_diff,
+      includeTextDiff,
+    }) => {
+      const orch = runtime.orch;
+      if (!orch) return errorResult(NOT_CONFIGURED_MSG);
+      if (!snapshot_path && !snapshot_id) {
+        return errorResult("snapshot_path or snapshot_id is required");
+      }
+      try {
+        const data = await fetchOrch(
+          orch,
+          "POST",
+          `/api/nodes/${encodeURIComponent(node_id)}/agents/config/rollback`,
+          {
+            snapshot_path,
+            snapshot_id,
+            include_text_diff: include_text_diff ?? includeTextDiff ?? false,
+          },
+        );
+        return jsonResult(data);
+      } catch (err) {
+        return errorResult(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  server.registerTool(
     "create_remote_agent_session",
     {
       description:

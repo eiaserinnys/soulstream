@@ -149,6 +149,28 @@ type PlanAgentProfileUpdateCmd = CommandLike & {
   include_text_diff?: boolean;
   includeTextDiff?: boolean;
 };
+type ApplyAgentProfileUpdateCmd = CommandLike & {
+  type: "apply_agent_profile_update";
+  profile?: unknown;
+  create_if_missing?: boolean;
+  createIfMissing?: boolean;
+  include_text_diff?: boolean;
+  includeTextDiff?: boolean;
+  expected_config_checksum?: string | null;
+  expectedConfigChecksum?: string | null;
+};
+type ListAgentsConfigSnapshotsCmd = CommandLike & {
+  type: "list_agents_config_snapshots";
+};
+type RollbackAgentsConfigCmd = CommandLike & {
+  type: "rollback_agents_config";
+  snapshot_path?: string;
+  snapshotPath?: string;
+  snapshot_id?: string;
+  snapshotId?: string;
+  include_text_diff?: boolean;
+  includeTextDiff?: boolean;
+};
 
 /**
  * orch → 노드 명령 디스패처.
@@ -246,6 +268,12 @@ export class CommandDispatcher {
         this.handleProviderUsage(cmd as ProviderUsageCommand),
       plan_agent_profile_update: (cmd) =>
         this.handlePlanAgentProfileUpdate(cmd as PlanAgentProfileUpdateCmd),
+      apply_agent_profile_update: (cmd) =>
+        this.handleApplyAgentProfileUpdate(cmd as ApplyAgentProfileUpdateCmd),
+      list_agents_config_snapshots: (cmd) =>
+        this.handleListAgentsConfigSnapshots(cmd as ListAgentsConfigSnapshotsCmd),
+      rollback_agents_config: (cmd) =>
+        this.handleRollbackAgentsConfig(cmd as RollbackAgentsConfigCmd),
     };
   }
 
@@ -580,6 +608,68 @@ export class CommandDispatcher {
           requestId: commandRequestId(cmd),
           profile: cmd.profile,
           createIfMissing: cmd.create_if_missing ?? cmd.createIfMissing,
+          includeTextDiff: cmd.include_text_diff ?? cmd.includeTextDiff,
+        }),
+      );
+    } catch (err) {
+      if (err instanceof AgentConfigCommandError) {
+        await this.sendError(cmd, err.message);
+        return;
+      }
+      throw err;
+    }
+  }
+
+  private async handleApplyAgentProfileUpdate(
+    cmd: ApplyAgentProfileUpdateCmd,
+  ): Promise<void> {
+    try {
+      await this.send(
+        await this.agentConfigCommands.applyProfileUpdate({
+          requestId: commandRequestId(cmd),
+          profile: cmd.profile,
+          createIfMissing: cmd.create_if_missing ?? cmd.createIfMissing,
+          includeTextDiff: cmd.include_text_diff ?? cmd.includeTextDiff,
+          expectedConfigChecksum:
+            cmd.expected_config_checksum ?? cmd.expectedConfigChecksum,
+        }),
+      );
+    } catch (err) {
+      if (err instanceof AgentConfigCommandError) {
+        await this.sendError(cmd, err.message);
+        return;
+      }
+      throw err;
+    }
+  }
+
+  private async handleListAgentsConfigSnapshots(
+    cmd: ListAgentsConfigSnapshotsCmd,
+  ): Promise<void> {
+    try {
+      await this.send(
+        await this.agentConfigCommands.listSnapshots({
+          requestId: commandRequestId(cmd),
+        }),
+      );
+    } catch (err) {
+      if (err instanceof AgentConfigCommandError) {
+        await this.sendError(cmd, err.message);
+        return;
+      }
+      throw err;
+    }
+  }
+
+  private async handleRollbackAgentsConfig(
+    cmd: RollbackAgentsConfigCmd,
+  ): Promise<void> {
+    try {
+      await this.send(
+        await this.agentConfigCommands.rollback({
+          requestId: commandRequestId(cmd),
+          snapshotPath: cmd.snapshot_path ?? cmd.snapshotPath,
+          snapshotId: cmd.snapshot_id ?? cmd.snapshotId,
           includeTextDiff: cmd.include_text_diff ?? cmd.includeTextDiff,
         }),
       );

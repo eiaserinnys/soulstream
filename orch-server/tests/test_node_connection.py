@@ -7,17 +7,20 @@ import pytest
 
 from soulstream_server.constants import (
     CMD_APPROVE_TOOL,
+    CMD_APPLY_AGENT_PROFILE_UPDATE,
     CMD_CREATE_SESSION,
     CMD_DELETE_SESSION_ATTACHMENTS,
     CMD_DOWNLOAD_ATTACHMENT,
     CMD_INTERVENE,
     CMD_INTERRUPT_SESSION,
+    CMD_LIST_AGENTS_CONFIG_SNAPSHOTS,
     CMD_PLAN_AGENT_PROFILE_UPDATE,
     CMD_PROVIDER_USAGE_GET,
     CMD_REALTIME_CREATE_CALL,
     CMD_REALTIME_EVENT,
     CMD_REALTIME_RESOLVE_TOOL_APPROVAL,
     CMD_REJECT_TOOL,
+    CMD_ROLLBACK_AGENTS_CONFIG,
     CMD_RESPOND,
     CMD_SUBSCRIBE_EVENTS,
     CMD_UPLOAD_ATTACHMENT,
@@ -347,6 +350,95 @@ class TestCommandSending:
         assert sent["create_if_missing"] is True
         assert sent["include_text_diff"] is True
         assert result["ok"] is True
+
+    async def test_send_apply_agent_profile_update_sends_write_command_with_checksum(self, node, ws):
+        """agent profile apply is proxied to the target node with checksum guard."""
+
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            req_id = data["requestId"]
+            if req_id in node._pending:
+                node._pending[req_id].set_result({
+                    "type": CMD_APPLY_AGENT_PROFILE_UPDATE,
+                    "requestId": req_id,
+                    "ok": True,
+                    "changed": True,
+                    "snapshot_path": "/srv/snap.yaml",
+                    "reload_ok": True,
+                })
+
+        ws.send_json.side_effect = resolve_future
+        profile = {
+            "id": "codex-default",
+            "name": "Codex Applied",
+            "backend": "codex",
+            "workspace_dir": "/tmp/codex",
+        }
+
+        result = await node.send_apply_agent_profile_update(
+            profile,
+            create_if_missing=True,
+            include_text_diff=True,
+            expected_config_checksum="base-checksum",
+        )
+
+        sent = ws.send_json.call_args[0][0]
+        assert sent["type"] == CMD_APPLY_AGENT_PROFILE_UPDATE
+        assert sent["profile"] == profile
+        assert sent["create_if_missing"] is True
+        assert sent["include_text_diff"] is True
+        assert sent["expected_config_checksum"] == "base-checksum"
+        assert result["snapshot_path"] == "/srv/snap.yaml"
+
+    async def test_send_list_agents_config_snapshots_sends_inventory_command(self, node, ws):
+        """snapshot inventory is requested over the node command channel."""
+
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            req_id = data["requestId"]
+            if req_id in node._pending:
+                node._pending[req_id].set_result({
+                    "type": CMD_LIST_AGENTS_CONFIG_SNAPSHOTS,
+                    "requestId": req_id,
+                    "ok": True,
+                    "snapshots": [{"snapshot_id": "snap.yaml"}],
+                })
+
+        ws.send_json.side_effect = resolve_future
+
+        result = await node.send_list_agents_config_snapshots()
+
+        sent = ws.send_json.call_args[0][0]
+        assert sent["type"] == CMD_LIST_AGENTS_CONFIG_SNAPSHOTS
+        assert result["snapshots"][0]["snapshot_id"] == "snap.yaml"
+
+    async def test_send_rollback_agents_config_sends_snapshot_id_command(self, node, ws):
+        """rollback supports snapshot id as well as full snapshot path."""
+
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            req_id = data["requestId"]
+            if req_id in node._pending:
+                node._pending[req_id].set_result({
+                    "type": CMD_ROLLBACK_AGENTS_CONFIG,
+                    "requestId": req_id,
+                    "ok": True,
+                    "changed": True,
+                    "reload_ok": True,
+                })
+
+        ws.send_json.side_effect = resolve_future
+
+        result = await node.send_rollback_agents_config(
+            snapshot_id="snap.yaml",
+            include_text_diff=True,
+        )
+
+        sent = ws.send_json.call_args[0][0]
+        assert sent["type"] == CMD_ROLLBACK_AGENTS_CONFIG
+        assert sent["snapshot_id"] == "snap.yaml"
+        assert sent["include_text_diff"] is True
+        assert result["reload_ok"] is True
 
     async def test_send_respond_sends_input_request_id_without_overwriting_command_request_id(
         self, node, ws

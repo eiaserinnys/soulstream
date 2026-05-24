@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 73개 $defs (wire 33 + SSE event 40). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16) + OpenAI Agents SDK parity (2026-05-21).
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 76개 $defs (wire 36 + SSE event 40). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16) + OpenAI Agents SDK parity (2026-05-21).
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -30,6 +30,9 @@ export type SoulstreamUpstreamProtocol =
   | RealtimeResolveToolApproval
   | ListSessions
   | PlanAgentProfileUpdate
+  | ApplyAgentProfileUpdate
+  | ListAgentsConfigSnapshots
+  | RollbackAgentsConfig
   | HealthCheck
   | SubscribeEvents
   | ClaudeAuthStatus
@@ -811,6 +814,14 @@ export interface PlanAgentProfileUpdate {
    */
   config_path?: string;
   /**
+   * 응답에만 존재. plan 시점 현재 config raw bytes의 sha256.
+   */
+  config_checksum?: string;
+  /**
+   * 응답에만 존재. expected_config_checksum에 넘길 수 있는 base checksum.
+   */
+  base_config_checksum?: string;
+  /**
    * 응답에만 존재.
    */
   changed?: boolean;
@@ -840,6 +851,200 @@ export interface PlanAgentProfileUpdate {
    * 응답에만 존재.
    */
   comment_preservation?: "not_preserved";
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: agents.yaml 단일 agent profile 교체를 대상 노드에서 실제 적용. expected_config_checksum이 있으면 현재 raw config sha256과 일치해야 한다.
+ */
+export interface ApplyAgentProfileUpdate {
+  type: "apply_agent_profile_update";
+  request_id?: string;
+  requestId?: string;
+  profile: {
+    [k: string]: unknown;
+  };
+  create_if_missing?: boolean;
+  createIfMissing?: boolean;
+  include_text_diff?: boolean;
+  includeTextDiff?: boolean;
+  /**
+   * 선택. plan 응답의 config_checksum/base_config_checksum과 비교하여 stale apply를 거부.
+   */
+  expected_config_checksum?: string | null;
+  expectedConfigChecksum?: string | null;
+  /**
+   * 응답에만 존재.
+   */
+  ok?: boolean;
+  /**
+   * 응답에만 존재.
+   */
+  config_path?: string;
+  /**
+   * 응답에만 존재. 적용 후 config raw bytes의 sha256.
+   */
+  config_checksum?: string;
+  /**
+   * 응답에만 존재. 적용 직전 config raw bytes의 sha256.
+   */
+  base_config_checksum?: string;
+  /**
+   * 응답에만 존재.
+   */
+  changed?: boolean;
+  /**
+   * 응답에만 존재. agent profile apply의 의미 변화 목록.
+   */
+  semantic_changes?: {
+    op: "add_agent" | "replace_agent" | "update_agent_atom_contexts" | "no_change";
+    agent_id: string;
+    before?: unknown;
+    after?: unknown;
+    [k: string]: unknown;
+  }[];
+  /**
+   * 응답에만 존재. diff가 실제 text diff를 포함하는지 여부.
+   */
+  text_diff_included?: boolean;
+  /**
+   * 응답에만 존재. include_text_diff=false이면 빈 문자열.
+   */
+  diff?: string;
+  /**
+   * 응답에만 존재. 변경 전 raw config snapshot path.
+   */
+  snapshot_path?: string | null;
+  /**
+   * 응답에만 존재.
+   */
+  applied_at?: string | null;
+  /**
+   * 응답에만 존재.
+   */
+  reload_ok?: boolean;
+  /**
+   * 응답에만 존재.
+   */
+  snapshot_root?: string;
+  /**
+   * 응답에만 존재.
+   */
+  comment_preservation?: "not_preserved";
+  /**
+   * 응답에만 존재.
+   */
+  agent_count?: number;
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: 대상 노드의 managed agents.yaml snapshot inventory 조회.
+ */
+export interface ListAgentsConfigSnapshots {
+  type: "list_agents_config_snapshots";
+  request_id?: string;
+  requestId?: string;
+  /**
+   * 응답에만 존재.
+   */
+  ok?: boolean;
+  /**
+   * 응답에만 존재. 최신순 snapshot 목록.
+   */
+  snapshots?: {
+    snapshot_id?: string;
+    snapshot_path?: string;
+    created_at?: string;
+    mtime?: string;
+    size_bytes?: number;
+    config_path?: string;
+    config_name?: string;
+    config_hash?: string;
+    [k: string]: unknown;
+  }[];
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: managed snapshot path 또는 snapshot id로 agents.yaml rollback.
+ */
+export interface RollbackAgentsConfig {
+  type: "rollback_agents_config";
+  request_id?: string;
+  requestId?: string;
+  /**
+   * 요청에서는 restore 대상 snapshot path. 응답에서는 rollback 직전 raw config snapshot path.
+   */
+  snapshot_path?: string | null;
+  snapshotPath?: string;
+  snapshot_id?: string;
+  snapshotId?: string;
+  include_text_diff?: boolean;
+  includeTextDiff?: boolean;
+  /**
+   * 응답에만 존재.
+   */
+  ok?: boolean;
+  /**
+   * 응답에만 존재.
+   */
+  config_path?: string;
+  /**
+   * 응답에만 존재. rollback 후 config raw bytes의 sha256.
+   */
+  config_checksum?: string;
+  /**
+   * 응답에만 존재. rollback 직전 config raw bytes의 sha256.
+   */
+  base_config_checksum?: string;
+  /**
+   * 응답에만 존재.
+   */
+  changed?: boolean;
+  /**
+   * 응답에만 존재. rollback은 보통 빈 배열.
+   */
+  semantic_changes?: {
+    [k: string]: unknown;
+  }[];
+  /**
+   * 응답에만 존재. diff가 실제 text diff를 포함하는지 여부.
+   */
+  text_diff_included?: boolean;
+  /**
+   * 응답에만 존재. include_text_diff=false이면 빈 문자열.
+   */
+  diff?: string;
+  /**
+   * 응답에만 존재. rollback 직전 raw config snapshot path alias.
+   */
+  rollback_snapshot_path?: string | null;
+  /**
+   * 응답에만 존재. 요청에서 지정한 restore 대상 path.
+   */
+  restored_snapshot_path?: string | null;
+  /**
+   * 응답에만 존재. 요청에서 지정한 restore 대상 id.
+   */
+  restored_snapshot_id?: string | null;
+  /**
+   * 응답에만 존재.
+   */
+  applied_at?: string | null;
+  /**
+   * 응답에만 존재.
+   */
+  reload_ok?: boolean;
+  /**
+   * 응답에만 존재.
+   */
+  snapshot_root?: string;
+  /**
+   * 응답에만 존재.
+   */
+  comment_preservation?: "not_preserved";
+  /**
+   * 응답에만 존재.
+   */
+  agent_count?: number;
   [k: string]: unknown;
 }
 /**

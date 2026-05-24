@@ -24,6 +24,10 @@ export interface AgentConfigPlanOptions {
   includeTextDiff?: boolean;
 }
 
+export interface AgentConfigApplyOptions extends AgentConfigPlanOptions {
+  expectedConfigChecksum?: string | null;
+}
+
 export type AgentConfigSemanticChange =
   | {
       op: "add_agent";
@@ -64,6 +68,8 @@ export type AgentConfigSemanticChangeWire = Omit<
 
 export interface AgentConfigApplyResult extends ConfigApplyResult<AgentsConfig> {
   semanticChanges?: AgentConfigSemanticChange[];
+  textDiffIncluded?: boolean;
+  reloadOk?: boolean;
 }
 
 export type AgentConfigSnapshotInfo = ConfigSnapshotInfo;
@@ -116,10 +122,24 @@ export class AgentConfigService {
   replaceProfile(
     profile: AgentProfile,
     createIfMissing = false,
+    options: AgentConfigApplyOptions = {},
   ): Promise<AgentConfigApplyResult> {
-    return this.store.apply((current) =>
-      replaceAgentProfile(current, profile, createIfMissing),
-    );
+    const includeTextDiff = options.includeTextDiff ?? true;
+    let semanticChanges: AgentConfigSemanticChange[] = [];
+    return this.store.apply((current) => {
+      semanticChanges = profileUpdateSemanticChanges(current, profile, createIfMissing);
+      if (isNoChangeOnly(semanticChanges)) return current;
+      return replaceAgentProfile(current, profile, createIfMissing);
+    }, {
+      includeTextDiff,
+      expectedConfigChecksum: options.expectedConfigChecksum,
+    }).then((result) => ({
+      ...result,
+      changed: !isNoChangeOnly(semanticChanges),
+      semanticChanges,
+      textDiffIncluded: includeTextDiff,
+      reloadOk: true,
+    }));
   }
 
   planSetAgentAtomContexts(
@@ -147,11 +167,21 @@ export class AgentConfigService {
       ...result,
       changed: !isNoChangeOnly(semanticChanges),
       semanticChanges,
+      textDiffIncluded: true,
+      reloadOk: true,
     }));
   }
 
-  rollback(snapshotPath: string): Promise<AgentConfigApplyResult> {
-    return this.store.rollback(snapshotPath);
+  rollback(
+    snapshotPathOrId: string,
+    options: AgentConfigPlanOptions = {},
+  ): Promise<AgentConfigApplyResult> {
+    const includeTextDiff = options.includeTextDiff ?? true;
+    return this.store.rollback(snapshotPathOrId, { includeTextDiff }).then((result) => ({
+      ...result,
+      textDiffIncluded: includeTextDiff,
+      reloadOk: true,
+    }));
   }
 
   private async planWithSemanticChanges(

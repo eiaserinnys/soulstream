@@ -378,12 +378,107 @@ class PlanAgentProfileUpdate(TypedDict):
     includeTextDiff: NotRequired[bool]
     ok: NotRequired[bool]
     config_path: NotRequired[str]
+    config_checksum: NotRequired[str]
+    base_config_checksum: NotRequired[str]
     changed: NotRequired[bool]
     semantic_changes: NotRequired[list[SemanticChange]]
     text_diff_included: NotRequired[bool]
     diff: NotRequired[str]
     snapshot_root: NotRequired[str]
     comment_preservation: NotRequired[Literal['not_preserved']]
+
+
+class SemanticChange1(TypedDict):
+    op: Literal['add_agent', 'replace_agent', 'update_agent_atom_contexts', 'no_change']
+    agent_id: str
+    before: NotRequired[Any]
+    after: NotRequired[Any]
+
+
+class ApplyAgentProfileUpdate(TypedDict):
+    """
+    orch→노드: agents.yaml 단일 agent profile 교체를 대상 노드에서 실제 적용. expected_config_checksum이 있으면 현재 raw config sha256과 일치해야 한다.
+    """
+
+    type: Literal['apply_agent_profile_update']
+    request_id: NotRequired[str]
+    requestId: NotRequired[str]
+    profile: dict[str, Any]
+    create_if_missing: NotRequired[bool]
+    createIfMissing: NotRequired[bool]
+    include_text_diff: NotRequired[bool]
+    includeTextDiff: NotRequired[bool]
+    expected_config_checksum: NotRequired[str | None]
+    expectedConfigChecksum: NotRequired[str | None]
+    ok: NotRequired[bool]
+    config_path: NotRequired[str]
+    config_checksum: NotRequired[str]
+    base_config_checksum: NotRequired[str]
+    changed: NotRequired[bool]
+    semantic_changes: NotRequired[list[SemanticChange1]]
+    text_diff_included: NotRequired[bool]
+    diff: NotRequired[str]
+    snapshot_path: NotRequired[str | None]
+    applied_at: NotRequired[str | None]
+    reload_ok: NotRequired[bool]
+    snapshot_root: NotRequired[str]
+    comment_preservation: NotRequired[Literal['not_preserved']]
+    agent_count: NotRequired[int]
+
+
+class Snapshot(TypedDict):
+    snapshot_id: NotRequired[str]
+    snapshot_path: NotRequired[str]
+    created_at: NotRequired[str]
+    mtime: NotRequired[str]
+    size_bytes: NotRequired[int]
+    config_path: NotRequired[str]
+    config_name: NotRequired[str]
+    config_hash: NotRequired[str]
+
+
+class ListAgentsConfigSnapshots(TypedDict):
+    """
+    orch→노드: 대상 노드의 managed agents.yaml snapshot inventory 조회.
+    """
+
+    type: Literal['list_agents_config_snapshots']
+    request_id: NotRequired[str]
+    requestId: NotRequired[str]
+    ok: NotRequired[bool]
+    snapshots: NotRequired[list[Snapshot]]
+
+
+class RollbackAgentsConfig(TypedDict):
+    """
+    orch→노드: managed snapshot path 또는 snapshot id로 agents.yaml rollback.
+    """
+
+    type: Literal['rollback_agents_config']
+    request_id: NotRequired[str]
+    requestId: NotRequired[str]
+    snapshot_path: NotRequired[str | None]
+    snapshotPath: NotRequired[str]
+    snapshot_id: NotRequired[str]
+    snapshotId: NotRequired[str]
+    include_text_diff: NotRequired[bool]
+    includeTextDiff: NotRequired[bool]
+    ok: NotRequired[bool]
+    config_path: NotRequired[str]
+    config_checksum: NotRequired[str]
+    base_config_checksum: NotRequired[str]
+    changed: NotRequired[bool]
+    semantic_changes: NotRequired[list[dict[str, Any]]]
+    text_diff_included: NotRequired[bool]
+    diff: NotRequired[str]
+    rollback_snapshot_path: NotRequired[str | None]
+    restored_snapshot_path: NotRequired[str | None]
+    restored_snapshot_id: NotRequired[str | None]
+    applied_at: NotRequired[str | None]
+    reload_ok: NotRequired[bool]
+    snapshot_root: NotRequired[str]
+    comment_preservation: NotRequired[Literal['not_preserved']]
+    agent_count: NotRequired[int]
 
 
 class HealthCheck(TypedDict):
@@ -883,6 +978,9 @@ SoulstreamUpstreamProtocol: TypeAlias = (
     | RealtimeResolveToolApproval
     | ListSessions
     | PlanAgentProfileUpdate
+    | ApplyAgentProfileUpdate
+    | ListAgentsConfigSnapshots
+    | RollbackAgentsConfig
     | HealthCheck
     | SubscribeEvents
     | ClaudeAuthStatus

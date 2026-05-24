@@ -191,6 +191,133 @@ class TestPlanAgentProfileUpdate:
         assert "not connected" in resp.json()["detail"]
 
 
+class TestApplyAgentProfileUpdate:
+    """POST /api/nodes/{node_id}/agents/config/apply-profile-update tests."""
+
+    async def test_proxies_apply_to_target_node_with_checksum(self, client, node_manager):
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+        node = await node_manager.register_node(ws, {
+            "node_id": "n1", "host": "10.0.0.1", "port": 4100,
+        })
+        node.send_apply_agent_profile_update = AsyncMock(return_value={
+            "ok": True,
+            "config_path": "/srv/agents.yaml",
+            "changed": True,
+            "semantic_changes": [{"op": "replace_agent", "agent_id": "codex-default"}],
+            "text_diff_included": False,
+            "diff": "",
+            "snapshot_path": "/srv/snap.yaml",
+            "config_checksum": "next-checksum",
+            "base_config_checksum": "base-checksum",
+            "reload_ok": True,
+        })
+        profile = {
+            "id": "codex-default",
+            "name": "Codex Applied",
+            "backend": "codex",
+            "workspace_dir": "/tmp/codex",
+        }
+
+        resp = await client.post(
+            "/api/nodes/n1/agents/config/apply-profile-update",
+            json={
+                "profile": profile,
+                "create_if_missing": True,
+                "includeTextDiff": False,
+                "expectedConfigChecksum": "base-checksum",
+            },
+        )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["ok"] is True
+        assert body["snapshot_path"] == "/srv/snap.yaml"
+        assert body["reload_ok"] is True
+        node.send_apply_agent_profile_update.assert_called_once_with(
+            profile,
+            create_if_missing=True,
+            include_text_diff=False,
+            expected_config_checksum="base-checksum",
+        )
+
+
+class TestListAgentsConfigSnapshots:
+    """GET /api/nodes/{node_id}/agents/config/snapshots tests."""
+
+    async def test_proxies_snapshot_inventory_to_target_node(self, client, node_manager):
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+        node = await node_manager.register_node(ws, {
+            "node_id": "n1", "host": "10.0.0.1", "port": 4100,
+        })
+        node.send_list_agents_config_snapshots = AsyncMock(return_value={
+            "ok": True,
+            "snapshots": [
+                {
+                    "snapshot_id": "snap.yaml",
+                    "snapshot_path": "/srv/.local/config-snapshots/agents.yaml-h/snap.yaml",
+                },
+            ],
+        })
+
+        resp = await client.get("/api/nodes/n1/agents/config/snapshots")
+
+        assert resp.status_code == 200
+        assert resp.json()["snapshots"][0]["snapshot_id"] == "snap.yaml"
+        node.send_list_agents_config_snapshots.assert_called_once_with()
+
+
+class TestRollbackAgentsConfig:
+    """POST /api/nodes/{node_id}/agents/config/rollback tests."""
+
+    async def test_proxies_snapshot_id_rollback_to_target_node(self, client, node_manager):
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+        node = await node_manager.register_node(ws, {
+            "node_id": "n1", "host": "10.0.0.1", "port": 4100,
+        })
+        node.send_rollback_agents_config = AsyncMock(return_value={
+            "ok": True,
+            "changed": True,
+            "snapshot_path": "/srv/pre-rollback.yaml",
+            "config_checksum": "restored-checksum",
+            "reload_ok": True,
+        })
+
+        resp = await client.post(
+            "/api/nodes/n1/agents/config/rollback",
+            json={"snapshotId": "snap.yaml", "include_text_diff": True},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["reload_ok"] is True
+        node.send_rollback_agents_config.assert_called_once_with(
+            snapshot_path=None,
+            snapshot_id="snap.yaml",
+            include_text_diff=True,
+        )
+
+    async def test_rejects_rollback_without_snapshot_ref(self, client, node_manager):
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+        await node_manager.register_node(ws, {
+            "node_id": "n1", "host": "10.0.0.1", "port": 4100,
+        })
+
+        resp = await client.post(
+            "/api/nodes/n1/agents/config/rollback",
+            json={},
+        )
+
+        assert resp.status_code == 422
+        assert "snapshot_path or snapshot_id" in resp.json()["detail"]
+
+
 class TestPortraitProxy:
     """portrait 캐시 서빙 테스트."""
 

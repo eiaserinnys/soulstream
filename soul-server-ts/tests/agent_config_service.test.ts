@@ -60,6 +60,16 @@ describe("AgentConfigService", () => {
 
     expect(result.changed).toBe(true);
     expect(result.snapshotPath).toBeTruthy();
+    expect(result.configChecksum).toMatch(/^[a-f0-9]{64}$/);
+    expect(result.baseConfigChecksum).toMatch(/^[a-f0-9]{64}$/);
+    expect(result.semanticChanges).toEqual([
+      expect.objectContaining({
+        op: "replace_agent",
+        agentId: "codex-default",
+      }),
+    ]);
+    expect(result.textDiffIncluded).toBe(true);
+    expect(result.reloadOk).toBe(true);
     expect(result.diff).toContain("-    name: Codex");
     expect(result.diff).toContain("+    name: Codex Updated");
     expect(registry.get("codex-default")?.name).toBe("Codex Updated");
@@ -78,6 +88,8 @@ describe("AgentConfigService", () => {
     const plan = await service.planProfileUpdate(profile, true);
 
     expect(plan.changed).toBe(true);
+    expect(plan.configChecksum).toMatch(/^[a-f0-9]{64}$/);
+    expect(plan.baseConfigChecksum).toBe(plan.configChecksum);
     expect(plan.textDiffIncluded).toBe(false);
     expect(plan.diff).toBe("");
     expect(plan.semanticChanges).toEqual([
@@ -144,6 +156,61 @@ describe("AgentConfigService", () => {
     });
   });
 
+  it("applies profile changes with semantic result and opt-in text diff", async () => {
+    const updated = await service.replaceProfile(
+      {
+        id: "codex-default",
+        name: "Codex Applied",
+        backend: "codex",
+        workspace_dir: "/tmp/codex-ws",
+      },
+      false,
+      { includeTextDiff: false },
+    );
+
+    expect(updated.changed).toBe(true);
+    expect(updated.textDiffIncluded).toBe(false);
+    expect(updated.diff).toBe("");
+    expect(updated.snapshotPath).toBeTruthy();
+    expect(updated.semanticChanges).toEqual([
+      expect.objectContaining({
+        op: "replace_agent",
+        agentId: "codex-default",
+      }),
+    ]);
+    expect(registry.get("codex-default")?.name).toBe("Codex Applied");
+  });
+
+  it("rejects profile apply when the expected config checksum is stale", async () => {
+    const profile = {
+      id: "codex-default",
+      name: "Codex Applied",
+      backend: "codex",
+      workspace_dir: "/tmp/codex-ws",
+    } as const;
+    const plan = await service.planProfileUpdate(profile);
+    fs.writeFileSync(
+      configPath,
+      [
+        "agents:",
+        "  - id: codex-default",
+        "    name: Concurrent Edit",
+        "    backend: codex",
+        "    workspace_dir: /tmp/codex",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    await expect(
+      service.replaceProfile(profile, false, {
+        expectedConfigChecksum: plan.configChecksum,
+      }),
+    ).rejects.toThrow(/config checksum mismatch/);
+    expect(registry.get("codex-default")?.name).toBe("Codex");
+    expect(fs.readFileSync(configPath, "utf-8")).toContain("Concurrent Edit");
+  });
+
   it("sets atom_contexts and can roll back the applied config", async () => {
     const nodeId = "11111111-2222-3333-4444-555555555555";
     const applied = await service.setAgentAtomContexts("codex-default", [
@@ -172,10 +239,28 @@ describe("AgentConfigService", () => {
 
     expect(snapshots).toHaveLength(1);
     expect(snapshots[0]).toMatchObject({
+      snapshotId: path.basename(applied.snapshotPath ?? ""),
       snapshotPath: applied.snapshotPath,
       configPath,
       configName: "agents.yaml",
       sizeBytes: expect.any(Number),
     });
+  });
+
+  it("rolls back by managed snapshot id", async () => {
+    const applied = await service.replaceProfile({
+      id: "codex-default",
+      name: "Codex Updated",
+      backend: "codex",
+      workspace_dir: "/tmp/codex",
+    });
+    expect(registry.get("codex-default")?.name).toBe("Codex Updated");
+
+    await service.rollback(path.basename(applied.snapshotPath ?? ""), {
+      includeTextDiff: false,
+    });
+
+    expect(registry.get("codex-default")?.name).toBe("Codex");
+    expect(fs.readFileSync(configPath, "utf-8")).toContain("name: Codex");
   });
 });

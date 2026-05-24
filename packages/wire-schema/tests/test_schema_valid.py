@@ -61,6 +61,9 @@ def test_schema_has_all_message_types() -> None:
         "RealtimeResolveToolApproval",
         "ListSessions",
         "PlanAgentProfileUpdate",
+        "ApplyAgentProfileUpdate",
+        "ListAgentsConfigSnapshots",
+        "RollbackAgentsConfig",
         "HealthCheck",
         "SubscribeEvents",
         "ClaudeAuthStatus",
@@ -69,7 +72,7 @@ def test_schema_has_all_message_types() -> None:
         "ClaudeAuthGetUsage",
         "ClaudeAuthGetProfile",
     }
-    assert len(wire_types) == 33
+    assert len(wire_types) == 36
 
     sse_types = {
         "SSEEventInit",
@@ -171,6 +174,9 @@ def test_oneof_covers_all_wire_messages() -> None:
         "RealtimeResolveToolApproval",
         "ListSessions",
         "PlanAgentProfileUpdate",
+        "ApplyAgentProfileUpdate",
+        "ListAgentsConfigSnapshots",
+        "RollbackAgentsConfig",
         "HealthCheck",
         "SubscribeEvents",
         "ClaudeAuthStatus",

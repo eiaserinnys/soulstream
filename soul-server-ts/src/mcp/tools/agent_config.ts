@@ -65,6 +65,7 @@ export function registerAgentConfigTools(
           config_path: runtime.agentsConfigPath,
           snapshots: snapshots.map((snapshot) => ({
             snapshot_path: snapshot.snapshotPath,
+            snapshot_id: snapshot.snapshotId,
             created_at: snapshot.createdAt,
             mtime: snapshot.mtime,
             size_bytes: snapshot.sizeBytes,
@@ -102,6 +103,8 @@ export function registerAgentConfigTools(
         return jsonResult({
           ok: true,
           config_path: runtime.agentsConfigPath,
+          config_checksum: plan.configChecksum,
+          base_config_checksum: plan.baseConfigChecksum,
           changed: plan.changed,
           semantic_changes: toAgentConfigSemanticChangeWire(plan.semanticChanges),
           text_diff_included: plan.textDiffIncluded,
@@ -123,20 +126,45 @@ export function registerAgentConfigTools(
       inputSchema: {
         profile: AgentProfileSchema,
         create_if_missing: z.boolean().default(false),
+        include_text_diff: z.boolean().optional(),
+        includeTextDiff: z.boolean().optional(),
+        expected_config_checksum: z.string().optional(),
+        expectedConfigChecksum: z.string().optional(),
       },
     },
-    async ({ profile, create_if_missing }) => {
+    async ({
+      profile,
+      create_if_missing,
+      include_text_diff,
+      includeTextDiff,
+      expected_config_checksum,
+      expectedConfigChecksum,
+    }) => {
       try {
+        const includeTextDiffValue = include_text_diff ?? includeTextDiff ?? true;
         const updated = await agentConfig.replaceProfile(
           profile,
           create_if_missing ?? false,
+          {
+            includeTextDiff: includeTextDiffValue,
+            expectedConfigChecksum:
+              expected_config_checksum ?? expectedConfigChecksum,
+          },
         );
         return jsonResult({
           ok: true,
           config_path: runtime.agentsConfigPath,
+          config_checksum: updated.configChecksum,
+          base_config_checksum: updated.baseConfigChecksum,
           changed: updated.changed,
+          semantic_changes: updated.semanticChanges
+            ? toAgentConfigSemanticChangeWire(updated.semanticChanges)
+            : [],
+          text_diff_included: updated.textDiffIncluded ?? includeTextDiffValue,
           diff: updated.diff,
           snapshot_path: updated.snapshotPath,
+          applied_at: updated.appliedAt,
+          reload_ok: updated.reloadOk ?? true,
           comment_preservation: updated.commentPreservation,
           agent_count: updated.config.agents.length,
           agent: updated.config.agents.find((p) => p.id === profile.id),
@@ -166,12 +194,17 @@ export function registerAgentConfigTools(
         return jsonResult({
           ok: true,
           config_path: runtime.agentsConfigPath,
+          config_checksum: updated.configChecksum,
+          base_config_checksum: updated.baseConfigChecksum,
           changed: updated.changed,
           diff: updated.diff,
+          text_diff_included: updated.textDiffIncluded ?? true,
           semantic_changes: updated.semanticChanges
             ? toAgentConfigSemanticChangeWire(updated.semanticChanges)
             : [],
           snapshot_path: updated.snapshotPath,
+          applied_at: updated.appliedAt,
+          reload_ok: updated.reloadOk ?? true,
           comment_preservation: updated.commentPreservation,
           agent: updated.config.agents.find((p) => p.id === agent_id),
         });
@@ -188,17 +221,28 @@ export function registerAgentConfigTools(
         "ConfigStore가 만든 snapshot으로 agents.yaml을 rollback하고 AgentRegistry를 reload한다.",
       inputSchema: {
         snapshot_path: z.string().min(1),
+        include_text_diff: z.boolean().optional(),
+        includeTextDiff: z.boolean().optional(),
       },
     },
-    async ({ snapshot_path }) => {
+    async ({ snapshot_path, include_text_diff, includeTextDiff }) => {
       try {
-        const updated = await agentConfig.rollback(snapshot_path);
+        const includeTextDiffValue = include_text_diff ?? includeTextDiff ?? true;
+        const updated = await agentConfig.rollback(snapshot_path, {
+          includeTextDiff: includeTextDiffValue,
+        });
         return jsonResult({
           ok: true,
           config_path: runtime.agentsConfigPath,
+          config_checksum: updated.configChecksum,
+          base_config_checksum: updated.baseConfigChecksum,
           changed: updated.changed,
           diff: updated.diff,
+          text_diff_included: updated.textDiffIncluded ?? includeTextDiffValue,
           rollback_snapshot_path: updated.snapshotPath,
+          snapshot_path: updated.snapshotPath,
+          applied_at: updated.appliedAt,
+          reload_ok: updated.reloadOk ?? true,
           comment_preservation: updated.commentPreservation,
           agent_count: updated.config.agents.length,
         });

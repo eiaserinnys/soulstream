@@ -56,6 +56,33 @@ class PlanAgentProfileUpdateRequest(BaseModel):
     )
 
 
+class ApplyAgentProfileUpdateRequest(PlanAgentProfileUpdateRequest):
+    expected_config_checksum: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "expected_config_checksum",
+            "expectedConfigChecksum",
+        ),
+    )
+
+
+class RollbackAgentsConfigRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    snapshot_path: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("snapshot_path", "snapshotPath"),
+    )
+    snapshot_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("snapshot_id", "snapshotId"),
+    )
+    include_text_diff: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("include_text_diff", "includeTextDiff"),
+    )
+
+
 def create_nodes_router(
     node_manager: NodeManager,
     broadcaster: SessionBroadcaster,
@@ -155,6 +182,65 @@ def create_nodes_router(
             return await node.send_plan_agent_profile_update(
                 body.profile,
                 create_if_missing=body.create_if_missing,
+                include_text_diff=body.include_text_diff,
+            )
+        except ConnectionError as err:
+            raise HTTPException(status_code=503, detail=str(err)) from err
+        except RuntimeError as err:
+            raise HTTPException(status_code=400, detail=str(err)) from err
+
+    @router.post("/{node_id}/agents/config/apply-profile-update")
+    async def apply_agent_profile_update(
+        node_id: str,
+        body: ApplyAgentProfileUpdateRequest,
+    ) -> dict:
+        """대상 노드의 agents.yaml profile 변경을 실제 적용한다."""
+        node = node_manager.get_node(node_id)
+        if not node:
+            raise HTTPException(status_code=404, detail=f"Node {node_id} not connected")
+        try:
+            return await node.send_apply_agent_profile_update(
+                body.profile,
+                create_if_missing=body.create_if_missing,
+                include_text_diff=body.include_text_diff,
+                expected_config_checksum=body.expected_config_checksum,
+            )
+        except ConnectionError as err:
+            raise HTTPException(status_code=503, detail=str(err)) from err
+        except RuntimeError as err:
+            raise HTTPException(status_code=400, detail=str(err)) from err
+
+    @router.get("/{node_id}/agents/config/snapshots")
+    async def list_agents_config_snapshots(node_id: str) -> dict:
+        """대상 노드의 agents.yaml snapshot 목록을 조회한다."""
+        node = node_manager.get_node(node_id)
+        if not node:
+            raise HTTPException(status_code=404, detail=f"Node {node_id} not connected")
+        try:
+            return await node.send_list_agents_config_snapshots()
+        except ConnectionError as err:
+            raise HTTPException(status_code=503, detail=str(err)) from err
+        except RuntimeError as err:
+            raise HTTPException(status_code=400, detail=str(err)) from err
+
+    @router.post("/{node_id}/agents/config/rollback")
+    async def rollback_agents_config(
+        node_id: str,
+        body: RollbackAgentsConfigRequest,
+    ) -> dict:
+        """대상 노드의 agents.yaml을 snapshot path 또는 snapshot id로 rollback한다."""
+        if not body.snapshot_path and not body.snapshot_id:
+            raise HTTPException(
+                status_code=422,
+                detail="snapshot_path or snapshot_id is required",
+            )
+        node = node_manager.get_node(node_id)
+        if not node:
+            raise HTTPException(status_code=404, detail=f"Node {node_id} not connected")
+        try:
+            return await node.send_rollback_agents_config(
+                snapshot_path=body.snapshot_path,
+                snapshot_id=body.snapshot_id,
                 include_text_diff=body.include_text_diff,
             )
         except ConnectionError as err:

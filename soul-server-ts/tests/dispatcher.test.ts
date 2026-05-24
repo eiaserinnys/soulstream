@@ -44,7 +44,10 @@ function createDispatcher(opts: {
   claudeAuth?: ClaudeAuthCommandHandler;
   sessionDb?: Partial<SessionDB>;
   realtimeBroker?: Partial<RealtimeBroker>;
-  agentConfigService?: Pick<AgentConfigService, "planProfileUpdate">;
+  agentConfigService?: Pick<
+    AgentConfigService,
+    "listSnapshots" | "planProfileUpdate" | "replaceProfile" | "rollback"
+  >;
 } = {}) {
   const sent: unknown[] = [];
   const send = vi.fn(async (data: unknown) => {
@@ -1290,6 +1293,8 @@ describe("CommandDispatcher.plan_agent_profile_update", () => {
     const planProfileUpdate = vi.fn().mockResolvedValue({
       configPath: "/srv/agents.yaml",
       snapshotRoot: "/srv/.local/config-snapshots",
+      baseConfigChecksum: "base-checksum",
+      configChecksum: "base-checksum",
       changed: true,
       semanticChanges: [
         {
@@ -1310,7 +1315,12 @@ describe("CommandDispatcher.plan_agent_profile_update", () => {
       commentPreservation: "not_preserved",
     });
     const { dispatcher, sent } = createDispatcher({
-      agentConfigService: { planProfileUpdate },
+      agentConfigService: {
+        listSnapshots: vi.fn(),
+        planProfileUpdate,
+        replaceProfile: vi.fn(),
+        rollback: vi.fn(),
+      },
     });
     const profile = {
       id: "codex-default",
@@ -1336,6 +1346,8 @@ describe("CommandDispatcher.plan_agent_profile_update", () => {
         requestId: "plan-1",
         ok: true,
         config_path: "/srv/agents.yaml",
+        config_checksum: "base-checksum",
+        base_config_checksum: "base-checksum",
         changed: true,
         semantic_changes: [
           {
@@ -1357,6 +1369,163 @@ describe("CommandDispatcher.plan_agent_profile_update", () => {
       },
     ]);
     expect(JSON.stringify(sent[0])).not.toContain("snapshotPath");
+  });
+
+  it("apply_agent_profile_update delegates write with checksum guard and semantic response", async () => {
+    const replaceProfile = vi.fn().mockResolvedValue({
+      configPath: "/srv/agents.yaml",
+      snapshotRoot: "/srv/.local/config-snapshots",
+      baseConfigChecksum: "base-checksum",
+      configChecksum: "next-checksum",
+      changed: true,
+      semanticChanges: [
+        {
+          op: "replace_agent",
+          agentId: "codex-default",
+          before: { id: "codex-default", name: "Old" },
+          after: {
+            id: "codex-default",
+            name: "Codex Applied",
+            backend: "codex",
+            workspace_dir: "/tmp/codex",
+          },
+        },
+      ],
+      textDiffIncluded: false,
+      diff: "",
+      config: { agents: [codexAgent] },
+      commentPreservation: "not_preserved",
+      snapshotPath: "/srv/.local/config-snapshots/agents.yaml-h/snap.yaml",
+      appliedAt: "2026-05-24T00:00:00.000Z",
+      reloadOk: true,
+    });
+    const { dispatcher, sent } = createDispatcher({
+      agentConfigService: {
+        listSnapshots: vi.fn(),
+        planProfileUpdate: vi.fn(),
+        replaceProfile,
+        rollback: vi.fn(),
+      },
+    });
+
+    await dispatcher.dispatch({
+      type: "apply_agent_profile_update",
+      requestId: "apply-1",
+      profile: codexAgent,
+      create_if_missing: true,
+      include_text_diff: false,
+      expected_config_checksum: "base-checksum",
+    });
+
+    expect(replaceProfile).toHaveBeenCalledWith(codexAgent, true, {
+      includeTextDiff: false,
+      expectedConfigChecksum: "base-checksum",
+    });
+    expect(sent[0]).toMatchObject({
+      type: "apply_agent_profile_update",
+      requestId: "apply-1",
+      ok: true,
+      config_path: "/srv/agents.yaml",
+      base_config_checksum: "base-checksum",
+      config_checksum: "next-checksum",
+      changed: true,
+      semantic_changes: [
+        expect.objectContaining({
+          op: "replace_agent",
+          agent_id: "codex-default",
+        }),
+      ],
+      text_diff_included: false,
+      diff: "",
+      snapshot_path: "/srv/.local/config-snapshots/agents.yaml-h/snap.yaml",
+      reload_ok: true,
+    });
+  });
+
+  it("list_agents_config_snapshots delegates inventory to service", async () => {
+    const listSnapshots = vi.fn().mockReturnValue([
+      {
+        snapshotId: "snap.yaml",
+        snapshotPath: "/srv/.local/config-snapshots/agents.yaml-h/snap.yaml",
+        createdAt: "2026-05-24T00:00:00.000Z",
+        mtime: "2026-05-24T00:00:00.000Z",
+        sizeBytes: 123,
+        configPath: "/srv/agents.yaml",
+        configName: "agents.yaml",
+        configHash: "abc123",
+      },
+    ]);
+    const { dispatcher, sent } = createDispatcher({
+      agentConfigService: {
+        listSnapshots,
+        planProfileUpdate: vi.fn(),
+        replaceProfile: vi.fn(),
+        rollback: vi.fn(),
+      },
+    });
+
+    await dispatcher.dispatch({
+      type: "list_agents_config_snapshots",
+      requestId: "snapshots-1",
+    });
+
+    expect(listSnapshots).toHaveBeenCalledTimes(1);
+    expect(sent[0]).toMatchObject({
+      type: "list_agents_config_snapshots",
+      requestId: "snapshots-1",
+      ok: true,
+      snapshots: [
+        expect.objectContaining({
+          snapshot_id: "snap.yaml",
+          snapshot_path: "/srv/.local/config-snapshots/agents.yaml-h/snap.yaml",
+        }),
+      ],
+    });
+  });
+
+  it("rollback_agents_config delegates snapshot id restore with opt-in diff", async () => {
+    const rollback = vi.fn().mockResolvedValue({
+      configPath: "/srv/agents.yaml",
+      snapshotRoot: "/srv/.local/config-snapshots",
+      baseConfigChecksum: "changed-checksum",
+      configChecksum: "restored-checksum",
+      changed: true,
+      textDiffIncluded: true,
+      diff: "--- agents.yaml\n+++ agents.yaml\n",
+      config: { agents: [codexAgent] },
+      commentPreservation: "not_preserved",
+      snapshotPath: "/srv/.local/config-snapshots/agents.yaml-h/pre-rollback.yaml",
+      appliedAt: "2026-05-24T00:00:00.000Z",
+      reloadOk: true,
+    });
+    const { dispatcher, sent } = createDispatcher({
+      agentConfigService: {
+        listSnapshots: vi.fn(),
+        planProfileUpdate: vi.fn(),
+        replaceProfile: vi.fn(),
+        rollback,
+      },
+    });
+
+    await dispatcher.dispatch({
+      type: "rollback_agents_config",
+      requestId: "rollback-1",
+      snapshot_id: "snap.yaml",
+      include_text_diff: true,
+    });
+
+    expect(rollback).toHaveBeenCalledWith("snap.yaml", {
+      includeTextDiff: true,
+    });
+    expect(sent[0]).toMatchObject({
+      type: "rollback_agents_config",
+      requestId: "rollback-1",
+      ok: true,
+      config_checksum: "restored-checksum",
+      text_diff_included: true,
+      snapshot_path: "/srv/.local/config-snapshots/agents.yaml-h/pre-rollback.yaml",
+      restored_snapshot_id: "snap.yaml",
+    });
   });
 
   it("returns explicit error when AgentConfigService is not wired", async () => {

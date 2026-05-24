@@ -17,15 +17,22 @@ export interface ConfigStoreOptions<TConfig> {
 export interface ConfigReadResult<TConfig> {
   raw: string;
   config: TConfig;
+  checksum: string;
 }
 
 export interface ConfigPlanOptions {
   includeTextDiff?: boolean;
 }
 
+export interface ConfigApplyOptions extends ConfigPlanOptions {
+  expectedConfigChecksum?: string | null;
+}
+
 export interface ConfigChangePlan<TConfig> {
   configPath: string;
   snapshotRoot: string;
+  baseConfigChecksum: string;
+  configChecksum: string;
   changed: boolean;
   diff: string;
   config: TConfig;
@@ -38,6 +45,7 @@ export interface ConfigApplyResult<TConfig> extends ConfigChangePlan<TConfig> {
 }
 
 export interface ConfigSnapshotInfo {
+  snapshotId: string;
   snapshotPath: string;
   createdAt: string;
   mtime: string;
@@ -74,7 +82,7 @@ export class ConfigStore<TConfig> {
 
   read(): ConfigReadResult<TConfig> {
     const raw = fs.readFileSync(this.actualConfigPath, "utf-8");
-    return { raw, config: this.parseRaw(raw) };
+    return { raw, config: this.parseRaw(raw), checksum: checksumRaw(raw) };
   }
 
   listSnapshots(): ConfigSnapshotInfo[] {
@@ -98,6 +106,7 @@ export class ConfigStore<TConfig> {
       const stat = fs.lstatSync(snapshotPath);
       if (!stat.isFile() || stat.isSymbolicLink()) continue;
       snapshots.push({
+        snapshotId: entry.name,
         snapshotPath,
         createdAt: stat.birthtime.toISOString(),
         mtime: stat.mtime.toISOString(),
@@ -128,6 +137,8 @@ export class ConfigStore<TConfig> {
     return {
       configPath: this.displayConfigPath,
       snapshotRoot: this.snapshotRoot,
+      baseConfigChecksum: current.checksum,
+      configChecksum: current.checksum,
       changed,
       diff: changed && includeTextDiff
         ? diffText(current.raw, nextRaw, path.basename(this.actualConfigPath))
@@ -139,17 +150,23 @@ export class ConfigStore<TConfig> {
 
   async apply(
     mutate: (current: TConfig) => MaybePromise<TConfig>,
+    options: ConfigApplyOptions = {},
   ): Promise<ConfigApplyResult<TConfig>> {
     const current = this.read();
+    this.assertExpectedChecksum(current.checksum, options.expectedConfigChecksum);
     const nextConfig = this.normalize(await mutate(current.config));
     const currentCanonicalRaw = this.stringifyConfig(current.config);
     const nextRaw = this.stringifyConfig(nextConfig);
     const changed = currentCanonicalRaw !== nextRaw;
+    const includeTextDiff = options.includeTextDiff ?? true;
+    const nextChecksum = changed ? checksumRaw(nextRaw) : current.checksum;
     const basePlan = {
       configPath: this.displayConfigPath,
       snapshotRoot: this.snapshotRoot,
+      baseConfigChecksum: current.checksum,
+      configChecksum: nextChecksum,
       changed,
-      diff: changed
+      diff: changed && includeTextDiff
         ? diffText(current.raw, nextRaw, path.basename(this.actualConfigPath))
         : "",
       config: nextConfig,
@@ -169,22 +186,29 @@ export class ConfigStore<TConfig> {
     };
   }
 
-  async rollback(snapshotPath: string): Promise<ConfigApplyResult<TConfig>> {
-    const resolvedSnapshotPath = path.resolve(snapshotPath);
+  async rollback(
+    snapshotPathOrId: string,
+    options: ConfigPlanOptions = {},
+  ): Promise<ConfigApplyResult<TConfig>> {
+    const resolvedSnapshotPath = this.resolveSnapshotPath(snapshotPathOrId);
     this.assertManagedSnapshotPath(resolvedSnapshotPath);
     const snapshotStat = fs.lstatSync(resolvedSnapshotPath);
     if (!snapshotStat.isFile() || snapshotStat.isSymbolicLink()) {
-      throw new Error(`rollback snapshot path is not a managed file: ${snapshotPath}`);
+      throw new Error(`rollback snapshot path is not a managed file: ${snapshotPathOrId}`);
     }
     const rollbackRaw = fs.readFileSync(resolvedSnapshotPath, "utf-8");
     const rollbackConfig = this.parseRaw(rollbackRaw);
     const current = this.read();
     const changed = current.raw !== rollbackRaw;
+    const includeTextDiff = options.includeTextDiff ?? true;
+    const rollbackChecksum = changed ? checksumRaw(rollbackRaw) : current.checksum;
     const basePlan = {
       configPath: this.displayConfigPath,
       snapshotRoot: this.snapshotRoot,
+      baseConfigChecksum: current.checksum,
+      configChecksum: rollbackChecksum,
       changed,
-      diff: changed
+      diff: changed && includeTextDiff
         ? diffText(current.raw, rollbackRaw, path.basename(this.actualConfigPath))
         : "",
       config: rollbackConfig,
@@ -206,6 +230,18 @@ export class ConfigStore<TConfig> {
 
   private normalize(config: TConfig): TConfig {
     return this.parseRaw(this.stringifyConfig(config));
+  }
+
+  private assertExpectedChecksum(
+    actualChecksum: string,
+    expectedChecksum: string | null | undefined,
+  ): void {
+    if (!expectedChecksum) return;
+    if (actualChecksum !== expectedChecksum) {
+      throw new Error(
+        `config checksum mismatch: expected ${expectedChecksum}, got ${actualChecksum}`,
+      );
+    }
   }
 
   private snapshotDir(): string {
@@ -235,6 +271,13 @@ export class ConfigStore<TConfig> {
     if (relative.startsWith("..") || path.isAbsolute(relative) || relative === "") {
       throw new Error(`rollback snapshot path is outside snapshot root: ${snapshotPath}`);
     }
+  }
+
+  private resolveSnapshotPath(snapshotPathOrId: string): string {
+    if (path.basename(snapshotPathOrId) === snapshotPathOrId) {
+      return path.join(this.snapshotDir(), snapshotPathOrId);
+    }
+    return path.resolve(snapshotPathOrId);
   }
 
   private writeAtomic(raw: string): void {
@@ -307,4 +350,8 @@ function splitLines(raw: string): string[] {
 
 function isNodeError(err: unknown): err is NodeJS.ErrnoException {
   return Boolean(err && typeof err === "object" && "code" in err);
+}
+
+function checksumRaw(raw: string): string {
+  return createHash("sha256").update(raw).digest("hex");
 }

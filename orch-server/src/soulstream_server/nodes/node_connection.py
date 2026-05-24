@@ -10,15 +10,18 @@ from starlette.websockets import WebSocketDisconnect
 
 from soulstream_server.constants import (
     CMD_APPROVE_TOOL,
+    CMD_APPLY_AGENT_PROFILE_UPDATE,
     CMD_CREATE_SESSION,
     CMD_DELETE_SESSION_ATTACHMENTS,
     CMD_DOWNLOAD_ATTACHMENT,
     CMD_INTERVENE,
     CMD_INTERRUPT_SESSION,
+    CMD_LIST_AGENTS_CONFIG_SNAPSHOTS,
     CMD_REALTIME_CREATE_CALL,
     CMD_REALTIME_EVENT,
     CMD_REALTIME_RESOLVE_TOOL_APPROVAL,
     CMD_REJECT_TOOL,
+    CMD_ROLLBACK_AGENTS_CONFIG,
     CMD_RESPOND,
     CMD_SUBSCRIBE_EVENTS,
     CMD_UPLOAD_ATTACHMENT,
@@ -371,6 +374,41 @@ class NodeConnection:
                 "include_text_diff": include_text_diff,
             },
         )
+
+    async def send_apply_agent_profile_update(
+        self,
+        profile: dict,
+        create_if_missing: bool = False,
+        include_text_diff: bool = False,
+        expected_config_checksum: str | None = None,
+    ) -> dict:
+        """agents.yaml profile 변경을 대상 노드에서 실제 적용한다."""
+        payload: dict[str, Any] = {
+            "profile": profile,
+            "create_if_missing": create_if_missing,
+            "include_text_diff": include_text_diff,
+        }
+        if expected_config_checksum is not None:
+            payload["expected_config_checksum"] = expected_config_checksum
+        return await self._send_command(CMD_APPLY_AGENT_PROFILE_UPDATE, payload)
+
+    async def send_list_agents_config_snapshots(self) -> dict:
+        """대상 노드의 agents.yaml snapshot 목록을 조회한다."""
+        return await self._send_command(CMD_LIST_AGENTS_CONFIG_SNAPSHOTS, {})
+
+    async def send_rollback_agents_config(
+        self,
+        snapshot_path: str | None = None,
+        snapshot_id: str | None = None,
+        include_text_diff: bool = False,
+    ) -> dict:
+        """대상 노드의 agents.yaml을 snapshot path 또는 id로 rollback한다."""
+        payload: dict[str, Any] = {"include_text_diff": include_text_diff}
+        if snapshot_path is not None:
+            payload["snapshot_path"] = snapshot_path
+        if snapshot_id is not None:
+            payload["snapshot_id"] = snapshot_id
+        return await self._send_command(CMD_ROLLBACK_AGENTS_CONFIG, payload)
 
     async def send_respond(
         self, session_id: str, request_id: str, answers: dict
