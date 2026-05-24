@@ -45,6 +45,7 @@ import {
   useDashboardStore,
   ConnectionBadge,
   useSessionListProvider,
+  shouldLoadMoreAfterSessionMove,
 } from "@seosoyoung/soul-ui";
 import { FeedView } from "./components/FeedView";
 import { getSessionProvider } from "./providers";
@@ -52,6 +53,8 @@ import { getSessionProvider } from "./providers";
 export function DashboardLayout() {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const viewMode = useDashboardStore((s) => s.viewMode);
+  const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
+  const catalog = useDashboardStore((s) => s.catalog);
   const openNewSessionModal = useDashboardStore((s) => s.openNewSessionModal);
 
   // 세션 목록 구독 (SSE 모드: 실시간)
@@ -112,12 +115,19 @@ export function DashboardLayout() {
   // 세션 이동 후 빈 자리 보충 — 이동으로 폴더 표시 세션 수가 줄면 더 있으면 loadMore
   const handleMoveSessions = useCallback(
     async (sessionIds: string[], targetFolderId: string | null) => {
+      const shouldBackfill = shouldLoadMoreAfterSessionMove({
+        viewMode,
+        selectedFolderId,
+        catalog,
+        sessionIds,
+        targetFolderId,
+      });
       await moveSessionsOptimistic(sessionIds, targetFolderId);
-      if (hasMore) {
+      if (hasMore && shouldBackfill) {
         loadMore();
       }
     },
-    [hasMore, loadMore],
+    [catalog, hasMore, loadMore, selectedFolderId, viewMode],
   );
 
   // Config / Search 모달 상태

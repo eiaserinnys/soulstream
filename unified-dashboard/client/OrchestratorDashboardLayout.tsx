@@ -49,6 +49,7 @@ import {
   ConnectionBadge,
   useSessionListProvider,
   useIsMobile,
+  shouldLoadMoreAfterSessionMove,
 } from "@seosoyoung/soul-ui";
 import { FeedView } from "./components/FeedView";
 import { useAppConfig } from "./config/AppConfigContext";
@@ -57,6 +58,8 @@ export function OrchestratorDashboardLayout() {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const activeSessionSummary = useDashboardStore((s) => s.activeSessionSummary);
   const viewMode = useDashboardStore((s) => s.viewMode);
+  const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
+  const catalog = useDashboardStore((s) => s.catalog);
   const openNewSessionModal = useDashboardStore((s) => s.openNewSessionModal);
   const nodes = useOrchestratorStore((s) => s.nodes);
   const connectionStatus = useOrchestratorStore((s) => s.connectionStatus);
@@ -127,10 +130,17 @@ export function OrchestratorDashboardLayout() {
   // 세션 이동 후 빈 자리 보충
   const handleMoveSessions = useCallback(
     async (sessionIds: string[], targetFolderId: string | null) => {
+      const shouldBackfill = shouldLoadMoreAfterSessionMove({
+        viewMode,
+        selectedFolderId,
+        catalog,
+        sessionIds,
+        targetFolderId,
+      });
       await moveSessionsOptimistic(sessionIds, targetFolderId);
-      if (hasMore) loadMore();
+      if (hasMore && shouldBackfill) loadMore();
     },
-    [hasMore, loadMore],
+    [catalog, hasMore, loadMore, selectedFolderId, viewMode],
   );
 
   // Config / Search 모달 상태

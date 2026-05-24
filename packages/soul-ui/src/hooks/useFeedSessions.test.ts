@@ -146,6 +146,7 @@ describe("useFeedSessions", () => {
   });
 
   it("does not change feed results when a folder query is populated after render", async () => {
+    const observed: string[][] = [];
     queryClient.setQueryData(
       ["sessions", "all", "feed", null],
       page([makeSession("feed-session")]),
@@ -156,7 +157,12 @@ describe("useFeedSessions", () => {
         createElement(
           QueryClientProvider,
           { client: queryClient },
-          createElement(Probe, { onValue: (value) => { latest = value; } }),
+          createElement(Probe, {
+            onValue: (value) => {
+              latest = value;
+              observed.push(value.map((s) => s.agentSessionId));
+            },
+          }),
         ),
       );
     });
@@ -167,8 +173,9 @@ describe("useFeedSessions", () => {
       ["sessions", "all", "folder", "folder-a"],
       page([makeSession("folder-session")]),
     );
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(latest.map((s) => s.agentSessionId)).toEqual(["feed-session"]);
+    expect(observed).toEqual([["feed-session"]]);
   });
 });

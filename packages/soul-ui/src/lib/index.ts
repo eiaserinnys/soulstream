@@ -15,6 +15,8 @@ export { createFolderOperations } from "./folder-operations";
 export type { FolderApiConfig, FolderOperations } from "./folder-operations";
 export { createMoveSessionsOperations } from "./move-sessions";
 export type { MoveSessionsApiConfig, MoveSessionsOperations } from "./move-sessions";
+export { shouldLoadMoreAfterSessionMove } from "./session-move-load-more";
+export type { SessionMoveLoadMoreState } from "./session-move-load-more";
 
 // === Rename Session ===
 export { renameSessionOptimistic, createRenameSessionOperation } from "./rename-session";

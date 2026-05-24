@@ -4,7 +4,11 @@
  * soul-ui의 FeedView에 unified-dashboard API 구현을 주입한다.
  */
 import { useCallback } from "react";
-import { FeedView as SoulUIFeedView } from "@seosoyoung/soul-ui";
+import {
+  FeedView as SoulUIFeedView,
+  shouldLoadMoreAfterSessionMove,
+  useDashboardStore,
+} from "@seosoyoung/soul-ui";
 import { moveSessionsOptimistic } from "client/lib/move-sessions";
 import { renameSessionOptimistic } from "client/lib/rename-session";
 
@@ -15,14 +19,25 @@ interface FeedViewWrapperProps {
 }
 
 export function FeedView({ onNewSession, onLoadMore, hasMore }: FeedViewWrapperProps = {}) {
+  const viewMode = useDashboardStore((s) => s.viewMode);
+  const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
+  const catalog = useDashboardStore((s) => s.catalog);
+
   const handleMoveSessions = useCallback(
     async (sessionIds: string[], targetFolderId: string | null) => {
+      const shouldBackfill = shouldLoadMoreAfterSessionMove({
+        viewMode,
+        selectedFolderId,
+        catalog,
+        sessionIds,
+        targetFolderId,
+      });
       await moveSessionsOptimistic(sessionIds, targetFolderId);
-      if (hasMore && onLoadMore) {
+      if (hasMore && onLoadMore && shouldBackfill) {
         onLoadMore();
       }
     },
-    [hasMore, onLoadMore],
+    [catalog, hasMore, onLoadMore, selectedFolderId, viewMode],
   );
 
   return (
