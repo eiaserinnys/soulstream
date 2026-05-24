@@ -1497,6 +1497,53 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
     expect(mocks.getSession).toHaveBeenCalledWith("missing");
   });
 
+  it("DB row가 다른 노드 소유이면 local hydrate·auto-resume하지 않고 Task not found로 fallback 신호", async () => {
+    const mocks = makeMocks();
+    mocks.getSession.mockResolvedValueOnce({
+      session_id: "caller-owned-elsewhere",
+      folder_id: "f-owner",
+      display_name: null,
+      node_id: "owner-node",
+      session_type: "claude",
+      status: "completed",
+      prompt: "caller prompt",
+      client_id: null,
+      claude_session_id: "thread-owner-node",
+      last_message: null,
+      metadata: null,
+      was_running_at_shutdown: false,
+      last_event_id: 42,
+      last_read_event_id: 10,
+      created_at: new Date("2026-05-25T01:00:00Z"),
+      updated_at: new Date("2026-05-25T01:05:00Z"),
+      agent_id: "codex-default",
+      caller_session_id: null,
+      away_summary: null,
+    });
+    const tm = new TaskManager("reporting-node", mocks.db, mocks.broadcaster, silentLogger);
+    const onResume = vi.fn();
+
+    await expect(
+      tm.addIntervention(
+        {
+          agentSessionId: "caller-owned-elsewhere",
+          text: "remote child completion report",
+          user: "agent",
+          callerInfo: { source: "agent", agent_node: "reporting-node" },
+        },
+        onResume,
+      ),
+    ).rejects.toThrow("Task not found: caller-owned-elsewhere");
+
+    expect(mocks.getSession).toHaveBeenCalledWith("caller-owned-elsewhere");
+    expect(tm.getTask("caller-owned-elsewhere")).toBeUndefined();
+    expect(mocks.appendMetadata).not.toHaveBeenCalled();
+    expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
+    expect(mocks.updateSession).not.toHaveBeenCalled();
+    expect(mocks.emitSessionUpdated).not.toHaveBeenCalled();
+    expect(onResume).not.toHaveBeenCalled();
+  });
+
   it("메모리에 task가 없고 DB에 completed 세션이 있으면 hydrate + auto-resume 흐름 진입", async () => {
     const mocks = makeMocks();
     // DB row 반환 — codex 세션 (claude_session_id가 codex thread id)

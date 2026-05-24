@@ -672,6 +672,32 @@ describe("CodexEngineAdapter.execute — 세션 resume", () => {
     });
     expect(mockStartThread).not.toHaveBeenCalled();
   });
+
+  it("resume no-rollout 실행 오류는 fatal SSE 없이 graceful 종료", async () => {
+    const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
+    mockResumeThread.mockReturnValue({ runStreamed: mockRunStreamed });
+    mockRunStreamed.mockRejectedValue(
+      new Error(
+        "Codex Exec exited with code 1: Error: thread/resume failed: no rollout found for thread id thr-missing (code -32600)",
+      ),
+    );
+
+    const engine = new CodexEngineAdapter(
+      { workspaceDir: "/tmp/work" },
+      silentLogger(),
+    );
+    const events = [];
+    for await (const e of engine.execute({
+      prompt: "x",
+      resumeSessionId: "thr-missing",
+    })) {
+      events.push(e);
+    }
+
+    expect(mockResumeThread).toHaveBeenCalledWith("thr-missing", expect.any(Object));
+    expect(mockStartThread).not.toHaveBeenCalled();
+    expect(events).toEqual([]);
+  });
 });
 
 describe("CodexEngineAdapter — 오류 경로", () => {

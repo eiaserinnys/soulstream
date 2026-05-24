@@ -291,6 +291,27 @@ describe("CodexAppServerEngineAdapter", () => {
     ]);
   });
 
+  it("resume no-rollout RPC error ends gracefully without yielding a fatal error event", async () => {
+    const client = new FakeClient();
+    client.resumeThread.mockRejectedValueOnce(
+      new AppServerRpcError(
+        "thread/resume failed: no rollout found for thread id thread-missing (code -32600)",
+        { code: -32600, requestId: "req-resume" },
+      ),
+    );
+    const { adapter } = makeAdapter(client);
+
+    const events = await drain(
+      adapter.execute({ prompt: "resume", resumeSessionId: "thread-missing" }),
+    );
+
+    expect(client.resumeThread).toHaveBeenCalledWith(
+      expect.objectContaining({ threadId: "thread-missing" }),
+    );
+    expect(client.startTurn).not.toHaveBeenCalled();
+    expect(events).toEqual([]);
+  });
+
   it("steer returns no_active_turn before execute and failed on RPC error", async () => {
     const client = new FakeClient();
     client.steerTurn.mockRejectedValueOnce(

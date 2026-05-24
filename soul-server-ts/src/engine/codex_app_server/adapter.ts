@@ -232,9 +232,22 @@ export class CodexAppServerEngineAdapter
     queue: AsyncPayloadQueue<SSEEventPayload>,
   ): Promise<string | null> {
     if (params.resumeSessionId) {
-      const response = await this.client.resumeThread(
-        buildThreadResumeParams(params, this.workspaceDir),
-      );
+      let response: ThreadResumeResponse;
+      try {
+        response = await this.client.resumeThread(
+          buildThreadResumeParams(params, this.workspaceDir),
+        );
+      } catch (error) {
+        if (isNoRolloutFoundResumeError(error)) {
+          this.logger.warn(
+            { error, threadId: params.resumeSessionId },
+            "Codex app-server resume skipped: rollout not found",
+          );
+          queue.close();
+          return null;
+        }
+        throw error;
+      }
       if (this.closed) return null;
       return response.thread.id;
     }
@@ -299,6 +312,12 @@ function fatalErrorPayload(error: Error): SSEEventPayload {
     fatal: true,
     timestamp: Date.now() / 1000,
   } as SSEEventPayload;
+}
+
+function isNoRolloutFoundResumeError(error: unknown): boolean {
+  if (!(error instanceof AppServerRpcError)) return false;
+  if (error.code !== -32600) return false;
+  return error.message.toLowerCase().includes("no rollout found");
 }
 
 function mapSteerError(error: unknown): LiveTurnSteerResult {

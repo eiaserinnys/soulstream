@@ -185,7 +185,19 @@ export class CodexEngineAdapter implements EnginePort {
 
     let thread: Thread;
     if (params.resumeSessionId) {
-      thread = this.codex.resumeThread(params.resumeSessionId, threadOptions);
+      try {
+        thread = this.codex.resumeThread(params.resumeSessionId, threadOptions);
+      } catch (err) {
+        if (isNoRolloutFoundResumeError(err)) {
+          this.logger.warn(
+            { err, sessionId: params.resumeSessionId },
+            "Codex resume skipped: rollout not found",
+          );
+          this.currentTurn = null;
+          return;
+        }
+        throw err;
+      }
       this.logger.debug(
         { sessionId: params.resumeSessionId },
         "Resumed Codex thread",
@@ -203,6 +215,14 @@ export class CodexEngineAdapter implements EnginePort {
         signal: controller.signal,
       });
     } catch (err) {
+      if (params.resumeSessionId && isNoRolloutFoundResumeError(err)) {
+        this.logger.warn(
+          { err, sessionId: params.resumeSessionId },
+          "Codex resume skipped: rollout not found",
+        );
+        this.currentTurn = null;
+        return;
+      }
       this.logger.warn({ err }, "thread.runStreamed throw");
       yield {
         type: "error",
@@ -298,6 +318,12 @@ export class CodexEngineAdapter implements EnginePort {
     }
     // Codex SDK 0.130.0은 명시 close 없음 — flag로만 lifecycle 표시.
   }
+}
+
+function isNoRolloutFoundResumeError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  const lower = message.toLowerCase();
+  return lower.includes("thread/resume") && lower.includes("no rollout found");
 }
 
 function buildCodexInput(params: EngineExecuteParams): Input {

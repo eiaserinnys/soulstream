@@ -79,7 +79,7 @@ export class TaskManager {
   private readonly lifecycleRoute: TaskLifecycleRoute;
 
   constructor(
-    nodeId: string,
+    private readonly nodeId: string,
     private readonly db: SessionDB,
     private readonly broadcaster: SessionBroadcaster,
     private readonly logger: Logger,
@@ -98,7 +98,7 @@ export class TaskManager {
     private readonly agentRegistry?: AgentRegistry,
   ) {
     this.taskCreation = new TaskCreation({
-      nodeId,
+      nodeId: this.nodeId,
       db,
       broadcaster,
       logger,
@@ -313,6 +313,18 @@ export class TaskManager {
       return null;
     }
     if (!row) return null;
+    // Legacy rows can lack node_id; block only when DB has an authoritative owner.
+    if (row.node_id && row.node_id !== this.nodeId) {
+      this.logger.info(
+        {
+          sessionId,
+          ownerNodeId: row.node_id,
+          currentNodeId: this.nodeId,
+        },
+        "loadEvictedTask: session belongs to another node",
+      );
+      return null;
+    }
 
     return hydrateEvictedTaskFromSessionRow(row, this.logger);
   }
