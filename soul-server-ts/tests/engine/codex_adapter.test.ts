@@ -397,12 +397,9 @@ describe("CodexEngineAdapter.execute — 새 thread", () => {
     expect(mockRunStreamed.mock.calls[0][0]).toBe("텍스트만");
   });
 
-  it("codex가 item.completed (agent_message)만 emit해도 text_start+text_delta+text_end+complete 시퀀스를 yield한다 — claude 정본 정합", async () => {
-    // 분석 캐시 `20260517-1220-codex-ts-subscribe-events.md` §A: codex-rs는 item.started·item.updated를
-    // emit하지 않음. 분석 캐시 `20260517-1325-codex-ts-sse-ui-routing.md`: claude 정본 시퀀스는
-    // text_start → text_delta → text_end. 클라이언트(soul-ui tree-placer/node-factory)는 text_start
-    // 없이는 text_delta·text_end를 silent drop. 어댑터→mapper 통합 시퀀스가 *세 이벤트 모두*를
-    // 발행해야 채팅 UI에 본문이 표시된다.
+  it("codex가 item.completed (agent_message)만 emit하면 assistant_message+complete를 yield한다", async () => {
+    // item.completed는 완료된 assistant 말풍선의 durable 정본이므로 assistant_message로
+    // emit한다. text_start/text_delta/text_end는 생성 중 live transport에만 사용한다.
     const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
     mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });
     mockRunStreamed.mockResolvedValue({
@@ -434,15 +431,15 @@ describe("CodexEngineAdapter.execute — 새 thread", () => {
       sseEvents.push(event as Record<string, unknown>);
     }
 
-    expect(sseEvents).toHaveLength(5);
+    expect(sseEvents).toHaveLength(3);
     expect(sseEvents[0]).toEqual({ type: "session", session_id: "thr-codex" });
-    expect(sseEvents[1]).toMatchObject({ type: "text_start" });
-    expect(sseEvents[1].text).toBeUndefined();
-    expect(sseEvents[2]).toMatchObject({ type: "text_delta", text: "hello world" });
-    expect(sseEvents[3]).toMatchObject({ type: "text_end" });
-    expect(sseEvents[3].text).toBeUndefined();
-    // F3: complete payload에 result = 마지막 agent_message text가 박힌다.
-    expect(sseEvents[4]).toMatchObject({ type: "complete", result: "hello world" });
+    expect(sseEvents[1]).toMatchObject({
+      type: "assistant_message",
+      content: "hello world",
+      _final_for_live_stream: true,
+    });
+    // complete은 턴 종료 메타이며 legacy final text 호환을 위해 result를 유지한다.
+    expect(sseEvents[2]).toMatchObject({ type: "complete", result: "hello world" });
   });
 
   it("model 옵션을 startThread에 그대로 전달", async () => {

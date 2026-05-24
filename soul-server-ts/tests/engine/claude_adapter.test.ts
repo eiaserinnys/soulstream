@@ -164,14 +164,12 @@ describe("ClaudeEngineAdapter fake client flow", () => {
     });
     expect(seen.map((event) => event.type)).toEqual([
       "session",
-      "text_start",
-      "text_delta",
-      "text_end",
+      "assistant_message",
       "complete",
     ]);
     expect(seen[0]).toEqual({ type: "session", session_id: "claude-sess-1" });
-    expect(seen[2]).toMatchObject({ type: "text_delta", text: "hello from claude" });
-    expect(seen[4]).toMatchObject({ type: "complete", result: "hello from claude" });
+    expect(seen[1]).toMatchObject({ type: "assistant_message", content: "hello from claude" });
+    expect(seen[2]).toMatchObject({ type: "complete", result: "hello from claude" });
   });
 
   it("client error event를 fatal error SSE로 전달하고 complete를 강제하지 않는다", async () => {
@@ -355,14 +353,12 @@ describe("ClaudeEngineAdapter fake client flow", () => {
     expect(injected).toEqual(["injected while waiting"]);
     expect(seen.map((event) => event.type)).toEqual([
       "session",
-      "text_start",
-      "text_delta",
-      "text_end",
+      "assistant_message",
       "complete",
     ]);
-    expect(seen[2]).toMatchObject({
-      type: "text_delta",
-      text: "injected while waiting",
+    expect(seen[1]).toMatchObject({
+      type: "assistant_message",
+      content: "injected while waiting",
     });
   });
 

@@ -83,9 +83,8 @@ class SessionBroadcaster(BaseSessionBroadcaster):
     async def emit_session_updated(self, task: Task) -> int:
         """세션 업데이트 이벤트 발행.
 
-        push 본문 정본은 last_assistant_text (text_delta가 누적해서 마지막에
-        block.text 전체로 남는 어시스턴트 응답). last_progress_text는 진행 안내
-        ("도구 실행 중...")라 본문에 부적합 — fallback으로만 둔다.
+        push 본문 정본은 last_assistant_text (완료 시점의 assistant_message 본문).
+        last_progress_text는 진행 안내("도구 실행 중...")라 본문에 부적합 — fallback으로만 둔다.
         task가 COMPLETED/ERROR로 전환되는 시점이 push 발사 트리거이므로
         이 시점의 last_assistant_text가 가장 의미 있는 본문이다.
         """

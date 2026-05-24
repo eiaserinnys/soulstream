@@ -6,34 +6,16 @@
  *   - `item.updated`는 *상태 갱신* (delta append 아님) — text 그대로 운반
  *
  * agent_message 매핑:
- *   - item.started   → text_start (text 필드 없음)
- *   - item.updated   → text_delta (text=item.text 누적값)
- *   - item.completed → text_start + text_delta(text=item.text) + text_end
- *                       (text 비어 있으면 text="" 그대로 발행 — claude `message_processor.py`
- *                        _handle_text 정합으로 빈 텍스트도 3-시퀀스 유지)
+ *   - item.started   → text_start (live transport only)
+ *   - item.updated   → text_delta (live transport only, text=item.text 누적값)
+ *   - item.completed → assistant_message (durable semantic final)
  *
  * codex-rs CLI `--experimental-json` 실측(2026-05-17, 분석 캐시
  * `20260517-1220-codex-ts-subscribe-events.md` §A): item.started·item.updated가 *발생하지 않는다*.
  * 짧건 길건 agent_message의 텍스트는 *오로지* `item.completed.item.text` 하나에 담겨 온다.
  *
- * 따라서 item.completed에서 *세 이벤트 모두를 합성*한다 (분석 캐시
- * `20260517-1325-codex-ts-sse-ui-routing.md`):
- *
- *   - soul-ui `tree-placer.handleTextStart`(`packages/soul-ui/src/stores/tree-placer.ts:157-179`)는
- *     text_start 수신 시 텍스트 노드를 생성하고 ctx.activeTextTarget을 *설정*한다.
- *   - 후속 text_delta·text_end는 activeTextTarget이 *없으면* silent drop된다
- *     (`packages/soul-ui/src/stores/node-factory.ts:296-312`).
- *   - claude 백엔드 정본 시퀀스(`soul-server/src/soul_server/engine/types.py:90`
- *     "text_start → text_delta → text_end")와 정합 — 백엔드 간 wire 대칭성 회복.
- *
- * 세 페이로드는 동일 timestamp로 묶여 atomic 의미를 보존한다 (DB 라이브 claude 샘플
- * `sess-20260322110817-20ec409b`이 같은 패턴: 동일 ts). `text_delta`는 *누적값*을 운반하므로
- * `event_persistence.ts:117-124` lastAssistantText 누적 모델과 정합.
- *
- * 미래에 codex SDK가 progressive streaming을 emit하기 시작하면 item.updated의 text_delta가
- * 이미 발행된 상태에서 item.completed의 합성 text_delta가 *동일 누적값*을 한 번 더 발행한다.
- * text_delta는 누적값을 전체로 덮어쓰는 모델이므로 클라이언트 표시는 변하지 않고, DB에
- * 한 행이 추가될 뿐이다 (수용 가능한 운영 비용). 정밀 dedup은 후속 카드.
+ * 따라서 item.completed에서 완료 말풍선의 durable 정본인 assistant_message를 발행한다.
+ * text_start/text_delta/text_end는 생성 중 live transport에서만 쓰며 DB history에는 저장하지 않는다.
  *
  * Python wire 정본: `soul-server/src/soul_server/models/schemas.py` L155-174.
  * 모든 payload에 `timestamp: Date.now()/1000` (Unix epoch sec, Python 정합).
@@ -100,12 +82,18 @@ function parseToolInput(value: unknown): unknown {
   }
 }
 
-function emitTextSequence(text: string): SSEEventPayload[] {
+function emitAssistantMessage(
+  text: string,
+  extra: Record<string, unknown> = {},
+): SSEEventPayload[] {
   const ts = nowEpochSec();
   return [
-    { type: "text_start", timestamp: ts } as SSEEventPayload,
-    { type: "text_delta", text, timestamp: ts } as SSEEventPayload,
-    { type: "text_end", timestamp: ts } as SSEEventPayload,
+    {
+      type: "assistant_message",
+      content: text,
+      timestamp: ts,
+      ...extra,
+    } as SSEEventPayload,
   ];
 }
 
@@ -186,10 +174,12 @@ export function mapThreadEvent(event: ThreadEvent | RawCodexEvent): SSEEventPayl
 function mapItemStarted(item: ThreadItem | RawCodexItem | unknown): SSEEventPayload[] {
   switch (typeOf(item)) {
     case "agent_message":
-      // text_start — Python 정본은 text 필드 없음 (schemas.py L155-159).
       return [
         {
           type: "text_start",
+          _live_only: true,
+          raw_event_type: "item.started",
+          item_id: fieldString(item, "id"),
           timestamp: nowEpochSec(),
         } as SSEEventPayload,
       ];
@@ -272,6 +262,9 @@ function mapItemUpdated(item: ThreadItem | RawCodexItem | unknown): SSEEventPayl
       {
         type: "text_delta",
         text: fieldString(item, "text") ?? "",
+        _live_only: true,
+        raw_event_type: "item.updated",
+        item_id: fieldString(item, "id"),
         timestamp: nowEpochSec(),
       } as SSEEventPayload,
     ];
@@ -283,23 +276,13 @@ function mapItemUpdated(item: ThreadItem | RawCodexItem | unknown): SSEEventPayl
 function mapItemCompleted(item: ThreadItem | RawCodexItem | unknown): SSEEventPayload[] {
   switch (typeOf(item)) {
     case "agent_message": {
-      // codex-rs는 progressive streaming(item.started/item.updated)을 emit하지 않는다
-      // (분석 캐시 `20260517-1220-codex-ts-subscribe-events.md` §A 실측). 그러나 soul-ui
-      // 클라이언트의 tree-placer.handleTextStart(`packages/soul-ui/src/stores/tree-placer.ts:157-179`)는
-      // text_start 수신 시 텍스트 노드를 생성하고 ctx.activeTextTarget을 *설정*한다.
-      // 후속 text_delta·text_end는 activeTextTarget이 *없으면* silent drop된다
-      // (`packages/soul-ui/src/stores/node-factory.ts:296-312`).
-      //
-      // 따라서 claude 백엔드 정본 시퀀스(`soul-server/src/soul_server/engine/types.py:90`
-      // "text_start → text_delta → text_end")와 정합되도록 item.completed에서 *세 이벤트
-      // 모두를 합성*한다. claude는 `message_processor.py:239-271 _handle_text`에서 빈 텍스트
-      // 분기 없이 3-시퀀스를 무조건 emit하므로(`text=""`도 포함), codex도 동일하게 emit하여
-      // 백엔드 간 비대칭을 남기지 않는다 (design-principles §9 일관성·대칭성 완전 정합).
-      //
-      // 세 페이로드는 동일 timestamp로 묶여 atomic 의미를 보존한다 (DB 라이브 claude 샘플
-      // `sess-20260322110817-20ec409b`: 동일 ts 1774177745.579).
-      return emitTextSequence(
+      const itemId = isRecord(item) ? fieldString(item, "id") : undefined;
+      return emitAssistantMessage(
         isRecord(item) ? fieldString(item, "text") ?? "" : "",
+        {
+          raw_event_type: "item.completed",
+          ...(itemId ? { item_id: itemId, _final_for_live_stream: true } : {}),
+        },
       );
     }
 
@@ -479,7 +462,9 @@ function mapResponseMessage(payload: RawCodexItem): SSEEventPayload[] {
     })
     .join("");
 
-  return text.length > 0 ? emitTextSequence(text) : [];
+  return text.length > 0
+    ? emitAssistantMessage(text, { raw_event_type: "response_item.message" })
+    : [];
 }
 
 function mapResponseReasoning(payload: RawCodexItem): SSEEventPayload[] {

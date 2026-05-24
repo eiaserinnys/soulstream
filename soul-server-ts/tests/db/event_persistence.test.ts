@@ -46,20 +46,20 @@ function makeMockBroadcaster() {
 const silentLogger = pino({ level: "silent" });
 
 describe("extractPreviewText", () => {
-  it("text_delta는 text 필드", () => {
+  it("text_delta는 live transport라 last_message preview에 쓰지 않는다", () => {
     expect(
       extractPreviewText({ type: "text_delta", text: "hello" } as SSEEventPayload),
-    ).toBe("hello");
+    ).toBe("");
   });
   it("thinking은 thinking 필드", () => {
     expect(
       extractPreviewText({ type: "thinking", thinking: "..." } as SSEEventPayload),
     ).toBe("...");
   });
-  it("complete은 result 필드", () => {
+  it("complete은 turn metadata라 last_message preview에 쓰지 않는다", () => {
     expect(
       extractPreviewText({ type: "complete", result: "done" } as SSEEventPayload),
-    ).toBe("done");
+    ).toBe("");
   });
   it("error는 message 필드", () => {
     expect(
@@ -100,10 +100,10 @@ describe("extractPreviewText", () => {
 });
 
 describe("extractSearchableText", () => {
-  it("preview와 같은 텍스트", () => {
+  it("text_delta는 durable 검색 대상이 아니다", () => {
     expect(
       extractSearchableText({ type: "text_delta", text: "x" } as SSEEventPayload),
-    ).toBe("x");
+    ).toBe("");
   });
   it("app-server live-only delta는 생성 중 wire 전용이라 검색 대상에서 제외한다", () => {
     expect(
@@ -149,7 +149,20 @@ describe("EventPersistence.persistEvent", () => {
     expect(isLiveOnlyEvent(event)).toBe(true);
     expect(shouldPersistEvent(event)).toBe(false);
     await expect(ep.persistEvent("sess-1", event)).rejects.toThrow(
-      /live-only events must not be persisted/,
+      /transient live events must not be persisted/,
+    );
+    expect(appendEvent).not.toHaveBeenCalled();
+  });
+
+  it("text lifecycle event는 _live_only가 없어도 DB 저장 대상이 아니다", async () => {
+    const { db, appendEvent } = makeMockDB();
+    const { broadcaster } = makeMockBroadcaster();
+    const ep = new EventPersistence(db, broadcaster, silentLogger);
+    const event = { type: "text_delta", text: "partial" } as SSEEventPayload;
+
+    expect(shouldPersistEvent(event)).toBe(false);
+    await expect(ep.persistEvent("sess-1", event)).rejects.toThrow(
+      /transient live events must not be persisted/,
     );
     expect(appendEvent).not.toHaveBeenCalled();
   });
@@ -158,13 +171,17 @@ describe("EventPersistence.persistEvent", () => {
     const { db, appendEvent } = makeMockDB();
     const { broadcaster } = makeMockBroadcaster();
     const ep = new EventPersistence(db, broadcaster, silentLogger);
-    const event = { type: "text_delta", text: "hi", timestamp: 1731700000 } as SSEEventPayload;
+    const event = {
+      type: "assistant_message",
+      content: "hi",
+      timestamp: 1731700000,
+    } as unknown as SSEEventPayload;
     const id = await ep.persistEvent("sess-1", event);
     expect(id).toBe(42);
     expect(appendEvent).toHaveBeenCalledTimes(1);
     const arg = appendEvent.mock.calls[0][0];
     expect(arg.sessionId).toBe("sess-1");
-    expect(arg.eventType).toBe("text_delta");
+    expect(arg.eventType).toBe("assistant_message");
     expect(JSON.parse(arg.payload)).toEqual(event);
     expect(arg.searchableText).toBe("hi");
     expect(arg.createdAt).toBeInstanceOf(Date);
@@ -182,7 +199,7 @@ describe("EventPersistence.persistEvent", () => {
 });
 
 describe("EventPersistence.handleSideEffects", () => {
-  it("text_delta는 last_message 갱신 + task.lastAssistantText 누적", async () => {
+  it("text_delta는 last_message 없이 task.lastAssistantText만 갱신", async () => {
     const { db, updateLastMessage } = makeMockDB();
     const { broadcaster } = makeMockBroadcaster();
     const ep = new EventPersistence(db, broadcaster, silentLogger);
@@ -192,11 +209,7 @@ describe("EventPersistence.handleSideEffects", () => {
       { type: "text_delta", text: "hello", timestamp: 1731700000 } as SSEEventPayload,
       task,
     );
-    expect(updateLastMessage).toHaveBeenCalledTimes(1);
-    const arg = updateLastMessage.mock.calls[0][1];
-    expect(arg.type).toBe("text_delta");
-    expect(arg.preview).toBe("hello");
-    expect(typeof arg.timestamp).toBe("string");
+    expect(updateLastMessage).not.toHaveBeenCalled();
     expect(task.lastAssistantText).toBe("hello");
   });
 
@@ -333,7 +346,11 @@ describe("EventPersistence.handleSideEffects", () => {
     const long = "a".repeat(250);
     await ep.handleSideEffects(
       "sess-1",
-      { type: "text_delta", text: long, timestamp: 1 } as SSEEventPayload,
+      {
+        type: "assistant_message",
+        content: long,
+        timestamp: 1,
+      } as unknown as SSEEventPayload,
       makeTask(),
     );
     const arg = updateLastMessage.mock.calls[0][1];
@@ -349,7 +366,11 @@ describe("EventPersistence.handleSideEffects", () => {
     await expect(
       ep.handleSideEffects(
         "sess-1",
-        { type: "text_delta", text: "x", timestamp: 1 } as SSEEventPayload,
+        {
+          type: "assistant_message",
+          content: "x",
+          timestamp: 1,
+        } as unknown as SSEEventPayload,
         makeTask(),
       ),
     ).rejects.toThrow(/db down/);
@@ -373,7 +394,11 @@ describe("EventPersistence.handleSideEffects", () => {
     });
     await ep.handleSideEffects(
       "sess-1",
-      { type: "text_delta", text: "hello world", timestamp: 1731700000 } as SSEEventPayload,
+      {
+        type: "assistant_message",
+        content: "hello world",
+        timestamp: 1731700000,
+      } as unknown as SSEEventPayload,
       task,
     );
 
@@ -383,7 +408,7 @@ describe("EventPersistence.handleSideEffects", () => {
     expect(args[1]).toBe("running");                   // status
     expect(typeof args[2]).toBe("string");             // updatedAt (ISO)
     expect(args[3]).toEqual({                          // lastMessage
-      type: "text_delta",
+      type: "assistant_message",
       preview: "hello world",
       timestamp: args[2],                              // DB 갱신과 같은 ts
     });
@@ -422,7 +447,11 @@ describe("EventPersistence.handleSideEffects", () => {
     await expect(
       ep.handleSideEffects(
         "sess-1",
-        { type: "text_delta", text: "hello", timestamp: 1 } as SSEEventPayload,
+        {
+          type: "assistant_message",
+          content: "hello",
+          timestamp: 1,
+        } as unknown as SSEEventPayload,
         task,
       ),
     ).resolves.toBeUndefined();

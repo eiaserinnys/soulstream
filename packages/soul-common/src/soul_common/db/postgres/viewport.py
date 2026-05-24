@@ -29,8 +29,6 @@ TIMELINE_EVENT_TYPES: tuple[str, ...] = (
     "thinking",
     "tool_start",
     "tool_result",
-    "complete",
-    "result",
     "error",
     "assistant_error",
     "system",
@@ -51,6 +49,38 @@ TIMELINE_EVENT_TYPES: tuple[str, ...] = (
     "realtime_status",
     "realtime_transcript",
 )
+
+LEGACY_COMPLETE_TIMELINE_EVENT_TYPES: tuple[str, ...] = (
+    *TIMELINE_EVENT_TYPES,
+    "complete",
+)
+
+
+def _synthesize_legacy_complete_messages(messages: list[dict]) -> list[dict]:
+    """complete.result-only legacy rows become assistant_message timeline rows."""
+    out: list[dict] = []
+    for message in messages:
+        if message.get("event_type") != "complete":
+            out.append(message)
+            continue
+        payload = _payload_dict(message.get("payload"))
+        result = payload.get("result")
+        if not isinstance(result, str) or not result:
+            continue
+        synthesized = dict(message)
+        synthesized["event_type"] = "assistant_message"
+        synthesized["payload"] = {
+            "type": "assistant_message",
+            "content": result,
+            "legacy_source_type": "complete",
+            **({"timestamp": payload["timestamp"]} if "timestamp" in payload else {}),
+            **(
+                {"claude_session_id": payload["claude_session_id"]}
+                if "claude_session_id" in payload else {}
+            ),
+        }
+        out.append(synthesized)
+    return out
 
 
 def _decode_messages_cursor(before: str | datetime) -> tuple[datetime, int | None]:
@@ -356,9 +386,26 @@ class PostgresViewportMixin:
         """기본 채팅 UI용 semantic timeline을 페이지네이션한다.
 
         raw `/messages`와 달리 progress/debug/text lifecycle 같은 비가시 이벤트를
-        SQL 단계에서 제외한다. tool_result가 페이지 경계에 걸리면 같은
-        tool_use_id의 tool_start를 보강하여 기존 tool UI 매칭을 유지한다.
+        SQL 단계에서 제외한다. legacy 세션에 assistant_message가 전혀 없고
+        complete.result만 남은 경우에만 complete를 assistant_message로 합성한다.
+        tool_result가 페이지 경계에 걸리면 같은 tool_use_id의 tool_start를 보강하여
+        기존 tool UI 매칭을 유지한다.
         """
+        has_assistant_message = await self._pool.fetchval(
+            """
+            SELECT EXISTS (
+                SELECT 1 FROM events
+                WHERE session_id = $1 AND event_type = 'assistant_message'
+                LIMIT 1
+            )
+            """,
+            session_id,
+        )
+        timeline_event_types = (
+            TIMELINE_EVENT_TYPES
+            if has_assistant_message else LEGACY_COMPLETE_TIMELINE_EVENT_TYPES
+        )
+
         if before is not None:
             before_dt, before_id = _decode_messages_cursor(before)
             if before_id is None:
@@ -372,7 +419,7 @@ class PostgresViewportMixin:
                     ORDER BY created_at DESC, id DESC
                     LIMIT $4
                     """,
-                    session_id, list(TIMELINE_EVENT_TYPES), before_dt, limit + 1,
+                    session_id, list(timeline_event_types), before_dt, limit + 1,
                 )
             else:
                 rows = await self._pool.fetch(
@@ -388,7 +435,7 @@ class PostgresViewportMixin:
                     ORDER BY created_at DESC, id DESC
                     LIMIT $5
                     """,
-                    session_id, list(TIMELINE_EVENT_TYPES), before_dt, before_id,
+                    session_id, list(timeline_event_types), before_dt, before_id,
                     limit + 1,
                 )
         else:
@@ -401,7 +448,7 @@ class PostgresViewportMixin:
                 ORDER BY created_at DESC, id DESC
                 LIMIT $3
                 """,
-                session_id, list(TIMELINE_EVENT_TYPES), limit + 1,
+                session_id, list(timeline_event_types), limit + 1,
             )
 
         has_more = len(rows) > limit
@@ -438,7 +485,10 @@ class PostgresViewportMixin:
                     seen_ids.add(row_id)
 
         all_rows.sort(key=lambda r: (r["created_at"], r["id"]), reverse=True)
-        return _serialize_timeline_rows(all_rows), next_cursor
+        messages = _serialize_timeline_rows(all_rows)
+        if not has_assistant_message:
+            messages = _synthesize_legacy_complete_messages(messages)
+        return messages, next_cursor
 
     async def read_timeline_trace(
         self,

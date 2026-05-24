@@ -893,6 +893,7 @@ class TestGetSessionSummary:
         assert PREVIEW_FIELD_MAP["complete"] == "result"
         assert PREVIEW_FIELD_MAP["error"] == "message"
         assert PREVIEW_FIELD_MAP["thinking"] == "thinking"
+        assert PREVIEW_FIELD_MAP["assistant_message"] == "content"
         assert PREVIEW_FIELD_MAP["text_delta"] == "text"
         assert PREVIEW_FIELD_MAP["away_summary"] == "content"
 

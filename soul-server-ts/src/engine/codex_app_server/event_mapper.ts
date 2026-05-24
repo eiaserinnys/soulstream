@@ -221,9 +221,12 @@ function mapRawResponseItem(
     if (!text) return [];
     const timestamp = nowEpochSec();
     return [
-      { type: "text_start", timestamp, ...rawContext(context.method, context) },
-      { type: "text_delta", text, timestamp, ...rawContext(context.method, context) },
-      { type: "text_end", timestamp, ...rawContext(context.method, context) },
+      {
+        type: "assistant_message",
+        content: text,
+        timestamp,
+        ...rawContext(context.method, context),
+      },
     ] as SSEEventPayload[];
   }
   if (type === "reasoning") {

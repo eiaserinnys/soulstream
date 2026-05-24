@@ -20,6 +20,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+TRANSIENT_TEXT_EVENT_TYPES = {"text_start", "text_delta", "text_end"}
+TURN_METADATA_EVENT_TYPES = {"complete", "result"}
+
 
 class EventPersistence:
     """이벤트 영속화 및 DB 부수효과 처리 헬퍼.
@@ -44,6 +47,8 @@ class EventPersistence:
         if self._db is None:
             return None
         event_type = event_dict.get("type", "")
+        if event_type in TRANSIENT_TEXT_EVENT_TYPES:
+            return None
         payload = json.dumps(event_dict, ensure_ascii=False)
         searchable = extract_searchable_text(event_dict)
         ts = event_dict.get("timestamp")
@@ -74,6 +79,8 @@ class EventPersistence:
             return
 
         event_type = event_dict.get("type", "")
+        if event_type in TRANSIENT_TEXT_EVENT_TYPES or event_type in TURN_METADATA_EVENT_TYPES:
+            return
 
         # user_message 전용: text 또는 messages에서 preview 추출
         if event_type == "user_message":

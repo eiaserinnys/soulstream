@@ -87,7 +87,7 @@ class ThinkingEngineEvent(EngineEvent):
 
 @dataclass
 class TextDeltaEngineEvent(EngineEvent):
-    """텍스트 블록 이벤트 (text_start → text_delta → text_end 시퀀스 생성)"""
+    """생성 중 live transport 텍스트 이벤트 (text_start → text_delta → text_end)."""
 
     text: str = ""
 
@@ -112,6 +112,21 @@ class TextDeltaEngineEvent(EngineEvent):
                 timestamp=self.timestamp,
             ),
         ]
+
+
+@dataclass
+class AssistantMessageEngineEvent(EngineEvent):
+    """완료된 assistant 말풍선의 durable semantic 이벤트."""
+
+    content: str = ""
+
+    def to_sse(self) -> list[BaseModel]:
+        from soul_server.models.schemas import AssistantMessageSSEEvent
+        return [AssistantMessageSSEEvent(
+            content=self.content,
+            parent_event_id=self.parent_event_id,
+            timestamp=self.timestamp,
+        )]
 
 
 @dataclass

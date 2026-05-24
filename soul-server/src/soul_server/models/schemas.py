@@ -174,6 +174,14 @@ class TextEndSSEEvent(BaseModel):
     parent_event_id: Optional[int] = None
 
 
+class AssistantMessageSSEEvent(BaseModel):
+    """완료된 assistant 말풍선의 semantic 정본 이벤트"""
+    type: str = "assistant_message"
+    timestamp: float
+    content: str
+    parent_event_id: Optional[int] = None
+
+
 class ToolStartSSEEvent(BaseModel):
     """도구 호출 시작 이벤트"""
     type: str = "tool_start"

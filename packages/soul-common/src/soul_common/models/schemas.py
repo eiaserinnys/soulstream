@@ -28,6 +28,7 @@ class SSEEventType(str, Enum):
     TEXT_START = "text_start"
     TEXT_DELTA = "text_delta"
     TEXT_END = "text_end"
+    ASSISTANT_MESSAGE = "assistant_message"
     TOOL_START = "tool_start"
     TOOL_RESULT = "tool_result"
     RESULT = "result"

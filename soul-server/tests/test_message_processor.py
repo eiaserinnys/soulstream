@@ -8,10 +8,10 @@ from unittest.mock import AsyncMock
 from soul_server.claude.agent_runner import MessageState
 from soul_server.claude.message_processor import MessageProcessor
 from soul_server.engine.types import (
+    AssistantMessageEngineEvent,
     AwaySummaryEngineEvent,
     PromptSuggestionEngineEvent,
     ResultEngineEvent,
-    TextDeltaEngineEvent,
     ThinkingEngineEvent,
     ToolResultEngineEvent,
     ToolStartEngineEvent,
@@ -407,7 +407,7 @@ class TestTextBlock:
     """TextBlock 처리 테스트"""
 
     @pytest.mark.asyncio
-    async def test_text_delta_event_emitted(self):
+    async def test_assistant_message_event_emitted(self):
         events = []
         on_event = AsyncMock(side_effect=lambda e: events.append(e))
         proc, state = _make_processor(on_event=on_event)
@@ -417,8 +417,8 @@ class TestTextBlock:
 
         assert len(events) == 1
         event = events[0]
-        assert isinstance(event, TextDeltaEngineEvent)
-        assert event.text == "hello world"
+        assert isinstance(event, AssistantMessageEngineEvent)
+        assert event.content == "hello world"
 
     @pytest.mark.asyncio
     async def test_on_progress_called(self):

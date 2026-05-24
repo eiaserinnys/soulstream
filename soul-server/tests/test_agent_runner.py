@@ -1925,9 +1925,9 @@ class TestClaudeRunnerPooled:
 class TestEngineEventCallback:
     """on_event 콜백을 통한 세분화 이벤트 발행 테스트"""
 
-    async def test_text_delta_event_emitted(self):
-        """TextBlock -> TEXT_DELTA 이벤트가 발행되는지 확인"""
-        from soul_server.engine.types import EngineEvent, TextDeltaEngineEvent
+    async def test_assistant_message_event_emitted(self):
+        """TextBlock -> ASSISTANT_MESSAGE 이벤트가 발행되는지 확인"""
+        from soul_server.engine.types import AssistantMessageEngineEvent, EngineEvent
 
         runner = ClaudeRunner()
         events = []
@@ -1946,9 +1946,9 @@ class TestEngineEventCallback:
                     with patch("soul_server.claude.message_processor.TextBlock", MockTextBlock):
                         await runner.run("테스트", on_event=on_event)
 
-        text_events = [e for e in events if isinstance(e, TextDeltaEngineEvent)]
-        assert len(text_events) == 1
-        assert text_events[0].text == "응답 중..."
+        assistant_events = [e for e in events if isinstance(e, AssistantMessageEngineEvent)]
+        assert len(assistant_events) == 1
+        assert assistant_events[0].content == "응답 중..."
 
     async def test_tool_start_event_emitted(self):
         """ToolUseBlock -> TOOL_START 이벤트가 발행되는지 확인"""

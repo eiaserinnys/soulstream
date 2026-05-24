@@ -106,7 +106,7 @@ describe("Codex raw response_item 매핑 (SDK d.ts 밖 이벤트)", () => {
     });
   });
 
-  it("response_item.message assistant output → text_start + text_delta + text_end", () => {
+  it("response_item.message assistant output → assistant_message", () => {
     const sse = mapThreadEvent({
       type: "response_item",
       payload: {
@@ -116,12 +116,12 @@ describe("Codex raw response_item 매핑 (SDK d.ts 밖 이벤트)", () => {
       },
     } as never);
 
-    expect(sse.map((p) => (p as { type: string }).type)).toEqual([
-      "text_start",
-      "text_delta",
-      "text_end",
-    ]);
-    expect(sse[1]).toMatchObject({ text: "raw assistant text" });
+    expect(sse).toHaveLength(1);
+    expect(sse[0]).toMatchObject({
+      type: "assistant_message",
+      content: "raw assistant text",
+      raw_event_type: "response_item.message",
+    });
   });
 
   it("알 수 없는 top-level event/item은 no-op 배열로 격리한다", () => {
@@ -136,7 +136,7 @@ describe("Codex raw response_item 매핑 (SDK d.ts 밖 이벤트)", () => {
 });
 
 describe("item.started 매핑 (B-3 streaming 활성)", () => {
-  it("agent_message → text_start (text 필드 없음, timestamp 박힘)", () => {
+  it("agent_message → live-only text_start (text 필드 없음, timestamp 박힘)", () => {
     const sse = mapThreadEvent({
       type: "item.started",
       item: { id: "i1", type: "agent_message", text: "" },
@@ -144,6 +144,8 @@ describe("item.started 매핑 (B-3 streaming 활성)", () => {
     expect(sse).toHaveLength(1);
     const ev = sse[0] as Record<string, unknown>;
     expect(ev.type).toBe("text_start");
+    expect(ev._live_only).toBe(true);
+    expect(ev.item_id).toBe("i1");
     expect(ev.text).toBeUndefined();  // Python schemas.py L155-159 정합
     expect(typeof ev.timestamp).toBe("number");
   });
@@ -259,6 +261,8 @@ describe("item.updated 매핑 (B-3 streaming)", () => {
     expect(sse[0]).toMatchObject({
       type: "text_delta",
       text: "Hello partial",
+      _live_only: true,
+      item_id: "i1",
     });
     expect(typeof (sse[0] as { timestamp: number }).timestamp).toBe("number");
   });
@@ -298,45 +302,29 @@ describe("item.updated 매핑 (B-3 streaming)", () => {
 });
 
 describe("item.completed 매핑", () => {
-  it("agent_message (text 있음) → text_start + text_delta(text) + text_end — claude 정본 시퀀스 정합", () => {
-    // 분석 캐시 `20260517-1325-codex-ts-sse-ui-routing.md`:
-    // soul-ui tree-placer.handleTextStart가 text_start 수신 시 activeTextTarget 설정.
-    // 후속 text_delta·text_end가 activeTextTarget을 통해 같은 노드에 누적·완료.
-    // text_start 없이는 두 이벤트 모두 silent drop (`node-factory.ts:296-312`).
-    // 따라서 codex-rs가 item.started를 emit하지 않을 때 mapper가 text_start까지
-    // 합성해야 채팅 UI에 본문이 표시된다 — claude `engine/types.py:90` 정본 시퀀스와 정합.
+  it("agent_message (text 있음) → assistant_message durable final", () => {
     const sse = mapThreadEvent({
       type: "item.completed",
       item: { id: "i1", type: "agent_message", text: "Hello world" },
     });
-    expect(sse).toHaveLength(3);
-    const startEv = sse[0] as Record<string, unknown>;
-    expect(startEv.type).toBe("text_start");
-    expect(startEv.text).toBeUndefined();  // Python schemas.py L155-159 정합
-    expect(typeof startEv.timestamp).toBe("number");
-    expect(sse[1]).toMatchObject({
-      type: "text_delta",
-      text: "Hello world",
+    expect(sse).toHaveLength(1);
+    expect(sse[0]).toMatchObject({
+      type: "assistant_message",
+      content: "Hello world",
+      raw_event_type: "item.completed",
+      item_id: "i1",
+      _final_for_live_stream: true,
     });
-    const endEv = sse[2] as Record<string, unknown>;
-    expect(endEv.type).toBe("text_end");
-    expect(endEv.text).toBeUndefined();  // Python schemas.py L170-174 정합
-    expect(endEv.item_id).toBeUndefined();
-    expect(typeof endEv.timestamp).toBe("number");
+    expect(typeof (sse[0] as { timestamp: number }).timestamp).toBe("number");
   });
 
-  it("agent_message (text 빈 문자열) → text_start+text_delta(text='')+text_end — claude 정본 정합 (빈 텍스트도 3-시퀀스)", () => {
-    // claude `message_processor.py:239-271 _handle_text`는 빈 텍스트 분기 없이 무조건
-    // TextDeltaEngineEvent(text=block.text)를 emit → to_sse가 항상 [text_start, text_delta(text=""), text_end] 3건.
-    // codex도 동일하게 발행하여 백엔드 비대칭을 남기지 않는다 (code-reviewer 권고 옵션 A).
+  it("agent_message (text 빈 문자열) → assistant_message content=''", () => {
     const sse = mapThreadEvent({
       type: "item.completed",
       item: { id: "i1", type: "agent_message", text: "" },
     });
-    expect(sse).toHaveLength(3);
-    expect((sse[0] as { type: string }).type).toBe("text_start");
-    expect(sse[1]).toMatchObject({ type: "text_delta", text: "" });
-    expect((sse[2] as { type: string }).type).toBe("text_end");
+    expect(sse).toHaveLength(1);
+    expect(sse[0]).toMatchObject({ type: "assistant_message", content: "" });
   });
 
   it("agent_message — 한글·이모지·multiline verbatim 보존 (인코딩 변조 금지)", () => {
@@ -345,20 +333,17 @@ describe("item.completed 매핑", () => {
       type: "item.completed",
       item: { id: "i1", type: "agent_message", text },
     });
-    expect(sse).toHaveLength(3);
-    expect((sse[1] as { text: string }).text).toBe(text);
+    expect(sse).toHaveLength(1);
+    expect((sse[0] as { content: string }).content).toBe(text);
   });
 
-  it("agent_message — text_start·text_delta·text_end의 timestamp는 모두 동일 (atomic 묶음, claude 정본 정합)", () => {
+  it("agent_message — assistant_message timestamp를 가진다", () => {
     const sse = mapThreadEvent({
       type: "item.completed",
       item: { id: "i1", type: "agent_message", text: "x" },
     });
     const t0 = (sse[0] as { timestamp: number }).timestamp;
-    const t1 = (sse[1] as { timestamp: number }).timestamp;
-    const t2 = (sse[2] as { timestamp: number }).timestamp;
-    expect(t0).toBe(t1);
-    expect(t1).toBe(t2);
+    expect(typeof t0).toBe("number");
   });
 
   it("reasoning → thinking (text + signature='')", () => {
@@ -531,24 +516,18 @@ describe("item.completed 매핑", () => {
 });
 
 describe("claude·codex wire 대칭성 (백엔드 간 정합 가드)", () => {
-  it("agent_message 텍스트 블록은 claude 정본 시퀀스 'text_start → text_delta → text_end'와 동일 type 순서로 emit한다", () => {
-    // Python 정본: `soul-server/src/soul_server/engine/types.py:90`
-    //   """텍스트 블록 이벤트 (text_start → text_delta → text_end 시퀀스 생성)"""
-    // DB 라이브 claude 샘플 (`sess-20260322110817-20ec409b`)도 동일 순서를 따른다.
-    // codex 매퍼가 이 시퀀스를 정합 emit하지 않으면 다운스트림(soul-ui, DB 검색, dashboard)에서
-    // 백엔드 비대칭으로 인한 결함이 누적된다 (분석 캐시 `20260517-1325` §A 가설 S3 채택 근거).
-    const CLAUDE_CANONICAL_TEXT_SEQUENCE = [
-      "text_start",
-      "text_delta",
-      "text_end",
-    ] as const;
-
+  it("completed agent_message는 durable assistant_message 단일 이벤트로 emit한다", () => {
     const sse = mapThreadEvent({
       type: "item.completed",
       item: { id: "i1", type: "agent_message", text: "non-empty content" },
     });
     const codexTypeSequence = sse.map((p) => (p as { type: string }).type);
-    expect(codexTypeSequence).toEqual([...CLAUDE_CANONICAL_TEXT_SEQUENCE]);
+    expect(codexTypeSequence).toEqual(["assistant_message"]);
+    expect(sse[0]).toMatchObject({
+      type: "assistant_message",
+      content: "non-empty content",
+      _final_for_live_stream: true,
+    });
   });
 });
 

@@ -71,6 +71,9 @@ function makeMocks() {
     if (event.type === "text_delta" && typeof event.text === "string") {
       task.lastAssistantText = event.text;
     }
+    if (event.type === "assistant_message" && typeof event.content === "string") {
+      task.lastAssistantText = event.content;
+    }
   });
   const persistence = { persistEvent, handleSideEffects } as unknown as EventPersistence;
 
@@ -106,12 +109,13 @@ async function waitFor(predicate: () => boolean, timeoutMs = 1000): Promise<void
 }
 
 describe("TaskExecutor.startExecution", () => {
-  it("정상 흐름: 모든 이벤트 persist + broadcast + side effect + 완료 후 session_updated", async () => {
+  it("정상 흐름: durable 이벤트만 persist + 모든 이벤트 broadcast/side effect + 완료 후 session_updated", async () => {
     const mocks = makeMocks();
     const events: SSEEventPayload[] = [
       { type: "session", session_id: "thr-1" } as SSEEventPayload,
       { type: "text_delta", text: "hello", timestamp: 1 } as SSEEventPayload,
       { type: "text_end", timestamp: 2 } as SSEEventPayload,
+      { type: "assistant_message", content: "hello", timestamp: 3 } as SSEEventPayload,
     ];
     const engine = makeFakeEngine(events);
     const factory = vi.fn(() => engine);
@@ -127,10 +131,11 @@ describe("TaskExecutor.startExecution", () => {
     executor.startExecution(task, agent);
     await task.executionPromise;
 
-    // B-5: turn 진입 *전* user_message 영속화(1건) + 엔진 이벤트(3건) = 총 4건.
-    expect(mocks.persistEvent).toHaveBeenCalledTimes(4);
-    expect(mocks.emitEventEnvelope).toHaveBeenCalledTimes(4);
-    expect(mocks.handleSideEffects).toHaveBeenCalledTimes(4);
+    // B-5: user_message + session + assistant_message만 durable 저장.
+    // text_delta/text_end는 live transport 전용이라 persist하지 않는다.
+    expect(mocks.persistEvent).toHaveBeenCalledTimes(3);
+    expect(mocks.emitEventEnvelope).toHaveBeenCalledTimes(5);
+    expect(mocks.handleSideEffects).toHaveBeenCalledTimes(5);
 
     // 첫 persistEvent는 user_message 영속화
     expect(mocks.persistEvent.mock.calls[0][1]).toMatchObject({
@@ -139,14 +144,14 @@ describe("TaskExecutor.startExecution", () => {
     });
 
     expect(task.status).toBe("completed");
-    expect(task.lastEventId).toBe(4);  // user_message(1) + 엔진 3건 = 4
+    expect(task.lastEventId).toBe(3);
     expect(task.codexThreadId).toBe("thr-1");
     expect(task.completedAt).toBeInstanceOf(Date);
     expect(task.engine).toBeUndefined();
 
     expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", {
       status: "completed",
-      last_event_id: 4,
+      last_event_id: 3,
     });
     expect(mocks.emitSessionUpdated).toHaveBeenCalledWith(task);
   });
@@ -291,7 +296,7 @@ describe("TaskExecutor.startExecution", () => {
     expect(capturedReasoningEffort).toBe("low");
   });
 
-  it("Claude task oauthToken을 engine.execute extraEnv로 전달하고 session/text/complete를 기존 표면에 영속한다", async () => {
+  it("Claude task oauthToken을 engine.execute extraEnv로 전달하고 semantic assistant history를 영속한다", async () => {
     const mocks = makeMocks();
     let capturedExtraEnv: Record<string, string> | undefined;
     const engine: EnginePort = {
@@ -303,6 +308,7 @@ describe("TaskExecutor.startExecution", () => {
         yield { type: "text_start", timestamp: 1 } as SSEEventPayload;
         yield { type: "text_delta", text: "claude says hi", timestamp: 1 } as SSEEventPayload;
         yield { type: "text_end", timestamp: 1 } as SSEEventPayload;
+        yield { type: "assistant_message", content: "claude says hi", timestamp: 1 } as SSEEventPayload;
         yield { type: "complete", result: "claude says hi", timestamp: 1 } as SSEEventPayload;
       },
       async interrupt() { return true; },
@@ -331,7 +337,7 @@ describe("TaskExecutor.startExecution", () => {
     expect(mocks.setClaudeSessionId).toHaveBeenCalledWith("sess-1", "claude-sess-1");
     expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", {
       status: "completed",
-      last_event_id: 6,
+      last_event_id: 4,
     });
   });
 
@@ -577,8 +583,8 @@ describe("TaskExecutor.startExecution", () => {
     mocks.persistEvent.mockImplementation(async () => 99);
 
     const events: SSEEventPayload[] = [
-      { type: "text_delta", text: "a", timestamp: 1 } as SSEEventPayload,
-      { type: "text_end", timestamp: 2 } as SSEEventPayload,
+      { type: "assistant_message", content: "a", timestamp: 1 } as SSEEventPayload,
+      { type: "complete", result: "a", timestamp: 2 } as SSEEventPayload,
     ];
     const executor = new TaskExecutor(
       () => makeFakeEngine(events),
@@ -592,7 +598,7 @@ describe("TaskExecutor.startExecution", () => {
     await task.executionPromise;
 
     // 첫 persistEvent throw(user_message 영속화)에도 status=completed (격리)
-    // user_message(1, throw) + text_delta(2) + text_end(3) = 3건 호출
+    // user_message(1, throw) + assistant_message(2) + complete(3) = 3건 호출
     expect(task.status).toBe("completed");
     expect(mocks.persistEvent).toHaveBeenCalledTimes(3);
     // emitEventEnvelope는 user_message + 2건 = 3건 (persistEvent throw에도 broadcast는 호출됨)
@@ -657,8 +663,8 @@ describe("TaskExecutor.startExecution", () => {
       new Error("last_message db down"),
     );
     const events: SSEEventPayload[] = [
-      { type: "text_delta", text: "a", timestamp: 1 } as SSEEventPayload,
-      { type: "text_delta", text: "ab", timestamp: 2 } as SSEEventPayload,
+      { type: "assistant_message", content: "a", timestamp: 1 } as SSEEventPayload,
+      { type: "complete", result: "a", timestamp: 2 } as SSEEventPayload,
     ];
     const executor = new TaskExecutor(
       () => makeFakeEngine(events),
@@ -672,7 +678,7 @@ describe("TaskExecutor.startExecution", () => {
     await task.executionPromise;
 
     expect(task.status).toBe("completed");
-    // user_message(1) + text_delta x 2 = 3건 (첫 handleSideEffects throw에도 다음 이벤트 진행)
+    // user_message(1) + assistant_message + complete = 3건 (첫 handleSideEffects throw에도 다음 이벤트 진행)
     expect(mocks.persistEvent).toHaveBeenCalledTimes(3);
     expect(mocks.handleSideEffects).toHaveBeenCalledTimes(3);
   });
@@ -686,6 +692,7 @@ describe("TaskExecutor.startExecution", () => {
     const events: SSEEventPayload[] = [
       { type: "session", session_id: "thr-codex-1" } as SSEEventPayload,
       { type: "text_delta", text: "after error", timestamp: 1 } as SSEEventPayload,
+      { type: "assistant_message", content: "after error", timestamp: 2 } as SSEEventPayload,
     ];
     const executor = new TaskExecutor(
       () => makeFakeEngine(events),
@@ -701,7 +708,7 @@ describe("TaskExecutor.startExecution", () => {
     // setClaudeSessionId throw에도 task 진행 계속
     expect(task.status).toBe("completed");
     expect(task.codexThreadId).toBe("thr-codex-1");  // 메모리 박기는 throw 전에 완료
-    // user_message(1) + session(2) + text_delta(3) = 3건 모두 처리
+    // user_message(1) + session(2) + assistant_message(3) = 3건 durable 저장
     expect(mocks.persistEvent).toHaveBeenCalledTimes(3);
     expect(mocks.emitSessionUpdated).toHaveBeenCalled();
   });
@@ -1367,11 +1374,19 @@ describe("TaskExecutor engine event publishing — _event_id ride-along (Python 
 
     // user_message + 6 turn events = 7 emit
     const emitCalls = mocks.emitEventEnvelope.mock.calls;
-    // 모든 envelope event payload에 _event_id (number) 있음
-    for (const call of emitCalls) {
-      const payload = call[1] as Record<string, unknown>;
-      expect(payload._event_id).toEqual(expect.any(Number));
-    }
+    const eventIdsByType = new Map(
+      emitCalls.map((call) => {
+        const payload = call[1] as Record<string, unknown>;
+        return [payload.type, payload._event_id];
+      }),
+    );
+    expect(eventIdsByType.get("user_message")).toEqual(expect.any(Number));
+    expect(eventIdsByType.get("session")).toEqual(expect.any(Number));
+    expect(eventIdsByType.get("text_start")).toBeUndefined();
+    expect(eventIdsByType.get("text_delta")).toBeUndefined();
+    expect(eventIdsByType.get("prompt_suggestion")).toEqual(expect.any(Number));
+    expect(eventIdsByType.get("credential_alert")).toEqual(expect.any(Number));
+    expect(eventIdsByType.get("complete")).toEqual(expect.any(Number));
   });
 
   it("persistEvent throw → _event_id 미박힘 + broadcast는 계속 (격리)", async () => {
@@ -1384,7 +1399,7 @@ describe("TaskExecutor engine event publishing — _event_id ride-along (Python 
       return callCount;
     });
     const events: SSEEventPayload[] = [
-      { type: "text_delta", text: "hi", timestamp: 1 } as SSEEventPayload,
+      { type: "assistant_message", content: "hi", timestamp: 1 } as SSEEventPayload,
       { type: "complete", usage: {}, timestamp: 2 } as SSEEventPayload,
     ];
     const executor = new TaskExecutor(() => makeFakeEngine(events), mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
@@ -1392,12 +1407,12 @@ describe("TaskExecutor engine event publishing — _event_id ride-along (Python 
     executor.startExecution(task, agent);
     await task.executionPromise;
 
-    // text_delta는 persist throw — _event_id 없음. complete는 성공 — _event_id 있음.
-    const textDeltaCall = mocks.emitEventEnvelope.mock.calls.find(
-      (c) => (c[1] as { type: string }).type === "text_delta",
+    // assistant_message는 persist throw — _event_id 없음. complete는 성공 — _event_id 있음.
+    const assistantCall = mocks.emitEventEnvelope.mock.calls.find(
+      (c) => (c[1] as { type: string }).type === "assistant_message",
     );
-    expect(textDeltaCall).toBeDefined();
-    expect((textDeltaCall![1] as Record<string, unknown>)._event_id).toBeUndefined();
+    expect(assistantCall).toBeDefined();
+    expect((assistantCall![1] as Record<string, unknown>)._event_id).toBeUndefined();
 
     const completeCall = mocks.emitEventEnvelope.mock.calls.find(
       (c) => (c[1] as { type: string }).type === "complete",

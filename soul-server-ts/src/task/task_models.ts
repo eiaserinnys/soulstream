@@ -152,7 +152,7 @@ export interface Task {
   lastEventId: number;
   lastReadEventId: number;
 
-  /** session_updated wire에 박힘 — text_delta accumulation 결과. */
+  /** session_updated wire에 박힘 — 최종 assistant_message 또는 live text 누적 결과. */
   lastAssistantText?: string;
   lastProgressText?: string;
 

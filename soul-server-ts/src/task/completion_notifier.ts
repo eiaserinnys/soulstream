@@ -131,8 +131,8 @@ export class TaskCompletionNotifier implements CompletionNotifier {
    *   2. `error` 또는 task.error 박힘 — engine throw / executionPromise 안전망.
    *   3. 그 외 (completed) — `lastAssistantText` 정본 + `(빈 응답)` fallback.
    *
-   * `lastAssistantText`는 event_persistence.handleSideEffects(L122-129)가 매 text_delta마다
-   * 누적 block.text 전체로 덮어쓰므로 finalize 시점에 마지막 turn 응답이 박혀 있음. 부재 시
+   * `lastAssistantText`는 event_persistence.handleSideEffects가 최종 assistant_message로
+   * 덮어쓰므로 finalize 시점에 마지막 turn 응답이 박혀 있음. 부재 시
    * `(빈 응답)` fallback으로 parent에 빈 메시지가 그대로 가는 것을 차단.
    */
   private _buildNotifyText(task: Task): string {

@@ -8,7 +8,7 @@
  * 검증:
  *   - session_register stored proc 호출 (DB)
  *   - session_created wire 발행 (orch)
- *   - SSE event envelope 시퀀스 발행 (text_start → text_delta → text_end)
+ *   - SSE event envelope 시퀀스 발행 (live text lifecycle + durable assistant_message)
  *   - session_updated wire 발행 (완료 시)
  *   - lastAssistantText 누적
  */
@@ -91,13 +91,14 @@ describe("Phase B-3 E2E: create_session → engine drain → broadcast", () => {
 
     const registry = new AgentRegistry([codexAgent]);
 
-    // fake Codex events: thread.started → text_start → text_delta(누적) → text_end → complete
+    // fake Codex events: thread.started → live text lifecycle → assistant_message → complete
     const codexEvents: SSEEventPayload[] = [
       { type: "session", session_id: "thr-codex-1" } as SSEEventPayload,
       { type: "text_start", timestamp: 1 } as SSEEventPayload,
       { type: "text_delta", text: "Hello", timestamp: 2 } as SSEEventPayload,
       { type: "text_delta", text: "Hello world", timestamp: 3 } as SSEEventPayload,
       { type: "text_end", timestamp: 4 } as SSEEventPayload,
+      { type: "assistant_message", content: "Hello world", timestamp: 4.5 } as SSEEventPayload,
       {
         type: "complete",
         usage: {
@@ -173,7 +174,8 @@ describe("Phase B-3 E2E: create_session → engine drain → broadcast", () => {
     expect((envelopes[3].event as Record<string, unknown>).type).toBe("text_delta");
     expect((envelopes[4].event as Record<string, unknown>).type).toBe("text_delta");
     expect((envelopes[5].event as Record<string, unknown>).type).toBe("text_end");
-    expect((envelopes[6].event as Record<string, unknown>).type).toBe("complete");
+    expect((envelopes[6].event as Record<string, unknown>).type).toBe("assistant_message");
+    expect((envelopes[7].event as Record<string, unknown>).type).toBe("complete");
 
     // session_updated 완료 시 1회 (status=completed)
     const updated = orchReceived.filter((m) => m.type === "session_updated");
@@ -185,8 +187,9 @@ describe("Phase B-3 E2E: create_session → engine drain → broadcast", () => {
     // === ASSERT — DB stored proc 호출 ===
     const procNames = dbCalls.map((c) => c.fragments.join("?"));
     expect(procNames.some((p) => p.includes("session_register"))).toBe(true);
-    // B-5: user_message 영속(1) + codexEvents
-    expect(procNames.filter((p) => p.includes("event_append")).length).toBe(codexEvents.length + 1);
+    // B-5: user_message + session + assistant_message + complete만 durable 저장.
+    // text_start/text_delta/text_end는 live transport 전용이라 event_append를 호출하지 않는다.
+    expect(procNames.filter((p) => p.includes("event_append")).length).toBe(4);
     expect(procNames.some((p) => p.includes("session_update"))).toBe(true);
 
     // F-3B: session_set_claude_id 1회 호출 (thread id 영속화)
@@ -194,24 +197,21 @@ describe("Phase B-3 E2E: create_session → engine drain → broadcast", () => {
       procNames.filter((p) => p.includes("session_set_claude_id")).length,
     ).toBe(1);
 
-    // F-3A: emit_session_message_updated wire — PREVIEW_FIELD_MAP 매칭 + 필드 값 있을 때만.
-    // codexEvents 중: text_delta(×2 — "Hello", "Hello world")만 wire 발행.
-    // B-5: user_message(1)도 PREVIEW_FIELD_MAP.user_message="text" 매칭으로 last_message 갱신.
-    // complete은 PREVIEW_FIELD_MAP에서 result 필드를 보지만 본 fixture는 result 미포함 → skip.
-    // text_start/text_end/session은 매핑 없음 → skip.
+    // F-3A: emit_session_message_updated wire — semantic preview 이벤트만 발행.
+    // B-5: user_message(1) + assistant_message(1). live text lifecycle과 complete는 제외.
     // 이 wire는 `last_message` 키 보유로 식별 (G-19 마커).
     const messageUpdates = orchReceived.filter(
       (m) => m.type === "session_updated" && m.last_message !== undefined,
     );
-    expect(messageUpdates.length).toBe(3);  // user_message + text_delta x 2
+    expect(messageUpdates.length).toBe(2);
     expect(
-      (messageUpdates[2].last_message as Record<string, unknown>).preview,
+      (messageUpdates[1].last_message as Record<string, unknown>).preview,
     ).toBe("Hello world");
 
     // task 상태
     expect(task!.status).toBe("completed");
     expect(task!.codexThreadId).toBe("thr-codex-1");
-    expect(task!.lastEventId).toBe(codexEvents.length + 1);  // +user_message
+    expect(task!.lastEventId).toBe(4);  // user_message + session + assistant_message + complete
     expect(task!.lastAssistantText).toBe("Hello world");
   });
 

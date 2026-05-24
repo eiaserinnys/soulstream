@@ -231,6 +231,10 @@ class TaskExecutor:
                 text = event_dict.get("text") or ""
                 if text:
                     task.last_assistant_text = text
+            elif event.type == "assistant_message":
+                content = event_dict.get("content") or ""
+                if isinstance(content, str) and content:
+                    task.last_assistant_text = content
 
             # 이벤트 영속화 — Phase 2-B-1(2026-05-08): persist_with_subtree 폐기.
             # subtree_update 발신을 함께 폐기했으므로 _event_id 주입과 last_event_id

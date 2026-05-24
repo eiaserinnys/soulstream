@@ -47,6 +47,7 @@ type ExpectedShape = {
  * - TextStartSSEEvent (L155-159): type, timestamp, parent_event_id?
  * - TextDeltaSSEEvent (L162-167): type, timestamp, text, parent_event_id?
  * - TextEndSSEEvent (L170-174): type, timestamp, parent_event_id?
+ * - AssistantMessageSSEEvent (L177-183): type, timestamp, content, parent_event_id?
  * - ToolStartSSEEvent (L177-184): type, timestamp, tool_name, tool_input, tool_use_id?, parent_event_id?
  * - ToolResultSSEEvent (L187-195): type, timestamp, tool_name, result, is_error, tool_use_id?, parent_event_id?
  * - ResultSSEEvent (L198-211): type, timestamp, success, output, error?, usage?, total_cost_usd?,
@@ -89,6 +90,10 @@ const PYTHON_SHAPES: Record<string, ExpectedShape> = {
   },
   text_end: {
     required: ["type", "timestamp"],
+    optional: ["parent_event_id"],
+  },
+  assistant_message: {
+    required: ["type", "timestamp", "content"],
     optional: ["parent_event_id"],
   },
   tool_start: {
@@ -186,12 +191,10 @@ describe("Cross-language wire shape parity (TS mapper output ↔ Python *SSEEven
     assertPythonShape(out[0] as Record<string, unknown>, PYTHON_SHAPES.thinking!);
   });
 
-  it("text — Python TextStartSSEEvent / TextDeltaSSEEvent / TextEndSSEEvent 3개로 분해", () => {
+  it("text — Python AssistantMessageSSEEvent semantic final로 매핑", () => {
     const out = mapClaudeClientEvent({ type: "text", text: "hello", timestamp: 1 });
-    expect(out).toHaveLength(3);
-    assertPythonShape(out[0] as Record<string, unknown>, PYTHON_SHAPES.text_start!);
-    assertPythonShape(out[1] as Record<string, unknown>, PYTHON_SHAPES.text_delta!);
-    assertPythonShape(out[2] as Record<string, unknown>, PYTHON_SHAPES.text_end!);
+    expect(out).toHaveLength(1);
+    assertPythonShape(out[0] as Record<string, unknown>, PYTHON_SHAPES.assistant_message!);
   });
 
   it("tool_start — Python ToolStartSSEEvent (schemas.py:177-184)", () => {

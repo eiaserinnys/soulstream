@@ -6,6 +6,7 @@
 from soul_server.engine.types import (
     EngineEvent,
     EngineResult,
+    AssistantMessageEngineEvent,
     ThinkingEngineEvent,
     TextDeltaEngineEvent,
     ToolStartEngineEvent,
@@ -21,6 +22,7 @@ from soul_server.engine.types import (
 __all__ = [
     "EngineEvent",
     "EngineResult",
+    "AssistantMessageEngineEvent",
     "ThinkingEngineEvent",
     "TextDeltaEngineEvent",
     "ToolStartEngineEvent",

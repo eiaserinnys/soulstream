@@ -43,14 +43,25 @@ class TestPersistEvent:
         db = _make_mock_db()
         persistence = EventPersistence(session_db=db)
 
-        event = {"type": "text_delta", "text": "hello", "timestamp": "2024-01-01T00:00:00Z"}
+        event = {"type": "assistant_message", "content": "hello", "timestamp": "2024-01-01T00:00:00Z"}
         result = await persistence.persist_event("sess-1", event)
 
         assert result == 42
         db.append_event.assert_called_once()
         call_args = db.append_event.call_args
         assert call_args[0][0] == "sess-1"
-        assert call_args[0][1] == "text_delta"
+        assert call_args[0][1] == "assistant_message"
+
+    async def test_persist_event_skips_text_lifecycle_events(self):
+        """text_start/text_delta/text_end는 live transport 전용이므로 DB에 저장하지 않는다."""
+        db = _make_mock_db()
+        persistence = EventPersistence(session_db=db)
+
+        event = {"type": "text_delta", "text": "hello", "timestamp": "2024-01-01T00:00:00Z"}
+        result = await persistence.persist_event("sess-1", event)
+
+        assert result is None
+        db.append_event.assert_not_called()
 
     async def test_persist_event_returns_none_when_db_absent(self):
         """DB가 없으면 None을 반환한다"""
@@ -66,7 +77,7 @@ class TestPersistEvent:
         db = _make_mock_db()
         persistence = EventPersistence(session_db=db)
 
-        event = {"type": "text_delta", "text": "hello", "timestamp": 1704067200.0}
+        event = {"type": "assistant_message", "content": "hello", "timestamp": 1704067200.0}
         await persistence.persist_event("sess-1", event)
 
         call_args = db.append_event.call_args[0]
@@ -78,7 +89,7 @@ class TestPersistEvent:
         db = _make_mock_db()
         persistence = EventPersistence(session_db=db)
 
-        event = {"type": "text_delta", "text": "hello"}
+        event = {"type": "assistant_message", "content": "hello"}
         await persistence.persist_event("sess-1", event)
 
         call_args = db.append_event.call_args[0]
@@ -225,17 +236,17 @@ class TestUpdateLastMessage:
             get_broadcaster=lambda: mock_broadcaster,
         ), db, mock_broadcaster
 
-    async def test_text_delta_saves_and_broadcasts(self):
-        """text_delta 이벤트: text 필드에서 preview를 추출하여 DB 저장 + 브로드캐스트"""
+    async def test_assistant_message_saves_and_broadcasts(self):
+        """assistant_message 이벤트: content 필드에서 preview를 추출하여 DB 저장 + 브로드캐스트"""
         persistence, db, broadcaster = self._make_persistence()
         task = _make_task()
 
-        event = {"type": "text_delta", "text": "hello world", "timestamp": "2024-01-01T00:00:00Z"}
+        event = {"type": "assistant_message", "content": "hello world", "timestamp": "2024-01-01T00:00:00Z"}
         await persistence.update_last_message("sess-1", event, task)
 
         db.update_last_message.assert_called_once_with(
             "sess-1", {
-                "type": "text_delta",
+                "type": "assistant_message",
                 "preview": "hello world",
                 "timestamp": "2024-01-01T00:00:00Z",
             }
@@ -243,8 +254,19 @@ class TestUpdateLastMessage:
         broadcaster.emit_session_message_updated.assert_called_once()
         call_kwargs = broadcaster.emit_session_message_updated.call_args.kwargs
         assert call_kwargs["agent_session_id"] == "sess-1"
-        assert call_kwargs["last_message"]["type"] == "text_delta"
+        assert call_kwargs["last_message"]["type"] == "assistant_message"
         assert call_kwargs["last_message"]["preview"] == "hello world"
+
+    async def test_text_delta_is_live_only_for_last_message(self):
+        """text_delta는 live transport 전용이라 세션 카드 preview를 갱신하지 않는다."""
+        persistence, db, broadcaster = self._make_persistence()
+        task = _make_task()
+
+        event = {"type": "text_delta", "text": "hello world", "timestamp": "2024-01-01T00:00:00Z"}
+        await persistence.update_last_message("sess-1", event, task)
+
+        db.update_last_message.assert_not_called()
+        broadcaster.emit_session_message_updated.assert_not_called()
 
     async def test_tool_use_is_ignored(self):
         """tool_use: PREVIEW_FIELD_MAP에 없는 타입이므로 DB 호출 없이 즉시 반환"""
@@ -343,7 +365,7 @@ class TestUpdateLastMessage:
         persistence, _, _ = self._make_persistence(db=db, broadcaster=broken_broadcaster)
         task = _make_task()
 
-        event = {"type": "text_delta", "text": "hello", "timestamp": "2024-01-01T00:00:00Z"}
+        event = {"type": "assistant_message", "content": "hello", "timestamp": "2024-01-01T00:00:00Z"}
         await persistence.update_last_message("sess-1", event, task)
 
         db.update_last_message.assert_called_once()
@@ -354,7 +376,7 @@ class TestUpdateLastMessage:
         task = _make_task()
 
         long_text = "a" * 300
-        event = {"type": "text_delta", "text": long_text, "timestamp": "2024-01-01T00:00:00Z"}
+        event = {"type": "assistant_message", "content": long_text, "timestamp": "2024-01-01T00:00:00Z"}
         await persistence.update_last_message("sess-1", event, task)
 
         db.update_last_message.assert_called_once()

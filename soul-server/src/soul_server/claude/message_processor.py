@@ -16,12 +16,12 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional
 
 from soul_server.engine.types import (
     AssistantErrorEngineEvent,
+    AssistantMessageEngineEvent,
     AwaySummaryEngineEvent,
     EventCallback,
     PromptSuggestionEngineEvent,
     RateLimitEngineEvent,
     ResultEngineEvent,
-    TextDeltaEngineEvent,
     ThinkingEngineEvent,
     ToolResultEngineEvent,
     ToolStartEngineEvent,
@@ -262,13 +262,13 @@ class MessageProcessor:
         if self.on_event:
             try:
                 await self.on_event(
-                    TextDeltaEngineEvent(
-                        text=block.text,
+                    AssistantMessageEngineEvent(
+                        content=block.text,
                         parent_event_id=msg_parent,
                     )
                 )
             except Exception as e:
-                logger.warning(f"이벤트 콜백 오류 (TEXT_DELTA): {e}")
+                logger.warning(f"이벤트 콜백 오류 (ASSISTANT_MESSAGE): {e}")
 
     async def _handle_tool_use(
         self, block: Any, msg_parent: Optional[str]

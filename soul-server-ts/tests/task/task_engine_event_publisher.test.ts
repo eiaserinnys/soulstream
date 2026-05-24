@@ -61,8 +61,8 @@ describe("TaskEngineEventPublisher", () => {
     const publisher = new TaskEngineEventPublisher(deps);
     const task = makeTask();
     const event = {
-      type: "text_delta",
-      text: "hello",
+      type: "assistant_message",
+      content: "hello",
       timestamp: 1,
     } as SSEEventPayload;
 
@@ -80,11 +80,11 @@ describe("TaskEngineEventPublisher", () => {
       deps.handleSideEffects.mock.invocationCallOrder[0],
     );
     expect(deps.logger.info).toHaveBeenCalledWith(
-      { sessionId: "sess-1", eventType: "text_delta" },
+      { sessionId: "sess-1", eventType: "assistant_message" },
       "emitEventEnvelope dispatch",
     );
     expect(deps.logger.info).toHaveBeenCalledWith(
-      { sessionId: "sess-1", eventType: "text_delta" },
+      { sessionId: "sess-1", eventType: "assistant_message" },
       "emitEventEnvelope completed",
     );
   });

@@ -243,9 +243,15 @@ export class AgentsEngineAdapter implements EnginePort, SupportsToolApproval {
           conversationId: stateConversationId(result.state) ?? null,
           schemaVersion: AGENTS_RUN_STATE_SCHEMA_VERSION,
         });
+        const finalOutput = stringifyFinalOutput(result.finalOutput);
+        yield {
+          type: "assistant_message",
+          content: finalOutput,
+          timestamp: Date.now() / 1000,
+        } as SSEEventPayload;
         yield {
           type: "complete",
-          result: stringifyFinalOutput(result.finalOutput),
+          result: finalOutput,
           attachments: [],
           timestamp: Date.now() / 1000,
         } as SSEEventPayload;

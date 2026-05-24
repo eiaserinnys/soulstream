@@ -164,7 +164,7 @@ class Task:
     intervention_queue: asyncio.Queue = field(default_factory=asyncio.Queue, repr=False)
     execution_task: Optional[asyncio.Task] = field(default=None, repr=False)
     last_progress_text: Optional[str] = field(default=None, repr=False)
-    # 마지막 어시스턴트 응답 텍스트 — text_delta(누적 block.text) 매번 덮어쓴다.
+    # 마지막 어시스턴트 응답 텍스트 — 최종 assistant_message로 덮어쓴다.
     # 푸시 알림 body·세션 카드 preview에 사용 (push notifier _push_body_preview).
     # last_progress_text("진행 안내 메시지")와 의미가 다르므로 분리한다.
     last_assistant_text: Optional[str] = field(default=None, repr=False)
@@ -291,15 +291,16 @@ class Task:
         )
 
 
-# 이벤트 타입별 미리보기 텍스트 필드 매핑 (readable events only)
+# 이벤트 타입별 미리보기 텍스트 필드 매핑 (readable durable events only)
 # - thinking: ThinkingSSEEvent.thinking
-# - text_delta: TextDeltaSSEEvent.text (block.text 전체, 청크 아님)
+# - assistant_message: AssistantMessageSSEEvent.content
 # - result: ResultSSEEvent.output
 # - complete: CompleteEvent.result
 # - error: ErrorEvent.message
 # intervention_sent는 별도 처리 (EventPersistence.update_last_message)
 PREVIEW_FIELD_MAP: dict[str, str] = {
     "thinking":      "thinking",
+    "assistant_message": "content",
     "text_delta":    "text",
     "result":        "output",
     "complete":      "result",

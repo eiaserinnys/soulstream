@@ -3,8 +3,8 @@
  *
  * This mapper is intentionally Claude-specific. Codex ThreadEvent mapping stays in
  * codex_event_mapper.ts because the source event cardinality differs: Python Claude
- * represents one text block as TextDeltaEngineEvent.to_sse() →
- * text_start/text_delta/text_end, while Codex has SDK item lifecycle events.
+ * represents one completed text block as a semantic assistant_message. Live
+ * text_start/text_delta/text_end is reserved for generation-time transport.
  */
 
 import type { SSEEventPayload } from "./protocol.js";
@@ -193,9 +193,12 @@ export function mapClaudeClientEvent(
       const timestamp = event.timestamp ?? nowEpochSec();
       const parent = parentField(event.parentEventId);
       return [
-        asSSE({ type: "text_start", timestamp, ...parent }),
-        asSSE({ type: "text_delta", text: event.text, timestamp, ...parent }),
-        asSSE({ type: "text_end", timestamp, ...parent }),
+        asSSE({
+          type: "assistant_message",
+          content: event.text,
+          timestamp,
+          ...parent,
+        }),
       ];
     }
 

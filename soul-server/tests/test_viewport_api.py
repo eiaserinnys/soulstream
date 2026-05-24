@@ -379,6 +379,7 @@ class TestReadMessagesPagination:
         """
         db = PostgresSessionDB.__new__(PostgresSessionDB)
         db._pool = MagicMock()
+        db._pool.fetchval = AsyncMock(return_value=True)
         db._pool.fetch = AsyncMock(return_value=[])
         db._pool.fetchval = AsyncMock(return_value=1)
 
@@ -406,6 +407,7 @@ class TestReadMessagesPagination:
         """before가 이미 datetime 객체이면 그대로 전달 (방어 코드)."""
         db = PostgresSessionDB.__new__(PostgresSessionDB)
         db._pool = MagicMock()
+        db._pool.fetchval = AsyncMock(return_value=True)
         db._pool.fetch = AsyncMock(return_value=[])
         db._pool.fetchval = AsyncMock(return_value=1)
 
@@ -421,6 +423,7 @@ class TestReadMessagesPagination:
         """timestamp가 같은 이벤트가 페이지 경계에 걸려도 id 조건으로 다음 페이지에 포함한다."""
         db = PostgresSessionDB.__new__(PostgresSessionDB)
         db._pool = MagicMock()
+        db._pool.fetchval = AsyncMock(return_value=True)
         db._pool.fetch = AsyncMock(return_value=[])
         db._pool.fetchval = AsyncMock(return_value=1)
 
@@ -564,6 +567,7 @@ class TestReadTimeline:
         """timeline은 progress/debug/text delta를 SQL 필터에서 제외한다."""
         db = PostgresSessionDB.__new__(PostgresSessionDB)
         db._pool = MagicMock()
+        db._pool.fetchval = AsyncMock(return_value=True)
         db._pool.fetch = AsyncMock(return_value=[])
 
         await db.read_timeline("s1", before=None, limit=50)
@@ -580,6 +584,8 @@ class TestReadTimeline:
         assert "assistant_message" in timeline_types
         assert "tool_start" in timeline_types
         assert "tool_result" in timeline_types
+        assert "complete" not in timeline_types
+        assert "result" not in timeline_types
         assert "progress" not in timeline_types
         assert "debug" not in timeline_types
         assert "text_delta" not in timeline_types
@@ -599,6 +605,7 @@ class TestReadTimeline:
              "payload": {}, "created_at": "2026-05-23T12:01:00+00:00"},
         ]
         db._pool = MagicMock()
+        db._pool.fetchval = AsyncMock(return_value=True)
         db._pool.fetch = AsyncMock(return_value=rows)
 
         messages, cursor = await db.read_timeline("s1", before=None, limit=2)
@@ -625,6 +632,7 @@ class TestReadTimeline:
              "created_at": "2026-05-23T12:01:00+00:00"},
         ]
         db._pool = MagicMock()
+        db._pool.fetchval = AsyncMock(return_value=True)
         db._pool.fetch = AsyncMock(side_effect=[page_rows, paired_starts])
 
         messages, cursor = await db.read_timeline("s1", before=None, limit=2)
@@ -634,6 +642,46 @@ class TestReadTimeline:
         second_call = db._pool.fetch.call_args_list[1]
         assert "event_type = 'tool_start'" in second_call[0][0]
         assert second_call[0][2] == ["toolu_1"]
+
+    @pytest.mark.asyncio
+    async def test_legacy_complete_result_synthesized_only_without_assistant_message(self):
+        """assistant_message가 전혀 없는 legacy 세션은 complete.result를 assistant_message로 합성한다."""
+        db = PostgresSessionDB.__new__(PostgresSessionDB)
+        rows = [
+            {"id": 20, "parent_event_id": None, "event_type": "complete",
+             "payload": {"type": "complete", "result": "legacy answer", "timestamp": 10.0},
+             "created_at": "2026-05-23T12:02:00+00:00"},
+            {"id": 10, "parent_event_id": None, "event_type": "user_message",
+             "payload": {"type": "user_message", "text": "q"},
+             "created_at": "2026-05-23T12:01:00+00:00"},
+        ]
+        db._pool = MagicMock()
+        db._pool.fetchval = AsyncMock(return_value=False)
+        db._pool.fetch = AsyncMock(return_value=rows)
+
+        messages, _ = await db.read_timeline("s1", before=None, limit=50)
+
+        call_args = db._pool.fetch.call_args
+        timeline_types = call_args[0][2]
+        assert "complete" in timeline_types
+        assert messages[0]["event_type"] == "assistant_message"
+        assert messages[0]["payload"]["content"] == "legacy answer"
+        assert messages[0]["payload"]["legacy_source_type"] == "complete"
+        assert messages[1]["event_type"] == "user_message"
+
+    @pytest.mark.asyncio
+    async def test_complete_rows_excluded_when_assistant_message_exists(self):
+        """assistant_message가 있는 세션은 complete를 timeline bubble로 중복 노출하지 않는다."""
+        db = PostgresSessionDB.__new__(PostgresSessionDB)
+        db._pool = MagicMock()
+        db._pool.fetchval = AsyncMock(return_value=True)
+        db._pool.fetch = AsyncMock(return_value=[])
+
+        await db.read_timeline("s1", before=None, limit=50)
+
+        timeline_types = db._pool.fetch.call_args[0][2]
+        assert "assistant_message" in timeline_types
+        assert "complete" not in timeline_types
 
     @pytest.mark.asyncio
     async def test_tool_payloads_are_compact_summaries(self):
@@ -666,6 +714,7 @@ class TestReadTimeline:
              "created_at": "2026-05-23T12:02:00+00:00"},
         ]
         db._pool = MagicMock()
+        db._pool.fetchval = AsyncMock(return_value=True)
         db._pool.fetch = AsyncMock(return_value=page_rows)
 
         messages, _ = await db.read_timeline("s1", before=None, limit=50)

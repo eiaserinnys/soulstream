@@ -5,7 +5,7 @@
  * TS 측은 Codex 흐름에 한정 — metadata_extractor·away_summary는 본 PR 범위 외.
  *
  * 책임:
- *   1. persistEvent: 저장 대상 이벤트만 event_append stored proc 호출 → 새 event_id 반환
+ *   1. persistEvent: semantic/debug events만 event_append stored proc 호출 → 새 event_id 반환
  *   2. handleSideEffects: last_message DB 갱신 + emit_session_message_updated wire 발행
  *      (F-3A) + task.lastAssistantText 누적
  */
@@ -19,14 +19,12 @@ import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import type { SessionDB } from "./session_db.js";
 
 /**
- * 이벤트 타입별 preview 텍스트 추출 필드.
- * Python `task_models.py` L298-305 `PREVIEW_FIELD_MAP` 정본.
+ * 이벤트 타입별 last_message preview 텍스트 추출 필드.
+ * text_start/text_delta/text_end는 live transport 전용이고, complete/result는 turn
+ * metadata라 채팅 말풍선 preview의 정본으로 쓰지 않는다.
  */
 const PREVIEW_FIELD_MAP: Record<string, string> = {
   thinking: "thinking",
-  text_delta: "text",
-  result: "output",
-  complete: "result",
   error: "message",
   away_summary: "content",
   assistant_message: "content",
@@ -38,6 +36,8 @@ const PREVIEW_FIELD_MAP: Record<string, string> = {
   realtime_transcript: "text",
 };
 
+const TRANSIENT_TEXT_EVENT_TYPES = new Set(["text_start", "text_delta", "text_end"]);
+
 export class EventPersistence {
   constructor(
     private readonly db: SessionDB,
@@ -47,7 +47,8 @@ export class EventPersistence {
 
   /**
    * 이벤트를 DB에 영속화. 반환 event_id를 호출자가 task.lastEventId에 박는다.
-   * `_live_only` 이벤트는 생성 중 wire 전용이므로 호출자가 persist 전에 건너뛰어야 한다.
+   * text lifecycle 이벤트와 `_live_only` 이벤트는 생성 중 wire 전용이므로 호출자가
+   * persist 전에 건너뛰어야 한다.
    *
    * @returns 새 events.id (1-based).
    */
@@ -56,7 +57,7 @@ export class EventPersistence {
     event: SSEEventPayload,
   ): Promise<number> {
     if (!shouldPersistEvent(event)) {
-      throw new Error("live-only events must not be persisted");
+      throw new Error("transient live events must not be persisted");
     }
     const eventType = (event as { type: string }).type;
     const payload = JSON.stringify(event);
@@ -75,8 +76,9 @@ export class EventPersistence {
    * 이벤트 후처리: last_message DB 갱신 + emit_session_message_updated wire 발행 +
    * task.lastAssistantText 누적.
    *
-   * F-3A: PREVIEW_FIELD_MAP 매칭 이벤트(text_delta/thinking/result/complete/error/away_summary)에
-   * 한해 DB 갱신 직후 broadcaster에 last_message wire를 발행. text_start/text_end/session 등은
+   * F-3A: PREVIEW_FIELD_MAP 매칭 이벤트(thinking/error/away_summary/assistant_message)에
+   * 한해 DB 갱신 직후 broadcaster에 last_message wire를 발행. text_start/text_delta/
+   * text_end/complete/result/session 등은
    * PREVIEW_FIELD_MAP에 없어 자동 필터됨 — Python `event_persistence.py` L96-133 정본과 정합.
    *
    * 실패 격리 정책 (Python 정본 정합):
@@ -103,7 +105,6 @@ export class EventPersistence {
       if (typeof text === "string") {
         if ((event as { raw_event_type?: unknown }).raw_event_type === "item/agentMessage/delta") {
           task.lastAssistantText = `${task.lastAssistantText ?? ""}${text}`;
-          previewText = task.lastAssistantText;
         } else {
           task.lastAssistantText = text;
         }
@@ -171,8 +172,12 @@ export function isLiveOnlyEvent(event: SSEEventPayload): boolean {
   return (event as Record<string, unknown>)._live_only === true;
 }
 
+export function isTransientTextEvent(event: SSEEventPayload): boolean {
+  return TRANSIENT_TEXT_EVENT_TYPES.has((event as { type: string }).type);
+}
+
 export function shouldPersistEvent(event: SSEEventPayload): boolean {
-  return !isLiveOnlyEvent(event);
+  return !isLiveOnlyEvent(event) && !isTransientTextEvent(event);
 }
 
 /**
@@ -181,9 +186,16 @@ export function shouldPersistEvent(event: SSEEventPayload): boolean {
  * 아니므로 검색 텍스트도 비운다.
  */
 export function extractSearchableText(event: SSEEventPayload): string {
-  if (isLiveOnlyEvent(event)) return "";
+  if (!shouldPersistEvent(event)) return "";
   const preview = extractPreviewText(event);
   if (preview) return preview;
+  const eventType = (event as { type: string }).type;
+  if (eventType === "complete") {
+    return contentToText((event as Record<string, unknown>).result);
+  }
+  if (eventType === "result") {
+    return contentToText((event as Record<string, unknown>).output);
+  }
   const messages = (event as Record<string, unknown>).messages;
   if (!Array.isArray(messages)) return "";
   return messages

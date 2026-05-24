@@ -9,7 +9,7 @@ function eventTypes(events: ReturnType<typeof mapClaudeClientEvent>): string[] {
   return events.map((event) => event.type);
 }
 
-describe("Claude event mapper parity with Python EngineEvent.to_sse", () => {
+describe("Claude event mapper semantic history contract", () => {
   it("session carries backend session id without timestamp", () => {
     expect(mapClaudeClientEvent({ type: "session", sessionId: "claude-sess-1" })).toEqual([
       { type: "session", session_id: "claude-sess-1" },
@@ -30,17 +30,19 @@ describe("Claude event mapper parity with Python EngineEvent.to_sse", () => {
     });
   });
 
-  it("Python TextDeltaEngineEvent cardinality: one text client event emits text_start → text_delta → text_end", () => {
+  it("text client event emits durable assistant_message", () => {
     const events = mapClaudeClientEvent({
       type: "text",
       text: "Hello Claude",
       timestamp: 123,
     });
 
-    expect(eventTypes(events)).toEqual(["text_start", "text_delta", "text_end"]);
-    expect(events[0]).toEqual({ type: "text_start", timestamp: 123 });
-    expect(events[1]).toEqual({ type: "text_delta", text: "Hello Claude", timestamp: 123 });
-    expect(events[2]).toEqual({ type: "text_end", timestamp: 123 });
+    expect(eventTypes(events)).toEqual(["assistant_message"]);
+    expect(events[0]).toEqual({
+      type: "assistant_message",
+      content: "Hello Claude",
+      timestamp: 123,
+    });
   });
 
   it("thinking preserves thinking text and signature", () => {
@@ -374,9 +376,7 @@ describe("Claude event mapper parity with Python EngineEvent.to_sse", () => {
     expect(fixture.flatMap((event) => mapClaudeClientEvent(event)).map((event) => event.type)).toEqual([
       "session",
       "debug",
-      "text_start",
-      "text_delta",
-      "text_end",
+      "assistant_message",
       "tool_start",
       "tool_result",
       "thinking",
