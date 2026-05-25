@@ -49,7 +49,7 @@ describe("buildRegistrationMsg (Phase B-3 yaml-driven)", () => {
     expect(msg.node_id).toBe("eias-shopping-ts");
     expect(msg.host).toBe("127.0.0.1");
     expect(msg.port).toBe(4205);
-    expect(msg.capabilities).toEqual({ max_concurrent: 1 });
+    expect(msg.capabilities).toEqual({ max_concurrent: 1, reflect_brief: true });
     expect(msg.supported_backends).toEqual(["codex"]);
     // portrait_path 미설정 — portrait_url=""·portrait_b64 미박힘 (Python 정본 graceful 정합)
     expect(msg.agents).toEqual([
@@ -72,7 +72,7 @@ describe("buildRegistrationMsg (Phase B-3 yaml-driven)", () => {
       agentRegistry: new AgentRegistry([]),
     });
     expect(msg.agents).toEqual([]);
-    expect(msg.capabilities).toEqual({ max_concurrent: 0 });
+    expect(msg.capabilities).toEqual({ max_concurrent: 0, reflect_brief: true });
     expect(msg.supported_backends).toEqual([]);
   });
 
@@ -84,7 +84,7 @@ describe("buildRegistrationMsg (Phase B-3 yaml-driven)", () => {
       userName: "",
       agentRegistry: new AgentRegistry([codexAgent, claudeAgent]),
     });
-    expect(msg.capabilities).toEqual({ max_concurrent: 2 });
+    expect(msg.capabilities).toEqual({ max_concurrent: 2, reflect_brief: true });
     expect((msg.supported_backends ?? []).slice().sort()).toEqual(["claude", "codex"]);
     expect(msg.agents?.map((a) => [a.id, a.name, a.backend])).toEqual([
       ["codex-default", "Codex Default", "codex"],

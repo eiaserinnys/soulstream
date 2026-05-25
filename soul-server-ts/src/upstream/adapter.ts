@@ -5,6 +5,7 @@ import type { AgentConfigService } from "../agent_config_service.js";
 import type { AgentRegistry } from "../agent_registry.js";
 import type { ClaudeAuthCommandHandler } from "../auth/claude_auth.js";
 import type { SessionDB } from "../db/session_db.js";
+import type { McpRuntime } from "../mcp/runtime.js";
 import type { RealtimeBroker } from "../realtime/realtime_broker.js";
 import type { TaskExecutor } from "../task/task_executor.js";
 import type { TaskManager } from "../task/task_manager.js";
@@ -35,6 +36,7 @@ export interface UpstreamDependencies {
   sessionDb?: SessionDB;
   realtimeBroker?: RealtimeBroker;
   agentConfigService?: AgentConfigService;
+  reflectionRuntime?: McpRuntime;
 }
 
 /**
@@ -73,6 +75,7 @@ export class UpstreamAdapter {
       deps.realtimeBroker,
       undefined,
       deps.agentConfigService,
+      deps.reflectionRuntime,
     );
   }
 

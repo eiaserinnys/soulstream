@@ -430,6 +430,71 @@ describe("create_remote_agent_session", () => {
   });
 });
 
+describe("reflect_cluster_brief", () => {
+  it("proxies orchestrator aggregate without colliding with self reflect_brief", async () => {
+    const capture = await createOrchCapture(200, (req) => {
+      if (req.method === "GET" && req.url === "/cogito/briefs") {
+        return {
+          body: {
+            schema_version: "soulstream.reflect.aggregate.v1",
+            kind: "orchestrator_node_brief_aggregate",
+            status: "ok",
+            nodes: [
+              {
+                node_id: "node-remote",
+                status: "ok",
+                data: { kind: "compact_aggregate" },
+              },
+            ],
+          },
+        };
+      }
+      return { status: 404, body: { error: "unexpected route" } };
+    });
+    try {
+      const runtime = makeRuntime({ queued: true, queuePosition: 1 }, capture.orch);
+      const client = await createClient(runtime);
+
+      const result = await client.callTool({
+        name: "reflect_cluster_brief",
+        arguments: {},
+      });
+
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toMatchObject({
+        schema_version: "soulstream.reflect.aggregate.v1",
+        kind: "orchestrator_node_brief_aggregate",
+        nodes: [
+          expect.objectContaining({
+            node_id: "node-remote",
+            status: "ok",
+          }),
+        ],
+      });
+      expect(capture.requests.map((r) => `${r.method} ${r.url}`)).toEqual([
+        "GET /cogito/briefs",
+      ]);
+    } finally {
+      await capture.close();
+    }
+  });
+
+  it("returns explicit error when orchestrator proxy is not configured", async () => {
+    const runtime = makeRuntime({ queued: true, queuePosition: 1 });
+    const client = await createClient(runtime);
+
+    const result = await client.callTool({
+      name: "reflect_cluster_brief",
+      arguments: {},
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toEqual({
+      error: "multi-node not configured",
+    });
+  });
+});
+
 describe("plan_remote_agent_profile_update", () => {
   it("proxies read-only profile update planning to the orchestrator node endpoint", async () => {
     const capture = await createOrchCapture(200, (req) => {

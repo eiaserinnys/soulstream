@@ -31,6 +31,7 @@ CMD_CLAUDE_AUTH_DELETE_TOKEN = "claude_auth_delete_token"
 CMD_CLAUDE_AUTH_GET_USAGE = "claude_auth_get_usage"
 CMD_CLAUDE_AUTH_GET_PROFILE = "claude_auth_get_profile"  # 계정 프로필(email 등) 조회
 CMD_PROVIDER_USAGE_GET = "provider_usage_get"
+CMD_REFLECT_BRIEF = "reflect_brief"
 CMD_PLAN_AGENT_PROFILE_UPDATE = "plan_agent_profile_update"
 CMD_APPLY_AGENT_PROFILE_UPDATE = "apply_agent_profile_update"
 CMD_LIST_AGENTS_CONFIG_SNAPSHOTS = "list_agents_config_snapshots"

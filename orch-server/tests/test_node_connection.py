@@ -16,6 +16,7 @@ from soulstream_server.constants import (
     CMD_LIST_AGENTS_CONFIG_SNAPSHOTS,
     CMD_PLAN_AGENT_PROFILE_UPDATE,
     CMD_PROVIDER_USAGE_GET,
+    CMD_REFLECT_BRIEF,
     CMD_REALTIME_CREATE_CALL,
     CMD_REALTIME_EVENT,
     CMD_REALTIME_RESOLVE_TOOL_APPROVAL,
@@ -308,6 +309,29 @@ class TestCommandSending:
         sent = ws.send_json.call_args[0][0]
         assert sent["type"] == CMD_PROVIDER_USAGE_GET
         assert sent["provider"] == "codex"
+
+    async def test_send_reflect_brief_sends_read_only_command_with_timeout(self, node, ws):
+        """reflect_brief is proxied as a read-only node command."""
+
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            req_id = data["requestId"]
+            if req_id in node._pending:
+                node._pending[req_id].set_result({
+                    "type": CMD_REFLECT_BRIEF,
+                    "requestId": req_id,
+                    "ok": True,
+                    "brief": {"kind": "compact_aggregate"},
+                })
+
+        ws.send_json.side_effect = resolve_future
+
+        result = await node.send_reflect_brief(timeout=0.25)
+
+        sent = ws.send_json.call_args[0][0]
+        assert sent["type"] == CMD_REFLECT_BRIEF
+        assert sent["requestId"].startswith("req-")
+        assert result["brief"]["kind"] == "compact_aggregate"
 
     async def test_send_plan_agent_profile_update_sends_read_only_command(self, node, ws):
         """agent profile planning is proxied as a read-only node command."""

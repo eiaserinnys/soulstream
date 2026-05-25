@@ -34,13 +34,18 @@ Once connected, all tools below are available inside the Claude Code session.
 | Tool | Description |
 |------|-------------|
 | `reflect_service(service, level)` | Query a service at depth 0–3: features → config → source locations → runtime state |
-| `reflect_brief()` | Compact aggregate over Level 0–3 reflection for work-start triage, returned in memory |
+| `reflect_brief()` | Self-only compact aggregate over this TS node's Level 0–3 reflection, returned in memory |
+| `reflect_cluster_brief()` | Orchestrator-backed aggregate of connected TS nodes' self `reflect_brief` snapshots |
 | `reflect_refresh()` | Compatibility no-op; cogito brief files are no longer persisted |
 
-Use `reflect_brief()` when an agent needs a small, machine-readable startup view. It combines
+Use `reflect_brief()` when an agent needs a small, machine-readable startup view for the current node. It combines
 identity/capabilities, configuration status, core source pointers, and runtime/dependency health in
 one response. Use `reflect_service("soul-server-ts", level)` for drilldown when a section points to a
 specific level.
+
+Use `reflect_cluster_brief()` when an agent needs the orchestrator's view across connected TS nodes. The tool calls
+the orchestrator API and keeps node failures local to each node entry. It does not replace self `reflect_brief()`;
+the names are intentionally different so callers can choose local self-diagnosis or cluster diagnosis explicitly.
 
 `reflect_service("soul-server-ts", level)` returns a typed envelope for every level:
 
@@ -71,9 +76,8 @@ Level-specific fields are always under `data`. Top-level compatibility aliases m
 
 Unavailable runtime facts are represented structurally, for example `{ "status": "unavailable", "reason": "..." }` or `{ "status": "not_configured" }`. Reflection should not guess values that the TS node cannot verify.
 
-`reflect_brief()` also reports aggregate providers that are not currently wired. The TS node reports
-orchestrator or manifest aggregation as `not_configured` or `unavailable` instead of attempting a
-speculative cross-node lookup.
+`reflect_brief()` may also report aggregate providers that are not available from the local node. Cross-node lookup
+belongs to the orchestrator-backed `reflect_cluster_brief()` path.
 
 ### Session history
 
@@ -109,4 +113,5 @@ One endpoint is also available outside of MCP:
 
 ```
 GET  /cogito/search?q=<query>&top_k=10   — tsvector session history search
+GET  /cogito/briefs                      — aggregate connected TS node reflect_brief snapshots
 ```

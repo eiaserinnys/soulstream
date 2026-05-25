@@ -33,6 +33,7 @@ from soulstream_server.constants import (
     CMD_CLAUDE_AUTH_GET_PROFILE,
     CMD_PLAN_AGENT_PROFILE_UPDATE,
     CMD_PROVIDER_USAGE_GET,
+    CMD_REFLECT_BRIEF,
     COMMAND_TIMEOUT,
     EVT_ERROR,
 )
@@ -440,6 +441,10 @@ class NodeConnection:
         if provider is not None:
             payload["provider"] = provider
         return await self._send_command(CMD_PROVIDER_USAGE_GET, payload)
+
+    async def send_reflect_brief(self, timeout: float = 5.0) -> dict:
+        """대상 노드의 live cogito brief를 WS command로 조회한다."""
+        return await self._send_command(CMD_REFLECT_BRIEF, {}, timeout=timeout)
 
     async def send_plan_agent_profile_update(
         self,
