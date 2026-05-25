@@ -197,25 +197,74 @@ describe("MCP SDK client smoke", () => {
     expect(names.length).toBeGreaterThanOrEqual(expected.length);
   });
 
-  it("callTool('reflect_brief') → services 배열에 본 노드 Level 0 snapshot 한 행", async () => {
+  it("callTool('reflect_brief') → compact aggregate includes Level 0-3 sections", async () => {
     const result = await client.callTool({ name: "reflect_brief", arguments: {} });
     const structured = result.structuredContent as {
+      schema_version: string;
+      kind: string;
+      status: string;
       services: Array<{
         name: string;
         data: {
           schema_version: string;
           service: string;
           level: number;
+          kind: string;
+          identity: { name: string };
           data: { identity: { name: string } };
+          sections: {
+            identity: { status: string; source: { level: number }; checked_at: string };
+            configuration: { status: string; source: { level: number }; checked_at: string };
+            source: { status: string; source: { level: number }; checked_at: string };
+            runtime: {
+              status: string;
+              source: { level: number };
+              checked_at: string;
+              data: {
+                dependencies: {
+                  database: { status: string };
+                  orchestrator: { status: string; checked_at: string };
+                };
+              };
+            };
+          };
+          aggregate_sources: {
+            orchestrator: { status: string; checked_at: string };
+            manifest: { status: string; checked_at: string };
+          };
         };
       }>;
     };
+    expect(structured.schema_version).toBe("soulstream.reflect.v1");
+    expect(structured.kind).toBe("compact_aggregate");
+    expect(structured.status).toBe("ok");
     expect(Array.isArray(structured.services)).toBe(true);
     expect(structured.services[0]?.name).toBe("soul-server-ts");
     expect(structured.services[0]?.data.schema_version).toBe("soulstream.reflect.v1");
     expect(structured.services[0]?.data.service).toBe("soul-server-ts");
+    expect(structured.services[0]?.data.kind).toBe("compact_aggregate");
     expect(structured.services[0]?.data.level).toBe(0);
+    expect(structured.services[0]?.data.identity.name).toBe("soul-server-ts");
     expect(structured.services[0]?.data.data.identity.name).toBe("soul-server-ts");
+    expect(structured.services[0]?.data.sections.identity.source.level).toBe(0);
+    expect(structured.services[0]?.data.sections.configuration.source.level).toBe(1);
+    expect(structured.services[0]?.data.sections.source.source.level).toBe(2);
+    expect(structured.services[0]?.data.sections.runtime.source.level).toBe(3);
+    expect(structured.services[0]?.data.sections.runtime.data.dependencies.database.status).toBe(
+      "ok",
+    );
+    expect(
+      structured.services[0]?.data.sections.runtime.data.dependencies.orchestrator.status,
+    ).toBe("not_configured");
+    expect(
+      structured.services[0]?.data.sections.runtime.data.dependencies.orchestrator.checked_at,
+    ).toEqual(expect.any(String));
+    expect(structured.services[0]?.data.aggregate_sources.orchestrator.status).toBe(
+      "not_configured",
+    );
+    expect(structured.services[0]?.data.aggregate_sources.manifest.status).toBe(
+      "not_configured",
+    );
   });
 
   it("callTool('list_local_agents') → AgentRegistry 응답", async () => {
