@@ -17,8 +17,8 @@ import { AgentsEngineAdapter } from "./engine/agents_adapter.js";
 import { AnthropicAdapter, OpenAIAdapter } from "./llm/adapters.js";
 import { LlmExecutor } from "./llm/executor.js";
 import { createLogger } from "./logger.js";
-import { wsToHttpBase } from "./mcp/orch_proxy.js";
-import type { McpRuntime, OrchProxyConfig } from "./mcp/runtime.js";
+import { buildOrchProxyConfig } from "./mcp/orch_proxy.js";
+import type { McpRuntime } from "./mcp/runtime.js";
 import { buildServer, startServer } from "./server.js";
 import { RealtimeBroker } from "./realtime/realtime_broker.js";
 import { TaskCompletionNotifier } from "./task/completion_notifier.js";
@@ -284,7 +284,7 @@ async function main(): Promise<void> {
     taskExecutor.startExecution(task, agent);
   };
 
-  const orchProxyConfig = env.MCP_ENABLED ? buildOrchProxyConfig(env) : undefined;
+  const orchProxyConfig = buildOrchProxyConfig(env);
   const completionNotifier = new TaskCompletionNotifier(
     env.SOULSTREAM_NODE_ID,
     taskManager,
@@ -347,7 +347,8 @@ async function main(): Promise<void> {
     agentConfigService,
     catalogService,
     logger,
-    // B-7: completionNotifier가 이미 같은 orchProxyConfig를 보유 — 정본 하나 (design-principles §3)
+    // Completion relay and MCP multi-node tools share the same upstream HTTP config.
+    // Completion relay is not gated by MCP exposure; MCP route mounting still is.
     orch: orchProxyConfig,
   };
 
@@ -448,24 +449,6 @@ async function main(): Promise<void> {
   };
   process.once("SIGTERM", () => void shutdown("SIGTERM"));
   process.once("SIGINT", () => void shutdown("SIGINT"));
-}
-
-/**
- * MCP multi_node 도구가 사용할 orch HTTP base URL + 인증 헤더 조립.
- *
- * SOULSTREAM_UPSTREAM_URL은 reverse WS 경로(ws[s]://host/ws/...)이므로 scheme/path 변환.
- * AUTH_BEARER_TOKEN이 있으면 Authorization 헤더에 박는다.
- */
-function buildOrchProxyConfig(env: {
-  SOULSTREAM_UPSTREAM_URL: string;
-  AUTH_BEARER_TOKEN: string;
-}): OrchProxyConfig {
-  const baseUrl = wsToHttpBase(env.SOULSTREAM_UPSTREAM_URL);
-  const headers: Record<string, string> = {};
-  if (env.AUTH_BEARER_TOKEN) {
-    headers["authorization"] = `Bearer ${env.AUTH_BEARER_TOKEN}`;
-  }
-  return { baseUrl, headers };
 }
 
 main().catch((err) => {

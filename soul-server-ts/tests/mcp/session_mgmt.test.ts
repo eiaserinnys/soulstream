@@ -264,6 +264,41 @@ describe("agent profile backend boundary", () => {
     );
   });
 
+  it("create_agent_session은 caller_session_id와 caller_info를 로컬 task에 보존한다", async () => {
+    const runtime = makeRuntime(
+      { queued: true, queuePosition: 1 },
+      undefined,
+      [codexAgent, claudeAgent],
+    );
+    const client = await createClient(runtime);
+
+    const result = await client.callTool({
+      name: "create_agent_session",
+      arguments: {
+        agent_id: "codex-default",
+        prompt: "child work",
+        caller_session_id: "caller-sess-1",
+        folder_id: "folder-1",
+      },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(runtime.createTask).toHaveBeenCalledTimes(1);
+    expect(runtime.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: "child work",
+        profileId: "codex-default",
+        callerSessionId: "caller-sess-1",
+        folderId: "folder-1",
+        callerInfo: expect.objectContaining({
+          source: "agent",
+          agent_node: "node-test",
+          agent_id: "codex-default",
+        }),
+      }),
+    );
+  });
+
   it("reflect_service level=3은 registry agent 수를 보고", async () => {
     const runtime = makeRuntime(
       { queued: true, queuePosition: 1 },
@@ -375,7 +410,9 @@ describe("create_remote_agent_session", () => {
       expect(body.profile).toBe("roselin_codex");
       expect(body.nodeId).toBe("node-remote");
       expect(body.folderId).toBe("folder-1");
+      expect(body.caller_session_id).toBe("caller-sess-1");
       expect(body.caller_info.agent_id).toBe("codex-default");
+      expect(body.caller_info.agent_node).toBe("node-test");
     } finally {
       await capture.close();
     }

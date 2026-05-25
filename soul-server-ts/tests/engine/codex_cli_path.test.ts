@@ -19,6 +19,10 @@ function makeExecutable(path: string): void {
   chmodSync(path, 0o755);
 }
 
+function makeFile(path: string): void {
+  writeFileSync(path, "echo codex\n");
+}
+
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
@@ -44,6 +48,66 @@ describe("resolveCodexCliPath", () => {
     expect(resolveCodexCliPath({ PATH: dir, HOME: "" })).toEqual({
       path: codex,
       source: "PATH",
+    });
+  });
+
+  it("Windows PATH에서 extensionless bash shim 대신 codex.cmd를 선택한다", () => {
+    const dir = makeTempDir();
+    const bashShim = join(dir, "codex");
+    const cmdShim = join(dir, "codex.cmd");
+    makeFile(bashShim);
+    makeFile(cmdShim);
+
+    expect(resolveCodexCliPath({ PATH: dir, HOME: "" }, "win32")).toEqual({
+      path: cmdShim,
+      source: "PATH",
+    });
+  });
+
+  it("Windows Path 키도 PATH처럼 처리한다", () => {
+    const dir = makeTempDir();
+    const cmdShim = join(dir, "codex.cmd");
+    makeFile(cmdShim);
+
+    expect(resolveCodexCliPath({ Path: dir }, "win32")).toEqual({
+      path: cmdShim,
+      source: "PATH",
+    });
+  });
+
+  it("Windows APPDATA npm fallback에서 codex.cmd를 찾는다", () => {
+    const appData = makeTempDir();
+    const npmDir = join(appData, "npm");
+    const cmdShim = join(npmDir, "codex.cmd");
+    mkdirSync(npmDir, { recursive: true });
+    makeFile(cmdShim);
+
+    expect(
+      resolveCodexCliPath(
+        { PATH: "", APPDATA: appData, USERPROFILE: "" },
+        "win32",
+      ),
+    ).toEqual({
+      path: cmdShim,
+      source: "WINDOWS_APPDATA_NPM",
+    });
+  });
+
+  it("Windows USERPROFILE npm fallback에서 codex.cmd를 찾는다", () => {
+    const userProfile = makeTempDir();
+    const npmDir = join(userProfile, "AppData", "Roaming", "npm");
+    const cmdShim = join(npmDir, "codex.cmd");
+    mkdirSync(npmDir, { recursive: true });
+    makeFile(cmdShim);
+
+    expect(
+      resolveCodexCliPath(
+        { PATH: "", APPDATA: "", USERPROFILE: userProfile },
+        "win32",
+      ),
+    ).toEqual({
+      path: cmdShim,
+      source: "WINDOWS_USERPROFILE_NPM",
     });
   });
 

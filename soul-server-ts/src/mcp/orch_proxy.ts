@@ -1,3 +1,5 @@
+import type { OrchProxyConfig } from "./runtime.js";
+
 /**
  * orch HTTP base URL 변환 헬퍼.
  *
@@ -21,4 +23,23 @@ export function wsToHttpBase(wsUrl: string): string {
   const slashIdx = rest.indexOf("/");
   const hostPort = slashIdx === -1 ? rest : rest.slice(0, slashIdx);
   return `${scheme}${hostPort}`;
+}
+
+/**
+ * Build the orchestrator HTTP relay config from the required upstream WS URL.
+ *
+ * This config is used by two different surfaces:
+ * - MCP multi-node tools when MCP is enabled.
+ * - Completion relay for delegated child sessions, regardless of MCP exposure.
+ */
+export function buildOrchProxyConfig(env: {
+  SOULSTREAM_UPSTREAM_URL: string;
+  AUTH_BEARER_TOKEN?: string;
+}): OrchProxyConfig {
+  const baseUrl = wsToHttpBase(env.SOULSTREAM_UPSTREAM_URL);
+  const headers: Record<string, string> = {};
+  if (env.AUTH_BEARER_TOKEN) {
+    headers["authorization"] = `Bearer ${env.AUTH_BEARER_TOKEN}`;
+  }
+  return { baseUrl, headers };
 }

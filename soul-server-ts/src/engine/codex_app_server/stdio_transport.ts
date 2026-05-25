@@ -30,6 +30,7 @@ export interface StdioAppServerTransportOptions {
   listenUrl?: AppServerTransportUrl;
   cwd?: string;
   env?: NodeJS.ProcessEnv;
+  platform?: NodeJS.Platform;
   logger?: AppServerTransportLogger;
   closeGraceMs?: number;
   spawnProcess?: StdioSpawnProcess;
@@ -75,10 +76,12 @@ class StdioAppServerTransport implements AppServerTransport {
     this.logger = options.logger ?? NOOP_LOGGER;
     this.closeGraceMs = options.closeGraceMs ?? 2_000;
     const spawnProcess = options.spawnProcess ?? defaultSpawnProcess;
+    const platform = options.platform ?? process.platform;
     this.child = spawnProcess(command, args, {
       cwd: options.cwd,
       env: options.env,
       stdio: "pipe",
+      ...(needsWindowsCommandShell(command, platform) ? { shell: true } : {}),
     });
 
     this.logger.debug({ pid: this.child.pid, command, args }, "Codex app-server spawned");
@@ -222,6 +225,15 @@ function defaultSpawnProcess(
   options: SpawnOptionsWithoutStdio,
 ): AppServerChildProcess {
   return spawn(command, args, options);
+}
+
+function needsWindowsCommandShell(
+  command: string,
+  platform: NodeJS.Platform,
+): boolean {
+  if (platform !== "win32") return false;
+  const lower = command.toLowerCase();
+  return lower.endsWith(".cmd") || lower.endsWith(".bat");
 }
 
 function exitError(code: number | null, signal: NodeJS.Signals | null): Error | undefined {

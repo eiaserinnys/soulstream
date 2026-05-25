@@ -89,6 +89,44 @@ describe("stdio app-server transport", () => {
     expect(commands).toEqual(["/home/eias/.npm-global/bin/codex"]);
   });
 
+  it("uses shell mode for Windows .cmd command shims", async () => {
+    const child = new MockChildProcess();
+    const spawnOptions: Array<{ shell?: unknown }> = [];
+
+    const transport = createStdioAppServerTransport({
+      command: "C:\\Users\\LG\\AppData\\Roaming\\npm\\codex.cmd",
+      platform: "win32",
+      spawnProcess: (_command, _args, options) => {
+        spawnOptions.push(options);
+        return child;
+      },
+    });
+
+    await transport.send({ id: "req-1", method: "initialize", params: {} });
+
+    expect(spawnOptions).toHaveLength(1);
+    expect(spawnOptions[0]!.shell).toBe(true);
+  });
+
+  it("does not force shell mode for Windows .exe commands", async () => {
+    const child = new MockChildProcess();
+    const spawnOptions: Array<{ shell?: unknown }> = [];
+
+    const transport = createStdioAppServerTransport({
+      command: "C:\\Program Files\\Codex\\codex.exe",
+      platform: "win32",
+      spawnProcess: (_command, _args, options) => {
+        spawnOptions.push(options);
+        return child;
+      },
+    });
+
+    await transport.send({ id: "req-1", method: "initialize", params: {} });
+
+    expect(spawnOptions).toHaveLength(1);
+    expect(spawnOptions[0]!.shell).toBeUndefined();
+  });
+
   it("parses stdout newline framed JSON across chunk boundaries", () => {
     const child = new MockChildProcess();
     const messages: AppServerJsonMessage[] = [];

@@ -1,25 +1,46 @@
 import { describe, expect, it } from "vitest";
 
-import { wsToHttpBase } from "../../src/mcp/orch_proxy.js";
+import { buildOrchProxyConfig, wsToHttpBase } from "../../src/mcp/orch_proxy.js";
 
-describe("wsToHttpBase", () => {
-  it("ws:// → http://", () => {
-    expect(wsToHttpBase("ws://localhost:5200/ws/node")).toBe(
-      "http://localhost:5200",
+describe("orch proxy config", () => {
+  it("converts upstream websocket URL to HTTP base", () => {
+    expect(wsToHttpBase("ws://orch.example.com:3105/ws/node")).toBe(
+      "http://orch.example.com:3105",
+    );
+    expect(wsToHttpBase("wss://orch.example.com/ws/node")).toBe(
+      "https://orch.example.com",
     );
   });
 
-  it("wss:// → https://", () => {
-    expect(wsToHttpBase("wss://example.com:443/ws/node")).toBe(
-      "https://example.com:443",
-    );
-  });
-
-  it("path가 없어도 host:port 그대로 보존", () => {
+  it("preserves host and port when path is absent", () => {
     expect(wsToHttpBase("ws://127.0.0.1:5200")).toBe("http://127.0.0.1:5200");
   });
 
-  it("http:// 스킴은 거부 throw", () => {
+  it("rejects non-websocket schemes", () => {
     expect(() => wsToHttpBase("http://example.com")).toThrow(/ws:\/\//);
+  });
+
+  it("builds relay config from upstream URL without depending on MCP_ENABLED", () => {
+    expect(
+      buildOrchProxyConfig({
+        SOULSTREAM_UPSTREAM_URL: "wss://orch.example.com/ws/node",
+        AUTH_BEARER_TOKEN: "secret",
+      }),
+    ).toEqual({
+      baseUrl: "https://orch.example.com",
+      headers: { authorization: "Bearer secret" },
+    });
+  });
+
+  it("omits authorization header when auth token is empty", () => {
+    expect(
+      buildOrchProxyConfig({
+        SOULSTREAM_UPSTREAM_URL: "ws://127.0.0.1:3105/ws/node",
+        AUTH_BEARER_TOKEN: "",
+      }),
+    ).toEqual({
+      baseUrl: "http://127.0.0.1:3105",
+      headers: {},
+    });
   });
 });
