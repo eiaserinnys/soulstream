@@ -124,6 +124,18 @@ function makeRuntime(configPath: string, agentRegistry: AgentRegistry): McpRunti
   };
 }
 
+async function callToolCapturingValidation(
+  client: Client,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<unknown> {
+  try {
+    return await client.callTool({ name, arguments: args });
+  } catch (err) {
+    return err;
+  }
+}
+
 describe("MCP SDK client smoke", () => {
   let server: Awaited<ReturnType<typeof buildServer>>;
   let client: Client;
@@ -549,6 +561,23 @@ describe("MCP SDK client smoke", () => {
     expect(rollback.isError).not.toBe(true);
     expect(agentRegistry.get("codex-default")?.mcp_profile).toBeUndefined();
     expect(fs.readFileSync(configPath, "utf-8")).not.toContain("mcp_profile:");
+  });
+
+  it("callTool('set_agent_mcp_profile') without mcp_profile → validation error, no file write", async () => {
+    const before = fs.readFileSync(configPath, "utf-8");
+
+    const result = await callToolCapturingValidation(
+      client,
+      "set_agent_mcp_profile",
+      { agent_id: "codex-default" },
+    );
+
+    expect(JSON.stringify(result)).toContain("mcp_profile");
+    if (result && typeof result === "object" && "isError" in result) {
+      expect((result as { isError?: boolean }).isError).toBe(true);
+    }
+    expect(fs.readFileSync(configPath, "utf-8")).toBe(before);
+    expect(agentRegistry.get("codex-default")?.mcp_profile).toBeUndefined();
   });
 
   it("callTool('plan_agent_mcp_profile_update') → read-only semantic plan", async () => {

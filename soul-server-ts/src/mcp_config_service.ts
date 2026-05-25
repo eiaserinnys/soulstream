@@ -153,7 +153,9 @@ export class McpConfigService {
         ...(profile.name ? { name: profile.name } : {}),
         ...(profile.description ? { description: profile.description } : {}),
         mcp_servers: profile.mcp_servers,
-        hosted_tools: profile.hosted_tools,
+        hosted_tools: profile.hosted_tools.map((tool) =>
+          sanitizeHostedTool(tool, this.processEnv)
+        ),
       })),
     };
   }
@@ -305,7 +307,7 @@ function sanitizeServer(
 }
 
 function sanitizeSecretRecord(
-  record: Record<string, string | { env: string }>,
+  record: Record<string, unknown>,
   processEnv: Record<string, string | undefined>,
 ): Record<string, unknown> {
   return Object.fromEntries(
@@ -317,6 +319,18 @@ function sanitizeSecretRecord(
       return [key, value];
     }),
   );
+}
+
+function sanitizeHostedTool(
+  tool: AgentsSdkHostedTool,
+  processEnv: Record<string, string | undefined>,
+): Record<string, unknown> {
+  if (tool.type !== "hosted_mcp") return tool;
+  return {
+    ...tool,
+    ...(tool.authorization ? { authorization: { redacted: true } } : {}),
+    ...(tool.headers ? { headers: sanitizeSecretRecord(tool.headers, processEnv) } : {}),
+  };
 }
 
 function mergeByKey<T>(defaults: T[], overrides: T[], keyOf: (value: T) => string): T[] {

@@ -219,7 +219,7 @@ export function registerAgentConfigTools(
         "agents.yaml 단일 agent.mcp_profile 참조 변경 계획을 생성한다. 파일은 쓰지 않는다.",
       inputSchema: {
         agent_id: z.string().min(1),
-        mcp_profile: z.string().min(1).nullable().optional(),
+        mcp_profile: z.string().min(1).nullable(),
         include_text_diff: z.boolean().optional(),
         includeTextDiff: z.boolean().optional(),
       },
@@ -257,7 +257,7 @@ export function registerAgentConfigTools(
         "agents.yaml의 단일 agent.mcp_profile 참조를 설정하거나 null로 제거한다. registry/profile 파일 자체는 수정하지 않는다.",
       inputSchema: {
         agent_id: z.string().min(1),
-        mcp_profile: z.string().min(1).nullable().optional(),
+        mcp_profile: z.string().min(1).nullable(),
         include_text_diff: z.boolean().optional(),
         includeTextDiff: z.boolean().optional(),
         expected_config_checksum: z.string().optional(),

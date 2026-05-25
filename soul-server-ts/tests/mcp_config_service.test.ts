@@ -136,6 +136,41 @@ describe("McpConfigService", () => {
     });
   });
 
+  it("redacts hosted MCP authorization and sensitive headers from listProfiles output", () => {
+    fs.writeFileSync(
+      profilesPath,
+      [
+        "profiles:",
+        "  - id: hosted",
+        "    hosted_tools:",
+        "      - type: hosted_mcp",
+        "        server_label: hosted-docs",
+        "        server_url: https://hosted.example.com/mcp",
+        "        authorization: Bearer hosted-secret",
+        "        headers:",
+        "          Authorization: Bearer header-secret",
+        "          X-API-Key: api-key-secret",
+        "          X-Trace-Id: trace-id",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    const service = new McpConfigService({ agentsConfigPath });
+
+    const [profile] = service.listProfiles().profiles;
+    const [hostedTool] = profile?.hosted_tools as Array<Record<string, unknown>>;
+
+    expect(hostedTool.authorization).toEqual({ redacted: true });
+    expect(hostedTool.headers).toEqual({
+      Authorization: { redacted: true },
+      "X-API-Key": { redacted: true },
+      "X-Trace-Id": "trace-id",
+    });
+    expect(JSON.stringify(profile)).not.toContain("hosted-secret");
+    expect(JSON.stringify(profile)).not.toContain("header-secret");
+    expect(JSON.stringify(profile)).not.toContain("api-key-secret");
+  });
+
   it("inline mcp_servers and hosted_tools override profile defaults by stable key", () => {
     fs.writeFileSync(
       registryPath,
