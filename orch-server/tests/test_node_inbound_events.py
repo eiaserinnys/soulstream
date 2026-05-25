@@ -51,6 +51,49 @@ class TestNodeInboundEventsSessionCache:
             "node-1", "session_created", data
         )
 
+    @pytest.mark.parametrize(
+        ("data", "session_id"),
+        [
+            (
+                {
+                    "type": EVT_SESSION_CREATED,
+                    "agent_session_id": "sess-snake-top",
+                    "status": "idle",
+                },
+                "sess-snake-top",
+            ),
+            (
+                {
+                    "type": EVT_SESSION_CREATED,
+                    "session": {
+                        "agentSessionId": "sess-camel-nested",
+                        "status": "running",
+                    },
+                },
+                "sess-camel-nested",
+            ),
+            (
+                {
+                    "type": EVT_SESSION_CREATED,
+                    "session": {
+                        "agent_session_id": "sess-snake-nested",
+                        "status": "running",
+                    },
+                },
+                "sess-snake-nested",
+            ),
+        ],
+    )
+    async def test_session_created_accepts_snake_and_nested_session_ids(
+        self, inbound, on_session_change, data, session_id
+    ):
+        await inbound.handle(data)
+
+        assert inbound.sessions[session_id]["agentSessionId"] == session_id
+        on_session_change.assert_awaited_once_with(
+            "node-1", "session_created", data
+        )
+
     async def test_sessions_update_replaces_cache_and_reports_change(
         self, inbound, on_session_change
     ):
@@ -72,6 +115,23 @@ class TestNodeInboundEventsSessionCache:
             "node-1", "sessions_update", data
         )
 
+    async def test_sessions_update_accepts_snake_case_agent_session_id(
+        self, inbound, on_session_change
+    ):
+        data = {
+            "type": EVT_SESSIONS_UPDATE,
+            "sessions": [
+                {"agent_session_id": "new-snake", "status": "running"},
+            ],
+        }
+
+        await inbound.handle(data)
+
+        assert "new-snake" in inbound.sessions
+        on_session_change.assert_awaited_once_with(
+            "node-1", "sessions_update", data
+        )
+
     async def test_session_updated_updates_existing_cache_item_and_reports_change(
         self, inbound, on_session_change
     ):
@@ -88,6 +148,26 @@ class TestNodeInboundEventsSessionCache:
         await inbound.handle(data)
 
         assert inbound.sessions["sess-x"]["status"] == "idle"
+        on_session_change.assert_awaited_once_with(
+            "node-1", "session_updated", data
+        )
+
+    async def test_session_updated_accepts_snake_case_agent_session_id(
+        self, inbound, on_session_change
+    ):
+        inbound.sessions["sess-snake"] = {
+            "agentSessionId": "sess-snake",
+            "status": "running",
+        }
+        data = {
+            "type": EVT_SESSION_UPDATED,
+            "agent_session_id": "sess-snake",
+            "status": "idle",
+        }
+
+        await inbound.handle(data)
+
+        assert inbound.sessions["sess-snake"]["status"] == "idle"
         on_session_change.assert_awaited_once_with(
             "node-1", "session_updated", data
         )
@@ -120,6 +200,22 @@ class TestNodeInboundEventsSessionCache:
         await inbound.handle(data)
 
         assert "sess-del" not in inbound.sessions
+        on_session_change.assert_awaited_once_with(
+            "node-1", "session_deleted", data
+        )
+
+    async def test_session_deleted_accepts_snake_case_agent_session_id(
+        self, inbound, on_session_change
+    ):
+        inbound.sessions["sess-del-snake"] = {"agentSessionId": "sess-del-snake"}
+        data = {
+            "type": EVT_SESSION_DELETED,
+            "agent_session_id": "sess-del-snake",
+        }
+
+        await inbound.handle(data)
+
+        assert "sess-del-snake" not in inbound.sessions
         on_session_change.assert_awaited_once_with(
             "node-1", "session_deleted", data
         )

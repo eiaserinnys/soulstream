@@ -22,6 +22,26 @@ OnSessionChangeCallback = Callable[
 ]
 
 
+def _nested_session(data: dict) -> dict:
+    session = data.get("session")
+    return session if isinstance(session, dict) else {}
+
+
+def _session_id_from_payload(data: dict) -> str | None:
+    session = _nested_session(data)
+    session_id = (
+        data.get("agentSessionId")
+        or data.get("agent_session_id")
+        or data.get("sessionId")
+        or data.get("session_id")
+        or session.get("agentSessionId")
+        or session.get("agent_session_id")
+        or session.get("sessionId")
+        or session.get("session_id")
+    )
+    return session_id if isinstance(session_id, str) and session_id else None
+
+
 class NodeInboundEvents:
     """Handle node-originated events and local session/listener state."""
 
@@ -96,17 +116,18 @@ class NodeInboundEvents:
             await self.on_session_change(self.node_id, change_type, data)
 
     async def _on_session_created(self, data: dict) -> None:
-        session_id = data.get("agentSessionId")
+        session = _nested_session(data)
+        session_id = _session_id_from_payload(data)
         if session_id:
             self._sessions[session_id] = {
                 "agentSessionId": session_id,
-                "status": data.get("status", "running"),
+                "status": data.get("status") or session.get("status", "running"),
                 "nodeId": self.node_id,
             }
             await self._notify_session_change("session_created", data)
 
     async def _on_event(self, data: dict) -> None:
-        session_id = data.get("agentSessionId") or data.get("sessionId")
+        session_id = _session_id_from_payload(data)
         subscribe_id = data.get("subscribeId")
 
         if session_id and session_id in self._subscribe_listeners:
@@ -121,19 +142,19 @@ class NodeInboundEvents:
         sessions = data.get("sessions", [])
         self._sessions.clear()
         for session in sessions:
-            session_id = session.get("agentSessionId") or session.get("session_id")
+            session_id = _session_id_from_payload(session)
             if session_id:
                 self._sessions[session_id] = session
         await self._notify_session_change("sessions_update", data)
 
     async def _on_session_updated(self, data: dict) -> None:
-        session_id = data.get("agentSessionId") or data.get("session_id")
+        session_id = _session_id_from_payload(data)
         if session_id and session_id in self._sessions:
             self._sessions[session_id].update(data)
         await self._notify_session_change("session_updated", data)
 
     async def _on_session_deleted(self, data: dict) -> None:
-        session_id = data.get("agentSessionId") or data.get("session_id")
+        session_id = _session_id_from_payload(data)
         if session_id:
             self._sessions.pop(session_id, None)
         await self._notify_session_change("session_deleted", data)

@@ -71,6 +71,7 @@ class TestHandleMessage:
         assert future.done()
         result = future.result()
         assert result["agentSessionId"] == "sess-abc"
+        assert "sess-abc" not in node.sessions
 
     async def test_error_rejects_pending_future(self, node):
         """error message with matching requestId sets exception on the future."""
@@ -179,6 +180,20 @@ class TestHandleMessage:
 
         assert "sess-new" in node.sessions
         assert node.sessions["sess-new"]["status"] == "running"
+
+    async def test_nested_session_created_event_adds_to_sessions(self, node):
+        """session_created event without requestId accepts nested TS broadcaster wire."""
+        await node.handle_message({
+            "type": EVT_SESSION_CREATED,
+            "session": {
+                "agent_session_id": "sess-nested",
+                "status": "running",
+            },
+            "folderId": "folder-1",
+        })
+
+        assert "sess-nested" in node.sessions
+        assert node.sessions["sess-nested"]["status"] == "running"
 
 
 class TestCommandSending:
