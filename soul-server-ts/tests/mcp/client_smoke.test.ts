@@ -53,9 +53,13 @@ const EXPECTED_TOOLS = [
   "delete_session",
   // agent_config
   "get_agents_config",
+  "list_mcp_registry",
+  "list_mcp_profiles",
   "list_agents_config_snapshots",
   "plan_agent_profile_update",
+  "plan_agent_mcp_profile_update",
   "update_agent_profile",
+  "set_agent_mcp_profile",
   "set_agent_atom_contexts",
   "rollback_agents_config",
   // multi_node
@@ -131,6 +135,31 @@ describe("MCP SDK client smoke", () => {
   beforeAll(async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "soul-mcp-smoke-"));
     configPath = path.join(tempDir, "agents.yaml");
+    fs.writeFileSync(
+      path.join(tempDir, "mcp-registry.yaml"),
+      [
+        "servers:",
+        "  - id: docs",
+        "    type: streamable_http",
+        "    url: https://docs.example.com/mcp",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    fs.writeFileSync(
+      path.join(tempDir, "mcp-profiles.yaml"),
+      [
+        "profiles:",
+        "  - id: research",
+        "    name: Research",
+        "    mcp_servers: [docs]",
+        "    hosted_tools:",
+        "      - type: web_search",
+        "        search_context_size: low",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
     fs.writeFileSync(
       configPath,
       [
@@ -451,6 +480,105 @@ describe("MCP SDK client smoke", () => {
     expect(rollback.isError).not.toBe(true);
     expect(agentRegistry.get("codex-default")?.atom_contexts).toBeUndefined();
     expect(fs.readFileSync(configPath, "utf-8")).not.toContain("atom_contexts:");
+  });
+
+  it("callTool('list_mcp_registry'/'list_mcp_profiles') → canonical MCP presets", async () => {
+    const registry = await client.callTool({
+      name: "list_mcp_registry",
+      arguments: {},
+    });
+    expect(registry.isError).not.toBe(true);
+    const registryContent = registry.structuredContent as {
+      servers: Array<{ id: string; type: string; url?: string }>;
+    };
+    expect(registryContent.servers).toEqual([
+      expect.objectContaining({
+        id: "docs",
+        type: "streamable_http",
+        url: "https://docs.example.com/mcp",
+      }),
+    ]);
+
+    const profiles = await client.callTool({
+      name: "list_mcp_profiles",
+      arguments: {},
+    });
+    expect(profiles.isError).not.toBe(true);
+    const profilesContent = profiles.structuredContent as {
+      profiles: Array<{ id: string; mcp_servers: string[]; hosted_tools: Array<{ type: string }> }>;
+    };
+    expect(profilesContent.profiles).toEqual([
+      expect.objectContaining({
+        id: "research",
+        mcp_servers: ["docs"],
+        hosted_tools: [expect.objectContaining({ type: "web_search" })],
+      }),
+    ]);
+  });
+
+  it("callTool('set_agent_mcp_profile') → narrow agents.yaml update + registry reload", async () => {
+    const result = await client.callTool({
+      name: "set_agent_mcp_profile",
+      arguments: {
+        agent_id: "codex-default",
+        mcp_profile: "research",
+      },
+    });
+    expect(result.isError).not.toBe(true);
+    const structured = result.structuredContent as {
+      snapshot_path?: string;
+      semantic_changes: Array<{ op: string; agent_id: string; after: string }>;
+      agent: { mcp_profile?: string };
+    };
+    expect(structured.snapshot_path).toBeTruthy();
+    expect(structured.semantic_changes).toEqual([
+      expect.objectContaining({
+        op: "update_agent_mcp_profile",
+        agent_id: "codex-default",
+        after: "research",
+      }),
+    ]);
+    expect(structured.agent.mcp_profile).toBe("research");
+    expect(agentRegistry.get("codex-default")?.mcp_profile).toBe("research");
+    expect(fs.readFileSync(configPath, "utf-8")).toContain("mcp_profile: research");
+
+    const rollback = await client.callTool({
+      name: "rollback_agents_config",
+      arguments: { snapshot_path: structured.snapshot_path },
+    });
+    expect(rollback.isError).not.toBe(true);
+    expect(agentRegistry.get("codex-default")?.mcp_profile).toBeUndefined();
+    expect(fs.readFileSync(configPath, "utf-8")).not.toContain("mcp_profile:");
+  });
+
+  it("callTool('plan_agent_mcp_profile_update') → read-only semantic plan", async () => {
+    const before = fs.readFileSync(configPath, "utf-8");
+    const result = await client.callTool({
+      name: "plan_agent_mcp_profile_update",
+      arguments: {
+        agent_id: "codex-default",
+        mcp_profile: "research",
+      },
+    });
+    expect(result.isError).not.toBe(true);
+    const structured = result.structuredContent as {
+      changed: boolean;
+      semantic_changes: Array<{ op: string; agent_id: string; after: string }>;
+      text_diff_included: boolean;
+      diff: string;
+    };
+    expect(structured.changed).toBe(true);
+    expect(structured.semantic_changes).toEqual([
+      expect.objectContaining({
+        op: "update_agent_mcp_profile",
+        agent_id: "codex-default",
+        after: "research",
+      }),
+    ]);
+    expect(structured.text_diff_included).toBe(false);
+    expect(structured.diff).toBe("");
+    expect(fs.readFileSync(configPath, "utf-8")).toBe(before);
+    expect(agentRegistry.get("codex-default")?.mcp_profile).toBeUndefined();
   });
 
   it("callTool('plan_agent_profile_update') → semantic plan by default, no file write", async () => {

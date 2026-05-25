@@ -18,6 +18,7 @@ export interface AgentConfigServiceOptions {
   configPath: string;
   snapshotRoot?: string;
   agentRegistry?: Pick<AgentRegistry, "replace">;
+  profileResolver?: (profiles: AgentProfile[]) => AgentProfile[];
 }
 
 export interface AgentConfigPlanOptions {
@@ -48,10 +49,16 @@ export type AgentConfigSemanticChange =
       after: AgentAtomContext[];
     }
   | {
+      op: "update_agent_mcp_profile";
+      agentId: string;
+      before: string | null;
+      after: string | null;
+    }
+  | {
       op: "no_change";
       agentId: string;
-      before: AgentProfile | AgentAtomContext[] | null;
-      after: AgentProfile | AgentAtomContext[] | null;
+      before: AgentProfile | AgentAtomContext[] | string | null;
+      after: AgentProfile | AgentAtomContext[] | string | null;
     };
 
 export interface AgentConfigPlan extends ConfigChangePlan<AgentsConfig> {
@@ -85,15 +92,17 @@ export function toAgentConfigSemanticChangeWire(
 
 export class AgentConfigService {
   private readonly store: ConfigStore<AgentsConfig>;
+  private readonly profileResolver?: (profiles: AgentProfile[]) => AgentProfile[];
 
   constructor(options: AgentConfigServiceOptions) {
+    this.profileResolver = options.profileResolver;
     this.store = new ConfigStore({
       configPath: options.configPath,
       snapshotRoot: options.snapshotRoot,
       parse: parseAgentsConfigRaw,
       stringify: stringifyAgentsConfig,
       onAfterApply: (config) => {
-        options.agentRegistry?.replace(config.agents);
+        options.agentRegistry?.replace(this.resolveProfiles(config.agents));
       },
     });
   }
@@ -129,7 +138,7 @@ export class AgentConfigService {
     return this.store.apply((current) => {
       semanticChanges = profileUpdateSemanticChanges(current, profile, createIfMissing);
       if (isNoChangeOnly(semanticChanges)) return current;
-      return replaceAgentProfile(current, profile, createIfMissing);
+      return this.prepareConfig(replaceAgentProfile(current, profile, createIfMissing));
     }, {
       includeTextDiff,
       expectedConfigChecksum: options.expectedConfigChecksum,
@@ -162,12 +171,47 @@ export class AgentConfigService {
     return this.store.apply((current) => {
       semanticChanges = atomContextsSemanticChanges(current, agentId, atomContexts);
       if (isNoChangeOnly(semanticChanges)) return current;
-      return setAgentAtomContexts(current, agentId, atomContexts);
+      return this.prepareConfig(setAgentAtomContexts(current, agentId, atomContexts));
     }).then((result) => ({
       ...result,
       changed: !isNoChangeOnly(semanticChanges),
       semanticChanges,
       textDiffIncluded: true,
+      reloadOk: true,
+    }));
+  }
+
+  planSetAgentMcpProfile(
+    agentId: string,
+    mcpProfile: string | null | undefined,
+    options: AgentConfigPlanOptions = {},
+  ): Promise<AgentConfigPlan> {
+    return this.planWithSemanticChanges(
+      (current) => mcpProfileSemanticChanges(current, agentId, mcpProfile),
+      (current) => setAgentMcpProfile(current, agentId, mcpProfile),
+      options,
+    );
+  }
+
+  setAgentMcpProfile(
+    agentId: string,
+    mcpProfile: string | null | undefined,
+    options: AgentConfigApplyOptions = {},
+  ): Promise<AgentConfigApplyResult> {
+    const includeTextDiff = options.includeTextDiff ?? true;
+    let semanticChanges: AgentConfigSemanticChange[] = [];
+    return this.store.apply((current) => {
+      semanticChanges = mcpProfileSemanticChanges(current, agentId, mcpProfile);
+      if (isNoChangeOnly(semanticChanges)) return current;
+      return this.prepareConfig(setAgentMcpProfile(current, agentId, mcpProfile));
+    }, {
+      includeTextDiff,
+      expectedConfigChecksum: options.expectedConfigChecksum,
+    }).then((result) => ({
+      ...result,
+      changed: !isNoChangeOnly(semanticChanges),
+      semanticChanges,
+      textDiffIncluded: includeTextDiff,
       reloadOk: true,
     }));
   }
@@ -193,8 +237,8 @@ export class AgentConfigService {
     let semanticChanges: AgentConfigSemanticChange[] = [];
     const plan = await this.store.plan((current) => {
       semanticChanges = computeSemanticChanges(current);
-      if (isNoChangeOnly(semanticChanges)) return current;
-      return mutate(current);
+      if (isNoChangeOnly(semanticChanges)) return this.prepareConfig(current);
+      return this.prepareConfig(mutate(current));
     }, { includeTextDiff });
     return {
       ...plan,
@@ -202,6 +246,15 @@ export class AgentConfigService {
       semanticChanges,
       textDiffIncluded: includeTextDiff,
     };
+  }
+
+  private prepareConfig(config: AgentsConfig): AgentsConfig {
+    this.resolveProfiles(config.agents);
+    return config;
+  }
+
+  private resolveProfiles(profiles: AgentProfile[]): AgentProfile[] {
+    return this.profileResolver ? this.profileResolver(profiles) : profiles;
   }
 }
 
@@ -245,6 +298,30 @@ function setAgentAtomContexts(
     found = true;
     if (semanticEqual(profile.atom_contexts ?? [], atomContexts)) return profile;
     return { ...profile, atom_contexts: atomContexts };
+  });
+  if (!found) {
+    throw new Error(`agent not found: ${agentId}`);
+  }
+  return { ...current, agents: nextAgents };
+}
+
+function setAgentMcpProfile(
+  current: AgentsConfig,
+  agentId: string,
+  mcpProfile: string | null | undefined,
+): AgentsConfig {
+  let found = false;
+  const nextValue = normalizeMcpProfileValue(mcpProfile);
+  const nextAgents = current.agents.map((profile) => {
+    if (profile.id !== agentId) return profile;
+    found = true;
+    if ((profile.mcp_profile ?? undefined) === nextValue) return profile;
+    if (nextValue === undefined) {
+      const { mcp_profile: _removed, ...rest } = profile;
+      void _removed;
+      return rest;
+    }
+    return { ...profile, mcp_profile: nextValue };
   });
   if (!found) {
     throw new Error(`agent not found: ${agentId}`);
@@ -309,6 +386,39 @@ function atomContextsSemanticChanges(
     before: currentContexts,
     after: atomContexts,
   }];
+}
+
+function mcpProfileSemanticChanges(
+  current: AgentsConfig,
+  agentId: string,
+  mcpProfile: string | null | undefined,
+): AgentConfigSemanticChange[] {
+  const existing = current.agents.find((p) => p.id === agentId);
+  if (!existing) {
+    throw new Error(`agent not found: ${agentId}`);
+  }
+  const before = existing.mcp_profile ?? null;
+  const after = normalizeMcpProfileValue(mcpProfile) ?? null;
+  if (before === after) {
+    return [{
+      op: "no_change",
+      agentId,
+      before,
+      after,
+    }];
+  }
+  return [{
+    op: "update_agent_mcp_profile",
+    agentId,
+    before,
+    after,
+  }];
+}
+
+function normalizeMcpProfileValue(value: string | null | undefined): string | undefined {
+  if (value === null || value === undefined) return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 function isNoChangeOnly(changes: AgentConfigSemanticChange[]): boolean {

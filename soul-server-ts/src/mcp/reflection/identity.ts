@@ -53,9 +53,13 @@ export const SELF_IDENTITY = {
       description: "agents.yaml agent profile 조회·편집",
       tools: [
         "get_agents_config",
+        "list_mcp_registry",
+        "list_mcp_profiles",
         "list_agents_config_snapshots",
         "plan_agent_profile_update",
         "update_agent_profile",
+        "plan_agent_mcp_profile_update",
+        "set_agent_mcp_profile",
         "set_agent_atom_contexts",
         "rollback_agents_config",
       ],

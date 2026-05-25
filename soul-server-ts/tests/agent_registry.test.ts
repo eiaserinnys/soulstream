@@ -177,6 +177,32 @@ describe("AgentProfileSchema", () => {
     });
   });
 
+  it("agent profile은 mcp_profile 참조를 기존 inline agents_sdk와 함께 파싱", () => {
+    const parsed = AgentProfileSchema.parse({
+      id: "agents-research",
+      name: "Agents Research",
+      backend: "openai-agents",
+      workspace_dir: "/tmp/agents",
+      mcp_profile: "research-defaults",
+      agents_sdk: {
+        entry_agent: "triage",
+        agents: [
+          {
+            id: "triage",
+            name: "Triage",
+            instructions: "Route work.",
+            hosted_tools: [{ type: "web_search" }],
+          },
+        ],
+      },
+    });
+
+    expect(parsed.mcp_profile).toBe("research-defaults");
+    expect(parsed.agents_sdk?.agents[0]?.hosted_tools).toEqual([
+      { type: "web_search" },
+    ]);
+  });
+
   it("file_search hosted tool은 vector_store_ids가 없으면 거부", () => {
     expect(() =>
       AgentProfileSchema.parse({

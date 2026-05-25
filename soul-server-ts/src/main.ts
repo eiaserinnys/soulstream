@@ -17,6 +17,7 @@ import { AgentsEngineAdapter } from "./engine/agents_adapter.js";
 import { AnthropicAdapter, OpenAIAdapter } from "./llm/adapters.js";
 import { LlmExecutor } from "./llm/executor.js";
 import { createLogger } from "./logger.js";
+import { McpConfigService } from "./mcp_config_service.js";
 import { buildOrchProxyConfig } from "./mcp/orch_proxy.js";
 import type { McpRuntime } from "./mcp/runtime.js";
 import { buildServer, startServer } from "./server.js";
@@ -70,12 +71,18 @@ async function main(): Promise<void> {
   }
 
   const logger = createLogger(env.LOG_LEVEL);
+  const mcpConfigService = new McpConfigService({
+    agentsConfigPath: env.AGENTS_CONFIG_PATH,
+    processEnv: process.env,
+  });
 
   // agent_registry yaml 로딩 — 부재 시 명확한 stderr + exit(1)
   // (Haniel 카드 미적용 상태에서 본 PR 머지·기동 시 명확한 오류 메시지 의무)
   let agentRegistry;
   try {
-    agentRegistry = loadAgentRegistry(env.AGENTS_CONFIG_PATH);
+    agentRegistry = loadAgentRegistry(env.AGENTS_CONFIG_PATH, {
+      profileResolver: (profiles) => mcpConfigService.resolveProfiles(profiles),
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(
@@ -129,6 +136,7 @@ async function main(): Promise<void> {
   const agentConfigService = new AgentConfigService({
     configPath: env.AGENTS_CONFIG_PATH,
     agentRegistry,
+    profileResolver: (profiles) => mcpConfigService.resolveProfiles(profiles),
   });
 
   const claudeAuth = new ClaudeAuthService(
@@ -352,6 +360,7 @@ async function main(): Promise<void> {
     taskExecutor,
     agentRegistry,
     agentConfigService,
+    mcpConfigService,
     catalogService,
     logger,
     // Completion relay and MCP multi-node tools share the same upstream HTTP config.

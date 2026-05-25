@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { AgentRegistry } from "../src/agent_registry.js";
 import { AgentConfigService } from "../src/agent_config_service.js";
+import { McpConfigService } from "../src/mcp_config_service.js";
 
 describe("AgentConfigService", () => {
   let tempDir: string;
@@ -262,5 +263,66 @@ describe("AgentConfigService", () => {
 
     expect(registry.get("codex-default")?.name).toBe("Codex");
     expect(fs.readFileSync(configPath, "utf-8")).toContain("name: Codex");
+  });
+
+  it("plans and applies a narrow mcp_profile reference update", async () => {
+    fs.writeFileSync(
+      path.join(tempDir, "mcp-profiles.yaml"),
+      ["profiles:", "  - id: research", ""].join("\n"),
+      "utf-8",
+    );
+    const mcpConfig = new McpConfigService({ agentsConfigPath: configPath });
+    service = new AgentConfigService({
+      configPath,
+      snapshotRoot,
+      agentRegistry: registry,
+      profileResolver: (profiles) => mcpConfig.resolveProfiles(profiles),
+    });
+
+    const plan = await service.planSetAgentMcpProfile("codex-default", "research");
+
+    expect(plan.changed).toBe(true);
+    expect(plan.semanticChanges).toEqual([
+      {
+        op: "update_agent_mcp_profile",
+        agentId: "codex-default",
+        before: null,
+        after: "research",
+      },
+    ]);
+    expect(fs.readFileSync(configPath, "utf-8")).not.toContain("mcp_profile:");
+
+    const updated = await service.setAgentMcpProfile("codex-default", "research", {
+      includeTextDiff: false,
+    });
+
+    expect(updated.changed).toBe(true);
+    expect(updated.textDiffIncluded).toBe(false);
+    expect(updated.semanticChanges).toEqual([
+      expect.objectContaining({
+        op: "update_agent_mcp_profile",
+        agentId: "codex-default",
+      }),
+    ]);
+    expect(registry.get("codex-default")?.mcp_profile).toBe("research");
+    expect(fs.readFileSync(configPath, "utf-8")).toContain("mcp_profile: research");
+  });
+
+  it("rejects invalid mcp_profile references before writing agents.yaml", async () => {
+    const before = fs.readFileSync(configPath, "utf-8");
+    const mcpConfig = new McpConfigService({ agentsConfigPath: configPath });
+    service = new AgentConfigService({
+      configPath,
+      snapshotRoot,
+      agentRegistry: registry,
+      profileResolver: (profiles) => mcpConfig.resolveProfiles(profiles),
+    });
+
+    await expect(
+      service.setAgentMcpProfile("codex-default", "missing-profile"),
+    ).rejects.toThrow(/MCP profile not found: missing-profile/);
+
+    expect(fs.readFileSync(configPath, "utf-8")).toBe(before);
+    expect(registry.get("codex-default")?.mcp_profile).toBeUndefined();
   });
 });

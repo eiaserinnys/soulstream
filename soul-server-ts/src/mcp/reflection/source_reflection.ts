@@ -175,6 +175,18 @@ const SOURCE_MANIFEST: SourceManifestItem[] = [
     entries: [{ symbol: "AgentRegistry", search: /^export class AgentRegistry/ }],
   },
   {
+    relativePath: "mcp_config_service.ts",
+    role: "mcp-registry.yaml/mcp-profiles.yaml model and runtime profile resolver",
+    capabilities: ["agent_config", "cogito"],
+    entries: [{ symbol: "McpConfigService", search: /^export class McpConfigService/ }],
+  },
+  {
+    relativePath: "mcp/tools/agent_config.ts",
+    role: "agent config and MCP profile tool registration",
+    capabilities: ["agent_config", "cogito"],
+    entries: [{ symbol: "registerAgentConfigTools", search: /^export function registerAgentConfigTools/ }],
+  },
+  {
     relativePath: "task/task_manager.ts",
     role: "session lifecycle and in-memory task collection",
     capabilities: ["session_mgmt", "session_query", "cogito"],

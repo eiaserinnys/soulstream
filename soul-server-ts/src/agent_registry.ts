@@ -35,7 +35,7 @@ const AgentsSdkProviderSchema = z.object({
   cache_responses_websocket_models: z.boolean().optional(),
 });
 
-const AgentsSdkHostedToolSchema = z.union([
+export const AgentsSdkHostedToolSchema = z.union([
   z.object({
     type: z.literal("web_search"),
     name: z.string().min(1).optional(),
@@ -116,7 +116,7 @@ const AgentsSdkHostedToolSchema = z.union([
   }
 });
 
-const AgentsSdkMcpServerSchema = z.union([
+export const AgentsSdkMcpServerSchema = z.union([
   z.object({
     type: z.literal("stdio"),
     name: z.string().min(1).optional(),
@@ -190,6 +190,8 @@ const AgentsSdkConfigSchema = z.object({
 });
 
 export type AgentsSdkConfig = z.infer<typeof AgentsSdkConfigSchema>;
+export type AgentsSdkHostedTool = z.infer<typeof AgentsSdkHostedToolSchema>;
+export type AgentsSdkMcpServer = z.infer<typeof AgentsSdkMcpServerSchema>;
 
 export const AgentAtomContextSchema = z.object({
   node_id: z.string().regex(UUID_RE, "atom_contexts.node_id must be a UUID"),
@@ -210,6 +212,7 @@ export const AgentProfileSchema = z.object({
   max_turns: z.number().int().positive().optional(),
   allowed_tools: z.array(z.string()).optional(),
   disallowed_tools: z.array(z.string()).optional(),
+  mcp_profile: z.string().min(1).optional(),
   portrait_path: z.string().optional(),
   /**
    * agents.yaml 정본 atom 주입.
@@ -249,6 +252,10 @@ export const AgentsConfigSchema = z.object({
 });
 
 export type AgentsConfig = z.infer<typeof AgentsConfigSchema>;
+
+export interface LoadAgentRegistryOptions {
+  profileResolver?: (profiles: AgentProfile[]) => AgentProfile[];
+}
 
 /**
  * agent 프로필 컬렉션. Python `AgentRegistry`와 동일 인터페이스(`get`/`list`/`has`).
@@ -330,7 +337,13 @@ export function readAgentsConfigRaw(configPath: string): {
  *
  * 빈 파일·`agents: []`은 정상 — 빈 registry 반환. node_register agents 광고는 빈 배열.
  */
-export function loadAgentRegistry(configPath: string): AgentRegistry {
+export function loadAgentRegistry(
+  configPath: string,
+  options: LoadAgentRegistryOptions = {},
+): AgentRegistry {
   const validated = readAgentsConfig(configPath);
-  return new AgentRegistry(validated.agents);
+  const profiles = options.profileResolver
+    ? options.profileResolver(validated.agents)
+    : validated.agents;
+  return new AgentRegistry(profiles);
 }

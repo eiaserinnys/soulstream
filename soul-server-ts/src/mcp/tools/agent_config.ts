@@ -15,6 +15,7 @@ import {
   AgentAtomContextSchema,
   AgentProfileSchema,
 } from "../../agent_registry.js";
+import { McpConfigService } from "../../mcp_config_service.js";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 
@@ -22,9 +23,13 @@ export function registerAgentConfigTools(
   server: McpServer,
   runtime: McpRuntime,
 ): void {
+  const mcpConfig = runtime.mcpConfigService ?? new McpConfigService({
+    agentsConfigPath: runtime.agentsConfigPath,
+  });
   const agentConfig = runtime.agentConfigService ?? new AgentConfigService({
     configPath: runtime.agentsConfigPath,
     agentRegistry: runtime.agentRegistry,
+    profileResolver: (profiles) => mcpConfig.resolveProfiles(profiles),
   });
 
   server.registerTool(
@@ -44,6 +49,38 @@ export function registerAgentConfigTools(
           agents: parsed.agents,
           ...(include_raw ? { raw_yaml: raw } : {}),
         });
+      } catch (err) {
+        return errorResult(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  server.registerTool(
+    "list_mcp_registry",
+    {
+      description:
+        "mcp-registry.yaml의 MCP 서버 정본 목록을 조회한다. 민감 header/env 값은 노출하지 않는다.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        return jsonResult(mcpConfig.listRegistry());
+      } catch (err) {
+        return errorResult(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  server.registerTool(
+    "list_mcp_profiles",
+    {
+      description:
+        "mcp-profiles.yaml의 agent별/용도별 MCP 노출 프리셋 목록을 조회한다.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        return jsonResult(mcpConfig.listProfiles());
       } catch (err) {
         return errorResult(err instanceof Error ? err.message : String(err));
       }
@@ -168,6 +205,100 @@ export function registerAgentConfigTools(
           comment_preservation: updated.commentPreservation,
           agent_count: updated.config.agents.length,
           agent: updated.config.agents.find((p) => p.id === profile.id),
+        });
+      } catch (err) {
+        return errorResult(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  server.registerTool(
+    "plan_agent_mcp_profile_update",
+    {
+      description:
+        "agents.yaml 단일 agent.mcp_profile 참조 변경 계획을 생성한다. 파일은 쓰지 않는다.",
+      inputSchema: {
+        agent_id: z.string().min(1),
+        mcp_profile: z.string().min(1).nullable().optional(),
+        include_text_diff: z.boolean().optional(),
+        includeTextDiff: z.boolean().optional(),
+      },
+    },
+    async ({ agent_id, mcp_profile, include_text_diff, includeTextDiff }) => {
+      try {
+        const includeTextDiffValue = include_text_diff ?? includeTextDiff ?? false;
+        const plan = await agentConfig.planSetAgentMcpProfile(
+          agent_id,
+          mcp_profile,
+          { includeTextDiff: includeTextDiffValue },
+        );
+        return jsonResult({
+          ok: true,
+          config_path: runtime.agentsConfigPath,
+          config_checksum: plan.configChecksum,
+          base_config_checksum: plan.baseConfigChecksum,
+          changed: plan.changed,
+          semantic_changes: toAgentConfigSemanticChangeWire(plan.semanticChanges),
+          text_diff_included: plan.textDiffIncluded,
+          diff: plan.diff,
+          snapshot_root: plan.snapshotRoot,
+          comment_preservation: plan.commentPreservation,
+        });
+      } catch (err) {
+        return errorResult(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  server.registerTool(
+    "set_agent_mcp_profile",
+    {
+      description:
+        "agents.yaml의 단일 agent.mcp_profile 참조를 설정하거나 null로 제거한다. registry/profile 파일 자체는 수정하지 않는다.",
+      inputSchema: {
+        agent_id: z.string().min(1),
+        mcp_profile: z.string().min(1).nullable().optional(),
+        include_text_diff: z.boolean().optional(),
+        includeTextDiff: z.boolean().optional(),
+        expected_config_checksum: z.string().optional(),
+        expectedConfigChecksum: z.string().optional(),
+      },
+    },
+    async ({
+      agent_id,
+      mcp_profile,
+      include_text_diff,
+      includeTextDiff,
+      expected_config_checksum,
+      expectedConfigChecksum,
+    }) => {
+      try {
+        const includeTextDiffValue = include_text_diff ?? includeTextDiff ?? true;
+        const updated = await agentConfig.setAgentMcpProfile(
+          agent_id,
+          mcp_profile,
+          {
+            includeTextDiff: includeTextDiffValue,
+            expectedConfigChecksum:
+              expected_config_checksum ?? expectedConfigChecksum,
+          },
+        );
+        return jsonResult({
+          ok: true,
+          config_path: runtime.agentsConfigPath,
+          config_checksum: updated.configChecksum,
+          base_config_checksum: updated.baseConfigChecksum,
+          changed: updated.changed,
+          semantic_changes: updated.semanticChanges
+            ? toAgentConfigSemanticChangeWire(updated.semanticChanges)
+            : [],
+          text_diff_included: updated.textDiffIncluded ?? includeTextDiffValue,
+          diff: updated.diff,
+          snapshot_path: updated.snapshotPath,
+          applied_at: updated.appliedAt,
+          reload_ok: updated.reloadOk ?? true,
+          comment_preservation: updated.commentPreservation,
+          agent: updated.config.agents.find((p) => p.id === agent_id),
         });
       } catch (err) {
         return errorResult(err instanceof Error ? err.message : String(err));

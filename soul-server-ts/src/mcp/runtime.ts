@@ -10,6 +10,7 @@ import type { AgentConfigService } from "../agent_config_service.js";
 import type { AgentRegistry } from "../agent_registry.js";
 import type { CatalogService } from "../catalog/catalog_service.js";
 import type { SessionDB } from "../db/session_db.js";
+import type { McpConfigService } from "../mcp_config_service.js";
 import type { TaskExecutor } from "../task/task_executor.js";
 import type { TaskManager } from "../task/task_manager.js";
 
@@ -28,6 +29,7 @@ export interface McpRuntime {
   taskExecutor: TaskExecutor;
   agentRegistry: AgentRegistry;
   agentConfigService?: AgentConfigService;
+  mcpConfigService?: McpConfigService;
   catalogService: CatalogService;
   logger: Logger;
   /** 미설정 시 multi-node 도구는 등록되되 호출 시 `{error: ...}` 반환. */

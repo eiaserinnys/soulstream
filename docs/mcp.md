@@ -114,6 +114,25 @@ belongs to the orchestrator-backed `reflect_cluster_brief()` path.
 | `delete_folder(folder_id)` | Delete a folder |
 | `move_sessions_to_folder(session_ids, folder_id)` | Move sessions into a folder (pass `null` to unassign) |
 
+### Agent and MCP config
+
+| Tool | Description |
+|------|-------------|
+| `get_agents_config(include_raw)` | Read `agents.yaml`, optionally including raw YAML |
+| `list_mcp_registry()` | Read `mcp-registry.yaml` server definitions with sensitive header/env values redacted |
+| `list_mcp_profiles()` | Read `mcp-profiles.yaml` exposure presets |
+| `plan_agent_profile_update(profile, create_if_missing, include_text_diff)` | Plan a semantic `agents.yaml` profile replacement without writing |
+| `update_agent_profile(profile, create_if_missing, expected_config_checksum)` | Apply a full profile replacement with snapshot/checksum guard |
+| `plan_agent_mcp_profile_update(agent_id, mcp_profile)` | Plan only an agent's `mcp_profile` reference change without writing |
+| `set_agent_mcp_profile(agent_id, mcp_profile)` | Set or clear only an agent's `mcp_profile` reference |
+| `set_agent_atom_contexts(agent_id, atom_contexts)` | Set only an agent's atom contexts |
+| `rollback_agents_config(snapshot_path)` | Restore `agents.yaml` from a managed ConfigStore snapshot |
+
+`mcp_profile` is a convenience preset, not a hard security boundary. Profile defaults are expanded from
+`mcp-profiles.yaml` and `mcp-registry.yaml` before an OpenAI Agents runtime starts. Inline
+`agents_sdk.agents[].mcp_servers` and `hosted_tools` remain valid and override profile defaults by effective tool or
+server key.
+
 ## REST endpoints
 
 One endpoint is also available outside of MCP:
