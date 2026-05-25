@@ -30,6 +30,7 @@ export interface RuntimeReflectionData extends Record<string, unknown> {
     };
     orchestrator: {
       status: ProbeStatus;
+      checked_at: string;
       base_url?: string;
       auth_header_configured?: boolean;
       reason?: string;
@@ -102,14 +103,17 @@ async function probeDatabase(
 }
 
 function probeOrchestrator(runtime: McpRuntime): RuntimeReflectionData["dependencies"]["orchestrator"] {
+  const checkedAt = new Date().toISOString();
   if (!runtime.orch) {
     return {
       status: "not_configured",
+      checked_at: checkedAt,
       reason: "orchestrator proxy config was not injected into McpRuntime",
     };
   }
   return {
     status: "unavailable",
+    checked_at: checkedAt,
     base_url: runtime.orch.baseUrl,
     auth_header_configured: Boolean(
       runtime.orch.headers.authorization || runtime.orch.headers.Authorization,

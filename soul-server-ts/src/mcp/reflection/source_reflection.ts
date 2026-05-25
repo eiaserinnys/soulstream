@@ -101,11 +101,33 @@ const SOURCE_MANIFEST: SourceManifestItem[] = [
   },
   {
     relativePath: "mcp/reflection/self_reflection.ts",
-    role: "typed reflection envelope builder",
+    role: "typed reflection envelope and brief entrypoint",
     capabilities: ["cogito"],
     entries: [
       { symbol: "reflectSelf", search: /^export async function reflectSelf/ },
       { symbol: "buildBriefSnapshot", search: /^export async function buildBriefSnapshot/ },
+    ],
+  },
+  {
+    relativePath: "mcp/reflection/brief_reflection.ts",
+    role: "compact aggregate brief builder over Level 0-3 reflection",
+    capabilities: ["cogito"],
+    entries: [
+      {
+        symbol: "buildSelfServiceBrief",
+        search: /^export async function buildSelfServiceBrief/,
+      },
+    ],
+  },
+  {
+    relativePath: "mcp/reflection/types.ts",
+    role: "typed reflection envelope and compact aggregate contracts",
+    capabilities: ["cogito"],
+    entries: [
+      {
+        symbol: "ReflectionBriefSnapshot",
+        search: /^export interface ReflectionBriefSnapshot/,
+      },
     ],
   },
   {

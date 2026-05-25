@@ -1,5 +1,6 @@
 import type { McpRuntime } from "../runtime.js";
 
+import { buildSelfServiceBrief } from "./brief_reflection.js";
 import { buildConfigReflection } from "./config_reflection.js";
 import {
   filterCapabilities,
@@ -12,6 +13,7 @@ import { buildSourceReflection } from "./source_reflection.js";
 import type {
   ReflectionEnvelope,
   ReflectionError,
+  ReflectionBriefSnapshot,
   ReflectionLevel,
   ReflectionStatus,
 } from "./types.js";
@@ -19,23 +21,26 @@ import type {
 export { REFLECTION_SCHEMA_VERSION, SELF_IDENTITY, SELF_SERVICE_NAME };
 export type { ReflectionLevel };
 
-export async function buildBriefSnapshot(
-  runtime: McpRuntime,
-): Promise<{
-  services: Array<{
-    name: typeof SELF_SERVICE_NAME;
-    type: "internal";
-    data: Record<string, unknown>;
-  }>;
-}> {
+export async function buildBriefSnapshot(runtime: McpRuntime): Promise<ReflectionBriefSnapshot> {
+  const serviceBrief = await buildSelfServiceBrief(runtime, (level) =>
+    reflectSelf(runtime, level),
+  );
   return {
+    schema_version: REFLECTION_SCHEMA_VERSION,
+    generated_at: serviceBrief.generated_at,
+    kind: "compact_aggregate",
+    status: serviceBrief.status,
+    summary:
+      "Compact live aggregate of TS soul-server reflection; use reflect_service for drilldown.",
     services: [
       {
         name: SELF_IDENTITY.name,
         type: "internal",
-        data: await reflectSelf(runtime, 0),
+        data: serviceBrief,
       },
     ],
+    aggregate_sources: serviceBrief.aggregate_sources,
+    errors: serviceBrief.errors,
   };
 }
 
