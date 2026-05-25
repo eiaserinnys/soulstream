@@ -28,6 +28,7 @@ import {
   type StartExecutionCallback,
 } from "./task/task_manager.js";
 import { ExecutionContextBuilder } from "./context/context_builder.js";
+import { DEFAULT_COGITO_CONTEXT_LIMITS } from "./context/cogito_context.js";
 import { UpstreamAdapter } from "./upstream/adapter.js";
 import { SessionBroadcaster } from "./upstream/session_broadcaster.js";
 
@@ -171,9 +172,11 @@ async function main(): Promise<void> {
     logger,
     processEnv: process.env,
   });
+  const orchProxyConfig = buildOrchProxyConfig(env);
 
-  // B-6 context_builder: 신규 task 첫 turn 진입 시 folder_prompt + atom_context + soulstream_item을
-  // 합성한 prompt를 codex에 전달. atom env 미설정이면 atom 호출 skip (graceful).
+  // B-6 context_builder: 신규 task 첫 turn 진입 시 folder_prompt + atom_context +
+  // cogito_context + soulstream_item을 합성한 prompt를 codex에 전달.
+  // atom/cogito 조회 실패는 typed context omission 또는 warning으로 격리한다.
   //
   // Phase A context 정본 진입점 (atom d7a1ad86 차단): TaskManager가 _addInterventionAutoResume에서
   // buildResumeContextItems 호출에 사용. TaskManager 생성 *전*에 wiring하여 의존성 주입.
@@ -186,6 +189,11 @@ async function main(): Promise<void> {
         enabled: Boolean(env.ATOM_ENABLED),
         serverUrl: env.ATOM_SERVER_URL ?? "",
         apiKey: env.ATOM_API_KEY ?? "",
+      },
+      cogito: {
+        baseUrl: orchProxyConfig.baseUrl,
+        headers: orchProxyConfig.headers,
+        ...DEFAULT_COGITO_CONTEXT_LIMITS,
       },
     },
     logger,
@@ -284,7 +292,6 @@ async function main(): Promise<void> {
     taskExecutor.startExecution(task, agent);
   };
 
-  const orchProxyConfig = buildOrchProxyConfig(env);
   const completionNotifier = new TaskCompletionNotifier(
     env.SOULSTREAM_NODE_ID,
     taskManager,

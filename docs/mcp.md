@@ -47,6 +47,13 @@ Use `reflect_cluster_brief()` when an agent needs the orchestrator's view across
 the orchestrator API and keeps node failures local to each node entry. It does not replace self `reflect_brief()`;
 the names are intentionally different so callers can choose local self-diagnosis or cluster diagnosis explicitly.
 
+Agent startup also consumes the same orchestrator aggregate through `GET /cogito/briefs`, but it does not inject the
+raw aggregate into the prompt. `soul-server-ts` builds a separate `<cogito_context>` item with a compact allowlist:
+node status, service status, capability names, task/agent counts, dependency statuses, uptime, and memory counters.
+Raw environment variables, tokens, argv/cmdline, executable paths, credential paths, and full runtime payloads are
+omitted. Lookup failure, timeout, an empty cluster, or per-node failure must not block session creation; the startup
+context records a short typed warning or an empty/partial status and continues.
+
 `reflect_service("soul-server-ts", level)` returns a typed envelope for every level:
 
 ```json

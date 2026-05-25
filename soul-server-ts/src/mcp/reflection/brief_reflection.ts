@@ -20,6 +20,8 @@ interface SafeLevelResult {
 }
 
 const CORE_SOURCE_PATHS = new Set([
+  "context/context_builder.ts",
+  "context/cogito_context.ts",
   "mcp/tools/reflect.ts",
   "mcp/reflection/self_reflection.ts",
   "mcp/reflection/brief_reflection.ts",
