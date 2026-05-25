@@ -11,6 +11,7 @@ import {
   ExecutionContextBuilder,
   composeFirstTurnPrompt,
 } from "../../src/context/context_builder.js";
+import type { CogitoContextConfig } from "../../src/context/cogito_context.js";
 import type { Task } from "../../src/task/task_models.js";
 
 const silentLogger = pino({ level: "silent" });
@@ -40,6 +41,7 @@ function makeBuilder(
   dbOverrides: Partial<SessionDB> = {},
   registry?: AgentRegistry,
   atomEnabled = false,
+  cogito?: CogitoContextConfig,
 ): ExecutionContextBuilder {
   const getSession = vi.fn().mockResolvedValue(null);
   const getFolderById = vi.fn().mockResolvedValue(null);
@@ -54,9 +56,23 @@ function makeBuilder(
         serverUrl: atomEnabled ? "https://atom.test" : "",
         apiKey: atomEnabled ? "k" : "",
       },
+      ...(cogito ? { cogito } : {}),
     },
     silentLogger,
   );
+}
+
+function makeCogitoConfig(
+  overrides: Partial<CogitoContextConfig> = {},
+): CogitoContextConfig {
+  return {
+    baseUrl: "https://orch.test",
+    headers: { authorization: "Bearer secret-token" },
+    timeoutMs: 50,
+    maxNodes: 4,
+    maxChars: 4000,
+    ...overrides,
+  };
 }
 
 describe("ExecutionContextBuilder.build — 기본 흐름", () => {
@@ -278,6 +294,96 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
       "attached_files",
     ]);
     expect(ctx.combinedContextItems[1]).toEqual(attachmentContext);
+  });
+});
+
+describe("ExecutionContextBuilder.build — cogito_context fetch", () => {
+  const originalFetch = globalThis.fetch;
+  beforeEach(() => {
+    globalThis.fetch = vi.fn() as typeof fetch;
+  });
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("cogito 설정 있음 → soulstream_session과 별도 cogito_context item 추가", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          schema_version: "soulstream.reflect.aggregate.v1",
+          kind: "orchestrator_node_brief_aggregate",
+          status: "ok",
+          node_count: 1,
+          nodes: [
+            {
+              node_id: "node-A",
+              status: "ok",
+              data: {
+                service: "soul-server-ts",
+                status: "ok",
+                capabilities: [{ name: "cogito" }],
+                sections: {
+                  runtime: {
+                    status: "ok",
+                    data: {
+                      process: { uptime_seconds: 10 },
+                      counts: { active_task_count: 1 },
+                      dependencies: { database: { status: "ok" } },
+                    },
+                  },
+                },
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+    const cb = makeBuilder({}, undefined, false, makeCogitoConfig());
+
+    const ctx = await cb.build(makeTask(), codexAgent);
+
+    expect(ctx.combinedContextItems.map((item) => item.key)).toEqual([
+      "soulstream_session",
+      "cogito_context",
+    ]);
+    expect(ctx.combinedContextItems[1]?.content).toMatchObject({
+      status: "ok",
+      nodes: [
+        expect.objectContaining({
+          node_id: "node-A",
+          runtime: expect.objectContaining({
+            dependency_statuses: { database: "ok" },
+          }),
+        }),
+      ],
+    });
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "https://orch.test/cogito/briefs",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
+  it("cogito 조회 실패 → warning context로 격리하고 build는 계속", async () => {
+    vi.mocked(globalThis.fetch).mockRejectedValueOnce(new Error("network"));
+    const cb = makeBuilder({}, undefined, false, makeCogitoConfig());
+
+    const ctx = await cb.build(makeTask(), codexAgent);
+
+    expect(ctx.combinedContextItems.map((item) => item.key)).toEqual([
+      "soulstream_session",
+      "cogito_context",
+    ]);
+    expect(ctx.combinedContextItems[1]?.content).toMatchObject({
+      status: "unavailable",
+      warnings: [
+        {
+          code: "cogito_context_unavailable",
+          message:
+            "cogito cluster brief unavailable; startup continues without live cluster context",
+        },
+      ],
+    });
   });
 });
 

@@ -62,6 +62,23 @@ const SOURCE_MANIFEST: SourceManifestItem[] = [
     entries: [{ symbol: "buildServer", search: /^export async function buildServer/ }],
   },
   {
+    relativePath: "context/context_builder.ts",
+    role: "agent startup prompt context assembly, including safe cogito context consumption",
+    capabilities: ["cogito", "session_mgmt"],
+    entries: [
+      { symbol: "ExecutionContextBuilder", search: /^export class ExecutionContextBuilder/ },
+      { symbol: "composeFirstTurnPrompt", search: /^export function composeFirstTurnPrompt/ },
+    ],
+  },
+  {
+    relativePath: "context/cogito_context.ts",
+    role: "safe startup cogito_context builder over orchestrator cluster brief aggregate",
+    capabilities: ["cogito"],
+    entries: [
+      { symbol: "fetchCogitoContextItem", search: /^export async function fetchCogitoContextItem/ },
+    ],
+  },
+  {
     relativePath: "mcp/runtime.ts",
     role: "typed dependency boundary for MCP tools",
     capabilities: [

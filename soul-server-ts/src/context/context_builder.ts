@@ -5,8 +5,9 @@
  *   1. _resolveFolder    — sessions.folder_id → folder.settings (folderPrompt·atomContextNode)
  *   2. _fetchAgentAtomContext — agents.yaml atom_contexts → system prompt용 마크다운
  *   3. _fetchAtomContext — folder atomContextNode → context item용 마크다운
- *   4. _resolveProfile   — agents.yaml profile에서 workspace_dir·max_turns·tools
- *   5. _assembleContext  — agent atom + folder_prompt + system_prompt + context items를
+ *   4. _fetchCogitoContext — orchestrator cluster brief → 안전 요약 context item
+ *   5. _resolveProfile   — agents.yaml profile에서 workspace_dir·max_turns·tools
+ *   6. _assembleContext  — agent atom + folder_prompt + system_prompt + context items를
  *      합쳐 PreparedContext 반환
  *
  * 호출자(task_executor)는 codex SDK가 turn-level systemPrompt를 지원하지 않으므로 (분석 캐시
@@ -24,6 +25,10 @@ import type { Task } from "../task/task_models.js";
 
 import { fetchAtomContext, fetchAtomContexts } from "./atom_context.js";
 import {
+  fetchCogitoContextItem,
+  type CogitoContextConfig,
+} from "./cogito_context.js";
+import {
   assemblePrompt,
   formatContextItems,
   type ContextItem,
@@ -34,7 +39,7 @@ import { buildSoulstreamContextItem } from "./soulstream_item.js";
 export interface PreparedContext {
   /** agent atom context + folder_prompt + task.systemPrompt. */
   effectiveSystemPrompt?: string;
-  /** soulstream_item + atom_context + task.contextItems (현재 빈 배열). */
+  /** soulstream_item + cogito_context + atom_context + task.contextItems. */
   combinedContextItems: ContextItem[];
   folderName?: string;
   /** profile.workspace_dir (있으면). 호출자가 agent.workspace_dir로 폴백. */
@@ -56,6 +61,7 @@ export interface AtomConfig {
 export interface ContextBuilderConfig {
   nodeId: string;
   atom: AtomConfig;
+  cogito?: CogitoContextConfig;
 }
 
 export class ExecutionContextBuilder {
@@ -109,6 +115,7 @@ export class ExecutionContextBuilder {
     const { folderName, folderPrompt, folderSettings } = await this._resolveFolder(task);
     const agentAtomMarkdown = await this._fetchAgentAtomContext(agent);
     const atomMarkdown = await this._fetchAtomContext(folderSettings);
+    const cogitoContextItem = await this._fetchCogitoContext();
     const { workingDir, maxTurns } = this._resolveProfile(task);
     return this._assembleContext({
       task,
@@ -117,6 +124,7 @@ export class ExecutionContextBuilder {
       folderPrompt,
       agentAtomMarkdown,
       atomMarkdown,
+      cogitoContextItem,
       workingDir,
       maxTurns,
     });
@@ -209,6 +217,16 @@ export class ExecutionContextBuilder {
     return await fetchAtomContexts(this.cfg.atom, specs, this.logger);
   }
 
+  private async _fetchCogitoContext(): Promise<ContextItem | null> {
+    if (!this.cfg.cogito) return null;
+    try {
+      return await fetchCogitoContextItem(this.cfg.cogito, this.logger);
+    } catch (err) {
+      this.logger.warn({ err }, "_fetchCogitoContext: unexpected failure");
+      return null;
+    }
+  }
+
   /**
    * profile_id → agent registry 조회 (Python L122-135).
    *
@@ -234,7 +252,8 @@ export class ExecutionContextBuilder {
    *   effectiveSystemPrompt = agent.atom_contexts + folder_prompt + task.systemPrompt
    *                           (있는 값만 "\n\n"로 연결)
    *   effectiveWorkspaceDir = profile.workspace_dir ?? agent.workspace_dir
-   *   combinedContextItems  = [soulstream_item] + [atom_context if present] + task.contextItems
+   *   combinedContextItems  = [soulstream_item] + [cogito_context if configured]
+   *                           + [atom_context if present] + task.contextItems
    *   assembledPrompt       = assemblePrompt(task.prompt, task.context) — 현재 task.context 없음
    */
   private _assembleContext(args: {
@@ -244,6 +263,7 @@ export class ExecutionContextBuilder {
     folderPrompt?: string;
     agentAtomMarkdown: string | null;
     atomMarkdown: string | null;
+    cogitoContextItem: ContextItem | null;
     workingDir?: string;
     maxTurns?: number;
   }): PreparedContext {
@@ -274,6 +294,9 @@ export class ExecutionContextBuilder {
     });
 
     const combinedContextItems: ContextItem[] = [soulstreamItem];
+    if (args.cogitoContextItem) {
+      combinedContextItems.push(args.cogitoContextItem);
+    }
     if (args.atomMarkdown) {
       combinedContextItems.push({
         key: "atom_context",
