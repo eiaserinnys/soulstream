@@ -154,6 +154,11 @@ export class SessionDB {
     }
   }
 
+  /** Lightweight liveness probe for runtime reflection. */
+  async ping(): Promise<void> {
+    await this.sql`SELECT 1`;
+  }
+
   /** Python `session_register` stored procedure 호출 (schema.sql L196-218). */
   async registerSession(params: RegisterSessionParams): Promise<void> {
     await this.sql`

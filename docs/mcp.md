@@ -1,13 +1,15 @@
 # MCP Server
 
-Soulstream exposes a built-in MCP server that Claude Code sessions (and any other MCP client) can connect to. Through this server, a running session can inspect the service itself — query session history, search past conversations, manage folders, and reflect on what capabilities the server provides.
+Soulstream exposes a built-in MCP server that Claude Code, Codex, and other MCP clients can connect to. Through this server, a running session can inspect the service itself, query session history, search past conversations, manage folders, and reflect on what capabilities the server provides.
+
+The current reflection source of truth is the TypeScript `soul-server-ts` MCP server. The legacy Python `soul-server` MCP surface is deprecated for new reflection design and should not be used as the implementation reference.
 
 ## Connecting
 
-The MCP server is mounted at:
+The TS MCP server uses Streamable HTTP and is mounted at `MCP_PATH` on the TS node. The default path is:
 
 ```
-http://localhost:3105/cogito-mcp/sse   (SSE transport)
+http://localhost:4205/mcp   (Streamable HTTP transport)
 ```
 
 Add it to `.mcp.json` in the workspace:
@@ -15,9 +17,9 @@ Add it to `.mcp.json` in the workspace:
 ```json
 {
   "mcpServers": {
-    "soulstream-cogito": {
-      "type": "sse",
-      "url": "http://localhost:3105/cogito-mcp/sse"
+    "soul-server-ts": {
+      "type": "streamable_http",
+      "url": "http://localhost:4205/mcp"
     }
   }
 }
@@ -35,14 +37,34 @@ Once connected, all tools below are available inside the Claude Code session.
 | `reflect_brief()` | Full Level 0 snapshot of all registered services, returned in memory |
 | `reflect_refresh()` | Compatibility no-op; cogito brief files are no longer persisted |
 
+`reflect_service("soul-server-ts", level)` returns a typed envelope for every level:
+
+```json
+{
+  "schema_version": "soulstream.reflect.v1",
+  "generated_at": "2026-05-25T00:00:00.000Z",
+  "service": "soul-server-ts",
+  "node_id": "node-id",
+  "level": 2,
+  "status": "ok",
+  "summary": "source entrypoints, files, symbols, and line ranges",
+  "data": {},
+  "errors": []
+}
+```
+
+Level-specific fields are always under `data`. Top-level compatibility aliases may exist for older callers, but new callers should read the envelope.
+
 **Level guide for `reflect_service`:**
 
 | Level | Returns |
 |-------|---------|
-| 0 | Identity + capability list |
-| 1 | Config / environment variable state |
-| 2 | Source file paths and line ranges |
-| 3 | Runtime status, PID, uptime |
+| 0 | Identity + MCP capability list |
+| 1 | Config / environment variable state with present, missing, default, redacted, or unavailable status |
+| 2 | Source root, source file paths, capabilities, symbols, and runtime-computed line ranges |
+| 3 | Runtime process details, memory, uptime, task/agent counts, database probe status, and orchestrator proxy status |
+
+Unavailable runtime facts are represented structurally, for example `{ "status": "unavailable", "reason": "..." }` or `{ "status": "not_configured" }`. Reflection should not guess values that the TS node cannot verify.
 
 ### Session history
 

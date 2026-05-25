@@ -197,11 +197,25 @@ describe("MCP SDK client smoke", () => {
     expect(names.length).toBeGreaterThanOrEqual(expected.length);
   });
 
-  it("callTool('reflect_brief') → services 배열에 본 노드 한 행", async () => {
+  it("callTool('reflect_brief') → services 배열에 본 노드 Level 0 snapshot 한 행", async () => {
     const result = await client.callTool({ name: "reflect_brief", arguments: {} });
-    const structured = result.structuredContent as { services: Array<{ name: string }> };
+    const structured = result.structuredContent as {
+      services: Array<{
+        name: string;
+        data: {
+          schema_version: string;
+          service: string;
+          level: number;
+          data: { identity: { name: string } };
+        };
+      }>;
+    };
     expect(Array.isArray(structured.services)).toBe(true);
     expect(structured.services[0]?.name).toBe("soul-server-ts");
+    expect(structured.services[0]?.data.schema_version).toBe("soulstream.reflect.v1");
+    expect(structured.services[0]?.data.service).toBe("soul-server-ts");
+    expect(structured.services[0]?.data.level).toBe(0);
+    expect(structured.services[0]?.data.data.identity.name).toBe("soul-server-ts");
   });
 
   it("callTool('list_local_agents') → AgentRegistry 응답", async () => {
@@ -223,11 +237,19 @@ describe("MCP SDK client smoke", () => {
       arguments: { service: "soul-server-ts", level: 0 },
     });
     const structured = result.structuredContent as {
-      identity: { name: string };
-      capabilities: Array<{ name: string; tools: string[] }>;
+      schema_version: string;
+      service: string;
+      level: number;
+      data: {
+        identity: { name: string };
+        capabilities: Array<{ name: string; tools: string[] }>;
+      };
     };
-    expect(structured.identity.name).toBe("soul-server-ts");
-    const capNames = structured.capabilities.map((c) => c.name);
+    expect(structured.schema_version).toBe("soulstream.reflect.v1");
+    expect(structured.service).toBe("soul-server-ts");
+    expect(structured.level).toBe(0);
+    expect(structured.data.identity.name).toBe("soul-server-ts");
+    const capNames = structured.data.capabilities.map((c) => c.name);
     expect(capNames).toEqual(
       expect.arrayContaining([
         "cogito",
@@ -238,6 +260,97 @@ describe("MCP SDK client smoke", () => {
         "multi_node",
       ]),
     );
+  });
+
+  it("callTool('reflect_service', level=2) → source-linked registry with line ranges", async () => {
+    const result = await client.callTool({
+      name: "reflect_service",
+      arguments: { service: "soul-server-ts", level: 2, capability: "cogito" },
+    });
+    expect(result.isError).not.toBe(true);
+    const structured = result.structuredContent as {
+      schema_version: string;
+      data: {
+        source_root: { status: string; path?: string };
+        sources: Array<{
+          relative_path: string;
+          absolute_path: string;
+          capabilities: string[];
+          entries: Array<{
+            symbol: string;
+            status: string;
+            line_range: { start_line: number; end_line: number };
+          }>;
+        }>;
+      };
+    };
+    expect(structured.schema_version).toBe("soulstream.reflect.v1");
+    expect(structured.data.source_root.status).toBe("ok");
+    const reflectSource = structured.data.sources.find(
+      (source) => source.relative_path === "mcp/tools/reflect.ts",
+    );
+    expect(reflectSource?.absolute_path.endsWith("src/mcp/tools/reflect.ts")).toBe(true);
+    expect(reflectSource?.capabilities).toContain("cogito");
+    expect(reflectSource?.entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          symbol: "registerReflectTools",
+          status: "ok",
+          line_range: expect.objectContaining({
+            start_line: expect.any(Number),
+            end_line: expect.any(Number),
+          }),
+        }),
+      ]),
+    );
+    const entry = reflectSource?.entries.find((e) => e.symbol === "registerReflectTools");
+    expect(entry?.line_range.start_line).toBeGreaterThan(0);
+    expect(entry?.line_range.end_line).toBeGreaterThanOrEqual(entry?.line_range.start_line ?? 0);
+
+    const sourceResolver = structured.data.sources.find(
+      (source) => source.relative_path === "mcp/reflection/source_reflection.ts",
+    );
+    const resolverEntry = sourceResolver?.entries.find(
+      (e) => e.symbol === "buildSourceReflection",
+    );
+    expect(resolverEntry?.line_range.start_line).toBeGreaterThan(150);
+  });
+
+  it("callTool('reflect_service', level=3) → process + runtime dependency statuses", async () => {
+    const result = await client.callTool({
+      name: "reflect_service",
+      arguments: { service: "soul-server-ts", level: 3 },
+    });
+    expect(result.isError).not.toBe(true);
+    const structured = result.structuredContent as {
+      schema_version: string;
+      data: {
+        process: {
+          pid: number;
+          cwd: string;
+          exec_path: string;
+          argv: string[];
+          uptime_seconds: number;
+          memory: { rss: number; heap_used: number };
+        };
+        counts: { agent_count: number; active_task_count: number };
+        dependencies: {
+          database: { status: string };
+          orchestrator: { status: string };
+        };
+      };
+    };
+    expect(structured.schema_version).toBe("soulstream.reflect.v1");
+    expect(structured.data.process.pid).toBe(process.pid);
+    expect(structured.data.process.cwd).toBe(process.cwd());
+    expect(structured.data.process.exec_path).toBe(process.execPath);
+    expect(structured.data.process.argv.length).toBeGreaterThan(0);
+    expect(structured.data.process.memory.rss).toBeGreaterThan(0);
+    expect(structured.data.process.memory.heap_used).toBeGreaterThan(0);
+    expect(structured.data.counts.agent_count).toBe(1);
+    expect(structured.data.counts.active_task_count).toBe(0);
+    expect(structured.data.dependencies.database.status).toBe("ok");
+    expect(structured.data.dependencies.orchestrator.status).toBe("not_configured");
   });
 
   it("callTool('set_agent_atom_contexts') → agents.yaml 갱신 + runtime registry reload", async () => {
