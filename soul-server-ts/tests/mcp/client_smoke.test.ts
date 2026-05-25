@@ -61,6 +61,7 @@ const EXPECTED_TOOLS = [
   // multi_node
   "list_nodes",
   "list_node_agents",
+  "reflect_cluster_brief",
   "create_remote_agent_session",
   "plan_remote_agent_profile_update",
   "apply_remote_agent_profile_update",

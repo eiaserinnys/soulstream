@@ -170,10 +170,28 @@ const SOURCE_MANIFEST: SourceManifestItem[] = [
     entries: [{ symbol: "CodexEngineAdapter", search: /^export class CodexEngineAdapter/ }],
   },
   {
+    relativePath: "mcp/tools/multi_node.ts",
+    role: "MCP tools that proxy orchestrator-backed multi-node APIs",
+    capabilities: ["multi_node", "cogito"],
+    entries: [{ symbol: "registerMultiNodeTools", search: /^export function registerMultiNodeTools/ }],
+  },
+  {
     relativePath: "mcp/orch_proxy.ts",
     role: "orchestrator HTTP proxy config derived from upstream WebSocket URL",
     capabilities: ["multi_node", "cogito"],
     entries: [{ symbol: "buildOrchProxyConfig", search: /^export function buildOrchProxyConfig/ }],
+  },
+  {
+    relativePath: "upstream/dispatcher.ts",
+    role: "orchestrator WebSocket command inventory and ACK routing",
+    capabilities: ["multi_node", "cogito", "session_mgmt", "agent_config"],
+    entries: [{ symbol: "CommandDispatcher", search: /^export class CommandDispatcher/ }],
+  },
+  {
+    relativePath: "upstream/reflection_commands.ts",
+    role: "read-only upstream command handler for live cogito reflection",
+    capabilities: ["multi_node", "cogito"],
+    entries: [{ symbol: "ReflectionCommands", search: /^export class ReflectionCommands/ }],
   },
 ];
 

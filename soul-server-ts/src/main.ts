@@ -413,6 +413,7 @@ async function main(): Promise<void> {
       sessionDb: db,
       realtimeBroker,
       agentConfigService,
+      reflectionRuntime: mcpRuntime,
     },
   );
 

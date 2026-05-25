@@ -59,6 +59,25 @@ export function registerMultiNodeTools(
   );
 
   server.registerTool(
+    "reflect_cluster_brief",
+    {
+      description:
+        "오케스트레이터를 통해 연결된 TS 노드들의 reflect_brief를 집계한다. 로컬 reflect_brief(self-only)와 별도 도구다.",
+      inputSchema: {},
+    },
+    async () => {
+      const orch = runtime.orch;
+      if (!orch) return errorResult(NOT_CONFIGURED_MSG);
+      try {
+        const data = await fetchOrch(orch, "GET", "/cogito/briefs");
+        return jsonResult(data);
+      } catch (err) {
+        return errorResult(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  server.registerTool(
     "plan_remote_agent_profile_update",
     {
       description:

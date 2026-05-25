@@ -16,6 +16,7 @@ import type { TaskManager } from "../task/task_manager.js";
 import type { CallerInfo, Task } from "../task/task_models.js";
 import type { ReasoningEffort } from "../engine/protocol.js";
 import type { SessionDB } from "../db/session_db.js";
+import type { McpRuntime } from "../mcp/runtime.js";
 import type { RealtimeBroker } from "../realtime/realtime_broker.js";
 import {
   AgentConfigCommandError,
@@ -54,6 +55,10 @@ import {
   type RealtimeEventCommand,
   type RealtimeResolveToolApprovalCommand,
 } from "./realtime_commands.js";
+import {
+  ReflectionCommandError,
+  ReflectionCommands,
+} from "./reflection_commands.js";
 import {
   SessionListCommandError,
   SessionListCommands,
@@ -141,6 +146,7 @@ interface DownloadAttachmentCmd extends CommandLike {
 }
 
 type ListSessionsCmd = CommandLike & { type: "list_sessions" };
+type ReflectBriefCmd = CommandLike & { type: "reflect_brief" };
 type PlanAgentProfileUpdateCmd = CommandLike & {
   type: "plan_agent_profile_update";
   profile?: unknown;
@@ -196,6 +202,7 @@ export class CommandDispatcher {
   private readonly deliveryCommands: DeliveryCommands;
   private readonly realtimeCommands: RealtimeCommands;
   private readonly agentConfigCommands: AgentConfigCommands;
+  private readonly reflectionCommands: ReflectionCommands;
 
   constructor(
     private readonly send: SendFn,
@@ -215,6 +222,7 @@ export class CommandDispatcher {
     realtimeBroker?: RealtimeBroker,
     providerUsage?: ProviderUsageCommandHandler,
     agentConfigService?: AgentConfigCommandHandler,
+    reflectionRuntime?: McpRuntime,
   ) {
     this.taskRuntimeCommands = new TaskRuntimeCommands({
       agentRegistry,
@@ -239,6 +247,7 @@ export class CommandDispatcher {
       agentConfigService,
       agentRegistry,
     );
+    this.reflectionCommands = new ReflectionCommands(reflectionRuntime);
     // This table is the route inventory. Add new command types here, then put
     // command-specific adaptation behind a tested boundary when it has depth.
     this.handlers = {
@@ -269,6 +278,7 @@ export class CommandDispatcher {
       claude_auth_get_profile: (cmd) => this.handleClaudeAuth(cmd as ClaudeAuthCommand),
       provider_usage_get: (cmd) =>
         this.handleProviderUsage(cmd as ProviderUsageCommand),
+      reflect_brief: (cmd) => this.handleReflectBrief(cmd as ReflectBriefCmd),
       plan_agent_profile_update: (cmd) =>
         this.handlePlanAgentProfileUpdate(cmd as PlanAgentProfileUpdateCmd),
       apply_agent_profile_update: (cmd) =>
@@ -616,6 +626,22 @@ export class CommandDispatcher {
       );
     } catch (err) {
       if (err instanceof AgentConfigCommandError) {
+        await this.sendError(cmd, err.message);
+        return;
+      }
+      throw err;
+    }
+  }
+
+  private async handleReflectBrief(cmd: ReflectBriefCmd): Promise<void> {
+    try {
+      await this.send(
+        await this.reflectionCommands.reflectBrief({
+          requestId: commandRequestId(cmd),
+        }),
+      );
+    } catch (err) {
+      if (err instanceof ReflectionCommandError) {
         await this.sendError(cmd, err.message);
         return;
       }
