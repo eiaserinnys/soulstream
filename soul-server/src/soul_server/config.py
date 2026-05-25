@@ -124,7 +124,7 @@ class Settings:
     llm_openai_api_key: str = ""
     llm_anthropic_api_key: str = ""
 
-    # Cogito (선택 사항 — 미설정 시 브리프 생성 비활성화)
+    # Cogito (선택 사항 — 미설정 시 리플렉션 도구 비활성화)
     cogito_manifest_path: str = ""
 
     # Atom 연동 (선택 사항 — 미설정/ATOM_ENABLED=false 시 비활성)

@@ -1,4 +1,4 @@
 """Cogito integration for soulstream.
 
-Collects service reflection data and composes a brief for Claude Code sessions.
+Collects service reflection data for runtime MCP/API lookup.
 """

@@ -60,18 +60,6 @@ async def _http_get(url: str, timeout: float = 5.0) -> dict[str, Any]:
         return resp.json()
 
 
-async def do_refresh() -> tuple[bool, str]:
-    """브리프 갱신 공통 로직. REST API에서도 사용.
-
-    Returns:
-        ``(True, path_str)`` on success, ``(False, error_message)`` on failure.
-    """
-    if not _brief_composer:
-        return False, "BriefComposer not initialized"
-    path = await _brief_composer.write_brief()
-    return True, str(path)
-
-
 # ---------------------------------------------------------------------------
 # MCP Tools
 # ---------------------------------------------------------------------------
@@ -163,16 +151,12 @@ async def reflect_brief() -> dict:
 
 @cogito_mcp.tool()
 async def reflect_refresh() -> dict:
-    """브리프 파일(brief.md)을 즉시 갱신한다.
+    """호환용 no-op.
 
-    Returns:
-        {"refreshed": true, "path": "...brief.md"}
+    Cogito brief 파일 영속화는 제거되었다. 런타임 조회는
+    ``reflect_service``와 ``reflect_brief``가 직접 수행한다.
     """
-    try:
-        ok, result = await do_refresh()
-    except Exception as e:
-        return {"error": f"브리프 갱신 실패: {e}"}
-
-    if not ok:
-        return {"error": result}
-    return {"refreshed": True, "path": result}
+    return {
+        "refreshed": False,
+        "reason": "cogito brief files are no longer persisted",
+    }

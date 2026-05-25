@@ -18,7 +18,6 @@ from soul_server.engine.types import EngineEvent
 from soul_server.service.context_builder import build_soulstream_context_item, format_context_items
 
 if TYPE_CHECKING:
-    from soul_server.cogito.brief_composer import BriefComposer
     from soul_server.service.runner_pool import RunnerPool
 from soul_server.models import (
     AwaySummarySSEEvent,
@@ -154,12 +153,10 @@ class SoulEngineAdapter:
         workspace_dir: Optional[str] = None,
         pool: Optional["RunnerPool"] = None,
         rate_limit_tracker: Optional[Any] = None,
-        brief_composer: Optional["BriefComposer"] = None,
     ):
         self._workspace_dir = workspace_dir or get_settings().workspace_dir
         self._pool = pool
         self._rate_limit_tracker = rate_limit_tracker
-        self._brief_composer = brief_composer
 
     @property
     def workspace_dir(self) -> str:
@@ -458,13 +455,6 @@ class SoulEngineAdapter:
             ProgressEvent | InterventionSentEvent | ContextUsageEvent
             | CompactEvent | DebugEvent | CompleteEvent | ErrorEvent
         """
-        # Cogito brief refresh (failure isolated — 실패해도 세션 진행)
-        if self._brief_composer is not None:
-            try:
-                await self._brief_composer.write_brief()
-            except Exception as e:
-                logger.warning("Cogito brief refresh failed: %s", e)
-
         queue: asyncio.Queue = asyncio.Queue()
         loop = asyncio.get_running_loop()
 
@@ -545,7 +535,6 @@ def get_soul_engine() -> SoulEngineAdapter:
 def init_soul_engine(
     pool: Optional["RunnerPool"] = None,
     rate_limit_tracker: Optional[Any] = None,
-    brief_composer: Optional["BriefComposer"] = None,
 ) -> SoulEngineAdapter:
     """soul_engine 싱글톤을 (재)초기화한다.
 
@@ -554,7 +543,6 @@ def init_soul_engine(
     Args:
         pool: 주입할 RunnerPool. None이면 풀 없이 초기화.
         rate_limit_tracker: RateLimitTracker 인스턴스. None이면 추적 비활성화.
-        brief_composer: BriefComposer 인스턴스. None이면 브리프 생성 비활성화.
 
     Returns:
         새로 생성된 SoulEngineAdapter 인스턴스
@@ -563,6 +551,5 @@ def init_soul_engine(
     soul_engine = SoulEngineAdapter(
         pool=pool,
         rate_limit_tracker=rate_limit_tracker,
-        brief_composer=brief_composer,
     )
     return soul_engine

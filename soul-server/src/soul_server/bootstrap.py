@@ -76,24 +76,22 @@ def bootstrap_runner_pool(settings: Settings) -> RunnerPool:
 
 
 def bootstrap_cogito(settings: Settings):
-    """Cogito BriefComposer 초기화. 설정이 없으면 None을 반환."""
+    """Cogito runtime reflection tools 초기화. 설정이 없으면 None을 반환."""
     if not settings.cogito_manifest_path:
-        logger.info("  Cogito brief composer: disabled (COGITO_MANIFEST_PATH not set)")
+        logger.info("  Cogito reflection tools: disabled (COGITO_MANIFEST_PATH not set)")
         return None
 
     from soul_server.cogito.brief_composer import BriefComposer
     from soul_server.cogito.mcp_tools import init as init_cogito_mcp
 
-    cogito_output_dir = str(Path(settings.workspace_dir) / ".claude" / "rules" / "cogito")
     brief_composer = BriefComposer(
         manifest_path=settings.cogito_manifest_path,
-        output_dir=cogito_output_dir,
     )
     init_cogito_mcp(
         brief_composer=brief_composer,
         manifest_path=settings.cogito_manifest_path,
     )
-    logger.info(f"  Cogito brief composer: manifest={settings.cogito_manifest_path}")
+    logger.info(f"  Cogito reflection tools: manifest={settings.cogito_manifest_path}")
     logger.info("  Cogito MCP tools: initialized")
     return brief_composer
 
@@ -305,4 +303,3 @@ async def resume_shutdown_sessions(
         logger.warning(f"  shutdown session resume 실패: {e}")
     finally:
         await session_db.clear_shutdown_flags()
-

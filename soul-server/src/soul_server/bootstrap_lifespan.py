@@ -110,15 +110,14 @@ async def startup_lifespan(
     # 1. RunnerPool
     pool = bootstrap_runner_pool(settings)
 
-    # 2. Cogito
-    brief_composer = bootstrap_cogito(settings)
+    # 2. Cogito runtime reflection tools
+    bootstrap_cogito(settings)
 
-    # 3. SoulEngine (RunnerPool + RateLimitTracker + Cogito 조합)
+    # 3. SoulEngine (RunnerPool + RateLimitTracker 조합)
     rate_limit_tracker = RateLimitTracker()
     init_soul_engine(
         pool=pool,
         rate_limit_tracker=rate_limit_tracker,
-        brief_composer=brief_composer,
     )
 
     # 4. Pre-warm + Maintenance
