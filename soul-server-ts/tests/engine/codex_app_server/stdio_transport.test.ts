@@ -51,7 +51,7 @@ describe("stdio app-server transport", () => {
     ]);
   });
 
-  it("spawns codex app-server and writes newline framed JSON", async () => {
+  it("defaults to codex command and writes newline framed JSON", async () => {
     const child = new MockChildProcess();
     const writes: string[] = [];
     child.stdin.on("data", (chunk) => writes.push(chunk.toString("utf8")));
@@ -69,6 +69,24 @@ describe("stdio app-server transport", () => {
     expect(writes).toEqual([
       JSON.stringify({ id: "req-1", method: "initialize", params: {} }) + "\n",
     ]);
+  });
+
+  it("uses explicit command override for app-server startup", async () => {
+    const child = new MockChildProcess();
+    const commands: string[] = [];
+
+    const transport = createStdioAppServerTransport({
+      command: "/home/eias/.npm-global/bin/codex",
+      spawnProcess: (command, args) => {
+        commands.push(command);
+        expect(args).toEqual(["app-server", "--listen", "stdio://"]);
+        return child;
+      },
+    });
+
+    await transport.send({ id: "req-1", method: "initialize", params: {} });
+
+    expect(commands).toEqual(["/home/eias/.npm-global/bin/codex"]);
   });
 
   it("parses stdout newline framed JSON across chunk boundaries", () => {

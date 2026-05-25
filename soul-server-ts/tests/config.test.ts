@@ -22,6 +22,7 @@ describe("parseEnv", () => {
     expect(env.DASH_USER_PORTRAIT).toBe("");
     expect(env.LLM_OPENAI_API_KEY).toBeUndefined();
     expect(env.LLM_ANTHROPIC_API_KEY).toBeUndefined();
+    expect(env.CODEX_CLI_PATH).toBeUndefined();
     expect(env.CODEX_ADAPTER_MODE).toBe("sdk");
   });
 
@@ -136,6 +137,15 @@ describe("parseEnv", () => {
     expect(() =>
       parseEnv({ ...minimal, CODEX_ADAPTER_MODE: "appserver" }),
     ).toThrow(ZodError);
+  });
+
+  it("CODEX_CLI_PATH는 default 없이 명시된 값만 사용한다", () => {
+    expect(parseEnv(minimal).CODEX_CLI_PATH).toBeUndefined();
+    const env = parseEnv({
+      ...minimal,
+      CODEX_CLI_PATH: "/home/eias/.npm-global/bin/codex",
+    });
+    expect(env.CODEX_CLI_PATH).toBe("/home/eias/.npm-global/bin/codex");
   });
 
   // MCP Streamable HTTP env (본 카드 신규)

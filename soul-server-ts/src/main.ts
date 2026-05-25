@@ -12,6 +12,7 @@ import { EventPersistence } from "./db/event_persistence.js";
 import { ClaudeEngineAdapter } from "./engine/claude_adapter.js";
 import { CodexEngineAdapter } from "./engine/codex_adapter.js";
 import { CodexAppServerEngineAdapter } from "./engine/codex_app_server/index.js";
+import { resolveCodexCliPath } from "./engine/codex_cli_path.js";
 import { AgentsEngineAdapter } from "./engine/agents_adapter.js";
 import { AnthropicAdapter, OpenAIAdapter } from "./llm/adapters.js";
 import { LlmExecutor } from "./llm/executor.js";
@@ -100,6 +101,7 @@ async function main(): Promise<void> {
   );
 
   const hasClaudeBackend = agentRegistry.supportedBackends().includes("claude");
+  const hasCodexBackend = agentRegistry.supportedBackends().includes("codex");
   if (hasClaudeBackend && !env.CLAUDE_AUTH_TOKEN_PATH) {
     console.error(
       "CLAUDE_AUTH_TOKEN_PATH is required when agents.yaml contains a Claude backend agent.",
@@ -108,6 +110,19 @@ async function main(): Promise<void> {
       "TS Claude auth storage must be explicit; Python .env and ~/.claude are not shared.",
     );
     process.exit(1);
+  }
+  const codexCliPath = resolveCodexCliPath(process.env);
+  if (hasCodexBackend) {
+    if (codexCliPath) {
+      logger.info(
+        { source: codexCliPath.source, path: codexCliPath.path },
+        "Codex CLI path resolved",
+      );
+    } else {
+      logger.warn(
+        "Codex CLI path not resolved from CODEX_CLI_PATH, PATH, or HOME. SDK mode will use the bundled binary; app-server mode will fall back to spawning \"codex\" from PATH.",
+      );
+    }
   }
 
   const agentConfigService = new AgentConfigService({
@@ -196,6 +211,7 @@ async function main(): Promise<void> {
           {
             workspaceDir: agent.workspace_dir,
             apiKey: env.CODEX_API_KEY,
+            codexPathOverride: codexCliPath?.path,
             processEnv: process.env,
           },
           logger,
@@ -209,6 +225,7 @@ async function main(): Promise<void> {
           // SDK의 envOverride로 넘겨 codex CLI 자식의 ~/.codex/auth.json OAuth fallback을 보호한다
           // (분석 캐시 `20260517-1157-codex-ts-oauth-401.md`).
           processEnv: process.env,
+          codexPathOverride: codexCliPath?.path,
         },
         logger,
       );

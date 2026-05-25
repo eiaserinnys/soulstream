@@ -719,6 +719,40 @@ describe("CodexEngineAdapter — 오류 경로", () => {
     ]);
   });
 
+  it("Codex CLI stdin 조기 실패는 경로 점검 힌트를 포함해 보고한다", async () => {
+    const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
+    async function* brokenStream(): AsyncGenerator<ThreadEvent> {
+      throw new Error("Cannot call write after a stream was destroyed");
+    }
+    mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });
+    mockRunStreamed.mockResolvedValue({ events: brokenStream() });
+
+    const engine = new CodexEngineAdapter(
+      {
+        workspaceDir: "/tmp/work",
+        codexPathOverride: "/home/eias/.npm-global/bin/codex",
+      },
+      silentLogger(),
+    );
+    const events = [];
+    for await (const e of engine.execute({ prompt: "x" })) {
+      events.push(e);
+    }
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      type: "error",
+      fatal: true,
+    });
+    expect((events[0] as { message: string }).message).toContain(
+      "Codex CLI exited before Soulstream could write the prompt",
+    );
+    expect((events[0] as { message: string }).message).toContain(
+      "codexPathOverride=/home/eias/.npm-global/bin/codex",
+    );
+    expect((events[0] as { message: string }).message).toContain("CODEX_CLI_PATH/PATH");
+  });
+
   it("stream mid-turn error 이벤트가 mapper 통해 SSE error로 발행", async () => {
     const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
     mockStartThread.mockReturnValue({ runStreamed: mockRunStreamed });

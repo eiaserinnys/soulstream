@@ -33,6 +33,11 @@ export const EnvSchema = z
      */
     CODEX_API_KEY: z.string().optional(),
     /**
+     * Codex CLI 실행 파일 절대 경로. optional — 미설정 시 main.ts가 PATH와
+     * 사용자 npm 전역 설치 위치를 탐색하고, 그래도 없으면 SDK 기본 경로에 맡긴다.
+     */
+    CODEX_CLI_PATH: z.string().optional(),
+    /**
      * Codex backend adapter 선택. default는 기존 SDK/exec 경로 유지.
      * app-server adapter는 실험 경로라 명시 opt-in에서만 사용한다.
      */

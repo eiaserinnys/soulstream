@@ -94,6 +94,7 @@ export class CodexEngineAdapter implements EnginePort {
 
   private readonly codex: Codex;
   private readonly logger: Logger;
+  private readonly codexPathOverride: string | undefined;
   private closed = false;
 
   /** 가장 최근 turn의 AbortController. interrupt() 시 사용. */
@@ -110,6 +111,7 @@ export class CodexEngineAdapter implements EnginePort {
       env: sanitizeCodexEnv(config.processEnv ?? process.env),
     });
     this.logger = logger;
+    this.codexPathOverride = config.codexPathOverride;
   }
 
   async *execute(params: EngineExecuteParams): AsyncIterable<SSEEventPayload> {
@@ -226,7 +228,7 @@ export class CodexEngineAdapter implements EnginePort {
       this.logger.warn({ err }, "thread.runStreamed throw");
       yield {
         type: "error",
-        message: err instanceof Error ? err.message : String(err),
+        message: formatCodexExecutionErrorMessage(err, this.codexPathOverride),
         fatal: true,
       } as SSEEventPayload;
       this.currentTurn = null;
@@ -287,7 +289,7 @@ export class CodexEngineAdapter implements EnginePort {
         this.logger.warn({ err }, "Codex stream error mid-turn");
         yield {
           type: "error",
-          message: err instanceof Error ? err.message : String(err),
+          message: formatCodexExecutionErrorMessage(err, this.codexPathOverride),
           fatal: true,
         } as SSEEventPayload;
       }
@@ -324,6 +326,32 @@ function isNoRolloutFoundResumeError(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err);
   const lower = message.toLowerCase();
   return lower.includes("thread/resume") && lower.includes("no rollout found");
+}
+
+export function formatCodexExecutionErrorMessage(
+  err: unknown,
+  codexPathOverride: string | undefined,
+): string {
+  const message = err instanceof Error ? err.message : String(err);
+  const lower = message.toLowerCase();
+  const isEarlyStdinFailure =
+    lower.includes("stream was destroyed") ||
+    lower.includes("write after end") ||
+    lower.includes("epipe") ||
+    lower.includes("child process has no stdin");
+  if (!isEarlyStdinFailure) {
+    return message;
+  }
+
+  const pathHint = codexPathOverride
+    ? `codexPathOverride=${codexPathOverride}`
+    : "codexPathOverride not set";
+  return [
+    "Codex CLI exited before Soulstream could write the prompt",
+    `(${pathHint})`,
+    message,
+    "Check CODEX_CLI_PATH/PATH and run codex --version on the node.",
+  ].join(": ");
 }
 
 function buildCodexInput(params: EngineExecuteParams): Input {
