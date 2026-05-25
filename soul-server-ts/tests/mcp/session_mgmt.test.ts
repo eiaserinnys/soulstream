@@ -299,7 +299,7 @@ describe("agent profile backend boundary", () => {
     );
   });
 
-  it("reflect_service level=3은 registry agent 수를 보고", async () => {
+  it("reflect_service level=3은 typed runtime snapshot 안에 registry agent 수를 보고", async () => {
     const runtime = makeRuntime(
       { queued: true, queuePosition: 1 },
       undefined,
@@ -314,7 +314,18 @@ describe("agent profile backend boundary", () => {
 
     expect(result.isError).not.toBe(true);
     expect(result.structuredContent).toMatchObject({
+      schema_version: "soulstream.reflect.v1",
       agent_count: 2,
+      data: {
+        counts: {
+          agent_count: 2,
+        },
+        dependencies: {
+          database: {
+            status: "unavailable",
+          },
+        },
+      },
     });
   });
 });
