@@ -128,7 +128,7 @@ export function registerReflectTools(
     "reflect_brief",
     {
       description:
-        "본 TS 노드의 Level 0 브리프를 반환한다. 다른 서비스를 합치는 BriefComposer는 본 카드 범위 외.",
+        "본 TS 노드의 Level 0 브리프를 반환한다. 파일은 생성하지 않는다.",
       inputSchema: {},
     },
     async () => {
@@ -151,13 +151,13 @@ export function registerReflectTools(
     "reflect_refresh",
     {
       description:
-        "Python BriefComposer만 브리프 파일을 갱신한다. 본 TS 노드는 미보유 — no-op.",
+        "Cogito brief 파일 영속화는 제거되었다. 호환용 no-op.",
       inputSchema: {},
     },
     async () => {
       return jsonResult({
         refreshed: false,
-        reason: "ts node has no brief composer",
+        reason: "cogito brief files are no longer persisted",
       });
     },
   );

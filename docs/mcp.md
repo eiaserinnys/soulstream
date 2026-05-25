@@ -32,8 +32,8 @@ Once connected, all tools below are available inside the Claude Code session.
 | Tool | Description |
 |------|-------------|
 | `reflect_service(service, level)` | Query a service at depth 0–3: features → config → source locations → runtime state |
-| `reflect_brief()` | Full Level 0 snapshot of all registered services |
-| `reflect_refresh()` | Force-regenerate the brief file on disk |
+| `reflect_brief()` | Full Level 0 snapshot of all registered services, returned in memory |
+| `reflect_refresh()` | Compatibility no-op; cogito brief files are no longer persisted |
 
 **Level guide for `reflect_service`:**
 
@@ -74,9 +74,8 @@ Once connected, all tools below are available inside the Claude Code session.
 
 ## REST endpoints
 
-Two endpoints are also available outside of MCP:
+One endpoint is also available outside of MCP:
 
 ```
 GET  /cogito/search?q=<query>&top_k=10   — tsvector session history search
-POST /cogito/refresh                     — Force-refresh the brief file
 ```

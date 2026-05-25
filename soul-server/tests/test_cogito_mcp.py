@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
-from pathlib import Path
 
 from soul_server.cogito import mcp_tools, mcp_cogito, mcp_multi_node
 from soul_server.service.postgres_session_db import PostgresSessionDB
@@ -207,55 +206,34 @@ class TestReflectBrief:
 # ---------------------------------------------------------------------------
 
 class TestReflectRefresh:
-    async def test_no_composer(self):
+    async def test_noop_without_composer(self):
         fn = _unwrap(mcp_tools.reflect_refresh)
         result = await fn()
-        assert "error" in result
+        assert result == {
+            "refreshed": False,
+            "reason": "cogito brief files are no longer persisted",
+        }
 
-    async def test_success(self):
+    async def test_noop_does_not_call_legacy_writer(self):
         composer = MagicMock()
-        composer.write_brief = AsyncMock(return_value=Path("/output/brief.md"))
+        composer.write_brief = AsyncMock()
         mcp_tools._brief_composer = composer
         mcp_cogito._brief_composer = composer
 
         fn = _unwrap(mcp_tools.reflect_refresh)
         result = await fn()
-        assert result["refreshed"] is True
-        assert "brief.md" in result["path"]
+        assert result["refreshed"] is False
+        composer.write_brief.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
-# REST API /cogito/refresh
+# REST API /cogito/refresh removed
 # ---------------------------------------------------------------------------
 
 class TestApiRefresh:
-    async def test_no_composer_returns_503(self):
-        from fastapi import HTTPException
-
-        with pytest.raises(HTTPException) as exc_info:
-            await mcp_tools.api_refresh()
-        assert exc_info.value.status_code == 503
-
-    async def test_success(self):
-        composer = MagicMock()
-        composer.write_brief = AsyncMock(return_value=Path("/output/brief.md"))
-        mcp_tools._brief_composer = composer
-        mcp_cogito._brief_composer = composer
-
-        result = await mcp_tools.api_refresh()
-        assert result["refreshed"] is True
-
-    async def test_exception_returns_500(self):
-        from fastapi import HTTPException
-
-        composer = MagicMock()
-        composer.write_brief = AsyncMock(side_effect=RuntimeError("disk full"))
-        mcp_tools._brief_composer = composer
-        mcp_cogito._brief_composer = composer
-
-        with pytest.raises(HTTPException) as exc_info:
-            await mcp_tools.api_refresh()
-        assert exc_info.value.status_code == 500
+    def test_refresh_route_not_registered(self):
+        paths = [getattr(route, "path", "") for route in mcp_tools.cogito_api_router.routes]
+        assert not any(path.endswith("/refresh") for path in paths)
 
 
 # ---------------------------------------------------------------------------

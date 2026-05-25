@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 from fastmcp import FastMCP
 
 if TYPE_CHECKING:
@@ -46,7 +46,7 @@ from soul_server.cogito import mcp_multi_node      # noqa: E402, F401
 # mcp_cogito
 from soul_server.cogito.mcp_cogito import (  # noqa: E402
     reflect_service, reflect_brief, reflect_refresh,
-    _load_manifest, _find_service, _http_get, do_refresh as _do_refresh,
+    _load_manifest, _find_service, _http_get,
 )
 
 # mcp_session_query
@@ -102,19 +102,6 @@ def init_multi_node_tools(settings) -> None:
 # ---------------------------------------------------------------------------
 
 cogito_api_router = APIRouter(prefix="/cogito", tags=["cogito"])
-
-
-@cogito_api_router.post("/refresh")
-async def api_refresh() -> dict:
-    """브리프를 즉시 갱신하는 REST 엔드포인트 (CLI에서 사용)."""
-    try:
-        ok, result = await mcp_cogito.do_refresh()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Refresh failed: {e}")
-
-    if not ok:
-        raise HTTPException(status_code=503, detail=result)
-    return {"refreshed": True, "path": result}
 
 
 @cogito_api_router.get("/search")
