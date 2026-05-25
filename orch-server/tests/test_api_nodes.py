@@ -242,6 +242,78 @@ class TestApplyAgentProfileUpdate:
             expected_config_checksum="base-checksum",
         )
 
+    async def test_apply_refreshes_list_node_agents_without_reconnect(self, client, node_manager):
+        """remote apply 성공 직후 같은 NodeConnection catalog를 갱신한다."""
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+        node = await node_manager.register_node(ws, {
+            "node_id": "n1",
+            "host": "10.0.0.1",
+            "port": 4100,
+            "agents": [
+                {
+                    "id": "old-agent",
+                    "name": "Old Agent",
+                    "backend": "claude",
+                    "portrait_url": "",
+                },
+            ],
+            "supported_backends": ["claude"],
+            "capabilities": {"max_concurrent": 1},
+            "user": {"name": "Test User", "hasPortrait": False},
+        })
+
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            req_id = data["requestId"]
+            if req_id in node._pending:
+                node._pending[req_id].set_result({
+                    "type": "apply_agent_profile_update",
+                    "requestId": req_id,
+                    "ok": True,
+                    "changed": True,
+                    "reload_ok": True,
+                    "agents": [
+                        {
+                            "id": "codex-default",
+                            "name": "Codex Default",
+                            "backend": "codex",
+                            "portrait_url": "",
+                        },
+                    ],
+                    "supported_backends": ["codex"],
+                    "capabilities": {"max_concurrent": 1},
+                })
+
+        ws.send_json.side_effect = resolve_future
+
+        resp = await client.post(
+            "/api/nodes/n1/agents/config/apply-profile-update",
+            json={
+                "profile": {
+                    "id": "codex-default",
+                    "name": "Codex Default",
+                    "backend": "codex",
+                    "workspace_dir": "/tmp/codex",
+                },
+            },
+        )
+        agents_resp = await client.get("/api/nodes/n1/agents")
+
+        assert resp.status_code == 200
+        assert resp.json()["catalog_refresh"]["ok"] is True
+        assert agents_resp.status_code == 200
+        assert agents_resp.json()["agents"] == [
+            {
+                "id": "codex-default",
+                "name": "Codex Default",
+                "portraitUrl": "",
+                "max_turns": None,
+                "backend": "codex",
+            },
+        ]
+
 
 class TestListAgentsConfigSnapshots:
     """GET /api/nodes/{node_id}/agents/config/snapshots tests."""
@@ -300,6 +372,62 @@ class TestRollbackAgentsConfig:
             snapshot_id="snap.yaml",
             include_text_diff=True,
         )
+
+    async def test_rollback_refreshes_list_node_agents_without_reconnect(self, client, node_manager):
+        """remote rollback 성공 직후 같은 NodeConnection catalog를 갱신한다."""
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+        node = await node_manager.register_node(ws, {
+            "node_id": "n1",
+            "host": "10.0.0.1",
+            "port": 4100,
+            "agents": [
+                {
+                    "id": "temp-agent",
+                    "name": "Temp Agent",
+                    "backend": "codex",
+                    "portrait_url": "",
+                },
+            ],
+            "supported_backends": ["codex"],
+            "capabilities": {"max_concurrent": 1},
+            "user": {"name": "Test User", "hasPortrait": False},
+        })
+
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            req_id = data["requestId"]
+            if req_id in node._pending:
+                node._pending[req_id].set_result({
+                    "type": "rollback_agents_config",
+                    "requestId": req_id,
+                    "ok": True,
+                    "changed": True,
+                    "reload_ok": True,
+                    "agents": [
+                        {
+                            "id": "claude-roselin",
+                            "name": "로젤린",
+                            "backend": "claude",
+                            "portrait_url": "",
+                        },
+                    ],
+                    "supported_backends": ["claude"],
+                    "capabilities": {"max_concurrent": 1},
+                })
+
+        ws.send_json.side_effect = resolve_future
+
+        resp = await client.post(
+            "/api/nodes/n1/agents/config/rollback",
+            json={"snapshotId": "snap.yaml"},
+        )
+        agents_resp = await client.get("/api/nodes/n1/agents")
+
+        assert resp.status_code == 200
+        assert resp.json()["catalog_refresh"]["ok"] is True
+        assert agents_resp.json()["agents"][0]["id"] == "claude-roselin"
 
     async def test_rejects_rollback_without_snapshot_ref(self, client, node_manager):
         ws = AsyncMock()

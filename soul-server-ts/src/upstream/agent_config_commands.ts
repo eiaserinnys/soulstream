@@ -1,4 +1,9 @@
-import { AgentProfileSchema } from "../agent_registry.js";
+import {
+  AgentProfileSchema,
+  type AgentProfile,
+  type AgentRegistry,
+  type AgentsConfig,
+} from "../agent_registry.js";
 import type {
   AgentConfigApplyResult,
   AgentConfigPlan,
@@ -11,6 +16,8 @@ export type AgentConfigCommandHandler = Pick<
   AgentConfigService,
   "listSnapshots" | "planProfileUpdate" | "replaceProfile" | "rollback"
 >;
+
+type AgentCatalogSource = Pick<AgentRegistry, "list" | "supportedBackends">;
 
 export interface PlanAgentProfileUpdateParams {
   requestId: string;
@@ -40,7 +47,10 @@ export class AgentConfigCommandError extends Error {}
  * Owns read-only agents.yaml planning commands coming from the orchestrator.
  */
 export class AgentConfigCommands {
-  constructor(private readonly service?: AgentConfigCommandHandler) {}
+  constructor(
+    private readonly service?: AgentConfigCommandHandler,
+    private readonly agentRegistry?: AgentCatalogSource,
+  ) {}
 
   async planProfileUpdate(
     params: PlanAgentProfileUpdateParams,
@@ -96,7 +106,12 @@ export class AgentConfigCommands {
           expectedConfigChecksum: params.expectedConfigChecksum,
         },
       );
-      return agentConfigApplyResultWire("apply_agent_profile_update", params.requestId, result);
+      return agentConfigApplyResultWire(
+        "apply_agent_profile_update",
+        params.requestId,
+        result,
+        agentCatalogWire(this.agentRegistry, result.config),
+      );
     } catch (err) {
       throw new AgentConfigCommandError(
         err instanceof Error ? err.message : String(err),
@@ -139,10 +154,16 @@ export class AgentConfigCommands {
       const result = await this.service.rollback(snapshotRef, {
         includeTextDiff: params.includeTextDiff ?? false,
       });
-      return agentConfigApplyResultWire("rollback_agents_config", params.requestId, result, {
-        restored_snapshot_path: params.snapshotPath,
-        restored_snapshot_id: params.snapshotId,
-      });
+      return agentConfigApplyResultWire(
+        "rollback_agents_config",
+        params.requestId,
+        result,
+        agentCatalogWire(this.agentRegistry, result.config),
+        {
+          restored_snapshot_path: params.snapshotPath,
+          restored_snapshot_id: params.snapshotId,
+        },
+      );
     } catch (err) {
       throw new AgentConfigCommandError(
         err instanceof Error ? err.message : String(err),
@@ -168,6 +189,7 @@ function agentConfigApplyResultWire(
   type: "apply_agent_profile_update" | "rollback_agents_config",
   requestId: string,
   result: AgentConfigApplyResult,
+  catalog: ReturnType<typeof agentCatalogWire>,
   extras: Record<string, unknown> = {},
 ): Record<string, unknown> {
   const response: Record<string, unknown> = {
@@ -188,10 +210,45 @@ function agentConfigApplyResultWire(
     reload_ok: result.reloadOk ?? true,
     snapshot_root: result.snapshotRoot,
     comment_preservation: result.commentPreservation,
-    agent_count: result.config.agents.length,
+    agent_count: catalog.agents.length,
+    agents: catalog.agents,
+    supported_backends: catalog.supported_backends,
+    capabilities: catalog.capabilities,
   };
   if (type === "rollback_agents_config") {
     response.rollback_snapshot_path = result.snapshotPath;
   }
   return { ...response, ...extras };
+}
+
+function agentCatalogWire(
+  agentRegistry: AgentCatalogSource | undefined,
+  fallbackConfig: AgentsConfig,
+): {
+  agents: Record<string, unknown>[];
+  supported_backends: string[];
+  capabilities: { max_concurrent: number };
+} {
+  const agents = agentRegistry ? agentRegistry.list() : fallbackConfig.agents;
+  const supportedBackends = agentRegistry
+    ? agentRegistry.supportedBackends()
+    : Array.from(new Set(agents.map((agent) => agent.backend)));
+  return {
+    agents: agents.map(agentProfileSummaryWire),
+    supported_backends: supportedBackends,
+    capabilities: { max_concurrent: agents.length },
+  };
+}
+
+function agentProfileSummaryWire(profile: AgentProfile): Record<string, unknown> {
+  const entry: Record<string, unknown> = {
+    id: profile.id,
+    name: profile.name,
+    backend: profile.backend,
+    portrait_url: profile.portrait_path ? `/api/agents/${profile.id}/portrait` : "",
+  };
+  if (profile.max_turns !== undefined) {
+    entry.max_turns = profile.max_turns;
+  }
+  return entry;
 }

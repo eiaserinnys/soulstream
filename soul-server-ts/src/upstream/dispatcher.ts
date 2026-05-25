@@ -235,7 +235,10 @@ export class CommandDispatcher {
       logger,
     });
     this.realtimeCommands = new RealtimeCommands(realtimeBroker);
-    this.agentConfigCommands = new AgentConfigCommands(agentConfigService);
+    this.agentConfigCommands = new AgentConfigCommands(
+      agentConfigService,
+      agentRegistry,
+    );
     // This table is the route inventory. Add new command types here, then put
     // command-specific adaptation behind a tested boundary when it has depth.
     this.handlers = {

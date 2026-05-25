@@ -1372,34 +1372,48 @@ describe("CommandDispatcher.plan_agent_profile_update", () => {
   });
 
   it("apply_agent_profile_update delegates write with checksum guard and semantic response", async () => {
-    const replaceProfile = vi.fn().mockResolvedValue({
-      configPath: "/srv/agents.yaml",
-      snapshotRoot: "/srv/.local/config-snapshots",
-      baseConfigChecksum: "base-checksum",
-      configChecksum: "next-checksum",
-      changed: true,
-      semanticChanges: [
-        {
-          op: "replace_agent",
-          agentId: "codex-default",
-          before: { id: "codex-default", name: "Old" },
-          after: {
-            id: "codex-default",
-            name: "Codex Applied",
-            backend: "codex",
-            workspace_dir: "/tmp/codex",
+    let registryForReload: AgentRegistry;
+    const reloadedAgents = [
+      codexAgent,
+      {
+        id: "codex-helper",
+        name: "Codex Helper",
+        backend: "codex",
+        workspace_dir: "/tmp/codex-helper",
+        portrait_path: "/tmp/codex-helper.png",
+      } as const,
+    ];
+    const replaceProfile = vi.fn().mockImplementation(async () => {
+      registryForReload.replace(reloadedAgents);
+      return {
+        configPath: "/srv/agents.yaml",
+        snapshotRoot: "/srv/.local/config-snapshots",
+        baseConfigChecksum: "base-checksum",
+        configChecksum: "next-checksum",
+        changed: true,
+        semanticChanges: [
+          {
+            op: "replace_agent",
+            agentId: "codex-default",
+            before: { id: "codex-default", name: "Old" },
+            after: {
+              id: "codex-default",
+              name: "Codex Applied",
+              backend: "codex",
+              workspace_dir: "/tmp/codex",
+            },
           },
-        },
-      ],
-      textDiffIncluded: false,
-      diff: "",
-      config: { agents: [codexAgent] },
-      commentPreservation: "not_preserved",
-      snapshotPath: "/srv/.local/config-snapshots/agents.yaml-h/snap.yaml",
-      appliedAt: "2026-05-24T00:00:00.000Z",
-      reloadOk: true,
+        ],
+        textDiffIncluded: false,
+        diff: "",
+        config: { agents: [codexAgent] },
+        commentPreservation: "not_preserved",
+        snapshotPath: "/srv/.local/config-snapshots/agents.yaml-h/snap.yaml",
+        appliedAt: "2026-05-24T00:00:00.000Z",
+        reloadOk: true,
+      };
     });
-    const { dispatcher, sent } = createDispatcher({
+    const { dispatcher, sent, registry } = createDispatcher({
       agentConfigService: {
         listSnapshots: vi.fn(),
         planProfileUpdate: vi.fn(),
@@ -1407,6 +1421,7 @@ describe("CommandDispatcher.plan_agent_profile_update", () => {
         rollback: vi.fn(),
       },
     });
+    registryForReload = registry;
 
     await dispatcher.dispatch({
       type: "apply_agent_profile_update",
@@ -1439,6 +1454,23 @@ describe("CommandDispatcher.plan_agent_profile_update", () => {
       diff: "",
       snapshot_path: "/srv/.local/config-snapshots/agents.yaml-h/snap.yaml",
       reload_ok: true,
+      agent_count: 2,
+      agents: [
+        {
+          id: "codex-default",
+          name: "Codex Default",
+          backend: "codex",
+          portrait_url: "",
+        },
+        {
+          id: "codex-helper",
+          name: "Codex Helper",
+          backend: "codex",
+          portrait_url: "/api/agents/codex-helper/portrait",
+        },
+      ],
+      supported_backends: ["codex"],
+      capabilities: { max_concurrent: 2 },
     });
   });
 
@@ -1484,21 +1516,25 @@ describe("CommandDispatcher.plan_agent_profile_update", () => {
   });
 
   it("rollback_agents_config delegates snapshot id restore with opt-in diff", async () => {
-    const rollback = vi.fn().mockResolvedValue({
-      configPath: "/srv/agents.yaml",
-      snapshotRoot: "/srv/.local/config-snapshots",
-      baseConfigChecksum: "changed-checksum",
-      configChecksum: "restored-checksum",
-      changed: true,
-      textDiffIncluded: true,
-      diff: "--- agents.yaml\n+++ agents.yaml\n",
-      config: { agents: [codexAgent] },
-      commentPreservation: "not_preserved",
-      snapshotPath: "/srv/.local/config-snapshots/agents.yaml-h/pre-rollback.yaml",
-      appliedAt: "2026-05-24T00:00:00.000Z",
-      reloadOk: true,
+    let registryForReload: AgentRegistry;
+    const rollback = vi.fn().mockImplementation(async () => {
+      registryForReload.replace([claudeAgent]);
+      return {
+        configPath: "/srv/agents.yaml",
+        snapshotRoot: "/srv/.local/config-snapshots",
+        baseConfigChecksum: "changed-checksum",
+        configChecksum: "restored-checksum",
+        changed: true,
+        textDiffIncluded: true,
+        diff: "--- agents.yaml\n+++ agents.yaml\n",
+        config: { agents: [codexAgent] },
+        commentPreservation: "not_preserved",
+        snapshotPath: "/srv/.local/config-snapshots/agents.yaml-h/pre-rollback.yaml",
+        appliedAt: "2026-05-24T00:00:00.000Z",
+        reloadOk: true,
+      };
     });
-    const { dispatcher, sent } = createDispatcher({
+    const { dispatcher, sent, registry } = createDispatcher({
       agentConfigService: {
         listSnapshots: vi.fn(),
         planProfileUpdate: vi.fn(),
@@ -1506,6 +1542,7 @@ describe("CommandDispatcher.plan_agent_profile_update", () => {
         rollback,
       },
     });
+    registryForReload = registry;
 
     await dispatcher.dispatch({
       type: "rollback_agents_config",
@@ -1525,6 +1562,17 @@ describe("CommandDispatcher.plan_agent_profile_update", () => {
       text_diff_included: true,
       snapshot_path: "/srv/.local/config-snapshots/agents.yaml-h/pre-rollback.yaml",
       restored_snapshot_id: "snap.yaml",
+      agent_count: 1,
+      agents: [
+        {
+          id: "claude-roselin",
+          name: "로젤린",
+          backend: "claude",
+          portrait_url: "",
+        },
+      ],
+      supported_backends: ["claude"],
+      capabilities: { max_concurrent: 1 },
     });
   });
 

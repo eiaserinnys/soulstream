@@ -934,6 +934,28 @@ export interface ApplyAgentProfileUpdate {
    * 응답에만 존재.
    */
   agent_count?: number;
+  /**
+   * 응답에만 존재. apply 후 target node registry가 광고하는 최신 agent summary.
+   */
+  agents?: {
+    id?: string;
+    name?: string;
+    backend?: string;
+    portrait_url?: string;
+    max_turns?: number | null;
+    portrait_b64?: string;
+    [k: string]: unknown;
+  }[];
+  /**
+   * 응답에만 존재. apply 후 target node registry의 backend 목록.
+   */
+  supported_backends?: string[];
+  /**
+   * 응답에만 존재. apply 후 target node agent catalog 기반 capability.
+   */
+  capabilities?: {
+    [k: string]: unknown;
+  };
   [k: string]: unknown;
 }
 /**
@@ -1045,6 +1067,28 @@ export interface RollbackAgentsConfig {
    * 응답에만 존재.
    */
   agent_count?: number;
+  /**
+   * 응답에만 존재. rollback 후 target node registry가 광고하는 최신 agent summary.
+   */
+  agents?: {
+    id?: string;
+    name?: string;
+    backend?: string;
+    portrait_url?: string;
+    max_turns?: number | null;
+    portrait_b64?: string;
+    [k: string]: unknown;
+  }[];
+  /**
+   * 응답에만 존재. rollback 후 target node registry의 backend 목록.
+   */
+  supported_backends?: string[];
+  /**
+   * 응답에만 존재. rollback 후 target node agent catalog 기반 capability.
+   */
+  capabilities?: {
+    [k: string]: unknown;
+  };
   [k: string]: unknown;
 }
 /**

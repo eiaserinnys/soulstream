@@ -405,6 +405,91 @@ class TestCommandSending:
         assert sent["expected_config_checksum"] == "base-checksum"
         assert result["snapshot_path"] == "/srv/snap.yaml"
 
+    async def test_send_apply_agent_profile_update_refreshes_agent_catalog(self, node, ws):
+        """apply 응답의 target registry summary로 local agent catalog cache를 갱신한다."""
+        node.set_agent_data({
+            "old-agent": {
+                "id": "old-agent",
+                "name": "Old Agent",
+                "portrait_url": "",
+                "backend": "claude",
+            },
+        }, {"old-agent": b"stale-portrait"})
+        node.supported_backends = ["claude"]
+        node.capabilities = {"max_concurrent": 1, "other": "kept"}
+
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            req_id = data["requestId"]
+            if req_id in node._pending:
+                node._pending[req_id].set_result({
+                    "type": CMD_APPLY_AGENT_PROFILE_UPDATE,
+                    "requestId": req_id,
+                    "ok": True,
+                    "changed": True,
+                    "reload_ok": True,
+                    "agents": [
+                        {
+                            "id": "codex-default",
+                            "name": "Codex Default",
+                            "backend": "codex",
+                            "portrait_url": "/api/agents/codex-default/portrait",
+                        },
+                    ],
+                    "supported_backends": ["codex"],
+                    "capabilities": {"max_concurrent": 1},
+                })
+
+        ws.send_json.side_effect = resolve_future
+
+        result = await node.send_apply_agent_profile_update({
+            "id": "codex-default",
+            "name": "Codex Default",
+            "backend": "codex",
+            "workspace_dir": "/tmp/codex",
+        })
+
+        assert result["catalog_refresh"] == {
+            "ok": True,
+            "agent_count": 1,
+            "source": "command_response",
+        }
+        assert set(node.agent_profiles) == {"codex-default"}
+        assert node.agent_profiles["codex-default"]["backend"] == "codex"
+        assert node.supported_backends == ["codex"]
+        assert node.capabilities == {"max_concurrent": 1, "other": "kept"}
+        assert node.portrait_cache == {}
+
+    async def test_send_apply_agent_profile_update_reports_missing_catalog_refresh(self, node, ws):
+        """구버전 node 응답처럼 agents가 없으면 apply 성공을 깨지 않고 degraded 상태를 보고한다."""
+
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            req_id = data["requestId"]
+            if req_id in node._pending:
+                node._pending[req_id].set_result({
+                    "type": CMD_APPLY_AGENT_PROFILE_UPDATE,
+                    "requestId": req_id,
+                    "ok": True,
+                    "changed": True,
+                    "reload_ok": True,
+                })
+
+        ws.send_json.side_effect = resolve_future
+
+        result = await node.send_apply_agent_profile_update({
+            "id": "codex-default",
+            "name": "Codex Default",
+            "backend": "codex",
+            "workspace_dir": "/tmp/codex",
+        })
+
+        assert result["ok"] is True
+        assert result["catalog_refresh"] == {
+            "ok": False,
+            "reason": "missing_agents",
+        }
+
     async def test_send_list_agents_config_snapshots_sends_inventory_command(self, node, ws):
         """snapshot inventory is requested over the node command channel."""
 
@@ -454,6 +539,48 @@ class TestCommandSending:
         assert sent["snapshot_id"] == "snap.yaml"
         assert sent["include_text_diff"] is True
         assert result["reload_ok"] is True
+
+    async def test_send_rollback_agents_config_refreshes_agent_catalog(self, node, ws):
+        """rollback 응답의 target registry summary로 local agent catalog cache를 갱신한다."""
+        node.set_agent_data({
+            "claude-roselin": {
+                "id": "claude-roselin",
+                "name": "로젤린",
+                "portrait_url": "/api/agents/claude-roselin/portrait",
+                "backend": "claude",
+            },
+        }, {"claude-roselin": b"cached-portrait"})
+
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            req_id = data["requestId"]
+            if req_id in node._pending:
+                node._pending[req_id].set_result({
+                    "type": CMD_ROLLBACK_AGENTS_CONFIG,
+                    "requestId": req_id,
+                    "ok": True,
+                    "changed": True,
+                    "reload_ok": True,
+                    "agents": [
+                        {
+                            "id": "claude-roselin",
+                            "name": "로젤린",
+                            "backend": "claude",
+                            "portrait_url": "",
+                        },
+                    ],
+                    "supported_backends": ["claude"],
+                    "capabilities": {"max_concurrent": 1},
+                })
+
+        ws.send_json.side_effect = resolve_future
+
+        result = await node.send_rollback_agents_config(snapshot_id="snap.yaml")
+
+        assert result["catalog_refresh"]["ok"] is True
+        assert set(node.agent_profiles) == {"claude-roselin"}
+        assert node.supported_backends == ["claude"]
+        assert node.portrait_cache == {"claude-roselin": b"cached-portrait"}
 
     async def test_send_respond_sends_input_request_id_without_overwriting_command_request_id(
         self, node, ws

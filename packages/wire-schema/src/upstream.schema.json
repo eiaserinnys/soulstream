@@ -643,7 +643,33 @@
           "enum": ["not_preserved"],
           "description": "응답에만 존재."
         },
-        "agent_count": { "type": "integer", "description": "응답에만 존재." }
+        "agent_count": { "type": "integer", "description": "응답에만 존재." },
+        "agents": {
+          "type": "array",
+          "description": "응답에만 존재. apply 후 target node registry가 광고하는 최신 agent summary.",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "backend": { "type": "string" },
+              "portrait_url": { "type": "string" },
+              "max_turns": { "type": ["integer", "null"] },
+              "portrait_b64": { "type": "string" }
+            }
+          }
+        },
+        "supported_backends": {
+          "type": "array",
+          "description": "응답에만 존재. apply 후 target node registry의 backend 목록.",
+          "items": { "type": "string" }
+        },
+        "capabilities": {
+          "type": "object",
+          "description": "응답에만 존재. apply 후 target node agent catalog 기반 capability.",
+          "additionalProperties": true
+        }
       }
     },
     "ListAgentsConfigSnapshots": {
@@ -741,7 +767,33 @@
           "enum": ["not_preserved"],
           "description": "응답에만 존재."
         },
-        "agent_count": { "type": "integer", "description": "응답에만 존재." }
+        "agent_count": { "type": "integer", "description": "응답에만 존재." },
+        "agents": {
+          "type": "array",
+          "description": "응답에만 존재. rollback 후 target node registry가 광고하는 최신 agent summary.",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "backend": { "type": "string" },
+              "portrait_url": { "type": "string" },
+              "max_turns": { "type": ["integer", "null"] },
+              "portrait_b64": { "type": "string" }
+            }
+          }
+        },
+        "supported_backends": {
+          "type": "array",
+          "description": "응답에만 존재. rollback 후 target node registry의 backend 목록.",
+          "items": { "type": "string" }
+        },
+        "capabilities": {
+          "type": "object",
+          "description": "응답에만 존재. rollback 후 target node agent catalog 기반 capability.",
+          "additionalProperties": true
+        }
       }
     },
     "HealthCheck": {

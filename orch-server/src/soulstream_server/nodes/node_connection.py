@@ -1,6 +1,7 @@
 """NodeConnection — soul-server node WebSocket connection wrapper."""
 
 import asyncio
+import base64
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Callable, Coroutine
@@ -104,6 +105,87 @@ class NodeConnection:
         """에이전트 프로필과 portrait 캐시를 설정한다."""
         self._agent_profiles = profiles
         self._portrait_cache = portrait_cache
+
+    def _refresh_agent_catalog_from_command_result(self, result: dict) -> dict:
+        """apply/rollback command 응답의 registry summary로 agent catalog cache 갱신.
+
+        구버전 node는 agents를 반환하지 않을 수 있다. 이 경우 config write/reload 성공은
+        그대로 보존하고, catalog 갱신 실패만 응답에 명시한다.
+        """
+        if "agents" not in result:
+            return {
+                **result,
+                "catalog_refresh": {
+                    "ok": False,
+                    "reason": "missing_agents",
+                },
+            }
+
+        try:
+            agents = result["agents"]
+            if not isinstance(agents, list):
+                raise ValueError("agents must be a list")
+
+            profiles: dict[str, dict[str, Any]] = {}
+            portrait_cache: dict[str, bytes] = {}
+            backends: list[str] = []
+            for agent in agents:
+                if not isinstance(agent, dict):
+                    raise ValueError("agent entry must be an object")
+                agent_id = agent.get("id")
+                if not isinstance(agent_id, str) or not agent_id:
+                    raise ValueError("agent entry missing id")
+                backend = agent.get("backend", "claude")
+                if not isinstance(backend, str) or not backend:
+                    raise ValueError(f"agent {agent_id} has invalid backend")
+                profiles[agent_id] = {
+                    "id": agent_id,
+                    "name": agent.get("name", ""),
+                    "portrait_url": agent.get("portrait_url", ""),
+                    "max_turns": agent.get("max_turns"),
+                    "backend": backend,
+                }
+                backends.append(backend)
+                if agent.get("portrait_b64"):
+                    portrait_cache[agent_id] = base64.b64decode(agent["portrait_b64"])
+                elif agent_id in self._portrait_cache:
+                    portrait_cache[agent_id] = self._portrait_cache[agent_id]
+
+            supported_backends = result.get("supported_backends")
+            if (
+                isinstance(supported_backends, list)
+                and all(isinstance(b, str) for b in supported_backends)
+            ):
+                self.supported_backends = supported_backends
+            else:
+                self.supported_backends = list(dict.fromkeys(backends))
+
+            capabilities = result.get("capabilities")
+            next_capabilities = {**self.capabilities}
+            if isinstance(capabilities, dict):
+                next_capabilities.update(capabilities)
+            if not isinstance(capabilities, dict) or "max_concurrent" not in capabilities:
+                next_capabilities["max_concurrent"] = len(profiles)
+            self.capabilities = next_capabilities
+
+            self.set_agent_data(profiles, portrait_cache)
+            return {
+                **result,
+                "catalog_refresh": {
+                    "ok": True,
+                    "agent_count": len(profiles),
+                    "source": "command_response",
+                },
+            }
+        except Exception as err:
+            return {
+                **result,
+                "catalog_refresh": {
+                    "ok": False,
+                    "reason": "invalid_agents",
+                    "message": str(err),
+                },
+            }
 
     @property
     def user_info(self) -> dict:
@@ -390,7 +472,8 @@ class NodeConnection:
         }
         if expected_config_checksum is not None:
             payload["expected_config_checksum"] = expected_config_checksum
-        return await self._send_command(CMD_APPLY_AGENT_PROFILE_UPDATE, payload)
+        result = await self._send_command(CMD_APPLY_AGENT_PROFILE_UPDATE, payload)
+        return self._refresh_agent_catalog_from_command_result(result)
 
     async def send_list_agents_config_snapshots(self) -> dict:
         """대상 노드의 agents.yaml snapshot 목록을 조회한다."""
@@ -408,7 +491,8 @@ class NodeConnection:
             payload["snapshot_path"] = snapshot_path
         if snapshot_id is not None:
             payload["snapshot_id"] = snapshot_id
-        return await self._send_command(CMD_ROLLBACK_AGENTS_CONFIG, payload)
+        result = await self._send_command(CMD_ROLLBACK_AGENTS_CONFIG, payload)
+        return self._refresh_agent_catalog_from_command_result(result)
 
     async def send_respond(
         self, session_id: str, request_id: str, answers: dict

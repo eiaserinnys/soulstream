@@ -424,6 +424,9 @@ class ApplyAgentProfileUpdate(TypedDict):
     snapshot_root: NotRequired[str]
     comment_preservation: NotRequired[Literal['not_preserved']]
     agent_count: NotRequired[int]
+    agents: NotRequired[list[Agent]]
+    supported_backends: NotRequired[list[str]]
+    capabilities: NotRequired[dict[str, Any]]
 
 
 class Snapshot(TypedDict):
@@ -479,6 +482,9 @@ class RollbackAgentsConfig(TypedDict):
     snapshot_root: NotRequired[str]
     comment_preservation: NotRequired[Literal['not_preserved']]
     agent_count: NotRequired[int]
+    agents: NotRequired[list[Agent]]
+    supported_backends: NotRequired[list[str]]
+    capabilities: NotRequired[dict[str, Any]]
 
 
 class HealthCheck(TypedDict):
