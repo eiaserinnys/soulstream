@@ -23,6 +23,7 @@ import {
   LinkedSessionRuntimeIndicator,
   STATUS_META,
   TaskContextMenu,
+  TaskStatusLineOverlay,
   TaskTreeLines,
 } from "./TaskTreeParts";
 
@@ -310,6 +311,7 @@ export function TaskTreeView({ sessions = [], onNewSession }: TaskTreeViewProps)
                 ? sessionById.get(task.linkedSessionId)
                 : undefined;
               const portraitUrl = linkedSession?.agentPortraitUrl ?? null;
+              const verifiedDone = task.status === "verified_done";
               return (
                 <div
                   key={task.id}
@@ -317,6 +319,7 @@ export function TaskTreeView({ sessions = [], onNewSession }: TaskTreeViewProps)
                     "group flex items-center gap-2 px-3 py-2 transition-colors",
                     row.depth === 0 ? "min-h-[62px]" : "min-h-[52px]",
                     navigationDisabled ? "text-muted-foreground" : "hover:bg-muted/45",
+                    verifiedDone && "opacity-70",
                   )}
                   onContextMenu={(event) => {
                     event.preventDefault();
@@ -325,20 +328,23 @@ export function TaskTreeView({ sessions = [], onNewSession }: TaskTreeViewProps)
                 >
                   <TaskTreeLines row={row} />
 
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 shrink-0"
-                    disabled={pendingTaskId === task.id}
-                    title={`Set ${NEXT_STATUS[task.status]}`}
-                    onClick={() => void cycleStatus(task)}
-                  >
-                    {pendingTaskId === task.id ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <StatusIcon className={cn("h-4 w-4", STATUS_META[task.status].className)} />
-                    )}
-                  </Button>
+                  <div className="relative flex w-8 shrink-0 self-stretch items-center justify-center">
+                    <TaskStatusLineOverlay row={row} />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="relative z-10 h-8 w-8 shrink-0"
+                      disabled={pendingTaskId === task.id}
+                      title={`Set ${NEXT_STATUS[task.status]}`}
+                      onClick={() => void cycleStatus(task)}
+                    >
+                      {pendingTaskId === task.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <StatusIcon className={cn("h-4 w-4", STATUS_META[task.status].className)} />
+                      )}
+                    </Button>
+                  </div>
 
                   <button
                     type="button"

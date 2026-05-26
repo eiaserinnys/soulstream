@@ -25,13 +25,13 @@ export const STATUS_META: Record<
   open: { label: "Open", icon: Circle, className: "text-muted-foreground" },
   in_progress: { label: "In Progress", icon: Play, className: "text-info" },
   agent_done: { label: "Agent Done", icon: CheckCircle2, className: "text-primary" },
-  verified_done: { label: "Verified", icon: ShieldCheck, className: "text-success" },
+  verified_done: { label: "완료", icon: ShieldCheck, className: "text-muted-foreground" },
   reopened: { label: "Reopened", icon: RotateCcw, className: "text-accent-amber" },
   blocked: { label: "Blocked", icon: OctagonAlert, className: "text-accent-red" },
   cancelled: { label: "Cancelled", icon: CircleSlash, className: "text-muted-foreground" },
 };
 
-const STATUS_OPTIONS: TaskStatus[] = [
+export const STATUS_OPTIONS: TaskStatus[] = [
   "open",
   "in_progress",
   "blocked",
@@ -42,20 +42,37 @@ const STATUS_OPTIONS: TaskStatus[] = [
 ];
 
 export function TaskTreeLines({ row }: { row: TaskTreeRow }) {
-  if (row.depth === 0) return <span className="w-1 shrink-0" aria-hidden />;
+  if (row.depth === 0) return null;
+  const slots = Array.from({ length: row.depth });
   return (
-    <div className="flex self-stretch shrink-0" aria-hidden>
-      {row.ancestorLast.slice(1).map((isLast, index) => (
-        <span key={index} className="relative w-4">
-          {!isLast && <span className="absolute left-1/2 top-0 bottom-0 border-l border-border/70" />}
-        </span>
-      ))}
-      <span className="relative w-4">
-        <span className="absolute left-1/2 top-0 h-1/2 border-l border-border/70" />
-        <span className="absolute left-1/2 right-0 top-1/2 border-t border-border/70" />
-        {!row.isLast && <span className="absolute left-1/2 top-1/2 bottom-0 border-l border-border/70" />}
-      </span>
+    <div className="-mr-2 flex self-stretch shrink-0" aria-hidden>
+      {slots.map((_, index) => {
+        const isBranchSlot = index === row.depth - 1;
+        const ancestorIsLast = row.ancestorLast[index] ?? true;
+        return (
+          <span key={index} className="relative w-8 shrink-0">
+            {!isBranchSlot && !ancestorIsLast && (
+              <span className="absolute left-1/2 top-0 bottom-0 border-l border-border/70" />
+            )}
+            {isBranchSlot && (
+              <span className="absolute left-1/2 right-[-1rem] top-1/2 border-t border-border/70" />
+            )}
+          </span>
+        );
+      })}
     </div>
+  );
+}
+
+export function TaskStatusLineOverlay({ row }: { row: TaskTreeRow }) {
+  if (row.depth === 0) return null;
+  return (
+    <>
+      <span className="absolute left-1/2 top-0 h-1/2 border-l border-border/70" aria-hidden />
+      {!row.isLast && (
+        <span className="absolute left-1/2 top-1/2 bottom-0 border-l border-border/70" aria-hidden />
+      )}
+    </>
   );
 }
 
